@@ -1,0 +1,562 @@
+/**
+ * End-to-end check of Aether Studio in a real Chromium.
+ *
+ * Starts the server in offline mock mode (serving the built studio from
+ * `apps/studio/dist`), then drives the app like a user:
+ *
+ *  1. boot with `?debug=1`, wait for the default world to render and prove
+ *     the canvas is not blank (screenshot pixel variance);
+ *  2. send four example prompts through the chat box (type + Enter), wait
+ *     for each agent turn to finish, check the world changed and the
+ *     physics-check pill shows a result;
+ *  3. Play, drive the player with the keyboard for 3 s, check physics moved
+ *     something and fps > 0, Stop and check the world was restored exactly;
+ *  4. undo / redo, select an entity in the outliner and recolor it in the
+ *     inspector, export the world JSON.
+ *
+ * A second, shorter run deletes `navigator.gpu` to force the WebGL2 path.
+ * Any console error or uncaught page error fails the run. README
+ * screenshots are written to `docs/screenshots/`.
+ *
+ * Run: `npm run build && npm run e2e` (or `AETHER_E2E_URL=http://… npm run e2e`
+ * against an already running server).
+ */
+import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwright';
+import { decodePng, pixelStats } from './support/png';
+import { REPO_ROOT, STUDIO_DIST, findChrome, startServer } from './support/env';
+
+/**
+ * Chromium flags for GPU coverage on GPU-less machines. The first three
+ * enable WebGPU and software GL; the last two route WebGPU to SwiftShader's
+ * Vulkan, without which headless Chromium returns a null adapter and the
+ * studio (correctly) falls back to WebGL2.
+ */
+const CHROME_ARGS = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
+const VIEWPORT = { width: 1440, height: 900 };
+const SCREENSHOT_DIR = join(REPO_ROOT, 'docs/screenshots');
+
+const BOOT_TIMEOUT_MS = 60_000;
+const AGENT_TIMEOUT_MS = 120_000;
+const MODE_TIMEOUT_MS = 30_000;
+const DRIVE_MS = 3_000;
+const FPS_SAMPLE_MS = 2_000;
+/** Luminance std-dev below this means a flat (blank) canvas. */
+const MIN_CANVAS_STDDEV = 6;
+const MIN_CANVAS_COLORS = 24;
+
+/** Prompts sent through the chat, in order (the last one is a playable game). */
+const PROMPTS: ReadonlyArray<{ slug: string; text: string }> = [
+  { slug: 'lakeside-camp', text: 'A cozy lakeside camp at sunset with a campfire, tents and fireflies' },
+  { slug: 'domino-run', text: 'Build a domino run that knocks over a bell tower' },
+  { slug: 'bowling-alley', text: 'Bowling alley: knock down a pyramid of 15 crates with a heavy ball' },
+  { slug: 'coin-island', text: 'A coin collecting game on a tropical island — collect 10 coins in 60 seconds' },
+];
+
+/**
+ * Console noise that is expected and harmless. Only `error`-level messages
+ * fail the run; these patterns are documented here so new noise is a
+ * conscious decision.
+ */
+const BENIGN_CONSOLE: readonly RegExp[] = [
+  // Chromium's GPU process logs these for software (SwiftShader) GL; not app errors.
+  /GL Driver Message/i,
+  /GPU stall due to ReadPixels/i,
+  // Dawn's message when a WebGPU adapter probe is torn down (no adapter in headless).
+  /valid external Instance reference no longer exists/i,
+];
+
+// ---------------------------------------------------------------------------
+// Logging & assertions
+// ---------------------------------------------------------------------------
+
+const startedAt = performance.now();
+function log(line: string): void {
+  process.stdout.write(`[${((performance.now() - startedAt) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
+}
+
+class E2EFailure extends Error {
+  override name = 'E2EFailure';
+}
+
+function check(cond: unknown, message: string): asserts cond {
+  if (!cond) throw new E2EFailure(message);
+}
+
+async function waitFor<T>(page: Page, what: string, timeoutMs: number, probe: () => Promise<T | null | undefined | false>, intervalMs = 250): Promise<T> {
+  const deadline = performance.now() + timeoutMs;
+  let last: unknown = null;
+  while (performance.now() < deadline) {
+    const v = await probe();
+    if (v !== null && v !== undefined && v !== false) return v;
+    last = v;
+    await page.waitForTimeout(intervalMs);
+  }
+  throw new E2EFailure(`timed out after ${timeoutMs} ms waiting for ${what} (last=${JSON.stringify(last)})`);
+}
+
+// ---------------------------------------------------------------------------
+// Page probes (run inside the browser; rely on the `?debug=1` handle)
+// ---------------------------------------------------------------------------
+
+/** Compact studio state read through `window.__aether`. */
+interface StudioSnapshot {
+  ready: boolean;
+  loading: string | null;
+  fatal: string | null;
+  backend: string | null;
+  mode: string;
+  modeBusy: boolean;
+  entities: number;
+  head: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  fps: number;
+  drawCalls: number;
+  triangles: number;
+  agentBusy: boolean;
+  verify: string;
+  lastAssistant: string | null;
+  simAttached: boolean;
+  physics: boolean;
+}
+
+function snapshot(page: Page): Promise<StudioSnapshot | null> {
+  return page.evaluate((): StudioSnapshot | null => {
+    const a = window.__aether;
+    if (!a) return null;
+    const st = a.store.getState();
+    let lastAssistant: string | null = null;
+    for (let i = st.chat.length - 1; i >= 0; i--) {
+      const e = st.chat[i];
+      if (e && e.role === 'assistant') {
+        lastAssistant = e.status;
+        break;
+      }
+    }
+    const sim = a.simulation;
+    return {
+      ready: sim !== null && st.loading === null,
+      loading: st.loading,
+      fatal: st.fatal,
+      backend: st.backend,
+      mode: st.mode,
+      modeBusy: st.modeBusy,
+      entities: Object.keys(a.history.current.entities).length,
+      head: a.history.head,
+      canUndo: a.history.canUndo(),
+      canRedo: a.history.canRedo(),
+      fps: st.stats.fps,
+      drawCalls: st.stats.drawCalls,
+      triangles: st.stats.triangles,
+      agentBusy: st.agentBusy,
+      verify: st.verify.status,
+      lastAssistant,
+      simAttached: sim !== null,
+      physics: sim?.physics != null,
+    };
+  });
+}
+
+async function snap(page: Page): Promise<StudioSnapshot> {
+  const s = await snapshot(page);
+  check(s, 'window.__aether debug handle is missing');
+  return s;
+}
+
+/** Canonical JSON of the current world document. */
+function worldJson(page: Page): Promise<string> {
+  return page.evaluate(() => JSON.stringify(window.__aether?.history.current ?? null));
+}
+
+/** One-line summaries of the latest assistant turn's events (diagnostics). */
+function lastTurnEvents(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const chat = window.__aether?.store.getState().chat ?? [];
+    const last = chat[chat.length - 1];
+    if (!last || last.role !== 'assistant') return [];
+    return last.events.map((e) => {
+      switch (e.type) {
+        case 'patches':
+          return `patches(${e.message.slice(0, 60)}${e.errors.length > 0 ? `; ${e.errors.length} errors: ${e.errors[0]?.slice(0, 120) ?? ''}` : ''})`;
+        case 'verify':
+          return `verify(${e.passed ? 'pass' : 'fail'})`;
+        case 'done':
+          return `done(${e.calls} calls)`;
+        case 'generator':
+          return `generator(${e.id}${e.ok ? '' : `: ${e.error ?? 'failed'}`})`;
+        case 'repair':
+          return `repair#${e.attempt}`;
+        default:
+          return `${e.type}(${e.text.slice(0, 100)})`;
+      }
+    });
+  });
+}
+
+/** Positions of every physics body plus the player capsule (play mode). */
+function bodyPositions(page: Page): Promise<Record<string, [number, number, number]>> {
+  return page.evaluate(() => {
+    const sim = window.__aether?.simulation;
+    const out: Record<string, [number, number, number]> = {};
+    const pw = sim?.physics;
+    if (pw) for (const [id, s] of pw.getAllStates()) out[id] = [s.position[0], s.position[1], s.position[2]];
+    const p = sim?.playerPosition;
+    if (p) out['@player'] = [p[0], p[1], p[2]];
+    return out;
+  });
+}
+
+/** Largest displacement between two position sets (ids present in both). */
+function maxDisplacement(a: Record<string, [number, number, number]>, b: Record<string, [number, number, number]>): { id: string; d: number } {
+  let best = { id: '', d: 0 };
+  for (const id of Object.keys(a)) {
+    const p = a[id];
+    const q = b[id];
+    if (!p || !q) continue;
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    if (d > best.d) best = { id, d };
+  }
+  return best;
+}
+
+/** Average of the 4 Hz fps stat over a window. */
+async function sampleFps(page: Page, ms: number): Promise<{ fps: number; drawCalls: number; triangles: number }> {
+  const samples: StudioSnapshot[] = [];
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    await page.waitForTimeout(250);
+    samples.push(await snap(page));
+  }
+  const fps = samples.reduce((t, s) => t + s.fps, 0) / Math.max(1, samples.length);
+  const last = samples[samples.length - 1];
+  return { fps, drawCalls: last?.drawCalls ?? 0, triangles: last?.triangles ?? 0 };
+}
+
+/** Screenshot the viewport and check it contains a real rendered image. */
+async function assertCanvasRendered(page: Page, label: string): Promise<void> {
+  const png = await page.locator('.viewport__host canvas').screenshot();
+  const stats = pixelStats(decodePng(png));
+  log(`  canvas (${label}): mean=${stats.mean.toFixed(1)} stddev=${stats.stdDev.toFixed(1)} colors=${stats.distinctColors}`);
+  check(stats.stdDev >= MIN_CANVAS_STDDEV && stats.distinctColors >= MIN_CANVAS_COLORS, `canvas looks blank after ${label} (stddev ${stats.stdDev.toFixed(1)}, ${stats.distinctColors} colours)`);
+}
+
+/** Hide debug/transient overlays so screenshots look like the product. */
+async function setPresentationMode(page: Page, on: boolean): Promise<void> {
+  await page.evaluate((enable) => {
+    window.__aether?.store.getState().updateSettings({ showPerf: !enable });
+    const id = 'e2e-presentation';
+    document.getElementById(id)?.remove();
+    if (enable) {
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent = '.viewport__hint, .toasts, .toast { display: none !important; } * { caret-color: transparent !important; }';
+      document.head.appendChild(style);
+    }
+  }, on);
+  await page.waitForTimeout(300);
+}
+
+async function screenshot(page: Page, name: string, target: 'page' | 'viewport'): Promise<void> {
+  await setPresentationMode(page, true);
+  const path = join(SCREENSHOT_DIR, `${name}.png`);
+  if (target === 'viewport') await page.locator('.viewport').screenshot({ path });
+  else await page.screenshot({ path });
+  await setPresentationMode(page, false);
+  log(`  screenshot → docs/screenshots/${name}.png`);
+}
+
+// ---------------------------------------------------------------------------
+// Steps
+// ---------------------------------------------------------------------------
+
+/** Measurements reported at the end of a run. */
+interface RunMetrics {
+  backend: string;
+  firstFrameMs: number;
+  defaultWorld: { fps: number; drawCalls: number; triangles: number; entities: number };
+  examples: Array<{ slug: string; entities: number; fps: number; drawCalls: number; triangles: number; verify: string; agentMs: number }>;
+}
+
+async function boot(page: Page, url: string, metrics: RunMetrics): Promise<void> {
+  const t0 = performance.now();
+  await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+  await waitFor(page, 'the studio to render its first frame', BOOT_TIMEOUT_MS, async () => {
+    const s = await snapshot(page);
+    if (s?.fatal) throw new E2EFailure(`renderer failed: ${s.fatal}`);
+    return s && s.ready && s.fps > 0 && s.entities > 0 ? s : null;
+  });
+  metrics.firstFrameMs = performance.now() - t0;
+  const s = await snap(page);
+  metrics.backend = s.backend ?? 'none';
+  log(`  booted on ${metrics.backend} in ${Math.round(metrics.firstFrameMs)} ms with ${s.entities} entities`);
+  check(s.entities > 0, 'default world has no entities');
+  await assertCanvasRendered(page, 'boot');
+  const perf = await sampleFps(page, FPS_SAMPLE_MS);
+  metrics.defaultWorld = { ...perf, entities: s.entities };
+}
+
+async function sendPrompt(page: Page, prompt: { slug: string; text: string }, metrics: RunMetrics, shots: boolean): Promise<void> {
+  const before = await snap(page);
+  const beforeWorld = await worldJson(page);
+  const input = page.getByLabel('Prompt', { exact: true });
+  await input.click();
+  await input.fill(prompt.text);
+  const t0 = performance.now();
+  await input.press('Enter');
+  await waitFor(page, `agent to start on "${prompt.slug}"`, 10_000, async () => (await snap(page)).agentBusy || (await snap(page)).head !== before.head);
+  const after = await waitFor(page, `agent to finish "${prompt.slug}"`, AGENT_TIMEOUT_MS, async () => {
+    const s = await snap(page);
+    return !s.agentBusy && s.lastAssistant !== 'streaming' && s.ready ? s : null;
+  });
+  const agentMs = performance.now() - t0;
+  log(`  agent: ${(await lastTurnEvents(page)).join(' | ')}`);
+  check(after.lastAssistant === 'done', `agent turn for "${prompt.slug}" ended with status ${after.lastAssistant}`);
+  check(after.head !== before.head && (await worldJson(page)) !== beforeWorld, `"${prompt.slug}" did not change the world`);
+  check(after.entities !== before.entities, `"${prompt.slug}" did not change the entity count (${before.entities})`);
+  const pill = page.locator('.viewport .pill--button');
+  const pillText = (await pill.textContent())?.trim() ?? '';
+  check(/✓|✗|failing/.test(pillText) && !/outdated/.test(pillText), `verify pill shows no fresh result for "${prompt.slug}" ("${pillText}")`);
+  await waitFor(page, 'renderer to sync the new world', 15_000, async () => {
+    const s = await snap(page);
+    return s.ready && s.fps > 0 ? s : null;
+  });
+  await page.waitForTimeout(500);
+  await assertCanvasRendered(page, prompt.slug);
+  const perf = await sampleFps(page, FPS_SAMPLE_MS);
+  metrics.examples.push({ slug: prompt.slug, entities: after.entities, verify: after.verify, agentMs, ...perf });
+  log(`  "${prompt.slug}": ${before.entities} → ${after.entities} entities, verify=${after.verify} ("${pillText}"), agent ${Math.round(agentMs)} ms, ${perf.fps.toFixed(1)} fps, ${perf.drawCalls} draws`);
+  if (shots) {
+    await screenshot(page, `world-${prompt.slug}`, 'viewport');
+    if (prompt.slug === 'lakeside-camp') await screenshot(page, 'studio-overview', 'page');
+  }
+}
+
+async function playAndStop(page: Page, shots: boolean): Promise<void> {
+  const before = await worldJson(page);
+  const playBtn = page.locator('button.play-btn');
+  await playBtn.click();
+  await waitFor(page, 'play mode', MODE_TIMEOUT_MS, async () => {
+    const s = await snap(page);
+    return s.mode === 'play' && s.physics && !s.modeBusy ? s : null;
+  });
+  await page.waitForTimeout(300);
+  const p0 = await bodyPositions(page);
+  check(Object.keys(p0).length > 0, 'play mode has no physics bodies or player');
+
+  // Drive the player: keyboard focus on the canvas, then W / D / Space / A.
+  await page.locator('.viewport__host canvas').focus();
+  const driveStart = performance.now();
+  const legs: ReadonlyArray<[string, number]> = [
+    ['KeyW', 0.4],
+    ['KeyD', 0.2],
+    ['Space', 0.1],
+    ['KeyW', 0.2],
+    ['KeyA', 0.1],
+  ];
+  for (const [key, share] of legs) {
+    await page.keyboard.down(key);
+    await page.waitForTimeout(DRIVE_MS * share);
+    await page.keyboard.up(key);
+  }
+  const drove = performance.now() - driveStart;
+  const p1 = await bodyPositions(page);
+  const moved = maxDisplacement(p0, p1);
+  const s = await snap(page);
+  log(`  played ${Math.round(drove)} ms: ${Object.keys(p1).length} bodies, max displacement ${moved.d.toFixed(2)} m (${moved.id}), fps ${s.fps}`);
+  check(moved.d > 0.05, `physics did not move anything during play (max ${moved.d})`);
+  check(s.fps > 0, 'fps stat is 0 during play');
+  if (shots) await screenshot(page, 'play-mode', 'page');
+
+  await playBtn.click();
+  await waitFor(page, 'edit mode after Stop', MODE_TIMEOUT_MS, async () => {
+    const st = await snap(page);
+    return st.mode === 'edit' && !st.physics && !st.modeBusy ? st : null;
+  });
+  check((await worldJson(page)) === before, 'Stop did not restore the world document exactly');
+  log('  stop restored the world');
+}
+
+async function undoRedo(page: Page): Promise<void> {
+  const before = await snap(page);
+  const worldBefore = await worldJson(page);
+  check(before.canUndo, 'nothing to undo after the prompts');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undone = await waitFor(page, 'undo', 5_000, async () => {
+    const s = await snap(page);
+    return s.head !== before.head ? s : null;
+  });
+  check((await worldJson(page)) !== worldBefore, 'undo did not change the world');
+  check(undone.canRedo, 'redo not available after undo');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await waitFor(page, 'redo', 5_000, async () => {
+    const s = await snap(page);
+    return s.head === before.head ? s : null;
+  });
+  check((await worldJson(page)) === worldBefore, 'redo did not restore the world');
+  log(`  undo/redo ok (head ${before.head} → ${undone.head} → ${before.head})`);
+}
+
+async function editColor(page: Page): Promise<void> {
+  const target = await page.evaluate(() => {
+    const w = window.__aether?.history.current;
+    if (!w) return null;
+    for (const id of Object.keys(w.entities)) {
+      const e = w.entities[id];
+      if (e && e.shape.kind === 'primitive' && e.material && e.visible) return id;
+    }
+    return null;
+  });
+  check(target, 'no recolorable entity in the world');
+  await page.locator('#tab-outliner').click();
+  await page.getByLabel('Search entities').fill('');
+  const row = page.locator(`.outliner-row:has(.outliner-row__name[title="${target}"])`);
+  await row.scrollIntoViewIfNeeded();
+  await row.click();
+  await waitFor(page, 'outliner selection', 5_000, () =>
+    page.evaluate((id) => {
+      const sel = window.__aether?.store.getState().selection ?? [];
+      return sel.length === 1 && sel[0] === id;
+    }, target),
+  );
+  await page.locator('#tab-inspector').click();
+  const hex = page.getByLabel('Color hex', { exact: true });
+  await hex.fill('#ff3366');
+  await hex.press('Enter');
+  await waitFor(page, 'color commit', 5_000, () =>
+    page.evaluate((id) => {
+      const e = window.__aether?.history.current.entities[id];
+      return e?.material?.color === '#ff3366';
+    }, target),
+  );
+  log(`  recolored ${target} via outliner + inspector`);
+}
+
+async function exportJson(page: Page): Promise<void> {
+  const expected = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export world JSON' }).click()]);
+  const path = await download.path();
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  const envelope = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  check(envelope['format'] === 'aether-world', 'export is not an aether-world envelope');
+  const world = envelope['world'];
+  const ents = typeof world === 'object' && world !== null ? (world as Record<string, unknown>)['entities'] : undefined;
+  const count = typeof ents === 'object' && ents !== null ? Object.keys(ents).length : -1;
+  check(count === expected, `exported JSON has ${count} entities, expected ${expected}`);
+  check(/\.json$/.test(download.suggestedFilename()), `unexpected export filename ${download.suggestedFilename()}`);
+  log(`  exported ${download.suggestedFilename()} (${count} entities)`);
+}
+
+// ---------------------------------------------------------------------------
+// Runs
+// ---------------------------------------------------------------------------
+
+interface RunOptions {
+  name: string;
+  /** Delete `navigator.gpu` before any script runs (forces WebGL2). */
+  forceWebGL2: boolean;
+  /** Backend the run must end up on. */
+  expectBackend: 'webgpu' | 'webgl2';
+  /** Full flow (all prompts + editing) or the short smoke flow. */
+  full: boolean;
+  screenshots: boolean;
+}
+
+async function run(browser: Browser, url: string, opts: RunOptions): Promise<RunMetrics> {
+  log(`run "${opts.name}"`);
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
+  const errors: string[] = [];
+  const metrics: RunMetrics = { backend: 'none', firstFrameMs: 0, defaultWorld: { fps: 0, drawCalls: 0, triangles: 0, entities: 0 }, examples: [] };
+  try {
+    const page = await context.newPage();
+    if (opts.forceWebGL2) {
+      await page.addInitScript(() => {
+        delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu'];
+      });
+    }
+    page.on('console', (m: ConsoleMessage) => {
+      if (m.type() !== 'error') return;
+      const text = m.text();
+      if (BENIGN_CONSOLE.some((re) => re.test(text))) return;
+      errors.push(`console.error: ${text.slice(0, 500)}`);
+    });
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message.slice(0, 500)}`));
+    page.on('crash', () => errors.push('page crashed'));
+
+    await boot(page, url, metrics);
+    check(metrics.backend === opts.expectBackend, `expected the ${opts.expectBackend} backend, got ${metrics.backend}`);
+    if (opts.screenshots) await screenshot(page, 'studio-default-world', 'page');
+
+    const prompts = opts.full ? PROMPTS : PROMPTS.slice(-1);
+    for (const p of prompts) await sendPrompt(page, p, metrics, opts.screenshots);
+    await playAndStop(page, opts.screenshots);
+    if (opts.full) {
+      await undoRedo(page);
+      await editColor(page);
+      await exportJson(page);
+    }
+    check(errors.length === 0, `console/page errors:\n  ${errors.join('\n  ')}`);
+    log(`run "${opts.name}" passed`);
+    return metrics;
+  } catch (err) {
+    if (errors.length > 0) log(`  collected errors:\n  ${errors.join('\n  ')}`);
+    throw err;
+  } finally {
+    await context.close();
+  }
+}
+
+/** Raw and gzip sizes of the built JS/WASM/CSS assets. */
+function bundleSizes(): Array<{ file: string; kb: number; gzipKb: number }> {
+  const dir = join(STUDIO_DIST, 'assets');
+  return readdirSync(dir)
+    .filter((f) => /\.(js|wasm|css)$/.test(f))
+    .map((f) => {
+      const bytes = readFileSync(join(dir, f));
+      return { file: f, kb: statSync(join(dir, f)).size / 1024, gzipKb: gzipSync(bytes, { level: 6 }).length / 1024 };
+    })
+    .sort((a, b) => b.kb - a.kb);
+}
+
+function report(results: Array<{ name: string; metrics: RunMetrics }>): void {
+  log('metrics');
+  for (const { name, metrics: m } of results) {
+    log(`  [${name}] backend=${m.backend} firstFrame=${Math.round(m.firstFrameMs)} ms default world: ${m.defaultWorld.entities} entities, ${m.defaultWorld.fps.toFixed(1)} fps, ${m.defaultWorld.drawCalls} draws, ${m.defaultWorld.triangles} tris`);
+    const densest = [...m.examples].sort((a, b) => b.triangles - a.triangles)[0];
+    if (densest) log(`  [${name}] densest example "${densest.slug}": ${densest.entities} entities, ${densest.fps.toFixed(1)} fps, ${densest.drawCalls} draws, ${densest.triangles} tris`);
+  }
+  let total = 0;
+  let totalGz = 0;
+  for (const b of bundleSizes()) {
+    total += b.kb;
+    totalGz += b.gzipKb;
+    log(`  bundle ${b.file.padEnd(40)} ${b.kb.toFixed(0).padStart(6)} KB  (gzip ${b.gzipKb.toFixed(0)} KB)`);
+  }
+  log(`  bundle total ${total.toFixed(0)} KB (gzip ${totalGz.toFixed(0)} KB)`);
+}
+
+async function main(): Promise<void> {
+  mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  const server = await startServer(log);
+  let browser: Browser | null = null;
+  try {
+    const executablePath = findChrome();
+    log(`server ${server.url}, chromium ${executablePath}`);
+    browser = await chromium.launch({ executablePath, args: CHROME_ARGS });
+    const results: Array<{ name: string; metrics: RunMetrics }> = [];
+    results.push({ name: 'webgpu', metrics: await run(browser, server.url, { name: 'webgpu', forceWebGL2: false, expectBackend: 'webgpu', full: true, screenshots: true }) });
+    results.push({ name: 'webgl2-only', metrics: await run(browser, server.url, { name: 'webgl2-only', forceWebGL2: true, expectBackend: 'webgl2', full: false, screenshots: false }) });
+    report(results);
+    log('E2E PASSED');
+  } finally {
+    await browser?.close();
+    await server.stop();
+  }
+}
+
+main().catch((err: unknown) => {
+  log(`E2E FAILED: ${err instanceof Error ? err.message : String(err)}`);
+  process.exitCode = 1;
+});

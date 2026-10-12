@@ -14,7 +14,10 @@
     "dev:server": "npm run dev -w @aether/server",
     "build": "npm run build -w @aether/studio",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "NODE_ENV=production node --import tsx apps/server/src/main.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "e2e": "tsx tests/e2e/studio.e2e.ts"
   },
   "engines": {
     "node": ">=22"
