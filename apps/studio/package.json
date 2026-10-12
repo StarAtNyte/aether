@@ -1,0 +1,13 @@
+{
+  "name": "@aether/studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "dependencies": {
+    "@aether/core": "*", "@aether/physics": "*", "@aether/render": "*", "@aether/procgen": "*", "@aether/logic": "*", "@aether/agent": "*",
+    "react": "^19.3.0", "react-dom": "^19.3.0", "zustand": "^5.0.15", "three": "0.186.1"
+  },
+  "devDependencies": { "@vitejs/plugin-react": "^6.1.2", "vite": "^8.3.4" }
+}

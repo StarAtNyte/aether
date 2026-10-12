@@ -1,0 +1,16 @@
+{
+  "name": "@aether/logic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@aether/core": "*",
+    "quickjs-emscripten": "^0.32.0"
+  }
+}

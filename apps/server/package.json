@@ -1,0 +1,9 @@
+{
+  "name": "@aether/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": { "dev": "tsx watch src/main.ts", "start": "tsx src/main.ts" },
+  "dependencies": { "@aether/core": "*", "@aether/agent": "*", "hono": "^4.13.13", "@hono/node-server": "^2.1.4", "tsx": "^4.23.15" }
+}

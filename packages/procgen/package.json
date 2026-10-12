@@ -1,0 +1,11 @@
+{
+  "name": "@aether/procgen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./src/index.ts" },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": { "@aether/core": "*" }
+}

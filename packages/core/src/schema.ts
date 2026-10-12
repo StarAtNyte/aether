@@ -1,0 +1,465 @@
+/**
+ * Aether World IR — the single source of truth shared by every package.
+ *
+ * Conventions:
+ * - Units are meters, seconds, kilograms. Y is up. Ground plane is y = 0.
+ * - Rotations are Euler angles in DEGREES (XYZ order) — friendlier for LLMs.
+ * - Colors are CSS hex strings ("#aabbcc").
+ * - Everything is plain JSON so it can be diffed, persisted and sent to an LLM.
+ *
+ * The LLM never edits this structure directly: it emits `Patch` operations,
+ * which are validated and applied by `applyPatches` in this package.
+ */
+import { z } from 'zod';
+
+export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
+export type Vec3 = z.infer<typeof Vec3>;
+export const Vec2 = z.tuple([z.number(), z.number()]);
+export type Vec2 = z.infer<typeof Vec2>;
+export const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must be #rrggbb');
+export type Color = z.infer<typeof Color>;
+
+export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+export const Json: z.ZodType<Json> = z.lazy(() =>
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(Json), z.record(z.string(), Json)]),
+);
+
+/** Entity id: lowercase slug, e.g. "red-car", "tower-block-12". */
+export const EntityId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'ids are lowercase slugs');
+export type EntityId = z.infer<typeof EntityId>;
+
+/**
+ * Selector — how rules/tests/behaviors refer to entities:
+ * - "some-id"   a single entity
+ * - "#tag"      every entity carrying the tag
+ * - "player"    the player avatar / controlled entity
+ * - "*"         every entity
+ */
+export const Selector = z.string().min(1);
+export type Selector = z.infer<typeof Selector>;
+
+// ---------------------------------------------------------------------------
+// Transform
+// ---------------------------------------------------------------------------
+
+export const Transform = z.object({
+  position: Vec3.default([0, 0, 0]),
+  rotation: Vec3.default([0, 0, 0]),
+  scale: Vec3.default([1, 1, 1]),
+});
+export type Transform = z.infer<typeof Transform>;
+
+// ---------------------------------------------------------------------------
+// Material
+// ---------------------------------------------------------------------------
+
+export const MaterialPreset = z.enum([
+  'plastic', 'wood', 'stone', 'brick', 'concrete', 'metal', 'gold', 'glass', 'water', 'ice',
+  'grass', 'dirt', 'sand', 'snow', 'lava', 'neon', 'rubber', 'fabric', 'leaf', 'bark', 'crystal', 'emissive',
+]);
+export type MaterialPreset = z.infer<typeof MaterialPreset>;
+
+export const MaterialSpec = z.object({
+  preset: MaterialPreset.optional(),
+  color: Color.optional(),
+  roughness: z.number().min(0).max(1).optional(),
+  metalness: z.number().min(0).max(1).optional(),
+  emissive: Color.optional(),
+  emissiveIntensity: z.number().min(0).max(50).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  flatShading: z.boolean().optional(),
+  /** Use per-vertex colors produced by a procedural generator. */
+  vertexColors: z.boolean().optional(),
+});
+export type MaterialSpec = z.infer<typeof MaterialSpec>;
+
+// ---------------------------------------------------------------------------
+// Shape — what an entity looks like
+// ---------------------------------------------------------------------------
+
+export const PrimitiveKind = z.enum(['box', 'sphere', 'cylinder', 'cone', 'capsule', 'torus', 'plane']);
+export type PrimitiveKind = z.infer<typeof PrimitiveKind>;
+
+export const PrimitiveShape = z.object({
+  kind: z.literal('primitive'),
+  primitive: PrimitiveKind,
+  /**
+   * Full dimensions in meters (width, height, depth).
+   * sphere: diameter = size[0]; cylinder/cone/capsule: diameter = size[0], height = size[1];
+   * torus: outer diameter = size[0], tube thickness = size[1]; plane: width = size[0], depth = size[2].
+   */
+  size: Vec3.default([1, 1, 1]),
+});
+
+export const ProceduralShape = z.object({
+  kind: z.literal('procedural'),
+  /** Built-in generator id (see @aether/procgen catalog) or id of a custom generator in `world.generators`. */
+  generator: z.string().min(1),
+  params: z.record(z.string(), Json).default({}),
+  seed: z.number().int().optional(),
+});
+
+export const ModelShape = z.object({
+  kind: z.literal('model'),
+  url: z.string().min(1),
+  /** Target size of the model's largest dimension in meters (auto-fit). */
+  fitSize: z.number().positive().optional(),
+});
+
+export const ScatterShape = z.object({
+  kind: z.literal('scatter'),
+  /** The repeated thing. Rendered with GPU instancing. */
+  of: z.union([PrimitiveShape, ProceduralShape]),
+  count: z.number().int().min(1).max(200_000),
+  /** Area (width, depth) centered on the entity position. */
+  area: Vec2,
+  seed: z.number().int().default(1),
+  scaleRange: Vec2.default([0.8, 1.2]),
+  /** Random yaw per instance. */
+  randomYaw: z.boolean().default(true),
+  /** Optional terrain entity id to place instances on its surface. */
+  onSurface: EntityId.optional(),
+  /** Minimum spacing between instances in meters (best effort). */
+  minSpacing: z.number().min(0).optional(),
+});
+
+export const NoneShape = z.object({ kind: z.literal('none') });
+
+export const ShapeSpec = z.discriminatedUnion('kind', [PrimitiveShape, ProceduralShape, ModelShape, ScatterShape, NoneShape]);
+export type ShapeSpec = z.infer<typeof ShapeSpec>;
+export type PrimitiveShape = z.infer<typeof PrimitiveShape>;
+export type ProceduralShape = z.infer<typeof ProceduralShape>;
+export type ModelShape = z.infer<typeof ModelShape>;
+export type ScatterShape = z.infer<typeof ScatterShape>;
+
+// ---------------------------------------------------------------------------
+// Physics
+// ---------------------------------------------------------------------------
+
+export const BodyType = z.enum(['static', 'dynamic', 'kinematic']);
+export type BodyType = z.infer<typeof BodyType>;
+
+export const ColliderKind = z.enum(['auto', 'box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh', 'heightfield', 'none']);
+export type ColliderKind = z.infer<typeof ColliderKind>;
+
+export const PhysicsSpec = z.object({
+  body: BodyType.default('static'),
+  /** 'auto' picks the best collider from the shape (primitive → matching collider, procedural → generator colliders, else hull). */
+  collider: ColliderKind.default('auto'),
+  /** Total mass in kg. If omitted, derived from density × volume. */
+  mass: z.number().positive().optional(),
+  density: z.number().positive().optional(),
+  friction: z.number().min(0).max(5).default(0.6),
+  restitution: z.number().min(0).max(1).default(0.1),
+  /** Sensor colliders detect overlaps (triggers) but do not collide. */
+  sensor: z.boolean().default(false),
+  linearDamping: z.number().min(0).default(0),
+  angularDamping: z.number().min(0).default(0.05),
+  gravityScale: z.number().default(1),
+  lockRotation: z.boolean().default(false),
+  ccd: z.boolean().default(false),
+  initialVelocity: Vec3.optional(),
+  initialAngularVelocity: Vec3.optional(),
+});
+export type PhysicsSpec = z.infer<typeof PhysicsSpec>;
+
+/** Joints make articulated objects: doors, wheels, catapults, drawbridges, pendulums. */
+export const JointSpec = z.object({
+  type: z.enum(['fixed', 'revolute', 'prismatic', 'spherical']),
+  /** The other body. The joint connects THIS entity to `target`. Use "world" to pin to the static world. */
+  target: z.union([EntityId, z.literal('world')]),
+  /** Anchor in this entity's local space. */
+  anchor: Vec3.default([0, 0, 0]),
+  /** Anchor in the target's local space (world space if target = "world"). */
+  targetAnchor: Vec3.default([0, 0, 0]),
+  /** Hinge / slide axis (local to this entity). */
+  axis: Vec3.default([0, 1, 0]),
+  /** Revolute: degrees. Prismatic: meters. */
+  limits: Vec2.optional(),
+  motor: z
+    .object({
+      /** Revolute: degrees/s. Prismatic: m/s. */
+      targetVelocity: z.number().default(0),
+      /** Optional target position (degrees or meters) — acts as a servo. */
+      targetPosition: z.number().optional(),
+      stiffness: z.number().min(0).default(0),
+      damping: z.number().min(0).default(10),
+      maxForce: z.number().positive().default(1000),
+    })
+    .optional(),
+});
+export type JointSpec = z.infer<typeof JointSpec>;
+
+// ---------------------------------------------------------------------------
+// Lights
+// ---------------------------------------------------------------------------
+
+export const LightSpec = z.object({
+  type: z.enum(['point', 'spot', 'directional', 'ambient', 'hemisphere']),
+  color: Color.default('#ffffff'),
+  intensity: z.number().min(0).default(1),
+  /** point/spot range in meters (0 = infinite). */
+  range: z.number().min(0).default(0),
+  /** spot cone angle in degrees. */
+  angle: z.number().min(1).max(89).default(30),
+  castShadow: z.boolean().default(false),
+});
+export type LightSpec = z.infer<typeof LightSpec>;
+
+// ---------------------------------------------------------------------------
+// Behaviors — reusable per-entity logic components (executed by @aether/logic)
+// ---------------------------------------------------------------------------
+
+/**
+ * Built-in behavior types. Parameters are documented in @aether/logic's catalog,
+ * which is what the agent prompt is generated from.
+ */
+export const BuiltinBehavior = z.enum([
+  'spin', 'bob', 'orbit', 'patrol', 'follow', 'lookAt', 'wander', 'flee',
+  'collectible', 'door', 'pressurePlate', 'spawner', 'lifetime', 'explosive',
+  'playerController', 'vehicle', 'npc', 'pulseLight', 'conveyor', 'buoyancy',
+  'windZone', 'checkpoint', 'goal', 'hazard', 'launcher', 'magnet',
+]);
+export type BuiltinBehavior = z.infer<typeof BuiltinBehavior>;
+
+export const BehaviorSpec = z.object({
+  /** Built-in behavior id, or "script" for a sandboxed custom script (see `world.scripts`). */
+  type: z.union([BuiltinBehavior, z.literal('script')]),
+  params: z.record(z.string(), Json).default({}),
+  enabled: z.boolean().default(true),
+});
+export type BehaviorSpec = z.infer<typeof BehaviorSpec>;
+
+// ---------------------------------------------------------------------------
+// Entity
+// ---------------------------------------------------------------------------
+
+export const Entity = z.object({
+  id: EntityId,
+  name: z.string().default(''),
+  /** Short semantic description; used by the agent for reasoning and by the outliner. */
+  description: z.string().optional(),
+  parent: EntityId.nullable().default(null),
+  tags: z.array(z.string()).default([]),
+  transform: Transform.default({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }),
+  shape: ShapeSpec.default({ kind: 'none' }),
+  material: MaterialSpec.optional(),
+  physics: PhysicsSpec.optional(),
+  joint: JointSpec.optional(),
+  light: LightSpec.optional(),
+  behaviors: z.array(BehaviorSpec).default([]),
+  /** Per-entity variables readable/writable by rules (e.g. health, open). */
+  state: z.record(z.string(), Json).default({}),
+  visible: z.boolean().default(true),
+  castShadow: z.boolean().default(true),
+  receiveShadow: z.boolean().default(true),
+  /** When true the entity is a template for `spawn` actions and is not instantiated. */
+  template: z.boolean().default(false),
+});
+export type Entity = z.infer<typeof Entity>;
+export type EntityInput = z.input<typeof Entity>;
+
+// ---------------------------------------------------------------------------
+// Rules — world-level "when / if / then" logic (executed by @aether/logic)
+// ---------------------------------------------------------------------------
+
+export const CompareOp = z.enum(['==', '!=', '>', '<', '>=', '<=']);
+export type CompareOp = z.infer<typeof CompareOp>;
+
+export const Trigger = z.discriminatedUnion('on', [
+  z.object({ on: z.literal('start') }),
+  z.object({ on: z.literal('tick'), every: z.number().positive().default(1) }),
+  z.object({ on: z.literal('timer'), at: z.number().min(0) }),
+  z.object({ on: z.literal('collision'), a: Selector, b: Selector.default('*'), minImpulse: z.number().min(0).default(0) }),
+  z.object({ on: z.literal('enter'), zone: Selector, who: Selector.default('player') }),
+  z.object({ on: z.literal('exit'), zone: Selector, who: Selector.default('player') }),
+  z.object({ on: z.literal('key'), key: z.string().min(1) }),
+  z.object({ on: z.literal('click'), target: Selector }),
+  z.object({ on: z.literal('state'), key: z.string(), op: CompareOp, value: Json }),
+  z.object({ on: z.literal('event'), name: z.string().min(1) }),
+  z.object({ on: z.literal('fallBelow'), target: Selector, y: z.number() }),
+]);
+export type Trigger = z.infer<typeof Trigger>;
+
+/** Condition on a world state variable ("score") or entity state ("door-1.open"). */
+export const Condition = z.object({ key: z.string(), op: CompareOp, value: Json });
+export type Condition = z.infer<typeof Condition>;
+
+export const Action = z.discriminatedUnion('do', [
+  z.object({ do: z.literal('set'), key: z.string(), value: Json }),
+  z.object({ do: z.literal('add'), key: z.string(), amount: z.number() }),
+  z.object({ do: z.literal('spawn'), template: EntityId, at: z.union([Vec3, Selector]).optional(), count: z.number().int().min(1).max(500).default(1), spread: z.number().min(0).default(0) }),
+  z.object({ do: z.literal('destroy'), target: Selector }),
+  z.object({ do: z.literal('impulse'), target: Selector, vector: Vec3 }),
+  z.object({ do: z.literal('setVelocity'), target: Selector, vector: Vec3 }),
+  z.object({ do: z.literal('teleport'), target: Selector, to: z.union([Vec3, Selector]) }),
+  z.object({ do: z.literal('setProperty'), target: Selector, path: z.string(), value: Json }),
+  z.object({ do: z.literal('enableBehavior'), target: Selector, behavior: z.string(), enabled: z.boolean() }),
+  z.object({ do: z.literal('explode'), at: z.union([Vec3, Selector]), force: z.number().positive().default(20), radius: z.number().positive().default(5) }),
+  z.object({ do: z.literal('setGravity'), vector: Vec3 }),
+  z.object({ do: z.literal('emit'), event: z.string().min(1), delay: z.number().min(0).default(0) }),
+  z.object({ do: z.literal('message'), text: z.string(), duration: z.number().positive().default(3) }),
+  z.object({ do: z.literal('sound'), sound: z.enum(['pickup', 'hit', 'explosion', 'win', 'lose', 'click', 'whoosh', 'bell']) }),
+  z.object({ do: z.literal('win'), text: z.string().default('You win!') }),
+  z.object({ do: z.literal('lose'), text: z.string().default('Game over') }),
+  z.object({ do: z.literal('reset') }),
+]);
+export type Action = z.infer<typeof Action>;
+
+export const Rule = z.object({
+  id: z.string().min(1),
+  description: z.string().optional(),
+  when: Trigger,
+  if: z.array(Condition).default([]),
+  then: z.array(Action).min(1),
+  /** Fire at most once per play session. */
+  once: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+});
+export type Rule = z.infer<typeof Rule>;
+export type RuleInput = z.input<typeof Rule>;
+
+// ---------------------------------------------------------------------------
+// Environment and player
+// ---------------------------------------------------------------------------
+
+export const Environment = z.object({
+  sky: z.enum(['day', 'dawn', 'sunset', 'night', 'overcast', 'space', 'studio']).default('day'),
+  /** 0–24 hours; drives sun direction and color when set. */
+  timeOfDay: z.number().min(0).max(24).optional(),
+  fog: z.object({ color: Color, density: z.number().min(0).max(1) }).nullable().default(null),
+  weather: z.enum(['clear', 'rain', 'snow', 'dust', 'fireflies']).default('clear'),
+  ambientIntensity: z.number().min(0).default(0.4),
+  sunIntensity: z.number().min(0).default(2.5),
+  /** Infinite ground plane at y=0 with a collider. Set to null for no ground (space, sky islands). */
+  ground: z.object({ material: MaterialSpec, size: z.number().positive().default(400) }).nullable().default({ material: { preset: 'grass' }, size: 400 }),
+  gravity: Vec3.default([0, -9.81, 0]),
+  /** Post effects. */
+  bloom: z.number().min(0).max(3).default(0.4),
+  exposure: z.number().min(0.1).max(4).default(1),
+});
+export type Environment = z.infer<typeof Environment>;
+
+export const PlayerSpec = z.object({
+  mode: z.enum(['orbit', 'firstPerson', 'thirdPerson', 'vehicle']).default('thirdPerson'),
+  spawn: Vec3.default([0, 1, 8]),
+  /** Entity the player controls in vehicle mode, or the avatar entity in third-person. */
+  controls: EntityId.optional(),
+  moveSpeed: z.number().positive().default(6),
+  jumpSpeed: z.number().min(0).default(6),
+});
+export type PlayerSpec = z.infer<typeof PlayerSpec>;
+
+// ---------------------------------------------------------------------------
+// Custom code generated at runtime by the coding model (sandboxed)
+// ---------------------------------------------------------------------------
+
+export const ParamSpec = z.object({
+  type: z.enum(['number', 'int', 'boolean', 'color', 'enum']),
+  default: Json,
+  min: z.number().optional(),
+  max: z.number().optional(),
+  options: z.array(z.string()).optional(),
+  description: z.string().optional(),
+});
+export type ParamSpec = z.infer<typeof ParamSpec>;
+
+/**
+ * A procedural geometry generator written by the coding model.
+ * `source` is the BODY of `function generate(params, api) { ... }` and must return
+ * the result of `api.build()` — see @aether/procgen GeneratorApi.
+ */
+export const GeneratorDef = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
+  description: z.string(),
+  params: z.record(z.string(), ParamSpec).default({}),
+  source: z.string().min(1).max(60_000),
+});
+export type GeneratorDef = z.infer<typeof GeneratorDef>;
+
+/**
+ * A custom behavior script written by the coding model. `source` is the BODY of
+ * `function update(ctx) { ... }` called every fixed tick — see @aether/logic ScriptContext.
+ */
+export const ScriptDef = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
+  description: z.string(),
+  source: z.string().min(1).max(30_000),
+});
+export type ScriptDef = z.infer<typeof ScriptDef>;
+
+// ---------------------------------------------------------------------------
+// Verification tests — expectations proven by running the physics headless
+// ---------------------------------------------------------------------------
+
+export const WorldTest = z.discriminatedUnion('kind', [
+  /** Targets come to rest without drifting more than maxDrift meters. */
+  z.object({ id: z.string(), kind: z.literal('stable'), target: Selector.default('*'), seconds: z.number().positive().default(3), maxDrift: z.number().positive().default(0.15) }),
+  /** No dynamic bodies start interpenetrating. */
+  z.object({ id: z.string(), kind: z.literal('noOverlap'), target: Selector.default('*') }),
+  /** Target's position enters a zone (entity bounds or sphere) within N seconds of simulation. */
+  z.object({ id: z.string(), kind: z.literal('reaches'), target: Selector, zone: z.union([Selector, z.object({ center: Vec3, radius: z.number().positive() })]), within: z.number().positive().default(10) }),
+  /** A world/entity state condition becomes true within N seconds (rules run headless). */
+  z.object({ id: z.string(), kind: z.literal('eventually'), condition: Condition, within: z.number().positive().default(10) }),
+  /** Target moves at least `distance` meters (e.g. a domino chain actually falls). */
+  z.object({ id: z.string(), kind: z.literal('moves'), target: Selector, distance: z.number().positive().default(0.5), within: z.number().positive().default(10) }),
+  /** Target tips over (rotation from upright exceeds `degrees`). */
+  z.object({ id: z.string(), kind: z.literal('topples'), target: Selector, degrees: z.number().positive().default(45), within: z.number().positive().default(10) }),
+  /** Target stays above y (never falls through the world / off the island). */
+  z.object({ id: z.string(), kind: z.literal('staysAbove'), target: Selector, y: z.number().default(-1), within: z.number().positive().default(10) }),
+]);
+export type WorldTest = z.infer<typeof WorldTest>;
+
+// ---------------------------------------------------------------------------
+// World document
+// ---------------------------------------------------------------------------
+
+export const WorldDoc = z.object({
+  version: z.literal(1).default(1),
+  id: z.string().default('world'),
+  name: z.string().default('Untitled world'),
+  description: z.string().default(''),
+  seed: z.number().int().default(1),
+  environment: Environment.default(Environment.parse({})),
+  player: PlayerSpec.default(PlayerSpec.parse({})),
+  entities: z.record(EntityId, Entity).default({}),
+  rules: z.array(Rule).default([]),
+  /** Global world variables (score, lives, flags) readable by rules and HUD. */
+  state: z.record(z.string(), Json).default({}),
+  /** HUD bindings: show these state keys on screen. */
+  hud: z.array(z.object({ key: z.string(), label: z.string() })).default([]),
+  generators: z.record(z.string(), GeneratorDef).default({}),
+  scripts: z.record(z.string(), ScriptDef).default({}),
+  tests: z.array(WorldTest).default([]),
+});
+export type WorldDoc = z.infer<typeof WorldDoc>;
+export type WorldDocInput = z.input<typeof WorldDoc>;
+
+// ---------------------------------------------------------------------------
+// Patches — the ONLY way the agent (or the editor UI) mutates a world
+// ---------------------------------------------------------------------------
+
+/** Deep-partial entity used by `update`. Arrays are replaced, objects merged. */
+export const EntityUpdate = z.record(z.string(), Json);
+
+export const Patch = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('add'), entity: Entity }),
+  z.object({ op: z.literal('update'), id: EntityId, set: EntityUpdate }),
+  z.object({ op: z.literal('remove'), id: EntityId, /** also remove children */ recursive: z.boolean().default(true) }),
+  z.object({ op: z.literal('rename'), id: EntityId, newId: EntityId }),
+  z.object({ op: z.literal('addRule'), rule: Rule }),
+  z.object({ op: z.literal('updateRule'), id: z.string(), set: z.record(z.string(), Json) }),
+  z.object({ op: z.literal('removeRule'), id: z.string() }),
+  z.object({ op: z.literal('setEnvironment'), set: z.record(z.string(), Json) }),
+  z.object({ op: z.literal('setPlayer'), set: z.record(z.string(), Json) }),
+  z.object({ op: z.literal('setState'), key: z.string(), value: Json }),
+  z.object({ op: z.literal('setHud'), hud: z.array(z.object({ key: z.string(), label: z.string() })) }),
+  z.object({ op: z.literal('defineGenerator'), generator: GeneratorDef }),
+  z.object({ op: z.literal('defineScript'), script: ScriptDef }),
+  z.object({ op: z.literal('addTest'), test: WorldTest }),
+  z.object({ op: z.literal('removeTest'), id: z.string() }),
+  z.object({ op: z.literal('setMeta'), name: z.string().optional(), description: z.string().optional(), seed: z.number().int().optional() }),
+  z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
+]);
+export type Patch = z.infer<typeof Patch>;
+export type PatchInput = z.input<typeof Patch>;
