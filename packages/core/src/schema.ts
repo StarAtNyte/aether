@@ -460,6 +460,10 @@ export const Patch = z.discriminatedUnion('op', [
   z.object({ op: z.literal('removeTest'), id: z.string() }),
   z.object({ op: z.literal('setMeta'), name: z.string().optional(), description: z.string().optional(), seed: z.number().int().optional() }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
+  /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */
+  z.object({ op: z.literal('removeGenerator'), id: z.string().min(1) }),
+  /** Additive: delete a custom script. Needed so `defineScript` is invertible. */
+  z.object({ op: z.literal('removeScript'), id: z.string().min(1) }),
 ]);
 export type Patch = z.infer<typeof Patch>;
 export type PatchInput = z.input<typeof Patch>;
