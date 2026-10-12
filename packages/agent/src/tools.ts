@@ -1,0 +1,166 @@
+/**
+ * Tools the planner model can call, as JSON Schemas (sent to providers) and
+ * matching zod schemas (used to validate the model's untrusted arguments).
+ *
+ * The patch payload is described in the system prompt instead of the tool
+ * schema: a full JSON Schema of the World IR would cost thousands of tokens on
+ * every request and providers handle deeply nested unions poorly. Patches are
+ * fully validated by `applyPatches` anyway.
+ */
+import { z } from 'zod';
+import type { ToolDef } from './types';
+
+/** Upper bounds on tool arguments. */
+export const TOOL_LIMITS = Object.freeze({
+  MAX_PATCHES_PER_CALL: 400,
+  MAX_INSPECT_IDS: 24,
+  MAX_MESSAGE: 2_000,
+  /** Serialized size cap of any tool input. */
+  MAX_INPUT_CHARS: 600_000,
+});
+
+/** Patch operations accepted by apply_patches (mirrors the core `Patch` union). */
+export const PATCH_OPS = [
+  'add', 'update', 'remove', 'rename', 'addRule', 'updateRule', 'removeRule', 'setEnvironment', 'setPlayer', 'setState',
+  'setHud', 'defineGenerator', 'defineScript', 'addTest', 'removeTest', 'setMeta', 'clear', 'removeGenerator', 'removeScript',
+] as const;
+
+const slugPattern = '^[a-z][a-z0-9-]{1,63}$';
+
+const paramSpecSchema = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['number', 'int', 'boolean', 'color', 'enum'] },
+    default: {},
+    min: { type: 'number' },
+    max: { type: 'number' },
+    options: { type: 'array', items: { type: 'string' } },
+    description: { type: 'string' },
+  },
+  required: ['type', 'default'],
+} as const;
+
+/** Tool names. */
+export type AgentToolName = 'apply_patches' | 'write_generator' | 'write_script' | 'request_asset' | 'inspect' | 'run_verification' | 'finish';
+
+/** All tools available to the planner (stable order: part of the prompt-cache prefix). */
+export const AGENT_TOOLS: ToolDef[] = [
+  {
+    name: 'apply_patches',
+    description:
+      'Edit the world with a batch of patch operations (see "Patch operations" in the system prompt). Valid patches are applied in order and committed as one undo step; invalid ones are skipped and reported back with their index and reason, so fix and resend only those. Batch related edits (up to 400 patches per call).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        patches: {
+          type: 'array',
+          minItems: 1,
+          maxItems: TOOL_LIMITS.MAX_PATCHES_PER_CALL,
+          items: { type: 'object', properties: { op: { type: 'string', enum: [...PATCH_OPS] } }, required: ['op'] },
+          description: 'Patch objects, e.g. {"op":"add","entity":{...}} or {"op":"setEnvironment","set":{"sky":"sunset"}}.',
+        },
+        message: { type: 'string', description: 'Short commit message for the history timeline, e.g. "Add pine forest".' },
+      },
+      required: ['patches', 'message'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'write_generator',
+    description:
+      'Define a custom procedural geometry generator (only when no built-in generator fits). `source` is the BODY of `function generate(params, api)` using the GeneratorApi and must `return api.build()`. Base at y=0, centered in x/z, meters. The code is statically checked and test-run in a sandbox; errors come back so you can fix it. Then use it with shape {"kind":"procedural","generator":"<id>","params":{...}}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', pattern: slugPattern, description: 'Lowercase slug, must not clash with a built-in id.' },
+        description: { type: 'string' },
+        params: { type: 'object', additionalProperties: paramSpecSchema, description: 'Parameter specs with defaults.' },
+        source: { type: 'string', description: 'Function body (JavaScript, no imports, no globals).' },
+      },
+      required: ['id', 'description', 'source'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'write_script',
+    description:
+      'Define a custom per-entity behavior script (only when built-in behaviors and rules cannot express it). `source` is the BODY of `function update(ctx)` called every fixed tick; it returns intents (see Script API). Attach with behaviors: [{"type":"script","params":{"script":"<id>"}}].',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', pattern: slugPattern },
+        description: { type: 'string' },
+        source: { type: 'string', description: 'Function body (JavaScript, sandboxed, no globals).' },
+      },
+      required: ['id', 'description', 'source'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'request_asset',
+    description:
+      'Ask the specialist coding model to write, test and define a custom procedural generator for a distinctive object (e.g. "a gothic cathedral with flying buttresses"). Prefer this over write_generator for anything non-trivial. Returns the generator id and its params once it validates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', pattern: slugPattern },
+        description: { type: 'string', description: 'What the object looks like: parts, proportions, colors, style.' },
+        params_hint: { type: 'string', description: 'Optional: parameters it should expose, e.g. "height, color, floors".' },
+      },
+      required: ['id', 'description'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'inspect',
+    description: 'Read the current world. Without ids: the compact world summary. With ids: the full JSON of those entities (up to 24).',
+    inputSchema: {
+      type: 'object',
+      properties: { ids: { type: 'array', items: { type: 'string' }, maxItems: TOOL_LIMITS.MAX_INSPECT_IDS } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'run_verification',
+    description: 'Run the world\'s tests and physics diagnostics headlessly now and get a pass/fail summary with concrete problems.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'finish',
+    description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
+    inputSchema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+      required: ['message'],
+      additionalProperties: false,
+    },
+  },
+];
+
+/** zod validators for each tool's arguments. */
+export const ToolInputs = {
+  apply_patches: z.object({
+    patches: z.array(z.unknown()).min(1).max(TOOL_LIMITS.MAX_PATCHES_PER_CALL),
+    message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('Agent edit'),
+  }),
+  write_generator: z.object({
+    id: z.string(),
+    description: z.string().max(TOOL_LIMITS.MAX_MESSAGE),
+    params: z.record(z.string(), z.unknown()).default({}),
+    source: z.string(),
+  }),
+  write_script: z.object({ id: z.string(), description: z.string().max(TOOL_LIMITS.MAX_MESSAGE), source: z.string() }),
+  request_asset: z.object({
+    id: z.string().regex(new RegExp(slugPattern)),
+    description: z.string().min(1).max(TOOL_LIMITS.MAX_MESSAGE),
+    params_hint: z.string().max(500).optional(),
+  }),
+  inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional() }),
+  run_verification: z.object({}),
+  finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
+} as const;
+
+/** True when `name` is one of {@link AGENT_TOOLS}. */
+export function isAgentTool(name: string): name is AgentToolName {
+  return Object.prototype.hasOwnProperty.call(ToolInputs, name);
+}

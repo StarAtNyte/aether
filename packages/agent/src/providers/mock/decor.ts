@@ -1,0 +1,126 @@
+/**
+ * Reusable scene-dressing helpers for the mock planner themes: orientation
+ * math, tree rings, scatter belts, backdrop mountains, lamps, paths.
+ * Built-in generators follow procgen conventions: base at y=0, centered,
+ * long axis / facing along +X (cars, boats, walls, fences, docks, ramps).
+ */
+import type { Json } from '@aether/core';
+import { r2, type Builder, type ScatterOpts } from './builder';
+
+/** Theme placement context: origin of the theme and the radius it must keep clear. */
+export interface ThemeCtx {
+  b: Builder;
+  x: number;
+  z: number;
+  /** Radius around (x, z) reserved for an activity; settings place nothing inside. */
+  clear: number;
+  /** True for the main setting (owns the environment and backdrop). */
+  primary: boolean;
+  /** A count the user asked for ("collect 12 coins"), when any. */
+  count?: number;
+  /** A time limit the user asked for, in seconds ("in 60 seconds"), when any. */
+  seconds?: number;
+}
+
+const DEG = 180 / Math.PI;
+
+/** Yaw (degrees) that turns a +Z-facing object at (fx, fz) toward (tx, tz). */
+export function yawFacingZ(fx: number, fz: number, tx: number, tz: number): number {
+  return r2(Math.atan2(tx - fx, tz - fz) * DEG);
+}
+
+/** Yaw (degrees) that turns a +X-facing object (car, boat, wall) along direction (dx, dz). */
+export function yawAlongX(dx: number, dz: number): number {
+  return r2(Math.atan2(-dz, dx) * DEG);
+}
+
+/** Night or dusk: lights should be on. */
+export function lightsOn(b: Builder): boolean {
+  return b.mood.night || b.mood.dusk;
+}
+
+/** Individual static trees in an annulus around the context origin. */
+export function treeRing(c: ThemeCtx, count: number, inner: number, outer: number, kinds: ReadonlyArray<{ generator: string; params: Record<string, Json> }>, footprint = 1.8): number {
+  let placed = 0;
+  const lo = Math.max(inner, c.clear + footprint);
+  if (lo >= outer) return 0;
+  for (let i = 0; i < count; i++) {
+    const p = c.b.spot(c.x, c.z, lo, outer, footprint);
+    if (!p) continue;
+    const kind = c.b.pick(kinds);
+    const params: Record<string, Json> = { ...kind.params };
+    if (typeof params['height'] === 'number') params['height'] = r2((params['height'] as number) * c.b.rand(0.75, 1.3));
+    c.b.gen(kind.generator.startsWith('tree-') ? 'tree' : kind.generator, kind.generator, params, [p[0], 0, p[1]], { yaw: r2(c.b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+    placed++;
+  }
+  return placed;
+}
+
+/**
+ * Decorative scatter patches (no physics) tiling a ring [inner, outer] so the
+ * cleared center stays empty. `perPatch` instances per patch.
+ */
+export function scatterBelt(c: ThemeCtx, base: string, generator: string, params: Record<string, Json>, perPatch: number, inner: number, outer: number, opts: { scaleRange?: [number, number]; minSpacing?: number; tags?: string[] } = {}): void {
+  const lo = Math.max(inner, c.clear);
+  if (outer - lo < 2) return;
+  const side = r2((outer - lo) * 0.65);
+  const mid = lo + (outer - lo) / 2;
+  const patches = Math.max(3, Math.min(10, Math.round((2 * Math.PI * mid) / (side * 1.6))));
+  const offset = c.b.rand(0, Math.PI * 2);
+  for (let i = 0; i < patches; i++) {
+    const a = offset + (i / patches) * Math.PI * 2;
+    const o: ScatterOpts = { castShadow: generator.startsWith('tree') };
+    if (opts.scaleRange) o.scaleRange = opts.scaleRange;
+    if (opts.minSpacing !== undefined) o.minSpacing = opts.minSpacing;
+    if (opts.tags) o.tags = opts.tags;
+    c.b.scatter(base, generator, params, perPatch, [side, side], [r2(c.x + Math.cos(a) * mid), 0, r2(c.z + Math.sin(a) * mid)], o);
+  }
+}
+
+/** Ring of distant mountains framing the scene (no physics: unreachable). */
+export function backdropMountains(c: ThemeCtx, count: number, color: string, snowLine: number, radius = 110, height = 30): void {
+  const offset = c.b.rand(0, Math.PI * 2);
+  for (let i = 0; i < count; i++) {
+    const a = offset + (i / count) * Math.PI * 2 + c.b.rand(-0.25, 0.25);
+    const d = radius * c.b.rand(0.9, 1.15);
+    c.b.gen('mountain', 'mountain', { size: r2(c.b.rand(60, 90)), height: r2(height * c.b.rand(0.7, 1.3)), color, snowLine }, [r2(c.x + Math.cos(a) * d), 0, r2(c.z + Math.sin(a) * d)], { yaw: r2(c.b.rand(0, 360)), tags: ['backdrop'] });
+  }
+}
+
+/** Drifting clouds high above the scene. */
+export function clouds(c: ThemeCtx, count: number, color = '#ffffff'): void {
+  for (let i = 0; i < count; i++) {
+    const a = c.b.rand(0, Math.PI * 2);
+    const d = c.b.rand(20, 70);
+    c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(4, 9)), color }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(24, 36)), r2(c.z + Math.sin(a) * d)], {
+      castShadow: false,
+      behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: r2(c.b.rand(6, 10)) } }],
+    });
+  }
+}
+
+/** Lamp post with a real light when it is dark. Returns the lamp id. */
+export function lamp(b: Builder, x: number, z: number, color = '#ffd27a', height = 3.5): string {
+  const id = b.gen('lamp-post', 'lamp-post', { height, lightColor: color }, [x, 0, z], { physics: 'static', tags: ['lamp'], footprint: 0.6 });
+  if (lightsOn(b)) b.light(id, [0, r2(height - 0.3), 0], color, 2.5, 14);
+  return id;
+}
+
+/** Flat path strip (decal-like thin box) from (x1, z1) to (x2, z2). */
+export function path(b: Builder, x1: number, z1: number, x2: number, z2: number, width: number, color: string, preset: 'dirt' | 'stone' | 'concrete' | 'sand' | 'wood' = 'dirt'): string {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const len = Math.hypot(dx, dz);
+  return b.prim('path', 'box', [r2(width), 0.04, r2(len)], [r2((x1 + x2) / 2), 0.02, r2((z1 + z2) / 2)], {
+    yaw: yawFacingZ(x1, z1, x2, z2),
+    material: { preset, color, roughness: 0.95 },
+    castShadow: false,
+  });
+}
+
+/** Campfire with a flickering light. */
+export function campfire(b: Builder, x: number, z: number): string {
+  const id = b.gen('campfire', 'campfire', { size: 1.2 }, [x, 0, z], { physics: 'static', footprint: 2.2, name: 'Campfire' });
+  b.light(id, [0, 0.8, 0], '#ff8a3d', 3, 12, [{ type: 'pulseLight', params: { min: 2, max: 3.6, period: 0.35 } }]);
+  return id;
+}
