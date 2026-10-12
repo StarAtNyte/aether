@@ -424,14 +424,14 @@ original TypeScript implementation.
 | Work | What inspired us |
 | --- | --- |
 | PWM, [arXiv:2609.10540](https://arxiv.org/abs/2609.10540) | Explicit, code-defined world state and rules as the source of truth, separate from rendering. We render it in real time in the browser instead of with a video model. |
-| CoDeR, [arXiv:2609.26458](https://arxiv.org/abs/2609.26458) | Worlds as code that a model writes and refines. This inspired the patch IR and the generators written by the coder model. |
+| CoDeR, [arXiv:2609.26458](https://arxiv.org/abs/2609.26458) | Agents write executable Three.js code for world rules and dynamics, with diffusion only rendering it. Aether keeps the code-defined world and renders it live instead. This inspired the patch IR and the generators written by the coder model. |
 | SceneMosaic, [arXiv:2609.05594](https://arxiv.org/abs/2609.05594) | Generate, then validate and repair with physics stabilisation and a critic/actor loop. We use deterministic code for geometry and support checks and the LLM for semantics. |
-| PAT3D, [arXiv:2511.21978](https://arxiv.org/abs/2511.21978) | Physics-aware scene placement ("drop and freeze"). This became `settle`. |
-| SceneSmith, [arXiv:2602.09153](https://arxiv.org/abs/2602.09153) | Agentic, tool-driven scene composition |
-| Articraft, [arXiv:2605.15187](https://arxiv.org/abs/2605.15187) | Articulated objects defined in code. This shaped the joint spec (doors, wheels, drawbridges). |
-| ESG, [arXiv:2609.15392](https://arxiv.org/abs/2609.15392) | Structured, editable scene generation |
-| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Evaluating generated worlds by whether they behave correctly. This led to "physics as unit tests". |
-| 3DCodeBench, [arXiv:2606.01057](https://arxiv.org/abs/2606.01057) | Code as a medium for 3D generation and how to evaluate it. This informed the small, typed `GeneratorApi`. |
+| PAT3D, [arXiv:2511.21978](https://arxiv.org/abs/2511.21978) | A simulation-in-the-loop step settles a generated scene under gravity and removes intersections. This became `settle`. |
+| SceneSmith, [arXiv:2602.09153](https://arxiv.org/abs/2602.09153) | Designer, critic and orchestrator agents build scenes in stages and estimate physical properties, keeping collisions low. This shaped the agent's plan, verify and repair loop. |
+| Articraft, [arXiv:2605.15187](https://arxiv.org/abs/2605.15187) | An LLM writes code against a parts-and-joints SDK, and a test harness feeds results back in an edit-execute-repair loop. This shaped the joint spec (doors, wheels, drawbridges) and the generator repair loop. |
+| ESG, [arXiv:2609.15392](https://arxiv.org/abs/2609.15392) | An LLM writes a machine-checkable scene graph with physical properties and a timeline of events, which simulation then makes happen on schedule. This inspired world tests such as `eventually` and `topples`. |
+| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Grades LLM-written Three.js worlds by running them, and finds that judges reading only the code miss missing features. This led to "physics as unit tests": Aether runs every world headless before calling it done. |
+| 3DCodeBench, [arXiv:2606.01057](https://arxiv.org/abs/2606.01057) | Finds that most failures in LLM-written 3D code are API mismatches and floating parts. This informed the small, typed `GeneratorApi` and the base-at-ground convention. |
 
 ## Licence, third parties and AI disclosure
 
