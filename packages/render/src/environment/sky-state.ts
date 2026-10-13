@@ -69,15 +69,15 @@ export interface SkyState {
 
 /**
  * Hours each natural preset may use (inclusive). Day/overcast keep the sun
- * at least ~25° high, dawn/sunset keep it 3–16° above the horizon on the
+ * at least ~25° high, dawn/sunset keep it ~7–17° above the horizon on the
  * correct side of noon, night keeps it well below the horizon (the moon is
  * the key light). Outside the window the hour is clamped to the nearest edge.
  */
 export const PRESET_WINDOWS: Readonly<Record<'day' | 'overcast' | 'dawn' | 'sunset', readonly [number, number]>> = Object.freeze({
   day: [7.6, 16.4],
   overcast: [7.6, 16.4],
-  dawn: [6.15, 6.9],
-  sunset: [17.1, 17.85],
+  dawn: [6.38, 7],
+  sunset: [17, 17.62],
 });
 
 /** Night hours run from {@link NIGHT_WINDOW}[0] through midnight to [1]. */
@@ -113,8 +113,8 @@ export function presetHour(preset: SkyPreset, hour: number): number {
 /** Default hour for each preset when `timeOfDay` is not set. */
 export const PRESET_HOURS: Readonly<Record<SkyPreset, number>> = Object.freeze({
   day: 13,
-  dawn: 6.4,
-  sunset: 17.7,
+  dawn: 6.5,
+  sunset: 17.5,
   night: 23,
   overcast: 12,
   space: 10,

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Entity, WorldDoc } from '@aether/core';
 import { parseIntent } from '../src/providers/mock/intent';
 import { CLOUD_ALTITUDE, CLOUD_RING, inViewCorridor, VIEW_BEARING, VIEW_CORRIDOR_START } from '../src/providers/mock/decor';
+import { CHASE_POCKET_OFFSET, CHASE_POCKET_RADIUS } from '../src/providers/mock/planner';
 import { mockApply } from './helpers';
 
 async function build(prompt: string): Promise<WorldDoc> {
@@ -119,5 +120,20 @@ describe('composition helpers', () => {
     const mountains = all(w).filter((e) => e.id.startsWith('mountain'));
     expect(mountains.length).toBeGreaterThan(0);
     for (const m of mountains) expect(m.shape.kind === 'procedural' && m.shape.params['groundColor']).toBe(ground);
+  });
+});
+
+describe('chase camera pocket', () => {
+  it('keeps trees, palms and rocks out of the spot behind the player spawn', async () => {
+    for (const prompt of ['A coin collecting game on a tropical island — collect 10 coins in 60 seconds', 'a cozy forest camp with a campfire and tents', 'a snowy winter village']) {
+      const w = await build(prompt);
+      if (w.player.mode === 'orbit') continue;
+      const [sx, , sz] = w.player.spawn;
+      for (const e of all(w)) {
+        if (!e.tags.some((t) => t === 'tree' || t === 'rock') || e.parent) continue;
+        const [x, , z] = e.transform.position;
+        expect(Math.hypot(x - sx, z - (sz + CHASE_POCKET_OFFSET)), `${prompt}: ${e.id}`).toBeGreaterThan(CHASE_POCKET_RADIUS);
+      }
+    }
   });
 });

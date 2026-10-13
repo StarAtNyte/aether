@@ -40,7 +40,7 @@ for await (const ev of agent.run('Build a domino run that knocks over a bell tow
 | `createAnthropicProvider` | Server only. Raw `fetch` to the Messages API, cache breakpoints, per-role effort, thinking blocks carried across turns. |
 | `createOpenAIProvider` | Server only. Raw `fetch` to the Responses API, `store: false`, reasoning items carried across turns. |
 | `createHttpProvider` | Browser to `/api/llm`. Never sends a model id, and validates replies with zod. |
-| `createMockProvider` | Deterministic offline planner: 18 themes, mood combinations and edit commands. It is the judging fallback and is used in tests. |
+| `createMockProvider` | Deterministic offline planner: 18 themes, mood combinations and edit commands. It is the offline fallback and is used in tests. |
 
 The networked providers retry 429, 5xx, 529 and network errors up to 3 times
 with backoff and jitter, honour `retry-after`, use a timeout per attempt and

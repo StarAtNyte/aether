@@ -1,6 +1,6 @@
 /**
  * Integration: worlds produced by the offline mock planner pass the real
- * headless verification (Rapier physics + logic rules). This is what judges
+ * headless verification (Rapier physics + logic rules). This is what visitors
  * see when no API key is configured, so it must hold for the showcase themes.
  */
 import { applyPatches, createWorld, worldTransform, type WorldDoc } from '@aether/core';

@@ -13,16 +13,22 @@
  * to render only the prompts whose slug contains one of the arguments.
  * `npm run gallery -- --skies` instead renders the starter world under each
  * of the seven sky presets (`sky-<preset>.png`) to compare them side by side.
+ * `--firefox` renders with Firefox (WebGL2) instead of Chromium, and
+ * `--out=<dir>` writes the PNGs elsewhere (e.g. a scratch folder for a
+ * Firefox/Chromium parity check).
  */
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { chromium, type Browser, type Page } from 'playwright';
+import { join, resolve } from 'node:path';
+import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { DEFAULT_PROMPTS } from '../../scripts/smoke-prompts';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, REPO_ROOT, findChrome, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer } from './support/env';
 
 const VIEWPORT = { width: 1440, height: 900 };
-const OUT_DIR = join(REPO_ROOT, 'docs/screenshots/gallery');
+const ARGS = process.argv.slice(2);
+const OUT_ARG = ARGS.find((a) => a.startsWith('--out='));
+const OUT_DIR = OUT_ARG ? resolve(OUT_ARG.slice('--out='.length)) : join(REPO_ROOT, 'docs/screenshots/gallery');
+const USE_FIREFOX = ARGS.includes('--firefox');
 const BOOT_TIMEOUT_MS = 60_000;
 const AGENT_TIMEOUT_MS = 120_000;
 /** Time for the camera fly-to and streamed generator content to settle. */
@@ -116,7 +122,7 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
     const stats = pixelStats(decodePng(png));
     if (stats.stdDev < MIN_CANVAS_STDDEV) throw new Error(`"${slug}" rendered a blank canvas`);
     if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
-    log(`  ${slug}: ${done.entities} entities, ${fps} fps, fog ${look.fog.toFixed(4)} @ r ${look.radius.toFixed(1)}, mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → docs/screenshots/gallery/${slug}.png`);
+    log(`  ${slug}: ${done.entities} entities, ${await page.evaluate(() => window.__aether?.simulation?.backend ?? '?')}, ${fps} fps, fog ${look.fog.toFixed(4)} @ r ${look.radius.toFixed(1)}, mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → ${file}`);
   } finally {
     await context.close();
   }
@@ -160,7 +166,7 @@ async function renderSkies(browser: Browser, url: string): Promise<void> {
       const png = await page.locator('.viewport').screenshot({ path: file });
       const stats = pixelStats(decodePng(png));
       if (stats.stdDev < MIN_CANVAS_STDDEV) throw new Error(`sky ${sky} rendered a blank canvas`);
-      log(`  sky-${sky}: mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → docs/screenshots/gallery/sky-${sky}.png`);
+      log(`  sky-${sky}: mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → ${file}`);
     }
     if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
   } finally {
@@ -168,14 +174,20 @@ async function renderSkies(browser: Browser, url: string): Promise<void> {
   }
 }
 
+/** The one browser of the run: Chromium (WebGPU via SwiftShader) or, with `--firefox`, Firefox (WebGL2). */
+function launchBrowser(): Promise<Browser> {
+  if (USE_FIREFOX) return firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } });
+  return chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
+}
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const args = ARGS.filter((a) => a !== '--firefox' && !a.startsWith('--out='));
   if (args.includes('--skies')) {
     mkdirSync(OUT_DIR, { recursive: true });
     const server = await startServer(log);
     let browser: Browser | null = null;
     try {
-      browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
+      browser = await launchBrowser();
       log(`rendering ${SKIES.length} sky presets`);
       await renderSkies(browser, server.url);
       log('GALLERY DONE');
@@ -192,7 +204,7 @@ async function main(): Promise<void> {
   const server = await startServer(log);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
+    browser = await launchBrowser();
     log(`rendering ${prompts.length} prompts`);
     for (const p of prompts) await renderPrompt(browser, server.url, p);
     log('GALLERY DONE');

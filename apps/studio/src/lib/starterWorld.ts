@@ -1,7 +1,7 @@
 /**
  * The default world shown on first visit: a dusk glade with a campfire,
  * tents, pine forests, distant mountains, a crate pyramid for physics and
- * five glowing gems to collect — so a judge can press Play immediately.
+ * five glowing gems to collect — so a visitor can press Play immediately.
  * Built only from built-in generators and primitives (no external assets).
  */
 import { createWorld, type EntityInput, type RuleInput, type WorldDoc, type WorldDocInput } from '@aether/core';
@@ -80,7 +80,7 @@ const WORLD: WorldDocInput = {
   seed: 7,
   environment: {
     sky: 'sunset',
-    timeOfDay: 18.2,
+    timeOfDay: 17.45,
     fog: { color: '#d9a07a', density: 0.008 },
     weather: 'fireflies',
     ambientIntensity: 0.45,

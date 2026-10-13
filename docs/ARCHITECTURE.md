@@ -566,7 +566,7 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
 - Prismatic joints between bodies with different starting orientations align
   the slide axis only approximately.
 - Rate-limit and token-budget counters are in memory and per instance, which
-  is suitable for a single judging deployment.
+  is suitable for a single hosted deployment.
 - A `null` stored inside free-form JSON state cannot be restored by
   `invertPatches`, because `null` means "delete" in updates. History undo is
   unaffected because it does not replay inverse patches.

@@ -1,7 +1,7 @@
 /**
  * Daily (UTC) LLM token budget shared by every client of this server.
  *
- * Protects a public judging deployment from runaway cost: once the budget for
+ * Protects a public deployment from runaway cost: once the budget for
  * the current UTC day is spent, `/api/llm` answers 429 until midnight UTC.
  */
 

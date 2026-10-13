@@ -91,9 +91,18 @@ explicit state, so the AI can be held to account:
   caps. The whole runtime is deterministic: same seed and inputs give the same
   run.
 - **WebGPU with WebGL2 fallback.** three.js r186 `WebGPURenderer`, ACES tone
-  mapping, bloom, procedural skies driven by time of day, fog, weather
-  particles, soft shadows fitted to the scene, and orbit, follow and
-  first-person cameras.
+  mapping, bloom and a soft vignette, weather particles, soft shadows fitted
+  to the content, and orbit, follow (it steps in front of obstacles) and
+  first-person cameras. Firefox and other browsers without WebGPU get the
+  same look on WebGL2.
+- **Art-directed by policy, whatever the model writes.** Seven distinct sky
+  presets (day, dawn, sunset, night, overcast, space, studio). Each one aims
+  the sun to rake across the default view, and nights get a moon rim light, a
+  starfield and a galactic band. Fog scales with the size of the world:
+  content stays crisp and distant mountains stay atmospheric. Auto-framing
+  composes an elevated three-quarter shot of the meaningful content with sky
+  in frame. Lava and water get procedural glowing cracks and ripples, and new
+  worlds *materialize*, growing out of the ground in a ripple from the centre.
 - **Offline mock mode.** With no API key (or when the backend is unreachable),
   a deterministic offline planner builds worlds for 18 themes (dominoes,
   coins, parkour, bowling, castle, city, haunted forest, space, volcano and
@@ -174,7 +183,8 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
 | `npm run smoke` | Runs the real agent with the offline mock against 13 prompts and re-verifies every world headless |
-| `npm run e2e` | Playwright browser test of the built studio on WebGPU and WebGL2 (run `npm run build` first) |
+| `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
+| `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset) |
 
 ## How a prompt becomes a playable world
 
@@ -347,12 +357,12 @@ All LLM output and all user input are treated as untrusted.
 
 | Layer | Command | Coverage |
 | --- | --- | --- |
-| Unit and integration | `npm test` | About 990 Vitest tests across 55 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening. No test makes a network call. |
+| Unit and integration | `npm test` | About 1,050 Vitest tests across 61 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 13 prompts, including all 8 gallery examples. Every resulting world is re-validated and re-verified independently. |
-| End to end | `npm run build && npm run e2e` | Real Chromium against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on both WebGPU and forced WebGL2, and any console error fails the run. |
+| End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors |
 
-Install the browser for e2e once with `npx playwright install chromium`.
+Install the browsers for e2e once with `npx playwright install chromium firefox`.
 
 ## Deployment
 

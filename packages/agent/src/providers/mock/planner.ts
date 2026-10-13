@@ -26,6 +26,10 @@ export interface MockPlan {
   message: string;
 }
 
+/** The pocket kept free behind the player spawn for the chase camera (center offset on +Z, radius; metres). */
+export const CHASE_POCKET_OFFSET = 4;
+export const CHASE_POCKET_RADIUS = 4.5;
+
 /** Atmospheric settings whose environment wins when combined. */
 const ATMOSPHERIC = new Set(['haunted', 'winter', 'space', 'volcano', 'desert']);
 
@@ -62,7 +66,11 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   }
   for (const a of activities) a.player?.(b);
   const spawn = b.playerValue('spawn');
-  if (Array.isArray(spawn) && typeof spawn[0] === 'number' && typeof spawn[2] === 'number') b.reserve(spawn[0], spawn[2], 2.5);
+  if (Array.isArray(spawn) && typeof spawn[0] === 'number' && typeof spawn[2] === 'number') {
+    b.reserve(spawn[0], spawn[2], 2.5);
+    // Keep the chase camera's starting spot (behind the player, on +Z) free of props.
+    b.reserve(spawn[0], spawn[2] + CHASE_POCKET_OFFSET, CHASE_POCKET_RADIUS);
+  }
   if (clear > 0) b.reserve(0, 0, clear);
 
   const { count, seconds } = intent;

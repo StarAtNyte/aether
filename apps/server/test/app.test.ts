@@ -96,7 +96,7 @@ describe('CORS', () => {
   });
 
   it('allows same-host origins (studio served by this server)', async () => {
-    const res = await makeApp(config).request('http://judge.example.com/api/llm', jsonInit('POST', {}, { Origin: 'https://judge.example.com', Host: 'judge.example.com' }));
+    const res = await makeApp(config).request('http://visitor.example.com/api/llm', jsonInit('POST', {}, { Origin: 'https://visitor.example.com', Host: 'visitor.example.com' }));
     expect(res.status).toBe(503); // reached the route (mock mode)
   });
 });

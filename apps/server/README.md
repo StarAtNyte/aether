@@ -47,7 +47,7 @@ Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are
 - Keys come only from the environment. Logs are structured JSON (method, path, status, ms, request id) with no bodies, and secrets plus key-shaped strings are scrubbed.
 - CORS allowlist (`ALLOWED_ORIGINS`). Mutating requests that carry a foreign `Origin` get 403. JSON bodies must be sent as `application/json`, which forces a preflight.
 - Per-IP token buckets: `/api/llm` defaults to 20/min with burst 5; other API routes default to 120/min with burst 60. Behind a proxy, set `TRUST_PROXY_HOPS`.
-- **Daily token budget** (`AETHER_DAILY_TOKEN_BUDGET`, UTC day, in memory). Once it is spent, `/api/llm` returns 429 until midnight UTC. This protects the judging deployment from abuse.
+- **Daily token budget** (`AETHER_DAILY_TOKEN_BUDGET`, UTC day, in memory). Once it is spent, `/api/llm` returns 429 until midnight UTC. This protects the public deployment from abuse.
 - Body limits per route. Untrusted JSON is screened for prototype-pollution keys, depth and node-count bombs before zod runs.
 - Storage: ids and hashes are regex-validated and resolved paths are re-checked to stay inside `DATA_DIR`. Writes are atomic (temp file then rename), and entry counts and sizes are capped.
 - Headers: CSP (`default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'`), `nosniff`, `Referrer-Policy`, COOP `same-origin`, `X-Frame-Options: DENY`, and HSTS in production.
