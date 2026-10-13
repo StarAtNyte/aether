@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { CodexOptions, ThreadEvent, ThreadOptions, TurnOptions, UserInput } from '@openai/codex-sdk';
 import type { TextCompletionRequest } from '@aether/agent';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { claudeArgs, createClaudeCodeBackend, STRUCTURED_OUTPUT_TOOL } from '../src/backends/claude';
+import { claudeArgs, createClaudeCodeBackend, MAX_STRAY_PROTOCOL_CALLS, protocolToolSet, STRUCTURED_OUTPUT_TOOL } from '../src/backends/claude';
 import { codexLockdownConfig, createCodexBackend, CODEX_DISABLED_FEATURES, mcpDisableOverrides, type CodexLike } from '../src/backends/codex';
 import { parseCodexModels, probeClaude, probeCodex } from '../src/backends/status';
 import { restrictedEnv } from '../src/sandbox';
@@ -83,6 +83,46 @@ describe('Claude Code backend', () => {
     await expect(createClaudeCodeBackend({ spawn: used.spawn, tmpRoot: root }).complete(REQ)).rejects.toMatchObject({ code: 'tool_violation' });
     const mcp = fakeSpawn([{ lines: [JSON.stringify({ type: 'system', subtype: 'init', tools: [STRUCTURED_OUTPUT_TOOL], mcp_servers: [{ name: 'x' }] })], hang: true }]);
     await expect(createClaudeCodeBackend({ spawn: mcp.spawn, tmpRoot: root }).complete(REQ)).rejects.toMatchObject({ code: 'tool_violation' });
+  });
+
+  // Regression: a real haiku run once called `apply_patches` as a native tool (it does not exist in
+  // the CLI, which only exposes StructuredOutput) and the whole turn fell back to the offline planner.
+  describe('stray calls to emulated protocol tools', () => {
+    const INIT = JSON.stringify({ type: 'system', subtype: 'init', tools: [STRUCTURED_OUTPUT_TOOL], mcp_servers: [] });
+    const stray = (name: string): string => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input: { patches: [] } }] } });
+    const PROTO_REQ: TextCompletionRequest = { ...REQ, toolNames: ['apply_patches', 'finish'] };
+
+    it('tolerates a direct call to a protocol tool after a verified init and returns the structured reply', async () => {
+      const structured = { tool_calls: [{ name: 'finish', input: {} }] };
+      const f = fakeSpawn([{ lines: [INIT, stray('apply_patches'), ...ok(structured).slice(1)] }]);
+      const r = await createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ);
+      expect(r.structured).toEqual(structured);
+      expect(f.calls[0]?.killed).toBe(false);
+    });
+
+    it('fails closed when the call comes before the init event proved the tool set', async () => {
+      const f = fakeSpawn([{ lines: [stray('apply_patches')], hang: true }]);
+      await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ)).rejects.toMatchObject({ code: 'tool_violation' });
+      expect(f.calls[0]?.killed).toBe(true);
+    });
+
+    it('still treats names that are not protocol tools of this request as violations', async () => {
+      const f = fakeSpawn([{ lines: [INIT, stray('write_generator')], hang: true }]);
+      await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ)).rejects.toMatchObject({ code: 'tool_violation' });
+    });
+
+    it('never lets a request make built-in, MCP or structured-output names tolerable', async () => {
+      expect([...protocolToolSet(['apply_patches', 'Read', 'Bash', 'mcp__fs__read', STRUCTURED_OUTPUT_TOOL, 'WebFetch', 'finish'])]).toEqual(['apply_patches', 'finish']);
+      const f = fakeSpawn([{ lines: [INIT, stray('Read')], hang: true }]);
+      await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete({ ...REQ, toolNames: ['Read'] })).rejects.toMatchObject({ code: 'tool_violation' });
+    });
+
+    it('stops a run that keeps calling protocol tools directly (backend error, not a violation)', async () => {
+      const lines = [INIT, ...Array.from({ length: MAX_STRAY_PROTOCOL_CALLS + 1 }, () => stray('apply_patches'))];
+      const f = fakeSpawn([{ lines, hang: true }]);
+      await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ)).rejects.toMatchObject({ code: 'backend_error' });
+      expect(f.calls[0]?.killed).toBe(true);
+    });
   });
 
   it('maps a missing CLI, a logged-out CLI, rate limits and timeouts', async () => {

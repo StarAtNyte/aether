@@ -131,6 +131,11 @@ describe('createEmulatedProvider', () => {
     expect(res.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
     expect(backend.requests[0]).toMatchObject({ model: 'm1', effort: 'low', role: 'planner' });
     expect(backend.requests[0]?.schema).toMatchObject({ type: 'object' });
+    // The backend learns the emulated tool names (to recognise a model calling one natively).
+    expect(backend.requests[0]?.toolNames).toEqual(req().tools?.map((t) => t.name));
+    // The protocol tells the model the tools are not directly callable and to use structured output if offered.
+    expect(backend.requests[0]?.system).toContain('NOT callable directly');
+    expect(backend.requests[0]?.system).toContain('structured-output tool');
   });
   it('prefers structured output when the backend returns it', async () => {
     const backend = new FakeBackend([{ text: 'garbage', structured: { tool_calls: [], final_message: 'Hi' } }]);

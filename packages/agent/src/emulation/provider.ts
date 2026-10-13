@@ -26,6 +26,12 @@ export interface TextCompletionRequest {
   schema: JsonSchemaObject;
   /** Image data URLs (PNG/JPEG/WebP). */
   images: string[];
+  /**
+   * Names of the emulated (protocol) tools. They are never native tools of the
+   * backend; a backend may use the list to recognise a model that mistakenly
+   * tries to call one of them directly.
+   */
+  toolNames?: readonly string[];
   model?: string;
   effort?: TextEffort;
   maxOutputTokens?: number;
@@ -88,6 +94,7 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
             prompt,
             schema,
             images: rendered.images,
+            ...(tools.length > 0 ? { toolNames: tools.map((t) => t.name) } : {}),
             ...(model0 ? { model: model0 } : {}),
             ...(opts.effort ? { effort: opts.effort } : {}),
             ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),

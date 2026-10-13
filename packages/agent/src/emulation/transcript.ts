@@ -34,7 +34,7 @@ export function protocolInstructions(tools: readonly ToolDef[], strict: boolean)
   const arg = strict ? '"input_json": "<the tool input object, JSON-encoded as a string>"' : '"input": { …tool input… }';
   const lines = [
     '## Tool protocol (IMPORTANT)',
-    'You cannot call tools natively. Instead, reply with ONLY one JSON object (no Markdown fences, no prose outside it):',
+    'The tools listed below are NOT callable directly. To use them, reply with ONLY one JSON object (no Markdown fences, no prose outside it); if your environment offers a structured-output tool, deliver this object through it:',
     `{"thoughts": "<one or two sentences>", "tool_calls": [{"name": "<tool>", ${arg}}], "final_message": ""}`,
     '- Put every tool you want to run, in order, in "tool_calls"; their results come back in the next message as <tool_result> blocks.',
     '- When the work is complete, call the finish tool (if it exists). When no tool is needed, return "tool_calls": [] and answer in "final_message".',

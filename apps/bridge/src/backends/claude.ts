@@ -77,14 +77,37 @@ export function claudeInput(req: Pick<TextCompletionRequest, 'prompt' | 'images'
   return `${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`;
 }
 
-interface Observed {
+/**
+ * Direct calls to an emulated protocol tool (e.g. `apply_patches`) tolerated
+ * per run. Such a call cannot execute — the verified init event proves the CLI
+ * exposes nothing but the structured-output tool, so the CLI answers "no such
+ * tool" and the model retries through structured output.
+ */
+export const MAX_STRAY_PROTOCOL_CALLS = 3;
+
+/** What the line observer has seen during one run. */
+export interface ClaudeObserved {
   result?: Record<string, unknown>;
   violation?: string;
   rateLimited: boolean;
+  /** The init event was seen and listed only the structured-output tool and no MCP server. */
+  initVerified?: boolean;
+  /** Direct calls to emulated protocol tools so far. */
+  strayCalls?: number;
+  /** Set when the model kept calling protocol tools directly (not a security issue). */
+  stray?: boolean;
 }
 
-/** Inspect one stream-json line; returns a violation reason to kill the run. */
-export function observeClaudeLine(line: string, into: Observed): string | void {
+/**
+ * Inspect one stream-json line; returns a reason to kill the run.
+ *
+ * Fail closed: any exposed tool other than the structured-output tool, any MCP
+ * server, or any `tool_use` of another name is a violation — except a call
+ * whose name is one of the request's own emulated tools (`protocolTools`) after
+ * a verified init, which is a harmless model slip (bounded by
+ * {@link MAX_STRAY_PROTOCOL_CALLS}).
+ */
+export function observeClaudeLine(line: string, into: ClaudeObserved, protocolTools: ReadonlySet<string> = new Set()): string | void {
   let ev: unknown;
   try {
     ev = JSON.parse(line) as unknown;
@@ -101,15 +124,25 @@ export function observeClaudeLine(line: string, into: Observed): string | void {
       into.violation = `tools exposed: ${[...extra.slice(0, 5), ...(mcp > 0 ? [`${mcp} MCP server(s)`] : [])].join(', ')}`;
       return 'tools';
     }
+    into.initVerified = true;
   } else if (e['type'] === 'assistant') {
     const msg = e['message'];
     const content = typeof msg === 'object' && msg !== null ? (msg as { content?: unknown }).content : undefined;
     if (Array.isArray(content)) {
       for (const b of content) {
-        if (typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'tool_use' && (b as { name?: unknown }).name !== STRUCTURED_OUTPUT_TOOL) {
-          into.violation = `tool call: ${String((b as { name?: unknown }).name).slice(0, 40)}`;
-          return 'tool_use';
+        if (typeof b !== 'object' || b === null || (b as { type?: unknown }).type !== 'tool_use') continue;
+        const name = (b as { name?: unknown }).name;
+        if (name === STRUCTURED_OUTPUT_TOOL) continue;
+        if (into.initVerified === true && typeof name === 'string' && protocolTools.has(name)) {
+          into.strayCalls = (into.strayCalls ?? 0) + 1;
+          if (into.strayCalls > MAX_STRAY_PROTOCOL_CALLS) {
+            into.stray = true;
+            return 'stray';
+          }
+          continue;
         }
+        into.violation = `tool call: ${String(name).slice(0, 40)}`;
+        return 'tool_use';
       }
     }
   } else if (e['type'] === 'rate_limit_event') {
@@ -118,6 +151,18 @@ export function observeClaudeLine(line: string, into: Observed): string | void {
   } else if (e['type'] === 'result') {
     into.result = e;
   }
+}
+
+/**
+ * The request's emulated tool names that may be tolerated as stray calls.
+ * Built-in CLI tool names, MCP-style names and the structured-output tool are
+ * never tolerable, whatever the (untrusted) request calls its tools.
+ */
+export function protocolToolSet(names: readonly string[] | undefined): ReadonlySet<string> {
+  const denied = new Set<string>([...CLAUDE_DENIED_TOOLS, STRUCTURED_OUTPUT_TOOL]);
+  const out = new Set<string>();
+  for (const n of (names ?? []).slice(0, 64)) if (/^[a-z][a-z0-9_]{0,63}$/.test(n) && !denied.has(n) && !n.startsWith('mcp__')) out.add(n);
+  return out;
 }
 
 function num(v: unknown): number {
@@ -135,13 +180,14 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
       return withTempDir(async (dir) => {
         const systemFile = join(dir, 'system.txt');
         await writeFile(systemFile, req.system, { encoding: 'utf8', mode: 0o600 });
-        const observed: Observed = { rateLimited: false };
+        const observed: ClaudeObserved = { rateLimited: false };
+        const protocolTools = protocolToolSet(req.toolNames);
         const run = await runProcess(command, claudeArgs(req, systemFile), {
           cwd: dir,
           env: restrictedEnv(opts.env),
           timeoutMs,
           stdin: claudeInput(req),
-          onLine: (line) => observeClaudeLine(line, observed),
+          onLine: (line) => observeClaudeLine(line, observed, protocolTools),
           ...(signal ? { signal } : {}),
           ...(opts.spawn ? { spawn: opts.spawn } : {}),
         });
@@ -152,6 +198,7 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
         if (run.stopped === 'aborted') throw new BridgeError('backend_error', 'cancelled');
         if (run.stopped === 'timeout') throw new BridgeError('timeout', `Claude Code did not answer within ${Math.round(timeoutMs / 1000)} s.`);
         if (observed.violation) throw new BridgeError('tool_violation', `Refused: the Claude Code run exposed or used a tool (${observed.violation}).`);
+        if (observed.stray) throw new BridgeError('backend_error', 'Claude Code kept calling tools directly instead of replying with JSON. Try again or pick another model.');
         if (run.stopped === 'stdout_cap') throw new BridgeError('backend_error', 'Claude Code produced too much output.');
         const res = observed.result;
         if (observed.rateLimited && (!res || res['is_error'] === true)) throw new BridgeError('rate_limited', "Claude Code reports that your subscription's usage limit is reached. Try again later.", { retryAfterSec: 60 });
