@@ -49,6 +49,7 @@ export const TopBar = memo(function TopBar(): ReactElement {
   const modeBusy = useUI((s) => s.modeBusy);
   const loading = useUI((s) => s.loading);
   const panels = useUI((s) => s.panels);
+  const darkTheme = useUI((s) => s.settings.darkTheme);
   const { canUndo, canRedo } = useHistoryState();
   const fileRef = useRef<HTMLInputElement>(null);
   const playing = mode === 'play';
@@ -133,6 +134,16 @@ export const TopBar = memo(function TopBar(): ReactElement {
           <Icon name="upload" />
         </button>
         <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={onFile} />
+        <button
+          type="button"
+          className="icon-btn theme-btn"
+          onClick={() => studio.store.getState().updateSettings({ darkTheme: !darkTheme })}
+          aria-pressed={darkTheme}
+          title={darkTheme ? 'Switch to the light theme' : 'Switch to the dark theme'}
+          aria-label="Dark theme"
+        >
+          <Icon name={darkTheme ? 'sun' : 'moon'} />
+        </button>
         <button type="button" className="icon-btn" onClick={() => studio.store.getState().setSettingsOpen(true)} title="Settings & shortcuts" aria-label="Settings">
           <Icon name="settings" />
         </button>

@@ -11,6 +11,7 @@ import './styles/app.css';
 import { App } from './App';
 import { StudioProvider } from './app/context';
 import { Studio } from './engine/Studio';
+import { applyTheme, themeFromSetting } from './lib/theme';
 
 declare global {
   interface Window {
@@ -28,6 +29,8 @@ function debugEnabled(): boolean {
 }
 
 const studio = new Studio();
+// Theme before the first paint so a dark-theme visitor never sees a light flash.
+applyTheme(document, themeFromSetting(studio.store.getState().settings.darkTheme));
 void studio.boot();
 
 if (debugEnabled()) {

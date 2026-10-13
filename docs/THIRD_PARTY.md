@@ -9,11 +9,12 @@ on 2026-10-13. Aether's own code is [MIT](../LICENSE) (© 2026 Aether
 contributors). All eight workspace packages (`@aether/*`) are private and
 MIT-licensed.
 
-**Summary:** everything that ships to users (the browser bundle and the
-server runtime) is under **MIT or Apache-2.0**. Both are permissive and
-compatible with the organizer's commercial, promotional and evaluation
-licence and with the public-repository requirement. Nothing is
-non-commercial, personal-use-only, evaluation-only or strong copyleft. Items
+**Summary:** all code that ships to users (the browser bundle and the
+server runtime) is under **MIT or Apache-2.0**; the two self-hosted web
+fonts are under the **SIL Open Font License 1.1**. All are permissive,
+allow commercial use and redistribution, and are compatible with a public
+source repository. Nothing is non-commercial, personal-use-only,
+evaluation-only or strong copyleft. Items
 that need a note are listed in [Flags](#flags-and-notes).
 
 ---
@@ -133,8 +134,8 @@ deterministic offline mock and calls no external service at all.
 
 ## 5. Assets
 
-**No third-party 3D models, textures, HDRIs, images, fonts or audio are
-included.**
+**No third-party 3D models, textures, HDRIs, images or audio are
+included.** The only third-party media are two open-source fonts (below).
 
 - **Geometry:** every mesh is generated at runtime by Aether's own
   procedural kernel and its 35 built-in generators, or by sandboxed
@@ -143,10 +144,19 @@ included.**
   presets plus shaders that ship with three.js. No texture files.
 - **Audio:** synthesised at runtime with WebAudio oscillators
   (`apps/studio/src/engine/sound.ts`). No audio files.
-- **Fonts:** the CSS names *Inter* and *JetBrains Mono* first in the font
-  stack, but **no font files are bundled or loaded from a CDN**. They are used
-  only if already installed on the viewer's machine; otherwise system fonts
-  apply.
+- **Fonts:** two variable web fonts are self-hosted from
+  `apps/studio/public/fonts/` (never loaded from a CDN). Each is a Latin
+  subset (`pyftsubset`, fontTools 4.66.1, all OpenType layout features kept)
+  of the official release file; the full licence text ships next to each font.
+
+  | Font | Upstream release | Licence | Shipped file (SHA-256) |
+  | --- | --- | --- | --- |
+  | [Inter](https://github.com/rsms/inter) 4.1 — UI and display type | `Inter-4.1.zip` (SHA-256 `9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`), file `web/InterVariable.woff2` | SIL OFL 1.1, © 2016 The Inter Project Authors (`Inter-OFL.txt`) | `inter-var-latin.woff2`, 108 KB (`61bfb1520d2e7d081e984f35dada957961b56e36734837aa6ce5bebcbe1e243b`) |
+  | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 2.304 — code and labels | `JetBrainsMono-2.304.zip` (SHA-256 `6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`), file `fonts/variable/JetBrainsMono[wght].ttf` | SIL OFL 1.1, © 2020 The JetBrains Mono Project Authors (`JetBrainsMono-OFL.txt`) | `jetbrains-mono-var-latin.woff2`, 43 KB (`f4256d9ed255e928da20ca7a44a8d6a8b7f8e4128f63229c4de028c842868367`) |
+
+  Neither upstream declares a Reserved Font Name; the subsets are still
+  registered under the private family names *Aether Sans* and *Aether Mono*
+  so they are never confused with the original releases.
 - **Icon:** `apps/studio/public/favicon.svg` is original to this project.
 - **Screenshots:** `docs/screenshots/*.png` are captures of this application
   made by the e2e test.
@@ -170,7 +180,7 @@ repositories.
   Code** and **OpenAI Codex**) under the direction and review of the human
   author. The author directed the design (World IR, package contracts,
   security and verification approach) and accepted every change. All code was
-  written during the official build period: the first commit is dated
+  written for this project from scratch: the first commit is dated
   2026-10-12, and the full commit history is public.
 - **AI at runtime.** The app sends user prompts, a text summary of the world
   and optional user-supplied images to Anthropic Claude and/or OpenAI models
@@ -188,16 +198,18 @@ repositories.
 
 | Item | Status | Assessment |
 | --- | --- | --- |
-| **lightningcss 1.33.0, MPL-2.0** | Dev and build only | A CSS tool used internally by Vite. It runs on the build machine and none of its code ends up in the studio bundle or the server runtime. MPL-2.0 is a weak, file-level copyleft that applies only to modifications of its own files, which we do not modify or distribute. **No conflict** with the organizer licence. It is flagged because it is the only licence outside MIT, Apache-2.0, ISC and BSD. |
+| **lightningcss 1.33.0, MPL-2.0** | Dev and build only | A CSS tool used internally by Vite. It runs on the build machine and none of its code ends up in the studio bundle or the server runtime. MPL-2.0 is a weak, file-level copyleft that applies only to modifications of its own files, which we do not modify or distribute. **No conflict** with commercial use or redistribution of Aether. It is flagged because it is the only licence outside MIT, Apache-2.0, ISC and BSD. |
 | **Apache-2.0 components** (Rapier, TypeScript, Playwright, detect-libc, expect-type) | Rapier ships in the bundle and the Docker image; the others are dev only | Apache-2.0 is permissive and compatible. When redistributing Rapier, keep its licence text: it is preserved in `node_modules` inside the Docker image, and the licence is credited here. The package ships no NOTICE file. |
 | **QuickJS (inside quickjs-emscripten)** | Ships as WASM | MIT, © Fabrice Bellard and Charlie Gordon. Credited here. |
-| **Docker base image `node:22-slim`** | Deployment only | Node.js (MIT) on Debian. The OS packages carry their own licences (some GPL), which is ordinary aggregation in a container image. Aether code is not linked into them. They are not part of the submitted source. |
+| **Docker base image `node:22-slim`** | Deployment only | Node.js (MIT) on Debian. The OS packages carry their own licences (some GPL), which is ordinary aggregation in a container image. Aether code is not linked into them. They are not part of the repository source. |
 | **Chromium downloaded by Playwright** | Dev only (e2e) | Downloaded on demand by `npx playwright install` and never committed or shipped |
+| **Inter and JetBrains Mono, SIL OFL 1.1** | Ship as static font files | OFL 1.1 permits use, embedding, modification and redistribution, including commercially, provided the copyright notice and licence travel with the fonts (they do: `apps/studio/public/fonts/*-OFL.txt`, copied into the build). Neither font declares a Reserved Font Name; the subsets are served as *Aether Sans* / *Aether Mono* anyway. The fonts may not be sold on their own, which Aether does not do. |
 | **Two Rapier versions in `node_modules`** | Informational | 0.21.0 is the one actually used (`packages/physics`). 0.12.0 is only a type-level dependency of `@types/three` and is never imported. |
 
-**Conclusion:** every component Aether ships is MIT or Apache-2.0, plus
-QuickJS under MIT. There are no non-commercial, personal-only,
+**Conclusion:** every code component Aether ships is MIT or Apache-2.0, plus
+QuickJS under MIT; the two web fonts are SIL OFL 1.1. There are no non-commercial, personal-only,
 educational-only, evaluation-only, share-alike or source-available
-components, and no third-party media assets. Before the final submission,
+components, and the only third-party media are the two OFL fonts above.
+Before each release,
 regenerate this list if dependencies change, for example with
 `npm ls --all` and a licence scan of `package-lock.json`.

@@ -24,6 +24,40 @@ function hasWebGPU(): boolean {
   return typeof nav === 'object' && nav !== null && 'gpu' in nav && Boolean((nav as { gpu?: unknown }).gpu);
 }
 
+/** localStorage key set while WebGPU initializes; still present on the next load means the browser died mid-init. */
+const GPU_INIT_PENDING_KEY = 'aether.webgpuInitPending';
+/** localStorage key that permanently disables WebGPU after a crash was detected. */
+const GPU_DISABLED_KEY = 'aether.webgpuDisabled';
+function storageGet(key: string): string | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key: string, value: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Storage blocked (private mode / quota): the guard simply becomes a no-op.
+  }
+}
+
+function webgpuAllowed(): boolean {
+  if (storageGet(GPU_DISABLED_KEY) === '1') return false;
+  if (storageGet(GPU_INIT_PENDING_KEY) === '1') {
+    // The previous WebGPU init never completed: the browser most likely crashed during it.
+    storageSet(GPU_INIT_PENDING_KEY, null);
+    storageSet(GPU_DISABLED_KEY, '1');
+    log.warn('Previous WebGPU initialization did not finish; using WebGL2 from now on');
+    return false;
+  }
+  return true;
+}
+
 /** True when the renderer runs on the WebGPU backend. */
 export function detectBackend(renderer: WebGPURenderer): BackendKind {
   const backend: unknown = renderer.backend;
@@ -41,11 +75,14 @@ export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: Backend
     return r;
   };
   let renderer: WebGPURenderer;
-  if (opts.preferWebGPU && hasWebGPU()) {
+  if (opts.preferWebGPU && hasWebGPU() && webgpuAllowed()) {
     opts.onProgress?.('Initializing WebGPU…');
     try {
+      storageSet(GPU_INIT_PENDING_KEY, '1');
       renderer = await attempt(false);
+      storageSet(GPU_INIT_PENDING_KEY, null);
     } catch (e) {
+      storageSet(GPU_INIT_PENDING_KEY, null);
       log.warn(`WebGPU init failed (${errorMessage(e)}); falling back to WebGL2`);
       opts.onProgress?.('WebGPU unavailable, falling back to WebGL2…');
       renderer = await attempt(true);

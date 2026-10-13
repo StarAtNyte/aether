@@ -1,14 +1,19 @@
-import { memo, useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../../config';
-import { useStudio, useUI } from '../../app/context';
+import { useStudio, useUI, useWorld } from '../../app/context';
 import type { ChatEntry } from '../../lib/chat';
 import { EXAMPLE_PROMPTS } from '../../lib/examples';
+import { clipWords } from '../../lib/format';
+import { remixSuggestions } from '../../lib/remix';
+import { worldChroma } from '../../lib/worldChroma';
 import { Icon } from '../Icon';
 import { Orb } from '../Orb';
 import { ChatEvent } from './ChatEvent';
 
 /** How often the idle composer placeholder rotates to the next example. */
 const PLACEHOLDER_ROTATE_MS = 4200;
+/** Placeholder examples are clipped so they fit on one line. */
+const PLACEHOLDER_MAX_CHARS = 34;
 
 /** Curated prompt gallery shown when the chat is empty. */
 const ExampleGallery = memo(function ExampleGallery({ onPick }: { onPick: (prompt: string) => void }): ReactElement {
@@ -74,6 +79,29 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
   );
 });
 
+/** One-tap follow-ups under the latest finished turn, each previewing its sky. */
+const RemixChips = memo(function RemixChips({ onPick }: { onPick: (prompt: string) => void }): ReactElement | null {
+  const env = useWorld().environment;
+  const mode = useUI((s) => s.mode);
+  const { sky, weather, gravity, sunIntensity, ambientIntensity } = env;
+  const chips = useMemo(
+    () => remixSuggestions({ sky, weather, gravity }).map((r) => ({ ...r, color: worldChroma({ sky: r.sky, sunIntensity, ambientIntensity }).glow })),
+    [sky, weather, gravity, sunIntensity, ambientIntensity],
+  );
+  if (mode !== 'edit' || chips.length === 0) return null;
+  return (
+    <div className="remix" role="group" aria-label="Try a variation">
+      <span className="remix__label">Remix</span>
+      {chips.map((c) => (
+        <button key={c.prompt} type="button" className="remix__chip" style={{ ['--chip' as string]: c.color }} onClick={() => onPick(c.prompt)}>
+          <span className="remix__dot" aria-hidden="true" />
+          {c.prompt}
+        </button>
+      ))}
+    </div>
+  );
+});
+
 /** Left panel: streaming agent conversation + prompt box. */
 export const ChatPanel = memo(function ChatPanel(): ReactElement {
   const studio = useStudio();
@@ -92,7 +120,9 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
     return () => window.clearInterval(id);
   }, [busy, draft]);
   const example = EXAMPLE_PROMPTS[hintIndex];
-  const placeholder = busy ? 'Aether is building…' : chat.length === 0 || !example ? 'Describe a world, or ask for a change…' : `Try: ${example.prompt.toLowerCase()}`;
+  const lastEntry = chat[chat.length - 1];
+  const lastDone = lastEntry !== undefined && lastEntry.role === 'assistant' && lastEntry.status === 'done';
+  const placeholder = busy ? 'Aether is building…' : chat.length === 0 || !example ? 'Describe a world, or ask for a change…' : `Try: ${clipWords(example.prompt.toLowerCase(), PLACEHOLDER_MAX_CHARS)}`;
 
   useEffect(() => {
     const el = listRef.current;
@@ -144,6 +174,7 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
         aria-live="polite"
       >
         {chat.length === 0 ? <ExampleGallery onPick={send} /> : chat.map((entry) => <ChatItem key={entry.id} entry={entry} />)}
+        {!busy && lastDone && <RemixChips onPick={send} />}
       </div>
       <form
         className={`composer${busy ? ' is-busy' : ''}`}

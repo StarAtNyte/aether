@@ -118,6 +118,8 @@ export interface StudioSettings {
   preferWebGPU: boolean;
   /** Laptop/battery rendering: no bloom, smaller shadow maps, DPR 1. */
   lowPower: boolean;
+  /** Dark interface theme (the default is light). */
+  darkTheme: boolean;
 }
 
 /** Default preferences. */
@@ -128,6 +130,7 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   showColliders: false,
   preferWebGPU: true,
   lowPower: false,
+  darkTheme: false,
 });
 
 /** Load settings, keeping only known boolean fields. */

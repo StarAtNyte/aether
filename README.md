@@ -416,10 +416,12 @@ original TypeScript implementation.
 - **Third-party components:** every runtime and development dependency, with
   its exact version and licence, is listed in
   **[docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)**. Everything shipped to users
-  is permissively licensed (MIT or Apache-2.0).
-- **Assets:** there are no third-party 3D models, textures, fonts, images or
-  audio. Geometry is generated procedurally, sounds are synthesised with
-  WebAudio oscillators, and the UI uses the system font stack. The screenshots
+  is permissively licensed (code under MIT or Apache-2.0, fonts under the SIL
+  Open Font License 1.1).
+- **Assets:** there are no third-party 3D models, textures, images or audio.
+  Geometry is generated procedurally and sounds are synthesised with WebAudio
+  oscillators. The UI is set in self-hosted Latin subsets of Inter and
+  JetBrains Mono (OFL 1.1, licence files ship alongside). The screenshots
   in `docs/screenshots` were captured from this app.
 - **AI disclosure:** this codebase was written with AI coding assistants
   (Claude Code and Codex) under human direction and review. At runtime the app

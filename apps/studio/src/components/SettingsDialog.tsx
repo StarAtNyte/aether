@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { Toggle } from './fields';
 
 const OPTIONS: ReadonlyArray<[keyof StudioSettings, string, string]> = [
+  ['darkTheme', 'Dark theme', 'Dim interface for low-light rooms (the default is light)'],
   ['showPerf', 'Performance overlay', 'FPS, draw calls and triangles over the viewport'],
   ['showColliders', 'Show colliders', 'Wireframe physics colliders in the viewport'],
   ['pointerLock', 'Capture mouse in play mode', 'Click the viewport to lock the pointer for mouse-look'],

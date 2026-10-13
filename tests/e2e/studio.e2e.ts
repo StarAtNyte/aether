@@ -396,6 +396,48 @@ async function undoRedo(page: Page): Promise<void> {
   log(`  undo/redo ok (head ${before.head} → ${undone.head} → ${before.head})`);
 }
 
+/** Light by default; the top-bar switch flips to dark, persists, and back. Self-hosted fonts load. */
+async function themeSwitch(page: Page): Promise<void> {
+  const look = (): Promise<{ theme: string | undefined; bgLum: number; saved: unknown; font: boolean }> =>
+    page.evaluate(() => {
+      // Computed colors may be oklab()/color(): resolve through a 1×1 canvas.
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 1;
+      const ctx = cv.getContext('2d');
+      let bgLum = -1;
+      if (ctx) {
+        ctx.fillStyle = getComputedStyle(document.querySelector('.app') ?? document.body).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r = 0, g = 0, b = 0] = ctx.getImageData(0, 0, 1, 1).data;
+        bgLum = (r + g + b) / 3;
+      }
+      let saved: unknown = null;
+      try {
+        saved = (JSON.parse(localStorage.getItem('aether.studio.settings.v1') ?? 'null') as { darkTheme?: unknown } | null)?.darkTheme ?? null;
+      } catch {
+        saved = 'unreadable';
+      }
+      return { theme: document.documentElement.dataset['theme'], bgLum, saved, font: document.fonts.check('13px "Aether Sans"') };
+    });
+  const light = await look();
+  check(light.theme === 'light', `expected the light theme by default, got ${String(light.theme)}`);
+  check(light.bgLum > 200, `light theme background is not light (mean channel ${light.bgLum})`);
+  check(light.font, 'the self-hosted UI font did not load');
+  const toggle = page.getByRole('button', { name: 'Dark theme' });
+  await toggle.click();
+  const dark = await waitFor(page, 'dark theme', 5_000, async () => {
+    const s = await look();
+    return s.theme === 'dark' && s.bgLum >= 0 && s.bgLum < 40 ? s : null;
+  });
+  check(dark.saved === true, 'dark theme choice was not persisted');
+  await toggle.click();
+  await waitFor(page, 'light theme again', 5_000, async () => {
+    const s = await look();
+    return s.theme === 'light' && s.bgLum > 200 ? s : null;
+  });
+  log(`  theme switch ok (light ${light.bgLum.toFixed(0)} → dark ${dark.bgLum.toFixed(0)} → light)`);
+}
+
 async function editColor(page: Page): Promise<void> {
   const target = await page.evaluate(() => {
     const w = window.__aether?.history.current;
@@ -490,6 +532,7 @@ async function run(browser: Browser, url: string, opts: RunOptions): Promise<Run
     for (const p of prompts) await sendPrompt(page, p, metrics, opts.screenshots);
     await playAndStop(page, opts.screenshots);
     if (opts.full) {
+      await themeSwitch(page);
       await undoRedo(page);
       await editColor(page);
       await exportJson(page);

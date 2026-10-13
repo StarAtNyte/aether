@@ -46,3 +46,11 @@ export function clip(s: string, max: number): string {
 function trimZero(s: string): string {
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 }
+
+/** Clip text at a word boundary, adding an ellipsis when shortened. */
+export function clipWords(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,:;—-]+$/, '')}…`;
+}
