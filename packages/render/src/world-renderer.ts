@@ -360,6 +360,11 @@ export class WorldRenderer {
     return this.env.fogState;
   }
 
+  /** True while content is still materialising (grow-in) or the camera is flying: captures should wait. */
+  get animating(): boolean {
+    return this.grow.active || this.cameraFlying;
+  }
+
   /** True while an automatic camera flight (framing, focus) is in progress. */
   get cameraFlying(): boolean {
     return this.rig.focusing;
@@ -669,6 +674,14 @@ export class WorldRenderer {
     _bounds.getCenter(_center);
     const r = Math.max(_bounds.max.x - _bounds.min.x, _bounds.max.y - _bounds.min.y, _bounds.max.z - _bounds.min.z) / 2;
     this.rig.focusOn(_center, r);
+  }
+
+  /** World-space bounds of an entity at full scale (null when it has no content yet). */
+  entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null {
+    if (this.disposed) return null;
+    this.grow.withFullScale(() => this.sync.entityBounds(id, _bounds));
+    if (_bounds.isEmpty()) return null;
+    return { min: _bounds.min.toArray() as Vec3, max: _bounds.max.toArray() as Vec3 };
   }
 
   /**

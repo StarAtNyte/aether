@@ -19,12 +19,14 @@ const PatchesView = memo(function PatchesView({ event }: { event: Extract<ChatEv
   return (
     <div className="ev ev--patches">
       <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <Icon name="cube" />
-        <span className="diff-chips__msg">{event.message || 'World edit'}</span>
+        <Icon name="cube" className="diff-chips__icon" />
+        <span className="diff-chips__msg" title={event.message || 'World edit'}>
+          {event.message || 'World edit'}
+        </span>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} className="diff-chips__chev" />
         <span className="diff-chips__list">
           {chips.length === 0 ? <span className="chip">no changes</span> : chips.map((c) => <span key={c} className={`chip${c.startsWith('＋') ? ' chip--add' : c.startsWith('−') ? ' chip--remove' : c.startsWith('✎') ? ' chip--edit' : ''}`}>{c}</span>)}
         </span>
-        <Icon name={open ? 'chevronUp' : 'chevronDown'} />
       </button>
       {open && (
         <div className="diff-detail">

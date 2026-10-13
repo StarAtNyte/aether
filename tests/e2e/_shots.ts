@@ -95,6 +95,20 @@ try {
         await page.waitForTimeout(600);
         await page.screenshot({ path: `${OUT}${tag}-${sz}-settings.png` });
         await page.keyboard.press('Escape');
+      } else if (step === 'drawer') {
+        await page.evaluate(() => window.__aether!.store.getState().showInspector());
+        await page.waitForTimeout(600);
+        const probe = (): Promise<unknown> => page.evaluate(() => [...document.querySelectorAll('.drawer')].map((d) => ({ cls: d.className, t: getComputedStyle(d).transform, td: getComputedStyle(d).transitionDuration, anims: d.getAnimations().map((a) => `${a.playState}:${String(a.currentTime)}`) })));
+        console.log(JSON.stringify(await probe()));
+        await page.waitForTimeout(2000);
+        console.log(JSON.stringify(await probe()));
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-drawer.png` });
+      } else if (step === 'thumb') {
+        const url = await page.evaluate(async () => (await window.__aether?.simulation?.thumbnail(640, 360)) ?? '');
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(`${OUT}${tag}-${sz}-thumb.webp`, Buffer.from(url.split(',')[1] ?? '', 'base64'));
+        const shot = await page.evaluate(async () => (await window.__aether?.simulation?.screenshot()) ?? '');
+        writeFileSync(`${OUT}${tag}-${sz}-shot.jpg`, Buffer.from(shot.split(',')[1] ?? '', 'base64'));
       } else if (step === 'homeback') {
         await page.goto(`${server.url}/?debug=1#/`);
         await page.waitForTimeout(1500);

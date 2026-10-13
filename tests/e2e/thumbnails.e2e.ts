@@ -28,12 +28,8 @@ const ONLY_PALETTE = ARGS.includes('--palette');
 const FILTERS = ARGS.filter((a) => !a.startsWith('--'));
 const TEMPLATE_BUDGET = 30 * 1024;
 const PALETTE_BUDGET = 12 * 1024;
-/**
- * Tablet layout (side panels are drawers, closed by default): the editor
- * viewport is the full 1000×562 area below the top bar — 16:9, the
- * thumbnail aspect — so the editor's own framing fits the capture.
- */
-const VIEWPORT = { width: 1000, height: 610 };
+/** The default desktop editor (same framing visitors see). */
+const VIEWPORT = { width: 1440, height: 900 };
 
 const startedAt = performance.now();
 function log(line: string): void {
@@ -81,8 +77,15 @@ async function renderTemplates(page: Page, url: string): Promise<void> {
       return !!st && !st.agentBusy && last?.role === 'assistant' && last.status !== 'streaming';
     }, null, { timeout: 180_000, polling: 250 });
     await page.evaluate(() => window.__aether?.store.getState().select([]));
+    const info = await page.evaluate(() => {
+      const a = window.__aether;
+      const st = a?.store.getState();
+      return { n: Object.keys(a?.history.current.entities ?? {}).length, low: st?.memory, size: [innerWidth, innerHeight], stats: st?.stats };
+    });
+    log(`  ${JSON.stringify(info)}`);
     // Camera flight and streamed generator content settle.
     await page.waitForTimeout(3000);
+    if (process.env['THUMB_DEBUG']) await page.screenshot({ path: `${process.env['THUMB_DEBUG']}/page-${t.slug}.png` });
     const buf = await capture(page, 640, 360, TEMPLATE_BUDGET);
     writeFileSync(join(PUBLIC, 'templates', `${t.slug}.webp`), buf);
     log(`template ${t.slug}: ${(buf.length / 1024).toFixed(1)} KB`);
@@ -95,7 +98,7 @@ const STUDIO_WORLD = {
   version: 1,
   world: {
     name: 'Asset studio',
-    environment: { sky: 'studio', weather: 'clear', ground: { material: { preset: 'concrete', color: '#d9dbe0' }, size: 60 }, bloom: 0.2, sunIntensity: 2.6, ambientIntensity: 0.7 },
+    environment: { sky: 'studio', weather: 'clear', ground: { material: { preset: 'plastic', color: '#9ea3ad', roughness: 0.95 }, size: 60 }, bloom: 0.25, sunIntensity: 2.8, ambientIntensity: 0.8 },
     player: { mode: 'orbit' },
   },
 };
@@ -104,7 +107,10 @@ async function renderPalette(page: Page, url: string): Promise<void> {
   mkdirSync(join(PUBLIC, 'palette'), { recursive: true });
   await page.goto(`${url}/?debug=1#/new`);
   await waitReady(page);
-  const err = await page.evaluate(async (text) => (await window.__aether?.studio.importText(text)) ?? 'no studio', JSON.stringify(STUDIO_WORLD));
+  const err = await page.evaluate(async (text) => {
+    const a = window.__aether;
+    return a ? await a.studio.importText(text) : 'no studio';
+  }, JSON.stringify(STUDIO_WORLD));
   if (err) throw new Error(`studio world rejected: ${err}`);
   await page.waitForTimeout(1500);
   for (const item of PALETTE_ITEMS) {
@@ -113,10 +119,19 @@ async function renderPalette(page: Page, url: string): Promise<void> {
     if (!id) throw new Error(`could not place ${item.id}`);
     await page.evaluate(async (eid) => {
       const a = window.__aether;
-      if (!a) return;
+      const sim = a?.simulation;
+      if (!a || !sim) return;
       a.store.getState().select([]);
-      await a.simulation?.whenSynced();
-      a.studio.focus(eid);
+      await sim.whenSynced();
+      // Frame the object's own bounds with some air around it (three-quarter view).
+      const b = sim.renderer.entityBounds(eid);
+      if (!b) {
+        a.studio.focus(eid);
+        return;
+      }
+      const c: [number, number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+      const radius = Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) / 2;
+      sim.renderer.frameSphere(c, radius * 1.15, [1, 0.8, 1.35], 0);
     }, id);
     await page.waitForTimeout(1800);
     const buf = await capture(page, 192, 192, PALETTE_BUDGET);
@@ -134,8 +149,6 @@ try {
   const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: 'light' });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`PAGE ERROR ${e.message}`));
-  // Thumbnails show the world, not the first-use hint or overlays (captures read the canvas only).
-  await page.addInitScript(() => localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ showNavHint: false, darkTheme: false })));
   if (!ONLY_PALETTE) await renderTemplates(page, server.url);
   if (!ONLY_TEMPLATES) await renderPalette(page, server.url);
   log('done');

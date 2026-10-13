@@ -1150,6 +1150,10 @@ button.chip:hover {
   font-size: var(--fs-16);
 }
 
+.palette__input:focus-visible {
+  outline: none;
+}
+
 .palette__input::placeholder {
   color: var(--text-3);
 }

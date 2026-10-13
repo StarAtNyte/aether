@@ -34,6 +34,9 @@ import { SoundBoard } from './sound';
 import { TransformTable } from './TransformTable';
 import { findAvatar, framingSphere, movingIds } from './worldQueries';
 
+/** Longest wait for content to finish materialising before a thumbnail (ms). */
+const THUMBNAIL_SETTLE_MS = 6000;
+
 const log = createLogger('sim');
 
 /** Below this height the built-in player respawns. */
@@ -386,6 +389,13 @@ export class Simulation {
     if (this.session || this.disposed) return null;
     try {
       await this.whenSynced();
+      // Let the grow-in animation and any camera flight finish (bounded wait).
+      const deadline = performance.now() + THUMBNAIL_SETTLE_MS;
+      while (this.renderer.animating && performance.now() < deadline && !this.disposed) {
+        this.touch();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (this.session || this.disposed) return null;
       const webp = await this.renderer.screenshot({ width, height, mime: 'image/webp' });
       if (webp.startsWith('data:image/webp')) return webp;
       return await this.renderer.screenshot({ width, height, mime: 'image/jpeg' });

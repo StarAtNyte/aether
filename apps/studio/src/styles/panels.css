@@ -275,7 +275,15 @@
   background: var(--surface-2);
 }
 
-.diff-chips > .icon:first-child {
+.diff-chips {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  row-gap: 6px;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+}
+
+.diff-chips__icon,
+.diff-chips__chev {
   color: var(--text-3);
 }
 
@@ -289,9 +297,11 @@
 }
 
 .diff-chips__list {
+  grid-column: 2 / -1;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s-1);
-  flex: none;
+  min-width: 0;
 }
 
 .diff-chips .chip {
@@ -950,7 +960,9 @@
 }
 
 .field-row__control > .select,
-.field-row__control > .input {
+.field-row__control > .input,
+.field-row__control > .num-field,
+.field-row__control > .slider-field {
   flex: 1 1 auto;
 }
 

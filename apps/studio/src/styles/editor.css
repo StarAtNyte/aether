@@ -1277,8 +1277,27 @@
     top: calc(var(--s-3) + var(--control-h) + var(--s-2));
   }
 
+  /* Compact performance readout: the frame rate only. */
   .perf-hud {
-    width: 132px;
+    display: flex;
+    align-items: center;
+    width: auto;
+    height: var(--control-h);
+    padding: 0 var(--s-3);
+  }
+
+  .perf-hud dl {
+    display: none;
+  }
+
+  .perf-hud__fps {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .perf-hud__fps strong {
+    font-size: var(--fs-13);
   }
 }
 
@@ -1297,7 +1316,7 @@
 
 /* Phone: viewport on top, sheet below */
 .editor[data-layout='phone'] {
-  --sheet-min: 196px;
+  --sheet-min: 224px;
 }
 
 .editor[data-layout='phone'] .editor__body {

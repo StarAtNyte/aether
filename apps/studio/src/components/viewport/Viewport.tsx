@@ -200,7 +200,7 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
 
   return (
     <>
-      <div className="vp-labels" ref={layerRef} aria-hidden="true" />
+      <div className="vp-labels" ref={layerRef} aria-hidden="true" data-layout-ignore="" />
       <div className={`vp-gizmo${playing ? ' is-hidden' : ''}`}>
         <button type="button" className="vp-gizmo__btn" onClick={() => studio.viewPreset('reset')} aria-label="Reset camera" data-tip="Reset camera" data-kbd="0" data-tip-pos="left">
           <svg ref={gizmoRef} width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
@@ -295,7 +295,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
         void studio.addFromPalette(id);
       }}
     >
-      <div className="viewport__host" ref={hostRef} />
+      <div className="viewport__host" ref={hostRef} data-layout-ignore="" />
       {ready && <ViewOverlays playing={playing} />}
       <div className="vp-overlay vp-overlay--tl">
         {ready && !playing && <CameraPresets />}

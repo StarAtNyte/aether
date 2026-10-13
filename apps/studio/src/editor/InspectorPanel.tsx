@@ -149,9 +149,11 @@ export const InspectorPanel = memo(function InspectorPanel(): ReactElement {
     <>
       {e ? (
         <PanelHeader title={e.name || e.id}>
-          <span className="chip chip--quiet" title={entityKind(e)}>
-            {entityKind(e)}
-          </span>
+          {entityKind(e).toLowerCase() !== (e.name || e.id).toLowerCase() && (
+            <span className="chip chip--quiet" title={entityKind(e)}>
+              {entityKind(e)}
+            </span>
+          )}
           <button type="button" className="icon-btn icon-btn--sm" aria-label="Focus camera" data-tip="Focus" data-kbd="F" onClick={() => studio.focus(e.id)}>
             <Icon name="focus" />
           </button>

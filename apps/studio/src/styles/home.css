@@ -349,10 +349,12 @@
 
 /* Template row: one line of cards, scrolls horizontally, snaps */
 .template-row {
+  --cols: 4;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 232px;
-  gap: var(--s-3);
+  /* Columns line up with the project grid below (same count, same gap). */
+  grid-auto-columns: calc((100% - var(--s-6) * 2 - (var(--cols) - 1) * var(--s-4)) / var(--cols));
+  gap: var(--s-4);
   margin: 0 calc(-1 * var(--s-6));
   padding: 2px var(--s-6) var(--s-2);
   overflow-x: auto;
@@ -360,6 +362,19 @@
   scroll-snap-type: x mandatory;
   scroll-padding: 0 var(--s-6);
   overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--s-6), #000 calc(100% - var(--s-12)), transparent);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--s-6), #000 calc(100% - var(--s-12)), transparent);
+}
+
+.template-row::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .template-row {
+    --cols: 3;
+  }
 }
 
 .template-row__item {
@@ -374,8 +389,15 @@
 .template-grid,
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s-4);
+}
+
+@media (max-width: 1279px) {
+  .template-grid,
+  .project-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* List view */

@@ -10,13 +10,13 @@ import { useStudio } from '../../app/context';
 import { defaultParams, entityReplacePatches, entityToJson, parseEntityJson, parseTags } from '../../lib/entityEdit';
 import { formatValue } from '../../lib/ruleFormat';
 import { Icon } from '../Icon';
-import { ColorField, FieldRow, NumberField, Section, SelectField, Switch, TextField, Toggle, Vec3Field } from '../fields';
+import { ColorField, FieldRow, humanize, NumberField, Section, SelectField, Switch, TextField, Toggle, Vec3Field } from '../fields';
 
 type Update = (set: Record<string, Json>, message: string) => void;
 
 const BODY_OPTIONS = ['none', ...BodyType.options] as const;
 type BodyOption = (typeof BODY_OPTIONS)[number];
-const PRESET_OPTIONS = ['(none)', ...MaterialPreset.options] as const;
+const PRESET_OPTIONS = ['none', ...MaterialPreset.options] as const;
 type PresetOption = (typeof PRESET_OPTIONS)[number];
 const BEHAVIOR_TYPES = BEHAVIOR_CATALOG.map((b) => b.type);
 
@@ -58,7 +58,7 @@ const ShapeSection = memo(function ShapeSection({ e, update, disabled }: { e: En
           </FieldRow>
           {Object.keys(s.params).length === 0 && <p className="section__note">Default parameters.</p>}
           {Object.entries(s.params).map(([k, v]) => (
-            <FieldRow key={k} label={k}>
+            <FieldRow key={k} label={humanize(k)}>
               {typeof v === 'number' ? (
                 <NumberField label={k} value={v} disabled={disabled} onCommit={(n) => update({ shape: { params: { [k]: n } } }, `Set ${e.id} ${k}`)} />
               ) : typeof v === 'boolean' ? (
@@ -115,10 +115,10 @@ const MaterialSection = memo(function MaterialSection({ e, update, disabled }: {
       <FieldRow label="Preset">
         <SelectField<PresetOption>
           label="Preset"
-          value={m.preset ?? '(none)'}
+          value={m.preset ?? 'none'}
           options={PRESET_OPTIONS}
           disabled={disabled}
-          onChange={(v) => update({ material: { preset: v === '(none)' ? null : v } }, `Set ${e.id} material`)}
+          onChange={(v) => update({ material: { preset: v === 'none' ? null : v } }, `Set ${e.id} material`)}
         />
       </FieldRow>
       <FieldRow label="Color">

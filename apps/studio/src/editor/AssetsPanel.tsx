@@ -13,7 +13,8 @@ import { Icon } from '../components/Icon';
 export const PALETTE_DRAG_TYPE = 'application/x-aether-palette';
 
 const Tile = memo(function Tile({ item, disabled, onPlace }: { item: PaletteItem; disabled: boolean; onPlace: (id: string) => void }): ReactElement {
-  const [failed, setFailed] = useState(false);
+  // Lights have no geometry to render: they get an icon instead of a preview image.
+  const [failed, setFailed] = useState(item.entity.shape === undefined);
   return (
     <button
       type="button"
