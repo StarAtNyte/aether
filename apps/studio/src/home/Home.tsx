@@ -17,6 +17,7 @@ import type { ProjectMeta } from '../projects/model';
 import { Icon, type IconName } from '../components/Icon';
 import { Logomark } from '../components/Logo';
 import { SettingsDialog } from '../components/SettingsDialog';
+import { loadAiPrefs, parsePrefs, saveAiPrefs, type AiPrefs } from '../ai/prefs';
 import { ToastStack } from '../components/Toasts';
 import { CommandPalette, type Command } from '../components/ui/CommandPalette';
 import { ConfirmDialog } from '../components/ui/Dialog';
@@ -199,6 +200,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   const [prefs, setPrefs] = useState<HomePrefs>(loadPrefs);
   const [query, setQuery] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiPrefs, setAiPrefs] = useState<AiPrefs>(() => loadAiPrefs(browserStorage()));
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -491,7 +493,21 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         }}
         onClose={() => setDeleting(null)}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} update={(p) => store.getState().updateSettings(p)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        update={(p) => store.getState().updateSettings(p)}
+        ai={{
+          prefs: aiPrefs,
+          update: (p) =>
+            setAiPrefs((cur) => {
+              const next = parsePrefs({ ...cur, ...p });
+              saveAiPrefs(browserStorage(), next);
+              return next;
+            }),
+        }}
+      />
       <CommandPalette open={paletteOpen} onClose={() => store.getState().setPaletteOpen(false)} commands={commands} placeholder="Search projects, templates and actions…" />
       <ToastStack toasts={toasts} onDismiss={store.getState().dismissToast} />
     </div>

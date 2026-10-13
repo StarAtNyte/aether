@@ -19,7 +19,7 @@ export type LlmRole = 'planner' | 'coder' | 'critic';
 export type RoleModels = Record<LlmRole, string>;
 
 /** Which upstream LLM provider to prefer. */
-export type ProviderPreference = 'anthropic' | 'openai' | 'mock';
+export type ProviderPreference = 'anthropic' | 'openai' | 'mock' | 'codex' | 'claude-code';
 
 /** Fully-resolved, validated server configuration. */
 export interface ServerConfig {
@@ -27,7 +27,16 @@ export interface ServerConfig {
   readonly host: string;
   readonly production: boolean;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  /**
+   * Upstream for `/api/llm`. Defaults to 'mock': owner-paid API keys are used only when
+   * AETHER_PROVIDER names that provider explicitly. 'codex' / 'claude-code' run the locally
+   * signed-in CLI headless (local full-stack development).
+   */
   readonly provider: ProviderPreference;
+  /** Headless CLI options (AETHER_PROVIDER=codex|claude-code). */
+  readonly headless: { readonly model?: string; readonly effort: 'low' | 'medium' | 'high' };
+  /** Accept visitors' own API keys on `/api/llm/byok` (forwarded per request, never stored or logged). */
+  readonly byok: boolean;
   /** API keys (secrets). Never log or return these. */
   readonly keys: { readonly anthropic?: string; readonly openai?: string };
   readonly baseUrls: { readonly anthropic?: string; readonly openai?: string };
@@ -139,8 +148,11 @@ const EnvSchema = z.object({
     .trim()
     .toLowerCase()
     .optional()
-    .transform((v) => (v === undefined || v === '' ? 'anthropic' : v))
-    .pipe(z.enum(['anthropic', 'openai', 'mock'])),
+    .transform((v) => (v === undefined || v === '' ? 'mock' : v))
+    .pipe(z.enum(['anthropic', 'openai', 'mock', 'codex', 'claude-code'])),
+  AETHER_HEADLESS_MODEL: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, 'invalid model id').optional(),
+  AETHER_HEADLESS_EFFORT: z.enum(['low', 'medium', 'high']).optional().default('low'),
+  AETHER_BYOK: bool(true),
   ANTHROPIC_API_KEY: optionalSecret,
   OPENAI_API_KEY: optionalSecret,
   ANTHROPIC_BASE_URL: optionalHttpsUrl,
@@ -219,6 +231,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
     production,
     logLevel: e.LOG_LEVEL,
     provider: e.AETHER_PROVIDER,
+    headless: { ...(e.AETHER_HEADLESS_MODEL ? { model: e.AETHER_HEADLESS_MODEL } : {}), effort: e.AETHER_HEADLESS_EFFORT },
+    byok: e.AETHER_BYOK,
     keys: { anthropic: e.ANTHROPIC_API_KEY, openai: e.OPENAI_API_KEY },
     baseUrls: { anthropic: e.ANTHROPIC_BASE_URL, openai: e.OPENAI_BASE_URL },
     models: {

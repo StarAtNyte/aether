@@ -158,11 +158,63 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
           {event.error && <p className="ev-errors">{event.error}</p>}
         </div>
       );
-    case 'done':
-      return event.calls > 0 ? (
-        <div className="ev ev--done">
-          {event.calls} model call{event.calls === 1 ? '' : 's'} · {compactCount(event.inputTokens)} in / {compactCount(event.outputTokens)} out tokens
+    case 'done': {
+      const parts: string[] = [];
+      if (event.via) parts.push(event.via);
+      if (event.ms !== undefined) parts.push(formatElapsed(event.ms));
+      if (event.calls > 0) parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in / ${compactCount(event.outputTokens)} out tokens`);
+      return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;
+    }
+    case 'notice':
+      return (
+        <div className={`ev ev--notice${event.tone === 'warning' ? ' is-warning' : ''}`} role="status">
+          <Icon name={event.tone === 'warning' ? 'alert' : 'info'} /> <span>{event.text}</span>
         </div>
-      ) : null;
+      );
+    case 'quality':
+      return <QualityView event={event} />;
   }
+});
+
+/** "12 s" / "1 min 05 s". */
+export function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+}
+
+/** Quality score with an expandable rubric breakdown. */
+const QualityView = memo(function QualityView({ event }: { event: Extract<ChatEventView, { type: 'quality' }> }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const grade = event.score >= 85 ? 'ok' : event.score >= 72 ? 'fair' : 'low';
+  const title = event.round === 0 ? 'Quality review' : `Quality after refinement ${event.round}`;
+  return (
+    <div className={`ev ev--quality is-${grade}`}>
+      <button type="button" className="quality__head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="quality__score" aria-label={`Quality score ${event.score} of 100`}>
+          {event.score}
+        </span>
+        <span className="quality__text">
+          <span className="quality__title">{title}</span>
+          <span className="quality__summary">{event.applied.length > 0 ? `Improved: ${event.applied.join(', ')}.` : event.summary}</span>
+        </span>
+        <span className="quality__source">{event.source === 'heuristic' ? 'measured' : 'measured + model review'}</span>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} className="quality__chev" />
+      </button>
+      {open && (
+        <ul className="quality__rubric">
+          {event.criteria.map((c) => (
+            <li key={c.id} className="quality__row">
+              <span className="quality__label">{c.label}</span>
+              <span className="quality__bar" aria-hidden="true">
+                <span className="quality__fill" style={{ width: `${Math.round(c.score * 10)}%` }} />
+              </span>
+              <span className="quality__value">{c.score.toFixed(1)}</span>
+              {c.note && <span className="quality__note">{c.note}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 });

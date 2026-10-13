@@ -19,6 +19,7 @@ import { scrub, silentLogger, type Logger } from './logger';
 import { accessLog, corsAllowlist, jsonBodyLimit, originGuard, rateLimit, securityHeaders } from './middleware';
 import { TokenBucketLimiter } from './rate-limit';
 import { GENERATOR_HASH_RE, registerGeneratorRoutes } from './routes/generators';
+import { registerByokRoutes } from './routes/byok';
 import { registerLlmRoutes, type LiveLlm } from './routes/llm';
 import { registerWorldRoutes, WORLD_ID_RE } from './routes/worlds';
 import { registerStatic } from './static';
@@ -39,6 +40,8 @@ export interface AppDeps {
   now?: () => number;
   /** Aborted when the process starts shutting down (cancels in-flight upstream calls). */
   shutdownSignal?: AbortSignal;
+  /** Upstream fetch for bring-your-own-key calls (tests inject a fake). */
+  byokFetch?: typeof fetch;
 }
 
 /** Per-route request body caps (bytes). */
@@ -97,17 +100,18 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   const apiRate = rateLimit(apiLimiter, clientIp);
   app.use('/api/*', async (c, next) => {
     if (c.req.path === '/api/health') return next();
-    return c.req.path === '/api/llm' ? llmRate(c, next) : apiRate(c, next);
+    return c.req.path === '/api/llm' || c.req.path === '/api/llm/byok' ? llmRate(c, next) : apiRate(c, next);
   });
   const generatorPutRate = rateLimit(generatorPutLimiter, clientIp);
   app.on('PUT', '/api/generators/*', generatorPutRate);
   app.use('/api/llm', jsonBodyLimit(caps.llm));
+  app.use('/api/llm/byok', jsonBodyLimit(caps.llm));
   app.use('/api/worlds', jsonBodyLimit(caps.worlds));
   app.use('/api/worlds/*', jsonBodyLimit(caps.worlds));
   app.use('/api/generators/*', jsonBodyLimit(caps.generators));
 
   const providers = deps.providers ?? (llm ? [llm.provider.name] : ['mock']);
-  app.get('/api/health', (c) => c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers] }, 200));
+  app.get('/api/health', (c) => c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: config.byok }, 200));
 
   registerLlmRoutes(app, {
     llm,
@@ -115,6 +119,15 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
     timeoutMs: config.llm.timeoutMs,
     maxOutputTokens: config.llm.maxOutputTokens,
     logger,
+    ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
+  });
+  registerByokRoutes(app, {
+    enabled: config.byok,
+    models: { anthropic: { ...config.models.anthropic }, openai: { ...config.models.openai } },
+    timeoutMs: config.llm.timeoutMs,
+    maxOutputTokens: config.llm.maxOutputTokens,
+    logger,
+    ...(deps.byokFetch ? { fetch: deps.byokFetch } : {}),
     ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
   });
   registerGeneratorRoutes(app, { store: generatorStore, validator: deps.generatorValidator ?? null, logger });

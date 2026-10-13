@@ -14,6 +14,10 @@ export interface HttpProviderOptions {
   endpoint: string;
   fetch?: typeof fetch;
   retry?: RetryPolicy;
+  /** Extra request headers (e.g. the visitor's own key for `/api/llm/byok`); never logged. */
+  headers?: Record<string, string>;
+  /** Provider name reported to the agent (default 'http'). */
+  name?: string;
 }
 
 function describeError(status: number, body: unknown): string {
@@ -32,14 +36,14 @@ export function createHttpProvider(opts: HttpProviderOptions): Provider {
   if (!opts.endpoint) throw new ProviderError('bad_request', 'endpoint is required');
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   return {
-    name: 'http',
+    name: opts.name ?? 'http',
     async complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse> {
       // Clients never choose models: the server maps `role` to an allowlisted model.
       const body: Omit<CompletionRequest, 'model'> & { model?: string } = { ...req };
       delete body.model;
       const json = await postJson({
         url: opts.endpoint,
-        headers: { 'content-type': 'application/json' },
+        headers: { ...opts.headers, 'content-type': 'application/json' },
         body,
         fetch: doFetch,
         describeError,

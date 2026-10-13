@@ -11,6 +11,7 @@ import { appendEvent, trimChat, type ChatEntry, type ChatEventView, type ChatSta
 import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
 import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
 import type { EditorTool } from '../engine/Simulation';
+import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -123,10 +124,16 @@ export interface StudioState {
   toasts: Toast[];
   settings: StudioSettings;
   settingsOpen: boolean;
+  /** Section shown when Settings opens. */
+  settingsTab: 'general' | 'ai' | 'shortcuts';
   memory: MemoryState;
   gpu: GpuState | null;
   /** Bumped to replace the renderer (context-loss recovery, low-memory switch); the viewport remounts its canvas. */
   rendererEpoch: number;
+  /** AI connection / model / effort / refinement for this project. */
+  aiPrefs: AiPrefs;
+  /** The running agent turn: when it started, which connection it uses and the current step (null when idle). */
+  agentRun: { startedAt: number; via: string; step: string } | null;
 
   setMode(mode: StudioMode): void;
   setModeBusy(busy: boolean): void;
@@ -165,9 +172,14 @@ export interface StudioState {
   dismissToast(id: number): void;
   updateSettings(patch: Partial<StudioSettings>): void;
   setSettingsOpen(open: boolean): void;
+  /** Open Settings on a section. */
+  openSettings(tab: 'general' | 'ai' | 'shortcuts'): void;
   setMemory(m: MemoryState): void;
   setGpu(g: GpuState | null): void;
   bumpRendererEpoch(): void;
+  setAiPrefs(patch: Partial<AiPrefs>): void;
+  setAgentRun(run: { startedAt: number; via: string; step: string } | null): void;
+  setAgentStep(step: string): void;
   pruneEntities(existing: ReadonlySet<string>): void;
 }
 
@@ -177,6 +189,7 @@ export interface StudioInit {
   settings?: StudioSettings;
   /** Initial panel visibility (defaults to both open). */
   panels?: { left: boolean; right: boolean };
+  aiPrefs?: AiPrefs;
 }
 
 const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0 };
@@ -233,9 +246,12 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     toasts: [],
     settings: init.settings ? { ...init.settings } : { ...DEFAULT_SETTINGS },
     settingsOpen: false,
+    settingsTab: 'general',
     memory: { lowMemory: false, reason: null, automatic: false },
     gpu: null,
     rendererEpoch: 0,
+    aiPrefs: init.aiPrefs ? parsePrefs(init.aiPrefs) : { ...DEFAULT_AI_PREFS },
+    agentRun: null,
 
     setMode: (mode) => set({ mode }),
     setModeBusy: (modeBusy) => set({ modeBusy }),
@@ -316,10 +332,14 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     },
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
-    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setSettingsOpen: (settingsOpen) => set(settingsOpen ? { settingsOpen } : { settingsOpen, settingsTab: 'general' }),
+    openSettings: (settingsTab) => set({ settingsOpen: true, settingsTab }),
     setMemory: (memory) => set((s) => (s.memory.lowMemory === memory.lowMemory && s.memory.reason === memory.reason && s.memory.automatic === memory.automatic ? s : { memory })),
     setGpu: (gpu) => set({ gpu }),
     bumpRendererEpoch: () => set((s) => ({ rendererEpoch: s.rendererEpoch + 1 })),
+    setAiPrefs: (patch) => set((s) => ({ aiPrefs: parsePrefs({ ...s.aiPrefs, ...patch }) })),
+    setAgentRun: (agentRun) => set({ agentRun }),
+    setAgentStep: (step) => set((s) => (s.agentRun && s.agentRun.step !== step ? { agentRun: { ...s.agentRun, step: step.slice(0, 120) } } : s)),
     pruneEntities: (existing) => {
       const s = get();
       const selection = s.selection.filter((id) => existing.has(id));

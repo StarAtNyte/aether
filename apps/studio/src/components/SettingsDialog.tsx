@@ -4,7 +4,10 @@
  * (studio settings, plus renderer details); the caller supplies the values
  * and the update function.
  */
-import { memo, useState, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useEffect, useState, type ReactElement } from 'react';
+import type { AiPrefs } from '../ai/prefs';
+// Lazy: the AI pane pulls in the agent package; the home page must not pay for it up front.
+const AiConnectionPane = lazy(async () => ({ default: (await import('./ai/AiConnectionPane')).AiConnectionPane }));
 import { SHORTCUTS } from '../app/useShortcuts';
 import type { BackendSetting, LowMemorySetting, StudioSettings } from '../lib/storage';
 import { Toggle } from './fields';
@@ -33,13 +36,14 @@ const BACKEND_CHOICES: ReadonlyArray<[BackendSetting, string]> = [
   ['webgl2', 'WebGL2'],
 ];
 
-type Tab = 'general' | 'ai' | 'shortcuts';
+/** Settings sections. */
+export type SettingsTab = 'general' | 'ai' | 'shortcuts';
+type Tab = SettingsTab;
 
 /** Extra (editor-only) information shown in Settings. */
 export interface SettingsContext {
   memory?: { lowMemory: boolean; reason: string | null };
   gpu?: { description: string } | null;
-  provider?: { status: 'checking' | 'live' | 'offline'; name: string };
 }
 
 /** Settings dialog. */
@@ -50,6 +54,7 @@ export const SettingsDialog = memo(function SettingsDialog({
   update,
   context = {},
   initialTab = 'general',
+  ai,
 }: {
   open: boolean;
   onClose: () => void;
@@ -57,9 +62,14 @@ export const SettingsDialog = memo(function SettingsDialog({
   update: (patch: Partial<StudioSettings>) => void;
   context?: SettingsContext;
   initialTab?: Tab;
+  /** AI preferences (the editor's project, or the global default on the home page). */
+  ai: { prefs: AiPrefs; update: (patch: Partial<AiPrefs>) => void };
 }): ReactElement {
   const [tab, setTab] = useState<Tab>(initialTab);
-  const { memory, gpu, provider } = context;
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
+  const { memory, gpu } = context;
   return (
     <Dialog open={open} onClose={onClose} title="Settings" size="md" className="settings">
       <Segmented<Tab>
@@ -125,42 +135,9 @@ export const SettingsDialog = memo(function SettingsDialog({
         </div>
       )}
       {tab === 'ai' && (
-        <div className="settings__pane">
-          <section className="settings__group">
-            <h3 className="settings__heading">Model</h3>
-            <div className="connection">
-              <span className={`status-dot${provider?.status === 'live' ? ' is-live' : ''}`} aria-hidden="true" />
-              <div className="connection__text">
-                <span className="connection__title">{provider?.status === 'live' ? `Connected · ${provider.name}` : provider?.status === 'checking' ? 'Checking the AI backend…' : 'Offline planner'}</span>
-                <span className="connection__hint">
-                  {provider?.status === 'live'
-                    ? 'Prompts go to the model configured on the Aether server. Keys never reach the browser.'
-                    : 'Prompts are answered by the built-in planner, which runs in your browser. To use a live model, start the Aether server with an Anthropic or OpenAI key (see the README).'}
-                </span>
-              </div>
-            </div>
-          </section>
-          <section className="settings__group">
-            <h3 className="settings__heading">Agent</h3>
-            <div className="setting-row">
-              <span className="setting-row__text">
-                <span className="setting-row__label">Automatic repairs</span>
-                <span className="setting-row__hint">Rounds the agent may spend fixing a world that fails its physics checks.</span>
-              </span>
-              <Segmented<string>
-                label="Automatic repairs"
-                value={String(settings.repairs)}
-                onChange={(v) => update({ repairs: Number(v) })}
-                options={[
-                  ['0', 'Off'],
-                  ['1', '1'],
-                  ['2', '2'],
-                  ['3', '3'],
-                ]}
-              />
-            </div>
-          </section>
-        </div>
+        <Suspense fallback={<div className="settings__pane" aria-busy="true" />}>
+          <AiConnectionPane prefs={ai.prefs} update={ai.update} repairs={settings.repairs} setRepairs={(n) => update({ repairs: n })} />
+        </Suspense>
       )}
       {tab === 'shortcuts' && (
         <div className="settings__pane">

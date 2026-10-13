@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   const logger = createLogger({ level: config.logLevel, secrets: secretValues(config) });
 
   const plan = planProviders(config);
-  const llm: LiveLlm | null = plan.active ? { provider: createLiveProvider(plan.active), models: plan.active.models } : null;
+  const llm: LiveLlm | null = plan.active ? { provider: await createLiveProvider(plan.active), models: plan.active.models } : null;
   const generatorValidator = config.generators.validate
     ? await loadSandboxValidator(logger, config.generators.timeoutMs, { maxQueue: config.generators.maxQueue })
     : null;

@@ -7,7 +7,7 @@
  */
 import { uniqueId, type EntityId, type PatchInput, type WorldDoc } from '@aether/core';
 import { contentExtent, placedContent, type Placed } from './geometry';
-import type { Bounds3, QualityReport } from './types';
+import type { Bounds3, QualityFix, QualityReport } from './types';
 
 /** Maximum entities moved per fix (keeps a refinement round small and reviewable). */
 const MAX_MOVES = 12;
@@ -42,16 +42,17 @@ function decorFor(world: WorldDoc): { generator: string; params: Record<string, 
  * Build improvement patches for the fixable issues of `report`.
  * `bounds` should be the same bounds source the report was computed with.
  */
-export function improvementPatches(world: WorldDoc, report: QualityReport, bounds?: (id: EntityId) => Bounds3 | null): Improvement {
+export function improvementPatches(world: WorldDoc, report: QualityReport, bounds?: (id: EntityId) => Bounds3 | null, only?: ReadonlySet<QualityFix>): Improvement {
   const patches: PatchInput[] = [];
   const applied: string[] = [];
   const content = placedContent(world, bounds);
   const byId = new Map(content.map((p) => [p.id, p]));
   const solid = content.filter((p) => p.root && p.entity.physics?.body !== 'dynamic');
   const moved = new Set<EntityId>();
-  const fixes = new Set(report.issues.map((i) => i.fix).filter((f) => f !== undefined));
+  const fixes = new Set(report.issues.map((i) => i.fix).filter((f): f is QualityFix => f !== undefined && (!only || only.has(f))));
 
   for (const issue of report.issues) {
+    if (issue.fix && only && !only.has(issue.fix)) continue;
     if (issue.fix === 'ground') {
       let n = 0;
       for (const id of issue.entities ?? []) {

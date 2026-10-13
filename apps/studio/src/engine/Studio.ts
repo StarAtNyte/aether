@@ -5,11 +5,11 @@
  * and subscribe to History / the store; they never own engine state.
  */
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, createMockProvider, isAbortError, type Provider } from '@aether/agent';
+import { WorldAgent, createFallbackProvider, createMockProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type Provider, type QualityFix } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
-import { buildAgentHistory, toDiagnostics, toEventView, toTestResults, type ChatEntry } from '../lib/chat';
+import { buildAgentHistory, toDiagnostics, toEventView, toTestResults, type ChatEntry, type ChatEventView } from '../lib/chat';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
 import { createStarterWorld } from '../lib/starterWorld';
@@ -38,7 +38,11 @@ import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
 import type { ContextLossInfo, GizmoChange, RenderMemoryStats } from '@aether/render';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
-import { AgentBridge, agentCatalogs, runVerification, selectProvider } from './AgentBridge';
+import { AgentBridge, agentCatalogs, runVerification } from './AgentBridge';
+import { aiConnection, type AiConnection, type ResolvedConnection } from '../ai/connection';
+import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
+import { runQualityPass, toQualityView } from '../ai/quality';
+import { fallbackText } from '../ai/messages';
 import { Simulation } from './Simulation';
 import { isNewWorld } from './worldQueries';
 
@@ -47,6 +51,8 @@ const log = createLogger('studio');
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
 const MAX_REPAIRS = 2;
+/** Offline refinement only applies physical and lighting fixes (the offline planner's art direction stays intact). */
+const OFFLINE_FIXES: ReadonlySet<QualityFix> = new Set(['ground', 'separate', 'light-night']);
 
 /** A project opened in the studio (see `projects/`). */
 export interface StudioProject {
@@ -70,6 +76,10 @@ export interface StudioOptions {
   onSave?: (world: WorldDoc, chat: readonly ChatEntry[]) => Promise<string | null>;
   /** Called whenever settings change (lets the app shell follow the theme). */
   onSettings?: (settings: StudioSettings) => void;
+  /** Project id (AI preferences are remembered per project). */
+  projectId?: string;
+  /** AI connection manager (default: the page-wide one). */
+  ai?: AiConnection;
 }
 
 /** Options of {@link Studio.send}. */
@@ -103,7 +113,8 @@ export class Studio {
   private sim: Simulation | null = null;
   /** Bumped per attach so a superseded (StrictMode / remount) attach discards its renderer. */
   private attachGen = 0;
-  private provider: Provider | null = null;
+  readonly ai: AiConnection;
+  private readonly projectId: string | null;
   private abort: AbortController | null = null;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly cleanups: Array<() => void> = [];
@@ -139,7 +150,9 @@ export class Studio {
     const settings = loadSettings(this.storage, systemPrefersDark());
     const memory = decideLowMemory(settings.lowMemory, readMemorySignals());
     this.history = new History(initial, { maxEntries: memory.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal });
-    this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels() });
+    this.projectId = opts.projectId ?? null;
+    this.ai = opts.ai ?? aiConnection();
+    this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels(), aiPrefs: loadAiPrefs(this.storage, this.projectId) });
     this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
     this.sandbox = createSandbox();
     this.bridge = new AgentBridge(this.history, this.sandbox);
@@ -154,6 +167,16 @@ export class Studio {
     );
     let lastChat = this.store.getState().chat;
     let lastSettings = this.store.getState().settings;
+    let lastPrefs = this.store.getState().aiPrefs;
+    this.cleanups.push(
+      this.store.subscribe((s) => {
+        if (s.aiPrefs === lastPrefs) return;
+        lastPrefs = s.aiPrefs;
+        saveAiPrefs(this.storage, s.aiPrefs, this.projectId);
+        this.updateProviderState();
+      }),
+      this.ai.store.subscribe(() => this.updateProviderState()),
+    );
     this.cleanups.push(
       this.store.subscribe((s) => {
         if (s.chat !== lastChat) {
@@ -191,12 +214,27 @@ export class Studio {
     }
   }
 
-  /** Start background work: provider probe and shared-world loading. */
+  /** Start background work: AI connection probes and shared-world loading. */
   async boot(): Promise<void> {
     void this.loadSharedWorldFromUrl();
-    const choice = await selectProvider();
-    this.provider = choice.provider;
-    this.store.getState().setProvider({ status: choice.live ? 'live' : 'offline', name: choice.name });
+    this.updateProviderState();
+    await this.ai.refresh();
+    this.updateProviderState();
+  }
+
+  /** Mirror the resolved connection into the UI's provider chip. */
+  private updateProviderState(): void {
+    const a = this.ai.store.getState();
+    const r = this.ai.resolve(this.store.getState().aiPrefs);
+    const checking = a.server.state === 'checking' || (a.bridge.paired && a.bridge.state === 'checking' && r.kind !== 'offline');
+    const next = checking ? { status: 'checking' as const, name: r.label } : { status: r.kind !== 'offline' && r.ready ? ('live' as const) : ('offline' as const), name: r.ready ? r.label : 'Offline planner' };
+    const cur = this.store.getState().provider;
+    if (cur.status !== next.status || cur.name !== next.name) this.store.getState().setProvider(next);
+  }
+
+  /** The connection the next prompt will use. */
+  resolvedConnection(): ResolvedConnection {
+    return this.ai.resolve(this.store.getState().aiPrefs);
   }
 
   /** The running simulation (null until the viewport is ready). */
@@ -631,33 +669,49 @@ export class Studio {
     if (!text || st.agentBusy) return;
     if (this.sim?.mode === 'play') await this.sim.stop();
     this.sim?.touch();
-    let provider: Provider;
-    if (opts.offline) provider = createMockProvider();
-    else {
-      provider = this.provider ?? (await selectProvider()).provider;
-      this.provider = provider;
-    }
+    const prefs = st.aiPrefs;
+    const resolved: ResolvedConnection = opts.offline ? { kind: 'offline', label: 'Offline planner', ready: true, vision: false } : this.ai.resolve(prefs);
+    const primary = opts.offline ? null : this.ai.createProvider(prefs, resolved);
     const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
     const history = buildAgentHistory(st.chat);
     const before = this.history.current;
     st.addUserMessage(text);
     const entryId = st.startAssistant();
     st.setAgentBusy(true);
+    const startedAt = performance.now();
+    let via = primary ? resolved.label : 'Offline planner';
+    st.setAgentRun({ startedAt: Date.now(), via, step: 'Planning…' });
+    const push = (view: ChatEventView): void => this.store.getState().pushEvent(entryId, view);
+    if (!opts.offline && resolved.kind !== 'offline' && !resolved.ready) {
+      push({ type: 'notice', tone: 'warning', text: `${resolved.label} is unavailable (${resolved.reason ?? 'not ready'}). Building with the offline planner instead.` });
+    }
+    let fell: FallbackNotice | null = null;
+    const provider: Provider = primary
+      ? createFallbackProvider({
+          primary,
+          fallback: createMockProvider(),
+          onFallback: (n) => {
+            fell = n;
+            via = 'Offline planner';
+            const s = this.store.getState();
+            s.setAgentRun(s.agentRun ? { ...s.agentRun, via } : null);
+            push({ type: 'notice', tone: 'warning', text: fallbackText(resolved.label, n) });
+          },
+        })
+      : createMockProvider();
     const abort = new AbortController();
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
+    const usage = { inputTokens: 0, outputTokens: 0, calls: 0 };
     try {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
       const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS });
-      for await (const event of agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) })) {
-        const view = toEventView(event);
-        this.store.getState().pushEvent(entryId, view);
-        if (event.type === 'error') status = 'error';
-        if (view.type === 'verify') {
-          this.store.getState().setVerify({ status: view.passed ? 'passed' : 'failed', summary: view.summary, results: view.results, diagnostics: view.diagnostics, head: this.history.head, ms: 0 });
-          this.sim?.setDiagnostics(view.diagnostics);
-        }
-        if (abort.signal.aborted) break;
+      status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) }), entryId, abort, usage);
+      if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
+        // Quality loop: review the result and spend the refinement budget on its weakest points.
+        const online = primary !== null && fell === null;
+        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history });
+        if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
       const after = this.history.current;
@@ -670,16 +724,97 @@ export class Studio {
       if (abort.signal.aborted || isAbortError(err)) status = 'aborted';
       else {
         status = 'error';
-        this.store.getState().pushEvent(entryId, { type: 'error', text: errorMessage(err).slice(0, 600) });
+        push({ type: 'error', text: errorMessage(err).slice(0, 600) });
       }
     } finally {
       if (this.abort === abort) this.abort = null;
+      push({ type: 'done', ...usage, ms: Math.round(performance.now() - startedAt), via });
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
+      s.setAgentRun(null);
       if (this.onSave) this.schedulePersist();
       else saveChat(this.storage, this.store.getState().chat);
     }
+  }
+
+  /** Stream agent events into the chat entry; returns the turn status. The agent's own 'done' is folded into `usage`. */
+  private async streamRun(run: AsyncGenerator<AgentEvent>, entryId: number, abort: AbortController, usage: { inputTokens: number; outputTokens: number; calls: number }): Promise<'done' | 'error' | 'aborted'> {
+    let status: 'done' | 'error' | 'aborted' = 'done';
+    for await (const event of run) {
+      if (event.type === 'done') {
+        usage.inputTokens += event.usage.inputTokens;
+        usage.outputTokens += event.usage.outputTokens;
+        usage.calls += event.usage.calls;
+        continue;
+      }
+      const view = toEventView(event);
+      this.store.getState().pushEvent(entryId, view);
+      if (view.type === 'status') this.store.getState().setAgentStep(view.text);
+      if (event.type === 'error') status = 'error';
+      if (view.type === 'verify') {
+        this.store.getState().setVerify({ status: view.passed ? 'passed' : 'failed', summary: view.summary, results: view.results, diagnostics: view.diagnostics, head: this.history.head, ms: 0 });
+        this.sim?.setDiagnostics(view.diagnostics);
+      }
+      if (abort.signal.aborted) break;
+    }
+    return abort.signal.aborted ? 'aborted' : status;
+  }
+
+  /**
+   * The quality loop: assess (heuristics + optional vision critic), and while
+   * the score is below the threshold and budget remains, improve — through
+   * the connected model (targeted edits) or, offline, with deterministic
+   * physical fixes — then assess again.
+   */
+  private async refine(ctx: {
+    entryId: number;
+    prompt: string;
+    provider: Provider;
+    online: boolean;
+    critic: Provider | null;
+    budget: number;
+    abort: AbortController;
+    usage: { inputTokens: number; outputTokens: number; calls: number };
+    history: ReturnType<typeof buildAgentHistory>;
+  }): Promise<'done' | 'aborted'> {
+    let applied: string[] = [];
+    for (let round = 0; round <= ctx.budget; round++) {
+      if (ctx.abort.signal.aborted) return 'aborted';
+      this.store.getState().setAgentStep(round === 0 ? 'Reviewing quality…' : 'Re-checking quality…');
+      const v = this.store.getState().verify;
+      const report = await runQualityPass({
+        world: this.history.current,
+        prompt: ctx.prompt,
+        sim: this.sim,
+        ...(v.status === 'passed' || v.status === 'failed' ? { verifyPassed: v.status === 'passed', diagnostics: v.diagnostics } : {}),
+        critic: ctx.critic,
+        signal: ctx.abort.signal,
+      });
+      if (ctx.abort.signal.aborted) return 'aborted';
+      this.store.getState().pushEvent(ctx.entryId, toQualityView(report, round, applied));
+      if (round >= ctx.budget || !needsRefinement(report)) return 'done';
+      if (ctx.online) {
+        this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), maxRepairs: 1 });
+        const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
+        const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history }), ctx.entryId, ctx.abort, ctx.usage);
+        if (status === 'aborted') return 'aborted';
+        applied = ['targeted edits by the model'];
+      } else {
+        const sim = this.sim;
+        const imp = improvementPatches(this.history.current, report, sim ? (id) => sim.entityBounds(id) : undefined, OFFLINE_FIXES);
+        if (imp.patches.length === 0) return 'done';
+        const r = this.history.commit(imp.patches, `Refine: ${imp.applied.join(', ')}`.slice(0, 120), 'agent');
+        if (r.applied.length === 0) return 'done';
+        applied = imp.applied;
+        const verify = await runVerification(this.history.current, this.sim);
+        const view = toEventView({ type: 'verify', passed: verify.passed, summary: verify.summary, report: verify.report });
+        this.store.getState().pushEvent(ctx.entryId, view);
+        if (view.type === 'verify') this.store.getState().setVerify({ status: view.passed ? 'passed' : 'failed', summary: view.summary, results: view.results, diagnostics: view.diagnostics, head: this.history.head, ms: 0 });
+      }
+    }
+    return 'done';
   }
 
   /** Abort the running agent turn. */

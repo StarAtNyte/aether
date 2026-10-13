@@ -107,6 +107,20 @@ describe('planProviders', () => {
     expect(planProviders(loadConfig({ AETHER_PROVIDER: 'mock', ANTHROPIC_API_KEY: 'k1234' })).mode).toBe('mock');
   });
 
+  it('never spends owner keys unless AETHER_PROVIDER names the provider', () => {
+    const plan = planProviders(loadConfig({ ANTHROPIC_API_KEY: 'a-key', OPENAI_API_KEY: 'o-key' }));
+    expect(plan.mode).toBe('mock');
+    expect(plan.active).toBeNull();
+  });
+
+  it('plans the headless CLI providers without any key', () => {
+    const codex = planProviders(loadConfig({ AETHER_PROVIDER: 'codex', AETHER_HEADLESS_MODEL: 'gpt-6.1-sol' }));
+    expect(codex).toMatchObject({ mode: 'live', active: { kind: 'headless', name: 'codex', model: 'gpt-6.1-sol', effort: 'low' } });
+    const claude = planProviders(loadConfig({ AETHER_PROVIDER: 'claude-code', AETHER_HEADLESS_EFFORT: 'medium' }));
+    expect(claude.active).toMatchObject({ kind: 'headless', name: 'claude-code', effort: 'medium' });
+    expect(() => loadConfig({ AETHER_PROVIDER: 'codex', AETHER_HEADLESS_MODEL: 'x; rm -rf /' })).toThrow();
+  });
+
   it('prefers the configured provider and falls back to the other key', () => {
     const both = { ANTHROPIC_API_KEY: 'a-key', OPENAI_API_KEY: 'o-key' };
     expect(planProviders(loadConfig({ ...both, AETHER_PROVIDER: 'openai' })).active?.name).toBe('openai');

@@ -432,6 +432,32 @@ export class Simulation {
     }
   }
 
+  /**
+   * Orthographic top/front/side/iso renders of the settled world for the
+   * quality critique (edit mode only; waits for grow-in like thumbnails).
+   */
+  async renderViews(size = 256): Promise<string[]> {
+    if (this.session || this.disposed) return [];
+    try {
+      await this.whenSynced();
+      const deadline = performance.now() + THUMBNAIL_SETTLE_MS;
+      while (this.renderer.animating && performance.now() < deadline && !this.disposed) {
+        this.touch();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (this.session || this.disposed) return [];
+      return await this.renderer.renderViews(['top', 'front', 'side', 'iso'], size);
+    } catch (err) {
+      log.warn('renderViews failed', err);
+      return [];
+    }
+  }
+
+  /** World-space bounds of an entity at full scale (null when not rendered). */
+  entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null {
+    return this.renderer.entityBounds(id);
+  }
+
   /** Camera presets for the editor (orbit mode only). */
   viewPreset(preset: 'top' | 'front' | 'side' | 'iso'): void {
     if (this.session) return;

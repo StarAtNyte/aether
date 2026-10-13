@@ -1,0 +1,18 @@
+/**
+ * @aether/bridge — run Codex / Claude Code headless (the user's own
+ * subscription login) behind the agent's Provider interface, locally only.
+ */
+export { createBridgeHandler, BRIDGE_VERSION, type BridgeDeps, type BridgeLogger } from './server';
+export { startBridge, type RunningBridge } from './start';
+export { parseBridgeConfig, normalizeOrigin, DEFAULT_ORIGINS, USAGE, type BridgeConfig } from './config';
+export { Pairing, newPairingCode, newToken, MAX_PAIR_ATTEMPTS } from './pairing';
+export { JobQueue } from './queue';
+export { ResponseCache, contentHash } from './cache';
+export { BridgeError, classifyCliFailure } from './errors';
+export { restrictedEnv, withTempDir, ENV_ALLOWLIST } from './sandbox';
+export { runProcess, type RunOptions, type RunResult, type SpawnFn } from './process';
+export { createClaudeCodeBackend, claudeArgs, claudeInput, observeClaudeLine, CLAUDE_MODELS, CLAUDE_DEFAULT_MODEL, CLAUDE_DENIED_TOOLS } from './backends/claude';
+export { createCodexBackend, codexLockdownConfig, codexThreadOptions, mcpDisableOverrides, CODEX_DISABLED_FEATURES, FORBIDDEN_ITEM_TYPES, type CodexLike } from './backends/codex';
+export { probeCodex, probeClaude, parseCodexModels, listCodexMcpServers, cached, CODEX_FALLBACK_MODELS } from './backends/status';
+export { createHeadlessBackends, createHeadlessProvider, resolveCommands, type HeadlessOptions } from './headless';
+export { which } from './which';

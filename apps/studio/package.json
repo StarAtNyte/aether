@@ -20,7 +20,8 @@
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15",
     "three": "0.186.1",
-    "zod": "^4.6.6"
+    "zod": "^4.6.6",
+    "@mlc-ai/web-llm": "0.2.86"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",

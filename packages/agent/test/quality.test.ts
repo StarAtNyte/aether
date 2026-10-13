@@ -1,6 +1,6 @@
 import { applyPatches, createWorld, type EntityInput, type WorldDoc } from '@aether/core';
 import { describe, expect, it } from 'vitest';
-import { assessWorld, blendCritique, buildCriticRequest, improvementPatches, needsRefinement, paletteStats, promptKeywords, QUALITY_CRITERIA, refineInstruction, type QualityReport } from '../src/quality/index';
+import { assessWorld, viewStatsFromPixels, blendCritique, buildCriticRequest, improvementPatches, needsRefinement, paletteStats, promptKeywords, QUALITY_CRITERIA, refineInstruction, type QualityReport } from '../src/quality/index';
 import { mockApply } from './helpers';
 
 function world(entities: EntityInput[], env: Record<string, unknown> = {}): WorldDoc {
@@ -146,5 +146,41 @@ describe('critic', () => {
     expect(text).toContain('Quality review');
     expect(text).toContain('apply_patches');
     expect(text).toMatch(/- (detail|coherence|composition)/);
+  });
+});
+
+describe('viewStatsFromPixels', () => {
+  const img = (w: number, h: number, f: (x: number, y: number) => [number, number, number]): Uint8ClampedArray => {
+    const a = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const [r, g, b] = f(x, y);
+      a.set([r, g, b, 255], (y * w + x) * 4);
+    }
+    return a;
+  };
+  it('a flat image has no coverage, edges or contrast', () => {
+    const s = viewStatsFromPixels(img(64, 64, () => [120, 160, 220]), 64, 64);
+    expect(s.coverage).toBe(0);
+    expect(s.edgeDensity).toBe(0);
+    expect(s.contrast).toBeCloseTo(0, 5);
+  });
+  it('a detailed object in the middle covers the centre cells', () => {
+    const s = viewStatsFromPixels(img(64, 64, (x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? ((x + y) % 4 < 2 ? [200, 40, 40] : [40, 40, 40]) : [120, 160, 220])), 64, 64);
+    expect(s.coverage).toBeGreaterThan(0.15);
+    expect(s.coverage).toBeLessThan(0.6);
+    expect(s.edgeDensity).toBeGreaterThan(0.05);
+    expect(s.colorfulness).toBeGreaterThan(0);
+  });
+  it('rejects short buffers', () => {
+    expect(viewStatsFromPixels(new Uint8ClampedArray(10), 64, 64).coverage).toBe(0);
+  });
+});
+
+describe('improvementPatches allow-list', () => {
+  it('applies only the allowed fixes', () => {
+    const w = applyPatches(createWorld(), [{ op: 'setEnvironment', set: { sky: 'night' } }, { op: 'add', entity: { id: 'crate', shape: { kind: 'primitive', primitive: 'box', size: [1, 1, 1] }, transform: { position: [0, 3, 0] } } }]).world;
+    const rep = assessWorld({ world: w, prompt: 'a crate' });
+    const imp = improvementPatches(w, rep, undefined, new Set(['ground'] as const));
+    expect(imp.applied).toEqual(['grounded 1 floating object']);
   });
 });

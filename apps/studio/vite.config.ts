@@ -42,6 +42,8 @@ export default defineConfig({
             { name: 'rapier', test: /[\\/]node_modules[\\/]@dimforge[\\/]rapier3d-compat[\\/]/, priority: 30 },
             // QuickJS loads only when a world runs or validates a script: keep it out of the eager vendor chunk.
             { name: 'quickjs', test: /[\\/]node_modules[\\/](quickjs-emscripten-core|@jitl)[\\/]/, priority: 30 },
+            // The opt-in on-device model runtime (multi-MB): only loaded from Settings → AI connection.
+            { name: 'webllm', test: /[\\/]node_modules[\\/](@mlc-ai|loglevel)[\\/]/, priority: 30 },
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler|zustand)[\\/]/, priority: 20 },
             { name: 'vendor', test: /[\\/]node_modules[\\/]/, priority: 10 },
           ],

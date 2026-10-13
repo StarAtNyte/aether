@@ -38,7 +38,7 @@ export function corsAllowlist(allowedOrigins: readonly string[]): MiddlewareHand
   return cors({
     origin: (origin) => (allowed.has(origin) ? origin : null),
     allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'X-Request-Id', 'X-Edit-Token'],
+    allowHeaders: ['Content-Type', 'X-Request-Id', 'X-Edit-Token', 'X-Aether-Provider', 'X-Aether-Key'],
     exposeHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Limit', 'RateLimit-Remaining'],
     maxAge: 600,
   });
@@ -92,6 +92,17 @@ export function jsonBodyLimit(maxBytes: number): MiddlewareHandler<AppEnv> {
   });
 }
 
+/** Hosts the opt-in on-device model downloads from (weights from Hugging Face, WASM model libraries from GitHub). */
+export const WEBLLM_HOSTS: readonly string[] = Object.freeze([
+  'https://huggingface.co',
+  'https://cdn-lfs.huggingface.co',
+  'https://cdn-lfs-us-1.huggingface.co',
+  'https://cdn-lfs.hf.co',
+  'https://cdn-lfs-us-1.hf.co',
+  'https://cas-bridge.xethub.hf.co',
+  'https://raw.githubusercontent.com',
+]);
+
 /** Content-Security-Policy directives for the studio and API responses. */
 export const CSP_DIRECTIVES = Object.freeze({
   defaultSrc: ["'self'"],
@@ -99,7 +110,9 @@ export const CSP_DIRECTIVES = Object.freeze({
   workerSrc: ["'self'", 'blob:'],
   imgSrc: ["'self'", 'data:', 'blob:'],
   // blob:/data: so locally imported glTF models (blob URLs, data URIs) can be fetched.
-  connectSrc: ["'self'", 'blob:', 'data:'],
+  // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
+  // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries).
+  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...WEBLLM_HOSTS],
   styleSrc: ["'self'", "'unsafe-inline'"],
   fontSrc: ["'self'", 'data:'],
   objectSrc: ["'none'"],

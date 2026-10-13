@@ -187,6 +187,8 @@ function lastTurnEvents(page: Page): Promise<string[]> {
           return `generator(${e.id}${e.ok ? '' : `: ${e.error ?? 'failed'}`})`;
         case 'repair':
           return `repair#${e.attempt}`;
+        case 'quality':
+          return `quality(${e.score})`;
         default:
           return `${e.type}(${e.text.slice(0, 100)})`;
       }

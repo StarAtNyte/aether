@@ -115,9 +115,12 @@ export function parseAnthropicResponse(body: unknown): { response: CompletionRes
   if (reason === 'tool_use') stopReason = 'tool_use';
   else if (reason === 'max_tokens' || reason === 'model_context_window_exceeded') stopReason = 'max_tokens';
   else if (reason === 'refusal') {
+    // `stop_details` is only populated for refusals: { type: 'refusal', category, explanation }.
     stopReason = 'error';
-    content.push({ type: 'text', text: 'The model declined this request.' });
-  } else stopReason = 'end';
+    const details = isRecord(body['stop_details']) ? body['stop_details'] : undefined;
+    const category = details && typeof details['category'] === 'string' ? details['category'].slice(0, 40) : '';
+    content.push({ type: 'text', text: `The model declined this request${category ? ` (${category})` : ''}.` });
+  } else stopReason = 'end'; // end_turn, stop_sequence, pause_turn (server tools are never used here)
   const usage = isRecord(body['usage']) ? body['usage'] : {};
   const response: CompletionResponse = {
     content,

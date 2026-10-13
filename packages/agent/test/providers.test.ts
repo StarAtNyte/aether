@@ -297,3 +297,89 @@ describe('transport', () => {
     expect(waits).toEqual([100, 200, 300]);
   });
 });
+
+describe('BYO-key providers: current API shapes (fixtures)', () => {
+  it('Anthropic: parallel tool calls in one turn, all results returned in one user turn, results first', async () => {
+    const f = fakeFetch([
+      {
+        status: 200,
+        body: {
+          model: 'claude-sonnet-5-5',
+          stop_reason: 'tool_use',
+          content: [
+            { type: 'tool_use', id: 'toolu_a', name: 'inspect', input: {} },
+            { type: 'tool_use', id: 'toolu_b', name: 'run_verification', input: {} },
+          ],
+          usage: { input_tokens: 5, output_tokens: 6 },
+        },
+      },
+    ]);
+    const p = createAnthropicProvider({ apiKey: 'k', models: MODELS, fetch: f.fetch, retry: FAST });
+    const res = await p.complete(
+      req({
+        messages: [
+          { role: 'user', content: 'go' },
+          { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'inspect', input: {} }, { type: 'tool_use', id: 't2', name: 'inspect', input: { ids: ['a'] } }] },
+          { role: 'user', content: [{ type: 'text', text: 'also' }, { type: 'tool_result', toolUseId: 't1', content: 'r1' }, { type: 'tool_result', toolUseId: 't2', content: 'r2' }] },
+        ],
+      }),
+    );
+    expect(res.content.filter((b) => b.type === 'tool_use').map((b) => b.type === 'tool_use' && b.id)).toEqual(['toolu_a', 'toolu_b']);
+    const msgs = f.calls[0]?.body['messages'] as Array<{ role: string; content: Array<{ type: string }> }>;
+    expect(msgs[2]?.content.map((b) => b.type)).toEqual(['tool_result', 'tool_result', 'text']);
+    expect(f.calls[0]?.body['tool_choice']).toBeUndefined();
+    expect(f.calls[0]?.body['temperature']).toBeUndefined();
+    expect(f.calls[0]?.body['thinking']).toBeUndefined();
+  });
+
+  it('Anthropic: refusal carries the stop_details category; truncation maps to max_tokens', async () => {
+    const f = fakeFetch([
+      { status: 200, body: { stop_reason: 'refusal', stop_details: { type: 'refusal', category: 'cyber', explanation: 'x' }, content: [], usage: {} } },
+      { status: 200, body: { stop_reason: 'max_tokens', content: [{ type: 'text', text: 'partial' }], usage: { output_tokens: 2000 } } },
+      { status: 200, body: { stop_reason: 'pause_turn', content: [{ type: 'text', text: 'paused' }], usage: {} } },
+    ]);
+    const p = createAnthropicProvider({ apiKey: 'k', models: MODELS, fetch: f.fetch, retry: FAST });
+    const refused = await p.complete(req());
+    expect(refused.stopReason).toBe('error');
+    expect(refused.content).toEqual([{ type: 'text', text: 'The model declined this request (cyber).' }]);
+    expect((await p.complete(req())).stopReason).toBe('max_tokens');
+    expect((await p.complete(req())).stopReason).toBe('end');
+  });
+
+  it('Anthropic: overloaded (529) exhausts retries into a retryable overloaded error', async () => {
+    const f = fakeFetch(Array.from({ length: 4 }, () => ({ status: 529, body: { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } } })));
+    const err = await createAnthropicProvider({ apiKey: 'k', models: MODELS, fetch: f.fetch, retry: FAST }).complete(req()).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'overloaded', retryable: true, status: 529 });
+    expect(f.calls).toHaveLength(4);
+  });
+
+  it('OpenAI: several function calls in one response, outputs replayed as function_call_output items', async () => {
+    const f = fakeFetch([
+      {
+        status: 200,
+        body: {
+          status: 'completed',
+          model: 'gpt-6.1-sol',
+          output: [
+            { type: 'function_call', call_id: 'c1', name: 'inspect', arguments: '{}' },
+            { type: 'function_call', call_id: 'c2', name: 'finish', arguments: '{"message":"done"}' },
+          ],
+          usage: { input_tokens: 3, output_tokens: 4 },
+        },
+      },
+    ]);
+    const p = createOpenAIProvider({ apiKey: 'k', models: { planner: 'gpt-6-luna', coder: 'gpt-6.1-sol', critic: 'gpt-6-luna' }, fetch: f.fetch, retry: FAST });
+    const res = await p.complete(req());
+    expect(res.stopReason).toBe('tool_use');
+    expect(res.content.map((b) => b.type === 'tool_use' && b.name)).toEqual(['inspect', 'finish']);
+    const input = f.calls[0]?.body['input'] as Array<{ type: string }>;
+    expect(input.map((i) => i.type)).toContain('function_call_output');
+    expect(f.calls[0]?.body['store']).toBe(false);
+  });
+
+  it('OpenAI: 429 with retry-after is retried; exhausted rate limit surfaces as rate_limit', async () => {
+    const f = fakeFetch(Array.from({ length: 4 }, () => ({ status: 429, body: { error: { message: 'Rate limit reached' } }, headers: { 'retry-after': '1' } })));
+    const err = await createOpenAIProvider({ apiKey: 'k', models: { planner: 'a', coder: 'b', critic: 'c' }, fetch: f.fetch, retry: FAST }).complete(req()).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'rate_limit', retryAfterMs: 1000 });
+  });
+});

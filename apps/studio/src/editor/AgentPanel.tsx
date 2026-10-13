@@ -14,7 +14,8 @@ import { remixSuggestions } from '../lib/remix';
 import { ChatEvent } from '../components/chat/ChatEvent';
 import { Icon } from '../components/Icon';
 import { Logomark } from '../components/Logo';
-import { Menu } from '../components/ui/Menu';
+import { ModelPicker, RefineMenu } from '../components/ai/ComposerControls';
+import { formatElapsed } from '../components/chat/ChatEvent';
 import { Thumb } from '../home/cards';
 
 /** Connection status card shown in the empty state. */
@@ -29,9 +30,9 @@ const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
       </span>
       <span className="connect-card__text">
         <span className="connect-card__title">Offline planner</span>
-        <span className="connect-card__hint">Runs in your browser. Connect a model for open-ended prompts.</span>
+        <span className="connect-card__hint">Runs in your browser. Use your Codex or Claude subscription for open-ended prompts, at no cost to anyone else.</span>
       </span>
-      <button type="button" className="btn btn--sm" onClick={() => studio.store.getState().setSettingsOpen(true)}>
+      <button type="button" className="btn btn--sm" onClick={() => studio.store.getState().openSettings('ai')}>
         Connect
       </button>
     </div>
@@ -72,11 +73,30 @@ const EmptyAgent = memo(function EmptyAgent({ onPrompt, onTemplate }: { onPrompt
   );
 });
 
-/** Skeleton lines while the agent thinks. */
+/** Live progress while the agent works: current step, connection, elapsed time and cancel. */
 function ThinkingSkeleton({ text }: { text: string }): ReactElement {
+  const studio = useStudio();
+  const run = useUI((s) => s.agentRun);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   return (
     <div className="thinking" role="status">
-      <span className="thinking__text">{text}</span>
+      <span className="thinking__row">
+        <span className="thinking__text">{run?.step || text}</span>
+        {run && (
+          <span className="thinking__meta">
+            {run.via} · {formatElapsed(Math.max(0, now - run.startedAt))}
+          </span>
+        )}
+        {run && (
+          <button type="button" className="link thinking__stop" onClick={() => studio.stopAgent()}>
+            Cancel
+          </button>
+        )}
+      </span>
       <span className="skeleton skeleton--line" style={{ width: '92%' }} />
       <span className="skeleton skeleton--line" style={{ width: '74%' }} />
     </div>
@@ -128,7 +148,6 @@ const RemixChips = memo(function RemixChips({ onPick }: { onPick: (prompt: strin
 /** Prompt composer with reference images. */
 const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: string, images: string[]) => void; busy: boolean }): ReactElement {
   const studio = useStudio();
-  const repairs = useUI((s) => s.settings.repairs);
   const [draft, setDraft] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -217,17 +236,8 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
             e.target.value = '';
           }}
         />
-        <Menu
-          label="Automatic repairs"
-          items={[0, 1, 2, 3].map((n) => ({ id: `r${n}`, label: n === 0 ? 'No repairs' : `Repair up to ${n}×`, checked: repairs === n, onSelect: () => studio.store.getState().updateSettings({ repairs: n }) }))}
-          trigger={(t) => (
-            <button {...t} type="button" className="composer__select" data-tip="Automatic repair rounds when physics checks fail">
-              <Icon name="wand" />
-              <span>{repairs === 0 ? 'No repairs' : `Repair ×${repairs}`}</span>
-              <Icon name="chevronDown" className="composer__chev" />
-            </button>
-          )}
-        />
+        <ModelPicker />
+        <RefineMenu />
         <span className="spacer" />
         {busy ? (
           <button type="button" className="send-btn send-btn--stop" onClick={() => studio.stopAgent()} aria-label="Stop generating" data-tip="Stop" data-kbd="Esc">

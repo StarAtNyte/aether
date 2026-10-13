@@ -36,7 +36,17 @@ export type ChatEventView =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'error'; text: string }
-  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number };
+  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string }
+  | { type: 'notice'; tone: 'info' | 'warning'; text: string }
+  | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
+
+/** One rubric row of a quality event. */
+export interface QualityCriterionView {
+  id: string;
+  label: string;
+  score: number;
+  note: string;
+}
 
 /** Lifecycle of an assistant turn. */
 export type ChatStatus = 'streaming' | 'done' | 'error' | 'aborted';
@@ -208,8 +218,22 @@ export function reviveEvent(v: unknown): ChatEventView | null {
     }
     case 'verify':
       return { type: 'verify', passed: v['passed'] === true, summary: str(v['summary']), results: toTestResults(v), diagnostics: toDiagnostics(v) };
-    case 'done':
-      return { type: 'done', inputTokens: num(v['inputTokens']), outputTokens: num(v['outputTokens']), calls: num(v['calls']) };
+    case 'done': {
+      const d: ChatEventView = { type: 'done', inputTokens: num(v['inputTokens']), outputTokens: num(v['outputTokens']), calls: num(v['calls']) };
+      if (typeof v['ms'] === 'number' && Number.isFinite(v['ms']) && v['ms'] >= 0) d.ms = Math.min(v['ms'], 3_600_000);
+      if (typeof v['via'] === 'string') d.via = str(v['via'], 80);
+      return d;
+    }
+    case 'notice':
+      return { type: 'notice', tone: v['tone'] === 'warning' ? 'warning' : 'info', text: str(v['text'], 600) };
+    case 'quality': {
+      const criteria = Array.isArray(v['criteria'])
+        ? v['criteria'].filter(isRecord).slice(0, 10).map((c) => ({ id: str(c['id'], 24), label: str(c['label'], 40), score: Math.max(0, Math.min(10, num(c['score']))), note: str(c['note'], 200) }))
+        : [];
+      const source = v['source'] === 'critic' || v['source'] === 'blend' ? v['source'] : 'heuristic';
+      const applied = Array.isArray(v['applied']) ? v['applied'].filter((x): x is string => typeof x === 'string').slice(0, 8).map((x) => clip(x, 160)) : [];
+      return { type: 'quality', score: Math.max(0, Math.min(100, Math.round(num(v['score'])))), round: Math.max(0, Math.min(10, num(v['round']))), source, summary: str(v['summary'], 300), criteria, applied };
+    }
     default:
       return null;
   }

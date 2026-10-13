@@ -1,0 +1,28 @@
+/**
+ * React access to the page-wide AI connection state.
+ */
+import { useStore } from 'zustand';
+import { aiConnection, type AiConnectionState } from './connection';
+
+/** Select from the AI connection state (re-renders only when the selection changes). */
+export function useAi<T>(selector: (s: AiConnectionState) => T): T {
+  return useStore(aiConnection().store, selector);
+}
+
+/** Human label + tone for the bridge state badge. */
+export function bridgeBadge(state: AiConnectionState['bridge']['state']): { text: string; tone: 'ok' | 'warn' | 'bad' | 'quiet' } {
+  switch (state) {
+    case 'ready':
+      return { text: 'Connected', tone: 'ok' };
+    case 'checking':
+      return { text: 'Checking…', tone: 'quiet' };
+    case 'not_logged_in':
+      return { text: 'Not signed in', tone: 'warn' };
+    case 'offline':
+      return { text: 'Bridge offline', tone: 'bad' };
+    case 'error':
+      return { text: 'Error', tone: 'bad' };
+    case 'unpaired':
+      return { text: 'Not paired', tone: 'quiet' };
+  }
+}

@@ -25,14 +25,17 @@ const EditorSettings = memo(function EditorSettings(): ReactElement {
   const settings = useUI((s) => s.settings);
   const memory = useUI((s) => s.memory);
   const gpu = useUI((s) => s.gpu);
-  const provider = useUI((s) => s.provider);
+  const tab = useUI((s) => s.settingsTab);
+  const aiPrefs = useUI((s) => s.aiPrefs);
   return (
     <SettingsDialog
       open={open}
       onClose={() => studio.store.getState().setSettingsOpen(false)}
       settings={settings}
       update={(p) => studio.store.getState().updateSettings(p)}
-      context={{ memory, gpu, provider }}
+      context={{ memory, gpu }}
+      initialTab={tab}
+      ai={{ prefs: aiPrefs, update: (p) => studio.store.getState().setAiPrefs(p) }}
     />
   );
 });
