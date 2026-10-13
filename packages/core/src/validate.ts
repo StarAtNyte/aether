@@ -11,6 +11,7 @@ import { isValidSelector } from './query';
 import { isEntityId } from './ids';
 import { forEachRuleSelector, forEachTestSelector } from './refs';
 import { isAllowedModelUrl } from './urls';
+import { checkMeshAssetSizes, meshAssetBytes } from './mesh/codec';
 
 export type { Issue } from './issues';
 
@@ -27,7 +28,25 @@ export class WorldValidationError extends Error {
 
 /** Number of scatter instances an entity contributes to `MAX_SCATTER_TOTAL`. */
 export function scatterCount(e: Entity): number {
-  return e.shape.kind === 'scatter' ? e.shape.count : 0;
+  if (e.shape.kind !== 'scatter') return 0;
+  return e.shape.points ? e.shape.points.length : e.shape.count;
+}
+
+/** Ids of entities whose shape is the mesh asset `meshId`. */
+export function meshUsers(entities: Readonly<Record<string, Entity>>, meshId: string): string[] {
+  const users: string[] = [];
+  for (const id of Object.keys(entities)) {
+    const s = (entities[id] as Entity).shape;
+    if (s.kind === 'mesh' && s.mesh === meshId) users.push(id);
+  }
+  return users;
+}
+
+/** Total decoded bytes of every mesh asset of a world. */
+export function meshTotalBytes(meshes: WorldDoc['meshes']): number {
+  let total = 0;
+  for (const k of Object.keys(meshes)) total += meshAssetBytes(meshes[k] as WorldDoc['meshes'][string]);
+  return total;
 }
 
 /** Ids of entities that use custom generator `generatorId` (directly or via scatter). */
@@ -68,6 +87,9 @@ export function checkIntegrity(world: WorldDoc): Issue[] {
     }
     if (e.shape.kind === 'scatter' && e.shape.onSurface !== undefined && !exists(e.shape.onSurface)) {
       issues.push({ path: `${p}.shape.onSurface`, message: `refers to missing entity '${e.shape.onSurface}'` });
+    }
+    if (e.shape.kind === 'mesh' && !hasOwn(world.meshes, e.shape.mesh)) {
+      issues.push({ path: `${p}.shape.mesh`, message: `refers to missing mesh '${e.shape.mesh}'` });
     }
     if (e.shape.kind === 'model' && !isAllowedModelUrl(e.shape.url)) {
       issues.push({
@@ -151,6 +173,17 @@ export function checkIntegrity(world: WorldDoc): Issue[] {
     if (world.scripts[k]?.id !== k) issues.push({ path: `scripts.${k}.id`, message: `must equal its key '${k}'` });
     if (isForbiddenKey(k)) issues.push({ path: `scripts.${k}`, message: `id '${k}' is reserved` });
   }
+  const meshIds = Object.keys(world.meshes);
+  if (meshIds.length > LIMITS.MAX_MESHES) issues.push({ path: 'meshes', message: `has ${meshIds.length} meshes (max ${LIMITS.MAX_MESHES})` });
+  for (const k of meshIds) {
+    const m = world.meshes[k] as WorldDoc['meshes'][string];
+    if (m.id !== k) issues.push({ path: `meshes.${k}.id`, message: `must equal its key '${k}'` });
+    if (isForbiddenKey(k)) issues.push({ path: `meshes.${k}`, message: `id '${k}' is reserved` });
+    const sizes = checkMeshAssetSizes(m);
+    if (sizes) issues.push({ path: `meshes.${k}`, message: sizes });
+  }
+  const meshBytes = meshTotalBytes(world.meshes);
+  if (meshBytes > LIMITS.MAX_MESH_BYTES) issues.push({ path: 'meshes', message: `mesh data totals ${Math.round(meshBytes / 1024)} KiB (max ${LIMITS.MAX_MESH_BYTES / 1024} KiB)` });
   const stateKeys = Object.keys(world.state).length;
   if (stateKeys > LIMITS.MAX_STATE_KEYS) issues.push({ path: 'state', message: `has ${stateKeys} variables (max ${LIMITS.MAX_STATE_KEYS})` });
   if (world.hud.length > LIMITS.MAX_HUD) issues.push({ path: 'hud', message: `has ${world.hud.length} entries (max ${LIMITS.MAX_HUD})` });

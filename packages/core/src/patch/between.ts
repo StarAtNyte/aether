@@ -12,6 +12,8 @@
  *   D. update changed entities (scatter-shrinking updates first, to respect
  *      MAX_SCATTER_TOTAL);
  *   E. generators, scripts, rules, tests, environment, player, state, HUD, meta.
+ * Mesh assets are set before step A (entities may reference them) and removed
+ * after step E (once nothing references them).
  *
  * Known limitation: a `null` stored inside free-form JSON (e.g. entity or world
  * state) cannot be re-created by `update`/`setState`, which treat `null` as
@@ -151,6 +153,13 @@ function testPatches(a: readonly WorldTest[], b: readonly WorldTest[], out: Patc
 export function patchesBetween(from: WorldDoc, to: WorldDoc): Patch[] {
   if (from === to) return [];
   const out: Patch[] = [];
+  // Meshes first: added/updated entities may reference new mesh assets.
+  if (from.meshes !== to.meshes) {
+    for (const id of Object.keys(to.meshes)) {
+      const m = to.meshes[id] as WorldDoc['meshes'][string];
+      if (!hasOwn(from.meshes, id) || (from.meshes[id] !== m && !deepEqual(from.meshes[id], m))) out.push({ op: 'setMesh', mesh: m });
+    }
+  }
   const removed = entityPatches(from, to, out);
 
   mapPatches(from.generators, to.generators, (id) => ({ op: 'removeGenerator', id }), (generator) => ({ op: 'defineGenerator', generator }), out);
@@ -183,6 +192,11 @@ export function patchesBetween(from: WorldDoc, to: WorldDoc): Patch[] {
   if (from.description !== to.description) meta.description = to.description;
   if (from.seed !== to.seed) meta.seed = to.seed;
   if (meta.name !== undefined || meta.description !== undefined || meta.seed !== undefined) out.push(meta);
+  // Removing an entity drops its unused mesh automatically; remove the rest explicitly.
+  if (from.meshes !== to.meshes) {
+    const after = applyPatches(from, out).world;
+    for (const id of Object.keys(from.meshes)) if (!hasOwn(to.meshes, id) && hasOwn(after.meshes, id)) out.push({ op: 'removeMesh', id });
+  }
   return out;
 }
 

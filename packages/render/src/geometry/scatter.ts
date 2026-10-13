@@ -15,7 +15,7 @@ export const MAX_SCATTER_INSTANCES = 200_000;
 const MAX_SPACING_ATTEMPTS = 12;
 
 /** Placement inputs. */
-export type ScatterParams = Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'>;
+export type ScatterParams = Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points'>>;
 
 /** Flat placement data in the scatter entity's local frame. */
 export interface ScatterPlacements {
@@ -25,6 +25,8 @@ export interface ScatterPlacements {
   scale: Float32Array;
   /** Yaw in radians. */
   yaw: Float32Array;
+  /** Local heights of hand-placed points (null: random layout, y = 0 unless on a surface). */
+  y: Float32Array | null;
 }
 
 /** Linked-list spatial hash over typed arrays (O(1) insert, 3x3 neighborhood query). */
@@ -91,6 +93,7 @@ function finiteOr(v: number | undefined, fallback: number): number {
  * candidates per instance).
  */
 export function scatterPlacements(shape: ScatterParams, maxCount = MAX_SCATTER_INSTANCES): ScatterPlacements {
+  if (shape.points) return pointPlacements(shape, shape.points, maxCount);
   const count = Math.max(0, Math.min(Math.floor(finiteOr(shape.count, 0)), Math.floor(maxCount), MAX_SCATTER_INSTANCES));
   const random = rng(shape.seed ?? 1);
   const w = Math.abs(finiteOr(shape.area?.[0], 0));
@@ -105,6 +108,7 @@ export function scatterPlacements(shape: ScatterParams, maxCount = MAX_SCATTER_I
     z: new Float32Array(count),
     scale: new Float32Array(count),
     yaw: new Float32Array(count),
+    y: null,
   };
   const attempts = grid ? MAX_SPACING_ATTEMPTS : 1;
   const spacing2 = spacing * spacing;
@@ -126,6 +130,28 @@ export function scatterPlacements(shape: ScatterParams, maxCount = MAX_SCATTER_I
     grid?.insert(x, z);
     out.x[i] = x;
     out.z[i] = z;
+    out.scale[i] = Math.max(1e-3, lo + (hi - lo) * random());
+    out.yaw[i] = shape.randomYaw === false ? 0 : random() * 360 * (Math.PI / 180);
+  }
+  return out;
+}
+
+/**
+ * Placements of hand-painted points: positions as stored, scale and yaw
+ * drawn from the seeded stream in point order (same rule as physics).
+ */
+function pointPlacements(shape: ScatterParams, points: readonly Vec3[], maxCount: number): ScatterPlacements {
+  const count = Math.max(0, Math.min(points.length, Math.floor(maxCount), MAX_SCATTER_INSTANCES));
+  const random = rng(shape.seed ?? 1);
+  const lo = finiteOr(shape.scaleRange?.[0], 1);
+  const hi = finiteOr(shape.scaleRange?.[1], lo);
+  const out: ScatterPlacements = { count, x: new Float32Array(count), z: new Float32Array(count), scale: new Float32Array(count), yaw: new Float32Array(count), y: new Float32Array(count) };
+  const ys = out.y as Float32Array;
+  for (let i = 0; i < count; i++) {
+    const p = points[i] as Vec3;
+    out.x[i] = finiteOr(p[0], 0);
+    ys[i] = finiteOr(p[1], 0);
+    out.z[i] = finiteOr(p[2], 0);
     out.scale[i] = Math.max(1e-3, lo + (hi - lo) * random());
     out.yaw[i] = shape.randomYaw === false ? 0 : random() * 360 * (Math.PI / 180);
   }
@@ -163,7 +189,7 @@ export function composeScatterMatrices(p: ScatterPlacements, lift: number, surfa
     const yaw = p.yaw[i] as number;
     const x = p.x[i] as number;
     const z = p.z[i] as number;
-    let y = 0;
+    let y = p.y ? (p.y[i] as number) : 0;
     if (surface) {
       const h = surface(x, z);
       if (h === h && Number.isFinite(h)) y = h;

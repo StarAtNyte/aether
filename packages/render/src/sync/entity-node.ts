@@ -5,6 +5,7 @@ import { Group, type InstancedBufferAttribute, type Mesh, type MeshStandardMater
 import type { Entity, EntityId, MaterialSpec } from '@aether/core';
 import type { KeyedOutput } from '../types';
 import type { EntityLight } from './lights';
+import type { MeshGeometryBundle } from '../geometry/mesh-asset';
 
 /** Key under `Object3D.userData` holding the owning entity id. */
 export const ENTITY_ID_KEY = 'aetherId';
@@ -54,6 +55,8 @@ export interface EntityNode {
   bindings: MeshBinding[];
   geometryKeys: string[];
   modelUrl: string | null;
+  /** Geometry of a mounted editable mesh (`mesh` shapes), owned by this node. */
+  meshBundle: MeshGeometryBundle | null;
   instanceMatrix: InstancedBufferAttribute | null;
   instances: number;
   /** Triangles drawn by this node's scatter instances (render-cost budget). */
@@ -92,6 +95,7 @@ export function createEntityNode(entity: Entity, transient: boolean): EntityNode
     bindings: [],
     geometryKeys: [],
     modelUrl: null,
+    meshBundle: null,
     instanceMatrix: null,
     instances: 0,
     scatterTriangles: 0,

@@ -18,6 +18,8 @@ export interface WorldDiff {
   generatorsChanged: string[];
   /** Custom script ids added, removed or redefined. */
   scriptsChanged: string[];
+  /** Mesh asset ids added, removed or replaced. */
+  meshesChanged: string[];
   stateChanged: boolean;
   hudChanged: boolean;
   testsChanged: boolean;
@@ -29,7 +31,7 @@ export interface WorldDiff {
 export function isEmptyDiff(d: WorldDiff): boolean {
   return (
     d.added.length === 0 && d.removed.length === 0 && d.changed.length === 0 && !d.environmentChanged && !d.playerChanged &&
-    !d.rulesChanged && d.generatorsChanged.length === 0 && d.scriptsChanged.length === 0 && !d.stateChanged && !d.hudChanged &&
+    !d.rulesChanged && d.generatorsChanged.length === 0 && d.scriptsChanged.length === 0 && d.meshesChanged.length === 0 && !d.stateChanged && !d.hudChanged &&
     !d.testsChanged && !d.metaChanged
   );
 }
@@ -50,7 +52,7 @@ function changedKeys(a: Readonly<Record<string, unknown>>, b: Readonly<Record<st
 export function diffWorlds(a: WorldDoc, b: WorldDoc): WorldDiff {
   const diff: WorldDiff = {
     added: [], removed: [], changed: [], environmentChanged: false, playerChanged: false, rulesChanged: false,
-    generatorsChanged: [], scriptsChanged: [], stateChanged: false, hudChanged: false, testsChanged: false, metaChanged: false,
+    generatorsChanged: [], scriptsChanged: [], meshesChanged: [], stateChanged: false, hudChanged: false, testsChanged: false, metaChanged: false,
   };
   if (a === b) return diff;
   const ea = a.entities;
@@ -67,6 +69,7 @@ export function diffWorlds(a: WorldDoc, b: WorldDoc): WorldDiff {
   diff.rulesChanged = changed(a.rules, b.rules);
   diff.generatorsChanged = changedKeys(a.generators, b.generators);
   diff.scriptsChanged = changedKeys(a.scripts, b.scripts);
+  diff.meshesChanged = changedKeys(a.meshes, b.meshes);
   diff.stateChanged = changed(a.state, b.state);
   diff.hudChanged = changed(a.hud, b.hud);
   diff.testsChanged = changed(a.tests, b.tests);

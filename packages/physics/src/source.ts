@@ -11,9 +11,9 @@
  *   `heightfield`) are derived from the shape's bounds / geometry.
  */
 import type { Entity, Json, PrimitiveShape, ProceduralShape, Vec3, WorldDoc } from '@aether/core';
-import { stableStringify } from '@aether/core';
+import { decodeMeshCached, meshBounds, stableStringify } from '@aether/core';
 import type { ColliderDesc, GeneratorOutput } from '@aether/procgen';
-import { DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, outputBytes, primitiveOutput } from '@aether/procgen';
+import { DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, meshColliders, outputBytes, primitiveOutput } from '@aether/procgen';
 import { collidersBounds, fromColliderDesc, sanitizePoints, SHAPE_LIMITS, type LocalCollider } from './shapes';
 import type { ColliderProvider } from './types';
 
@@ -224,13 +224,48 @@ function boxFromBounds(b: { min: Vec3; max: Vec3 }): LocalCollider {
   return at({ kind: 'box', half }, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]);
 }
 
+/** World data the collider resolution may read (custom generators, mesh assets). */
+export type ShapeWorld = Pick<WorldDoc, 'generators'> & Partial<Pick<WorldDoc, 'meshes'>>;
+
+/**
+ * Editable mesh colliders from the document: an exact triangle mesh for
+ * static/kinematic bodies, a convex hull for dynamic ones (always derived
+ * from the current mesh data, so edits keep colliders in sync).
+ */
+function meshGeometry(entity: Entity, meshId: string, world: ShapeWorld | null, warnings: string[]): Geometry {
+  const asset = world?.meshes && Object.hasOwn(world.meshes, meshId) ? world.meshes[meshId] : undefined;
+  if (!asset) {
+    warnings.push(`${entity.id}: mesh '${meshId.slice(0, 64)}' is missing; using a 1m box placeholder`);
+    const b = unitBox();
+    return { bounds: b, output: null, colliders: [boxFromBounds(b)] };
+  }
+  try {
+    const data = decodeMeshCached(asset);
+    const bounds = meshBounds(data.positions);
+    const output: GeneratorOutput = {
+      parts: [{ positions: data.positions, normals: new Float32Array(0), indices: data.indices, material: {} }],
+      colliders: [],
+      bounds,
+      stats: { triangles: data.indices.length / 3, ms: 0 },
+    };
+    const descs = meshColliders(data, entity.physics?.body ?? 'static');
+    return { bounds, output, colliders: fromDescs(descs, warnings, entity.id) };
+  } catch (err) {
+    warnings.push(`${entity.id}: mesh data is invalid (${err instanceof Error ? err.message.slice(0, 120) : 'error'}); using a 1m box`);
+    const b = unitBox();
+    return { bounds: b, output: null, colliders: [boxFromBounds(b)] };
+  }
+}
+
 /** Colliders that the shape itself defines ('auto' mode), or null when unknown. */
-function autoColliders(entity: Entity, world: Pick<WorldDoc, 'generators'> | null, provider: ColliderProvider | undefined, warnings: string[]): Geometry {
+function autoColliders(entity: Entity, world: ShapeWorld | null, provider: ColliderProvider | undefined, warnings: string[]): Geometry {
   const shape = entity.shape;
   const label = entity.id;
   switch (shape.kind) {
     case 'primitive':
       return { bounds: boundsOfPrimitive(shape), output: null, colliders: primitiveColliders(shape) };
+    case 'mesh':
+      return meshGeometry(entity, shape.mesh, world, warnings);
     case 'procedural':
     case 'model': {
       const provided = safeProvide(provider, entity, warnings);
@@ -314,7 +349,7 @@ function outputTrimesh(out: GeneratorOutput | null): { positions: Float32Array; 
 export function resolveShapeColliders(
   entity: Entity,
   mode: ColliderMode,
-  world: Pick<WorldDoc, 'generators'> | null,
+  world: ShapeWorld | null,
   provider?: ColliderProvider,
 ): ResolvedColliders {
   const warnings: string[] = [];

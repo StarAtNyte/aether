@@ -21,7 +21,11 @@
  *   equal to the old id, player.controls, exact-id selectors / spawn templates /
  *   "id.key" state keys in rules, tests and the HUD.
  * - `setState` with `value: null` deletes the variable.
- * - `clear` empties entities, rules, tests, state and HUD; custom generators and
+ * - `setMesh` adds or replaces an editable mesh asset (sizes, index ranges and
+ *   finite coordinates are checked by decoding it); `removeMesh` is refused
+ *   while an entity still uses the mesh; `remove` drops mesh assets that no
+ *   entity uses any more.
+ * - `clear` empties entities, rules, tests, state, HUD and meshes; custom generators and
  *   scripts are kept (they are reusable code); environment/player are reset only
  *   with `keepEnvironment: false` (player.controls is always cleared).
  */
@@ -42,7 +46,8 @@ import { deepMerge, ENTITY_MERGE, ENVIRONMENT_MERGE, PLAYER_MERGE, RULE_MERGE, t
 import { isValidSelector } from '../query';
 import { isEntityId, uniqueId } from '../ids';
 import { forEachRuleSelector, forEachTestSelector, mapRuleRefs, mapTestRefs, renameEntityRefs, renameMapper } from '../refs';
-import { generatorUsers, scatterCount } from '../validate';
+import { generatorUsers, meshTotalBytes, meshUsers, scatterCount } from '../validate';
+import { checkMeshAssetSizes, decodeMesh, meshAssetBytes } from '../mesh/codec';
 import { Draft } from './draft';
 
 /** A rejected patch. `index` is the position in the input array (-1 for batch-level errors). */
@@ -122,6 +127,11 @@ function labelOf(raw: unknown): string {
       const key = str(raw['key']);
       return key !== undefined ? `setState '${key}'` : op;
     }
+    case 'setMesh': {
+      const m = raw['mesh'];
+      const mid = isPlainObject(m) ? str(m['id']) : undefined;
+      return mid ? `setMesh '${mid}'` : op;
+    }
     default:
       return id ? `${op} '${id}'` : op;
   }
@@ -170,6 +180,9 @@ function checkEntityRefs(d: Draft, e: Entity): Outcome {
   if (e.joint && e.joint.target !== 'world') {
     if (e.joint.target === e.id) return fail('joint.target cannot be the entity itself (use "world" to pin it)');
     if (!d.has(e.joint.target)) return fail(`joint.target ${notFound(d, 'entity', e.joint.target, entityIds(d))} (use "world" to pin to the static world)`, e.joint.target);
+  }
+  if (e.shape.kind === 'mesh' && !hasOwn(d.world.meshes, e.shape.mesh)) {
+    return fail(`shape.mesh ${notFound(d, 'mesh', e.shape.mesh, () => Object.keys(d.world.meshes))} (add it with setMesh first)`);
   }
   if (e.shape.kind === 'scatter' && e.shape.onSurface !== undefined) {
     if (e.shape.onSurface === e.id) return fail('shape.onSurface cannot be the entity itself');
@@ -254,8 +267,9 @@ function opUpdate(d: Draft, p: PatchOf<'update'>): Outcome {
 
 /** Remove references to deleted entities from survivors and the player. */
 function clearDanglingRefs(d: Draft, removed: ReadonlySet<string>): void {
-  for (const id of Object.keys(d.world.entities)) {
-    const e = d.world.entities[id] as Entity;
+  for (const id of [...d.referenceHolders()]) {
+    const e = d.entity(id);
+    if (!e) continue;
     let next = e;
     if (e.joint && e.joint.target !== 'world' && removed.has(e.joint.target)) {
       const { joint: _dropped, ...rest } = next;
@@ -285,8 +299,15 @@ function opRemove(d: Draft, p: PatchOf<'remove'>): Outcome {
       d.setEntity({ ...(d.entity(childId) as Entity), parent: target.parent });
     }
   }
+  const meshes = new Set<string>();
+  for (const id of removed) {
+    const shape = d.entity(id)?.shape;
+    if (shape?.kind === 'mesh') meshes.add(shape.mesh);
+  }
   for (let i = removed.length - 1; i >= 0; i--) d.deleteEntity(removed[i] as string);
   clearDanglingRefs(d, new Set(removed));
+  // Mesh data belongs to its entities: drop assets nothing uses any more.
+  for (const m of meshes) if (hasOwn(d.world.meshes, m) && meshUsers(d.world.entities, m).length === 0) delete d.meshes()[m];
   return OK;
 }
 
@@ -413,6 +434,34 @@ function opRemoveScript(d: Draft, p: PatchOf<'removeScript'>): Outcome {
   return OK;
 }
 
+function opSetMesh(d: Draft, p: PatchOf<'setMesh'>): Outcome {
+  const m = p.mesh;
+  if (isForbiddenKey(m.id)) return fail(`id ${q(m.id)} is reserved; choose another id`);
+  const map = d.world.meshes;
+  const prev = hasOwn(map, m.id) ? map[m.id] : undefined;
+  if (!prev && Object.keys(map).length >= LIMITS.MAX_MESHES) return fail(`mesh limit reached (${LIMITS.MAX_MESHES})`);
+  if (prev && deepEqual(prev, m)) return OK;
+  const sizes = checkMeshAssetSizes(m);
+  if (sizes) return fail(sizes);
+  const total = meshTotalBytes(map) - (prev ? meshAssetBytes(prev) : 0) + meshAssetBytes(m);
+  if (total > LIMITS.MAX_MESH_BYTES) return fail(`mesh data would total ${Math.round(total / 1024)} KiB (max ${LIMITS.MAX_MESH_BYTES / 1024} KiB); simplify or delete meshes`);
+  try {
+    decodeMesh(m);
+  } catch (err) {
+    return fail(`invalid mesh data: ${err instanceof Error ? truncate(err.message, 120) : 'malformed'}`);
+  }
+  d.meshes()[m.id] = m;
+  return OK;
+}
+
+function opRemoveMesh(d: Draft, p: PatchOf<'removeMesh'>): Outcome {
+  if (!hasOwn(d.world.meshes, p.id)) return fail(notFound(d, 'mesh', p.id, () => Object.keys(d.world.meshes)));
+  const users = meshUsers(d.world.entities, p.id);
+  if (users.length > 0) return fail(`mesh ${q(p.id)} is still used by ${users.slice(0, 5).map(q).join(', ')}; change or remove those entities first`);
+  delete d.meshes()[p.id];
+  return OK;
+}
+
 function opAddTest(d: Draft, p: PatchOf<'addTest'>): Outcome {
   if (d.world.tests.some((t) => t.id === p.test.id)) return fail(`test ${q(p.test.id)} already exists — remove it first or use another id`);
   if (d.world.tests.length >= LIMITS.MAX_TESTS) return fail(`test limit reached (${LIMITS.MAX_TESTS})`);
@@ -442,6 +491,7 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
   if (d.world.tests.length > 0) d.set('tests', []);
   if (Object.keys(d.world.state).length > 0) d.set('state', {});
   if (d.world.hud.length > 0) d.set('hud', []);
+  for (const m of Object.keys(d.world.meshes)) delete d.meshes()[m];
   if (!p.keepEnvironment) {
     const env = EnvironmentSchema.parse({});
     const player = PlayerSchema.parse({});
@@ -475,6 +525,8 @@ function applyOne(d: Draft, p: Patch): Outcome {
     case 'removeTest': return opRemoveTest(d, p);
     case 'setMeta': return opSetMeta(d, p);
     case 'clear': return opClear(d, p);
+    case 'setMesh': return opSetMesh(d, p);
+    case 'removeMesh': return opRemoveMesh(d, p);
     default: {
       const exhaustive: never = p;
       return fail(`unsupported op ${JSON.stringify((exhaustive as { op?: unknown }).op)}`);

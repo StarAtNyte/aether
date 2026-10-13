@@ -35,3 +35,6 @@ export { GENERATOR_API_DTS } from './sandbox/dts';
 export { GENERATOR_EXAMPLES } from './sandbox/examples';
 export { silhouette, checkSilhouette, type SilhouetteStats, type SilhouetteVerdict, type SilhouetteView } from './silhouette';
 export { GENERATOR_LIBRARY, isLibraryGenerator, loadLibraryGenerator, matchLibrary, type LibraryEntry } from './library';
+
+export * from './mesh-edit/index';
+export { ComputeClient, type ComputeClientOptions } from './compute/client';

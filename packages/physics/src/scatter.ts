@@ -24,7 +24,22 @@ const MAX_SPACING_ATTEMPTS = 12;
  * one farthest from its neighbors. Cost O(count) using a
  * spatial hash.
  */
-export function scatterInstances(shape: Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'>, maxCount = Infinity): ScatterInstance[] {
+export function scatterInstances(shape: Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points'>>, maxCount = Infinity): ScatterInstance[] {
+  if (shape.points) {
+    // Hand-painted points: positions as stored; scale and yaw from the seeded stream (same as render).
+    const random = rng(shape.seed ?? 1);
+    const lo = Number.isFinite(shape.scaleRange?.[0]) ? (shape.scaleRange[0] as number) : 1;
+    const hi = Number.isFinite(shape.scaleRange?.[1]) ? (shape.scaleRange[1] as number) : lo;
+    const out: ScatterInstance[] = [];
+    const n = Math.max(0, Math.min(shape.points.length, maxCount));
+    for (let i = 0; i < n; i++) {
+      const p = shape.points[i] as Vec3;
+      const scale = Math.max(1e-3, lo + (hi - lo) * random());
+      const yawDeg = shape.randomYaw === false ? 0 : random() * 360;
+      out.push({ position: [p[0], p[1], p[2]], scale, yawDeg });
+    }
+    return out;
+  }
   const count = Math.max(0, Math.min(Math.floor(shape.count), maxCount));
   const random = rng(shape.seed ?? 1);
   const w = Number.isFinite(shape.area[0]) ? Math.abs(shape.area[0]) : 0;

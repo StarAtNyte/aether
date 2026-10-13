@@ -3,7 +3,7 @@
  * entities (renderer-supplied when available, otherwise estimated from the
  * shape spec) and the classification of scenery vs. content.
  */
-import { worldTransform, type Entity, type EntityId, type Json, type WorldDoc } from '@aether/core';
+import { decodeMeshCached, meshBounds, worldTransform, type Entity, type EntityId, type Json, type WorldDoc } from '@aether/core';
 import type { Bounds3 } from './types';
 
 /** Entities whose footprint exceeds this are treated as scenery (metres). */
@@ -95,6 +95,19 @@ export function estimateBounds(world: WorldDoc, e: Entity): Bounds3 | null {
       size = [shape.area[0], 1, shape.area[1]];
       baseAtZero = true;
       break;
+    case 'mesh': {
+      const asset = Object.hasOwn(world.meshes, shape.mesh) ? world.meshes[shape.mesh] : undefined;
+      if (!asset) return null;
+      let b: { min: [number, number, number]; max: [number, number, number] };
+      try {
+        b = meshBounds(decodeMeshCached(asset).positions);
+      } catch {
+        return null;
+      }
+      size = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]];
+      baseAtZero = true;
+      break;
+    }
   }
   let t: ReturnType<typeof worldTransform>;
   try {

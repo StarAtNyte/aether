@@ -227,6 +227,21 @@ export class History {
   }
 
   /**
+   * The commits leading to the current position, newest first (the base entry
+   * excluded): source, message and the applied patches. At most `limit`.
+   */
+  recentCommits(limit = 50): ReadonlyArray<{ id: number; source: HistorySource; message: string; patches: readonly Patch[] }> {
+    const b = this.branchState;
+    const out: Array<{ id: number; source: HistorySource; message: string; patches: readonly Patch[] }> = [];
+    for (let i = b.cursor; i > 0 && out.length < Math.max(0, limit); i--) {
+      const e = this.byId.get(b.ids[i] as number) as Entry;
+      if (e.parent === null) break;
+      out.push({ id: e.id, source: e.source, message: e.message, patches: e.patches });
+    }
+    return out;
+  }
+
+  /**
    * Time travel: move to `entryId` without discarding anything (redo stays
    * available). Searches the current branch first, then other branches
    * (switching to the first one containing the entry). Throws `RangeError`

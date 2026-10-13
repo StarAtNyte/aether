@@ -25,6 +25,7 @@ import {
   type Ray,
 } from 'three';
 import {
+  decodeMeshCached,
   deepEqual,
   diffWorlds,
   type Entity,
@@ -44,6 +45,8 @@ import { createMaterial } from '../materials/material-cache';
 import { instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
 import { composeScatterMatrices, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
+import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
+import { meshColliders } from '@aether/procgen';
 import { createEntityLight, disposeEntityLight, enforceShadowCap, updateLightParams } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
@@ -117,6 +120,22 @@ interface Retired {
   geometryKeys: string[];
   owned: MeshStandardMaterial[];
   modelUrl: string | null;
+  bundle: MeshGeometryBundle | null;
+}
+
+/** Key under `Mesh.userData` holding the global triangle index of each local triangle (mesh shapes). */
+export const MESH_TRIANGLES_KEY = 'aetherTriangles';
+
+let meshKeySeq = 0;
+const meshKeys = new WeakMap<object, string>();
+/** Stable per-object key of an (immutable) mesh asset. */
+function meshAssetKey(asset: object): string {
+  let k = meshKeys.get(asset);
+  if (!k) {
+    k = `mesh#${++meshKeySeq}`;
+    meshKeys.set(asset, k);
+  }
+  return k;
 }
 
 /** Copy resolved uniform values onto a live (owned) material without changing its program. */
@@ -246,7 +265,7 @@ export class SceneSync {
     if (prev === world) return RESOLVED;
     const diff = prev ? diffWorlds(prev, world) : null;
     this.current = world;
-    if (diff && diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && diff.generatorsChanged.length === 0) return RESOLVED;
+    if (diff && diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && diff.generatorsChanged.length === 0 && diff.meshesChanged.length === 0) return RESOLVED;
 
     const renderable = renderableIds(world);
     const started: Promise<void>[] = [];
@@ -283,6 +302,15 @@ export class SceneSync {
         const changedGens = new Set(diff.generatorsChanged);
         for (const node of this.nodes.values()) {
           if (!usesGenerator(node.entity.shape, changedGens)) continue;
+          rebuild.add(node.id);
+          moved.add(node.id);
+        }
+      }
+      if (diff.meshesChanged.length > 0) {
+        const changedMeshes = new Set(diff.meshesChanged);
+        for (const node of this.nodes.values()) {
+          const s = node.entity.shape;
+          if (s.kind !== 'mesh' || !changedMeshes.has(s.mesh) || node.transient) continue;
           rebuild.add(node.id);
           moved.add(node.id);
         }
@@ -581,7 +609,8 @@ export class SceneSync {
     if (transformChanged) this.applyTransform(node);
     node.object.visible = after.visible;
     const reparent = before.parent !== after.parent;
-    const rebuild = !deepEqual(before.shape, after.shape);
+    // Mesh colliders depend on the body type (trimesh vs hull).
+    const rebuild = !deepEqual(before.shape, after.shape) || (after.shape.kind === 'mesh' && before.physics?.body !== after.physics?.body);
     if (!rebuild && !deepEqual(before.material, after.material)) this.rematerial(node);
     if (!rebuild && (before.castShadow !== after.castShadow || before.receiveShadow !== after.receiveShadow)) this.applyShadowFlags(node);
     if (!deepEqual(before.light, after.light)) this.syncLight(node, before);
@@ -639,6 +668,9 @@ export class SceneSync {
           break;
         case 'scatter':
           work = this.buildScatter(node, shape, world, token);
+          break;
+        case 'mesh':
+          this.mountMesh(node, shape.mesh);
           break;
       }
     } catch (e) {
@@ -727,7 +759,7 @@ export class SceneSync {
 
   private mountScatter(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput): void {
     const available = this.maxInstances - this.totalInstances;
-    const wanted = Math.min(shape.count, MAX_SCATTER_INSTANCES);
+    const wanted = Math.min(shape.points ? shape.points.length : shape.count, MAX_SCATTER_INSTANCES);
     let trisPerInstance = 0;
     for (const part of keyed.output.parts) trisPerInstance += Math.floor(part.indices.length / 3);
     const triAvailable = this.maxScatterTriangles - this.totalScatterTriangles;
@@ -749,6 +781,77 @@ export class SceneSync {
     node.scatterTriangles = placements.count * trisPerInstance;
     this.totalScatterTriangles += node.scatterTriangles;
     this.mountOutput(node, keyed, false, attr);
+  }
+
+  /**
+   * Mount an editable mesh asset: one Mesh per material slot sharing one set
+   * of vertex attributes. `keyed` carries the data for colliders, scatter
+   * surfaces and bounds (no geometry-cache entry: the node owns the bundle).
+   */
+  private mountMesh(node: EntityNode, meshId: string): void {
+    const world = this.current;
+    const asset = world && Object.hasOwn(world.meshes ?? {}, meshId) ? world.meshes[meshId] : undefined;
+    if (!asset) throw new Error(`mesh "${meshId.slice(0, 64)}" is missing`);
+    const data = decodeMeshCached(asset);
+    const slotMaterials: MaterialSpec[] = asset.materials.length > 0 ? asset.materials : [{}];
+    const bundle = buildMeshGeometry(data, slotMaterials.length);
+    node.meshBundle = bundle;
+    const body = node.entity.physics?.body ?? 'static';
+    const colliders = body === 'dynamic' ? meshColliders(data, 'dynamic') : [{ kind: 'trimesh' as const, positions: data.positions, indices: data.indices }];
+    const bb = bundle.full.boundingBox;
+    node.keyed = {
+      key: meshAssetKey(asset),
+      output: {
+        parts: [{ positions: data.positions, normals: bundle.normal.array as Float32Array, indices: data.indices, material: slotMaterials[0] ?? {} }],
+        colliders,
+        bounds: bb ? { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] } : { min: [0, 0, 0], max: [0, 0, 0] },
+        stats: { triangles: bundle.triangleCount, ms: 0 },
+      },
+    };
+    node.partCount = bundle.slots.length;
+    for (const slot of bundle.slots) {
+      const partMaterial = slotMaterials[slot.slot] ?? {};
+      const handle = this.opts.materials.acquire(mergeMaterial(partMaterial, node.entity.material, node.partCount), { hasVertexColors: bundle.hasColors, doubleSided: false }, this.variant);
+      const mesh = new Mesh(slot.geometry, handle.material);
+      mesh.matrixAutoUpdate = false;
+      mesh.name = `${node.id}:slot${slot.slot}`;
+      mesh.userData[MESH_TRIANGLES_KEY] = slot.triangles;
+      node.bindings.push({
+        mesh,
+        partMaterial,
+        hasColors: bundle.hasColors,
+        doubleSided: false,
+        materialKey: handle.key,
+        seeThrough: handle.resolved.transparent && handle.resolved.opacity < SHADOW_OPACITY_MIN,
+        ownedMaterial: null,
+      });
+      node.content.add(mesh);
+    }
+    this.applyShadowFlags(node);
+  }
+
+  /** Geometry bundle of a mounted mesh entity (editor overlays, picking), or null. */
+  meshBundle(id: EntityId): MeshGeometryBundle | null {
+    return this.nodes.get(id)?.meshBundle ?? null;
+  }
+
+  /**
+   * Live preview of an editable mesh without a document change: overwrite
+   * positions and/or vertex colours (same vertex count) of the mounted
+   * geometry. Painting a mesh without colours switches its materials to
+   * vertex colours once. Returns false when the preview cannot be applied
+   * (unknown entity, not a mesh, size mismatch).
+   */
+  previewMesh(id: EntityId, positions: Float32Array | null, colors: Float32Array | null): boolean {
+    const node = this.nodes.get(id);
+    const bundle = node?.meshBundle;
+    if (!node || !bundle) return false;
+    if (!previewMeshGeometry(bundle, positions, colors)) return false;
+    if (colors && node.bindings.some((b) => !b.hasColors)) {
+      for (const b of node.bindings) b.hasColors = true;
+      this.rematerial(node);
+    }
+    return true;
   }
 
   /** Mount one mesh (or instanced mesh) per generator part. */
@@ -822,7 +925,8 @@ export class SceneSync {
    * the still-retained resources. Pair with {@link releaseRetired}.
    */
   private detachContent(node: EntityNode): Retired {
-    const retired: Retired = { materialKeys: [], geometryKeys: node.geometryKeys, owned: [], modelUrl: node.modelUrl };
+    const retired: Retired = { materialKeys: [], geometryKeys: node.geometryKeys, owned: [], modelUrl: node.modelUrl, bundle: node.meshBundle };
+    node.meshBundle = null;
     for (const b of node.bindings) {
       retired.materialKeys.push(b.materialKey);
       if (b.ownedMaterial) retired.owned.push(b.ownedMaterial);
@@ -850,6 +954,8 @@ export class SceneSync {
     for (const k of r.materialKeys) this.opts.materials.release(k);
     for (const k of r.geometryKeys) this.opts.geometries.release(k);
     if (r.modelUrl !== null) this.opts.models?.release(r.modelUrl);
+    r.bundle?.dispose();
+    r.bundle = null;
     r.owned = [];
     r.materialKeys = [];
     r.geometryKeys = [];

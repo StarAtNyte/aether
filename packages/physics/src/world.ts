@@ -648,6 +648,23 @@ export class PhysicsWorld {
       const owner = this.partOwner.get(id) ?? bodyOwnerOf(world, id);
       if (owner) affected.add(owner);
     }
+    // Entities whose mesh asset changed: their colliders must be rebuilt even though the entity is unchanged.
+    const meshEdited = new Set<EntityId>();
+    if (d.meshesChanged.length > 0) {
+      const changedMeshes = new Set(d.meshesChanged);
+      for (const id of Object.keys(world.entities)) {
+        const s = world.entities[id]?.shape;
+        if (s?.kind === 'mesh' && changedMeshes.has(s.mesh)) {
+          meshEdited.add(id);
+          affected.add(id);
+          const owner = bodyOwnerOf(world, id);
+          if (owner) {
+            affected.add(owner);
+            meshEdited.add(owner);
+          }
+        }
+      }
+    }
     // Scatters projected onto an affected terrain.
     for (const rec of this.records.values()) {
       const s = rec.entity.shape;
@@ -667,7 +684,7 @@ export class PhysicsWorld {
         continue;
       }
       const plan = planBody(world, id, children);
-      if (!rec || !rec.plan || rec.plan.bodyKey !== plan.bodyKey) {
+      if (!rec || !rec.plan || rec.plan.bodyKey !== plan.bodyKey || meshEdited.has(id)) {
         if (rec) this.removeRecord(id);
         this.addPlanned(plan);
         rebuilt.add(id);
@@ -866,8 +883,9 @@ export class PhysicsWorld {
   private scatterColliders(entity: Entity, pose: Pose): LocalCollider[] | null {
     const shape = entity.shape;
     if (shape.kind !== 'scatter') return null;
-    if (shape.count > PHYSICS_LIMITS.MAX_SCATTER_COLLIDERS) {
-      this.note(entity.id, `${entity.id}: scatter of ${shape.count} instances exceeds ${PHYSICS_LIMITS.MAX_SCATTER_COLLIDERS}; no colliders (instances are not solid)`);
+    const instances = shape.points ? shape.points.length : shape.count;
+    if (instances > PHYSICS_LIMITS.MAX_SCATTER_COLLIDERS) {
+      this.note(entity.id, `${entity.id}: scatter of ${instances} instances exceeds ${PHYSICS_LIMITS.MAX_SCATTER_COLLIDERS}; no colliders (instances are not solid)`);
       return null;
     }
     const proto: Entity = { ...entity, shape: shape.of };
@@ -880,7 +898,7 @@ export class PhysicsWorld {
     const R = rapier();
     const out: LocalCollider[] = [];
     for (const inst of scatterInstances(shape)) {
-      let y = 0;
+      let y = inst.position[1];
       if (surface) {
         const wp = rotate(pose.quaternion, [inst.position[0] * pose.scale[0], 0, inst.position[2] * pose.scale[2]]);
         const ox = wp[0] + pose.position[0];

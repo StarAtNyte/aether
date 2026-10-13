@@ -30,6 +30,11 @@ export interface SummaryOptions {
   maxEntities?: number;
   /** Entity ids that must always be listed. */
   focus?: EntityId[];
+  /**
+   * Entities the user edited by hand recently (see `userEditMarks`): listed
+   * even past `maxEntities` and tagged `user-edited(paths)`, newest first.
+   */
+  userEdits?: ReadonlyMap<EntityId, { paths: readonly string[]; age: number }>;
 }
 
 const DEFAULT_MAX_ENTITIES = 300;
@@ -83,12 +88,24 @@ function shapeText(s: ShapeSpec): string {
     case 'model':
       return `model ${JSON.stringify(truncate(s.url, 48))}${s.fitSize !== undefined ? ` fit=${n1(s.fitSize)}` : ''}`;
     case 'scatter':
-      return `scatter ${s.count}x ${shapeText(s.of)} area=${n1(s.area[0])}x${n1(s.area[1])}${s.onSurface ? ` on=${s.onSurface}` : ''}`;
+      return s.points
+        ? `scatter ${s.points.length}x ${shapeText(s.of)} painted${s.onSurface ? ` on=${s.onSurface}` : ''}`
+        : `scatter ${s.count}x ${shapeText(s.of)} area=${n1(s.area[0])}x${n1(s.area[1])}${s.onSurface ? ` on=${s.onSurface}` : ''}`;
+    case 'mesh':
+      return `mesh:${s.mesh}`;
   }
 }
 
-function entityLine(e: Entity, depth: number): string {
-  const parts = [e.id, e.name ? truncate(e.name, 40) : '-', shapeText(e.shape), `pos ${vec(e.transform.position)}`];
+function meshText(world: WorldDoc, s: ShapeSpec): string | null {
+  if (s.kind !== 'mesh' || !hasOwn(world.meshes, s.mesh)) return null;
+  const m = world.meshes[s.mesh] as WorldDoc['meshes'][string];
+  const src = m.source?.shape;
+  const from = src ? (src.kind === 'procedural' ? ` baked from gen:${src.generator}` : ` baked from ${src.primitive}`) : '';
+  return `mesh ${m.vertexCount}v/${m.triangleCount}t${from} (hand-edited geometry; change it with transform/material, not shape params)`;
+}
+
+function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: readonly string[]; age: number } | undefined): string {
+  const parts = [e.id, e.name ? truncate(e.name, 40) : '-', meshText(world, e.shape) ?? shapeText(e.shape), `pos ${vec(e.transform.position)}`];
   const r = e.transform.rotation;
   if (r[0] !== 0 || r[1] !== 0 || r[2] !== 0) parts.push(`rot ${vec(r)}`);
   const s = e.transform.scale;
@@ -114,8 +131,9 @@ function entityLine(e: Entity, depth: number): string {
   if (e.joint) parts.push(`joint ${e.joint.type}->${e.joint.target}`);
   const stateKeys = Object.keys(e.state);
   if (stateKeys.length > 0) parts.push(`state ${stateKeys.sort().slice(0, 6).map((k) => `${k}=${json(e.state[k], 20)}`).join(' ')}`);
-  const flags = [e.template ? 'template' : '', e.visible ? '' : 'hidden'].filter(Boolean);
+  const flags = [e.template ? 'template' : '', e.visible ? '' : 'hidden', e.locked ? 'locked(by user: do not change)' : ''].filter(Boolean);
   if (flags.length > 0) parts.push(flags.join(' '));
+  if (mark) parts.push(`user-edited(${mark.paths.slice(0, 4).join(',')}${mark.age === 0 ? ', just now' : ''})`);
   return `${'  '.repeat(depth)}${parts.join(' | ')}`;
 }
 
@@ -225,7 +243,8 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   const max = Math.max(0, Math.floor(opts.maxEntities ?? DEFAULT_MAX_ENTITIES));
   const include = new Set<string>();
   for (let i = 0; i < order.length && i < max; i++) include.add((order[i] as { id: string }).id);
-  for (const f of opts.focus ?? []) {
+  const marked = opts.userEdits ? [...opts.userEdits.keys()] : [];
+  for (const f of [...(opts.focus ?? []), ...marked]) {
     let cur: string | null = hasOwn(world.entities, f) ? f : null;
     for (let guard = 0; cur !== null && guard < 128 && !include.has(cur); guard++) {
       include.add(cur);
@@ -235,7 +254,7 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   }
   if (order.length > 0) {
     lines.push('entities:');
-    for (const { id, depth } of order) if (include.has(id)) lines.push(entityLine(world.entities[id] as Entity, depth));
+    for (const { id, depth } of order) if (include.has(id)) lines.push(entityLine(world, world.entities[id] as Entity, depth, opts.userEdits?.get(id)));
     const omitted = order.length - include.size;
     if (omitted > 0) lines.push(`... ${omitted} more entities`);
   }
@@ -251,6 +270,10 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   if (world.tests.length > 0) {
     lines.push('tests:');
     for (const t of world.tests) lines.push(`test ${t.id}: ${testText(t)}`);
+  }
+  if (marked.length > 0) {
+    const recent = [...(opts.userEdits as ReadonlyMap<EntityId, { age: number }>).entries()].sort((a, b) => a[1].age - b[1].age).slice(0, 6).map(([id]) => id);
+    lines.push(`user recently edited by hand (newest first): ${recent.join(', ')} — "the one I just moved/changed" means these; keep their user-edited properties unless asked`);
   }
   return lines.join('\n');
 }

@@ -8,7 +8,26 @@ export * from './schema';
 
 export { LIMITS, type Limits } from './limits';
 export { isAllowedModelUrl, MODEL_URL_HTTPS_HOSTS, MAX_MODEL_URL_LENGTH } from './urls';
-export { createWorld, validateWorld, checkIntegrity, WorldValidationError, type Issue } from './validate';
+export { createWorld, validateWorld, checkIntegrity, WorldValidationError, meshUsers, meshTotalBytes, scatterCount, type Issue } from './validate';
+export {
+  encodeMesh,
+  encodeMeshUpdate,
+  decodeMesh,
+  decodeMeshCached,
+  cloneMeshData,
+  checkMeshData,
+  checkMeshAssetSizes,
+  meshAssetBytes,
+  meshByteSize,
+  meshBounds,
+  srgbToLinear,
+  linearToSrgb,
+  MAX_MESH_COORDINATE,
+  type MeshData,
+  type EncodeMeshOptions,
+} from './mesh/codec';
+export { encodeBase64, decodeBase64Into, encodeChunks, decodeChunks, BASE64_CHUNK_CHARS } from './mesh/base64';
+export { userEditMarks, updatePaths, overlappingPaths, type UserEditMarks, type CommitLike } from './edits';
 export { zodIssues, issueText, issuesText, findUnknownKeys } from './issues';
 export { inspectUntrusted, isForbiddenKey, FORBIDDEN_KEYS, type GuardLimits, type GuardResult } from './guard';
 
