@@ -284,6 +284,11 @@ export class SceneSync {
     return { fields: this.fieldNodes.size, instances: this.fieldInstances, drawnInstances, drawnTriangles };
   }
 
+  /** True while any scatter field or virtual-geometry mesh is mounted. */
+  get scaleGeometryActive(): boolean {
+    return this.fieldNodes.size > 0 || this.virtualGroups.size > 0;
+  }
+
   /** Virtual-geometry statistics: unique meshes, instances, source and drawn triangles. */
   virtualStats(): { meshes: number; instances: number; sourceTriangles: number; drawnTriangles: number } {
     let instances = 0;

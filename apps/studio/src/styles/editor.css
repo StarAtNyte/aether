@@ -553,6 +553,7 @@
 
 /* Floating overlay surfaces share one treatment */
 .vp-overlay .segmented,
+.geo-badge,
 .vp-btn,
 .dock,
 .nav-hint,
@@ -641,6 +642,49 @@
 }
 
 /* Performance HUD (hidden by default) */
+/* Scene vs drawn triangles (scatter fields, virtual geometry) */
+.geo-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-2);
+  color: var(--text-2);
+  font-size: var(--fs-11);
+  line-height: var(--lh-11);
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
+}
+
+.geo-badge__row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.geo-badge__row strong {
+  min-width: 44px;
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+.geo-badge__row:first-child strong {
+  color: var(--accent);
+}
+
+.geo-badge__detail {
+  margin-top: 2px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
 .perf-hud {
   width: 156px;
   padding: var(--s-2) var(--s-3);

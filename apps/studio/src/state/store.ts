@@ -37,6 +37,14 @@ export interface PerfStats {
   gpuMB: number;
   /** JS heap in use (MB; 0 when the browser does not report it). */
   heapMB: number;
+  /** Triangles the scene holds at full detail (every scatter instance, every sculpture). */
+  sceneTriangles: number;
+  /** Instances in culled scatter fields, and how many the last frame drew. */
+  fieldInstances: number;
+  fieldDrawn: number;
+  /** Virtual-geometry instances and the triangles their cluster cuts draw. */
+  virtualInstances: number;
+  virtualDrawn: number;
 }
 
 /** Low-memory mode as currently applied. */
@@ -314,7 +322,7 @@ export interface StudioInit {
   aiPrefs?: AiPrefs;
 }
 
-const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0 };
+const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0, sceneTriangles: 0, fieldInstances: 0, fieldDrawn: 0, virtualInstances: 0, virtualDrawn: 0 };
 const IDLE_VERIFY: VerifyState = { status: 'idle', summary: '', results: [], diagnostics: [], head: null, ms: 0 };
 const INITIAL_GAME: GameState = { status: 'playing', text: '', hud: {}, time: 0 };
 const MAX_TOAST_TEXT = 240;

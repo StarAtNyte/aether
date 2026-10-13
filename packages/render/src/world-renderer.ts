@@ -1299,10 +1299,8 @@ export class WorldRenderer {
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
-    // Culled instance fields re-plan when the view changed (or a field was just mounted).
-    if (this.viewChanged() || this.sync.viewNeedsUpdate) {
-      if (this.sync.updateView(this.perspective, Math.max(1, Math.round(this.cssHeight * this.renderer.getPixelRatio())))) this.needsDraw = true;
-    }
+    // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
+    if (this.sync.viewNeedsUpdate) this.needsDraw = true;
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
     const animate = opts.animate !== false;
@@ -1433,6 +1431,13 @@ export class WorldRenderer {
 
   private draw(): void {
     this.prepareBatches();
+    // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
+    // (the viewport, or a capture view), only when the view or content changed.
+    if (this.viewChanged() || this.sync.viewNeedsUpdate) {
+      const target = this.renderer.getOutputRenderTarget();
+      const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
+      this.sync.updateView(this.perspective, Math.max(1, height));
+    }
     this.syncPost();
     try {
       if (this.post) this.post.render();
@@ -1721,6 +1726,11 @@ export class WorldRenderer {
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
     this.needsDraw = true;
+  }
+
+  /** True while the world uses scatter fields or virtual geometry (cheap). */
+  get scaleGeometryActive(): boolean {
+    return this.sync.scaleGeometryActive;
   }
 
   /** Frame statistics and resource counts. */

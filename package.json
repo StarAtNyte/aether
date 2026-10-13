@@ -20,6 +20,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "e2e": "tsx tests/e2e/studio.e2e.ts",
     "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
+    "e2e:benchmark": "tsx tests/e2e/benchmark.e2e.ts",
     "gallery": "tsx tests/e2e/gallery.e2e.ts",
     "thumbnails": "tsx tests/e2e/thumbnails.e2e.ts",
     "e2e:layout": "tsx tests/e2e/layout.e2e.ts",

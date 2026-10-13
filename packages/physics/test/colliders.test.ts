@@ -120,3 +120,22 @@ describe('collider output cache budget', () => {
     expect(colliderCacheStats()).toEqual({ entries: 0, bytes: 0 });
   });
 });
+
+describe('collider views of huge outputs', () => {
+  it('caches a light point sample for meshes above the trimesh limit and keeps small meshes intact', async () => {
+    const { colliderView } = await import('../src/source');
+    const big = generateBuiltinSync('colossus', { detail: 3 }, 1);
+    const view = colliderView(big);
+    expect(view.colliders).toEqual(big.colliders);
+    expect(view.bounds).toEqual(big.bounds);
+    expect(view.parts).toHaveLength(1);
+    expect(view.parts[0]!.indices.length).toBe(0);
+    expect(view.parts[0]!.positions.length / 3).toBeLessThanOrEqual(16_384 + 1);
+    const small = generateBuiltinSync('rock', {}, 1);
+    expect(colliderView(small)).toBe(small);
+    // Hull colliders still work from the sample.
+    const e = { id: 'c', shape: { kind: 'procedural', generator: 'colossus', params: { detail: 3 } }, physics: { body: 'static', collider: 'hull' } } as unknown as Entity;
+    const r = resolveShapeColliders(e, 'hull', null);
+    expect(r.colliders.length).toBeGreaterThan(0);
+  });
+});

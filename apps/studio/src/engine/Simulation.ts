@@ -106,6 +106,14 @@ export interface SimulationStats {
   gpuMB: number;
   /** JS heap in use (MB; 0 where the browser does not report it). */
   heapMB: number;
+  /** Triangles the scene holds at full detail. */
+  sceneTriangles: number;
+  /** Scatter-field instances held / drawn by the last frame. */
+  fieldInstances: number;
+  fieldDrawn: number;
+  /** Virtual-geometry instances / triangles their cuts draw. */
+  virtualInstances: number;
+  virtualDrawn: number;
 }
 
 /** Callbacks from the simulation to the UI layer. */
@@ -140,6 +148,11 @@ export interface SimulationOptions {
   lowMemory?: boolean;
   /** Skip collecting renderer stats in edit mode (perf HUD hidden). */
   statsWhileEditing?: boolean;
+  /**
+   * Scatter fields and virtual geometry (default true). False draws every
+   * layer and sculpture at full detail (`?engine=classic`, comparisons).
+   */
+  scaleGeometry?: boolean;
 }
 
 /** Session state the logic host needs (everything except the runtime itself). */
@@ -257,6 +270,7 @@ export class Simulation {
       antialias: true,
       lowMemory: opts.lowMemory === true,
       growIn: !prefersReducedMotion(),
+      ...(opts.scaleGeometry === false ? { fields: false, virtualGeometry: false } : {}),
       onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
@@ -942,7 +956,8 @@ export class Simulation {
 
   private emitStats(): void {
     const s = this.session;
-    if (!s && !this.statsWhileEditing) return;
+    // Worlds drawn through fields / virtual geometry always report (the viewport shows their triangle counts).
+    if (!s && !this.statsWhileEditing && !this.renderer.scaleGeometryActive) return;
     const r = this.renderer.stats();
     const p = s ? s.pw.stats() : null;
     const heap = (performance as unknown as { memory?: { usedJSHeapSize?: unknown } }).memory?.usedJSHeapSize;
@@ -956,6 +971,11 @@ export class Simulation {
       entities: r.entities,
       bodies: p ? p.bodies : 0,
       stepMs: p ? p.stepMs : 0,
+      sceneTriangles: r.sceneTriangles ?? 0,
+      fieldInstances: r.fieldInstances ?? 0,
+      fieldDrawn: r.fieldDrawn ?? 0,
+      virtualInstances: r.virtualInstances ?? 0,
+      virtualDrawn: r.virtualDrawnTriangles ?? 0,
     });
     if (s && this.listener.onHud) {
       const hud: Record<string, Json | undefined> = {};

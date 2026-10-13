@@ -19,6 +19,7 @@ import { ContextBar } from './ContextBar';
 import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
+import { GeometryBadge } from './GeometryBadge';
 import { PlayHud } from './PlayHud';
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
@@ -282,6 +283,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       <div className="vp-overlay vp-overlay--tl">
         {ready && !playing && <CameraPresets />}
         <PerfHud />
+        {ready && <GeometryBadge />}
       </div>
       <div className="vp-overlay vp-overlay--tr">
         {playing ? <CameraToggle /> : ready && <VerifyPill />}

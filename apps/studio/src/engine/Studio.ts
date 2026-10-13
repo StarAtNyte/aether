@@ -329,6 +329,7 @@ export class Studio {
           pointerLock: st.settings.pointerLock,
           lowMemory: st.memory.lowMemory,
           statsWhileEditing: st.settings.showPerf,
+          scaleGeometry: !classicEngineRequested(),
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),
         },
@@ -1051,6 +1052,12 @@ function safeModeRequested(): boolean {
   if (typeof location === 'undefined') return false;
   const q = new URLSearchParams(location.search);
   return q.get('safe') === '1' || q.get('reset') === '1';
+}
+
+/** `?engine=classic`: draw every layer and sculpture at full detail (no fields, no virtual geometry). */
+function classicEngineRequested(): boolean {
+  if (typeof location === 'undefined') return false;
+  return new URLSearchParams(location.search).get('engine') === 'classic';
 }
 
 /** Wait after the first frame before prefetching verification physics (ms). */
