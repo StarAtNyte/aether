@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "toy-tank",
+    "description": "Chunky toy tank: rounded hull on two tread blocks with road wheels, turret with a short barrel, bright toy colors",
+    "category": "vehicles",
+    "keywords": [
+      "toy tank",
+      "army tank"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#39b86b",
+        "description": "main hull and turret color"
+      },
+      "trackColor": {
+        "type": "color",
+        "default": "#30343b",
+        "description": "rubber tread color"
+      }
+    },
+    "size": [
+      2.325,
+      1.725,
+      2.432
+    ]
+  },
+  "def": {
+    "id": "toy-tank",
+    "description": "A chunky, brightly colored toy tank with rounded twin treads, visible road wheels on both sides, a compact turret, short cannon, hatch, lights, bumpers, and rear details.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#39b86b",
+        "description": "main hull and turret color"
+      },
+      "trackColor": {
+        "type": "color",
+        "default": "#30343b",
+        "description": "rubber tread color"
+      }
+    },
+    "source": "const s = 1.0;\nconst main = { preset: 'plastic', color: params.color, roughness: 0.38 };\nconst tracks = { preset: 'rubber', color: params.trackColor, roughness: 0.92 };\nconst dark = { preset: 'plastic', color: '#25313b', roughness: 0.55 };\nconst wheel = { preset: 'plastic', color: '#f2b632', roughness: 0.45 };\nconst accent = { preset: 'plastic', color: '#ffcf3f', roughness: 0.4 };\nconst glass = { preset: 'glass', color: '#8de2ff', emissive: '#55bde8', emissiveIntensity: 0.55, opacity: 0.9, roughness: 0.15 };\nconst red = { preset: 'plastic', color: '#ff4f55', roughness: 0.4 };\n\n// Rounded rubber tread pods, running front-to-back.\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.capsule(0.34 * s, 2.18 * s).scale(0.62, 1, 1).rotate(90, 0, 0).translate(side * 0.82 * s, 0.42 * s, 0), tracks);\n  // Bright road wheels are visible from either side.\n  const wheelZ = [-0.67, -0.22, 0.23, 0.68];\n  for (let i = 0; i < wheelZ.length; i++) {\n    api.add(api.cylinder(0.245 * s, 0.245 * s, 0.09 * s, 12).rotate(0, 0, 90).translate(side * 1.055 * s, 0.42 * s, wheelZ[i] * s), wheel);\n    api.add(api.cylinder(0.105 * s, 0.105 * s, 0.105 * s, 10).rotate(0, 0, 90).translate(side * 1.11 * s, 0.42 * s, wheelZ[i] * s), dark);\n  }\n}\n\n// Lower chassis, rounded armored hull, and contrasting nose plate.\napi.add(api.box(1.58 * s, 0.30 * s, 1.78 * s).translate(0, 0.53 * s, 0), dark);\napi.add(api.capsule(0.33 * s, 1.72 * s).scale(2.42, 0.82, 1).rotate(90, 0, 0).translate(0, 0.79 * s, 0), main);\napi.add(api.extrude([[-0.66, -0.18], [0.66, -0.18], [0.54, 0.18], [-0.54, 0.18]], 0.13 * s).scale(s).rotate(90, 0, 0).translate(0, 0.83 * s, 0.91 * s), accent);\n\n// Compact turret with rounded cap, neck ring, and hatch.\napi.add(api.cylinder(0.59 * s, 0.68 * s, 0.18 * s, 16).translate(0, 1.08 * s, -0.08 * s), dark);\napi.add(api.cylinder(0.53 * s, 0.58 * s, 0.32 * s, 16).translate(0, 1.28 * s, -0.08 * s), main);\napi.add(api.sphere(0.51 * s, 2).scale(1, 0.48, 1).translate(0, 1.48 * s, -0.08 * s), main);\napi.add(api.cylinder(0.25 * s, 0.25 * s, 0.08 * s, 14).translate(0, 1.64 * s, -0.12 * s), accent);\napi.add(api.box(0.07 * s, 0.17 * s, 0.06 * s).translate(0.22 * s, 1.72 * s, -0.12 * s), dark);\n\n// Short toy cannon points toward +Z, with a thick muzzle rim.\napi.add(api.cylinder(0.10 * s, 0.13 * s, 0.78 * s, 12).rotate(90, 0, 0).translate(0, 1.37 * s, 0.76 * s), main);\napi.add(api.cylinder(0.155 * s, 0.155 * s, 0.19 * s, 12).rotate(90, 0, 0).translate(0, 1.37 * s, 1.22 * s), dark);\napi.add(api.cylinder(0.085 * s, 0.085 * s, 0.195 * s, 12).rotate(90, 0, 0).translate(0, 1.37 * s, 1.225 * s), tracks);\n\n// Front lamps, tow hooks, rear lights, and exhausts make every side readable.\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.sphere(0.10 * s, 1).scale(1, 0.8, 0.45).translate(side * 0.52 * s, 0.86 * s, 0.96 * s), glass);\n  api.add(api.torus(0.10 * s, 0.025 * s).translate(side * 0.54 * s, 0.53 * s, 1.01 * s), accent);\n  api.add(api.box(0.13 * s, 0.10 * s, 0.055 * s).translate(side * 0.56 * s, 0.77 * s, -0.94 * s), red);\n  api.add(api.cylinder(0.055 * s, 0.055 * s, 0.42 * s, 8).translate(side * 0.48 * s, 1.06 * s, -0.72 * s), dark);\n  api.add(api.cylinder(0.085 * s, 0.06 * s, 0.12 * s, 8).translate(side * 0.48 * s, 1.31 * s, -0.72 * s), dark);\n}\napi.add(api.box(1.46 * s, 0.10 * s, 0.12 * s).translate(0, 0.38 * s, 1.05 * s), accent);\napi.add(api.box(1.46 * s, 0.10 * s, 0.12 * s).translate(0, 0.38 * s, -1.05 * s), accent);\napi.add(api.box(0.72 * s, 0.055 * s, 0.48 * s).translate(0, 1.03 * s, -0.55 * s), accent);\n\napi.collider({ kind: 'box', halfExtents: [1.08 * s, 0.43 * s, 1.10 * s], offset: [0, 0.43 * s, 0] });\napi.collider({ kind: 'box', halfExtents: [0.77 * s, 0.30 * s, 0.86 * s], offset: [0, 0.89 * s, 0] });\napi.collider({ kind: 'cylinder', radius: 0.58 * s, halfHeight: 0.31 * s, offset: [0, 1.34 * s, -0.08 * s] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:40:17.422Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 3400,
+    "parts": 7,
+    "colliders": 3
+  }
+}

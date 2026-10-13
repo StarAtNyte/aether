@@ -69,7 +69,7 @@ function parseArgs(argv: readonly string[]): Args {
     model,
     effort,
     limit: Math.max(1, Number(get('limit') ?? 1000) || 1000),
-    maxCalls: Math.max(1, Number(get('max-calls') ?? (provider === 'mock' ? 10_000 : 40)) || 40),
+    maxCalls: Math.max(1, Number(get('max-calls') ?? (provider === 'mock' ? 10_000 : provider === 'codex' || provider === 'claude-code' ? 300 : 40)) || 40),
     json: get('json'),
     prompts: positional.length > 0 ? positional : DEFAULT_PROMPTS,
   };

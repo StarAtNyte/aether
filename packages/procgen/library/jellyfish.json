@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "jellyfish",
+    "description": "Translucent glowing jellyfish: domed bell and long wavy tentacles, floating with its lowest tentacle tips at y = 0",
+    "category": "nature",
+    "keywords": [
+      "jellyfish",
+      "jelly fish"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#72d9ff",
+        "description": "Primary bioluminescent body color"
+      },
+      "size": {
+        "type": "number",
+        "default": 3,
+        "min": 0.8,
+        "max": 10,
+        "description": "Overall jellyfish height in meters"
+      }
+    },
+    "size": [
+      1.68,
+      2.646,
+      1.68
+    ]
+  },
+  "def": {
+    "id": "jellyfish",
+    "description": "A luminous translucent jellyfish with a sculpted domed bell, glowing inner core, scalloped rim, and layered wavy tentacles arranged for a strong silhouette from every side.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#72d9ff",
+        "description": "Primary bioluminescent body color"
+      },
+      "size": {
+        "type": "number",
+        "default": 3,
+        "min": 0.8,
+        "max": 10,
+        "description": "Overall jellyfish height in meters"
+      }
+    },
+    "source": "const h = params.size;\nconst r = h * 0.28;\nconst c = params.color;\nconst pale = api.mix(c, '#ffffff', 0.52);\nconst deep = api.mix(c, '#402070', 0.32);\nconst glow = api.mix(c, '#ffffff', 0.18);\nconst bellBottom = h * 0.70;\nconst bellProfile = [\n  [0, h],\n  [r * 0.22, h * 0.985],\n  [r * 0.48, h * 0.94],\n  [r * 0.72, h * 0.88],\n  [r * 0.90, h * 0.80],\n  [r, h * 0.735],\n  [r * 0.96, h * 0.69],\n  [r * 0.78, h * 0.675],\n  [r * 0.55, h * 0.705],\n  [r * 0.30, h * 0.735],\n  [0, h * 0.745]\n];\nconst bell = api.lathe(bellProfile, 28);\nbell.vertexColor((x, y, z) => {\n  const edge = Math.min(1, Math.sqrt(x * x + z * z) / r);\n  const shimmer = 0.10 * api.noise3(x * 4 / h, y * 5 / h, z * 4 / h);\n  return api.mix(pale, c, Math.max(0, Math.min(1, edge * 0.55 + shimmer)));\n});\napi.add(bell, { preset: 'glass', color: c, roughness: 0.12, opacity: 0.68, emissive: c, emissiveIntensity: 1.25, vertexColors: true });\nconst rimMat = { preset: 'emissive', color: pale, emissive: c, emissiveIntensity: 2.8, opacity: 0.82, roughness: 0.2 };\napi.add(api.torus(r * 0.94, r * 0.045).rotate(90, 0, 0).translate(0, h * 0.695, 0), rimMat);\nconst coreProfile = [[0, h * 0.70], [r * 0.20, h * 0.715], [r * 0.28, h * 0.78], [r * 0.20, h * 0.87], [0, h * 0.91]];\napi.add(api.lathe(coreProfile, 18), { preset: 'emissive', color: glow, emissive: glow, emissiveIntensity: 2.2, opacity: 0.48, roughness: 0.25 });\nconst nodeMat = { preset: 'emissive', color: deep, emissive: c, emissiveIntensity: 1.6, opacity: 0.72, roughness: 0.3 };\nfor (let i = 0; i < 8; i++) {\n  const a = i * Math.PI * 2 / 8;\n  const rr = r * 0.49;\n  api.add(api.sphere(r * 0.075, 1).scale(1, 0.65, 1).translate(Math.cos(a) * rr, h * 0.72, Math.sin(a) * rr), nodeMat);\n}\nconst tentacleMat = { preset: 'glass', color: c, emissive: c, emissiveIntensity: 1.55, opacity: 0.72, roughness: 0.22 };\nfor (let i = 0; i < 12; i++) {\n  const a = i * Math.PI * 2 / 12;\n  const ring = i % 2 === 0 ? r * 0.68 : r * 0.48;\n  const len = h * (0.50 + 0.12 * api.rng());\n  const top = bellBottom + h * 0.012;\n  const pts = [];\n  const phase = api.rng() * Math.PI * 2;\n  const sway = r * (0.10 + api.rng() * 0.08);\n  for (let j = 0; j <= 11; j++) {\n    const t = j / 11;\n    const y = top - len * t;\n    const wave = Math.sin(t * Math.PI * (2.4 + (i % 3) * 0.35) + phase) * sway * (0.25 + t * 0.75);\n    const twist = Math.cos(t * Math.PI * 2 + phase) * sway * 0.45 * t;\n    pts.push([Math.cos(a) * ring + Math.cos(a) * wave - Math.sin(a) * twist, y, Math.sin(a) * ring + Math.sin(a) * wave + Math.cos(a) * twist]);\n  }\n  api.add(api.tube(pts, r * (i % 2 === 0 ? 0.026 : 0.019), 6), tentacleMat);\n}\nconst armMat = { preset: 'glass', color: pale, emissive: c, emissiveIntensity: 2.0, opacity: 0.78, roughness: 0.2 };\nfor (let i = 0; i < 4; i++) {\n  const a = i * Math.PI * 0.5 + Math.PI * 0.25;\n  const pts = [];\n  const armTop = h * 0.75;\n  const len = h * (0.45 + 0.035 * i);\n  for (let j = 0; j <= 12; j++) {\n    const t = j / 12;\n    const radial = r * (0.18 + 0.12 * t);\n    const curl = Math.sin(t * Math.PI * 3.2 + i * 1.3) * r * 0.10 * t;\n    pts.push([Math.cos(a) * radial - Math.sin(a) * curl, armTop - len * t, Math.sin(a) * radial + Math.cos(a) * curl]);\n  }\n  api.add(api.tube(pts, r * 0.047, 7), armMat);\n}\napi.collider({ kind: 'sphere', radius: r * 0.88, offset: [0, h * 0.82, 0] });\napi.collider({ kind: 'cylinder', radius: r * 0.45, halfHeight: h * 0.25, offset: [0, h * 0.46, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:49:13.695Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 4508,
+    "parts": 6,
+    "colliders": 2
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "surfboard",
+    "description": "Surfboard standing upright planted in sand, with a pointed nose, a fin and a center stripe",
+    "category": "props",
+    "keywords": [
+      "surfboard",
+      "surf board"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#2f9eb3",
+        "description": "main surfboard color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#f4c95d",
+        "description": "center stripe color"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.1,
+        "min": 1,
+        "max": 4.5,
+        "description": "surfboard length in meters"
+      }
+    },
+    "size": [
+      1.737,
+      2.307,
+      1.217
+    ]
+  },
+  "def": {
+    "id": "surfboard",
+    "description": "A detailed upright surfboard planted in a rippled sand mound, with a pointed nose, two-sided center stripe, rear fin, rails and leash plug.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#2f9eb3",
+        "description": "main surfboard color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#f4c95d",
+        "description": "center stripe color"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.1,
+        "min": 1,
+        "max": 4.5,
+        "description": "surfboard length in meters"
+      }
+    },
+    "source": "const L = params.length;\nconst W = L * 0.255;\nconst T = L * 0.034;\nconst baseY = L * 0.055;\nconst boardShape = [\n  [0, L],\n  [W * 0.28, L * 0.965],\n  [W * 0.43, L * 0.88],\n  [W * 0.5, L * 0.68],\n  [W * 0.48, L * 0.38],\n  [W * 0.38, L * 0.12],\n  [W * 0.22, 0],\n  [-W * 0.22, 0],\n  [-W * 0.38, L * 0.12],\n  [-W * 0.48, L * 0.38],\n  [-W * 0.5, L * 0.68],\n  [-W * 0.43, L * 0.88],\n  [-W * 0.28, L * 0.965]\n];\nconst boardMat = { preset: 'plastic', color: params.color, roughness: 0.28 };\nconst stripeMat = { preset: 'plastic', color: params.stripeColor, roughness: 0.25 };\nconst darkMat = { preset: 'rubber', color: '#25343a', roughness: 0.65 };\nconst sandMat = { preset: 'sand', color: '#d8bc7a', roughness: 0.95, flatShading: true };\napi.add(api.extrude(boardShape, T).translate(0, baseY, 0), boardMat);\nconst SW = W * 0.18;\nconst stripeShape = [\n  [-SW * 0.42, L * 0.035],\n  [SW * 0.42, L * 0.035],\n  [SW * 0.5, L * 0.88],\n  [SW * 0.34, L * 0.955],\n  [0, L * 0.988],\n  [-SW * 0.34, L * 0.955],\n  [-SW * 0.5, L * 0.88]\n];\napi.add(api.extrude(stripeShape, T * 1.08).translate(0, baseY, 0), stripeMat);\nconst rail = api.tube([[-W * 0.31, baseY + L * 0.075, T * 0.52],[-W * 0.47, baseY + L * 0.35, T * 0.52],[-W * 0.49, baseY + L * 0.67, T * 0.52],[-W * 0.35, baseY + L * 0.91, T * 0.52],[0, baseY + L * 0.997, T * 0.52],[W * 0.35, baseY + L * 0.91, T * 0.52],[W * 0.49, baseY + L * 0.67, T * 0.52],[W * 0.47, baseY + L * 0.35, T * 0.52],[W * 0.31, baseY + L * 0.075, T * 0.52]], T * 0.065, 5);\napi.add(rail, { preset: 'plastic', color: api.mix(params.color, '#ffffff', 0.32), roughness: 0.3 });\nconst finShape = [[0, 0], [L * 0.135, L * 0.035], [L * 0.105, L * 0.16], [L * 0.025, L * 0.255]];\napi.add(api.extrude(finShape, T * 0.46).rotate(0, 90, 0).translate(0, baseY + L * 0.055, -T * 0.38), { preset: 'plastic', color: api.mix(params.color, '#17343b', 0.35), roughness: 0.34 });\napi.add(api.cylinder(T * 0.15, T * 0.15, T * 0.3, 10).rotate(90, 0, 0).translate(W * 0.16, baseY + L * 0.12, T * 0.62), darkMat);\nconst sand = api.icosphereRock(L * 0.25, 0.18).scale(1.65, 0.25, 1.15).translate(0, L * 0.018, 0);\nsand.vertexColor((x, y, z) => api.mix('#c9a966', '#ead497', 0.45 + 0.25 * api.noise3(x * 7, y * 7, z * 7)));\napi.add(sand, sandMat);\nfor (let i = 0; i < 3; i++) {\n  const rr = L * (0.105 + i * 0.043);\n  api.add(api.torus(rr, L * 0.006).rotate(90, 0, 0).scale(1, 1, 0.7).translate(L * 0.11, L * (0.045 + i * 0.002), L * 0.035), sandMat);\n}\napi.collider({ kind: 'box', halfExtents: [W * 0.48, L * 0.5, T * 0.6], offset: [0, baseY + L * 0.5, 0] });\napi.collider({ kind: 'box', halfExtents: [L * 0.41, L * 0.055, L * 0.29], offset: [0, L * 0.04, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:44:33.826Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1974,
+    "parts": 7,
+    "colliders": 2
+  }
+}

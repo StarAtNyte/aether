@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "swing-set",
+    "description": "Playground swing set: A-frame metal posts, top bar, two swings hanging on chains with seats",
+    "category": "props",
+    "keywords": [
+      "swing set",
+      "playground swing"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#2f78b7",
+        "description": "main frame color"
+      },
+      "seats": {
+        "type": "int",
+        "default": 2,
+        "min": 1,
+        "max": 4,
+        "description": "number of swings"
+      }
+    },
+    "size": [
+      3.07,
+      2.432,
+      1.73
+    ]
+  },
+  "def": {
+    "id": "swing-set",
+    "description": "Detailed playground swing set with splayed A-frame metal supports, reinforced top beam, connector collars, and one to four chain-hung rubber seats.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#2f78b7",
+        "description": "main frame color"
+      },
+      "seats": {
+        "type": "int",
+        "default": 2,
+        "min": 1,
+        "max": 4,
+        "description": "number of swings"
+      }
+    },
+    "source": "const n = Math.max(1, Math.min(4, Math.floor(params.seats)));\nconst span = 1.25 + n * 0.72;\nconst height = 2.35;\nconst endInset = 0.18;\nconst frameX = span / 2 - endInset;\nconst footSpread = 0.78;\nconst postR = 0.055;\nconst frameMat = { preset: 'metal', color: params.color, metalness: 0.65, roughness: 0.32 };\nconst darkMetal = { preset: 'metal', color: '#303841', metalness: 0.78, roughness: 0.28 };\nconst chainMat = { preset: 'metal', color: '#9ba5ad', metalness: 0.9, roughness: 0.22 };\nconst seatMat = { preset: 'rubber', color: '#26343c', roughness: 0.72 };\nconst capMat = { preset: 'plastic', color: '#f2b632', roughness: 0.42 };\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * frameX;\n  api.add(api.tube([[x, 0.06, -footSpread], [x, height, 0]], postR, 10), frameMat);\n  api.add(api.tube([[x, 0.06, footSpread], [x, height, 0]], postR, 10), frameMat);\n  api.add(api.tube([[x, 0.72, -footSpread * 0.7], [x, 0.72, footSpread * 0.7]], postR * 0.72, 8), frameMat);\n  api.add(api.cylinder(postR * 1.45, postR * 1.45, 0.16, 12).rotate(0, 0, 90).translate(x, height, 0), darkMetal);\n  for (let zSide = -1; zSide <= 1; zSide += 2) {\n    api.add(api.cylinder(postR * 1.35, postR * 1.55, 0.07, 10).translate(x, 0.035, zSide * footSpread), darkMetal);\n  }\n}\napi.add(api.cylinder(postR * 1.2, postR * 1.2, span + 0.3, 12).rotate(0, 0, 90).translate(0, height, 0), frameMat);\napi.add(api.cylinder(postR * 1.5, postR * 1.5, 0.08, 12).rotate(0, 0, 90).translate(-span / 2 - 0.15, height, 0), capMat);\napi.add(api.cylinder(postR * 1.5, postR * 1.5, 0.08, 12).rotate(0, 0, 90).translate(span / 2 + 0.15, height, 0), capMat);\nconst usable = span - 0.62;\nconst spacing = usable / n;\nfor (let i = 0; i < n; i++) {\n  const sx = -usable / 2 + spacing * (i + 0.5);\n  const chainGap = Math.min(0.32, spacing * 0.42);\n  const hangerY = height - 0.09;\n  const seatY = 0.62;\n  const seatW = chainGap + 0.2;\n  for (let side = -1; side <= 1; side += 2) {\n    const cx = sx + side * chainGap / 2;\n    api.add(api.torus(0.065, 0.014).rotate(0, 90, 0).translate(cx, hangerY, 0), darkMetal);\n    api.add(api.tube([[cx, hangerY - 0.05, 0], [cx, seatY + 0.09, -0.12]], 0.012, 6), chainMat);\n    api.add(api.tube([[cx, hangerY - 0.05, 0], [cx, seatY + 0.09, 0.12]], 0.012, 6), chainMat);\n    api.add(api.cylinder(0.025, 0.025, 0.08, 8).translate(cx, seatY + 0.06, 0), darkMetal);\n  }\n  const seat = api.box(seatW, 0.075, 0.38).translate(sx, seatY, 0);\n  api.add(seat, seatMat);\n  api.add(api.box(seatW * 0.9, 0.018, 0.28).translate(sx, seatY + 0.047, 0), { preset: 'rubber', color: '#3f535d', roughness: 0.68 });\n  api.add(api.box(0.035, 0.09, 0.32).translate(sx - seatW * 0.42, seatY, 0), darkMetal);\n  api.add(api.box(0.035, 0.09, 0.32).translate(sx + seatW * 0.42, seatY, 0), darkMetal);\n}\napi.add(api.box(span - 0.45, 0.035, 0.045).translate(0, height - 0.18, -0.03), darkMetal);\napi.autoColliders('hull');\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:40:56.669Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 2972,
+    "parts": 6,
+    "colliders": 32
+  }
+}

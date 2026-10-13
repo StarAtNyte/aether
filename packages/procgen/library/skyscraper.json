@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "skyscraper",
+    "description": "Modern glass skyscraper with setbacks, window grid bands, a lobby base and a rooftop antenna, about 60 m tall",
+    "category": "architecture",
+    "keywords": [
+      "skyscraper",
+      "office tower",
+      "high rise",
+      "highrise"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 60,
+        "min": 24,
+        "max": 150,
+        "description": "Architectural height to the main roof in meters"
+      },
+      "floors": {
+        "type": "int",
+        "default": 20,
+        "min": 8,
+        "max": 50,
+        "description": "Number of occupied floors"
+      },
+      "glassColor": {
+        "type": "color",
+        "default": "#4f7892",
+        "description": "Primary curtain-wall glass color"
+      },
+      "lights": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show warm illuminated window bands"
+      }
+    },
+    "size": [
+      16.104,
+      69.56,
+      16.2
+    ]
+  },
+  "def": {
+    "id": "skyscraper",
+    "description": "A modern glass skyscraper with three stepped facade tiers, four-sided window grids, a polished lobby podium, entrance canopies, rooftop crown and antenna.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 60,
+        "min": 24,
+        "max": 150,
+        "description": "Architectural height to the main roof in meters"
+      },
+      "floors": {
+        "type": "int",
+        "default": 20,
+        "min": 8,
+        "max": 50,
+        "description": "Number of occupied floors"
+      },
+      "glassColor": {
+        "type": "color",
+        "default": "#4f7892",
+        "description": "Primary curtain-wall glass color"
+      },
+      "lights": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show warm illuminated window bands"
+      }
+    },
+    "source": "const h = params.height;\nconst floors = params.floors;\nconst floorH = h / floors;\nconst w = h * 0.22;\nconst d = h * 0.18;\nconst podiumH = Math.max(2.8, h * 0.065);\nconst tier1Top = Math.max(3, Math.floor(floors * 0.48));\nconst tier2Top = Math.max(tier1Top + 2, Math.floor(floors * 0.78));\nconst glass = { preset: 'glass', color: params.glassColor, roughness: 0.16, metalness: 0.12, opacity: 0.9 };\nconst frame = { preset: 'metal', color: '#26333b', roughness: 0.28, metalness: 0.72 };\nconst trim = { preset: 'metal', color: '#aebbc2', roughness: 0.22, metalness: 0.82 };\nconst stone = { preset: 'stone', color: '#30383d', roughness: 0.72 };\nconst lobbyGlass = { preset: 'glass', color: '#8eb4c5', roughness: 0.1, metalness: 0.08, opacity: 0.72 };\nconst warm = { preset: 'emissive', color: '#ffd89a', emissive: '#ffc66d', emissiveIntensity: 2.2, roughness: 0.35 };\nfunction dimsForFloor(i) {\n  if (i < tier1Top) return [w, d];\n  if (i < tier2Top) return [w * 0.78, d * 0.82];\n  return [w * 0.57, d * 0.62];\n}\nfunction addTier(first, last, tw, td) {\n  const y0 = first * floorH;\n  const th = (last - first) * floorH;\n  api.add(api.box(tw, th, td).translate(0, y0 + th / 2, 0), glass);\n}\naddTier(0, tier1Top, w, d);\naddTier(tier1Top, tier2Top, w * 0.78, d * 0.82);\naddTier(tier2Top, floors, w * 0.57, d * 0.62);\nconst bandH = Math.min(0.18, floorH * 0.075);\nfor (let i = 1; i < floors; i++) {\n  const sz = dimsForFloor(i - 0.1);\n  api.add(api.box(sz[0] + 0.08, bandH, sz[1] + 0.08).translate(0, i * floorH, 0), frame);\n}\nfunction addMullions(first, last, tw, td, countX, countZ) {\n  const y0 = first * floorH;\n  const th = (last - first) * floorH;\n  const bar = Math.max(0.045, h * 0.0009);\n  for (let i = 1; i < countX; i++) {\n    const x = -tw / 2 + tw * i / countX;\n    api.add(api.box(bar, th, bar).translate(x, y0 + th / 2, td / 2 + bar * 0.35), frame);\n    api.add(api.box(bar, th, bar).translate(x, y0 + th / 2, -td / 2 - bar * 0.35), frame);\n  }\n  for (let i = 1; i < countZ; i++) {\n    const z = -td / 2 + td * i / countZ;\n    api.add(api.box(bar, th, bar).translate(tw / 2 + bar * 0.35, y0 + th / 2, z), frame);\n    api.add(api.box(bar, th, bar).translate(-tw / 2 - bar * 0.35, y0 + th / 2, z), frame);\n  }\n}\naddMullions(0, tier1Top, w, d, 8, 7);\naddMullions(tier1Top, tier2Top, w * 0.78, d * 0.82, 6, 6);\naddMullions(tier2Top, floors, w * 0.57, d * 0.62, 5, 4);\nfor (let s = 0; s < 2; s++) {\n  const fi = s === 0 ? tier1Top : tier2Top;\n  const lower = dimsForFloor(fi - 1);\n  const upper = dimsForFloor(fi);\n  const y = fi * floorH + 0.12;\n  api.add(api.box(lower[0] + 0.55, 0.24, lower[1] + 0.55).translate(0, y, 0), trim);\n  api.add(api.box(upper[0] + 0.22, 0.2, upper[1] + 0.22).translate(0, y + 0.16, 0), stone);\n}\nif (params.lights) {\n  const panelH = floorH * 0.42;\n  for (let i = 2; i < floors; i += 3) {\n    const sz = dimsForFloor(i);\n    const y = (i + 0.53) * floorH;\n    const pw = sz[0] * 0.23;\n    const pd = sz[1] * 0.23;\n    const phase = (i % 2) * 0.18;\n    api.add(api.box(pw, panelH, 0.035).translate(-sz[0] * 0.2 + phase, y, sz[1] / 2 + 0.055), warm);\n    api.add(api.box(pw, panelH, 0.035).translate(sz[0] * 0.2 - phase, y, -sz[1] / 2 - 0.055), warm);\n    api.add(api.box(0.035, panelH, pd).translate(sz[0] / 2 + 0.055, y, sz[1] * 0.18 - phase), warm);\n    api.add(api.box(0.035, panelH, pd).translate(-sz[0] / 2 - 0.055, y, -sz[1] * 0.18 + phase), warm);\n  }\n}\napi.add(api.box(w * 1.14, podiumH, d * 1.16).translate(0, podiumH / 2, 0), lobbyGlass);\napi.add(api.box(w * 1.22, 0.38, d * 1.24).translate(0, 0.19, 0), stone);\napi.add(api.box(w * 1.18, 0.24, d * 1.2).translate(0, podiumH + 0.12, 0), trim);\nconst col = Math.max(0.18, w * 0.025);\nfor (let side = -1; side <= 1; side += 2) {\n  for (let j = -2; j <= 2; j++) {\n    api.add(api.box(col, podiumH * 0.82, col).translate(j * w * 0.18, podiumH * 0.45, side * (d * 0.58)), trim);\n  }\n  api.add(api.box(w * 0.48, 0.24, d * 0.18).translate(0, podiumH * 0.78, side * (d * 0.66)), trim);\n}\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.box(col, podiumH * 0.82, col).translate(side * (w * 0.57), podiumH * 0.45, -d * 0.18), trim);\n  api.add(api.box(col, podiumH * 0.82, col).translate(side * (w * 0.57), podiumH * 0.45, d * 0.18), trim);\n}\nconst topW = w * 0.57;\nconst topD = d * 0.62;\napi.add(api.box(topW * 1.08, 0.32, topD * 1.1).translate(0, h + 0.16, 0), trim);\nconst crownH = Math.max(1.2, h * 0.03);\napi.add(api.box(topW * 0.58, crownH, topD * 0.55).translate(0, h + 0.32 + crownH / 2, 0), frame);\nfor (let i = -2; i <= 2; i++) {\n  api.add(api.box(0.08, crownH * 0.72, topD * 0.58).translate(i * topW * 0.12, h + 0.35 + crownH * 0.36, 0), trim);\n}\nconst mastH = h * 0.11;\nconst mastBase = h + 0.32 + crownH;\napi.add(api.cylinder(h * 0.006, h * 0.011, mastH, 10).translate(0, mastBase + mastH / 2, 0), trim);\napi.add(api.sphere(h * 0.014, 1).translate(0, mastBase + mastH, 0), params.lights ? { preset: 'emissive', color: '#ff4b3e', emissive: '#ff2418', emissiveIntensity: 4 } : frame);\napi.collider({ kind: 'box', halfExtents: [w * 0.57, podiumH / 2, d * 0.58], offset: [0, podiumH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [w / 2, tier1Top * floorH / 2, d / 2], offset: [0, tier1Top * floorH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [w * 0.39, (tier2Top - tier1Top) * floorH / 2, d * 0.41], offset: [0, (tier1Top + tier2Top) * floorH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [w * 0.285, (floors - tier2Top) * floorH / 2, d * 0.31], offset: [0, (tier2Top + floors) * floorH / 2, 0] });\napi.collider({ kind: 'cylinder', radius: h * 0.011, halfHeight: mastH / 2, offset: [0, mastBase + mastH / 2, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:34:32.531Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1792,
+    "parts": 7,
+    "colliders": 5
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "beach-umbrella",
+    "description": "Beach umbrella with a striped canopy on a slightly tilted pole planted in the sand, with a beach towel underneath",
+    "category": "props",
+    "keywords": [
+      "beach umbrella",
+      "parasol",
+      "sun umbrella",
+      "umbrella"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e85d5d",
+        "description": "primary canopy and towel color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#fff3d6",
+        "description": "alternating canopy and towel stripe color"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 8,
+        "min": -18,
+        "max": 18,
+        "description": "umbrella pole tilt in degrees"
+      }
+    },
+    "size": [
+      2.477,
+      2.587,
+      2.36
+    ]
+  },
+  "def": {
+    "id": "beach-umbrella",
+    "description": "A detailed beach umbrella with a gently domed striped canopy, tilted wooden pole, radial underside ribs, sand mound, and a fringed beach towel in a coordinated palette.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e85d5d",
+        "description": "primary canopy and towel color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#fff3d6",
+        "description": "alternating canopy and towel stripe color"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 8,
+        "min": -18,
+        "max": 18,
+        "description": "umbrella pole tilt in degrees"
+      }
+    },
+    "source": "const main = params.color;\nconst stripe = params.stripeColor;\nconst tilt = params.tilt;\nconst ang = tilt * Math.PI / 180;\nconst cs = Math.cos(ang);\nconst sn = Math.sin(ang);\nconst poleH = 2.35;\nconst poleR = 0.027;\nconst canopyR = 1.18;\nconst hubY = 2.16;\nconst tx = -sn * poleH * 0.5;\nconst ty = cs * poleH * 0.5;\nconst point = (x, y, z) => [x * cs - y * sn, x * sn + y * cs, z];\nconst fabric = { preset: 'fabric', roughness: 0.82, flatShading: true };\nconst wood = { preset: 'wood', color: '#9a673d', roughness: 0.62 };\nconst metal = { preset: 'metal', color: '#d8d2c3', metalness: 0.65, roughness: 0.32 };\nconst sand = { preset: 'sand', color: '#d9bd83', roughness: 1, flatShading: true };\napi.add(api.icosphereRock(0.34, 0.32).scale(1.55, 0.28, 1.35).translate(0, 0.06, 0), sand);\napi.add(api.cylinder(poleR, poleR * 1.08, poleH, 12).rotate(0, 0, tilt).translate(tx, ty, 0), wood);\nconst capProfile = [[0, hubY + 0.34], [canopyR * 0.2, hubY + 0.3], [canopyR * 0.48, hubY + 0.19], [canopyR * 0.76, hubY + 0.03], [canopyR, hubY - 0.16], [canopyR * 0.98, hubY - 0.22], [canopyR * 0.74, hubY - 0.04], [canopyR * 0.47, hubY + 0.12], [canopyR * 0.19, hubY + 0.24], [0, hubY + 0.28]];\nconst canopy = api.lathe(capProfile, 32).rotate(0, 0, tilt);\ncanopy.vertexColor((x, y, z) => {\n  let a = Math.atan2(z, x);\n  if (a < 0) a += Math.PI * 2;\n  return Math.floor(a / (Math.PI / 4)) % 2 === 0 ? main : stripe;\n});\napi.add(canopy, fabric);\nconst top = point(0, hubY + 0.35, 0);\napi.add(api.sphere(0.065, 1).translate(top[0], top[1], top[2]), metal);\nconst hub = point(0, hubY - 0.03, 0);\napi.add(api.cylinder(0.065, 0.075, 0.12, 12).rotate(0, 0, tilt).translate(hub[0], hub[1], hub[2]), metal);\nfor (let i = 0; i < 8; i++) {\n  const a = i * Math.PI / 4;\n  const inner = point(Math.cos(a) * 0.07, hubY - 0.02, Math.sin(a) * 0.07);\n  const edge = point(Math.cos(a) * canopyR * 0.94, hubY - 0.17, Math.sin(a) * canopyR * 0.94);\n  api.add(api.tube([inner, edge], 0.012, 6), metal);\n  const braceStart = point(Math.cos(a) * 0.03, hubY - 0.23, Math.sin(a) * 0.03);\n  const braceEnd = point(Math.cos(a) * canopyR * 0.48, hubY + 0.06, Math.sin(a) * canopyR * 0.48);\n  api.add(api.tube([braceStart, braceEnd], 0.009, 6), metal);\n}\nconst towelW = 0.82;\nconst towelL = 1.48;\nconst towel = api.box(towelW, 0.018, towelL).translate(0.62, 0.105, 0.28);\ntowel.vertexColor((x, y, z) => Math.floor((z + towelL * 0.5) / (towelL / 7)) % 2 === 0 ? main : stripe);\napi.add(towel, fabric);\nfor (let side = -1; side <= 1; side += 2) {\n  for (let j = 0; j < 9; j++) {\n    const x = 0.62 - towelW * 0.44 + j * towelW * 0.11;\n    const z = 0.28 + side * (towelL * 0.5 + 0.045);\n    api.add(api.cylinder(0.007, 0.007, 0.09, 5).rotate(90, 0, 0).translate(x, 0.105, z), { preset: 'fabric', color: stripe, roughness: 0.9 });\n  }\n}\napi.collider({ kind: 'box', halfExtents: [0.045, poleH * 0.5, 0.045], offset: [tx, ty, 0], rotation: [0, 0, tilt] });\napi.collider({ kind: 'box', halfExtents: [canopyR * 0.72, 0.18, canopyR * 0.72], offset: point(0, hubY + 0.08, 0), rotation: [0, 0, tilt] });\napi.collider({ kind: 'box', halfExtents: [towelW * 0.5, 0.012, towelL * 0.5], offset: [0.62, 0.105, 0.28] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:43:36.573Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1804,
+    "parts": 5,
+    "colliders": 3
+  }
+}

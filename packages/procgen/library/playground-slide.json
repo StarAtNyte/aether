@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "playground-slide",
+    "description": "Playground slide: ladder with rails up to a small platform and a long curved chute down to the ground",
+    "category": "props",
+    "keywords": [
+      "playground slide",
+      "kids slide",
+      "water slide"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e84b3c",
+        "description": "main chute color"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.2,
+        "min": 1.2,
+        "max": 4.5,
+        "description": "platform height in meters"
+      }
+    },
+    "size": [
+      1.12,
+      3.164,
+      5.989
+    ]
+  },
+  "def": {
+    "id": "playground-slide",
+    "description": "Detailed playground slide with an inclined rung ladder, guarded platform, support frame, and a long curved chute that reaches the ground.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e84b3c",
+        "description": "main chute color"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.2,
+        "min": 1.2,
+        "max": 4.5,
+        "description": "platform height in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst w = h * 0.38;\nconst railR = h * 0.018;\nconst deckT = h * 0.055;\nconst zDeck = 0;\nconst chuteColor = params.color;\nconst frameColor = api.mix(params.color, '#17385f', 0.78);\nconst accentColor = api.mix(params.color, '#ffd34e', 0.72);\nconst darkColor = '#263442';\nconst chuteMat = { preset: 'plastic', color: chuteColor, roughness: 0.34 };\nconst frameMat = { preset: 'metal', color: frameColor, metalness: 0.58, roughness: 0.38 };\nconst accentMat = { preset: 'plastic', color: accentColor, roughness: 0.42 };\nconst gripMat = { preset: 'rubber', color: darkColor, roughness: 0.82 };\nconst deckMat = { preset: 'metal', color: frameColor, metalness: 0.45, roughness: 0.62 };\napi.add(api.box(w * 1.34, deckT, w * 1.15).translate(0, h, zDeck), deckMat);\napi.add(api.box(w * 1.16, h * 0.025, w * 0.96).translate(0, h + deckT * 0.58, zDeck), gripMat);\nconst postX = w * 0.56;\nconst postZ = w * 0.42;\nfor (let sx = -1; sx <= 1; sx += 2) {\n  for (let sz = -1; sz <= 1; sz += 2) {\n    api.add(api.cylinder(railR * 1.22, railR * 1.22, h, 10).translate(sx * postX, h * 0.5, sz * postZ), frameMat);\n  }\n}\nfor (let sx = -1; sx <= 1; sx += 2) {\n  api.add(api.tube([[sx * postX, h + deckT, -postZ], [sx * postX, h * 1.42, -postZ], [sx * postX, h * 1.42, postZ * 0.18]], railR, 8), frameMat);\n}\napi.add(api.tube([[-postX, h * 1.42, -postZ], [postX, h * 1.42, -postZ]], railR, 8), frameMat);\nconst ladderBottomZ = -h * 0.72;\nconst ladderTopZ = -postZ;\nconst ladderTopY = h + deckT;\nconst ladderBottomY = h * 0.08;\nconst ladderDx = w * 0.48;\nfor (let sx = -1; sx <= 1; sx += 2) {\n  api.add(api.tube([[sx * ladderDx, ladderBottomY, ladderBottomZ], [sx * ladderDx, ladderTopY, ladderTopZ], [sx * ladderDx, h * 1.38, -postZ]], railR * 1.1, 8), frameMat);\n}\nconst rungCount = 7;\nfor (let i = 0; i < rungCount; i++) {\n  const t = i / (rungCount - 1);\n  const ry = ladderBottomY + (ladderTopY - ladderBottomY) * t;\n  const rz = ladderBottomZ + (ladderTopZ - ladderBottomZ) * t;\n  api.add(api.cylinder(railR * 0.82, railR * 0.82, ladderDx * 2, 8).rotate(0, 0, 90).translate(0, ry, rz), accentMat);\n}\nconst chuteStartZ = postZ + w * 0.18;\nconst chuteLen = h * 1.48;\nconst chuteWidth = w * 1.08;\nconst segments = 14;\nconst panelDepth = chuteLen / segments * 1.09;\nfor (let i = 0; i < segments; i++) {\n  const t0 = i / segments;\n  const t1 = (i + 1) / segments;\n  const tm = (t0 + t1) * 0.5;\n  const z0 = chuteStartZ + chuteLen * t0;\n  const z1 = chuteStartZ + chuteLen * t1;\n  const y0 = h * (1 - t0) * (1 - t0) + h * 0.08;\n  const y1 = h * (1 - t1) * (1 - t1) + h * 0.08;\n  const angle = Math.atan2(y0 - y1, z1 - z0) * 180 / Math.PI;\n  const cy = (y0 + y1) * 0.5;\n  const cz = (z0 + z1) * 0.5;\n  api.add(api.box(chuteWidth, h * 0.035, panelDepth).rotate(angle, 0, 0).translate(0, cy, cz), chuteMat);\n  api.collider({ kind: 'box', halfExtents: [chuteWidth * 0.5, h * 0.026, panelDepth * 0.5], offset: [0, cy, cz], rotation: [angle, 0, 0] });\n}\nconst leftPath = [];\nconst rightPath = [];\nfor (let i = 0; i <= segments; i++) {\n  const t = i / segments;\n  const z = chuteStartZ + chuteLen * t;\n  const y = h * (1 - t) * (1 - t) + h * 0.08 + h * 0.16;\n  leftPath.push([-chuteWidth * 0.53, y, z]);\n  rightPath.push([chuteWidth * 0.53, y, z]);\n}\napi.add(api.tube(leftPath, railR * 1.18, 8), accentMat);\napi.add(api.tube(rightPath, railR * 1.18, 8), accentMat);\nfor (let i = 0; i <= segments; i += 2) {\n  const t = i / segments;\n  const z = chuteStartZ + chuteLen * t;\n  const floorY = h * (1 - t) * (1 - t) + h * 0.08;\n  const sideY = floorY + h * 0.09;\n  api.add(api.cylinder(railR * 0.72, railR * 0.72, h * 0.18, 8).translate(-chuteWidth * 0.53, sideY, z), accentMat);\n  api.add(api.cylinder(railR * 0.72, railR * 0.72, h * 0.18, 8).translate(chuteWidth * 0.53, sideY, z), accentMat);\n}\nconst endZ = chuteStartZ + chuteLen;\napi.add(api.box(chuteWidth * 1.13, h * 0.055, h * 0.28).translate(0, h * 0.085, endZ + h * 0.12), chuteMat);\nfor (let sx = -1; sx <= 1; sx += 2) {\n  api.add(api.cylinder(railR * 1.7, railR * 1.9, h * 0.055, 10).translate(sx * postX, h * 0.0275, postZ), gripMat);\n  api.add(api.cylinder(railR * 1.7, railR * 1.9, h * 0.055, 10).translate(sx * ladderDx, h * 0.0275, ladderBottomZ), gripMat);\n}\napi.collider({ kind: 'box', halfExtents: [w * 0.67, deckT * 0.5, w * 0.575], offset: [0, h, 0] });\nfor (let sx = -1; sx <= 1; sx += 2) {\n  api.collider({ kind: 'cylinder', radius: railR * 1.35, halfHeight: h * 0.5, offset: [sx * postX, h * 0.5, postZ] });\n}\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:41:51.408Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1964,
+    "parts": 5,
+    "colliders": 17
+  }
+}

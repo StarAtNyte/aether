@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "bus",
+    "description": "City bus: long boxy body with rounded corners, window strip, doors, six wheels with hubs, headlights and a route sign",
+    "category": "vehicles",
+    "keywords": [
+      "bus",
+      "city bus",
+      "school bus"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e33b32",
+        "description": "Primary body color"
+      },
+      "length": {
+        "type": "number",
+        "default": 10.5,
+        "min": 6,
+        "max": 18,
+        "description": "Overall bus length in meters"
+      }
+    },
+    "size": [
+      12.222,
+      3.415,
+      2.868
+    ]
+  },
+  "def": {
+    "id": "bus",
+    "description": "Detailed six-wheel city bus with a long boxy body, softened roofline, panoramic window strip, passenger doors, lights, hubs, bumpers and glowing route signs.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#e33b32",
+        "description": "Primary body color"
+      },
+      "length": {
+        "type": "number",
+        "default": 10.5,
+        "min": 6,
+        "max": 18,
+        "description": "Overall bus length in meters"
+      }
+    },
+    "source": "const L = params.length;\nconst W = L * 0.245;\nconst H = L * 0.285;\nconst baseY = H * 0.12;\nconst wheelR = H * 0.115;\nconst wheelW = W * 0.075;\nconst sideZ = W * 0.5 + wheelW * 0.18;\nconst bodyMat = { preset: 'metal', color: params.color, metalness: 0.18, roughness: 0.38 };\nconst dark = { preset: 'metal', color: '#20252b', metalness: 0.45, roughness: 0.32 };\nconst glass = { preset: 'glass', color: '#263e4e', roughness: 0.12, metalness: 0.12, opacity: 0.88 };\nconst rubber = { preset: 'rubber', color: '#17191b', roughness: 0.92 };\nconst hub = { preset: 'metal', color: '#aeb5ba', metalness: 0.82, roughness: 0.26 };\nconst light = { preset: 'emissive', color: '#fff2c2', emissive: '#fff0a0', emissiveIntensity: 2.5 };\nconst redLight = { preset: 'emissive', color: '#d72828', emissive: '#ff2222', emissiveIntensity: 1.8 };\nconst amber = { preset: 'emissive', color: '#ffb11f', emissive: '#ff9c12', emissiveIntensity: 2.8 };\napi.add(api.box(L * 0.94, H * 0.48, W).translate(0, baseY + H * 0.25, 0), bodyMat);\napi.add(api.box(L * 0.91, H * 0.43, W * 0.97).translate(0, baseY + H * 0.68, 0), bodyMat);\napi.add(api.box(L * 0.88, H * 0.065, W * 0.9).translate(0, baseY + H * 0.925, 0), bodyMat);\napi.add(api.cylinder(W * 0.43, W * 0.43, L * 0.82, 16).rotate(0, 0, 90).scale(1, 0.22, 1).translate(0, baseY + H * 0.94, 0), bodyMat);\napi.add(api.box(L * 0.98, H * 0.055, W * 1.035).translate(0, baseY + H * 0.08, 0), dark);\napi.add(api.box(L * 0.95, H * 0.045, W * 1.025).translate(0, baseY + H * 0.43, 0), dark);\nconst winY = baseY + H * 0.695;\nconst winH = H * 0.31;\nconst panelCount = 7;\nconst usable = L * 0.72;\nconst panelW = usable / panelCount * 0.88;\nfor (let side = -1; side <= 1; side += 2) {\n  for (let i = 0; i < panelCount; i++) {\n    const x = -usable * 0.5 + (i + 0.5) * usable / panelCount;\n    const isDoor = side > 0 && (i === 1 || i === 2);\n    if (!isDoor) api.add(api.box(panelW, winH, H * 0.012).translate(x, winY, side * (W * 0.493)), glass);\n  }\n}\nconst doorX = -L * 0.255;\napi.add(api.box(L * 0.205, H * 0.58, H * 0.018).translate(doorX, baseY + H * 0.43, W * 0.505), glass);\napi.add(api.box(H * 0.025, H * 0.59, H * 0.024).translate(doorX, baseY + H * 0.43, W * 0.516), dark);\napi.add(api.box(L * 0.215, H * 0.025, H * 0.024).translate(doorX, baseY + H * 0.135, W * 0.516), dark);\napi.add(api.box(L * 0.205, H * 0.025, H * 0.024).translate(doorX, baseY + H * 0.72, W * 0.516), dark);\napi.add(api.box(H * 0.018, H * 0.14, H * 0.025).translate(doorX + L * 0.02, baseY + H * 0.41, W * 0.527), hub);\napi.add(api.box(H * 0.018, H * 0.14, H * 0.025).translate(doorX - L * 0.02, baseY + H * 0.41, W * 0.527), hub);\napi.add(api.box(H * 0.018, winH * 0.88, W * 0.68).translate(-L * 0.458, winY, 0), glass);\napi.add(api.box(H * 0.018, winH * 0.72, W * 0.72).translate(L * 0.458, winY, 0), glass);\nconst axleX = [-L * 0.31, L * 0.18, L * 0.32];\nfor (let a = 0; a < axleX.length; a++) {\n  for (let side = -1; side <= 1; side += 2) {\n    api.add(api.cylinder(wheelR, wheelR, wheelW, 14).rotate(90, 0, 0).translate(axleX[a], wheelR, side * sideZ), rubber);\n    api.add(api.cylinder(wheelR * 0.48, wheelR * 0.48, wheelW * 1.08, 12).rotate(90, 0, 0).translate(axleX[a], wheelR, side * (sideZ + side * wheelW * 0.03)), hub);\n  }\n}\napi.add(api.box(L * 0.28, H * 0.105, H * 0.018).translate(-L * 0.467, baseY + H * 0.845, 0), dark);\napi.add(api.box(H * 0.02, H * 0.058, W * 0.48).translate(-L * 0.478, baseY + H * 0.845, 0), amber);\napi.add(api.box(L * 0.18, H * 0.085, H * 0.018).translate(L * 0.467, baseY + H * 0.83, 0), dark);\napi.add(api.box(H * 0.02, H * 0.04, W * 0.31).translate(L * 0.478, baseY + H * 0.83, 0), amber);\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.box(H * 0.024, H * 0.075, W * 0.18).translate(-L * 0.482, baseY + H * 0.265, side * W * 0.3), light);\n  api.add(api.box(H * 0.024, H * 0.075, W * 0.16).translate(L * 0.482, baseY + H * 0.28, side * W * 0.31), redLight);\n  api.add(api.box(L * 0.075, H * 0.055, H * 0.03).translate(-L * 0.39, baseY + H * 0.73, side * W * 0.54), dark);\n}\napi.add(api.box(H * 0.055, H * 0.08, W * 1.06).translate(-L * 0.49, baseY + H * 0.13, 0), dark);\napi.add(api.box(H * 0.055, H * 0.08, W * 1.06).translate(L * 0.49, baseY + H * 0.13, 0), dark);\napi.collider({ kind: 'box', halfExtents: [L * 0.47, H * 0.44, W * 0.5], offset: [0, baseY + H * 0.48, 0] });\nfor (let i = 0; i < axleX.length; i++) api.collider({ kind: 'box', halfExtents: [wheelR, wheelR, W * 0.58], offset: [axleX[i], wheelR, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:35:39.510Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1132,
+    "parts": 8,
+    "colliders": 4
+  }
+}

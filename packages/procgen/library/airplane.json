@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "airplane",
+    "description": "Propeller airplane parked on its landing gear: fuselage, main wings, tail fin and stabilizers, cockpit canopy and a nose propeller",
+    "category": "vehicles",
+    "keywords": [
+      "airplane",
+      "aeroplane",
+      "plane",
+      "aircraft",
+      "biplane"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#d64b3f",
+        "description": "Primary aircraft color"
+      },
+      "wingspan": {
+        "type": "number",
+        "default": 9,
+        "min": 3,
+        "max": 24,
+        "description": "Overall wingspan in meters"
+      }
+    },
+    "size": [
+      9,
+      3.36,
+      6.908
+    ]
+  },
+  "def": {
+    "id": "airplane",
+    "description": "Detailed parked single-engine propeller airplane with tapered wings, streamlined fuselage, cockpit canopy, tail surfaces, spinning-style nose propeller, markings, and three-point landing gear.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#d64b3f",
+        "description": "Primary aircraft color"
+      },
+      "wingspan": {
+        "type": "number",
+        "default": 9,
+        "min": 3,
+        "max": 24,
+        "description": "Overall wingspan in meters"
+      }
+    },
+    "source": "const s = params.wingspan;\nconst L = s * 0.72;\nconst r = s * 0.075;\nconst bodyY = s * 0.16;\nconst primary = params.color;\nconst cream = '#eee9dc';\nconst dark = '#252b31';\nconst silver = '#aeb6bd';\nconst glass = '#78a9bd';\nconst rubber = { preset: 'rubber', color: '#17191c', roughness: 0.92 };\nconst metal = { preset: 'metal', color: silver, metalness: 0.72, roughness: 0.3 };\nconst paint = { preset: 'metal', color: primary, metalness: 0.28, roughness: 0.38 };\nconst trim = { preset: 'metal', color: cream, metalness: 0.18, roughness: 0.42 };\n\nconst fuselage = api.capsule(r, L * 0.88).rotate(90, 0, 0).scale(1, 1, 1.04).translate(0, bodyY, 0);\nfuselage.vertexColor((x, y, z) => y < bodyY - r * 0.18 ? api.mix(primary, dark, 0.18) : primary);\napi.add(fuselage, { preset: 'metal', metalness: 0.3, roughness: 0.38 });\napi.add(api.cylinder(r * 0.78, r * 0.96, r * 0.7, 16).rotate(90, 0, 0).translate(0, bodyY, L * 0.47), paint);\napi.add(api.cylinder(r * 0.98, r * 0.98, r * 0.11, 16).rotate(90, 0, 0).translate(0, bodyY, L * 0.405), metal);\n\nconst wingShape = [[-s * 0.5, 0], [-s * 0.47, -L * 0.19], [-r * 0.8, -L * 0.07], [r * 0.8, -L * 0.07], [s * 0.47, -L * 0.19], [s * 0.5, 0], [r * 0.85, L * 0.12], [-r * 0.85, L * 0.12]];\nconst wing = api.extrude(wingShape, r * 0.16).rotate(90, 0, 0).translate(0, bodyY - r * 0.08, L * 0.02);\nwing.vertexColor((x, y, z) => Math.abs(x) > s * 0.35 ? cream : primary);\napi.add(wing, { preset: 'metal', metalness: 0.24, roughness: 0.4 });\n\nconst tailSpan = s * 0.34;\nconst tailShape = [[-tailSpan * 0.5, 0], [-tailSpan * 0.46, -L * 0.1], [tailSpan * 0.46, -L * 0.1], [tailSpan * 0.5, 0], [r * 0.35, L * 0.075], [-r * 0.35, L * 0.075]];\nconst stabilizer = api.extrude(tailShape, r * 0.1).rotate(90, 0, 0).translate(0, bodyY + r * 0.08, -L * 0.38);\nstabilizer.vertexColor((x, y, z) => Math.abs(x) > tailSpan * 0.36 ? cream : primary);\napi.add(stabilizer, { preset: 'metal', metalness: 0.24, roughness: 0.4 });\n\nconst finShape = [[-L * 0.085, 0], [L * 0.08, 0], [L * 0.025, r * 2.75], [-L * 0.06, r * 2.15]];\nconst fin = api.extrude(finShape, r * 0.16).translate(0, bodyY + r * 0.38, -L * 0.39);\nfin.vertexColor((x, y, z) => y > bodyY + r * 2.25 ? cream : primary);\napi.add(fin, { preset: 'metal', metalness: 0.24, roughness: 0.4 });\n\nconst canopy = api.sphere(r * 1.02, 2).scale(0.78, 0.54, 1.35).translate(0, bodyY + r * 0.78, L * 0.06);\napi.add(canopy, { preset: 'glass', color: glass, opacity: 0.78, roughness: 0.12, metalness: 0.05 });\napi.add(api.box(r * 0.09, r * 1.02, r * 1.55).rotate(24, 0, 0).translate(0, bodyY + r * 0.74, L * 0.055), { preset: 'metal', color: dark, metalness: 0.65, roughness: 0.25 });\napi.add(api.box(r * 1.65, r * 0.1, r * 1.42).translate(0, bodyY + r * 0.73, L * 0.055), { preset: 'metal', color: dark, metalness: 0.65, roughness: 0.25 });\n\nconst hubZ = L * 0.535;\napi.add(api.cylinder(r * 0.18, r * 0.18, r * 0.55, 12).rotate(90, 0, 0).translate(0, bodyY, hubZ - r * 0.16), metal);\napi.add(api.sphere(r * 0.34, 2).scale(0.72, 0.72, 1).translate(0, bodyY, hubZ + r * 0.15), paint);\nconst bladeShape = [[-r * 0.1, 0], [-r * 0.18, r * 0.72], [-r * 0.08, r * 1.85], [r * 0.13, r * 1.9], [r * 0.18, r * 0.7], [r * 0.1, 0]];\nfor (let i = 0; i < 2; i++) {\n  const blade = api.extrude(bladeShape, r * 0.07).rotate(0, 0, i * 180 + 18).translate(0, bodyY, hubZ + r * 0.29);\n  blade.vertexColor((x, y, z) => Math.abs(y - bodyY) > r * 1.55 ? cream : dark);\n  api.add(blade, { preset: 'metal', metalness: 0.55, roughness: 0.3 });\n}\n\nconst gearY = bodyY - r * 1.25;\nfor (let side = -1; side <= 1; side += 2) {\n  const gx = side * s * 0.16;\n  api.add(api.cylinder(r * 0.07, r * 0.07, r * 1.55, 8).rotate(0, 0, side * -13).translate(gx * 0.86, bodyY - r * 0.72, L * 0.06), metal);\n  api.add(api.cylinder(r * 0.34, r * 0.34, r * 0.18, 12).rotate(0, 0, 90).translate(gx, gearY, L * 0.06), rubber);\n  api.add(api.cylinder(r * 0.13, r * 0.13, r * 0.2, 12).rotate(0, 0, 90).translate(gx, gearY, L * 0.06), metal);\n}\napi.add(api.cylinder(r * 0.055, r * 0.055, r * 0.75, 8).rotate(12, 0, 0).translate(0, bodyY - r * 0.65, -L * 0.39), metal);\napi.add(api.cylinder(r * 0.2, r * 0.2, r * 0.12, 10).rotate(0, 0, 90).translate(0, bodyY - r * 1.02, -L * 0.43), rubber);\n\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.sphere(r * 0.18, 1).scale(1, 0.5, 0.55).translate(side * s * 0.47, bodyY - r * 0.02, L * 0.015), { preset: 'glass', color: side < 0 ? '#e33b32' : '#59d37d', emissive: side < 0 ? '#e33b32' : '#59d37d', emissiveIntensity: 1.5 });\n}\napi.add(api.box(r * 0.08, r * 0.65, r * 0.035).translate(0, bodyY, L * 0.485), trim);\napi.collider({ kind: 'capsule', radius: r, halfHeight: L * 0.42, offset: [0, bodyY, 0], rotation: [90, 0, 0] });\napi.collider({ kind: 'box', halfExtents: [s * 0.49, r * 0.09, L * 0.14], offset: [0, bodyY - r * 0.08, L * 0.01] });\napi.collider({ kind: 'box', halfExtents: [tailSpan * 0.49, r * 0.07, L * 0.09], offset: [0, bodyY + r * 0.08, -L * 0.39] });\napi.collider({ kind: 'box', halfExtents: [s * 0.2, r * 0.34, r * 0.26], offset: [0, gearY, L * 0.06] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:37:51.104Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1568,
+    "parts": 11,
+    "colliders": 4
+  }
+}

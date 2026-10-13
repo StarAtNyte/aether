@@ -7,10 +7,10 @@
  * `packages/procgen/src/library-index.ts`.
  *
  * Calls are sequential (one at a time), resumable (existing files are kept
- * unless --force) and bounded by --max-calls (default 60). The four reviewed
+ * unless --force) and bounded by --max-calls (default 300, max 2000; the run also stops cleanly on a subscription rate limit). The four reviewed
  * few-shot examples are added without any model call.
  *
- *   npx tsx scripts/build-generator-library.ts [--max-calls=60] [--only=piano,bus]
+ *   npx tsx scripts/build-generator-library.ts [--backend=codex|claude-code] [--max-calls=300] [--only=piano,bus]
  *     [--limit=5] [--model=<id>] [--effort=low|medium|high] [--force] [--index-only] [--mock]
  *
  * `--mock` uses the offline provider (pipeline check without model calls; its
@@ -42,6 +42,8 @@ const EXAMPLE_META: Readonly<Record<string, Omit<LibrarySpec, 'id' | 'paramsHint
 };
 
 interface Args {
+  /** Local subscription backend (never a paid API key). */
+  backend: 'codex' | 'claude-code';
   maxCalls: number;
   only: Set<string> | null;
   limit: number;
@@ -58,9 +60,12 @@ function parseArgs(argv: readonly string[]): Args {
   if (effort !== 'low' && effort !== 'medium' && effort !== 'high') throw new Error('--effort must be low, medium or high');
   const model = get('model');
   if (model !== undefined && !/^[A-Za-z0-9._:-]{1,64}$/.test(model)) throw new Error('invalid --model');
+  const backend = get('backend') ?? 'codex';
+  if (backend !== 'codex' && backend !== 'claude-code') throw new Error('--backend must be codex or claude-code');
   const only = get('only');
   return {
-    maxCalls: Math.max(0, Math.min(200, Number(get('max-calls') ?? 60) || 0)),
+    backend,
+    maxCalls: Math.max(0, Math.min(2000, Number(get('max-calls') ?? 300) || 0)),
     only: only ? new Set(only.split(',').map((s) => s.trim()).filter(Boolean)) : null,
     limit: Math.max(0, Number(get('limit') ?? 1000) || 0),
     model,
@@ -69,6 +74,13 @@ function parseArgs(argv: readonly string[]): Args {
     indexOnly: argv.includes('--index-only'),
     mock: argv.includes('--mock'),
   };
+}
+
+/** True when an error comes from the subscription's usage/rate limit (bridge code `rate_limited` or provider text). */
+function isRateLimited(e: unknown): boolean {
+  if (typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'rate_limited') return true;
+  const text = e instanceof Error ? e.message : String(e);
+  return /rate.?limit|usage limit|too many requests|\b429\b|quota|limit (reached|exceeded)|out of (credits|usage)/i.test(text);
 }
 
 /** Wrap a provider so it refuses calls beyond `max` (counted across the whole run). */
@@ -137,7 +149,7 @@ async function main(): Promise<void> {
   // 2. Model-written generators, sequentially, within the call budget.
   if (!args.indexOnly) {
     const builtin = new Set(catalog().map((g) => g.id));
-    const base = args.mock ? createMockProvider() : createHeadlessProvider('codex', { effort: args.effort, ...(args.model ? { model: args.model } : {}), timeoutMs: 300_000 });
+    const base = args.mock ? createMockProvider() : createHeadlessProvider(args.backend, { effort: args.effort, ...(args.model ? { model: args.model } : {}), timeoutMs: 300_000 });
     const provider = budgeted(base, args.maxCalls);
     const system = buildCoderPrompt({ generators: catalog(), behaviors: BEHAVIOR_CATALOG, ruleDocs: RULE_DOCS, generatorApiDts: GENERATOR_API_DTS, generatorExamples: GENERATOR_EXAMPLES, scriptApiDts: SCRIPT_API_DTS });
     const todo = LIBRARY_SPECS.filter((s) => (!args.only || args.only.has(s.id)) && (args.force || !library.has(s.id))).slice(0, args.limit);
@@ -167,18 +179,23 @@ async function main(): Promise<void> {
           { id: spec.id, description: `${spec.description}. Make it detailed and recognizable from any side, with a coherent colour palette.`, paramsHint: spec.paramsHint },
         );
       } catch (e) {
-        console.log(`codex    ${spec.id.padEnd(18)} FAIL ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+        const message = e instanceof Error ? e.message : String(e);
+        console.log(`${args.backend.padEnd(8)} ${spec.id.padEnd(18)} FAIL ${message.slice(0, 200)}`);
+        if (isRateLimited(e)) {
+          console.log('subscription usage limit reached; stopping cleanly (re-run later to continue where it left off)');
+          break;
+        }
         continue;
       }
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       const check = last as Awaited<ReturnType<typeof acceptLibraryGenerator>> | null;
       if (!result.ok || !check?.ok) {
-        console.log(`codex    ${spec.id.padEnd(18)} FAIL ${secs}s ${usage.calls} call(s): ${result.ok ? 'check failed' : result.error.slice(0, 200)}`);
+        console.log(`${args.backend.padEnd(8)} ${spec.id.padEnd(18)} FAIL ${secs}s ${usage.calls} call(s): ${result.ok ? 'check failed' : result.error.slice(0, 200)}`);
         continue;
       }
       const def: GeneratorDef = { ...result.def, id: spec.id };
       const file = fileFor({ id: spec.id, description: spec.description.slice(0, 300), category: spec.category, keywords: [...spec.keywords] }, def, check, {
-        source: 'codex',
+        source: args.backend,
         ...(args.model ? { model: args.model } : {}),
         effort: args.effort,
         createdAt: new Date().toISOString(),
@@ -187,7 +204,7 @@ async function main(): Promise<void> {
       await writeFile(join(dir, `${spec.id}.json`), serializeLibraryFile(file));
       library.set(spec.id, file);
       written++;
-      console.log(`codex    ${spec.id.padEnd(18)} ok   ${secs}s ${usage.calls} call(s) ${check.triangles} tris ${check.size.join('×')} m`);
+      console.log(`${args.backend.padEnd(8)} ${spec.id.padEnd(18)} ok   ${secs}s ${usage.calls} call(s) ${check.triangles} tris ${check.size.join('×')} m`);
     }
     console.log(`model calls: ${provider.calls()} / ${args.maxCalls}; new generators: ${written}`);
   }

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "picnic-table",
+    "description": "Wooden picnic table with two attached benches and A-frame legs",
+    "category": "props",
+    "keywords": [
+      "picnic table",
+      "picnic bench"
+    ],
+    "params": {
+      "woodColor": {
+        "type": "color",
+        "default": "#9a6538",
+        "description": "main wood colour"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.2,
+        "min": 1.2,
+        "max": 4.5,
+        "description": "overall table length in meters"
+      }
+    },
+    "size": [
+      2.235,
+      0.84,
+      1.78
+    ]
+  },
+  "def": {
+    "id": "picnic-table",
+    "description": "A detailed wooden picnic table with a slatted tabletop, two attached benches, sturdy A-frame legs, diagonal braces, end supports, and dark metal fasteners.",
+    "params": {
+      "woodColor": {
+        "type": "color",
+        "default": "#9a6538",
+        "description": "main wood colour"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.2,
+        "min": 1.2,
+        "max": 4.5,
+        "description": "overall table length in meters"
+      }
+    },
+    "source": "const L = params.length;\nconst s = L / 2.2;\nconst topY = 0.78 * s;\nconst topW = 0.82 * s;\nconst plankH = 0.055 * s;\nconst gap = 0.012 * s;\nconst plankW = (topW - gap * 4) / 5;\nconst benchY = 0.44 * s;\nconst benchW = 0.29 * s;\nconst benchZ = 0.72 * s;\nconst frameX = L * 0.34;\nconst wood = { preset: 'wood', color: params.woodColor, roughness: 0.82 };\nconst darkWood = { preset: 'wood', color: api.mix(params.woodColor, '#3b2418', 0.34), roughness: 0.88 };\nconst edgeWood = { preset: 'wood', color: api.mix(params.woodColor, '#d7aa70', 0.18), roughness: 0.78 };\nconst metal = { preset: 'metal', color: '#34383a', metalness: 0.72, roughness: 0.38 };\nfor (let i = 0; i < 5; i++) {\n  const z = -topW / 2 + plankW / 2 + i * (plankW + gap);\n  api.add(api.box(L, plankH, plankW).translate(0, topY, z), i === 0 || i === 4 ? edgeWood : wood);\n}\nfor (let side = -1; side <= 1; side += 2) {\n  const z = side * benchZ;\n  api.add(api.box(L, plankH, benchW).translate(0, benchY, z), wood);\n  api.add(api.box(L + 0.035 * s, 0.035 * s, 0.035 * s).translate(0, benchY + plankH * 0.55, z + side * benchW * 0.35), edgeWood);\n}\nfor (let end = -1; end <= 1; end += 2) {\n  const x = end * frameX;\n  api.add(api.box(0.105 * s, 0.105 * s, 1.78 * s).translate(x, benchY - 0.075 * s, 0), darkWood);\n  for (let side = -1; side <= 1; side += 2) {\n    const leg = api.box(0.13 * s, 0.78 * s, 0.13 * s).rotate(side * 24, 0, 0).translate(x, 0.38 * s, side * 0.40 * s);\n    api.add(leg, darkWood);\n    api.add(api.box(0.16 * s, 0.045 * s, 0.25 * s).translate(x, 0.035 * s, side * 0.67 * s), darkWood);\n  }\n  api.add(api.box(0.12 * s, 0.10 * s, topW * 0.94).translate(x, topY - 0.09 * s, 0), darkWood);\n  for (let side = -1; side <= 1; side += 2) {\n    api.add(api.cylinder(0.025 * s, 0.025 * s, 0.018 * s, 10).rotate(90, 0, 0).translate(x, topY + plankH * 0.58, side * topW * 0.31), metal);\n    api.add(api.cylinder(0.025 * s, 0.025 * s, 0.018 * s, 10).translate(x, benchY + plankH * 0.58, side * benchZ), metal);\n  }\n}\napi.add(api.box(L * 0.74, 0.10 * s, 0.10 * s).translate(0, 0.36 * s, 0), darkWood);\nfor (let side = -1; side <= 1; side += 2) {\n  for (let end = -1; end <= 1; end += 2) {\n    const path = [[end * frameX, 0.34 * s, side * 0.04 * s], [end * L * 0.12, 0.70 * s, side * 0.30 * s]];\n    api.add(api.tube(path, 0.035 * s, 6), darkWood);\n  }\n}\napi.collider({ kind: 'box', halfExtents: [L / 2, plankH / 2, topW / 2], offset: [0, topY, 0] });\nfor (let side = -1; side <= 1; side += 2) {\n  api.collider({ kind: 'box', halfExtents: [L / 2, plankH / 2, benchW / 2], offset: [0, benchY, side * benchZ] });\n}\nfor (let end = -1; end <= 1; end += 2) {\n  for (let side = -1; side <= 1; side += 2) {\n    api.collider({ kind: 'box', halfExtents: [0.065 * s, 0.39 * s, 0.065 * s], offset: [end * frameX, 0.38 * s, side * 0.40 * s], rotation: [side * 24, 0, 0] });\n  }\n}\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:42:38.405Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 680,
+    "parts": 4,
+    "colliders": 7
+  }
+}

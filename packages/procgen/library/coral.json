@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "coral",
+    "description": "Branching coral cluster: several knobbly branching arms and a few fan shapes on a rock base, vivid colors",
+    "category": "nature",
+    "keywords": [
+      "coral",
+      "coral reef"
+    ],
+    "params": {
+      "branches": {
+        "type": "int",
+        "default": 9,
+        "min": 4,
+        "max": 18,
+        "description": "number of main branching arms"
+      },
+      "color": {
+        "type": "color",
+        "default": "#ff5f73",
+        "description": "primary coral color"
+      },
+      "size": {
+        "type": "number",
+        "default": 2.4,
+        "min": 0.6,
+        "max": 8,
+        "description": "overall cluster size in meters"
+      }
+    },
+    "size": [
+      2.674,
+      2.396,
+      2.4
+    ]
+  },
+  "def": {
+    "id": "coral",
+    "description": "Vivid branching coral cluster with knobbly radial arms, sculptural sea fans, and a faceted rock base, detailed from every viewing angle.",
+    "params": {
+      "branches": {
+        "type": "int",
+        "default": 9,
+        "min": 4,
+        "max": 18,
+        "description": "number of main branching arms"
+      },
+      "color": {
+        "type": "color",
+        "default": "#ff5f73",
+        "description": "primary coral color"
+      },
+      "size": {
+        "type": "number",
+        "default": 2.4,
+        "min": 0.6,
+        "max": 8,
+        "description": "overall cluster size in meters"
+      }
+    },
+    "source": "const s = params.size;\nconst n = params.branches;\nconst baseY = s * 0.14;\nconst coralMat = { preset: 'stone', color: params.color, roughness: 0.72, flatShading: true };\nconst tipColor = api.mix(params.color, '#ffd1a6', 0.34);\nconst tipMat = { preset: 'stone', color: tipColor, roughness: 0.68, flatShading: true };\nconst fanColor = api.mix(params.color, '#9b35d1', 0.42);\nconst fanMat = { preset: 'stone', color: fanColor, roughness: 0.76, flatShading: true };\nconst rockMat = { preset: 'stone', color: '#6f756d', roughness: 0.95, flatShading: true };\nconst sandMat = { preset: 'sand', color: '#c9aa72', roughness: 1, flatShading: true };\napi.add(api.cylinder(s * 0.42, s * 0.5, s * 0.08, 18).translate(0, s * 0.04, 0), sandMat);\nconst rock = api.icosphereRock(s * 0.34, 0.62).scale(1.35, 0.58, 1.05).translate(0, baseY, 0);\nrock.vertexColor((x, y, z) => api.mix('#4f5650', '#8d8c78', 0.45 + 0.25 * api.noise3(x * 5, y * 5, z * 5)));\napi.add(rock, rockMat);\nfor (let i = 0; i < n; i++) {\n  const a = i * Math.PI * 2 / n + (api.rng() - 0.5) * 0.28;\n  const radial = s * (0.08 + api.rng() * 0.14);\n  const x0 = Math.cos(a) * radial;\n  const z0 = Math.sin(a) * radial;\n  const lean = s * (0.17 + api.rng() * 0.18);\n  const h = s * (0.42 + api.rng() * 0.28);\n  const bend = (api.rng() - 0.5) * s * 0.12;\n  const px = -Math.sin(a);\n  const pz = Math.cos(a);\n  const p0 = [x0, baseY + s * 0.03, z0];\n  const p1 = [x0 + Math.cos(a) * lean * 0.34 + px * bend, baseY + h * 0.32, z0 + Math.sin(a) * lean * 0.34 + pz * bend];\n  const p2 = [x0 + Math.cos(a) * lean * 0.68 - px * bend * 0.3, baseY + h * 0.69, z0 + Math.sin(a) * lean * 0.68 - pz * bend * 0.3];\n  const p3 = [x0 + Math.cos(a) * lean, baseY + h, z0 + Math.sin(a) * lean];\n  const rad = s * (0.035 + api.rng() * 0.012);\n  api.add(api.tube([p0, p1, p2, p3], rad, 7), coralMat);\n  const split = i % 2 === 0 || api.rng() > 0.55;\n  if (split) {\n    const side = api.rng() > 0.5 ? 1 : -1;\n    const q1 = [p2[0] + px * side * s * 0.11, p2[1] + s * 0.12, p2[2] + pz * side * s * 0.11];\n    const q2 = [p2[0] + px * side * s * 0.2 + Math.cos(a) * s * 0.04, p2[1] + s * 0.25, p2[2] + pz * side * s * 0.2 + Math.sin(a) * s * 0.04];\n    api.add(api.tube([p2, q1, q2], rad * 0.72, 7), coralMat);\n    api.add(api.icosphereRock(rad * 1.35, 0.28).translate(q2[0], q2[1], q2[2]), tipMat);\n  }\n  api.add(api.icosphereRock(rad * 1.5, 0.3).translate(p3[0], p3[1], p3[2]), tipMat);\n  for (let k = 1; k < 3; k++) {\n    const t = k / 3;\n    const bx = p1[0] * (1 - t) + p3[0] * t;\n    const by = p1[1] * (1 - t) + p3[1] * t;\n    const bz = p1[2] * (1 - t) + p3[2] * t;\n    api.add(api.icosphereRock(rad * 1.18, 0.35).translate(bx, by, bz), tipMat);\n  }\n}\nfor (let f = 0; f < 3; f++) {\n  const ang = (f * 120 + 35) * Math.PI / 180;\n  const ux = Math.cos(ang);\n  const uz = Math.sin(ang);\n  const vx = -uz;\n  const vz = ux;\n  const cx = ux * s * 0.13;\n  const cz = uz * s * 0.13;\n  const y0 = baseY + s * 0.04;\n  const nodes = [];\n  for (let row = 0; row < 5; row++) {\n    const yy = y0 + row * s * 0.115;\n    const half = s * (0.04 + row * 0.045);\n    const count = row + 2;\n    nodes[row] = [];\n    for (let j = 0; j < count; j++) {\n      const u = -half + 2 * half * j / (count - 1);\n      nodes[row][j] = [cx + vx * u, yy, cz + vz * u];\n      if (row > 0) {\n        const parentIndex = Math.min(Math.floor(j * (nodes[row - 1].length - 1) / (count - 1)), nodes[row - 1].length - 1);\n        const parent = nodes[row - 1][parentIndex];\n        api.add(api.tube([parent, nodes[row][j]], s * 0.012, 5), fanMat);\n      }\n      if (j > 0) api.add(api.tube([nodes[row][j - 1], nodes[row][j]], s * 0.009, 5), fanMat);\n    }\n  }\n  const top = nodes[4];\n  for (let j = 0; j < top.length; j++) api.add(api.icosphereRock(s * 0.022, 0.25).translate(top[j][0], top[j][1], top[j][2]), tipMat);\n}\napi.collider({ kind: 'cylinder', radius: s * 0.5, halfHeight: s * 0.07, offset: [0, s * 0.07, 0] });\napi.collider({ kind: 'capsule', radius: s * 0.3, halfHeight: s * 0.32, offset: [0, baseY + s * 0.32, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:46:55.825Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 20172,
+    "parts": 5,
+    "colliders": 2
+  }
+}

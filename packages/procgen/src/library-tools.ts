@@ -43,7 +43,7 @@ export const LibraryFileSchema = z.object({
   def: GeneratorDef,
   provenance: z.object({
     /** "codex": written by the coding model; "example": a reviewed few-shot example. */
-    source: z.enum(['codex', 'example']),
+    source: z.enum(['codex', 'claude-code', 'example']),
     model: z.string().max(80).optional(),
     effort: z.string().max(20).optional(),
     createdAt: z.string().max(40),

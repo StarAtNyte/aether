@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "seaweed",
+    "description": "Clump of tall wavy kelp ribbons with small bladders, rooted on a rock",
+    "category": "nature",
+    "keywords": [
+      "seaweed",
+      "kelp",
+      "sea grass"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#547f2f",
+        "description": "main kelp color"
+      },
+      "height": {
+        "type": "number",
+        "default": 3.2,
+        "min": 0.8,
+        "max": 10,
+        "description": "overall kelp height in meters"
+      },
+      "strands": {
+        "type": "int",
+        "default": 9,
+        "min": 3,
+        "max": 20,
+        "description": "number of tall kelp ribbons"
+      }
+    },
+    "size": [
+      1.673,
+      3.519,
+      1.414
+    ]
+  },
+  "def": {
+    "id": "seaweed",
+    "description": "A detailed clump of tall, wavy kelp ribbons arranged for a strong silhouette from every side, with branching fronds, small buoyant bladders, and a faceted anchor rock.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#547f2f",
+        "description": "main kelp color"
+      },
+      "height": {
+        "type": "number",
+        "default": 3.2,
+        "min": 0.8,
+        "max": 10,
+        "description": "overall kelp height in meters"
+      },
+      "strands": {
+        "type": "int",
+        "default": 9,
+        "min": 3,
+        "max": 20,
+        "description": "number of tall kelp ribbons"
+      }
+    },
+    "source": "const h = params.height;\nconst count = params.strands;\nconst baseR = h * 0.16;\nconst kelpMat = { preset: 'leaf', roughness: 0.72, flatShading: false, vertexColors: true };\nconst bladderMat = { preset: 'leaf', roughness: 0.62, flatShading: true, vertexColors: true };\nconst rockMat = { preset: 'stone', color: '#59615a', roughness: 0.96, flatShading: true, vertexColors: true };\nconst rock = api.icosphereRock(baseR * 1.3, 0.48).scale(1.2, 0.58, 1.0).translate(0, baseR * 0.42, 0);\nrock.vertexColor((x, y, z) => api.mix('#394640', '#788078', 0.48 + api.noise3(x * 5, y * 5, z * 5) * 0.22));\napi.add(rock, rockMat);\nfor (let i = 0; i < count; i++) {\n  const a = (i / count) * Math.PI * 2 + (api.rng() - 0.5) * 0.32;\n  const radial = baseR * (0.22 + 0.58 * api.rng());\n  const sh = h * (0.68 + 0.31 * api.rng());\n  const width = h * (0.034 + 0.016 * api.rng());\n  const depth = width * (0.16 + 0.08 * api.rng());\n  const phase = api.rng() * Math.PI * 2;\n  const bends = 2.0 + api.rng() * 1.7;\n  const lean = (api.rng() - 0.5) * width * 2.2;\n  const levels = 11;\n  const shape = [];\n  for (let j = 0; j <= levels; j++) {\n    const t = j / levels;\n    const half = width * (1 - 0.72 * t) * (0.82 + 0.18 * Math.sin(t * Math.PI));\n    const center = Math.sin(t * bends * Math.PI * 2 + phase) * width * (0.42 + 1.05 * t) + lean * t;\n    shape.push([center - half, baseR * 0.42 + t * sh]);\n  }\n  for (let j = levels; j >= 0; j--) {\n    const t = j / levels;\n    const half = width * (1 - 0.72 * t) * (0.82 + 0.18 * Math.sin(t * Math.PI));\n    const center = Math.sin(t * bends * Math.PI * 2 + phase) * width * (0.42 + 1.05 * t) + lean * t;\n    shape.push([center + half, baseR * 0.42 + t * sh]);\n  }\n  const ribbon = api.extrude(shape, depth).rotate(0, a * 180 / Math.PI, 0).translate(Math.cos(a) * radial, 0, Math.sin(a) * radial);\n  const strandColor = api.mix(params.color, i % 3 === 0 ? '#b2a83b' : '#244e32', 0.18 + 0.16 * api.rng());\n  ribbon.vertexColor((x, y, z) => api.mix(strandColor, '#d0bd55', Math.max(0, Math.min(0.3, y / h * 0.24 + api.noise3(x * 3, y * 2, z * 3) * 0.05))));\n  api.add(ribbon, kelpMat);\n  const bladderCount = 2 + Math.floor(api.rng() * 3);\n  for (let b = 0; b < bladderCount; b++) {\n    const t = 0.48 + b * 0.13 + api.rng() * 0.07;\n    if (t > 0.92) continue;\n    const center = Math.sin(t * bends * Math.PI * 2 + phase) * width * (0.42 + 1.05 * t) + lean * t;\n    const side = b % 2 === 0 ? 1 : -1;\n    const localX = center + side * width * (0.72 - 0.35 * t);\n    const rr = width * (0.42 + 0.12 * api.rng());\n    const bx = Math.cos(a) * radial + Math.cos(a) * localX + Math.sin(a) * side * depth * 1.8;\n    const bz = Math.sin(a) * radial + Math.sin(a) * localX - Math.cos(a) * side * depth * 1.8;\n    const by = baseR * 0.42 + t * sh;\n    const bladder = api.sphere(rr, 1).scale(0.8, 1.3, 0.8).translate(bx, by, bz);\n    bladder.vertexColor(() => api.mix(strandColor, '#c7ad3d', 0.38));\n    api.add(bladder, bladderMat);\n    const tipX = bx + Math.cos(a) * side * width * 1.7;\n    const tipZ = bz + Math.sin(a) * side * width * 1.7;\n    const frond = api.tube([[bx, by, bz], [tipX, by + width * 0.9, tipZ]], depth * 0.42, 5);\n    frond.vertexColor(() => strandColor);\n    api.add(frond, kelpMat);\n  }\n}\napi.collider({ kind: 'sphere', radius: baseR * 1.25, offset: [0, baseR * 0.42, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:48:05.528Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 4788,
+    "parts": 3,
+    "colliders": 1
+  }
+}
