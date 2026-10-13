@@ -71,3 +71,5 @@ export { composeScatterPacked } from './geometry/scatter';
 export { DEFAULT_FIELD_BUDGET, type FieldBudget } from './sync/field-mount';
 export { DEFAULT_VIRTUAL_TRIANGLES, VIEW_INTERVAL_MS } from './sync/scene-sync';
 export { gradeFor, NEUTRAL_GRADE, type Grade } from './gpu/grade';
+export { CameraTour, tourKeys, TOUR_SECONDS, type TourKey } from './view/tour';
+export { applyWind, FOLIAGE_GENERATORS, WIND_LINEAR, WIND_QUADRATIC } from './materials/wind';

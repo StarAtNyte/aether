@@ -983,6 +983,8 @@ buildLodChain(parts, ratios?) → LodLevel[]                   // discrete LODs 
 buildChunks(packed, count, radius) + new FieldCuller(chunks, { lodTriangles, radius, budgetTriangles }).update(view) → dirty level mask
 composeScatterPacked(placements, lift, sampler?) → Float32Array   // x, y, z, s·cos, s·sin (20 B per instance)
 gradeFor(skyState) → Grade                                  // post-pass colour grade (split tone, saturation, contrast)
+WorldRenderer.startTour(seconds = 26): boolean; stopTour(); touring   // fly-through around the content; canvas input stops it
+tourKeys(from, center, radius, focus?, floorY?) → TourKey[]; new CameraTour(keys, seconds).update(dt, camera, target)
 ```
 
 DAG builds run in `dag.worker.ts` (module worker; inline fallback),

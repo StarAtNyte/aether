@@ -174,7 +174,10 @@ async function run(target: Target, url: string): Promise<Result> {
     }
     await page.goto(`${url}/?${params.toString()}#/new`, { waitUntil: 'domcontentloaded' });
     await waitFor(page, 'boot', BOOT_TIMEOUT_MS, (p) => p.ready && p.entities > 0);
-    const backend = await page.evaluate(() => window.__aether?.simulation?.backend ?? '?');
+    const backend = await page.evaluate(() => {
+      const r = window.__aether?.simulation?.renderer;
+      return `${window.__aether?.simulation?.backend ?? '?'} (${r?.gpu.tier ?? '?'}: ${(r?.gpu.description ?? '?').slice(0, 60)})`;
+    });
     const t0 = performance.now();
     const input = page.getByLabel('Prompt', { exact: true });
     await input.fill(PROMPT);

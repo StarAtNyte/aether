@@ -9,7 +9,7 @@
  */
 import { performance } from 'node:perf_hooks';
 import { simplifyMesh } from '../../packages/render/src/virtual/simplify';
-import { assembleCut, buildClusterDag, createCutScratch, cutIndexCount, selectCut, type CutView } from '../../packages/render/src/virtual/cluster-dag';
+import { assembleCut, buildClusterDag, createCutScratch, selectCut, type CutView } from '../../packages/render/src/virtual/cluster-dag';
 import { icosphere, median } from '../lib/meshes';
 
 const subdivs = process.argv.slice(2).map(Number).filter((n) => n >= 1 && n <= 9);
@@ -45,7 +45,6 @@ for (const s of subdivs.length ? subdivs : [5, 7, 8]) {
       idx = assembleCut(dag, out, n, target);
       times.push(performance.now() - a);
     }
-    void cutIndexCount;
     console.log(`  cut @${dist}: ${n} clusters, ${(idx / 3).toLocaleString()} tris (${((idx / 3 / tris) * 100).toFixed(2)}%), ${median(times).toFixed(3)} ms`);
   }
 }

@@ -41,7 +41,7 @@ const canyonOfColossi: Theme = {
   absorbs: ['desert'],
   blurb: 'a stratified sandstone canyon lined with weathered colossal heads and a ring of carved standing stones, under plateaus holding a million pines — every statue drawn as virtual geometry, the forest as culled level-of-detail fields',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 15.2, sunIntensity: 3.2, fog: { color: '#e8b98c', density: 0.004 }, bloom: 0.55, exposure: 1.05, weather: 'clear', ground: { material: { preset: 'sand', color: '#c98f5e' }, size: SIZE * 1.6 } });
+    b.env({ sky: 'day', timeOfDay: 15.2, sunIntensity: 3.2, fog: { color: '#e9c6a0', density: 0.0012 }, bloom: 0.55, exposure: 1.05, weather: 'clear', ground: { material: { preset: 'sand', color: '#c98f5e' }, size: SIZE * 1.6 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 46] });
   },
   build(c) {

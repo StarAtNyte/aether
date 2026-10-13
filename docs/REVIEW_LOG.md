@@ -850,3 +850,83 @@ and scatter was already instanced, so no impostor LOD was added.
   previous stage measured +202 and +434 MB). GPU object counts stayed
   constant (49 geometries, 30 textures, 17 materials). The budget was not
   relaxed.
+
+## Engine R&D: virtual geometry, scatter fields, grade, wind, fly-through
+
+**What changed**
+
+- `packages/render/src/virtual/`: QEM simplifier (half-edge collapse),
+  meshlet clustering with spheres and normal cones, cluster LOD DAG with
+  watertight cut selection, a DAG worker + validated client, the per-mesh
+  `VirtualGroup` (shared vertex buffers, one packed dynamic index buffer,
+  budget governor), automatic LOD chains, the chunked `FieldCuller` and the
+  `ScatterField` (one instanced mesh per level and part).
+- `SceneSync`: parts with ≥ 20k triangles become virtual geometry (full
+  detail raycast-only), scatter layers with ≥ 2 000 instances become fields;
+  `updateView` re-plans both (throttled to 120 ms while moving, forced for
+  captures); `sceneTriangles`, `fieldStats`, `virtualStats`.
+- Renderer: per-GPU `fieldInstances/fieldTriangles/virtualTriangles`
+  budgets, sky-derived colour grade in the post pass, p90 resolution
+  governor, foliage wind (TSL position node), fly-through tour, built-in
+  generators in the compute worker.
+- Content: `colossus` generator (moai head / carved standing stone /
+  boulder, 49k–786k smooth triangles), terrain variant 3 (canyon), the
+  offline planner's "Canyon of Colossi" theme and template, physics collider
+  views of huge outputs.
+- Schema (backward compatible): scatter `count` ≤ 1 000 000, total ≤ 2 000 000.
+- Studio: scene-vs-drawn triangle badge, fly-through button,
+  `?engine=classic`. Tests: `virtual`, `scatter-field`, `virtual-mesh`,
+  `dag-client`, `tour`, `grade`, `sculpture`, alloc probes, CSP, badge.
+- Experiments + `docs/RESEARCH_LOG.md`; `npm run e2e:benchmark`.
+
+**SECURITY**
+
+- New input boundaries: DAG worker messages are validated on both ends
+  (`parseDagRequest`: typed arrays only, ≤ 2 M vertices / 12 M indices, every
+  index in range, finite positions; `validateDag`: types, lengths, offsets,
+  index and group ranges, NaN-free LOD data), one build at a time, 60 s
+  timeout, the worker is terminated and respawned on timeout or crash.
+  Built-in generation through the compute worker re-validates outputs
+  (`validateOutput`) and falls back inline. `?engine=classic` is an exact
+  string compare. The World IR limits stay zod-enforced (count ≤ 1 M per
+  layer, 2 M total) and renderers clamp to per-GPU budgets.
+- No eval / `new Function`; the DAG worker gets its own CSP
+  (`default-src 'none'; script-src 'self'`) on the Node server and in
+  `vercel.json` (tested); the page CSP is unchanged (no `'unsafe-inline'`
+  scripts, no new wildcard). No innerHTML: the badge renders React text.
+- No secrets, no network, no subprocesses, no downloads, no new
+  dependencies (`npm audit --omit=dev`: 0 vulnerabilities). Spark was only
+  evaluated from `npm view` metadata.
+- Memory caps: DAG cache 96 MB LRU (0 in low-memory mode), LOD chain LRU
+  (24), field buffers bounded by the triangle budget, index capacity by
+  `virtualTriangles`.
+
+**PERFORMANCE**
+
+- Per-frame allocations: allocation probes cover field + virtual view
+  planning with a moving camera (50k pines, two sculptures) and the
+  fly-through (rig update): 0 B/frame from render code. Fixed on the way:
+  doubles boxed through calls and object fields in the tour (typed state
+  arrays, inline spline weights) and in the caster-reuse check (inlined).
+- Workers: DAG builds (seconds of CPU for 400k+ triangles) and built-in
+  generation run off the main thread; the full-detail mesh is never drawn
+  while a hierarchy builds (it caused 43 s of blocked page in the critique
+  views on SwiftShader before).
+- GPU resources: showcase rebuilt twice with a small world in between
+  (`e2e:benchmark --cycles=2`, Firefox): 66 GPU geometries vs 68 baseline,
+  textures 28, cached geometries 22, materials 7 — flat.
+- Uploads: found that three re-uploads `DynamicDrawUsage` buffers on every
+  use; static usage + ranged version bumps took Firefox from 100 ms to 33 ms
+  median frame (render CPU 118 → 21 ms) on the showcase.
+- Bundle: the new render modules add ~34 KB minified (13.8 KB gzip) to the
+  editor chunk (EditorRoute 713.9 → 721.6 kB as built) plus 4.7 KB for the
+  sculpture generator; the DAG worker (15.3 KB) loads only when a mesh needs
+  it. Nothing over 50 KB was added to the first frame.
+- First frame: unchanged path for ordinary worlds (fields/virtual mount
+  only for ≥ 2 000 instances / ≥ 20k triangles); built-ins now generate in
+  the worker, so heavy generators no longer block it.
+- Firefox/WebGL2 measured (hardware GPU): showcase p50 33 ms, p90 83 ms
+  while orbiting, 236 M scene triangles → 2.3 M drawn; Chromium on
+  SwiftShader is GPU-bound at ~1.5 s per frame for the same scene (software
+  rasterizer), with software-tier budgets lowered to 300k field / 250k
+  virtual triangles.

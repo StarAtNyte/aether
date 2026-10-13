@@ -3,7 +3,6 @@
  * {@link ScatterField}: LOD chains (cached per generator output), packed
  * placements and per-field triangle budgets.
  */
-import type { BufferGeometry } from 'three';
 import type { GeneratorOutput, MeshPart } from '../types';
 import { buildLodChain, type LodLevel } from '../virtual/lod-chain';
 
@@ -77,11 +76,4 @@ export function shareBudget(total: number, instances: readonly number[]): number
   const sum = instances.reduce((s, n) => s + n, 0);
   if (sum <= 0) return instances.map(() => 0);
   return instances.map((n) => Math.max(total * 0.05, Math.floor((total * n) / sum)));
-}
-
-/** Geometry handle list of one field level (keys to release, geometries per part). */
-export interface FieldLevelGeometry {
-  keys: string[];
-  geometries: BufferGeometry[];
-  triangles: number;
 }

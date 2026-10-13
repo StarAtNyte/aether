@@ -18,8 +18,12 @@ import { defineGenerator, lin, pBool, pColor, pInt, pNum, pVariant, shade } from
 /** Grid edge per cube face for each detail level (12·N² triangles: 49k … 786k). */
 const DETAIL_GRID = [64, 128, 192, 256] as const;
 
-/** Smooth stone (no flat shading: the geometry carries the detail). */
-const SMOOTH_STONE = { preset: 'stone', vertexColors: true, roughness: 0.9 } as const;
+/**
+ * Smooth stone (no flat shading: the geometry carries the detail). White base
+ * colour: the vertex colours already hold the stone's tone (the preset's grey
+ * would multiply them down to near black).
+ */
+const SMOOTH_STONE = { preset: 'stone', color: '#ffffff', vertexColors: true, roughness: 0.9 } as const;
 
 function gauss(x: number, w: number): number {
   return Math.exp(-(x * x) / (w * w));

@@ -530,7 +530,11 @@ allocation-free per frame (allocation probe).
   dynamic index buffer (uploaded from the first changed instance); a budget
   governor raises the error threshold when cuts exceed the GPU class's
   triangle budget. Shadow casters skip cluster frustum/back-face culling
-  (off-screen parts can shadow the view); LOD still applies.
+  (off-screen parts can shadow the view); LOD still applies, and a caster
+  keeps its cut while the camera moved < 1.5 % of its distance or while it
+  is far outside the view. These buffers use *static* usage on purpose:
+  three re-uploads `DynamicDrawUsage` buffers on every draw, so changes go
+  up only through version bumps with accumulated update ranges.
 - *Scatter fields* (`virtual/field-culler.ts`, `scatter-field.ts`). Layers
   of ≥ 2 000 instances (up to 1 000 000 per entity) are packed into 20-byte
   records, sorted into ~128-instance chunks and drawn through one instanced
@@ -550,6 +554,11 @@ allocation-free per frame (allocation probe).
 - *Grade.* The post pass applies a colour grade derived from the sky state
   (split tone toward the key light and the zenith, saturation, contrast
   pivot) in the same composite pass; uniforms only.
+- *Camera director.* `startTour()` flies a loop around the content
+  (`view/tour.ts`: keys from the framing sphere and the focus objects, low
+  passes and high reveals, a Catmull-Rom spline with eased timing, starting
+  and ending at the current view); any pointer or wheel input, or any camera
+  command, stops it. The studio's camera button starts it.
 - *Resolution governor.* `AdaptiveResolution` decides on the 90th-percentile
   frame time of the last 48 frames, so periodic stutter scales the buffer
   down even when the mean frame rate looks fine.
@@ -911,8 +920,13 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
   materials on the main thread (measured 0.7–4 s on a power-saving laptop
   with a software GPU); verification and captures no longer add to it.
 - Static-prop instancing covers identical static primitives only; generated
-  (procedural) props are unique per seed, and distant scatter has no
-  impostor LOD yet.
+  (procedural) props are unique per seed. Distant scatter uses QEM LOD
+  levels (no impostor billboards).
+- Virtual geometry and scatter fields plan on the CPU: re-plan frames while
+  the camera moves cost a few milliseconds (p90 above p50); GPU compute
+  culling would remove that on WebGPU only. Ghost previews (proposed worlds)
+  draw sculptures at full detail. On software rasterizers (SwiftShader) the
+  showcase is GPU-bound at about one frame per second.
 - `spawn` copies the template entity but not its children.
 - Prismatic joints between bodies with different starting orientations align
   the slide axis only approximately.

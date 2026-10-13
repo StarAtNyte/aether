@@ -61,9 +61,10 @@ WebGPU / WebGL2, the e2e configuration) and Firefox on WebGL2.
   61 MB of matrices. Re-plan 0.0–0.16 ms when nothing changed, 2.4–3.4 ms
   when levels are rewritten; ≈ 137k instances / 3 M triangles drawn per frame
   instead of 208 M (69×) under a 3 M budget.
-- Browser: the CPU side is negligible (profile of a 6 s orbit: 44 ms in
-  `updateView`); on SwiftShader the cost is GPU upload (`writeBuffer`), so
-  re-plans are throttled to one per 120 ms while moving, levels are written
+- Browser: the CPU side is small (SwiftShader profile of a 6 s orbit: 44 ms
+  in `updateView`; Firefox on hardware: 1–1.5 ms per re-plan for the two
+  500k fields); uploads dominate, so re-plans are throttled to one per
+  120 ms while moving, levels are written
   in stable chunk order and uploaded from the first changed chunk only, and
   empty levels are never submitted.
 - Per-GPU budgets (instances / triangles): discrete 2 M / 4 M, integrated
@@ -77,18 +78,42 @@ plateaus, 60k grass tufts on the floor, 18 colossal heads, a ring of 12
 carved standing stones and 10 boulders. Smoke (Node): builds and verifies
 in 1.5 s.
 
-`npm run e2e:benchmark` (1280×800, camera orbiting for 6 s):
+`npm run e2e:benchmark` (1280×800, camera orbiting for 6 s). Firefox ran on
+the machine's hardware GPU (WebGL2); headless Chromium on SwiftShader:
 
-| Browser / backend | Scene triangles | Drawn | Ratio | Draws | Frame p50 / p90 | Build |
-| --- | --- | --- | --- | --- | --- | --- |
-| Chromium, WebGPU (SwiftShader) | 223 M | 1.16 M | 192× | 113 | 1 467 / 3 233 ms | 45 s |
-| Chromium, WebGL2 (SwiftShader) | 223 M | 0.76–1.2 M | 190–290× | 119 | 1 467 / 1 967 ms | 55 s |
-| Firefox, WebGL2 | 236 M (grass fits its budget) | 2.1 M | 112× | 116 | 100 / 117 ms | 10 s |
+| Browser / engine | Scene triangles | Drawn | Draws | CPU in render() | Frame p50 / p90 |
+| --- | --- | --- | --- | --- | --- |
+| Firefox WebGL2, scale engine | **236 M** (1 M pines, 60k grass, 41 sculptures) | 2.3 M (103× fewer) | 115 | 21 ms | **33 ms / 83 ms** |
+| Firefox WebGL2, classic (`?engine=classic`) | 27 M (instance budget dropped 90 % of the trees) | 26.4 M | 66 | 9 ms | 33 ms / 50 ms |
+| Chromium WebGPU (SwiftShader), scale | 223 M | 1.2 M (192×) | 113 | GPU-bound | 1.5 s / 3.2 s |
+| Chromium WebGL2 (SwiftShader), scale | 223 M | 0.8–1.2 M | 119 | GPU-bound | 1.5 s / 2.0 s |
+| Chromium WebGPU (SwiftShader), classic | 223 M requested | — | — | — | agent turn did not finish in 240 s (critique views of 18 M full-detail triangles) |
 
-The software rasterizer is GPU-bound (the CPU profile is 99 % waiting in
-`writeBuffer`); the same frame on a hardware GPU is measured with
-`--only=chromium-gpu`. The classic engine (`?engine=classic`) is the A/B
-baseline: see below.
+The classic engine can only show a tenth of the forest and still draws 26 M
+triangles; the scale engine shows the whole scene at the same median frame
+time. Its p90 comes from re-plan frames (every 120 ms while the camera
+moves); a static or slowly moving camera re-plans nothing.
+
+Two findings made the difference between 100 ms and 33 ms per frame in
+Firefox:
+
+1. **`DynamicDrawUsage` re-uploads every draw.** three's `Attributes.update`
+   uploads any buffer with dynamic usage on *every* use, ignoring versions
+   and update ranges. The shared virtual-geometry index buffer (41 meshes,
+   two passes) and the field instance buffers were dynamic, so up to 16 MB
+   went to the GPU dozens of times per frame (34 ms/frame in
+   `updateAttribute`). They now use static usage and upload only through
+   version bumps with update ranges (accumulated until the renderer
+   uploads them): 34 → 6 ms/frame.
+2. **Shadow casters re-selected every re-plan.** Casters skip frustum
+   culling, so 18 colossal heads walked their whole hierarchy every 120 ms.
+   A caster now keeps its cut while the camera moved < 1.5 % of its
+   distance or while it is more than three radii outside the view.
+
+Other measured checks: GPU objects stay flat over showcase rebuilds
+(`--cycles=2`: 66 GPU geometries vs a 68 baseline, 28 textures, 22 cached
+geometries, 7 materials); the planner allocates nothing per frame
+(allocation probe, moving camera over a 50k-pine field and two sculptures).
 
 ## 4. Smaller wins
 

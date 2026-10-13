@@ -103,9 +103,11 @@ explicit state, so the AI can be held to account:
   *scatter fields* turn any layer of 2 000+ instances (up to a million per
   layer) into spatial chunks with automatic LOD meshes, culled per chunk and
   spent against a per-GPU triangle budget, far chunks first. The built-in
-  showcase — "a canyon with a million trees and ancient statues" — holds
-  223 M triangles and draws about 1.2 M (≈ 190× fewer); the viewport shows
-  both numbers. Vegetation fields sway in a procedural wind, and the post
+  showcase — "a canyon with a million trees and ancient statues", also a
+  template — holds 236 M triangles and draws about 2.3 M (≈ 100× fewer),
+  at the same median frame time (33 ms in Firefox) as the full-detail
+  renderer needs for a tenth of that forest; the viewport shows both
+  numbers, and the camera button flies through any world. Vegetation fields sway in a procedural wind, and the post
   pass applies a colour grade derived from the sky (split tone, saturation,
   contrast). Research notes and numbers: [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md),
   [`experiments/`](experiments).
@@ -527,13 +529,14 @@ All LLM output and all user input are treated as untrusted.
 
 | Layer | Command | Coverage |
 | --- | --- | --- |
-| Unit and integration | `npm test` | About 1,580 Vitest tests across 110 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
+| Unit and integration | `npm test` | About 1,690 Vitest tests across 125 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials) and the scale-geometry algorithms (watertight LOD cuts, simplifier invariants, budgeted field culling, allocation-free view planning). No test makes a network call. |
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 13 prompts, including all 8 gallery examples. Every resulting world is re-validated and re-verified independently. |
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
 | Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
-| Types | `npm run typecheck` | Strict TypeScript, zero errors |
+| Benchmark | `npm run build && npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles, CPU in the renderer and the view planner while the camera orbits; `--classic` for the full-detail engine, `--cycles=N` checks GPU objects stay flat across rebuilds. |
+| Types | `npm run typecheck` | Strict TypeScript, zero errors (including `experiments/`) |
 
 Install the browsers for e2e once with `npx playwright install chromium firefox`.
 
