@@ -711,3 +711,142 @@ Defects found during the review and fixed (each with a test):
   (agent turns, quality-view captures, undo history of very different
   worlds) rather than leaked GPU objects, but this was not proven and the
   budget was not relaxed.
+
+## Performance and architecture: verification workers, lazy Rapier, frame-loop work
+
+Scope: physics verification in module workers (protocol, pool, parallel
+fork verification, live results, main-thread fallback), lazy and lighter
+Rapier/QuickJS loading, the remaining hot-path items (terrain picking,
+pooled `getTransform`, numeric physics event keys, once-per-tick world-state
+JSON for scripts) and frame-loop work (allocation probe, BVH raycasts,
+static-prop instancing, adaptive resolution, asynchronous captures).
+
+Measurement machine: a laptop in its power-saving profile (CPU at about
+1.2 GHz, platform profile `quiet`), headless browsers on a software GPU
+(SwiftShader). Composited frames take about one second in Chromium there,
+for the build at the start of this stage as well; absolute timings are
+therefore slow, comparisons are made against that build (`85dfae2`, built
+separately and run with the same probes).
+
+Defects found during the stage (each with a regression test):
+
+1. **Rapier wasm rewrite passed a property of the URL.** The compat bundle
+   calls its initialiser with `toByteArray("…").buffer`; the first version
+   of the build plugin replaced only `toByteArray("…")`, so the initialiser
+   got `"/assets/….wasm".buffer` and every verification failed with
+   "Invalid base URL" (caught by the new e2e assertion that verification ran
+   in a worker). The plugin now consumes the trailing `.buffer` and a test
+   runs it on the real package and checks the argument is the URL itself.
+2. **Captures froze the page for seconds.** Critique views and thumbnails
+   read the canvas back synchronously (`drawImage` + `toDataURL`), which
+   waits for the whole GPU queue: 24–37 s of a single main-thread task on
+   the software GPU. Captures now render into a reused output render target
+   and use `readRenderTargetPixelsAsync`, then encode on a CPU-backed
+   canvas with `toBlob`. Compared with the synchronous path after the camera
+   settled: mean absolute pixel difference 1.4–2.3 / 255 (JPEG noise) in
+   Chromium WebGPU, Chromium WebGL2 and Firefox, correct orientation on both
+   backends; thumbnail capture in Firefox 34 ms.
+3. **Per-frame garbage found by the new allocation probe:** array
+   destructuring in the weather update, `Map` entry iteration in the
+   selection highlighter, a `Map.clear()` per physics step (a new hash table
+   every step) and boxed doubles in the camera damping and BVH traversal.
+   All fixed; the probe asserts < 16 sampled bytes per frame.
+
+**Before → after**
+
+| | Before (`85dfae2`) | After |
+| --- | --- | --- |
+| Rapier main chunk | 4,231 KB (1,615 KB gzip) | 217 KB (38 KB gzip) + 3,010 KB wasm (1,144 KB gzip), shared by page and workers |
+| All JS + wasm + CSS in `dist` | 14,041 KB (4,956 KB gzip) | 13,746 KB (4,715 KB gzip) |
+| Editor chunk (first load of the editor) | 620 KB | 651 KB (+31 KB: pool, protocol, live view, BVH, batches) |
+| Transferred until the first frame | 2,826 KB | 2,858 KB (Rapier and QuickJS still not loaded) |
+| First frame, Chromium WebGPU / WebGL2 / Firefox (2 runs each) | 3.9–5.5 s / 10.9–11.7 s / 4.2–4.4 s | 4.4–5.9 s / 7.8–11.3 s / 4.3–4.8 s (noise) |
+| Verification on the main thread during an agent turn | the whole run (cooperative 8 ms slices) | none; longest non-render script while a worker verifies: 0–9 ms |
+| "Run checks" on a rendered world (e2e) | — | 109–166 ms in 2 lanes; longest task 0 ms, worst stall 53–62 ms (Chromium), 0 ms (Firefox) |
+| Longest main-thread task in an agent turn (Chromium WebGPU) | 32–39 s (sync capture) | 0.7–3.4 s (three.js material compile of the new world, see below) |
+| Raycast on a 131k-triangle terrain | 11–21 ms per ray | 0.03–0.05 ms (BVH build 30 ms warm, at idle) |
+| Physics event drain, 1000 boxes | 1.36–1.42 ms, strings per contact | 1.22–1.32 ms, no allocation for steady contacts |
+
+QuickJS already shipped a single variant (`quickjs-emscripten-core` +
+`@jitl/quickjs-wasmfile-release-sync`, one 503 KB wasm); the worker build
+reuses the same wasm file. Neither QuickJS nor Rapier is modulepreloaded.
+Static-prop instancing was sized on the 13 smoke worlds: it saves up to 19
+draw calls per pass (bowling alley); procedural props are unique per seed
+and scatter was already instanced, so no impostor LOD was added.
+
+**Security**
+
+- New input boundary: worker messages. Requests are zod-validated in the
+  worker (discriminated union, strict objects, request ids), the world is
+  re-validated with `validateWorld` (prototype-pollution screen, caps),
+  colliders are typed-array checked with per-shape and total caps (≤ 5000
+  entities, ≤ 2048 colliders each, ≤ 16 M numbers, heightfield sample count
+  checked). Replies are zod-validated on the main thread (strings clipped to
+  2000 chars, lists ≤ 512, finite numbers); unknown or late replies are
+  ignored. Malformed requests get a `failed` reply when an id is
+  recoverable; the handler never throws.
+- The worker runs only our code; model-written generator code never enters
+  it (its colliders arrive as data) and behaviour scripts stay in QuickJS.
+  It is served with `default-src 'none'; script-src 'self'
+  'wasm-unsafe-eval'; connect-src 'self'` by the Node server and
+  `vercel.json` (tested); the page CSP is unchanged. No `eval`,
+  `new Function` or `innerHTML` in the new code.
+- Resource caps: per-request timeout (budget + 20 s cold start) terminates
+  the worker; cancellation by `AbortSignal`; at most 2 workers, idle ones
+  terminated after a minute.
+- The build plugin reads only the wasm next to the resolved Rapier module and
+  rewrites it only when the file is byte-identical (SHA-256) to the inlined
+  module. No new dependencies; `npm audit --omit=dev`: 0 vulnerabilities.
+
+**Performance**
+
+- Allocation probe (`tests/unit/alloc-probe.ts`, V8 sampling heap profiler
+  through `node:inspector`, collected objects included): pose application
+  for 500 bodies, camera rig orbit + follow, grow-in, highlighter, frame
+  stats, adaptive resolution, environment + 5000 weather particles, static
+  batches with a moving member, BVH ray misses and the physics event drain
+  all stay under 16 sampled bytes per frame after JIT warm-up.
+- Heavy CPU in workers: verification (now), generator sandbox and mesh
+  operations (before). BVH builds run at idle.
+- GPU resources: capture targets are an LRU of two sizes, disposed with the
+  renderer; instanced batch buffers are released on regroup (unchanged
+  batches are kept, not recreated) and never dispose shared geometry or
+  materials.
+- Memory bounded: pose pool ≤ 4096 records, impulse slots ≤ 8192 pairs,
+  interned event ids compacted at 2^15, BVHs held by a `WeakMap` per
+  geometry, live verification list ≤ 200 tests.
+- Unit tests: 1,581 tests in 110 files (new: worker protocol through the
+  pure handler, pool with fake workers running the real handler —
+  sharding, progress, cancel, crash, start failure, timeout, idle —,
+  shard planning and merging, renderer colliders, live feed throttling,
+  verify shards/abort/progress, event collector, world-state JSON, pose
+  pool, Rapier plugin, BVH against three.js on transformed meshes and all
+  material sides, adaptive resolution, static batches, allocation probes,
+  worker CSP).
+
+**Verification**
+
+- `tsc -p tsconfig.json --noEmit`: 0 errors.
+- Vitest: 1,580/1,581 in the full parallel run; the failure is "steps 1000
+  dynamic boxes in under 8 ms" under load (8.6–9.7 ms), which passes alone
+  in this build and in the stage-start build alike (power-saving CPU; seen
+  in an earlier stage too).
+- `npm run build -w @aether/studio`: ok. `npm run smoke`: 13/13.
+- `npm run e2e`: passed in Chromium WebGPU, Chromium WebGL2 and Firefox
+  WebGL2. Every agent turn verified in workers (1–2 lanes), no non-render
+  main-thread script above 9 ms while a worker verified, "Run checks" with
+  no long task.
+
+**Open items**
+
+- The first frame of a newly built world (or new lighting) compiles three.js
+  node materials on the main thread: 0.7–4 s single tasks on this machine
+  (Chromium), event-loop stalls of 1.6–12.6 s in Firefox. This is the
+  remaining source of long tasks during agent turns; verification and
+  captures no longer contribute. Progressive compilation (`compileAsync`
+  per entity behind the grow-in) is the next step.
+- `npm run e2e:memory -- --only=firefox` still exceeds its tab-growth budget
+  (401 → 583 MB over 20 cycles, peak 755 MB at cycle 15, budget +160 MB; the
+  previous stage measured +202 and +434 MB). GPU object counts stayed
+  constant (49 geometries, 30 textures, 17 materials). The budget was not
+  relaxed.
