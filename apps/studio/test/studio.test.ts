@@ -21,6 +21,7 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
     renderer: { gpu: { tier: 'integrated', description: 'Test GPU' } },
     setShowColliders: () => undefined,
     setSelection: () => undefined,
+    setGizmo: () => undefined,
     setLowMemory: (on: boolean) => void lowMemory.push(on),
     frameWorld: async () => undefined,
     touch: () => undefined,

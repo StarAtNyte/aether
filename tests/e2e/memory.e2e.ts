@@ -274,7 +274,7 @@ async function run(browser: Browser, url: string, name: string, expectBackend: s
   const errors: string[] = [];
   const { context, page } = await newPage(browser, errors);
   try {
-    await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
     const booted = await waitReady(page, 'first frame');
     check(booted.backend === expectBackend, `expected ${expectBackend}, got ${booted.backend}`);
     check(!booted.lowMemory, 'low-memory mode should be off on this machine');
@@ -368,7 +368,7 @@ async function lowMemoryRun(browser: Browser, url: string): Promise<Report['lowM
   const stub = `Object.defineProperty(Navigator.prototype, 'deviceMemory', { configurable: true, get: () => 2 });`;
   const { context, page } = await newPage(browser, errors, stub);
   try {
-    await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
     const m = await waitReady(page, 'first frame (low memory)');
     check(m.lowMemory, 'low-memory mode did not turn on for a 2 GB device');
     check(m.historyLimit <= 40, `low-memory history limit is ${m.historyLimit}`);
@@ -390,7 +390,7 @@ async function chromiumWebglRecovery(browser: Browser, url: string): Promise<voi
   const init = `try { localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ backend: 'webgl2' })); } catch {}`;
   const { context, page } = await newPage(browser, errors, init);
   try {
-    await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
     const m = await waitReady(page, 'first frame (forced WebGL2)');
     check(m.backend === 'webgl2', `the backend setting did not force WebGL2 (got ${m.backend})`);
     await loseAndRecover(page);

@@ -669,7 +669,7 @@
   font-weight: 600;
 }
 
-.perf-hud__fps.is-bad strong {
+.viewport.is-playing .perf-hud__fps.is-bad strong {
   color: var(--danger-text);
 }
 
@@ -746,6 +746,11 @@
 .dock__btn.is-active {
   background: var(--accent-soft);
   color: var(--accent-text);
+}
+
+.dock__group {
+  display: flex;
+  gap: 2px;
 }
 
 .dock__sep {
@@ -890,6 +895,10 @@
 .vp-label__metric {
   flex: none;
   color: var(--text-3);
+}
+
+.vp-label__metric:empty {
+  display: none;
 }
 
 /* Agent progress */
@@ -1264,6 +1273,10 @@
     padding: 0 6px;
   }
 
+  .dock__opt {
+    display: none;
+  }
+
   .vp-gizmo {
     display: none;
   }
@@ -1316,7 +1329,7 @@
 
 /* Phone: viewport on top, sheet below */
 .editor[data-layout='phone'] {
-  --sheet-min: 224px;
+  --sheet-min: 176px;
 }
 
 .editor[data-layout='phone'] .editor__body {
@@ -1396,8 +1409,19 @@
   flex: none;
   gap: 2px;
   height: 44px;
-  padding: 0 var(--s-2);
+  padding: 0 var(--s-6) 0 var(--s-2);
   border-bottom: 1px solid var(--border);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent);
+}
+
+/* Smallest snap: the sheet is a prompt bar (tabs + composer only). */
+.sheet.is-min .agent__list {
+  display: none;
+}
+
+.sheet.is-min .composer {
+  margin-top: var(--s-3);
 }
 
 .sheet__tab {

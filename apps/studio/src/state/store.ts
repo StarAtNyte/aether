@@ -10,6 +10,7 @@ import { MAX_TOASTS } from '../config';
 import { appendEvent, trimChat, type ChatEntry, type ChatEventView, type ChatStatus, type DiagnosticView, type TestResultView } from '../lib/chat';
 import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
 import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
+import type { EditorTool } from '../engine/Simulation';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -105,6 +106,8 @@ export interface StudioState {
   save: { status: SaveStatus; error: string | null };
   /** Command palette open. */
   paletteOpen: boolean;
+  /** Editor tool (select, or a move / rotate / scale gizmo). */
+  tool: EditorTool;
   selection: string[];
   outlinerFilter: string;
   chat: ChatEntry[];
@@ -139,6 +142,7 @@ export interface StudioState {
   setPanel(side: 'left' | 'right', open: boolean): void;
   setSave(status: SaveStatus, error?: string | null): void;
   setPaletteOpen(open: boolean): void;
+  setTool(tool: EditorTool): void;
   select(ids: readonly string[]): void;
   setOutlinerFilter(filter: string): void;
   addUserMessage(text: string): number;
@@ -213,6 +217,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     panels: init.panels ? { left: init.panels.left, right: init.panels.right } : { left: true, right: true },
     save: { status: 'saved', error: null },
     paletteOpen: false,
+    tool: 'select',
     selection: [],
     outlinerFilter: '',
     chat: init.chat ? trimChat(init.chat) : [],
@@ -253,6 +258,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setPanel: (side, open) => set((s) => (s.panels[side] === open ? s : { panels: { ...s.panels, [side]: open } })),
     setSave: (status, error = null) => set((s) => (s.save.status === status && s.save.error === error ? s : { save: { status, error: error === null ? null : error.slice(0, 240) } })),
     setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+    setTool: (tool) => set({ tool }),
     select: (ids) => {
       const next = [...new Set(ids)];
       const cur = get().selection;

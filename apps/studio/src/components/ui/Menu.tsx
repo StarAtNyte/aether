@@ -5,7 +5,7 @@
  * Keyboard: arrows / Home / End move, Enter / Space select, Esc / Tab close
  * and return focus to the trigger. Closes on outside pointer, scroll and resize.
  */
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon, type IconName } from '../Icon';
 
@@ -43,7 +43,6 @@ export const Menu = memo(function Menu({
   width?: number;
 }): ReactElement {
   const [open, setOpen] = useState(false);
-  const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const id = useId();
@@ -67,9 +66,14 @@ export const Menu = memo(function Menu({
     let top = r.bottom + GAP;
     if (top + h > vh - EDGE && r.top - GAP - h >= EDGE) top = r.top - GAP - h;
     top = Math.max(EDGE, Math.min(top, vh - h - EDGE));
-    setStyle({ left: Math.round(left), top: Math.round(top), maxHeight: vh - 2 * EDGE });
+    // Positioned with direct writes (no extra render) and made visible before focusing:
+    // a `visibility: hidden` element cannot take focus.
+    list.style.left = `${Math.round(left)}px`;
+    list.style.top = `${Math.round(top)}px`;
+    list.style.maxHeight = `${vh - 2 * EDGE}px`;
+    list.style.visibility = 'visible';
     const first = list.querySelector<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)');
-    first?.focus();
+    first?.focus({ preventScroll: true });
   }, [open, align]);
 
   useEffect(() => {
@@ -84,10 +88,18 @@ export const Menu = memo(function Menu({
       close(false);
     };
     const onResize = (): void => close(false);
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      close(true);
+    };
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDown, true);
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onResize);
     return () => {
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onResize);
@@ -138,7 +150,7 @@ export const Menu = memo(function Menu({
       {trigger(props)}
       {open &&
         createPortal(
-          <div ref={listRef} id={id} className="menu" role="menu" aria-label={label} style={{ ...style, ...(width ? { width } : {}) }} onKeyDown={onListKey}>
+          <div ref={listRef} id={id} className="menu" role="menu" aria-label={label} style={{ visibility: 'hidden', ...(width ? { width } : {}) }} onKeyDown={onListKey}>
             {items.map((it) => {
               if (it.kind === 'separator') return <div key={it.id} className="menu__sep" role="separator" />;
               if (it.kind === 'heading') return <div key={it.id} className="menu__heading">{it.label}</div>;

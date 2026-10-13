@@ -103,6 +103,26 @@ try {
         await page.waitForTimeout(2000);
         console.log(JSON.stringify(await probe()));
         await page.screenshot({ path: `${OUT}${tag}-${sz}-drawer.png` });
+      } else if (step === 'menu') {
+        await page.getByRole('button', { name: 'View', exact: true }).click();
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-menu.png` });
+        await page.keyboard.press('Escape');
+      } else if (step === 'tooltip') {
+        await page.getByRole('button', { name: 'Undo', exact: true }).hover();
+        await page.waitForTimeout(900);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-tooltip.png`, clip: { x: 500, y: 0, width: 500, height: 120 } });
+      } else if (step === 'docs') {
+        await page.goto(`${server.url}/?debug=1#/docs`);
+        await page.waitForTimeout(800);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-docs.png` });
+      } else if (step === 'projects') {
+        await page.goto(`${server.url}/?debug=1#/projects`);
+        await page.waitForTimeout(800);
+        await page.getByRole('radio', { name: 'List view' }).click();
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-projects.png` });
+        await page.getByRole('radio', { name: 'Grid view' }).click();
       } else if (step === 'thumb') {
         const url = await page.evaluate(async () => (await window.__aether?.simulation?.thumbnail(640, 360)) ?? '');
         const { writeFileSync } = await import('node:fs');

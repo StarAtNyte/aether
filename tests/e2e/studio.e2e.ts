@@ -5,7 +5,8 @@
  * Starts the server in offline mock mode (serving the built studio from
  * `apps/studio/dist`), then drives the app like a user:
  *
- *  1. boot with `?debug=1`, wait for the default world to render and prove
+ *  1. open `#/new` with `?debug=1` (a new project from the starter scene,
+ *     created through the projects home), wait for it to render and prove
  *     the canvas is not blank (screenshot pixel variance);
  *  2. send four example prompts through the chat box (type + Enter), wait
  *     for each agent turn to finish, check the world changed and the
@@ -249,7 +250,7 @@ async function setPresentationMode(page: Page, on: boolean): Promise<void> {
     if (enable) {
       const style = document.createElement('style');
       style.id = id;
-      style.textContent = '.viewport__hint, .toasts, .toast { display: none !important; } * { caret-color: transparent !important; }';
+      style.textContent = '.nav-hint, .toasts, .toast, .tooltip { display: none !important; } * { caret-color: transparent !important; }';
       document.head.appendChild(style);
     }
   }, on);
@@ -279,7 +280,10 @@ interface RunMetrics {
 
 async function boot(page: Page, url: string, metrics: RunMetrics): Promise<void> {
   const t0 = performance.now();
-  await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
+  // The frame-rate counter only runs while the performance overlay is on (it is off by default).
+  await waitFor(page, 'the editor to open', BOOT_TIMEOUT_MS, () => page.evaluate(() => !!window.__aether));
+  await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: true }));
   await waitFor(page, 'the studio to render its first frame', BOOT_TIMEOUT_MS, async () => {
     const s = await snapshot(page);
     if (s?.fatal) throw new E2EFailure(`renderer failed: ${s.fatal}`);
@@ -315,7 +319,7 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   check(after.entities !== before.entities, `"${prompt.slug}" did not change the entity count (${before.entities})`);
   const pill = page.locator('.viewport .pill--button');
   const pillText = (await pill.textContent())?.trim() ?? '';
-  check(/✓|✗|failing/.test(pillText) && !/outdated/.test(pillText), `verify pill shows no fresh result for "${prompt.slug}" ("${pillText}")`);
+  check(/passed|failed|failing/i.test(pillText) && !/outdated/i.test(pillText), `checks button shows no fresh result for "${prompt.slug}" ("${pillText}")`);
   await waitFor(page, 'renderer to sync the new world', 15_000, async () => {
     const s = await snap(page);
     return s.ready && s.fps > 0 ? s : null;
@@ -396,7 +400,7 @@ async function undoRedo(page: Page): Promise<void> {
   log(`  undo/redo ok (head ${before.head} → ${undone.head} → ${before.head})`);
 }
 
-/** Light by default; the top-bar switch flips to dark, persists, and back. Self-hosted fonts load. */
+/** Light by default; the app menu flips to dark, persists, and back. Self-hosted fonts load. */
 async function themeSwitch(page: Page): Promise<void> {
   const look = (): Promise<{ theme: string | undefined; bgLum: number; saved: unknown; font: boolean }> =>
     page.evaluate(() => {
@@ -406,7 +410,7 @@ async function themeSwitch(page: Page): Promise<void> {
       const ctx = cv.getContext('2d');
       let bgLum = -1;
       if (ctx) {
-        ctx.fillStyle = getComputedStyle(document.querySelector('.app') ?? document.body).backgroundColor;
+        ctx.fillStyle = getComputedStyle(document.querySelector('.editor') ?? document.body).backgroundColor;
         ctx.fillRect(0, 0, 1, 1);
         const [r = 0, g = 0, b = 0] = ctx.getImageData(0, 0, 1, 1).data;
         bgLum = (r + g + b) / 3;
@@ -423,14 +427,16 @@ async function themeSwitch(page: Page): Promise<void> {
   check(light.theme === 'light', `expected the light theme by default, got ${String(light.theme)}`);
   check(light.bgLum > 200, `light theme background is not light (mean channel ${light.bgLum})`);
   check(light.font, 'the self-hosted UI font did not load');
-  const toggle = page.getByRole('button', { name: 'Dark theme' });
-  await toggle.click();
+  const menu = page.getByRole('button', { name: 'Aether menu' });
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Dark theme' }).click();
   const dark = await waitFor(page, 'dark theme', 5_000, async () => {
     const s = await look();
     return s.theme === 'dark' && s.bgLum >= 0 && s.bgLum < 40 ? s : null;
   });
   check(dark.saved === true, 'dark theme choice was not persisted');
-  await toggle.click();
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Light theme' }).click();
   await waitFor(page, 'light theme again', 5_000, async () => {
     const s = await look();
     return s.theme === 'light' && s.bgLum > 200 ? s : null;
@@ -449,8 +455,8 @@ async function editColor(page: Page): Promise<void> {
     return null;
   });
   check(target, 'no recolorable entity in the world');
-  await page.locator('#tab-outliner').click();
-  await page.getByLabel('Search entities').fill('');
+  await page.locator('#rail-objects').click();
+  await page.getByLabel('Search objects').fill('');
   const row = page.locator(`.outliner-row:has(.outliner-row__name[title="${target}"])`);
   await row.scrollIntoViewIfNeeded();
   await row.click();
@@ -460,7 +466,7 @@ async function editColor(page: Page): Promise<void> {
       return sel.length === 1 && sel[0] === id;
     }, target),
   );
-  await page.locator('#tab-inspector').click();
+  // The inspector (right panel) now shows the selected object's sections.
   const hex = page.getByLabel('Color hex', { exact: true });
   await hex.fill('#ff3366');
   await hex.press('Enter');

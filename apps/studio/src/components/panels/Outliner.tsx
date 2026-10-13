@@ -156,7 +156,7 @@ export const Outliner = memo(function Outliner(): ReactElement {
             type="search"
             value={filter}
             placeholder="Search objects or #tag"
-            aria-label="Search entities"
+            aria-label="Search objects"
             onChange={(e) => studio.store.getState().setOutlinerFilter(e.target.value)}
           />
         </label>

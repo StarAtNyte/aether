@@ -35,6 +35,7 @@ export { SkyDome, SKY_RADIUS } from './environment/sky-dome';
 export { WeatherSystem, WEATHER_CONFIGS, type WeatherConfig, type WeatherKind } from './environment/weather';
 
 export { CameraRig, easeInOutCubic, damp, type FollowSource, type OrbitControlsLike } from './view/camera-rig';
+export { TransformGizmo, readTransform, type GizmoChange, type GizmoMode, type TransformControlsLike } from './view/transform-gizmo';
 export { contentFraming, framingPose, DEFAULT_FRAMING_AZIMUTH, DEFAULT_SKY_TILT, type Framing, type FramingItem, type FramingPose, type FramingPoseOptions } from './view/framing';
 export { collectFramingItems, FRAMING_EXCLUDED_TAGS, FOCUS_TAG, SCENERY_GENERATORS } from './view/content-items';
 export { GrowIn, growDelay, growScale, GROW_DURATION, GROW_MAX_DELAY } from './view/grow-in';

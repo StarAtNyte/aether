@@ -20,6 +20,7 @@ import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
 import { SKY_RADIUS } from './environment/sky-dome';
 import { CameraRig, type FollowSource, type OrbitControlsLike } from './view/camera-rig';
+import { createTransformControls, TransformGizmo, type GizmoChange, type GizmoMode } from './view/transform-gizmo';
 import { Avatar } from './view/avatar';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
@@ -238,6 +239,9 @@ export class WorldRenderer {
   private lastDrawCalls = 0;
   private framesDrawn = 0;
   private lastTriangles = 0;
+  private readonly orbit: OrbitControlsLike | null;
+  /** Editor transform gizmo (created on first use). */
+  private gizmo: TransformGizmo | null = null;
 
   private constructor(
     private readonly renderer: WebGPURenderer,
@@ -257,6 +261,7 @@ export class WorldRenderer {
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
+    this.orbit = controls;
     this.rig.occlusion = (from, to) => this.freeDistance(from, to);
     this.generatorCache = opts.geometrySource ? null : new GeneratorCache(256, this.budget.generatorCacheBytes);
     const source =
@@ -676,6 +681,33 @@ export class WorldRenderer {
     this.rig.focusOn(_center, r);
   }
 
+  /**
+   * Show the move / rotate / scale gizmo on an entity (null id or mode hides
+   * it). `onCommit` receives the entity's local transform after each drag.
+   * The gizmo follows the entity's rendered object; call again after the
+   * entity is rebuilt.
+   */
+  async setGizmo(id: EntityId | null, mode: GizmoMode | null, onCommit?: (change: GizmoChange) => void): Promise<void> {
+    if (this.disposed) return;
+    const object = id && mode ? this.sync.object(id) : undefined;
+    if (!object || !mode || !onCommit) {
+      this.gizmo?.detach();
+      return;
+    }
+    this.gizmo ??= new TransformGizmo(
+      () => createTransformControls(this.perspective, this.domElement),
+      (helper) => this.scene.add(helper),
+      this.orbit,
+      () => this.requestRender(),
+    );
+    await this.gizmo.attach(object, mode, onCommit);
+  }
+
+  /** True while a gizmo handle is hovered or dragged (clicks then must not change the selection). */
+  get gizmoBusy(): boolean {
+    return this.gizmo?.busy ?? false;
+  }
+
   /** World-space bounds of an entity at full scale (null when it has no content yet). */
   entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null {
     if (this.disposed) return null;
@@ -882,15 +914,23 @@ export class WorldRenderer {
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
-    // Captures (agent visual critique) always show the finished world, never a mid-grow frame.
-    return this.grow.withFullScale(() =>
-      this.withTemporarySize(w, h, () => {
-        this.perspective.aspect = w / h;
-        this.perspective.updateProjectionMatrix();
-        this.draw();
-        return grab(canvas, w, h, mime);
-      }),
-    );
+    // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
+    const decorations: Object3D[] = [this.highlighter.group, ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const wasVisible = decorations.map((o) => o.visible);
+    for (const o of decorations) o.visible = false;
+    try {
+      // Captures always show the finished world, never a mid-grow frame.
+      return this.grow.withFullScale(() =>
+        this.withTemporarySize(w, h, () => {
+          this.perspective.aspect = w / h;
+          this.perspective.updateProjectionMatrix();
+          this.draw();
+          return grab(canvas, w, h, mime);
+        }),
+      );
+    } finally {
+      decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
+    }
   }
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
@@ -1019,6 +1059,8 @@ export class WorldRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.gizmo?.dispose();
+    this.gizmo = null;
     this.post?.dispose();
     this.post = null;
     this.postGen++;

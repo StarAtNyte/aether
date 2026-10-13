@@ -80,13 +80,21 @@ interface LabelSlot {
   x: number;
   y: number;
   shown: boolean;
+  /** Measured size (px), read once per label set — never per frame. */
+  w: number;
+  h: number;
 }
+
+/** Gap kept between two visible labels (px). */
+const LABEL_GAP = 4;
 
 /** Drives the gizmo and labels. Owns the label DOM nodes it creates. */
 export class ViewOverlay {
   private readonly dirs = new Float32Array(6);
   private readonly proj = new Float32Array(3);
   private readonly slots: LabelSlot[] = [];
+  /** Accepted label rectangles this frame: [left, top, right, bottom] × MAX_LABELS. */
+  private readonly placed = new Float32Array(MAX_LABELS * 4);
   private lastCamera: OverlayCamera | null = null;
 
   constructor(
@@ -115,7 +123,7 @@ export class ViewOverlay {
         metric.className = 'vp-label__metric';
         el.append(dot, name, metric);
         layer.appendChild(el);
-        slot = { el, name, metric, pos: [0, 0, 0], x: NaN, y: NaN, shown: true };
+        slot = { el, name, metric, pos: [0, 0, 0], x: NaN, y: NaN, shown: true, w: 0, h: 0 };
         this.slots.push(slot);
       }
       // textContent only: names come from the (untrusted) world document.
@@ -126,6 +134,11 @@ export class ViewOverlay {
       slot.pos[1] = spec.position[1];
       slot.pos[2] = spec.position[2];
       slot.x = NaN;
+    }
+    // One layout read per label set (sizes only change when the text does).
+    for (const s of this.slots) {
+      s.w = s.el.offsetWidth;
+      s.h = s.el.offsetHeight;
     }
     if (this.lastCamera) this.update(this.lastCamera);
   }
@@ -150,17 +163,38 @@ export class ViewOverlay {
     if (!layer || this.slots.length === 0) return;
     const w = layer.clientWidth;
     const h = layer.clientHeight;
+    let placed = 0;
+    // Greedy culling in priority order: a label that would overlap one already
+    // placed (or leave the view) is hidden this frame.
     for (const s of this.slots) {
       projectPoint(cam, s.pos, w, h, this.proj);
-      const visible = this.proj[2] === 1;
+      const x = Math.round(this.proj[0] as number);
+      const y = Math.round(this.proj[1] as number);
+      const l = x - s.w / 2;
+      const t = y - s.h;
+      let visible = this.proj[2] === 1 && l >= 0 && t >= 0 && l + s.w <= w && y <= h;
+      if (visible) {
+        for (let i = 0; i < placed; i++) {
+          const o = i * 4;
+          if (l < (this.placed[o + 2] as number) + LABEL_GAP && l + s.w + LABEL_GAP > (this.placed[o] as number) && t < (this.placed[o + 3] as number) + LABEL_GAP && y + LABEL_GAP > (this.placed[o + 1] as number)) {
+            visible = false;
+            break;
+          }
+        }
+      }
+      if (visible) {
+        const o = placed * 4;
+        this.placed[o] = l;
+        this.placed[o + 1] = t;
+        this.placed[o + 2] = l + s.w;
+        this.placed[o + 3] = y;
+        placed++;
+      }
       if (visible !== s.shown) {
         s.shown = visible;
         s.el.style.visibility = visible ? 'visible' : 'hidden';
       }
-      if (!visible) continue;
-      const x = Math.round(this.proj[0] as number);
-      const y = Math.round(this.proj[1] as number);
-      if (x === s.x && y === s.y) continue;
+      if (!visible || (x === s.x && y === s.y)) continue;
       s.x = x;
       s.y = y;
       s.el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -100%)`;

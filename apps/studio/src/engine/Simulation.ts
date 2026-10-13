@@ -24,7 +24,7 @@ import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type Histor
 import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type ContextLossInfo, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoChange, type GizmoMode, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -38,6 +38,10 @@ import { findAvatar, framingSphere, movingIds } from './worldQueries';
 const THUMBNAIL_SETTLE_MS = 6000;
 
 const log = createLogger('sim');
+
+/** Editor tools: plain selection, or a transform gizmo on the selected object. */
+export type EditorTool = 'select' | 'move' | 'rotate' | 'scale';
+const GIZMO_MODE: Readonly<Record<Exclude<EditorTool, 'select'>, GizmoMode>> = { move: 'translate', rotate: 'rotate', scale: 'scale' };
 
 /** Below this height the built-in player respawns. */
 const PLAYER_KILL_Y = -40;
@@ -78,6 +82,8 @@ export interface SimulationListener {
   onMessage?(text: string, duration: number): void;
   onGameOver?(result: 'win' | 'lose', text: string): void;
   onPick?(id: EntityId | null, additive: boolean): void;
+  /** A gizmo drag ended: the entity's new local transform (one undoable edit). */
+  onTransform?(id: EntityId, change: GizmoChange): void;
   onModeChange?(mode: 'edit' | 'play'): void;
   onError?(message: string): void;
   /** The render loop stopped after repeated failures; the page must be reloaded. */
@@ -155,6 +161,10 @@ export class Simulation {
   private downX = 0;
   private downY = 0;
   private downValid = false;
+  /** The pointer went down on a gizmo handle: the release is not a selection click. */
+  private downOnGizmo = false;
+  private gizmoIds: readonly EntityId[] = [];
+  private gizmoTool: EditorTool = 'select';
   private frameFailures = 0;
   private lastFrameError = '';
   private stopRequested = false;
@@ -268,7 +278,24 @@ export class Simulation {
       }
       this.refreshDebug();
       this.renderer.highlight(this.selection.filter((id) => this.syncedWorldDoc && Object.prototype.hasOwnProperty.call(this.syncedWorldDoc.entities, id)));
+      // The entity's rendered object may have been rebuilt: re-attach the gizmo.
+      this.applyGizmo();
     });
+  }
+
+  /** Editor tool and the selection it acts on (the gizmo shows for exactly one selected entity). */
+  setGizmo(ids: readonly EntityId[], tool: EditorTool): void {
+    this.gizmoIds = ids.slice(0, 2);
+    this.gizmoTool = tool;
+    this.applyGizmo();
+  }
+
+  private applyGizmo(): void {
+    if (this.disposed) return;
+    const id = this.gizmoIds.length === 1 ? (this.gizmoIds[0] ?? null) : null;
+    const known = id !== null && this.syncedWorldDoc !== null && Object.prototype.hasOwnProperty.call(this.syncedWorldDoc.entities, id);
+    const mode = this.session || this.gizmoTool === 'select' || !known ? null : GIZMO_MODE[this.gizmoTool];
+    void this.renderer.setGizmo(mode ? id : null, mode, id && mode ? (change) => this.listener.onTransform?.(id, change) : undefined).catch((err: unknown) => log.warn('gizmo unavailable', err));
   }
 
   // ---------------------------------------------------------------------------
@@ -542,6 +569,7 @@ export class Simulation {
       if (t) this.table.ensure(id, t.position, t.quaternion);
     }
     this.session = session;
+    this.applyGizmo();
     this.stopRequested = false;
     try {
       this.renderer.highlight([]);
@@ -572,6 +600,7 @@ export class Simulation {
     if (!s) return;
     this.session = null;
     s.ended = true;
+    this.applyGizmo();
     try {
       safely('input detach', () => this.input.detach());
       safely('logic dispose', () => s.logic.dispose());
@@ -784,6 +813,7 @@ export class Simulation {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     this.downValid = e.button === 0;
+    this.downOnGizmo = this.renderer.gizmoBusy;
     this.downX = e.clientX;
     this.downY = e.clientY;
     if (isTypingElement(document.activeElement)) (document.activeElement as HTMLElement).blur();
@@ -792,6 +822,7 @@ export class Simulation {
   private readonly onPointerUp = (e: PointerEvent): void => {
     if (!this.downValid || e.button !== 0) return;
     this.downValid = false;
+    if (this.downOnGizmo) return;
     if (Math.hypot(e.clientX - this.downX, e.clientY - this.downY) > CLICK_SLOP_PX) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;

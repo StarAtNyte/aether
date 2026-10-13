@@ -17,7 +17,7 @@ export type LayoutMode = 'wide' | 'medium' | 'tablet' | 'phone';
 export const BREAKPOINTS = { medium: 1024, wide: 1280, tablet: 768 } as const;
 
 /** Side panel width limits (px). */
-export const PANEL_WIDTH = { min: 240, max: 440, left: 272, right: 304 } as const;
+export const PANEL_WIDTH = { min: 240, max: 440, left: 272, right: 320 } as const;
 
 /** Media query of the compact (phone) layout. */
 export const COMPACT_QUERY = `(max-width: ${BREAKPOINTS.tablet - 1}px)`;

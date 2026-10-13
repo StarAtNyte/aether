@@ -94,7 +94,7 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(`${url}/?debug=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
     await waitFor(page, 'boot', BOOT_TIMEOUT_MS, (p) => p.ready && p.entities > 0);
     const input = page.getByLabel('Prompt', { exact: true });
     await input.fill(prompt);
@@ -115,7 +115,7 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
       return { fog: r?.fogState?.density ?? 0, radius: r?.contentSphere?.radius ?? 0 };
     });
     await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: false }));
-    await page.addStyleTag({ content: '.viewport__hint, .toasts, .toast { display: none !important; }' });
+    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip { display: none !important; }' });
     await page.waitForTimeout(300);
     const file = join(OUT_DIR, `${slug}.png`);
     const png = await page.locator('.viewport').screenshot({ path: file });
@@ -146,11 +146,11 @@ async function renderSkies(browser: Browser, url: string): Promise<void> {
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(`${url}/?debug=1&reset=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
     await waitFor(page, 'boot', BOOT_TIMEOUT_MS, (p) => p.ready && p.entities > 0);
     await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
     await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: false }));
-    await page.addStyleTag({ content: '.viewport__hint, .toasts, .toast { display: none !important; }' });
+    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip { display: none !important; }' });
     for (const [sky, hour] of SKIES) {
       await page.evaluate(
         ([preset, timeOfDay]) => {

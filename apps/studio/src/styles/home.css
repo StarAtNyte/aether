@@ -353,7 +353,7 @@
   display: grid;
   grid-auto-flow: column;
   /* Columns line up with the project grid below (same count, same gap). */
-  grid-auto-columns: calc((100% - var(--s-6) * 2 - (var(--cols) - 1) * var(--s-4)) / var(--cols));
+  grid-auto-columns: calc((100% - (var(--cols) - 1) * var(--s-4)) / var(--cols));
   gap: var(--s-4);
   margin: 0 calc(-1 * var(--s-6));
   padding: 2px var(--s-6) var(--s-2);
@@ -801,7 +801,8 @@
     white-space: nowrap;
   }
 
-  .home-top__search {
+  .home-top__search,
+  .home-top__cmd {
     display: none;
   }
 

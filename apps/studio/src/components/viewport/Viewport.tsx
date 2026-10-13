@@ -13,7 +13,8 @@ import { shortcut } from '../../lib/keys';
 import { worldLabels } from '../../lib/labels';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { PALETTE_DRAG_TYPE } from '../../editor/AssetsPanel';
-import { Icon } from '../Icon';
+import { Icon, type IconName } from '../Icon';
+import type { EditorTool } from '../../engine/Simulation';
 import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
@@ -91,30 +92,57 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
   );
 });
 
+/** Transform tools shown in the dock: id, label, icon, shortcut. */
+const TOOLS: ReadonlyArray<[EditorTool, string, IconName, string]> = [
+  ['select', 'Select', 'pointer', 'V'],
+  ['move', 'Move', 'move', 'W'],
+  ['rotate', 'Rotate', 'rotate', 'E'],
+  ['scale', 'Scale', 'scale', 'R'],
+];
+
 /** Floating tool dock (bottom-centre, edit mode). */
 const ToolDock = memo(function ToolDock(): ReactElement {
   const studio = useStudio();
   const selection = useUI((s) => s.selection);
+  const tool = useUI((s) => s.tool);
   const labels = useUI((s) => s.settings.showLabels);
   const st = studio.store.getState();
   const has = selection.length > 0;
   return (
     <div className="dock" role="toolbar" aria-label="Tools">
+      <div className="dock__group" role="radiogroup" aria-label="Transform tool">
+        {TOOLS.map(([id, label, icon, key]) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={tool === id}
+            className={`dock__btn${tool === id ? ' is-active' : ''}`}
+            onClick={() => st.setTool(id)}
+            aria-label={label}
+            data-tip={id === 'select' ? label : `${label} the selected object`}
+            data-kbd={key}
+            data-tip-pos="top"
+          >
+            <Icon name={icon} />
+          </button>
+        ))}
+      </div>
+      <span className="dock__sep" aria-hidden="true" />
       <button type="button" className="dock__btn" onClick={() => st.showLeftView('assets')} aria-label="Add object" data-tip="Add object" data-kbd="A" data-tip-pos="top">
         <Icon name="plus" />
       </button>
-      <span className="dock__sep" aria-hidden="true" />
       <button type="button" className="dock__btn" disabled={!has} onClick={() => selection[0] && studio.focus(selection[0])} aria-label="Focus selection" data-tip="Focus selection" data-kbd="F" data-tip-pos="top">
         <Icon name="focus" />
       </button>
       <button type="button" className="dock__btn" disabled={!has} onClick={() => studio.deleteEntities(selection)} aria-label="Delete selection" data-tip="Delete" data-kbd="Del" data-tip-pos="top">
         <Icon name="trash" />
       </button>
-      <span className="dock__sep" aria-hidden="true" />
-      <button type="button" className="dock__btn" onClick={() => studio.viewPreset('reset')} aria-label="Frame world" data-tip="Frame world" data-kbd="0" data-tip-pos="top">
+      <span className="dock__sep dock__opt" aria-hidden="true" />
+      <button type="button" className="dock__btn dock__opt" onClick={() => studio.viewPreset('reset')} aria-label="Frame world" data-tip="Frame world" data-kbd="0" data-tip-pos="top">
         <Icon name="maximize" />
       </button>
-      <button type="button" className={`dock__btn${labels ? ' is-active' : ''}`} aria-pressed={labels} onClick={() => st.updateSettings({ showLabels: !labels })} aria-label="Object labels" data-tip="Object labels" data-kbd="L" data-tip-pos="top">
+      <button type="button" className={`dock__btn dock__opt${labels ? ' is-active' : ''}`} aria-pressed={labels} onClick={() => st.updateSettings({ showLabels: !labels })} aria-label="Object labels" data-tip="Object labels" data-kbd="L" data-tip-pos="top">
         <Icon name="tag" />
       </button>
     </div>

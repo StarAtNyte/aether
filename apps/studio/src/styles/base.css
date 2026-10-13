@@ -138,6 +138,15 @@ kbd {
   outline-offset: 1px;
 }
 
+/* Fields inside a framed wrapper: the wrapper draws the focus state (:focus-within). */
+.composer__input:focus-visible,
+.prompt-box__input:focus-visible,
+.search-field input:focus-visible,
+.num-field input:focus-visible,
+.palette__input:focus-visible {
+  outline: none;
+}
+
 /* Scrollbars: thin, quiet, overlay-like */
 * {
   scrollbar-width: thin;

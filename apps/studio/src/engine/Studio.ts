@@ -36,7 +36,7 @@ import { downloadText } from '../lib/download';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
-import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
+import type { ContextLossInfo, GizmoChange, RenderMemoryStats } from '@aether/render';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, runVerification, selectProvider } from './AgentBridge';
 import { Simulation } from './Simulation';
@@ -240,6 +240,7 @@ export class Studio {
           onMessage: (text, duration) => this.store.getState().toast(text, 'game', duration),
           onGameOver: (result, text) => this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text }),
           onPick: (id, additive) => this.pick(id, additive),
+          onTransform: (id, change) => this.applyGizmoTransform(id, change),
           onModeChange: (mode) => {
             const s = this.store.getState();
             s.setMode(mode);
@@ -273,8 +274,10 @@ export class Studio {
       this.store.getState().setBackend(sim.backend);
       this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });
       for (const fn of this.simListeners) fn(sim);
+      sim.setGizmo(this.store.getState().selection, this.store.getState().tool);
       const unsubSel = this.store.subscribe((s, prev) => {
         if (s.selection !== prev.selection) sim.setSelection(s.selection);
+        if (s.selection !== prev.selection || s.tool !== prev.tool) sim.setGizmo(s.selection, s.tool);
       });
       // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
       await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
@@ -399,6 +402,17 @@ export class Studio {
       return text;
     }
     return null;
+  }
+
+  /** Commit the result of a gizmo drag (skipped when nothing changed). */
+  applyGizmoTransform(id: EntityId, change: GizmoChange): void {
+    const e = getEntity(this.history.current, id);
+    if (!e) return;
+    const t = e.transform;
+    const same = (a: readonly number[], b: readonly number[]): boolean => a.every((v, i) => Math.abs(v - (b[i] ?? 0)) < 1e-4);
+    if (same(t.position, change.position) && same(t.rotation, change.rotation) && same(t.scale, change.scale)) return;
+    const verb = change.mode === 'rotate' ? 'Rotate' : change.mode === 'scale' ? 'Scale' : 'Move';
+    this.commitUser([{ op: 'update', id, set: { transform: { position: change.position, rotation: change.rotation, scale: change.scale } } }], `${verb} ${e.name || id}`);
   }
 
   /** Delete entities (with children). */

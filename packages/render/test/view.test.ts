@@ -6,6 +6,7 @@ import { FrameStats } from '../src/view/frame-stats';
 import { Highlighter, MAX_HIGHLIGHTS } from '../src/view/highlighter';
 import { DebugOverlay } from '../src/view/debug-overlay';
 import { Avatar } from '../src/view/avatar';
+import { readTransform, TransformGizmo, type TransformControlsLike } from '../src/view/transform-gizmo';
 import { box, makeSync, patch, world } from './helpers';
 
 function fakeControls(): OrbitControlsLike & { updates: number } {
@@ -54,6 +55,22 @@ describe('CameraRig', () => {
     expect(cam.position.distanceTo(new Vector3(10, 0, 0))).toBeGreaterThan(2);
     rig.focusOn(new Vector3(-5, 0, 0), 1, 0);
     expect(controls.target.x).toBe(-5);
+  });
+
+  it('reports its look-at target (orbit target for placement and camera presets)', () => {
+    const cam = new PerspectiveCamera(50, 1, 0.1, 1000);
+    cam.position.set(0, 10, 20);
+    const controls = fakeControls();
+    const rig = new CameraRig(cam, controls);
+    rig.flyTo(new Vector3(0, 30, 0.01), new Vector3(4, 0, -2), 0);
+    const out = new Vector3();
+    expect(rig.getTarget(out)).toBe(out);
+    expect(out.toArray()).toEqual([4, 0, -2]);
+    // A straight-down camera (top view) is allowed by flyTo (focusOn would clamp the elevation).
+    expect(cam.position.y).toBe(30);
+    const noControls = new CameraRig(new PerspectiveCamera(), null);
+    noControls.flyTo(new Vector3(1, 2, 3), new Vector3(7, 8, 9), 0);
+    expect(noControls.getTarget(new Vector3()).toArray()).toEqual([7, 8, 9]);
   });
 
   it('follow chases from behind the target heading; first person sits at eye height', () => {
@@ -240,5 +257,77 @@ describe('CameraRig chase occlusion', () => {
     for (let i = 0; i < 200; i++) rig.update(1 / 60);
     expect(cam.position.distanceTo(new Vector3(0, 1.3, 0))).toBeGreaterThan(5);
     rig.dispose();
+  });
+});
+
+describe('TransformGizmo', () => {
+  function fakeTc(): TransformControlsLike & { emit(type: string, value?: unknown): void; helperObj: Group; attached: number } {
+    const listeners = new Map<string, Array<(e: { value?: unknown }) => void>>();
+    const helperObj = new Group();
+    return {
+      object: undefined,
+      dragging: false,
+      axis: null,
+      enabled: true,
+      helperObj,
+      attached: 0,
+      setMode() {},
+      setSize() {},
+      attach(o) {
+        this.object = o;
+        this.attached++;
+      },
+      detach() {
+        this.object = undefined;
+      },
+      getHelper: () => helperObj,
+      addEventListener(type, fn) {
+        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+      },
+      emit(type, value) {
+        for (const fn of listeners.get(type) ?? []) fn({ value });
+      },
+      dispose() {},
+    };
+  }
+
+  it('reads document transforms from an object (degrees, rounded, positive scale)', () => {
+    const o = new Group();
+    o.position.set(1.23456, 0, -2);
+    o.rotation.set(Math.PI / 2, 0, -Math.PI / 4);
+    o.scale.set(2, 0, 1);
+    expect(readTransform(o, 'rotate')).toEqual({ position: [1.235, 0, -2], rotation: [90, 0, -45], scale: [2, 0.001, 1], mode: 'rotate' });
+  });
+
+  it('attaches lazily, disables orbit while dragging, commits once per drag and hides on detach', async () => {
+    const tc = fakeTc();
+    const scene = new Group();
+    const controls = fakeControls();
+    let renders = 0;
+    const gizmo = new TransformGizmo(async () => tc, (h) => scene.add(h), controls, () => void renders++);
+    expect(gizmo.busy).toBe(false);
+    const target = new Group();
+    const commits: unknown[] = [];
+    await gizmo.attach(target, 'translate', (c) => commits.push(c));
+    expect(scene.children).toContain(tc.helperObj);
+    expect(gizmo.object).toBe(target);
+    tc.axis = 'X';
+    expect(gizmo.busy).toBe(true);
+    tc.emit('dragging-changed', true);
+    expect(controls.enabled).toBe(false);
+    target.position.x = 3;
+    tc.emit('dragging-changed', false);
+    tc.emit('mouseUp');
+    expect(controls.enabled).toBe(true);
+    expect(commits).toEqual([{ position: [3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], mode: 'translate' }]);
+    await gizmo.attach(target, 'scale', (c) => commits.push(c));
+    expect(tc.attached).toBe(1);
+    gizmo.detach();
+    expect(tc.helperObj.visible).toBe(false);
+    tc.emit('mouseUp');
+    expect(commits).toHaveLength(1);
+    expect(renders).toBeGreaterThan(0);
+    gizmo.dispose();
+    expect(scene.children).not.toContain(tc.helperObj);
   });
 });

@@ -7,9 +7,11 @@ import { useEffect } from 'react';
 import { isTypingTarget } from '../engine/input';
 import { shortcut } from '../lib/keys';
 import type { LeftView } from '../state/store';
+import type { EditorTool } from '../engine/Simulation';
 import { useStudio } from './context';
 
 const VIEW_KEYS: Readonly<Record<string, LeftView>> = { '1': 'agent', '2': 'objects', '3': 'assets', '4': 'logic', '5': 'verify', '6': 'history' };
+const TOOL_KEYS: Readonly<Record<string, EditorTool>> = { v: 'select', w: 'move', e: 'rotate', r: 'scale' };
 const CAMERA_KEYS: Readonly<Record<string, 'reset' | 'iso' | 'top' | 'front' | 'side'>> = { '0': 'reset', '1': 'iso', '2': 'top', '3': 'front', '4': 'side' };
 
 /** Shortcut reference shown in Settings and the docs: [keys, action]. */
@@ -20,6 +22,7 @@ export const SHORTCUTS: ReadonlyArray<[string, string]> = [
   [shortcut('Mod+Shift+Z'), 'Redo'],
   ['/', 'Write a prompt'],
   ['A', 'Add an object'],
+  ['V · W · E · R', 'Select · move · rotate · scale'],
   ['F', 'Focus selection'],
   ['Delete', 'Delete selection'],
   ['Esc', 'Stop play / deselect'],
@@ -105,6 +108,8 @@ export function useShortcuts(): void {
         st.updateSettings({ showLabels: !st.settings.showLabels });
       } else if (e.key === 'a' || e.key === 'A') {
         st.showLeftView('assets');
+      } else if (!e.shiftKey && Object.prototype.hasOwnProperty.call(TOOL_KEYS, e.key.toLowerCase())) {
+        st.setTool(TOOL_KEYS[e.key.toLowerCase()] as EditorTool);
       } else if (!e.shiftKey && Object.prototype.hasOwnProperty.call(CAMERA_KEYS, e.key)) {
         studio.viewPreset(CAMERA_KEYS[e.key] as 'reset');
       } else if (e.key === '/') {
