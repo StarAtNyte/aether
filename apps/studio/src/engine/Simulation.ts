@@ -31,6 +31,7 @@ import { FixedStepper } from './FixedStepper';
 import { IdleClock } from './IdleClock';
 import { InputController } from './input';
 import { SoundBoard } from './sound';
+import { PosePool } from './posePool';
 import { TransformTable } from './TransformTable';
 import { findAvatar, framingSphere, movingIds } from './worldQueries';
 
@@ -775,14 +776,29 @@ export class Simulation {
   private createHost(s: SessionCore): LogicHost {
     const sim = this;
     const isDoc = (id: EntityId): boolean => Object.prototype.hasOwnProperty.call(s.world.entities, id);
+    // One reusable pose record per entity: getTransform runs many times per tick.
+    const poses = new PosePool();
     return {
       getTransform(id) {
         if (s.ended || s.destroyed.has(id)) return undefined;
-        if (id === PLAYER_PSEUDO_ID && s.character) return { position: s.character.position, quaternion: yawQuat(sim.input.yawDeg) };
-        const st = s.pw.getState(id);
-        if (st) return { position: st.position, quaternion: st.quaternion };
-        if (sim.table.read(id, scratchPos, scratchQuat)) return { position: [scratchPos[0], scratchPos[1], scratchPos[2]], quaternion: [scratchQuat[0], scratchQuat[1], scratchQuat[2], scratchQuat[3]] };
-        return isDoc(id) ? safeWorldTransform(s.world, id) : undefined;
+        const slot = poses.slot(id);
+        if (id === PLAYER_PSEUDO_ID && s.character) {
+          const p = s.character.position;
+          const h = (sim.input.yawDeg * Math.PI) / 360;
+          slot.position[0] = p[0];
+          slot.position[1] = p[1];
+          slot.position[2] = p[2];
+          slot.quaternion[0] = 0;
+          slot.quaternion[1] = Math.sin(h);
+          slot.quaternion[2] = 0;
+          slot.quaternion[3] = Math.cos(h);
+          return slot;
+        }
+        if (s.pw.readPose(id, slot.position, slot.quaternion)) return slot;
+        if (sim.table.read(id, slot.position, slot.quaternion)) return slot;
+        if (!isDoc(id)) return undefined;
+        const t = safeWorldTransform(s.world, id);
+        return t ? poses.fill(id, t.position, t.quaternion) : undefined;
       },
       setKinematic(id, position, quaternion) {
         if (s.ended || s.destroyed.has(id)) return;
@@ -823,6 +839,7 @@ export class Simulation {
       destroy(id) {
         if (s.ended || s.destroyed.has(id)) return;
         s.destroyed.add(id);
+        poses.release(id);
         s.pw.removeEntity(id);
         sim.table.remove(id);
         if (s.transients.delete(id)) sim.renderer.removeTransient(id);
@@ -1135,11 +1152,6 @@ function safeWorldTransform(world: WorldDoc, id: EntityId): { position: Vec3; qu
   } catch {
     return undefined;
   }
-}
-
-function yawQuat(yawDeg: number): QuatTuple {
-  const h = (yawDeg * Math.PI) / 360;
-  return [0, Math.sin(h), 0, Math.cos(h)];
 }
 
 /** Camera yaw in degrees (0 faces −Z), used to start play facing where the editor camera looked. */

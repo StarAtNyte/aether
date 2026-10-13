@@ -26,7 +26,7 @@
 import { newQuickJSWASMModuleFromVariant, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime, type QuickJSWASMModule } from 'quickjs-emscripten-core';
 import RELEASE_SYNC from '@jitl/quickjs-wasmfile-release-sync';
 import { hashString, ScriptDef, type EntityId } from '@aether/core';
-import type { ScriptDiagnostic, ScriptIntent, ScriptRunner, ScriptSnapshot } from '../types';
+import type { ScriptDiagnostic, ScriptIntent, ScriptPrepared, ScriptRunner, ScriptSnapshot } from '../types';
 import { validateIntents } from './intents';
 
 import { MAX_ABANDONED_RUNTIMES, SCRIPT_HEAP_BUDGET_BYTES, type ManagedScriptRunner, type ScriptRunnerOptions } from './config';
@@ -126,6 +126,20 @@ export function isScriptingReady(): boolean {
 
 const now: () => number =
   typeof performance !== 'undefined' && typeof performance.now === 'function' ? () => performance.now() : () => Date.now();
+
+/**
+ * JSON of a script snapshot. With `worldJson` (the runtime's once-per-tick
+ * serialization of `snap.world`), only the small per-entity part is
+ * serialized and the world state is spliced in, so N script calls per tick
+ * no longer serialize the world state N times.
+ */
+export function serializeSnapshot(snap: ScriptSnapshot, worldJson?: string): string {
+  if (typeof worldJson !== 'string' || worldJson.length === 0) return JSON.stringify(snap);
+  const { world: _world, ...rest } = snap;
+  const head = JSON.stringify(rest);
+  // `rest` always has keys (dt, time, …), so `head` is "{…}" and a comma is valid.
+  return `${head.slice(0, -1)},"world":${worldJson}}`;
+}
 
 /** Build the sandbox program for a script body. */
 function buildProgram(body: string, seed: number): string {
@@ -341,13 +355,13 @@ class QuickJSScriptRunner implements ScriptRunner {
     if (this.budget.abandoned > MAX_ABANDONED_RUNTIMES) retireModule(this.wasm);
   }
 
-  update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot): ScriptIntent[] {
+  update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot, prepared?: ScriptPrepared): ScriptIntent[] {
     if (this.disposed) return [];
     const slot = this.slots.get(scriptId);
     if (!slot || slot.disabled || !slot.entry) return [];
     let json: string;
     try {
-      json = JSON.stringify(snap);
+      json = serializeSnapshot(snap, prepared?.worldJson);
     } catch {
       this.report(scriptId, 'snapshot could not be serialized', entityId);
       return [];

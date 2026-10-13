@@ -27,7 +27,7 @@ export { PhysicsWorld, PHYSICS_LIMITS } from './world';
 export { CharacterController, type CharacterInput, type CharacterOptions } from './character';
 export { settle, SETTLE_LIMITS } from './settle';
 export { diagnose, findOverlaps, DIAGNOSE_LIMITS, type OverlapPair } from './diagnose';
-export { verify, VERIFY_LIMITS, VERIFY_SLICE_MS, type VerifyOptions } from './verify';
+export { verify, shardIndices, VerifyAbortedError, VERIFY_LIMITS, VERIFY_SLICE_MS, type VerifyOptions } from './verify';
 export { summarizeReport, REPORT_LIMITS } from './report';
 export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';

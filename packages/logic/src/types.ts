@@ -16,7 +16,12 @@ export type QuatTuple = [number, number, number, number];
  * must copy them if they keep them.
  */
 export interface LogicHost {
-  /** Current world-space pose of an entity (or the player avatar), if known. */
+  /**
+   * Current world-space pose of an entity (or the player avatar), if known.
+   * Implementations may return a record reused per entity id (overwritten
+   * by the next query for the same id), so callers copy what they keep
+   * beyond the current tick.
+   */
   getTransform(id: EntityId): { position: Vec3; quaternion: QuatTuple } | undefined;
   /** Move a kinematic (or physics-less) entity to a world-space pose. */
   setKinematic(id: EntityId, position: Vec3, quaternion: QuatTuple): void;
@@ -129,6 +134,12 @@ export interface ScriptSnapshot {
   input: { forward: number; right: number; jump: boolean; action: boolean };
 }
 
+/** Data the runtime pre-serializes once per tick for {@link ScriptRunner.update}. */
+export interface ScriptPrepared {
+  /** Exactly `JSON.stringify(snap.world)`. */
+  worldJson?: string;
+}
+
 /** What a script may ask the runtime to do. */
 export type ScriptIntent =
   | Action
@@ -146,8 +157,13 @@ export interface ScriptDiagnostic {
 export interface ScriptRunner {
   /** Compile (or recompile when the source changed) a script. */
   load(def: ScriptDef): void;
-  /** Run one update of `scriptId` for `entityId`; never throws, returns validated intents. */
-  update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot): ScriptIntent[];
+  /**
+   * Run one update of `scriptId` for `entityId`; never throws, returns
+   * validated intents. `prepared.worldJson` (additive) is `JSON.stringify(snap.world)`
+   * computed once per tick by the runtime; runners may splice it instead of
+   * serializing the world state again for every call.
+   */
+  update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot, prepared?: ScriptPrepared): ScriptIntent[];
   /** Release every interpreter resource. */
   dispose(): void;
   /** Optional: drain diagnostics accumulated since the last call (additive to the contract). */

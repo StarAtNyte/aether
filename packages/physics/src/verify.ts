@@ -36,9 +36,38 @@ export interface VerifyOptions {
   budgetMs?: number;
   /**
    * Yield to the event loop after this many ms of continuous stepping
-   * (default {@link VERIFY_SLICE_MS}; 0 disables yielding, e.g. inside a Worker).
+   * (default {@link VERIFY_SLICE_MS}; 0 disables yielding).
    */
   sliceMs?: number;
+  /**
+   * Run only these indices of `world.tests` (a shard of a parallel run).
+   * Out-of-range and duplicate indices are ignored. The report then lists
+   * results for exactly these tests, in ascending index order, and sets
+   * `testIndices`.
+   */
+  tests?: readonly number[];
+  /** Compute static diagnostics (default true; parallel shards skip them except one). */
+  diagnostics?: boolean;
+  /** Abort the run: the promise rejects with an `AbortError` at the next step. */
+  signal?: AbortSignal;
+  /** Called once per test as soon as it is decided (incremental progress). */
+  onResult?: (index: number, result: TestResult) => void;
+}
+
+/** Error thrown by {@link verify} when its `signal` aborts. */
+export class VerifyAbortedError extends Error {
+  override name = 'AbortError';
+  constructor() {
+    super('verification cancelled');
+  }
+}
+
+/** Sorted, de-duplicated, in-range test indices of a shard (all tests when `only` is undefined). */
+export function shardIndices(count: number, only: readonly number[] | undefined): number[] {
+  if (!only) return Array.from({ length: count }, (_, i) => i);
+  const set = new Set<number>();
+  for (const i of only) if (Number.isInteger(i) && i >= 0 && i < count) set.add(i);
+  return [...set].sort((a, b) => a - b);
 }
 
 /** Default stepping slice before verify yields to the host (keeps a UI thread responsive). */
@@ -324,9 +353,12 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
   const maxSeconds = clampNum(opts.maxSeconds, VERIFY_LIMITS.DEFAULT_MAX_SECONDS, 0, VERIFY_LIMITS.MAX_SECONDS);
   const budgetMs = clampNum(opts.budgetMs, VERIFY_LIMITS.DEFAULT_BUDGET_MS, 1, VERIFY_LIMITS.MAX_BUDGET_MS);
   const sliceMs = clampNum(opts.sliceMs, VERIFY_SLICE_MS, 0, 1000);
+  const signal = opts.signal;
+  const indices = shardIndices(world.tests.length, opts.tests);
+  if (signal?.aborted) throw new VerifyAbortedError();
   const pw = await PhysicsWorld.create(world, opts.colliders ? { colliders: opts.colliders } : {});
   try {
-    const diagnostics = diagnoseWorld(pw);
+    const diagnostics = opts.diagnostics === false ? [] : diagnoseWorld(pw);
     const ctx: Ctx = { pw, world, hook: null };
     let hookError: string | null = null;
     if (opts.logic) {
@@ -336,32 +368,43 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
         hookError = err instanceof Error ? err.message.slice(0, 200) : 'logic failed to start';
       }
     }
-    const results = new Map<string, TestResult>();
-    const running: Array<Evaluator & { key: string }> = [];
-    world.tests.forEach((test, index) => {
-      const key = `${index}`;
+    const results = new Map<number, TestResult>();
+    const decide = (index: number, result: TestResult): void => {
+      results.set(index, result);
+      if (opts.onResult) {
+        try {
+          opts.onResult(index, result);
+        } catch {
+          /* a progress listener never breaks verification */
+        }
+      }
+    };
+    const active: Array<Evaluator & { index: number }> = [];
+    for (const index of indices) {
+      const test = world.tests[index] as WorldTest;
       const ev = evaluator(ctx, test);
       const v = ev.check(0);
-      if (v) results.set(key, { id: test.id, kind: test.kind, ...v, atTime: 0 });
-      else running.push({ ...ev, key });
-    });
-    const horizon = Math.min(maxSeconds, running.reduce((m, e) => Math.max(m, e.horizon), 0));
+      if (v) decide(index, { id: test.id, kind: test.kind, ...v, atTime: 0 });
+      else active.push({ ...ev, index });
+    }
+    const horizon = Math.min(maxSeconds, active.reduce((m, e) => Math.max(m, e.horizon), 0));
     let budgetHit = false;
-    let active = running;
     // Compute time spent before stepping (world build, diagnostics) counts too.
     let spentMs = performance.now() - t0;
     let sliceStart = performance.now();
     while (active.length > 0 && pw.time < horizon - 1e-9) {
+      if (signal?.aborted) throw new VerifyAbortedError();
       const now = performance.now();
       if (spentMs + (now - sliceStart) > budgetMs) {
         budgetHit = true;
         break;
       }
       if (sliceMs > 0 && now - sliceStart >= sliceMs) {
-        // Cooperative yield: rendering/input run between slices; yielded time is not billed.
+        // Cooperative yield: rendering/input (or a cancel message) run between slices; yielded time is not billed.
         spentMs += now - sliceStart;
         await yieldToHost();
         sliceStart = performance.now();
+        if (signal?.aborted) throw new VerifyAbortedError();
       }
       const events = pw.stepFixed();
       if (ctx.hook && !hookError) {
@@ -372,24 +415,29 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
         }
       }
       const t = pw.time;
-      active = active.filter((ev) => {
+      // In-place compaction (no per-step array allocation).
+      let kept = 0;
+      for (let i = 0; i < active.length; i++) {
+        const ev = active[i] as Evaluator & { index: number };
         ev.onEvents?.(events);
         const v = ev.check(t);
-        if (!v) return true;
-        results.set(ev.key, { id: ev.test.id, kind: ev.test.kind, ...v, atTime: Number(t.toFixed(3)) });
-        return false;
-      });
+        if (v) decide(ev.index, { id: ev.test.id, kind: ev.test.kind, ...v, atTime: Number(t.toFixed(3)) });
+        else active[kept++] = ev;
+      }
+      active.length = kept;
     }
     for (const ev of active) {
       const why = budgetHit ? `inconclusive: wall-clock budget of ${budgetMs}ms exhausted at t=${fmt(pw.time, 1)}s` : ev.timeout(pw.time);
-      results.set(ev.key, { id: ev.test.id, kind: ev.test.kind, passed: false, message: why });
+      decide(ev.index, { id: ev.test.id, kind: ev.test.kind, passed: false, message: why });
     }
-    const ordered = world.tests.map((_, i) => results.get(`${i}`) as TestResult);
+    const ordered = indices.map((i) => results.get(i) as TestResult);
     if (hookError) {
       for (const r of ordered) if (!r.passed && r.kind === 'eventually') r.message += ` (logic error: ${hookError})`;
     }
     const passed = ordered.every((r) => r.passed) && !diagnostics.some((d) => d.severity === 'error');
-    return { passed, results: ordered, diagnostics, simulatedSeconds: Number(pw.time.toFixed(3)), ms: performance.now() - t0 };
+    const report: VerifyReport = { passed, results: ordered, diagnostics, simulatedSeconds: Number(pw.time.toFixed(3)), ms: performance.now() - t0 };
+    if (opts.tests) report.testIndices = indices;
+    return report;
   } finally {
     pw.dispose();
   }

@@ -276,6 +276,26 @@ export class PhysicsWorld {
     return stateOf(rec.body);
   }
 
+  /**
+   * Copy an entity's world pose into caller-owned buffers (no result
+   * objects; Rapier's own accessors still create two small vectors).
+   * Returns false (buffers untouched) when the entity has no body.
+   */
+  readPose(id: EntityId, position: Vec3, quaternion: Quat): boolean {
+    const rec = this.records.get(id);
+    if (!rec || this.disposed) return false;
+    const t = rec.body.translation();
+    const r = rec.body.rotation();
+    position[0] = t.x;
+    position[1] = t.y;
+    position[2] = t.z;
+    quaternion[0] = r.x;
+    quaternion[1] = r.y;
+    quaternion[2] = r.z;
+    quaternion[3] = r.w;
+    return true;
+  }
+
   /** States of every body (static ones included). */
   getAllStates(): Map<EntityId, BodyState> {
     const out = new Map<EntityId, BodyState>();

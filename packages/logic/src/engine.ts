@@ -95,6 +95,12 @@ export class Engine implements BehaviorEnv, RuleHost {
   private readonly seed: number;
   private readonly registry = new EntityRegistry();
   private worldState: StateRecord = {};
+  /**
+   * JSON of {@link worldState} shared by every script call of a tick;
+   * cleared at tick start and on every state write, so scripts always see
+   * current values but the record is serialized once in the common case.
+   */
+  private worldJson: string | null = null;
   private readonly scope: StateScope;
   private readonly rules: RuleEngine;
   private readonly keyEdges = new KeyEdges();
@@ -229,6 +235,7 @@ export class Engine implements BehaviorEnv, RuleHost {
     this._time += step;
     this.hostPos.clear();
     this.zoneFrames.clear();
+    this.worldJson = null;
     this.scriptTotalPrev = this.scriptSeen;
     this.scriptSeen = 0;
     if (this.scriptTotalPrev > MAX_SCRIPT_CALLS_PER_TICK) {
@@ -271,6 +278,7 @@ export class Engine implements BehaviorEnv, RuleHost {
     const prev = this.world;
     this.world = next;
     this.loadScripts(next);
+    this.worldJson = null;
     for (const k of Object.keys(next.state)) {
       if (!hasOwn(this.worldState, k) && Object.keys(this.worldState).length < LIMITS.MAX_STATE_KEYS) {
         this.worldState[k] = cloneState({ [k]: next.state[k] as Json })[k] as Json;
@@ -319,6 +327,7 @@ export class Engine implements BehaviorEnv, RuleHost {
   private build(world: WorldDoc): void {
     this.registry.clear();
     this.worldState = cloneState(world.state);
+    this.worldJson = null;
     for (const id of Object.keys(world.entities)) {
       const spec = world.entities[id] as Entity;
       if (!spec.template) this.addEntity(spec, false);
@@ -611,7 +620,7 @@ export class Engine implements BehaviorEnv, RuleHost {
       this.warnOnce(`noscript:${e.id}:${id}`, `script '${id}' on ${e.id} not found in world.scripts`);
       return;
     }
-    const intents = this.scripts.update(id, e.id, this.snapshot(e, dt));
+    const intents = this.scripts.update(id, e.id, this.snapshot(e, dt), { worldJson: this.sharedWorldJson() });
     if (!Array.isArray(intents)) return;
     const ctx: ActionContext = { depth: 0, selfId: e.id };
     const n = Math.min(intents.length, 32);
@@ -627,6 +636,7 @@ export class Engine implements BehaviorEnv, RuleHost {
         if (intent.do === 'moveTo') {
           moveToward(this, e, intent.target, intent.speed, dt, { flat: false, face: false });
         } else if (intent.do === 'setSelfState') {
+          this.worldJson = null;
           writeState(this.scope, `${e.id}.${intent.key}`, intent.value);
         } else {
           const desc = executeAction(intent, this, ctx);
@@ -638,6 +648,18 @@ export class Engine implements BehaviorEnv, RuleHost {
         this.log(`script '${id}' on ${e.id}: ${intent.do} failed: ${errorText(err)}`);
       }
     }
+  }
+
+  /** Serialized world state for this tick (see {@link worldJson}); undefined when it cannot be serialized. */
+  private sharedWorldJson(): string | undefined {
+    if (this.worldJson === null) {
+      try {
+        this.worldJson = JSON.stringify(this.worldState);
+      } catch {
+        return undefined;
+      }
+    }
+    return this.worldJson;
   }
 
   private snapshot(e: RuntimeEntity, dt: number): ScriptSnapshot {
@@ -856,6 +878,7 @@ export class Engine implements BehaviorEnv, RuleHost {
   }
 
   setState(key: string, value: Json): string {
+    this.worldJson = null;
     const before = writeState(this.scope, key, value);
     return `${key} ${showValue(before)}→${showValue(value)}`;
   }
@@ -865,6 +888,7 @@ export class Engine implements BehaviorEnv, RuleHost {
     if (cur !== undefined && typeof cur !== 'number') throw new Error(`'${key}' is not a number (${showValue(cur)})`);
     const next = (cur ?? 0) + amount;
     if (!Number.isFinite(next)) throw new Error(`'${key}' would become non-finite`);
+    this.worldJson = null;
     writeState(this.scope, key, next);
     return `${key} ${showValue(cur)}→${showValue(next)}`;
   }

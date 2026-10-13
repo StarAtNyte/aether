@@ -7,6 +7,7 @@
 import { worldTransform, type Entity, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import { EMPTY_INPUT, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner } from '@aether/logic';
 import type { LogicHook, PhysicsWorld } from '@aether/physics';
+import { PosePool } from './posePool';
 
 /** Outcome recorded by the headless host. */
 export interface HeadlessOutcome {
@@ -21,6 +22,8 @@ const MAX_TRACKED_POSES = 5000;
 export class HeadlessLogicHost implements LogicHost {
   private readonly poses = new Map<EntityId, { position: Vec3; quaternion: QuatTuple }>();
   private readonly destroyed = new Set<EntityId>();
+  /** Reused per-entity pose records (getTransform runs many times per tick). */
+  private readonly pool = new PosePool();
   readonly outcome: HeadlessOutcome = { result: null, text: '', messages: 0 };
 
   constructor(
@@ -30,14 +33,14 @@ export class HeadlessLogicHost implements LogicHost {
 
   getTransform(id: EntityId): { position: Vec3; quaternion: QuatTuple } | undefined {
     if (this.destroyed.has(id)) return undefined;
-    const s = this.pw.getState(id);
-    if (s) return { position: s.position, quaternion: s.quaternion };
+    const slot = this.pool.slot(id);
+    if (this.pw.readPose(id, slot.position, slot.quaternion)) return slot;
     const p = this.poses.get(id);
     if (p) return p;
     if (!Object.prototype.hasOwnProperty.call(this.world.entities, id)) return undefined;
     try {
       const t = worldTransform(this.world, id);
-      return { position: t.position, quaternion: t.quaternion };
+      return this.pool.fill(id, t.position, t.quaternion);
     } catch {
       return undefined;
     }
@@ -87,6 +90,7 @@ export class HeadlessLogicHost implements LogicHost {
   destroy(id: EntityId): void {
     this.destroyed.add(id);
     this.poses.delete(id);
+    this.pool.release(id);
     this.pw.removeEntity(id);
   }
 

@@ -84,6 +84,11 @@ export interface VerifyReport {
   diagnostics: Diagnostic[];
   simulatedSeconds: number;
   ms: number;
+  /**
+   * Set only for a shard run (`VerifyOptions.tests`): the `world.tests`
+   * indices that `results` correspond to, in the same order.
+   */
+  testIndices?: number[];
 }
 
 /** Hooks gameplay logic into headless verification. */

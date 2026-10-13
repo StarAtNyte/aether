@@ -16,6 +16,7 @@ export {
   type QuatTuple,
   type ScriptDiagnostic,
   type ScriptIntent,
+  type ScriptPrepared,
   type ScriptRunner,
   type ScriptSnapshot,
 } from './types';
