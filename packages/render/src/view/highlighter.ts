@@ -59,14 +59,14 @@ export class Highlighter {
 
   /** Re-fit boxes to (possibly moving) targets. Drops targets that left the scene. */
   update(): void {
-    for (const [id, h] of this.helpers) {
-      if (!h.target.parent) {
-        this.remove(id);
-        continue;
-      }
-      h.helper.update();
-    }
+    // Map#forEach with a pre-bound callback: no iterator or [key, value] entry arrays per frame.
+    this.helpers.forEach(this.updateOne);
   }
+
+  private readonly updateOne = (h: { target: Object3D; helper: { update(): void } }, id: EntityId): void => {
+    if (!h.target.parent) this.remove(id);
+    else h.helper.update();
+  };
 
   /** Remove all highlights. */
   clear(): void {

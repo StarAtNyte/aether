@@ -143,8 +143,11 @@ export class WeatherSystem {
     const m = mesh.instanceMatrix.array as Float32Array;
     const o = this.offsets;
     const ph = this.phases;
-    const [hx, hy, hz] = cfg.half;
-    const [vx, vy, vz] = cfg.velocity;
+    // Index access, not destructuring: array destructuring may allocate an iterator per frame.
+    const half = cfg.half;
+    const vel = cfg.velocity;
+    const hx = half[0], hy = half[1], hz = half[2];
+    const vx = vel[0], vy = vel[1], vz = vel[2];
     const w = cfg.swayHz * Math.PI * 2;
     const cx = camera.position.x;
     const cy = camera.position.y;

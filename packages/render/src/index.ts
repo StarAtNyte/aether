@@ -53,3 +53,5 @@ export { RefCache } from './refcache';
 export { setRenderLogLevel, type LogLevel } from './log';
 export { adapterKnownGood, describeAdapter, parseBackendPreference, pickBackend, type AdapterInfoLike, type BackendDecision, type BackendEnvironment, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
 export { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, MIN_PIXEL_RATIO, type GpuTier, type RenderBudget } from './gpu/budget';
+export { AdaptiveResolution, ADAPTIVE_DEFAULTS, type AdaptiveOptions } from './view/adaptive-resolution';
+export { accelerateRaycast, bvhEligible, BVH_MIN_TRIANGLES, triangleBvh, type TriangleBvh } from './geometry/raycast-bvh';

@@ -8,6 +8,7 @@
  * refcounted caches; procedural shapes and models build asynchronously behind
  * a placeholder, and stale async results are discarded via per-node tokens.
  */
+import { accelerateRaycast } from '../geometry/raycast-bvh';
 import {
   Box3,
   BoxGeometry,
@@ -816,6 +817,7 @@ export class SceneSync {
       mesh.matrixAutoUpdate = false;
       mesh.name = `${node.id}:slot${slot.slot}`;
       mesh.userData[MESH_TRIANGLES_KEY] = slot.triangles;
+      accelerateRaycast(mesh);
       node.bindings.push({
         mesh,
         partMaterial,
@@ -887,6 +889,8 @@ export class SceneSync {
           mesh = im;
         } else {
           mesh = new Mesh(g.geometry, handle.material);
+          // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
+          accelerateRaycast(mesh);
         }
         node.bindings.push({
           mesh,

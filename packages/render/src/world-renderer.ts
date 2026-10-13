@@ -30,6 +30,7 @@ import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
+import { AdaptiveResolution } from './view/adaptive-resolution';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
@@ -77,6 +78,12 @@ export interface RendererOptions {
    * world is built or edited. Default true; pass false for reduced motion.
    */
   growIn?: boolean;
+  /**
+   * Lower the drawing-buffer resolution while continuous rendering stays
+   * under 40 fps, and restore it when there is headroom (default true).
+   * Never raises the resolution above the GPU budget.
+   */
+  adaptiveResolution?: boolean;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -116,6 +123,8 @@ export interface RenderStats {
   textures: number;
   entities: number;
   instances: number;
+  /** Adaptive resolution scale (1 = the GPU budget's full pixel ratio). */
+  resolutionScale?: number;
 }
 
 /** A raycast hit on a document entity (see {@link WorldRenderer.raycastEntity}). */
@@ -288,6 +297,10 @@ export class WorldRenderer {
   /** Draw counters of the last frame actually drawn (stable while on-demand rendering idles). */
   private lastDrawCalls = 0;
   private framesDrawn = 0;
+  /** Frame-time driven resolution scale (see {@link AdaptiveResolution}). */
+  private readonly adaptive = new AdaptiveResolution();
+  /** The previous animation frame drew (continuous rendering streak). */
+  private drewLastFrame = false;
   private lastTriangles = 0;
   private readonly orbit: OrbitControlsLike | null;
   /** Editor transform gizmo (created on first use). */
@@ -319,6 +332,7 @@ export class WorldRenderer {
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description) });
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.budget = renderBudget(this.gpu.tier, this.lowMemory);
+    this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
@@ -512,6 +526,15 @@ export class WorldRenderer {
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
+  }
+
+  /** Turn adaptive resolution on or off (off restores the full budget resolution at once). */
+  setAdaptiveResolution(on: boolean): void {
+    this.adaptive.enabled = on;
+    if (!on && this.adaptive.scale !== 1) {
+      this.adaptive.reset();
+      this.resize(this.cssWidth, this.cssHeight);
+    }
   }
 
   /** @deprecated alias of {@link setLowMemory}. */
@@ -1190,7 +1213,10 @@ export class WorldRenderer {
     this.env.update(animate ? step : 0, this.perspective);
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
-    if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !(animate && this.env.animating)) return false;
+    if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !(animate && this.env.animating)) {
+      this.drewLastFrame = false;
+      return false;
+    }
     this.needsDraw = false;
     this.highlighter.update();
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
@@ -1200,6 +1226,8 @@ export class WorldRenderer {
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
     this.lastTriangles = info.triangles ?? 0;
     this.frameStats.record(dt, now() - t0);
+    if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
+    this.drewLastFrame = true;
     return true;
   }
 
@@ -1468,7 +1496,7 @@ export class WorldRenderer {
     this.cssWidth = width;
     this.cssHeight = height;
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap), width, height, this.budget);
+    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * this.adaptive.scale, width, height, this.budget);
     if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.perspective.aspect = width / height;
@@ -1488,6 +1516,7 @@ export class WorldRenderer {
       textures: info.memory.textures ?? 0,
       entities: this.sync.entityCount,
       instances: this.sync.instanceCount,
+      resolutionScale: this.adaptive.scale,
     };
   }
 

@@ -211,9 +211,10 @@ export class CameraRig {
         rate = 14;
       }
     }
-    this.camera.position.lerp(_desired, damp(rate, dt));
+    // Inline exponential damping (same as damp()): no boxed return values per frame.
+    this.camera.position.lerp(_desired, 1 - Math.exp(-rate * Math.max(0, dt)));
     _desired.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
-    this.look.lerp(_desired, damp(10, dt));
+    this.look.lerp(_desired, 1 - Math.exp(-10 * Math.max(0, dt)));
     this.camera.lookAt(this.look);
     return true;
   }
