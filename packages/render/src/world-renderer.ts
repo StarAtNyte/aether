@@ -31,6 +31,7 @@ import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { gradeFor } from './gpu/grade';
+import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { contentFraming, framingPose, type Framing } from './view/framing';
@@ -392,6 +393,10 @@ export class WorldRenderer {
   private readonly editOverlay = new EditOverlay();
   /** Last pointer position over the canvas in NDC (gizmo snapping). */
   private readonly pointerNdc = new Vector2();
+  /** Direct camera input ends a fly-through. */
+  private readonly onUserCamera = (): void => {
+    if (this.rig.touring) this.rig.stopTour();
+  };
   private readonly onPointerMove = (e: PointerEvent): void => {
     const rect = this.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -461,6 +466,8 @@ export class WorldRenderer {
     this.env.shadowMapCap = this.budget.shadowMapCap;
     this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
+    canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
+    canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
   }
 
   /** Create a renderer on `canvas` (WebGPU when possible, else WebGL2). */
@@ -546,6 +553,39 @@ export class WorldRenderer {
   /** True while an automatic camera flight (framing, focus) is in progress. */
   get cameraFlying(): boolean {
     return this.rig.focusing;
+  }
+
+  /** True while a fly-through tour plays (see {@link startTour}). */
+  get touring(): boolean {
+    return this.rig.touring;
+  }
+
+  /**
+   * Fly-through: a cinematic loop around the meaningful content (low passes
+   * past focus objects, high reveals), starting and ending at the current
+   * view. Pointer or wheel input on the canvas, or any camera command, stops
+   * it. Returns false when there is nothing to tour.
+   */
+  startTour(seconds = TOUR_SECONDS): boolean {
+    if (this.boundsDirty) this.refresh();
+    const f = this.framing;
+    if (!f) return false;
+    const focus: Vec3[] = [];
+    for (const item of collectFramingItems(this.sync)) {
+      if (focus.length >= 6) break;
+      if (item.focus || (item.weight === undefined && (item.max[1] - item.min[1]) > f.radius * 0.08)) focus.push([(item.min[0] + item.max[0]) / 2, item.min[1] + (item.max[1] - item.min[1]) * 0.45, (item.min[2] + item.max[2]) / 2]);
+    }
+    const cam = this.perspective.position;
+    const target = this.orbitTarget();
+    const keys = tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY));
+    this.rig.startTour(new CameraTour(keys, seconds));
+    this.needsDraw = true;
+    return true;
+  }
+
+  /** Stop a running tour (the camera stays where it is). */
+  stopTour(): void {
+    this.rig.stopTour();
   }
 
   /** The main perspective camera. */
@@ -1808,6 +1848,8 @@ export class WorldRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.domElement.removeEventListener('pointermove', this.onPointerMove);
+    this.domElement.removeEventListener('pointerdown', this.onUserCamera);
+    this.domElement.removeEventListener('wheel', this.onUserCamera);
     this.gizmo?.dispose();
     this.gizmo = null;
     this.editOverlay.dispose();

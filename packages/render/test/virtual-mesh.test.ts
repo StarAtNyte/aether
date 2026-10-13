@@ -93,6 +93,8 @@ describe('VirtualGroup', () => {
     const { group, meshes } = setup();
     group.update(camera(6), 800);
     const firstRange = { ...meshes[0]!.geometry.drawRange };
+    // The renderer clears ranges once uploaded.
+    meshes[0]!.geometry.index!.clearUpdateRanges();
     // Moving the last instance only changes its own cut.
     meshes[2]!.parent!.position.z += 1.5;
     meshes[2]!.parent!.updateMatrixWorld(true);

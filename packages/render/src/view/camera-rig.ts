@@ -6,6 +6,7 @@
  */
 import { Euler, PerspectiveCamera, Vector3 } from 'three';
 import type { CameraMode } from '../types';
+import type { CameraTour } from './tour';
 
 /** The subset of OrbitControls the rig needs (lets tests use a fake). */
 export interface OrbitControlsLike {
@@ -97,13 +98,36 @@ export class CameraRig {
     }
   }
 
+  /** Running fly-through (see {@link startTour}). */
+  private tour: CameraTour | null = null;
+
   /** True while a fly-to animation runs. */
   get focusing(): boolean {
     return this.focusT < 1;
   }
 
+  /** True while a fly-through plays. */
+  get touring(): boolean {
+    return this.tour !== null && this.tour.active;
+  }
+
+  /** Play a fly-through (orbit mode); user input or any camera command stops it. */
+  startTour(tour: CameraTour): void {
+    if (this.mode !== 'orbit') this.setMode('orbit', null);
+    this.focusT = 1;
+    this.tour = tour;
+  }
+
+  /** Stop a running fly-through where it is (orbiting continues around its current target). */
+  stopTour(): void {
+    if (!this.tour) return;
+    this.tour = null;
+    if (this.controls) this.controls.target.copy(this.look);
+  }
+
   /** Switch mode. `source` provides the follow/first-person target. */
   setMode(mode: CameraMode, source: FollowSource | null): void {
+    this.tour = null;
     this.mode = mode;
     this.follow = mode === 'orbit' ? null : source;
     if (this.controls) {
@@ -145,6 +169,7 @@ export class CameraRig {
 
   /** Fly (or jump when `duration` ≤ 0) to a camera position looking at `target`. Switches to orbit mode. */
   flyTo(position: Vector3, target: Vector3, duration = 0.9): void {
+    this.tour = null;
     if (this.mode !== 'orbit') this.setMode('orbit', null);
     this.fromPos.copy(this.camera.position);
     this.fromTarget.copy(this.controls ? this.controls.target : this.look);
@@ -166,6 +191,12 @@ export class CameraRig {
 
   /** Advance the camera one frame. Zero allocations. Returns true when the view may have changed. */
   update(dt: number): boolean {
+    if (this.tour) {
+      this.tour.io[2] = dt;
+      this.tour.io[3] = this.floorY;
+      if (this.tour.step(this.camera, this.look)) return true;
+      this.stopTour();
+    }
     if (this.focusT < 1) {
       this.focusT = Math.min(1, this.focusT + dt / this.focusDuration);
       const e = easeInOutCubic(this.focusT);

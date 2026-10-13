@@ -1010,6 +1010,12 @@ export class Studio {
     return entity.id;
   }
 
+  /** Cinematic fly-through of the world (edit mode); any camera input stops it. */
+  tour(): void {
+    if (!this.sim || this.sim.mode === 'play') return;
+    if (!this.sim.tour()) this.store.getState().toast('Add something to the world first.', 'info', 3);
+  }
+
   /** Editor camera presets ('reset' re-frames the whole world). */
   viewPreset(preset: 'top' | 'front' | 'side' | 'iso' | 'reset'): void {
     if (!this.sim || this.sim.mode === 'play') return;

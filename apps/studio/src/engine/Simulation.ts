@@ -583,6 +583,13 @@ export class Simulation {
   }
 
   /** Camera presets for the editor (orbit mode only). */
+  /** Fly-through tour of the world (edit mode); returns false when there is nothing to tour. */
+  tour(): boolean {
+    if (this.session) return false;
+    this.touch();
+    return this.renderer.startTour();
+  }
+
   viewPreset(preset: 'top' | 'front' | 'side' | 'iso'): void {
     if (this.session) return;
     this.touch();

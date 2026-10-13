@@ -100,7 +100,7 @@ export class ScatterField {
       const from = Math.min(count, this.culler.dirtyFrom[l] as number);
       if (from >= count) continue;
       const attr = this.attributes[l] as InstancedBufferAttribute;
-      attr.clearUpdateRanges();
+      // Ranges accumulate until uploaded (the renderer clears them), so two re-plans before one draw stay correct.
       attr.addUpdateRange(from * 16, (count - from) * 16);
       attr.needsUpdate = true;
     }

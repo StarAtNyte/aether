@@ -187,9 +187,12 @@ export class VirtualGroup {
     let drawn = 0;
     for (const inst of this.instances) drawn += inst.mesh.geometry.drawRange.count;
     this.drawnTriangles = drawn / 3;
-    this.index.clearUpdateRanges();
-    if (w > start) this.index.addUpdateRange(start, w - start);
-    this.index.needsUpdate = true;
+    // Upload only what was rewritten; a version bump without a range would re-upload the whole buffer.
+    if (w > start) {
+      // Ranges accumulate until the renderer uploads them (it clears them afterwards).
+      this.index.addUpdateRange(start, w - start);
+      this.index.needsUpdate = true;
+    }
     return true;
   }
 

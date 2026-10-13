@@ -50,6 +50,16 @@ const CameraPresets = memo(function CameraPresets(): ReactElement {
   );
 });
 
+/** Fly-through button (edit mode). */
+const TourButton = memo(function TourButton(): ReactElement {
+  const studio = useStudio();
+  return (
+    <button type="button" className="vp-btn" aria-label="Fly through the world" data-tip="Fly through (move the camera to stop)" onClick={() => studio.tour()}>
+      <Icon name="camera" />
+    </button>
+  );
+});
+
 /** Play-mode camera switcher. */
 const CameraToggle = memo(function CameraToggle(): ReactElement {
   const studio = useStudio();
@@ -281,7 +291,12 @@ export const Viewport = memo(function Viewport(): ReactElement {
       <div className="viewport__host" ref={hostRef} data-layout-ignore="" />
       {ready && <ViewOverlays playing={playing} />}
       <div className="vp-overlay vp-overlay--tl">
-        {ready && !playing && <CameraPresets />}
+        {ready && !playing && (
+          <div className="vp-row">
+            <CameraPresets />
+            <TourButton />
+          </div>
+        )}
         <PerfHud />
         {ready && <GeometryBadge />}
       </div>

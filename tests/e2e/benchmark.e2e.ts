@@ -12,8 +12,7 @@
  * One browser at a time; everything started here is stopped in `finally`.
  *
  * Run: `npm run build && npm run e2e:benchmark` (Chromium WebGPU, Chromium
- * WebGL2, then Firefox WebGL2, all on software GPUs). `--only=chromium-gpu`
- * measures the machine's hardware GPU instead. Flags: `--only=<target>`,
+ * WebGL2, then Firefox WebGL2). Flags: `--only=<target>`,
  * `--classic`, `--seconds=6`, `--out=<dir>` for the screenshots.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -51,8 +50,6 @@ interface Target {
 const TARGETS: readonly Target[] = [
   { name: 'chromium-webgpu', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] }), query: '' },
   { name: 'chromium-webgl2', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] }), query: '' },
-  // Hardware GPU (headless Chromium over Vulkan/ANGLE). Not part of the default run: only with --only=chromium-gpu.
-  { name: 'chromium-gpu', launch: () => chromium.launch({ executablePath: findChrome(), args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--ignore-gpu-blocklist', '--enable-gpu-rasterization'] }), query: '' },
   { name: 'firefox', launch: () => firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }), query: '' },
 ];
 
@@ -126,6 +123,10 @@ interface Result {
   p99: number;
   longTasks: number;
   longestTask: number;
+  /** Mean CPU ms per frame inside three's render() and in the view planner; re-plans that changed buffers. */
+  renderCpuMs: number;
+  planCpuMs: number;
+  replans: number;
   buildSeconds: number;
   screenshot: string;
 }
@@ -215,6 +216,28 @@ async function run(target: Target, url: string): Promise<Result> {
           })
         : null;
       obs?.observe({ entryTypes: ['longtask'] });
+      // CPU time inside three's render() and in the view planner (scatter fields + virtual cuts).
+      type Timed = { render: (...a: unknown[]) => unknown };
+      const inner = (r as unknown as { renderer: Timed }).renderer;
+      const sync = (r as unknown as { sync: { updateView: (...a: unknown[]) => unknown } }).sync;
+      const origRender = inner.render;
+      const origPlan = sync.updateView;
+      let renderMs = 0;
+      let planMs = 0;
+      let plans = 0;
+      inner.render = function (this: unknown, ...a: unknown[]) {
+        const t0 = performance.now();
+        const out = origRender.apply(this, a);
+        renderMs += performance.now() - t0;
+        return out;
+      };
+      sync.updateView = function (this: unknown, ...a: unknown[]) {
+        const t0 = performance.now();
+        const out = origPlan.apply(this, a);
+        planMs += performance.now() - t0;
+        if (out === true) plans++;
+        return out;
+      };
       const frames: number[] = [];
       const start = performance.now();
       let last = start;
@@ -233,11 +256,13 @@ async function run(target: Target, url: string): Promise<Result> {
         requestAnimationFrame(step);
       });
       obs?.disconnect();
+      inner.render = origRender;
+      sync.updateView = origPlan;
       const s = r.stats();
       frames.shift();
       const sorted = [...frames].sort((x, y) => x - y);
       const q = (p: number): number => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0;
-      return { frames: frames.length, p50: q(0.5), p90: q(0.9), p99: q(0.99), longTasks, longest, stats: s };
+      return { frames: frames.length, p50: q(0.5), p90: q(0.9), p99: q(0.99), longTasks, longest, stats: s, renderMs: renderMs / Math.max(1, frames.length), planMs: planMs / Math.max(1, frames.length), plans };
     }, SECONDS);
     if (cdp && PROFILE) {
       const { profile } = await cdp.send('Profiler.stop');
@@ -296,6 +321,9 @@ async function run(target: Target, url: string): Promise<Result> {
       p99: m.p99,
       longTasks: m.longTasks,
       longestTask: m.longest,
+      renderCpuMs: m.renderMs,
+      planCpuMs: m.planMs,
+      replans: m.plans,
       buildSeconds,
       screenshot: file,
     };
@@ -309,12 +337,13 @@ async function main(): Promise<void> {
   const results: Result[] = [];
   try {
     for (const t of TARGETS) {
-      if (ONLY ? t.name !== ONLY : t.name === 'chromium-gpu') continue;
+      if (ONLY && t.name !== ONLY) continue;
       log(`${t.name}${CLASSIC ? ' (classic engine)' : ''}: building "${PROMPT}"`);
       const r = await run(t, server.url);
       results.push(r);
       const M = (n: number): string => `${(n / 1e6).toFixed(2)}M`;
       log(`  ${r.backend}: scene ${M(r.sceneTriangles)} tris, drawn ${M(r.drawnTriangles)} (${(r.sceneTriangles / Math.max(1, r.drawnTriangles)).toFixed(0)}x), ${r.drawCalls} draws; fields ${r.fieldDrawn}/${r.fieldInstances}; virtual ${r.virtualInstances} meshes ${M(r.virtualDrawn)} tris`);
+      log(`  CPU per frame: render ${r.renderCpuMs.toFixed(1)} ms, view planning ${r.planCpuMs.toFixed(2)} ms (${r.replans} re-plans)`);
       log(`  frame p50 ${r.p50.toFixed(1)} ms, p90 ${r.p90.toFixed(1)} ms, p99 ${r.p99.toFixed(1)} ms over ${r.frames} frames; ${r.longTasks} long tasks (max ${r.longestTask.toFixed(0)} ms); built in ${r.buildSeconds.toFixed(1)} s → ${r.screenshot}`);
     }
     process.stdout.write(`${JSON.stringify(results)}\n`);

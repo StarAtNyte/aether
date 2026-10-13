@@ -6,6 +6,7 @@
 import { r2, type Builder, type PlaceOpts, type V3 } from './builder';
 import type { Json } from '@aether/core';
 import type { Theme } from './theme';
+import { VIEW_BEARING } from './decor';
 
 /**
  * A sculpture sharing one mesh with every other sculpture of the same
@@ -60,13 +61,14 @@ const canyonOfColossi: Theme = {
     }
     // Dry grass along the canyon floor.
     b.add({ id: b.id('floor-grass'), name: 'Canyon grass', transform: { position: [0, 0, 0] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'grass-tuft', params: { size: 0.6, color: '#b9a35f' } }, count: 60_000, area: [70, SIZE - 100], seed: 13, scaleRange: [0.7, 1.5], onSurface: terrain }, tags: ['backdrop'] });
-    // Colossal heads lining the floor, facing the centre line (one shared mesh: identical params).
+    // An avenue of colossal heads lining the floor, all gazing down the canyon toward the
+    // default camera (one shared mesh: identical params and seed).
     for (let i = 0; i < 9; i++) {
       for (const side of [-1, 1]) {
         const z = r2(-260 + i * 65 + (side > 0 ? 30 : 0));
         const x = r2(side * (26 + b.rand(0, 8)) + Math.sin((z * 4.2) / SIZE) * SIZE * 0.025);
         const h = r2(b.rand(0.8, 1.25));
-        sculpture(b, 'colossus', { variant: 0, detail: 3, height: 16, color: '#a39380' }, 7, [x, 0, z], { yaw: side > 0 ? -90 + b.rand(-20, 20) : 90 + b.rand(-20, 20), scale: h, name: 'Colossal head', footprint: 6, tags: ['backdrop'] });
+        sculpture(b, 'colossus', { variant: 0, detail: 3, height: 16, color: '#a39380' }, 7, [x, 0, z], { yaw: VIEW_BEARING + side * 8 + b.rand(-10, 10), scale: h, name: 'Colossal head', footprint: 6, tags: ['backdrop'] });
       }
     }
     // A ring of carved standing stones around the canyon's heart.
