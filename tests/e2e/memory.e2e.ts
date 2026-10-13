@@ -314,7 +314,8 @@ async function run(browser: Browser, url: string, name: string, expectBackend: s
       }
     }
     const endMem = await loadStarter(page);
-    const end = await settledSample(page);
+    // More samples at the end: Firefox collects garbage lazily (no forced GC from a page).
+    const end = await settledSample(page, 6);
     log(`  end: tab ${end.tabMb.toFixed(0)} MB, heap ${end.heapMB ?? 'n/a'} MB, ${endMem.geometries} GPU geometries (${endMem.cachedGeometries} cached), ${endMem.textures} textures, ${endMem.materials} materials, history ${endMem.historyEntries}, chat ${endMem.chatEntries}`);
     // Same world, same resources: the reference-counted caches must be back to exactly the baseline.
     check(endMem.cachedGeometries === warmMem.cachedGeometries, `cached geometries leaked: ${warmMem.cachedGeometries} → ${endMem.cachedGeometries}`);

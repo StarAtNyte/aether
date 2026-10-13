@@ -65,6 +65,9 @@ export function stableStringify(v: unknown): string;   // sorted keys, used for 
 export class History {
   constructor(initial: WorldDoc, opts?: { maxEntries?: number });
   get current(): WorldDoc;
+  get size(): number;                                  // entries held in memory (all branches)
+  get entryLimit(): number;
+  setMaxEntries(max: number): number;                  // memory budget: prunes oldest entries now, never the current position
   commit(patches: readonly unknown[], message: string, source?: 'agent' | 'user' | 'system'): PatchResult;
   undo(): WorldDoc | null;  redo(): WorldDoc | null;
   canUndo(): boolean; canRedo(): boolean;
@@ -152,7 +155,10 @@ export function resolveParams(spec: Record<string, ParamSpec>, params: Record<st
 export function fallbackOutput(reason: string): GeneratorOutput;   // visible placeholder when a generator fails
 
 // Cache (LRU, keyed by generator id + stableStringify(params) + seed + source hash)
-export class GeneratorCache { constructor(maxEntries?: number); get(key: string): GeneratorOutput | undefined; set(key: string, v: GeneratorOutput): void; key(shape: ProceduralShape, sourceHash?: number): string; clear(): void; }
+// Bounded by entry count AND by the bytes of the outputs' typed arrays (default 64 MB); an output larger than the budget is not cached.
+export class GeneratorCache { constructor(maxEntries?: number, maxBytes?: number); get(key: string): GeneratorOutput | undefined; set(key: string, v: GeneratorOutput): void; key(shape: ProceduralShape, sourceHash?: number): string; clear(): void; readonly bytes: number; readonly byteLimit: number; setByteLimit(maxBytes: number): void; }
+export function outputBytes(out: GeneratorOutput): number;   // typed-array bytes of mesh parts + colliders
+export const DEFAULT_CACHE_BYTES: number;
 
 // Sandbox for LLM-written generator source (SECURITY CRITICAL)
 export interface SandboxRunner { run(def: GeneratorDef, params: Record<string, Json>, seed: number, opts?: { timeoutMs?: number }): Promise<GeneratorOutput>; dispose(): void; }
@@ -218,6 +224,10 @@ export interface VerifyReport { passed: boolean; results: TestResult[]; diagnost
 export interface LogicHook { tick(dt: number, pw: PhysicsWorld, events: PhysicsEvent[]): void; readState(key: string): Json | undefined; }
 export async function verify(world: WorldDoc, opts?: { colliders?: ColliderProvider; logic?: (pw: PhysicsWorld) => LogicHook; maxSeconds?: number; budgetMs?: number }): Promise<VerifyReport>;
 export function summarizeReport(report: VerifyReport): string;   // compact text for the LLM repair loop
+
+// Collider output caches (built-in generators / primitives): ≤ 64 entries and ≤ MAX_COLLIDER_CACHE_BYTES (32 MB) each
+export function clearColliderCache(): void;
+export function colliderCacheStats(): { entries: number; bytes: number };
 ```
 
 ## @aether/logic
@@ -264,26 +274,38 @@ export const RULE_DOCS: string;                             // compact docs of t
 export interface ScriptRunner { load(def: ScriptDef): void; update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot): ScriptIntent[]; dispose(): void; }
 export interface ScriptSnapshot { dt: number; time: number; self: { id: EntityId; position: Vec3; velocity: Vec3; state: Record<string, Json> }; player?: { position: Vec3 }; world: Record<string, Json>; nearby: Array<{ id: EntityId; tags: string[]; position: Vec3 }>; input: { forward: number; right: number; jump: boolean; action: boolean }; }
 export type ScriptIntent = Action | { do: 'moveTo'; target: Vec3; speed: number } | { do: 'setSelfState'; key: string; value: Json };
-export function createScriptRunner(opts?: { budgetMs?: number }): ScriptRunner;   // interpreter-based (no eval of untrusted code on main thread) OR documented isolation; MUST enforce op budget and deny globals
+export function createScriptRunner(opts?: ScriptRunnerOptions): ManagedScriptRunner;   // QuickJS sandbox; throws until initScripting() resolved
+export function initScripting(): Promise<void>;     // LAZY: imports QuickJS (one variant: release-sync) on first call only
+export function isScriptingReady(): boolean;
+export function scriptHeapUsage(): { reservedBytes: number; abandonedRuntimes: number };
 export const SCRIPT_API_DTS: string;
 ```
+
+The package entry never imports QuickJS statically (a unit test walks the
+static import graph): worlds without scripts never download or compile it.
 
 ## @aether/render
 
 three.js r186. Prefers `WebGPURenderer` (`three/webgpu`) with automatic WebGL2 fallback (the same renderer forced onto its WebGL2 backend; every feature below works on both).
 
 ```ts
+export type BackendPreference = 'auto' | 'webgpu' | 'webgl2';
 export interface RendererOptions {
-  preferWebGPU?: boolean; antialias?: boolean; shadows?: boolean; pixelRatioCap?: number;
+  backend?: BackendPreference;                            // default 'auto' (policy below)
+  preferWebGPU?: boolean;                                 // deprecated: false = 'webgl2'
+  antialias?: boolean; shadows?: boolean; pixelRatioCap?: number;   // pixelRatioCap: extra cap on top of the GPU budget
   sandbox?: SandboxRunner; onProgress?: (msg: string) => void;
-  geometrySource?: GeometrySource; modelLoader?: ModelLoader; maxInstances?: number;
-  lowPower?: boolean;                                     // no bloom pass, 1024² sun shadow map
+  geometrySource?: GeometrySource; modelLoader?: ModelLoader; maxInstances?: number;   // default: the budget's instance cap
+  lowMemory?: boolean;                                    // low-memory budget (see renderBudget); lowPower is a deprecated alias
+  onContextLost?: (info: { backend: 'webgpu' | 'webgl2'; message: string }) => void;   // device/context lost: renderer stops drawing; host replaces it
   growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
 }
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
   readonly backend: 'webgpu' | 'webgl2';
+  readonly gpu: Readonly<{ description: string; tier: GpuTier }>;
   readonly domElement: HTMLCanvasElement;
+  get contextLost(): boolean; get frameCount(): number; get lowMemoryMode(): boolean;
   get camera(): THREE.PerspectiveCamera;
   get contentSphere(): Readonly<{ center: Vec3; radius: number }> | null;   // meaningful content (fog, shadows, framing)
   get cameraFlying(): boolean;                            // an automatic camera flight is in progress
@@ -306,13 +328,47 @@ export class WorldRenderer {
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: Diagnostic[] }): void;
   screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (for VLM critique); never a mid-grow frame
   renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size?: number): Promise<string[]>;
-  render(dt: number, opts?: { onDemand?: boolean }): boolean;   // call every frame; on-demand skips unchanged frames
-  requestRender(): void; setLowPower(on: boolean): void;
-  resize(width: number, height: number): void;
+  render(dt: number, opts?: { onDemand?: boolean; animate?: boolean }): boolean;   // on-demand skips unchanged frames; animate:false freezes weather (idle editor)
+  requestRender(): void;
+  setLowMemory(on: boolean): void;                        // runtime switch: pixel ratio, shadows, post pass, generator cache (MSAA/instances need a new renderer); setLowPower = deprecated alias
+  resize(width: number, height: number): void;            // pixel ratio = effectivePixelRatio(devicePixelRatio, w, h, budget)
   stats(): { fps: number; frameMs: number; drawCalls: number; triangles: number; geometries: number; textures: number; entities: number; instances: number };
+  memoryStats(): RenderMemoryStats;                       // tier, pixel ratio, drawing buffer, shadow size, post, GPU/cached geometries, textures, materials, generator cache MB, estimated GPU MB
   dispose(): void;
 }
+
+// GPU memory budgets (pure, gpu/budget.ts)
+export type GpuTier = 'discrete' | 'integrated' | 'software' | 'unknown';
+export function classifyGpu(description: string | null | undefined): GpuTier;   // WebGL renderer string / WebGPU adapter info
+export function renderBudget(tier: GpuTier, lowMemory: boolean): RenderBudget;   // { pixelRatioCap, maxPixels, shadowMapCap, post, antialias, maxInstances, generatorCacheBytes }
+export function effectivePixelRatio(dpr: number, cssW: number, cssH: number, budget: Pick<RenderBudget, 'pixelRatioCap' | 'maxPixels'>): number;
+// Backend policy (pure, gpu/backend.ts)
+export function pickBackend(pref: BackendPreference, env: BackendEnvironment): 'webgpu' | 'webgl2' | 'probe';
+export function adapterKnownGood(info: AdapterInfoLike | null | undefined): boolean;
 ```
+
+**Memory budgets.** Drawing-buffer pixels dominate GPU memory (multisampled
+half-float target + resolves + bloom chain + swap chain, measured at
+roughly 100–140 bytes per pixel), so every GPU class has a pixel-ratio cap
+and an absolute pixel cap:
+
+| Tier | Pixel ratio cap | Max pixels | Sun shadow map | Post (bloom) | MSAA |
+| --- | --- | --- | --- | --- | --- |
+| discrete (incl. Apple silicon) | 1.5 | 3.7 MP | 2048² | yes | yes |
+| integrated / unknown | 1.25 | 2.1 MP | 2048² | yes | yes |
+| software (SwiftShader, llvmpipe) | 1 | 1.4 MP | 1024² | yes | yes |
+| low-memory mode (any tier) | 1 | 1.05 MP | 1024² | no | no |
+
+The post pipeline (the largest single allocation) exists only while a
+world uses bloom: it is disposed when bloom is 0 or low-memory mode is on
+and rebuilt on demand.
+
+**Backend policy (`backend: 'auto'`).** Chromium and Safari use WebGPU when
+`navigator.gpu` exists. Firefox and its forks use WebGL2 on Linux, and
+elsewhere only when the WebGPU adapter is a real (non-fallback) NVIDIA, AMD
+or Apple GPU. A WebGPU initialization (or adapter probe) that never finished
+disables WebGPU for the origin. A lost device/context calls `onContextLost`
+(three's default handler, which only logs, is replaced).
 
 Rendering requirements: instanced rendering for `scatter` shapes (InstancedMesh /
 BatchedMesh), geometry & material caches keyed by stable JSON, per-frame zero
@@ -416,3 +472,21 @@ outliner, inspector, logic panel (rules as readable cards), verification panel
 (tests + diagnostics + "physics check ✓"), history timeline (undo/redo/branches),
 play/edit toggle, perf HUD, example prompt gallery, export/import JSON, share link.
 A `Simulation` class wires PhysicsWorld + LogicRuntime + WorldRenderer with a fixed-step loop.
+
+Memory and GPU robustness (see `src/lib/memory.ts`):
+
+- Settings `backend: 'auto' | 'webgpu' | 'webgl2'` (switching restarts the
+  renderer) and `lowMemory: 'auto' | 'on' | 'off'` (older saves migrate:
+  `preferWebGPU: false` → 'webgl2', `lowPower: true` → 'on').
+- Automatic low-memory mode: `navigator.deviceMemory` ≤ 4 GB, JS heap
+  pressure (≥ 70 % of the limit or ≥ 600 MB, sampled every 10 s, latched) or
+  a lost GPU context. It is shown as a "Low memory" badge in the top bar and
+  applies the renderer's low-memory budget plus a 40-entry undo history
+  (150 otherwise).
+- A lost context remounts the viewport canvas with a new renderer
+  (`store.rendererEpoch`); after a lost WebGPU device the replacement uses
+  WebGL2. At most 3 recoveries per 2 minutes, then a fatal message.
+- The frame loop stops while the page is hidden, and after 30 s without
+  input an edit-mode viewport stops redrawing animated weather.
+- `studio.memoryReport()` (debug handle) and the perf HUD expose the memory
+  picture; `npm run e2e:memory` asserts the budgets in Chromium and Firefox.

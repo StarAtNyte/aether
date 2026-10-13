@@ -232,6 +232,35 @@ describe('createWorkerSandbox (pool, watchdog, protocol)', () => {
     sb.dispose();
   });
 
+  it('terminates idle workers after the idle timeout and respawns them lazily', async () => {
+    FakeWorker.created = 0;
+    const workers: FakeWorker[] = [];
+    const sb = createWorkerSandbox({ poolSize: 2, idleTimeoutMs: 80, createWorker: () => {
+      const w = new FakeWorker();
+      workers.push(w);
+      return w;
+    } });
+    await sb.run(def(FINISH), {}, 1);
+    expect(workers.length).toBe(1);
+    expect(workers[0]?.terminated).toBe(false);
+    await new Promise((r) => setTimeout(r, 160));
+    expect(workers[0]?.terminated).toBe(true);
+    const again = await sb.run(def(FINISH), {}, 2);
+    expect(again.parts.length).toBe(1);
+    expect(FakeWorker.created).toBe(2);
+    // 0 disables the idle timeout.
+    const keep = createWorkerSandbox({ poolSize: 1, idleTimeoutMs: 0, createWorker: () => {
+      const w = new FakeWorker();
+      workers.push(w);
+      return w;
+    } });
+    await keep.run(def(FINISH), {}, 1);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(workers[workers.length - 1]?.terminated).toBe(false);
+    keep.dispose();
+    sb.dispose();
+  });
+
   it('terminates and respawns a worker on timeout', async () => {
     FakeWorker.created = 0;
     const workers: FakeWorker[] = [];

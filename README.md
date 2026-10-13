@@ -93,8 +93,9 @@ explicit state, so the AI can be held to account:
 - **WebGPU with WebGL2 fallback.** three.js r186 `WebGPURenderer`, ACES tone
   mapping, bloom and a soft vignette, weather particles, soft shadows fitted
   to the content, and orbit, follow (it steps in front of obstacles) and
-  first-person cameras. Firefox and other browsers without WebGPU get the
-  same look on WebGL2.
+  first-person cameras. Firefox uses WebGL2 by default (WebGPU only on
+  known-good GPUs) and gets the same look. The renderer can be forced to
+  either backend in Settings.
 - **Art-directed by policy, whatever the model writes.** Seven distinct sky
   presets (day, dawn, sunset, night, overcast, space, studio). Each one aims
   the sun to rake across the default view, and nights get a moon rim light, a
@@ -114,7 +115,8 @@ explicit state, so the AI can be held to account:
 - **Studio UI.** Streaming chat with diff chips and verify badges, an 8-prompt
   example gallery, outliner, inspector with a validated JSON editor, rule
   cards, a verification panel with "Fix with AI", a history timeline, a play
-  HUD, a performance overlay and a low-power mode.
+  HUD, a performance overlay with memory readouts, and a low memory mode
+  that turns itself on for small devices.
 
 ## Quick start
 
@@ -184,6 +186,7 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
 | `npm run smoke` | Runs the real agent with the offline mock against 13 prompts and re-verifies every world headless |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
+| `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset) |
 
 ## How a prompt becomes a playable world
@@ -344,9 +347,19 @@ All LLM output and all user input are treated as untrusted.
 - **Caching.** Geometry and materials are reference-counted caches keyed by
   stable JSON. Generator output sits in an LRU cache keyed by id, params,
   seed and source hash, with in-flight dedupe.
-- **Responsive UI.** Rendering in edit mode happens on demand. Verification
+- **Memory budgets.** Each GPU class gets a pixel-ratio cap (1.25 on
+  integrated GPUs), an absolute drawing-buffer cap and a 2048² shadow map;
+  bloom's render targets exist only while a world uses bloom. Low memory
+  mode (automatic for devices with 4 GB or less, under heap pressure or
+  after a lost GPU context) drops to ratio 1, about 1 MP, no MSAA or bloom,
+  1024² shadows and a 40-entry undo history. Caches are bounded by bytes as
+  well as entries. A lost GPU context is recovered with a fresh renderer.
+- **Responsive UI.** Rendering in edit mode happens on demand, and an idle
+  editor (30 s without input) stops redrawing animated weather; the loop
+  stops while the tab is hidden. Verification
   yields to the browser every 8 ms. Rapier (a multi-MB WASM chunk) loads
-  lazily on the first Play or Verify. Stats and HUD updates go to React at
+  lazily on the first Play or Verify, and QuickJS only for worlds with
+  scripts. Stats and HUD updates go to React at
   4 Hz, never every frame.
 - **Measured.** 1000 dynamic boxes step in about 2.3 ms on average (8 ms
   budget). 1000 patches apply in about 40 ms. All 35 built-in generators run
@@ -360,6 +373,7 @@ All LLM output and all user input are treated as untrusted.
 | Unit and integration | `npm test` | About 1,050 Vitest tests across 61 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 13 prompts, including all 8 gallery examples. Every resulting world is re-validated and re-verified independently. |
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
+| Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors |
 
 Install the browsers for e2e once with `npx playwright install chromium firefox`.

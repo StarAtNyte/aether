@@ -27,7 +27,8 @@ These are bundled into the studio or executed by the server.
 | --- | --- | --- | --- | --- |
 | [three](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | `@aether/render`, studio | © 2010–2026 three.js authors |
 | [@dimforge/rapier3d-compat](https://github.com/dimforge/rapier.js) | 0.21.0 | Apache-2.0 | `@aether/physics` (installed at `packages/physics/node_modules`) | Dimforge / rapier.js authors |
-| [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `@aether/logic` script sandbox | © 2019–2024 Jake Teton-Landis |
+| [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `@aether/logic` script sandbox (loaded lazily) | © 2019–2024 Jake Teton-Landis |
+| [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `@aether/logic`: the single QuickJS build the sandbox loads | © 2019–2024 Jake Teton-Landis |
 | [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | `@aether/core`, `@aether/agent`, validation everywhere | © 2025 Colin McDonnell |
 | [react](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
 | [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
@@ -40,12 +41,7 @@ These are bundled into the studio or executed by the server.
 
 | Package | Installed version | Licence | Pulled in by |
 | --- | --- | --- | --- |
-| quickjs-emscripten-core | 0.32.0 | MIT | quickjs-emscripten |
-| @jitl/quickjs-ffi-types | 0.32.0 | MIT | quickjs-emscripten |
-| @jitl/quickjs-wasmfile-release-sync | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | quickjs-emscripten. This is the variant loaded at runtime. |
-| @jitl/quickjs-wasmfile-release-asyncify | 0.32.0 | MIT | quickjs-emscripten. Emitted by the build but never loaded. |
-| @jitl/quickjs-wasmfile-debug-sync | 0.32.0 | MIT | quickjs-emscripten. Emitted by the build but never loaded. |
-| @jitl/quickjs-wasmfile-debug-asyncify | 0.32.0 | MIT | quickjs-emscripten. Emitted by the build but never loaded. |
+| @jitl/quickjs-ffi-types | 0.32.0 | MIT | quickjs-emscripten-core, @jitl/quickjs-wasmfile-release-sync |
 | scheduler | 0.28.0 | MIT | react-dom |
 | @types/react | 19.3.0 | MIT | Type-only peer of zustand. Not present at runtime. |
 | csstype | 3.2.3 | MIT | Type-only dependency of @types/react |
@@ -200,7 +196,7 @@ repositories.
 | --- | --- | --- |
 | **lightningcss 1.33.0, MPL-2.0** | Dev and build only | A CSS tool used internally by Vite. It runs on the build machine and none of its code ends up in the studio bundle or the server runtime. MPL-2.0 is a weak, file-level copyleft that applies only to modifications of its own files, which we do not modify or distribute. **No conflict** with commercial use or redistribution of Aether. It is flagged because it is the only licence outside MIT, Apache-2.0, ISC and BSD. |
 | **Apache-2.0 components** (Rapier, TypeScript, Playwright, detect-libc, expect-type) | Rapier ships in the bundle and the Docker image; the others are dev only | Apache-2.0 is permissive and compatible. When redistributing Rapier, keep its licence text: it is preserved in `node_modules` inside the Docker image, and the licence is credited here. The package ships no NOTICE file. |
-| **QuickJS (inside quickjs-emscripten)** | Ships as WASM | MIT, © Fabrice Bellard and Charlie Gordon. Credited here. |
+| **QuickJS (inside @jitl/quickjs-wasmfile-release-sync)** | Ships as WASM | MIT, © Fabrice Bellard and Charlie Gordon. Credited here. |
 | **Docker base image `node:22-slim`** | Deployment only | Node.js (MIT) on Debian. The OS packages carry their own licences (some GPL), which is ordinary aggregation in a container image. Aether code is not linked into them. They are not part of the repository source. |
 | **Chromium downloaded by Playwright** | Dev only (e2e) | Downloaded on demand by `npx playwright install` and never committed or shipped |
 | **Inter and JetBrains Mono, SIL OFL 1.1** | Ship as static font files | OFL 1.1 permits use, embedding, modification and redistribution, including commercially, provided the copyright notice and licence travel with the fonts (they do: `apps/studio/public/fonts/*-OFL.txt`, copied into the build). Neither font declares a Reserved Font Name; the subsets are served as *Aether Sans* / *Aether Mono* anyway. The fonts may not be sold on their own, which Aether does not do. |

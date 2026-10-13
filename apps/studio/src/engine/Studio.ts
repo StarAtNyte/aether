@@ -171,6 +171,11 @@ export class Studio {
     const st = this.store.getState();
     const gen = ++this.attachGen;
     st.setLoading('Starting renderer…');
+    // React StrictMode (development) mounts, unmounts and remounts the viewport in one commit.
+    // Yield once so a superseded attach never creates a GPU context at all: two renderers
+    // initializing side by side would double the GPU memory peak at startup.
+    await Promise.resolve();
+    if (gen !== this.attachGen) return () => undefined;
     markBooting(this.storage);
     try {
       const sim = await Simulation.create(

@@ -156,6 +156,8 @@ export class Simulation {
   private stopRequested = false;
   private statsWhileEditing: boolean;
   private readonly idle = new IdleClock();
+  /** Reused per frame (the frame loop must not allocate). */
+  private readonly renderOpts = { onDemand: true, animate: true };
   private hidden = false;
 
   private constructor(renderer: WorldRenderer, history: History, listener: SimulationListener, opts: SimulationOptions) {
@@ -628,7 +630,9 @@ export class Simulation {
     try {
       if (s) this.stepSession(s, dt);
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
-      this.renderer.render(dt, { onDemand: s === null, animate: s !== null || !this.idle.idle(t) });
+      this.renderOpts.onDemand = s === null;
+      this.renderOpts.animate = s !== null || !this.idle.idle(t);
+      this.renderer.render(dt, this.renderOpts);
       this.frameFailures = 0;
     } catch (err) {
       this.onFrameError(err, s);

@@ -334,7 +334,7 @@ watchdog and a bounded queue (overflow returns 503).
 | Layer | Mechanism |
 | --- | --- |
 | 1. Schema | `ScriptDef`: id regex, source ≤ 30 kB |
-| 2. Interpreter isolation | **QuickJS compiled to WASM** (`quickjs-emscripten`, single release-sync variant). Untrusted code is never `eval`'d by the host engine. |
+| 2. Interpreter isolation | **QuickJS compiled to WASM** (`quickjs-emscripten-core` with the single `@jitl/quickjs-wasmfile-release-sync` build, loaded lazily). Untrusted code is never `eval`'d by the host engine. |
 | 3. Capability denial | No host functions are exposed. `Date`, `Promise`, `Proxy` and `RegExp` are removed, `eval` and `Function` are throwing stubs, and `Math.random` is seeded. |
 | 4. Data-only boundary | A JSON snapshot goes in and a JSON list of intents comes out. No handles cross the boundary, and handles are disposed on every call. |
 | 5. Resource limits | 8 MB memory per script by default, 128 KB stack (capped at 256 KB), a 128 MB shared heap budget, a 2 ms call budget, at most 24 calls per tick (round robin), and disable after 3 overruns or 10 errors |
@@ -346,12 +346,30 @@ runtimes.
 
 ## 10. Rendering and incremental sync
 
-`WorldRenderer` (three.js r186) tries `WebGPURenderer` first and falls back to
-WebGL2 if WebGPU is missing or fails to initialise. Settings: ACES tone
+`WorldRenderer` (three.js r186) runs `WebGPURenderer` on its WebGPU backend
+or, when the backend policy says so (or WebGPU is missing or fails to
+initialise), on its WebGL2 backend. The policy prefers WebGPU on Chromium
+and Safari and WebGL2 on Firefox, where WebGPU is used only for a known-good
+discrete or Apple GPU outside Linux; a WebGPU start that never finished
+disables WebGPU for the origin. Settings: ACES tone
 mapping, sRGB output, environment-driven exposure, bloom plus a subtle
 vignette through `RenderPipeline` (disabled automatically if it fails), PCF
 shadows with a softened radius, and a sun shadow camera refitted to the
 meaningful content.
+
+**Memory budgets.** On a laptop with an integrated GPU, GPU memory *is* system
+memory, and drawing-buffer pixels dominate it: a multisampled half-float
+scene target, its resolves, the bloom chain and the swap chain cost roughly
+100–140 bytes per pixel (measured). `classifyGpu` sorts the GPU (WebGL
+renderer string or WebGPU adapter info) into discrete, integrated, software
+or unknown, and `renderBudget` gives each class a pixel-ratio cap (1.5,
+1.25, 1, 1.25), an absolute drawing-buffer cap (3.7, 2.1, 1.4, 2.1 MP), a
+2048² (software: 1024²) sun shadow map, an instance budget and a generator
+cache byte budget. Low-memory mode overrides the class: ratio 1, about 1 MP,
+1024² shadows, no MSAA, no post pass, smaller caches. The post pipeline is
+released whenever a world does not use bloom and rebuilt on demand. A lost
+device or context stops drawing and is reported to the host, which replaces
+the renderer on a fresh canvas.
 
 **Art direction.** Every world should look composed in the first seconds,
 whatever the model wrote, so the look is policy rather than per-world tuning:
@@ -537,7 +555,19 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
   `renderer.applyTransforms` → `renderer.render`. Edit mode renders on
   demand. Play snapshots the document by reference (documents are
   immutable). Stop discards every runtime change and restores the pre-play
-  world exactly. Rapier is imported lazily on the first Play or Verify.
+  world exactly. Rapier is imported lazily on the first Play or Verify, and
+  QuickJS only when a world with scripts runs or is validated. The loop
+  stops while the page is hidden; after 30 s without input an edit-mode
+  viewport also stops redrawing animated weather.
+- **Memory.** Low-memory mode (`src/lib/memory.ts`) is a setting
+  (auto, on, off). Auto turns it on when `navigator.deviceMemory` is 4 GB or
+  less, under JS heap pressure, or after a lost GPU context, and shows a
+  "Low memory" badge. It applies the renderer's low-memory budget and caps
+  undo history at 40 entries (150 otherwise). A lost context remounts the
+  viewport canvas with a new renderer (WebGL2 after a lost WebGPU device), at
+  most three times in two minutes. Generator outputs are cached under a
+  byte budget, idle generator sandbox workers are terminated after a minute,
+  and `npm run e2e:memory` asserts the budgets in Chromium and Firefox.
 - **`Studio`** is the controller React calls into. It handles persistence,
   import and export, share links, verification and agent streaming with a
   Stop button. A boot marker detects a world that crashed the tab on start-up

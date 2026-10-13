@@ -32,6 +32,12 @@ export interface WorkerSandboxOptions {
   maxRunsPerWorker?: number;
   /** Max queued runs before new runs are rejected (default 256). */
   maxQueue?: number;
+  /**
+   * Terminate a worker after this long without work (default 60000 ms; 0
+   * keeps workers alive). An idle worker still holds a whole JavaScript
+   * realm; it is respawned lazily on the next run.
+   */
+  idleTimeoutMs?: number;
   /** Worker factory (tests / custom bundlers). Defaults to the bundled module worker. */
   createWorker?: () => WorkerLike;
 }
@@ -50,6 +56,7 @@ interface Slot {
   runs: number;
   task: Task | null;
   timer: ReturnType<typeof setTimeout> | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
 function defaultWorker(): WorkerLike {
@@ -84,15 +91,22 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
   const bootTimeout = clamp(opts.bootTimeoutMs, 10_000, 100, 60_000);
   const maxRuns = clamp(opts.maxRunsPerWorker, 100, 1, 1_000_000);
   const maxQueue = clamp(opts.maxQueue, 256, 1, 10_000);
+  const idleTimeout = clamp(opts.idleTimeoutMs, 60_000, 0, 3_600_000);
   const factory = opts.createWorker ?? defaultWorker;
-  const slots: Slot[] = Array.from({ length: poolSize }, () => ({ worker: null, ready: false, runs: 0, task: null, timer: null }));
+  const slots: Slot[] = Array.from({ length: poolSize }, () => ({ worker: null, ready: false, runs: 0, task: null, timer: null, idleTimer: null }));
   const queue: Task[] = [];
   let nextId = 1;
   let disposed = false;
 
+  const clearIdle = (slot: Slot): void => {
+    if (slot.idleTimer) clearTimeout(slot.idleTimer);
+    slot.idleTimer = null;
+  };
+
   const kill = (slot: Slot): void => {
     if (slot.timer) clearTimeout(slot.timer);
     slot.timer = null;
+    clearIdle(slot);
     if (slot.worker) {
       slot.worker.onmessage = null;
       slot.worker.onerror = null;
@@ -156,7 +170,18 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
     pump();
   };
 
+  /** Release an idle worker's realm after `idleTimeout` (respawned lazily). */
+  const scheduleIdle = (slot: Slot): void => {
+    clearIdle(slot);
+    if (idleTimeout === 0 || disposed || !slot.worker || slot.task) return;
+    slot.idleTimer = setTimeout(() => {
+      slot.idleTimer = null;
+      if (!slot.task) kill(slot);
+    }, idleTimeout);
+  };
+
   const dispatch = (slot: Slot, task: Task): void => {
+    clearIdle(slot);
     slot.task = task;
     if (!slot.worker) {
       try {
@@ -186,10 +211,10 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
   function pump(): void {
     if (disposed) return;
     for (const slot of slots) {
-      if (queue.length === 0) return;
       if (slot.task) continue;
       const task = queue.shift();
       if (task) dispatch(slot, task);
+      else scheduleIdle(slot);
     }
   }
 
