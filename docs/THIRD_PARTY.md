@@ -1,7 +1,6 @@
 # Third-party components, licences and AI disclosure
 
-This file is the disclosure the Victoria VR AI Builder Hackathon 2026 rules
-require. It covers every library, tool, service, asset and AI component used
+This file covers every library, tool, service, asset and AI component used
 by Aether, with its exact installed version, licence and provenance.
 
 Versions and licences were read from each package's installed

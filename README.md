@@ -9,8 +9,6 @@ press Play. It does this by fast-forwarding a headless copy of the physics
 simulation and running the world's own tests ("the domino chain topples", "the
 player can reach the flag", "the coin counter reaches 10").
 
-Built for the **Victoria VR AI Builder Hackathon 2026**.
-
 ![Aether Studio: chat panel, live viewport and inspector](docs/screenshots/studio-overview.png)
 
 | Domino run | Coin island | Bowling alley | Lakeside camp |
@@ -35,7 +33,6 @@ Built for the **Victoria VR AI Builder Hackathon 2026**.
 - [Performance](#performance)
 - [Testing](#testing)
 - [Deployment](#deployment)
-- [Hackathon submission notes](#hackathon-submission-notes)
 - [Research inspirations](#research-inspirations)
 - [Licence, third parties and AI disclosure](#licence-third-parties-and-ai-disclosure)
 
@@ -359,7 +356,7 @@ Install the browser for e2e once with `npx playwright install chromium`.
 
 ## Deployment
 
-The judged demo is one container that serves the API and the built studio
+The hosted demo is one container that serves the API and the built studio
 from the same origin:
 
 ```bash
@@ -376,44 +373,14 @@ Render and Railway notes are in
 [`apps/server/README.md`](apps/server/README.md#deploying) (set
 `TRUST_PROXY_HOPS=1` and mount a volume at `/data`).
 
-**Keeping the demo alive through judging.** The submission deadline is
-11 November 2026, 16:30 CEST, and winners are announced on 25 November 2026.
-The rules require the demo to stay accessible during judging *and*
-publication, so plan for it to stay up well beyond that date:
+**Keeping the hosted demo reliable.**
 
 - Disable scale-to-zero or auto-stop (for example, keep at least one machine
   running on Fly.io) and point an uptime monitor at `/api/health`.
-- Keep `AETHER_DAILY_TOKEN_BUDGET` set and the provider account funded. When
-  the budget is spent or keys fail, the studio falls back to the offline mock
-  automatically, so judges always get a working world.
-- Do not redeploy material changes after the deadline without the
-  organizer's permission. Tag the submitted commit.
-
-## Hackathon submission notes
-
-- **Suggested focus category:** *AI-generated 3D scenes*. Secondary fit:
-  *Browser-native creative tools*. Judges may test prompts outside the chosen
-  category. The offline mock covers 18 themes and the live models handle
-  free-form prompts.
-- **What it does:** turns natural language into interactive 3D worlds
-  (scenes plus physics plus gameplay logic) in the browser and verifies the
-  mechanics by simulation before play.
-- **Problem or opportunity:** prompt-to-3D output is usually static and
-  unverifiable. Creators still have to wire up logic by hand and find out by
-  playtesting that it is broken. Aether makes the AI write the logic *and* the
-  tests, and proves them.
-- **How AI is used:** a planner model edits the World IR through typed tool
-  calls. A coder model writes procedural generators and behaviour scripts that
-  run sandboxed. Verification reports drive a bounded self-repair loop.
-- **How users interact:** chat (text, optionally with reference images), an
-  example gallery, direct editing in the inspector, outliner and logic panels,
-  Play mode with keyboard controls, history with branches, and share links.
-- **Technologies:** TypeScript, three.js (WebGPU/WebGL2), Rapier (WASM),
-  QuickJS (WASM), React, Zustand, Vite, Hono, zod, Anthropic and OpenAI APIs.
-  See [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
-- **Created during the hackathon:** all code in this repository. The first
-  commit is dated 12 October 2026, inside the official build period
-  (11 Sep – 11 Nov 2026). No pre-existing project code was reused.
+- Keep `AETHER_DAILY_TOKEN_BUDGET` set. When the budget is spent or a provider
+  fails, the studio falls back to the offline planner automatically, so
+  visitors always get a working world.
+- Tag every production release so a deployment can be reproduced exactly.
 
 ## Research inspirations
 
@@ -430,7 +397,7 @@ original TypeScript implementation.
 | SceneSmith, [arXiv:2602.09153](https://arxiv.org/abs/2602.09153) | Designer, critic and orchestrator agents build scenes in stages and estimate physical properties, keeping collisions low. This shaped the agent's plan, verify and repair loop. |
 | Articraft, [arXiv:2605.15187](https://arxiv.org/abs/2605.15187) | An LLM writes code against a parts-and-joints SDK, and a test harness feeds results back in an edit-execute-repair loop. This shaped the joint spec (doors, wheels, drawbridges) and the generator repair loop. |
 | ESG, [arXiv:2609.15392](https://arxiv.org/abs/2609.15392) | An LLM writes a machine-checkable scene graph with physical properties and a timeline of events, which simulation then makes happen on schedule. This inspired world tests such as `eventually` and `topples`. |
-| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Grades LLM-written Three.js worlds by running them, and finds that judges reading only the code miss missing features. This led to "physics as unit tests": Aether runs every world headless before calling it done. |
+| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Grades LLM-written Three.js worlds by running them, and finds that evaluators who only read the code miss absent features. This led to "physics as unit tests": Aether runs every world headless before calling it done. |
 | 3DCodeBench, [arXiv:2606.01057](https://arxiv.org/abs/2606.01057) | Finds that most failures in LLM-written 3D code are API mismatches and floating parts. This informed the small, typed `GeneratorApi` and the base-at-ground convention. |
 
 ## Licence, third parties and AI disclosure
