@@ -3,7 +3,7 @@
  * the base64 string that `@dimforge/rapier3d-compat` inlines in its JS.
  *
  * The compat bundle calls its wasm-bindgen initialiser with
- * `{ module_or_path: <b64>.toByteArray("AGFzbQ…") }`. This plugin replaces
+ * `{ module_or_path: <b64>.toByteArray("AGFzbQ…").buffer }`. This plugin replaces
  * that argument with the URL of the package's own `rapier_wasm3d_bg.wasm`
  * (imported with `?url`, so Vite hashes and emits it), after checking that
  * the file is byte-identical to the inlined module (SHA-256). The
@@ -22,7 +22,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 /** Matches the compat initialiser's inlined module argument. */
-const INLINED_WASM = /module_or_path:([A-Za-z_$][\w$]*)\.toByteArray\("([A-Za-z0-9+/=]{1024,})"\)/;
+const INLINED_WASM = /module_or_path:([A-Za-z_$][\w$]*)\.toByteArray\("([A-Za-z0-9+/=]{1024,})"\)(\.buffer)?/;
 /** Module ids the plugin rewrites. */
 const RAPIER_MODULE = /[\\/]@dimforge[\\/]rapier3d-compat[\\/]dist[\\/]rapier\.mjs$/;
 /** Identifier of the injected URL import (cannot collide with minified names). */
@@ -53,6 +53,7 @@ export function rewriteRapierWasm(code: string, wasmFile: string, readFile: (pat
     return { ok: false, reason: `missing ${wasmFile}` };
   }
   if (sha256(inlined) !== sha256(file)) return { ok: false, reason: 'shipped wasm differs from the inlined module' };
+  // The whole argument (including a trailing `.buffer`) becomes the URL string.
   const replaced = code.slice(0, m.index) + `module_or_path:${URL_BINDING}` + code.slice(m.index + m[0].length);
   const importLine = `import ${URL_BINDING} from ${JSON.stringify(`${wasmFile.split('\\').join('/')}?url`)};\n`;
   return { ok: true, code: importLine + replaced, wasmBytes: file.length };

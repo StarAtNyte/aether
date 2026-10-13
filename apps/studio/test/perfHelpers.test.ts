@@ -47,6 +47,13 @@ describe('rapier-wasm build plugin', () => {
     expect(rewriteRapierWasm(r.code, '/pkg/dist/rapier_wasm3d_bg.wasm', () => wasm).ok).toBe(false);
   });
 
+  it('consumes the trailing .buffer of the real bundle (the argument must be the URL string itself)', () => {
+    const real = code.replace(`toByteArray("${b64}")`, `toByteArray("${b64}").buffer`);
+    const r = rewriteRapierWasm(real, '/w.wasm', () => wasm);
+    expect(r.ok && r.code).toContain('EI({module_or_path:__aetherRapierWasmUrl})');
+    expect(r.ok && r.code).not.toContain('.buffer');
+  });
+
   it('keeps the module untouched when the shipped file differs, is missing or the pattern is absent', () => {
     const other = new Uint8Array(wasm);
     other[20] = 1 + ((other[20] ?? 0) % 200);
@@ -66,5 +73,7 @@ describe('rapier-wasm build plugin', () => {
     const out = plugin.transform(readFileSync(real, 'utf8'), real);
     expect(out).not.toBeNull();
     expect(out?.code.length ?? Infinity).toBeLessThan(400_000);
+    // The initialiser receives the URL string, not a property of it.
+    expect(out?.code).toMatch(/module_or_path:__aetherRapierWasmUrl[})]/);
   });
 });
