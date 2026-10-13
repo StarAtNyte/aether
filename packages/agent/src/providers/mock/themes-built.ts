@@ -87,7 +87,7 @@ const castle: Theme = {
   id: 'castle',
   kind: 'setting',
   title: 'Castle Keep',
-  match: /\b(castle|fortress|fort|citadel|keep|kingdom|knights?|king|queen|medieval|towers?|battlements)\b/,
+  match: /\b(castle|fortress|fort|citadel|keep|kingdom|knights?|king|queen|medieval|(?<!(?:bell|block|crate|domino|box|card|clock|water|jenga|stacked|stack of) )towers?(?! of (?:blocks?|crates?|boxes|cards|dominoe?s))|battlements)\b/,
   radius: 36,
   blurb: 'a stone castle with four corner towers, crenellated walls, a gatehouse arch, a central keep and torches',
   env(b) {

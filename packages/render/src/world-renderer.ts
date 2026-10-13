@@ -232,6 +232,11 @@ export class WorldRenderer {
     return this.framing;
   }
 
+  /** Fog currently applied to the scene (color and density after the content-size policy), null when none. */
+  get fogState(): Readonly<{ color: string; density: number }> | null {
+    return this.env.fogState;
+  }
+
   /** True while an automatic camera flight (framing, focus) is in progress. */
   get cameraFlying(): boolean {
     return this.rig.focusing;
@@ -516,6 +521,7 @@ export class WorldRenderer {
     if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !this.env.animating) return false;
     this.needsDraw = false;
     this.highlighter.update();
+    if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
     this.draw();
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;

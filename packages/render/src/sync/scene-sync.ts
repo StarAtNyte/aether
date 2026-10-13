@@ -872,7 +872,7 @@ export class SceneSync {
       });
       let owned = b.ownedMaterial;
       if (!owned) {
-        owned = createMaterial(resolved, this.variant);
+        owned = createMaterial(resolved, this.variant, this.opts.materials.surfaces);
         if (field === 'opacity' && !owned.transparent) {
           // Opacity animations blend from the start so the program never flips per tick.
           owned.transparent = true;

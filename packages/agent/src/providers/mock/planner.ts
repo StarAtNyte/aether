@@ -42,9 +42,10 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   const seed = hashString(intent.text);
   const existing = wipe ? [] : view.entities.map((e) => e.id);
   const b = new Builder(seed, existing, intent.mood, wipe ? [] : view.testIds, wipe ? [] : view.ruleIds);
-  const bare = intent.settings.length === 0 && (intent.activities.length === 0 || intent.activities.some((a) => a.wantsSetting));
+  // An activity can absorb another one it renders itself (bowling at a crate pyramid).
+  const activities = intent.activities.filter((a) => !intent.activities.some((o) => o !== a && o.absorbs?.includes(a.id)));
+  const bare = intent.settings.length === 0 && (activities.length === 0 || activities.some((a) => a.wantsSetting));
   const settings: Theme[] = bare ? [DEFAULT_SETTING] : intent.settings;
-  const activities = intent.activities;
   const primary = settings[0];
   const clear = activities.reduce((m, t) => Math.max(m, t.radius), 0);
 
@@ -65,7 +66,10 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   if (clear > 0) b.reserve(0, 0, clear);
 
   const { count, seconds } = intent;
-  const withCount = (ctx: ThemeCtx): ThemeCtx => ({ ...ctx, ...(count !== undefined ? { count } : {}), ...(seconds !== undefined ? { seconds } : {}) });
+  const withIds = new Set(intent.activities.map((a) => a.id));
+  const withCount = (ctx: ThemeCtx): ThemeCtx => ({ ...ctx, with: withIds, request: intent.text, ...(count !== undefined ? { count } : {}), ...(seconds !== undefined ? { seconds } : {}) });
+  // A playable mechanic owns the camera: settings around it lose their focus tags.
+  b.setPhase('setting', activities.length > 0);
   if (primary) primary.build(withCount({ b, x: 0, z: 0, clear, primary: true }));
   let slot = 0;
   for (const s of settings.slice(1)) {
@@ -77,6 +81,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   }
   // The first activity owns the cleared origin; further activities get their
   // own free slot so two set-pieces never interpenetrate.
+  b.setPhase('activity');
   activities.forEach((a, i) => {
     if (i === 0) a.build(withCount({ b, x: 0, z: 0, clear, primary: !primary }));
     else {
@@ -86,7 +91,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   });
 
   // Additions named alongside a theme ("a forest with 3 tents") and mood overrides.
-  const extras = intent.edits.filter((e) => e.kind === 'add' && !settings.concat(activities).some((t) => t.match.test(e.phrase)));
+  const extras = intent.edits.filter((e) => e.kind === 'add' && !settings.concat(intent.activities).some((t) => t.match.test(e.phrase)));
   const added = extras.length > 0 ? applyEdits(b, { ...intent, edits: extras }, view) : [];
   b.env(intent.env);
   const weather = b.envValue('weather');

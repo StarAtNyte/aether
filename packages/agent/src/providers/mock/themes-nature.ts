@@ -318,7 +318,7 @@ const farm: Theme = {
   kind: 'setting',
   layerable: true,
   title: 'Windmill Farm',
-  match: /\b(farm|windmills?|barn|countryside|ranch|fields?|crops?|sheep|cows?|harvest|rural|tractor)\b/,
+  match: /\b(farm|windmills?|barn|countryside|ranch|(?<!(?:asteroid|debris|force|star|ice|lava|snow|energy|magnetic|mine|battle) )fields?|crops?|sheep|cows?|harvest|rural|tractor)\b/,
   radius: 40,
   blurb: 'rolling farmland with windmills, a red barn, fenced crop fields, hay bales and wandering sheep',
   env(b) {

@@ -4,7 +4,15 @@
  * the sun only inside the preset's window, so `sky: 'sunset'` always reads
  * as a sunset even when a model asks for 19:00 (when the sun would already
  * be below the horizon). Natural presets (day/dawn/sunset/night) take their
- * sky gradient from the sun elevation. No three.js — unit-tested directly.
+ * sky gradient from the sun elevation; dawn and sunset sample the gradient a
+ * few degrees lower than the light ({@link GOLDEN_SKY_DROP}) so the sky
+ * glows orange while the key light still rakes across the scene.
+ *
+ * The sun's compass direction is art-directed relative to the default
+ * three-quarter camera ({@link VIEW_AZIMUTH}): a low sun lights the scene
+ * from the side (long shadows across the frame, warm lit faces against cool
+ * shade) instead of straight from behind the camera (flat) or straight into
+ * it (silhouettes). No three.js — unit-tested directly.
  */
 import type { Environment, Vec3 } from '@aether/core';
 
@@ -110,8 +118,24 @@ export const PRESET_HOURS: Readonly<Record<SkyPreset, number>> = Object.freeze({
 
 /** Peak sun elevation at noon in degrees. */
 const MAX_ELEVATION = 70;
-/** Azimuth offset so the noon sun lights scenes from the side, not straight from the camera. */
-const AZIMUTH_OFFSET = (35 * Math.PI) / 180;
+/**
+ * Horizontal direction (degrees) of the default framing camera as seen from
+ * the content (0 = camera on +Z). Mirrors `DEFAULT_FRAMING_AZIMUTH` of the
+ * view module; sun bearings are chosen relative to it.
+ */
+export const VIEW_AZIMUTH = 28;
+/** Bearing of the noon sun relative to the view (degrees, negative = from the camera's left). */
+const NOON_BEARING = -60;
+/** Bearing of the rising sun at 06:00 (from the right, slightly behind the content). */
+const SUNRISE_BEARING = 92;
+/** Bearing of the setting sun at 18:00 (from the left, slightly behind the content). */
+const SUNSET_BEARING = -108;
+/** Bearing of the moon at night (from the right, behind the content: silver rim light). */
+export const MOON_BEARING = 105;
+/** Moon elevation in degrees. */
+const MOON_ELEVATION = 38;
+/** Dawn/sunset skies are sampled this many degrees below the light elevation (deeper colors). */
+export const GOLDEN_SKY_DROP = 6;
 
 type Rgb = [number, number, number];
 
@@ -177,14 +201,31 @@ export function normalizeHour(h: number): number {
   return ((h % 24) + 24) % 24;
 }
 
+/**
+ * Bearing of the sun relative to the default view (degrees, 0 = behind the
+ * camera, ±90 = from the side, ±180 = straight into the camera) for an hour.
+ * Morning light comes from the right, afternoon light from the left; the
+ * bearing stays within ±110° so the camera never stares into a low sun.
+ */
+export function sunBearing(hour: number): number {
+  const h = normalizeHour(hour);
+  if (h <= 12) return NOON_BEARING + ((12 - Math.max(6, h)) / 6) * (SUNRISE_BEARING - NOON_BEARING);
+  return NOON_BEARING + ((Math.min(18, h) - 12) / 6) * (SUNSET_BEARING - NOON_BEARING);
+}
+
+/** Unit vector toward a light at `bearing` (relative to the view) and `elevation` (degrees). */
+export function bearingDirection(bearing: number, elevation: number): Vec3 {
+  const phi = ((VIEW_AZIMUTH + bearing) * Math.PI) / 180;
+  const e = (elevation * Math.PI) / 180;
+  const c = Math.cos(e);
+  return [Math.sin(phi) * c, Math.sin(e), Math.cos(phi) * c];
+}
+
 /** Sun elevation (degrees) and unit direction toward the sun for an hour. */
 export function sunPosition(hour: number): { elevation: number; direction: Vec3 } {
   const h = normalizeHour(hour);
   const elevation = MAX_ELEVATION * Math.sin(((h - 6) / 12) * Math.PI);
-  const az = ((h - 12) / 12) * Math.PI + AZIMUTH_OFFSET;
-  const e = (elevation * Math.PI) / 180;
-  const c = Math.cos(e);
-  return { elevation, direction: [-Math.sin(az) * c, Math.sin(e), Math.cos(az) * c] };
+  return { elevation, direction: bearingDirection(sunBearing(h), elevation) };
 }
 
 /** Moonlight key intensity for a world `sunIntensity` (bright enough to read the scene, never daylight). */
@@ -199,34 +240,37 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
   const sunIntensity = Number.isFinite(env.sunIntensity) ? Math.max(0, env.sunIntensity) : 2.5;
   const ambient = Number.isFinite(env.ambientIntensity) ? Math.max(0, env.ambientIntensity) : 0.4;
   const { elevation, direction } = sunPosition(hour);
+  const golden = preset === 'dawn' || preset === 'sunset';
+  // Golden-hour presets paint the sky (and tint the light) as if the sun sat a little lower.
+  const skyElevation = golden ? elevation - GOLDEN_SKY_DROP : elevation;
   const day = smoothstep(-4, 10, elevation);
-  const keys = sampleKeys(elevation);
+  const keys = sampleKeys(skyElevation);
   const moon = elevation < -4;
-  const lightDirection: Vec3 = moon ? [-direction[0], Math.max(0.45, -direction[1]), -direction[2]] : direction;
+  const lightDirection: Vec3 = moon ? bearingDirection(MOON_BEARING, MOON_ELEVATION) : direction;
   normalize(lightDirection);
-  const golden = 1 - smoothstep(4, 30, elevation);
+  const glow = 1 - smoothstep(4, 30, skyElevation);
 
   const state: SkyState = {
     hour,
     elevation,
     lightDirection,
-    lightColor: moon ? '#a9bcff' : keys.sun,
-    lightIntensity: moon ? moonIntensity(sunIntensity) : sunIntensity * Math.max(0.05, day),
+    lightColor: moon ? '#a9bcff' : golden ? mixHex(keys.sun, '#ffb070', 0.25) : keys.sun,
+    lightIntensity: moon ? moonIntensity(sunIntensity) : sunIntensity * Math.max(0.05, day) * (golden ? 1.15 : 1),
     moon,
     zenith: keys.zenith,
     horizon: keys.horizon,
     nadir: mixHex(keys.horizon, '#20242c', 0.6),
     sunGlow: keys.sun,
-    sunGlowStrength: moon ? 0 : 0.25 + 0.75 * golden,
+    sunGlowStrength: moon ? 0 : 0.25 + 0.75 * glow,
     hemiSky: moon ? '#5468a8' : mixHex(keys.zenith, keys.horizon, 0.45),
-    hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * golden),
+    hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * glow),
     hemiIntensity: ambient * 2 * (moon ? 0.62 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),
     fogColor: keys.horizon,
-    hazeDensity: moon ? 0.5 : 0.45 + 0.25 * golden,
+    hazeDensity: moon ? 0.5 : 0.4 + 0.25 * glow,
     showGround: true,
     exposure: PRESET_EXPOSURE[preset],
-    envIntensity: moon ? 0.35 : 0.45 + 0.15 * golden,
+    envIntensity: moon ? 0.35 : 0.45 + 0.15 * glow,
   };
 
   switch (preset) {

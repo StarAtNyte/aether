@@ -20,6 +20,10 @@ export interface ThemeCtx {
   count?: number;
   /** A time limit the user asked for, in seconds ("in 60 seconds"), when any. */
   seconds?: number;
+  /** Ids of every activity named in the request (lets one activity adapt to another). */
+  with?: ReadonlySet<string>;
+  /** The normalized request text (for small wording-driven touches). */
+  request?: string;
 }
 
 const DEG = 180 / Math.PI;
@@ -90,12 +94,19 @@ export function backdropMountains(c: ThemeCtx, count: number, color: string, sno
   }
 }
 
-/** Drifting clouds high above the scene. */
+/** Inner and outer radius (m) of the cloud ring: beyond the set, where the camera never flies. */
+export const CLOUD_RING: readonly [number, number] = Object.freeze([80, 150]) as readonly [number, number];
+/** Cloud altitude range (m): above any framing camera, low enough to show above the horizon. */
+export const CLOUD_ALTITUDE: readonly [number, number] = Object.freeze([46, 70]) as readonly [number, number];
+
+/** Drifting clouds on a distant ring high above the scene (a sky backdrop, never in the camera's way). */
 export function clouds(c: ThemeCtx, count: number, color = '#ffffff'): void {
+  const offset = c.b.rand(0, Math.PI * 2);
   for (let i = 0; i < count; i++) {
-    const a = c.b.rand(0, Math.PI * 2);
-    const d = c.b.rand(20, 70);
-    c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(4, 9)), color }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(24, 36)), r2(c.z + Math.sin(a) * d)], {
+    // Spread around the ring (with jitter) so a few always sit behind the content.
+    const a = offset + (i / Math.max(1, count)) * Math.PI * 2 + c.b.rand(-0.4, 0.4);
+    const d = c.b.rand(CLOUD_RING[0], CLOUD_RING[1]);
+    c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(9, 16)), color }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(CLOUD_ALTITUDE[0], CLOUD_ALTITUDE[1])), r2(c.z + Math.sin(a) * d)], {
       castShadow: false,
       tags: ['sky'],
       behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: r2(c.b.rand(6, 10)) } }],

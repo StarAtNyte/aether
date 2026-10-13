@@ -2,6 +2,11 @@
  * Conversion of procgen `MeshPart`s (plain typed arrays) into three.js
  * `BufferGeometry`. Typed arrays are shared, not copied (generator outputs are
  * immutable), except for indices which are narrowed to 16 bits when possible.
+ *
+ * Texture coordinates are box-projected in metres (see
+ * {@link boxProjectedUvs}) rather than taken from the part: the only
+ * textured materials are tiling surface details (lava, water) that must
+ * keep a constant real-world scale on any size of mesh.
  */
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { MeshPart } from '../types';
@@ -20,22 +25,52 @@ function narrowIndices(indices: Uint32Array, vertexCount: number): Uint16Array |
 }
 
 /**
+ * Box-projected UVs in metres: each vertex is projected onto the plane
+ * facing its dominant normal axis (top/bottom → x,z; front/back → x,y;
+ * sides → z,y). Seamless on flat surfaces, which is where tiling surface
+ * detail is used.
+ */
+export function boxProjectedUvs(positions: Float32Array, normals: Float32Array): Float32Array {
+  const count = positions.length / 3;
+  const uvs = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const nx = Math.abs(normals[i * 3] as number);
+    const ny = Math.abs(normals[i * 3 + 1] as number);
+    const nz = Math.abs(normals[i * 3 + 2] as number);
+    const x = positions[i * 3] as number;
+    const y = positions[i * 3 + 1] as number;
+    const z = positions[i * 3 + 2] as number;
+    if (ny >= nx && ny >= nz) {
+      uvs[i * 2] = x;
+      uvs[i * 2 + 1] = z;
+    } else if (nz >= nx) {
+      uvs[i * 2] = x;
+      uvs[i * 2 + 1] = y;
+    } else {
+      uvs[i * 2] = z;
+      uvs[i * 2 + 1] = y;
+    }
+  }
+  return uvs;
+}
+
+/**
  * Build a `BufferGeometry` from one mesh part. Validates array lengths
  * (positions/normals/uvs/colors per vertex, triangle-multiple indices) and
  * computes bounding volumes for frustum culling.
  */
 export function partToBufferGeometry(part: MeshPart): BufferGeometry {
-  const { positions, normals, indices, uvs, colors } = part;
+  const { positions, normals, indices, colors } = part;
   if (!(positions instanceof Float32Array) || positions.length % 3 !== 0) throw new InvalidMeshError('positions must be a Float32Array of xyz triples');
   const vertexCount = positions.length / 3;
   if (!(indices instanceof Uint32Array) || indices.length % 3 !== 0) throw new InvalidMeshError('indices must be a Uint32Array of triangles');
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(positions, 3));
   if (normals instanceof Float32Array && normals.length === positions.length) g.setAttribute('normal', new BufferAttribute(normals, 3));
-  if (uvs instanceof Float32Array && uvs.length === vertexCount * 2) g.setAttribute('uv', new BufferAttribute(uvs, 2));
   if (colors instanceof Float32Array && colors.length === vertexCount * 3) g.setAttribute('color', new BufferAttribute(colors, 3));
   if (indices.length > 0) g.setIndex(new BufferAttribute(narrowIndices(indices, vertexCount), 1));
   if (!g.getAttribute('normal')) g.computeVertexNormals();
+  g.setAttribute('uv', new BufferAttribute(boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array), 2));
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;

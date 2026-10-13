@@ -6,7 +6,10 @@
  *    outliers such as distant backdrop props) and a weighted 85th-percentile
  *    radius. `focus` items pull the center and must be fully inside.
  * 2. {@link framingPose} places an elevated three-quarter camera that fits
- *    that sphere for the viewport's aspect ratio, never below the ground.
+ *    that sphere for the viewport's aspect ratio, never below the ground,
+ *    and tilts the view up a little ({@link DEFAULT_SKY_TILT}) so a band of
+ *    sky and horizon stays in frame above the content — a composed shot
+ *    rather than a top-down map.
  */
 import type { Vec3 } from '@aether/core';
 
@@ -133,12 +136,24 @@ export interface FramingPoseOptions {
   groundY?: number | null;
   /** Extra distance factor (> 1 zooms out). Default 1. */
   margin?: number;
+  /**
+   * Degrees the view is tilted up from looking straight at the content
+   * center, so the horizon shows. Default {@link DEFAULT_SKY_TILT} with a
+   * ground, half of it without one.
+   */
+  tiltDeg?: number;
 }
 
 /** Default horizontal camera direction: a three-quarter view from the +Z (player spawn) side. */
 export const DEFAULT_FRAMING_AZIMUTH = 28;
 /** Minimum camera height above the ground (metres). */
 export const MIN_CAMERA_CLEARANCE = 1.2;
+/** Default upward view tilt in degrees (see {@link FramingPoseOptions.tiltDeg}). */
+export const DEFAULT_SKY_TILT = 8;
+/** Share of the tilt that may crop the foreground instead of pushing the camera back. */
+const TILT_CROP = 0.4;
+/** Lowest view pitch (degrees below the horizon) a tilt may leave. */
+const MIN_PITCH = 6;
 
 /**
  * Elevated three-quarter camera that fits `framing` in a viewport of
@@ -147,18 +162,30 @@ export const MIN_CAMERA_CLEARANCE = 1.2;
  */
 export function framingPose(framing: Framing, opts: FramingPoseOptions): FramingPose {
   const radius = Math.max(0.25, Number.isFinite(framing.radius) ? framing.radius : 1);
-  const target: Vec3 = framing.center.every(Number.isFinite) ? [framing.center[0], framing.center[1], framing.center[2]] : [0, 0, 0];
+  const center: Vec3 = framing.center.every(Number.isFinite) ? [framing.center[0], framing.center[1], framing.center[2]] : [0, 0, 0];
   const vHalf = ((Number.isFinite(opts.fovDeg) && opts.fovDeg > 1 ? Math.min(170, opts.fovDeg) : 55) * Math.PI) / 360;
   const aspect = Number.isFinite(opts.aspect) && opts.aspect > 0 ? opts.aspect : 1;
   const hHalf = Math.atan(Math.tan(vHalf) * aspect);
-  const half = Math.min(vHalf, hHalf);
+  const groundY = opts.groundY === undefined ? 0 : opts.groundY;
+  const hasGround = groundY !== null && Number.isFinite(groundY);
+  const tiltDefault = hasGround ? DEFAULT_SKY_TILT : DEFAULT_SKY_TILT / 2;
+  const tiltDeg = opts.tiltDeg !== undefined && Number.isFinite(opts.tiltDeg) ? Math.max(0, Math.min(25, opts.tiltDeg)) : tiltDefault;
+  const elevationDeg = opts.elevationDeg ?? 24 + 8 * Math.min(1, Math.max(0, (radius - 8) / 50));
+  const elevation = (elevationDeg * Math.PI) / 180;
+  const pitch = (Math.max(Math.min(MIN_PITCH, elevationDeg), elevationDeg - tiltDeg) * Math.PI) / 180;
+  const tilt = elevation - pitch;
+  // The tilt moves the content down the frame: fit it against the smaller vertical half-angle
+  // (minus the share that may crop the foreground).
+  const vFit = Math.max(0.05, vHalf - tilt * (1 - TILT_CROP));
+  const half = Math.min(vFit, hHalf);
   const margin = opts.margin !== undefined && Number.isFinite(opts.margin) && opts.margin > 0 ? opts.margin : 1;
   const distance = Math.min(2000, (radius / Math.sin(half)) * margin);
-  const elevation = ((opts.elevationDeg ?? 24 + 8 * Math.min(1, Math.max(0, (radius - 8) / 50))) * Math.PI) / 180;
   const azimuth = ((opts.azimuthDeg ?? DEFAULT_FRAMING_AZIMUTH) * Math.PI) / 180;
   const h = Math.cos(elevation) * distance;
-  const position: Vec3 = [target[0] + Math.sin(azimuth) * h, target[1] + Math.sin(elevation) * distance, target[2] + Math.cos(azimuth) * h];
-  const groundY = opts.groundY === undefined ? 0 : opts.groundY;
-  if (groundY !== null && Number.isFinite(groundY)) position[1] = Math.max(position[1], groundY + MIN_CAMERA_CLEARANCE);
-  return { position, target, distance };
+  const position: Vec3 = [center[0] + Math.sin(azimuth) * h, center[1] + Math.sin(elevation) * distance, center[2] + Math.cos(azimuth) * h];
+  if (hasGround) position[1] = Math.max(position[1], (groundY as number) + MIN_CAMERA_CLEARANCE);
+  // Look at the point above the content center where the tilted view ray crosses its vertical axis,
+  // so orbiting still pivots around the content.
+  const target: Vec3 = [center[0], position[1] - h * Math.tan(pitch), center[2]];
+  return { position, target, distance: Math.hypot(position[0] - target[0], position[1] - target[1], position[2] - target[2]) };
 }

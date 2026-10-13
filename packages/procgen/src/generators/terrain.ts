@@ -6,6 +6,7 @@
 import type { InternalApi } from '../api';
 import type { GeneratorOutput } from '../types';
 import { mixLinear, type RGB } from '../color';
+import { Mesh } from '../kernel/mesh';
 import { defineGenerator, lin, MAT, pColor, pInt, pNum, pVariant, shade } from './kit';
 
 interface TerrainPalette {
@@ -21,6 +22,12 @@ interface TerrainShape {
   resolution: number;
   /** When set, heights are rescaled so the total relief equals this many meters. */
   fitHeight?: number;
+  /**
+   * Leave out the flat border at the lowest height from the render mesh (the
+   * collider keeps it). A peak standing on a world ground plane then has no
+   * square plate z-fighting with — and differently colored than — the ground.
+   */
+  trimFlat?: boolean;
   /** Raw height in meters at (x, z). */
   height(x: number, z: number): number;
   /**
@@ -28,6 +35,32 @@ interface TerrainShape {
    * h = height above the lowest point in meters, slope = 1 - normal.y.
    */
   color(t: number, h: number, slope: number, x: number, z: number, out: RGB): void;
+}
+
+/** Relative height (share of the relief) below which a trimmed border counts as flat. */
+const FLAT_EPSILON = 0.002;
+
+/**
+ * Drop triangles whose three vertices all sit within `eps` of y = 0. The
+ * vertices stay (bounds and the base-at-y=0 contract are unchanged); only
+ * the index buffer shrinks.
+ */
+export function trimFlatTriangles(mesh: Mesh, eps: number): void {
+  const pos = mesh.positions;
+  const idx = mesh.indices;
+  const out = new Uint32Array(idx.length);
+  let n = 0;
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i] as number;
+    const b = idx[i + 1] as number;
+    const c = idx[i + 2] as number;
+    if ((pos[a * 3 + 1] as number) <= eps && (pos[b * 3 + 1] as number) <= eps && (pos[c * 3 + 1] as number) <= eps) continue;
+    out[n++] = a;
+    out[n++] = b;
+    out[n++] = c;
+  }
+  // Never trim everything (a degenerate, completely flat input keeps its plate).
+  if (n > 0 && n < idx.length) mesh.indices = out.slice(0, n);
 }
 
 /** Shared heightfield pipeline: sample, mesh, paint, heightfield collider. */
@@ -53,6 +86,7 @@ function buildTerrain(api: InternalApi, shape: TerrainShape): GeneratorOutput {
   for (let i = 0; i < raw.length; i++) raw[i] = ((raw[i] as number) - lo) * scale;
   const mesh = api.grid(res, res, size, size, raw);
   mesh.paintFn((x, y, z, _nx, ny, _nz, out) => shape.color(y / range, y, 1 - ny, x, z, out));
+  if (shape.trimFlat === true && mesh instanceof Mesh) trimFlatTriangles(mesh, range * FLAT_EPSILON);
   api.add(mesh, MAT.ground);
   const heights = new Float32Array(n * n);
   for (let ix = 0; ix < n; ix++) {
@@ -197,6 +231,7 @@ const mountain = defineGenerator({
     return buildTerrain(api, {
       size,
       resolution: p.int('resolution'),
+      trimFlat: true,
       height(x, z) {
         let d = variant === 1 ? Math.hypot((x / R) * 0.55, z / R) : Math.hypot(x / R, z / R);
         d += 0.12 * n.fbm2(x * 2 / size, z * 2 / size, 3);

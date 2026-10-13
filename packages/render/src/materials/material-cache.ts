@@ -3,10 +3,11 @@
  * is used on purpose: `WebGPURenderer` converts it to its node equivalent on
  * both the WebGPU and the WebGL2 backend, and it also works in Node tests.
  */
-import { Color, DoubleSide, FrontSide, MeshStandardMaterial, type Material } from 'three';
+import { Color, DoubleSide, FrontSide, MeshStandardMaterial, Vector2, type Material } from 'three';
 import type { MaterialSpec } from '@aether/core';
 import { RefCache } from '../refcache';
 import { materialKey, resolveMaterial, type MaterialVariant, type ResolveOptions, type ResolvedMaterial } from './presets';
+import { SurfaceTextures, WATER_NORMAL_SCALE } from './surface-textures';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -19,8 +20,11 @@ export interface MaterialHandle {
   resolved: ResolvedMaterial;
 }
 
-/** Build a three.js material from resolved parameters. */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant): MeshStandardMaterial {
+/**
+ * Build a three.js material from resolved parameters. With `surfaces`,
+ * lava and water (standard variant) get their procedural detail maps.
+ */
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -44,6 +48,15 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant): M
     // Sorted alpha blending without depth writes avoids self-occlusion artifacts on water/glass.
     m.depthWrite = r.opacity > 0.9;
   }
+  if (variant === 'standard' && surfaces && r.surface) {
+    const maps = surfaces.get(r.surface);
+    m.map = maps.map;
+    if (maps.emissiveMap && r.emissiveIntensity > 0) m.emissiveMap = maps.emissiveMap;
+    if (maps.normalMap) {
+      m.normalMap = maps.normalMap;
+      m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
+    }
+  }
   m.name = `aether:${variant}`;
   return m;
 }
@@ -54,12 +67,14 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant): M
  */
 export class MaterialCache {
   private readonly cache = new RefCache<Material>((m) => m.dispose());
+  /** Procedural surface textures shared by this cache's lava/water materials. */
+  readonly surfaces = new SurfaceTextures();
 
   /** Acquire (and retain) the material for `spec`. Pair every call with {@link release}. */
   acquire(spec: MaterialSpec | undefined, opts: ResolveOptions = {}, variant: MaterialVariant = 'standard'): MaterialHandle {
     const resolved = resolveMaterial(spec, opts);
     const key = materialKey(resolved, variant);
-    const material = this.cache.acquire(key, () => createMaterial(resolved, variant));
+    const material = this.cache.acquire(key, () => createMaterial(resolved, variant, this.surfaces));
     return { key, material, resolved };
   }
 
@@ -78,8 +93,9 @@ export class MaterialCache {
     return this.cache.size;
   }
 
-  /** Dispose every material. */
+  /** Dispose every material and the surface textures. */
   dispose(): void {
     this.cache.clear();
+    this.surfaces.dispose();
   }
 }

@@ -99,6 +99,10 @@ export class Builder {
   private readonly extra: PatchInput[] = [];
   private metaName: string | undefined;
   private metaDescription: string | undefined;
+  /** Kind of theme currently building (see {@link setPhase}). */
+  private phase: 'setting' | 'activity' = 'setting';
+  /** When true, settings' `focus` tags are dropped: the activity owns the camera. */
+  private activityOwnsFocus = false;
 
   constructor(seed: number, existingIds: Iterable<string>, mood: Mood, existingTests: Iterable<string> = [], existingRules: Iterable<string> = []) {
     this.seed = seed >>> 0;
@@ -134,6 +138,19 @@ export class Builder {
   /** A fresh 31-bit seed for generator variation. */
   subSeed(): number {
     return Math.floor(this.random() * 2_147_483_647);
+  }
+
+  // -- camera focus ---------------------------------------------------------------
+
+  /**
+   * Declare which kind of theme the following entities belong to. Once
+   * `activityOwnsFocus` is set (a world with a playable mechanic), `focus`
+   * tags from settings are dropped so the framing camera looks at the
+   * mechanic instead of, say, a castle keep next to it.
+   */
+  setPhase(kind: 'setting' | 'activity', activityOwnsFocus = this.activityOwnsFocus): void {
+    this.phase = kind;
+    this.activityOwnsFocus = activityOwnsFocus;
   }
 
   // -- ids & occupancy ----------------------------------------------------------
@@ -232,7 +249,10 @@ export class Builder {
     if (o.scale !== undefined && e.transform) e.transform.scale = typeof o.scale === 'number' ? [r2(o.scale), r2(o.scale), r2(o.scale)] : o.scale;
     if (o.name) e.name = o.name;
     if (o.description) e.description = o.description;
-    if (o.tags) e.tags = o.tags;
+    if (o.tags) {
+      const tags = this.phase === 'setting' && this.activityOwnsFocus ? o.tags.filter((t) => t !== 'focus') : o.tags;
+      if (tags.length > 0) e.tags = tags;
+    }
     if (o.physics) e.physics = physicsSpec(o.physics);
     if (o.material) e.material = o.material;
     if (o.behaviors) e.behaviors = o.behaviors;

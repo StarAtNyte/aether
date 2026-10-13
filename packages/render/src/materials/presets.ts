@@ -5,6 +5,7 @@
  * the material cache key.
  */
 import { stableStringify, type MaterialPreset, type MaterialSpec } from '@aether/core';
+import type { SurfaceKind } from './surface-textures';
 
 /** Concrete parameters of one material (all fields resolved). */
 export interface ResolvedMaterial {
@@ -20,6 +21,8 @@ export interface ResolvedMaterial {
   flatShading: boolean;
   vertexColors: boolean;
   doubleSided: boolean;
+  /** Procedural surface detail (lava cracks, water ripples), null for plain materials. */
+  surface: SurfaceKind | null;
 }
 
 /** One entry of the preset table. */
@@ -33,12 +36,15 @@ export interface PresetDef {
   emissiveFollowsColor?: boolean;
   opacity?: number;
   flatShading?: boolean;
+  /** Procedural surface detail applied by the renderer. */
+  surface?: SurfaceKind;
 }
 
 /**
  * Preset table. Values are tuned for ACES filmic tone mapping at exposure 1
  * under the default day sky. Glass/water/ice are cheap alpha-blended
- * materials (no transmission pass) so they work on both backends.
+ * materials (no transmission pass) so they work on both backends. Lava and
+ * water also get procedural surface detail (see `surface-textures.ts`).
  */
 export const MATERIAL_PRESETS: Readonly<Record<MaterialPreset, PresetDef>> = Object.freeze({
   plastic: { color: '#d9d9d9', roughness: 0.42, metalness: 0 },
@@ -49,13 +55,13 @@ export const MATERIAL_PRESETS: Readonly<Record<MaterialPreset, PresetDef>> = Obj
   metal: { color: '#b8bcc2', roughness: 0.32, metalness: 1 },
   gold: { color: '#e8b64c', roughness: 0.24, metalness: 1 },
   glass: { color: '#cfe8f2', roughness: 0.04, metalness: 0, opacity: 0.28 },
-  water: { color: '#2a7fb8', roughness: 0.06, metalness: 0, opacity: 0.72, emissive: '#0a2a40', emissiveIntensity: 0.3 },
+  water: { color: '#2a7fb8', roughness: 0.06, metalness: 0, opacity: 0.72, emissive: '#0a2a40', emissiveIntensity: 0.3, surface: 'water' },
   ice: { color: '#d6f0ff', roughness: 0.12, metalness: 0, opacity: 0.85, emissive: '#1c3a4a', emissiveIntensity: 0.15 },
   grass: { color: '#5d9a3c', roughness: 0.95, metalness: 0 },
   dirt: { color: '#6e4f33', roughness: 1, metalness: 0 },
   sand: { color: '#d9c08b', roughness: 0.97, metalness: 0 },
   snow: { color: '#f4f7fb', roughness: 0.85, metalness: 0 },
-  lava: { color: '#3a0f05', roughness: 0.9, metalness: 0, emissive: '#ff4a12', emissiveIntensity: 2.2 },
+  lava: { color: '#3a0f05', roughness: 0.9, metalness: 0, emissive: '#ff4a12', emissiveIntensity: 2.2, surface: 'lava' },
   neon: { color: '#ff3df0', roughness: 0.4, metalness: 0, emissiveFollowsColor: true, emissiveIntensity: 3 },
   rubber: { color: '#2a2a2a', roughness: 0.95, metalness: 0 },
   fabric: { color: '#8a6fb0', roughness: 1, metalness: 0 },
@@ -124,6 +130,7 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     flatShading: typeof spec?.flatShading === 'boolean' ? spec.flatShading : (p.flatShading ?? false),
     vertexColors: opts.hasVertexColors === true && spec?.vertexColors !== false,
     doubleSided: opts.doubleSided === true,
+    surface: p.surface ?? null,
   };
 }
 
