@@ -124,7 +124,7 @@ interface BlockingStats {
   frames: LongFrame[] | null;
   /** Event-loop stalls > 50 ms seen by a 20 ms interval timer (every browser). */
   stalls: Interval[];
-  /** Verification runs: from `running` to a final state. */
+  /** Worker verification runs: from dispatch (planned in a worker) to the result. */
   verifications: Interval[];
 }
 
@@ -174,7 +174,8 @@ const BLOCKING_PROBE = `(() => {
       if (watching || !window.__aether) return;
       watching = true;
       window.__aether.store.subscribe((st) => {
-        const running = st.verify.status === 'running';
+        // From dispatch to the worker (the run is planned) until the result is in.
+        const running = st.verify.status === 'running' && !!st.verify.live && st.verify.live.worker === true;
         if (running && openAt < 0) openAt = performance.now();
         else if (!running && openAt >= 0) { s.verifications.push({ start: openAt, duration: performance.now() - openAt }); openAt = -1; }
       });
@@ -201,12 +202,16 @@ function overlaps(a: Interval, b: Interval): boolean {
  * other long script in these windows (message handlers, timers, promise
  * continuations) would be verification work leaking onto the main thread.
  */
-function verificationScriptMax(b: BlockingStats): number {
-  if (!b.frames) return -1;
-  let worst = 0;
+function verificationScriptMax(b: BlockingStats): { ms: number; what: string } {
+  if (!b.frames) return { ms: -1, what: '' };
+  let worst = { ms: 0, what: '' };
   for (const f of b.frames) {
-    if (!b.verifications.some((w) => overlaps(f, w))) continue;
-    for (const sc of f.scripts) if (sc.invoker !== 'FrameRequestCallback' && sc.duration > worst) worst = sc.duration;
+    for (const sc of f.scripts) {
+      if (sc.invoker === 'FrameRequestCallback' || sc.duration <= worst.ms) continue;
+      // The script itself (not just its frame) must run while a worker verification is in flight.
+      if (!b.verifications.some((w) => overlaps({ start: sc.start, duration: sc.duration }, w))) continue;
+      worst = { ms: sc.duration, what: `${sc.type}: ${sc.invoker}` };
+    }
   }
   return worst;
 }
@@ -457,15 +462,16 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   log(`  agent: ${(await lastTurnEvents(page)).join(' | ')}`);
   const longTaskMs = longest(blocking.tasks);
   const lagMs = longest(blocking.stalls);
-  const verifyScriptMs = verificationScriptMax(blocking);
+  const verifyScript = verificationScriptMax(blocking);
+  const verifyScriptMs = verifyScript.ms;
   log(
     `  main thread during the turn: longest task ${longTaskMs < 0 ? 'n/a' : `${Math.round(longTaskMs)} ms`}, worst stall ${Math.round(lagMs)} ms; ` +
       `verification ${after.verifyWorker ? `in ${after.verifyLanes} worker lane(s)` : 'on the main thread'} (${blocking.verifications.length} run(s), ${Math.round(after.verifyMs)} ms), ` +
-      `longest non-render script during verification ${verifyScriptMs < 0 ? 'n/a' : `${Math.round(verifyScriptMs)} ms`}`,
+      `longest non-render script during verification ${verifyScriptMs < 0 ? 'n/a' : `${Math.round(verifyScriptMs)} ms${verifyScript.what ? ` (${verifyScript.what})` : ''}`}`,
   );
   check(after.verifyWorker === true, `verification of "${prompt.slug}" did not run in a worker (${String(after.verifyWorker)})`);
   check(blocking.verifications.length > 0, `no verification run was observed during "${prompt.slug}"`);
-  check(verifyScriptMs < MAX_LONG_TASK_MS, `a ${Math.round(verifyScriptMs)} ms main-thread script ran during verification of "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
+  check(verifyScriptMs < MAX_LONG_TASK_MS, `a ${Math.round(verifyScriptMs)} ms main-thread script (${verifyScript.what}) ran during verification of "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
   check(after.lastAssistant === 'done', `agent turn for "${prompt.slug}" ended with status ${after.lastAssistant}`);
   check(after.head !== before.head && (await worldJson(page)) !== beforeWorld, `"${prompt.slug}" did not change the world`);
   check(after.entities !== before.entities, `"${prompt.slug}" did not change the entity count (${before.entities})`);
