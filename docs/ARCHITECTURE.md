@@ -577,7 +577,9 @@ saved with the world, shareable).
 ### 12.3 Quality loop
 
 After the agent finishes, the studio renders four views (top, front, side,
-iso), computes view statistics (coverage, edge density, contrast,
+iso) into a corner of the existing drawing buffer (viewport + scissor, one
+reused crop canvas, then the frame is redrawn), so a capture never
+reallocates the canvas buffers, computes view statistics (coverage, edge density, contrast,
 colourfulness) and scores the world against the rubric with deterministic
 heuristics (grounding, overlaps, emptiness / density, scale sanity, palette
 harmony, lighting for the mood, framing, prompt coherence). With a

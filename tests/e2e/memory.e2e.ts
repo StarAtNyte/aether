@@ -22,7 +22,8 @@
  * (`/proc/<pid>/smaps_rollup`), sampled from the test. Any console error
  * fails the run.
  *
- * Run: `npm run build && npm run e2e:memory`.
+ * Run: `npm run build && npm run e2e:memory` (add `-- --only=chromium` or
+ * `-- --only=firefox` to run one browser).
  */
 import { chromium, firefox, type Browser, type BrowserContext, type ConsoleMessage, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
@@ -415,14 +416,20 @@ async function main(): Promise<void> {
   const server = await startServer(log);
   let browser: Browser | null = null;
   const results: Report[] = [];
+  const only = process.argv.find((a) => a.startsWith('--only='))?.slice('--only='.length);
+  if (only !== undefined && only !== 'chromium' && only !== 'firefox') throw new Error('--only must be chromium or firefox');
   try {
-    browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS, '--js-flags=--expose-gc'] });
-    results.push(await run(browser, server.url, 'chromium-webgpu', 'webgpu', false));
-    await chromiumWebglRecovery(browser, server.url);
-    await browser.close();
-    browser = null;
-    browser = await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } });
-    results.push(await run(browser, server.url, 'firefox-webgl2', 'webgl2', true));
+    if (only !== 'firefox') {
+      browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS, '--js-flags=--expose-gc'] });
+      results.push(await run(browser, server.url, 'chromium-webgpu', 'webgpu', false));
+      await chromiumWebglRecovery(browser, server.url);
+      await browser.close();
+      browser = null;
+    }
+    if (only !== 'chromium') {
+      browser = await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } });
+      results.push(await run(browser, server.url, 'firefox-webgl2', 'webgl2', true));
+    }
     report(results);
     log('MEMORY E2E PASSED');
   } finally {

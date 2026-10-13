@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, type Intersection, type Mesh, type Object3D } from 'three';
+import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -24,7 +24,7 @@ import { createTransformControls, TransformGizmo, type GizmoChange, type GizmoMo
 import { Avatar } from './view/avatar';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
-import { captureMime, captureSize, MAX_VIEWS, viewPose, type CaptureView } from './view/capture';
+import { captureMime, captureSize, MAX_VIEWS, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
@@ -145,6 +145,9 @@ const _ndc = new Vector2();
 const _bounds = new Box3();
 const _center = new Vector3();
 const _size = new Vector2();
+const _buffer = new Vector2();
+const _savedViewport = new Vector4();
+const _savedScissor = new Vector4();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _target = new Vector3();
@@ -176,6 +179,20 @@ function now(): number {
 }
 
 /** Copy the canvas into a new 2D canvas of `w`×`h` and encode it. Must run in the same task as the render. */
+/**
+ * Copy the `size`×`size` square at (`sx`, `sy`) (drawing-buffer pixels, top-left origin) of
+ * `source` into `out` (resized only when needed) and encode it.
+ */
+function grabRegion(source: HTMLCanvasElement, out: HTMLCanvasElement, sx: number, sy: number, size: number, px: number, mime: string): string {
+  if (out.width !== px) out.width = px;
+  if (out.height !== px) out.height = px;
+  const ctx = out.getContext('2d');
+  if (!ctx) throw new Error('2D canvas unavailable');
+  ctx.clearRect(0, 0, px, px);
+  ctx.drawImage(source, sx, sy, size, size, 0, 0, px, px);
+  return out.toDataURL(mime, JPEG_QUALITY);
+}
+
 function grab(source: HTMLCanvasElement, w: number, h: number, mime: string): string {
   const out = document.createElement('canvas');
   out.width = w;
@@ -211,6 +228,8 @@ export class WorldRenderer {
   private growEnabled = true;
   private post: PostPipeline | null = null;
   private ortho: OrthographicCamera | null = null;
+  /** Reused 2D canvas for critique-view crops (released on dispose). */
+  private viewCanvas: HTMLCanvasElement | null = null;
   private boundsDirty = true;
   /** Something visible changed since the last drawn frame (on-demand rendering). */
   private needsDraw = true;
@@ -951,8 +970,7 @@ export class WorldRenderer {
     this.scene.fog = null;
     this.scene.background = new Color(this.env.skyState.horizon);
     try {
-      return this.grow.withFullScale(() => this.withTemporarySize(px, px, () =>
-        list.map((view) => {
+      const renderView = (view: CaptureView): void => {
           const pose = viewPose(bounds, view);
           cam.left = -pose.halfSize;
           cam.right = pose.halfSize;
@@ -966,15 +984,66 @@ export class WorldRenderer {
           cam.updateProjectionMatrix();
           cam.updateMatrixWorld();
           this.renderer.render(this.scene, cam);
-          return grab(this.domElement, px, px, 'image/jpeg');
-        }),
-      ));
+      };
+      return this.grow.withFullScale(() => {
+        // Render into a corner of the existing drawing buffer (viewport + scissor) instead of
+        // resizing it: a resize reallocates the canvas buffers (MSAA, depth, post targets) twice
+        // per capture, which Firefox reclaims lazily — memory then grows with every agent turn.
+        const region = viewRegion(this.renderer.getDrawingBufferSize(_buffer).x, _buffer.y, px);
+        if (!region) {
+          return this.withTemporarySize(px, px, () =>
+            list.map((view) => {
+              renderView(view);
+              return grab(this.domElement, px, px, 'image/jpeg');
+            }),
+          );
+        }
+        const out = (this.viewCanvas ??= document.createElement('canvas'));
+        return this.withViewportRegion(region, () =>
+          list.map((view) => {
+            renderView(view);
+            return grabRegion(this.domElement, out, region.x, region.y, region.size, px, 'image/jpeg');
+          }),
+        );
+      });
     } finally {
       hidden.forEach((o, i) => {
         o.visible = wasVisible[i] ?? true;
       });
       this.scene.fog = fog;
       this.scene.background = background;
+    }
+  }
+
+  /**
+   * Run `fn` with rendering confined to `region` (drawing-buffer pixels) of
+   * the current drawing buffer, then restore the viewport and scissor and
+   * redraw the normal frame at once (no flash of the captured views).
+   */
+  private withViewportRegion<T>(region: { x: number; y: number; size: number }, fn: () => T): T {
+    const pr = this.renderer.getPixelRatio() || 1;
+    this.renderer.getViewport(_savedViewport);
+    this.renderer.getScissor(_savedScissor);
+    const scissorTest = this.renderer.getScissorTest();
+    // three.js multiplies by the pixel ratio and floors: +0.25 px keeps integers exact.
+    const x = (region.x + 0.25) / pr;
+    const y = (region.y + 0.25) / pr;
+    const s = (region.size + 0.25) / pr;
+    this.renderer.setViewport(x, y, s, s);
+    this.renderer.setScissor(x, y, s, s);
+    this.renderer.setScissorTest(true);
+    try {
+      return fn();
+    } finally {
+      this.renderer.setViewport(_savedViewport.x, _savedViewport.y, _savedViewport.z, _savedViewport.w);
+      this.renderer.setScissor(_savedScissor.x, _savedScissor.y, _savedScissor.z, _savedScissor.w);
+      this.renderer.setScissorTest(scissorTest);
+      this.needsDraw = true;
+      try {
+        this.draw();
+      } catch (e) {
+        log.warn(`redraw after capture failed: ${errorMessage(e)}`);
+      }
     }
   }
 
@@ -1064,6 +1133,12 @@ export class WorldRenderer {
     this.post?.dispose();
     this.post = null;
     this.postGen++;
+    if (this.viewCanvas) {
+      // Release the 2D backing store now rather than at GC time.
+      this.viewCanvas.width = 0;
+      this.viewCanvas.height = 0;
+      this.viewCanvas = null;
+    }
     this.generatorCache?.clear();
     this.rig.dispose();
     this.sync.dispose();

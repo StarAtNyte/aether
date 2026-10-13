@@ -73,3 +73,14 @@ export function viewPose(bounds: Bounds | null, view: CaptureView): ViewPose {
     far: dist + r * 2 + 1,
   };
 }
+
+/**
+ * Where to render a `px`-pixel critique view inside a `bw`×`bh` drawing
+ * buffer without resizing it: a square at the top-left corner (three.js
+ * viewports use a top-left origin on both backends). Null when the buffer is
+ * too small (callers then resize temporarily).
+ */
+export function viewRegion(bw: number, bh: number, px: number): { x: number; y: number; size: number } | null {
+  if (!(px >= 16) || !(bw >= px) || !(bh >= px)) return null;
+  return { x: 0, y: 0, size: Math.floor(px) };
+}

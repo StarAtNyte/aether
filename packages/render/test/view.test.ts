@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Box3Helper, Group, LineSegments, Mesh, PerspectiveCamera, Vector3 } from 'three';
 import { CameraRig, damp, easeInOutCubic, MIN_FOLLOW_DISTANCE, type OrbitControlsLike } from '../src/view/camera-rig';
-import { captureMime, captureSize, MAX_CAPTURE_SIZE, viewPose } from '../src/view/capture';
+import { captureMime, captureSize, MAX_CAPTURE_SIZE, viewPose, viewRegion } from '../src/view/capture';
 import { FrameStats } from '../src/view/frame-stats';
 import { Highlighter, MAX_HIGHLIGHTS } from '../src/view/highlighter';
 import { DebugOverlay } from '../src/view/debug-overlay';
@@ -329,5 +329,20 @@ describe('TransformGizmo', () => {
     expect(renders).toBeGreaterThan(0);
     gizmo.dispose();
     expect(scene.children).not.toContain(tc.helperObj);
+  });
+});
+
+// Regression: critique views used to resize the whole drawing buffer twice per capture, and
+// Firefox's tab memory grew ~390 MB over 20 agent turns. Views now render into a region instead.
+describe('viewRegion', () => {
+  it('places the view in the top-left corner of a large enough buffer, without resizing', () => {
+    expect(viewRegion(1440, 900, 384)).toEqual({ x: 0, y: 0, size: 384 });
+    expect(viewRegion(384, 384, 384)).toEqual({ x: 0, y: 0, size: 384 });
+  });
+  it('returns null (temporary resize fallback) when the buffer is too small or the size invalid', () => {
+    expect(viewRegion(300, 900, 384)).toBeNull();
+    expect(viewRegion(1440, 383, 384)).toBeNull();
+    expect(viewRegion(1440, 900, Number.NaN)).toBeNull();
+    expect(viewRegion(1440, 900, 8)).toBeNull();
   });
 });
