@@ -9,8 +9,8 @@ import { LoginManager, parseLoginOutput, sanitizeOutput } from '../src/auth';
 import { JobQueue } from '../src/queue';
 import { SessionStore } from '../src/sessions';
 import { LocalAi } from '../src/local';
-import { claudeAgenticArgs, codexAgenticConfig, codexAgenticThread, insideWorkspace, observeAgenticClaude, readArtifact, runAgentic } from '../src/worker/agentic';
-import { JobManager, validateGeneratorDef } from '../src/worker/jobs';
+import { claudeAgenticArgs, codexAgenticConfig, confinedNodeArgs, codexAgenticThread, insideWorkspace, observeAgenticClaude, readArtifact, runAgentic } from '../src/worker/agentic';
+import { JobManager, validateInWorkspace } from '../src/worker/jobs';
 import { parseProgressLine, PROGRESS_PREFIX, WorkerJob, type WorkerResult, type WorkerRunner } from '../src/worker/protocol';
 import { runWorker, runningWorkers } from '../src/worker/runner';
 import { createWorkerSessionStore, createWorkerTextBackend } from '../src/worker/text-backend';
@@ -77,6 +77,8 @@ describe('agentic lockdown', () => {
     const args = claudeAgenticArgs({}, '/tmp/sys.txt');
     expect(args).toContain('--restricted');
     expect(args).toContain('Bash(node check.mjs:*)');
+    expect(args).toContain('Write(./out/**)');
+    expect(args).not.toContain('Write');
     expect(args[args.indexOf('--tools') + 1]).toBe('Read,Write,Edit,Bash');
     expect(args.join(' ')).not.toMatch(/dangerously|bypassPermissions/);
     expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
@@ -89,6 +91,8 @@ describe('agentic lockdown', () => {
     expect(observeAgenticClaude(tool('Bash', { command: 'node check.mjs out/generator.json && rm -rf ~' }), dir, report)).toMatch(/shell command/);
     expect(observeAgenticClaude(tool('Write', { file_path: '/etc/passwd' }), dir, report)).toMatch(/outside/);
     expect(observeAgenticClaude(tool('Write', { file_path: join(dir, '../x') }), dir, report)).toMatch(/outside/);
+    expect(observeAgenticClaude(tool('Write', { file_path: join(dir, 'check.mjs') }), dir, report)).toMatch(/outside out/);
+    expect(observeAgenticClaude(tool('Read', { file_path: join(dir, 'task.md') }), dir, report)).toBeUndefined();
     expect(observeAgenticClaude(tool('WebFetch', { url: 'x' }), dir, report)).toMatch(/tool call/);
     expect(observeAgenticClaude(JSON.stringify({ type: 'system', subtype: 'init', tools: ['Read', 'WebSearch'], mcp_servers: [] }), dir, report)).toMatch(/tools exposed/);
     expect(observeAgenticClaude(tool('Write', { file_path: join(dir, 'out/generator.json') }), dir, report)).toBeUndefined();
@@ -173,6 +177,7 @@ describe('workspace and artifact', () => {
     expect(await readFile(join(ws.dir, 'GENERATOR_API.d.ts'), 'utf8')).toContain('interface');
     expect((await stat(join(ws.dir, 'out'))).isDirectory()).toBe(true);
     expect(await readFile(join(ws.dir, 'check.mjs'), 'utf8')).toBe('// checker');
+    expect((await stat(join(ws.dir, 'check.mjs'))).mode & 0o777).toBe(0o400);
     await removeWorkspace(ws.dir);
     await expect(stat(ws.dir)).rejects.toThrow();
     expect(assetTask({ id: 'x1', description: 'y' })).toContain('node check.mjs out/generator.json');
@@ -205,10 +210,23 @@ describe('workspace and artifact', () => {
     expect(evil).toMatchObject({ ok: false, error: expect.stringContaining('rejected') });
   });
 
-  it('validates generators in the host sandbox', async () => {
-    expect(await validateGeneratorDef(LIGHTHOUSE)).toBeNull();
-    expect(await validateGeneratorDef({ ...LIGHTHOUSE, source: 'while (true) {}' })).toMatch(/.+/);
-  }, 20_000);
+  it('validates generators with the confined checker (pristine copy, no links followed)', async () => {
+    await mkdir(join(dir, 'out'));
+    expect(await validateInWorkspace(LIGHTHOUSE, dir)).toBeNull();
+    expect(await validateInWorkspace({ ...LIGHTHOUSE, source: 'while (true) {}\nreturn api.build();' }, dir)).toMatch(/.+/);
+    expect(await validateInWorkspace({ ...LIGHTHOUSE, source: 'return 1;' }, dir)).toMatch(/.+/);
+  }, 60_000);
+
+  it('confines the checker: no reads outside the workspace, no processes, writes only under out/', async () => {
+    await mkdir(join(dir, 'out'));
+    const script = join(dir, 'probe.mjs');
+    await writeFile(script, "import fs from 'node:fs'; const r = []; for (const f of [() => fs.readFileSync('/etc/hostname'), () => fs.writeFileSync('x.txt', 'a'), () => fs.writeFileSync('out/ok.txt', 'a')]) { try { f(); r.push('ok'); } catch (e) { r.push(e.code); } } import('node:child_process').then((cp) => { try { cp.execSync('true'); r.push('ok'); } catch (e) { r.push(e.code); } console.log(r.join(',')); });");
+    const { runProcess } = await import('../src/process');
+    const r = await runProcess(process.execPath, [...confinedNodeArgs(dir, script), script], { cwd: dir, env: { PATH: process.env['PATH'] ?? '' }, timeoutMs: 20_000 });
+    expect(r.stdout.trim()).toBe('ERR_ACCESS_DENIED,ERR_ACCESS_DENIED,ok,ERR_ACCESS_DENIED');
+    expect(confinedNodeArgs('/w', '/c.mjs', '22.5.0')[0]).toBe('--experimental-permission');
+    expect(confinedNodeArgs('/w', '/c.mjs', '24.1.0')[0]).toBe('--permission');
+  }, 30_000);
 });
 
 describe('worker process runner', () => {

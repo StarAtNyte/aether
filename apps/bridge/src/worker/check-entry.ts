@@ -10,7 +10,9 @@
  * `out/preview.png` for the agent to look at. Prints a report; exit code 0
  * only when everything passes.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { GeneratorDef } from '@aether/core';
 import { checkSilhouette, resolveParams, staticCheckSource, validateOutput, type GeneratorOutput } from '@aether/procgen';
@@ -195,6 +197,7 @@ export async function checkGeneratorFile(path: string): Promise<{ passed: boolea
   if (!screen.ok) return { passed: false, lines: ['RESULT: FAIL', ...screen.problems.slice(0, 6).map((p) => `- issue: source rejected: ${p}`)] };
   const sandbox = createNodeSandbox({ timeoutMs: 4000 });
   let first: GeneratorOutput | null = null;
+  let valid = false;
   try {
     for (const seed of SEEDS) {
       const raw = await sandbox.run(def.data, resolveParams(def.data.params, {}), seed);
@@ -205,6 +208,7 @@ export async function checkGeneratorFile(path: string): Promise<{ passed: boolea
       }
       first ??= v.output;
     }
+    valid = first !== null && issues.length === 0;
   } catch (e) {
     issues.push(`the generator threw: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
   } finally {
@@ -235,11 +239,34 @@ export async function checkGeneratorFile(path: string): Promise<{ passed: boolea
     }
   }
   const passed = issues.length === 0 && first !== null;
-  return { passed, lines: [passed ? 'RESULT: PASS' : 'RESULT: FAIL', ...issues.map((i) => `- issue: ${i}`), ...lines] };
+  // VALID: the definition is usable at all (schema, source screen, sandboxed runs, output validation),
+  // independent of the quality heuristics above. The host re-validates with this line.
+  return { passed, lines: [passed ? 'RESULT: PASS' : 'RESULT: FAIL', `VALID: ${valid ? 'yes' : 'no'}`, ...issues.map((i) => `- issue: ${i}`), ...lines] };
+}
+
+/**
+ * Re-run this script confined by the Node permission model (read the
+ * workspace, write only `out/`, no processes or workers) unless it already
+ * is: the generator code it executes is untrusted. Returns the exit code, or
+ * null when this process is the confined one.
+ */
+function confineSelf(): number | null {
+  if ((process as { permission?: unknown }).permission !== undefined && process.execArgv.some((a) => /^--(experimental-)?permission$/.test(a))) return null;
+  const script = process.argv[1] ?? '';
+  const root = dirname(resolvePath(script));
+  const [major = 0, minor = 0] = process.versions.node.split('.').map((n) => Number(n));
+  const flag = major > 22 || (major === 22 && minor >= 13) ? '--permission' : '--experimental-permission';
+  const r = spawnSync(process.execPath, [flag, `--allow-fs-read=${root}`, `--allow-fs-read=${process.cwd()}`, `--allow-fs-write=${join(process.cwd(), 'out')}`, script, ...process.argv.slice(2)], { stdio: 'inherit', env: { PATH: process.env['PATH'] ?? '' }, timeout: 90_000 });
+  return typeof r.status === 'number' ? r.status : 1;
 }
 
 /** CLI entry. */
 async function main(): Promise<void> {
+  const confined = confineSelf();
+  if (confined !== null) {
+    process.exitCode = confined;
+    return;
+  }
   const file = process.argv[2];
   if (!file) {
     process.stdout.write('usage: node check.mjs out/generator.json\n');

@@ -26,11 +26,13 @@ export interface AssetSpec {
 
 let checkScript: Promise<string> | null = null;
 
-/** Bundle the checker (once per process) into `dir/check-<pid>.mjs`; resolves to its path. */
-export function bundledCheckScript(dir: string = tmpdir()): Promise<string> {
+/** Bundle the checker (once per process) into a private temp folder; resolves to its path. */
+export function bundledCheckScript(): Promise<string> {
   checkScript ??= (async () => {
     const entry = fileURLToPath(new URL('./check-entry.ts', import.meta.url));
-    const outfile = join(dir, `aether-check-${process.pid}.mjs`);
+    const dir = await mkdtemp(join(tmpdir(), 'aether-check-'));
+    await chmod(dir, 0o700);
+    const outfile = join(dir, 'check.mjs');
     const { build } = await import('esbuild');
     await build({
       entryPoints: [entry],
@@ -45,7 +47,7 @@ export function bundledCheckScript(dir: string = tmpdir()): Promise<string> {
       // Bundled CommonJS dependencies may call require() for Node built-ins.
       banner: { js: "import { createRequire as __aetherRequire } from 'node:module'; const require = __aetherRequire(import.meta.url);" },
     });
-    await chmod(outfile, 0o600);
+    await chmod(outfile, 0o400);
     return outfile;
   })().catch((e: unknown) => {
     checkScript = null;
@@ -94,6 +96,7 @@ export async function createAssetWorkspace(spec: AssetSpec, opts: { root?: strin
     }
     await mkdir(join(dir, 'out'), { mode: 0o700 });
     await copyFile(opts.checkScript ?? (await bundledCheckScript()), join(dir, 'check.mjs'));
+    await chmod(join(dir, 'check.mjs'), 0o400);
     return { dir, task, artifact: ASSET_ARTIFACT };
   } catch (e) {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);

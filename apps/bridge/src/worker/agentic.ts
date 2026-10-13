@@ -28,6 +28,7 @@ import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess } from '../process';
 import { restrictedEnv } from '../sandbox';
 import { which } from '../which';
+import { bundledCheckScript } from './workspace';
 import type { WorkerJob, WorkerResult } from './protocol';
 
 type AgenticJob = Extract<WorkerJob, { kind: 'agentic' }>;
@@ -92,7 +93,8 @@ export function claudeAgenticArgs(job: Pick<AgenticJob, 'model' | 'effort'>, sys
     '--effort', job.effort ?? 'medium',
     '--restricted',
     '--tools', 'Read,Write,Edit,Bash',
-    '--allowedTools', 'Read', 'Write', 'Edit', 'Bash(node check.mjs:*)',
+    // Writes only under out/ (the checker and the task stay as Aether wrote them); the only command is the checker.
+    '--allowedTools', 'Read', 'Write(./out/**)', 'Edit(./out/**)', 'Bash(node check.mjs:*)',
     '--disallowedTools', 'WebFetch,WebSearch,Task,Agent,NotebookEdit,MultiEdit,Glob,Grep,LS,TodoWrite,KillShell,BashOutput,Skill,SlashCommand',
     '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--safe-mode',
@@ -154,16 +156,41 @@ export function observeAgenticClaude(line: string, workspace: string, report: (p
     } else {
       const path = typeof input['file_path'] === 'string' ? input['file_path'] : '';
       if (!path || !insideWorkspace(workspace, path)) return 'a file outside the workspace';
+      if (name !== 'Read' && !insideWorkspace(join(workspace, 'out'), path)) return 'a file outside out/';
       if (name !== 'Read') report('write', `Writing ${basename(path).slice(0, 60)}…`);
     }
   }
 }
 
-/** Default checker: `node check.mjs <artifact>` in the workspace (60 s, core environment). */
-async function defaultCheck(workspace: string, artifact: string, env: NodeJS.ProcessEnv): Promise<{ passed: boolean; report: string }> {
-  const r = await runProcess(process.execPath, ['check.mjs', artifact], { cwd: workspace, env: restrictedEnv(env), timeoutMs: 60_000, maxStdout: 256 * 1024 });
+/**
+ * Node flags that confine a checker run to its workspace with the Node
+ * permission model: read the workspace, write only `out/`, no child
+ * processes, workers, native addons or WASI. The checker executes
+ * model-written generator code in `node:vm`, which is not a security
+ * boundary on its own; these flags are the boundary on the host.
+ */
+export function confinedNodeArgs(workspace: string, script: string, version: string = process.versions.node): string[] {
+  const [major = 0, minor = 0] = version.split('.').map((n) => Number(n));
+  const flag = major > 22 || (major === 22 && minor >= 13) ? '--permission' : '--experimental-permission';
+  return [flag, `--allow-fs-read=${resolve(workspace)}`, `--allow-fs-read=${resolve(script)}`, `--allow-fs-write=${join(resolve(workspace), 'out')}`, '--disable-proto=throw'];
+}
+
+/**
+ * Run Aether's own checker (the pristine bundle, not the workspace copy the
+ * agent could have edited) on `artifact`, confined to the workspace
+ * (60 s, core environment).
+ */
+export async function runConfinedCheck(workspace: string, artifact: string, env: NodeJS.ProcessEnv): Promise<{ passed: boolean; valid: boolean; report: string }> {
+  const script = await bundledCheckScript();
+  const r = await runProcess(process.execPath, [...confinedNodeArgs(workspace, script), script, artifact], { cwd: workspace, env: restrictedEnv(env), timeoutMs: 60_000, maxStdout: 256 * 1024 });
   const report = `${r.stdout}\n${r.stderr}`.trim().slice(-6000);
-  return { passed: r.code === 0 && /RESULT: PASS/.test(r.stdout), report: report || 'The checker printed nothing.' };
+  return { passed: r.code === 0 && /^RESULT: PASS$/m.test(r.stdout), valid: /^VALID: yes$/m.test(r.stdout), report: report || 'The checker printed nothing.' };
+}
+
+/** Default checker between rounds. */
+async function defaultCheck(workspace: string, artifact: string, env: NodeJS.ProcessEnv): Promise<{ passed: boolean; report: string }> {
+  const r = await runConfinedCheck(workspace, artifact, env);
+  return { passed: r.passed, report: r.report };
 }
 
 /** First line of a checker report worth showing ("RESULT: FAIL — …"). */

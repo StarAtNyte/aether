@@ -12,11 +12,9 @@ import { appendFile, chmod, mkdir, readFile, readdir, rename, rm, writeFile } fr
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AssetJobRequestSchema, JOB_ID_RE, LocalJobSchema, type AssetJobRequest, type JobState, type LocalJob, type LocalJobEvent } from '@aether/agent';
-import type { GeneratorDef as GeneratorDefType, Json } from '@aether/core';
-import { createNodeSandbox } from '@aether/procgen/node';
-import { resolveParams, validateOutput } from '@aether/procgen';
+import type { GeneratorDef as GeneratorDefType } from '@aether/core';
 import { BridgeError } from '../errors';
-import { readArtifact } from './agentic';
+import { readArtifact, runConfinedCheck } from './agentic';
 import type { WorkerRunner } from './protocol';
 import { createAssetWorkspace, parseAssetArtifact, removeWorkspace, type AssetSpec } from './workspace';
 
@@ -38,8 +36,12 @@ export interface JobManagerOptions {
   accountHome?: () => Promise<{ id: string; home: string | null }>;
   /** Workspace factory (tests). */
   createWorkspace?: typeof createAssetWorkspace;
-  /** Validate a generator in the host sandbox (default: node sandbox, three seeds). */
-  validate?: (def: GeneratorDefType) => Promise<string | null>;
+  /**
+   * Validate the parsed generator before it is accepted; `workspace` is the
+   * job's folder (still present). Default: the checker, confined with the
+   * Node permission model, runs the definition for three seeds.
+   */
+  validate?: (def: GeneratorDefType, workspace: string) => Promise<string | null>;
   now?: () => number;
   /** Jobs kept on disk (oldest finished ones are pruned). */
   keep?: number;
@@ -49,20 +51,23 @@ export interface JobManagerOptions {
 
 const MAX_EVENTS = 2000;
 
-/** Default host-side validation: node sandbox, three seeds, output validation. */
-export async function validateGeneratorDef(def: GeneratorDefType): Promise<string | null> {
-  const sandbox = createNodeSandbox({ timeoutMs: 4000 });
+/**
+ * Default host-side validation: write the parsed definition to a new file in
+ * the workspace (never following anything the agent left there) and run the
+ * checker on it, confined to the workspace with the Node permission model.
+ * The studio validates it once more in its own sandbox before use.
+ */
+export async function validateInWorkspace(def: GeneratorDefType, workspace: string, env?: NodeJS.ProcessEnv): Promise<string | null> {
+  const name = `out/aether-validate-${randomUUID().slice(0, 8)}.json`;
   try {
-    for (const seed of [1, 7, 42]) {
-      const v = validateOutput(await sandbox.run(def, resolveParams(def.params, {} as Record<string, Json>), seed));
-      if (!v.ok) return `seed ${seed}: ${v.error}`;
-    }
-    return null;
-  } catch (e) {
-    return e instanceof Error ? e.message.slice(0, 300) : 'the generator failed';
-  } finally {
-    sandbox.dispose();
+    await writeFile(join(workspace, name), JSON.stringify(def), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  } catch {
+    return 'could not prepare the validation run';
   }
+  const r = await runConfinedCheck(workspace, name, env ?? process.env);
+  if (r.valid) return null;
+  const issue = r.report.split('\n').find((l) => l.startsWith('- issue:'));
+  return (issue ? issue.replace(/^- issue:\s*/, '') : 'the generator did not pass validation').slice(0, 300);
 }
 
 /** The durable job queue. */
@@ -325,7 +330,7 @@ export class JobManager {
       // Only the final artifact is used, and it is validated again here.
       const parsed = parseAssetArtifact(await readArtifact(ws.dir, ws.artifact), rec.spec.id);
       if (!parsed.ok) throw new BridgeError('backend_error', parsed.error);
-      const problem = await (this.opts.validate ?? validateGeneratorDef)(parsed.def);
+      const problem = await (this.opts.validate ?? ((d: GeneratorDefType, w: string) => validateInWorkspace(d, w)))(parsed.def, ws.dir);
       if (problem) throw new BridgeError('backend_error', `The generator failed validation: ${problem}`);
       rec.result = { def: parsed.def, turns: r.turns, checkerPassed: r.passed, ...(r.usage ? { usage: r.usage } : {}), ...(r.model ? { model: r.model } : {}) };
       outcome = { status: 'done' };
