@@ -11,7 +11,7 @@ import { formatHour } from '../lib/worldChroma';
 import { formatValue } from '../lib/ruleFormat';
 import { Icon } from '../components/Icon';
 import { ColorField, FieldRow, NumberField, Section, SelectField, SliderField, Switch, Toggle } from '../components/fields';
-import { entityKind, ObjectInspector } from '../components/panels/Inspector';
+import { entityKind, MultiInspector, ObjectInspector } from '../components/panels/Inspector';
 import { PanelHeader } from './Panels';
 
 const SKIES = ['day', 'dawn', 'sunset', 'night', 'overcast', 'space', 'studio'] as const satisfies ReadonlyArray<Environment['sky']>;
@@ -145,9 +145,16 @@ export const InspectorPanel = memo(function InspectorPanel(): ReactElement {
   const id = selection[0];
   const e = id !== undefined && Object.prototype.hasOwnProperty.call(world.entities, id) ? world.entities[id] : undefined;
   const count = Object.keys(world.entities).length;
+  const multi = selection.length > 1;
   return (
     <>
-      {e ? (
+      {multi ? (
+        <PanelHeader title={`${selection.length} objects`}>
+          <button type="button" className="icon-btn icon-btn--sm" aria-label="Deselect" data-tip="Deselect" data-kbd="Esc" data-tip-align="end" onClick={() => studio.store.getState().select([])}>
+            <Icon name="x" />
+          </button>
+        </PanelHeader>
+      ) : e ? (
         <PanelHeader title={e.name || e.id}>
           {entityKind(e).toLowerCase() !== (e.name || e.id).toLowerCase() && (
             <span className="chip chip--quiet" title={entityKind(e)}>
@@ -157,7 +164,10 @@ export const InspectorPanel = memo(function InspectorPanel(): ReactElement {
           <button type="button" className="icon-btn icon-btn--sm" aria-label="Focus camera" data-tip="Focus" data-kbd="F" onClick={() => studio.focus(e.id)}>
             <Icon name="focus" />
           </button>
-          <button type="button" className="icon-btn icon-btn--sm" aria-label="Delete object" data-tip="Delete" data-kbd="Del" disabled={playing} onClick={() => studio.deleteEntities(selection)}>
+          <button type="button" className="icon-btn icon-btn--sm" aria-label="Duplicate object" data-tip="Duplicate" data-kbd="⌘D" disabled={playing} onClick={() => studio.editor.duplicate()}>
+            <Icon name="copy" />
+          </button>
+          <button type="button" className="icon-btn icon-btn--sm" aria-label="Delete object" data-tip="Delete" data-kbd="Del" disabled={playing || e.locked === true} onClick={() => studio.editor.deleteSelection()}>
             <Icon name="trash" />
           </button>
           <button type="button" className="icon-btn icon-btn--sm" aria-label="Deselect" data-tip="Deselect" data-kbd="Esc" data-tip-align="end" onClick={() => studio.store.getState().select([])}>
@@ -171,7 +181,7 @@ export const InspectorPanel = memo(function InspectorPanel(): ReactElement {
           </span>
         </PanelHeader>
       )}
-      <div className="panel__body scroll-y">{e ? <ObjectInspector e={e} count={selection.length} playing={playing} /> : <SceneInspector playing={playing} />}</div>
+      <div className="panel__body scroll-y">{multi ? <MultiInspector ids={selection} playing={playing} /> : e ? <ObjectInspector e={e} count={selection.length} playing={playing} /> : <SceneInspector playing={playing} />}</div>
     </>
   );
 });

@@ -112,7 +112,8 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   }
   const result = ctx.host.applyPatches(input.patches, message);
   events.push({ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } });
-  const content = formatPatchOutcome(result.applied.length, input.patches.length, result.errors, Object.keys(result.world.entities).length);
+  let content = formatPatchOutcome(result.applied.length, input.patches.length, result.errors, Object.keys(result.world.entities).length);
+  if (result.notes && result.notes.length > 0) content += `\n${result.notes.slice(0, 4).map((n) => `Note: ${n.slice(0, 400)}`).join('\n')}`;
   return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
 }
 

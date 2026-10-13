@@ -5,7 +5,7 @@
 import type { Entity, WorldDoc } from '@aether/core';
 
 /** Icon category of an entity row. */
-export type RowKind = 'light' | 'scatter' | 'procedural' | 'primitive' | 'model' | 'group' | 'template';
+export type RowKind = 'light' | 'scatter' | 'procedural' | 'primitive' | 'model' | 'mesh' | 'group' | 'template';
 
 /** One visible outliner row. */
 export interface OutlinerRow {
@@ -16,6 +16,8 @@ export interface OutlinerRow {
   tags: string[];
   childCount: number;
   visible: boolean;
+  /** Locked by the user (not pickable, protected from the agent). */
+  locked: boolean;
   dynamic: boolean;
   hasBehaviors: boolean;
 }
@@ -37,6 +39,8 @@ export function rowKind(e: Entity): RowKind {
       return 'primitive';
     case 'model':
       return 'model';
+    case 'mesh':
+      return 'mesh';
     default:
       return 'group';
   }
@@ -79,6 +83,7 @@ function createRow(e: Entity, depth: number, childCount: number): OutlinerRow {
     tags: e.tags,
     childCount,
     visible: e.visible,
+    locked: e.locked === true,
     dynamic: e.physics?.body === 'dynamic',
     hasBehaviors: e.behaviors.length > 0,
   };

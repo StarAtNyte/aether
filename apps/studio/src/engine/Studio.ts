@@ -762,6 +762,10 @@ export class Studio {
       }
       const view = toEventView(event);
       this.store.getState().pushEvent(entryId, view);
+      if (event.type === 'patches') {
+        const overwritten = this.bridge.takeOverwrites();
+        if (overwritten.length > 0) this.store.getState().pushEvent(entryId, { type: 'notice', tone: 'info', text: `Changed things you set by hand: ${overwritten.join('; ')}. Undo to restore them.`.slice(0, 600) });
+      }
       if (view.type === 'status') this.store.getState().setAgentStep(view.text);
       if (event.type === 'error') status = 'error';
       if (view.type === 'verify') {

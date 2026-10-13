@@ -147,7 +147,10 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const name = activities[0] && primary ? `${activities[0].title} — ${primary.title}` : heroTitle && primary ? `${heroTitle} — ${primary.title}` : (titles[0] ?? 'New World');
   b.meta(name, intent.text.slice(0, 200));
 
-  const patches: PatchInput[] = wipe && view.entityCount > 0 ? [{ op: 'clear', keepEnvironment: false }, ...b.build()] : b.build();
+  // Objects the user locked survive a rebuild: remove the others one by one instead of clearing.
+  const locked = view.entities.filter((e) => e.locked);
+  const wipePatches: PatchInput[] = !wipe || view.entityCount === 0 ? [] : locked.length === 0 ? [{ op: 'clear', keepEnvironment: false }] : view.entities.filter((e) => e.depth === 0 && !e.locked).map((e): PatchInput => ({ op: 'remove', id: e.id, recursive: true }));
+  const patches: PatchInput[] = [...wipePatches, ...b.build()];
   const blurbs = [...settings, ...activities].map((t) => t.blurb);
   const moodWords = Object.entries(intent.mood).filter(([, v]) => v).map(([k]) => k);
   return {
@@ -171,6 +174,10 @@ function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem
     done.push(`environment: ${envKeys.map((k) => (k === 'gravity' ? 'gravity' : `${k}`)).join(', ')}`);
   }
   const patches = b.build();
+  const lockedNotes = done.filter((d) => d.includes('because you locked it'));
+  if (patches.length === 0 && lockedNotes.length > 0) {
+    return { plan: '', patches: [], message: `I ${lockedNotes.join('; ')}.` };
+  }
   if (patches.length === 0) {
     return {
       plan: '',

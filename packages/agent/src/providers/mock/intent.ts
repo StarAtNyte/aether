@@ -15,7 +15,7 @@ export const ALL_THEMES: readonly Theme[] = [...NATURE_THEMES, ...BUILT_THEMES, 
 
 /** Property changes understood by "make the X …". */
 export type Change =
-  | { kind: 'scale'; factor: number }
+  | { kind: 'scale'; factor: number; axis?: 'y' }
   | { kind: 'color'; color: string }
   | { kind: 'bouncy' }
   | { kind: 'mass'; heavy: boolean }
@@ -94,6 +94,7 @@ const INCREMENTAL = /\b(?:more|another|extra|also|too|as well|again|additional)\
 const CREATE = /\b(create|generate|build|design|give me|show me|i want|i'd like|let'?s (?:make|build)|turn (?:it|this|the world|everything) into|make (?:me )?(?:an?|the) (?:\w+ )?(?:world|scene|level|map|game))\b/;
 
 function changeFor(word: string): Change | null {
+  if (word === 'taller' || word === 'shorter') return { kind: 'scale', factor: SIZE[word] as number, axis: 'y' };
   if (SIZE[word] !== undefined) return { kind: 'scale', factor: SIZE[word] as number };
   if (COLORS[word]) return { kind: 'color', color: COLORS[word] as string };
   if (word === 'bouncy' || word === 'bouncier') return { kind: 'bouncy' };

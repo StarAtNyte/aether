@@ -7,7 +7,8 @@
  * Also selects the LLM provider: the server proxy when `/api/health`
  * reports a live model, otherwise the deterministic offline mock.
  */
-import { type GeneratorDef, type History, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
+import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
+import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
 import type { ColliderProvider, VerifyReport } from '@aether/physics';
@@ -82,9 +83,14 @@ export async function selectProvider(fetchImpl: typeof fetch = fetch, timeoutMs:
   return { provider: createOfflinePlanner(), live: false, name: 'offline demo' };
 }
 
+/** Commits inspected for hand-edit marks. */
+const EDIT_MARK_COMMITS = 60;
+
 /** AgentHost implementation backed by the studio. */
 export class AgentBridge implements AgentHost {
   private simulation: Simulation | null = null;
+  /** Hand edits the agent overwrote since the last {@link takeOverwrites} (shown in the chat). */
+  private overwrites: string[] = [];
 
   /**
    * @param history world history (commits are attributed to 'agent')
@@ -104,8 +110,35 @@ export class AgentBridge implements AgentHost {
     return this.history.current;
   }
 
+  /** Recent hand edits of entities that still exist. */
+  userEdits(): EditMarks {
+    const world = this.history.current;
+    return userEditMarks(this.history.recentCommits(EDIT_MARK_COMMITS), { exists: (id: EntityId) => Object.prototype.hasOwnProperty.call(world.entities, id) });
+  }
+
+  /**
+   * Commit agent patches (source 'agent'). Patches touching locked entities
+   * are refused with an explanation; overwritten hand edits are reported
+   * to the model (`notes`) and collected for the chat.
+   */
   applyPatches(patches: unknown[], message: string): PatchResult {
-    return this.history.commit(patches, message || 'Agent edit', 'agent');
+    const before = this.history.current;
+    const screened = screenLocked(before, Array.isArray(patches) ? patches : []);
+    const marks = this.userEdits();
+    const r = this.history.commit(screened.allowed, message || 'Agent edit', 'agent');
+    const errors = [...screened.refused, ...r.errors.map((e) => ({ ...e, index: e.index >= 0 ? (screened.indices[e.index] ?? e.index) : e.index }))].sort((a, b) => a.index - b.index);
+    const overwritten = overwrittenEdits(r.applied, marks);
+    if (overwritten.length === 0) return { ...r, errors };
+    this.overwrites.push(...overwritten);
+    if (this.overwrites.length > 24) this.overwrites = this.overwrites.slice(-24);
+    return { ...r, errors, notes: [`these changes overwrote things the user set by hand (${overwritten.join('; ')}); tell the user plainly what you changed`] };
+  }
+
+  /** Hand edits the agent overwrote since the last call (then cleared). */
+  takeOverwrites(): string[] {
+    const out = this.overwrites;
+    this.overwrites = [];
+    return out;
   }
 
   async verify(world: WorldDoc): Promise<BridgeVerifyResult> {

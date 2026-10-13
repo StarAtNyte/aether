@@ -65,6 +65,11 @@ export interface PatchResult {
   applied: Patch[];
   /** Rejected patches with actionable messages (sorted by index). */
   errors: PatchError[];
+  /**
+   * Non-fatal notes for the caller (e.g. hosts that report overwritten
+   * hand edits). `applyPatches` itself never sets it.
+   */
+  notes?: string[];
 }
 
 /** Options for {@link applyPatches}. */

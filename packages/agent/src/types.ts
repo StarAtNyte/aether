@@ -4,7 +4,7 @@
  * Every provider normalizes its wire format to these shapes so the agent loop,
  * the server proxy and the studio never depend on a vendor API.
  */
-import type { GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, WorldDoc } from '@aether/core';
+import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, WorldDoc } from '@aether/core';
 
 /** One block of message content. Images travel as `data:` URLs. */
 export type ContentBlock =
@@ -75,6 +75,12 @@ export interface AgentHost {
   applyPatches(patches: unknown[], message: string): PatchResult;
   verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }>;
   screenshot?(): Promise<string | null>;
+  /**
+   * Entities the user edited by hand recently (property paths, newest
+   * first). They are marked in the world summary so "the tower I just
+   * moved" resolves and hand edits are kept unless the user asks.
+   */
+  userEdits?(): ReadonlyMap<EntityId, { paths: readonly string[]; age: number }>;
   validateGenerator?(def: GeneratorDef): Promise<{ ok: boolean; error?: string }>;
   validateScript?(def: ScriptDef): Promise<{ ok: boolean; error?: string }>;
 }

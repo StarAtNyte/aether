@@ -18,7 +18,6 @@ import {
   Group,
   InstancedMesh,
   LineBasicMaterial,
-  LineLoop,
   LineSegments,
   Matrix4,
   Mesh,
@@ -76,7 +75,7 @@ export class EditOverlay {
   private lineMaterial: LineBasicMaterial | null = null;
   private selLineMaterial: LineBasicMaterial | null = null;
   private faceMaterial: MeshBasicMaterial | null = null;
-  private brush: LineLoop | null = null;
+  private brush: LineSegments | null = null;
   private joint: Group | null = null;
   private view: ComponentView | null = null;
   private markerScale = 0.02;
@@ -98,6 +97,9 @@ export class EditOverlay {
     g.name = 'edit:components';
     g.matrixAutoUpdate = false;
     view.target.add(g);
+    // Entity objects do not auto-update their matrices: give the overlay its world matrix now
+    // (later moves of the entity update its children through the parent's flag).
+    g.updateMatrixWorld(true);
     this.components = g;
     this.componentParent = view.target;
     this.lineMaterial ??= new LineBasicMaterial({ color: WIRE, transparent: true, opacity: 0.55, depthTest: true });
@@ -112,6 +114,7 @@ export class EditOverlay {
       this.wire.raycast = () => undefined;
       this.wire.renderOrder = SPRITE_ORDER;
       g.add(this.wire);
+      this.wire.updateMatrixWorld(true);
     }
     if (view.selectedFaces.length > 0) {
       const idx: number[] = [];
@@ -129,6 +132,7 @@ export class EditOverlay {
       this.selFaces.raycast = () => undefined;
       this.selFaces.renderOrder = SPRITE_ORDER;
       g.add(this.selFaces);
+      this.selFaces.updateMatrixWorld(true);
     }
     if (view.selectedEdges.length > 0) {
       const eg = new BufferGeometry();
@@ -138,6 +142,7 @@ export class EditOverlay {
       this.selEdges.raycast = () => undefined;
       this.selEdges.renderOrder = SPRITE_ORDER + 1;
       g.add(this.selEdges);
+      this.selEdges.updateMatrixWorld(true);
     }
     this.buildMarkers(view);
   }
@@ -166,6 +171,7 @@ export class EditOverlay {
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
     this.markers = im;
     g.add(im);
+    im.updateMatrixWorld(true);
     this.refreshMarkers();
   }
 
@@ -221,16 +227,20 @@ export class EditOverlay {
       return;
     }
     if (!this.brush) {
+      // A circle as line segments (WebGPU has no line loops).
       const segs = 64;
-      const pts = new Float32Array(segs * 3);
+      const pts = new Float32Array(segs * 6);
       for (let i = 0; i < segs; i++) {
-        const a = (i / segs) * Math.PI * 2;
-        pts[i * 3] = Math.cos(a);
-        pts[i * 3 + 1] = Math.sin(a);
+        const a0 = (i / segs) * Math.PI * 2;
+        const a1 = ((i + 1) / segs) * Math.PI * 2;
+        pts[i * 6] = Math.cos(a0);
+        pts[i * 6 + 1] = Math.sin(a0);
+        pts[i * 6 + 3] = Math.cos(a1);
+        pts[i * 6 + 4] = Math.sin(a1);
       }
       const geo = new BufferGeometry();
       geo.setAttribute('position', new BufferAttribute(pts, 3));
-      this.brush = new LineLoop(geo, new LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 }));
+      this.brush = new LineSegments(geo, new LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 }));
       this.brush.name = 'edit:brush';
       this.brush.renderOrder = SPRITE_ORDER + 3;
       this.brush.raycast = () => undefined;

@@ -34,8 +34,37 @@ export function reserveExisting(b: Builder, view: WorldView): void {
   }
 }
 
-/** Entities matching a free-text target. Children only match by exact id. */
-export function resolveTargets(view: WorldView, target: string, all: boolean): EntityView[] {
+/** "the tower I just moved", "the one I changed", "the last one": the user means something they edited by hand. */
+const RECENT_PHRASE = /\b(?:that\s+|which\s+)?(?:i|we)\s+(?:just\s+|recently\s+|have\s+|had\s+)?(?:moved|placed|put|edited|changed|added|made|rotated|scaled|dragged|painted|sculpted|selected|resized|built)\b(?:\s+(?:it|there|here))?|\bjust now\b|\b(?:last|latest|previous)\s+one\b|\bthe one\b/g;
+
+/** Strip a recency phrase from a target; reports whether there was one. */
+export function recencyOf(target: string): { rest: string; recent: boolean } {
+  const rest = target.toLowerCase().replace(RECENT_PHRASE, ' ').replace(/\s+/g, ' ').trim();
+  return { rest, recent: rest !== target.toLowerCase().replace(/\s+/g, ' ').trim() };
+}
+
+/** Recently hand-edited entities, newest first. */
+function recentlyEdited(view: WorldView): EntityView[] {
+  const byId = new Map(view.entities.map((e) => [e.id, e]));
+  const ordered = view.recentEdits.map((id) => byId.get(id)).filter((e): e is EntityView => !!e);
+  for (const e of view.entities) if (e.userEditedAge !== undefined && !ordered.includes(e)) ordered.push(e);
+  return ordered;
+}
+
+/** Entities matching a free-text target. Children only match by exact id. Locked entities never match. */
+export function resolveTargets(view: WorldView, rawTarget: string, all: boolean): EntityView[] {
+  const { rest, recent } = recencyOf(rawTarget);
+  if (recent) {
+    const pool = recentlyEdited(view).filter((e) => !e.locked);
+    if (pool.length === 0) return [];
+    if (!rest || /^(it|that|this|thing|object|one)$/.test(rest)) return [pool[0] as EntityView];
+    const matching = matchTargets({ ...view, entities: pool }, rest, true);
+    return matching.length > 0 ? [matching[0] as EntityView] : [];
+  }
+  return matchTargets(view, rawTarget, all).filter((e) => !e.locked);
+}
+
+function matchTargets(view: WorldView, target: string, all: boolean): EntityView[] {
   const exact = view.entities.find((e) => e.id === slugify(target) || e.id === target);
   if (exact) return [exact];
   const words = target.toLowerCase().split(/\s+/).filter((w) => w && !ADJECTIVES.has(w) && !COLORS[w]);
@@ -51,6 +80,9 @@ export function resolveTargets(view: WorldView, target: string, all: boolean): E
   });
   if (hits.length === 0) return [];
   if (all) return hits.slice(0, MAX_TARGETS);
+  // When several match, an entity the user just worked on is the most likely meaning.
+  const edited = hits.filter((e) => e.userEditedAge !== undefined);
+  if (edited.length === 1) return edited;
   const closest = hits.reduce((best, e) => (Math.hypot(e.pos[0], e.pos[2]) < Math.hypot(best.pos[0], best.pos[2]) ? e : best));
   return [closest];
 }
@@ -64,6 +96,12 @@ function changeSet(b: Builder, e: EntityView, change: Change): Record<string, Js
   switch (change.kind) {
     case 'scale': {
       const s = Math.max(0.05, Math.min(50, r2(e.scale * change.factor)));
+      if (change.axis === 'y') {
+        // Taller / shorter: stretch only the height (the footprint stays where the user put it).
+        const transform: Record<string, Json> = { scale: [r2(e.scale), s, r2(e.scale)] };
+        if (e.shape === 'primitive' && e.height !== undefined) transform['position'] = [e.pos[0], r2(e.pos[1] + (e.height * (s - e.scale)) / 2), e.pos[2]];
+        return { transform };
+      }
       const transform: Record<string, Json> = { scale: [s, s, s] };
       // Primitives are centered: keep their bottom where it was so they stay on whatever supports them.
       if (e.shape === 'primitive' && e.height !== undefined) transform['position'] = [e.pos[0], r2(e.pos[1] + (e.height * (s - e.scale)) / 2), e.pos[2]];
@@ -109,7 +147,7 @@ function changeSet(b: Builder, e: EntityView, change: Change): Record<string, Js
 
 function describeChange(change: Change): string {
   switch (change.kind) {
-    case 'scale': return change.factor > 1 ? 'bigger' : 'smaller';
+    case 'scale': return change.axis === 'y' ? (change.factor > 1 ? 'taller' : 'shorter') : change.factor > 1 ? 'bigger' : 'smaller';
     case 'color': return `recolored ${change.color}`;
     case 'bouncy': return 'bouncy';
     case 'mass': return change.heavy ? 'heavier' : 'lighter';
@@ -190,7 +228,8 @@ export function applyEdits(b: Builder, intent: Intent, view: WorldView, library:
     }
     const targets = resolveTargets(view, edit.target, edit.all);
     if (targets.length === 0) {
-      done.push(`couldn't find "${edit.target}"`);
+      const locked = matchTargets(view, recencyOf(edit.target).rest || edit.target, edit.all).filter((e) => e.locked);
+      done.push(locked.length > 0 ? `left ${(locked[0] as EntityView).id} alone because you locked it (unlock it to let me change it)` : `couldn't find "${edit.target}"`);
       continue;
     }
     if (edit.kind === 'remove') {

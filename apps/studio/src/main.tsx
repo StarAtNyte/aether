@@ -14,6 +14,7 @@ import './styles/controls.css';
 import './styles/editor.css';
 import './styles/panels.css';
 import './styles/home.css';
+import './styles/editing.css';
 import { App } from './App';
 import { AppProvider, openRepo } from './app/appContext';
 import { createAppStore } from './app/appStore';

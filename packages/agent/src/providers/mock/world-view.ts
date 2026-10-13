@@ -28,6 +28,10 @@ export interface EntityView {
   hasLight: boolean;
   template: boolean;
   depth: number;
+  /** Locked by the user: must not be changed. */
+  locked: boolean;
+  /** The user edited it by hand recently (commits ago; 0 = latest), when known. */
+  userEditedAge?: number;
 }
 
 /** The parsed world. */
@@ -43,6 +47,8 @@ export interface WorldView {
   sky?: string;
   weather?: string;
   hasGround: boolean;
+  /** Ids the user edited by hand recently, newest first. */
+  recentEdits: string[];
 }
 
 function parseVec(text: string): V3 | undefined {
@@ -131,7 +137,7 @@ function parseEntityLine(line: string): EntityView | null {
   const parts = line.trim().split(' | ');
   const id = parts[0];
   if (!id || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) || parts.length < 4) return null;
-  const e: EntityView = { id, name: parts[1] === '-' ? '' : (parts[1] ?? ''), shape: '', pos: [0, 0, 0], scale: 1, sensor: false, behaviors: [], tags: [], hasLight: false, template: false, depth };
+  const e: EntityView = { id, name: parts[1] === '-' ? '' : (parts[1] ?? ''), shape: '', pos: [0, 0, 0], scale: 1, sensor: false, behaviors: [], tags: [], hasLight: false, template: false, depth, locked: false };
   parseShape(parts[2] ?? '', e);
   for (const part of parts.slice(3)) {
     if (part.startsWith('pos ')) e.pos = parseVec(part.slice(4)) ?? e.pos;
@@ -150,20 +156,30 @@ function parseEntityLine(line: string): EntityView | null {
       const m = /#[0-9a-fA-F]{6}/.exec(part);
       if (m) e.color = m[0];
     } else if (part.startsWith('light ')) e.hasLight = true;
-    else if (part.split(' ').includes('template')) e.template = true;
+    else if (part.startsWith('user-edited(')) e.userEditedAge = part.includes('just now') ? 0 : 1;
+    else {
+      const words = part.split(' ');
+      if (words.includes('template')) e.template = true;
+      if (part.includes('locked(')) e.locked = true;
+    }
   }
   return e;
 }
 
 /** Parse a world summary; an empty string yields an empty world. */
 export function parseWorldSummary(summary: string): WorldView {
-  const view: WorldView = { entityCount: 0, entities: [], elided: false, stateKeys: [], hud: [], ruleIds: [], testIds: [], hasGround: true };
+  const view: WorldView = { entityCount: 0, entities: [], elided: false, stateKeys: [], hud: [], ruleIds: [], testIds: [], hasGround: true, recentEdits: [] };
   let section: 'head' | 'entities' | 'rules' | 'tests' = 'head';
   for (const line of summary.split('\n')) {
     const t = line.trim();
     if (t === 'entities:') { section = 'entities'; continue; }
     if (t === 'rules:') { section = 'rules'; continue; }
     if (t === 'tests:') { section = 'tests'; continue; }
+    const recent = /^user recently edited by hand \(newest first\): ([^—]+)/.exec(t);
+    if (recent) {
+      view.recentEdits = (recent[1] as string).split(',').map((s) => s.trim()).filter((s) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(s));
+      continue;
+    }
     if (section === 'head') {
       const count = /^world .* entities=(\d+)/.exec(t);
       if (count) view.entityCount = Number(count[1]);
