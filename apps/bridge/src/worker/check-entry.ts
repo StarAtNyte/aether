@@ -233,7 +233,7 @@ export async function checkGeneratorFile(path: string): Promise<{ passed: boolea
     else lines.push(`silhouette: front coverage ${(sil.front.coverage * 100).toFixed(0)}%, top coverage ${(sil.top.coverage * 100).toFixed(0)}%, outline complexity ${sil.front.complexity.toFixed(2)}`);
     try {
       writeFileSync(PREVIEW, previewPng(first));
-      lines.push(`preview: ${PREVIEW} (front, side / top, three-quarter) — open it and judge proportions, detail and colours`);
+      lines.push(`preview: ${PREVIEW} (front, side / top, three-quarter) — open it and check proportions, detail and colours`);
     } catch {
       lines.push('preview: could not be written');
     }

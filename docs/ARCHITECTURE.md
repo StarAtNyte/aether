@@ -616,9 +616,12 @@ studio ──/api/local/complete──▶ server ──spawn──▶ worker pro
   across rounds; Claude Code runs restricted to Read/Write/Edit and
   `node check.mjs`, with every tool call screened. After each round the host
   runs the checker and feeds failures back, up to the budget shown in the
-  composer (rounds and minutes). Only the final artifact is read (no links
-  followed), screened and validated again in Aether's own sandbox before the
-  agent's normal generator validation; the workspace is always deleted. If
+  composer (rounds and minutes). The checker runs generator code only under
+  the Node permission model (workspace read, `out/` write, no processes or
+  workers); it confines itself when the agent starts it, and the host runs
+  its own untouched copy. Only the final artifact is read (no links
+  followed), screened and validated by the confined checker, then once more
+  by the studio's generator sandbox; the workspace is always deleted. If
   the build fails, the agent falls back to the quick single-shot coder.
 - **Durable queue.** Build jobs are persisted (record + capped JSONL event
   log, files 0600) and streamed as server-sent events with an `after` cursor,

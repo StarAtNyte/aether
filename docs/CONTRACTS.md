@@ -746,12 +746,25 @@ size/grounding/silhouette heuristics + a four-view `out/preview.png`, prints
 `RESULT: PASS|FAIL` and `- issue:` lines). Codex runs in its
 `workspace-write` sandbox (network off, approval `never`, `inherit: core`
 environment, web search/MCP off, one thread across rounds); Claude Code runs
-`claude -p --restricted --tools Read,Write,Edit,Bash` with only
-`Bash(node check.mjs:*)` allowed and every tool call screened (paths inside
-the workspace, no other command). After each round the host runs the checker
-and feeds failures back, up to the budget. Only the final artifact is read
-(no symlinks, ≤ 120 KB), parsed, statically screened and validated again in
-the host sandbox; the workspace is always deleted.
+`claude -p --restricted --tools Read,Write,Edit,Bash` with only `Read`,
+`Write(./out/**)`, `Edit(./out/**)` and `Bash(node check.mjs:*)` allowed and
+every tool call screened (reads inside the workspace, writes inside `out/`,
+no other command). The checker executes generator code only under the Node
+permission model (`confinedNodeArgs`: read the workspace, write `out/`, no
+processes/workers/addons); it re-spawns itself confined when the agent runs
+it, and the host runs its own pristine bundle confined (`runConfinedCheck`,
+which also reports `VALID: yes|no` independent of the quality heuristics).
+After each round the host runs the checker and feeds failures back, up to
+the budget. Only the final artifact is read (no links followed, ≤ 120 KB),
+parsed, statically screened and validated by the confined checker
+(`validateInWorkspace`); the studio validates it again in its generator
+sandbox. The workspace is always deleted.
+
+The generator sandbox worker script (`/assets/sandbox.worker-*.js`) is
+served with its own policy, `default-src 'none'; script-src 'self'
+'unsafe-eval' 'wasm-unsafe-eval'` (server `SANDBOX_WORKER_CSP` and
+`vercel.json`), because it compiles generator source with `new Function`;
+the page keeps the strict policy.
 
 ### Studio (`apps/studio/src/ai/`)
 
