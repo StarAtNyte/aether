@@ -95,3 +95,13 @@ describe('bridge account client', () => {
     expect(() => createBridgeAccountApi({ baseUrl: 'https://evil.example', token, fetch })).toThrow();
   });
 });
+
+describe('sign-in state', () => {
+  it('accepts only https verification links', async () => {
+    const { LoginStateSchema } = await import('../src');
+    const base = { backend: 'codex', running: true, output: '', startedAt: 1 };
+    expect(LoginStateSchema.safeParse({ ...base, url: 'https://auth.openai.com/codex/device' }).success).toBe(true);
+    expect(LoginStateSchema.safeParse({ ...base, url: 'javascript:alert(1)' }).success).toBe(false);
+    expect(LoginStateSchema.safeParse({ ...base, url: 'http://evil.example' }).success).toBe(false);
+  });
+});

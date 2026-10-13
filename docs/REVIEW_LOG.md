@@ -521,3 +521,145 @@ regression test:
   140.1 s, verified after two repairs, quality 88. Both worlds were built
   through the bridge with no fallback. All servers, bridges and browsers
   started for these runs were shut down.
+
+## Full editor, local AI and the coding-agent worker
+
+Scope: selection and transforms (multi-select, marquee, gizmo with space,
+pivot and snapping, align/distribute, duplicate, copy/paste across
+projects, group/ungroup, reparenting, hide/lock, focus), parametric
+procedural objects with worker regeneration and "Bake to mesh", mesh edit
+mode (vertex/edge/face, extrude, inset, subdivide, smooth, merge, normals,
+UV unwrap, soft selection), sculpt / vertex paint / scatter paint brushes,
+material editor and eyedropper, visual rule cards, behaviour / physics /
+joint forms, editable checks; the agent ↔ manual round trip (hand-edit marks,
+locks); in-app sign-in, conversation continuity per project and per-turn
+model/token display; local AI on the server (worker processes, deep builds
+by a coding agent, durable job queue with server-sent events, several Codex
+accounts).
+
+Defects found during the review and fixed (each with a test):
+
+1. **Generator sandbox blocked by the page CSP in production.** The sandbox
+   worker compiles model-written generators with `new Function`; served with
+   the page's `script-src 'self' 'wasm-unsafe-eval'` it failed with an
+   `EvalError`, so every custom or deep-built generator was rejected on the
+   production server and the static deployment. Only the sandbox worker
+   script now gets `default-src 'none'; script-src 'self' 'unsafe-eval'
+   'wasm-unsafe-eval'` (no network, no nested workers); the page policy is
+   unchanged. Server middleware and `vercel.json` agree (`csp.test.ts`), and
+   `e2e:local` places a deep-built generator in Chromium and Firefox.
+2. **The editor never passed its project id to `Studio`**, so per-project AI
+   preferences and the new per-project conversation key were silently
+   global. `EditorRoute` now passes it; `e2e:local` asserts the
+   `p-<projectId>` session key on every call.
+3. **Worker results could never parse.** `WorkerResult` was a zod
+   discriminated union with two `ok: true` variants, which throws at parse
+   time; every worker result would have been reported as a crash. Now a
+   plain union (worker runner tests run real child processes).
+4. **Codex agentic runs had no tool host.** The read-only lockdown disables
+   `code_mode_host`, which the agentic run also inherited, so a real deep
+   build could not touch its workspace (found by the real smoke run). The
+   agentic configuration keeps `code_mode_host`, `shell_tool`,
+   `unified_exec` and `view_image` and nothing else; the user's own Codex
+   skills are no longer injected (`skills.include_instructions = false`,
+   bundled skills off), for both quick and agentic runs.
+5. **A job could be reported finished before its workspace was deleted.**
+   The workspace is now removed before the final event is emitted.
+
+**SECURITY**
+
+- New boundaries and their validation: `/api/local/*` bodies and replies
+  (zod schemas in `@aether/agent` `local-protocol.ts`, JSON body guard with
+  depth/node/string caps, body limit, rate limits), route parameters
+  (project keys, account ids and job ids matched against strict patterns
+  before use), the `after` cursor (≤ 7 digits), worker stdin/stdout/stderr
+  (`WorkerJob` / `WorkerResult` / progress lines, 16 MB stdout cap, 4 KB
+  progress lines), persisted job records (re-validated on load), the account
+  registry (zod, ids only, ≤ 8 accounts), bridge `/v1/auth/*` and
+  `/v1/sessions/*`, mesh assets (strict base64 decoding, lengths, index
+  ranges, finite coordinates, per-mesh and world byte caps), clipboard
+  paste (`aether/entities` JSON validated as patches), every editor commit
+  (patch validation in `applyPatches`).
+- Local AI is never served by a hosted deployment: `AETHER_LOCAL_AI` is off
+  in production and when hosting markers are present (startup error if
+  forced on there), the Docker image sets `AETHER_HOSTED=1` and
+  `AETHER_LOCAL_AI=off`, and every `/api/local/*` request must arrive on a
+  loopback socket with a loopback `Host` and no proxy headers
+  (`X-Forwarded-For`, `X-Real-IP`, `Forwarded`, …). State-changing requests
+  need `Content-Type: application/json` and an allowed `Origin`, so another
+  site in the user's browser cannot drive it; DNS rebinding fails the Host
+  check.
+- Credentials: sign-in runs the CLIs' own commands; Aether only relays the
+  verification URL and one-time code they print (output sanitised, ANSI and
+  control characters stripped). No credential file is read, stored or
+  transmitted; the account registry holds `{id, label, home}` only (0600),
+  account homes are 0700, removal is limited to homes inside the registry
+  folder.
+- Subprocesses: argument arrays only, no shell; allowlisted environment (no
+  keys or tokens; the desktop session variables only for a browser sign-in);
+  timeouts everywhere; worker processes are detached into their own process
+  group and killed as a group (SIGTERM, then SIGKILL after 3 s), and all are
+  stopped on shutdown. Model ids reach CLI arguments only after
+  `MODEL_ID_RE`.
+- Untrusted code from the coding agent: Codex works inside its own
+  `workspace-write` sandbox (network off, approval `never`, core-only
+  environment, MCP/web search/plugins off); Claude Code is restricted to
+  Read, `Write(./out/**)`, `Edit(./out/**)` and `Bash(node check.mjs:*)`,
+  and every tool call is screened as it streams. The checker that executes
+  generator code runs under the Node permission model (read the workspace,
+  write only `out/`, no child processes, workers, addons or WASI): it
+  re-spawns itself confined when the agent starts it, and the host always
+  runs its own pristine bundle confined. `node:vm` is never used in the
+  server process for agent output. The final artifact is read without
+  following links (`lstat`, `realpath`, `O_NOFOLLOW`, ≤ 120 KB), statically
+  screened, validated by the confined checker, then validated once more by
+  the studio's generator sandbox. Workspaces are 0700 temp folders, always
+  deleted.
+- No `eval` outside the sandboxes (the sandbox worker's scoped CSP is the
+  only `'unsafe-eval'`), no `innerHTML`/`dangerouslySetInnerHTML` (the
+  sign-in link is a React `<a>` with `rel="noopener noreferrer"` and only
+  `https://` URLs pass the parser), no secrets in the repository, logs carry
+  metadata only. Path traversal: every path built from input is checked to
+  stay inside its root (`insideWorkspace`, account homes, job files by id
+  pattern). Prototype pollution: JSON bodies are screened by
+  `inspectUntrusted`, patches by core's key checks, persisted records by zod.
+- Dependencies: `esbuild` 0.28.2 (MIT, already in the lockfile through
+  `tsx`) is now a direct, exactly pinned dependency of `@aether/bridge`;
+  recorded in `THIRD_PARTY.md`. `npm audit --omit=dev`: 0 vulnerabilities.
+
+**PERFORMANCE**
+
+- Dragging: the gizmo moves a pivot proxy and the selected objects' render
+  nodes directly; the document is written once on release (one commit),
+  so a drag costs no patch, diff or physics rebuild per frame. Live sculpt
+  and paint previews update the existing GPU attributes in place
+  (`SculptSession.takeDirty` gives the changed vertex range for a partial
+  upload; `transformVerticesInto` and `previewMeshGeometry` reuse their
+  output buffers) and commit once per stroke.
+- Heavy CPU work is off the main thread: mesh operations and parameter
+  regeneration run in the compute worker (`ComputeClient`, debounced, latest
+  wins, timeout → worker replaced); AI calls and deep builds run in separate
+  processes on the server.
+- GPU disposal: replaced or removed mesh assets dispose their geometries
+  (shared attributes, one index buffer per material slot); overlays (wire,
+  markers, brush ring, joint lines) reuse their buffers and are disposed with
+  the overlay. See Verification for `e2e:memory`.
+- Caps / LRU: ≤ 128 meshes, 65 536 vertices and 131 072 triangles per mesh,
+  24 MB of mesh data per world, 20 000 painted scatter points; conversation
+  store LRU 64 with a 6 h idle limit; finished build jobs kept ≤ 100 with ≤ 2
+  000 events each; quick calls 1 running + ≤ 4 waiting, builds 1 running +
+  ≤ 4 waiting.
+- Bundle: the editor chunk grew from 480.9 KB to 634.5 KB (202 KB gzip) with
+  the editing UI and tools; the compute worker (240 KB) and the generator
+  sandbox worker load on demand; the local AI settings live in the lazy
+  settings chunk. Mesh-edit operations are 27 KB minified, so no further
+  split was worth a loading state. First-load JavaScript of the home page is
+  492 KB (index, React, vendor, core schemas); WebLLM stays a lazy 6.1 MB
+  chunk behind its opt-in.
+- Real local AI runs on this machine: a quick completion through a worker
+  process took 12.7 s with Codex (default model) and 4.4 s with Claude Code
+  (`haiku`); a deep build of a garden lantern with Codex (low effort, budget
+  2 rounds) passed the checker in round 1 and was accepted after host
+  validation in 64 s. The first deep-build attempt (before fix 4) showed the
+  progress stream and the clean failure path.
+

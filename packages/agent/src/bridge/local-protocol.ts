@@ -36,7 +36,7 @@ export const LoginStateSchema = z.object({
   backend: z.enum(BRIDGE_BACKENDS),
   accountId: z.string().regex(ACCOUNT_ID_RE).optional(),
   running: z.boolean(),
-  url: z.string().url().max(400).optional(),
+  url: z.string().max(400).regex(/^https:\/\/[^\s"'<>]+$/).optional(),
   code: z.string().max(16).optional(),
   output: z.string().max(4000),
   startedAt: z.number(),
