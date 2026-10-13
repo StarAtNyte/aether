@@ -232,19 +232,19 @@ describe('SceneSync scatter', () => {
   });
 
   it('enforces the total instance budget', async () => {
-    const { sync } = makeSync({ maxInstances: 1500 });
+    const { sync } = makeSync({ maxInstances: 1500, fields: false });
     await sync.setWorld(world([forest(), { ...forest(), id: 'forest-2' }]));
     expect(sync.instanceCount).toBe(1500);
     expect([...sync.getWarnings().values()].join(' ')).toMatch(/limited/);
   });
 
-  it('handles a 200k-instance scatter (clamped to the default laptop budget unless raised)', async () => {
+  it('handles a 200k-instance scatter as a plain layer (clamped to the default laptop budget unless raised)', async () => {
     const big = forest({ shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'cone', size: [1, 2, 1] }, count: 200_000, area: [400, 400], seed: 1 } });
-    const { sync } = makeSync();
+    const { sync } = makeSync({ fields: false });
     await sync.setWorld(world([big]));
     expect(sync.instanceCount).toBe(DEFAULT_MAX_INSTANCES);
     expect(sync.getWarnings().get('forest')).toMatch(/limited/);
-    const { sync: roomy } = makeSync({ maxInstances: 500_000 });
+    const { sync: roomy } = makeSync({ maxInstances: 500_000, fields: false });
     const t0 = performance.now();
     await roomy.setWorld(world([big]));
     expect(roomy.instanceCount).toBe(200_000);
@@ -252,7 +252,7 @@ describe('SceneSync scatter', () => {
   });
 
   it('clamps scatter layers to the triangle budget (instances × triangles per instance)', async () => {
-    const { sync } = makeSync({ maxScatterTriangles: 1200 });
+    const { sync } = makeSync({ maxScatterTriangles: 1200, fields: false });
     await sync.setWorld(world([forest()]));
     const tris = (meshes(sync, 'forest')[0]!.geometry.index?.count ?? 0) / 3;
     expect(tris).toBeGreaterThan(0);

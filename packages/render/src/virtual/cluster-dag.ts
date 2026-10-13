@@ -279,7 +279,10 @@ function formGroups(ids: number[], pool: Uint32Array, offsets: Uint32Array, sphe
   const vOff = new Uint32Array(vertexCount + 1);
   for (let k = 0; k < n; k++) {
     const c = ids[k] as number;
-    for (let i = offsets[c] as number; i < (offsets[c + 1] as number); i++) vOff[(weld[pool[i] as number] as number) + 1]++;
+    for (let i = offsets[c] as number; i < (offsets[c + 1] as number); i++) {
+      const v = (weld[pool[i] as number] as number) + 1;
+      vOff[v] = (vOff[v] as number) + 1;
+    }
   }
   for (let v = 0; v < vertexCount; v++) vOff[v + 1] = (vOff[v + 1] as number) + (vOff[v] as number);
   const vClusters = new Uint32Array(vOff[vertexCount] as number);
@@ -289,7 +292,7 @@ function formGroups(ids: number[], pool: Uint32Array, offsets: Uint32Array, sphe
     for (let i = offsets[c] as number; i < (offsets[c + 1] as number); i++) {
       const v = weld[pool[i] as number] as number;
       vClusters[(vOff[v] as number) + (fill[v] as number)] = k;
-      fill[v]++;
+      fill[v] = (fill[v] as number) + 1;
     }
   }
   // Morton order of cluster centres.
@@ -334,7 +337,7 @@ function formGroups(ids: number[], pool: Uint32Array, offsets: Uint32Array, sphe
               stamp[o] = round;
               shared[o] = 0;
             }
-            shared[o]++;
+            shared[o] = (shared[o] as number) + 1;
             if ((shared[o] as number) > bestShared) {
               bestShared = shared[o] as number;
               best = o;

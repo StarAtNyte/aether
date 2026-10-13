@@ -22,8 +22,11 @@ import {
   Quaternion,
   StaticDrawUsage,
   Vector3,
+  type BufferGeometry,
   type Light,
+  type Material,
   type Object3D,
+  type PerspectiveCamera,
   type Ray,
 } from 'three';
 import {
@@ -39,14 +42,18 @@ import {
   type ShapeSpec,
   type WorldDoc,
 } from '@aether/core';
-import type { GeneratorOutput, GeometrySource, KeyedOutput } from '../types';
+import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../types';
 import type { GeometryCache } from '../geometry/buffer-geometry';
 import type { MaterialCache } from '../materials/material-cache';
 import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMaterial } from '../materials/presets';
 import { createMaterial } from '../materials/material-cache';
 import { instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
-import { composeScatterMatrices, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
+import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
+import { ScatterField, FIELD_MIN_INSTANCES } from '../virtual/scatter-field';
+import { buildChunks } from '../virtual/field-culler';
+import { createLocalView, localView } from '../virtual/view';
+import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareBudget, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
 import { createEntityLight, disposeEntityLight, enforceShadowCap, updateLightParams } from './lights';
@@ -100,6 +107,12 @@ export interface SceneSyncOptions {
   onContentChanged?: (id: EntityId) => void;
   /** Draw identical static props as instanced batches (default true; never for the ghost variant). */
   staticBatching?: boolean;
+  /**
+   * Huge scatter layers (≥ {@link FIELD_MIN_INSTANCES}) become culled, LOD'd
+   * instance fields with these budgets (default {@link DEFAULT_FIELD_BUDGET});
+   * `false` keeps every layer a plain instanced mesh.
+   */
+  fields?: FieldBudget | false;
 }
 
 // Scratch objects (no per-frame allocations in applyTransforms).
@@ -194,6 +207,15 @@ export class SceneSync {
   private readonly batches: StaticBatches | null;
   /** Content changed since the batches were grouped. */
   private batchesStale = true;
+  /** Field budgets (null: fields disabled). */
+  private readonly fieldBudget: FieldBudget | null;
+  /** Nodes currently showing a scatter field. */
+  private readonly fieldNodes = new Set<EntityNode>();
+  private fieldInstances = 0;
+  private readonly lodChains = new LodChainCache();
+  /** A field was mounted or rebalanced since the last {@link updateView}. */
+  private viewDirty = false;
+  private readonly view = createLocalView();
 
   constructor(private readonly opts: SceneSyncOptions) {
     this.variant = opts.variant ?? 'standard';
@@ -203,6 +225,64 @@ export class SceneSync {
     this.placeholderGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
+    this.fieldBudget = this.variant === 'standard' && opts.fields !== false ? (opts.fields ?? DEFAULT_FIELD_BUDGET) : null;
+  }
+
+  /** Whether a scatter field needs a view update even if the camera did not move. */
+  get viewNeedsUpdate(): boolean {
+    return this.viewDirty;
+  }
+
+  /**
+   * Re-plan every scatter field for `camera` (call before drawing whenever
+   * the camera moved or {@link viewNeedsUpdate}); `heightPx` is the drawing
+   * buffer height. Returns true when instance buffers changed (redraw).
+   * Allocation-free.
+   */
+  updateView(camera: PerspectiveCamera, heightPx: number): boolean {
+    this.viewDirty = false;
+    if (this.fieldNodes.size === 0) return false;
+    let changed = false;
+    for (const node of this.fieldNodes) {
+      const field = node.field;
+      if (!field || !node.object.visible) continue;
+      field.group.updateWorldMatrix(true, false);
+      if (field.update(localView(camera, field.group, heightPx, this.view))) changed = true;
+    }
+    return changed;
+  }
+
+  /** Field statistics: instances held, drawn this frame, triangles drawn. */
+  fieldStats(): { fields: number; instances: number; drawnInstances: number; drawnTriangles: number } {
+    let drawnInstances = 0;
+    let drawnTriangles = 0;
+    for (const node of this.fieldNodes) {
+      if (!node.field || !node.object.visible) continue;
+      drawnInstances += node.field.culler.drawnInstances;
+      drawnTriangles += node.field.culler.drawnTriangles;
+    }
+    return { fields: this.fieldNodes.size, instances: this.fieldInstances, drawnInstances, drawnTriangles };
+  }
+
+  /**
+   * Triangles the scene represents at full detail: every mesh part, every
+   * scatter instance (instances × triangles per instance) and editable
+   * meshes. Compare with the renderer's drawn triangles. Not per frame.
+   */
+  sceneTriangles(): number {
+    let total = 0;
+    for (const node of this.nodes.values()) {
+      if (!node.object.visible) continue;
+      if (node.meshBundle) {
+        total += node.meshBundle.triangleCount;
+        continue;
+      }
+      if (!node.keyed) continue;
+      let tris = 0;
+      for (const part of node.keyed.output.parts) tris += Math.floor(part.indices.length / 3);
+      total += node.entity.shape.kind === 'scatter' ? tris * node.instances : tris;
+    }
+    return total;
   }
 
   /**
@@ -244,9 +324,9 @@ export class SceneSync {
     return this.nodes.size;
   }
 
-  /** Total scatter instances currently drawn. */
+  /** Total scatter instances currently mounted (plain instanced layers and fields). */
   get instanceCount(): number {
-    return this.totalInstances;
+    return this.totalInstances + this.fieldInstances;
   }
 
   /** Object3D of an entity. */
@@ -804,6 +884,11 @@ export class SceneSync {
   }
 
   private mountScatter(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput): void {
+    const requested = Math.min(shape.points ? shape.points.length : shape.count, MAX_SCATTER_INSTANCES);
+    if (this.fieldBudget && requested >= FIELD_MIN_INSTANCES && keyed.output.parts.length > 0) {
+      this.mountField(node, shape, keyed, requested, this.fieldBudget);
+      return;
+    }
     const available = this.maxInstances - this.totalInstances;
     const wanted = Math.min(shape.points ? shape.points.length : shape.count, MAX_SCATTER_INSTANCES);
     let trisPerInstance = 0;
@@ -827,6 +912,79 @@ export class SceneSync {
     node.scatterTriangles = placements.count * trisPerInstance;
     this.totalScatterTriangles += node.scatterTriangles;
     this.mountOutput(node, keyed, false, attr);
+  }
+
+  /**
+   * Mount a huge scatter layer as a {@link ScatterField}: packed placements
+   * sorted into chunks, automatic LOD levels from the QEM simplifier, and a
+   * share of the renderer's field triangle budget.
+   */
+  private mountField(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput, requested: number, budget: FieldBudget): void {
+    const available = Math.max(0, budget.maxInstances - this.fieldInstances);
+    const count = Math.min(requested, available);
+    if (count < requested) this.warn(node.id, `scatter field limited to ${count} of ${requested} instances (renderer field budget ${budget.maxInstances})`);
+    if (count === 0) return;
+    const placements = scatterPlacements(shape, count);
+    const lift = shape.of.kind === 'primitive' ? primitiveLift(shape.of.primitive, shape.of.size) : 0;
+    const sampler = shape.onSurface ? this.surfaceSampler(node, shape.onSurface) : undefined;
+    const radius = Math.max(1e-3, outputRadius(keyed.output));
+    const chunks = buildChunks(composeScatterPacked(placements, lift, sampler), placements.count, radius);
+    const chain = this.lodChains.get(keyed.key, keyed.output);
+    const parts = keyed.output.parts;
+    node.keyed = keyed;
+    node.partCount = parts.length;
+    const levels: { geometries: BufferGeometry[]; triangles: number }[] = [];
+    const materials: Material[] = [];
+    const handles: { key: string; hasColors: boolean; seeThrough: boolean; part: MeshPart }[] = [];
+    try {
+      for (let l = 0; l < chain.length; l++) {
+        const geometries: BufferGeometry[] = [];
+        for (let i = 0; i < parts.length; i++) {
+          const src = parts[i] as MeshPart;
+          const g = this.opts.geometries.acquire(lodOutputKey(keyed.key, l), i, lodPart(chain, l, i, src));
+          node.geometryKeys.push(g.key);
+          geometries.push(g.geometry);
+        }
+        levels.push({ geometries, triangles: (chain[l] as { triangles: number }).triangles });
+      }
+    } catch (e) {
+      this.warn(node.id, `invalid scatter mesh: ${errorMessage(e)}`);
+      return;
+    }
+    // Field capacity follows the field's size (a 400k+ layer may use the whole budget).
+    const cap = Math.max(budget.triangles * 0.15, Math.min(budget.triangles, (budget.triangles * placements.count) / 400_000));
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i] as MeshPart;
+      const hasColors = part.colors instanceof Float32Array && part.colors.length > 0;
+      const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length), { hasVertexColors: hasColors, doubleSided: false }, this.variant);
+      materials.push(handle.material);
+      handles.push({ key: handle.key, hasColors, seeThrough: handle.resolved.transparent && handle.resolved.opacity < SHADOW_OPACITY_MIN, part });
+    }
+    const field = new ScatterField(chunks, levels, materials, radius, cap);
+    // One binding per (level, part) mesh; each holds its own material reference.
+    for (let m = 0; m < field.meshes.length; m++) {
+      const h = handles[m % parts.length] as (typeof handles)[number];
+      const key = m < parts.length ? h.key : this.opts.materials.acquire(mergeMaterial(h.part.material, node.entity.material, parts.length), { hasVertexColors: h.hasColors, doubleSided: false }, this.variant).key;
+      node.bindings.push({ mesh: field.meshes[m] as InstancedMesh, partMaterial: h.part.material, hasColors: h.hasColors, doubleSided: false, materialKey: key, seeThrough: h.seeThrough, ownedMaterial: null });
+    }
+    node.field = field;
+    node.instances = placements.count;
+    node.scatterTriangles = 0;
+    this.fieldInstances += placements.count;
+    this.fieldNodes.add(node);
+    node.content.add(field.group);
+    this.rebalanceFields();
+    this.applyShadowFlags(node);
+  }
+
+  /** Re-split the field triangle budget after fields came or went. */
+  private rebalanceFields(): void {
+    this.viewDirty = true;
+    const budget = this.fieldBudget;
+    if (!budget || this.fieldNodes.size === 0) return;
+    const nodes = [...this.fieldNodes];
+    const shares = shareBudget(budget.triangles, nodes.map((n) => n.instances));
+    nodes.forEach((n, i) => n.field?.culler.setBudget(shares[i] as number));
   }
 
   /**
@@ -989,6 +1147,15 @@ export class SceneSync {
       if (b.ownedMaterial) retired.owned.push(b.ownedMaterial);
       if (b.mesh instanceof InstancedMesh) b.mesh.dispose();
     }
+    // Field instances are budgeted separately from plain instanced layers.
+    const fieldInstances = node.field ? node.instances : 0;
+    if (node.field) {
+      node.field.dispose();
+      node.field = null;
+      this.fieldInstances -= fieldInstances;
+      this.fieldNodes.delete(node);
+      this.rebalanceFields();
+    }
     node.content.clear();
     node.bindings = [];
     node.geometryKeys = [];
@@ -997,7 +1164,7 @@ export class SceneSync {
     node.partCount = 0;
     node.placeholder = false;
     node.failed = false;
-    this.totalInstances -= node.instances;
+    this.totalInstances -= node.instances - fieldInstances;
     node.instances = 0;
     this.totalScatterTriangles -= node.scatterTriangles;
     node.scatterTriangles = 0;

@@ -30,7 +30,10 @@ export function radixSortByKey(order: Uint32Array, keys: Uint32Array, n: number,
   let dst = scratch;
   for (let shift = 0; shift < 32; shift += bits) {
     count.fill(0);
-    for (let i = 0; i < n; i++) count[((keys[src[i] as number] as number) >>> shift) & mask]++;
+    for (let i = 0; i < n; i++) {
+      const b = ((keys[src[i] as number] as number) >>> shift) & mask;
+      count[b] = (count[b] as number) + 1;
+    }
     let sum = 0;
     for (let b = 0; b < buckets; b++) {
       const c = count[b] as number;
@@ -41,7 +44,7 @@ export function radixSortByKey(order: Uint32Array, keys: Uint32Array, n: number,
       const id = src[i] as number;
       const b = ((keys[id] as number) >>> shift) & mask;
       dst[count[b] as number] = id;
-      count[b]++;
+      count[b] = (count[b] as number) + 1;
     }
     const t = src;
     src = dst;

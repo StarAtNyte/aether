@@ -10,7 +10,7 @@
 import { rng, type PrimitiveKind, type ScatterShape, type Vec3 } from '@aether/core';
 
 /** Hard per-entity cap (matches the schema). */
-export const MAX_SCATTER_INSTANCES = 200_000;
+export const MAX_SCATTER_INSTANCES = 1_000_000;
 /** Candidates tried per instance when `minSpacing` is set (same as physics). */
 const MAX_SPACING_ATTEMPTS = 12;
 
@@ -215,4 +215,32 @@ export function composeScatterMatrices(p: ScatterPlacements, lift: number, surfa
     m[o + 15] = 1;
   }
   return m;
+}
+
+/**
+ * Like {@link composeScatterMatrices} but writes the compact field layout —
+ * x, y, z, s·cos(yaw), s·sin(yaw) per instance (20 bytes instead of 64) —
+ * consumed by the scatter-field culler (`FIELD_STRIDE` = 5).
+ */
+export function composeScatterPacked(p: ScatterPlacements, lift: number, surface?: SurfaceSampler): Float32Array {
+  const n = p.count;
+  const out = new Float32Array(n * 5);
+  for (let i = 0; i < n; i++) {
+    const s = p.scale[i] as number;
+    const yaw = p.yaw[i] as number;
+    const x = p.x[i] as number;
+    const z = p.z[i] as number;
+    let y = p.y ? (p.y[i] as number) : 0;
+    if (surface) {
+      const h = surface(x, z);
+      if (h === h && Number.isFinite(h)) y = h;
+    }
+    const o = i * 5;
+    out[o] = x;
+    out[o + 1] = y + lift * s;
+    out[o + 2] = z;
+    out[o + 3] = Math.cos(yaw) * s;
+    out[o + 4] = Math.sin(yaw) * s;
+  }
+  return out;
 }

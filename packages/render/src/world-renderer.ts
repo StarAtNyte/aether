@@ -90,6 +90,11 @@ export interface RendererOptions {
    * at least six) as one instanced draw each (default true).
    */
   staticBatching?: boolean;
+  /**
+   * Draw huge scatter layers as culled, LOD'd instance fields within the GPU
+   * class's field budget (default true; false = plain instanced meshes).
+   */
+  fields?: boolean;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -140,6 +145,11 @@ export interface RenderStats {
   resolutionScale?: number;
   /** Draw calls per pass saved by instancing identical static props. */
   batchedDrawsSaved?: number;
+  /** Triangles the scene represents at full detail (every instance, every mesh). */
+  sceneTriangles?: number;
+  /** Instances held by culled scatter fields, and how many of them the last frame drew. */
+  fieldInstances?: number;
+  fieldDrawn?: number;
 }
 
 /** A raycast hit on a document entity (see {@link WorldRenderer.raycastEntity}). */
@@ -405,6 +415,7 @@ export class WorldRenderer {
       ...common,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
+      fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
@@ -415,6 +426,7 @@ export class WorldRenderer {
       ...common,
       variant: 'ghost',
       maxInstances: 50_000,
+      fields: false,
       onContentChanged: () => {
         this.needsDraw = true;
       },
@@ -1265,6 +1277,10 @@ export class WorldRenderer {
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    // Culled instance fields re-plan when the view changed (or a field was just mounted).
+    if (this.viewChanged() || this.sync.viewNeedsUpdate) {
+      if (this.sync.updateView(this.perspective, Math.max(1, Math.round(this.cssHeight * this.renderer.getPixelRatio())))) this.needsDraw = true;
+    }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
     const animate = opts.animate !== false;
@@ -1291,6 +1307,27 @@ export class WorldRenderer {
 
   private refresh(): void {
     this.grow.withFullScale(() => this.refreshBounds());
+  }
+
+  /** Last camera pose + projection seen by {@link viewChanged}. */
+  private readonly lastView = new Float64Array(33);
+
+  /** True when the camera's world matrix or projection changed since the last call (allocation-free). */
+  private viewChanged(): boolean {
+    const cam = this.perspective;
+    cam.updateMatrixWorld();
+    const w = cam.matrixWorld.elements;
+    const p = cam.projectionMatrix.elements;
+    const last = this.lastView;
+    let changed = last[32] !== this.cssHeight * this.renderer.getPixelRatio();
+    for (let i = 0; i < 16; i++) {
+      if (last[i] !== w[i]) changed = true;
+      if (last[16 + i] !== p[i]) changed = true;
+      last[i] = w[i] as number;
+      last[16 + i] = p[i] as number;
+    }
+    last[32] = this.cssHeight * this.renderer.getPixelRatio();
+    return changed;
   }
 
   private refreshBounds(): void {
@@ -1667,6 +1704,7 @@ export class WorldRenderer {
   /** Frame statistics and resource counts. */
   stats(): RenderStats {
     const info = this.renderer.info;
+    const fields = this.sync.fieldStats();
     return {
       fps: Math.round(this.frameStats.fps * 10) / 10,
       frameMs: Math.round(this.frameStats.frameMs * 100) / 100,
@@ -1678,6 +1716,9 @@ export class WorldRenderer {
       instances: this.sync.instanceCount,
       resolutionScale: this.adaptive.scale,
       batchedDrawsSaved: this.sync.batchStats().drawCallsSaved,
+      sceneTriangles: this.sync.sceneTriangles(),
+      fieldInstances: fields.instances,
+      fieldDrawn: fields.drawnInstances,
     };
   }
 

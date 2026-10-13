@@ -11,7 +11,7 @@ export const LIMITS = Object.freeze({
   /** Maximum number of world rules. */
   MAX_RULES: 500,
   /** Maximum sum of `scatter.count` over all scatter entities. */
-  MAX_SCATTER_TOTAL: 500_000,
+  MAX_SCATTER_TOTAL: 2_000_000,
   /** Maximum number of custom generators in `world.generators`. */
   MAX_GENERATORS: 64,
   /** Maximum number of custom scripts in `world.scripts`. */

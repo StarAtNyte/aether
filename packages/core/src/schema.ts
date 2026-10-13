@@ -111,7 +111,11 @@ export const ScatterShape = z.object({
   kind: z.literal('scatter'),
   /** The repeated thing. Rendered with GPU instancing. */
   of: z.union([PrimitiveShape, ProceduralShape]),
-  count: z.number().int().min(1).max(200_000),
+  /**
+   * Instances. Layers of 2000+ render as culled, level-of-detail instance
+   * fields, so very large counts (a million trees) stay interactive.
+   */
+  count: z.number().int().min(1).max(1_000_000),
   /** Area (width, depth) centered on the entity position. */
   area: Vec2,
   seed: z.number().int().default(1),

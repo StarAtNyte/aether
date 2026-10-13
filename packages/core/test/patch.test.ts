@@ -521,16 +521,19 @@ describe('limits', () => {
 
   it('enforces MAX_SCATTER_TOTAL on add and update (and allows shrinking)', () => {
     const scatter = (count: number) => ({ kind: 'scatter', of: { kind: 'primitive', primitive: 'box' }, count, area: [10, 10] });
+    const max = LIMITS.MAX_SCATTER_TOTAL;
+    const big = 800_000; // below the per-entity cap of 1 000 000
     let w = apply(createWorld(), [
-      { op: 'add', entity: { id: 'a', shape: scatter(200_000) } },
-      { op: 'add', entity: { id: 'b', shape: scatter(200_000) } },
+      { op: 'add', entity: { id: 'a', shape: scatter(big) } },
+      { op: 'add', entity: { id: 'b', shape: scatter(big) } },
     ]).world;
-    expect(only(w, { op: 'add', entity: { id: 'c', shape: scatter(100_001) } })).toMatch(/scatter instances would total 500001 \(max 500000\)/);
-    w = apply(w, [{ op: 'add', entity: { id: 'c', shape: scatter(50_000) } }]).world;
-    expect(only(w, { op: 'update', id: 'c', set: { shape: { count: 100_001 } } })).toMatch(/would total 500001/);
-    expect(apply(w, [{ op: 'update', id: 'c', set: { shape: { count: 100_000 } } }]).errors).toEqual([]);
+    const room = max - 2 * big;
+    expect(only(w, { op: 'add', entity: { id: 'c', shape: scatter(room + 1) } })).toMatch(new RegExp(`scatter instances would total ${max + 1} \\(max ${max}\\)`));
+    w = apply(w, [{ op: 'add', entity: { id: 'c', shape: scatter(room / 2) } }]).world;
+    expect(only(w, { op: 'update', id: 'c', set: { shape: { count: room + 1 } } })).toMatch(new RegExp(`would total ${max + 1}`));
+    expect(apply(w, [{ op: 'update', id: 'c', set: { shape: { count: room } } }]).errors).toEqual([]);
     w = apply(w, [{ op: 'update', id: 'a', set: { shape: { count: 1 } } }]).world;
-    expect(apply(w, [{ op: 'add', entity: { id: 'd', shape: scatter(199_999) } }]).errors).toEqual([]);
+    expect(apply(w, [{ op: 'add', entity: { id: 'd', shape: scatter(big - 1) } }]).errors).toEqual([]);
   });
 });
 

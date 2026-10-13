@@ -78,7 +78,7 @@ export function buildClusters(positions: Float32Array, indices: Uint32Array, max
 
   // Vertex → triangle adjacency (CSR) over welded ids.
   const offs = new Uint32Array(vertexCount + 1);
-  for (let i = 0; i < triCount * 3; i++) offs[vid(i) + 1]++;
+  for (let i = 0; i < triCount * 3; i++) offs[vid(i) + 1] = (offs[vid(i) + 1] as number) + 1;
   for (let v = 0; v < vertexCount; v++) offs[v + 1] = (offs[v + 1] as number) + (offs[v] as number);
   const adj = new Uint32Array(triCount * 3);
   const fill = new Uint32Array(vertexCount);
@@ -86,7 +86,7 @@ export function buildClusters(positions: Float32Array, indices: Uint32Array, max
     for (let k = 0; k < 3; k++) {
       const v = vid(t * 3 + k);
       adj[(offs[v] as number) + (fill[v] as number)] = t;
-      fill[v]++;
+      fill[v] = (fill[v] as number) + 1;
     }
   }
 

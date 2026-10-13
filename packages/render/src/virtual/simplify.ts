@@ -141,7 +141,7 @@ interface Adjacency {
 function buildAdjacency(tri: Uint32Array, triCount: number, vertexCount: number, out: Adjacency | null): Adjacency {
   const offsets = out && out.offsets.length >= vertexCount + 1 ? out.offsets : new Uint32Array(vertexCount + 1);
   offsets.fill(0, 0, vertexCount + 1);
-  for (let i = 0; i < triCount * 3; i++) offsets[(tri[i] as number) + 1]++;
+  for (let i = 0; i < triCount * 3; i++) offsets[(tri[i] as number) + 1] = (offsets[(tri[i] as number) + 1] as number) + 1;
   for (let v = 0; v < vertexCount; v++) offsets[v + 1] = (offsets[v + 1] as number) + (offsets[v] as number);
   const tris = out && out.tris.length >= triCount * 3 ? out.tris : new Uint32Array(triCount * 3);
   const fill = new Uint32Array(vertexCount);
@@ -149,7 +149,7 @@ function buildAdjacency(tri: Uint32Array, triCount: number, vertexCount: number,
     for (let k = 0; k < 3; k++) {
       const v = tri[t * 3 + k] as number;
       tris[(offsets[v] as number) + (fill[v] as number)] = t;
-      fill[v]++;
+      fill[v] = (fill[v] as number) + 1;
     }
   }
   return { offsets, tris };

@@ -6,6 +6,7 @@ import type { Entity, EntityId, MaterialSpec } from '@aether/core';
 import type { KeyedOutput } from '../types';
 import type { EntityLight } from './lights';
 import type { MeshGeometryBundle } from '../geometry/mesh-asset';
+import type { ScatterField } from '../virtual/scatter-field';
 
 /** Key under `Object3D.userData` holding the owning entity id. */
 export const ENTITY_ID_KEY = 'aetherId';
@@ -59,6 +60,8 @@ export interface EntityNode {
   meshBundle: MeshGeometryBundle | null;
   instanceMatrix: InstancedBufferAttribute | null;
   instances: number;
+  /** Culled, LOD'd instance field (huge scatter layers) instead of one instanced mesh. */
+  field: ScatterField | null;
   /** Triangles drawn by this node's scatter instances (render-cost budget). */
   scatterTriangles: number;
   /** Incremented on every content rebuild; stale async results are dropped. */
@@ -98,6 +101,7 @@ export function createEntityNode(entity: Entity, transient: boolean): EntityNode
     meshBundle: null,
     instanceMatrix: null,
     instances: 0,
+    field: null,
     scatterTriangles: 0,
     token: 0,
     ready: Promise.resolve(),
