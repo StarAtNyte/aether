@@ -114,7 +114,7 @@ export const SignInRows = memo(function SignInRows({ backends, api, onChanged, t
       <ul className="backend-list" data-testid={testId}>
         {backends.map((b) => (
           <li key={b.id} className="backend-list__row">
-            <span className={`status-chip${b.loggedIn ? ' is-ok' : ' is-warn'}`}>{b.loggedIn ? 'Signed in' : b.installed ? 'Not signed in' : 'Not installed'}</span>
+            <span className={`status-chip${b.loggedIn ? ' is-ok' : ' is-warn'}`}>{b.loggedIn ? 'Ready' : b.installed ? 'Not signed in' : 'Not installed'}</span>
             <span className="backend-list__name">{b.label}</span>
             <span className="backend-list__detail">{b.loggedIn ? (b.account ?? b.detail) : b.detail}</span>
             {b.installed && api && !s.login?.running && (

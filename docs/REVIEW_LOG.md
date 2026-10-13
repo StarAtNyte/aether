@@ -663,3 +663,51 @@ Defects found during the review and fixed (each with a test):
   validation in 64 s. The first deep-build attempt (before fix 4) showed the
   progress stream and the clean failure path.
 
+**Verification**
+
+- `tsc -p tsconfig.json --noEmit`: 0 errors. Vitest: 101 files, 1 514 tests
+  (new: worker protocol and runner with real child processes, process-group
+  kill on timeout and cancel, allowlisted environment, agentic loop with a
+  fake Codex SDK, Claude tool screening, confined checker (reads, writes,
+  processes), artifact links, durable jobs (queue, frozen account, events,
+  restart, cancel, caps), worker text backend and conversations, sign-in
+  and accounts, `/api/local` guard and endpoints including SSE replay,
+  bridge `/v1/auth` and `/v1/sessions`, local client reconnects, deep build
+  in the agent, local connection ordering in the studio, sandbox worker
+  CSP). One run was fully green; a later run under heavy unrelated machine
+  load (load average ≈ 8 from a desktop browser) missed the physics timing
+  test "1000 dynamic boxes under 8 ms" (9.6 ms); physics code is unchanged
+  in this stage.
+- `npm run build -w @aether/studio`: ok. `npm run smoke`: 13/13.
+- `npm run e2e`: passed (Chromium WebGPU, Chromium WebGL2-only, Firefox).
+- `npm run e2e:editing`: Chromium WebGPU and Firefox WebGL2 passed (gizmo
+  move + undo, parameter regeneration, bake → extrude → hull collider,
+  sculpt stroke undo/redo, scatter paint ≈ 200 points, rule card edited and
+  checked in Play).
+- `npm run e2e:local` (new, costs nothing: scripted `/api/local` replies):
+  Chromium and Firefox — automatic mode picks Codex on this computer, a deep
+  build streams its progress, its generator passes the studio sandbox and is
+  placed, every call carries `p-<projectId>`, the done line names the model;
+  "Connect Codex" card and device sign-in with cancel.
+- `npm run e2e:connection`: Chromium and Firefox passed with the new sign-in
+  rows.
+- Real runs (owner's machine, four model calls in total): the three planned
+  worker calls (Codex and Claude Code quick completions, one Codex deep
+  build) plus one repeat of the deep build after fixing defect 4, which then
+  passed (64 s).
+- `npm run e2e:memory`: Chromium WebGPU passed (heap 83 → 105 MB over 20
+  cycles, GPU geometries/textures/materials constant, context-loss recovery
+  ok). **Firefox failed its tab-growth budget** (332 → 534 MB and 332 → 766
+  MB in two runs, budget +160 MB) with GPU object counts constant. A probe
+  isolated it to agent turns (12 play/stop cycles alone: 331 → 338 MB; 12
+  agent turns: 323 → 458 MB, falling slowly while idle). Not resolved in
+  this stage; see the open item below.
+
+**Open items**
+
+- Firefox tab memory grows across offline agent turns in `e2e:memory`
+  (above). Chromium's heap stays within budget and the renderer's GPU object
+  counts are constant, which points at garbage the Firefox process keeps
+  (agent turns, quality-view captures, undo history of very different
+  worlds) rather than leaked GPU objects, but this was not proven and the
+  budget was not relaxed.
