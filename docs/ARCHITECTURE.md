@@ -216,7 +216,9 @@ the character controller.
 **Stepping.** A fixed 1/60 s accumulator runs at most 5 substeps (to avoid a
 spiral of death), and `alpha` is exposed for interpolation. Events are
 de-duplicated per entity pair. Impulses come from contact-force events above
-twice the body's weight.
+twice the body's weight. Entity ids are interned to small integers, so pair
+keys are V8 small integers and draining a step's events builds no strings
+and allocates nothing for steady contacts (an allocation probe asserts it).
 
 **Incremental `sync(world, diff)`.** A body is rebuilt only when its physical
 definition changes. A pure move teleports it, and colour edits are ignored.
@@ -264,6 +266,9 @@ return { passed, results[], diagnostics[], simulatedSeconds, ms }
 Verification passes only when every test passes **and** there is no
 error-severity diagnostic. The compute budget counts world build,
 diagnostics and stepping, but not time spent yielded to the host.
+`verify` also takes `tests` (run only these indices: a shard), `diagnostics`
+(skip the static checks), `signal` (abort at the next step) and `onResult`
+(each test as soon as it is decided).
 Because the simulation is headless and fixed-step, seconds of gameplay finish
 in milliseconds. For example, 1000 dynamic boxes average about 2.3 ms per
 step. `summarizeReport` turns the report into compact text for the repair
@@ -280,6 +285,51 @@ How each test kind is decided:
 | `moves` | The target travels at least `distance` |
 | `topples` | The target's tilt from upright exceeds `degrees` |
 | `staysAbove` | The target never drops below `y` |
+
+### Verification off the main thread
+
+The studio never verifies on the UI thread. `VerificationService`
+(`apps/studio/src/engine/verify/`) sends the world to a pool of module
+workers (`verify.worker.ts`), each of which loads Rapier (and QuickJS, only
+for worlds with scripts) on first use:
+
+```
+Studio / AgentBridge ──VerifyPool.verify(world, colliders)──▶ planShards(tests, lanes)
+      ▲   ▲                        │ lane 1: tests [0, 3] + diagnostics ─▶ worker ─ progress … verified
+      │   └ progress (per test) ◀──┤ lane 2: tests [1, 2]               ─▶ worker ─ progress … verified
+      └──── merged report ◀────────┘ mergeShardReports (world.tests order)
+```
+
+- **Protocol.** zod on both ends, request ids, one terminal reply per
+  request (`verified`, `failed` with `cancelled`, …), `progress` messages in
+  between. The worker re-validates the world (`validateWorld`) and the
+  colliders (typed arrays, counts, a 16 M-number cap). Renderer colliders
+  are sent only for shapes the worker cannot rebuild from the document
+  (model-written generators, imported models).
+- **Fork verification.** With several tests and enough simulated time
+  (≥ 3 s), the tests are split across lanes by their horizons
+  (longest-processing-time first); every lane simulates the same
+  deterministic world from t = 0, so a test's verdict does not depend on its
+  lane (tested against a single run). Diagnostics run in the lightest lane.
+- **Lanes.** At most 2 workers, 1 with fewer than 4 logical cores, ≤ 4 GB
+  device memory or in low-memory mode. Idle workers are terminated after a
+  minute; physics is prefetched in a worker 2.5 s after the first frame
+  (idle callback, not in low-memory mode) and again when a prompt is sent.
+- **Robustness.** Cancellation (`AbortSignal` → `cancel` message, checked
+  at every 25 ms slice), a timeout per request (compute budget + 20 s cold
+  start; the worker is then terminated), and a fallback to the cooperative
+  main-thread verifier when module workers cannot start (old browsers, a
+  CSP) or a worker crashes.
+- **Live results.** Each decided test streams into the Verify panel and the
+  viewport pill ("Checking 3/7…"), coalesced to one store update per 60 ms;
+  the final line says how much physics was simulated, how fast and in how
+  many parallel workers.
+
+Measured (e2e, power-saving laptop, software GPU): while "Run checks"
+simulates a rendered world in two workers, the longest main-thread task is
+0 ms (Chromium) and the worst event-loop stall 53–62 ms; during agent turns
+no main-thread script other than the renderer's frame callback runs longer
+than 9 ms while a worker verifies.
 
 ## 8. Logic runtime
 
@@ -298,6 +348,9 @@ implement with a recording fake.
   behaviours on kinematic entities compose into one pose per tick (bob,
   spin and patrol stack instead of fighting each other). Dynamic bodies are
   steered by velocity.
+- **Scripts.** The world state is serialized once per tick for all script
+  calls (re-serialized only after a state write) and spliced into each
+  snapshot, instead of being stringified for every call.
 - **Safety rails.** At most 64 rule firings per tick, emit chains cut off at
   depth 8, 256 queued events, caps on spawns and zone checks, and unsafe
   property paths rejected. `tick` never throws; failures go to the log.
@@ -421,6 +474,40 @@ world under each preset) to `docs/screenshots/gallery/` for visual review.
 
 **Runtime path.** `applyTransforms(packed, order)` consumes the physics
 `Float32Array` without allocating, and handles bodies with parents.
+
+**Frame-loop performance.**
+
+- *Zero allocations per frame.* An allocation probe (V8 sampling heap
+  profiler, collected objects included) drives the per-frame code headless —
+  physics pose application for 500 bodies, camera rig, grow-in, highlighter,
+  weather (5000 particles), sky, static batches, BVH ray misses, adaptive
+  resolution — and asserts < 16 sampled bytes per frame from render code.
+  It found and fixed array destructuring in the weather update, Map entry
+  iteration in the highlighter and boxed doubles in the camera damping.
+- *Raycasts through a BVH.* Meshes with ≥ 512 triangles (terrain, big
+  generated props, editable meshes) raycast through a linear BVH (Morton
+  order, built at the next idle moment, refitted when vertices move). On a
+  131k-triangle terrain a ray costs 0.03–0.05 ms instead of 11–21 ms; this
+  covers picking, gizmo snapping, brushes and the chase camera's per-frame
+  occlusion ray.
+- *Static-prop instancing.* At least six identical static props (same
+  primitive, material and shadow flags) are drawn as one `InstancedMesh`.
+  Member meshes stay in the scene on a layer that cameras skip but
+  raycasters test, so picking, outlines, gizmos and runtime overrides work
+  unchanged; a member that changes material, moves out or is removed leaves
+  its batch.
+- *Adaptive resolution.* While continuous rendering stays below 40 fps for
+  1.5 s, the drawing buffer is scaled down in steps of 0.8 (to 0.5 of the
+  budget); it is restored after 5 s above 56 fps, and an upscale that has to
+  be undone doubles the wait. The scale only ever lowers the GPU budget's
+  ratio (low-memory mode included).
+- *Asynchronous captures.* Critique views and thumbnails render into a
+  reused render target set as the renderer's *output* target (same tone
+  mapping, color space and post pipeline as the screen) and are read back
+  with `readRenderTargetPixelsAsync` (WebGPU buffer mapping, WebGL2 pixel
+  buffer + fence), then encoded on a CPU-backed canvas with `toBlob`. A
+  synchronous canvas readback used to wait for the GPU: 24–37 s on a
+  software GPU, now none.
 `setEntityProperty` accepts only validated paths. `addTransient` and
 `removeTransient` handle runtime spawns. `clearRuntimeOverrides` resets the
 scene when play stops.
@@ -695,14 +782,22 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
 
 ## 14. Studio runtime
 
+- **Verification** runs in workers (see §7, "Verification off the main
+  thread"); the cooperative main-thread verifier is only the fallback.
 - **`Simulation`** owns the renderer and, in play mode, the physics world,
   the logic runtime and the player character controller. It runs a fixed
   60 Hz loop outside React: `physics.step` → `logic.tick` →
   `renderer.applyTransforms` → `renderer.render`. Edit mode renders on
   demand. Play snapshots the document by reference (documents are
   immutable). Stop discards every runtime change and restores the pre-play
-  world exactly. Rapier is imported lazily on the first Play or Verify, and
-  QuickJS only when a world with scripts runs or is validated. The loop
+  world exactly. Rapier is imported lazily (on the main thread
+  only on the first Play; verification loads it inside its worker) and
+  QuickJS only when a world with scripts runs or is validated. Neither is
+  modulepreloaded: the first frame never waits for them. Rapier's WebAssembly
+  ships as a hashed `.wasm` file shared by the page and the workers and is
+  compiled with `instantiateStreaming` (a build plugin replaces the 4 MB
+  base64 string of `rapier3d-compat` after checking the shipped file is
+  byte-identical); the main Rapier chunk went from 4.3 MB to 0.22 MB. The loop
   stops while the page is hidden; after 30 s without input an edit-mode
   viewport also stops redrawing animated weather.
 - **Memory.** Low-memory mode (`src/lib/memory.ts`) is a setting
@@ -766,10 +861,12 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
 
 ## 16. Known limitations
 
-- Several identical primitive entities are not yet batched into one draw call
-  (scatter *is* instanced).
-- Verification runs on the main thread, cooperatively yielding every 8 ms,
-  rather than in a dedicated Worker.
+- The first frame after a new world or new lighting compiles three.js node
+  materials on the main thread (measured 0.7–4 s on a power-saving laptop
+  with a software GPU); verification and captures no longer add to it.
+- Static-prop instancing covers identical static primitives only; generated
+  (procedural) props are unique per seed, and distant scatter has no
+  impostor LOD yet.
 - `spawn` copies the template entity but not its children.
 - Prismatic joints between bodies with different starting orientations align
   the slide axis only approximately.

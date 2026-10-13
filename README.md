@@ -72,7 +72,10 @@ explicit state, so the AI can be held to account:
   interpenetrations, floating objects and broken joints, with concrete fixes
   ("move crate-3 up to y=1.25"). `settle` drops objects and writes their rest
   poses back as patches. `fork()` and `snapshot()`/`restore()` clone a running
-  simulation.
+  simulation. Verification runs in background workers, and worlds with
+  several tests are verified as parallel forks: the checks panel fills in
+  test by test ("12 s of physics in 340 ms · 2 parallel workers") while the
+  viewport stays fully interactive.
 - **Procedural generator library.** 35 deterministic built-in generators
   (trees, rocks, houses, towers, bridges, windmills, vehicles, terrain,
   islands, mountains, crystals, portals and more), built on a typed-array
@@ -437,7 +440,8 @@ All LLM output and all user input are treated as untrusted.
     bounded queue.
 - **Server hardening.** CORS allowlist and foreign-origin guard, per-IP token
   buckets, a daily token budget, per-route body limits, an upstream timeout
-  with abort on client disconnect, a strict CSP, `nosniff`, COOP,
+  with abort on client disconnect, a strict CSP (the physics verification
+  worker gets a tighter one: WebAssembly and same-origin fetches only), `nosniff`, COOP,
   `X-Frame-Options: DENY`, HSTS in production, JSON-only errors with no stack
   traces, atomic and capped file storage, and share links with a hashed edit
   token.
@@ -468,13 +472,25 @@ All LLM output and all user input are treated as untrusted.
   after a lost GPU context) drops to ratio 1, about 1 MP, no MSAA or bloom,
   1024² shadows and a 40-entry undo history. Caches are bounded by bytes as
   well as entries. A lost GPU context is recovered with a fresh renderer.
+- **Verification in workers.** Headless verification runs in up to two
+  module workers (a protocol validated on both ends, cancellation, timeouts,
+  a main-thread fallback). Independent tests are split across both workers
+  and simulated in parallel; results stream into the UI as they are decided.
+  While checks run on a rendered world, the longest main-thread task
+  measured in the e2e run is 0 ms.
 - **Responsive UI.** Rendering in edit mode happens on demand, and an idle
   editor (30 s without input) stops redrawing animated weather; the loop
-  stops while the tab is hidden. Verification
-  yields to the browser every 8 ms. Rapier (a multi-MB WASM chunk) loads
-  lazily on the first Play or Verify, and QuickJS only for worlds with
-  scripts. Stats and HUD updates go to React at
-  4 Hz, never every frame.
+  stops while the tab is hidden. Captures (critique views, thumbnails) read
+  pixels back asynchronously, so a slow GPU never freezes the page. Rapier
+  loads lazily (in the worker for verification, on the main thread only for
+  Play) as a cached `.wasm` file compiled while streaming (the Rapier chunk
+  went from 4.3 MB to 0.22 MB), and QuickJS only for worlds with scripts.
+  Stats and HUD updates go to React at 4 Hz, never every frame.
+- **Frame loop.** An allocation probe asserts the per-frame render path
+  allocates nothing; large meshes raycast through a BVH (a 131k-triangle
+  terrain: 0.03–0.05 ms per ray instead of 11–21 ms), identical static props
+  are drawn instanced, and the resolution adapts while continuous rendering
+  stays under 40 fps.
 - **Measured.** 1000 dynamic boxes step in about 2.3 ms on average (8 ms
   budget). 1000 patches apply in about 40 ms. All 35 built-in generators run
   in about 0.4 s in total. A 1000-entity logic tick takes under 2 ms. The
@@ -486,7 +502,7 @@ All LLM output and all user input are treated as untrusted.
 | --- | --- | --- |
 | Unit and integration | `npm test` | About 1,200 Vitest tests across 78 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 13 prompts, including all 8 gallery examples. Every resulting world is re-validated and re-verified independently. |
-| End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
+| End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
 | Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |

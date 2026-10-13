@@ -318,6 +318,7 @@ export interface RendererOptions {
   onContextLost?: (info: { backend: 'webgpu' | 'webgl2'; message: string }) => void;   // device/context lost: renderer stops drawing; host replaces it
   growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
   adaptiveResolution?: boolean;                           // default true: scale the drawing buffer down while continuous frames stay < 40 fps
+  staticBatching?: boolean;                               // default true: ≥ 6 identical static primitives draw as one InstancedMesh
 }
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
@@ -932,3 +933,19 @@ decided), lanes, worker }`, coalesced to ≤ 1 store write per 60 ms); the
 final state adds `lanes`, `worker` and `simulatedSeconds`. The verification
 worker is served with `default-src 'none'; script-src 'self'
 'wasm-unsafe-eval'; connect-src 'self'` (server and `vercel.json`).
+
+Render performance helpers (`@aether/render`, additive):
+
+```ts
+accelerateRaycast(mesh, idle?): boolean      // BVH raycast for meshes with ≥ BVH_MIN_TRIANGLES (512); tree built at idle, refitted on vertex edits
+triangleBvh(geometry): TriangleBvh | null    // cached per geometry (rebuilt when the index or the position array changes)
+class AdaptiveResolution { scale; enabled; record(dt, continuous): boolean; reset(): void }   // ADAPTIVE_DEFAULTS: < 40 fps → ×0.8 steps to 0.5
+class StaticBatches { rebuild(nodes): boolean; update(): boolean; drawCallsSaved; count; clear() }   // used by SceneSync
+SceneSync.updateBatches(): boolean; SceneSync.batchStats(): { batches; drawCallsSaved }; BATCHED_LAYER = 7   // raycasters must enable it
+RenderStats.resolutionScale?: number; RenderStats.batchedDrawsSaved?: number
+```
+
+`WorldRenderer.screenshot()` and `renderViews()` read pixels back
+asynchronously (output render target + `readRenderTargetPixelsAsync`) and
+fall back to the synchronous canvas readback once if that fails.
+
