@@ -19,6 +19,14 @@ export const STUDIO_DIST = join(REPO_ROOT, 'apps/studio/dist');
 const HEALTH_TIMEOUT_MS = 30_000;
 
 /**
+ * Chromium flags for GPU coverage on GPU-less machines. The first three
+ * enable WebGPU and software GL; the last two route WebGPU to SwiftShader's
+ * Vulkan, without which headless Chromium returns a null adapter and the
+ * studio (correctly) falls back to WebGL2.
+ */
+export const CHROME_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
+
+/**
  * Resolve the Chromium executable: `AETHER_E2E_CHROME`, then Playwright's
  * pinned build, then any cached Playwright Chromium, then system Chrome.
  */

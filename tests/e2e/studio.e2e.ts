@@ -26,15 +26,8 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
-import { REPO_ROOT, STUDIO_DIST, findChrome, startServer } from './support/env';
+import { CHROME_ARGS, REPO_ROOT, STUDIO_DIST, findChrome, startServer } from './support/env';
 
-/**
- * Chromium flags for GPU coverage on GPU-less machines. The first three
- * enable WebGPU and software GL; the last two route WebGPU to SwiftShader's
- * Vulkan, without which headless Chromium returns a null adapter and the
- * studio (correctly) falls back to WebGL2.
- */
-const CHROME_ARGS = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
 const VIEWPORT = { width: 1440, height: 900 };
 const SCREENSHOT_DIR = join(REPO_ROOT, 'docs/screenshots');
 
@@ -544,7 +537,7 @@ async function main(): Promise<void> {
   try {
     const executablePath = findChrome();
     log(`server ${server.url}, chromium ${executablePath}`);
-    browser = await chromium.launch({ executablePath, args: CHROME_ARGS });
+    browser = await chromium.launch({ executablePath, args: [...CHROME_ARGS] });
     const results: Array<{ name: string; metrics: RunMetrics }> = [];
     results.push({ name: 'webgpu', metrics: await run(browser, server.url, { name: 'webgpu', forceWebGL2: false, expectBackend: 'webgpu', full: true, screenshots: true }) });
     results.push({ name: 'webgl2-only', metrics: await run(browser, server.url, { name: 'webgl2-only', forceWebGL2: true, expectBackend: 'webgl2', full: false, screenshots: false }) });

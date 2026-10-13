@@ -16,21 +16,9 @@ import { initPhysics, summarizeReport, verify } from '@aether/physics';
 import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, catalog, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { createVerifyLogic } from '../apps/studio/src/engine/headlessHost';
-import { EXAMPLE_PROMPTS } from '../apps/studio/src/lib/examples';
+import { DEFAULT_PROMPTS } from './smoke-prompts';
 
-/**
- * Prompts covering the showcase themes plus every example-gallery card
- * (one per line of the report). `npx tsx scripts/smoke.ts "<prompt>"` runs
- * only the given prompts.
- */
-const DEFAULT_PROMPTS: readonly string[] = [
-  'a cozy forest camp with a campfire and tents',
-  'a domino run that knocks over a bell',
-  'a coin collecting game: grab 8 coins before time runs out',
-  'an asteroid field in space',
-  'a bowling alley with ten pins',
-  ...EXAMPLE_PROMPTS.map((e) => e.prompt),
-];
+/** `npx tsx scripts/smoke.ts "<prompt>"` runs only the given prompts. */
 const PROMPTS: readonly string[] = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_PROMPTS;
 
 /** Headless verification limits (same order of magnitude as the studio). */
