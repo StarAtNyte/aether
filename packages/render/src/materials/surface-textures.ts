@@ -10,13 +10,17 @@
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 import { rng } from '@aether/core';
 
-/** Surfaces with procedural detail. */
-export type SurfaceKind = 'lava' | 'water';
+/**
+ * Surfaces with procedural detail. `ground` is the soft albedo mottling of
+ * the environment ground plane (never assigned by a preset, see
+ * `ResolveOptions.surface`).
+ */
+export type SurfaceKind = 'lava' | 'water' | 'ground';
 
 /** Texture edge length in pixels (power of two, tileable). */
 export const SURFACE_TEXTURE_SIZE = 128;
 /** Real-world size of one texture tile in metres, per surface. */
-export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 11, water: 7 });
+export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 11, water: 7, ground: 7 });
 /** Lava crust brightness in the emissive mask (cracks are 1). */
 export const LAVA_CRUST_GLOW = 0.12;
 /** Water normal map strength. */
@@ -25,10 +29,14 @@ export const WATER_NORMAL_SCALE = 0.45;
 export const SURFACE_FLOW: Readonly<Record<SurfaceKind, readonly [number, number]>> = Object.freeze({
   lava: Object.freeze([0.004, 0.011]) as readonly [number, number],
   water: Object.freeze([0.012, -0.008]) as readonly [number, number],
+  ground: Object.freeze([0, 0]) as readonly [number, number],
 });
+/** Darkest / brightest albedo multiplier of the ground mottling (≤ 1: an 8-bit texture cannot brighten). */
+export const GROUND_DETAIL_RANGE: readonly [number, number] = Object.freeze([0.82, 1]) as readonly [number, number];
 
 const LAVA_SEED = 0x1a7a;
 const WATER_SEED = 0x3a7e;
+const GROUND_SEED = 0x6a0d;
 /** Worley cells per tile side (lava plates). */
 const LAVA_CELLS = 5;
 
@@ -179,6 +187,38 @@ export function waterPixels(size = SURFACE_TEXTURE_SIZE): { normal: Uint8Array; 
   return { normal, color };
 }
 
+/**
+ * Ground: RGBA8 albedo multiplier pixels (grey, sRGB) of soft fractal
+ * mottling with sparse darker flecks, so a lawn, beach or plaza reads as a
+ * surface with texture rather than one flat color. Tiles seamlessly; the
+ * vertex-color macro variation of the ground plane breaks up the repetition.
+ */
+export function groundPixels(size = SURFACE_TEXTURE_SIZE): Uint8Array {
+  const n = Math.max(8, Math.floor(size));
+  const random = rng(GROUND_SEED);
+  // No octave coarser than a sixth of the tile: coarse per-tile blobs would read as a grid in the distance
+  // (the ground's vertex tint supplies the large-scale variation instead).
+  const soft = tileFbm(random, n, 6, 3);
+  const grain = tileFbm(random, n, 16, 2);
+  const [lo, hi] = GROUND_DETAIL_RANGE;
+  const out = new Uint8Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    const s = soft[i] as number;
+    const g = grain[i] as number;
+    // Contrast-stretched soft patches plus fine grain; flecks where the grain dips.
+    const patch = smoothstep(0.25, 0.75, s);
+    const fleck = smoothstep(0.38, 0.28, g) * 0.35;
+    const v = Math.max(0, Math.min(1, patch * 0.75 + g * 0.25 - fleck));
+    const t = Math.round(255 * (lo + (hi - lo) * v));
+    const o = i * 4;
+    out[o] = t;
+    out[o + 1] = t;
+    out[o + 2] = t;
+    out[o + 3] = 255;
+  }
+  return out;
+}
+
 /** Textures of one surface kind. */
 export interface SurfaceMaps {
   map: Texture;
@@ -220,9 +260,14 @@ function scrollMaps(maps: SurfaceMaps, flow: readonly [number, number], dt: numb
 export class SurfaceTextures {
   private lava: SurfaceMaps | null = null;
   private water: SurfaceMaps | null = null;
+  private ground: SurfaceMaps | null = null;
 
   /** Textures of `kind`, created on first use. */
   get(kind: SurfaceKind): SurfaceMaps {
+    if (kind === 'ground') {
+      if (!this.ground) this.ground = { map: makeTexture(groundPixels(), SURFACE_TEXTURE_SIZE, true, SURFACE_TILE_METRES.ground), emissiveMap: null, normalMap: null };
+      return this.ground;
+    }
     if (kind === 'lava') {
       if (!this.lava) {
         const px = lavaPixels();
@@ -239,7 +284,7 @@ export class SurfaceTextures {
     return this.water;
   }
 
-  /** True once any surface texture exists (callers skip {@link advance} otherwise). */
+  /** True once any flowing surface texture exists (callers skip {@link advance} otherwise; the ground is static). */
   get active(): boolean {
     return this.lava !== null || this.water !== null;
   }
@@ -253,12 +298,13 @@ export class SurfaceTextures {
 
   /** Release every texture. */
   dispose(): void {
-    for (const maps of [this.lava, this.water]) {
+    for (const maps of [this.lava, this.water, this.ground]) {
       maps?.map.dispose();
       maps?.emissiveMap?.dispose();
       maps?.normalMap?.dispose();
     }
     this.lava = null;
     this.water = null;
+    this.ground = null;
   }
 }

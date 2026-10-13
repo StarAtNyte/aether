@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MeshStandardMaterial } from 'three';
 import { primitiveOutput } from '@aether/procgen';
-import { lavaPixels, LAVA_CRUST_GLOW, SURFACE_FLOW, SURFACE_TEXTURE_SIZE, SURFACE_TILE_METRES, SurfaceTextures, waterPixels } from '../src/materials/surface-textures';
+import { GROUND_DETAIL_RANGE, groundPixels, lavaPixels, LAVA_CRUST_GLOW, SURFACE_FLOW, SURFACE_TEXTURE_SIZE, SURFACE_TILE_METRES, SurfaceTextures, waterPixels } from '../src/materials/surface-textures';
 import { MaterialCache, createMaterial } from '../src/materials/material-cache';
 import { resolveMaterial } from '../src/materials/presets';
 import { boxProjectedUvs, partToBufferGeometry } from '../src/geometry/buffer-geometry';
@@ -132,5 +132,43 @@ describe('box-projected uvs', () => {
     }
     expect(hi - lo).toBeCloseTo(30, 0);
     g.dispose();
+  });
+});
+
+describe('ground detail', () => {
+  it('is deterministic grey mottling within the detail range, with visible variation', () => {
+    const a = groundPixels(32);
+    expect(Array.from(a)).toEqual(Array.from(groundPixels(32)));
+    let lo = 255;
+    let hi = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      expect(a[i]).toBe(a[i + 1]);
+      expect(a[i]).toBe(a[i + 2]);
+      expect(a[i + 3]).toBe(255);
+      lo = Math.min(lo, a[i] as number);
+      hi = Math.max(hi, a[i] as number);
+    }
+    expect(lo).toBeGreaterThanOrEqual(Math.floor(255 * GROUND_DETAIL_RANGE[0]));
+    expect(hi).toBeLessThanOrEqual(Math.ceil(255 * GROUND_DETAIL_RANGE[1]));
+    expect(hi - lo).toBeGreaterThan(30);
+  });
+
+  it('is only applied on request, and never overrides a preset surface', () => {
+    expect(resolveMaterial({ preset: 'grass' }).surface).toBeNull();
+    expect(resolveMaterial({ preset: 'grass' }, { surface: 'ground' }).surface).toBe('ground');
+    expect(resolveMaterial({ preset: 'lava' }, { surface: 'ground' }).surface).toBe('lava');
+  });
+
+  it('is static (never scrolls) and is disposed with the other surfaces', () => {
+    const s = new SurfaceTextures();
+    const g = s.get('ground');
+    expect(g.map.repeat.x).toBeCloseTo(1 / SURFACE_TILE_METRES.ground, 10);
+    expect(s.active).toBe(false);
+    s.advance(10);
+    expect(g.map.offset.x).toBe(0);
+    let disposed = 0;
+    g.map.addEventListener('dispose', () => disposed++);
+    s.dispose();
+    expect(disposed).toBe(1);
   });
 });

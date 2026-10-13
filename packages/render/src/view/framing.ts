@@ -132,7 +132,7 @@ export interface FramingPoseOptions {
   aspect: number;
   /** Horizontal viewing direction (degrees, 0 = camera on +Z looking toward −Z). Default 28. */
   azimuthDeg?: number;
-  /** Elevation above the horizon in degrees. Default grows from 24° (small scenes) to 32° (large). */
+  /** Elevation above the horizon in degrees. Default grows from 24° (small scenes) to 28° (large), see {@link ELEVATION_RANGE}. */
   elevationDeg?: number;
   /** Ground height the camera must stay above (null = no ground). Default 0. */
   groundY?: number | null;
@@ -141,8 +141,8 @@ export interface FramingPoseOptions {
   /**
    * Degrees the view is tilted up from looking straight at the content
    * center, so the horizon shows. Default {@link DEFAULT_SKY_TILT} with a
-   * ground, half of it without one; halved again for scenes larger than
-   * 60 m (their distant haze already fills the top of the frame).
+   * ground, half of it without one; 30 % less for scenes larger than 60 m
+   * (their distant haze already fills the top of the frame).
    */
   tiltDeg?: number;
 }
@@ -155,6 +155,13 @@ export const MIN_CAMERA_CLEARANCE = 1.2;
 export const DEFAULT_SKY_TILT = 8;
 /** Share of the tilt that may crop the foreground instead of pushing the camera back. */
 const TILT_CROP = 0.4;
+/**
+ * Default camera elevation (degrees) for small → large content. Kept low
+ * enough that even a 60 m village leaves a band of sky above the horizon.
+ */
+export const ELEVATION_RANGE: readonly [number, number] = Object.freeze([24, 28]) as readonly [number, number];
+/** Share of the sky tilt dropped for scenes larger than 60 m (their haze already fills the top of the frame). */
+const LARGE_SCENE_TILT_CUT = 0.3;
 /** Lowest view pitch (degrees below the horizon) a tilt may leave. */
 const MIN_PITCH = 6;
 
@@ -172,9 +179,9 @@ export function framingPose(framing: Framing, opts: FramingPoseOptions): Framing
   const groundY = opts.groundY === undefined ? 0 : opts.groundY;
   const hasGround = groundY !== null && Number.isFinite(groundY);
   // Large scenes see far, hazy ground near the top of the frame already: tilt less.
-  const tiltDefault = (hasGround ? DEFAULT_SKY_TILT : DEFAULT_SKY_TILT / 2) * (1 - 0.5 * Math.min(1, Math.max(0, (radius - 20) / 40)));
+  const tiltDefault = (hasGround ? DEFAULT_SKY_TILT : DEFAULT_SKY_TILT / 2) * (1 - LARGE_SCENE_TILT_CUT * Math.min(1, Math.max(0, (radius - 20) / 40)));
   const tiltDeg = opts.tiltDeg !== undefined && Number.isFinite(opts.tiltDeg) ? Math.max(0, Math.min(25, opts.tiltDeg)) : tiltDefault;
-  const elevationDeg = opts.elevationDeg ?? 24 + 8 * Math.min(1, Math.max(0, (radius - 8) / 50));
+  const elevationDeg = opts.elevationDeg ?? ELEVATION_RANGE[0] + (ELEVATION_RANGE[1] - ELEVATION_RANGE[0]) * Math.min(1, Math.max(0, (radius - 8) / 50));
   const elevation = (elevationDeg * Math.PI) / 180;
   const pitch = (Math.max(Math.min(MIN_PITCH, elevationDeg), elevationDeg - tiltDeg) * Math.PI) / 180;
   const tilt = elevation - pitch;

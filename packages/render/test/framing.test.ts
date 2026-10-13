@@ -65,6 +65,16 @@ describe('framingPose', () => {
     expect(27.5 - pitch).toBeGreaterThan(5);
   });
 
+  it('large scenes (a 50 m village) in a portrait viewport still keep a band of sky in frame', () => {
+    for (const radius of [50, 80, 120]) {
+      const pose = framingPose({ center: [0, 3, 0], radius }, { fovDeg: 55, aspect: 0.84 });
+      const pitch = (Math.atan2(pose.position[1] - pose.target[1], Math.hypot(pose.position[0] - pose.target[0], pose.position[2] - pose.target[2])) * 180) / Math.PI;
+      expect(27.5 - pitch).toBeGreaterThan(5);
+      // Still an elevated view, not a ground-level shot.
+      expect(pitch).toBeGreaterThan(15);
+    }
+  });
+
   it('never puts the camera below the ground, and wider viewports bring it closer', () => {
     const low = framingPose({ center: [0, -50, 0], radius: 5 }, { fovDeg: 55, aspect: 1, groundY: 0 });
     expect(low.position[1]).toBeGreaterThanOrEqual(MIN_CAMERA_CLEARANCE);

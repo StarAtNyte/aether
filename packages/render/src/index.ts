@@ -19,7 +19,7 @@ export { createEntityLight, updateLightParams, enforceShadowCap, LOCAL_LIGHT_SCA
 
 export { MATERIAL_PRESETS, resolveMaterial, materialKey, mergeMaterial, type ResolvedMaterial, type PresetDef, type MaterialVariant, type ResolveOptions } from './materials/presets';
 export { MaterialCache, createMaterial, type MaterialHandle } from './materials/material-cache';
-export { SurfaceTextures, lavaPixels, waterPixels, SURFACE_TILE_METRES, type SurfaceKind, type SurfaceMaps } from './materials/surface-textures';
+export { SurfaceTextures, lavaPixels, waterPixels, groundPixels, GROUND_DETAIL_RANGE, SURFACE_TILE_METRES, type SurfaceKind, type SurfaceMaps } from './materials/surface-textures';
 
 export { partToBufferGeometry, partKey, GeometryCache, InvalidMeshError, boxProjectedUvs } from './geometry/buffer-geometry';
 export { createProcgenGeometrySource, primitiveKey, type ProcgenSourceOptions } from './geometry/procgen-source';

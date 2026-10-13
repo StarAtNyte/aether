@@ -66,14 +66,22 @@ export function groundHue(x: number, z: number): number {
 }
 
 /** Per-channel multipliers of the hue drift at full strength (warm = +, cool = −). */
-const HUE_DRIFT: readonly [number, number, number] = [0.07, 0.025, -0.09];
+const HUE_DRIFT: readonly [number, number, number] = [0.11, 0.04, -0.14];
 
+/**
+ * Per-vertex tint (macro variation) and metre UVs (u = x, v = −z) so the
+ * ground detail texture covers the same real-world area on the plane and the
+ * skirt, whatever the ground size.
+ */
 function tintVertices(g: BufferGeometry): void {
   const pos = g.getAttribute('position');
   const colors = new Float32Array(pos.count * 3);
+  const uvs = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
+    uvs[i * 2] = x;
+    uvs[i * 2 + 1] = -z;
     const t = groundTint(x, z);
     const w = groundHue(x, z);
     colors[i * 3] = t * (1 + HUE_DRIFT[0] * w);
@@ -81,6 +89,7 @@ function tintVertices(g: BufferGeometry): void {
     colors[i * 3 + 2] = t * (1 + HUE_DRIFT[2] * w);
   }
   g.setAttribute('color', new BufferAttribute(colors, 3));
+  g.setAttribute('uv', new BufferAttribute(uvs, 2));
 }
 
 function createGroundGeometry(size: number): PlaneGeometry {
@@ -266,7 +275,7 @@ export class EnvironmentRig {
     }
     if (!spec) return;
     const size = Math.max(1, Math.min(20_000, Number.isFinite(spec.size) ? spec.size : 400));
-    const handle = this.materials.acquire(spec.material, { hasVertexColors: true });
+    const handle = this.materials.acquire(spec.material, { hasVertexColors: true, surface: 'ground' });
     this.groundMaterialKey = handle.key;
     const ground = new Mesh(createGroundGeometry(size), handle.material);
     ground.name = 'aether:ground';

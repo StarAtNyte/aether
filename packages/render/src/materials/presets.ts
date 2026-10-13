@@ -103,6 +103,12 @@ export interface ResolveOptions {
   hasVertexColors?: boolean;
   /** Render both faces (planes, cards). */
   doubleSided?: boolean;
+  /**
+   * Procedural detail for presets that define none (the environment ground
+   * plane passes `'ground'`). A preset's own surface (lava, water) wins.
+   * Only geometry with metre UVs should ask for it.
+   */
+  surface?: SurfaceKind;
 }
 
 /**
@@ -130,7 +136,7 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     flatShading: typeof spec?.flatShading === 'boolean' ? spec.flatShading : (p.flatShading ?? false),
     vertexColors: opts.hasVertexColors === true && spec?.vertexColors !== false,
     doubleSided: opts.doubleSided === true,
-    surface: p.surface ?? null,
+    surface: p.surface ?? opts.surface ?? null,
   };
 }
 
