@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
+import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -180,6 +180,8 @@ const MIN_VISIBLE_SHARE = 0.06;
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 const JPEG_QUALITY = 0.8;
+/** Capture render targets kept (critique views and thumbnails use two sizes). */
+const MAX_CAPTURE_TARGETS = 2;
 const VIEW_NAMES: ReadonlySet<string> = new Set(['top', 'front', 'side', 'iso']);
 
 // Scratch (per-frame paths must not allocate).
@@ -249,6 +251,28 @@ function grabRegion(source: HTMLCanvasElement, out: HTMLCanvasElement, sx: numbe
   return out.toDataURL(mime, JPEG_QUALITY);
 }
 
+/**
+ * Encode RGBA8 pixels (rows bottom-up when `flipY`, as WebGL reads them) as
+ * a data URL through a reused 2D canvas. Pixels are written row by row so a
+ * flip needs no second buffer.
+ */
+function encodePixels(pixels: Uint8Array, w: number, h: number, mime: string, flipY: boolean, out: HTMLCanvasElement): string {
+  if (out.width !== w) out.width = w;
+  if (out.height !== h) out.height = h;
+  const ctx = out.getContext('2d');
+  if (!ctx) throw new Error('2D canvas unavailable');
+  const image = ctx.createImageData(w, h);
+  const row = w * 4;
+  for (let y = 0; y < h; y++) {
+    const src = (flipY ? h - 1 - y : y) * row;
+    image.data.set(pixels.subarray(src, src + row), y * row);
+  }
+  // Opaque output (JPEG has no alpha; PNG/WebP thumbnails should not be see-through).
+  for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+  ctx.putImageData(image, 0, 0);
+  return out.toDataURL(mime, JPEG_QUALITY);
+}
+
 function grab(source: HTMLCanvasElement, w: number, h: number, mime: string): string {
   const out = document.createElement('canvas');
   out.width = w;
@@ -285,6 +309,13 @@ export class WorldRenderer {
   private post: PostPipeline | null = null;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
   private viewCanvas: HTMLCanvasElement | null = null;
+  /**
+   * Reused targets of asynchronous captures by size (see {@link renderToPixels}),
+   * at most two (critique views + thumbnails), so captures never reallocate GPU memory per turn.
+   */
+  private readonly captureTargets = new Map<string, RenderTarget>();
+  /** Asynchronous readback failed once on this device: captures use the synchronous canvas path. */
+  private asyncCaptureFailed = false;
   private boundsDirty = true;
   /** Something visible changed since the last drawn frame (on-demand rendering). */
   private needsDraw = true;
@@ -1360,7 +1391,30 @@ export class WorldRenderer {
     const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
+    const aspect = this.perspective.aspect;
     try {
+      if (!this.asyncCaptureFailed) {
+        try {
+          // Asynchronous readback: the GPU renders and copies while the page keeps running.
+          const pixels = await this.grow.withFullScale(() =>
+            this.renderToPixels(w, h, () => {
+              this.perspective.aspect = w / h;
+              this.perspective.updateProjectionMatrix();
+              // Same look as the viewport (bloom, vignette): the post pipeline writes to the output target too.
+              this.draw();
+            }, () => {
+              this.perspective.aspect = aspect;
+              this.perspective.updateProjectionMatrix();
+              decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
+            }),
+          );
+          return encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.viewCanvas ??= document.createElement('canvas')));
+        } catch (e) {
+          this.asyncCaptureFailed = true;
+          log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
+          for (const o of decorations) o.visible = false;
+        }
+      }
       // Captures always show the finished world, never a mid-grow frame.
       return this.grow.withFullScale(() =>
         this.withTemporarySize(w, h, () => {
@@ -1373,6 +1427,51 @@ export class WorldRenderer {
     } finally {
       decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
     }
+  }
+
+  /**
+   * Render into the reusable capture target, with the same tone mapping and
+   * output color space as the screen (the target is set as the renderer's
+   * output target), and start an asynchronous readback. `restore` runs
+   * synchronously right after the draw is submitted, so the next animation
+   * frame renders the normal view; only the readback is awaited (WebGPU
+   * buffer mapping, WebGL2 pixel-buffer + fence), so a slow GPU never
+   * freezes the page. Returns RGBA8 pixels.
+   */
+  private renderToPixels(w: number, h: number, draw: () => void, restore: () => void): Promise<Uint8Array> {
+    const key = `${w}x${h}`;
+    let rt = this.captureTargets.get(key);
+    if (rt) {
+      // Most recently used last.
+      this.captureTargets.delete(key);
+    } else {
+      rt = new RenderTarget(w, h, { depthBuffer: true, generateMipmaps: false });
+      if (this.captureTargets.size >= MAX_CAPTURE_TARGETS) {
+        const [oldestKey, oldest] = this.captureTargets.entries().next().value as [string, RenderTarget];
+        this.captureTargets.delete(oldestKey);
+        oldest.dispose();
+      }
+    }
+    this.captureTargets.set(key, rt);
+    const r = this.renderer;
+    const prevOutput = r.getOutputRenderTarget();
+    const prevTarget = r.getRenderTarget();
+    let pending: Promise<unknown>;
+    try {
+      r.setOutputRenderTarget(rt);
+      r.setRenderTarget(null);
+      draw();
+      pending = r.readRenderTargetPixelsAsync(rt, 0, 0, w, h);
+    } finally {
+      r.setOutputRenderTarget(prevOutput);
+      r.setRenderTarget(prevTarget);
+      restore();
+      this.needsDraw = true;
+    }
+    return pending.then((data) => {
+      if (!(data instanceof Uint8Array) || data.length < w * h * 4) throw new Error('unexpected capture pixel format');
+      return data;
+    });
   }
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
@@ -1439,6 +1538,26 @@ export class WorldRenderer {
           this.prepareBatches();
           this.renderer.render(this.scene, cam);
       };
+      if (!this.asyncCaptureFailed) {
+        try {
+          // Asynchronous readback per view (see renderToPixels): submit every view, then await the copies.
+          const reads = this.grow.withFullScale(() =>
+            list.map((view, i) => this.renderToPixels(px, px, () => renderView(view), () => (i === list.length - 1 ? restore() : undefined))),
+          );
+          const out = (this.viewCanvas ??= document.createElement('canvas'));
+          const views: string[] = [];
+          for (const read of reads) views.push(encodePixels(await read, px, px, 'image/jpeg', this.backend === 'webgl2', out));
+          return views;
+        } catch (e) {
+          this.asyncCaptureFailed = true;
+          log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
+          restored = false;
+          for (const o of hidden) o.visible = false;
+          if (fog instanceof FogExp2) fog.density = 0;
+          else this.scene.fog = null;
+          this.scene.background = new Color(this.env.skyState.horizon);
+        }
+      }
       return this.grow.withFullScale(() => {
         // Render into a corner of the existing drawing buffer (viewport + scissor) instead of
         // resizing it: a resize reallocates the canvas buffers (MSAA, depth, post targets) twice
@@ -1595,6 +1714,8 @@ export class WorldRenderer {
     this.post?.dispose();
     this.post = null;
     this.postGen++;
+    for (const rt of this.captureTargets.values()) rt.dispose();
+    this.captureTargets.clear();
     if (this.viewCanvas) {
       // Release the 2D backing store now rather than at GC time.
       this.viewCanvas.width = 0;
