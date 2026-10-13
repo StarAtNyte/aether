@@ -30,6 +30,14 @@ function smoothstep(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * Radius along unit direction (dx, dy, dz) of the superellipsoid
+ * |x|^n + |y|^n + |z|^n = 1: n = 2 is a sphere, larger n a rounded box.
+ */
+function superRadius(dx: number, dy: number, dz: number, n: number): number {
+  return (Math.abs(dx) ** n + Math.abs(dy) ** n + Math.abs(dz) ** n) ** (-1 / n);
+}
+
 /** Fractal noise (4 octaves, lacunarity 2.1). */
 function fbm3(n: Noise, x: number, y: number, z: number, octaves: number): number {
   let sum = 0;
@@ -116,15 +124,12 @@ function sculptedCube(api: InternalApi, n: number, sculpt: Sculpt, cavity: Float
 /** Colossal head on a shoulder block (Easter-Island-like), unit height 2 centred at y = 0. */
 function headSculpt(noise: Noise, erosion: number): Sculpt {
   return (dx, dy, dz, out) => {
-    // Tall base volume.
-    let x = dx * 0.5;
-    let y = dy;
-    let z = dz * 0.47;
-    // Squarer cross-section (superellipse) and a flat crown.
-    const sq = 1 + 0.18 * Math.min(1, Math.abs(dx * dz) * 4);
-    x *= sq;
-    z *= sq;
-    if (y > 0.78) y = 0.78 + (y - 0.78) * 0.25;
+    // Tall, blocky base volume (rounded-box superellipsoid) with a flat crown.
+    const sr = superRadius(dx, dy, dz, 3.4);
+    let x = dx * sr * 0.46;
+    let y = dy * sr;
+    let z = dz * sr * 0.42;
+    if (y > 0.82) y = 0.82 + (y - 0.82) * 0.3;
     // Shoulder block below the chin.
     const below = smoothstep(-0.62, -0.95, dy);
     x *= 1 + 0.55 * below;
@@ -163,14 +168,12 @@ function headSculpt(noise: Noise, erosion: number): Sculpt {
 function monolithSculpt(noise: Noise, erosion: number, carved: boolean): Sculpt {
   return (dx, dy, dz, out) => {
     const taper = 1 - 0.18 * smoothstep(-0.2, 1, dy);
-    // Boxy slab: push directions toward the faces.
-    const p = 0.35;
-    const sx = Math.sign(dx) * Math.abs(dx) ** p;
-    const sz = Math.sign(dz) * Math.abs(dz) ** p;
-    let x = (dx * 0.4 + sx * 0.6) * 0.34 * taper;
-    let z = (dz * 0.4 + sz * 0.6) * 0.22 * taper;
-    let y = dy;
-    if (y > 0.8) y = 0.8 + (y - 0.8) * 0.55;
+    // Slab: a rounded box (superellipsoid), slightly tapering, with a weathered crown.
+    const sr = superRadius(dx, dy, dz, 6);
+    let x = dx * sr * 0.34 * taper;
+    let z = dz * sr * 0.2 * taper;
+    let y = dy * sr;
+    if (y > 0.9) y = 0.9 + (y - 0.9) * 0.4;
     let groove = 0;
     if (carved) {
       const band = Math.abs(Math.sin(dy * 26));

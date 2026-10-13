@@ -7,8 +7,10 @@ import { expectValidPart, sameGeometry, windingMismatch } from './helpers';
 const REQUIRED_IDS = [
   'terrain', 'island', 'mountain', 'tree-pine', 'tree-oak', 'tree-palm', 'bush', 'rock', 'grass-tuft', 'flowers', 'mushroom',
   'house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'lamp-post', 'bench', 'table', 'chair', 'crate',
-  'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal',
+  'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus',
 ];
+/** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
+const SCULPTURES = new Set(['colossus']);
 const TERRAIN = new Set(['terrain', 'island', 'mountain']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 
@@ -33,8 +35,9 @@ function randomParams(spec: Record<string, ParamSpec>, random: () => number): Re
         break;
     }
   }
-  // terrain resolution is capped in random runs to keep the suite fast
+  // terrain resolution and sculpture detail are capped in random runs to keep the suite fast
   if ('resolution' in out) out.resolution = Math.min(64, out.resolution as number);
+  if ('detail' in out) out.detail = 1;
   return out;
 }
 
@@ -52,6 +55,8 @@ function checkOutput(id: string, out: GeneratorOutput): void {
   expect(out.stats.triangles).toBe(tris);
   if (TERRAIN.has(id)) {
     expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
+  } else if (SCULPTURES.has(id)) {
+    expect(tris).toBeLessThanOrEqual(12 * 256 * 256);
   } else if (TREES.has(id)) {
     expect(tris).toBeLessThan(2000);
   } else {
@@ -92,7 +97,7 @@ describe('built-in generators', () => {
       });
 
       it('is deterministic for a given seed and varies with the seed', () => {
-        const small: Record<string, Json> = TERRAIN.has(id) ? { resolution: 24 } : {};
+        const small: Record<string, Json> = TERRAIN.has(id) ? { resolution: 24 } : SCULPTURES.has(id) ? { detail: 1 } : {};
         const a = generateBuiltinSync(id, small, 7);
         const b = generateBuiltinSync(id, small, 7);
         expect(sameGeometry(a, b)).toBe(true);
@@ -105,7 +110,7 @@ describe('built-in generators', () => {
         for (let i = 0; i < 4; i++) checkOutput(id, generateBuiltinSync(id, randomParams(gen.params, random), i + 11));
         const maxVariant = gen.params.variant?.max ?? 0;
         for (let v = 0; v <= maxVariant; v++) {
-          checkOutput(id, generateBuiltinSync(id, TERRAIN.has(id) ? { variant: v, resolution: 32 } : { variant: v }, 3));
+          checkOutput(id, generateBuiltinSync(id, TERRAIN.has(id) ? { variant: v, resolution: 32 } : SCULPTURES.has(id) ? { variant: v, detail: 1 } : { variant: v }, 3));
         }
         checkOutput(id, generateBuiltinSync(id, { size: 'huge', height: null, color: 42, variant: 99, unknown: { deep: [1] } } as Record<string, Json>, 5));
       });

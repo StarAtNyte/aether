@@ -512,7 +512,7 @@ world under each preset) to `docs/screenshots/gallery/` for visual review.
 frame can draw. Both plan on the CPU and submit ordinary instanced or
 indexed draws, so WebGPU, WebGL2 and Firefox behave the same; both are
 re-planned in `draw()` whenever the camera (or a capture camera) changed,
-throttled to one re-plan per 90 ms while the camera keeps moving, and are
+throttled to one re-plan per 120 ms while the camera keeps moving, and are
 allocation-free per frame (allocation probe).
 
 - *Virtual geometry* (`virtual/`). Parts with ≥ 20 000 triangles are split

@@ -970,7 +970,7 @@ RenderBudget.fieldInstances / fieldTriangles / virtualTriangles   // per GPU cla
 // SceneSync (GPU-free)
 SceneSyncOptions.fields?: { maxInstances; triangles } | false      // layers ≥ FIELD_MIN_INSTANCES (2000) become fields
 SceneSyncOptions.virtual?: { triangles; dag?: DagClientOptions } | false   // parts ≥ VIRTUAL_MIN_TRIANGLES (20 000)
-SceneSync.updateView(camera, heightPx, nowMs = 0): boolean   // re-plan fields + cuts; throttled to VIEW_INTERVAL_MS (90) when nowMs > 0
+SceneSync.updateView(camera, heightPx, nowMs = 0): boolean   // re-plan fields + cuts; throttled to VIEW_INTERVAL_MS (120) when nowMs > 0
 SceneSync.viewNeedsUpdate: boolean; SceneSync.scaleGeometryActive: boolean
 SceneSync.fieldStats(); SceneSync.virtualStats(); SceneSync.sceneTriangles()
 

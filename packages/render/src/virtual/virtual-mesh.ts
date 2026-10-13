@@ -13,8 +13,8 @@
  *
  * Plain indexed draws only, so the WebGPU and WebGL2 backends behave alike.
  */
-import { BufferAttribute, BufferGeometry, DynamicDrawUsage, FrontSide, Mesh, type Material, type PerspectiveCamera } from 'three';
-import { assembleCut, createCutScratch, cutIndexCount, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
+import { BufferAttribute, BufferGeometry, FrontSide, Mesh, type Material, type PerspectiveCamera } from 'three';
+import { assembleCut, createCutScratch, cutIndexCount, LOD_STRIDE, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
 import { createLocalView, localView } from './view';
 
 /** Mesh parts with at least this many triangles are drawn as virtual geometry. */
@@ -37,7 +37,12 @@ interface Instance {
   count: number;
   indexCount: number;
   hash: number;
+  /** Camera (object space) xyz and threshold of the last selection (typed: no boxed doubles); NaN = never. */
+  last: Float64Array;
 }
+
+/** A shadow caster keeps its cut while the camera moved less than this share of its distance. */
+const CASTER_REUSE = 0.015;
 
 /** See the module docs. */
 export class VirtualGroup {
@@ -64,8 +69,9 @@ export class VirtualGroup {
       if (a instanceof BufferAttribute) this.attributes.push([name, new BufferAttribute(a.array, a.itemSize, a.normalized)]);
     }
     const cap = Math.max(3, Math.floor(Math.max(1, capacityTriangles)) * 3);
+    // Static usage on purpose: three re-uploads DynamicDrawUsage buffers on every use (every
+    // mesh, every pass). Changes go up through version bumps with update ranges instead.
     this.index = new BufferAttribute(new Uint32Array(cap), 1);
-    this.index.setUsage(DynamicDrawUsage);
     this.sourceBox = source.boundingBox;
     this.sourceSphere = source.boundingSphere;
   }
@@ -100,7 +106,7 @@ export class VirtualGroup {
     mesh.raycast = noRaycast;
     // The cut is planned on the CPU per cluster: three's per-object culling would only add work.
     mesh.frustumCulled = false;
-    this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1 });
+    this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN) });
     return mesh;
   }
 
@@ -142,6 +148,24 @@ export class VirtualGroup {
         cut.threshold = VIRTUAL_ERROR_PX * this.thresholdScale;
         // Shadow casters keep off-screen clusters (they may shadow the view); LOD still applies.
         const culls = !source.castShadow;
+        if (!culls && inst.count > 0) {
+          // Inline (a call here boxed doubles in the probe): reuse the caster's previous cut?
+          const last = inst.last;
+          const lx = last[0] as number;
+          if (last[3] === cut.threshold && lx === lx) {
+            const dx = v.cx - lx, dy = v.cy - (last[1] as number), dz = v.cz - (last[2] as number);
+            const moved = dx * dx + dy * dy + dz * dz;
+            const dist2 = v.cx * v.cx + v.cy * v.cy + v.cz * v.cz;
+            if (moved < dist2 * CASTER_REUSE * CASTER_REUSE || this.farOutside(v.planes)) {
+              total += inst.indexCount;
+              continue;
+            }
+          }
+        }
+        inst.last[0] = v.cx;
+        inst.last[1] = v.cy;
+        inst.last[2] = v.cz;
+        inst.last[3] = cut.threshold;
         cut.planes = culls ? v.planes : null;
         cut.backface = culls && (source.material as Material).side === FrontSide;
         inst.count = selectCut(this.dag, cut, inst.selected, this.scratch);
@@ -194,6 +218,23 @@ export class VirtualGroup {
       this.index.needsUpdate = true;
     }
     return true;
+  }
+
+  /**
+   * True when the mesh's root LOD sphere lies outside one of the frustum
+   * planes by more than three radii: a shadow caster that far off screen
+   * keeps its previous cut (LOD error in its shadow is invisible).
+   */
+  private farOutside(pl: Float64Array): boolean {
+    const roots = this.dag.roots;
+    if (roots.length === 0) return false;
+    const o = (roots[0] as number) * LOD_STRIDE + 1;
+    const lod = this.dag.lod;
+    const x = lod[o] as number, y = lod[o + 1] as number, z = lod[o + 2] as number, r = lod[o + 3] as number;
+    for (let p = 0; p < pl.length; p += 4) {
+      if ((pl[p] as number) * x + (pl[p + 1] as number) * y + (pl[p + 2] as number) * z + (pl[p + 3] as number) < -3 * r) return true;
+    }
+    return false;
   }
 
   /** Dispose every instance geometry (shared GPU buffers go with them). */

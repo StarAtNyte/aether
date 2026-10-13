@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { History, validateWorld, type WorldDoc } from '@aether/core';
 import { createStarterWorld } from '../src/lib/starterWorld';
@@ -64,7 +66,8 @@ describe('thumbnails', () => {
     expect(fitThumbnail(new Blob([new Uint8Array(MAX_THUMBNAIL_BYTES + 1)]))).toBe(false);
   });
   it('ships one template thumbnail path per template', () => {
-    expect(TEMPLATES).toHaveLength(8);
+    expect(TEMPLATES).toHaveLength(9);
+    for (const t of TEMPLATES) expect(existsSync(fileURLToPath(new URL(`../public${templateThumbnail(t.slug)}`, import.meta.url))), t.slug).toBe(true);
     expect(templateThumbnail('coin-island')).toBe('/templates/coin-island.webp');
     expect(templateBySlug('domino-run')?.title).toBe('Domino run');
     expect(templateBySlug('../etc')).toBeUndefined();

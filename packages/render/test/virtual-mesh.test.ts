@@ -89,6 +89,16 @@ describe('VirtualGroup', () => {
     expect(tight.group.drawnTriangles).toBeLessThanOrEqual(600);
   });
 
+  it('keeps shadow-caster cuts while the camera barely moved, and re-selects after a real move', () => {
+    const { group, meshes } = setup();
+    for (const m of meshes) (m.parent!.children[0] as Mesh).castShadow = true;
+    group.update(camera(10), 800);
+    const before = meshes.map((m) => ({ ...m.geometry.drawRange }));
+    expect(group.update(camera(10.05), 800)).toBe(false);
+    expect(meshes.map((m) => ({ ...m.geometry.drawRange }))).toEqual(before);
+    expect(group.update(camera(4), 800)).toBe(true);
+  });
+
   it('re-uploads only from the first instance whose cut changed', () => {
     const { group, meshes } = setup();
     group.update(camera(6), 800);

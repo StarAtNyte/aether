@@ -63,7 +63,7 @@ WebGPU / WebGL2, the e2e configuration) and Firefox on WebGL2.
   instead of 208 M (69×) under a 3 M budget.
 - Browser: the CPU side is negligible (profile of a 6 s orbit: 44 ms in
   `updateView`); on SwiftShader the cost is GPU upload (`writeBuffer`), so
-  re-plans are throttled to one per 90 ms while moving, levels are written
+  re-plans are throttled to one per 120 ms while moving, levels are written
   in stable chunk order and uploaded from the first changed chunk only, and
   empty levels are never submitted.
 - Per-GPU budgets (instances / triangles): discrete 2 M / 4 M, integrated

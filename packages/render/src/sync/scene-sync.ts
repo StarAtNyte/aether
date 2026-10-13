@@ -126,7 +126,7 @@ export interface SceneSyncOptions {
 }
 
 /** Minimum interval between view re-plans while the camera keeps moving (ms). */
-export const VIEW_INTERVAL_MS = 90;
+export const VIEW_INTERVAL_MS = 120;
 
 /** Default virtual-geometry budget: triangles one unique mesh may draw over all its instances. */
 export const DEFAULT_VIRTUAL_TRIANGLES = 1_500_000;

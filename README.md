@@ -472,7 +472,7 @@ All LLM output and all user input are treated as untrusted.
 - **Instancing and scatter fields.** Small `scatter` layers are one
   instanced mesh; layers of 2 000+ instances become fields (packed 20-byte
   instances in ~128-instance chunks, QEM LOD levels, CPU chunk culling
-  against a triangle budget, re-planned at most every 90 ms while the camera
+  against a triangle budget, re-planned at most every 120 ms while the camera
   moves and re-uploaded only from the first changed chunk). A million pines:
   19 MB of instance data, 0.0–3.4 ms per re-plan, ≈ 70× fewer triangles than
   full detail under a 3 M budget.

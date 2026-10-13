@@ -129,8 +129,12 @@ describe('validateWorld', () => {
 
   it('enforces scatter total', () => {
     const entities: Record<string, unknown> = {};
-    for (let i = 0; i < 3; i++) entities[`s${i}`] = { id: `s${i}`, shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box' }, count: 200_000, area: [1, 1] } };
-    expect(issuesOf({ entities }).some((i) => i.message.includes('scatter instances total 600000'))).toBe(true);
+    // Three layers of 800k exceed LIMITS.MAX_SCATTER_TOTAL (2 000 000); each is within the per-layer cap.
+    for (let i = 0; i < 3; i++) entities[`s${i}`] = { id: `s${i}`, shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box' }, count: 800_000, area: [1, 1] } };
+    expect(issuesOf({ entities }).some((i) => i.message.includes(`scatter instances total 2400000 (max ${LIMITS.MAX_SCATTER_TOTAL})`))).toBe(true);
+    for (let i = 0; i < 2; i++) entities[`s${i}`] = { id: `s${i}`, shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box' }, count: 1_000_000, area: [1, 1] } };
+    delete entities['s2'];
+    expect(validateWorld({ entities }).ok).toBe(true);
   });
 
   it('rejects hostile input before parsing', () => {

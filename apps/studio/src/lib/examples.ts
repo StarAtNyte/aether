@@ -34,6 +34,7 @@ export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([
   { slug: 'bowling-alley', title: 'Bowling alley', kind: 'physics', description: 'Knock down a pyramid of 15 crates.', prompt: 'Bowling alley: knock down a pyramid of 15 crates with a heavy ball' },
   { slug: 'haunted-forest', title: 'Haunted forest', kind: 'story', description: 'Foggy woods at night and a storyteller.', prompt: 'Haunted forest at night with fog and an NPC who tells a story' },
   { slug: 'obstacle-course', title: 'Obstacle course', kind: 'game', description: 'Moving platforms, lava and a goal flag.', prompt: 'Obstacle course with moving platforms, lava and a goal flag' },
+  { slug: 'canyon-of-colossi', title: 'Canyon of colossi', kind: 'scene', description: 'A million trees and ancient statues: 200M+ triangles, drawn by the screen.', prompt: 'A canyon with a million trees and ancient statues' },
 ] satisfies WorldTemplate[]);
 
 /** Template by slug (undefined when unknown). */

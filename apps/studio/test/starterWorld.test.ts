@@ -30,7 +30,7 @@ describe('starter world', () => {
 
 describe('example prompts', () => {
   it('ships the 8 curated prompts', () => {
-    expect(EXAMPLE_PROMPTS).toHaveLength(8);
-    expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(8);
+    expect(EXAMPLE_PROMPTS).toHaveLength(9);
+    expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(9);
   });
 });

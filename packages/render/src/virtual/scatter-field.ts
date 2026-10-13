@@ -7,7 +7,7 @@
  * Works identically on the WebGPU and WebGL2 backends: the GPU only ever
  * sees ordinary instanced draws.
  */
-import { Box3, DynamicDrawUsage, Group, InstancedBufferAttribute, InstancedMesh, Sphere, Vector3, type BufferGeometry, type Material } from 'three';
+import { Box3, Group, InstancedBufferAttribute, InstancedMesh, Sphere, Vector3, type BufferGeometry, type Material } from 'three';
 import { FieldCuller, type FieldChunks } from './field-culler';
 import type { LocalView } from './view';
 
@@ -55,8 +55,9 @@ export class ScatterField {
     const sphere = box.isEmpty() ? new Sphere() : box.getBoundingSphere(new Sphere());
     for (let l = 0; l < levels.length; l++) {
       const level = levels[l] as FieldLevel;
+      // Static usage on purpose: three re-uploads DynamicDrawUsage buffers on every draw;
+      // re-plans upload through version bumps with update ranges instead.
       const attr = new InstancedBufferAttribute(this.culler.buffers[l] as Float32Array, 16);
-      attr.setUsage(DynamicDrawUsage);
       this.attributes.push(attr);
       for (let p = 0; p < this.parts; p++) {
         const geometry = level.geometries[p] as BufferGeometry;

@@ -42,7 +42,7 @@ Findings that shaped the design:
   the camera turned; levels are now written in stable chunk order, only
   when their membership changes, and uploaded from the first changed chunk.
 - On SwiftShader (software WebGPU, used by the e2e suite) GPU uploads, not
-  CPU, dominate: re-planning is throttled to one per 90 ms while the camera
+  CPU, dominate: re-planning is throttled to one per 120 ms while the camera
   moves (captures re-plan immediately), which removed multi-second stalls.
 - Impostor billboards were not needed: the coarsest QEM level (4–28
   triangles) costs about as much as a billboard pair without alpha-test
