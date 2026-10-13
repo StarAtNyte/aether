@@ -7,9 +7,9 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, FogExp2, Frustum, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
+import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { Entity, deepEqual, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
+import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
 import { MaterialCache } from './materials/material-cache';
 import { GeometryCache } from './geometry/buffer-geometry';
@@ -20,7 +20,11 @@ import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
 import { SKY_RADIUS } from './environment/sky-dome';
 import { CameraRig, type FollowSource, type OrbitControlsLike } from './view/camera-rig';
-import { createTransformControls, TransformGizmo, type GizmoChange, type GizmoMode } from './view/transform-gizmo';
+import type { GizmoMode } from './view/transform-gizmo';
+import { createSelectionControls, SelectionGizmo, type GizmoCommit, type GizmoOptions, type GizmoTarget, type SnapHit } from './view/selection-gizmo';
+import { EditOverlay, type ComponentMode } from './view/edit-overlay';
+import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
+import type { MeshGeometryBundle } from './geometry/mesh-asset';
 import { Avatar } from './view/avatar';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
@@ -32,7 +36,7 @@ import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, type PostPipeline } from './gpu/post';
-import { GeneratorCache } from '@aether/procgen';
+import { GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { errorMessage, log } from './log';
 
 /** Renderer construction options. */
@@ -114,6 +118,20 @@ export interface RenderStats {
   instances: number;
 }
 
+/** A raycast hit on a document entity (see {@link WorldRenderer.raycastEntity}). */
+export interface EntityHit {
+  id: EntityId;
+  /** World-space hit point and (unit) surface normal. */
+  point: Vec3;
+  normal: Vec3;
+  /** The same in the entity's local space (mesh / brush coordinates). */
+  localPoint: Vec3;
+  localNormal: Vec3;
+  /** Document triangle index for `mesh` shapes (null otherwise). */
+  triangle: number | null;
+  distance: number;
+}
+
 /** Options of {@link WorldRenderer.frameContent}. */
 export interface FrameContentOptions {
   /** Entities that must be in view and pull the center (in addition to `focus`-tagged ones). */
@@ -160,12 +178,23 @@ const _corner = new Vector3();
 const _one = new Box3();
 const _occDir = new Vector3();
 const _occHits: Intersection[] = [];
+const _snapHits: Intersection[] = [];
+const _snapPoint = new Vector3();
+const _snapVertex = new Vector3();
+const _snapTmp = new Vector3();
+const _inv4 = new Matrix4();
+const _rectCorner = new Vector3();
 /** Hits closer than this to the chase target (its own body) are ignored (m). */
 const OCCLUSION_NEAR = 0.6;
 
 function isDescendant(object: Object3D, ancestor: Object3D): boolean {
   for (let o: Object3D | null = object; o; o = o.parent) if (o === ancestor) return true;
   return false;
+}
+
+/** Axis-aligned rectangle overlap (inclusive). */
+export function rectsOverlap(ax0: number, ay0: number, ax1: number, ay1: number, bx0: number, by0: number, bx1: number, by1: number): boolean {
+  return ax0 <= bx1 && ax1 >= bx0 && ay0 <= by1 && ay1 >= by0;
 }
 
 /** A mesh that blocks the view: visible all the way up and not see-through. */
@@ -262,7 +291,18 @@ export class WorldRenderer {
   private lastTriangles = 0;
   private readonly orbit: OrbitControlsLike | null;
   /** Editor transform gizmo (created on first use). */
-  private gizmo: TransformGizmo | null = null;
+  private gizmo: SelectionGizmo | null = null;
+  /** Invisible handle the component gizmo drags (mesh editing). */
+  private componentHandle: Group | null = null;
+  /** Editor overlays: mesh components, brush ring, joints. */
+  private readonly editOverlay = new EditOverlay();
+  /** Last pointer position over the canvas in NDC (gizmo snapping). */
+  private readonly pointerNdc = new Vector2();
+  private readonly onPointerMove = (e: PointerEvent): void => {
+    const rect = this.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    this.pointerNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  };
 
   private constructor(
     private readonly renderer: WebGPURenderer,
@@ -311,7 +351,8 @@ export class WorldRenderer {
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
     this.env.sun.shadow.radius = 3;
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group);
+    canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
   }
 
   /** Create a renderer on `canvas` (WebGPU when possible, else WebGL2). */
@@ -491,6 +532,16 @@ export class WorldRenderer {
   /** Generator output of an entity (procedural colliders for physics). */
   getGeneratorOutput(id: EntityId): GeneratorOutput | undefined {
     return this.sync.getOutput(id);
+  }
+
+  /**
+   * Seed the generator cache with an output computed elsewhere (e.g. in a
+   * worker), so the next build of this exact shape is a cache hit instead of
+   * a main-thread generation. Built-in generators only.
+   */
+  primeGeneratorOutput(shape: ProceduralShape, output: GeneratorOutput): void {
+    if (!this.generatorCache || Object.hasOwn(this.sync.world?.generators ?? {}, shape.generator)) return;
+    this.generatorCache.set(proceduralOutputKey(shape, { generators: {} }), output);
   }
 
   /** Apply packed physics poses (`PhysicsWorld.writeTransforms`). Zero allocations. */
@@ -703,30 +754,267 @@ export class WorldRenderer {
   }
 
   /**
-   * Show the move / rotate / scale gizmo on an entity (null id or mode hides
-   * it). `onCommit` receives the entity's local transform after each drag.
-   * The gizmo follows the entity's rendered object; call again after the
-   * entity is rebuilt.
+   * Show the move / rotate / scale gizmo on one or more entities (empty ids
+   * or a null mode hide it). `onCommit` receives every moved entity's new
+   * local transform after each drag (one undoable edit); `onLive` is told
+   * which entities moved during a drag. The gizmo follows the rendered
+   * objects; call again after entities are rebuilt.
    */
-  async setGizmo(id: EntityId | null, mode: GizmoMode | null, onCommit?: (change: GizmoChange) => void): Promise<void> {
+  async setGizmo(ids: readonly EntityId[] | null, mode: GizmoMode | null, onCommit?: (commit: GizmoCommit) => void, opts: GizmoOptions = {}, onLive?: (ids: readonly EntityId[]) => void): Promise<void> {
     if (this.disposed) return;
-    const object = id && mode ? this.sync.object(id) : undefined;
-    if (!object || !mode || !onCommit) {
+    this.componentHandle?.removeFromParent();
+    this.componentHandle = null;
+    const targets: GizmoTarget[] = [];
+    for (const id of ids ?? []) {
+      const object = this.sync.object(id);
+      if (object && !this.sync.node(id)?.transient) targets.push({ id, object });
+    }
+    if (targets.length === 0 || !mode || !onCommit) {
       this.gizmo?.detach();
       return;
     }
-    this.gizmo ??= new TransformGizmo(
-      () => createTransformControls(this.perspective, this.domElement),
-      (helper) => this.scene.add(helper),
+    this.gizmo ??= new SelectionGizmo(
+      () => createSelectionControls(this.perspective, this.domElement),
+      (o) => this.scene.add(o),
       this.orbit,
       () => this.requestRender(),
+      (exclude) => this.snapUnderPointer(exclude),
     );
-    await this.gizmo.attach(object, mode, onCommit);
+    await this.gizmo.attach(targets, mode, opts, onCommit, onLive);
+  }
+
+  /** Change gizmo options live (e.g. a held modifier toggles snapping during a drag). */
+  setGizmoOptions(opts: GizmoOptions): void {
+    this.gizmo?.setOptions(opts);
   }
 
   /** True while a gizmo handle is hovered or dragged (clicks then must not change the selection). */
   get gizmoBusy(): boolean {
     return this.gizmo?.busy ?? false;
+  }
+
+  /** True while a gizmo handle is being dragged. */
+  get gizmoDragging(): boolean {
+    return this.gizmo?.dragging ?? false;
+  }
+
+  /** Surface / vertex under the pointer, ignoring `exclude` (gizmo snapping). Reuses scratch objects. */
+  private snapUnderPointer(exclude: readonly Object3D[]): SnapHit | null {
+    this.raycaster.setFromCamera(this.pointerNdc, this.perspective);
+    _snapHits.length = 0;
+    this.raycaster.intersectObject(this.sync.root, true, _snapHits);
+    let result: SnapHit | null = null;
+    for (const hit of _snapHits) {
+      if (!hit.object.visible || exclude.some((o) => isDescendant(hit.object, o))) continue;
+      _snapPoint.copy(hit.point);
+      let vertex: Vector3 | null = null;
+      const pos = (hit.object as Partial<Mesh>).geometry?.getAttribute('position');
+      if (hit.face && pos) {
+        let best = Number.POSITIVE_INFINITY;
+        for (const vi of [hit.face.a, hit.face.b, hit.face.c]) {
+          _snapTmp.fromBufferAttribute(pos, vi).applyMatrix4(hit.object.matrixWorld);
+          const d = _snapTmp.distanceToSquared(hit.point);
+          if (d < best) {
+            best = d;
+            _snapVertex.copy(_snapTmp);
+            vertex = _snapVertex;
+          }
+        }
+      }
+      result = { point: _snapPoint, vertex };
+      break;
+    }
+    _snapHits.length = 0;
+    return result;
+  }
+
+  /**
+   * Raycast document entities at normalized device coordinates. `only`
+   * restricts the test to one entity (brushes), `exclude` skips entities.
+   * Scatter instances are not hit. Returns world and local hit data.
+   */
+  raycastEntity(ndcX: number, ndcY: number, opts: { only?: EntityId; exclude?: ReadonlySet<EntityId> } = {}): EntityHit | null {
+    if (this.disposed || !Number.isFinite(ndcX) || !Number.isFinite(ndcY)) return null;
+    this.raycaster.setFromCamera(_ndc.set(ndcX, ndcY), this.perspective);
+    _hits.length = 0;
+    const root = opts.only ? this.sync.object(opts.only) : this.sync.root;
+    if (!root) return null;
+    this.raycaster.intersectObject(root, true, _hits);
+    let out: EntityHit | null = null;
+    for (const hit of _hits) {
+      if (!hit.object.visible || (hit.object as Partial<Mesh>).isMesh !== true) continue;
+      const id = this.sync.idOf(hit.object);
+      if (!id || (opts.only && id !== opts.only) || opts.exclude?.has(id)) continue;
+      const entityObject = this.sync.object(id);
+      if (!entityObject) continue;
+      entityObject.updateWorldMatrix(true, false);
+      _inv4.copy(entityObject.matrixWorld).invert();
+      const local = _pos.copy(hit.point).applyMatrix4(_inv4);
+      const localPoint: Vec3 = [local.x, local.y, local.z];
+      let localNormal: Vec3 = [0, 1, 0];
+      let normal: Vec3 = [0, 1, 0];
+      if (hit.face) {
+        // Face normal: object space → entity space (through the mesh's own matrix) and world.
+        const n = _target.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+        normal = [n.x, n.y, n.z];
+        const ln = n.transformDirection(_inv4);
+        localNormal = [ln.x, ln.y, ln.z];
+      }
+      const tris = hit.object.userData[MESH_TRIANGLES_KEY] as Uint32Array | undefined;
+      const triangle = tris && typeof hit.faceIndex === 'number' && hit.faceIndex < tris.length ? (tris[hit.faceIndex] as number) : null;
+      out = { id, point: [hit.point.x, hit.point.y, hit.point.z], normal, localPoint, localNormal, triangle, distance: hit.distance };
+      break;
+    }
+    _hits.length = 0;
+    return out;
+  }
+
+  /**
+   * First visible document surface along a world-space ray (scatter
+   * instances and `exclude` entities are skipped): the scatter brush uses it
+   * to drop instances onto whatever is below. Returns the point, unit normal
+   * and entity id, or null.
+   */
+  raycastWorld(origin: Vec3, direction: Vec3, maxDistance = 1e4, exclude?: ReadonlySet<EntityId>, only?: EntityId): { id: EntityId; point: Vec3; normal: Vec3 } | null {
+    if (this.disposed || !origin.every(Number.isFinite) || !direction.every(Number.isFinite)) return null;
+    _occDir.set(direction[0], direction[1], direction[2]);
+    if (_occDir.lengthSq() < 1e-12) return null;
+    _occDir.normalize();
+    const ray = this.occlusionRay;
+    ray.set(_pos.set(origin[0], origin[1], origin[2]), _occDir);
+    ray.near = 0;
+    ray.far = Math.max(0, maxDistance);
+    _occHits.length = 0;
+    const root = only ? this.sync.object(only) : this.sync.root;
+    if (!root) return null;
+    ray.intersectObject(root, true, _occHits);
+    let out: { id: EntityId; point: Vec3; normal: Vec3 } | null = null;
+    for (const hit of _occHits) {
+      if (!isOpaqueVisible(hit.object) || hit.object.name === 'edit:components') continue;
+      const id = this.sync.idOf(hit.object);
+      if (!id || exclude?.has(id)) continue;
+      const n = hit.face ? _target.copy(hit.face.normal).transformDirection(hit.object.matrixWorld) : _target.set(0, 1, 0);
+      out = { id, point: [hit.point.x, hit.point.y, hit.point.z], normal: [n.x, n.y, n.z] };
+      break;
+    }
+    _occHits.length = 0;
+    return out;
+  }
+
+  /**
+   * Entities whose on-screen bounds touch the rectangle (normalized device
+   * coordinates, any corner order): marquee selection. Transient spawns,
+   * templates and `skip` ids are excluded; at most 2000 ids.
+   */
+  entitiesInRect(x0: number, y0: number, x1: number, y1: number, skip?: (id: EntityId) => boolean): EntityId[] {
+    if (this.disposed) return [];
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    const cam = this.perspective;
+    cam.updateMatrixWorld();
+    const out: EntityId[] = [];
+    this.grow.withFullScale(() => {
+      this.sync.forEachNode((node) => {
+        if (out.length >= 2000 || node.transient || !node.object.visible || node.content.children.length === 0 || (skip && skip(node.id))) return;
+        _one.setFromObject(node.content);
+        if (_one.isEmpty()) return;
+        let sx0 = Infinity;
+        let sy0 = Infinity;
+        let sx1 = -Infinity;
+        let sy1 = -Infinity;
+        let behind = 0;
+        for (let i = 0; i < 8; i++) {
+          _rectCorner.set(i & 1 ? _one.max.x : _one.min.x, i & 2 ? _one.max.y : _one.min.y, i & 4 ? _one.max.z : _one.min.z).project(cam);
+          if (_rectCorner.z > 1) behind++;
+          sx0 = Math.min(sx0, _rectCorner.x);
+          sy0 = Math.min(sy0, _rectCorner.y);
+          sx1 = Math.max(sx1, _rectCorner.x);
+          sy1 = Math.max(sy1, _rectCorner.y);
+        }
+        if (behind === 8) return;
+        if (rectsOverlap(sx0, sy0, sx1, sy1, minX, minY, maxX, maxY)) out.push(node.id);
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Rebuild one entity's content from the current document (drops a live
+   * preview that was not committed, e.g. a cancelled stroke).
+   */
+  rebuildEntity(id: EntityId): void {
+    if (this.sync.refresh(id)) this.needsDraw = true;
+  }
+
+  /** Mounted geometry of a mesh entity (editor), or null. */
+  meshBundle(id: EntityId): MeshGeometryBundle | null {
+    return this.sync.meshBundle(id);
+  }
+
+  /** Live (uncommitted) preview of a mesh entity's positions and/or colours; see `SceneSync.previewMesh`. */
+  previewMesh(id: EntityId, positions: Float32Array | null, colors: Float32Array | null): boolean {
+    const ok = this.sync.previewMesh(id, positions, colors);
+    if (ok) {
+      if (positions) this.editOverlay.refreshMarkers();
+      this.needsDraw = true;
+      this.boundsDirty = true;
+    }
+    return ok;
+  }
+
+  /**
+   * Show the components of a mesh entity for editing (null hides them).
+   * `edges` are vertex pairs; the selections index the mounted mesh.
+   */
+  showMeshComponents(view: { id: EntityId; mode: ComponentMode; edges: Uint32Array; selectedVertices: ArrayLike<number>; selectedEdges: ArrayLike<number>; selectedFaces: ArrayLike<number> } | null): boolean {
+    this.needsDraw = true;
+    if (!view) {
+      this.editOverlay.setComponents(null);
+      return true;
+    }
+    const target = this.sync.object(view.id);
+    const bundle = this.sync.meshBundle(view.id);
+    if (!target || !bundle) {
+      this.editOverlay.setComponents(null);
+      return false;
+    }
+    this.editOverlay.setComponents({ target, bundle, mode: view.mode, edges: view.edges, selectedVertices: view.selectedVertices, selectedEdges: view.selectedEdges, selectedFaces: view.selectedFaces });
+    return true;
+  }
+
+  /** Brush ring for sculpting / painting (world space); null hides it. */
+  showBrush(brush: { point: Vec3; normal: Vec3; radius: number; erase?: boolean } | null): void {
+    this.editOverlay.setBrush(brush);
+    this.needsDraw = true;
+  }
+
+  /** Joint of an entity (anchor, axis, link to target) in world space; null hides it. */
+  showJoint(id: EntityId | null): void {
+    this.needsDraw = true;
+    const node = id ? this.sync.node(id) : undefined;
+    const joint = node?.entity.joint;
+    if (!node || !joint) {
+      this.editOverlay.setJoint(null);
+      return;
+    }
+    node.object.updateWorldMatrix(true, false);
+    const anchor = _pos.set(joint.anchor[0], joint.anchor[1], joint.anchor[2]).applyMatrix4(node.object.matrixWorld);
+    const a: Vec3 = [anchor.x, anchor.y, anchor.z];
+    const ax = _target.set(joint.axis[0], joint.axis[1], joint.axis[2]).transformDirection(node.object.matrixWorld);
+    const axis: Vec3 = [ax.x, ax.y, ax.z];
+    let target: Vec3 | null = null;
+    if (joint.target === 'world') target = [joint.targetAnchor[0], joint.targetAnchor[1], joint.targetAnchor[2]];
+    else {
+      const t = this.sync.object(joint.target);
+      if (t) {
+        t.updateWorldMatrix(true, false);
+        const p = _center.set(joint.targetAnchor[0], joint.targetAnchor[1], joint.targetAnchor[2]).applyMatrix4(t.matrixWorld);
+        target = [p.x, p.y, p.z];
+      }
+    }
+    this.editOverlay.setJoint({ anchor: a, axis, target, type: joint.type });
   }
 
   /** World-space bounds of an entity at full scale (null when it has no content yet). */
@@ -765,22 +1053,98 @@ export class WorldRenderer {
     return free;
   }
 
-  /** Entity under normalized device coordinates (−1..1), or null. */
-  pick(ndcX: number, ndcY: number): EntityId | null {
+  /**
+   * Entity under normalized device coordinates (−1..1), or null. `skip`
+   * makes entities transparent to picking (e.g. locked ones): the next hit
+   * behind them is returned.
+   */
+  pick(ndcX: number, ndcY: number, skip?: (id: EntityId) => boolean): EntityId | null {
     if (!Number.isFinite(ndcX) || !Number.isFinite(ndcY)) return null;
     this.raycaster.setFromCamera(_ndc.set(ndcX, ndcY), this.perspective);
     _hits.length = 0;
     this.raycaster.intersectObject(this.sync.root, true, _hits);
     let id: EntityId | null = null;
     for (const hit of _hits) {
-      if (!hit.object.visible) continue;
-      id = this.sync.idOf(hit.object);
-      if (id) break;
+      if (!hit.object.visible || hit.object.name === 'edit:components') continue;
+      const hitId = this.sync.idOf(hit.object);
+      if (hitId && !(skip && skip(hitId))) {
+        id = hitId;
+        break;
+      }
     }
     _hits.length = 0;
     // Scatter instances are not raycast individually (O(instances × triangles));
     // when no solid mesh was hit, a scatter layer is picked by its bounds.
-    return id ?? this.sync.pickScatter(this.raycaster.ray)?.id ?? null;
+    if (id) return id;
+    const scatter = this.sync.pickScatter(this.raycaster.ray)?.id ?? null;
+    return scatter && !(skip && skip(scatter)) ? scatter : null;
+  }
+
+  /**
+   * Whether a left-button drag (one-finger drag on touch) navigates the
+   * camera. Tools that draw with the left button (marquee, brushes) turn it
+   * off; right-drag pans and the wheel zooms either way.
+   */
+  setLeftDragNavigation(on: boolean): void {
+    const c = this.orbit;
+    if (!c?.mouseButtons) return;
+    // three's MOUSE.ROTATE = 0, TOUCH.ROTATE = 0.
+    c.mouseButtons.LEFT = on ? 0 : null;
+    if (c.touches) c.touches.ONE = on ? 0 : null;
+  }
+
+  /**
+   * Gizmo on a selection of mesh components: an invisible handle at
+   * `localCenter` (entity space) is dragged; `onLive` / `onCommit` receive
+   * the handle's transform change as a column-major 4×4 matrix in the
+   * entity's local space (apply it to the component vertices).
+   */
+  async setComponentGizmo(id: EntityId | null, localCenter: Vec3, mode: GizmoMode | null, opts: GizmoOptions, onLive?: (matrix: Float32Array) => void, onCommit?: (matrix: Float32Array) => void): Promise<void> {
+    if (this.disposed) return;
+    this.componentHandle?.removeFromParent();
+    this.componentHandle = null;
+    const owner = id ? this.sync.object(id) : undefined;
+    if (!owner || !mode || !onCommit) {
+      this.gizmo?.detach();
+      return;
+    }
+    const handle = new Group();
+    handle.name = 'edit:component-handle';
+    handle.position.set(localCenter[0], localCenter[1], localCenter[2]);
+    handle.updateMatrix();
+    owner.add(handle);
+    handle.updateMatrixWorld(true);
+    this.componentHandle = handle;
+    const start = handle.matrix.clone();
+    const startInv = start.clone().invert();
+    const out = new Float32Array(16);
+    const delta = new Matrix4();
+    const read = (): Float32Array => {
+      handle.updateMatrix();
+      delta.multiplyMatrices(handle.matrix, startInv);
+      out.set(delta.elements);
+      return out;
+    };
+    this.gizmo ??= new SelectionGizmo(
+      () => createSelectionControls(this.perspective, this.domElement),
+      (o) => this.scene.add(o),
+      this.orbit,
+      () => this.requestRender(),
+      (exclude) => this.snapUnderPointer(exclude),
+    );
+    await this.gizmo.attach(
+      [{ id: id as EntityId, object: handle }],
+      mode,
+      { ...opts, pivot: 'origin', surfaceSnap: false, vertexSnap: false },
+      () => {
+        const m = read();
+        // The next drag starts from the moved handle.
+        start.copy(handle.matrix);
+        startInv.copy(start).invert();
+        onCommit(m);
+      },
+      () => onLive?.(read()),
+    );
   }
 
   /** Selection outline for `ids` (empty clears). */
@@ -936,7 +1300,7 @@ export class WorldRenderer {
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
-    const decorations: Object3D[] = [this.highlighter.group, ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
     try {
@@ -969,7 +1333,7 @@ export class WorldRenderer {
     _savedCamUp.copy(cam.up);
     const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
     // Hide view-dependent decorations; give the background a flat sky color.
-    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root];
+    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = hidden.map((o) => o.visible);
     // Neutralize fog through its density uniform: removing it (scene.fog = null) changes every
     // material's shader, and each capture then built a fog-less variant of every object's GPU
@@ -1151,12 +1515,23 @@ export class WorldRenderer {
     };
   }
 
+  /** Component overlays live under entity objects: collect them so captures can hide them. */
+  private editComponentGroups(): Object3D[] {
+    const out: Object3D[] = [];
+    this.sync.root.traverse((o) => {
+      if (o.name === 'edit:components') out.push(o);
+    });
+    return out;
+  }
+
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.gizmo?.dispose();
     this.gizmo = null;
+    this.editOverlay.dispose();
     this.post?.dispose();
     this.post = null;
     this.postGen++;

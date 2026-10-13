@@ -830,6 +830,14 @@ export class SceneSync {
     this.applyShadowFlags(node);
   }
 
+  /** Rebuild an entity's content from its current (document) value; false when unknown. */
+  refresh(id: EntityId): boolean {
+    const node = this.nodes.get(id);
+    if (!node) return false;
+    void this.rebuild(node);
+    return true;
+  }
+
   /** Geometry bundle of a mounted mesh entity (editor overlays, picking), or null. */
   meshBundle(id: EntityId): MeshGeometryBundle | null {
     return this.nodes.get(id)?.meshBundle ?? null;

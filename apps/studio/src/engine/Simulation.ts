@@ -24,7 +24,7 @@ import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type Histor
 import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoChange, type GizmoMode, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -39,9 +39,42 @@ const THUMBNAIL_SETTLE_MS = 6000;
 
 const log = createLogger('sim');
 
-/** Editor tools: plain selection, or a transform gizmo on the selected object. */
-export type EditorTool = 'select' | 'move' | 'rotate' | 'scale';
-const GIZMO_MODE: Readonly<Record<Exclude<EditorTool, 'select'>, GizmoMode>> = { move: 'translate', rotate: 'rotate', scale: 'scale' };
+/**
+ * Editor tools: selection (click or box), a transform gizmo on the
+ * selection, or a brush (sculpt, vertex paint, scatter paint).
+ */
+export type EditorTool = 'select' | 'box' | 'move' | 'rotate' | 'scale' | 'sculpt' | 'paint' | 'scatter';
+/** Gizmo mode of a transform tool (null for the other tools). */
+export function gizmoModeOf(tool: EditorTool): GizmoMode | null {
+  return tool === 'move' ? 'translate' : tool === 'rotate' ? 'rotate' : tool === 'scale' ? 'scale' : null;
+}
+
+/** A pointer event handed to a viewport tool (NDC: −1..1, y up). */
+export interface ToolPointer {
+  ndcX: number;
+  ndcY: number;
+  /** Position relative to the canvas in CSS pixels. */
+  x: number;
+  y: number;
+  /** Pen pressure 0..1 (0.5 for a mouse button press, as browsers report). */
+  pressure: number;
+  pointerType: string;
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+}
+
+/** A tool that takes over left-button drags in the viewport (marquee, brushes). */
+export interface ViewportTool {
+  /** Start a drag; return false to fall back to normal clicking/orbiting. */
+  down(p: ToolPointer): boolean;
+  move(p: ToolPointer): void;
+  up(p: ToolPointer): void;
+  /** Pointer hover without a drag (null: the pointer left the viewport). */
+  hover?(p: ToolPointer | null): void;
+  /** Drag cancelled (Escape, lost capture). */
+  cancel?(): void;
+}
 
 /** Below this height the built-in player respawns. */
 const PLAYER_KILL_Y = -40;
@@ -82,8 +115,10 @@ export interface SimulationListener {
   onMessage?(text: string, duration: number): void;
   onGameOver?(result: 'win' | 'lose', text: string): void;
   onPick?(id: EntityId | null, additive: boolean): void;
-  /** A gizmo drag ended: the entity's new local transform (one undoable edit). */
-  onTransform?(id: EntityId, change: GizmoChange): void;
+  /** A gizmo drag ended: the new local transforms of every moved entity (one undoable edit). */
+  onTransform?(commit: GizmoCommit): void;
+  /** The renderer finished syncing to a new world (overlays that reference rendered geometry refresh). */
+  onSynced?(): void;
   onModeChange?(mode: 'edit' | 'play'): void;
   onError?(message: string): void;
   /** The render loop stopped after repeated failures; the page must be reloaded. */
@@ -165,6 +200,16 @@ export class Simulation {
   private downOnGizmo = false;
   private gizmoIds: readonly EntityId[] = [];
   private gizmoTool: EditorTool = 'select';
+  private gizmoOptions: GizmoOptions = {};
+  /** Overrides the entity gizmo (component editing) while true. */
+  private gizmoSuspended = false;
+  private viewportTool: ViewportTool | null = null;
+  private toolDragging = false;
+  private toolPointerId = -1;
+  /** Consumes clicks before entity picking (e.g. component selection); returns true when handled. */
+  private clickHandler: ((p: ToolPointer, additive: boolean) => boolean) | null = null;
+  private pickSkip: ((id: EntityId) => boolean) | undefined = undefined;
+  private marquee: HTMLDivElement | null = null;
   private frameFailures = 0;
   private lastFrameError = '';
   private stopRequested = false;
@@ -186,6 +231,9 @@ export class Simulation {
     const canvas = renderer.domElement;
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('pointerleave', this.onPointerLeave);
+    canvas.addEventListener('pointercancel', this.onPointerCancel);
     const parent = canvas.parentElement;
     this.resizeObserver = typeof ResizeObserver !== 'undefined' && parent ? new ResizeObserver(() => this.resize()) : null;
     if (parent) this.resizeObserver?.observe(parent);
@@ -280,22 +328,83 @@ export class Simulation {
       this.renderer.highlight(this.selection.filter((id) => this.syncedWorldDoc && Object.prototype.hasOwnProperty.call(this.syncedWorldDoc.entities, id)));
       // The entity's rendered object may have been rebuilt: re-attach the gizmo.
       this.applyGizmo();
+      this.listener.onSynced?.();
     });
   }
 
-  /** Editor tool and the selection it acts on (the gizmo shows for exactly one selected entity). */
-  setGizmo(ids: readonly EntityId[], tool: EditorTool): void {
-    this.gizmoIds = ids.slice(0, 2);
+  /** Editor tool, the selection it acts on and the gizmo options (the gizmo shows for transform tools). */
+  setGizmo(ids: readonly EntityId[], tool: EditorTool, opts: GizmoOptions = this.gizmoOptions): void {
+    this.gizmoIds = ids.slice(0, 2000);
     this.gizmoTool = tool;
+    this.gizmoOptions = opts;
     this.applyGizmo();
   }
 
+  /** Change gizmo options (snapping, space, pivot) live, also during a drag. */
+  setGizmoOptions(opts: GizmoOptions): void {
+    this.gizmoOptions = opts;
+    this.renderer.setGizmoOptions(opts);
+  }
+
+  /** Hand the gizmo to component editing (true) or back to entities (false). */
+  suspendEntityGizmo(on: boolean): void {
+    if (this.gizmoSuspended === on) return;
+    this.gizmoSuspended = on;
+    if (!on) this.applyGizmo();
+  }
+
   private applyGizmo(): void {
-    if (this.disposed) return;
-    const id = this.gizmoIds.length === 1 ? (this.gizmoIds[0] ?? null) : null;
-    const known = id !== null && this.syncedWorldDoc !== null && Object.prototype.hasOwnProperty.call(this.syncedWorldDoc.entities, id);
-    const mode = this.session || this.gizmoTool === 'select' || !known ? null : GIZMO_MODE[this.gizmoTool];
-    void this.renderer.setGizmo(mode ? id : null, mode, id && mode ? (change) => this.listener.onTransform?.(id, change) : undefined).catch((err: unknown) => log.warn('gizmo unavailable', err));
+    if (this.disposed || this.gizmoSuspended) return;
+    const doc = this.syncedWorldDoc;
+    const ids = doc ? this.gizmoIds.filter((id) => Object.prototype.hasOwnProperty.call(doc.entities, id) && doc.entities[id]?.locked !== true) : [];
+    const mode = this.session ? null : gizmoModeOf(this.gizmoTool);
+    void this.renderer
+      .setGizmo(mode ? ids : null, mode, mode ? (commit) => this.listener.onTransform?.(commit) : undefined, this.gizmoOptions)
+      .catch((err: unknown) => log.warn('gizmo unavailable', err));
+  }
+
+  /**
+   * Install a viewport tool that takes over left-button drags (null: plain
+   * selection and orbiting). Camera navigation keeps right-drag and the wheel.
+   */
+  setViewportTool(tool: ViewportTool | null): void {
+    if (this.toolDragging) this.viewportTool?.cancel?.();
+    this.toolDragging = false;
+    this.viewportTool?.hover?.(null);
+    this.viewportTool = tool;
+    this.renderer.setLeftDragNavigation(tool === null);
+  }
+
+  /** Consume clicks before entity picking (null: default picking). */
+  setClickHandler(fn: ((p: ToolPointer, additive: boolean) => boolean) | null): void {
+    this.clickHandler = fn;
+  }
+
+  /** Entities that clicks and marquees pass through (e.g. locked ones). */
+  setPickFilter(skip: ((id: EntityId) => boolean) | undefined): void {
+    this.pickSkip = skip;
+  }
+
+  /** Draw (or with null hide) the marquee rectangle, in canvas CSS pixels. */
+  showMarquee(rect: { x0: number; y0: number; x1: number; y1: number } | null): void {
+    const host = this.renderer.domElement.parentElement;
+    if (!rect || !host) {
+      this.marquee?.remove();
+      this.marquee = null;
+      return;
+    }
+    if (!this.marquee) {
+      const el = document.createElement('div');
+      el.className = 'vp-marquee';
+      el.setAttribute('aria-hidden', 'true');
+      host.appendChild(el);
+      this.marquee = el;
+    }
+    const s = this.marquee.style;
+    s.left = `${Math.min(rect.x0, rect.x1)}px`;
+    s.top = `${Math.min(rect.y0, rect.y1)}px`;
+    s.width = `${Math.abs(rect.x1 - rect.x0)}px`;
+    s.height = `${Math.abs(rect.y1 - rect.y0)}px`;
   }
 
   // ---------------------------------------------------------------------------
@@ -596,6 +705,10 @@ export class Simulation {
     }
     this.session = session;
     this.applyGizmo();
+    if (this.toolDragging) this.viewportTool?.cancel?.();
+    this.toolDragging = false;
+    this.viewportTool?.hover?.(null);
+    this.renderer.setLeftDragNavigation(true);
     this.stopRequested = false;
     try {
       this.renderer.highlight([]);
@@ -650,6 +763,7 @@ export class Simulation {
       this.table.clear();
       safely('camera reset', () => this.renderer.setCameraMode('orbit'));
       safely('highlight', () => this.renderer.highlight(this.selection));
+      safely('tool navigation', () => this.renderer.setLeftDragNavigation(this.viewportTool === null));
       this.listener.onModeChange?.('edit');
       // Catch up with edits that happened while playing.
       if (this.history.current !== s.world) this.requestSync(this.history.current);
@@ -837,29 +951,84 @@ export class Simulation {
   // Pointer, resize, teardown
   // ---------------------------------------------------------------------------
 
+  private toolPointer(e: PointerEvent): ToolPointer | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    return {
+      ndcX: (x / rect.width) * 2 - 1,
+      ndcY: -(y / rect.height) * 2 + 1,
+      x,
+      y,
+      pressure: e.pointerType === 'pen' ? Math.min(1, Math.max(0.05, e.pressure || 0.5)) : 1,
+      pointerType: e.pointerType,
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+      alt: e.altKey,
+    };
+  }
+
   private readonly onPointerDown = (e: PointerEvent): void => {
     this.downValid = e.button === 0;
     this.downOnGizmo = this.renderer.gizmoBusy;
     this.downX = e.clientX;
     this.downY = e.clientY;
     if (isTypingElement(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    if (this.session || e.button !== 0 || this.downOnGizmo || !this.viewportTool) return;
+    const p = this.toolPointer(e);
+    if (!p || !this.viewportTool.down(p)) return;
+    this.toolDragging = true;
+    this.toolPointerId = e.pointerId;
+    this.downValid = false;
+    try {
+      this.renderer.domElement.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is optional */
+    }
+    this.touch();
+  };
+
+  private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.session || !this.viewportTool) return;
+    const p = this.toolPointer(e);
+    if (!p) return;
+    if (this.toolDragging && e.pointerId === this.toolPointerId) this.viewportTool.move(p);
+    else if (!this.toolDragging && e.buttons === 0) this.viewportTool.hover?.(p);
+  };
+
+  private readonly onPointerLeave = (): void => {
+    if (!this.toolDragging) this.viewportTool?.hover?.(null);
+  };
+
+  private readonly onPointerCancel = (e: PointerEvent): void => {
+    if (!this.toolDragging || e.pointerId !== this.toolPointerId) return;
+    this.toolDragging = false;
+    this.viewportTool?.cancel?.();
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    if (this.toolDragging && e.pointerId === this.toolPointerId) {
+      this.toolDragging = false;
+      const p = this.toolPointer(e);
+      if (p) this.viewportTool?.up(p);
+      else this.viewportTool?.cancel?.();
+      return;
+    }
     if (!this.downValid || e.button !== 0) return;
     this.downValid = false;
     if (this.downOnGizmo) return;
     if (Math.hypot(e.clientX - this.downX, e.clientY - this.downY) > CLICK_SLOP_PX) return;
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    const id = this.renderer.pick(x, y);
+    const p = this.toolPointer(e);
+    if (!p) return;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!this.session && this.clickHandler?.(p, additive)) return;
+    const id = this.renderer.pick(p.ndcX, p.ndcY, this.session ? undefined : this.pickSkip);
     if (this.session) {
       if (id) this.session.logic.click(id);
       return;
     }
-    this.listener.onPick?.(id, e.shiftKey || e.metaKey || e.ctrlKey);
+    this.listener.onPick?.(id, additive);
   };
 
   /** Stop the loop while the page is hidden; resume (without a giant time step) when it shows again. */
@@ -906,6 +1075,11 @@ export class Simulation {
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('pointermove', this.onPointerMove);
+    canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    canvas.removeEventListener('pointercancel', this.onPointerCancel);
+    this.marquee?.remove();
+    this.marquee = null;
     const s = this.session;
     this.session = null;
     if (s) {

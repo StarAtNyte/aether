@@ -18,12 +18,17 @@ function fakeSim(thumb: string | null): Simulation {
   return {
     backend: 'webgl2',
     mode: 'edit',
-    renderer: { gpu: { tier: 'integrated', description: 'Test GPU' } },
+    renderer: { gpu: { tier: 'integrated', description: 'Test GPU' }, showJoint: () => undefined, showMeshComponents: () => true },
     setShowColliders: () => undefined,
     setStatsWhileEditing: () => undefined,
     setPointerLock: () => undefined,
     setSelection: () => undefined,
     setGizmo: () => undefined,
+    setGizmoOptions: () => undefined,
+    setPickFilter: () => undefined,
+    setViewportTool: () => undefined,
+    setClickHandler: () => undefined,
+    suspendEntityGizmo: () => undefined,
     setLowMemory: () => undefined,
     frameWorld: async () => undefined,
     revealEntities: async () => undefined,
@@ -148,14 +153,14 @@ describe('Studio in project mode', () => {
     const e = studio.history.current.entities[id];
     if (!e) throw new Error('no entity');
     const head = studio.history.head;
-    studio.applyGizmoTransform(id, { position: [...e.transform.position], rotation: [...e.transform.rotation], scale: [...e.transform.scale], mode: 'translate' });
+    studio.editor.commitGizmo({ mode: 'translate', changes: [{ id, position: [...e.transform.position], rotation: [...e.transform.rotation], scale: [...e.transform.scale] }] });
     expect(studio.history.head).toBe(head);
-    studio.applyGizmoTransform(id, { position: [9, 1, -4], rotation: [...e.transform.rotation], scale: [...e.transform.scale], mode: 'translate' });
+    studio.editor.commitGizmo({ mode: 'translate', changes: [{ id, position: [9, 1, -4], rotation: [...e.transform.rotation], scale: [...e.transform.scale] }] });
     expect(studio.history.current.entities[id]?.transform.position).toEqual([9, 1, -4]);
     expect(studio.history.entries().at(-1)?.message).toMatch(/^Move /);
     studio.undo();
     expect(studio.history.current.entities[id]?.transform.position).toEqual(e.transform.position);
-    studio.applyGizmoTransform('missing', { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], mode: 'scale' });
+    studio.editor.commitGizmo({ mode: 'scale', changes: [{ id: 'missing', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }] });
     studio.dispose();
   });
 

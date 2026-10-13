@@ -6,7 +6,11 @@
  * (scene sync, material/geometry caches, scatter layout, sky model, …) are
  * exported too for tests, tooling and alternative front-ends.
  */
-export { WorldRenderer, type ContextLossInfo, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
+export { WorldRenderer, rectsOverlap, type ContextLossInfo, type EntityHit, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
+export { SelectionGizmo, readLocal, topLevelTargets, type GizmoCommit, type GizmoOptions, type GizmoPivot, type GizmoSpace, type GizmoTarget, type GizmoTargetChange, type SelectionControlsLike, type SnapHit } from './view/selection-gizmo';
+export { EditOverlay, MAX_VERTEX_MARKERS, type ComponentMode, type ComponentView } from './view/edit-overlay';
+export { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle, type MeshSlotGeometry } from './geometry/mesh-asset';
+export { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 export type { Bounds, CameraMode, GeometrySource, KeyedOutput, RenderDiagnostic, ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner } from './types';
 
 export { SceneSync, DEFAULT_MAX_INSTANCES, type SceneSyncOptions } from './sync/scene-sync';

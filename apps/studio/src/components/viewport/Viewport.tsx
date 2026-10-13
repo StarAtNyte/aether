@@ -12,9 +12,10 @@ import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
 import { worldLabels } from '../../lib/labels';
 import { ViewOverlay } from '../../engine/viewOverlay';
-import { PALETTE_DRAG_TYPE } from '../../editor/AssetsPanel';
-import { Icon, type IconName } from '../Icon';
-import type { EditorTool } from '../../engine/Simulation';
+import { MATERIAL_DRAG_TYPE, PALETTE_DRAG_TYPE, parseMaterialDrag } from '../../editor/AssetsPanel';
+import { Icon } from '../Icon';
+import { ToolDock } from './ToolDock';
+import { ContextBar } from './ContextBar';
 import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
@@ -89,63 +90,6 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
         </button>
       )}
     />
-  );
-});
-
-/** Transform tools shown in the dock: id, label, icon, shortcut. */
-const TOOLS: ReadonlyArray<[EditorTool, string, IconName, string]> = [
-  ['select', 'Select', 'pointer', 'V'],
-  ['move', 'Move', 'move', 'W'],
-  ['rotate', 'Rotate', 'rotate', 'E'],
-  ['scale', 'Scale', 'scale', 'R'],
-];
-
-/** Floating tool dock (bottom-centre, edit mode). */
-const ToolDock = memo(function ToolDock(): ReactElement {
-  const studio = useStudio();
-  const selection = useUI((s) => s.selection);
-  const tool = useUI((s) => s.tool);
-  const labels = useUI((s) => s.settings.showLabels);
-  const st = studio.store.getState();
-  const has = selection.length > 0;
-  return (
-    <div className="dock" role="toolbar" aria-label="Tools">
-      <div className="dock__group" role="radiogroup" aria-label="Transform tool">
-        {TOOLS.map(([id, label, icon, key]) => (
-          <button
-            key={id}
-            type="button"
-            role="radio"
-            aria-checked={tool === id}
-            className={`dock__btn${tool === id ? ' is-active' : ''}`}
-            onClick={() => st.setTool(id)}
-            aria-label={label}
-            data-tip={id === 'select' ? label : `${label} the selected object`}
-            data-kbd={key}
-            data-tip-pos="top"
-          >
-            <Icon name={icon} />
-          </button>
-        ))}
-      </div>
-      <span className="dock__sep" aria-hidden="true" />
-      <button type="button" className="dock__btn" onClick={() => st.showLeftView('assets')} aria-label="Add object" data-tip="Add object" data-kbd="A" data-tip-pos="top">
-        <Icon name="plus" />
-      </button>
-      <button type="button" className="dock__btn" disabled={!has} onClick={() => selection[0] && studio.focus(selection[0])} aria-label="Focus selection" data-tip="Focus selection" data-kbd="F" data-tip-pos="top">
-        <Icon name="focus" />
-      </button>
-      <button type="button" className="dock__btn" disabled={!has} onClick={() => studio.deleteEntities(selection)} aria-label="Delete selection" data-tip="Delete" data-kbd="Del" data-tip-pos="top">
-        <Icon name="trash" />
-      </button>
-      <span className="dock__sep dock__opt" aria-hidden="true" />
-      <button type="button" className="dock__btn dock__opt" onClick={() => studio.viewPreset('reset')} aria-label="Frame world" data-tip="Frame world" data-kbd="0" data-tip-pos="top">
-        <Icon name="maximize" />
-      </button>
-      <button type="button" className={`dock__btn dock__opt${labels ? ' is-active' : ''}`} aria-pressed={labels} onClick={() => st.updateSettings({ showLabels: !labels })} aria-label="Object labels" data-tip="Object labels" data-kbd="L" data-tip-pos="top">
-        <Icon name="tag" />
-      </button>
-    </div>
   );
 });
 
@@ -309,7 +253,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
       className={`viewport${playing ? ' is-playing' : ''}${dropping ? ' is-dropping' : ''}`}
       aria-label="Viewport"
       onDragOver={(e) => {
-        if (playing || ![...e.dataTransfer.types].includes(PALETTE_DRAG_TYPE)) return;
+        const types = [...e.dataTransfer.types];
+        if (playing || (!types.includes(PALETTE_DRAG_TYPE) && !types.includes(MATERIAL_DRAG_TYPE))) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setDropping(true);
@@ -317,6 +262,15 @@ export const Viewport = memo(function Viewport(): ReactElement {
       onDragLeave={() => setDropping(false)}
       onDrop={(e) => {
         setDropping(false);
+        const material = parseMaterialDrag(e.dataTransfer.getData(MATERIAL_DRAG_TYPE));
+        if (material) {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+          const y = -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+          if (!studio.editor.dropMaterial(x, y, material.spec, material.name)) studio.store.getState().toast('Drop the material onto an object.', 'info', 3);
+          return;
+        }
         const id = e.dataTransfer.getData(PALETTE_DRAG_TYPE);
         if (!id) return;
         e.preventDefault();
@@ -333,6 +287,11 @@ export const Viewport = memo(function Viewport(): ReactElement {
         {playing ? <CameraToggle /> : ready && <VerifyPill />}
         {ready && !playing && <DisplayMenu />}
       </div>
+      {ready && !playing && (
+        <div className="vp-context">
+          <ContextBar />
+        </div>
+      )}
       <BusyIndicator />
       <PlayHud />
       {ready && playing && <TouchControls />}

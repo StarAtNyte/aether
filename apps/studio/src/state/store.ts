@@ -82,6 +82,60 @@ export interface ProviderState {
   name: string;
 }
 
+/** Transform gizmo settings (session). */
+export interface GizmoSettings {
+  space: 'world' | 'local';
+  /** Rotate / scale around the selection centre, the active object's origin, or each object's own origin. */
+  pivot: 'center' | 'origin' | 'individual';
+  /** Grid / angle / scale snapping on (hold Ctrl while dragging to invert). */
+  snap: boolean;
+  /** Grid step in metres. */
+  grid: number;
+  /** Angle step in degrees. */
+  angle: number;
+  /** Scale step. */
+  scaleStep: number;
+  /** Move snaps onto the surface under the pointer. */
+  surface: boolean;
+  /** Move snaps the pivot onto the nearest vertex under the pointer. */
+  vertex: boolean;
+}
+
+/** Mesh component selection while editing a mesh (indices into its vertex / triangle arrays). */
+export interface MeshEditState {
+  id: string;
+  mode: 'vertex' | 'edge' | 'face';
+  vertices: number[];
+  /** Vertex index pairs. */
+  edges: number[];
+  faces: number[];
+  /** Soft-selection radius in metres (0: off). */
+  soft: number;
+}
+
+/** Brush settings (sculpt, paint, scatter). */
+export interface BrushSettings {
+  sculpt: 'raise' | 'lower' | 'smooth' | 'flatten' | 'noise';
+  /** Radius in metres. */
+  size: number;
+  /** 0..1 */
+  strength: number;
+  falloff: 'smooth' | 'linear' | 'constant' | 'sharp';
+  /** Paint colour (#rrggbb). */
+  color: string;
+  /** Erase instead of paint / place. */
+  erase: boolean;
+  /** Generator painted by the scatter brush. */
+  scatterItem: string;
+  /** Scatter instances per square metre. */
+  density: number;
+}
+
+/** Default gizmo settings. */
+export const DEFAULT_GIZMO: Readonly<GizmoSettings> = Object.freeze({ space: 'world', pivot: 'center', snap: false, grid: 0.5, angle: 15, scaleStep: 0.1, surface: false, vertex: false });
+/** Default brush settings. */
+export const DEFAULT_BRUSH: Readonly<BrushSettings> = Object.freeze({ sculpt: 'raise', size: 3, strength: 0.5, falloff: 'smooth', color: '#5e8c3a', erase: false, scatterItem: 'grass-tuft', density: 1.5 });
+
 /** Play-mode game state shown in the HUD. */
 export interface GameState {
   status: 'playing' | 'won' | 'lost';
@@ -134,6 +188,16 @@ export interface StudioState {
   aiPrefs: AiPrefs;
   /** The running agent turn: when it started, which connection it uses and the current step (null when idle). */
   agentRun: { startedAt: number; via: string; step: string } | null;
+  /** Transform gizmo options. */
+  gizmo: GizmoSettings;
+  /** Mesh being edited at component level (null: object mode). */
+  meshEdit: MeshEditState | null;
+  /** A mesh operation is running (in the compute worker). */
+  meshBusy: boolean;
+  /** Sculpt / paint / scatter brush settings. */
+  brush: BrushSettings;
+  /** The material eyedropper is armed: the next viewport click copies a material. */
+  materialPick: boolean;
 
   setMode(mode: StudioMode): void;
   setModeBusy(busy: boolean): void;
@@ -181,6 +245,47 @@ export interface StudioState {
   setAgentRun(run: { startedAt: number; via: string; step: string } | null): void;
   setAgentStep(step: string): void;
   pruneEntities(existing: ReadonlySet<string>): void;
+  setGizmoSettings(patch: Partial<GizmoSettings>): void;
+  setMeshEdit(state: MeshEditState | null): void;
+  setMeshBusy(busy: boolean): void;
+  setBrush(patch: Partial<BrushSettings>): void;
+  setMaterialPick(on: boolean): void;
+}
+
+function clampNum(v: unknown, min: number, max: number, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+}
+
+/** Merge a gizmo settings patch, keeping every value in range. */
+export function mergeGizmo(cur: GizmoSettings, patch: Partial<GizmoSettings>): GizmoSettings {
+  const n = { ...cur, ...patch };
+  return {
+    space: n.space === 'local' ? 'local' : 'world',
+    pivot: n.pivot === 'origin' || n.pivot === 'individual' ? n.pivot : 'center',
+    snap: n.snap === true,
+    grid: clampNum(n.grid, 0.01, 100, DEFAULT_GIZMO.grid),
+    angle: clampNum(n.angle, 1, 90, DEFAULT_GIZMO.angle),
+    scaleStep: clampNum(n.scaleStep, 0.01, 10, DEFAULT_GIZMO.scaleStep),
+    surface: n.surface === true,
+    vertex: n.vertex === true,
+  };
+}
+
+/** Merge a brush settings patch, keeping every value in range. */
+export function mergeBrush(cur: BrushSettings, patch: Partial<BrushSettings>): BrushSettings {
+  const n = { ...cur, ...patch };
+  const modes: ReadonlyArray<BrushSettings['sculpt']> = ['raise', 'lower', 'smooth', 'flatten', 'noise'];
+  const falloffs: ReadonlyArray<BrushSettings['falloff']> = ['smooth', 'linear', 'constant', 'sharp'];
+  return {
+    sculpt: modes.includes(n.sculpt) ? n.sculpt : DEFAULT_BRUSH.sculpt,
+    size: clampNum(n.size, 0.1, 100, DEFAULT_BRUSH.size),
+    strength: clampNum(n.strength, 0.01, 1, DEFAULT_BRUSH.strength),
+    falloff: falloffs.includes(n.falloff) ? n.falloff : DEFAULT_BRUSH.falloff,
+    color: typeof n.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(n.color) ? n.color.toLowerCase() : DEFAULT_BRUSH.color,
+    erase: n.erase === true,
+    scatterItem: typeof n.scatterItem === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(n.scatterItem) ? n.scatterItem : DEFAULT_BRUSH.scatterItem,
+    density: clampNum(n.density, 0.05, 20, DEFAULT_BRUSH.density),
+  };
 }
 
 /** Initial values that callers may override (persisted chat/settings). */
@@ -252,6 +357,11 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     rendererEpoch: 0,
     aiPrefs: init.aiPrefs ? parsePrefs(init.aiPrefs) : { ...DEFAULT_AI_PREFS },
     agentRun: null,
+    gizmo: { ...DEFAULT_GIZMO },
+    meshEdit: null,
+    meshBusy: false,
+    brush: { ...DEFAULT_BRUSH },
+    materialPick: false,
 
     setMode: (mode) => set({ mode }),
     setModeBusy: (modeBusy) => set({ modeBusy }),
@@ -344,6 +454,12 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
       const s = get();
       const selection = s.selection.filter((id) => existing.has(id));
       if (selection.length !== s.selection.length) set({ selection });
+      if (s.meshEdit && !existing.has(s.meshEdit.id)) set({ meshEdit: null });
     },
+    setGizmoSettings: (patch) => set((s) => ({ gizmo: mergeGizmo(s.gizmo, patch) })),
+    setMeshEdit: (meshEdit) => set({ meshEdit }),
+    setMeshBusy: (meshBusy) => set((s) => (s.meshBusy === meshBusy ? s : { meshBusy })),
+    setBrush: (patch) => set((s) => ({ brush: mergeBrush(s.brush, patch) })),
+    setMaterialPick: (materialPick) => set((s) => (s.materialPick === materialPick ? s : { materialPick })),
   }));
 }

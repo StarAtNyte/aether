@@ -686,3 +686,107 @@ export function faceEdges(mesh: MeshData, faces: Iterable<number> | null = null)
   }
   return Uint32Array.from(out);
 }
+
+/**
+ * Faces connected to `seed` across shared (welded) edges whose normals are
+ * within `maxAngleDeg` of the seed's: picking one triangle of a quad selects
+ * the whole flat face. Capped at `limit` faces.
+ */
+export function coplanarFaces(mesh: MeshData, seed: number, maxAngleDeg = 1, limit = 4096): number[] {
+  const tris = mesh.indices.length / 3;
+  if (!(seed >= 0 && seed < tris)) return [];
+  const weld = weldMap(mesh.positions);
+  const idx = mesh.indices;
+  const edgeFacesMap = new Map<number, number[]>();
+  for (let t = 0; t < tris; t++) {
+    for (let k = 0; k < 3; k++) {
+      const key = edgeKey(weld[idx[t * 3 + k] as number] as number, weld[idx[t * 3 + ((k + 1) % 3)] as number] as number);
+      const list = edgeFacesMap.get(key);
+      if (list) list.push(t);
+      else edgeFacesMap.set(key, [t]);
+    }
+  }
+  const normalOf = (t: number): [number, number, number] => {
+    const n = faceNormal(mesh, t, [0, 0, 0]);
+    const l = Math.hypot(n[0], n[1], n[2]) || 1;
+    return [n[0] / l, n[1] / l, n[2] / l];
+  };
+  const ref = normalOf(seed);
+  const cos = Math.cos((Math.max(0, maxAngleDeg) * Math.PI) / 180);
+  const out = [seed];
+  const seen = new Set([seed]);
+  for (let i = 0; i < out.length && out.length < limit; i++) {
+    const t = out[i] as number;
+    for (let k = 0; k < 3; k++) {
+      const key = edgeKey(weld[idx[t * 3 + k] as number] as number, weld[idx[t * 3 + ((k + 1) % 3)] as number] as number);
+      for (const u of edgeFacesMap.get(key) ?? []) {
+        if (seen.has(u)) continue;
+        seen.add(u);
+        const n = normalOf(u);
+        if (n[0] * ref[0] + n[1] * ref[1] + n[2] * ref[2] >= cos) out.push(u);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The component of triangle `t` nearest to a local point: its nearest
+ * vertex, or its nearest edge (as a vertex pair).
+ */
+export function nearestComponent(mesh: MeshData, t: number, point: readonly [number, number, number]): { vertex: number; edge: [number, number] } | null {
+  const tris = mesh.indices.length / 3;
+  if (!(t >= 0 && t < tris)) return null;
+  const p = mesh.positions;
+  const v = [mesh.indices[t * 3] as number, mesh.indices[t * 3 + 1] as number, mesh.indices[t * 3 + 2] as number];
+  const d2 = (i: number): number => ((p[i * 3] as number) - point[0]) ** 2 + ((p[i * 3 + 1] as number) - point[1]) ** 2 + ((p[i * 3 + 2] as number) - point[2]) ** 2;
+  let vertex = v[0] as number;
+  for (const i of v) if (d2(i) < d2(vertex)) vertex = i;
+  const segDist = (a: number, b: number): number => {
+    const ax = p[a * 3] as number, ay = p[a * 3 + 1] as number, az = p[a * 3 + 2] as number;
+    const bx = (p[b * 3] as number) - ax, by = (p[b * 3 + 1] as number) - ay, bz = (p[b * 3 + 2] as number) - az;
+    const len2 = bx * bx + by * by + bz * bz || 1;
+    const s = Math.max(0, Math.min(1, ((point[0] - ax) * bx + (point[1] - ay) * by + (point[2] - az) * bz) / len2));
+    return (ax + bx * s - point[0]) ** 2 + (ay + by * s - point[1]) ** 2 + (az + bz * s - point[2]) ** 2;
+  };
+  let edge: [number, number] = [v[0] as number, v[1] as number];
+  let best = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const a = v[k] as number;
+    const b = v[(k + 1) % 3] as number;
+    const d = segDist(a, b);
+    if (d < best) {
+      best = d;
+      edge = [a, b];
+    }
+  }
+  return { vertex, edge };
+}
+
+/**
+ * Allocation-free variant of {@link transformVertices}: writes into `out`
+ * (same length as `positions`), so gizmo drags of components can run every
+ * pointer move without garbage.
+ */
+export function transformVerticesInto(out: Float32Array, positions: Float32Array, weights: Float32Array, m: ArrayLike<number>): Float32Array {
+  const n = Math.min(out.length, positions.length) / 3;
+  for (let v = 0; v < n; v++) {
+    const x = positions[v * 3] as number;
+    const y = positions[v * 3 + 1] as number;
+    const z = positions[v * 3 + 2] as number;
+    const wt = weights[v] as number;
+    if (!(wt > 0)) {
+      out[v * 3] = x;
+      out[v * 3 + 1] = y;
+      out[v * 3 + 2] = z;
+      continue;
+    }
+    const tx = (m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number);
+    const ty = (m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number);
+    const tz = (m[2] as number) * x + (m[6] as number) * y + (m[10] as number) * z + (m[14] as number);
+    out[v * 3] = x + (tx - x) * wt;
+    out[v * 3 + 1] = y + (ty - y) * wt;
+    out[v * 3 + 2] = z + (tz - z) * wt;
+  }
+  return out;
+}

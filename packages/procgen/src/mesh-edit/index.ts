@@ -7,6 +7,7 @@ export { buildTopology, boundaryVertices, edgeKey, edgeEnds, faceNormal, meshHea
 export { MeshBuilder, MeshLimitError } from './builder';
 export {
   averageNormal,
+  coplanarFaces,
   copiesOf,
   deleteFaces,
   extrudeFaces,
@@ -15,11 +16,13 @@ export {
   flipFaces,
   insetFaces,
   mergeByDistance,
+  nearestComponent,
   orientOutward,
   smoothMesh,
   softWeights,
   subdivide,
   transformVertices,
+  transformVerticesInto,
   unwrapUVs,
 } from './ops';
 export { falloffWeight, SculptSession, type BrushDab, type BrushFalloff, type SculptMode } from './sculpt';

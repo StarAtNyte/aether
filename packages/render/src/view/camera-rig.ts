@@ -13,6 +13,10 @@ export interface OrbitControlsLike {
   enableDamping: boolean;
   dampingFactor: number;
   readonly target: Vector3;
+  /** Mouse button → action map (three's OrbitControls); a missing action disables that button. */
+  mouseButtons?: { LEFT?: number | null; MIDDLE?: number | null; RIGHT?: number | null };
+  /** Touch gesture → action map (three's OrbitControls). */
+  touches?: { ONE?: number | null; TWO?: number | null };
   update(deltaTime?: number | null): boolean;
   dispose(): void;
 }

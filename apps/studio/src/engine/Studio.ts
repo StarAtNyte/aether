@@ -36,7 +36,8 @@ import { downloadText } from '../lib/download';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
-import type { ContextLossInfo, GizmoChange, RenderMemoryStats } from '@aether/render';
+import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
+import { Editor } from './editor/Editor';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, runVerification } from './AgentBridge';
 import { aiConnection, type AiConnection, type ResolvedConnection } from '../ai/connection';
@@ -108,6 +109,8 @@ export class Studio {
   readonly history: History;
   readonly store: StoreApi<StudioState>;
   readonly bridge: AgentBridge;
+  /** Hand editing: selection ops, mesh editing, brushes, materials, parameters. */
+  readonly editor: Editor;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   private sim: Simulation | null = null;
@@ -156,6 +159,7 @@ export class Studio {
     this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
     this.sandbox = createSandbox();
     this.bridge = new AgentBridge(this.history, this.sandbox);
+    this.editor = new Editor(this, { storage: this.storage });
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -278,7 +282,8 @@ export class Studio {
           onMessage: (text, duration) => this.store.getState().toast(text, 'game', duration),
           onGameOver: (result, text) => this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text }),
           onPick: (id, additive) => this.pick(id, additive),
-          onTransform: (id, change) => this.applyGizmoTransform(id, change),
+          onTransform: (commit) => this.editor.commitGizmo(commit),
+          onSynced: () => this.editor.onSynced(),
           onModeChange: (mode) => {
             const s = this.store.getState();
             s.setMode(mode);
@@ -307,6 +312,7 @@ export class Studio {
       }
       this.sim = sim;
       this.bridge.attach(sim);
+      this.editor.attach(sim);
       // Settings may have changed while the renderer was starting: apply the current ones.
       const now = this.store.getState().settings;
       sim.setShowColliders(now.showColliders);
@@ -331,6 +337,7 @@ export class Studio {
         if (this.sim === sim) {
           this.sim = null;
           this.bridge.attach(null);
+          this.editor.attach(null);
           for (const fn of this.simListeners) fn(null);
         }
         sim.dispose();
@@ -421,6 +428,8 @@ export class Studio {
   /** Viewport/outliner selection. */
   pick(id: EntityId | null, additive = false): void {
     const s = this.store.getState();
+    // Leaving component editing by clicking another object.
+    if (s.meshEdit && id !== s.meshEdit.id) this.editor.mesh.exit();
     if (!id) {
       if (!additive) s.select([]);
       return;
@@ -446,22 +455,14 @@ export class Studio {
     return null;
   }
 
-  /** Commit the result of a gizmo drag (skipped when nothing changed). */
-  applyGizmoTransform(id: EntityId, change: GizmoChange): void {
-    const e = getEntity(this.history.current, id);
-    if (!e) return;
-    const t = e.transform;
-    const same = (a: readonly number[], b: readonly number[]): boolean => a.every((v, i) => Math.abs(v - (b[i] ?? 0)) < 1e-4);
-    if (same(t.position, change.position) && same(t.rotation, change.rotation) && same(t.scale, change.scale)) return;
-    const verb = change.mode === 'rotate' ? 'Rotate' : change.mode === 'scale' ? 'Scale' : 'Move';
-    this.commitUser([{ op: 'update', id, set: { transform: { position: change.position, rotation: change.rotation, scale: change.scale } } }], `${verb} ${e.name || id}`);
-  }
-
-  /** Delete entities (with children). */
+  /** Delete entities (with children). Locked entities are kept. */
   deleteEntities(ids: readonly EntityId[]): void {
     if (ids.length === 0) return;
     const world = this.history.current;
-    const live = ids.filter((id) => getEntity(world, id));
+    const live = ids.filter((id) => {
+      const e = getEntity(world, id);
+      return !!e && e.locked !== true;
+    });
     if (live.length === 0) return;
     if (this.commitUser(live.map((id) => ({ op: 'remove', id, recursive: true })), live.length === 1 ? `Delete ${live[0]}` : `Delete ${live.length} entities`) === null) {
       this.store.getState().select([]);
@@ -932,6 +933,7 @@ export class Studio {
     this.disposed = true;
     this.abort?.abort();
     for (const c of this.cleanups.splice(0)) c();
+    this.editor.dispose();
     this.sim?.dispose();
     this.sim = null;
     this.sandbox?.dispose();
