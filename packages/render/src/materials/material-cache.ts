@@ -8,6 +8,7 @@ import type { MaterialSpec } from '@aether/core';
 import { RefCache } from '../refcache';
 import { materialKey, resolveMaterial, type MaterialVariant, type ResolveOptions, type ResolvedMaterial } from './presets';
 import { SurfaceTextures, WATER_NORMAL_SCALE } from './surface-textures';
+import { applyWind } from './wind';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -48,7 +49,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     // Sorted alpha blending without depth writes avoids self-occlusion artifacts on water/glass.
     m.depthWrite = r.opacity > 0.9;
   }
-  if (variant === 'standard' && surfaces && r.surface) {
+  if (variant !== 'ghost' && surfaces && r.surface) {
     const maps = surfaces.get(r.surface);
     m.map = maps.map;
     if (maps.emissiveMap && r.emissiveIntensity > 0) m.emissiveMap = maps.emissiveMap;
@@ -57,6 +58,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
       m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
     }
   }
+  if (variant === 'foliage') applyWind(m);
   m.name = `aether:${variant}`;
   return m;
 }

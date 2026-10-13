@@ -271,3 +271,23 @@ describe('SceneSync scatter fields', () => {
     expect(renderBudget('discrete', true).fieldTriangles).toBeLessThan(renderBudget('discrete', false).fieldTriangles);
   });
 });
+
+describe('foliage wind', () => {
+  it('gives vegetation fields a wind position node that survives material changes, and leaves other fields alone', async () => {
+    const { createProcgenGeometrySource } = await import('../src/geometry/procgen-source');
+    const { sync, materials } = makeSync({ source: createProcgenGeometrySource(), fields: { maxInstances: 100_000, triangles: 200_000 } });
+    const w = world([
+      { id: 'pines', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'tree-pine' }, count: 3000, area: [200, 200], seed: 1 } },
+      { id: 'stones', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'rock' }, count: 3000, area: [200, 200], seed: 2 } },
+    ]);
+    await sync.setWorld(w);
+    await sync.whenIdle();
+    const windy = (id: string): boolean[] => sync.node(id)!.bindings.map((b) => (b.mesh.material as { positionNode?: unknown }).positionNode !== undefined);
+    expect(windy('pines').every(Boolean)).toBe(true);
+    expect(windy('stones').some(Boolean)).toBe(false);
+    await sync.setWorld(patch(w, [{ op: 'update', id: 'pines', set: { material: { color: '#335533' } } }]));
+    expect(windy('pines').every(Boolean)).toBe(true);
+    await sync.setWorld(world([]));
+    expect(materials.size).toBe(0);
+  });
+});

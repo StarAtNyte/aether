@@ -182,7 +182,7 @@ descriptions. It contains no three.js.
   materials, which reduces draw calls. `autoColliders('box' | 'hull')` and
   `build()` place the base on y = 0 and centre x and z (heightfield terrain
   keeps its frame).
-- **35 built-in generators** in six categories (nature, architecture, props,
+- **36 built-in generators** in six categories (nature, architecture, props,
   vehicles, terrain, fx), each with 2 to 4 variants and typed params.
   `resolveParams` applies defaults, clamping and type coercion.
 - **Heightfield colliders** use Rapier's native layout: heights normalised to
@@ -508,6 +508,52 @@ world under each preset) to `docs/screenshots/gallery/` for visual review.
   buffer + fence), then encoded on a CPU-backed canvas with `toBlob`. A
   synchronous canvas readback used to wait for the GPU: 24–37 s on a
   software GPU, now none.
+**Scale geometry.** Two systems let a world hold far more geometry than a
+frame can draw. Both plan on the CPU and submit ordinary instanced or
+indexed draws, so WebGPU, WebGL2 and Firefox behave the same; both are
+re-planned in `draw()` whenever the camera (or a capture camera) changed,
+throttled to one re-plan per 90 ms while the camera keeps moving, and are
+allocation-free per frame (allocation probe).
+
+- *Virtual geometry* (`virtual/`). Parts with ≥ 20 000 triangles are split
+  into 128-triangle clusters; groups of four adjacent clusters are
+  simplified to half with their outer border locked (our quadric-error,
+  half-edge-collapse simplifier, so no vertex is ever created and all levels
+  share one vertex buffer) and re-split, level after level, into a cluster
+  DAG whose errors and bounding spheres are monotone. A cluster is drawn when
+  its projected error is ≤ 1 px but its parents' is not; since every cluster
+  made from one group shares that group's error and sphere, the cut is
+  watertight. Hierarchies build in `dag.worker.ts` (validated messages,
+  timeout, byte-capped cache); meanwhile the full-detail mesh stays on the
+  raycast-only layer (picking, snapping and the chase camera use its BVH)
+  and is never drawn. All instances of a mesh pack their cuts into one
+  dynamic index buffer (uploaded from the first changed instance); a budget
+  governor raises the error threshold when cuts exceed the GPU class's
+  triangle budget. Shadow casters skip cluster frustum/back-face culling
+  (off-screen parts can shadow the view); LOD still applies.
+- *Scatter fields* (`virtual/field-culler.ts`, `scatter-field.ts`). Layers
+  of ≥ 2 000 instances (up to 1 000 000 per entity) are packed into 20-byte
+  records, sorted into ~128-instance chunks and drawn through one instanced
+  mesh per (LOD level, part). LOD levels come from the same simplifier
+  (faceted generator meshes are re-flattened). Each re-plan culls chunks
+  against a padded frustum, picks a level from the projected instance size
+  (with hysteresis) and spends the field's share of the triangle budget
+  front to back, demoting or dropping far chunks. Level buffers are written
+  in stable chunk order and uploaded only from the first changed chunk.
+  Vegetation fields use the `foliage` material variant: a TSL position node
+  bends crowns in a procedural wind (vertex shader only).
+- *Showcase.* The offline planner's "Canyon of Colossi" (prompt: "a canyon
+  with a million trees and ancient statues") uses both: 1 M pines in two
+  fields, 41 sculptures from the `colossus` generator sharing three meshes,
+  and a canyon terrain (itself virtual geometry). The viewport badge shows
+  scene vs drawn triangles; `npm run e2e:benchmark` measures it.
+- *Grade.* The post pass applies a colour grade derived from the sky state
+  (split tone toward the key light and the zenith, saturation, contrast
+  pivot) in the same composite pass; uniforms only.
+- *Resolution governor.* `AdaptiveResolution` decides on the 90th-percentile
+  frame time of the last 48 frames, so periodic stutter scales the buffer
+  down even when the mean frame rate looks fine.
+
 `setEntityProperty` accepts only validated paths. `addTransient` and
 `removeTransient` handle runtime spawns. `clearRuntimeOverrides` resets the
 scene when play stops.

@@ -76,9 +76,9 @@ explicit state, so the AI can be held to account:
   several tests are verified as parallel forks: the checks panel fills in
   test by test ("12 s of physics in 340 ms · 2 parallel workers") while the
   viewport stays fully interactive.
-- **Procedural generator library.** 35 deterministic built-in generators
-  (trees, rocks, houses, towers, bridges, windmills, vehicles, terrain,
-  islands, mountains, crystals, portals and more), built on a typed-array
+- **Procedural generator library.** 36 deterministic built-in generators
+  (trees, rocks, houses, towers, bridges, windmills, vehicles, terrain and canyons,
+  islands, mountains, crystals, portals, high-detail colossal sculptures and more), built on a typed-array
   geometry kernel and seeded simplex noise. Each has variants, parameters,
   several materials and auto-derived colliders. All geometry is procedural,
   so the project ships no third-party 3D assets.
@@ -93,6 +93,22 @@ explicit state, so the AI can be held to account:
   exchange JSON only, run on a per-call time budget and have memory and stack
   caps. The whole runtime is deterministic: same seed and inputs give the same
   run.
+- **Hundreds of millions of triangles, drawn by the screen, not the scene.**
+  Two engines inside the renderer, both pure CPU planning plus ordinary
+  draws, so WebGPU, WebGL2 and Firefox behave identically:
+  *virtual geometry* (Nanite-style) splits every part with 20k+ triangles
+  into 128-triangle clusters, builds a cluster LOD hierarchy with our own
+  quadric-error simplifier in a worker, and draws a crack-free,
+  view-dependent cut per instance (frustum and normal-cone culled);
+  *scatter fields* turn any layer of 2 000+ instances (up to a million per
+  layer) into spatial chunks with automatic LOD meshes, culled per chunk and
+  spent against a per-GPU triangle budget, far chunks first. The built-in
+  showcase — "a canyon with a million trees and ancient statues" — holds
+  223 M triangles and draws about 1.2 M (≈ 190× fewer); the viewport shows
+  both numbers. Vegetation fields sway in a procedural wind, and the post
+  pass applies a colour grade derived from the sky (split tone, saturation,
+  contrast). Research notes and numbers: [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md),
+  [`experiments/`](experiments).
 - **WebGPU with WebGL2 fallback.** three.js r186 `WebGPURenderer`, ACES tone
   mapping, bloom and a soft vignette, weather particles, soft shadows fitted
   to the content, and orbit, follow (it steps in front of obstacles) and
@@ -275,6 +291,7 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 | `?safe=1` | Boot into the starter world. The last saved world stays one Undo away. This also happens automatically after a crash during start-up. |
 | `?reset=1` | Same recovery path as `?safe=1` |
 | `?debug=1` | Verbose logging and exposes `window.__aether` (also on in dev builds) |
+| `?engine=classic` | Turn scatter fields and virtual geometry off (every layer and sculpture drawn at full detail; for comparisons) |
 
 Routes are hash based (they work on any static host): `#/` home, `#/templates`,
 `#/projects`, `#/docs`, `#/p/<id>` the editor for a project, `#/new` a new
@@ -293,6 +310,7 @@ template (for example `#/new/coin-island`).
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
 | `npm run smoke` | Runs the real agent with the offline planner against 13 prompts and re-verifies every world headless |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
+| `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
@@ -395,7 +413,7 @@ flowchart TB
 | Package | Responsibility |
 | --- | --- |
 | [`@aether/core`](packages/core) | World IR (zod), `applyPatches`, `invertPatches`, `diffWorlds`, `History` with branches, selectors, deterministic rng and hashes, world summaries for LLM context |
-| [`@aether/procgen`](packages/procgen) | Typed-array geometry kernel (no three.js), noise, 35 built-in generators, `GeneratorApi`, LRU cache, Worker sandbox (browser) and `node:vm` sandbox (`@aether/procgen/node`, tests and server) |
+| [`@aether/procgen`](packages/procgen) | Typed-array geometry kernel (no three.js), noise, 36 built-in generators, `GeneratorApi`, LRU cache, Worker sandbox (browser) and `node:vm` sandbox (`@aether/procgen/node`, tests and server) |
 | [`@aether/physics`](packages/physics) | Rapier 0.21 wrapper: incremental sync, joints, character controller, events, snapshots and forks, `verify`, `diagnose`, `settle` |
 | [`@aether/logic`](packages/logic) | Deterministic gameplay runtime: rules engine, 26 behaviours, QuickJS script sandbox, host-agnostic through `LogicHost` |
 | [`@aether/render`](packages/render) | `WorldRenderer`: WebGPU/WebGL2, incremental `SceneSync`, instanced scatter, environment, cameras, picking, ghost preview, debug overlays, screenshots |
@@ -451,9 +469,18 @@ All LLM output and all user input are treated as untrusted.
 
 ## Performance
 
-- **Instancing.** `scatter` shapes (forests, grass, rocks) are drawn with GPU
-  instancing and one shared matrix buffer. Device budgets cap them (150k
-  instances or 12M triangles by default), and large layers skip shadows.
+- **Instancing and scatter fields.** Small `scatter` layers are one
+  instanced mesh; layers of 2 000+ instances become fields (packed 20-byte
+  instances in ~128-instance chunks, QEM LOD levels, CPU chunk culling
+  against a triangle budget, re-planned at most every 90 ms while the camera
+  moves and re-uploaded only from the first changed chunk). A million pines:
+  19 MB of instance data, 0.0–3.4 ms per re-plan, ≈ 70× fewer triangles than
+  full detail under a 3 M budget.
+- **Virtual geometry.** Parts with 20k+ triangles build a cluster LOD DAG in
+  a worker (328k triangles: 1.5 s) and draw a 1 px-error cut: all instances
+  of a mesh share one vertex buffer and one dynamic index buffer (≈ 2× the
+  source indices); a cut costs 0.01–0.5 ms on the CPU and is watertight by
+  construction (tested).
 - **Zero-allocation hot loops.** Physics writes packed
   `[p, q]` transforms into a reused `Float32Array`, which the renderer
   consumes without allocating. Logic reuses per-tick scratch state, and script
@@ -492,7 +519,7 @@ All LLM output and all user input are treated as untrusted.
   are drawn instanced, and the resolution adapts while continuous rendering
   stays under 40 fps.
 - **Measured.** 1000 dynamic boxes step in about 2.3 ms on average (8 ms
-  budget). 1000 patches apply in about 40 ms. All 35 built-in generators run
+  budget). 1000 patches apply in about 40 ms. The 35 classic built-in generators run
   in about 0.4 s in total. A 1000-entity logic tick takes under 2 ms. The
   offline smoke run takes under a second per prompt.
 

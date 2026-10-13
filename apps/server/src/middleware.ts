@@ -142,6 +142,14 @@ export const VERIFY_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-un
 /** Built path of the verification worker. */
 export const VERIFY_WORKER_PATH = /^\/assets\/verify\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
+/**
+ * The geometry (cluster hierarchy) worker runs only our own typed-array
+ * code: no eval, no WebAssembly, no network.
+ */
+export const DAG_WORKER_CSP = "default-src 'none'; script-src 'self'";
+/** Built path of the geometry worker. */
+export const DAG_WORKER_PATH = /^\/assets\/dag\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
+
 /** Security headers: CSP, nosniff, referrer policy, COOP, frame denial, HSTS (production only). */
 export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> {
   const base = secureHeaders({
@@ -159,5 +167,6 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
     await base(c, next);
     if (SANDBOX_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
     else if (VERIFY_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', VERIFY_WORKER_CSP);
+    else if (DAG_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', DAG_WORKER_CSP);
   };
 }

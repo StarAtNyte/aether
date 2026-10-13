@@ -46,6 +46,7 @@ import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../
 import type { GeometryCache } from '../geometry/buffer-geometry';
 import type { MaterialCache } from '../materials/material-cache';
 import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMaterial } from '../materials/presets';
+import { FOLIAGE_GENERATORS } from '../materials/wind';
 import { createMaterial } from '../materials/material-cache';
 import { instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
@@ -1008,10 +1009,12 @@ export class SceneSync {
     }
     // Field capacity follows the field's size (a 400k+ layer may use the whole budget).
     const cap = Math.max(budget.triangles * 0.15, Math.min(budget.triangles, (budget.triangles * placements.count) / 400_000));
+    // Vegetation fields sway in the wind (vertex shader only).
+    const variant: MaterialVariant = shape.of.kind === 'procedural' && FOLIAGE_GENERATORS.has(shape.of.generator) ? 'foliage' : this.variant;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] as MeshPart;
       const hasColors = part.colors instanceof Float32Array && part.colors.length > 0;
-      const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length), { hasVertexColors: hasColors, doubleSided: false }, this.variant);
+      const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length), { hasVertexColors: hasColors, doubleSided: false }, variant);
       materials.push(handle.material);
       handles.push({ key: handle.key, hasColors, seeThrough: handle.resolved.transparent && handle.resolved.opacity < SHADOW_OPACITY_MIN, part });
     }
@@ -1019,8 +1022,8 @@ export class SceneSync {
     // One binding per (level, part) mesh; each holds its own material reference.
     for (let m = 0; m < field.meshes.length; m++) {
       const h = handles[m % parts.length] as (typeof handles)[number];
-      const key = m < parts.length ? h.key : this.opts.materials.acquire(mergeMaterial(h.part.material, node.entity.material, parts.length), { hasVertexColors: h.hasColors, doubleSided: false }, this.variant).key;
-      node.bindings.push({ mesh: field.meshes[m] as InstancedMesh, partMaterial: h.part.material, hasColors: h.hasColors, doubleSided: false, materialKey: key, seeThrough: h.seeThrough, ownedMaterial: null });
+      const key = m < parts.length ? h.key : this.opts.materials.acquire(mergeMaterial(h.part.material, node.entity.material, parts.length), { hasVertexColors: h.hasColors, doubleSided: false }, variant).key;
+      node.bindings.push({ mesh: field.meshes[m] as InstancedMesh, partMaterial: h.part.material, hasColors: h.hasColors, doubleSided: false, materialKey: key, seeThrough: h.seeThrough, ownedMaterial: null, ...(variant !== this.variant ? { variant } : {}) });
     }
     node.field = field;
     node.instances = placements.count;
@@ -1315,7 +1318,7 @@ export class SceneSync {
       });
       let owned = b.ownedMaterial;
       if (!owned) {
-        owned = createMaterial(resolved, this.variant, this.opts.materials.surfaces);
+        owned = createMaterial(resolved, b.variant ?? this.variant, this.opts.materials.surfaces);
         if (field === 'opacity' && !owned.transparent) {
           // Opacity animations blend from the start so the program never flips per tick.
           owned.transparent = true;
@@ -1342,7 +1345,7 @@ export class SceneSync {
       const handle = this.opts.materials.acquire(
         mergeMaterial(b.partMaterial, node.entity.material, node.partCount),
         { hasVertexColors: b.hasColors, doubleSided: b.doubleSided },
-        this.variant,
+        b.variant ?? this.variant,
       );
       this.opts.materials.release(b.materialKey);
       b.materialKey = handle.key;

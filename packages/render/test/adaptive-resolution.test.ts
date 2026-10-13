@@ -36,13 +36,14 @@ describe('AdaptiveResolution', () => {
     const a = new AdaptiveResolution();
     feed(a, 30, 2);
     expect(a.scale).toBeLessThan(1);
-    feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 0.5);
+    // +1 s: the p90 window (48 frames) first has to flush the slow frames.
+    feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1);
     expect(a.scale).toBe(1);
     // Too slow again right away: the next upscale waits twice as long.
     feed(a, 30, 2);
     expect(a.scale).toBeLessThan(1);
-    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 0.5)).toBe(0);
-    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 0.5)).toBe(1);
+    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1)).toBe(0);
+    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1)).toBe(1);
     expect(a.scale).toBe(1);
   });
 
@@ -54,6 +55,23 @@ describe('AdaptiveResolution', () => {
     feed(a, 10, 10);
     expect(a.scale).toBeLessThan(1);
     a.reset();
+    expect(a.scale).toBe(1);
+  });
+});
+
+describe('AdaptiveResolution p90 governor', () => {
+  it('scales down for periodic stutter even when the mean frame rate looks fine', () => {
+    const a = new AdaptiveResolution();
+    // 6 of every 48 frames take 45 ms, the rest 14 ms: mean ≈ 57 fps, p90 ≈ 22 fps.
+    let changed = false;
+    for (let i = 0; i < 48 * 4 && !changed; i++) changed = a.record(i % 8 === 0 ? 0.045 : 0.014, true);
+    expect(changed).toBe(true);
+    expect(a.scale).toBeLessThan(1);
+  });
+
+  it('keeps full resolution with rare isolated spikes', () => {
+    const a = new AdaptiveResolution();
+    for (let i = 0; i < 600; i++) a.record(i % 60 === 0 ? 0.05 : 0.016, true);
     expect(a.scale).toBe(1);
   });
 });

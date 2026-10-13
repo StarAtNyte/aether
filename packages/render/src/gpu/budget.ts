@@ -81,7 +81,7 @@ export function renderBudget(tier: GpuTier, lowMemory: boolean): RenderBudget {
     case 'discrete':
       return { pixelRatioCap: 1.5, maxPixels: 3.7e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 150_000, generatorCacheBytes: 64 * MB, fieldInstances: 2_000_000, fieldTriangles: 4_000_000, virtualTriangles: 3_000_000 };
     case 'software':
-      return { pixelRatioCap: 1, maxPixels: 1.4e6, shadowMapCap: 1024, post: true, antialias: true, maxInstances: 80_000, generatorCacheBytes: 32 * MB, fieldInstances: 1_000_000, fieldTriangles: 600_000, virtualTriangles: 400_000 };
+      return { pixelRatioCap: 1, maxPixels: 1.4e6, shadowMapCap: 1024, post: true, antialias: true, maxInstances: 80_000, generatorCacheBytes: 32 * MB, fieldInstances: 1_000_000, fieldTriangles: 300_000, virtualTriangles: 250_000 };
     case 'integrated':
     case 'unknown':
     default:

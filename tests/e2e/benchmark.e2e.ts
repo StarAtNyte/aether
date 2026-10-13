@@ -12,10 +12,11 @@
  * One browser at a time; everything started here is stopped in `finally`.
  *
  * Run: `npm run build && npm run e2e:benchmark` (Chromium WebGPU, Chromium
- * WebGL2, then Firefox WebGL2). Flags: `--only=chromium-webgpu|chromium-webgl2|firefox`,
+ * WebGL2, then Firefox WebGL2, all on software GPUs). `--only=chromium-gpu`
+ * measures the machine's hardware GPU instead. Flags: `--only=<target>`,
  * `--classic`, `--seconds=6`, `--out=<dir>` for the screenshots.
  */
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
@@ -29,6 +30,10 @@ const CLASSIC = ARGS.includes('--classic');
 const SECONDS = Math.min(30, Math.max(2, Number(arg('seconds') ?? 6)));
 const OUT_DIR = resolve(arg('out') ?? join(REPO_ROOT, 'docs/screenshots/benchmark'));
 const ONLY = arg('only');
+/** `--cycles=N`: rebuild the showcase N more times (with a small world in between) and check GPU objects stay flat. */
+const CYCLES = Math.min(10, Math.max(0, Number(arg('cycles') ?? 0)));
+/** `--profile=<file.cpuprofile>`: record a main-thread CPU profile of the orbit (Chromium only). */
+const PROFILE = arg('profile');
 const BOOT_TIMEOUT_MS = 90_000;
 const AGENT_TIMEOUT_MS = 240_000;
 
@@ -46,6 +51,8 @@ interface Target {
 const TARGETS: readonly Target[] = [
   { name: 'chromium-webgpu', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] }), query: '' },
   { name: 'chromium-webgl2', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] }), query: '' },
+  // Hardware GPU (headless Chromium over Vulkan/ANGLE). Not part of the default run: only with --only=chromium-gpu.
+  { name: 'chromium-gpu', launch: () => chromium.launch({ executablePath: findChrome(), args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--ignore-gpu-blocklist', '--enable-gpu-rasterization'] }), query: '' },
   { name: 'firefox', launch: () => firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }), query: '' },
 ];
 
@@ -123,6 +130,27 @@ interface Result {
   screenshot: string;
 }
 
+/** Type a prompt and wait for the agent turn to finish. */
+async function agentTurn(page: Page, prompt: string): Promise<void> {
+  const input = page.getByLabel('Prompt', { exact: true });
+  await input.fill(prompt);
+  await input.press('Enter');
+  await waitFor(page, 'the agent to start', 15_000, (p) => p.busy || p.last !== null);
+  const done = await waitFor(page, 'the agent to finish', AGENT_TIMEOUT_MS, (p) => !p.busy && p.last !== 'streaming' && p.ready);
+  if (done.last !== 'done') throw new Error(`agent turn ended with ${done.last}`);
+  await page.evaluate(async () => {
+    await window.__aether?.simulation?.whenSynced();
+  });
+}
+
+/** GPU objects the renderer holds (three's counters + its caches). */
+function gpuObjects(page: Page): Promise<{ geometries: number; textures: number; cachedGeometries: number; materials: number }> {
+  return page.evaluate(() => {
+    const m = window.__aether?.simulation?.renderer.memoryStats();
+    return { geometries: m?.geometries ?? -1, textures: m?.textures ?? -1, cachedGeometries: m?.cachedGeometries ?? -1, materials: m?.materials ?? -1 };
+  });
+}
+
 async function run(target: Target, url: string): Promise<Result> {
   const browser = await target.launch();
   try {
@@ -165,6 +193,12 @@ async function run(target: Target, url: string): Promise<Result> {
     }, null, { timeout: 120_000 });
     await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
     const buildSeconds = (performance.now() - t0) / 1000;
+    const cdp = PROFILE && target.name.startsWith('chromium') ? await context.newCDPSession(page) : null;
+    if (cdp) {
+      await cdp.send('Profiler.enable');
+      await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
+      await cdp.send('Profiler.start');
+    }
     // Orbit the camera for SECONDS, recording frame times and long tasks in the page.
     const m = await page.evaluate(async (seconds: number) => {
       const sim = window.__aether?.simulation;
@@ -205,6 +239,13 @@ async function run(target: Target, url: string): Promise<Result> {
       const q = (p: number): number => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0;
       return { frames: frames.length, p50: q(0.5), p90: q(0.9), p99: q(0.99), longTasks, longest, stats: s };
     }, SECONDS);
+    if (cdp && PROFILE) {
+      const { profile } = await cdp.send('Profiler.stop');
+      writeFileSync(resolve(PROFILE), JSON.stringify(profile));
+      log(`  CPU profile → ${resolve(PROFILE)}`);
+    }
+    // Back to the default framing for the screenshot (the orbit ends low in the canyon).
+    await page.evaluate(() => window.__aether?.simulation?.renderer.frameContent({ duration: 0 }));
     await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: true }));
     await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip { display: none !important; }' });
     await page.waitForTimeout(700);
@@ -213,6 +254,28 @@ async function run(target: Target, url: string): Promise<Result> {
     const png = await page.locator('.viewport').screenshot({ path: file });
     const px = pixelStats(decodePng(png));
     if (px.stdDev < 6) throw new Error('blank canvas');
+    // Close-up of the nearest colossal head (virtual geometry at full detail).
+    await page.evaluate(() => {
+      const a = window.__aether;
+      const id = a ? Object.keys(a.history.current.entities).find((k) => k.startsWith('colossus')) : undefined;
+      if (id) a?.simulation?.renderer.focus(id);
+    });
+    await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    await page.locator('.viewport').screenshot({ path: file.replace(/\.png$/, '-closeup.png') });
+    if (CYCLES > 0) {
+      // Let virtual geometry finish swapping in, then take the baseline.
+      await page.waitForTimeout(3000);
+      const base = await gpuObjects(page);
+      for (let i = 0; i < CYCLES; i++) {
+        await agentTurn(page, 'a cozy meadow with a few trees');
+        await agentTurn(page, PROMPT);
+        await page.waitForTimeout(3000);
+        const now = await gpuObjects(page);
+        log(`  cycle ${i + 1}/${CYCLES}: ${now.geometries} GPU geometries (baseline ${base.geometries}), ${now.textures} textures, ${now.cachedGeometries} cached, ${now.materials} materials`);
+        if (now.cachedGeometries > base.cachedGeometries + 2 || now.materials > base.materials + 2 || now.textures > base.textures + 2) throw new Error(`GPU objects grew: ${JSON.stringify(base)} → ${JSON.stringify(now)}`);
+      }
+    }
     if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
     await context.close();
     const s = m.stats;
@@ -246,7 +309,7 @@ async function main(): Promise<void> {
   const results: Result[] = [];
   try {
     for (const t of TARGETS) {
-      if (ONLY && t.name !== ONLY) continue;
+      if (ONLY ? t.name !== ONLY : t.name === 'chromium-gpu') continue;
       log(`${t.name}${CLASSIC ? ' (classic engine)' : ''}: building "${PROMPT}"`);
       const r = await run(t, server.url);
       results.push(r);

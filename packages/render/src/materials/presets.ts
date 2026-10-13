@@ -141,7 +141,8 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
 }
 
 /** Rendering variant of a material (the ghost preview uses a translucent override). */
-export type MaterialVariant = 'standard' | 'ghost';
+/** 'foliage' is 'standard' plus procedural wind sway (vegetation fields). */
+export type MaterialVariant = 'standard' | 'ghost' | 'foliage';
 
 /** Stable cache key of a resolved material + variant. Equivalent specs share one key. */
 export function materialKey(resolved: ResolvedMaterial, variant: MaterialVariant = 'standard'): string {

@@ -6,6 +6,7 @@ import type { Entity, EntityId, MaterialSpec } from '@aether/core';
 import type { KeyedOutput } from '../types';
 import type { EntityLight } from './lights';
 import type { MeshGeometryBundle } from '../geometry/mesh-asset';
+import type { MaterialVariant } from '../materials/presets';
 import type { ScatterField } from '../virtual/scatter-field';
 
 /** Key under `Object3D.userData` holding the owning entity id. */
@@ -27,6 +28,8 @@ export interface MeshBinding {
    * cached `materialKey` stays retained underneath and is rebound on reset.
    */
   ownedMaterial: MeshStandardMaterial | null;
+  /** Material variant of this binding when it differs from the sync's (foliage wind). */
+  variant?: MaterialVariant;
 }
 
 /**

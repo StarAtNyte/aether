@@ -74,12 +74,18 @@ function frustum(x: number, y: number, z: number, yaw: number): Float64Array {
 
 const classify: number[] = [];
 const rewrite: number[] = [];
-let tris = 0, inst = 0, rewrites = 0;
+let tris = 0, inst = 0, rewrites = 0, uploaded = 0, fullUpload = 0;
 for (let f = 0; f < 120; f++) {
   const yaw = f * 0.02;
   const view = { cx: Math.cos(f * 0.01) * 20, cy: 8, cz: Math.sin(f * 0.01) * 20, pixelScale, planes: frustum(Math.cos(f * 0.01) * 20, 8, Math.sin(f * 0.01) * 20, yaw) };
   const a = performance.now();
-  const changed = culler.update(view) !== 0;
+  const dirty = culler.update(view);
+  const changed = dirty !== 0;
+  for (let l = 0; l < culler.levels; l++) {
+    if (!(dirty & (1 << l))) continue;
+    uploaded += Math.max(0, culler.counts[l]! - culler.dirtyFrom[l]!) * 64;
+    fullUpload += culler.counts[l]! * 64;
+  }
   const ms = performance.now() - a;
   (changed ? rewrite : classify).push(ms);
   if (changed) rewrites++;
@@ -89,4 +95,5 @@ for (let f = 0; f < 120; f++) {
 }
 const full = chain[0]!.triangles * placements.count;
 console.log(`  update: ${median(classify).toFixed(2)} ms when unchanged, ${median(rewrite).toFixed(2)} ms with rewrite (${rewrites}/120 frames rewrote)`);
+console.log(`  uploads: ${(uploaded / 120 / 1e6).toFixed(2)} MB/frame incremental vs ${(fullUpload / 120 / 1e6).toFixed(2)} MB/frame rewriting changed levels whole`);
 console.log(`  drawn per frame: ${(inst / 120).toFixed(0)} instances, ${(tris / 120 / 1e6).toFixed(2)}M triangles vs ${(full / 1e6).toFixed(0)}M at full detail (${(full / (tris / 120)).toFixed(0)}x fewer)`);

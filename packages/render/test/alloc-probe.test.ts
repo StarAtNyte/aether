@@ -75,6 +75,34 @@ describe('render loop allocation probe', () => {
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
   });
 
+  it('scatter-field and virtual-geometry view planning (moving camera) allocate nothing per frame', async () => {
+    const { createProcgenGeometrySource } = await import('../src/geometry/procgen-source');
+    const { sync } = makeSync({ source: createProcgenGeometrySource(), fields: { maxInstances: 200_000, triangles: 400_000 }, virtual: { triangles: 300_000, dag: { createWorker: null } } });
+    await sync.setWorld(createWorld({
+      entities: {
+        forest: { id: 'forest', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'tree-pine' }, count: 50_000, area: [600, 600], seed: 2 } },
+        stone: { id: 'stone', shape: { kind: 'procedural', generator: 'colossus', params: { detail: 1 } } },
+        'stone-2': { id: 'stone-2', transform: { position: [20, 0, 0] }, shape: { kind: 'procedural', generator: 'colossus', params: { detail: 1 } } },
+      },
+    }));
+    await sync.whenIdle();
+    for (let i = 0; i < 100 && sync.virtualStats().instances < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(sync.virtualStats().instances).toBe(2);
+    const cam = new PerspectiveCamera(55, 1.6, 0.1, 3000);
+    let t = 0;
+    const r = await probeAllocations(
+      () => {
+        t += 0.05;
+        cam.position.set(Math.cos(t) * 60, 12, Math.sin(t) * 60);
+        cam.lookAt(0, 0, 0);
+        cam.updateMatrixWorld();
+        sync.updateView(cam, 900);
+      },
+      { iterations: 200, warmup: 400, match: RENDER_SRC },
+    );
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
+  });
+
   it('camera rig (orbit + follow), grow-in, highlighter, stats and adaptive resolution allocate nothing per frame', async () => {
     const cam = new PerspectiveCamera(50, 1, 0.1, 1000);
     const orbit = new CameraRig(cam, controls());

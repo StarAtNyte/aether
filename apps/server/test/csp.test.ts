@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CSP_DIRECTIVES, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -69,11 +69,13 @@ describe('generator sandbox worker policy', () => {
     const file = fileURLToPath(new URL('../../../vercel.json', import.meta.url));
     const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
     const rules = config.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
-    expect(rules.map((r) => r.source)).toEqual(['/((?!assets/sandbox\\.worker-|assets/verify\\.worker-).*)', '/assets/sandbox.worker-(.*)', '/assets/verify.worker-(.*)']);
+    expect(rules.map((r) => r.source)).toEqual(['/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-).*)', '/assets/sandbox.worker-(.*)', '/assets/verify.worker-(.*)', '/assets/dag.worker-(.*)']);
     expect(rules[1]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(SANDBOX_WORKER_CSP);
     expect(rules[2]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(VERIFY_WORKER_CSP);
     // Both worker rules keep the other security headers of the page.
+    expect(rules[3]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(DAG_WORKER_CSP);
     expect(rules[2]?.headers.map((x) => x.key).sort()).toEqual(rules[1]?.headers.map((x) => x.key).sort());
+    expect(rules[3]?.headers.map((x) => x.key).sort()).toEqual(rules[1]?.headers.map((x) => x.key).sort());
   });
 
   it('is sent by the Node server for the worker only', async () => {
@@ -103,6 +105,21 @@ describe('physics verification worker policy', () => {
     expect(worker.headers.get('content-security-policy')).toBe(VERIFY_WORKER_CSP);
     const sandbox = await app.request('/assets/sandbox.worker-BvSP-eys.js');
     expect(sandbox.headers.get('content-security-policy')).toBe(SANDBOX_WORKER_CSP);
+    cleanupDirs();
+  });
+});
+
+describe('geometry worker policy', () => {
+  it('allows same-origin script only (no eval, no wasm, no network) and is sent for that worker only', async () => {
+    const p = parsePolicy(DAG_WORKER_CSP);
+    expect(p.get('default-src')).toEqual(["'none'"]);
+    expect(p.get('script-src')).toEqual(["'self'"]);
+    expect([...p.keys()].sort()).toEqual(['default-src', 'script-src']);
+    expect(DAG_WORKER_PATH.test('/assets/dag.worker-DKylClzY.js')).toBe(true);
+    expect(DAG_WORKER_PATH.test('/assets/dag.worker-x.js/../index.js')).toBe(false);
+    const app = makeApp(makeConfig());
+    const worker = await app.request('/assets/dag.worker-DKylClzY.js');
+    expect(worker.headers.get('content-security-policy')).toBe(DAG_WORKER_CSP);
     cleanupDirs();
   });
 });

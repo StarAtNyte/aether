@@ -144,7 +144,7 @@ uses an owner-paid key by default.
 included.** The only third-party media are two open-source fonts (below).
 
 - **Geometry:** every mesh is generated at runtime by Aether's own
-  procedural kernel and its 35 built-in generators, or by sandboxed
+  procedural kernel and its 36 built-in generators, or by sandboxed
   generators written by the coder model at runtime.
 - **Materials and skies:** procedural, built from colour and parameter
   presets plus shaders that ship with three.js. No texture files.
@@ -186,6 +186,20 @@ The research papers cited in the [README](../README.md#research-inspirations)
 3DCodeBench) were used **only as conceptual inspiration**. No code, models,
 weights, datasets, prompts or assets were copied from them or from their
 repositories.
+
+The scale-geometry code in `packages/render/src/virtual/` (quadric-error
+simplification, meshlet clustering, the cluster LOD DAG, scatter-field
+culling) is an original TypeScript implementation of published techniques:
+Garland & Heckbert, *Surface Simplification Using Quadric Error Metrics*
+(SIGGRAPH 1997); Karis et al., *Nanite: A Deep Dive* (SIGGRAPH 2021
+course); and the public design notes of meshoptimizer (MIT, Arseny
+Kapoulkine). No source code was copied from meshoptimizer, Unreal Engine or
+any other implementation, and no new dependency was added. The voxel
+experiment (`experiments/voxel-meshing`) implements classic greedy meshing
+(Lysenko, *Meshing in a Minecraft Game*, 2012) and the publicly described
+binary greedy technique from scratch. `@sparkjsdev/spark` (MIT) was only
+evaluated from its package metadata (`experiments/gaussian-splats`) and is
+not installed.
 
 ## AI disclosure
 

@@ -40,7 +40,7 @@ const canyonOfColossi: Theme = {
   absorbs: ['desert'],
   blurb: 'a stratified sandstone canyon lined with weathered colossal heads and a ring of carved standing stones, under plateaus holding a million pines — every statue drawn as virtual geometry, the forest as culled level-of-detail fields',
   env(b) {
-    b.env({ sky: 'sunset', timeOfDay: 17.6, sunIntensity: 3, fog: { color: '#e8b98c', density: 0.004 }, bloom: 0.55, exposure: 1.05, weather: 'clear', ground: { material: { preset: 'sand', color: '#c98f5e' }, size: SIZE * 1.6 } });
+    b.env({ sky: 'day', timeOfDay: 16.6, sunIntensity: 3.2, fog: { color: '#e8b98c', density: 0.004 }, bloom: 0.55, exposure: 1.05, weather: 'clear', ground: { material: { preset: 'sand', color: '#c98f5e' }, size: SIZE * 1.6 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 46] });
   },
   build(c) {
@@ -66,7 +66,7 @@ const canyonOfColossi: Theme = {
         const z = r2(-260 + i * 65 + (side > 0 ? 30 : 0));
         const x = r2(side * (26 + b.rand(0, 8)) + Math.sin((z * 4.2) / SIZE) * SIZE * 0.025);
         const h = r2(b.rand(0.8, 1.25));
-        sculpture(b, 'colossus', { variant: 0, detail: 3, height: 16, color: '#a39380' }, 7, [x, 0, z], { yaw: side > 0 ? -90 + b.rand(-20, 20) : 90 + b.rand(-20, 20), scale: h, name: 'Colossal head', footprint: 6 });
+        sculpture(b, 'colossus', { variant: 0, detail: 3, height: 16, color: '#a39380' }, 7, [x, 0, z], { yaw: side > 0 ? -90 + b.rand(-20, 20) : 90 + b.rand(-20, 20), scale: h, name: 'Colossal head', footprint: 6, tags: ['backdrop'] });
       }
     }
     // A ring of carved standing stones around the canyon's heart.
@@ -80,7 +80,7 @@ const canyonOfColossi: Theme = {
       const z = r2(b.rand(-300, 300));
       const p = b.spot(0, z, 0, 18, 4);
       if (!p) continue;
-      sculpture(b, 'boulder', { variant: 2, detail: 2, height: 4, color: '#9b7f66' }, 5, [p[0], 0, p[1]], { yaw: b.rand(0, 360), scale: b.rand(0.6, 1.4), name: 'Boulder', footprint: 3 });
+      sculpture(b, 'boulder', { variant: 2, detail: 2, height: 4, color: '#9b7f66' }, 5, [p[0], 0, p[1]], { yaw: b.rand(0, 360), scale: b.rand(0.6, 1.4), name: 'Boulder', footprint: 3, tags: ['backdrop'] });
     }
   },
 };

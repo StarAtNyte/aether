@@ -3,6 +3,9 @@
  * rendering (play mode, camera flights, animated weather) stays below
  * {@link ADAPTIVE_DEFAULTS.lowFps}, and restores it when there is headroom.
  *
+ * - Decisions use the 90th-percentile frame time of the last 48 frames, not
+ *   the mean: a scene that averages 50 fps but stutters every few frames is
+ *   treated as slow (p90 frame-time governor).
  * - Only back-to-back frames count (an on-demand editor that skips frames or
  *   a hidden tab never looks "slow").
  * - Hysteresis: downscale after `downAfter` seconds below `lowFps`; upscale
@@ -14,6 +17,9 @@
  *
  * Allocation-free per frame.
  */
+
+/** Frames in the percentile window. */
+const WINDOW = 48;
 
 /** Tunables of {@link AdaptiveResolution}. */
 export const ADAPTIVE_DEFAULTS = Object.freeze({
@@ -50,6 +56,11 @@ export class AdaptiveResolution {
   private upWait: number;
   private sinceUpscale = Number.POSITIVE_INFINITY;
   private changes = 0;
+  /** Ring of recent continuous frame times (s) and a scratch copy for the percentile. */
+  private readonly window = new Float32Array(WINDOW);
+  private readonly sorted = new Float32Array(WINDOW);
+  private cursor = 0;
+  private filled = 0;
 
   constructor(opts: AdaptiveOptions = {}) {
     this.o = { ...ADAPTIVE_DEFAULTS, ...opts };
@@ -62,8 +73,18 @@ export class AdaptiveResolution {
   }
 
   /** Smoothed frame rate of the current continuous streak (0 when none). */
+  /** Frame rate implied by the p90 frame time of the recent window (0 = no data). */
   get smoothedFps(): number {
     return this.fps;
+  }
+
+  /** 90th-percentile frame time of the window (allocation-free: typed-array sort of a scratch copy). */
+  private p90(): number {
+    const n = this.filled;
+    const s = this.sorted.subarray(0, n);
+    for (let i = 0; i < n; i++) s[i] = this.window[i] as number;
+    s.sort();
+    return s[Math.min(n - 1, Math.floor(n * 0.9))] as number;
   }
 
   /**
@@ -76,12 +97,15 @@ export class AdaptiveResolution {
     this.sinceUpscale += dt;
     if (!continuous || dt > this.o.maxContinuousDt) {
       this.fps = 0;
+      this.filled = 0;
       this.below = 0;
       this.above = 0;
       return false;
     }
-    const fps = 1 / dt;
-    this.fps = this.fps === 0 ? fps : this.fps + (fps - this.fps) * 0.1;
+    this.window[this.cursor] = dt;
+    this.cursor = (this.cursor + 1) % WINDOW;
+    if (this.filled < WINDOW) this.filled++;
+    this.fps = 1 / this.p90();
     if (this.fps < this.o.lowFps) {
       this.below += dt;
       this.above = 0;
@@ -107,6 +131,7 @@ export class AdaptiveResolution {
   reset(): void {
     this.scale = 1;
     this.fps = 0;
+    this.filled = 0;
     this.below = 0;
     this.above = 0;
     this.upWait = this.o.upAfter;
@@ -119,6 +144,7 @@ export class AdaptiveResolution {
     this.below = 0;
     this.above = 0;
     this.fps = 0;
+    this.filled = 0;
     if (rounded === this.scale) return false;
     this.scale = rounded;
     this.changes++;

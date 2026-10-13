@@ -437,7 +437,8 @@ export class WorldRenderer {
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
       fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
-      virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles },
+      // Low-memory mode keeps no hierarchy cache beyond the meshes on screen.
+      virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles, dag: { cacheBytes: this.lowMemory ? 0 : 96 * 1024 * 1024 } },
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
