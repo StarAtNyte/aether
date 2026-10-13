@@ -14,26 +14,49 @@ import { remixSuggestions } from '../lib/remix';
 import { ChatEvent } from '../components/chat/ChatEvent';
 import { Icon } from '../components/Icon';
 import { Logomark } from '../components/Logo';
-import { ModelPicker, RefineMenu } from '../components/ai/ComposerControls';
+import { DeepBuildToggle, ModelPicker, RefineMenu } from '../components/ai/ComposerControls';
 import { formatElapsed } from '../components/chat/ChatEvent';
 import { Thumb } from '../home/cards';
+import { aiConnection } from '../ai/connection';
+import { useAi } from '../ai/useAi';
 
-/** Connection status card shown in the empty state. */
+/** Connection card shown in the empty state: "Connect Codex" until an AI connection is ready. */
 const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
   const studio = useStudio();
   const provider = useUI((s) => s.provider);
-  if (provider.status !== 'offline') return null;
+  const local = useAi((s) => s.local);
+  const [starting, setStarting] = useState(false);
+  const localReady = local.state === 'ready';
+  if (localReady || (provider.status !== 'offline' && local.state !== 'not_logged_in')) return null;
+  const canSignInHere = local.state === 'not_logged_in' && local.backends.some((b) => b.id === 'codex' && b.installed);
+  const connect = (): void => {
+    if (canSignInHere) {
+      setStarting(true);
+      // Start Codex's own device sign-in; the settings pane shows the link and code.
+      void aiConnection()
+        .localApi.login('codex')
+        .catch(() => undefined)
+        .finally(() => {
+          setStarting(false);
+          studio.store.getState().openSettings('ai');
+        });
+    } else studio.store.getState().openSettings('ai');
+  };
   return (
-    <div className="connect-card">
+    <div className="connect-card connect-card--hero" data-testid="connect-codex">
       <span className="connect-card__icon">
         <Icon name="link" />
       </span>
       <span className="connect-card__text">
-        <span className="connect-card__title">Offline planner</span>
-        <span className="connect-card__hint">Runs in your browser. Use your Codex or Claude subscription for open-ended prompts, at no cost to anyone else.</span>
+        <span className="connect-card__title">Connect Codex</span>
+        <span className="connect-card__hint">
+          {local.state === 'off'
+            ? 'Use your ChatGPT or Claude subscription for open-ended prompts and deep-built assets. Until then, the offline planner runs in your browser.'
+            : 'Sign in with ChatGPT once: Codex then builds worlds and writes new assets on this computer, checking its own work.'}
+        </span>
       </span>
-      <button type="button" className="btn btn--sm" onClick={() => studio.store.getState().openSettings('ai')}>
-        Connect
+      <button type="button" className="btn btn--sm btn--primary" onClick={connect} disabled={starting}>
+        {starting ? 'Starting…' : 'Connect Codex'}
       </button>
     </div>
   );
@@ -43,6 +66,7 @@ const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
 const EmptyAgent = memo(function EmptyAgent({ onPrompt, onTemplate }: { onPrompt: (p: string) => void; onTemplate: (prompt: string) => void }): ReactElement {
   return (
     <div className="agent-empty">
+      <ConnectionCard />
       <div className="agent-empty__hero">
         <Logomark size={28} />
         <h2 className="agent-empty__title">Let’s build!</h2>
@@ -68,7 +92,6 @@ const EmptyAgent = memo(function EmptyAgent({ onPrompt, onTemplate }: { onPrompt
           ))}
         </div>
       </div>
-      <ConnectionCard />
     </div>
   );
 });
@@ -238,6 +261,7 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
         />
         <ModelPicker />
         <RefineMenu />
+        <DeepBuildToggle />
         <span className="spacer" />
         {busy ? (
           <button type="button" className="send-btn send-btn--stop" onClick={() => studio.stopAgent()} aria-label="Stop generating" data-tip="Stop" data-kbd="Esc">

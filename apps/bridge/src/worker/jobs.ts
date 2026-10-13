@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { JOB_ID_RE, LocalJobSchema, type AssetJobRequestSchema, type JobState, type LocalJob, type LocalJobEvent } from '@aether/agent';
+import { AssetJobRequestSchema, JOB_ID_RE, LocalJobSchema, type AssetJobRequest, type JobState, type LocalJob, type LocalJobEvent } from '@aether/agent';
 import type { GeneratorDef as GeneratorDefType, Json } from '@aether/core';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { resolveParams, validateOutput } from '@aether/procgen';
@@ -155,7 +155,10 @@ export class JobManager {
   }
 
   /** Queue an asset build. */
-  async enqueueAsset(req: AssetJobInput): Promise<JobRecord> {
+  async enqueueAsset(input: AssetJobRequest): Promise<JobRecord> {
+    const parsed = AssetJobRequestSchema.safeParse(input);
+    if (!parsed.success) throw new BridgeError('invalid_request', 'The build request is invalid.');
+    const req: AssetJobInput = parsed.data;
     await this.init();
     if (this.disposed) throw new BridgeError('backend_error', 'The AI service is shutting down.');
     if (this.queue.length >= (this.opts.maxQueued ?? 4)) throw new BridgeError('busy', 'Too many builds are waiting. Try again when one finished.', { retryAfterSec: 30 });
@@ -300,6 +303,7 @@ export class JobManager {
     await this.persist(rec);
     this.emit(rec.id, 'running', 'Preparing the workspace…');
     let ws: { dir: string; task: string; artifact: string } | null = null;
+    let outcome: { status: JobState; error?: string } = { status: 'failed', error: 'The build failed.' };
     try {
       ws = await (this.opts.createWorkspace ?? createAssetWorkspace)(rec.spec as AssetSpec);
       const r = await this.opts.runWorker(
@@ -318,18 +322,20 @@ export class JobManager {
       );
       if (!r.ok || r.kind !== 'agentic') throw new BridgeError('backend_error', 'The coding agent returned an unexpected result.');
       this.emit(rec.id, 'validate', 'Validating the result in Aether’s sandbox…');
+      // Only the final artifact is used, and it is validated again here.
       const parsed = parseAssetArtifact(await readArtifact(ws.dir, ws.artifact), rec.spec.id);
       if (!parsed.ok) throw new BridgeError('backend_error', parsed.error);
       const problem = await (this.opts.validate ?? validateGeneratorDef)(parsed.def);
       if (problem) throw new BridgeError('backend_error', `The generator failed validation: ${problem}`);
       rec.result = { def: parsed.def, turns: r.turns, checkerPassed: r.passed, ...(r.usage ? { usage: r.usage } : {}), ...(r.model ? { model: r.model } : {}) };
-      await this.finish(rec, 'done');
+      outcome = { status: 'done' };
     } catch (e) {
-      const cancelled = signal.aborted;
-      await this.finish(rec, cancelled ? 'cancelled' : 'failed', cancelled ? 'Cancelled.' : e instanceof Error ? e.message : 'The build failed.');
+      outcome = signal.aborted ? { status: 'cancelled', error: 'Cancelled.' } : { status: 'failed', error: e instanceof Error ? e.message : 'The build failed.' };
     } finally {
+      // The workspace is gone before anyone hears that the job ended.
       if (ws) await removeWorkspace(ws.dir);
     }
+    await this.finish(rec, outcome.status, outcome.error);
   }
 
   /** Stop the running job and refuse new ones (host shutdown). */

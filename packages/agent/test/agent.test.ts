@@ -305,6 +305,54 @@ describe('WorldAgent tools', () => {
     expect(events.find((e) => e.type === 'done')).toMatchObject({ usage: { calls: 4 } });
   });
 
+  it('request_asset uses the deep builder when given, and validates its result', async () => {
+    const provider = new ScriptedProvider([turn(call('request_asset', { id: 'cathedral', description: 'gothic cathedral', params_hint: 'towers' })), turn(call('finish', { message: 'ok' }))]);
+    const host = new MemoryHost();
+    const validated: string[] = [];
+    host.validateGenerator = async (def) => {
+      validated.push(def.id);
+      return { ok: true };
+    };
+    const specs: unknown[] = [];
+    const events = await collect(
+      new WorldAgent({
+        provider,
+        catalogs: TEST_CATALOGS,
+        buildAsset: async (spec) => {
+          specs.push(spec);
+          return { ok: true, def: { ...gen, id: 'something-else' }, note: '2 rounds' };
+        },
+      }).run('x', host),
+    );
+    expect(specs).toEqual([{ id: 'cathedral', description: 'gothic cathedral', paramsHint: 'towers' }]);
+    expect(validated).toEqual(['cathedral']);
+    expect(host.world.generators['cathedral']).toBeDefined();
+    expect(provider.requests.every((r) => r.role !== 'coder')).toBe(true);
+    expect(events.some((e) => e.type === 'status' && /coding agent/.test(e.text))).toBe(true);
+  });
+
+  it('request_asset falls back to the coder when the deep build fails or is rejected', async () => {
+    for (const outcome of ['error', 'invalid'] as const) {
+      const provider = new ScriptedProvider([
+        turn(call('request_asset', { id: 'cathedral', description: 'gothic cathedral' })),
+        turn(call('submit_generator', { ...gen, id: 'cathedral' })),
+        turn(call('finish', { message: 'ok' })),
+      ]);
+      const host = new MemoryHost();
+      host.validateGenerator = async (def) => (def.source.includes('BAD') ? { ok: false, error: 'rejected' } : { ok: true });
+      const events = await collect(
+        new WorldAgent({
+          provider,
+          catalogs: TEST_CATALOGS,
+          buildAsset: async () => (outcome === 'error' ? { ok: false, error: 'the checker kept failing' } : { ok: true, def: { ...gen, id: 'cathedral', source: `${gen.source} // BAD` } }),
+        }).run('x', host),
+      );
+      expect(provider.requests.some((r) => r.role === 'coder')).toBe(true);
+      expect(host.world.generators['cathedral']?.source).not.toContain('BAD');
+      expect(events.some((e) => e.type === 'status' && /directly instead/.test(e.text))).toBe(true);
+    }
+  });
+
   it('write_script validates and defines a script', async () => {
     const provider = new ScriptedProvider([turn(call('write_script', { id: 'hopper', description: 'hops', source: 'return [];' })), turn(call('finish', { message: 'ok' }))]);
     const host = new MemoryHost();

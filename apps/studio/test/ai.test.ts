@@ -84,7 +84,9 @@ describe('session secrets and deep links', () => {
 
 describe('AiConnection', () => {
   it('parses server health defensively', () => {
-    expect(parseServerHealth({ ok: true, mode: 'live', providers: ['codex', 3], byok: true })).toEqual({ state: 'live', providers: ['codex'], byok: true });
+    expect(parseServerHealth({ ok: true, mode: 'live', providers: ['codex', 3], byok: true })).toEqual({ state: 'live', providers: ['codex'], byok: true, local: false });
+    expect(parseServerHealth({ ok: true, mode: 'mock', providers: [], byok: false, local: true }).local).toBe(true);
+    expect(parseServerHealth({ ok: true, mode: 'mock', local: 'yes' }).local).toBe(false);
     expect(parseServerHealth(null).state).toBe('offline');
   });
 

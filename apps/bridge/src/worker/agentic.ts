@@ -16,7 +16,8 @@
  * Nothing the agent says is trusted: the parent reads only the artifact file
  * and validates it with its own sandbox.
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk';
@@ -40,6 +41,8 @@ export interface AgenticDeps {
   /** Runs the checker; default `node check.mjs <artifact>` in the workspace. */
   check?: (workspace: string, artifact: string) => Promise<{ passed: boolean; report: string }>;
   claudeCommand?: string | null;
+  /** Codex MCP server names to disable (default: `codex mcp list`); null refuses the run. */
+  mcpServers?: () => Promise<string[] | null>;
 }
 
 /** Features that stay ON for agentic Codex runs (the agent must run the checker and look at the preview). */
@@ -175,9 +178,11 @@ export async function runAgentic(job: AgenticJob, deps: AgenticDeps): Promise<Wo
   let passed = false;
   let turn = 0;
   let next = job.task;
+  // One Codex thread for the whole job: later rounds continue the same conversation.
+  const codex: CodexSession = { thread: null };
   for (; turn < job.maxTurns; turn++) {
     deps.progress('turn', turn === 0 ? 'Starting the coding agent…' : `Round ${turn + 1}: fixing what the checker found…`);
-    if (job.backend === 'codex') message = await codexTurn(job, next, usage, deps);
+    if (job.backend === 'codex') message = await codexTurn(job, next, usage, deps, codex);
     else message = await claudeTurn(job, next, usage, deps);
     deps.progress('check', 'Checking the result…');
     const r = await check(job.workspace, job.artifact);
@@ -192,18 +197,26 @@ export async function runAgentic(job: AgenticJob, deps: AgenticDeps): Promise<Wo
   return { ok: true, kind: 'agentic', turns: Math.min(turn, job.maxTurns), passed, usage, ...(job.model ? { model: job.model } : {}), ...(message ? { message: message.slice(0, 4000) } : {}) };
 }
 
-async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: number; outputTokens: number }, deps: AgenticDeps): Promise<string> {
-  const codexPath = which('codex');
-  const servers = await listCodexMcpServers({ codexCommand: codexPath, claudeCommand: null, env: deps.env });
-  if (servers === null) throw new BridgeError('tool_violation', 'Refused: the MCP servers in your Codex config could not be listed to disable them.');
-  const options: CodexOptions = {
-    ...(codexPath ? { codexPathOverride: codexPath } : {}),
-    env: restrictedEnv(deps.env),
-    config: codexAgenticConfig(),
-    configOverrides: mcpDisableOverrides(servers),
-  } as CodexOptions;
-  const codex = deps.createCodex ? deps.createCodex(options) : new Codex(options);
-  const thread = codex.startThread(codexAgenticThread(job));
+type CodexThreadRun = ReturnType<NonNullable<AgenticDeps['createCodex']>>['startThread'] extends (...a: never[]) => infer T ? T : never;
+interface CodexSession {
+  thread: CodexThreadRun | null;
+}
+
+async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: number; outputTokens: number }, deps: AgenticDeps, session: CodexSession): Promise<string> {
+  if (!session.thread) {
+    const codexPath = which('codex');
+    const servers = deps.mcpServers ? await deps.mcpServers() : await listCodexMcpServers({ codexCommand: codexPath, claudeCommand: null, env: deps.env });
+    if (servers === null) throw new BridgeError('tool_violation', 'Refused: the MCP servers in your Codex config could not be listed to disable them.');
+    const options: CodexOptions = {
+      ...(codexPath ? { codexPathOverride: codexPath } : {}),
+      env: restrictedEnv(deps.env),
+      config: codexAgenticConfig(),
+      configOverrides: mcpDisableOverrides(servers),
+    } as CodexOptions;
+    const codex = deps.createCodex ? deps.createCodex(options) : new Codex(options);
+    session.thread = codex.startThread(codexAgenticThread(job));
+  }
+  const thread = session.thread;
   const ctrl = new AbortController();
   let last = '';
   let lastPhase = '';
@@ -284,9 +297,20 @@ async function claudeTurn(job: AgenticJob, input: string, usage: { inputTokens: 
 /** Read the artifact the agent produced (bounded); null when missing or too large. */
 export async function readArtifact(workspace: string, artifact: string, maxBytes = 120 * 1024): Promise<string | null> {
   if (!insideWorkspace(workspace, artifact)) return null;
+  const path = join(workspace, artifact);
   try {
-    const text = await readFile(join(workspace, artifact), 'utf8');
-    return text.length > maxBytes ? null : text;
+    // The agent controls the folder: never follow a link it may have planted (it could point anywhere).
+    const st = await lstat(path);
+    if (!st.isFile() || st.size > maxBytes) return null;
+    const real = await realpath(path);
+    if (!insideWorkspace(await realpath(workspace), real)) return null;
+    const handle = await open(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const text = await handle.readFile({ encoding: 'utf8' });
+      return text.length > maxBytes ? null : text;
+    } finally {
+      await handle.close();
+    }
   } catch {
     return null;
   }

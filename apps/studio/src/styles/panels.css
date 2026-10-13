@@ -131,6 +131,11 @@
   background: var(--surface-2);
 }
 
+.connect-card--hero {
+  margin-bottom: var(--s-3);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+}
+
 .connect-card__icon {
   display: grid;
   place-items: center;

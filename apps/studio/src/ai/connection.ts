@@ -206,6 +206,7 @@ export class AiConnection {
     const key = projectSessionKey(projectId);
     if (!key) return;
     const tasks: Array<Promise<unknown>> = [];
+    if (this.store.getState().server.state === 'checking') await this.probeServer();
     if (this.store.getState().server.local) tasks.push(this.localApi.clearSessions(key));
     const bridge = this.bridgeAccounts();
     if (bridge) tasks.push(bridge.clearSessions(key));

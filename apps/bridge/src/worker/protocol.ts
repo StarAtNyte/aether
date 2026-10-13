@@ -64,7 +64,7 @@ export type WorkerJob = z.infer<typeof WorkerJob>;
 const Usage = z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) });
 
 /** The worker's result (stdout). */
-export const WorkerResult = z.discriminatedUnion('ok', [
+export const WorkerResult = z.union([
   z.object({
     ok: z.literal(true),
     kind: z.literal('complete'),

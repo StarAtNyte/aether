@@ -7,6 +7,9 @@ import { normalizeOrigin, parseBridgeConfig } from '../src/config';
 import { MAX_PAIR_ATTEMPTS, Pairing } from '../src/pairing';
 import { JobQueue } from '../src/queue';
 import { createBridgeHandler } from '../src/server';
+import { LoginManager } from '../src/auth';
+import { SessionStore } from '../src/sessions';
+import { fakeSpawn, type SpawnCall } from './helpers';
 
 const ORIGIN = 'http://localhost:5173';
 
@@ -37,6 +40,9 @@ let port = 0;
 let pairing: Pairing;
 let codex: FakeBackend;
 let claude: FakeBackend;
+let sessions: SessionStore;
+let loginCalls: SpawnCall[];
+let authChanges = 0;
 
 interface Res {
   status: number;
@@ -69,7 +75,15 @@ beforeEach(async () => {
   pairing = new Pairing();
   codex = new FakeBackend(30);
   claude = new FakeBackend();
+  sessions = new SessionStore();
+  authChanges = 0;
+  const loginSpawn = fakeSpawn([{ lines: ['Follow these steps to sign in with ChatGPT:', '1. Open https://auth.openai.com/codex/device in your browser', '2. Enter this one-time code ABCD-12345'], hang: true }]);
+  loginCalls = loginSpawn.calls;
+  const login = new LoginManager({ codexCommand: '/usr/bin/codex', claudeCommand: null, spawn: loginSpawn.spawn as never, run: fakeSpawn([{ lines: ['Successfully logged out'], code: 0 }]).spawn });
   const handler = createBridgeHandler({
+    login,
+    sessions,
+    onAuthChange: () => void authChanges++,
     config: { origins: [ORIGIN, 'https://studio.example'], maxBodyBytes: 64 * 1024, maxWaiting: 1 },
     port: () => port,
     pairing,
@@ -261,5 +275,50 @@ describe('config, queue, cache', () => {
     expect(c.get('a')).toBe('x');
     c.set('big', 'q'.repeat(300));
     expect(c.get('big')).toBeUndefined();
+  });
+});
+
+describe('bridge sign-in and conversations', () => {
+  const auth = (token: string): Record<string, string> => ({ origin: ORIGIN, authorization: `Bearer ${token}`, 'content-type': 'application/json' });
+
+  it('requires pairing for sign-in and session endpoints', async () => {
+    expect((await call('POST', '/v1/auth/login', { headers: { origin: ORIGIN, 'content-type': 'application/json' }, body: '{"backend":"codex"}' })).status).toBe(401);
+    expect((await call('DELETE', '/v1/sessions/p-abcdefgh1', { headers: { origin: ORIGIN } })).status).toBe(401);
+  });
+
+  it('runs the CLI device sign-in and relays only its link and code', async () => {
+    const token = await pairToken();
+    const r = await call('POST', '/v1/auth/login', { headers: auth(token), body: JSON.stringify({ backend: 'codex' }) });
+    expect(r.status).toBe(200);
+    expect(loginCalls[0]?.args).toEqual(['login', '--device-auth']);
+    await new Promise((res) => setTimeout(res, 20));
+    const st = await call('GET', '/v1/auth/login', { headers: auth(token) });
+    expect(st.body).toMatchObject({ login: { backend: 'codex', running: true, url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345' } });
+    // One sign-in at a time.
+    const again = await call('POST', '/v1/auth/login', { headers: auth(token), body: JSON.stringify({ backend: 'codex' }) });
+    expect(again.status).toBe(400);
+    const cancel = await call('POST', '/v1/auth/login/cancel', { headers: auth(token), body: '{}' });
+    expect(cancel.body).toMatchObject({ login: { running: false, finished: { ok: false } } });
+    expect(loginCalls[0]?.killed).toBe(true);
+    expect(authChanges).toBeGreaterThan(0);
+    const bad = await call('POST', '/v1/auth/login', { headers: auth(token), body: JSON.stringify({ backend: 'rm -rf' }) });
+    expect(bad.status).toBe(400);
+  });
+
+  it('signs out through the CLI', async () => {
+    const token = await pairToken();
+    const r = await call('POST', '/v1/auth/logout', { headers: auth(token), body: JSON.stringify({ backend: 'codex' }) });
+    expect(r.body).toEqual({ ok: true, message: 'Signed out.' });
+  });
+
+  it('forgets a project\'s conversations', async () => {
+    const token = await pairToken();
+    sessions.record('p-abcdefgh1', 'codex', undefined, { id: 'thread-1', systemHash: 'a'.repeat(64), body: 'x' });
+    sessions.record('p-other0001', 'codex', undefined, { id: 'thread-2', systemHash: 'a'.repeat(64), body: 'x' });
+    const r = await call('DELETE', '/v1/sessions/p-abcdefgh1', { headers: { origin: ORIGIN, authorization: `Bearer ${token}` } });
+    expect(r.body).toEqual({ cleared: 1 });
+    expect(sessions.size).toBe(1);
+    const bad = await call('DELETE', '/v1/sessions/..', { headers: { origin: ORIGIN, authorization: `Bearer ${token}` } });
+    expect(bad.status).toBe(404);
   });
 });

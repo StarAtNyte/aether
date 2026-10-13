@@ -26,3 +26,19 @@ export function bridgeBadge(state: AiConnectionState['bridge']['state']): { text
       return { text: 'Not paired', tone: 'quiet' };
   }
 }
+
+/** Human label + tone for the local AI badge. */
+export function localBadge(state: AiConnectionState['local']['state']): { text: string; tone: 'ok' | 'warn' | 'bad' | 'quiet' } {
+  switch (state) {
+    case 'ready':
+      return { text: 'Ready', tone: 'ok' };
+    case 'checking':
+      return { text: 'Checking…', tone: 'quiet' };
+    case 'not_logged_in':
+      return { text: 'Not signed in', tone: 'warn' };
+    case 'error':
+      return { text: 'Error', tone: 'bad' };
+    case 'off':
+      return { text: 'Run locally', tone: 'quiet' };
+  }
+}

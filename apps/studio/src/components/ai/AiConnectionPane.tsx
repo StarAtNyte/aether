@@ -9,9 +9,10 @@ import { memo, useEffect, useState, type ReactElement, type ReactNode } from 're
 import { aiConnection, DEFAULT_BRIDGE_URL, effectiveBridgeChoice } from '../../ai/connection';
 import { hostedBridgeNote, isLocalOrigin } from '../../ai/messages';
 import { MAX_REFINE, WEBLLM_MODELS, type AiMode, type AiPrefs } from '../../ai/prefs';
-import { bridgeBadge, useAi } from '../../ai/useAi';
+import { bridgeBadge, localBadge, useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
 import { Segmented } from '../ui/Segmented';
+import { BridgeSignIn, LocalAiSetup } from './LocalAiSetup';
 
 /** Copy-to-clipboard command line. */
 function Command({ text }: { text: string }): ReactElement {
@@ -121,15 +122,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
               Unpair
             </button>
           </div>
-          <ul className="backend-list">
-            {bridge.backends.map((b) => (
-              <li key={b.id} className="backend-list__row">
-                <Badge text={b.loggedIn ? 'Ready' : b.installed ? 'Not signed in' : 'Not installed'} tone={b.loggedIn ? 'ok' : 'warn'} />
-                <span className="backend-list__name">{b.label}</span>
-                <span className="backend-list__detail">{b.detail}</span>
-              </li>
-            ))}
-          </ul>
+          <BridgeSignIn />
           <div className="setting-row">
             <span className="setting-row__text">
               <span className="setting-row__label">Agent</span>
@@ -197,7 +190,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
             <strong>Hosted page cannot connect:</strong> Safari blocks HTTPS pages from reaching local services; use Chrome, Edge or Firefox, or run the studio locally. Chrome may first ask to allow access to your local network.
           </li>
           <li>
-            <strong>Not signed in:</strong> run <code>codex login</code> (ChatGPT account) or start <code>claude</code> once and sign in.
+            <strong>Not signed in:</strong> use the sign-in buttons above, or run <code>codex login</code> (ChatGPT account) or <code>claude auth login</code> in a terminal.
           </li>
           <li>
             <strong>Origin not allowed:</strong> when using a hosted copy of the studio, start the bridge with <code>--origin {origin || 'https://your-site'}</code>.
@@ -309,18 +302,22 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
   const server = useAi((s) => s.server);
   const webllm = useAi((s) => s.webllm);
   const byok = useAi((s) => s.byok);
+  const local = useAi((s) => s.local);
   useEffect(() => {
     void aiConnection().refresh();
   }, []);
   const b = bridgeBadge(bridge.state);
+  const lb = localBadge(local.state);
   return (
     <div className="settings__pane ai-pane">
       <section className="settings__group">
         <h3 className="settings__heading">Connection</h3>
         <div className="ai-modes" role="radiogroup" aria-label="AI connection">
-          <ModeCard mode="auto" prefs={prefs} update={update} title="Automatic" hint="Uses your local bridge when it is paired and signed in, otherwise the offline planner." badge={<Badge text="Recommended" tone="quiet" />} />
-          <ModeCard mode="offline" prefs={prefs} update={update} title="Offline planner" hint="Always available, instant, runs in your browser. Best for the built-in themes and common objects." badge={<Badge text="Available" tone="ok" />} />
-          <ModeCard mode="bridge" prefs={prefs} update={update} title="Local bridge · Codex or Claude Code" hint="Open-ended prompts with the model from your own ChatGPT or Claude subscription, through a small service on your computer." badge={<Badge text={b.text} tone={b.tone} />}>
+          <ModeCard mode="auto" prefs={prefs} update={update} title="Automatic" hint="Picks the best connection: Codex or Claude Code on this computer, then the local bridge, then an on-device model, then the offline planner." badge={<Badge text="Recommended" tone="quiet" />} />
+          <ModeCard mode="local" prefs={prefs} update={update} title="Codex or Claude Code on this computer" hint="Your own ChatGPT or Claude subscription, run by Aether on this computer. Deep builds let a coding agent write, render and check new assets." badge={<Badge text={lb.text} tone={lb.tone} />}>
+            <LocalAiSetup prefs={prefs} update={update} />
+          </ModeCard>
+          <ModeCard mode="bridge" prefs={prefs} update={update} title="Local bridge · Codex or Claude Code" hint="Use your subscription from a hosted copy of the studio, through a small service on your computer." badge={<Badge text={b.text} tone={b.tone} />}>
             <BridgeSetup prefs={prefs} update={update} />
           </ModeCard>
           <ModeCard
@@ -333,6 +330,7 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
           >
             <WebLlmSetup prefs={prefs} update={update} />
           </ModeCard>
+          <ModeCard mode="offline" prefs={prefs} update={update} title="Offline planner" hint="Always available, instant, runs in your browser. Best for the built-in themes and common objects." badge={<Badge text="Available" tone="ok" />} />
           <ModeCard mode="byok" prefs={prefs} update={update} title="Your own API key" hint="Optional: use your own Anthropic or OpenAI key." badge={<Badge text={byok ? 'Key set' : 'Optional'} tone={byok ? 'ok' : 'quiet'} />}>
             <ByokSetup prefs={prefs} update={update} />
           </ModeCard>

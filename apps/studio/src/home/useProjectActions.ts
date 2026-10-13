@@ -78,6 +78,8 @@ export function useProjectActions(): ProjectActions {
           return;
         }
         const deleted = r.value;
+        // Forget the project's resumable AI conversations (loaded lazily: the home page stays light).
+        void import('../ai/connection').then((m) => m.aiConnection().forgetProject(project.id)).catch(() => undefined);
         toast(`Deleted “${project.name}”`, 'info', 8, {
           label: 'Undo',
           run: () => {

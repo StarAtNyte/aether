@@ -33,11 +33,14 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
   const server = useAi((s) => s.server);
   const webllm = useAi((s) => s.webllm);
   const byok = useAi((s) => s.byok);
+  const local = useAi((s) => s.local);
   // Keep the bridge status fresh while the editor is open (focus + every minute while visible).
   useEffect(() => {
     const ai = aiConnection();
     const refresh = (): void => {
-      if (document.visibilityState === 'visible' && ai.store.getState().bridge.paired) void ai.refreshBridge();
+      if (document.visibilityState !== 'visible') return;
+      if (ai.store.getState().bridge.paired) void ai.refreshBridge();
+      if (ai.store.getState().server.local) void ai.refreshLocal();
     };
     window.addEventListener('focus', refresh);
     const timer = setInterval(refresh, 60_000);
@@ -46,7 +49,7 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
       clearInterval(timer);
     };
   }, []);
-  const resolved = useMemo(() => studio.ai.resolve(prefs), [studio, prefs, bridge, server, webllm, byok]);
+  const resolved = useMemo(() => studio.ai.resolve(prefs), [studio, prefs, bridge, server, webllm, byok, local]);
   const set = (p: Partial<AiPrefs>): void => studio.store.getState().setAiPrefs(p);
   const models = (id: 'codex' | 'claude-code'): Array<{ id: string; label: string }> => {
     const b = bridge.backends.find((x) => x.id === id);
@@ -62,26 +65,42 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
   const items: MenuEntry[] = [
     { kind: 'heading', id: 'h-conn', label: 'Connection' },
     { id: 'auto', label: 'Automatic', checked: prefs.mode === 'auto', onSelect: () => set({ mode: 'auto' }) },
-    { id: 'offline', label: 'Offline planner', checked: prefs.mode === 'offline', onSelect: () => set({ mode: 'offline' }) },
   ];
-  if (server.state === 'live') items.push({ id: 'server', label: `Server · ${server.providers[0] ?? 'model'}`, checked: prefs.mode === 'server', onSelect: () => set({ mode: 'server' }) });
+  // 1–2: Codex / Claude Code on this computer (local AI workers).
+  const localChoice = effectiveBridgeChoice(prefs, local.backends);
+  if (local.state !== 'off') {
+    for (const backend of ['codex', 'claude-code'] as const) {
+      const b = local.backends.find((x) => x.id === backend);
+      const note = local.state === 'checking' ? 'checking' : !b ? '' : b.loggedIn ? '' : b.installed ? 'not signed in' : 'not installed';
+      items.push({ kind: 'heading', id: `h-local-${backend}`, label: `${backend === 'codex' ? 'Codex' : 'Claude Code'} on this computer${note ? ` — ${note}` : ''}` });
+      for (const m of b && b.models.length > 0 ? b.models : models(backend)) {
+        const current = prefs.mode === 'local' && localChoice.backend === backend && localChoice.model === m.id;
+        items.push({ id: `local:${backend}:${m.id}`, label: m.label, checked: current, onSelect: () => set({ mode: 'local', backend, ...(backend === 'codex' ? { codexModel: m.id } : { claudeModel: m.id }) }) });
+      }
+    }
+  }
   const choice = effectiveBridgeChoice(prefs, bridge.backends);
+  // 3: through the bridge.
   for (const backend of ['codex', 'claude-code'] as const) {
     const note = backendState(backend);
-    items.push({ kind: 'heading', id: `h-${backend}`, label: `${backend === 'codex' ? 'Codex' : 'Claude Code'}${note ? ` — ${note}` : ''}` });
+    if (!bridge.paired && local.state !== 'off') continue;
+    items.push({ kind: 'heading', id: `h-${backend}`, label: `${backend === 'codex' ? 'Codex' : 'Claude Code'} via bridge${note ? ` — ${note}` : ''}` });
     for (const m of models(backend)) {
       const current = prefs.mode === 'bridge' && choice.backend === backend && choice.model === m.id;
       items.push({ id: `${backend}:${m.id}`, label: m.label, checked: current, onSelect: () => set({ mode: 'bridge', backend, ...(backend === 'codex' ? { codexModel: m.id } : { claudeModel: m.id }) }) });
     }
   }
+  if (server.state === 'live') items.push({ id: 'server', label: `Server · ${server.providers[0] ?? 'model'}`, checked: prefs.mode === 'server', onSelect: () => set({ mode: 'server' }) });
   if (webllm.state === 'ready' || prefs.mode === 'webllm') {
     items.push({ kind: 'heading', id: 'h-webllm', label: 'On-device (experimental)' });
     for (const m of WEBLLM_MODELS) items.push({ id: `webllm:${m.id}`, label: m.label, checked: prefs.mode === 'webllm' && prefs.webllmModel === m.id, onSelect: () => set({ mode: 'webllm', webllmModel: m.id }) });
   }
+  items.push({ id: 'offline', label: 'Offline planner', checked: prefs.mode === 'offline', onSelect: () => set({ mode: 'offline' }) });
   if (byok || prefs.mode === 'byok') items.push({ id: 'byok', label: `Your API key · ${prefs.byokProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}`, checked: prefs.mode === 'byok', onSelect: () => set({ mode: 'byok' }) });
-  if (resolved.kind === 'bridge' || prefs.mode === 'bridge') {
+  const active = resolved.kind === 'local' ? localChoice : choice;
+  if (resolved.kind === 'bridge' || resolved.kind === 'local' || prefs.mode === 'bridge' || prefs.mode === 'local') {
     items.push({ kind: 'heading', id: 'h-effort', label: 'Reasoning effort' });
-    for (const e of ['low', 'medium', 'high'] as const) items.push({ id: `effort:${e}`, label: e === 'low' ? 'Low (fastest)' : e === 'medium' ? 'Medium' : 'High', checked: choice.effort === e, onSelect: () => set({ effort: e }) });
+    for (const e of ['low', 'medium', 'high'] as const) items.push({ id: `effort:${e}`, label: e === 'low' ? 'Low (fastest)' : e === 'medium' ? 'Medium' : 'High', checked: active.effort === e, onSelect: () => set({ effort: e }) });
   }
   items.push({ kind: 'separator', id: 'sep' }, { id: 'setup', label: 'Set up connections…', icon: 'settings', onSelect: () => studio.store.getState().openSettings('ai') });
 
@@ -96,7 +115,40 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
         <button {...t} type="button" className="composer__select composer__model" data-tip={tip} data-testid="model-picker" data-ai-kind={resolved.kind} data-ai-status={resolved.ready ? 'ready' : 'unavailable'} data-bridge-state={bridge.state}>
           <span className={`status-dot${dot}`} aria-hidden="true" />
           <span className="composer__model-label">{resolved.ready ? resolved.label : prefs.mode === 'auto' ? 'Offline planner' : resolved.label}</span>
-          {prefs.mode === 'bridge' && resolved.ready && <span className="composer__effort">{choice.effort}</span>}
+          {(resolved.kind === 'bridge' || resolved.kind === 'local') && resolved.ready && <span className="composer__effort">{active.effort}</span>}
+          <Icon name="chevronDown" className="composer__chev" />
+        </button>
+      )}
+    />
+  );
+});
+
+/** Deep build toggle (shown while a local worker is connected), with the per-asset budget. */
+export const DeepBuildToggle = memo(function DeepBuildToggle(): ReactElement | null {
+  const studio = useStudio();
+  const prefs = useUI((s) => s.aiPrefs);
+  const local = useAi((s) => s.local);
+  const bridge = useAi((s) => s.bridge);
+  const server = useAi((s) => s.server);
+  const resolved = useMemo(() => studio.ai.resolve(prefs), [studio, prefs, local, bridge, server]);
+  if (resolved.kind !== 'local' || !resolved.ready || !resolved.worker) return null;
+  const minutes = Math.min(20, 3 + prefs.deepTurns * 2);
+  const items: MenuEntry[] = [
+    { kind: 'heading', id: 'h-deep', label: 'Deep build (new assets)' },
+    { id: 'deep-on', label: 'On: a coding agent writes, renders and checks', checked: prefs.deep, onSelect: () => studio.store.getState().setAiPrefs({ deep: true }) },
+    { id: 'deep-off', label: 'Off: quick single answer', checked: !prefs.deep, onSelect: () => studio.store.getState().setAiPrefs({ deep: false }) },
+    { kind: 'heading', id: 'h-budget', label: 'Budget per asset' },
+    ...[1, 2, 3, 4, 6].map((n): MenuEntry => ({ id: `turns${n}`, label: `${n} round${n === 1 ? '' : 's'} · ≤ ${Math.min(20, 3 + n * 2)} min`, checked: prefs.deepTurns === n, onSelect: () => studio.store.getState().setAiPrefs({ deepTurns: n, deep: true }) })),
+  ];
+  return (
+    <Menu
+      label="Deep build"
+      items={items}
+      width={280}
+      trigger={(t) => (
+        <button {...t} type="button" className={`composer__select${prefs.deep ? ' is-on' : ''}`} data-tip={prefs.deep ? `Deep build on: up to ${prefs.deepTurns} rounds, ${minutes} min per new asset` : 'Deep build off'} data-testid="deep-build" aria-pressed={prefs.deep}>
+          <Icon name="code" />
+          <span>{prefs.deep ? `Deep ×${prefs.deepTurns}` : 'Quick'}</span>
           <Icon name="chevronDown" className="composer__chev" />
         </button>
       )}

@@ -1574,7 +1574,59 @@ button.chip:hover {
 }
 
 .backend-list__detail {
+  flex: 1 1 8rem;
+  min-width: 0;
   color: var(--text-3);
+}
+
+/* Sign-in flow and accounts (local AI / bridge) */
+.local-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.login-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+}
+
+.login-flow .setup-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.login-flow__code {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.login-flow__code .inline-code {
+  font-size: var(--fs-13);
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  font-size: var(--fs-12);
+}
+
+.accounts > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.accounts[open] > * + * {
+  margin-top: var(--s-2);
 }
 
 .troubleshoot {
