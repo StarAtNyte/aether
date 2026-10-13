@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Box3Helper, Group, LineSegments, Mesh, PerspectiveCamera, Vector3 } from 'three';
 import { CameraRig, damp, easeInOutCubic, MIN_FOLLOW_DISTANCE, type OrbitControlsLike } from '../src/view/camera-rig';
-import { captureMime, captureSize, MAX_CAPTURE_SIZE, viewPose, viewRegion } from '../src/view/capture';
+import { CAPTURE_FOV_DEG, captureMime, captureSize, MAX_CAPTURE_SIZE, telephotoPose, viewPose, viewRegion } from '../src/view/capture';
 import { FrameStats } from '../src/view/frame-stats';
 import { Highlighter, MAX_HIGHLIGHTS } from '../src/view/highlighter';
 import { DebugOverlay } from '../src/view/debug-overlay';
@@ -344,5 +344,36 @@ describe('viewRegion', () => {
     expect(viewRegion(1440, 383, 384)).toBeNull();
     expect(viewRegion(1440, 900, Number.NaN)).toBeNull();
     expect(viewRegion(1440, 900, 8)).toBeNull();
+  });
+});
+
+describe('telephotoPose', () => {
+  const bounds = { min: [-10, 0, -6] as [number, number, number], max: [14, 8, 6] as [number, number, number] };
+  it.each(['top', 'front', 'side', 'iso'] as const)('%s: same direction and framing as the orthographic view', (view) => {
+    const o = viewPose(bounds, view);
+    const t = telephotoPose(o);
+    expect(t.fov).toBe(CAPTURE_FOV_DEG);
+    expect(t.target).toEqual(o.target);
+    expect(t.up).toEqual(o.up);
+    const dir = (p: readonly number[]): number[] => {
+      const d = [p[0]! - o.target[0], p[1]! - o.target[1], p[2]! - o.target[2]];
+      const l = Math.hypot(d[0]!, d[1]!, d[2]!);
+      return d.map((x) => x / l);
+    };
+    dir(t.position).forEach((c, i) => expect(c).toBeCloseTo(dir(o.position)[i]!, 9));
+    const dist = Math.hypot(t.position[0] - o.target[0], t.position[1] - o.target[1], t.position[2] - o.target[2]);
+    // The half-height of the frustum at the target equals the orthographic half size.
+    expect(dist * Math.tan((t.fov * Math.PI) / 360)).toBeCloseTo(o.halfSize, 6);
+    // The whole scene (±halfSize around the target) lies between near and far.
+    expect(t.near).toBeLessThan(dist - o.halfSize);
+    expect(t.far).toBeGreaterThan(dist + o.halfSize);
+    expect(t.near).toBeGreaterThan(0);
+  });
+
+  it('clamps nonsense field-of-view values', () => {
+    const o = viewPose(null, 'top');
+    expect(telephotoPose(o, Number.NaN).fov).toBe(CAPTURE_FOV_DEG);
+    expect(telephotoPose(o, 500).fov).toBe(60);
+    expect(telephotoPose(o, 0).fov).toBe(1);
   });
 });
