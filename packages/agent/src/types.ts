@@ -79,7 +79,8 @@ export interface AgentHost {
   getWorld(): WorldDoc;
   /** Validates and commits patches (non-atomic: valid patches apply, invalid ones are reported). */
   applyPatches(patches: unknown[], message: string): PatchResult;
-  verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }>;
+  /** Verify `world` (the optional signal is the run's abort signal; additive). */
+  verify(world: WorldDoc, opts?: { signal?: AbortSignal }): Promise<{ report: unknown; summary: string; passed: boolean }>;
   screenshot?(): Promise<string | null>;
   /**
    * Entities the user edited by hand recently (property paths, newest

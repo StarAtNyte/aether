@@ -74,6 +74,23 @@ export interface VerifyState {
   /** History entry id the result belongs to (stale when the head moved). */
   head: number | null;
   ms: number;
+  /** While running: every test in world order, filled in as each one is decided (null otherwise). */
+  live?: LiveVerify | null;
+  /** Parallel worker lanes of the last run (1 on the main thread). */
+  lanes?: number;
+  /** True when the last run happened in a worker. */
+  worker?: boolean;
+  /** Simulated seconds of the last run. */
+  simulatedSeconds?: number;
+}
+
+/** Live view of a running verification. */
+export interface LiveVerify {
+  tests: Array<{ id: string; kind: string }>;
+  /** Index-aligned with `tests`; null until decided. */
+  results: Array<TestResultView | null>;
+  lanes: number;
+  worker: boolean;
 }
 
 /** Backend LLM provider status. */

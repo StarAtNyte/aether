@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { rapierWasm } from '../../scripts/vite/rapier-wasm';
 
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
 const API_TARGET = 'http://localhost:8787';
@@ -9,7 +10,8 @@ const apiProxy = {
 };
 
 export default defineConfig({
-  plugins: [react()],
+  // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) })],
   server: {
     port: 5173,
     proxy: apiProxy,
@@ -20,6 +22,8 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    // The verification worker loads Rapier too: same rewrite, same hashed wasm file.
+    plugins: () => [rapierWasm({ warn: (m) => console.warn(m) })],
   },
   optimizeDeps: {
     // Rapier ships an inlined WASM blob; pre-bundling it only slows dev startup.

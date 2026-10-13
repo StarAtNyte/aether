@@ -9,7 +9,7 @@ import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, n
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
-import { buildAgentHistory, toDiagnostics, toEventView, toTestResults, type ChatEntry, type ChatEventView } from '../lib/chat';
+import { buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
 import { createStarterWorld } from '../lib/starterWorld';
@@ -39,7 +39,11 @@ import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, 
 import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
-import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, runVerification } from './AgentBridge';
+import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread } from './AgentBridge';
+import { LiveVerifyFeed } from './verify/live';
+import { VerifyPool } from './verify/pool';
+import { VerificationService } from './verify/service';
+import { verifyLanes } from './verify/shards';
 import { aiConnection, effectiveBridgeChoice, projectSessionKey, type AiConnection, type ResolvedConnection } from '../ai/connection';
 import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
@@ -122,6 +126,13 @@ export class Studio {
   readonly editor: Editor;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
+  /** Physics verification in workers (main-thread fallback). */
+  private readonly verifier: VerificationService;
+  /** Streams verification progress into the store. */
+  private readonly liveVerify: LiveVerifyFeed;
+  /** Cancels the running panel verification (dispose). */
+  private verifyAbort: AbortController | null = null;
+  private warmTimer: ReturnType<typeof setTimeout> | null = null;
   private sim: Simulation | null = null;
   /** Bumped per attach so a superseded (StrictMode / remount) attach discards its renderer. */
   private attachGen = 0;
@@ -167,7 +178,14 @@ export class Studio {
     this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels(), aiPrefs: loadAiPrefs(this.storage, this.projectId) });
     this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
     this.sandbox = createSandbox();
-    this.bridge = new AgentBridge(this.history, this.sandbox);
+    this.verifier = new VerificationService(createVerifyPool(memory.on), verifyOnMainThread);
+    this.liveVerify = new LiveVerifyFeed({
+      get: () => this.store.getState().verify,
+      set: (patch) => this.store.getState().setVerify(patch),
+      head: () => this.history.head,
+    });
+    this.bridge = new AgentBridge(this.history, this.sandbox, this.verifier);
+    this.bridge.verifyListener = this.liveVerify;
     this.editor = new Editor(this, { storage: this.storage });
 
     this.cleanups.push(
@@ -339,7 +357,10 @@ export class Studio {
       // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
       await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
       // The first world rendered (generation included): this boot is healthy.
-      if (gen === this.attachGen) clearBooting(this.storage);
+      if (gen === this.attachGen) {
+        clearBooting(this.storage);
+        this.scheduleVerifyWarmup();
+      }
       this.store.getState().setLoading(null);
       return () => {
         unsubSel();
@@ -646,26 +667,36 @@ export class Studio {
   // Verification
   // ---------------------------------------------------------------------------
 
-  /** Run the world's tests + diagnostics headless and publish the result. */
+  /** Run the world's tests + diagnostics headless (in workers) and publish the result live. */
   async runVerify(): Promise<void> {
     const st = this.store.getState();
     if (st.verify.status === 'running') return;
     const head = this.history.head;
-    st.setVerify({ status: 'running', summary: '', head });
-    const t0 = performance.now();
-    const r = await runVerification(this.history.current, this.sim);
-    const results = toTestResults(r.report);
-    const diagnostics = toDiagnostics(r.report);
-    const crashed = 'error' in r.report;
-    this.store.getState().setVerify({
-      status: crashed ? 'error' : r.passed ? 'passed' : 'failed',
-      summary: r.summary,
-      results,
-      diagnostics,
-      head,
-      ms: performance.now() - t0,
-    });
-    if (this.history.head === head) this.sim?.setDiagnostics(diagnostics);
+    const ctrl = new AbortController();
+    this.verifyAbort = ctrl;
+    try {
+      await this.bridge.verify(this.history.current, { signal: ctrl.signal });
+    } finally {
+      if (this.verifyAbort === ctrl) this.verifyAbort = null;
+    }
+    const v = this.store.getState().verify;
+    if (this.history.head === head && v.status !== 'idle') this.sim?.setDiagnostics(v.diagnostics);
+  }
+
+  /**
+   * Prefetch verification physics in a worker once the browser is idle
+   * (skipped in low-memory mode; the first check then loads it on demand).
+   */
+  private scheduleVerifyWarmup(): void {
+    if (this.warmTimer !== null || this.store.getState().memory.lowMemory) return;
+    this.warmTimer = setTimeout(() => {
+      const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      const warm = (): void => {
+        if (!this.disposed) this.verifier.warm(Object.keys(this.history.current.scripts).length > 0);
+      };
+      if (typeof idle === 'function') idle(warm, { timeout: 4000 });
+      else warm();
+    }, VERIFY_WARMUP_DELAY_MS);
   }
 
   // ---------------------------------------------------------------------------
@@ -685,6 +716,8 @@ export class Studio {
     if (!text || st.agentBusy) return;
     if (this.sim?.mode === 'play') await this.sim.stop();
     this.sim?.touch();
+    // Intent: the turn will verify the world, so load physics in a worker while the model plans.
+    this.verifier.warm(Object.keys(this.history.current.scripts).length > 0);
     const prefs = st.aiPrefs;
     const resolved: ResolvedConnection = opts.offline ? { kind: 'offline', label: 'Offline planner', ready: true, vision: false } : this.ai.resolve(prefs);
     const primary = opts.offline ? null : this.ai.createProvider(prefs, resolved);
@@ -822,10 +855,8 @@ export class Studio {
       }
       if (view.type === 'status') this.store.getState().setAgentStep(view.text);
       if (event.type === 'error') status = 'error';
-      if (view.type === 'verify') {
-        this.store.getState().setVerify({ status: view.passed ? 'passed' : 'failed', summary: view.summary, results: view.results, diagnostics: view.diagnostics, head: this.history.head, ms: 0 });
-        this.sim?.setDiagnostics(view.diagnostics);
-      }
+      // The Verify panel was already updated live by the bridge's verification listener.
+      if (view.type === 'verify') this.sim?.setDiagnostics(view.diagnostics);
       if (abort.signal.aborted) break;
     }
     return abort.signal.aborted ? 'aborted' : status;
@@ -880,10 +911,11 @@ export class Studio {
         const r = this.history.commit(imp.patches, `Refine: ${imp.applied.join(', ')}`.slice(0, 120), 'agent');
         if (r.applied.length === 0) return 'done';
         applied = imp.applied;
-        const verify = await runVerification(this.history.current, this.sim);
+        const verify = await this.bridge.verify(this.history.current, { signal: ctx.abort.signal });
+        if (ctx.abort.signal.aborted) return 'aborted';
         const view = toEventView({ type: 'verify', passed: verify.passed, summary: verify.summary, report: verify.report });
         this.store.getState().pushEvent(ctx.entryId, view);
-        if (view.type === 'verify') this.store.getState().setVerify({ status: view.passed ? 'passed' : 'failed', summary: view.summary, results: view.results, diagnostics: view.diagnostics, head: this.history.head, ms: 0 });
+        if (view.type === 'verify') this.sim?.setDiagnostics(view.diagnostics);
       }
     }
     return 'done';
@@ -991,6 +1023,10 @@ export class Studio {
     void this.flushPersist();
     this.disposed = true;
     this.abort?.abort();
+    this.verifyAbort?.abort();
+    if (this.warmTimer !== null) clearTimeout(this.warmTimer);
+    this.warmTimer = null;
+    this.verifier.dispose();
     for (const c of this.cleanups.splice(0)) c();
     this.editor.dispose();
     this.sim?.dispose();
@@ -1015,6 +1051,16 @@ function safeModeRequested(): boolean {
   if (typeof location === 'undefined') return false;
   const q = new URLSearchParams(location.search);
   return q.get('safe') === '1' || q.get('reset') === '1';
+}
+
+/** Wait after the first frame before prefetching verification physics (ms). */
+const VERIFY_WARMUP_DELAY_MS = 2500;
+
+/** Verification worker pool sized for this device (null without Worker support). */
+function createVerifyPool(lowMemory: boolean): VerifyPool | null {
+  if (typeof Worker === 'undefined') return null;
+  const nav = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number });
+  return new VerifyPool({ lanes: verifyLanes({ hardwareConcurrency: nav?.hardwareConcurrency, deviceMemory: nav?.deviceMemory, lowMemory }) });
 }
 
 function createSandbox(): SandboxRunner | null {

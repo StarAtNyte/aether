@@ -244,7 +244,7 @@ function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.insp
 
 /** Run the host verification and package it as an event + text. */
 export async function runVerification(ctx: ExecutorContext): Promise<{ event: AgentEvent; passed: boolean; summary: string }> {
-  const res = await raceAbort(ctx.host.verify(ctx.host.getWorld()), ctx.signal);
+  const res = await raceAbort(ctx.host.verify(ctx.host.getWorld(), ctx.signal ? { signal: ctx.signal } : {}), ctx.signal);
   const summary = typeof res.summary === 'string' ? res.summary : 'no summary';
   const passed = res.passed === true;
   return { event: { type: 'verify', passed, summary, report: res.report }, passed, summary };

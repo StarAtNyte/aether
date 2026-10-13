@@ -14,7 +14,9 @@ export const VerifyPill = memo(function VerifyPill(): ReactElement | null {
   let text = 'Run checks';
   if (verify.status === 'running') {
     state = 'running';
-    text = 'Checking…';
+    const live = verify.live;
+    const done = live ? live.results.filter((r) => r !== null).length : 0;
+    text = live && live.tests.length > 0 ? `Checking ${done}/${live.tests.length}…` : 'Checking…';
   } else if (verify.status === 'passed') {
     state = stale ? 'idle' : 'ok';
     text = stale ? 'Checks outdated' : 'Checks passed';

@@ -11,11 +11,13 @@ import { userEditMarks, type EntityId, type GeneratorDef, type History, type Pat
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
-import type { ColliderProvider, VerifyReport } from '@aether/physics';
+import type { ColliderProvider, TestResult, VerifyReport } from '@aether/physics';
+import { summarizeReport } from '@aether/physics/report';
 import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, loadLibraryGenerator, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
 import { API, GENERATOR_DRY_RUN_MS, HEALTH_TIMEOUT_MS, VERIFY_BUDGET_MS, VERIFY_MAX_SECONDS } from '../config';
 import { errorMessage } from '../lib/log';
 import { createVerifyLogic } from './headlessHost';
+import { VerificationService, type VerifyRunOptions } from './verify/service';
 import type { Simulation } from './Simulation';
 
 /** Result handed back to the agent by `verify`. */
@@ -23,6 +25,15 @@ export interface BridgeVerifyResult {
   report: VerifyReport | { error: string };
   summary: string;
   passed: boolean;
+}
+
+/** Receives live progress of a verification run. */
+export interface VerifyProgressListener {
+  start(world: WorldDoc): void;
+  plan(plan: { lanes: number; worker: boolean }): void;
+  result(index: number, result: TestResult): void;
+  /** The run finished (or was cancelled) after `ms` milliseconds of wall time. */
+  end(run: VerificationRun, ms: number): void;
 }
 
 /** Provider selection outcome. */
@@ -92,13 +103,20 @@ export class AgentBridge implements AgentHost {
   /** Hand edits the agent overwrote since the last {@link takeOverwrites} (shown in the chat). */
   private overwrites: string[] = [];
 
+  /** Live progress of agent-triggered verification (the Verify panel streams it). */
+  verifyListener: VerifyProgressListener | null = null;
+  /** Where and how fast the last agent-triggered verification ran. */
+  lastVerify: { ms: number; lanes: number; worker: boolean; simulatedSeconds: number } | null = null;
+
   /**
    * @param history world history (commits are attributed to 'agent')
    * @param sandbox Worker sandbox for LLM-written generators (null when unavailable)
+   * @param verifier worker-backed verification (main thread when null)
    */
   constructor(
     private readonly history: History,
     private readonly sandbox: SandboxRunner | null,
+    private readonly verifier: VerificationService | null = null,
   ) {}
 
   /** Attach the simulation once the viewport exists (screenshots, collider reuse). */
@@ -141,8 +159,20 @@ export class AgentBridge implements AgentHost {
     return out;
   }
 
-  async verify(world: WorldDoc): Promise<BridgeVerifyResult> {
-    return runVerification(world, this.simulation);
+  async verify(world: WorldDoc, opts: { signal?: AbortSignal } = {}): Promise<BridgeVerifyResult> {
+    const listener = this.verifyListener;
+    const t0 = performance.now();
+    listener?.start(world);
+    const run = await runVerification(world, this.simulation, {
+      service: this.verifier,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(listener ? { onResult: (i: number, r: TestResult) => listener.result(i, r), onPlan: (p: { lanes: number; worker: boolean }) => listener.plan(p) } : {}),
+    });
+    const ms = performance.now() - t0;
+    const simulated = 'simulatedSeconds' in run.report ? run.report.simulatedSeconds : 0;
+    this.lastVerify = { ms, lanes: run.lanes, worker: run.worker, simulatedSeconds: simulated };
+    listener?.end(run, ms);
+    return { report: run.report, summary: run.summary, passed: run.passed };
   }
 
   async screenshot(): Promise<string | null> {
@@ -183,41 +213,81 @@ export class AgentBridge implements AgentHost {
   }
 }
 
+/** Options of {@link runVerification}. */
+export interface RunVerificationOptions {
+  /** Worker-backed verification (falls back to the main thread by itself); main thread when absent. */
+  service?: VerificationService | null;
+  signal?: AbortSignal;
+  /** Each test's result as soon as it is decided (`index` into `world.tests`). */
+  onResult?: (index: number, result: TestResult) => void;
+  /** Where and how wide the run goes, before it starts. */
+  onPlan?: (plan: { lanes: number; worker: boolean }) => void;
+}
+
+/** {@link BridgeVerifyResult} plus where it ran. */
+export interface VerificationRun extends BridgeVerifyResult {
+  /** Worker lanes used (1 on the main thread). */
+  lanes: number;
+  /** True when it ran in a worker. */
+  worker: boolean;
+  /** True when it was cancelled. */
+  cancelled: boolean;
+}
+
 /**
- * Run `world.tests` + static diagnostics headless with world rules hooked
- * in. Never throws: failures become a failed result with an error report.
+ * Cooperative main-thread verification (the fallback when workers cannot
+ * run): yields every ~8 ms so the UI stays responsive.
+ * @throws Error named `AbortError` when `opts.signal` aborts
  */
-export async function runVerification(world: WorldDoc, sim: Simulation | null): Promise<BridgeVerifyResult> {
+export async function verifyOnMainThread(world: WorldDoc, opts: VerifyRunOptions): Promise<VerifyReport> {
   // Physics (multi-MB Rapier chunk) is loaded on first use, not at startup.
-  let physics: typeof import('@aether/physics');
-  try {
-    physics = await import('@aether/physics');
-  } catch (err) {
-    const message = `verification unavailable: ${errorMessage(err)}`;
-    return { report: { error: message }, summary: message, passed: false };
-  }
-  // Procedural colliders come from the renderer: wait until it reflects `world`,
-  // otherwise a just-edited procedural shape would be verified with stale colliders.
-  const colliders = sim ? await syncedColliders(sim, world) : undefined;
+  const physics = await import('@aether/physics');
   const hasScripts = Object.keys(world.scripts).length > 0;
   if (hasScripts) await initScripting().catch(() => undefined);
   const logic = createVerifyLogic(world, {
     scripts: () => (hasScripts && isScriptingReady() ? createScriptRunner({ seed: world.seed }) : undefined),
   });
   try {
-    const report = await physics.verify(world, {
-      ...(colliders ? { colliders } : {}),
+    return await physics.verify(world, {
+      ...(opts.colliders ? { colliders: opts.colliders } : {}),
       logic: logic.factory,
-      maxSeconds: VERIFY_MAX_SECONDS,
-      budgetMs: VERIFY_BUDGET_MS,
+      maxSeconds: opts.maxSeconds,
+      budgetMs: opts.budgetMs,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.onResult ? { onResult: opts.onResult } : {}),
     });
-    return { report, summary: physics.summarizeReport(report), passed: report.passed };
-  } catch (err) {
-    const message = `verification crashed: ${errorMessage(err)}`;
-    return { report: { error: message }, summary: message, passed: false };
   } finally {
     logic.dispose();
   }
+}
+
+/**
+ * Run `world.tests` + static diagnostics headless with world rules hooked
+ * in: in the verification workers when a service is given (sharded across
+ * lanes), otherwise on the main thread. Never throws: failures become a
+ * failed result with an error report.
+ */
+export async function runVerification(world: WorldDoc, sim: Simulation | null, opts: RunVerificationOptions = {}): Promise<VerificationRun> {
+  // Procedural colliders come from the renderer: wait until it reflects `world`,
+  // otherwise a just-edited procedural shape would be verified with stale colliders.
+  const colliders = sim ? await syncedColliders(sim, world) : undefined;
+  const runOpts: VerifyRunOptions = {
+    colliders,
+    maxSeconds: VERIFY_MAX_SECONDS,
+    budgetMs: VERIFY_BUDGET_MS,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.onResult ? { onResult: opts.onResult } : {}),
+    ...(opts.onPlan ? { onPlan: opts.onPlan } : {}),
+  };
+  const service = opts.service ?? new VerificationService(null, verifyOnMainThread);
+  const out = await service.run(world, runOpts);
+  if (out.ok) {
+    // The report module is tiny and Rapier-free: summarising never loads physics on the main thread.
+    const summary = summarizeReport(out.report);
+    return { report: out.report, summary, passed: out.report.passed, lanes: out.lanes, worker: out.worker, cancelled: false };
+  }
+  const message = out.cancelled ? 'verification cancelled' : /unavailable|import|fetch|module/i.test(out.error) && !out.worker ? `verification unavailable: ${out.error}` : `verification crashed: ${out.error}`;
+  return { report: { error: message }, summary: message, passed: false, lanes: 1, worker: out.worker, cancelled: out.cancelled };
 }
 
 /**

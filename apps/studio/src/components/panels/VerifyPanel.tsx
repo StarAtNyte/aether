@@ -5,6 +5,16 @@ import { formatMs } from '../../lib/format';
 import { Icon } from '../Icon';
 import { RichText } from '../RichText';
 
+/** One line on where and how fast the last run went, e.g. "12 s of physics in 340 ms · 2 parallel workers". */
+export function runMeta(v: { ms: number; lanes?: number | undefined; worker?: boolean | undefined; simulatedSeconds?: number | undefined }): string {
+  const parts: string[] = [];
+  const sim = v.simulatedSeconds ?? 0;
+  parts.push(sim > 0 ? `${sim.toFixed(sim >= 10 ? 0 : 1)} s of physics in ${formatMs(v.ms)}` : formatMs(v.ms));
+  if (v.worker === true) parts.push((v.lanes ?? 1) > 1 ? `${v.lanes} parallel workers` : 'background worker');
+  else if (v.worker === false) parts.push('main thread');
+  return parts.join(' · ');
+}
+
 function describeDiagnostic(d: DiagnosticView): string {
   const who = d.entities.length > 0 ? ` (${d.entities.join(', ')})` : '';
   return `${d.code}${who}: ${d.message}${d.suggestion ? ` Suggestion: ${d.suggestion}` : ''}`;
@@ -20,6 +30,8 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
   const stale = verify.head !== null && verify.head !== head;
   const running = verify.status === 'running';
   const failing = verify.results.filter((r) => !r.passed);
+  const live = running ? (verify.live ?? null) : null;
+  const decided = live ? live.results.filter((r) => r !== null).length : 0;
 
   return (
     <div className="verify">
@@ -32,8 +44,42 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
             {stale ? 'outdated' : verify.status === 'passed' ? 'passed' : verify.status === 'error' ? 'error' : 'failed'}
           </span>
         )}
-        {verify.ms > 0 && !running && <span className="panel-toolbar__count">{formatMs(verify.ms)}</span>}
+        {verify.ms > 0 && !running && (
+          <span className="panel-toolbar__count" title={runMeta(verify)} data-testid="verify-meta">
+            {runMeta(verify)}
+          </span>
+        )}
       </div>
+
+      {live && (
+        <section className="logic-section verify-live" aria-live="polite" data-testid="verify-live">
+          <h3 className="section-title">
+            {live.worker ? (live.lanes > 1 ? `Simulating on ${live.lanes} parallel workers` : 'Simulating in a background worker') : 'Simulating'}{' '}
+            <span className="muted">
+              {decided}/{live.tests.length}
+            </span>
+          </h3>
+          {live.worker && live.lanes > 1 && (
+            <div className="verify-lanes" aria-hidden="true">
+              {Array.from({ length: live.lanes }, (_, i) => (
+                <span key={i} className="verify-lanes__lane" />
+              ))}
+            </div>
+          )}
+          <ul className="test-list">
+            {live.tests.map((t, i) => {
+              const r = live.results[i] ?? null;
+              return (
+                <li key={`${t.id}-${i}`} className={r ? (r.passed ? 'is-pass' : 'is-fail') : 'is-pending'}>
+                  {r ? <Icon name={r.passed ? 'check' : 'x'} /> : <span className="test-list__pending" />}
+                  <span className="test-list__id">{t.id}</span>
+                  <span className="test-list__msg">{r ? r.message : t.kind}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {verify.status === 'idle' && (
         <div className="panel-empty panel-empty--center">
@@ -51,7 +97,7 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
         </details>
       )}
 
-      {verify.results.length > 0 && (
+      {verify.results.length > 0 && !live && (
         <section className="logic-section">
           <h3 className="section-title">
             Tests{' '}
@@ -76,7 +122,7 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
         </section>
       )}
 
-      {verify.diagnostics.length > 0 && (
+      {verify.diagnostics.length > 0 && !running && (
         <section className="logic-section">
           <h3 className="section-title">
             Diagnostics <span className="muted">{verify.diagnostics.length}</span>

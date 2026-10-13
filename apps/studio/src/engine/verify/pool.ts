@@ -50,6 +50,8 @@ export interface PoolVerifyOptions {
   signal?: AbortSignal;
   /** Called as soon as each test is decided (`index` into `world.tests`). */
   onResult?: (index: number, result: TestResult) => void;
+  /** Called once the run is planned, with the number of lanes it uses. */
+  onPlan?: (lanes: number) => void;
 }
 
 /** Result of {@link VerifyPool.verify}. */
@@ -266,6 +268,11 @@ export class VerifyPool {
     if (this.disposed) throw new WorkerUnavailableError('verification pool disposed');
     const shards = planShards(world.tests, this.laneCount, opts.maxSeconds);
     const timeoutMs = opts.budgetMs + this.slackMs;
+    try {
+      opts.onPlan?.(shards.length);
+    } catch {
+      /* listeners never break verification */
+    }
     // One controller for all shards: the caller's abort or the first failure stops the rest.
     const ctrl = new AbortController();
     const forward = (): void => ctrl.abort();
