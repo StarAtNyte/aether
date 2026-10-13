@@ -31,7 +31,8 @@ export function silhouette(out: GeneratorOutput, view: SilhouetteView, size = 48
   const maxV = out.bounds.max[v];
   const extent = Math.max(maxU - minU, maxV - minV, 1e-6);
   const grid = new Uint8Array(size * size);
-  const toPx = (val: number, min: number): number => ((val - min) / extent) * (size - 1);
+  // Map the bounds onto [0, size] so pixel centres (x + 0.5) cover the full extent.
+  const toPx = (val: number, min: number): number => ((val - min) / extent) * size;
   for (const part of out.parts) {
     const p = part.positions;
     const idx = part.indices;
@@ -87,8 +88,8 @@ function fillTriangle(grid: Uint8Array, size: number, ax: number, ay: number, bx
   if (Math.abs(area) < 1e-9) {
     // Degenerate in this projection (an edge-on face): mark its vertices' cells only.
     for (const [x, y] of [[ax, ay], [bx, by], [cx, cy]] as const) {
-      const xi = Math.round(x);
-      const yi = Math.round(y);
+      const xi = Math.min(size - 1, Math.floor(x));
+      const yi = Math.min(size - 1, Math.floor(y));
       if (xi >= 0 && yi >= 0 && xi < size && yi < size) grid[yi * size + xi] = 1;
     }
     return;

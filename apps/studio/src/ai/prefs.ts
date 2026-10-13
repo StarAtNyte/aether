@@ -15,11 +15,15 @@ export type AiMode = (typeof AI_MODES)[number];
 /** Largest refinement budget offered. */
 export const MAX_REFINE = 3;
 
-/** WebLLM models offered (small instruct models, q4f16). */
+/**
+ * WebLLM models offered (small instruct models, q4f16). Only permissively
+ * licensed weights (Apache-2.0 / MIT); the visitor's browser downloads them
+ * directly from the model host after an explicit opt-in.
+ */
 export const WEBLLM_MODELS = [
-  { id: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', label: 'Qwen2.5 3B', downloadMB: 1900 },
-  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 3B', downloadMB: 1800 },
-  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen2.5 1.5B (smaller)', downloadMB: 1000 },
+  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen2.5 1.5B', downloadMB: 1000, licence: 'Apache-2.0' },
+  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC', label: 'Phi-3.5 mini (3.8B)', downloadMB: 2200, licence: 'MIT' },
+  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC', label: 'SmolLM2 1.7B', downloadMB: 1100, licence: 'Apache-2.0' },
 ] as const;
 
 /** Same as `MODEL_ID_RE` in @aether/agent (kept local so the home page does not load the agent package; a test asserts equality). */

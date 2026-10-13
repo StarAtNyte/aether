@@ -9,6 +9,7 @@ import { ALL_THEMES } from './intent';
 import { COLORS, lookupAsset, singular } from './lexicon';
 import type { EntityView, WorldView } from './world-view';
 import type { ThemeCtx } from './decor';
+import { findLibraryItems, libraryAsset, type MockLibraryItem } from './library';
 
 const KNOWN_BEHAVIORS: ReadonlySet<string> = new Set([...BuiltinBehavior.options, 'script']);
 const ADJECTIVES = new Set(['big', 'small', 'large', 'tiny', 'huge', 'giant', 'little', 'tall', 'short', 'old', 'new', 'wooden', 'stone', 'all', 'every', 'my', 'the', 'those', 'these', 'of']);
@@ -134,8 +135,18 @@ function freeSlot(b: Builder, radius: number): [number, number] {
   return [0, r2(-(radius + 60))];
 }
 
-function addThings(b: Builder, edit: Extract<Edit, { kind: 'add' }>, view: WorldView, intent: Intent): string | null {
-  const found = lookupAsset(edit.phrase);
+/** Built-in vocabulary first, then the generator library ("add a pagoda"). */
+function findAsset(phrase: string, library: readonly MockLibraryItem[]): ReturnType<typeof lookupAsset> {
+  const found = lookupAsset(phrase);
+  if (found) return found;
+  const hit = findLibraryItems(phrase, library)[0];
+  if (!hit) return null;
+  const color = Object.entries(COLORS).find(([name]) => new RegExp(`\\b${name}\\b`, 'i').test(phrase))?.[1];
+  return { asset: libraryAsset(hit.item), noun: hit.keyword, ...(color ? { color } : {}) };
+}
+
+function addThings(b: Builder, edit: Extract<Edit, { kind: 'add' }>, view: WorldView, intent: Intent, library: readonly MockLibraryItem[]): string | null {
+  const found = findAsset(edit.phrase, library);
   if (!found) {
     const theme = ALL_THEMES.find((t) => t.match.test(edit.phrase));
     if (!theme) return null;
@@ -169,11 +180,11 @@ function addThings(b: Builder, edit: Extract<Edit, { kind: 'add' }>, view: World
 }
 
 /** Apply edit commands; returns human descriptions of what changed. */
-export function applyEdits(b: Builder, intent: Intent, view: WorldView): string[] {
+export function applyEdits(b: Builder, intent: Intent, view: WorldView, library: readonly MockLibraryItem[] = []): string[] {
   const done: string[] = [];
   for (const edit of intent.edits) {
     if (edit.kind === 'add') {
-      const d = addThings(b, edit, view, intent);
+      const d = addThings(b, edit, view, intent, library);
       if (d) done.push(d);
       continue;
     }

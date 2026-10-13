@@ -123,6 +123,9 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string {
     PATCHES,
     `## Worked examples\n${renderExamples()}`,
     `## Built-in generators (shape {"kind":"procedural","generator":id,"params":{...}}; unknown params are ignored; every param has a default)\n${renderGeneratorCatalog(catalogs.generators)}`,
+    ...(catalogs.libraryGenerators && catalogs.libraryGenerators.length > 0
+      ? [`## Library generators (used exactly like built-ins; defined in the world automatically on first use)\n${renderGeneratorCatalog(catalogs.libraryGenerators)}`]
+      : []),
     `## Built-in behaviors (entity.behaviors: [{"type":id,"params":{...}}])\n${renderBehaviorCatalog(catalogs.behaviors)}`,
     `## Rules\n${catalogs.ruleDocs.trim()}`,
     TESTS,

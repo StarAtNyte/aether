@@ -148,9 +148,9 @@ describe('createWebLlmProvider', () => {
         },
       },
     };
-    const p = createWebLlmProvider({ engine, model: 'Qwen2.5-3B-Instruct-q4f16_1-MLC' });
+    const p = createWebLlmProvider({ engine, model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC' });
     const res = await p.complete({ ...REQ, tools: [{ name: 'finish', description: 'd', inputSchema: { type: 'object' } }] });
-    expect(res).toMatchObject({ stopReason: 'tool_use', model: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', usage: { inputTokens: 12, outputTokens: 3 } });
+    expect(res).toMatchObject({ stopReason: 'tool_use', model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', usage: { inputTokens: 12, outputTokens: 3 } });
     const r = seen[0] as { response_format: { type: string; schema: string }; messages: Array<{ role: string }> };
     expect(r.response_format.type).toBe('json_object');
     expect(JSON.parse(r.response_format.schema)).toMatchObject({ type: 'object' });

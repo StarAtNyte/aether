@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "fountain",
+    "description": "Tiered stone fountain with water basins.",
+    "category": "architecture",
+    "keywords": [
+      "fountain",
+      "water fountain"
+    ],
+    "params": {
+      "radius": {
+        "type": "number",
+        "default": 2,
+        "min": 0.5,
+        "max": 10,
+        "description": "basin radius in meters"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#b9b2a6",
+        "description": "stone color"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#4fa8e0",
+        "description": "water color"
+      }
+    },
+    "size": [
+      4,
+      2.61,
+      4
+    ]
+  },
+  "def": {
+    "id": "fountain",
+    "description": "Tiered stone fountain with a round basin, pedestal, upper bowl and shimmering water.",
+    "params": {
+      "radius": {
+        "type": "number",
+        "default": 2,
+        "min": 0.5,
+        "max": 10,
+        "description": "basin radius in meters"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#b9b2a6",
+        "description": "stone color"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#4fa8e0",
+        "description": "water color"
+      }
+    },
+    "source": "const R = params.radius;\nconst stone = { preset: 'stone', roughness: 0.9, flatShading: true };\nconst basin = api.lathe([[0, 0], [R, 0], [R, R * 0.25], [R * 0.9, R * 0.25], [R * 0.9, R * 0.08], [0, R * 0.08]], 24);\nbasin.vertexColor((x, y, z) => api.mix(params.stoneColor, '#6f6a62', 0.25 + 0.25 * api.noise3(x * 2, y * 2, z * 2)));\napi.add(basin, stone);\nconst water = { preset: 'water', color: params.waterColor, opacity: 0.8, roughness: 0.05, emissive: params.waterColor, emissiveIntensity: 0.15 };\napi.add(api.cylinder(R * 0.9, R * 0.9, 0.04, 24).translate(0, R * 0.2, 0), water);\nconst pillar = api.lathe([[0, 0], [R * 0.16, 0], [R * 0.11, R * 0.4], [R * 0.13, R * 0.75], [0, R * 0.75]], 12);\npillar.vertexColor(() => params.stoneColor);\napi.add(pillar, stone);\nconst bowl = api.lathe([[0, R * 0.7], [R * 0.45, R * 0.75], [R * 0.5, R * 0.9], [R * 0.44, R * 0.9], [R * 0.4, R * 0.8], [0, R * 0.8]], 18);\nbowl.vertexColor(() => params.stoneColor);\napi.add(bowl, stone);\napi.add(api.cylinder(R * 0.4, R * 0.4, 0.03, 18).translate(0, R * 0.86, 0), water);\nconst jet = api.cone(R * 0.06, R * 0.45, 8).translate(0, R * 1.08, 0);\napi.add(jet, { preset: 'water', color: '#cfefff', emissive: '#9fdcff', emissiveIntensity: 0.8, opacity: 0.7 });\napi.collider({ kind: 'cylinder', radius: R, halfHeight: R * 0.125, offset: [0, R * 0.125, 0] });\napi.collider({ kind: 'cylinder', radius: R * 0.16, halfHeight: R * 0.45, offset: [0, R * 0.45, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "example",
+    "createdAt": "2026-10-13T10:13:48.064Z",
+    "attempts": 0
+  },
+  "checks": {
+    "triangles": 592,
+    "parts": 3,
+    "colliders": 2
+  }
+}

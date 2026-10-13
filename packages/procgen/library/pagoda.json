@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "pagoda",
+    "description": "Multi-tier East Asian pagoda with upturned eaves on every tier, a stone base and a finial spire, about 12 m tall",
+    "category": "architecture",
+    "keywords": [
+      "pagoda"
+    ],
+    "params": {
+      "tiers": {
+        "type": "int",
+        "default": 5,
+        "min": 3,
+        "max": 7,
+        "description": "number of pagoda stories"
+      },
+      "roofColor": {
+        "type": "color",
+        "default": "#315f4b",
+        "description": "glazed roof tile color"
+      },
+      "wallColor": {
+        "type": "color",
+        "default": "#efe1c2",
+        "description": "plaster wall color"
+      }
+    },
+    "size": [
+      6.156,
+      12,
+      6.156
+    ]
+  },
+  "def": {
+    "id": "pagoda",
+    "description": "A detailed twelve-meter East Asian pagoda with three to seven tapering stories, four-sided upturned eaves, balconies, timber framing, a stone base, and a gold finial spire.",
+    "params": {
+      "tiers": {
+        "type": "int",
+        "default": 5,
+        "min": 3,
+        "max": 7,
+        "description": "number of pagoda stories"
+      },
+      "roofColor": {
+        "type": "color",
+        "default": "#315f4b",
+        "description": "glazed roof tile color"
+      },
+      "wallColor": {
+        "type": "color",
+        "default": "#efe1c2",
+        "description": "plaster wall color"
+      }
+    },
+    "source": "const n = params.tiers;\nconst totalH = 12;\nconst baseH = 0.65;\nconst finialH = 1.45;\nconst storyH = (totalH - baseH - finialH) / n;\nconst roofH = storyH * 0.37;\nconst wallH = storyH * 0.60;\nconst stone = { preset: 'stone', color: '#77756f', roughness: 0.92, flatShading: true };\nconst stoneDark = { preset: 'stone', color: '#555650', roughness: 0.95 };\nconst wall = { preset: 'concrete', color: params.wallColor, roughness: 0.8 };\nconst timber = { preset: 'wood', color: '#6d241b', roughness: 0.72 };\nconst darkWood = { preset: 'wood', color: '#351b17', roughness: 0.78 };\nconst roof = { preset: 'brick', color: params.roofColor, roughness: 0.58, flatShading: true };\nconst roofEdge = { preset: 'metal', color: api.mix(params.roofColor, '#17241f', 0.38), metalness: 0.22, roughness: 0.5 };\nconst gold = { preset: 'gold', color: '#d6a62d', metalness: 0.72, roughness: 0.28 };\napi.add(api.box(5.7, 0.28, 5.7).translate(0, 0.14, 0), stoneDark);\napi.add(api.box(5.2, 0.37, 5.2).translate(0, 0.465, 0), stone);\nfor (let k = 0; k < 4; k++) {\n  const a = k * Math.PI * 0.5;\n  const x = Math.cos(a) * 2.72;\n  const z = Math.sin(a) * 2.72;\n  api.add(api.sphere(0.16, 1).scale(1, 0.55, 1).translate(x, 0.36, z), stoneDark);\n}\nlet y = baseH;\nlet topWidth = 0;\nfor (let i = 0; i < n; i++) {\n  const t = i / Math.max(1, n - 1);\n  const wallW = 3.85 - t * 1.55;\n  const deckW = wallW + 0.72;\n  const roofW = wallW + 1.55;\n  const wallY = y + wallH * 0.5;\n  api.add(api.box(deckW, storyH * 0.09, deckW).translate(0, y + storyH * 0.045, 0), darkWood);\n  api.add(api.box(wallW, wallH, wallW).translate(0, wallY, 0), wall);\n  const post = Math.max(0.09, wallW * 0.035);\n  for (let sx = -1; sx <= 1; sx += 2) {\n    for (let sz = -1; sz <= 1; sz += 2) {\n      api.add(api.box(post, wallH * 1.06, post).translate(sx * wallW * 0.48, wallY, sz * wallW * 0.48), timber);\n    }\n  }\n  const beamY = y + wallH * 0.83;\n  for (let q = 0; q < 4; q++) {\n    api.add(api.box(wallW + post, post * 1.25, post * 0.9).translate(0, beamY, wallW * 0.505).rotate(0, q * 90, 0), timber);\n    const faceZ = wallW * 0.507;\n    for (let j = -2; j <= 2; j++) {\n      const px = j * wallW * 0.145;\n      api.add(api.box(post * 0.52, wallH * 0.48, post * 0.45).translate(px, y + wallH * 0.42, faceZ).rotate(0, q * 90, 0), darkWood);\n    }\n    api.add(api.box(wallW * 0.76, post * 0.48, post * 0.42).translate(0, y + wallH * 0.42, faceZ * 1.004).rotate(0, q * 90, 0), darkWood);\n  }\n  const railY = y + storyH * 0.25;\n  if (i < n - 1) {\n    for (let q = 0; q < 4; q++) {\n      const rz = deckW * 0.46;\n      api.add(api.box(deckW * 0.88, post * 0.38, post * 0.38).translate(0, railY, rz).rotate(0, q * 90, 0), darkWood);\n      for (let j = -3; j <= 3; j++) {\n        api.add(api.box(post * 0.3, storyH * 0.22, post * 0.3).translate(j * deckW * 0.115, y + storyH * 0.15, rz).rotate(0, q * 90, 0), darkWood);\n      }\n    }\n  }\n  const roofBaseY = y + wallH;\n  const roofCenterY = roofBaseY + roofH * 0.42;\n  api.add(api.cone(roofW * 0.71, roofH * 0.78, 4).rotate(0, 45, 0).translate(0, roofBaseY + roofH * 0.39, 0), roof);\n  api.add(api.box(roofW, storyH * 0.055, roofW).translate(0, roofBaseY + storyH * 0.028, 0), roofEdge);\n  const rise = roofH * 0.25;\n  const thick = Math.max(0.08, storyH * 0.055);\n  const fascia = [[-roofW * 0.5, 0], [roofW * 0.5, 0], [roofW * 0.57, rise], [roofW * 0.51, rise + thick], [-roofW * 0.51, rise + thick], [-roofW * 0.57, rise]];\n  for (let q = 0; q < 4; q++) {\n    api.add(api.extrude(fascia, thick).translate(0, roofBaseY, roofW * 0.47).rotate(0, q * 90, 0), roofEdge);\n  }\n  for (let q = 0; q < 4; q++) {\n    const a = q * Math.PI * 0.5 + Math.PI * 0.25;\n    api.add(api.sphere(thick * 0.72, 1).translate(Math.cos(a) * roofW * 0.74, roofBaseY + rise * 1.02, Math.sin(a) * roofW * 0.74), gold);\n  }\n  api.collider({ kind: 'box', halfExtents: [deckW * 0.5, storyH * 0.045, deckW * 0.5], offset: [0, y + storyH * 0.045, 0] });\n  api.collider({ kind: 'box', halfExtents: [wallW * 0.5, wallH * 0.5, wallW * 0.5], offset: [0, wallY, 0] });\n  y += storyH;\n  topWidth = roofW;\n}\nconst spireBase = totalH - finialH;\napi.add(api.cylinder(topWidth * 0.15, topWidth * 0.19, finialH * 0.13, 12).translate(0, spireBase + finialH * 0.065, 0), gold);\napi.add(api.sphere(finialH * 0.13, 2).scale(1, 0.7, 1).translate(0, spireBase + finialH * 0.22, 0), gold);\nconst mast = api.cylinder(finialH * 0.035, finialH * 0.055, finialH * 0.72, 10).translate(0, spireBase + finialH * 0.55, 0);\napi.add(mast, gold);\nfor (let j = 0; j < 4; j++) {\n  const rr = finialH * (0.19 - j * 0.025);\n  api.add(api.torus(rr, finialH * 0.025).rotate(90, 0, 0).translate(0, spireBase + finialH * (0.38 + j * 0.12), 0), gold);\n}\napi.add(api.cone(finialH * 0.09, finialH * 0.28, 10).translate(0, totalH - finialH * 0.14, 0), gold);\napi.collider({ kind: 'box', halfExtents: [2.85, 0.14, 2.85], offset: [0, 0.14, 0] });\napi.collider({ kind: 'cylinder', radius: finialH * 0.06, halfHeight: finialH * 0.45, offset: [0, spireBase + finialH * 0.52, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:15:29.434Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 9232,
+    "parts": 8,
+    "colliders": 12
+  }
+}

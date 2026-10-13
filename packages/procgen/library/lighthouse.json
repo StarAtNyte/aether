@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "lighthouse",
+    "description": "Striped lighthouse with a gallery, railing and a glowing lamp room.",
+    "category": "architecture",
+    "keywords": [
+      "lighthouse",
+      "light house",
+      "beacon tower"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 10,
+        "min": 3,
+        "max": 40,
+        "description": "tower height in meters"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#d1453b",
+        "description": "stripe color"
+      },
+      "lightColor": {
+        "type": "color",
+        "default": "#fff2a8",
+        "description": "lamp color"
+      }
+    },
+    "size": [
+      3.36,
+      12.3,
+      3.36
+    ]
+  },
+  "def": {
+    "id": "lighthouse",
+    "description": "Striped lighthouse with a gallery, railing and a glowing lamp room.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 10,
+        "min": 3,
+        "max": 40,
+        "description": "tower height in meters"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#d1453b",
+        "description": "stripe color"
+      },
+      "lightColor": {
+        "type": "color",
+        "default": "#fff2a8",
+        "description": "lamp color"
+      }
+    },
+    "source": "const h = params.height;\nconst r = h * 0.12;\nconst tower = api.cylinder(r * 0.7, r, h, 16).translate(0, h / 2, 0);\ntower.vertexColor((x, y, z) => (Math.floor(y / (h / 6)) % 2 === 0 ? '#f4f1ea' : params.stripeColor));\napi.add(tower, { preset: 'concrete', roughness: 0.8, flatShading: true });\napi.add(api.cylinder(r * 1.3, r * 1.4, h * 0.06, 16).translate(0, h * 0.03, 0), { preset: 'stone', color: '#8a8580' });\nconst metal = { preset: 'metal', color: '#2f3238', metalness: 0.7, roughness: 0.4 };\napi.add(api.cylinder(r * 1.1, r * 1.1, h * 0.03, 16).translate(0, h + h * 0.015, 0), metal);\nfor (let i = 0; i < 12; i++) {\n  const a = (i / 12) * Math.PI * 2;\n  api.add(api.box(0.05, h * 0.05, 0.05).translate(Math.cos(a) * r * 1.05, h + h * 0.055, Math.sin(a) * r * 1.05), metal);\n}\napi.add(api.torus(r * 1.05, 0.03).rotate(90, 0, 0).translate(0, h + h * 0.08, 0), metal);\nconst lamp = api.cylinder(r * 0.55, r * 0.55, h * 0.1, 12).translate(0, h + h * 0.08, 0);\napi.add(lamp, { preset: 'emissive', color: params.lightColor, emissive: params.lightColor, emissiveIntensity: 4 });\napi.add(api.cone(r * 0.75, h * 0.1, 12).translate(0, h + h * 0.18, 0), metal);\napi.collider({ kind: 'cylinder', radius: r, halfHeight: h * 0.62, offset: [0, h * 0.62, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "example",
+    "createdAt": "2026-10-13T10:13:48.064Z",
+    "attempts": 0
+  },
+  "checks": {
+    "triangles": 888,
+    "parts": 4,
+    "colliders": 1
+  }
+}

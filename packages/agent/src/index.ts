@@ -29,7 +29,8 @@ export { CompletionRequestSchema, CompletionResponseSchema, ContentBlockSchema, 
 export { createAnthropicProvider, type AnthropicProviderOptions, type AnthropicEffort } from './providers/anthropic';
 export { createOpenAIProvider, type OpenAIProviderOptions, type OpenAIEffort } from './providers/openai';
 export { createHttpProvider, type HttpProviderOptions } from './providers/http';
-export { createMockProvider } from './providers/mock/index';
+export { createMockProvider, type MockProviderOptions } from './providers/mock/index';
+export type { MockLibraryItem } from './providers/mock/library';
 export { ProviderError, isAbortError, type ProviderErrorCode } from './providers/errors';
 export type { RetryPolicy } from './providers/transport';
 

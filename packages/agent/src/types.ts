@@ -87,6 +87,12 @@ export interface AgentCatalogs {
   generatorApiDts: string;
   generatorExamples: unknown[];
   scriptApiDts: string;
+  /**
+   * Generator-library entries (same shape as `generators`). They are listed
+   * in the prompt and used like built-ins; the host defines one in the world
+   * on first use through `AgentOptions.resolveGenerator`.
+   */
+  libraryGenerators?: unknown[];
 }
 
 /** Options for {@link WorldAgent}. */
@@ -101,6 +107,11 @@ export interface AgentOptions {
   /** Output token cap per planner call (default 16000). */
   maxTokens?: number;
   catalogs: AgentCatalogs;
+  /**
+   * Definition of a library generator by id (null when unknown). Called
+   * before patches that reference an undefined generator are applied.
+   */
+  resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
 }
 
 /** Token usage accumulated over a run. */

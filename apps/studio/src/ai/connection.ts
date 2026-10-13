@@ -19,6 +19,7 @@ import {
   type Provider,
   type WebLlmEngineLike,
 } from '@aether/agent';
+import { GENERATOR_LIBRARY } from '@aether/procgen';
 import { API, HEALTH_TIMEOUT_MS } from '../config';
 import { bridgeModel, WEBLLM_MODELS, type AiPrefs } from './prefs';
 import { browserSession, loadBridgeSession, loadByokSession, saveBridgeSession, saveByokSession, BYOK_KEY_RE, type SessionStore } from './session';
@@ -296,7 +297,7 @@ export class AiConnection {
 
   /** The offline planner. */
   offline(): Provider {
-    return createMockProvider();
+    return createMockProvider({ library: GENERATOR_LIBRARY });
   }
 }
 

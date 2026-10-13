@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "castle-gate",
+    "description": "Castle gatehouse: two crenellated stone towers flanking an arched gate with a portcullis and a wall walk on top",
+    "category": "architecture",
+    "keywords": [
+      "castle gate",
+      "gatehouse",
+      "portcullis"
+    ],
+    "params": {
+      "stoneColor": {
+        "type": "color",
+        "default": "#8f8879",
+        "description": "Main dressed-stone color"
+      },
+      "height": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 24,
+        "description": "Overall gatehouse height in meters"
+      }
+    },
+    "size": [
+      9.364,
+      7.64,
+      3.264
+    ]
+  },
+  "def": {
+    "id": "castle-gate",
+    "description": "A detailed medieval stone castle gatehouse with twin crenellated towers, a deep arched passage, iron portcullis, battlements, wall walk, arrow slits, and rear-facing architectural detail.",
+    "params": {
+      "stoneColor": {
+        "type": "color",
+        "default": "#8f8879",
+        "description": "Main dressed-stone color"
+      },
+      "height": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 24,
+        "description": "Overall gatehouse height in meters"
+      }
+    },
+    "source": "const H = params.height;\nconst S = H / 8;\nconst towerR = 1.45 * S;\nconst towerH = 6.9 * S;\nconst towerX = 3.05 * S;\nconst wallD = 1.9 * S;\nconst gateHalf = 1.15 * S;\nconst springY = 2.7 * S;\nconst archR = gateHalf;\nconst crownY = springY + archR;\nconst stone = { preset: 'stone', color: params.stoneColor, roughness: 0.92, flatShading: true };\nconst darkStone = { preset: 'stone', color: api.mix(params.stoneColor, '#282826', 0.32), roughness: 0.95, flatShading: true };\nconst iron = { preset: 'metal', color: '#25282a', metalness: 0.72, roughness: 0.42 };\nconst wood = { preset: 'wood', color: '#4b3120', roughness: 0.88 };\nconst addStone = (mesh) => {\n  mesh.vertexColor((x, y, z) => api.mix(params.stoneColor, '#5d594f', 0.10 + 0.10 * (api.noise3(x * 1.7, y * 1.7, z * 1.7) + 1) * 0.5));\n  api.add(mesh, stone);\n};\naddStone(api.cylinder(towerR * 0.96, towerR, towerH, 16).translate(-towerX, towerH / 2, 0));\naddStone(api.cylinder(towerR * 0.96, towerR, towerH, 16).translate(towerX, towerH / 2, 0));\naddStone(api.box(towerX * 2, springY, wallD).translate(0, springY / 2, 0));\naddStone(api.box(towerX * 2, 1.7 * S, wallD).translate(0, crownY + 0.85 * S, 0));\naddStone(api.box(towerX - gateHalf, crownY - springY, wallD).translate(-(towerX + gateHalf) / 2, (springY + crownY) / 2, 0));\naddStone(api.box(towerX - gateHalf, crownY - springY, wallD).translate((towerX + gateHalf) / 2, (springY + crownY) / 2, 0));\nconst archOuter = archR + 0.38 * S;\nconst archSegs = 11;\nfor (let side = -1; side <= 1; side += 2) {\n  const z = side * (wallD / 2 + 0.035 * S);\n  for (let i = 0; i < archSegs; i++) {\n    const a0 = i * Math.PI / archSegs;\n    const a1 = (i + 1) * Math.PI / archSegs;\n    const shape = [\n      [Math.cos(a0) * archR, springY + Math.sin(a0) * archR],\n      [Math.cos(a0) * archOuter, springY + Math.sin(a0) * archOuter],\n      [Math.cos(a1) * archOuter, springY + Math.sin(a1) * archOuter],\n      [Math.cos(a1) * archR, springY + Math.sin(a1) * archR]\n    ];\n    const voussoir = api.extrude(shape, 0.15 * S).translate(0, 0, z);\n    voussoir.vertexColor(() => i % 2 === 0 ? api.mix(params.stoneColor, '#d3c9ae', 0.18) : api.mix(params.stoneColor, '#504c45', 0.12));\n    api.add(voussoir, stone);\n  }\n}\nfor (let side = -1; side <= 1; side += 2) {\n  addStone(api.box(0.34 * S, springY, 0.16 * S).translate(side * (gateHalf + 0.19 * S), springY / 2, wallD / 2 + 0.04 * S));\n  addStone(api.box(0.34 * S, springY, 0.16 * S).translate(side * (gateHalf + 0.19 * S), springY / 2, -wallD / 2 - 0.04 * S));\n}\nconst gateZ = wallD / 2 + 0.14 * S;\nfor (let i = -3; i <= 3; i++) {\n  const x = i * gateHalf * 0.285;\n  const top = springY + Math.sqrt(Math.max(0, archR * archR - x * x)) - 0.13 * S;\n  const bottom = 0.28 * S;\n  api.add(api.box(0.075 * S, top - bottom, 0.09 * S).translate(x, (top + bottom) / 2, gateZ), iron);\n  api.add(api.cone(0.095 * S, 0.32 * S, 6).rotate(180, 0, 0).translate(x, bottom, gateZ), iron);\n}\nfor (let j = 0; j < 3; j++) {\n  api.add(api.box(gateHalf * 1.9, 0.085 * S, 0.11 * S).translate(0, (0.9 + j * 0.72) * S, gateZ + 0.01 * S), iron);\n}\nconst walkY = 5.82 * S;\naddStone(api.box(towerX * 2.1, 0.25 * S, wallD * 1.25).translate(0, walkY, 0));\nfor (let side = -1; side <= 1; side += 2) {\n  const z = side * wallD * 0.69;\n  addStone(api.box(towerX * 2.15, 0.34 * S, 0.24 * S).translate(0, walkY + 0.29 * S, z));\n  for (let i = -4; i <= 4; i++) {\n    addStone(api.box(0.45 * S, 0.58 * S, 0.34 * S).translate(i * 0.72 * S, walkY + 0.72 * S, z));\n  }\n}\nfor (let t = -1; t <= 1; t += 2) {\n  addStone(api.cylinder(towerR * 1.08, towerR * 1.08, 0.25 * S, 16).translate(t * towerX, towerH + 0.02 * S, 0));\n  for (let i = 0; i < 12; i++) {\n    const a = i * Math.PI * 2 / 12;\n    const rr = towerR * 0.96;\n    addStone(api.box(0.48 * S, 0.62 * S, 0.48 * S).rotate(0, -a * 180 / Math.PI, 0).translate(t * towerX + Math.cos(a) * rr, towerH + 0.43 * S, Math.sin(a) * rr));\n  }\n}\nfor (let t = -1; t <= 1; t += 2) {\n  for (let side = -1; side <= 1; side += 2) {\n    api.add(api.box(0.16 * S, 0.72 * S, 0.06 * S).translate(t * towerX, 3.55 * S, side * (towerR + 0.015 * S)), darkStone);\n    api.add(api.box(0.42 * S, 0.12 * S, 0.065 * S).translate(t * towerX, 3.55 * S, side * (towerR + 0.025 * S)), darkStone);\n  }\n}\nconst rearZ = -wallD / 2 - 0.09 * S;\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.box(0.48 * S, 1.05 * S, 0.11 * S).translate(side * 1.72 * S, 1.05 * S, rearZ), wood);\n  api.add(api.box(0.07 * S, 1.08 * S, 0.13 * S).translate(side * 1.72 * S, 1.05 * S, rearZ - 0.02 * S), iron);\n}\napi.add(api.box(0.72 * S, 0.42 * S, 0.09 * S).translate(0, 5.12 * S, wallD / 2 + 0.07 * S), darkStone);\napi.collider({ kind: 'cylinder', radius: towerR, halfHeight: towerH / 2, offset: [-towerX, towerH / 2, 0] });\napi.collider({ kind: 'cylinder', radius: towerR, halfHeight: towerH / 2, offset: [towerX, towerH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [(towerX - gateHalf) / 2, springY / 2, wallD / 2], offset: [-(towerX + gateHalf) / 2, springY / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [(towerX - gateHalf) / 2, springY / 2, wallD / 2], offset: [(towerX + gateHalf) / 2, springY / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [towerX, 0.85 * S, wallD / 2], offset: [0, crownY + 0.85 * S, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:20:42.939Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1516,
+    "parts": 4,
+    "colliders": 5
+  }
+}

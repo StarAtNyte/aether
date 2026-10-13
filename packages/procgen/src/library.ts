@@ -22,10 +22,12 @@ export interface LibraryEntry {
   /** Lower-case nouns that select it ("lighthouse", "light house"). */
   keywords: readonly string[];
   params: Readonly<Record<string, ParamSpec>>;
+  /** Bounding size [w, h, d] in metres at default params (placement footprint). */
+  size: readonly [number, number, number];
 }
 
 /** All library generators (catalog only). */
-export const GENERATOR_LIBRARY: readonly LibraryEntry[] = LIBRARY_ENTRIES as readonly LibraryEntry[];
+export const GENERATOR_LIBRARY: readonly LibraryEntry[] = LIBRARY_ENTRIES;
 
 const BY_ID = new Map(GENERATOR_LIBRARY.map((e) => [e.id, e]));
 const cache = new Map<string, Promise<GeneratorDef | null>>();

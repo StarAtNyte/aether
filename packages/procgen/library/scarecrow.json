@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "scarecrow",
+    "description": "Scarecrow on a wooden cross post: burlap sack head with a straw hat, plaid shirt arms outstretched, straw tufts",
+    "category": "props",
+    "keywords": [
+      "scarecrow"
+    ],
+    "params": {
+      "shirtColor": {
+        "type": "color",
+        "default": "#8f3f36",
+        "description": "Main color of the plaid shirt"
+      },
+      "hatColor": {
+        "type": "color",
+        "default": "#b8873f",
+        "description": "Color of the straw hat"
+      }
+    },
+    "size": [
+      3.607,
+      3.7,
+      1.24
+    ]
+  },
+  "def": {
+    "id": "scarecrow",
+    "description": "Detailed rustic scarecrow on a wooden cross post, with a burlap sack face, floppy straw hat, plaid outstretched shirt, rope ties, and straw tufts visible from every side.",
+    "params": {
+      "shirtColor": {
+        "type": "color",
+        "default": "#8f3f36",
+        "description": "Main color of the plaid shirt"
+      },
+      "hatColor": {
+        "type": "color",
+        "default": "#b8873f",
+        "description": "Color of the straw hat"
+      }
+    },
+    "source": "const shirtColor = params.shirtColor;\nconst hatColor = params.hatColor;\nconst wood = { preset: 'wood', color: '#6b4428', roughness: 0.95 };\nconst shirt = { preset: 'fabric', color: shirtColor, roughness: 0.95 };\nconst plaid = { preset: 'fabric', color: '#d6b06a', roughness: 0.9 };\nconst burlap = { preset: 'fabric', color: '#b99a6a', roughness: 1, flatShading: true };\nconst straw = { preset: 'grass', color: hatColor, roughness: 1 };\nconst dark = { preset: 'fabric', color: '#382b25', roughness: 1 };\nconst rope = { preset: 'fabric', color: '#8b653b', roughness: 1 };\nconst denim = { preset: 'fabric', color: '#45566b', roughness: 0.95 };\nconst postH = 3.25;\napi.add(api.cylinder(0.1, 0.14, postH, 8).translate(0, postH / 2, -0.13), wood);\napi.add(api.cylinder(0.085, 0.085, 2.8, 8).rotate(0, 0, 90).translate(0, 2.25, -0.12), wood);\napi.add(api.box(0.9, 0.28, 0.08).translate(0, 0.14, 0), { preset: 'wood', color: '#755033', roughness: 1 });\napi.add(api.box(0.78, 0.9, 0.38).translate(0, 1.82, 0), shirt);\napi.add(api.box(1.05, 0.34, 0.34).translate(-0.9, 2.2, 0), shirt);\napi.add(api.box(1.05, 0.34, 0.34).translate(0.9, 2.2, 0), shirt);\nfor (let i = -1; i <= 1; i++) {\n  api.add(api.box(0.045, 0.91, 0.39).translate(i * 0.25, 1.82, 0.005), plaid);\n}\nfor (let i = 0; i < 3; i++) {\n  api.add(api.box(0.79, 0.045, 0.39).translate(0, 1.56 + i * 0.27, 0.006), plaid);\n}\nfor (let side = -1; side <= 1; side += 2) {\n  for (let i = 0; i < 3; i++) {\n    api.add(api.box(0.045, 0.35, 0.35).translate(side * (0.52 + i * 0.35), 2.2, 0.006), plaid);\n  }\n  api.add(api.torus(0.17, 0.025).rotate(90, 0, 0).translate(side * 1.42, 2.2, 0), rope);\n  for (let j = 0; j < 7; j++) {\n    const a = (j / 7) * Math.PI * 2;\n    const len = 0.25 + api.rng() * 0.12;\n    const x0 = side * 1.44;\n    const path = [[x0, 2.2, 0], [x0 + side * len, 2.2 + Math.cos(a) * 0.11, Math.sin(a) * 0.11]];\n    api.add(api.tube(path, 0.014, 5), straw);\n  }\n}\napi.add(api.box(0.34, 0.7, 0.31).rotate(0, 0, 5).translate(-0.21, 1.03, 0), denim);\napi.add(api.box(0.34, 0.7, 0.31).rotate(0, 0, -5).translate(0.21, 1.03, 0), denim);\napi.add(api.torus(0.31, 0.025).rotate(90, 0, 0).translate(0, 1.42, 0), rope);\nconst head = api.sphere(0.42, 2).scale(0.83, 1.08, 0.78).translate(0, 2.86, 0);\nhead.displace((x, y, z) => 0.012 * api.noise3(x * 17, y * 17, z * 17));\napi.add(head, burlap);\napi.add(api.torus(0.31, 0.022).rotate(90, 0, 0).translate(0, 2.56, 0), rope);\napi.add(api.sphere(0.045, 1).scale(1, 1, 0.45).translate(-0.135, 2.94, 0.32), dark);\napi.add(api.sphere(0.045, 1).scale(1, 1, 0.45).translate(0.135, 2.94, 0.32), dark);\napi.add(api.cone(0.065, 0.16, 6).rotate(90, 0, 0).translate(0, 2.84, 0.39), { preset: 'fabric', color: '#b66a35', roughness: 1 });\nconst smile = [[-0.17, 2.72, 0.325], [-0.08, 2.67, 0.35], [0, 2.65, 0.36], [0.09, 2.67, 0.35], [0.17, 2.72, 0.325]];\napi.add(api.tube(smile, 0.016, 5), dark);\nfor (let i = 0; i < 5; i++) {\n  api.add(api.box(0.012, 0.07, 0.018).rotate(0, 0, -35 + i * 18).translate(-0.12 + i * 0.06, 2.68, 0.35), dark);\n}\nfor (let i = 0; i < 9; i++) {\n  const a = (i / 9) * Math.PI * 2;\n  api.add(api.tube([[Math.cos(a) * 0.22, 3.13, Math.sin(a) * 0.22], [Math.cos(a) * 0.34, 3.3 + api.rng() * 0.12, Math.sin(a) * 0.34]], 0.014, 5), straw);\n}\napi.add(api.cylinder(0.62, 0.62, 0.08, 16).translate(0, 3.2, 0), straw);\napi.add(api.cylinder(0.3, 0.36, 0.38, 12).translate(0, 3.39, 0), straw);\napi.add(api.torus(0.335, 0.035).rotate(90, 0, 0).translate(0, 3.23, 0), dark);\napi.add(api.cylinder(0.08, 0.22, 0.12, 10).translate(0, 3.64, 0), straw);\napi.collider({ kind: 'box', halfExtents: [0.14, 1.63, 0.16], offset: [0, 1.63, -0.08] });\napi.collider({ kind: 'box', halfExtents: [1.45, 0.2, 0.2], offset: [0, 2.2, 0] });\napi.collider({ kind: 'box', halfExtents: [0.42, 0.48, 0.22], offset: [0, 1.82, 0] });\napi.collider({ kind: 'sphere', radius: 0.43, offset: [0, 2.86, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:23:04.073Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 3878,
+    "parts": 10,
+    "colliders": 4
+  }
+}

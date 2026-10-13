@@ -9,97 +9,17 @@
  * Run: `npm run smoke` (or `npx tsx scripts/smoke.ts`).
  */
 import { performance } from 'node:perf_hooks';
-import { createWorld, History, validateWorld, type GeneratorDef, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
-import { createMockProvider, WorldAgent, type AgentCatalogs, type AgentEvent, type AgentHost } from '@aether/agent';
-import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
-import { initPhysics, summarizeReport, verify } from '@aether/physics';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, catalog, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
+import { validateWorld } from '@aether/core';
+import { createMockProvider, WorldAgent, type AgentEvent } from '@aether/agent';
+import { initScripting } from '@aether/logic';
+import { initPhysics } from '@aether/physics';
+import { GENERATOR_LIBRARY, loadLibraryGenerator, type SandboxRunner } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
-import { createVerifyLogic } from '../apps/studio/src/engine/headlessHost';
+import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, runVerify } from './lib/headless-world';
 import { DEFAULT_PROMPTS } from './smoke-prompts';
 
 /** `npx tsx scripts/smoke.ts "<prompt>"` runs only the given prompts. */
 const PROMPTS: readonly string[] = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_PROMPTS;
-
-/** Headless verification limits (same order of magnitude as the studio). */
-const VERIFY_MAX_SECONDS = 25;
-const VERIFY_BUDGET_MS = 20_000;
-const GENERATOR_DRY_RUN_MS = 1_000;
-
-/** Catalogs for the agent's system prompt (same data the studio sends). */
-const CATALOGS: AgentCatalogs = {
-  generators: catalog(),
-  behaviors: BEHAVIOR_CATALOG,
-  ruleDocs: RULE_DOCS,
-  generatorApiDts: GENERATOR_API_DTS,
-  generatorExamples: GENERATOR_EXAMPLES,
-  scriptApiDts: SCRIPT_API_DTS,
-};
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/** Node AgentHost: History for edits, Rapier + logic for verification. */
-class NodeAgentHost implements AgentHost {
-  readonly history = new History(createWorld());
-  verifyRuns = 0;
-
-  constructor(private readonly sandbox: SandboxRunner) {}
-
-  getWorld(): WorldDoc {
-    return this.history.current;
-  }
-
-  applyPatches(patches: unknown[], message: string): PatchResult {
-    return this.history.commit(patches, message, 'agent');
-  }
-
-  async verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }> {
-    this.verifyRuns++;
-    return runVerify(world);
-  }
-
-  async validateGenerator(def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {
-    const check = staticCheckSource(def.source);
-    if (!check.ok) return { ok: false, error: `rejected by static check: ${check.problems.slice(0, 5).join('; ')}` };
-    try {
-      const out = await this.sandbox.run(def, resolveParams(def.params, {}), 1, { timeoutMs: GENERATOR_DRY_RUN_MS });
-      const v = validateOutput(out);
-      return v.ok ? { ok: true } : { ok: false, error: v.error };
-    } catch (err) {
-      return { ok: false, error: errorText(err) };
-    }
-  }
-
-  async validateScript(def: ScriptDef): Promise<{ ok: boolean; error?: string }> {
-    if (!isScriptingReady()) return { ok: false, error: 'script sandbox unavailable' };
-    const runner = createScriptRunner();
-    try {
-      runner.load(def);
-      const problems = runner.takeDiagnostics().filter((d) => d.scriptId === def.id);
-      return problems.length > 0 ? { ok: false, error: problems.map((p) => p.text).join('; ') } : { ok: true };
-    } catch (err) {
-      return { ok: false, error: errorText(err) };
-    } finally {
-      runner.dispose();
-    }
-  }
-}
-
-/** Run world tests + diagnostics with rules/behaviors hooked in. */
-async function runVerify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }> {
-  const hasScripts = Object.keys(world.scripts).length > 0;
-  const logic = createVerifyLogic(world, {
-    scripts: () => (hasScripts && isScriptingReady() ? createScriptRunner({ seed: world.seed }) : undefined),
-  });
-  try {
-    const report = await verify(world, { logic: logic.factory, maxSeconds: VERIFY_MAX_SECONDS, budgetMs: VERIFY_BUDGET_MS });
-    return { report, summary: summarizeReport(report), passed: report.passed };
-  } finally {
-    logic.dispose();
-  }
-}
 
 interface SmokeResult {
   prompt: string;
@@ -115,7 +35,7 @@ interface SmokeResult {
 async function runPrompt(prompt: string, sandbox: SandboxRunner): Promise<SmokeResult> {
   const t0 = performance.now();
   const host = new NodeAgentHost(sandbox);
-  const agent = new WorldAgent({ provider: createMockProvider(), catalogs: CATALOGS, maxRepairs: 2 });
+  const agent = new WorldAgent({ provider: createMockProvider({ library: GENERATOR_LIBRARY }), catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2 });
   const problems: string[] = [];
   let lastVerify: Extract<AgentEvent, { type: 'verify' }> | null = null;
   let done = false;

@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "satellite-dish",
+    "description": "Large radio telescope satellite dish: parabolic reflector on a tilt mount, receiver arm and a concrete base",
+    "category": "props",
+    "keywords": [
+      "satellite dish",
+      "radio telescope",
+      "antenna dish",
+      "dish antenna"
+    ],
+    "params": {
+      "diameter": {
+        "type": "number",
+        "default": 8,
+        "min": 2,
+        "max": 30,
+        "description": "reflector diameter in meters"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 35,
+        "min": 5,
+        "max": 80,
+        "description": "dish elevation angle in degrees"
+      },
+      "color": {
+        "type": "color",
+        "default": "#d9dde0",
+        "description": "reflector and structural frame color"
+      }
+    },
+    "size": [
+      6.815,
+      9.618,
+      8.245
+    ]
+  },
+  "def": {
+    "id": "satellite-dish",
+    "description": "Large steerable radio telescope with a thick parabolic reflector, rear structural ribs, central feed horn and tripod receiver supports on a detailed tilt mount and concrete base.",
+    "params": {
+      "diameter": {
+        "type": "number",
+        "default": 8,
+        "min": 2,
+        "max": 30,
+        "description": "reflector diameter in meters"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 35,
+        "min": 5,
+        "max": 80,
+        "description": "dish elevation angle in degrees"
+      },
+      "color": {
+        "type": "color",
+        "default": "#d9dde0",
+        "description": "reflector and structural frame color"
+      }
+    },
+    "source": "const D = params.diameter;\nconst R = D * 0.5;\nconst tilt = params.tilt;\nconst depth = D * 0.18;\nconst thick = D * 0.018;\nconst pivotY = D * 0.68;\nconst rad = tilt * Math.PI / 180;\nconst structure = { preset: 'metal', color: params.color, metalness: 0.45, roughness: 0.38, flatShading: true };\nconst darkMetal = { preset: 'metal', color: '#343b42', metalness: 0.75, roughness: 0.3 };\nconst concrete = { preset: 'concrete', color: '#8b8f91', roughness: 0.92, flatShading: true };\nconst accent = { preset: 'metal', color: '#d9822b', metalness: 0.55, roughness: 0.35 };\nfunction dishPoint(r, a, extra) {\n  const y = -depth + depth * (r * r) / (R * R) + extra;\n  const x0 = Math.cos(a) * r;\n  const z0 = Math.sin(a) * r;\n  return [x0 * Math.cos(rad) - y * Math.sin(rad), pivotY + x0 * Math.sin(rad) + y * Math.cos(rad), z0];\n}\nfunction axisPoint(y) {\n  return [-y * Math.sin(rad), pivotY + y * Math.cos(rad), 0];\n}\nconst profile = [];\nfor (let i = 0; i <= 10; i++) {\n  const r = R * i / 10;\n  profile.push([r, -depth - thick + depth * (r * r) / (R * R)]);\n}\nprofile.push([R, thick * 0.35]);\nfor (let i = 10; i >= 0; i--) {\n  const r = R * i / 10;\n  profile.push([r, -depth + depth * (r * r) / (R * R)]);\n}\nconst reflector = api.lathe(profile, 32).rotate(0, 0, tilt).translate(0, pivotY, 0);\nreflector.vertexColor((x, y, z) => api.mix(params.color, '#ffffff', 0.08 + 0.07 * api.noise3(x * 0.7, y * 0.7, z * 0.7)));\napi.add(reflector, { preset: 'metal', metalness: 0.32, roughness: 0.46, flatShading: true });\nconst rim = api.torus(R, thick * 0.85).rotate(90, 0, 0).rotate(0, 0, tilt).translate(0, pivotY, 0);\napi.add(rim, structure);\nfor (let k = 0; k < 12; k++) {\n  const a = k * Math.PI * 2 / 12;\n  const path = [];\n  for (let j = 1; j <= 8; j++) path.push(dishPoint(R * j / 8, a, -thick * 1.15));\n  api.add(api.tube(path, thick * 0.38, 6), darkMetal);\n}\nconst rearHub = dishPoint(0, 0, -thick * 2.2);\napi.add(api.sphere(D * 0.055, 1).translate(rearHub[0], rearHub[1], rearHub[2]), darkMetal);\nconst focusDist = D * 0.52;\nconst feed = axisPoint(focusDist);\nconst feedBack = axisPoint(focusDist - D * 0.09);\napi.add(api.tube([feedBack, feed], D * 0.035, 10), darkMetal);\napi.add(api.cone(D * 0.075, D * 0.13, 12).rotate(0, 0, tilt + 180).translate(feed[0], feed[1], feed[2]), accent);\nfor (let k = 0; k < 3; k++) {\n  const a = k * Math.PI * 2 / 3;\n  const edge = dishPoint(R * 0.78, a, thick * 0.8);\n  api.add(api.tube([edge, feedBack], D * 0.018, 6), structure);\n}\nconst baseR = D * 0.22;\napi.add(api.cylinder(baseR * 1.18, baseR * 1.32, D * 0.16, 20).translate(0, D * 0.08, 0), concrete);\napi.add(api.cylinder(baseR, baseR * 1.08, D * 0.32, 18).translate(0, D * 0.32, 0), concrete);\napi.add(api.cylinder(baseR * 0.83, baseR * 0.83, D * 0.08, 18).translate(0, D * 0.52, 0), darkMetal);\nconst axleLen = D * 0.36;\napi.add(api.cylinder(D * 0.075, D * 0.075, axleLen, 14).rotate(90, 0, 0).translate(0, pivotY, 0), darkMetal);\nfor (let side = -1; side <= 1; side += 2) {\n  const z = side * D * 0.18;\n  const leg = api.tube([[0, D * 0.52, z], [0, pivotY, z]], D * 0.045, 8);\n  api.add(leg, structure);\n  api.add(api.cylinder(D * 0.105, D * 0.105, D * 0.07, 14).rotate(90, 0, 0).translate(0, pivotY, z), accent);\n}\napi.add(api.box(D * 0.22, D * 0.14, D * 0.16).translate(baseR * 0.92, D * 0.4, 0), darkMetal);\napi.add(api.cylinder(D * 0.035, D * 0.035, D * 0.18, 10).translate(baseR * 1.02, D * 0.58, 0), accent);\napi.collider({ kind: 'cylinder', radius: baseR * 1.32, halfHeight: D * 0.26, offset: [0, D * 0.26, 0] });\napi.collider({ kind: 'sphere', radius: R, offset: [0, pivotY, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:27:05.966Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 3740,
+    "parts": 5,
+    "colliders": 2
+  }
+}

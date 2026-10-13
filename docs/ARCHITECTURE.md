@@ -506,18 +506,81 @@ model. That lets the server map roles to allowlisted models.
 | `createAnthropicProvider` | Server only | Raw `fetch` to the Messages API. Cache breakpoints on the system prompt and the last tool, a per-role `effort` level, and thinking blocks passed back unchanged. Refusals and truncation map to stop reasons. |
 | `createOpenAIProvider` | Server only | Raw `fetch` to the Responses API with `store: false`. Function calls map to `tool_use`. Encrypted reasoning items are carried across turns. |
 | `createHttpProvider` | Browser | Posts to `/api/llm`, never sends a model id, and validates the reply with zod |
-| `createMockProvider` | Anywhere | Deterministic offline planner: 18 themes, mood combinations (night, rain, fog, low gravity and more) and edit commands. It emits plan, `apply_patches` and `finish` calls just like a real model. |
+| `createMockProvider` | Anywhere | Deterministic offline planner: 18 themes, mood combinations (night, rain, fog, low gravity and more), edit commands and the generator library by name. It emits plan, `apply_patches` and `finish` calls just like a real model. |
+| `createBridgeProvider` | Browser / Node | Posts to the local Aether Bridge (`/v1/complete`, bearer token from pairing); the bridge drives Codex or Claude Code headless |
+| `createEmulatedProvider` | Anywhere | Tool use for text-only backends: asks for one JSON object `{thoughts, tool_calls, final_message}`, validates it with zod, re-asks once on invalid JSON, maps it to `tool_use` blocks |
+| `createWebLlmProvider` | Browser | On-device model (WebLLM, lazy chunk, WebGPU) through the same emulation, with JSON-schema constrained output |
+| `createFallbackProvider` | Anywhere | Wraps any primary: on failure (offline, not signed in, rate limited, timeout) it reports once and continues with the offline planner |
 
 All three networked providers retry up to 3 times with exponential backoff and
 jitter on 429, 5xx, 529 and network errors, and honour `retry-after`. Other
 4xx errors are never retried. Each attempt has its own timeout combined with
 the caller's abort signal, and responses are size-capped.
 
-**Selection.** The studio calls `/api/health`. If the server reports
-`mode: 'live'`, it uses the HTTP provider; otherwise it uses the local mock
-and shows an "offline demo mode" badge. On the server, `AETHER_PROVIDER`
-picks Anthropic or OpenAI and falls back to whichever has a key, or to mock
-mode if neither does.
+**Selection.** The studio's AI connection manager (`apps/studio/src/ai/`)
+resolves the preferred mode per project: `auto` uses a paired, signed-in
+bridge, else a live server, else the offline planner; `offline`, `server`,
+`bridge`, `webllm` and `byok` force one. Every networked choice is wrapped in
+the fallback provider, so a failure never leaves a blank world or a stuck
+spinner: the chat shows a notice and the offline planner finishes the turn.
+On the server, `AETHER_PROVIDER` defaults to `mock`; `codex` / `claude-code`
+use this machine's signed-in CLI through the same locked-down backends as the
+bridge; `anthropic` / `openai` need a key and are never used by default.
+
+### 12.1 Zero-cost connections: the Aether Bridge
+
+Hosted pages cannot reach a user's CLI, and the project owner must not pay
+per prompt, so the bridge runs on the user's own computer:
+
+```
+browser studio ──(pair: code → 256-bit token)──▶ 127.0.0.1:8790 Aether Bridge
+      │  POST /v1/complete {backend, model, effort, request}       │
+      │  Origin allowlist · CORS + PNA preflight · ≤ 16 MiB         ├─ Codex   (@openai/codex-sdk, ChatGPT sign-in)
+      ◀── CompletionResponse (tool_use blocks via emulation) ───────┴─ Claude Code (`claude -p`, user's sign-in)
+```
+
+World content is untrusted (prompt injection can hide in names, notes or
+images), so each run happens in a fresh empty temp directory that is deleted
+afterwards, with an allowlisted environment (no keys or tokens), approval
+`never`, a read-only sandbox, network and web search off, and every tool,
+shell, patch, MCP server, plugin and browser feature disabled. Codex output
+is constrained by a strict JSON Schema and any tool event aborts the run;
+Claude Code runs with an empty tool list plus a deny list, no MCP, no
+settings, no session persistence. The model can only return text, which the
+emulation layer validates. One job per backend runs at a time (≤ 4 queued),
+identical requests hit a content-hash cache, and timeouts or a cancelled
+request kill the child process.
+
+Measured on the development machine (one call each, low effort, the full
+planner prompt plus a two-tool request): Codex (`gpt-5.6-sol` default) 22.3 s,
+Claude Code (`haiku`) 6.1 s. The offline planner answers in under 0.2 s.
+
+### 12.2 Generator library
+
+`packages/procgen/library/*.json` holds 40+ generators for common objects the
+built-ins do not cover. `npm run library` asks Codex for each object (one call
+at a time, bounded budget, one repair attempt with the checker's error) and
+keeps only generators that pass static checks, sandboxed runs with three
+seeds, output validation and a CPU silhouette check. The catalog
+(`library-index.ts`) is small and eager; each source file is its own lazy
+chunk. The offline planner and the model prompt both see the catalog, and
+`WorldAgent` defines a library generator in the world just before the first
+patch that uses it, so it then behaves like any custom generator (sandboxed,
+saved with the world, shareable).
+
+### 12.3 Quality loop
+
+After the agent finishes, the studio renders four views (top, front, side,
+iso), computes view statistics (coverage, edge density, contrast,
+colourfulness) and scores the world against the rubric with deterministic
+heuristics (grounding, overlaps, emptiness / density, scale sanity, palette
+harmony, lighting for the mood, framing, prompt coherence). With a
+vision-capable connection the views also go to a critic call whose JSON
+verdict is blended in. Below the threshold (72) and within the per-project
+refine budget, targeted improvements are applied (re-grounding, separating
+overlaps, densifying sparse scenes, night lighting, golden-hour sky, palette
+correction) or the agent gets a focused refine instruction. `npm run eval`
+reports the same scores per prompt and model.
 
 ## 13. Server
 

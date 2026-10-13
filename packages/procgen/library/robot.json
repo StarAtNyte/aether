@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "robot",
+    "description": "Friendly retro robot standing upright: boxy torso with a control panel, round head with glowing eyes and an antenna, jointed arms and legs",
+    "category": "props",
+    "keywords": [
+      "robot",
+      "droid",
+      "android",
+      "mech"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#4f91a8",
+        "description": "primary painted metal color"
+      },
+      "eyeColor": {
+        "type": "color",
+        "default": "#7dffda",
+        "description": "glowing eye and indicator color"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.2,
+        "min": 0.8,
+        "max": 8,
+        "description": "overall robot height in meters"
+      }
+    },
+    "size": [
+      1.388,
+      2.44,
+      0.708
+    ]
+  },
+  "def": {
+    "id": "robot",
+    "description": "Friendly retro robot with a boxy control-panel torso, rounded head, glowing eyes, antenna, articulated limbs, and details visible from every side.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#4f91a8",
+        "description": "primary painted metal color"
+      },
+      "eyeColor": {
+        "type": "color",
+        "default": "#7dffda",
+        "description": "glowing eye and indicator color"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.2,
+        "min": 0.8,
+        "max": 8,
+        "description": "overall robot height in meters"
+      }
+    },
+    "source": "const H = params.height;\nconst s = H / 2.2;\nconst primary = { preset: 'metal', color: params.color, metalness: 0.55, roughness: 0.34 };\nconst trim = { preset: 'metal', color: '#d9d3bf', metalness: 0.72, roughness: 0.26 };\nconst dark = { preset: 'metal', color: '#303944', metalness: 0.7, roughness: 0.3 };\nconst rubber = { preset: 'rubber', color: '#20262c', roughness: 0.82 };\nconst glow = { preset: 'emissive', color: params.eyeColor, emissive: params.eyeColor, emissiveIntensity: 3.5, roughness: 0.18 };\nconst red = { preset: 'emissive', color: '#ff604f', emissive: '#ff3020', emissiveIntensity: 1.8 };\nconst torsoY = 1.15 * s;\napi.add(api.box(0.82*s, 0.72*s, 0.48*s).translate(0, torsoY, 0), primary);\napi.add(api.box(0.72*s, 0.055*s, 0.40*s).translate(0, 0.775*s, 0), trim);\napi.add(api.box(0.58*s, 0.42*s, 0.045*s).translate(0, 1.15*s, 0.263*s), dark);\napi.add(api.box(0.48*s, 0.055*s, 0.025*s).translate(0, 1.28*s, 0.292*s), trim);\nfor (let i = 0; i < 4; i++) {\n  const x = (-0.18 + i * 0.12) * s;\n  const mat = i === 0 ? red : (i === 1 ? glow : trim);\n  api.add(api.sphere(0.035*s, 1).scale(1, 1, 0.45).translate(x, 1.10*s, 0.294*s), mat);\n}\nfor (let i = 0; i < 3; i++) api.add(api.box(0.34*s, 0.025*s, 0.018*s).translate(0, (0.99-i*0.055)*s, 0.295*s), trim);\napi.add(api.box(0.44*s, 0.26*s, 0.035*s).translate(0, 1.18*s, -0.258*s), dark);\nfor (let i = 0; i < 4; i++) api.add(api.box(0.28*s, 0.018*s, 0.018*s).translate(0, (1.27-i*0.06)*s, -0.281*s), trim);\napi.add(api.cylinder(0.15*s, 0.15*s, 0.13*s, 12).translate(0, 1.57*s, 0), dark);\napi.add(api.cylinder(0.34*s, 0.34*s, 0.08*s, 16).translate(0, 1.65*s, 0), trim);\napi.add(api.cylinder(0.31*s, 0.31*s, 0.34*s, 16).translate(0, 1.84*s, 0), primary);\napi.add(api.sphere(0.31*s, 2).scale(1, 0.45, 1).translate(0, 2.01*s, 0), primary);\napi.add(api.box(0.46*s, 0.16*s, 0.035*s).translate(0, 1.87*s, 0.305*s), dark);\nfor (let i = -1; i <= 1; i += 2) {\n  const x = i * 0.14*s;\n  api.add(api.sphere(0.072*s, 2).scale(1, 0.78, 0.38).translate(x, 1.89*s, 0.337*s), glow);\n  api.add(api.torus(0.075*s, 0.018*s).translate(x, 1.89*s, 0.326*s), trim);\n}\napi.add(api.box(0.14*s, 0.022*s, 0.018*s).translate(0, 1.76*s, 0.333*s), trim);\napi.add(api.box(0.22*s, 0.11*s, 0.035*s).translate(0, 1.87*s, -0.326*s), dark);\napi.add(api.cylinder(0.025*s, 0.025*s, 0.25*s, 8).translate(0, 2.22*s, 0), trim);\napi.add(api.sphere(0.07*s, 2).translate(0, 2.37*s, 0), red);\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * 0.53*s;\n  api.add(api.sphere(0.13*s, 1).translate(side*0.45*s, 1.36*s, 0), dark);\n  api.add(api.cylinder(0.105*s, 0.105*s, 0.38*s, 10).rotate(0, 0, side*8).translate(x, 1.18*s, 0), primary);\n  api.add(api.sphere(0.12*s, 1).translate(side*0.56*s, 0.98*s, 0), trim);\n  api.add(api.cylinder(0.09*s, 0.09*s, 0.30*s, 10).rotate(0, 0, -side*5).translate(side*0.575*s, 0.82*s, 0), primary);\n  api.add(api.sphere(0.13*s, 1).scale(0.8, 1, 0.75).translate(side*0.59*s, 0.62*s, 0), dark);\n}\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * 0.22*s;\n  api.add(api.cylinder(0.13*s, 0.13*s, 0.30*s, 10).translate(x, 0.61*s, 0), primary);\n  api.add(api.sphere(0.14*s, 1).translate(x, 0.43*s, 0), dark);\n  api.add(api.cylinder(0.115*s, 0.13*s, 0.27*s, 10).translate(x, 0.275*s, 0), trim);\n  api.add(api.box(0.31*s, 0.12*s, 0.43*s).translate(x, 0.06*s, 0.07*s), primary);\n  api.add(api.box(0.32*s, 0.035*s, 0.44*s).translate(x, 0.0175*s, 0.07*s), rubber);\n}\napi.collider({ kind: 'box', halfExtents: [0.41*s, 0.36*s, 0.24*s], offset: [0, torsoY, 0] });\napi.collider({ kind: 'sphere', radius: 0.33*s, offset: [0, 1.87*s, 0] });\napi.collider({ kind: 'box', halfExtents: [0.38*s, 0.38*s, 0.28*s], offset: [0, 0.38*s, 0] });\napi.collider({ kind: 'box', halfExtents: [0.66*s, 0.42*s, 0.18*s], offset: [0, 1.04*s, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:27:52.268Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 4052,
+    "parts": 6,
+    "colliders": 4
+  }
+}

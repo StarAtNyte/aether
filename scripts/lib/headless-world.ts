@@ -1,0 +1,93 @@
+/**
+ * Headless world host shared by `scripts/smoke.ts` and `scripts/eval-agent.ts`:
+ * the agent catalogs the studio sends, plus a Node AgentHost over core
+ * History with Rapier + logic verification and the node generator sandbox.
+ */
+import { createWorld, History, type GeneratorDef, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
+import type { AgentCatalogs, AgentHost } from '@aether/agent';
+import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, isScriptingReady } from '@aether/logic';
+import { summarizeReport, verify } from '@aether/physics';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
+import { createVerifyLogic } from '../../apps/studio/src/engine/headlessHost';
+
+/** Headless verification limits (same order of magnitude as the studio). */
+export const VERIFY_MAX_SECONDS = 25;
+export const VERIFY_BUDGET_MS = 20_000;
+export const GENERATOR_DRY_RUN_MS = 1_000;
+
+/** Catalogs for the agent's system prompt (same data the studio sends). */
+export const CATALOGS: AgentCatalogs = {
+  generators: catalog(),
+  behaviors: BEHAVIOR_CATALOG,
+  ruleDocs: RULE_DOCS,
+  generatorApiDts: GENERATOR_API_DTS,
+  generatorExamples: GENERATOR_EXAMPLES,
+  scriptApiDts: SCRIPT_API_DTS,
+  libraryGenerators: [...GENERATOR_LIBRARY],
+};
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Node AgentHost: History for edits, Rapier + logic for verification. */
+export class NodeAgentHost implements AgentHost {
+  readonly history = new History(createWorld());
+  verifyRuns = 0;
+
+  constructor(private readonly sandbox: SandboxRunner) {}
+
+  getWorld(): WorldDoc {
+    return this.history.current;
+  }
+
+  applyPatches(patches: unknown[], message: string): PatchResult {
+    return this.history.commit(patches, message, 'agent');
+  }
+
+  async verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }> {
+    this.verifyRuns++;
+    return runVerify(world);
+  }
+
+  async validateGenerator(def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {
+    const check = staticCheckSource(def.source);
+    if (!check.ok) return { ok: false, error: `rejected by static check: ${check.problems.slice(0, 5).join('; ')}` };
+    try {
+      const out = await this.sandbox.run(def, resolveParams(def.params, {}), 1, { timeoutMs: GENERATOR_DRY_RUN_MS });
+      const v = validateOutput(out);
+      return v.ok ? { ok: true } : { ok: false, error: v.error };
+    } catch (err) {
+      return { ok: false, error: errorText(err) };
+    }
+  }
+
+  async validateScript(def: ScriptDef): Promise<{ ok: boolean; error?: string }> {
+    if (!isScriptingReady()) return { ok: false, error: 'script sandbox unavailable' };
+    const runner = createScriptRunner();
+    try {
+      runner.load(def);
+      const problems = runner.takeDiagnostics().filter((d) => d.scriptId === def.id);
+      return problems.length > 0 ? { ok: false, error: problems.map((p) => p.text).join('; ') } : { ok: true };
+    } catch (err) {
+      return { ok: false, error: errorText(err) };
+    } finally {
+      runner.dispose();
+    }
+  }
+}
+
+/** Run world tests + diagnostics with rules/behaviors hooked in. */
+export async function runVerify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }> {
+  const hasScripts = Object.keys(world.scripts).length > 0;
+  const logic = createVerifyLogic(world, {
+    scripts: () => (hasScripts && isScriptingReady() ? createScriptRunner({ seed: world.seed }) : undefined),
+  });
+  try {
+    const report = await verify(world, { logic: logic.factory, maxSeconds: VERIFY_MAX_SECONDS, budgetMs: VERIFY_BUDGET_MS });
+    return { report, summary: summarizeReport(report), passed: report.passed };
+  } finally {
+    logic.dispose();
+  }
+}
+

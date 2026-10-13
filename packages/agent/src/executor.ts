@@ -7,6 +7,7 @@
 import { GeneratorDef, ScriptDef, hasOwn, summarizeWorld, type PatchError } from '@aether/core';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
+import { libraryDefinitions } from './library-refs';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool } from './tools';
 import type { AgentEvent, AgentHost, Provider, UsageTotals } from './types';
@@ -32,6 +33,8 @@ export interface ExecutorContext {
   builtinGenerators: ReadonlySet<string>;
   usage: UsageTotals;
   signal?: AbortSignal;
+  /** Library generator definitions on demand (see {@link libraryDefinitions}). */
+  resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
 }
 
 const MAX_RESULT_CHARS = 20_000;
@@ -98,10 +101,19 @@ function inputSize(input: unknown): number {
 
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
+  const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
+  const events: AgentEvent[] = [];
+  if (defs.length > 0) {
+    const res = ctx.host.applyPatches(defs, `Library: ${defs.map((d) => d.generator.id).join(', ')}`.slice(0, 200));
+    for (const d of defs) {
+      const err = res.errors.find((e) => e.index === defs.indexOf(d));
+      events.push(err ? { type: 'generator', def: d.generator, ok: false, error: err.message } : { type: 'generator', def: d.generator, ok: true });
+    }
+  }
   const result = ctx.host.applyPatches(input.patches, message);
-  const event: AgentEvent = { type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } };
+  events.push({ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } });
   const content = formatPatchOutcome(result.applied.length, input.patches.length, result.errors, Object.keys(result.world.entities).length);
-  return { content, isError: result.applied.length === 0 && result.errors.length > 0, events: [event], edited: result.applied.length > 0 };
+  return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
 }
 
 async function defineGenerator(ctx: ExecutorContext, def: GeneratorDef, events: AgentEvent[]): Promise<ToolOutcome> {

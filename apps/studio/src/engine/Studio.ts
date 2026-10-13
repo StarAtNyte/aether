@@ -5,7 +5,7 @@
  * and subscribe to History / the store; they never own engine state.
  */
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, createFallbackProvider, createMockProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type Provider, type QualityFix } from '@aether/agent';
+import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type Provider, type QualityFix } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -38,7 +38,7 @@ import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
 import type { ContextLossInfo, GizmoChange, RenderMemoryStats } from '@aether/render';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
-import { AgentBridge, agentCatalogs, runVerification } from './AgentBridge';
+import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, runVerification } from './AgentBridge';
 import { aiConnection, type AiConnection, type ResolvedConnection } from '../ai/connection';
 import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
@@ -689,7 +689,7 @@ export class Studio {
     const provider: Provider = primary
       ? createFallbackProvider({
           primary,
-          fallback: createMockProvider(),
+          fallback: createOfflinePlanner(),
           onFallback: (n) => {
             fell = n;
             via = 'Offline planner';
@@ -698,14 +698,14 @@ export class Studio {
             push({ type: 'notice', tone: 'warning', text: fallbackText(resolved.label, n) });
           },
         })
-      : createMockProvider();
+      : createOfflinePlanner();
     const abort = new AbortController();
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
     const usage = { inputTokens: 0, outputTokens: 0, calls: 0 };
     try {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS });
       status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) }), entryId, abort, usage);
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
@@ -796,7 +796,7 @@ export class Studio {
       if (round >= ctx.budget || !needsRefinement(report)) return 'done';
       if (ctx.online) {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
-        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), maxRepairs: 1 });
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1 });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
         const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';

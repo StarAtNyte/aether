@@ -104,11 +104,31 @@ explicit state, so the AI can be held to account:
   composes an elevated three-quarter shot of the meaningful content with sky
   in frame. Lava and water get procedural glowing cracks and ripples, and new
   worlds *materialize*, growing out of the ground in a ripple from the centre.
-- **Offline mock mode.** With no API key (or when the backend is unreachable),
-  a deterministic offline planner builds worlds for 18 themes (dominoes,
-  coins, parkour, bowling, castle, city, haunted forest, space, volcano and
-  more) and supports edit commands ("add 5 trees", "make the ball bouncy",
-  "remove the tent"). Its worlds pass the same physics verification.
+- **AI connections that cost nothing per prompt.** Settings → AI connection
+  (and the model picker under the prompt) offers: the **offline planner**
+  (default, always available); the **local Aether Bridge**, which runs the
+  Codex or Claude Code CLI you are already signed in to (ChatGPT or Claude
+  subscription, no API key) with every tool disabled; **on-device AI** with
+  WebLLM (experimental, opt-in download, WebGPU); and an optional
+  **bring-your-own API key** that stays in the tab's session storage. Pick
+  the model, reasoning effort and the number of quality refinement rounds per
+  project; a status badge shows connected / not signed in / bridge offline,
+  and any failure falls back to the offline planner with a visible notice.
+- **3D quality loop.** After every build the world is scored against a
+  written rubric (composition, materials, lighting, scale, detail, coherence
+  with the prompt, physical validity) from four rendered views plus scene
+  heuristics, critiqued by a vision model when one is connected, and improved
+  in targeted rounds while it is below the threshold. The score and its
+  breakdown appear quietly in the chat.
+- **Offline planner and generator library.** With no AI connection (or when
+  it is unreachable) a deterministic planner builds worlds for 18 themes
+  (dominoes, coins, parkour, bowling, castle, city, haunted forest, space,
+  volcano and more), supports edit commands ("add 5 trees", "make the ball
+  bouncy", "remove the tent") and places any of 40+ library objects by name
+  (lighthouse, pagoda, piano, ferris wheel, steam locomotive, hot air
+  balloon…): procedural generators written ahead of time by a coding model,
+  validated, and loaded on demand. Its worlds pass the same physics
+  verification.
 - **Undo, branches and time travel.** Every agent or user edit is a history
   commit. You can undo and redo, check out any past state without losing
   later ones, create named branches, export and import JSON, and share links.
@@ -147,13 +167,30 @@ Requirements: **Node.js 22 or newer** and npm 10 or newer. A GPU browser
 git clone <this repository> aether && cd aether
 npm install
 
-# Optional: live LLM mode. Without keys everything still works in offline mock mode.
-cp .env.example .env
-#   then set ANTHROPIC_API_KEY=... and/or OPENAI_API_KEY=...
-
 npm run dev:server   # API server on http://localhost:8787 (terminal 1)
 npm run dev          # Studio on http://localhost:5173, proxies /api (terminal 2)
 ```
+
+No API key is needed: everything works with the offline planner.
+
+### Use your Codex or Claude Code subscription (no API key)
+
+```bash
+npm run bridge       # Aether Bridge on http://127.0.0.1:8790 (terminal 3)
+```
+
+The bridge prints a pairing code and a one-click link. In the studio open
+**Settings → AI connection → Local bridge**, enter the code (or open the
+link), then pick **Codex** or **Claude Code**, a model and the reasoning
+effort under the prompt. Requirements: the `codex` CLI signed in with
+`codex login` (ChatGPT), and/or the `claude` CLI signed in. The bridge listens
+on 127.0.0.1 only, accepts only paired, allowlisted studio origins (`--origin
+https://your-host` adds a hosted studio), and runs each request in an empty
+temporary folder with all tools, shell, file and network access disabled. A
+published `npx aether-bridge` command is planned.
+
+To let the **server** itself use a signed-in CLI on this machine instead,
+start it with `AETHER_PROVIDER=codex` or `AETHER_PROVIDER=claude-code`.
 
 Open <http://localhost:5173>, pick an example card or type a prompt such as
 *"Build a domino run that knocks over a bell tower"* and watch the agent plan,
@@ -169,13 +206,15 @@ npm run start        # serves studio + API on http://localhost:8787
 
 ### Environment
 
-API keys live **only on the server** (`.env` at the repo root, or real
-environment variables, which take precedence). The main settings:
+Configuration lives in `.env` at the repo root (copy `.env.example`), or real
+environment variables, which take precedence. Paid API keys are optional;
+the hosted server never needs or uses one by default. The main settings:
 
 | Variable | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Upstream keys (server only). With neither set the server runs in mock mode. |
-| `AETHER_PROVIDER` | `anthropic` (default), `openai` or `mock` |
+| `AETHER_PROVIDER` | `mock` (default: offline planner), `codex` / `claude-code` (signed-in CLI on this machine), `anthropic` or `openai` (needs a key) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Optional upstream keys (server only), used only when `AETHER_PROVIDER` names that provider |
+| `AETHER_BYOK` | `true` (default) lets visitors use their own key through `/api/llm/byok` (never stored or logged) |
 | `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic model per role |
 | `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI model per role |
 | `PORT`, `HOST`, `NODE_ENV` | Listener; `production` turns on static hosting and HSTS |
@@ -209,12 +248,16 @@ template (for example `#/new/coin-island`).
 | `npm run start` | Production server: API plus the built studio on one origin |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
-| `npm run smoke` | Runs the real agent with the offline mock against 13 prompts and re-verifies every world headless |
+| `npm run smoke` | Runs the real agent with the offline planner against 13 prompts and re-verifies every world headless |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
 | `npm run thumbnails` | Renders the template thumbnails (`public/templates/*.webp`, ≤ 30 KB) and asset previews (`public/palette/*.webp`) with the real renderer |
+| `npm run bridge` | Starts the local Aether Bridge (Codex / Claude Code through your own sign-in); `-- --origin https://host` allows a hosted studio |
+| `npm run eval` | Agent evaluation: patch error rate, verification pass rate, latency and quality score per prompt (`-- --provider=codex --effort=low --limit=3`, `--provider=claude-code --model=haiku`) |
+| `npm run library` | Rebuilds the offline generator library with Codex (sequential, call budget, resumable; `-- --only=piano`) |
+| `npm run e2e:bridge` | Real end-to-end check through the bridge: one prompt via Codex and one via Claude Code from the built studio (uses your subscription) |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset) |
 
 ## How a prompt becomes a playable world

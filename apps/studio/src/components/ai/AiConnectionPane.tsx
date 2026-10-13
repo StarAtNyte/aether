@@ -216,7 +216,7 @@ const WebLlmSetup = memo(function WebLlmSetup({ prefs, update }: { prefs: AiPref
         <select className="select select--sm" aria-label="On-device model" value={prefs.webllmModel} onChange={(e) => update({ webllmModel: e.target.value })}>
           {WEBLLM_MODELS.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label} · {(m.downloadMB / 1000).toFixed(1)} GB
+              {m.label} · {(m.downloadMB / 1000).toFixed(1)} GB · {m.licence}
             </option>
           ))}
         </select>

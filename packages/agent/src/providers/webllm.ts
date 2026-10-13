@@ -29,7 +29,7 @@ export interface WebLlmEngineLike {
 /** Options of {@link createWebLlmProvider}. */
 export interface WebLlmProviderOptions {
   engine: WebLlmEngineLike;
-  /** Model id shown in responses (e.g. "Qwen2.5-3B-Instruct-q4f16_1-MLC"). */
+  /** Model id shown in responses (e.g. "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"). */
   model: string;
   /** Output cap per call (default 3000: small models, small budgets). */
   maxTokens?: number;

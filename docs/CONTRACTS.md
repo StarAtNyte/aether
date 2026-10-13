@@ -430,7 +430,8 @@ export interface Provider { readonly name: string; complete(req: CompletionReque
 export function createAnthropicProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;  // server-side only, raw fetch to Messages API, prompt caching on system/tools
 export function createOpenAIProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;     // server-side only, raw fetch to Responses API
 export function createHttpProvider(opts: { endpoint: string; fetch?: typeof fetch }): Provider;                      // browser -> our server proxy
-export function createMockProvider(): Provider;   // deterministic offline planner: keyword → world templates (MUST produce good worlds for ~15 themes; used as fallback + in tests)
+export function createMockProvider(opts?: { library?: MockLibraryItem[] }): Provider;   // deterministic offline planner: keyword → world templates (MUST produce good worlds for ~15 themes; used as fallback + in tests); `library` lets it place generator-library objects by name
+export interface MockLibraryItem { id: string; keywords: readonly string[]; size: readonly [number, number, number] }
 
 export type AgentEvent =
   | { type: 'status'; text: string }
@@ -451,8 +452,14 @@ export interface AgentHost {
   validateGenerator?(def: GeneratorDef): Promise<{ ok: boolean; error?: string }>;
   validateScript?(def: ScriptDef): Promise<{ ok: boolean; error?: string }>;
 }
-export interface AgentCatalogs { generators: unknown[]; behaviors: unknown[]; ruleDocs: string; generatorApiDts: string; generatorExamples: unknown[]; scriptApiDts: string; }
-export interface AgentOptions { provider: Provider; maxRepairs?: number; maxTurns?: number; catalogs: AgentCatalogs; }
+export interface AgentCatalogs { generators: unknown[]; behaviors: unknown[]; ruleDocs: string; generatorApiDts: string; generatorExamples: unknown[]; scriptApiDts: string;
+  libraryGenerators?: unknown[];   // generator-library catalog (same entry shape); listed in its own prompt section, used like built-ins
+}
+export interface AgentOptions { provider: Provider; maxRepairs?: number; maxTurns?: number; catalogs: AgentCatalogs;
+  resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;   // library definitions on demand: before apply_patches, every referenced
+                                                                      // procedural generator that is not built in / in the world / in the batch is
+                                                                      // resolved and a defineGenerator patch is committed first (≤ 8 per call)
+}
 export class WorldAgent {
   constructor(opts: AgentOptions);
   run(prompt: string, host: AgentHost, opts?: { signal?: AbortSignal; images?: string[]; history?: ChatMessage[] }): AsyncGenerator<AgentEvent>;
@@ -460,6 +467,98 @@ export class WorldAgent {
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, write_generator, write_script, inspect, run_verification, finish
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
 ```
+
+### Zero-cost AI connections (also exported by `@aether/agent`)
+
+Text-only backends (Codex / Claude Code headless, on-device models) are
+adapted to the tool-calling `Provider` contract, so `WorldAgent`, verification
+and repair run unchanged:
+
+```ts
+// Tool-use emulation. The model answers ONE JSON object:
+//   { thoughts?, tool_calls: [{ name, input } | { name, input_json }], final_message? }
+// (`input_json` = arguments as a JSON string, for strict structured-output engines).
+// zod-validated (≤ 16 calls, ≤ 600 000 chars per input); one automatic re-ask on invalid JSON.
+export interface TextBackend { name: string; strictSchema?: boolean; complete(req: TextCompletionRequest, signal?): Promise<TextCompletionResult>; }
+export function createEmulatedProvider(opts: { backend: TextBackend; name: string; model?: string; effort?: 'low' | 'medium' | 'high' }): Provider;
+export function parseEmulatedReply(value: unknown, tools: ToolDef[], salt: string): { ok: true; response } | { ok: false; error };
+export function replyJsonSchema(tools: ToolDef[], strict: boolean): object;
+
+// Local bridge client (browser or Node). Protocol (bridge/protocol.ts, zod on both sides):
+//   POST /v1/pair { code } → { token }          (pairing code printed by the bridge; 5 wrong codes lock and rotate it)
+//   GET  /v1/status (Bearer) → { ok, name: 'aether-bridge', version, backends: BridgeBackendStatus[] }
+//   POST /v1/complete (Bearer) { backend: 'codex' | 'claude-code', model?, effort?, request: CompletionRequest } → CompletionResponse
+//   errors: { error: { code: BridgeErrorCode, message } }  (unauthorized, forbidden_origin, busy, not_logged_in, cli_missing, timeout, rate_limited, tool_violation, …)
+export function createBridgeProvider(opts: { baseUrl: string; token: string; backend; model?; effort?; fetch? }): Provider;
+export function fetchBridgeStatus(baseUrl, token, fetch?): Promise<BridgeStatus>;
+export function pairBridge(baseUrl, code, fetch?): Promise<string>;   // → token
+export function normalizeBridgeUrl(raw: string): string | null;        // loopback origins only
+
+// Fallback: any primary failure (offline, not signed in, rate limited, timeout…) → offline planner, reported once.
+export function createFallbackProvider(opts: { primary: Provider; fallback: Provider; onFallback?: (n: FallbackNotice) => void }): FallbackProvider;
+// On-device (experimental; the engine is created lazily by the studio, WebGPU only):
+export function createWebLlmProvider(opts: { engine: WebLlmEngineLike; model: string }): Provider;
+
+// 3D quality loop: rubric (composition, materials, lighting, scale, detail, coherence, physical; weighted 0–100,
+// threshold 72), deterministic heuristics (+ rendered view stats), optional vision critic, targeted improvements.
+export function assessWorld(input: QualityInput): QualityReport;
+export function improvementPatches(world, report, bounds?, only?): { patches; applied: QualityFix[] };
+export function buildCriticRequest(prompt, heuristic, views: string[]): CompletionRequest;   // role 'critic', ≤ 4 views
+export function blendCritique(heuristic: QualityReport, replyText: string): QualityReport;
+export function needsRefinement(report, threshold?): boolean; export function refineInstruction(report): string;
+```
+
+## apps/bridge — Aether Bridge (local, `npm run bridge`)
+
+A small Node service on the user's own computer that lets the browser studio
+use the Codex or Claude Code CLI the user is already signed in to (no API
+keys, no per-prompt cost to anyone else). `npx tsx apps/bridge/src/main.ts
+[--port 8790] [--origin https://hosted.example] [--studio URL] [--timeout 240]`;
+a published `npx aether-bridge` is planned (`bin/aether-bridge.mjs`).
+
+- Binds `127.0.0.1` only (8790, or a free port); `Host` must be a loopback name.
+- Pairing: prints a one-time code (and a deep link `?bridge=<url>#aether-bridge=<token>`);
+  a 256-bit bearer token is required on every request except `/v1/pair`.
+- Exact `Origin` allowlist (local studio origins + `--origin`, https only for
+  non-loopback); CORS + Private Network Access preflight
+  (`Access-Control-Allow-Private-Network: true`); body ≤ 16 MiB.
+- One job per backend at a time, ≤ 4 queued (else `busy`); per-request timeout
+  and client abort kill the run; identical requests are served from a
+  content-hash LRU cache.
+- Headless runs are locked down: Codex via `@openai/codex-sdk` (read-only
+  sandbox, approval `never`, network + web search off, shell/exec/patch/MCP/
+  plugin/browser features disabled, every configured MCP server disabled,
+  strict `outputSchema`; any tool item aborts the run); Claude Code via the
+  installed `claude` CLI (`-p`, stream-json in/out, `--tools ""` plus a
+  deny list, empty `--strict-mcp-config`, `--safe-mode`, no setting sources
+  or slash commands, `--permission-mode dontAsk`, no session persistence,
+  `--json-schema`); both
+  in a fresh empty temp directory (deleted afterwards), with an allowlisted
+  environment (no keys/tokens), argument arrays only, no shell.
+- `createHeadlessProvider('codex' | 'claude-code', opts)` exposes the same
+  locked-down backends in Node (server `AETHER_PROVIDER=codex|claude-code`,
+  `scripts/eval-agent.ts`, `scripts/build-generator-library.ts`).
+
+## Generator library (`@aether/procgen`)
+
+```ts
+export interface LibraryEntry { id; description; category; keywords: readonly string[]; params: Record<string, ParamSpec>; size: [w, h, d] }
+export const GENERATOR_LIBRARY: readonly LibraryEntry[];              // catalog only (src/library-index.ts, generated)
+export function loadLibraryGenerator(id: string): Promise<GeneratorDef | null>;   // lazy JSON chunk; schema + static check on load; own keys only
+export function matchLibrary(text: string, max?: number): LibraryEntry[];          // whole-word, plural-insensitive keyword match
+export function isLibraryGenerator(id: string): boolean;
+export function checkSilhouette(out: GeneratorOutput): { ok: true; front; top } | { ok: false; error };   // headless "render" check
+```
+
+Library generators are ordinary custom generators: placed with
+`{"kind":"procedural","generator":"<id>"}`, defined into the world on first
+use (`AgentOptions.resolveGenerator`) and always executed in the generator
+sandbox. Files live in `packages/procgen/library/<id>.json`
+(`LibraryFileSchema`: entry, def, provenance, checks); they are written by
+`npm run library` (Codex, sequential, call budget) and accepted only when
+`acceptLibraryGenerator` passes for seeds 1, 7 and 42 (static check, sandbox
+run, output validation, plausible size, grounded + centred, visible silhouette
+that is not a bare box, ≤ 60 000 triangles).
 
 ## apps/server (Hono on Node)
 
@@ -469,7 +568,9 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string;
 - `GET/PUT /api/generators/:hash` — content-addressed cache of validated generator defs.
 - `GET/PUT /api/worlds/:id` — share links (validated `WorldDoc`, ≤ 2 MB, server-generated random ids).
 - Security: keys from env only; CORS allowlist; per-IP token bucket; body limit; upstream timeout + abort; no secrets in responses/logs; security headers (CSP, nosniff, referrer-policy, frame-ancestors); serves `apps/studio/dist` in production.
-- No key configured → `mode: 'mock'`; studio falls back to `createMockProvider()`.
+- No key configured → `mode: 'mock'`; studio falls back to the offline planner. The hosted server never needs or uses an owner-paid key by default (`AETHER_PROVIDER` unset = mock).
+- `AETHER_PROVIDER=codex|claude-code` (local full stack only): the server answers `/api/llm` through the locked-down headless CLI of the machine it runs on.
+- `POST /api/llm/byok` (`AETHER_BYOK`, default on; set `false` to disable): the visitor's own Anthropic/OpenAI key in `X-Aether-Key` (sessionStorage in the browser), used for that one upstream call, never stored or logged.
 
 ## apps/studio (React 19 + Vite)
 

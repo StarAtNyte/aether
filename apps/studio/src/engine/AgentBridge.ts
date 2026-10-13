@@ -11,7 +11,7 @@ import { type GeneratorDef, type History, type PatchResult, type ScriptDef, type
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
 import type { ColliderProvider, VerifyReport } from '@aether/physics';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, catalog, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, loadLibraryGenerator, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
 import { API, GENERATOR_DRY_RUN_MS, HEALTH_TIMEOUT_MS, VERIFY_BUDGET_MS, VERIFY_MAX_SECONDS } from '../config';
 import { errorMessage } from '../lib/log';
 import { createVerifyLogic } from './headlessHost';
@@ -44,7 +44,16 @@ export function agentCatalogs(): AgentCatalogs {
     generatorApiDts: GENERATOR_API_DTS,
     generatorExamples: GENERATOR_EXAMPLES,
     scriptApiDts: SCRIPT_API_DTS,
+    libraryGenerators: [...GENERATOR_LIBRARY],
   };
+}
+
+/** Definition of a generator-library object (lazy chunk; null when unknown). */
+export const resolveLibraryGenerator = (id: string): Promise<GeneratorDef | null> => loadLibraryGenerator(id);
+
+/** The offline planner, able to place generator-library objects by name. */
+export function createOfflinePlanner(): Provider {
+  return createMockProvider({ library: GENERATOR_LIBRARY });
 }
 
 /** Parse an untrusted `/api/health` body. */
@@ -70,7 +79,7 @@ export async function selectProvider(fetchImpl: typeof fetch = fetch, timeoutMs:
   } finally {
     clearTimeout(timer);
   }
-  return { provider: createMockProvider(), live: false, name: 'offline demo' };
+  return { provider: createOfflinePlanner(), live: false, name: 'offline demo' };
 }
 
 /** AgentHost implementation backed by the studio. */

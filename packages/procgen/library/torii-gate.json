@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "torii-gate",
+    "description": "Japanese torii gate: two vermilion pillars on black bases, two crossbeams with the top one curved upward at the ends",
+    "category": "architecture",
+    "keywords": [
+      "torii",
+      "torii gate",
+      "shrine gate"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#d94a32",
+        "description": "Vermilion color of the gate"
+      },
+      "height": {
+        "type": "number",
+        "default": 5,
+        "min": 2,
+        "max": 20,
+        "description": "Overall gate height in meters"
+      }
+    },
+    "size": [
+      4.28,
+      4.925,
+      0.814
+    ]
+  },
+  "def": {
+    "id": "torii-gate",
+    "description": "Detailed Japanese torii gate with tapered vermilion pillars, black stone bases, layered collars, two crossbeams, an upswept top lintel, and a central gold-accented plaque.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#d94a32",
+        "description": "Vermilion color of the gate"
+      },
+      "height": {
+        "type": "number",
+        "default": 5,
+        "min": 2,
+        "max": 20,
+        "description": "Overall gate height in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst span = h * 0.72;\nconst postR = h * 0.055;\nconst baseH = h * 0.105;\nconst postTop = h * 0.86;\nconst beamDepth = h * 0.105;\nconst vermilion = { preset: 'wood', color: params.color, roughness: 0.62 };\nconst dark = { preset: 'stone', color: '#17191c', roughness: 0.82 };\nconst blackWood = { preset: 'wood', color: '#24201d', roughness: 0.68 };\nconst gold = { preset: 'gold', color: '#d5ad4d', metalness: 0.65, roughness: 0.35 };\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * span * 0.36;\n  api.add(api.cylinder(postR * 1.32, postR * 1.48, baseH, 16).translate(x, baseH * 0.5, 0), dark);\n  api.add(api.cylinder(postR * 1.12, postR * 1.28, h * 0.045, 16).translate(x, baseH + h * 0.0225, 0), blackWood);\n  api.add(api.cylinder(postR * 0.82, postR, postTop - baseH, 16).translate(x, baseH + (postTop - baseH) * 0.5, 0), vermilion);\n  api.add(api.cylinder(postR * 1.16, postR * 1.16, h * 0.035, 16).translate(x, h * 0.73, 0), vermilion);\n  api.add(api.cylinder(postR * 1.28, postR * 1.05, h * 0.045, 16).translate(x, postTop - h * 0.012, 0), vermilion);\n}\nconst lowerY = h * 0.72;\napi.add(api.box(span * 0.82, h * 0.075, beamDepth * 0.8).translate(0, lowerY, 0), vermilion);\napi.add(api.box(span * 0.91, h * 0.027, beamDepth * 0.94).translate(0, lowerY + h * 0.049, 0), blackWood);\nconst halfW = span * 0.58;\nconst beamShape = [\n  [-halfW, h * 0.055],\n  [-span * 0.49, h * 0.043],\n  [-span * 0.28, h * 0.019],\n  [0, h * 0.012],\n  [span * 0.28, h * 0.019],\n  [span * 0.49, h * 0.043],\n  [halfW, h * 0.055],\n  [halfW * 0.985, -h * 0.026],\n  [span * 0.48, -h * 0.034],\n  [span * 0.27, -h * 0.049],\n  [0, -h * 0.052],\n  [-span * 0.27, -h * 0.049],\n  [-span * 0.48, -h * 0.034],\n  [-halfW * 0.985, -h * 0.026]\n];\napi.add(api.extrude(beamShape, beamDepth).translate(0, h * 0.895, 0), vermilion);\nconst capShape = [\n  [-halfW * 1.025, h * 0.018],\n  [-span * 0.5, h * 0.012],\n  [-span * 0.28, h * 0.004],\n  [0, 0],\n  [span * 0.28, h * 0.004],\n  [span * 0.5, h * 0.012],\n  [halfW * 1.025, h * 0.018],\n  [halfW, -h * 0.006],\n  [0, -h * 0.02],\n  [-halfW, -h * 0.006]\n];\napi.add(api.extrude(capShape, beamDepth * 1.1).translate(0, h * 0.967, 0), blackWood);\nconst plaqueW = span * 0.18;\nconst plaqueH = h * 0.105;\napi.add(api.box(plaqueW, plaqueH, beamDepth * 1.02).translate(0, h * 0.797, 0), blackWood);\napi.add(api.box(plaqueW * 0.72, plaqueH * 0.12, beamDepth * 1.045).translate(0, h * 0.817, 0), gold);\napi.add(api.box(plaqueW * 0.42, plaqueH * 0.1, beamDepth * 1.05).translate(0, h * 0.785, 0), gold);\nfor (let side = -1; side <= 1; side += 2) {\n  api.collider({ kind: 'cylinder', radius: postR * 1.3, halfHeight: postTop * 0.5, offset: [side * span * 0.36, postTop * 0.5, 0] });\n}\napi.collider({ kind: 'box', halfExtents: [span * 0.46, h * 0.055, beamDepth * 0.5], offset: [0, lowerY, 0] });\napi.collider({ kind: 'box', halfExtents: [halfW, h * 0.065, beamDepth * 0.56], offset: [0, h * 0.925, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:26:30.327Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 788,
+    "parts": 4,
+    "colliders": 4
+  }
+}

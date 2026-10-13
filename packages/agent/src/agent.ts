@@ -105,6 +105,7 @@ export class WorldAgent {
       coderSystem: this.coderSystem,
       builtinGenerators: this.builtinGenerators,
       usage,
+      ...(this.opts.resolveGenerator ? { resolveGenerator: this.opts.resolveGenerator } : {}),
       ...(signal ? { signal } : {}),
     };
 

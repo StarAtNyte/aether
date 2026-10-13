@@ -13,6 +13,7 @@ import { Builder } from './builder';
 import type { ThemeCtx } from './decor';
 import { applyEdits, reserveExisting } from './edits';
 import { parseIntent, type Intent } from './intent';
+import { findLibraryItems, libraryAsset, libraryRadius, type LibraryHit, type MockLibraryItem } from './library';
 import type { Theme } from './theme';
 import { DEFAULT_SETTING } from './themes-nature';
 import { parseWorldSummary, type WorldView } from './world-view';
@@ -42,7 +43,38 @@ function slotFor(b: Builder, index: number, radius: number, primaryRadius: numbe
   return [x, z];
 }
 
-function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
+/**
+ * Library objects named in a scene description that no theme or explicit
+ * "with/add" edit already covers ("a lighthouse on a rocky island").
+ */
+function sceneLibraryHits(intent: Intent, library: readonly MockLibraryItem[]): LibraryHit[] {
+  const addPhrases = intent.edits.filter((e) => e.kind === 'add').map((e) => e.phrase);
+  return findLibraryItems(intent.text, library).filter((h) => !addPhrases.some((p) => findLibraryItems(p, [h.item]).length > 0));
+}
+
+/** Place library hits: a bare scene's first hit becomes the centrepiece at the origin. */
+function placeLibraryHits(b: Builder, hits: readonly LibraryHit[], heroAtOrigin: boolean): string[] {
+  const done: string[] = [];
+  hits.forEach((hit, i) => {
+    const asset = libraryAsset(hit.item);
+    let placed = 0;
+    for (let k = 0; k < hit.count; k++) {
+      if (i === 0 && k === 0 && heroAtOrigin) {
+        b.gen(hit.item.id, hit.item.id, {}, [0, 0, 0], { physics: 'static', tags: ['library', 'focus'] });
+        placed++;
+        continue;
+      }
+      const p = b.spot(0, 0, asset.radius + 4, 14 + asset.radius * 2 + k * 2, asset.radius);
+      if (!p) continue;
+      asset.make(b, p[0], p[1]);
+      placed++;
+    }
+    if (placed > 0) done.push(`${placed} ${hit.keyword}${placed === 1 ? '' : 's'}`);
+  });
+  return done;
+}
+
+function generate(intent: Intent, view: WorldView, wipe: boolean, library: readonly MockLibraryItem[]): MockPlan {
   const seed = hashString(intent.text);
   const existing = wipe ? [] : view.entities.map((e) => e.id);
   const b = new Builder(seed, existing, intent.mood, wipe ? [] : view.testIds, wipe ? [] : view.ruleIds);
@@ -51,7 +83,10 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   const bare = intent.settings.length === 0 && (activities.length === 0 || activities.some((a) => a.wantsSetting));
   const settings: Theme[] = bare ? [DEFAULT_SETTING] : intent.settings;
   const primary = settings[0];
-  const clear = activities.reduce((m, t) => Math.max(m, t.radius), 0);
+  const libHits = sceneLibraryHits(intent, library);
+  // Without a recognized theme, a named library object is the scene's subject.
+  const hero = intent.settings.length === 0 && activities.length === 0 ? libHits[0] : undefined;
+  const clear = Math.max(activities.reduce((m, t) => Math.max(m, t.radius), 0), hero ? libraryRadius(hero.item) + 1.5 : 0);
 
   // Environment: the primary setting, then atmospheric secondaries (snow, night fog…)
   // override it; the primary keeps its player setup. Without a setting, the
@@ -77,7 +112,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   const withIds = new Set(intent.activities.map((a) => a.id));
   const withCount = (ctx: ThemeCtx): ThemeCtx => ({ ...ctx, with: withIds, request: intent.text, ...(count !== undefined ? { count } : {}), ...(seconds !== undefined ? { seconds } : {}) });
   // A playable mechanic owns the camera: settings around it lose their focus tags.
-  b.setPhase('setting', activities.length > 0);
+  b.setPhase('setting', activities.length > 0 || hero !== undefined);
   if (primary) primary.build(withCount({ b, x: 0, z: 0, clear, primary: true }));
   let slot = 0;
   for (const s of settings.slice(1)) {
@@ -100,14 +135,16 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
 
   // Additions named alongside a theme ("a forest with 3 tents") and mood overrides.
   const extras = intent.edits.filter((e) => e.kind === 'add' && !settings.concat(intent.activities).some((t) => t.match.test(e.phrase)));
-  const added = extras.length > 0 ? applyEdits(b, { ...intent, edits: extras }, view) : [];
+  const libraryDone = placeLibraryHits(b, libHits, hero !== undefined);
+  const added = [...libraryDone, ...(extras.length > 0 ? applyEdits(b, { ...intent, edits: extras }, view, library) : [])];
   b.env(intent.env);
   const weather = b.envValue('weather');
   if (intent.mood.night && (weather === undefined || weather === 'clear')) b.env({ weather: 'fireflies' });
   b.test({ id: 'no-overlap', kind: 'noOverlap' });
 
   const titles = [...activities, ...settings].map((t) => t.title);
-  const name = activities[0] && primary ? `${activities[0].title} — ${primary.title}` : (titles[0] ?? 'New World');
+  const heroTitle = hero ? hero.keyword.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : undefined;
+  const name = activities[0] && primary ? `${activities[0].title} — ${primary.title}` : heroTitle && primary ? `${heroTitle} — ${primary.title}` : (titles[0] ?? 'New World');
   b.meta(name, intent.text.slice(0, 200));
 
   const patches: PatchInput[] = wipe && view.entityCount > 0 ? [{ op: 'clear', keepEnvironment: false }, ...b.build()] : b.build();
@@ -120,11 +157,11 @@ function generate(intent: Intent, view: WorldView, wipe: boolean): MockPlan {
   };
 }
 
-function edit(intent: Intent, view: WorldView): MockPlan {
+function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem[]): MockPlan {
   const b = new Builder(hashString(`${intent.text}|${view.entityCount}`), view.entities.map((e) => e.id), intent.mood, view.testIds, view.ruleIds);
   b.keepHud(view.hud);
   reserveExisting(b, view);
-  const done = applyEdits(b, intent, view);
+  const done = applyEdits(b, intent, view, library);
   const envKeys = Object.keys(intent.env);
   if (envKeys.length > 0) {
     const env: Record<string, Json> = { ...intent.env };
@@ -144,14 +181,17 @@ function edit(intent: Intent, view: WorldView): MockPlan {
   return { plan: `Plan: ${done.join('; ')}.`, patches, message: `Done — ${done.join('; ')}.` };
 }
 
-/** Plan a response to `request` given the current world `summary`. Deterministic. */
-export function planMock(request: string, summary: string): MockPlan {
+/**
+ * Plan a response to `request` given the current world `summary`.
+ * Deterministic. `library` lists generator-library objects it may place.
+ */
+export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = []): MockPlan {
   const intent = parseIntent(request);
   const view = parseWorldSummary(summary);
   const hasThemes = intent.settings.length > 0 || intent.activities.length > 0;
-  if (view.entityCount === 0) return generate(intent, view, false);
-  if (intent.clear || (hasThemes && (intent.create || intent.describesScene))) return generate(intent, view, true);
-  const result = edit(intent, view);
-  if (result.patches.length === 0 && hasThemes) return generate(intent, view, true);
+  if (view.entityCount === 0) return generate(intent, view, false, library);
+  if (intent.clear || (hasThemes && (intent.create || intent.describesScene))) return generate(intent, view, true, library);
+  const result = edit(intent, view, library);
+  if (result.patches.length === 0 && hasThemes) return generate(intent, view, true, library);
   return result;
 }

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "cart",
+    "description": "Wooden hand cart with two spoked wheels, plank bed, side rails and two pull handles",
+    "category": "vehicles",
+    "keywords": [
+      "cart",
+      "wagon",
+      "handcart",
+      "wheelbarrow"
+    ],
+    "params": {
+      "woodColor": {
+        "type": "color",
+        "default": "#8b5a2b",
+        "description": "Main timber color"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.4,
+        "min": 1,
+        "max": 6,
+        "description": "Overall cart length in meters"
+      }
+    },
+    "size": [
+      1.641,
+      1.467,
+      2.692
+    ]
+  },
+  "def": {
+    "id": "cart",
+    "description": "Detailed wooden hand cart with a planked bed, raised side rails, iron-rimmed spoked wheels, axle hardware and two long pull handles.",
+    "params": {
+      "woodColor": {
+        "type": "color",
+        "default": "#8b5a2b",
+        "description": "Main timber color"
+      },
+      "length": {
+        "type": "number",
+        "default": 2.4,
+        "min": 1,
+        "max": 6,
+        "description": "Overall cart length in meters"
+      }
+    },
+    "source": "const L = params.length;\nconst bedW = L * 0.42;\nconst bedLen = L * 0.56;\nconst plankT = L * 0.035;\nconst bedY = L * 0.41;\nconst bedZ = -L * 0.16;\nconst wheelR = L * 0.18;\nconst wheelX = bedW * 0.57;\nconst wheelY = wheelR;\nconst wheelZ = -L * 0.2;\nconst darkWood = api.mix(params.woodColor, '#2b180d', 0.32);\nconst lightWood = api.mix(params.woodColor, '#d5a665', 0.2);\nconst wood = { preset: 'wood', color: params.woodColor, roughness: 0.82 };\nconst woodDark = { preset: 'wood', color: darkWood, roughness: 0.88 };\nconst woodLight = { preset: 'wood', color: lightWood, roughness: 0.78 };\nconst iron = { preset: 'metal', color: '#343638', metalness: 0.8, roughness: 0.38 };\nconst ironDark = { preset: 'metal', color: '#202224', metalness: 0.72, roughness: 0.48 };\nconst plankCount = 7;\nconst plankW = bedW / plankCount * 0.91;\nfor (let i = 0; i < plankCount; i++) {\n  const x = -bedW / 2 + (i + 0.5) * bedW / plankCount;\n  const p = api.box(plankW, plankT, bedLen).translate(x, bedY, bedZ);\n  p.vertexColor((vx, vy, vz) => api.mix(params.woodColor, lightWood, 0.18 + 0.12 * api.noise2(vz * 13 / L, vx * 8 / L)));\n  api.add(p, { preset: 'wood', roughness: 0.82 });\n}\nconst crossZ = [-L * 0.405, -L * 0.15, L * 0.105];\nfor (let i = 0; i < crossZ.length; i++) api.add(api.box(bedW * 1.04, L * 0.045, L * 0.055).translate(0, bedY - plankT, crossZ[i]), woodDark);\nconst railH = L * 0.18;\nconst postT = L * 0.035;\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * bedW * 0.49;\n  for (let j = 0; j < 4; j++) {\n    const z = bedZ - bedLen * 0.45 + j * bedLen * 0.3;\n    api.add(api.box(postT, railH, postT).translate(x, bedY + railH * 0.48, z), woodDark);\n  }\n  api.add(api.box(postT, postT, bedLen * 0.94).translate(x, bedY + railH * 0.92, bedZ), wood);\n  api.add(api.box(postT * 0.75, postT * 0.75, bedLen * 0.94).translate(x, bedY + railH * 0.48, bedZ), woodLight);\n}\nconst backZ = bedZ - bedLen * 0.5;\nfor (let j = 0; j < 4; j++) {\n  const x = -bedW * 0.45 + j * bedW * 0.3;\n  api.add(api.box(postT, railH, postT).translate(x, bedY + railH * 0.48, backZ), woodDark);\n}\napi.add(api.box(bedW, postT, postT).translate(0, bedY + railH * 0.92, backZ), wood);\napi.add(api.cylinder(L * 0.025, L * 0.025, bedW * 1.28, 12).rotate(0, 0, 90).translate(0, wheelY, wheelZ), ironDark);\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * wheelX;\n  api.add(api.torus(wheelR, L * 0.018).rotate(0, 90, 0).translate(x, wheelY, wheelZ), iron);\n  api.add(api.torus(wheelR * 0.84, L * 0.022).rotate(0, 90, 0).translate(x, wheelY, wheelZ), woodDark);\n  api.add(api.cylinder(L * 0.048, L * 0.048, L * 0.09, 12).rotate(0, 0, 90).translate(x, wheelY, wheelZ), ironDark);\n  for (let s = 0; s < 10; s++) {\n    const a = s * 36;\n    const ar = a * Math.PI / 180;\n    const sy = wheelY + Math.cos(ar) * wheelR * 0.43;\n    const sz = wheelZ + Math.sin(ar) * wheelR * 0.43;\n    api.add(api.cylinder(L * 0.009, L * 0.012, wheelR * 0.76, 6).rotate(a, 0, 0).translate(x, sy, sz), woodLight);\n  }\n  api.add(api.cylinder(L * 0.028, L * 0.038, L * 0.115, 10).rotate(0, 0, 90).translate(side * (wheelX + L * 0.045), wheelY, wheelZ), iron);\n}\nconst frontZ = bedZ + bedLen * 0.48;\nfor (let side = -1; side <= 1; side += 2) {\n  const x = side * bedW * 0.4;\n  const path = [[x, bedY - L * 0.035, frontZ - L * 0.04], [x, bedY - L * 0.055, L * 0.31], [side * bedW * 0.34, bedY - L * 0.13, L * 0.5]];\n  api.add(api.tube(path, L * 0.025, 8), woodDark);\n  api.add(api.cylinder(L * 0.032, L * 0.032, L * 0.15, 10).rotate(90, 0, 0).translate(side * bedW * 0.34, bedY - L * 0.13, L * 0.545), wood);\n  api.add(api.torus(L * 0.035, L * 0.009).rotate(90, 0, 0).translate(side * bedW * 0.34, bedY - L * 0.13, L * 0.62), iron);\n}\napi.add(api.box(bedW * 0.68, L * 0.055, L * 0.12).translate(0, bedY - L * 0.09, frontZ - L * 0.02), woodDark);\napi.collider({ kind: 'box', halfExtents: [bedW * 0.52, L * 0.12, bedLen * 0.5], offset: [0, bedY + L * 0.07, bedZ] });\napi.collider({ kind: 'box', halfExtents: [bedW * 0.62, wheelR, L * 0.045], offset: [0, wheelY, wheelZ] });\napi.collider({ kind: 'box', halfExtents: [bedW * 0.44, L * 0.04, L * 0.3], offset: [0, bedY - L * 0.08, L * 0.31] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:22:19.234Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 4096,
+    "parts": 6,
+    "colliders": 3
+  }
+}

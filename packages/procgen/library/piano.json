@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "piano",
+    "description": "Grand piano with a lifted lid on a prop stick, black and white keys, three legs, pedals and a bench",
+    "category": "props",
+    "keywords": [
+      "piano",
+      "grand piano"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#171719",
+        "description": "Main lacquer color of the piano and bench"
+      },
+      "lidOpen": {
+        "type": "boolean",
+        "default": true,
+        "description": "Raise the grand piano lid and show its prop stick"
+      }
+    },
+    "size": [
+      3.18,
+      2.412,
+      3.42
+    ]
+  },
+  "def": {
+    "id": "piano",
+    "description": "Detailed grand piano with a curved body, raised or closed lid, prop stick, black and white keyboard, three tapered legs, brass pedals, and a matching padded bench.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#171719",
+        "description": "Main lacquer color of the piano and bench"
+      },
+      "lidOpen": {
+        "type": "boolean",
+        "default": true,
+        "description": "Raise the grand piano lid and show its prop stick"
+      }
+    },
+    "source": "const c = params.color;\nconst open = params.lidOpen;\nconst wood = { preset: 'wood', color: c, roughness: 0.22 };\nconst dark = { preset: 'wood', color: '#09090b', roughness: 0.25 };\nconst white = { preset: 'plastic', color: '#f3efe3', roughness: 0.28 };\nconst black = { preset: 'plastic', color: '#111114', roughness: 0.2 };\nconst brass = { preset: 'gold', color: '#b78b35', metalness: 0.8, roughness: 0.25 };\nconst felt = { preset: 'fabric', color: '#8b1f2b', roughness: 0.9 };\nconst footprint = [[-1.5,0.58],[1.5,0.58],[1.48,0.28],[1.38,-0.12],[1.18,-0.58],[0.85,-0.98],[0.4,-1.27],[-0.1,-1.4],[-0.72,-1.36],[-1.22,-1.12],[-1.46,-0.7]];\nconst body = api.extrude(footprint,0.32).rotate(90,0,0).translate(0,1.32,0);\napi.add(body,wood);\napi.add(api.box(3.18,0.2,0.72).translate(0,1.37,0.73),wood);\napi.add(api.box(3.05,0.12,0.12).translate(0,1.58,0.39),felt);\nconst lid = api.extrude(footprint,0.075).rotate(90,0,0);\nif(open){\n  lid.rotate(0,0,-16).translate(0.03,1.85,0);\n}else{\n  lid.translate(0,1.53,0);\n}\napi.add(lid,wood);\napi.add(api.box(3.08,0.09,0.12).translate(0,1.6,0.44),brass);\nconst whiteCount = 28;\nconst keyW = 2.9 / whiteCount;\nfor(let i=0;i<whiteCount;i++){\n  const x = -1.45 + keyW*(i+0.5);\n  api.add(api.box(keyW-0.006,0.055,0.5).translate(x,1.55,0.78),white);\n}\nconst blackPattern = [0,1,3,4,5];\nfor(let i=0;i<whiteCount-1;i++){\n  if(blackPattern.indexOf(i%7)>=0){\n    const x = -1.45 + keyW*(i+1);\n    api.add(api.box(keyW*0.58,0.085,0.31).translate(x,1.61,0.64),black);\n  }\n}\napi.add(api.box(3.16,0.16,0.15).translate(0,1.47,1.07),wood);\napi.add(api.box(3.18,0.12,0.13).translate(0,1.63,1.06),wood);\napi.add(api.box(1.4,0.72,0.055).rotate(-12,0,0).translate(0,2.0,0.37),wood);\napi.add(api.box(1.28,0.035,0.035).translate(0,2.34,0.29),brass);\nfunction leg(x,z){\n  api.add(api.cylinder(0.09,0.145,1.24,10).translate(x,0.69,z),wood);\n  api.add(api.sphere(0.12,1).scale(1,0.55,1).translate(x,0.09,z),brass);\n}\nleg(-1.2,0.42);\nleg(1.2,0.42);\nleg(-0.62,-1.0);\napi.add(api.box(1.9,0.08,0.08).translate(0,0.55,0.39),wood);\napi.add(api.box(0.08,0.08,1.0).rotate(0,-28,0).translate(-0.88,0.55,-0.25),wood);\napi.add(api.box(0.16,0.62,0.18).translate(0,0.66,0.22),wood);\nfor(let p=-1;p<=1;p++){\n  api.add(api.box(0.1,0.035,0.3).rotate(-10,0,0).translate(p*0.13,0.36,0.4),brass);\n}\nif(open){\n  api.add(api.cylinder(0.025,0.025,1.08,8).rotate(0,0,-43).translate(0.6,2.0,-0.36),brass);\n  api.add(api.box(0.07,0.07,0.14).translate(0.97,1.64,-0.36),brass);\n}\nconst benchZ = 1.78;\napi.add(api.box(1.25,0.17,0.48).translate(0,0.7,benchZ),felt);\napi.add(api.box(1.18,0.1,0.42).translate(0,0.59,benchZ),wood);\nfor(let bx=-1;bx<=1;bx+=2){\n  for(let bz=-1;bz<=1;bz+=2){\n    api.add(api.cylinder(0.045,0.065,0.58,8).translate(bx*0.48,0.29,benchZ+bz*0.15),wood);\n  }\n}\napi.collider({kind:'box',halfExtents:[1.58,0.22,0.95],offset:[0,1.4,0.08]});\napi.collider({kind:'box',halfExtents:[0.64,0.38,0.27],offset:[0,0.38,benchZ]});\napi.collider({kind:'cylinder',radius:0.15,halfHeight:0.62,offset:[-1.2,0.69,0.42]});\napi.collider({kind:'cylinder',radius:0.15,halfHeight:0.62,offset:[1.2,0.69,0.42]});\napi.collider({kind:'cylinder',radius:0.15,halfHeight:0.62,offset:[-0.62,0.69,-1.0]});\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:16:18.069Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1488,
+    "parts": 5,
+    "colliders": 5
+  }
+}

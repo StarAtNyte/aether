@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hot-air-balloon",
+    "description": "Hot air balloon: a striped teardrop envelope, ropes and a wicker basket with a burner, hovering 1 m above its base point",
+    "category": "vehicles",
+    "keywords": [
+      "hot air balloon",
+      "balloon"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#c94f3d",
+        "description": "main envelope color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#f3c969",
+        "description": "alternating envelope stripe color"
+      },
+      "height": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 20,
+        "description": "balloon height from basket bottom to envelope crown in meters"
+      }
+    },
+    "size": [
+      3.47,
+      9,
+      3.47
+    ]
+  },
+  "def": {
+    "id": "hot-air-balloon",
+    "description": "A detailed hot-air balloon hovering one meter above a subtle ground marker, with a striped lobed teardrop envelope, four-sided rope rigging, woven wicker basket, and twin burner assembly.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#c94f3d",
+        "description": "main envelope color"
+      },
+      "stripeColor": {
+        "type": "color",
+        "default": "#f3c969",
+        "description": "alternating envelope stripe color"
+      },
+      "height": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 20,
+        "description": "balloon height from basket bottom to envelope crown in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst hover = 1;\nconst basketH = h * 0.14;\nconst basketW = h * 0.13;\nconst basketD = h * 0.105;\nconst gap = h * 0.055;\nconst envBottom = hover + basketH + gap;\nconst envH = h - basketH - gap;\nconst R = h * 0.245;\nconst segs = 24;\nconst profile = [];\nconst rings = 18;\nfor (let i = 0; i <= rings; i++) {\n  const t = i / rings;\n  const y = envBottom + t * envH;\n  let r = R * Math.pow(Math.sin(Math.PI * t), 0.62) * (0.48 + 0.72 * t);\n  if (i === 0 || i === rings) r = 0;\n  profile.push([r, y]);\n}\nconst envelope = api.lathe(profile, segs);\nenvelope.vertexColor((x, y, z) => {\n  let a = Math.atan2(z, x);\n  if (a < 0) a += Math.PI * 2;\n  const panel = Math.floor((a / (Math.PI * 2)) * 12);\n  const base = panel % 2 === 0 ? params.color : params.stripeColor;\n  const vertical = (y - envBottom) / envH;\n  const shade = 0.05 + 0.12 * Math.abs(vertical - 0.55);\n  return api.mix(base, '#5a2630', shade);\n});\napi.add(envelope, { preset: 'fabric', roughness: 0.86, flatShading: true });\nconst dark = { preset: 'metal', color: '#393638', metalness: 0.65, roughness: 0.38 };\nconst ropeMat = { preset: 'fabric', color: '#6b4529', roughness: 1 };\nconst wicker = { preset: 'wood', color: '#a66a32', roughness: 0.9 };\nconst wickerDark = { preset: 'wood', color: '#68401f', roughness: 0.95 };\nconst burnerMat = { preset: 'metal', color: '#9b8d78', metalness: 0.75, roughness: 0.28 };\nconst basketY = hover + basketH * 0.5;\nconst wall = basketW * 0.08;\napi.add(api.box(basketW, wall, basketD).translate(0, hover + wall * 0.5, 0), wickerDark);\napi.add(api.box(basketW, basketH, wall).translate(0, basketY, basketD * 0.5 - wall * 0.5), wicker);\napi.add(api.box(basketW, basketH, wall).translate(0, basketY, -basketD * 0.5 + wall * 0.5), wicker);\napi.add(api.box(wall, basketH, basketD - wall * 2).translate(-basketW * 0.5 + wall * 0.5, basketY, 0), wicker);\napi.add(api.box(wall, basketH, basketD - wall * 2).translate(basketW * 0.5 - wall * 0.5, basketY, 0), wicker);\nfor (let i = 0; i < 4; i++) {\n  const yy = hover + basketH * (0.2 + i * 0.21);\n  api.add(api.box(basketW * 1.035, wall * 0.32, basketD * 1.035).translate(0, yy, 0), wickerDark);\n}\nfor (let i = -2; i <= 2; i++) {\n  const x = i * basketW * 0.19;\n  api.add(api.box(wall * 0.28, basketH * 0.92, wall * 0.45).translate(x, basketY, basketD * 0.515), wickerDark);\n  api.add(api.box(wall * 0.28, basketH * 0.92, wall * 0.45).translate(x, basketY, -basketD * 0.515), wickerDark);\n}\nfor (let i = -1; i <= 1; i++) {\n  const z = i * basketD * 0.25;\n  api.add(api.box(wall * 0.45, basketH * 0.92, wall * 0.28).translate(basketW * 0.515, basketY, z), wickerDark);\n  api.add(api.box(wall * 0.45, basketH * 0.92, wall * 0.28).translate(-basketW * 0.515, basketY, z), wickerDark);\n}\nconst frameY = hover + basketH + gap * 0.35;\napi.add(api.box(basketW * 0.82, wall * 0.5, wall * 0.5).translate(0, frameY, 0), dark);\napi.add(api.box(wall * 0.5, wall * 0.5, basketD * 0.72).translate(0, frameY, 0), dark);\nconst burnerY = hover + basketH + gap * 0.28;\nfor (let s = -1; s <= 1; s += 2) {\n  api.add(api.cylinder(basketW * 0.095, basketW * 0.12, gap * 0.46, 10).translate(s * basketW * 0.18, burnerY, 0), burnerMat);\n  api.add(api.cone(basketW * 0.055, gap * 0.38, 8).translate(s * basketW * 0.18, burnerY + gap * 0.35, 0), { preset: 'emissive', color: '#ff9b32', emissive: '#ff6a19', emissiveIntensity: 2.6, opacity: 0.9 });\n}\nconst ropeR = h * 0.006;\nconst bx = basketW * 0.47;\nconst bz = basketD * 0.47;\nconst attachY = envBottom + envH * 0.18;\nconst attachR = R * 0.67;\nconst corners = [[-bx,-bz],[bx,-bz],[bx,bz],[-bx,bz]];\nfor (let i = 0; i < 4; i++) {\n  const sx = corners[i][0];\n  const sz = corners[i][1];\n  const len = Math.sqrt(sx * sx + sz * sz);\n  const ex = sx / len * attachR;\n  const ez = sz / len * attachR;\n  api.add(api.tube([[sx, hover + basketH * 0.88, sz],[sx * 1.25, envBottom - gap * 0.08, sz * 1.25],[ex, attachY, ez]], ropeR, 5), ropeMat);\n}\napi.add(api.torus(R * 0.19, ropeR * 1.4).rotate(90, 0, 0).translate(0, envBottom + envH * 0.055, 0), ropeMat);\napi.add(api.cylinder(R * 0.14, R * 0.17, h * 0.025, 12).translate(0, envBottom + h * 0.012, 0), dark);\napi.add(api.cylinder(h * 0.16, h * 0.16, h * 0.006, 24).translate(0, h * 0.003, 0), { preset: 'concrete', color: '#544f4a', roughness: 1, opacity: 0.28 });\napi.collider({ kind: 'box', halfExtents: [basketW * 0.5, basketH * 0.5, basketD * 0.5], offset: [0, basketY, 0] });\napi.collider({ kind: 'sphere', radius: R * 0.82, offset: [0, envBottom + envH * 0.55, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:17:39.000Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1996,
+    "parts": 8,
+    "colliders": 2
+  }
+}

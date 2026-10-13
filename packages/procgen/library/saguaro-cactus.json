@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "saguaro-cactus",
+    "description": "Saguaro cactus: tall ribbed column with two or three upturned arms and small flowers on top",
+    "category": "nature",
+    "keywords": [
+      "saguaro",
+      "saguaro cactus",
+      "desert cactus"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 5.5,
+        "min": 1.5,
+        "max": 14,
+        "description": "Overall cactus height in meters"
+      },
+      "arms": {
+        "type": "int",
+        "default": 3,
+        "min": 0,
+        "max": 4,
+        "description": "Number of upturned arms"
+      },
+      "color": {
+        "type": "color",
+        "default": "#3f7f4f",
+        "description": "Primary cactus green"
+      }
+    },
+    "size": [
+      2.141,
+      5.578,
+      1.969
+    ]
+  },
+  "def": {
+    "id": "saguaro-cactus",
+    "description": "A detailed, all-around saguaro cactus with a tapered ribbed trunk, configurable upturned arms, crown flowers, and a cohesive desert-green palette.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 5.5,
+        "min": 1.5,
+        "max": 14,
+        "description": "Overall cactus height in meters"
+      },
+      "arms": {
+        "type": "int",
+        "default": 3,
+        "min": 0,
+        "max": 4,
+        "description": "Number of upturned arms"
+      },
+      "color": {
+        "type": "color",
+        "default": "#3f7f4f",
+        "description": "Primary cactus green"
+      }
+    },
+    "source": "const h = params.height;\nconst armCount = params.arms;\nconst r = h * 0.085;\nconst cactusMat = { preset: 'leaf', color: params.color, roughness: 0.82, flatShading: true };\nconst ribMat = { preset: 'leaf', color: api.mix(params.color, '#d4dfa0', 0.15), roughness: 0.88, flatShading: true };\nconst flowerMat = { preset: 'leaf', color: '#f4c9c5', roughness: 0.68, flatShading: true };\nconst flowerCenterMat = { preset: 'leaf', color: '#e6b84f', roughness: 0.72, flatShading: true };\n\nconst trunkProfile = [\n  [r * 0.82, 0],\n  [r, h * 0.055],\n  [r * 1.02, h * 0.48],\n  [r * 0.96, h * 0.82],\n  [r * 0.76, h * 0.97],\n  [r * 0.42, h]\n];\napi.add(api.lathe(trunkProfile, 16), cactusMat);\n\nconst ribCount = 12;\nfor (let i = 0; i < ribCount; i++) {\n  const a = i * Math.PI * 2 / ribCount;\n  const ca = Math.cos(a);\n  const sa = Math.sin(a);\n  const path = [\n    [ca * r * 0.91, h * 0.045, sa * r * 0.91],\n    [ca * r * 1.035, h * 0.18, sa * r * 1.035],\n    [ca * r * 1.045, h * 0.5, sa * r * 1.045],\n    [ca * r * 0.97, h * 0.82, sa * r * 0.97],\n    [ca * r * 0.68, h * 0.975, sa * r * 0.68]\n  ];\n  api.add(api.tube(path, r * 0.075, 5), ribMat);\n}\n\nfunction addFlower(x, y, z, scale) {\n  const petals = 7;\n  for (let p = 0; p < petals; p++) {\n    const a = p * Math.PI * 2 / petals;\n    api.add(api.sphere(scale * 0.19, 1).scale(1.55, 0.42, 0.82).rotate(0, -p * 360 / petals, 0).translate(x + Math.cos(a) * scale * 0.2, y, z + Math.sin(a) * scale * 0.2), flowerMat);\n  }\n  api.add(api.sphere(scale * 0.13, 1).scale(1, 0.65, 1).translate(x, y + scale * 0.025, z), flowerCenterMat);\n}\n\naddFlower(0, h + r * 0.08, 0, r * 0.8);\n\nfor (let i = 0; i < armCount; i++) {\n  const angle = (i / Math.max(1, armCount)) * Math.PI * 2 + 0.38 + (api.rng() - 0.5) * 0.18;\n  const ca = Math.cos(angle);\n  const sa = Math.sin(angle);\n  const sideX = -sa;\n  const sideZ = ca;\n  const joinY = h * (0.34 + i * 0.095 + (api.rng() - 0.5) * 0.035);\n  const reach = h * (0.16 + 0.018 * (i % 2));\n  const rise = h * (0.23 + 0.025 * ((i + 1) % 3));\n  const ar = r * 0.57;\n  const elbowX = ca * reach;\n  const elbowZ = sa * reach;\n  const tipY = joinY + rise;\n  const armPath = [\n    [ca * r * 0.55, joinY - ar * 0.15, sa * r * 0.55],\n    [ca * r * 1.15, joinY, sa * r * 1.15],\n    [ca * reach * 0.72, joinY + ar * 0.08, sa * reach * 0.72],\n    [elbowX, joinY + ar * 0.55, elbowZ],\n    [elbowX, tipY - ar * 0.55, elbowZ],\n    [elbowX, tipY, elbowZ]\n  ];\n  api.add(api.tube(armPath, ar, 10), cactusMat);\n\n  for (let q = 0; q < 6; q++) {\n    const b = q * Math.PI * 2 / 6;\n    const ox = sideX * Math.cos(b) * ar * 0.93 + ca * Math.sin(b) * ar * 0.93;\n    const oz = sideZ * Math.cos(b) * ar * 0.93 + sa * Math.sin(b) * ar * 0.93;\n    const ridgePath = [\n      [ca * reach * 0.76 + sideX * Math.cos(b) * ar * 0.75, joinY + ar * 0.15 + Math.sin(b) * ar * 0.3, sa * reach * 0.76 + sideZ * Math.cos(b) * ar * 0.75],\n      [elbowX + ox, joinY + ar * 0.62, elbowZ + oz],\n      [elbowX + ox, tipY - ar * 0.22, elbowZ + oz]\n    ];\n    api.add(api.tube(ridgePath, ar * 0.075, 4), ribMat);\n  }\n\n  addFlower(elbowX, tipY + ar * 0.62, elbowZ, ar * 0.9);\n  api.collider({ kind: 'box', halfExtents: [reach * 0.48, ar, ar], offset: [ca * reach * 0.52, joinY + ar * 0.2, sa * reach * 0.52], rotation: [0, -angle * 180 / Math.PI, 0] });\n  api.collider({ kind: 'capsule', halfHeight: rise * 0.48, radius: ar, offset: [elbowX, joinY + rise * 0.52, elbowZ] });\n}\n\napi.collider({ kind: 'capsule', halfHeight: h * 0.47, radius: r, offset: [0, h * 0.49, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:23:42.839Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 5392,
+    "parts": 4,
+    "colliders": 7
+  }
+}

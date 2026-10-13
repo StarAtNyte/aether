@@ -36,6 +36,8 @@ These are bundled into the studio or executed by the server.
 | [hono](https://github.com/honojs/hono) | 4.13.13 | MIT | server | © 2021–present Yusuke Wada and Hono contributors |
 | [@hono/node-server](https://github.com/honojs/node-server) | 2.1.4 | MIT | server | © 2022–present Yusuke Wada and Hono contributors |
 | [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | server runtime (TypeScript loader), `smoke` and `e2e` scripts | © Hiroki Osame |
+| [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 (exact) | Apache-2.0 | `apps/bridge` only (local Aether Bridge; never in the browser bundle or the hosted server) | © OpenAI |
+| [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86 (exact) | Apache-2.0 | studio, **lazy chunk** loaded only after the user opts in to on-device AI | © MLC contributors |
 
 ## 2. Transitive runtime dependencies
 
@@ -47,6 +49,8 @@ These are bundled into the studio or executed by the server.
 | csstype | 3.2.3 | MIT | Type-only dependency of @types/react |
 | esbuild | 0.28.2 | MIT (© 2020 Evan Wallace) | tsx (TypeScript transform on the server). Its platform binary package `@esbuild/<platform>` 0.28.2 is MIT as well. |
 | fsevents | 2.3.3 | MIT | Optional, macOS only (file watching) |
+| @openai/codex | 0.162.1 | Apache-2.0 | @openai/codex-sdk (the Codex CLI; its platform package `@openai/codex-<platform>` ships a native binary, Apache-2.0). Runs only on the user's machine inside the bridge. |
+| loglevel | 1.9.2 | MIT (© Tim Perry) | @mlc-ai/web-llm |
 
 ## 3. Development and build dependencies
 
@@ -124,9 +128,15 @@ Licence count across all 148 lockfile entries: 99 MIT, 27 Apache-2.0,
 | [Anthropic Claude API](https://www.anthropic.com/legal/commercial-terms) (Messages API) | Planner, coder and critic models when `ANTHROPIC_API_KEY` is set | Called only from the server, using the deployer's own key under their API terms |
 | [OpenAI API](https://openai.com/policies/business-terms/) (Responses API) | Alternative provider when `OPENAI_API_KEY` is set | Called only from the server, using the deployer's own key under their API terms |
 
-Model ids are configuration (`.env`), not code. No model weights are
-downloaded, bundled or redistributed. With no keys, Aether uses its own
-deterministic offline mock and calls no external service at all.
+| Codex CLI with the user's own ChatGPT sign-in (via the local bridge) | Optional AI connection | Runs on the user's computer under the user's own OpenAI account and terms; nothing is proxied through the hosted server |
+| Claude Code CLI with the user's own sign-in (via the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
+| Hugging Face / MLC model hosts (`huggingface.co`, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered (Qwen2.5 1.5B Instruct, Apache-2.0; Phi-3.5 mini Instruct, MIT; SmolLM2 1.7B Instruct, Apache-2.0); they are downloaded by the visitor's browser directly from the model host and cached there; Aether does not redistribute them |
+
+Model ids are configuration (`.env`, Settings), not code. No model weights are
+bundled or redistributed. With no keys and no connection, Aether uses its own
+deterministic offline planner and calls no external service at all. Paid
+API keys are only an optional bring-your-own setting: the hosted server never
+uses an owner-paid key by default.
 
 ## 5. Assets
 
@@ -186,15 +196,28 @@ repositories.
   security and verification approach) and accepted every change. All code was
   written for this project from scratch: the first commit is dated
   2026-10-12, and the full commit history is public.
-- **AI at runtime.** The app sends user prompts, a text summary of the world
-  and optional user-supplied images to Anthropic Claude and/or OpenAI models
-  through the server proxy. The models return structured tool calls (World IR
+- **AI at runtime.** Depending on the connection the user picks, the app
+  sends user prompts, a text summary of the world and optional images (user
+  references, rendered views for the quality critique) to: the user's own
+  Codex or Claude Code CLI through the local bridge, an on-device model in the
+  browser, or Anthropic Claude / OpenAI models through the server proxy (the
+  deployer's or the user's own key). The models return structured tool calls (World IR
   patches, procedural generator source, behaviour scripts), which are
   validated before use.
 - **AI-generated assets.** 3D content created by AI at runtime is produced
   *as code*: procedural generators and behaviour scripts that run in
   sandboxes (see [ARCHITECTURE.md §9](ARCHITECTURE.md#9-sandbox-design)). No
   pre-generated AI meshes, images or audio are committed to the repository.
+- **Offline generator library (AI-generated code).** The procedural
+  generators in `packages/procgen/library/*.json` whose `provenance.source`
+  is `"codex"` were **written by OpenAI Codex** (through the author's own
+  ChatGPT sign-in, `scripts/build-generator-library.ts`, low reasoning
+  effort) from short object descriptions in
+  `packages/procgen/src/library-specs.ts`, and accepted only after automatic
+  checks (static source check, sandboxed runs with three seeds, output
+  validation, size/grounding/silhouette checks). The four entries with
+  `"source": "example"` are the hand-reviewed few-shot examples. They are
+  code, not meshes, and always execute in the generator sandbox.
 - **Offline mock.** The built-in mock provider is ordinary deterministic
   code (keyword matching plus world templates). It is not a model.
 

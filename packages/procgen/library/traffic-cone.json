@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "traffic-cone",
+    "description": "Orange traffic cone with a square black base and two white reflective bands, 0.7 m tall",
+    "category": "props",
+    "keywords": [
+      "traffic cone",
+      "road cone",
+      "safety cone"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#f26a1b",
+        "description": "cone body color"
+      },
+      "height": {
+        "type": "number",
+        "default": 0.7,
+        "min": 0.3,
+        "max": 2,
+        "description": "overall cone height in meters"
+      }
+    },
+    "size": [
+      0.336,
+      0.7,
+      0.336
+    ]
+  },
+  "def": {
+    "id": "traffic-cone",
+    "description": "Detailed 0.7 m traffic cone with a tapered orange body, two bright reflective bands, reinforced foot collar, and layered square black rubber base.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#f26a1b",
+        "description": "cone body color"
+      },
+      "height": {
+        "type": "number",
+        "default": 0.7,
+        "min": 0.3,
+        "max": 2,
+        "description": "overall cone height in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst baseW = h * 0.48;\nconst baseH = h * 0.075;\nconst coneBottom = baseH;\nconst coneTop = h;\nconst coneH = coneTop - coneBottom;\nconst orange = params.color;\nconst white = '#f3f1df';\nconst rubber = { preset: 'rubber', color: '#17191a', roughness: 0.92 };\nconst coneMat = { preset: 'plastic', roughness: 0.42, flatShading: true };\napi.add(api.box(baseW, baseH * 0.52, baseW).translate(0, baseH * 0.26, 0), rubber);\napi.add(api.box(baseW * 0.91, baseH * 0.48, baseW * 0.91).translate(0, baseH * 0.76, 0), rubber);\nconst cornerPad = h * 0.018;\nconst padOffset = baseW * 0.5 - cornerPad * 0.8;\nfor (let ix = -1; ix <= 1; ix += 2) {\n  for (let iz = -1; iz <= 1; iz += 2) {\n    api.add(api.box(cornerPad * 1.6, baseH * 0.18, cornerPad * 1.6).translate(ix * padOffset, baseH * 0.09, iz * padOffset), rubber);\n  }\n}\nconst footR = h * 0.205;\nconst footH = h * 0.045;\napi.add(api.cylinder(footR * 0.92, footR, footH, 24).translate(0, baseH + footH * 0.5, 0), { preset: 'plastic', color: orange, roughness: 0.48, flatShading: true });\nconst y0 = coneBottom + footH * 0.55;\nconst y1 = coneBottom + coneH * 0.39;\nconst y2 = coneBottom + coneH * 0.50;\nconst y3 = coneBottom + coneH * 0.61;\nconst y4 = coneBottom + coneH * 0.70;\nconst r0 = h * 0.175;\nconst rAt = (y) => r0 + (h * 0.045 - r0) * ((y - y0) / (coneTop - y0));\nconst profile = [\n  [0, y0], [r0, y0],\n  [rAt(y1), y1], [rAt(y1), y1],\n  [rAt(y2), y2], [rAt(y2), y2],\n  [rAt(y3), y3], [rAt(y3), y3],\n  [rAt(y4), y4], [rAt(y4), y4],\n  [h * 0.045, coneTop], [0, coneTop]\n];\nconst cone = api.lathe(profile, 28);\ncone.vertexColor((x, y, z) => ((y >= y1 && y <= y2) || (y >= y3 && y <= y4)) ? white : orange);\napi.add(cone, coneMat);\napi.add(api.torus(rAt(y1) * 0.995, h * 0.006).rotate(90, 0, 0).translate(0, y1, 0), { preset: 'plastic', color: white, roughness: 0.3 });\napi.add(api.torus(rAt(y3) * 0.995, h * 0.006).rotate(90, 0, 0).translate(0, y3, 0), { preset: 'plastic', color: white, roughness: 0.3 });\napi.collider({ kind: 'box', halfExtents: [baseW * 0.5, baseH * 0.5, baseW * 0.5], offset: [0, baseH * 0.5, 0] });\napi.collider({ kind: 'cylinder', radius: r0, halfHeight: (coneTop - y0) * 0.5, offset: [0, y0 + (coneTop - y0) * 0.5, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:16:58.244Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1688,
+    "parts": 4,
+    "colliders": 2
+  }
+}

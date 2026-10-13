@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "rocket",
+    "description": "Retro rocket ship on its fins, ready for launch.",
+    "category": "vehicles",
+    "keywords": [
+      "rocket",
+      "rocket ship",
+      "spaceship",
+      "space ship"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 6,
+        "min": 1,
+        "max": 40,
+        "description": "height in meters"
+      },
+      "bodyColor": {
+        "type": "color",
+        "default": "#e8e8ee",
+        "description": "body color"
+      },
+      "accentColor": {
+        "type": "color",
+        "default": "#d1453b",
+        "description": "nose and fin color"
+      }
+    },
+    "size": [
+      2.014,
+      6,
+      2.326
+    ]
+  },
+  "def": {
+    "id": "rocket",
+    "description": "Retro rocket standing on three fins with a porthole, accent nose cone and nozzle.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 6,
+        "min": 1,
+        "max": 40,
+        "description": "height in meters"
+      },
+      "bodyColor": {
+        "type": "color",
+        "default": "#e8e8ee",
+        "description": "body color"
+      },
+      "accentColor": {
+        "type": "color",
+        "default": "#d1453b",
+        "description": "nose and fin color"
+      }
+    },
+    "source": "const h = params.height;\nconst r = h * 0.11;\nconst profile = [[0, h * 0.12], [r * 0.85, h * 0.12], [r, h * 0.3], [r, h * 0.62], [r * 0.7, h * 0.82], [r * 0.25, h * 0.95], [0, h]];\nconst body = api.lathe(profile, 20);\nbody.vertexColor((x, y, z) => (y > h * 0.8 ? params.accentColor : params.bodyColor));\napi.add(body, { preset: 'metal', metalness: 0.4, roughness: 0.35 });\nconst fin = [[0, 0], [r * 1.4, 0], [r * 0.2, h * 0.38], [0, h * 0.38]];\nfor (let i = 0; i < 3; i++) {\n  const f = api.extrude(fin, r * 0.12).translate(r * 0.6, 0, 0).rotate(0, i * 120, 0);\n  api.add(f, { preset: 'metal', color: params.accentColor, metalness: 0.3, roughness: 0.4 });\n}\napi.add(api.cylinder(r * 0.55, r * 0.75, h * 0.08, 16).translate(0, h * 0.09, 0), { preset: 'metal', color: '#3b3e44', metalness: 0.8, roughness: 0.3 });\nconst ring = api.torus(r * 0.32, r * 0.06).translate(0, h * 0.58, r * 0.98);\napi.add(ring, { preset: 'metal', color: '#c9ced6', metalness: 0.9, roughness: 0.2 });\napi.add(api.sphere(r * 0.28, 2).scale(1, 1, 0.4).translate(0, h * 0.58, r * 0.95), { preset: 'glass', color: '#7fc8ff', emissive: '#1a5a8a', emissiveIntensity: 0.6, opacity: 0.85 });\napi.autoColliders('hull');\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "example",
+    "createdAt": "2026-10-13T10:13:48.064Z",
+    "attempts": 0
+  },
+  "checks": {
+    "triangles": 1004,
+    "parts": 5,
+    "colliders": 7
+  }
+}

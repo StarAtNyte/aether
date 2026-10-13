@@ -11,6 +11,7 @@ import { hashString, stableStringify } from '@aether/core';
 import { messageText, parseUserTurn } from '../../context';
 import type { CompletionRequest, CompletionResponse, ContentBlock, Provider } from '../../types';
 import { ProviderError } from '../errors';
+import type { MockLibraryItem } from './library';
 import { planMock } from './planner';
 
 /** Patches per apply_patches call (mirrors the tool limit). */
@@ -67,8 +68,18 @@ function coderResponse(req: CompletionRequest): CompletionResponse {
   ], 'tool_use');
 }
 
+/** Options of {@link createMockProvider}. */
+export interface MockProviderOptions {
+  /**
+   * Generator-library objects the planner may place by name ("a pagoda").
+   * The host must resolve their definitions (`AgentOptions.resolveGenerator`).
+   */
+  library?: readonly MockLibraryItem[];
+}
+
 /** Create the deterministic offline provider. */
-export function createMockProvider(): Provider {
+export function createMockProvider(opts: MockProviderOptions = {}): Provider {
+  const library = (opts.library ?? []).slice(0, 500);
   return {
     name: 'mock',
     async complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse> {
@@ -84,7 +95,7 @@ export function createMockProvider(): Provider {
 
       const raw = messageText(last);
       const envelope = parseUserTurn(raw);
-      const plan = planMock(envelope?.request ?? raw, envelope?.summary ?? '');
+      const plan = planMock(envelope?.request ?? raw, envelope?.summary ?? '', library);
       if (plan.patches.length === 0) return respond(req, [{ type: 'text', text: plan.message }], 'end');
 
       const key = hashString(raw).toString(36);

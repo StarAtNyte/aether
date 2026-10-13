@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "palm-hut",
+    "description": "Tropical beach hut on short stilts: bamboo walls, thatched palm-leaf conical roof, small ladder and doorway",
+    "category": "architecture",
+    "keywords": [
+      "palm hut",
+      "beach hut",
+      "tiki hut",
+      "thatched hut",
+      "bungalow"
+    ],
+    "params": {
+      "roofColor": {
+        "type": "color",
+        "default": "#b8893f",
+        "description": "Color of the dried palm-leaf thatch"
+      },
+      "size": {
+        "type": "number",
+        "default": 3.2,
+        "min": 1.5,
+        "max": 8,
+        "description": "Width and depth of the hut in meters"
+      }
+    },
+    "size": [
+      5.408,
+      6.424,
+      5.408
+    ]
+  },
+  "def": {
+    "id": "palm-hut",
+    "description": "Detailed tropical beach hut raised on short bamboo stilts, with woven bamboo walls, a layered palm-thatch conical roof, framed doorway, side windows, and a small leaning ladder.",
+    "params": {
+      "roofColor": {
+        "type": "color",
+        "default": "#b8893f",
+        "description": "Color of the dried palm-leaf thatch"
+      },
+      "size": {
+        "type": "number",
+        "default": 3.2,
+        "min": 1.5,
+        "max": 8,
+        "description": "Width and depth of the hut in meters"
+      }
+    },
+    "source": "const s = params.size;\nconst floorY = s * 0.38;\nconst wallH = s * 0.72;\nconst wallTop = floorY + wallH;\nconst postR = s * 0.045;\nconst bamboo = { preset: 'wood', color: '#b58a4b', roughness: 0.82, flatShading: true };\nconst bambooDark = { preset: 'wood', color: '#76522d', roughness: 0.9, flatShading: true };\nconst wallMat = { preset: 'wood', color: '#d1ad68', roughness: 0.95 };\nconst shadow = { preset: 'wood', color: '#211a12', roughness: 1 };\nconst thatch = { preset: 'leaf', color: params.roofColor, roughness: 1, flatShading: true };\nconst thatchDark = { preset: 'leaf', color: api.mix(params.roofColor, '#4d3015', 0.35), roughness: 1, flatShading: true };\nconst half = s * 0.5;\nconst wallHalf = s * 0.42;\nconst postH = wallTop + s * 0.08;\nfor (let ix = -1; ix <= 1; ix += 2) {\n  for (let iz = -1; iz <= 1; iz += 2) {\n    api.add(api.cylinder(postR * 0.82, postR, postH, 8).translate(ix * wallHalf, postH / 2, iz * wallHalf), bambooDark);\n  }\n}\napi.add(api.box(s * 0.9, s * 0.09, s * 0.9).translate(0, floorY, 0), bambooDark);\nfor (let i = -5; i <= 5; i++) {\n  api.add(api.cylinder(s * 0.018, s * 0.018, s * 0.86, 6).rotate(90, 0, 0).translate(i * s * 0.075, floorY + s * 0.055, 0), bamboo);\n}\nconst panelT = s * 0.035;\nconst doorW = s * 0.27;\nconst doorH = wallH * 0.72;\nconst sideW = (s * 0.84 - doorW) / 2;\napi.add(api.box(sideW, wallH, panelT).translate(-(doorW + sideW) / 2, floorY + wallH / 2, wallHalf), wallMat);\napi.add(api.box(sideW, wallH, panelT).translate((doorW + sideW) / 2, floorY + wallH / 2, wallHalf), wallMat);\napi.add(api.box(doorW, wallH - doorH, panelT).translate(0, floorY + doorH + (wallH - doorH) / 2, wallHalf), wallMat);\napi.add(api.box(doorW * 0.9, doorH * 0.96, panelT * 0.45).translate(0, floorY + doorH * 0.48, wallHalf + panelT), shadow);\nconst backY = floorY + wallH / 2;\napi.add(api.box(s * 0.84, wallH, panelT).translate(0, backY, -wallHalf), wallMat);\nconst winW = s * 0.25;\nconst winH = wallH * 0.32;\nconst lowerH = wallH * 0.28;\nconst upperH = wallH - lowerH - winH;\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.box(panelT, lowerH, s * 0.84).translate(side * wallHalf, floorY + lowerH / 2, 0), wallMat);\n  api.add(api.box(panelT, upperH, s * 0.84).translate(side * wallHalf, floorY + lowerH + winH + upperH / 2, 0), wallMat);\n  api.add(api.box(panelT, winH, (s * 0.84 - winW) / 2).translate(side * wallHalf, floorY + lowerH + winH / 2, -(winW + (s * 0.84 - winW) / 2) / 2), wallMat);\n  api.add(api.box(panelT, winH, (s * 0.84 - winW) / 2).translate(side * wallHalf, floorY + lowerH + winH / 2, (winW + (s * 0.84 - winW) / 2) / 2), wallMat);\n  api.add(api.box(panelT * 0.5, winH * 0.86, winW * 0.9).translate(side * (wallHalf + panelT), floorY + lowerH + winH / 2, 0), shadow);\n}\nfor (let side = -1; side <= 1; side += 2) {\n  for (let i = -3; i <= 3; i++) {\n    api.add(api.cylinder(s * 0.014, s * 0.014, s * 0.78, 6).rotate(90, 0, 0).translate(i * s * 0.105, floorY + wallH * 0.5, side * (wallHalf + panelT)), bamboo);\n    api.add(api.cylinder(s * 0.014, s * 0.014, s * 0.78, 6).rotate(90, 0, 90).translate(side * (wallHalf + panelT), floorY + wallH * 0.5, i * s * 0.105), bamboo);\n  }\n}\nfor (let y = 0; y < 4; y++) {\n  const yy = floorY + wallH * (0.18 + y * 0.21);\n  api.add(api.cylinder(s * 0.013, s * 0.013, s * 0.82, 6).rotate(0, 0, 90).translate(0, yy, wallHalf + panelT * 1.15), bamboo);\n  api.add(api.cylinder(s * 0.013, s * 0.013, s * 0.82, 6).rotate(0, 0, 90).translate(0, yy, -wallHalf - panelT * 1.15), bamboo);\n}\nconst frameR = s * 0.025;\napi.add(api.cylinder(frameR, frameR, doorH, 7).translate(-doorW / 2, floorY + doorH / 2, wallHalf + panelT * 1.8), bambooDark);\napi.add(api.cylinder(frameR, frameR, doorH, 7).translate(doorW / 2, floorY + doorH / 2, wallHalf + panelT * 1.8), bambooDark);\napi.add(api.cylinder(frameR, frameR, doorW, 7).rotate(0, 0, 90).translate(0, floorY + doorH, wallHalf + panelT * 1.8), bambooDark);\nconst roofBase = wallTop - s * 0.02;\nconst roofR = s * 0.69;\nconst roofH = s * 0.76;\napi.add(api.cone(roofR, roofH, 24).translate(0, roofBase + roofH / 2, 0), thatch);\napi.add(api.cone(roofR * 0.86, roofH * 0.68, 24).translate(0, roofBase + s * 0.08 + roofH * 0.34, 0), thatchDark);\napi.add(api.cone(roofR * 0.83, roofH * 0.65, 24).translate(0, roofBase + s * 0.1 + roofH * 0.325, 0), thatch);\nfor (let i = 0; i < 16; i++) {\n  const a = i * Math.PI * 2 / 16;\n  const ex = Math.cos(a) * roofR * 0.97;\n  const ez = Math.sin(a) * roofR * 0.97;\n  api.add(api.tube([[0, roofBase + roofH * 0.96, 0], [ex * 0.5, roofBase + roofH * 0.52, ez * 0.5], [ex, roofBase + s * 0.015, ez]], s * 0.012, 5), thatchDark);\n}\napi.add(api.cylinder(s * 0.035, s * 0.05, s * 0.22, 8).translate(0, roofBase + roofH + s * 0.04, 0), thatchDark);\nconst ladderZ = wallHalf + s * 0.28;\nconst ladderH = floorY + s * 0.08;\nfor (let x = -1; x <= 1; x += 2) {\n  api.add(api.cylinder(s * 0.025, s * 0.025, ladderH * 1.08, 7).rotate(-12, 0, 0).translate(x * doorW * 0.38, ladderH * 0.5, ladderZ), bambooDark);\n}\nfor (let i = 0; i < 4; i++) {\n  api.add(api.cylinder(s * 0.022, s * 0.022, doorW * 0.76, 7).rotate(0, 0, 90).translate(0, s * 0.09 + i * ladderH * 0.22, ladderZ + s * 0.07 - i * s * 0.025), bamboo);\n}\napi.collider({ kind: 'box', halfExtents: [s * 0.45, s * 0.055, s * 0.45], offset: [0, floorY, 0] });\nfor (let ix = -1; ix <= 1; ix += 2) {\n  for (let iz = -1; iz <= 1; iz += 2) api.collider({ kind: 'cylinder', radius: postR, halfHeight: postH / 2, offset: [ix * wallHalf, postH / 2, iz * wallHalf] });\n}\napi.collider({ kind: 'box', halfExtents: [s * 0.42, wallH / 2, panelT], offset: [0, floorY + wallH / 2, -wallHalf] });\napi.collider({ kind: 'box', halfExtents: [panelT, wallH / 2, s * 0.42], offset: [-wallHalf, floorY + wallH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [panelT, wallH / 2, s * 0.42], offset: [wallHalf, floorY + wallH / 2, 0] });\napi.collider({ kind: 'box', halfExtents: [sideW / 2, wallH / 2, panelT], offset: [-(doorW + sideW) / 2, floorY + wallH / 2, wallHalf] });\napi.collider({ kind: 'box', halfExtents: [sideW / 2, wallH / 2, panelT], offset: [(doorW + sideW) / 2, floorY + wallH / 2, wallHalf] });\napi.collider({ kind: 'cylinder', radius: roofR * 0.96, halfHeight: roofH * 0.22, offset: [0, roofBase + roofH * 0.22, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:25:21.730Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 2356,
+    "parts": 6,
+    "colliders": 11
+  }
+}
