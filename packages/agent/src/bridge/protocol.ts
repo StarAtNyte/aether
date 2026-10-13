@@ -87,6 +87,8 @@ export const BridgeBackendStatusSchema = z.object({
   loggedIn: z.boolean(),
   /** Human-readable state, e.g. "Logged in using ChatGPT". */
   detail: z.string().max(200),
+  /** Signed-in account and plan where the CLI reports them, e.g. "you@example.com · Max". */
+  account: z.string().max(160).optional(),
   models: z.array(BridgeModelSchema).max(32),
   defaultModel: z.string().regex(MODEL_ID_RE).optional(),
   /** Jobs running + queued. */

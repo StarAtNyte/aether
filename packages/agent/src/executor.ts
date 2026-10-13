@@ -10,7 +10,7 @@ import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool } from './tools';
-import type { AgentEvent, AgentHost, Provider, UsageTotals } from './types';
+import type { AgentEvent, AgentHost, AgentOptions, Provider, UsageTotals } from './types';
 
 /** Result of one tool execution. */
 export interface ToolOutcome {
@@ -35,6 +35,8 @@ export interface ExecutorContext {
   signal?: AbortSignal;
   /** Library generator definitions on demand (see {@link libraryDefinitions}). */
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
+  /** Agentic asset builder (deep build); see `AgentOptions.buildAsset`. */
+  buildAsset?: AgentOptions['buildAsset'];
 }
 
 const MAX_RESULT_CHARS = 20_000;
@@ -156,9 +158,40 @@ async function writeGeneratorTool(ctx: ExecutorContext, input: z.infer<typeof To
   return defineGenerator(ctx, parsed.data, []);
 }
 
+/** Deep build: an agentic worker iterates on the generator; its result is validated like any other. */
+async function buildAssetDeep(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.request_asset>): Promise<ToolOutcome | null> {
+  const build = ctx.buildAsset;
+  if (!build) return null;
+  const events: AgentEvent[] = [{ type: 'status', text: `Building "${input.id}" with the coding agent…` }];
+  let result: Awaited<ReturnType<NonNullable<ExecutorContext['buildAsset']>>>;
+  try {
+    result = await raceAbort(build({ id: input.id, description: input.description, ...(input.params_hint ? { paramsHint: input.params_hint } : {}) }, ctx.signal), ctx.signal);
+  } catch (e) {
+    if (ctx.signal?.aborted) throw e;
+    result = { ok: false, error: errorMessage(e) };
+  }
+  if (!result.ok) {
+    // Fall back to the single-shot coder (the caller continues with it).
+    events.push({ type: 'status', text: `The coding agent could not finish (${result.error.slice(0, 160)}); writing it directly instead…` });
+    return { content: '', isError: true, events, edited: false };
+  }
+  const parsed = GeneratorDef.safeParse({ ...result.def, id: input.id });
+  if (!parsed.success) return { content: '', isError: true, events: [...events, { type: 'status', text: 'The coding agent returned an invalid generator; writing it directly instead…' }], edited: false };
+  const check = await validateGenerator(ctx, parsed.data);
+  if (!check.ok) {
+    const error = check.error ?? 'validation failed';
+    events.push({ type: 'generator', def: parsed.data, ok: false, error }, { type: 'status', text: 'The built generator failed our checks; writing it directly instead…' });
+    return { content: '', isError: true, events, edited: false };
+  }
+  const out = await defineGenerator(ctx, parsed.data, events);
+  return out;
+}
+
 async function requestAssetTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.request_asset>): Promise<ToolOutcome> {
   if (ctx.builtinGenerators.has(input.id)) return fail(`"${input.id}" is a built-in generator; use it directly or pick another id.`);
-  const events: AgentEvent[] = [{ type: 'status', text: `Writing a custom generator "${input.id}"…` }];
+  const deep = await buildAssetDeep(ctx, input);
+  if (deep && !deep.isError) return deep;
+  const events: AgentEvent[] = [...(deep?.events ?? []), { type: 'status', text: `Writing a custom generator "${input.id}"…` }];
   const result = await requestGenerator(
     { provider: ctx.provider, system: ctx.coderSystem, validate: (def) => validateGenerator(ctx, def), usage: ctx.usage, ...(ctx.signal ? { signal: ctx.signal } : {}) },
     { id: input.id, description: input.description, ...(input.params_hint ? { paramsHint: input.params_hint } : {}) },

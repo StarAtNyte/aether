@@ -20,6 +20,7 @@ import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions, type Tu
 import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { restrictedEnv, withTempDir } from '../sandbox';
+import { sha256, type SessionStore } from '../sessions';
 
 /** Thread item types that mean the agent tried to act instead of answer. */
 export const FORBIDDEN_ITEM_TYPES: ReadonlySet<string> = new Set(['command_execution', 'file_change', 'mcp_tool_call', 'web_search']);
@@ -72,8 +73,16 @@ export function mcpDisableOverrides(names: readonly string[]): string[] {
 }
 
 /** Structural view of the SDK used here (a fake implements it in tests). */
+export interface CodexThreadLike {
+  readonly id?: string | null;
+  runStreamed(input: string | UserInput[], turnOptions?: TurnOptions): Promise<{ events: AsyncGenerator<ThreadEvent> }>;
+}
+
+/** Structural view of the SDK used here (a fake implements it in tests). */
 export interface CodexLike {
-  startThread(options?: ThreadOptions): { runStreamed(input: string | UserInput[], turnOptions?: TurnOptions): Promise<{ events: AsyncGenerator<ThreadEvent> }> };
+  startThread(options?: ThreadOptions): CodexThreadLike;
+  /** Resume a conversation by thread id (optional in fakes: sessions are then not resumed). */
+  resumeThread?(id: string, options?: ThreadOptions): CodexThreadLike;
 }
 
 /** Options of {@link createCodexBackend}. */
@@ -87,6 +96,15 @@ export interface CodexBackendOptions {
   mcpServers?: () => Promise<readonly string[] | null>;
   /** SDK factory (tests inject a fake). */
   createCodex?: (options: CodexOptions) => CodexLike;
+  /** Resumable conversations per project (see `TextCompletionRequest.session`). */
+  sessions?: SessionStore;
+}
+
+/** Image placeholders `[image N attached]` in a text (1-based indices). */
+function imageRefs(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/\[image (\d{1,2}) attached\]/g)) out.push(Number(m[1]));
+  return out;
 }
 
 function imageExt(mime: string): string {
@@ -118,9 +136,16 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
         } catch (e) {
           throw new BridgeError('cli_missing', 'The Codex CLI could not be found. Install it (npm i -g @openai/codex) and run "codex login".', { cause: e });
         }
-        const input: UserInput[] = [{ type: 'text', text: `<system>\n${req.system}\n</system>\n\n${req.prompt}` }];
-        for (let i = 0; i < Math.min(4, req.images.length); i++) {
-          const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(req.images[i] as string);
+        // A known conversation is resumed with only what is new; otherwise a fresh thread gets everything.
+        const session = req.session && opts.sessions ? req.session : undefined;
+        const plan = session && opts.sessions ? opts.sessions.plan(session.key, 'codex', req.model, req.system, session.body) : { resume: null };
+        const text = plan.resume
+          ? `${plan.delta.trim().length > 0 ? `${plan.delta.trim()}\n\n` : ''}${session?.tail ?? ''}`
+          : `<system>\n${req.system}\n</system>\n\n${req.prompt}`;
+        const input: UserInput[] = [{ type: 'text', text }];
+        const wanted = plan.resume ? imageRefs(text).map((n) => n - 1) : req.images.map((_, i) => i);
+        for (const i of wanted.slice(0, 4)) {
+          const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(req.images[i] ?? '');
           if (!m?.[1] || !m[2]) continue;
           const path = join(dir, `view-${i}.${imageExt(m[1])}`);
           await writeFile(path, Buffer.from(m[2], 'base64'), { mode: 0o600 });
@@ -135,12 +160,13 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
         const onAbort = (): void => ctrl.abort();
         if (signal?.aborted) ctrl.abort();
         else signal?.addEventListener('abort', onAbort, { once: true });
-        let text = '';
+        let reply = '';
         let usage: { inputTokens: number; outputTokens: number } | undefined;
         let failure: string | undefined;
         let violation: string | undefined;
+        let threadId: string | null | undefined;
         try {
-          const thread = codex.startThread(codexThreadOptions(req, dir));
+          const thread = plan.resume && codex.resumeThread ? codex.resumeThread(plan.resume.id, codexThreadOptions(req, dir)) : codex.startThread(codexThreadOptions(req, dir));
           const { events } = await thread.runStreamed(input, { outputSchema: req.schema, signal: ctrl.signal });
           for await (const ev of events) {
             if ((ev.type === 'item.started' || ev.type === 'item.updated' || ev.type === 'item.completed') && FORBIDDEN_ITEM_TYPES.has(ev.item.type)) {
@@ -148,12 +174,16 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
               ctrl.abort();
               break;
             }
-            if (ev.type === 'item.completed' && ev.item.type === 'agent_message') text = ev.item.text;
+            if (ev.type === 'thread.started') threadId = ev.thread_id;
+            else if (ev.type === 'item.completed' && ev.item.type === 'agent_message') reply = ev.item.text;
             else if (ev.type === 'turn.completed') usage = { inputTokens: ev.usage.input_tokens + ev.usage.cached_input_tokens, outputTokens: ev.usage.output_tokens };
             else if (ev.type === 'turn.failed') failure = ev.error.message;
             else if (ev.type === 'error') failure = ev.message;
           }
+          threadId ??= thread.id ?? null;
         } catch (e) {
+          // A resumed conversation that cannot continue is forgotten (the next call starts fresh).
+          if (plan.resume && session) opts.sessions?.forget(session.key, 'codex', req.model);
           if (violation) {
             /* reported below */
           } else if (timedOut) throw new BridgeError('timeout', `Codex did not answer within ${Math.round(timeoutMs / 1000)} s.`);
@@ -165,9 +195,13 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
           signal?.removeEventListener('abort', onAbort);
         }
         if (violation) throw new BridgeError('tool_violation', `Refused: Codex tried to use a tool (${violation}); the run was stopped.`);
-        if (failure) throw classifyCliFailure('Codex', failure);
-        if (!text) throw new BridgeError('backend_error', 'Codex returned an empty reply.');
-        return { text, ...(usage ? { usage } : {}), ...(req.model ? { model: req.model } : {}) };
+        if (failure) {
+          if (plan.resume && session) opts.sessions?.forget(session.key, 'codex', req.model);
+          throw classifyCliFailure('Codex', failure);
+        }
+        if (!reply) throw new BridgeError('backend_error', 'Codex returned an empty reply.');
+        if (session && threadId) opts.sessions?.record(session.key, 'codex', req.model, { id: threadId, systemHash: sha256(req.system), body: session.body });
+        return { text: reply, ...(usage ? { usage } : {}), ...(req.model ? { model: req.model } : {}), ...(plan.resume ? { resumed: true } : {}) };
       }, opts.tmpRoot);
     },
   };

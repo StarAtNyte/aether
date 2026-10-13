@@ -109,8 +109,8 @@ const MeshBar = memo(function MeshBar(): ReactElement | null {
   );
 });
 
-/** Brush size / strength / falloff (shared by all brushes). */
-const BrushCommon = memo(function BrushCommon(): ReactElement {
+/** Brush size, and for sculpt / paint strength and falloff. */
+const BrushCommon = memo(function BrushCommon({ sizeOnly = false }: { sizeOnly?: boolean }): ReactElement {
   const studio = useStudio();
   const b = useUI((s) => s.brush);
   const set = studio.store.getState().setBrush;
@@ -120,11 +120,15 @@ const BrushCommon = memo(function BrushCommon(): ReactElement {
         <span className="ctx-num__label">Size</span>
         <SliderField label="Brush size" value={b.size} min={0.25} max={30} step={0.25} format={(v) => `${v.toFixed(v < 10 ? 2 : 1)} m`} onCommit={(v) => set({ size: v })} />
       </label>
-      <label className="ctx-slider" data-tip="Brush strength (Shift+[ and ])" data-tip-pos="bottom">
-        <span className="ctx-num__label">Strength</span>
-        <SliderField label="Brush strength" value={b.strength} min={0.05} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onCommit={(v) => set({ strength: v })} />
-      </label>
-      <SelectField<'smooth' | 'linear' | 'sharp' | 'constant'> label="Falloff" value={b.falloff} options={['smooth', 'linear', 'sharp', 'constant']} onChange={(v) => set({ falloff: v })} />
+      {!sizeOnly && (
+        <>
+          <label className="ctx-slider" data-tip="Brush strength (Shift+[ and ])" data-tip-pos="bottom">
+            <span className="ctx-num__label">Strength</span>
+            <SliderField label="Brush strength" value={b.strength} min={0.05} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onCommit={(v) => set({ strength: v })} />
+          </label>
+          <SelectField<'smooth' | 'linear' | 'sharp' | 'constant'> label="Falloff" value={b.falloff} options={['smooth', 'linear', 'sharp', 'constant']} onChange={(v) => set({ falloff: v })} />
+        </>
+      )}
     </>
   );
 });
@@ -157,7 +161,7 @@ const PaintBar = memo(function PaintBar(): ReactElement {
   const set = studio.store.getState().setBrush;
   return (
     <div className="ctx-bar" role="toolbar" aria-label="Paint brush" data-testid="paint-bar">
-      <div className="ctx-swatches" role="radiogroup" aria-label="Paint colour">
+      <div className="ctx-swatches" role="radiogroup" aria-label="Paint color">
         {PAINT_SWATCHES.map((s) => (
           <button
             key={s.color}
@@ -172,7 +176,7 @@ const PaintBar = memo(function PaintBar(): ReactElement {
             onClick={() => set({ color: s.color, erase: false })}
           />
         ))}
-        <input className="ctx-color" type="color" value={color} aria-label="Custom colour" onChange={(e) => set({ color: e.target.value, erase: false })} />
+        <input className="ctx-color" type="color" value={color} aria-label="Custom color" onChange={(e) => set({ color: e.target.value, erase: false })} />
       </div>
       <button type="button" className={`ctx-btn${erase ? ' is-active' : ''}`} aria-pressed={erase} aria-label="Erase paint" data-tip="Erase paint (or hold Alt)" data-tip-pos="bottom" onClick={() => set({ erase: !erase })}>
         <Icon name="x" />
@@ -205,7 +209,7 @@ const ScatterBar = memo(function ScatterBar(): ReactElement {
         <Icon name="x" />
       </button>
       <span className="ctx-sep" aria-hidden="true" />
-      <BrushCommon />
+      <BrushCommon sizeOnly />
     </div>
   );
 });

@@ -25,7 +25,7 @@ export const DOCK_TOOLS: ReadonlyArray<{ id: EditorTool; label: string; icon: Ic
 /** Brush tools. */
 export const BRUSH_TOOLS: ReadonlyArray<{ id: EditorTool; label: string; icon: IconName; key: string; tip: string }> = [
   { id: 'sculpt', label: 'Sculpt', icon: 'sculpt', key: 'S', tip: 'Sculpt terrain and meshes' },
-  { id: 'paint', label: 'Paint', icon: 'brush', key: 'P', tip: 'Paint vertex colours' },
+  { id: 'paint', label: 'Paint', icon: 'brush', key: 'P', tip: 'Paint vertex colors' },
   { id: 'scatter', label: 'Scatter', icon: 'sprout', key: 'T', tip: 'Paint trees, grass and rocks' },
 ];
 

@@ -72,7 +72,8 @@ export async function probeCodex(deps: ProbeDeps): Promise<Omit<BridgeBackendSta
     if (cat.ok) models = parseCodexModels(cat.out.slice(0, cat.out.lastIndexOf('}') + 1));
   }
   if (models.length === 0) models = [...CODEX_FALLBACK_MODELS];
-  return { ...base, installed: true, loggedIn, detail: line.slice(0, 200), models, defaultModel: models[0]?.id ?? 'gpt-6.1-sol' };
+  const via = /using\s+(.+)$/i.exec(line)?.[1]?.trim();
+  return { ...base, installed: true, loggedIn, detail: line.slice(0, 200), ...(loggedIn && via ? { account: via.slice(0, 120) } : {}), models, defaultModel: models[0]?.id ?? 'gpt-6.1-sol' };
 }
 
 /** Status of the Claude Code CLI. */
@@ -84,17 +85,21 @@ export async function probeClaude(deps: ProbeDeps): Promise<Omit<BridgeBackendSt
   if (r.missing) return { ...base, installed: false, loggedIn: false, detail: 'Claude Code CLI not found', models };
   let loggedIn = false;
   let method = '';
+  let account = '';
   try {
     const j = JSON.parse(r.out.slice(r.out.indexOf('{'), r.out.lastIndexOf('}') + 1)) as Record<string, unknown>;
     loggedIn = j['loggedIn'] === true;
     method = typeof j['authMethod'] === 'string' ? j['authMethod'] : '';
     // An API-key login would bill per token: the bridge only uses subscription logins.
     if (loggedIn && j['apiProvider'] !== undefined && j['apiProvider'] !== 'firstParty') loggedIn = false;
+    const email = typeof j['email'] === 'string' && /^[^\s@]{1,64}@[^\s@]{1,100}$/.test(j['email']) ? j['email'] : '';
+    const plan = typeof j['subscriptionType'] === 'string' && /^[a-z0-9_-]{1,24}$/i.test(j['subscriptionType']) ? j['subscriptionType'] : '';
+    account = [email, plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : ''].filter(Boolean).join(' · ');
   } catch {
     loggedIn = false;
   }
   const detail = loggedIn ? `Logged in${method ? ` (${method.slice(0, 40)})` : ''}` : 'Not logged in — run "claude" once and sign in';
-  return { ...base, installed: true, loggedIn, detail, models, defaultModel: CLAUDE_DEFAULT_MODEL };
+  return { ...base, installed: true, loggedIn, detail, ...(loggedIn && account ? { account: account.slice(0, 160) } : {}), models, defaultModel: CLAUDE_DEFAULT_MODEL };
 }
 
 /**

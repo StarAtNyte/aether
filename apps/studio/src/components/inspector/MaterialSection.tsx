@@ -1,7 +1,7 @@
 /**
  * Material editor: preset swatches, colour, PBR sliders (roughness,
  * metalness), glow (emissive colour + intensity), opacity, flat shading,
- * vertex colours and the eyedropper ("copy the material of another object
+ * vertex colors and the eyedropper ("copy the material of another object
  * onto the selection"). Every change is one undoable edit.
  */
 import { memo, type ReactElement } from 'react';
@@ -56,8 +56,8 @@ export const MaterialSection = memo(function MaterialSection({ e, update, disabl
           />
         ))}
       </div>
-      <FieldRow label="Colour">
-        <ColorField label="Colour" value={m.color ?? preset?.color ?? '#cccccc'} disabled={disabled} onCommit={(c) => update({ material: { color: c } }, `Recolour ${name}`)} />
+      <FieldRow label="Color">
+        <ColorField label="Color" value={m.color ?? preset?.color ?? '#cccccc'} disabled={disabled} onCommit={(c) => update({ material: { color: c } }, `Recolor ${name}`)} />
       </FieldRow>
       <FieldRow label="Roughness">
         <SliderField label="Roughness" value={m.roughness ?? preset?.roughness ?? 0.6} min={0} max={1} step={0.01} disabled={disabled} onCommit={(n) => update({ material: { roughness: n } }, `Set ${name} roughness`)} />
@@ -65,8 +65,8 @@ export const MaterialSection = memo(function MaterialSection({ e, update, disabl
       <FieldRow label="Metalness">
         <SliderField label="Metalness" value={m.metalness ?? preset?.metalness ?? 0} min={0} max={1} step={0.01} disabled={disabled} onCommit={(n) => update({ material: { metalness: n } }, `Set ${name} metalness`)} />
       </FieldRow>
-      <FieldRow label="Glow colour">
-        <ColorField label="Emissive colour" value={m.emissive ?? '#000000'} disabled={disabled} onCommit={(c) => update({ material: { emissive: c, ...(m.emissiveIntensity === undefined || m.emissiveIntensity === 0 ? { emissiveIntensity: 1 } : {}) } }, `Set ${name} glow colour`)} />
+      <FieldRow label="Glow color">
+        <ColorField label="Emissive color" value={m.emissive ?? '#000000'} disabled={disabled} onCommit={(c) => update({ material: { emissive: c, ...(m.emissiveIntensity === undefined || m.emissiveIntensity === 0 ? { emissiveIntensity: 1 } : {}) } }, `Set ${name} glow color`)} />
       </FieldRow>
       <FieldRow label="Glow">
         <SliderField label="Emissive intensity" value={m.emissiveIntensity ?? 0} min={0} max={10} step={0.1} disabled={disabled} onCommit={(n) => update({ material: { emissiveIntensity: n } }, `Set ${name} glow`)} />
@@ -78,8 +78,8 @@ export const MaterialSection = memo(function MaterialSection({ e, update, disabl
         <Switch label="Flat shading" checked={m.flatShading === true} disabled={disabled} onChange={(v) => update({ material: { flatShading: v ? true : null } }, `${v ? 'Flat' : 'Smooth'} shading on ${name}`)} />
       </FieldRow>
       {(e.shape.kind === 'mesh' || e.shape.kind === 'procedural') && (
-        <FieldRow label="Vertex colours">
-          <Switch label="Use vertex colours" checked={m.vertexColors !== false} disabled={disabled} onChange={(v) => update({ material: { vertexColors: v ? null : false } }, `${v ? 'Show' : 'Hide'} vertex colours on ${name}`)} />
+        <FieldRow label="Vertex colors">
+          <Switch label="Use vertex colors" checked={m.vertexColors !== false} disabled={disabled} onChange={(v) => update({ material: { vertexColors: v ? null : false } }, `${v ? 'Show' : 'Hide'} vertex colors on ${name}`)} />
         </FieldRow>
       )}
       {m.preset !== undefined || m.color !== undefined ? (

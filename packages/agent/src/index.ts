@@ -17,6 +17,8 @@ export type {
   Provider,
   ToolDef,
   UsageTotals,
+  AssetBuildSpec,
+  AssetBuildResult,
 } from './types';
 
 export { WorldAgent, COMPACT_LIMITS, type RunOptions } from './agent';
@@ -41,6 +43,7 @@ export { EMULATION_LIMITS, EmulatedReplySchema, parseEmulatedReply, replyJsonSch
 export { protocolInstructions, renderTranscript, type RenderedPrompt } from './emulation/transcript';
 export { extractJsonObject } from './emulation/json';
 export * from './bridge/protocol';
+export * from './bridge/local-protocol';
 export { BRIDGE_COMPLETE_TIMEOUT_MS, BRIDGE_PROBE_TIMEOUT_MS, createBridgeProvider, fetchBridgeStatus, pairBridge, type BridgeProviderOptions } from './bridge/client';
 export { createFallbackProvider, type FallbackNotice, type FallbackProvider, type FallbackProviderOptions } from './providers/fallback';
 export { createWebLlmBackend, createWebLlmProvider, type WebLlmEngineLike, type WebLlmProviderOptions } from './providers/webllm';

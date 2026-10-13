@@ -52,6 +52,7 @@ export const CompletionRequestSchema = z
     tools: z.array(ToolDefSchema).max(WIRE_LIMITS.MAX_TOOLS).optional(),
     maxTokens: z.number().int().positive().max(WIRE_LIMITS.MAX_OUTPUT_TOKENS).optional(),
     temperature: z.number().min(0).max(2).optional(),
+    session: z.string().regex(/^[a-z0-9][a-z0-9-]{7,79}$/).optional(),
   })
   .refine((r) => countImages(r.messages) <= WIRE_LIMITS.MAX_IMAGES, { message: `at most ${WIRE_LIMITS.MAX_IMAGES} images per request` });
 

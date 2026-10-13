@@ -43,6 +43,10 @@ function addUsage(usage: UsageTotals, res: CompletionResponse): void {
   usage.calls += 1;
   usage.inputTokens += res.usage?.inputTokens ?? 0;
   usage.outputTokens += res.usage?.outputTokens ?? 0;
+  if (res.model) {
+    const list = (usage.models ??= []);
+    if (!list.includes(res.model.slice(0, 64)) && list.length < 4) list.push(res.model.slice(0, 64));
+  }
 }
 
 /** Ask the coder model for a generator with the given id and description. */

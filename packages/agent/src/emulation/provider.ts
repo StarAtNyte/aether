@@ -35,6 +35,13 @@ export interface TextCompletionRequest {
   model?: string;
   effort?: TextEffort;
   maxOutputTokens?: number;
+  /**
+   * Resumable conversation (see `CompletionRequest.session`): `body` is the
+   * append-only conversation and `tail` the closing instruction, so a backend
+   * that resumes a thread sends only what follows the body it already sent.
+   * `prompt` stays the complete prompt for backends that ignore sessions.
+   */
+  session?: { key: string; body: string; tail: string };
 }
 
 /** Result of a text completion. */
@@ -45,6 +52,8 @@ export interface TextCompletionResult {
   structured?: unknown;
   usage?: { inputTokens: number; outputTokens: number };
   model?: string;
+  /** The backend continued an earlier conversation (sent only the new part). */
+  resumed?: boolean;
 }
 
 /** A backend that returns text (ideally JSON) but has no native tool calling. */
@@ -82,7 +91,7 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
     name: opts.name ?? backend.name,
     async complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse> {
       const tools = req.tools ?? [];
-      const rendered = renderTranscript(req, backend.strictSchema, opts.compact ? { resultChars: COMPACT_RESULT_CHARS } : {});
+      const rendered = renderTranscript(req, backend.strictSchema, { ...(opts.compact ? { resultChars: COMPACT_RESULT_CHARS } : {}), ...(req.session ? { stable: true } : {}) });
       const schema = replyJsonSchema(tools, backend.strictSchema);
       const salt = hashString(rendered.prompt).toString(36);
       let prompt = rendered.prompt;
@@ -103,6 +112,7 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
             ...(model0 ? { model: model0 } : {}),
             ...(opts.effort ? { effort: opts.effort } : {}),
             ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
+            ...(req.session ? { session: { key: req.session, body: rendered.body, tail: attempt === 0 ? rendered.tail : prompt.slice(rendered.body.length).trimStart() } } : {}),
           },
           signal,
         );

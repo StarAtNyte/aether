@@ -16,3 +16,12 @@ export { createCodexBackend, codexLockdownConfig, codexThreadOptions, mcpDisable
 export { probeCodex, probeClaude, parseCodexModels, listCodexMcpServers, cached, CODEX_FALLBACK_MODELS } from './backends/status';
 export { createHeadlessBackends, createHeadlessProvider, resolveCommands, type HeadlessOptions } from './headless';
 export { which } from './which';
+export { LocalAi, LOCAL_AI_VERSION, type LocalAiOptions } from './local';
+export { SessionStore, sha256, SESSION_KEY_RE, MAX_SESSIONS, SESSION_TTL_MS, type SessionEntry } from './sessions';
+export { LoginManager, parseLoginOutput, sanitizeOutput, loginArgs, logoutArgs, type LoginState, type LoginBackend } from './auth';
+export { CodexAccounts, DEFAULT_ACCOUNT_ID, MAX_ACCOUNTS, type AccountView } from './accounts';
+export { JobManager, validateGeneratorDef, type JobManagerOptions, type JobRecord, type JobEvent } from './worker/jobs';
+export { runWorker, stopAllWorkers, runningWorkers, defaultWorkerCommand, KILL_GRACE_MS } from './worker/runner';
+export { createWorkerTextBackend, createWorkerSessionStore } from './worker/text-backend';
+export { createAssetWorkspace, removeWorkspace, parseAssetArtifact, assetTask, bundledCheckScript, ASSET_ARTIFACT } from './worker/workspace';
+export { WorkerJob, WorkerResult, parseProgressLine, PROGRESS_PREFIX, type WorkerRunner, type WorkerProgress } from './worker/protocol';

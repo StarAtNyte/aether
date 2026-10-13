@@ -40,6 +40,12 @@ export interface CompletionRequest {
   maxTokens?: number;
   /** Advisory only: current reasoning models reject sampling parameters, so providers may ignore it. */
   temperature?: number;
+  /**
+   * Conversation key (per project): backends that keep threads (Codex,
+   * Claude Code) resume the same conversation and receive only what is new.
+   * Other providers ignore it.
+   */
+  session?: string;
 }
 
 /** A normalized completion response. */
@@ -119,6 +125,13 @@ export interface AgentOptions {
    */
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
   /**
+   * Build a custom generator with an agentic worker (a coding agent that
+   * iterates in a sandboxed workspace with a checker) instead of one
+   * single-shot coder call. The returned definition is untrusted: it goes
+   * through the host's `validateGenerator` like any other.
+   */
+  buildAsset?: (spec: AssetBuildSpec, signal?: AbortSignal) => Promise<AssetBuildResult>;
+  /**
    * Prompt profile (default 'full'). 'compact' is for small models with a
    * ~4k-token context (on-device): a condensed system prompt, only the
    * apply_patches and finish tools, a shorter world summary and history,
@@ -135,4 +148,17 @@ export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   calls: number;
+  /** Models that actually answered (as reported by the provider), in order of first use. */
+  models?: string[];
 }
+
+/** What {@link AgentOptions.buildAsset} is asked to build. */
+export interface AssetBuildSpec {
+  /** Generator id to define (lowercase slug). */
+  id: string;
+  description: string;
+  paramsHint?: string;
+}
+
+/** Result of {@link AgentOptions.buildAsset}: the generator (validated again by the host), or why it failed. */
+export type AssetBuildResult = { ok: true; def: GeneratorDef; note?: string } | { ok: false; error: string };

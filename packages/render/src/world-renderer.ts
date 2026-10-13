@@ -968,7 +968,7 @@ export class WorldRenderer {
    * Show the components of a mesh entity for editing (null hides them).
    * `edges` are vertex pairs; the selections index the mounted mesh.
    */
-  showMeshComponents(view: { id: EntityId; mode: ComponentMode; edges: Uint32Array; selectedVertices: ArrayLike<number>; selectedEdges: ArrayLike<number>; selectedFaces: ArrayLike<number> } | null): boolean {
+  showMeshComponents(view: { id: EntityId; mode: ComponentMode; edges: Uint32Array; selectedVertices: ArrayLike<number>; selectedEdges: ArrayLike<number>; selectedFaces: ArrayLike<number>; markerVertices?: ArrayLike<number> } | null): boolean {
     this.needsDraw = true;
     if (!view) {
       this.editOverlay.setComponents(null);
@@ -980,7 +980,7 @@ export class WorldRenderer {
       this.editOverlay.setComponents(null);
       return false;
     }
-    this.editOverlay.setComponents({ target, bundle, mode: view.mode, edges: view.edges, selectedVertices: view.selectedVertices, selectedEdges: view.selectedEdges, selectedFaces: view.selectedFaces });
+    this.editOverlay.setComponents({ target, bundle, mode: view.mode, edges: view.edges, selectedVertices: view.selectedVertices, selectedEdges: view.selectedEdges, selectedFaces: view.selectedFaces, ...(view.markerVertices ? { markerVertices: view.markerVertices } : {}) });
     return true;
   }
 

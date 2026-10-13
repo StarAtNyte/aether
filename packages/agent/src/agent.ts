@@ -28,7 +28,19 @@ export interface RunOptions {
   images?: string[];
   /** Prior conversation (text is kept; tool traffic and images are dropped). */
   history?: ChatMessage[];
+  /** Conversation key forwarded to providers that keep threads (see `CompletionRequest.session`). */
+  session?: string;
 }
+
+/** Record a provider's reported model in the usage totals (at most 4, first use order). */
+export function noteModel(usage: UsageTotals, model: string | undefined): void {
+  if (!model) return;
+  const list = (usage.models ??= []);
+  const m = model.slice(0, 64);
+  if (!list.includes(m) && list.length < 4) list.push(m);
+}
+
+const SESSION_RE = /^[a-z0-9][a-z0-9-]{7,79}$/;
 
 function clampInt(v: number | undefined, fallback: number, min: number, max: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.floor(v))) : fallback;
@@ -93,7 +105,7 @@ export class WorldAgent {
       const aborted = opts.signal?.aborted === true || isAbortError(e);
       yield { type: 'error', text: aborted ? 'Cancelled.' : `Agent failed: ${errorMessage(e).slice(0, 500)}` };
     }
-    yield { type: 'done', usage: { ...usage } };
+    yield { type: 'done', usage: { ...usage, ...(usage.models ? { models: [...usage.models] } : {}) } };
   }
 
   private async *loop(prompt: string, host: AgentHost, opts: RunOptions, usage: UsageTotals): AsyncGenerator<AgentEvent> {
@@ -112,6 +124,7 @@ export class WorldAgent {
       builtinGenerators: this.builtinGenerators,
       usage,
       ...(this.opts.resolveGenerator ? { resolveGenerator: this.opts.resolveGenerator } : {}),
+      ...(this.opts.buildAsset ? { buildAsset: this.opts.buildAsset } : {}),
       ...(signal ? { signal } : {}),
     };
 
@@ -133,13 +146,15 @@ export class WorldAgent {
     yield { type: 'status', text: 'Planning…' };
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
+      const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
       const res: CompletionResponse = await raceAbort(
-        this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens }, signal),
+        this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
         signal,
       );
       usage.calls += 1;
       usage.inputTokens += res.usage?.inputTokens ?? 0;
       usage.outputTokens += res.usage?.outputTokens ?? 0;
+      noteModel(usage, res.model);
       messages.push({ role: 'assistant', content: res.content });
 
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');

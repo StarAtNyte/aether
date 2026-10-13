@@ -41,6 +41,8 @@ export interface ComponentView {
   /** Welded edges as vertex index pairs (wireframe). */
   edges: Uint32Array;
   selectedVertices: ArrayLike<number>;
+  /** Vertices that get markers in vertex mode (e.g. one per welded position); default: all. */
+  markerVertices?: ArrayLike<number>;
   /** Selected edges as vertex index pairs. */
   selectedEdges: ArrayLike<number>;
   selectedFaces: ArrayLike<number>;
@@ -154,7 +156,8 @@ export class EditOverlay {
     const selected = new Set<number>();
     for (let i = 0; i < view.selectedVertices.length; i++) selected.add(view.selectedVertices[i] as number);
     const showAll = view.mode === 'vertex' && n <= MAX_VERTEX_MARKERS;
-    const list: number[] = showAll ? Array.from({ length: n }, (_, i) => i) : [...selected];
+    const candidates = view.markerVertices;
+    const list: number[] = showAll ? (candidates ? Array.from(candidates) : Array.from({ length: n }, (_, i) => i)) : [...selected];
     if (list.length === 0) return;
     const bb = view.bundle.full.boundingBox;
     const size = bb ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) : 1;

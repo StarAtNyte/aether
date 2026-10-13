@@ -193,7 +193,16 @@ export class MeshEditor {
       return;
     }
     const vertices = me.mode === 'vertex' ? me.vertices : [];
-    const ok = sim.renderer.showMeshComponents({ id: me.id, mode: me.mode, edges: this.edgeList(m.data), selectedVertices: vertices, selectedEdges: me.mode === 'edge' ? me.edges : [], selectedFaces: me.mode === 'face' ? me.faces : [] });
+    const ok = sim.renderer.showMeshComponents({
+      id: me.id,
+      mode: me.mode,
+      edges: this.edgeList(m.data),
+      selectedVertices: vertices,
+      selectedEdges: me.mode === 'edge' ? me.edges : [],
+      selectedFaces: me.mode === 'face' ? me.faces : [],
+      // One marker per position: split copies of a vertex would overdraw each other.
+      ...(me.mode === 'vertex' ? { markerVertices: this.topology(m.data).reps } : {}),
+    });
     // The mesh is still being (re)built: the next sync calls refresh again.
     if (!ok) return;
     sim.suspendEntityGizmo(true);

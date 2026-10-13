@@ -18,7 +18,12 @@ const RESULT_CHARS = 12_000;
 /** A request rendered for a text-only backend. */
 export interface RenderedPrompt {
   system: string;
+  /** The whole user prompt (`body` + the closing instruction). */
   prompt: string;
+  /** The conversation without the closing instruction (append-only in stable mode). */
+  body: string;
+  /** The closing instruction. */
+  tail: string;
   /** Image data URLs, in conversation order (at most 4 by the wire limits). */
   images: string[];
 }
@@ -67,6 +72,13 @@ function summarizeInput(input: unknown): string {
 export interface TranscriptOptions {
   /** Characters kept per tool result (default 12 000; small-context models use less). */
   resultChars?: number;
+  /**
+   * Stable rendering for resumed conversations: every assistant turn is
+   * summarised the same way whether or not it is the latest, so the body
+   * only ever grows by appending (a resumed thread already holds the
+   * model's full earlier replies).
+   */
+  stable?: boolean;
 }
 
 function renderBlock(b: ContentBlock, latestAssistant: boolean, images: string[], resultChars: number): string | null {
@@ -108,12 +120,13 @@ export function renderTranscript(req: CompletionRequest, strict: boolean, opts: 
   const parts: string[] = [];
   req.messages.forEach((m, i) => {
     const body = blocksOf(m)
-      .map((b) => renderBlock(b, i === lastAssistant, images, resultChars))
+      .map((b) => renderBlock(b, !opts.stable && i === lastAssistant, images, resultChars))
       .filter((s): s is string => s !== null)
       .join('\n');
     if (body.length === 0) return;
     parts.push(m.role === 'user' ? `<user>\n${body}\n</user>` : `<assistant>\n${body}\n</assistant>`);
   });
-  parts.push(tools.length > 0 ? 'Reply now with the JSON object (tool protocol).' : 'Reply now with the JSON object.');
-  return { system, prompt: parts.join('\n\n'), images };
+  const tail = tools.length > 0 ? 'Reply now with the JSON object (tool protocol).' : 'Reply now with the JSON object.';
+  const body = parts.join('\n\n');
+  return { system, prompt: body.length > 0 ? `${body}\n\n${tail}` : tail, body, tail, images };
 }

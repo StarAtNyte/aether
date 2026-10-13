@@ -13,13 +13,14 @@
   pointer-events: none;
 }
 
-/* Context bar: top-centre of the viewport */
+/* Context bar: top-centre of the viewport, below the camera / checks row */
 .vp-context {
   position: absolute;
-  top: var(--s-3);
+  top: calc(var(--s-3) + 44px);
   left: 50%;
   z-index: var(--z-overlay);
-  max-width: calc(100% - 2 * 220px);
+  width: max-content;
+  max-width: calc(100% - 2 * var(--s-3));
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -477,7 +478,7 @@
   min-width: 120px;
 }
 
-.rule-editor__action-head .rule-editor__hint {
+.rule-editor__action-head .select {
   flex: 1 1 auto;
 }
 
@@ -533,9 +534,3 @@
   color: var(--danger);
 }
 
-@media (max-width: 1100px) {
-  .vp-context {
-    top: 52px;
-    max-width: calc(100% - 24px);
-  }
-}

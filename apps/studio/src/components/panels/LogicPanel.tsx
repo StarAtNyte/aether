@@ -82,8 +82,9 @@ const RuleEditor = memo(function RuleEditor({ rule, entityIds, onClose }: { rule
         {draft.then.map((a, i) => (
           <div key={i} className="rule-editor__action">
             <div className="rule-editor__action-head">
-              <SelectField<Action['do']> label="Action" value={a.do} options={ACTION_KINDS} onChange={(kind) => setAction(i, defaultAction(kind))} />
-              <span className="rule-editor__hint">{ACTION_LABELS[a.do]}</span>
+              <span className="rule-editor__select" data-tip={ACTION_LABELS[a.do]}>
+                <SelectField<Action['do']> label="Action" value={a.do} options={ACTION_KINDS} onChange={(kind) => setAction(i, defaultAction(kind))} />
+              </span>
               <button type="button" className="icon-btn icon-btn--xs" disabled={draft.then.length <= 1} aria-label="Remove action" onClick={() => setDraft({ ...draft, then: draft.then.filter((_, j) => j !== i) })}>
                 <Icon name="x" />
               </button>
