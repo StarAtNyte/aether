@@ -466,3 +466,58 @@ that fails without the fix):
   run); the CLI discovery commands the bridge relies on (`codex login
   status`, `codex debug models`, `codex mcp list --json`, `claude auth
   status --json`) were re-checked on this machine without model calls.
+
+## Zero-cost AI connections — follow-up audit
+
+Scope: re-audit of every item of the stage against the code (bridge, both
+headless backends, emulation, browser client, connection manager, composer
+and settings, BYO-key passthrough, server headless providers, library, eval,
+quality loop), then the gates and real runs. Defects fixed, each with a
+regression test:
+
+1. **Stale model id sent to the CLI.** The composer and Settings sent the
+   saved Codex / Claude Code model even when the signed-in CLI's catalog no
+   longer listed it, so every call would fail and fall back. New
+   `effectiveBridgeChoice` (studio `ai/connection.ts`) keeps the saved model
+   only while the catalog lists it (else the backend's `defaultModel`), keeps
+   the effort only when that model supports it, and is used by `resolve`,
+   `createProvider`, the model picker check marks and the Settings select.
+2. **Hosted page + Safari silently "offline".** WebKit (Safari and every iOS
+   browser) blocks `http://127.0.0.1` from https pages, which surfaced only
+   as "bridge offline". `hostedBridgeNote` now shows a clear note in the
+   setup pane (WebKit: use Chrome/Edge/Firefox or run the studio locally;
+   Chromium: allow local-network access if asked), plus a troubleshooting
+   entry; README and ARCHITECTURE document it.
+
+**SECURITY**
+
+- No new input boundary: the user agent and origin are read locally and
+  only select a static message; the model choice is taken from the bridge
+  status, which is already zod-validated (`BridgeStatusSchema`, ids match
+  `MODEL_ID_RE`) and re-checked by the bridge before any CLI argument is
+  built. No `eval`, no `innerHTML`, CSP unchanged, no new dependency.
+- `npm audit --omit=dev`: 0 vulnerabilities.
+- Re-checked: tokens in sessionStorage only, bridge Host/Origin/bearer
+  enforcement, tool lockdown of both CLIs, restricted environment, temp
+  directory cleanup, BYO key never logged (vendor error text not logged).
+
+**PERFORMANCE**
+
+- No render-loop or engine code changed; per-frame allocation and GPU
+  disposal are unchanged from the memory stage (`e2e:memory` not re-run).
+- Bundle: editor chunk 480.97 → 480.86 KB; first-load chunks unchanged;
+  WebLLM remains a lazy 6.1 MB chunk loaded only after opt-in.
+
+**Verification**
+
+- `tsc -p tsconfig.json --noEmit`: 0 errors. Vitest: 91 files, 1368 tests.
+- `npm run build -w @aether/studio`: ok. `npm run smoke`: 13/13.
+- `npm run e2e`: Chromium WebGPU, Chromium WebGL2-only, Firefox WebGL2 passed.
+- `npm run e2e:connection`: Chromium and Firefox passed.
+- `npm run eval` (offline): patch error rate 0 %, verification 100 %,
+  quality mean 87.9.
+- Real runs (`npm run e2e:bridge`, Chromium, one prompt each): Claude Code
+  `haiku` 54.4 s, verified after one repair, quality 89; Codex `gpt-6.1-sol`
+  140.1 s, verified after two repairs, quality 88. Both worlds were built
+  through the bridge with no fallback. All servers, bridges and browsers
+  started for these runs were shut down.

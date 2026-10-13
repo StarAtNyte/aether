@@ -189,6 +189,11 @@ https://your-host` adds a hosted studio), and runs each request in an empty
 temporary folder with all tools, shell, file and network access disabled. A
 published `npx aether-bridge` command is planned.
 
+From a hosted (https) copy of the studio, Chrome, Edge and Firefox can reach
+the bridge (Chrome may first ask to allow access to your local network).
+Safari and iOS browsers block https pages from calling local services, so
+there run the studio locally (`npm run dev`) and pair from that page.
+
 To let the **server** itself use a signed-in CLI on this machine instead,
 start it with `AETHER_PROVIDER=codex` or `AETHER_PROVIDER=claude-code`.
 

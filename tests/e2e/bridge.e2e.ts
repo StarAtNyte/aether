@@ -27,7 +27,7 @@ const arg = (name: string): string | undefined => argv.find((a) => a.startsWith(
 const which = arg('backend') ?? 'both';
 const BACKENDS: Backend[] = which === 'both' ? ['codex', 'claude-code'] : which === 'codex' || which === 'claude-code' ? [which] : [];
 const FIREFOX = argv.includes('--firefox');
-const MODELS: Record<Backend, string> = { codex: arg('codex-model') ?? 'gpt-5.6-sol', 'claude-code': arg('claude-model') ?? 'haiku' };
+const MODELS: Record<Backend, string> = { codex: arg('codex-model') ?? 'gpt-6.1-sol', 'claude-code': arg('claude-model') ?? 'haiku' };
 
 function log(line: string): void {
   process.stdout.write(`${line}\n`);

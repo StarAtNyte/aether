@@ -32,6 +32,16 @@ export const LIMITS = Object.freeze({
   MAX_INPUT_NODES: 2_000_000,
   /** Maximum length of any single string in untrusted input. */
   MAX_STRING_LENGTH: 100_000,
+  /** Maximum number of editable mesh assets in `world.meshes`. */
+  MAX_MESHES: 128,
+  /** Maximum vertices of one mesh asset (indices are stored as uint16). */
+  MAX_MESH_VERTICES: 65_536,
+  /** Maximum triangles of one mesh asset. */
+  MAX_MESH_TRIANGLES: 131_072,
+  /** Maximum decoded bytes of all mesh assets of a world together. */
+  MAX_MESH_BYTES: 24 * 1024 * 1024,
+  /** Maximum hand-placed points of one scatter entity. */
+  MAX_SCATTER_POINTS: 20_000,
 });
 
 /** Type of {@link LIMITS}. */

@@ -552,14 +552,26 @@ identical requests hit a content-hash cache, and timeouts or a cancelled
 request kill the child process.
 
 Measured on the development machine (one call each, low effort, the full
-planner prompt plus a two-tool request): Codex (`gpt-5.6-sol` default) 22.3 s,
+planner prompt plus a two-tool request): Codex (`gpt-5.6-sol`) 22.3 s,
 Claude Code (`haiku`) 6.1 s. The offline planner answers in under 0.2 s.
 A whole studio turn through the bridge (`npm run e2e:bridge`, prompt "a small
 lighthouse on a rocky islet at sunset", refine off: plan, a new generator,
-patches, verification and the quality pass) took 28 s with Claude Code
-`haiku` and 59 s with Codex `gpt-5.6-sol` in Chromium, and 81 s with Claude
-Code in Firefox (one extra planning turn). Every world was verified, with
-quality scores of 89–95.
+patches, verification, repairs and the quality pass), latest run in
+Chromium: Claude Code `haiku` 54 s (one repair round), Codex `gpt-6.1-sol`
+140 s (two repair rounds); an earlier run took 28 s with Claude Code and 59 s
+with Codex `gpt-5.6-sol`, and 81 s with Claude Code in Firefox. The spread
+comes from how many repair rounds the model needs. Every world was verified,
+with quality scores of 88–95.
+
+The studio reconciles the saved model with the catalog the bridge reports
+(`effectiveBridgeChoice`): a model that the signed-in CLI no longer lists is
+replaced by that backend's default instead of failing every call.
+
+Browsers: from a hosted https page, Chromium and Firefox may call
+`http://127.0.0.1` (Chromium may first ask for local-network access, and the
+bridge answers the Private Network Access preflight). WebKit (Safari and all
+iOS browsers) blocks it as mixed content, so the setup pane says so and
+points to running the studio locally.
 
 ### 12.2 Generator library
 

@@ -554,6 +554,18 @@ a published `npx aether-bridge` is planned (`bin/aether-bridge.mjs`).
   locked-down backends in Node (server `AETHER_PROVIDER=codex|claude-code`,
   `scripts/eval-agent.ts`, `scripts/build-generator-library.ts`).
 
+### Studio side of the bridge (`apps/studio/src/ai/`)
+
+```ts
+// What a bridge send actually uses: the chosen backend when signed in (else the first signed-in one),
+// the saved model only while that backend's catalog lists it (else its defaultModel), and the saved
+// effort only when that model supports it. With no catalog yet, the saved choice is sent unchanged.
+export function effectiveBridgeChoice(prefs: AiPrefs, backends: readonly BridgeBackendStatus[]): { backend; model: string | undefined; effort };
+// Browser limits for a hosted (https) studio reaching http://127.0.0.1: WebKit (Safari, every iOS
+// browser) blocks it as mixed content ('warn'); Chromium may ask for local-network access ('info').
+export function hostedBridgeNote(origin: string, userAgent: string): { tone: 'warn' | 'info'; text: string } | null;
+```
+
 ## Generator library (`@aether/procgen`)
 
 ```ts

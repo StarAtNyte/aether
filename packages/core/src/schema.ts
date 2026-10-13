@@ -122,12 +122,33 @@ export const ScatterShape = z.object({
   onSurface: EntityId.optional(),
   /** Minimum spacing between instances in meters (best effort). */
   minSpacing: z.number().min(0).optional(),
+  /**
+   * Hand-placed instances (scatter painting): local positions relative to the
+   * entity. When present they replace the random layout (`count`, `area` and
+   * `minSpacing` are then ignored for placement); yaw and scale still come
+   * from `seed`. With `onSurface` the height is re-projected onto the surface.
+   */
+  points: z.array(Vec3).max(20_000).optional(),
+});
+
+/** Mesh asset id (same syntax as entity ids). */
+export const MeshId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'mesh ids are lowercase slugs');
+export type MeshId = z.infer<typeof MeshId>;
+
+/**
+ * An editable mesh (baked from a procedural object or edited by hand). The
+ * data lives in `world.meshes[mesh]` so documents stay plain JSON.
+ */
+export const MeshShape = z.object({
+  kind: z.literal('mesh'),
+  mesh: MeshId,
 });
 
 export const NoneShape = z.object({ kind: z.literal('none') });
 
-export const ShapeSpec = z.discriminatedUnion('kind', [PrimitiveShape, ProceduralShape, ModelShape, ScatterShape, NoneShape]);
+export const ShapeSpec = z.discriminatedUnion('kind', [PrimitiveShape, ProceduralShape, ModelShape, ScatterShape, NoneShape, MeshShape]);
 export type ShapeSpec = z.infer<typeof ShapeSpec>;
+export type MeshShape = z.infer<typeof MeshShape>;
 export type PrimitiveShape = z.infer<typeof PrimitiveShape>;
 export type ProceduralShape = z.infer<typeof ProceduralShape>;
 export type ModelShape = z.infer<typeof ModelShape>;
@@ -256,6 +277,11 @@ export const Entity = z.object({
   receiveShadow: z.boolean().default(true),
   /** When true the entity is a template for `spawn` actions and is not instantiated. */
   template: z.boolean().default(false),
+  /**
+   * Locked by the user in the editor: not selectable in the viewport, and the
+   * agent must not change it (its patches are refused with an explanation).
+   */
+  locked: z.boolean().optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -412,6 +438,41 @@ export const WorldTest = z.discriminatedUnion('kind', [
 export type WorldTest = z.infer<typeof WorldTest>;
 
 // ---------------------------------------------------------------------------
+// Mesh assets — editable geometry stored in the document (see core mesh codec)
+// ---------------------------------------------------------------------------
+
+/**
+ * Binary data as base64 chunks (each ≤ 64 Ki characters, so no single string
+ * exceeds the untrusted-input string limit). Little-endian.
+ */
+export const Base64Chunks = z.array(z.string().max(65_536).regex(/^[A-Za-z0-9+/]*={0,2}$/, 'chunks must be base64')).max(256);
+export type Base64Chunks = z.infer<typeof Base64Chunks>;
+
+/**
+ * Indexed triangle mesh. Encoding (see `encodeMesh` / `decodeMesh`):
+ * `positions` float32 xyz, `indices` uint16 (3 per triangle, counter-clockwise
+ * front faces), `colors` uint8 sRGB rgb per vertex, `uvs` float32 uv per
+ * vertex, `faceMaterials` uint8 slot per triangle into `materials`.
+ * Normals are derived (smooth, split where vertices are split).
+ */
+export const MeshAsset = z.object({
+  id: MeshId,
+  vertexCount: z.number().int().min(3).max(65_536),
+  triangleCount: z.number().int().min(1).max(131_072),
+  positions: Base64Chunks,
+  indices: Base64Chunks,
+  colors: Base64Chunks.optional(),
+  uvs: Base64Chunks.optional(),
+  faceMaterials: Base64Chunks.optional(),
+  /** Material slots (merged under the entity material, like generator parts). */
+  materials: z.array(MaterialSpec).max(16).default([]),
+  /** What the mesh was baked from (lets the editor re-generate it). */
+  source: z.object({ shape: z.union([PrimitiveShape, ProceduralShape]) }).optional(),
+});
+export type MeshAsset = z.infer<typeof MeshAsset>;
+export type MeshAssetInput = z.input<typeof MeshAsset>;
+
+// ---------------------------------------------------------------------------
 // World document
 // ---------------------------------------------------------------------------
 
@@ -432,6 +493,8 @@ export const WorldDoc = z.object({
   generators: z.record(z.string(), GeneratorDef).default({}),
   scripts: z.record(z.string(), ScriptDef).default({}),
   tests: z.array(WorldTest).default([]),
+  /** Editable mesh data referenced by `mesh` shapes. */
+  meshes: z.record(MeshId, MeshAsset).default({}),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;
@@ -465,6 +528,10 @@ export const Patch = z.discriminatedUnion('op', [
   z.object({ op: z.literal('removeGenerator'), id: z.string().min(1) }),
   /** Additive: delete a custom script. Needed so `defineScript` is invertible. */
   z.object({ op: z.literal('removeScript'), id: z.string().min(1) }),
+  /** Additive: add or replace an editable mesh asset (editor bake / mesh edits). */
+  z.object({ op: z.literal('setMesh'), mesh: MeshAsset }),
+  /** Additive: delete a mesh asset (rejected while entities still use it). */
+  z.object({ op: z.literal('removeMesh'), id: MeshId }),
 ]);
 export type Patch = z.infer<typeof Patch>;
 export type PatchInput = z.input<typeof Patch>;
