@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "ferris-wheel",
+    "description": "Ferris wheel: A-frame supports, spoked wheel with rim lights and eight hanging gondolas",
+    "category": "architecture",
+    "keywords": [
+      "ferris wheel",
+      "big wheel",
+      "observation wheel"
+    ],
+    "params": {
+      "diameter": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 24,
+        "description": "wheel diameter in meters"
+      },
+      "color": {
+        "type": "color",
+        "default": "#d64045",
+        "description": "primary wheel and support color"
+      },
+      "gondolas": {
+        "type": "int",
+        "default": 8,
+        "min": 6,
+        "max": 16,
+        "description": "number of hanging gondolas"
+      }
+    },
+    "size": [
+      9.037,
+      9.788,
+      4.16
+    ]
+  },
+  "def": {
+    "id": "ferris-wheel",
+    "description": "Detailed Ferris wheel with twin A-frame supports, a spoked illuminated wheel, central axle, and 6–16 colorful hanging gondolas.",
+    "params": {
+      "diameter": {
+        "type": "number",
+        "default": 8,
+        "min": 3,
+        "max": 24,
+        "description": "wheel diameter in meters"
+      },
+      "color": {
+        "type": "color",
+        "default": "#d64045",
+        "description": "primary wheel and support color"
+      },
+      "gondolas": {
+        "type": "int",
+        "default": 8,
+        "min": 6,
+        "max": 16,
+        "description": "number of hanging gondolas"
+      }
+    },
+    "source": "const D = params.diameter;\nconst R = D * 0.5;\nconst n = params.gondolas;\nconst hubY = R + D * 0.18;\nconst frameZ = D * 0.16;\nconst rimTube = D * 0.018;\nconst primary = { preset: 'metal', color: params.color, metalness: 0.55, roughness: 0.3 };\nconst dark = { preset: 'metal', color: '#26323b', metalness: 0.75, roughness: 0.25 };\nconst trim = { preset: 'metal', color: '#e6c75a', metalness: 0.65, roughness: 0.28 };\nconst glass = { preset: 'glass', color: '#8ed7e8', roughness: 0.08, opacity: 0.72 };\nconst light = { preset: 'emissive', color: '#fff2ad', emissive: '#ffd86b', emissiveIntensity: 3.2, roughness: 0.2 };\nconst groundY = D * 0.025;\napi.add(api.box(D * 0.92, D * 0.05, D * 0.46).translate(0, groundY, 0), { preset: 'concrete', color: '#777d80', roughness: 0.9 });\napi.add(api.box(D * 0.98, D * 0.025, D * 0.52).translate(0, D * 0.0125, 0), { preset: 'stone', color: '#4e5559', roughness: 0.85 });\nfor (let side = -1; side <= 1; side += 2) {\n  const z = side * frameZ;\n  api.add(api.tube([[-R * 0.68, D * 0.05, z], [0, hubY, z], [R * 0.68, D * 0.05, z]], D * 0.035, 8), primary);\n  api.add(api.tube([[-R * 0.52, D * 0.34, z], [R * 0.52, D * 0.34, z]], D * 0.022, 8), primary);\n  api.add(api.box(D * 0.22, D * 0.07, D * 0.1).translate(-R * 0.68, D * 0.075, z), dark);\n  api.add(api.box(D * 0.22, D * 0.07, D * 0.1).translate(R * 0.68, D * 0.075, z), dark);\n}\napi.add(api.cylinder(D * 0.075, D * 0.075, D * 0.46, 16).rotate(90, 0, 0).translate(0, hubY, 0), dark);\napi.add(api.cylinder(D * 0.13, D * 0.13, D * 0.055, 16).rotate(90, 0, 0).translate(0, hubY, frameZ + D * 0.035), trim);\napi.add(api.cylinder(D * 0.13, D * 0.13, D * 0.055, 16).rotate(90, 0, 0).translate(0, hubY, -frameZ - D * 0.035), trim);\napi.add(api.torus(R, rimTube).translate(0, hubY, 0), primary);\napi.add(api.torus(R * 0.94, rimTube * 0.7).translate(0, hubY, 0), trim);\nconst spokeCount = Math.max(12, n * 2);\nfor (let i = 0; i < spokeCount; i++) {\n  const a = i * Math.PI * 2 / spokeCount;\n  const x = Math.cos(a) * R * 0.94;\n  const y = hubY + Math.sin(a) * R * 0.94;\n  api.add(api.tube([[0, hubY, 0], [x, y, 0]], D * 0.008, 6), i % 2 === 0 ? primary : trim);\n}\nconst palette = ['#ef5350', '#f4b942', '#36a2ae', '#5470c6', '#8d63b8', '#54a96b', '#e56b9f', '#f07a3f'];\nfor (let i = 0; i < n; i++) {\n  const a = i * Math.PI * 2 / n;\n  const x = Math.cos(a) * R;\n  const mountY = hubY + Math.sin(a) * R;\n  const cabinW = D * 0.12;\n  const cabinH = D * 0.105;\n  const cabinD = D * 0.115;\n  const barLen = D * 0.105;\n  const cabinY = mountY - barLen - cabinH * 0.5;\n  const cabinColor = palette[i % palette.length];\n  const cabinMat = { preset: 'metal', color: cabinColor, metalness: 0.35, roughness: 0.38 };\n  api.add(api.cylinder(D * 0.025, D * 0.025, D * 0.26, 8).rotate(90, 0, 0).translate(x, mountY, 0), dark);\n  api.add(api.tube([[x, mountY, -cabinD * 0.42], [x, cabinY + cabinH * 0.42, -cabinD * 0.42]], D * 0.01, 6), dark);\n  api.add(api.tube([[x, mountY, cabinD * 0.42], [x, cabinY + cabinH * 0.42, cabinD * 0.42]], D * 0.01, 6), dark);\n  api.add(api.box(cabinW, cabinH * 0.62, cabinD).translate(x, cabinY - cabinH * 0.08, 0), cabinMat);\n  api.add(api.box(cabinW * 1.08, cabinH * 0.12, cabinD * 1.08).translate(x, cabinY + cabinH * 0.29, 0), trim);\n  api.add(api.box(cabinW * 0.72, cabinH * 0.34, D * 0.006).translate(x, cabinY + cabinH * 0.02, cabinD * 0.505), glass);\n  api.add(api.box(cabinW * 0.72, cabinH * 0.34, D * 0.006).translate(x, cabinY + cabinH * 0.02, -cabinD * 0.505), glass);\n}\nconst lightCount = Math.max(24, n * 3);\nfor (let i = 0; i < lightCount; i++) {\n  const a = i * Math.PI * 2 / lightCount;\n  const x = Math.cos(a) * R;\n  const y = hubY + Math.sin(a) * R;\n  api.add(api.sphere(D * 0.014, 0).translate(x, y, rimTube * 1.35), light);\n  api.add(api.sphere(D * 0.014, 0).translate(x, y, -rimTube * 1.35), light);\n}\napi.collider({ kind: 'box', halfExtents: [D * 0.49, D * 0.025, D * 0.26], offset: [0, D * 0.025, 0] });\napi.collider({ kind: 'box', halfExtents: [D * 0.38, hubY * 0.48, D * 0.04], offset: [0, hubY * 0.48, frameZ], rotation: [0, 0, 0] });\napi.collider({ kind: 'box', halfExtents: [D * 0.38, hubY * 0.48, D * 0.04], offset: [0, hubY * 0.48, -frameZ], rotation: [0, 0, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:58:57.009Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 5096,
+    "parts": 15,
+    "colliders": 3
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "wizard-tower",
+    "description": "Crooked wizard tower: stone round tower that leans slightly, small windows, a balcony, a tall pointed starry blue roof with a glowing orb on top",
+    "category": "architecture",
+    "keywords": [
+      "wizard tower",
+      "mage tower",
+      "magic tower",
+      "sorcerer tower"
+    ],
+    "params": {
+      "roofColor": {
+        "type": "color",
+        "default": "#243b7a",
+        "description": "Color of the tall starry roof"
+      },
+      "height": {
+        "type": "number",
+        "default": 9,
+        "min": 4,
+        "max": 24,
+        "description": "Overall tower height in meters"
+      }
+    },
+    "size": [
+      3.41,
+      9.603,
+      3.41
+    ]
+  },
+  "def": {
+    "id": "wizard-tower",
+    "description": "A detailed crooked round wizard tower with weathered stone courses, windows on every side, a wraparound balcony, a star-studded blue conical roof, and a glowing magical orb.",
+    "params": {
+      "roofColor": {
+        "type": "color",
+        "default": "#243b7a",
+        "description": "Color of the tall starry roof"
+      },
+      "height": {
+        "type": "number",
+        "default": 9,
+        "min": 4,
+        "max": 24,
+        "description": "Overall tower height in meters"
+      }
+    },
+    "source": "const H = params.height;\nconst r = H * 0.115;\nconst stone = { preset: 'stone', color: '#777b83', roughness: 0.92, flatShading: true };\nconst darkStone = { preset: 'stone', color: '#4d5159', roughness: 0.95, flatShading: true };\nconst trim = { preset: 'stone', color: '#9a968d', roughness: 0.88, flatShading: true };\nconst wood = { preset: 'wood', color: '#4a2f25', roughness: 0.82 };\nconst metal = { preset: 'metal', color: '#252b35', metalness: 0.65, roughness: 0.42 };\nconst windowMat = { preset: 'glass', color: '#79c9e8', emissive: '#4da6d8', emissiveIntensity: 1.2, opacity: 0.88 };\nconst starMat = { preset: 'emissive', color: '#f4df91', emissive: '#ffe9a3', emissiveIntensity: 3 };\nconst levels = 7;\nconst bodyH = H * 0.61;\nconst segH = bodyH / levels;\nfunction lean(y) {\n  const q = y / bodyH;\n  return [r * (0.42 * q + 0.12 * Math.sin(q * Math.PI * 1.7)), r * (0.18 * q - 0.1 * Math.sin(q * Math.PI * 2.1))];\n}\napi.add(api.cylinder(r * 1.2, r * 1.28, H * 0.055, 14).translate(0, H * 0.0275, 0), darkStone);\napi.add(api.cylinder(r * 1.08, r * 1.18, H * 0.035, 14).translate(0, H * 0.072, 0), trim);\nfor (let i = 0; i < levels; i++) {\n  const y = H * 0.075 + segH * (i + 0.5);\n  const p = lean(y);\n  const rb = r * (1 - i * 0.025);\n  const rt = r * (0.975 - i * 0.025);\n  const course = api.cylinder(rt, rb, segH * 1.035, 14).translate(p[0], y, p[1]);\n  course.vertexColor((x, yy, z) => api.mix('#656a72', '#94928b', 0.38 + 0.22 * api.noise3(x * 3.2, yy * 2.4, z * 3.2)));\n  api.add(course, stone);\n  if (i > 0) api.add(api.torus(rb * 0.99, H * 0.008).rotate(90, 0, 0).translate(p[0], y - segH * 0.49, p[1]), darkStone);\n  api.collider({ kind: 'cylinder', radius: rb, halfHeight: segH * 0.51, offset: [p[0], y, p[1]] });\n}\nconst doorY = H * 0.16;\napi.add(api.box(r * 0.48, H * 0.19, r * 0.09).translate(0, doorY, r * 1.12), wood);\napi.add(api.torus(r * 0.29, H * 0.025).translate(0, doorY + H * 0.06, r * 1.17), trim);\nfor (let n = 0; n < 7; n++) {\n  const y = H * (0.23 + n * 0.052);\n  const p = lean(y);\n  const a = (n * 137 + 28) * Math.PI / 180;\n  const rr = r * (1.015 - n * 0.018);\n  const wx = p[0] + Math.sin(a) * rr;\n  const wz = p[1] + Math.cos(a) * rr;\n  api.add(api.box(r * 0.3, H * 0.075, H * 0.018).rotate(0, a * 180 / Math.PI, 0).translate(wx, y, wz), windowMat);\n  api.add(api.torus(r * 0.19, H * 0.018).rotate(0, a * 180 / Math.PI, 0).translate(wx, y + H * 0.012, wz), trim);\n  api.add(api.box(H * 0.014, H * 0.066, H * 0.023).rotate(0, a * 180 / Math.PI, 0).translate(wx, y, wz), metal);\n}\nconst topY = H * 0.075 + bodyH;\nconst topP = lean(bodyH);\nconst balconyY = topY - H * 0.035;\napi.add(api.cylinder(r * 1.48, r * 1.42, H * 0.045, 18).translate(topP[0], balconyY, topP[1]), trim);\napi.add(api.torus(r * 1.43, H * 0.025).rotate(90, 0, 0).translate(topP[0], balconyY + H * 0.035, topP[1]), metal);\nfor (let i = 0; i < 12; i++) {\n  const a = i * Math.PI * 2 / 12;\n  const x = topP[0] + Math.cos(a) * r * 1.43;\n  const z = topP[1] + Math.sin(a) * r * 1.43;\n  api.add(api.box(H * 0.018, H * 0.105, H * 0.018).translate(x, balconyY + H * 0.085, z), metal);\n}\napi.add(api.torus(r * 1.43, H * 0.021).rotate(90, 0, 0).translate(topP[0], balconyY + H * 0.14, topP[1]), metal);\nconst roofBase = topY + H * 0.005;\nconst roofH = H * 0.285;\napi.add(api.cone(r * 1.42, roofH, 18).translate(topP[0], roofBase + roofH * 0.5, topP[1]), { preset: 'fabric', color: params.roofColor, roughness: 0.72, flatShading: true });\napi.add(api.torus(r * 1.38, H * 0.025).rotate(90, 0, 0).translate(topP[0], roofBase + H * 0.018, topP[1]), metal);\nfor (let i = 0; i < 22; i++) {\n  const f = 0.12 + api.rng() * 0.7;\n  const a = api.rng() * Math.PI * 2;\n  const rad = r * 1.42 * (1 - f) + H * 0.012;\n  const x = topP[0] + Math.cos(a) * rad;\n  const z = topP[1] + Math.sin(a) * rad;\n  const y = roofBase + roofH * f;\n  api.add(api.sphere(H * (0.009 + api.rng() * 0.004), 0).translate(x, y, z), starMat);\n}\nconst orbY = roofBase + roofH + H * 0.045;\napi.add(api.cylinder(H * 0.018, H * 0.022, H * 0.07, 8).translate(topP[0], roofBase + roofH + H * 0.015, topP[1]), metal);\napi.add(api.sphere(H * 0.047, 2).translate(topP[0], orbY, topP[1]), { preset: 'crystal', color: '#b7f1ff', emissive: '#69dfff', emissiveIntensity: 4, roughness: 0.12 });\napi.collider({ kind: 'cylinder', radius: r * 1.48, halfHeight: H * 0.025, offset: [topP[0], balconyY, topP[1]] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:51:52.415Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 10408,
+    "parts": 9,
+    "colliders": 8
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "dragon-statue",
+    "description": "Stone dragon statue on a plinth: coiled body, raised head with horns, folded wings, tail wrapping around",
+    "category": "props",
+    "keywords": [
+      "dragon statue",
+      "dragon"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#7f8582",
+        "description": "Primary stone color"
+      },
+      "height": {
+        "type": "number",
+        "default": 3.2,
+        "min": 1,
+        "max": 10,
+        "description": "Overall statue height in meters"
+      }
+    },
+    "size": [
+      1.845,
+      2.837,
+      1.495
+    ]
+  },
+  "def": {
+    "id": "dragon-statue",
+    "description": "A detailed, low-poly stone dragon statue with a coiled body, raised horned head, folded wings, wrapped tail, claws, and a stepped plinth.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#7f8582",
+        "description": "Primary stone color"
+      },
+      "height": {
+        "type": "number",
+        "default": 3.2,
+        "min": 1,
+        "max": 10,
+        "description": "Overall statue height in meters"
+      }
+    },
+    "source": "const H = params.height;\nconst s = H / 3.2;\nconst baseY = 0.26 * s;\nconst stone = { preset: 'stone', roughness: 0.92, flatShading: true, vertexColors: true };\nconst dark = api.mix(params.color, '#252a29', 0.34);\nconst light = api.mix(params.color, '#d8d2c5', 0.25);\nconst accent = api.mix(params.color, '#4b514f', 0.2);\nfunction shade(mesh, k) {\n  mesh.vertexColor((x, y, z) => api.mix(dark, light, Math.max(0, Math.min(1, 0.48 + y / (H * 3) + api.noise3(x * 4 / s + k, y * 4 / s, z * 4 / s) * 0.16))));\n  api.add(mesh, stone);\n}\nshade(api.box(1.72 * s, 0.24 * s, 1.46 * s).translate(0, 0.12 * s, 0), 1);\nshade(api.box(1.48 * s, 0.16 * s, 1.24 * s).translate(0, 0.32 * s, 0), 2);\nshade(api.box(1.3 * s, 0.1 * s, 1.08 * s).translate(0, 0.45 * s, 0), 3);\nconst coil = [];\nfor (let i = 0; i <= 18; i++) {\n  const a = i * Math.PI * 1.62 / 18;\n  const r = (0.57 - i * 0.012) * s;\n  coil.push([Math.cos(a) * r, (0.55 + 0.025 * Math.sin(a * 2)) * s, Math.sin(a) * r]);\n}\nshade(api.tube(coil, 0.19 * s, 7), 4);\nconst torso = api.capsule(0.3 * s, 1.12 * s).rotate(-13, 0, 5).translate(-0.03 * s, 1.12 * s, 0);\nshade(torso, 5);\nconst chest = api.sphere(0.4 * s, 1).scale(0.92, 1.2, 0.82).translate(0, 1.23 * s, 0.01 * s);\nshade(chest, 6);\nconst neckPath = [[0.02*s,1.34*s,0],[0.13*s,1.62*s,0.02*s],[0.1*s,1.92*s,0.06*s],[-0.02*s,2.17*s,0.13*s]];\nshade(api.tube(neckPath, 0.19 * s, 7), 7);\nconst head = api.sphere(0.29 * s, 1).scale(0.9, 0.78, 1.25).translate(-0.02 * s, 2.29 * s, 0.23 * s);\nshade(head, 8);\nshade(api.box(0.32 * s, 0.2 * s, 0.37 * s).rotate(-8,0,0).translate(-0.02*s,2.23*s,0.48*s), 9);\nfor (let side = -1; side <= 1; side += 2) {\n  shade(api.cone(0.085*s,0.48*s,6).rotate(18,0,side*18).translate(side*0.15*s,2.62*s,0.08*s), 10 + side);\n  shade(api.cone(0.045*s,0.16*s,5).rotate(72,0,side*10).translate(side*0.11*s,2.3*s,0.69*s), 12 + side);\n  shade(api.sphere(0.035*s,1).translate(side*0.11*s,2.37*s,0.48*s), 14 + side);\n}\nconst browL = api.cone(0.065*s,0.2*s,5).rotate(0,0,-72).translate(-0.18*s,2.43*s,0.4*s);\nconst browR = api.cone(0.065*s,0.2*s,5).rotate(0,0,72).translate(0.18*s,2.43*s,0.4*s);\nshade(browL,16); shade(browR,17);\nconst wingShape = [[0,0],[0.34*s,0.13*s],[0.67*s,0.03*s],[0.48*s,0.39*s],[0.8*s,0.52*s],[0.35*s,0.61*s],[0.1*s,0.86*s]];\nfor (let side = -1; side <= 1; side += 2) {\n  const wing = api.extrude(wingShape,0.075*s).scale(side,1,1).rotate(-10,side*20,side*8).translate(side*0.17*s,1.24*s,-0.12*s);\n  shade(wing,18+side);\n  for (let j = 0; j < 3; j++) {\n    const rib = [[side*0.2*s,1.38*s,-0.17*s],[side*(0.43+0.1*j)*s,(1.62+0.17*j)*s,-0.13*s]];\n    shade(api.tube(rib,0.025*s,5),22+j+side);\n  }\n}\nfor (let side = -1; side <= 1; side += 2) {\n  const fore = [[side*0.21*s,1.25*s,0.21*s],[side*0.36*s,0.93*s,0.35*s],[side*0.47*s,0.68*s,0.39*s]];\n  shade(api.tube(fore,0.09*s,6),28+side);\n  const hind = [[side*0.22*s,0.93*s,-0.2*s],[side*0.49*s,0.73*s,-0.24*s],[side*0.55*s,0.57*s,-0.07*s]];\n  shade(api.tube(hind,0.13*s,6),30+side);\n  for (let c = -1; c <= 1; c++) {\n    shade(api.cone(0.026*s,0.16*s,5).rotate(88,0,0).translate(side*(0.47+0.035*c)*s,0.61*s,(0.43+0.025*c)*s),34+c+side);\n  }\n}\nconst tail = [[-0.32*s,0.69*s,-0.2*s],[-0.65*s,0.62*s,-0.38*s],[-0.72*s,0.61*s,0.12*s],[-0.49*s,0.62*s,0.52*s],[-0.08*s,0.61*s,0.66*s],[0.37*s,0.6*s,0.57*s],[0.7*s,0.59*s,0.26*s],[0.78*s,0.61*s,-0.12*s]];\nshade(api.tube(tail,0.105*s,6),38);\nshade(api.cone(0.14*s,0.42*s,6).rotate(90,0,-12).translate(0.91*s,0.62*s,-0.17*s),39);\nfor (let i = 0; i < 7; i++) {\n  const y = (1.42 + i*0.135) * s;\n  shade(api.cone((0.075-i*0.005)*s,(0.19-i*0.008)*s,5).rotate(0,0,180).translate(-0.08*s,y,-0.18*s),40+i);\n}\napi.collider({ kind: 'box', halfExtents: [0.86*s,0.25*s,0.73*s], offset: [0,0.25*s,0] });\napi.collider({ kind: 'capsule', radius: 0.38*s, halfHeight: 0.68*s, offset: [0,1.15*s,0] });\napi.collider({ kind: 'sphere', radius: 0.34*s, offset: [-0.02*s,2.29*s,0.23*s] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T11:06:04.694Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1704,
+    "parts": 1,
+    "colliders": 3
+  }
+}

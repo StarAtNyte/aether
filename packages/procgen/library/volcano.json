@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "volcano",
+    "description": "Volcano: a wide rocky cone with a crater and glowing lava rivers running down its flanks, about 30 m tall",
+    "category": "terrain",
+    "keywords": [
+      "volcano",
+      "volcanic mountain"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 30,
+        "min": 8,
+        "max": 80,
+        "description": "Volcano height in meters"
+      },
+      "lavaColor": {
+        "type": "color",
+        "default": "#ff4a0a",
+        "description": "Color of the glowing molten lava"
+      }
+    },
+    "size": [
+      49.256,
+      31.028,
+      49.149
+    ]
+  },
+  "def": {
+    "id": "volcano",
+    "description": "A broad 30-meter rocky volcano with a deep crater, rugged faceted slopes, glowing crater lava, and branching lava rivers visible from every side.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 30,
+        "min": 8,
+        "max": 80,
+        "description": "Volcano height in meters"
+      },
+      "lavaColor": {
+        "type": "color",
+        "default": "#ff4a0a",
+        "description": "Color of the glowing molten lava"
+      }
+    },
+    "source": "const h = params.height;\nconst R = h * 0.82;\nconst rimR = R * 0.19;\nconst rockMat = { preset: 'stone', roughness: 1, flatShading: true };\nconst darkRock = '#292623';\nconst warmRock = '#514138';\nconst ashRock = '#71665c';\nconst profile = [\n  [0, h * 0.70],\n  [rimR * 0.45, h * 0.71],\n  [rimR * 0.82, h * 0.88],\n  [rimR, h],\n  [R * 0.28, h * 0.83],\n  [R * 0.48, h * 0.61],\n  [R * 0.70, h * 0.34],\n  [R * 0.90, h * 0.10],\n  [R, 0],\n  [0, 0]\n];\nconst mountain = api.lathe(profile, 48);\nmountain.displace((x, y, z) => {\n  const radial = Math.sqrt(x * x + z * z) / R;\n  const coarse = api.fbm2(x * 0.075 + y * 0.035, z * 0.075 - y * 0.025, 4);\n  const ridges = Math.abs(api.noise2(Math.atan2(z, x) * 3.2, y * 0.12)) - 0.45;\n  return h * (0.018 + radial * 0.025) * coarse + h * 0.012 * ridges;\n});\nmountain.vertexColor((x, y, z) => {\n  const n = api.fbm2(x * 0.11 + y * 0.04, z * 0.11, 3);\n  const high = Math.max(0, Math.min(1, y / h));\n  const base = api.mix(darkRock, warmRock, 0.38 + n * 0.22);\n  return api.mix(base, ashRock, high * 0.32);\n});\napi.add(mountain, rockMat);\nconst lavaMat = { preset: 'lava', color: params.lavaColor, emissive: params.lavaColor, emissiveIntensity: 4.5, roughness: 0.22 };\nconst hotMat = { preset: 'emissive', color: '#ffd36a', emissive: params.lavaColor, emissiveIntensity: 7, roughness: 0.15 };\nconst pool = api.cylinder(rimR * 0.63, rimR * 0.63, h * 0.018, 32).translate(0, h * 0.715, 0);\npool.vertexColor((x, y, z) => api.mix(params.lavaColor, '#ffd76a', 0.25 + 0.35 * api.noise2(x * 0.7, z * 0.7)));\napi.add(pool, lavaMat);\napi.add(api.torus(rimR * 0.52, h * 0.018).rotate(90, 0, 0).translate(0, h * 0.73, 0), hotMat);\nconst flowCount = 8;\nfor (let i = 0; i < flowCount; i++) {\n  const baseA = i * Math.PI * 2 / flowCount + (api.rng() - 0.5) * 0.28;\n  const reach = R * (0.72 + api.rng() * 0.25);\n  const points = [];\n  const steps = 9;\n  for (let j = 0; j < steps; j++) {\n    const t = j / (steps - 1);\n    const r = rimR * 0.64 + (reach - rimR * 0.64) * t;\n    const bend = Math.sin(t * Math.PI * (1.3 + i * 0.07) + i) * 0.10 + (api.noise2(i * 2.7, t * 4.5) * 0.07);\n    const a = baseA + bend;\n    const q = r / R;\n    let y = h * (1 - Math.pow(q, 0.72)) * 0.96;\n    if (j === 0) y = h * 0.75;\n    y += h * 0.016;\n    points.push([Math.cos(a) * r, y, Math.sin(a) * r]);\n  }\n  const flow = api.tube(points, h * (0.020 + api.rng() * 0.008), 7);\n  api.add(flow, lavaMat);\n  if (i % 2 === 0) {\n    const split = [];\n    for (let j = 4; j < steps; j++) {\n      const t = j / (steps - 1);\n      const r = rimR * 0.64 + (reach - rimR * 0.64) * t;\n      const a = baseA + 0.12 + (t - 0.45) * (0.18 + 0.04 * i);\n      const q = r / R;\n      const y = h * (1 - Math.pow(q, 0.72)) * 0.96 + h * 0.018;\n      split.push([Math.cos(a) * r, y, Math.sin(a) * r]);\n    }\n    api.add(api.tube(split, h * 0.014, 6), lavaMat);\n  }\n}\nfor (let i = 0; i < 18; i++) {\n  const a = i * Math.PI * 2 / 18 + (api.rng() - 0.5) * 0.13;\n  const rr = rimR * (0.88 + api.rng() * 0.22);\n  const size = h * (0.025 + api.rng() * 0.025);\n  const rock = api.icosphereRock(size, 0.65).scale(1.3, 0.8 + api.rng() * 0.5, 1).translate(Math.cos(a) * rr, h * (0.91 + api.rng() * 0.07), Math.sin(a) * rr);\n  rock.vertexColor(() => api.mix(darkRock, ashRock, api.rng() * 0.45));\n  api.add(rock, rockMat);\n}\napi.collider({ kind: 'cylinder', radius: R, halfHeight: h * 0.10, offset: [0, h * 0.10, 0] });\napi.collider({ kind: 'cylinder', radius: R * 0.72, halfHeight: h * 0.20, offset: [0, h * 0.28, 0] });\napi.collider({ kind: 'cylinder', radius: R * 0.47, halfHeight: h * 0.22, offset: [0, h * 0.56, 0] });\napi.collider({ kind: 'cylinder', radius: R * 0.25, halfHeight: h * 0.13, offset: [0, h * 0.82, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:54:09.977Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 8384,
+    "parts": 4,
+    "colliders": 4
+  }
+}

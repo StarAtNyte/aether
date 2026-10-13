@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "mailbox",
+    "description": "Rural mailbox on a wooden post with a rounded top and a red flag",
+    "category": "props",
+    "keywords": [
+      "mailbox",
+      "letterbox",
+      "post box"
+    ],
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#496a78",
+        "description": "mailbox body color"
+      }
+    },
+    "size": [
+      0.88,
+      2.29,
+      1.334
+    ]
+  },
+  "def": {
+    "id": "mailbox",
+    "description": "Detailed rural curbside mailbox with a rounded metal body, paneled front door, rear seams, raised red flag, wooden post and diagonal support.",
+    "params": {
+      "color": {
+        "type": "color",
+        "default": "#496a78",
+        "description": "mailbox body color"
+      }
+    },
+    "source": "const bodyColor = params.color;\nconst metal = { preset: 'metal', color: bodyColor, metalness: 0.55, roughness: 0.42 };\nconst darkMetal = { preset: 'metal', color: '#27343a', metalness: 0.72, roughness: 0.35 };\nconst red = { preset: 'metal', color: '#c7352d', metalness: 0.35, roughness: 0.38 };\nconst wood = { preset: 'wood', color: '#76502f', roughness: 0.82 };\nconst woodDark = { preset: 'wood', color: '#4d321f', roughness: 0.9 };\nconst w = 0.72;\nconst d = 1.18;\nconst wall = 0.42;\nconst shoulderY = 1.63;\nconst r = w * 0.5;\nconst shape = [[-w * 0.5, 0], [w * 0.5, 0], [w * 0.5, wall], [w * 0.493, wall + r * 0.068], [w * 0.462, wall + r * 0.191], [w * 0.404, wall + r * 0.294], [w * 0.321, wall + r * 0.377], [w * 0.219, wall + r * 0.435], [w * 0.105, wall + r * 0.481], [0, wall + r * 0.5], [-w * 0.105, wall + r * 0.481], [-w * 0.219, wall + r * 0.435], [-w * 0.321, wall + r * 0.377], [-w * 0.404, wall + r * 0.294], [-w * 0.462, wall + r * 0.191], [-w * 0.493, wall + r * 0.068], [-w * 0.5, wall]];\nconst body = api.extrude(shape, d).translate(0, shoulderY - wall, 0);\nbody.vertexColor((x, y, z) => api.mix(bodyColor, '#dce4e5', 0.08 + 0.08 * (y - shoulderY + wall) / (wall + r * 0.5)));\napi.add(body, { preset: 'metal', metalness: 0.55, roughness: 0.42, vertexColors: true });\nconst front = api.extrude(shape, 0.035).translate(0, shoulderY - wall, d * 0.5 + 0.022);\napi.add(front, metal);\nconst rear = api.extrude(shape, 0.026).translate(0, shoulderY - wall, -d * 0.5 - 0.017);\napi.add(rear, metal);\napi.add(api.box(w * 0.9, 0.035, d * 1.02).translate(0, shoulderY - wall + 0.018, 0), darkMetal);\napi.add(api.box(w * 0.22, 0.065, 0.07).translate(0, shoulderY + r * 0.47, d * 0.5 + 0.075), darkMetal);\napi.add(api.box(w * 0.08, 0.12, 0.065).translate(0, shoulderY + r * 0.41, d * 0.5 + 0.073), darkMetal);\napi.add(api.torus(w * 0.43, 0.012).translate(0, shoulderY + wall * 0.35, d * 0.5 + 0.047), darkMetal);\napi.add(api.torus(w * 0.43, 0.01).translate(0, shoulderY + wall * 0.35, -d * 0.5 - 0.034), darkMetal);\nfor (let i = -1; i <= 1; i += 2) {\n  api.add(api.cylinder(0.025, 0.025, 0.055, 10).rotate(90, 0, 0).translate(i * w * 0.36, shoulderY - wall * 0.82, d * 0.5 + 0.065), darkMetal);\n}\nconst postH = 1.28;\napi.add(api.box(0.18, postH, 0.18).translate(0, postH * 0.5, -0.12), wood);\napi.add(api.box(0.88, 0.16, 0.18).translate(0, postH - 0.03, -0.12), wood);\napi.add(api.box(0.12, 0.12, 0.72).rotate(38, 0, 0).translate(0, postH * 0.76, -0.31), woodDark);\napi.add(api.box(0.25, 0.09, 0.25).translate(0, 0.045, -0.12), woodDark);\nconst flagX = w * 0.5 + 0.045;\napi.add(api.cylinder(0.028, 0.028, 0.62, 10).translate(flagX, shoulderY + 0.16, 0.05), red);\napi.add(api.cylinder(0.075, 0.075, 0.045, 12).rotate(0, 0, 90).translate(flagX, shoulderY - 0.15, 0.05), darkMetal);\napi.add(api.box(0.055, 0.2, 0.31).translate(flagX, shoulderY + 0.56, 0.16), red);\napi.add(api.box(0.065, 0.045, 0.19).translate(flagX, shoulderY + 0.48, -0.08), red);\napi.collider({ kind: 'box', halfExtents: [0.1, postH * 0.5, 0.1], offset: [0, postH * 0.5, -0.12] });\napi.collider({ kind: 'box', halfExtents: [w * 0.5, (wall + r * 0.5) * 0.5, d * 0.5], offset: [0, shoulderY - wall + (wall + r * 0.5) * 0.5, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T11:01:13.061Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1428,
+    "parts": 6,
+    "colliders": 2
+  }
+}

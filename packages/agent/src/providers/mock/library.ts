@@ -20,7 +20,7 @@ export interface MockLibraryItem {
 /** A library hit in free text. */
 export interface LibraryHit {
   item: MockLibraryItem;
-  /** Keyword as matched (singular form). */
+  /** The catalog keyword that matched (as written in the catalog). */
   keyword: string;
   /** Count written right before the noun ("three rockets" → 3), else 1. */
   count: number;
@@ -40,17 +40,17 @@ export function findLibraryItems(text: string, library: readonly MockLibraryItem
   const joined = ` ${w.join(' ')} `;
   const hits: Array<LibraryHit & { at: number; len: number }> = [];
   for (const item of library) {
-    let best: { at: number; kw: string } | null = null;
+    let best: { at: number; kw: string; original: string } | null = null;
     for (const k of item.keywords) {
       const kw = words(k).join(' ');
       if (!kw) continue;
       const at = joined.indexOf(` ${kw} `);
-      if (at >= 0 && (!best || kw.length > best.kw.length)) best = { at, kw };
+      if (at >= 0 && (!best || kw.length > best.kw.length)) best = { at, kw, original: k.toLowerCase() };
     }
     if (!best) continue;
     const before = joined.slice(0, best.at).trim().split(' ').pop();
     const n = parseCount(before);
-    hits.push({ item, keyword: best.kw, count: Math.max(1, Math.min(MAX_COUNT, n ?? 1)), at: best.at, len: best.kw.length });
+    hits.push({ item, keyword: best.original, count: Math.max(1, Math.min(MAX_COUNT, n ?? 1)), at: best.at, len: best.kw.length });
   }
   // Drop hits whose keyword sits inside a longer hit ("tank" inside "toy tank").
   const kept = hits.filter((h) => !hits.some((o) => o !== h && o.len > h.len && h.at >= o.at && h.at + h.len <= o.at + o.len));

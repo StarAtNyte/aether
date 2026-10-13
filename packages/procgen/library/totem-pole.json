@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "totem-pole",
+    "description": "Carved totem pole: stacked painted animal faces with beaks and wings near the top",
+    "category": "props",
+    "keywords": [
+      "totem",
+      "totem pole"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 6,
+        "min": 2,
+        "max": 20,
+        "description": "Overall height of the totem pole in meters"
+      }
+    },
+    "size": [
+      3.69,
+      6.075,
+      1.913
+    ]
+  },
+  "def": {
+    "id": "totem-pole",
+    "description": "A detailed carved cedar totem pole with stacked painted animal masks, four-sided facial details, projecting beaks and muzzles, and a winged eagle crown.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 6,
+        "min": 2,
+        "max": 20,
+        "description": "Overall height of the totem pole in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst r = h * 0.075;\nconst cedar = { preset: 'wood', color: '#6f3f25', roughness: 0.9, flatShading: true };\nconst dark = { preset: 'wood', color: '#172c32', roughness: 0.82, flatShading: true };\nconst red = { preset: 'wood', color: '#a83c2f', roughness: 0.82, flatShading: true };\nconst teal = { preset: 'wood', color: '#2f7270', roughness: 0.82, flatShading: true };\nconst cream = { preset: 'wood', color: '#e4c98c', roughness: 0.86, flatShading: true };\nconst white = { preset: 'wood', color: '#eee2c5', roughness: 0.84, flatShading: true };\nconst pole = api.cylinder(r * 0.88, r, h * 0.92, 16).translate(0, h * 0.46, 0);\npole.vertexColor((x, y, z) => api.mix('#75462b', '#4a281b', 0.22 + 0.14 * api.noise3(x * 12, y * 4, z * 12)));\napi.add(pole, { preset: 'wood', roughness: 0.94, flatShading: true });\napi.add(api.cylinder(r * 1.3, r * 1.42, h * 0.045, 16).translate(0, h * 0.0225, 0), dark);\nconst levels = [0.19, 0.36, 0.53, 0.70];\nconst faceColors = [red, teal, cream, red];\nfor (let q = 0; q < levels.length; q++) {\n  const cy = h * levels[q];\n  const fc = faceColors[q];\n  api.add(api.cylinder(r * 1.12, r * 1.12, h * 0.105, 12).translate(0, cy, 0), fc);\n  api.add(api.torus(r * 1.07, r * 0.09).rotate(90, 0, 0).translate(0, cy - h * 0.052, 0), dark);\n  for (let side = 0; side < 4; side++) {\n    const a = side * Math.PI * 0.5;\n    const yaw = side * 90;\n    const dx = Math.sin(a);\n    const dz = Math.cos(a);\n    const lateralX = Math.cos(a);\n    const lateralZ = -Math.sin(a);\n    for (let e = -1; e <= 1; e += 2) {\n      const ex = dx * r * 1.03 + lateralX * e * r * 0.36;\n      const ez = dz * r * 1.03 + lateralZ * e * r * 0.36;\n      api.add(api.sphere(r * 0.20, 1).scale(1.25, 0.72, 0.45).rotate(0, yaw, 0).translate(ex, cy + h * 0.018, ez), white);\n      api.add(api.sphere(r * 0.085, 1).scale(1, 1, 0.55).translate(ex + dx * r * 0.07, cy + h * 0.018, ez + dz * r * 0.07), dark);\n      api.add(api.cone(r * 0.14, r * 0.38, 5).rotate(0, 0, e * 25).rotate(0, yaw, 0).translate(dx * r * 0.9 + lateralX * e * r * 0.66, cy + h * 0.047, dz * r * 0.9 + lateralZ * e * r * 0.66), fc);\n    }\n    const muzzleY = cy - h * 0.022;\n    if (q === 1 || q === 3) {\n      api.add(api.cone(r * 0.32, r * 0.9, 8).rotate(90, 0, 0).rotate(0, yaw, 0).translate(dx * r * 1.42, muzzleY, dz * r * 1.42), cream);\n      api.add(api.box(r * 0.58, r * 0.08, r * 0.12).rotate(0, yaw, 0).translate(dx * r * 1.18, muzzleY, dz * r * 1.18), dark);\n    } else {\n      api.add(api.sphere(r * 0.34, 1).scale(0.72, 0.58, 1).rotate(0, yaw, 0).translate(dx * r * 1.18, muzzleY, dz * r * 1.18), cream);\n      api.add(api.sphere(r * 0.16, 1).scale(1, 0.7, 0.7).translate(dx * r * 1.48, muzzleY + r * 0.03, dz * r * 1.48), dark);\n    }\n  }\n}\nconst topY = h * 0.83;\napi.add(api.cylinder(r * 1.18, r * 1.05, h * 0.17, 12).translate(0, topY, 0), teal);\nfor (let side = 0; side < 4; side++) {\n  const a = side * Math.PI * 0.5;\n  const dx = Math.sin(a);\n  const dz = Math.cos(a);\n  const lx = Math.cos(a);\n  const lz = -Math.sin(a);\n  const yaw = side * 90;\n  for (let e = -1; e <= 1; e += 2) {\n    api.add(api.sphere(r * 0.22, 1).scale(1.25, 0.7, 0.45).rotate(0, yaw, 0).translate(dx * r * 1.08 + lx * e * r * 0.38, topY + h * 0.035, dz * r * 1.08 + lz * e * r * 0.38), white);\n    api.add(api.sphere(r * 0.09, 1).translate(dx * r * 1.2 + lx * e * r * 0.38, topY + h * 0.035, dz * r * 1.2 + lz * e * r * 0.38), dark);\n  }\n  api.add(api.cone(r * 0.38, r * 1.15, 8).rotate(90, 0, 0).rotate(0, yaw, 0).translate(dx * r * 1.55, topY - h * 0.015, dz * r * 1.55), cream);\n}\nconst wingShape = [[0,0],[r*2.7,r*0.18],[r*4.1,-r*0.3],[r*3.35,-r*0.72],[r*4,-r*1.05],[r*2.7,-r*1.15],[r*3.05,-r*1.55],[r*1.55,-r*1.3],[0,-r*0.72]];\nfor (let s = -1; s <= 1; s += 2) {\n  const shape = [];\n  for (let i = 0; i < wingShape.length; i++) shape.push([wingShape[i][0] * s, wingShape[i][1]]);\n  api.add(api.extrude(shape, r * 0.34).translate(0, h * 0.88, 0), dark);\n  const featherShape = [[0,0],[r*2.6*s,r*0.02],[r*3.45*s,-r*0.24],[r*2.45*s,-r*0.42],[r*3.1*s,-r*0.65],[r*1.55*s,-r*0.66],[0,-r*0.42]];\n  api.add(api.extrude(featherShape, r * 0.39).translate(0, h * 0.875, r * 0.04), red);\n  for (let f = 1; f <= 3; f++) {\n    api.add(api.box(r * 0.09, r * 0.65, r * 0.43).rotate(0, 0, s * (52 + f * 5)).translate(s * r * (1.0 + f * 0.68), h * (0.873 - f * 0.006), r * 0.08), cream);\n  }\n}\napi.add(api.cylinder(r * 0.42, r * 0.75, h * 0.055, 10).translate(0, h * 0.957, 0), red);\napi.add(api.cone(r * 0.58, h * 0.055, 10).translate(0, h * 0.985, 0), cream);\napi.collider({ kind: 'cylinder', radius: r * 1.15, halfHeight: h * 0.46, offset: [0, h * 0.46, 0] });\napi.collider({ kind: 'box', halfExtents: [r * 4.15, h * 0.09, r * 0.3], offset: [0, h * 0.845, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T11:03:08.343Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 14660,
+    "parts": 6,
+    "colliders": 2
+  }
+}

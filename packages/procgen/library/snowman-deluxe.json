@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "snowman-deluxe",
+    "description": "Snowman of three snowballs with a carrot nose, coal eyes and buttons, stick arms, a top hat and a knitted scarf",
+    "category": "props",
+    "keywords": [
+      "snowman",
+      "snow man"
+    ],
+    "params": {
+      "scarfColor": {
+        "type": "color",
+        "default": "#b8324a",
+        "description": "Color of the knitted scarf"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.4,
+        "min": 0.8,
+        "max": 8,
+        "description": "Overall snowman height in meters"
+      }
+    },
+    "size": [
+      2.11,
+      2.816,
+      1.25
+    ]
+  },
+  "def": {
+    "id": "snowman-deluxe",
+    "description": "A detailed three-snowball snowman with a carrot nose, coal face and buttons, twig arms, a banded top hat, and a textured knitted scarf.",
+    "params": {
+      "scarfColor": {
+        "type": "color",
+        "default": "#b8324a",
+        "description": "Color of the knitted scarf"
+      },
+      "height": {
+        "type": "number",
+        "default": 2.4,
+        "min": 0.8,
+        "max": 8,
+        "description": "Overall snowman height in meters"
+      }
+    },
+    "source": "const h = params.height;\nconst s = h / 2.4;\nconst snow = { preset: 'snow', color: '#f3f7f8', roughness: 0.92, flatShading: true };\nconst coal = { preset: 'stone', color: '#20252a', roughness: 0.9, flatShading: true };\nconst carrot = { preset: 'plastic', color: '#e87524', roughness: 0.78, flatShading: true };\nconst wood = { preset: 'bark', color: '#62422d', roughness: 1, flatShading: true };\nconst hat = { preset: 'fabric', color: '#24272c', roughness: 0.86 };\nconst hatBand = { preset: 'fabric', color: '#6f2331', roughness: 0.82 };\nconst scarf = { preset: 'fabric', color: params.scarfColor, roughness: 0.95, flatShading: true };\nconst r0 = 0.55 * s;\nconst r1 = 0.43 * s;\nconst r2 = 0.34 * s;\nconst y0 = 0.55 * s;\nconst y1 = 1.38 * s;\nconst y2 = 2.03 * s;\napi.add(api.sphere(r0, 2).scale(1, 0.97, 1).translate(0, y0, 0), snow);\napi.add(api.sphere(r1, 2).scale(1.02, 1, 0.99).translate(0, y1, 0), snow);\napi.add(api.sphere(r2, 2).scale(1, 1.02, 0.98).translate(0, y2, 0), snow);\nconst eyeY = y2 + 0.095 * s;\nfor (let side = -1; side <= 1; side += 2) {\n  api.add(api.icosphereRock(0.047 * s, 0.38).translate(side * 0.115 * s, eyeY, 0.31 * s), coal);\n}\napi.add(api.cone(0.085 * s, 0.42 * s, 10).rotate(90, 0, 0).translate(0, y2 - 0.015 * s, 0.49 * s), carrot);\nconst smile = [[-0.18, 0.015], [-0.09, -0.045], [0, -0.065], [0.09, -0.045], [0.18, 0.015]];\nfor (let i = 0; i < smile.length; i++) {\n  api.add(api.icosphereRock(0.026 * s, 0.3).translate(smile[i][0] * s, y2 - 0.135 * s + smile[i][1] * s, 0.315 * s), coal);\n}\nconst buttonY = [1.55, 1.36, 1.16, 0.77, 0.52];\nfor (let i = 0; i < buttonY.length; i++) {\n  const rr = (i < 3 ? 0.043 : 0.048) * s;\n  const z = i < 3 ? 0.405 * s : 0.515 * s;\n  api.add(api.icosphereRock(rr, 0.42).translate(0, buttonY[i] * s, z), coal);\n}\nconst leftArm = [[-0.31 * s, 1.48 * s, 0], [-0.7 * s, 1.66 * s, 0.03 * s], [-0.94 * s, 1.86 * s, 0.01 * s]];\nconst rightArm = [[0.31 * s, 1.48 * s, 0], [0.69 * s, 1.6 * s, -0.04 * s], [0.93 * s, 1.74 * s, -0.08 * s]];\napi.add(api.tube(leftArm, 0.035 * s, 7), wood);\napi.add(api.tube(rightArm, 0.035 * s, 7), wood);\napi.add(api.tube([[-0.78 * s, 1.72 * s, 0.02 * s], [-0.91 * s, 2.02 * s, 0.02 * s]], 0.022 * s, 6), wood);\napi.add(api.tube([[-0.79 * s, 1.73 * s, 0.02 * s], [-1.05 * s, 1.88 * s, 0.04 * s]], 0.022 * s, 6), wood);\napi.add(api.tube([[0.77 * s, 1.65 * s, -0.06 * s], [0.88 * s, 1.94 * s, -0.05 * s]], 0.022 * s, 6), wood);\napi.add(api.tube([[0.77 * s, 1.65 * s, -0.06 * s], [1.04 * s, 1.78 * s, -0.12 * s]], 0.022 * s, 6), wood);\napi.add(api.torus(0.37 * s, 0.07 * s).rotate(90, 0, 0).translate(0, 1.78 * s, 0), scarf);\napi.add(api.box(0.16 * s, 0.58 * s, 0.055 * s).rotate(0, 0, 7).translate(0.2 * s, 1.49 * s, 0.4 * s), scarf);\napi.add(api.box(0.15 * s, 0.47 * s, 0.052 * s).rotate(0, 0, -9).translate(0.03 * s, 1.52 * s, 0.425 * s), scarf);\nfor (let i = 0; i < 4; i++) {\n  api.add(api.tube([[0.13 * s + i * 0.025 * s, 1.255 * s, 0.43 * s], [0.12 * s + i * 0.025 * s, 1.19 * s, 0.435 * s]], 0.008 * s, 5), scarf);\n  api.add(api.tube([[-0.035 * s + i * 0.025 * s, 1.305 * s, 0.45 * s], [-0.045 * s + i * 0.025 * s, 1.24 * s, 0.455 * s]], 0.008 * s, 5), scarf);\n}\nconst brimY = 2.36 * s;\napi.add(api.cylinder(0.46 * s, 0.46 * s, 0.065 * s, 20).translate(0, brimY, 0), hat);\napi.add(api.cylinder(0.285 * s, 0.305 * s, 0.42 * s, 18).translate(0, 2.59 * s, 0), hat);\napi.add(api.cylinder(0.307 * s, 0.307 * s, 0.09 * s, 18).translate(0, 2.43 * s, 0), hatBand);\napi.add(api.cylinder(0.29 * s, 0.29 * s, 0.045 * s, 18).translate(0, 2.81 * s, 0), hat);\napi.collider({ kind: 'sphere', radius: r0, offset: [0, y0, 0] });\napi.collider({ kind: 'sphere', radius: r1, offset: [0, y1, 0] });\napi.collider({ kind: 'sphere', radius: r2, offset: [0, y2, 0] });\napi.collider({ kind: 'cylinder', radius: 0.46 * s, halfHeight: 0.245 * s, offset: [0, 2.575 * s, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:56:39.414Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 5672,
+    "parts": 7,
+    "colliders": 4
+  }
+}

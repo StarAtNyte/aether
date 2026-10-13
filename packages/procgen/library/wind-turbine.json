@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "wind-turbine",
+    "description": "Modern wind turbine: tall tapered white tower, nacelle and three long slim blades",
+    "category": "architecture",
+    "keywords": [
+      "wind turbine",
+      "turbine"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 18,
+        "min": 5,
+        "max": 80,
+        "description": "overall turbine height in meters"
+      }
+    },
+    "size": [
+      7.638,
+      17.64,
+      2.455
+    ]
+  },
+  "def": {
+    "id": "wind-turbine",
+    "description": "Modern three-bladed wind turbine with a tapered white tower, streamlined nacelle, contrasting hub details, access door, and long swept blades.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 18,
+        "min": 5,
+        "max": 80,
+        "description": "overall turbine height in meters"
+      }
+    },
+    "source": "const H = params.height;\nconst towerH = H * 0.74;\nconst hubY = H * 0.735;\nconst rotorR = H * 0.245;\nconst baseR = H * 0.032;\nconst topR = H * 0.018;\nconst white = { preset: 'metal', color: '#eef2f3', metalness: 0.18, roughness: 0.38 };\nconst bladeMat = { preset: 'plastic', color: '#f7f8f6', roughness: 0.32 };\nconst dark = { preset: 'metal', color: '#39434a', metalness: 0.65, roughness: 0.3 };\nconst accent = { preset: 'plastic', color: '#b8c2c8', roughness: 0.45 };\nconst towerProfile = [[0, 0], [baseR * 1.18, 0], [baseR * 1.18, H * 0.018], [baseR, H * 0.025], [topR, towerH], [0, towerH]];\napi.add(api.lathe(towerProfile, 20), white);\napi.add(api.cylinder(baseR * 1.35, baseR * 1.45, H * 0.018, 20).translate(0, H * 0.009, 0), accent);\nconst nacelleLength = H * 0.105;\nconst nacelle = api.capsule(H * 0.025, nacelleLength).rotate(90, 0, 0).scale(1, 0.82, 1).translate(0, hubY, -H * 0.027);\napi.add(nacelle, white);\napi.add(api.box(H * 0.038, H * 0.012, H * 0.047).translate(0, hubY - H * 0.021, -H * 0.025), accent);\napi.add(api.cylinder(H * 0.006, H * 0.006, H * 0.018, 10).translate(0, hubY + H * 0.035, -H * 0.052), dark);\napi.add(api.sphere(H * 0.008, 1).translate(0, hubY + H * 0.045, -H * 0.052), { preset: 'emissive', color: '#d94335', emissive: '#d94335', emissiveIntensity: 1.6 });\nconst hubZ = H * 0.036;\napi.add(api.cylinder(H * 0.026, H * 0.033, H * 0.045, 16).rotate(90, 0, 0).translate(0, hubY, hubZ * 0.45), white);\napi.add(api.sphere(H * 0.029, 2).scale(1, 1, 0.72).translate(0, hubY, hubZ), accent);\nconst root = rotorR * 0.105;\nconst bladeShape = [[-rotorR * 0.018, root], [rotorR * 0.028, root], [rotorR * 0.045, rotorR * 0.28], [rotorR * 0.022, rotorR * 0.68], [rotorR * 0.006, rotorR], [-rotorR * 0.009, rotorR * 0.98], [-rotorR * 0.014, rotorR * 0.55]];\nfor (let i = 0; i < 3; i++) {\n  const angle = i * 120;\n  const blade = api.extrude(bladeShape, H * 0.008).rotate(0, 0, angle).translate(0, hubY, hubZ + H * 0.008);\n  api.add(blade, bladeMat);\n  const a = angle * Math.PI / 180;\n  const mid = root + (rotorR - root) * 0.48;\n  api.collider({ kind: 'box', halfExtents: [rotorR * 0.026, (rotorR - root) * 0.48, H * 0.005], offset: [-Math.sin(a) * mid, hubY + Math.cos(a) * mid, hubZ + H * 0.008], rotation: [0, 0, angle] });\n}\napi.add(api.box(H * 0.018, H * 0.032, H * 0.003).translate(0, H * 0.085, baseR * 0.99), dark);\napi.add(api.box(H * 0.011, H * 0.003, H * 0.0015).translate(0, H * 0.087, baseR * 1.045), accent);\napi.collider({ kind: 'cylinder', radius: baseR * 1.18, halfHeight: towerH * 0.5, offset: [0, towerH * 0.5, 0] });\napi.collider({ kind: 'box', halfExtents: [H * 0.027, H * 0.027, nacelleLength * 0.5], offset: [0, hubY, -H * 0.027] });\napi.collider({ kind: 'sphere', radius: H * 0.034, offset: [0, hubY, hubZ] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:59:53.067Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 1036,
+    "parts": 5,
+    "colliders": 6
+  }
+}

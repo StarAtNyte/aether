@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "igloo",
+    "description": "Igloo: dome of snow blocks with visible block seams and a tunnel entrance",
+    "category": "architecture",
+    "keywords": [
+      "igloo"
+    ],
+    "params": {
+      "size": {
+        "type": "number",
+        "default": 3,
+        "min": 1,
+        "max": 10,
+        "description": "Overall igloo dome diameter in meters"
+      }
+    },
+    "size": [
+      3.06,
+      1.62,
+      4.1
+    ]
+  },
+  "def": {
+    "id": "igloo",
+    "description": "Detailed hemispherical igloo with layered snow-block seams, staggered joints, and a projecting arched entrance tunnel.",
+    "params": {
+      "size": {
+        "type": "number",
+        "default": 3,
+        "min": 1,
+        "max": 10,
+        "description": "Overall igloo dome diameter in meters"
+      }
+    },
+    "source": "const D = params.size;\nconst R = D * 0.5;\nconst wallH = R * 0.16;\nconst domeH = R * 0.92;\nconst snow = { preset: 'snow', color: '#e8f2f5', roughness: 0.92, flatShading: true };\nconst snowLight = { preset: 'snow', color: '#f5fbfc', roughness: 0.9, flatShading: true };\nconst seam = { preset: 'snow', color: '#9fb9c2', roughness: 1, flatShading: true };\nconst shadow = { preset: 'concrete', color: '#26373e', roughness: 1 };\n\nconst profile = [[0,0],[R,0],[R,wallH]];\nfor (let i = 1; i <= 8; i++) {\n  const y = wallH + domeH * i / 8;\n  const t = (y - wallH) / domeH;\n  const rr = R * Math.sqrt(Math.max(0, 1 - t * t));\n  profile.push([rr,y]);\n}\nprofile.push([0,wallH + domeH]);\nconst dome = api.lathe(profile, 32);\ndome.vertexColor((x,y,z) => {\n  const n = api.noise3(x * 3.1, y * 3.1, z * 3.1);\n  return api.mix('#dcebee', '#ffffff', 0.48 + n * 0.14);\n});\napi.add(dome, snow);\n\nconst courses = 7;\nfor (let j = 1; j <= courses; j++) {\n  const y = wallH + domeH * j / 8;\n  const t = (y - wallH) / domeH;\n  const rr = R * Math.sqrt(Math.max(0.01, 1 - t * t));\n  api.add(api.torus(rr * 1.006, R * 0.012).rotate(90,0,0).translate(0,y,0), seam);\n  const blocks = Math.max(6, Math.round(22 * rr / R));\n  const phase = (j % 2) * Math.PI / blocks;\n  for (let k = 0; k < blocks; k++) {\n    const a = k * Math.PI * 2 / blocks + phase;\n    const x = Math.sin(a) * rr * 1.012;\n    const z = Math.cos(a) * rr * 1.012;\n    const joint = api.box(R * 0.014, domeH / 8 * 0.76, R * 0.032).rotate(0,a * 180 / Math.PI,0).translate(x,y - domeH / 16,z);\n    api.add(joint, seam);\n  }\n}\napi.add(api.torus(R * 0.997, R * 0.014).rotate(90,0,0).translate(0,wallH,0), seam);\n\nconst iw = R * 0.46;\nconst ih = R * 0.62;\nconst tunnelL = R * 0.68;\nconst block = R * 0.16;\nconst frontZ = R + tunnelL;\nconst backZ = R * 0.72;\nconst depth = frontZ - backZ;\napi.add(api.box(block, ih * 0.72, depth).translate(-iw * 0.5 - block * 0.48, ih * 0.36, (frontZ + backZ) * 0.5), snowLight);\napi.add(api.box(block, ih * 0.72, depth).translate(iw * 0.5 + block * 0.48, ih * 0.36, (frontZ + backZ) * 0.5), snowLight);\n\nconst archR = iw * 0.5 + block * 0.5;\nconst archY = ih * 0.68;\nfor (let k = 0; k < 7; k++) {\n  const a = Math.PI * k / 6;\n  const x = Math.cos(a) * archR;\n  const y = archY + Math.sin(a) * archR;\n  const cap = api.box(block * 0.94, block * 0.88, depth).rotate(0,0,a * 180 / Math.PI - 90).translate(x,y,(frontZ + backZ) * 0.5);\n  api.add(cap, k % 2 === 0 ? snow : snowLight);\n}\n\nconst openingShape = [[-iw * 0.5,0],[iw * 0.5,0],[iw * 0.5,ih * 0.68]];\nfor (let k = 0; k <= 8; k++) {\n  const a = k * Math.PI / 8;\n  openingShape.push([Math.cos(a) * iw * 0.5, ih * 0.68 + Math.sin(a) * iw * 0.5]);\n}\nopeningShape.push([-iw * 0.5,ih * 0.68]);\napi.add(api.extrude(openingShape,R * 0.025).translate(0,0,frontZ + R * 0.018), shadow);\n\nfor (let side = -1; side <= 1; side += 2) {\n  for (let j = 1; j < 4; j++) {\n    api.add(api.box(block * 1.02,R * 0.012,R * 0.035).translate(side * (iw * 0.5 + block * 0.48),j * ih * 0.18,frontZ + R * 0.025),seam);\n  }\n}\nfor (let j = 0; j < 3; j++) {\n  const z = backZ + depth * (j + 1) / 4;\n  api.add(api.box(iw + block * 1.9,R * 0.012,R * 0.035).translate(0,ih * 0.03,z),seam);\n}\n\napi.collider({ kind: 'cylinder', radius: R, halfHeight: (wallH + domeH) * 0.5, offset: [0,(wallH + domeH) * 0.5,0] });\napi.collider({ kind: 'box', halfExtents: [iw * 0.5 + block, ih * 0.52, depth * 0.5], offset: [0,ih * 0.52,(frontZ + backZ) * 0.5] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:57:39.963Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 6172,
+    "parts": 5,
+    "colliders": 2
+  }
+}

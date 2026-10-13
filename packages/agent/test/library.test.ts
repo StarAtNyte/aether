@@ -12,6 +12,7 @@ const LIBRARY: MockLibraryItem[] = [
   { id: 'pagoda', keywords: ['pagoda'], size: [6, 12, 6] },
   { id: 'toy-tank', keywords: ['toy tank', 'army tank'], size: [3, 2, 4] },
   { id: 'lighthouse', keywords: ['lighthouse', 'light house'], size: [3, 11, 3] },
+  { id: 'ferris-wheel', keywords: ['ferris wheel'], size: [12, 14, 3] },
 ];
 
 const DEFS: Record<string, GeneratorDef> = {
@@ -27,6 +28,11 @@ describe('findLibraryItems', () => {
     expect(findLibraryItems('a fish tank', LIBRARY)).toEqual([]);
     expect(findLibraryItems('pagodaland', LIBRARY)).toEqual([]);
     expect(findLibraryItems('a pagoda', [])).toEqual([]);
+  });
+
+  it('reports the catalog keyword as written (regression: "ferris" was singularized to "ferri")', () => {
+    expect(findLibraryItems('two ferris wheels', LIBRARY)).toEqual([{ item: LIBRARY[3], keyword: 'ferris wheel', count: 2 }]);
+    expect(planMock('a ferris wheel', '', LIBRARY).message).toContain('Ferris Wheel');
   });
 
   it('caps counts and hits', () => {

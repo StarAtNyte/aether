@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "waterfall",
+    "description": "Waterfall: a stepped rock cliff with a wide translucent water sheet falling into a round pool with foam rocks",
+    "category": "terrain",
+    "keywords": [
+      "waterfall",
+      "cascade"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 5,
+        "min": 2,
+        "max": 15,
+        "description": "Overall cliff height in meters"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#48a9d6",
+        "description": "Color of the waterfall and pool water"
+      }
+    },
+    "size": [
+      4.483,
+      5.307,
+      5.526
+    ]
+  },
+  "def": {
+    "id": "waterfall",
+    "description": "A detailed stepped rock waterfall with broad translucent cascades, a round stone-edged pool, foamy impact water, ripples, and scattered natural rocks, readable from every side.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 5,
+        "min": 2,
+        "max": 15,
+        "description": "Overall cliff height in meters"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#48a9d6",
+        "description": "Color of the waterfall and pool water"
+      }
+    },
+    "source": "const h = params.height;\nconst u = h / 5;\nconst waterColor = params.waterColor;\nconst rockMat = { preset: 'stone', roughness: 0.95, flatShading: true, vertexColors: true };\nconst darkRock = '#4d5552';\nconst midRock = '#68716c';\nconst lightRock = '#858c82';\nconst moss = '#52674a';\nconst waterMat = { preset: 'water', color: waterColor, opacity: 0.7, roughness: 0.08, emissive: waterColor, emissiveIntensity: 0.16 };\nconst foamMat = { preset: 'water', color: '#dff7f5', opacity: 0.82, roughness: 0.2, emissive: '#bfe8e8', emissiveIntensity: 0.3 };\nconst stoneMat = { preset: 'stone', roughness: 0.95, flatShading: true, vertexColors: true };\nfunction rockColor(x, y, z) {\n  const n = api.noise3(x * 1.8 / u, y * 1.6 / u, z * 1.8 / u);\n  const base = n > 0.28 ? lightRock : (n < -0.3 ? darkRock : midRock);\n  return y > h * 0.12 && api.noise2(x * 2 / u, z * 2 / u) > 0.48 ? api.mix(base, moss, 0.45) : base;\n}\nconst lower = api.box(u * 3.6, u * 1.55, u * 1.65).translate(0, u * 0.775, -u * 0.72);\nlower.displace((x, y, z) => api.noise3(x * 2.2 / u, y * 2 / u, z * 2.2 / u) * u * 0.055).vertexColor(rockColor);\napi.add(lower, rockMat);\nconst middle = api.box(u * 3.05, u * 1.55, u * 1.5).translate(0.08 * u, u * 2.275, -u * 0.93);\nmiddle.displace((x, y, z) => api.noise3(x * 2.4 / u, y * 2 / u, z * 2.4 / u) * u * 0.06).vertexColor(rockColor);\napi.add(middle, rockMat);\nconst upper = api.box(u * 2.55, u * 1.9, u * 1.35).translate(-0.1 * u, u * 4.05, -u * 1.08);\nupper.displace((x, y, z) => api.noise3(x * 2.5 / u, y * 2 / u, z * 2.5 / u) * u * 0.065).vertexColor(rockColor);\napi.add(upper, rockMat);\nfor (let i = 0; i < 9; i++) {\n  const a = i * 2.399;\n  const rx = Math.cos(a) * u * (1.45 + 0.35 * api.rng());\n  const rz = -u * (0.8 + 0.5 * api.rng()) + Math.sin(a) * u * 0.55;\n  const rr = u * (0.25 + api.rng() * 0.22);\n  const ry = rr * (0.75 + api.rng() * 0.55);\n  const r = api.icosphereRock(rr, 0.65).scale(1.2, ry / rr, 0.9).translate(rx, rr * 0.55, rz);\n  r.vertexColor(rockColor);\n  api.add(r, stoneMat);\n}\nconst poolR = u * 2.15;\nconst basin = api.lathe([[0,0],[poolR,0],[poolR,u*0.18],[poolR*0.94,u*0.27],[poolR*0.82,u*0.18],[0,u*0.12]],28).translate(0,0,u*1.2);\nbasin.vertexColor((x,y,z) => api.mix(darkRock, lightRock, 0.38 + 0.22 * api.noise3(x/u,y/u,z/u)));\napi.add(basin, stoneMat);\napi.add(api.cylinder(poolR * 0.84, poolR * 0.84, u * 0.055, 28).translate(0, u * 0.205, u * 1.2), waterMat);\nconst falls = [\n  [-0.08*u, u*4.91, -0.37*u, u*1.48, u*1.62],\n  [0.06*u, u*3.32, -0.12*u, u*1.65, u*1.50],\n  [-0.02*u, u*1.72, 0.28*u, u*1.82, u*1.48]\n];\nfor (let i = 0; i < falls.length; i++) {\n  const f = falls[i];\n  const sheet = api.box(f[3], f[4], u * 0.055).translate(f[0], f[1] - f[4] * 0.5, f[2]);\n  sheet.vertexColor((x,y,z) => api.mix(waterColor, '#d6f4f4', 0.18 + 0.28 * (0.5 + 0.5 * api.noise3(x*5/u,y*4/u,z*3/u))));\n  api.add(sheet, waterMat);\n  api.add(api.box(f[3] * 0.96, u * 0.075, u * 0.34).translate(f[0], f[1] - f[4] + u * 0.035, f[2] + u * 0.13), foamMat);\n}\nfor (let i = 0; i < 7; i++) {\n  const x = (i - 3) * u * 0.25;\n  const stream = api.tube([[x,u*4.86,-u*0.32],[x + api.noise2(i,1)*u*0.05,u*3.7,-u*0.25],[x + api.noise2(i,2)*u*0.07,u*2.35,u*0.02],[x + api.noise2(i,3)*u*0.08,u*0.35,u*0.43]],u*0.025,5);\n  api.add(stream, foamMat);\n}\nfor (let i = 0; i < 12; i++) {\n  const a = i * Math.PI * 2 / 12;\n  const rad = u * (0.3 + api.rng() * 0.48);\n  const bubble = api.icosphereRock(u * (0.065 + api.rng() * 0.055),0.25).scale(1.8,0.35,1).translate(Math.cos(a)*rad,u*0.25,u*0.62 + Math.sin(a)*rad*0.5);\n  api.add(bubble, foamMat);\n}\nfor (let i = 0; i < 3; i++) {\n  api.add(api.torus(u * (0.42 + i * 0.27), u * 0.018).rotate(90,0,0).scale(1,1,0.55).translate(0,u*(0.245+i*0.006),u*0.95), foamMat);\n}\nfor (let i = 0; i < 14; i++) {\n  const a = i * Math.PI * 2 / 14 + 0.15;\n  const rr = u * (0.18 + 0.08 * api.rng());\n  const px = Math.cos(a) * poolR * 0.9;\n  const pz = u * 1.2 + Math.sin(a) * poolR * 0.9;\n  const rimRock = api.icosphereRock(rr,0.7).scale(1.35,0.7,1).translate(px,u*0.2,pz);\n  rimRock.vertexColor(rockColor);\n  api.add(rimRock,stoneMat);\n}\napi.collider({ kind: 'box', halfExtents: [u*1.8,u*0.78,u*0.83], offset: [0,u*0.78,-u*0.72] });\napi.collider({ kind: 'box', halfExtents: [u*1.53,u*0.78,u*0.75], offset: [0.08*u,u*2.28,-u*0.93] });\napi.collider({ kind: 'box', halfExtents: [u*1.28,u*0.95,u*0.68], offset: [-0.1*u,u*4.05,-u*1.08] });\napi.collider({ kind: 'cylinder', radius: poolR, halfHeight: u*0.13, offset: [0,u*0.13,u*1.2] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "codex",
+    "effort": "low",
+    "createdAt": "2026-10-13T10:55:21.646Z",
+    "attempts": 1
+  },
+  "checks": {
+    "triangles": 13364,
+    "parts": 4,
+    "colliders": 4
+  }
+}
