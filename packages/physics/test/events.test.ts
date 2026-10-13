@@ -88,3 +88,24 @@ describe('EventCollector', () => {
     expect(c.activePairs).toBe(0);
   });
 });
+
+describe('EventCollector allocation probe', () => {
+  it('draining steady contacts (force events, no state change) builds no key strings', async () => {
+    const { probeAllocations, describeSites } = await import('../../../tests/unit/alloc-probe');
+    const c = new EventCollector();
+    c.drain(queue([[1, 3, true]]), maps, 1 / 60, []);
+    // 64 steady contact-force events per step between already-touching bodies.
+    const forces: Array<[number, number, number]> = Array.from({ length: 64 }, (_, i) => [1 + (i % 2), 3, 100 + i]);
+    const forceEvents = forces.map(([c1, c2, f]) => ({ collider1: () => c1, collider2: () => c2, totalForceMagnitude: () => f }) as unknown as TempContactForceEvent);
+    const steady = {
+      drainContactForceEvents(cb: (e: TempContactForceEvent) => void) {
+        for (let i = 0; i < forceEvents.length; i++) cb(forceEvents[i] as TempContactForceEvent);
+      },
+      drainCollisionEvents() {},
+    } as unknown as EventQueue;
+    const out: PhysicsEvent[] = [];
+    const r = await probeAllocations(() => c.drain(steady, maps, 1 / 60, out), { iterations: 400, warmup: 40_000, match: /packages\/physics\/src\/events\.ts/ });
+    expect(out).toHaveLength(0);
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(16);
+  });
+});

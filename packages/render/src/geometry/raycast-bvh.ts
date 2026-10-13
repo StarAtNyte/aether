@@ -298,11 +298,23 @@ const _stack = new Int32Array(STACK_SIZE);
 const _edge1 = new Vector3();
 const _edge2 = new Vector3();
 
-/** Scalar outputs of the inner functions (returning doubles from calls would box them). */
+/**
+ * Scalars shared with the inner functions through typed arrays: passing or
+ * returning doubles across non-inlined calls boxes them (a heap number per
+ * call), which would allocate per visited node.
+ * `_rayS`: origin xyz, direction xyz, inverse direction xyz, culling side.
+ */
 const _out = new Float64Array(2);
+const _rayS = new Float64Array(10);
+/** Current best hit distance during a traversal (read by {@link boxEntry}). */
+const _best = new Float64Array(1);
 
 /** Slab test: true when the ray enters node `b`'s box before `far`; the entry distance goes to `_out[0]`. */
-function boxEntry(boxes: Float32Array, b: number, ox: number, oy: number, oz: number, ix: number, iy: number, iz: number, far: number): boolean {
+function boxEntry(boxes: Float32Array, b: number): boolean {
+  const far = _best[0] as number;
+  const r = _rayS;
+  const ox = r[0] as number, oy = r[1] as number, oz = r[2] as number;
+  const ix = r[6] as number, iy = r[7] as number, iz = r[8] as number;
   let t1 = ((boxes[b] as number) - ox) * ix;
   let t2 = ((boxes[b + 3] as number) - ox) * ix;
   let tmin = Math.min(t1, t2);
@@ -330,17 +342,27 @@ function boxEntry(boxes: Float32Array, b: number, ox: number, oy: number, oz: nu
  */
 export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<number> | null, ray: Ray, side: number, out: Int32Array): number {
   const { boxes, nodes, tris } = tree;
-  const ox = ray.origin.x, oy = ray.origin.y, oz = ray.origin.z;
   const dx = ray.direction.x, dy = ray.direction.y, dz = ray.direction.z;
+  const r = _rayS;
+  r[0] = ray.origin.x;
+  r[1] = ray.origin.y;
+  r[2] = ray.origin.z;
+  r[3] = dx;
+  r[4] = dy;
+  r[5] = dz;
   // Axis-parallel rays: a huge finite inverse instead of Infinity avoids 0 × ∞ = NaN in the slab test.
-  const ix = dx !== 0 ? 1 / dx : 1e30, iy = dy !== 0 ? 1 / dy : 1e30, iz = dz !== 0 ? 1 / dz : 1e30;
+  r[6] = dx !== 0 ? 1 / dx : 1e30;
+  r[7] = dy !== 0 ? 1 / dy : 1e30;
+  r[8] = dz !== 0 ? 1 / dz : 1e30;
+  r[9] = side;
   let best = Infinity;
+  _best[0] = best;
   let bestTri = -1;
   let sp = 0;
   _stack[sp++] = 0;
   while (sp > 0) {
     const node = _stack[--sp] as number;
-    if (!boxEntry(boxes, node * 6, ox, oy, oz, ix, iy, iz, best)) continue;
+    if (!boxEntry(boxes, node * 6)) continue;
     const meta = nodes[node * 2 + 1] as number;
     if ((meta & LEAF_BIT) !== 0) {
       const start = nodes[node * 2] as number;
@@ -353,8 +375,9 @@ export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<nu
         _a.set(p[a] as number, p[a + 1] as number, p[a + 2] as number);
         _b.set(p[b] as number, p[b + 1] as number, p[b + 2] as number);
         _c.set(p[c] as number, p[c + 1] as number, p[c + 2] as number);
-        if (triangleHit(ox, oy, oz, dx, dy, dz, side) && (_out[1] as number) < best) {
+        if (triangleHit() && (_out[1] as number) < best) {
           best = _out[1] as number;
+          _best[0] = best;
           bestTri = t;
         }
       }
@@ -364,8 +387,8 @@ export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<nu
     const right = nodes[node * 2] as number;
     if (sp + 2 > STACK_SIZE) continue; // pathological depth: skip rather than overflow
     // Visit the nearer child first.
-    const tl = boxEntry(boxes, left * 6, ox, oy, oz, ix, iy, iz, best) ? (_out[0] as number) : Infinity;
-    const tr = boxEntry(boxes, right * 6, ox, oy, oz, ix, iy, iz, best) ? (_out[0] as number) : Infinity;
+    const tl = boxEntry(boxes, left * 6) ? (_out[0] as number) : Infinity;
+    const tr = boxEntry(boxes, right * 6) ? (_out[0] as number) : Infinity;
     if (tl <= tr) {
       if (tr !== Infinity) _stack[sp++] = right;
       if (tl !== Infinity) _stack[sp++] = left;
@@ -379,7 +402,11 @@ export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<nu
 }
 
 /** Ray/triangle (_a, _b, _c) test with three's material-side culling; the hit distance goes to `_out[1]`. */
-function triangleHit(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, side: number): boolean {
+function triangleHit(): boolean {
+  const r = _rayS;
+  const ox = r[0] as number, oy = r[1] as number, oz = r[2] as number;
+  const dx = r[3] as number, dy = r[4] as number, dz = r[5] as number;
+  const side = r[9] as number;
   _edge1.subVectors(_b, _a);
   _edge2.subVectors(_c, _a);
   // p = d × e2

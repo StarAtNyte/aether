@@ -42,6 +42,8 @@ const FPS_SAMPLE_MS = 2_000;
 /** Luminance std-dev below this means a flat (blank) canvas. */
 const MIN_CANVAS_STDDEV = 6;
 const MIN_CANVAS_COLORS = 24;
+/** No main-thread task may run longer than this during an agent turn (verification runs in workers). */
+const MAX_LONG_TASK_MS = 200;
 
 /** Prompts sent through the chat, in order (the last one is a playable game). */
 const PROMPTS: ReadonlyArray<{ slug: string; text: string }> = [
@@ -99,6 +101,69 @@ async function waitFor<T>(page: Page, what: string, timeoutMs: number, probe: ()
 // Page probes (run inside the browser; rely on the `?debug=1` handle)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Long-task probe (installed before any page script runs)
+// ---------------------------------------------------------------------------
+
+/** Main-thread blocking observed since the last reset. */
+interface BlockingStats {
+  /** Longest `longtask` entry (Chromium; -1 where the entry type is unsupported, e.g. Firefox). */
+  longTaskMax: number;
+  longTasks: number;
+  /** Longest event-loop stall seen by a 20 ms interval timer (all browsers). */
+  lagMax: number;
+}
+
+declare global {
+  interface Window {
+    __aetherBlocking?: { reset(): void; read(): BlockingStats };
+  }
+}
+
+/**
+ * Records long tasks (PerformanceObserver 'longtask', Chromium) and the
+ * worst event-loop stall (an interval timer's lateness, every browser), so
+ * Firefox, which has no long-task entries, is measured too. Plain JavaScript
+ * source (not a compiled function) so no bundler helper leaks into the page.
+ */
+const BLOCKING_PROBE = `(() => {
+  const stats = { longTaskMax: -1, longTasks: 0, lagMax: 0 };
+  let supported = false;
+  try {
+    supported = PerformanceObserver.supportedEntryTypes.includes('longtask');
+    if (supported) {
+      stats.longTaskMax = 0;
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          stats.longTasks++;
+          if (e.duration > stats.longTaskMax) stats.longTaskMax = e.duration;
+        }
+      }).observe({ type: 'longtask', buffered: false });
+    }
+  } catch (err) {
+    supported = false;
+  }
+  const INTERVAL = 20;
+  let last = performance.now();
+  setInterval(() => {
+    const now = performance.now();
+    const lag = now - last - INTERVAL;
+    if (lag > stats.lagMax) stats.lagMax = lag;
+    last = now;
+  }, INTERVAL);
+  window.__aetherBlocking = {
+    reset() {
+      stats.longTaskMax = supported ? 0 : -1;
+      stats.longTasks = 0;
+      stats.lagMax = 0;
+      last = performance.now();
+    },
+    read() {
+      return { longTaskMax: stats.longTaskMax, longTasks: stats.longTasks, lagMax: stats.lagMax };
+    },
+  };
+})();`;
+
 /** Compact studio state read through `window.__aether`. */
 interface StudioSnapshot {
   ready: boolean;
@@ -116,6 +181,9 @@ interface StudioSnapshot {
   triangles: number;
   agentBusy: boolean;
   verify: string;
+  verifyWorker: boolean | null;
+  verifyLanes: number;
+  verifyMs: number;
   lastAssistant: string | null;
   simAttached: boolean;
   physics: boolean;
@@ -151,6 +219,9 @@ function snapshot(page: Page): Promise<StudioSnapshot | null> {
       triangles: st.stats.triangles,
       agentBusy: st.agentBusy,
       verify: st.verify.status,
+      verifyWorker: st.verify.worker ?? null,
+      verifyLanes: st.verify.lanes ?? 0,
+      verifyMs: st.verify.ms,
       lastAssistant,
       simAttached: sim !== null,
       physics: sim?.physics != null,
@@ -278,7 +349,7 @@ interface RunMetrics {
   backend: string;
   firstFrameMs: number;
   defaultWorld: { fps: number; drawCalls: number; triangles: number; entities: number };
-  examples: Array<{ slug: string; entities: number; fps: number; drawCalls: number; triangles: number; verify: string; agentMs: number }>;
+  examples: Array<{ slug: string; entities: number; fps: number; drawCalls: number; triangles: number; verify: string; agentMs: number; longTaskMs: number; lagMs: number; verifyMs: number; lanes: number }>;
 }
 
 async function boot(page: Page, url: string, metrics: RunMetrics): Promise<void> {
@@ -308,6 +379,7 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   const input = page.getByLabel('Prompt', { exact: true });
   await input.click();
   await input.fill(prompt.text);
+  await page.evaluate(() => window.__aetherBlocking?.reset());
   const t0 = performance.now();
   await input.press('Enter');
   await waitFor(page, `agent to start on "${prompt.slug}"`, 10_000, async () => (await snap(page)).agentBusy || (await snap(page)).head !== before.head);
@@ -316,7 +388,13 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
     return !s.agentBusy && s.lastAssistant !== 'streaming' && s.ready ? s : null;
   });
   const agentMs = performance.now() - t0;
+  const blocking = await page.evaluate(() => window.__aetherBlocking?.read() ?? null);
+  check(blocking, 'the long-task probe is missing');
   log(`  agent: ${(await lastTurnEvents(page)).join(' | ')}`);
+  log(`  main thread during the turn: longest task ${blocking.longTaskMax < 0 ? 'n/a' : `${Math.round(blocking.longTaskMax)} ms`} (${blocking.longTasks} long tasks), worst event-loop stall ${Math.round(blocking.lagMax)} ms; verification ${after.verifyWorker ? `in ${after.verifyLanes} worker lane(s)` : 'on the main thread'}, ${Math.round(after.verifyMs)} ms`);
+  check(after.verifyWorker === true, `verification of "${prompt.slug}" did not run in a worker (${String(after.verifyWorker)})`);
+  check(blocking.longTaskMax < MAX_LONG_TASK_MS, `a ${Math.round(blocking.longTaskMax)} ms long task blocked the main thread during "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
+  check(blocking.lagMax < MAX_LONG_TASK_MS, `the event loop stalled for ${Math.round(blocking.lagMax)} ms during "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
   check(after.lastAssistant === 'done', `agent turn for "${prompt.slug}" ended with status ${after.lastAssistant}`);
   check(after.head !== before.head && (await worldJson(page)) !== beforeWorld, `"${prompt.slug}" did not change the world`);
   check(after.entities !== before.entities, `"${prompt.slug}" did not change the entity count (${before.entities})`);
@@ -330,7 +408,7 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   await page.waitForTimeout(500);
   await assertCanvasRendered(page, prompt.slug);
   const perf = await sampleFps(page, FPS_SAMPLE_MS);
-  metrics.examples.push({ slug: prompt.slug, entities: after.entities, verify: after.verify, agentMs, ...perf });
+  metrics.examples.push({ slug: prompt.slug, entities: after.entities, verify: after.verify, agentMs, longTaskMs: blocking.longTaskMax, lagMs: blocking.lagMax, verifyMs: after.verifyMs, lanes: after.verifyLanes, ...perf });
   log(`  "${prompt.slug}": ${before.entities} → ${after.entities} entities, verify=${after.verify} ("${pillText}"), agent ${Math.round(agentMs)} ms, ${perf.fps.toFixed(1)} fps, ${perf.drawCalls} draws`);
   if (shots) {
     await screenshot(page, `world-${prompt.slug}`, 'viewport');
@@ -544,6 +622,7 @@ async function run(browser: Browser, url: string, opts: RunOptions): Promise<Run
   const metrics: RunMetrics = { backend: 'none', firstFrameMs: 0, defaultWorld: { fps: 0, drawCalls: 0, triangles: 0, entities: 0 }, examples: [] };
   try {
     const page = await context.newPage();
+    await page.addInitScript({ content: BLOCKING_PROBE });
     if (opts.forceWebGL2) {
       await page.addInitScript(() => {
         delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu'];
@@ -601,6 +680,9 @@ function report(results: Array<{ name: string; metrics: RunMetrics }>): void {
     log(`  [${name}] backend=${m.backend} firstFrame=${Math.round(m.firstFrameMs)} ms default world: ${m.defaultWorld.entities} entities, ${m.defaultWorld.fps.toFixed(1)} fps, ${m.defaultWorld.drawCalls} draws, ${m.defaultWorld.triangles} tris`);
     const densest = [...m.examples].sort((a, b) => b.triangles - a.triangles)[0];
     if (densest) log(`  [${name}] densest example "${densest.slug}": ${densest.entities} entities, ${densest.fps.toFixed(1)} fps, ${densest.drawCalls} draws, ${densest.triangles} tris`);
+    const worstTask = Math.max(...m.examples.map((e) => e.longTaskMs));
+    const worstLag = Math.max(...m.examples.map((e) => e.lagMs));
+    log(`  [${name}] agent turns: longest main-thread task ${worstTask < 0 ? 'n/a' : `${Math.round(worstTask)} ms`}, worst stall ${Math.round(worstLag)} ms; verification ${m.examples.map((e) => `${e.slug} ${Math.round(e.verifyMs)} ms/${e.lanes} lane(s)`).join(', ')}`);
   }
   let total = 0;
   let totalGz = 0;

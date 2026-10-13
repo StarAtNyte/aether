@@ -132,6 +132,16 @@ export const SANDBOX_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe
 /** Built path of the generator sandbox worker. */
 export const SANDBOX_WORKER_PATH = /^\/assets\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
+/**
+ * The physics verification worker runs only our own code (Rapier and the
+ * QuickJS interpreter as WebAssembly); it needs no eval and no network
+ * beyond fetching its own same-origin wasm and chunks, so it gets a tighter
+ * policy than the page (no bridge or model hosts).
+ */
+export const VERIFY_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
+/** Built path of the verification worker. */
+export const VERIFY_WORKER_PATH = /^\/assets\/verify\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
+
 /** Security headers: CSP, nosniff, referrer policy, COOP, frame denial, HSTS (production only). */
 export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> {
   const base = secureHeaders({
@@ -148,5 +158,6 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
   return async (c, next) => {
     await base(c, next);
     if (SANDBOX_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
+    else if (VERIFY_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', VERIFY_WORKER_CSP);
   };
 }

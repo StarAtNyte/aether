@@ -48,7 +48,7 @@ describe('render loop allocation probe', () => {
         packed[1] = Math.sin(f++);
         sync.applyTransforms(packed, order);
       },
-      { iterations: 400, match: RENDER_SRC },
+      { iterations: 400, warmup: 4000, match: RENDER_SRC },
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
   });
@@ -106,7 +106,8 @@ describe('render loop allocation probe', () => {
         rig.update(1 / 60, cam);
         weather.update(1 / 60, cam);
       },
-      { iterations: 300, match: RENDER_SRC },
+      // The 5000-particle loop optimizes quickly; a long warmup would only cost test time.
+      { iterations: 300, warmup: 1500, match: RENDER_SRC },
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
     weather.dispose();
@@ -128,7 +129,7 @@ describe('render loop allocation probe', () => {
       () => {
         mesh.raycast(ray, hits);
       },
-      { iterations: 500, match: RENDER_SRC },
+      { iterations: 500, warmup: 30_000, match: RENDER_SRC },
     );
     expect(hits).toHaveLength(0);
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);

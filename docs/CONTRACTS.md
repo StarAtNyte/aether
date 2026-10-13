@@ -189,6 +189,7 @@ export class PhysicsWorld {
   readonly time: number;
   readonly alpha: number;                                 // interpolation factor for rendering
   getState(id: EntityId): BodyState | undefined;
+  readPose(id: EntityId, position: Vec3, quaternion: Quat): boolean;   // copy into caller buffers (no result objects); false without a body
   getAllStates(): Map<EntityId, BodyState>;
   dynamicIds(): EntityId[];
   writeTransforms(into: Float32Array, order: EntityId[]): void;   // packed [px,py,pz,qx,qy,qz,qw]* for zero-alloc render sync
@@ -220,10 +221,23 @@ export async function diagnose(world: WorldDoc, opts?: { colliders?: ColliderPro
 
 // Verification: run world.tests headless (fork, fast-forward), with logic hooked in via callback
 export interface TestResult { id: string; kind: string; passed: boolean; message: string; atTime?: number; }
-export interface VerifyReport { passed: boolean; results: TestResult[]; diagnostics: Diagnostic[]; simulatedSeconds: number; ms: number; }
+export interface VerifyReport { passed: boolean; results: TestResult[]; diagnostics: Diagnostic[]; simulatedSeconds: number; ms: number;
+  testIndices?: number[];          // shard runs only: the world.tests indices `results` belong to
+}
 export interface LogicHook { tick(dt: number, pw: PhysicsWorld, events: PhysicsEvent[]): void; readState(key: string): Json | undefined; }
-export async function verify(world: WorldDoc, opts?: { colliders?: ColliderProvider; logic?: (pw: PhysicsWorld) => LogicHook; maxSeconds?: number; budgetMs?: number }): Promise<VerifyReport>;
+export interface VerifyOptions {
+  colliders?: ColliderProvider; logic?: (pw: PhysicsWorld) => LogicHook; maxSeconds?: number; budgetMs?: number;
+  sliceMs?: number;                // yield to the host after this much stepping (default 8; 0 = never)
+  tests?: readonly number[];       // run only these world.tests indices (a parallel shard); report sets testIndices
+  diagnostics?: boolean;           // default true; shards other than one skip the static diagnostics
+  signal?: AbortSignal;            // abort → rejects with VerifyAbortedError (name 'AbortError') at the next step
+  onResult?: (index: number, result: TestResult) => void;   // each test as soon as it is decided (listener errors are ignored)
+}
+export async function verify(world: WorldDoc, opts?: VerifyOptions): Promise<VerifyReport>;
+export class VerifyAbortedError extends Error {}           // name 'AbortError'
+export function shardIndices(count: number, only: readonly number[] | undefined): number[];   // sorted, unique, in range
 export function summarizeReport(report: VerifyReport): string;   // compact text for the LLM repair loop
+// Also importable without Rapier: `import { summarizeReport } from '@aether/physics/report'` (main thread, no WASM chunk).
 
 // Collider output caches (built-in generators / primitives): ≤ 64 entries and ≤ MAX_COLLIDER_CACHE_BYTES (32 MB) each
 export function clearColliderCache(): void;
@@ -238,6 +252,7 @@ the studio with physics + render, and by tests with fakes).
 
 ```ts
 export interface LogicHost {
+  // May return a record reused per entity id (overwritten by the next query for that id): copy what you keep past the tick.
   getTransform(id: EntityId): { position: Vec3; quaternion: [number, number, number, number] } | undefined;
   setKinematic(id: EntityId, position: Vec3, quaternion: [number, number, number, number]): void; // for kinematic/no-physics entities
   applyImpulse(id: EntityId, v: Vec3): void; setVelocity(id: EntityId, v: Vec3): void; getVelocity(id: EntityId): Vec3 | undefined;
@@ -271,7 +286,10 @@ export interface BehaviorCatalogEntry { type: BuiltinBehavior; description: stri
 export const BEHAVIOR_CATALOG: BehaviorCatalogEntry[];      // every BuiltinBehavior documented (for agent prompt)
 export const RULE_DOCS: string;                             // compact docs of triggers/actions for the agent prompt
 
-export interface ScriptRunner { load(def: ScriptDef): void; update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot): ScriptIntent[]; dispose(): void; }
+export interface ScriptRunner { load(def: ScriptDef): void; update(scriptId: string, entityId: EntityId, snap: ScriptSnapshot, prepared?: ScriptPrepared): ScriptIntent[]; dispose(): void; }
+// `prepared.worldJson` === JSON.stringify(snap.world), serialized once per tick by the runtime (invalidated by state
+// writes); the QuickJS runner splices it instead of serializing the world state for every call (additive).
+export interface ScriptPrepared { worldJson?: string; }
 export interface ScriptSnapshot { dt: number; time: number; self: { id: EntityId; position: Vec3; velocity: Vec3; state: Record<string, Json> }; player?: { position: Vec3 }; world: Record<string, Json>; nearby: Array<{ id: EntityId; tags: string[]; position: Vec3 }>; input: { forward: number; right: number; jump: boolean; action: boolean }; }
 export type ScriptIntent = Action | { do: 'moveTo'; target: Vec3; speed: number } | { do: 'setSelfState'; key: string; value: Json };
 export function createScriptRunner(opts?: ScriptRunnerOptions): ManagedScriptRunner;   // QuickJS sandbox; throws until initScripting() resolved
@@ -299,6 +317,7 @@ export interface RendererOptions {
   lowMemory?: boolean;                                    // low-memory budget (see renderBudget); lowPower is a deprecated alias
   onContextLost?: (info: { backend: 'webgpu' | 'webgl2'; message: string }) => void;   // device/context lost: renderer stops drawing; host replaces it
   growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
+  adaptiveResolution?: boolean;                           // default true: scale the drawing buffer down while continuous frames stay < 40 fps
 }
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
@@ -313,6 +332,7 @@ export class WorldRenderer {
   setWorld(world: WorldDoc): Promise<void>;               // incremental sync via diffWorlds; async because procedural generation may be sandboxed
   getGeneratorOutput(id: EntityId): GeneratorOutput | undefined;   // so physics can use procedural colliders
   applyTransforms(packed: Float32Array, order: EntityId[]): void;   // from PhysicsWorld.writeTransforms
+  setAdaptiveResolution(on: boolean): void;              // stats().resolutionScale reports the current scale (1 = full budget)
   setEntityProperty(id: EntityId, path: string, value: Json): void;
   clearRuntimeOverrides(): void;
   addTransient(entity: Entity, opts?: { trusted?: boolean }): void; removeTransient(id: EntityId): void;   // runtime spawns not in doc
@@ -448,7 +468,7 @@ export type AgentEvent =
 export interface AgentHost {
   getWorld(): WorldDoc;
   applyPatches(patches: unknown[], message: string): PatchResult;    // commits to history
-  verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }>;
+  verify(world: WorldDoc, opts?: { signal?: AbortSignal /* the run's abort signal (additive) */ }): Promise<{ report: unknown; summary: string; passed: boolean }>;
   screenshot?(): Promise<string | null>;
   validateGenerator?(def: GeneratorDef): Promise<{ ok: boolean; error?: string }>;
   validateScript?(def: ScriptDef): Promise<{ ok: boolean; error?: string }>;
@@ -882,3 +902,33 @@ Memory and GPU robustness (see `src/lib/memory.ts`):
   input an edit-mode viewport stops redrawing animated weather.
 - `studio.memoryReport()` (debug handle) and the perf HUD expose the memory
   picture; `npm run e2e:memory` asserts the budgets in Chromium and Firefox.
+
+Verification off the main thread (`src/engine/verify/`):
+
+```ts
+// Worker protocol (zod on both ends, request ids, one terminal reply per request)
+type VerifyRequest =                                   // main → worker
+  | { type: 'verify'; id; world: unknown /* validateWorld in the worker */; colliders: Array<[entityId, ColliderDesc[]]>;
+      options: { maxSeconds; budgetMs; diagnostics: boolean; tests?: number[] /* shard */ } }
+  | { type: 'diagnose' | 'settle'; id; world; colliders; … } | { type: 'warm'; id; scripting: boolean } | { type: 'cancel'; id };
+type VerifyReply =                                     // worker → main
+  | { type: 'ready' } | { type: 'progress'; id; index; result: TestResult }
+  | { type: 'verified'; id; report } | { type: 'diagnosed'; id; diagnostics } | { type: 'settled'; id; report }
+  | { type: 'warmed'; id } | { type: 'failed'; id; error; cancelled: boolean };
+// Caps: ≤ 5000 collider entities, ≤ 2048 colliders each, ≤ 16 M numbers in total; reply strings ≤ 2000 chars, lists ≤ 512.
+createVerifyHandler({ physics, scripting?, post, sliceMs? })   // pure handler (worker entry + Node tests)
+new VerifyPool({ lanes /* 1..2 */, createWorker?, slackMs?, idleMs? })
+  .verify(world, { colliders, maxSeconds, budgetMs, signal?, onResult?, onPlan? }) → { report, lanes }
+  // throws WorkerUnavailableError (caller falls back to the main thread), VerifyTimeoutError (worker restarted), AbortError
+  .warm(scripting?)                                     // idle / intent prefetch of Rapier (+ QuickJS) inside the worker
+planShards(tests, lanes, maxSeconds) / mergeShardReports(tests, shards)   // fork verification across lanes
+verifyLanes({ hardwareConcurrency, deviceMemory, lowMemory }) → 1 | 2
+new VerificationService(pool | null, verifyOnMainThread).run(world, opts) → VerifyOutcome   // never throws
+```
+
+`AgentBridge.verify(world, { signal })` and `Studio.runVerify()` stream each
+test into `store.verify.live` (`{ tests, results (index-aligned, null until
+decided), lanes, worker }`, coalesced to ≤ 1 store write per 60 ms); the
+final state adds `lanes`, `worker` and `simulatedSeconds`. The verification
+worker is served with `default-src 'none'; script-src 'self'
+'wasm-unsafe-eval'; connect-src 'self'` (server and `vercel.json`).

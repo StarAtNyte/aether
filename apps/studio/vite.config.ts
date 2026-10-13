@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { rapierWasm } from '../../scripts/vite/rapier-wasm';
+import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
 
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
 const API_TARGET = 'http://localhost:8787';
@@ -34,8 +34,9 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    // three.js and the Rapier WASM blob are legitimately large.
-    chunkSizeWarningLimit: 4600,
+    // three.js and the opt-in WebLLM runtime (6.1 MB, lazy) are legitimately large;
+    // Rapier's wasm is a separate .wasm asset (see scripts/vite/rapier-wasm.ts).
+    chunkSizeWarningLimit: 6200,
     rolldownOptions: {
       output: {
         codeSplitting: {
