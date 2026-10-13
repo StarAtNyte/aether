@@ -767,6 +767,19 @@
   height: 40px;
   padding: var(--s-1);
   border-radius: var(--r-3);
+  /* Never wider than the space between the side overlays: scroll instead of overlapping the axis gizmo. */
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.dock::-webkit-scrollbar {
+  display: none;
+}
+
+.dock > * {
+  flex: none;
 }
 
 .dock__btn {

@@ -20,6 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer } from './support/env';
+import { TEMPLATES } from '../../apps/studio/src/lib/examples';
 
 const ARGS = process.argv.slice(2);
 const BROWSERS = ARGS.includes('--firefox') ? ['firefox'] : ARGS.includes('--chromium') ? ['chromium'] : ['chromium', 'firefox'];
@@ -68,10 +69,10 @@ async function homeFlow(page: Page, base: string): Promise<void> {
   await page.goto(`${base}/?debug=1#/`);
   await page.getByRole('heading', { name: 'Start from a template' }).waitFor({ timeout: 20_000 });
   const templates = page.locator('.card--template');
-  check((await templates.count()) === 8, `expected 8 template cards, got ${await templates.count()}`);
+  check((await templates.count()) === TEMPLATES.length, `expected ${TEMPLATES.length} template cards, got ${await templates.count()}`);
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.card--template img')].slice(0, 4).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
   await page.getByText('No projects yet').waitFor();
-  log('  home: 8 templates with thumbnails, empty state');
+  log(`  home: ${TEMPLATES.length} templates with thumbnails, empty state`);
 
   // 2. Template → editor → built world → autosave.
   await templates.filter({ hasText: 'Coin island' }).click();

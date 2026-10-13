@@ -123,6 +123,7 @@
 
 .connect-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-3);
@@ -151,8 +152,10 @@
 .connect-card__text {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  /* In a narrow panel the text takes its own row instead of shrinking below a word's width. */
+  flex: 1 1 140px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .connect-card__title {
