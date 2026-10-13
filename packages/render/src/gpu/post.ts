@@ -1,5 +1,5 @@
 /**
- * Post-processing: scene pass + bloom + a soft vignette through three's node
+ * Post-processing: scene pass + bloom + a sky-derived colour grade + a soft vignette through three's node
  * `RenderPipeline` (formerly `PostProcessing`, renamed in r183). Tone
  * mapping and color space conversion happen in the pipeline's output
  * transform. Any failure (missing feature, shader compile error) disables
@@ -8,11 +8,14 @@
 import type { Camera, Scene } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
+import { NEUTRAL_GRADE, type Grade } from './grade';
 
 /** A running post pipeline. */
 export interface PostPipeline {
   render(): void;
   setBloom(strength: number): void;
+  /** Apply a colour grade (uniform updates only; no shader rebuild). */
+  setGrade(grade: Grade): void;
   dispose(): void;
 }
 
@@ -48,7 +51,7 @@ export function bloomStrength(bloom: number): number {
 /** Build the pipeline, or null when unsupported. */
 export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number): Promise<PostPipeline | null> {
   try {
-    const [{ RenderPipeline }, { pass, screenUV, smoothstep, float }, { bloom }] = await Promise.all([
+    const [{ RenderPipeline, Vector3 }, { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp }, { bloom }] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
@@ -57,11 +60,30 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const color = scenePass.getTextureNode('output');
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     const vignette = float(1).sub(smoothstep(float(VIGNETTE_RANGE[0]), float(VIGNETTE_RANGE[1]), screenUV.sub(0.5).length()).mul(VIGNETTE_STRENGTH));
-    const pipeline = new RenderPipeline(renderer, color.add(bloomNode).mul(vignette));
+    // Grade in linear HDR before the output transform: split tone, saturation, contrast pivot.
+    const uSat = uniform(NEUTRAL_GRADE.saturation);
+    const uContrast = uniform(NEUTRAL_GRADE.contrast);
+    const uShadow = uniform(new Vector3(1, 1, 1));
+    const uHigh = uniform(new Vector3(1, 1, 1));
+    const hdr = color.add(bloomNode).rgb;
+    const luma = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
+    const toned = hdr.mul(mix(uShadow, uHigh, smoothstep(float(0.02), float(0.6), luma)));
+    const toneLuma = dot(toned, vec3(0.2126, 0.7152, 0.0722));
+    const saturated = max(mix(vec3(toneLuma), toned, uSat), vec3(0));
+    const pivot = float(0.18);
+    const contrasted = pow(saturated.div(pivot).add(1e-5), vec3(uContrast)).mul(pivot);
+    const graded = clamp(contrasted, vec3(0), vec3(64)).mul(vignette);
+    const pipeline = new RenderPipeline(renderer, vec4(graded, color.a));
     return {
       render: () => pipeline.render(),
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);
+      },
+      setGrade: (g: Grade) => {
+        uSat.value = g.saturation;
+        uContrast.value = g.contrast;
+        uShadow.value.set(...g.shadowTint);
+        uHigh.value.set(...g.highlightTint);
       },
       dispose: () => {
         pipeline.dispose();

@@ -93,6 +93,8 @@ export class VirtualGroup {
     if (this.sourceSphere) g.boundingSphere = this.sourceSphere.clone();
     const mesh = new Mesh(g, source.material as Material);
     mesh.name = `${source.name}:virtual`;
+    // Hidden until its first cut is planned (an empty draw range is never submitted).
+    mesh.visible = false;
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(source.matrix);
     mesh.raycast = noRaycast;
@@ -126,7 +128,7 @@ export class VirtualGroup {
         const { mesh, source } = inst;
         mirror(mesh, source);
         // Hidden instances keep their last cut (nothing draws them; it is ready when shown again).
-        if (!visibleInScene(mesh)) {
+        if (!visibleInScene(mesh.parent)) {
           total += inst.indexCount;
           continue;
         }
@@ -150,32 +152,43 @@ export class VirtualGroup {
       // Over budget: coarsen every cut (still watertight) and select again.
       this.thresholdScale = Math.min(MAX_THRESHOLD_SCALE, this.thresholdScale * 1.6);
     }
-    // Detect changes (order-sensitive hash of every cut).
+    // Detect changes (order-sensitive hash of every cut); remember the first changed instance.
     let total = 0;
-    for (const inst of this.instances) {
+    let first = -1;
+    for (let k = 0; k < this.instances.length; k++) {
+      const inst = this.instances[k] as Instance;
       let h = inst.count | 0;
       for (let i = 0; i < inst.count; i++) h = (Math.imul(h, 31) + (inst.selected[i] as number)) | 0;
-      if (h !== inst.hash) changed = true;
+      if (h !== inst.hash && first < 0) first = k;
       inst.hash = h;
       total += inst.indexCount;
     }
+    if (first >= 0) changed = true;
     // Relax the governor when there is plenty of room.
     if (this.thresholdScale > 1 && total < this.index.count * 0.35) {
       this.thresholdScale = Math.max(1, this.thresholdScale / 1.25);
       changed = true;
+      first = 0;
       for (const inst of this.instances) inst.hash = -1;
     }
     if (!changed) return false;
+    if (first < 0) first = 0;
+    // Cuts are packed back to back: instances before the first change keep their ranges.
     const target = this.index.array as Uint32Array;
-    let w = 0;
-    for (const inst of this.instances) {
+    const start = first > 0 ? (this.instances[first - 1] as Instance).mesh.geometry.drawRange.start + (this.instances[first - 1] as Instance).mesh.geometry.drawRange.count : 0;
+    let w = start;
+    for (let k = first; k < this.instances.length; k++) {
+      const inst = this.instances[k] as Instance;
       const n = assembleCut(this.dag, inst.selected, inst.count, target, w);
       inst.mesh.geometry.setDrawRange(w, n);
+      inst.mesh.visible = n > 0;
       w += n;
     }
-    this.drawnTriangles = w / 3;
+    let drawn = 0;
+    for (const inst of this.instances) drawn += inst.mesh.geometry.drawRange.count;
+    this.drawnTriangles = drawn / 3;
     this.index.clearUpdateRanges();
-    if (w > 0) this.index.addUpdateRange(0, w);
+    if (w > start) this.index.addUpdateRange(start, w - start);
     this.index.needsUpdate = true;
     return true;
   }
@@ -199,8 +212,9 @@ export function mirror(mesh: Mesh, source: Mesh): void {
   mesh.receiveShadow = source.receiveShadow;
 }
 
-/** True when the mesh and all its ancestors are visible. */
-function visibleInScene(o: Mesh): boolean {
-  for (let p: Mesh['parent'] | Mesh = o; p; p = p.parent) if (!p.visible) return false;
+/** True when `o` and all its ancestors are visible (null: detached, not visible). */
+function visibleInScene(o: Mesh['parent']): boolean {
+  if (!o) return false;
+  for (let p: Mesh['parent'] = o; p; p = p.parent) if (!p.visible) return false;
   return true;
 }

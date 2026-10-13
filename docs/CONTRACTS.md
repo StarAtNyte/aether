@@ -319,6 +319,7 @@ export interface RendererOptions {
   growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
   adaptiveResolution?: boolean;                           // default true: scale the drawing buffer down while continuous frames stay < 40 fps
   staticBatching?: boolean;                               // default true: ≥ 6 identical static primitives draw as one InstancedMesh
+  fields?: boolean; virtualGeometry?: boolean; workerGeneration?: boolean;   // default true (see "Scale geometry" below)
 }
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
@@ -949,3 +950,49 @@ RenderStats.resolutionScale?: number; RenderStats.batchedDrawsSaved?: number
 asynchronously (output render target + `readRenderTargetPixelsAsync`) and
 fall back to the synchronous canvas readback once if that fails.
 
+
+## Scale geometry: scatter fields and virtual geometry (`@aether/render`, additive)
+
+Both are on by default, work identically on the WebGPU and WebGL2 backends
+(plain instanced / indexed draws; all planning on the CPU) and degrade by
+budget, never by failure.
+
+```ts
+// Renderer options (default true): huge scatter layers as culled LOD fields; high-poly parts as virtual geometry;
+// built-in generators run in the compute worker (inline fallback).
+RendererOptions.fields?: boolean; RendererOptions.virtualGeometry?: boolean; RendererOptions.workerGeneration?: boolean;
+WorldRenderer.scaleGeometryActive: boolean                 // a field or a virtual mesh is mounted
+RenderStats.sceneTriangles?: number                        // full-detail triangles the scene holds (instances × mesh, every part)
+RenderStats.fieldInstances?: number; RenderStats.fieldDrawn?: number
+RenderStats.virtualInstances?: number; RenderStats.virtualSourceTriangles?: number; RenderStats.virtualDrawnTriangles?: number
+RenderBudget.fieldInstances / fieldTriangles / virtualTriangles   // per GPU class (discrete 2M / 4M / 3M … low memory 300k / 600k / 400k)
+
+// SceneSync (GPU-free)
+SceneSyncOptions.fields?: { maxInstances; triangles } | false      // layers ≥ FIELD_MIN_INSTANCES (2000) become fields
+SceneSyncOptions.virtual?: { triangles; dag?: DagClientOptions } | false   // parts ≥ VIRTUAL_MIN_TRIANGLES (20 000)
+SceneSync.updateView(camera, heightPx, nowMs = 0): boolean   // re-plan fields + cuts; throttled to VIEW_INTERVAL_MS (90) when nowMs > 0
+SceneSync.viewNeedsUpdate: boolean; SceneSync.scaleGeometryActive: boolean
+SceneSync.fieldStats(); SceneSync.virtualStats(); SceneSync.sceneTriangles()
+
+// Algorithms (pure, typed arrays, unit-tested)
+simplifyMesh(positions, indices, { targetIndexCount, maxError?, locked?, lockBorder?, welded? }) → { indices, error }   // QEM half-edge collapse: never creates vertices
+buildClusters(positions, indices, maxTriangles = 128, weld?) / splitClusters(...) / clusterBounds(...) → spheres + normal cones
+buildClusterDag(positions, indices) → ClusterDag            // levels of 128-triangle clusters, groups of 4 simplified with locked borders
+selectCut(dag, view, out, scratch) → count; assembleCut(dag, selected, n, target, offset?) // watertight view-dependent cut (≤ threshold px)
+buildLodChain(parts, ratios?) → LodLevel[]                   // discrete LODs for scatter meshes (faceted parts re-flattened)
+buildChunks(packed, count, radius) + new FieldCuller(chunks, { lodTriangles, radius, budgetTriangles }).update(view) → dirty level mask
+composeScatterPacked(placements, lift, sampler?) → Float32Array   // x, y, z, s·cos, s·sin (20 B per instance)
+gradeFor(skyState) → Grade                                  // post-pass colour grade (split tone, saturation, contrast)
+```
+
+DAG builds run in `dag.worker.ts` (module worker; inline fallback),
+one at a time, 60 s timeout, cached per geometry key (96 MB LRU); requests
+and replies are structurally validated (`parseDagRequest`, `validateDag`:
+types, lengths, index ranges). Physics caches outputs above the trimesh
+limit as a collider view (colliders + bounds + a 16k point sample).
+
+World IR (backward compatible): `ScatterShape.count` max 1 000 000 (was
+200 000), `LIMITS.MAX_SCATTER_TOTAL` 2 000 000 (was 500 000). New built-in
+generator `colossus` (variants head / standing stone / boulder; `detail`
+1–4 ≈ 49k–786k smooth triangles) and terrain variant 3 (canyon, floor at y = 0).
+Studio URL flag `?engine=classic` turns fields and virtual geometry off.

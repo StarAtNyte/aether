@@ -14,7 +14,8 @@
  *    one, or dropped when even the coarsest does not fit, so far chunks
  *    degrade first and the frame cost is bounded whatever the scene holds,
  * 4. rewrites only the levels whose chunk membership changed, in stable
- *    chunk order, so an unchanged level is never re-uploaded.
+ *    chunk order, and only from the first chunk that differs, so unchanged
+ *    levels and unchanged prefixes are never re-uploaded.
  *
  * Allocation-free after construction.
  */
@@ -170,6 +171,16 @@ export class FieldCuller {
   readonly counts: Uint32Array;
   /** Instances written per level buffer (equals `counts` after every update). */
   private readonly written: Uint32Array;
+  /**
+   * First instance of each level whose matrix changed in the last rewrite;
+   * instances before it were already uploaded (upload `[dirtyFrom, count)`).
+   */
+  readonly dirtyFrom: Uint32Array;
+  /** Chunk order of each level's buffer, to find the first change. */
+  private readonly sequences: Int32Array[] = [];
+  private readonly seqLength: Uint32Array;
+  private readonly prevSeqLength: Uint32Array;
+  private readonly diverged: Uint8Array;
   /** Instance capacity per level (bounded by the triangle budget). */
   readonly capacity: Uint32Array;
   /** Triangles the last assignment draws (per frame, instances × level triangles). */
@@ -213,6 +224,11 @@ export class FieldCuller {
     this.capacity = new Uint32Array(this.levels);
     this.counts = new Uint32Array(this.levels);
     this.written = new Uint32Array(this.levels);
+    this.dirtyFrom = new Uint32Array(this.levels);
+    this.seqLength = new Uint32Array(this.levels);
+    this.prevSeqLength = new Uint32Array(this.levels);
+    this.diverged = new Uint8Array(this.levels);
+    for (let l = 0; l < this.levels; l++) this.sequences.push(new Int32Array(n));
     this.buffers = [];
     for (let l = 0; l < this.levels; l++) {
       const tris = Math.max(1, opts.lodTriangles[l] as number);
@@ -226,6 +242,7 @@ export class FieldCuller {
   setBudget(triangles: number): void {
     this.budget = Math.max(0, Math.min(triangles, this.opts.budgetTriangles));
     this.prevLevel.fill(-2);
+    this.prevSeqLength.fill(0);
   }
 
   /**
@@ -343,14 +360,35 @@ export class FieldCuller {
   private assemble(dirty: number): void {
     const { chunks, level } = this;
     const data = chunks.data;
-    for (let l = 0; l < this.levels; l++) if (dirty & (1 << l)) this.written[l] = 0;
+    for (let l = 0; l < this.levels; l++) {
+      if (!(dirty & (1 << l))) continue;
+      this.written[l] = 0;
+      this.seqLength[l] = 0;
+      this.diverged[l] = 0;
+      this.dirtyFrom[l] = 0;
+    }
     for (let c = 0; c < chunks.chunkCount; c++) {
       const l = level[c] as number;
       if (l < 0 || !(dirty & (1 << l))) continue;
+      const seq = this.sequences[l] as Int32Array;
+      const pos = this.seqLength[l] as number;
+      const start = chunks.start[c] as number;
+      const end = chunks.start[c + 1] as number;
+      // Same chunk at the same place as last time: its matrices are already uploaded.
+      if (!this.diverged[l] && pos < (this.prevSeqLength[l] as number) && seq[pos] === c) {
+        this.seqLength[l] = pos + 1;
+        this.written[l] = (this.written[l] as number) + (end - start);
+        continue;
+      }
+      if (!this.diverged[l]) {
+        this.diverged[l] = 1;
+        this.dirtyFrom[l] = this.written[l] as number;
+      }
+      seq[pos] = c;
+      this.seqLength[l] = pos + 1;
       const buf = this.buffers[l] as Float32Array;
       let w = (this.written[l] as number) * 16;
-      const end = chunks.start[c + 1] as number;
-      for (let j = chunks.start[c] as number; j < end; j++) {
+      for (let j = start; j < end; j++) {
         const o = j * FIELD_STRIDE;
         const cs = data[o + 3] as number;
         const sn = data[o + 4] as number;
@@ -374,6 +412,12 @@ export class FieldCuller {
         w += 16;
       }
       this.written[l] = w / 16;
+    }
+    for (let l = 0; l < this.levels; l++) {
+      if (!(dirty & (1 << l))) continue;
+      // A level that only lost chunks at its end needs no upload beyond its new count.
+      if (!this.diverged[l]) this.dirtyFrom[l] = this.written[l] as number;
+      this.prevSeqLength[l] = this.seqLength[l] as number;
     }
   }
 }

@@ -63,6 +63,7 @@ export class ScatterField {
         const mesh = new InstancedMesh(geometry, materials[p] as Material, 0);
         mesh.instanceMatrix = attr;
         mesh.count = 0;
+        mesh.visible = false;
         mesh.frustumCulled = false;
         mesh.boundingBox = box.clone();
         mesh.boundingSphere = sphere.clone();
@@ -89,11 +90,18 @@ export class ScatterField {
     if (dirty === 0) return false;
     for (let l = 0; l < this.attributes.length; l++) {
       const count = this.culler.counts[l] as number;
-      for (let p = 0; p < this.parts; p++) (this.meshes[l * this.parts + p] as InstancedMesh).count = count;
+      for (let p = 0; p < this.parts; p++) {
+        const mesh = this.meshes[l * this.parts + p] as InstancedMesh;
+        mesh.count = count;
+        // An empty level is not submitted at all.
+        mesh.visible = count > 0;
+      }
       if (!(dirty & (1 << l))) continue;
+      const from = Math.min(count, this.culler.dirtyFrom[l] as number);
+      if (from >= count) continue;
       const attr = this.attributes[l] as InstancedBufferAttribute;
       attr.clearUpdateRanges();
-      if (count > 0) attr.addUpdateRange(0, count * 16);
+      attr.addUpdateRange(from * 16, (count - from) * 16);
       attr.needsUpdate = true;
     }
     return true;

@@ -56,3 +56,18 @@ export { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadow
 export { AdaptiveResolution, ADAPTIVE_DEFAULTS, type AdaptiveOptions } from './view/adaptive-resolution';
 export { accelerateRaycast, bvhEligible, BVH_MIN_TRIANGLES, triangleBvh, type TriangleBvh } from './geometry/raycast-bvh';
 export { StaticBatches, BATCHED_LAYER, MIN_BATCH, batchable } from './sync/static-batches';
+
+// Scale geometry: QEM simplification, cluster LOD DAG (virtual geometry), scatter fields.
+export { simplifyMesh, weldPositions, type SimplifyOptions, type SimplifyResult } from './virtual/simplify';
+export { buildClusters, splitClusters, clusterBounds, CLUSTER_TRIANGLES, type ClusterSet, type ClusterBounds } from './virtual/clusters';
+export { buildClusterDag, selectCut, assembleCut, cutIndexCount, createCutScratch, backfacing, LOD_STRIDE, type ClusterDag, type CutView, type CutScratch } from './virtual/cluster-dag';
+export { DagClient, dagBytes, type DagClientOptions, type DagWorkerLike } from './virtual/dag-client';
+export { parseDagRequest, validateDag, MAX_DAG_INDICES, MAX_DAG_VERTICES } from './virtual/dag-protocol';
+export { VirtualGroup, VIRTUAL_MIN_TRIANGLES, VIRTUAL_ERROR_PX } from './virtual/virtual-mesh';
+export { buildLodChain, isFaceted, LOD_RATIOS, type LodLevel, type LodPart } from './virtual/lod-chain';
+export { buildChunks, packMatrices, FieldCuller, FIELD_STRIDE, CHUNK_INSTANCES, DEFAULT_LOD_PIXELS, type FieldChunks, type FieldView, type FieldCullerOptions } from './virtual/field-culler';
+export { ScatterField, FIELD_MIN_INSTANCES } from './virtual/scatter-field';
+export { composeScatterPacked } from './geometry/scatter';
+export { DEFAULT_FIELD_BUDGET, type FieldBudget } from './sync/field-mount';
+export { DEFAULT_VIRTUAL_TRIANGLES, VIEW_INTERVAL_MS } from './sync/scene-sync';
+export { gradeFor, NEUTRAL_GRADE, type Grade } from './gpu/grade';

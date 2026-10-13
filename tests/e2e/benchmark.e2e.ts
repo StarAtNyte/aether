@@ -127,6 +127,8 @@ async function run(target: Target, url: string): Promise<Result> {
   const browser = await target.launch();
   try {
     const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+    // tsx keeps function names with an `__name` helper that page.evaluate bodies reference.
+    await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

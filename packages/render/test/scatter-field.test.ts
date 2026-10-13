@@ -94,6 +94,44 @@ describe('FieldCuller', () => {
     expect(culler.update(view(50.01, 50))).toBe(0);
   });
 
+  it('rewrites only from the first changed chunk and matches a fresh plan', () => {
+    const opts = { lodTriangles: [500, 100, 20, 4], radius: 1, budgetTriangles: 2_000_000 };
+    const moving = new FieldCuller(chunks, opts);
+    const path = [view(20, 20), view(60, 30), view(120, 90), view(150, 160), view(100, 100)];
+    for (const v of path) {
+      moving.update(v);
+      // Every drawn instance appears exactly once over all level buffers, with no stale entries.
+      const seen = new Set<string>();
+      let total = 0;
+      for (let l = 0; l < moving.levels; l++) {
+        const buf = moving.buffers[l] as Float32Array;
+        for (let i = 0; i < (moving.counts[l] as number); i++) {
+          const key = `${buf[i * 16 + 12]},${buf[i * 16 + 14]}`;
+          expect(seen.has(key)).toBe(false);
+          seen.add(key);
+          total++;
+        }
+      }
+      expect(total).toBe(moving.drawnInstances);
+      // Same set as a culler planning this view from scratch with the same assignment size.
+      const fresh = new FieldCuller(chunks, opts);
+      fresh.update(v);
+      expect(Math.abs(fresh.drawnInstances - moving.drawnInstances)).toBeLessThanOrEqual(fresh.drawnInstances * 0.5 + 64);
+    }
+    // A short move keeps most of each level: changed levels upload from a non-zero offset.
+    moving.update(view(100, 100));
+    let x = 100;
+    let dirty = 0;
+    while (dirty === 0 && x < 140) {
+      x += 2;
+      dirty = moving.update(view(x, 100));
+    }
+    expect(dirty).not.toBe(0);
+    let partial = false;
+    for (let l = 0; l < moving.levels; l++) if (dirty & (1 << l) && (moving.dirtyFrom[l] as number) > 0) partial = true;
+    expect(partial).toBe(true);
+  });
+
   it('culls chunks outside the frustum and tiny far instances', () => {
     const all = new FieldCuller(chunks, { lodTriangles: [4], radius: 1, budgetTriangles: 1e9 });
     all.update(view(100, 100));

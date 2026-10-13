@@ -124,6 +124,9 @@ export interface SceneSyncOptions {
   virtual?: { triangles: number; dag?: DagClientOptions } | false;
 }
 
+/** Minimum interval between view re-plans while the camera keeps moving (ms). */
+export const VIEW_INTERVAL_MS = 90;
+
 /** Default virtual-geometry budget: triangles one unique mesh may draw over all its instances. */
 export const DEFAULT_VIRTUAL_TRIANGLES = 1_500_000;
 
@@ -227,6 +230,8 @@ export class SceneSync {
   private readonly lodChains = new LodChainCache();
   /** A field was mounted or rebalanced since the last {@link updateView}. */
   private viewDirty = false;
+  /** Time of the last unthrottled view update (ms; 0 = never). */
+  private lastViewUpdate = 0;
   private readonly view = createLocalView();
   /** Virtual geometry (null: disabled). */
   private readonly dags: DagClient | null;
@@ -253,12 +258,21 @@ export class SceneSync {
   }
 
   /**
-   * Re-plan every scatter field for `camera` (call before drawing whenever
-   * the camera moved or {@link viewNeedsUpdate}); `heightPx` is the drawing
-   * buffer height. Returns true when instance buffers changed (redraw).
+   * Re-plan every scatter field and virtual-geometry cut for `camera` (call
+   * before drawing whenever the camera moved or {@link viewNeedsUpdate});
+   * `heightPx` is the drawing-buffer height. With `nowMs` (frame time) the
+   * re-plan is throttled to one per {@link VIEW_INTERVAL_MS}; 0 forces it
+   * (captures). Returns true when instance or index buffers changed.
    * Allocation-free.
    */
-  updateView(camera: PerspectiveCamera, heightPx: number): boolean {
+  updateView(camera: PerspectiveCamera, heightPx: number, nowMs = 0): boolean {
+    // While the camera moves, re-plan at most every VIEW_INTERVAL_MS (uploads dominate on
+    // slow GPUs); the skipped frame leaves the view dirty so the last pose is always planned.
+    if (nowMs > 0 && nowMs - this.lastViewUpdate < VIEW_INTERVAL_MS && this.lastViewUpdate > 0) {
+      this.viewDirty = true;
+      return false;
+    }
+    this.lastViewUpdate = nowMs;
     this.viewDirty = false;
     let changed = false;
     for (const { group } of this.virtualGroups.values()) if (group.update(camera, heightPx)) changed = true;
@@ -595,7 +609,7 @@ export class SceneSync {
       _box.makeEmpty();
       for (const b of node.bindings) {
         const mesh = b.mesh;
-        if (!mesh.visible || !(mesh instanceof InstancedMesh) || !mesh.boundingBox) continue;
+        if ((!mesh.visible && !node.field) || !(mesh instanceof InstancedMesh) || !mesh.boundingBox) continue;
         mesh.updateWorldMatrix(true, false);
         _box2.copy(mesh.boundingBox).applyMatrix4(mesh.matrixWorld);
         _box.union(_box2);
@@ -1159,16 +1173,20 @@ export class SceneSync {
   }
 
   /**
-   * Swap a high-poly part to virtual geometry once its cluster DAG is built
-   * (in the worker; the plain mesh draws meanwhile). The plain mesh moves to
-   * the raycast-only layer so picking, snapping and the chase camera keep
-   * using its full-detail BVH.
+   * Draw a high-poly part as virtual geometry once its cluster DAG is built
+   * (in the worker). The full-detail mesh lives on the raycast-only layer
+   * from the start, so picking, snapping and the chase camera keep using its
+   * BVH while it never costs a draw; it is drawn plainly only when no
+   * hierarchy can be built.
    */
   private virtualize(node: EntityNode, source: Mesh, key: string, positions: Float32Array, indices: Uint32Array): void {
     const dags = this.dags;
     if (!dags) return;
     const token = node.token;
     const geometry = source.geometry;
+    // Never draw the full-detail mesh: it stays raycast-only and the cluster cut streams in
+    // once the hierarchy is built (a cached hierarchy appears on the next frame).
+    source.layers.set(BATCHED_LAYER);
     dags.build(key, positions, indices).then(
       (dag) => {
         if (this.disposed || node.token !== token || source.parent !== node.content || !node.bindings.some((b) => b.mesh === source)) return;
@@ -1184,8 +1202,14 @@ export class SceneSync {
         node.content.add(mesh);
         node.virtual.push({ key, mesh, source });
         this.viewDirty = true;
+        this.opts.onContentChanged?.(node.id);
       },
-      (e: unknown) => log.debug(`virtual geometry unavailable for ${node.id}: ${errorMessage(e)}`),
+      (e: unknown) => {
+        // No hierarchy (too large, worker failure): draw the plain mesh after all.
+        if (node.token === token) source.layers.set(0);
+        log.debug(`virtual geometry unavailable for ${node.id}: ${errorMessage(e)}`);
+        this.opts.onContentChanged?.(node.id);
+      },
     );
   }
 

@@ -30,6 +30,7 @@ import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
+import { gradeFor } from './gpu/grade';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { contentFraming, framingPose, type Framing } from './view/framing';
@@ -497,7 +498,10 @@ export class WorldRenderer {
     // User camera input marks the next on-demand frame dirty.
     onControlsChange?.(() => wr.requestRender());
     wr.resize(width, height);
-    if (wr.budget.post) wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4);
+    if (wr.budget.post) {
+      wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4);
+      wr.post?.setGrade(gradeFor(wr.env.skyState));
+    }
     opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
     return wr;
   }
@@ -600,6 +604,7 @@ export class WorldRenderer {
     this.env.apply(env, this.scene);
     this.renderer.toneMappingExposure = this.env.exposure;
     this.post?.setBloom(env.bloom);
+    this.post?.setGrade(gradeFor(this.env.skyState));
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
     this.boundsDirty = true;
     this.needsDraw = true;
@@ -1403,6 +1408,7 @@ export class WorldRenderer {
           }
           if (gen !== this.postGen || this.disposed || !this.wantsPost) p.dispose();
           else {
+            p.setGrade(gradeFor(this.env.skyState));
             this.post = p;
             this.needsDraw = true;
           }
@@ -1429,14 +1435,19 @@ export class WorldRenderer {
     this.sync.updateBatches();
   }
 
-  private draw(): void {
+  /**
+   * Draw one frame. `capture` marks an off-screen view (critique views,
+   * thumbnails): scatter fields and virtual geometry then re-plan for that
+   * camera immediately, never throttled.
+   */
+  private draw(capture = false): void {
     this.prepareBatches();
     // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
     // (the viewport, or a capture view), only when the view or content changed.
     if (this.viewChanged() || this.sync.viewNeedsUpdate) {
       const target = this.renderer.getOutputRenderTarget();
       const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
-      this.sync.updateView(this.perspective, Math.max(1, height));
+      this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now());
     }
     this.syncPost();
     try {
@@ -1476,7 +1487,7 @@ export class WorldRenderer {
               this.perspective.aspect = w / h;
               this.perspective.updateProjectionMatrix();
               // Same look as the viewport (bloom, vignette): the post pipeline writes to the output target too.
-              this.draw();
+              this.draw(true);
             }, () => {
               this.perspective.aspect = aspect;
               this.perspective.updateProjectionMatrix();
@@ -1495,7 +1506,7 @@ export class WorldRenderer {
         this.withTemporarySize(w, h, () => {
           this.perspective.aspect = w / h;
           this.perspective.updateProjectionMatrix();
-          this.draw();
+          this.draw(true);
           return grab(canvas, w, h, mime);
         }),
       );
@@ -1683,7 +1694,7 @@ export class WorldRenderer {
       this.renderer.setScissorTest(scissorTest);
       this.needsDraw = true;
       try {
-        this.draw();
+        this.draw(true);
       } catch (e) {
         log.warn(`redraw after capture failed: ${errorMessage(e)}`);
       }
