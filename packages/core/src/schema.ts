@@ -10,6 +10,7 @@
  * The LLM never edits this structure directly: it emits `Patch` operations,
  * which are validated and applied by `applyPatches` in this package.
  */
+import './zod-config';
 import { z } from 'zod';
 
 export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);

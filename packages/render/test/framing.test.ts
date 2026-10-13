@@ -101,6 +101,21 @@ describe('collectFramingItems', () => {
     expect(collectFramingItems(sync, new Set(['mountain']))).toHaveLength(3);
     sync.dispose();
   });
+
+  it('treats untagged terrain generators as scenery, but frames scenery when it is all there is', async () => {
+    const { sync } = makeSync();
+    const peak = { id: 'peak', transform: { position: [80, 0, -80] as [number, number, number] }, shape: { kind: 'procedural' as const, generator: 'mountain', params: {} } };
+    await sync.setWorld(world([box('camp', [0, 0.5, 0]), peak]));
+    await tick();
+    const items = collectFramingItems(sync);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.max[0]).toBeLessThan(5);
+    await sync.setWorld(world([peak]));
+    await tick();
+    expect(collectFramingItems(sync)).toHaveLength(1);
+    expect(collectFramingItems(sync)[0]!.min[0]).toBeGreaterThan(50);
+    sync.dispose();
+  });
 });
 
 describe('grow-in', () => {

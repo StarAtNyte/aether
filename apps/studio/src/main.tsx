@@ -2,6 +2,9 @@
  * Aether Studio entry point: creates the Studio controller, exposes a debug
  * handle for e2e tests (dev builds or `?debug=1`), and mounts React.
  */
+// Evaluated first: core configures zod (jitless) before any module defines a schema,
+// so the strict CSP never sees zod's `new Function` probe.
+import '@aether/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/app.css';

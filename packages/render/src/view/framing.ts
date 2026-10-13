@@ -42,7 +42,7 @@ export const FRAMING_COVERAGE = 0.8;
 /** How far the center moves from the content median toward the focus items. */
 const FOCUS_PULL = 0.7;
 /** With focus items, the rest of the content only needs this share of its reach in view (tighter hero shots). */
-const FOCUS_REACH = 0.7;
+const FOCUS_REACH = 0.55;
 
 interface Sample {
   c: Vec3;
@@ -141,7 +141,8 @@ export interface FramingPoseOptions {
   /**
    * Degrees the view is tilted up from looking straight at the content
    * center, so the horizon shows. Default {@link DEFAULT_SKY_TILT} with a
-   * ground, half of it without one.
+   * ground, half of it without one; halved again for scenes larger than
+   * 60 m (their distant haze already fills the top of the frame).
    */
   tiltDeg?: number;
 }
@@ -170,7 +171,8 @@ export function framingPose(framing: Framing, opts: FramingPoseOptions): Framing
   const hHalf = Math.atan(Math.tan(vHalf) * aspect);
   const groundY = opts.groundY === undefined ? 0 : opts.groundY;
   const hasGround = groundY !== null && Number.isFinite(groundY);
-  const tiltDefault = hasGround ? DEFAULT_SKY_TILT : DEFAULT_SKY_TILT / 2;
+  // Large scenes see far, hazy ground near the top of the frame already: tilt less.
+  const tiltDefault = (hasGround ? DEFAULT_SKY_TILT : DEFAULT_SKY_TILT / 2) * (1 - 0.5 * Math.min(1, Math.max(0, (radius - 20) / 40)));
   const tiltDeg = opts.tiltDeg !== undefined && Number.isFinite(opts.tiltDeg) ? Math.max(0, Math.min(25, opts.tiltDeg)) : tiltDefault;
   const elevationDeg = opts.elevationDeg ?? 24 + 8 * Math.min(1, Math.max(0, (radius - 8) / 50));
   const elevation = (elevationDeg * Math.PI) / 180;

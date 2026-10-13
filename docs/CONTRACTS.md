@@ -270,30 +270,44 @@ export const SCRIPT_API_DTS: string;
 
 ## @aether/render
 
-three.js r186. Prefers `WebGPURenderer` (`three/webgpu`) with automatic WebGL2 fallback.
+three.js r186. Prefers `WebGPURenderer` (`three/webgpu`) with automatic WebGL2 fallback (the same renderer forced onto its WebGL2 backend; every feature below works on both).
 
 ```ts
-export interface RendererOptions { preferWebGPU?: boolean; antialias?: boolean; shadows?: boolean; pixelRatioCap?: number; sandbox?: SandboxRunner; onProgress?: (msg: string) => void; }
+export interface RendererOptions {
+  preferWebGPU?: boolean; antialias?: boolean; shadows?: boolean; pixelRatioCap?: number;
+  sandbox?: SandboxRunner; onProgress?: (msg: string) => void;
+  geometrySource?: GeometrySource; modelLoader?: ModelLoader; maxInstances?: number;
+  lowPower?: boolean;                                     // no bloom pass, 1024² sun shadow map
+  growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
+}
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
   readonly backend: 'webgpu' | 'webgl2';
+  readonly domElement: HTMLCanvasElement;
+  get camera(): THREE.PerspectiveCamera;
+  get contentSphere(): Readonly<{ center: Vec3; radius: number }> | null;   // meaningful content (fog, shadows, framing)
+  get cameraFlying(): boolean;                            // an automatic camera flight is in progress
+  get fogState(): Readonly<{ color: string; density: number }> | null;      // fog after the content-size policy
   setWorld(world: WorldDoc): Promise<void>;               // incremental sync via diffWorlds; async because procedural generation may be sandboxed
   getGeneratorOutput(id: EntityId): GeneratorOutput | undefined;   // so physics can use procedural colliders
   applyTransforms(packed: Float32Array, order: EntityId[]): void;   // from PhysicsWorld.writeTransforms
   setEntityProperty(id: EntityId, path: string, value: Json): void;
-  addTransient(entity: Entity): void; removeTransient(id: EntityId): void;   // runtime spawns not in doc
+  clearRuntimeOverrides(): void;
+  addTransient(entity: Entity, opts?: { trusted?: boolean }): void; removeTransient(id: EntityId): void;   // runtime spawns not in doc
   setCameraMode(mode: 'orbit' | 'follow' | 'firstPerson', target?: EntityId): void;
   setPlayerAvatar(position: Vec3, yawDeg: number): void;
-  get camera(): THREE.PerspectiveCamera;
-  readonly domElement: HTMLCanvasElement;
+  frameContent(opts?: { focus?: EntityId[]; focusPoints?: Vec3[]; duration?: number; flyIn?: boolean }): boolean;   // auto-framing (see below)
+  reveal(ids: EntityId[], duration?: number): boolean;    // re-frame only when edited entities are off screen / too small
+  frameSphere(center: Vec3, radius: number, direction?: Vec3, duration?: number): void;
   focus(id: EntityId): void;                              // smooth camera fly-to
   pick(ndcX: number, ndcY: number): EntityId | null;
   highlight(ids: EntityId[]): void;                       // selection outline
   showGhost(world: WorldDoc | null): void;                // translucent preview of a proposed world
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: Diagnostic[] }): void;
-  screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (for VLM critique)
+  screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (for VLM critique); never a mid-grow frame
   renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size?: number): Promise<string[]>;
-  render(dt: number): void;                               // call every frame
+  render(dt: number, opts?: { onDemand?: boolean }): boolean;   // call every frame; on-demand skips unchanged frames
+  requestRender(): void; setLowPower(on: boolean): void;
   resize(width: number, height: number): void;
   stats(): { fps: number; frameMs: number; drawCalls: number; triangles: number; geometries: number; textures: number; entities: number; instances: number };
   dispose(): void;
@@ -305,6 +319,39 @@ BatchedMesh), geometry & material caches keyed by stable JSON, per-frame zero
 allocation, frustum culling, PCF soft shadows with a camera-fitted directional
 light, procedural sky per `environment.sky` and `timeOfDay`, fog, weather
 particles (GPU points), bloom/tone mapping (ACES), dispose everything on removal.
+
+**Look (art direction, all pure and unit-tested):**
+
+- *Sky presets* (`computeSkyState`): the preset is authoritative and
+  `timeOfDay` only moves the sun inside the preset's window
+  (`PRESET_WINDOWS`). The sun's bearing is chosen relative to the default
+  three-quarter camera (`sunBearing`, `VIEW_AZIMUTH`): morning light from the
+  right, afternoon from the left, never straight into the lens; the moon
+  rim-lights from behind-right. Dawn/sunset sample the sky a few degrees
+  lower than the light (deeper color). `SkyState.nebula` paints a nebula
+  (space) or a faint galactic band (clear nights) on the dome.
+- *Fog* (`resolveFog`): content keeps < 6 % fog at its far edge from the
+  framing distance (`maxContentFogDensity`); the preset haze fades backdrop
+  scenery; world fog above `FOGGY_THRESHOLD` may thicken to twice the cap;
+  the fog color is pulled toward the sky horizon and the dome's horizon band
+  matches it.
+- *Framing* (`collectFramingItems` → `contentFraming` → `framingPose`):
+  ground, sky, `backdrop`/`terrain` tags, terrain generators (mountain,
+  island, terrain) and huge entities are scenery (framed only when nothing
+  else exists); `focus`-tagged entities pull the center; the camera is an
+  elevated three-quarter view tilted up (`DEFAULT_SKY_TILT`) so sky shows,
+  never below the ground.
+- *Materials*: `lava` and `water` presets carry procedural, tileable detail
+  maps (`SurfaceTextures`: glowing crack mask, ripple normal map) on
+  box-projected metre UVs (`boxProjectedUvs`), scrolled slowly while frames
+  are drawn. The post pipeline adds a subtle vignette after bloom.
+- *Grow-in* (`GrowIn`): entities a `setWorld` adds are hidden while their
+  geometry streams in, then grow (content group scale only) in a ripple
+  from the content center; bounds/framing/captures always see full scale.
+
+`@aether/procgen` mountain: `groundColor` param (foothill color, match the
+world ground); the flat foothill plate is sunk to y = 0 and trimmed from the
+render mesh (the heightfield collider keeps the full grid).
 
 ## @aether/agent
 

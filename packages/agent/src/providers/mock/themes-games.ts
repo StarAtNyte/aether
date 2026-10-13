@@ -81,8 +81,14 @@ const domino: Theme = {
     if (/\btower\b/.test(c.request ?? '')) {
       b.gen('bell-tower', 'tower', { height: 6.5, radius: 1.3, color: '#d8c8aa', roofColor: '#9b2c2c' }, [r2(bx + dir[0] * 2.6), 0, r2(bz + dir[1] * 2.6)], { physics: 'static', name: 'Bell tower', tags: ['focus'] });
     }
-    // A low wooden display deck under the run makes it read as a built set-piece.
-    b.prim('domino-deck', 'box', [r2(Math.max(hi[0], bx) - Math.min(lo[0], bx) + 4), 0.02, r2(Math.max(hi[1], bz) - Math.min(lo[1], bz) + 4)], [r2((Math.max(hi[0], bx) + Math.min(lo[0], bx)) / 2), 0.01, r2((Math.max(hi[1], bz) + Math.min(lo[1], bz)) / 2)], { name: 'Display deck', material: { preset: 'wood', color: '#8a5d3b', roughness: 0.6 }, castShadow: false });
+    // A pale stone plaza (an ellipse around the run) makes it read as a built set-piece.
+    const x0 = Math.min(lo[0], bx);
+    const x1 = Math.max(hi[0], bx);
+    const z0 = Math.min(lo[1], bz);
+    const z1 = Math.max(hi[1], bz);
+    const wx = r2((x1 - x0) * 1.15 + 4);
+    const wz = r2((z1 - z0) * 1.6 + 5);
+    b.prim('domino-deck', 'cylinder', [wx, 0.02, wx], [r2((x0 + x1) / 2), 0.01, r2((z0 + z1) / 2)], { name: 'Domino plaza', scale: [1, 1, r2(wz / wx)], material: { preset: 'stone', color: '#b5a688', roughness: 0.9 }, castShadow: false });
     b.state('rang', false);
     b.rule({ id: 'ring-bell', description: 'The last domino rings the bell', when: { on: 'collision', a: '#domino', b: bell }, then: [{ do: 'sound', sound: 'bell' }, { do: 'set', key: 'rang', value: true }, { do: 'message', text: 'DING! Chain complete.', duration: 4 }], once: true });
     b.rule({ id: 'reset-key', when: { on: 'key', key: 'r' }, then: [{ do: 'reset' }] });

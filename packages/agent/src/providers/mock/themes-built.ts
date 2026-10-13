@@ -91,7 +91,7 @@ const castle: Theme = {
   radius: 36,
   blurb: 'a stone castle with four corner towers, crenellated walls, a gatehouse arch, a central keep and torches',
   env(b) {
-    b.env({ sky: 'dawn', timeOfDay: 7.5, fog: { color: '#c9c3c8', density: 0.012 }, bloom: 0.7, ground: { material: { preset: 'grass', color: '#5c7f3c' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 15.8, fog: { color: '#d6d2c4', density: 0.01 }, bloom: 0.7, ground: { material: { preset: 'grass', color: '#5c7f3c' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 26] });
   },
   build(c) {
@@ -302,7 +302,7 @@ const space: Theme = {
     }
     b.reserve(c.x, c.z, 8); // the deck is full now
     b.scatter('debris-field', 'rock', { size: 1.2, color: '#5d554d' }, 60, [140, 140], [c.x, -8, c.z], { scaleRange: [0.5, 2.5], minSpacing: 4, castShadow: false, tags: ['backdrop'] });
-    const planet = b.prim('gas-giant', 'sphere', [40, 40, 40], [r2(c.x - 90), 30, r2(c.z - 140)], { name: 'Gas giant', material: { color: '#d08c60', emissive: '#6b3a1f', emissiveIntensity: 0.4 }, castShadow: false, tags: ['backdrop'] });
+    const planet = b.prim('gas-giant', 'sphere', [40, 40, 40], [r2(c.x - 80), 8, r2(c.z - 150)], { name: 'Gas giant', material: { color: '#d08c60', emissive: '#6b3a1f', emissiveIntensity: 0.4 }, castShadow: false, tags: ['backdrop'] });
     b.prim(`${planet}-ring`, 'torus', [70, 1.5, 70], [0, 0, 0], { parent: planet, rot: [70, 0, 15], material: { color: '#e9d8a6', opacity: 0.7 }, castShadow: false });
     b.prim('moon', 'sphere', [8, 8, 8], [r2(c.x + 60), 40, r2(c.z - 80)], {
       material: { color: '#c9c9c9', emissive: '#5a5a5a', emissiveIntensity: 0.3 },

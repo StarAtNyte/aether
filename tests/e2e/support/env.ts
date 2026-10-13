@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 
 /** Repository root (tests/e2e/support → ../../..). */
 export const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../..');
@@ -49,6 +49,39 @@ export function findChrome(): string {
   }
   for (const p of ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']) if (existsSync(p)) return p;
   throw new Error('No Chromium found. Run `npx playwright install chromium` or set AETHER_E2E_CHROME.');
+}
+
+/**
+ * Firefox preferences for headless runs on GPU-less machines: force WebGL on
+ * (software rasterizer) so the studio renders through its WebGL2 backend.
+ */
+export const FIREFOX_PREFS: Readonly<Record<string, boolean | number | string>> = Object.freeze({
+  'webgl.force-enabled': true,
+  'webgl.disabled': false,
+  'webgl.enable-webgl2': true,
+});
+
+/**
+ * Resolve the Firefox executable: `AETHER_E2E_FIREFOX`, then Playwright's
+ * pinned build, then any cached Playwright Firefox, then a system Firefox.
+ */
+export function findFirefox(): string {
+  const fromEnv = process.env['AETHER_E2E_FIREFOX'];
+  if (fromEnv && existsSync(fromEnv)) return fromEnv;
+  const pinned = firefox.executablePath();
+  if (existsSync(pinned)) return pinned;
+  const cache = join(homedir(), '.cache/ms-playwright');
+  if (existsSync(cache)) {
+    const builds = readdirSync(cache)
+      .filter((d) => /^firefox-\d+$/.test(d))
+      .sort((a, b) => Number(b.slice(8)) - Number(a.slice(8)));
+    for (const d of builds) {
+      const p = join(cache, d, 'firefox/firefox');
+      if (existsSync(p)) return p;
+    }
+  }
+  for (const p of ['/usr/bin/firefox', '/usr/lib/firefox/firefox']) if (existsSync(p)) return p;
+  throw new Error('No Firefox found. Run `npx playwright install firefox` or set AETHER_E2E_FIREFOX.');
 }
 
 /** Ask the OS for a free TCP port on localhost. */

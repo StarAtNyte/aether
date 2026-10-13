@@ -227,7 +227,7 @@ const volcano: Theme = {
   radius: 40,
   blurb: 'a smouldering volcano with rivers of glowing lava, basalt rocks and burning crystals',
   env(b) {
-    b.env({ sky: 'sunset', timeOfDay: 17.4, fog: { color: '#3a1c14', density: 0.02 }, weather: 'dust', bloom: 1.6, exposure: 1.1, ambientIntensity: 0.3, ground: { material: { preset: 'dirt', color: '#2b2522' }, size: 400 } });
+    b.env({ sky: 'sunset', timeOfDay: 17.4, fog: { color: '#3a1c14', density: 0.02 }, weather: 'dust', bloom: 1.2, exposure: 1.1, ambientIntensity: 0.3, ground: { material: { preset: 'dirt', color: '#2b2522' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 16] });
   },
   build(c) {
@@ -382,7 +382,7 @@ const meadow: Theme = {
   title: 'Mountain Meadow',
   match: /\b(meadow|valley|hills?|mountains?|nature|lake|river|landscape|scenery)\b/,
   radius: 36,
-  blurb: 'a peaceful mountain meadow with a lake, wildflowers, oaks and a stone bridge',
+  blurb: 'a peaceful mountain meadow with wildflowers, oaks and pines under distant snowy peaks',
   env(b) {
     b.env({ sky: 'day', timeOfDay: 10.5, fog: { color: '#cfdde8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#66924a' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });

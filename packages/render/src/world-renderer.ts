@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, type Intersection, type Object3D } from 'three';
+import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -108,6 +108,24 @@ const _frustum = new Frustum();
 const _viewProj = new Matrix4();
 const _corner = new Vector3();
 const _one = new Box3();
+const _occDir = new Vector3();
+const _occHits: Intersection[] = [];
+/** Hits closer than this to the chase target (its own body) are ignored (m). */
+const OCCLUSION_NEAR = 0.6;
+
+function isDescendant(object: Object3D, ancestor: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) if (o === ancestor) return true;
+  return false;
+}
+
+/** A mesh that blocks the view: visible all the way up and not see-through. */
+function isOpaqueVisible(object: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) if (!o.visible) return false;
+  const material = (object as Partial<Mesh>).material;
+  if (!material) return false;
+  const first = Array.isArray(material) ? material[0] : material;
+  return !first || !first.transparent || first.opacity > 0.9;
+}
 
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : 0;
@@ -142,6 +160,9 @@ export class WorldRenderer {
   private readonly avatar = new Avatar();
   private readonly frameStats = new FrameStats();
   private readonly raycaster = new Raycaster();
+  private readonly occlusionRay = new Raycaster();
+  /** Entity the chase camera follows (its own meshes never block the view). */
+  private followId: EntityId | null = null;
   private readonly grow = new GrowIn();
   private growEnabled = true;
   private post: PostPipeline | null = null;
@@ -172,6 +193,7 @@ export class WorldRenderer {
     this.domElement = canvas;
     this.perspective = camera;
     this.rig = new CameraRig(camera, controls);
+    this.rig.occlusion = (from, to) => this.freeDistance(from, to);
     const source = opts.geometrySource ?? createProcgenGeometrySource(opts.sandbox ? { sandbox: opts.sandbox } : {});
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models };
@@ -399,6 +421,7 @@ export class WorldRenderer {
         };
       }
     }
+    this.followId = mode !== 'orbit' && target ? target : null;
     this.avatar.setHidden(mode === 'firstPerson' && !target);
     this.rig.setMode(mode, source);
     this.needsDraw = true;
@@ -504,6 +527,34 @@ export class WorldRenderer {
     _bounds.getCenter(_center);
     const r = Math.max(_bounds.max.x - _bounds.min.x, _bounds.max.y - _bounds.min.y, _bounds.max.z - _bounds.min.z) / 2;
     this.rig.focusOn(_center, r);
+  }
+
+  /**
+   * Free distance from `from` toward `to` before a visible, opaque document
+   * mesh (Infinity when clear). Scatter layers are not raycast (they are
+   * thin decoration) and see-through materials never block the view. Reuses
+   * one hit list; three allocates hit records only when something is hit.
+   */
+  private freeDistance(from: Vector3, to: Vector3): number {
+    _occDir.subVectors(to, from);
+    const length = _occDir.length();
+    if (!(length > 1e-4)) return Number.POSITIVE_INFINITY;
+    _occDir.multiplyScalar(1 / length);
+    const ray = this.occlusionRay;
+    ray.set(from, _occDir);
+    ray.near = OCCLUSION_NEAR;
+    ray.far = length;
+    _occHits.length = 0;
+    ray.intersectObject(this.sync.root, true, _occHits);
+    let free = Number.POSITIVE_INFINITY;
+    const followed = this.followId ? this.sync.object(this.followId) : undefined;
+    for (const hit of _occHits) {
+      if (!isOpaqueVisible(hit.object) || (followed && isDescendant(hit.object, followed))) continue;
+      free = hit.distance;
+      break;
+    }
+    _occHits.length = 0;
+    return free;
   }
 
   /** Entity under normalized device coordinates (−1..1), or null. */

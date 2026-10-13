@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Box3Helper, Group, LineSegments, Mesh, PerspectiveCamera, Vector3 } from 'three';
-import { CameraRig, damp, easeInOutCubic, type OrbitControlsLike } from '../src/view/camera-rig';
+import { CameraRig, damp, easeInOutCubic, MIN_FOLLOW_DISTANCE, type OrbitControlsLike } from '../src/view/camera-rig';
 import { captureMime, captureSize, MAX_CAPTURE_SIZE, viewPose } from '../src/view/capture';
 import { FrameStats } from '../src/view/frame-stats';
 import { Highlighter, MAX_HIGHLIGHTS } from '../src/view/highlighter';
@@ -215,5 +215,30 @@ describe('Avatar', () => {
     a.set(Number.NaN, 0, 0, 0);
     expect(a.group.position.x).toBe(1);
     a.dispose();
+  });
+});
+
+describe('CameraRig chase occlusion', () => {
+  it('moves in front of an obstacle between the target and the camera, and back out when clear', () => {
+    const cam = new PerspectiveCamera();
+    const rig = new CameraRig(cam, fakeControls());
+    const target = new Vector3(0, 0, 0);
+    let blocked = true;
+    rig.occlusion = (from, to) => {
+      expect(Number.isFinite(from.x + to.x)).toBe(true);
+      return blocked ? 2 : Number.POSITIVE_INFINITY;
+    };
+    rig.setMode('follow', (out) => {
+      out.copy(target);
+      return 0;
+    });
+    for (let i = 0; i < 200; i++) rig.update(1 / 60);
+    const near = cam.position.distanceTo(new Vector3(0, 1.3, 0));
+    expect(near).toBeLessThan(2);
+    expect(near).toBeGreaterThanOrEqual(MIN_FOLLOW_DISTANCE - 1e-6);
+    blocked = false;
+    for (let i = 0; i < 200; i++) rig.update(1 / 60);
+    expect(cam.position.distanceTo(new Vector3(0, 1.3, 0))).toBeGreaterThan(5);
+    rig.dispose();
   });
 });

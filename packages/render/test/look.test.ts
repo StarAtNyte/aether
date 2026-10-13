@@ -112,6 +112,20 @@ describe('sky presets', () => {
     expect(s.exposure).toBeGreaterThan(1.3);
   });
 
+  it('overcast is a dim grey-blue, near-shadowless sky; studio a bright neutral one', () => {
+    const overcast = computeSkyState(env({ sky: 'overcast' }));
+    const studio = computeSkyState(env({ sky: 'studio' }));
+    const day = computeSkyState(env({ sky: 'day' }));
+    const lum = (hex: string): number => rgb(hex).reduce((a, b) => a + b, 0) / 3;
+    expect(lum(studio.zenith) - lum(overcast.zenith)).toBeGreaterThan(50);
+    expect(lum(studio.horizon) - lum(overcast.horizon)).toBeGreaterThan(40);
+    const [r, , b] = rgb(overcast.zenith);
+    expect(b).toBeGreaterThan(r);
+    expect(overcast.lightIntensity).toBeLessThan(day.lightIntensity * 0.3);
+    // Studio keeps a full-strength key light (crisp product-shot shadows).
+    expect(studio.lightIntensity).toBeCloseTo(day.lightIntensity, 6);
+  });
+
   it('space has a full nebula and no haze; overcast and studio have none', () => {
     expect(computeSkyState(env({ sky: 'space' })).nebula).toBe(1);
     expect(computeSkyState(env({ sky: 'overcast' })).nebula).toBe(0);
@@ -222,5 +236,18 @@ describe('sky environment map', () => {
     expect(px[top + 2]!).toBeGreaterThan(px[top]!);
     expect(px[1]!).toBeGreaterThan(px[2]!);
     expect(px[0]! + px[1]! + px[2]!).toBeLessThan(px[top]! + px[top + 1]! + px[top + 2]!);
+  });
+});
+
+describe('post vignette and bloom', () => {
+  it('leaves the center untouched and darkens the corners subtly', async () => {
+    const { vignetteFactor, VIGNETTE_STRENGTH, bloomStrength, MAX_BLOOM_STRENGTH } = await import('../src/gpu/post');
+    expect(vignetteFactor(0)).toBe(1);
+    expect(vignetteFactor(0.3)).toBe(1);
+    expect(vignetteFactor(Math.SQRT1_2)).toBeLessThan(1);
+    expect(vignetteFactor(Math.SQRT1_2)).toBeGreaterThanOrEqual(1 - VIGNETTE_STRENGTH);
+    expect(VIGNETTE_STRENGTH).toBeLessThan(0.35);
+    expect(bloomStrength(100)).toBe(MAX_BLOOM_STRENGTH);
+    expect(bloomStrength(Number.NaN)).toBe(0);
   });
 });

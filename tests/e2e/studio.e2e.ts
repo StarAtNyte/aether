@@ -1,5 +1,6 @@
 /**
- * End-to-end check of Aether Studio in a real Chromium.
+ * End-to-end check of Aether Studio in real browsers: Chromium (WebGPU and
+ * forced WebGL2), then Firefox (WebGL2), one browser at a time.
  *
  * Starts the server in offline mock mode (serving the built studio from
  * `apps/studio/dist`), then drives the app like a user:
@@ -14,7 +15,8 @@
  *  4. undo / redo, select an entity in the outliner and recolor it in the
  *     inspector, export the world JSON.
  *
- * A second, shorter run deletes `navigator.gpu` to force the WebGL2 path.
+ * A second, shorter Chromium run deletes `navigator.gpu` to force the WebGL2
+ * path; a third, full run uses Firefox, whose Linux builds have no WebGPU.
  * Any console error or uncaught page error fails the run. README
  * screenshots are written to `docs/screenshots/`.
  *
@@ -24,9 +26,9 @@
 import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwright';
+import { chromium, firefox, type Browser, type ConsoleMessage, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, REPO_ROOT, STUDIO_DIST, findChrome, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox, startServer } from './support/env';
 
 const VIEWPORT = { width: 1440, height: 900 };
 const SCREENSHOT_DIR = join(REPO_ROOT, 'docs/screenshots');
@@ -59,6 +61,8 @@ const BENIGN_CONSOLE: readonly RegExp[] = [
   /GPU stall due to ReadPixels/i,
   // Dawn's message when a WebGPU adapter probe is torn down (no adapter in headless).
   /valid external Instance reference no longer exists/i,
+  // Firefox's software WebGL reports driver performance hints as warnings/errors.
+  /^WebGL warning:/i,
 ];
 
 // ---------------------------------------------------------------------------
@@ -533,6 +537,7 @@ function report(results: Array<{ name: string; metrics: RunMetrics }>): void {
 async function main(): Promise<void> {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   const server = await startServer(log);
+  // One browser at a time: Chromium runs first and is closed before Firefox starts.
   let browser: Browser | null = null;
   try {
     const executablePath = findChrome();
@@ -541,6 +546,13 @@ async function main(): Promise<void> {
     const results: Array<{ name: string; metrics: RunMetrics }> = [];
     results.push({ name: 'webgpu', metrics: await run(browser, server.url, { name: 'webgpu', forceWebGL2: false, expectBackend: 'webgpu', full: true, screenshots: true }) });
     results.push({ name: 'webgl2-only', metrics: await run(browser, server.url, { name: 'webgl2-only', forceWebGL2: true, expectBackend: 'webgl2', full: false, screenshots: false }) });
+    await browser.close();
+    browser = null;
+    // Firefox (no WebGPU on Linux): the WebGL2 path must carry the whole product.
+    const firefoxPath = findFirefox();
+    log(`firefox ${firefoxPath}`);
+    browser = await firefox.launch({ executablePath: firefoxPath, firefoxUserPrefs: { ...FIREFOX_PREFS } });
+    results.push({ name: 'firefox-webgl2', metrics: await run(browser, server.url, { name: 'firefox-webgl2', forceWebGL2: false, expectBackend: 'webgl2', full: true, screenshots: false }) });
     report(results);
     log('E2E PASSED');
   } finally {

@@ -19,20 +19,25 @@ export { createEntityLight, updateLightParams, enforceShadowCap, LOCAL_LIGHT_SCA
 
 export { MATERIAL_PRESETS, resolveMaterial, materialKey, mergeMaterial, type ResolvedMaterial, type PresetDef, type MaterialVariant, type ResolveOptions } from './materials/presets';
 export { MaterialCache, createMaterial, type MaterialHandle } from './materials/material-cache';
+export { SurfaceTextures, lavaPixels, waterPixels, SURFACE_TILE_METRES, type SurfaceKind, type SurfaceMaps } from './materials/surface-textures';
 
-export { partToBufferGeometry, partKey, GeometryCache, InvalidMeshError } from './geometry/buffer-geometry';
+export { partToBufferGeometry, partKey, GeometryCache, InvalidMeshError, boxProjectedUvs } from './geometry/buffer-geometry';
 export { createProcgenGeometrySource, primitiveKey, type ProcgenSourceOptions } from './geometry/procgen-source';
 export { scatterPlacements, composeScatterMatrices, primitiveLift, MAX_SCATTER_INSTANCES, type ScatterParams, type ScatterPlacements, type SurfaceSampler } from './geometry/scatter';
 export { HeightGrid, buildHeightGrid, transformPositions, DEFAULT_GRID_RESOLUTION, type TriangleSource } from './geometry/height-grid';
 export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
 
-export { computeSkyState, sunPosition, normalizeHour, mixHex, PRESET_HOURS, type SkyState, type SkyPreset } from './environment/sky-state';
+export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';
+export { resolveFog, fogAmount, hazeDensity, maxContentFogDensity, worldFogDensity, type FogParams } from './environment/fog';
 export { fitShadowCamera, type ShadowFit, type ShadowFitOptions } from './environment/shadow-fit';
 export { EnvironmentRig, groundTint, MAX_FOG_DENSITY } from './environment/environment-rig';
 export { SkyDome, SKY_RADIUS } from './environment/sky-dome';
 export { WeatherSystem, WEATHER_CONFIGS, type WeatherConfig, type WeatherKind } from './environment/weather';
 
 export { CameraRig, easeInOutCubic, damp, type FollowSource, type OrbitControlsLike } from './view/camera-rig';
+export { contentFraming, framingPose, DEFAULT_FRAMING_AZIMUTH, DEFAULT_SKY_TILT, type Framing, type FramingItem, type FramingPose, type FramingPoseOptions } from './view/framing';
+export { collectFramingItems, FRAMING_EXCLUDED_TAGS, FOCUS_TAG, SCENERY_GENERATORS } from './view/content-items';
+export { GrowIn, growDelay, growScale, GROW_DURATION, GROW_MAX_DELAY } from './view/grow-in';
 export { viewPose, captureSize, captureMime, MAX_CAPTURE_SIZE, MAX_VIEWS, type CaptureView, type ViewPose } from './view/capture';
 export { Highlighter, MAX_HIGHLIGHTS } from './view/highlighter';
 export { DebugOverlay, MAX_DEBUG_ITEMS, type DebugOptions } from './view/debug-overlay';

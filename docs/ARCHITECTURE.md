@@ -348,9 +348,41 @@ runtimes.
 
 `WorldRenderer` (three.js r186) tries `WebGPURenderer` first and falls back to
 WebGL2 if WebGPU is missing or fails to initialise. Settings: ACES tone
-mapping, sRGB output, environment-driven exposure, bloom through
-`RenderPipeline` (disabled automatically if it fails), PCF shadows with a
-softened radius, and a sun shadow camera refitted to the scene bounds.
+mapping, sRGB output, environment-driven exposure, bloom plus a subtle
+vignette through `RenderPipeline` (disabled automatically if it fails), PCF
+shadows with a softened radius, and a sun shadow camera refitted to the
+meaningful content.
+
+**Art direction.** Every world should look composed in the first seconds,
+whatever the model wrote, so the look is policy rather than per-world tuning:
+
+- *Sky.* The preset (`day`, `dawn`, `sunset`, `night`, `overcast`, `space`,
+  `studio`) is authoritative; `timeOfDay` moves the sun only inside the
+  preset's window. The sun's compass bearing is chosen relative to the
+  default camera, so a low sun rakes across the frame (warm lit faces, cool
+  shade, long sideways shadows) instead of flattening the scene from behind
+  the camera or silhouetting it from the front. Golden-hour skies are
+  sampled a few degrees lower than the light; nights get a moon rim light, a
+  starfield and a faint galactic band; space gets a procedural nebula.
+- *Fog.* Densities are scaled to the content radius: the content's far edge
+  stays under ~5 % fog from the framing distance, backdrop mountains fade to
+  ~15–45 %, and only explicitly foggy worlds may go twice as thick. Fog,
+  dome horizon and sky reflections share one horizon color.
+- *Framing.* After a build, the camera frames the bounding boxes of the
+  meaningful content (scenery, sky and huge terrain excluded, `focus`
+  entities weighted) from an elevated three-quarter view, tilted up so a
+  band of sky shows, never below the ground; edits only re-frame when the
+  changed entities are off screen.
+- *Materials.* Lava and water carry procedural, tileable detail (glowing
+  Worley cracks, a ripple normal map) on box-projected metre UVs, so detail
+  has the same scale on a pond and a sea. Mountains sink and trim their
+  foothill plate and paint their foothills in the world's ground color.
+- *Materialize.* New entities grow out of the ground in a ripple from the
+  content center (content-group scale only; physics and bounds are
+  untouched). Disabled for `prefers-reduced-motion`.
+
+`npm run gallery` renders every smoke prompt (and `-- --skies`, the starter
+world under each preset) to `docs/screenshots/gallery/` for visual review.
 
 **`SceneSync`** applies `diffWorlds` output:
 

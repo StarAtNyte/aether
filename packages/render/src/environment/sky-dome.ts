@@ -99,8 +99,10 @@ export class SkyDome {
         _c.g += _glow.g * g;
         _c.b += _glow.b * g;
       }
-      if (state.nebula > 0 && t > -0.2) {
-        nebulaAt(_d.x, _d.y, _d.z, state.nebula * Math.min(1, (t + 0.2) * 4), _neb);
+      // Over a ground the nebula fades out just above the horizon (no band meeting the ground line).
+      const nebulaFade = state.showGround ? Math.max(0, Math.min(1, (t - 0.04) * 5)) : Math.min(1, Math.max(0, (t + 0.2) * 4));
+      if (state.nebula > 0 && nebulaFade > 0) {
+        nebulaAt(_d.x, _d.y, _d.z, state.nebula * nebulaFade, _neb);
         _c.r += _neb[0];
         _c.g += _neb[1];
         _c.b += _neb[2];

@@ -3,6 +3,7 @@
  * patch, diff, query, version and summarize worlds. Headless and dependency-
  * free apart from zod; safe to run in Node, browsers and Web Workers.
  */
+import './zod-config';
 export * from './schema';
 
 export { LIMITS, type Limits } from './limits';

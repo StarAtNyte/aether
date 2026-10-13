@@ -89,7 +89,7 @@ export const PRESET_EXPOSURE: Readonly<Record<SkyPreset, number>> = Object.freez
   dawn: 1,
   sunset: 1.02,
   night: 1.6,
-  overcast: 1.12,
+  overcast: 1.05,
   space: 1.05,
   studio: 1.02,
 });
@@ -295,20 +295,21 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     case 'overcast':
       return {
         ...state,
-        zenith: mixHex('#8c96a3', keys.zenith, 0.15),
-        horizon: mixHex('#c9ced4', keys.horizon, 0.1),
-        nadir: '#8e949b',
-        lightColor: '#e8ecf0',
-        lightIntensity: moon ? moonIntensity(sunIntensity) * 0.5 : sunIntensity * 0.35 * Math.max(0.1, day),
+        // Moody grey-blue cloud deck: diffuse, almost shadowless light.
+        zenith: mixHex('#66717f', keys.zenith, 0.1),
+        horizon: mixHex('#a7afb9', keys.horizon, 0.08),
+        nadir: '#7d848c',
+        lightColor: '#dfe6ee',
+        lightIntensity: moon ? moonIntensity(sunIntensity) * 0.5 : sunIntensity * 0.2 * Math.max(0.1, day),
         sunGlowStrength: 0,
-        hemiSky: '#c9ced6',
-        hemiGround: '#5d5a52',
-        hemiIntensity: ambient * 3.2 * (0.3 + 0.7 * day),
+        hemiSky: '#bcc5d0',
+        hemiGround: '#55534d',
+        hemiIntensity: ambient * 3.4 * (0.3 + 0.7 * day),
         stars: 0,
         nebula: 0,
-        fogColor: '#b8bec6',
-        hazeDensity: 0.85,
-        envIntensity: 0.6,
+        fogColor: '#9ea7b2',
+        hazeDensity: 0.9,
+        envIntensity: 0.55,
       };
     case 'space':
       return {

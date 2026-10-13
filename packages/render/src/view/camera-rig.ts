@@ -1,6 +1,7 @@
 /**
  * Camera behaviors: orbit (OrbitControls with damping), follow (smooth
- * third-person chase), first-person, and an eased fly-to used by `focus`.
+ * third-person chase that moves in front of obstacles), first-person, and an
+ * eased fly-to used by `focus`.
  * Everything per-frame uses module scratch objects (no allocations).
  */
 import { Euler, PerspectiveCamera, Vector3 } from 'three';
@@ -33,17 +34,30 @@ export function damp(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * Math.max(0, dt));
 }
 
+/**
+ * Distance (m) from `from` toward `to` that is free of solid geometry, or
+ * `Infinity` when nothing blocks the segment. Used to keep the chase camera
+ * in front of obstacles.
+ */
+export type OcclusionQuery = (from: Vector3, to: Vector3) => number;
+
 /** Lowest view elevation {@link CameraRig.focusOn} keeps (20°). */
 export const MIN_FOCUS_ELEVATION = 20;
 const MIN_FOCUS_SIN = Math.sin((MIN_FOCUS_ELEVATION * Math.PI) / 180);
 const MIN_FOCUS_COS = Math.cos((MIN_FOCUS_ELEVATION * Math.PI) / 180);
 
 const FOLLOW_DISTANCE = 5.5;
+/** Closest the chase camera gets to its target when pulled in by an obstacle (m). */
+export const MIN_FOLLOW_DISTANCE = 1.2;
+/** Gap kept between the pulled-in chase camera and the obstacle surface (m). */
+const OCCLUSION_PADDING = 0.35;
 const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
 const EYE_HEIGHT = 1.6;
 
 const _target = new Vector3();
+const _lookAt = new Vector3();
+const _dir = new Vector3();
 const _desired = new Vector3();
 const _euler = new Euler(0, 0, 0, 'YXZ');
 
@@ -65,6 +79,8 @@ export class CameraRig {
    * when the world has no ground. Keeps orbiting and fly-tos above ground.
    */
   floorY = Number.NEGATIVE_INFINITY;
+  /** Optional obstacle query for the chase camera (see {@link OcclusionQuery}). */
+  occlusion: OcclusionQuery | null = null;
 
   constructor(
     readonly camera: PerspectiveCamera,
@@ -173,7 +189,20 @@ export class CameraRig {
     }
     // Follow: chase from behind the target's heading.
     _desired.set(_target.x + Math.sin(yaw) * FOLLOW_DISTANCE, _target.y + FOLLOW_HEIGHT, _target.z + Math.cos(yaw) * FOLLOW_DISTANCE);
-    this.camera.position.lerp(_desired, damp(6, dt));
+    let rate = 6;
+    if (this.occlusion) {
+      // Something solid between the target and the camera (a tree trunk, a wall): move in front of it, fast.
+      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
+      _dir.subVectors(_desired, _lookAt);
+      const full = _dir.length();
+      const free = full > 1e-4 ? this.occlusion(_lookAt, _desired) : Number.POSITIVE_INFINITY;
+      if (free < full) {
+        _dir.multiplyScalar(1 / full);
+        _desired.copy(_lookAt).addScaledVector(_dir, Math.max(MIN_FOLLOW_DISTANCE, free - OCCLUSION_PADDING));
+        rate = 14;
+      }
+    }
+    this.camera.position.lerp(_desired, damp(rate, dt));
     _desired.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
     this.look.lerp(_desired, damp(10, dt));
     this.camera.lookAt(this.look);

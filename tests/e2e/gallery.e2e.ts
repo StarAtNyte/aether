@@ -11,6 +11,8 @@
  *
  * Run: `npm run build && npm run gallery` — or `npm run gallery -- lakeside`
  * to render only the prompts whose slug contains one of the arguments.
+ * `npm run gallery -- --skies` instead renders the starter world under each
+ * of the seven sky presets (`sky-<preset>.png`) to compare them side by side.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -120,8 +122,70 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
   }
 }
 
+/** Sky presets with the hour each is shown at (the preset defaults). */
+const SKIES: ReadonlyArray<readonly [string, number]> = [
+  ['day', 13],
+  ['dawn', 6.4],
+  ['sunset', 17.7],
+  ['night', 23],
+  ['overcast', 12],
+  ['space', 10],
+  ['studio', 11],
+];
+
+/** Render the starter world once per sky preset (one context, environment edits only). */
+async function renderSkies(browser: Browser, url: string): Promise<void> {
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  try {
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${url}/?debug=1&reset=1`, { waitUntil: 'domcontentloaded' });
+    await waitFor(page, 'boot', BOOT_TIMEOUT_MS, (p) => p.ready && p.entities > 0);
+    await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
+    await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: false }));
+    await page.addStyleTag({ content: '.viewport__hint, .toasts, .toast { display: none !important; }' });
+    for (const [sky, hour] of SKIES) {
+      await page.evaluate(
+        ([preset, timeOfDay]) => {
+          window.__aether?.studio.commitUser([{ op: 'setEnvironment', set: { sky: preset, timeOfDay } }], `Sky ${preset}`);
+        },
+        [sky, hour] as const,
+      );
+      await page.evaluate(async () => {
+        await window.__aether?.simulation?.whenSynced();
+      });
+      await page.waitForTimeout(900);
+      const file = join(OUT_DIR, `sky-${sky}.png`);
+      const png = await page.locator('.viewport').screenshot({ path: file });
+      const stats = pixelStats(decodePng(png));
+      if (stats.stdDev < MIN_CANVAS_STDDEV) throw new Error(`sky ${sky} rendered a blank canvas`);
+      log(`  sky-${sky}: mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → docs/screenshots/gallery/sky-${sky}.png`);
+    }
+    if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
+  } finally {
+    await context.close();
+  }
+}
+
 async function main(): Promise<void> {
-  const filters = process.argv.slice(2).map((f) => f.toLowerCase());
+  const args = process.argv.slice(2);
+  if (args.includes('--skies')) {
+    mkdirSync(OUT_DIR, { recursive: true });
+    const server = await startServer(log);
+    let browser: Browser | null = null;
+    try {
+      browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
+      log(`rendering ${SKIES.length} sky presets`);
+      await renderSkies(browser, server.url);
+      log('GALLERY DONE');
+    } finally {
+      await browser?.close();
+      await server.stop();
+    }
+    return;
+  }
+  const filters = args.map((f) => f.toLowerCase());
   const prompts = DEFAULT_PROMPTS.filter((p) => filters.length === 0 || filters.some((f) => gallerySlug(p).includes(f)));
   if (prompts.length === 0) throw new Error(`no prompt matches ${filters.join(', ')}`);
   mkdirSync(OUT_DIR, { recursive: true });

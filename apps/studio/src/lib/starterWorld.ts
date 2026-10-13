@@ -98,15 +98,17 @@ const WORLD: WorldDocInput = {
       {
         id: 'mountain-north',
         name: 'North peak',
+        tags: ['backdrop'],
         transform: { position: [-45, 0, -85], rotation: [0, 20, 0], scale: [1, 1, 1] },
-        shape: { kind: 'procedural', generator: 'mountain', params: { size: 90, height: 42, variant: 0 }, seed: 3 },
+        shape: { kind: 'procedural', generator: 'mountain', params: { size: 90, height: 42, variant: 0, groundColor: '#5f7f3a' }, seed: 3 },
         physics: { body: 'static' },
       },
       {
         id: 'mountain-east',
         name: 'East ridge',
+        tags: ['backdrop'],
         transform: { position: [60, 0, -70], rotation: [0, -35, 0], scale: [1, 1, 1] },
-        shape: { kind: 'procedural', generator: 'mountain', params: { size: 80, height: 30, variant: 1 }, seed: 9 },
+        shape: { kind: 'procedural', generator: 'mountain', params: { size: 80, height: 30, variant: 1, groundColor: '#5f7f3a' }, seed: 9 },
         physics: { body: 'static' },
       },
       {
