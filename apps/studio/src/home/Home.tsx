@@ -334,9 +334,10 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
               </a>
             </div>
             <div className="template-row" role="list">
-              {TEMPLATES.map((t, i) => (
+              {TEMPLATES.map((t) => (
                 <div key={t.slug} role="listitem" className="template-row__item">
-                  <TemplateCard template={t} onPick={pickTemplate} eager={i < 4} />
+                  {/* Eager: ~10 KB each, and the cards at the faded edge of the row must never show a placeholder. */}
+                  <TemplateCard template={t} onPick={pickTemplate} eager />
                 </div>
               ))}
             </div>

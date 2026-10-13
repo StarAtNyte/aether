@@ -106,6 +106,8 @@ function checkLayout(): Violation[] {
     let scrollClip = false;
     let hiddenClipRect: DOMRect | null = null;
     for (let a = el.parentElement; a; a = a.parentElement) {
+      // The document itself never counts as a clip: content cut by html/body is content past the viewport.
+      if (a === document.body || a === doc) break;
       const cs = getComputedStyle(a);
       const ox = cs.overflowX;
       const oy = cs.overflowY;
@@ -119,18 +121,20 @@ function checkLayout(): Violation[] {
       }
       if (!hiddenClipRect) hiddenClipRect = ar;
       clipped = true;
-      if (a === document.body || a === doc) break;
     }
     const outside = r.left < -EPS || r.top < -EPS || r.right > vw + EPS || r.bottom > vh + EPS;
     if (outside && !scrollClip) {
       const insideClip = hiddenClipRect && hiddenClipRect.left >= -EPS && hiddenClipRect.top >= -EPS && hiddenClipRect.right <= vw + EPS && hiddenClipRect.bottom <= vh + EPS;
       if (!clipped || !insideClip) out.push({ kind: 'offscreen', where: path(el), detail: `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)} in ${vw}×${vh}` });
     }
-    // Interactive controls and text cut by a non-scrolling clip ancestor.
+    // Anything cut by a non-scrolling clip ancestor (controls are reported as such).
     if (hiddenClipRect && !scrollClip) {
       const interactive = el.matches('button, a[href], input, select, textarea, [role="tab"], [role="switch"], kbd');
-      const cut = r.left < hiddenClipRect.left - EPS || r.right > hiddenClipRect.right + EPS || r.top < hiddenClipRect.top - EPS || r.bottom > hiddenClipRect.bottom + EPS;
-      if (interactive && cut && !el.closest('[data-clip-ok]')) out.push({ kind: 'clipped-control', where: path(el), detail: `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)} clip ${Math.round(hiddenClipRect.left)},${Math.round(hiddenClipRect.top)} ${Math.round(hiddenClipRect.width)}×${Math.round(hiddenClipRect.height)}` });
+      const CUT = interactive ? EPS : 2.5;
+      const cut = r.left < hiddenClipRect.left - CUT || r.right > hiddenClipRect.right + CUT || r.top < hiddenClipRect.top - CUT || r.bottom > hiddenClipRect.bottom + CUT;
+      // Media cropped by their frame (object-fit) is intentional.
+      const media = el.matches('img, canvas, video') || el.closest('.thumb, .tile__art');
+      if (cut && !media && !el.closest('[data-clip-ok]')) out.push({ kind: interactive ? 'clipped-control' : 'clipped', where: path(el), detail: `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)} clip ${Math.round(hiddenClipRect.left)},${Math.round(hiddenClipRect.top)} ${Math.round(hiddenClipRect.width)}×${Math.round(hiddenClipRect.height)}` });
     }
     // Text overflow without ellipsis (leaf text holders only).
     if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && el.tagName !== 'SELECT') {

@@ -1328,8 +1328,15 @@
 }
 
 /* Phone: viewport on top, sheet below */
+/* Smallest sheet = handle + tabs + composer (prompt bar). Touch targets are 44 px on coarse pointers. */
 .editor[data-layout='phone'] {
   --sheet-min: 176px;
+}
+
+@media (pointer: coarse) {
+  .editor[data-layout='phone'] {
+    --sheet-min: 192px;
+  }
 }
 
 .editor[data-layout='phone'] .editor__body {
