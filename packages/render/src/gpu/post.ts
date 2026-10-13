@@ -16,9 +16,22 @@ export interface PostPipeline {
   dispose(): void;
 }
 
-/** Bloom tuning (threshold keeps only HDR/emissive highlights blooming). */
-const BLOOM_RADIUS = 0.45;
-const BLOOM_THRESHOLD = 0.82;
+/**
+ * Bloom tuning. The threshold sits above the brightest diffusely lit
+ * surface (white albedo under a full sun ≈ 0.8 linear), so only emissive
+ * materials, the sun disc and sharp specular glints bloom.
+ */
+const BLOOM_RADIUS = 0.35;
+export const BLOOM_THRESHOLD = 1.05;
+/** `environment.bloom` (0–3) is scaled by this into the bloom node strength (subtle by default). */
+export const BLOOM_SCALE = 0.42;
+/** Upper bound of the bloom node strength. */
+export const MAX_BLOOM_STRENGTH = 1.1;
+
+/** Bloom node strength for an `environment.bloom` value. */
+export function bloomStrength(bloom: number): number {
+  return Math.max(0, Math.min(MAX_BLOOM_STRENGTH, (Number.isFinite(bloom) ? bloom : 0) * BLOOM_SCALE));
+}
 
 /** Build the pipeline, or null when unsupported. */
 export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number): Promise<PostPipeline | null> {
@@ -30,12 +43,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     ]);
     const scenePass = pass(scene, camera);
     const color = scenePass.getTextureNode('output');
-    const bloomNode = bloom(color, strength, BLOOM_RADIUS, BLOOM_THRESHOLD);
+    const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     const pipeline = new RenderPipeline(renderer, color.add(bloomNode));
     return {
       render: () => pipeline.render(),
       setBloom: (s: number) => {
-        bloomNode.strength.value = Math.max(0, Math.min(3, Number.isFinite(s) ? s : 0));
+        bloomNode.strength.value = bloomStrength(s);
       },
       dispose: () => {
         pipeline.dispose();

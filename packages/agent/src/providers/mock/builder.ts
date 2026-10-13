@@ -23,6 +23,8 @@ export interface Mood {
   snow: boolean;
   fog: boolean;
   lowGravity: boolean;
+  /** The request mentions open water (lakeside, by the river, pond…). */
+  water: boolean;
 }
 
 /** Physics shorthand accepted by {@link Builder} helpers. */
@@ -82,6 +84,8 @@ export class Builder {
   private readonly ids: Set<string>;
   private readonly counters = new Map<string, number>();
   private readonly circles: Circle[] = [];
+  /** Areas decorative scatter must stay out of (water surfaces). */
+  private readonly keepOut: Circle[] = [];
   private readonly entities: PatchInput[] = [];
   private readonly envSet: Record<string, Json> = {};
   private readonly playerSet: Record<string, Json> = {};
@@ -189,6 +193,21 @@ export class Builder {
       }
     }
     return null;
+  }
+
+  /** Keep decorative scatter (grass, flowers) out of a circle, e.g. a lake surface. */
+  keepClear(x: number, z: number, r: number): void {
+    if (r > 0) this.keepOut.push({ x, z, r });
+  }
+
+  /** True when a square patch of half-size `half` centered at (x, z) touches a keep-clear circle. */
+  touchesKeepClear(x: number, z: number, half: number): boolean {
+    for (const c of this.keepOut) {
+      const dx = Math.max(0, Math.abs(c.x - x) - half);
+      const dz = Math.max(0, Math.abs(c.z - z) - half);
+      if (dx * dx + dz * dz < c.r * c.r) return true;
+    }
+    return false;
   }
 
   /** Reserve (x, z) if free; returns whether it was. */

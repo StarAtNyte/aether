@@ -29,7 +29,7 @@ import { FixedStepper } from './FixedStepper';
 import { InputController } from './input';
 import { SoundBoard } from './sound';
 import { TransformTable } from './TransformTable';
-import { findAvatar, focusTarget, framingSphere, movingIds } from './worldQueries';
+import { findAvatar, framingSphere, movingIds } from './worldQueries';
 
 const log = createLogger('sim');
 
@@ -37,8 +37,10 @@ const log = createLogger('sim');
 const PLAYER_KILL_Y = -40;
 /** Pointer travel (px) that turns a click into an orbit drag. */
 const CLICK_SLOP_PX = 5;
-/** Camera offset direction used by {@link Simulation.frameEntity} (distance is set by the renderer). */
-const FRAME_OFFSET: Vec3 = [14, 9, 18];
+/** Fallback camera offset direction of {@link Simulation.frameWorld} (distance is set by the renderer). */
+const FRAME_OFFSET: Vec3 = [8, 7, 15];
+/** Fallback framing flight time (seconds). */
+const FRAME_DURATION = 1.1;
 /** Radius around the player spawn framed for character games. */
 const PLAYER_FRAME_RADIUS = 14;
 /** Max transient (runtime-spawned) entities alive at once. */
@@ -260,41 +262,39 @@ export class Simulation {
   }
 
   /**
-   * Frame an entity from a fixed elevated three-quarter vantage (used when a
-   * world is first opened, so the start view never depends on where the
-   * camera happened to be).
+   * Frame a freshly built or opened world: the renderer frames the bounding
+   * boxes of its meaningful content (ground, sky and backdrop ignored,
+   * `focus`-tagged entities weighted) from an elevated three-quarter view;
+   * character games without an avatar entity also keep the player spawn in
+   * view. `flyIn` starts from a wider establishing shot (first load). Waits
+   * for the renderer to catch up.
    */
-  frameEntity(id: EntityId): void {
-    const world = this.history.current;
-    const t = Object.prototype.hasOwnProperty.call(world.entities, id) ? safeWorldTransform(world, id) : undefined;
-    if (!t) return;
-    const [x, y, z] = t.position;
-    this.renderer.camera.position.set(x + FRAME_OFFSET[0], y + FRAME_OFFSET[1], z + FRAME_OFFSET[2]);
-    this.renderer.focus(id);
-  }
-
-  /**
-   * Frame a freshly built or opened world from the fixed three-quarter
-   * vantage: its `focus`-tagged entity, else the player's start area for
-   * character games, else its {@link framingSphere}. Waits for the renderer
-   * to catch up.
-   */
-  async frameWorld(): Promise<void> {
+  async frameWorld(opts: { flyIn?: boolean } = {}): Promise<void> {
     await this.whenSynced();
     if (this.disposed || this.session) return;
     const world = this.history.current;
-    const focus = focusTarget(world);
-    if (focus) {
-      this.frameEntity(focus);
-      return;
-    }
     const p = world.player;
-    if (p.mode !== 'orbit' && !findAvatar(world)) {
-      this.renderer.frameSphere(p.spawn, PLAYER_FRAME_RADIUS, FRAME_OFFSET);
+    const spawnFocus = p.mode !== 'orbit' && !findAvatar(world);
+    if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}) })) return;
+    // Nothing rendered yet (e.g. every entity failed to build): fall back to document positions.
+    if (spawnFocus) {
+      this.renderer.frameSphere(p.spawn, PLAYER_FRAME_RADIUS, FRAME_OFFSET, FRAME_DURATION);
       return;
     }
     const sphere = framingSphere(world);
-    if (sphere) this.renderer.frameSphere(sphere.center, sphere.radius, FRAME_OFFSET);
+    if (sphere) this.renderer.frameSphere(sphere.center, sphere.radius, FRAME_OFFSET, FRAME_DURATION);
+  }
+
+  /**
+   * Keep entities changed by an edit in view: the camera only moves when one
+   * of them is off screen or too small to read. Waits for the renderer.
+   */
+  async revealEntities(ids: readonly EntityId[]): Promise<void> {
+    await this.whenSynced();
+    if (this.disposed || this.session) return;
+    const world = this.history.current;
+    const present = ids.filter((id) => Object.prototype.hasOwnProperty.call(world.entities, id) && !world.entities[id]?.template);
+    this.renderer.reveal(present);
   }
 
   /** Toggle collider wireframes. */

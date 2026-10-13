@@ -1,8 +1,10 @@
 /**
- * Pure sky/sun/ambient parameters derived from `world.environment`. The sun
- * follows `timeOfDay` (or a per-preset default hour); natural presets
- * (day/dawn/sunset/night) take their sky gradient from the sun elevation, so
- * any hour looks plausible. No three.js — unit-tested directly.
+ * Pure sky/sun/ambient parameters derived from `world.environment`. The sky
+ * preset is authoritative: `timeOfDay` (or a per-preset default hour) moves
+ * the sun only inside the preset's window, so `sky: 'sunset'` always reads
+ * as a sunset even when a model asks for 19:00 (when the sun would already
+ * be below the horizon). Natural presets (day/dawn/sunset/night) take their
+ * sky gradient from the sun elevation. No three.js — unit-tested directly.
  */
 import type { Environment, Vec3 } from '@aether/core';
 
@@ -11,7 +13,7 @@ export type SkyPreset = Environment['sky'];
 
 /** Everything the environment rig needs to light and color the scene. */
 export interface SkyState {
-  /** Hour actually used (0–24). */
+  /** Hour actually used (0–24): `timeOfDay` clamped into the preset's window. */
   hour: number;
   /** Sun elevation in degrees (negative below the horizon). */
   elevation: number;
@@ -38,10 +40,61 @@ export interface SkyState {
   stars: number;
   /** Default fog color (horizon) when the world defines none. */
   fogColor: string;
-  /** Default haze density when the world defines no fog (0 = none). */
+  /**
+   * Dimensionless aerial-perspective amount when the world defines no fog
+   * (0 = none). {@link resolveFog} turns it into a density scaled to the
+   * size of the content, so distant scenery fades but nearby content stays crisp.
+   */
   hazeDensity: number;
   /** Whether the ground plane is shown for this preset. */
   showGround: boolean;
+  /** Tone-mapping exposure multiplier of the preset (multiplied with `environment.exposure`). */
+  exposure: number;
+  /** Image-based (sky reflection) lighting intensity. */
+  envIntensity: number;
+}
+
+/**
+ * Hours each natural preset may use (inclusive). Day/overcast keep the sun
+ * at least ~25° high, dawn/sunset keep it 3–16° above the horizon on the
+ * correct side of noon, night keeps it well below the horizon (the moon is
+ * the key light). Outside the window the hour is clamped to the nearest edge.
+ */
+export const PRESET_WINDOWS: Readonly<Record<'day' | 'overcast' | 'dawn' | 'sunset', readonly [number, number]>> = Object.freeze({
+  day: [7.6, 16.4],
+  overcast: [7.6, 16.4],
+  dawn: [6.15, 6.9],
+  sunset: [17.1, 17.85],
+});
+
+/** Night hours run from {@link NIGHT_WINDOW}[0] through midnight to [1]. */
+export const NIGHT_WINDOW: readonly [number, number] = Object.freeze([20.5, 3.5]) as readonly [number, number];
+
+/** Exposure multiplier per preset (dim presets are lifted so they stay readable). */
+export const PRESET_EXPOSURE: Readonly<Record<SkyPreset, number>> = Object.freeze({
+  day: 1,
+  dawn: 1.08,
+  sunset: 1.1,
+  night: 1.45,
+  overcast: 1.12,
+  space: 1.05,
+  studio: 1.02,
+});
+
+/**
+ * Clamp an hour into the window of `preset` (see {@link PRESET_WINDOWS}).
+ * Space and studio ignore the hour; they return it normalized.
+ */
+export function presetHour(preset: SkyPreset, hour: number): number {
+  const h = normalizeHour(hour);
+  if (preset === 'night') {
+    const [from, to] = NIGHT_WINDOW;
+    if (h >= from || h <= to) return h;
+    return h < 12 ? to : from;
+  }
+  if (preset === 'space' || preset === 'studio') return h;
+  const [lo, hi] = PRESET_WINDOWS[preset];
+  return Math.min(hi, Math.max(lo, h));
 }
 
 /** Default hour for each preset when `timeOfDay` is not set. */
@@ -94,13 +147,13 @@ interface Key {
 
 /** Natural sky keyframes by sun elevation (degrees). */
 const NATURAL: readonly Key[] = [
-  { at: -90, zenith: '#03060f', horizon: '#0b1228', sun: '#9db4ff' },
-  { at: -14, zenith: '#050a1a', horizon: '#121c3a', sun: '#9db4ff' },
-  { at: -6, zenith: '#14204a', horizon: '#4a3a5e', sun: '#ff5a2a' },
-  { at: 0, zenith: '#2c4682', horizon: '#ff8a4c', sun: '#ff7b3a' },
-  { at: 8, zenith: '#4a78c0', horizon: '#ffc58a', sun: '#ffc48a' },
-  { at: 25, zenith: '#3d7fd9', horizon: '#b9d8f2', sun: '#fff1dc' },
-  { at: 90, zenith: '#2f6fd0', horizon: '#c4def4', sun: '#ffffff' },
+  { at: -90, zenith: '#060b1f', horizon: '#1a2650', sun: '#9db4ff' },
+  { at: -14, zenith: '#0a1430', horizon: '#22305c', sun: '#9db4ff' },
+  { at: -6, zenith: '#1b2a5c', horizon: '#5a4670', sun: '#ff5a2a' },
+  { at: 0, zenith: '#34508e', horizon: '#ff9459', sun: '#ff8340' },
+  { at: 8, zenith: '#5582c6', horizon: '#ffc792', sun: '#ffc48a' },
+  { at: 25, zenith: '#4a8be0', horizon: '#c2def5', sun: '#fff1dc' },
+  { at: 90, zenith: '#3b7ad8', horizon: '#cfe5f7', sun: '#ffffff' },
 ];
 
 function sampleKeys(elevation: number): { zenith: string; horizon: string; sun: string } {
@@ -134,41 +187,59 @@ export function sunPosition(hour: number): { elevation: number; direction: Vec3 
   return { elevation, direction: [-Math.sin(az) * c, Math.sin(e), Math.cos(az) * c] };
 }
 
+/** Moonlight key intensity for a world `sunIntensity` (bright enough to read the scene, never daylight). */
+function moonIntensity(sunIntensity: number): number {
+  return Math.min(0.9, 0.42 + sunIntensity * 0.12);
+}
+
 /** Compute the full sky state for an environment. */
 export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'sunIntensity' | 'ambientIntensity'>): SkyState {
-  const preset: SkyPreset = env.sky;
-  const hour = normalizeHour(env.timeOfDay ?? PRESET_HOURS[preset] ?? 12);
+  const preset: SkyPreset = Object.hasOwn(PRESET_HOURS, env.sky) ? env.sky : 'day';
+  const hour = presetHour(preset, env.timeOfDay ?? PRESET_HOURS[preset]);
   const sunIntensity = Number.isFinite(env.sunIntensity) ? Math.max(0, env.sunIntensity) : 2.5;
   const ambient = Number.isFinite(env.ambientIntensity) ? Math.max(0, env.ambientIntensity) : 0.4;
   const { elevation, direction } = sunPosition(hour);
   const day = smoothstep(-4, 10, elevation);
   const keys = sampleKeys(elevation);
   const moon = elevation < -4;
-  const lightDirection: Vec3 = moon ? [-direction[0], Math.max(0.35, -direction[1]), -direction[2]] : direction;
+  const lightDirection: Vec3 = moon ? [-direction[0], Math.max(0.45, -direction[1]), -direction[2]] : direction;
   normalize(lightDirection);
+  const golden = 1 - smoothstep(4, 30, elevation);
 
   const state: SkyState = {
     hour,
     elevation,
     lightDirection,
-    lightColor: moon ? '#9db4ff' : keys.sun,
-    lightIntensity: moon ? sunIntensity * 0.12 : sunIntensity * Math.max(0.05, day),
+    lightColor: moon ? '#a9bcff' : keys.sun,
+    lightIntensity: moon ? moonIntensity(sunIntensity) : sunIntensity * Math.max(0.05, day),
     moon,
     zenith: keys.zenith,
     horizon: keys.horizon,
     nadir: mixHex(keys.horizon, '#20242c', 0.6),
     sunGlow: keys.sun,
-    sunGlowStrength: moon ? 0 : 0.25 + 0.75 * (1 - smoothstep(5, 40, elevation)),
-    hemiSky: mixHex(keys.zenith, keys.horizon, 0.35),
-    hemiGround: mixHex('#3b3326', keys.horizon, 0.15),
-    hemiIntensity: ambient * (0.35 + 0.65 * day) * 2,
+    sunGlowStrength: moon ? 0 : 0.25 + 0.75 * golden,
+    hemiSky: moon ? '#5468a8' : mixHex(keys.zenith, keys.horizon, 0.45),
+    hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * golden),
+    hemiIntensity: ambient * 2 * (moon ? 0.62 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),
     fogColor: keys.horizon,
-    hazeDensity: 0.0022,
+    hazeDensity: moon ? 0.5 : 0.45 + 0.25 * golden,
     showGround: true,
+    exposure: PRESET_EXPOSURE[preset],
+    envIntensity: moon ? 0.35 : 0.45 + 0.15 * golden,
   };
 
   switch (preset) {
+    case 'dawn':
+      // Cooler, pinker than a sunset at the same elevation.
+      return {
+        ...state,
+        zenith: mixHex(state.zenith, '#6b7fc4', 0.35),
+        horizon: mixHex(state.horizon, '#f7b6a8', 0.45),
+        fogColor: mixHex(state.horizon, '#f7b6a8', 0.45),
+        sunGlow: mixHex(state.sunGlow, '#ffd0b8', 0.4),
+        lightColor: mixHex(state.lightColor, '#ffd6c2', 0.35),
+      };
     case 'overcast':
       return {
         ...state,
@@ -176,14 +247,15 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         horizon: mixHex('#c9ced4', keys.horizon, 0.1),
         nadir: '#8e949b',
         lightColor: '#e8ecf0',
-        lightIntensity: moon ? sunIntensity * 0.06 : sunIntensity * 0.35 * Math.max(0.1, day),
+        lightIntensity: moon ? moonIntensity(sunIntensity) * 0.5 : sunIntensity * 0.35 * Math.max(0.1, day),
         sunGlowStrength: 0,
         hemiSky: '#c9ced6',
         hemiGround: '#5d5a52',
         hemiIntensity: ambient * 3.2 * (0.3 + 0.7 * day),
         stars: 0,
         fogColor: '#b8bec6',
-        hazeDensity: 0.006,
+        hazeDensity: 0.85,
+        envIntensity: 0.6,
       };
     case 'space':
       return {
@@ -204,6 +276,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         fogColor: '#000003',
         hazeDensity: 0,
         showGround: false,
+        envIntensity: 0.25,
       };
     case 'studio':
       return {
@@ -223,6 +296,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         stars: 0,
         fogColor: '#e9ebee',
         hazeDensity: 0,
+        envIntensity: 0.6,
       };
     default:
       return state;

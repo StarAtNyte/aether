@@ -45,7 +45,7 @@ const village: Theme = {
     const { b } = c;
     if (c.clear < 4) {
       b.prim('plaza', 'cylinder', [14, 0.06, 14], [c.x, 0.03, c.z], { material: { preset: 'stone', color: '#b8b0a2' }, castShadow: false, name: 'Plaza' });
-      b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue' });
+      b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue', tags: ['focus'] });
       for (let i = 0; i < 2; i++) {
         const tx = r2(c.x + (i === 0 ? -4.5 : 4.5));
         const tz = r2(c.z - 3);
@@ -115,7 +115,7 @@ const castle: Theme = {
       b.gen('castle-wall', 'wall', { length: r2(seg), height: 6, thickness: 1.4, color: stone, crenellated: true }, [r2(cx + side * (2.5 + seg / 2)), 0, r2(cz + half)], { physics: 'static', tags: ['castle'] });
     }
     b.gen('gatehouse', 'arch', { width: 5, height: 7, thickness: 1.6, color: '#8f897f', accentColor: '#7a1f1f' }, [cx, 0, r2(cz + half)], { physics: 'static', name: 'Gatehouse' });
-    b.gen('keep', 'tower', { height: 20, radius: 4, color: '#a39d92', roofColor: '#7a1f1f' }, [cx, 0, r2(cz - 3)], { physics: 'static', name: 'Keep' });
+    b.gen('keep', 'tower', { height: 20, radius: 4, color: '#a39d92', roofColor: '#7a1f1f' }, [cx, 0, r2(cz - 3)], { physics: 'static', name: 'Keep', tags: ['focus'] });
     b.prim('banner', 'box', [0.05, 2.4, 1.4], [r2(cx + 4.1), 16, r2(cz - 3)], { material: { preset: 'fabric', color: '#b5232f' }, castShadow: false, name: 'Royal banner' });
     b.reserve(cx, cz, half + 3);
     for (const side of [-1, 1]) {
@@ -192,7 +192,7 @@ const city: Theme = {
         yaw: yawAlongX(0, -1),
         physics: { body: 'dynamic', mass: 900, friction: 0.9, angularDamping: 2, linearDamping: 0.1 },
         behaviors: [{ type: 'vehicle', params: { maxSpeed: 22, acceleration: 9 } }],
-        tags: ['car', 'player-car'],
+        tags: ['car', 'player-car', 'focus'],
       });
       b.player({ mode: 'vehicle', controls: car, spawn: [r2(c.x - 1.8), 1, r2(c.z + 16)] });
       b.test({ id: 'car-on-road', kind: 'staysAbove', target: car, y: -0.5, within: 5 });
@@ -218,7 +218,7 @@ const haunted: Theme = {
     const mx = c.x;
     const mz = r2(c.z - Math.max(14, c.clear + 8));
     if (b.claim(mx, mz, 7)) {
-      b.gen('mansion', 'house', { width: 10, depth: 8, floors: 3, color: '#3d3a44', roofColor: '#1f1c24', trimColor: '#14121a', lights: true, variant: 2 }, [mx, 0, mz], { physics: 'static', name: 'Haunted mansion' });
+      b.gen('mansion', 'house', { width: 10, depth: 8, floors: 3, color: '#3d3a44', roofColor: '#1f1c24', trimColor: '#14121a', lights: true, variant: 2 }, [mx, 0, mz], { physics: 'static', name: 'Haunted mansion', tags: ['focus'] });
       b.light(b.empty('mansion-glow', [mx, 0, r2(mz + 5)]), [0, 3, 0], '#9d7bff', 2.5, 14, [{ type: 'pulseLight', params: { min: 1, max: 3, period: 3 } }]);
     }
     let graves = 0;
@@ -268,7 +268,7 @@ const space: Theme = {
   },
   build(c) {
     const { b } = c;
-    const base = b.prim('station-deck', 'cylinder', [16, 1, 16], [c.x, -0.5, c.z], { name: 'Station deck', material: { preset: 'metal', color: '#9aa4b1', metalness: 0.7, roughness: 0.35 }, physics: 'static', tags: ['platform'] });
+    const base = b.prim('station-deck', 'cylinder', [16, 1, 16], [c.x, -0.5, c.z], { name: 'Station deck', material: { preset: 'metal', color: '#9aa4b1', metalness: 0.7, roughness: 0.35 }, physics: 'static', tags: ['platform', 'focus'] });
     b.prim(`${base}-rim`, 'torus', [16.4, 0.4, 16.4], [0, 0.3, 0], { parent: base, rot: [90, 0, 0], material: { preset: 'neon', color: '#00e5ff', emissive: '#00e5ff', emissiveIntensity: 2 } });
     b.reserve(c.x, r2(c.z - 5.5), 1.8); // portal
     for (let i = 0; i < 4; i++) {
@@ -291,7 +291,7 @@ const space: Theme = {
       const d = b.rand(28, 60);
       b.gen('asteroid', 'rock', { size: r2(b.rand(4, 10)), color: b.pick(['#5d554d', '#7a6f63', '#4a4440']) }, [r2(c.x + Math.cos(a) * d), r2(b.rand(-10, 25)), r2(c.z + Math.sin(a) * d)], {
         behaviors: [{ type: 'spin', params: { axis: [r2(b.rand(-1, 1)), 1, r2(b.rand(-1, 1))], speed: r2(b.rand(4, 14)) } }],
-        tags: ['asteroid'],
+        tags: ['asteroid', 'backdrop'],
       });
     }
     for (let i = 0; i < 5; i++) {
@@ -301,13 +301,14 @@ const space: Theme = {
       if (i < 2) b.light(crystal, [0, 1, 0], '#9be7ff', 1.5, 8);
     }
     b.reserve(c.x, c.z, 8); // the deck is full now
-    b.scatter('debris-field', 'rock', { size: 1.2, color: '#5d554d' }, 60, [140, 140], [c.x, -8, c.z], { scaleRange: [0.5, 2.5], minSpacing: 4, castShadow: false });
-    const planet = b.prim('gas-giant', 'sphere', [40, 40, 40], [r2(c.x - 90), 30, r2(c.z - 140)], { name: 'Gas giant', material: { color: '#d08c60', emissive: '#6b3a1f', emissiveIntensity: 0.4 }, castShadow: false });
+    b.scatter('debris-field', 'rock', { size: 1.2, color: '#5d554d' }, 60, [140, 140], [c.x, -8, c.z], { scaleRange: [0.5, 2.5], minSpacing: 4, castShadow: false, tags: ['backdrop'] });
+    const planet = b.prim('gas-giant', 'sphere', [40, 40, 40], [r2(c.x - 90), 30, r2(c.z - 140)], { name: 'Gas giant', material: { color: '#d08c60', emissive: '#6b3a1f', emissiveIntensity: 0.4 }, castShadow: false, tags: ['backdrop'] });
     b.prim(`${planet}-ring`, 'torus', [70, 1.5, 70], [0, 0, 0], { parent: planet, rot: [70, 0, 15], material: { color: '#e9d8a6', opacity: 0.7 }, castShadow: false });
     b.prim('moon', 'sphere', [8, 8, 8], [r2(c.x + 60), 40, r2(c.z - 80)], {
       material: { color: '#c9c9c9', emissive: '#5a5a5a', emissiveIntensity: 0.3 },
       behaviors: [{ type: 'orbit', params: { center: [c.x, 30, r2(c.z - 60)], radius: 70, speed: 4 } }],
       castShadow: false,
+      tags: ['backdrop'],
     });
     b.test({ id: 'cargo-on-deck', kind: 'staysAbove', target: '#cargo', y: -1, within: 8 });
     b.test({ id: 'deck-stable', kind: 'stable', target: '#cargo', seconds: 4, maxDrift: 0.3 });

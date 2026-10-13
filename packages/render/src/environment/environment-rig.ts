@@ -1,41 +1,61 @@
 /**
  * Environment rig: procedural sky, sun (directional, shadow-casting, fitted
- * to the content), hemisphere ambient, fog, ground plane and weather — all
- * driven by `world.environment`. Pure three.js core (no renderer access).
+ * to the content), hemisphere ambient, sky reflections (image-based light),
+ * fog scaled to the content, ground plane plus a horizon skirt, and weather —
+ * all driven by `world.environment`. Pure three.js core (no renderer access).
  */
 import {
   BufferAttribute,
+  DataTexture,
   DirectionalLight,
+  EquirectangularReflectionMapping,
   FogExp2,
   Group,
   HemisphereLight,
+  LinearFilter,
   Mesh,
   PlaneGeometry,
+  RGBAFormat,
+  RingGeometry,
+  SRGBColorSpace,
+  type BufferGeometry,
   type Box3,
   type Camera,
   type Scene,
 } from 'three';
 import { stableStringify, type Environment, type MaterialSpec } from '@aether/core';
 import type { MaterialCache } from '../materials/material-cache';
+import { resolveMaterial } from '../materials/presets';
 import { computeSkyState, type SkyState } from './sky-state';
-import { SkyDome } from './sky-dome';
+import { SkyDome, SKY_RADIUS } from './sky-dome';
 import { WeatherSystem } from './weather';
 import { fitShadowCamera } from './shadow-fit';
+import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
+import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 
-/** Max fog density honored (higher values turn the screen into a wall). */
-export const MAX_FOG_DENSITY = 0.25;
+export { MAX_FOG_DENSITY };
+
 const GROUND_SEGMENTS = 64;
+/** Outer radius of the decorative horizon skirt around the physical ground (inside the camera far plane). */
+export const GROUND_SKIRT_RADIUS = SKY_RADIUS * 2;
+/** The skirt sits slightly below the ground so the two never z-fight where they overlap. */
+const SKIRT_DROP = 0.04;
+/**
+ * Share of the hemisphere light kept once sky reflections (image-based
+ * lighting) also contribute ambient light.
+ */
+export const HEMI_SHARE_WITH_IBL = 0.6;
+/** Content radius assumed before the first content bounds arrive. */
+const DEFAULT_CONTENT_RADIUS = 20;
 
-/** Deterministic, cheap ground tint variation in [0.88, 1.06]. */
+/** Deterministic, cheap ground tint variation in [0.86, 1.08] (large soft patches plus finer mottling). */
 export function groundTint(x: number, z: number): number {
   const a = Math.sin(x * 0.043 + z * 0.021) * 0.5 + Math.sin(x * 0.011 - z * 0.037 + 1.7) * 0.5;
   const b = Math.sin(x * 0.17 + 2.3) * Math.sin(z * 0.13 + 0.7);
-  return 0.97 + a * 0.06 + b * 0.03;
+  return 0.97 + a * 0.075 + b * 0.035;
 }
 
-function createGroundGeometry(size: number): PlaneGeometry {
-  const g = new PlaneGeometry(size, size, GROUND_SEGMENTS, GROUND_SEGMENTS);
-  g.rotateX(-Math.PI / 2);
+function tintVertices(g: BufferGeometry): void {
   const pos = g.getAttribute('position');
   const colors = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
@@ -45,6 +65,22 @@ function createGroundGeometry(size: number): PlaneGeometry {
     colors[i * 3 + 2] = t;
   }
   g.setAttribute('color', new BufferAttribute(colors, 3));
+}
+
+function createGroundGeometry(size: number): PlaneGeometry {
+  const g = new PlaneGeometry(size, size, GROUND_SEGMENTS, GROUND_SEGMENTS);
+  g.rotateX(-Math.PI / 2);
+  tintVertices(g);
+  return g;
+}
+
+/** Annulus from just inside the physical ground's edge to the horizon (no collider: purely visual). */
+function createSkirtGeometry(size: number): RingGeometry {
+  const inner = Math.max(1, size * 0.48);
+  const g = new RingGeometry(inner, Math.max(inner + 10, GROUND_SKIRT_RADIUS), 72, 6);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, -SKIRT_DROP, 0);
+  tintVertices(g);
   return g;
 }
 
@@ -57,10 +93,15 @@ export class EnvironmentRig {
   readonly weather: WeatherSystem;
   private readonly fog = new FogExp2('#c4def4', 0);
   private ground: Mesh | null = null;
+  private skirt: Mesh | null = null;
   private groundKey = '';
   private groundMaterialKey = '';
   private state: SkyState;
   private env: Environment | null = null;
+  private scene: Scene | null = null;
+  private envMap: DataTexture | null = null;
+  private contentRadius = DEFAULT_CONTENT_RADIUS;
+  private fogParams: FogParams | null = null;
   /** Upper bound on the sun shadow map resolution (lowered in low-power mode). */
   shadowMapCap = 4096;
 
@@ -89,31 +130,104 @@ export class EnvironmentRig {
     return this.ground;
   }
 
-  /** Apply an environment (sky, lights, fog on `scene`, ground, weather). */
+  /** The decorative horizon skirt around the ground (null when there is no ground). */
+  get skirtMesh(): Mesh | null {
+    return this.skirt;
+  }
+
+  /** Fog currently applied (null when none). */
+  get fogState(): Readonly<FogParams> | null {
+    return this.fogParams;
+  }
+
+  /** Sky reflection texture bound as `scene.environment` (null before the first apply). */
+  get environmentMap(): DataTexture | null {
+    return this.envMap;
+  }
+
+  /** Apply an environment (sky, lights, reflections, fog on `scene`, ground, weather). */
   apply(env: Environment, scene: Scene): void {
     this.env = env;
+    this.scene = scene;
     const s = computeSkyState(env);
     this.state = s;
-    this.sky.apply(s);
     this.sun.color.set(s.lightColor);
     this.sun.intensity = s.lightIntensity;
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
-    this.hemi.intensity = s.hemiIntensity;
+    this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
+    this.syncGround(s.showGround ? env.ground : null);
+    this.applyFog();
+    this.weather.set(env.weather);
+  }
 
-    if (env.fog && env.fog.density > 0) {
-      this.fog.color.set(env.fog.color);
-      this.fog.density = Math.min(MAX_FOG_DENSITY, env.fog.density);
-      scene.fog = this.fog;
-    } else if (s.hazeDensity > 0 && s.showGround && env.ground) {
-      this.fog.color.set(s.fogColor);
-      this.fog.density = s.hazeDensity * (400 / Math.max(100, env.ground.size));
+  /**
+   * Tell the rig how large the meaningful content is (framing radius, metres).
+   * Fog density follows it so small and large worlds both read clearly. Only
+   * the density uniform changes (no shader or texture rebuild).
+   */
+  setContentRadius(radius: number): void {
+    if (!Number.isFinite(radius) || radius <= 0 || Math.abs(radius - this.contentRadius) < 0.5) return;
+    this.contentRadius = radius;
+    const env = this.env;
+    const scene = this.scene;
+    if (!env || !scene) return;
+    const fog = resolveFog(env, this.state, radius);
+    // The fog color does not depend on the radius; only presence and density can change.
+    if (fog && this.fogParams) {
+      this.fogParams = fog;
+      this.fog.density = fog.density;
+    } else if (fog || this.fogParams) {
+      this.applyFog();
+    }
+  }
+
+  /** Fog, dome colors and sky reflections (they share the horizon color). */
+  private applyFog(): void {
+    const env = this.env;
+    const scene = this.scene;
+    if (!env || !scene) return;
+    const s = this.state;
+    const fog = resolveFog(env, s, this.contentRadius);
+    this.fogParams = fog;
+    if (fog) {
+      this.fog.color.set(fog.color);
+      this.fog.density = fog.density;
       scene.fog = this.fog;
     } else {
       scene.fog = null;
     }
-    this.syncGround(s.showGround ? env.ground : null);
-    this.weather.set(env.weather);
+    // Only a visible horizon (ground worlds) blends into the fog; space keeps its black.
+    const horizon = fog && s.showGround ? fog.color : undefined;
+    this.sky.apply(s, horizon);
+    this.updateEnvironmentMap(scene, horizon ?? s.horizon);
+  }
+
+  /**
+   * Upload the sky reflection image. One texture lives for the rig's
+   * lifetime and is updated in place (`needsPMREMUpdate`), so materials keep
+   * their compiled programs and only the small PMREM is regenerated.
+   */
+  private updateEnvironmentMap(scene: Scene, horizon: string): void {
+    const groundSpec = this.state.showGround ? this.env?.ground : null;
+    const groundColor = groundSpec ? resolveMaterial(groundSpec.material).color : null;
+    const pixels = skyEnvironmentPixels(this.state, groundColor, horizon);
+    let tex = this.envMap;
+    if (!tex) {
+      tex = new DataTexture(pixels, ENV_MAP_WIDTH, ENV_MAP_HEIGHT, RGBAFormat);
+      tex.colorSpace = SRGBColorSpace;
+      tex.mapping = EquirectangularReflectionMapping;
+      tex.magFilter = LinearFilter;
+      tex.minFilter = LinearFilter;
+      tex.generateMipmaps = false;
+      this.envMap = tex;
+    } else {
+      (tex.image.data as Uint8Array).set(pixels);
+    }
+    tex.needsUpdate = true;
+    tex.needsPMREMUpdate = true;
+    scene.environment = tex;
+    scene.environmentIntensity = this.state.envIntensity;
   }
 
   private syncGround(spec: { material: MaterialSpec; size: number } | null): void {
@@ -123,8 +237,15 @@ export class EnvironmentRig {
     if (this.ground) {
       this.ground.removeFromParent();
       this.ground.geometry.dispose();
-      this.materials.release(this.groundMaterialKey);
       this.ground = null;
+    }
+    if (this.skirt) {
+      this.skirt.removeFromParent();
+      this.skirt.geometry.dispose();
+      this.skirt = null;
+    }
+    if (this.groundMaterialKey) {
+      this.materials.release(this.groundMaterialKey);
       this.groundMaterialKey = '';
     }
     if (!spec) return;
@@ -138,6 +259,15 @@ export class EnvironmentRig {
     ground.matrixAutoUpdate = false;
     this.ground = ground;
     this.group.add(ground);
+    if (size / 2 < GROUND_SKIRT_RADIUS) {
+      const skirt = new Mesh(createSkirtGeometry(size), handle.material);
+      skirt.name = 'aether:ground-skirt';
+      skirt.receiveShadow = false;
+      skirt.castShadow = false;
+      skirt.matrixAutoUpdate = false;
+      this.skirt = skirt;
+      this.group.add(skirt);
+    }
   }
 
   /** Fit the sun's shadow frustum to world-space content bounds (call when the world changes). */
@@ -183,14 +313,17 @@ export class EnvironmentRig {
     return this.env?.bloom ?? 0.4;
   }
 
-  /** Exposure requested by the environment. */
+  /** Tone-mapping exposure: `environment.exposure` × the sky preset's exposure. */
   get exposure(): number {
-    return this.env?.exposure ?? 1;
+    return (this.env?.exposure ?? 1) * this.state.exposure;
   }
 
   /** Release everything. */
   dispose(): void {
     this.syncGround(null);
+    if (this.scene && this.scene.environment === this.envMap) this.scene.environment = null;
+    this.envMap?.dispose();
+    this.envMap = null;
     this.sky.dispose();
     this.weather.dispose();
     this.sun.shadow.map?.dispose();

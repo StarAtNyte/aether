@@ -69,11 +69,14 @@ export function scatterBelt(c: ThemeCtx, base: string, generator: string, params
   const offset = c.b.rand(0, Math.PI * 2);
   for (let i = 0; i < patches; i++) {
     const a = offset + (i / patches) * Math.PI * 2;
+    const px = r2(c.x + Math.cos(a) * mid);
+    const pz = r2(c.z + Math.sin(a) * mid);
+    if (c.b.touchesKeepClear(px, pz, side / 2)) continue;
     const o: ScatterOpts = { castShadow: generator.startsWith('tree') };
     if (opts.scaleRange) o.scaleRange = opts.scaleRange;
     if (opts.minSpacing !== undefined) o.minSpacing = opts.minSpacing;
     if (opts.tags) o.tags = opts.tags;
-    c.b.scatter(base, generator, params, perPatch, [side, side], [r2(c.x + Math.cos(a) * mid), 0, r2(c.z + Math.sin(a) * mid)], o);
+    c.b.scatter(base, generator, params, perPatch, [side, side], [px, 0, pz], o);
   }
 }
 
@@ -94,6 +97,7 @@ export function clouds(c: ThemeCtx, count: number, color = '#ffffff'): void {
     const d = c.b.rand(20, 70);
     c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(4, 9)), color }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(24, 36)), r2(c.z + Math.sin(a) * d)], {
       castShadow: false,
+      tags: ['sky'],
       behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: r2(c.b.rand(6, 10)) } }],
     });
   }
@@ -118,9 +122,36 @@ export function path(b: Builder, x1: number, z1: number, x2: number, z2: number,
   });
 }
 
+/** Small glowing lantern on a post (a warm point light when it is dark). */
+export function lantern(b: Builder, x: number, z: number, color = '#ffb35c'): string {
+  const post = b.prim('lantern-post', 'cylinder', [0.1, 1.3, 0.1], [x, 0.65, z], { material: { preset: 'wood', color: '#4a3424' }, physics: 'static', footprint: 0.4 });
+  b.prim(`${post}-lamp`, 'box', [0.28, 0.34, 0.28], [0, 0.8, 0], { parent: post, material: { preset: 'emissive', color, emissive: color, emissiveIntensity: lightsOn(b) ? 3 : 0.6 }, castShadow: false });
+  if (lightsOn(b)) b.light(post, [0, 0.9, 0], color, 1.6, 9);
+  return post;
+}
+
+/** A lake (flat water disc) with a reed fringe, a little jetty and a rowboat. Returns the lake id. */
+export function lake(b: Builder, x: number, z: number, radius: number): string {
+  const id = b.prim('lake', 'cylinder', [r2(radius * 2), 0.08, r2(radius * 2)], [x, 0.04, z], { name: 'Lake', material: { preset: 'water', color: '#2f7fae', opacity: 0.88, roughness: 0.04 }, castShadow: false, tags: ['water'] });
+  b.prim(`${id}-shore`, 'cylinder', [r2(radius * 2 + 2.2), 0.05, r2(radius * 2 + 2.2)], [x, 0.025, z], { material: { preset: 'sand', color: '#b9a57a' }, castShadow: false });
+  b.reserve(x, z, radius + 1);
+  b.keepClear(x, z, radius + 0.5);
+  // Reed clumps around the rim (never on the water).
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + b.rand(-0.2, 0.2);
+    const d = radius + 0.6;
+    b.scatter('reeds', 'grass-tuft', { color: '#6f8f3a', size: 1.1 }, 7, [2.4, 2.4], [r2(x + Math.cos(a) * d), 0, r2(z + Math.sin(a) * d)], { minSpacing: 0.4, scaleRange: [0.9, 1.6] });
+  }
+  const jx = r2(x + radius * 0.35);
+  const jz = r2(z + radius * 0.8);
+  b.gen('jetty', 'dock', { length: r2(radius * 0.7), width: 1.6, height: 0.5 }, [jx, 0, jz], { yaw: 90, physics: 'static', name: 'Jetty' });
+  b.gen('rowboat', 'boat', { length: 3.2, variant: 0, color: '#8a5a3a' }, [r2(x - radius * 0.3), 0.05, r2(z + radius * 0.1)], { yaw: 35, behaviors: [{ type: 'bob', params: { amplitude: 0.06, period: 3.4 } }], name: 'Rowboat' });
+  return id;
+}
+
 /** Campfire with a flickering light. */
 export function campfire(b: Builder, x: number, z: number): string {
-  const id = b.gen('campfire', 'campfire', { size: 1.2 }, [x, 0, z], { physics: 'static', footprint: 2.2, name: 'Campfire' });
+  const id = b.gen('campfire', 'campfire', { size: 1.2 }, [x, 0, z], { physics: 'static', footprint: 2.2, name: 'Campfire', tags: ['focus'] });
   b.light(id, [0, 0.8, 0], '#ff8a3d', 3, 12, [{ type: 'pulseLight', params: { min: 2, max: 3.6, period: 0.35 } }]);
   return id;
 }

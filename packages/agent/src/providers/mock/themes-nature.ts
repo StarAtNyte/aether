@@ -3,7 +3,7 @@
  * winter, desert canyon, volcano, park, farm and a default meadow.
  */
 import { r2 } from './builder';
-import { backdropMountains, campfire, clouds, lamp, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
+import { backdropMountains, campfire, clouds, lake, lamp, lantern, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 
 function rocks(c: ThemeCtx, count: number, inner: number, outer: number, color: string, mossy: boolean, size: [number, number] = [0.8, 2.2]): void {
@@ -41,8 +41,17 @@ const forest: Theme = {
         const tx = r2(c.x + Math.cos(a) * 6);
         const tz = r2(c.z + Math.sin(a) * 6);
         b.gen('tent', 'tent', { size: 2.6, color: b.pick(['#c8553d', '#2a9d8f', '#e9c46a']) }, [tx, 0, tz], { yaw: yawFacingZ(tx, tz, c.x, c.z), physics: 'static', footprint: 2 });
+        if (lightsOn(b)) lantern(b, r2(tx + Math.cos(a + 1.2) * 2), r2(tz + Math.sin(a + 1.2) * 2));
       }
+      // Woodpile: three stacked logs.
+      const pile = b.prim('woodpile', 'cylinder', [0.32, 1.6, 0.32], [r2(c.x + 3.6), 0.16, r2(c.z + 1.4)], { rot: [0, 20, 90], material: { preset: 'bark', color: '#6b4a2f' }, physics: 'static', footprint: 0.9 });
+      b.prim(`${pile}-log`, 'cylinder', [0.32, 1.6, 0.32], [0, 0, 0.33], { parent: pile, material: { preset: 'bark', color: '#7a5535' } });
+      b.prim(`${pile}-log`, 'cylinder', [0.3, 1.5, 0.3], [0.28, 0, 0.165], { parent: pile, material: { preset: 'bark', color: '#5e402a' } });
       b.meta('Forest Camp', `Campfire clearing (${fire}) in a pine forest`);
+    }
+    if (b.mood.water && c.primary) {
+      // Lakeside: the lake opens up behind the camp, toward the mountains.
+      lake(b, r2(c.x - 3), r2(c.z - 17), 8);
     }
     treeRing(c, 22, 9, c.primary ? 30 : 22, [
       { generator: 'tree-pine', params: { height: 8, snow: b.mood.snow } },
@@ -135,7 +144,7 @@ const winter: Theme = {
   build(c) {
     const { b } = c;
     if (c.clear < 6) {
-      const cabin = b.gen('cabin', 'house', { width: 7, depth: 6, color: '#7a5233', roofColor: '#f2f4f7', trimColor: '#3d2a1a', lights: true, variant: 2 }, [c.x, 0, r2(c.z - 4)], { physics: 'static', footprint: 5, name: 'Log cabin' });
+      const cabin = b.gen('cabin', 'house', { width: 7, depth: 6, color: '#7a5233', roofColor: '#f2f4f7', trimColor: '#3d2a1a', lights: true, variant: 2 }, [c.x, 0, r2(c.z - 4)], { physics: 'static', footprint: 5, name: 'Log cabin', tags: ['focus'] });
       b.light(cabin, [0, 2, 4], '#ffb86b', 2.5, 12);
       const sx = r2(c.x + 5);
       const sz = r2(c.z + 3);
@@ -195,7 +204,7 @@ const desert: Theme = {
       cacti++;
     }
     if (c.clear < 8) {
-      b.gen('ruin-arch', 'arch', { width: 4, height: 5, color: '#c9a27a', accentColor: '#8a5a3c' }, [c.x, 0, r2(c.z - 6)], { physics: 'static', footprint: 3, name: 'Ancient arch' });
+      b.gen('ruin-arch', 'arch', { width: 4, height: 5, color: '#c9a27a', accentColor: '#8a5a3c' }, [c.x, 0, r2(c.z - 6)], { physics: 'static', footprint: 3, name: 'Ancient arch', tags: ['focus'] });
       b.gen('ruin-wall', 'wall', { length: 6, height: 2, color: '#c9a27a', crenellated: false }, [r2(c.x - 6), 0, r2(c.z - 8)], { yaw: 25, physics: 'static', footprint: 3 });
       b.gen('ruin-statue', 'statue', { height: 3, color: '#d1b48c' }, [r2(c.x + 6), 0, r2(c.z - 7)], { yaw: -20, physics: 'static', footprint: 1.5 });
     }
@@ -216,7 +225,7 @@ const volcano: Theme = {
   radius: 40,
   blurb: 'a smouldering volcano with rivers of glowing lava, basalt rocks and burning crystals',
   env(b) {
-    b.env({ sky: 'sunset', timeOfDay: 19, fog: { color: '#3a1c14', density: 0.02 }, weather: 'dust', bloom: 1.6, exposure: 1.1, ambientIntensity: 0.3, ground: { material: { preset: 'dirt', color: '#2b2522' }, size: 400 } });
+    b.env({ sky: 'sunset', timeOfDay: 17.4, fog: { color: '#3a1c14', density: 0.02 }, weather: 'dust', bloom: 1.6, exposure: 1.1, ambientIntensity: 0.3, ground: { material: { preset: 'dirt', color: '#2b2522' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 16] });
   },
   build(c) {
@@ -320,7 +329,7 @@ const farm: Theme = {
     const { b } = c;
     const barnX = r2(c.x - 10);
     const barnZ = r2(c.z - 10);
-    if (b.claim(barnX, barnZ, 6)) b.gen('barn', 'house', { width: 9, depth: 7, color: '#a63a2b', roofColor: '#4a3b35', trimColor: '#f1ece2', lights: b.mood.night, variant: 2 }, [barnX, 0, barnZ], { yaw: 10, physics: 'static', name: 'Barn' });
+    if (b.claim(barnX, barnZ, 6)) b.gen('barn', 'house', { width: 9, depth: 7, color: '#a63a2b', roofColor: '#4a3b35', trimColor: '#f1ece2', lights: b.mood.night, variant: 2 }, [barnX, 0, barnZ], { yaw: 10, physics: 'static', name: 'Barn', tags: ['focus'] });
     for (let i = 0; i < 3; i++) {
       const wx = r2(c.x + 10 + i * 12);
       const wz = r2(c.z - 18 - i * 6);

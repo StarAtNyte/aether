@@ -98,13 +98,19 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
       await window.__aether?.simulation?.whenSynced();
     });
     await page.waitForTimeout(SETTLE_MS);
+    // Slow software GPUs advance the camera flight in clamped steps: wait until it landed.
+    await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
+    await page.waitForTimeout(500);
+    const fps = await page.evaluate(() => window.__aether?.store.getState().stats.fps ?? 0);
+    await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: false }));
     await page.addStyleTag({ content: '.viewport__hint, .toasts, .toast { display: none !important; }' });
+    await page.waitForTimeout(300);
     const file = join(OUT_DIR, `${slug}.png`);
     const png = await page.locator('.viewport').screenshot({ path: file });
     const stats = pixelStats(decodePng(png));
     if (stats.stdDev < MIN_CANVAS_STDDEV) throw new Error(`"${slug}" rendered a blank canvas`);
     if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
-    log(`  ${slug}: ${done.entities} entities, mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → docs/screenshots/gallery/${slug}.png`);
+    log(`  ${slug}: ${done.entities} entities, ${fps} fps, mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → docs/screenshots/gallery/${slug}.png`);
   } finally {
     await context.close();
   }

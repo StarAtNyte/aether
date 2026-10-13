@@ -96,7 +96,8 @@ const GUIDELINES = `## Guidelines
 - Physics: static for scenery the player touches, dynamic only for things meant to move. Dynamic bodies must start resting on something (not intersecting, not floating). Stacks: exact heights, no gaps.
 - Gameplay: express goals with behaviors (collectible, goal, hazard, checkpoint…) and rules; initialize every state key you read (setState) and show important ones in the HUD; add win/lose conditions when the request implies a game.
 - Player: "orbit" for dioramas, machines and chain reactions; "thirdPerson" for exploring and games; "vehicle" + controls for driving; "firstPerson" for interiors/horror.
-- Art direction: always set environment (sky, timeOfDay, fog, weather, bloom) to match the mood: sunset 18–19, night 21–23 with emissive lights + bloom 1–1.5, fog for depth and atmosphere, snow/rain where the theme implies it.
+- Art direction: always set environment (sky, timeOfDay, fog, weather, bloom) to match the mood: the sky preset decides the look (timeOfDay only fine-tunes the sun inside it: dawn 6.2–6.9, day 8–16, sunset 17.1–17.8, night 21–3); night needs emissive lights/lamps + bloom 1–1.5; fog light (0.004–0.015) for depth, the renderer scales it to the world size; snow/rain where the theme implies it.
+- Camera: tag the centerpiece (campfire, castle, start platform…) "focus" so the camera frames it, and distant scenery (mountains, planets, skyline) "backdrop" so it is ignored when framing.
 - Always add tests that prove the requested mechanic works (topples for chain reactions, eventually for rules/timers, staysAbove for things that must not fall out, stable for stacks/structures). Tests must be achievable WITHOUT player input.
 - Edits: change only what was asked; reuse existing ids (see the world summary); use update for tweaks rather than remove+add.`;
 

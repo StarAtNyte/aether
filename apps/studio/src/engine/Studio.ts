@@ -4,7 +4,7 @@
  * once the viewport canvas exists. React components call into this object
  * and subscribe to History / the store; they never own engine state.
  */
-import { History, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
+import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
 import { WorldAgent, isAbortError, type Provider } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
@@ -189,7 +189,7 @@ export class Studio {
       const unsubSel = this.store.subscribe((s, prev) => {
         if (s.selection !== prev.selection) sim.setSelection(s.selection);
       });
-      await sim.frameWorld();
+      await sim.frameWorld({ flyIn: true });
       // The first world rendered (generation included): this boot is healthy.
       if (gen === this.attachGen) clearBooting(this.storage);
       this.store.getState().setLoading(null);
@@ -487,7 +487,12 @@ export class Studio {
         if (abort.signal.aborted) break;
       }
       if (abort.signal.aborted) status = 'aborted';
-      if (isNewWorld(before, this.history.current)) void this.sim?.frameWorld();
+      const after = this.history.current;
+      if (isNewWorld(before, after)) void this.sim?.frameWorld();
+      else if (after !== before) {
+        const d = diffWorlds(before, after);
+        void this.sim?.revealEntities([...d.added, ...d.changed]);
+      }
     } catch (err) {
       if (abort.signal.aborted || isAbortError(err)) status = 'aborted';
       else {

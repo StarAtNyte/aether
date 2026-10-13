@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, type Intersection, type Object3D } from 'three';
+import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, type Intersection, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -25,6 +25,8 @@ import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, viewPose, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
+import { contentFraming, framingPose, type Framing } from './view/framing';
+import { collectFramingItems } from './view/content-items';
 import { createGpuRenderer, type BackendKind } from './gpu/backend';
 import { createPostPipeline, type PostPipeline } from './gpu/post';
 import { errorMessage, log } from './log';
@@ -62,6 +64,27 @@ export interface RenderStats {
   instances: number;
 }
 
+/** Options of {@link WorldRenderer.frameContent}. */
+export interface FrameContentOptions {
+  /** Entities that must be in view and pull the center (in addition to `focus`-tagged ones). */
+  focus?: readonly EntityId[];
+  /** Extra focus points (e.g. the player spawn of a character game). */
+  focusPoints?: readonly Vec3[];
+  /** Flight time in seconds (0 jumps). Default 1.1. */
+  duration?: number;
+  /** Start from a wider, higher establishing shot and fly in (first load). */
+  flyIn?: boolean;
+}
+
+/** Lowest orbit camera height above a ground plane (metres). */
+const MIN_ORBIT_HEIGHT = 0.4;
+/** Default camera flight time of automatic framing (seconds). */
+export const FRAME_DURATION = 1.1;
+/** Establishing-shot flight time used by `flyIn` (seconds). */
+const FLY_IN_DURATION = 1.6;
+/** Screen share (of the half view height) below which revealed content is considered too small to read. */
+const MIN_VISIBLE_SHARE = 0.06;
+
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 const JPEG_QUALITY = 0.8;
@@ -73,6 +96,12 @@ const _bounds = new Box3();
 const _center = new Vector3();
 const _size = new Vector2();
 const _hits: Intersection[] = [];
+const _pos = new Vector3();
+const _target = new Vector3();
+const _frustum = new Frustum();
+const _viewProj = new Matrix4();
+const _corner = new Vector3();
+const _one = new Box3();
 
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : 0;
@@ -115,6 +144,8 @@ export class WorldRenderer {
   private debugDirty = false;
   private sinceRefit = REFIT_INTERVAL;
   private framed = false;
+  /** Sphere of the meaningful content (refreshed with the bounds). */
+  private framing: Framing | null = null;
   private disposed = false;
   private lowPower = false;
   /** Draw counters of the last frame actually drawn (stable while on-demand rendering idles). */
@@ -196,6 +227,16 @@ export class WorldRenderer {
     return wr;
   }
 
+  /** Sphere of the meaningful content used for fog and shadow fitting (null before content). */
+  get contentSphere(): Readonly<Framing> | null {
+    return this.framing;
+  }
+
+  /** True while an automatic camera flight (framing, focus) is in progress. */
+  get cameraFlying(): boolean {
+    return this.rig.focusing;
+  }
+
   /** The main perspective camera. */
   get camera(): PerspectiveCamera {
     return this.perspective;
@@ -212,21 +253,15 @@ export class WorldRenderer {
     this.needsDraw = true;
     await done;
     if (this.disposed) return;
-    if (!this.framed) {
-      this.sync.computeBounds(_bounds);
-      if (!_bounds.isEmpty()) {
-        this.framed = true;
-        _bounds.getCenter(_center);
-        this.rig.focusOn(_center, Math.min(200, _bounds.getSize(new Vector3()).length() / 2), 0);
-      }
-    }
+    if (!this.framed) this.framed = this.frameContent({ duration: 0 });
   }
 
   private applyEnvironment(world: WorldDoc): void {
     const env = world.environment;
     this.env.apply(env, this.scene);
-    this.renderer.toneMappingExposure = env.exposure;
+    this.renderer.toneMappingExposure = this.env.exposure;
     this.post?.setBloom(env.bloom);
+    this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
     this.boundsDirty = true;
     this.needsDraw = true;
   }
@@ -343,6 +378,69 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  /**
+   * Frame the meaningful content of the world (see `collectFramingItems`)
+   * from an elevated three-quarter view that fits the viewport, never below
+   * the ground. Returns false when there is nothing to frame.
+   */
+  frameContent(opts: FrameContentOptions = {}): boolean {
+    if (this.disposed) return false;
+    const items = collectFramingItems(this.sync, new Set(opts.focus ?? []));
+    for (const p of opts.focusPoints ?? []) {
+      if (p.every(Number.isFinite)) items.push({ min: [p[0] - 1.5, p[1], p[2] - 1.5], max: [p[0] + 1.5, p[1] + 2, p[2] + 1.5], focus: true });
+    }
+    const framing = contentFraming(items);
+    if (!framing) return false;
+    const groundY = this.env.groundMesh ? 0 : null;
+    const cam = this.perspective;
+    const pose = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY });
+    _pos.set(pose.position[0], pose.position[1], pose.position[2]);
+    _target.set(pose.target[0], pose.target[1], pose.target[2]);
+    const duration = opts.duration ?? FRAME_DURATION;
+    if (opts.flyIn) {
+      const wide = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, margin: 1.7, elevationDeg: 46 });
+      _center.set(wide.position[0], wide.position[1], wide.position[2]);
+      this.rig.flyTo(_center, _target, 0);
+      this.rig.flyTo(_pos, _target, Math.max(duration, FLY_IN_DURATION));
+    } else {
+      this.rig.flyTo(_pos, _target, duration);
+    }
+    this.needsDraw = true;
+    return true;
+  }
+
+  /**
+   * Make sure `ids` are visible: when any of them is outside the view (or too
+   * small to read), re-frame the content with them as focus. Returns true when
+   * the camera moves.
+   */
+  reveal(ids: readonly EntityId[], duration = FRAME_DURATION): boolean {
+    if (this.disposed || ids.length === 0) return false;
+    _bounds.makeEmpty();
+    for (const id of ids.slice(0, 256)) {
+      this.sync.entityBounds(id, _one);
+      if (!_one.isEmpty()) _bounds.union(_one);
+    }
+    if (_bounds.isEmpty()) return false;
+    const cam = this.perspective;
+    cam.updateMatrixWorld();
+    _viewProj.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _frustum.setFromProjectionMatrix(_viewProj);
+    let inside = true;
+    for (let i = 0; i < 8 && inside; i++) {
+      _corner.set(i & 1 ? _bounds.max.x : _bounds.min.x, i & 2 ? _bounds.max.y : _bounds.min.y, i & 4 ? _bounds.max.z : _bounds.min.z);
+      inside = _frustum.containsPoint(_corner);
+    }
+    if (inside) {
+      _bounds.getCenter(_center);
+      const radius = _bounds.getSize(_corner).length() / 2;
+      const distance = Math.max(0.01, cam.position.distanceTo(_center));
+      const share = radius / (distance * Math.tan((cam.fov * Math.PI) / 360));
+      if (share >= MIN_VISIBLE_SHARE) return false;
+    }
+    return this.frameContent({ focus: ids, duration });
+  }
+
   /** Smoothly fly the camera to an entity. */
   focus(id: EntityId): void {
     this.needsDraw = true;
@@ -431,7 +529,18 @@ export class WorldRenderer {
     this.needsDraw = true;
     if (this.boundsDirty) {
       this.boundsDirty = false;
-      this.env.fitShadows(this.sync.computeBounds(_bounds));
+      this.framing = contentFraming(collectFramingItems(this.sync));
+      const f = this.framing;
+      if (f) {
+        this.env.setContentRadius(f.radius);
+        // Shadows are spent on the meaningful content, not on backdrop mountains.
+        const r = f.radius * 1.2;
+        _bounds.min.set(f.center[0] - r, Math.min(0, f.center[1] - r), f.center[2] - r);
+        _bounds.max.set(f.center[0] + r, f.center[1] + r, f.center[2] + r);
+        this.env.fitShadows(_bounds);
+      } else {
+        this.env.fitShadows(this.sync.computeBounds(_bounds));
+      }
     }
     if (this.debugDirty) {
       this.debugDirty = false;

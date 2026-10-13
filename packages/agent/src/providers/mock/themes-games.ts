@@ -133,7 +133,7 @@ const parkour: Theme = {
   radius: 17,
   blurb: 'a spiral parkour climb over a lava pit with a checkpoint, a moving lift and a glowing goal portal at the top',
   env(b) {
-    b.env({ sky: 'sunset', timeOfDay: 18.5, bloom: 1.1, fog: { color: '#f2b38a', density: 0.008 }, ground: { material: { preset: 'stone', color: '#6f6a64' }, size: 300 } });
+    b.env({ sky: 'sunset', timeOfDay: 17.5, bloom: 1.1, fog: { color: '#f2b38a', density: 0.008 }, ground: { material: { preset: 'stone', color: '#6f6a64' }, size: 300 } });
   },
   player(b) {
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 19], moveSpeed: 6.5, jumpSpeed: 6.5 });

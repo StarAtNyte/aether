@@ -33,6 +33,11 @@ export function damp(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * Math.max(0, dt));
 }
 
+/** Lowest view elevation {@link CameraRig.focusOn} keeps (20°). */
+export const MIN_FOCUS_ELEVATION = 20;
+const MIN_FOCUS_SIN = Math.sin((MIN_FOCUS_ELEVATION * Math.PI) / 180);
+const MIN_FOCUS_COS = Math.cos((MIN_FOCUS_ELEVATION * Math.PI) / 180);
+
 const FOLLOW_DISTANCE = 5.5;
 const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
@@ -55,6 +60,11 @@ export class CameraRig {
   private focusDuration = 0.9;
   /** First-person pitch in radians (clamped ±85°). */
   pitch = 0;
+  /**
+   * Lowest camera height in orbit mode (ground + clearance), or -Infinity
+   * when the world has no ground. Keeps orbiting and fly-tos above ground.
+   */
+  floorY = Number.NEGATIVE_INFINITY;
 
   constructor(
     readonly camera: PerspectiveCamera,
@@ -83,23 +93,43 @@ export class CameraRig {
     this.focusT = 1;
   }
 
-  /** Smoothly fly to frame a sphere (switches to orbit mode). */
+  /**
+   * Smoothly fly to frame a sphere (switches to orbit mode). The current
+   * horizontal viewing direction is kept, but the view is lifted to at least
+   * {@link MIN_FOCUS_ELEVATION} above the horizon so a camera that sat low
+   * (or below a raised target) never ends up looking from under the ground.
+   */
   focusOn(center: Vector3, radius: number, duration = 0.9): void {
-    if (this.mode !== 'orbit') this.setMode('orbit', null);
     const r = Math.max(0.25, Number.isFinite(radius) ? radius : 1);
-    const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = Math.min(2000, (r / Math.sin(fov / 2)) * 1.15);
-    this.fromPos.copy(this.camera.position);
-    this.fromTarget.copy(this.controls ? this.controls.target : this.look);
+    const vHalf = (this.camera.fov * Math.PI) / 360;
+    const half = Math.min(vHalf, Math.atan(Math.tan(vHalf) * (this.camera.aspect > 0 ? this.camera.aspect : 1)));
+    const dist = Math.min(2000, (r / Math.sin(half)) * 1.1);
     // Keep the current viewing direction; avoid a degenerate direction when the camera is at the center.
     _desired.copy(this.camera.position).sub(center);
     if (_desired.lengthSq() < 1e-6) _desired.set(0.6, 0.5, 1);
-    _desired.normalize().multiplyScalar(dist);
-    this.toPos.copy(center).add(_desired);
-    this.toTarget.copy(center);
-    this.focusDuration = Math.max(0.01, duration);
-    this.focusT = duration <= 0 ? 1 : 0;
-    if (duration <= 0) this.place(this.toPos, this.toTarget);
+    _desired.normalize();
+    if (_desired.y < MIN_FOCUS_SIN) {
+      const horizontal = Math.hypot(_desired.x, _desired.z);
+      if (horizontal < 1e-6) _desired.set(0, 0, 1);
+      else _desired.set(_desired.x / horizontal, 0, _desired.z / horizontal);
+      _desired.multiplyScalar(MIN_FOCUS_COS).setY(MIN_FOCUS_SIN);
+    }
+    _desired.multiplyScalar(dist).add(center);
+    this.flyTo(_desired, center, duration);
+  }
+
+  /** Fly (or jump when `duration` ≤ 0) to a camera position looking at `target`. Switches to orbit mode. */
+  flyTo(position: Vector3, target: Vector3, duration = 0.9): void {
+    if (this.mode !== 'orbit') this.setMode('orbit', null);
+    this.fromPos.copy(this.camera.position);
+    this.fromTarget.copy(this.controls ? this.controls.target : this.look);
+    this.toPos.copy(position);
+    if (this.toPos.y < this.floorY) this.toPos.y = this.floorY;
+    this.toTarget.copy(target);
+    const d = Number.isFinite(duration) ? duration : 0;
+    this.focusDuration = Math.max(0.01, d);
+    this.focusT = d <= 0 ? 1 : 0;
+    if (d <= 0) this.place(this.toPos, this.toTarget);
   }
 
   private place(pos: Vector3, target: Vector3): void {
@@ -122,7 +152,12 @@ export class CameraRig {
     }
     if (this.mode === 'orbit') {
       if (!this.controls) return false;
-      const changed = this.controls.update(dt);
+      let changed = this.controls.update(dt);
+      if (this.camera.position.y < this.floorY) {
+        this.camera.position.y = this.floorY;
+        this.camera.lookAt(this.controls.target);
+        changed = true;
+      }
       this.look.copy(this.controls.target);
       return changed;
     }

@@ -27,6 +27,8 @@ import type { SkyState } from './sky-state';
 /** Dome radius in meters (camera far plane must exceed it). */
 export const SKY_RADIUS = 900;
 const STAR_COUNT = 1800;
+/** Share of the fog color mixed into the dome's horizon band. */
+const HORIZON_FOG_BLEND = 0.6;
 const STAR_SEED = 0x5ca1ab1e;
 
 const _zenith = new Color();
@@ -50,7 +52,7 @@ export class SkyDome {
     const geometry = new SphereGeometry(SKY_RADIUS, 48, 24);
     const count = geometry.getAttribute('position').count;
     geometry.setAttribute('color', new BufferAttribute(new Float32Array(count * 3), 3));
-    this.dome = new Mesh(geometry, new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false, toneMapped: false }));
+    this.dome = new Mesh(geometry, new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false }));
     this.dome.renderOrder = -10;
     this.dome.frustumCulled = false;
 
@@ -64,11 +66,20 @@ export class SkyDome {
     this.group.add(this.dome, this.stars, this.disc);
   }
 
-  /** Recolor the dome and place the sun/moon disc. */
-  apply(state: SkyState): void {
+  /**
+   * Recolor the dome and place the sun/moon disc. With `fogColor`, the
+   * horizon band blends into the fog and the lower hemisphere takes the fog
+   * color, so fogged scenery and the ground's far edge melt into the sky.
+   */
+  apply(state: SkyState, fogColor?: string): void {
     _zenith.set(state.zenith);
     _horizon.set(state.horizon);
     _nadir.set(state.nadir);
+    if (fogColor) {
+      _c.set(fogColor);
+      _horizon.lerp(_c, HORIZON_FOG_BLEND);
+      _nadir.copy(_c);
+    }
     _glow.set(state.sunGlow);
     this.sunDir.set(state.lightDirection[0], state.lightDirection[1], state.lightDirection[2]).normalize();
     const pos = this.dome.geometry.getAttribute('position');
