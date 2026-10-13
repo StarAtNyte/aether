@@ -1,9 +1,78 @@
-import { memo, useEffect, useRef, type ReactElement } from 'react';
-import { useStudio, useUI } from '../../app/context';
+import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useStudio, useUI, useWorld } from '../../app/context';
+import { useWorldChroma } from '../../app/useWorldChroma';
+import { liveAgentLine } from '../../lib/agentLine';
+import { formatHour } from '../../lib/worldChroma';
 import { Icon } from '../Icon';
+import { Orb } from '../Orb';
 import { PerfHud } from './PerfHud';
 import { PlayHud } from './PlayHud';
 import { VerifyPill } from './VerifyPill';
+
+const SKY_LABEL: Readonly<Record<string, string>> = {
+  day: 'Daylight',
+  dawn: 'Dawn',
+  sunset: 'Golden hour',
+  night: 'Night',
+  overcast: 'Overcast',
+  space: 'Deep space',
+  studio: 'Studio',
+};
+
+/** Bottom-left caption plate: the world's sky, clock and size, in the world's own colors. */
+const WorldCaption = memo(function WorldCaption(): ReactElement | null {
+  const world = useWorld();
+  const { chroma } = useWorldChroma();
+  const mode = useUI((s) => s.mode);
+  if (mode === 'play') return null;
+  const entities = Object.keys(world.entities).length;
+  const rules = world.rules.length;
+  return (
+    <div className="world-caption" aria-label="World summary">
+      <span className="world-caption__swatch" aria-hidden="true" />
+      <span className="world-caption__sky">{SKY_LABEL[chroma.preset] ?? chroma.preset}</span>
+      {chroma.preset !== 'space' && chroma.preset !== 'studio' && <span className="world-caption__item">{formatHour(chroma.hour)}</span>}
+      <span className="world-caption__item">
+        {entities} {entities === 1 ? 'entity' : 'entities'}
+      </span>
+      {rules > 0 && (
+        <span className="world-caption__item">
+          {rules} {rules === 1 ? 'rule' : 'rules'}
+        </span>
+      )}
+    </div>
+  );
+});
+
+/**
+ * While the agent works: an aurora ring weaves around the viewport with the
+ * live progress line. When a turn completes, a light band sweeps across the
+ * frame once ("the world materializes").
+ */
+const WeaveOverlay = memo(function WeaveOverlay(): ReactElement {
+  const line = useUI(liveAgentLine);
+  const busy = useUI((s) => s.agentBusy);
+  const [reveal, setReveal] = useState(0);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) setReveal((n) => n + 1);
+    wasBusy.current = busy;
+  }, [busy]);
+  return (
+    <>
+      {busy && (
+        <div className="weave" role="status" aria-live="polite">
+          <span className="weave__ring" aria-hidden="true" />
+          <span className="weave__line">
+            <span className="weave__dot" aria-hidden="true" />
+            <span className="weave__text">{line}</span>
+          </span>
+        </div>
+      )}
+      {reveal > 0 && <span key={reveal} className="reveal" aria-hidden="true" />}
+    </>
+  );
+});
 
 /** Camera view switcher (play mode). */
 const CameraToggle = memo(function CameraToggle(): ReactElement | null {
@@ -72,6 +141,9 @@ export const Viewport = memo(function Viewport(): ReactElement {
         <VerifyPill />
       </div>
       <PlayHud />
+      <span className="viewport__corners" aria-hidden="true" />
+      {!loading && !fatal && <WorldCaption />}
+      <WeaveOverlay />
       {mode === 'edit' && !loading && !fatal && (
         <div className="viewport__hint" aria-hidden="true">
           Drag to orbit · scroll to zoom · click to select · <kbd>F</kbd> focus
@@ -79,8 +151,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
       )}
       {loading && !fatal && (
         <div className="viewport__loading" role="status">
-          <span className="spinner spinner--lg" aria-hidden="true" />
-          <span>{loading}</span>
+          <Orb size={56} className="orb--loading" />
+          <span className="viewport__loading-text">{loading}</span>
         </div>
       )}
       {fatal && (

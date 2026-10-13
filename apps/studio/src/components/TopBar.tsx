@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ChangeEvent, type ReactElement 
 import { MAX_IMPORT_BYTES } from '../config';
 import { useHistoryState, useStudio, useUI, useWorld } from '../app/context';
 import { Icon } from './Icon';
+import { Orb } from './Orb';
 
 /** Inline-editable world name. */
 const WorldName = memo(function WorldName(): ReactElement {
@@ -77,9 +78,7 @@ export const TopBar = memo(function TopBar(): ReactElement {
           <Icon name="panelLeft" />
         </button>
         <div className="brand" aria-label="Aether">
-          <span className="brand__mark">
-            <Icon name="logo" size={18} />
-          </span>
+          <Orb size={26} className="brand__mark" />
           <span className="brand__name">Aether</span>
         </div>
         <span className="topbar__divider" aria-hidden="true" />
@@ -91,7 +90,7 @@ export const TopBar = memo(function TopBar(): ReactElement {
         )}
         {provider.status === 'offline' && (
           <span className="badge badge--muted" title="No AI backend reachable — prompts are answered by the built-in offline world planner.">
-            offline demo mode
+            <span className="dot dot--idle" aria-hidden="true" /> offline planner
           </span>
         )}
         {provider.status === 'live' && (
@@ -127,10 +126,10 @@ export const TopBar = memo(function TopBar(): ReactElement {
         <button type="button" className="btn btn--ghost" onClick={() => void studio.share()} disabled={playing} title="Upload and copy a share link">
           <Icon name="share" /> <span className="hide-narrow">Share</span>
         </button>
-        <button type="button" className="icon-btn" onClick={() => studio.exportToFile()} title="Export world JSON" aria-label="Export world JSON">
+        <button type="button" className="icon-btn hide-compact" onClick={() => studio.exportToFile()} title="Export world JSON" aria-label="Export world JSON">
           <Icon name="download" />
         </button>
-        <button type="button" className="icon-btn" onClick={() => fileRef.current?.click()} disabled={playing} title="Import world JSON" aria-label="Import world JSON">
+        <button type="button" className="icon-btn hide-compact" onClick={() => fileRef.current?.click()} disabled={playing} title="Import world JSON" aria-label="Import world JSON">
           <Icon name="upload" />
         </button>
         <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={onFile} />

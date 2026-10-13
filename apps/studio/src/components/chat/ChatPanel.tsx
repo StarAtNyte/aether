@@ -4,23 +4,31 @@ import { useStudio, useUI } from '../../app/context';
 import type { ChatEntry } from '../../lib/chat';
 import { EXAMPLE_PROMPTS } from '../../lib/examples';
 import { Icon } from '../Icon';
+import { Orb } from '../Orb';
 import { ChatEvent } from './ChatEvent';
+
+/** How often the idle composer placeholder rotates to the next example. */
+const PLACEHOLDER_ROTATE_MS = 4200;
 
 /** Curated prompt gallery shown when the chat is empty. */
 const ExampleGallery = memo(function ExampleGallery({ onPick }: { onPick: (prompt: string) => void }): ReactElement {
   return (
     <div className="gallery">
       <div className="gallery__intro">
-        <span className="gallery__badge">
-          <Icon name="sparkles" size={14} />
-        </span>
-        <h2>Speak a world into being</h2>
+        <Orb size={64} className="gallery__orb" />
+        <p className="gallery__eyebrow">Natural language → living 3D</p>
+        <h2>
+          Speak a world <em>into being</em>
+        </h2>
         <p>Describe a scene, a physics contraption or a little game. Aether builds it, checks it with real physics, and lets you play it.</p>
       </div>
       <div className="gallery__grid">
-        {EXAMPLE_PROMPTS.map((p) => (
-          <button key={p.title} type="button" className="prompt-card" style={{ ['--hue' as string]: String(p.hue) }} onClick={() => onPick(p.prompt)}>
-            <span className="prompt-card__kind">{p.kind}</span>
+        {EXAMPLE_PROMPTS.map((p, i) => (
+          <button key={p.title} type="button" className="prompt-card" style={{ ['--hue' as string]: String(p.hue), ['--i' as string]: String(i) }} onClick={() => onPick(p.prompt)}>
+            <span className="prompt-card__swatch" aria-hidden="true" />
+            <span className="prompt-card__kind">
+              <span className="prompt-card__num">{String(i + 1).padStart(2, '0')}</span> {p.kind}
+            </span>
             <span className="prompt-card__title">{p.title}</span>
             <span className="prompt-card__text">{p.prompt}</span>
           </button>
@@ -35,7 +43,12 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
   if (entry.role === 'user') {
     return (
       <div className="msg msg--user">
-        <div className="msg__bubble">{entry.text}</div>
+        <div className="msg__bubble">
+          <span className="msg__quote" aria-hidden="true">
+            “
+          </span>
+          {entry.text}
+        </div>
       </div>
     );
   }
@@ -43,7 +56,7 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
   return (
     <div className={`msg msg--assistant${live ? ' is-live' : ''}`}>
       <div className="msg__avatar" aria-hidden="true">
-        <Icon name="logo" size={14} />
+        <Orb size={22} className={live ? 'is-live' : ''} />
       </div>
       <div className="msg__body">
         {entry.events.length === 0 && live && (
@@ -70,6 +83,16 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
+  const [hintIndex, setHintIndex] = useState(0);
+
+  // Idle composer: rotate through example prompts as an invitation.
+  useEffect(() => {
+    if (busy || draft !== '') return;
+    const id = window.setInterval(() => setHintIndex((i) => (i + 1) % EXAMPLE_PROMPTS.length), PLACEHOLDER_ROTATE_MS);
+    return () => window.clearInterval(id);
+  }, [busy, draft]);
+  const example = EXAMPLE_PROMPTS[hintIndex];
+  const placeholder = busy ? 'Aether is building…' : chat.length === 0 || !example ? 'Describe a world, or ask for a change…' : `Try: ${example.prompt.toLowerCase()}`;
 
   useEffect(() => {
     const el = listRef.current;
@@ -103,6 +126,7 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
       <div className="panel__header">
         <span className="panel__title">
           <Icon name="sparkles" size={14} /> World agent
+          {busy && <span className="panel__live" aria-hidden="true" />}
         </span>
         {chat.length > 0 && (
           <button type="button" className="btn btn--ghost btn--xs" onClick={() => studio.store.getState().clearChat()} disabled={busy} title="Clear conversation (the world is kept)">
@@ -122,12 +146,13 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
         {chat.length === 0 ? <ExampleGallery onPick={send} /> : chat.map((entry) => <ChatItem key={entry.id} entry={entry} />)}
       </div>
       <form
-        className="composer"
+        className={`composer${busy ? ' is-busy' : ''}`}
         onSubmit={(e) => {
           e.preventDefault();
           send(draft);
         }}
       >
+        <span className="composer__aurora" aria-hidden="true" />
         <textarea
           id="prompt-input"
           ref={inputRef}
@@ -135,7 +160,7 @@ export const ChatPanel = memo(function ChatPanel(): ReactElement {
           value={draft}
           rows={1}
           maxLength={MAX_PROMPT_CHARS}
-          placeholder={busy ? 'Aether is building…' : 'Describe a world, or ask for a change…'}
+          placeholder={placeholder}
           aria-label="Prompt"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}

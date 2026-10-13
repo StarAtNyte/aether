@@ -28,6 +28,7 @@ import {
   type StorageLike,
 } from '../lib/storage';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
+import { initialPanels } from '../lib/layout';
 import { createStudioStore, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, runVerification, selectProvider } from './AgentBridge';
 import { Simulation } from './Simulation';
@@ -69,7 +70,7 @@ export class Studio {
     // In safe mode the saved world stays one Undo away (first history entry).
     const initial = saved ?? createStarterWorld();
     this.history = new History(initial, { maxEntries: MAX_HISTORY_ENTRIES });
-    this.store = createStudioStore({ chat: loadChat(this.storage), settings: loadSettings(this.storage) });
+    this.store = createStudioStore({ chat: loadChat(this.storage), settings: loadSettings(this.storage), panels: initialPanels() });
     this.sandbox = createSandbox();
     this.bridge = new AgentBridge(this.history, this.sandbox);
 

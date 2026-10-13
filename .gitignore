@@ -13,3 +13,7 @@ apps/server/data
 .private/
 AGENTS.md
 research.md
+
+# Agent scratch files
+**/_*_tmp.*
+**/*.tmp.*

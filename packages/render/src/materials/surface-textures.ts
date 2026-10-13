@@ -20,7 +20,7 @@ export type SurfaceKind = 'lava' | 'water' | 'ground';
 /** Texture edge length in pixels (power of two, tileable). */
 export const SURFACE_TEXTURE_SIZE = 128;
 /** Real-world size of one texture tile in metres, per surface. */
-export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 11, water: 7, ground: 7 });
+export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 11, water: 7, ground: 6 });
 /** Lava crust brightness in the emissive mask (cracks are 1). */
 export const LAVA_CRUST_GLOW = 0.12;
 /** Water normal map strength. */
@@ -196,10 +196,10 @@ export function waterPixels(size = SURFACE_TEXTURE_SIZE): { normal: Uint8Array; 
 export function groundPixels(size = SURFACE_TEXTURE_SIZE): Uint8Array {
   const n = Math.max(8, Math.floor(size));
   const random = rng(GROUND_SEED);
-  // No octave coarser than a sixth of the tile: coarse per-tile blobs would read as a grid in the distance
+  // No octave coarser than an eighth of the tile: coarse per-tile blobs would read as a grid in the distance
   // (the ground's vertex tint supplies the large-scale variation instead).
-  const soft = tileFbm(random, n, 6, 3);
-  const grain = tileFbm(random, n, 16, 2);
+  const soft = tileFbm(random, n, 8, 3);
+  const grain = tileFbm(random, n, 32, 2);
   const [lo, hi] = GROUND_DETAIL_RANGE;
   const out = new Uint8Array(n * n * 4);
   for (let i = 0; i < n * n; i++) {

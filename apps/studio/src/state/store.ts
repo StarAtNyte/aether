@@ -118,6 +118,8 @@ export interface StudioState {
 export interface StudioInit {
   chat?: ChatEntry[];
   settings?: StudioSettings;
+  /** Initial panel visibility (defaults to both open). */
+  panels?: { left: boolean; right: boolean };
 }
 
 const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0 };
@@ -152,7 +154,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     mode: 'edit',
     modeBusy: false,
     rightTab: 'outliner',
-    panels: { left: true, right: true },
+    panels: init.panels ? { left: init.panels.left, right: init.panels.right } : { left: true, right: true },
     selection: [],
     outlinerFilter: '',
     chat: init.chat ? trimChat(init.chat) : [],
