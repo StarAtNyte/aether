@@ -65,7 +65,12 @@ export interface EmulatedProviderOptions {
   effort?: TextEffort;
   /** Automatic re-asks after an invalid reply (default 1, max 2). */
   maxReasks?: number;
+  /** Small-context backend: tool results are cut to {@link COMPACT_RESULT_CHARS} characters. */
+  compact?: boolean;
 }
+
+/** Characters kept per tool result for compact (small-context) backends. */
+export const COMPACT_RESULT_CHARS = 1_200;
 
 const REASK_PREFIX = 'Your previous reply could not be used';
 
@@ -77,7 +82,7 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
     name: opts.name ?? backend.name,
     async complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse> {
       const tools = req.tools ?? [];
-      const rendered = renderTranscript(req, backend.strictSchema);
+      const rendered = renderTranscript(req, backend.strictSchema, opts.compact ? { resultChars: COMPACT_RESULT_CHARS } : {});
       const schema = replyJsonSchema(tools, backend.strictSchema);
       const salt = hashString(rendered.prompt).toString(36);
       let prompt = rendered.prompt;

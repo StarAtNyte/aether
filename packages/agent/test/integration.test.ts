@@ -7,6 +7,7 @@ import { applyPatches, createWorld, worldTransform, type WorldDoc } from '@aethe
 import { EMPTY_INPUT, LogicRuntime, type LogicHost } from '@aether/logic';
 import { initPhysics, verify, type LogicHook, type PhysicsWorld } from '@aether/physics';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { PROMPT_EXAMPLES } from '../src/examples';
 import { askMock, patchesOf } from './helpers';
 
 /** Minimal LogicHost over a PhysicsWorld (what the studio wires up for real). */
@@ -62,6 +63,22 @@ describe('mock worlds pass physics + logic verification', () => {
     const report = await verify(result.world, { maxSeconds: 25, budgetMs: 20_000, logic: logicHook(result.world) });
     expect(report.results.filter((r) => !r.passed)).toEqual([]);
     expect(report.diagnostics.filter((d) => d.severity !== 'info')).toEqual([]);
+    expect(report.passed).toBe(true);
+  });
+});
+
+// Regression: the domino few-shot example (shown to every live model) failed its own
+// "chain-falls" test — the last domino came to rest leaning on the bell at 35°.
+describe('few-shot prompt examples pass their own verification', () => {
+  beforeAll(async () => {
+    await initPhysics();
+  });
+
+  it.each(PROMPT_EXAMPLES.filter((ex) => !ex.request.startsWith('(edit)')).map((ex) => [ex.request, ex] as const))('%s', async (_request, ex) => {
+    const result = applyPatches(createWorld(), ex.patches);
+    expect(result.errors).toEqual([]);
+    const report = await verify(result.world, { maxSeconds: 25, budgetMs: 20_000, logic: logicHook(result.world) });
+    expect(report.results.filter((r) => !r.passed)).toEqual([]);
     expect(report.passed).toBe(true);
   });
 });

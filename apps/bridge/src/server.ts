@@ -168,7 +168,10 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
 
     const parsed = BridgeCompleteRequestSchema.safeParse(parseJson(await readBody(req, deps.config.maxBodyBytes)));
     if (!parsed.success) throw new BridgeError('invalid_request', `The completion request is invalid (${parsed.error.issues[0]?.path.join('.') ?? ''}: ${parsed.error.issues[0]?.message ?? ''}).`.slice(0, 300));
-    const { backend, model, effort, request } = parsed.data;
+    const { backend, model, effort } = parsed.data;
+    // Only the validated top-level `model` may choose a model: the inner request's free-form
+    // `model` field would otherwise reach the CLI's argument list / SDK options.
+    const { model: _ignoredInnerModel, ...request } = parsed.data.request;
     const key = contentHash({ backend, model: model ?? null, effort: effort ?? null, request });
     const hit = cache.get(key);
     if (hit) {

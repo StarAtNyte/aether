@@ -31,18 +31,32 @@ export interface WebLlmProviderOptions {
   engine: WebLlmEngineLike;
   /** Model id shown in responses (e.g. "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"). */
   model: string;
-  /** Output cap per call (default 3000: small models, small budgets). */
+  /** Output cap per call (default 1200: small models, small budgets). */
   maxTokens?: number;
+  /** The model's context window in tokens, input + output (default 4096, as WebLLM configures these models). */
+  contextTokens?: number;
 }
+
+/** Conservative characters-per-token estimate for prompts full of JSON (real tokenizers average 3–4). */
+export const WEBLLM_CHARS_PER_TOKEN = 3;
+/** Smallest useful output budget; a request that leaves less is refused before generating. */
+export const WEBLLM_MIN_OUTPUT_TOKENS = 256;
 
 /** Text backend over a WebLLM engine (exported for tests). */
 export function createWebLlmBackend(opts: WebLlmProviderOptions): TextBackend {
-  const maxTokens = Math.max(64, Math.min(8192, Math.floor(opts.maxTokens ?? 3000)));
+  const maxTokens = Math.max(64, Math.min(8192, Math.floor(opts.maxTokens ?? 1200)));
+  const contextTokens = Math.max(1024, Math.min(131_072, Math.floor(opts.contextTokens ?? 4096)));
   return {
     name: 'on-device',
     strictSchema: false,
     async complete(req: TextCompletionRequest, signal?: AbortSignal): Promise<TextCompletionResult> {
       if (signal?.aborted) throw new ProviderError('aborted', 'request aborted');
+      // Fail fast (and fall back) instead of letting the engine reject or silently truncate.
+      const inputTokens = Math.ceil((req.system.length + req.prompt.length) / WEBLLM_CHARS_PER_TOKEN) + 32;
+      const room = contextTokens - inputTokens;
+      if (room < WEBLLM_MIN_OUTPUT_TOKENS) {
+        throw new ProviderError('too_large', `this request needs about ${inputTokens} tokens but the on-device model holds ${contextTokens}`, { reason: 'webllm_context' });
+      }
       const onAbort = (): void => opts.engine.interruptGenerate?.();
       signal?.addEventListener('abort', onAbort, { once: true });
       try {
@@ -52,7 +66,7 @@ export function createWebLlmBackend(opts: WebLlmProviderOptions): TextBackend {
             { role: 'user', content: req.prompt },
           ],
           response_format: { type: 'json_object', schema: JSON.stringify(req.schema) },
-          max_tokens: Math.min(maxTokens, req.maxOutputTokens ?? maxTokens),
+          max_tokens: Math.min(maxTokens, req.maxOutputTokens ?? maxTokens, room),
           temperature: 0.2,
           stream: false,
         });
@@ -76,5 +90,5 @@ export function createWebLlmBackend(opts: WebLlmProviderOptions): TextBackend {
 
 /** A tool-calling provider running a WebLLM model on this device. */
 export function createWebLlmProvider(opts: WebLlmProviderOptions): Provider {
-  return createEmulatedProvider({ backend: createWebLlmBackend(opts), name: 'on-device', model: opts.model });
+  return createEmulatedProvider({ backend: createWebLlmBackend(opts), name: 'on-device', model: opts.model, compact: true });
 }

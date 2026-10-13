@@ -16,9 +16,11 @@ class FakeBackend implements TextBackend {
   readonly strictSchema = false;
   calls = 0;
   aborted = 0;
+  models: Array<string | undefined> = [];
   constructor(private readonly delayMs = 0) {}
-  complete(_req: TextCompletionRequest, signal?: AbortSignal): Promise<TextCompletionResult> {
+  complete(req: TextCompletionRequest, signal?: AbortSignal): Promise<TextCompletionResult> {
     this.calls++;
+    this.models.push(req.model);
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => resolve({ text: JSON.stringify({ tool_calls: [{ name: 'finish', input: { message: 'ok' } }] }) }), this.delayMs);
       signal?.addEventListener('abort', () => {
@@ -199,6 +201,19 @@ describe('bridge HTTP behaviour', () => {
     });
     await new Promise((r) => setTimeout(r, 60));
     expect(codex.aborted).toBe(1);
+  });
+
+  // Regression: the inner request's free-form `model` (≤ 128 chars, no pattern) took precedence
+  // over the validated top-level one and would have reached `claude --model <value>`.
+  it('ignores the inner request model: only the validated top-level model reaches the backend', async () => {
+    const token = await pairToken();
+    const h = { origin: ORIGIN, authorization: `Bearer ${token}` };
+    const body = (outer: string | undefined): string => JSON.stringify({ backend: 'claude-code', ...(outer ? { model: outer } : {}), request: { role: 'planner', model: '--dangerously-skip-permissions', system: 's', messages: [{ role: 'user', content: `m-${outer ?? 'none'}` }], tools: [{ name: 'finish', description: 'd', inputSchema: { type: 'object' } }] } });
+    expect((await call('POST', '/v1/complete', { headers: h, body: body('haiku') })).status).toBe(200);
+    expect((await call('POST', '/v1/complete', { headers: h, body: body(undefined) })).status).toBe(200);
+    expect(claude.models).toEqual(['haiku', undefined]);
+    const bad = await call('POST', '/v1/complete', { headers: h, body: JSON.stringify({ backend: 'codex', model: '--yolo', request: { role: 'planner', system: 's', messages: [{ role: 'user', content: 'x' }] } }) });
+    expect(bad.status).toBe(400);
   });
 
   it('unknown endpoints are 404 after auth', async () => {

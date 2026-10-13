@@ -5,7 +5,7 @@
  * and subscribe to History / the store; they never own engine state.
  */
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type Provider, type QualityFix } from '@aether/agent';
+import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -662,6 +662,12 @@ export class Studio {
   // Agent
   // ---------------------------------------------------------------------------
 
+  /** Refresh the state of a connection that just failed (fire and forget; probes never throw). */
+  private reprobe(kind: ResolvedConnection['kind']): void {
+    if (kind === 'bridge') void this.ai.refreshBridge();
+    else if (kind === 'server' || kind === 'byok') void this.ai.probeServer();
+  }
+
   /** Send a prompt to the agent and stream its events into the chat. */
   async send(prompt: string, opts: SendOptions = {}): Promise<void> {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS);
@@ -696,6 +702,9 @@ export class Studio {
             const s = this.store.getState();
             s.setAgentRun(s.agentRun ? { ...s.agentRun, via } : null);
             push({ type: 'notice', tone: 'warning', text: fallbackText(resolved.label, n) });
+            // Re-probe in the background so the status badge stops claiming a live connection
+            // and the next prompt goes straight to the offline planner instead of retrying.
+            this.reprobe(resolved.kind);
           },
         })
       : createOfflinePlanner();
@@ -705,12 +714,14 @@ export class Studio {
     const usage = { inputTokens: 0, outputTokens: 0, calls: 0 };
     try {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS });
+      // Small on-device models get the condensed prompt that fits their ~4k-token context.
+      const promptProfile: PromptProfile = primary && resolved.kind === 'webllm' ? 'compact' : 'full';
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile });
       status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) }), entryId, abort, usage);
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
-        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history });
+        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile });
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
@@ -777,6 +788,7 @@ export class Studio {
     abort: AbortController;
     usage: { inputTokens: number; outputTokens: number; calls: number };
     history: ReturnType<typeof buildAgentHistory>;
+    promptProfile: PromptProfile;
   }): Promise<'done' | 'aborted'> {
     let applied: string[] = [];
     for (let round = 0; round <= ctx.budget; round++) {
@@ -796,7 +808,7 @@ export class Studio {
       if (round >= ctx.budget || !needsRefinement(report)) return 'done';
       if (ctx.online) {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
-        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1 });
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
         const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';

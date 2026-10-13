@@ -16,6 +16,7 @@ const ACTIONS: Readonly<Record<string, string>> = {
   forbidden_origin: 'the bridge does not allow this site yet. Restart it with --origin set to this address',
   invalid_url: 'the bridge address is not a local address',
   webllm_error: 'the on-device model failed',
+  webllm_context: 'this request is too long for the small on-device model. Try a shorter prompt, start from a smaller world, or use the local bridge',
 };
 
 /** Notice shown when a run falls back to the offline planner. */

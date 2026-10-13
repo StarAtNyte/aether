@@ -136,6 +136,12 @@ describe('Claude Code backend', () => {
     expect(slow.calls[0]?.killed).toBe(true);
   });
 
+  it('refuses a flag-like model id before spawning anything', async () => {
+    const f = fakeSpawn([{ lines: ok({ tool_calls: [] }) }]);
+    await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete({ ...REQ, model: '--dangerously-skip-permissions' })).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(f.calls).toEqual([]);
+  });
+
   it('kills the CLI when the caller aborts', async () => {
     const f = fakeSpawn([{ hang: true }]);
     const ctrl = new AbortController();
@@ -212,6 +218,12 @@ describe('Codex backend', () => {
       await expect(createCodexBackend({ createCodex: f.create, tmpRoot: root }).complete(REQ)).rejects.toMatchObject({ code: 'tool_violation' });
       expect(aborted).toBe(false);
     }
+  });
+
+  it('refuses a model id that could smuggle config before starting the SDK', async () => {
+    const f = fakeCodex([message('{"tool_calls":[]}'), done]);
+    await expect(createCodexBackend({ createCodex: f.create, tmpRoot: root }).complete({ ...REQ, model: 'x" sandbox_mode="danger-full-access' })).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(f.seen.options).toBeUndefined();
   });
 
   it('maps failures: usage limit, login, missing CLI, empty reply, unlistable MCP config', async () => {

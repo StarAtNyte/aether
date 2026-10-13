@@ -12,12 +12,14 @@
 import { summarizeWorld } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
-import { buildCoderPrompt, buildSystemPrompt } from './prompt';
+import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
-import { AGENT_TOOLS } from './tools';
-import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, UsageTotals } from './types';
+import { AGENT_TOOLS, COMPACT_TOOLS } from './tools';
+import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
+/** Limits of the compact prompt profile (small on-device models, ~4k-token context). */
+export const COMPACT_LIMITS = Object.freeze({ maxTokens: 1_200, summaryEntities: 15, historyMessages: 2, historyChars: 400 });
 
 /** Options of a single {@link WorldAgent.run}. */
 export interface RunOptions {
@@ -51,6 +53,8 @@ export class WorldAgent {
   private readonly maxToolCalls: number;
   private readonly maxTokens: number;
   private readonly builtinGenerators: ReadonlySet<string>;
+  private readonly compact: boolean;
+  private readonly tools: ToolDef[];
   private systemPrompt: string | undefined;
   private coderPrompt: string | undefined;
 
@@ -59,7 +63,9 @@ export class WorldAgent {
     this.maxRepairs = clampInt(opts.maxRepairs, DEFAULTS.maxRepairs, 0, 10);
     this.maxTurns = clampInt(opts.maxTurns, DEFAULTS.maxTurns, 1, 50);
     this.maxToolCalls = clampInt(opts.maxToolCalls, DEFAULTS.maxToolCalls, 1, 500);
-    this.maxTokens = clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000);
+    this.compact = opts.promptProfile === 'compact';
+    this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
+    this.tools = this.compact ? COMPACT_TOOLS : AGENT_TOOLS;
     const ids = new Set<string>();
     for (const g of opts.catalogs.generators) {
       if (typeof g === 'object' && g !== null && 'id' in g && typeof (g as { id: unknown }).id === 'string') ids.add((g as { id: string }).id);
@@ -69,7 +75,7 @@ export class WorldAgent {
 
   /** The (cached) planner system prompt. */
   get system(): string {
-    this.systemPrompt ??= buildSystemPrompt(this.opts.catalogs);
+    this.systemPrompt ??= this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs);
     return this.systemPrompt;
   }
 
@@ -109,9 +115,14 @@ export class WorldAgent {
       ...(signal ? { signal } : {}),
     };
 
-    const summary = summarizeWorld(host.getWorld(), { maxEntities: CONTEXT_LIMITS.SUMMARY_ENTITIES });
+    const summary = summarizeWorld(host.getWorld(), { maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : CONTEXT_LIMITS.SUMMARY_ENTITIES });
     const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn(summary, request) }];
-    const messages: ChatMessage[] = [...sanitizeHistory(opts.history), { role: 'user', content: first }];
+    const prior = sanitizeHistory(opts.history);
+    const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;
+    // History must start with a user turn.
+    const trimmed = this.compact ? kept.map((m): ChatMessage => ({ role: m.role, content: (m.content as string).slice(0, COMPACT_LIMITS.historyChars) })) : kept;
+    const history = trimmed.length > 0 && trimmed[0]?.role !== 'user' ? trimmed.slice(1) : trimmed;
+    const messages: ChatMessage[] = [...history, { role: 'user', content: first }];
 
     let repairs = 0;
     let toolCalls = 0;
@@ -122,7 +133,7 @@ export class WorldAgent {
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
       const res: CompletionResponse = await raceAbort(
-        this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: AGENT_TOOLS, maxTokens: this.maxTokens }, signal),
+        this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens }, signal),
         signal,
       );
       usage.calls += 1;

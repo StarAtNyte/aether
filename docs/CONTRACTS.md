@@ -459,13 +459,18 @@ export interface AgentOptions { provider: Provider; maxRepairs?: number; maxTurn
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;   // library definitions on demand: before apply_patches, every referenced
                                                                       // procedural generator that is not built in / in the world / in the batch is
                                                                       // resolved and a defineGenerator patch is committed first (≤ 8 per call)
+  promptProfile?: 'full' | 'compact';   // default 'full'. 'compact' (small on-device models, ~4k-token context): condensed system prompt
+                                        // (buildCompactSystemPrompt), COMPACT_TOOLS only, ≤ 15 summary entities, last user/assistant
+                                        // exchange of history (≤ 400 chars each), output cap 1 200 tokens (COMPACT_LIMITS)
 }
 export class WorldAgent {
   constructor(opts: AgentOptions);
   run(prompt: string, host: AgentHost, opts?: { signal?: AbortSignal; images?: string[]; history?: ChatMessage[] }): AsyncGenerator<AgentEvent>;
 }
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, write_generator, write_script, inspect, run_verification, finish
+export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
+export function buildCompactSystemPrompt(catalogs: AgentCatalogs): string;   // ≈ 1.2k tokens; catalog ids only, one example
 ```
 
 ### Zero-cost AI connections (also exported by `@aether/agent`)
@@ -484,7 +489,9 @@ export interface TextBackend { name: string; strictSchema?: boolean; complete(re
 //   toolNames: the emulated tool names (never native tools). The Claude Code backend tolerates up to 3
 //   direct calls to one of them after its init event proved only StructuredOutput is exposed;
 //   any other tool name, or a call before that proof, is a `tool_violation`.
-export function createEmulatedProvider(opts: { backend: TextBackend; name: string; model?: string; effort?: 'low' | 'medium' | 'high' }): Provider;
+export function createEmulatedProvider(opts: { backend: TextBackend; name: string; model?: string; effort?: 'low' | 'medium' | 'high';
+  compact?: boolean;   // small-context backend: tool results cut to 1 200 chars in the transcript
+}): Provider;
 export function parseEmulatedReply(value: unknown, tools: ToolDef[], salt: string): { ok: true; response } | { ok: false; error };
 export function replyJsonSchema(tools: ToolDef[], strict: boolean): object;
 
@@ -492,6 +499,7 @@ export function replyJsonSchema(tools: ToolDef[], strict: boolean): object;
 //   POST /v1/pair { code } → { token }          (pairing code printed by the bridge; 5 wrong codes lock and rotate it)
 //   GET  /v1/status (Bearer) → { ok, name: 'aether-bridge', version, backends: BridgeBackendStatus[] }
 //   POST /v1/complete (Bearer) { backend: 'codex' | 'claude-code', model?, effort?, request: CompletionRequest } → CompletionResponse
+//     `model` must match MODEL_ID_RE; the inner `request.model` is ignored (it is free-form and would otherwise reach the CLI)
 //   errors: { error: { code: BridgeErrorCode, message } }  (unauthorized, forbidden_origin, busy, not_logged_in, cli_missing, timeout, rate_limited, tool_violation, …)
 export function createBridgeProvider(opts: { baseUrl: string; token: string; backend; model?; effort?; fetch? }): Provider;
 export function fetchBridgeStatus(baseUrl, token, fetch?): Promise<BridgeStatus>;
@@ -501,7 +509,10 @@ export function normalizeBridgeUrl(raw: string): string | null;        // loopba
 // Fallback: any primary failure (offline, not signed in, rate limited, timeout…) → offline planner, reported once.
 export function createFallbackProvider(opts: { primary: Provider; fallback: Provider; onFallback?: (n: FallbackNotice) => void }): FallbackProvider;
 // On-device (experimental; the engine is created lazily by the studio, WebGPU only):
-export function createWebLlmProvider(opts: { engine: WebLlmEngineLike; model: string }): Provider;
+export function createWebLlmProvider(opts: { engine: WebLlmEngineLike; model: string; maxTokens?: number /* 1200 */; contextTokens?: number /* 4096 */ }): Provider;
+//   compact transcript; a request whose estimated input (chars / 3) leaves < 256 output tokens is refused before generating
+//   (ProviderError 'too_large', reason 'webllm_context'); max_tokens never exceeds what the context has left.
+//   Hosts should run WorldAgent with promptProfile 'compact' for it.
 
 // 3D quality loop: rubric (composition, materials, lighting, scale, detail, coherence, physical; weighted 0–100,
 // threshold 72), deterministic heuristics (+ rendered view stats), optional vision critic, targeted improvements.

@@ -137,6 +137,29 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
 ];
 
+/**
+ * Tools of the compact prompt profile (small on-device models): only
+ * apply_patches and finish, with short descriptions and minimal schemas so
+ * the whole request fits a ~4k-token context. Same names and validators as
+ * {@link AGENT_TOOLS}.
+ */
+export const COMPACT_TOOLS: ToolDef[] = [
+  {
+    name: 'apply_patches',
+    description: 'Edit the world with patch operations. Errors come back by index: fix and resend only those.',
+    inputSchema: {
+      type: 'object',
+      properties: { patches: { type: 'array', minItems: 1, items: { type: 'object' } }, message: { type: 'string' } },
+      required: ['patches', 'message'],
+    },
+  },
+  {
+    name: 'finish',
+    description: 'Call when done. message: one sentence for the user.',
+    inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
+  },
+];
+
 /** zod validators for each tool's arguments. */
 export const ToolInputs = {
   apply_patches: z.object({

@@ -63,7 +63,13 @@ function summarizeInput(input: unknown): string {
   return `${text.slice(0, OLD_INPUT_CHARS)}… (truncated, already executed)`;
 }
 
-function renderBlock(b: ContentBlock, latestAssistant: boolean, images: string[]): string | null {
+/** Options of {@link renderTranscript}. */
+export interface TranscriptOptions {
+  /** Characters kept per tool result (default 12 000; small-context models use less). */
+  resultChars?: number;
+}
+
+function renderBlock(b: ContentBlock, latestAssistant: boolean, images: string[], resultChars: number): string | null {
   switch (b.type) {
     case 'text':
       return b.text.length > 0 ? b.text : null;
@@ -73,7 +79,7 @@ function renderBlock(b: ContentBlock, latestAssistant: boolean, images: string[]
     case 'tool_use':
       return `<tool_call name="${b.name}" id="${b.id}">${latestAssistant ? stableStringify(b.input ?? {}) : summarizeInput(b.input)}</tool_call>`;
     case 'tool_result': {
-      const body = b.content.length > RESULT_CHARS ? `${b.content.slice(0, RESULT_CHARS)}… (truncated)` : b.content;
+      const body = b.content.length > resultChars ? `${b.content.slice(0, resultChars)}… (truncated)` : b.content;
       return `<tool_result id="${b.toolUseId}"${b.isError ? ' error="true"' : ''}>${body}</tool_result>`;
     }
   }
@@ -87,8 +93,9 @@ function blocksOf(m: ChatMessage): ContentBlock[] {
  * Render `req` for a text-only backend. `strict` selects the reply variant
  * described to the model (see {@link protocolInstructions}).
  */
-export function renderTranscript(req: CompletionRequest, strict: boolean): RenderedPrompt {
+export function renderTranscript(req: CompletionRequest, strict: boolean, opts: TranscriptOptions = {}): RenderedPrompt {
   const tools = req.tools ?? [];
+  const resultChars = Math.max(200, Math.min(RESULT_CHARS, Math.floor(opts.resultChars ?? RESULT_CHARS)));
   const system = `${req.system}\n\n${protocolInstructions(tools, strict)}`;
   const images: string[] = [];
   let lastAssistant = -1;
@@ -101,7 +108,7 @@ export function renderTranscript(req: CompletionRequest, strict: boolean): Rende
   const parts: string[] = [];
   req.messages.forEach((m, i) => {
     const body = blocksOf(m)
-      .map((b) => renderBlock(b, i === lastAssistant, images))
+      .map((b) => renderBlock(b, i === lastAssistant, images, resultChars))
       .filter((s): s is string => s !== null)
       .join('\n');
     if (body.length === 0) return;

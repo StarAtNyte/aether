@@ -17,7 +17,7 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions, type TurnOptions, type UserInput } from '@openai/codex-sdk';
-import type { TextBackend, TextCompletionRequest, TextCompletionResult } from '@aether/agent';
+import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { restrictedEnv, withTempDir } from '../sandbox';
 
@@ -101,6 +101,8 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
     name: 'Codex',
     strictSchema: true,
     async complete(req: TextCompletionRequest, signal?: AbortSignal): Promise<TextCompletionResult> {
+      // The model id becomes a CLI option: never let anything flag- or TOML-like through.
+      if (req.model !== undefined && !MODEL_ID_RE.test(req.model)) throw new BridgeError('invalid_request', 'Invalid model id.');
       const servers = opts.mcpServers ? await opts.mcpServers() : [];
       if (servers === null) throw new BridgeError('tool_violation', 'Refused: the bridge could not list your Codex MCP servers to disable them.');
       const overrides = mcpDisableOverrides(servers);

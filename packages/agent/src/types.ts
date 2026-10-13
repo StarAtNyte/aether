@@ -112,7 +112,17 @@ export interface AgentOptions {
    * before patches that reference an undefined generator are applied.
    */
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
+  /**
+   * Prompt profile (default 'full'). 'compact' is for small models with a
+   * ~4k-token context (on-device): a condensed system prompt, only the
+   * apply_patches and finish tools, a shorter world summary and history,
+   * and a smaller output cap.
+   */
+  promptProfile?: PromptProfile;
 }
+
+/** Size of the planner prompt: everything, or a condensed form for small models. */
+export type PromptProfile = 'full' | 'compact';
 
 /** Token usage accumulated over a run. */
 export interface UsageTotals {

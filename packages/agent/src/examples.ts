@@ -56,7 +56,8 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
         entity: {
           id: 'bell',
           name: 'Bell',
-          transform: { position: [3.85, 0.4, 0] },
+          // Far enough that domino-6 passes 45° (topples) before its tip strikes the bell.
+          transform: { position: [4.1, 0.4, 0] },
           shape: { kind: 'primitive', primitive: 'cone', size: [0.6, 0.8, 0.6] },
           material: { preset: 'gold' },
           physics: { body: 'dynamic', mass: 0.3 },

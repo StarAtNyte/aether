@@ -11,7 +11,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { TextBackend, TextCompletionRequest, TextCompletionResult } from '@aether/agent';
+import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess, type SpawnFn } from '../process';
 import { restrictedEnv, withTempDir } from '../sandbox';
@@ -177,6 +177,8 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
     name: 'Claude Code',
     strictSchema: false,
     async complete(req: TextCompletionRequest, signal?: AbortSignal): Promise<TextCompletionResult> {
+      // The model id becomes a CLI argument: never let anything flag-like through.
+      if (req.model !== undefined && !MODEL_ID_RE.test(req.model)) throw new BridgeError('invalid_request', 'Invalid model id.');
       return withTempDir(async (dir) => {
         const systemFile = join(dir, 'system.txt');
         await writeFile(systemFile, req.system, { encoding: 'utf8', mode: 0o600 });

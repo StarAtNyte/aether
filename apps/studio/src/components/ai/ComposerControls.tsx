@@ -92,7 +92,7 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
       width={260}
       items={items}
       trigger={(t) => (
-        <button {...t} type="button" className="composer__select composer__model" data-tip={tip} data-testid="model-picker">
+        <button {...t} type="button" className="composer__select composer__model" data-tip={tip} data-testid="model-picker" data-ai-kind={resolved.kind} data-ai-status={resolved.ready ? 'ready' : 'unavailable'} data-bridge-state={bridge.state}>
           <span className={`status-dot${dot}`} aria-hidden="true" />
           <span className="composer__model-label">{resolved.ready ? resolved.label : prefs.mode === 'auto' ? 'Offline planner' : resolved.label}</span>
           {prefs.mode === 'bridge' && resolved.ready && <span className="composer__effort">{prefs.effort}</span>}
