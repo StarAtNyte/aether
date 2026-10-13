@@ -17,13 +17,14 @@ WebGPU / WebGL2, the e2e configuration) and Firefox on WebGL2.
 | Procedural wind for vegetation fields (TSL vertex node) | **Shipped** | `materials/wind.ts` |
 | Sky-derived colour grade in the composite pass | **Shipped** | `gpu/grade.ts`, `gpu/post.ts` |
 | p90 frame-time resolution governor | **Shipped** | `view/adaptive-resolution.ts` |
+| Camera director (fly-through loop around the content) | **Shipped** | `view/tour.ts`, studio camera button |
 | Built-in generation in the compute worker | **Shipped** | `geometry/procgen-source.ts`, `procgen/generate.ts` |
 | High-detail procedural sculpture generator + canyon terrain | **Shipped** (content for the above) | `procgen/generators/sculpture.ts`, `terrain.ts` variant 3 |
 | Binary greedy voxel meshing | Algorithm wins (5–11× vs greedy), **not integrated** (no voxel content in the World IR) | `experiments/voxel-meshing` |
 | Gaussian splats (Spark) | **Not integrated** (second renderer path, no splat content) | `experiments/gaussian-splats` |
 | GPU compute culling + indirect draws | **Not built**: the CPU planners already cost < 1 ms; a WebGPU-only path would fork Firefox/WebGL2 | — |
 | 16-byte instance format via custom vertex node | **Deferred**: 4× less upload, matters only on software rasterizers at these counts | — |
-| Cinematic items not attempted this round (planar-reflection water, GTAO, TAA, VSM/cascades, GPU particles, audio, camera director) | Open | — |
+| Cinematic items not attempted this round (planar-reflection water, GTAO, TAA, VSM/cascades, GPU particles, procedural audio) | Open | — |
 
 ## 1. Virtual geometry
 
@@ -123,6 +124,12 @@ geometries, 7 materials); the planner allocates nothing per frame
   (no extra target or pass; unit-tested policy).
 - **Wind.** Vegetation fields get a TSL position node (quadratic bend by
   height above the mesh base, phase from position): vertex work only.
+- **Fly-through.** `startTour()` builds a loop of keys from the framing
+  sphere and the focus objects (low passes, high reveals), plays it on a
+  Catmull-Rom spline with eased timing, starts and ends at the current
+  view, and stops on any input; per-frame state lives in a typed array so
+  the probe measures 0 B/frame (doubles passed through calls or stored in
+  object fields were boxed on the first attempt).
 - **p90 governor.** The adaptive resolution decides on the 90th-percentile
   frame time of 48 frames: a scene averaging 57 fps that stutters every
   eighth frame (p90 ≈ 22 fps) now scales down; isolated spikes do not.
