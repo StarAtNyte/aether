@@ -480,6 +480,10 @@ and repair run unchanged:
 // (`input_json` = arguments as a JSON string, for strict structured-output engines).
 // zod-validated (≤ 16 calls, ≤ 600 000 chars per input); one automatic re-ask on invalid JSON.
 export interface TextBackend { name: string; strictSchema?: boolean; complete(req: TextCompletionRequest, signal?): Promise<TextCompletionResult>; }
+// TextCompletionRequest = { role, system, prompt, schema, images, toolNames?, model?, effort?, maxOutputTokens? }
+//   toolNames: the emulated tool names (never native tools). The Claude Code backend tolerates up to 3
+//   direct calls to one of them after its init event proved only StructuredOutput is exposed;
+//   any other tool name, or a call before that proof, is a `tool_violation`.
 export function createEmulatedProvider(opts: { backend: TextBackend; name: string; model?: string; effort?: 'low' | 'medium' | 'high' }): Provider;
 export function parseEmulatedReply(value: unknown, tools: ToolDef[], salt: string): { ok: true; response } | { ok: false; error };
 export function replyJsonSchema(tools: ToolDef[], strict: boolean): object;

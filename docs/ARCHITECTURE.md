@@ -554,6 +554,12 @@ request kill the child process.
 Measured on the development machine (one call each, low effort, the full
 planner prompt plus a two-tool request): Codex (`gpt-5.6-sol` default) 22.3 s,
 Claude Code (`haiku`) 6.1 s. The offline planner answers in under 0.2 s.
+A whole studio turn through the bridge (`npm run e2e:bridge`, prompt "a small
+lighthouse on a rocky islet at sunset", refine off: plan, a new generator,
+patches, verification and the quality pass) took 28 s with Claude Code
+`haiku` and 59 s with Codex `gpt-5.6-sol` in Chromium, and 81 s with Claude
+Code in Firefox (one extra planning turn). Every world was verified, with
+quality scores of 89–95.
 
 ### 12.2 Generator library
 
