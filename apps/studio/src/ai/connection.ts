@@ -70,6 +70,33 @@ export function parseServerHealth(body: unknown): AiConnectionState['server'] {
 
 const BACKEND_LABEL: Record<'codex' | 'claude-code', string> = { codex: 'Codex', 'claude-code': 'Claude Code' };
 
+/** The backend, model and effort a bridge send will actually use. */
+export interface BridgeChoice {
+  backend: 'codex' | 'claude-code';
+  model: string | undefined;
+  effort: AiPrefs['effort'];
+}
+
+/**
+ * Reconcile the saved preferences with what the bridge reports: prefer the
+ * chosen backend when it is signed in (else the first signed-in one), keep
+ * the saved model only while that backend's catalog still lists it (a model
+ * retired from the catalog would otherwise fail every call), and keep the
+ * effort only when the model supports it.
+ */
+export function effectiveBridgeChoice(prefs: AiPrefs, backends: readonly BridgeBackendStatus[]): BridgeChoice {
+  const ready = backends.filter((b) => b.installed && b.loggedIn);
+  const status = ready.find((b) => b.id === prefs.backend) ?? ready[0] ?? backends.find((b) => b.id === prefs.backend);
+  const backend = status?.id ?? prefs.backend;
+  const wanted = backend === prefs.backend ? bridgeModel(prefs) : undefined;
+  const catalog = status?.models ?? [];
+  let model = wanted;
+  if (catalog.length > 0 && (model === undefined || !catalog.some((m) => m.id === model))) model = status?.defaultModel ?? catalog[0]?.id;
+  const efforts = catalog.find((m) => m.id === model)?.efforts;
+  const effort = efforts && efforts.length > 0 && !efforts.includes(prefs.effort) ? (efforts.includes('low') ? 'low' : (efforts[0] ?? prefs.effort)) : prefs.effort;
+  return { backend, model, effort };
+}
+
 /** The page's AI connection manager. */
 export class AiConnection {
   readonly store: StoreApi<AiConnectionState>;
@@ -226,19 +253,15 @@ export class AiConnection {
   /** Resolve preferences to a concrete connection (no network). */
   resolve(prefs: AiPrefs): ResolvedConnection {
     const s = this.store.getState();
-    const bridgeBackend = (): BridgeBackendStatus | undefined => {
-      const ready = s.bridge.backends.filter((b) => b.installed && b.loggedIn);
-      return ready.find((b) => b.id === prefs.backend) ?? ready[0];
-    };
     const bridge = (): ResolvedConnection => {
-      const b = bridgeBackend();
-      const id = b?.id ?? prefs.backend;
-      const model = id === prefs.backend ? bridgeModel(prefs) : b?.defaultModel;
+      const choice = effectiveBridgeChoice(prefs, s.bridge.backends);
+      const id = choice.backend;
+      const model = choice.model;
       const label = `${BACKEND_LABEL[id]}${model ? ` · ${model}` : ''}`;
       if (!s.bridge.paired) return { kind: 'bridge', label, ready: false, reason: 'the local bridge is not paired', vision: false };
       if (s.bridge.state === 'offline') return { kind: 'bridge', label, ready: false, reason: 'the local bridge is not running (start it with npm run bridge)', vision: false };
       if (s.bridge.state === 'not_logged_in') return { kind: 'bridge', label, ready: false, reason: `${BACKEND_LABEL[id]} is not signed in on this computer`, vision: false };
-      const vision = b?.models.find((m) => m.id === model)?.vision ?? true;
+      const vision = s.bridge.backends.find((b) => b.id === id)?.models.find((m) => m.id === model)?.vision ?? true;
       return { kind: 'bridge', label, ready: true, vision };
     };
     switch (prefs.mode) {
@@ -282,10 +305,8 @@ export class AiConnection {
         return createHttpProvider({ endpoint: API.llm, fetch: this.fetchImpl, name: 'server' });
       case 'bridge': {
         if (!this.token) return null;
-        const ready = s.bridge.backends.filter((b) => b.installed && b.loggedIn);
-        const backend = (ready.find((b) => b.id === prefs.backend) ?? ready[0])?.id ?? prefs.backend;
-        const model = backend === prefs.backend ? bridgeModel(prefs) : undefined;
-        return createBridgeProvider({ baseUrl: s.bridge.url, token: this.token, backend, effort: prefs.effort, fetch: this.fetchImpl, ...(model ? { model } : {}) });
+        const { backend, model, effort } = effectiveBridgeChoice(prefs, s.bridge.backends);
+        return createBridgeProvider({ baseUrl: s.bridge.url, token: this.token, backend, effort, fetch: this.fetchImpl, ...(model ? { model } : {}) });
       }
       case 'webllm':
         return this.engine ? createWebLlmProvider({ engine: this.engine, model: prefs.webllmModel }) : null;

@@ -6,7 +6,7 @@
  */
 import { memo, useEffect, useMemo, type ReactElement } from 'react';
 import { useStudio, useUI } from '../../app/context';
-import { aiConnection } from '../../ai/connection';
+import { aiConnection, effectiveBridgeChoice } from '../../ai/connection';
 import { MAX_REFINE, WEBLLM_MODELS, type AiPrefs } from '../../ai/prefs';
 import { useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
@@ -65,11 +65,12 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
     { id: 'offline', label: 'Offline planner', checked: prefs.mode === 'offline', onSelect: () => set({ mode: 'offline' }) },
   ];
   if (server.state === 'live') items.push({ id: 'server', label: `Server · ${server.providers[0] ?? 'model'}`, checked: prefs.mode === 'server', onSelect: () => set({ mode: 'server' }) });
+  const choice = effectiveBridgeChoice(prefs, bridge.backends);
   for (const backend of ['codex', 'claude-code'] as const) {
     const note = backendState(backend);
     items.push({ kind: 'heading', id: `h-${backend}`, label: `${backend === 'codex' ? 'Codex' : 'Claude Code'}${note ? ` — ${note}` : ''}` });
     for (const m of models(backend)) {
-      const current = prefs.mode === 'bridge' && prefs.backend === backend && (backend === 'codex' ? prefs.codexModel : prefs.claudeModel) === m.id;
+      const current = prefs.mode === 'bridge' && choice.backend === backend && choice.model === m.id;
       items.push({ id: `${backend}:${m.id}`, label: m.label, checked: current, onSelect: () => set({ mode: 'bridge', backend, ...(backend === 'codex' ? { codexModel: m.id } : { claudeModel: m.id }) }) });
     }
   }
@@ -80,7 +81,7 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
   if (byok || prefs.mode === 'byok') items.push({ id: 'byok', label: `Your API key · ${prefs.byokProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}`, checked: prefs.mode === 'byok', onSelect: () => set({ mode: 'byok' }) });
   if (resolved.kind === 'bridge' || prefs.mode === 'bridge') {
     items.push({ kind: 'heading', id: 'h-effort', label: 'Reasoning effort' });
-    for (const e of ['low', 'medium', 'high'] as const) items.push({ id: `effort:${e}`, label: e === 'low' ? 'Low (fastest)' : e === 'medium' ? 'Medium' : 'High', checked: prefs.effort === e, onSelect: () => set({ effort: e }) });
+    for (const e of ['low', 'medium', 'high'] as const) items.push({ id: `effort:${e}`, label: e === 'low' ? 'Low (fastest)' : e === 'medium' ? 'Medium' : 'High', checked: choice.effort === e, onSelect: () => set({ effort: e }) });
   }
   items.push({ kind: 'separator', id: 'sep' }, { id: 'setup', label: 'Set up connections…', icon: 'settings', onSelect: () => studio.store.getState().openSettings('ai') });
 
@@ -95,7 +96,7 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
         <button {...t} type="button" className="composer__select composer__model" data-tip={tip} data-testid="model-picker" data-ai-kind={resolved.kind} data-ai-status={resolved.ready ? 'ready' : 'unavailable'} data-bridge-state={bridge.state}>
           <span className={`status-dot${dot}`} aria-hidden="true" />
           <span className="composer__model-label">{resolved.ready ? resolved.label : prefs.mode === 'auto' ? 'Offline planner' : resolved.label}</span>
-          {prefs.mode === 'bridge' && resolved.ready && <span className="composer__effort">{prefs.effort}</span>}
+          {prefs.mode === 'bridge' && resolved.ready && <span className="composer__effort">{choice.effort}</span>}
           <Icon name="chevronDown" className="composer__chev" />
         </button>
       )}

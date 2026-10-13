@@ -6,7 +6,8 @@
  * and a personal API key is billed to its owner.
  */
 import { memo, useEffect, useState, type ReactElement, type ReactNode } from 'react';
-import { aiConnection, DEFAULT_BRIDGE_URL } from '../../ai/connection';
+import { aiConnection, DEFAULT_BRIDGE_URL, effectiveBridgeChoice } from '../../ai/connection';
+import { hostedBridgeNote, isLocalOrigin } from '../../ai/messages';
 import { MAX_REFINE, WEBLLM_MODELS, type AiMode, type AiPrefs } from '../../ai/prefs';
 import { bridgeBadge, useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
@@ -68,7 +69,9 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const origin = typeof location !== 'undefined' ? location.origin : '';
-  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const local = isLocalOrigin(origin);
+  const browserNote = hostedBridgeNote(origin, typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  const choice = effectiveBridgeChoice(prefs, bridge.backends);
   const command = local ? 'npm run bridge' : `npm run bridge -- --origin ${origin}`;
   const backend = bridge.backends.find((b) => b.id === prefs.backend);
   const models = backend?.models ?? [];
@@ -149,7 +152,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
               <select
                 className="select select--sm"
                 aria-label="Model"
-                value={prefs.backend === 'codex' ? prefs.codexModel : prefs.claudeModel}
+                value={choice.backend === prefs.backend && choice.model ? choice.model : prefs.backend === 'codex' ? prefs.codexModel : prefs.claudeModel}
                 onChange={(e) => update(prefs.backend === 'codex' ? { codexModel: e.target.value } : { claudeModel: e.target.value })}
               >
                 {models.map((m) => (
@@ -167,7 +170,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
             </span>
             <Segmented<'low' | 'medium' | 'high'>
               label="Reasoning effort"
-              value={prefs.effort}
+              value={choice.effort}
               onChange={(v) => update({ effort: v })}
               options={[
                 ['low', 'Low'],
@@ -178,12 +181,20 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
           </div>
         </>
       )}
+      {browserNote && (
+        <p className={`setup-note${browserNote.tone === 'warn' ? ' setup-note--warn' : ''}`} data-testid="bridge-browser-note">
+          {browserNote.text}
+        </p>
+      )}
       {bridge.detail && bridge.state !== 'ready' && <p className="setup-note">{bridge.detail}</p>}
       <details className="troubleshoot">
         <summary>Troubleshooting</summary>
         <ul>
           <li>
             <strong>Bridge offline:</strong> keep the terminal with <code>npm run bridge</code> open; it listens on 127.0.0.1 only.
+          </li>
+          <li>
+            <strong>Hosted page cannot connect:</strong> Safari blocks HTTPS pages from reaching local services; use Chrome, Edge or Firefox, or run the studio locally. Chrome may first ask to allow access to your local network.
           </li>
           <li>
             <strong>Not signed in:</strong> run <code>codex login</code> (ChatGPT account) or start <code>claude</code> once and sign in.

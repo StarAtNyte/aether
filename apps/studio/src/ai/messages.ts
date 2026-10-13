@@ -24,3 +24,29 @@ export function fallbackText(label: string, n: FallbackNotice): string {
   const action = (n.reason && ACTIONS[n.reason]) ?? (n.code === 'network' ? 'it could not be reached' : n.code === 'auth' ? 'it rejected the credentials' : n.message);
   return `${label} could not answer: ${action}. Finished with the offline planner instead.`.slice(0, 600);
 }
+
+/** True for a loopback studio origin (`http://localhost:…`, `http://127.0.0.1:…`). */
+export function isLocalOrigin(origin: string): boolean {
+  return /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+}
+
+/**
+ * Browser-specific limits on reaching the local bridge from a hosted (HTTPS)
+ * copy of the studio, or null when there is nothing to warn about.
+ *
+ * - Safari (and every iOS browser) treats `http://127.0.0.1` as mixed content on HTTPS pages and
+ *   blocks it, so the bridge only works from a locally served studio there.
+ * - Chromium may ask for permission to reach devices on the local network
+ *   the first time; the request fails until the visitor allows it.
+ */
+export function hostedBridgeNote(origin: string, userAgent: string): { tone: 'warn' | 'info'; text: string } | null {
+  if (isLocalOrigin(origin) || !origin.startsWith('https:')) return null;
+  // iOS browsers (CriOS, FxiOS…) are WebKit underneath, so they match the Safari branch.
+  const chromium = /(?:Chrome|Chromium|Edg)\//.test(userAgent);
+  const firefox = /Firefox\//.test(userAgent);
+  if (!chromium && !firefox && /Safari\//.test(userAgent)) {
+    return { tone: 'warn', text: 'Safari blocks hosted pages from reaching services on this computer. Use Chrome, Edge or Firefox here, or run the studio locally (npm run dev) and pair from there.' };
+  }
+  if (chromium) return { tone: 'info', text: 'If the browser asks to access apps or devices on your local network, choose Allow: that is how this page reaches the bridge.' };
+  return null;
+}

@@ -1472,6 +1472,10 @@ button.chip:hover {
   line-height: var(--lh-12);
 }
 
+.setup-note--warn {
+  color: var(--warning-text);
+}
+
 .ai-mode__body {
   display: flex;
   flex-direction: column;

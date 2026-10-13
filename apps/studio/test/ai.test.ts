@@ -1,8 +1,8 @@
-import { MODEL_ID_RE } from '@aether/agent';
+import { MODEL_ID_RE, type BridgeBackendStatus } from '@aether/agent';
 import { describe, expect, it } from 'vitest';
-import { AiConnection, parseServerHealth } from '../src/ai/connection';
+import { AiConnection, effectiveBridgeChoice, parseServerHealth } from '../src/ai/connection';
 import { extractBridgeLink } from '../src/ai/deepLink';
-import { fallbackText } from '../src/ai/messages';
+import { fallbackText, hostedBridgeNote, isLocalOrigin } from '../src/ai/messages';
 import { DEFAULT_AI_PREFS, loadAiPrefs, parsePrefs, PREF_MODEL_ID_RE, saveAiPrefs, type AiPrefs } from '../src/ai/prefs';
 import { loadBridgeSession, loadByokSession, saveBridgeSession, validateBridgeLink, type SessionStore } from '../src/ai/session';
 import { reviveChat } from '../src/lib/chat';
@@ -102,6 +102,27 @@ describe('AiConnection', () => {
     expect(p?.name).toBe('codex');
   });
 
+  it('never sends a saved model the bridge catalog no longer lists (regression)', async () => {
+    const r = router({ '/v1/status': () => json(STATUS(true)) });
+    const ai = new AiConnection({ fetch: r.fetch, session: mem() });
+    ai.adoptPairing({ url: 'http://127.0.0.1:8790', token: TOKEN });
+    await ai.refreshBridge();
+    const stale = prefs({ mode: 'bridge', backend: 'codex', codexModel: 'gpt-retired-1' });
+    expect(ai.resolve(stale)).toMatchObject({ ready: true, label: 'Codex · gpt-6.1-sol' });
+    const sent: unknown[] = [];
+    const r2 = router({ '/v1/status': () => json(STATUS(true)), '/v1/complete': (init) => (sent.push(JSON.parse(String(init.body))), json({ content: [{ type: 'text', text: 'ok' }], stopReason: 'end', usage: { inputTokens: 1, outputTokens: 1 } })) });
+    const ai2 = new AiConnection({ fetch: r2.fetch, session: mem() });
+    ai2.adoptPairing({ url: 'http://127.0.0.1:8790', token: TOKEN });
+    await ai2.refreshBridge();
+    await ai2.createProvider(stale)?.complete({ role: 'planner', system: 's', messages: [{ role: 'user', content: 'hi' }], tools: [], maxTokens: 100 });
+    expect(sent[0]).toMatchObject({ backend: 'codex', model: 'gpt-6.1-sol' });
+    // A model the catalog lists is kept; an effort the model lacks falls back to low.
+    const listed = { ...STATUS(true).backends[0], models: [{ id: 'gpt-6.1-sol', label: 'a', efforts: ['low', 'medium'] }, { id: 'gpt-6-luna', label: 'b', efforts: ['low', 'medium'] }] } as BridgeBackendStatus;
+    expect(effectiveBridgeChoice(prefs({ codexModel: 'gpt-6-luna', effort: 'high' }), [listed])).toEqual({ backend: 'codex', model: 'gpt-6-luna', effort: 'low' });
+    // No catalog yet (bridge not probed): the saved choice is sent unchanged.
+    expect(effectiveBridgeChoice(prefs({ codexModel: 'gpt-x', effort: 'high' }), [])).toEqual({ backend: 'codex', model: 'gpt-x', effort: 'high' });
+  });
+
   it('reports why a chosen connection is unusable (never silently)', async () => {
     const r = router({ '/api/health': () => json({ ok: true, mode: 'mock', byok: false }), '/v1/status': () => json(STATUS(false)) });
     const ai = new AiConnection({ fetch: r.fetch, session: mem(), webGpu: async () => ({ ok: false, reason: 'no WebGPU' }) });
@@ -190,5 +211,21 @@ describe('chat views for the AI connection', () => {
       { type: 'quality', score: 100, round: 1, source: 'heuristic', summary: 's', criteria: [{ id: 'composition', label: 'Composition', score: 10, note: 'n' }], applied: ['grounded 1'] },
       { type: 'done', inputTokens: 1, outputTokens: 2, calls: 1, ms: 1234, via: 'Codex · gpt-6.1-sol' },
     ]);
+  });
+});
+
+describe('hosted bridge browser notes', () => {
+  const SAFARI = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+  const IOS_CHROME = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1';
+  const CHROME = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+  const FIREFOX = 'Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0';
+  it('warns WebKit browsers on hosted pages, hints Chromium, stays quiet locally and in Firefox', () => {
+    expect(hostedBridgeNote('https://studio.example', SAFARI)?.tone).toBe('warn');
+    expect(hostedBridgeNote('https://studio.example', IOS_CHROME)?.tone).toBe('warn');
+    expect(hostedBridgeNote('https://studio.example', CHROME)?.tone).toBe('info');
+    expect(hostedBridgeNote('https://studio.example', FIREFOX)).toBeNull();
+    expect(hostedBridgeNote('http://localhost:5173', SAFARI)).toBeNull();
+    expect(isLocalOrigin('http://127.0.0.1:4173')).toBe(true);
+    expect(isLocalOrigin('http://localhost.evil.example')).toBe(false);
   });
 });
