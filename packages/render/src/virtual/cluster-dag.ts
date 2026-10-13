@@ -464,9 +464,12 @@ export function backfacing(cones: Float32Array, q: number, vx: number, vy: numbe
   return (cosT * cosA - sinT * sinA) * len >= r;
 }
 
-/** Copy the triangles of `count` selected clusters into `target`; returns the index count written (stops at capacity). */
-export function assembleCut(dag: ClusterDag, selected: Uint32Array, count: number, target: Uint32Array): number {
-  let w = 0;
+/**
+ * Copy the triangles of `count` selected clusters into `target` starting at
+ * `offset`; returns the index count written (stops before exceeding capacity).
+ */
+export function assembleCut(dag: ClusterDag, selected: Uint32Array, count: number, target: Uint32Array, offset = 0): number {
+  let w = offset;
   for (let i = 0; i < count; i++) {
     const c = selected[i] as number;
     const a = dag.offsets[c] as number;
@@ -475,7 +478,7 @@ export function assembleCut(dag: ClusterDag, selected: Uint32Array, count: numbe
     // Element loop instead of set(subarray): no view object per cluster on the per-frame path.
     for (let i = a; i < b; i++) target[w++] = dag.indices[i] as number;
   }
-  return w;
+  return w - offset;
 }
 
 /** Index count of the selected clusters. */

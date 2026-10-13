@@ -124,13 +124,14 @@ const terrain = defineGenerator({
     resolution: pInt(128, 16, 256, 'grid cells per side (detail)'),
     roughness: pNum(0.5, 0, 1, '0 smooth hills … 1 rugged'),
     color: pColor('#5a8f3c', 'grass color'),
-    variant: pVariant(2, '0 hills, 1 plateaus (terraced), 2 valley'),
+    variant: pVariant(3, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls)'),
   },
   run(p, api) {
     const size = p.num('size');
     const H = p.num('height');
     const rough = p.num('roughness');
     const variant = p.int('variant');
+    if (variant === 3) return canyonTerrain(api, size, H, rough, p.int('resolution'), p.color('color'));
     const freq = 2.2 / size;
     const oct = 3 + Math.round(rough * 3);
     const pal = palette(p.color('color'));
@@ -156,6 +157,44 @@ const terrain = defineGenerator({
     });
   },
 });
+
+/**
+ * Canyon: a flat floor (exactly y = 0) running along Z, meandering a little,
+ * with terraced sandstone walls rising to a rolling plateau.
+ */
+function canyonTerrain(api: InternalApi, size: number, H: number, rough: number, resolution: number, grass: string): GeneratorOutput {
+  const n = api.noise;
+  const freq = 2.2 / size;
+  const floorHalf = size * 0.06;
+  const pal = palette(grass);
+  const sandstone = lin('#b0603a');
+  const pale = lin('#d7a370');
+  return buildTerrain(api, {
+    size,
+    resolution,
+    fitHeight: H,
+    height(x, z) {
+      const meander = Math.sin(z * 4.2 / size) * size * 0.025;
+      const d = Math.abs(x - meander) - floorHalf - n.noise2(z * 0.02, 3.7) * size * 0.012;
+      if (d <= 0) return 0;
+      const wall = smoothstep(0, size * 0.09, d);
+      // Strata: terraces with slightly sloped treads.
+      const steps = 7;
+      const t = wall * steps;
+      const strata = (Math.floor(t) + smoothstep(0.55, 1, t - Math.floor(t))) / steps;
+      const plateau = 0.78 + 0.22 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, 3 + Math.round(rough * 3)));
+      return strata * plateau * H;
+    },
+    color(t, _h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.2, z * 0.2);
+      // Banded sandstone walls, grassy plateau, dusty floor.
+      const band = 0.5 + 0.5 * Math.sin((t + w) * 38);
+      mixLinear(sandstone, pale, band * 0.6, out);
+      mixLinear(out, pal.grass, smoothstep(0.82, 0.9, t + w) * (1 - smoothstep(0.3, 0.5, slope)), out);
+      if (t < 0.01) mixLinear(pal.sand, sandstone, 0.35 + w * 2, out);
+    },
+  });
+}
 
 const island = defineGenerator({
   id: 'island',

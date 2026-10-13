@@ -53,6 +53,9 @@ import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, pr
 import { ScatterField, FIELD_MIN_INSTANCES } from '../virtual/scatter-field';
 import { buildChunks } from '../virtual/field-culler';
 import { createLocalView, localView } from '../virtual/view';
+import { DagClient, type DagClientOptions } from '../virtual/dag-client';
+import { mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../virtual/virtual-mesh';
+import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareBudget, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
@@ -113,7 +116,16 @@ export interface SceneSyncOptions {
    * `false` keeps every layer a plain instanced mesh.
    */
   fields?: FieldBudget | false;
+  /**
+   * Parts with ≥ {@link VIRTUAL_MIN_TRIANGLES} triangles are drawn as
+   * virtual geometry (cluster LOD DAG, built in a worker) within this
+   * per-mesh triangle budget; `false` draws them as plain meshes.
+   */
+  virtual?: { triangles: number; dag?: DagClientOptions } | false;
 }
+
+/** Default virtual-geometry budget: triangles one unique mesh may draw over all its instances. */
+export const DEFAULT_VIRTUAL_TRIANGLES = 1_500_000;
 
 // Scratch objects (no per-frame allocations in applyTransforms).
 const _inv = new Matrix4();
@@ -216,6 +228,10 @@ export class SceneSync {
   /** A field was mounted or rebalanced since the last {@link updateView}. */
   private viewDirty = false;
   private readonly view = createLocalView();
+  /** Virtual geometry (null: disabled). */
+  private readonly dags: DagClient | null;
+  private readonly virtualTriangles: number;
+  private readonly virtualGroups = new Map<string, { group: VirtualGroup; refs: number }>();
 
   constructor(private readonly opts: SceneSyncOptions) {
     this.variant = opts.variant ?? 'standard';
@@ -226,6 +242,9 @@ export class SceneSync {
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
     this.fieldBudget = this.variant === 'standard' && opts.fields !== false ? (opts.fields ?? DEFAULT_FIELD_BUDGET) : null;
+    const virtual = this.variant === 'standard' && opts.virtual !== false ? (opts.virtual ?? { triangles: DEFAULT_VIRTUAL_TRIANGLES }) : null;
+    this.dags = virtual ? new DagClient(virtual.dag) : null;
+    this.virtualTriangles = virtual ? Math.max(3, virtual.triangles) : 0;
   }
 
   /** Whether a scatter field needs a view update even if the camera did not move. */
@@ -241,8 +260,9 @@ export class SceneSync {
    */
   updateView(camera: PerspectiveCamera, heightPx: number): boolean {
     this.viewDirty = false;
-    if (this.fieldNodes.size === 0) return false;
     let changed = false;
+    for (const { group } of this.virtualGroups.values()) if (group.update(camera, heightPx)) changed = true;
+    if (this.fieldNodes.size === 0) return changed;
     for (const node of this.fieldNodes) {
       const field = node.field;
       if (!field || !node.object.visible) continue;
@@ -262,6 +282,19 @@ export class SceneSync {
       drawnTriangles += node.field.culler.drawnTriangles;
     }
     return { fields: this.fieldNodes.size, instances: this.fieldInstances, drawnInstances, drawnTriangles };
+  }
+
+  /** Virtual-geometry statistics: unique meshes, instances, source and drawn triangles. */
+  virtualStats(): { meshes: number; instances: number; sourceTriangles: number; drawnTriangles: number } {
+    let instances = 0;
+    let sourceTriangles = 0;
+    let drawnTriangles = 0;
+    for (const { group } of this.virtualGroups.values()) {
+      instances += group.size;
+      sourceTriangles += group.dag.baseTriangles * group.size;
+      drawnTriangles += group.drawnTriangles;
+    }
+    return { meshes: this.virtualGroups.size, instances, sourceTriangles, drawnTriangles };
   }
 
   /**
@@ -604,6 +637,8 @@ export class SceneSync {
         obj.quaternion.copy(_pQuat.invert()).multiply(_q);
       }
       obj.updateMatrix();
+      // A moving high-poly mesh re-plans its cut on the next frame.
+      if (node.virtual.length > 0) this.viewDirty = true;
     }
   }
 
@@ -646,6 +681,7 @@ export class SceneSync {
     if (this.disposed) return;
     this.clear();
     this.disposed = true;
+    this.dags?.dispose();
     this.placeholderGeometry.dispose();
     this.placeholderMaterial.dispose();
     this.root.removeFromParent();
@@ -1094,6 +1130,7 @@ export class SceneSync {
           mesh = new Mesh(g.geometry, handle.material);
           // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
           accelerateRaycast(mesh);
+          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES) this.virtualize(node, mesh, g.key, part.positions, part.indices);
         }
         node.bindings.push({
           mesh,
@@ -1114,6 +1151,52 @@ export class SceneSync {
       node.content.add(mesh);
     }
     this.applyShadowFlags(node);
+  }
+
+  /**
+   * Swap a high-poly part to virtual geometry once its cluster DAG is built
+   * (in the worker; the plain mesh draws meanwhile). The plain mesh moves to
+   * the raycast-only layer so picking, snapping and the chase camera keep
+   * using its full-detail BVH.
+   */
+  private virtualize(node: EntityNode, source: Mesh, key: string, positions: Float32Array, indices: Uint32Array): void {
+    const dags = this.dags;
+    if (!dags) return;
+    const token = node.token;
+    const geometry = source.geometry;
+    dags.build(key, positions, indices).then(
+      (dag) => {
+        if (this.disposed || node.token !== token || source.parent !== node.content || !node.bindings.some((b) => b.mesh === source)) return;
+        let entry = this.virtualGroups.get(key);
+        if (!entry) {
+          entry = { group: new VirtualGroup(dag, geometry, Math.min(this.virtualTriangles, Math.max(dag.baseTriangles, 65_536) * 3)), refs: 0 };
+          this.virtualGroups.set(key, entry);
+        }
+        entry.refs++;
+        const mesh = entry.group.add(source);
+        mirror(mesh, source);
+        source.layers.set(BATCHED_LAYER);
+        node.content.add(mesh);
+        node.virtual.push({ key, mesh, source });
+        this.viewDirty = true;
+      },
+      (e: unknown) => log.debug(`virtual geometry unavailable for ${node.id}: ${errorMessage(e)}`),
+    );
+  }
+
+  /** Drop an entity's virtual stand-ins (the group is disposed with its last instance). */
+  private releaseVirtual(node: EntityNode): void {
+    for (const v of node.virtual) {
+      v.source.layers.set(0);
+      const entry = this.virtualGroups.get(v.key);
+      if (!entry) continue;
+      entry.group.remove(v.mesh);
+      if (--entry.refs <= 0) {
+        entry.group.dispose();
+        this.virtualGroups.delete(v.key);
+      }
+    }
+    node.virtual = [];
   }
 
   private mountPlaceholder(node: EntityNode): void {
@@ -1140,6 +1223,7 @@ export class SceneSync {
    * the still-retained resources. Pair with {@link releaseRetired}.
    */
   private detachContent(node: EntityNode): Retired {
+    this.releaseVirtual(node);
     const retired: Retired = { materialKeys: [], geometryKeys: node.geometryKeys, owned: [], modelUrl: node.modelUrl, bundle: node.meshBundle };
     node.meshBundle = null;
     for (const b of node.bindings) {
@@ -1248,6 +1332,9 @@ export class SceneSync {
       b.mesh.castShadow = standard && shadowCaster && node.entity.castShadow && !b.seeThrough;
       b.mesh.receiveShadow = standard && node.entity.receiveShadow;
     }
+    // Virtual stand-ins follow their source meshes (material swaps go through here too).
+    for (const v of node.virtual) mirror(v.mesh, v.source);
+    if (node.virtual.length > 0) this.viewDirty = true;
   }
 
   private syncLight(node: EntityNode, before: Entity | undefined): void {

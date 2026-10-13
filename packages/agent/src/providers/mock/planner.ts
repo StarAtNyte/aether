@@ -81,7 +81,9 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   // An activity can absorb another one it renders itself (bowling at a crate pyramid).
   const activities = intent.activities.filter((a) => !intent.activities.some((o) => o !== a && o.absorbs?.includes(a.id)));
   const bare = intent.settings.length === 0 && (activities.length === 0 || activities.some((a) => a.wantsSetting));
-  const settings: Theme[] = bare ? [DEFAULT_SETTING] : intent.settings;
+  // A setting can absorb another it renders itself (the colossi canyon replaces the desert canyon).
+  const named = intent.settings.filter((s) => !intent.settings.some((o) => o !== s && o.absorbs?.includes(s.id)));
+  const settings: Theme[] = bare ? [DEFAULT_SETTING] : named;
   const primary = settings[0];
   const libHits = sceneLibraryHits(intent, library);
   // Without a recognized theme, a named library object is the scene's subject.

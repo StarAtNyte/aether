@@ -9,12 +9,14 @@ import { ARCHITECTURE_GENERATORS } from './architecture';
 import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
+import { SCULPTURE_GENERATORS } from './sculpture';
 
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
   ...NATURE_GENERATORS,
   ...ARCHITECTURE_GENERATORS,
   ...PROP_GENERATORS,
+  ...SCULPTURE_GENERATORS,
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,
 ];

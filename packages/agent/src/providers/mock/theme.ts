@@ -22,7 +22,7 @@ export interface Theme {
   env(b: Builder): void;
   /** Activities that look bare on their own get the default setting around them. */
   wantsSetting?: boolean;
-  /** Activities: ids of other activities this one renders itself when both are requested. */
+  /** Ids of other themes of the same kind this one renders itself when both are requested. */
   absorbs?: readonly string[];
   /** Activities: player setup applied even when combined with a setting. */
   player?(b: Builder): void;

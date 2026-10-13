@@ -73,7 +73,16 @@ function customGenerator(world: Pick<WorldDoc, 'generators'>, id: string): Gener
 export async function generate(
   shape: ProceduralShape,
   world: Pick<WorldDoc, 'generators'>,
-  opts: { sandbox?: SandboxRunner; cache?: GeneratorCache } = {},
+  opts: {
+    sandbox?: SandboxRunner;
+    cache?: GeneratorCache;
+    /**
+     * Runs built-in generators elsewhere (e.g. `ComputeClient.generate` in a
+     * worker, so heavy sculptures never block the page). Its output must be
+     * validated by the runner; a rejection falls back to running inline.
+     */
+    builtin?: (generator: string, params: Record<string, Json>, seed: number) => Promise<GeneratorOutput>;
+  } = {},
 ): Promise<GeneratorOutput> {
   const id = shape.generator;
   const seed = shape.seed ?? DEFAULT_SEED;
@@ -99,7 +108,15 @@ export async function generate(
     if (!gen) throw new Error(`unknown generator "${String(id).slice(0, 64)}"`);
     const resolved = resolveParams(gen.params, params);
     key = cache?.key({ ...shape, params: resolved, seed });
+    const remote = opts.builtin;
     run = async () => {
+      if (remote) {
+        try {
+          return await remote(gen.id, resolved, seed);
+        } catch {
+          // Worker unavailable, crashed or timed out: same result inline.
+        }
+      }
       await yieldToEventLoop();
       return gen.generate(resolved, createGeneratorApi(seed));
     };

@@ -109,8 +109,40 @@ export function builtinOutput(shape: ProceduralShape): GeneratorOutput | null {
       out = null;
     }
   }
+  out = out ? colliderView(out) : null;
   builtinCache.set(key, out);
   return out;
+}
+
+/** Points kept from a mesh too big for a trimesh collider (hulls only need a spread sample). */
+const COLLIDER_SAMPLE_POINTS = 16_384;
+
+/**
+ * Physics never needs the triangles of a mesh above the trimesh limit (a
+ * trimesh is refused, hulls subsample anyway), so such outputs are cached
+ * as a light view: their colliders, bounds and a strided point sample. A
+ * 400k-triangle sculpture then costs ~200 KB of cache instead of ~15 MB,
+ * and the cache stops thrashing in worlds with several of them.
+ */
+export function colliderView(out: GeneratorOutput): GeneratorOutput {
+  let nv = 0;
+  for (const p of out.parts) nv += p.positions.length / 3;
+  if (nv <= SHAPE_LIMITS.MAX_TRIMESH_VERTICES) return out;
+  const stride = Math.max(1, Math.ceil(nv / COLLIDER_SAMPLE_POINTS));
+  const sample = new Float32Array(Math.ceil(nv / stride) * 3);
+  let w = 0;
+  let k = 0;
+  for (const p of out.parts) {
+    for (let i = 0; i + 2 < p.positions.length; i += 3, k++) {
+      if (k % stride !== 0 || w + 3 > sample.length) continue;
+      sample[w++] = p.positions[i] as number;
+      sample[w++] = p.positions[i + 1] as number;
+      sample[w++] = p.positions[i + 2] as number;
+    }
+  }
+  const positions = sample.slice(0, w);
+  const material = out.parts[0]?.material ?? {};
+  return { ...out, parts: [{ positions, normals: new Float32Array(positions.length), indices: new Uint32Array(0), material }] };
 }
 
 function primitiveGeometry(shape: PrimitiveShape): GeneratorOutput | null {

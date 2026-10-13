@@ -1,0 +1,259 @@
+/**
+ * High-detail sculpture generator: weathered colossal heads, carved standing
+ * stones and eroded boulders with hundreds of thousands of smooth triangles.
+ * Meant for virtual geometry (the renderer draws a view-dependent cluster
+ * cut), so detail costs memory, not frame time.
+ *
+ * Tessellation is a spherified cube (uniform triangles, shared vertices,
+ * deterministic seams) displaced by analytic sculpt functions plus erosion
+ * noise; normals are smooth (area-weighted).
+ */
+import type { Noise } from '../noise';
+import { MeshBuilder, type Mesh } from '../kernel/mesh';
+import type { InternalApi } from '../api';
+import { boxCollider, cylinderCollider } from '../colliders';
+import { mixLinear, type RGB } from '../color';
+import { defineGenerator, lin, pBool, pColor, pInt, pNum, pVariant, shade } from './kit';
+
+/** Grid edge per cube face for each detail level (12·N² triangles: 49k … 786k). */
+const DETAIL_GRID = [64, 128, 192, 256] as const;
+
+/** Smooth stone (no flat shading: the geometry carries the detail). */
+const SMOOTH_STONE = { preset: 'stone', vertexColors: true, roughness: 0.9 } as const;
+
+function gauss(x: number, w: number): number {
+  return Math.exp(-(x * x) / (w * w));
+}
+
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Fractal noise (4 octaves, lacunarity 2.1). */
+function fbm3(n: Noise, x: number, y: number, z: number, octaves: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let f = 1;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * n.noise3(x * f, y * f, z * f);
+    f *= 2.1;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+/** Shape function: maps a unit direction to a point (written to `out`) and returns a cavity value 0..1. */
+type Sculpt = (dx: number, dy: number, dz: number, out: Float64Array) => number;
+
+/**
+ * Spherified-cube mesh of `n` quads per face edge, displaced by `sculpt`.
+ * Lattice points shared between faces get one vertex (exact integer keys),
+ * so the surface is closed and the cluster builder sees one manifold.
+ */
+function sculptedCube(api: InternalApi, n: number, sculpt: Sculpt, cavity: Float32Array | null): Mesh {
+  const faces: Array<[number, number, number, number, number, number, number, number, number]> = [
+    // normal, u axis, v axis
+    [1, 0, 0, 0, 0, -1, 0, 1, 0],
+    [-1, 0, 0, 0, 0, 1, 0, 1, 0],
+    [0, 1, 0, 1, 0, 0, 0, 0, -1],
+    [0, -1, 0, 1, 0, 0, 0, 0, 1],
+    [0, 0, 1, 1, 0, 0, 0, 1, 0],
+    [0, 0, -1, -1, 0, 0, 0, 1, 0],
+  ];
+  const b = new MeshBuilder(6 * n * n + 2, 6 * n * n * 6);
+  const ids = new Map<number, number>();
+  const grid = new Int32Array((n + 1) * (n + 1));
+  const out = new Float64Array(3);
+  const side = n + 1;
+  for (const [nx, ny, nz, ux, uy, uz, vx, vy, vz] of faces) {
+    for (let j = 0; j <= n; j++) {
+      for (let i = 0; i <= n; i++) {
+        const a = (2 * i) / n - 1;
+        const c = (2 * j) / n - 1;
+        // Integer lattice coordinates on the cube surface (exact seams).
+        const X = Math.round(((nx + ux * a + vx * c) + 1) * n / 2);
+        const Y = Math.round(((ny + uy * a + vy * c) + 1) * n / 2);
+        const Z = Math.round(((nz + uz * a + vz * c) + 1) * n / 2);
+        const key = (X * side + Y) * side + Z;
+        let id = ids.get(key);
+        if (id === undefined) {
+          const x = (2 * X) / n - 1;
+          const y = (2 * Y) / n - 1;
+          const z = (2 * Z) / n - 1;
+          // Spherified cube: near-uniform triangle sizes.
+          const sx = x * Math.sqrt(1 - (y * y) / 2 - (z * z) / 2 + (y * y * z * z) / 3);
+          const sy = y * Math.sqrt(1 - (z * z) / 2 - (x * x) / 2 + (z * z * x * x) / 3);
+          const sz = z * Math.sqrt(1 - (x * x) / 2 - (y * y) / 2 + (x * x * y * y) / 3);
+          const cav = sculpt(sx, sy, sz, out);
+          id = b.vertex(out[0] as number, out[1] as number, out[2] as number, sx, sy, sz, 0, 0);
+          if (cavity && id < cavity.length) cavity[id] = cav;
+          ids.set(key, id);
+        }
+        grid[j * side + i] = id;
+      }
+    }
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const p00 = grid[j * side + i] as number;
+        const p10 = grid[j * side + i + 1] as number;
+        const p01 = grid[(j + 1) * side + i] as number;
+        const p11 = grid[(j + 1) * side + i + 1] as number;
+        // Alternate the diagonal for an even, isotropic triangulation.
+        if ((i + j) % 2 === 0) {
+          b.tri(p00, p10, p11);
+          b.tri(p00, p11, p01);
+        } else {
+          b.tri(p00, p10, p01);
+          b.tri(p10, p11, p01);
+        }
+      }
+    }
+  }
+  return api.fromBuilder(b).recomputeNormals();
+}
+
+/** Colossal head on a shoulder block (Easter-Island-like), unit height 2 centred at y = 0. */
+function headSculpt(noise: Noise, erosion: number): Sculpt {
+  return (dx, dy, dz, out) => {
+    // Tall base volume.
+    let x = dx * 0.5;
+    let y = dy;
+    let z = dz * 0.47;
+    // Squarer cross-section (superellipse) and a flat crown.
+    const sq = 1 + 0.18 * Math.min(1, Math.abs(dx * dz) * 4);
+    x *= sq;
+    z *= sq;
+    if (y > 0.78) y = 0.78 + (y - 0.78) * 0.25;
+    // Shoulder block below the chin.
+    const below = smoothstep(-0.62, -0.95, dy);
+    x *= 1 + 0.55 * below;
+    z *= 1 + 0.35 * below;
+    const front = smoothstep(0.05, 0.55, dz);
+    const ax = Math.abs(dx);
+    let d = 0;
+    // Heavy brow, deep eye shadows, long straight nose, pursed lips, jutting chin.
+    d += front * gauss(dy - 0.3, 0.07) * gauss(dx, 0.42) * 0.07;
+    d -= front * gauss(ax - 0.19, 0.09) * gauss(dy - 0.18, 0.07) * 0.08;
+    const noseBand = smoothstep(0.36, 0.24, dy) * smoothstep(-0.24, -0.12, dy);
+    const noseW = 0.06 + 0.05 * smoothstep(0.2, -0.18, dy);
+    d += front * gauss(dx, noseW) * noseBand * (0.13 + 0.05 * smoothstep(0.25, -0.15, dy));
+    d += front * gauss(dy + 0.17, 0.045) * gauss(ax - 0.085, 0.05) * 0.045;
+    d += front * gauss(dy + 0.33, 0.04) * gauss(dx, 0.2) * 0.05;
+    d -= front * gauss(dy + 0.385, 0.012) * gauss(dx, 0.2) * 0.03;
+    d += front * gauss(dy + 0.43, 0.035) * gauss(dx, 0.17) * 0.035;
+    d += front * gauss(dy + 0.56, 0.08) * gauss(dx, 0.24) * 0.07;
+    // Long ears.
+    const sideW = smoothstep(0.55, 0.85, ax) * gauss(dz + 0.02, 0.12);
+    d += sideW * smoothstep(0.32, 0.18, dy) * smoothstep(-0.4, -0.25, dy) * 0.05;
+    // Erosion: broad weathering, pits and vertical rain streaks.
+    const e = fbm3(noise, dx * 3.1, dy * 3.1, dz * 3.1, 4) * 0.03 + noise.noise3(dx * 23, dy * 23, dz * 23) * 0.006;
+    const pit = Math.max(0, noise.noise3(dx * 41 + 7, dy * 41, dz * 41) - 0.45) * 0.03;
+    const streak = Math.max(0, noise.noise3(dx * 9, dy * 0.8, dz * 9)) * 0.012;
+    d += erosion * (e - pit - streak);
+    const r = 1 + d;
+    out[0] = x * r;
+    out[1] = y * (1 + d * 0.3);
+    out[2] = z * r;
+    return Math.min(1, Math.max(0, -d * 10 + pit * 30));
+  };
+}
+
+/** Standing stone with carved rings and a spiral band. */
+function monolithSculpt(noise: Noise, erosion: number, carved: boolean): Sculpt {
+  return (dx, dy, dz, out) => {
+    const taper = 1 - 0.18 * smoothstep(-0.2, 1, dy);
+    // Boxy slab: push directions toward the faces.
+    const p = 0.35;
+    const sx = Math.sign(dx) * Math.abs(dx) ** p;
+    const sz = Math.sign(dz) * Math.abs(dz) ** p;
+    let x = (dx * 0.4 + sx * 0.6) * 0.34 * taper;
+    let z = (dz * 0.4 + sz * 0.6) * 0.22 * taper;
+    let y = dy;
+    if (y > 0.8) y = 0.8 + (y - 0.8) * 0.55;
+    let groove = 0;
+    if (carved) {
+      const band = Math.abs(Math.sin(dy * 26));
+      groove += smoothstep(0.92, 1, band) * smoothstep(0.75, 0.5, Math.abs(dy)) * 0.022;
+      const spiral = Math.abs(Math.sin(Math.atan2(dz, dx) * 3 + dy * 9));
+      groove += smoothstep(0.94, 1, spiral) * smoothstep(0.7, 0.2, Math.abs(dy)) * 0.016;
+      // Glyph dots between the rings.
+      const g = noise.noise3(dx * 30, dy * 30, dz * 30);
+      groove += smoothstep(0.55, 0.7, g) * 0.01 * smoothstep(0.6, 0.3, Math.abs(dy));
+    }
+    const e = fbm3(noise, dx * 2.7, dy * 2.7, dz * 2.7, 4) * 0.05 + noise.noise3(dx * 19, dy * 19, dz * 19) * 0.007;
+    const r = 1 + erosion * e - groove;
+    x *= r;
+    z *= r;
+    y *= 1 + erosion * e * 0.2;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
+    return Math.min(1, groove * 40 + Math.max(0, -e) * 4);
+  };
+}
+
+/** Eroded boulder. */
+function boulderSculpt(noise: Noise, erosion: number): Sculpt {
+  return (dx, dy, dz, out) => {
+    const e = fbm3(noise, dx * 1.6, dy * 1.6, dz * 1.6, 5) * 0.35 + Math.abs(noise.noise3(dx * 7, dy * 7, dz * 7)) * -0.05 * erosion;
+    const r = 1 + e;
+    out[0] = dx * r;
+    out[1] = dy * r * 0.72;
+    out[2] = dz * r * 0.9;
+    return Math.min(1, Math.max(0, -e * 3));
+  };
+}
+
+const colossus = defineGenerator({
+  id: 'colossus',
+  description:
+    'Ancient high-detail sculpture (hundreds of thousands of smooth triangles, drawn as virtual geometry): colossal stone head on a shoulder block, carved standing stone with rings and a spiral, or an eroded boulder. Use for monuments, ancient ruins and benchmark scenes.',
+  category: 'props',
+  params: {
+    height: pNum(8, 1, 60, 'total height in meters'),
+    color: pColor('#9a8f80', 'stone color'),
+    mossColor: pColor('#5f7444', 'lichen color on upward surfaces'),
+    variant: pVariant(2, '0 colossal head, 1 carved standing stone, 2 eroded boulder'),
+    detail: pInt(3, 1, 4, 'tessellation: 1 ≈ 49k, 2 ≈ 196k, 3 ≈ 442k, 4 ≈ 786k triangles'),
+    erosion: pNum(1, 0, 2, 'weathering strength'),
+    carved: pBool(true, 'carved rings and glyphs (standing stone)'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const variant = p.int('variant');
+    const n = DETAIL_GRID[Math.min(DETAIL_GRID.length - 1, Math.max(0, p.int('detail') - 1))] as number;
+    const erosion = p.num('erosion');
+    const sculpt = variant === 0 ? headSculpt(api.noise, erosion) : variant === 1 ? monolithSculpt(api.noise, erosion, p.bool('carved')) : boulderSculpt(api.noise, erosion);
+    const cavity = new Float32Array(6 * n * n + 2);
+    const mesh = sculptedCube(api, n, sculpt, cavity);
+    // Unit volume spans y ∈ [-1, 1] (boulders [-0.72, 0.72]): stand it on the ground at height H.
+    const b0 = mesh.bounds();
+    const s = H / Math.max(1e-6, b0.max[1] - b0.min[1]);
+    mesh.scale(s, s, s).translate(0, -b0.min[1] * s, 0);
+    const base = lin(p.color('color'));
+    const dark = lin(shade(p.color('color'), -0.45));
+    const light = lin(shade(p.color('color'), 0.18));
+    const moss = lin(p.color('mossColor'));
+    const tmp: RGB = [0, 0, 0];
+    const noise = api.noise;
+    let v = 0;
+    mesh.paintFn((x, y, z, _nx, ny, _nz, out) => {
+      const k = 0.5 + 0.5 * noise.noise3(x * 0.9, y * 0.9, z * 0.9);
+      mixLinear(base, light, k * 0.7, tmp);
+      mixLinear(tmp, dark, Math.min(1, (cavity[v] ?? 0) * 0.8 + (y < H * 0.04 ? 0.35 : 0)), out);
+      if (ny > 0.55) mixLinear(out, moss, Math.min(0.85, (ny - 0.55) * 2.2 * (0.6 + 0.4 * noise.noise3(x * 2, y * 2, z * 2))), out);
+      v++;
+    });
+    api.add(mesh, SMOOTH_STONE);
+    const bb = mesh.bounds();
+    const w = bb.max[0] - bb.min[0];
+    const d = bb.max[2] - bb.min[2];
+    if (variant === 2) api.collider(cylinderCollider(0, H / 2, 0, Math.min(w, d) * 0.45, H * 0.9));
+    else api.collider(boxCollider((bb.max[0] + bb.min[0]) / 2, H / 2, (bb.max[2] + bb.min[2]) / 2, w * 0.9, H, d * 0.9));
+    return api.build();
+  },
+});
+
+/** Sculpture generators in catalog order. */
+export const SCULPTURE_GENERATORS = [colossus];

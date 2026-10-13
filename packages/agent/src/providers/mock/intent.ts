@@ -9,9 +9,10 @@ import type { Theme } from './theme';
 import { BUILT_THEMES } from './themes-built';
 import { GAME_THEMES } from './themes-games';
 import { NATURE_THEMES } from './themes-nature';
+import { TECH_THEMES } from './themes-tech';
 
 /** Every theme, settings first. */
-export const ALL_THEMES: readonly Theme[] = [...NATURE_THEMES, ...BUILT_THEMES, ...GAME_THEMES];
+export const ALL_THEMES: readonly Theme[] = [...TECH_THEMES, ...NATURE_THEMES, ...BUILT_THEMES, ...GAME_THEMES];
 
 /** Property changes understood by "make the X …". */
 export type Change =

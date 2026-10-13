@@ -38,7 +38,7 @@ import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, type PostPipeline } from './gpu/post';
-import { GeneratorCache, proceduralOutputKey } from '@aether/procgen';
+import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { errorMessage, log } from './log';
 
 /** Renderer construction options. */
@@ -95,6 +95,13 @@ export interface RendererOptions {
    * class's field budget (default true; false = plain instanced meshes).
    */
   fields?: boolean;
+  /**
+   * Draw high-poly parts as virtual geometry (cluster LOD DAG built in a
+   * worker; default true; false = plain meshes).
+   */
+  virtualGeometry?: boolean;
+  /** Run built-in generators in a worker (default true where module workers exist). */
+  workerGeneration?: boolean;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -150,6 +157,10 @@ export interface RenderStats {
   /** Instances held by culled scatter fields, and how many of them the last frame drew. */
   fieldInstances?: number;
   fieldDrawn?: number;
+  /** Virtual geometry: instances, the triangles they represent and the triangles their cuts draw. */
+  virtualInstances?: number;
+  virtualSourceTriangles?: number;
+  virtualDrawnTriangles?: number;
 }
 
 /** A raycast hit on a document entity (see {@link WorldRenderer.raycastEntity}). */
@@ -353,6 +364,8 @@ export class WorldRenderer {
   readonly gpu: Readonly<GpuInfo & { tier: GpuTier }>;
   /** Generator output cache owned by this renderer (null with a custom geometry source). */
   private readonly generatorCache: GeneratorCache | null;
+  /** Worker for built-in generators (null in Node or when disabled). */
+  private readonly compute: ComputeClient | null;
   /** Extra pixel-ratio cap from the options. */
   private readonly ratioCap: number;
   private cssWidth = 1;
@@ -406,9 +419,16 @@ export class WorldRenderer {
     this.orbit = controls;
     this.rig.occlusion = (from, to) => this.freeDistance(from, to);
     this.generatorCache = opts.geometrySource ? null : new GeneratorCache(256, this.budget.generatorCacheBytes);
+    // Built-in generators run in the compute worker (heavy sculptures never block the page).
+    this.compute = !opts.geometrySource && typeof Worker !== 'undefined' && opts.workerGeneration !== false ? new ComputeClient({ idleTimeoutMs: 30_000 }) : null;
+    const compute = this.compute;
     const source =
       opts.geometrySource ??
-      createProcgenGeometrySource({ ...(opts.sandbox ? { sandbox: opts.sandbox } : {}), ...(this.generatorCache ? { cache: this.generatorCache } : {}) });
+      createProcgenGeometrySource({
+        ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
+        ...(this.generatorCache ? { cache: this.generatorCache } : {}),
+        ...(compute ? { builtin: (g: string, p: Record<string, Json>, seed: number) => compute.generate(g, p, seed) } : {}),
+      });
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models };
     this.sync = new SceneSync({
@@ -416,6 +436,7 @@ export class WorldRenderer {
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
       fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
+      virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles },
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
@@ -427,6 +448,7 @@ export class WorldRenderer {
       variant: 'ghost',
       maxInstances: 50_000,
       fields: false,
+      virtual: false,
       onContentChanged: () => {
         this.needsDraw = true;
       },
@@ -1705,6 +1727,7 @@ export class WorldRenderer {
   stats(): RenderStats {
     const info = this.renderer.info;
     const fields = this.sync.fieldStats();
+    const virtual = this.sync.virtualStats();
     return {
       fps: Math.round(this.frameStats.fps * 10) / 10,
       frameMs: Math.round(this.frameStats.frameMs * 100) / 100,
@@ -1719,6 +1742,9 @@ export class WorldRenderer {
       sceneTriangles: this.sync.sceneTriangles(),
       fieldInstances: fields.instances,
       fieldDrawn: fields.drawnInstances,
+      virtualInstances: virtual.instances,
+      virtualSourceTriangles: virtual.sourceTriangles,
+      virtualDrawnTriangles: virtual.drawnTriangles,
     };
   }
 
@@ -1780,6 +1806,7 @@ export class WorldRenderer {
       this.viewCanvas = null;
     }
     this.generatorCache?.clear();
+    this.compute?.dispose();
     this.rig.dispose();
     this.sync.dispose();
     this.ghost.dispose();

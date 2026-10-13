@@ -4,9 +4,9 @@
  * geometry. Custom (LLM-written) generators run only inside the sandbox
  * runner supplied by the host.
  */
-import { stableStringify, type PrimitiveShape, type ProceduralShape, type WorldDoc } from '@aether/core';
+import { stableStringify, type Json, type PrimitiveShape, type ProceduralShape, type WorldDoc } from '@aether/core';
 import { fallbackOutput, generate, GeneratorCache, primitiveOutput, proceduralOutputKey } from '@aether/procgen';
-import type { GeometrySource, KeyedOutput, SandboxRunner } from '../types';
+import type { GeneratorOutput, GeometrySource, KeyedOutput, SandboxRunner } from '../types';
 
 /** Options of {@link createProcgenGeometrySource}. */
 export interface ProcgenSourceOptions {
@@ -16,6 +16,8 @@ export interface ProcgenSourceOptions {
   cache?: GeneratorCache;
   /** Max memoized primitive outputs (default 512). */
   maxPrimitives?: number;
+  /** Off-thread runner for built-in generators (falls back to inline on failure). */
+  builtin?: (generator: string, params: Record<string, Json>, seed: number) => Promise<GeneratorOutput>;
 }
 
 /** Stable key of a primitive shape's geometry. */
@@ -47,7 +49,7 @@ export function createProcgenGeometrySource(opts: ProcgenSourceOptions = {}): Ge
     async procedural(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>): Promise<KeyedOutput> {
       // Same normalization as generate(): equivalent spellings share one GPU geometry.
       const key = `proc|${proceduralOutputKey(shape, world)}`;
-      const output = await generate(shape, world, { cache, ...(opts.sandbox ? { sandbox: opts.sandbox } : {}) });
+      const output = await generate(shape, world, { cache, ...(opts.sandbox ? { sandbox: opts.sandbox } : {}), ...(opts.builtin ? { builtin: opts.builtin } : {}) });
       return { key, output };
     },
 

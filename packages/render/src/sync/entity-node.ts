@@ -62,6 +62,11 @@ export interface EntityNode {
   instances: number;
   /** Culled, LOD'd instance field (huge scatter layers) instead of one instanced mesh. */
   field: ScatterField | null;
+  /**
+   * Virtual-geometry stand-ins of high-poly parts: `source` stays for picking
+   * (raycast-only layer), `mesh` draws the view-dependent cluster cut.
+   */
+  virtual: Array<{ key: string; mesh: Mesh; source: Mesh }>;
   /** Triangles drawn by this node's scatter instances (render-cost budget). */
   scatterTriangles: number;
   /** Incremented on every content rebuild; stale async results are dropped. */
@@ -102,6 +107,7 @@ export function createEntityNode(entity: Entity, transient: boolean): EntityNode
     instanceMatrix: null,
     instances: 0,
     field: null,
+    virtual: [],
     scatterTriangles: 0,
     token: 0,
     ready: Promise.resolve(),
