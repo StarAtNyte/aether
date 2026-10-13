@@ -169,13 +169,13 @@ const portal = defineGenerator({
       }
     }
     const disc = api.cylinder(R * 0.99, R * 0.99, depth * 0.08, 32).rotate(90, 0, 0).translate(0, cy, 0);
-    api.add(disc, glow(g, 2.2));
+    api.add(disc, glow(g, 1.3));
     const inner = mixHex(g, '#ffffff', 0.45);
     for (const sz of [-1, 1]) {
       for (let k = 0; k < 3; k++) {
         const rr = R * (0.75 - k * 0.22);
         const ring = api.torus(rr, R * 0.025, 4, 24).rotate(0, 0, k * 20).translate(0, cy, sz * depth * (0.06 + k * 0.012));
-        api.add(ring, glow(inner, 3 + k));
+        api.add(ring, glow(inner, 2 + k * 0.6));
       }
     }
     // floating motes

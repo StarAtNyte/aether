@@ -16,7 +16,7 @@ export type SurfaceKind = 'lava' | 'water';
 /** Texture edge length in pixels (power of two, tileable). */
 export const SURFACE_TEXTURE_SIZE = 128;
 /** Real-world size of one texture tile in metres, per surface. */
-export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 7, water: 5 });
+export const SURFACE_TILE_METRES: Readonly<Record<SurfaceKind, number>> = Object.freeze({ lava: 11, water: 7 });
 /** Lava crust brightness in the emissive mask (cracks are 1). */
 export const LAVA_CRUST_GLOW = 0.12;
 /** Water normal map strength. */
@@ -84,8 +84,8 @@ export function lavaPixels(size = SURFACE_TEXTURE_SIZE): { color: Uint8Array; em
   const cells = LAVA_CELLS;
   const points = new Float32Array(cells * cells * 2);
   for (let i = 0; i < cells * cells; i++) {
-    points[i * 2] = 0.15 + random() * 0.7;
-    points[i * 2 + 1] = 0.15 + random() * 0.7;
+    points[i * 2] = 0.05 + random() * 0.9;
+    points[i * 2 + 1] = 0.05 + random() * 0.9;
   }
   const mottle = tileFbm(random, n, 4, 3);
   const color = new Uint8Array(n * n * 4);
@@ -114,7 +114,7 @@ export function lavaPixels(size = SURFACE_TEXTURE_SIZE): { color: Uint8Array; em
       }
       const m = mottle[y * n + x] as number;
       // Cracks: narrow where plates meet, widened a little by the mottling.
-      const crack = 1 - smoothstep(0.02, 0.1 + 0.08 * m, f2 - f1);
+      const crack = 1 - smoothstep(0.015, 0.06 + 0.07 * m, f2 - f1);
       // Plate centers cool to crust; plate rims stay warm.
       const warm = Math.max(crack, smoothstep(0.55, 0.05, f1) * 0.25 * m);
       const glow = LAVA_CRUST_GLOW + (1 - LAVA_CRUST_GLOW) * Math.min(1, warm);
@@ -136,7 +136,7 @@ export function lavaPixels(size = SURFACE_TEXTURE_SIZE): { color: Uint8Array; em
 
 /**
  * Water: RGBA8 tangent-space normal-map pixels (flat = 128,128,255) of a
- * tileable ripple height field (crossing waves plus fractal chop), and a
+ * tileable ripple height field (fractal chop over faint crossing swells), and a
  * subtle brightness map so large lakes are not one flat color.
  */
 export function waterPixels(size = SURFACE_TEXTURE_SIZE): { normal: Uint8Array; color: Uint8Array } {
@@ -151,14 +151,14 @@ export function waterPixels(size = SURFACE_TEXTURE_SIZE): { normal: Uint8Array; 
       const u = x / n;
       const v = y / n;
       // Integer wave numbers keep the field tileable.
-      const waves = Math.sin(tau * (3 * u + 2 * v)) * 0.35 + Math.sin(tau * (-2 * u + 5 * v) + 1.3) * 0.25 + Math.sin(tau * (7 * u - 1 * v) + 0.4) * 0.12;
-      height[y * n + x] = waves + ((chop[y * n + x] as number) - 0.5) * 1.6;
+      const waves = Math.sin(tau * (3 * u + 2 * v)) * 0.08 + Math.sin(tau * (-2 * u + 5 * v) + 1.3) * 0.06 + Math.sin(tau * (7 * u - 3 * v) + 0.4) * 0.04;
+      height[y * n + x] = waves + ((chop[y * n + x] as number) - 0.5) * 2;
     }
   }
   const normal = new Uint8Array(n * n * 4);
   const color = new Uint8Array(n * n * 4);
   const at = (x: number, y: number): number => height[(((y % n) + n) % n) * n + (((x % n) + n) % n)] as number;
-  const strength = 2.2;
+  const strength = 1.8;
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const sx = (at(x + 1, y) - at(x - 1, y)) * strength;

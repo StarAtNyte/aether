@@ -263,20 +263,20 @@ const space: Theme = {
   radius: 40,
   blurb: 'a low-gravity asteroid outpost floating in space with glowing crystals, orbiting planets and a warp portal',
   env(b) {
-    b.env({ sky: 'space', fog: null, ground: null, gravity: [0, -1.62, 0], bloom: 1.5, ambientIntensity: 0.35, sunIntensity: 2.2, weather: 'clear' });
+    b.env({ sky: 'space', fog: null, ground: null, gravity: [0, -1.62, 0], bloom: 1, ambientIntensity: 0.35, sunIntensity: 2.2, weather: 'clear' });
     b.player({ mode: 'thirdPerson', spawn: [0, 2, 6], jumpSpeed: 7 });
   },
   build(c) {
     const { b } = c;
-    const base = b.prim('station-deck', 'cylinder', [16, 1, 16], [c.x, -0.5, c.z], { name: 'Station deck', material: { preset: 'metal', color: '#9aa4b1', metalness: 0.7, roughness: 0.35 }, physics: 'static', tags: ['platform', 'focus'] });
-    b.prim(`${base}-rim`, 'torus', [16.4, 0.4, 16.4], [0, 0.3, 0], { parent: base, rot: [90, 0, 0], material: { preset: 'neon', color: '#00e5ff', emissive: '#00e5ff', emissiveIntensity: 2 } });
+    const base = b.prim('station-deck', 'cylinder', [16, 1, 16], [c.x, -0.5, c.z], { name: 'Station deck', material: { preset: 'metal', color: '#6f7a88', metalness: 0.6, roughness: 0.42 }, physics: 'static', tags: ['platform', 'focus'] });
+    b.prim(`${base}-rim`, 'torus', [16.4, 0.4, 16.4], [0, 0.3, 0], { parent: base, rot: [90, 0, 0], material: { preset: 'neon', color: '#00e5ff', emissive: '#00e5ff', emissiveIntensity: 1.1 } });
     b.reserve(c.x, r2(c.z - 5.5), 1.8); // portal
     for (let i = 0; i < 4; i++) {
       const p = b.spot(c.x, c.z, 2, 6.5, 0.8);
       if (p) b.gen('crate', 'crate', { size: 0.9, color: '#6c7a89' }, [p[0], 0, p[1]], { physics: { body: 'dynamic', mass: 4 }, tags: ['cargo'] });
     }
     const portal = b.gen('warp-portal', 'portal', { size: 3, glowColor: '#00e5ff' }, [c.x, 0, r2(c.z - 5.5)], { physics: 'static', name: 'Warp portal' });
-    b.light(portal, [0, 1.5, 0.5], '#00e5ff', 3, 12, [{ type: 'pulseLight', params: { min: 2, max: 4, period: 2 } }]);
+    b.light(portal, [0, 1.5, 0.5], '#00e5ff', 1.6, 12, [{ type: 'pulseLight', params: { min: 1.2, max: 2.2, period: 2 } }]);
     // Floating asteroid stepping stones and big drifting asteroids.
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
@@ -298,7 +298,7 @@ const space: Theme = {
       const p = b.spot(c.x, c.z, 3, 7.5, 0.7);
       if (!p) continue;
       const crystal = b.gen('crystal', 'crystal', { size: r2(b.rand(0.8, 1.6)), color: b.pick(['#7fd4ff', '#c77dff', '#72efdd']), glow: 2.5 }, [p[0], 0, p[1]], { physics: 'static', tags: ['crystal'] });
-      if (i < 2) b.light(crystal, [0, 1, 0], '#9be7ff', 1.5, 8);
+      if (i < 2) b.light(crystal, [0, 1, 0], '#9be7ff', 0.8, 7);
     }
     b.reserve(c.x, c.z, 8); // the deck is full now
     b.scatter('debris-field', 'rock', { size: 1.2, color: '#5d554d' }, 60, [140, 140], [c.x, -8, c.z], { scaleRange: [0.5, 2.5], minSpacing: 4, castShadow: false, tags: ['backdrop'] });

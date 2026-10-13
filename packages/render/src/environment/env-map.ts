@@ -6,7 +6,7 @@
  * as the sky behind it. Pure (no three.js); the rig uploads the pixels.
  */
 import type { Vec3 } from '@aether/core';
-import { mixHex, type SkyState } from './sky-state';
+import { mixHex, SKY_GRADIENT_POWER, type SkyState } from './sky-state';
 
 /** Environment image width (pixels). PMREM filtering makes a small image enough. */
 export const ENV_MAP_WIDTH = 64;
@@ -54,7 +54,7 @@ export function skyEnvironmentPixels(state: SkyState, ground: string | null, hor
       const phi = ((i + 0.5) / w - 0.5) * Math.PI * 2;
       const dx = Math.cos(phi) * cosT;
       const dz = Math.sin(phi) * cosT;
-      if (y >= 0) lerp3(hor, zen, Math.pow(y, 0.55), c);
+      if (y >= 0) lerp3(hor, zen, Math.pow(y, SKY_GRADIENT_POWER), c);
       else lerp3(hor, bottom, Math.min(1, -y * 6), c);
       if (state.sunGlowStrength > 0 && y > -0.05) {
         const k = Math.max(0, dx * sun[0] + y * sun[1] + dz * sun[2]);

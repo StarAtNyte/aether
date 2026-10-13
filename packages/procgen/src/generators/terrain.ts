@@ -37,6 +37,9 @@ interface TerrainShape {
   color(t: number, h: number, slope: number, x: number, z: number, out: RGB): void;
 }
 
+/** Normalized height removed from the bottom of a mountain (its foothill plate). */
+const MOUNTAIN_BASE = 0.05;
+
 /** Relative height (share of the relief) below which a trimmed border counts as flat. */
 const FLAT_EPSILON = 0.002;
 
@@ -215,6 +218,7 @@ const mountain = defineGenerator({
     resolution: pInt(96, 16, 256, 'grid cells per side'),
     snowLine: pNum(0.7, 0, 1, 'normalized height where snow starts (1 = no snow)'),
     color: pColor('#7d7468', 'rock color'),
+    groundColor: pColor('#5b8a3c', 'foothill color (match the world ground so the peak rises out of it)'),
     variant: pVariant(2, '0 single peak, 1 ridge, 2 volcano crater'),
   },
   run(p, api) {
@@ -226,7 +230,7 @@ const mountain = defineGenerator({
     const n = api.noise;
     const rockC = lin(p.color('color'));
     const rockD = lin(shade(p.color('color'), -0.3));
-    const grass = lin('#5b8a3c');
+    const grass = lin(p.color('groundColor'));
     const snow = lin('#f4f7fa');
     return buildTerrain(api, {
       size,
@@ -239,7 +243,9 @@ const mountain = defineGenerator({
         const ridge = n.ridged2(x * 3.2 / size, z * 3.2 / size, 5);
         let h = Math.pow(fall, 1.5) * (0.55 + 0.6 * ridge);
         if (variant === 2) h -= 0.55 * smoothstep(0.22, 0.05, d) * Math.pow(fall, 1.5);
-        return h * H;
+        // The lowest foothills sink to exactly 0 (then trimmed from the mesh), so the
+        // peak rises cleanly out of the world ground instead of sitting on a plate.
+        return Math.max(0, h - MOUNTAIN_BASE) * H;
       },
       color(t, _h, slope, x, z, out) {
         const w = 0.05 * n.noise2(x * 0.4, z * 0.4);

@@ -1,7 +1,7 @@
 /**
  * Procedural sky: a camera-centered dome colored per vertex (zenith → horizon
- * → nadir gradient with a sun halo), a billboarded sun/moon disc and a star
- * field. Plain classic materials, so it renders identically on the WebGPU and
+ * → nadir gradient with a sun halo, plus a nebula / galactic band in space
+ * and on clear nights), a billboarded sun/moon disc and a star field. Plain classic materials, so it renders identically on the WebGPU and
  * WebGL2 backends; updating it costs one small vertex-color upload and only
  * happens when the environment changes.
  */
@@ -22,13 +22,14 @@ import {
   type Camera,
 } from 'three';
 import { rng } from '@aether/core';
-import type { SkyState } from './sky-state';
+import { SKY_GRADIENT_POWER, type SkyState } from './sky-state';
+import { nebulaAt } from './nebula';
 
 /** Dome radius in meters (camera far plane must exceed it). */
 export const SKY_RADIUS = 900;
 const STAR_COUNT = 1800;
 /** Share of the fog color mixed into the dome's horizon band. */
-const HORIZON_FOG_BLEND = 0.6;
+const HORIZON_FOG_BLEND = 0.85;
 const STAR_SEED = 0x5ca1ab1e;
 
 const _zenith = new Color();
@@ -38,6 +39,7 @@ const _glow = new Color();
 const _c = new Color();
 const _d = new Vector3();
 const _sun = new Vector3();
+const _neb: [number, number, number] = [0, 0, 0];
 
 /** Camera-following procedural sky. */
 export class SkyDome {
@@ -49,7 +51,7 @@ export class SkyDome {
 
   constructor() {
     this.group.name = 'aether:sky';
-    const geometry = new SphereGeometry(SKY_RADIUS, 48, 24);
+    const geometry = new SphereGeometry(SKY_RADIUS, 64, 32);
     const count = geometry.getAttribute('position').count;
     geometry.setAttribute('color', new BufferAttribute(new Float32Array(count * 3), 3));
     this.dome = new Mesh(geometry, new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false }));
@@ -88,7 +90,7 @@ export class SkyDome {
     for (let i = 0; i < pos.count; i++) {
       _d.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
       const t = _d.y;
-      if (t >= 0) _c.copy(_horizon).lerp(_zenith, Math.pow(t, 0.55));
+      if (t >= 0) _c.copy(_horizon).lerp(_zenith, Math.pow(t, SKY_GRADIENT_POWER));
       else _c.copy(_horizon).lerp(_nadir, Math.min(1, Math.pow(-t, 0.4) * 1.4));
       if (glow > 0) {
         const k = Math.max(0, _d.dot(this.sunDir));
@@ -96,6 +98,12 @@ export class SkyDome {
         _c.r += _glow.r * g;
         _c.g += _glow.g * g;
         _c.b += _glow.b * g;
+      }
+      if (state.nebula > 0 && t > -0.2) {
+        nebulaAt(_d.x, _d.y, _d.z, state.nebula * Math.min(1, (t + 0.2) * 4), _neb);
+        _c.r += _neb[0];
+        _c.g += _neb[1];
+        _c.b += _neb[2];
       }
       col.setXYZ(i, _c.r, _c.g, _c.b);
     }

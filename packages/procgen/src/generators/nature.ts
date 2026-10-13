@@ -348,8 +348,8 @@ const grassTuft = defineGenerator({
     const n = p.int('blades');
     const windswept = p.int('variant') === 1;
     const base = p.color('color');
-    const c0 = lin(shade(base, -0.4));
-    const c1 = lin(shade(mixHex(base, '#e8e07a', 0.35), 0.1));
+    const c0 = lin(shade(base, -0.25));
+    const c1 = lin(shade(mixHex(base, '#e8e07a', 0.35), 0.12));
     let all: Mesh | null = null;
     for (let k = 0; k < n; k++) {
       const a = api.rng() * Math.PI * 2;
@@ -364,7 +364,7 @@ const grassTuft = defineGenerator({
       for (let i = 0; i < 4; i++) {
         const s = i / 3;
         path.push([bx + dx * lean * h * s * s, h * s, bz + dz * lean * h * s * s]);
-        widths.push(S * 0.04 * (1 - s * 0.92));
+        widths.push(S * 0.055 * (1 - s * 0.92));
       }
       const blade = ribbon(api, path, widths, [-dz, 0, dx], 0.2);
       blade.paintFn((_x, y, _z, _nx, _ny, _nz, out) => mixLinear(c0, c1, y / S, out));

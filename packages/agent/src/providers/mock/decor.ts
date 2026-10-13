@@ -28,6 +28,28 @@ export interface ThemeCtx {
 
 const DEG = 180 / Math.PI;
 
+/**
+ * Bearing (degrees, 0 = +Z) from the world origin toward the default
+ * three-quarter camera. Mirrors the renderer's `DEFAULT_FRAMING_AZIMUTH`.
+ */
+export const VIEW_BEARING = 28;
+/** Half-width (degrees) of the tree-free view corridor toward the camera. */
+export const VIEW_CORRIDOR_HALF_ANGLE = 26;
+/** The corridor starts this far from the origin (closer trees are part of the set). */
+export const VIEW_CORRIDOR_START = 10;
+
+/**
+ * True when (x, z) lies in the corridor between the scene and the default
+ * camera. Trees there would fill the foreground with dark silhouettes, so
+ * tree rings and forest belts leave it open (it reads as a trail or a clearing).
+ */
+export function inViewCorridor(x: number, z: number): boolean {
+  if (Math.hypot(x, z) < VIEW_CORRIDOR_START) return false;
+  const bearing = Math.atan2(x, z) * DEG;
+  const diff = Math.abs(((bearing - VIEW_BEARING + 540) % 360) - 180);
+  return diff < VIEW_CORRIDOR_HALF_ANGLE;
+}
+
 /** Yaw (degrees) that turns a +Z-facing object at (fx, fz) toward (tx, tz). */
 export function yawFacingZ(fx: number, fz: number, tx: number, tz: number): number {
   return r2(Math.atan2(tx - fx, tz - fz) * DEG);
@@ -50,7 +72,7 @@ export function treeRing(c: ThemeCtx, count: number, inner: number, outer: numbe
   if (lo >= outer) return 0;
   for (let i = 0; i < count; i++) {
     const p = c.b.spot(c.x, c.z, lo, outer, footprint);
-    if (!p) continue;
+    if (!p || inViewCorridor(p[0], p[1])) continue;
     const kind = c.b.pick(kinds);
     const params: Record<string, Json> = { ...kind.params };
     if (typeof params['height'] === 'number') params['height'] = r2((params['height'] as number) * c.b.rand(0.75, 1.3));
@@ -76,6 +98,7 @@ export function scatterBelt(c: ThemeCtx, base: string, generator: string, params
     const px = r2(c.x + Math.cos(a) * mid);
     const pz = r2(c.z + Math.sin(a) * mid);
     if (c.b.touchesKeepClear(px, pz, side / 2)) continue;
+    if (generator.startsWith('tree') && inViewCorridor(px, pz)) continue;
     const o: ScatterOpts = { castShadow: generator.startsWith('tree') };
     if (opts.scaleRange) o.scaleRange = opts.scaleRange;
     if (opts.minSpacing !== undefined) o.minSpacing = opts.minSpacing;
@@ -84,13 +107,24 @@ export function scatterBelt(c: ThemeCtx, base: string, generator: string, params
   }
 }
 
-/** Ring of distant mountains framing the scene (no physics: unreachable). */
+/** Color of the pending world ground ("#rrggbb"), when the environment sets one. */
+export function groundColor(b: Builder): string | undefined {
+  const ground = b.envValue('ground');
+  if (!ground || typeof ground !== 'object' || Array.isArray(ground)) return undefined;
+  const material = (ground as Record<string, Json>)['material'];
+  if (!material || typeof material !== 'object' || Array.isArray(material)) return undefined;
+  const color = (material as Record<string, Json>)['color'];
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined;
+}
+
+/** Ring of distant mountains framing the scene (no physics: unreachable). Foothills take the ground color. */
 export function backdropMountains(c: ThemeCtx, count: number, color: string, snowLine: number, radius = 110, height = 30): void {
   const offset = c.b.rand(0, Math.PI * 2);
+  const foot = groundColor(c.b);
   for (let i = 0; i < count; i++) {
     const a = offset + (i / count) * Math.PI * 2 + c.b.rand(-0.25, 0.25);
     const d = radius * c.b.rand(0.9, 1.15);
-    c.b.gen('mountain', 'mountain', { size: r2(c.b.rand(60, 90)), height: r2(height * c.b.rand(0.7, 1.3)), color, snowLine }, [r2(c.x + Math.cos(a) * d), 0, r2(c.z + Math.sin(a) * d)], { yaw: r2(c.b.rand(0, 360)), tags: ['backdrop'] });
+    c.b.gen('mountain', 'mountain', { size: r2(c.b.rand(60, 90)), height: r2(height * c.b.rand(0.7, 1.3)), color, snowLine, ...(foot ? { groundColor: foot } : {}) }, [r2(c.x + Math.cos(a) * d), 0, r2(c.z + Math.sin(a) * d)], { yaw: r2(c.b.rand(0, 360)), tags: ['backdrop'] });
   }
 }
 
@@ -106,7 +140,9 @@ export function clouds(c: ThemeCtx, count: number, color = '#ffffff'): void {
     // Spread around the ring (with jitter) so a few always sit behind the content.
     const a = offset + (i / Math.max(1, count)) * Math.PI * 2 + c.b.rand(-0.4, 0.4);
     const d = c.b.rand(CLOUD_RING[0], CLOUD_RING[1]);
-    c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(9, 16)), color }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(CLOUD_ALTITUDE[0], CLOUD_ALTITUDE[1])), r2(c.z + Math.sin(a) * d)], {
+    c.b.gen('cloud', 'cloud', { size: r2(c.b.rand(18, 30)), color, variant: c.b.chance(0.3) ? 1 : 0 }, [r2(c.x + Math.cos(a) * d), r2(c.b.rand(CLOUD_ALTITUDE[0], CLOUD_ALTITUDE[1])), r2(c.z + Math.sin(a) * d)], {
+      // Daylight clouds scatter light through: a little self-illumination keeps their shaded side soft.
+      ...(lightsOn(c.b) ? {} : { material: { emissive: color, emissiveIntensity: 0.3 } }),
       castShadow: false,
       tags: ['sky'],
       behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: r2(c.b.rand(6, 10)) } }],
@@ -114,10 +150,10 @@ export function clouds(c: ThemeCtx, count: number, color = '#ffffff'): void {
   }
 }
 
-/** Lamp post with a real light when it is dark. Returns the lamp id. */
-export function lamp(b: Builder, x: number, z: number, color = '#ffd27a', height = 3.5): string {
+/** Lamp post with a real light when it is dark (or when `lit`). Returns the lamp id. */
+export function lamp(b: Builder, x: number, z: number, color = '#ffd27a', height = 3.5, lit = lightsOn(b)): string {
   const id = b.gen('lamp-post', 'lamp-post', { height, lightColor: color }, [x, 0, z], { physics: 'static', tags: ['lamp'], footprint: 0.6 });
-  if (lightsOn(b)) b.light(id, [0, r2(height - 0.3), 0], color, 2.5, 14);
+  if (lit) b.light(id, [0, r2(height - 0.3), 0], color, 2.5, 14);
   return id;
 }
 

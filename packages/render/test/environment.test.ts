@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Box3, PerspectiveCamera, Scene, Vector3, FogExp2 } from 'three';
 import { Environment } from '@aether/core';
-import { computeSkyState, mixHex, normalizeHour, PRESET_HOURS, sunPosition } from '../src/environment/sky-state';
+import { computeSkyState, mixHex, NIGHT_WINDOW, normalizeHour, PRESET_HOURS, PRESET_WINDOWS, sunPosition } from '../src/environment/sky-state';
+import { maxContentFogDensity, worldFogDensity } from '../src/environment/fog';
 import { fitShadowCamera } from '../src/environment/shadow-fit';
 import { EnvironmentRig, groundTint, MAX_FOG_DENSITY } from '../src/environment/environment-rig';
 import { WeatherSystem, WEATHER_CONFIGS } from '../src/environment/weather';
@@ -27,9 +28,15 @@ describe('sun and sky', () => {
     expect(normalizeHour(Number.NaN)).toBe(12);
   });
 
-  it('uses preset default hours and timeOfDay overrides', () => {
+  it('uses preset default hours; timeOfDay moves the sun only inside the preset window', () => {
     expect(computeSkyState(env({ sky: 'sunset' })).hour).toBe(PRESET_HOURS.sunset);
-    expect(computeSkyState(env({ sky: 'day', timeOfDay: 20 })).hour).toBe(20);
+    expect(computeSkyState(env({ sky: 'day', timeOfDay: 14 })).hour).toBe(14);
+    // A day sky asked for 20:00 stays a day sky (latest daylight hour of the window).
+    expect(computeSkyState(env({ sky: 'day', timeOfDay: 20 })).hour).toBe(PRESET_WINDOWS.day[1]);
+    expect(computeSkyState(env({ sky: 'sunset', timeOfDay: 19 })).hour).toBe(PRESET_WINDOWS.sunset[1]);
+    expect(computeSkyState(env({ sky: 'dawn', timeOfDay: 3 })).hour).toBe(PRESET_WINDOWS.dawn[0]);
+    expect(computeSkyState(env({ sky: 'night', timeOfDay: 12 })).hour).toBe(NIGHT_WINDOW[0]);
+    expect(computeSkyState(env({ sky: 'night', timeOfDay: 1 })).hour).toBe(1);
   });
 
   it('day is bright and starless, night has stars and a dim moon', () => {
@@ -103,7 +110,12 @@ describe('EnvironmentRig', () => {
     scene.add(rig.group);
     rig.apply(env({ sky: 'day', fog: { color: '#aabbcc', density: 0.9 } }), scene);
     expect(scene.fog).toBeInstanceOf(FogExp2);
-    expect((scene.fog as FogExp2).density).toBe(MAX_FOG_DENSITY);
+    // A wall of fog is capped by the content-size policy (foggy, but the scene stays readable).
+    const density = (scene.fog as FogExp2).density;
+    expect(density).toBeCloseTo(worldFogDensity(0.9, 20), 10);
+    expect(density).toBeLessThan(MAX_FOG_DENSITY);
+    expect(density).toBeGreaterThan(maxContentFogDensity(20));
+    expect(rig.fogState?.density).toBe(density);
     expect(rig.groundMesh).not.toBeNull();
     expect(rig.sun.castShadow).toBe(true);
     const groundMat = rig.groundMesh!.material;

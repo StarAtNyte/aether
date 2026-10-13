@@ -41,6 +41,8 @@ export const FRAMING_RADIUS_RANGE: readonly [number, number] = Object.freeze([3,
 export const FRAMING_COVERAGE = 0.8;
 /** How far the center moves from the content median toward the focus items. */
 const FOCUS_PULL = 0.7;
+/** With focus items, the rest of the content only needs this share of its reach in view (tighter hero shots). */
+const FOCUS_REACH = 0.7;
 
 interface Sample {
   c: Vec3;
@@ -106,7 +108,7 @@ export function contentFraming(items: readonly FramingItem[]): Framing | null {
     FRAMING_COVERAGE,
   );
   const [lo, hi] = FRAMING_RADIUS_RANGE;
-  const radius = Math.min(hi, Math.max(lo, Math.max(focus.length > 0 ? reach * 0.8 : reach, focusReach * 1.1)));
+  const radius = Math.min(hi, Math.max(lo, Math.max(focus.length > 0 ? reach * FOCUS_REACH : reach, focusReach * 1.1)));
   return { center, radius };
 }
 

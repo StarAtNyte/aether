@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { WorldAgent } from '../src/agent';
 import { createMockProvider } from '../src/providers/mock/index';
 import { parseIntent } from '../src/providers/mock/intent';
+import { Builder } from '../src/providers/mock/builder';
 import { askMock, collect, MemoryHost, mockApply, patchesOf, TEST_CATALOGS } from './helpers';
 
 const BUILTIN = new Set([
@@ -271,14 +272,38 @@ describe('mock provider: edits on an existing world', () => {
     expect(parseIntent('Bowling alley: knock down a pyramid of 15 crates').describesScene).toBe(true);
   });
 
-  it('two launch activities get their own slots and launch state', async () => {
+  it('bowling at a crate pyramid is one mechanic: the pyramid replaces the pins at the end of the lane', async () => {
     const { result } = await mockApply('Bowling alley: knock down a pyramid of 15 crates with a heavy ball');
     expect(result.errors).toEqual([]);
     const w = result.world;
-    expect(w.state).toMatchObject({ launched: false, launched2: false });
-    const ball = w.entities['bowling-ball-1']!.transform.position;
-    const cannon = w.entities['cannonball-1']!.transform.position;
-    expect(Math.hypot(ball[0] - cannon[0], ball[2] - cannon[2])).toBeGreaterThan(5);
+    const ids = Object.keys(w.entities);
+    // One launcher, no separate cannon set-piece.
+    expect(w.state).toMatchObject({ launched: false, cratesHit: 0 });
+    expect(ids.some((id) => id.startsWith('cannonball'))).toBe(false);
+    expect(ids.some((id) => id.startsWith('pin-'))).toBe(false);
+    const crates = Object.values(w.entities).filter((e) => e.tags.includes('crate'));
+    expect(crates).toHaveLength(15);
+    // The pyramid stands on the lane, beyond the ball, and the ball is the heavy one.
+    const lane = w.entities['lane-1']!.transform.position;
+    const ball = w.entities['bowling-ball-1']!;
+    for (const c of crates) {
+      expect(Math.abs(c.transform.position[0] - lane[0])).toBeLessThan(1.3);
+      expect(c.transform.position[2]).toBeLessThan(ball.transform.position[2] - 10);
+    }
+    expect(ball.physics?.mass).toBeGreaterThanOrEqual(12);
+    expect(w.tests.some((t) => t.id === 'pyramid-falls')).toBe(true);
+    // A night alley: no meadow around it.
+    expect(w.environment.sky).toBe('night');
+    expect(ids.some((id) => id.startsWith('mountain'))).toBe(false);
+  });
+
+  it('fresh state keys never collide within one build', () => {
+    const b = new Builder(1, [], parseIntent('x').mood);
+    expect(b.freshStateKey('launched')).toBe('launched');
+    b.state('launched', false);
+    expect(b.freshStateKey('launched')).toBe('launched2');
+    b.state('launched2', false);
+    expect(b.freshStateKey('launched')).toBe('launched3');
   });
 
   it('start over rebuilds the world', async () => {

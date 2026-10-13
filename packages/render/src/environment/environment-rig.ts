@@ -55,14 +55,30 @@ export function groundTint(x: number, z: number): number {
   return 0.97 + a * 0.075 + b * 0.035;
 }
 
+/**
+ * Deterministic warm/cool hue drift of the ground in [-1, 1] (independent of
+ * {@link groundTint}): sun-dried warmer patches and lusher cooler ones, so a
+ * 400 m lawn is not one flat color.
+ */
+export function groundHue(x: number, z: number): number {
+  const v = Math.sin(x * 0.027 - z * 0.019 + 0.6) * 0.6 + Math.sin(x * 0.083 + z * 0.061 + 2.1) * 0.4;
+  return Math.max(-1, Math.min(1, v));
+}
+
+/** Per-channel multipliers of the hue drift at full strength (warm = +, cool = −). */
+const HUE_DRIFT: readonly [number, number, number] = [0.07, 0.025, -0.09];
+
 function tintVertices(g: BufferGeometry): void {
   const pos = g.getAttribute('position');
   const colors = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    const t = groundTint(pos.getX(i), pos.getZ(i));
-    colors[i * 3] = t;
-    colors[i * 3 + 1] = t;
-    colors[i * 3 + 2] = t;
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const t = groundTint(x, z);
+    const w = groundHue(x, z);
+    colors[i * 3] = t * (1 + HUE_DRIFT[0] * w);
+    colors[i * 3 + 1] = t * (1 + HUE_DRIFT[1] * w);
+    colors[i * 3 + 2] = t * (1 + HUE_DRIFT[2] * w);
   }
   g.setAttribute('color', new BufferAttribute(colors, 3));
 }

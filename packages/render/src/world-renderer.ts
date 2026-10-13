@@ -27,6 +27,7 @@ import { captureMime, captureSize, MAX_VIEWS, viewPose, type CaptureView } from 
 import { FrameStats } from './view/frame-stats';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
+import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind } from './gpu/backend';
 import { createPostPipeline, type PostPipeline } from './gpu/post';
 import { errorMessage, log } from './log';
@@ -50,6 +51,11 @@ export interface RendererOptions {
   maxInstances?: number;
   /** Laptop/battery mode: no bloom post pass and a 1024² sun shadow map. */
   lowPower?: boolean;
+  /**
+   * Animate new entities growing in (a ripple from the scene center) when a
+   * world is built or edited. Default true; pass false for reduced motion.
+   */
+  growIn?: boolean;
 }
 
 /** Renderer statistics. */
@@ -136,6 +142,8 @@ export class WorldRenderer {
   private readonly avatar = new Avatar();
   private readonly frameStats = new FrameStats();
   private readonly raycaster = new Raycaster();
+  private readonly grow = new GrowIn();
+  private growEnabled = true;
   private post: PostPipeline | null = null;
   private ortho: OrthographicCamera | null = null;
   private boundsDirty = true;
@@ -184,6 +192,7 @@ export class WorldRenderer {
         this.needsDraw = true;
       },
     });
+    this.growEnabled = opts.growIn !== false;
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
     this.env.sun.shadow.radius = 3;
     this.setLowPower(opts.lowPower === true);
@@ -253,12 +262,45 @@ export class WorldRenderer {
     const prev = this.sync.world;
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
     const done = this.sync.setWorld(world);
+    // New entities stay hidden while their geometry streams in, then grow in together.
+    const added = this.growEnabled ? this.addedContent(prev, world) : [];
+    for (const target of added) this.grow.hide(target);
     this.boundsDirty = true;
     this.debugDirty = true;
     this.needsDraw = true;
     await done;
     if (this.disposed) return;
+    if (added.length > 0) this.startGrow(added);
     if (!this.framed) this.framed = this.frameContent({ duration: 0 });
+  }
+
+  /** Content groups of renderable entities that `world` adds to `prev` (all of them for a first world). */
+  private addedContent(prev: WorldDoc | null, world: WorldDoc): Object3D[] {
+    const out: Object3D[] = [];
+    for (const [id, entity] of Object.entries(world.entities)) {
+      if (entity.template || entity.shape.kind === 'none' || (prev && Object.hasOwn(prev.entities, id))) continue;
+      const node = this.sync.node(id);
+      if (node && !node.transient) out.push(node.content);
+    }
+    return out;
+  }
+
+  /** Start the grow-in ripple of `targets`, staggered by distance from the content center. */
+  private startGrow(targets: readonly Object3D[]): void {
+    const plan = this.grow.withFullScale(() => {
+      const framing = contentFraming(collectFramingItems(this.sync));
+      const cx = framing?.center[0] ?? 0;
+      const cz = framing?.center[2] ?? 0;
+      return targets.map((target) => {
+        if (!target.parent) return { target, delay: 0, overshoot: false };
+        target.getWorldPosition(_pos);
+        _one.setFromObject(target);
+        const radius = _one.isEmpty() ? 0 : _one.getSize(_corner).length() / 2;
+        return { target, delay: growDelay(Math.hypot(_pos.x - cx, _pos.z - cz)), overshoot: radius <= GROW_OVERSHOOT_MAX_RADIUS };
+      });
+    });
+    for (const p of plan) this.grow.start(p.target, p.delay, p.overshoot);
+    this.needsDraw = true;
   }
 
   private applyEnvironment(world: WorldDoc): void {
@@ -390,7 +432,7 @@ export class WorldRenderer {
    */
   frameContent(opts: FrameContentOptions = {}): boolean {
     if (this.disposed) return false;
-    const items = collectFramingItems(this.sync, new Set(opts.focus ?? []));
+    const items = this.grow.withFullScale(() => collectFramingItems(this.sync, new Set(opts.focus ?? [])));
     for (const p of opts.focusPoints ?? []) {
       if (p.every(Number.isFinite)) items.push({ min: [p[0] - 1.5, p[1], p[2] - 1.5], max: [p[0] + 1.5, p[1] + 2, p[2] + 1.5], focus: true });
     }
@@ -422,10 +464,12 @@ export class WorldRenderer {
   reveal(ids: readonly EntityId[], duration = FRAME_DURATION): boolean {
     if (this.disposed || ids.length === 0) return false;
     _bounds.makeEmpty();
-    for (const id of ids.slice(0, 256)) {
-      this.sync.entityBounds(id, _one);
-      if (!_one.isEmpty()) _bounds.union(_one);
-    }
+    this.grow.withFullScale(() => {
+      for (const id of ids.slice(0, 256)) {
+        this.sync.entityBounds(id, _one);
+        if (!_one.isEmpty()) _bounds.union(_one);
+      }
+    });
     if (_bounds.isEmpty()) return false;
     const cam = this.perspective;
     cam.updateMatrixWorld();
@@ -449,7 +493,7 @@ export class WorldRenderer {
   /** Smoothly fly the camera to an entity. */
   focus(id: EntityId): void {
     this.needsDraw = true;
-    this.sync.entityBounds(id, _bounds);
+    this.grow.withFullScale(() => this.sync.entityBounds(id, _bounds));
     if (_bounds.isEmpty()) {
       const o = this.sync.object(id);
       if (!o) return;
@@ -498,7 +542,7 @@ export class WorldRenderer {
 
   /** Collider wireframes, bounds and diagnostic markers. */
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: RenderDiagnostic[] }): void {
-    this.debug.show(opts ?? {}, this.sync);
+    this.grow.withFullScale(() => this.debug.show(opts ?? {}, this.sync));
     this.debugDirty = false;
     this.needsDraw = true;
   }
@@ -515,6 +559,8 @@ export class WorldRenderer {
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    const growing = this.grow.active && this.grow.update(step);
+    if (growing) this.needsDraw = true;
     this.env.update(step, this.perspective);
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
@@ -531,6 +577,10 @@ export class WorldRenderer {
   }
 
   private refresh(): void {
+    this.grow.withFullScale(() => this.refreshBounds());
+  }
+
+  private refreshBounds(): void {
     this.sinceRefit = 0;
     this.needsDraw = true;
     if (this.boundsDirty) {
@@ -577,12 +627,15 @@ export class WorldRenderer {
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
-    return this.withTemporarySize(w, h, () => {
-      this.perspective.aspect = w / h;
-      this.perspective.updateProjectionMatrix();
-      this.draw();
-      return grab(canvas, w, h, mime);
-    });
+    // Captures (agent visual critique) always show the finished world, never a mid-grow frame.
+    return this.grow.withFullScale(() =>
+      this.withTemporarySize(w, h, () => {
+        this.perspective.aspect = w / h;
+        this.perspective.updateProjectionMatrix();
+        this.draw();
+        return grab(canvas, w, h, mime);
+      }),
+    );
   }
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
@@ -591,7 +644,7 @@ export class WorldRenderer {
     const list = (Array.isArray(views) ? views : []).filter((v): v is CaptureView => VIEW_NAMES.has(v)).slice(0, MAX_VIEWS);
     if (list.length === 0) return [];
     const px = captureSize(size, 512);
-    this.sync.computeBounds(_bounds);
+    this.grow.withFullScale(() => this.sync.computeBounds(_bounds));
     const bounds = _bounds.isEmpty() ? null : { min: _bounds.min.toArray() as Vec3, max: _bounds.max.toArray() as Vec3 };
     const cam = (this.ortho ??= new OrthographicCamera(-1, 1, 1, -1, 0.05, 1000));
     // Hide view-dependent decorations; give the background a flat sky color.
@@ -603,7 +656,7 @@ export class WorldRenderer {
     this.scene.fog = null;
     this.scene.background = new Color(this.env.skyState.horizon);
     try {
-      return this.withTemporarySize(px, px, () =>
+      return this.grow.withFullScale(() => this.withTemporarySize(px, px, () =>
         list.map((view) => {
           const pose = viewPose(bounds, view);
           cam.left = -pose.halfSize;
@@ -620,7 +673,7 @@ export class WorldRenderer {
           this.renderer.render(this.scene, cam);
           return grab(this.domElement, px, px, 'image/jpeg');
         }),
-      );
+      ));
     } finally {
       hidden.forEach((o, i) => {
         o.visible = wasVisible[i] ?? true;

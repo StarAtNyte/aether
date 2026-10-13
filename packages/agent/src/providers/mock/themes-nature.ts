@@ -3,7 +3,7 @@
  * winter, desert canyon, volcano, park, farm and a default meadow.
  */
 import { r2 } from './builder';
-import { backdropMountains, campfire, clouds, lake, lamp, lantern, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
+import { backdropMountains, campfire, clouds, lake, lamp, lantern, lightsOn, path, scatterBelt, treeRing, VIEW_BEARING, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 
 function rocks(c: ThemeCtx, count: number, inner: number, outer: number, color: string, mossy: boolean, size: [number, number] = [0.8, 2.2]): void {
@@ -43,6 +43,8 @@ const forest: Theme = {
         b.gen('tent', 'tent', { size: 2.6, color: b.pick(['#c8553d', '#2a9d8f', '#e9c46a']) }, [tx, 0, tz], { yaw: yawFacingZ(tx, tz, c.x, c.z), physics: 'static', footprint: 2 });
         if (lightsOn(b)) lantern(b, r2(tx + Math.cos(a + 1.2) * 2), r2(tz + Math.sin(a + 1.2) * 2));
       }
+      // A trail winds from the camp toward the default camera (through the view corridor).
+      path(b, r2(c.x + 1.2), r2(c.z + 3.2), r2(c.x + Math.sin((VIEW_BEARING * Math.PI) / 180) * 34), r2(c.z + Math.cos((VIEW_BEARING * Math.PI) / 180) * 34), 1.5, '#6b5a45', 'dirt');
       // Woodpile: three stacked logs.
       const pile = b.prim('woodpile', 'cylinder', [0.32, 1.6, 0.32], [r2(c.x + 3.6), 0.16, r2(c.z + 1.4)], { rot: [0, 20, 90], material: { preset: 'bark', color: '#6b4a2f' }, physics: 'static', footprint: 0.9 });
       b.prim(`${pile}-log`, 'cylinder', [0.32, 1.6, 0.32], [0, 0, 0.33], { parent: pile, material: { preset: 'bark', color: '#7a5535' } });
@@ -84,7 +86,7 @@ const beach: Theme = {
   build(c) {
     const { b } = c;
     const seaZ = c.z - 8;
-    b.prim('sea', 'box', [260, 0.2, 120], [c.x, -0.04, r2(seaZ - 60)], { name: 'Sea', material: { preset: 'water', color: '#1f86b8', opacity: 0.85, roughness: 0.08 }, castShadow: false });
+    b.prim('sea', 'box', [1600, 0.2, 700], [c.x, -0.04, r2(seaZ - 350)], { name: 'Sea', material: { preset: 'water', color: '#1f86b8', opacity: 0.85, roughness: 0.08 }, castShadow: false });
     const dockX = r2(c.x + 10);
     b.gen('dock', 'dock', { length: 14, width: 2.6, height: 1 }, [dockX, 0, r2(seaZ - 2)], { yaw: 90, physics: 'static', name: 'Pier' });
     b.gen('boat', 'boat', { length: 5, variant: 1, color: '#f4f1ea', accentColor: '#c8553d' }, [r2(dockX + 3.5), 0, r2(seaZ - 11)], {
@@ -231,9 +233,10 @@ const volcano: Theme = {
   build(c) {
     const { b } = c;
     const vz = r2(c.z - 55);
-    b.gen('volcano', 'mountain', { size: 70, height: 38, color: '#3b302b', snowLine: 1 }, [c.x, 0, vz], { physics: 'static', name: 'Volcano' });
-    const crater = b.prim('crater-glow', 'sphere', [9, 9, 9], [c.x, 36, vz], { material: { preset: 'lava', emissive: '#ff4800', emissiveIntensity: 6 }, castShadow: false });
-    b.light(crater, [0, 3, 0], '#ff5a1f', 8, 80, [{ type: 'pulseLight', params: { min: 5, max: 9, period: 2.5 } }]);
+    b.gen('volcano', 'mountain', { size: 70, height: 38, color: '#3b302b', groundColor: '#2b2522', snowLine: 1 }, [c.x, 0, vz], { physics: 'static', name: 'Volcano' });
+    // The crater's molten glow: a pulsing light just above the rim lights the peak from inside.
+    const crater = b.empty('crater-glow', [c.x, 24, vz], { name: 'Crater glow' });
+    b.light(crater, [0, 0, 0], '#ff5a1f', 8, 80, [{ type: 'pulseLight', params: { min: 5, max: 9, period: 2.5 } }]);
     for (const [ox, oz, w, d, yaw] of [[-14, -12, 4, 34, 20], [16, -6, 3, 28, -30]] as const) {
       const x = r2(c.x + ox);
       const z = r2(c.z + oz);
@@ -381,7 +384,7 @@ const meadow: Theme = {
   radius: 36,
   blurb: 'a peaceful mountain meadow with a lake, wildflowers, oaks and a stone bridge',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 10.5, fog: { color: '#cfdde8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#5f9440' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 10.5, fog: { color: '#cfdde8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#66924a' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {

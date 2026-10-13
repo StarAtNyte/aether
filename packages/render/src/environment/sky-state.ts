@@ -46,6 +46,11 @@ export interface SkyState {
   hemiIntensity: number;
   /** 0..1 star visibility. */
   stars: number;
+  /**
+   * 0..1 strength of the procedural nebula / galactic band painted on the
+   * dome (full in space, a faint band on clear nights).
+   */
+  nebula: number;
   /** Default fog color (horizon) when the world defines none. */
   fogColor: string;
   /**
@@ -81,9 +86,9 @@ export const NIGHT_WINDOW: readonly [number, number] = Object.freeze([20.5, 3.5]
 /** Exposure multiplier per preset (dim presets are lifted so they stay readable). */
 export const PRESET_EXPOSURE: Readonly<Record<SkyPreset, number>> = Object.freeze({
   day: 1,
-  dawn: 1.08,
-  sunset: 1.1,
-  night: 1.45,
+  dawn: 1,
+  sunset: 1.02,
+  night: 1.6,
   overcast: 1.12,
   space: 1.05,
   studio: 1.02,
@@ -134,6 +139,8 @@ const SUNSET_BEARING = -108;
 export const MOON_BEARING = 105;
 /** Moon elevation in degrees. */
 const MOON_ELEVATION = 38;
+/** Exponent of the dome's horizon → zenith gradient (lower = the zenith color reaches further down). */
+export const SKY_GRADIENT_POWER = 0.42;
 /** Dawn/sunset skies are sampled this many degrees below the light elevation (deeper colors). */
 export const GOLDEN_SKY_DROP = 6;
 
@@ -176,8 +183,8 @@ const NATURAL: readonly Key[] = [
   { at: -6, zenith: '#1b2a5c', horizon: '#5a4670', sun: '#ff5a2a' },
   { at: 0, zenith: '#34508e', horizon: '#ff9459', sun: '#ff8340' },
   { at: 8, zenith: '#5582c6', horizon: '#ffc792', sun: '#ffc48a' },
-  { at: 25, zenith: '#4a8be0', horizon: '#c2def5', sun: '#fff1dc' },
-  { at: 90, zenith: '#3b7ad8', horizon: '#cfe5f7', sun: '#ffffff' },
+  { at: 25, zenith: '#3f82db', horizon: '#b3d3f0', sun: '#fff1dc' },
+  { at: 90, zenith: '#336fd0', horizon: '#bcd9f2', sun: '#ffffff' },
 ];
 
 function sampleKeys(elevation: number): { zenith: string; horizon: string; sun: string } {
@@ -230,7 +237,7 @@ export function sunPosition(hour: number): { elevation: number; direction: Vec3 
 
 /** Moonlight key intensity for a world `sunIntensity` (bright enough to read the scene, never daylight). */
 function moonIntensity(sunIntensity: number): number {
-  return Math.min(0.9, 0.42 + sunIntensity * 0.12);
+  return Math.min(1, 0.52 + sunIntensity * 0.14);
 }
 
 /** Compute the full sky state for an environment. */
@@ -264,8 +271,9 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     sunGlowStrength: moon ? 0 : 0.25 + 0.75 * glow,
     hemiSky: moon ? '#5468a8' : mixHex(keys.zenith, keys.horizon, 0.45),
     hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * glow),
-    hemiIntensity: ambient * 2 * (moon ? 0.62 : 0.4 + 0.6 * day),
+    hemiIntensity: ambient * 2 * (moon ? 0.75 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),
+    nebula: 0.3 * smoothstep(-8, -20, elevation),
     fogColor: keys.horizon,
     hazeDensity: moon ? 0.5 : 0.4 + 0.25 * glow,
     showGround: true,
@@ -275,14 +283,14 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
 
   switch (preset) {
     case 'dawn':
-      // Cooler, pinker than a sunset at the same elevation.
+      // Softer and pinker than a sunset at the same elevation.
       return {
         ...state,
-        zenith: mixHex(state.zenith, '#6b7fc4', 0.35),
-        horizon: mixHex(state.horizon, '#f7b6a8', 0.45),
-        fogColor: mixHex(state.horizon, '#f7b6a8', 0.45),
+        zenith: mixHex(state.zenith, '#5d78c9', 0.35),
+        horizon: mixHex(state.horizon, '#ffb48c', 0.4),
+        fogColor: mixHex(state.horizon, '#f2b9a2', 0.4),
         sunGlow: mixHex(state.sunGlow, '#ffd0b8', 0.4),
-        lightColor: mixHex(state.lightColor, '#ffd6c2', 0.35),
+        lightColor: mixHex(state.lightColor, '#ffd6c2', 0.3),
       };
     case 'overcast':
       return {
@@ -297,6 +305,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         hemiGround: '#5d5a52',
         hemiIntensity: ambient * 3.2 * (0.3 + 0.7 * day),
         stars: 0,
+        nebula: 0,
         fogColor: '#b8bec6',
         hazeDensity: 0.85,
         envIntensity: 0.6,
@@ -317,6 +326,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         hemiGround: '#0a0a12',
         hemiIntensity: ambient * 0.8,
         stars: 1,
+        nebula: 1,
         fogColor: '#000003',
         hazeDensity: 0,
         showGround: false,
@@ -338,6 +348,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         hemiGround: '#8a8d93',
         hemiIntensity: ambient * 3,
         stars: 0,
+        nebula: 0,
         fogColor: '#e9ebee',
         hazeDensity: 0,
         envIntensity: 0.6,

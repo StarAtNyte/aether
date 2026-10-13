@@ -4,7 +4,7 @@
  * prove the mechanic without player input.
  */
 import { r2, type Builder, type PhysicsOpt } from './builder';
-import { yawAlongX, type ThemeCtx } from './decor';
+import { lamp, yawAlongX, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 
 const RAINBOW = ['#e63946', '#f4a261', '#e9c46a', '#2a9d8f', '#457b9d', '#9b5de5'];
@@ -82,7 +82,7 @@ const domino: Theme = {
       b.gen('bell-tower', 'tower', { height: 6.5, radius: 1.3, color: '#d8c8aa', roofColor: '#9b2c2c' }, [r2(bx + dir[0] * 2.6), 0, r2(bz + dir[1] * 2.6)], { physics: 'static', name: 'Bell tower', tags: ['focus'] });
     }
     // A low wooden display deck under the run makes it read as a built set-piece.
-    b.prim('domino-deck', 'box', [r2(Math.max(hi[0], bx) - Math.min(lo[0], bx) + 4), 0.02, r2(Math.max(hi[1], bz) - Math.min(lo[1], bz) + 4)], [r2((Math.max(hi[0], bx) + Math.min(lo[0], bx)) / 2), 0.01, r2((Math.max(hi[1], bz) + Math.min(lo[1], bz)) / 2)], { name: 'Display deck', material: { preset: 'wood', color: '#b98a5e', roughness: 0.55 }, castShadow: false });
+    b.prim('domino-deck', 'box', [r2(Math.max(hi[0], bx) - Math.min(lo[0], bx) + 4), 0.02, r2(Math.max(hi[1], bz) - Math.min(lo[1], bz) + 4)], [r2((Math.max(hi[0], bx) + Math.min(lo[0], bx)) / 2), 0.01, r2((Math.max(hi[1], bz) + Math.min(lo[1], bz)) / 2)], { name: 'Display deck', material: { preset: 'wood', color: '#8a5d3b', roughness: 0.6 }, castShadow: false });
     b.state('rang', false);
     b.rule({ id: 'ring-bell', description: 'The last domino rings the bell', when: { on: 'collision', a: '#domino', b: bell }, then: [{ do: 'sound', sound: 'bell' }, { do: 'set', key: 'rang', value: true }, { do: 'message', text: 'DING! Chain complete.', duration: 4 }], once: true });
     b.rule({ id: 'reset-key', when: { on: 'key', key: 'r' }, then: [{ do: 'reset' }] });
@@ -114,10 +114,10 @@ const coins: Theme = {
     for (let i = 0; i < n * 6 && placed < n; i++) {
       const p = b.spot(c.x, c.z, 4, 10 + n * 1.5, 0.8);
       if (!p) continue;
-      b.prim('coin', 'cylinder', [0.8, 0.12, 0.8], [p[0], 1, p[1]], {
+      b.prim('coin', 'cylinder', [1, 0.14, 1], [p[0], 1.1, p[1]], {
         name: 'Coin',
         rot: [90, 0, 0],
-        material: { preset: 'gold', emissive: '#ffb703', emissiveIntensity: 0.5 },
+        material: { preset: 'gold', emissive: '#ffb703', emissiveIntensity: 1.1 },
         behaviors: [{ type: 'spin', params: { axis: [0, 0, 1], speed: 150 } }, { type: 'bob', params: { amplitude: 0.2, period: 1.6, phase: r2(b.rand(0, 1)) } }, { type: 'collectible', params: { scoreKey: 'score', value: 1 } }],
         tags: ['coin', 'focus'],
       });
@@ -195,7 +195,7 @@ const parkour: Theme = {
       name: 'Goal portal',
       tags: ['goal', 'focus'],
     });
-    b.light(portal, [0, 1.5, 0.6], '#ffd166', 3, 14, [{ type: 'pulseLight', params: { min: 2, max: 4, period: 1.8 } }]);
+    b.light(portal, [0, 1.5, 0.6], '#ffd166', 1.6, 12, [{ type: 'pulseLight', params: { min: 1.2, max: 2.2, period: 1.8 } }]);
     b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: 'Climb the platforms to the golden portal. Avoid the lava!', duration: 5 }] });
     b.test({ id: 'lift-moves', kind: 'moves', target: lift, distance: 0.8, within: 6 });
     b.test({ id: 'course-solid', kind: 'stable', target: '#platform', seconds: 2, maxDrift: 0.05 });
@@ -237,7 +237,7 @@ const bowling: Theme = {
     // "…knock down a pyramid of crates": the lane ends at a crate pyramid instead of pins.
     const crates = c.with?.has('tower') === true;
     b.prim('hall-floor', 'box', [12, 0.04, 30], [c.x, 0.02, r2(laneZ - 1)], { name: 'Alley floor', material: { preset: 'wood', color: '#3a2a22', roughness: 0.3 }, castShadow: false });
-    b.prim('lane', 'box', [2.6, 0.1, 22], [c.x, 0.05, r2(laneZ)], { name: 'Lane', material: { preset: 'wood', color: '#d4a373', roughness: 0.25 }, physics: { body: 'static', friction: 0.3 }, tags: ['focus'] });
+    b.prim('lane', 'box', [2.6, 0.1, 22], [c.x, 0.05, r2(laneZ)], { name: 'Lane', material: { preset: 'wood', color: '#d4a373', roughness: 0.38 }, physics: { body: 'static', friction: 0.3 }, tags: ['focus'] });
     for (const side of [-1, 1]) {
       b.prim('lane-rail', 'box', [0.2, 0.3, 22], [r2(c.x + side * 1.4), 0.15, r2(laneZ)], { material: { preset: 'neon', color: NEON[1] as string, emissive: NEON[1] as string, emissiveIntensity: 1.2 }, physics: 'static' });
       // Neighbouring lanes (set dressing only).
@@ -302,10 +302,14 @@ const bowling: Theme = {
     ['#ff006e', '#00f5d4', '#fee440'].forEach((color, i) => {
       b.prim('spare-ball', 'sphere', [0.5, 0.5, 0.5], [r2(c.x + 5.6), 0.95, r2(laneZ + 7.4 + i * 0.6)], { material: { preset: 'plastic', color, roughness: 0.15 }, physics: 'static' });
     });
-    for (const side of [-1, 1]) b.gen('bench', 'bench', { length: 2.4, color: '#5a189a' }, [r2(c.x + side * 3), 0, r2(laneZ + 13.5)], { yaw: 180, physics: 'static' });
+    for (const side of [-1, 1]) {
+      b.gen('bench', 'bench', { length: 2.4, color: '#5a189a' }, [r2(c.x + side * 3), 0, r2(laneZ + 13.5)], { yaw: 180, physics: 'static' });
+      // Lit lamp posts flank the entrance (the alley is a night scene).
+      lamp(b, r2(c.x + side * 6.4), r2(laneZ + 12), '#ffc8dd', 3.6, true);
+    }
     // Warm overhead lights along the lane, plus the neon glow at the pins.
-    for (const dz of [-8, 0, 8]) b.light(b.empty('lane-light', [c.x, 4.2, r2(laneZ + dz)]), [0, 0, 0], '#ffe1c4', 3.2, 13);
-    b.light(b.empty('pin-glow', [c.x, 2.2, r2(headZ + 1)]), [0, 0, 0], '#ff4fa3', 2.4, 9);
+    for (const dz of [-8, 0, 8]) b.light(b.empty('lane-light', [c.x, 4.6, r2(laneZ + dz)]), [0, 0, 0], '#ffe1c4', 2, 12);
+    b.light(b.empty('pinsetter-glow', [c.x, 2.2, r2(headZ + 1)]), [0, 0, 0], '#ff4fa3', 2.4, 9);
     b.meta(crates ? 'Bowling Smash' : 'Bowling Night', crates ? 'A heavy ball versus a crate pyramid' : 'Ten-pin bowling lane');
   },
 };

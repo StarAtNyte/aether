@@ -175,6 +175,7 @@ export class Simulation {
       antialias: true,
       pixelRatioCap: opts.lowPower ? 1 : PIXEL_RATIO_CAP,
       lowPower: opts.lowPower === true,
+      growIn: !prefersReducedMotion(),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
@@ -783,4 +784,13 @@ function cameraYawDeg(renderer: WorldRenderer): number {
   scratchDir.z = -(e[10] as number);
   if (Math.abs(scratchDir.x) + Math.abs(scratchDir.z) < 1e-6) return 0;
   return (Math.atan2(-scratchDir.x, -scratchDir.z) * 180) / Math.PI;
+}
+
+/** True when the user asked the OS/browser for reduced motion (no grow-in animation then). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }

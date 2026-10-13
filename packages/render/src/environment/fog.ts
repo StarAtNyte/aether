@@ -6,7 +6,7 @@
  * `FogExp2` attenuates as `1 - exp(-(density × distance)²)`, so a density
  * that looks right for a 10 m bowling lane turns a 150 m village into a
  * white wall. The policy therefore caps the density so content at framing
- * distance stays crisp (≤ ~8 % fog) while backdrop scenery further out
+ * distance stays crisp (≤ ~5 % fog) while backdrop scenery further out
  * (mountain rings, the horizon skirt) fades into the sky. Worlds that
  * explicitly ask for thick fog (haunted, rain) may go up to twice the cap.
  */
@@ -18,7 +18,7 @@ export const MAX_FOG_DENSITY = 0.25;
 /** Content radii are clamped into this range (metres) before scaling the fog. */
 export const FOG_RADIUS_RANGE: readonly [number, number] = Object.freeze([6, 150]) as readonly [number, number];
 /** How strongly a world fog color is pulled toward the sky horizon (0 = untouched). */
-export const FOG_HORIZON_PULL = 0.45;
+export const FOG_HORIZON_PULL = 0.65;
 /**
  * World fog densities up to this value are read as "aerial perspective"
  * and never exceed the content cap; above it the world explicitly asks for a
@@ -58,20 +58,20 @@ export function fogAmount(density: number, distance: number): number {
 
 /**
  * Density of the preset haze for a content radius (`amount` = {@link SkyState.hazeDensity}).
- * At amount 1 backdrop scenery seen from the framing distance is ~45 % hazed.
+ * At amount 1 backdrop scenery seen from the framing distance is ~32 % hazed.
  */
 export function hazeDensity(amount: number, radius: number): number {
   if (!(amount > 0)) return 0;
   const r = clampRadius(radius);
-  return (0.78 * amount) / (VIEW_DISTANCE_RADII * r + BACKDROP_DISTANCE);
+  return (0.62 * amount) / (VIEW_DISTANCE_RADII * r + BACKDROP_DISTANCE);
 }
 
 /**
  * Largest aerial-perspective density that keeps content of `radius`
- * readable: its far edge, seen from the framing distance, stays under ~8 % fog.
+ * readable: its far edge, seen from the framing distance, stays under ~5 % fog.
  */
 export function maxContentFogDensity(radius: number): number {
-  return 0.29 / ((VIEW_DISTANCE_RADII + 1) * clampRadius(radius));
+  return 0.22 / ((VIEW_DISTANCE_RADII + 1) * clampRadius(radius));
 }
 
 /** Effective density of a world fog request `wanted` for content of `radius` (see {@link FOGGY_THRESHOLD}). */
