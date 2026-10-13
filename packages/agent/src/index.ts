@@ -32,3 +32,15 @@ export { createHttpProvider, type HttpProviderOptions } from './providers/http';
 export { createMockProvider } from './providers/mock/index';
 export { ProviderError, isAbortError, type ProviderErrorCode } from './providers/errors';
 export type { RetryPolicy } from './providers/transport';
+
+// Zero-cost AI connections: tool-use emulation for text-only backends, the local bridge, on-device models, fallback.
+export { createEmulatedProvider, type EmulatedProviderOptions, type TextBackend, type TextCompletionRequest, type TextCompletionResult, type TextEffort } from './emulation/provider';
+export { EMULATION_LIMITS, EmulatedReplySchema, parseEmulatedReply, replyJsonSchema, type JsonSchemaObject, type ParsedReply } from './emulation/protocol';
+export { protocolInstructions, renderTranscript, type RenderedPrompt } from './emulation/transcript';
+export { extractJsonObject } from './emulation/json';
+export * from './bridge/protocol';
+export { BRIDGE_COMPLETE_TIMEOUT_MS, BRIDGE_PROBE_TIMEOUT_MS, createBridgeProvider, fetchBridgeStatus, pairBridge, type BridgeProviderOptions } from './bridge/client';
+export { createFallbackProvider, type FallbackNotice, type FallbackProvider, type FallbackProviderOptions } from './providers/fallback';
+export { createWebLlmBackend, createWebLlmProvider, type WebLlmEngineLike, type WebLlmProviderOptions } from './providers/webllm';
+export { errorMessage } from './providers/errors';
+export * from './quality/index';

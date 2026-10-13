@@ -1,0 +1,20 @@
+{
+  "name": "@aether/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Aether Bridge: a local, token-paired service that lets the browser studio use the Codex or Claude Code CLI you are already signed in to.",
+  "exports": { ".": "./src/index.ts" },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": { "aether-bridge": "./bin/aether-bridge.mjs" },
+  "scripts": { "start": "tsx src/main.ts" },
+  "dependencies": {
+    "@aether/agent": "*",
+    "@aether/core": "*",
+    "@openai/codex-sdk": "0.162.1",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.6"
+  }
+}

@@ -25,13 +25,16 @@ export class ProviderError extends Error {
   readonly retryable: boolean;
   /** Server-suggested wait before retrying, in milliseconds. */
   readonly retryAfterMs: number | undefined;
+  /** Finer, backend-specific reason (e.g. 'not_logged_in', 'cli_missing', 'bridge_offline'); shown in setup/fallback UX. */
+  readonly reason: string | undefined;
 
-  constructor(code: ProviderErrorCode, message: string, opts: { status?: number; retryAfterMs?: number; cause?: unknown } = {}) {
+  constructor(code: ProviderErrorCode, message: string, opts: { status?: number; retryAfterMs?: number; cause?: unknown; reason?: string } = {}) {
     super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
     this.name = 'ProviderError';
     this.code = code;
     this.status = opts.status;
     this.retryAfterMs = opts.retryAfterMs;
+    this.reason = opts.reason;
     this.retryable = code === 'rate_limit' || code === 'overloaded' || code === 'server' || code === 'timeout' || code === 'network';
   }
 }
