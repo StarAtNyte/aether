@@ -4,7 +4,7 @@
  * (which would recreate the renderer).
  */
 import { memo, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
-import { useStudio, useUI } from '../app/context';
+import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
 import { SettingsDialog } from '../components/SettingsDialog';
@@ -35,6 +35,15 @@ const EditorSettings = memo(function EditorSettings(): ReactElement {
       context={{ memory, gpu, provider }}
     />
   );
+});
+
+/** Keeps the tab title on the project name (isolated so world edits re-render nothing else). */
+const DocumentTitle = memo(function DocumentTitle(): null {
+  const name = useWorld().name;
+  useEffect(() => {
+    document.title = `${name || 'Untitled world'} · Aether`;
+  }, [name]);
+  return null;
 });
 
 const EditorPalette = memo(function EditorPalette(): ReactElement {
@@ -112,6 +121,7 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
         {tablet && (panels.left || panels.right) ? <div className="scrim" onClick={closeDrawers} aria-hidden="true" /> : null}
         {phone ? <MobileSheet /> : null}
       </div>
+      <DocumentTitle />
       <Toasts />
       <EditorSettings />
       <EditorPalette />

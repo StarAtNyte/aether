@@ -568,10 +568,28 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
   most three times in two minutes. Generator outputs are cached under a
   byte budget, idle generator sandbox workers are terminated after a minute,
   and `npm run e2e:memory` asserts the budgets in Chromium and Firefox.
-- **`Studio`** is the controller React calls into. It handles persistence,
-  import and export, share links, verification and agent streaming with a
-  Stop button. A boot marker detects a world that crashed the tab on start-up
-  and opens the starter world instead, keeping the old one one Undo away.
+- **`Studio`** is the controller React calls into, one per opened project.
+  It handles autosave (debounced, serialized writes through the projects
+  repository, with a save indicator), import and export, share links,
+  verification, thumbnails, asset placement, camera presets, gizmo edits and
+  agent streaming with a Stop button. A boot marker detects a world that
+  crashed the tab on start-up and opens the starter world instead, keeping
+  the old one one Undo away.
+- **Projects** (`src/projects/`) live in IndexedDB: small metadata records
+  for the home page, the world + chat body loaded only when a project opens,
+  and WebP thumbnails. Everything read back is validated (zod for metadata,
+  `validateWorld` for worlds, `reviveChat` for transcripts); writes are
+  size-capped and quota errors become actionable messages. Without IndexedDB
+  (some private modes) an in-memory backend keeps the session working.
+- **Shell.** Hash routes switch between the projects home and the editor;
+  the editor and the engine (three.js, physics glue, agent) are a lazy chunk
+  prefetched on intent (hover / focus of a card), so the home page loads
+  about 460 KB of JS. The layout has four modes by width (wide, medium,
+  tablet, phone; `src/lib/layout.ts`) and the viewport never remounts when
+  the mode changes. Camera-dependent overlays (axis gizmo, labels) are
+  updated outside React from the simulation's view listener, only on frames
+  that redraw. One fixed-position tooltip element serves every `data-tip`.
+  The design system is in `src/styles/` (OKLCH tokens, light and dark).
 - **State** lives in a Zustand store. It skips unchanged values, and stats
   and HUD updates arrive at 4 Hz.
 - **Rendering of AI text** goes through a small rich-text renderer that never

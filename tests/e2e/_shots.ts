@@ -123,6 +123,16 @@ try {
         await page.waitForTimeout(400);
         await page.screenshot({ path: `${OUT}${tag}-${sz}-projects.png` });
         await page.getByRole('radio', { name: 'Grid view' }).click();
+      } else if (step === 'leftdrawer') {
+        await page.evaluate(() => window.__aether!.store.getState().showLeftView('objects'));
+        await page.waitForTimeout(900);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-leftdrawer.png` });
+        console.log('scrim', JSON.stringify(await page.evaluate(() => { const el = document.querySelector('.scrim'); return el ? { r: el.getBoundingClientRect().toJSON(), bg: getComputedStyle(el).backgroundColor, z: getComputedStyle(el).zIndex, op: getComputedStyle(el).opacity } : null; })));
+        await page.evaluate(() => window.__aether!.store.getState().setPanel('left', false));
+      } else if (step === 'templates') {
+        await page.goto(`${server.url}/?debug=1#/templates`);
+        await page.waitForTimeout(800);
+        await page.screenshot({ path: `${OUT}${tag}-${sz}-templates.png` });
       } else if (step === 'thumb') {
         const url = await page.evaluate(async () => (await window.__aether?.simulation?.thumbnail(640, 360)) ?? '');
         const { writeFileSync } = await import('node:fs');

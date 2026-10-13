@@ -20,17 +20,17 @@ const RuleCard = memo(function RuleCard({ rule, disabled, onToggle }: { rule: Ru
       </header>
       {c.description && <p className="rule-card__desc">{c.description}</p>}
       <div className="rule-line">
-        <span className="kw kw--when">WHEN</span>
+        <span className="kw kw--when">When</span>
         <span>{c.when}</span>
       </div>
       {c.conditions.length > 0 && (
         <div className="rule-line">
-          <span className="kw kw--if">IF</span>
+          <span className="kw kw--if">If</span>
           <span>{c.conditions.join(' and ')}</span>
         </div>
       )}
       <div className="rule-line">
-        <span className="kw kw--then">THEN</span>
+        <span className="kw kw--then">Then</span>
         <span className="rule-actions">
           {c.actions.map((a, i) => (
             <span key={i} className="action-chip">

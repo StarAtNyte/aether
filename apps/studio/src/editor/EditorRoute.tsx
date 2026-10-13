@@ -15,6 +15,7 @@ import type { ProjectRepo } from '../projects/repo';
 import { Icon } from '../components/Icon';
 import { EditorContext, type EditorServices } from './editorContext';
 import { EditorShell } from './EditorShell';
+import { EditorSkeleton } from './EditorSkeleton';
 
 const log = createLogger('editor');
 /** Delay after an agent turn before the thumbnail is taken (grow-in animation, camera flight). */
@@ -61,24 +62,6 @@ async function saveThumbnail(studio: Studio, repo: ProjectRepo, id: string): Pro
   } catch (err) {
     log.warn('thumbnail capture failed', err);
   }
-}
-
-/** Skeleton shown while a project opens. */
-function EditorSkeleton(): ReactElement {
-  return (
-    <div className="editor editor--skeleton" aria-busy="true" aria-label="Opening project">
-      <div className="topbar">
-        <span className="skeleton skeleton--block" style={{ width: 120, height: 20 }} />
-      </div>
-      <div className="editor__body">
-        <div className="editor__canvas">
-          <div className="viewport">
-            <span className="vp-loading__surface skeleton" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /** Error page for a project that cannot be opened. */

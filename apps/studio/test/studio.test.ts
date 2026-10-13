@@ -20,6 +20,8 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
     mode: 'edit',
     renderer: { gpu: { tier: 'integrated', description: 'Test GPU' } },
     setShowColliders: () => undefined,
+    setStatsWhileEditing: () => undefined,
+    setPointerLock: () => undefined,
     setSelection: () => undefined,
     setGizmo: () => undefined,
     setLowMemory: (on: boolean) => void lowMemory.push(on),

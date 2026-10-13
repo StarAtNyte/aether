@@ -248,6 +248,7 @@ async function setPresentationMode(page: Page, on: boolean): Promise<void> {
     const id = 'e2e-presentation';
     document.getElementById(id)?.remove();
     if (enable) {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       const style = document.createElement('style');
       style.id = id;
       style.textContent = '.nav-hint, .toasts, .toast, .tooltip { display: none !important; } * { caret-color: transparent !important; }';
@@ -479,6 +480,31 @@ async function editColor(page: Page): Promise<void> {
   log(`  recolored ${target} via outliner + inspector`);
 }
 
+/** README shots of the projects home (desktop) and the editor on a phone. */
+async function homeAndPhoneShots(browser: Browser, page: Page, url: string): Promise<void> {
+  await page.evaluate(() => window.__aether?.studio.flush());
+  await page.goto(`${url}/?debug=1#/`);
+  await page.locator('.card--project').first().waitFor({ timeout: 20_000 });
+  // Lazy images off screen never start loading; wait for the ones in view.
+  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.card img')].filter((i) => { const r = i.getBoundingClientRect(); return r.right > 0 && r.left < innerWidth && r.top < innerHeight; }).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await screenshot(page, 'projects-home', 'page');
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  try {
+    const p = await phone.newPage();
+    await p.goto(`${url}/?debug=1#/new/coin-island`);
+    await p.waitForFunction(() => {
+      const st = window.__aether?.store.getState();
+      const last = st?.chat[st.chat.length - 1];
+      return !!st && st.loading === null && !st.agentBusy && last?.role === 'assistant' && last.status === 'done';
+    }, null, { timeout: AGENT_TIMEOUT_MS });
+    await p.waitForTimeout(3000);
+    await screenshot(p, 'mobile-editor', 'page');
+  } finally {
+    await phone.close();
+  }
+}
+
 async function exportJson(page: Page): Promise<void> {
   const expected = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export world JSON' }).click()]);
@@ -542,6 +568,7 @@ async function run(browser: Browser, url: string, opts: RunOptions): Promise<Run
       await undoRedo(page);
       await editColor(page);
       await exportJson(page);
+      if (opts.screenshots) await homeAndPhoneShots(browser, page, url);
     }
     check(errors.length === 0, `console/page errors:\n  ${errors.join('\n  ')}`);
     log(`run "${opts.name}" passed`);

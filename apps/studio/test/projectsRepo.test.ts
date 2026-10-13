@@ -133,6 +133,9 @@ describe('ProjectRepo', () => {
     expect((await repo.setThumbnail(r.value.id, new Blob([new Uint8Array(MAX_THUMBNAIL_BYTES + 1)], { type: 'image/webp' }))).ok).toBe(false);
     expect((await repo.setThumbnail(r.value.id, new Blob(['<svg/>'], { type: 'image/svg+xml' }))).ok).toBe(false);
     expect((await repo.setThumbnail(r.value.id, new Blob([], { type: 'image/png' }))).ok).toBe(false);
+    // A record written behind the repository's back is re-checked on read.
+    await (repo.backend as MemoryBackend).putThumb(r.value.id, new Blob(['<svg onload="x()"/>'], { type: 'image/svg+xml' }));
+    expect(await repo.thumbnail(r.value.id)).toBeNull();
   });
 
   it('exports and imports (round trip), rejecting invalid files', async () => {

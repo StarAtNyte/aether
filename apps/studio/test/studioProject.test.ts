@@ -20,6 +20,8 @@ function fakeSim(thumb: string | null): Simulation {
     mode: 'edit',
     renderer: { gpu: { tier: 'integrated', description: 'Test GPU' } },
     setShowColliders: () => undefined,
+    setStatsWhileEditing: () => undefined,
+    setPointerLock: () => undefined,
     setSelection: () => undefined,
     setGizmo: () => undefined,
     setLowMemory: () => undefined,
@@ -168,6 +170,28 @@ describe('Studio in project mode', () => {
     expect(sim.viewPreset).toHaveBeenCalledWith('top');
     studio.viewPreset('reset');
     expect(frame).toHaveBeenCalledTimes(1);
+    studio.dispose();
+  });
+
+  it('applies settings changed while the renderer was starting (regression)', async () => {
+    let resolve: ((sim: Simulation) => void) | null = null;
+    const sim = fakeSim(null);
+    const stats: boolean[] = [];
+    const colliders: boolean[] = [];
+    Object.assign(sim, { setStatsWhileEditing: (on: boolean) => void stats.push(on), setShowColliders: (on: boolean) => void colliders.push(on) });
+    const create = vi.spyOn(Simulation, 'create').mockImplementation((_c, _h, _l, opts) => {
+      expect(opts?.statsWhileEditing).toBe(false);
+      return new Promise((ok) => (resolve = ok));
+    });
+    const studio = new Studio({ storage: memoryStorage(), safeMode: false });
+    const attached = studio.attachCanvas({} as HTMLCanvasElement);
+    await vi.waitFor(() => expect(create).toHaveBeenCalled());
+    // The performance overlay and colliders are switched on before the renderer is ready.
+    studio.store.getState().updateSettings({ showPerf: true, showColliders: true });
+    (resolve as ((s: Simulation) => void) | null)?.(sim);
+    await attached;
+    expect(stats.at(-1)).toBe(true);
+    expect(colliders.at(-1)).toBe(true);
     studio.dispose();
   });
 

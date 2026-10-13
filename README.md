@@ -9,15 +9,15 @@ press Play. It does this by fast-forwarding a headless copy of the physics
 simulation and running the world's own tests ("the domino chain topples", "the
 player can reach the flag", "the coin counter reaches 10").
 
-![Aether Studio: chat panel, live viewport and inspector](docs/screenshots/studio-overview.png)
+![Aether editor: agent panel, live viewport with tool dock, scene inspector](docs/screenshots/studio-overview.png)
 
 | Domino run | Coin island | Bowling alley | Lakeside camp |
 | --- | --- | --- | --- |
 | ![Domino run](docs/screenshots/world-domino-run.png) | ![Coin island](docs/screenshots/world-coin-island.png) | ![Bowling alley](docs/screenshots/world-bowling-alley.png) | ![Lakeside camp](docs/screenshots/world-lakeside-camp.png) |
 
-| Default world in the editor | Play mode |
-| --- | --- |
-| ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) |
+| Projects home | Starter scene in the editor | Play mode | Phone |
+| --- | --- | --- | --- |
+| ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |
 
 ---
 
@@ -112,11 +112,31 @@ explicit state, so the AI can be held to account:
 - **Undo, branches and time travel.** Every agent or user edit is a history
   commit. You can undo and redo, check out any past state without losing
   later ones, create named branches, export and import JSON, and share links.
-- **Studio UI.** Streaming chat with diff chips and verify badges, an 8-prompt
-  example gallery, outliner, inspector with a validated JSON editor, rule
-  cards, a verification panel with "Fix with AI", a history timeline, a play
-  HUD, a performance overlay with memory readouts, and a low memory mode
-  that turns itself on for small devices.
+- **Projects home.** Every world is a project saved in the browser
+  (IndexedDB, validated on load, quota-aware), with rendered thumbnails,
+  "Recently opened" (grid or list), search, sort, rename, duplicate, delete
+  with Undo, `.aether.json` export and drag-and-drop import. New projects
+  start from a prompt, an empty or starter scene, or one of 8 templates with
+  real rendered previews.
+- **Editor.** A quiet, professional layout: icon rail (Agent, Objects,
+  Assets, Logic, Checks, History) and panel on the left, the viewport in the
+  middle, a sectioned inspector on the right (scene settings when nothing is
+  selected: sky, time of day, light, fog, ground, gravity, play camera,
+  variables). The agent streams plans, diff chips and check results; the
+  composer takes reference images. Assets places ready-made objects (rendered
+  preview tiles) by click or drag. The viewport has camera presets, move /
+  rotate / scale gizmos, a tool dock, an axis gizmo, optional object labels
+  and a performance overlay (off by default). A command palette (Ctrl/⌘+K)
+  searches actions, objects, assets, templates and projects; every control
+  has a tooltip with its shortcut. Light theme by default (follows the system
+  on first visit), dark theme one click away.
+- **Responsive.** Three columns on wide screens with resizable, balanced
+  side panels; one panel at a time on laptops; slide-over drawers on
+  tablets; on phones the viewport sits above a bottom sheet (drag handle,
+  tabs, prompt always visible) and play mode shows a touch stick with jump
+  and act buttons. An automated layout test checks 8 sizes in Chromium and
+  Firefox for overflow, clipped controls, unellipsized text and overlapping
+  overlays.
 
 ## Quick start
 
@@ -174,6 +194,11 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 | `?reset=1` | Same recovery path as `?safe=1` |
 | `?debug=1` | Verbose logging and exposes `window.__aether` (also on in dev builds) |
 
+Routes are hash based (they work on any static host): `#/` home, `#/templates`,
+`#/projects`, `#/docs`, `#/p/<id>` the editor for a project, `#/new` a new
+project from the starter scene and `#/new/<template>` a new project from a
+template (for example `#/new/coin-island`).
+
 ## Scripts
 
 | Command | What it does |
@@ -187,6 +212,9 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 | `npm run smoke` | Runs the real agent with the offline mock against 13 prompts and re-verifies every world headless |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
+| `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
+| `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
+| `npm run thumbnails` | Renders the template thumbnails (`public/templates/*.webp`, ≤ 30 KB) and asset previews (`public/palette/*.webp`) with the real renderer |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset) |
 
 ## How a prompt becomes a playable world
@@ -240,8 +268,10 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph Browser["Browser: apps/studio (React 19 + Vite)"]
-        UI["UI: chat, outliner, inspector,<br/>logic, verify, history"]
-        ST["Studio controller<br/>History, persistence, share"]
+        HOME["Projects home<br/>IndexedDB projects, templates"]
+        UI["Editor UI: agent, objects, assets,<br/>inspector, logic, checks, history"]
+        ST["Studio controller<br/>History, autosave, share"]
+        HOME --> UI
         SIM["Simulation<br/>fixed-step loop"]
         AB["AgentBridge<br/>(AgentHost)"]
         UI --> ST --> SIM
@@ -370,9 +400,11 @@ All LLM output and all user input are treated as untrusted.
 
 | Layer | Command | Coverage |
 | --- | --- | --- |
-| Unit and integration | `npm test` | About 1,050 Vitest tests across 61 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
+| Unit and integration | `npm test` | About 1,200 Vitest tests across 78 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials). No test makes a network call. |
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 13 prompts, including all 8 gallery examples. Every resulting world is re-validated and re-verified independently. |
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
+| Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
+| Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors |
 

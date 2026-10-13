@@ -47,6 +47,8 @@ export interface NewProject {
 }
 
 const CHANNEL = 'aether-projects';
+/** Image types accepted as thumbnails (never SVG). */
+const THUMB_TYPE = /^image\/(webp|jpeg|png)$/;
 
 function ok<T>(value: T): RepoResult<T> {
   return { ok: true, value };
@@ -281,7 +283,7 @@ export class ProjectRepo {
   /** Store a thumbnail (≤ {@link MAX_THUMBNAIL_BYTES}, image/* only). */
   async setThumbnail(id: string, blob: Blob): Promise<RepoResult<true>> {
     if (blob.size === 0 || blob.size > MAX_THUMBNAIL_BYTES) return fail('Thumbnail too large.');
-    if (!/^image\/(webp|jpeg|png)$/.test(blob.type)) return fail('Unsupported thumbnail type.');
+    if (!THUMB_TYPE.test(blob.type)) return fail('Unsupported thumbnail type.');
     const meta = await this.meta(id);
     if (!meta) return fail('This project no longer exists.');
     try {
@@ -298,7 +300,7 @@ export class ProjectRepo {
   async thumbnail(id: string): Promise<Blob | null> {
     try {
       const b = await this.backend.getThumb(id);
-      return b && b.size > 0 && b.size <= MAX_THUMBNAIL_BYTES ? b : null;
+      return b && b.size > 0 && b.size <= MAX_THUMBNAIL_BYTES && THUMB_TYPE.test(b.type) ? b : null;
     } catch {
       return null;
     }

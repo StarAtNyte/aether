@@ -321,12 +321,18 @@ export class WorldRenderer {
   frameContent(opts?: { focus?: EntityId[]; focusPoints?: Vec3[]; duration?: number; flyIn?: boolean }): boolean;   // auto-framing (see below)
   reveal(ids: EntityId[], duration?: number): boolean;    // re-frame only when edited entities are off screen / too small
   frameSphere(center: Vec3, radius: number, direction?: Vec3, duration?: number): void;
+  viewFrom(direction: Vec3, duration?: number): void;     // camera preset (top/front/side/iso): no elevation clamp, frames contentSphere
+  orbitTarget(out?: Vec3): Vec3;                          // editor orbit target (placement point)
+  entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null;   // world bounds at full scale
+  get animating(): boolean;                               // grow-in or camera flight in progress (captures wait for it)
+  setGizmo(id: EntityId | null, mode: 'translate' | 'rotate' | 'scale' | null, onCommit?: (c: GizmoChange) => void): Promise<void>;   // TransformControls (lazy); one commit per drag
+  get gizmoBusy(): boolean;                               // a handle is hovered or dragged: clicks must not change the selection
   focus(id: EntityId): void;                              // smooth camera fly-to
   pick(ndcX: number, ndcY: number): EntityId | null;
   highlight(ids: EntityId[]): void;                       // selection outline
   showGhost(world: WorldDoc | null): void;                // translucent preview of a proposed world
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: Diagnostic[] }): void;
-  screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (for VLM critique); never a mid-grow frame
+  screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (VLM critique, thumbnails); never a mid-grow frame; no selection box or gizmo
   renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size?: number): Promise<string[]>;
   render(dt: number, opts?: { onDemand?: boolean; animate?: boolean }): boolean;   // on-demand skips unchanged frames; animate:false freezes weather (idle editor)
   requestRender(): void;
@@ -467,11 +473,53 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string;
 
 ## apps/studio (React 19 + Vite)
 
-Editor + player: chat panel (streaming agent events), viewport (WorldRenderer),
-outliner, inspector, logic panel (rules as readable cards), verification panel
-(tests + diagnostics + "physics check ✓"), history timeline (undo/redo/branches),
-play/edit toggle, perf HUD, example prompt gallery, export/import JSON, share link.
-A `Simulation` class wires PhysicsWorld + LogicRuntime + WorldRenderer with a fixed-step loop.
+Two halves behind hash routes (`src/lib/router.ts`, untrusted input matched
+against strict patterns): the projects home (`#/`, `#/templates`,
+`#/projects`, `#/published`, `#/docs`) and the editor (`#/p/<id>`, loaded
+lazily with the engine). `#/new` and `#/new/<template>` create a project and
+replace themselves with its editor.
+
+Editor + player: agent panel (streaming agent events, reference images),
+objects outliner, assets palette, sectioned inspector (scene or object),
+logic panel, checks panel, history timeline, play/edit, transform gizmos,
+camera presets, labels, perf HUD (off by default), command palette,
+export/import JSON, share link. A `Simulation` class wires PhysicsWorld +
+LogicRuntime + WorldRenderer with a fixed-step loop.
+
+Projects (`src/projects/`):
+
+```ts
+// IndexedDB 'aether-studio' v1: stores meta (keyPath id), data (keyPath id), thumbs (Blob by id)
+interface ProjectMeta { v: 1; id: string /* [a-z0-9]{8,32} */; name: string; createdAt: number; updatedAt: number; openedAt: number;
+  template: string | null; entityCount: number; hasThumbnail: boolean }            // zod-validated on every read
+class ProjectRepo {                                      // over a ProjectBackend (IdbBackend | MemoryBackend fallback)
+  list(): Promise<ProjectMeta[]>;                        // newest first; invalid records skipped
+  create(p: { world: WorldDoc; chat?: ChatEntry[]; name?: string; template?: string | null }): Promise<RepoResult<ProjectMeta>>;
+  open(id): Promise<RepoResult<{ meta; world; chat }>>;  // world via validateImportedValue, chat via reviveChat
+  save(id, world, chat); rename(id, name); duplicate(id); remove(id) /* → DeletedProject for restore() */; restore(deleted);
+  setThumbnail(id, blob /* image/webp|jpeg|png, ≤ 60 KB */); thumbnail(id); exportText(id); importText(text);
+  subscribe(fn): () => void;                             // this tab + other tabs (BroadcastChannel, payload ignored)
+}
+// Caps: 200 projects, 6 MB serialized per project; quota errors become actionable messages.
+migrateLegacyWorld(storage, repo)                        // the pre-projects localStorage world becomes the first project, once
+```
+
+`Studio` (constructed per opened project by the editor route):
+
+```ts
+new Studio({ storage?, safeMode?, project?: { world, chat }, onSave?: (world, chat) => Promise<string | null>, onSettings? });
+studio.send(prompt, { offline?: boolean /* built-in planner (templates) */, images?: string[] /* ≤ 4 data URLs */ });
+studio.flush(): Promise<void>;                 // write pending autosave (debounced, serialized; store.save = saved | unsaved | saving | error)
+studio.captureThumbnail(): Promise<Blob | null>;   // WebP (JPEG fallback) ≤ 60 KB, waits for grow-in / camera flight
+studio.addFromPalette(itemId): string | null;  // place an asset at the orbit target (one undoable edit, selected)
+studio.viewPreset('top' | 'front' | 'side' | 'iso' | 'reset');
+studio.applyGizmoTransform(id, change);        // one undoable edit per gizmo drag; no-op drags ignored
+```
+
+Settings gained `showLabels`, `showNavHint`, `repairs` (0–3, the agent's
+automatic repair rounds); `showPerf` now defaults to false, and `darkTheme`
+follows `prefers-color-scheme` until a theme is saved (`/theme-boot.js`
+applies it before first paint).
 
 Memory and GPU robustness (see `src/lib/memory.ts`):
 

@@ -269,7 +269,11 @@ export class Studio {
       }
       this.sim = sim;
       this.bridge.attach(sim);
-      sim.setShowColliders(st.settings.showColliders);
+      // Settings may have changed while the renderer was starting: apply the current ones.
+      const now = this.store.getState().settings;
+      sim.setShowColliders(now.showColliders);
+      sim.setStatsWhileEditing(now.showPerf);
+      sim.setPointerLock(now.pointerLock);
       sim.setSelection(this.store.getState().selection);
       this.store.getState().setBackend(sim.backend);
       this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });

@@ -4,13 +4,19 @@
  * replaces itself with the editor. A share link (`?world=<id>`) opened on
  * the home route becomes a new project that loads the shared world.
  */
-import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from './app/appContext';
-import { EditorRoute } from './editor/EditorRoute';
+import { EditorSkeleton } from './editor/EditorSkeleton';
 import { Home } from './home/Home';
 import { createBlankProject, createEmptyWorld, createFromTemplate } from './projects/create';
 import { isHomeRoute } from './lib/router';
 import { applyTheme, themeFromSetting } from './lib/theme';
+
+/**
+ * The editor (renderer, physics, agent — three.js and the engine packages)
+ * loads on demand: the projects home never pays for it.
+ */
+const EditorRoute = lazy(() => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute })));
 
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
@@ -62,7 +68,13 @@ export const App = memo(function App(): ReactElement {
   const dark = useAppState((s) => s.settings.darkTheme);
   useEffect(() => applyTheme(document, themeFromSetting(dark)), [dark]);
   useShareLink();
-  if (route.name === 'editor') return <EditorRoute key={route.id} id={route.id} />;
+  if (route.name === 'editor') {
+    return (
+      <Suspense fallback={<EditorSkeleton />}>
+        <EditorRoute key={route.id} id={route.id} />
+      </Suspense>
+    );
+  }
   if (route.name === 'new') return <NewRoute key={route.template ?? 'starter'} template={route.template} />;
   return <Home section={route.name} />;
 });

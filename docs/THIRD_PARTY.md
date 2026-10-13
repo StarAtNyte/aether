@@ -29,7 +29,7 @@ These are bundled into the studio or executed by the server.
 | [@dimforge/rapier3d-compat](https://github.com/dimforge/rapier.js) | 0.21.0 | Apache-2.0 | `@aether/physics` (installed at `packages/physics/node_modules`) | Dimforge / rapier.js authors |
 | [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `@aether/logic` script sandbox (loaded lazily) | © 2019–2024 Jake Teton-Landis |
 | [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `@aether/logic`: the single QuickJS build the sandbox loads | © 2019–2024 Jake Teton-Landis |
-| [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | `@aether/core`, `@aether/agent`, validation everywhere | © 2025 Colin McDonnell |
+| [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | `@aether/core`, `@aether/agent`, studio (project records), validation everywhere | © 2025 Colin McDonnell |
 | [react](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
 | [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
 | [zustand](https://github.com/pmndrs/zustand) | 5.0.15 | MIT | studio state | © 2019 Paul Henschel |
@@ -153,7 +153,15 @@ included.** The only third-party media are two open-source fonts (below).
   Neither upstream declares a Reserved Font Name; the subsets are still
   registered under the private family names *Aether Sans* and *Aether Mono*
   so they are never confused with the original releases.
-- **Icon:** `apps/studio/public/favicon.svg` is original to this project.
+- **Icon and logomark:** `apps/studio/public/favicon.svg` and the in-app
+  logomark (`src/components/Logo.tsx`) and the stroke icon set
+  (`src/components/Icon.tsx`) are original to this project.
+- **Template and asset previews:** `apps/studio/public/templates/*.webp` and
+  `apps/studio/public/palette/*.webp` are renders of Aether's own procedural
+  worlds and objects, produced by `npm run thumbnails` with this
+  application's renderer. No third-party imagery.
+- **Transform gizmo:** three.js's `TransformControls` (examples/jsm, part of
+  the MIT-licensed `three` package above), loaded lazily by the editor.
 - **Screenshots:** `docs/screenshots/*.png` are captures of this application
   made by the e2e test.
 - **`model` shapes:** the World IR can reference glTF models, but the default

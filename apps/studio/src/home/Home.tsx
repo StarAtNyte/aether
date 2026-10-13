@@ -27,6 +27,7 @@ import { NewProjectDialog, RenameDialog } from './dialogs';
 import { Docs } from './Docs';
 import { useProjectActions } from './useProjectActions';
 import { useProjectList, useThumbnails } from './useProjects';
+import { prefetchEditor } from '../editor/prefetch';
 
 const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -239,6 +240,10 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     [actions],
   );
 
+  useEffect(() => {
+    document.title = section === 'home' ? 'Aether' : `${TITLES[section]} · Aether`;
+  }, [section]);
+
   // Keyboard: ⌘/Ctrl+K palette, "/" search, N new project.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -383,7 +388,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
       }}
     >
       <Sidebar section={section} collapsed={prefs.collapsed} onCollapse={() => updatePrefs({ collapsed: !prefs.collapsed })} onSettings={() => setSettingsOpen(true)} />
-      <div className="home__main">
+      <div className="home__main" onPointerOver={(e) => (e.target as Element).closest('.card, .home-top__new, .project-row') && prefetchEditor()} onFocus={(e) => (e.target as Element).closest('.card, .home-top__new, .project-row') && prefetchEditor()}>
         <header className="home-top">
           <a className="home-top__brand" href="#/" aria-label="Aether home">
             <Logomark size={22} />
