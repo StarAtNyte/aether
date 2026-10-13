@@ -53,6 +53,28 @@ describe('render loop allocation probe', () => {
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
   });
 
+  it('static-prop batch updates (200 instanced posts, one moving) allocate nothing per frame', async () => {
+    const { sync } = makeSync();
+    const map: Record<string, EntityInput> = {};
+    for (let i = 0; i < 200; i++) map[`post-${i}`] = { id: `post-${i}`, transform: { position: [i, 0.5, 0] }, shape: { kind: 'primitive', primitive: 'box', size: [0.3, 1, 0.3] }, physics: { body: 'static' } };
+    await sync.setWorld(createWorld({ entities: map }));
+    sync.root.updateMatrixWorld(true);
+    sync.updateBatches();
+    expect(sync.batchStats().drawCallsSaved).toBe(199);
+    const mover = sync.object('post-7')!;
+    let t = 0;
+    const r = await probeAllocations(
+      () => {
+        mover.position.y = Math.sin((t += 0.1));
+        mover.updateMatrix();
+        sync.root.updateMatrixWorld();
+        sync.updateBatches();
+      },
+      { iterations: 300, warmup: 3000, match: RENDER_SRC },
+    );
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
+  });
+
   it('camera rig (orbit + follow), grow-in, highlighter, stats and adaptive resolution allocate nothing per frame', async () => {
     const cam = new PerspectiveCamera(50, 1, 0.1, 1000);
     const orbit = new CameraRig(cam, controls());

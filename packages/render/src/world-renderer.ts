@@ -31,6 +31,7 @@ import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { AdaptiveResolution } from './view/adaptive-resolution';
+import { BATCHED_LAYER } from './sync/static-batches';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
@@ -84,6 +85,11 @@ export interface RendererOptions {
    * Never raises the resolution above the GPU budget.
    */
   adaptiveResolution?: boolean;
+  /**
+   * Draw identical static props (same primitive, material and shadow flags,
+   * at least six) as one instanced draw each (default true).
+   */
+  staticBatching?: boolean;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -113,6 +119,13 @@ export interface RenderMemoryStats {
   estimatedGpuMB: number;
 }
 
+/** A raycaster that also tests batched static props (their meshes live on {@link BATCHED_LAYER}). */
+function createRaycaster(): Raycaster {
+  const r = new Raycaster();
+  r.layers.enable(BATCHED_LAYER);
+  return r;
+}
+
 /** Renderer statistics. */
 export interface RenderStats {
   fps: number;
@@ -125,6 +138,8 @@ export interface RenderStats {
   instances: number;
   /** Adaptive resolution scale (1 = the GPU budget's full pixel ratio). */
   resolutionScale?: number;
+  /** Draw calls per pass saved by instancing identical static props. */
+  batchedDrawsSaved?: number;
 }
 
 /** A raycast hit on a document entity (see {@link WorldRenderer.raycastEntity}). */
@@ -261,8 +276,8 @@ export class WorldRenderer {
   private readonly debug = new DebugOverlay();
   private readonly avatar = new Avatar();
   private readonly frameStats = new FrameStats();
-  private readonly raycaster = new Raycaster();
-  private readonly occlusionRay = new Raycaster();
+  private readonly raycaster = createRaycaster();
+  private readonly occlusionRay = createRaycaster();
   /** Entity the chase camera follows (its own meshes never block the view). */
   private followId: EntityId | null = null;
   private readonly grow = new GrowIn();
@@ -347,6 +362,7 @@ export class WorldRenderer {
     this.sync = new SceneSync({
       ...common,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
+      staticBatching: opts.staticBatching !== false,
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
@@ -1302,7 +1318,20 @@ export class WorldRenderer {
   /** The post pipeline could not be built on this device (never retried). */
   private postFailed = false;
 
+  /**
+   * Bring the static-prop batches up to date before any draw: regroup after
+   * content changes (so a removed prop's geometry is never drawn) and copy
+   * member transforms. World matrices are updated first only when batches
+   * exist (the renderer would otherwise do it inside render()).
+   */
+  private prepareBatches(): void {
+    if (!this.sync.batchesActive) return;
+    this.scene.updateMatrixWorld();
+    this.sync.updateBatches();
+  }
+
   private draw(): void {
+    this.prepareBatches();
     this.syncPost();
     try {
       if (this.post) this.post.render();
@@ -1407,6 +1436,7 @@ export class WorldRenderer {
           cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
           cam.updateProjectionMatrix();
           cam.updateMatrixWorld();
+          this.prepareBatches();
           this.renderer.render(this.scene, cam);
       };
       return this.grow.withFullScale(() => {
@@ -1517,6 +1547,7 @@ export class WorldRenderer {
       entities: this.sync.entityCount,
       instances: this.sync.instanceCount,
       resolutionScale: this.adaptive.scale,
+      batchedDrawsSaved: this.sync.batchStats().drawCallsSaved,
     };
   }
 

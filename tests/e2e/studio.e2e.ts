@@ -306,9 +306,22 @@ async function sampleFps(page: Page, ms: number): Promise<{ fps: number; drawCal
   return { fps, drawCalls: last?.drawCalls ?? 0, triangles: last?.triangles ?? 0 };
 }
 
+/**
+ * Screenshot of one element by clipping a page screenshot to its box.
+ * `locator.screenshot()` first waits for the element to be "stable" over
+ * consecutive animation frames, which never settles in time on a slow
+ * software GPU (power-saving CPU: ~1 s per composited frame); the pixels are
+ * the same.
+ */
+async function clipShot(page: Page, selector: string, path?: string): Promise<Buffer> {
+  const box = await page.locator(selector).first().boundingBox();
+  check(box && box.width > 0 && box.height > 0, `${selector} has no visible box`);
+  return page.screenshot({ clip: { x: box.x, y: box.y, width: box.width, height: box.height }, ...(path ? { path } : {}), timeout: 60_000 });
+}
+
 /** Screenshot the viewport and check it contains a real rendered image. */
 async function assertCanvasRendered(page: Page, label: string): Promise<void> {
-  const png = await page.locator('.viewport__host canvas').screenshot();
+  const png = await clipShot(page, '.viewport__host canvas');
   const stats = pixelStats(decodePng(png));
   log(`  canvas (${label}): mean=${stats.mean.toFixed(1)} stddev=${stats.stdDev.toFixed(1)} colors=${stats.distinctColors}`);
   check(stats.stdDev >= MIN_CANVAS_STDDEV && stats.distinctColors >= MIN_CANVAS_COLORS, `canvas looks blank after ${label} (stddev ${stats.stdDev.toFixed(1)}, ${stats.distinctColors} colours)`);
@@ -334,7 +347,7 @@ async function setPresentationMode(page: Page, on: boolean): Promise<void> {
 async function screenshot(page: Page, name: string, target: 'page' | 'viewport'): Promise<void> {
   await setPresentationMode(page, true);
   const path = join(SCREENSHOT_DIR, `${name}.png`);
-  if (target === 'viewport') await page.locator('.viewport').screenshot({ path });
+  if (target === 'viewport') await clipShot(page, '.viewport', path);
   else await page.screenshot({ path });
   await setPresentationMode(page, false);
   log(`  screenshot → docs/screenshots/${name}.png`);

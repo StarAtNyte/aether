@@ -9,6 +9,7 @@
  * a placeholder, and stale async results are discarded via per-node tokens.
  */
 import { accelerateRaycast } from '../geometry/raycast-bvh';
+import { StaticBatches } from './static-batches';
 import {
   Box3,
   BoxGeometry,
@@ -97,6 +98,8 @@ export interface SceneSyncOptions {
   maxScatterTriangles?: number;
   /** Called after any entity's content (geometry/bounds) changed. */
   onContentChanged?: (id: EntityId) => void;
+  /** Draw identical static props as instanced batches (default true; never for the ghost variant). */
+  staticBatching?: boolean;
 }
 
 // Scratch objects (no per-frame allocations in applyTransforms).
@@ -187,6 +190,10 @@ export class SceneSync {
   /** True while setWorld rebuilds: dependent scatter relayout is deferred to one pass. */
   private batching = false;
   private disposed = false;
+  /** Instanced batches of identical static props (null when disabled). */
+  private readonly batches: StaticBatches | null;
+  /** Content changed since the batches were grouped. */
+  private batchesStale = true;
 
   constructor(private readonly opts: SceneSyncOptions) {
     this.variant = opts.variant ?? 'standard';
@@ -195,6 +202,36 @@ export class SceneSync {
     this.root.name = this.variant === 'ghost' ? 'aether:ghost' : 'aether:entities';
     this.placeholderGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
+    this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
+  }
+
+  /**
+   * Prepare the static-prop batches for a frame: regroup when content
+   * changed, then copy member transforms. Call with current world matrices
+   * (`scene.updateMatrixWorld()`), right before drawing. Allocation-free
+   * unless a regroup happens.
+   * @returns true when an instance changed
+   */
+  updateBatches(): boolean {
+    const b = this.batches;
+    if (!b) return false;
+    let regrouped = false;
+    if (this.batchesStale || b.needsRebuild) {
+      this.batchesStale = false;
+      regrouped = b.rebuild(this.nodes.values());
+    }
+    const moved = b.count > 0 ? b.update() : false;
+    return regrouped || moved;
+  }
+
+  /** Whether {@link updateBatches} has work (batches exist or a regroup is pending). */
+  get batchesActive(): boolean {
+    return this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild);
+  }
+
+  /** Static-prop batches and the draw calls they save per pass. */
+  batchStats(): { batches: number; drawCallsSaved: number } {
+    return { batches: this.batches?.count ?? 0, drawCallsSaved: this.batches?.drawCallsSaved ?? 0 };
   }
 
   /** The last world passed to {@link setWorld}. */
@@ -339,7 +376,10 @@ export class SceneSync {
     }
     this.relayoutDependents(moved, started);
     if (this.lightsDirty) this.applyShadowCap();
-    return Promise.all(started).then(() => undefined);
+    this.batchesStale = true;
+    return Promise.all(started).then(() => {
+      this.batchesStale = true;
+    });
   }
 
   /** Add a runtime-spawned entity that is not part of the document. Returns false on id conflicts. */
@@ -370,6 +410,7 @@ export class SceneSync {
   setProperty(id: EntityId, path: string, value: Json): boolean {
     const node = this.nodes.get(id);
     if (!node) return false;
+    this.batchesStale = true;
     if (path === 'visible' && typeof value === 'boolean') {
       node.entity = { ...node.entity, visible: value };
       node.object.visible = value;
@@ -410,6 +451,7 @@ export class SceneSync {
   clearOverrides(): void {
     const world = this.current;
     if (!world) return;
+    this.batchesStale = true;
     for (const node of this.nodes.values()) {
       if (!node.overridden || node.transient) continue;
       const docEntity = world.entities[node.id];
@@ -512,6 +554,8 @@ export class SceneSync {
 
   /** Remove everything (keeps caches alive for reuse). */
   clear(): void {
+    this.batches?.clear();
+    this.batchesStale = true;
     for (const node of [...this.nodes.values()]) this.removeNode(node);
     this.current = null;
     this.warnings.clear();
@@ -561,6 +605,7 @@ export class SceneSync {
 
   private removeNode(node: EntityNode): void {
     node.token++;
+    this.batchesStale = true;
     this.teardownContent(node);
     if (node.light) {
       disposeEntityLight(node.light);
@@ -1008,6 +1053,7 @@ export class SceneSync {
 
   /** Re-derive materials after an entity material change (geometry is kept). */
   private rematerial(node: EntityNode): void {
+    this.batchesStale = true;
     for (const b of node.bindings) {
       if (b.ownedMaterial) {
         b.ownedMaterial.dispose();
@@ -1027,6 +1073,7 @@ export class SceneSync {
   }
 
   private applyShadowFlags(node: EntityNode): void {
+    this.batchesStale = true;
     const standard = this.variant === 'standard';
     // Dense scatter layers (grass, pebbles) would double their draw cost in the shadow pass.
     const shadowCaster = node.instances <= SCATTER_SHADOW_MAX_INSTANCES;
@@ -1068,6 +1115,7 @@ export class SceneSync {
   // -------------------------------------------------------------------------
 
   private contentChanged(node: EntityNode): void {
+    this.batchesStale = true;
     this.opts.onContentChanged?.(node.id);
     if (!this.batching && node.entity.shape.kind !== 'scatter' && this.dependents.has(node.id)) this.relayoutDependents(new Set([node.id]), []);
   }

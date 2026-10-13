@@ -55,3 +55,4 @@ export { adapterKnownGood, describeAdapter, parseBackendPreference, pickBackend,
 export { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, MIN_PIXEL_RATIO, type GpuTier, type RenderBudget } from './gpu/budget';
 export { AdaptiveResolution, ADAPTIVE_DEFAULTS, type AdaptiveOptions } from './view/adaptive-resolution';
 export { accelerateRaycast, bvhEligible, BVH_MIN_TRIANGLES, triangleBvh, type TriangleBvh } from './geometry/raycast-bvh';
+export { StaticBatches, BATCHED_LAYER, MIN_BATCH, batchable } from './sync/static-batches';
