@@ -34,6 +34,10 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
+function clampUnit(v: number): number {
+  return Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
+}
+
 /** Wrap an angle in degrees to (-180, 180]. */
 export function wrapDeg(d: number): number {
   if (!Number.isFinite(d)) return 0;
@@ -53,6 +57,9 @@ export class InputController {
   private dragging = false;
   private attached: HTMLElement | null = null;
   private pointerLock = false;
+  /** On-screen (touch) stick: forward/right in [-1, 1]. */
+  private virtualForward = 0;
+  private virtualRight = 0;
 
   constructor() {
     this.state = { forward: 0, right: 0, jump: false, action: false, keys: this.merged, pointerYawDeg: 0 };
@@ -66,6 +73,29 @@ export class InputController {
   /** Set the yaw (e.g. from the camera when play starts). */
   setYaw(deg: number): void {
     this.yaw = wrapDeg(deg);
+  }
+
+  /**
+   * Feed the on-screen touch stick. Values are clamped to [-1, 1] and
+   * combined with the keyboard (the larger magnitude wins per axis).
+   */
+  setVirtualStick(forward: number, right: number): void {
+    this.virtualForward = clampUnit(forward);
+    this.virtualRight = clampUnit(right);
+  }
+
+  /**
+   * A tap on an on-screen button: latched like a key tap so a short press is
+   * never missed between two fixed steps. Only `Space` (jump) and `KeyE`
+   * (action) are accepted.
+   */
+  tapVirtual(code: 'Space' | 'KeyE'): void {
+    if (code === 'Space' || code === 'KeyE') this.latched.add(code);
+  }
+
+  /** Turn the camera/player by a number of degrees (touch look). */
+  turnBy(deg: number): void {
+    if (Number.isFinite(deg)) this.yaw = wrapDeg(this.yaw + deg);
   }
 
   /** Start listening. `pointerLock` requests mouse capture on canvas click. */
@@ -107,8 +137,8 @@ export class InputController {
     this.latched.clear();
     const a = axesFromKeys(this.merged);
     if (a.turn !== 0) this.yaw = wrapDeg(this.yaw - a.turn * KEY_YAW_SPEED * dt);
-    this.state.forward = a.forward;
-    this.state.right = a.right;
+    this.state.forward = Math.abs(this.virtualForward) > Math.abs(a.forward) ? this.virtualForward : a.forward;
+    this.state.right = Math.abs(this.virtualRight) > Math.abs(a.right) ? this.virtualRight : a.right;
     this.state.jump = a.jump;
     this.state.action = a.action;
     this.state.pointerYawDeg = this.yaw;
@@ -131,6 +161,8 @@ export class InputController {
   private readonly onBlur = (): void => {
     this.held.clear();
     this.dragging = false;
+    this.virtualForward = 0;
+    this.virtualRight = 0;
   };
 
   private readonly onPointerDown = (e: PointerEvent): void => {

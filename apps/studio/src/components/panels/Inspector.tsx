@@ -1,29 +1,18 @@
-import { memo, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+/**
+ * Object inspector: sections for the selected entity (transform, shape,
+ * material, physics, light, behaviours, raw JSON). Every edit is one
+ * undoable 'user' patch.
+ */
+import { memo, useEffect, useState, type ReactElement } from 'react';
 import { BodyType, MaterialPreset, PrimitiveKind, isEntityId, slugify, type Entity, type Json } from '@aether/core';
 import { BEHAVIOR_CATALOG } from '@aether/logic';
-import { useStudio, useUI, useWorld } from '../../app/context';
+import { useStudio } from '../../app/context';
 import { defaultParams, entityReplacePatches, entityToJson, parseEntityJson, parseTags } from '../../lib/entityEdit';
 import { formatValue } from '../../lib/ruleFormat';
 import { Icon } from '../Icon';
-import { ColorField, FieldRow, NumberField, SelectField, TextField, Toggle, Vec3Field } from '../fields';
+import { ColorField, FieldRow, NumberField, Section, SelectField, Switch, TextField, Toggle, Vec3Field } from '../fields';
 
 type Update = (set: Record<string, Json>, message: string) => void;
-
-function Section({ title, children, right, defaultOpen = true }: { title: string; children: ReactNode; right?: ReactNode; defaultOpen?: boolean }): ReactElement {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <section className={`insp-section${open ? ' is-open' : ''}`}>
-      <div className="insp-section__head">
-        <button type="button" className="insp-section__toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={11} />
-          {title}
-        </button>
-        {right}
-      </div>
-      {open && <div className="insp-section__body">{children}</div>}
-    </section>
-  );
-}
 
 const BODY_OPTIONS = ['none', ...BodyType.options] as const;
 type BodyOption = (typeof BODY_OPTIONS)[number];
@@ -31,11 +20,27 @@ const PRESET_OPTIONS = ['(none)', ...MaterialPreset.options] as const;
 type PresetOption = (typeof PRESET_OPTIONS)[number];
 const BEHAVIOR_TYPES = BEHAVIOR_CATALOG.map((b) => b.type);
 
-/** Friendly shape controls. */
+/** Short kind label of an entity ("Box", "Tree pine", "Light", …). */
+export function entityKind(e: Entity): string {
+  if (e.light) return `${e.light.type.charAt(0).toUpperCase()}${e.light.type.slice(1)} light`;
+  switch (e.shape.kind) {
+    case 'primitive':
+      return e.shape.primitive.charAt(0).toUpperCase() + e.shape.primitive.slice(1);
+    case 'procedural':
+      return e.shape.generator.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    case 'scatter':
+      return `Scatter ×${e.shape.count}`;
+    case 'model':
+      return 'Model';
+    default:
+      return 'Group';
+  }
+}
+
 const ShapeSection = memo(function ShapeSection({ e, update, disabled }: { e: Entity; update: Update; disabled: boolean }): ReactElement {
   const s = e.shape;
   return (
-    <Section title={`Shape · ${s.kind}`}>
+    <Section title="Shape">
       {s.kind === 'primitive' && (
         <>
           <FieldRow label="Primitive">
@@ -47,19 +52,23 @@ const ShapeSection = memo(function ShapeSection({ e, update, disabled }: { e: En
       {s.kind === 'procedural' && (
         <>
           <FieldRow label="Generator">
-            <code className="inline-code">{s.generator}</code>
+            <span className="value-text mono" title={s.generator}>
+              {s.generator}
+            </span>
           </FieldRow>
-          {Object.keys(s.params).length === 0 && <p className="muted small">Default parameters.</p>}
+          {Object.keys(s.params).length === 0 && <p className="section__note">Default parameters.</p>}
           {Object.entries(s.params).map(([k, v]) => (
             <FieldRow key={k} label={k}>
               {typeof v === 'number' ? (
                 <NumberField label={k} value={v} disabled={disabled} onCommit={(n) => update({ shape: { params: { [k]: n } } }, `Set ${e.id} ${k}`)} />
               ) : typeof v === 'boolean' ? (
-                <Toggle label="" checked={v} disabled={disabled} onChange={(b) => update({ shape: { params: { [k]: b } } }, `Set ${e.id} ${k}`)} />
+                <Switch label={k} checked={v} disabled={disabled} onChange={(b) => update({ shape: { params: { [k]: b } } }, `Set ${e.id} ${k}`)} />
               ) : typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? (
                 <ColorField label={k} value={v} disabled={disabled} onCommit={(c) => update({ shape: { params: { [k]: c } } }, `Set ${e.id} ${k}`)} />
               ) : (
-                <span className="mono small">{formatValue(v)}</span>
+                <span className="value-text mono" title={formatValue(v)}>
+                  {formatValue(v)}
+                </span>
               )}
             </FieldRow>
           ))}
@@ -71,7 +80,7 @@ const ShapeSection = memo(function ShapeSection({ e, update, disabled }: { e: En
       {s.kind === 'scatter' && (
         <>
           <FieldRow label="Of">
-            <code className="inline-code">{s.of.kind === 'procedural' ? s.of.generator : s.of.primitive}</code>
+            <span className="value-text mono">{s.of.kind === 'procedural' ? s.of.generator : s.of.primitive}</span>
           </FieldRow>
           <FieldRow label="Count">
             <NumberField label="Count" value={s.count} step={1} min={1} max={200_000} disabled={disabled} onCommit={(n) => update({ shape: { count: Math.round(n) } }, `Set ${e.id} count`)} />
@@ -89,10 +98,12 @@ const ShapeSection = memo(function ShapeSection({ e, update, disabled }: { e: En
       )}
       {s.kind === 'model' && (
         <FieldRow label="URL">
-          <span className="mono small break">{s.url}</span>
+          <span className="value-text mono" title={s.url}>
+            {s.url}
+          </span>
         </FieldRow>
       )}
-      {s.kind === 'none' && <p className="muted small">No geometry (group, light or logic holder).</p>}
+      {s.kind === 'none' && <p className="section__note">No geometry (group, light or logic holder).</p>}
     </Section>
   );
 });
@@ -170,7 +181,7 @@ const LightSection = memo(function LightSection({ e, update, disabled }: { e: En
   const l = e.light;
   if (!l) return null;
   return (
-    <Section title={`Light · ${l.type}`}>
+    <Section title="Light">
       <FieldRow label="Color">
         <ColorField label="Light color" value={l.color} disabled={disabled} onCommit={(c) => update({ light: { color: c } }, `Set ${e.id} light color`)} />
       </FieldRow>
@@ -191,22 +202,23 @@ const BehaviorsSection = memo(function BehaviorsSection({ e, update, disabled }:
   const [adding, setAdding] = useState(BEHAVIOR_TYPES[0] ?? 'spin');
   const setList = (list: Entity['behaviors'], message: string): void => update({ behaviors: list as unknown as Json }, message);
   return (
-    <Section title={`Behaviors · ${e.behaviors.length}`}>
-      {e.behaviors.length === 0 && <p className="muted small">No behaviors. Add one below or ask the agent.</p>}
+    <Section title="Behaviours" right={<span className="count-badge">{e.behaviors.length}</span>}>
+      {e.behaviors.length === 0 && <p className="section__note">No behaviours. Add one below or ask the agent.</p>}
       {e.behaviors.map((b, i) => (
-        <div key={`${b.type}-${i}`} className={`behavior-card${b.enabled ? '' : ' is-disabled'}`}>
-          <div className="behavior-card__head">
-            <span className="behavior-card__type">{b.type}</span>
-            <Toggle label="" checked={b.enabled} disabled={disabled} onChange={(v) => setList(e.behaviors.map((x, j) => (j === i ? { ...x, enabled: v } : x)), `${v ? 'Enable' : 'Disable'} ${b.type} on ${e.id}`)} />
-            <button type="button" className="icon-btn icon-btn--xs icon-btn--danger" disabled={disabled} aria-label={`Remove ${b.type}`} onClick={() => setList(e.behaviors.filter((_, j) => j !== i), `Remove ${b.type} from ${e.id}`)}>
-              <Icon name="trash" size={12} />
+        <div key={`${b.type}-${i}`} className={`behavior${b.enabled ? '' : ' is-disabled'}`}>
+          <div className="behavior__head">
+            <span className="behavior__type">{b.type}</span>
+            <Switch label={`Enable ${b.type}`} checked={b.enabled} disabled={disabled} onChange={(v) => setList(e.behaviors.map((x, j) => (j === i ? { ...x, enabled: v } : x)), `${v ? 'Enable' : 'Disable'} ${b.type} on ${e.id}`)} />
+            <button type="button" className="icon-btn icon-btn--sm" disabled={disabled} aria-label={`Remove ${b.type}`} data-tip="Remove" onClick={() => setList(e.behaviors.filter((_, j) => j !== i), `Remove ${b.type} from ${e.id}`)}>
+              <Icon name="trash" />
             </button>
           </div>
           {Object.keys(b.params).length > 0 && (
-            <div className="behavior-card__params">
+            <div className="behavior__params">
               {Object.entries(b.params).map(([k, v]) => (
-                <span key={k} className="param">
-                  <span className="param__k">{k}</span> {formatValue(v)}
+                <span key={k} className="param" title={`${k}: ${formatValue(v)}`}>
+                  <span className="param__k">{k}</span>
+                  <span className="param__v">{formatValue(v)}</span>
                 </span>
               ))}
             </div>
@@ -214,10 +226,10 @@ const BehaviorsSection = memo(function BehaviorsSection({ e, update, disabled }:
         </div>
       ))}
       <div className="add-row">
-        <SelectField label="Behavior type" value={adding} options={BEHAVIOR_TYPES} disabled={disabled} onChange={setAdding} />
+        <SelectField label="Behaviour type" value={adding} options={BEHAVIOR_TYPES} disabled={disabled} onChange={setAdding} />
         <button
           type="button"
-          className="btn btn--xs"
+          className="btn btn--sm"
           disabled={disabled}
           onClick={() => {
             const entry = BEHAVIOR_CATALOG.find((c) => c.type === adding);
@@ -225,7 +237,7 @@ const BehaviorsSection = memo(function BehaviorsSection({ e, update, disabled }:
             setList([...e.behaviors, { type: entry.type, params: defaultParams(entry.params), enabled: true }], `Add ${entry.type} to ${e.id}`);
           }}
         >
-          <Icon name="plus" size={12} /> Add
+          <Icon name="plus" /> Add
         </button>
       </div>
     </Section>
@@ -252,9 +264,9 @@ const RawJson = memo(function RawJson({ e, disabled }: { e: Entity; disabled: bo
     if (!err) setDirty(false);
   };
   return (
-    <Section title="Raw JSON" defaultOpen={false}>
+    <Section title="Advanced (JSON)" defaultOpen={false}>
       <textarea
-        className={`json-editor${error ? ' has-error' : ''}`}
+        className={`code-input${error ? ' has-error' : ''}`}
         value={text}
         spellCheck={false}
         disabled={disabled}
@@ -272,13 +284,10 @@ const RawJson = memo(function RawJson({ e, disabled }: { e: Entity; disabled: bo
           {error}
         </p>
       )}
-      <div className="add-row">
-        <button type="button" className="btn btn--primary btn--xs" disabled={!dirty || disabled} onClick={apply}>
-          Apply
-        </button>
+      <div className="add-row add-row--end">
         <button
           type="button"
-          className="btn btn--xs"
+          className="btn btn--sm"
           disabled={!dirty}
           onClick={() => {
             setText(entityToJson(e));
@@ -288,40 +297,32 @@ const RawJson = memo(function RawJson({ e, disabled }: { e: Entity; disabled: bo
         >
           Revert
         </button>
+        <button type="button" className="btn btn--primary btn--sm" disabled={!dirty || disabled} onClick={apply}>
+          Apply
+        </button>
       </div>
     </Section>
   );
 });
 
-/** Inspector for the selected entity. Every edit is one undoable 'user' patch. */
-export const Inspector = memo(function Inspector(): ReactElement {
+/** Inspector for one entity. */
+export const ObjectInspector = memo(function ObjectInspector({ e, count, playing }: { e: Entity; count: number; playing: boolean }): ReactElement {
   const studio = useStudio();
-  const world = useWorld();
-  const selection = useUI((s) => s.selection);
-  const playing = useUI((s) => s.mode === 'play');
-  const id = selection[0];
-  const e = id !== undefined && Object.prototype.hasOwnProperty.call(world.entities, id) ? world.entities[id] : undefined;
-  if (!e) {
-    return (
-      <div className="empty">
-        <Icon name="target" size={20} />
-        <p>Select an entity in the viewport or the outliner to inspect it.</p>
-      </div>
-    );
-  }
   const update: Update = (set, message) => studio.commitUser([{ op: 'update', id: e.id, set }], message);
   return (
     <div className="inspector" key={e.id}>
-      {selection.length > 1 && <p className="muted small">{selection.length} selected — showing the first.</p>}
-      <div className="insp-header">
-        <TextField label="Name" value={e.name} disabled={playing} placeholder={e.id} onCommit={(v) => update({ name: v.slice(0, 120) }, `Rename ${e.id}`)} />
-        <div className="insp-id">
-          <span className="muted">id</span>
+      {count > 1 && <p className="inspector__note">{count} selected — editing the first.</p>}
+      <Section title="Object">
+        <FieldRow label="Name">
+          <TextField label="Name" value={e.name} disabled={playing} placeholder={e.id} onCommit={(v) => update({ name: v.slice(0, 120) }, `Rename ${e.id}`)} />
+        </FieldRow>
+        <FieldRow label="Id">
           <TextField
             label="Entity id"
             value={e.id}
             maxLength={64}
             disabled={playing}
+            mono
             onCommit={(v) => {
               const next = isEntityId(v) ? v : slugify(v);
               if (next && next !== e.id) {
@@ -329,21 +330,18 @@ export const Inspector = memo(function Inspector(): ReactElement {
               }
             }}
           />
-          <button type="button" className="icon-btn icon-btn--xs" title="Focus camera" aria-label="Focus camera" onClick={() => studio.focus(e.id)}>
-            <Icon name="target" size={12} />
-          </button>
-        </div>
-        {e.description && <p className="muted small">{e.description}</p>}
-      </div>
-      <Section title="Transform">
-        <Vec3Field label="Position" value={e.transform.position} disabled={playing} onCommit={(v) => update({ transform: { position: v } }, `Move ${e.id}`)} />
-        <Vec3Field label="Rotation°" value={e.transform.rotation} step={5} disabled={playing} onCommit={(v) => update({ transform: { rotation: v } }, `Rotate ${e.id}`)} />
-        <Vec3Field label="Scale" value={e.transform.scale} min={0.001} disabled={playing} onCommit={(v) => update({ transform: { scale: v } }, `Scale ${e.id}`)} />
+        </FieldRow>
         <FieldRow label="Tags">
           <TextField label="Tags" value={e.tags.join(', ')} disabled={playing} placeholder="coin, pickup" onCommit={(v) => update({ tags: parseTags(v) }, `Tag ${e.id}`)} />
         </FieldRow>
+        {e.description && <p className="section__note">{e.description}</p>}
         <Toggle label="Visible" checked={e.visible} disabled={playing} onChange={(v) => update({ visible: v }, `${v ? 'Show' : 'Hide'} ${e.id}`)} />
         <Toggle label="Casts shadow" checked={e.castShadow} disabled={playing} onChange={(v) => update({ castShadow: v }, `Set ${e.id} shadows`)} />
+      </Section>
+      <Section title="Transform">
+        <Vec3Field label="Position" value={e.transform.position} disabled={playing} onCommit={(v) => update({ transform: { position: v } }, `Move ${e.id}`)} />
+        <Vec3Field label="Rotation" value={e.transform.rotation} step={5} disabled={playing} onCommit={(v) => update({ transform: { rotation: v } }, `Rotate ${e.id}`)} />
+        <Vec3Field label="Scale" value={e.transform.scale} min={0.001} disabled={playing} onCommit={(v) => update({ transform: { scale: v } }, `Scale ${e.id}`)} />
       </Section>
       <ShapeSection e={e} update={update} disabled={playing} />
       {e.shape.kind !== 'none' && <MaterialSection e={e} update={update} disabled={playing} />}
@@ -351,11 +349,6 @@ export const Inspector = memo(function Inspector(): ReactElement {
       <LightSection e={e} update={update} disabled={playing} />
       <BehaviorsSection e={e} update={update} disabled={playing} />
       <RawJson e={e} disabled={playing} />
-      <div className="insp-footer">
-        <button type="button" className="btn btn--danger btn--xs" disabled={playing} onClick={() => studio.deleteEntities([e.id])}>
-          <Icon name="trash" size={12} /> Delete entity
-        </button>
-      </div>
     </div>
   );
 });

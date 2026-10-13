@@ -9,11 +9,16 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { MAX_TOASTS } from '../config';
 import { appendEvent, trimChat, type ChatEntry, type ChatEventView, type ChatStatus, type DiagnosticView, type TestResultView } from '../lib/chat';
 import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
+import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
-/** Right-hand panel tabs. */
+/** Inspector tabs (legacy name: the right-hand panel's tabs before the left rail existed). */
 export type RightTab = 'outliner' | 'inspector' | 'logic' | 'verify' | 'history';
+/** Left panel views, switched from the icon rail. */
+export type LeftView = 'agent' | 'objects' | 'assets' | 'logic' | 'verify' | 'history';
+/** Project save status shown in the top bar. */
+export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
 /** Orbit camera or player view (play mode). */
 export type CameraView = 'orbit' | 'follow' | 'firstPerson';
 
@@ -54,6 +59,8 @@ export interface Toast {
   text: string;
   /** Seconds on screen. */
   duration: number;
+  /** Optional action button (e.g. "Undo"). */
+  action?: { label: string; run: () => void };
 }
 
 /** Latest physics verification. */
@@ -87,7 +94,17 @@ export interface StudioState {
   mode: StudioMode;
   modeBusy: boolean;
   rightTab: RightTab;
+  /** Left panel view (icon rail). */
+  leftView: LeftView;
+  /** Responsive layout mode (set by the editor shell). */
+  layout: LayoutMode;
+  /** Phone layout: bottom sheet tab. */
+  sheetTab: LeftView | 'inspector';
   panels: { left: boolean; right: boolean };
+  /** Project autosave state (always 'saved' outside project mode). */
+  save: { status: SaveStatus; error: string | null };
+  /** Command palette open. */
+  paletteOpen: boolean;
   selection: string[];
   outlinerFilter: string;
   chat: ChatEntry[];
@@ -111,7 +128,17 @@ export interface StudioState {
   setMode(mode: StudioMode): void;
   setModeBusy(busy: boolean): void;
   setRightTab(tab: RightTab): void;
+  setLeftView(view: LeftView): void;
+  setLayout(layout: LayoutMode): void;
+  setSheetTab(tab: LeftView | 'inspector'): void;
+  /** Show a left view: opens the left panel (or the phone sheet tab) on it. */
+  showLeftView(view: LeftView): void;
+  /** Show the inspector: opens the right panel (or the phone sheet tab). */
+  showInspector(): void;
   togglePanel(side: 'left' | 'right'): void;
+  setPanel(side: 'left' | 'right', open: boolean): void;
+  setSave(status: SaveStatus, error?: string | null): void;
+  setPaletteOpen(open: boolean): void;
   select(ids: readonly string[]): void;
   setOutlinerFilter(filter: string): void;
   addUserMessage(text: string): number;
@@ -130,7 +157,7 @@ export interface StudioState {
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
   setCameraView(v: CameraView): void;
-  toast(text: string, kind?: Toast['kind'], duration?: number): number;
+  toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
   dismissToast(id: number): void;
   updateSettings(patch: Partial<StudioSettings>): void;
   setSettingsOpen(open: boolean): void;
@@ -180,7 +207,12 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     mode: 'edit',
     modeBusy: false,
     rightTab: 'outliner',
+    leftView: 'agent',
+    layout: 'wide',
+    sheetTab: 'agent',
     panels: init.panels ? { left: init.panels.left, right: init.panels.right } : { left: true, right: true },
+    save: { status: 'saved', error: null },
+    paletteOpen: false,
     selection: [],
     outlinerFilter: '',
     chat: init.chat ? trimChat(init.chat) : [],
@@ -203,7 +235,24 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setMode: (mode) => set({ mode }),
     setModeBusy: (modeBusy) => set({ modeBusy }),
     setRightTab: (rightTab) => set({ rightTab }),
-    togglePanel: (side) => set((s) => ({ panels: { ...s.panels, [side]: !s.panels[side] } })),
+    setLeftView: (leftView) => set({ leftView }),
+    setLayout: (layout) => set((s) => (s.layout === layout ? s : { layout, panels: constrainPanels(layout, s.panels) })),
+    setSheetTab: (sheetTab) => set({ sheetTab }),
+    showLeftView: (view) =>
+      set((s) => {
+        if (s.layout === 'phone') return { leftView: view, sheetTab: view };
+        const panels = s.panels.left ? s.panels : togglePanels(s.layout, s.panels, 'left');
+        return { leftView: view, panels };
+      }),
+    showInspector: () =>
+      set((s) => {
+        if (s.layout === 'phone') return { sheetTab: 'inspector' };
+        return s.panels.right ? s : { panels: togglePanels(s.layout, s.panels, 'right') };
+      }),
+    togglePanel: (side) => set((s) => ({ panels: togglePanels(s.layout, s.panels, side) })),
+    setPanel: (side, open) => set((s) => (s.panels[side] === open ? s : { panels: { ...s.panels, [side]: open } })),
+    setSave: (status, error = null) => set((s) => (s.save.status === status && s.save.error === error ? s : { save: { status, error: error === null ? null : error.slice(0, 240) } })),
+    setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
     select: (ids) => {
       const next = [...new Set(ids)];
       const cur = get().selection;
@@ -250,11 +299,11 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
     resetGame: () => set({ game: INITIAL_GAME }),
     setCameraView: (cameraView) => set({ cameraView }),
-    toast: (text, kind = 'info', duration = 3) => {
+    toast: (text, kind = 'info', duration = 3, action) => {
       const id = nextToastId++;
       const d = Number.isFinite(duration) ? Math.min(Math.max(duration, 1), 30) : 3;
       set((s) => {
-        const toasts = [...s.toasts, { id, kind, text: text.slice(0, MAX_TOAST_TEXT), duration: d }];
+        const toasts = [...s.toasts, { id, kind, text: text.slice(0, MAX_TOAST_TEXT), duration: d, ...(action ? { action } : {}) }];
         return { toasts: toasts.length > MAX_TOASTS ? toasts.slice(toasts.length - MAX_TOASTS) : toasts };
       });
       return id;

@@ -4,10 +4,26 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
-  "dependencies": {
-    "@aether/core": "*", "@aether/physics": "*", "@aether/render": "*", "@aether/procgen": "*", "@aether/logic": "*", "@aether/agent": "*",
-    "react": "^19.3.0", "react-dom": "^19.3.0", "zustand": "^5.0.15", "three": "0.186.1"
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "devDependencies": { "@vitejs/plugin-react": "^6.1.2", "vite": "^8.3.4" }
+  "dependencies": {
+    "@aether/core": "*",
+    "@aether/physics": "*",
+    "@aether/render": "*",
+    "@aether/procgen": "*",
+    "@aether/logic": "*",
+    "@aether/agent": "*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15",
+    "three": "0.186.1",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.4"
+  }
 }

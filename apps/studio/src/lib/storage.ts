@@ -124,22 +124,34 @@ export interface StudioSettings {
   backend: BackendSetting;
   /** Low-memory mode (smaller drawing buffer, no bloom/MSAA, smaller caches and history). */
   lowMemory: LowMemorySetting;
-  /** Dark interface theme (the default is light). */
+  /** Dark interface theme (the default follows the system on a first visit, then is remembered). */
   darkTheme: boolean;
+  /** Floating name labels over entities in the viewport. */
+  showLabels: boolean;
+  /** First-use navigation hint over the viewport (turned off once dismissed). */
+  showNavHint: boolean;
+  /** Automatic repair rounds the agent may spend when physics checks fail (0–3). */
+  repairs: number;
 }
 
 /** Default preferences. */
 export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
-  showPerf: true,
+  showPerf: false,
   pointerLock: false,
   shadows: true,
   showColliders: false,
   backend: 'auto',
   lowMemory: 'auto',
   darkTheme: false,
+  showLabels: false,
+  showNavHint: true,
+  repairs: 2,
 });
 
-const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme'] as const satisfies ReadonlyArray<keyof StudioSettings>;
+/** Largest accepted value of the `repairs` setting. */
+export const MAX_REPAIRS_SETTING = 3;
+
+const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint'] as const satisfies ReadonlyArray<keyof StudioSettings>;
 const BACKENDS: readonly BackendSetting[] = ['auto', 'webgpu', 'webgl2'];
 const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
 
@@ -150,11 +162,12 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | und
 /**
  * Load settings, keeping only known fields of the right type and value.
  * Older saves are migrated: `preferWebGPU: false` → backend 'webgl2',
- * `lowPower: true` → low memory 'on'.
+ * `lowPower: true` → low memory 'on'. Until a theme has been saved, the
+ * theme follows `prefersDark` (the system color scheme).
  */
-export function loadSettings(storage: StorageLike | null): StudioSettings {
+export function loadSettings(storage: StorageLike | null, prefersDark = false): StudioSettings {
   const raw = readJson(storage, STORAGE_KEYS.settings);
-  const out: StudioSettings = { ...DEFAULT_SETTINGS };
+  const out: StudioSettings = { ...DEFAULT_SETTINGS, darkTheme: prefersDark === true };
   if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
     const r = raw as Record<string, unknown>;
     const own = (k: string): unknown => (Object.prototype.hasOwnProperty.call(r, k) ? r[k] : undefined);
@@ -164,8 +177,19 @@ export function loadSettings(storage: StorageLike | null): StudioSettings {
     }
     out.backend = oneOf(own('backend'), BACKENDS) ?? (own('preferWebGPU') === false ? 'webgl2' : DEFAULT_SETTINGS.backend);
     out.lowMemory = oneOf(own('lowMemory'), LOW_MEMORY) ?? (own('lowPower') === true ? 'on' : DEFAULT_SETTINGS.lowMemory);
+    const repairs = own('repairs');
+    if (typeof repairs === 'number' && Number.isInteger(repairs) && repairs >= 0 && repairs <= MAX_REPAIRS_SETTING) out.repairs = repairs;
   }
   return out;
+}
+
+/** True when the operating system asks for a dark color scheme (false outside a browser). */
+export function systemPrefersDark(): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return false;
+  }
 }
 
 /** Persist settings. */

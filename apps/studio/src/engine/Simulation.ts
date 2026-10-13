@@ -377,6 +377,52 @@ export class Simulation {
     }
   }
 
+  /**
+   * Small still of the finished world for project cards (edit mode only).
+   * Prefers WebP; browsers that cannot encode it (Safari) fall back to JPEG.
+   */
+  async thumbnail(width = 480, height = 270): Promise<string | null> {
+    if (this.session || this.disposed) return null;
+    try {
+      await this.whenSynced();
+      const webp = await this.renderer.screenshot({ width, height, mime: 'image/webp' });
+      if (webp.startsWith('data:image/webp')) return webp;
+      return await this.renderer.screenshot({ width, height, mime: 'image/jpeg' });
+    } catch (err) {
+      log.warn('thumbnail failed', err);
+      return null;
+    }
+  }
+
+  /** Camera presets for the editor (orbit mode only). */
+  viewPreset(preset: 'top' | 'front' | 'side' | 'iso'): void {
+    if (this.session) return;
+    this.touch();
+    const dir: Vec3 = preset === 'top' ? [0, 1, 0.0001] : preset === 'front' ? [0, 0.18, 1] : preset === 'side' ? [1, 0.18, 0] : [0.62, 0.55, 0.85];
+    this.renderer.viewFrom(dir);
+  }
+
+  /** Where a new object is placed: the orbit target, snapped to the ground plane (y ≥ 0). */
+  placementPoint(): Vec3 {
+    const t = this.renderer.orbitTarget();
+    return [Math.round(t[0] * 2) / 2, Math.max(0, Math.round(t[1] * 2) / 2), Math.round(t[2] * 2) / 2];
+  }
+
+  /** On-screen touch stick (play mode). */
+  setVirtualStick(forward: number, right: number): void {
+    this.input.setVirtualStick(forward, right);
+  }
+
+  /** On-screen jump / action buttons (play mode). */
+  tapVirtual(code: 'Space' | 'KeyE'): void {
+    this.input.tapVirtual(code);
+  }
+
+  /** Touch look: turn by degrees (play mode). */
+  turnBy(deg: number): void {
+    this.input.turnBy(deg);
+  }
+
   private refreshDebug(): void {
     this.renderer.showDebug({ colliders: this.showColliders, diagnostics: this.diagnostics });
   }

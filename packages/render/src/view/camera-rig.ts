@@ -134,6 +134,11 @@ export class CameraRig {
     this.flyTo(_desired, center, duration);
   }
 
+  /** Current look-at point (orbit target) written into `out`. */
+  getTarget(out: Vector3): Vector3 {
+    return out.copy(this.controls ? this.controls.target : this.look);
+  }
+
   /** Fly (or jump when `duration` ≤ 0) to a camera position looking at `target`. Switches to orbit mode. */
   flyTo(position: Vector3, target: Vector3, duration = 0.9): void {
     if (this.mode !== 'orbit') this.setMode('orbit', null);

@@ -558,6 +558,39 @@ export class WorldRenderer {
   }
 
   /**
+   * Look at the framed content (or the current orbit target) from a fixed
+   * direction — camera presets such as top, front or a three-quarter view.
+   * `direction` points from the target to the camera; only its direction
+   * matters. Unlike {@link frameSphere} the elevation is not clamped, so a
+   * straight-down top view is possible.
+   */
+  viewFrom(direction: Vec3, duration = FRAME_DURATION): void {
+    if (this.disposed || !direction.every(Number.isFinite)) return;
+    const len = Math.hypot(direction[0], direction[1], direction[2]);
+    if (len < 1e-6) return;
+    const f = this.framing;
+    if (f) _target.set(f.center[0], f.center[1], f.center[2]);
+    else this.rig.getTarget(_target);
+    const radius = f ? f.radius : 10;
+    const cam = this.perspective;
+    const vHalf = (cam.fov * Math.PI) / 360;
+    const half = Math.min(vHalf, Math.atan(Math.tan(vHalf) * (cam.aspect > 0 ? cam.aspect : 1)));
+    const dist = Math.min(2000, (radius / Math.sin(half)) * 1.05);
+    _pos.set(direction[0] / len, direction[1] / len, direction[2] / len).multiplyScalar(dist).add(_target);
+    this.rig.flyTo(_pos, _target, duration);
+    this.needsDraw = true;
+  }
+
+  /** The point the editor camera orbits around (written into `out`). */
+  orbitTarget(out: Vec3 = [0, 0, 0]): Vec3 {
+    this.rig.getTarget(_target);
+    out[0] = _target.x;
+    out[1] = _target.y;
+    out[2] = _target.z;
+    return out;
+  }
+
+  /**
    * Frame the meaningful content of the world (see `collectFramingItems`)
    * from an elevated three-quarter view that fits the viewport, never below
    * the ground. Returns false when there is nothing to frame.

@@ -1,18 +1,24 @@
-import { memo, useEffect, useRef, type ReactElement } from 'react';
-import { useStudio, useUI } from '../app/context';
+/**
+ * Settings: appearance, viewport, play, performance, AI connection and the
+ * keyboard reference. Shared by the home page (app settings) and the editor
+ * (studio settings, plus renderer details); the caller supplies the values
+ * and the update function.
+ */
+import { memo, useState, type ReactElement } from 'react';
 import { SHORTCUTS } from '../app/useShortcuts';
 import type { BackendSetting, LowMemorySetting, StudioSettings } from '../lib/storage';
-import { Icon } from './Icon';
 import { Toggle } from './fields';
+import { Dialog } from './ui/Dialog';
+import { Segmented } from './ui/Segmented';
 
 type BooleanSetting = { [K in keyof StudioSettings]: StudioSettings[K] extends boolean ? K : never }[keyof StudioSettings];
 
-const OPTIONS: ReadonlyArray<[BooleanSetting, string, string]> = [
-  ['darkTheme', 'Dark theme', 'Dim interface for low-light rooms (the default is light)'],
-  ['showPerf', 'Performance overlay', 'FPS, draw calls and triangles over the viewport'],
-  ['showColliders', 'Show colliders', 'Wireframe physics colliders in the viewport'],
-  ['pointerLock', 'Capture mouse in play mode', 'Click the viewport to lock the pointer for mouse-look'],
-  ['shadows', 'Shadows', 'Soft shadows (applies after reload)'],
+const VIEWPORT_OPTIONS: ReadonlyArray<[BooleanSetting, string, string]> = [
+  ['showPerf', 'Performance overlay', 'Frame rate, draw calls and memory over the viewport.'],
+  ['showLabels', 'Object labels', 'Name labels over the main objects in the viewport.'],
+  ['showColliders', 'Show colliders', 'Wireframe physics colliders.'],
+  ['shadows', 'Shadows', 'Soft shadows (applies after reload).'],
+  ['showNavHint', 'Navigation hint', 'Mouse and touch controls shown over an idle viewport.'],
 ];
 
 const LOW_MEMORY_CHOICES: ReadonlyArray<[LowMemorySetting, string]> = [
@@ -27,98 +33,149 @@ const BACKEND_CHOICES: ReadonlyArray<[BackendSetting, string]> = [
   ['webgl2', 'WebGL2'],
 ];
 
-/** A labeled row of mutually exclusive choices (same layout as a toggle row). */
-function ChoiceRow<T extends string>({ label, hint, value, choices, onChange }: { label: string; hint: string; value: T; choices: ReadonlyArray<[T, string]>; onChange: (v: T) => void }): ReactElement {
-  return (
-    <div className="toggle choice-row">
-      <span className="toggle__text">
-        <span className="toggle__label">{label}</span>
-        <span className="toggle__hint">{hint}</span>
-      </span>
-      <span className="segmented" role="radiogroup" aria-label={label}>
-        {choices.map(([v, text]) => (
-          <button key={v} type="button" role="radio" aria-checked={value === v} className={`seg-btn${value === v ? ' is-active' : ''}`} onClick={() => onChange(v)}>
-            {text}
-          </button>
-        ))}
-      </span>
-    </div>
-  );
+type Tab = 'general' | 'ai' | 'shortcuts';
+
+/** Extra (editor-only) information shown in Settings. */
+export interface SettingsContext {
+  memory?: { lowMemory: boolean; reason: string | null };
+  gpu?: { description: string } | null;
+  provider?: { status: 'checking' | 'live' | 'offline'; name: string };
 }
 
-/** Settings + keyboard shortcut reference (modal dialog). */
-export const SettingsDialog = memo(function SettingsDialog(): ReactElement | null {
-  const studio = useStudio();
-  const open = useUI((s) => s.settingsOpen);
-  const settings = useUI((s) => s.settings);
-  const memory = useUI((s) => s.memory);
-  const gpu = useUI((s) => s.gpu);
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) d.close();
-  }, [open]);
-
-  const close = (): void => studio.store.getState().setSettingsOpen(false);
-
+/** Settings dialog. */
+export const SettingsDialog = memo(function SettingsDialog({
+  open,
+  onClose,
+  settings,
+  update,
+  context = {},
+  initialTab = 'general',
+}: {
+  open: boolean;
+  onClose: () => void;
+  settings: StudioSettings;
+  update: (patch: Partial<StudioSettings>) => void;
+  context?: SettingsContext;
+  initialTab?: Tab;
+}): ReactElement {
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const { memory, gpu, provider } = context;
   return (
-    <dialog ref={ref} className="dialog" onClose={close} onCancel={close} aria-labelledby="settings-title">
-      <div className="dialog__header">
-        <h2 id="settings-title">Settings</h2>
-        <button type="button" className="icon-btn" onClick={close} aria-label="Close settings">
-          <Icon name="x" />
-        </button>
-      </div>
-      <div className="dialog__body">
-        <section className="settings-list">
-          {OPTIONS.map(([key, label, hint]) => (
-            <Toggle key={key} label={label} hint={hint} checked={settings[key]} onChange={(v) => studio.store.getState().updateSettings({ [key]: v })} />
-          ))}
-          <ChoiceRow
-            label="Low memory mode"
-            hint={`${memory.lowMemory ? `On${memory.reason ? ` — ${memory.reason}` : ''}` : 'Off'}. Lower resolution, no bloom, smaller shadows, caches and undo history. Auto turns it on for small devices or under memory pressure.`}
-            value={settings.lowMemory}
-            choices={LOW_MEMORY_CHOICES}
-            onChange={(v) => studio.store.getState().updateSettings({ lowMemory: v })}
-          />
-          <ChoiceRow
-            label="Renderer"
-            hint={`Auto uses WebGPU where it is reliable (WebGL2 on Firefox unless the GPU is known good).${gpu?.description ? ` GPU: ${gpu.description}` : ''}`}
-            value={settings.backend}
-            choices={BACKEND_CHOICES}
-            onChange={(v) => studio.store.getState().updateSettings({ backend: v })}
-          />
-        </section>
-        <section>
-          <h3 className="section-title">Keyboard shortcuts</h3>
+    <Dialog open={open} onClose={onClose} title="Settings" size="md" className="settings">
+      <Segmented<Tab>
+        label="Settings section"
+        value={tab}
+        onChange={setTab}
+        options={[
+          ['general', 'General'],
+          ['ai', 'AI connection'],
+          ['shortcuts', 'Shortcuts'],
+        ]}
+        stretch
+      />
+      {tab === 'general' && (
+        <div className="settings__pane">
+          <section className="settings__group">
+            <h3 className="settings__heading">Appearance</h3>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Theme</span>
+                <span className="setting-row__hint">Follows your system until you choose.</span>
+              </span>
+              <Segmented<'light' | 'dark'>
+                label="Theme"
+                value={settings.darkTheme ? 'dark' : 'light'}
+                onChange={(v) => update({ darkTheme: v === 'dark' })}
+                options={[
+                  ['light', 'Light'],
+                  ['dark', 'Dark'],
+                ]}
+              />
+            </div>
+          </section>
+          <section className="settings__group">
+            <h3 className="settings__heading">Viewport</h3>
+            {VIEWPORT_OPTIONS.map(([key, label, hint]) => (
+              <Toggle key={key} label={label} hint={hint} checked={settings[key]} onChange={(v) => update({ [key]: v })} />
+            ))}
+          </section>
+          <section className="settings__group">
+            <h3 className="settings__heading">Play</h3>
+            <Toggle label="Capture the mouse" hint="Click the viewport in play mode to lock the pointer for mouse-look." checked={settings.pointerLock} onChange={(v) => update({ pointerLock: v })} />
+          </section>
+          <section className="settings__group">
+            <h3 className="settings__heading">Performance</h3>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Low memory mode</span>
+                <span className="setting-row__hint">
+                  {memory ? (memory.lowMemory ? `On${memory.reason ? ` — ${memory.reason}` : ''}. ` : 'Off. ') : ''}Lower resolution, no bloom, smaller shadows and caches.
+                </span>
+              </span>
+              <Segmented<LowMemorySetting> label="Low memory mode" value={settings.lowMemory} onChange={(v) => update({ lowMemory: v })} options={LOW_MEMORY_CHOICES} />
+            </div>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Renderer</span>
+                <span className="setting-row__hint">Auto uses WebGPU where it is reliable, WebGL2 elsewhere.{gpu?.description ? ` GPU: ${gpu.description}.` : ''}</span>
+              </span>
+              <Segmented<BackendSetting> label="Renderer" value={settings.backend} onChange={(v) => update({ backend: v })} options={BACKEND_CHOICES} />
+            </div>
+          </section>
+        </div>
+      )}
+      {tab === 'ai' && (
+        <div className="settings__pane">
+          <section className="settings__group">
+            <h3 className="settings__heading">Model</h3>
+            <div className="connection">
+              <span className={`status-dot${provider?.status === 'live' ? ' is-live' : ''}`} aria-hidden="true" />
+              <div className="connection__text">
+                <span className="connection__title">{provider?.status === 'live' ? `Connected · ${provider.name}` : provider?.status === 'checking' ? 'Checking the AI backend…' : 'Offline planner'}</span>
+                <span className="connection__hint">
+                  {provider?.status === 'live'
+                    ? 'Prompts go to the model configured on the Aether server. Keys never reach the browser.'
+                    : 'Prompts are answered by the built-in planner, which runs in your browser. To use a live model, start the Aether server with an Anthropic or OpenAI key (see the README).'}
+                </span>
+              </div>
+            </div>
+          </section>
+          <section className="settings__group">
+            <h3 className="settings__heading">Agent</h3>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Automatic repairs</span>
+                <span className="setting-row__hint">Rounds the agent may spend fixing a world that fails its physics checks.</span>
+              </span>
+              <Segmented<string>
+                label="Automatic repairs"
+                value={String(settings.repairs)}
+                onChange={(v) => update({ repairs: Number(v) })}
+                options={[
+                  ['0', 'Off'],
+                  ['1', '1'],
+                  ['2', '2'],
+                  ['3', '3'],
+                ]}
+              />
+            </div>
+          </section>
+        </div>
+      )}
+      {tab === 'shortcuts' && (
+        <div className="settings__pane">
           <dl className="shortcut-list">
             {SHORTCUTS.map(([keys, what]) => (
-              <div key={keys}>
-                <dt>
+              <div key={keys} className="shortcut-list__row">
+                <dt>{what}</dt>
+                <dd>
                   <kbd>{keys}</kbd>
-                </dt>
-                <dd>{what}</dd>
+                </dd>
               </div>
             ))}
           </dl>
-        </section>
-        <section className="dialog__danger">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              studio.resetToStarter();
-              close();
-            }}
-          >
-            <Icon name="refresh" /> Load the starter world
-          </button>
-          <span className="muted">Undoable — your current world stays in History.</span>
-        </section>
-      </div>
-    </dialog>
+        </div>
+      )}
+    </Dialog>
   );
 });

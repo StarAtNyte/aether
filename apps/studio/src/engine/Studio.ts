@@ -5,11 +5,11 @@
  * and subscribe to History / the store; they never own engine state.
  */
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, isAbortError, type Provider } from '@aether/agent';
+import { WorldAgent, createMockProvider, isAbortError, type Provider } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
-import { buildAgentHistory, toDiagnostics, toEventView, toTestResults } from '../lib/chat';
+import { buildAgentHistory, toDiagnostics, toEventView, toTestResults, type ChatEntry } from '../lib/chat';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
 import { createStarterWorld } from '../lib/starterWorld';
@@ -23,10 +23,15 @@ import {
   previousBootFailed,
   saveChat,
   saveRecoveryWorld,
+  MAX_REPAIRS_SETTING,
   saveSettings,
   saveWorld,
+  systemPrefersDark,
   type StorageLike,
+  type StudioSettings,
 } from '../lib/storage';
+import { paletteEntity, paletteItem } from '../lib/palette';
+import { dataUrlToBlob, fitThumbnail } from '../lib/thumbnail';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
@@ -41,6 +46,38 @@ const log = createLogger('studio');
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
 const MAX_REPAIRS = 2;
+
+/** A project opened in the studio (see `projects/`). */
+export interface StudioProject {
+  world: WorldDoc;
+  chat: readonly ChatEntry[];
+}
+
+/** Construction options. */
+export interface StudioOptions {
+  /** Settings/legacy storage (default: localStorage). */
+  storage?: StorageLike | null;
+  /** Force or skip crash-loop safe mode (default: detected). */
+  safeMode?: boolean;
+  /**
+   * Open this project instead of the legacy single saved world. World and
+   * chat are then persisted through `onSave` (debounced) instead of
+   * localStorage.
+   */
+  project?: StudioProject;
+  /** Persist the project; resolves to an error message, or null on success. */
+  onSave?: (world: WorldDoc, chat: readonly ChatEntry[]) => Promise<string | null>;
+  /** Called whenever settings change (lets the app shell follow the theme). */
+  onSettings?: (settings: StudioSettings) => void;
+}
+
+/** Options of {@link Studio.send}. */
+export interface SendOptions {
+  /** Use the built-in offline planner even when an AI backend is live (templates). */
+  offline?: boolean;
+  /** Reference images (data URLs) sent with the prompt; at most 4. */
+  images?: readonly string[];
+}
 
 /** Memory picture of the whole studio (debug handle, memory e2e). */
 export interface StudioMemoryReport {
@@ -82,20 +119,26 @@ export class Studio {
   private readonly recoveries = new RecoveryLimiter();
   private attachCount = 0;
   private memoryTimer: ReturnType<typeof setInterval> | null = null;
+  /** Project persistence (null: legacy localStorage world). */
+  private readonly onSave: StudioOptions['onSave'] | null;
+  /** The save in flight (project mode), so saves never overlap. */
+  private saving: Promise<void> = Promise.resolve();
+  private disposed = false;
 
-  constructor(opts: { storage?: StorageLike | null; safeMode?: boolean } = {}) {
+  constructor(opts: StudioOptions = {}) {
     this.storage = opts.storage === undefined ? browserStorage() : opts.storage;
-    const saved = loadWorld(this.storage);
+    this.onSave = opts.project && opts.onSave ? opts.onSave : null;
+    const saved = opts.project ? opts.project.world : loadWorld(this.storage);
     // Crash-loop guard: never auto-load a world that may have killed the last session.
     const safe = opts.safeMode ?? (previousBootFailed(this.storage) || safeModeRequested());
     this.skippedWorld = safe && saved ? saved : null;
     if (this.skippedWorld) saveRecoveryWorld(this.storage, this.skippedWorld);
     // In safe mode the saved world stays one Undo away (first history entry).
     const initial = saved ?? createStarterWorld();
-    const settings = loadSettings(this.storage);
+    const settings = loadSettings(this.storage, systemPrefersDark());
     const memory = decideLowMemory(settings.lowMemory, readMemorySignals());
     this.history = new History(initial, { maxEntries: memory.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal });
-    this.store = createStudioStore({ chat: loadChat(this.storage), settings, panels: initialPanels() });
+    this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels() });
     this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
     this.sandbox = createSandbox();
     this.bridge = new AgentBridge(this.history, this.sandbox);
@@ -114,12 +157,16 @@ export class Studio {
       this.store.subscribe((s) => {
         if (s.chat !== lastChat) {
           lastChat = s.chat;
-          if (!s.agentBusy) saveChat(this.storage, s.chat);
+          if (!s.agentBusy) {
+            if (this.onSave) this.schedulePersist();
+            else saveChat(this.storage, s.chat);
+          }
         }
         if (s.settings !== lastSettings) {
           const prev = lastSettings;
           lastSettings = s.settings;
           saveSettings(this.storage, s.settings);
+          opts.onSettings?.(s.settings);
           if (prev.showColliders !== s.settings.showColliders) this.sim?.setShowColliders(s.settings.showColliders);
           if (prev.pointerLock !== s.settings.pointerLock) this.sim?.setPointerLock(s.settings.pointerLock);
           if (prev.lowMemory !== s.settings.lowMemory) this.applyMemory();
@@ -129,7 +176,7 @@ export class Studio {
       }),
     );
     if (typeof window !== 'undefined') {
-      const flush = (): void => this.flushPersist();
+      const flush = (): void => void this.flushPersist();
       window.addEventListener('pagehide', flush);
       this.cleanups.push(() => window.removeEventListener('pagehide', flush));
       this.memoryTimer = setInterval(() => this.sampleMemory(), MEMORY_SAMPLE_MS);
@@ -567,14 +614,19 @@ export class Studio {
   // ---------------------------------------------------------------------------
 
   /** Send a prompt to the agent and stream its events into the chat. */
-  async send(prompt: string): Promise<void> {
+  async send(prompt: string, opts: SendOptions = {}): Promise<void> {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS);
     const st = this.store.getState();
     if (!text || st.agentBusy) return;
     if (this.sim?.mode === 'play') await this.sim.stop();
     this.sim?.touch();
-    const provider = this.provider ?? (await selectProvider()).provider;
-    this.provider = provider;
+    let provider: Provider;
+    if (opts.offline) provider = createMockProvider();
+    else {
+      provider = this.provider ?? (await selectProvider()).provider;
+      this.provider = provider;
+    }
+    const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
     const history = buildAgentHistory(st.chat);
     const before = this.history.current;
     st.addUserMessage(text);
@@ -584,8 +636,9 @@ export class Studio {
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
     try {
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), maxRepairs: MAX_REPAIRS });
-      for await (const event of agent.run(text, this.bridge, { signal: abort.signal, history })) {
+      const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS });
+      for await (const event of agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) })) {
         const view = toEventView(event);
         this.store.getState().pushEvent(entryId, view);
         if (event.type === 'error') status = 'error';
@@ -613,7 +666,8 @@ export class Studio {
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
-      saveChat(this.storage, this.store.getState().chat);
+      if (this.onSave) this.schedulePersist();
+      else saveChat(this.storage, this.store.getState().chat);
     }
   }
 
@@ -632,23 +686,92 @@ export class Studio {
   // ---------------------------------------------------------------------------
 
   private schedulePersist(): void {
+    if (this.disposed) return;
     if (this.persistTimer !== null) clearTimeout(this.persistTimer);
+    if (this.onSave) this.store.getState().setSave('unsaved');
     this.persistTimer = setTimeout(() => this.flushPersist(), PERSIST_DEBOUNCE_MS);
   }
 
-  private flushPersist(): void {
+  /** Write pending changes now (legacy: localStorage; project: `onSave`, serialized). */
+  private flushPersist(): Promise<void> {
+    const pending = this.persistTimer !== null;
     if (this.persistTimer !== null) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
-    saveWorld(this.storage, this.history.current);
+    if (!this.onSave) {
+      saveWorld(this.storage, this.history.current);
+      return Promise.resolve();
+    }
+    if (!pending) return this.saving;
+    const save = this.onSave;
+    const world = this.history.current;
+    const chat = this.store.getState().chat;
+    this.store.getState().setSave('saving');
+    this.saving = this.saving
+      .then(() => save(world, chat))
+      .then(
+        (err) => {
+          // A newer change may already be waiting: only report "saved" when nothing is pending.
+          if (err) this.store.getState().setSave('error', err);
+          else if (this.persistTimer === null) this.store.getState().setSave('saved');
+        },
+        (err: unknown) => this.store.getState().setSave('error', errorMessage(err)),
+      );
+    return this.saving;
   }
 
-  /** Release everything (tests / HMR). */
+  /** Save pending project changes and wait for the write (before leaving the editor). */
+  async flush(): Promise<void> {
+    await this.flushPersist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Thumbnails, placement, camera presets, touch input
+  // ---------------------------------------------------------------------------
+
+  /** A small WebP/JPEG still of the world for project cards (≤ 60 KB), or null. */
+  async captureThumbnail(): Promise<Blob | null> {
+    const sim = this.sim;
+    if (!sim || sim.mode === 'play' || this.store.getState().loading !== null) return null;
+    for (const [w, h] of [[480, 270], [384, 216], [320, 180]] as const) {
+      const url = await sim.thumbnail(w, h);
+      const blob = url ? dataUrlToBlob(url) : null;
+      if (!blob) return null;
+      if (fitThumbnail(blob)) return blob;
+    }
+    return null;
+  }
+
+  /** Place a palette item at the camera's focus point (one undoable edit) and select it. */
+  addFromPalette(itemId: string): string | null {
+    const item = paletteItem(itemId);
+    if (!item) return null;
+    if (this.store.getState().mode === 'play') {
+      this.store.getState().toast('Stop the simulation before adding objects.', 'info');
+      return null;
+    }
+    const at = this.sim ? this.sim.placementPoint() : ([0, 0, 0] as [number, number, number]);
+    const entity = paletteEntity(item, this.history.current, at);
+    if (this.commitUser([{ op: 'add', entity }], `Add ${item.label.toLowerCase()}`) !== null) return null;
+    this.store.getState().select([entity.id]);
+    void this.sim?.revealEntities([entity.id]);
+    return entity.id;
+  }
+
+  /** Editor camera presets ('reset' re-frames the whole world). */
+  viewPreset(preset: 'top' | 'front' | 'side' | 'iso' | 'reset'): void {
+    if (!this.sim || this.sim.mode === 'play') return;
+    if (preset === 'reset') void this.sim.frameWorld();
+    else this.sim.viewPreset(preset);
+  }
+
+  /** Release everything (leaving the editor, tests, HMR). Pending changes are written first. */
   dispose(): void {
     if (this.memoryTimer !== null) clearInterval(this.memoryTimer);
     this.memoryTimer = null;
-    this.flushPersist();
+    void this.flushPersist();
+    this.disposed = true;
     this.abort?.abort();
     for (const c of this.cleanups.splice(0)) c();
     this.sim?.dispose();
