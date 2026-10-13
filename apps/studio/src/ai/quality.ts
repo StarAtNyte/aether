@@ -17,21 +17,49 @@ const STATS_SIZE = 64;
 /** Rendered view size sent to the critic (small: headless calls are slow). */
 export const VIEW_SIZE = 384;
 
+/** Decode a base64 image data URL into a Blob without a network fetch (null when malformed). */
+export function dataUrlToBlob(dataUrl: string): Blob | null {
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!m?.[1] || !m[2]) return null;
+  try {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: m[1] });
+  } catch {
+    return null;
+  }
+}
+
+type StatsContext = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
+let statsCtx: StatsContext | null | undefined;
+
+/**
+ * One small, CPU-backed (willReadFrequently) canvas reused for every view:
+ * a fresh canvas per view is only reclaimed on a lazy GC in some browsers,
+ * so memory grew with every agent turn.
+ */
+function statsContext(): StatsContext | null {
+  if (statsCtx !== undefined) return statsCtx;
+  const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(STATS_SIZE, STATS_SIZE) : Object.assign(document.createElement('canvas'), { width: STATS_SIZE, height: STATS_SIZE });
+  statsCtx = (canvas.getContext('2d', { willReadFrequently: true }) as StatsContext | null) ?? null;
+  return statsCtx;
+}
+
 /** Decode a data URL and compute its statistics (null when the browser cannot). */
 export async function statsOfImage(dataUrl: string): Promise<ViewStats | null> {
   try {
-    const blob = await (await fetch(dataUrl)).blob();
+    const blob = dataUrlToBlob(dataUrl);
+    const ctx = blob ? statsContext() : null;
+    if (!blob || !ctx) return null;
     const bitmap = await createImageBitmap(blob, { resizeWidth: STATS_SIZE, resizeHeight: STATS_SIZE, resizeQuality: 'medium' });
-    const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(STATS_SIZE, STATS_SIZE) : Object.assign(document.createElement('canvas'), { width: STATS_SIZE, height: STATS_SIZE });
-    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
-    if (!ctx) {
+    try {
+      ctx.clearRect(0, 0, STATS_SIZE, STATS_SIZE);
+      ctx.drawImage(bitmap, 0, 0, STATS_SIZE, STATS_SIZE);
+    } finally {
       bitmap.close();
-      return null;
     }
-    ctx.drawImage(bitmap, 0, 0, STATS_SIZE, STATS_SIZE);
-    bitmap.close();
-    const data = ctx.getImageData(0, 0, STATS_SIZE, STATS_SIZE).data;
-    return viewStatsFromPixels(data, STATS_SIZE, STATS_SIZE);
+    return viewStatsFromPixels(ctx.getImageData(0, 0, STATS_SIZE, STATS_SIZE).data, STATS_SIZE, STATS_SIZE);
   } catch (err) {
     log.warn('view statistics unavailable', err);
     return null;

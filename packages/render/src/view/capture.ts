@@ -84,3 +84,44 @@ export function viewRegion(bw: number, bh: number, px: number): { x: number; y: 
   if (!(px >= 16) || !(bw >= px) || !(bh >= px)) return null;
   return { x: 0, y: 0, size: Math.floor(px) };
 }
+
+/** Field of view (degrees) of critique captures: narrow enough to read as orthographic. */
+export const CAPTURE_FOV_DEG = 12;
+
+/** A perspective camera pose equivalent to an orthographic {@link ViewPose}. */
+export interface TelephotoPose {
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  fov: number;
+  near: number;
+  far: number;
+}
+
+/**
+ * Convert an orthographic view into a narrow-field perspective view that
+ * frames the same square (`halfSize` at the target), looking from the same
+ * direction. Captures then reuse the main perspective camera: a second
+ * camera would make the renderer build a second set of per-object GPU state
+ * (render objects, uniform buffers) for every world, which some browsers
+ * reclaim only lazily.
+ */
+export function telephotoPose(pose: ViewPose, fovDeg: number = CAPTURE_FOV_DEG): TelephotoPose {
+  const fov = Math.max(1, Math.min(60, Number.isFinite(fovDeg) ? fovDeg : CAPTURE_FOV_DEG));
+  const dx = pose.position[0] - pose.target[0];
+  const dy = pose.position[1] - pose.target[1];
+  const dz = pose.position[2] - pose.target[2];
+  const len = Math.hypot(dx, dy, dz) || 1;
+  const half = Math.max(0.01, pose.halfSize);
+  const dist = half / Math.tan((fov * Math.PI) / 360);
+  // The scene spans about ±half around the target along the view axis (halfSize ≈ 1.08 × radius).
+  const depth = half * 1.5 + 1;
+  return {
+    position: [pose.target[0] + (dx / len) * dist, pose.target[1] + (dy / len) * dist, pose.target[2] + (dz / len) * dist],
+    target: [pose.target[0], pose.target[1], pose.target[2]],
+    up: [pose.up[0], pose.up[1], pose.up[2]],
+    fov,
+    near: Math.max(0.05, dist - depth),
+    far: dist + depth,
+  };
+}

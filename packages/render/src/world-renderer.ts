@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
+import { Box3, Color, FogExp2, Frustum, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -24,7 +24,7 @@ import { createTransformControls, TransformGizmo, type GizmoChange, type GizmoMo
 import { Avatar } from './view/avatar';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
-import { captureMime, captureSize, MAX_VIEWS, viewPose, viewRegion, type CaptureView } from './view/capture';
+import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
@@ -148,6 +148,9 @@ const _size = new Vector2();
 const _buffer = new Vector2();
 const _savedViewport = new Vector4();
 const _savedScissor = new Vector4();
+const _savedCamPos = new Vector3();
+const _savedCamQuat = new Quaternion();
+const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _target = new Vector3();
@@ -227,7 +230,6 @@ export class WorldRenderer {
   private readonly grow = new GrowIn();
   private growEnabled = true;
   private post: PostPipeline | null = null;
-  private ortho: OrthographicCamera | null = null;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
   private viewCanvas: HTMLCanvasElement | null = null;
   private boundsDirty = true;
@@ -960,22 +962,52 @@ export class WorldRenderer {
     const px = captureSize(size, 512);
     this.grow.withFullScale(() => this.sync.computeBounds(_bounds));
     const bounds = _bounds.isEmpty() ? null : { min: _bounds.min.toArray() as Vec3, max: _bounds.max.toArray() as Vec3 };
-    const cam = (this.ortho ??= new OrthographicCamera(-1, 1, 1, -1, 0.05, 1000));
+    // The main camera, re-aimed per view and restored below (see telephotoPose for why not a second camera).
+    const cam = this.perspective;
+    _savedCamPos.copy(cam.position);
+    _savedCamQuat.copy(cam.quaternion);
+    _savedCamUp.copy(cam.up);
+    const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
     // Hide view-dependent decorations; give the background a flat sky color.
     const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root];
     const wasVisible = hidden.map((o) => o.visible);
+    // Neutralize fog through its density uniform: removing it (scene.fog = null) changes every
+    // material's shader, and each capture then built a fog-less variant of every object's GPU
+    // state, which Firefox reclaims only lazily (memory grew by ~90 MB per agent turn).
     const fog = this.scene.fog;
+    const fogDensity = fog instanceof FogExp2 ? fog.density : null;
     const background = this.scene.background;
     for (const o of hidden) o.visible = false;
-    // PROBE this.scene.fog = null;
+    if (fog instanceof FogExp2) fog.density = 0;
+    else this.scene.fog = null;
     this.scene.background = new Color(this.env.skyState.horizon);
+    let restored = false;
+    const restore = (): void => {
+      if (restored) return;
+      restored = true;
+      hidden.forEach((o, i) => {
+        o.visible = wasVisible[i] ?? true;
+      });
+      this.scene.fog = fog;
+      if (fog instanceof FogExp2 && fogDensity !== null) fog.density = fogDensity;
+      this.scene.background = background;
+      cam.position.copy(_savedCamPos);
+      cam.quaternion.copy(_savedCamQuat);
+      cam.up.copy(_savedCamUp);
+      cam.fov = saved.fov;
+      cam.aspect = saved.aspect;
+      cam.near = saved.near;
+      cam.far = saved.far;
+      cam.zoom = saved.zoom;
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    };
     try {
       const renderView = (view: CaptureView): void => {
-          const pose = viewPose(bounds, view);
-          cam.left = -pose.halfSize;
-          cam.right = pose.halfSize;
-          cam.top = pose.halfSize;
-          cam.bottom = -pose.halfSize;
+          const pose = telephotoPose(viewPose(bounds, view));
+          cam.fov = pose.fov;
+          cam.aspect = 1;
+          cam.zoom = 1;
           cam.near = pose.near;
           cam.far = pose.far;
           cam.position.set(pose.position[0], pose.position[1], pose.position[2]);
@@ -990,28 +1022,23 @@ export class WorldRenderer {
         // resizing it: a resize reallocates the canvas buffers (MSAA, depth, post targets) twice
         // per capture, which Firefox reclaims lazily — memory then grows with every agent turn.
         const region = viewRegion(this.renderer.getDrawingBufferSize(_buffer).x, _buffer.y, px);
-        if (!region) {
-          return this.withTemporarySize(px, px, () =>
-            list.map((view) => {
+        // Restore the camera, fog, sky and decorations before the helpers redraw the normal frame.
+        const captureAll = (grabOne: () => string): string[] => {
+          try {
+            return list.map((view) => {
               renderView(view);
-              return grab(this.domElement, px, px, 'image/jpeg');
-            }),
-          );
-        }
+              return grabOne();
+            });
+          } finally {
+            restore();
+          }
+        };
+        if (!region) return this.withTemporarySize(px, px, () => captureAll(() => grab(this.domElement, px, px, 'image/jpeg')));
         const out = (this.viewCanvas ??= document.createElement('canvas'));
-        return this.withViewportRegion(region, () =>
-          list.map((view) => {
-            renderView(view);
-            return grabRegion(this.domElement, out, region.x, region.y, region.size, px, 'image/jpeg');
-          }),
-        );
+        return this.withViewportRegion(region, () => captureAll(() => grabRegion(this.domElement, out, region.x, region.y, region.size, px, 'image/jpeg')));
       });
     } finally {
-      hidden.forEach((o, i) => {
-        o.visible = wasVisible[i] ?? true;
-      });
-      this.scene.fog = fog;
-      this.scene.background = background;
+      restore();
     }
   }
 
