@@ -7,7 +7,10 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
+  createBridgeAccountApi,
   createBridgeProvider,
+  createLocalAiApi,
+  createLocalProvider,
   createHttpProvider,
   createMockProvider,
   createWebLlmProvider,
@@ -16,6 +19,9 @@ import {
   ProviderError,
   type BridgeBackendStatus,
   type BridgeStatus,
+  type LocalAiApi,
+  type LocalStatus,
+  type LoginState,
   type Provider,
   type WebLlmEngineLike,
 } from '@aether/agent';
@@ -31,17 +37,22 @@ export const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:8790';
 /** Bridge connection states (shown as badges). */
 export type BridgeState = 'unpaired' | 'checking' | 'ready' | 'not_logged_in' | 'offline' | 'error';
 
+/** Local AI states: 'off' when the server does not offer it (hosted, or not running locally). */
+export type LocalState = 'off' | 'checking' | 'ready' | 'not_logged_in' | 'error';
+
 /** Observable connection state. */
 export interface AiConnectionState {
-  bridge: { url: string; paired: boolean; state: BridgeState; detail: string; backends: BridgeBackendStatus[] };
-  server: { state: 'checking' | 'live' | 'mock' | 'offline'; providers: string[]; byok: boolean };
+  /** Local AI: the signed-in Codex / Claude Code of this computer, through the Aether server's workers. */
+  local: { state: LocalState; detail: string; backends: BridgeBackendStatus[]; account: LocalStatus['account']; jobs: number; login: LoginState | null };
+  bridge: { url: string; paired: boolean; state: BridgeState; detail: string; backends: BridgeBackendStatus[]; login: LoginState | null };
+  server: { state: 'checking' | 'live' | 'mock' | 'offline'; providers: string[]; byok: boolean; local: boolean };
   webllm: { state: 'idle' | 'unsupported' | 'loading' | 'ready' | 'error'; progress: number; detail: string; model: string | null };
   byok: { provider: 'anthropic' | 'openai' } | null;
 }
 
 /** What a send will use. */
 export interface ResolvedConnection {
-  kind: 'offline' | 'server' | 'bridge' | 'webllm' | 'byok';
+  kind: 'offline' | 'local' | 'server' | 'bridge' | 'webllm' | 'byok';
   /** Short label for badges, e.g. "Codex · gpt-6.1-sol". */
   label: string;
   /** False when the chosen connection is known to be unusable right now. */
@@ -50,6 +61,8 @@ export interface ResolvedConnection {
   reason?: string;
   /** Whether the vision critic can see rendered views through it. */
   vision: boolean;
+  /** Local AI can run deep builds (agentic workers). */
+  worker?: boolean;
 }
 
 /** Collaborators (injectable for tests). */
@@ -62,10 +75,10 @@ export interface AiConnectionDeps {
 
 /** Parse an untrusted `/api/health` body. */
 export function parseServerHealth(body: unknown): AiConnectionState['server'] {
-  if (typeof body !== 'object' || body === null) return { state: 'offline', providers: [], byok: false };
+  if (typeof body !== 'object' || body === null) return { state: 'offline', providers: [], byok: false, local: false };
   const b = body as Record<string, unknown>;
   const providers = Array.isArray(b['providers']) ? b['providers'].filter((p): p is string => typeof p === 'string').slice(0, 8).map((p) => p.slice(0, 40)) : [];
-  return { state: b['ok'] === true && b['mode'] === 'live' ? 'live' : 'mock', providers, byok: b['byok'] === true };
+  return { state: b['ok'] === true && b['mode'] === 'live' ? 'live' : 'mock', providers, byok: b['byok'] === true, local: b['local'] === true };
 }
 
 const BACKEND_LABEL: Record<'codex' | 'claude-code', string> = { codex: 'Codex', 'claude-code': 'Claude Code' };
@@ -106,6 +119,8 @@ export class AiConnection {
   private byokKey: string | null = null;
   private engine: WebLlmEngineLike | null = null;
   private refreshing: Promise<void> | null = null;
+  /** Local AI client (same origin). */
+  readonly localApi: LocalAiApi;
 
   constructor(private readonly deps: AiConnectionDeps = {}) {
     this.fetchImpl = deps.fetch ?? ((input, init) => globalThis.fetch(input, init));
@@ -114,9 +129,11 @@ export class AiConnection {
     const byok = loadByokSession(this.session);
     this.token = bridge?.token ?? null;
     this.byokKey = byok?.key ?? null;
+    this.localApi = createLocalAiApi({ fetch: this.fetchImpl });
     this.store = createStore<AiConnectionState>()(() => ({
-      bridge: { url: bridge?.url ?? DEFAULT_BRIDGE_URL, paired: bridge !== null, state: bridge ? 'checking' : 'unpaired', detail: '', backends: [] },
-      server: { state: 'checking', providers: [], byok: false },
+      local: { state: 'checking', detail: '', backends: [], account: null, jobs: 0, login: null },
+      bridge: { url: bridge?.url ?? DEFAULT_BRIDGE_URL, paired: bridge !== null, state: bridge ? 'checking' : 'unpaired', detail: '', backends: [], login: null },
+      server: { state: 'checking', providers: [], byok: false, local: false },
       webllm: { state: 'idle', progress: 0, detail: '', model: null },
       byok: byok ? { provider: byok.provider } : null,
     }));
@@ -132,18 +149,67 @@ export class AiConnection {
     return this.refreshing;
   }
 
-  /** Probe `/api/health`. */
+  /** Probe `/api/health` (and local AI when the server offers it). */
   async probeServer(): Promise<void> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), HEALTH_TIMEOUT_MS);
     try {
       const res = await this.fetchImpl(API.health, { signal: ctrl.signal, headers: { accept: 'application/json' } });
-      this.store.setState({ server: res.ok ? parseServerHealth(await res.json()) : { state: 'offline', providers: [], byok: false } });
+      this.store.setState({ server: res.ok ? parseServerHealth(await res.json()) : { state: 'offline', providers: [], byok: false, local: false } });
     } catch {
-      this.store.setState({ server: { state: 'offline', providers: [], byok: false } });
+      this.store.setState({ server: { state: 'offline', providers: [], byok: false, local: false } });
     } finally {
       clearTimeout(timer);
     }
+    await this.refreshLocal();
+  }
+
+  /** Re-read local AI status (sign-in state, models, account). Never throws. */
+  async refreshLocal(): Promise<void> {
+    if (!this.store.getState().server.local) {
+      this.setLocal({ state: 'off', detail: '', backends: [], account: null, jobs: 0, login: null });
+      return;
+    }
+    const cur = this.store.getState().local;
+    if (cur.state === 'off') this.setLocal({ state: 'checking' });
+    try {
+      const st = await this.localApi.status();
+      const ready = st.backends.some((b) => b.installed && b.loggedIn);
+      const detail = ready ? st.backends.filter((b) => b.loggedIn).map((b) => b.label).join(' and ') + ' ready on this computer' : st.backends.map((b) => `${b.label}: ${b.detail}`).join(' · ');
+      this.setLocal({ state: ready ? 'ready' : 'not_logged_in', detail: detail.slice(0, 240), backends: st.backends, account: st.account, jobs: st.jobs, login: st.login });
+    } catch (err) {
+      this.setLocal({ state: 'error', detail: err instanceof Error ? err.message.slice(0, 200) : 'local AI error' });
+    }
+  }
+
+  private setLocal(patch: Partial<AiConnectionState['local']>): void {
+    this.store.setState((s) => ({ local: { ...s.local, ...patch } }));
+  }
+
+  /** Sign-in/sign-out API of the bridge (null when not paired). */
+  bridgeAccounts(): ReturnType<typeof createBridgeAccountApi> | null {
+    if (!this.token) return null;
+    try {
+      return createBridgeAccountApi({ baseUrl: this.store.getState().bridge.url, token: this.token, fetch: this.fetchImpl });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Record the bridge's sign-in state (polled by the settings pane). */
+  setBridgeLogin(login: LoginState | null): void {
+    this.setBridge({ login });
+  }
+
+  /** Forget a deleted project's resumable conversations everywhere (best effort). */
+  async forgetProject(projectId: string): Promise<void> {
+    const key = projectSessionKey(projectId);
+    if (!key) return;
+    const tasks: Array<Promise<unknown>> = [];
+    if (this.store.getState().server.local) tasks.push(this.localApi.clearSessions(key));
+    const bridge = this.bridgeAccounts();
+    if (bridge) tasks.push(bridge.clearSessions(key));
+    await Promise.allSettled(tasks);
   }
 
   /** Re-read the bridge status (login state, models). */
@@ -253,6 +319,18 @@ export class AiConnection {
   /** Resolve preferences to a concrete connection (no network). */
   resolve(prefs: AiPrefs): ResolvedConnection {
     const s = this.store.getState();
+    const local = (): ResolvedConnection => {
+      const choice = effectiveBridgeChoice(prefs, s.local.backends);
+      const id = choice.backend;
+      const label = `${BACKEND_LABEL[id]} on this computer${choice.model ? ` · ${choice.model}` : ''}`;
+      if (s.local.state === 'off') return { kind: 'local', label, ready: false, reason: 'local AI needs the Aether server running on this computer', vision: false };
+      if (s.local.state === 'checking') return { kind: 'local', label, ready: false, reason: 'still checking local AI', vision: false };
+      if (s.local.state === 'error') return { kind: 'local', label, ready: false, reason: s.local.detail || 'local AI is not responding', vision: false };
+      const status = s.local.backends.find((b) => b.id === id);
+      if (!status?.loggedIn) return { kind: 'local', label, ready: false, reason: `${BACKEND_LABEL[id]} is not signed in on this computer`, vision: false };
+      const vision = status.models.find((m) => m.id === choice.model)?.vision ?? true;
+      return { kind: 'local', label, ready: true, vision, worker: true };
+    };
     const bridge = (): ResolvedConnection => {
       const choice = effectiveBridgeChoice(prefs, s.bridge.backends);
       const id = choice.backend;
@@ -273,6 +351,8 @@ export class AiConnection {
           : { kind: 'server', label: 'Server model', ready: false, reason: 'this server has no model configured', vision: false };
       case 'bridge':
         return bridge();
+      case 'local':
+        return local();
       case 'webllm': {
         const m = WEBLLM_MODELS.find((x) => x.id === prefs.webllmModel);
         const label = `On-device · ${m?.label ?? prefs.webllmModel}`;
@@ -286,9 +366,16 @@ export class AiConnection {
         return { kind: 'byok', label, ready: true, vision: true };
       }
       case 'auto': {
+        // Local AI first (Codex, then Claude Code, unless the user picked a backend that is signed in).
+        const l = local();
+        if (l.ready) return l;
         const b = bridge();
         if (b.ready) return b;
         if (s.server.state === 'live') return { kind: 'server', label: s.server.providers[0] ?? 'Server model', ready: true, vision: true };
+        if (s.webllm.state === 'ready' && this.engine) {
+          const m = WEBLLM_MODELS.find((x) => x.id === s.webllm.model);
+          return { kind: 'webllm', label: `On-device · ${m?.label ?? s.webllm.model ?? ''}`, ready: true, vision: false };
+        }
         return { kind: 'offline', label: 'Offline planner', ready: true, vision: false };
       }
     }
@@ -303,13 +390,17 @@ export class AiConnection {
         return null;
       case 'server':
         return createHttpProvider({ endpoint: API.llm, fetch: this.fetchImpl, name: 'server' });
+      case 'local': {
+        const { backend, model, effort } = effectiveBridgeChoice(prefs, s.local.backends);
+        return createLocalProvider({ backend, effort, fetch: this.fetchImpl, ...(model ? { model } : {}) });
+      }
       case 'bridge': {
         if (!this.token) return null;
         const { backend, model, effort } = effectiveBridgeChoice(prefs, s.bridge.backends);
         return createBridgeProvider({ baseUrl: s.bridge.url, token: this.token, backend, effort, fetch: this.fetchImpl, ...(model ? { model } : {}) });
       }
       case 'webllm':
-        return this.engine ? createWebLlmProvider({ engine: this.engine, model: prefs.webllmModel }) : null;
+        return this.engine ? createWebLlmProvider({ engine: this.engine, model: s.webllm.model ?? prefs.webllmModel }) : null;
       case 'byok':
         return this.byokKey
           ? createHttpProvider({ endpoint: `${API.llm}/byok`, fetch: this.fetchImpl, name: prefs.byokProvider, retry: { maxRetries: 0 }, headers: { 'x-aether-provider': prefs.byokProvider, 'x-aether-key': this.byokKey } })
@@ -321,6 +412,13 @@ export class AiConnection {
   offline(): Provider {
     return createMockProvider({ library: GENERATOR_LIBRARY });
   }
+}
+
+/** Session key of a project's resumable conversations (`p-<id>`), or null for an invalid id. */
+export function projectSessionKey(projectId: string | null | undefined): string | null {
+  if (!projectId) return null;
+  const key = `p-${projectId.toLowerCase()}`;
+  return /^[a-z0-9][a-z0-9-]{7,79}$/.test(key) ? key : null;
 }
 
 let shared: AiConnection | null = null;

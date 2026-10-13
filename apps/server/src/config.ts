@@ -37,6 +37,12 @@ export interface ServerConfig {
   readonly headless: { readonly model?: string; readonly effort: 'low' | 'medium' | 'high' };
   /** Accept visitors' own API keys on `/api/llm/byok` (forwarded per request, never stored or logged). */
   readonly byok: boolean;
+  /**
+   * Local AI (`/api/local/*`): the machine owner's signed-in Codex / Claude Code
+   * through worker processes. Only for a server running on the user's own
+   * computer: off in production and on recognised hosting platforms.
+   */
+  readonly localAi: boolean;
   /** API keys (secrets). Never log or return these. */
   readonly keys: { readonly anthropic?: string; readonly openai?: string };
   readonly baseUrls: { readonly anthropic?: string; readonly openai?: string };
@@ -153,6 +159,7 @@ const EnvSchema = z.object({
   AETHER_HEADLESS_MODEL: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, 'invalid model id').optional(),
   AETHER_HEADLESS_EFFORT: z.enum(['low', 'medium', 'high']).optional().default('low'),
   AETHER_BYOK: bool(true),
+  AETHER_LOCAL_AI: z.enum(['auto', 'on', 'off']).optional().default('auto'),
   ANTHROPIC_API_KEY: optionalSecret,
   OPENAI_API_KEY: optionalSecret,
   ANTHROPIC_BASE_URL: optionalHttpsUrl,
@@ -208,6 +215,15 @@ export class ConfigError extends Error {
   }
 }
 
+/** Environment markers of hosting platforms and containers (local AI is never offered there). */
+const HOSTED_MARKERS = ['VERCEL', 'FLY_APP_NAME', 'RENDER', 'RAILWAY_ENVIRONMENT', 'K_SERVICE', 'AWS_LAMBDA_FUNCTION_NAME', 'DYNO', 'NETLIFY', 'KUBERNETES_SERVICE_HOST', 'AETHER_HOSTED'] as const;
+
+/** The hosting platform marker found in `env`, or null when the server looks local. */
+export function hostedPlatform(env: Readonly<Record<string, string | undefined>>): string | null {
+  for (const k of HOSTED_MARKERS) if (typeof env[k] === 'string' && env[k] !== '' && env[k] !== '0' && env[k] !== 'false') return k;
+  return null;
+}
+
 function resolvePath(p: string | undefined, fallback: string): string {
   if (p === undefined || p === '') return fallback;
   return isAbsolute(p) ? p : resolve(REPO_ROOT, p);
@@ -225,6 +241,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
   const e = parsed.data;
   const production = e.NODE_ENV === 'production';
   const serveStatic = e.SERVE_STATIC ?? production;
+  const hosted = hostedPlatform(env);
+  if (e.AETHER_LOCAL_AI === 'on' && hosted) throw new ConfigError([`AETHER_LOCAL_AI: local AI cannot be enabled on a hosted platform (${hosted})`]);
   return {
     port: e.PORT,
     host: e.HOST,
@@ -233,6 +251,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
     provider: e.AETHER_PROVIDER,
     headless: { ...(e.AETHER_HEADLESS_MODEL ? { model: e.AETHER_HEADLESS_MODEL } : {}), effort: e.AETHER_HEADLESS_EFFORT },
     byok: e.AETHER_BYOK,
+    localAi: e.AETHER_LOCAL_AI === 'on' || (e.AETHER_LOCAL_AI === 'auto' && !production && hosted === null),
     keys: { anthropic: e.ANTHROPIC_API_KEY, openai: e.OPENAI_API_KEY },
     baseUrls: { anthropic: e.ANTHROPIC_BASE_URL, openai: e.OPENAI_BASE_URL },
     models: {

@@ -14,6 +14,7 @@ import { createLiveProvider } from './llm/providers';
 import { planProviders } from './llm/provider-plan';
 import { createLogger } from './logger';
 import type { LiveLlm } from './routes/llm';
+import { LocalAi } from '@aether/bridge';
 
 /** Hard deadline for draining in-flight requests on shutdown. */
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -29,8 +30,13 @@ async function main(): Promise<void> {
     ? await loadSandboxValidator(logger, config.generators.timeoutMs, { maxQueue: config.generators.maxQueue })
     : null;
 
+  // Local AI (the machine owner's signed-in CLIs): never on hosted deployments (see config.localAi).
+  const local = config.localAi ? new LocalAi({ dataDir: resolve(config.dataDir, 'local-ai') }) : null;
+  if (local) await local.init();
+
   const shutdown = new AbortController();
   const app = createApp(config, {
+    local,
     logger,
     llm,
     providers: plan.mode === 'live' ? plan.available : ['mock'],
@@ -46,6 +52,7 @@ async function main(): Promise<void> {
       provider: plan.active?.name ?? 'mock',
       serveStatic: config.serveStatic,
       generatorValidation: generatorValidator !== null,
+      localAi: local !== null,
     });
   });
   logger.debug('config', { config: JSON.stringify(redactConfig(config)) });
@@ -57,6 +64,7 @@ async function main(): Promise<void> {
     logger.info('shutting down', { signal });
     shutdown.abort();
     void generatorValidator?.dispose();
+    local?.dispose();
     const force = setTimeout(() => {
       logger.warn('forced exit after grace period');
       process.exit(1);

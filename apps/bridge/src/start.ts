@@ -7,7 +7,9 @@ import type { AddressInfo } from 'node:net';
 import { probeClaude, probeCodex, cached } from './backends/status';
 import type { BridgeConfig } from './config';
 import { createHeadlessBackends, resolveCommands } from './headless';
+import { LoginManager } from './auth';
 import { Pairing } from './pairing';
+import { createWorkerSessionStore } from './worker/text-backend';
 import { createBridgeHandler, type BridgeLogger } from './server';
 
 /** A listening bridge. */
@@ -38,12 +40,22 @@ function listen(server: Server, port: number): Promise<number> {
 /** Start listening; `onCode` receives every pairing code (rotations included). */
 export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeLogger; onCode?: (code: string) => void } = {}): Promise<RunningBridge> {
   const commands = resolveCommands({ codexPath: config.codexPath, claudePath: config.claudePath });
-  const backends = createHeadlessBackends({ codexPath: config.codexPath, claudePath: config.claudePath, timeoutMs: config.timeoutMs }, commands);
+  const sessions = createWorkerSessionStore();
+  const backends = createHeadlessBackends({ codexPath: config.codexPath, claudePath: config.claudePath, timeoutMs: config.timeoutMs, sessions }, commands);
   const probeDeps = { codexCommand: commands.codex, claudeCommand: commands.claude };
-  const status = cached(async () => Promise.all([probeCodex(probeDeps), probeClaude(probeDeps)]), 30_000);
+  let status = cached(async () => Promise.all([probeCodex(probeDeps), probeClaude(probeDeps)]), 30_000);
+  const login = new LoginManager({ codexCommand: commands.codex, claudeCommand: commands.claude });
+  let lastAuth = 0;
+  const onAuthChange = (): void => {
+    const s = login.status();
+    const stamp = s?.finished ? s.startedAt : Date.now();
+    if (stamp === lastAuth) return;
+    lastAuth = stamp;
+    status = cached(async () => Promise.all([probeCodex(probeDeps), probeClaude(probeDeps)]), 30_000);
+  };
   const pairing = new Pairing(opts.onCode);
   let boundPort = config.port;
-  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status, ...(opts.logger ? { logger: opts.logger } : {}) }));
+  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status: () => status(), login, sessions, onAuthChange, ...(opts.logger ? { logger: opts.logger } : {}) }));
   server.requestTimeout = config.timeoutMs + 60_000;
   server.headersTimeout = 30_000;
   server.keepAliveTimeout = 5_000;
@@ -59,6 +71,8 @@ export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeL
     url: `http://127.0.0.1:${boundPort}`,
     pairing,
     close: () => new Promise<void>((resolve) => {
+      login.dispose();
+      sessions.clear();
       server.closeAllConnections();
       server.close(() => resolve());
     }),

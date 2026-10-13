@@ -37,7 +37,7 @@ export function corsAllowlist(allowedOrigins: readonly string[]): MiddlewareHand
   const allowed = new Set(allowedOrigins);
   return cors({
     origin: (origin) => (allowed.has(origin) ? origin : null),
-    allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'X-Request-Id', 'X-Edit-Token', 'X-Aether-Provider', 'X-Aether-Key'],
     exposeHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Limit', 'RateLimit-Remaining'],
     maxAge: 600,

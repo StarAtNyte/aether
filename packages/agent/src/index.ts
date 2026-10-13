@@ -45,6 +45,7 @@ export { extractJsonObject } from './emulation/json';
 export * from './bridge/protocol';
 export * from './bridge/local-protocol';
 export { BRIDGE_COMPLETE_TIMEOUT_MS, BRIDGE_PROBE_TIMEOUT_MS, createBridgeProvider, fetchBridgeStatus, pairBridge, type BridgeProviderOptions } from './bridge/client';
+export { createLocalAiApi, createLocalProvider, createBridgeAccountApi, parseSseBlock, LOCAL_AI_BASE, type AiAccountApi, type LocalAiApi, type LocalProviderOptions } from './bridge/local-client';
 export { createFallbackProvider, type FallbackNotice, type FallbackProvider, type FallbackProviderOptions } from './providers/fallback';
 export { createWebLlmBackend, createWebLlmProvider, type WebLlmEngineLike, type WebLlmProviderOptions } from './providers/webllm';
 export { errorMessage } from './providers/errors';

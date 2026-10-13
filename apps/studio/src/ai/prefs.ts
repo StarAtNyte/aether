@@ -7,8 +7,13 @@
 import { z } from 'zod';
 import { readJson, writeJson, type StorageLike } from '../lib/storage';
 
-/** Connection modes. 'auto' = local bridge when paired and ready, else the server model, else offline. */
-export const AI_MODES = ['auto', 'offline', 'server', 'bridge', 'webllm', 'byok'] as const;
+/**
+ * Connection modes. 'auto' picks, in order: local AI on this computer (Codex,
+ * then Claude Code), the paired bridge, the server model, an on-device model
+ * that is already loaded, then the offline planner. A personal API key is
+ * only used when chosen explicitly.
+ */
+export const AI_MODES = ['auto', 'local', 'offline', 'server', 'bridge', 'webllm', 'byok'] as const;
 /** A connection mode. */
 export type AiMode = (typeof AI_MODES)[number];
 
@@ -40,6 +45,10 @@ export const AiPrefsSchema = z.object({
   refine: z.number().int().min(0).max(MAX_REFINE).catch(1),
   webllmModel: z.enum(WEBLLM_MODELS.map((m) => m.id) as [string, ...string[]]).catch(WEBLLM_MODELS[0].id),
   byokProvider: z.enum(['anthropic', 'openai']).catch('anthropic'),
+  /** Deep build: new assets are built by a coding agent that iterates with a checker (local AI only). */
+  deep: z.boolean().catch(true),
+  /** Iterations a deep build may spend (1–6). */
+  deepTurns: z.number().int().min(1).max(6).catch(3),
 });
 /** AI preferences. */
 export type AiPrefs = z.infer<typeof AiPrefsSchema>;

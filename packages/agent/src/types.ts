@@ -72,7 +72,7 @@ export type AgentEvent =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'error'; text: string }
-  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number } };
+  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] } };
 
 /** The environment the agent edits (studio: history + physics; tests: fakes). */
 export interface AgentHost {

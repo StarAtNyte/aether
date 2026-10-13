@@ -40,11 +40,20 @@ import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, runVerification } from './AgentBridge';
-import { aiConnection, type AiConnection, type ResolvedConnection } from '../ai/connection';
+import { aiConnection, effectiveBridgeChoice, projectSessionKey, type AiConnection, type ResolvedConnection } from '../ai/connection';
 import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
 import { fallbackText } from '../ai/messages';
 import { Simulation } from './Simulation';
+
+/** Token usage of one turn (all agent runs of a prompt). */
+interface RunUsage {
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+  /** Models that answered, in order of first use. */
+  models: string[];
+}
 import { isNewWorld } from './worldQueries';
 
 const log = createLogger('studio');
@@ -712,17 +721,20 @@ export class Studio {
     const abort = new AbortController();
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
-    const usage = { inputTokens: 0, outputTokens: 0, calls: 0 };
+    let session: string | undefined;
+    const usage: RunUsage = { inputTokens: 0, outputTokens: 0, calls: 0, models: [] };
     try {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
       // Small on-device models get the condensed prompt that fits their ~4k-token context.
       const promptProfile: PromptProfile = primary && resolved.kind === 'webllm' ? 'compact' : 'full';
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile });
-      status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}) }), entryId, abort, usage);
+      const buildAsset = primary && resolved.kind === 'local' && resolved.worker && prefs.deep ? this.deepBuilder(entryId, prefs) : undefined;
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}) });
+      session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
+      status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}), ...(session ? { session } : {}) }), entryId, abort, usage);
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
-        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile });
+        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
@@ -740,7 +752,7 @@ export class Studio {
       }
     } finally {
       if (this.abort === abort) this.abort = null;
-      push({ type: 'done', ...usage, ms: Math.round(performance.now() - startedAt), via });
+      push({ type: 'done', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, calls: usage.calls, ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
@@ -750,14 +762,54 @@ export class Studio {
     }
   }
 
+  /**
+   * Deep build through local AI: the server's coding-agent worker builds the
+   * generator in a throwaway workspace (iterating with its checker); progress
+   * streams into the chat. The result is validated again by the agent.
+   */
+  private deepBuilder(entryId: number, prefs: StudioState['aiPrefs']): NonNullable<ConstructorParameters<typeof WorldAgent>[0]['buildAsset']> {
+    return async (spec, signal) => {
+      const ai = this.ai;
+      const { backend, model, effort } = effectiveBridgeChoice(prefs, ai.store.getState().local.backends);
+      const turns = prefs.deepTurns;
+      const budget = { turns, minutes: Math.min(20, 3 + turns * 2) };
+      const push = (text: string): void => {
+        this.store.getState().pushEvent(entryId, { type: 'status', text: text.slice(0, 300) });
+        this.store.getState().setAgentStep(text.slice(0, 120));
+      };
+      let jobId: string | null = null;
+      const onAbort = (): void => {
+        if (jobId) void ai.localApi.cancelJob(jobId).catch(() => undefined);
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        const job = await ai.localApi.startJob({ kind: 'asset', backend, effort, spec, budget, ...(model ? { model } : {}) });
+        jobId = job.id;
+        push(`Deep build of "${spec.id}" (up to ${budget.turns} rounds, ${budget.minutes} min)…`);
+        const done = await ai.localApi.followJob(job.id, { ...(signal ? { signal } : {}), onEvent: (e) => {
+          if (e.phase !== 'queued' || e.seq > 1) push(e.message);
+        } });
+        if (done.status !== 'done' || !done.result) return { ok: false, error: done.error ?? `the build ${done.status}` };
+        const r = done.result;
+        return { ok: true, def: r.def, note: `${r.turns} round${r.turns === 1 ? '' : 's'}${r.checkerPassed ? ', checks passed' : ''}${r.model ? ` · ${r.model}` : ''}` };
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        return { ok: false, error: errorMessage(e).slice(0, 300) };
+      } finally {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    };
+  }
+
   /** Stream agent events into the chat entry; returns the turn status. The agent's own 'done' is folded into `usage`. */
-  private async streamRun(run: AsyncGenerator<AgentEvent>, entryId: number, abort: AbortController, usage: { inputTokens: number; outputTokens: number; calls: number }): Promise<'done' | 'error' | 'aborted'> {
+  private async streamRun(run: AsyncGenerator<AgentEvent>, entryId: number, abort: AbortController, usage: RunUsage): Promise<'done' | 'error' | 'aborted'> {
     let status: 'done' | 'error' | 'aborted' = 'done';
     for await (const event of run) {
       if (event.type === 'done') {
         usage.inputTokens += event.usage.inputTokens;
         usage.outputTokens += event.usage.outputTokens;
         usage.calls += event.usage.calls;
+        for (const m of event.usage.models ?? []) if (!usage.models.includes(m) && usage.models.length < 6) usage.models.push(m.slice(0, 64));
         continue;
       }
       const view = toEventView(event);
@@ -791,9 +843,10 @@ export class Studio {
     critic: Provider | null;
     budget: number;
     abort: AbortController;
-    usage: { inputTokens: number; outputTokens: number; calls: number };
+    usage: RunUsage;
     history: ReturnType<typeof buildAgentHistory>;
     promptProfile: PromptProfile;
+    session?: string;
   }): Promise<'done' | 'aborted'> {
     let applied: string[] = [];
     for (let round = 0; round <= ctx.budget; round++) {
@@ -815,7 +868,7 @@ export class Studio {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
         const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
-        const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history }), ctx.entryId, ctx.abort, ctx.usage);
+        const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history, ...(ctx.session ? { session: ctx.session } : {}) }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';
         applied = ['targeted edits by the model'];
       } else {

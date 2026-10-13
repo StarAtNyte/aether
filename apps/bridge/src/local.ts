@@ -167,6 +167,7 @@ export class LocalAi {
   dispose(): void {
     this.jobs.dispose();
     this.login.dispose();
+    this.sessions.clear();
     stopAllWorkers();
   }
 }

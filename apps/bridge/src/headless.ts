@@ -7,6 +7,7 @@ import { createEmulatedProvider, type BridgeBackendId, type BridgeEffort, type P
 import { createClaudeCodeBackend } from './backends/claude';
 import { createCodexBackend } from './backends/codex';
 import { cached, listCodexMcpServers } from './backends/status';
+import type { SessionStore } from './sessions';
 import { which } from './which';
 
 /** Options of {@link createHeadlessBackends}. */
@@ -15,6 +16,8 @@ export interface HeadlessOptions {
   claudePath?: string | undefined;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  /** Resumable conversations per project (bridge); absent: every call starts fresh. */
+  sessions?: SessionStore;
 }
 
 /** Resolved CLI commands (null when not installed). */
@@ -36,8 +39,8 @@ export function createHeadlessBackends(opts: HeadlessOptions = {}, commands: Res
   const mcp = cached(() => listCodexMcpServers({ codexCommand: commands.codex, claudeCommand: null, ...(opts.env ? { env: opts.env } : {}) }), 60_000);
   return {
     // Without a codex on PATH the SDK falls back to its bundled CLI.
-    codex: createCodexBackend({ ...(commands.codex ? { codexPath: commands.codex } : {}), mcpServers: mcp, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.env ? { env: opts.env } : {}) }),
-    'claude-code': createClaudeCodeBackend({ command: commands.claude ?? 'claude', ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.env ? { env: opts.env } : {}) }),
+    codex: createCodexBackend({ ...(commands.codex ? { codexPath: commands.codex } : {}), mcpServers: mcp, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.env ? { env: opts.env } : {}), ...(opts.sessions ? { sessions: opts.sessions } : {}) }),
+    'claude-code': createClaudeCodeBackend({ command: commands.claude ?? 'claude', ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.env ? { env: opts.env } : {}), ...(opts.sessions ? { sessions: opts.sessions } : {}) }),
   };
 }
 

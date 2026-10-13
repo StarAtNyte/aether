@@ -36,7 +36,7 @@ export type ChatEventView =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'error'; text: string }
-  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string }
+  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string }
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
 
@@ -222,6 +222,10 @@ export function reviveEvent(v: unknown): ChatEventView | null {
       const d: ChatEventView = { type: 'done', inputTokens: num(v['inputTokens']), outputTokens: num(v['outputTokens']), calls: num(v['calls']) };
       if (typeof v['ms'] === 'number' && Number.isFinite(v['ms']) && v['ms'] >= 0) d.ms = Math.min(v['ms'], 3_600_000);
       if (typeof v['via'] === 'string') d.via = str(v['via'], 80);
+      if (Array.isArray(v['models'])) {
+        const models = v['models'].filter((m): m is string => typeof m === 'string').slice(0, 6).map((m) => str(m, 64));
+        if (models.length > 0) d.models = models;
+      }
       return d;
     }
     case 'notice':

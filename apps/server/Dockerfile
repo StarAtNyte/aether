@@ -17,6 +17,8 @@ RUN npm ci --no-audit --no-fund \
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production \
+    AETHER_HOSTED=1 \
+    AETHER_LOCAL_AI=off \
     PORT=8787 \
     HOST=0.0.0.0 \
     DATA_DIR=/data

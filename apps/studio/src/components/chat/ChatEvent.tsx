@@ -161,6 +161,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
     case 'done': {
       const parts: string[] = [];
       if (event.via) parts.push(event.via);
+      if (event.models && event.models.length > 0) parts.push(`answered by ${event.models.join(', ')}`);
       if (event.ms !== undefined) parts.push(formatElapsed(event.ms));
       if (event.calls > 0) parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in / ${compactCount(event.outputTokens)} out tokens`);
       return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;

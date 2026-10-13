@@ -5,6 +5,11 @@
  *   POST /v1/pair       { code } → { token }
  *   GET  /v1/status     → BridgeStatus                      (bearer token)
  *   POST /v1/complete   BridgeCompleteRequest → CompletionResponse (bearer token)
+ *   POST /v1/auth/login { backend } → LoginState       (bearer; runs the CLI's own sign-in on this machine)
+ *   GET  /v1/auth/login → { login }                     (bearer)
+ *   POST /v1/auth/login/cancel → { login }              (bearer)
+ *   POST /v1/auth/logout { backend } → { ok, message }  (bearer)
+ *   DELETE /v1/sessions/:project → { cleared }          (bearer; forget a project's conversations)
  *
  * Every request must target the loopback Host (DNS-rebinding guard) and, when
  * it carries an Origin, come from an allowlisted origin. CORS and Private
@@ -16,6 +21,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   BridgeCompleteRequestSchema,
   BridgePairRequestSchema,
+  LoginStartRequestSchema,
+  LogoutRequestSchema,
+  PROJECT_SESSION_RE,
   CompletionResponseSchema,
   createEmulatedProvider,
   ProviderError,
@@ -30,6 +38,8 @@ import type { BridgeConfig } from './config';
 import { BridgeError } from './errors';
 import type { Pairing } from './pairing';
 import { JobQueue } from './queue';
+import type { LoginManager } from './auth';
+import type { SessionStore } from './sessions';
 
 /** Bridge version reported by /v1/status. */
 export const BRIDGE_VERSION = '0.1.0';
@@ -51,6 +61,12 @@ export interface BridgeDeps {
   status: () => Promise<Array<Omit<BridgeBackendStatus, 'busy'>>>;
   logger?: BridgeLogger;
   now?: () => number;
+  /** CLI sign-in flows (absent: the auth endpoints answer not_found). */
+  login?: LoginManager;
+  /** Resumable conversations (absent: nothing to clear). */
+  sessions?: SessionStore;
+  /** Called after a sign-in finished or a sign-out (refresh cached status). */
+  onAuthChange?: () => void;
 }
 
 /** Global pairing attempts per minute (on top of the per-code limit). */
@@ -156,8 +172,48 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
       send(res, 200, { token: r.token }, cors);
       return;
     }
-    if (route !== 'GET /v1/status' && route !== 'POST /v1/complete') throw new BridgeError('not_found', 'Unknown endpoint.');
+    const sessionMatch = req.method === 'DELETE' ? /^\/v1\/sessions\/([a-z0-9-]{1,80})$/.exec(url.pathname) : null;
+    const known = route === 'GET /v1/status' || route === 'POST /v1/complete' || route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login' || sessionMatch !== null;
+    if (!known) throw new BridgeError('not_found', 'Unknown endpoint.');
     if (!deps.pairing.verify(bearer(req))) throw new BridgeError('unauthorized', 'Not paired with this bridge (or it restarted). Pair again with the code it printed.');
+
+    if (sessionMatch) {
+      const project = sessionMatch[1] ?? '';
+      if (!PROJECT_SESSION_RE.test(project)) throw new BridgeError('invalid_request', 'Invalid project key.');
+      send(res, 200, { cleared: deps.sessions?.clearProject(project) ?? 0 }, cors);
+      return;
+    }
+    if (route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login') {
+      const login = deps.login;
+      if (!login) throw new BridgeError('not_found', 'Sign-in is not available on this bridge.');
+      const state = (): unknown => {
+        const s = login.status();
+        if (s?.finished) deps.onAuthChange?.();
+        return s;
+      };
+      if (route === 'GET /v1/auth/login') return send(res, 200, { login: state() }, cors);
+      if (route === 'POST /v1/auth/login/cancel') {
+        login.cancel();
+        return send(res, 200, { login: state() }, cors);
+      }
+      if (route === 'POST /v1/auth/login') {
+        const body = LoginStartRequestSchema.safeParse(parseJson(await readBody(req, 1024)));
+        if (!body.success) throw new BridgeError('invalid_request', 'Send {"backend": "codex" | "claude-code"}.');
+        try {
+          return send(res, 200, login.start(body.data.backend), cors);
+        } catch (e) {
+          throw new BridgeError('invalid_request', e instanceof Error ? e.message.slice(0, 200) : 'Sign-in could not start.');
+        }
+      }
+      if (route === 'POST /v1/auth/logout') {
+        const body = LogoutRequestSchema.safeParse(parseJson(await readBody(req, 1024)));
+        if (!body.success) throw new BridgeError('invalid_request', 'Send {"backend": "codex" | "claude-code"}.');
+        const r = await login.logout(body.data.backend);
+        deps.onAuthChange?.();
+        return send(res, 200, r, cors);
+      }
+      throw new BridgeError('not_found', 'Unknown endpoint.');
+    }
 
     if (route === 'GET /v1/status') {
       const list = await deps.status();
@@ -224,7 +280,7 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
       }
       const headers: Record<string, string> = {
         ...cors,
-        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
         'access-control-allow-headers': 'authorization, content-type',
         'access-control-max-age': '600',
       };

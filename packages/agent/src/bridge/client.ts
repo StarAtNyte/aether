@@ -46,17 +46,21 @@ const CODE_FOR: Readonly<Record<BridgeErrorCode, ProviderErrorCode>> = {
   pairing_locked: 'rate_limit',
 };
 
-interface CallOptions {
-  method: 'GET' | 'POST';
+/** One request to the bridge or to local AI (internal to the clients). */
+export interface CallOptions {
+  method: 'GET' | 'POST' | 'DELETE';
   url: string;
   token?: string;
   body?: unknown;
   fetch: typeof fetch;
   timeoutMs: number;
   signal?: AbortSignal;
+  /** Message when the service cannot be reached. */
+  offline?: string;
 }
 
-async function call(opts: CallOptions): Promise<unknown> {
+/** Send one JSON request; bridge-format errors become {@link ProviderError}s. */
+export async function call(opts: CallOptions): Promise<unknown> {
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), opts.timeoutMs);
   const signal = anySignal([opts.signal, timeout.signal]);
@@ -75,7 +79,7 @@ async function call(opts: CallOptions): Promise<unknown> {
     } catch (e) {
       if (opts.signal?.aborted) throw new ProviderError('aborted', 'request aborted', { cause: e });
       if (timeout.signal.aborted) throw new ProviderError('timeout', `the bridge did not answer within ${Math.round(opts.timeoutMs / 1000)} s`, { cause: e, reason: 'timeout' });
-      throw new ProviderError('network', 'the local bridge is not running (start it with "npm run bridge")', { cause: e, reason: 'bridge_offline' });
+      throw new ProviderError('network', opts.offline ?? 'the local bridge is not running (start it with "npm run bridge")', { cause: e, reason: 'bridge_offline' });
     }
     let text: string;
     try {

@@ -124,6 +124,12 @@ export class SessionStore {
     return n;
   }
 
+  /** Forget everything (shutdown). */
+  clear(): void {
+    for (const e of this.map.values()) this.onEvict(e);
+    this.map.clear();
+  }
+
   /** Number of remembered conversations. */
   get size(): number {
     return this.map.size;
