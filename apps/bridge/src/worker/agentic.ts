@@ -46,7 +46,7 @@ export interface AgenticDeps {
 }
 
 /** Features that stay ON for agentic Codex runs (the agent must run the checker and look at the preview). */
-export const CODEX_AGENTIC_FEATURES: ReadonlySet<string> = new Set(['shell_tool', 'unified_exec', 'view_image']);
+export const CODEX_AGENTIC_FEATURES: ReadonlySet<string> = new Set(['shell_tool', 'unified_exec', 'view_image', 'code_mode_host']);
 
 /** Codex config overrides of an agentic run. */
 export function codexAgenticConfig(): NonNullable<CodexOptions['config']> {
@@ -62,6 +62,8 @@ export function codexAgenticConfig(): NonNullable<CodexOptions['config']> {
     // Commands see only core variables (PATH, HOME, …): no keys or tokens.
     shell_environment_policy: { inherit: 'core' },
     history: { persistence: 'none' },
+    // The user's own Codex skills are not part of the task: keep their instructions out of the run.
+    skills: { include_instructions: false, bundled: { enabled: false } },
   };
 }
 

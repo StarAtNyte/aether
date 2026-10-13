@@ -1,3 +1,4 @@
+import type { GeneratorDef } from '@aether/core';
 import { createWorld } from '@aether/core';
 import { describe, expect, it } from 'vitest';
 import { WorldAgent } from '../src/agent';
@@ -320,7 +321,7 @@ describe('WorldAgent tools', () => {
         catalogs: TEST_CATALOGS,
         buildAsset: async (spec) => {
           specs.push(spec);
-          return { ok: true, def: { ...gen, id: 'something-else' }, note: '2 rounds' };
+          return { ok: true as const, def: { ...(gen as GeneratorDef), id: 'something-else' }, note: '2 rounds' };
         },
       }).run('x', host),
     );
@@ -344,7 +345,7 @@ describe('WorldAgent tools', () => {
         new WorldAgent({
           provider,
           catalogs: TEST_CATALOGS,
-          buildAsset: async () => (outcome === 'error' ? { ok: false, error: 'the checker kept failing' } : { ok: true, def: { ...gen, id: 'cathedral', source: `${gen.source} // BAD` } }),
+          buildAsset: async () => (outcome === 'error' ? { ok: false as const, error: 'the checker kept failing' } : { ok: true as const, def: { ...(gen as GeneratorDef), id: 'cathedral', source: `${gen.source} // BAD` } }),
         }).run('x', host),
       );
       expect(provider.requests.some((r) => r.role === 'coder')).toBe(true);

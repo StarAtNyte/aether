@@ -67,7 +67,9 @@ describe('agentic lockdown', () => {
     expect(c['web_search']).toBe('disabled');
     const features = c['features'] as Record<string, boolean>;
     expect(features['shell_tool']).toBeUndefined();
+    expect(features['code_mode_host']).toBeUndefined();
     expect(Object.values(features).every((v) => v === false)).toBe(true);
+    expect(c['skills']).toEqual({ include_instructions: false, bundled: { enabled: false } });
     const t = codexAgenticThread({ workspace: dir, model: 'gpt-6.1-sol', effort: 'high' });
     expect(t).toMatchObject({ sandboxMode: 'workspace-write', approvalPolicy: 'never', networkAccessEnabled: false, workingDirectory: dir, model: 'gpt-6.1-sol', modelReasoningEffort: 'high' });
   });

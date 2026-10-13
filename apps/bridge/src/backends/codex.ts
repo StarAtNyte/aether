@@ -45,6 +45,8 @@ export function codexLockdownConfig(): NonNullable<CodexOptions['config']> {
     project_doc_max_bytes: 0,
     shell_environment_policy: { inherit: 'none' },
     history: { persistence: 'none' },
+    // No skill instructions from the user's Codex home: they add tokens and unrelated context.
+    skills: { include_instructions: false, bundled: { enabled: false } },
   };
 }
 

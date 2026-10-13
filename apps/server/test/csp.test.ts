@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CSP_DIRECTIVES } from '../src/middleware';
+import { CSP_DIRECTIVES, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH } from '../src/middleware';
+import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
 
@@ -50,5 +51,34 @@ describe('Content-Security-Policy', () => {
     }
     expect(p.get('object-src')).toEqual(["'none'"]);
     expect(p.get('frame-ancestors')).toEqual(["'none'"]);
+  });
+});
+
+describe('generator sandbox worker policy', () => {
+  it('allows eval only in the sandbox worker script, and nothing else there', () => {
+    const p = parsePolicy(SANDBOX_WORKER_CSP);
+    expect(p.get('default-src')).toEqual(["'none'"]);
+    expect(p.get('script-src')).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"].sort());
+    expect([...p.keys()].sort()).toEqual(['default-src', 'script-src']);
+    expect(SANDBOX_WORKER_PATH.test('/assets/sandbox.worker-BvSP-eys.js')).toBe(true);
+    expect(SANDBOX_WORKER_PATH.test('/assets/index-abc.js')).toBe(false);
+    expect(SANDBOX_WORKER_PATH.test('/assets/sandbox.worker-x.js/../index.js')).toBe(false);
+  });
+
+  it('is the same on the static deployment, which keeps the strict policy everywhere else', () => {
+    const file = fileURLToPath(new URL('../../../vercel.json', import.meta.url));
+    const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
+    const rules = config.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
+    expect(rules.map((r) => r.source)).toEqual(['/((?!assets/sandbox\\.worker-).*)', '/assets/sandbox.worker-(.*)']);
+    expect(rules[1]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(SANDBOX_WORKER_CSP);
+  });
+
+  it('is sent by the Node server for the worker only', async () => {
+    const app = makeApp(makeConfig());
+    const worker = await app.request('/assets/sandbox.worker-BvSP-eys.js');
+    expect(worker.headers.get('content-security-policy')).toBe(SANDBOX_WORKER_CSP);
+    const page = await app.request('/api/health');
+    expect(page.headers.get('content-security-policy')).not.toMatch(/'unsafe-eval'/);
+    cleanupDirs();
   });
 });

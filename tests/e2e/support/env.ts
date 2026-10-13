@@ -124,6 +124,7 @@ export async function startServer(log: (line: string) => void): Promise<TestServ
       NODE_ENV: 'production',
       SERVE_STATIC: 'true',
       AETHER_PROVIDER: 'mock',
+      AETHER_LOCAL_AI: 'off',
       ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: '',
       ALLOWED_ORIGINS: url,

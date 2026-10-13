@@ -789,9 +789,11 @@ export class Studio {
         const done = await ai.localApi.followJob(job.id, { ...(signal ? { signal } : {}), onEvent: (e) => {
           if (e.phase !== 'queued' || e.seq > 1) push(e.message);
         } });
-        if (done.status !== 'done' || !done.result) return { ok: false, error: done.error ?? `the build ${done.status}` };
+        if (done.status !== 'done' || !done.result) return { ok: false, error: done.error ?? `the build was ${done.status}` };
         const r = done.result;
-        return { ok: true, def: r.def, note: `${r.turns} round${r.turns === 1 ? '' : 's'}${r.checkerPassed ? ', checks passed' : ''}${r.model ? ` · ${r.model}` : ''}` };
+        const note = `${r.turns} round${r.turns === 1 ? '' : 's'}${r.checkerPassed ? ', checks passed' : ', checks not passed'}${r.model ? ` · ${r.model}` : ''}${r.usage ? ` · ${r.usage.inputTokens + r.usage.outputTokens} tokens` : ''}`;
+        this.store.getState().pushEvent(entryId, { type: 'notice', tone: 'info', text: `Deep build: ${note}`.slice(0, 300) });
+        return { ok: true, def: r.def, note };
       } catch (e) {
         if (signal?.aborted) throw e;
         return { ok: false, error: errorMessage(e).slice(0, 300) };

@@ -121,9 +121,20 @@ export const CSP_DIRECTIVES = Object.freeze({
   frameAncestors: ["'none'"],
 });
 
+/**
+ * The generator sandbox worker compiles AI-written generator source with
+ * `new Function` inside its locked-down worker (see procgen's sandbox), which
+ * needs `'unsafe-eval'`. Only that worker script gets it, together with a
+ * policy that denies everything else (no network, no nested workers): the
+ * page itself keeps the strict policy above.
+ */
+export const SANDBOX_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
+/** Built path of the generator sandbox worker. */
+export const SANDBOX_WORKER_PATH = /^\/assets\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
+
 /** Security headers: CSP, nosniff, referrer policy, COOP, frame denial, HSTS (production only). */
 export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> {
-  return secureHeaders({
+  const base = secureHeaders({
     contentSecurityPolicy: { ...CSP_DIRECTIVES },
     crossOriginOpenerPolicy: 'same-origin',
     crossOriginResourcePolicy: 'same-origin',
@@ -134,4 +145,8 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
     strictTransportSecurity: production ? 'max-age=31536000; includeSubDomains' : false,
     permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
   });
+  return async (c, next) => {
+    await base(c, next);
+    if (SANDBOX_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
+  };
 }

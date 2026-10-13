@@ -104,9 +104,19 @@ explicit state, so the AI can be held to account:
   composes an elevated three-quarter shot of the meaningful content with sky
   in frame. Lava and water get procedural glowing cracks and ripples, and new
   worlds *materialize*, growing out of the ground in a ripple from the centre.
+- **Codex or Claude Code on this computer.** Run Aether locally and it uses
+  the Codex or Claude Code login you already have, with no bridge to pair:
+  sign in from Settings ("Sign in with ChatGPT" / "Sign in to Claude"), add
+  and switch between several Codex accounts, and pick model and effort.
+  **Deep build** (on by default) hands each new asset to a coding agent that
+  writes the generator in a private scratch folder, renders and checks it,
+  and fixes what the checker finds, with live progress in the chat; Aether
+  validates the final result again before using it. Conversations continue
+  per project, and each turn shows the models that answered and its token
+  usage. Hosted copies never use this.
 - **AI connections that cost nothing per prompt.** Settings → AI connection
   (and the model picker under the prompt) offers: the **offline planner**
-  (default, always available); the **local Aether Bridge**, which runs the
+  (always available); the **local Aether Bridge**, which runs the
   Codex or Claude Code CLI you are already signed in to (ChatGPT or Claude
   subscription, no API key) with every tool disabled; **on-device AI** with
   WebLLM (experimental, opt-in download, WebGPU); and an optional
@@ -144,9 +154,25 @@ explicit state, so the AI can be held to account:
   selected: sky, time of day, light, fog, ground, gravity, play camera,
   variables). The agent streams plans, diff chips and check results; the
   composer takes reference images. Assets places ready-made objects (rendered
-  preview tiles) by click or drag. The viewport has camera presets, move /
-  rotate / scale gizmos, a tool dock, an axis gizmo, optional object labels
-  and a performance overlay (off by default). A command palette (Ctrl/⌘+K)
+  preview tiles) and materials by click or drag. The viewport has camera
+  presets, a tool dock, an axis gizmo, optional object labels and a
+  performance overlay (off by default).
+- **Full editing, not just a viewer.** Click, shift-click and marquee
+  selection in sync with the outliner; move / rotate / scale gizmos (W/E/R)
+  in local or world space with pivot choice, numeric input and grid, angle,
+  surface and vertex snapping; align and distribute; duplicate, copy/paste
+  across projects, group, reparent by drag, hide and lock. Procedural objects
+  expose their parameters as live sliders (regenerated in a worker), seed
+  re-roll and scatter density, and can be baked to an editable mesh.
+  Mesh edit mode (Tab) works on vertices, edges and faces with soft
+  selection, extrude, inset, subdivide, smooth, merge by distance, normal
+  fixes and UV unwrap, and colliders follow the mesh. Sculpt and paint
+  brushes (raise, lower, smooth, flatten, noise, vertex colour, scatter paint
+  with erase) have size, strength, falloff and pen pressure, with one undo
+  step per stroke. A material editor with eyedropper, visual WHEN/IF/THEN
+  rule cards, behaviour and physics forms (joints are drawn in the
+  viewport) and editable checks with "Run checks" complete the set. The
+  agent sees your hand edits and never touches locked objects. A command palette (Ctrl/⌘+K)
   searches actions, objects, assets, templates and projects; every control
   has a tooltip with its shortcut. Light theme by default (follows the system
   on first visit), dark theme one click away.
@@ -194,8 +220,16 @@ the bridge (Chrome may first ask to allow access to your local network).
 Safari and iOS browsers block https pages from calling local services, so
 there run the studio locally (`npm run dev`) and pair from that page.
 
-To let the **server** itself use a signed-in CLI on this machine instead,
-start it with `AETHER_PROVIDER=codex` or `AETHER_PROVIDER=claude-code`.
+**Running Aether locally?** You do not need the bridge: with `npm run
+dev:server` on your own computer the studio finds Codex and Claude Code
+automatically (Settings → AI connection → *Codex or Claude Code on this
+computer*, or the **Connect Codex** card in the agent panel), runs them in
+worker processes and offers deep builds. `AETHER_LOCAL_AI=off` disables it;
+it is always off in production builds on hosting platforms and in the Docker
+image.
+
+To let the **server** answer `/api/llm` with a signed-in CLI instead, start
+it with `AETHER_PROVIDER=codex` or `AETHER_PROVIDER=claude-code`.
 
 Open <http://localhost:5173>, pick an example card or type a prompt such as
 *"Build a domino run that knocks over a bell tower"* and watch the agent plan,
@@ -220,6 +254,7 @@ the hosted server never needs or uses one by default. The main settings:
 | `AETHER_PROVIDER` | `mock` (default: offline planner), `codex` / `claude-code` (signed-in CLI on this machine), `anthropic` or `openai` (needs a key) |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Optional upstream keys (server only), used only when `AETHER_PROVIDER` names that provider |
 | `AETHER_BYOK` | `true` (default) lets visitors use their own key through `/api/llm/byok` (never stored or logged) |
+| `AETHER_LOCAL_AI` | `auto` (default): Codex / Claude Code of this computer under `/api/local/*` for a non-production server without hosting markers; `on` forces it (refused on hosting platforms), `off` disables it |
 | `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic model per role |
 | `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI model per role |
 | `PORT`, `HOST`, `NODE_ENV` | Listener; `production` turns on static hosting and HSTS |

@@ -573,6 +573,66 @@ bridge answers the Private Network Access preflight). WebKit (Safari and all
 iOS browsers) blocks it as mixed content, so the setup pane says so and
 points to running the studio locally.
 
+### 12.4 Local AI on this computer and the coding-agent worker
+
+When the Aether server runs on the user's own machine (development, or
+`npm run start` without hosting markers), it offers local AI under
+`/api/local/*`, and the studio prefers it automatically: Codex first, then
+Claude Code, then the paired bridge, the server model, a loaded on-device
+model and finally the offline planner. Hosted deployments never offer it
+(`AETHER_LOCAL_AI` is `off` in production and on hosting platforms, and the
+routes refuse anything but direct loopback requests without proxy headers),
+so nobody's subscription is ever spent on behalf of visitors.
+
+```
+studio ──/api/local/complete──▶ server ──spawn──▶ worker process (one per call, own process group)
+   │                                 │               └─ locked-down Codex / Claude Code completion (as the bridge)
+   │                                 │
+   └──/api/local/jobs (+ SSE events)─┴─ JobManager (durable, one at a time) ──spawn──▶ worker process
+                                                       └─ coding agent in a throwaway workspace:
+                                                          write out/generator.json → node check.mjs → fix → …
+```
+
+- **Crash isolation.** Every call and every build runs in a fresh Node
+  process with an allowlisted environment (no keys), detached in its own
+  process group. A timeout or a cancel sends SIGTERM to the group, then
+  SIGKILL; the host stops every worker on shutdown. Progress arrives as
+  validated `AETHER_PROGRESS` lines on stderr; the result is one JSON object
+  on stdout.
+- **Quick completions** reuse the bridge's locked-down backends (read-only,
+  tool-less). Conversations are resumed per project: the server keeps the
+  Codex thread id or Claude session id for `p-<projectId>` (LRU, 6 h) and
+  sends only the new part of the conversation; deleting the project forgets
+  it. The chat's last line names the models that answered and the tokens
+  used.
+- **Deep builds.** With "Deep build" on (the default when local AI is
+  connected), a new asset requested by the agent is built by a coding agent
+  instead of one single-shot reply. The workspace is a private temp folder
+  holding only the generator API, worked examples, the task and `check.mjs`
+  (bundled once with esbuild from `check-entry.ts`: schema, static screen,
+  sandbox runs for three seeds, size/grounding/silhouette heuristics and a
+  four-view `preview.png`). Codex runs in its `workspace-write` sandbox with
+  network off, approval `never` and a core-only environment, on one thread
+  across rounds; Claude Code runs restricted to Read/Write/Edit and
+  `node check.mjs`, with every tool call screened. After each round the host
+  runs the checker and feeds failures back, up to the budget shown in the
+  composer (rounds and minutes). Only the final artifact is read (no links
+  followed), screened and validated again in Aether's own sandbox before the
+  agent's normal generator validation; the workspace is always deleted. If
+  the build fails, the agent falls back to the quick single-shot coder.
+- **Durable queue.** Build jobs are persisted (record + capped JSONL event
+  log, files 0600) and streamed as server-sent events with an `after` cursor,
+  so the studio reconnects without losing or repeating progress. Provider,
+  account, model and effort are frozen when a job is queued; jobs interrupted
+  by a restart are marked failed.
+- **Sign-in and accounts.** The settings pane runs the CLIs' own sign-in
+  flows (`codex login --device-auth`, `claude auth login --claudeai`) and
+  shows only the verification link and one-time code they print; Aether
+  never reads, stores or transmits credential files. Extra Codex accounts are
+  separate `CODEX_HOME` folders (0700) listed in a token-free registry
+  (0600); switching is manual and waits for running jobs. The paired bridge
+  offers the same sign-in buttons through `/v1/auth/*`.
+
 ### 12.2 Generator library
 
 `packages/procgen/library/*.json` holds 40+ generators for common objects the
@@ -658,6 +718,20 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
   agent streaming with a Stop button. A boot marker detects a world that
   crashed the tab on start-up and opens the starter world instead, keeping
   the old one one Undo away.
+- **Editor.** `Editor` (`src/engine/editor/`) owns selection (click,
+  shift/ctrl toggle, marquee), the multi-selection gizmo (a pivot proxy that
+  moves the objects live and commits once on release; local/world space,
+  pivot modes, grid/angle/surface/vertex snapping), align/distribute,
+  duplicate, copy/paste between projects, group/ungroup, reparenting, hide
+  and lock. Procedural parameters regenerate in a module worker
+  (`ComputeClient`, debounced) and "Bake to mesh" turns generator output into
+  an editable mesh asset that keeps a link to its source. Mesh edit mode,
+  sculpt, vertex paint and scatter paint run their heavy work in the same
+  worker and preview on the GPU (partial attribute uploads) before writing
+  one undoable commit per operation or stroke; physics rebuilds the collider
+  of a changed mesh. Locked entities are skipped by editor tools and the
+  agent alike, and the agent is told which entities the user edited by hand
+  so "make the tower I just moved taller" resolves to the right object.
 - **Projects** (`src/projects/`) live in IndexedDB: small metadata records
   for the home page, the world + chat body loaded only when a project opens,
   and WebP thumbnails. Everything read back is validated (zod for metadata,

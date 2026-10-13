@@ -100,6 +100,7 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         return;
       }
       const s = new Studio({
+        projectId: id,
         project: { world: r.value.world, chat: r.value.chat },
         onSave: async (world, chat) => {
           const x = await repo.save(id, world, chat);

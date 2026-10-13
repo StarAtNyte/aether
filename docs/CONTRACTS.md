@@ -325,7 +325,7 @@ export class WorldRenderer {
   orbitTarget(out?: Vec3): Vec3;                          // editor orbit target (placement point)
   entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null;   // world bounds at full scale
   get animating(): boolean;                               // grow-in or camera flight in progress (captures wait for it)
-  setGizmo(id: EntityId | null, mode: 'translate' | 'rotate' | 'scale' | null, onCommit?: (c: GizmoChange) => void): Promise<void>;   // TransformControls (lazy); one commit per drag
+  setGizmo(ids: readonly EntityId[] | null, mode: GizmoMode | null, onCommit?: (c: GizmoCommit) => void, opts?: GizmoOptions, onLive?: (ids: readonly EntityId[]) => void): Promise<void>;   // multi-selection gizmo (see "Editing" below); one commit per drag
   get gizmoBusy(): boolean;                               // a handle is hovered or dragged: clicks must not change the selection
   focus(id: EntityId): void;                              // smooth camera fly-to
   pick(ndcX: number, ndcY: number): EntityId | null;
@@ -423,7 +423,8 @@ LLM orchestration — provider-agnostic, runs in browser (via server proxy) and 
 export interface ChatMessage { role: 'user' | 'assistant'; content: string | ContentBlock[]; }
 export type ContentBlock = { type: 'text'; text: string } | { type: 'image'; dataUrl: string } | { type: 'tool_use'; id: string; name: string; input: unknown } | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean };
 export interface ToolDef { name: string; description: string; inputSchema: object; }
-export interface CompletionRequest { role: 'planner' | 'coder' | 'critic'; model?: string; system: string; messages: ChatMessage[]; tools?: ToolDef[]; maxTokens?: number; temperature?: number; }
+export interface CompletionRequest { role: 'planner' | 'coder' | 'critic'; model?: string; system: string; messages: ChatMessage[]; tools?: ToolDef[]; maxTokens?: number; temperature?: number;
+  session?: string;   // conversation key (/^[a-z0-9][a-z0-9-]{7,79}$/, the studio sends `p-<projectId>`): thread-keeping backends resume it }
 export interface CompletionResponse { content: ContentBlock[]; stopReason: 'end' | 'tool_use' | 'max_tokens' | 'error'; usage?: { inputTokens: number; outputTokens: number }; model?: string; }
 export interface Provider { readonly name: string; complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse>; }
 
@@ -442,7 +443,7 @@ export type AgentEvent =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'error'; text: string }
-  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number } };
+  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] /* models that answered, first use order */ } };
 
 export interface AgentHost {
   getWorld(): WorldDoc;
@@ -465,7 +466,7 @@ export interface AgentOptions { provider: Provider; maxRepairs?: number; maxTurn
 }
 export class WorldAgent {
   constructor(opts: AgentOptions);
-  run(prompt: string, host: AgentHost, opts?: { signal?: AbortSignal; images?: string[]; history?: ChatMessage[] }): AsyncGenerator<AgentEvent>;
+  run(prompt: string, host: AgentHost, opts?: { signal?: AbortSignal; images?: string[]; history?: ChatMessage[]; session?: string }): AsyncGenerator<AgentEvent>;
 }
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, write_generator, write_script, inspect, run_verification, finish
 export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
@@ -566,6 +567,208 @@ export function effectiveBridgeChoice(prefs: AiPrefs, backends: readonly BridgeB
 export function hostedBridgeNote(origin: string, userAgent: string): { tone: 'warn' | 'info'; text: string } | null;
 ```
 
+## Full editor (selection, transforms, meshes, sculpt, paint, logic)
+
+### `@aether/core` additions (backward compatible)
+
+```ts
+// Schema
+type MeshId = string;                                   // slug, like entity ids
+interface MeshShape { kind: 'mesh'; mesh: MeshId }       // in the ShapeSpec union
+interface Entity { locked?: boolean; /* … */ }           // user lock: editor tools and the agent leave it alone
+interface ScatterShape { points?: Vec3[] /* ≤ MAX_SCATTER_POINTS, painted placements (local, y included) */; /* … */ }
+interface MeshAsset {
+  id: MeshId; vertexCount: number; triangleCount: number;
+  positions: Base64Chunks;            // f32 xyz           Base64Chunks = string[] (≤ 64 Ki chars each, 4-byte aligned)
+  indices: Base64Chunks;              // u16 when vertexCount ≤ 65 536 (always, given MAX_MESH_VERTICES)
+  colors?: Base64Chunks;              // u8 sRGB rgb per vertex
+  uvs?: Base64Chunks;                 // f32 uv per vertex
+  faceMaterials?: Base64Chunks;       // u8 slot per triangle
+  materials: MaterialSpec[];          // ≤ 16 slots
+  source?: { generator: string; params: Record<string, Json>; seed: number };   // "Bake to mesh" keeps the link
+}
+interface WorldDoc { meshes?: Record<MeshId, MeshAsset>; /* … */ }
+type Patch = /* … */ | { op: 'setMesh'; mesh: MeshAsset } | { op: 'removeMesh'; id: MeshId };
+// LIMITS += MAX_MESHES 128, MAX_MESH_VERTICES 65 536, MAX_MESH_TRIANGLES 131 072, MAX_MESH_BYTES 24 MB (all meshes), MAX_SCATTER_POINTS 20 000
+// applyPatches: a mesh shape must reference an existing asset; removing the last user GCs the asset; `clear` drops meshes.
+interface PatchResult { world; applied; errors; notes?: string[] }   // notes: informational (e.g. "kept locked entity x")
+
+// Mesh codec (pure; typed arrays ↔ base64 chunks; strict decoding: lengths, ranges, finite values)
+interface MeshData { positions: Float32Array; indices: Uint32Array; colors: Float32Array | null /* linear */; uvs: Float32Array | null; faceMaterials: Uint8Array | null }
+function encodeMesh(id, data: MeshData, opts: { materials; source? }): MeshAsset;
+function encodeMeshUpdate(prev: MeshAsset, prevData: MeshData, next: MeshData): MeshAsset;   // unchanged streams share their chunk arrays
+function decodeMesh(asset: MeshAsset): MeshData;  function decodeMeshCached(asset): MeshData;  // WeakMap per asset object
+function checkMeshData(data): string | null;  function meshBounds(data): { min; max };  function meshByteSize(asset): number;
+
+// Hand-edit tracking (agent ↔ manual round trip)
+function userEditMarks(commits: CommitLike[], opts: { maxCommits?: number; exists?: (id) => boolean }): UserEditMarks;   // newest user edits per entity
+History.recentCommits(limit): CommitLike[];
+summarizeWorld(world, { userEdits?: ReadonlyMap<EntityId, { paths: string[]; age: number }> /* … */ });
+//   entity lines gain "locked(by user: do not change)" and "user-edited(<paths>, just now)";
+//   a trailing "user recently edited by hand (newest first): …" line resolves "the tower I just moved".
+```
+
+### `@aether/procgen` additions
+
+```ts
+// Mesh editing (pure functions over MeshData; every result passes checkMeshData and the caps)
+extrudeFaces(mesh, faces, distance); insetFaces(mesh, faces, amount); subdivide(mesh, faces | null, { smooth? });
+smoothMesh(mesh, { iterations?, factor?, weights?, pinBoundary? }); mergeByDistance(mesh, distance) → { mesh, removed };
+flipFaces(mesh, faces | null); orientOutward(mesh) → { mesh, flipped }; deleteFaces(mesh, faces); unwrapUVs(mesh, 'box' | 'planar', scale?);
+softWeights(mesh, selected, radius) → Float32Array; transformVertices(positions, weights, matrix4) (+ allocation-free transformVerticesInto);
+nearestComponent(mesh, triangle, localPoint) → { vertex, edge } | null; coplanarFaces(mesh, seed, maxAngleDeg?, limit?);
+buildTopology(mesh) / meshHealth(mesh) (manifold, boundary and non-manifold edges, …) / signedVolume(mesh);
+class SculptSession { constructor(mesh, { seed? }); sculpt(mode: SculptMode, dab: BrushDab): number; paint(rgb, dab, erase?): number;
+  takeDirty(): { start, count } | null /* changed vertex range for a partial GPU upload */; }   // modes: raise/lower/smooth/flatten/noise
+bakeOutput(output: GeneratorOutput): BakedMesh;   meshColliders(mesh, dynamic): Collider[];   // trimesh (static) or hull (dynamic, ≤ MAX_HULL_POINTS)
+const MeshOp: ZodType;  runMeshOp(input: MeshOpInput): MeshOpResult;   // the worker protocol (zod-validated, transferables)
+
+// Heavy work off the main thread (module worker; inline fallback where workers are unavailable)
+class ComputeClient {
+  constructor(opts?: { timeoutMs?: number; idleTimeoutMs?: number; createWorker?: (() => WorkerLike) | null });
+  meshOp(op: MeshOpInput, mesh: MeshData): Promise<MeshOpResult>;   // input mesh copied; a timed-out worker is replaced
+  generate(generator: string, params, seed): Promise<GeneratorOutput>;   // built-in generators; debounced parameter regeneration
+  dispose(): void;
+}
+```
+
+### `@aether/render` editing API
+
+```ts
+type GizmoMode = 'translate' | 'rotate' | 'scale';
+interface GizmoOptions { space?: 'world' | 'local'; pivot?: 'center' | 'origin' | 'individual'; translationSnap?: number | null;
+  rotationSnapDeg?: number | null; scaleSnap?: number | null; surfaceSnap?: boolean; vertexSnap?: boolean }
+interface GizmoCommit { mode: GizmoMode; changes: Array<{ id: EntityId; position: Vec3; rotation: Vec3 /* deg XYZ */; scale: Vec3 }> }   // local transforms
+interface EntityHit { id; point; normal; localPoint; localNormal; triangle: number | null; distance }
+setGizmoOptions(opts); get gizmoDragging(): boolean;   // live drag: proxy pivot moves the objects, no document writes until release
+raycastEntity(ndcX, ndcY, { only?, exclude? }): EntityHit | null;   raycastWorld(origin, dir, max?, exclude?, only?);
+entitiesInRect(x0, y0, x1, y1, skip?): EntityId[];   pick(ndcX, ndcY, skip?): EntityId | null;   // marquee + click selection
+meshBundle(id); previewMesh(id, positions | null, colors | null): boolean;   // live sculpt/paint preview without a document write
+rebuildEntity(id); showMeshComponents(view | null); showBrush(brush | null); showJoint(id | null);
+setComponentGizmo(id, localCenter, mode, opts, onLive?, onCommit?);   // vertex/edge/face transforms (matrix in mesh space)
+setLeftDragNavigation(on); primeGeneratorOutput(shape, output);       // worker results reuse the renderer's cache
+```
+
+Mesh shapes render as one shared set of position/normal/colour/uv attributes
+with one index geometry per material slot; GPU resources are disposed when an
+asset is replaced or removed. Physics builds a trimesh (static) or convex hull
+(dynamic) and rebuilds bodies whose mesh changed (`diffWorlds().meshesChanged`).
+
+### Studio editor (`apps/studio/src/engine/editor/`)
+
+`Editor` owns selection (click, shift/ctrl toggle, marquee), the gizmo
+(W/E/R, local/world, pivot, grid/angle/surface/vertex snapping, numeric
+input in the inspector), align/distribute, duplicate (Ctrl+D), copy/cut/paste
+(clipboard JSON `aether/entities`, works across projects; generator and mesh
+assets travel along), delete, group/ungroup (Ctrl+G / Ctrl+Shift+G), outliner
+drag-to-reparent (world transform preserved), hide (H) / lock, focus (F) and
+frame all (0). Mesh edit mode (Tab) offers vertex/edge/face components,
+move/rotate/scale with soft selection, extrude, inset, subdivide, smooth,
+merge by distance, flip / recompute normals and box/planar UV unwrap, all in
+the compute worker. Sculpt (raise/lower/smooth/flatten/noise), vertex paint
+and scatter paint (density, erase) brushes record one history entry per
+stroke. Every edit is one undoable commit.
+
+The agent sees which entities the user edited by hand (`AgentHost.userEdits`)
+and never changes a locked entity: such patches are dropped with a note in
+the tool result, and when an agent patch overwrites a property the user set
+by hand the chat says so ("Changed things you set by hand: … Undo to restore").
+
+## Local AI and the coding-agent worker
+
+### Bridge additions (`apps/bridge`, all behind the pairing token)
+
+```
+POST   /v1/auth/login        { backend } → LoginState        runs `codex login --device-auth` / `claude auth login --claudeai`
+GET    /v1/auth/login        → { login: LoginState | null }   poll; the CLI's verification URL and one-time code only
+POST   /v1/auth/login/cancel → { login }
+POST   /v1/auth/logout       { backend } → { ok, message }    `codex logout` / `claude auth logout`
+DELETE /v1/sessions/:project → { cleared }                    forget a project's resumable conversations
+```
+
+`/v1/complete` accepts `request.session`: the bridge remembers per project
+(LRU 64, 6 h idle, in memory only) the Codex thread id or Claude Code session
+id and resumes it with only the new part of the conversation. Runs stay
+read-only and tool-less.
+
+### Server: `/api/local/*` (only when `config.localAi`)
+
+`AETHER_LOCAL_AI=auto|on|off` (default `auto`: on for a non-production server
+without hosting-platform markers such as `VERCEL`, `FLY_APP_NAME`, `RENDER`,
+`K_SERVICE`, `AETHER_HOSTED`; the Docker image sets `AETHER_HOSTED=1` and
+`AETHER_LOCAL_AI=off`; `on` with a marker is a startup error). Every request
+must arrive on a loopback socket with a loopback `Host` and without proxy
+headers (`X-Forwarded-For`, `X-Real-IP`, `Forwarded`, …); errors use the
+bridge format `{ error: { code, message } }`.
+
+```
+GET    /api/local/status                  → LocalStatus { backends: BridgeBackendStatus[] (account, models, busy), account, jobs, login }
+POST   /api/local/complete                BridgeCompleteRequest → CompletionResponse   (one worker process per call; 1 running, ≤ 4 waiting)
+DELETE /api/local/sessions/:project       → { cleared }
+GET|POST /api/local/login, POST /api/local/login/cancel, POST /api/local/logout { backend, accountId? }
+GET    /api/local/accounts                → { items: LocalAccount[], activeId, jobs }
+POST   /api/local/accounts                { label } → LoginState     new Codex account (own CODEX_HOME) + device sign-in
+POST   /api/local/accounts/:id/activate   → AccountsList             refused while jobs run; never automatic
+DELETE /api/local/accounts/:id            → AccountsList             not the default or the active account
+POST   /api/local/jobs                    AssetJobRequest { kind: 'asset', backend, model?, effort?, spec: { id, description, paramsHint? }, budget: { turns 1–6, minutes 1–20 } } → LocalJob
+GET    /api/local/jobs/:id                → LocalJob
+GET    /api/local/jobs/:id/events?after=N → text/event-stream: `progress` events { seq, at, phase, message } after N, then `end` with the LocalJob
+POST   /api/local/jobs/:id/cancel         → LocalJob
+```
+
+Schemas: `@aether/agent` `bridge/local-protocol.ts`; clients:
+`createLocalAiApi()` (status, sign-in, accounts, jobs, `followJob` with
+reconnect from the last `seq`), `createLocalProvider()`,
+`createBridgeAccountApi()`.
+
+### Worker processes (`apps/bridge/src/worker/`)
+
+```ts
+type WorkerJob =
+  | { kind: 'complete'; backend; request: TextCompletionRequest; session?: { id; systemHash; body; dir? }; codexHome?: string | null; timeoutMs? }
+  | { kind: 'agentic'; backend; model?; effort?; workspace: string; task: string; artifact: `out/${string}.json`; maxTurns: 1–8; codexHome?: string | null };
+type WorkerResult = { ok: true; kind: 'complete'; text; structured?; usage?; model?; resumed?; session? }
+                  | { ok: true; kind: 'agentic'; turns; passed; usage?; model?; message? }
+                  | { ok: false; code: BridgeErrorCode; message };
+// stdin: the job (JSON); stdout: the result (JSON, ≤ 16 MB); stderr: `AETHER_PROGRESS {"phase","message"}` lines (validated) + noise
+function runWorker(job, { timeoutMs, signal?, onProgress?, env?, command? }): Promise<WorkerResult>;
+//   detached process group, allowlisted environment, SIGTERM then SIGKILL after 3 s on timeout/cancel, stopAllWorkers() on shutdown
+class JobManager {   // durable build queue: one job at a time, ≤ 4 waiting; records + JSONL events (0600) under <data>/local-ai/ai-jobs
+  enqueueAsset(req): Promise<LocalJob>;  get(id); eventsAfter(id, after); subscribe(id, fn); cancel(id); activeCount(); init(); dispose();
+}
+class LocalAi { status(); provider(backend, model?, effort?); jobs; accounts; login; sessions; clearProject(project); refresh(); dispose() }
+```
+
+An agentic asset job: a private temp workspace (0700) with
+`GENERATOR_API.d.ts`, worked examples, `task.md` and `check.mjs` (bundled
+once with esbuild: schema + static screen + sandbox run for three seeds +
+size/grounding/silhouette heuristics + a four-view `out/preview.png`, prints
+`RESULT: PASS|FAIL` and `- issue:` lines). Codex runs in its
+`workspace-write` sandbox (network off, approval `never`, `inherit: core`
+environment, web search/MCP off, one thread across rounds); Claude Code runs
+`claude -p --restricted --tools Read,Write,Edit,Bash` with only
+`Bash(node check.mjs:*)` allowed and every tool call screened (paths inside
+the workspace, no other command). After each round the host runs the checker
+and feeds failures back, up to the budget. Only the final artifact is read
+(no symlinks, ≤ 120 KB), parsed, statically screened and validated again in
+the host sandbox; the workspace is always deleted.
+
+### Studio (`apps/studio/src/ai/`)
+
+- `AiPrefs.mode` adds `'local'`; `deep: boolean` (default true) and
+  `deepTurns` (1–6, default 3). Automatic order: Codex on this computer,
+  Claude Code on this computer, the paired bridge, the server model, a loaded
+  on-device model, the offline planner; a personal key only when chosen.
+- `ResolvedConnection.kind` adds `'local'` (`worker: true`): new assets
+  (`request_asset`) go through a deep build with streamed progress when
+  "Deep build" is on; everything else stays a quick completion.
+- `projectSessionKey(projectId)` = `p-<id>` is sent as `RunOptions.session`
+  for local and bridge connections; deleting a project calls
+  `aiConnection().forgetProject(id)` (local AI and bridge).
+- The chat's `done` line shows the connection, the models that answered and
+  the token usage of the turn.
+
+
 ## Generator library (`@aether/procgen`)
 
 ```ts
@@ -589,7 +792,7 @@ that is not a bare box, ≤ 60 000 triangles).
 
 ## apps/server (Hono on Node)
 
-- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock' }`
+- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock', byok: boolean, local: boolean }` (`local`: `/api/local/*` is served, see "Local AI")
 - `POST /api/llm` body `CompletionRequest` (zod-validated, body ≤ 1 MB, ≤ 4 images) → `CompletionResponse`.
   The server maps `role` to an allowlisted model; clients cannot pick arbitrary models.
 - `GET/PUT /api/generators/:hash` — content-addressed cache of validated generator defs.
@@ -641,7 +844,7 @@ studio.flush(): Promise<void>;                 // write pending autosave (deboun
 studio.captureThumbnail(): Promise<Blob | null>;   // WebP (JPEG fallback) ≤ 60 KB, waits for grow-in / camera flight
 studio.addFromPalette(itemId): string | null;  // place an asset at the orbit target (one undoable edit, selected)
 studio.viewPreset('top' | 'front' | 'side' | 'iso' | 'reset');
-studio.applyGizmoTransform(id, change);        // one undoable edit per gizmo drag; no-op drags ignored
+studio.editor.commitGizmo(commit);             // one undoable edit per gizmo drag (all selected targets); no-op drags ignored
 ```
 
 Settings gained `showLabels`, `showNavHint`, `repairs` (0–3, the agent's
