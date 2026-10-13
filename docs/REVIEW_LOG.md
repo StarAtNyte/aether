@@ -353,3 +353,116 @@ memory is the budget metric for Firefox.
   Firefox (cards overflowing their columns, scrolled-away empty state,
   truncated project name, unbalanced rails, misaligned template row, label
   clutter, alarming idle fps colour, inner focus outlines, menu focus).
+
+## Zero-cost AI connections and AI path readiness
+
+Scope reviewed: the local bridge (`apps/bridge`), tool-use emulation, the
+browser bridge client, fallback, WebLLM, BYO key, the studio connection
+manager and composer controls, the quality loop and the library/eval
+scripts. Defects found and fixed in this pass (each with a regression test
+that fails without the fix):
+
+1. **Model id injection into CLI arguments (security).** `POST /v1/complete`
+   validated the top-level `model` against `MODEL_ID_RE`, but the emulated
+   provider preferred the inner `request.model` (free-form, ≤ 128 chars),
+   which then reached `claude --model <value>` / the Codex model option. The
+   bridge now drops the inner model, and both backends refuse any model id
+   that fails the pattern before spawning or creating the SDK client.
+2. **On-device mode could never answer.** The planner prompt is about 15.7k
+   tokens; the offered WebLLM models hold 4,096 (input and output). Added the
+   compact prompt profile (`WorldAgent` `promptProfile: 'compact'`:
+   condensed IR, catalog ids only, one example, `apply_patches` + `finish`,
+   15-entity summary, last exchange of history capped at 400 chars, 1,200
+   output tokens) and a context guard in the WebLLM backend that refuses
+   requests that cannot fit (reason `webllm_context`, explained in the UI)
+   and caps `max_tokens` to what is left. Measured with a 135-entity world
+   and prior history: about 2.6k input tokens on the first call, 3.0k on the
+   follow-up.
+3. **Stale connection badge after a failure.** After a fallback (bridge
+   stopped, pairing expired, not signed in) nothing re-probed the
+   connection, so the composer kept a live badge and every later prompt
+   retried the dead bridge first. The studio now re-probes the failed
+   connection in the background on fallback.
+4. **Few-shot example failed its own test.** The domino example shown to
+   every live model left `domino-6` leaning on the bell at 35°, failing its
+   `topples` test and costing a repair round on every similar prompt. The
+   bell moved to x = 4.1 (passes from 4.0 to 4.3); every example with tests
+   is now verified with real physics in the suite.
+
+**SECURITY**
+
+- Input boundaries: bridge HTTP bodies (streamed size cap 16 MiB, zod
+  schemas for pair/complete, response re-validated), Host header
+  (DNS-rebinding guard), exact Origin allowlist (https unless loopback, no
+  wildcards), bearer token on status/complete (256-bit, constant-time
+  compare, in memory only), pairing codes (single use, 10-minute expiry,
+  rotated after 5 wrong guesses, 20 attempts per minute globally); CLI
+  stdout parsed line by line with an 8 MiB cap and a fail-closed tool
+  observer; LLM output validated by the emulation protocol (zod, ≤ 16 calls,
+  ≤ 600k chars per input, one re-ask); deep link token removed from the
+  address bar before the router runs and validated; pairing token and BYO key
+  in sessionStorage only (the connection e2e asserts the token never reaches
+  localStorage); WebLLM engine shape checked after the lazy import.
+- Headless agents: argument arrays only (`shell: false`), allowlisted
+  environment (keys/tokens/session variables dropped even if allowlisted by
+  name), fresh private temp directory deleted afterwards (also when the run
+  throws, now tested), timeouts with SIGTERM→SIGKILL escalation, abort on
+  client disconnect. Claude Code: `--tools ""` plus a deny list, empty strict
+  MCP config, `--safe-mode`, no setting sources, slash commands off,
+  `dontAsk` with no permission prompts, no session persistence, structured
+  output only; any other tool in the init event or any other tool call kills
+  the run. Codex: read-only sandbox, approval never, no network, web search
+  off, 28 tool features off, every configured MCP server disabled by name
+  (refuses to run if the list cannot be read), strict output schema, any
+  command/file/MCP/web event aborts the run. Flags verified against
+  `claude --help` (2.1.296) and the Codex SDK 0.162.1 types.
+- CLI failure text is classified, never forwarded (test asserts paths,
+  emails and keys do not leak); `claude auth status` returns the account
+  email, which the bridge does not pass on.
+- CSP: new test keeps `vercel.json` and the server's directives identical and
+  strict (no `'unsafe-inline'`/`'unsafe-eval'` scripts, wildcards only for
+  `http://127.0.0.1:*` / `http://localhost:*`, the documented bridge).
+- No `eval`/`new Function`, no `innerHTML` added. No new dependencies in this
+  pass. `npm audit --omit=dev`: 0 vulnerabilities. Hosted server default
+  provider stays `mock`; BYO keys are passed through per request and never
+  logged or stored.
+
+**PERFORMANCE**
+
+- No render-loop code changed in this pass (agent, bridge and the send path
+  only), so per-frame allocation is unchanged from the previous probe.
+- Bundle: first load (home) 464 KB of JS, unchanged (previous stage 463 KB);
+  the editor chunk grew 0.46 KB (480.51 → 480.97 KB); WebLLM stays a 6.1 MB
+  lazy chunk loaded only after the explicit opt-in.
+- Bridge memory bounded: response cache LRU (128 entries / 16 MiB), one job
+  per backend with ≤ 4 waiting, status probes cached for 30 s, MCP list for
+  60 s, at most 16 tokens kept.
+- Headless work stays off the browser main thread entirely (it runs in the
+  CLI processes); on-device generation runs on the GPU in WebLLM's engine.
+- GPU disposal and memory: `npm run e2e:memory` (Chromium and Firefox),
+  see Verification.
+
+**Verification**
+
+- `tsc -p tsconfig.json --noEmit`: 0 errors. Vitest: 91 files, 1361 tests
+  (new: compact profile and WebLLM context guard, studio on-device turn,
+  re-probe after fallback, inner-model regression and flag-like model
+  refusal for both backends, temp-dir cleanup on throw, failure
+  classification, CSP sync, example verification).
+- `npm run build -w @aether/studio`: ok. `npm run smoke`: 13/13.
+- `npm run e2e`: Chromium WebGPU, Chromium WebGL2-only and Firefox WebGL2
+  passed.
+- `npm run e2e:connection` (new, costs nothing): the real bridge handler
+  with scripted backends. In Chromium and Firefox: pairing by code in
+  Settings, Codex ready / Claude Code not signed in badges, session-only
+  token, a whole turn through the bridge with the strict `input_json` reply
+  form, verification and the vision critic, a real CORS preflight from the
+  studio origin; deep link pairing scrubbed from the address bar; not signed
+  in, rate limited and bridge stopped all finish with the offline planner
+  and a notice that says what to do, and the badge then shows the bridge
+  offline.
+- Real Codex / Claude Code calls were not repeated in this pass (the
+  latencies in ARCHITECTURE §12.1 come from the earlier `npm run e2e:bridge`
+  run); the CLI discovery commands the bridge relies on (`codex login
+  status`, `codex debug models`, `codex mcp list --json`, `claude auth
+  status --json`) were re-checked on this machine without model calls.

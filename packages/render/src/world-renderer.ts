@@ -967,7 +967,7 @@ export class WorldRenderer {
     const fog = this.scene.fog;
     const background = this.scene.background;
     for (const o of hidden) o.visible = false;
-    this.scene.fog = null;
+    // PROBE this.scene.fog = null;
     this.scene.background = new Color(this.env.skyState.horizon);
     try {
       const renderView = (view: CaptureView): void => {
