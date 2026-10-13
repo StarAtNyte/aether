@@ -106,3 +106,17 @@ describe('collider providers and fallbacks', () => {
     expect(r.warnings[0]).toMatch(/no colliders for generator "my-gen"/);
   });
 });
+
+describe('collider output cache budget', () => {
+  it('stays within its entry and byte caps across many distinct generator calls', async () => {
+    const { builtinOutput, clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } = await import('../src/source');
+    clearColliderCache();
+    for (let seed = 1; seed <= 90; seed++) builtinOutput({ kind: 'procedural', generator: 'terrain', params: {}, seed });
+    const stats = colliderCacheStats();
+    expect(stats.entries).toBeLessThanOrEqual(64);
+    expect(stats.bytes).toBeGreaterThan(0);
+    expect(stats.bytes).toBeLessThanOrEqual(MAX_COLLIDER_CACHE_BYTES);
+    clearColliderCache();
+    expect(colliderCacheStats()).toEqual({ entries: 0, bytes: 0 });
+  });
+});

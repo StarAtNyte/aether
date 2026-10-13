@@ -29,7 +29,9 @@ import {
 } from '../lib/storage';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
-import { createStudioStore, type StudioState } from '../state/store';
+import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
+import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
+import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, runVerification, selectProvider } from './AgentBridge';
 import { Simulation } from './Simulation';
 import { isNewWorld } from './worldQueries';
@@ -38,8 +40,20 @@ const log = createLogger('studio');
 
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
-const MAX_HISTORY_ENTRIES = 150;
 const MAX_REPAIRS = 2;
+
+/** Memory picture of the whole studio (debug handle, memory e2e). */
+export interface StudioMemoryReport {
+  renderer: RenderMemoryStats | null;
+  historyEntries: number;
+  historyLimit: number;
+  chatEntries: number;
+  /** JS heap in use (MB), null where the browser does not report it. */
+  heapMB: number | null;
+  memory: MemoryState;
+  rendererEpoch: number;
+  contextLosses: number;
+}
 
 /** Application controller. See module docs. */
 export class Studio {
@@ -59,6 +73,15 @@ export class Studio {
 
   /** World skipped at boot because the previous session crashed while starting (or `?safe=1`). */
   private readonly skippedWorld: WorldDoc | null;
+  /** GPU contexts lost this session (feeds automatic low-memory mode). */
+  private contextLosses = 0;
+  /** Heap pressure seen this session (latched). */
+  private pressure = false;
+  /** After a lost WebGPU device the replacement renderer uses WebGL2. */
+  private forceWebGL2 = false;
+  private readonly recoveries = new RecoveryLimiter();
+  private attachCount = 0;
+  private memoryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(opts: { storage?: StorageLike | null; safeMode?: boolean } = {}) {
     this.storage = opts.storage === undefined ? browserStorage() : opts.storage;
@@ -69,8 +92,11 @@ export class Studio {
     if (this.skippedWorld) saveRecoveryWorld(this.storage, this.skippedWorld);
     // In safe mode the saved world stays one Undo away (first history entry).
     const initial = saved ?? createStarterWorld();
-    this.history = new History(initial, { maxEntries: MAX_HISTORY_ENTRIES });
-    this.store = createStudioStore({ chat: loadChat(this.storage), settings: loadSettings(this.storage), panels: initialPanels() });
+    const settings = loadSettings(this.storage);
+    const memory = decideLowMemory(settings.lowMemory, readMemorySignals());
+    this.history = new History(initial, { maxEntries: memory.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal });
+    this.store = createStudioStore({ chat: loadChat(this.storage), settings, panels: initialPanels() });
+    this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
     this.sandbox = createSandbox();
     this.bridge = new AgentBridge(this.history, this.sandbox);
 
@@ -96,7 +122,8 @@ export class Studio {
           saveSettings(this.storage, s.settings);
           if (prev.showColliders !== s.settings.showColliders) this.sim?.setShowColliders(s.settings.showColliders);
           if (prev.pointerLock !== s.settings.pointerLock) this.sim?.setPointerLock(s.settings.pointerLock);
-          if (prev.lowPower !== s.settings.lowPower) this.sim?.setLowPower(s.settings.lowPower);
+          if (prev.lowMemory !== s.settings.lowMemory) this.applyMemory();
+          if (prev.backend !== s.settings.backend) void this.restartRenderer('Switching renderer…');
           if (prev.showPerf !== s.settings.showPerf) this.sim?.setStatsWhileEditing(s.settings.showPerf);
         }
       }),
@@ -105,7 +132,9 @@ export class Studio {
       const flush = (): void => this.flushPersist();
       window.addEventListener('pagehide', flush);
       this.cleanups.push(() => window.removeEventListener('pagehide', flush));
+      this.memoryTimer = setInterval(() => this.sampleMemory(), MEMORY_SAMPLE_MS);
     }
+    if (memory.on && memory.automatic) this.announceLowMemory(memory.reason);
     if (this.skippedWorld) {
       this.replaceWorld(createStarterWorld(), 'Safe mode: starter world');
       this.store
@@ -166,12 +195,15 @@ export class Studio {
           },
           onError: (message) => this.store.getState().toast(message, 'error', 6),
           onFatal: (message) => this.store.getState().setFatal(message),
+          onContextLost: (info) => {
+            if (gen === this.attachGen) this.handleContextLost(info);
+          },
         },
         {
-          preferWebGPU: st.settings.preferWebGPU,
+          backend: this.forceWebGL2 ? 'webgl2' : st.settings.backend,
           shadows: st.settings.shadows,
           pointerLock: st.settings.pointerLock,
-          lowPower: st.settings.lowPower,
+          lowMemory: st.memory.lowMemory,
           statsWhileEditing: st.settings.showPerf,
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),
@@ -186,11 +218,13 @@ export class Studio {
       sim.setShowColliders(st.settings.showColliders);
       sim.setSelection(this.store.getState().selection);
       this.store.getState().setBackend(sim.backend);
+      this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });
       for (const fn of this.simListeners) fn(sim);
       const unsubSel = this.store.subscribe((s, prev) => {
         if (s.selection !== prev.selection) sim.setSelection(s.selection);
       });
-      await sim.frameWorld({ flyIn: true });
+      // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
+      await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
       // The first world rendered (generation included): this boot is healthy.
       if (gen === this.attachGen) clearBooting(this.storage);
       this.store.getState().setLoading(null);
@@ -212,6 +246,74 @@ export class Studio {
       st.setFatal(`This browser could not start WebGPU or WebGL2: ${errorMessage(err)}`);
       return () => undefined;
     }
+  }
+
+  /**
+   * Replace the renderer: the viewport remounts its canvas and attaches a new
+   * simulation (play mode is stopped first). Used for context-loss recovery
+   * and backend switches.
+   */
+  async restartRenderer(message = 'Restarting renderer…'): Promise<void> {
+    if (this.sim?.mode === 'play') await this.sim.stop();
+    const st = this.store.getState();
+    st.setFatal(null);
+    st.setLoading(message);
+    st.bumpRendererEpoch();
+  }
+
+  private handleContextLost(info: ContextLossInfo): void {
+    this.contextLosses++;
+    // A lost WebGPU device tends to be lost again (driver resets on hybrid GPUs): recover on WebGL2.
+    if (info.backend === 'webgpu') this.forceWebGL2 = true;
+    const st = this.store.getState();
+    if (!this.recoveries.tryAcquire(typeof performance !== 'undefined' ? performance.now() : Date.now())) {
+      st.setFatal(`The graphics device keeps resetting (${info.message}). Close other GPU-heavy tabs, then reload the page.`);
+      return;
+    }
+    st.toast(`The graphics context was lost (${info.message}). Restoring the viewport…`, 'info', 6);
+    this.applyMemory();
+    void this.restartRenderer('Restoring the renderer…');
+  }
+
+  /** Re-decide low-memory mode from the setting and the session's signals, and apply it everywhere. */
+  private applyMemory(): void {
+    const st = this.store.getState();
+    const d = decideLowMemory(st.settings.lowMemory, { ...readMemorySignals(), contextLosses: this.contextLosses, pressure: this.pressure });
+    const was = st.memory.lowMemory;
+    st.setMemory({ lowMemory: d.on, reason: d.reason, automatic: d.automatic });
+    this.history.setMaxEntries(d.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal);
+    if (was === d.on) return;
+    this.sim?.setLowMemory(d.on);
+    if (d.on && d.automatic) this.announceLowMemory(d.reason);
+  }
+
+  private announceLowMemory(reason: string | null): void {
+    this.store.getState().toast(`Low memory mode is on${reason ? `: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` : ''}. You can change it in Settings.`, 'info', 8);
+  }
+
+  /** Periodic heap check (Chromium reports the heap; elsewhere this is a no-op). */
+  private sampleMemory(): void {
+    if (this.pressure || this.store.getState().settings.lowMemory !== 'auto') return;
+    if (!heapUnderPressure(readMemorySignals())) return;
+    this.pressure = true;
+    log.warn('JS heap under pressure; switching to low memory mode');
+    this.applyMemory();
+  }
+
+  /** Memory picture of the studio (debug handle / memory e2e). */
+  memoryReport(): StudioMemoryReport {
+    const st = this.store.getState();
+    const heap = readMemorySignals().heapUsedBytes;
+    return {
+      renderer: this.sim ? this.sim.memoryStats() : null,
+      historyEntries: this.history.size,
+      historyLimit: this.history.entryLimit,
+      chatEntries: st.chat.length,
+      heapMB: heap === undefined ? null : Math.round(heap / (1024 * 1024)),
+      memory: st.memory,
+      rendererEpoch: st.rendererEpoch,
+      contextLosses: this.contextLosses,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -465,6 +567,7 @@ export class Studio {
     const st = this.store.getState();
     if (!text || st.agentBusy) return;
     if (this.sim?.mode === 'play') await this.sim.stop();
+    this.sim?.touch();
     const provider = this.provider ?? (await selectProvider()).provider;
     this.provider = provider;
     const history = buildAgentHistory(st.chat);
@@ -538,6 +641,8 @@ export class Studio {
 
   /** Release everything (tests / HMR). */
   dispose(): void {
+    if (this.memoryTimer !== null) clearInterval(this.memoryTimer);
+    this.memoryTimer = null;
     this.flushPersist();
     this.abort?.abort();
     for (const c of this.cleanups.splice(0)) c();

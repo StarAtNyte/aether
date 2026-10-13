@@ -48,6 +48,18 @@ export const PerfHud = memo(function PerfHud(): ReactElement | null {
           <dt>gpu</dt>
           <dd>{backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}</dd>
         </div>
+        {stats.gpuMB > 0 && (
+          <div title="Estimated GPU memory of the drawing buffers and shadow map">
+            <dt>vram</dt>
+            <dd>~{compactCount(stats.gpuMB)} MB</dd>
+          </div>
+        )}
+        {stats.heapMB > 0 && (
+          <div title="JavaScript heap in use">
+            <dt>heap</dt>
+            <dd>{compactCount(stats.heapMB)} MB</dd>
+          </div>
+        )}
       </dl>
     </div>
   );

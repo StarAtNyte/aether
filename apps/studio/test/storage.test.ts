@@ -72,3 +72,47 @@ describe('storage', () => {
     expect(loadChat(s)).toEqual([{ id: 1, role: 'user', text: 'hi' }]);
   });
 });
+
+describe('settings: backend and low-memory preferences', () => {
+  function mem(): StorageLike {
+    const m = new Map<string, string>();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) };
+  }
+
+  it('defaults to automatic backend and low-memory detection', () => {
+    expect(DEFAULT_SETTINGS.backend).toBe('auto');
+    expect(DEFAULT_SETTINGS.lowMemory).toBe('auto');
+    expect(loadSettings(mem())).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('round-trips valid values and rejects unknown ones', () => {
+    const s = mem();
+    saveSettings(s, { ...DEFAULT_SETTINGS, backend: 'webgl2', lowMemory: 'on' });
+    expect(loadSettings(s)).toMatchObject({ backend: 'webgl2', lowMemory: 'on' });
+    s.setItem(STORAGE_KEYS.settings, JSON.stringify({ backend: 'vulkan', lowMemory: true }));
+    expect(loadSettings(s)).toMatchObject({ backend: 'auto', lowMemory: 'auto' });
+    s.setItem(STORAGE_KEYS.settings, JSON.stringify({ backend: { toString: 'webgpu' }, lowMemory: ['on'] }));
+    expect(loadSettings(s)).toMatchObject({ backend: 'auto', lowMemory: 'auto' });
+  });
+
+  it('migrates the old preferWebGPU and lowPower flags', () => {
+    const s = mem();
+    s.setItem(STORAGE_KEYS.settings, JSON.stringify({ preferWebGPU: false, lowPower: true }));
+    const settings = loadSettings(s);
+    expect(settings).toMatchObject({ backend: 'webgl2', lowMemory: 'on' });
+    expect('preferWebGPU' in settings).toBe(false);
+    expect('lowPower' in settings).toBe(false);
+    s.setItem(STORAGE_KEYS.settings, JSON.stringify({ preferWebGPU: true, lowPower: false }));
+    expect(loadSettings(s)).toMatchObject({ backend: 'auto', lowMemory: 'auto' });
+    // New fields win over the old flags.
+    s.setItem(STORAGE_KEYS.settings, JSON.stringify({ preferWebGPU: false, backend: 'webgpu', lowPower: true, lowMemory: 'off' }));
+    expect(loadSettings(s)).toMatchObject({ backend: 'webgpu', lowMemory: 'off' });
+  });
+
+  it('ignores a prototype-polluting settings object', () => {
+    const s = mem();
+    s.setItem(STORAGE_KEYS.settings, '{"__proto__":{"backend":"webgpu","lowMemory":"on"}}');
+    expect(loadSettings(s)).toMatchObject({ backend: 'auto', lowMemory: 'auto' });
+    expect(({} as Record<string, unknown>)['backend']).toBeUndefined();
+  });
+});

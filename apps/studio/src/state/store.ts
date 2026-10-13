@@ -26,6 +26,25 @@ export interface PerfStats {
   bodies: number;
   entities: number;
   stepMs: number;
+  /** Estimated GPU drawing-buffer + shadow memory (MB). */
+  gpuMB: number;
+  /** JS heap in use (MB; 0 when the browser does not report it). */
+  heapMB: number;
+}
+
+/** Low-memory mode as currently applied. */
+export interface MemoryState {
+  lowMemory: boolean;
+  /** Why it is on (shown in the UI), null when off. */
+  reason: string | null;
+  /** On because of detection (setting 'auto'), not because the user chose it. */
+  automatic: boolean;
+}
+
+/** GPU the renderer runs on. */
+export interface GpuState {
+  tier: 'discrete' | 'integrated' | 'software' | 'unknown';
+  description: string;
 }
 
 /** A transient notification. */
@@ -84,6 +103,10 @@ export interface StudioState {
   toasts: Toast[];
   settings: StudioSettings;
   settingsOpen: boolean;
+  memory: MemoryState;
+  gpu: GpuState | null;
+  /** Bumped to replace the renderer (context-loss recovery, low-memory switch); the viewport remounts its canvas. */
+  rendererEpoch: number;
 
   setMode(mode: StudioMode): void;
   setModeBusy(busy: boolean): void;
@@ -111,6 +134,9 @@ export interface StudioState {
   dismissToast(id: number): void;
   updateSettings(patch: Partial<StudioSettings>): void;
   setSettingsOpen(open: boolean): void;
+  setMemory(m: MemoryState): void;
+  setGpu(g: GpuState | null): void;
+  bumpRendererEpoch(): void;
   pruneEntities(existing: ReadonlySet<string>): void;
 }
 
@@ -122,7 +148,7 @@ export interface StudioInit {
   panels?: { left: boolean; right: boolean };
 }
 
-const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0 };
+const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0 };
 const IDLE_VERIFY: VerifyState = { status: 'idle', summary: '', results: [], diagnostics: [], head: null, ms: 0 };
 const INITIAL_GAME: GameState = { status: 'playing', text: '', hud: {}, time: 0 };
 const MAX_TOAST_TEXT = 240;
@@ -170,6 +196,9 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     toasts: [],
     settings: init.settings ? { ...init.settings } : { ...DEFAULT_SETTINGS },
     settingsOpen: false,
+    memory: { lowMemory: false, reason: null, automatic: false },
+    gpu: null,
+    rendererEpoch: 0,
 
     setMode: (mode) => set({ mode }),
     setModeBusy: (modeBusy) => set({ modeBusy }),
@@ -233,6 +262,9 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setMemory: (memory) => set((s) => (s.memory.lowMemory === memory.lowMemory && s.memory.reason === memory.reason && s.memory.automatic === memory.automatic ? s : { memory })),
+    setGpu: (gpu) => set({ gpu }),
+    bumpRendererEpoch: () => set((s) => ({ rendererEpoch: s.rendererEpoch + 1 })),
     pruneEntities: (existing) => {
       const s = get();
       const selection = s.selection.filter((id) => existing.has(id));

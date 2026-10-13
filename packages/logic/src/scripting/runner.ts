@@ -20,34 +20,18 @@
  *   leaked memory is reclaimed with the old one.
  *
  * Usage: `await initScripting()` once (loads the WASM module), then
- * `createScriptRunner()` synchronously.
+ * `createScriptRunner()` synchronously. Hosts normally reach this module
+ * through `./lazy`, which imports it (and QuickJS) only on first use.
  */
-import { newQuickJSWASMModule, RELEASE_SYNC, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime, type QuickJSWASMModule } from 'quickjs-emscripten';
+import { newQuickJSWASMModuleFromVariant, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime, type QuickJSWASMModule } from 'quickjs-emscripten-core';
+import RELEASE_SYNC from '@jitl/quickjs-wasmfile-release-sync';
 import { hashString, ScriptDef, type EntityId } from '@aether/core';
 import type { ScriptDiagnostic, ScriptIntent, ScriptRunner, ScriptSnapshot } from '../types';
 import { validateIntents } from './intents';
 
-/** Options for {@link createScriptRunner}. */
-export interface ScriptRunnerOptions {
-  /** Wall-clock budget per update call in ms (default 2). */
-  budgetMs?: number;
-  /** Budget for compiling/loading a script in ms (default 50). */
-  loadBudgetMs?: number;
-  /** Heap limit per script runtime in bytes (default 8 MB). */
-  memoryLimitBytes?: number;
-  /**
-   * Max interpreter stack per script runtime in bytes (default 128 KB, capped
-   * at 256 KB: larger values let deep recursion exhaust the host WASM stack
-   * before QuickJS can raise a catchable stack-overflow error).
-   */
-  maxStackBytes?: number;
-  /** Overruns before a script is disabled (default 3). */
-  maxOverruns?: number;
-  /** Errors before a script is disabled (default 10). */
-  maxErrors?: number;
-  /** Seed for the in-sandbox Math.random (default 1). */
-  seed?: number;
-}
+import { MAX_ABANDONED_RUNTIMES, SCRIPT_HEAP_BUDGET_BYTES, type ManagedScriptRunner, type ScriptRunnerOptions } from './config';
+
+export { MAX_ABANDONED_RUNTIMES, SCRIPT_HEAP_BUDGET_BYTES, type ManagedScriptRunner, type ScriptRunnerOptions };
 
 const DEFAULTS = {
   budgetMs: 2,
@@ -70,15 +54,6 @@ const MAX_DIAGNOSTICS = 200;
 /** Name of the frozen entry point inside the sandbox. */
 const ENTRY = '__aetherRun';
 
-/**
- * Sum of per-script memory limits that may be reserved at once on one WASM
- * module (all QuickJS runtimes share its heap). Bounds a hostile world to
- * ~128 MB instead of MAX_SCRIPTS × the per-script limit.
- */
-export const SCRIPT_HEAP_BUDGET_BYTES = 128 * 1024 * 1024;
-/** Abandoned (unfreeable) runtimes tolerated before a fresh WASM module is loaded. */
-export const MAX_ABANDONED_RUNTIMES = 4;
-
 /** Module-wide accounting (shared by every runner on the same WASM module). */
 interface ModuleBudget {
   reserved: number;
@@ -96,9 +71,13 @@ function budgetOf(m: QuickJSWASMModule): ModuleBudget {
 let wasmModule: QuickJSWASMModule | undefined;
 let loading: Promise<QuickJSWASMModule> | undefined;
 
-/** Load a single (release, sync) QuickJS variant; unused variants are never fetched. */
+/**
+ * Load the one QuickJS variant the sandbox uses (release build, synchronous
+ * API). It is imported directly, so the bundle ships exactly one QuickJS
+ * WASM file and no other variant can ever be fetched.
+ */
 function loadModule(): Promise<QuickJSWASMModule> {
-  return newQuickJSWASMModule(RELEASE_SYNC);
+  return newQuickJSWASMModuleFromVariant(RELEASE_SYNC);
 }
 
 /** Load the QuickJS WebAssembly module (idempotent). Must resolve before {@link createScriptRunner}. */
@@ -459,13 +438,6 @@ class QuickJSScriptRunner implements ScriptRunner {
 
 function positive(v: number | undefined, def: number): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : def;
-}
-
-/** A {@link ScriptRunner} with extra management methods. */
-export interface ManagedScriptRunner extends ScriptRunner {
-  takeDiagnostics(): ScriptDiagnostic[];
-  activeScripts(): string[];
-  unload(scriptId: string): void;
 }
 
 /**

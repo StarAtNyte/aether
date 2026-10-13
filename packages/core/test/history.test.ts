@@ -205,3 +205,49 @@ describe('History: serialization', () => {
     expect(() => History.fromJSON(JSON.parse(JSON.stringify(good).replace('"maxEntries"', '"__proto__":{"x":1},"maxEntries"')))).toThrow(/forbidden key/);
   });
 });
+
+describe('History: setMaxEntries (memory budget)', () => {
+  it('prunes the oldest entries of every branch and keeps the newest', () => {
+    const h = new History(createWorld(), { maxEntries: 50 });
+    for (let i = 0; i < 20; i++) h.commit(add(`e${i}`), `add ${i}`);
+    const head = h.current;
+    expect(h.size).toBe(21);
+    const listener = vi.fn();
+    h.subscribe(listener);
+    expect(h.setMaxEntries(5)).toBe(5);
+    expect(h.entryLimit).toBe(5);
+    expect(h.size).toBe(6);
+    expect(h.current).toBe(head);
+    expect(listener).toHaveBeenCalledTimes(1);
+    let undos = 0;
+    while (h.undo()) undos++;
+    expect(undos).toBe(5);
+    // Later commits respect the new cap.
+    while (h.redo());
+    for (let i = 0; i < 10; i++) h.commit(add(`f${i}`), `add f${i}`);
+    expect(h.size).toBe(6);
+  });
+
+  it('never prunes the current position and is a silent no-op when nothing exceeds the cap', () => {
+    const h = new History(createWorld(), { maxEntries: 100 });
+    for (let i = 0; i < 10; i++) h.commit(add(`e${i}`), `add ${i}`);
+    for (let i = 0; i < 8; i++) h.undo();
+    const here = h.current;
+    h.setMaxEntries(3);
+    expect(h.current).toBe(here);
+    // Only the 2 entries before the cursor could go; the redo tail survives.
+    expect(h.canRedo()).toBe(true);
+    expect(h.canUndo()).toBe(false);
+    const listener = vi.fn();
+    h.subscribe(listener);
+    h.setMaxEntries(1000);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('clamps invalid caps like the constructor', () => {
+    const h = new History(createWorld(), { maxEntries: 10 });
+    expect(h.setMaxEntries(0)).toBe(1);
+    expect(h.setMaxEntries(Number.NaN)).toBe(1);
+    expect(h.setMaxEntries(1e9)).toBe(10_000);
+  });
+});

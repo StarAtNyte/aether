@@ -14,18 +14,21 @@
  *
  * The loop runs outside React: no state updates per frame. Stats and the
  * HUD are pushed to listeners at 4 Hz. In edit mode frames are rendered on
- * demand (only when something visible changed), so an idle editor does not
- * keep the GPU busy. `@aether/physics` (a multi-MB WASM chunk) is loaded
- * lazily on the first Play.
+ * demand (only when something visible changed), and after 30 s without
+ * input even animated weather stops redrawing, so an idle editor does not
+ * keep the GPU busy. While the page is hidden the loop is stopped entirely.
+ * `@aether/physics` (a multi-MB WASM chunk) is loaded lazily on the first
+ * Play or verification.
  */
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type RenderDiagnostic } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type ContextLossInfo, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
+import { IdleClock } from './IdleClock';
 import { InputController } from './input';
 import { SoundBoard } from './sound';
 import { TransformTable } from './TransformTable';
@@ -47,8 +50,7 @@ const PLAYER_FRAME_RADIUS = 14;
 const MAX_TRANSIENTS = 2000;
 /** Consecutive failed frames after which the render loop is stopped (persistent GPU/device failure). */
 const MAX_FRAME_FAILURES = 30;
-/** Default device-pixel-ratio cap (2 is costly on laptop GPUs with little visual gain). */
-const PIXEL_RATIO_CAP = 1.5;
+const MB = 1024 * 1024;
 
 /** Live counters pushed to the UI at 4 Hz. */
 export interface SimulationStats {
@@ -59,6 +61,10 @@ export interface SimulationStats {
   entities: number;
   bodies: number;
   stepMs: number;
+  /** Estimated GPU drawing-buffer + shadow memory (MB). */
+  gpuMB: number;
+  /** JS heap in use (MB; 0 where the browser does not report it). */
+  heapMB: number;
 }
 
 /** Callbacks from the simulation to the UI layer. */
@@ -73,17 +79,20 @@ export interface SimulationListener {
   onError?(message: string): void;
   /** The render loop stopped after repeated failures; the page must be reloaded. */
   onFatal?(message: string): void;
+  /** The GPU device / WebGL context was lost; the simulation must be replaced. */
+  onContextLost?(info: ContextLossInfo): void;
 }
 
 /** Construction options. */
 export interface SimulationOptions {
-  preferWebGPU?: boolean;
+  /** Backend policy (default 'auto'). */
+  backend?: BackendPreference;
   shadows?: boolean;
   pointerLock?: boolean;
   sandbox?: SandboxRunner;
   onProgress?: (msg: string) => void;
-  /** Laptop/battery mode: no bloom, smaller shadow map, DPR capped at 1. */
-  lowPower?: boolean;
+  /** Low-memory mode (see `renderBudget` in `@aether/render`). */
+  lowMemory?: boolean;
   /** Skip collecting renderer stats in edit mode (perf HUD hidden). */
   statsWhileEditing?: boolean;
 }
@@ -146,6 +155,8 @@ export class Simulation {
   private lastFrameError = '';
   private stopRequested = false;
   private statsWhileEditing: boolean;
+  private readonly idle = new IdleClock();
+  private hidden = false;
 
   private constructor(renderer: WorldRenderer, history: History, listener: SimulationListener, opts: SimulationOptions) {
     this.renderer = renderer;
@@ -164,18 +175,24 @@ export class Simulation {
     if (parent) this.resizeObserver?.observe(parent);
     this.resize();
     this.requestSync(history.current);
-    this.raf = requestAnimationFrame(this.onAnimationFrame);
+    this.touch();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onVisibility);
+      this.hidden = document.visibilityState === 'hidden';
+    }
+    for (const type of ACTIVITY_EVENTS) window.addEventListener(type, this.onActivity, { passive: true, capture: true });
+    if (!this.hidden) this.raf = requestAnimationFrame(this.onAnimationFrame);
   }
 
   /** Create the renderer on `canvas` and start the loop (edit mode). */
   static async create(canvas: HTMLCanvasElement, history: History, listener: SimulationListener, opts: SimulationOptions = {}): Promise<Simulation> {
     const renderer = await WorldRenderer.create(canvas, {
-      preferWebGPU: opts.preferWebGPU !== false,
+      backend: opts.backend ?? 'auto',
       shadows: opts.shadows !== false,
       antialias: true,
-      pixelRatioCap: opts.lowPower ? 1 : PIXEL_RATIO_CAP,
-      lowPower: opts.lowPower === true,
+      lowMemory: opts.lowMemory === true,
       growIn: !prefersReducedMotion(),
+      onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
@@ -226,6 +243,7 @@ export class Simulation {
 
   private requestSync(world: WorldDoc): void {
     if (this.disposed) return;
+    this.touch();
     const idle = this.pendingWorld === null;
     this.pendingWorld = world;
     if (!idle) return; // the running chain picks up the newest world
@@ -310,9 +328,19 @@ export class Simulation {
     this.refreshDebug();
   }
 
-  /** Toggle low-power rendering (no bloom, smaller shadows). */
-  setLowPower(on: boolean): void {
-    this.renderer.setLowPower(on);
+  /** Toggle the renderer's low-memory budget (pixel ratio, shadows, post pass, caches). */
+  setLowMemory(on: boolean): void {
+    this.renderer.setLowMemory(on);
+  }
+
+  /** GPU memory picture of the renderer. */
+  memoryStats(): RenderMemoryStats {
+    return this.renderer.memoryStats();
+  }
+
+  /** Mark user/agent activity (keeps animated environments running in edit mode). */
+  touch(): void {
+    this.idle.touch(now());
   }
 
   /** Collect renderer stats in edit mode only while someone displays them. */
@@ -599,8 +627,8 @@ export class Simulation {
     const s = this.session;
     try {
       if (s) this.stepSession(s, dt);
-      // Edit mode renders on demand; play mode renders every frame.
-      this.renderer.render(dt, { onDemand: s === null });
+      // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
+      this.renderer.render(dt, { onDemand: s === null, animate: s !== null || !this.idle.idle(t) });
       this.frameFailures = 0;
     } catch (err) {
       this.onFrameError(err, s);
@@ -660,7 +688,10 @@ export class Simulation {
     if (!s && !this.statsWhileEditing) return;
     const r = this.renderer.stats();
     const p = s ? s.pw.stats() : null;
+    const heap = (performance as unknown as { memory?: { usedJSHeapSize?: unknown } }).memory?.usedJSHeapSize;
     this.listener.onStats?.({
+      gpuMB: this.renderer.memoryStats().estimatedGpuMB,
+      heapMB: typeof heap === 'number' && Number.isFinite(heap) ? Math.round(heap / MB) : 0,
       fps: r.fps,
       frameMs: r.frameMs,
       drawCalls: r.drawCalls,
@@ -703,6 +734,29 @@ export class Simulation {
     this.listener.onPick?.(id, e.shiftKey || e.metaKey || e.ctrlKey);
   };
 
+  /** Stop the loop while the page is hidden; resume (without a giant time step) when it shows again. */
+  private readonly onVisibility = (): void => {
+    if (this.disposed) return;
+    const hidden = document.visibilityState === 'hidden';
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    if (hidden) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      this.sound.suspend();
+      return;
+    }
+    this.lastFrame = -1;
+    this.stepper.reset();
+    this.touch();
+    this.renderer.requestRender();
+    if (this.raf === 0 && this.frameFailures < MAX_FRAME_FAILURES) this.raf = requestAnimationFrame(this.onAnimationFrame);
+  };
+
+  private readonly onActivity = (): void => {
+    this.touch();
+  };
+
   private resize(): void {
     const parent = this.renderer.domElement.parentElement;
     if (!parent) return;
@@ -716,6 +770,9 @@ export class Simulation {
     if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
+    for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, this.onActivity, { capture: true });
     this.unsubscribe();
     this.resizeObserver?.disconnect();
     const canvas = this.renderer.domElement;
@@ -739,6 +796,13 @@ export class Simulation {
 // -----------------------------------------------------------------------------
 // Helpers (pure)
 // -----------------------------------------------------------------------------
+
+/** Input that counts as activity for the idle clock. */
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const;
+
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : 0;
+}
 
 /** Run a teardown step, logging (not propagating) its failure. */
 function safely(step: string, fn: () => void): void {

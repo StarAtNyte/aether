@@ -6,7 +6,7 @@
  * (scene sync, material/geometry caches, scatter layout, sky model, …) are
  * exported too for tests, tooling and alternative front-ends.
  */
-export { WorldRenderer, type RendererOptions, type RenderStats } from './world-renderer';
+export { WorldRenderer, type ContextLossInfo, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
 export type { Bounds, CameraMode, GeometrySource, KeyedOutput, RenderDiagnostic, ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner } from './types';
 
 export { SceneSync, DEFAULT_MAX_INSTANCES, type SceneSyncOptions } from './sync/scene-sync';
@@ -46,4 +46,5 @@ export { FrameStats } from './view/frame-stats';
 
 export { RefCache } from './refcache';
 export { setRenderLogLevel, type LogLevel } from './log';
-export type { BackendKind } from './gpu/backend';
+export { adapterKnownGood, describeAdapter, parseBackendPreference, pickBackend, type AdapterInfoLike, type BackendDecision, type BackendEnvironment, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
+export { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, MIN_PIXEL_RATIO, type GpuTier, type RenderBudget } from './gpu/budget';

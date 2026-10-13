@@ -1,7 +1,21 @@
 /**
- * Renderer creation: `WebGPURenderer` on the WebGPU backend when available,
- * otherwise (or when initialization fails) the same renderer forced onto its
- * WebGL2 backend. Browser-only; kept thin on purpose.
+ * Renderer creation: `WebGPURenderer` on the WebGPU backend when the backend
+ * policy allows it, otherwise (or when initialization fails) the same
+ * renderer forced onto its WebGL2 backend. Browser-only; kept thin on
+ * purpose. The policy itself ({@link pickBackend}, {@link adapterKnownGood})
+ * is pure and unit-tested.
+ *
+ * Policy (`preference: 'auto'`):
+ * - Chromium / Safari: WebGPU when `navigator.gpu` exists.
+ * - Firefox (and forks such as Zen): WebGL2, unless the WebGPU adapter
+ *   reports a known-good discrete GPU on Windows or macOS. Firefox's
+ *   WebGPU on Linux (notably hybrid Intel + NVIDIA laptops) has crashed
+ *   the whole browser, and its WebGL2 path is mature.
+ * - A WebGPU init that never finished (the browser died during it) disables
+ *   WebGPU permanently for this origin; see the crash guard below.
+ *
+ * `'webgpu'` / `'webgl2'` force a backend (WebGPU still falls back when it
+ * cannot start).
  */
 import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -10,18 +24,95 @@ import { errorMessage, log } from '../log';
 /** Active GPU backend. */
 export type BackendKind = 'webgpu' | 'webgl2';
 
+/** Requested backend: automatic policy, or forced. */
+export type BackendPreference = 'auto' | 'webgpu' | 'webgl2';
+
 /** Options of {@link createGpuRenderer}. */
 export interface BackendOptions {
-  preferWebGPU: boolean;
+  /** Backend policy (default 'auto'). */
+  preference?: BackendPreference;
+  /** @deprecated use `preference`; `false` means 'webgl2'. */
+  preferWebGPU?: boolean;
   antialias: boolean;
   shadows: boolean;
   pixelRatioCap: number;
   onProgress?: (msg: string) => void;
 }
 
-function hasWebGPU(): boolean {
+/** What the GPU reported about itself (best effort; strings may be empty). */
+export interface GpuInfo {
+  /** Human-readable GPU description, e.g. "Mesa Intel(R) UHD Graphics 620". */
+  description: string;
+}
+
+/** Environment facts the policy needs (injectable for tests). */
+export interface BackendEnvironment {
+  webgpuAvailable: boolean;
+  /** WebGPU disabled for this origin by the crash guard. */
+  webgpuBlocked: boolean;
+  /** Firefox or a Firefox fork (Gecko). */
+  firefox: boolean;
+  /** Desktop Linux (not Android). */
+  linux: boolean;
+}
+
+/** Decision of {@link pickBackend}: a backend, or "ask the WebGPU adapter first". */
+export type BackendDecision = BackendKind | 'probe';
+
+/** Subset of `GPUAdapterInfo` used by the policy. */
+export interface AdapterInfoLike {
+  vendor?: string;
+  architecture?: string;
+  description?: string;
+  device?: string;
+  isFallbackAdapter?: boolean;
+}
+
+/** Normalize an untrusted preference value (unknown values mean 'auto'). */
+export function parseBackendPreference(value: unknown): BackendPreference {
+  return value === 'webgpu' || value === 'webgl2' || value === 'auto' ? value : 'auto';
+}
+
+/** Pick the backend to try first. See the module docs for the policy. */
+export function pickBackend(preference: BackendPreference, env: BackendEnvironment): BackendDecision {
+  if (!env.webgpuAvailable || env.webgpuBlocked || preference === 'webgl2') return 'webgl2';
+  if (preference === 'webgpu') return 'webgpu';
+  if (!env.firefox) return 'webgpu';
+  return env.linux ? 'webgl2' : 'probe';
+}
+
+/** Discrete / known-good GPU vendors for Firefox's WebGPU (Windows and macOS). */
+const KNOWN_GOOD_VENDORS = /^(nvidia|amd|ati|apple)\b/i;
+
+/** True when a Firefox WebGPU adapter is trusted: a real (non-fallback) discrete or Apple GPU. */
+export function adapterKnownGood(info: AdapterInfoLike | null | undefined): boolean {
+  if (!info || info.isFallbackAdapter === true) return false;
+  const vendor = typeof info.vendor === 'string' ? info.vendor.trim() : '';
+  return KNOWN_GOOD_VENDORS.test(vendor);
+}
+
+/** One-line description of an adapter for the GPU budget (vendor, architecture, description). */
+export function describeAdapter(info: AdapterInfoLike | null | undefined): string {
+  if (!info) return '';
+  return [info.vendor, info.architecture, info.device, info.description]
+    .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    .join(' ')
+    .slice(0, 256);
+}
+
+/** Facts about the running browser. */
+export function detectEnvironment(): BackendEnvironment {
   const nav: unknown = typeof navigator === 'undefined' ? undefined : navigator;
-  return typeof nav === 'object' && nav !== null && 'gpu' in nav && Boolean((nav as { gpu?: unknown }).gpu);
+  const n = typeof nav === 'object' && nav !== null ? (nav as { gpu?: unknown; userAgent?: unknown; platform?: unknown }) : {};
+  const ua = typeof n.userAgent === 'string' ? n.userAgent : '';
+  const platform = typeof n.platform === 'string' ? n.platform : '';
+  return {
+    webgpuAvailable: Boolean(n.gpu),
+    webgpuBlocked: !webgpuAllowed(),
+    // Gecko browsers (Firefox, Zen, LibreWolf…) send "Gecko/<date>"; Chromium and Safari only "like Gecko".
+    firefox: /\bGecko\/\d|\bFirefox\/\d/.test(ua),
+    linux: /Linux/i.test(platform || ua) && !/Android/i.test(ua),
+  };
 }
 
 /** localStorage key set while WebGPU initializes; still present on the next load means the browser died mid-init. */
@@ -64,8 +155,43 @@ export function detectBackend(renderer: WebGPURenderer): BackendKind {
   return typeof backend === 'object' && backend !== null && (backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true ? 'webgpu' : 'webgl2';
 }
 
+/** Ask Firefox's WebGPU adapter whether it is trusted. Never throws. */
+async function probeAdapter(): Promise<boolean> {
+  try {
+    const gpu = (navigator as unknown as { gpu?: { requestAdapter(o?: object): Promise<{ info?: AdapterInfoLike; isFallbackAdapter?: boolean } | null> } }).gpu;
+    const adapter = gpu ? await gpu.requestAdapter({ powerPreference: 'high-performance' }) : null;
+    if (!adapter) return false;
+    const info: AdapterInfoLike = { ...(adapter.info ?? {}), ...(adapter.isFallbackAdapter === true ? { isFallbackAdapter: true } : {}) };
+    const ok = adapterKnownGood(info);
+    log.info(`WebGPU adapter "${describeAdapter(info) || 'unknown'}": ${ok ? 'trusted' : 'not trusted, using WebGL2'}`);
+    return ok;
+  } catch (e) {
+    log.warn(`WebGPU adapter probe failed (${errorMessage(e)})`);
+    return false;
+  }
+}
+
+/** Best-effort description of the GPU the renderer runs on. Never throws. */
+export function gpuInfoOf(renderer: WebGPURenderer): GpuInfo {
+  try {
+    const backend = renderer.backend as unknown as { device?: { adapterInfo?: AdapterInfoLike }; gl?: WebGL2RenderingContext };
+    if (backend.device) return { description: describeAdapter(backend.device.adapterInfo) };
+    const gl = backend.gl;
+    if (gl) {
+      const plain = String(gl.getParameter(gl.RENDERER) ?? '');
+      // Firefox returns the (sanitized) real renderer here; Chromium returns a generic name.
+      if (plain && !/^webkit webgl$/i.test(plain)) return { description: plain.slice(0, 256) };
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      if (ext) return { description: String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? '').slice(0, 256) };
+    }
+  } catch {
+    // Information only.
+  }
+  return { description: '' };
+}
+
 /** Create and initialize the renderer with the project-wide color/shadow settings. */
-export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: BackendOptions): Promise<{ renderer: WebGPURenderer; backend: BackendKind }> {
+export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: BackendOptions): Promise<{ renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo }> {
   const { WebGPURenderer } = await import('three/webgpu');
   const attempt = async (forceWebGL: boolean): Promise<WebGPURenderer> => {
     const r = new WebGPURenderer({ canvas, antialias: opts.antialias, forceWebGL, powerPreference: 'high-performance', alpha: false });
@@ -74,23 +200,34 @@ export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: Backend
     await r.init();
     return r;
   };
+  const preference = opts.preference ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto');
+  let decision = pickBackend(preference, detectEnvironment());
   let renderer: WebGPURenderer;
-  if (opts.preferWebGPU && hasWebGPU() && webgpuAllowed()) {
-    opts.onProgress?.('Initializing WebGPU…');
+  if (decision !== 'webgl2') {
     try {
+      // The guard covers the adapter probe too: on broken drivers requesting an adapter can already crash.
       storageSet(GPU_INIT_PENDING_KEY, '1');
-      renderer = await attempt(false);
+      if (decision === 'probe') decision = (await probeAdapter()) ? 'webgpu' : 'webgl2';
+      if (decision === 'webgpu') {
+        opts.onProgress?.('Initializing WebGPU…');
+        renderer = await attempt(false);
+        storageSet(GPU_INIT_PENDING_KEY, null);
+        return finish(renderer, opts);
+      }
       storageSet(GPU_INIT_PENDING_KEY, null);
     } catch (e) {
       storageSet(GPU_INIT_PENDING_KEY, null);
       log.warn(`WebGPU init failed (${errorMessage(e)}); falling back to WebGL2`);
       opts.onProgress?.('WebGPU unavailable, falling back to WebGL2…');
-      renderer = await attempt(true);
+      return finish(await attempt(true), opts);
     }
-  } else {
-    opts.onProgress?.('Initializing WebGL2…');
-    renderer = await attempt(true);
   }
+  opts.onProgress?.('Initializing WebGL2…');
+  renderer = await attempt(true);
+  return finish(renderer, opts);
+}
+
+function finish(renderer: WebGPURenderer, opts: BackendOptions): { renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo } {
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
@@ -99,5 +236,5 @@ export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: Backend
   renderer.shadowMap.type = PCFShadowMap;
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   renderer.setPixelRatio(Math.min(dpr, Math.max(0.5, opts.pixelRatioCap)));
-  return { renderer, backend: detectBackend(renderer) };
+  return { renderer, backend: detectBackend(renderer), gpu: gpuInfoOf(renderer) };
 }

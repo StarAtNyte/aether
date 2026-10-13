@@ -24,7 +24,7 @@ export { BUILTIN_GENERATORS, catalog, getBuiltinGenerator } from './generators/i
 export { generate, generateBuiltinSync, generatorSourceHash, proceduralOutputKey, yieldToEventLoop } from './generate';
 export { primitiveOutput, fallbackOutput, validateOutput } from './output';
 export { resolveParams } from './params';
-export { GeneratorCache, DEFAULT_SEED, generatorCacheKey } from './cache';
+export { GeneratorCache, DEFAULT_CACHE_BYTES, DEFAULT_SEED, generatorCacheKey, outputBytes } from './cache';
 export { PROCGEN_LIMITS } from './limits';
 export { Noise } from './noise';
 export { normalizeHex, mixHex } from './color';

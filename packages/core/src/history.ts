@@ -90,7 +90,7 @@ export class History {
   private readonly branchMap = new Map<string, Branch>();
   private active = 'main';
   private nextId = 1;
-  private readonly maxEntries: number;
+  private maxEntries: number;
   private readonly events = new Emitter<{ change: WorldDoc }>();
 
   /**
@@ -152,6 +152,41 @@ export class History {
     this.collectGarbage();
     this.notify();
     return result;
+  }
+
+  /** Number of entries held in memory across all branches (base entries included). */
+  get size(): number {
+    return this.byId.size;
+  }
+
+  /** Current per-branch entry cap (see the constructor). */
+  get entryLimit(): number {
+    return this.maxEntries;
+  }
+
+  /**
+   * Change the per-branch entry cap (e.g. a low-memory mode) and prune the
+   * oldest entries of every branch down to it right away. The current
+   * position is never pruned: on a branch whose cursor sits deeper in the
+   * past than the cap allows, only the entries before the cursor go. Change
+   * listeners fire only when something was dropped (the world itself never
+   * changes). Returns the effective cap (clamped like the constructor's).
+   */
+  setMaxEntries(max: number): number {
+    this.maxEntries = Number.isFinite(max) ? Math.min(MAX_MAX_ENTRIES, Math.max(1, Math.floor(max))) : this.maxEntries;
+    let pruned = false;
+    for (const b of this.branchMap.values()) {
+      const drop = Math.min(b.ids.length - (this.maxEntries + 1), b.cursor);
+      if (drop <= 0) continue;
+      b.ids.splice(0, drop);
+      b.cursor -= drop;
+      pruned = true;
+    }
+    if (pruned) {
+      this.collectGarbage();
+      this.notify();
+    }
+    return this.maxEntries;
   }
 
   /** Step back one entry on the current branch. Returns the new world, or null at the start. */

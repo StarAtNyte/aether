@@ -109,15 +109,21 @@ export function saveChat(storage: StorageLike | null, chat: readonly ChatEntry[]
   return writeJson(storage, STORAGE_KEYS.chat, chat);
 }
 
+/** Rendering backend preference (see `@aether/render` backend policy). */
+export type BackendSetting = 'auto' | 'webgpu' | 'webgl2';
+/** Low-memory mode: decided by device detection, or forced on/off. */
+export type LowMemorySetting = 'auto' | 'on' | 'off';
+
 /** User preferences persisted across sessions. */
 export interface StudioSettings {
   showPerf: boolean;
   pointerLock: boolean;
   shadows: boolean;
   showColliders: boolean;
-  preferWebGPU: boolean;
-  /** Laptop/battery rendering: no bloom, smaller shadow maps, DPR 1. */
-  lowPower: boolean;
+  /** Rendering backend: automatic policy or forced (applies after a renderer restart). */
+  backend: BackendSetting;
+  /** Low-memory mode (smaller drawing buffer, no bloom/MSAA, smaller caches and history). */
+  lowMemory: LowMemorySetting;
   /** Dark interface theme (the default is light). */
   darkTheme: boolean;
 }
@@ -128,20 +134,36 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   pointerLock: false,
   shadows: true,
   showColliders: false,
-  preferWebGPU: true,
-  lowPower: false,
+  backend: 'auto',
+  lowMemory: 'auto',
   darkTheme: false,
 });
 
-/** Load settings, keeping only known boolean fields. */
+const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme'] as const satisfies ReadonlyArray<keyof StudioSettings>;
+const BACKENDS: readonly BackendSetting[] = ['auto', 'webgpu', 'webgl2'];
+const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
+}
+
+/**
+ * Load settings, keeping only known fields of the right type and value.
+ * Older saves are migrated: `preferWebGPU: false` → backend 'webgl2',
+ * `lowPower: true` → low memory 'on'.
+ */
 export function loadSettings(storage: StorageLike | null): StudioSettings {
   const raw = readJson(storage, STORAGE_KEYS.settings);
   const out: StudioSettings = { ...DEFAULT_SETTINGS };
   if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
     const r = raw as Record<string, unknown>;
-    for (const k of Object.keys(DEFAULT_SETTINGS) as Array<keyof StudioSettings>) {
-      if (Object.prototype.hasOwnProperty.call(r, k) && typeof r[k] === 'boolean') out[k] = r[k];
+    const own = (k: string): unknown => (Object.prototype.hasOwnProperty.call(r, k) ? r[k] : undefined);
+    for (const k of BOOLEAN_SETTINGS) {
+      const v = own(k);
+      if (typeof v === 'boolean') out[k] = v;
     }
+    out.backend = oneOf(own('backend'), BACKENDS) ?? (own('preferWebGPU') === false ? 'webgl2' : DEFAULT_SETTINGS.backend);
+    out.lowMemory = oneOf(own('lowMemory'), LOW_MEMORY) ?? (own('lowPower') === true ? 'on' : DEFAULT_SETTINGS.lowMemory);
   }
   return out;
 }

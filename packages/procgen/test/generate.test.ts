@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProceduralShape, type GeneratorDef, type Json } from '@aether/core';
-import { createGeneratorApi, DEFAULT_SEED, generate, GeneratorCache, generatorSourceHash, proceduralOutputKey, type GeneratorOutput, type SandboxRunner } from '../src/index';
+import { createGeneratorApi, DEFAULT_SEED, generate, GeneratorCache, outputBytes, generatorSourceHash, proceduralOutputKey, type GeneratorOutput, type SandboxRunner } from '../src/index';
 
 const shape = (generator: string, params: Record<string, Json> = {}, seed?: number): ProceduralShape =>
   ProceduralShape.parse({ kind: 'procedural', generator, params, ...(seed === undefined ? {} : { seed }) });
@@ -33,6 +33,42 @@ describe('GeneratorCache', () => {
     c.clear();
     expect(c.size).toBe(0);
     expect(new GeneratorCache(Number.NaN).size).toBe(0);
+  });
+
+  it('bounds the cached bytes, evicting least recently used outputs', () => {
+    const o = boxOutput();
+    const size = outputBytes(o);
+    expect(size).toBeGreaterThan(0);
+    const c = new GeneratorCache(100, size * 2);
+    c.set('a', o);
+    c.set('b', o);
+    expect(c.bytes).toBe(size * 2);
+    c.get('a');
+    c.set('c', o);
+    expect(c.get('b')).toBeUndefined();
+    expect(c.get('a')).toBe(o);
+    expect(c.bytes).toBe(size * 2);
+    // Replacing a key does not double count.
+    c.set('a', o);
+    expect(c.bytes).toBe(size * 2);
+    // Shrinking the budget evicts immediately; an output above the budget is never cached.
+    c.setByteLimit(size);
+    expect(c.size).toBe(1);
+    expect(c.bytes).toBe(size);
+    c.setByteLimit(size - 1);
+    expect(c.size).toBe(0);
+    c.set('d', o);
+    expect(c.get('d')).toBeUndefined();
+    expect(c.bytes).toBe(0);
+    c.setByteLimit(Number.NaN);
+    expect(c.byteLimit).toBe(size - 1);
+  });
+
+  it('counts collider arrays in outputBytes', () => {
+    const o = boxOutput();
+    const base = outputBytes(o);
+    const withHull = { ...o, colliders: [...o.colliders, { kind: 'hull' as const, points: new Float32Array(30), offset: [0, 0, 0] as [number, number, number] }] };
+    expect(outputBytes(withHull)).toBe(base + 120);
   });
 
   it('builds stable keys independent of param key order', () => {

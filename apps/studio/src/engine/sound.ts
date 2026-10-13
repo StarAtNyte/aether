@@ -56,6 +56,11 @@ export class SoundBoard {
     if (tone.then) this.voice(ctx, tone.type, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, tone.gain);
   }
 
+  /** Pause the audio clock (page hidden); the next {@link play} resumes it. */
+  suspend(): void {
+    if (this.ctx?.state === 'running') void this.ctx.suspend().catch(() => undefined);
+  }
+
   /** Close the audio context. */
   dispose(): void {
     void this.ctx?.close().catch(() => undefined);
@@ -63,7 +68,10 @@ export class SoundBoard {
   }
 
   private context(): AudioContext | null {
-    if (this.ctx) return this.ctx;
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
+      return this.ctx;
+    }
     try {
       const Ctor = typeof AudioContext !== 'undefined' ? AudioContext : null;
       this.ctx = Ctor ? new Ctor() : null;

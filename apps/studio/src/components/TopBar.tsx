@@ -44,6 +44,7 @@ const WorldName = memo(function WorldName(): ReactElement {
 export const TopBar = memo(function TopBar(): ReactElement {
   const studio = useStudio();
   const backend = useUI((s) => s.backend);
+  const memory = useUI((s) => s.memory);
   const provider = useUI((s) => s.provider);
   const mode = useUI((s) => s.mode);
   const modeBusy = useUI((s) => s.modeBusy);
@@ -85,9 +86,19 @@ export const TopBar = memo(function TopBar(): ReactElement {
         <span className="topbar__divider" aria-hidden="true" />
         <WorldName />
         {backend && (
-          <span className={`badge badge--${backend}`} title={backend === 'webgpu' ? 'Rendering with WebGPU' : 'Rendering with WebGL2 (WebGPU unavailable)'}>
+          <span className={`badge badge--${backend}`} title={backend === 'webgpu' ? 'Rendering with WebGPU' : 'Rendering with WebGL2'}>
             {backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}
           </span>
+        )}
+        {memory.lowMemory && (
+          <button
+            type="button"
+            className="badge badge--memory"
+            title={`Low memory mode${memory.reason ? `: ${memory.reason}` : ''}. Click to change it in Settings.`}
+            onClick={() => studio.store.getState().setSettingsOpen(true)}
+          >
+            Low memory
+          </button>
         )}
         {provider.status === 'offline' && (
           <span className="badge badge--muted" title="No AI backend reachable — prompts are answered by the built-in offline world planner.">

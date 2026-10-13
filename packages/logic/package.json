@@ -11,6 +11,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@aether/core": "*",
-    "quickjs-emscripten": "^0.32.0"
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "quickjs-emscripten-core": "0.32.0"
   }
 }

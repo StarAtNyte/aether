@@ -28,17 +28,21 @@ import { FrameStats } from './view/frame-stats';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
-import { createGpuRenderer, type BackendKind } from './gpu/backend';
+import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
+import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, type PostPipeline } from './gpu/post';
+import { GeneratorCache } from '@aether/procgen';
 import { errorMessage, log } from './log';
 
 /** Renderer construction options. */
 export interface RendererOptions {
-  /** Try WebGPU first (default true). */
+  /** Backend policy (default 'auto', see `gpu/backend.ts`). */
+  backend?: BackendPreference;
+  /** @deprecated use `backend`; `false` means 'webgl2'. */
   preferWebGPU?: boolean;
   antialias?: boolean;
   shadows?: boolean;
-  /** Max device pixel ratio (default 2). */
+  /** Extra cap on the device pixel ratio (the GPU budget applies its own, lower caps). */
   pixelRatioCap?: number;
   /** Sandbox for custom (LLM-written) generators. */
   sandbox?: SandboxRunner;
@@ -49,13 +53,52 @@ export interface RendererOptions {
   modelLoader?: ModelLoader;
   /** Total scatter instance budget. */
   maxInstances?: number;
-  /** Laptop/battery mode: no bloom post pass and a 1024² sun shadow map. */
+  /**
+   * Low-memory mode: pixel ratio 1 and ≤ ~1 MP drawing buffer, no MSAA, no
+   * bloom post pass, 1024² sun shadows, smaller instance and generator
+   * caches. See {@link renderBudget}.
+   */
+  lowMemory?: boolean;
+  /** @deprecated alias of `lowMemory`. */
   lowPower?: boolean;
+  /**
+   * Called once when the GPU device / WebGL context is lost (driver reset,
+   * GPU process crash, memory pressure). The renderer stops drawing; the
+   * host should dispose it and create a new one on a fresh canvas.
+   */
+  onContextLost?: (info: ContextLossInfo) => void;
   /**
    * Animate new entities growing in (a ripple from the scene center) when a
    * world is built or edited. Default true; pass false for reduced motion.
    */
   growIn?: boolean;
+}
+
+/** Details of a lost GPU device / WebGL context. */
+export interface ContextLossInfo {
+  backend: BackendKind;
+  message: string;
+}
+
+/** GPU memory picture of the renderer (diagnostics, memory budgets, e2e). */
+export interface RenderMemoryStats {
+  gpuTier: GpuTier;
+  gpu: string;
+  lowMemory: boolean;
+  pixelRatio: number;
+  drawingBuffer: [number, number];
+  shadowMapSize: number;
+  post: boolean;
+  /** GPU geometries / textures three.js has uploaded (counted on first draw). */
+  geometries: number;
+  textures: number;
+  /** Live geometries and materials held by the renderer's reference-counted caches. */
+  cachedGeometries: number;
+  materials: number;
+  /** CPU copies of procedural meshes held by the generator cache (MB). */
+  generatorCacheMB: number;
+  /** Estimated drawing-buffer + shadow memory on the GPU (MB). */
+  estimatedGpuMB: number;
 }
 
 /** Renderer statistics. */
@@ -176,9 +219,24 @@ export class WorldRenderer {
   /** Sphere of the meaningful content (refreshed with the bounds). */
   private framing: Framing | null = null;
   private disposed = false;
-  private lowPower = false;
+  private lost = false;
+  private lowMemory = false;
+  private budget: RenderBudget;
+  /** GPU description and class (drives {@link budget}). */
+  readonly gpu: Readonly<GpuInfo & { tier: GpuTier }>;
+  /** Generator output cache owned by this renderer (null with a custom geometry source). */
+  private readonly generatorCache: GeneratorCache | null;
+  /** Extra pixel-ratio cap from the options. */
+  private readonly ratioCap: number;
+  private cssWidth = 1;
+  private cssHeight = 1;
+  /** Bumped whenever the post pipeline is dropped, so a late async creation is discarded. */
+  private postGen = 0;
+  private postPending = false;
+  private readonly onContextLost: ((info: ContextLossInfo) => void) | undefined;
   /** Draw counters of the last frame actually drawn (stable while on-demand rendering idles). */
   private lastDrawCalls = 0;
+  private framesDrawn = 0;
   private lastTriangles = 0;
 
   private constructor(
@@ -188,18 +246,27 @@ export class WorldRenderer {
     controls: OrbitControlsLike | null,
     camera: PerspectiveCamera,
     opts: RendererOptions,
+    gpu: GpuInfo,
   ) {
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
+    this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description) });
+    this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
+    this.budget = renderBudget(this.gpu.tier, this.lowMemory);
+    this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
+    this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
     this.rig.occlusion = (from, to) => this.freeDistance(from, to);
-    const source = opts.geometrySource ?? createProcgenGeometrySource(opts.sandbox ? { sandbox: opts.sandbox } : {});
+    this.generatorCache = opts.geometrySource ? null : new GeneratorCache(256, this.budget.generatorCacheBytes);
+    const source =
+      opts.geometrySource ??
+      createProcgenGeometrySource({ ...(opts.sandbox ? { sandbox: opts.sandbox } : {}), ...(this.generatorCache ? { cache: this.generatorCache } : {}) });
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models };
     this.sync = new SceneSync({
       ...common,
-      ...(opts.maxInstances !== undefined ? { maxInstances: opts.maxInstances } : {}),
+      maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
@@ -217,17 +284,19 @@ export class WorldRenderer {
     this.growEnabled = opts.growIn !== false;
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
     this.env.sun.shadow.radius = 3;
-    this.setLowPower(opts.lowPower === true);
+    this.env.shadowMapCap = this.budget.shadowMapCap;
     this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group);
   }
 
   /** Create a renderer on `canvas` (WebGPU when possible, else WebGL2). */
   static async create(canvas: HTMLCanvasElement, opts: RendererOptions = {}): Promise<WorldRenderer> {
-    const { renderer, backend } = await createGpuRenderer(canvas, {
-      preferWebGPU: opts.preferWebGPU !== false,
-      antialias: opts.antialias !== false,
+    const lowMemory = opts.lowMemory === true || opts.lowPower === true;
+    const { renderer, backend, gpu } = await createGpuRenderer(canvas, {
+      preference: opts.backend ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto'),
+      // MSAA is fixed at context creation: low-memory mode starts without it.
+      antialias: opts.antialias !== false && !lowMemory,
       shadows: opts.shadows !== false,
-      pixelRatioCap: Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : 2,
+      pixelRatioCap: 1,
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
@@ -249,13 +318,36 @@ export class WorldRenderer {
     } catch (e) {
       log.warn(`orbit controls unavailable: ${errorMessage(e)}`);
     }
-    const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts);
+    const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts, gpu);
+    // A lost device/context stops drawing and tells the host (three's default only logs an error).
+    renderer.onDeviceLost = (info: { message?: unknown }) => wr.handleContextLost(typeof info?.message === 'string' ? info.message : 'unknown reason');
     // User camera input marks the next on-demand frame dirty.
     onControlsChange?.(() => wr.requestRender());
-    renderer.setSize(width, height, false);
-    wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4);
-    opts.onProgress?.(`Renderer ready (${backend})`);
+    wr.resize(width, height);
+    if (wr.budget.post) wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4);
+    opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
     return wr;
+  }
+
+  /** Frames actually drawn since creation (on-demand rendering skips the rest). */
+  get frameCount(): number {
+    return this.framesDrawn;
+  }
+
+  /** True once the GPU device / WebGL context was lost (the renderer no longer draws). */
+  get contextLost(): boolean {
+    return this.lost;
+  }
+
+  private handleContextLost(message: string): void {
+    if (this.lost || this.disposed) return;
+    this.lost = true;
+    log.warn(`${this.backend} context lost: ${message.slice(0, 200)}`);
+    try {
+      this.onContextLost?.({ backend: this.backend, message: message.slice(0, 200) });
+    } catch (e) {
+      log.warn(`context-lost handler failed: ${errorMessage(e)}`);
+    }
   }
 
   /** Sphere of the meaningful content used for fog and shadow fitting (null before content). */
@@ -335,12 +427,29 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
-  /** Toggle low-power rendering (no bloom pass, smaller shadow map). */
-  setLowPower(on: boolean): void {
-    this.lowPower = on;
-    this.env.shadowMapCap = on ? 1024 : 4096;
+  /**
+   * Switch the low-memory budget at runtime: the pixel ratio, shadow map,
+   * post pass and generator cache follow immediately (GPU targets are
+   * released); MSAA and the instance budget only change with a new renderer.
+   */
+  setLowMemory(on: boolean): void {
+    this.lowMemory = on;
+    this.budget = renderBudget(this.gpu.tier, on);
+    this.env.shadowMapCap = this.budget.shadowMapCap;
+    this.generatorCache?.setByteLimit(this.budget.generatorCacheBytes);
+    this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
+  }
+
+  /** @deprecated alias of {@link setLowMemory}. */
+  setLowPower(on: boolean): void {
+    this.setLowMemory(on);
+  }
+
+  /** True while the low-memory budget is active. */
+  get lowMemoryMode(): boolean {
+    return this.lowMemory;
   }
 
   /** Ask for a frame on the next on-demand {@link render} (e.g. after an external camera change). */
@@ -603,23 +712,27 @@ export class WorldRenderer {
    *
    * With `onDemand` (edit mode), the GPU frame is skipped when nothing visible
    * changed: no camera motion or flight, no content/override/selection change,
-   * no animated weather. Returns true when a frame was drawn.
+   * no animated weather. `animate: false` (an idle editor) freezes the
+   * self-animating environment so it no longer forces frames. Returns true
+   * when a frame was drawn.
    */
-  render(dt: number, opts: { onDemand?: boolean } = {}): boolean {
-    if (this.disposed) return false;
+  render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
+    if (this.disposed || this.lost) return false;
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
-    this.env.update(step, this.perspective);
+    const animate = opts.animate !== false;
+    this.env.update(animate ? step : 0, this.perspective);
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
-    if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !this.env.animating) return false;
+    if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !(animate && this.env.animating)) return false;
     this.needsDraw = false;
     this.highlighter.update();
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
     this.draw();
+    this.framesDrawn++;
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
     this.lastTriangles = info.triangles ?? 0;
@@ -655,9 +768,53 @@ export class WorldRenderer {
     }
   }
 
+  /** Post pass wanted for the current world and budget. */
+  private get wantsPost(): boolean {
+    return this.budget.post && this.env.bloom > 0.001;
+  }
+
+  /**
+   * Keep the post pipeline only while it is used: its full-resolution
+   * multisampled target and bloom chain are the largest GPU allocations, so
+   * they are released as soon as a world (or low-memory mode) turns bloom
+   * off and rebuilt asynchronously when it comes back.
+   */
+  private syncPost(): void {
+    const want = this.wantsPost;
+    if (!want && this.post) {
+      this.post.dispose();
+      this.post = null;
+      this.postGen++;
+    } else if (want && !this.post && !this.postPending && !this.postFailed) {
+      this.postPending = true;
+      const gen = ++this.postGen;
+      createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom)
+        .then((p) => {
+          this.postPending = false;
+          if (!p) {
+            this.postFailed = true;
+            return;
+          }
+          if (gen !== this.postGen || this.disposed || !this.wantsPost) p.dispose();
+          else {
+            this.post = p;
+            this.needsDraw = true;
+          }
+        })
+        .catch(() => {
+          this.postPending = false;
+          this.postFailed = true;
+        });
+    }
+  }
+
+  /** The post pipeline could not be built on this device (never retried). */
+  private postFailed = false;
+
   private draw(): void {
+    this.syncPost();
     try {
-      if (this.post && !this.lowPower && this.env.bloom > 0.001) this.post.render();
+      if (this.post) this.post.render();
       else this.renderer.render(this.scene, this.perspective);
     } catch (e) {
       // A post pipeline failure must not kill the viewport: drop post and keep rendering directly.
@@ -665,6 +822,7 @@ export class WorldRenderer {
         log.warn(`post-processing failed, disabling: ${errorMessage(e)}`);
         this.post.dispose();
         this.post = null;
+        this.postFailed = true;
       } else {
         throw e;
       }
@@ -673,7 +831,7 @@ export class WorldRenderer {
 
   /** Capture the current view as a data URL (JPEG quality 0.8 by default). */
   async screenshot(opts: { width?: number; height?: number; mime?: string } = {}): Promise<string> {
-    if (this.disposed) throw new Error('renderer disposed');
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     const canvas = this.domElement;
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
@@ -691,7 +849,7 @@ export class WorldRenderer {
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
   async renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size = 512): Promise<string[]> {
-    if (this.disposed) throw new Error('renderer disposed');
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     const list = (Array.isArray(views) ? views : []).filter((v): v is CaptureView => VIEW_NAMES.has(v)).slice(0, MAX_VIEWS);
     if (list.length === 0) return [];
     const px = captureSize(size, 512);
@@ -754,9 +912,18 @@ export class WorldRenderer {
     }
   }
 
-  /** Resize the drawing buffer (CSS pixels) and camera aspect. */
+  /**
+   * Resize the drawing buffer (CSS pixels) and camera aspect. The pixel
+   * ratio follows the GPU budget: capped per GPU class and so that the
+   * drawing buffer never exceeds the budget's pixel count.
+   */
   resize(width: number, height: number): void {
     if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) return;
+    this.cssWidth = width;
+    this.cssHeight = height;
+    const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap), width, height, this.budget);
+    if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
@@ -778,12 +945,38 @@ export class WorldRenderer {
     };
   }
 
+  /** GPU memory picture (cheap; no GPU readback). */
+  memoryStats(): RenderMemoryStats {
+    const info = this.renderer.info;
+    const ratio = this.renderer.getPixelRatio();
+    const w = Math.round(this.cssWidth * ratio);
+    const h = Math.round(this.cssHeight * ratio);
+    const shadow = this.env.sun.castShadow ? this.env.sun.shadow.mapSize.x : 0;
+    return {
+      gpuTier: this.gpu.tier,
+      gpu: this.gpu.description,
+      lowMemory: this.lowMemory,
+      pixelRatio: ratio,
+      drawingBuffer: [w, h],
+      shadowMapSize: shadow,
+      post: this.post !== null,
+      geometries: info.memory.geometries ?? 0,
+      textures: info.memory.textures ?? 0,
+      cachedGeometries: this.geometries.size,
+      materials: this.materials.size,
+      generatorCacheMB: Math.round(((this.generatorCache?.bytes ?? 0) / (1024 * 1024)) * 10) / 10,
+      estimatedGpuMB: Math.round(estimateFramebufferMB(w, h, this.post !== null || !this.lowMemory) + estimateShadowMB(shadow)),
+    };
+  }
+
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.post?.dispose();
     this.post = null;
+    this.postGen++;
+    this.generatorCache?.clear();
     this.rig.dispose();
     this.sync.dispose();
     this.ghost.dispose();

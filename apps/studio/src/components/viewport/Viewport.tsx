@@ -108,6 +108,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const loading = useUI((s) => s.loading);
   const fatal = useUI((s) => s.fatal);
   const mode = useUI((s) => s.mode);
+  // A new epoch (context-loss recovery, backend switch) remounts the canvas: a lost context is never reused.
+  const epoch = useUI((s) => s.rendererEpoch);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -128,7 +130,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       teardown?.();
       canvas.remove();
     };
-  }, [studio]);
+  }, [studio, epoch]);
 
   return (
     <section className={`viewport${mode === 'play' ? ' is-playing' : ''}`} aria-label="Viewport">

@@ -13,7 +13,7 @@
 import type { Entity, Json, PrimitiveShape, ProceduralShape, Vec3, WorldDoc } from '@aether/core';
 import { stableStringify } from '@aether/core';
 import type { ColliderDesc, GeneratorOutput } from '@aether/procgen';
-import { DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, primitiveOutput } from '@aether/procgen';
+import { DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, outputBytes, primitiveOutput } from '@aether/procgen';
 import { collidersBounds, fromColliderDesc, sanitizePoints, SHAPE_LIMITS, type LocalCollider } from './shapes';
 import type { ColliderProvider } from './types';
 
@@ -30,35 +30,60 @@ export interface ResolvedColliders {
 const TORUS_SEGMENTS = 12;
 const PLANE_HALF_THICKNESS = 0.01;
 const MAX_CACHE_ENTRIES = 64;
+/** Byte budget of each output cache (typed arrays of the cached outputs). */
+export const MAX_COLLIDER_CACHE_BYTES = 32 * 1024 * 1024;
 /** Colliders accepted from one provider/generator result (untrusted input cap). */
 export const MAX_COLLIDERS_PER_SHAPE = 2048;
 
-/** Small LRU of generator outputs keyed by generator + params + seed. */
+/** Small LRU of generator outputs keyed by generator + params + seed, bounded by count and bytes. */
 class OutputCache {
-  private readonly map = new Map<string, GeneratorOutput | null>();
+  private readonly map = new Map<string, { out: GeneratorOutput | null; bytes: number }>();
+  private bytes = 0;
   get(key: string): GeneratorOutput | null | undefined {
     const hit = this.map.get(key);
     if (hit !== undefined) {
       this.map.delete(key);
       this.map.set(key, hit);
     }
-    return hit;
+    return hit?.out;
   }
   set(key: string, value: GeneratorOutput | null): void {
-    this.map.delete(key);
-    this.map.set(key, value);
-    if (this.map.size > MAX_CACHE_ENTRIES) {
-      const oldest = this.map.keys().next().value;
-      if (oldest !== undefined) this.map.delete(oldest);
+    this.drop(key);
+    const bytes = value ? outputBytes(value) : 0;
+    if (bytes > MAX_COLLIDER_CACHE_BYTES) return;
+    this.map.set(key, { out: value, bytes });
+    this.bytes += bytes;
+    while (this.map.size > MAX_CACHE_ENTRIES || this.bytes > MAX_COLLIDER_CACHE_BYTES) {
+      const oldest = this.map.keys().next();
+      if (oldest.done) break;
+      this.drop(oldest.value);
     }
+  }
+  private drop(key: string): void {
+    const old = this.map.get(key);
+    if (!old) return;
+    this.map.delete(key);
+    this.bytes -= old.bytes;
+  }
+  get size(): number {
+    return this.map.size;
+  }
+  get heldBytes(): number {
+    return this.bytes;
   }
   clear(): void {
     this.map.clear();
+    this.bytes = 0;
   }
 }
 
 const builtinCache = new OutputCache();
 const primitiveCache = new OutputCache();
+
+/** Entries and bytes held by the collider output caches (diagnostics, memory budgets). */
+export function colliderCacheStats(): { entries: number; bytes: number } {
+  return { entries: builtinCache.size + primitiveCache.size, bytes: builtinCache.heldBytes + primitiveCache.heldBytes };
+}
 
 /** Drop cached generator outputs (tests, memory pressure). */
 export function clearColliderCache(): void {

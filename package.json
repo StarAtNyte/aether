@@ -18,6 +18,7 @@
     "start": "NODE_ENV=production node --import tsx apps/server/src/main.ts",
     "smoke": "tsx scripts/smoke.ts",
     "e2e": "tsx tests/e2e/studio.e2e.ts",
+    "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
     "gallery": "tsx tests/e2e/gallery.e2e.ts"
   },
   "engines": {

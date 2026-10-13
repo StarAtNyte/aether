@@ -691,6 +691,17 @@ code,
   border-color: var(--line);
 }
 
+.badge--memory {
+  color: var(--warn-text);
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  cursor: pointer;
+}
+
+.badge--memory:hover {
+  border-color: var(--text-mute);
+}
+
 .badge--live {
   color: var(--ok-text);
   border-color: var(--ok-line);
@@ -2519,6 +2530,15 @@ code,
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.choice-row {
+  cursor: default;
+  flex-wrap: wrap;
+}
+
+.choice-row .segmented {
+  flex-shrink: 0;
 }
 
 .toggle__hint {
