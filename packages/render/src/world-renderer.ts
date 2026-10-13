@@ -253,13 +253,15 @@ function grabRegion(source: HTMLCanvasElement, out: HTMLCanvasElement, sx: numbe
 
 /**
  * Encode RGBA8 pixels (rows bottom-up when `flipY`, as WebGL reads them) as
- * a data URL through a reused 2D canvas. Pixels are written row by row so a
- * flip needs no second buffer.
+ * a data URL through a reused, CPU-backed 2D canvas (`willReadFrequently`:
+ * a GPU-accelerated 2D canvas would wait for the GPU again when encoding).
+ * The encoder runs asynchronously (`toBlob`), so even a large thumbnail
+ * never blocks the page.
  */
-function encodePixels(pixels: Uint8Array, w: number, h: number, mime: string, flipY: boolean, out: HTMLCanvasElement): string {
+async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: string, flipY: boolean, out: HTMLCanvasElement): Promise<string> {
   if (out.width !== w) out.width = w;
   if (out.height !== h) out.height = h;
-  const ctx = out.getContext('2d');
+  const ctx = out.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2D canvas unavailable');
   const image = ctx.createImageData(w, h);
   const row = w * 4;
@@ -270,7 +272,14 @@ function encodePixels(pixels: Uint8Array, w: number, h: number, mime: string, fl
   // Opaque output (JPEG has no alpha; PNG/WebP thumbnails should not be see-through).
   for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
   ctx.putImageData(image, 0, 0);
-  return out.toDataURL(mime, JPEG_QUALITY);
+  const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, mime, JPEG_QUALITY));
+  if (!blob) return out.toDataURL(mime, JPEG_QUALITY);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => (typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('capture encoding failed')));
+    reader.onerror = () => reject(reader.error ?? new Error('capture encoding failed'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function grab(source: HTMLCanvasElement, w: number, h: number, mime: string): string {
@@ -309,6 +318,8 @@ export class WorldRenderer {
   private post: PostPipeline | null = null;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
   private viewCanvas: HTMLCanvasElement | null = null;
+  /** CPU-backed canvas that encodes asynchronous captures. */
+  private encodeCanvas: HTMLCanvasElement | null = null;
   /**
    * Reused targets of asynchronous captures by size (see {@link renderToPixels}),
    * at most two (critique views + thumbnails), so captures never reallocate GPU memory per turn.
@@ -1408,7 +1419,7 @@ export class WorldRenderer {
               decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
             }),
           );
-          return encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.viewCanvas ??= document.createElement('canvas')));
+          return await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas')));
         } catch (e) {
           this.asyncCaptureFailed = true;
           log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
@@ -1544,9 +1555,9 @@ export class WorldRenderer {
           const reads = this.grow.withFullScale(() =>
             list.map((view, i) => this.renderToPixels(px, px, () => renderView(view), () => (i === list.length - 1 ? restore() : undefined))),
           );
-          const out = (this.viewCanvas ??= document.createElement('canvas'));
+          const out = (this.encodeCanvas ??= document.createElement('canvas'));
           const views: string[] = [];
-          for (const read of reads) views.push(encodePixels(await read, px, px, 'image/jpeg', this.backend === 'webgl2', out));
+          for (const read of reads) views.push(await encodePixels(await read, px, px, 'image/jpeg', this.backend === 'webgl2', out));
           return views;
         } catch (e) {
           this.asyncCaptureFailed = true;
@@ -1716,6 +1727,11 @@ export class WorldRenderer {
     this.postGen++;
     for (const rt of this.captureTargets.values()) rt.dispose();
     this.captureTargets.clear();
+    if (this.encodeCanvas) {
+      this.encodeCanvas.width = 0;
+      this.encodeCanvas.height = 0;
+      this.encodeCanvas = null;
+    }
     if (this.viewCanvas) {
       // Release the 2D backing store now rather than at GC time.
       this.viewCanvas.width = 0;

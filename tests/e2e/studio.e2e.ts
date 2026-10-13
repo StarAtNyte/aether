@@ -105,64 +105,111 @@ async function waitFor<T>(page: Page, what: string, timeoutMs: number, probe: ()
 // Long-task probe (installed before any page script runs)
 // ---------------------------------------------------------------------------
 
+/** One recorded main-thread interval (ms, page clock). */
+interface Interval {
+  start: number;
+  duration: number;
+}
+
+/** A long animation frame with its script attribution (Chromium). */
+interface LongFrame extends Interval {
+  scripts: Array<{ invoker: string; type: string; start: number; duration: number }>;
+}
+
 /** Main-thread blocking observed since the last reset. */
 interface BlockingStats {
-  /** Longest `longtask` entry (Chromium; -1 where the entry type is unsupported, e.g. Firefox). */
-  longTaskMax: number;
-  longTasks: number;
-  /** Longest event-loop stall seen by a 20 ms interval timer (all browsers). */
-  lagMax: number;
+  /** `longtask` entries (Chromium); null where the entry type is unsupported (Firefox). */
+  tasks: Interval[] | null;
+  /** `long-animation-frame` entries with script attribution (Chromium); null where unsupported. */
+  frames: LongFrame[] | null;
+  /** Event-loop stalls > 50 ms seen by a 20 ms interval timer (every browser). */
+  stalls: Interval[];
+  /** Verification runs: from `running` to a final state. */
+  verifications: Interval[];
 }
 
 declare global {
   interface Window {
-    __aetherBlocking?: { reset(): void; read(): BlockingStats };
+    __aetherBlocking?: { reset(): void; read(): BlockingStats; watchVerify(): void };
   }
 }
 
 /**
- * Records long tasks (PerformanceObserver 'longtask', Chromium) and the
- * worst event-loop stall (an interval timer's lateness, every browser), so
- * Firefox, which has no long-task entries, is measured too. Plain JavaScript
- * source (not a compiled function) so no bundler helper leaks into the page.
+ * Records long tasks and long animation frames (Chromium) and event-loop
+ * stalls (an interval timer's lateness, every browser, since Firefox has no
+ * long-task entries), plus the time windows in which verification runs.
+ * Plain JavaScript source (not a compiled function) so no bundler helper
+ * leaks into the page.
  */
 const BLOCKING_PROBE = `(() => {
-  const stats = { longTaskMax: -1, longTasks: 0, lagMax: 0 };
-  let supported = false;
+  const s = { tasks: null, frames: null, stalls: [], verifications: [] };
+  const types = (window.PerformanceObserver && PerformanceObserver.supportedEntryTypes) || [];
+  const reset = () => {
+    s.tasks = types.includes('longtask') ? [] : null;
+    s.frames = types.includes('long-animation-frame') ? [] : null;
+    s.stalls = [];
+    s.verifications = [];
+  };
+  reset();
   try {
-    supported = PerformanceObserver.supportedEntryTypes.includes('longtask');
-    if (supported) {
-      stats.longTaskMax = 0;
-      new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) {
-          stats.longTasks++;
-          if (e.duration > stats.longTaskMax) stats.longTaskMax = e.duration;
-        }
-      }).observe({ type: 'longtask', buffered: false });
-    }
-  } catch (err) {
-    supported = false;
-  }
+    if (types.includes('longtask')) new PerformanceObserver((list) => { for (const e of list.getEntries()) if (s.tasks) s.tasks.push({ start: e.startTime, duration: e.duration }); }).observe({ type: 'longtask', buffered: false });
+    if (types.includes('long-animation-frame')) new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) if (s.frames) s.frames.push({ start: e.startTime, duration: e.duration, scripts: (e.scripts || []).map((x) => ({ invoker: String(x.invoker || ''), type: String(x.invokerType || ''), start: x.startTime, duration: x.duration })) });
+    }).observe({ type: 'long-animation-frame', buffered: false });
+  } catch (err) {}
   const INTERVAL = 20;
   let last = performance.now();
   setInterval(() => {
     const now = performance.now();
     const lag = now - last - INTERVAL;
-    if (lag > stats.lagMax) stats.lagMax = lag;
+    if (lag > 50) s.stalls.push({ start: last, duration: lag });
     last = now;
   }, INTERVAL);
+  let watching = false;
+  let openAt = -1;
   window.__aetherBlocking = {
-    reset() {
-      stats.longTaskMax = supported ? 0 : -1;
-      stats.longTasks = 0;
-      stats.lagMax = 0;
-      last = performance.now();
-    },
-    read() {
-      return { longTaskMax: stats.longTaskMax, longTasks: stats.longTasks, lagMax: stats.lagMax };
+    reset() { reset(); openAt = -1; last = performance.now(); },
+    read() { return JSON.parse(JSON.stringify(s)); },
+    watchVerify() {
+      if (watching || !window.__aether) return;
+      watching = true;
+      window.__aether.store.subscribe((st) => {
+        const running = st.verify.status === 'running';
+        if (running && openAt < 0) openAt = performance.now();
+        else if (!running && openAt >= 0) { s.verifications.push({ start: openAt, duration: performance.now() - openAt }); openAt = -1; }
+      });
     },
   };
 })();`;
+
+/** Longest duration in a list (0 when empty, -1 when unsupported). */
+function longest(list: Interval[] | null): number {
+  if (!list) return -1;
+  return list.reduce((m, i) => Math.max(m, i.duration), 0);
+}
+
+/** True when two intervals overlap. */
+function overlaps(a: Interval, b: Interval): boolean {
+  return a.start < b.start + b.duration && b.start < a.start + a.duration;
+}
+
+/**
+ * Longest main-thread script during verification that is NOT the renderer's
+ * animation-frame callback (Chromium long-animation-frame attribution; -1
+ * where unsupported). Rendering a freshly built world compiles its
+ * materials inside the frame callback (three.js, not verification); any
+ * other long script in these windows (message handlers, timers, promise
+ * continuations) would be verification work leaking onto the main thread.
+ */
+function verificationScriptMax(b: BlockingStats): number {
+  if (!b.frames) return -1;
+  let worst = 0;
+  for (const f of b.frames) {
+    if (!b.verifications.some((w) => overlaps(f, w))) continue;
+    for (const sc of f.scripts) if (sc.invoker !== 'FrameRequestCallback' && sc.duration > worst) worst = sc.duration;
+  }
+  return worst;
+}
 
 /** Compact studio state read through `window.__aether`. */
 interface StudioSnapshot {
@@ -363,6 +410,7 @@ interface RunMetrics {
   firstFrameMs: number;
   defaultWorld: { fps: number; drawCalls: number; triangles: number; entities: number };
   examples: Array<{ slug: string; entities: number; fps: number; drawCalls: number; triangles: number; verify: string; agentMs: number; longTaskMs: number; lagMs: number; verifyMs: number; lanes: number }>;
+  checks?: { ms: number; lanes: number; longTaskMs: number; lagMs: number };
 }
 
 async function boot(page: Page, url: string, metrics: RunMetrics): Promise<void> {
@@ -392,7 +440,10 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   const input = page.getByLabel('Prompt', { exact: true });
   await input.click();
   await input.fill(prompt.text);
-  await page.evaluate(() => window.__aetherBlocking?.reset());
+  await page.evaluate(() => {
+    window.__aetherBlocking?.watchVerify();
+    window.__aetherBlocking?.reset();
+  });
   const t0 = performance.now();
   await input.press('Enter');
   await waitFor(page, `agent to start on "${prompt.slug}"`, 10_000, async () => (await snap(page)).agentBusy || (await snap(page)).head !== before.head);
@@ -404,10 +455,17 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   const blocking = await page.evaluate(() => window.__aetherBlocking?.read() ?? null);
   check(blocking, 'the long-task probe is missing');
   log(`  agent: ${(await lastTurnEvents(page)).join(' | ')}`);
-  log(`  main thread during the turn: longest task ${blocking.longTaskMax < 0 ? 'n/a' : `${Math.round(blocking.longTaskMax)} ms`} (${blocking.longTasks} long tasks), worst event-loop stall ${Math.round(blocking.lagMax)} ms; verification ${after.verifyWorker ? `in ${after.verifyLanes} worker lane(s)` : 'on the main thread'}, ${Math.round(after.verifyMs)} ms`);
+  const longTaskMs = longest(blocking.tasks);
+  const lagMs = longest(blocking.stalls);
+  const verifyScriptMs = verificationScriptMax(blocking);
+  log(
+    `  main thread during the turn: longest task ${longTaskMs < 0 ? 'n/a' : `${Math.round(longTaskMs)} ms`}, worst stall ${Math.round(lagMs)} ms; ` +
+      `verification ${after.verifyWorker ? `in ${after.verifyLanes} worker lane(s)` : 'on the main thread'} (${blocking.verifications.length} run(s), ${Math.round(after.verifyMs)} ms), ` +
+      `longest non-render script during verification ${verifyScriptMs < 0 ? 'n/a' : `${Math.round(verifyScriptMs)} ms`}`,
+  );
   check(after.verifyWorker === true, `verification of "${prompt.slug}" did not run in a worker (${String(after.verifyWorker)})`);
-  check(blocking.longTaskMax < MAX_LONG_TASK_MS, `a ${Math.round(blocking.longTaskMax)} ms long task blocked the main thread during "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
-  check(blocking.lagMax < MAX_LONG_TASK_MS, `the event loop stalled for ${Math.round(blocking.lagMax)} ms during "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
+  check(blocking.verifications.length > 0, `no verification run was observed during "${prompt.slug}"`);
+  check(verifyScriptMs < MAX_LONG_TASK_MS, `a ${Math.round(verifyScriptMs)} ms main-thread script ran during verification of "${prompt.slug}" (limit ${MAX_LONG_TASK_MS} ms)`);
   check(after.lastAssistant === 'done', `agent turn for "${prompt.slug}" ended with status ${after.lastAssistant}`);
   check(after.head !== before.head && (await worldJson(page)) !== beforeWorld, `"${prompt.slug}" did not change the world`);
   check(after.entities !== before.entities, `"${prompt.slug}" did not change the entity count (${before.entities})`);
@@ -421,12 +479,44 @@ async function sendPrompt(page: Page, prompt: { slug: string; text: string }, me
   await page.waitForTimeout(500);
   await assertCanvasRendered(page, prompt.slug);
   const perf = await sampleFps(page, FPS_SAMPLE_MS);
-  metrics.examples.push({ slug: prompt.slug, entities: after.entities, verify: after.verify, agentMs, longTaskMs: blocking.longTaskMax, lagMs: blocking.lagMax, verifyMs: after.verifyMs, lanes: after.verifyLanes, ...perf });
+  metrics.examples.push({ slug: prompt.slug, entities: after.entities, verify: after.verify, agentMs, longTaskMs, lagMs, verifyMs: after.verifyMs, lanes: after.verifyLanes, ...perf });
   log(`  "${prompt.slug}": ${before.entities} → ${after.entities} entities, verify=${after.verify} ("${pillText}"), agent ${Math.round(agentMs)} ms, ${perf.fps.toFixed(1)} fps, ${perf.drawCalls} draws`);
   if (shots) {
     await screenshot(page, `world-${prompt.slug}`, 'viewport');
     if (prompt.slug === 'lakeside-camp') await screenshot(page, 'studio-overview', 'page');
   }
+}
+
+/**
+ * "Run checks" on a world that is already rendered (no new materials to
+ * compile, nothing else running): the page must stay responsive while the
+ * world is simulated, because verification runs in workers. Measured in
+ * every browser with the event-loop stall probe, and with long tasks where
+ * supported.
+ */
+async function verifyResponsiveness(page: Page): Promise<{ ms: number; lanes: number; longTaskMs: number; lagMs: number }> {
+  await waitFor(page, 'the renderer to settle', 60_000, () => page.evaluate(() => !window.__aether?.simulation?.renderer.animating));
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => {
+    window.__aetherBlocking?.watchVerify();
+    window.__aetherBlocking?.reset();
+  });
+  await page.locator('.viewport .pill--button').click();
+  const done = await waitFor(page, 'checks to finish', 60_000, async () => {
+    const st = await snap(page);
+    return st.verify !== 'running' && st.verify !== 'idle' ? st : null;
+  });
+  await page.waitForTimeout(300);
+  const b = await page.evaluate(() => window.__aetherBlocking?.read() ?? null);
+  check(b, 'the long-task probe is missing');
+  const longTaskMs = longest(b.tasks);
+  const lagMs = longest(b.stalls);
+  log(`  run checks on a rendered world: ${Math.round(done.verifyMs)} ms in ${done.verifyLanes} worker lane(s); longest task ${longTaskMs < 0 ? 'n/a' : `${Math.round(longTaskMs)} ms`}, worst stall ${Math.round(lagMs)} ms`);
+  check(done.verifyWorker === true, 'Run checks did not verify in a worker');
+  check(b.verifications.length === 1, `expected one verification run, saw ${b.verifications.length}`);
+  check(longTaskMs < MAX_LONG_TASK_MS, `a ${Math.round(longTaskMs)} ms long task blocked the page while checks ran (limit ${MAX_LONG_TASK_MS} ms)`);
+  check(lagMs < MAX_LONG_TASK_MS, `the page stalled for ${Math.round(lagMs)} ms while checks ran (limit ${MAX_LONG_TASK_MS} ms)`);
+  return { ms: done.verifyMs, lanes: done.verifyLanes, longTaskMs, lagMs };
 }
 
 async function playAndStop(page: Page, shots: boolean): Promise<void> {
@@ -656,6 +746,7 @@ async function run(browser: Browser, url: string, opts: RunOptions): Promise<Run
 
     const prompts = opts.full ? PROMPTS : PROMPTS.slice(-1);
     for (const p of prompts) await sendPrompt(page, p, metrics, opts.screenshots);
+    metrics.checks = await verifyResponsiveness(page);
     await playAndStop(page, opts.screenshots);
     if (opts.full) {
       await themeSwitch(page);
@@ -696,6 +787,7 @@ function report(results: Array<{ name: string; metrics: RunMetrics }>): void {
     const worstTask = Math.max(...m.examples.map((e) => e.longTaskMs));
     const worstLag = Math.max(...m.examples.map((e) => e.lagMs));
     log(`  [${name}] agent turns: longest main-thread task ${worstTask < 0 ? 'n/a' : `${Math.round(worstTask)} ms`}, worst stall ${Math.round(worstLag)} ms; verification ${m.examples.map((e) => `${e.slug} ${Math.round(e.verifyMs)} ms/${e.lanes} lane(s)`).join(', ')}`);
+    if (m.checks) log(`  [${name}] run checks: ${Math.round(m.checks.ms)} ms in ${m.checks.lanes} lane(s); longest task ${m.checks.longTaskMs < 0 ? 'n/a' : `${Math.round(m.checks.longTaskMs)} ms`}, worst stall ${Math.round(m.checks.lagMs)} ms`);
   }
   let total = 0;
   let totalGz = 0;
