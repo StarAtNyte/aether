@@ -127,8 +127,25 @@ export class EnvironmentRig {
   private envMap: DataTexture | null = null;
   private contentRadius = DEFAULT_CONTENT_RADIUS;
   private fogParams: FogParams | null = null;
-  /** Upper bound on the sun shadow map resolution (lowered in low-power mode). */
-  shadowMapCap = 4096;
+  private mapCap = 2048;
+
+  /** Upper bound on the sun shadow map resolution (the GPU budget's cap). Lowering it shrinks the current map right away. */
+  get shadowMapCap(): number {
+    return this.mapCap;
+  }
+
+  set shadowMapCap(cap: number) {
+    if (!Number.isFinite(cap) || cap < 64) return;
+    this.mapCap = Math.floor(cap);
+    if (this.sun.shadow.mapSize.x > this.mapCap) this.setShadowMapSize(this.mapCap);
+  }
+
+  private setShadowMapSize(size: number): void {
+    this.sun.shadow.mapSize.set(size, size);
+    // Force the shadow map to be reallocated at the new size.
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+  }
 
   constructor(
     private readonly materials: MaterialCache,
@@ -313,13 +330,8 @@ export class EnvironmentRig {
     cam.near = fit.near;
     cam.far = fit.far;
     cam.updateProjectionMatrix();
-    const mapSize = Math.min(fit.mapSize, this.shadowMapCap);
-    if (this.sun.shadow.mapSize.x !== mapSize) {
-      this.sun.shadow.mapSize.set(mapSize, mapSize);
-      // Force the shadow map to be reallocated at the new size.
-      this.sun.shadow.map?.dispose();
-      this.sun.shadow.map = null;
-    }
+    const mapSize = Math.min(fit.mapSize, this.mapCap);
+    if (this.sun.shadow.mapSize.x !== mapSize) this.setShadowMapSize(mapSize);
   }
 
   /** Per-frame update (sky follows the camera, weather animates). Zero allocations. */

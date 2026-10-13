@@ -192,3 +192,21 @@ describe('WeatherSystem', () => {
     w.dispose();
   });
 });
+
+describe('EnvironmentRig shadow map budget', () => {
+  it('applies a lowered cap to the current map immediately and never exceeds it when refitting', async () => {
+    const { MaterialCache } = await import('../src/materials/material-cache');
+    const rig = new EnvironmentRig(new MaterialCache(), true);
+    expect(rig.sun.shadow.mapSize.x).toBeLessThanOrEqual(2048);
+    rig.shadowMapCap = 1024;
+    expect(rig.sun.shadow.mapSize.x).toBe(1024);
+    rig.fitShadows(new Box3(new Vector3(-200, 0, -200), new Vector3(200, 50, 200)));
+    expect(rig.sun.shadow.mapSize.x).toBe(1024);
+    rig.shadowMapCap = Number.NaN;
+    expect(rig.shadowMapCap).toBe(1024);
+    rig.shadowMapCap = 2048;
+    rig.fitShadows(new Box3(new Vector3(-200, 0, -200), new Vector3(200, 50, 200)));
+    expect(rig.sun.shadow.mapSize.x).toBe(2048);
+    rig.dispose();
+  });
+});
