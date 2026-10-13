@@ -19,12 +19,12 @@ const PatchesView = memo(function PatchesView({ event }: { event: Extract<ChatEv
   return (
     <div className="ev ev--patches">
       <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <Icon name="cube" size={13} />
+        <Icon name="cube" />
         <span className="diff-chips__msg">{event.message || 'World edit'}</span>
         <span className="diff-chips__list">
           {chips.length === 0 ? <span className="chip">no changes</span> : chips.map((c) => <span key={c} className={`chip${c.startsWith('＋') ? ' chip--add' : c.startsWith('−') ? ' chip--remove' : c.startsWith('✎') ? ' chip--edit' : ''}`}>{c}</span>)}
         </span>
-        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={12} />
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} />
       </button>
       {open && (
         <div className="diff-detail">
@@ -71,34 +71,32 @@ const VerifyView = memo(function VerifyView({ event }: { event: Extract<ChatEven
   return (
     <div className={`ev ev--verify ${event.passed ? 'is-pass' : 'is-fail'}`}>
       <button type="button" className="verify-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className={`pill ${event.passed ? 'pill--ok' : 'pill--bad'}`}>
-          <Icon name={event.passed ? 'shield' : 'alert'} size={12} /> {event.passed ? 'Physics check passed' : 'Physics check failed'}
-        </span>
+        <span className={`status-chip is-${event.passed ? 'ok' : 'bad'}`}>{event.passed ? 'Checks passed' : 'Checks failed'}</span>
         {event.results.length > 0 && (
-          <span className="muted">
+          <span className="ev__meta">
             {passed}/{event.results.length} tests
           </span>
         )}
-        {event.diagnostics.length > 0 && <span className="muted">· {event.diagnostics.length} diagnostics</span>}
-        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={12} />
+        {event.diagnostics.length > 0 && <span className="ev__meta">{event.diagnostics.length} notes</span>}
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} />
       </button>
       {open && (
         <ul className="test-list">
           {event.results.map((r, i) => (
             <li key={`${r.id}-${i}`} className={r.passed ? 'is-pass' : 'is-fail'}>
-              <Icon name={r.passed ? 'check' : 'x'} size={12} />
+              <Icon name={r.passed ? 'check' : 'x'} />
               <span className="test-list__id">{r.id}</span>
               <span className="test-list__msg">{r.message}</span>
             </li>
           ))}
           {event.diagnostics.map((d, i) => (
             <li key={`d${i}`} className={`sev-${d.severity}`}>
-              <Icon name={d.severity === 'info' ? 'info' : 'alert'} size={12} />
+              <Icon name={d.severity === 'info' ? 'info' : 'alert'} />
               <span className="test-list__id">{d.code}</span>
               <span className="test-list__msg">{d.message}</span>
             </li>
           ))}
-          {event.results.length === 0 && event.diagnostics.length === 0 && <li className="muted">{event.summary || 'No tests defined.'}</li>}
+          {event.results.length === 0 && event.diagnostics.length === 0 && <li className="test-list__empty">{event.summary || 'No tests defined.'}</li>}
         </ul>
       )}
     </div>
@@ -110,8 +108,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
   switch (event.type) {
     case 'status':
       return (
-        <div className="ev ev--status">
-          {live && <span className="spinner" aria-hidden="true" />}
+        <div className={`ev ev--status${live ? ' is-live' : ''}`}>
           <span>{event.text}</span>
         </div>
       );
@@ -119,7 +116,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       return (
         <div className="ev ev--plan">
           <div className="ev__label">
-            <Icon name="list" size={12} /> Plan
+            <Icon name="list" /> Plan
           </div>
           <RichText text={event.text} />
         </div>
@@ -133,15 +130,13 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
     case 'error':
       return (
         <div className="ev ev--error" role="alert">
-          <Icon name="alert" size={13} /> <span>{event.text}</span>
+          <Icon name="alert" /> <span>{event.text}</span>
         </div>
       );
     case 'repair':
       return (
         <div className="ev ev--repair">
-          <span className="pill pill--warn">
-            <Icon name="wand" size={12} /> Repair #{event.attempt}
-          </span>
+          <span className="status-chip is-warn">Repair {event.attempt}</span>
           <span className="ev__text">{event.text}</span>
         </div>
       );
@@ -153,17 +148,17 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       return (
         <div className="ev ev--generator">
           <div className="ev__label">
-            <Icon name="code" size={12} /> Generator <code className="inline-code">{event.id}</code>
-            <span className={`pill ${event.ok ? 'pill--ok' : 'pill--bad'}`}>{event.ok ? 'sandbox ok' : 'rejected'}</span>
+            <Icon name="code" /> Generator <code className="inline-code">{event.id}</code>
+            <span className={`status-chip is-${event.ok ? 'ok' : 'bad'}`}>{event.ok ? 'Sandbox ok' : 'Rejected'}</span>
           </div>
-          {event.description && <p className="muted">{event.description}</p>}
+          {event.description && <p className="ev__desc">{event.description}</p>}
           <CodeBlock code={event.source} lang="js" title={`${event.id}.js`} />
           {event.error && <p className="ev-errors">{event.error}</p>}
         </div>
       );
     case 'done':
       return event.calls > 0 ? (
-        <div className="ev ev--done muted">
+        <div className="ev ev--done">
           {event.calls} model call{event.calls === 1 ? '' : 's'} · {compactCount(event.inputTokens)} in / {compactCount(event.outputTokens)} out tokens
         </div>
       ) : null;

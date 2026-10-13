@@ -1,60 +1,37 @@
 /**
- * Aether Studio entry point: creates the Studio controller, exposes a debug
- * handle for e2e tests (dev builds or `?debug=1`), and mounts React.
+ * Aether Studio entry point: app store (route, settings), the projects
+ * repository (IndexedDB, opened in the background) and the React tree.
+ * The theme was already applied before first paint by `/theme-boot.js`.
  */
 // Evaluated first: core configures zod (jitless) before any module defines a schema,
 // so the strict CSP never sees zod's `new Function` probe.
 import '@aether/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import './styles/app.css';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/controls.css';
+import './styles/editor.css';
+import './styles/panels.css';
+import './styles/home.css';
 import { App } from './App';
-import { StudioProvider } from './app/context';
-import { Studio } from './engine/Studio';
+import { AppProvider, openRepo } from './app/appContext';
+import { createAppStore } from './app/appStore';
 import { applyTheme, themeFromSetting } from './lib/theme';
+import { installTooltips } from './components/ui/tooltips';
 
-declare global {
-  interface Window {
-    /** Debug/e2e handle (dev builds or `?debug=1` only). */
-    __aether?: { readonly history: Studio['history']; readonly simulation: Studio['simulation']; readonly store: Studio['store']; readonly studio: Studio };
-  }
-}
-
-function debugEnabled(): boolean {
-  try {
-    return import.meta.env.DEV || new URLSearchParams(location.search).get('debug') === '1';
-  } catch {
-    return false;
-  }
-}
-
-const studio = new Studio();
-// Theme before the first paint so a dark-theme visitor never sees a light flash.
-applyTheme(document, themeFromSetting(studio.store.getState().settings.darkTheme));
-void studio.boot();
-
-if (debugEnabled()) {
-  window.__aether = {
-    studio,
-    get history() {
-      return studio.history;
-    },
-    get simulation() {
-      return studio.simulation;
-    },
-    get store() {
-      return studio.store;
-    },
-  };
-}
+const store = createAppStore();
+installTooltips(document);
+applyTheme(document, themeFromSetting(store.getState().settings.darkTheme));
+const repoPromise = openRepo();
 
 const rootEl = document.getElementById('root');
 if (rootEl) {
   createRoot(rootEl).render(
     <StrictMode>
-      <StudioProvider studio={studio}>
+      <AppProvider store={store} repoPromise={repoPromise}>
         <App />
-      </StudioProvider>
+      </AppProvider>
     </StrictMode>,
   );
 }

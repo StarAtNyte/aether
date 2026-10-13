@@ -31,26 +31,37 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
       </div>
       {!over && (
         <div className="play-hint" aria-hidden="true">
-          <kbd>W</kbd>
-          <kbd>A</kbd>
-          <kbd>S</kbd>
-          <kbd>D</kbd> move · <kbd>Space</kbd> jump · <kbd>E</kbd> act · drag to look · <kbd>Esc</kbd> stop
+          <span>
+            <kbd>W</kbd>
+            <kbd>A</kbd>
+            <kbd>S</kbd>
+            <kbd>D</kbd> Move
+          </span>
+          <span>
+            <kbd>Space</kbd> Jump
+          </span>
+          <span>
+            <kbd>E</kbd> Act
+          </span>
+          <span>
+            <kbd>Esc</kbd> Stop
+          </span>
         </div>
       )}
       {over && (
         <div className={`game-over ${game.status === 'won' ? 'is-win' : 'is-lose'}`} role="dialog" aria-modal="false" aria-label="Game over">
           <div className="game-over__card">
             <span className="game-over__icon">
-              <Icon name={game.status === 'won' ? 'sparkles' : 'alert'} size={26} />
+              <Icon name={game.status === 'won' ? 'check' : 'alert'} size={20} />
             </span>
             <h2>{game.status === 'won' ? 'You win!' : 'Game over'}</h2>
             {game.text && <p>{game.text}</p>}
             <div className="game-over__actions">
-              <button type="button" className="btn btn--primary" onClick={() => void studio.restart()} autoFocus>
-                <Icon name="refresh" /> Restart
-              </button>
               <button type="button" className="btn" onClick={() => void studio.togglePlay()}>
-                <Icon name="stop" /> Back to editor
+                Back to editor
+              </button>
+              <button type="button" className="btn btn--primary" onClick={() => void studio.restart()} autoFocus>
+                <Icon name="refresh" /> Play again
               </button>
             </div>
           </div>

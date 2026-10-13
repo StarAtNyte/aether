@@ -1,27 +1,34 @@
 /**
- * Global keyboard shortcuts. Keys typed into text fields are left alone
- * (except Escape). In play mode only Stop/Escape apply — everything else is
- * game input.
+ * Global editor keyboard shortcuts. Keys typed into text fields are left
+ * alone (except Escape). In play mode only Stop/Escape apply — everything
+ * else is game input.
  */
 import { useEffect } from 'react';
 import { isTypingTarget } from '../engine/input';
-import type { RightTab } from '../state/store';
+import { shortcut } from '../lib/keys';
+import type { LeftView } from '../state/store';
 import { useStudio } from './context';
 
-const TAB_KEYS: Readonly<Record<string, RightTab>> = { '1': 'outliner', '2': 'inspector', '3': 'logic', '4': 'verify', '5': 'history' };
+const VIEW_KEYS: Readonly<Record<string, LeftView>> = { '1': 'agent', '2': 'objects', '3': 'assets', '4': 'logic', '5': 'verify', '6': 'history' };
+const CAMERA_KEYS: Readonly<Record<string, 'reset' | 'iso' | 'top' | 'front' | 'side'>> = { '0': 'reset', '1': 'iso', '2': 'top', '3': 'front', '4': 'side' };
 
-/** Shortcut reference shown in the settings dialog. */
+/** Shortcut reference shown in Settings and the docs: [keys, action]. */
 export const SHORTCUTS: ReadonlyArray<[string, string]> = [
-  ['Ctrl/⌘ + Enter', 'Play / Stop'],
-  ['Ctrl/⌘ + Z', 'Undo'],
-  ['Ctrl/⌘ + Shift + Z', 'Redo'],
+  [shortcut('Mod+K'), 'Command palette'],
+  [shortcut('Mod+Enter'), 'Play / stop'],
+  [shortcut('Mod+Z'), 'Undo'],
+  [shortcut('Mod+Shift+Z'), 'Redo'],
+  ['/', 'Write a prompt'],
+  ['A', 'Add an object'],
   ['F', 'Focus selection'],
   ['Delete', 'Delete selection'],
-  ['Esc', 'Stop play / clear selection'],
-  ['/', 'Focus the prompt box'],
-  ['Alt + 1…5', 'Switch inspector tab'],
-  ['Ctrl/⌘ + [ / ]', 'Toggle chat / inspector panel'],
-  ['WASD · Arrows · Space · E', 'Move · turn · jump · act (play)'],
+  ['Esc', 'Stop play / deselect'],
+  ['0 – 4', 'Frame world / 3D / top / front / side view'],
+  ['L', 'Object labels'],
+  [shortcut('Shift+P'), 'Performance overlay'],
+  ['Alt+1 – 6', 'Agent, Objects, Assets, Logic, Checks, History'],
+  [shortcut('Mod+[') + ' / ]', 'Toggle left panel / inspector'],
+  ['WASD · Space · E', 'Move · jump · act (play)'],
 ];
 
 /** Install the global shortcut handler. */
@@ -32,19 +39,25 @@ export function useShortcuts(): void {
       const st = studio.store.getState();
       const mod = e.ctrlKey || e.metaKey;
       const typing = isTypingTarget(e.target);
+      if (mod && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        st.setPaletteOpen(!st.paletteOpen);
+        return;
+      }
       if (mod && e.key === 'Enter') {
         e.preventDefault();
         void studio.togglePlay();
         return;
       }
       if (e.key === 'Escape') {
-        if (st.settingsOpen) st.setSettingsOpen(false);
-        else if (st.mode === 'play') void studio.togglePlay();
+        if (st.paletteOpen || st.settingsOpen || document.querySelector('dialog[open]')) return;
+        if (st.mode === 'play') void studio.togglePlay();
+        else if (st.agentBusy && typing) studio.stopAgent();
         else if (typing && e.target instanceof HTMLElement) e.target.blur();
         else st.select([]);
         return;
       }
-      if (st.mode === 'play' || typing) return;
+      if (st.mode === 'play' || typing || st.paletteOpen) return;
       if (mod && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) studio.redo();
@@ -66,13 +79,20 @@ export function useShortcuts(): void {
         st.togglePanel('right');
         return;
       }
-      if (e.altKey && Object.prototype.hasOwnProperty.call(TAB_KEYS, e.key)) {
-        e.preventDefault();
-        if (!st.panels.right) st.togglePanel('right');
-        st.setRightTab(TAB_KEYS[e.key] as RightTab);
+      if (e.altKey && !mod) {
+        const digit = e.code.startsWith('Digit') ? e.code.slice(5) : e.key;
+        if (Object.prototype.hasOwnProperty.call(VIEW_KEYS, digit)) {
+          e.preventDefault();
+          st.showLeftView(VIEW_KEYS[digit] as LeftView);
+        }
         return;
       }
-      if (mod || e.altKey) return;
+      if (mod) return;
+      if (e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault();
+        st.updateSettings({ showPerf: !st.settings.showPerf });
+        return;
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (st.selection.length > 0) {
           e.preventDefault();
@@ -81,13 +101,16 @@ export function useShortcuts(): void {
       } else if (e.key === 'f' || e.key === 'F') {
         const id = st.selection[0];
         if (id) studio.focus(id);
+      } else if (e.key === 'l' || e.key === 'L') {
+        st.updateSettings({ showLabels: !st.settings.showLabels });
+      } else if (e.key === 'a' || e.key === 'A') {
+        st.showLeftView('assets');
+      } else if (!e.shiftKey && Object.prototype.hasOwnProperty.call(CAMERA_KEYS, e.key)) {
+        studio.viewPreset(CAMERA_KEYS[e.key] as 'reset');
       } else if (e.key === '/') {
-        const input = document.getElementById('prompt-input');
-        if (input) {
-          e.preventDefault();
-          if (!st.panels.left) st.togglePanel('left');
-          input.focus();
-        }
+        e.preventDefault();
+        st.showLeftView('agent');
+        requestAnimationFrame(() => document.getElementById('prompt-input')?.focus());
       }
     };
     window.addEventListener('keydown', onKey);

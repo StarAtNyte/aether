@@ -1,6 +1,6 @@
 /**
  * Interface theme (light by default, dark on request). The palette lives in
- * CSS (`:root` and `:root[data-theme='dark']` in styles/app.css); this module
+ * CSS (`:root` and `:root[data-theme='dark']` in styles/tokens.css); this module
  * only flips the switch on the document and keeps the browser chrome in step
  * (`color-scheme`, `<meta name="theme-color">`). DOM access goes through a
  * tiny structural interface so it is testable without a browser.
@@ -9,10 +9,10 @@
 /** The two interface themes. */
 export type ThemeName = 'light' | 'dark';
 
-/** Browser-chrome color for each theme (matches `--bg` in app.css). */
+/** Browser-chrome color for each theme (matches `--surface`, the top bar, in styles/tokens.css). */
 export const THEME_COLORS: Readonly<Record<ThemeName, string>> = Object.freeze({
-  light: '#f3f4f7',
-  dark: '#07080c',
+  light: '#ffffff',
+  dark: '#1f2022',
 });
 
 /** Minimal element surface used by {@link applyTheme}. */

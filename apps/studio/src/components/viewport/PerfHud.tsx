@@ -13,7 +13,8 @@ export const PerfHud = memo(function PerfHud(): ReactElement | null {
   return (
     <div className="perf-hud" aria-label="Performance">
       <div className={`perf-hud__fps ${fpsClass}`}>
-        <strong>{Math.round(stats.fps)}</strong> fps
+        <strong>{stats.fps > 0 ? Math.round(stats.fps) : '–'}</strong>
+        <span>fps{mode === 'edit' && stats.fps === 0 ? ' · idle' : ''}</span>
       </div>
       <dl>
         <div>

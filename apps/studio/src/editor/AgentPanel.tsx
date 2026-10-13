@@ -255,7 +255,10 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
 
   useEffect(() => {
     const el = listRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    // The empty state reads top-down; a conversation follows its newest entry.
+    if (chat.length === 0) el.scrollTop = 0;
+    else if (stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [chat]);
 
   const send = (text: string, images: readonly string[] = [], offline = false): void => {

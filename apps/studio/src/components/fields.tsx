@@ -151,13 +151,23 @@ export const TextField = memo(function TextField({ value, onCommit, label, maxLe
   );
 });
 
-/** Native select over string options. */
-export function SelectField<T extends string>({ value, options, onChange, label, disabled }: { value: T; options: readonly T[]; onChange: (v: T) => void; label: string; disabled?: boolean }): ReactElement {
+/** Human label for an enum value: "thirdPerson" → "Third person", "lamp-post" → "Lamp post". */
+export function humanize(value: string): string {
+  const s = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .toLowerCase()
+    .trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : value;
+}
+
+/** Native select over string options (labels are humanized unless `raw`). */
+export function SelectField<T extends string>({ value, options, onChange, label, disabled, raw }: { value: T; options: readonly T[]; onChange: (v: T) => void; label: string; disabled?: boolean; raw?: boolean }): ReactElement {
   return (
     <select className="select select--sm" value={value} aria-label={label} disabled={disabled} onChange={(e) => onChange(e.target.value as T)}>
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {raw ? o : humanize(o)}
         </option>
       ))}
     </select>

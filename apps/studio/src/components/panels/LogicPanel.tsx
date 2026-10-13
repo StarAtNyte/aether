@@ -13,9 +13,9 @@ const RuleCard = memo(function RuleCard({ rule, disabled, onToggle }: { rule: Ru
     <article className={`rule-card${c.enabled ? '' : ' is-disabled'}`}>
       <header className="rule-card__head">
         <span className="rule-card__id">{c.id}</span>
-        {c.once && <span className="mini-badge">once</span>}
+        {c.once && <span className="chip chip--quiet chip--xs">once</span>}
         <button type="button" className="icon-btn icon-btn--xs" disabled={disabled} onClick={() => onToggle(c.id, !c.enabled)} title={c.enabled ? 'Disable rule' : 'Enable rule'} aria-label={c.enabled ? `Disable ${c.id}` : `Enable ${c.id}`}>
-          <Icon name={c.enabled ? 'eye' : 'eyeOff'} size={12} />
+          <Icon name={c.enabled ? 'eye' : 'eyeOff'} />
         </button>
       </header>
       {c.description && <p className="rule-card__desc">{c.description}</p>}
@@ -120,7 +120,7 @@ export const LogicPanel = memo(function LogicPanel(): ReactElement {
               const r = resultById.get(t.id);
               return (
                 <li key={t.id} className={r ? (r.passed ? 'is-pass' : 'is-fail') : ''}>
-                  <Icon name={r ? (r.passed ? 'check' : 'x') : 'shield'} size={12} />
+                  <Icon name={r ? (r.passed ? 'check' : 'x') : 'shield'} />
                   <span className="test-list__id">{t.id}</span>
                   <span className="test-list__msg">{r ? r.message : formatTest(t)}</span>
                 </li>

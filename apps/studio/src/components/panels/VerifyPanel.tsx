@@ -24,21 +24,23 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
   return (
     <div className="verify">
       <div className="panel-toolbar">
-        <button type="button" className="btn btn--primary btn--xs" disabled={running || playing} onClick={() => void studio.runVerify()}>
-          {running ? <span className="spinner" aria-hidden="true" /> : <Icon name="shield" size={12} />} {running ? 'Checking…' : 'Run physics check'}
+        <button type="button" className="btn btn--primary btn--sm" disabled={running || playing} onClick={() => void studio.runVerify()}>
+          <Icon name="shield" /> {running ? 'Checking…' : 'Run checks'}
         </button>
         {verify.status !== 'idle' && !running && (
-          <span className={`pill ${stale ? 'pill--idle' : verify.status === 'passed' ? 'pill--ok' : 'pill--bad'}`}>
+          <span className={`status-chip is-${stale ? 'idle' : verify.status === 'passed' ? 'ok' : 'bad'}`}>
             {stale ? 'outdated' : verify.status === 'passed' ? 'passed' : verify.status === 'error' ? 'error' : 'failed'}
           </span>
         )}
-        {verify.ms > 0 && !running && <span className="muted small">{formatMs(verify.ms)}</span>}
+        {verify.ms > 0 && !running && <span className="panel-toolbar__count">{formatMs(verify.ms)}</span>}
       </div>
 
       {verify.status === 'idle' && (
-        <div className="empty">
-          <Icon name="shield" size={20} />
-          <p>Simulates the world headless with its rules and checks every test (stability, overlaps, reachability…) plus static diagnostics.</p>
+        <div className="panel-empty panel-empty--center">
+          <span className="panel-empty__icon">
+            <Icon name="shield" size={20} />
+          </span>
+          <p>Simulates the world headless with its rules and runs every test — stability, overlaps, reachability — plus static diagnostics.</p>
         </div>
       )}
 
@@ -60,12 +62,12 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
           <ul className="test-list">
             {verify.results.map((r, i) => (
               <li key={`${r.id}-${i}`} className={r.passed ? 'is-pass' : 'is-fail'}>
-                <Icon name={r.passed ? 'check' : 'x'} size={12} />
+                <Icon name={r.passed ? 'check' : 'x'} />
                 <span className="test-list__id">{r.id}</span>
                 <span className="test-list__msg">{r.message}</span>
                 {!r.passed && (
-                  <button type="button" className="btn btn--xs btn--ai" disabled={busy || playing} onClick={() => studio.fixWithAI(`test "${r.id}" (${r.kind}) failed: ${r.message}`)}>
-                    <Icon name="wand" size={11} /> Fix with AI
+                  <button type="button" className="btn btn--sm" disabled={busy || playing} onClick={() => studio.fixWithAI(`test "${r.id}" (${r.kind}) failed: ${r.message}`)}>
+                    <Icon name="wand" /> Fix with AI
                   </button>
                 )}
               </li>
@@ -102,8 +104,8 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
                 <p className="diag__msg">{d.message}</p>
                 {d.suggestion && <p className="diag__hint">{d.suggestion}</p>}
                 {d.severity !== 'info' && (
-                  <button type="button" className="btn btn--xs btn--ai" disabled={busy || playing} onClick={() => studio.fixWithAI(describeDiagnostic(d))}>
-                    <Icon name="wand" size={11} /> Fix with AI
+                  <button type="button" className="btn btn--sm" disabled={busy || playing} onClick={() => studio.fixWithAI(describeDiagnostic(d))}>
+                    <Icon name="wand" /> Fix with AI
                   </button>
                 )}
               </li>
@@ -113,7 +115,7 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
       )}
 
       {verify.status !== 'idle' && !running && verify.results.length === 0 && verify.diagnostics.length === 0 && (
-        <p className="muted small pad">No tests or problems found. Ask the agent to “add physics tests” for stronger guarantees.</p>
+        <p className="panel-empty">No tests or problems found. Ask the agent to “add physics tests” for stronger guarantees.</p>
       )}
     </div>
   );

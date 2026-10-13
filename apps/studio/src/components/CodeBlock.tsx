@@ -26,11 +26,11 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, title, collapsibl
         <span className="code-block__lang">{title ?? (lang || 'code')}</span>
         <span className="code-block__meta">{lineCount} lines</span>
         <button type="button" className="icon-btn icon-btn--xs" onClick={copy} title="Copy code" aria-label="Copy code">
-          <Icon name={copied ? 'check' : 'copy'} size={12} />
+          <Icon name={copied ? 'check' : 'copy'} />
         </button>
         {canCollapse && (
           <button type="button" className="icon-btn icon-btn--xs" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}>
-            <Icon name={open ? 'chevronUp' : 'chevronDown'} size={12} />
+            <Icon name={open ? 'chevronUp' : 'chevronDown'} />
           </button>
         )}
       </div>

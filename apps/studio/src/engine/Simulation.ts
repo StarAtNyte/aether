@@ -148,6 +148,7 @@ export class Simulation {
   private lastFrame = -1;
   private lastStats = 0;
   private disposed = false;
+  private viewListener: ((camera: WorldRenderer['camera']) => void) | null = null;
   private downX = 0;
   private downY = 0;
   private downValid = false;
@@ -406,6 +407,15 @@ export class Simulation {
   placementPoint(): Vec3 {
     const t = this.renderer.orbitTarget();
     return [Math.round(t[0] * 2) / 2, Math.max(0, Math.round(t[1] * 2) / 2), Math.round(t[2] * 2) / 2];
+  }
+
+  /**
+   * Camera-dependent overlays (axis gizmo, labels): called after every frame
+   * that redrew the view, and once immediately. One listener at a time.
+   */
+  setViewListener(fn: ((camera: WorldRenderer['camera']) => void) | null): void {
+    this.viewListener = fn;
+    if (fn) fn(this.renderer.camera);
   }
 
   /** On-screen touch stick (play mode). */
@@ -678,7 +688,8 @@ export class Simulation {
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
       this.renderOpts.onDemand = s === null;
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
-      this.renderer.render(dt, this.renderOpts);
+      const drew = this.renderer.render(dt, this.renderOpts);
+      if (drew && this.viewListener) this.viewListener(this.renderer.camera);
       this.frameFailures = 0;
     } catch (err) {
       this.onFrameError(err, s);

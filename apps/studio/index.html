@@ -1,18 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="description" content="Aether Studio — describe a world in plain language and get a physically verified, playable 3D scene in your browser." />
-    <meta name="theme-color" content="#f3f4f7" />
-    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Aether — describe a world in plain language and get a physically verified, playable 3D scene in your browser." />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preload" href="/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <title>Aether — speak worlds into being</title>
+    <script src="/theme-boot.js"></script>
+    <title>Aether</title>
   </head>
   <body>
-    <noscript>Aether Studio needs JavaScript and WebGL2 (or WebGPU) to run.</noscript>
+    <noscript>Aether needs JavaScript and WebGL2 (or WebGPU) to run.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

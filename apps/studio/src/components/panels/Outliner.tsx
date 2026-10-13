@@ -5,12 +5,12 @@ import { buildOutlinerRows, visibleRange, type OutlinerRow, type RowKind } from 
 import { Icon, type IconName } from '../Icon';
 
 const KIND_ICON: Record<RowKind, IconName> = {
-  light: 'sparkles',
-  scatter: 'branch',
-  procedural: 'wand',
+  light: 'lightbulb',
+  scatter: 'grid',
+  procedural: 'box3d',
   primitive: 'cube',
   model: 'cube',
-  group: 'list',
+  group: 'folder',
   template: 'copy',
 };
 
@@ -30,7 +30,7 @@ const Row = memo(function Row({ row, selected, collapsed, disabled, onSelect, on
   return (
     <div
       className={`outliner-row${selected ? ' is-selected' : ''}${row.visible ? '' : ' is-hidden'}`}
-      style={{ paddingLeft: 8 + row.depth * 14 }}
+      style={{ paddingLeft: 8 + row.depth * 16 }}
       role="treeitem"
       aria-selected={selected}
       aria-level={row.depth + 1}
@@ -52,22 +52,21 @@ const Row = memo(function Row({ row, selected, collapsed, disabled, onSelect, on
             onToggleCollapse(row.id);
           }}
         >
-          <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={11} />
+          <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} />
         </button>
       ) : (
         <span className="outliner-row__caret" aria-hidden="true" />
       )}
-      <Icon name={KIND_ICON[row.kind]} size={13} className={`kind kind--${row.kind}`} />
+      <Icon name={KIND_ICON[row.kind]} className="outliner-row__icon" />
       <span className="outliner-row__name" title={row.id}>
         {row.name}
       </span>
-      {row.dynamic && <span className="mini-badge" title="Dynamic physics body">dyn</span>}
-      {row.hasBehaviors && <span className="mini-badge mini-badge--logic" title="Has behaviors">fx</span>}
-      {row.tags.slice(0, 2).map((t) => (
-        <span key={t} className="tag">
+      {row.tags.slice(0, 1).map((t) => (
+        <span key={t} className="outliner-row__tag" title={`#${t}`}>
           #{t}
         </span>
       ))}
+      {row.hasBehaviors && <Icon name="zap" className="outliner-row__flag" label="Has behaviours" />}
       <span className="outliner-row__actions">
         <button
           type="button"
@@ -79,7 +78,7 @@ const Row = memo(function Row({ row, selected, collapsed, disabled, onSelect, on
             onFocus(row.id);
           }}
         >
-          <Icon name="target" size={12} />
+          <Icon name="target" />
         </button>
         <button
           type="button"
@@ -92,11 +91,11 @@ const Row = memo(function Row({ row, selected, collapsed, disabled, onSelect, on
             onToggleVisible(row.id, !row.visible);
           }}
         >
-          <Icon name={row.visible ? 'eye' : 'eyeOff'} size={12} />
+          <Icon name={row.visible ? 'eye' : 'eyeOff'} />
         </button>
         <button
           type="button"
-          className="icon-btn icon-btn--xs icon-btn--danger"
+          className="icon-btn icon-btn--xs"
           disabled={disabled}
           title="Delete"
           aria-label={`Delete ${row.name}`}
@@ -105,7 +104,7 @@ const Row = memo(function Row({ row, selected, collapsed, disabled, onSelect, on
             onDelete(row.id);
           }}
         >
-          <Icon name="trash" size={12} />
+          <Icon name="trash" />
         </button>
       </span>
     </div>
@@ -151,23 +150,23 @@ export const Outliner = memo(function Outliner(): ReactElement {
   return (
     <div className="outliner">
       <div className="panel-toolbar">
-        <label className="search">
-          <Icon name="search" size={13} />
+        <label className="search-field search-field--sm">
+          <Icon name="search" />
           <input
             type="search"
             value={filter}
-            placeholder="Search entities or #tag"
+            placeholder="Search objects or #tag"
             aria-label="Search entities"
             onChange={(e) => studio.store.getState().setOutlinerFilter(e.target.value)}
           />
         </label>
-        <span className="muted count">{filter ? `${rows.length}/${total}` : total}</span>
+        <span className="panel-toolbar__count">{filter ? `${rows.length} / ${total}` : total}</span>
       </div>
       {rows.length === 0 ? (
-        <div className="empty">{total === 0 ? 'The world is empty — describe something in the chat.' : 'No matching entities.'}</div>
+        <p className="panel-empty">{total === 0 ? 'The world is empty. Describe something to the agent or add an asset.' : 'No matching objects.'}</p>
       ) : (
         <div
-          className="outliner__list"
+          className="outliner__list scroll-y"
           ref={listRef}
           role="tree"
           aria-label="Entities"

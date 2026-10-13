@@ -28,18 +28,18 @@ export const HistoryPanel = memo(function HistoryPanel(): ReactElement {
   return (
     <div className="history">
       <div className="panel-toolbar">
-        <button type="button" className="btn btn--xs" disabled={!canUndo || playing} onClick={() => studio.undo()}>
-          <Icon name="undo" size={12} /> Undo
+        <button type="button" className="btn btn--sm" disabled={!canUndo || playing} onClick={() => studio.undo()}>
+          <Icon name="undo" /> Undo
         </button>
-        <button type="button" className="btn btn--xs" disabled={!canRedo || playing} onClick={() => studio.redo()}>
-          <Icon name="redo" size={12} /> Redo
+        <button type="button" className="btn btn--sm" disabled={!canRedo || playing} onClick={() => studio.redo()}>
+          <Icon name="redo" /> Redo
         </button>
-        <span className="muted small push">{entries.length - 1} edits</span>
+        <span className="panel-toolbar__count">{entries.length - 1} edits</span>
       </div>
 
       <section className="logic-section">
         <h3 className="section-title">
-          <Icon name="branch" size={12} /> Branches
+          <Icon name="branch" /> Branches
         </h3>
         <div className="branch-list">
           {branches.map((b) => (
@@ -55,9 +55,9 @@ export const HistoryPanel = memo(function HistoryPanel(): ReactElement {
             createBranch();
           }}
         >
-          <input className="text-field" value={name} maxLength={64} placeholder="new-branch-name" aria-label="New branch name" onChange={(e) => setName(e.target.value)} />
-          <button type="submit" className="btn btn--xs" disabled={!name.trim() || playing}>
-            <Icon name="plus" size={12} /> Branch here
+          <input className="input input--sm" value={name} maxLength={64} placeholder="new-branch-name" aria-label="New branch name" onChange={(e) => setName(e.target.value)} />
+          <button type="submit" className="btn btn--sm" disabled={!name.trim() || playing}>
+            <Icon name="plus" /> Branch here
           </button>
         </form>
         {error && <p className="field-error">{error}</p>}
@@ -72,7 +72,7 @@ export const HistoryPanel = memo(function HistoryPanel(): ReactElement {
               <li key={e.id} className={`timeline__item${current ? ' is-current' : ''}`}>
                 <button type="button" className="timeline__btn" disabled={playing || current} onClick={() => studio.checkout(e.id)} title={current ? 'Current state' : 'Jump to this state'}>
                   <span className={`timeline__icon src-${e.source}`}>
-                    <Icon name={SOURCE_ICON[e.source] ?? 'cube'} size={12} />
+                    <Icon name={SOURCE_ICON[e.source] ?? 'cube'} />
                   </span>
                   <span className="timeline__msg">{e.message}</span>
                   <span className="timeline__meta">{e.patchCount > 0 ? `${e.patchCount} ops` : ''}</span>

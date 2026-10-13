@@ -32,6 +32,7 @@ import {
 } from '../lib/storage';
 import { paletteEntity, paletteItem } from '../lib/palette';
 import { dataUrlToBlob, fitThumbnail } from '../lib/thumbnail';
+import { downloadText } from '../lib/download';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
@@ -496,16 +497,7 @@ export class Studio {
   /** Download the current world as JSON. */
   exportToFile(): void {
     const world = this.history.current;
-    const blob = new Blob([exportWorld(world)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportFileName(world);
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadText(exportFileName(world), exportWorld(world));
   }
 
   /** Upload the world to the server and copy a share link. Returns the link or null. */
@@ -546,6 +538,7 @@ export class Studio {
       if (!r.ok) throw new Error(r.error);
       this.replaceWorld(r.world, `Open shared "${r.world.name}"`);
       this.store.getState().toast(`Opened shared world "${r.world.name}"`, 'success');
+      clearShareParam();
     } catch (err) {
       this.store.getState().toast(`Could not open shared world: ${errorMessage(err)}`, 'error', 6);
     }
@@ -777,6 +770,17 @@ export class Studio {
     this.sim?.dispose();
     this.sim = null;
     this.sandbox?.dispose();
+  }
+}
+
+/** Drop `?world=` from the address bar once loaded, so a reload does not import it again. */
+function clearShareParam(): void {
+  try {
+    const url = new URL(location.href);
+    url.searchParams.delete('world');
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* history unavailable */
   }
 }
 

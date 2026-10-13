@@ -2,7 +2,7 @@ import { memo, type ReactElement } from 'react';
 import { useHistoryState, useStudio, useUI } from '../../app/context';
 import { Icon } from '../Icon';
 
-/** "Physics check" pill: latest verification result; click to (re)run and open the Verify tab. */
+/** "Checks" button: latest physics verification; click to (re)run and open the Checks view. */
 export const VerifyPill = memo(function VerifyPill(): ReactElement | null {
   const studio = useStudio();
   const verify = useUI((s) => s.verify);
@@ -10,34 +10,33 @@ export const VerifyPill = memo(function VerifyPill(): ReactElement | null {
   const { head } = useHistoryState();
   if (mode === 'play') return null;
   const stale = verify.head !== null && verify.head !== head;
-  let cls = 'pill--idle';
-  let text = 'Physics check';
+  let state = 'idle';
+  let text = 'Run checks';
   if (verify.status === 'running') {
-    cls = 'pill--running';
-    text = 'Checking physics…';
+    state = 'running';
+    text = 'Checking…';
   } else if (verify.status === 'passed') {
-    cls = stale ? 'pill--idle' : 'pill--ok';
-    text = stale ? 'Physics check (outdated)' : 'Physics check ✓';
+    state = stale ? 'idle' : 'ok';
+    text = stale ? 'Checks outdated' : 'Checks passed';
   } else if (verify.status === 'failed' || verify.status === 'error') {
-    cls = stale ? 'pill--idle' : 'pill--bad';
+    state = stale ? 'idle' : 'bad';
     const failing = verify.results.filter((r) => !r.passed).length;
-    text = stale ? 'Physics check (outdated)' : failing > 0 ? `${failing} check${failing === 1 ? '' : 's'} failing` : 'Physics check ✗';
+    text = stale ? 'Checks outdated' : failing > 0 ? `${failing} check${failing === 1 ? '' : 's'} failing` : 'Checks failed';
   }
   return (
     <button
       type="button"
-      className={`pill pill--button ${cls}`}
+      className={`vp-btn vp-btn--label pill--button is-${state}`}
       onClick={() => {
-        const st = studio.store.getState();
-        if (!st.panels.right) st.togglePanel('right');
-        st.setRightTab('verify');
+        studio.store.getState().showLeftView('verify');
         void studio.runVerify();
       }}
-      title="Run the world's physics tests headless"
+      data-tip="Simulate the world headless and run its physics tests"
+      data-tip-align="end"
       disabled={verify.status === 'running'}
     >
-      {verify.status === 'running' ? <span className="spinner" aria-hidden="true" /> : <Icon name={verify.status === 'failed' && !stale ? 'alert' : 'shield'} size={13} />}
-      {text}
+      <span className="vp-btn__status" aria-hidden="true" />
+      <span>{text}</span>
     </button>
   );
 });
