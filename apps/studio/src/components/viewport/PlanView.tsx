@@ -92,8 +92,10 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
   const fitKey = `${target}|${userMoved.current ? 'user' : `${size[0]}x${size[1]}`}`;
   const fitted = useRef('');
   // Keep the plan clear of the overlays: the building bar (top), the tools (left) and the status line (bottom).
-  const pad = Math.min(48, Math.max(16, Math.min(size[0], size[1]) * 0.05));
-  const margin = { top: (size[0] < 1180 ? 96 : 60) + pad, right: pad + 8, bottom: 56 + pad, left: 56 + pad };
+  const margin = useMemo(() => {
+    const pad = Math.min(48, Math.max(16, Math.min(size[0], size[1]) * 0.05));
+    return { top: (size[0] < 1180 ? 96 : 60) + pad, right: pad + 8, bottom: 56 + pad, left: 56 + pad };
+  }, [size]);
   useEffect(() => {
     if (!plan2d || fitted.current === fitKey || userMoved.current) return;
     fitted.current = fitKey;

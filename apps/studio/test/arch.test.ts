@@ -113,6 +113,12 @@ describe('floor plan view helpers', () => {
     expect(after[0]).toBeCloseTo(before[0] as number);
     expect(after[1]).toBeCloseTo(before[1] as number);
     expect(panBy(cam, 90, 0).cx).toBeCloseTo(4);
+    // Insets for overlays: the plan sits in the free area (here below a 100 px bar).
+    const inset = fitPlan([0, 0, 10, 5], 1000, 600, { top: 100, right: 20, bottom: 20, left: 20 });
+    const top = inset.cz - 300 / inset.scale; // plan z at the view's top edge
+    expect((0 - top) * inset.scale).toBeGreaterThanOrEqual(99.9);
+    const bottom = inset.cz + 300 / inset.scale; // plan z at the bottom edge
+    expect((bottom - 5) * inset.scale).toBeGreaterThanOrEqual(19.9);
     expect(clampZoom(1e9)).toBe(PLAN_ZOOM[1]);
     expect(clampZoom(Number.NaN)).toBe(PLAN_ZOOM[0]);
   });
