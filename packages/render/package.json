@@ -11,6 +11,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@aether/arch": "*",
+    "@aether/assets": "*",
     "@aether/core": "*",
     "@aether/procgen": "*",
     "three": "0.186.1"

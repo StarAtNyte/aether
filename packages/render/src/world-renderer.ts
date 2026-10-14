@@ -15,6 +15,7 @@ import { MaterialCache } from './materials/material-cache';
 import { GeometryCache } from './geometry/buffer-geometry';
 import { createProcgenGeometrySource } from './geometry/procgen-source';
 import { createGltfModelLoader, ModelCache, type ModelLoader } from './geometry/model-loader';
+import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
 import { SceneSync } from './sync/scene-sync';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
@@ -65,6 +66,8 @@ export interface RendererOptions {
   geometrySource?: GeometrySource;
   /** Override model loading. */
   modelLoader?: ModelLoader;
+  /** Override image texture loading (imported posters). */
+  textureSource?: TextureSource;
   /** Total scatter instance budget. */
   maxInstances?: number;
   /**
@@ -333,6 +336,7 @@ export class WorldRenderer {
   private readonly materials = new MaterialCache();
   private readonly geometries = new GeometryCache();
   private readonly models: ModelCache;
+  private readonly textures: TextureCache;
   private readonly sync: SceneSync;
   private readonly ghost: SceneSync;
   private readonly env: EnvironmentRig;
@@ -475,7 +479,8 @@ export class WorldRenderer {
       size: this.budget.finishTextureSize,
     });
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
-    const common = { source, materials: this.materials, geometries: this.geometries, models: this.models };
+    this.textures = new TextureCache(opts.textureSource ?? createTextureSource());
+    const common = { source, materials: this.materials, geometries: this.geometries, models: this.models, textures: this.textures };
     this.sync = new SceneSync({
       ...common,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
@@ -774,6 +779,16 @@ export class WorldRenderer {
   /** Ask for a frame on the next on-demand {@link render} (e.g. after an external camera change). */
   requestRender(): void {
     this.needsDraw = true;
+  }
+
+  /** Current locomotion gait of an animated asset entity (idle / walk / run), or null. */
+  gaitOf(id: EntityId): 'idle' | 'walk' | 'run' | null {
+    return this.sync.animator.gaitOf(id);
+  }
+
+  /** Number of animated asset entities. */
+  get animatedCount(): number {
+    return this.sync.animator.size;
   }
 
   /** Generator output of an entity (procedural colliders for physics). */
@@ -1532,6 +1547,8 @@ export class WorldRenderer {
     }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
+    // Characters and animals animate while the world runs or the user works (not in an idle editor).
+    if (opts.animate !== false && this.sync.updateAnimations(step)) this.needsDraw = true;
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
     // and merge building geometry only once nothing animates any more.
     if (this.wasGrowing && !this.grow.active) this.archView.invalidate();
@@ -2164,6 +2181,7 @@ export class WorldRenderer {
     this.materials.dispose();
     this.geometries.dispose();
     this.models.dispose();
+    this.textures.dispose();
     this.scene.clear();
     this.renderer.dispose().catch((e: unknown) => log.warn(`renderer dispose failed: ${errorMessage(e)}`));
   }

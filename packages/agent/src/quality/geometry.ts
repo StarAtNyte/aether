@@ -3,6 +3,7 @@
  * entities (renderer-supplied when available, otherwise estimated from the
  * shape spec) and the classification of scenery vs. content.
  */
+import { assetShapeSize } from '@aether/assets';
 import { decodeMeshCached, meshBounds, worldTransform, type Entity, type EntityId, type Json, type WorldDoc } from '@aether/core';
 import type { Bounds3 } from './types';
 
@@ -95,6 +96,12 @@ export function estimateBounds(world: WorldDoc, e: Entity): Bounds3 | null {
       size = [shape.area[0], 1, shape.area[1]];
       baseAtZero = true;
       break;
+    case 'asset': {
+      const s = assetShapeSize(shape);
+      size = s ?? [shape.fitSize ?? 1, shape.fitSize ?? 1, shape.fitSize ?? 1];
+      baseAtZero = true;
+      break;
+    }
     case 'mesh': {
       const asset = Object.hasOwn(world.meshes, shape.mesh) ? world.meshes[shape.mesh] : undefined;
       if (!asset) return null;

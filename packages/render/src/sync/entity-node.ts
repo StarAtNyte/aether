@@ -81,6 +81,8 @@ export interface EntityNode {
   placeholder: boolean;
   /** Fallback content is shown because generation/loading failed. */
   failed: boolean;
+  /** Release callbacks of asset content (cache refs, owned geometry, animation), run on teardown. */
+  releases: Array<() => void>;
 }
 
 /** Create an empty node for an entity. */
@@ -117,5 +119,6 @@ export function createEntityNode(entity: Entity, transient: boolean): EntityNode
     pending: false,
     placeholder: false,
     failed: false,
+    releases: [],
   };
 }

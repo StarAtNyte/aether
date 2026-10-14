@@ -26,16 +26,69 @@ export function isSafeModelUrl(url: string): boolean {
   return isAllowedModelUrl(url);
 }
 
-/** Default glTF loader (lazy-imports `GLTFLoader` so Node tests never load it). */
+/** Skeleton-aware clone (three's `SkeletonUtils.clone`), installed when the glTF loader module loads. */
+let skeletonClone: ((source: Object3D) => Object3D) | null = null;
+
+/**
+ * Default glTF loader (lazy-imports `GLTFLoader`, the meshopt decoder and
+ * `SkeletonUtils`, so Node tests and worlds without models never load them).
+ * Library files are meshopt-compressed (`EXT_meshopt_compression`); the
+ * decoder is a small WebAssembly module (allowed by the `wasm-unsafe-eval`
+ * CSP). Animation clips are kept on `scene.animations`.
+ */
 export function createGltfModelLoader(): ModelLoader {
+  let loader: Promise<{ loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }> }> | null = null;
   return {
     async load(url: string): Promise<Object3D> {
       if (!isSafeModelUrl(url)) throw new Error('model url rejected (only same-origin paths, blob:/glTF data: URLs and allowlisted https hosts)');
-      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-      const gltf = await new GLTFLoader().loadAsync(url);
+      loader ??= Promise.all([
+        import('three/addons/loaders/GLTFLoader.js'),
+        import('three/addons/libs/meshopt_decoder.module.js'),
+        import('three/addons/utils/SkeletonUtils.js'),
+      ]).then(([{ GLTFLoader }, { MeshoptDecoder }, { clone }]) => {
+        skeletonClone = clone;
+        return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+      });
+      const gltf = await (await loader).loadAsync(url);
+      gltf.scene.animations = gltf.animations;
       return gltf.scene;
     },
   };
+}
+
+/** True when the tree contains skinned meshes (needs a skeleton-aware clone). */
+export function hasSkin(root: Object3D): boolean {
+  let skinned = false;
+  root.traverse((o) => {
+    if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh) skinned = true;
+  });
+  return skinned;
+}
+
+/** Clone a loaded model for one entity (geometry and materials shared; skeletons rebound). */
+export function cloneModel(source: Object3D): Object3D {
+  const clone = skeletonClone && hasSkin(source) ? skeletonClone(source) : source.clone(true);
+  clone.animations = source.animations;
+  return clone;
+}
+
+/**
+ * Clone a library / imported asset: models are already normalised (metres,
+ * base on y = 0, centred), so only a uniform `scale` is applied. Skinned
+ * meshes skip frustum culling (their bind-pose bounds do not follow the
+ * animation).
+ */
+export function instantiateAsset(source: Object3D, scale: number): Group {
+  const clone = cloneModel(source);
+  const wrapper = new Group();
+  wrapper.name = 'asset';
+  wrapper.add(clone);
+  if (scale !== 1) clone.scale.multiplyScalar(scale);
+  clone.traverse((o) => {
+    if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh) o.frustumCulled = false;
+  });
+  clone.updateMatrix();
+  return wrapper;
 }
 
 function disposeTree(root: Object3D): void {
@@ -97,7 +150,7 @@ const _center = new Vector3();
  * resting on y = 0 like procedural outputs.
  */
 export function instantiateModel(source: Object3D, fitSize?: number): Group {
-  const clone = source.clone(true);
+  const clone = cloneModel(source);
   const wrapper = new Group();
   wrapper.name = 'model';
   wrapper.add(clone);

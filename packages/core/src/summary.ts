@@ -93,6 +93,8 @@ function shapeText(s: ShapeSpec): string {
         : `scatter ${s.count}x ${shapeText(s.of)} area=${n1(s.area[0])}x${n1(s.area[1])}${s.onSurface ? ` on=${s.onSurface}` : ''}`;
     case 'mesh':
       return `mesh:${s.mesh}`;
+    case 'asset':
+      return `asset:${s.id}${s.variant ? `/${s.variant}` : ''}${s.fitSize !== undefined ? ` fit=${n1(s.fitSize)}` : ''}${s.animation ? ` anim=${truncate(s.animation, 24)}` : ''}`;
   }
 }
 

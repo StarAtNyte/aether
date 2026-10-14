@@ -1,6 +1,11 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
+import { assetLibrary } from '../../scripts/vite/asset-library.ts';
+
+/** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
+const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
 
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
 const API_TARGET = 'http://localhost:8787';
@@ -11,7 +16,7 @@ const apiProxy = {
 
 export default defineConfig({
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) })],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR)],
   server: {
     port: 5173,
     proxy: apiProxy,

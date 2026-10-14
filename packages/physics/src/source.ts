@@ -16,6 +16,7 @@ import type { ColliderDesc, GeneratorOutput } from '@aether/procgen';
 import { DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, meshColliders, outputBytes, primitiveOutput } from '@aether/procgen';
 import { collidersBounds, fromColliderDesc, sanitizePoints, SHAPE_LIMITS, type LocalCollider } from './shapes';
 import type { ColliderProvider } from './types';
+import { assetColliderDescs, assetGeneratorShape } from './asset-colliders';
 
 /** Collider kinds that are derived from the shape (everything but 'none'). */
 type ColliderMode = Exclude<NonNullable<Entity['physics']>['collider'], 'none'>;
@@ -319,6 +320,21 @@ function autoColliders(entity: Entity, world: ShapeWorld | null, provider: Colli
       }
       warnings.push(`${label}: no colliders for generator "${shape.generator.slice(0, 64)}"; using a 1m box placeholder`);
       const b = unitBox();
+      return { bounds: b, output: null, colliders: [boxFromBounds(b)] };
+    }
+    case 'asset': {
+      const provided = safeProvide(provider, entity, warnings);
+      const descs = provided && provided.length > 0 ? provided : assetColliderDescs(shape);
+      if (descs) {
+        const colliders = fromDescs(descs, warnings, label);
+        const bounds = collidersBounds(colliders);
+        if (colliders.length > 0 && bounds) return { bounds, output: null, colliders };
+      }
+      // Fallback chain: a generator asset, then the shape's own fallback, then a placeholder box.
+      const generated = assetGeneratorShape(shape) ?? shape.fallback;
+      if (generated) return autoColliders({ ...entity, shape: generated }, world, provider, warnings);
+      warnings.push(`${label}: asset "${shape.id.slice(0, 64)}" is unknown here; using a ${shape.fitSize ?? 1}m box placeholder`);
+      const b = modelBounds(shape.fitSize);
       return { bounds: b, output: null, colliders: [boxFromBounds(b)] };
     }
     default:

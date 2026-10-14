@@ -7,7 +7,7 @@
  *   npm run assets:thumbs [-- --force] [-- --only id1,id2]
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Catalog } from '../../packages/assets/src/schema';
 import { withBrowserPage } from './browser';
@@ -36,7 +36,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true,
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.92;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -50,9 +50,10 @@ window.__thumb = {
     const gltf = await loader.loadAsync(url);
     const scene = new THREE.Scene();
     scene.environment = envTex;
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    scene.environmentIntensity = 0.55;
+    const key = new THREE.DirectionalLight(0xfff4e8, 1.5);
     key.position.set(3, 6, 4);
-    scene.add(key, new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.6));
+    scene.add(key, new THREE.HemisphereLight(0xdfe8ff, 0x6b665e, 0.35));
     const root = gltf.scene;
     scene.add(root);
     if (idle && gltf.animations.length) {
@@ -92,10 +93,17 @@ window.__thumb = {
 window.__thumbReady = true;
 `;
 
+/** Delete thumbnails no catalog entry references (left behind by rebuilt models). */
+function removeOrphans(catalog: Catalog): void {
+  const keep = new Set(catalog.entries.map((e) => e.thumb).filter((t): t is string => !!t));
+  for (const f of readdirSync(join(LIB, 't'))) if (!keep.has(`t/${f}`)) unlinkSync(join(LIB, 't', f));
+}
+
 async function main(): Promise<void> {
   const catalog = Catalog.parse(JSON.parse(readFileSync(CATALOG, 'utf8')));
   const todo = catalog.entries.filter((e) => e.file && (force || !e.thumb || !existsSync(join(LIB, e.thumb))) && (!only || only.has(e.id)));
   if (todo.length === 0) {
+    removeOrphans(catalog);
     console.log('all thumbnails present');
     return;
   }
@@ -118,6 +126,7 @@ async function main(): Promise<void> {
     }
   });
   writeFileSync(CATALOG, `${JSON.stringify(Catalog.parse(catalog))}\n`);
+  removeOrphans(catalog);
   console.log(`${todo.length} thumbnails rendered`);
 }
 

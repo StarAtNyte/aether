@@ -4,8 +4,17 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "exports": { ".": "./src/index.ts", "./report": "./src/report.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./report": "./src/report.ts"
+  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "dependencies": { "@aether/arch": "*", "@aether/core": "*", "@aether/procgen": "*", "@dimforge/rapier3d-compat": "0.21.0" }
+  "dependencies": {
+    "@aether/arch": "*",
+    "@aether/assets": "*",
+    "@aether/core": "*",
+    "@aether/procgen": "*",
+    "@dimforge/rapier3d-compat": "0.21.0"
+  }
 }

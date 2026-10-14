@@ -32,3 +32,4 @@ export { verify, shardIndices, VerifyAbortedError, VERIFY_LIMITS, VERIFY_SLICE_M
 export { summarizeReport, REPORT_LIMITS } from './report';
 export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';
+export { assetColliderDescs, assetGeneratorShape, usesAssets, ensureAssetCatalog } from './asset-colliders';

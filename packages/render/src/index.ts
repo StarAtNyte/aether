@@ -32,7 +32,9 @@ export { partToBufferGeometry, partKey, GeometryCache, InvalidMeshError, boxProj
 export { createProcgenGeometrySource, primitiveKey, type ProcgenSourceOptions } from './geometry/procgen-source';
 export { scatterPlacements, composeScatterMatrices, primitiveLift, MAX_SCATTER_INSTANCES, type ScatterParams, type ScatterPlacements, type SurfaceSampler } from './geometry/scatter';
 export { HeightGrid, buildHeightGrid, transformPositions, DEFAULT_GRID_RESOLUTION, type TriangleSource } from './geometry/height-grid';
-export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
+export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, instantiateAsset, cloneModel, hasSkin, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
+export { TextureCache, createTextureSource, createPoster, shareMaterials, type TextureSource } from './geometry/poster';
+export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animator';
 
 export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';
 export { resolveFog, fogAmount, hazeDensity, maxContentFogDensity, worldFogDensity, type FogParams } from './environment/fog';

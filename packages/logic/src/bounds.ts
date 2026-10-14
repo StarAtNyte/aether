@@ -7,6 +7,7 @@
  * is the natural "trigger volume" an LLM expects for invisible zones.
  */
 import type { Entity, Vec3 } from '@aether/core';
+import { assetShapeSize } from '@aether/assets';
 import type { QuatTuple } from './types';
 import { inverseRotate } from './vec';
 
@@ -54,6 +55,10 @@ export function zoneShapeOf(entity: Entity): ZoneShape {
       return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
     };
     return { kind: 'box', half: [(num('width', 0.9, 0.4, 3) / 2) * sx, (num('height', 2.1, 1.5, 4) / 2) * sy, (num('thickness', 0.045, 0.02, 0.12) / 2) * sz] };
+  }
+  if (shape.kind === 'asset') {
+    const size = assetShapeSize(shape);
+    if (size) return { kind: 'box', half: [(size[0] / 2) * sx, Math.max(size[1] / 2, MIN_HALF_HEIGHT) * sy, (size[2] / 2) * sz] };
   }
   if (shape.kind === 'model' && shape.fitSize !== undefined) {
     const h = shape.fitSize / 2;

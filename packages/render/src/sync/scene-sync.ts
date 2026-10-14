@@ -17,6 +17,7 @@ import {
   Group,
   InstancedBufferAttribute,
   InstancedMesh,
+  LOD,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -39,6 +40,7 @@ import {
   type Json,
   type LightSpec,
   type MaterialSpec,
+  type AssetShape,
   type ProceduralShape,
   type ScatterShape,
   type ShapeSpec,
@@ -52,7 +54,10 @@ import { finishAlbedoScale } from '@aether/procgen';
 import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMaterial } from '../materials/presets';
 import { FOLIAGE_GENERATORS } from '../materials/wind';
 import { createMaterial } from '../materials/material-cache';
-import { instantiateModel, type ModelCache } from '../geometry/model-loader';
+import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
+import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
+import { AssetAnimator } from './asset-animator';
+import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
 import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
 import { ScatterField, FIELD_MIN_INSTANCES } from '../virtual/scatter-field';
@@ -105,6 +110,8 @@ export interface SceneSyncOptions {
   geometries: GeometryCache;
   /** Model loading; without it model shapes show the fallback. */
   models?: ModelCache;
+  /** Image textures for imported posters (asset shapes of user images). */
+  textures?: TextureCache;
   /** 'ghost' renders translucent previews: no lights, no shadows. */
   variant?: MaterialVariant;
   /** Total instance budget (default {@link DEFAULT_MAX_INSTANCES}). */
@@ -158,6 +165,7 @@ interface Retired {
   owned: MeshStandardMaterial[];
   modelUrl: string | null;
   bundle: MeshGeometryBundle | null;
+  releases: Array<() => void>;
 }
 
 /** Key under `Mesh.userData` holding the global triangle index of each local triangle (mesh shapes). */
@@ -254,6 +262,8 @@ export class SceneSync {
   private readonly dags: DagClient | null;
   private readonly virtualTriangles: number;
   private readonly virtualGroups = new Map<string, { group: VirtualGroup; refs: number }>();
+  /** Locomotion / clip playback of animated assets. */
+  readonly animator = new AssetAnimator();
 
   constructor(private readonly opts: SceneSyncOptions) {
     this.variant = opts.variant ?? 'standard';
@@ -940,6 +950,9 @@ export class SceneSync {
         case 'model':
           work = this.buildModel(node, shape.url, shape.fitSize, token);
           break;
+        case 'asset':
+          work = this.buildAsset(node, shape, world, token);
+          break;
         case 'scatter':
           work = this.buildScatter(node, shape, world, token);
           break;
@@ -971,7 +984,7 @@ export class SceneSync {
     node.ready = done;
     // Model downloads are not awaited by setWorld (network); generation is.
     const tracked = this.track(done);
-    return shape.kind === 'model' ? RESOLVED : tracked;
+    return shape.kind === 'model' || shape.kind === 'asset' ? RESOLVED : tracked;
   }
 
   private resolveProcedural(node: EntityNode, shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>): Promise<{ keyed: KeyedOutput; failed: boolean }> {
@@ -1013,6 +1026,147 @@ export class SceneSync {
       });
       node.content.add(model);
     });
+  }
+
+  /** Advance asset animations (characters, animals). Returns true when a redraw is needed. */
+  updateAnimations(dt: number): boolean {
+    return this.animator.update(dt);
+  }
+
+  /**
+   * Mount a library or imported asset. Fallback chain when the asset is
+   * unknown or fails to load: a generator asset's procedural shape, then the
+   * shape's own `fallback`, then a translucent box of the asset's size.
+   */
+  private buildAsset(node: EntityNode, shape: AssetShape, world: Pick<WorldDoc, 'generators'>, token: number): Promise<void> {
+    this.mountPlaceholder(node);
+    return loadCatalog().then(async () => {
+      if (!this.isCurrent(node, token)) return;
+      const info = assetInfo(effectiveAssetId(shape));
+      const scale = info ? fitScale(info.size, shape.fitSize) : 1;
+      if (info) this.sizePlaceholder(node, info.size[0] * scale, info.size[1] * scale, info.size[2] * scale);
+      try {
+        if (!info || info.kind === 'hdri') throw new Error(info ? `"${shape.id}" is an environment map, not an object` : `asset "${shape.id.slice(0, 64)}" is not available`);
+        if (info.kind === 'generator') {
+          const g = info.entry?.generator;
+          if (!g) throw new Error(`asset "${shape.id}" has no generator`);
+          const { keyed, failed } = await this.resolveProcedural(node, { kind: 'procedural', generator: g.id, params: { ...g.params } }, world);
+          if (!this.isCurrent(node, token)) return;
+          this.teardownContent(node);
+          this.mountOutput(node, keyed, false);
+          node.failed = failed;
+          return;
+        }
+        if (info.kind === 'image') await this.mountPosterAsset(node, info, scale, token);
+        else await this.mountModelAsset(node, shape, info, scale, token);
+      } catch (e) {
+        if (!this.isCurrent(node, token)) return;
+        await this.mountAssetFallback(node, shape, world, token, errorMessage(e));
+      }
+    });
+  }
+
+  private sizePlaceholder(node: EntityNode, w: number, h: number, d: number): void {
+    for (const child of node.content.children) {
+      if (child.name !== 'placeholder') continue;
+      child.scale.set(Math.max(0.05, w), Math.max(0.05, h), Math.max(0.05, d));
+      child.updateMatrix();
+    }
+  }
+
+  private async mountModelAsset(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number): Promise<void> {
+    const models = this.opts.models;
+    if (!models || !info.url) throw new Error('model loading is not available');
+    const url = info.url;
+    const lodUrls = this.variant === 'standard' ? info.lodUrls : [];
+    const urls = [url, ...lodUrls];
+    // One reference per URL, held until the content is torn down (or released at once on failure / staleness).
+    const loads = urls.map((u) => models.acquire(u));
+    const release = (): void => {
+      for (const u of urls) models.release(u);
+    };
+    let sources: Object3D[];
+    try {
+      sources = await Promise.all(loads);
+    } catch (e) {
+      release();
+      throw e;
+    }
+    if (!this.isCurrent(node, token)) {
+      release();
+      return;
+    }
+    this.clearPlaceholder(node);
+    node.releases.push(release);
+    const main = instantiateAsset(sources[0] as Object3D, scale);
+    let content: Object3D = main;
+    if (sources.length > 1 && info.entry) {
+      const lod = new LOD();
+      lod.name = 'asset-lod';
+      lod.addLevel(main, 0);
+      const dist = lodDistances(info.entry, 50, scale);
+      for (let i = 1; i < sources.length; i++) {
+        const level = instantiateAsset(sources[i] as Object3D, scale);
+        shareMaterials(main, level);
+        lod.addLevel(level, dist[i - 1] ?? 1e9);
+      }
+      content = lod;
+    }
+    const standard = this.variant === 'standard';
+    content.traverse((o) => {
+      if (o instanceof Mesh) {
+        o.castShadow = standard && node.entity.castShadow;
+        o.receiveShadow = standard && node.entity.receiveShadow;
+      }
+    });
+    node.content.add(content);
+    const clipRoot = main.children[0];
+    if (standard && info.anims && clipRoot && clipRoot.animations.length > 0) {
+      this.animator.add(node.id, clipRoot, node.object, info.anims, shape.animation);
+      node.releases.push(() => this.animator.remove(node.id));
+    }
+  }
+
+  private async mountPosterAsset(node: EntityNode, info: AssetInfo, scale: number, token: number): Promise<void> {
+    const textures = this.opts.textures;
+    if (!textures || !info.url) throw new Error('image loading is not available');
+    const url = info.url;
+    const tex = await textures.acquire(url);
+    if (!this.isCurrent(node, token)) {
+      textures.release(url);
+      return;
+    }
+    this.clearPlaceholder(node);
+    const poster = createPoster(tex, info.size[0] * scale, info.size[1] * scale, info.size[2] * scale);
+    poster.group.traverse((o) => {
+      if (o instanceof Mesh) {
+        o.castShadow = this.variant === 'standard' && node.entity.castShadow;
+        o.receiveShadow = this.variant === 'standard' && node.entity.receiveShadow;
+      }
+    });
+    node.content.add(poster.group);
+    node.releases.push(() => {
+      poster.dispose();
+      textures.release(url);
+    });
+  }
+
+  private async mountAssetFallback(node: EntityNode, shape: AssetShape, world: Pick<WorldDoc, 'generators'>, token: number, reason: string): Promise<void> {
+    const fb = shape.fallback;
+    if (fb?.kind === 'procedural') {
+      const { keyed } = await this.resolveProcedural(node, fb, world);
+      if (!this.isCurrent(node, token)) return;
+      this.teardownContent(node);
+      this.mountOutput(node, keyed, false);
+    } else if (fb?.kind === 'primitive') {
+      this.teardownContent(node);
+      this.mountOutput(node, this.opts.source.primitive(fb), fb.primitive === 'plane');
+    } else {
+      // Keep the (sized) translucent placeholder as the stand-in.
+      if (!node.placeholder) this.mountPlaceholder(node);
+    }
+    this.warn(node.id, `${reason}; showing a stand-in`);
+    node.failed = true;
   }
 
   private buildScatter(node: EntityNode, shape: ScatterShape, world: Pick<WorldDoc, 'generators'>, token: number): Promise<void> {
@@ -1348,8 +1502,9 @@ export class SceneSync {
    */
   private detachContent(node: EntityNode): Retired {
     this.releaseVirtual(node);
-    const retired: Retired = { materialKeys: [], geometryKeys: node.geometryKeys, owned: [], modelUrl: node.modelUrl, bundle: node.meshBundle };
+    const retired: Retired = { materialKeys: [], geometryKeys: node.geometryKeys, owned: [], modelUrl: node.modelUrl, bundle: node.meshBundle, releases: node.releases };
     node.meshBundle = null;
+    node.releases = [];
     for (const b of node.bindings) {
       retired.materialKeys.push(b.materialKey);
       if (b.ownedMaterial) retired.owned.push(b.ownedMaterial);
@@ -1388,6 +1543,8 @@ export class SceneSync {
     if (r.modelUrl !== null) this.opts.models?.release(r.modelUrl);
     r.bundle?.dispose();
     r.bundle = null;
+    for (const release of r.releases) release();
+    r.releases = [];
     r.owned = [];
     r.materialKeys = [];
     r.geometryKeys = [];

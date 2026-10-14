@@ -208,9 +208,9 @@
    },
    "files": [
     {
-     "path": "m/sofa.e0b78459.glb",
-     "sha256": "e0b78459a3b4896397d302bb5b385ef6b1bd45073d346dca4fadf1a5c8279f8c",
-     "bytes": 11032
+     "path": "m/sofa.bdce35b6.glb",
+     "sha256": "bdce35b67dc613999c3ff6dc380f78678f7cccc9e0ac3fc90c1b93c3f7b83e55",
+     "bytes": 11136
     }
    ]
   },
@@ -225,9 +225,9 @@
    },
    "files": [
     {
-     "path": "m/sofa-long.82a880ae.glb",
-     "sha256": "82a880aeb04f41afe7a105d98492b4861ed18b142081cb831958ed28ec0d7d0c",
-     "bytes": 14176
+     "path": "m/sofa-long.4bf4ad14.glb",
+     "sha256": "4bf4ad148c6fe6917d0ed9345fff6bc70aeb4defd0c978bdf1c46c4114076d4c",
+     "bytes": 14280
     }
    ]
   },
@@ -242,9 +242,9 @@
    },
    "files": [
     {
-     "path": "m/sofa-corner.1ebba1a7.glb",
-     "sha256": "1ebba1a7f476061f33305ff55ebfb133cf5c7df4a839fc7d0c1300c5807e9050",
-     "bytes": 14456
+     "path": "m/sofa-corner.4cf784ef.glb",
+     "sha256": "4cf784ef017f116596c39663f1ff91215250e46dbcee80ca49539a0ee50566f7",
+     "bytes": 14560
     }
    ]
   },
@@ -259,9 +259,9 @@
    },
    "files": [
     {
-     "path": "m/ottoman.3c18230e.glb",
-     "sha256": "3c18230e792b7dd8f09b7a58abd1e87c3867af64d20d4a522cc21d31d1dbdc65",
-     "bytes": 8060
+     "path": "m/ottoman.931b34e1.glb",
+     "sha256": "931b34e1b6d92e0a800964274f3e97faf2bd86c3daee067a7217f1ed00b32b0c",
+     "bytes": 8160
     }
    ]
   },
@@ -276,9 +276,9 @@
    },
    "files": [
     {
-     "path": "m/sofa-modern.1186707e.glb",
-     "sha256": "1186707eb44cfe43515b4ab51ee947ab5d5397506224055c3b11d351fd1bddce",
-     "bytes": 10824
+     "path": "m/sofa-modern.b97d5abb.glb",
+     "sha256": "b97d5abba28e82ab2b96d1c0310ff4dfb9ac578ef8c5cc3f16fd33254c841499",
+     "bytes": 10924
     }
    ]
   },
@@ -293,9 +293,9 @@
    },
    "files": [
     {
-     "path": "m/sofa-modern-corner.e62d806b.glb",
-     "sha256": "e62d806b21efc404771520cab934675b96997d6b4b4c641409a5d73625a775e1",
-     "bytes": 14064
+     "path": "m/sofa-modern-corner.c61f70e2.glb",
+     "sha256": "c61f70e2826b04e83011ae0ef833f23f4d57aa739fc0993323cbfddd0218eb58",
+     "bytes": 14164
     }
    ]
   },
@@ -310,9 +310,9 @@
    },
    "files": [
     {
-     "path": "m/armchair.71e7ae3e.glb",
-     "sha256": "71e7ae3ed189a2549f91de90ea801cc78b5812ee8f8caf4837573f4c3c9d5fec",
-     "bytes": 11120
+     "path": "m/armchair.6a537d53.glb",
+     "sha256": "6a537d530377930ba2ee37cd78c6f61c299a4fe4da471cd8ba6d05b2e4f8a43d",
+     "bytes": 11224
     }
    ]
   },
@@ -327,9 +327,9 @@
    },
    "files": [
     {
-     "path": "m/armchair-relax.3ecbb106.glb",
-     "sha256": "3ecbb1064b47b24c0149fb16af084f3e62ce6d186c678e0c20d1cf3954a127e7",
-     "bytes": 21404
+     "path": "m/armchair-relax.97820a4a.glb",
+     "sha256": "97820a4abd3b446a3f9c1f3ba567860ecd778d0ae8e49604a6ce6bc77d963f51",
+     "bytes": 21556
     }
    ]
   },
@@ -344,9 +344,9 @@
    },
    "files": [
     {
-     "path": "m/armchair-modern.cee63bec.glb",
-     "sha256": "cee63becab2b4b627761daf4bd3e1cfc73451e355cce471e5389ac5bcff02993",
-     "bytes": 10820
+     "path": "m/armchair-modern.14df6c4d.glb",
+     "sha256": "14df6c4de1e872f1f02f0ecde0150ff2cfd6be9da8fd592f26a8d4f1d628ac15",
+     "bytes": 10920
     }
    ]
   },
@@ -361,9 +361,9 @@
    },
    "files": [
     {
-     "path": "m/chair.800e3c49.glb",
-     "sha256": "800e3c49b5a0e040842017e41a24e71b9060c7cc34cb2d0278fc2c15e228573a",
-     "bytes": 6120
+     "path": "m/chair.80f462c4.glb",
+     "sha256": "80f462c417f433a7b6bdd818be0e3fe181850e88dc0a3ebdd467aa3ed2b3e988",
+     "bytes": 6172
     }
    ]
   },
@@ -378,9 +378,9 @@
    },
    "files": [
     {
-     "path": "m/chair-cushion.37a79ed4.glb",
-     "sha256": "37a79ed410d3a1a7285956e105bcea4fcabcdd6dde3576d05bc6148b60528195",
-     "bytes": 12304
+     "path": "m/chair-cushion.ceab7225.glb",
+     "sha256": "ceab7225e766988e13a74e8ee8b6e74dd14d064f87f5c36d1f6d9084ae47cf3b",
+     "bytes": 12404
     }
    ]
   },
@@ -395,9 +395,9 @@
    },
    "files": [
     {
-     "path": "m/chair-modern.6a0148e0.glb",
-     "sha256": "6a0148e083f514403fcb4610f42073ac28aec50062c38f33aed1f258aac24bc1",
-     "bytes": 8572
+     "path": "m/chair-modern.f2314cbc.glb",
+     "sha256": "f2314cbc5ce25c855af5a2b71599f562c503a69dc32a21f900c258d3ee9e6490",
+     "bytes": 8672
     }
    ]
   },
@@ -412,9 +412,9 @@
    },
    "files": [
     {
-     "path": "m/chair-frame.0273db17.glb",
-     "sha256": "0273db1754e408ff417de54653708b758c8dc49d4526674ea9b1f59039f92431",
-     "bytes": 18924
+     "path": "m/chair-frame.1236d8c5.glb",
+     "sha256": "1236d8c5556a3fdd2521303b1d833b5661d2d35ac02bb764fcf6cfbd9f92346a",
+     "bytes": 19020
     }
    ]
   },
@@ -429,9 +429,9 @@
    },
    "files": [
     {
-     "path": "m/chair-rounded.989d9031.glb",
-     "sha256": "989d903143bed24f745f3669a280290333d6a11553fd687550ad6cb004506dff",
-     "bytes": 9348
+     "path": "m/chair-rounded.8ba3426c.glb",
+     "sha256": "8ba3426c537cabeb67e22300ed95bf048902e272291d128fcc35c0095d42beb6",
+     "bytes": 9400
     }
    ]
   },
@@ -446,9 +446,9 @@
    },
    "files": [
     {
-     "path": "m/office-chair.2f1369bc.glb",
-     "sha256": "2f1369bcb9fe3a9a686c5ef66670a40467efe0aa77be1ded373e4d9fbbb4d728",
-     "bytes": 37776
+     "path": "m/office-chair.1c9247d0.glb",
+     "sha256": "1c9247d08471c9f4642c62c84fd29d33dcc3611cfb5d0f6d01214b15262fdd94",
+     "bytes": 37872
     }
    ]
   },
@@ -463,9 +463,9 @@
    },
    "files": [
     {
-     "path": "m/bar-stool.a112ceb7.glb",
-     "sha256": "a112ceb7efab513413b97286a43c787f5c65401b6d234bd116155699c82d2301",
-     "bytes": 12284
+     "path": "m/bar-stool.a4f8d815.glb",
+     "sha256": "a4f8d8156ecaf86f29cc051ff92d0b3faf9ed6b87475085f0b5d00bf288b7ce6",
+     "bytes": 12384
     }
    ]
   },
@@ -480,9 +480,9 @@
    },
    "files": [
     {
-     "path": "m/bar-stool-square.c1abaf97.glb",
-     "sha256": "c1abaf97678b85b049cb607f452a32dc922fd42c6cb9e7a50798891141bf90d6",
-     "bytes": 9948
+     "path": "m/bar-stool-square.0412d8e0.glb",
+     "sha256": "0412d8e00cb218bb93118e4ae230c6cdff86cd5724de525679c22403f2cb3b95",
+     "bytes": 10052
     }
    ]
   },
@@ -497,9 +497,9 @@
    },
    "files": [
     {
-     "path": "m/bench-indoor.a003d8d5.glb",
-     "sha256": "a003d8d5c4cab229eccc364647a927d7fc6da11686853394c18e8590efce6eaf",
-     "bytes": 6240
+     "path": "m/bench-indoor.7dffd59f.glb",
+     "sha256": "7dffd59f91a0214a003b34d7b2cf505e9d0327cba6546793574a8227849c82e7",
+     "bytes": 6292
     }
    ]
   },
@@ -514,9 +514,9 @@
    },
    "files": [
     {
-     "path": "m/bench-cushion.c36dea4f.glb",
-     "sha256": "c36dea4fbd1148cfda2a52164996c6f5d4212668b1bf7d67058fffde2e1fda41",
-     "bytes": 12440
+     "path": "m/bench-cushion.b8f976ce.glb",
+     "sha256": "b8f976ce2f1c4a9296e06ea139665b8a02108ad0af4e9ce93dd7642361e9e423",
+     "bytes": 12540
     }
    ]
   },
@@ -531,9 +531,9 @@
    },
    "files": [
     {
-     "path": "m/table.92a36a2f.glb",
-     "sha256": "92a36a2f3604555f4f5207b026cb6b63e6f655cb39f76c71d184e2e25b4e0099",
-     "bytes": 5108
+     "path": "m/table.c07884d6.glb",
+     "sha256": "c07884d683891c0a179c3b5cb8da25ec3f01bfcf2a8a234ec1972f23e935b900",
+     "bytes": 5160
     }
    ]
   },
@@ -548,9 +548,9 @@
    },
    "files": [
     {
-     "path": "m/table-cloth.e3c4a2da.glb",
-     "sha256": "e3c4a2da0f01864deffffd68be802b8b354d83f449c4dd8638e89f2ae61ce9d6",
-     "bytes": 10200
+     "path": "m/table-cloth.421730e0.glb",
+     "sha256": "421730e0ca770d55c9f1283e81820187da418ce8087cf9befefdc4285ad8a30e",
+     "bytes": 10304
     }
    ]
   },
@@ -565,9 +565,9 @@
    },
    "files": [
     {
-     "path": "m/table-round.fe6c311c.glb",
-     "sha256": "fe6c311cd8efcd5469ded2d3091e8c43c05fc6acac9c9a96b319ec9aa76d5104",
-     "bytes": 4512
+     "path": "m/table-round.73a97c30.glb",
+     "sha256": "73a97c30ff55fb9e0533a2adc0b7a654f4e6592e751b44ace919829f4476f8c8",
+     "bytes": 4564
     }
    ]
   },
@@ -582,9 +582,9 @@
    },
    "files": [
     {
-     "path": "m/table-glass.86dcf5b9.glb",
-     "sha256": "86dcf5b92e99eb0ea5cefd8f608b038d9cdb185ce5fc4ccc78521e4aa870d3c5",
-     "bytes": 10264
+     "path": "m/table-glass.126a4529.glb",
+     "sha256": "126a45293fa61265fee3893ebe94ede4b12ee51f64d941b30380b2f85ac01d7c",
+     "bytes": 10356
     }
    ]
   },
@@ -599,9 +599,9 @@
    },
    "files": [
     {
-     "path": "m/table-cross.c15f9141.glb",
-     "sha256": "c15f91412fcd75800c5e8dd96ba1abe1feb0bc43230a14a6c13d18d1355fb9a8",
-     "bytes": 7152
+     "path": "m/table-cross.25ceab91.glb",
+     "sha256": "25ceab912ee35b6696e4396e9d0f8cc8a160433e031fba9a22911433cce9a8d7",
+     "bytes": 7204
     }
    ]
   },
@@ -616,9 +616,9 @@
    },
    "files": [
     {
-     "path": "m/coffee-table.d34b2bef.glb",
-     "sha256": "d34b2bef20dc8b2c91e63f8759ffbb509c1c082b2b15f7f807059d951beffe07",
-     "bytes": 4996
+     "path": "m/coffee-table.c5d37fe1.glb",
+     "sha256": "c5d37fe1a7bbbb26c6d3ca4260c6c45b1406c3eafdc1d6c73d3f856410e82bed",
+     "bytes": 5048
     }
    ]
   },
@@ -633,9 +633,9 @@
    },
    "files": [
     {
-     "path": "m/coffee-table-glass.f805c088.glb",
-     "sha256": "f805c0882ce3380c319fef5dabd5969f82ea6eb271b7a1af1e2a4352c0271457",
-     "bytes": 9592
+     "path": "m/coffee-table-glass.5c28821b.glb",
+     "sha256": "5c28821be54031a8928958957db3e48eb49e0b5109544c73a52de750d8ae1988",
+     "bytes": 9684
     }
    ]
   },
@@ -650,9 +650,9 @@
    },
    "files": [
     {
-     "path": "m/coffee-table-square.ce7e6ef7.glb",
-     "sha256": "ce7e6ef766d270c9d49a8c19c08c5ae5ed62d3cff94b39265a4719798308fec5",
-     "bytes": 4964
+     "path": "m/coffee-table-square.a07acc0c.glb",
+     "sha256": "a07acc0c3f2662d35acab87699b72332adc7946c3a29d1f3834180a739431cf0",
+     "bytes": 5016
     }
    ]
   },
@@ -667,9 +667,9 @@
    },
    "files": [
     {
-     "path": "m/side-table.75358d7b.glb",
-     "sha256": "75358d7b5121a2f5ab4f133fb84530c864f06a364d6107fc8e642f8bb61e153c",
-     "bytes": 9524
+     "path": "m/side-table.109988b9.glb",
+     "sha256": "109988b973552c6034d5894592f057e9f44ba9ca57c49909143b66b0c2fbf8ab",
+     "bytes": 9596
     }
    ]
   },
@@ -684,9 +684,9 @@
    },
    "files": [
     {
-     "path": "m/side-table-drawers.0db12c93.glb",
-     "sha256": "0db12c931f08b0620e59c0daa01f58c4a24f83a50825777d530ef38fd16faaa4",
-     "bytes": 18376
+     "path": "m/side-table-drawers.5700b283.glb",
+     "sha256": "5700b2831c42430171273513b24e4efd8a3defa7bd628c94626c01953424813a",
+     "bytes": 18500
     }
    ]
   },
@@ -701,9 +701,9 @@
    },
    "files": [
     {
-     "path": "m/desk.fe6a4fae.glb",
-     "sha256": "fe6a4fae36351431b4674441a294c3baf7175d05a2d49d998812b5abf3558511",
-     "bytes": 10748
+     "path": "m/desk.bc8f1773.glb",
+     "sha256": "bc8f1773a5e639179abe2d728128b012048d5e5bcc17b92980e7e56be837c910",
+     "bytes": 10848
     }
    ]
   },
@@ -718,9 +718,9 @@
    },
    "files": [
     {
-     "path": "m/desk-corner.969dc48a.glb",
-     "sha256": "969dc48a836e6f1ea4d01d3e6ec655ba544e4c1e8742a7844859b027d1bb84de",
-     "bytes": 12112
+     "path": "m/desk-corner.26375e5d.glb",
+     "sha256": "26375e5d4f499dba9d0283073a9ead8a7855a3882438fa5a79674bd392a3605b",
+     "bytes": 12212
     }
    ]
   },
@@ -735,9 +735,9 @@
    },
    "files": [
     {
-     "path": "m/bed-double.2d72276f.glb",
-     "sha256": "2d72276f1da7e3a904a413dabaaaa151ed51b30acf3c83ba33b6e11668cdf21d",
-     "bytes": 23788
+     "path": "m/bed-double.43a777e7.glb",
+     "sha256": "43a777e7005d4d2c773e491cefe13fec93c88ad3b1cef83bf605be96ebcd1692",
+     "bytes": 23972
     }
    ]
   },
@@ -752,9 +752,9 @@
    },
    "files": [
     {
-     "path": "m/bed-single.d83dd15b.glb",
-     "sha256": "d83dd15b1d6d71cb9a38e0fe64b9ff1fc2259918ec92466cdbf8c3c9987a82e3",
-     "bytes": 21416
+     "path": "m/bed-single.21725cc3.glb",
+     "sha256": "21725cc3d5ef037143a387ee6eb1dc634cfe9ce747af41805033c6ad9b8a5520",
+     "bytes": 21600
     }
    ]
   },
@@ -769,9 +769,9 @@
    },
    "files": [
     {
-     "path": "m/bunk-bed.6a726a2f.glb",
-     "sha256": "6a726a2f47f986d8998069b61ccfbfc1ba48133d77141e557727f1c5bbd40739",
-     "bytes": 33396
+     "path": "m/bunk-bed.b6d42e8e.glb",
+     "sha256": "b6d42e8e2eaa9129bfb79d6a2b6798e0f711d1a710bc4e9f0a807e24336f7376",
+     "bytes": 33528
     }
    ]
   },
@@ -786,9 +786,9 @@
    },
    "files": [
     {
-     "path": "m/nightstand.3f833b04.glb",
-     "sha256": "3f833b04c2d05e5342c6788460a978bc034e1092112457cd0f223b4e5a02cba9",
-     "bytes": 6936
+     "path": "m/nightstand.00186c6d.glb",
+     "sha256": "00186c6d380c1662c380900df7f0bf21ab9a4085857c39d4bab8afedbf4fd5bb",
+     "bytes": 7036
     }
    ]
   },
@@ -803,9 +803,9 @@
    },
    "files": [
     {
-     "path": "m/nightstand-drawer.32d309af.glb",
-     "sha256": "32d309af74917783bce20dc091dde2972b12a8c086c2c37ec936be56a4c1bd97",
-     "bytes": 15856
+     "path": "m/nightstand-drawer.15bc402d.glb",
+     "sha256": "15bc402d867be3d10dfb5ce59bb3fc610819dabcaf7e6855c5b1d9a7883ae6f0",
+     "bytes": 15980
     }
    ]
   },
@@ -820,9 +820,9 @@
    },
    "files": [
     {
-     "path": "m/bookcase.346bc642.glb",
-     "sha256": "346bc642ca57a59043cca326d7798e35c488f5232a7c922c5e88b1e240f8ef09",
-     "bytes": 8568
+     "path": "m/bookcase.3a39f1a6.glb",
+     "sha256": "3a39f1a6f3b1c26bd7891ddf65b26a81c5bd71e29978fdcf45e31a1b9ab3cde3",
+     "bytes": 8620
     }
    ]
   },
@@ -837,9 +837,9 @@
    },
    "files": [
     {
-     "path": "m/bookcase-low.be69bcf9.glb",
-     "sha256": "be69bcf93eda2efed3cf70942029730a8c8a6cb5d4d56517de16599687eb3299",
-     "bytes": 6332
+     "path": "m/bookcase-low.51918e67.glb",
+     "sha256": "51918e673411fba3a3a2025c4cc2b992fcd3858bd78ba1ab3b3181ed51615d89",
+     "bytes": 6384
     }
    ]
   },
@@ -854,9 +854,9 @@
    },
    "files": [
     {
-     "path": "m/bookcase-wide.1a16aae3.glb",
-     "sha256": "1a16aae36416b1ab6bc4041af5d3c93269f643161d359fdc53b76040d7cdbd88",
-     "bytes": 11352
+     "path": "m/bookcase-wide.35443f5c.glb",
+     "sha256": "35443f5c1d6435630fba4ada78fa1c38507a91700d87e97672a26308778ea941",
+     "bytes": 11404
     }
    ]
   },
@@ -871,9 +871,9 @@
    },
    "files": [
     {
-     "path": "m/cabinet-doors.1aca1572.glb",
-     "sha256": "1aca1572124537d24451be5af7944dc001990d5cfe1aa6d96bcb06d4ca506ab6",
-     "bytes": 13524
+     "path": "m/cabinet-doors.4da49ae6.glb",
+     "sha256": "4da49ae687f36bd8fbc454c5290361717612d40c61b5dfc90287651a3ece9e94",
+     "bytes": 13624
     }
    ]
   },
@@ -888,9 +888,9 @@
    },
    "files": [
     {
-     "path": "m/tv-stand.7835c03f.glb",
-     "sha256": "7835c03f4fea91d6ef66c5ec537264bacb28b9863bc765f11bc4e27916aab3e0",
-     "bytes": 6168
+     "path": "m/tv-stand.87543f61.glb",
+     "sha256": "87543f61088ce5b1ee2cb6113ce29d8ef77f186ea25e84fdf49af224496c8af2",
+     "bytes": 6220
     }
    ]
   },
@@ -905,9 +905,9 @@
    },
    "files": [
     {
-     "path": "m/tv-stand-doors.2efe2356.glb",
-     "sha256": "2efe235690442bc079b60734b889d658bd9a5f678fc9b83463f8eba1983a3f78",
-     "bytes": 11144
+     "path": "m/tv-stand-doors.529a7e1e.glb",
+     "sha256": "529a7e1eff9724a3bfcf0b52183425b40119794786bbf54ae5517ac1740fc610",
+     "bytes": 11244
     }
    ]
   },
@@ -922,9 +922,9 @@
    },
    "files": [
     {
-     "path": "m/coat-rack.259fdfd5.glb",
-     "sha256": "259fdfd510b31e589f3a5545a02618a655aa3223912907b45350f561344930e8",
-     "bytes": 7440
+     "path": "m/coat-rack.6078e5d2.glb",
+     "sha256": "6078e5d2ce29a5328381615568533125cd1812b60f40d9d3cc76901fa20818c2",
+     "bytes": 7492
     }
    ]
   },
@@ -939,9 +939,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-cabinet.e409a2f0.glb",
-     "sha256": "e409a2f0c9e7b4e1a346b94488a90704ebb38818b2c69d73174c2f5ebb6bbdbc",
-     "bytes": 12164
+     "path": "m/kitchen-cabinet.1d042225.glb",
+     "sha256": "1d042225e4ac9f2d328df9f27fb20e789b835c86b1380f3fd3bafcbdb83570eb",
+     "bytes": 12316
     }
    ]
   },
@@ -956,9 +956,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-drawers.0f5804c5.glb",
-     "sha256": "0f5804c5d90dbd5afa4e87a418607c2cfafa3c61443fc3b06c5737185610f7b3",
-     "bytes": 16772
+     "path": "m/kitchen-drawers.cea4594d.glb",
+     "sha256": "cea4594dfedc48acb4d15c7c83ec1552d38eb609b0c4b15eb968ce8c439edf67",
+     "bytes": 16920
     }
    ]
   },
@@ -973,9 +973,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-cabinet-corner.e40e4686.glb",
-     "sha256": "e40e4686e94142d7f0c972105f69a22b91c681e2265195c7198bfdf8f02f0bc7",
-     "bytes": 6956
+     "path": "m/kitchen-cabinet-corner.3133c1a8.glb",
+     "sha256": "3133c1a8487a729583f070f1818c9333fc8f4f9aa92104812e80a7c6bd28424a",
+     "bytes": 7056
     }
    ]
   },
@@ -990,9 +990,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-wall-cabinet.ac86ab39.glb",
-     "sha256": "ac86ab39493fb864fd4f1663058b70eb3fc7beb9c4782b858d66a420efb24c94",
-     "bytes": 9148
+     "path": "m/kitchen-wall-cabinet.79e78ff5.glb",
+     "sha256": "79e78ff5c2fc4fdd42f6c95aa3364f399c6f8698fb151d4b5f16fa171870a4fd",
+     "bytes": 9300
     }
    ]
   },
@@ -1007,9 +1007,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-wall-cabinet-double.c821826b.glb",
-     "sha256": "c821826bb8b63b5708463b834360e7f00ae38df60f3a807ed053aa231e69827d",
-     "bytes": 14640
+     "path": "m/kitchen-wall-cabinet-double.f017e66f.glb",
+     "sha256": "f017e66f7c48bbddbe398ba83830b874e816a60867dbc33dfa616748b2918642",
+     "bytes": 14788
     }
    ]
   },
@@ -1024,9 +1024,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-sink.eb8db862.glb",
-     "sha256": "eb8db862ca1f9f366083810696606e033f71d3a85548e62636cf1a3853432dc4",
-     "bytes": 49736
+     "path": "m/kitchen-sink.f823948a.glb",
+     "sha256": "f823948ac3807c919937dc3dad3c6f5eaabb74215caa5046f588ca228996537d",
+     "bytes": 50008
     }
    ]
   },
@@ -1041,9 +1041,9 @@
    },
    "files": [
     {
-     "path": "m/stove.0e34574b.glb",
-     "sha256": "0e34574bb0324349ac409d0cdb3150bf934549a3ac9be2c089266ca0f9116fb1",
-     "bytes": 93300
+     "path": "m/stove.0fc26ebb.glb",
+     "sha256": "0fc26ebbf9a7b563487900448a4430309df8163d1419e98663dba0601df9b286",
+     "bytes": 93532
     }
    ]
   },
@@ -1058,9 +1058,9 @@
    },
    "files": [
     {
-     "path": "m/stove-electric.a1bc3b7d.glb",
-     "sha256": "a1bc3b7dc5cb970f754bcfe1045d21df76083b629eee2140a8aaaaf6080e4d61",
-     "bytes": 43760
+     "path": "m/stove-electric.0da74e0c.glb",
+     "sha256": "0da74e0c73b22b6829ccbf7d5db1c504d4c940dea43bce00f35c206a991b3b3a",
+     "bytes": 44040
     }
    ]
   },
@@ -1075,9 +1075,9 @@
    },
    "files": [
     {
-     "path": "m/fridge.5d80cac9.glb",
-     "sha256": "5d80cac968c65cac36e1a358a74144f64a1e401b32dfe8021224518865345c10",
-     "bytes": 22452
+     "path": "m/fridge.b42612d0.glb",
+     "sha256": "b42612d0d163680beacd77086925c9740bbb683a4cc3bd27e45e6076b0abd6b8",
+     "bytes": 22648
     }
    ]
   },
@@ -1092,9 +1092,9 @@
    },
    "files": [
     {
-     "path": "m/fridge-large.d7735a44.glb",
-     "sha256": "d7735a4406c96927210759abc5caa6aac7cca19f2382fd663ae0a54858a71c18",
-     "bytes": 24560
+     "path": "m/fridge-large.12d86885.glb",
+     "sha256": "12d86885af96fb69645340eb98836b72ccb529814f0cd58a92b162d98befe5a4",
+     "bytes": 24656
     }
    ]
   },
@@ -1109,9 +1109,9 @@
    },
    "files": [
     {
-     "path": "m/fridge-small.9bf6dc3f.glb",
-     "sha256": "9bf6dc3f8590d6f86c470b1821a966e340d6bbfd7349cbf17d20f4ab17b70a6e",
-     "bytes": 16924
+     "path": "m/fridge-small.ce47db4d.glb",
+     "sha256": "ce47db4d2e81e9f4c4e4ce20ee82a818fb12d0ab47cbecbcb7c177dc3b7ec09c",
+     "bytes": 17120
     }
    ]
   },
@@ -1126,9 +1126,9 @@
    },
    "files": [
     {
-     "path": "m/kitchen-island.7c4e8626.glb",
-     "sha256": "7c4e86263244940093462a5f9dadf920015839a8f509cea3d5b026fab84b5caa",
-     "bytes": 9448
+     "path": "m/kitchen-island.b8707457.glb",
+     "sha256": "b8707457494dae6a831bce7e3f35df8bbbb39a4e438f23a5ed6ded4ab7103eb4",
+     "bytes": 9596
     }
    ]
   },
@@ -1143,9 +1143,9 @@
    },
    "files": [
     {
-     "path": "m/microwave.c67e8032.glb",
-     "sha256": "c67e803276c6c59f9c411825c3c11884fda2e48174188bd3cd99139f091b9580",
-     "bytes": 15964
+     "path": "m/microwave.ed58636c.glb",
+     "sha256": "ed58636cd7b27d0039373c7cabe170b65a4e2bb65dc5db989cf38875e9828a48",
+     "bytes": 16140
     }
    ]
   },
@@ -1160,9 +1160,9 @@
    },
    "files": [
     {
-     "path": "m/coffee-machine.57a85336.glb",
-     "sha256": "57a853368320474b487daad698d6f2e35c23921dcf123f783e06f832ae95ae7d",
-     "bytes": 13528
+     "path": "m/coffee-machine.d181c722.glb",
+     "sha256": "d181c722755bb2b26e68ea5cfa7ad7c52562bec26896b8b922cd18284b4acc4d",
+     "bytes": 13660
     }
    ]
   },
@@ -1177,9 +1177,9 @@
    },
    "files": [
     {
-     "path": "m/blender.d4bacf41.glb",
-     "sha256": "d4bacf4104a8293a7b5517ad0f147a93ad97c4d06af88bcb0f1e279f76272192",
-     "bytes": 13992
+     "path": "m/blender.5c613c98.glb",
+     "sha256": "5c613c982b9225877d234e8340e58e98c483089bfe3737916928cb48ba4f1f6e",
+     "bytes": 14132
     }
    ]
   },
@@ -1194,9 +1194,9 @@
    },
    "files": [
     {
-     "path": "m/toaster.1b042cf9.glb",
-     "sha256": "1b042cf9e72e9423e6ea847bf247e299379dd97c706f8046ebb66e1e48c0dcbf",
-     "bytes": 15200
+     "path": "m/toaster.3c0f115f.glb",
+     "sha256": "3c0f115f5f36b2e4a3fee22c605ed51ad8c379e1a9b38134451a8f4989c25f69",
+     "bytes": 15296
     }
    ]
   },
@@ -1211,9 +1211,9 @@
    },
    "files": [
     {
-     "path": "m/cooker-hood.f0dfa4ff.glb",
-     "sha256": "f0dfa4ff841a827072bf33cdb54eb3f94003f0581163310a2f225df7d3efd0c8",
-     "bytes": 5536
+     "path": "m/cooker-hood.91642321.glb",
+     "sha256": "91642321991d03892cb02744388048872c914254887a1af11b430c3d10d612a7",
+     "bytes": 5604
     }
    ]
   },
@@ -1228,9 +1228,9 @@
    },
    "files": [
     {
-     "path": "m/bathtub.d9a082c1.glb",
-     "sha256": "d9a082c139b2a6892bfa5ec9cc94cf655c30c11eabdb44b6ede0c101f005a900",
-     "bytes": 51104
+     "path": "m/bathtub.0925407a.glb",
+     "sha256": "0925407a27052970365d4af627ff5358de05bb18afa147357be725c03ed95272",
+     "bytes": 51236
     }
    ]
   },
@@ -1245,9 +1245,9 @@
    },
    "files": [
     {
-     "path": "m/shower.063332e4.glb",
-     "sha256": "063332e4053304d22517c7322a9e61c5b8d935acb35e8545a4f2ce76c2e5216c",
-     "bytes": 69376
+     "path": "m/shower.f64d4d1f.glb",
+     "sha256": "f64d4d1f7761352cb1a9efba37cc2226a39ecd02d91b2816cdf8e75c4f31da55",
+     "bytes": 69556
     }
    ]
   },
@@ -1262,9 +1262,9 @@
    },
    "files": [
     {
-     "path": "m/shower-round.d8023da4.glb",
-     "sha256": "d8023da45c8278e083641015b9aa25d940019778986379efa5a03812a5b9ae62",
-     "bytes": 52112
+     "path": "m/shower-round.e56925d9.glb",
+     "sha256": "e56925d9df084e3e2f0ba70c92fb5fa27130f4a5e15f31bcb3fe754325713526",
+     "bytes": 52268
     }
    ]
   },
@@ -1279,9 +1279,9 @@
    },
    "files": [
     {
-     "path": "m/toilet.a23d44c9.glb",
-     "sha256": "a23d44c9543c8e07cf495689262a4211953a7745eab25931c2c15942981b4e48",
-     "bytes": 30168
+     "path": "m/toilet.12d5729e.glb",
+     "sha256": "12d5729e07cc2ebd22ce3cf791e89564cff2d17caa0c70b53c2d3e0987f7c3e3",
+     "bytes": 30324
     }
    ]
   },
@@ -1296,9 +1296,9 @@
    },
    "files": [
     {
-     "path": "m/bathroom-sink.5e2c5c12.glb",
-     "sha256": "5e2c5c120876f7934556d0858f4fa394da5b001618cc2158812aad95afa87161",
-     "bytes": 31132
+     "path": "m/bathroom-sink.9b7c381e.glb",
+     "sha256": "9b7c381ebf73c5fcb5869cae967548ef0fb9aa19ff67bca974f9fbc2fd70543e",
+     "bytes": 31236
     }
    ]
   },
@@ -1313,9 +1313,9 @@
    },
    "files": [
     {
-     "path": "m/bathroom-sink-square.9cf0669e.glb",
-     "sha256": "9cf0669ee3c0d829e4ec7ca8971fe0ff25578d8eefd082dd9ace428b29c2e55b",
-     "bytes": 22052
+     "path": "m/bathroom-sink-square.a9fa4442.glb",
+     "sha256": "a9fa44429223c5d47ae59e5fd60b575a081c741cf12ab753f361a7bc5121e3a8",
+     "bytes": 22184
     }
    ]
   },
@@ -1330,9 +1330,9 @@
    },
    "files": [
     {
-     "path": "m/bathroom-cabinet.f384e8a1.glb",
-     "sha256": "f384e8a116c8c56cf3d4a414443ad6827b00e00a673daa39ca58db13e4c37aca",
-     "bytes": 50532
+     "path": "m/bathroom-cabinet.4c814442.glb",
+     "sha256": "4c814442de238426e2ad3f2c79700438e26404cf9dc56d014f3e22253ee7972c",
+     "bytes": 50720
     }
    ]
   },
@@ -1347,9 +1347,9 @@
    },
    "files": [
     {
-     "path": "m/bathroom-mirror.7cf1fc81.glb",
-     "sha256": "7cf1fc811d9bc1920319a8137773c0374ba6a7f282759e9b0dd83a607a37421b",
-     "bytes": 11740
+     "path": "m/bathroom-mirror.1dd8bf0a.glb",
+     "sha256": "1dd8bf0acafbca059f0a558848bb04c30c49ddf912c686bd6afdb79dae3d942d",
+     "bytes": 11888
     }
    ]
   },
@@ -1364,9 +1364,9 @@
    },
    "files": [
     {
-     "path": "m/washing-machine.146bcf21.glb",
-     "sha256": "146bcf21791ef1e8776daee746ce3a73beb4a5a716689676618b248421ccba92",
-     "bytes": 80912
+     "path": "m/washing-machine.ef8dc8e9.glb",
+     "sha256": "ef8dc8e9522acde6bcb1b0bc2cc09ea431c05161c812d67373e8a799386e0f4b",
+     "bytes": 81180
     }
    ]
   },
@@ -1381,9 +1381,9 @@
    },
    "files": [
     {
-     "path": "m/washer-dryer.6ea18fa7.glb",
-     "sha256": "6ea18fa7114e82f4a2e76b40fbe6ab148cf35f5381f57704044b0b936e05a33b",
-     "bytes": 98032
+     "path": "m/washer-dryer.e34f5c25.glb",
+     "sha256": "e34f5c2558d5319c4271301658778f4637100982aae892b288a57fec13d30cd3",
+     "bytes": 98300
     }
    ]
   },
@@ -1398,9 +1398,9 @@
    },
    "files": [
     {
-     "path": "m/floor-lamp.1d6c501f.glb",
-     "sha256": "1d6c501f57bdd5317bef1d770ab296db63ef86ad2417538d9fd03737c4965931",
-     "bytes": 8504
+     "path": "m/floor-lamp.2152c95a.glb",
+     "sha256": "2152c95a632fa21a9f09aef4d620ff6f485e87f087fa4dae4f7d10392c4d5cbc",
+     "bytes": 8596
     }
    ]
   },
@@ -1415,9 +1415,9 @@
    },
    "files": [
     {
-     "path": "m/floor-lamp-square.b0021ce3.glb",
-     "sha256": "b0021ce3a070a16afe0d97666cbafb140ad05616f62827ab0edcd64736613693",
-     "bytes": 7220
+     "path": "m/floor-lamp-square.8ac78f07.glb",
+     "sha256": "8ac78f072e73be4ba7b324b5b70d6596f6bd06231a24ca2cc96559697be1d22a",
+     "bytes": 7312
     }
    ]
   },
@@ -1432,9 +1432,9 @@
    },
    "files": [
     {
-     "path": "m/table-lamp.58433df7.glb",
-     "sha256": "58433df71246c3722dd2df473e627a9f01c70ac3770e3e44c7b7b743b1c3cde6",
-     "bytes": 8548
+     "path": "m/table-lamp.c4331bd8.glb",
+     "sha256": "c4331bd88837baacfeec325f8d9be2d80ac29e49f9d00f254e6ba5d49adf23a7",
+     "bytes": 8636
     }
    ]
   },
@@ -1449,9 +1449,9 @@
    },
    "files": [
     {
-     "path": "m/table-lamp-square.b2428eed.glb",
-     "sha256": "b2428eed2b2f5c229d47d0e3827b88385629888dc899df523820c46f7298de7f",
-     "bytes": 7232
+     "path": "m/table-lamp-square.6444bd89.glb",
+     "sha256": "6444bd89f00866e1d1f1095f4c2cb77a4971410e2dcc6e4d7500d7eecfc0ddad",
+     "bytes": 7320
     }
    ]
   },
@@ -1466,9 +1466,9 @@
    },
    "files": [
     {
-     "path": "m/ceiling-lamp.8177413f.glb",
-     "sha256": "8177413ff5261bdabfe0c45e8b50280280806bcb305563824729c2741fac3d91",
-     "bytes": 6852
+     "path": "m/ceiling-lamp.561ffc4a.glb",
+     "sha256": "561ffc4ad6ceab504da9a9cd57ca65e9efae3b73037377234f4d9643ce936ecc",
+     "bytes": 6944
     }
    ]
   },
@@ -1483,9 +1483,9 @@
    },
    "files": [
     {
-     "path": "m/wall-lamp.2fc931e0.glb",
-     "sha256": "2fc931e0babc2762e2fa42f3bb62c646a466730e21171cd168c73e19623bfc80",
-     "bytes": 6976
+     "path": "m/wall-lamp.c5ae90d7.glb",
+     "sha256": "c5ae90d78716f0b14fd999b76e896ecdf8bd67037de281d7d51839f62a5c2c6c",
+     "bytes": 7064
     }
    ]
   },
@@ -1500,9 +1500,9 @@
    },
    "files": [
     {
-     "path": "m/ceiling-fan.00fa3307.glb",
-     "sha256": "00fa330790ba2a9e8274aef907a92a2862aff297887ef05b148ac5ff0121c65f",
-     "bytes": 25156
+     "path": "m/ceiling-fan.0e4860ae.glb",
+     "sha256": "0e4860ae93ce1433da5b4c760e5fea16a3d4c744ea37a5d2c8c8fc2a9503d947",
+     "bytes": 25296
     }
    ]
   },
@@ -1517,9 +1517,9 @@
    },
    "files": [
     {
-     "path": "m/potted-plant.b32adae1.glb",
-     "sha256": "b32adae1239fca887a12b6bce377d720691d282b9ededde844a02bf4089d881f",
-     "bytes": 9072
+     "path": "m/potted-plant.631d6433.glb",
+     "sha256": "631d64337227571210e0bd39581c807d8450281022cc370ae4612f61566708e9",
+     "bytes": 9220
     }
    ]
   },
@@ -1534,9 +1534,9 @@
    },
    "files": [
     {
-     "path": "m/plant-small.dbfb2853.glb",
-     "sha256": "dbfb28532b240b8e438b2923c797e7f078db22b43dadb575b54445d2148cafbe",
-     "bytes": 10736
+     "path": "m/plant-small.fb326db0.glb",
+     "sha256": "fb326db0d470510db695120c28aaebefac35a61a3e3adc0f34446427c299253e",
+     "bytes": 10840
     }
    ]
   },
@@ -1551,9 +1551,9 @@
    },
    "files": [
     {
-     "path": "m/plant-small-b.7539917b.glb",
-     "sha256": "7539917b0817b2472dd568d681954732c884b69c3bf957db38d98bf236ac426b",
-     "bytes": 16312
+     "path": "m/plant-small-b.60347de5.glb",
+     "sha256": "60347de5ed08ea69fdc683c3109a581a25f45e5ff2c5cfe2ddc2931af50a712f",
+     "bytes": 16412
     }
    ]
   },
@@ -1568,9 +1568,9 @@
    },
    "files": [
     {
-     "path": "m/rug.242b1601.glb",
-     "sha256": "242b160146e42086bbb48b1cbe71707dd2b212309144e6f4bb3b8a3fb4d72a2f",
-     "bytes": 4044
+     "path": "m/rug.088d41ca.glb",
+     "sha256": "088d41cae70ec607e623c5f58eb3da5c3c9dd16d349b25b802d2516e2ecf2b62",
+     "bytes": 4148
     }
    ]
   },
@@ -1585,9 +1585,9 @@
    },
    "files": [
     {
-     "path": "m/rug-round.015bd6ad.glb",
-     "sha256": "015bd6ada28452c9d34fc640b78905f1640fbd44cb2fdab7cadf86769dcf5aaf",
-     "bytes": 10932
+     "path": "m/rug-round.1adf7dd2.glb",
+     "sha256": "1adf7dd252d5447571e35482514ec4c87b03e698726089f1ed57dab1a629b073",
+     "bytes": 11036
     }
    ]
   },
@@ -1602,9 +1602,9 @@
    },
    "files": [
     {
-     "path": "m/doormat.1a6e10be.glb",
-     "sha256": "1a6e10be6ebb5114541ca26eceb5b9783dcc7d5b299a767845deae4b8ef17016",
-     "bytes": 8184
+     "path": "m/doormat.cdbc683e.glb",
+     "sha256": "cdbc683e80200ab1c43731a823be15c0eef46036df3f8d9d51169af7bf255bfd",
+     "bytes": 8236
     }
    ]
   },
@@ -1619,9 +1619,9 @@
    },
    "files": [
     {
-     "path": "m/books.42cc7138.glb",
-     "sha256": "42cc7138928b6196529dd00cc682891b65f58e5b3683055b081d0b137ebe8aad",
-     "bytes": 15096
+     "path": "m/books.13a53f39.glb",
+     "sha256": "13a53f39f8b9d79c5854448f55bfa8288d943bde6ea1b73f9cca8cdf86d0a3bd",
+     "bytes": 15280
     }
    ]
   },
@@ -1636,9 +1636,9 @@
    },
    "files": [
     {
-     "path": "m/teddy-bear.893d2f5b.glb",
-     "sha256": "893d2f5b037366f3fac8c680e0c99ea9db09e273b4b01e3a418dbe8bea3a3463",
-     "bytes": 23736
+     "path": "m/teddy-bear.b778c806.glb",
+     "sha256": "b778c8060f189e618151d6009ede94c3c8995d32dcc7ee431dc140c1c54a6cda",
+     "bytes": 23888
     }
    ]
   },
@@ -1653,9 +1653,9 @@
    },
    "files": [
     {
-     "path": "m/pillow.0e44ab54.glb",
-     "sha256": "0e44ab54ef76c84250f0db0c1495a5113e27cfad6d8803ca0302396bd27d31ac",
-     "bytes": 4476
+     "path": "m/pillow.5ffb20cd.glb",
+     "sha256": "5ffb20cdec12d3e1f7e874c11d1fb8c6ca7afe8e946523f331c401e308b0bbf5",
+     "bytes": 4524
     }
    ]
   },
@@ -1670,9 +1670,9 @@
    },
    "files": [
     {
-     "path": "m/radio.64eb6c69.glb",
-     "sha256": "64eb6c693ffaa7c5cf649da725e0f902ecc109729100e32390258960e7f8ea7e",
-     "bytes": 35772
+     "path": "m/radio.df9b0419.glb",
+     "sha256": "df9b04194144666cf49d5a81674c25ab977f38423c43d978266a5b819de71bfb",
+     "bytes": 35920
     }
    ]
   },
@@ -1687,9 +1687,9 @@
    },
    "files": [
     {
-     "path": "m/speaker.733da3f6.glb",
-     "sha256": "733da3f6a936993d74959d116a6f904725dac5d62b887e6812efa10eecc04ad7",
-     "bytes": 17572
+     "path": "m/speaker.31382c22.glb",
+     "sha256": "31382c2204f036425bf5985e286b3288ccf3bbaa4ec6a134b70480bae1d88233",
+     "bytes": 17672
     }
    ]
   },
@@ -1704,9 +1704,9 @@
    },
    "files": [
     {
-     "path": "m/tv.2ccc2ff8.glb",
-     "sha256": "2ccc2ff8f5cdf0016d0ac34ed892b6217383b3a9fb27d4a26ccd22aecba5dbe6",
-     "bytes": 8024
+     "path": "m/tv.146ad4b6.glb",
+     "sha256": "146ad4b627fe94034b31f3b7e5a00c9dcaa6b8e6ca44ec9606e8703bfc909611",
+     "bytes": 8124
     }
    ]
   },
@@ -1721,9 +1721,9 @@
    },
    "files": [
     {
-     "path": "m/tv-vintage.6aafb65c.glb",
-     "sha256": "6aafb65cbbc0be5a7c0c95274bb64aa5672b6208939f98325073bb7be9bebda0",
-     "bytes": 41028
+     "path": "m/tv-vintage.ac773022.glb",
+     "sha256": "ac773022e2f710ce4444b2745b72a4a7dd55dad6659012dc90ca49aa4133b3b8",
+     "bytes": 41228
     }
    ]
   },
@@ -1738,9 +1738,9 @@
    },
    "files": [
     {
-     "path": "m/monitor.0defd261.glb",
-     "sha256": "0defd261090da4bad1f770c8642012656f911376784d37dfa93a1d567ffad47e",
-     "bytes": 8536
+     "path": "m/monitor.e5d52434.glb",
+     "sha256": "e5d52434f838714c9cb5b42aef02ab19834e657c71a1b9eaf6655c003e25ef9d",
+     "bytes": 8640
     }
    ]
   },
@@ -1755,9 +1755,9 @@
    },
    "files": [
     {
-     "path": "m/laptop.9c16335c.glb",
-     "sha256": "9c16335c8ba51cb764617e83aa3929ce00e64f15054c7ac48ed46d0c32b2cde1",
-     "bytes": 10020
+     "path": "m/laptop.b6040bee.glb",
+     "sha256": "b6040bee757a33b7fa493aa3c13c5022c50abe6721cc672f50661a87220e5d67",
+     "bytes": 10168
     }
    ]
   },
@@ -1772,9 +1772,9 @@
    },
    "files": [
     {
-     "path": "m/cardboard-box.24644330.glb",
-     "sha256": "24644330c99154118f1c0a58d7f72e8c18808f50923f727dee55b0f38132838e",
-     "bytes": 6640
+     "path": "m/cardboard-box.cfa69f1b.glb",
+     "sha256": "cfa69f1baa7fa7bdfc414ec108479227cdd88346ae44459e24fd0d2fd308e7bd",
+     "bytes": 6740
     }
    ]
   },
@@ -1789,9 +1789,9 @@
    },
    "files": [
     {
-     "path": "m/trash-can.547bc6a9.glb",
-     "sha256": "547bc6a9b077dfee39480f6229642792a7d4f49b32923e1250cfefe2c1b25349",
-     "bytes": 8472
+     "path": "m/trash-can.5fd35683.glb",
+     "sha256": "5fd3568335fd10b660c7d8c241ecb54321d8b944cc06b3e495770fc74f297a93",
+     "bytes": 8576
     }
    ]
   },
@@ -1806,9 +1806,9 @@
    },
    "files": [
     {
-     "path": "m/tree.12cc1300.glb",
-     "sha256": "12cc1300d60131e4e3f32f653b5e2ff441706d5d6197ee305518b8e9213c20f9",
-     "bytes": 12396
+     "path": "m/tree.38f21ef5.glb",
+     "sha256": "38f21ef57adea7749236e91a8618a551937e8c75896d25415cf88bc6d6bc3c52",
+     "bytes": 12532
     }
    ]
   },
@@ -1823,9 +1823,9 @@
    },
    "files": [
     {
-     "path": "m/tree-oak.665bb323.glb",
-     "sha256": "665bb323d117f5956095e2c852c4423f9305885ef95233768eff4622c41525c4",
-     "bytes": 18056
+     "path": "m/tree-oak.b621d865.glb",
+     "sha256": "b621d8658bb2b5c8ef4707e1d429ba22f87840650b77bf2c4dbbaab374cc041b",
+     "bytes": 18192
     }
    ]
   },
@@ -1840,9 +1840,9 @@
    },
    "files": [
     {
-     "path": "m/tree-oak-autumn.ae277747.glb",
-     "sha256": "ae27774779f9a6d7347c564ceca232949aa3682568d9f090e4a1942a2e6521fd",
-     "bytes": 18044
+     "path": "m/tree-oak-autumn.54f8e2e9.glb",
+     "sha256": "54f8e2e9205b68825f24b60457a1473af4e03e673207bae2a7d2779abf6671e4",
+     "bytes": 18160
     }
    ]
   },
@@ -1857,9 +1857,9 @@
    },
    "files": [
     {
-     "path": "m/tree-detailed.4f2ef0e3.glb",
-     "sha256": "4f2ef0e3d8fc912f780506f4af3a5a6cb4d731494d61b4dc2d567f1342e8d81f",
-     "bytes": 56928
+     "path": "m/tree-detailed.537d183f.glb",
+     "sha256": "537d183f97d34cd243a82143eea5be2a75e83c18c49a2615beff1f04aa25d894",
+     "bytes": 57104
     }
    ]
   },
@@ -1874,9 +1874,9 @@
    },
    "files": [
     {
-     "path": "m/tree-round.55ce9b9b.glb",
-     "sha256": "55ce9b9b779d5cd609e029d067dcb28e16e1be509aebab406c0db7576a83af6d",
-     "bytes": 7948
+     "path": "m/tree-round.3d6b022c.glb",
+     "sha256": "3d6b022c09b01c14cebedc9bdf8d55e373f4f17a8711ce9d7870b6ab3875dec1",
+     "bytes": 8084
     }
    ]
   },
@@ -1891,9 +1891,9 @@
    },
    "files": [
     {
-     "path": "m/tree-tall.f3d79089.glb",
-     "sha256": "f3d790899c55ca520a129c39a8167f2e96326d14cf19ac694853201c2f020be8",
-     "bytes": 9716
+     "path": "m/tree-tall.4e6bebc1.glb",
+     "sha256": "4e6bebc1aa760e749eabc63d94de21ddd0eca381fda634464320255a57b256e3",
+     "bytes": 9852
     }
    ]
   },
@@ -1908,9 +1908,9 @@
    },
    "files": [
     {
-     "path": "m/tree-thin.3f185674.glb",
-     "sha256": "3f1856741b4dbb808b3409b7d4ebf4a222eb03841fa9530323f9f70c5595679e",
-     "bytes": 21760
+     "path": "m/tree-thin.d8ba1aa3.glb",
+     "sha256": "d8ba1aa399513650aa16dfd703e8af3dfbb568f6e07a301a679c1889f83c08fa",
+     "bytes": 21896
     }
    ]
   },
@@ -1925,9 +1925,9 @@
    },
    "files": [
     {
-     "path": "m/tree-small.9b4db880.glb",
-     "sha256": "9b4db88037006421df607e5fa43b48609eac992c599d9995d3a62edc41adc0b5",
-     "bytes": 9128
+     "path": "m/tree-small.1b4ac308.glb",
+     "sha256": "1b4ac308f18534ad3493a40f4ca23561b8c925a9ea5bf8eae580c9ff3431f59f",
+     "bytes": 9264
     }
    ]
   },
@@ -1942,9 +1942,9 @@
    },
    "files": [
     {
-     "path": "m/tree-autumn.cd24b13b.glb",
-     "sha256": "cd24b13b0b54a71c760170b9764d145a63e58c4fccdf8e4795bb73cb39adfb1c",
-     "bytes": 21060
+     "path": "m/tree-autumn.71310143.glb",
+     "sha256": "713101431cf8b269e0c737df20ba502ce4f330ecce123cdea9fe714be1a43d6d",
+     "bytes": 21176
     }
    ]
   },
@@ -1959,9 +1959,9 @@
    },
    "files": [
     {
-     "path": "m/tree-plateau.a08d26f2.glb",
-     "sha256": "a08d26f2533b9c6e01dbea6cdab3696d4cd4b29806c1b7e8edeb8d3cd4440e92",
-     "bytes": 20376
+     "path": "m/tree-plateau.161c1918.glb",
+     "sha256": "161c191806fdd8e1aa8300a913fcfd984949d5d3a2575f966e1ff1e40884f070",
+     "bytes": 20512
     }
    ]
   },
@@ -1976,9 +1976,9 @@
    },
    "files": [
     {
-     "path": "m/tree-cone.6cf795b7.glb",
-     "sha256": "6cf795b715990c22a9195c65e3bad9f6066a2ce46087d1579d0a12399b09ea52",
-     "bytes": 14340
+     "path": "m/tree-cone.01947f21.glb",
+     "sha256": "01947f218a15e722b70b2f725a0930ea7a76d06ffce639d7e7a891ffdc209100",
+     "bytes": 14476
     }
    ]
   },
@@ -1993,9 +1993,9 @@
    },
    "files": [
     {
-     "path": "m/pine.1e65d70b.glb",
-     "sha256": "1e65d70b4cbc49a2390e02a0d151412c0f867e0b3694ae82fb023f6b0190f682",
-     "bytes": 23060
+     "path": "m/pine.9c89caea.glb",
+     "sha256": "9c89caeadf507997eec001bf926941094316581685da3f1b2febf396b9b95c81",
+     "bytes": 23204
     }
    ]
   },
@@ -2010,9 +2010,9 @@
    },
    "files": [
     {
-     "path": "m/pine-tall.b55c6eec.glb",
-     "sha256": "b55c6eecd718a4b029c9571004706294611a65b430411a1570e01d07c777c840",
-     "bytes": 13884
+     "path": "m/pine-tall.97d2ee02.glb",
+     "sha256": "97d2ee027925965fe585e5409190c97f39fdbc9faea2e17ec34c205c1661b297",
+     "bytes": 14028
     }
    ]
   },
@@ -2027,9 +2027,9 @@
    },
    "files": [
     {
-     "path": "m/pine-round.81d5b43e.glb",
-     "sha256": "81d5b43e5ec6bda2e516a96c9f7d2afb17f58db80dd8960ec858f1fb71552977",
-     "bytes": 17252
+     "path": "m/pine-round.fae913f6.glb",
+     "sha256": "fae913f63de92452b4ecec41c716fee65bfeb28e07748e6e31e91e21df99f140",
+     "bytes": 17400
     }
    ]
   },
@@ -2044,9 +2044,9 @@
    },
    "files": [
     {
-     "path": "m/pine-small.a1e79c4b.glb",
-     "sha256": "a1e79c4bacdee0c51884f1e7d717814061477a8d804c652f91574d912c335ba4",
-     "bytes": 14772
+     "path": "m/pine-small.20e5da00.glb",
+     "sha256": "20e5da00ea8326f3c6aaa085d1e8c16879a80f95a5fbe0063db53fd83f35c86d",
+     "bytes": 14916
     }
    ]
   },
@@ -2061,9 +2061,9 @@
    },
    "files": [
     {
-     "path": "m/palm-tree.270be014.glb",
-     "sha256": "270be0145017b5abc6d3a1bbceb60d05bb5c756281aa251dc02f790456df746f",
-     "bytes": 19236
+     "path": "m/palm-tree.9e0c29aa.glb",
+     "sha256": "9e0c29aabffe10f17e18e968ef57114abe836b85489d9914d3d2804e47c41b21",
+     "bytes": 19372
     }
    ]
   },
@@ -2078,9 +2078,9 @@
    },
    "files": [
     {
-     "path": "m/palm-tree-bent.0b9e83ac.glb",
-     "sha256": "0b9e83ac2a700a12a159826e5df8d634f24f44432ac3b548e484947da2ea6755",
-     "bytes": 17340
+     "path": "m/palm-tree-bent.26318855.glb",
+     "sha256": "2631885562c2af2065140686ecd803f96e59e7c313eea7f0b02c56a37db2c199",
+     "bytes": 17476
     }
    ]
   },
@@ -2095,9 +2095,9 @@
    },
    "files": [
     {
-     "path": "m/palm-tree-detailed.7a2bfcfd.glb",
-     "sha256": "7a2bfcfdbbff1492a56633a5cf663801b111d0fdf8966a857bd47c73fe633b74",
-     "bytes": 18404
+     "path": "m/palm-tree-detailed.5c63e722.glb",
+     "sha256": "5c63e722ab198bcc397c3e1ae34269e4f19eb73485121568e9e021de3d8637b8",
+     "bytes": 18540
     }
    ]
   },
@@ -2112,9 +2112,9 @@
    },
    "files": [
     {
-     "path": "m/bush.1bbb9868.glb",
-     "sha256": "1bbb9868d23698ddb461a290f368f7a9d0d0ccbb3cfa7f28c6373c6568324725",
-     "bytes": 3836
+     "path": "m/bush.cda6143d.glb",
+     "sha256": "cda6143d8c99fa5346a1787dd40f3b8656eacbb8172ffa673c3b1e03f6d14c2b",
+     "bytes": 3904
     }
    ]
   },
@@ -2129,9 +2129,9 @@
    },
    "files": [
     {
-     "path": "m/bush-large.aca383df.glb",
-     "sha256": "aca383df310b887c447bbe7df0a776263064f15c4527595c28c82d150de21265",
-     "bytes": 5360
+     "path": "m/bush-large.6301cc7b.glb",
+     "sha256": "6301cc7b8c2ad861813f6608ae7d3123cabfd063692ac4d9fcf9c6827564ed7a",
+     "bytes": 5424
     }
    ]
   },
@@ -2146,9 +2146,9 @@
    },
    "files": [
     {
-     "path": "m/bush-detailed.19e6a9d5.glb",
-     "sha256": "19e6a9d50f511570d2e47b9ad56708419d1ffa1a128196dd2d6c5bd556a7e70e",
-     "bytes": 7344
+     "path": "m/bush-detailed.3801744b.glb",
+     "sha256": "3801744b65ec23d354be79270d2c80cd6abfa60f2a3280c062ac964fda43aff0",
+     "bytes": 7408
     }
    ]
   },
@@ -2163,9 +2163,9 @@
    },
    "files": [
     {
-     "path": "m/fern.a66f43e9.glb",
-     "sha256": "a66f43e92f550194a81be70ef64afba45dc1d464b08b4aea93db13f1a27a2508",
-     "bytes": 2904
+     "path": "m/fern.4cb287a1.glb",
+     "sha256": "4cb287a1045aa2dc09b29b98fde705a96dd26268be77f0fcd94ab4f40345bf70",
+     "bytes": 2968
     }
    ]
   },
@@ -2180,9 +2180,9 @@
    },
    "files": [
     {
-     "path": "m/grass-tuft.13df6966.glb",
-     "sha256": "13df6966a434a112ca8e9072d0bad078fc6a999155af2821d3d66a12d4853867",
-     "bytes": 12068
+     "path": "m/grass-tuft.e6bb6960.glb",
+     "sha256": "e6bb6960f83fd25ad40888426371fec116cd432af3b7988e60c4f71ed603f4a3",
+     "bytes": 12132
     }
    ]
   },
@@ -2197,9 +2197,9 @@
    },
    "files": [
     {
-     "path": "m/flowers-red.84872b4e.glb",
-     "sha256": "84872b4e9738b9d484dfaa2af6a9b416247e56678442e0758690fcc9696cca8b",
-     "bytes": 9652
+     "path": "m/flowers-red.d296a755.glb",
+     "sha256": "d296a755cd607658358a027bdb232b1c00e0256ee05c2596c347b38e60c3ccdc",
+     "bytes": 9788
     }
    ]
   },
@@ -2214,9 +2214,9 @@
    },
    "files": [
     {
-     "path": "m/flowers-yellow.158daf66.glb",
-     "sha256": "158daf664eb688e4b48f276655c8a359cd03c22aad46cf29be40d8aa5b47bbb2",
-     "bytes": 9560
+     "path": "m/flowers-yellow.d98a3f18.glb",
+     "sha256": "d98a3f1859baaca1cd587a1317040d81efcc54a623c6261d3e748549c99acc62",
+     "bytes": 9692
     }
    ]
   },
@@ -2231,9 +2231,9 @@
    },
    "files": [
     {
-     "path": "m/flowers-purple.c04fe0c5.glb",
-     "sha256": "c04fe0c5a68e2310bd241657216adb830e2740f89d0f2f634bad6eb4eda3fba1",
-     "bytes": 9484
+     "path": "m/flowers-purple.9f70ab3f.glb",
+     "sha256": "9f70ab3fbeee6212beffb1b11c6641fa3e884f475950f530b75bc6aacd39c3c0",
+     "bytes": 9608
     }
    ]
   },
@@ -2248,9 +2248,9 @@
    },
    "files": [
     {
-     "path": "m/mushrooms-red.e1a76e10.glb",
-     "sha256": "e1a76e10ad6f4ec52959ff18bfd1c8a8cd96d964e49c8cbcc0de9bc999b33835",
-     "bytes": 18500
+     "path": "m/mushrooms-red.e3704581.glb",
+     "sha256": "e3704581df5082a64d0e47e3d6ae1764189b3e25d803ff12d24d0514ce891340",
+     "bytes": 18612
     }
    ]
   },
@@ -2265,9 +2265,9 @@
    },
    "files": [
     {
-     "path": "m/mushrooms.efae61bc.glb",
-     "sha256": "efae61bceea0458f74f5e560f6a4c32a73134801c7fa72b120f7b54ace6218f3",
-     "bytes": 18452
+     "path": "m/mushrooms.402250bd.glb",
+     "sha256": "402250bdc52b5010242ddb38d063d077bb3dea41b9d6680f396c0182a20359a4",
+     "bytes": 18552
     }
    ]
   },
@@ -2282,9 +2282,9 @@
    },
    "files": [
     {
-     "path": "m/cactus.77413fb5.glb",
-     "sha256": "77413fb50b4ac3039200b63a0ffaba0ce8f622d893d125ec6658b7da93de179d",
-     "bytes": 7036
+     "path": "m/cactus.7300b6a7.glb",
+     "sha256": "7300b6a7d5332beeb29129b4a11bf8483c8e426d2eed7b82d57cf1314617d023",
+     "bytes": 7104
     }
    ]
   },
@@ -2299,9 +2299,9 @@
    },
    "files": [
     {
-     "path": "m/cactus-short.3dfbb742.glb",
-     "sha256": "3dfbb742b0cc43d86eb3e837d965c4ac44ed1b779fa2826a3ecf90299696d066",
-     "bytes": 6400
+     "path": "m/cactus-short.7487ab06.glb",
+     "sha256": "7487ab06d3898013748d1eaa793236d7728d2acc68451120750a0e0fd458e949",
+     "bytes": 6468
     }
    ]
   },
@@ -2316,9 +2316,9 @@
    },
    "files": [
     {
-     "path": "m/lily-pad.ab1f6be8.glb",
-     "sha256": "ab1f6be8d07358313573ce17f56d590dc779230b3b66dbc188db130992152274",
-     "bytes": 14460
+     "path": "m/lily-pad.c4c5d3d4.glb",
+     "sha256": "c4c5d3d4eb67b206f8dab700bfabda2ec9712533d1152667653b17fef770a20c",
+     "bytes": 14668
     }
    ]
   },
@@ -2333,9 +2333,9 @@
    },
    "files": [
     {
-     "path": "m/pumpkin-crop.9b5149c9.glb",
-     "sha256": "9b5149c9f34ff2b2b761fbccc93a0f32a2ffffd11d0989ce96ed24988b7f1e20",
-     "bytes": 14232
+     "path": "m/pumpkin-crop.a855eb3b.glb",
+     "sha256": "a855eb3b1ca124df28a5bee6330d35a3d22c8bea1c3bba198191066232b3b2a3",
+     "bytes": 14356
     }
    ]
   },
@@ -2350,9 +2350,9 @@
    },
    "files": [
     {
-     "path": "m/rock-large.782a58d3.glb",
-     "sha256": "782a58d3374c8982e39c99b11f586c45e2e6d94425e9bfc42eb048b59ed067e0",
-     "bytes": 10732
+     "path": "m/rock-large.d3ad99e2.glb",
+     "sha256": "d3ad99e2f0e8be25975f203439bfa779d6336e466e087969629e68fcccf60c33",
+     "bytes": 10864
     }
    ]
   },
@@ -2367,9 +2367,9 @@
    },
    "files": [
     {
-     "path": "m/rock-large-b.6382dcee.glb",
-     "sha256": "6382dceeec6749919474a2a35509a7ec9d4f5181c106d98ee6783c0454a82b24",
-     "bytes": 16064
+     "path": "m/rock-large-b.545114ae.glb",
+     "sha256": "545114aee1617f32ffdb08f67918ec7d2cfef25654210ff3b5872d4e3ebd8b8a",
+     "bytes": 16240
     }
    ]
   },
@@ -2384,9 +2384,9 @@
    },
    "files": [
     {
-     "path": "m/rock-tall.3308a00c.glb",
-     "sha256": "3308a00c13c21b0f89208791afca7462afc1741443ded68300859c3794b0fe39",
-     "bytes": 21196
+     "path": "m/rock-tall.512845d8.glb",
+     "sha256": "512845d81235916fd365853a420d418953b9bbd34a5c0f037bc7ae269bd834b5",
+     "bytes": 21372
     }
    ]
   },
@@ -2401,9 +2401,9 @@
    },
    "files": [
     {
-     "path": "m/rock.acfb60b7.glb",
-     "sha256": "acfb60b7255c10d2b5fa76f1ef5c1d14cf0f23198105c609c665be6b7585a977",
-     "bytes": 3836
+     "path": "m/rock.9bc32201.glb",
+     "sha256": "9bc32201c038975a8f2fb577fe6d74e30d6914a3720b07e7b713533adc720821",
+     "bytes": 3972
     }
    ]
   },
@@ -2418,9 +2418,9 @@
    },
    "files": [
     {
-     "path": "m/rock-small.39797535.glb",
-     "sha256": "39797535c504c225c571c6fd45d69504ca82aaae66504b9a8632b38c9d06002b",
-     "bytes": 3724
+     "path": "m/rock-small.903fae0a.glb",
+     "sha256": "903fae0a9a597609457bd99d15c8bd602c98d875bf5dff96ee12078d414670ba",
+     "bytes": 3860
     }
    ]
   },
@@ -2435,9 +2435,9 @@
    },
    "files": [
     {
-     "path": "m/stone-large.2e6c94f9.glb",
-     "sha256": "2e6c94f9aab998cc381773445442df4b4cfd96c72945bf9d160d06cad033a937",
-     "bytes": 5840
+     "path": "m/stone-large.1cf52781.glb",
+     "sha256": "1cf527816f1f0586dd4ffd704c3237c252661bfcd7f3c53f4729244d1e4b8ab1",
+     "bytes": 5908
     }
    ]
   },
@@ -2452,9 +2452,9 @@
    },
    "files": [
     {
-     "path": "m/stone-tall.35d0e32e.glb",
-     "sha256": "35d0e32ef41386a886b309242a2fbbe71577e0d78d8e0c08a6daa48c979c0255",
-     "bytes": 16808
+     "path": "m/stone-tall.ad1c4fca.glb",
+     "sha256": "ad1c4fca0a1da070d46e629f53174f61e137765a071dcd6376fdbac017b57fe3",
+     "bytes": 16916
     }
    ]
   },
@@ -2469,9 +2469,9 @@
    },
    "files": [
     {
-     "path": "m/cliff.2505c2d2.glb",
-     "sha256": "2505c2d27e66d36b2fc00655247560a82073e2ddcf82785ae0f9a7bd375edbe3",
-     "bytes": 2948
+     "path": "m/cliff.888db113.glb",
+     "sha256": "888db113be5788beed99cb36ad3549e74095abe627409e2f6089b7d13e9db346",
+     "bytes": 3016
     }
    ]
   },
@@ -2486,9 +2486,9 @@
    },
    "files": [
     {
-     "path": "m/log.64cac23d.glb",
-     "sha256": "64cac23d510fd2a4e34223b043e3788607ba14686d6b97b892de2932f6896f0f",
-     "bytes": 17304
+     "path": "m/log.2035178b.glb",
+     "sha256": "2035178b1b93ef72641777d9d5d1004b298ab98e9db9e2a33be5102d9531c816",
+     "bytes": 17440
     }
    ]
   },
@@ -2503,9 +2503,9 @@
    },
    "files": [
     {
-     "path": "m/log-pile.ed93b7bf.glb",
-     "sha256": "ed93b7bfa18a523b17054b95139273d8ff4be5cbba9d511d20bd2ae176864496",
-     "bytes": 12912
+     "path": "m/log-pile.93b0acec.glb",
+     "sha256": "93b0acec85a413dcf3c66963719f97a67ea789d1f72d8659e8f2af87863b2d8a",
+     "bytes": 13044
     }
    ]
   },
@@ -2520,9 +2520,9 @@
    },
    "files": [
     {
-     "path": "m/tree-stump.0eed23c6.glb",
-     "sha256": "0eed23c6c74ec98044e1f1277752b84f23e7c7d38d8515bdf3dd6ec36081d7b5",
-     "bytes": 7612
+     "path": "m/tree-stump.bca71950.glb",
+     "sha256": "bca71950b9c938442c209004522d474a792dca9040959071f03356d8cab84d50",
+     "bytes": 7744
     }
    ]
   },
@@ -2537,9 +2537,9 @@
    },
    "files": [
     {
-     "path": "m/campfire.7548e006.glb",
-     "sha256": "7548e00610d7b6e1f41851e586f63e994f371573dbb7ab273cdef0a435879eef",
-     "bytes": 11340
+     "path": "m/campfire.2bc4f8ad.glb",
+     "sha256": "2bc4f8ad7cb1c65ebf5c73317ff09069e3e56f5dfe8e1098095549e7200b23d2",
+     "bytes": 11408
     }
    ]
   },
@@ -2554,9 +2554,9 @@
    },
    "files": [
     {
-     "path": "m/tent-open.76b37b40.glb",
-     "sha256": "76b37b402b170f41864d0f836693b748e4c7d4ce869cbb288badd11b37873686",
-     "bytes": 16416
+     "path": "m/tent-open.ca2263a8.glb",
+     "sha256": "ca2263a8168a74cb68af5727b80f15d8a8bba65f5f6fdbb9610045199581ae2c",
+     "bytes": 16544
     }
    ]
   },
@@ -2571,9 +2571,9 @@
    },
    "files": [
     {
-     "path": "m/canoe.b8924cd1.glb",
-     "sha256": "b8924cd18a1e044ac1f80d4ef73173dbcc9bf806bcbf30c34029b943a65b5ead",
-     "bytes": 20792
+     "path": "m/canoe.9875c269.glb",
+     "sha256": "9875c269e8a0176195f23a26730814e9124cad1f5b664fdc43efe4eb42e363c6",
+     "bytes": 20908
     }
    ]
   },
@@ -2588,9 +2588,9 @@
    },
    "files": [
     {
-     "path": "m/bridge-wood.5d4687dd.glb",
-     "sha256": "5d4687dddc155acd71a6b833ff850e1f6adf5231b6af22741fcc505e5f2197eb",
-     "bytes": 21024
+     "path": "m/bridge-wood.75fa5bfe.glb",
+     "sha256": "75fa5bfe3f78ecf0226a98f9d87dea578eb027aeac3b64d7b73ef56f5c05df2b",
+     "bytes": 21220
     }
    ]
   },
@@ -2605,9 +2605,9 @@
    },
    "files": [
     {
-     "path": "m/bridge-stone.4ac55a49.glb",
-     "sha256": "4ac55a49127336435510f35c87d8ce87f7ed9c9beb0013c20b1da3e1024b2205",
-     "bytes": 17544
+     "path": "m/bridge-stone.b4cd1e2a.glb",
+     "sha256": "b4cd1e2ac2e403271e8bc9c1570d48835469f6dc144dfff7b3beab32a39ed8e3",
+     "bytes": 17680
     }
    ]
   },
@@ -2622,9 +2622,9 @@
    },
    "files": [
     {
-     "path": "m/fence-wood.f0b87886.glb",
-     "sha256": "f0b878868e95deb42a0be35c2d2429e66561252967fb1336144e3737a4e34ac3",
-     "bytes": 6408
+     "path": "m/fence-wood.f2ade3d2.glb",
+     "sha256": "f2ade3d23935e2b79942d7856770c1e955673f487af39edaa404b9407ff7ef41",
+     "bytes": 6528
     }
    ]
   },
@@ -2639,9 +2639,9 @@
    },
    "files": [
     {
-     "path": "m/fence-gate.232be66f.glb",
-     "sha256": "232be66f5fdb3db3fbba2506cdbdc3c6019e04d90045e0e57287f697b525d811",
-     "bytes": 31196
+     "path": "m/fence-gate.e30822c4.glb",
+     "sha256": "e30822c4f50db18d461ecbcc1ed48666a0dbeee29e877b3efd8aa7e2d0d26e09",
+     "bytes": 31388
     }
    ]
   },
@@ -2656,9 +2656,9 @@
    },
    "files": [
     {
-     "path": "m/signpost.31fc0fb2.glb",
-     "sha256": "31fc0fb29f1176b8736e8bbaba21246a9999b972091e9ba556e611c80b0029cc",
-     "bytes": 8560
+     "path": "m/signpost.aaf9e681.glb",
+     "sha256": "aaf9e681fd737030407417a89d39acac41253c22ea1dc02c47e01cabc97a2c3a",
+     "bytes": 8724
     }
    ]
   },
@@ -2673,9 +2673,9 @@
    },
    "files": [
     {
-     "path": "m/statue-head.df0f1c42.glb",
-     "sha256": "df0f1c426b7ad227eef0d1ca3aad3b38202eeaaa2861a8b15b8d15ec653061df",
-     "bytes": 24476
+     "path": "m/statue-head.11bb4431.glb",
+     "sha256": "11bb443136acee1f6506ad06dade0ab6294f1c3f87f42b4e37d6ad9035e48ab8",
+     "bytes": 24652
     }
    ]
   },
@@ -2690,9 +2690,9 @@
    },
    "files": [
     {
-     "path": "m/column.6fb96c60.glb",
-     "sha256": "6fb96c60f060466a0c5fdb53c15b908facdad9468286e266876edb4eece6e350",
-     "bytes": 16100
+     "path": "m/column.f07cd162.glb",
+     "sha256": "f07cd1623ed4c83c88342e0b86a3c761af5ff580fdd2b2705f56657d6735ec81",
+     "bytes": 16276
     }
    ]
   },
@@ -2707,9 +2707,9 @@
    },
    "files": [
     {
-     "path": "m/column-broken.19461d21.glb",
-     "sha256": "19461d21936f3356bfa647048a9443c8bf24ef505a8e5f91b4983b0d02a9931e",
-     "bytes": 9460
+     "path": "m/column-broken.d7a002df.glb",
+     "sha256": "d7a002df9c1d47c809baa35697b99d65cc39a8c226b1d9ebeaad7d0aa64367e5",
+     "bytes": 9592
     }
    ]
   },
@@ -2724,9 +2724,9 @@
    },
    "files": [
     {
-     "path": "m/obelisk.169140d6.glb",
-     "sha256": "169140d67693ec4915de286180397a3802fe03dc2755cf80f28ac41801e59fa7",
-     "bytes": 6108
+     "path": "m/obelisk.65910a64.glb",
+     "sha256": "65910a646a48d550b72daa5ba5b3eea3b76cd26131f853329fcabc5282d49ecb",
+     "bytes": 6240
     }
    ]
   },
@@ -2741,9 +2741,9 @@
    },
    "files": [
     {
-     "path": "m/stone-ring.225a931d.glb",
-     "sha256": "225a931de73d3b0933a0a82320b1fd3eec9b7d92e1db8f955c913d1c9284d143",
-     "bytes": 8088
+     "path": "m/stone-ring.74cb7893.glb",
+     "sha256": "74cb7893cba84f3e0dc6930fb837e2603c7aa6ca99e087ff264896f58868793a",
+     "bytes": 8220
     }
    ]
   },
@@ -5399,13 +5399,13 @@
    "authors": null,
    "source": {
     "archive": "https://kenney.nl/media/pages/assets/survival-kit/4065a8185b-1712149243/kenney_survival-kit.zip",
-    "path": "kenney/survival-kit/Models/GLB format/tent.glb"
+    "path": "kenney/survival-kit/Models/GLB format/tent-canvas.glb"
    },
    "files": [
     {
-     "path": "m/tent.4aaa4bb0.glb",
-     "sha256": "4aaa4bb0f9fb0e03ec8cf4b83f7578bd75a6ee0d5dbfaf151bd6a4c9f535c555",
-     "bytes": 14820
+     "path": "m/tent.5ccb219f.glb",
+     "sha256": "5ccb219fa91ec2a4bcba053398b30a4564cc1cb32ad133a6fe97984102471e2f",
+     "bytes": 15740
     }
    ]
   },
@@ -5590,9 +5590,9 @@
    },
    "files": [
     {
-     "path": "m/treasure-chest.08ee4ed2.glb",
-     "sha256": "08ee4ed2161d1f12e4ce1bf646222ef6fbd8335278639dd281a97f2ef3f34434",
-     "bytes": 34292
+     "path": "m/treasure-chest.fba1277f.glb",
+     "sha256": "fba1277fddf02c6f74d135115928f2d898f03b80293abc7d64c2851fc8be72f6",
+     "bytes": 34360
     }
    ]
   },
@@ -5607,9 +5607,9 @@
    },
    "files": [
     {
-     "path": "m/pirate-crate.21367270.glb",
-     "sha256": "2136727021cc6c339031e98303924d9fc26eedbd70414e4c653fd3fbad164d16",
-     "bytes": 14632
+     "path": "m/pirate-crate.23e8b975.glb",
+     "sha256": "23e8b975d0db76427f5314dc336bca2124418404214d2d731542bb70139c362d",
+     "bytes": 14644
     }
    ]
   },
@@ -5624,9 +5624,9 @@
    },
    "files": [
     {
-     "path": "m/pirate-barrel.ef387da7.glb",
-     "sha256": "ef387da76d7ceca171816bb9a383ddea3d004484ce1ea245d18954331d42ab59",
-     "bytes": 17716
+     "path": "m/pirate-barrel.901f2e4d.glb",
+     "sha256": "901f2e4d578246d41a9d0e3dbd8057f6a36833b2184c811e0bf631bb9bd7a1e7",
+     "bytes": 17652
     }
    ]
   },

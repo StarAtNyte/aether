@@ -9,6 +9,7 @@
  *   their physical definition changed; pure moves teleport).
  * - Snapshots carry the handle ↔ entity maps so `restore`/`fork` are exact.
  */
+import { ensureAssetCatalog } from './asset-colliders';
 import type { Collider, EventQueue, ImpulseJoint, RigidBody, World } from '@dimforge/rapier3d-compat';
 import type { BodyType, Entity, EntityId, Vec3, WorldDiff, WorldDoc } from '@aether/core';
 import { diffWorlds, Entity as EntitySchema, eulerDegToQuat, inspectUntrusted, LIMITS } from '@aether/core';
@@ -133,6 +134,7 @@ export class PhysicsWorld {
    */
   static async create(world: WorldDoc, opts: PhysicsWorldOptions = {}): Promise<PhysicsWorld> {
     await initPhysics();
+    await ensureAssetCatalog(world);
     const R = rapier();
     const g = world.environment.gravity;
     const raw = new R.World(safeVec(g) ? { x: g[0], y: g[1], z: g[2] } : { x: 0, y: -9.81, z: 0 });
@@ -162,6 +164,7 @@ export class PhysicsWorld {
   /** Recreate a world from {@link snapshot} bytes (validated; throws on malformed input). */
   static async restore(snapshot: Uint8Array, world: WorldDoc, opts: { colliders?: ColliderProvider } = {}): Promise<PhysicsWorld> {
     await initPhysics();
+    await ensureAssetCatalog(world);
     const R = rapier();
     const { meta, rapierBytes } = decodeSnapshot(snapshot);
     let raw: World | null = null;

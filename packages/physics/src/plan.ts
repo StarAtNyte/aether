@@ -106,7 +106,7 @@ export function compositeParts(world: WorldDoc, ownerId: EntityId, children: Map
     if (!e || e.template || e.physics) continue; // own body (or template) ends the subtree
     for (const c of children.get(id) ?? []) stack.push(c);
     if (!e.visible || e.tags.includes('nocollide')) continue;
-    if (e.shape.kind !== 'primitive' && e.shape.kind !== 'procedural' && e.shape.kind !== 'model') continue;
+    if (e.shape.kind !== 'primitive' && e.shape.kind !== 'procedural' && e.shape.kind !== 'model' && e.shape.kind !== 'asset') continue;
     const pose = entityPose(world, id);
     const rel = relativePose(ownerPose, pose);
     parts.push({ entity: e, position: rel.position, quaternion: rel.quaternion, scale: pose.scale });
