@@ -1522,18 +1522,24 @@ SwiftShader (relative numbers), Firefox on the integrated Intel GPU.
   (bounded by the 1800-entity building limit and split at 400 k vertices
   per buffer) and are disposed on every regroup; `e2e:arch` shows no growth.
 
-**Gates.** tsc 0 errors. Vitest: 150 files, 1,998 tests; the last full
-run had two timing failures while another project's process kept the load
-average at 9–11 (`steps 1000 dynamic boxes` 8.8 ms vs 8 ms, the known
-load-sensitive test, and the new allocation probe, which was then made to
-wait for wall rebuilds before measuring); both files pass on re-run. Studio
-build OK. Smoke 23/23 (five architecture prompts among them, all
-`navigable`). `npm run e2e:arch` passes in Chromium WebGPU, Chromium WebGL2
-and Firefox WebGL2 on the final build. `npm run e2e` passed in all three
-browsers on this code path; later repeats under heavy external load failed
-on timing only (a 726 / 810 ms SwiftShader WebGL2 task during "Run checks",
-which three isolated repeats measured at 0 ms; a 6.4 s descheduled worker
-callback; a screenshot timeout while the desktop session restarted at a
-load average of 156). The architecture gallery (`npm run gallery -- --arch`)
-was rendered and inspected in three rounds; README shows eight of the
-renders.
+**Gates.** tsc 0 errors. Vitest: 150 files, about 2,000 tests; the last
+full run had two timing failures while another project's process kept the
+load average at 9–11 (`steps 1000 dynamic boxes` 8.8 ms vs 8 ms, the known
+load-sensitive test, and the new allocation probe, which now waits for wall
+rebuilds before measuring); both files pass on re-run, and the studio suite
+(348 tests) passes after the last change. Studio build OK. Smoke 23/23
+(five architecture prompts, all `navigable`). On the final build `npm run
+e2e` passes in Chromium WebGPU, Chromium WebGL2 and Firefox WebGL2 ("Run
+checks" longest task 0 / 0 / n/a ms), `npm run e2e:arch` passes in all
+three, and `npm run e2e:projects` passes in Chromium and Firefox.
+
+Before the last fix, three e2e repeats failed in Chromium WebGL2 with a
+726–810 ms task during "Run checks". A CPU profile showed the project
+thumbnail's pixel readback (`copyTextureToBuffer` → `getBufferSubData`,
+~400 ms on SwiftShader) starting the moment the world stopped animating,
+which is exactly when the test clicks "Run checks". **Fix:** thumbnails now
+wait for a quiet moment (2 s with no input and no animation, at most 15 s;
+`quietReached`, unit-tested). Isolated repeats then measured ≤ 115 ms
+tasks, and the full suite passed. The architecture gallery
+(`npm run gallery -- --arch`) was rendered and inspected in three rounds;
+README shows eight of the renders.
