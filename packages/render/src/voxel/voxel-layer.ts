@@ -28,6 +28,7 @@ import {
   MeshBasicMaterial,
   NearestFilter,
   NearestMipmapLinearFilter,
+  Object3D,
   RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
@@ -88,6 +89,32 @@ function passGeometry(p: VoxelMeshPass, minY: number, maxY: number): BufferGeome
   g.boundingBox = _box.clone();
   g.boundingSphere = _box.getBoundingSphere(new Sphere());
   return g;
+}
+
+const NO_F32 = new Float32Array(0);
+const NO_U8 = new Uint8Array(0);
+const NO_U16 = new Uint16Array(0);
+const NO_U32 = new Uint32Array(0);
+const keepArrays = Object3D.prototype.onAfterRender;
+
+/**
+ * `onAfterRender` of chunk meshes: once drawn, the vertex data lives on the
+ * GPU (uploads copy it synchronously on both backends), so the CPU copies
+ * (20–60 MiB at view distance 8) are released. Counts and bounds stay; the
+ * version is unchanged, so nothing is uploaded again. Chunk meshes are
+ * never ray cast (picking only tests document entities), and a lost GPU
+ * context rebuilds the whole terrain.
+ */
+function releaseVertexArrays(this: Object3D, _r: unknown, _s: unknown, _c: unknown, geometry: BufferGeometry): void {
+  for (const name of ['position', 'uv'] as const) {
+    const a = geometry.getAttribute(name) as BufferAttribute | undefined;
+    if (a) a.array = NO_F32;
+  }
+  const data = geometry.getAttribute('data') as BufferAttribute | undefined;
+  if (data) data.array = NO_U8;
+  const index = geometry.getIndex();
+  if (index) index.array = index.array instanceof Uint32Array ? NO_U32 : NO_U16;
+  this.onAfterRender = keepArrays;
 }
 
 /** Cutout crack pattern for each stage, stacked vertically (16 × 16·stages RGBA). */
@@ -158,13 +185,22 @@ export class VoxelLayer {
   private readonly mobKit = new MobKit();
   private triangles = 0;
   private faceTiles: Uint16Array | null = null;
-  private compiler: ((object: Group) => Promise<unknown>) | null = null;
+  private compiler: ((object: Object3D) => Promise<unknown>) | null = null;
+  /** Chunk meshes whose GPU state is being pre-built (see {@link flushPrebuild}). */
+  private readonly prebuilding = new Map<Mesh, Promise<unknown>>();
+  /** New chunk meshes waiting for {@link flushPrebuild}. */
+  private readonly toBuild: Mesh[] = [];
+  /** Detached container handed to the compiler (never in the scene; children listed, not parented). */
+  private readonly buildBatch = new Group();
   /** Materials whose shaders are compiling: chunk meshes stay hidden until they are ready. */
   private warming: TerrainMaterials | null = null;
   /** Bumped whenever something visible changed (the renderer redraws on demand). */
   version = 0;
 
   constructor() {
+    this.buildBatch.name = 'aether:voxel-prebuild';
+    this.buildBatch.matrixAutoUpdate = false;
+    this.buildBatch.matrixWorldAutoUpdate = false;
     this.group.name = 'aether:voxel';
     this.chunkGroup.name = 'aether:voxel-chunks';
     this.dropGroup.name = 'aether:voxel-drops';
@@ -198,7 +234,7 @@ export class VoxelLayer {
    * hidden, instead of compiling synchronously inside the first frame that
    * draws a chunk (hundreds of milliseconds on software rasterisers).
    */
-  setCompiler(compile: ((object: Group) => Promise<unknown>) | null): void {
+  setCompiler(compile: ((object: Object3D) => Promise<unknown>) | null): void {
     this.compiler = compile;
   }
 
@@ -350,13 +386,80 @@ export class VoxelLayer {
       m.receiveShadow = false;
       m.renderOrder = i === 2 ? 2 : 0;
       m.name = `voxel:${cx},${cz}:${i}`;
+      m.onAfterRender = releaseVertexArrays;
       this.chunkGroup.add(m);
       entry.meshes[i] = m;
       entry.triangles += p.quads * 2;
+      this.prebuild(m);
     }
     this.triangles += entry.triangles;
     this.chunks.set(key, entry);
     this.version++;
+  }
+
+  /** Queue a new chunk mesh for {@link flushPrebuild}. */
+  private prebuild(m: Mesh): void {
+    if (this.compiler) this.toBuild.push(m);
+  }
+
+  /**
+   * Create the queued chunk meshes' GPU state (vertex buffers, bindings,
+   * render objects) now, spread over later tasks by the renderer's
+   * asynchronous compiler, instead of at their first draw: otherwise every
+   * chunk that enters the view in the same frame (camera flights, the reveal
+   * after the shader warm-up) is built inside that one frame, a 100+ ms
+   * stall with a few dozen chunks. One compiler call per frame for all of
+   * them (each call has a fixed cost); projection happens synchronously in
+   * the call, so meshes outside the view are built too. The renderer calls
+   * this once per frame.
+   */
+  flushPrebuild(): void {
+    const compile = this.compiler;
+    const list = this.toBuild;
+    if (list.length === 0) return;
+    if (!compile) {
+      list.length = 0;
+      return;
+    }
+    // A detached container lists the meshes without re-parenting them (their matrices stay valid).
+    const batch = this.buildBatch;
+    for (const m of list) {
+      if (m.parent === null) continue; // removed again before this frame
+      m.updateWorldMatrix(true, false);
+      m.frustumCulled = false;
+      batch.children.push(m);
+    }
+    list.length = 0;
+    if (batch.children.length === 0) return;
+    let pending: Promise<unknown>;
+    try {
+      pending = compile(batch);
+    } catch {
+      pending = Promise.resolve();
+    }
+    const built = batch.children.slice() as Mesh[];
+    for (const m of built) m.frustumCulled = true;
+    batch.children.length = 0;
+    const done = (): void => {
+      for (const m of built) if (this.prebuilding.get(m) === pending) this.prebuilding.delete(m);
+    };
+    for (const m of built) this.prebuilding.set(m, pending);
+    pending.then(done, done);
+  }
+
+  /** Free a chunk mesh's geometry, after its pending pre-build (which would upload a disposed geometry again). */
+  private disposeChunkMesh(m: Mesh): void {
+    m.removeFromParent();
+    const pending = this.prebuilding.get(m);
+    if (!pending) {
+      m.geometry.dispose();
+      return;
+    }
+    this.prebuilding.delete(m);
+    const free = (): void => {
+      m.geometry.dispose();
+    };
+    pending.then(free, free);
   }
 
   /** A mesh is installed for chunk `key`. */
@@ -368,11 +471,7 @@ export class VoxelLayer {
   removeChunk(key: number): void {
     const e = this.chunks.get(key);
     if (!e) return;
-    for (const m of e.meshes) {
-      if (!m) continue;
-      m.geometry.dispose();
-      m.removeFromParent();
-    }
+    for (const m of e.meshes) if (m) this.disposeChunkMesh(m);
     this.triangles -= e.triangles;
     this.chunks.delete(key);
     this.version++;
@@ -575,6 +674,7 @@ export class VoxelLayer {
 
   /** Release every GPU resource. */
   dispose(): void {
+    this.toBuild.length = 0;
     this.clearChunks();
     this.clearActors();
     this.mobKit.dispose();

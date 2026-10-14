@@ -1439,6 +1439,7 @@ export class WorldRenderer {
     if (vox) {
       const tf = this.env.terrainFog;
       vox.setFog(tf.color, tf.near, tf.far, tf.density);
+      vox.flushPrebuild();
     }
     if (vox && vox.version !== this.voxelVersion) {
       this.voxelVersion = vox.version;

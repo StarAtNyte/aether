@@ -227,6 +227,12 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       };
     }, tFirst);
     const work = await page.evaluate(() => window.__aether?.simulation?.voxel?.workStats() ?? { update: -1, reply: -1, upload: -1 });
+    // JS heap after streaming (Chromium's non-standard performance.memory; reported only).
+    const heapMb = await page.evaluate(() => {
+      const m = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+      return m ? Math.round(m.usedJSHeapSize / 1048576) : -1;
+    });
+    if (heapMb >= 0) log(`[${label}] JS heap after streaming: ${heapMb} MB`);
     const maxLongTask = Math.max(0, ...tasks.long);
     if (tasks.loaf.length > 0) log(`[${label}] frames with blocking work while streaming [duration, blocking, render, scripts]: ${JSON.stringify(tasks.loaf.slice(0, 6))}`);
     const maxFrameGap = Math.max(0, ...tasks.gaps);
