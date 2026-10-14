@@ -12,9 +12,9 @@ import { CHUNK_VOLUME, HEIGHT, LAYER } from './constants';
 
 /** Transferable form of a chunk (worker messages, snapshots). */
 export interface PackedChunk {
-  palette: Uint16Array;
+  palette: Uint16Array<ArrayBuffer>;
   bits: number;
-  words: Uint32Array;
+  words: Uint32Array<ArrayBuffer>;
 }
 
 function bitsFor(n: number): number {

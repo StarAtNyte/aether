@@ -59,6 +59,7 @@ interface Job {
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
   kind: 'generate' | 'mesh';
+  urgent: boolean;
 }
 
 interface Lane {
@@ -168,9 +169,13 @@ export class VoxelJobPool {
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
       (message as { id: number }).id = id;
-      const job: Job = { id, key: this.key, message, transfer, resolve, reject, kind };
-      if (urgent) this.queue.unshift(job);
-      else this.queue.push(job);
+      const job: Job = { id, key: this.key, message, transfer, resolve, reject, kind, urgent };
+      if (urgent) {
+        // After the urgent jobs already queued (first come, first served), before all others.
+        let at = 0;
+        while (at < this.queue.length && (this.queue[at] as Job).urgent) at++;
+        this.queue.splice(at, 0, job);
+      } else this.queue.push(job);
       this.pump();
     });
   }

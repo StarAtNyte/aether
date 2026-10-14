@@ -148,7 +148,7 @@ class Reader {
     this.pos += 4;
     return v;
   }
-  bytes(n: number): Uint8Array {
+  bytes(n: number): Uint8Array<ArrayBuffer> {
     this.need(n);
     const out = this.buf.slice(this.pos, this.pos + n);
     this.pos += n;

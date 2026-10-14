@@ -205,7 +205,9 @@ export class ChunkStreamer {
       this.lastSweepCx = this.centerCx;
       this.lastSweepCz = this.centerCz;
       for (const slot of this.world.chunks.values()) {
-        if (Math.abs(slot.cx - this.centerCx) > keep || Math.abs(slot.cz - this.centerCz) > keep) this.unload(slot, true);
+        const d = Math.max(Math.abs(slot.cx - this.centerCx), Math.abs(slot.cz - this.centerCz));
+        if (d > keep) this.unload(slot, true);
+        else if (d > vd) this.hide(slot.key, slot.cx, slot.cz);
       }
     }
     this.lastUpdateMs = now() - t0;
@@ -301,6 +303,14 @@ export class ChunkStreamer {
         if (epoch === this.epoch) m.pending = false;
       });
     for (let k = 0; k < 9; k++) nb[k] = null;
+  }
+
+  /** Out of view but still loaded (hysteresis): drop the mesh, keep the blocks. */
+  private hide(key: number, cx: number, cz: number): void {
+    const m = this.meshes.get(key);
+    if (!m || m.shown < 0) return;
+    this.meshes.delete(key);
+    this.sink.onUnload(key, cx, cz);
   }
 
   private unload(slot: ChunkSlot, evict: boolean): void {

@@ -172,6 +172,8 @@ export const WindowParams = z.object({
   glass: MaterialSpec.default({ finish: 'glass' }),
   /** Interior sill board. */
   sill: z.boolean().default(true),
+  /** Which side of the wall is indoors (`b` = +Z): the sill board goes there, the drip sill outside. */
+  interior: z.enum(['a', 'b']).default('b'),
   sillMaterial: MaterialSpec.default({ finish: 'marble' }),
 });
 export type WindowParams = z.infer<typeof WindowParams>;

@@ -1,0 +1,159 @@
+import { describe, expect, it } from 'vitest';
+import { BlockRegistry } from '../src/blocks';
+import { chunkKey } from '../src/constants';
+import { terrainIdentity, type TerrainIdentity } from '../src/jobs';
+import type { ChunkMesh } from '../src/mesher';
+import { VoxelJobPool, type VoxelWorkerLike } from '../src/pool';
+import { ChunkStreamer } from '../src/streamer';
+import { VoxelWorkerHandler } from '../src/worker/handler';
+import { VoxelWorld } from '../src/world';
+import { terrain } from './helpers';
+
+async function settle(s: ChunkStreamer, maxMs = 20000): Promise<void> {
+  const end = Date.now() + maxMs;
+  while (!s.settled) {
+    if (Date.now() > end) throw new Error('streamer did not settle');
+    s.update();
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
+function setup(identity: TerrainIdentity, viewDistance = 2, pool = new VoxelJobPool({ createWorker: null })) {
+  const reg = new BlockRegistry(identity.blocks);
+  const world = new VoxelWorld(reg);
+  pool.configure(identity, reg.size - 1);
+  const meshes = new Map<number, ChunkMesh>();
+  const log: string[] = [];
+  const streamer = new ChunkStreamer(world, pool, {
+    onMesh: (key, _cx, _cz, mesh) => {
+      if (mesh) meshes.set(key, mesh);
+      log.push(`mesh ${key}`);
+    },
+    onUnload: (key) => {
+      meshes.delete(key);
+      log.push(`unload ${key}`);
+    },
+  }, { viewDistance });
+  return { reg, world, pool, streamer, meshes, log };
+}
+
+describe('chunk streaming', () => {
+  it('generates and meshes the view area nearest first, then settles', async () => {
+    const { streamer, meshes, world, log } = setup(terrainIdentity(terrain({ preset: 'flat' }), 1), 2);
+    streamer.setCenter(8, 8);
+    await settle(streamer);
+    expect(meshes.size).toBe(25);
+    // Generated ring of view + 1 for light/AO borders.
+    expect(world.chunks.size).toBe(49);
+    expect(log[0]).toBe(`mesh ${chunkKey(0, 0)}`);
+  });
+
+  it('remeshes only the edited chunk (and border neighbours) after an edit', async () => {
+    const { streamer, world, log, reg } = setup(terrainIdentity(terrain({ preset: 'flat' }), 1), 2);
+    streamer.setCenter(8, 8);
+    await settle(streamer);
+    log.length = 0;
+    // Interior edit that keeps light the same (opaque → opaque): just this chunk.
+    world.set(8, 50, 8, reg.idOr('stone'));
+    await settle(streamer);
+    expect(log).toEqual([`mesh ${chunkKey(0, 0)}`]);
+    log.length = 0;
+    // Same on the x = 15 border: the east neighbour too (its AO and faces read our border).
+    world.set(15, 50, 8, reg.idOr('stone'));
+    await settle(streamer);
+    expect(new Set(log)).toEqual(new Set([`mesh ${chunkKey(0, 0)}`, `mesh ${chunkKey(1, 0)}`]));
+    log.length = 0;
+    // A block that changes light (a torch) remeshes the whole ring, edited chunk first.
+    world.set(8, 52, 8, reg.idOr('torch'));
+    await settle(streamer);
+    expect(log[0]).toBe(`mesh ${chunkKey(0, 0)}`);
+    expect(new Set(log).size).toBe(9);
+  });
+
+  it('unloads far chunks when the centre moves (bounded memory)', async () => {
+    const { streamer, world, meshes } = setup(terrainIdentity(terrain({ preset: 'flat' }), 1), 2);
+    streamer.setCenter(0, 0);
+    await settle(streamer);
+    let peak = 0;
+    for (let step = 1; step <= 6; step++) {
+      streamer.setCenter(step * 16 * 4, 0);
+      await settle(streamer);
+      peak = Math.max(peak, world.chunks.size);
+    }
+    expect(peak).toBeLessThanOrEqual(81);
+    expect(meshes.size).toBe(25);
+  });
+
+  it('drops results computed for an outdated configuration', async () => {
+    const pool = new VoxelJobPool({ createWorker: null });
+    const reg = new BlockRegistry();
+    pool.configure(terrainIdentity(terrain({ preset: 'flat' }), 1), reg.size - 1);
+    const p = pool.generate(0, 0);
+    pool.configure(terrainIdentity(terrain({ preset: 'void' }), 1), reg.size - 1);
+    expect(await p).toBeNull();
+    const g = await pool.generate(0, 0);
+    expect(g?.top).toBe(-1);
+    pool.dispose();
+  });
+
+  it('runs jobs through workers and validates their replies', async () => {
+    // A fake worker that runs the real handler asynchronously, plus one that replies garbage.
+    const good = (): VoxelWorkerLike => {
+      const h = new VoxelWorkerHandler();
+      const w: VoxelWorkerLike = {
+        onmessage: null,
+        onerror: null,
+        postMessage(m: unknown) {
+          setTimeout(() => {
+            const r = h.handle(m);
+            if (r) w.onmessage?.({ data: r.message } as MessageEvent);
+          }, 0);
+        },
+        terminate() {},
+      };
+      return w;
+    };
+    const pool = new VoxelJobPool({ createWorker: good, workers: 2 });
+    const reg = new BlockRegistry();
+    pool.configure(terrainIdentity(terrain({ preset: 'survival' }), 3), reg.size - 1);
+    const g = await pool.generate(1, 1);
+    expect(g?.chunk.topY()).toBe(g?.top);
+    expect(pool.stats.generated).toBe(1);
+    pool.dispose();
+
+    let created = 0;
+    const evil = (): VoxelWorkerLike => {
+      created++;
+      const w: VoxelWorkerLike = {
+        onmessage: null,
+        onerror: null,
+        postMessage(m: unknown) {
+          const id = (m as { id?: number }).id;
+          if (typeof id !== 'number') return;
+          setTimeout(() => w.onmessage?.({ data: { type: 'meshed', id, key: pool2.key, mesh: { opaque: { quads: 1, positions: new Float32Array(12), uvs: new Float32Array(8), data: new Uint8Array(16), indices: new Uint16Array([0, 1, 9, 0, 1, 2]) }, cutout: null, liquid: null, minY: 0, maxY: 1 }, ms: 1 } } as MessageEvent), 0);
+        },
+        terminate() {},
+      };
+      return w;
+    };
+    const pool2 = new VoxelJobPool({ createWorker: evil, workers: 1 });
+    pool2.configure(terrainIdentity(terrain({ preset: 'flat' }), 3), reg.size - 1);
+    await expect(pool2.mesh(0, 0, [null, null, null, null, null, null, null, null, null], [-1, -1, -1, -1, -1, -1, -1, -1, -1])).rejects.toThrow(/malformed/);
+    expect(created).toBe(1);
+    pool2.dispose();
+  });
+
+  it('falls back to inline jobs when workers cannot start', async () => {
+    const pool = new VoxelJobPool({
+      createWorker: () => {
+        throw new Error('no workers here');
+      },
+    });
+    const reg = new BlockRegistry();
+    pool.configure(terrainIdentity(terrain({ preset: 'flat' }), 1), reg.size - 1);
+    const g = await pool.generate(0, 0);
+    expect(g?.top).toBeGreaterThan(40);
+    expect(pool.inlineMode).toBe(true);
+    pool.dispose();
+  });
+});

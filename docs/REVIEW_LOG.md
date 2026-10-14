@@ -1044,3 +1044,59 @@ reviewed in its own section.
   line per request (a local app; crash-safe).
 - Firefox/WebGL2: the CLI e2e runs the complete flow (first-run screen,
   device code, offline world) in Firefox as well as Chromium.
+
+## Hosted build: bring your own API key (direct to provider)
+
+**Scope.** Four key providers (Anthropic, OpenAI, OpenRouter, Google
+Gemini) are called straight from the browser. The new
+`createChatCompletionsProvider` serves OpenRouter and Gemini, and Anthropic
+gets a `browser` flag. Keys are stored per provider, in session storage by
+default, with an opt-in "remember on this device". A per-session call cap
+and a token estimate apply, and there is a per-provider model picker that
+loads the provider's own list. The server passthrough `/api/llm/byok` is
+removed. CSP `connect-src` lists exactly the four API origins. The local
+bridge stays available on the hosted build. New `npm run e2e:hosted`
+serves the static dist with no `/api`.
+
+**SECURITY.**
+- Input boundaries: keys (`BYOK_KEY_RE`, no whitespace, so no header
+  injection) are re-validated on every storage read. Unknown providers and
+  `__proto__` entries are dropped. Usage counters are clamped. Model ids in
+  preferences are zod-validated (`BYOK_MODEL_RE`). Provider model lists are
+  zod-validated, at most 8 MiB, 5 000 parsed and 200 kept, with a 15 s
+  timeout. Chat Completions replies go through a defensive normalizer
+  (tool calls ≤ 64, ids ≤ 128 chars, numbered by position when missing).
+- Secrets: the key lives only in the `AiConnection` instance, never in the
+  zustand state (a test asserts the serialized state has no key). It is not
+  in logs or exports. A unit test and the e2e (both browsers) assert the
+  key never reaches Aether's origin. The client bundle was scanned for
+  key-shaped strings: none. No `eval`, and no `innerHTML`.
+- CSP: still no `'unsafe-inline'` scripts. The only wildcards remain the
+  loopback bridge. Four explicit https origins were added, and a test keeps
+  `BYOK_API_HOSTS`, `vercel.json` and the studio catalog identical. The
+  CORS allowlist lost `X-Aether-Provider` / `X-Aether-Key`.
+- Spend: refuses calls beyond 150 per session before sending. Each attempt
+  has a 120 s timeout and at most 1 retry. Chat Completions output is
+  capped at 32 000 tokens.
+- No new dependencies (npm audit unchanged by this work).
+
+**PERFORMANCE.**
+- No render-loop code touched, so there are no per-frame allocations.
+- Bundle: `byokCatalog` is its own 1.7 KB chunk (0.6 KB gzip), imported by
+  the first-run screen without the agent package. The direct providers
+  (about 6 KB of source) join the existing agent chunk, which the editor
+  already loads, so nothing was added to the first frame.
+- Model lists are cached per provider and key (≤ 8 entries per page).
+- Measured own-key turn on the static build (scripted provider): Chromium
+  27–39 s (SwiftShader, dominated by the first frame and verification) and
+  Firefox/WebGL2 3.9 s.
+
+**Gates run for this part.** tsc is clean in every file this part touched.
+`apps/studio/test/byok.test.ts` (new, 19 tests), `ai.test.ts`,
+`studioAi.test.ts`, `packages/agent/test/chat-completions.test.ts`, the
+server suite including `csp.test.ts`, and the agent suite all pass (390
+tests). Studio build OK. `npm run e2e:hosted` passes in Chromium and
+Firefox: own-key turn, the first-run key path, bridge pairing, and an
+offline turn with no `/api`. One regression was fixed with a test: Chat
+Completions tool calls without ids were numbered by content position
+(`call_1` after a text block) instead of call position.
