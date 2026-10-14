@@ -259,7 +259,7 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     const before = await page.evaluate(() => window.__aether?.simulation?.playerPosition?.slice() ?? null);
     // Let the leaf finish its swing (0.85 s of simulated time; software rasterizers step slowly), then walk in.
     const simStart = await page.evaluate(() => window.__aether?.simulation?.logic?.time ?? 0);
-    await waitFor(page, 'the door swing', 30_000, () => page.evaluate((t0) => (window.__aether?.simulation?.logic?.time ?? 0) > t0 + 1.2, simStart), 100);
+    await waitFor(page, 'the door swing', 90_000, () => page.evaluate((t0) => (window.__aether?.simulation?.logic?.time ?? 0) > t0 + 1.2, simStart), 100);
     const insideNow = (): Promise<{ x: number; z: number; inside: boolean } | null> =>
       page.evaluate(() => {
         const w = window.__aether!.history.current;
