@@ -4,7 +4,8 @@
  * so the logic is trivially unit-testable and the resolved object doubles as
  * the material cache key.
  */
-import { stableStringify, type MaterialPreset, type MaterialSpec } from '@aether/core';
+import { FINISHES } from '@aether/arch';
+import { stableStringify, type MaterialFinish, type MaterialPreset, type MaterialSpec } from '@aether/core';
 import type { SurfaceKind } from './surface-textures';
 
 /** Concrete parameters of one material (all fields resolved). */
@@ -23,6 +24,8 @@ export interface ResolvedMaterial {
   doubleSided: boolean;
   /** Procedural surface detail (lava cracks, water ripples), null for plain materials. */
   surface: SurfaceKind | null;
+  /** Physically based finish with procedural texture maps (architecture), null otherwise. */
+  finish: MaterialFinish | null;
 }
 
 /** One entry of the preset table. */
@@ -118,6 +121,8 @@ export interface ResolveOptions {
  * colors and the spec does not explicitly disable them.
  */
 export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOptions = {}): ResolvedMaterial {
+  const fin = spec?.finish;
+  if (typeof fin === 'string' && Object.hasOwn(FINISHES, fin)) return resolveFinish(spec as MaterialSpec, fin, opts);
   const p = presetOf(spec);
   const color = hex(spec?.color, p.color);
   const explicitEmissive = typeof spec?.emissive === 'string' && HEX.test(spec.emissive);
@@ -137,6 +142,34 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     vertexColors: opts.hasVertexColors === true && spec?.vertexColors !== false,
     doubleSided: opts.doubleSided === true,
     surface: p.surface ?? opts.surface ?? null,
+    finish: null,
+  };
+}
+
+/**
+ * Resolve a finish material: the finish's physically based defaults, then
+ * the spec's explicit colour / roughness / metalness / opacity / emissive.
+ * A finish wins over a preset named in the same spec.
+ */
+function resolveFinish(spec: MaterialSpec, id: MaterialFinish, opts: ResolveOptions): ResolvedMaterial {
+  const d = FINISHES[id];
+  const color = hex(spec.color, d.color);
+  const explicitEmissive = typeof spec.emissive === 'string' && HEX.test(spec.emissive);
+  const emissiveIntensity = explicitEmissive ? range(spec.emissiveIntensity, 0, 50, 1) : 0;
+  const opacity = unit(spec.opacity, d.opacity ?? 1);
+  return {
+    color,
+    roughness: unit(spec.roughness, d.roughness),
+    metalness: unit(spec.metalness, d.metalness),
+    emissive: emissiveIntensity > 0 ? hex(spec.emissive, '#000000') : '#000000',
+    emissiveIntensity,
+    opacity,
+    transparent: opacity < OPAQUE_THRESHOLD,
+    flatShading: false,
+    vertexColors: opts.hasVertexColors === true && spec.vertexColors === true,
+    doubleSided: opts.doubleSided === true,
+    surface: null,
+    finish: id,
   };
 }
 

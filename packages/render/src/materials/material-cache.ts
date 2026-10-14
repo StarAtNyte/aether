@@ -9,6 +9,9 @@ import { RefCache } from '../refcache';
 import { materialKey, resolveMaterial, type MaterialVariant, type ResolveOptions, type ResolvedMaterial } from './presets';
 import { SurfaceTextures, WATER_NORMAL_SCALE } from './surface-textures';
 import { applyWind } from './wind';
+import { FINISHES } from '@aether/arch';
+import { finishAlbedoScale } from '@aether/procgen';
+import { FinishTextures, finishHasMaps } from './finish-textures';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -25,7 +28,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -58,9 +61,34 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
       m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
     }
   }
+  if (variant !== 'ghost' && r.finish) applyFinish(m, r, finishes);
   if (variant === 'foliage') applyWind(m);
   m.name = `aether:${variant}`;
   return m;
+}
+
+/**
+ * Bind a finish's maps: the albedo map holds ratios to the base colour
+ * scaled into 8 bits, so the colour is multiplied back by the same scale;
+ * roughness comes from the ORM map (absolute), so the factor carries only
+ * the spec's deviation from the finish default.
+ */
+function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: FinishTextures | undefined): void {
+  const id = r.finish;
+  if (!id) return;
+  const def = FINISHES[id];
+  if (!finishes || !finishHasMaps(id)) return;
+  const maps = finishes.get(id);
+  m.color.multiplyScalar(finishAlbedoScale(def));
+  m.map = maps.map;
+  m.roughnessMap = maps.orm;
+  m.roughness = Math.min(3, r.roughness / Math.max(0.01, def.roughness));
+  m.aoMap = maps.orm;
+  m.aoMapIntensity = 1;
+  if (def.bump > 0) {
+    m.normalMap = maps.normal;
+    m.normalScale = new Vector2(1, 1);
+  }
 }
 
 /**
@@ -71,12 +99,14 @@ export class MaterialCache {
   private readonly cache = new RefCache<Material>((m) => m.dispose());
   /** Procedural surface textures shared by this cache's lava/water materials. */
   readonly surfaces = new SurfaceTextures();
+  /** Texture maps of the physically based finishes (architecture). */
+  readonly finishes = new FinishTextures();
 
   /** Acquire (and retain) the material for `spec`. Pair every call with {@link release}. */
   acquire(spec: MaterialSpec | undefined, opts: ResolveOptions = {}, variant: MaterialVariant = 'standard'): MaterialHandle {
     const resolved = resolveMaterial(spec, opts);
     const key = materialKey(resolved, variant);
-    const material = this.cache.acquire(key, () => createMaterial(resolved, variant, this.surfaces));
+    const material = this.cache.acquire(key, () => createMaterial(resolved, variant, this.surfaces, this.finishes));
     return { key, material, resolved };
   }
 
@@ -99,5 +129,6 @@ export class MaterialCache {
   dispose(): void {
     this.cache.clear();
     this.surfaces.dispose();
+    this.finishes.dispose();
   }
 }

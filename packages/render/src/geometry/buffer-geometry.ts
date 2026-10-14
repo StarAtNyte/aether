@@ -70,7 +70,11 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   if (colors instanceof Float32Array && colors.length === vertexCount * 3) g.setAttribute('color', new BufferAttribute(colors, 3));
   if (indices.length > 0) g.setIndex(new BufferAttribute(narrowIndices(indices, vertexCount), 1));
   if (!g.getAttribute('normal')) g.computeVertexNormals();
-  g.setAttribute('uv', new BufferAttribute(boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array), 2));
+  // Parts with a physically based finish (architecture) carry authored metre UVs (boards along a
+  // floor, courses along a wall); everything else gets box-projected metre UVs.
+  const authored = part.material?.finish !== undefined && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
+  const uvs = authored ? (part.uvs as Float32Array) : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
+  g.setAttribute('uv', new BufferAttribute(uvs, 2));
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;

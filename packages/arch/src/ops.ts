@@ -92,7 +92,9 @@ function levelOf(plan: BuildingPlan, index: number): PlanLevel {
 }
 
 function roomOf(plan: BuildingPlan, id: string): { level: PlanLevel; room: PlanRoom } {
-  const short = id.startsWith(`${plan.id}-`) ? id.slice(plan.id.length + 1) : id;
+  // Accept plan ids ("living") and room entity ids ("house-l0-living").
+  const scoped = id.startsWith(`${plan.id}-`) ? id.slice(plan.id.length + 1) : id;
+  const short = /^l\d+-/.test(scoped) && !plan.levels.some((l) => l.rooms.some((r) => r.id === scoped)) ? scoped.replace(/^l\d+-/, '') : scoped;
   for (const level of plan.levels) {
     const room = level.rooms.find((r) => r.id === short);
     if (room) return { level, room };

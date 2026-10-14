@@ -249,6 +249,34 @@ function voxelLines(v: VoxelTerrain, worldSeed: number): string[] {
   return lines;
 }
 
+/** Most rooms listed per building digest. */
+const MAX_DIGEST_ROOMS = 40;
+
+/**
+ * One-line digest of a parametric building's subtree: part count, levels and
+ * rooms (id, type, name) — enough to address rooms in build_architecture ops.
+ */
+function buildingDigest(world: WorldDoc, root: string, children: ReadonlyMap<string | null, string[]>): string {
+  let parts = 0;
+  const levels: string[] = [];
+  const rooms: string[] = [];
+  const stack = [...(children.get(root) ?? [])];
+  const seen = new Set<string>();
+  while (stack.length > 0) {
+    const id = stack.pop() as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    parts++;
+    const e = world.entities[id] as Entity;
+    if (e.arch?.role === 'level') levels.push(`${e.arch.level ?? '?'}:${JSON.stringify(truncate(e.arch.name ?? e.name ?? id, 30))}`);
+    if (e.arch?.role === 'room' && rooms.length < MAX_DIGEST_ROOMS) rooms.push(`${id}(${e.arch.kind ?? 'room'} ${JSON.stringify(truncate(e.arch.name ?? e.name ?? id, 30))})`);
+    for (const k of children.get(id) ?? []) stack.push(k);
+  }
+  levels.sort();
+  rooms.sort();
+  return `building-parts ${parts} (edit with build_architecture) levels=[${levels.join(', ')}] rooms=[${rooms.join(', ')}]`;
+}
+
 // -- main ---------------------------------------------------------------------
 
 /** Deterministic, token-efficient summary of `world` (see module docs for the format). */
@@ -290,12 +318,19 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   for (const list of children.values()) list.sort();
   const order: Array<{ id: string; depth: number }> = [];
   const visited = new Set<string>();
+  const buildings = new Map<string, string>();
   const stack: Array<{ id: string; depth: number }> = (children.get(null) ?? []).map((id) => ({ id, depth: 0 })).reverse();
   while (stack.length > 0) {
     const item = stack.pop() as { id: string; depth: number };
     if (visited.has(item.id)) continue;
     visited.add(item.id);
     order.push(item);
+    // Parametric buildings collapse to one line: their hundreds of walls and
+    // pieces are edited through the plan (build_architecture), not by id.
+    if ((world.entities[item.id] as Entity).arch?.role === 'building') {
+      buildings.set(item.id, buildingDigest(world, item.id, children));
+      continue;
+    }
     const kids = children.get(item.id) ?? [];
     for (let i = kids.length - 1; i >= 0; i--) stack.push({ id: kids[i] as string, depth: item.depth + 1 });
   }
@@ -314,7 +349,12 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   }
   if (order.length > 0) {
     lines.push('entities:');
-    for (const { id, depth } of order) if (include.has(id)) lines.push(entityLine(world, world.entities[id] as Entity, depth, opts.userEdits?.get(id)));
+    for (const { id, depth } of order) {
+      if (!include.has(id)) continue;
+      lines.push(entityLine(world, world.entities[id] as Entity, depth, opts.userEdits?.get(id)));
+      const digest = buildings.get(id);
+      if (digest) lines.push(`${'  '.repeat(depth + 1)}${digest}`);
+    }
     const omitted = order.length - include.size;
     if (omitted > 0) lines.push(`... ${omitted} more entities`);
   }

@@ -18,6 +18,7 @@ import type { Theme } from './theme';
 import { DEFAULT_SETTING } from './themes-nature';
 import { parseWorldSummary, type WorldView } from './world-view';
 import { planVoxel } from './voxel';
+import { planArch } from './arch';
 
 /** Output of the mock planner. */
 export interface MockPlan {
@@ -26,6 +27,8 @@ export interface MockPlan {
   patches: PatchInput[];
   /** Finish message for the user (or the explanation when nothing was done). */
   message: string;
+  /** Architecture ops sent with build_architecture after the patches (buildings and interiors). */
+  arch?: { ops: unknown[]; message: string };
 }
 
 /** The pocket kept free behind the player spawn for the chase camera (center offset on +Z, radius; metres). */
@@ -199,6 +202,9 @@ export function planMock(request: string, summary: string, library: readonly Moc
   // Block worlds (voxel terrain) have their own planner.
   const voxel = planVoxel(request, summary);
   if (voxel) return voxel;
+  // Real-life buildings and interiors go through build_architecture.
+  const arch = planArch(request, summary);
+  if (arch) return arch;
   const intent = parseIntent(request);
   const view = parseWorldSummary(summary);
   const hasThemes = intent.settings.length > 0 || intent.activities.length > 0;

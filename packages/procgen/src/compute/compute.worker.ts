@@ -7,6 +7,7 @@
  */
 import { runMeshOp, meshTransferables, parseMeshMessage } from '../mesh-edit/run';
 import { generateBuiltinSync } from '../generate';
+import { finishPixels } from '../finish-pixels';
 import { parseComputeRequest, outputTransferables, type ComputeReply } from './protocol';
 
 interface WorkerScope {
@@ -32,6 +33,10 @@ scope.onmessage = (e: MessageEvent): void => {
       const r = runMeshOp(req.op, mesh);
       reply = { type: 'mesh', id: req.id, ok: true, mesh: r.mesh, ...(r.note ? { note: r.note } : {}) };
       transfer = meshTransferables(r.mesh);
+    } else if (req.type === 'finish') {
+      const pixels = finishPixels(req.finish, req.size);
+      reply = { type: 'finish', id: req.id, ok: true, pixels };
+      transfer = [pixels.albedo.buffer, pixels.orm.buffer, pixels.normal.buffer] as ArrayBuffer[];
     } else {
       const output = generateBuiltinSync(req.generator, req.params, req.seed);
       reply = { type: 'generate', id: req.id, ok: true, output };

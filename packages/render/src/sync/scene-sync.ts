@@ -45,6 +45,8 @@ import {
 import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../types';
 import type { GeometryCache } from '../geometry/buffer-geometry';
 import type { MaterialCache } from '../materials/material-cache';
+import { FINISHES } from '@aether/arch';
+import { finishAlbedoScale } from '@aether/procgen';
 import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMaterial } from '../materials/presets';
 import { FOLIAGE_GENERATORS } from '../materials/wind';
 import { createMaterial } from '../materials/material-cache';
@@ -177,6 +179,12 @@ function applyLiveUniforms(m: MeshStandardMaterial, r: ResolvedMaterial): void {
   m.emissive.set(r.emissive);
   m.emissiveIntensity = r.emissiveIntensity;
   m.roughness = r.roughness;
+  // Textured finishes store albedo / roughness relative to the finish (see `applyFinish`).
+  if (r.finish && m.map) {
+    const def = FINISHES[r.finish];
+    m.color.multiplyScalar(finishAlbedoScale(def));
+    m.roughness = Math.min(3, r.roughness / Math.max(0.01, def.roughness));
+  }
   m.metalness = r.metalness;
   if (r.transparent && !m.transparent) {
     // One-time switch to blending; never switched back while the override lives.
@@ -1318,7 +1326,7 @@ export class SceneSync {
       });
       let owned = b.ownedMaterial;
       if (!owned) {
-        owned = createMaterial(resolved, b.variant ?? this.variant, this.opts.materials.surfaces);
+        owned = createMaterial(resolved, b.variant ?? this.variant, this.opts.materials.surfaces, this.opts.materials.finishes);
         if (field === 'opacity' && !owned.transparent) {
           // Opacity animations blend from the start so the program never flips per tick.
           owned.transparent = true;

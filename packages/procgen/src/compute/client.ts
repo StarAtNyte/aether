@@ -11,7 +11,9 @@ import { generateBuiltinSync, yieldToEventLoop } from '../generate';
 import { validateOutput } from '../output';
 import { MeshOp, parseMeshMessage, runMeshOp, type MeshOpInput, type MeshOpResult } from '../mesh-edit/run';
 import type { WorkerLike } from '../sandbox/worker-sandbox';
-import { parseComputeReply, type ComputeRequest } from './protocol';
+import { parseComputeReply, parseFinishPixels, type ComputeRequest } from './protocol';
+import { finishPixels, type FinishPixels } from '../finish-pixels';
+import type { MaterialFinish } from '@aether/core';
 
 /** Options of {@link ComputeClient}. */
 export interface ComputeClientOptions {
@@ -24,8 +26,10 @@ export interface ComputeClientOptions {
 }
 
 interface Pending {
-  type: 'mesh' | 'generate';
-  resolve: (v: MeshOpResult | GeneratorOutput) => void;
+  type: 'mesh' | 'generate' | 'finish';
+  /** Expected texture edge of a finish request (reply validation). */
+  size?: number;
+  resolve: (v: MeshOpResult | GeneratorOutput | FinishPixels) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -84,6 +88,12 @@ export class ComputeClient {
       p.reject(new Error(msg.error));
       return;
     }
+    if (msg.type === 'finish') {
+      const pixels = parseFinishPixels(msg.pixels, p.size ?? -1);
+      if (!pixels) p.reject(new Error('the compute worker returned invalid texture data'));
+      else p.resolve(pixels);
+      return;
+    }
     if (msg.type === 'mesh') {
       const mesh = parseMeshMessage(msg.mesh);
       if (!mesh) p.reject(new Error('the compute worker returned invalid mesh data'));
@@ -125,7 +135,7 @@ export class ComputeClient {
     }, this.idleTimeoutMs);
   }
 
-  private send<T extends MeshOpResult | GeneratorOutput>(req: ComputeRequest, transfer: Transferable[]): Promise<T> | null {
+  private send<T extends MeshOpResult | GeneratorOutput | FinishPixels>(req: ComputeRequest, transfer: Transferable[]): Promise<T> | null {
     const w = this.ensure();
     if (!w) return null;
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
@@ -137,7 +147,7 @@ export class ComputeClient {
         // A runaway computation: restart the worker (other requests are retried by their callers).
         this.fail(new Error('the compute worker was restarted'), true);
       }, this.timeoutMs);
-      this.pending.set(req.id, { type: req.type, resolve: resolve as Pending['resolve'], reject, timer });
+      this.pending.set(req.id, { type: req.type, ...(req.type === 'finish' ? { size: req.size } : {}), resolve: resolve as Pending['resolve'], reject, timer });
       try {
         w.postMessage(req, transfer);
       } catch (err) {
@@ -171,6 +181,16 @@ export class ComputeClient {
     if (sent) return sent;
     await yieldToEventLoop();
     return generateBuiltinSync(generator, params, seed);
+  }
+
+  /** Synthesise the texture maps of a finish off the main thread (validated; inline fallback). */
+  async finish(finish: MaterialFinish, size: number): Promise<FinishPixels> {
+    if (this.disposed) throw new Error('compute client disposed');
+    const n = Math.min(1024, Math.max(16, 2 ** Math.round(Math.log2(Number.isFinite(size) ? size : 256))));
+    const sent = this.send<FinishPixels>({ type: 'finish', id: this.nextId++, finish, size: n }, []);
+    if (sent) return sent;
+    await yieldToEventLoop();
+    return finishPixels(finish, n);
   }
 
   /** Stop the worker and reject pending work. */

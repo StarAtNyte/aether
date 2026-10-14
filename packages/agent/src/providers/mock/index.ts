@@ -96,7 +96,7 @@ export function createMockProvider(opts: MockProviderOptions = {}): Provider {
       const raw = messageText(last);
       const envelope = parseUserTurn(raw);
       const plan = planMock(envelope?.request ?? raw, envelope?.summary ?? '', library);
-      if (plan.patches.length === 0) return respond(req, [{ type: 'text', text: plan.message }], 'end');
+      if (plan.patches.length === 0 && !plan.arch) return respond(req, [{ type: 'text', text: plan.message }], 'end');
 
       const key = hashString(raw).toString(36);
       const content: ContentBlock[] = [{ type: 'text', text: plan.plan }];
@@ -109,6 +109,7 @@ export function createMockProvider(opts: MockProviderOptions = {}): Provider {
           input: { patches: plan.patches.slice(i, i + PATCH_CHUNK), message: plan.patches.length > PATCH_CHUNK ? `${plan.message.slice(0, 60)} (${part})` : plan.message.slice(0, 120) },
         });
       }
+      if (plan.arch) content.push({ type: 'tool_use', id: `mock-${key}-arch`, name: 'build_architecture', input: { ops: plan.arch.ops, message: plan.arch.message } });
       content.push({ type: 'tool_use', id: `mock-${key}-finish`, name: 'finish', input: { message: plan.message } });
       return respond(req, content, 'tool_use');
     },
