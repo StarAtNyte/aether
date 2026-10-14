@@ -934,14 +934,18 @@ and scatter was already instanced, so no impostor LOD was added.
   virtual triangles.
 
 **Gates** (this stage, final runs): `tsc -p tsconfig.json --noEmit` 0
-errors; Vitest 1 640 tests in 118 files passing; studio build OK;
+errors; Vitest 1 641 tests in 118 files passing; studio build OK;
 `npm run smoke` 14/14 (the showcase template is now part of the set);
 `npm run e2e` passed in Chromium WebGPU, Chromium WebGL2 and Firefox
 WebGL2; `e2e:layout` and `e2e:projects` pass in Chromium and Firefox.
-Two earlier `npm run e2e` attempts failed on timing checks while another
-process on the machine used a full core (a 646 ms long task during "Run
-checks" on WebGL2, and a verification run not observed by the probe on a
-fast world); neither reproduced on the next run. Fixed on the way:
+Earlier `npm run e2e` attempts failed twice with "no verification run
+was observed" and once with a 646 ms long task during "Run checks" on
+WebGL2, while another process on the machine used a full core. The first
+was a real race in the studio: `LiveVerifyFeed.plan()` published the
+worker/lane plan only through its 60 ms coalescing timer, so a run that
+ended before the timer fired (the page busy compiling shaders) never showed
+that it ran in a worker. The plan is now published immediately (regression
+test in `verifyWorker.test.ts`); the long task did not reproduce. Fixed on the way:
 the projects e2e counted 8 templates (now reads the template list), the
 tool dock overflowed into the axis gizmo at 1024–1366 px and off screen on
 phones (it now scrolls within its column), and the connect card's text

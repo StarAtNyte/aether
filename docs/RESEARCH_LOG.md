@@ -156,3 +156,5 @@ geometries, 7 materials); the planner allocates nothing per frame
 - **GPU-driven culling.** The CPU planners stay under a millisecond for a
   million instances and 41 sculptures, and run identically on every backend;
   compute culling with indirect draws would only exist on WebGPU.
+
+Screenshots of the latest Firefox run: [`docs/screenshots/benchmark/`](screenshots/benchmark) (`firefox.png` scale engine with the triangle badge, `firefox-closeup.png` a colossal head at full detail, `firefox-classic.png` the classic engine).

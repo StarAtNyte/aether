@@ -46,7 +46,10 @@ export class LiveVerifyFeed implements VerifyProgressListener {
     if (!this.live) return;
     // A re-plan (worker fell back to the main thread) starts the list over.
     this.live = { ...this.live, results: this.live.results.map(() => null), lanes: plan.lanes, worker: plan.worker };
-    this.schedule();
+    // Published at once (a one-off transition, not a progress burst): a run that ends before the
+    // next coalesced flush — or while the page is busy — must still have shown where it ran.
+    this.dirty = false;
+    if (this.sink.get().status === 'running') this.sink.set({ live: { ...this.live, results: this.live.results.slice() } });
   }
 
   result(index: number, result: TestResult): void {

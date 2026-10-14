@@ -419,4 +419,22 @@ describe('LiveVerifyFeed', () => {
       vi.useRealTimers();
     }
   });
+
+  it('publishes the worker plan immediately, so a run that ends before the next flush still showed it', () => {
+    vi.useFakeTimers();
+    try {
+      const s = sink();
+      const feed = new LiveVerifyFeed(s.sink);
+      feed.start(multiTestWorld());
+      feed.plan({ lanes: 2, worker: true });
+      expect(s.state.status).toBe('running');
+      expect(s.state.live).toMatchObject({ lanes: 2, worker: true });
+      // The run ends before any timer fires (e.g. the page was busy compiling shaders).
+      feed.end({ report: { passed: true, results: [], diagnostics: [], simulatedSeconds: 1, ms: 5 }, summary: 's', passed: true, lanes: 2, worker: true, cancelled: false }, 7);
+      expect(s.writes.some((w) => w.live?.worker === true)).toBe(true);
+      expect(s.state.live).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
