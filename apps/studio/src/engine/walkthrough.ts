@@ -271,6 +271,13 @@ export class Walkthrough {
     st.toast(next >= 0 ? `Finish ${next + 1} of ${piece.variants.length}` : 'Original finish', 'game', 1);
   }
 
+  /** Light sources currently switched on. */
+  get lightsOn(): number {
+    let n = 0;
+    for (const on of this.lightOn.values()) if (on) n++;
+    return n;
+  }
+
   /** The sun hour chosen with 1–4 (null: the document's). */
   get timeOfDay(): number | null {
     return this.hour;

@@ -272,9 +272,11 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(inside?.inside === true, `[${label}] the player should have walked inside (from ${JSON.stringify(before)} to ${JSON.stringify(inside)})`);
     log(`[${label}] walkthrough: door opened, walked in to (${inside.x.toFixed(1)}, ${inside.z.toFixed(1)})`);
     await page.keyboard.press('Digit4');
-    await waitFor(page, 'night', 5_000, () => page.evaluate(() => window.__aether?.store.getState().toasts.some((t) => t.text === 'Night') === true));
+    await waitFor(page, 'night', 5_000, () => page.evaluate(() => window.__aether?.studio.arch.walkthrough?.timeOfDay === 22));
+    const lit = await page.evaluate(() => window.__aether?.studio.arch.walkthrough?.lightsOn ?? -1);
+    check(lit > 0, `[${label}] night should switch the lamps on (${lit})`);
     await page.keyboard.press('KeyL');
-    await waitFor(page, 'all lights', 5_000, () => page.evaluate(() => window.__aether?.store.getState().toasts.some((t) => /^All lights (on|off)$/.test(t.text)) === true));
+    await waitFor(page, 'all lights off', 5_000, () => page.evaluate(() => window.__aether?.studio.arch.walkthrough?.lightsOn === 0));
     await page.keyboard.press('KeyP');
     await waitFor(page, 'photo mode', 5_000, () => page.evaluate(() => document.querySelector('.viewport.is-photo') !== null));
     const photoHud = await page.locator('.walk-hint').count();

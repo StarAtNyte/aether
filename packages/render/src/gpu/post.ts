@@ -67,8 +67,9 @@ export function bloomStrength(bloom: number): number {
  * target's depth texture. Without this, every studio-render toggle leaked
  * three GPU textures.
  */
-function disposeTraaTextures(node: unknown): void {
+function disposeTraaTextures(node: unknown, placeholder: { dispose?: () => void } | undefined): void {
   const n = node as { _previousDepthNode?: { value?: { dispose?: () => void } }; _historyRenderTarget?: { depthTexture?: { dispose?: () => void } | null } };
+  placeholder?.dispose?.();
   n._previousDepthNode?.value?.dispose?.();
   n._historyRenderTarget?.depthTexture?.dispose?.();
 }
@@ -142,7 +143,9 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       // The graded image as a texture of our own, so its render target is disposed with the pipeline.
       const beauty = convertToTexture(gradedNode);
       const traaNode = traaMod.traa(beauty, prePassDepth, prePassVelocity, camera);
-      disposables.push(beauty, traaNode, { dispose: () => disposeTraaTextures(traaNode) });
+      // The placeholder depth texture is replaced after the first frame: keep a handle to free it.
+      const placeholder = (traaNode as unknown as { _previousDepthNode?: { value?: { dispose?: () => void } } })._previousDepthNode?.value;
+      disposables.push(beauty, traaNode, { dispose: () => disposeTraaTextures(traaNode, placeholder) });
       pipeline = new RenderPipeline(renderer, traaNode);
     } else {
       pipeline = new RenderPipeline(renderer, gradedNode);

@@ -184,4 +184,34 @@ describe('render loop allocation probe', () => {
     expect(hits).toHaveLength(0);
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
   });
+
+  it('building views and merged building geometry allocate nothing per frame in steady state', async () => {
+    const { compileBuilding } = await import('@aether/arch');
+    const { applyPatches } = await import('@aether/core');
+    const { ArchView } = await import('../src/view/arch-view');
+    const b = compileBuilding({ id: 'flat', levels: [{ rooms: [{ id: 'living', type: 'living', rect: [0, 0, 7, 5] }, { id: 'bed', type: 'bedroom', rect: [7, 0, 11, 5] }], doors: [{ between: ['living', 'outside'], main: true }, { between: ['living', 'bed'] }] }] });
+    const w = applyPatches(createWorld(), b.patches).world;
+    const { sync } = makeSync();
+    await sync.setWorld(w);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    const view = new ArchView(sync);
+    view.set({ walls: 'down', xray: false });
+    const cam = new PerspectiveCamera(50, 1.5, 0.1, 500);
+    cam.position.set(20, 15, 20);
+    cam.updateMatrixWorld();
+    view.update(cam, 0);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    sync.root.updateMatrixWorld(true);
+    sync.updateBatches();
+    const r = await probeAllocations(
+      () => {
+        view.update(cam, 0.016);
+        sync.updateBatches();
+      },
+      { iterations: 400, warmup: 3000, match: RENDER_SRC },
+    );
+    expect(sync.batchStats().merges).toBeGreaterThan(0);
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
+    view.dispose();
+  });
 });
