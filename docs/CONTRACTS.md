@@ -1185,6 +1185,9 @@ BlockRegistry(custom?: VoxelBlockDef[])  // numeric ids (0 air, built-ins, custo
 ChunkData                                // palette-compressed 16×16×128 chunk: 0/1/2/4/8/16-bit indices; get/set/pack/fromPacked(validated)/toDense
 TerrainGenerator(seed, preset, reg)      // height/biome/groundLevel + generate(cx, cz, out): biomes, caves, ores, trees, plants (deterministic)
 compileEdits(edits, reg, gen, seed) / applyEdits(compiled, cx, cz, dense)   // document edits, bounded per chunk
+  CompiledEdit = { min/max X Y Z (inclusive), content?: { minY, maxY }, sample(x, y, z, cur) → id | −1 }
+  // structures: columns that carve are also cleared up to the sky; foundation columns reach down to the
+  // natural ground (≤ MAX_FOUNDATION_REACH = 48 below the model); `content` = the model's own extent
 LightVolume.compute(reg)                 // sky + block light flood over the 3×3 chunk region
 ChunkMesher.mesh(volume) → ChunkMesh     // greedy, per-vertex AO + smooth light; passes opaque / cutout / liquid
   MeshBuffers = { positions f32×3, uvs f32×2 (block units), data u8×4 = [tile, AO×85, sky×17, block×17], indices, quads }
@@ -1215,11 +1218,19 @@ shapeless recipes + `game.recipes`), `DayClock` / `daylightAt` /
 ```ts
 WorldRenderer.voxel(): Promise<VoxelLayer>   // lazy chunk; .voxelIfLoaded; .releaseVoxel()
 VoxelLayer.setAtlas(pixels, size, faceTiles); setChunk(key, cx, cz, mesh | null); removeChunk(key); setLighting(daylight, tint)
+          setFog(color, near, far, density); setFogOrigin(x, z)   // terrain's own fog: linear over the horizontal distance
+          // to the streaming centre (near = ½ view distance, far = view distance) + the document's exp² fog density
+EnvironmentRig.terrainFog: { color, near, far, density }   // set by setFogDistance; the renderer copies it to the layer each frame
           setTarget(x, y, z, visible); setCrack(progress); setDrop(...); setMob(...); stats()
 WorldRenderer.setCameraPose(x, y, z, yaw, pitch)   // camera mode 'manual'
 WorldRenderer.setFogDistance(metres | null); setEnvironmentOverride(env); restoreEnvironment(); setAvatarVisible(on)
 PhysicsWorld.setVoxelTerrain(source: VoxelSolidSource | null)   // merged 8³ brick colliders around dynamic bodies
 Simulation.voxel: VoxelSession | null        // lazy; status(), measureEdit(), blockAt(), counts, game (VoxelPlay)
+VoxelSession.editFocus(from?) → { center, radius } | null          // sphere around the document edits from index `from`
+VoxelSession.viewOffset(center, radius, distance, preferred)        // framing side with the clearest view (generator heightfield)
+Simulation.revealVoxelEdits(from)            // frame the block edits a turn added
+isNewWorld(prev, next)                       // also true when block terrain appears or changes seed / preset
+addedVoxelEdits(prev, next) → index | null   // first block edit a turn added (camera reveal)
 ```
 
 Saves live in IndexedDB database `aether-voxel` (stores `chunks`,

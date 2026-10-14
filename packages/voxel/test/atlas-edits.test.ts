@@ -102,8 +102,8 @@ describe('document edits', () => {
 
   it('extends foundations down to the ground under raised or cliff-side structures (regression)', () => {
     // Placed 18 blocks above the flat ground (top block y = 51): no column may hang in the air.
-    const dense = apply({ shape: 'structure', structure: 'house', at: [8, 70, 8] });
-    const compiled = compileEdits([VoxelEdit.parse({ shape: 'structure', structure: 'house', at: [8, 70, 8] })], reg, gen, 1)[0];
+    const dense = apply({ shape: 'structure', structure: 'house', at: [8, 70, 8], anchor: 'world' });
+    const compiled = compileEdits([VoxelEdit.parse({ shape: 'structure', structure: 'house', at: [8, 70, 8], anchor: 'world' })], reg, gen, 1)[0];
     if (!compiled?.content) throw new Error('house did not compile');
     expect(compiled.minY).toBeLessThanOrEqual(52);
     for (let y = 52; y < compiled.content.minY; y++) expect(dense[cellIndex(8, y, 8)], `y ${y}`).not.toBe(0);

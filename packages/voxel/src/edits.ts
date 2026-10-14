@@ -263,8 +263,8 @@ function foundationReach(gen: TerrainGenerator, m: VoxelModel, ox: number, oy: n
 
 /**
  * A structure model placed with its corner at (ox, oy, oz). Besides the
- * model's own cells: columns whose highest non-KEEP cell carves are carved
- * up to the sky (no terrain floating above a building), and columns whose
+ * model's own cells: columns that carve anywhere are also cleared above the
+ * model up to the sky (no terrain floating above a building), and columns whose
  * bottom cell is foundation continue `reach` blocks further down where the
  * world is not solid (no building overhanging a slope or cliff).
  */
@@ -274,13 +274,11 @@ function modelEdit(m: VoxelModel, ox: number, oy: number, oz: number, isSolid: (
   let carvesSky = false;
   for (let i = 0; i < area; i++) {
     for (let y = m.sy - 1; y >= 0; y--) {
-      const v = m.data[i + y * area] as number;
-      if (v === KEEP) continue;
-      if (v === CARVE) {
+      if (m.data[i + y * area] === CARVE) {
         sky[i] = 1;
         carvesSky = true;
+        break;
       }
-      break;
     }
   }
   const top = oy + m.sy - 1;

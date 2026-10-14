@@ -355,6 +355,18 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     // Inventory: craft sticks from the starting planks.
     await page.keyboard.press('KeyE');
     await page.getByRole('dialog', { name: 'Inventory and crafting' }).waitFor({ timeout: 10_000 });
+    // The panel fits the viewport (editor panels stay open beside it) and Close covers no header text.
+    const layout = await page.evaluate(() => {
+      const box = (sel: string): [number, number, number, number] | null => {
+        const r = document.querySelector(sel)?.getBoundingClientRect();
+        return r ? [r.left, r.top, r.right, r.bottom] : null;
+      };
+      return { view: box('.viewport'), panel: box('.vx-screen__panel'), close: box('.vx-screen__close'), table: box('.vx-table'), hint: box('.vx-screen__hint') };
+    });
+    const inside = (a: number[] | null, b: number[] | null): boolean => !!a && !!b && a[0]! >= b[0]! - 1 && a[1]! >= b[1]! - 1 && a[2]! <= b[2]! + 1 && a[3]! <= b[3]! + 1;
+    const overlaps = (a: number[] | null, b: number[] | null): boolean => !!a && !!b && a[0]! < b[2]! && b[0]! < a[2]! && a[1]! < b[3]! && b[1]! < a[3]!;
+    check(inside(layout.panel, layout.view), `${label}: inventory panel overflows the viewport ${JSON.stringify(layout)}`);
+    check(!overlaps(layout.close, layout.table) && !overlaps(layout.close, layout.hint), `${label}: Close overlaps the inventory header ${JSON.stringify(layout)}`);
     const sticksBefore = (await player(page))?.slots.reduce((n, s) => n + (s?.item === 'stick' ? s.count : 0), 0) ?? 0;
     await page.getByRole('button', { name: 'Craft Stick', exact: true }).first().click();
     await waitFor(page, 'sticks to be crafted', 5000, async () => ((await player(page))?.slots.reduce((n, s) => n + (s?.item === 'stick' ? s.count : 0), 0) ?? 0) > sticksBefore);

@@ -25,6 +25,8 @@
   font-family: var(--font);
   user-select: none;
   z-index: 6;
+  /* Layout follows the viewport's own width (editor panels may be open), not the window's. */
+  container: vx-hud / inline-size;
 }
 
 .vx-hud button,
@@ -567,18 +569,35 @@
   right: 12px;
 }
 
+/* Room for the Close button at the top right (it sits over the crafting column). */
+.vx-screen__craft .vx-screen__head {
+  padding-right: 92px;
+}
+
 .vx-hud.is-ui .vx-bottom,
 .vx-hud.is-ui .vx-top {
   opacity: 0.35;
 }
 
-@media (max-width: 760px) {
+/* Inventory and crafting side by side need ~780 px: stack them in a narrower viewport. */
+@container vx-hud (max-width: 820px) {
+  .vx-screen__panel { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .vx-screen__inv .vx-screen__head { padding-right: 92px; }
+  .vx-screen__craft .vx-screen__head { padding-right: 0; }
+  .vx-screen__craft { max-height: none; }
+}
+
+@container vx-hud (max-width: 560px) {
   .vx-slot { width: 36px; height: 36px; }
   .vx-grid { grid-template-columns: repeat(9, 34px); }
   .vx-grid .vx-slot { width: 34px; height: 34px; }
-  .vx-screen__panel { grid-template-columns: 1fr; overflow-y: auto; }
   .vx-pip { width: 13px; height: 13px; }
   .vx-coords { display: none; }
+  .vx-screen__hint { display: none; }
+}
+
+/* Phones: the hotbar clears the on-screen touch controls. */
+@media (max-width: 760px) {
   .vx-bottom { bottom: 120px; }
 }
 
