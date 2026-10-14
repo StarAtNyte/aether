@@ -4,14 +4,27 @@
  * mapping and color space conversion happen in the pipeline's output
  * transform. Any failure (missing feature, shader compile error) disables
  * post and the caller renders directly.
+ *
+ * The `studio` quality (architectural stills) adds a depth/normal/velocity
+ * pre-pass, ground-truth ambient occlusion applied to the indirect light
+ * only (three's built-in AO context, so sunlit faces keep their contrast)
+ * and temporal reprojection anti-aliasing, which also accumulates the AO
+ * and shadow noise into a clean image while the camera rests.
  */
 import type { Camera, Scene } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { NEUTRAL_GRADE, type Grade } from './grade';
 
+/** Post pipeline quality: the realtime look, or the studio still (AO + temporal AA). */
+export type PostQuality = 'standard' | 'studio';
+
+/** Ambient occlusion tuning of the studio pipeline (metres / unitless). */
+export const STUDIO_AO = Object.freeze({ radius: 0.6, thickness: 0.6, distanceExponent: 1.4, scale: 1.15, samples: 12, resolutionScale: 0.5 });
+
 /** A running post pipeline. */
 export interface PostPipeline {
+  readonly quality: PostQuality;
   render(): void;
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
@@ -49,16 +62,47 @@ export function bloomStrength(bloom: number): number {
 }
 
 /** Build the pipeline, or null when unsupported. */
-export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number): Promise<PostPipeline | null> {
+export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard'): Promise<PostPipeline | null> {
   try {
-    const [{ RenderPipeline, Vector3 }, { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp }, { bloom }] = await Promise.all([
+    const studio = quality === 'studio';
+    const [{ RenderPipeline, Vector3, UnsignedByteType }, tsl, { bloom }, gtao, traaMod] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
+      studio ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
+      studio ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
     ]);
-    const scenePass = pass(scene, camera);
+    const { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext } = tsl;
+    const disposables: Array<{ dispose(): void }> = [];
+    // Temporal AA replaces MSAA in the studio pipeline (its depth copies need single-sampled targets).
+    const scenePass = studio ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
+    disposables.push(scenePass);
+    let prePassDepth: ReturnType<typeof scenePass.getTextureNode> | null = null;
+    let prePassVelocity: ReturnType<typeof scenePass.getTextureNode> | null = null;
+    if (studio && gtao) {
+      // Opaque pre-pass: view normals (8-bit) + velocity, and its depth for AO and TRAA.
+      const prePass = pass(scene, camera, { samples: 0 });
+      prePass.transparent = false;
+      prePass.setMRT(mrt({ output: packNormalToRGB(normalView), velocity }));
+      const normalTexture = prePass.getTexture('output');
+      normalTexture.type = UnsignedByteType;
+      const prePassNormal = sample((uv) => unpackRGBToNormal(prePass.getTextureNode().sample(uv)));
+      prePassDepth = prePass.getTextureNode('depth');
+      prePassVelocity = prePass.getTextureNode('velocity');
+      const aoPass = gtao.ao(prePassDepth, prePassNormal, camera);
+      aoPass.resolutionScale = STUDIO_AO.resolutionScale;
+      aoPass.useTemporalFiltering = true;
+      aoPass.radius.value = STUDIO_AO.radius;
+      aoPass.thickness.value = STUDIO_AO.thickness;
+      aoPass.distanceExponent.value = STUDIO_AO.distanceExponent;
+      aoPass.scale.value = STUDIO_AO.scale;
+      aoPass.samples.value = STUDIO_AO.samples;
+      scenePass.contextNode = builtinAOContext(aoPass.getTextureNode().sample(screenUV).r);
+      disposables.push(prePass, aoPass);
+    }
     const color = scenePass.getTextureNode('output');
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
+    disposables.push(bloomNode);
     const vignette = float(1).sub(smoothstep(float(VIGNETTE_RANGE[0]), float(VIGNETTE_RANGE[1]), screenUV.sub(0.5).length()).mul(VIGNETTE_STRENGTH));
     // Grade in linear HDR before the output transform: split tone, saturation, contrast pivot.
     const uSat = uniform(NEUTRAL_GRADE.saturation);
@@ -73,8 +117,17 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const pivot = float(0.18);
     const contrasted = pow(saturated.div(pivot).add(1e-5), vec3(uContrast)).mul(pivot);
     const graded = clamp(contrasted, vec3(0), vec3(64)).mul(vignette);
-    const pipeline = new RenderPipeline(renderer, vec4(graded, color.a));
+    const gradedNode = vec4(graded, color.a);
+    let pipeline: InstanceType<typeof RenderPipeline>;
+    if (studio && traaMod && prePassDepth && prePassVelocity) {
+      const traaNode = traaMod.traa(gradedNode, prePassDepth, prePassVelocity, camera);
+      disposables.push(traaNode);
+      pipeline = new RenderPipeline(renderer, traaNode);
+    } else {
+      pipeline = new RenderPipeline(renderer, gradedNode);
+    }
     return {
+      quality,
       render: () => pipeline.render(),
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);
@@ -87,12 +140,11 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       },
       dispose: () => {
         pipeline.dispose();
-        bloomNode.dispose();
-        scenePass.dispose();
+        for (const d of disposables) d.dispose();
       },
     };
   } catch (e) {
-    log.warn(`post-processing disabled: ${errorMessage(e)}`);
+    log.warn(`post-processing (${quality}) disabled: ${errorMessage(e)}`);
     return null;
   }
 }

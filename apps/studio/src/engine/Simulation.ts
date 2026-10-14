@@ -503,7 +503,8 @@ export class Simulation {
       }
       return;
     }
-    const spawnFocus = p.mode !== 'orbit' && !findAvatar(world);
+    // Buildings frame themselves (the walkthrough spawn sits outside the entrance and would pull the view off).
+    const spawnFocus = p.mode !== 'orbit' && !findAvatar(world) && !hasBuilding(world);
     if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}) })) return;
     // Nothing rendered yet (e.g. every entity failed to build): fall back to document positions.
     if (spawnFocus) {
@@ -1307,4 +1308,10 @@ export function prefersReducedMotion(): boolean {
   } catch {
     return false;
   }
+}
+
+/** The world contains a parametric building (`arch.role` "building"). */
+function hasBuilding(world: WorldDoc): boolean {
+  for (const id in world.entities) if (world.entities[id]?.arch?.role === 'building') return true;
+  return false;
 }

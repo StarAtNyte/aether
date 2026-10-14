@@ -36,11 +36,13 @@ import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { contentFraming, framingPose, type Framing } from './view/framing';
 import { ArchView, type ArchViewState } from './view/arch-view';
+import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
-import { createPostPipeline, type PostPipeline } from './gpu/post';
+import { createPostPipeline, type PostPipeline, type PostQuality } from './gpu/post';
+import { qualityPlan, Refinement, studioAvailable, type QualityPlan, type RenderQuality } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { errorMessage, log } from './log';
 import type { VoxelLayer } from './voxel/voxel-layer';
@@ -345,6 +347,14 @@ export class WorldRenderer {
   private readonly grow = new GrowIn();
   private growEnabled = true;
   private post: PostPipeline | null = null;
+  /** Render quality (realtime, or the studio still look) and its plan. */
+  private qualityPlan: QualityPlan;
+  /** Progressive refinement of studio stills while the view rests. */
+  private readonly refinement = new Refinement();
+  /** The studio pipeline failed on this device: studio quality is unavailable. */
+  private studioFailed = false;
+  /** Called when the effective render quality changes (e.g. studio fell back to realtime). */
+  onQualityChange: ((quality: RenderQuality) => void) | null = null;
   /** Architectural view modes (cutaway, exploded levels, x-ray, section) of buildings. */
   private readonly archView: ArchView;
   /** Clipping group around the scene content for the section cut (created on first use). */
@@ -388,6 +398,8 @@ export class WorldRenderer {
   private cssHeight = 1;
   /** Bumped whenever the post pipeline is dropped, so a late async creation is discarded. */
   private postGen = 0;
+  /** The user/host wants adaptive resolution (the studio quality suspends it). */
+  private adaptiveWanted = true;
   private postPending = false;
   private readonly onContextLost: ((info: ContextLossInfo) => void) | undefined;
   /** Draw counters of the last frame actually drawn (stable while on-demand rendering idles). */
@@ -437,6 +449,7 @@ export class WorldRenderer {
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.budget = renderBudget(this.gpu.tier, this.lowMemory);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
+    this.adaptiveWanted = this.adaptive.enabled;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
@@ -490,7 +503,8 @@ export class WorldRenderer {
     this.archView = new ArchView(this.sync);
     this.growEnabled = opts.growIn !== false;
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
-    this.env.sun.shadow.radius = 3;
+    this.qualityPlan = qualityPlan('realtime', this.budget);
+    this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.shadowMapCap = this.budget.shadowMapCap;
     this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
@@ -712,6 +726,7 @@ export class WorldRenderer {
   private applyEnvironment(world: WorldDoc): void {
     const env = world.environment;
     this.env.apply(env, this.scene);
+    this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.renderer.toneMappingExposure = this.env.exposure;
     this.post?.setBloom(env.bloom);
     this.post?.setGrade(gradeFor(this.env.skyState));
@@ -728,7 +743,7 @@ export class WorldRenderer {
   setLowMemory(on: boolean): void {
     this.lowMemory = on;
     this.budget = renderBudget(this.gpu.tier, on);
-    this.env.shadowMapCap = this.budget.shadowMapCap;
+    this.applyQuality(this.qualityPlan.quality);
     this.generatorCache?.setByteLimit(this.budget.generatorCacheBytes);
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
@@ -737,6 +752,8 @@ export class WorldRenderer {
 
   /** Turn adaptive resolution on or off (off restores the full budget resolution at once). */
   setAdaptiveResolution(on: boolean): void {
+    this.adaptiveWanted = on;
+    if (on && !this.qualityPlan.adaptiveResolution) return;
     this.adaptive.enabled = on;
     if (!on && this.adaptive.scale !== 1) {
       this.adaptive.reset();
@@ -916,6 +933,7 @@ export class WorldRenderer {
   setEnvironmentOverride(env: Environment): void {
     if (this.disposed) return;
     this.env.apply(env, this.scene);
+    this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.renderer.toneMappingExposure = this.env.exposure;
     this.post?.setGrade(gradeFor(this.env.skyState));
     this.needsDraw = true;
@@ -1535,7 +1553,11 @@ export class WorldRenderer {
     this.env.update(animate ? step : 0, this.perspective);
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
-    if (opts.onDemand === true && !cameraMoved && !this.needsDraw && !(animate && this.env.animating)) {
+    // Studio stills keep refining (temporal AA / AO converge) for a while after the view rests.
+    const changed = cameraMoved || this.needsDraw || (animate && this.env.animating);
+    if (changed) this.refinement.restart();
+    const refine = !changed && this.refinement.next();
+    if (opts.onDemand === true && !changed && !refine) {
       this.drewLastFrame = false;
       return false;
     }
@@ -1604,7 +1626,56 @@ export class WorldRenderer {
 
   /** Post pass wanted for the current world and budget. */
   private get wantsPost(): boolean {
-    return this.budget.post && this.env.bloom > 0.001;
+    return this.wantedPostQuality !== null;
+  }
+
+  /** Post variant the current quality and world need (null: render directly). */
+  private get wantedPostQuality(): PostQuality | null {
+    if (this.qualityPlan.post === 'studio') return 'studio';
+    return this.budget.post && this.env.bloom > 0.001 ? 'standard' : null;
+  }
+
+  /**
+   * Switch the render quality. `studio` (architectural stills: ambient
+   * occlusion, temporal anti-aliasing, larger soft shadows, progressive
+   * refinement while the view rests) needs the post pass; returns the
+   * quality actually in effect (realtime when studio is unavailable).
+   */
+  setRenderQuality(quality: RenderQuality): RenderQuality {
+    const want: RenderQuality = quality === 'studio' && !this.studioFailed ? 'studio' : 'realtime';
+    return this.applyQuality(want);
+  }
+
+  /** The render quality in effect. */
+  get renderQuality(): RenderQuality {
+    return this.qualityPlan.quality;
+  }
+
+  /** Studio quality can be used on this device and budget. */
+  get studioQualityAvailable(): boolean {
+    return !this.studioFailed && studioAvailable(this.budget);
+  }
+
+  /** Progress of the studio still refinement in [0, 1] (1 when idle or in realtime). */
+  get refineProgress(): number {
+    return this.refinement.progress;
+  }
+
+  private applyQuality(quality: RenderQuality): RenderQuality {
+    const before = this.qualityPlan.quality;
+    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software');
+    const plan = this.qualityPlan;
+    this.env.shadowMapCap = plan.shadowMapCap;
+    this.env.sun.shadow.radius = plan.shadowRadius;
+    this.refinement.setFrames(plan.accumulateFrames);
+    this.refinement.restart();
+    this.adaptive.enabled = plan.adaptiveResolution && this.adaptiveWanted;
+    if (!this.adaptive.enabled && this.adaptive.scale !== 1) this.adaptive.reset();
+    this.resize(this.cssWidth, this.cssHeight);
+    this.boundsDirty = true;
+    this.needsDraw = true;
+    if (plan.quality !== before) this.onQualityChange?.(plan.quality);
+    return plan.quality;
   }
 
   /**
@@ -1614,36 +1685,47 @@ export class WorldRenderer {
    * off and rebuilt asynchronously when it comes back.
    */
   private syncPost(): void {
-    const want = this.wantsPost;
-    if (!want && this.post) {
+    const want = this.wantedPostQuality;
+    if (this.post && this.post.quality !== want) {
       this.post.dispose();
       this.post = null;
       this.postGen++;
-    } else if (want && !this.post && !this.postPending && !this.postFailed) {
-      this.postPending = true;
-      const gen = ++this.postGen;
-      createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom)
-        .then((p) => {
-          this.postPending = false;
-          if (!p) {
-            this.postFailed = true;
-            return;
-          }
-          if (gen !== this.postGen || this.disposed || !this.wantsPost) p.dispose();
-          else {
-            p.setGrade(gradeFor(this.env.skyState));
-            this.post = p;
-            this.needsDraw = true;
-          }
-        })
-        .catch(() => {
-          this.postPending = false;
-          this.postFailed = true;
-        });
     }
+    if (want === null || this.post || this.postPending) return;
+    if (want === 'standard' && this.postFailed) return;
+    this.postPending = true;
+    const gen = ++this.postGen;
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, want)
+      .then((p) => {
+        this.postPending = false;
+        if (!p) {
+          this.postCreationFailed(want);
+          return;
+        }
+        if (gen !== this.postGen || this.disposed || this.wantedPostQuality !== want) p.dispose();
+        else {
+          p.setGrade(gradeFor(this.env.skyState));
+          this.post = p;
+          this.needsDraw = true;
+        }
+      })
+      .catch(() => {
+        this.postPending = false;
+        this.postCreationFailed(want);
+      });
   }
 
-  /** The post pipeline could not be built on this device (never retried). */
+  /** A pipeline could not be built (or crashed): studio falls back to realtime, standard to direct rendering. */
+  private postCreationFailed(quality: PostQuality): void {
+    if (quality === 'studio') {
+      this.studioFailed = true;
+      this.applyQuality('realtime');
+    } else {
+      this.postFailed = true;
+    }
+    this.needsDraw = true;
+  }
+
   private postFailed = false;
 
   /**
@@ -1679,10 +1761,11 @@ export class WorldRenderer {
     } catch (e) {
       // A post pipeline failure must not kill the viewport: drop post and keep rendering directly.
       if (this.post) {
-        log.warn(`post-processing failed, disabling: ${errorMessage(e)}`);
+        log.warn(`post-processing (${this.post.quality}) failed, disabling: ${errorMessage(e)}`);
+        const quality = this.post.quality;
         this.post.dispose();
         this.post = null;
-        this.postFailed = true;
+        this.postCreationFailed(quality);
       } else {
         throw e;
       }

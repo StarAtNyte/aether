@@ -222,6 +222,8 @@ export class SceneSync {
   private readonly placeholderGeometry: BoxGeometry;
   private readonly placeholderMaterial: MeshStandardMaterial;
   private current: WorldDoc | null = null;
+  /** Intensity factor of architectural lamps (daylight dimming, see `daylightLampFactor`). */
+  private archLampScale = 1;
   private totalInstances = 0;
   private lightsDirty = false;
   /** True while setWorld rebuilds: dependent scatter relayout is deferred to one pass. */
@@ -561,7 +563,7 @@ export class SceneSync {
     if (path === 'light.intensity' && typeof value === 'number' && Number.isFinite(value) && value >= 0 && node.entity.light && node.light) {
       const light = { ...node.entity.light, intensity: value };
       node.entity = { ...node.entity, light };
-      updateLightParams(node.light.light, light);
+      updateLightParams(node.light.light, light, this.lightScale(node));
       node.overridden = true;
       return true;
     }
@@ -586,6 +588,23 @@ export class SceneSync {
     if (flags.moved) this.relayoutDependents(new Set([id]), []);
     if (this.lightsDirty) this.applyShadowCap();
     return true;
+  }
+
+  /**
+   * Scale architectural lamps (`arch.role` "light"): the renderer dims them
+   * in daylight. Updates live lights in place (no allocation, no rebuild).
+   */
+  setArchLampScale(scale: number): void {
+    const s = Number.isFinite(scale) ? Math.max(0, Math.min(1, scale)) : 1;
+    if (s === this.archLampScale) return;
+    this.archLampScale = s;
+    for (const node of this.nodes.values()) {
+      if (node.light && node.entity.light && node.entity.arch?.role === 'light') updateLightParams(node.light.light, node.entity.light, s);
+    }
+  }
+
+  private lightScale(node: Readonly<EntityNode>): number {
+    return node.entity.arch?.role === 'light' ? this.archLampScale : 1;
   }
 
   /**
@@ -1401,7 +1420,7 @@ export class SceneSync {
     const old = before?.light;
     if (this.variant !== 'standard') return;
     if (node.light && spec && old && old.type === spec.type && old.range === spec.range && old.angle === spec.angle && old.castShadow === spec.castShadow) {
-      updateLightParams(node.light.light, spec);
+      updateLightParams(node.light.light, spec, this.lightScale(node));
       return;
     }
     if (node.light) {
@@ -1409,7 +1428,7 @@ export class SceneSync {
       node.light = null;
     }
     if (spec) {
-      node.light = createEntityLight(spec);
+      node.light = createEntityLight(spec, this.lightScale(node));
       node.object.add(node.light.light);
       if (node.light.target) node.object.add(node.light.target);
     }
