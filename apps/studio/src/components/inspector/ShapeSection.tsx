@@ -7,6 +7,7 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { PrimitiveKind, decodeMeshCached, hasOwn, type Entity, type Json, type WorldDoc } from '@aether/core';
 import { getBuiltinGenerator, meshHealth } from '@aether/procgen';
+import { assetInfo, assetShapeSize } from '@aether/assets';
 import { useStudio, useUI } from '../../app/context';
 import { Icon } from '../Icon';
 import { FieldRow, NumberField, SelectField, Section, Switch, Vec3Field } from '../fields';
@@ -14,6 +15,64 @@ import { ParamField, type ParamSpecLike } from './ParamField';
 import { isBakeable } from '../../editor/model/bake';
 
 type Update = (set: Record<string, Json>, message: string) => void;
+
+/** Library / imported asset: what it is, who made it, its look, size and animation. */
+const AssetInfo = memo(function AssetInfo({ e, update, disabled }: { e: Entity; update: Update; disabled: boolean }): ReactElement | null {
+  const studio = useStudio();
+  if (e.shape.kind !== 'asset') return null;
+  const shape = e.shape;
+  const info = assetInfo(shape.id);
+  if (!info) return <p className="section__note">Asset “{shape.id}” is not available here; a stand-in is shown{shape.fallback ? ' (its fallback shape)' : ''}.</p>;
+  const entry = info.entry;
+  const pack = entry ? studio.assets.state.getState().catalog?.packs.find((p) => p.id === entry.pack) : undefined;
+  const variants = entry?.variants ?? [];
+  const clips = info.anims?.clips ?? [];
+  const size = assetShapeSize(shape);
+  return (
+    <>
+      <FieldRow label="Asset">
+        <span className="value-text">{entry?.name ?? info.user?.name ?? shape.id}</span>
+      </FieldRow>
+      <FieldRow label="Source">
+        <span className="value-text" title={pack?.url ?? ''}>
+          {info.user ? 'Your import' : `${pack?.title ?? entry?.pack ?? ''} · ${entry?.authors?.join(', ') ?? pack?.author ?? ''} · ${pack?.licence ?? ''}`}
+        </span>
+      </FieldRow>
+      {size && (
+        <FieldRow label="Size">
+          <span className="value-text mono">{size.map((v) => v.toFixed(2)).join(' × ')} m</span>
+        </FieldRow>
+      )}
+      {variants.length > 0 && (
+        <FieldRow label="Look">
+          <SelectField
+            label="Variant"
+            value={shape.variant && variants.includes(shape.variant) ? shape.variant : shape.id}
+            options={[shape.id, ...variants]}
+            raw
+            disabled={disabled}
+            onChange={(v) => update({ shape: { variant: v === shape.id ? null : v } }, `Set ${e.id} look`)}
+          />
+        </FieldRow>
+      )}
+      <FieldRow label="Fit size">
+        <NumberField label="Largest dimension (m)" value={shape.fitSize ?? Math.max(...(size ?? [1]))} min={0.05} max={500} step={0.1} disabled={disabled} onCommit={(n) => update({ shape: { fitSize: n } }, `Resize ${e.id}`)} />
+      </FieldRow>
+      {clips.length > 0 && (
+        <FieldRow label="Animation">
+          <SelectField
+            label="Animation"
+            value={shape.animation ?? 'auto'}
+            options={['auto', 'none', ...clips.slice(0, 40)]}
+            raw
+            disabled={disabled}
+            onChange={(v) => update({ shape: { animation: v === 'auto' ? null : v } }, `Set ${e.id} animation`)}
+          />
+        </FieldRow>
+      )}
+    </>
+  );
+});
 
 /** Parameter specs of a generator (custom definitions win over built-ins). */
 export function generatorParams(world: WorldDoc, generator: string): Record<string, ParamSpecLike> {
@@ -202,6 +261,7 @@ export const ShapeSection = memo(function ShapeSection({ e, world, update, disab
           </span>
         </FieldRow>
       )}
+      <AssetInfo e={e} update={update} disabled={disabled} />
       {s.kind === 'none' && <p className="section__note">No geometry (group, light or logic holder).</p>}
     </Section>
   );

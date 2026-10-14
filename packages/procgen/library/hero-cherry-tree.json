@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-cherry-tree",
+    "description": "Cherry blossom tree: Sakura ~5.5 m tall, 7 m wide. Trunk: twisting tapered tube 2.2 m high, Ø0.5 base to Ø0.28 top with flared root. 6 branches evenly spaced around Y, arcing out to ~3-3.3 m and up to ~4 m, each with a fork twig. ~64 blossom clumps (r 0.6-1.3) along outer branches ",
+    "category": "nature",
+    "keywords": [
+      "cherry blossom",
+      "sakura tree",
+      "blossom tree"
+    ],
+    "params": {
+      "barkColor": {
+        "type": "color",
+        "default": "#3b2a24",
+        "description": "bark color"
+      },
+      "blossomColor": {
+        "type": "color",
+        "default": "#f6a6c1",
+        "description": "main blossom color"
+      },
+      "clumps": {
+        "type": "int",
+        "default": 64,
+        "min": 15,
+        "max": 120,
+        "description": "blossom clump count"
+      },
+      "height": {
+        "type": "number",
+        "default": 5.5,
+        "min": 2,
+        "max": 12,
+        "description": "tree height m"
+      },
+      "petals": {
+        "type": "int",
+        "default": 180,
+        "min": 0,
+        "max": 400,
+        "description": "ground petals"
+      },
+      "spread": {
+        "type": "number",
+        "default": 7,
+        "min": 3,
+        "max": 14,
+        "description": "canopy width m"
+      }
+    },
+    "size": [
+      8.072,
+      6.012,
+      8.628
+    ]
+  },
+  "def": {
+    "id": "hero-cherry-tree",
+    "description": "Sakura ~5.5 m tall, 7 m wide. Trunk: twisting tapered tube 2.2 m high, Ø0.5 base to Ø0.28 top with flared root. 6 branches evenly spaced around Y, arcing out to ~3-3.3 m and up to ~4 m, each with a fork twig. ~64 blossom clumps (r 0.6-1.3) along outer branches in a ~3.5 m radius disc at y 3.2-5.2, 9 hanging low at the rim on drooping twigs. 180 ground petals (r 0.3-3.5 m). Materials: bark, blossom (vertex colors), petals (vertex colors).",
+    "params": {
+      "barkColor": {
+        "type": "color",
+        "default": "#3b2a24",
+        "description": "bark color"
+      },
+      "blossomColor": {
+        "type": "color",
+        "default": "#f6a6c1",
+        "description": "main blossom color"
+      },
+      "clumps": {
+        "type": "int",
+        "default": 64,
+        "min": 15,
+        "max": 120,
+        "description": "blossom clump count"
+      },
+      "height": {
+        "type": "number",
+        "default": 5.5,
+        "min": 2,
+        "max": 12,
+        "description": "tree height m"
+      },
+      "petals": {
+        "type": "int",
+        "default": 180,
+        "min": 0,
+        "max": 400,
+        "description": "ground petals"
+      },
+      "spread": {
+        "type": "number",
+        "default": 7,
+        "min": 3,
+        "max": 14,
+        "description": "canopy width m"
+      }
+    },
+    "source": "const H = params.height, S = params.spread;\nconst sy = H / 5.5, sx = S / 7;\nconst bark = { preset: 'bark', color: params.barkColor, roughness: 0.95, flatShading: true };\nconst blossom = { preset: 'leaf', roughness: 0.85, flatShading: true };\nconst petalMat = { preset: 'fabric', roughness: 0.9 };\n// trunk: tapered twisting segments\nconst th = 2.2 * sy;\nconst NS = 10;\nconst tp = [];\nfor (let i = 0; i <= NS; i++) {\n  const t = i / NS;\n  tp.push([Math.sin(t * 6) * 0.18 * sx * (0.4 + t), t * th, Math.cos(t * 5) * 0.16 * sx * (0.4 + t)]);\n}\nfor (let i = 0; i < NS; i += 2) {\n  const t = i / NS;\n  const r = (0.26 - 0.12 * t) * sx;\n  api.add(api.tube([tp[i], tp[i + 1], tp[i + 2]], r, 9), bark);\n  api.add(api.sphere(r * 0.95, 1).translate(tp[i + 2][0], tp[i + 2][1], tp[i + 2][2]), bark);\n}\napi.add(api.cone(0.55 * sx, 0.6 * sy, 10).translate(tp[0][0], 0.3 * sy, tp[0][2]), bark);\nconst top = tp[NS];\nconst nb = 6;\nconst branches = [];\nconst a0 = api.rng() * 6;\nfor (let b = 0; b < nb; b++) {\n  const a = a0 + (b / nb) * Math.PI * 2 + (api.rng() - 0.5) * 0.3;\n  const len = (2.7 + api.rng() * 0.6) * sx;\n  const rise = (1.5 + api.rng() * 0.7) * sy;\n  const st = tp[NS - (b % 3)];\n  const pts = [];\n  for (let i = 0; i <= 8; i++) {\n    const t = i / 8;\n    const w = Math.sin(t * 5 + b * 1.7) * 0.18;\n    const rr = len * Math.pow(t, 0.9);\n    pts.push([st[0] + Math.cos(a + w) * rr, st[1] + rise * (1 - (1 - t) * (1 - t)) , st[2] + Math.sin(a + w) * rr]);\n  }\n  api.add(api.tube(pts.slice(0, 4), 0.17 * sx, 7), bark);\n  api.add(api.tube(pts.slice(3, 7), 0.11 * sx, 6), bark);\n  api.add(api.tube(pts.slice(6), 0.07 * sx, 5), bark);\n  const e = pts[4];\n  const a2 = a + (b % 2 ? 0.7 : -0.7);\n  const f = [e, [e[0] + Math.cos(a2) * 0.6 * sx, e[1] + 0.4 * sy, e[2] + Math.sin(a2) * 0.6 * sx], [e[0] + Math.cos(a2) * 1.2 * sx, e[1] + 0.7 * sy, e[2] + Math.sin(a2) * 1.2 * sx]];\n  api.add(api.tube(f, 0.065 * sx, 5), bark);\n  branches.push({ pts, f, a });\n}\nconst colors = [params.blossomColor, api.mix(params.blossomColor, '#ffffff', 0.4), api.mix(params.blossomColor, '#d9648f', 0.45), api.mix(params.blossomColor, '#ffe3ee', 0.6)];\nconst N = params.clumps;\nlet all = null;\nconst nHang = Math.max(3, Math.round(N * 0.14));\nfunction clump(x, y, z, r, c, id) {\n  const m = api.sphere(r, 2).scale(1, 0.8, 1).displace((px, py, pz) => api.noise3(px * 2 + id, py * 2, pz * 2) * 0.16 * r).translate(x, y, z);\n  m.vertexColor((px, py, pz) => api.mix(c, '#ffffff', Math.max(0, Math.min(0.3, (py - y) * 0.25))));\n  if (all) all.merge(m); else all = m;\n}\nfor (let i = 0; i < N; i++) {\n  const br = branches[i % nb];\n  const c = colors[Math.floor(api.rng() * colors.length)];\n  const r = (0.6 + api.rng() * 0.7) * Math.min(sx, 1.4);\n  if (i < nHang) {\n    const bb = branches[i % nb];\n    const e = bb.pts[7];\n    const ox = (api.rng() - 0.5) * 0.8 * sx, oz = (api.rng() - 0.5) * 0.8 * sx;\n    const y = Math.max(2.6 * sy, e[1] - (1.0 + api.rng() * 0.5) * sy);\n    const x = e[0] + ox + Math.cos(bb.a) * 0.3 * sx, z = e[2] + oz + Math.sin(bb.a) * 0.3 * sx;\n    api.add(api.tube([e, [(e[0] + x) / 2, (e[1] + y) / 2 + 0.2, (e[2] + z) / 2], [x, y + 0.2, z]], 0.035 * sx, 4), bark);\n    clump(x, y, z, r * 0.8, c, i);\n    continue;\n  }\n  let t = 0.4 + api.rng() * 0.6;\n  let p;\n  if (api.rng() < 0.3) {\n    p = br.f[1 + Math.floor(api.rng() * 2)];\n  } else {\n    const k = Math.min(7, Math.floor(t * 8));\n    p = br.pts[k];\n  }\n  const x = p[0] + (api.rng() - 0.5) * 1.2 * sx;\n  const z = p[2] + (api.rng() - 0.5) * 1.2 * sx;\n  let y = p[1] + (0.3 + api.rng() * 0.8) * sy;\n  y = Math.max(3.2 * sy, Math.min(5.0 * sy, y));\n  clump(x, y, z, r, c, i);\n}\n// a couple at the crown, fewer in centre\nclump(top[0], 4.5 * sy, top[2], 0.8 * Math.min(sx, 1.3), colors[1], 999);\nclump(top[0] + 0.9 * sx, 4.2 * sy, top[2] - 0.5 * sx, 0.7 * Math.min(sx, 1.3), colors[0], 998);\napi.add(all, blossom);\n// petals\nlet pm = null;\nconst pc = ['#f8b9cf', '#ffd6e4', '#f29ab8', '#fde4ee'];\nfor (let i = 0; i < params.petals; i++) {\n  const a = api.rng() * Math.PI * 2;\n  const d = 0.3 + Math.sqrt(api.rng()) * 3.2 * sx;\n  const col = pc[Math.floor(api.rng() * pc.length)];\n  const p = api.cylinder(0.03, 0.03, 0.006, 6).scale(1 + api.rng() * 0.5, 1, 0.8).rotate(0, api.rng() * 360, 0).translate(Math.cos(a) * d, 0.01 + api.rng() * 0.01, Math.sin(a) * d);\n  p.vertexColor(() => col);\n  if (pm) pm.merge(p); else pm = p;\n}\nif (pm) api.add(pm, petalMat);\napi.collider({ kind: 'cylinder', radius: 0.35 * sx, halfHeight: th / 2, offset: [0, th / 2, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:37:12.830Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 21194,
+    "parts": 3,
+    "colliders": 1
+  }
+}

@@ -32,6 +32,8 @@ export function entityKind(e: Entity): string {
       return 'Model';
     case 'mesh':
       return 'Mesh';
+    case 'asset':
+      return 'Asset';
     default:
       return 'Group';
   }
@@ -183,7 +185,8 @@ export const ObjectInspector = memo(function ObjectInspector({ e, count, playing
         <Vec3Field label="Scale" value={e.transform.scale} min={0.001} disabled={disabled} onCommit={(v) => update({ transform: { scale: v } }, `Scale ${e.id}`)} />
       </Section>
       <ShapeSection e={e} world={world} update={update} disabled={disabled} />
-      {e.shape.kind !== 'none' && <MaterialSection e={e} update={update} disabled={disabled} />}
+      {/* Library models carry their own (often textured) materials. */}
+      {e.shape.kind !== 'none' && e.shape.kind !== 'asset' && <MaterialSection e={e} update={update} disabled={disabled} />}
       <PhysicsSection e={e} update={update} disabled={disabled} />
       <JointSection e={e} world={world} update={update} disabled={disabled} />
       <LightSection e={e} update={update} disabled={disabled} />

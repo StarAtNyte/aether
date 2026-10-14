@@ -81,7 +81,7 @@ export const AssetsPanel = memo(function AssetsPanel(): ReactElement {
       <div className="panel-toolbar assets__toolbar">
         <label className="search-field search-field--sm">
           <Icon name="search" />
-          <input type="search" value={query} maxLength={64} placeholder={tab === 'library' ? 'Search 350+ assets (sofa, oak, taxi…)' : 'Search'} aria-label="Search assets" onChange={(e) => setQuery(e.target.value)} />
+          <input type="search" value={query} maxLength={64} placeholder={tab === 'library' ? 'Search 350+ assets' : 'Search'} aria-label="Search assets" onChange={(e) => setQuery(e.target.value)} />
         </label>
         <Segmented<AssetsTab>
           value={tab}

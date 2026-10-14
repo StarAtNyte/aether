@@ -274,7 +274,8 @@ async function main(): Promise<void> {
         name: rec.name,
         kind: 'hdri',
         category: 'sky',
-        tags: tagsFor(assetId, rec.name, 'sky', [...rec.categories, ...rec.tags].join(' '), 'realistic'),
+        // Categories only: Poly Haven's free-form tags describe what is in the photo (chairs, cars…).
+        tags: tagsFor(assetId, rec.name, 'sky', ['hdri', 'environment', 'sky', ...rec.categories].join(' '), 'realistic'),
         style: 'realistic',
         pack: 'polyhaven',
         authors: rec.authors,

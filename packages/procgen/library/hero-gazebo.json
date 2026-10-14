@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-gazebo",
+    "description": "Garden gazebo: Victorian octagonal gazebo, 4 m across corners, 4.6 m tall. Deck: raised octagon 0.5 m with skirt, 2 entry steps (0.17/0.33) on +Z face. 8 turned lathe columns 2.6 m tall at corners; eave beams 0.15 m; fretwork triangle brackets at beam ends; railing 0.9 m (bottom ra",
+    "category": "architecture",
+    "keywords": [
+      "gazebo",
+      "garden pavilion",
+      "bandstand"
+    ],
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 4,
+        "min": 2,
+        "max": 8,
+        "description": "width across corners in meters"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.6,
+        "min": 2.5,
+        "max": 9,
+        "description": "total height in meters"
+      },
+      "color": {
+        "type": "color",
+        "default": "#f4f2ec",
+        "description": "painted wood color"
+      },
+      "roofColor": {
+        "type": "color",
+        "default": "#4a5058",
+        "description": "slate roof color"
+      },
+      "deckColor": {
+        "type": "color",
+        "default": "#9c7a52",
+        "description": "deck color"
+      },
+      "balusters": {
+        "type": "int",
+        "default": 7,
+        "min": 3,
+        "max": 12,
+        "description": "balusters per railing panel"
+      }
+    },
+    "size": [
+      4.619,
+      4.81,
+      5.055
+    ]
+  },
+  "def": {
+    "id": "hero-gazebo",
+    "description": "Victorian octagonal gazebo, 4 m across corners, 4.6 m tall. Deck: raised octagon 0.5 m with skirt, 2 entry steps (0.17/0.33) on +Z face. 8 turned lathe columns 2.6 m tall at corners; eave beams 0.15 m; fretwork triangle brackets at beam ends; railing 0.9 m (bottom rail, 7 balusters, top rail) on 7 faces, open at entrance; 8-sided concave slate roof from 3.1 to 4.2 m with alternating shingle bands, overhang to 1.25R; finial ball, pole and weather-vane arrow to 4.6 m. White painted wood, slate roof.",
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 4,
+        "min": 2,
+        "max": 8,
+        "description": "width across corners in meters"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.6,
+        "min": 2.5,
+        "max": 9,
+        "description": "total height in meters"
+      },
+      "color": {
+        "type": "color",
+        "default": "#f4f2ec",
+        "description": "painted wood color"
+      },
+      "roofColor": {
+        "type": "color",
+        "default": "#4a5058",
+        "description": "slate roof color"
+      },
+      "deckColor": {
+        "type": "color",
+        "default": "#9c7a52",
+        "description": "deck color"
+      },
+      "balusters": {
+        "type": "int",
+        "default": 7,
+        "min": 3,
+        "max": 12,
+        "description": "balusters per railing panel"
+      }
+    },
+    "source": "const sx = params.width / 4, sy = params.height / 4.6;\nconst R = 2.0;\nconst white = { preset: 'wood', color: params.color, roughness: 0.55 };\nconst deck = { preset: 'wood', color: params.deckColor, roughness: 0.8 };\nconst slate = { preset: 'stone', roughness: 0.85, flatShading: true, vertexColors: true };\nconst iron = { preset: 'metal', color: '#2a2c30', metalness: 0.7, roughness: 0.4 };\nfunction A(m, mat) { m.scale(sx, sy, sx); api.add(m, mat); }\nconst D = Math.PI / 180;\nconst ap = R * Math.cos(22.5 * D);\nconst side = 2 * R * Math.sin(22.5 * D);\n// base\nA(api.cylinder(R * 1.02, R * 1.02, 0.42, 8).rotate(0, 22.5, 0).translate(0, 0.21, 0), white);\nA(api.cylinder(R * 1.08, R * 1.08, 0.08, 8).rotate(0, 22.5, 0).translate(0, 0.46, 0), deck);\n// steps\nA(api.box(1.4, 0.17, 0.4).translate(0, 0.085, ap * 1.08 + 0.55), deck);\nA(api.box(1.2, 0.33, 0.4).translate(0, 0.165, ap * 1.08 + 0.2), deck);\nconst top = 0.5, Hc = 2.6, beamY = top + Hc;\nconst profile = [[0, 0], [0.09, 0], [0.09, 0.1], [0.05, 0.16], [0.045, 0.4], [0.065, 0.9], [0.045, 1.5], [0.04, 2.1], [0.055, 2.4], [0.085, 2.47], [0.085, 2.6], [0, 2.6]];\nfor (let i = 0; i < 8; i++) {\n  const a = (i * 45 + 22.5) * D;\n  const x = Math.cos(a) * R, z = Math.sin(a) * R;\n  A(api.lathe(profile, 12).translate(x, top, z), white);\n  api.collider({ kind: 'cylinder', radius: 0.09 * sx, halfHeight: Hc / 2 * sy, offset: [x * sx, (top + Hc / 2) * sy, z * sx] });\n}\nfor (let i = 0; i < 8; i++) {\n  const th = i * 45 + 45;\n  const t = th * D;\n  const cx = Math.cos(t) * ap, cz = Math.sin(t) * ap;\n  const phi = -(th + 90);\n  // beam\n  A(api.box(side + 0.2, 0.2, 0.14).rotate(0, phi, 0).translate(cx, beamY - 0.05, cz), white);\n  // brackets\n  const L = side / 2 - 0.08;\n  const tx = -Math.sin(t), tz = Math.cos(t);\n  const b1 = api.extrude([[0, 0], [0.5, 0], [0.08, -0.08], [0, -0.5]], 0.05).rotate(0, phi, 0).translate(cx - tx * L, beamY - 0.15, cz - tz * L);\n  const b2 = api.extrude([[0, 0], [0, -0.5], [-0.08, -0.08], [-0.5, 0]], 0.05).rotate(0, phi, 0).translate(cx + tx * L, beamY - 0.15, cz + tz * L);\n  A(b1, white); A(b2, white);\n  A(api.sphere(0.04, 1).rotate(0, 0, 0).translate(cx - tx * (L - 0.22) , beamY - 0.3, cz - tz * (L - 0.22)), white);\n  A(api.sphere(0.04, 1).translate(cx + tx * (L - 0.22), beamY - 0.3, cz + tz * (L - 0.22)), white);\n  if (i === 1) continue;\n  // railing\n  const rl = side - 0.15;\n  const rb = top + 0.08;\n  A(api.box(rl, 0.07, 0.07).rotate(0, phi, 0).translate(cx, rb + 0.12, cz), white);\n  A(api.box(rl, 0.09, 0.1).rotate(0, phi, 0).translate(cx, rb + 0.9, cz), white);\n  const n = params.balusters;\n  for (let k = 0; k < n; k++) {\n    const u = ((k + 0.5) / n - 0.5) * (rl - 0.1);\n    A(api.cylinder(0.022, 0.022, 0.8, 6).translate(cx + tx * u, rb + 0.5, cz + tz * u), white);\n  }\n}\n// roof\nconst rr = R * 1.25, y0 = beamY + 0.05, rise = 1.1;\nconst prof = [[0, y0], [rr, y0], [rr, y0 + 0.06]];\nfor (let k = 1; k <= 14; k++) {\n  const t = k / 14;\n  prof.push([rr * Math.pow(1 - t, 1.15) + 0.0001, y0 + 0.06 + rise * t - 0.18 * Math.sin(t * Math.PI)]);\n}\nconst roof = api.lathe(prof, 8).rotate(0, 22.5, 0);\nconst c1 = params.roofColor, c2 = api.mix(params.roofColor, '#15181c', 0.35);\nroof.vertexColor((x, y, z) => (Math.floor((y - y0) / 0.13) % 2 === 0 ? c1 : c2));\nA(roof, slate);\nA(api.cylinder(0.3, 0.3, 0.1, 8).translate(0, y0 + rise + 0.05, 0), white);\n// finial\nconst yt = y0 + 0.06 + rise;\nA(api.sphere(0.1, 2).translate(0, yt + 0.1, 0), white);\nA(api.cylinder(0.015, 0.015, 0.4, 6).translate(0, yt + 0.3, 0), iron);\nA(api.box(0.4, 0.03, 0.03).translate(0, yt + 0.35, 0), iron);\nA(api.cone(0.05, 0.12, 6).rotate(0, 0, -90).translate(0.26, yt + 0.35, 0), iron);\nA(api.box(0.1, 0.1, 0.01).translate(-0.2, yt + 0.37, 0), iron);\n// colliders\napi.collider({ kind: 'cylinder', radius: R * 1.05 * sx, halfHeight: 0.25 * sy, offset: [0, 0.25 * sy, 0] });\napi.collider({ kind: 'box', halfExtents: [0.7 * sx, 0.165 * sy, 0.2 * sx], offset: [0, 0.165 * sy, (ap * 1.08 + 0.2) * sx] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:38:49.222Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 6124,
+    "parts": 4,
+    "colliders": 10
+  }
+}

@@ -397,6 +397,397 @@ export const LIBRARY_ENTRIES: readonly LibraryEntry[] = [
     ]
   },
   {
+    "id": "hero-car",
+    "description": "Vintage roadster: 1930s roadster 4.3 m long, ~1.8 m wide track 1.5, ~1.4 m tall. Hood 1.4 m, tall chrome grille 0.75 h, 4 wheels R0.38 with whitewall and 20 spokes, extruded arching cream fenders, running boards, 2 chrome headlamps Ø0.28, split windscreen, folded soft top, rear spa",
+    "category": "vehicles",
+    "keywords": [
+      "vintage car",
+      "classic car",
+      "roadster",
+      "old car"
+    ],
+    "params": {
+      "length": {
+        "type": "number",
+        "default": 4.3,
+        "min": 2,
+        "max": 8,
+        "description": "car length in m"
+      },
+      "bodyColor": {
+        "type": "color",
+        "default": "#5a0f1e",
+        "description": "paint"
+      },
+      "fenderColor": {
+        "type": "color",
+        "default": "#efe3c2",
+        "description": "fender colour"
+      },
+      "topColor": {
+        "type": "color",
+        "default": "#2a2622",
+        "description": "soft top"
+      },
+      "seatColor": {
+        "type": "color",
+        "default": "#8a5a2e",
+        "description": "leather"
+      }
+    },
+    "size": [
+      1.8,
+      1.528,
+      4.2
+    ]
+  },
+  {
+    "id": "hero-cherry-tree",
+    "description": "Cherry blossom tree: Sakura ~5.5 m tall, 7 m wide. Trunk: twisting tapered tube 2.2 m high, Ø0.5 base to Ø0.28 top with flared root. 6 branches evenly spaced around Y, arcing out to ~3-3.3 m and up to ~4 m, each with a fork twig. ~64 blossom clumps (r 0.6-1.3) along outer branches ",
+    "category": "nature",
+    "keywords": [
+      "cherry blossom",
+      "sakura tree",
+      "blossom tree"
+    ],
+    "params": {
+      "barkColor": {
+        "type": "color",
+        "default": "#3b2a24",
+        "description": "bark color"
+      },
+      "blossomColor": {
+        "type": "color",
+        "default": "#f6a6c1",
+        "description": "main blossom color"
+      },
+      "clumps": {
+        "type": "int",
+        "default": 64,
+        "min": 15,
+        "max": 120,
+        "description": "blossom clump count"
+      },
+      "height": {
+        "type": "number",
+        "default": 5.5,
+        "min": 2,
+        "max": 12,
+        "description": "tree height m"
+      },
+      "petals": {
+        "type": "int",
+        "default": 180,
+        "min": 0,
+        "max": 400,
+        "description": "ground petals"
+      },
+      "spread": {
+        "type": "number",
+        "default": 7,
+        "min": 3,
+        "max": 14,
+        "description": "canopy width m"
+      }
+    },
+    "size": [
+      8.072,
+      6.012,
+      8.628
+    ]
+  },
+  {
+    "id": "hero-explorer",
+    "description": "Stylised explorer: Toy explorer 1.75m: boots 0.17x0.14x0.28; legs d0.14 y0.12-0.8 gap 0.04; torso ellipsoid 0.38w x 0.24d x 0.48h (y0.8-1.28) with olive vest; shoulders y1.22, arms d0.09 L0.45 angled 18deg out; scarf at 1.3; head r0.23 at 1.47; wide brim hat r0.38 brim 0.02 tilted,",
+    "category": "props",
+    "keywords": [
+      "explorer",
+      "adventurer",
+      "hiker figure"
+    ],
+    "params": {
+      "boots": {
+        "type": "color",
+        "default": "#5a3820",
+        "description": "boots"
+      },
+      "height": {
+        "type": "number",
+        "default": 1.75,
+        "min": 0.5,
+        "max": 4,
+        "description": "total height m"
+      },
+      "khaki": {
+        "type": "color",
+        "default": "#c2a878",
+        "description": "clothing"
+      },
+      "olive": {
+        "type": "color",
+        "default": "#6b7040",
+        "description": "vest/hat band"
+      },
+      "scarf": {
+        "type": "color",
+        "default": "#c8332b",
+        "description": "scarf"
+      },
+      "skin": {
+        "type": "color",
+        "default": "#e8b48c",
+        "description": "skin"
+      }
+    },
+    "size": [
+      0.823,
+      1.835,
+      0.799
+    ]
+  },
+  {
+    "id": "hero-fountain",
+    "description": "Ornate fountain: Three-tier sandstone fountain, 3.4 m wide x 3 m tall: octagonal basin R1.7 h0.82 with moulded rim and 8 carved panels; fluted column r0.22 to y1.3; scalloped bowl 1 r1.0 (y1.25-1.7); stem r0.14; bowl 2 r0.62 (y1.95-2.3); stem r0.08; pinecone finial to y3.0; blue em",
+    "category": "architecture",
+    "keywords": [
+      "ornate fountain",
+      "tiered fountain",
+      "plaza fountain"
+    ],
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 3.4,
+        "min": 1.5,
+        "max": 8,
+        "description": "overall width in meters"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#c9a77c",
+        "description": "sandstone color"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#4fa8e8",
+        "description": "water color"
+      },
+      "panels": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "carved panels on basin (1 = yes)"
+      }
+    },
+    "size": [
+      3.44,
+      3.15,
+      3.44
+    ]
+  },
+  {
+    "id": "hero-gazebo",
+    "description": "Garden gazebo: Victorian octagonal gazebo, 4 m across corners, 4.6 m tall. Deck: raised octagon 0.5 m with skirt, 2 entry steps (0.17/0.33) on +Z face. 8 turned lathe columns 2.6 m tall at corners; eave beams 0.15 m; fretwork triangle brackets at beam ends; railing 0.9 m (bottom ra",
+    "category": "architecture",
+    "keywords": [
+      "gazebo",
+      "garden pavilion",
+      "bandstand"
+    ],
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 4,
+        "min": 2,
+        "max": 8,
+        "description": "width across corners in meters"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.6,
+        "min": 2.5,
+        "max": 9,
+        "description": "total height in meters"
+      },
+      "color": {
+        "type": "color",
+        "default": "#f4f2ec",
+        "description": "painted wood color"
+      },
+      "roofColor": {
+        "type": "color",
+        "default": "#4a5058",
+        "description": "slate roof color"
+      },
+      "deckColor": {
+        "type": "color",
+        "default": "#9c7a52",
+        "description": "deck color"
+      },
+      "balusters": {
+        "type": "int",
+        "default": 7,
+        "min": 3,
+        "max": 12,
+        "description": "balusters per railing panel"
+      }
+    },
+    "size": [
+      4.619,
+      4.81,
+      5.055
+    ]
+  },
+  {
+    "id": "hero-lantern",
+    "description": "Victorian street lantern: Victorian gas street lantern, 4.2 m default. Plinth step 0.1 h r0.3; fluted lathe base 0.9 h (r0.22 -> 0.09) with 8 half-round rib flutes 0.03 deep; tapered post r0.075->0.045 to 3.4 m; brass rings 0.02 h at 0.95/1.5/3.2 m; ladder bar 0.7 wide r0.0125 at 3",
+    "category": "props",
+    "keywords": [
+      "victorian lantern",
+      "gas lamp",
+      "old street lamp"
+    ],
+    "params": {
+      "brassColor": {
+        "type": "color",
+        "default": "#c8963c",
+        "description": "brass color"
+      },
+      "glowColor": {
+        "type": "color",
+        "default": "#ffb840",
+        "description": "glass glow color"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.2,
+        "min": 2,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "ironColor": {
+        "type": "color",
+        "default": "#1f2b25",
+        "description": "iron color"
+      }
+    },
+    "size": [
+      0.78,
+      4.48,
+      0.64
+    ]
+  },
+  {
+    "id": "hero-ship",
+    "description": "Sailing galleon: Galleon ~14.2 m long (hull 11.5 + bowsprit at 18 deg), beam 4.3. 60 lofted cross-sections with strong sheer (deck 2.2 mid, 3.0 at ends), raised keel at bow/stern; gold wale and rail 0.14 m; 6 red-framed gun ports per side; two-tier stern castle ~2.3 m above deck wi",
+    "category": "vehicles",
+    "keywords": [
+      "galleon",
+      "sailing ship",
+      "tall ship"
+    ],
+    "params": {
+      "billow": {
+        "type": "number",
+        "default": 0.8,
+        "min": 0,
+        "max": 1.5,
+        "description": "sail billow depth"
+      },
+      "hullColor": {
+        "type": "color",
+        "default": "#3a2312",
+        "description": "dark varnished wood"
+      },
+      "lanternColor": {
+        "type": "color",
+        "default": "#ffcf6a",
+        "description": "lantern and window glow"
+      },
+      "pennantColor": {
+        "type": "color",
+        "default": "#c0281e",
+        "description": "pennants"
+      },
+      "sailColor": {
+        "type": "color",
+        "default": "#f1e6c8",
+        "description": "sail cloth"
+      },
+      "sailTiers": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 3,
+        "description": "sails on main and fore masts"
+      },
+      "trimColor": {
+        "type": "color",
+        "default": "#d4a017",
+        "description": "gold trim"
+      }
+    },
+    "size": [
+      5.3,
+      13.05,
+      15.134
+    ]
+  },
+  {
+    "id": "hero-statue",
+    "description": "Ancient statue: Classical marble statue, 2.8 m default. Plinth: base 0.9x0.2, step 0.75x0.15, die 0.6x0.5 with 0.4x0.12 inscription plate and 3 raised lines, cap 0.72x0.1 (top at 0.95). Figure on top: wide robe lathe hem r0.30 to waist 0.2 to shoulders 0.22 with 0.03-0.04 ring step",
+    "category": "props",
+    "keywords": [
+      "ancient statue",
+      "marble statue",
+      "classical statue"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 2.8,
+        "min": 1,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "marbleColor": {
+        "type": "color",
+        "default": "#f0eee8",
+        "description": "marble color"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#6b6b68",
+        "description": "plinth stone color"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 8,
+        "min": -20,
+        "max": 20,
+        "description": "head tilt degrees"
+      },
+      "veining": {
+        "type": "number",
+        "default": 0.45,
+        "min": 0,
+        "max": 1,
+        "description": "vein strength"
+      },
+      "wreathColor": {
+        "type": "color",
+        "default": "#d9d6cb",
+        "description": "wreath color"
+      }
+    },
+    "size": [
+      0.974,
+      2.838,
+      0.9
+    ]
+  },
+  {
     "id": "hot-air-balloon",
     "description": "Hot air balloon: a striped teardrop envelope, ropes and a wicker basket with a burner, hovering 1 m above its base point",
     "category": "vehicles",
@@ -1370,6 +1761,14 @@ export const LIBRARY_LOADERS: Readonly<Record<string, () => Promise<unknown>>> =
   'ferris-wheel': () => import('../library/ferris-wheel.json'),
   'fountain': () => import('../library/fountain.json'),
   'helicopter': () => import('../library/helicopter.json'),
+  'hero-car': () => import('../library/hero-car.json'),
+  'hero-cherry-tree': () => import('../library/hero-cherry-tree.json'),
+  'hero-explorer': () => import('../library/hero-explorer.json'),
+  'hero-fountain': () => import('../library/hero-fountain.json'),
+  'hero-gazebo': () => import('../library/hero-gazebo.json'),
+  'hero-lantern': () => import('../library/hero-lantern.json'),
+  'hero-ship': () => import('../library/hero-ship.json'),
+  'hero-statue': () => import('../library/hero-statue.json'),
   'hot-air-balloon': () => import('../library/hot-air-balloon.json'),
   'igloo': () => import('../library/igloo.json'),
   'jellyfish': () => import('../library/jellyfish.json'),

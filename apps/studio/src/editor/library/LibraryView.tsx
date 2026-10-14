@@ -19,6 +19,9 @@ export const CATEGORY_LABELS: ReadonlyArray<readonly [AssetCategory, string]> = 
 
 type Filter = AssetCategory | 'all' | 'favorites';
 
+/** Tiles per category section while browsing everything. */
+const BROWSE_PER_CATEGORY = 9;
+
 /** Pack title + licence line for a tile tooltip. */
 function sourceLine(catalog: Catalog, e: CatalogEntry): string {
   const pack = catalog.packs.find((p) => p.id === e.pack);
@@ -103,6 +106,7 @@ export const LibraryView = memo(function LibraryView({ query }: { query: string 
     // Browsing (no query): favourites first, then the catalog order.
     return query.trim() === '' && filter === 'all' ? [...filtered.filter((e) => fav.has(e.id)), ...filtered.filter((e) => !fav.has(e.id))] : filtered;
   }, [catalog, favorites, filter, query]);
+  const browsing = query.trim() === '' && filter === 'all';
   if (!catalog) return <p className="panel-empty">Loading the asset library…</p>;
   if (catalog.entries.length === 0) return <p className="panel-empty">The asset library is not installed in this build.</p>;
   const fav = new Set(favorites);
@@ -130,6 +134,51 @@ export const LibraryView = memo(function LibraryView({ query }: { query: string 
       </div>
       {list.length === 0 ? (
         <p className="panel-empty">No assets match{query ? ` “${query}”` : ''}. Try another word, or ask the agent to build it.</p>
+      ) : browsing ? (
+        // Browsing everything: favourites, then one short section per category, in a curated order.
+        [
+          favorites.length > 0 ? (
+            <section key="favorites" className="assets__section" aria-labelledby="lib-favorites">
+              <header className="assets__head">
+                <h3 id="lib-favorites" className="assets__title">
+                  Favourites
+                </h3>
+              </header>
+              <div className="tile-grid asset-grid">
+                {favorites
+                  .map((id) => catalog.entries.find((e) => e.id === id))
+                  .filter((e): e is CatalogEntry => e !== undefined)
+                  .map((e) => (
+                    <AssetTile key={e.id} entry={e} catalog={catalog} favorite disabled={playing} />
+                  ))}
+              </div>
+            </section>
+          ) : null,
+          ...CATEGORY_LABELS.map(([cat, label]) => {
+          const all = catalog.entries.filter((e) => e.category === cat);
+          if (all.length === 0) return null;
+          const shown = all.slice(0, BROWSE_PER_CATEGORY);
+          return (
+            <section key={cat} className="assets__section" aria-labelledby={`lib-${cat}`}>
+              <header className="assets__head">
+                <h3 id={`lib-${cat}`} className="assets__title">
+                  {label}
+                </h3>
+                {all.length > shown.length && (
+                  <button type="button" className="link-btn assets__more" onClick={() => setFilter(cat)}>
+                    All {all.length}
+                  </button>
+                )}
+              </header>
+              <div className="tile-grid asset-grid">
+                {shown.map((e) => (
+                  <AssetTile key={e.id} entry={e} catalog={catalog} favorite={fav.has(e.id)} disabled={playing} />
+                ))}
+              </div>
+            </section>
+          );
+          }),
+        ]
       ) : (
         <div className="tile-grid asset-grid" data-count={list.length}>
           {list.map((e) => (

@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-car",
+    "description": "Vintage roadster: 1930s roadster 4.3 m long, ~1.8 m wide track 1.5, ~1.4 m tall. Hood 1.4 m, tall chrome grille 0.75 h, 4 wheels R0.38 with whitewall and 20 spokes, extruded arching cream fenders, running boards, 2 chrome headlamps Ø0.28, split windscreen, folded soft top, rear spa",
+    "category": "vehicles",
+    "keywords": [
+      "vintage car",
+      "classic car",
+      "roadster",
+      "old car"
+    ],
+    "params": {
+      "length": {
+        "type": "number",
+        "default": 4.3,
+        "min": 2,
+        "max": 8,
+        "description": "car length in m"
+      },
+      "bodyColor": {
+        "type": "color",
+        "default": "#5a0f1e",
+        "description": "paint"
+      },
+      "fenderColor": {
+        "type": "color",
+        "default": "#efe3c2",
+        "description": "fender colour"
+      },
+      "topColor": {
+        "type": "color",
+        "default": "#2a2622",
+        "description": "soft top"
+      },
+      "seatColor": {
+        "type": "color",
+        "default": "#8a5a2e",
+        "description": "leather"
+      }
+    },
+    "size": [
+      1.8,
+      1.528,
+      4.2
+    ]
+  },
+  "def": {
+    "id": "hero-car",
+    "description": "1930s roadster 4.3 m long, ~1.8 m wide track 1.5, ~1.4 m tall. Hood 1.4 m, tall chrome grille 0.75 h, 4 wheels R0.38 with whitewall and 20 spokes, extruded arching cream fenders, running boards, 2 chrome headlamps Ø0.28, split windscreen, folded soft top, rear spare wheel, bumpers. Burgundy body, cream fenders, chrome trim.",
+    "params": {
+      "length": {
+        "type": "number",
+        "default": 4.3,
+        "min": 2,
+        "max": 8,
+        "description": "car length in m"
+      },
+      "bodyColor": {
+        "type": "color",
+        "default": "#5a0f1e",
+        "description": "paint"
+      },
+      "fenderColor": {
+        "type": "color",
+        "default": "#efe3c2",
+        "description": "fender colour"
+      },
+      "topColor": {
+        "type": "color",
+        "default": "#2a2622",
+        "description": "soft top"
+      },
+      "seatColor": {
+        "type": "color",
+        "default": "#8a5a2e",
+        "description": "leather"
+      }
+    },
+    "source": "const S = params.length / 4.3;\nconst paint = { preset: 'metal', color: params.bodyColor, metalness: 0.5, roughness: 0.25 };\nconst cream = { preset: 'metal', color: params.fenderColor, metalness: 0.4, roughness: 0.3 };\nconst chrome = { preset: 'metal', color: '#d8dce2', metalness: 1, roughness: 0.12 };\nconst rubber = { preset: 'rubber', color: '#161616', roughness: 0.9 };\nconst dark = { preset: 'metal', color: '#1c1c1f', metalness: 0.5, roughness: 0.6 };\nconst top = { preset: 'fabric', color: params.topColor, roughness: 0.95 };\nconst leather = { preset: 'fabric', color: params.seatColor, roughness: 0.7 };\nconst glass = { preset: 'glass', color: '#9fd0e8', opacity: 0.35, roughness: 0.05 };\nconst lens = { preset: 'emissive', color: '#fff6c8', emissive: '#fff0b0', emissiveIntensity: 2 };\nfunction A(m, mat) { m.scale(S); api.add(m, mat); }\nfunction C(hx, hy, hz, x, y, z) { api.collider({ kind: 'box', halfExtents: [hx * S, hy * S, hz * S], offset: [x * S, y * S, z * S] }); }\nfunction wheel(x, y, z, spare) {\n  const sg = x > 0 ? 1 : -1;\n  const place = (m) => { if (spare) { m.translate(x, y, z); } else { m.translate(x, y, z); } return m; };\n  const ry = spare ? 0 : 90;\n  const rim = (m) => { m.rotate(0, ry, 0); return place(m); };\n  A(rim(api.torus(0.31, 0.07)), rubber);\n  const ww = api.lathe([[0.22, 0], [0.285, 0], [0.285, 0.02], [0.22, 0.02], [0.22, 0]], 28);\n  if (spare) { ww.rotate(90, 0, 0).translate(0, 0, 0.06); } else { ww.rotate(0, 0, 90).translate(sg * 0.06, 0, 0); }\n  place(ww);\n  A(ww, { preset: 'plastic', color: '#f4f1e6', roughness: 0.6 });\n  A(rim(api.torus(0.215, 0.015)), chrome);\n  for (let i = 0; i < 10; i++) {\n    const sp = api.box(0.015, 0.44, 0.015);\n    if (spare) { sp.rotate(0, 0, i * 18); } else { sp.rotate(i * 18, 0, 0); }\n    A(place(sp), chrome);\n  }\n  const hub = api.sphere(0.065, 2);\n  if (spare) hub.scale(1, 1, 0.6); else hub.scale(0.6, 1, 1);\n  A(place(hub), chrome);\n}\nconst fx = 0.75, zf = 1.2, zr = -1.3;\nwheel(fx, 0.38, zf); wheel(-fx, 0.38, zf); wheel(fx, 0.38, zr); wheel(-fx, 0.38, zr);\nwheel(0, 0.78, -2.12, true);\nA(api.box(0.5, 0.06, 0.1).translate(0, 0.35, -2.12), dark);\nA(api.cylinder(0.025, 0.025, 1.5, 8).rotate(0, 0, 90).translate(0, 0.38, zf), dark);\nA(api.cylinder(0.025, 0.025, 1.5, 8).rotate(0, 0, 90).translate(0, 0.38, zr), dark);\n// chassis\nA(api.box(0.7, 0.12, 3.5).translate(0, 0.38, -0.1), dark);\n// fenders\nfunction arch() {\n  const pts = [];\n  for (let a = 215; a >= -35; a -= 12.5) pts.push([Math.cos(a * Math.PI / 180) * 0.53, 0.38 + Math.sin(a * Math.PI / 180) * 0.53]);\n  for (let a = -35; a <= 215; a += 12.5) pts.push([Math.cos(a * Math.PI / 180) * 0.45, 0.38 + Math.sin(a * Math.PI / 180) * 0.45]);\n  return pts;\n}\nconst ar = arch();\nfor (const sx of [1, -1]) {\n  for (const z of [zf, zr]) {\n    A(api.extrude(ar, 0.3).rotate(0, 90, 0).translate(sx * fx, 0, z), cream);\n  }\n  // running board\n  A(api.box(0.26, 0.04, 1.6).translate(sx * 0.7, 0.4, -0.05), dark);\n  A(api.box(0.03, 0.045, 1.6).translate(sx * 0.83, 0.4, -0.05), chrome);\n  // fender brace to body\n  A(api.box(0.22, 0.05, 0.9).translate(sx * 0.62, 0.62, zf + 0.1), cream);\n  A(api.box(0.22, 0.05, 0.9).translate(sx * 0.62, 0.62, zr - 0.05), cream);\n  // headlamps\n  A(api.sphere(0.14, 3).translate(sx * 0.55, 0.98, 1.5), chrome);\n  A(api.sphere(0.1, 2).scale(1, 1, 0.5).translate(sx * 0.55, 0.98, 1.62), lens);\n  A(api.cylinder(0.02, 0.02, 0.3, 6).translate(sx * 0.55, 0.8, 1.45), chrome);\n}\n// body\nA(api.box(0.95, 0.45, 2.2).translate(0, 0.72, -0.85), paint);\nA(api.box(0.8, 0.5, 1.4).translate(0, 0.85, 0.9), paint);\nA(api.box(0.7, 0.04, 1.3).translate(0, 1.12, 0.9), paint);\nA(api.cylinder(0.3, 0.38, 0.3, 16).scale(1, 1, 1.4).rotate(90, 0, 0).translate(0, 0.78, -2.0), paint);\nA(api.box(0.6, 0.06, 1.4).translate(0, 1.15, 0.9), paint);\n// hood louvres\nfor (let i = 0; i < 6; i++) for (const sx of [1, -1]) A(api.box(0.02, 0.18, 0.04).translate(sx * 0.405, 0.9, 0.5 + i * 0.12), chrome);\n// grille\nA(api.box(0.52, 0.8, 0.07).translate(0, 0.98, 1.63), chrome);\nfor (let i = -4; i <= 4; i++) A(api.box(0.02, 0.7, 0.04).translate(i * 0.05, 0.98, 1.68), dark);\nA(api.box(0.4, 0.07, 0.04).translate(0, 1.4, 1.63), chrome);\nA(api.box(0.62, 0.1, 0.05).translate(0, 0.55, 1.6), paint);\n// bumpers\nA(api.box(1.3, 0.07, 0.05).translate(0, 0.4, 1.85), chrome);\nA(api.box(1.1, 0.07, 0.05).translate(0, 0.4, -2.3), chrome);\n// windscreen\nfor (const sx of [1, -1]) {\n  const px = sx * 0.26;\n  A(api.box(0.4, 0.34, 0.012).rotate(-14, 0, 0).translate(px, 1.33, 0.22), glass);\n  A(api.box(0.44, 0.025, 0.03).rotate(-14, 0, 0).translate(px, 1.51, 0.19), chrome);\n  A(api.box(0.025, 0.4, 0.03).rotate(-14, 0, 0).translate(sx * 0.46, 1.33, 0.21), chrome);\n}\nA(api.box(0.03, 0.4, 0.035).rotate(-14, 0, 0).translate(0, 1.33, 0.21), chrome);\nA(api.box(0.9, 0.03, 0.04).translate(0, 1.16, 0.28), chrome);\n// seats\nfor (const sx of [1, -1]) {\n  A(api.box(0.4, 0.12, 0.45).translate(sx * 0.24, 0.98, -0.3), leather);\n  A(api.box(0.4, 0.4, 0.1).rotate(-8, 0, 0).translate(sx * 0.24, 1.2, -0.55), leather);\n}\nA(api.box(0.85, 0.04, 0.4).translate(0, 0.93, 0.0), dark);\n// folded soft top\nA(api.box(0.9, 0.18, 0.4).translate(0, 1.07, -1.1), top);\nA(api.cylinder(0.14, 0.14, 0.9, 12).rotate(0, 0, 90).translate(0, 1.2, -1.1), top);\nA(api.box(0.9, 0.2, 0.05).translate(0, 1.0, -0.9), top);\n// tail light\nfor (const sx of [1, -1]) A(api.sphere(0.05, 2).translate(sx * 0.4, 0.8, -2.0), { preset: 'emissive', color: '#c01818', emissive: '#c01818', emissiveIntensity: 1.5 });\n// colliders\nC(0.5, 0.35, 1.1, 0, 0.75, -0.85);\nC(0.42, 0.4, 0.75, 0, 0.85, 0.9);\nC(0.9, 0.2, 2.1, 0, 0.38, -0.1);\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:34:55.116Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 10796,
+    "parts": 11,
+    "colliders": 3
+  }
+}

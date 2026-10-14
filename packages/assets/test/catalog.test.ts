@@ -30,8 +30,8 @@ describe('asset catalog', () => {
     for (const c of ['furniture', 'kitchen', 'bathroom', 'decor', 'plants', 'nature', 'rocks', 'building', 'street', 'vehicles', 'characters', 'animals', 'food', 'tools', 'sky'] as const) expect(cats.has(c), c).toBe(true);
   });
 
-  it('ships only CC0 / CC-BY packs and every pack is referenced', () => {
-    for (const p of catalog.packs) expect(['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
+  it('ships only CC0 / CC-BY third-party packs (first-party forge originals are MIT) and every pack is referenced', () => {
+    for (const p of catalog.packs) expect(p.id === 'aether-forge' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
     const packs = new Set(catalog.packs.map((p) => p.id));
     for (const e of catalog.entries) expect(packs.has(e.pack), `${e.id} pack ${e.pack}`).toBe(true);
   });
@@ -54,8 +54,20 @@ describe('asset catalog', () => {
     expect(total).toBeLessThan(150 * 1024 * 1024);
   });
 
-  it('has a thumbnail for every model and sky', () => {
-    for (const e of catalog.entries) if (e.kind !== 'generator') expect(e.thumb, e.id).toBeTruthy();
+  it('has a thumbnail for every model, sky and forge original', () => {
+    for (const e of catalog.entries) expect(e.thumb, e.id).toBeTruthy();
+  });
+
+  it('forge originals are library generators that ship with the app', async () => {
+    const { GENERATOR_LIBRARY } = await import('@aether/procgen');
+    const lib = new Set(GENERATOR_LIBRARY.map((g) => g.id));
+    const heroes = catalog.entries.filter((e) => e.kind === 'generator');
+    expect(heroes.length).toBeGreaterThanOrEqual(6);
+    expect(heroes.length).toBeLessThanOrEqual(8);
+    for (const h of heroes) {
+      expect(h.pack).toBe('aether-forge');
+      expect(lib.has(h.generator!.id), h.id).toBe(true);
+    }
   });
 
   it('records provenance (licence, source, file checksums) for every asset', () => {

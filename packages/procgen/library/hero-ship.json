@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-ship",
+    "description": "Sailing galleon: Galleon ~14.2 m long (hull 11.5 + bowsprit at 18 deg), beam 4.3. 60 lofted cross-sections with strong sheer (deck 2.2 mid, 3.0 at ends), raised keel at bow/stern; gold wale and rail 0.14 m; 6 red-framed gun ports per side; two-tier stern castle ~2.3 m above deck wi",
+    "category": "vehicles",
+    "keywords": [
+      "galleon",
+      "sailing ship",
+      "tall ship"
+    ],
+    "params": {
+      "billow": {
+        "type": "number",
+        "default": 0.8,
+        "min": 0,
+        "max": 1.5,
+        "description": "sail billow depth"
+      },
+      "hullColor": {
+        "type": "color",
+        "default": "#3a2312",
+        "description": "dark varnished wood"
+      },
+      "lanternColor": {
+        "type": "color",
+        "default": "#ffcf6a",
+        "description": "lantern and window glow"
+      },
+      "pennantColor": {
+        "type": "color",
+        "default": "#c0281e",
+        "description": "pennants"
+      },
+      "sailColor": {
+        "type": "color",
+        "default": "#f1e6c8",
+        "description": "sail cloth"
+      },
+      "sailTiers": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 3,
+        "description": "sails on main and fore masts"
+      },
+      "trimColor": {
+        "type": "color",
+        "default": "#d4a017",
+        "description": "gold trim"
+      }
+    },
+    "size": [
+      5.3,
+      13.05,
+      15.134
+    ]
+  },
+  "def": {
+    "id": "hero-ship",
+    "description": "Galleon ~14.2 m long (hull 11.5 + bowsprit at 18 deg), beam 4.3. 60 lofted cross-sections with strong sheer (deck 2.2 mid, 3.0 at ends), raised keel at bow/stern; gold wale and rail 0.14 m; 6 red-framed gun ports per side; two-tier stern castle ~2.3 m above deck with 0.65 m aft overhang, windows and lantern; 1.3 m forecastle with rounded front; three masts (12.6/11.2/9.6 m) with yards, wide billowing cream sails 2-3 tiers, shrouds, stays, red pennants.",
+    "params": {
+      "billow": {
+        "type": "number",
+        "default": 0.8,
+        "min": 0,
+        "max": 1.5,
+        "description": "sail billow depth"
+      },
+      "hullColor": {
+        "type": "color",
+        "default": "#3a2312",
+        "description": "dark varnished wood"
+      },
+      "lanternColor": {
+        "type": "color",
+        "default": "#ffcf6a",
+        "description": "lantern and window glow"
+      },
+      "pennantColor": {
+        "type": "color",
+        "default": "#c0281e",
+        "description": "pennants"
+      },
+      "sailColor": {
+        "type": "color",
+        "default": "#f1e6c8",
+        "description": "sail cloth"
+      },
+      "sailTiers": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 3,
+        "description": "sails on main and fore masts"
+      },
+      "trimColor": {
+        "type": "color",
+        "default": "#d4a017",
+        "description": "gold trim"
+      }
+    },
+    "source": "const L=11.5;\nconst hwAt=t=>{let b;if(t<0.4)b=1.75+0.4*Math.sin(t/0.4*Math.PI/2);else b=2.15*Math.pow(Math.cos((t-0.4)/0.6*Math.PI/2),0.8);return Math.max(b,0.1);};\nconst ydAt=t=>{const u=Math.abs(2*t-1);return 2.2+0.8*Math.pow(u,2.2);};\nconst ybAt=t=>0.2+1.5*Math.pow(Math.max(0,(0.3-t)/0.3),2)+0.8*Math.pow(Math.max(0,(0.3-t)/0.3),1)*0+1.6*Math.pow(Math.max(0,(t-0.5)/0.5),2);\nconst slopeDeg=t=>{const e=0.01;const s=(ydAt(Math.min(1,t+e))-ydAt(Math.max(0,t-e)))/((Math.min(1,t+e)-Math.max(0,t-e))*L);return -Math.atan(s)*180/Math.PI;};\nconst HC=params.hullColor,GC=params.trimColor;\nconst woodM={preset:'wood',roughness:0.45,metalness:0.05};\nconst goldM={preset:'gold',color:GC,metalness:0.8,roughness:0.35};\nconst mastM={preset:'wood',color:api.mix(HC,'#5a3a20',0.35),roughness:0.7};\nconst ropeM={preset:'fabric',color:'#6b5a3c',roughness:0.9};\nconst sailM={preset:'fabric',color:params.sailColor,roughness:0.95};\nconst redM={preset:'fabric',color:params.pennantColor,roughness:0.7};\nconst glowM={preset:'emissive',color:params.lanternColor,emissive:params.lanternColor,emissiveIntensity:2.5};\nconst blackM={preset:'plastic',color:'#0a0605',roughness:0.9};\nconst portM={preset:'plastic',color:'#8a1c14',roughness:0.6};\nfunction mg(o,m){if(o.m)o.m.merge(m);else o.m=m;}\nfunction fin(o,mat){if(o.m)api.add(o.m,mat);}\nconst N=60,step=L/N;\nconst hull={m:null},gold={m:null};\nfor(let i=0;i<N;i++){\n const t=(i+0.5)/N,zc=-L/2+t*L;\n const hw=hwAt(t),yb=ybAt(t),yd=ydAt(t),ym=yb+(yd-yb)*0.55,bw=hw*0.3;\n const s=api.extrude([[-bw,yb],[bw,yb],[hw,ym],[hw*0.93,yd+0.45],[-hw*0.93,yd+0.45],[-hw,ym]],step*1.04).translate(0,0,zc);\n s.vertexColor((x,y,z)=>api.mix(HC,'#24140a',0.4*Math.max(0,api.noise2(y*3,zc*2)+0.2)));\n mg(hull,s);\n const sl=slopeDeg(t);\n for(const sd of [-1,1]){\n  mg(gold,api.box(0.15,0.14,step*1.2).rotate(sl*0.0,0,0).translate(sd*(hw+0.02),ym-0.12,zc));\n  mg(gold,api.box(0.2,0.14,step*1.25).rotate(sl,0,0).translate(sd*hw*0.93,yd+0.45,zc));\n }\n}\nfin(hull,woodM);fin(gold,goldM);\nconst ports={m:null},frames={m:null};\nfor(let k=0;k<6;k++){const t=0.3+k*0.08,hw=hwAt(t),yb=ybAt(t),yd=ydAt(t),ym=yb+(yd-yb)*0.55,y=ym+(yd-ym)*0.4+0.05,zc=-L/2+t*L;\n for(const sd of [-1,1]){mg(ports,api.box(0.1,0.3,0.4).translate(sd*(hw*0.985+0.035),y,zc));mg(frames,api.box(0.06,0.4,0.52).translate(sd*(hw*0.985+0.015),y,zc));}}\nfin(frames,portM);fin(ports,blackM);\nconst cast1=api.box(3.3,1.4,2.6).translate(0,3.2,-4.3);cast1.vertexColor(()=>HC);api.add(cast1,woodM);\nconst cast2=api.box(2.9,1.0,2.8).translate(0,4.4,-5.0);cast2.vertexColor(()=>HC);api.add(cast2,woodM);\napi.add(api.box(3.5,0.14,2.6).translate(0,3.93,-4.3),goldM);\napi.add(api.box(3.15,0.14,3.0).translate(0,4.95,-5.0),goldM);\nfor(const sd of [-1,1])for(const zz of [-6.2,-5.4])api.add(api.box(0.12,0.4,0.12).rotate(0,0,sd*30).translate(sd*1.1,3.7,zz),goldM);\nconst win={m:null};\nfor(let k=-1;k<=1;k++){mg(win,api.box(0.5,0.45,0.06).translate(k*0.9,4.4,-6.42));}\nfor(const sd of [-1,1])for(let k=0;k<3;k++){mg(win,api.box(0.06,0.4,0.45).translate(sd*1.47,4.4,-5.9+k*0.95));mg(win,api.box(0.06,0.4,0.45).translate(sd*1.67,3.3,-5.1+k*0.95));}\nfin(win,glowM);\napi.add(api.box(3.0,0.1,0.1).translate(0,4.0,-6.42),goldM);\nconst lz=-6.0;\napi.add(api.cylinder(0.04,0.04,0.7,6).translate(0,5.35,lz),goldM);\napi.add(api.sphere(0.2,2).scale(1,1.3,1).translate(0,5.85,lz),glowM);\napi.add(api.cone(0.25,0.25,8).translate(0,6.22,lz),goldM);\napi.add(api.cylinder(0.24,0.2,0.06,8).translate(0,5.6,lz),goldM);\nconst fc=api.box(1.6,1.3,1.1).translate(0,3.2,3.9);fc.vertexColor(()=>HC);api.add(fc,woodM);\nconst fr=api.cylinder(0.8,0.8,1.3,16).translate(0,3.2,4.45);fr.vertexColor(()=>HC);api.add(fr,woodM);\napi.add(api.cylinder(0.9,0.9,0.12,16).translate(0,3.9,4.45),goldM);\napi.add(api.box(1.8,0.12,1.1).translate(0,3.9,3.9),goldM);\nconst dirY=Math.cos(72*Math.PI/180),dirZ=Math.sin(72*Math.PI/180);\nconst bs=[0,3.0,4.9];\napi.add(api.cylinder(0.06,0.14,3.8,8).rotate(72,0,0).translate(bs[0],bs[1]+dirY*1.9,bs[2]+dirZ*1.9),mastM);\nconst tip=[0,bs[1]+dirY*3.8,bs[2]+dirZ*3.8];\napi.add(api.sphere(0.12,1).translate(tip[0],tip[1],tip[2]),goldM);\nconst masts=[{z:3.0,H:11.2,ws:4.5,n:params.sailTiers},{z:0.3,H:12.6,ws:5.3,n:params.sailTiers},{z:-2.2,H:9.6,ws:3.8,n:Math.min(2,params.sailTiers)}];\nconst y0=2.3;\nfor(const m of masts){\n api.add(api.cylinder(0.07,0.15,m.H-y0,8).translate(0,(m.H+y0)/2,m.z),mastM);\n api.add(api.sphere(0.1,1).translate(0,m.H+0.05,m.z),goldM);\n api.add(api.extrude([[0,0],[0,0.3],[1.3,0.15]],0.02).rotate(0,-90,0).translate(0,m.H+0.2,m.z+0.05),redM);\n const yTop=m.H-0.35,avail=yTop-(y0+1.6),pitch=avail/m.n,sh=pitch*0.96;\n for(let k=0;k<m.n;k++){\n  const yt=yTop-k*pitch,yc=yt-sh/2,yl=m.ws*(1-0.15*k),w=yl*0.88;\n  const bul=params.billow;\n  const f=(x,z)=>{const u=2*x/w,v=2*z/sh;return bul*(1-u*u)*(1-v*v)*(0.6+0.3*v);};\n  const g=(x,z)=>-f(x,z);\n  api.add(api.heightfield(12,8,w,sh,f).rotate(90,0,0).translate(0,yc,m.z+0.22),sailM);\n  api.add(api.heightfield(12,8,w,sh,g).rotate(90,0,0).translate(0,yc,m.z+0.18),sailM);\n  api.add(api.cylinder(0.055,0.055,yl,6).rotate(0,0,90).translate(0,yt,m.z+0.2),mastM);\n }\n api.add(api.cylinder(0.55,0.42,0.25,10).translate(0,m.H-1.0,m.z),mastM);\n}\nconst rope=(pts)=>api.add(api.tube(pts,0.014,4),ropeM);\nfor(const m of masts){\n const t=(m.z+L/2)/L,hw=hwAt(t)*0.95,yd=ydAt(t)+0.5;\n for(const sd of [-1,1])for(const dz of [-0.5,0.1,0.7]){\n  rope([[sd*0.15,m.H*0.78,m.z],[sd*hw,yd,m.z+dz]]);\n }\n}\nrope([[0,11.2,3.0],[0,4.0,7.4]]);\nrope([[0,11.2,3.0],tip]);\nrope([[0,12.6,0.3],[0,11.2,3.0]]);\nrope([[0,12.6,0.3],[0,9.6,-2.2]]);\nrope([[0,9.6,-2.2],[0,5.0,-6.0]]);\napi.add(api.extrude([[0,0],[0,0.5],[1.8,0.4],[1.5,0.25],[1.8,0.1]],0.02).rotate(0,-90,0).translate(0,12.75,0.3),redM);\napi.collider({kind:'box',halfExtents:[2.1,1.8,L/2-0.5],offset:[0,1.9,0]});\napi.collider({kind:'box',halfExtents:[1.6,1.2,2.2],offset:[0,3.8,-4.7]});\napi.collider({kind:'box',halfExtents:[0.9,0.65,1.0],offset:[0,3.2,4.2]});\nfor(const m of masts)api.collider({kind:'cylinder',radius:0.15,halfHeight:(m.H-y0)/2,offset:[0,(m.H+y0)/2,m.z]});\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:32:56.652Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 9504,
+    "parts": 9,
+    "colliders": 6
+  }
+}

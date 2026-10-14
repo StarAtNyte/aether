@@ -57,6 +57,102 @@
       "score": 0.675,
       "iterations": 2,
       "model": "claude-code"
+    },
+    {
+      "id": "hero-ship",
+      "name": "Sailing galleon",
+      "category": "vehicles",
+      "keywords": [
+        "galleon",
+        "sailing ship",
+        "tall ship"
+      ],
+      "size": [
+        5.3,
+        13.05,
+        15.134
+      ],
+      "thumb": "t/hero-ship.5e2a5275.webp",
+      "score": 0.575,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-car",
+      "name": "Vintage roadster",
+      "category": "vehicles",
+      "keywords": [
+        "vintage car",
+        "classic car",
+        "roadster",
+        "old car"
+      ],
+      "size": [
+        1.8,
+        1.528,
+        4.2
+      ],
+      "thumb": "t/hero-car.854b2f24.webp",
+      "score": 0.5,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-explorer",
+      "name": "Stylised explorer",
+      "category": "characters",
+      "keywords": [
+        "explorer",
+        "adventurer",
+        "hiker figure"
+      ],
+      "size": [
+        0.823,
+        1.835,
+        0.799
+      ],
+      "thumb": "t/hero-explorer.1afdb01a.webp",
+      "score": 0.615,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-cherry-tree",
+      "name": "Cherry blossom tree",
+      "category": "nature",
+      "keywords": [
+        "cherry blossom",
+        "sakura tree",
+        "blossom tree"
+      ],
+      "size": [
+        8.072,
+        6.012,
+        8.628
+      ],
+      "thumb": "t/hero-cherry-tree.123a7228.webp",
+      "score": 0.475,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-gazebo",
+      "name": "Garden gazebo",
+      "category": "building",
+      "keywords": [
+        "gazebo",
+        "garden pavilion",
+        "bandstand"
+      ],
+      "size": [
+        4.619,
+        4.81,
+        5.055
+      ],
+      "thumb": "t/hero-gazebo.0f5717c9.webp",
+      "score": 0.675,
+      "iterations": 2,
+      "model": "claude-code"
     }
   ]
 }

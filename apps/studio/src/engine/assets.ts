@@ -184,12 +184,9 @@ export class AssetController {
     const asset = { size: info.size, placement: info.entry?.placement ?? (info.kind === 'image' ? 'wall' : 'floor'), facing: info.entry?.facing ?? '+z' } as const;
     const cam = sim.renderer.camera.position;
     const camera: Vec3 = [cam.x, cam.y, cam.z];
-    if (!ndc) {
-      const p = sim.placementPoint();
-      return placeAsset({ hit: { point: p, normal: [0, 1, 0] }, ray: { origin: camera, direction: [0, -1, 0] }, camera, asset });
-    }
-    const hit = sim.renderer.raycastEntity(ndc.x, ndc.y);
-    const ray = sim.renderer.cursorRay(ndc.x, ndc.y);
+    const at = ndc ?? { x: 0, y: -0.15 };
+    const hit = sim.renderer.raycastEntity(at.x, at.y);
+    const ray = sim.renderer.cursorRay(at.x, at.y);
     const floorAt = (x: number, z: number): number => {
       const down = sim.renderer.raycastWorld([x, (hit?.point[1] ?? 0) + 0.5, z], [0, -1, 0], 50);
       return down && down.normal[1] > 0.6 ? down.point[1] : 0;
@@ -198,6 +195,29 @@ export class AssetController {
   }
 
   private previewAt = 0;
+  private lastClick: { position: Vec3; width: number } | null = null;
+
+  /** Offset a click placement sideways (camera right) when it would land on the previous one. */
+  private besideLast(p: Vec3, size: Readonly<Vec3>): Vec3 {
+    const width = Math.max(size[0], size[2]);
+    const last = this.lastClick;
+    let out: Vec3 = p;
+    const sim = this.host.simulation;
+    if (last && sim && Math.hypot(last.position[0] - p[0], last.position[2] - p[2]) < (last.width + width) / 2) {
+      const cam = sim.renderer.camera;
+      // Camera right vector projected on the ground.
+      const yaw = Math.atan2(cam.matrixWorld.elements[8] ?? 0, cam.matrixWorld.elements[10] ?? 1);
+      const rx = Math.cos(yaw);
+      const rz = -Math.sin(yaw);
+      const step = (last.width + width) / 2 + 0.3;
+      const x = Math.round((last.position[0] + rx * step) * 100) / 100;
+      const z = Math.round((last.position[2] + rz * step) * 100) / 100;
+      const down = sim.renderer.raycastWorld([x, Math.max(p[1], last.position[1]) + 3, z], [0, -1, 0], 60);
+      out = [x, down && down.normal[1] > 0.6 ? Math.round(down.point[1] * 100) / 100 : 0, z];
+    }
+    this.lastClick = { position: out, width };
+    return out;
+  }
 
   /**
    * Translucent preview of where a dragged asset would land (the ghost
@@ -257,6 +277,8 @@ export class AssetController {
     }
     const at = this.placement(id, ndc);
     if (!at) return null;
+    // Clicking several tiles in a row lines the objects up instead of stacking them.
+    if (!ndc) at.position = this.besideLast(at.position, info.size);
     const world = this.host.history.current;
     const entityId = uniqueId(world, id.replace(/^user-/, 'import-').slice(0, 48));
     const entity: EntityInput = {

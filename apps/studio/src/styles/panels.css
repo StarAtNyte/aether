@@ -2275,3 +2275,13 @@ button.chip:disabled {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.assets__more {
+  flex: none;
+  font-size: var(--fs-11);
+  text-decoration: none;
+}
+
+.assets__more:hover {
+  text-decoration: underline;
+}

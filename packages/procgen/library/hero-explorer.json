@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-explorer",
+    "description": "Stylised explorer: Toy explorer 1.75m: boots 0.17x0.14x0.28; legs d0.14 y0.12-0.8 gap 0.04; torso ellipsoid 0.38w x 0.24d x 0.48h (y0.8-1.28) with olive vest; shoulders y1.22, arms d0.09 L0.45 angled 18deg out; scarf at 1.3; head r0.23 at 1.47; wide brim hat r0.38 brim 0.02 tilted,",
+    "category": "props",
+    "keywords": [
+      "explorer",
+      "adventurer",
+      "hiker figure"
+    ],
+    "params": {
+      "boots": {
+        "type": "color",
+        "default": "#5a3820",
+        "description": "boots"
+      },
+      "height": {
+        "type": "number",
+        "default": 1.75,
+        "min": 0.5,
+        "max": 4,
+        "description": "total height m"
+      },
+      "khaki": {
+        "type": "color",
+        "default": "#c2a878",
+        "description": "clothing"
+      },
+      "olive": {
+        "type": "color",
+        "default": "#6b7040",
+        "description": "vest/hat band"
+      },
+      "scarf": {
+        "type": "color",
+        "default": "#c8332b",
+        "description": "scarf"
+      },
+      "skin": {
+        "type": "color",
+        "default": "#e8b48c",
+        "description": "skin"
+      }
+    },
+    "size": [
+      0.823,
+      1.835,
+      0.799
+    ]
+  },
+  "def": {
+    "id": "hero-explorer",
+    "description": "Toy explorer 1.75m: boots 0.17x0.14x0.28; legs d0.14 y0.12-0.8 gap 0.04; torso ellipsoid 0.38w x 0.24d x 0.48h (y0.8-1.28) with olive vest; shoulders y1.22, arms d0.09 L0.45 angled 18deg out; scarf at 1.3; head r0.23 at 1.47; wide brim hat r0.38 brim 0.02 tilted, crown 0.12; pack 0.3x0.42x0.16 at z-0.2 with bedroll r0.07 L0.42 across top.",
+    "params": {
+      "boots": {
+        "type": "color",
+        "default": "#5a3820",
+        "description": "boots"
+      },
+      "height": {
+        "type": "number",
+        "default": 1.75,
+        "min": 0.5,
+        "max": 4,
+        "description": "total height m"
+      },
+      "khaki": {
+        "type": "color",
+        "default": "#c2a878",
+        "description": "clothing"
+      },
+      "olive": {
+        "type": "color",
+        "default": "#6b7040",
+        "description": "vest/hat band"
+      },
+      "scarf": {
+        "type": "color",
+        "default": "#c8332b",
+        "description": "scarf"
+      },
+      "skin": {
+        "type": "color",
+        "default": "#e8b48c",
+        "description": "skin"
+      }
+    },
+    "source": "const s = params.height / 1.75;\nconst cloth = { preset: 'fabric', color: params.khaki, roughness: 0.9 };\nconst oliveM = { preset: 'fabric', color: params.olive, roughness: 0.9 };\nconst skinM = { preset: 'plastic', color: params.skin, roughness: 0.6 };\nconst scarfM = { preset: 'fabric', color: params.scarf, roughness: 0.85 };\nconst bootM = { preset: 'rubber', color: params.boots, roughness: 0.8 };\nconst dark = { preset: 'plastic', color: '#1d1d1d', roughness: 0.4 };\nconst add = (m, mat) => { api.add(m.scale(s), mat); };\nfor (const sx of [-1, 1]) {\n  add(api.box(0.17, 0.12, 0.22).translate(sx * 0.09, 0.07, 0.0), bootM);\n  add(api.sphere(0.085, 2).scale(1, 0.75, 1).translate(sx * 0.09, 0.065, 0.12), bootM);\n  add(api.cylinder(0.08, 0.085, 0.16, 12).translate(sx * 0.09, 0.2, -0.01), bootM);\n  add(api.cylinder(0.072, 0.07, 0.6, 14).translate(sx * 0.09, 0.5, 0), cloth);\n  add(api.cylinder(0.078, 0.078, 0.04, 14).translate(sx * 0.09, 0.3, 0), oliveM);\n  // arm\n  const arm = api.capsule(0.045, 0.45).translate(0, -0.225, 0).rotate(0, 0, sx * 18).translate(sx * 0.2, 1.22, 0);\n  add(arm, cloth);\n  add(api.sphere(0.065, 2).translate(sx * 0.2, 1.22, 0), cloth);\n  const ex = sx * (0.2 + 0.4 * Math.sin(18 * Math.PI / 180));\n  const ey = 1.22 - 0.4 * Math.cos(18 * Math.PI / 180);\n  add(api.cylinder(0.052, 0.052, 0.05, 12).translate(0, -0.03, 0).rotate(0, 0, sx * 18).translate(ex, ey, 0), oliveM);\n  const hx = sx * (0.2 + 0.49 * Math.sin(18 * Math.PI / 180));\n  const hy = 1.22 - 0.49 * Math.cos(18 * Math.PI / 180);\n  add(api.sphere(0.06, 2).translate(hx, hy, 0), skinM);\n  // eyes\n  add(api.sphere(0.03, 2).scale(1, 1.3, 0.5).translate(sx * 0.08, 1.5, 0.215), dark);\n  // vest pockets\n  add(api.box(0.09, 0.09, 0.03).translate(sx * 0.09, 0.95, 0.13), cloth);\n}\n// pelvis + torso\nadd(api.sphere(1, 3).scale(0.19, 0.12, 0.12).translate(0, 0.84, 0), cloth);\nadd(api.sphere(1, 3).scale(0.19, 0.25, 0.12).translate(0, 1.04, 0), cloth);\nadd(api.sphere(1, 3).scale(0.2, 0.2, 0.13).translate(0, 1.02, 0.005), oliveM);\nadd(api.cylinder(0.185, 0.19, 0.05, 16).scale(1, 1, 0.68).translate(0, 0.86, 0), oliveM);\nadd(api.box(0.04, 0.4, 0.01).translate(0, 1.02, 0.132), cloth);\n// scarf\nadd(api.torus(0.14, 0.05).rotate(90, 0, 0).translate(0, 1.3, 0), scarfM);\nadd(api.box(0.08, 0.26, 0.04).translate(0.1, 1.15, 0.14).rotate(0, 0, 4), scarfM);\n// head\nadd(api.sphere(0.23, 4).translate(0, 1.47, 0), skinM);\nadd(api.sphere(0.04, 2).translate(0, 1.44, 0.23), skinM);\n// hat\nadd(api.cylinder(0.19, 0.22, 0.12, 18).translate(0, 1.7, 0), cloth);\nadd(api.sphere(0.19, 3).scale(1, 0.4, 1).translate(0, 1.76, 0), cloth);\nadd(api.cylinder(0.38, 0.4, 0.02, 28).rotate(3, 0, 0).translate(0, 1.64, 0), cloth);\nadd(api.cylinder(0.215, 0.222, 0.04, 18).translate(0, 1.67, 0), oliveM);\n// backpack\nadd(api.box(0.3, 0.42, 0.16).translate(0, 1.04, -0.2), oliveM);\nadd(api.box(0.24, 0.12, 0.04).translate(0, 0.95, -0.29), cloth);\nfor (const sx of [-1, 1]) add(api.box(0.04, 0.38, 0.02).translate(sx * 0.1, 1.08, 0.0).translate(0, 0, 0.115), oliveM);\nadd(api.cylinder(0.07, 0.07, 0.42, 14).rotate(0, 0, 90).translate(0, 1.3, -0.2), cloth);\nfor (const sx of [-1, 1]) add(api.cylinder(0.072, 0.072, 0.02, 14).rotate(0, 0, 90).translate(sx * 0.15, 1.3, -0.2), oliveM);\napi.collider({ kind: 'capsule', halfHeight: 0.4 * s, radius: 0.2 * s, offset: [0, 0.95 * s, -0.04 * s] });\napi.collider({ kind: 'box', halfExtents: [0.15 * s, 0.4 * s, 0.1 * s], offset: [0, 0.4 * s, 0] });\napi.collider({ kind: 'cylinder', halfHeight: 0.04 * s, radius: 0.38 * s, offset: [0, 1.65 * s, 0] });\napi.collider({ kind: 'sphere', radius: 0.23 * s, offset: [0, 1.5 * s, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:35:59.154Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 5968,
+    "parts": 6,
+    "colliders": 4
+  }
+}
