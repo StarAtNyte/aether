@@ -256,40 +256,57 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       const play = window.__aether?.simulation?.voxel?.game;
       play?.input.setLook(play.input.yawRad, -1.5);
     });
-    const before = await waitFor(page, 'the player to stand on a targeted block', 15_000, () => page.evaluate(() => {
-      const play = window.__aether?.simulation?.voxel?.game;
-      if (!play) return null;
-      const g = play.game;
-      const b = g.player.body;
-      const t = g.target;
-      if (!b.onGround || Math.abs(b.vy) > 0.01 || !t.valid) return null;
-      return { x: t.hit.x, y: t.hit.y, z: t.hit.z, block: window.__aether?.simulation?.voxel?.blockAt(t.hit.x, t.hit.y, t.hit.z) ?? null };
-    }));
-    check(before.block && before.block !== 'air', `the targeted cell is not solid (${JSON.stringify(before)})`);
     const cx = VIEWPORT.width / 2;
     const cy = VIEWPORT.height / 2;
     await page.mouse.move(cx, cy);
-    await page.mouse.down({ button: 'left' });
-    await waitFor(page, 'a block to break', 15_000, () => page.evaluate((c) => {
-      const v = window.__aether?.simulation?.voxel;
-      const id = v?.blockAt(c.x, c.y, c.z);
-      return id === 'air' ? true : null;
-    }, before));
-    await page.mouse.up({ button: 'left' });
-    // The drop falls and is pulled in by the pickup magnet (game time; may run slower than real time here).
     const startItems = new Set(start.slots.filter((x) => x !== null).map((x) => x.item));
-    const dug = await waitFor(page, 'the broken block to be picked up', 15_000, async () => {
-      const p = await player(page);
-      return p?.slots.find((x) => x !== null && !startItems.has(x.item)) ?? null;
-    }).catch(async (e: unknown) => {
+    // Break what the crosshair targets until something that drops an item came up
+    // (plants and leaves under the crosshair usually drop nothing).
+    let before: { x: number; y: number; z: number; block: string | null } | null = null;
+    let dug: { item: string; count: number } | null = null;
+    for (let attempt = 0; attempt < 5 && !dug; attempt++) {
+      before = await waitFor(page, 'the player to stand on a targeted block', 15_000, () => page.evaluate(() => {
+        const play = window.__aether?.simulation?.voxel?.game;
+        if (!play) return null;
+        const g = play.game;
+        const b = g.player.body;
+        const t = g.target;
+        if (!b.onGround || Math.abs(b.vy) > 0.01 || !t.valid) return null;
+        return { x: t.hit.x, y: t.hit.y, z: t.hit.z, block: window.__aether?.simulation?.voxel?.blockAt(t.hit.x, t.hit.y, t.hit.z) ?? null };
+      }));
+      check(before.block && before.block !== 'air', `the targeted cell is not solid (${JSON.stringify(before)})`);
+      const target = before;
+      await page.mouse.down({ button: 'left' });
+      await waitFor(page, 'a block to break', 15_000, () => page.evaluate((c) => {
+        const v = window.__aether?.simulation?.voxel;
+        const id = v?.blockAt(c.x, c.y, c.z);
+        return id === 'air' ? true : null;
+      }, target));
+      await page.mouse.up({ button: 'left' });
+      // The drop falls and is pulled in by the pickup magnet (game time; may run slower than real time here).
+      dug = await waitFor(page, 'the broken block to be picked up', 6_000, async () => {
+        const p = await player(page);
+        return p?.slots.find((x) => x !== null && !startItems.has(x.item)) ?? null;
+      }).catch(() => null);
+      if (!dug) {
+        const st = await page.evaluate(() => {
+          const g = window.__aether?.simulation?.voxel?.game?.game;
+          if (!g) return null;
+          const b = g.player.body;
+          return { player: [b.x, b.y, b.z, b.onGround], drops: g.drops.map((d) => [d.item, d.body.x, d.body.y, d.body.z, d.delay]) };
+        });
+        log(`[${label}] broke ${JSON.stringify(before)}: nothing picked up (${JSON.stringify(st)})`);
+      }
+    }
+    if (!dug || !before) {
       const state = await page.evaluate(() => {
         const g = window.__aether?.simulation?.voxel?.game?.game;
         if (!g) return null;
         const b = g.player.body;
         return { player: [b.x, b.y, b.z, b.onGround], mode: g.settings.mode, drops: g.drops.map((d) => [d.item, d.count, d.body.x, d.body.y, d.body.z, d.delay, d.age]) };
       });
-      throw new E2EFailure(`${e instanceof Error ? e.message : String(e)}; state ${JSON.stringify(state)}; broken ${JSON.stringify(before)}`);
-    });
+      throw new E2EFailure(`no broken block was picked up; state ${JSON.stringify(state)}; last broken ${JSON.stringify(before)}`);
+    }
     const afterBreak = await player(page);
     log(`[${label}] broke ${before.x},${before.y},${before.z} and picked up ${dug.item}`);
 
@@ -371,7 +388,10 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     }, start);
     await page.waitForTimeout(1500);
 
-    // 5. Stop (saves), reload, play: the dug cell is still changed.
+    // 5. Stop (saves), reload, play: the changed cells come back exactly.
+    const cells = [before, placedAt, placedAt ? { x: placedAt.x, y: placedAt.y + 1, z: placedAt.z } : null].filter((c): c is { x: number; y: number; z: number } => c !== null);
+    const readCells = (): Promise<Array<string | null>> => page.evaluate((cs) => cs.map((c: { x: number; y: number; z: number }) => window.__aether?.simulation?.voxel?.blockAt(c.x, c.y, c.z) ?? null), cells);
+    const savedCells = await readCells();
     await stop(page);
     await page.waitForTimeout(500);
     const projectUrl = page.url();
@@ -379,14 +399,13 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(page.url() === projectUrl, 'reload changed the project');
     await waitFor(page, 'the studio to boot again', BOOT_MS, () => page.evaluate(() => (window.__aether?.simulation && window.__aether.store.getState().loading === null ? true : null)));
     await streamed(page);
-    const persisted = await waitFor(page, 'the saved chunk to load', 20_000, () => page.evaluate((c) => {
-      const v = window.__aether?.simulation?.voxel;
-      const id = v?.blockAt(c.x, c.y, c.z);
-      return id && id !== null ? id : null;
-    }, before));
+    const persisted = await waitFor(page, 'the saved chunks to load', 20_000, async () => {
+      const now = await readCells();
+      return now.every((b, i) => b === savedCells[i]) ? now.join('/') : null;
+    });
     const generated = await page.evaluate(() => window.__aether?.simulation?.voxel?.status().changed ?? 0);
     check(generated > 0, 'no modified chunk came back from the save');
-    log(`[${label}] after reload the dug cell holds "${persisted}" (${generated} saved chunk(s) loaded)`);
+    log(`[${label}] after reload the edited cells hold ${persisted} (${generated} saved chunk(s) loaded)`);
     check(errors.length === 0, `page errors:\n${errors.join('\n')}`);
     return { backend, streamMs, chunks, view, maxLongTask, longTaskApi: tasks.api, maxFrameGap, editMs, peakLoaded, peakDrawn, fps };
   } finally {

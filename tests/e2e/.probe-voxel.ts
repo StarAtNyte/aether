@@ -19,13 +19,16 @@ try {
   const input = page.getByLabel('Prompt', { exact: true });
   await input.fill(process.argv[2] ?? 'a minecraft-like survival world');
   await input.press('Enter');
+  let tFirst = 0;
+  for (let i = 0; i < 2400 && !tFirst; i++) { tFirst = await page.evaluate(() => { const v = (window as any).__aether?.simulation?.voxel; const st = (window as any).__aether?.store.getState(); if (!v?.active || st?.agentBusy) return 0; const s = v.status(); return s.meshed > 0 && !s.compiling ? performance.now() : 0; }); if (!tFirst) await page.waitForTimeout(50); }
+  log('first chunk at ' + Math.round(tFirst - mark));
   for (let i = 0; i < 600; i++) {
     const s = await page.evaluate(() => { const v = window.__aether?.simulation?.voxel; const st = window.__aether?.store.getState(); return v?.active && !st?.agentBusy ? v.status() : null; });
     if (s?.settled && s.meshed > 0) { log(JSON.stringify(s)); break; }
     await page.waitForTimeout(250);
   }
   const { profile } = await cdp.send('Profiler.stop');
-  const lt = await page.evaluate((m) => (window as any).__lt.filter((e: number[]) => e[0] >= m), mark);
+  const lt = await page.evaluate((m) => (window as any).__lt.filter((e: number[]) => e[0] >= m), tFirst);
   log('long tasks (start rel, dur): ' + JSON.stringify(lt.map((e: number[]) => [e[0] - Math.round(mark), e[1]])));
   // self time per function
   const self = new Map<string, number>();

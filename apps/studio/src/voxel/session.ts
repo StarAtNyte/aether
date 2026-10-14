@@ -210,6 +210,7 @@ export class VoxelSession {
       return;
     }
     const epoch = ++this.epoch;
+    this.applyViewDistance();
     const layer = await this.renderer.voxel();
     if (this.disposed || epoch !== this.epoch) return;
     this.layer = layer;
@@ -285,14 +286,19 @@ export class VoxelSession {
     }
   }
 
-  /** Apply the (capped) view distance to streaming and fog; cheap when unchanged. */
+  /**
+   * Apply the (capped) view distance to streaming and fog; cheap when
+   * unchanged. Fog is part of every material's shader, so it is set before
+   * the terrain materials are created and pre-compiled (a later change would
+   * recompile them all inside one frame).
+   */
   private applyViewDistance(): void {
     const t = this.terrain;
-    if (!t || !this.streamer) return;
+    if (!t) return;
     const vd = this.viewDistance(t);
+    this.streamer?.setViewDistance(vd);
     if (vd === this.appliedDistance) return;
     this.appliedDistance = vd;
-    this.streamer.setViewDistance(vd);
     this.renderer.setFogDistance(vd * CHUNK);
   }
 
@@ -665,10 +671,11 @@ export class VoxelPlay {
     const b = this.game.player.body;
     if (this.saved) this.game.loadPlayer(this.saved);
     else {
-      const top = this.world.surfaceY(Math.floor(x), Math.floor(z));
-      b.x = Math.floor(x) + 0.5;
-      b.z = Math.floor(z) + 0.5;
-      b.y = top + 0.01;
+      // Solid open ground near the spawn: never a tree top, a plant or the sea.
+      const spot = this.world.findSpawn(x, z, CHUNK);
+      b.x = spot ? spot[0] : Math.floor(x) + 0.5;
+      b.z = spot ? spot[2] : Math.floor(z) + 0.5;
+      b.y = (spot ? spot[1] : this.world.surfaceY(Math.floor(x), Math.floor(z))) + 0.01;
       this.game.player.spawn = [b.x, b.y, b.z];
       this.game.player.fallFrom = b.y;
     }

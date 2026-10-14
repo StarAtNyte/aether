@@ -146,6 +146,24 @@ describe('VoxelGame', () => {
     expect(g.drops.length).toBe(0);
   });
 
+  it('finds open solid ground to spawn on: never leaves, plants or water', () => {
+    const w = flatWorld(1, 9, 'grass');
+    // A tree canopy and a pond around (0, 0); open grass from x = 3.
+    for (let z = -2; z <= 2; z++) for (let x = -2; x <= 2; x++) w.set(x, 12, z, id('oak_leaves'));
+    w.set(0, 10, 0, id('oak_log'));
+    w.set(0, 11, 0, id('oak_log'));
+    for (let z = -3; z <= 3; z++) w.set(-3, 9, z, id('water'));
+    w.set(3, 10, 0, id('poppy'));
+    const spot = w.findSpawn(0, 0, 8);
+    expect(spot).not.toBeNull();
+    const [x, y, z] = spot as [number, number, number];
+    expect(y).toBe(10);
+    expect(w.get(Math.floor(x), 9, Math.floor(z))).toBe(id('grass'));
+    expect(Math.max(Math.abs(Math.floor(x)), Math.abs(Math.floor(z)))).toBe(3);
+    expect(Math.floor(x) === 3 && Math.floor(z) === 0).toBe(false); // the flower cell is skipped
+    expect(w.findSpawn(500, 500, 4)).toBeNull(); // nothing loaded there
+  });
+
   it('places the held block on the targeted face', () => {
     const g = game();
     g.inventory.add('oak_planks', 3);
