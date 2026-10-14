@@ -41,7 +41,13 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'write_generator' | 'write_script' | 'request_asset' | 'inspect' | 'run_verification' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'finish';
+
+/** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
+export const ASSET_CATEGORIES = [
+  'furniture', 'kitchen', 'bathroom', 'decor', 'lighting', 'plants', 'nature', 'rocks', 'building', 'street',
+  'vehicles', 'characters', 'animals', 'food', 'tools', 'props', 'sky',
+] as const;
 
 /** Operations of build_architecture (mirrors @aether/arch `ArchOp`). */
 export const ARCH_OPS = [
@@ -141,6 +147,21 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'search_assets',
+    description:
+      'Search the library of ready-made, real-world-sized 3D assets (furniture, plants, trees, rocks, buildings, street props, vehicles, animated characters and animals, food, tools, HDR skies). Synonyms work ("couch" finds sofas). Returns ids with size in metres; place one with shape {"kind":"asset","id":"<id>"} — no scale needed. Prefer assets over primitives for everyday objects.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What you need, e.g. "sofa", "oak tree", "police car", "woman".' },
+        category: { type: 'string', enum: [...ASSET_CATEGORIES] },
+        limit: { type: 'integer', minimum: 1, maximum: 20 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'inspect',
     description: 'Read the current world. Without ids: the compact world summary. With ids: the full JSON of those entities (up to 24).',
     inputSchema: {
@@ -210,6 +231,11 @@ export const ToolInputs = {
     id: z.string().regex(new RegExp(slugPattern)),
     description: z.string().min(1).max(TOOL_LIMITS.MAX_MESSAGE),
     params_hint: z.string().max(500).optional(),
+  }),
+  search_assets: z.object({
+    query: z.string().max(120),
+    category: z.enum(ASSET_CATEGORIES).optional(),
+    limit: z.number().int().min(1).max(20).default(8),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional() }),
   run_verification: z.object({}),

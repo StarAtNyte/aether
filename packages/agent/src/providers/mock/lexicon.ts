@@ -6,6 +6,7 @@
 import type { Json } from '@aether/core';
 import { r2, type Builder } from './builder';
 import { campfire, lamp } from './decor';
+import { preferLibrary } from './library-assets';
 
 /** Named colors → hex. */
 export const COLORS: Readonly<Record<string, string>> = {
@@ -267,12 +268,23 @@ export function lookupAsset(phrase: string): { asset: Asset; noun: string; color
     if (COLORS[w] && color === undefined) color = COLORS[w];
     else if (!['big', 'small', 'large', 'tiny', 'huge', 'giant', 'little', 'new', 'more', 'extra', 'the', 'some', 'of', 'tall', 'short', 'glowing', 'old', 'wooden', 'stone'].includes(w)) rest.push(w);
   }
-  // Try two-word then one-word nouns, from the end of the phrase.
+  // Try two-word then one-word nouns, from the end of the phrase. Everyday objects become real
+  // library models when the asset catalog is loaded; nature, terrain and game pieces stay procedural.
+  const pick = (noun: string, base: Asset | null): { asset: Asset; noun: string; color?: string } | null => {
+    const asset = preferLibrary(noun, base) ?? base;
+    return asset ? { asset, noun, ...(color ? { color } : {}) } : null;
+  };
   for (let i = rest.length - 1; i >= 0; i--) {
     const two = i > 0 ? `${rest[i - 1]} ${singular(rest[i] as string)}` : undefined;
-    if (two && ASSETS[two]) return { asset: ASSETS[two] as Asset, noun: two, ...(color ? { color } : {}) };
+    if (two && ASSETS[two]) return pick(two, ASSETS[two] as Asset);
     const one = singular(rest[i] as string);
-    if (Object.prototype.hasOwnProperty.call(ASSETS, one)) return { asset: ASSETS[one] as Asset, noun: one, ...(color ? { color } : {}) };
+    if (Object.prototype.hasOwnProperty.call(ASSETS, one)) return pick(one, ASSETS[one] as Asset);
+  }
+  // Not in the built-in vocabulary: any noun the library knows ("add a sofa", "two police cars").
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const two = i > 0 ? `${rest[i - 1]} ${singular(rest[i] as string)}` : undefined;
+    const hit = (two ? pick(two, null) : null) ?? pick(singular(rest[i] as string), null);
+    if (hit) return hit;
   }
   return null;
 }

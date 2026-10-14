@@ -85,7 +85,8 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   else if (opts.w !== undefined && Math.max(sx, sz) > 1e-6) scale = opts.w / Math.max(sx, sz);
   const offset: [number, number, number] = [-((b.min[0] + b.max[0]) / 2) * scale, -b.min[1] * scale, -((b.min[2] + b.max[2]) / 2) * scale];
   const animated = isAnimated(doc);
-  let tris = animated ? normaliseAnimated(doc, scale, offset) : normaliseAndMerge(doc, scale, offset);
+  const flip = facesBackward(opts.cat ?? pack.category);
+  let tris = animated ? normaliseAnimated(doc, scale, offset, flip) : normaliseAndMerge(doc, scale, offset, flip);
   if (lodRatio !== null && !animated) {
     tris = await simplifyDocument(doc, lodRatio);
     // LOD files are geometry only: the renderer reuses LOD 0's materials (same primitive order), so textures ship once.
@@ -95,6 +96,9 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   const r = (v: number): number => Math.round(v * scale * 1000) / 1000;
   return { doc, tris, size: [r(sx), r(sy), r(sz)], animated };
 }
+
+/** Movers (characters, animals, vehicles) are turned to face −Z, the engine's forward axis. */
+const facesBackward = (category: string): boolean => category === 'characters' || category === 'animals' || category === 'vehicles';
 
 const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
@@ -166,6 +170,7 @@ async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: st
     lods,
     collider: colliderFor(kind, positions, hullPoints),
     placement: o.place ?? 'floor',
+    facing: facesBackward(category) ? '-z' : '+z',
     source: relative(SOURCE_DIR, srcPath),
   };
   if (phAuthors) entry.authors = phAuthors;

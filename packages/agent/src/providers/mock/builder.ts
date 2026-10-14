@@ -274,6 +274,18 @@ export class Builder {
     return id;
   }
 
+  /**
+   * Library asset standing at `pos` (base at pos.y, real-world size). The
+   * renderer shows `fallback` (or a box of the asset's size) when the asset
+   * cannot be loaded.
+   */
+  asset(base: string, assetId: string, pos: V3, o: PlaceOpts & { fallback?: EntityInput['shape']; fitSize?: number } = {}): string {
+    const id = this.id(base);
+    const shape: EntityInput['shape'] = { kind: 'asset', id: assetId, ...(o.fallback && (o.fallback.kind === 'procedural' || o.fallback.kind === 'primitive') ? { fallback: o.fallback } : {}), ...(o.fitSize ? { fitSize: o.fitSize } : {}) };
+    this.add(this.compose(id, pos, shape, o));
+    return id;
+  }
+
   /** Primitive entity centered at `pos`. */
   prim(base: string, primitive: 'box' | 'sphere' | 'cylinder' | 'cone' | 'capsule' | 'torus' | 'plane', size: V3, pos: V3, o: PlaceOpts = {}): string {
     const id = this.id(base);

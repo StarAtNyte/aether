@@ -5,6 +5,7 @@
 import { r2 } from './builder';
 import { backdropMountains, clouds, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
+import { catalogEntry, getCatalog } from '@aether/assets';
 
 const ROOFS = ['#a0442c', '#5b6d8a', '#7a4b2a', '#4a6b45', '#8a3b2e'];
 const WALLS = ['#e8dcc4', '#f1e3c8', '#d9c9a8', '#efe6d6', '#cfd8dc'];
@@ -136,6 +137,83 @@ const castle: Theme = {
   },
 };
 
+/** True when the asset library is loaded and has every id (themes then use real models). */
+function hasAssets(...ids: string[]): boolean {
+  const cat = getCatalog();
+  if (!cat || cat.entries.length === 0) return false;
+  return ids.every((id) => catalogEntry(id) !== null);
+}
+
+const CITY_BUILDINGS = ['shop-building', 'office-building', 'apartment-building', 'corner-building', 'brick-building', 'city-building', 'cafe-building', 'tall-building'] as const;
+const CITY_CARS = ['car', 'taxi', 'van', 'suv', 'hatchback', 'police-car', 'delivery-truck'] as const;
+const PEOPLE = ['man', 'woman', 'man-b', 'woman-b', 'man-c', 'woman-c', 'man-d', 'woman-d', 'man-e', 'woman-e'] as const;
+const CAR_FALLBACK = { kind: 'procedural' as const, generator: 'car', params: { length: 4.2 } };
+
+/** City street dressed with real library models: road tiles, shops, cars, street lights, pedestrians. */
+function libraryStreet(c: ThemeCtx): void {
+  const { b } = c;
+  const tiles = 12;
+  const tile = 8;
+  const z0 = c.z - (tiles * tile) / 2 + tile / 2;
+  for (let i = 0; i < tiles; i++) {
+    const crossing = i === 4 || i === 9;
+    b.asset('road', crossing ? 'road-crossing' : 'road', [c.x, 0, r2(z0 + i * tile)], { castShadow: false, name: crossing ? 'Crossing' : 'Road' });
+  }
+  for (const side of [-1, 1]) {
+    b.prim('sidewalk', 'box', [3, 0.2, tiles * tile], [r2(c.x + side * 5.5), 0.1, c.z], { material: { preset: 'concrete', color: '#b9bcc0' }, physics: 'static', castShadow: false });
+    for (let i = 0; i < 6; i++) {
+      const bz = r2(c.z - 36 + i * 14 + b.rand(-0.6, 0.6));
+      const bx = r2(c.x + side * 14);
+      const kind = CITY_BUILDINGS[(i * 3 + (side > 0 ? 1 : 0)) % CITY_BUILDINGS.length] as string;
+      b.asset('building', kind, [bx, 0, bz], {
+        yaw: side > 0 ? -90 : 90,
+        physics: 'static',
+        tags: ['building'],
+        fallback: { kind: 'procedural', generator: 'house', params: { floors: 3, width: 9, depth: 9 } },
+      });
+      if (i % 2 === 0) {
+        const lx = r2(c.x + side * 4.6);
+        const lz = r2(bz + 5);
+        const post = b.asset('streetlight', 'streetlight', [lx, 0.2, lz], { yaw: side > 0 ? 90 : -90, physics: 'static', tags: ['lamp'], footprint: 0.6 });
+        if (lightsOn(b)) b.light(post, [0, 4.6, 0], '#ffe6b0', 3, 16);
+      }
+    }
+    // Pedestrians strolling up and down the sidewalk (they walk, animate and turn at each end).
+    for (let k = 0; k < 2; k++) {
+      const px = r2(c.x + side * (5.1 + k * 0.8));
+      const from = r2(c.z - 30 + b.rand(0, 20));
+      const to = r2(from + side * 22);
+      b.asset('pedestrian', b.pick([...PEOPLE]), [px, 0.2, from], {
+        name: b.pick(['Ada', 'Bram', 'Cleo', 'Dorian', 'Esme', 'Finn', 'Gwen', 'Hugo']),
+        behaviors: [{ type: 'patrol', params: { waypoints: [[px, 0.2, from], [px, 0.2, to]], speed: r2(b.rand(1.2, 1.6)), mode: 'pingpong', face: true } }],
+        tags: ['npc', 'character'],
+      });
+    }
+  }
+  // Parked cars along the curb (library cars face -Z, the engine's forward axis).
+  for (let i = 0; i < 4; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    b.asset('parked-car', b.pick([...CITY_CARS]), [r2(c.x + side * 3), 0, r2(c.z - 30 + i * 16)], { yaw: side > 0 ? 180 : 0, physics: 'static', tags: ['car'], fallback: CAR_FALLBACK });
+  }
+  // Traffic: kinematic cars patrolling the lanes.
+  for (const [lane, dir] of [[-1.8, 1], [1.8, -1]] as const) {
+    const startZ = r2(c.z - dir * 40);
+    b.asset('traffic-car', b.pick(['taxi', 'car', 'suv', 'van']), [r2(c.x + lane), 0, startZ], {
+      yaw: dir > 0 ? 180 : 0,
+      physics: 'kinematic',
+      behaviors: [{ type: 'patrol', params: { waypoints: [[r2(c.x + lane), 0, startZ], [r2(c.x + lane), 0, r2(c.z + dir * 40)]], speed: 7, mode: 'loop', face: false } }],
+      tags: ['car', 'traffic'],
+      fallback: CAR_FALLBACK,
+    });
+  }
+  b.asset('traffic-light', 'traffic-light', [r2(c.x + 4.4), 0.2, r2(z0 + 4 * tile - 4.6)], { yaw: 90, physics: 'static' });
+  b.asset('traffic-light', 'traffic-light', [r2(c.x - 4.4), 0.2, r2(z0 + 4 * tile + 4.6)], { yaw: -90, physics: 'static' });
+  b.asset('dumpster', 'dumpster', [r2(c.x - 6.3), 0.2, r2(c.z + 26)], { yaw: 90, physics: 'static' });
+  b.asset('bench', 'bench-painted', [r2(c.x + 6.4), 0.2, r2(c.z - 12)], { yaw: -90, physics: 'static' });
+  b.asset('planter', 'planter', [r2(c.x + 6.4), 0.2, r2(c.z - 16)], { physics: 'static' });
+  b.asset('planter', 'planter', [r2(c.x - 6.4), 0.2, r2(c.z + 2)], { physics: 'static' });
+}
+
 const city: Theme = {
   id: 'city',
   kind: 'setting',
@@ -148,6 +226,23 @@ const city: Theme = {
   },
   build(c) {
     const { b } = c;
+    const library = hasAssets(...CITY_BUILDINGS, ...CITY_CARS, ...PEOPLE, 'road', 'road-crossing', 'streetlight', 'sports-car', 'traffic-light', 'dumpster', 'bench-painted', 'planter');
+    if (library) {
+      libraryStreet(c);
+      if (c.primary) {
+        const car = b.asset('player-car', 'sports-car', [r2(c.x - 1.8), 0, r2(c.z + 10)], {
+          name: 'Your car',
+          physics: { body: 'dynamic', mass: 900, friction: 0.9, angularDamping: 2, linearDamping: 0.1 },
+          behaviors: [{ type: 'vehicle', params: { maxSpeed: 22, acceleration: 9 } }],
+          tags: ['car', 'player-car', 'focus'],
+          fallback: { kind: 'procedural', generator: 'car', params: { length: 4.2, color: '#d62828' } },
+        });
+        b.player({ mode: 'vehicle', controls: car, spawn: [r2(c.x - 1.8), 1, r2(c.z + 16)] });
+        b.test({ id: 'car-on-road', kind: 'staysAbove', target: car, y: -0.5, within: 5 });
+        backdropMountains(c, 4, '#7a7f87', 0.8, 140, 30);
+      }
+      return;
+    }
     const roadLen = 90;
     b.prim('road', 'box', [8, 0.05, roadLen], [c.x, 0.025, c.z], { material: { preset: 'concrete', color: '#2f3237', roughness: 0.9 }, castShadow: false, name: 'Road' });
     for (let i = 0; i < 14; i++) {

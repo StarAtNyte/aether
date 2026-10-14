@@ -16,6 +16,7 @@ import { GeometryCache } from './geometry/buffer-geometry';
 import { createProcgenGeometrySource } from './geometry/procgen-source';
 import { createGltfModelLoader, ModelCache, type ModelLoader } from './geometry/model-loader';
 import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
+import type { HdriSource } from './environment/hdri';
 import { SceneSync } from './sync/scene-sync';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
@@ -68,6 +69,8 @@ export interface RendererOptions {
   modelLoader?: ModelLoader;
   /** Override image texture loading (imported posters). */
   textureSource?: TextureSource;
+  /** Override HDR environment loading (`environment.hdri`). */
+  hdriSource?: HdriSource;
   /** Total scatter instance budget. */
   maxInstances?: number;
   /**
@@ -507,7 +510,10 @@ export class WorldRenderer {
     });
     this.archView = new ArchView(this.sync);
     this.growEnabled = opts.growIn !== false;
-    this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
+    this.env = new EnvironmentRig(this.materials, opts.shadows !== false, opts.hdriSource);
+    this.env.onAsyncChange = () => {
+      this.needsDraw = true;
+    };
     this.qualityPlan = qualityPlan('realtime', this.budget);
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.shadowMapCap = this.budget.shadowMapCap;
@@ -779,6 +785,16 @@ export class WorldRenderer {
   /** Ask for a frame on the next on-demand {@link render} (e.g. after an external camera change). */
   requestRender(): void {
     this.needsDraw = true;
+  }
+
+  /**
+   * Re-mount entities that show the given asset ids (user imports registered
+   * after the world loaded); the environment HDRI is re-requested too.
+   */
+  refreshAssets(assetIds?: ReadonlySet<string>): void {
+    if (this.sync.refreshAssets(assetIds) > 0) this.needsDraw = true;
+    const env = this.sync.world?.environment;
+    if (env?.hdri && (!assetIds || assetIds.has(env.hdri))) this.env.hdri.reload();
   }
 
   /** Current locomotion gait of an animated asset entity (idle / walk / run), or null. */
@@ -1216,6 +1232,13 @@ export class WorldRenderer {
     }
     _hits.length = 0;
     return out;
+  }
+
+  /** World-space ray through normalized device coordinates (origin = camera position). */
+  cursorRay(ndcX: number, ndcY: number): { origin: Vec3; direction: Vec3 } {
+    this.raycaster.setFromCamera(_ndc.set(Number.isFinite(ndcX) ? ndcX : 0, Number.isFinite(ndcY) ? ndcY : 0), this.perspective);
+    const { origin: o, direction: d } = this.raycaster.ray;
+    return { origin: [o.x, o.y, o.z], direction: [d.x, d.y, d.z] };
   }
 
   /**

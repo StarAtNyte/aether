@@ -83,6 +83,12 @@ export const CatalogEntry = z.object({
   thumb: LibraryPath.optional(),
   collider: CatalogCollider,
   placement: AssetPlacement,
+  /**
+   * Direction the model's front points. Props face +Z (like the parametric
+   * furniture); things that move — characters, animals, vehicles — face −Z,
+   * the engine's forward axis, so behaviors walk and drive them head first.
+   */
+  facing: z.enum(['+z', '-z']).default('+z'),
   anims: CatalogAnims.optional(),
   /** Alternative looks of the same object (other catalog ids), selectable with the shape's `variant`. */
   variants: z.array(AssetId).max(12).optional(),

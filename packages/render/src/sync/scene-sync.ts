@@ -1347,6 +1347,24 @@ export class SceneSync {
     return true;
   }
 
+  /**
+   * Rebuild every entity showing one of `assetIds` (or any asset when
+   * omitted): user imports registered after the world loaded, or a library
+   * that finished loading. Returns how many were rebuilt (the environment
+   * HDRI is the renderer's job).
+   */
+  refreshAssets(assetIds?: ReadonlySet<string>): number {
+    let n = 0;
+    for (const node of this.nodes.values()) {
+      const s = node.entity.shape;
+      if (s.kind !== 'asset' || node.entity.template) continue;
+      if (assetIds && !assetIds.has(s.id) && !(s.variant && assetIds.has(s.variant))) continue;
+      void this.rebuild(node);
+      n++;
+    }
+    return n;
+  }
+
   /** Geometry bundle of a mounted mesh entity (editor overlays, picking), or null. */
   meshBundle(id: EntityId): MeshGeometryBundle | null {
     return this.nodes.get(id)?.meshBundle ?? null;

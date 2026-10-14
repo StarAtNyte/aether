@@ -76,7 +76,7 @@ export function assetInfo(id: string): AssetInfo | null {
     const u = users.get(id);
     if (!u) return null;
     const kind = u.meta.kind;
-    let size: Vec3 = u.size ?? [1, 1, 1];
+    let size: Vec3 = u.size ?? (u.meta.size ? [u.meta.size[0], u.meta.size[1], u.meta.size[2]] : [1, 1, 1]);
     if (kind === 'image' && !u.size) {
       const aspect = (u.meta.height ?? 1) / (u.meta.width ?? 1);
       size = [POSTER_WIDTH, POSTER_WIDTH * aspect, POSTER_DEPTH];

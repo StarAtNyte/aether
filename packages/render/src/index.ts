@@ -35,6 +35,7 @@ export { HeightGrid, buildHeightGrid, transformPositions, DEFAULT_GRID_RESOLUTIO
 export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, instantiateAsset, cloneModel, hasSkin, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
 export { TextureCache, createTextureSource, createPoster, shareMaterials, type TextureSource } from './geometry/poster';
 export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animator';
+export { HdriController, createHdriSource, type HdriSource } from './environment/hdri';
 
 export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';
 export { resolveFog, fogAmount, hazeDensity, maxContentFogDensity, worldFogDensity, type FogParams } from './environment/fog';

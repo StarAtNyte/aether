@@ -4,6 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
+import { loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps } from '@aether/arch';
 import { GeneratorDef, ScriptDef, hasOwn, summarizeWorld, type PatchError } from '@aether/core';
 import type { z } from 'zod';
@@ -258,6 +259,20 @@ async function writeScriptTool(ctx: ExecutorContext, input: z.infer<typeof ToolI
   };
 }
 
+/** search_assets: ranked library matches as compact JSON lines the model can place directly. */
+async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>): Promise<ToolOutcome> {
+  const catalog = await loadCatalog();
+  if (catalog.entries.length === 0) return { content: 'The asset library is not available here: use built-in generators or primitives.', isError: false, events: [], edited: false };
+  const hits = searchAssets(catalog, { text: input.query, limit: input.limit, ...(input.category ? { category: input.category } : {}) });
+  if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". Use a built-in generator, request_asset, or primitives.`, isError: false, events: [], edited: false };
+  const lines = hits.map(({ entry: e }) => {
+    const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');
+    const extra = [e.kind === 'hdri' ? 'environment: use setEnvironment {"hdri":"' + e.id + '"}' : `size ${size} m`, e.placement !== 'floor' ? `goes on ${e.placement}` : '', e.anims && e.anims.clips.length > 0 ? 'animated (idle/walk/run follow movement)' : ''].filter(Boolean).join(', ');
+    return `${e.id} — ${e.name} [${e.category}] ${extra}`;
+  });
+  return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).`), isError: false, events: [], edited: false };
+}
+
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {
   const world = ctx.host.getWorld();
   if (!input.ids || input.ids.length === 0) return { content: clip(summarizeWorld(world, { maxEntities: 400 })), isError: false, events: [], edited: false };
@@ -284,7 +299,7 @@ export async function runVerification(ctx: ExecutorContext): Promise<{ event: Ag
 
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, write_generator, write_script, request_asset, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -308,6 +323,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'request_asset': {
         const p = ToolInputs.request_asset.safeParse(rawInput);
         return p.success ? await requestAssetTool(ctx, p.data) : fail(`Invalid request_asset input: ${issuesText(p.error)}`);
+      }
+      case 'search_assets': {
+        const p = ToolInputs.search_assets.safeParse(rawInput);
+        return p.success ? await searchAssetsTool(p.data) : fail(`Invalid search_assets input: ${issuesText(p.error)}`);
       }
       case 'inspect': {
         const p = ToolInputs.inspect.safeParse(rawInput ?? {});

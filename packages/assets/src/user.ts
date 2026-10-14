@@ -30,6 +30,8 @@ export const UserAssetMeta = z.object({
   clips: z.array(z.string().max(64)).max(64).optional(),
   width: z.number().int().min(1).max(16384).optional(),
   height: z.number().int().min(1).max(16384).optional(),
+  /** Models: bounding-box size in metres (after normalisation: base on y = 0, centred). */
+  size: z.tuple([z.number().min(0).max(100_000), z.number().min(0).max(100_000), z.number().min(0).max(100_000)]).optional(),
   /** Licence / credit the user entered (shown in credits; free text, sanitised). */
   credit: z.string().max(200).optional(),
   createdAt: z.number().int().min(0),
@@ -81,7 +83,7 @@ export async function importUserAsset(bytes: Uint8Array, fileName: string, opts:
     const r = validateGltf(bytes, opts.gltf);
     if (!r.ok) return r;
     const id = `user-${(await sha256Hex(r.glb)).slice(0, 12)}`;
-    return { ok: true, asset: { data: r.glb, report: r.report, meta: { id, kind, name, mime: 'model/gltf-binary', bytes: r.glb.byteLength, triangles: r.report.triangles, clips: r.report.animations.slice(0, 64), createdAt } } };
+    return { ok: true, asset: { data: r.glb, report: r.report, meta: { id, kind, name, mime: 'model/gltf-binary', bytes: r.glb.byteLength, triangles: r.report.triangles, clips: r.report.animations.slice(0, 64), size: r.report.size, createdAt } } };
   }
   if (kind === 'image') {
     const r = validateImage(bytes, opts.image);

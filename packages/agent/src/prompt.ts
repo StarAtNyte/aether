@@ -67,9 +67,10 @@ Entity = { id, name?, description?, parent?: id|null, tags?: string[], transform
 Shape = {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone"|"capsule"|"torus"|"plane", size:[w,h,d]} (sphere diameter=size[0]; cylinder/cone/capsule diameter=size[0], height=size[1]); primitives are CENTERED on position, so a 1 m box resting on the ground has y=0.5
   | {kind:"procedural", generator:id, params:{...}, seed?:int} — generated objects have their BASE at y=0 and are centered in x/z: place them at y=0 to stand on the ground
   | {kind:"scatter", of: primitive|procedural shape, count, area:[w,d], seed?, scaleRange?:[0.8,1.2], randomYaw?:true, onSurface?: terrainId, minSpacing?} — GPU-instanced; use for >8 similar objects. Layers of 2000+ become culled level-of-detail fields: count may go up to 1,000,000 (a million trees stays interactive)
+  | {kind:"asset", id, variant?, fitSize?, animation?:"auto"|"none"|clip, fallback?: primitive|procedural shape} — a ready-made library model (see "Asset library"; find ids with search_assets). Real-world size in metres, base at y=0, centered in x/z: no scale needed. Characters/animals with clips walk/run/idle automatically from their movement (behaviors such as wander, patrol, npc, follow, playerController). Give a fallback generator for anything essential.
   | {kind:"none"} (groups, lights, invisible zones)
 Only entities with \`physics\` collide. Scenery players should bump into: physics {body:"static"}. Things that fall/roll/topple: "dynamic". Moved by behaviors: "kinematic" or no physics. Zones/triggers: physics {body:"static", sensor:true}.
-Environment: sky "day"|"dawn"|"sunset"|"night"|"overcast"|"space"|"studio", timeOfDay 0..24, fog {color, density 0..1 (0.005 light .. 0.04 thick)}|null, weather "clear"|"rain"|"snow"|"dust"|"fireflies", ambientIntensity, sunIntensity, ground {material, size}|null, gravity [0,-9.81,0], bloom 0..3, exposure.
+Environment: sky "day"|"dawn"|"sunset"|"night"|"overcast"|"space"|"studio", hdri?: library sky id (photographic HDR sky + lighting, e.g. "sky-venice-sunset"), hdriIntensity?, hdriBackground?, timeOfDay 0..24, fog {color, density 0..1 (0.005 light .. 0.04 thick)}|null, weather "clear"|"rain"|"snow"|"dust"|"fireflies", ambientIntensity, sunIntensity, ground {material, size}|null, gravity [0,-9.81,0], bloom 0..3, exposure.
 Player: mode "orbit"(spectator camera) | "thirdPerson" | "firstPerson" | "vehicle" (with controls: entity id), spawn [x,y,z], moveSpeed, jumpSpeed.
 World: state {score: 0, ...} global variables; hud [{key, label}] shows state on screen; tests (below).`;
 
@@ -107,6 +108,7 @@ moves/topples/staysAbove require EVERY matched target to pass: name a specific i
 
 const GUIDELINES = `## Guidelines
 - Build complete, beautiful, playable worlds: a clear focal point, foreground/midground/background, varied scale, color harmony, 30–250 entities (scatter counts are cheap; separate entities are not). Never exceed what the request needs.
+- Everyday real objects (furniture, appliances, plants, trees, rocks, cars, street props, people, animals, food, tools): prefer library assets ({kind:"asset"}) — they look real and come with colliders. Use generators for terrain, architecture, stylised or parametric things, and anything the library lacks.
 - Prefer built-in generators and behaviors; set their params (color, size/height, variant) for variety; give each instance a different seed or variant. Write custom generators/scripts only for things the built-ins cannot express.
 - Placement: generator bases sit at y=0; primitives are centered (y = height/2). Keep footprints from overlapping (houses ~6 m, trees ~3 m, rocks ~2 m apart); leave a clear area around the player spawn. Keep content within ~60 m of the origin unless asked otherwise.
 - Physics: static for scenery the player touches, dynamic only for things meant to move. Dynamic bodies must start resting on something (not intersecting, not floating). Stacks: exact heights, no gaps.
@@ -144,6 +146,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string {
     ...(catalogs.libraryGenerators && catalogs.libraryGenerators.length > 0
       ? [`## Library generators (used exactly like built-ins; defined in the world automatically on first use)\n${renderGeneratorCatalog(catalogs.libraryGenerators)}`]
       : []),
+    ...(catalogs.assetSummary ? [`## Asset library (shape {"kind":"asset","id":id}; search_assets finds more by name or synonym)\n${catalogs.assetSummary.trim()}`] : []),
     `## Built-in behaviors (entity.behaviors: [{"type":id,"params":{...}}])\n${renderBehaviorCatalog(catalogs.behaviors)}`,
     `## Rules\n${catalogs.ruleDocs.trim()}`,
     TESTS,

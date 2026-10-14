@@ -69,10 +69,12 @@ function readElement(acc: Accessor, i: number, out: number[]): number[] {
  * Bake transforms + normalisation into the geometry and merge by material.
  * Returns the number of triangles. Only for static models.
  */
-export function normaliseAndMerge(doc: Document, scale: number, offset: Vec3): number {
+export function normaliseAndMerge(doc: Document, scale: number, offset: Vec3, flip = false): number {
   const root = doc.getRoot();
   const scene = root.getDefaultScene() ?? root.listScenes()[0]!;
-  const norm: Mat4 = [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, offset[0], offset[1], offset[2], 1];
+  // Optional 180° turn about Y (front +Z → −Z) folded into the uniform scale.
+  const f = flip ? -scale : scale;
+  const norm: Mat4 = [f, 0, 0, 0, 0, scale, 0, 0, 0, 0, f, 0, flip ? -offset[0] : offset[0], offset[1], flip ? -offset[2] : offset[2], 1];
   const buckets = new Map<string, Bucket>();
   const tmp: number[] = [0, 0, 0, 0];
   const nodes: Node[] = [];
@@ -175,10 +177,14 @@ function det3(m: Mat4): number {
 }
 
 /** Wrap an animated / skinned model in a normalising root node. Returns its triangle count. */
-export function normaliseAnimated(doc: Document, scale: number, offset: Vec3): number {
+export function normaliseAnimated(doc: Document, scale: number, offset: Vec3, flip = false): number {
   const root = doc.getRoot();
   const scene = root.getDefaultScene() ?? root.listScenes()[0]!;
-  const wrapper = doc.createNode('asset-root').setScale([scale, scale, scale]).setTranslation(offset);
+  const wrapper = doc
+    .createNode('asset-root')
+    .setScale([scale, scale, scale])
+    .setRotation(flip ? [0, 1, 0, 0] : [0, 0, 0, 1])
+    .setTranslation(flip ? [-offset[0], offset[1], -offset[2]] : offset);
   for (const child of scene.listChildren()) {
     scene.removeChild(child);
     wrapper.addChild(child);

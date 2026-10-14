@@ -33,6 +33,7 @@ import { WeatherSystem } from './weather';
 import { fitShadowCamera } from './shadow-fit';
 import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
+import { createHdriSource, HdriController, type HdriSource } from './hdri';
 
 export { MAX_FOG_DENSITY };
 
@@ -164,10 +165,20 @@ export class EnvironmentRig {
     this.sun.shadow.map = null;
   }
 
+  /** HDR environment map (`environment.hdri`), when the world asks for one. */
+  readonly hdri: HdriController;
+  /** Called when asynchronous environment content (an HDRI) arrives: the owner redraws. */
+  onAsyncChange: (() => void) | null = null;
+
   constructor(
     private readonly materials: MaterialCache,
     shadows: boolean,
+    hdriSource: HdriSource = createHdriSource(),
   ) {
+    this.hdri = new HdriController(hdriSource, () => {
+      if (this.scene) this.updateEnvironmentMap(this.scene, this.fogParams?.color ?? this.state.horizon);
+      this.onAsyncChange?.();
+    });
     this.group.name = 'aether:environment';
     this.sun.name = 'sun';
     this.sun.castShadow = shadows;
@@ -216,6 +227,7 @@ export class EnvironmentRig {
     this.hemi.groundColor.set(s.hemiGround);
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
     this.syncGround(s.showGround ? env.ground : null);
+    this.hdri.set(env.hdri, { intensity: env.hdriIntensity, background: env.hdriBackground });
     this.applyFog();
     this.weather.set(env.weather);
   }
@@ -301,6 +313,12 @@ export class EnvironmentRig {
    * their compiled programs and only the small PMREM is regenerated.
    */
   private updateEnvironmentMap(scene: Scene, horizon: string): void {
+    // A loaded HDRI owns lighting (and, by default, the background); the analytic sky hides behind it.
+    if (this.hdri.bind(scene, this.state.envIntensity)) {
+      this.sky.group.visible = !this.hdri.showsBackground;
+      return;
+    }
+    this.sky.group.visible = true;
     const groundSpec = this.state.showGround ? this.env?.ground : null;
     const groundColor = groundSpec ? resolveMaterial(groundSpec.material).color : null;
     const pixels = skyEnvironmentPixels(this.state, groundColor, horizon);
@@ -409,6 +427,7 @@ export class EnvironmentRig {
   dispose(): void {
     this.syncGround(null);
     if (this.scene && this.scene.environment === this.envMap) this.scene.environment = null;
+    this.hdri.dispose();
     this.envMap?.dispose();
     this.envMap = null;
     this.sky.dispose();

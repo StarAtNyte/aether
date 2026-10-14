@@ -3,6 +3,7 @@
  * the agent catalogs the studio sends, plus a Node AgentHost over core
  * History with Rapier + logic verification and the node generator sandbox.
  */
+import { catalogSummary, getCatalog, loadCatalog } from '@aether/assets';
 import { createWorld, History, type GeneratorDef, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
 import type { AgentCatalogs, AgentHost } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, isScriptingReady } from '@aether/logic';
@@ -15,6 +16,9 @@ export const VERIFY_MAX_SECONDS = 25;
 export const VERIFY_BUDGET_MS = 20_000;
 export const GENERATOR_DRY_RUN_MS = 1_000;
 
+/** The asset library catalog (loaded once at startup, as the studio does when the editor opens). */
+await loadCatalog();
+
 /** Catalogs for the agent's system prompt (same data the studio sends). */
 export const CATALOGS: AgentCatalogs = {
   generators: catalog(),
@@ -24,6 +28,7 @@ export const CATALOGS: AgentCatalogs = {
   generatorExamples: GENERATOR_EXAMPLES,
   scriptApiDts: SCRIPT_API_DTS,
   libraryGenerators: [...GENERATOR_LIBRARY],
+  assetSummary: catalogSummary(getCatalog()),
 };
 
 function errorText(err: unknown): string {

@@ -46,7 +46,7 @@ function encode() {
   return canvas.toDataURL('image/webp', 0.86).split(',')[1];
 }
 window.__thumb = {
-  async model(url, idle) {
+  async model(url, idle, back) {
     const gltf = await loader.loadAsync(url);
     const scene = new THREE.Scene();
     scene.environment = envTex;
@@ -66,7 +66,7 @@ window.__thumb = {
     const box = new THREE.Box3().setFromObject(root, true);
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 5000);
-    const dir = new THREE.Vector3(1, 0.72, 1.35).normalize();
+    const dir = new THREE.Vector3(1, 0.72, back ? -1.35 : 1.35).normalize();
     const dist = sphere.radius / Math.sin(THREE.MathUtils.degToRad(28 / 2)) * 1.04;
     cam.position.copy(sphere.center).addScaledVector(dir, dist);
     cam.lookAt(sphere.center);
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
       const url = `/lib/${e.file}`;
       const b64 = e.kind === 'hdri'
         ? await page.evaluate((u) => (window as unknown as { __thumb: { hdri(u: string): Promise<string> } }).__thumb.hdri(u), url)
-        : await page.evaluate(([u, idle]) => (window as unknown as { __thumb: { model(u: string, i: string | null): Promise<string> } }).__thumb.model(u, idle), [url, e.anims?.idle ?? null] as const);
+        : await page.evaluate(([u, idle, back]) => (window as unknown as { __thumb: { model(u: string, i: string | null, b: boolean): Promise<string> } }).__thumb.model(u, idle, back), [url, e.anims?.idle ?? null, e.facing === '-z'] as const);
       const data = Buffer.from(b64, 'base64');
       const h = createHash('sha256').update(data).digest('hex').slice(0, 8);
       const rel = `t/${e.id}.${h}.webp`;

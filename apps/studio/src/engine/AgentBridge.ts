@@ -7,6 +7,7 @@
  * Also selects the LLM provider: the server proxy when `/api/health`
  * reports a live model, otherwise the deterministic offline mock.
  */
+import { catalogSummary, getCatalog } from '@aether/assets';
 import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
@@ -57,6 +58,7 @@ export function agentCatalogs(): AgentCatalogs {
     generatorExamples: GENERATOR_EXAMPLES,
     scriptApiDts: SCRIPT_API_DTS,
     libraryGenerators: [...GENERATOR_LIBRARY],
+    assetSummary: catalogSummary(getCatalog()),
   };
 }
 

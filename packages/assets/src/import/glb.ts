@@ -74,6 +74,8 @@ type GltfJson = z.infer<typeof GltfJson>;
 
 /** Facts about an accepted model. */
 export interface GltfReport {
+  /** Bounding-box size in model units (metres by glTF convention), after normalisation. */
+  size: [number, number, number];
   triangles: number;
   nodes: number;
   meshes: number;
@@ -155,10 +157,113 @@ function checkJson(json: GltfJson, limits: GltfLimits): string | null {
   return null;
 }
 
-function report(json: GltfJson): GltfReport {
+type Mat = number[];
+
+function matMul(a: Mat, b: Mat): Mat {
+  const o = new Array<number>(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let v = 0;
+    for (let k = 0; k < 4; k++) v += (a[k * 4 + r] as number) * (b[c * 4 + k] as number);
+    o[c * 4 + r] = v;
+  }
+  return o;
+}
+
+const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** Local matrix of a glTF node (column-major), from `matrix` or TRS. */
+function nodeMatrix(node: Record<string, unknown>): Mat {
+  const m = node['matrix'];
+  if (Array.isArray(m) && m.length === 16) return m.map((v) => num(v, 0));
+  const t = Array.isArray(node['translation']) ? (node['translation'] as unknown[]) : [];
+  const r = Array.isArray(node['rotation']) ? (node['rotation'] as unknown[]) : [];
+  const sc = Array.isArray(node['scale']) ? (node['scale'] as unknown[]) : [];
+  const [x, y, z, w] = [num(r[0], 0), num(r[1], 0), num(r[2], 0), num(r[3], 1)];
+  const [sx, sy, sz] = [num(sc[0], 1), num(sc[1], 1), num(sc[2], 1)];
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y + z * w) * sx, 2 * (x * z - y * w) * sx, 0,
+    2 * (x * y - z * w) * sy, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z + x * w) * sy, 0,
+    2 * (x * z + y * w) * sz, 2 * (y * z - x * w) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
+    num(t[0], 0), num(t[1], 0), num(t[2], 0), 1,
+  ];
+}
+
+/**
+ * World-space bounds of the default scene from accessor min/max (required
+ * by the glTF spec for POSITION) and node transforms; null when unknown.
+ */
+export function gltfBounds(json: GltfJson): { min: [number, number, number]; max: [number, number, number] } | null {
+  const root = json as Record<string, unknown>;
+  const nodes = (Array.isArray(root['nodes']) ? root['nodes'] : []) as Array<Record<string, unknown>>;
+  const scenes = (Array.isArray(root['scenes']) ? root['scenes'] : []) as Array<Record<string, unknown>>;
+  const scene = scenes[num(root['scene'], 0)] ?? scenes[0];
+  const roots = scene && Array.isArray(scene['nodes']) ? (scene['nodes'] as unknown[]) : nodes.map((_, i) => i);
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  const identity: Mat = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const stack: Array<{ i: number; m: Mat; depth: number }> = roots.filter((i): i is number => typeof i === 'number').map((i) => ({ i, m: identity, depth: 0 }));
+  let visits = 0;
+  while (stack.length > 0 && visits++ < 20_000) {
+    const { i, m, depth } = stack.pop() as { i: number; m: Mat; depth: number };
+    const node = nodes[i];
+    if (!node || depth > 64) continue;
+    const world = matMul(m, nodeMatrix(node));
+    const meshIndex = node['mesh'];
+    const mesh = typeof meshIndex === 'number' ? json.meshes?.[meshIndex] : undefined;
+    for (const prim of mesh?.primitives ?? []) {
+      const acc = json.accessors?.[prim.attributes['POSITION'] ?? -1] as Record<string, unknown> | undefined;
+      const lo = acc?.['min'];
+      const hi = acc?.['max'];
+      if (!Array.isArray(lo) || !Array.isArray(hi) || lo.length < 3 || hi.length < 3) continue;
+      for (let c = 0; c < 8; c++) {
+        const px = num(c & 1 ? hi[0] : lo[0], 0);
+        const py = num(c & 2 ? hi[1] : lo[1], 0);
+        const pz = num(c & 4 ? hi[2] : lo[2], 0);
+        const wx = (world[0] as number) * px + (world[4] as number) * py + (world[8] as number) * pz + (world[12] as number);
+        const wy = (world[1] as number) * px + (world[5] as number) * py + (world[9] as number) * pz + (world[13] as number);
+        const wz = (world[2] as number) * px + (world[6] as number) * py + (world[10] as number) * pz + (world[14] as number);
+        min[0] = Math.min(min[0], wx);
+        min[1] = Math.min(min[1], wy);
+        min[2] = Math.min(min[2], wz);
+        max[0] = Math.max(max[0], wx);
+        max[1] = Math.max(max[1], wy);
+        max[2] = Math.max(max[2], wz);
+      }
+    }
+    const children = Array.isArray(node['children']) ? (node['children'] as unknown[]) : [];
+    for (const c of children) if (typeof c === 'number') stack.push({ i: c, m: world, depth: depth + 1 });
+  }
+  if (!min.every(Number.isFinite) || !max.every(Number.isFinite)) return null;
+  return { min, max };
+}
+
+/**
+ * Normalise like the library: a new root node moves the model so its base
+ * rests on y = 0 and it is centred on X/Z. Returns the resulting size.
+ */
+function normaliseRoot(json: GltfJson): [number, number, number] {
+  const b = gltfBounds(json);
+  if (!b) return [1, 1, 1];
+  const root = json as Record<string, unknown>;
+  const nodes = (Array.isArray(root['nodes']) ? root['nodes'] : (root['nodes'] = [])) as Array<Record<string, unknown>>;
+  const scenes = (Array.isArray(root['scenes']) ? root['scenes'] : (root['scenes'] = [{ nodes: nodes.map((_, i) => i) }])) as Array<Record<string, unknown>>;
+  const sceneIndex = num(root['scene'], 0);
+  const scene = scenes[sceneIndex] ?? scenes[0];
+  if (scene) {
+    const children = Array.isArray(scene['nodes']) ? (scene['nodes'] as unknown[]).filter((i): i is number => typeof i === 'number') : [];
+    const translation = [-(b.min[0] + b.max[0]) / 2, -b.min[1], -(b.min[2] + b.max[2]) / 2];
+    nodes.push({ name: 'aether-root', translation, children });
+    scene['nodes'] = [nodes.length - 1];
+  }
+  const r = (v: number): number => Math.round(v * 1000) / 1000;
+  return [r(b.max[0] - b.min[0]), r(b.max[1] - b.min[1]), r(b.max[2] - b.min[2])];
+}
+
+function report(json: GltfJson, size: [number, number, number]): GltfReport {
   let tris = 0;
   for (const mesh of json.meshes ?? []) for (const prim of mesh.primitives) tris += primitiveTriangles(json, prim);
   return {
+    size,
     triangles: tris,
     nodes: json.nodes?.length ?? 0,
     meshes: json.meshes?.length ?? 0,
@@ -249,7 +354,8 @@ function validateGlb(bytes: Uint8Array, limits: GltfLimits): GltfResult {
   const err = checkJson(parsed, limits);
   if (err) return fail(err);
   sanitizeJson(parsed);
-  return { ok: true, glb: writeGlb(parsed, bin), report: report(parsed) };
+  const size = normaliseRoot(parsed);
+  return { ok: true, glb: writeGlb(parsed, bin), report: report(parsed, size) };
 }
 
 function validateGltfJson(bytes: Uint8Array, limits: GltfLimits): GltfResult {
@@ -286,7 +392,8 @@ function validateGltfJson(bytes: Uint8Array, limits: GltfLimits): GltfResult {
   if (err) return fail(err);
   (parsed as { buffers?: unknown }).buffers = size > 0 ? [{ byteLength: size }] : undefined;
   sanitizeJson(parsed);
-  return { ok: true, glb: writeGlb(parsed, size > 0 ? bin : null), report: report(parsed) };
+  const dims = normaliseRoot(parsed);
+  return { ok: true, glb: writeGlb(parsed, size > 0 ? bin : null), report: report(parsed, dims) };
 }
 
 /**

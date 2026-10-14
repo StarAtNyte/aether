@@ -106,6 +106,11 @@ export interface AgentCatalogs {
    * on first use through `AgentOptions.resolveGenerator`.
    */
   libraryGenerators?: unknown[];
+  /**
+   * Compact summary of the asset library (@aether/assets `catalogSummary`):
+   * categories with example ids. Empty or absent when no library is available.
+   */
+  assetSummary?: string;
 }
 
 /** Options for {@link WorldAgent}. */
