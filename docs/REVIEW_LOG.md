@@ -1392,3 +1392,148 @@ earlier run hit an 827 ms SwiftShader WebGL2 frame during "Run checks",
 which did not recur. `npm run e2e:voxel` passes in Chromium WebGPU,
 Chromium WebGL2, Firefox WebGL2 and the phone / touch runs in both
 browsers. Gallery renders of the four block prompts were inspected.
+
+## Real-life architecture and the studio render
+
+**Scope.** The interrupted attempts had already built most of the
+building model in `@aether/arch` (plans, the mitred wall network, CSG-free
+openings, slabs, roofs, stairs, the furniture kit, navigation and clearance
+checks, `floorPlan2d`), its procgen generators, the `build_architecture`
+agent tool with the offline planner, and a first `ArchView`. I checked
+them, kept them, and completed the stage: the studio side was missing
+entirely, the studio render did not exist, and rendering the prompts showed
+real defects. Every fix below has a regression test.
+
+- **Front doors swung outdoors.** A long facade is one merged wall whose
+  stored room sides name only the room at one end, so a hall's front door on
+  that wall resolved to the wrong side, and its leaf opened into the player
+  walking up to it (the walkthrough e2e caught it in Firefox). Door swing
+  and window interior sides are now sampled geometrically from the room
+  outlines (`roomSide` in `compile.ts`).
+- **Sectioned walls showed squashed window holes.** The cutaway scaled
+  walls vertically. Walls are now rebuilt by their generator with a
+  view-only `cut` param: drawn up to the cut, window holes filled, doorways
+  open, a dark cap on the cut face (section poche). The same cut makes the
+  section view show capped walls.
+- **Wall-mounted pieces and ceiling fittings floated** over sectioned walls
+  and hidden ceilings; they hide with their host now. Hidden pieces are
+  re-hidden after content rebuilds.
+- **Lamps blew out sunlit rooms and night interiors.** Interior lamps were
+  about 5× a full sun in World IR units. Lamps now dim with daylight (off in
+  full sun, which also removes a dozen point lights from every pixel), lamp
+  and diffuser levels were lowered, and the skylight / sky reflections were
+  made less saturated, so shaded white walls read pale grey instead of blue.
+- **The pool showed the lawn.** The basin sits below the ground plane and
+  its water was too; the water now stays above the ground and is opaque.
+- **The studio pipeline leaked three GPU textures per toggle** (TRAA's
+  placeholder and history depth textures, the converted beauty target).
+  They are released explicitly; 20 toggles keep textures flat.
+- **A section right after the exploded view hid the upper storey's walls.**
+  The cut height was measured from the storey's lifted height while it was
+  still settling back; the lift is now taken out of the cut.
+- **Photo mode made the studio render the user's setting** (the quality
+  callback wrote it back). Only real fallbacks are reported now.
+- **A room drawn behind a bedroom could be unreachable**: its automatic
+  door landed where the bedroom's furniture blocked it. The plan tool now
+  tries the door at mid-wall, near either end, to other neighbours and from
+  outside, and commits the first placement that passes the checks.
+- **The floor plan sat under the building bar** once it was re-fitted to
+  the real viewport size: the fit now keeps the bar, the tool column and the
+  status line clear (`fitPlan` insets) and re-fits on resizes until the user
+  pans or zooms.
+- A requested fireplace on a window wall emptied the living room; the
+  furniture falls back to other walls and the fireplace room keeps a solid
+  wall for it. Café and office washrooms no longer get bathtubs.
+
+What was added:
+- **Studio render**: depth / normal / velocity pre-pass, GTAO on indirect
+  light, temporal AA, doubled soft sun shadows, refinement while the view
+  rests; falls back to realtime when unavailable.
+- **Building bar and floor plan**: 3D / Plan, walls up / cutaway / down,
+  stacked / exploded / one floor, x-ray, section slider, daylight study,
+  Studio, Walk. The SVG plan draws poche walls, door swings, windows,
+  stairs, furniture, room chips with areas and dimensions, and draws rooms
+  (rectangle, polygon), doors and windows as undoable, checked edits
+  (`plan-edit.ts`). Room chips also float over rooms in the 3D cutaway.
+- **Walkthrough**: first person facing the entrance; E doors and switches
+  (a switch only from its room side), 1–4 time of day, L all lights, R
+  finish swap (real generator params), V view, P photo mode.
+- **Merged building geometry** (`static-merges.ts`): static parts of a
+  building merge per storey and material; members stay pickable and are
+  evicted when they move, change material, rebuild or hide.
+- Offline planner: forecourt sites, lawn finish ground, late-afternoon light.
+
+**SECURITY.**
+- New input boundaries:
+  - Plan tools: pointer positions become plan points (finite-checked and
+    snapped), outlines are capped at 32 points, refused when degenerate,
+    self-crossing, smaller than 1.5 m² or overlapping, and every result
+    goes through `applyArchOps` (zod, op caps, compile limits, usability
+    checks) and `history.commit` (patch validation).
+  - Architecture UI state: every `setArch` patch is merged through
+    `mergeArchUi` (enums, clamped numbers, capped level list).
+  - Walkthrough finish swap reads `arch.variants` from the document
+    (zod: ≤ 6 records of JSON); keys must match `^[a-z][a-zA-Z0-9]{0,31}$`
+    and go through `setProperty`, which rejects forbidden segments and
+    re-validates the entity.
+  - Room labels and the plan read polygons from the document: point counts
+    capped (128), finite numbers only, at most 24 labels / 4000 plan
+    elements. Room names render as React text (escaped); no `innerHTML`.
+  - Wall `cut` is a bounded zod number; it is only ever set by the view.
+  - No new network, storage, URL, postMessage, worker or subprocess paths.
+    No `eval` / `new Function`. CSP unchanged (SVG uses attributes, no
+    inline scripts or styles injected).
+- `npm audit --omit=dev`: 0 vulnerabilities. No new dependencies (three's
+  own GTAO / TRAA nodes). Pascal Editor (MIT) was used as a reference only;
+  no code or assets copied; credited in `docs/THIRD_PARTY.md`.
+
+**PERFORMANCE.**
+Measured on this laptop in its power-saving profile; Chromium runs on
+SwiftShader (relative numbers), Firefox on the integrated Intel GPU.
+- Two-bedroom apartment, Firefox WebGL2 (hardware), orbiting camera
+  (`e2e:benchmark --prompt=…`): **488 → 202 draw calls** per pass with the
+  building merges, renderer CPU **32.5 → 24.0 ms** per frame (a bowling
+  alley with 87 draws costs 12.7 ms on the same machine; headless Firefox
+  caps frames at 33 ms, so p50 is 33.3 ms for both). On a desktop CPU/GPU
+  that is well inside a 60 fps frame; on SwiftShader the apartment walk
+  runs at about 2 fps (500 draws before the merges, GPU-bound).
+- Daylight switches the building's lamps off (they were a dozen point
+  lights in every pixel's shading); night switches them back on.
+- Studio render: refines 48 frames (16 on software rasterizers) after the
+  view rests, then the editor idles again; adaptive resolution is suspended
+  only while it is on. GTAO runs at half resolution.
+- GPU resources over 20 view / quality cycles (walls down + x-ray + studio
+  on, then off): geometries, textures, cached geometries and materials flat
+  in all three runs of `e2e:arch` (Firefox: 249 / 84 / 266 / 75 before and
+  after). This check found the TRAA texture leak (+3 per toggle), fixed.
+- Allocation probe: `ArchView.update` + `updateBatches` (merges) in steady
+  state < 16 B/frame (new test in `alloc-probe.test.ts`).
+- Main thread: a whole building compiles, is checked and diffed in
+  55–87 ms (`applyArchOps`, apartment / villa / office floor), once per
+  agent op batch or plan-tool edit, not per frame. Geometry is generated in
+  the compute worker and the `navigable` test runs in the verification
+  workers, as before.
+- Bundle: EditorRoute +46.8 KB (+14.8 KB gzip: building bar, floor plan,
+  walkthrough, plan editing); the three chunk +13.1 KB (+3.8 KB gzip: the
+  GTAO and TRAA nodes); `session` +11.3 KB. Each is under the 50 KB
+  lazy-loading threshold; ordinary worlds load nothing new at run time
+  (the studio pipeline is built only when Studio is switched on).
+- Memory: merged buffers duplicate the vertex data of the merged parts
+  (bounded by the 1800-entity building limit and split at 400 k vertices
+  per buffer) and are disposed on every regroup; `e2e:arch` shows no growth.
+
+**Gates.** tsc 0 errors. Vitest: 150 files, 1,998 tests; the last full
+run had two timing failures while another project's process kept the load
+average at 9–11 (`steps 1000 dynamic boxes` 8.8 ms vs 8 ms, the known
+load-sensitive test, and the new allocation probe, which was then made to
+wait for wall rebuilds before measuring); both files pass on re-run. Studio
+build OK. Smoke 23/23 (five architecture prompts among them, all
+`navigable`). `npm run e2e:arch` passes in Chromium WebGPU, Chromium WebGL2
+and Firefox WebGL2 on the final build. `npm run e2e` passed in all three
+browsers on this code path; later repeats under heavy external load failed
+on timing only (a 726 / 810 ms SwiftShader WebGL2 task during "Run checks",
+which three isolated repeats measured at 0 ms; a 6.4 s descheduled worker
+callback; a screenshot timeout while the desktop session restarted at a
+load average of 156). The architecture gallery (`npm run gallery -- --arch`)
+was rendered and inspected in three rounds; README shows eight of the
+renders.
