@@ -17,13 +17,21 @@
  * position (no normal attribute needed); its sign from the camera side,
  * which is exact for front faces.
  *
+ * Fog is the terrain's own: a linear fade over the horizontal distance to
+ * the streaming centre (`fogOrigin`: the player in play, the orbit target in
+ * the editor; `fogNear` → `fogFar`), so terrain around the centre stays
+ * crisp and the streamed square never shows an edge, combined with the
+ * environment's exponential haze over the camera distance (`fogDensity`,
+ * e.g. a misty or night world). The scene's `FogExp2` keeps fogging
+ * everything else.
+ *
  * Three materials share the uniforms: opaque cubes, alpha-cutout (leaves,
  * glass, plants; double-sided) and liquids (translucent, animated).
  */
-import { Color, DoubleSide, FrontSide, type DataTexture } from 'three';
+import { Color, DoubleSide, FrontSide, Vector2, type DataTexture } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
-  abs, attribute, cameraPosition, clamp, cross, dFdx, dFdy, float, floor, fract, length, max, min, mix, mod, normalize, positionWorld, pow, select, texture, time, uniform, uv, vec2, vec3, vec4,
+  abs, attribute, cameraPosition, clamp, cross, dFdx, dFdy, exp, float, floor, fract, length, max, min, mix, mod, normalize, positionWorld, pow, select, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl';
 
 /** Tiles per atlas row. */
@@ -41,6 +49,16 @@ export interface TerrainUniforms {
   skyTint: { value: Color };
   /** Liquid opacity. */
   liquidOpacity: { value: number };
+  /** Fog colour (linear RGB, the scene fog's colour). */
+  fogColor: { value: Color };
+  /** Centre of the linear fade (world x, z). */
+  fogOrigin: { value: Vector2 };
+  /** Horizontal distance where the terrain fog starts (metres). */
+  fogNear: { value: number };
+  /** Horizontal distance where the terrain is fully fogged (metres). */
+  fogFar: { value: number };
+  /** The environment's own exponential haze density (0: none). */
+  fogDensity: { value: number };
 }
 
 /** The three terrain materials and their uniforms. */
@@ -62,6 +80,11 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
   const daylight = uniform(1);
   const skyTint = uniform(new Color(1, 1, 1));
   const liquidOpacity = uniform(0.78);
+  const fogColor = uniform(new Color(0.77, 0.87, 0.96));
+  const fogOrigin = uniform(new Vector2(0, 0));
+  const fogNear = uniform(1e5);
+  const fogFar = uniform(2e5);
+  const fogDensity = uniform(0);
 
   const build = (kind: 'opaque' | 'cutout' | 'liquid'): MeshBasicNodeMaterial => {
     const data = attribute('data', 'vec4');
@@ -91,11 +114,16 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
     const sky = curve(data.z).mul(daylight);
     const torch = curve(data.w);
     const light = max(skyTint.mul(sky), vec3(1.0, 0.86, 0.66).mul(torch));
-    const rgb = tex.rgb.mul(ao).mul(kind === 'cutout' ? mix(shade, float(1), float(0.35)) : shade).mul(light);
+    const lit = tex.rgb.mul(ao).mul(kind === 'cutout' ? mix(shade, float(1), float(0.35)) : shade).mul(light);
+    const flat = length(positionWorld.xz.sub(fogOrigin));
+    const haze = float(1).sub(exp(fogDensity.mul(length(toCam)).pow(2).negate()));
+    const fogged = clamp(max(smoothstep(fogNear, fogFar, flat), haze), 0, 1);
+    const rgb = mix(lit, fogColor, fogged);
 
     const m = new MeshBasicNodeMaterial();
     m.colorNode = vec4(rgb, float(1));
-    m.fog = true;
+    // Fogged above (see the module comment); the scene fog would fog it twice.
+    m.fog = false;
     if (kind === 'cutout') {
       m.opacityNode = tex.a;
       m.alphaTest = 0.5;
@@ -119,7 +147,16 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
     opaque,
     cutout,
     liquid,
-    uniforms: { daylight, skyTint: skyTint as unknown as TerrainUniforms['skyTint'], liquidOpacity },
+    uniforms: {
+      daylight,
+      skyTint: skyTint as unknown as TerrainUniforms['skyTint'],
+      liquidOpacity,
+      fogColor: fogColor as unknown as TerrainUniforms['fogColor'],
+      fogOrigin: fogOrigin as unknown as TerrainUniforms['fogOrigin'],
+      fogNear,
+      fogFar,
+      fogDensity,
+    },
     dispose() {
       opaque.dispose();
       cutout.dispose();

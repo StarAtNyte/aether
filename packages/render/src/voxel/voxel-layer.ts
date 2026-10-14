@@ -16,6 +16,7 @@
 import {
   Box3,
   BoxGeometry,
+  type Color,
   BufferAttribute,
   BufferGeometry,
   DataTexture,
@@ -295,6 +296,38 @@ export class VoxelLayer {
       c.setRGB(tint[0], tint[1], tint[2]);
       this.version++;
     }
+  }
+
+  /**
+   * Terrain fog (see `terrain-material.ts`): `color` in linear RGB, the
+   * linear fade from `near` to `far` metres of horizontal distance, and the
+   * environment's own exponential haze `density`. Called every frame; only
+   * changes bump {@link version}.
+   */
+  setFog(color: Color, near: number, far: number, density: number): void {
+    const m = this.mats;
+    if (!m) return;
+    const u = m.uniforms;
+    const n = Number.isFinite(near) ? Math.max(0, near) : 1e5;
+    const f = Number.isFinite(far) ? Math.max(n + 1, far) : n + 1;
+    const d = Number.isFinite(density) ? Math.max(0, density) : 0;
+    if (u.fogNear.value !== n || u.fogFar.value !== f || u.fogDensity.value !== d || !u.fogColor.value.equals(color)) {
+      u.fogNear.value = n;
+      u.fogFar.value = f;
+      u.fogDensity.value = d;
+      u.fogColor.value.copy(color);
+      this.version++;
+    }
+  }
+
+  /** Centre of the terrain's distance fog (world x, z): the streaming centre. */
+  setFogOrigin(x: number, z: number): void {
+    const m = this.mats;
+    if (!m || !Number.isFinite(x) || !Number.isFinite(z)) return;
+    const o = m.uniforms.fogOrigin.value;
+    if (o.x === x && o.y === z) return;
+    o.set(x, z);
+    this.version++;
   }
 
   /** Install (or with null remove) the meshes of chunk (cx, cz). */

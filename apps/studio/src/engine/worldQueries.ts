@@ -2,7 +2,7 @@
  * Pure queries over a world document used by the simulation and studio
  * (avatar lookup, runtime-moving entities, camera framing decisions).
  */
-import type { EntityId, Vec3, WorldDoc } from '@aether/core';
+import { deepEqual, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
 
 /** Entity the player controls: `player.controls`, else the first `playerController` entity. */
 export function findAvatar(world: WorldDoc): EntityId | null {
@@ -39,18 +39,37 @@ export function movingIds(world: WorldDoc): EntityId[] {
 }
 
 /**
- * True when `next` is essentially a different world from `prev`: fewer than
- * half of its entities are unchanged objects from `prev` (History shares
- * untouched entities structurally, so a rebuilt world has new objects even
- * when ids repeat). The camera re-frames such worlds.
+ * True when `next` is essentially a different world from `prev`: its block
+ * terrain is new (added, or another seed / preset), or fewer than half of
+ * its entities are unchanged objects from `prev` (History shares untouched
+ * entities structurally, so a rebuilt world has new objects even when ids
+ * repeat). The camera re-frames such worlds.
  */
 export function isNewWorld(prev: WorldDoc, next: WorldDoc): boolean {
   if (prev === next) return false;
+  // Block terrain that appeared or was regenerated (other seed or preset) is a new world,
+  // even with no entities at all (most block worlds have none).
+  const v = next.voxel;
+  if (v && (!prev.voxel || prev.voxel.preset !== v.preset || (prev.voxel.seed ?? prev.seed) !== (v.seed ?? next.seed))) return true;
   const ids = Object.keys(next.entities);
   if (ids.length === 0) return false;
   let kept = 0;
   for (const id of ids) if (Object.prototype.hasOwnProperty.call(prev.entities, id) && prev.entities[id] === next.entities[id]) kept++;
   return kept * 2 < ids.length;
+}
+
+/**
+ * Index of the first block edit `next` added to the same block terrain as
+ * `prev` (the camera shows edits from there on), or null when the terrain's
+ * edits did not grow. Edits replaced in place count from the first change.
+ */
+export function addedVoxelEdits(prev: WorldDoc, next: WorldDoc): number | null {
+  const a = prev.voxel?.edits;
+  const b = next.voxel?.edits;
+  if (!a || !b || a === b) return null;
+  let i = 0;
+  while (i < a.length && i < b.length && (a[i] === b[i] || deepEqual(a[i], b[i]))) i++;
+  return i < b.length ? i : null;
 }
 
 /** Smallest / largest radius {@link framingSphere} returns (metres). */

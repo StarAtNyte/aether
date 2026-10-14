@@ -91,6 +91,13 @@ const FRAME_OFFSET: Vec3 = [8, 7, 15];
 const FRAME_DURATION = 1.1;
 /** Radius around the player spawn framed for character games. */
 const PLAYER_FRAME_RADIUS = 14;
+/** Camera offset direction over block terrain (elevated three-quarter view). */
+const VOXEL_FRAME_OFFSET: Vec3 = [1, 0.62, 1.25];
+/** Framing radius over the spawn of block terrain without edits (blocks). */
+const VOXEL_SPAWN_RADIUS = 34;
+/** Framing radius bounds around block edits (blocks): small builds keep some landscape, huge ones stay readable. */
+const VOXEL_EDIT_MIN_RADIUS = 16;
+const VOXEL_EDIT_MAX_RADIUS = 72;
 /** Max transient (runtime-spawned) entities alive at once. */
 const MAX_TRANSIENTS = 2000;
 /** Consecutive failed frames after which the render loop is stopped (persistent GPU/device failure). */
@@ -484,9 +491,12 @@ export class Simulation {
     const world = this.history.current;
     const p = world.player;
     if (world.voxel && this.voxel?.active) {
-      // Block terrain: an elevated view over the spawn area (chunks stream in around the target).
-      const g = this.voxel.groundAt(p.spawn[0], p.spawn[2]);
-      this.renderer.frameSphere([p.spawn[0], g + 6, p.spawn[2]], 34, [1, 0.62, 1.25], opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+      // Block terrain: an elevated view over what was built (structures, pixel art …), else
+      // over the spawn area. Chunks stream in around the orbit target.
+      if (!this.frameVoxelEdits(0, opts.flyIn === true)) {
+        const g = this.voxel.groundAt(p.spawn[0], p.spawn[2]);
+        this.renderer.frameSphere([p.spawn[0], g + 6, p.spawn[2]], VOXEL_SPAWN_RADIUS, VOXEL_FRAME_OFFSET, opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+      }
       return;
     }
     const spawnFocus = p.mode !== 'orbit' && !findAvatar(world);
@@ -498,6 +508,25 @@ export class Simulation {
     }
     const sphere = framingSphere(world);
     if (sphere) this.renderer.frameSphere(sphere.center, sphere.radius, FRAME_OFFSET, FRAME_DURATION);
+  }
+
+  /**
+   * Show the block edits a turn added (from edit index `from` on): the
+   * camera frames them from an elevated view. Waits for the renderer.
+   */
+  async revealVoxelEdits(from: number): Promise<void> {
+    await this.whenSynced();
+    if (this.disposed || this.session || !this.history.current.voxel) return;
+    this.frameVoxelEdits(from, false);
+  }
+
+  /** Frame block edits from index `from` on; false when there are none (or no block terrain). */
+  private frameVoxelEdits(from: number, flyIn: boolean): boolean {
+    const focus = this.voxel?.active ? this.voxel.editFocus(from) : null;
+    if (!focus) return false;
+    const radius = Math.max(VOXEL_EDIT_MIN_RADIUS, Math.min(VOXEL_EDIT_MAX_RADIUS, focus.radius * 1.15));
+    this.renderer.frameSphere(focus.center, radius, VOXEL_FRAME_OFFSET, flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+    return true;
   }
 
   /**

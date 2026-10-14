@@ -40,6 +40,8 @@ const HUD_MS = 100;
 const UPLOADS_PER_FRAME = 4;
 /** Quad budget of those uploads per frame (one big chunk may exceed it alone). */
 const UPLOAD_QUADS_PER_FRAME = 12_000;
+/** Most recent document edits {@link VoxelSession.editFocus} frames. */
+const FOCUS_EDITS = 64;
 /** Seconds of game time between sky updates. */
 const SKY_STEP_HOURS = 0.08;
 
@@ -562,6 +564,7 @@ export class VoxelSession {
     else {
       this.renderer.orbitTarget(this.center);
       this.streamer.setCenter(this.center[0], this.center[2]);
+      this.layer?.setFogOrigin(this.center[0], this.center[2]);
     }
     this.streamer.update();
     this.flushUploads();
@@ -570,6 +573,39 @@ export class VoxelSession {
   /** Ground height (feet y) near (x, z) from the generator (frames the camera before chunks exist). */
   groundAt(x: number, z: number): number {
     return this.gen ? this.gen.groundLevel(Math.floor(x), Math.floor(z)) : 64;
+  }
+
+  /**
+   * A sphere around the document's block edits (structures, pixel art,
+   * shapes) from index `from` on, for camera framing; null when there are
+   * none. Bounds come from the edit compiler (surface anchors resolved);
+   * at most the last {@link FOCUS_EDITS} edits are considered.
+   */
+  editFocus(from = 0): { center: [number, number, number]; radius: number } | null {
+    const t = this.terrain;
+    const reg = this.reg;
+    const gen = this.gen;
+    if (!t || !reg || !gen || !this.identity) return null;
+    const start = Math.max(0, Math.min(t.edits.length, from), t.edits.length - FOCUS_EDITS);
+    const edits = t.edits.slice(start).filter((e) => e.shape !== 'clear');
+    if (edits.length === 0) return null;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    let z1 = -Infinity;
+    for (const e of compileEdits(edits, reg, gen, this.identity.seed)) {
+      x0 = Math.min(x0, e.minX);
+      y0 = Math.min(y0, e.minY);
+      z0 = Math.min(z0, e.minZ);
+      x1 = Math.max(x1, e.maxX + 1);
+      y1 = Math.max(y1, e.maxY + 1);
+      z1 = Math.max(z1, e.maxZ + 1);
+    }
+    if (!Number.isFinite(x0) || !Number.isFinite(x1)) return null;
+    const radius = 0.5 * Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    return { center: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], radius };
   }
 
   /** Begin the game (play mode). */

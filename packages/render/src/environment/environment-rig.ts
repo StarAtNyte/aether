@@ -6,6 +6,7 @@
  */
 import {
   BufferAttribute,
+  Color,
   DataTexture,
   DirectionalLight,
   EquirectangularReflectionMapping,
@@ -109,8 +110,14 @@ function createSkirtGeometry(size: number): RingGeometry {
   return g;
 }
 
-/** FogExp2 density × distance giving ≈ 95 % fog (√−ln 0.05). */
-const VIEW_FOG_K = 1.73;
+/**
+ * Scene `FogExp2` density × view distance in view-distance mode: ≈ 58 % fog
+ * at 0.8 of the distance, close to the terrain's own linear fade there, so
+ * mobs and props fade like the blocks around them.
+ */
+const VIEW_FOG_K = 1.2;
+/** Share of the view distance where the terrain's linear fog starts. */
+const TERRAIN_FOG_START = 0.5;
 
 /** Owns every environment object; add {@link group} to the scene. */
 export class EnvironmentRig {
@@ -130,6 +137,13 @@ export class EnvironmentRig {
   private envMap: DataTexture | null = null;
   private contentRadius = DEFAULT_CONTENT_RADIUS;
   private fogParams: FogParams | null = null;
+  /**
+   * Fog of block terrain (its materials fog themselves, see
+   * `voxel/terrain-material.ts`): colour, the linear fade over horizontal
+   * distance (`near` → `far`, metres; far = the view distance) and the
+   * environment's explicit fog density. Updated in place.
+   */
+  readonly terrainFog = { color: new Color('#c4def4'), near: 1e5, far: 2e5, density: 0 };
   private mapCap = 2048;
 
   /** Upper bound on the sun shadow map resolution (the GPU budget's cap). Lowering it shrinks the current map right away. */
@@ -252,8 +266,22 @@ export class EnvironmentRig {
     if (!env || !scene) return;
     const s = this.state;
     const own = resolveFog(env, s, this.contentRadius);
-    const fog = this.fogDistance === null ? own : { color: own?.color ?? s.fogColor, density: Math.max(own?.density ?? 0, VIEW_FOG_K / this.fogDistance) };
+    const view = this.fogDistance;
+    // View-distance mode: only fog the document asks for (not the ground haze) adds to the fade.
+    const explicit = view === null ? null : resolveFog({ fog: env.fog, ground: null }, s, view);
+    const fog = view === null ? own : { color: explicit?.color ?? s.fogColor, density: Math.max(explicit?.density ?? 0, VIEW_FOG_K / view) };
     this.fogParams = fog;
+    const tf = this.terrainFog;
+    if (view === null) {
+      tf.near = 1e5;
+      tf.far = 2e5;
+      tf.density = 0;
+    } else {
+      tf.near = view * TERRAIN_FOG_START;
+      tf.far = view;
+      tf.density = explicit?.density ?? 0;
+      tf.color.set(fog?.color ?? s.fogColor);
+    }
     if (fog) {
       this.fog.color.set(fog.color);
       this.fog.density = fog.density;

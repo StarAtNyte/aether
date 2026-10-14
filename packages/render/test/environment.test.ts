@@ -143,6 +143,29 @@ describe('EnvironmentRig', () => {
     rig.dispose();
   });
 
+  it('view-distance mode: terrain fades linearly over its last half, the scene haze stays light', () => {
+    const rig = new EnvironmentRig(new MaterialCache(), true);
+    const scene = new Scene();
+    rig.apply(env({ sky: 'day' }), scene);
+    expect(rig.terrainFog.near).toBeGreaterThan(1e4);
+    rig.setFogDistance(128);
+    expect(rig.terrainFog.near).toBe(64);
+    expect(rig.terrainFog.far).toBe(128);
+    // No explicit fog in the document: no extra exponential haze on the terrain.
+    expect(rig.terrainFog.density).toBe(0);
+    const fog = scene.fog as FogExp2;
+    // ≈ 58 % at 0.8 of the distance (no longer 95 % at the edge, 53 % at half of it).
+    expect(1 - Math.exp(-((fog.density * 64) ** 2))).toBeLessThan(0.35);
+    expect(rig.terrainFog.color.equals(fog.color)).toBe(true);
+    // An explicit fog (misty world) adds its haze to the terrain fade.
+    rig.apply(env({ sky: 'day', fog: { color: '#aabbcc', density: 0.9 } }), scene);
+    expect(rig.terrainFog.density).toBeGreaterThan(0);
+    rig.setFogDistance(null);
+    expect(rig.terrainFog.near).toBeGreaterThan(1e4);
+    expect(rig.terrainFog.density).toBe(0);
+    rig.dispose();
+  });
+
   it('ground tint stays subtle', () => {
     for (let i = 0; i < 100; i++) {
       const t = groundTint(i * 13.7 - 500, i * 7.1 - 300);

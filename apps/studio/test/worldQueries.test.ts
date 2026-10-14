@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createWorld, History, type WorldDocInput } from '@aether/core';
-import { findAvatar, focusTarget, framingSphere, isNewWorld, movingIds } from '../src/engine/worldQueries';
+import { createWorld, History, type VoxelEditInput, type WorldDocInput } from '@aether/core';
+import { addedVoxelEdits, findAvatar, focusTarget, framingSphere, isNewWorld, movingIds } from '../src/engine/worldQueries';
 import { createStarterWorld } from '../src/lib/starterWorld';
 
 describe('world queries', () => {
@@ -70,5 +70,29 @@ describe('world queries', () => {
     const t = framingSphere(createWorld({ entities: statics }))!;
     expect(t.radius).toBeLessThanOrEqual(60);
     expect(t.center[0]).toBeLessThan(20);
+  });
+  it('treats new or regenerated block terrain as a new world, even without entities (regression: camera stayed underground)', () => {
+    const start = createStarterWorld();
+    const blocks = createWorld({ voxel: { preset: 'survival' } });
+    expect(Object.keys(blocks.entities)).toHaveLength(0);
+    expect(isNewWorld(start, blocks)).toBe(true);
+    expect(isNewWorld(blocks, createWorld({ voxel: { preset: 'desert' } }))).toBe(true);
+    expect(isNewWorld(blocks, createWorld({ voxel: { preset: 'survival', seed: 99 } }))).toBe(true);
+    // Same terrain with an extra edit: not a new world (the edit is revealed instead).
+    const built = createWorld({ voxel: { preset: 'survival', edits: [{ shape: 'box', from: [0, 0, 0], to: [3, 3, 3], block: 'stone', anchor: 'surface' }] } });
+    expect(isNewWorld(blocks, built)).toBe(false);
+  });
+
+  it('finds the first block edit a turn added', () => {
+    const box: VoxelEditInput = { shape: 'box', from: [0, 0, 0], to: [3, 3, 3], block: 'stone' };
+    const ball: VoxelEditInput = { shape: 'sphere', center: [9, 70, 9], radius: 3, block: 'glass' };
+    const none = createWorld({ voxel: { preset: 'survival' } });
+    const one = createWorld({ voxel: { preset: 'survival', edits: [box] } });
+    const two = createWorld({ voxel: { preset: 'survival', edits: [box, ball] } });
+    expect(addedVoxelEdits(none, one)).toBe(0);
+    expect(addedVoxelEdits(one, two)).toBe(1);
+    expect(addedVoxelEdits(two, one)).toBeNull();
+    expect(addedVoxelEdits(two, two)).toBeNull();
+    expect(addedVoxelEdits(createWorld(), one)).toBeNull();
   });
 });

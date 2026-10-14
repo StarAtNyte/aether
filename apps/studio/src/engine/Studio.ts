@@ -58,7 +58,7 @@ interface RunUsage {
   /** Models that answered, in order of first use. */
   models: string[];
 }
-import { isNewWorld } from './worldQueries';
+import { addedVoxelEdits, isNewWorld } from './worldQueries';
 
 const log = createLogger('studio');
 
@@ -778,7 +778,9 @@ export class Studio {
       if (isNewWorld(before, after)) void this.sim?.frameWorld();
       else if (after !== before) {
         const d = diffWorlds(before, after);
-        void this.sim?.revealEntities([...d.added, ...d.changed]);
+        const builtFrom = addedVoxelEdits(before, after);
+        if (builtFrom !== null && d.added.length === 0) void this.sim?.revealVoxelEdits(builtFrom);
+        else void this.sim?.revealEntities([...d.added, ...d.changed]);
       }
     } catch (err) {
       if (abort.signal.aborted || isAbortError(err)) status = 'aborted';

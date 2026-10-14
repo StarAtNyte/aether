@@ -1436,6 +1436,10 @@ export class WorldRenderer {
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     if (this.sync.viewNeedsUpdate) this.needsDraw = true;
     const vox = this.voxelLayer;
+    if (vox) {
+      const tf = this.env.terrainFog;
+      vox.setFog(tf.color, tf.near, tf.far, tf.density);
+    }
     if (vox && vox.version !== this.voxelVersion) {
       this.voxelVersion = vox.version;
       this.needsDraw = true;
@@ -1726,6 +1730,9 @@ export class WorldRenderer {
     for (const o of hidden) o.visible = false;
     if (fog instanceof FogExp2) fog.density = 0;
     else this.scene.fog = null;
+    // Block terrain fogs itself (by distance to the camera): clear it for the far capture views too.
+    const tf = this.env.terrainFog;
+    this.voxelLayer?.setFog(tf.color, 1e5, 2e5, 0);
     this.scene.background = new Color(this.env.skyState.horizon);
     let restored = false;
     const restore = (): void => {
@@ -1736,6 +1743,7 @@ export class WorldRenderer {
       });
       this.scene.fog = fog;
       if (fog instanceof FogExp2 && fogDensity !== null) fog.density = fogDensity;
+      this.voxelLayer?.setFog(tf.color, tf.near, tf.far, tf.density);
       this.scene.background = background;
       cam.position.copy(_savedCamPos);
       cam.quaternion.copy(_savedCamQuat);
@@ -1781,6 +1789,7 @@ export class WorldRenderer {
           for (const o of hidden) o.visible = false;
           if (fog instanceof FogExp2) fog.density = 0;
           else this.scene.fog = null;
+          this.voxelLayer?.setFog(tf.color, 1e5, 2e5, 0);
           this.scene.background = new Color(this.env.skyState.horizon);
         }
       }
