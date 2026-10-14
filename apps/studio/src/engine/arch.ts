@@ -11,7 +11,7 @@
  */
 import type { StoreApi } from 'zustand/vanilla';
 import type { History, Patch, WorldDoc } from '@aether/core';
-import { applyArchOps, doorAtOp, drawRoomOp, listBuildings, listLevels, planOf, PlanError, windowAtOp, type P2 } from '@aether/arch';
+import { applyArchOps, doorAtOp, drawRoomCandidates, listBuildings, listLevels, planOf, PlanError, windowAtOp, type P2 } from '@aether/arch';
 import type { StudioState } from '../state/store';
 import { skyForHour, type ArchUiState } from '../state/archUi';
 import type { Simulation } from './Simulation';
@@ -207,10 +207,23 @@ export class ArchController {
     }
   }
 
-  /** Add a room drawn on the plan (outline in plan coordinates). */
+  /**
+   * Add a room drawn on the plan (outline in plan coordinates). Door
+   * placements are tried in order (mid-wall, near either end, other
+   * neighbours, an entrance) and the first that leaves every room reachable
+   * is committed — furniture in the neighbouring room can block a door.
+   */
   drawRoom(points: readonly P2[]): ArchEditResult {
     const type = this.host.store.getState().arch.roomType;
-    return this.guarded(({ plan, level }) => ({ ops: [drawRoomOp(plan, level, points, type)], message: `Draw ${type} room` }));
+    return this.guarded(({ plan, level }) => {
+      const candidates = drawRoomCandidates(plan, level, points, type);
+      const world = this.host.history.current;
+      for (const op of candidates) {
+        const res = applyArchOps(world, [op]);
+        if (res.errors.length === 0 && res.reports.every((r) => r.passed)) return { ops: [op], message: `Draw ${type} room` };
+      }
+      return { ops: [candidates[0] as Record<string, unknown>], message: `Draw ${type} room` };
+    });
   }
 
   /** Add a door where the plan was clicked. */

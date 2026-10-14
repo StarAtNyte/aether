@@ -1286,6 +1286,8 @@ snapPlanPoint(p, level, grid=0.1)        // room corner within 0.3 m, else onto 
 roomShape(points) → { rect } | { polygon } // PlanError for < 3 corners, self-crossing, < 1.5 m²
 drawRoomOp(plan, level, points, type, name?)  // refuses overlaps; adds a door to the neighbour sharing the longest wall
                                               // (≥ 1.1 m), or an entrance for a free-standing room
+drawRoomCandidates(plan, level, points, type) // ≤ 8 alternatives (door near either end, other neighbours, an entrance);
+                                              // the studio commits the first whose result passes the usability checks
 pickWall(level, p) → WallPick | null     // shared wall [roomA, roomB] or exterior wall [room, 'outside'] + side, within 0.45 m
 doorAtOp(plan, level, p, { width?, kind? }) / windowAtOp(plan, level, p, { width? }) / doorAtFraction(span, t, width)
 nextRoomId(plan, type) / levelPolygons(level)

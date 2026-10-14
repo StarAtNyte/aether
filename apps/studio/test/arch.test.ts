@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, History, type WorldDoc } from '@aether/core';
-import { applyArchOps } from '@aether/arch';
+import { applyArchOps, checkBuildings } from '@aether/arch';
+import { planArch } from '../../../packages/agent/src/providers/mock/arch';
 import { DEFAULT_ARCH_UI, hourLabel, mergeArchUi, SECTION_RANGE, sectionLevel, skyForHour, TIME_PRESETS } from '../src/state/archUi';
 import { areaLabel, clampZoom, closesPolygon, dragRect, fitPlan, lengthLabel, outlineArea, panBy, pathOf, PLAN_ZOOM, roomColors, viewBox, zoomAt } from '../src/lib/planView';
 import { nearestTarget, nextVariant, roomToggle, walkIndex, type WalkTarget } from '../src/engine/walkthrough';
@@ -226,6 +227,20 @@ describe('ArchController', () => {
     expect(c.addWindow([3, -0.05])).toBeNull();
     expect(c.removeRoom('office')).toBeNull();
     expect(Object.values(h.history.current.entities).some((e) => e.arch?.kind === 'office')).toBe(false);
+    c.dispose();
+  });
+
+  it('keeps a drawn room reachable when furniture blocks the first door spot (regression)', () => {
+    // The offline apartment: a room drawn behind the main bedroom used to get a door the bed blocked.
+    const plan = planArch('a modern two-bedroom apartment', '')!.arch!.ops;
+    const res = applyArchOps(createWorld(), plan);
+    const world = applyPatches(createWorld(), res.patches).world;
+    const h = host(world);
+    const c = new ArchController(h);
+    expect(c.drawRoom([[0, 10.6], [3.6, 10.6], [3.6, 13.6], [0, 13.6]])).toBeNull();
+    const reports = checkBuildings(h.history.current, '*', 0.8);
+    expect(reports[0]?.rooms).toBe(7);
+    expect(reports[0]?.passed).toBe(true);
     c.dispose();
   });
 

@@ -32,4 +32,4 @@ export { applyArchOps, describeBuilding, planOf, ArchOp, MAX_ARCH_OPS, type Arch
 export { checkBuilding, checkBuildings, summarizeBuildingReports, NAV_CELL, type ArchIssue, type BuildingReport } from './nav';
 export { RoomType, ArchStyle, Compass, PlanRoom, PlanDoor, PlanWindow, PlanStair, PlanLevel, PlanRoof, PlanItem, PlanSite, MAX_BUILDING_ENTITIES } from './plan';
 export { floorPlan2d, listBuildings, listLevels, planToWorld, worldToPlan, type FloorPlan2d, type Plan2dRoom, type Plan2dWall, type Plan2dDoor, type Plan2dWindow, type Plan2dItem, type Plan2dStair, type Plan2dDimension, type Plan2dLevel } from './plan2d';
-export { snapPlanPoint, nextRoomId, roomShape, drawRoomOp, pickWall, doorAtFraction, doorAtOp, windowAtOp, levelPolygons, PLAN_GRID, SNAP_REACH, MIN_DRAWN_ROOM_AREA, MAX_DRAWN_POINTS, WALL_PICK_REACH, type WallPick } from './plan-edit';
+export { snapPlanPoint, nextRoomId, roomShape, drawRoomOp, drawRoomCandidates, pickWall, doorAtFraction, doorAtOp, windowAtOp, levelPolygons, PLAN_GRID, SNAP_REACH, MIN_DRAWN_ROOM_AREA, MAX_DRAWN_POINTS, WALL_PICK_REACH, type WallPick } from './plan-edit';

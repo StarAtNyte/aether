@@ -19,6 +19,8 @@
  * Run: `npm run build && npm run e2e:arch` (`-- --chromium` / `-- --firefox`
  * for one browser, `-- --webgpu` / `-- --webgl2` for one Chromium backend).
  */
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
 import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
@@ -290,6 +292,12 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(back.walls === 'cutaway' && back.photo === false && back.quality === 'realtime', `[${label}] view modes should come back after Stop: ${JSON.stringify(back)}`);
     log(`[${label}] night + lights + photo mode, stopped, cutaway restored`);
     check(errors.length === 0, `[${label}] page errors: ${errors.slice(0, 5).join(' | ')}`);
+  } catch (e) {
+    // Keep a picture of the failure for diagnosis (outside the repository).
+    const shot = join(tmpdir(), `aether-arch-e2e-${label}.png`);
+    await page.screenshot({ path: shot }).catch(() => undefined);
+    log(`[${label}] failure screenshot: ${shot}`);
+    throw e;
   } finally {
     await context.close();
   }

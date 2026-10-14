@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createWorld, applyPatches } from '@aether/core';
-import { BuildingPlan, applyArchOps, checkBuilding, doorAtFraction, doorAtOp, drawRoomOp, nextRoomId, pickWall, planOf, roomShape, snapPlanPoint, windowAtOp, PlanError, type P2 } from '../src/index';
+import { BuildingPlan, applyArchOps, checkBuilding, doorAtFraction, doorAtOp, drawRoomCandidates, drawRoomOp, nextRoomId, pickWall, planOf, roomShape, snapPlanPoint, windowAtOp, PlanError, type P2 } from '../src/index';
 
 const PLAN = BuildingPlan.parse({
   id: 'flat',
@@ -76,6 +76,20 @@ describe('drawRoomOp', () => {
   it('makes unique ids', () => {
     expect(nextRoomId(PLAN, 'living')).toBe('living-2');
     expect(nextRoomId(PLAN, 'office')).toBe('office');
+  });
+});
+
+describe('drawRoomCandidates', () => {
+  it('offers the main door first, then other spots, other neighbours and an entrance', () => {
+    const c = drawRoomCandidates(PLAN, 0, [[0, 5], [10, 5], [10, 9], [0, 9]], 'bedroom');
+    expect(c[0]).toEqual(drawRoomOp(PLAN, 0, [[0, 5], [10, 5], [10, 9], [0, 9]], 'bedroom'));
+    const doors = c.map((op) => (op['doors'] as Array<Record<string, unknown>>)[0]);
+    expect(doors[1]).toMatchObject({ at: 0.12 });
+    expect(doors[2]).toMatchObject({ at: 0.88 });
+    // The bedroom also touches the kitchen: a door to it is an alternative.
+    expect(doors.some((d) => (d?.['between'] as string[])[0] === 'kitchen')).toBe(true);
+    expect(doors.at(-1)).toMatchObject({ between: ['bedroom', 'outside'] });
+    expect(c.length).toBeLessThanOrEqual(8);
   });
 });
 

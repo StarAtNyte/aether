@@ -16,15 +16,26 @@ export interface PlanCamera {
 /** Zoom limits (pixels per metre). */
 export const PLAN_ZOOM: readonly [number, number] = Object.freeze([6, 400]) as readonly [number, number];
 
-/** Camera that fits plan bounds `[x0, z0, x1, z1]` into a `width`×`height` px view with `margin` px around. */
-export function fitPlan(bounds: readonly [number, number, number, number], width: number, height: number, margin = 64): PlanCamera {
+/** Space (px) kept free around a fitted plan: a number for every side, or per side (overlays sit over the plan). */
+export type PlanInsets = number | { top: number; right: number; bottom: number; left: number };
+
+/**
+ * Camera that fits plan bounds `[x0, z0, x1, z1]` into a `width`×`height` px
+ * view, keeping `insets` px free (overlay bars over the plan), centred in
+ * the free area.
+ */
+export function fitPlan(bounds: readonly [number, number, number, number], width: number, height: number, insets: PlanInsets = 64): PlanCamera {
   const [x0, z0, x1, z1] = bounds;
+  const m = typeof insets === 'number' ? { top: insets, right: insets, bottom: insets, left: insets } : insets;
   const w = Math.max(1, x1 - x0);
   const h = Math.max(1, z1 - z0);
-  const vw = Math.max(1, width - 2 * margin);
-  const vh = Math.max(1, height - 2 * margin);
+  const vw = Math.max(1, width - m.left - m.right);
+  const vh = Math.max(1, height - m.top - m.bottom);
   const scale = clampZoom(Math.min(vw / w, vh / h));
-  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, scale };
+  // Shift the centre so the plan sits in the middle of the free area, not of the whole view.
+  const shiftX = (m.left - m.right) / 2 / scale;
+  const shiftZ = (m.top - m.bottom) / 2 / scale;
+  return { cx: (x0 + x1) / 2 - shiftX, cz: (z0 + z1) / 2 - shiftZ, scale };
 }
 
 /** Clamp a zoom to {@link PLAN_ZOOM}. */

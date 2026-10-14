@@ -132,6 +132,33 @@ export function drawRoomOp(plan: BuildingPlan, levelIndex: number, points: reado
   return { op: 'add_room', building: plan.id, level: levelIndex, room: { id, type, ...(name ? { name: name.slice(0, 60) } : {}), ...shape }, doors };
 }
 
+/**
+ * Alternative `add_room` ops for the same drawn outline, best first: the
+ * door to the main neighbour at mid-wall, then near either end of the shared
+ * wall, then to every other neighbour sharing ≥ 1.1 m, then an entrance from
+ * outside. Tools try them in order and keep the first whose result passes
+ * the usability checks (furniture in the neighbour may block a door).
+ * Bounded (≤ 8 ops).
+ */
+export function drawRoomCandidates(plan: BuildingPlan, levelIndex: number, points: readonly P2[], type: RoomType, name?: string): Array<Record<string, unknown>> {
+  const primary = drawRoomOp(plan, levelIndex, points, type, name);
+  const level = plan.levels[levelIndex] as PlanLevel;
+  const room = primary['room'] as { id: string; rect?: [number, number, number, number]; polygon?: P2[] };
+  const poly = room.rect ? positive([[room.rect[0], room.rect[1]], [room.rect[2], room.rect[1]], [room.rect[2], room.rect[3]], [room.rect[0], room.rect[3]]]) : positive(room.polygon ?? []);
+  const out: Array<Record<string, unknown>> = [primary];
+  const doors = primary['doors'] as Array<Record<string, unknown>>;
+  const main = doors[0];
+  if (main) for (const at of [0.12, 0.88]) out.push({ ...primary, doors: [{ ...main, at }] });
+  const mainNeighbour = main ? (main['between'] as [string, string])[0] : null;
+  for (const r of levelPolygons(level)) {
+    if (r.type === 'terrace' || r.id === mainNeighbour) continue;
+    const s = sharedSpans(poly, r.polygon)[0];
+    if (s && s.t1 - s.t0 >= AUTO_DOOR_MIN_SPAN) out.push({ ...primary, doors: [{ between: [r.id, room.id], width: type === 'bathroom' ? 0.8 : 0.9 }] });
+  }
+  out.push({ ...primary, doors: [{ between: [room.id, 'outside'], width: 1 }] });
+  return out.slice(0, 8);
+}
+
 /** What a click on the plan means for an opening tool. */
 export interface WallPick {
   /** Rooms on either side ("outside" for exterior walls). */
