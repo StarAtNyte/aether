@@ -28,7 +28,8 @@ const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const PAUSE_MS = 400;
 const ALLOWED_LICENCES = new Set(['CC0-1.0', 'CC-BY-4.0']);
-const ALLOWED_HOSTS = new Set(['kenney.nl', 'api.polyhaven.com', 'dl.polyhaven.org']);
+// ambientCG serves downloads from its own CDN host (Struffel Productions runs ambientCG).
+const ALLOWED_HOSTS = new Set(['kenney.nl', 'api.polyhaven.com', 'dl.polyhaven.org', 'ambientcg.com', 'acg-download.struffelproductions.com']);
 
 const Pack = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -54,6 +55,25 @@ export const Sources = z.object({
     hdris: z.array(z.string().regex(/^[A-Za-z0-9_]+$/)).max(16),
     resolution: z.enum(['1k', '2k']),
   }),
+  /** ambientCG PBR materials for the photo finishes (pinned SHA-256 per archive). */
+  ambientcg: z
+    .object({
+      licence: z.literal('CC0-1.0'),
+      licenceUrl: z.string().url(),
+      resolution: z.literal('1K-JPG'),
+      materials: z
+        .array(
+          z.object({
+            finish: z.string().regex(/^[a-z-]+$/),
+            id: z.string().regex(/^[A-Za-z0-9]+$/),
+            /** Real-world size of one texture tile in metres (default: the finish's own tile). */
+            tile: z.number().positive().max(10).optional(),
+            sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+          }),
+        )
+        .max(32),
+    })
+    .optional(),
 });
 export type Sources = z.infer<typeof Sources>;
 
@@ -202,11 +222,46 @@ async function fetchPolyhaven(src: Sources['polyhaven']): Promise<void> {
   writeFileSync(join(SOURCE_DIR, 'polyhaven', 'provenance.json'), JSON.stringify(records, null, 2));
 }
 
+/**
+ * ambientCG archives: the API publishes no checksum, so the first download
+ * pins its SHA-256 into `assets/sources.json` and every later fetch must match.
+ */
+async function fetchAmbientcg(src: NonNullable<Sources['ambientcg']>): Promise<void> {
+  let pinned = false;
+  for (const m of src.materials) {
+    const dir = join(SOURCE_DIR, 'ambientcg', m.id);
+    const zipPath = join(SOURCE_DIR, 'ambientcg', `${m.id}_${src.resolution}.zip`);
+    mkdirSync(join(SOURCE_DIR, 'ambientcg'), { recursive: true });
+    let data: Buffer | null = existsSync(zipPath) ? readFileSync(zipPath) : null;
+    if (!data || (m.sha256 && hash('sha256', data) !== m.sha256)) {
+      console.log(`download ambientCG ${m.id}`);
+      data = await download(`https://ambientcg.com/get?file=${m.id}_${src.resolution}.zip`, MAX_ARCHIVE_BYTES);
+      writeFileSync(zipPath, data);
+    }
+    const got = hash('sha256', data);
+    if (m.sha256 && got !== m.sha256) throw new Error(`${m.id}: sha256 mismatch (got ${got})`);
+    if (!m.sha256) {
+      m.sha256 = got;
+      pinned = true;
+    }
+    if (!existsSync(dir)) extract(zipPath, dir);
+    console.log(`ok ambientCG ${m.id} → ${m.finish}`);
+  }
+  if (pinned) {
+    const path = join(ROOT, 'assets', 'sources.json');
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    raw['ambientcg'] = src;
+    writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`);
+    console.log('pinned new ambientCG checksums in assets/sources.json');
+  }
+}
+
 async function main(): Promise<void> {
   const sources = readSources();
   mkdirSync(SOURCE_DIR, { recursive: true });
   for (const p of sources.packs) await fetchPack(p);
   await fetchPolyhaven(sources.polyhaven);
+  if (sources.ambientcg) await fetchAmbientcg(sources.ambientcg);
   console.log(`sources ready in ${SOURCE_DIR}`);
 }
 

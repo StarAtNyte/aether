@@ -169,14 +169,23 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'cutaway', xray: false, quality: 'realtime' }));
       await page.waitForTimeout(250);
     };
+    // The studio pipeline releases its render targets a few frames after it is switched off, later
+    // on a loaded machine: read the counts once they have settled (two equal samples, ≤ 10 s).
+    const settled = async (): Promise<Awaited<ReturnType<typeof gpu>>> => {
+      await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
+      let prev = await gpu();
+      for (let i = 0; i < 20; i++) {
+        await page.waitForTimeout(500);
+        const next = await gpu();
+        if (JSON.stringify(next) === JSON.stringify(prev)) return next;
+        prev = next;
+      }
+      return prev;
+    };
     await cycle();
-    await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
-    await page.waitForTimeout(800);
-    const base = await gpu();
+    const base = await settled();
     for (let i = 0; i < 20; i++) await cycle();
-    await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
-    await page.waitForTimeout(800);
-    const after = await gpu();
+    const after = await settled();
     check(after.textures <= base.textures + 2 && after.geometries <= base.geometries + 8 && after.cached <= base.cached + 4 && after.materials <= base.materials + 4, `[${label}] GPU resources grew over 20 view cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)}`);
     log(`[${label}] 20 view/quality cycles: geometries ${base.geometries}→${after.geometries}, textures ${base.textures}→${after.textures}, cached ${base.cached}→${after.cached}, materials ${base.materials}→${after.materials}`);
 

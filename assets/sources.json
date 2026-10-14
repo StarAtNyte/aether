@@ -242,5 +242,68 @@
       "brown_photostudio_02"
     ],
     "resolution": "1k"
+  },
+  "ambientcg": {
+    "licence": "CC0-1.0",
+    "licenceUrl": "https://docs.ambientcg.com/license/",
+    "resolution": "1K-JPG",
+    "materials": [
+      {
+        "finish": "oak",
+        "id": "WoodFloor051",
+        "tile": 1.8,
+        "sha256": "3f493484eab1ec5e1c466b90e515003b286fc6d7f84ff8ff6485900bfc26cef5"
+      },
+      {
+        "finish": "walnut",
+        "id": "WoodFloor041",
+        "tile": 1.9,
+        "sha256": "e7364ef32a8db269b2475e76a7e1832eca82bdf6574191cd96b1cdb2b362cdc6"
+      },
+      {
+        "finish": "brick",
+        "id": "Bricks090",
+        "tile": 1.5,
+        "sha256": "4386aadc14eb48fc60e6ab6a4c43e658bd6f424dbc7a4cdcaea3a44c5911581c"
+      },
+      {
+        "finish": "tile",
+        "id": "Tiles107",
+        "tile": 1,
+        "sha256": "ec41de6439d087cbd4b88ecd373cf240206715a3b3e022c0d556f9eb677940d0"
+      },
+      {
+        "finish": "marble",
+        "id": "Marble016",
+        "sha256": "3740ddfd7d355b8bd5d89a36a854070b9fdf5780e11a7c2c35b5d13c56ff64ee"
+      },
+      {
+        "finish": "concrete",
+        "id": "Concrete026",
+        "sha256": "72ac6b14736920468483b6d5c88c029addaca68cb91a5258c5cd91a37bcf0415"
+      },
+      {
+        "finish": "stone",
+        "id": "PavingStones092",
+        "tile": 1.55,
+        "sha256": "4e2fb75243e38de8c23cc7740f2ef34ff933f30994590b221631b13167feedf5"
+      },
+      {
+        "finish": "fabric",
+        "id": "Fabric048",
+        "tile": 0.4,
+        "sha256": "7f97ed27675f06a164713feb0704b80e57d8597f395b03ad979e763db57193ee"
+      },
+      {
+        "finish": "plaster",
+        "id": "Plaster001",
+        "sha256": "944b4831016e42ace4a89422e4e7190912ca2f7fed6f561354c48ec7bb54d3a4"
+      },
+      {
+        "finish": "terrazzo",
+        "id": "Terrazzo009",
+        "sha256": "667b610ce2548056359bb5f928a048db561bc30976547cffa88bf4ad83e78ffd"
+      }
+    ]
   }
 }
