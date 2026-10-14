@@ -26,6 +26,7 @@ import {
 import { createInput, daylightAt, EYE_HEIGHT, skyForHour, skyTintAt, VoxelGame, type GameEvent, type GameInput, type ItemDef } from '@aether/voxel/game';
 import { createLogger, errorMessage } from '../lib/log';
 import { hudEqual, type HudRecipe, type HudSlot, type ItemIcon, type VoxelHudState } from './hudState';
+import { clearViewOffset } from './framing';
 import { VoxelInput } from './input';
 import { paintItemIcons, pixelsToObjectUrl, ICON } from './itemIcons';
 import { parseChunkKey, voxelSaveStore, type VoxelSaveStore } from './saveStore';
@@ -597,15 +598,26 @@ export class VoxelSession {
     let z1 = -Infinity;
     for (const e of compileEdits(edits, reg, gen, this.identity.seed)) {
       x0 = Math.min(x0, e.minX);
-      y0 = Math.min(y0, e.minY);
+      y0 = Math.min(y0, e.content?.minY ?? e.minY);
       z0 = Math.min(z0, e.minZ);
       x1 = Math.max(x1, e.maxX + 1);
-      y1 = Math.max(y1, e.maxY + 1);
+      y1 = Math.max(y1, (e.content?.maxY ?? e.maxY) + 1);
       z1 = Math.max(z1, e.maxZ + 1);
     }
     if (!Number.isFinite(x0) || !Number.isFinite(x1)) return null;
     const radius = 0.5 * Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     return { center: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], radius };
+  }
+
+  /**
+   * Camera offset direction for framing a subject of `radius` blocks around
+   * `center` from about `distance` blocks: `preferred` turned to the side
+   * where the terrain does not hide it (see `framing.ts`).
+   */
+  viewOffset(center: [number, number, number], radius: number, distance: number, preferred: [number, number, number]): [number, number, number] {
+    const gen = this.gen;
+    if (!gen) return preferred;
+    return clearViewOffset((x, z) => gen.groundLevel(x, z), center, radius, distance, preferred);
   }
 
   /** Begin the game (play mode). */
@@ -819,7 +831,10 @@ export class VoxelPlay {
     this.frameNo++;
     const g = this.game;
     const b = g.player.body;
-    this.streamer.setCenter(this.ready ? b.x : this.spawnXZ[0], this.ready ? b.z : this.spawnXZ[1]);
+    const fx = this.ready ? b.x : this.spawnXZ[0];
+    const fz = this.ready ? b.z : this.spawnXZ[1];
+    this.streamer.setCenter(fx, fz);
+    this.layer.setFogOrigin(fx, fz);
     if (this.ready) {
       g.eye(this.eye);
       const yaw = this.gameInput.yaw;

@@ -80,6 +80,37 @@ describe('document edits', () => {
     expect(total).toBeGreaterThan(500);
   });
 
+  it('carves structures up to the sky: no terrain floats above a building (regression)', () => {
+    const edits = [VoxelEdit.parse({ shape: 'structure', structure: 'house', at: [8, 0, 8], anchor: 'surface' })];
+    const compiled = compileEdits(edits, reg, gen, 1);
+    const house = compiled[0];
+    if (!house) throw new Error('house did not compile');
+    expect(house.content).toBeDefined();
+    expect(house.maxY).toBe(127);
+    const dense = new Uint16Array(CHUNK_VOLUME);
+    gen.generate(0, 0, dense);
+    // An overhang (e.g. a mountain ledge) high above the site.
+    const stone = id('stone');
+    for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) dense[cellIndex(x, 110, z)] = stone;
+    applyEdits(compiled, 0, 0, dense);
+    expect(dense[cellIndex(8, 110, 8)]).toBe(0);
+    // Outside the footprint the ledge stays.
+    const outX = house.minX - 1;
+    if (outX >= 0) expect(dense[cellIndex(outX, 110, 8)]).toBe(stone);
+    expect(count(dense, stone)).toBeGreaterThan(0);
+  });
+
+  it('extends foundations down to the ground under raised or cliff-side structures (regression)', () => {
+    // Placed 18 blocks above the flat ground (top block y = 51): no column may hang in the air.
+    const dense = apply({ shape: 'structure', structure: 'house', at: [8, 70, 8] });
+    const compiled = compileEdits([VoxelEdit.parse({ shape: 'structure', structure: 'house', at: [8, 70, 8] })], reg, gen, 1)[0];
+    if (!compiled?.content) throw new Error('house did not compile');
+    expect(compiled.minY).toBeLessThanOrEqual(52);
+    for (let y = 52; y < compiled.content.minY; y++) expect(dense[cellIndex(8, y, 8)], `y ${y}`).not.toBe(0);
+    // Natural ground below is untouched.
+    expect(dense[cellIndex(8, 51, 8)]).toBe(id('grass'));
+  });
+
   it('writes block text and pixel art', () => {
     expect(count(apply({ shape: 'text', text: 'HI', at: [0, 70, 0], block: 'red_wool' }), id('red_wool'))).toBe(17 + 11);
     const heart = apply({ shape: 'pixels', at: [0, 90, 2], rows: ['.#.#.', '#####', '.###.', '..#..'], palette: { '#': 'red_wool' } });

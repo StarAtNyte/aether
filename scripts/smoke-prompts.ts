@@ -15,5 +15,6 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'a minecraft-like survival world',
   'a village of block houses',
   'pixel art heart in the sky over a blocky world',
+  'a blocky stone castle on a hill',
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
 ]);

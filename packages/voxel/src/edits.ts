@@ -28,6 +28,12 @@ export interface CompiledEdit {
   readonly maxY: number;
   readonly maxZ: number;
   /**
+   * Vertical extent of the edit's own blocks when the bounds also cover
+   * carving to the sky or foundation fill below (structures); absent when
+   * the bounds are the content.
+   */
+  readonly content?: Readonly<{ minY: number; maxY: number }>;
+  /**
    * New block for world cell (x, y, z) currently holding `cur`, or −1 to
    * keep it. Only called inside the bounds.
    */
@@ -177,7 +183,10 @@ function compileOne(e: VoxelEdit, reg: BlockRegistry, gen: TerrainGenerator, wor
       });
       const [ax, ayRaw, az] = e.at;
       const ay = ayRaw + lift(ax, az);
-      return modelEdit(model, ax - model.ax, ay - model.ay, az - model.az, isSolid);
+      const ox = ax - model.ax;
+      const oy = ay - model.ay;
+      const oz = az - model.az;
+      return modelEdit(model, ox, oy, oz, isSolid, foundationReach(gen, model, ox, oy, oz));
     }
     case 'pixels':
     case 'text': {
@@ -226,13 +235,64 @@ function compileOne(e: VoxelEdit, reg: BlockRegistry, gen: TerrainGenerator, wor
   }
 }
 
-function modelEdit(m: VoxelModel, ox: number, oy: number, oz: number, isSolid: (id: number) => boolean): CompiledEdit {
-  const b = boxOf(ox, oy, oz, ox + m.sx - 1, oy + m.sy - 1, oz + m.sz - 1);
+/** Deepest extra foundation under a structure (blocks below the model). */
+export const MAX_FOUNDATION_REACH = 48;
+/** Columns sampled per side when measuring the ground under a structure. */
+const FOOTPRINT_SAMPLES = 12;
+
+/**
+ * Extra foundation depth a structure needs below its model so that no
+ * foundation column hangs in the air: how far the natural ground under its
+ * footprint drops below the model's bottom (sampled on a grid, capped at
+ * {@link MAX_FOUNDATION_REACH}).
+ */
+function foundationReach(gen: TerrainGenerator, m: VoxelModel, ox: number, oy: number, oz: number): number {
+  let low = Infinity;
+  const stepX = Math.max(1, Math.floor(m.sx / FOOTPRINT_SAMPLES));
+  const stepZ = Math.max(1, Math.floor(m.sz / FOOTPRINT_SAMPLES));
+  for (let z = 0; z < m.sz; z += stepZ) {
+    for (let x = 0; x < m.sx; x += stepX) {
+      if (m.data[x + z * m.sx] !== FOUNDATION) continue;
+      const h = gen.height(ox + x, oz + z);
+      if (h >= 0 && h < low) low = h;
+    }
+  }
+  if (!Number.isFinite(low)) return 0;
+  return Math.max(0, Math.min(MAX_FOUNDATION_REACH, oy - 1 - low));
+}
+
+/**
+ * A structure model placed with its corner at (ox, oy, oz). Besides the
+ * model's own cells: columns whose highest non-KEEP cell carves are carved
+ * up to the sky (no terrain floating above a building), and columns whose
+ * bottom cell is foundation continue `reach` blocks further down where the
+ * world is not solid (no building overhanging a slope or cliff).
+ */
+function modelEdit(m: VoxelModel, ox: number, oy: number, oz: number, isSolid: (id: number) => boolean, reach = 0): CompiledEdit {
   const area = m.sx * m.sz;
+  const sky = new Uint8Array(area);
+  let carvesSky = false;
+  for (let i = 0; i < area; i++) {
+    for (let y = m.sy - 1; y >= 0; y--) {
+      const v = m.data[i + y * area] as number;
+      if (v === KEEP) continue;
+      if (v === CARVE) {
+        sky[i] = 1;
+        carvesSky = true;
+      }
+      break;
+    }
+  }
+  const top = oy + m.sy - 1;
+  const b = boxOf(ox, oy - Math.max(0, Math.floor(reach)), oz, ox + m.sx - 1, carvesSky ? HEIGHT - 1 : top, oz + m.sz - 1);
   return {
     ...b,
+    content: { minY: Math.max(0, oy), maxY: Math.min(HEIGHT - 1, top) },
     sample: (x, y, z, cur) => {
-      const v = m.data[x - ox + (z - oz) * m.sx + (y - oy) * area] as number;
+      const col = x - ox + (z - oz) * m.sx;
+      if (y > top) return sky[col] === 1 && cur !== AIR ? AIR : SKIP;
+      if (y < oy) return m.data[col] === FOUNDATION && !isSolid(cur) ? m.foundation : SKIP;
+      const v = m.data[col + (y - oy) * area] as number;
       if (v === KEEP) return SKIP;
       if (v === CARVE) return AIR;
       if (v === FOUNDATION) return isSolid(cur) ? SKIP : m.foundation;

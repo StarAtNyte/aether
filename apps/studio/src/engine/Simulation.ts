@@ -98,6 +98,8 @@ const VOXEL_SPAWN_RADIUS = 34;
 /** Framing radius bounds around block edits (blocks): small builds keep some landscape, huge ones stay readable. */
 const VOXEL_EDIT_MIN_RADIUS = 16;
 const VOXEL_EDIT_MAX_RADIUS = 72;
+/** Approximate camera distance per framing radius (the renderer fits the sphere to a ~50° view). */
+const VOXEL_DISTANCE_PER_RADIUS = 2.6;
 /** Max transient (runtime-spawned) entities alive at once. */
 const MAX_TRANSIENTS = 2000;
 /** Consecutive failed frames after which the render loop is stopped (persistent GPU/device failure). */
@@ -495,7 +497,9 @@ export class Simulation {
       // over the spawn area. Chunks stream in around the orbit target.
       if (!this.frameVoxelEdits(0, opts.flyIn === true)) {
         const g = this.voxel.groundAt(p.spawn[0], p.spawn[2]);
-        this.renderer.frameSphere([p.spawn[0], g + 6, p.spawn[2]], VOXEL_SPAWN_RADIUS, VOXEL_FRAME_OFFSET, opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+        const center: Vec3 = [p.spawn[0], g + 6, p.spawn[2]];
+        const offset = this.voxel.viewOffset(center, VOXEL_SPAWN_RADIUS, VOXEL_SPAWN_RADIUS * VOXEL_DISTANCE_PER_RADIUS, VOXEL_FRAME_OFFSET);
+        this.renderer.frameSphere(center, VOXEL_SPAWN_RADIUS, offset, opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
       }
       return;
     }
@@ -524,8 +528,10 @@ export class Simulation {
   private frameVoxelEdits(from: number, flyIn: boolean): boolean {
     const focus = this.voxel?.active ? this.voxel.editFocus(from) : null;
     if (!focus) return false;
+    const voxel = this.voxel as VoxelSession;
     const radius = Math.max(VOXEL_EDIT_MIN_RADIUS, Math.min(VOXEL_EDIT_MAX_RADIUS, focus.radius * 1.15));
-    this.renderer.frameSphere(focus.center, radius, VOXEL_FRAME_OFFSET, flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+    const offset = voxel.viewOffset(focus.center, radius, radius * VOXEL_DISTANCE_PER_RADIUS, VOXEL_FRAME_OFFSET);
+    this.renderer.frameSphere(focus.center, radius, offset, flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
     return true;
   }
 

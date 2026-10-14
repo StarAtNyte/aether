@@ -100,11 +100,11 @@ export const BUILTIN_BLOCKS: Readonly<Record<string, BlockSpec>> = Object.freeze
   snowy_grass: cube('snowy_grass', 'Snowy Grass', 0.6, t('noise', '#f2f6fb', '#dfe8f2'), {
     tool: 'shovel', drops: 'dirt', side: t('snow_side', '#8a5f3c', '#f2f6fb', '#dfe8f2'), bottom: t('dirt', '#8a5f3c', '#6b462b', '#9c6f4a'),
   }),
-  sand: cube('sand', 'Sand', 0.5, t('sand', '#e2d39c', '#d0bd85', '#efe3b5'), { tool: 'shovel' }),
+  sand: cube('sand', 'Sand', 0.5, t('sand', '#d6c286', '#bfa66c', '#e4d49e'), { tool: 'shovel' }),
   red_sand: cube('red_sand', 'Red Sand', 0.5, t('sand', '#c9773f', '#b06231', '#d98c55'), { tool: 'shovel' }),
   gravel: cube('gravel', 'Gravel', 0.6, t('gravel', '#867f7a', '#67615d', '#a29b96'), { tool: 'shovel' }),
   clay: cube('clay', 'Clay', 0.6, t('smooth', '#a1a6b5', '#8f94a3'), { tool: 'shovel' }),
-  sandstone: cube('sandstone', 'Sandstone', 0.8, t('sandstone', '#dbc890', '#c8b27a', '#e8d9a8'), { tool: 'pickaxe', tier: 1 }),
+  sandstone: cube('sandstone', 'Sandstone', 0.8, t('sandstone', '#cfb97f', '#b89f68', '#dfcd98'), { tool: 'pickaxe', tier: 1 }),
   snow: cube('snow', 'Snow', 0.2, t('noise', '#f4f7fb', '#e1e9f2'), { tool: 'shovel' }),
   ice: cube('ice', 'Ice', 0.5, t('ice', '#a8d2f2', '#8cbfe8', '#d6ecfb'), { tool: 'pickaxe', drops: null }),
   packed_ice: cube('packed_ice', 'Packed Ice', 0.5, t('ice', '#8db6e6', '#7aa4d8', '#b8d4f2'), { tool: 'pickaxe', drops: null }),
