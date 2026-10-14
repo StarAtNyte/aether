@@ -29,7 +29,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { chromium, firefox, type Browser, type ConsoleMessage, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
 const VIEWPORT = { width: 1440, height: 900 };
 const SCREENSHOT_DIR = join(REPO_ROOT, 'docs/screenshots');
@@ -679,6 +679,7 @@ async function homeAndPhoneShots(browser: Browser, page: Page, url: string): Pro
   await page.waitForTimeout(500);
   await screenshot(page, 'projects-home', 'page');
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await phone.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     const p = await phone.newPage();
     await p.goto(`${url}/?debug=1#/new/coin-island`);
@@ -727,6 +728,7 @@ interface RunOptions {
 async function run(browser: Browser, url: string, opts: RunOptions): Promise<RunMetrics> {
   log(`run "${opts.name}"`);
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
   const errors: string[] = [];
   const metrics: RunMetrics = { backend: 'none', firstFrameMs: 0, defaultWorld: { fps: 0, drawCalls: 0, triangles: 0, entities: 0 }, examples: [] };
   try {

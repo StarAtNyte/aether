@@ -8,7 +8,10 @@
 import { memo, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { aiConnection, DEFAULT_BRIDGE_URL, effectiveBridgeChoice } from '../../ai/connection';
 import { hostedBridgeNote, isLocalOrigin } from '../../ai/messages';
+import { byokModelFor } from '../../ai/byok';
+import { BYOK_CATALOG, BYOK_PROVIDERS, BYOK_SESSION_CALL_CAP, isByokProvider, type ByokModel, type ByokProvider } from '../../ai/byokCatalog';
 import { MAX_REFINE, WEBLLM_MODELS, type AiMode, type AiPrefs } from '../../ai/prefs';
+import { Toggle } from '../fields';
 import { bridgeBadge, localBadge, useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
 import { Segmented } from '../ui/Segmented';
@@ -244,34 +247,79 @@ const WebLlmSetup = memo(function WebLlmSetup({ prefs, update }: { prefs: AiPref
   );
 });
 
-const ByokSetup = memo(function ByokSetup({ prefs, update }: { prefs: AiPrefs; update: (p: Partial<AiPrefs>) => void }): ReactElement {
-  const byok = useAi((s) => s.byok);
-  const serverByok = useAi((s) => s.server.byok);
-  const [key, setKey] = useState('');
+/** Compact count (1 234 → "1.2k"). */
+function compact(n: number): string {
+  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+/** Model picker for the chosen key provider: the provider's live list once a key is set, else the built-in shortlist. */
+function ByokModelPicker({ provider, prefs, update, hasKey }: { provider: ByokProvider; prefs: AiPrefs; update: (p: Partial<AiPrefs>) => void; hasKey: boolean }): ReactElement {
+  const [live, setLive] = useState<{ provider: ByokProvider; models: ByokModel[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hasKey) return;
+    const ctrl = new AbortController();
+    setError(null);
+    aiConnection()
+      .listByokModels(provider, ctrl.signal)
+      .then(
+        (models) => setLive({ provider, models }),
+        (err: unknown) => {
+          if (!ctrl.signal.aborted) setError(err instanceof Error ? err.message.slice(0, 160) : 'The model list could not be loaded.');
+        },
+      );
+    return () => ctrl.abort();
+  }, [provider, hasKey]);
+  const current = byokModelFor(provider, prefs.byokModels[provider]);
+  const base = live?.provider === provider && live.models.length > 0 ? live.models : BYOK_CATALOG[provider].models;
+  const options = base.some((m) => m.id === current) ? base : [{ id: current, label: current }, ...base];
   return (
-    <div className="byok-setup">
-      <p className="setup-note">Optional. Your key stays in this tab only (session storage) and is sent per request to the provider through this site&apos;s server, never saved or logged. Usage is billed to your account.</p>
-      {!serverByok && <p className="setup-error">This server does not accept personal keys.</p>}
+    <div className="setting-row">
+      <span className="setting-row__text">
+        <span className="setting-row__label">Model</span>
+        {error && <span className="setting-row__hint">{error} Showing the usual models.</span>}
+      </span>
+      <select className="select select--sm" aria-label="Key model" value={current} onChange={(e) => update({ byokModels: { ...prefs.byokModels, [provider]: e.target.value } })}>
+        {options.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** Bring your own API key: provider, key (kept in this browser only), model, usage. */
+export const ByokSetup = memo(function ByokSetup({ prefs, update }: { prefs: AiPrefs; update: (p: Partial<AiPrefs>) => void }): ReactElement {
+  const byok = useAi((s) => s.byok);
+  const [key, setKey] = useState('');
+  const [remember, setRemember] = useState(byok.remembered);
+  const [error, setError] = useState<string | null>(null);
+  const provider = prefs.byokProvider;
+  const info = BYOK_CATALOG[provider];
+  const hasKey = byok.providers.includes(provider);
+  return (
+    <div className="byok-setup" data-testid="byok-setup">
+      <p className="setup-note">Your key stays in this browser and goes straight to {info.label}; Aether&apos;s server never sees it. Usage is billed to your account.</p>
       <div className="setting-row">
         <span className="setting-row__text">
           <span className="setting-row__label">Provider</span>
         </span>
-        <Segmented<'anthropic' | 'openai'>
-          label="Key provider"
-          value={prefs.byokProvider}
-          onChange={(v) => update({ byokProvider: v })}
-          options={[
-            ['anthropic', 'Anthropic'],
-            ['openai', 'OpenAI'],
-          ]}
-        />
+        <select className="select select--sm" aria-label="Key provider" value={provider} onChange={(e) => isByokProvider(e.target.value) && update({ byokProvider: e.target.value })}>
+          {BYOK_PROVIDERS.map((p) => (
+            <option key={p} value={p}>
+              {BYOK_CATALOG[p].label}
+              {byok.providers.includes(p) ? ' · key set' : ''}
+            </option>
+          ))}
+        </select>
       </div>
-      {byok && byok.provider === prefs.byokProvider ? (
+      {hasKey ? (
         <div className="bridge-status">
-          <Badge text="Key set for this tab" tone="ok" />
+          <Badge text={byok.remembered ? 'Key saved on this device' : 'Key set for this tab'} tone="ok" />
           <span className="spacer" />
-          <button type="button" className="btn btn--sm" onClick={() => aiConnection().clearByok()}>
+          <button type="button" className="btn btn--sm" onClick={() => aiConnection().clearByok(provider)}>
             Forget key
           </button>
         </div>
@@ -280,18 +328,62 @@ const ByokSetup = memo(function ByokSetup({ prefs, update }: { prefs: AiPrefs; u
           className="pair-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const err = aiConnection().setByok(prefs.byokProvider, key);
+            const err = aiConnection().setByok(provider, key, { remember });
             setError(err);
             if (!err) setKey('');
           }}
         >
-          <input className="input input--sm input--mono" type="password" autoComplete="off" aria-label="API key" placeholder="API key" value={key} maxLength={300} onChange={(e) => setKey(e.target.value)} />
+          <input
+            className="input input--sm input--mono"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={`${info.label} API key`}
+            placeholder={info.keyHint}
+            value={key}
+            maxLength={300}
+            onChange={(e) => setKey(e.target.value)}
+          />
           <button type="submit" className="btn btn--sm btn--primary" disabled={key.trim().length < 20}>
             Use key
           </button>
         </form>
       )}
-      {error && <p className="setup-error" role="alert">{error}</p>}
+      {!hasKey && (
+        <p className="setup-note">
+          <a href={info.keyPage} target="_blank" rel="noopener noreferrer">
+            Get a {info.label} key
+          </a>
+        </p>
+      )}
+      {error && (
+        <p className="setup-error" role="alert">
+          {error}
+        </p>
+      )}
+      <Toggle
+        label="Remember on this device"
+        hint="Keeps your keys in this browser's local storage after the tab closes. Leave it off on a shared computer."
+        checked={hasKey ? byok.remembered : remember}
+        onChange={(v) => {
+          setRemember(v);
+          if (byok.providers.length > 0) aiConnection().setByokRemember(v);
+        }}
+      />
+      <ByokModelPicker provider={provider} prefs={prefs} update={update} hasKey={hasKey} />
+      <div className="setting-row" data-testid="byok-usage">
+        <span className="setting-row__text">
+          <span className="setting-row__label">
+            This session: {byok.usage.calls} / {BYOK_SESSION_CALL_CAP} calls
+          </span>
+          <span className="setting-row__hint">
+            About {compact(byok.usage.inputTokens)} tokens in, {compact(byok.usage.outputTokens)} out (estimated; your provider&apos;s dashboard has the exact bill).
+          </span>
+        </span>
+        <button type="button" className="btn btn--sm" disabled={byok.usage.calls === 0} onClick={() => aiConnection().resetByokUsage()}>
+          Reset
+        </button>
+      </div>
     </div>
   );
 });
@@ -313,7 +405,7 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
       <section className="settings__group">
         <h3 className="settings__heading">Connection</h3>
         <div className="ai-modes" role="radiogroup" aria-label="AI connection">
-          <ModeCard mode="auto" prefs={prefs} update={update} title="Automatic" hint="Picks the best connection: Codex or Claude Code on this computer, then the local bridge, then an on-device model, then the offline planner." badge={<Badge text="Recommended" tone="quiet" />} />
+          <ModeCard mode="auto" prefs={prefs} update={update} title="Automatic" hint="Picks the best connection: Codex or Claude Code on this computer, then the local bridge, then your own API key, then an on-device model, then the offline planner." badge={<Badge text="Recommended" tone="quiet" />} />
           <ModeCard mode="local" prefs={prefs} update={update} title="Codex or Claude Code on this computer" hint="Your own ChatGPT or Claude subscription, run by Aether on this computer. Deep builds let a coding agent write, render and check new assets." badge={<Badge text={lb.text} tone={lb.tone} />}>
             <LocalAiSetup prefs={prefs} update={update} />
           </ModeCard>
@@ -331,7 +423,7 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
             <WebLlmSetup prefs={prefs} update={update} />
           </ModeCard>
           <ModeCard mode="offline" prefs={prefs} update={update} title="Offline planner" hint="Always available, instant, runs in your browser. Best for the built-in themes and common objects." badge={<Badge text="Available" tone="ok" />} />
-          <ModeCard mode="byok" prefs={prefs} update={update} title="Your own API key" hint="Optional: use your own Anthropic or OpenAI key." badge={<Badge text={byok ? 'Key set' : 'Optional'} tone={byok ? 'ok' : 'quiet'} />}>
+          <ModeCard mode="byok" prefs={prefs} update={update} title="Your own API key" hint="Anthropic, OpenAI, OpenRouter or Google Gemini, called straight from this browser." badge={<Badge text={byok.providers.length > 0 ? 'Key set' : 'Optional'} tone={byok.providers.length > 0 ? 'ok' : 'quiet'} />}>
             <ByokSetup prefs={prefs} update={update} />
           </ModeCard>
           {server.state === 'live' && <ModeCard mode="server" prefs={prefs} update={update} title="Server model" hint={`The model configured on this server (${server.providers.join(', ')}).`} badge={<Badge text="Connected" tone="ok" />} />}

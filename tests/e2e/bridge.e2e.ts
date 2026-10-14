@@ -15,7 +15,7 @@
 import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { parseBridgeConfig } from '../../apps/bridge/src/config';
 import { startBridge, type RunningBridge } from '../../apps/bridge/src/start';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer, SKIP_FIRST_RUN } from './support/env';
 
 type Backend = 'codex' | 'claude-code';
 
@@ -75,6 +75,7 @@ function turnState(page: Page): Promise<TurnState | null> {
 
 async function runBackend(browser: Browser, server: TestServer, bridge: RunningBridge, backend: Backend): Promise<{ ms: number; via: string | null; events: string[] }> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => log(`  [pageerror] ${e.message}`));

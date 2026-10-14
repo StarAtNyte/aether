@@ -1,7 +1,8 @@
 /**
  * AI connection manager (one per page): probes the Aether server and the
- * local bridge, holds the bridge pairing and the optional BYO key (session
- * only), loads the on-device model on request, and resolves the user's
+ * local bridge, holds the bridge pairing and the user's own API keys (this
+ * browser only; sent straight to the provider, never to Aether's server),
+ * loads the on-device model on request, and resolves the user's
  * preferences into a concrete provider — or explains why it cannot, so the
  * studio falls back to the offline planner with a visible notice.
  */
@@ -29,7 +30,10 @@ import {
 import { GENERATOR_LIBRARY } from '@aether/procgen/library';
 import { API, HEALTH_TIMEOUT_MS } from '../config';
 import { bridgeModel, WEBLLM_MODELS, type AiPrefs } from './prefs';
-import { browserSession, loadBridgeSession, loadByokSession, saveBridgeSession, saveByokSession, BYOK_KEY_RE, type SessionStore } from './session';
+import { byokModelFor, createDirectProvider, listProviderModels, meteredProvider } from './byok';
+import type { ByokModel } from './byokCatalog';
+import { BYOK_CATALOG, BYOK_KEY_RE, BYOK_SESSION_CALL_CAP, isByokProvider, type ByokProvider } from './byokCatalog';
+import { browserSession, deviceStorage, loadBridgeSession, loadByokKeys, loadByokUsage, saveBridgeSession, saveByokKeys, saveByokUsage, type ByokKeys, type ByokUsage, type SessionStore } from './session';
 
 /** Default bridge address. */
 export const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:8790';
@@ -47,7 +51,20 @@ export interface AiConnectionState {
   bridge: { url: string; paired: boolean; state: BridgeState; detail: string; backends: BridgeBackendStatus[]; login: LoginState | null };
   server: { state: 'checking' | 'live' | 'mock' | 'offline'; providers: string[]; byok: boolean; local: boolean };
   webllm: { state: 'idle' | 'unsupported' | 'loading' | 'ready' | 'error'; progress: number; detail: string; model: string | null };
-  byok: { provider: 'anthropic' | 'openai' } | null;
+  /** The user's own API keys (the keys themselves never enter observable state). */
+  byok: ByokState;
+}
+
+/** Observable bring-your-own-key state. */
+export interface ByokState {
+  /** Provider of the most recently set key (null: no key). */
+  provider: ByokProvider | null;
+  /** Providers that have a key in this browser. */
+  providers: ByokProvider[];
+  /** Keys are also kept on this device (localStorage). */
+  remembered: boolean;
+  /** Model calls and estimated tokens spent with the keys this browser session. */
+  usage: ByokUsage;
 }
 
 /** What a send will use. */
@@ -69,6 +86,8 @@ export interface ResolvedConnection {
 export interface AiConnectionDeps {
   fetch?: typeof fetch;
   session?: SessionStore | null;
+  /** Device storage for keys the user chose to remember (localStorage). */
+  device?: SessionStore | null;
   loadEngine?: (model: string, onProgress: (p: number, text: string) => void) => Promise<WebLlmEngineLike>;
   webGpu?: () => Promise<{ ok: boolean; reason: string }>;
 }
@@ -116,7 +135,9 @@ export class AiConnection {
   private readonly fetchImpl: typeof fetch;
   private readonly session: SessionStore | null;
   private token: string | null = null;
-  private byokKey: string | null = null;
+  private byokKeys: ByokKeys = {};
+  private readonly device: SessionStore | null;
+  private readonly modelLists = new Map<string, ByokModel[]>();
   private engine: WebLlmEngineLike | null = null;
   private refreshing: Promise<void> | null = null;
   /** Local AI client (same origin). */
@@ -125,17 +146,18 @@ export class AiConnection {
   constructor(private readonly deps: AiConnectionDeps = {}) {
     this.fetchImpl = deps.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.session = deps.session ?? null;
+    this.device = deps.device ?? null;
     const bridge = loadBridgeSession(this.session);
-    const byok = loadByokSession(this.session);
+    const byok = loadByokKeys(this.session, this.device);
     this.token = bridge?.token ?? null;
-    this.byokKey = byok?.key ?? null;
+    this.byokKeys = byok.keys;
     this.localApi = createLocalAiApi({ fetch: this.fetchImpl });
     this.store = createStore<AiConnectionState>()(() => ({
       local: { state: 'checking', detail: '', backends: [], account: null, jobs: 0, login: null },
       bridge: { url: bridge?.url ?? DEFAULT_BRIDGE_URL, paired: bridge !== null, state: bridge ? 'checking' : 'unpaired', detail: '', backends: [], login: null },
       server: { state: 'checking', providers: [], byok: false, local: false },
       webllm: { state: 'idle', progress: 0, detail: '', model: null },
-      byok: byok ? { provider: byok.provider } : null,
+      byok: byokState(byok.keys, byok.remembered, loadByokUsage(this.session)),
     }));
   }
 
@@ -279,21 +301,73 @@ export class AiConnection {
     this.forgetPairing('');
   }
 
-  /** Store a BYO key for this session. Resolves to an error message or null. */
-  setByok(provider: 'anthropic' | 'openai', key: string): string | null {
+  /**
+   * Keep the user's own API key for `provider` in this browser (this tab
+   * only, or on this device too with `remember`). Returns an error message,
+   * or null on success. The key is only ever sent to that provider's API.
+   */
+  setByok(provider: ByokProvider, key: string, opts: { remember?: boolean } = {}): string | null {
+    if (!isByokProvider(provider)) return 'Unknown provider.';
     const k = key.trim();
     if (!BYOK_KEY_RE.test(k)) return 'That does not look like an API key.';
-    this.byokKey = k;
-    saveByokSession(this.session, { provider, key: k });
-    this.store.setState({ byok: { provider } });
+    this.byokKeys = { ...this.byokKeys, [provider]: k };
+    const remember = opts.remember ?? this.store.getState().byok.remembered;
+    saveByokKeys(this.session, this.device, this.byokKeys, remember);
+    this.store.setState((s) => ({ byok: { ...byokState(this.byokKeys, remember && Object.keys(this.byokKeys).length > 0, s.byok.usage), provider } }));
     return null;
   }
 
-  /** Forget the BYO key. */
-  clearByok(): void {
-    this.byokKey = null;
-    saveByokSession(this.session, null);
-    this.store.setState({ byok: null });
+  /** Forget the key of `provider`, or every key (also from this device). */
+  clearByok(provider?: ByokProvider): void {
+    if (provider === undefined) this.byokKeys = {};
+    else {
+      const next = { ...this.byokKeys };
+      delete next[provider];
+      this.byokKeys = next;
+    }
+    const remember = this.store.getState().byok.remembered;
+    saveByokKeys(this.session, this.device, this.byokKeys, remember);
+    this.store.setState((s) => ({ byok: byokState(this.byokKeys, remember && Object.keys(this.byokKeys).length > 0, s.byok.usage) }));
+  }
+
+  /** Keep (or stop keeping) the keys on this device. */
+  setByokRemember(remember: boolean): void {
+    saveByokKeys(this.session, this.device, this.byokKeys, remember);
+    this.store.setState((s) => ({ byok: { ...s.byok, remembered: remember && Object.keys(this.byokKeys).length > 0 } }));
+  }
+
+  /** Reset this session's key usage counter (lifts the per-session call cap). */
+  resetByokUsage(): void {
+    saveByokUsage(this.session, null);
+    this.store.setState((s) => ({ byok: { ...s.byok, usage: { calls: 0, inputTokens: 0, outputTokens: 0 } } }));
+  }
+
+  /**
+   * The provider's own model list, loaded with the key set for it (cached per
+   * provider and key for this page). Rejects when no key is set or the call fails.
+   */
+  async listByokModels(provider: ByokProvider, signal?: AbortSignal): Promise<ByokModel[]> {
+    const key = this.keyFor(provider);
+    if (!key) throw new ProviderError('auth', `No ${BYOK_CATALOG[provider].label} key is set.`);
+    const cacheKey = `${provider}:${key.slice(-8)}`;
+    const hit = this.modelLists.get(cacheKey);
+    if (hit) return hit;
+    const list = await listProviderModels(provider, key, this.fetchImpl, signal);
+    if (this.modelLists.size >= 8) this.modelLists.clear();
+    this.modelLists.set(cacheKey, list);
+    return list;
+  }
+
+  /** The key set for `provider` in this browser (only for building a direct provider). */
+  private keyFor(provider: ByokProvider): string | null {
+    return this.byokKeys[provider] ?? null;
+  }
+
+  /** The provider a key-based send uses: the chosen one when it has a key, else the last key set. */
+  private byokProviderFor(prefs: AiPrefs): ByokProvider | null {
+    if (this.keyFor(prefs.byokProvider)) return prefs.byokProvider;
+    const last = this.store.getState().byok.provider;
+    return last && this.keyFor(last) ? last : null;
   }
 
   /** Download and start an on-device model (explicit opt-in). */
@@ -343,6 +417,15 @@ export class AiConnection {
       const vision = s.bridge.backends.find((b) => b.id === id)?.models.find((m) => m.id === model)?.vision ?? true;
       return { kind: 'bridge', label, ready: true, vision };
     };
+    const byok = (strict: boolean): ResolvedConnection => {
+      // Explicit mode uses exactly the chosen provider; 'auto' may use any key that is set.
+      const provider = strict ? prefs.byokProvider : (this.byokProviderFor(prefs) ?? prefs.byokProvider);
+      const model = byokModelFor(provider, prefs.byokModels[provider]);
+      const label = `Your key · ${BYOK_CATALOG[provider].label} · ${model}`;
+      if (!this.keyFor(provider)) return { kind: 'byok', label, ready: false, reason: `no ${BYOK_CATALOG[provider].label} API key is set in this browser`, vision: false };
+      if (s.byok.usage.calls >= BYOK_SESSION_CALL_CAP) return { kind: 'byok', label, ready: false, reason: `this session used its ${BYOK_SESSION_CALL_CAP} model calls with your key (reset the counter in Settings → AI connection)`, vision: false };
+      return { kind: 'byok', label, ready: true, vision: true };
+    };
     switch (prefs.mode) {
       case 'offline':
         return { kind: 'offline', label: 'Offline planner', ready: true, vision: false };
@@ -360,12 +443,8 @@ export class AiConnection {
         if (s.webllm.state === 'ready' && s.webllm.model === prefs.webllmModel && this.engine) return { kind: 'webllm', label, ready: true, vision: false };
         return { kind: 'webllm', label, ready: false, reason: s.webllm.state === 'unsupported' ? s.webllm.detail : 'the on-device model is not downloaded yet (Settings → AI connection)', vision: false };
       }
-      case 'byok': {
-        const label = `Your key · ${prefs.byokProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}`;
-        if (!this.byokKey || s.byok?.provider !== prefs.byokProvider) return { kind: 'byok', label, ready: false, reason: 'no API key is set for this session', vision: false };
-        if (!s.server.byok) return { kind: 'byok', label, ready: false, reason: 'this server does not accept personal keys', vision: false };
-        return { kind: 'byok', label, ready: true, vision: true };
-      }
+      case 'byok':
+        return byok(true);
       case 'auto': {
         // Local AI first (Codex, then Claude Code, unless the user picked a backend that is signed in).
         const l = local();
@@ -373,6 +452,8 @@ export class AiConnection {
         const b = bridge();
         if (b.ready) return b;
         if (s.server.state === 'live') return { kind: 'server', label: s.server.providers[0] ?? 'Server model', ready: true, vision: true };
+        const k = byok(false);
+        if (k.ready) return k;
         if (s.webllm.state === 'ready' && this.engine) {
           const m = WEBLLM_MODELS.find((x) => x.id === s.webllm.model);
           return { kind: 'webllm', label: `On-device · ${m?.label ?? s.webllm.model ?? ''}`, ready: true, vision: false };
@@ -402,10 +483,19 @@ export class AiConnection {
       }
       case 'webllm':
         return this.engine ? createWebLlmProvider({ engine: this.engine, model: s.webllm.model ?? prefs.webllmModel }) : null;
-      case 'byok':
-        return this.byokKey
-          ? createHttpProvider({ endpoint: `${API.llm}/byok`, fetch: this.fetchImpl, name: prefs.byokProvider, retry: { maxRetries: 0 }, headers: { 'x-aether-provider': prefs.byokProvider, 'x-aether-key': this.byokKey } })
-          : null;
+      case 'byok': {
+        const provider = prefs.mode === 'byok' ? prefs.byokProvider : this.byokProviderFor(prefs);
+        const key = provider ? this.keyFor(provider) : null;
+        if (!provider || !key) return null;
+        const direct = createDirectProvider(provider, key, byokModelFor(provider, prefs.byokModels[provider]), this.fetchImpl);
+        return meteredProvider(direct, {
+          read: () => this.store.getState().byok.usage,
+          write: (usage) => {
+            saveByokUsage(this.session, usage);
+            this.store.setState((st) => ({ byok: { ...st.byok, usage } }));
+          },
+        });
+      }
     }
   }
 
@@ -422,10 +512,16 @@ export function projectSessionKey(projectId: string | null | undefined): string 
   return /^[a-z0-9][a-z0-9-]{7,79}$/.test(key) ? key : null;
 }
 
+/** Observable key state (never the keys themselves). */
+function byokState(keys: ByokKeys, remembered: boolean, usage: ByokUsage): ByokState {
+  const providers = (Object.keys(keys) as ByokProvider[]).filter((p) => isByokProvider(p) && typeof keys[p] === 'string');
+  return { provider: providers[providers.length - 1] ?? null, providers, remembered, usage };
+}
+
 let shared: AiConnection | null = null;
 
 /** The page-wide connection manager (created on first use). */
 export function aiConnection(): AiConnection {
-  shared ??= new AiConnection({ session: browserSession() });
+  shared ??= new AiConnection({ session: browserSession(), device: deviceStorage() });
   return shared;
 }

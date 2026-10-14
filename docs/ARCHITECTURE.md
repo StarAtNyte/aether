@@ -645,8 +645,9 @@ model. That lets the server map roles to allowlisted models.
 
 | Provider | Where | Notes |
 | --- | --- | --- |
-| `createAnthropicProvider` | Server only | Raw `fetch` to the Messages API. Cache breakpoints on the system prompt and the last tool, a per-role `effort` level, and thinking blocks passed back unchanged. Refusals and truncation map to stop reasons. |
-| `createOpenAIProvider` | Server only | Raw `fetch` to the Responses API with `store: false`. Function calls map to `tool_use`. Encrypted reasoning items are carried across turns. |
+| `createAnthropicProvider` | Server, or browser with the user's own key | Raw `fetch` to the Messages API. Cache breakpoints on the system prompt and the last tool, a per-role `effort` level, and thinking blocks passed back unchanged. Refusals and truncation map to stop reasons. |
+| `createOpenAIProvider` | Server, or browser with the user's own key | Raw `fetch` to the Responses API with `store: false`. Function calls map to `tool_use`. Encrypted reasoning items are carried across turns. |
+| `createChatCompletionsProvider` | Browser (user's own key) / Node | OpenAI-compatible Chat Completions with function tools, for OpenRouter and Google Gemini. Tool results become `tool` messages, images become `image_url` parts |
 | `createHttpProvider` | Browser | Posts to `/api/llm`, never sends a model id, and validates the reply with zod |
 | `createMockProvider` | Anywhere | Deterministic offline planner: 18 themes, mood combinations (night, rain, fog, low gravity and more), edit commands and the generator library by name. It emits plan, `apply_patches` and `finish` calls just like a real model. |
 | `createBridgeProvider` | Browser / Node | Posts to the local Aether Bridge (`/v1/complete`, bearer token from pairing); the bridge drives Codex or Claude Code headless |
@@ -660,8 +661,9 @@ jitter on 429, 5xx, 529 and network errors, and honour `retry-after`. Other
 the caller's abort signal, and responses are size-capped.
 
 **Selection.** The studio's AI connection manager (`apps/studio/src/ai/`)
-resolves the preferred mode per project: `auto` uses a paired, signed-in
-bridge, else a live server, else the offline planner; `offline`, `server`,
+resolves the preferred mode per project: `auto` uses Codex / Claude Code on
+this computer, else a paired, signed-in bridge, else a live server, else the
+user's own API key, else a loaded on-device model, else the offline planner; `offline`, `server`,
 `bridge`, `webllm` and `byok` force one. Every networked choice is wrapped in
 the fallback provider, so a failure never leaves a blank world or a stuck
 spinner: the chat shows a notice and the offline planner finishes the turn.

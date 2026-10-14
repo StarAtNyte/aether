@@ -5,6 +5,7 @@
  * environment (mock mode). Secrets are only ever held in {@link ServerConfig.keys}
  * and are stripped by {@link redactConfig} before anything is logged.
  */
+import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -35,8 +36,6 @@ export interface ServerConfig {
   readonly provider: ProviderPreference;
   /** Headless CLI options (AETHER_PROVIDER=codex|claude-code). */
   readonly headless: { readonly model?: string; readonly effort: 'low' | 'medium' | 'high' };
-  /** Accept visitors' own API keys on `/api/llm/byok` (forwarded per request, never stored or logged). */
-  readonly byok: boolean;
   /**
    * Local AI (`/api/local/*`): the machine owner's signed-in Codex / Claude Code
    * through worker processes. Only for a server running on the user's own
@@ -74,6 +73,28 @@ export interface ServerConfig {
     readonly maxWorlds: number;
     readonly maxWorldBytes: number;
     readonly maxGeneratorBytes: number;
+  };
+  /**
+   * Local app hardening (`aether start`). `allowedHosts`: exact `host:port`
+   * values accepted in the Host header (DNS-rebinding defence); null accepts
+   * any Host (a hosted deployment behind its own proxy).
+   */
+  readonly local: {
+    readonly allowedHosts: readonly string[] | null;
+    /** Per-install secret: session cookie of the studio, required on `/api/local/*`. Null: not required. */
+    readonly sessionSecret: string | null;
+    /** LAN mode access token (every request but `/api/health` needs it). Null: no gate. */
+    readonly accessToken: string | null;
+    /** Random id of this server process, echoed by `/api/health` so the CLI can recognise it. */
+    readonly instanceId: string | null;
+    /** Append logs to this file (rotated) instead of stdout/stderr. */
+    readonly logFile: string | null;
+    /**
+     * Also listen as the token-paired Aether Bridge for these hosted studio
+     * origins (127.0.0.1 only), so a hosted copy of the studio can use this
+     * computer's Codex / Claude Code login. Null: no bridge.
+     */
+    readonly bridge: { readonly origins: readonly string[]; readonly port: number } | null;
   };
   readonly generators: {
     /**
@@ -143,10 +164,16 @@ const bool = <T extends boolean | undefined>(fallback: T) =>
     });
 
 const ORIGIN_RE = /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/;
+/** `host:port` (DNS name, IPv4 or bracketed IPv6). */
+const HOST_PORT_RE = /^([a-z0-9.-]{1,253}|\[[0-9a-f:.]{2,45}\]):\d{1,5}$/;
+/** Hosted studio origins the bridge may serve: https, or loopback http. */
+const BRIDGE_ORIGIN_RE = /^(https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?|http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?)$/;
+/** Shape of the session secret / access token files' content. */
+const SECRET_FILE_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
 const EnvSchema = z.object({
   PORT: int(8787, 1, 65535),
-  HOST: z.string().trim().min(1).max(255).optional().default('0.0.0.0'),
+  HOST: z.string().trim().min(1).max(255).optional().default('127.0.0.1'),
   NODE_ENV: z.string().trim().optional().default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional().default('info'),
   AETHER_PROVIDER: z
@@ -158,7 +185,6 @@ const EnvSchema = z.object({
     .pipe(z.enum(['anthropic', 'openai', 'mock', 'codex', 'claude-code'])),
   AETHER_HEADLESS_MODEL: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, 'invalid model id').optional(),
   AETHER_HEADLESS_EFFORT: z.enum(['low', 'medium', 'high']).optional().default('low'),
-  AETHER_BYOK: bool(true),
   AETHER_LOCAL_AI: z.enum(['auto', 'on', 'off']).optional().default('auto'),
   ANTHROPIC_API_KEY: optionalSecret,
   OPENAI_API_KEY: optionalSecret,
@@ -202,6 +228,39 @@ const EnvSchema = z.object({
   AETHER_DAILY_TOKEN_BUDGET: int(2_000_000, 0, 10_000_000_000),
   AETHER_MAX_GENERATORS: int(5_000, 1, 1_000_000),
   AETHER_MAX_WORLDS: int(10_000, 1, 1_000_000),
+  AETHER_ALLOWED_HOSTS: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v.trim() === '') return null;
+      const list = v.split(',').map((s) => s.trim().toLowerCase()).filter((s) => s !== '');
+      for (const h of list) {
+        if (!HOST_PORT_RE.test(h)) {
+          ctx.addIssue({ code: 'custom', message: `invalid host '${h}' (expected host:port)` });
+          return z.NEVER;
+        }
+      }
+      return list.slice(0, 16);
+    }),
+  AETHER_SECRET_FILE: z.string().trim().max(1024).optional(),
+  AETHER_ACCESS_TOKEN_FILE: z.string().trim().max(1024).optional(),
+  AETHER_INSTANCE_ID: z.string().trim().regex(/^[A-Za-z0-9-]{8,64}$/, 'invalid instance id').optional(),
+  AETHER_LOG_FILE: z.string().trim().max(1024).optional(),
+  AETHER_BRIDGE_ORIGINS: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v.trim() === '') return [];
+      const list = v.split(',').map((s) => s.trim().replace(/\/+$/, '')).filter((s) => s !== '');
+      for (const o of list) {
+        if (!BRIDGE_ORIGIN_RE.test(o)) {
+          ctx.addIssue({ code: 'custom', message: `invalid bridge origin '${o}' (https://host, or http://localhost:<port>)` });
+          return z.NEVER;
+        }
+      }
+      return list.slice(0, 16);
+    }),
+  AETHER_BRIDGE_PORT: int(8790, 0, 65535),
   AETHER_VALIDATE_GENERATORS: bool(false),
   AETHER_GENERATOR_TIMEOUT_MS: int(1_000, 50, 5_000),
   AETHER_GENERATOR_MAX_QUEUE: int(8, 1, 256),
@@ -224,6 +283,19 @@ export function hostedPlatform(env: Readonly<Record<string, string | undefined>>
   return null;
 }
 
+/** Read a secret file (trimmed); throws a ConfigError naming the variable (never the value). */
+function readSecretFile(name: string, path: string | undefined): string | null {
+  if (path === undefined || path === '') return null;
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8').trim();
+  } catch {
+    throw new ConfigError([`${name}: the file cannot be read`]);
+  }
+  if (!SECRET_FILE_RE.test(text)) throw new ConfigError([`${name}: the file does not hold a valid secret`]);
+  return text;
+}
+
 function resolvePath(p: string | undefined, fallback: string): string {
   if (p === undefined || p === '') return fallback;
   return isAbsolute(p) ? p : resolve(REPO_ROOT, p);
@@ -243,6 +315,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
   const serveStatic = e.SERVE_STATIC ?? production;
   const hosted = hostedPlatform(env);
   if (e.AETHER_LOCAL_AI === 'on' && hosted) throw new ConfigError([`AETHER_LOCAL_AI: local AI cannot be enabled on a hosted platform (${hosted})`]);
+  const localAi = e.AETHER_LOCAL_AI === 'on' || (e.AETHER_LOCAL_AI === 'auto' && !production && hosted === null);
+  if (e.AETHER_BRIDGE_ORIGINS.length > 0 && !localAi) throw new ConfigError(['AETHER_BRIDGE_ORIGINS: the bridge needs local AI (AETHER_LOCAL_AI=on, not on a hosted platform)']);
   return {
     port: e.PORT,
     host: e.HOST,
@@ -250,8 +324,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
     logLevel: e.LOG_LEVEL,
     provider: e.AETHER_PROVIDER,
     headless: { ...(e.AETHER_HEADLESS_MODEL ? { model: e.AETHER_HEADLESS_MODEL } : {}), effort: e.AETHER_HEADLESS_EFFORT },
-    byok: e.AETHER_BYOK,
-    localAi: e.AETHER_LOCAL_AI === 'on' || (e.AETHER_LOCAL_AI === 'auto' && !production && hosted === null),
+    localAi,
     keys: { anthropic: e.ANTHROPIC_API_KEY, openai: e.OPENAI_API_KEY },
     baseUrls: { anthropic: e.ANTHROPIC_BASE_URL, openai: e.OPENAI_BASE_URL },
     models: {
@@ -287,6 +360,14 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
       maxWorldBytes: 2 * 1024 * 1024,
       maxGeneratorBytes: 256 * 1024,
     },
+    local: {
+      allowedHosts: e.AETHER_ALLOWED_HOSTS,
+      sessionSecret: readSecretFile('AETHER_SECRET_FILE', e.AETHER_SECRET_FILE),
+      accessToken: readSecretFile('AETHER_ACCESS_TOKEN_FILE', e.AETHER_ACCESS_TOKEN_FILE),
+      instanceId: e.AETHER_INSTANCE_ID ?? null,
+      logFile: e.AETHER_LOG_FILE ? resolvePath(e.AETHER_LOG_FILE, '') : null,
+      bridge: e.AETHER_BRIDGE_ORIGINS.length > 0 ? { origins: e.AETHER_BRIDGE_ORIGINS, port: e.AETHER_BRIDGE_PORT } : null,
+    },
     generators: {
       validate: e.AETHER_VALIDATE_GENERATORS,
       timeoutMs: e.AETHER_GENERATOR_TIMEOUT_MS,
@@ -303,10 +384,11 @@ export function redactConfig(config: ServerConfig): Record<string, unknown> {
       anthropic: config.keys.anthropic ? '[set]' : '[unset]',
       openai: config.keys.openai ? '[set]' : '[unset]',
     },
+    local: { ...config.local, sessionSecret: config.local.sessionSecret ? '[set]' : '[unset]', accessToken: config.local.accessToken ? '[set]' : '[unset]' },
   };
 }
 
 /** Every secret value in the config, for scrubbing free text (e.g. upstream error messages). */
 export function secretValues(config: ServerConfig): string[] {
-  return [config.keys.anthropic, config.keys.openai].filter((k): k is string => typeof k === 'string' && k.length > 0);
+  return [config.keys.anthropic, config.keys.openai, config.local.sessionSecret ?? undefined, config.local.accessToken ?? undefined].filter((k): k is string => typeof k === 'string' && k.length > 0);
 }

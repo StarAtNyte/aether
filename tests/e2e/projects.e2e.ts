@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from 'playwright';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 import { TEMPLATES } from '../../apps/studio/src/lib/examples';
 
 const ARGS = process.argv.slice(2);
@@ -163,6 +163,7 @@ async function homeFlow(page: Page, base: string): Promise<void> {
 
 async function migrationFlow(browser: Browser, base: string, worldText: string, errors: string[]): Promise<void> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     await ctx.addInitScript((text) => {
       if (!localStorage.getItem('aether.studio.projects-migrated.v1')) localStorage.setItem('aether.studio.world.v1', text);
@@ -182,6 +183,7 @@ async function migrationFlow(browser: Browser, base: string, worldText: string, 
 
 async function phoneFlow(browser: Browser, name: string, base: string, errors: string[]): Promise<void> {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, ...(name === 'chromium' ? { isMobile: true } : {}) });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     const page = await ctx.newPage();
     watch(page, errors);
@@ -218,6 +220,7 @@ async function runBrowser(name: string, base: string): Promise<void> {
     browser = name === 'firefox' ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }) : await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
     log(`${name}`);
     ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    await ctx.addInitScript({ content: SKIP_FIRST_RUN });
     const page = await ctx.newPage();
     watch(page, errors);
     await homeFlow(page, base);

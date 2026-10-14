@@ -1,5 +1,6 @@
 /**
- * OpenAI Responses API provider (raw fetch, server-side only).
+ * OpenAI Responses API provider (raw fetch; server-side, or in the browser
+ * with the user's own key — the API allows CORS).
  *
  * - `POST {baseUrl}/v1/responses` with `instructions` (system prompt) and
  *   `input` items; stateless (`store: false`).
@@ -130,7 +131,7 @@ function describeError(status: number, body: unknown): string {
   return `OpenAI API error ${status}${msg ? `: ${msg}` : ''}`;
 }
 
-/** Create a provider for the OpenAI Responses API. Never use in browser code (the key would leak). */
+/** Create a provider for the OpenAI Responses API. In browser code only with the visitor's own key. */
 export function createOpenAIProvider(opts: OpenAIProviderOptions): Provider {
   if (!opts.apiKey) throw new ProviderError('auth', 'OpenAI API key is missing');
   const baseUrl = (opts.baseUrl ?? 'https://api.openai.com').replace(/\/+$/, '');

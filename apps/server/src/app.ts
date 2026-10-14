@@ -16,10 +16,10 @@ import { JsonFileStore } from './file-store';
 import type { GeneratorValidator } from './generator-validation';
 import { fail } from './http';
 import { scrub, silentLogger, type Logger } from './logger';
+import { accessGate, ADMIN_HEADER, hostGuard, secretEquals, sessionCookie } from './local-guard';
 import { accessLog, corsAllowlist, jsonBodyLimit, originGuard, rateLimit, securityHeaders } from './middleware';
 import { TokenBucketLimiter } from './rate-limit';
 import { GENERATOR_HASH_RE, registerGeneratorRoutes } from './routes/generators';
-import { registerByokRoutes } from './routes/byok';
 import { registerLlmRoutes, type LiveLlm } from './routes/llm';
 import { registerLocalRoutes, type LocalRouteDeps } from './routes/local';
 import type { LocalAi } from '@aether/bridge';
@@ -42,12 +42,14 @@ export interface AppDeps {
   now?: () => number;
   /** Aborted when the process starts shutting down (cancels in-flight upstream calls). */
   shutdownSignal?: AbortSignal;
-  /** Upstream fetch for bring-your-own-key calls (tests inject a fake). */
-  byokFetch?: typeof fetch;
   /** Local AI service (only when `config.localAi`); absent: `/api/local/*` is not served. */
   local?: LocalAi | null;
   /** Loopback check for `/api/local/*` (tests). */
   isLoopback?: LocalRouteDeps['isLoopback'];
+  /** Graceful shutdown requested by the `aether` CLI (`POST /api/admin/shutdown`, session secret required). */
+  requestShutdown?: () => void;
+  /** The in-process bridge for hosted studios (only with `config.local.bridge`). */
+  bridge?: LocalRouteDeps['bridge'];
 }
 
 /** Per-route request body caps (bytes). */
@@ -95,6 +97,10 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   app.use('*', requestId({ limitLength: 64 }));
   app.use('*', accessLog(logger));
   app.use('*', securityHeaders(config.production));
+  // Local app (`aether start`): answer only on our own address, gate LAN access, hand the studio its session cookie.
+  if (config.local.allowedHosts) app.use('*', hostGuard(config.local.allowedHosts));
+  if (config.local.accessToken) app.use('*', accessGate(config.local.accessToken, false));
+  if (config.local.sessionSecret) app.use('*', sessionCookie(config.local.sessionSecret, false));
 
   app.use('/api/*', corsAllowlist(config.allowedOrigins));
   app.use('/api/*', originGuard(config.allowedOrigins));
@@ -106,12 +112,11 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   const apiRate = rateLimit(apiLimiter, clientIp);
   app.use('/api/*', async (c, next) => {
     if (c.req.path === '/api/health') return next();
-    return c.req.path === '/api/llm' || c.req.path === '/api/llm/byok' || c.req.path === '/api/local/complete' ? llmRate(c, next) : apiRate(c, next);
+    return c.req.path === '/api/llm' || c.req.path === '/api/local/complete' ? llmRate(c, next) : apiRate(c, next);
   });
   const generatorPutRate = rateLimit(generatorPutLimiter, clientIp);
   app.on('PUT', '/api/generators/*', generatorPutRate);
   app.use('/api/llm', jsonBodyLimit(caps.llm));
-  app.use('/api/llm/byok', jsonBodyLimit(caps.llm));
   app.use('/api/local/*', jsonBodyLimit(caps.llm));
   app.use('/api/worlds', jsonBodyLimit(caps.worlds));
   app.use('/api/worlds/*', jsonBodyLimit(caps.worlds));
@@ -119,11 +124,25 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
 
   const providers = deps.providers ?? (llm ? [llm.provider.name] : ['mock']);
   const local = config.localAi ? (deps.local ?? null) : null;
-  app.get('/api/health', (c) => c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: config.byok, local: local !== null }, 200));
+  const secret = config.local.sessionSecret;
+  const requestShutdown = deps.requestShutdown;
+  if (secret && requestShutdown) {
+    app.post('/api/admin/shutdown', (c) => {
+      if (!secretEquals(c.req.header(ADMIN_HEADER), secret)) return fail(c, 401, 'unauthorized', 'Only the aether command can stop the server.');
+      requestShutdown();
+      return c.json({ ok: true, stopping: true }, 202);
+    });
+  }
+  const instance = config.local.instanceId;
+  app.get('/api/health', (c) =>
+    c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, ...(instance ? { instance } : {}) }, 200),
+  );
   if (local) {
     registerLocalRoutes(app, {
       local,
       logger,
+      ...(config.local.sessionSecret ? { sessionSecret: config.local.sessionSecret } : {}),
+      ...(deps.bridge ? { bridge: deps.bridge } : {}),
       ...(deps.isLoopback ? { isLoopback: deps.isLoopback } : {}),
       ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
     });
@@ -135,15 +154,6 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
     timeoutMs: config.llm.timeoutMs,
     maxOutputTokens: config.llm.maxOutputTokens,
     logger,
-    ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
-  });
-  registerByokRoutes(app, {
-    enabled: config.byok,
-    models: { anthropic: { ...config.models.anthropic }, openai: { ...config.models.openai } },
-    timeoutMs: config.llm.timeoutMs,
-    maxOutputTokens: config.llm.maxOutputTokens,
-    logger,
-    ...(deps.byokFetch ? { fetch: deps.byokFetch } : {}),
     ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
   });
   registerGeneratorRoutes(app, { store: generatorStore, validator: deps.generatorValidator ?? null, logger });

@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
 import { TEMPLATES } from '../../apps/studio/src/lib/examples';
 import { PALETTE_ITEMS } from '../../apps/studio/src/lib/palette';
-import { CHROME_ARGS, REPO_ROOT, findChrome, startServer } from './support/env';
+import { CHROME_ARGS, REPO_ROOT, findChrome, startServer, SKIP_FIRST_RUN } from './support/env';
 
 const PUBLIC = join(REPO_ROOT, 'apps/studio/public');
 const ARGS = process.argv.slice(2);
@@ -147,6 +147,7 @@ let browser: Browser | null = null;
 try {
   browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
   const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: 'light' });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`PAGE ERROR ${e.message}`));
   if (!ONLY_PALETTE) await renderTemplates(page, server.url);

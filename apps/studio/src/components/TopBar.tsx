@@ -15,6 +15,7 @@ import type { LayoutMode } from '../lib/layout';
 import { Icon } from './Icon';
 import { Logomark } from './Logo';
 import { Menu, type MenuEntry } from './ui/Menu';
+import { SignInChip } from '../onboarding/FirstRunHost';
 
 /** Inline-editable project (world) name. */
 const ProjectName = memo(function ProjectName(): ReactElement {
@@ -260,6 +261,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
           </>
         ) : (
           <>
+            <SignInChip />
             {memory.lowMemory && (
               <button type="button" className="chip chip--quiet hide-tablet" onClick={() => st().setSettingsOpen(true)} data-tip={memory.reason ?? 'Low memory mode'}>
                 Low memory

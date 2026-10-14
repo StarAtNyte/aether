@@ -27,6 +27,7 @@ import {
 import { BridgeError, DEFAULT_ACCOUNT_ID, type LocalAi } from '@aether/bridge';
 import type { AppEnv } from '../app-env';
 import { readJsonBody } from '../http';
+import { ADMIN_HEADER, hasSession, secretEquals } from '../local-guard';
 import type { Logger } from '../logger';
 
 /** Dependencies of the local AI routes. */
@@ -37,6 +38,22 @@ export interface LocalRouteDeps {
   isLoopback?: (c: Context<AppEnv>) => boolean;
   /** Aborted when the server shuts down. */
   shutdownSignal?: AbortSignal;
+  /** Per-install secret required on every local AI request (cookie or CLI header); absent: not required. */
+  sessionSecret?: string;
+  /** In-process bridge for hosted studios; `POST /api/local/bridge/pair` hands the CLI a pairing code and link. */
+  bridge?: LocalBridgeInfo;
+}
+
+/** What the CLI needs to pair a hosted studio with the in-process bridge. */
+export interface LocalBridgeInfo {
+  /** Bridge address, e.g. `http://127.0.0.1:8790`. */
+  url: string;
+  /** Hosted studio origins the bridge accepts. */
+  origins: readonly string[];
+  /** The current pairing code. */
+  code(): string;
+  /** Issue a fresh deep-link token. */
+  issue(): string;
 }
 
 const LOOPBACK_ADDR = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3})$/;
@@ -82,11 +99,24 @@ export function registerLocalRoutes(app: Hono<AppEnv>, deps: LocalRouteDeps): vo
   const isLoopback = deps.isLoopback ?? socketIsLoopback;
 
   app.use('/api/local/*', async (c, next) => {
+    if (deps.sessionSecret !== undefined && !hasSession(c, deps.sessionSecret)) {
+      return errorBody(c, 'unauthorized', 'Reload the studio from the link printed by "aether start".', 401);
+    }
     for (const h of PROXY_HEADERS) {
       if (c.req.header(h) !== undefined) return errorBody(c, 'forbidden_host', 'Local AI only answers requests made directly on this computer.', 403);
     }
     if (!LOOPBACK_HOST.test(c.req.header('host') ?? '') || !isLoopback(c)) return errorBody(c, 'forbidden_host', 'Local AI only answers requests made directly on this computer.', 403);
     return next();
+  });
+
+  // The CLI (which holds the session secret) asks for a pairing code and one-click links for hosted studios.
+  app.post('/api/local/bridge/pair', (c) => {
+    const bridge = deps.bridge;
+    if (!bridge) return errorBody(c, 'not_found', 'The bridge is off. Start Aether with --origin <https://your-studio>.', 404);
+    if (deps.sessionSecret === undefined || !secretEquals(c.req.header(ADMIN_HEADER), deps.sessionSecret)) return errorBody(c, 'unauthorized', 'Only the aether command can request pairing links.', 401);
+    const token = bridge.issue();
+    const links = bridge.origins.map((o) => `${o}/?bridge=${encodeURIComponent(bridge.url)}#aether-bridge=${token}`);
+    return c.json({ url: bridge.url, code: bridge.code(), links });
   });
 
   app.get('/api/local/status', async (c) => {

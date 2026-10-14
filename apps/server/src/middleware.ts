@@ -38,7 +38,7 @@ export function corsAllowlist(allowedOrigins: readonly string[]): MiddlewareHand
   return cors({
     origin: (origin) => (allowed.has(origin) ? origin : null),
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'X-Request-Id', 'X-Edit-Token', 'X-Aether-Provider', 'X-Aether-Key'],
+    allowHeaders: ['Content-Type', 'X-Request-Id', 'X-Edit-Token'],
     exposeHeaders: ['X-Request-Id', 'Retry-After', 'RateLimit-Limit', 'RateLimit-Remaining'],
     maxAge: 600,
   });
@@ -103,6 +103,13 @@ export const WEBLLM_HOSTS: readonly string[] = Object.freeze([
   'https://raw.githubusercontent.com',
 ]);
 
+/**
+ * Model APIs the studio calls straight from the browser with the user's own
+ * key (bring your own key): Anthropic, OpenAI, OpenRouter, Google Gemini.
+ * Must equal `BYOK_ORIGINS` of the studio's provider catalog (a test checks it).
+ */
+export const BYOK_API_HOSTS: readonly string[] = Object.freeze(['https://api.anthropic.com', 'https://api.openai.com', 'https://openrouter.ai', 'https://generativelanguage.googleapis.com']);
+
 /** Content-Security-Policy directives for the studio and API responses. */
 export const CSP_DIRECTIVES = Object.freeze({
   defaultSrc: ["'self'"],
@@ -111,8 +118,9 @@ export const CSP_DIRECTIVES = Object.freeze({
   imgSrc: ["'self'", 'data:', 'blob:'],
   // blob:/data: so locally imported glTF models (blob URLs, data URIs) can be fetched.
   // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
-  // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries).
-  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...WEBLLM_HOSTS],
+  // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries)
+  // and the model APIs a user's own key is sent to (never to Aether's server).
+  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS],
   styleSrc: ["'self'", "'unsafe-inline'"],
   fontSrc: ["'self'", 'data:'],
   objectSrc: ["'none'"],

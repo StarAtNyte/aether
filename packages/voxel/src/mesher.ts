@@ -199,9 +199,9 @@ export class ChunkMesher {
     const opaque = reg.opaque;
     const tiles = reg.faceTiles;
     const { axis, sign, u: ua, v: va } = dir;
-    const sn = STRIDE[axis] * sign;
-    const su = STRIDE[ua];
-    const sv = STRIDE[va];
+    const sn = (STRIDE[axis] as number) * sign;
+    const su = STRIDE[ua] as number;
+    const sv = STRIDE[va] as number;
     const lenA = axis === 1 ? y1 + 1 : CHUNK;
     const lenU = ua === 1 ? y1 + 1 : CHUNK;
     const lenV = va === 1 ? y1 + 1 : CHUNK;

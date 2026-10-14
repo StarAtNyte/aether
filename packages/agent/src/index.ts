@@ -31,6 +31,7 @@ export { CompletionRequestSchema, CompletionResponseSchema, ContentBlockSchema, 
 
 export { createAnthropicProvider, type AnthropicProviderOptions, type AnthropicEffort } from './providers/anthropic';
 export { createOpenAIProvider, type OpenAIProviderOptions, type OpenAIEffort } from './providers/openai';
+export { createChatCompletionsProvider, chatMessagesToWire, parseChatCompletion, type ChatCompletionsProviderOptions } from './providers/chat-completions';
 export { createHttpProvider, type HttpProviderOptions } from './providers/http';
 export { createMockProvider, type MockProviderOptions } from './providers/mock/index';
 export type { MockLibraryItem } from './providers/mock/library';

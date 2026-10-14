@@ -18,6 +18,8 @@ import { Icon, type IconName } from '../components/Icon';
 import { Logomark } from '../components/Logo';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { loadAiPrefs, parsePrefs, saveAiPrefs, type AiPrefs } from '../ai/prefs';
+import { SignInChip } from '../onboarding/FirstRunHost';
+import { useAiPrefsEvent } from '../onboarding/useAiPrefsEvent';
 import { ToastStack } from '../components/Toasts';
 import { CommandPalette, type Command } from '../components/ui/CommandPalette';
 import { ConfirmDialog } from '../components/ui/Dialog';
@@ -201,6 +203,8 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   const [query, setQuery] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiPrefs, setAiPrefs] = useState<AiPrefs>(() => loadAiPrefs(browserStorage()));
+  // A first-run choice (already saved) updates the settings shown here.
+  useAiPrefsEvent(() => setAiPrefs(loadAiPrefs(browserStorage())));
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -419,7 +423,8 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
             </label>
           )}
           <span className="spacer" />
-          <button type="button" className="icon-btn home-top__cmd" onClick={() => store.getState().setPaletteOpen(true)} aria-label="Command palette" data-tip="Command palette" data-kbd={shortcut('Mod+K')}>
+          <SignInChip />
+          <button type="button" className="icon-btn home-top__cmd"onClick={() => store.getState().setPaletteOpen(true)} aria-label="Command palette" data-tip="Command palette" data-kbd={shortcut('Mod+K')}>
             <Icon name="command" />
           </button>
           <button type="button" className="btn home-top__import" onClick={() => fileRef.current?.click()} data-tip="Import a .aether.json file">

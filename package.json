@@ -2,9 +2,12 @@
   "name": "aether-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "Aether \u2014 an AI-native WebGL/WebGPU framework that turns natural language into physically verified, interactive 3D worlds.",
+  "description": "Aether — an AI-native WebGL/WebGPU framework that turns natural language into physically verified, interactive 3D worlds.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "aether": "apps/cli/bin/aether.mjs"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -12,6 +15,9 @@
   "scripts": {
     "dev": "npm run dev -w @aether/studio",
     "dev:server": "npm run dev -w @aether/server",
+    "aether": "node apps/cli/bin/aether.mjs",
+    "aether:start": "node apps/cli/bin/aether.mjs start",
+    "aether:stop": "node apps/cli/bin/aether.mjs stop",
     "bridge": "tsx apps/bridge/src/main.ts",
     "build": "npm run build -w @aether/studio",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -29,8 +35,10 @@
     "e2e:connection": "tsx tests/e2e/connection.e2e.ts",
     "e2e:editing": "tsx tests/e2e/editing.e2e.ts",
     "e2e:local": "tsx tests/e2e/local.e2e.ts",
+    "e2e:hosted": "tsx tests/e2e/hosted.e2e.ts",
     "eval": "tsx scripts/eval-agent.ts",
-    "library": "tsx scripts/build-generator-library.ts"
+    "library": "tsx scripts/build-generator-library.ts",
+    "e2e:cli": "tsx tests/e2e/cli.e2e.ts"
   },
   "engines": {
     "node": ">=22"

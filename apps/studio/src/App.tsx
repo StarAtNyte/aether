@@ -11,6 +11,7 @@ import { Home } from './home/Home';
 import { createBlankProject, createEmptyWorld, createFromTemplate } from './projects/create';
 import { isHomeRoute } from './lib/router';
 import { applyTheme, themeFromSetting } from './lib/theme';
+import { FirstRunHost } from './onboarding/FirstRunHost';
 
 /**
  * The editor (renderer, physics, agent — three.js and the engine packages)
@@ -68,13 +69,20 @@ export const App = memo(function App(): ReactElement {
   const dark = useAppState((s) => s.settings.darkTheme);
   useEffect(() => applyTheme(document, themeFromSetting(dark)), [dark]);
   useShareLink();
+  let page: ReactElement;
   if (route.name === 'editor') {
-    return (
+    page = (
       <Suspense fallback={<EditorSkeleton />}>
         <EditorRoute key={route.id} id={route.id} />
       </Suspense>
     );
-  }
-  if (route.name === 'new') return <NewRoute key={route.template ?? 'starter'} template={route.template} />;
-  return <Home section={route.name} />;
+  } else if (route.name === 'new') page = <NewRoute key={route.template ?? 'starter'} template={route.template} />;
+  else page = <Home section={route.name} />;
+  return (
+    <>
+      {page}
+      {/* First-run "Connect your AI" screen: probes once, loads lazily, never blocks the app. */}
+      <FirstRunHost />
+    </>
+  );
 });

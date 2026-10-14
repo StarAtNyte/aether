@@ -19,6 +19,13 @@ export const STUDIO_DIST = join(REPO_ROOT, 'apps/studio/dist');
 const HEALTH_TIMEOUT_MS = 30_000;
 
 /**
+ * Init script that marks the first-run "Connect your AI" screen as already
+ * answered ("offline"), for suites that test something else. Only sets the
+ * marker when absent, so a suite can still clear it to test the screen.
+ */
+export const SKIP_FIRST_RUN = "try { if (!localStorage.getItem('aether.onboarding.v1')) localStorage.setItem('aether.onboarding.v1', JSON.stringify({ choice: 'offline', at: 1 })); } catch {}";
+
+/**
  * Chromium flags for GPU coverage on GPU-less machines. The first three
  * enable WebGPU and software GL; the last two route WebGPU to SwiftShader's
  * Vulkan, without which headless Chromium returns a null adapter and the

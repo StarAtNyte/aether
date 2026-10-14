@@ -11,12 +11,12 @@ describe('GET /api/health', () => {
     const app = makeApp(makeConfig());
     const res = await app.request('/api/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, mode: 'mock', providers: ['mock'], byok: true, local: false });
+    expect(await res.json()).toEqual({ ok: true, mode: 'mock', providers: ['mock'], byok: false, local: false });
   });
 
   it('reports live mode and provider names', async () => {
     const app = makeApp(makeConfig(), { llm: live(okProvider()), providers: ['anthropic', 'openai'] });
-    expect(await (await app.request('/api/health')).json()).toEqual({ ok: true, mode: 'live', providers: ['anthropic', 'openai'], byok: true, local: false });
+    expect(await (await app.request('/api/health')).json()).toEqual({ ok: true, mode: 'live', providers: ['anthropic', 'openai'], byok: false, local: false });
   });
 
   it('is never rate limited (platform health checks)', async () => {

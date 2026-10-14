@@ -1,10 +1,12 @@
 /**
- * Session-only secrets: the bridge pairing token and a bring-your-own API
- * key. They live in sessionStorage (gone when the tab closes, never in
- * localStorage, IndexedDB, exports, share links or logs) and are validated
- * on every read.
+ * Browser-held secrets: the bridge pairing token and bring-your-own API
+ * keys. They live in sessionStorage (gone when the tab closes); a key is
+ * kept in localStorage only when the user ticks "remember on this device".
+ * Never in IndexedDB, exports, share links or logs, never sent to Aether's
+ * server, and validated on every read.
  */
 import { BRIDGE_TOKEN_RE, normalizeBridgeUrl } from '@aether/agent';
+import { BYOK_KEY_RE, BYOK_PROVIDERS, type ByokProvider } from './byokCatalog';
 
 /** sessionStorage subset (injectable for tests). */
 export interface SessionStore {
@@ -14,9 +16,8 @@ export interface SessionStore {
 }
 
 const BRIDGE_KEY = 'aether.bridge.v1';
-const BYOK_KEY = 'aether.byok.v1';
-/** Same shape the server accepts. */
-export const BYOK_KEY_RE = /^[A-Za-z0-9_.-]{20,300}$/;
+const BYOK_KEY = 'aether.byok.v2';
+export { BYOK_KEY_RE };
 
 /** The browser's sessionStorage, or null (private mode, blocked storage). */
 export function browserSession(): SessionStore | null {
@@ -66,25 +67,91 @@ export function saveBridgeSession(store: SessionStore | null, s: BridgeSession |
   write(store, BRIDGE_KEY, s);
 }
 
-/** Saved bring-your-own key. */
-export interface ByokSession {
-  provider: 'anthropic' | 'openai';
-  key: string;
+/** Bring-your-own keys by provider. */
+export type ByokKeys = Partial<Record<ByokProvider, string>>;
+
+/** The stored keys and whether they are remembered on this device. */
+export interface ByokStore {
+  keys: ByokKeys;
+  /** True when the keys are also kept in localStorage ("remember on this device"). */
+  remembered: boolean;
 }
 
-/** Read the BYO key (null when absent or invalid). */
-export function loadByokSession(store: SessionStore | null): ByokSession | null {
-  const v = read(store, BYOK_KEY);
-  if (typeof v !== 'object' || v === null) return null;
-  const r = v as Record<string, unknown>;
-  const provider = r['provider'] === 'anthropic' || r['provider'] === 'openai' ? r['provider'] : null;
-  const key = typeof r['key'] === 'string' && BYOK_KEY_RE.test(r['key']) ? r['key'] : null;
-  return provider && key ? { provider, key } : null;
+/** Key usage in this browser session (the per-session call cap counts these). */
+export interface ByokUsage {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
-/** Save (or clear with null) the BYO key. */
-export function saveByokSession(store: SessionStore | null, s: ByokSession | null): void {
-  write(store, BYOK_KEY, s);
+const BYOK_DEVICE_KEY = 'aether.byok.device.v1';
+const BYOK_USAGE_KEY = 'aether.byok.usage.v1';
+const LEGACY_BYOK_KEY = 'aether.byok.v1';
+const MAX_COUNTER = 1e12;
+
+function parseKeys(v: unknown): ByokKeys {
+  const out: ByokKeys = {};
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return out;
+  const keys = (v as Record<string, unknown>)['keys'];
+  if (typeof keys !== 'object' || keys === null || Array.isArray(keys)) return out;
+  for (const p of BYOK_PROVIDERS) {
+    const k = (keys as Record<string, unknown>)[p];
+    if (typeof k === 'string' && BYOK_KEY_RE.test(k)) out[p] = k;
+  }
+  return out;
+}
+
+/**
+ * Read the saved keys: this tab's (sessionStorage) merged over the ones
+ * remembered on this device (localStorage). Invalid entries are dropped; a
+ * key saved by an older version (one provider, session only) is migrated.
+ */
+export function loadByokKeys(session: SessionStore | null, device: SessionStore | null): ByokStore {
+  const remembered = parseKeys(read(device, BYOK_DEVICE_KEY));
+  const keys: ByokKeys = { ...remembered, ...parseKeys(read(session, BYOK_KEY)) };
+  const legacy = read(session, LEGACY_BYOK_KEY);
+  if (typeof legacy === 'object' && legacy !== null) {
+    const r = legacy as Record<string, unknown>;
+    if ((r['provider'] === 'anthropic' || r['provider'] === 'openai') && typeof r['key'] === 'string' && BYOK_KEY_RE.test(r['key'])) keys[r['provider']] ??= r['key'];
+    write(session, LEGACY_BYOK_KEY, null);
+  }
+  return { keys, remembered: Object.keys(remembered).length > 0 };
+}
+
+/**
+ * Save the keys for this tab, and on this device too when `remember` is set
+ * (otherwise any device copy is removed). An empty map clears both.
+ */
+export function saveByokKeys(session: SessionStore | null, device: SessionStore | null, keys: ByokKeys, remember: boolean): void {
+  const clean = parseKeys({ keys });
+  const empty = Object.keys(clean).length === 0;
+  write(session, BYOK_KEY, empty ? null : { keys: clean });
+  write(device, BYOK_DEVICE_KEY, empty || !remember ? null : { keys: clean });
+}
+
+function counter(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.min(MAX_COUNTER, Math.floor(v)) : 0;
+}
+
+/** This session's key usage (zero when absent or invalid). */
+export function loadByokUsage(session: SessionStore | null): ByokUsage {
+  const v = read(session, BYOK_USAGE_KEY);
+  const r = typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+  return { calls: counter(r['calls']), inputTokens: counter(r['inputTokens']), outputTokens: counter(r['outputTokens']) };
+}
+
+/** Save (or clear with null) this session's key usage. */
+export function saveByokUsage(session: SessionStore | null, usage: ByokUsage | null): void {
+  write(session, BYOK_USAGE_KEY, usage);
+}
+
+/** The browser's localStorage for keys the user chose to remember, or null. */
+export function deviceStorage(): SessionStore | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Validate raw deep-link values (loopback URL + well-formed token). */

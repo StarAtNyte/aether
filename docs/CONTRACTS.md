@@ -450,8 +450,9 @@ export interface CompletionRequest { role: 'planner' | 'coder' | 'critic'; model
 export interface CompletionResponse { content: ContentBlock[]; stopReason: 'end' | 'tool_use' | 'max_tokens' | 'error'; usage?: { inputTokens: number; outputTokens: number }; model?: string; }
 export interface Provider { readonly name: string; complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse>; }
 
-export function createAnthropicProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;  // server-side only, raw fetch to Messages API, prompt caching on system/tools
-export function createOpenAIProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;     // server-side only, raw fetch to Responses API
+export function createAnthropicProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch; browser?: boolean }): Provider;  // raw fetch to Messages API, prompt caching on system/tools; `browser: true` (only with the user's own key) adds `anthropic-dangerous-direct-browser-access: true`
+export function createOpenAIProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;     // raw fetch to Responses API (server, or browser with the user's own key)
+export function createChatCompletionsProvider(opts: { name: string; apiKey: string; baseUrl: string /* https, or loopback http */; models: { planner: string; coder: string; critic: string }; fetch?: typeof fetch; headers?: Record<string, string> }): Provider;  // OpenAI-compatible `POST {baseUrl}/chat/completions` with function tools (OpenRouter, Gemini's OpenAI endpoint); tool calls without ids are numbered `call_<index>`
 export function createHttpProvider(opts: { endpoint: string; fetch?: typeof fetch }): Provider;                      // browser -> our server proxy
 export function createMockProvider(opts?: { library?: MockLibraryItem[] }): Provider;   // deterministic offline planner: keyword → world templates (MUST produce good worlds for ~15 themes; used as fallback + in tests); `library` lets it place generator-library objects by name
 export interface MockLibraryItem { id: string; keywords: readonly string[]; size: readonly [number, number, number] }
@@ -587,6 +588,41 @@ export function effectiveBridgeChoice(prefs: AiPrefs, backends: readonly BridgeB
 // Browser limits for a hosted (https) studio reaching http://127.0.0.1: WebKit (Safari, every iOS
 // browser) blocks it as mixed content ('warn'); Chromium may ask for local-network access ('info').
 export function hostedBridgeNote(origin: string, userAgent: string): { tone: 'warn' | 'info'; text: string } | null;
+```
+
+### Bring your own key (`apps/studio/src/ai/byokCatalog.ts`, `byok.ts`, `session.ts`, `connection.ts`)
+
+The studio calls the provider's API **straight from the browser** with the
+user's own key. The key is never sent to Aether's server, never logged,
+never placed in observable state, exports or share links. CSP `connect-src`
+lists exactly the four provider origins (`BYOK_ORIGINS` must equal the
+server's `BYOK_API_HOSTS`, which a test checks).
+
+```ts
+export const BYOK_PROVIDERS = ['anthropic', 'openai', 'openrouter', 'gemini'] as const;  // byokCatalog.ts (no heavy imports)
+export const BYOK_CATALOG: Record<ByokProvider, { label; origin; keyPage; keyHint; models: ByokModel[]; defaultModel }>;
+export const BYOK_KEY_RE = /^[A-Za-z0-9_.-]{20,300}$/;      // no whitespace: no header injection
+export const BYOK_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+export const BYOK_SESSION_CALL_CAP = 150;                   // model calls per browser session, then 'rate_limit' (reason 'session_cap') until reset
+export function maskKey(key: string): string;               // "sk-ant-••••WXYZ"
+// Anthropic: Messages API + `anthropic-dangerous-direct-browser-access: true`; OpenAI: Responses API;
+// OpenRouter (https://openrouter.ai/api/v1) and Gemini (…/v1beta/openai): Chat Completions.
+export function createDirectProvider(provider: ByokProvider, key: string, model: string, fetch: typeof fetch): Provider;
+export function meteredProvider(inner: Provider, meter: { read(): ByokUsage; write(u: ByokUsage): void }, cap?: number): Provider;
+export function listProviderModels(provider: ByokProvider, key: string, fetch: typeof fetch, signal?: AbortSignal): Promise<ByokModel[]>;  // zod-validated, ≤ 8 MiB, tool-capable only, ≤ 200
+
+// Storage: sessionStorage 'aether.byok.v2' ({keys}), plus localStorage 'aether.byok.device.v1' only with
+// "remember on this device"; usage in sessionStorage 'aether.byok.usage.v1'. Every read re-validates.
+class AiConnection {
+  setByok(provider: ByokProvider, key: string, opts?: { remember?: boolean }): string | null;  // error message, or null
+  clearByok(provider?: ByokProvider): void;   // no argument: every key, from this device too
+  setByokRemember(remember: boolean): void;
+  resetByokUsage(): void;
+  listByokModels(provider: ByokProvider, signal?: AbortSignal): Promise<ByokModel[]>;
+}
+interface ByokState { provider: ByokProvider | null; providers: ByokProvider[]; remembered: boolean; usage: { calls; inputTokens; outputTokens } }
+// AiPrefs: byokProvider: ByokProvider; byokModels: Partial<Record<ByokProvider, string>> (backward compatible: absent → defaults).
+// 'auto' resolution: local AI → bridge → server model → a key that is set → loaded on-device model → offline planner.
 ```
 
 ## Full editor (selection, transforms, meshes, sculpt, paint, logic)
@@ -827,7 +863,7 @@ that is not a bare box, ≤ 60 000 triangles).
 
 ## apps/server (Hono on Node)
 
-- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock', byok: boolean, local: boolean }` (`local`: `/api/local/*` is served, see "Local AI")
+- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock', byok: false, local: boolean }` (`local`: `/api/local/*` is served, see "Local AI")
 - `POST /api/llm` body `CompletionRequest` (zod-validated, body ≤ 1 MB, ≤ 4 images) → `CompletionResponse`.
   The server maps `role` to an allowlisted model; clients cannot pick arbitrary models.
 - `GET/PUT /api/generators/:hash` — content-addressed cache of validated generator defs.
@@ -835,7 +871,7 @@ that is not a bare box, ≤ 60 000 triangles).
 - Security: keys from env only; CORS allowlist; per-IP token bucket; body limit; upstream timeout + abort; no secrets in responses/logs; security headers (CSP, nosniff, referrer-policy, frame-ancestors); serves `apps/studio/dist` in production.
 - No key configured → `mode: 'mock'`; studio falls back to the offline planner. The hosted server never needs or uses an owner-paid key by default (`AETHER_PROVIDER` unset = mock).
 - `AETHER_PROVIDER=codex|claude-code` (local full stack only): the server answers `/api/llm` through the locked-down headless CLI of the machine it runs on.
-- `POST /api/llm/byok` (`AETHER_BYOK`, default on; set `false` to disable): the visitor's own Anthropic/OpenAI key in `X-Aether-Key` (sessionStorage in the browser), used for that one upstream call, never stored or logged.
+- Bring-your-own keys never reach the server: the studio calls the provider's API straight from the browser (see "Bring your own key" below). `/api/health` keeps `byok: false` for compatibility.
 
 ## apps/studio (React 19 + Vite)
 

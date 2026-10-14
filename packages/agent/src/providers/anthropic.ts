@@ -1,5 +1,6 @@
 /**
- * Anthropic Messages API provider (raw fetch, server-side only).
+ * Anthropic Messages API provider (raw fetch; server-side, or in the browser
+ * with the user's own key).
  *
  * - `POST {baseUrl}/v1/messages` with `x-api-key` + `anthropic-version`.
  * - Prompt caching: `cache_control` breakpoints on the system prompt and on
@@ -31,6 +32,12 @@ export interface AnthropicProviderOptions {
   /** Default output cap when the request has none (16 000; non-streaming). */
   defaultMaxTokens?: number;
   retry?: RetryPolicy;
+  /**
+   * Called straight from a web page with the user's own key (bring your own
+   * key): sends `anthropic-dangerous-direct-browser-access: true`, which the
+   * API requires for CORS. Never set it with a key that is not the user's.
+   */
+  browser?: boolean;
 }
 
 const API_VERSION = '2023-06-01';
@@ -140,14 +147,18 @@ function describeError(status: number, body: unknown): string {
   return `Anthropic API error ${status}${msg ? `: ${msg}` : ''}`;
 }
 
-/** Create a provider for the Anthropic Messages API. Never use in browser code (the key would leak). */
+/**
+ * Create a provider for the Anthropic Messages API. In browser code only with
+ * the visitor's own key and `browser: true` (never a site owner's key).
+ */
 export function createAnthropicProvider(opts: AnthropicProviderOptions): Provider {
   if (!opts.apiKey) throw new ProviderError('auth', 'Anthropic API key is missing');
   const baseUrl = (opts.baseUrl ?? 'https://api.anthropic.com').replace(/\/+$/, '');
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const effort = { ...DEFAULT_EFFORT, ...opts.effort };
   const replay = new LruMap<WireBlock[]>(REPLAY_CAPACITY);
-  const headers = { 'content-type': 'application/json', 'x-api-key': opts.apiKey, 'anthropic-version': API_VERSION };
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-api-key': opts.apiKey, 'anthropic-version': API_VERSION };
+  if (opts.browser) headers['anthropic-dangerous-direct-browser-access'] = 'true';
 
   return {
     name: 'anthropic',

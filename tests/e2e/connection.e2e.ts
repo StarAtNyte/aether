@@ -31,7 +31,7 @@ import { PROMPT_EXAMPLES, type BridgeBackendStatus, type TextBackend, type TextC
 import { BridgeError } from '../../apps/bridge/src/errors';
 import { Pairing } from '../../apps/bridge/src/pairing';
 import { createBridgeHandler } from '../../apps/bridge/src/server';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer, SKIP_FIRST_RUN } from './support/env';
 
 const TURN_TIMEOUT_MS = 120_000;
 
@@ -171,6 +171,7 @@ async function picker(page: Page): Promise<{ kind: string | null; status: string
 
 async function openEditor(browser: Browser, url: string, prefs: Record<string, unknown>): Promise<{ page: Page; close: () => Promise<void> }> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`  [pageerror] ${e.message}`));
   await page.addInitScript((p) => {

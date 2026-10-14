@@ -7,6 +7,7 @@
 import { memo, useEffect, useMemo, type ReactElement } from 'react';
 import { useStudio, useUI } from '../../app/context';
 import { aiConnection, effectiveBridgeChoice } from '../../ai/connection';
+import { BYOK_CATALOG } from '../../ai/byokCatalog';
 import { MAX_REFINE, WEBLLM_MODELS, type AiPrefs } from '../../ai/prefs';
 import { useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
@@ -96,7 +97,7 @@ export const ModelPicker = memo(function ModelPicker(): ReactElement {
     for (const m of WEBLLM_MODELS) items.push({ id: `webllm:${m.id}`, label: m.label, checked: prefs.mode === 'webllm' && prefs.webllmModel === m.id, onSelect: () => set({ mode: 'webllm', webllmModel: m.id }) });
   }
   items.push({ id: 'offline', label: 'Offline planner', checked: prefs.mode === 'offline', onSelect: () => set({ mode: 'offline' }) });
-  if (byok || prefs.mode === 'byok') items.push({ id: 'byok', label: `Your API key · ${prefs.byokProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}`, checked: prefs.mode === 'byok', onSelect: () => set({ mode: 'byok' }) });
+  if (byok.providers.length > 0 || prefs.mode === 'byok') items.push({ id: 'byok', label: `Your API key · ${BYOK_CATALOG[prefs.byokProvider].label}`, checked: prefs.mode === 'byok', onSelect: () => set({ mode: 'byok' }) });
   const active = resolved.kind === 'local' ? localChoice : choice;
   if (resolved.kind === 'bridge' || resolved.kind === 'local' || prefs.mode === 'bridge' || prefs.mode === 'local') {
     items.push({ kind: 'heading', id: 'h-effort', label: 'Reasoning effort' });

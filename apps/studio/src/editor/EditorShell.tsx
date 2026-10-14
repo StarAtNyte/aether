@@ -18,6 +18,7 @@ import { MobileSheet } from './MobileSheet';
 import { LeftPanel, ResizeHandle, RightPanel, RightRail } from './Panels';
 import { useEditorCommands } from './useEditorCommands';
 import { useLayoutMode, usePanelWidths } from './useLayout';
+import { useAiPrefsEvent } from '../onboarding/useAiPrefsEvent';
 
 const EditorSettings = memo(function EditorSettings(): ReactElement {
   const studio = useStudio();
@@ -27,6 +28,8 @@ const EditorSettings = memo(function EditorSettings(): ReactElement {
   const gpu = useUI((s) => s.gpu);
   const tab = useUI((s) => s.settingsTab);
   const aiPrefs = useUI((s) => s.aiPrefs);
+  // A choice made on the first-run screen applies to the open project at once.
+  useAiPrefsEvent((patch) => studio.store.getState().setAiPrefs(patch));
   return (
     <SettingsDialog
       open={open}

@@ -4,7 +4,7 @@ import { AiConnection, effectiveBridgeChoice, parseServerHealth } from '../src/a
 import { extractBridgeLink } from '../src/ai/deepLink';
 import { fallbackText, hostedBridgeNote, isLocalOrigin } from '../src/ai/messages';
 import { DEFAULT_AI_PREFS, loadAiPrefs, parsePrefs, PREF_MODEL_ID_RE, saveAiPrefs, type AiPrefs } from '../src/ai/prefs';
-import { loadBridgeSession, loadByokSession, saveBridgeSession, validateBridgeLink, type SessionStore } from '../src/ai/session';
+import { loadBridgeSession, loadByokKeys, saveBridgeSession, validateBridgeLink, type SessionStore } from '../src/ai/session';
 import { reviveChat } from '../src/lib/chat';
 import type { StorageLike } from '../src/lib/storage';
 
@@ -68,7 +68,7 @@ describe('session secrets and deep links', () => {
     s.setItem('aether.bridge.v1', JSON.stringify({ url: 'https://evil.example', token: TOKEN }));
     expect(loadBridgeSession(s)).toBeNull();
     s.setItem('aether.byok.v1', JSON.stringify({ provider: 'anthropic', key: 'bad key with spaces' }));
-    expect(loadByokSession(s)).toBeNull();
+    expect(loadByokKeys(s, null).keys).toEqual({});
   });
   it('strips the deep link from the URL and validates it', () => {
     const r = extractBridgeLink(`https://studio.example/?bridge=http%3A%2F%2F127.0.0.1%3A8790#aether-bridge=${TOKEN}`);
@@ -134,7 +134,7 @@ describe('AiConnection', () => {
     await ai.refreshBridge();
     expect(ai.resolve(prefs({ mode: 'bridge' }))).toMatchObject({ ready: false, reason: 'Codex is not signed in on this computer' });
     expect(ai.resolve(prefs({ mode: 'server' })).ready).toBe(false);
-    expect(ai.resolve(prefs({ mode: 'byok' })).reason).toContain('no API key');
+    expect(ai.resolve(prefs({ mode: 'byok' })).reason).toContain('no Anthropic API key');
     await ai.loadWebLlm(DEFAULT_AI_PREFS.webllmModel);
     expect(ai.store.getState().webllm).toMatchObject({ state: 'unsupported', detail: 'no WebGPU' });
     expect(ai.createProvider(prefs({ mode: 'webllm' }))).toBeNull();
@@ -152,21 +152,26 @@ describe('AiConnection', () => {
     expect(loadBridgeSession(session)).toBeNull();
   });
 
-  it('sends a BYO key only to our server passthrough, in headers', async () => {
-    const r = router({ '/api/health': () => json({ ok: true, mode: 'mock', byok: true }), '/api/llm/byok': () => json({ content: [{ type: 'text', text: 'ok' }], stopReason: 'end' }) });
+  it('sends a BYO key straight to the provider, never to our server', async () => {
+    const r = router({ '/api/health': () => json({ ok: true, mode: 'mock', byok: false }), '/v1/responses': () => json({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }], usage: { input_tokens: 7, output_tokens: 3 } }) });
     const session = mem();
     const ai = new AiConnection({ fetch: r.fetch, session });
     await ai.probeServer();
     expect(ai.setByok('openai', 'short')).not.toBeNull();
     expect(ai.setByok('openai', 'sk-test-0123456789abcdefghijk')).toBeNull();
+    // The server not accepting personal keys does not matter any more.
+    expect(ai.resolve(prefs({ mode: 'byok', byokProvider: 'openai' })).ready).toBe(true);
     const p = ai.createProvider(prefs({ mode: 'byok', byokProvider: 'openai' }));
     await p?.complete({ role: 'planner', system: 's', messages: [{ role: 'user', content: 'x' }] });
-    const call = r.calls.find((c) => c.url.endsWith('/api/llm/byok'));
-    expect((call?.init.headers as Record<string, string>)['x-aether-key']).toBe('sk-test-0123456789abcdefghijk');
-    expect(String(call?.init.body)).not.toContain('sk-test');
-    expect([...session.map.keys()]).toEqual(['aether.byok.v1']);
+    const call = r.calls.find((c) => c.url === 'https://api.openai.com/v1/responses');
+    expect((call?.init.headers as Record<string, string>)['authorization']).toBe('Bearer sk-test-0123456789abcdefghijk');
+    for (const c of r.calls.filter((x) => !x.url.startsWith('https://api.openai.com'))) expect(JSON.stringify(c.init)).not.toContain('sk-test');
+    expect(ai.store.getState().byok).toMatchObject({ provider: 'openai', providers: ['openai'], usage: { calls: 1, inputTokens: 7, outputTokens: 3 } });
+    expect(JSON.stringify(ai.store.getState())).not.toContain('sk-test');
+    expect([...session.map.keys()].sort()).toEqual(['aether.byok.usage.v1', 'aether.byok.v2']);
     ai.clearByok();
-    expect(session.map.size).toBe(0);
+    expect(session.map.has('aether.byok.v2')).toBe(false);
+    expect(ai.resolve(prefs({ mode: 'byok', byokProvider: 'openai' })).ready).toBe(false);
   });
 
   it('loads an on-device model through the injected loader with progress', async () => {

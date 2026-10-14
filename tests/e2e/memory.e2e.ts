@@ -27,7 +27,7 @@
  */
 import { chromium, firefox, type Browser, type BrowserContext, type ConsoleMessage, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 import { sampleBrowserMemory } from './support/procmem';
 
 const VIEWPORT = { width: 1440, height: 900 };
@@ -233,6 +233,7 @@ interface Report {
 
 async function newPage(browser: Browser, errors: string[], init?: string): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await context.newPage();
   if (init) await page.addInitScript({ content: init });
   page.on('console', (m: ConsoleMessage) => {

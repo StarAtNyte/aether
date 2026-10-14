@@ -23,7 +23,7 @@
  * `-- --firefox` for one browser).
  */
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from 'playwright';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
 /** Sizes from the layout requirements, plus landscape phone. */
 const DESKTOP_SIZES: ReadonlyArray<[number, number]> = [
@@ -304,6 +304,7 @@ async function runBrowser(name: string, base: string, failures: string[]): Promi
 
     // Desktop and tablet sizes: one page, resized in place.
     const desk = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await desk.addInitScript({ content: SKIP_FIRST_RUN });
     watch(desk);
     const page = await desk.newPage();
     page.on('pageerror', (e) => errors.push(e.message));
@@ -326,6 +327,7 @@ async function runBrowser(name: string, base: string, failures: string[]): Promi
     // Phones: touch context (coarse pointer).
     for (const [w, h] of PHONE_SIZES) {
       const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, ...(name === 'chromium' ? { isMobile: true } : {}) });
+      await ctx.addInitScript({ content: SKIP_FIRST_RUN });
       watch(ctx);
       const p = await ctx.newPage();
       p.on('pageerror', (e) => errors.push(e.message));

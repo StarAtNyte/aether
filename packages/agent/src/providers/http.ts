@@ -14,7 +14,7 @@ export interface HttpProviderOptions {
   endpoint: string;
   fetch?: typeof fetch;
   retry?: RetryPolicy;
-  /** Extra request headers (e.g. the visitor's own key for `/api/llm/byok`); never logged. */
+  /** Extra request headers; never logged. */
   headers?: Record<string, string>;
   /** Provider name reported to the agent (default 'http'). */
   name?: string;

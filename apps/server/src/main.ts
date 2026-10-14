@@ -12,9 +12,11 @@ import { loadEnvFile } from './env-file';
 import { loadSandboxValidator } from './generator-validation';
 import { createLiveProvider } from './llm/providers';
 import { planProviders } from './llm/provider-plan';
+import { createRotatingSink } from './log-file';
 import { createLogger } from './logger';
 import type { LiveLlm } from './routes/llm';
-import { LocalAi } from '@aether/bridge';
+import type { LocalBridgeInfo } from './routes/local';
+import { LocalAi, parseBridgeConfig, startBridge, type RunningBridge } from '@aether/bridge';
 
 /** Hard deadline for draining in-flight requests on shutdown. */
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -22,7 +24,8 @@ const SHUTDOWN_GRACE_MS = 10_000;
 async function main(): Promise<void> {
   loadEnvFile(resolve(REPO_ROOT, '.env'));
   const config = loadConfig(process.env);
-  const logger = createLogger({ level: config.logLevel, secrets: secretValues(config) });
+  const sink = config.local.logFile ? createRotatingSink(config.local.logFile) : undefined;
+  const logger = createLogger({ level: config.logLevel, secrets: secretValues(config), ...(sink ? { sink } : {}) });
 
   const plan = planProviders(config);
   const llm: LiveLlm | null = plan.active ? { provider: await createLiveProvider(plan.active), models: plan.active.models } : null;
@@ -34,9 +37,24 @@ async function main(): Promise<void> {
   const local = config.localAi ? new LocalAi({ dataDir: resolve(config.dataDir, 'local-ai') }) : null;
   if (local) await local.init();
 
+  // Optional bridge for hosted copies of the studio (same process, 127.0.0.1 only, token-paired).
+  let bridge: RunningBridge | null = null;
+  let bridgeInfo: LocalBridgeInfo | undefined;
+  if (local && config.local.bridge) {
+    const bridgeConfig = parseBridgeConfig(['--port', String(config.local.bridge.port), ...config.local.bridge.origins.flatMap((o) => ['--origin', o])], {});
+    bridge = await startBridge(bridgeConfig, { logger: { info: (msg) => logger.info(`bridge: ${msg}`), warn: (msg) => logger.warn(`bridge: ${msg}`) } });
+    const running = bridge;
+    bridgeInfo = { url: running.url, origins: config.local.bridge.origins, code: () => running.pairing.currentCode, issue: () => running.pairing.issue() };
+    logger.info('bridge listening', { url: running.url, origins: config.local.bridge.origins.join(',') });
+  }
+
   const shutdown = new AbortController();
+  // `aether stop` asks for a graceful shutdown over HTTP (signals are not graceful on Windows).
+  const stopRef: { current: ((signal: string) => void) | null } = { current: null };
   const app = createApp(config, {
+    requestShutdown: () => setImmediate(() => stopRef.current?.('aether stop')),
     local,
+    ...(bridgeInfo ? { bridge: bridgeInfo } : {}),
     logger,
     llm,
     providers: plan.mode === 'live' ? plan.available : ['mock'],
@@ -64,6 +82,7 @@ async function main(): Promise<void> {
     logger.info('shutting down', { signal });
     shutdown.abort();
     void generatorValidator?.dispose();
+    void bridge?.close();
     local?.dispose();
     const force = setTimeout(() => {
       logger.warn('forced exit after grace period');
@@ -78,6 +97,8 @@ async function main(): Promise<void> {
   };
   process.once('SIGTERM', () => stop('SIGTERM'));
   process.once('SIGINT', () => stop('SIGINT'));
+  if (process.platform === 'win32') process.once('SIGBREAK', () => stop('SIGBREAK'));
+  stopRef.current = stop;
 }
 
 main().catch((err: unknown) => {

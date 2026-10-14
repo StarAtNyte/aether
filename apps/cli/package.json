@@ -1,0 +1,20 @@
+{
+  "name": "@aether/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "The aether command: run the Aether studio on this computer with your own AI login.",
+  "bin": {
+    "aether": "./bin/aether.mjs"
+  },
+  "scripts": {
+    "start": "node bin/aether.mjs start"
+  },
+  "dependencies": {
+    "@aether/bridge": "*",
+    "@aether/server": "*",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.6"
+  }
+}

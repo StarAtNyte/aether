@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { DEFAULT_PROMPTS } from '../../scripts/smoke-prompts';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
 const VIEWPORT = { width: 1440, height: 900 };
 const ARGS = process.argv.slice(2);
@@ -90,6 +90,7 @@ async function waitFor(page: Page, what: string, timeoutMs: number, ok: (p: Prob
 async function renderPrompt(browser: Browser, url: string, prompt: string): Promise<void> {
   const slug = gallerySlug(prompt);
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     const page = await context.newPage();
     const errors: string[] = [];
@@ -142,6 +143,7 @@ const SKIES: ReadonlyArray<readonly [string, number]> = [
 /** Render the starter world once per sky preset (one context, environment edits only). */
 async function renderSkies(browser: Browser, url: string): Promise<void> {
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
   try {
     const page = await context.newPage();
     const errors: string[] = [];

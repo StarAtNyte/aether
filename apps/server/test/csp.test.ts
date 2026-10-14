@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
+import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -51,6 +52,16 @@ describe('Content-Security-Policy', () => {
     }
     expect(p.get('object-src')).toEqual(["'none'"]);
     expect(p.get('frame-ancestors')).toEqual(["'none'"]);
+  });
+});
+
+describe('bring-your-own-key provider origins', () => {
+  it('allows exactly the provider APIs the studio calls with a user key', () => {
+    expect([...BYOK_API_HOSTS].sort()).toEqual([...BYOK_ORIGINS].sort());
+    const connect = serverPolicy().get('connect-src') ?? [];
+    for (const o of BYOK_ORIGINS) expect(connect, o).toContain(o);
+    // No other non-loopback model API host (and no wildcard subdomains).
+    expect(connect.filter((s) => /api|openrouter|googleapis/.test(s)).sort()).toEqual([...BYOK_ORIGINS].sort());
   });
 });
 

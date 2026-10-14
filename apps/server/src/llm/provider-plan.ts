@@ -7,7 +7,7 @@
  * Cost policy: the server never spends owner-paid API keys unless
  * `AETHER_PROVIDER` explicitly names that provider. Without it the server is
  * in mock mode and visitors use the offline planner, their own local bridge
- * (Codex / Claude Code subscription) or their own key (`/api/llm/byok`).
+ * (Codex / Claude Code subscription) or their own key (called straight from the browser).
  */
 import type { RoleModels, ServerConfig } from '../config';
 

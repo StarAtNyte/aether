@@ -6,12 +6,13 @@
  */
 import { z } from 'zod';
 import { readJson, writeJson, type StorageLike } from '../lib/storage';
+import { BYOK_MODEL_RE, BYOK_PROVIDERS } from './byokCatalog';
 
 /**
  * Connection modes. 'auto' picks, in order: local AI on this computer (Codex,
- * then Claude Code), the paired bridge, the server model, an on-device model
- * that is already loaded, then the offline planner. A personal API key is
- * only used when chosen explicitly.
+ * then Claude Code), the paired bridge, the server model, the user's own API
+ * key (when one is set for the chosen provider), an on-device model that is
+ * already loaded, then the offline planner.
  */
 export const AI_MODES = ['auto', 'local', 'offline', 'server', 'bridge', 'webllm', 'byok'] as const;
 /** A connection mode. */
@@ -34,6 +35,7 @@ export const WEBLLM_MODELS = [
 /** Same as `MODEL_ID_RE` in @aether/agent (kept local so the home page does not load the agent package; a test asserts equality). */
 export const PREF_MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const ModelId = z.string().regex(PREF_MODEL_ID_RE);
+const ByokModelId = z.string().regex(BYOK_MODEL_RE).optional().catch(undefined);
 
 /** zod schema of {@link AiPrefs}. Unknown or invalid fields fall back to defaults. */
 export const AiPrefsSchema = z.object({
@@ -44,7 +46,12 @@ export const AiPrefsSchema = z.object({
   effort: z.enum(['low', 'medium', 'high']).catch('low'),
   refine: z.number().int().min(0).max(MAX_REFINE).catch(1),
   webllmModel: z.enum(WEBLLM_MODELS.map((m) => m.id) as [string, ...string[]]).catch(WEBLLM_MODELS[0].id),
-  byokProvider: z.enum(['anthropic', 'openai']).catch('anthropic'),
+  byokProvider: z.enum(BYOK_PROVIDERS).catch('anthropic'),
+  /** Model chosen per key provider (absent: the provider's default). */
+  byokModels: z
+    .object({ anthropic: ByokModelId, openai: ByokModelId, openrouter: ByokModelId, gemini: ByokModelId })
+    .catch({ anthropic: undefined, openai: undefined, openrouter: undefined, gemini: undefined })
+    .transform((m) => Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined)) as Partial<Record<(typeof BYOK_PROVIDERS)[number], string>>),
   /** Deep build: new assets are built by a coding agent that iterates with a checker (local AI only). */
   deep: z.boolean().catch(true),
   /** Iterations a deep build may spend (1–6). */

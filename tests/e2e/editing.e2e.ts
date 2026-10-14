@@ -19,7 +19,7 @@
  * `-- --chromium` for one browser).
  */
 import { chromium, firefox, type Browser, type ConsoleMessage, type Page } from 'playwright';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
 const VIEWPORT = { width: 1440, height: 900 };
 const BOOT_TIMEOUT_MS = 60_000;
@@ -360,6 +360,7 @@ async function editRuleAndPlay(page: Page): Promise<void> {
 async function run(browser: Browser, url: string, name: string): Promise<void> {
   log(`run "${name}"`);
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
   const errors: string[] = [];
   try {
     const page = await context.newPage();

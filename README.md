@@ -141,7 +141,10 @@ explicit state, so the AI can be held to account:
   Codex or Claude Code CLI you are already signed in to (ChatGPT or Claude
   subscription, no API key) with every tool disabled; **on-device AI** with
   WebLLM (experimental, opt-in download, WebGPU); and an optional
-  **bring-your-own API key** that stays in the tab's session storage. Pick
+  **bring-your-own API key** (Anthropic, OpenAI, OpenRouter or Google
+  Gemini) that the browser sends straight to that provider, never to
+  Aether's server; it stays in the tab unless you tick "remember on this
+  device", and a per-session call cap with a token estimate guards it. Pick
   the model, reasoning effort and the number of quality refinement rounds per
   project; a status badge shows connected / not signed in / bridge offline,
   and any failure falls back to the offline planner with a visible notice.
@@ -274,7 +277,6 @@ the hosted server never needs or uses one by default. The main settings:
 | --- | --- |
 | `AETHER_PROVIDER` | `mock` (default: offline planner), `codex` / `claude-code` (signed-in CLI on this machine), `anthropic` or `openai` (needs a key) |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Optional upstream keys (server only), used only when `AETHER_PROVIDER` names that provider |
-| `AETHER_BYOK` | `true` (default) lets visitors use their own key through `/api/llm/byok` (never stored or logged) |
 | `AETHER_LOCAL_AI` | `auto` (default): Codex / Claude Code of this computer under `/api/local/*` for a non-production server without hosting markers; `on` forces it (refused on hosting platforms), `off` disables it |
 | `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic model per role |
 | `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI model per role |

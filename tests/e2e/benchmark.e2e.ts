@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
-import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
 const PROMPT = 'a canyon with a million trees and ancient statues';
 const VIEWPORT = { width: 1280, height: 800 };
@@ -156,6 +156,7 @@ async function run(target: Target, url: string): Promise<Result> {
   const browser = await target.launch();
   try {
     const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+    await context.addInitScript({ content: SKIP_FIRST_RUN });
     // tsx keeps function names with an `__name` helper that page.evaluate bodies reference.
     await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
     const page = await context.newPage();

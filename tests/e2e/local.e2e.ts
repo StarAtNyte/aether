@@ -18,7 +18,7 @@
  */
 import { chromium, firefox, type Browser, type Page, type Route } from 'playwright';
 import { GENERATOR_EXAMPLES } from '@aether/procgen';
-import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, type TestServer, SKIP_FIRST_RUN } from './support/env';
 
 const TURN_TIMEOUT_MS = 120_000;
 const JOB_ID = '7a7a7a7a-7a7a-4a7a-8a7a-7a7a7a7a7a7a';
@@ -161,6 +161,7 @@ function turnState(page: Page): Promise<TurnState | null> {
 
 async function openEditor(browser: Browser, url: string, prefs: Record<string, unknown>, fake: LocalFake): Promise<{ page: Page; close: () => Promise<void> }> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`  [pageerror] ${e.message}`));
   await installLocalAi(page, fake);
