@@ -6,6 +6,7 @@ const browser = await chromium.launch({ executablePath: findChrome(), args: [...
 try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
+  if (process.env.GL) await ctx.addInitScript({ content: 'try { delete Navigator.prototype.gpu; } catch {}' });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f; window.__lt=[]; try{new PerformanceObserver(l=>{for(const e of l.getEntries()) window.__lt.push([Math.round(e.startTime),Math.round(e.duration)])}).observe({type:"longtask",buffered:true})}catch{}' });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type()==='warning') log('console: ' + m.text().slice(0, 300)); });

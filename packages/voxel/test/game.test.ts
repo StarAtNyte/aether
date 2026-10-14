@@ -146,6 +146,25 @@ describe('VoxelGame', () => {
     expect(g.drops.length).toBe(0);
   });
 
+  it('a drop two blocks down in a neighbouring hole hops up to the player', () => {
+    const g = game();
+    run(g, 0.5);
+    const b = g.player.body;
+    b.x = 0.5;
+    b.z = 0.5;
+    run(g, 0.3);
+    const feet = Math.floor(b.y);
+    // A two-deep pit right next to the player; the drop lands at its bottom.
+    g.breakBlock(1, feet - 1, 0);
+    g.breakBlock(1, feet - 2, 0);
+    g.inventory.clear();
+    g.drops.length = 0;
+    g.spawnDrop('cobblestone', 1, 1.5, feet - 2 + 0.1, 0.5, false);
+    run(g, 4);
+    expect(Math.floor(b.y)).toBe(feet);
+    expect(g.inventory.count('cobblestone')).toBe(1);
+  });
+
   it('finds open solid ground to spawn on: never leaves, plants or water', () => {
     const w = flatWorld(1, 9, 'grass');
     // A tree canopy and a pond around (0, 0); open grass from x = 3.

@@ -828,6 +828,8 @@ export class VoxelGame {
           const dist = Math.max(0.05, horiz);
           b.vx += (dx / dist) * dt * 18;
           b.vz += (dz / dist) * dt * 18;
+          // A drop resting below the player (a hole, a step down) hops up toward them.
+          if (b.onGround && below > 0.2) b.vy = Math.min(7, 3.2 + below * 1.8);
         }
       }
       if (d.age > DROP_LIFETIME || b.y < -16) this.drops.splice(i, 1);

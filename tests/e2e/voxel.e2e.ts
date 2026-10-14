@@ -386,7 +386,9 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       g.player.body.y = s.y + 4;
       g.player.body.z = s.z;
     }, start);
-    await page.waitForTimeout(1500);
+    // The home chunks (evicted while away, saved then) stream back in from the save.
+    await streamed(page);
+    await waitFor(page, 'the home chunks to load', 30_000, () => page.evaluate((c) => (window.__aether?.simulation?.voxel?.blockAt(c.x, c.y, c.z) ? true : null), before));
 
     // 5. Stop (saves), reload, play: the changed cells come back exactly.
     const cells = [before, placedAt, placedAt ? { x: placedAt.x, y: placedAt.y + 1, z: placedAt.z } : null].filter((c): c is { x: number; y: number; z: number } => c !== null);
@@ -399,9 +401,12 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(page.url() === projectUrl, 'reload changed the project');
     await waitFor(page, 'the studio to boot again', BOOT_MS, () => page.evaluate(() => (window.__aether?.simulation && window.__aether.store.getState().loading === null ? true : null)));
     await streamed(page);
+    let lastCells: Array<string | null> = [];
     const persisted = await waitFor(page, 'the saved chunks to load', 20_000, async () => {
-      const now = await readCells();
-      return now.every((b, i) => b === savedCells[i]) ? now.join('/') : null;
+      lastCells = await readCells();
+      return lastCells.every((b, i) => b === savedCells[i]) ? lastCells.join('/') : null;
+    }).catch((e: unknown) => {
+      throw new E2EFailure(`${e instanceof Error ? e.message : String(e)}: cells ${JSON.stringify(cells)} saved ${JSON.stringify(savedCells)} now ${JSON.stringify(lastCells)}`);
     });
     const generated = await page.evaluate(() => window.__aether?.simulation?.voxel?.status().changed ?? 0);
     check(generated > 0, 'no modified chunk came back from the save');

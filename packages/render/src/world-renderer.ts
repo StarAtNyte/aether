@@ -1607,6 +1607,9 @@ export class WorldRenderer {
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
+    // Shaders for the capture target compile off the frame first (decorations stay visible meanwhile).
+    await this.precompileCapture(w, h);
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
     const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
@@ -1659,20 +1662,7 @@ export class WorldRenderer {
    * freezes the page. Returns RGBA8 pixels.
    */
   private renderToPixels(w: number, h: number, draw: () => void, restore: () => void): Promise<Uint8Array> {
-    const key = `${w}x${h}`;
-    let rt = this.captureTargets.get(key);
-    if (rt) {
-      // Most recently used last.
-      this.captureTargets.delete(key);
-    } else {
-      rt = new RenderTarget(w, h, { depthBuffer: true, generateMipmaps: false });
-      if (this.captureTargets.size >= MAX_CAPTURE_TARGETS) {
-        const [oldestKey, oldest] = this.captureTargets.entries().next().value as [string, RenderTarget];
-        this.captureTargets.delete(oldestKey);
-        oldest.dispose();
-      }
-    }
-    this.captureTargets.set(key, rt);
+    const rt = this.captureTarget(w, h);
     const r = this.renderer;
     const prevOutput = r.getOutputRenderTarget();
     const prevTarget = r.getRenderTarget();
@@ -1692,6 +1682,53 @@ export class WorldRenderer {
       if (!(data instanceof Uint8Array) || data.length < w * h * 4) throw new Error('unexpected capture pixel format');
       return data;
     });
+  }
+
+  /** The reusable capture target of size w×h (LRU of {@link MAX_CAPTURE_TARGETS}). */
+  private captureTarget(w: number, h: number): RenderTarget {
+    const key = `${w}x${h}`;
+    let rt = this.captureTargets.get(key);
+    if (rt) {
+      // Most recently used last.
+      this.captureTargets.delete(key);
+    } else {
+      rt = new RenderTarget(w, h, { depthBuffer: true, generateMipmaps: false });
+      if (this.captureTargets.size >= MAX_CAPTURE_TARGETS) {
+        const [oldestKey, oldest] = this.captureTargets.entries().next().value as [string, RenderTarget];
+        this.captureTargets.delete(oldestKey);
+        oldest.dispose();
+      }
+    }
+    this.captureTargets.set(key, rt);
+    return rt;
+  }
+
+  /**
+   * Compile the scene's shaders for the capture target asynchronously
+   * before a capture draws into it. The capture target has its own output
+   * format, so its first draw would otherwise compile every visible
+   * material synchronously (hundreds of milliseconds on WebGL2 / software
+   * rasterisers, once per world). Best effort: errors are ignored and the
+   * draw then compiles as before.
+   */
+  private async precompileCapture(w: number, h: number): Promise<void> {
+    const r = this.renderer;
+    const rt = this.captureTarget(w, h);
+    const prevOutput = r.getOutputRenderTarget();
+    const prevTarget = r.getRenderTarget();
+    let pending: Promise<unknown> = Promise.resolve();
+    try {
+      r.setOutputRenderTarget(rt);
+      r.setRenderTarget(null);
+      // compileAsync reads the render target synchronously, before its first await.
+      pending = r.compileAsync(this.scene, this.perspective);
+    } catch {
+      /* compile on draw instead */
+    } finally {
+      r.setOutputRenderTarget(prevOutput);
+      r.setRenderTarget(prevTarget);
+    }
+    await pending.catch(() => undefined);
   }
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
