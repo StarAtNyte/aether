@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aether/arch": "*",
     "@aether/core": "*",
     "@aether/physics": "*",
     "@aether/render": "*",

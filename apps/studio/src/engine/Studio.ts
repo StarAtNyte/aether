@@ -38,6 +38,7 @@ import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
 import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
+import { ArchController } from './arch';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread } from './AgentBridge';
 import { LiveVerifyFeed } from './verify/live';
@@ -124,6 +125,8 @@ export class Studio {
   readonly bridge: AgentBridge;
   /** Hand editing: selection ops, mesh editing, brushes, materials, parameters. */
   readonly editor: Editor;
+  /** Architecture tools: building views, floor-plan editing, render quality, daylight study. */
+  readonly arch: ArchController;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   /** Physics verification in workers (main-thread fallback). */
@@ -187,6 +190,7 @@ export class Studio {
     this.bridge = new AgentBridge(this.history, this.sandbox, this.verifier);
     this.bridge.verifyListener = this.liveVerify;
     this.editor = new Editor(this, { storage: this.storage });
+    this.arch = new ArchController(this);
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -1039,6 +1043,7 @@ export class Studio {
     this.warmTimer = null;
     this.verifier.dispose();
     for (const c of this.cleanups.splice(0)) c();
+    this.arch.dispose();
     this.editor.dispose();
     this.sim?.dispose();
     this.sim = null;

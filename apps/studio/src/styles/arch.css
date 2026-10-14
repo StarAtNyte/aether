@@ -1,0 +1,510 @@
+/* ==========================================================================
+   Architecture: building view bar, floor-plan view, walkthrough hints
+   ========================================================================== */
+
+/* ---- Building view bar (top centre of the viewport) --------------------- */
+
+.arch-bar {
+  position: absolute;
+  top: var(--s-3);
+  left: 50%;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  max-width: calc(100% - 2 * 300px);
+  padding: 3px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transform: translateX(-50%);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.arch-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.arch-bar .vp-btn {
+  height: var(--control-h-sm);
+  min-width: var(--control-h-sm);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.arch-bar .vp-btn.is-on {
+  color: var(--accent-text, var(--accent));
+  background: var(--accent-soft);
+}
+
+.arch-bar .vp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.arch-bar .vp-btn--primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.arch-bar .vp-btn--primary:hover:not(:disabled) {
+  color: var(--on-accent);
+  background: var(--accent-hover);
+}
+
+.arch-bar .segmented {
+  height: var(--control-h-sm);
+  padding: 2px;
+  border-radius: var(--r-2);
+  background: var(--surface-3);
+}
+
+.arch-bar__sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--s-1);
+  background: var(--border-strong);
+}
+
+/* Popover bodies (section, daylight) */
+.arch-pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+}
+
+.arch-pop__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+
+.arch-pop__value {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.arch-pop__range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.arch-pop__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+
+.arch-pop__chips .chip.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Floor plan view ---------------------------------------------------- */
+
+.plan-view {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-overlay) - 1);
+  overflow: hidden;
+  background: #f6f5f1;
+  --plan-ink: #232427;
+  --plan-line: #8d8b86;
+  --plan-grid: rgba(35, 36, 39, 0.06);
+  --plan-chip: rgba(255, 255, 255, 0.94);
+  --plan-chip-border: rgba(35, 36, 39, 0.12);
+}
+
+:root[data-theme='dark'] .plan-view {
+  background: #1d1e21;
+  --plan-ink: #e9e8e4;
+  --plan-line: #8f8d88;
+  --plan-grid: rgba(233, 232, 228, 0.06);
+  --plan-chip: rgba(40, 41, 45, 0.94);
+  --plan-chip-border: rgba(233, 232, 228, 0.14);
+}
+
+:root[data-theme='dark'] .plan-room {
+  filter: brightness(0.32) saturate(1.4);
+}
+
+.plan-view__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.plan-view__svg--rect,
+.plan-view__svg--polygon {
+  cursor: crosshair;
+}
+
+.plan-view__svg--door,
+.plan-view__svg--window {
+  cursor: copy;
+}
+
+.plan-grid {
+  stroke: var(--plan-grid);
+}
+
+.plan-room {
+  stroke: var(--accent);
+}
+
+.plan-room.is-selected {
+  fill-opacity: 0.85;
+}
+
+.plan-item {
+  fill: rgba(255, 255, 255, 0.55);
+  stroke: var(--plan-line);
+}
+
+:root[data-theme='dark'] .plan-item {
+  fill: rgba(255, 255, 255, 0.04);
+}
+
+.plan-item--rug {
+  fill: none;
+  stroke-dasharray: 0.06 0.05;
+}
+
+.plan-wall {
+  fill: var(--plan-ink);
+}
+
+.plan-window {
+  fill: #ffffff;
+  stroke: var(--plan-ink);
+}
+
+:root[data-theme='dark'] .plan-window {
+  fill: #2a2c30;
+}
+
+.plan-window__glass {
+  stroke: #6f9fc7;
+}
+
+.plan-door__leaf,
+.plan-door__slide {
+  stroke: var(--plan-ink);
+  stroke-linecap: round;
+}
+
+.plan-door__arc {
+  fill: none;
+  stroke: var(--plan-line);
+}
+
+.plan-stair {
+  fill: rgba(255, 255, 255, 0.6);
+  stroke: var(--plan-ink);
+}
+
+.plan-stair__tread {
+  stroke: var(--plan-line);
+}
+
+.plan-stair__arrow {
+  stroke: var(--plan-ink);
+}
+
+.plan-stair__head {
+  fill: var(--plan-ink);
+}
+
+.plan-dim line {
+  stroke: var(--plan-line);
+}
+
+.plan-dim text {
+  fill: var(--plan-line);
+  font-family: var(--mono);
+}
+
+.plan-dim--overall line {
+  stroke: var(--plan-ink);
+}
+
+.plan-dim--overall text {
+  fill: var(--plan-ink);
+}
+
+.plan-chip rect {
+  fill: var(--plan-chip);
+  stroke: var(--plan-chip-border);
+  stroke-width: 0.012;
+}
+
+.plan-chip text {
+  fill: var(--plan-ink);
+  font-family: var(--font);
+}
+
+.plan-chip__name {
+  font-weight: 600;
+}
+
+.plan-chip__area {
+  fill: var(--plan-line);
+  font-family: var(--mono);
+}
+
+.plan-draft path {
+  fill: color-mix(in oklch, var(--accent) 14%, transparent);
+  stroke: var(--accent);
+}
+
+.plan-draft__len,
+.plan-draft__area {
+  fill: var(--accent);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.plan-vertex {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 0.03;
+}
+
+.plan-vertex--first {
+  fill: var(--accent);
+}
+
+.plan-cursor {
+  fill: var(--accent);
+}
+
+.plan-wallhint {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.plan-wallhint.is-bad {
+  stroke: var(--danger);
+}
+
+.plan-tools {
+  position: absolute;
+  top: 50%;
+  left: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-1);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-1);
+  transform: translateY(-50%);
+}
+
+.plan-tools__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--r-2);
+  color: var(--text-2);
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.plan-tools__btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.plan-tools__btn.is-on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-tools__sep {
+  height: 1px;
+  margin: 2px var(--s-1);
+  background: var(--border-strong);
+}
+
+.plan-status {
+  position: absolute;
+  left: 50%;
+  bottom: var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: calc(100% - 2 * 76px);
+  padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3);
+  min-height: 36px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-12);
+  color: var(--text-2);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.plan-status__title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.plan-status__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-status__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.plan-status__type select {
+  height: var(--control-h-xs);
+  padding: 0 var(--s-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+/* ---- Walkthrough hints (play) ------------------------------------------- */
+
+.walk-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--s-3);
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-1) var(--s-3);
+  max-width: calc(100% - 24px);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.walk-hint kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  text-align: center;
+}
+
+.walk-time {
+  position: absolute;
+  top: var(--s-3);
+  left: 50%;
+  z-index: var(--z-overlay);
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--overlay-border);
+  border-radius: 999px;
+  background: var(--overlay);
+  box-shadow: var(--shadow-1);
+  color: var(--text);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Photo mode: the picture only */
+.viewport.is-photo .vp-overlay,
+.viewport.is-photo .play-hud,
+.viewport.is-photo .play-hint,
+.viewport.is-photo .walk-hint,
+.viewport.is-photo .walk-time,
+.viewport.is-photo .touch,
+.viewport.is-photo .vp-gizmo {
+  display: none !important;
+}
+
+.photo-badge {
+  position: absolute;
+  right: var(--s-3);
+  bottom: var(--s-3);
+  z-index: var(--z-overlay);
+  padding: 2px var(--s-2);
+  border-radius: 999px;
+  background: oklch(0% 0 0 / 0.42);
+  color: oklch(100% 0 0 / 0.86);
+  font-size: var(--fs-11);
+  pointer-events: none;
+}
+
+/* Narrow viewports: the bar moves under the camera presets and drops its labels. */
+@container viewport (max-width: 1180px) {
+  .arch-bar {
+    top: calc(var(--s-3) + var(--control-h) + var(--s-2));
+    left: var(--s-3);
+    max-width: calc(100% - 24px);
+    transform: none;
+  }
+}
+
+@container viewport (max-width: 760px) {
+  .arch-bar .vp-btn--label span {
+    display: none;
+  }
+
+  .plan-status__hint {
+    display: none;
+  }
+
+  .walk-hint {
+    display: none;
+  }
+}
+
+/* The floor plan replaces the 3D overlays */
+.viewport.is-plan .vp-overlay--tl,
+.viewport.is-plan .vp-bottom,
+.viewport.is-plan .vp-gizmo,
+.viewport.is-plan .vp-context,
+.viewport.is-plan .vp-labels {
+  display: none;
+}

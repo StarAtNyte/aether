@@ -705,16 +705,33 @@ function placedEntity(p: Placed, id: string, parent: string, room: string, level
   return e;
 }
 
-/** Alternative looks for the interactive material swap. */
-function variantsFor(p: Placed): MaterialSpec[] | undefined {
+/**
+ * Alternative looks for the walkthrough's material swap (key R): each is a
+ * set of generator param overrides of the piece (cover material and colour
+ * of seating, field and border of rugs, linen and headboard of beds).
+ */
+export function variantsFor(p: Pick<Placed, 'kind'>): Array<Record<string, Json>> | undefined {
   switch (p.kind) {
     case 'sofa':
     case 'armchair':
-      return [{ color: '#3f5a52' }, { color: '#b5651d' }, { color: '#d9d3c7' }, { color: '#2f3640' }];
+      return [
+        { upholstery: 'velvet', color: '#3f5a52' },
+        { upholstery: 'leather', color: '#8a5a3b' },
+        { upholstery: 'fabric', color: '#d9d3c7' },
+        { upholstery: 'velvet', color: '#2f3640' },
+      ];
     case 'rug':
-      return [{ color: '#8c3f36' }, { color: '#2f4858' }, { color: '#e3dccf' }];
+      return [
+        { color: '#8c3f36', border: '#5a2a24' },
+        { color: '#2f4858', border: '#1f2f3a' },
+        { color: '#e3dccf', border: '#b9ae9c' },
+      ];
     case 'bed':
-      return [{ color: '#c9b79c' }, { color: '#55606b' }, { color: '#9aa58f' }];
+      return [
+        { linen: '#f1eee8', headboard: '#55606b' },
+        { linen: '#dfe6ea', headboard: '#9aa58f' },
+        { linen: '#efe6d6', headboard: '#8a6a52' },
+      ];
     default:
       return undefined;
   }

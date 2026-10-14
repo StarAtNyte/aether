@@ -10,6 +10,7 @@ import { MAX_TOASTS } from '../config';
 import { appendEvent, trimChat, type ChatEntry, type ChatEventView, type ChatStatus, type DiagnosticView, type TestResultView } from '../lib/chat';
 import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
 import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
+import { DEFAULT_ARCH_UI, mergeArchUi, type ArchUiState } from './archUi';
 import type { EditorTool } from '../engine/Simulation';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 import type { VoxelHudState } from '../voxel/hudState';
@@ -226,6 +227,8 @@ export interface StudioState {
   brush: BrushSettings;
   /** The material eyedropper is armed: the next viewport click copies a material. */
   materialPick: boolean;
+  /** Architecture tools: building views, floor plan, render quality, daylight study. */
+  arch: ArchUiState;
 
   setMode(mode: StudioMode): void;
   setModeBusy(busy: boolean): void;
@@ -279,6 +282,7 @@ export interface StudioState {
   setMeshBusy(busy: boolean): void;
   setBrush(patch: Partial<BrushSettings>): void;
   setMaterialPick(on: boolean): void;
+  setArch(patch: Partial<ArchUiState>): void;
 }
 
 function clampNum(v: unknown, min: number, max: number, fallback: number): number {
@@ -392,6 +396,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     meshBusy: false,
     brush: { ...DEFAULT_BRUSH },
     materialPick: false,
+    arch: { ...DEFAULT_ARCH_UI },
 
     setMode: (mode) => set({ mode }),
     setModeBusy: (modeBusy) => set({ modeBusy }),
@@ -492,5 +497,10 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setMeshBusy: (meshBusy) => set((s) => (s.meshBusy === meshBusy ? s : { meshBusy })),
     setBrush: (patch) => set((s) => ({ brush: mergeBrush(s.brush, patch) })),
     setMaterialPick: (materialPick) => set((s) => (s.materialPick === materialPick ? s : { materialPick })),
+    setArch: (patch) =>
+      set((s) => {
+        const arch = mergeArchUi(s.arch, patch);
+        return shallowEqual(arch, s.arch) ? s : { arch };
+      }),
   }));
 }

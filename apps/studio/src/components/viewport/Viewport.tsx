@@ -21,6 +21,8 @@ import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
 import { PlayHud } from './PlayHud';
+import { ArchBar } from './ArchBar';
+import { PlanView } from './PlanView';
 
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
@@ -243,6 +245,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const voxelGame = useUI((s) => s.voxelHud !== null);
   // The inventory screen takes the touch area: no stick or buttons over it.
   const voxelUi = useUI((s) => s.voxelHud?.inventoryOpen === true || s.voxelHud?.dead === true);
+  const photo = useUI((s) => s.arch.photo && s.mode === 'play');
+  const planOpen = useUI((s) => s.arch.plan && s.arch.building !== null && s.mode === 'edit');
 
   useEffect(() => {
     const host = hostRef.current;
@@ -268,7 +272,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const ready = !loading && !fatal;
   return (
     <section
-      className={`viewport${playing ? ' is-playing' : ''}${dropping ? ' is-dropping' : ''}`}
+      className={`viewport${playing ? ' is-playing' : ''}${dropping ? ' is-dropping' : ''}${photo ? ' is-photo' : ''}${planOpen ? ' is-plan' : ''}`}
       aria-label="Viewport"
       onDragOver={(e) => {
         const types = [...e.dataTransfer.types];
@@ -297,6 +301,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
     >
       <div className="viewport__host" ref={hostRef} data-layout-ignore="" />
       {ready && <ViewOverlays playing={playing} />}
+      {ready && planOpen && <PlanView />}
+      {ready && <ArchBar />}
       <div className="vp-overlay vp-overlay--tl">
         {ready && !playing && (
           <div className="vp-row">

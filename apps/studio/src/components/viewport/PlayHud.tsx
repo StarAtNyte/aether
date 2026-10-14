@@ -13,8 +13,46 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
   const world = useWorld();
   const mode = useUI((s) => s.mode);
   const game = useUI((s) => s.game);
+  const building = useUI((s) => s.arch.building !== null);
+  const photo = useUI((s) => s.arch.photo);
   if (mode !== 'play') return null;
   const over = game.status !== 'playing';
+  if (building && world.hud.length === 0) {
+    // Building walkthrough: no score or clock, just the controls.
+    return photo ? (
+      <span className="photo-badge">Photo mode · P to leave</span>
+    ) : (
+      <div className="walk-hint" aria-hidden="true">
+        <span>
+          <kbd>W</kbd>
+          <kbd>A</kbd>
+          <kbd>S</kbd>
+          <kbd>D</kbd> Walk
+        </span>
+        <span>
+          <kbd>E</kbd> Doors · lights
+        </span>
+        <span>
+          <kbd>L</kbd> All lights
+        </span>
+        <span>
+          <kbd>R</kbd> Swap finish
+        </span>
+        <span>
+          <kbd>1</kbd>–<kbd>4</kbd> Time of day
+        </span>
+        <span>
+          <kbd>V</kbd> View
+        </span>
+        <span>
+          <kbd>P</kbd> Photo
+        </span>
+        <span>
+          <kbd>Esc</kbd> Stop
+        </span>
+      </div>
+    );
+  }
   return (
     <>
       <div className="play-hud" aria-live="polite">

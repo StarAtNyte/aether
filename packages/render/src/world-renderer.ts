@@ -808,6 +808,8 @@ export class WorldRenderer {
   /** Drop runtime overrides (call on play reset). */
   clearRuntimeOverrides(): void {
     this.sync.clearOverrides();
+    // View-mode overrides (sectioned walls) were dropped too: re-apply them.
+    this.archView.invalidate();
     this.boundsDirty = true;
     this.needsDraw = true;
   }
