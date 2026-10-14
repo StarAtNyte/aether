@@ -27,7 +27,7 @@ export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructurePar
 export { FURNITURE, furnitureById, furnitureByKind, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
 export { navigableVerdict } from './checks';
 export { BuildingPlan, type BuildingPlanInput } from './plan';
-export { compileBuilding, parsePlan, PlanError, MAX_BUILDING_LIGHTS, FLOOR_THICKNESS, type CompiledBuilding } from './compile';
+export { compileBuilding, parsePlan, PlanError, variantsFor, MAX_BUILDING_LIGHTS, FLOOR_THICKNESS, type CompiledBuilding } from './compile';
 export { applyArchOps, describeBuilding, planOf, ArchOp, MAX_ARCH_OPS, type ArchOpError, type ArchOpsResult } from './ops';
 export { checkBuilding, checkBuildings, summarizeBuildingReports, NAV_CELL, type ArchIssue, type BuildingReport } from './nav';
 export { RoomType, ArchStyle, Compass, PlanRoom, PlanDoor, PlanWindow, PlanStair, PlanLevel, PlanRoof, PlanItem, PlanSite, MAX_BUILDING_ENTITIES } from './plan';

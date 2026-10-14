@@ -169,7 +169,8 @@ export function buildBasin(p: BasinParams): ArchOutput {
   set.add(coping, p.coping);
   if (p.water) {
     const water = new Geom().flatPolygon(inner, -p.freeboard, true);
-    set.add(water, { finish: 'water' });
+    // Opaque: the basin sits below the ground plane, which must not show through the water.
+    set.add(water, { finish: 'water', opacity: 1 });
   }
   // Colliders: floor and four walls (people can walk around and fall in).
   const t = 0.1;

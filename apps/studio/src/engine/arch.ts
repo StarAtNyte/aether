@@ -16,6 +16,9 @@ import type { StudioState } from '../state/store';
 import { skyForHour, type ArchUiState } from '../state/archUi';
 import type { Simulation } from './Simulation';
 import { Walkthrough } from './walkthrough';
+import { createLogger } from '../lib/log';
+
+const log = createLogger('arch');
 
 /** What the controller needs from the studio. */
 export interface ArchHost {
@@ -96,7 +99,16 @@ export class ArchController {
     this.apply(this.host.store.getState().arch, null);
   }
 
+  /** View modes are cosmetic: a renderer failure here is logged, never fatal to the studio. */
   private apply(a: ArchUiState, prev: ArchUiState | null): void {
+    try {
+      this.applyUnsafe(a, prev);
+    } catch (e) {
+      log.warn('architecture view update failed', e);
+    }
+  }
+
+  private applyUnsafe(a: ArchUiState, prev: ArchUiState | null): void {
     const sim = this.host.simulation;
     if (!sim) return;
     const r = sim.renderer;

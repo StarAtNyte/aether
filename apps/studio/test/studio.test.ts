@@ -18,7 +18,17 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
   const sim = {
     backend: 'webgl2',
     mode: 'edit',
-    renderer: { gpu: { tier: 'integrated', description: 'Test GPU' }, showJoint: () => undefined, showMeshComponents: () => true },
+    renderer: {
+      gpu: { tier: 'integrated', description: 'Test GPU' },
+      showJoint: () => undefined,
+      showMeshComponents: () => true,
+      setArchView: () => undefined,
+      setRenderQuality: (q: string) => q,
+      studioQualityAvailable: true,
+      restoreEnvironment: () => undefined,
+      setEnvironmentOverride: () => undefined,
+      onQualityChange: null,
+    },
     setShowColliders: () => undefined,
     setStatsWhileEditing: () => undefined,
     setPointerLock: () => undefined,
