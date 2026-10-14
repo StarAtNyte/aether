@@ -265,3 +265,53 @@ export function interiorPoint(poly: readonly P2[]): P2 {
   }
   return best;
 }
+
+/**
+ * Clip a polygon by a CONVEX polygon (Sutherland–Hodgman). Both in any
+ * winding; returns the intersection outline (possibly empty).
+ */
+export function clipPolygon(subject: readonly P2[], clip: readonly P2[]): P2[] {
+  const c = positive(clip);
+  let out: P2[] = subject.map((p) => [p[0], p[1]] as P2);
+  for (let i = 0; i < c.length && out.length > 0; i++) {
+    const a = c[i] as P2;
+    const b = c[(i + 1) % c.length] as P2;
+    // Inside = left of a→b for a positive (shoelace) polygon: cross ≥ 0.
+    const inside = (p: P2): boolean => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= -1e-9;
+    const input = out;
+    out = [];
+    for (let k = 0; k < input.length; k++) {
+      const p = input[k] as P2;
+      const q = input[(k + 1) % input.length] as P2;
+      const ip = inside(p);
+      const iq = inside(q);
+      if (ip) out.push(p);
+      if (ip !== iq) {
+        const dx = q[0] - p[0];
+        const dz = q[1] - p[1];
+        const den = (b[0] - a[0]) * dz - (b[1] - a[1]) * dx;
+        if (Math.abs(den) > 1e-12) {
+          const t = ((b[1] - a[1]) * (p[0] - a[0]) - (b[0] - a[0]) * (p[1] - a[1])) / den;
+          out.push([p[0] + dx * t, p[1] + dz * t]);
+        }
+      }
+    }
+  }
+  return simplifyPolygon(out);
+}
+
+/** True when the polygon is convex (either winding). */
+export function isConvex(poly: readonly P2[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i] as P2;
+    const b = poly[(i + 1) % poly.length] as P2;
+    const c = poly[(i + 2) % poly.length] as P2;
+    const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (Math.abs(cr) < 1e-9) continue;
+    const s = Math.sign(cr);
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}

@@ -308,10 +308,12 @@ export const ArchMeta = z.object({
   /** Furniture / fixture kind ("sofa", "bed", "pendant") or room type ("kitchen"). */
   kind: z.string().max(40).optional(),
   /**
-   * Alternative looks for the interactive material swap (walkthrough key R).
-   * Each is merged over the entity's own material.
+   * Alternative looks for the interactive material swap (walkthrough key R):
+   * each is a set of procedural-shape param overrides (e.g. `{ "upholstery":
+   * "velvet", "color": "#3f5a52" }` for a sofa, `{ "finish": { "finish":
+   * "marble" } }` for a floor) applied as a runtime override.
    */
-  variants: z.array(MaterialSpec).max(6).optional(),
+  variants: z.array(z.record(z.string(), Json)).max(6).optional(),
   /**
    * Buildings: the plan they were compiled from (see @aether/arch
    * `BuildingPlan`), so architecture tools can edit and re-compile the

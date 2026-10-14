@@ -937,3 +937,74 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
 - A `null` stored inside free-form JSON state cannot be restored by
   `invertPatches`, because `null` means "delete" in updates. History undo is
   unaffected because it does not replay inverse patches.
+
+## 17. Block worlds (voxel terrain and the game kit)
+
+A world can carry block terrain in `world.voxel`: a seeded generator
+preset, custom blocks, an ordered list of document edits (boxes, spheres,
+structures, pixel art, text …) and game-kit settings. The document stays
+small (a castle is one edit, not 200 000 blocks); everything else is
+derived deterministically from it.
+
+**Engine (`@aether/voxel`, no three.js).** Chunks are 16 × 16 columns of
+the full 128-block height, stored palette-compressed (an index of 0–16
+bits per cell; typical terrain packs into 2–4 bits). Terrain mixes
+continentalness, hills and ridged mountains into six biomes, carves
+spaghetti and cheese caves from an interpolated 3D noise field, places ore
+veins and trees/cacti/flowers per chunk (structures that cross a border are
+evaluated from their origin and clipped, so seams never show). Document
+edits compile once into bounded samplers and only the edits that touch a
+chunk run for it. Light is a breadth-first flood over the 3 × 3 chunk
+region (sky light falls straight down then spreads; torches, glowstone and
+lava emit block light), so the centre chunk and its border are exact.
+Meshing is greedy per face direction; every visible face gets four corner
+ambient-occlusion levels and smoothed sky/block light, and only faces with
+identical corners merge, so merging never changes shading. Quads split
+along the brighter diagonal. Output is three typed-array passes (opaque,
+alpha-cutout, liquid) in a compact vertex format.
+
+**Threads.** Generation and meshing run in up to two module workers
+(one on devices reporting ≤ 4 GB or ≤ 2 cores); messages are zod-validated
+both ways and every reply is checked (palette ids, word counts, index
+ranges, vertex bounds) before it reaches storage or the GPU. Jobs carry
+the terrain key, so results computed for an outdated configuration are
+dropped; a worker that crashes or times out is replaced and after three
+failures jobs run inline. The streamer walks a precomputed spiral around
+the camera (edit mode) or player (play), generating within view + 1,
+meshing within view, hiding meshes beyond view and unloading data beyond
+view + 2, so memory is bounded by the view distance. Edited chunks are
+remeshed urgently ahead of streaming work (their neighbours too when the
+edit touches a border or changes light). Agent edits that only append or
+remove document edits regenerate just the chunks those edits touch; the
+old meshes stay until the new ones arrive.
+
+**Rendering.** The voxel layer (a lazily loaded chunk of `@aether/render`)
+wraps transferred arrays directly in buffer geometries with tight bounds
+(per-chunk frustum culling) and draws them with TSL materials that run on
+WebGPU and WebGL2 alike: atlas sampling with gradients from the unwrapped
+block UVs (no tile seams, mips clamped before tiles bleed), AO, classic face
+shading derived from screen-space derivatives, and max(sky × daylight ×
+tint, torch light). The atlas (256², 16 px tiles) is painted procedurally
+from the block registry. Fog ends at the view distance and the sky dome
+melts into it, so streaming edges are never visible.
+
+**Game kit (`@aether/voxel/game`).** Pure and deterministic: swept AABB
+collision against blocks (axis by axis, every layer between start and end
+is scanned, so no tunnelling; one-block auto-step; swimming), DDA ray
+casting for the crosshair, break times from hardness × tool × tier,
+drops with pickup magnetism, an inventory with stacks, shapeless recipes,
+health / hunger / exhaustion, fall, lava and drowning damage, respawn, a
+day/night clock that drives the sky and sky light, and mobs (sheep, pig,
+chicken by day on grass; zombies and spiders at night) using the
+wander / flee / chase vocabulary of the logic behaviours. Dynamic Rapier
+bodies collide with terrain through merged 8³ brick colliders built only
+around them.
+
+**Studio.** `VoxelSession` (loaded on the first voxel world) mirrors the
+document, streams chunks and, in play mode, runs the game at the fixed
+60 Hz step with its own input (pointer lock where available, drag-to-look
+otherwise), poses the camera directly (first/third person), and pushes a
+HUD snapshot to the store only when something visible changed. Player
+changes are saved per modified chunk (compressed) to IndexedDB every few
+seconds, on unload and on stop, and load again on the next play — also
+after a reload. Saves can be exported and imported as files.

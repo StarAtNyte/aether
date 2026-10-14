@@ -6,7 +6,7 @@
  * gizmo (bottom-right), the first-use navigation hint, floating labels,
  * the agent progress bar, play HUD and touch controls.
  */
-import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactElement } from 'react';
 import { useSimulation, useStudio, useUI, useWorld } from '../../app/context';
 import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
@@ -21,9 +21,12 @@ import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
 import { PlayHud } from './PlayHud';
-import { VoxelHud } from './VoxelHud';
+
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
+
+/** Block-world game HUD (and its stylesheet): loaded only when a voxel game runs. */
+const VoxelHud = lazy(() => import('./VoxelHud').then((m) => ({ default: m.VoxelHud })));
 
 type CameraPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -312,7 +315,13 @@ export const Viewport = memo(function Viewport(): ReactElement {
         </div>
       )}
       <BusyIndicator />
-      {voxelGame ? <VoxelHud /> : <PlayHud />}
+      {voxelGame ? (
+        <Suspense fallback={null}>
+          <VoxelHud />
+        </Suspense>
+      ) : (
+        <PlayHud />
+      )}
       {ready && playing && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">

@@ -68,7 +68,7 @@ export function useShortcuts(): void {
       }
       if (e.key === 'Escape') {
         if (st.paletteOpen || st.settingsOpen || document.querySelector('dialog[open]')) return;
-        if (st.mode === 'play' && st.voxelHud?.inventoryOpen) studio.simulation?.voxel.game?.setInventoryOpen(false);
+        if (st.mode === 'play' && st.voxelHud?.inventoryOpen) studio.simulation?.voxel?.game?.setInventoryOpen(false);
         else if (st.mode === 'play') void studio.togglePlay();
         else if (st.agentBusy && typing) studio.stopAgent();
         else if (typing && e.target instanceof HTMLElement) e.target.blur();

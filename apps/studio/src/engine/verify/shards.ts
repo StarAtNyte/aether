@@ -29,6 +29,7 @@ export const MIN_PARALLEL_SECONDS = 3;
 export function testHorizon(test: WorldTest, maxSeconds: number): number {
   switch (test.kind) {
     case 'noOverlap':
+    case 'navigable':
       return 0;
     case 'stable':
       return Math.min(maxSeconds, test.seconds);

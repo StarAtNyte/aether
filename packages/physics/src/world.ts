@@ -23,6 +23,7 @@ import { decodeSnapshot, encodeSnapshot, type BodyMeta, type SnapshotMeta } from
 import { resolveShapeColliders } from './source';
 import { GROUND_ID, type BodyState, type ColliderProvider, type Diagnostic, type PhysicsEvent, type PhysicsStats, type PhysicsWorldOptions, type Quat, type RaycastHit } from './types';
 import { isFiniteVec, normalizeQuat, quatMul, rotate } from './vec';
+import { VoxelTerrainColliders, type VoxelSolidSource } from './voxel-terrain';
 
 /** Engine limits (bounded work for untrusted worlds). */
 export const PHYSICS_LIMITS = Object.freeze({
@@ -112,6 +113,9 @@ export class PhysicsWorld {
   private readonly buildNotes = new Map<EntityId, string[]>();
   private ground: GroundRecord | null = null;
   private colliderCount = 0;
+  /** Block terrain colliders around dynamic bodies (voxel worlds). */
+  private terrain: VoxelTerrainColliders | null = null;
+  private terrainPoints = new Float64Array(96);
 
   private constructor(world: World, doc: WorldDoc, provider: ColliderProvider | undefined, fixedDt: number) {
     this.world = world;
@@ -231,8 +235,46 @@ export class PhysicsWorld {
     return out;
   }
 
+  /**
+   * Collide dynamic bodies with block terrain (null removes it). Terrain
+   * colliders are merged boxes built only around dynamic bodies and refreshed
+   * every few steps (see {@link VoxelTerrainColliders}).
+   */
+  setVoxelTerrain(source: VoxelSolidSource | null): void {
+    this.live();
+    this.terrain?.dispose();
+    this.terrain = source ? new VoxelTerrainColliders(this.world, source) : null;
+    if (this.terrain) this.updateTerrain(0);
+  }
+
+  /** Terrain bricks and colliders in use (stats, tests). */
+  get terrainCounts(): { bricks: number; colliders: number } {
+    return this.terrain ? this.terrain.counts : { bricks: 0, colliders: 0 };
+  }
+
+  private updateTerrain(dt: number): void {
+    const t = this.terrain;
+    if (!t) return;
+    let n = 0;
+    for (const r of this.records.values()) {
+      if (r.type !== 'dynamic' || r.sensor) continue;
+      if (n + 3 > this.terrainPoints.length) {
+        if (this.terrainPoints.length >= 3 * 4096) break;
+        const grown = new Float64Array(this.terrainPoints.length * 2);
+        grown.set(this.terrainPoints);
+        this.terrainPoints = grown;
+      }
+      const p = r.body.translation();
+      this.terrainPoints[n++] = p.x;
+      this.terrainPoints[n++] = p.y;
+      this.terrainPoints[n++] = p.z;
+    }
+    t.update(this.terrainPoints.subarray(0, n), dt);
+  }
+
   private stepInto(out: PhysicsEvent[]): void {
     this.flushPending(out);
+    if (this.terrain && this.steps % 4 === 0) this.updateTerrain(this.fixedDt * 4);
     const t0 = performance.now();
     this.world.step(this.queue);
     this.steps++;
@@ -1045,6 +1087,7 @@ export class PhysicsWorld {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.terrain = null;
     this.queue.free();
     this.world.free();
     this.records.clear();

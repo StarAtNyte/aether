@@ -126,6 +126,53 @@ export class VoxelSession {
     };
   }
 
+  /**
+   * Diagnostics: change one block and resolve with the milliseconds until
+   * its chunk's new mesh is on screen (−1 when the chunk is not loaded or it
+   * took over 5 s). Used by the end-to-end performance checks.
+   */
+  async measureEdit(x: number, y: number, z: number, block: string): Promise<number> {
+    const world = this.world;
+    const streamer = this.streamer;
+    const id = this.reg?.id(block);
+    if (!world || !streamer || id === undefined) return -1;
+    const slot = world.slot(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
+    if (!slot) return -1;
+    const t0 = performance.now();
+    if (world.set(x, y, z, id) < 0) return -1;
+    const want = slot.version;
+    return new Promise((resolve) => {
+      const check = (): void => {
+        if (streamer.shownVersion(slot.key) >= want) resolve(performance.now() - t0);
+        else if (performance.now() - t0 > 5000) resolve(-1);
+        else requestAnimationFrame(check);
+      };
+      check();
+    });
+  }
+
+  /** Solid-block source for Rapier terrain colliders (dynamic entities in block worlds). */
+  solidSource(): { isSolid(x: number, y: number, z: number): boolean; chunkVersion(cx: number, cz: number): number; readonly height: number } | null {
+    const world = this.world;
+    if (!world) return null;
+    return {
+      height: 128,
+      isSolid: (x, y, z) => world.isLoaded(x, z) && world.isSolid(x, y, z),
+      chunkVersion: (cx, cz) => world.slot(cx, cz)?.version ?? -1,
+    };
+  }
+
+  /** Block at a world cell (diagnostics; −1 when not loaded). */
+  blockAt(x: number, y: number, z: number): string | null {
+    if (!this.world || !this.reg || !this.world.isLoaded(x, z)) return null;
+    return this.reg.type(this.world.get(x, y, z)).id;
+  }
+
+  /** Loaded chunks and drawn chunk meshes (memory checks). */
+  get counts(): { loaded: number; drawn: number } {
+    return { loaded: this.world?.chunks.size ?? 0, drawn: this.layer?.stats().chunks ?? 0 };
+  }
+
   /** Mirror `doc.voxel` (call after the renderer synced the document). */
   async sync(doc: WorldDoc): Promise<void> {
     if (this.disposed) return;

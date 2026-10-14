@@ -17,6 +17,7 @@ import { GENERATOR_LIBRARY, loadLibraryGenerator, type SandboxRunner } from '@ae
 import { createNodeSandbox } from '@aether/procgen/node';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, runVerify } from './lib/headless-world';
 import { DEFAULT_PROMPTS } from './smoke-prompts';
+import { VoxelJobContext, terrainIdentity } from '@aether/voxel';
 
 /** `npx tsx scripts/smoke.ts "<prompt>"` runs only the given prompts. */
 const PROMPTS: readonly string[] = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_PROMPTS;
@@ -52,7 +53,20 @@ async function runPrompt(prompt: string, sandbox: SandboxRunner): Promise<SmokeR
   const valid = validateWorld(world);
   if (!valid.ok) problems.push(`invalid world: ${valid.issues.slice(0, 3).map((i) => `${i.path}: ${i.message}`).join('; ')}`);
   const entities = Object.keys(world.entities).length;
-  if (entities === 0) problems.push('world is empty');
+  // Block worlds (voxel terrain) may have no entities at all: check the terrain instead —
+  // every document edit compiles and the spawn area generates and meshes into real geometry.
+  if (entities === 0 && !world.voxel) problems.push('world is empty');
+  if (world.voxel) {
+    const ctx = new VoxelJobContext(terrainIdentity(world.voxel, world.seed));
+    if (ctx.edits.length !== world.voxel.edits.length) problems.push(`only ${ctx.edits.length}/${world.voxel.edits.length} voxel edits compiled`);
+    const cx = Math.floor(world.player.spawn[0] / 16);
+    const cz = Math.floor(world.player.spawn[2] / 16);
+    const chunks = [];
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) chunks.push(ctx.generate(cx + dx, cz + dz).chunk);
+    const mesh = ctx.mesh(chunks);
+    const quads = (mesh.opaque?.quads ?? 0) + (mesh.cutout?.quads ?? 0) + (mesh.liquid?.quads ?? 0);
+    if (quads < 50) problems.push(`spawn chunk meshed to only ${quads} quads`);
+  }
 
   // Independent re-verification of the final world (not trusting the agent's event).
   const final = await runVerify(world);

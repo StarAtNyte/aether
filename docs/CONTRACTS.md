@@ -1130,3 +1130,73 @@ World IR (backward compatible): `ScatterShape.count` max 1 000 000 (was
 generator `colossus` (variants head / standing stone / boulder; `detail`
 1–4 ≈ 49k–786k smooth triangles) and terrain variant 3 (canyon, floor at y = 0).
 Studio URL flag `?engine=classic` turns fields and virtual geometry off.
+
+## Block worlds: `@aether/voxel` (+ additions to core, render, physics, studio)
+
+### World IR (additive, backward compatible)
+
+```ts
+WorldDoc.voxel?: VoxelTerrain            // absent for ordinary worlds
+VoxelTerrain = { preset: 'survival'|'plains'|'forest'|'desert'|'snow'|'mountains'|'islands'|'flat'|'void' = 'survival',
+  seed?: int (default world.seed), viewDistance: 2..16 = 6 (chunks), border: 0..30000 = 0 (finite half-size, 0 endless),
+  blocks: VoxelBlockDef[] (≤ 64 custom / recoloured blocks), edits: VoxelEdit[] (≤ 2000), game: VoxelGame }
+VoxelEdit = box | sphere | cylinder | line | stairs | structure (house castle tower bridge well pyramid tree lamppost wall arch)
+          | pixels (character grid + palette) | text (5×7 font) | replace | clear;  anchor 'world' | 'surface' (y above generated ground)
+VoxelGame = { mode: 'survival'|'creative'|'explore', dayLength, startHour, cycle, mobs, passive[], hostile[], maxMobs,
+  hunger, fallDamage, keepInventory, startItems: VoxelStack[], recipes: VoxelRecipe[] }
+Patch += { op: 'setVoxel', set: Record<string, Json> | null }    // deep merge (arrays replace); null removes the terrain
+       | { op: 'voxelEdit', edits: VoxelEdit[] (1..256) }       // append edits; needs terrain
+LIMITS.MAX_VOXEL_PATCH_BLOCKS 2 000 000 · MAX_VOXEL_TOTAL_BLOCKS 32 000 000 · MAX_VOXEL_EDITS 2000 (upper-bound volumes, voxelEditVolume)
+```
+
+Block and item ids are checked against `VOXEL_BLOCK_IDS` / `VOXEL_ITEM_IDS`
+plus the world's custom blocks (with "did you mean" hints); `diffWorlds`
+reports `voxelChanged`; `patchesBetween` emits `setVoxel`; `summarizeWorld`
+prints `voxel …`, `voxel-game …` and the newest 24 `voxel-edit …` lines.
+
+### `@aether/voxel` (pure TypeScript, no three.js)
+
+```ts
+BlockRegistry(custom?: VoxelBlockDef[])  // numeric ids (0 air, built-ins, custom), flag tables solid/opaque/render/emissive/lightCost, faceTiles
+ChunkData                                // palette-compressed 16×16×128 chunk: 0/1/2/4/8/16-bit indices; get/set/pack/fromPacked(validated)/toDense
+TerrainGenerator(seed, preset, reg)      // height/biome/groundLevel + generate(cx, cz, out): biomes, caves, ores, trees, plants (deterministic)
+compileEdits(edits, reg, gen, seed) / applyEdits(compiled, cx, cz, dense)   // document edits, bounded per chunk
+LightVolume.compute(reg)                 // sky + block light flood over the 3×3 chunk region
+ChunkMesher.mesh(volume) → ChunkMesh     // greedy, per-vertex AO + smooth light; passes opaque / cutout / liquid
+  MeshBuffers = { positions f32×3, uvs f32×2 (block units), data u8×4 = [tile, AO×85, sky×17, block×17], indices, quads }
+VoxelJobContext(identity).generate(cx, cz) / .mesh(chunks[9], tops?)        // the two worker jobs
+VoxelJobPool({ createWorker?, workers? (1–2 by deviceMemory/cores), timeoutMs? })
+  .configure(identity, maxBlockId) → key; .generate(cx, cz, urgent?) / .mesh(cx, cz, chunks, tops, urgent?) → Promise<… | null (outdated)>
+  // module workers (voxel.worker.ts) with inline fallback; zod-validated messages; checkMesh / fromPacked on every reply; timeouts
+VoxelWorld(reg)                          // loaded chunk slots (version, modified), get/set/isSolid/isLiquid/surfaceY, dirty set for remeshing
+ChunkStreamer(world, pool, sink, { viewDistance, border?, saved? })
+  .setCenter(x, z); .update(); .regenerate(keys); .reset(); .settled; .meshedCount; .shownVersion(key)
+  // spiral order, dirty chunks first (urgent), generate within view+1, mesh within view, hide beyond view, unload beyond view+2
+raycastVoxels(get, ox, oy, oz, dx, dy, dz, max, hits, out: VoxelHit) → boolean   // Amanatides–Woo DDA, allocation-free
+moveBody(query, body, dt, autoStep?) / sweepAxis / resolvePenetration / sampleLiquid   // swept AABB, no tunnelling, 1-block step
+buildAtlas(reg) → { pixels RGBA 256², 16 px tiles }                           // procedural block textures
+encodeSave / decodeSave / encodeChunk / decodeChunk (deflate-raw via CompressionStream; caps, zod meta, SaveFormatError)
+```
+
+`@aether/voxel/game`: `VoxelGame({ world, reg, settings, seed, spawn })`
+with `tick(dt, GameInput)`, `drainEvents(fn)` (`sound`, `block`, `pickup`,
+`damage`, `death`, `respawn`, `message`), `breakTime`, `harvests`, `craft`,
+`spawnMob`, `spawnDrop`, `respawn`, `snapshotPlayer` / `loadPlayer`;
+`ItemRegistry`, `Inventory` (36 slots, hotbar 0–8), `RecipeBook` (built-in
+shapeless recipes + `game.recipes`), `DayClock` / `daylightAt` /
+`skyForHour` / `skyTintAt`, `MOB_SPECS` + `tickMob` / `hurtMob`.
+
+### `@aether/render`, `@aether/physics`, studio
+
+```ts
+WorldRenderer.voxel(): Promise<VoxelLayer>   // lazy chunk; .voxelIfLoaded; .releaseVoxel()
+VoxelLayer.setAtlas(pixels, size, faceTiles); setChunk(key, cx, cz, mesh | null); removeChunk(key); setLighting(daylight, tint)
+          setTarget(x, y, z, visible); setCrack(progress); setDrop(...); setMob(...); stats()
+WorldRenderer.setCameraPose(x, y, z, yaw, pitch)   // camera mode 'manual'
+WorldRenderer.setFogDistance(metres | null); setEnvironmentOverride(env); restoreEnvironment(); setAvatarVisible(on)
+PhysicsWorld.setVoxelTerrain(source: VoxelSolidSource | null)   // merged 8³ brick colliders around dynamic bodies
+Simulation.voxel: VoxelSession | null        // lazy; status(), measureEdit(), blockAt(), counts, game (VoxelPlay)
+```
+
+Saves live in IndexedDB database `aether-voxel` (stores `chunks`,
+`players`), keyed `<project id>::<preset>:<seed>:<border>`.

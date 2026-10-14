@@ -34,7 +34,7 @@ import { SoundBoard } from './sound';
 import { PosePool } from './posePool';
 import { TransformTable } from './TransformTable';
 import { findAvatar, framingSphere, movingIds } from './worldQueries';
-import { VoxelSession, type VoxelPlay } from '../voxel/session';
+import type { VoxelSession, VoxelPlay } from '../voxel/session';
 import type { VoxelHudState } from '../voxel/hudState';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
@@ -199,8 +199,10 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
-  /** Block terrain + voxel game (inactive for worlds without `voxel`). */
-  readonly voxel: VoxelSession;
+  /** Block terrain + voxel game, loaded on the first world with `voxel` (null until then). */
+  voxel: VoxelSession | null = null;
+  private voxelLoading: Promise<VoxelSession> | null = null;
+  private readonly saveBase: string;
   private readonly unsubscribe: () => void;
   private readonly resizeObserver: ResizeObserver | null;
   private session: PlaySession | null = null;
@@ -249,12 +251,7 @@ export class Simulation {
     this.listener = listener;
     this.pointerLock = opts.pointerLock === true;
     this.statsWhileEditing = opts.statsWhileEditing !== false;
-    this.voxel = new VoxelSession(renderer, {
-      onHud: (state) => listener.onVoxelHud?.(state),
-      sound: (name) => this.sound.play(name),
-      error: (message) => listener.onError?.(message),
-      saveBase: opts.saveBase ?? 'scratch',
-    });
+    this.saveBase = opts.saveBase ?? 'scratch';
     this.unsubscribe = history.subscribe((world) => {
       if (!this.session) this.requestSync(world);
     });
@@ -348,7 +345,7 @@ export class Simulation {
         const next = this.pendingWorld;
         try {
           await this.renderer.setWorld(next);
-          await this.voxel.sync(next);
+          if (next.voxel || this.voxel) await (await this.voxelSession()).sync(next);
           this.syncedWorldDoc = next;
         } catch (err) {
           log.error('renderer sync failed', err);
@@ -362,6 +359,23 @@ export class Simulation {
       this.applyGizmo();
       this.listener.onSynced?.();
     });
+  }
+
+  /** The voxel session (its module is loaded on first use: worlds without terrain never pay for it). */
+  private voxelSession(): Promise<VoxelSession> {
+    if (this.voxel) return Promise.resolve(this.voxel);
+    this.voxelLoading ??= import('../voxel/session').then(({ VoxelSession: Session }) => {
+      const session = new Session(this.renderer, {
+        onHud: (state) => this.listener.onVoxelHud?.(state),
+        sound: (name) => this.sound.play(name),
+        error: (message) => this.listener.onError?.(message),
+        saveBase: this.saveBase,
+      });
+      if (this.disposed) session.dispose();
+      else this.voxel = session;
+      return session;
+    });
+    return this.voxelLoading;
   }
 
   /** Editor tool, the selection it acts on and the gizmo options (the gizmo shows for transform tools). */
@@ -467,7 +481,7 @@ export class Simulation {
     if (this.disposed || this.session) return;
     const world = this.history.current;
     const p = world.player;
-    if (world.voxel && this.voxel.active) {
+    if (world.voxel && this.voxel?.active) {
       // Block terrain: an elevated view over the spawn area (chunks stream in around the target).
       const g = this.voxel.groundAt(p.spawn[0], p.spawn[2]);
       this.renderer.frameSphere([p.spawn[0], g + 6, p.spawn[2]], 34, [1, 0.62, 1.25], opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
@@ -731,16 +745,20 @@ export class Simulation {
       }
       if (this.disposed) throw new Error('simulation disposed');
       const avatarId = findAvatar(world);
-      const voxelGame = world.voxel !== undefined && this.voxel.active;
+      const voxelGame = world.voxel !== undefined && this.voxel !== null && this.voxel.active;
       if (!voxelGame && !avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
         character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID });
       }
-      const voxel = voxelGame ? await this.voxel.startPlay(world, this.renderer.domElement) : null;
+      const voxel = voxelGame && this.voxel ? await this.voxel.startPlay(world, this.renderer.domElement) : null;
+      if (voxelGame) {
+        const terrain = this.voxel?.solidSource();
+        if (terrain) pw.setVoxelTerrain(terrain);
+      }
       core = { world, pw, scripts, character, avatarId, transients: new Set(), destroyed: new Set(), ended: false, voxel };
       logic = new LogicRuntime(world, this.createHost(core), scripts ? { scripts, seed: world.seed } : { seed: world.seed });
     } catch (err) {
       if (core) core.ended = true;
-      if (core?.voxel) await this.voxel.stopPlay().catch(() => undefined);
+      if (core?.voxel) await this.voxel?.stopPlay().catch(() => undefined);
       safely('logic dispose', () => logic?.dispose());
       safely('scripts dispose', () => scripts?.dispose());
       safely('character dispose', () => character?.dispose());
@@ -796,7 +814,7 @@ export class Simulation {
     this.applyGizmo();
     try {
       safely('input detach', () => this.input.detach());
-      if (s.voxel) await this.voxel.stopPlay().catch((err: unknown) => log.warn('voxel stop failed', err));
+      if (s.voxel) await this.voxel?.stopPlay().catch((err: unknown) => log.warn('voxel stop failed', err));
       safely('logic dispose', () => s.logic.dispose());
       safely('scripts dispose', () => s.scripts?.dispose());
       safely('character dispose', () => s.character?.dispose());
@@ -947,7 +965,7 @@ export class Simulation {
     const s = this.session;
     try {
       if (s) this.stepSession(s, dt);
-      if (this.voxel.active) this.voxel.frame(dt);
+      if (this.voxel?.active) this.voxel.frame(dt);
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
       this.renderOpts.onDemand = s === null;
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
@@ -1173,7 +1191,8 @@ export class Simulation {
     this.marquee = null;
     const s = this.session;
     this.session = null;
-    this.voxel.dispose();
+    this.voxel?.dispose();
+    this.voxel = null;
     if (s) {
       s.ended = true;
       this.input.detach();

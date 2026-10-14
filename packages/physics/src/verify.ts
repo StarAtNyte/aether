@@ -4,6 +4,7 @@
  * hook) until every test is decided, the simulated horizon is reached or the
  * wall-clock budget runs out.
  */
+import { navigableVerdict } from '@aether/arch';
 import type { EntityId, Vec3, WorldDoc, WorldTest } from '@aether/core';
 import { compare, readStateKey, resolveSelector } from '@aether/core';
 import { diagnoseWorld, findOverlaps } from './diagnose';
@@ -336,6 +337,11 @@ function evaluator(ctx: Ctx, test: WorldTest): Evaluator {
     }
     case 'staysAbove':
       return staysAboveTest(ctx, test);
+    case 'navigable': {
+      // Static, decided at t = 0 from the document (navigation grid, door swings, furniture).
+      const verdict = navigableVerdict(ctx.world, test.target, test.clearance);
+      return { test, horizon: 0, check: () => verdict, timeout: () => '' };
+    }
   }
 }
 

@@ -136,7 +136,7 @@ function RecipeCard({ r, hud, onCraft }: { r: HudRecipe; hud: VoxelHudState; onC
 /** The inventory + crafting screen. */
 function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
   const sim = useSimulation();
-  const play = sim?.voxel.game ?? null;
+  const play = sim?.voxel?.game ?? null;
   const [picked, setPicked] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
   const onSlot = useCallback(
@@ -209,7 +209,7 @@ export const VoxelHud = memo(function VoxelHud(): ReactElement | null {
   const mode = useUI((s) => s.mode);
   const sim = useSimulation();
   if (!hud || mode !== 'play') return null;
-  const play = sim?.voxel.game ?? null;
+  const play = sim?.voxel?.game ?? null;
   const survival = hud.mode === 'survival';
   const night = hud.hour < 5 || hud.hour >= 19.5;
   return (

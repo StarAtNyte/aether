@@ -45,6 +45,8 @@ export class VoxelInput {
   private lastForward = -1e9;
   private sprintLatch = false;
   private flyTap = false;
+  /** Pointer lock was refused (headless, iframe, permissions): clicks act directly and drags look. */
+  private lockFailed = false;
   private virtualForward = 0;
   private virtualRight = 0;
   /** True while the UI (inventory screen) owns the mouse. */
@@ -78,6 +80,7 @@ export class VoxelInput {
     window.addEventListener('mousemove', this.onMouseMove);
     el.addEventListener('wheel', this.onWheel, { passive: false });
     el.addEventListener('contextmenu', this.onContextMenu);
+    document.addEventListener('pointerlockerror', this.onLockError);
   }
 
   detach(): void {
@@ -86,6 +89,7 @@ export class VoxelInput {
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
+    document.removeEventListener('pointerlockerror', this.onLockError);
     if (this.el) {
       this.el.removeEventListener('mousedown', this.onMouseDown);
       this.el.removeEventListener('wheel', this.onWheel);
@@ -224,10 +228,12 @@ export class VoxelInput {
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (this.uiOpen) return;
     if (!this.locked) {
-      // The first click captures the mouse; it is not an action.
-      this.lock();
       this.dragging = true;
-      if (e.button === 0) return;
+      // A click that captures the mouse is not an action (unless capture is impossible here).
+      if (!this.lockFailed && typeof this.el?.requestPointerLock === 'function') {
+        this.lock();
+        if (e.button === 0) return;
+      }
     }
     if (e.button === 0) {
       this.primaryDown = true;
@@ -260,6 +266,10 @@ export class VoxelInput {
     if (this.uiOpen) return;
     e.preventDefault();
     if (e.deltaY !== 0) this.commands.scroll += e.deltaY > 0 ? 1 : -1;
+  };
+
+  private readonly onLockError = (): void => {
+    this.lockFailed = true;
   };
 
   private readonly onContextMenu = (e: Event): void => {

@@ -12,5 +12,8 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'a coin collecting game: grab 8 coins before time runs out',
   'an asteroid field in space',
   'a bowling alley with ten pins',
+  'a minecraft-like survival world',
+  'a village of block houses',
+  'pixel art heart in the sky over a blocky world',
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
 ]);

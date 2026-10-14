@@ -17,6 +17,7 @@ import { findLibraryItems, libraryAsset, libraryRadius, type LibraryHit, type Mo
 import type { Theme } from './theme';
 import { DEFAULT_SETTING } from './themes-nature';
 import { parseWorldSummary, type WorldView } from './world-view';
+import { planVoxel } from './voxel';
 
 /** Output of the mock planner. */
 export interface MockPlan {
@@ -195,6 +196,9 @@ function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem
  * Deterministic. `library` lists generator-library objects it may place.
  */
 export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = []): MockPlan {
+  // Block worlds (voxel terrain) have their own planner.
+  const voxel = planVoxel(request, summary);
+  if (voxel) return voxel;
   const intent = parseIntent(request);
   const view = parseWorldSummary(summary);
   const hasThemes = intent.settings.length > 0 || intent.activities.length > 0;

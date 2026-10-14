@@ -182,6 +182,10 @@ export const TEST_FIELDS: Readonly<Record<WorldTest['kind'], readonly FieldDef[]
     { key: 'y', label: 'Above y', kind: 'number' },
     { key: 'within', label: 'For (s)', kind: 'number' },
   ],
+  navigable: [
+    { key: 'target', label: 'Building', kind: 'selector' },
+    { key: 'clearance', label: 'Walkway (m)', kind: 'number' },
+  ],
 };
 
 /** Human labels of test kinds. */
@@ -193,6 +197,7 @@ export const TEST_LABELS: Readonly<Record<WorldTest['kind'], string>> = {
   moves: 'Moves',
   topples: 'Topples',
   staysAbove: 'Stays above',
+  navigable: 'Building is walkable',
 };
 
 /** Comparison operators. */
@@ -280,6 +285,7 @@ export function defaultTest(kind: WorldTest['kind'], id: string): WorldTest {
     moves: { id, kind: 'moves', target: 'ball' },
     topples: { id, kind: 'topples', target: '#domino' },
     staysAbove: { id, kind: 'staysAbove', target: 'player', y: -1 },
+    navigable: { id, kind: 'navigable', target: '*' },
   };
   return WorldTest.parse(defaults[kind]);
 }

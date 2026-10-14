@@ -126,6 +126,11 @@ export class ChunkStreamer {
     return this.world.dirty.size === 0;
   }
 
+  /** Slot version of the mesh on screen for chunk `key` (−1: none). */
+  shownVersion(key: number): number {
+    return this.meshes.get(key)?.shown ?? -1;
+  }
+
   /** Current view distance (chunks). */
   get distance(): number {
     return this.viewDistance;
