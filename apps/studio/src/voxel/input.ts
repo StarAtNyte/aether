@@ -4,8 +4,11 @@
  * fallback), WASD / arrows, Space (double-tap toggles creative flight),
  * Shift sneak, Ctrl or double-tap W sprint, left button break/attack,
  * right button place/use, 1–9 and the wheel for the hotbar, E inventory,
- * Q drop, F5 / V third-person view. Fills a reused {@link GameInput}; taps
- * between two fixed steps are latched so none is lost. Keys typed into
+ * Q drop, F5 / V third-person view. Touch screens: drag on the view to
+ * look, tap to place / use, touch and hold to break (aim while holding);
+ * the on-screen stick and buttons feed {@link setVirtualStick} / {@link tap}
+ * and the HUD has an inventory button. Fills a reused {@link GameInput};
+ * taps between two fixed steps are latched so none is lost. Keys typed into
  * text fields are ignored and everything is released on blur.
  */
 import type { GameInput } from '@aether/voxel/game';
@@ -19,6 +22,12 @@ const DOUBLE_TAP_MS = 280;
 const LOCK_GRACE_MS = 1000;
 /** Most keys tracked at once. */
 const MAX_KEYS = 32;
+/** Radians of look per pixel of touch drag (a finger covers more of the screen than a mouse). */
+export const TOUCH_LOOK_PER_PX = 0.0055;
+/** A touch that stays within this many pixels is a tap or a hold, not a look drag. */
+export const TOUCH_SLOP_PX = 10;
+/** Touch held this long without moving starts breaking (ms). */
+export const TOUCH_HOLD_MS = 280;
 
 /** One-shot UI commands produced by the keyboard (consumed by the session). */
 export interface VoxelCommands {
@@ -62,6 +71,19 @@ export class VoxelInput {
   private lockRequestedAt = Number.NEGATIVE_INFINITY;
   private virtualForward = 0;
   private virtualRight = 0;
+  /** The player uses a touch screen (set by the first touch; no pointer lock, touch hints). */
+  private touchMode = false;
+  /** The touch on the view being tracked (−1: none); others (second finger) are ignored. */
+  private touchId = -1;
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private touchLastX = 0;
+  private touchLastY = 0;
+  private touchStartT = 0;
+  /** The tracked touch moved beyond the slop (it is a look drag). */
+  private touchMoved = false;
+  /** The tracked touch is held in place: breaking. */
+  private touchHolding = false;
   /** True while the UI (inventory screen) owns the mouse. */
   uiOpen = false;
   readonly commands: VoxelCommands = { inventory: false, drop: false, view: false, slot: -1, scroll: 0 };
@@ -80,6 +102,7 @@ export class VoxelInput {
    */
   get needsCapture(): boolean {
     if (this.locked) return false;
+    if (this.touchMode) return !this.engaged;
     if (!this.engaged) return true;
     return !this.lockFailed && typeof this.el?.requestPointerLock === 'function';
   }
@@ -95,9 +118,16 @@ export class VoxelInput {
     return this.yaw;
   }
 
+  /** The player is on a touch screen (touch hints and controls). */
+  get touch(): boolean {
+    return this.touchMode;
+  }
+
   attach(el: HTMLElement): void {
     this.detach();
     this.el = el;
+    // Phones and tablets start in touch mode (touch hints); any touch later switches too.
+    if (!this.touchMode && primaryPointerIsCoarse()) this.touchMode = true;
     releaseTextFocus();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
@@ -107,6 +137,11 @@ export class VoxelInput {
     window.addEventListener('mousemove', this.onMouseMove);
     el.addEventListener('wheel', this.onWheel, { passive: false });
     el.addEventListener('contextmenu', this.onContextMenu);
+    el.addEventListener('pointerdown', this.onTouchDown);
+    window.addEventListener('pointerdown', this.onAnyPointer, true);
+    window.addEventListener('pointermove', this.onTouchMove);
+    window.addEventListener('pointerup', this.onTouchUp);
+    window.addEventListener('pointercancel', this.onTouchCancel);
     document.addEventListener('pointerlockerror', this.onLockError);
     document.addEventListener('pointerlockchange', this.onLockChange);
   }
@@ -116,6 +151,10 @@ export class VoxelInput {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('pointerdown', this.onAnyPointer, true);
+    window.removeEventListener('pointermove', this.onTouchMove);
+    window.removeEventListener('pointerup', this.onTouchUp);
+    window.removeEventListener('pointercancel', this.onTouchCancel);
     window.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('pointerlockerror', this.onLockError);
     document.removeEventListener('pointerlockchange', this.onLockChange);
@@ -123,19 +162,20 @@ export class VoxelInput {
       this.el.removeEventListener('mousedown', this.onMouseDown);
       this.el.removeEventListener('wheel', this.onWheel);
       this.el.removeEventListener('contextmenu', this.onContextMenu);
+      this.el.removeEventListener('pointerdown', this.onTouchDown);
       if (this.locked) document.exitPointerLock();
     }
     this.el = null;
     this.onBlur();
   }
 
-  /** Request mouse capture (must run inside a user gesture). */
+  /** Request mouse capture (must run inside a user gesture). Touch screens just start (no capture). */
   lock(): void {
     const el = this.el;
     this.engaged = true;
     // Keys must reach the game, not a chat box that still holds the focus.
     releaseTextFocus();
-    if (!el || this.locked || typeof el.requestPointerLock !== 'function') return;
+    if (this.touchMode || !el || this.locked || typeof el.requestPointerLock !== 'function') return;
     this.lockRequestedAt = performance.now();
     try {
       const p = el.requestPointerLock() as unknown;
@@ -177,6 +217,12 @@ export class VoxelInput {
 
   /** Fill `out` for one fixed step; latched taps are consumed. */
   sample(out: GameInput): GameInput {
+    // A touch held in place long enough breaks (the time check runs here: no timers).
+    if (this.touchId !== -1 && !this.touchMoved && !this.touchHolding && !this.uiOpen && now() - this.touchStartT >= TOUCH_HOLD_MS) {
+      this.touchHolding = true;
+      this.primaryDown = true;
+      this.attackTap = true;
+    }
     const k = this.key;
     const ui = this.uiOpen;
     const f = ui ? 0 : (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0);
@@ -261,6 +307,8 @@ export class VoxelInput {
     this.sprintLatch = false;
     this.virtualForward = 0;
     this.virtualRight = 0;
+    this.touchId = -1;
+    this.touchHolding = false;
   };
 
   private readonly onMouseDown = (e: MouseEvent): void => {
@@ -322,4 +370,68 @@ export class VoxelInput {
   private readonly onContextMenu = (e: Event): void => {
     e.preventDefault();
   };
+
+  /** Any touch anywhere (capture phase, before the overlay's click) switches to touch mode. */
+  private readonly onAnyPointer = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') this.touchMode = true;
+  };
+
+  /** A finger on the view: look, tap or hold (the first finger only; the stick and buttons stop propagation). */
+  private readonly onTouchDown = (e: PointerEvent): void => {
+    if (e.pointerType !== 'touch' || this.uiOpen || this.touchId !== -1) return;
+    // No emulated mouse events for this touch (they would act a second time).
+    e.preventDefault();
+    this.touchMode = true;
+    this.engaged = true;
+    this.touchId = e.pointerId;
+    this.touchStartX = this.touchLastX = e.clientX;
+    this.touchStartY = this.touchLastY = e.clientY;
+    this.touchStartT = now();
+    this.touchMoved = false;
+    this.touchHolding = false;
+  };
+
+  private readonly onTouchMove = (e: PointerEvent): void => {
+    if (e.pointerId !== this.touchId) return;
+    const dx = e.clientX - this.touchLastX;
+    const dy = e.clientY - this.touchLastY;
+    this.touchLastX = e.clientX;
+    this.touchLastY = e.clientY;
+    if (!this.touchMoved && Math.hypot(e.clientX - this.touchStartX, e.clientY - this.touchStartY) > TOUCH_SLOP_PX) this.touchMoved = true;
+    // Look while dragging, and aim while holding to break.
+    if (this.uiOpen || (!this.touchMoved && !this.touchHolding) || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    this.yaw -= dx * TOUCH_LOOK_PER_PX;
+    this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * TOUCH_LOOK_PER_PX));
+  };
+
+  private readonly onTouchUp = (e: PointerEvent): void => {
+    if (e.pointerId !== this.touchId) return;
+    // A quick tap in place places / uses.
+    if (!this.touchMoved && !this.touchHolding && !this.uiOpen) this.useTap = true;
+    this.endTouch();
+  };
+
+  private readonly onTouchCancel = (e: PointerEvent): void => {
+    if (e.pointerId === this.touchId) this.endTouch();
+  };
+
+  private endTouch(): void {
+    if (this.touchHolding) this.primaryDown = false;
+    this.touchId = -1;
+    this.touchHolding = false;
+    this.touchMoved = false;
+  }
+}
+
+/** The primary pointer is a finger (phones, tablets); false where unknown. */
+function primaryPointerIsCoarse(): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
+}
+
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }

@@ -971,6 +971,7 @@ export class VoxelPlay {
       hour: Math.round(g.clock.hour * 4) / 4,
       day: g.clock.day,
       capture: this.input.needsCapture,
+      touch: this.input.touch,
       view: this.view,
       flying: p.flying,
       target: t.valid ? reg.type(t.hit.block).label : '',

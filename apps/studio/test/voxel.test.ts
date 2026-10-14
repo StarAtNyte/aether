@@ -6,7 +6,7 @@ import { MemoryVoxelStore, parseChunkKey } from '../src/voxel/saveStore';
 function hud(over: Partial<VoxelHudState> = {}): VoxelHudState {
   return {
     mode: 'survival', loading: null, health: 20, hunger: 20, air: 10, dead: false, deathCause: '', slots: [{ item: 'stone', label: 'Stone', count: 3, icon: { kind: 'block', top: 1, side: 1, flat: false } }, null],
-    selected: 0, inventoryOpen: false, recipes: [], nearTable: false, hour: 8, day: 0, capture: false, view: 'first', flying: false, target: '', position: [0, 60, 0],
+    selected: 0, inventoryOpen: false, recipes: [], nearTable: false, hour: 8, day: 0, capture: false, touch: false, view: 'first', flying: false, target: '', position: [0, 60, 0],
     atlasUrl: 'a', itemsUrl: 'b', itemCount: 3, toast: '', ...over,
   };
 }

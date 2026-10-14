@@ -241,6 +241,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const epoch = useUI((s) => s.rendererEpoch);
   const playing = mode === 'play';
   const voxelGame = useUI((s) => s.voxelHud !== null);
+  // The inventory screen takes the touch area: no stick or buttons over it.
+  const voxelUi = useUI((s) => s.voxelHud?.inventoryOpen === true || s.voxelHud?.dead === true);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -322,7 +324,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       ) : (
         <PlayHud />
       )}
-      {ready && playing && <TouchControls />}
+      {ready && playing && !voxelUi && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">
           <NavHint />

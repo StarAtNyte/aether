@@ -13,11 +13,14 @@
  *    it back (right click), open the inventory (E), craft sticks, close;
  * 4. teleport far several times: loaded chunks and drawn chunk meshes stay
  *    bounded (unloading works);
- * 5. Stop (saves), reload the page, play again: the block changes persist.
+ * 5. Stop (saves), reload the page, play again: the block changes persist;
+ * 6. a phone with a touch screen: touch hints, drag to look, the inventory
+ *    button, the inventory fits and the touch controls step aside.
  *
  * Numbers are relative (software rasterizer); they are printed as a report.
  * Run: `npm run build && npm run e2e:voxel` (`-- --chromium` / `-- --firefox`
- * for one browser, `-- --chromium --webgpu` for the WebGPU run only).
+ * for one browser, `-- --chromium --webgpu` / `-- --chromium --webgl2` for one Chromium backend,
+ * `-- --touch` for the phone scenario only).
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,6 +44,8 @@ const MAX_VOXEL_WORK_MS = 16;
  */
 const MAX_EDIT_MESH_MS = 60;
 const ARGS = process.argv.slice(2);
+/** `--touch`: only the phone / touch scenario. */
+const TOUCH_ONLY = ARGS.includes('--touch');
 
 const startedAt = performance.now();
 function log(line: string): void {
@@ -446,6 +451,79 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
   }
 }
 
+/**
+ * Phone with a touch screen (390 × 844): "Tap to play" hints, drag on the
+ * view to look, the inventory button, the inventory fits the screen and the
+ * on-screen stick / buttons step aside while it is open.
+ */
+async function touchRun(browser: Browser, url: string, label: string, mobile: boolean): Promise<void> {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, ...(mobile ? { isMobile: true } : {}) });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
+  await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  try {
+    await boot(page, url, '#/new');
+    const err = await page.evaluate(async () => {
+      const a = window.__aether;
+      if (!a) return 'no studio';
+      const world = { ...a.history.current, voxel: { preset: 'plains', viewDistance: 4 } };
+      return a.studio.importText(JSON.stringify({ format: 'aether-world', version: 1, world }));
+    });
+    check(!err, `${label}: import failed: ${String(err)}`);
+    await streamed(page);
+    await play(page);
+    const capture = page.locator('.vx-capture');
+    await capture.waitFor({ timeout: 10_000 });
+    check((await capture.innerText()).includes('Tap to play'), `${label}: no touch hints on a phone`);
+    await capture.tap();
+    await waitFor(page, 'the game to start on touch', 10_000, () => page.evaluate(() => (window.__aether?.store.getState().voxelHud?.capture === false ? true : null)));
+    // Drag on the view: the player looks around.
+    const yaw0 = await page.evaluate(() => window.__aether?.simulation?.voxel?.game?.input.yawRad ?? 0);
+    const cdp = mobile ? await context.newCDPSession(page) : null;
+    if (cdp) {
+      // Chromium: a real touch drag through the DevTools protocol.
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 400 }] });
+      for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 200 + i * 15, y: 400 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } else {
+      // Firefox: pointer events of type touch on the canvas.
+      await page.evaluate(() => {
+        const canvas = document.querySelector('.viewport canvas');
+        if (!canvas) return;
+        const ev = (type: string, x: number): PointerEvent => new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: 400, bubbles: true, cancelable: true });
+        canvas.dispatchEvent(ev('pointerdown', 200));
+        for (let i = 1; i <= 6; i++) canvas.dispatchEvent(ev('pointermove', 200 + i * 15));
+        canvas.dispatchEvent(ev('pointerup', 290));
+      });
+    }
+    const yaw1 = await waitFor(page, 'a touch drag to turn the view', 5_000, () => page.evaluate((y0) => {
+      const y = window.__aether?.simulation?.voxel?.game?.input.yawRad ?? y0;
+      return Math.abs(y - y0) > 0.05 ? y : null;
+    }, yaw0));
+    log(`[${label} touch] drag turned the view by ${(((yaw0 - yaw1) * 180) / Math.PI).toFixed(0)}°`);
+    await page.getByRole('button', { name: 'Open inventory' }).tap();
+    await page.getByRole('dialog', { name: 'Inventory and crafting' }).waitFor({ timeout: 10_000 });
+    const layout = await page.evaluate(() => {
+      const box = (sel: string): number[] | null => {
+        const r = document.querySelector(sel)?.getBoundingClientRect();
+        return r ? [r.left, r.top, r.right, r.bottom] : null;
+      };
+      return { view: box('.viewport'), panel: box('.vx-screen__panel'), grid: box('.vx-grid'), touch: box('.touch') };
+    });
+    const inside = (a: number[] | null, b: number[] | null): boolean => !!a && !!b && a[0]! >= b[0]! - 1 && a[1]! >= b[1]! - 1 && a[2]! <= b[2]! + 1 && a[3]! <= b[3]! + 1;
+    check(inside(layout.panel, layout.view) && inside(layout.grid, layout.panel), `${label} touch: inventory does not fit the phone ${JSON.stringify(layout)}`);
+    check(layout.touch === null, `${label} touch: on-screen controls cover the inventory`);
+    await page.getByRole('button', { name: 'Close' }).tap();
+    await page.getByRole('dialog', { name: 'Inventory and crafting' }).waitFor({ state: 'detached', timeout: 10_000 });
+    check(errors.length === 0, `${label} touch: page errors:\n${errors.join('\n')}`);
+    log(`[${label} touch] phone layout, touch look and inventory OK`);
+  } finally {
+    await context.close();
+  }
+}
+
 async function main(): Promise<void> {
   const server = await startServer(log);
   const results: Array<{ name: string; m: Metrics }> = [];
@@ -454,14 +532,16 @@ async function main(): Promise<void> {
   try {
     if (only !== '--firefox') {
       browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
-      results.push({ name: 'chromium-webgpu', m: await run(browser, server.url, 'chromium-webgpu', false) });
-      if (!ARGS.includes('--webgpu')) results.push({ name: 'chromium-webgl2', m: await run(browser, server.url, 'chromium-webgl2', true) });
+      if (!TOUCH_ONLY && !ARGS.includes('--webgl2')) results.push({ name: 'chromium-webgpu', m: await run(browser, server.url, 'chromium-webgpu', false) });
+      if (!TOUCH_ONLY && !ARGS.includes('--webgpu')) results.push({ name: 'chromium-webgl2', m: await run(browser, server.url, 'chromium-webgl2', true) });
+      await touchRun(browser, server.url, 'chromium', true);
       await browser.close();
       browser = null;
     }
     if (only !== '--chromium') {
       browser = await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } });
-      results.push({ name: 'firefox-webgl2', m: await run(browser, server.url, 'firefox-webgl2', false) });
+      if (!TOUCH_ONLY) results.push({ name: 'firefox-webgl2', m: await run(browser, server.url, 'firefox-webgl2', false) });
+      await touchRun(browser, server.url, 'firefox', false);
       await browser.close();
       browser = null;
     }

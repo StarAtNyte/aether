@@ -47,6 +47,8 @@ export interface VoxelHudState {
   day: number;
   /** Show the "click to play" overlay (mouse not captured and capture possible). */
   capture: boolean;
+  /** The player uses a touch screen (touch hints and the inventory button). */
+  touch: boolean;
   view: 'first' | 'third';
   flying: boolean;
   /** Label of the block under the crosshair. */
@@ -80,7 +82,7 @@ export function hudEqual(a: VoxelHudState | null, b: VoxelHudState | null): bool
   if (
     a.mode !== b.mode || a.loading !== b.loading || a.health !== b.health || a.hunger !== b.hunger || a.air !== b.air || a.dead !== b.dead ||
     a.deathCause !== b.deathCause || a.selected !== b.selected || a.inventoryOpen !== b.inventoryOpen || a.nearTable !== b.nearTable || a.hour !== b.hour ||
-    a.day !== b.day || a.capture !== b.capture || a.view !== b.view || a.flying !== b.flying || a.target !== b.target || a.atlasUrl !== b.atlasUrl ||
+    a.day !== b.day || a.capture !== b.capture || a.touch !== b.touch || a.view !== b.view || a.flying !== b.flying || a.target !== b.target || a.atlasUrl !== b.atlasUrl ||
     a.itemsUrl !== b.itemsUrl || a.toast !== b.toast || a.position[0] !== b.position[0] || a.position[1] !== b.position[1] || a.position[2] !== b.position[2]
   ) {
     return false;

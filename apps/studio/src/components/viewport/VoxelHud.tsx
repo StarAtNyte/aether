@@ -235,7 +235,7 @@ function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
         <section className="vx-screen__inv" aria-label="Inventory">
           <header className="vx-screen__head">
             <h2>Inventory</h2>
-            <span className="vx-screen__hint">Click an item, then a slot to move it · right-click splits a stack</span>
+            <span className="vx-screen__hint">{hud.touch ? 'Tap an item, then a slot to move it' : 'Click an item, then a slot to move it · right-click splits a stack'}</span>
           </header>
           <div className="vx-grid">
             {hud.slots.slice(9).map((s, k) => (
@@ -262,7 +262,7 @@ function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
         </section>
         <SaveActions />
         <button type="button" className="btn vx-screen__close" onClick={() => play?.setInventoryOpen(false)}>
-          Close <kbd>E</kbd>
+          Close {!hud.touch && <kbd>E</kbd>}
         </button>
       </div>
     </div>
@@ -314,15 +314,29 @@ export const VoxelHud = memo(function VoxelHud(): ReactElement | null {
             {hud.slots.slice(0, 9).map((s, i) => (
               <Slot key={i} index={i} slot={s} hud={hud} selected={hud.selected === i} onClick={(k) => play?.select(k)} />
             ))}
+            {hud.touch && (
+              <button type="button" className="vx-slot vx-slot--more" aria-label="Open inventory" onClick={() => play?.setInventoryOpen(true)}>
+                <span aria-hidden="true">•••</span>
+              </button>
+            )}
           </div>
         </div>
       )}
       {hud.capture && !hud.inventoryOpen && !hud.dead && hud.loading === null && (
         <button type="button" className="vx-capture" onClick={() => play?.lockPointer()}>
-          <b>Click to play</b>
-          <span>
-            <kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Left</kbd> break · <kbd>Right</kbd> place · <kbd>E</kbd> inventory · <kbd>1–9</kbd> hotbar · <kbd>V</kbd> view · <kbd>Esc</kbd> exit
-          </span>
+          {hud.touch ? (
+            <>
+              <b>Tap to play</b>
+              <span>Stick to move · drag to look · tap to place · touch and hold to break · ••• inventory</span>
+            </>
+          ) : (
+            <>
+              <b>Click to play</b>
+              <span>
+                <kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Left</kbd> break · <kbd>Right</kbd> place · <kbd>E</kbd> inventory · <kbd>1–9</kbd> hotbar · <kbd>V</kbd> view · <kbd>Esc</kbd> exit
+              </span>
+            </>
+          )}
         </button>
       )}
       {hud.inventoryOpen && <InventoryScreen hud={hud} />}
