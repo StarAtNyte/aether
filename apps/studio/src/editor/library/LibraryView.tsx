@@ -9,12 +9,13 @@ import { libraryUrl, searchAssets, type AssetCategory, type Catalog, type Catalo
 import { useStudio, useUI } from '../../app/context';
 import { Icon } from '../../components/Icon';
 import { ASSET_DRAG_TYPE, dragState, useLibrary } from './useLibrary';
+import { MATERIAL_DRAG_TYPE } from '../../lib/materials';
 
 /** Category chips in display order, with labels. */
 export const CATEGORY_LABELS: ReadonlyArray<readonly [AssetCategory, string]> = [
   ['furniture', 'Furniture'], ['kitchen', 'Kitchen'], ['bathroom', 'Bathroom'], ['decor', 'Decor'], ['lighting', 'Lighting'], ['plants', 'Plants'],
   ['nature', 'Nature'], ['rocks', 'Rocks'], ['building', 'Buildings'], ['street', 'Street'], ['vehicles', 'Vehicles'], ['characters', 'People'],
-  ['animals', 'Animals'], ['food', 'Food'], ['tools', 'Tools'], ['props', 'Props'], ['sky', 'Skies'],
+  ['animals', 'Animals'], ['food', 'Food'], ['tools', 'Tools'], ['props', 'Props'], ['sky', 'Skies'], ['materials', 'Surfaces'],
 ];
 
 type Filter = AssetCategory | 'all' | 'favorites';
@@ -51,8 +52,13 @@ const AssetTile = memo(function AssetTile({ entry, catalog, favorite, disabled }
           studio.assets.clearPreview();
         }}
         onDragStart={(e) => {
-          dragState.asset = entry.id;
-          e.dataTransfer.setData(ASSET_DRAG_TYPE, entry.id);
+          if (entry.kind === 'material' && entry.material) {
+            // Surfaces drop onto objects like the material swatches.
+            e.dataTransfer.setData(MATERIAL_DRAG_TYPE, JSON.stringify({ name: entry.name, spec: { finish: entry.material.finish } }));
+          } else {
+            dragState.asset = entry.id;
+            e.dataTransfer.setData(ASSET_DRAG_TYPE, entry.id);
+          }
           e.dataTransfer.setData('text/plain', entry.name);
           e.dataTransfer.effectAllowed = 'copy';
         }}
@@ -62,7 +68,7 @@ const AssetTile = memo(function AssetTile({ entry, catalog, favorite, disabled }
       >
         <span className="tile__art">
           {broken || !entry.thumb ? (
-            <Icon name={entry.kind === 'hdri' ? 'sun' : 'cube'} size={20} />
+            <Icon name={entry.kind === 'hdri' ? 'sun' : entry.kind === 'material' ? 'palette' : 'cube'} size={20} />
           ) : (
             <img src={libraryUrl(entry.thumb, catalog)} alt="" width={96} height={96} loading="lazy" decoding="async" draggable={false} onError={() => setBroken(true)} />
           )}

@@ -259,8 +259,23 @@ export class RoomLayout {
   }
 
   /** Make a placement record. */
+  /** Placements made while true use the parametric piece even when a library model exists. */
+  private parametricOnly = false;
+
+  /** Run `fn` with library models first; when it places nothing, retry with the parametric piece. */
+  private withFallback(fn: () => Placed | null): Placed | null {
+    const first = fn();
+    if (first || this.parametricOnly) return first;
+    this.parametricOnly = true;
+    try {
+      return fn();
+    } finally {
+      this.parametricOnly = false;
+    }
+  }
+
   make(def: FurnitureDef, params: Record<string, Json>, x: number, z: number, yaw: number, y = 0, name?: string): Placed {
-    const asset = furnitureAsset(def.kind, this.ctx.style);
+    const asset = this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style);
     const size = asset ? asset.size : furnitureSize(def, params);
     const floor = def.mount === 'floor';
     return {
@@ -283,9 +298,12 @@ export class RoomLayout {
   tryAt(kind: string, params: Record<string, Json>, x: number, z: number, yaw: number, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
-    const p = this.make(def, params, x, z, yaw, 0, name);
-    if (def.mount === 'floor' && !this.fits(p.footprint, kind)) return null;
-    return this.push(p);
+    // A library model can be larger than the parametric piece the spot was planned for.
+    return this.withFallback(() => {
+      const p = this.make(def, params, x, z, yaw, 0, name);
+      if (def.mount === 'floor' && !this.fits(p.footprint, kind)) return null;
+      return this.push(p);
+    });
   }
 
   /**
@@ -295,9 +313,13 @@ export class RoomLayout {
    * floor in front (checked against other pieces).
    */
   againstWall(kind: string, params: Record<string, Json>, edge: number, t: number | null, name?: string): Placed | null {
+    return this.withFallback(() => this.againstWallOnce(kind, params, edge, t, name));
+  }
+
+  private againstWallOnce(kind: string, params: Record<string, Json>, edge: number, t: number | null, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
-    const size = furnitureAsset(def.kind, this.ctx.style)?.size ?? furnitureSize(def, params);
+    const size = (this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style))?.size ?? furnitureSize(def, params);
     const e = this.ctx.edges[edge] as RoomEdge;
     const yaw = yawFacingIn(e);
     const free = this.freeIntervals(edge, size[1]);

@@ -1062,7 +1062,7 @@ export class SceneSync {
       const scale = info ? fitScale(info.size, shape.fitSize) : 1;
       if (info) this.sizePlaceholder(node, info.size[0] * scale, info.size[1] * scale, info.size[2] * scale);
       try {
-        if (!info || info.kind === 'hdri') throw new Error(info ? `"${shape.id}" is an environment map, not an object` : `asset "${shape.id.slice(0, 64)}" is not available`);
+        if (!info || info.kind === 'hdri' || info.kind === 'material') throw new Error(info ? `"${shape.id}" is a ${info.kind === 'hdri' ? 'sky' : 'surface material'}, not an object` : `asset "${shape.id.slice(0, 64)}" is not available`);
         if (info.kind === 'generator') {
           const g = info.entry?.generator;
           if (!g) throw new Error(`asset "${shape.id}" has no generator`);

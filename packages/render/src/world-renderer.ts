@@ -17,6 +17,8 @@ import { createProcgenGeometrySource } from './geometry/procgen-source';
 import { createGltfModelLoader, ModelCache, type ModelLoader } from './geometry/model-loader';
 import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
 import type { HdriSource } from './environment/hdri';
+import { photoFinishResolver } from './materials/photo-finishes';
+import { getCatalog } from '@aether/assets';
 import { SceneSync } from './sync/scene-sync';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
@@ -793,6 +795,8 @@ export class WorldRenderer {
    */
   refreshAssets(assetIds?: ReadonlySet<string>): void {
     if (this.sync.refreshAssets(assetIds) > 0) this.needsDraw = true;
+    // Photographed finish maps from the library (once the catalog is in).
+    if (!assetIds && getCatalog()) this.materials.finishes.usePhotos(photoFinishResolver());
     const env = this.sync.world?.environment;
     if (env?.hdri && (!assetIds || assetIds.has(env.hdri))) this.env.hdri.reload();
   }

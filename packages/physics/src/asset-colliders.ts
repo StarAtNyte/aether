@@ -12,7 +12,7 @@ import type { ColliderDesc } from '@aether/procgen';
 /** Collider descriptions for an asset shape, or null when the asset is unknown or is a generator. */
 export function assetColliderDescs(shape: Pick<AssetShape, 'id' | 'variant' | 'fitSize'>): ColliderDesc[] | null {
   const info = assetInfo(effectiveAssetId(shape));
-  if (!info || info.kind === 'hdri' || info.kind === 'generator') return null;
+  if (!info || info.kind === 'hdri' || info.kind === 'generator' || info.kind === 'material') return null;
   const s = fitScale(info.size, shape.fitSize);
   const w = Math.max(0.02, info.size[0] * s);
   const h = Math.max(0.02, info.size[1] * s);

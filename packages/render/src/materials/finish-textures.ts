@@ -23,7 +23,40 @@ export interface FinishMaps {
   normal: Texture;
   /** Pixels arrived (false while the neutral placeholder is shown). */
   ready: boolean;
+  /** Photographed maps are shown (procedural results arriving later are ignored). */
+  photo: boolean;
 }
+
+/** URLs of a finish's photographed maps and the real-world size of one tile (metres). */
+export interface PhotoFinishSource {
+  tile: number;
+  albedo: string;
+  orm: string;
+  normal: string;
+}
+
+/** Resolves the photo maps of a finish (null: keep the procedural ones). */
+export type PhotoResolver = (finish: MaterialFinish) => PhotoFinishSource | null;
+
+/** Decodes an image URL into `size × size` RGBA8 pixels. Injected so tests can fake it. */
+export type PixelLoader = (url: string, size: number) => Promise<Uint8Array>;
+
+/** Browser pixel loader: fetch → `createImageBitmap` → (Offscreen)canvas resample. */
+export const browserPixelLoader: PixelLoader = async (url, size) => {
+  if (typeof createImageBitmap !== 'function') throw new Error('image decoding is unavailable');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  try {
+    const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size) : Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+    if (!ctx) throw new Error('2D canvas unavailable');
+    ctx.drawImage(bmp, 0, 0, size, size);
+    return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
+  } finally {
+    bmp.close();
+  }
+};
 
 /** Synthesises the pixels of a finish (worker or inline). */
 export type FinishSynth = (finish: MaterialFinish, size: number) => Promise<FinishPixels>;
@@ -114,18 +147,60 @@ export class FinishTextures {
     return this.maps.size;
   }
 
+  private photos: PhotoResolver | null = null;
+  private pixelLoader: PixelLoader = browserPixelLoader;
+
+  /**
+   * Use photographed maps (asset library "material" entries) for the finishes
+   * that have them: existing finishes are upgraded in place (same textures,
+   * no shader recompile), later ones load the photos directly. Pass `null`
+   * to stop using photos for finishes created from now on.
+   */
+  usePhotos(resolver: PhotoResolver | null, loader: PixelLoader = browserPixelLoader): void {
+    this.photos = resolver;
+    this.pixelLoader = loader;
+    if (!resolver) return;
+    for (const [id, maps] of this.maps) if (!maps.photo) this.loadPhoto(id, maps);
+  }
+
+  private loadPhoto(id: MaterialFinish, maps: FinishMaps): boolean {
+    const src = this.photos?.(id);
+    if (!src || !finishHasMaps(id)) return false;
+    const size = this.size;
+    Promise.all([this.pixelLoader(src.albedo, size), this.pixelLoader(src.orm, size), this.pixelLoader(src.normal, size)]).then(
+      ([albedo, orm, normal]) => {
+        if (this.disposed || this.maps.get(id) !== maps) return;
+        const n = size * size * 4;
+        if (albedo.length !== n || orm.length !== n || normal.length !== n) return;
+        fill(maps.map, albedo);
+        fill(maps.orm, orm);
+        fill(maps.normal, normal);
+        // Texture transforms are uniforms: retiling to the photo's real size recompiles nothing.
+        const k = 1 / Math.max(0.05, src.tile);
+        for (const t of [maps.map, maps.orm, maps.normal]) t.repeat.set(k, k);
+        maps.photo = true;
+        maps.ready = true;
+        this.onUpdate?.();
+      },
+      (e: unknown) => log.warn(`photo maps of "${id}" failed (procedural kept): ${errorMessage(e)}`),
+    );
+    return true;
+  }
+
   /** Maps of `id` (created on first use; pixels fill in asynchronously). */
   get(id: MaterialFinish): FinishMaps {
     const hit = this.maps.get(id);
     if (hit) return hit;
     const def = FINISHES[id];
     const ph = placeholder(id, this.size);
-    const maps: FinishMaps = { map: texture(ph.albedo, this.size, def.tile), orm: texture(ph.orm, this.size, def.tile), normal: texture(ph.normal, this.size, def.tile), ready: false };
+    const maps: FinishMaps = { map: texture(ph.albedo, this.size, def.tile), orm: texture(ph.orm, this.size, def.tile), normal: texture(ph.normal, this.size, def.tile), ready: false, photo: false };
     this.maps.set(id, maps);
     const size = this.size;
+    // The procedural maps are synthesised regardless: they show if the photos fail to load.
+    this.loadPhoto(id, maps);
     this.synth(id, size).then(
       (px) => {
-        if (this.disposed || this.maps.get(id) !== maps || px.size !== size) return;
+        if (this.disposed || this.maps.get(id) !== maps || px.size !== size || maps.photo) return;
         fill(maps.map, px.albedo);
         fill(maps.orm, px.orm);
         fill(maps.normal, px.normal);

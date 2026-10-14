@@ -17,7 +17,7 @@ export type AssetId = z.infer<typeof AssetId>;
 /** Browse categories (also the top-level grouping in prompts and the asset browser). */
 export const AssetCategory = z.enum([
   'furniture', 'kitchen', 'bathroom', 'decor', 'lighting', 'plants', 'nature', 'rocks', 'building', 'street',
-  'vehicles', 'characters', 'animals', 'food', 'tools', 'props', 'sky',
+  'vehicles', 'characters', 'animals', 'food', 'tools', 'props', 'sky', 'materials',
 ]);
 export type AssetCategory = z.infer<typeof AssetCategory>;
 
@@ -38,7 +38,7 @@ export const AssetLicence = z.enum(['CC0-1.0', 'CC-BY-4.0', 'MIT']);
 export type AssetLicence = z.infer<typeof AssetLicence>;
 
 /** Library file path relative to the catalog base: `m/sofa.0123abcd.glb`. */
-export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12])?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
+export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12]|\.albedo|\.orm|\.normal)?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
 
 /**
  * Physics collider recorded by the build script, in the asset's normalised
@@ -68,8 +68,12 @@ export type CatalogAnims = z.infer<typeof CatalogAnims>;
 export const CatalogEntry = z.object({
   id: AssetId,
   name: z.string().min(1).max(60),
-  /** `model`: a glTF file; `hdri`: an environment map; `generator`: a procedural (parametric) generator. */
-  kind: z.enum(['model', 'hdri', 'generator']),
+  /**
+   * `model`: a glTF file; `hdri`: an environment map; `generator`: a
+   * procedural (parametric) generator; `material`: photographed PBR maps of a
+   * surface finish (used by the renderer for `material.finish`).
+   */
+  kind: z.enum(['model', 'hdri', 'generator', 'material']),
   category: AssetCategory,
   /** Search keywords (lowercase words), including synonyms ("couch" for a sofa). */
   tags: z.array(z.string().min(1).max(32)).max(32),
@@ -99,6 +103,19 @@ export const CatalogEntry = z.object({
   variants: z.array(AssetId).max(12).optional(),
   /** Generators: the procedural generator id and default params. */
   generator: z.object({ id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/), params: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).default({}) }).optional(),
+  /**
+   * Materials: the finish they texture and their maps in the renderer's
+   * finish format (albedo ratio to the base colour ÷ the finish's albedo
+   * scale, ORM with absolute roughness, OpenGL tangent-space normal), plus
+   * the real-world size of one tile in metres.
+   */
+  material: z
+    .object({
+      finish: z.string().regex(/^[a-z-]{2,32}$/),
+      tile: z.number().positive().max(20),
+      maps: z.object({ albedo: LibraryPath, orm: LibraryPath, normal: LibraryPath }),
+    })
+    .optional(),
   /** Provenance: file path inside the source pack. */
   source: z.string().max(200),
 });

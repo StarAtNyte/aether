@@ -260,6 +260,18 @@ export class AssetController {
       return null;
     }
     const name = info.entry?.name ?? info.user?.name ?? id;
+    if (info.kind === 'material') {
+      // A photographed surface: applied to the selection's finish.
+      const finish = info.entry?.material?.finish;
+      const sel = st.selection;
+      if (!finish || sel.length === 0) {
+        st.toast('Select objects first, or drag the surface onto one.', 'info', 3);
+        return null;
+      }
+      const patches = sel.filter((sid) => Object.hasOwn(this.host.history.current.entities, sid)).map((sid) => ({ op: 'update', id: sid, set: { material: { finish } } }));
+      this.host.commitUser(patches, `Apply ${name}`);
+      return null;
+    }
     if (info.kind === 'generator') {
       // Forge originals are ordinary (editable) library generators: define and place one.
       const def = info.entry?.generator ? await loadLibraryGenerator(info.entry.generator.id) : null;

@@ -27,7 +27,7 @@ describe('asset catalog', () => {
 
   it('covers every category the brief asks for', () => {
     const cats = new Set(catalog.entries.map((e) => e.category));
-    for (const c of ['furniture', 'kitchen', 'bathroom', 'decor', 'plants', 'nature', 'rocks', 'building', 'street', 'vehicles', 'characters', 'animals', 'food', 'tools', 'sky'] as const) expect(cats.has(c), c).toBe(true);
+    for (const c of ['furniture', 'kitchen', 'bathroom', 'decor', 'plants', 'nature', 'rocks', 'building', 'street', 'vehicles', 'characters', 'animals', 'food', 'tools', 'sky', 'materials'] as const) expect(cats.has(c), c).toBe(true);
   });
 
   it('ships only CC0 / CC-BY third-party packs (first-party forge originals are MIT) and every pack is referenced', () => {
@@ -40,7 +40,7 @@ describe('asset catalog', () => {
     const lib = join(ROOT, 'assets', 'lib');
     let total = 0;
     for (const e of catalog.entries) {
-      for (const f of [e.file, e.thumb, ...e.lods.map((l) => l.file)]) {
+      for (const f of [e.file, e.thumb, ...e.lods.map((l) => l.file), ...(e.material ? [e.material.maps.albedo, e.material.maps.orm, e.material.maps.normal] : [])]) {
         if (!f) continue;
         const path = join(lib, f);
         expect(existsSync(path), f).toBe(true);
@@ -54,8 +54,22 @@ describe('asset catalog', () => {
     expect(total).toBeLessThan(150 * 1024 * 1024);
   });
 
-  it('has a thumbnail for every model, sky and forge original', () => {
+  it('has a thumbnail for every model, sky, surface and forge original', () => {
     for (const e of catalog.entries) expect(e.thumb, e.id).toBeTruthy();
+  });
+
+  it('photographed surfaces map onto existing finishes with real tile sizes', async () => {
+    const { FINISHES } = await import('@aether/arch');
+    const mats = catalog.entries.filter((e) => e.kind === 'material');
+    expect(mats.length).toBeGreaterThanOrEqual(8);
+    const finishes = new Set<string>();
+    for (const m of mats) {
+      expect(m.pack).toBe('ambientcg');
+      expect(Object.hasOwn(FINISHES, m.material!.finish), m.id).toBe(true);
+      expect(m.material!.tile).toBeGreaterThan(0.1);
+      finishes.add(m.material!.finish);
+    }
+    expect(finishes.size).toBe(mats.length);
   });
 
   it('forge originals are library generators that ship with the app', async () => {
@@ -75,6 +89,10 @@ describe('asset catalog', () => {
     for (const e of catalog.entries) {
       if (e.kind === 'generator') continue;
       const m = byId.get(e.id);
+      if (e.kind === 'material') {
+        expect(m, e.id).toBeTruthy();
+        continue;
+      }
       expect(m, e.id).toBeTruthy();
       expect(['CC0-1.0', 'CC-BY-4.0']).toContain(m!.licence);
       expect(m!.files.some((f) => f.path === e.file)).toBe(true);

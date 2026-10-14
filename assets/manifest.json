@@ -185,6 +185,146 @@
    "retrieved": "2026-10-14"
   },
   {
+   "id": "ambientcg-WoodFloor051",
+   "provider": "ambientCG",
+   "title": "WoodFloor051",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=WoodFloor051",
+   "archive": "https://ambientcg.com/get?file=WoodFloor051_1K-JPG.zip",
+   "sha256": "3f493484eab1ec5e1c466b90e515003b286fc6d7f84ff8ff6485900bfc26cef5",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"oak\""
+  },
+  {
+   "id": "ambientcg-WoodFloor041",
+   "provider": "ambientCG",
+   "title": "WoodFloor041",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=WoodFloor041",
+   "archive": "https://ambientcg.com/get?file=WoodFloor041_1K-JPG.zip",
+   "sha256": "e7364ef32a8db269b2475e76a7e1832eca82bdf6574191cd96b1cdb2b362cdc6",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"walnut\""
+  },
+  {
+   "id": "ambientcg-Bricks090",
+   "provider": "ambientCG",
+   "title": "Bricks090",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Bricks090",
+   "archive": "https://ambientcg.com/get?file=Bricks090_1K-JPG.zip",
+   "sha256": "4386aadc14eb48fc60e6ab6a4c43e658bd6f424dbc7a4cdcaea3a44c5911581c",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"brick\""
+  },
+  {
+   "id": "ambientcg-Tiles107",
+   "provider": "ambientCG",
+   "title": "Tiles107",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Tiles107",
+   "archive": "https://ambientcg.com/get?file=Tiles107_1K-JPG.zip",
+   "sha256": "ec41de6439d087cbd4b88ecd373cf240206715a3b3e022c0d556f9eb677940d0",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"tile\""
+  },
+  {
+   "id": "ambientcg-Marble016",
+   "provider": "ambientCG",
+   "title": "Marble016",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Marble016",
+   "archive": "https://ambientcg.com/get?file=Marble016_1K-JPG.zip",
+   "sha256": "3740ddfd7d355b8bd5d89a36a854070b9fdf5780e11a7c2c35b5d13c56ff64ee",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"marble\""
+  },
+  {
+   "id": "ambientcg-Concrete042A",
+   "provider": "ambientCG",
+   "title": "Concrete042A",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Concrete042A",
+   "archive": "https://ambientcg.com/get?file=Concrete042A_1K-JPG.zip",
+   "sha256": "07f5a1d1389bd1ecef41a528c5a0b2acee571627b27b6de0b111fef0d28610e4",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"concrete\""
+  },
+  {
+   "id": "ambientcg-PavingStones070",
+   "provider": "ambientCG",
+   "title": "PavingStones070",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=PavingStones070",
+   "archive": "https://ambientcg.com/get?file=PavingStones070_1K-JPG.zip",
+   "sha256": "84be05ad935c2a8ea0dd3b82dd18c9e1faf7eeae222b85d96beb14ed16276132",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"stone\""
+  },
+  {
+   "id": "ambientcg-Fabric026",
+   "provider": "ambientCG",
+   "title": "Fabric026",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Fabric026",
+   "archive": "https://ambientcg.com/get?file=Fabric026_1K-JPG.zip",
+   "sha256": "b47a2965c035772400524000926be3afe2dd9afc2fff052346e1c264476afd1b",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"fabric\""
+  },
+  {
+   "id": "ambientcg-Plaster001",
+   "provider": "ambientCG",
+   "title": "Plaster001",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Plaster001",
+   "archive": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+   "sha256": "944b4831016e42ace4a89422e4e7190912ca2f7fed6f561354c48ec7bb54d3a4",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"plaster\""
+  },
+  {
+   "id": "ambientcg-Terrazzo009",
+   "provider": "ambientCG",
+   "title": "Terrazzo009",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Terrazzo009",
+   "archive": "https://ambientcg.com/get?file=Terrazzo009_1K-JPG.zip",
+   "sha256": "667b610ce2548056359bb5f928a048db561bc30976547cffa88bf4ad83e78ffd",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"terrazzo\""
+  },
+  {
    "id": "polyhaven",
    "provider": "Poly Haven",
    "title": "Poly Haven models and HDRIs",
@@ -6400,6 +6540,326 @@
      "path": "h/sky-photo-studio.469abc5e.hdr",
      "sha256": "469abc5e6035b6c450bae8adbb448f8d1fa7c51d9e384e501516c28352c91b58",
      "bytes": 1648130
+    }
+   ]
+  },
+  {
+   "id": "finish-oak",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/WoodFloor051",
+    "path": "ambientcg/WoodFloor051"
+   },
+   "files": [
+    {
+     "path": "x/oak.albedo.90fec2e7.jpg",
+     "sha256": "90fec2e7695b624b4e0135b0df79a9d9e4dfc03300073d34ca822c51e134dd2c",
+     "bytes": 86795
+    },
+    {
+     "path": "x/oak.orm.44a5f2a8.jpg",
+     "sha256": "44a5f2a8ab394c5c1321ea3d608fd32a992c1a2d3c6d45f160a768007ec23299",
+     "bytes": 42728
+    },
+    {
+     "path": "x/oak.normal.d7cbb123.jpg",
+     "sha256": "d7cbb1231d87158baff566023638ff54eb6d14a0a98eac698e2ef61eb8ce38f4",
+     "bytes": 17730
+    },
+    {
+     "path": "t/finish-oak.a1fc2269.webp",
+     "sha256": "a1fc2269477b43ff903a2ed7e48c8eb91d8deb581eab0500bd288f127f3faffa",
+     "bytes": 33716
+    }
+   ]
+  },
+  {
+   "id": "finish-walnut",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/WoodFloor041",
+    "path": "ambientcg/WoodFloor041"
+   },
+   "files": [
+    {
+     "path": "x/walnut.albedo.1e2e2397.jpg",
+     "sha256": "1e2e23970cfa1e58fbd171f5314af8f8165d450a01a6f7e1fa5b687bb862f431",
+     "bytes": 119118
+    },
+    {
+     "path": "x/walnut.orm.cf1c4b58.jpg",
+     "sha256": "cf1c4b58332cd4ab33c54d350794bb4a83b7b4ab3ca29c9ae8fa710fdae29435",
+     "bytes": 15910
+    },
+    {
+     "path": "x/walnut.normal.4e47ae7f.jpg",
+     "sha256": "4e47ae7f2fb5455827dad159747c8b7591d38d349af486f5659c49dfd8ae1a7b",
+     "bytes": 29388
+    },
+    {
+     "path": "t/finish-walnut.ac060be3.webp",
+     "sha256": "ac060be31f94efaa9271ad0bacc7dc268c7534cd71fa9ccc136e0d25284d4fa0",
+     "bytes": 53594
+    }
+   ]
+  },
+  {
+   "id": "finish-brick",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Bricks090",
+    "path": "ambientcg/Bricks090"
+   },
+   "files": [
+    {
+     "path": "x/brick.albedo.63cd990b.jpg",
+     "sha256": "63cd990bba906aa550ab26ead012ed73981f37d9240a424eca07dffa0c5f8b98",
+     "bytes": 42941
+    },
+    {
+     "path": "x/brick.orm.570768b3.jpg",
+     "sha256": "570768b3bfd64631076c2d1ddad82c641b98381070f08ae3b83589775eb21e9e",
+     "bytes": 90575
+    },
+    {
+     "path": "x/brick.normal.5fa63063.jpg",
+     "sha256": "5fa630632f86d18c45cd6a78b901dd745800250731646056bf1461ce9a817cf6",
+     "bytes": 59014
+    },
+    {
+     "path": "t/finish-brick.b25c5d03.webp",
+     "sha256": "b25c5d03c9a7702dd60a67eb38cbfb2d75ef28ea9f9ac93c64ba2c33d1c71d03",
+     "bytes": 40568
+    }
+   ]
+  },
+  {
+   "id": "finish-tile",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Tiles107",
+    "path": "ambientcg/Tiles107"
+   },
+   "files": [
+    {
+     "path": "x/tile.albedo.ec77c07d.jpg",
+     "sha256": "ec77c07dbb01e6d5dd88bb2195b88234c57ddf545cb0d8d39d54a86ed99dcfd9",
+     "bytes": 33180
+    },
+    {
+     "path": "x/tile.orm.fb16f6cf.jpg",
+     "sha256": "fb16f6cf4672cf79d527424f30a423c699cdad891af48b3368424c0e51fa7520",
+     "bytes": 50850
+    },
+    {
+     "path": "x/tile.normal.91b7dc83.jpg",
+     "sha256": "91b7dc839b9f522cc2145211b30c848ae6de8217e8c79a47d681cea029df5452",
+     "bytes": 36480
+    },
+    {
+     "path": "t/finish-tile.3065ee72.webp",
+     "sha256": "3065ee726a1ab306eea0a46c543369346ca2e8917f4e5263219c863977d325fd",
+     "bytes": 6536
+    }
+   ]
+  },
+  {
+   "id": "finish-marble",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Marble016",
+    "path": "ambientcg/Marble016"
+   },
+   "files": [
+    {
+     "path": "x/marble.albedo.611cad46.jpg",
+     "sha256": "611cad469362ea51a0d07785a6207d6b3c5036d660876e7d6aef76a5ae886a8e",
+     "bytes": 159274
+    },
+    {
+     "path": "x/marble.orm.744319a7.jpg",
+     "sha256": "744319a7fecb5c31a4980dff1ca14f1bd4b367469038d52fa1cecd57a8785fce",
+     "bytes": 24258
+    },
+    {
+     "path": "x/marble.normal.622a0f20.jpg",
+     "sha256": "622a0f2087f2d2159c37f588175923a3f67dc69265a966baf1890d116a8cb4be",
+     "bytes": 2299
+    },
+    {
+     "path": "t/finish-marble.d96a393a.webp",
+     "sha256": "d96a393acbfa407cc17d48c4b22866cf3d9681ae30f070609ba999fff3064bf9",
+     "bytes": 118168
+    }
+   ]
+  },
+  {
+   "id": "finish-concrete",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Concrete042A",
+    "path": "ambientcg/Concrete042A"
+   },
+   "files": [
+    {
+     "path": "x/concrete.albedo.24c61865.jpg",
+     "sha256": "24c61865875200393d0dd407f76f4c8b3a911c5c101b47d0ec14dc1d79c67003",
+     "bytes": 96637
+    },
+    {
+     "path": "x/concrete.orm.72251ab8.jpg",
+     "sha256": "72251ab8776927af157fae32f1381620d9aec996618dbbb68b3c10594983b507",
+     "bytes": 65329
+    },
+    {
+     "path": "x/concrete.normal.71c87595.jpg",
+     "sha256": "71c875957db7df90011e74eca384301761cd970e762047cc08f6fc71bbec3f43",
+     "bytes": 40882
+    },
+    {
+     "path": "t/finish-concrete.2183e590.webp",
+     "sha256": "2183e590c07cbc47ecf7da09b92f93203582b928043bd74002658ca98905a01b",
+     "bytes": 37788
+    }
+   ]
+  },
+  {
+   "id": "finish-stone",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/PavingStones070",
+    "path": "ambientcg/PavingStones070"
+   },
+   "files": [
+    {
+     "path": "x/stone.albedo.0f09a76e.jpg",
+     "sha256": "0f09a76e1fd49319613d75376543a902f36e8250b373bb3d1d9486edf0f0ee3e",
+     "bytes": 156696
+    },
+    {
+     "path": "x/stone.orm.1380ae55.jpg",
+     "sha256": "1380ae5574080c14acb25b64b3ee7ad4c6b325dfe99359362f1cf6b5949ab775",
+     "bytes": 67001
+    },
+    {
+     "path": "x/stone.normal.e7a5d12d.jpg",
+     "sha256": "e7a5d12d40d21593cf9926a8528faa12f74d4f650d182d64f97bc0a519b8a166",
+     "bytes": 121782
+    },
+    {
+     "path": "t/finish-stone.7ecdb93e.webp",
+     "sha256": "7ecdb93e0ba103b22cbf0c72ed1a985653be000bee88126ad8c96a7179c0dd5d",
+     "bytes": 103256
+    }
+   ]
+  },
+  {
+   "id": "finish-fabric",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Fabric026",
+    "path": "ambientcg/Fabric026"
+   },
+   "files": [
+    {
+     "path": "x/fabric.albedo.e5070141.jpg",
+     "sha256": "e507014167fd5f92385bfd0c617239973c2f111858de34783a983b4546b6aeb4",
+     "bytes": 147683
+    },
+    {
+     "path": "x/fabric.orm.b5bd1fef.jpg",
+     "sha256": "b5bd1fefcb83259868c9883e80cf040066307eee422d9bd97eb336bb6096c7e0",
+     "bytes": 51239
+    },
+    {
+     "path": "x/fabric.normal.2d264afa.jpg",
+     "sha256": "2d264afa202dbafe096f7d0f31eb688be2bb08014f52ae0fe0c092ec51f59ddc",
+     "bytes": 81486
+    },
+    {
+     "path": "t/finish-fabric.cf9a7898.webp",
+     "sha256": "cf9a78987cba334b589153020959180d5714a9ec45fd439022d77943a23ac2a2",
+     "bytes": 106494
+    }
+   ]
+  },
+  {
+   "id": "finish-plaster",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Plaster001",
+    "path": "ambientcg/Plaster001"
+   },
+   "files": [
+    {
+     "path": "x/plaster.albedo.e97b3e2a.jpg",
+     "sha256": "e97b3e2a1d7bf8d077d2234e9b71c3144f4500ec6de5088fe87ed9ab9b3ca668",
+     "bytes": 58671
+    },
+    {
+     "path": "x/plaster.orm.143ab80a.jpg",
+     "sha256": "143ab80aba3ad44c515b84f8e80837ef0a71100a3c4062dfef390c0ff84614ce",
+     "bytes": 27480
+    },
+    {
+     "path": "x/plaster.normal.94fed796.jpg",
+     "sha256": "94fed7960211f27a5cce5cfcf3311d3018407b773053ca6d9f3fdf253dadecbc",
+     "bytes": 87140
+    },
+    {
+     "path": "t/finish-plaster.89fd302d.webp",
+     "sha256": "89fd302d92f602d0ce3e169ff452a6fcba59148af400467e0b29128c207477e2",
+     "bytes": 16508
+    }
+   ]
+  },
+  {
+   "id": "finish-terrazzo",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Terrazzo009",
+    "path": "ambientcg/Terrazzo009"
+   },
+   "files": [
+    {
+     "path": "x/terrazzo.albedo.301b9b59.jpg",
+     "sha256": "301b9b59beead639fad9d865cea3855ea1946265ad8307e6b4135f185caf3172",
+     "bytes": 127533
+    },
+    {
+     "path": "x/terrazzo.orm.ded70e8e.jpg",
+     "sha256": "ded70e8e0d583e2ef42e3d2684584d35e2b1ddb8f590ad05b63a7a79c488c9f5",
+     "bytes": 49694
+    },
+    {
+     "path": "x/terrazzo.normal.d9024e22.jpg",
+     "sha256": "d9024e223285e7e2c259a04d49588f50d9a875f9cf778919ecb72943ea3626ba",
+     "bytes": 4056
+    },
+    {
+     "path": "t/finish-terrazzo.62964c18.webp",
+     "sha256": "62964c188f089592bd317f1ad242f53563ee72acba2541dc5cec9c8bbeb262c0",
+     "bytes": 78882
     }
    ]
   }

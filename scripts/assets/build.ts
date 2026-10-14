@@ -24,6 +24,7 @@ import { colliderFor, kebab, prettyName, tagsFor } from './describe';
 import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
 import { reencodedTextures } from './textures';
+import { buildPhotoFinishes } from './materials';
 
 /** Re-encoded realistic textures by source basename (see textures.ts). */
 let TEXTURES = new Map<string, Uint8Array>();
@@ -220,6 +221,7 @@ async function main(): Promise<void> {
   const nio = await io();
   rmSync(join(LIB, 'm'), { recursive: true, force: true });
   rmSync(join(LIB, 'h'), { recursive: true, force: true });
+  rmSync(join(LIB, 'x'), { recursive: true, force: true });
   const phRecords: PolyhavenRecord[] = JSON.parse(readFileSync(join(SOURCE_DIR, 'polyhaven', 'provenance.json'), 'utf8')) as PolyhavenRecord[];
   const phById = new Map(phRecords.map((r) => [r.id, r]));
   const phTextures: string[] = [];
@@ -292,6 +294,38 @@ async function main(): Promise<void> {
       source: { archive: `polyhaven:${id}`, path: relative(SOURCE_DIR, src) },
     });
   }
+  // Photo finishes (ambientCG) for `material.finish` surfaces.
+  for (const pf of await buildPhotoFinishes(sources.ambientcg)) {
+    const id = `finish-${pf.finish}`;
+    const albedo = writeLib('x', pf.finish, '.albedo', 'jpg', pf.albedo);
+    const orm = writeLib('x', pf.finish, '.orm', 'jpg', pf.orm);
+    const normal = writeLib('x', pf.finish, '.normal', 'jpg', pf.normal);
+    const thumb = writeLib('t', id, '', 'webp', pf.thumb);
+    const label = pf.finish.replace(/-/g, ' ');
+    built.push({
+      entry: {
+        id,
+        name: `${label.charAt(0).toUpperCase()}${label.slice(1)} (photo)`,
+        kind: 'material',
+        category: 'materials',
+        tags: tagsFor(id, label, 'materials', 'pbr texture surface finish', 'realistic'),
+        style: 'realistic',
+        pack: 'ambientcg',
+        size: [0, 0, 0],
+        tris: 0,
+        bytes: albedo.bytes + orm.bytes + normal.bytes,
+        lods: [],
+        thumb: thumb.path,
+        collider: { type: 'box' },
+        placement: 'floor',
+        facing: '+z',
+        material: { finish: pf.finish, tile: pf.tile, maps: { albedo: albedo.path, orm: orm.path, normal: normal.path } },
+        source: pf.source,
+      },
+      files: [albedo, orm, normal, thumb],
+      source: { archive: pf.source, path: pf.source },
+    });
+  }
   const entries = built.map((b) => b.entry);
   assignVariants(entries);
   // Hero generators made with the asset forge (scripts/assets/forge-heroes.ts).
@@ -327,6 +361,7 @@ async function main(): Promise<void> {
   const packs: CatalogPack[] = [
     ...sources.packs.map((p) => ({ id: p.id, title: `Kenney ${p.title}`, author: p.author, licence: 'CC0-1.0' as const, licenceUrl: p.licenceUrl, url: p.page, version: p.version })),
     { id: 'polyhaven', title: 'Poly Haven', author: 'Poly Haven contributors', licence: 'CC0-1.0', licenceUrl: 'https://polyhaven.com/license', url: 'https://polyhaven.com', version: '2026-10-14' },
+    { id: 'ambientcg', title: 'ambientCG', author: 'ambientCG (Lennart Demes)', licence: 'CC0-1.0', licenceUrl: 'https://docs.ambientcg.com/license/', url: 'https://ambientcg.com', version: '2026-10-15' },
     { id: 'aether-forge', title: 'Aether forge originals', author: 'Aether (procedural code written with an AI model)', licence: 'MIT', licenceUrl: 'https://opensource.org/license/mit', url: 'https://opensource.org/license/mit', version: '1' },
   ];
   const catalog = Catalog.parse({ version: 1, base: '/assets/lib/', packs, entries: entries.sort((a, b) => (a.category === b.category ? (a.id < b.id ? -1 : 1) : a.category < b.category ? -1 : 1)) });
@@ -336,6 +371,7 @@ async function main(): Promise<void> {
     licencePolicy: 'Only CC0-1.0 and CC-BY-4.0 assets are accepted; NC, ND, editorial-only, personal-use-only or unclear licences are never shipped.',
     sources: [
       ...sources.packs.map((p) => ({ id: p.id, provider: 'Kenney', title: p.title, version: p.version, author: p.author, licence: p.licence, licenceUrl: p.licenceUrl, page: p.page, archive: p.url, sha256: p.sha256, retrieved: p.retrieved })),
+      ...(sources.ambientcg?.materials ?? []).map((m) => ({ id: `ambientcg-${m.id}`, provider: 'ambientCG', title: m.id, version: '1K-JPG', author: 'ambientCG (Lennart Demes)', licence: 'CC0-1.0', licenceUrl: 'https://docs.ambientcg.com/license/', page: `https://ambientcg.com/view?id=${m.id}`, archive: `https://ambientcg.com/get?file=${m.id}_1K-JPG.zip`, sha256: m.sha256 ?? null, retrieved: '2026-10-15', usedFor: `finish "${m.finish}"` })),
       { id: 'polyhaven', provider: 'Poly Haven', title: 'Poly Haven models and HDRIs', author: 'see per-asset authors', licence: 'CC0-1.0', licenceUrl: 'https://polyhaven.com/license', page: 'https://polyhaven.com', archive: 'https://api.polyhaven.com (per-file MD5 verified)', retrieved: '2026-10-14' },
     ],
     assets: built.map((b) => ({ id: b.entry.id, pack: b.entry.pack, licence: 'CC0-1.0', authors: b.entry.authors ?? null, source: b.source, files: b.files })),

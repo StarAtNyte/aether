@@ -57,7 +57,7 @@ export const POSTER_DEPTH = 0.02;
 /** Everything a consumer needs to place, draw and collide an asset. */
 export interface AssetInfo {
   id: string;
-  kind: 'model' | 'image' | 'hdri' | 'generator';
+  kind: 'model' | 'image' | 'hdri' | 'generator' | 'material';
   /** Natural size in metres (before `fitSize`). */
   size: Vec3;
   collider: CatalogCollider;
@@ -116,7 +116,7 @@ export function fitScale(size: Readonly<Vec3>, fitSize: number | undefined): num
 /** Displayed size of an asset shape in metres, or null when the asset is unknown. */
 export function assetShapeSize(shape: Pick<AssetShape, 'id' | 'variant' | 'fitSize'>): Vec3 | null {
   const info = assetInfo(effectiveAssetId(shape));
-  if (!info || info.kind === 'hdri') return null;
+  if (!info || info.kind === 'hdri' || info.kind === 'material') return null;
   const s = fitScale(info.size, shape.fitSize);
   return [info.size[0] * s, info.size[1] * s, info.size[2] * s];
 }

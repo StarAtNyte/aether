@@ -263,7 +263,10 @@ async function writeScriptTool(ctx: ExecutorContext, input: z.infer<typeof ToolI
 async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>): Promise<ToolOutcome> {
   const catalog = await loadCatalog();
   if (catalog.entries.length === 0) return { content: 'The asset library is not available here: use built-in generators or primitives.', isError: false, events: [], edited: false };
-  const hits = searchAssets(catalog, { text: input.query, limit: input.limit, ...(input.category ? { category: input.category } : {}) });
+  // Surfaces are applied through material.finish (their photographed maps load automatically).
+  const hits = searchAssets(catalog, { text: input.query, limit: input.limit + 4, ...(input.category ? { category: input.category } : {}) })
+    .filter((h) => h.entry.kind !== 'material')
+    .slice(0, input.limit);
   if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". Use a built-in generator, request_asset, or primitives.`, isError: false, events: [], edited: false };
   const lines = hits.map(({ entry: e }) => {
     const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');

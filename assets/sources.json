@@ -279,20 +279,18 @@
       },
       {
         "finish": "concrete",
-        "id": "Concrete026",
-        "sha256": "72ac6b14736920468483b6d5c88c029addaca68cb91a5258c5cd91a37bcf0415"
+        "id": "Concrete042A",
+        "sha256": "07f5a1d1389bd1ecef41a528c5a0b2acee571627b27b6de0b111fef0d28610e4"
       },
       {
         "finish": "stone",
-        "id": "PavingStones092",
-        "tile": 1.55,
-        "sha256": "4e2fb75243e38de8c23cc7740f2ef34ff933f30994590b221631b13167feedf5"
+        "id": "PavingStones070",
+        "sha256": "84be05ad935c2a8ea0dd3b82dd18c9e1faf7eeae222b85d96beb14ed16276132"
       },
       {
         "finish": "fabric",
-        "id": "Fabric048",
-        "tile": 0.4,
-        "sha256": "7f97ed27675f06a164713feb0704b80e57d8597f395b03ad979e763db57193ee"
+        "id": "Fabric026",
+        "sha256": "b47a2965c035772400524000926be3afe2dd9afc2fff052346e1c264476afd1b"
       },
       {
         "finish": "plaster",
