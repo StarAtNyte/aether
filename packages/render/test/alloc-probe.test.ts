@@ -200,9 +200,17 @@ describe('render loop allocation probe', () => {
     cam.position.set(20, 15, 20);
     cam.updateMatrixWorld();
     view.update(cam, 0);
-    for (let i = 0; i < 10; i++) await Promise.resolve();
+    // Let the sectioned walls finish rebuilding, then settle the merges before measuring.
+    await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+    const pending: Array<Promise<void>> = [];
+    sync.forEachNode((n) => pending.push(n.ready));
+    await Promise.all(pending);
     sync.root.updateMatrixWorld(true);
-    sync.updateBatches();
+    for (let i = 0; i < 3; i++) {
+      view.update(cam, 0.016);
+      sync.updateBatches();
+    }
     const r = await probeAllocations(
       () => {
         view.update(cam, 0.016);

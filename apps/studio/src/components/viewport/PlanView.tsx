@@ -81,14 +81,22 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
     return () => ro.disconnect();
   }, []);
 
-  // Fit when the plan opens, the storey changes or the building changes.
-  const fitKey = `${building ?? ''}|${a.level}`;
+  // Fit when the plan opens, the storey or building changes, and on resizes until the user pans or zooms.
+  const userMoved = useRef(false);
+  const target = `${building ?? ''}|${a.level}`;
+  const lastTarget = useRef('');
+  if (lastTarget.current !== target) {
+    lastTarget.current = target;
+    userMoved.current = false;
+  }
+  const fitKey = `${target}|${userMoved.current ? 'user' : `${size[0]}x${size[1]}`}`;
   const fitted = useRef('');
+  const margin = Math.min(72, Math.max(24, Math.min(size[0], size[1]) * 0.08));
   useEffect(() => {
-    if (!plan2d || fitted.current === fitKey) return;
+    if (!plan2d || fitted.current === fitKey || userMoved.current) return;
     fitted.current = fitKey;
-    setCam(fitPlan(plan2d.bounds, size[0], size[1], 72));
-  }, [plan2d, fitKey, size]);
+    setCam(fitPlan(plan2d.bounds, size[0], size[1], margin));
+  }, [plan2d, fitKey, size, margin]);
 
   // Leaving a tool drops its draft.
   useEffect(() => {
@@ -143,7 +151,7 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
   }, [draft, dragStart, a.planTool, selected, studio, commitPolygon]);
 
   if (!a.building || !a.plan) return null;
-  const view = cam ?? (plan2d ? fitPlan(plan2d.bounds, size[0], size[1], 72) : { cx: 0, cz: 0, scale: 40 });
+  const view = cam ?? (plan2d ? fitPlan(plan2d.bounds, size[0], size[1], margin) : { cx: 0, cz: 0, scale: 40 });
   const vb = viewBox(view, size[0], size[1]);
   const px = 1 / view.scale;
   const snap = (p: P2): P2 => snapPlanPoint(p, level);
@@ -188,6 +196,7 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
       const dx = e.clientX - pan.x;
       const dy = e.clientY - pan.y;
       panRef.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      userMoved.current = true;
       setCam(panBy(view, dx, dy));
       return;
     }
@@ -212,6 +221,7 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
   const onWheel = (e: ReactWheelEvent<SVGSVGElement>): void => {
     const r = e.currentTarget.getBoundingClientRect();
     const factor = Math.exp(-Math.max(-200, Math.min(200, e.deltaY)) * 0.0022);
+    userMoved.current = true;
     setCam(zoomAt(view, factor, e.clientX - r.left, e.clientY - r.top, size[0], size[1]));
   };
 
@@ -401,7 +411,10 @@ export const PlanView = memo(function PlanView(): ReactElement | null {
           </button>
         ))}
         <span className="plan-tools__sep" aria-hidden="true" />
-        <button type="button" className="plan-tools__btn" aria-label="Fit plan" data-tip="Fit plan" data-tip-pos="right" onClick={() => plan2d && setCam(fitPlan(plan2d.bounds, size[0], size[1], 72))}>
+        <button type="button" className="plan-tools__btn" aria-label="Fit plan" data-tip="Fit plan" data-tip-pos="right" onClick={() => {
+            userMoved.current = false;
+            if (plan2d) setCam(fitPlan(plan2d.bounds, size[0], size[1], margin));
+          }}>
           <Icon name="maximize" />
         </button>
       </div>

@@ -32,6 +32,10 @@ with your own API key, with your own Codex login through that same command
 | --- | --- | --- | --- |
 | ![Two-bedroom apartment in the studio render: a doll's-house cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-overview.png) | ![The apartment's living room through the cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-room.png) | ![Two-storey villa with the storeys lifted apart](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-exploded.png) | ![Floor plan: poche walls, door swings, room chips with areas, dimensions](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-plan.png) |
 
+| Villa living room (one storey shown) | Café | Living room with a fireplace, at night | Villa, section cut |
+| --- | --- | --- | --- |
+| ![The villa's open living room, kitchen and stair](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-room.png) | ![Café with counter, tables and washroom](docs/screenshots/gallery/arch-a-small-caf-interior-room.png) | ![Scandinavian living room at night, lamps on](docs/screenshots/gallery/arch-scandinavian-living-room-with-a-fireplace-night.png) | ![Section through the villa's upper floor](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-section.png) |
+
 | Projects home | Starter scene in the editor | Play mode | Phone |
 | --- | --- | --- | --- |
 | ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |

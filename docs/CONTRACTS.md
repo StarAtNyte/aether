@@ -1325,6 +1325,13 @@ createPostPipeline(renderer, scene, camera, bloom, quality = 'standard')   // Po
 SceneSync.restoreNode(id)            // drop one node's runtime overrides (view modes undo their own)
 SceneSync.setArchLampScale(scale)    // architectural lamps (arch.role 'light') dimmed in daylight; off below LAMP_CUTOFF (0.2)
 daylightLampFactor(sunElevationDeg)  // 1 at night → DAYLIGHT_LAMP_FACTOR (0.14) in full daylight (smoothstep, −3°..22°)
+StaticMerges                         // building parts (static `arch` entities without behaviours) merged per storey and
+                                     // material (≥ MIN_MERGE 3 meshes, ≤ 400 k vertices per buffer) under the storey object;
+                                     // members stay on BATCHED_LAYER (pickable) and are evicted when they move, change
+                                     // material, rebuild or hide; merged buffers are owned and disposed on regroup / clear
+SceneSync.setMergesSuspended(on)     // the renderer pauses merging while content grows in
+SceneSync.batchStats() → { batches, drawCallsSaved (instancing + merges), merges }
+mergeGeometries(members)             // pure: positions / normals / uvs / colours into the parent frame
 ```
 
 Frame fitting: worlds with buildings frame from 38° elevation, without sky
@@ -1360,6 +1367,8 @@ components/viewport/ArchBar.tsx   3D | Plan · walls · storeys · x-ray · sect
 components/viewport/PlanView.tsx  SVG floor plan: poche walls, doors with swing arcs, windows, stairs, furniture,
                   room chips (dot · name · m²), dimensions; tools select / rectangle / polygon / door / window; snapping
 lib/planView.ts   fitPlan / zoomAt / panBy / viewBox / roomColors / areaLabel / dragRect / closesPolygon (pure)
+lib/labels.ts     roomLabels(world, level?) → name · m² chips over each room (cutaway / walls down / section / one storey)
+state/archUi.ts   sectionLevel(levels, height) → the storey a section cuts through (its rooms are labelled)
 ```
 
 E2E: `npm run e2e:arch` (Chromium WebGPU, Chromium WebGL2, Firefox WebGL2):

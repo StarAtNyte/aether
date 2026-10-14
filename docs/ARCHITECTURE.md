@@ -1067,6 +1067,15 @@ mode (no post budget) and pipeline failures fall back to the realtime look.
 Lamps (`arch.role` "light") are dimmed by daylight and switched off in full
 sun, which keeps a dozen point lights from costing per-pixel work.
 
+**Draw calls.** Every wall, slab and piece of furniture is its own entity,
+so a furnished apartment is several hundred meshes. `StaticMerges` merges
+the static ones per storey and material into a few dozen meshes parented to
+the storey (exploded and single-storey views move and hide them for free);
+the entities' own meshes stay in the scene on a raycast-only layer, so
+picking, selection, physics and overrides are untouched. A member that
+moves, changes material, rebuilds or hides is evicted and draws itself; its
+group is re-merged without it. Merging pauses while content grows in.
+
 **Studio.** The building bar switches 3D and the SVG floor plan (read back
 with `floorPlan2d`, so manual edits show up), wall and storey modes, x-ray,
 section, the daylight study (an environment override) and the studio
