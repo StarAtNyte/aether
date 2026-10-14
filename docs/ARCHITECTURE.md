@@ -1209,3 +1209,45 @@ flowchart LR
 - **History and versions.** Every publish is recorded in an IndexedDB
   library of its own (files kept for re-download within a budget), and the
   project gets a version snapshot that restores as one undoable change.
+
+## 21. Default projects and flagship worlds
+
+The projects home ships finished worlds as default projects. They are data,
+not code paths: one manifest, two static files per entry, and the same
+offline planner that answers prompts.
+
+```text
+apps/studio/src/showcase/manifest.ts   SHOWCASE: slug, title, prompt, kind, curation, origin
+        │  (eager: a few KB, part of the home bundle)
+        ├── public/templates/<slug>.webp          card thumbnail, ≤ 30 KB, eager on the home page
+        └── public/templates/worlds/<slug>.json   saved world, fetched only when opened
+                    ▲
+npm run showcase:bake   agent loop + mock provider on each prompt → validate → Rapier/logic verify → write
+npm run showcase:thumbs flagship covers from art-directed cameras (docs/screenshots/showcase)
+```
+
+- **Curation.** `curation: 'featured'` puts an entry in the home row, at the
+  top of the Templates page and in the agent's empty state; `'candidate'`
+  lists it under "More worlds"; `'hidden'` keeps the files and old links
+  (`#/new/<slug>`) without showing it. Array order is display order.
+- **Flagships are planner output.** Each flagship is a deterministic plan in
+  `packages/agent/src/providers/mock/showcase/` composed from the
+  framework's parts (terrain variants, instanced scatter with hand-placed
+  points, library generators and assets, behaviours, rules, joints and
+  motors, `build_architecture`, voxel edits) with verification tests and a
+  title card. Typing the card's prompt in the chat rebuilds the same world;
+  the baked file is that output, re-verified.
+- **Opening a template** fetches the saved world through the import path
+  (size cap, timeout, prototype-pollution guard, schema validation), creates
+  the project with the card's thumbnail and a chat that starts with the
+  original prompt, and falls back to rebuilding from the prompt offline when
+  the file is unavailable.
+- **Title cards.** A world's `intro` holds the play session before its first
+  tick (physics and logic do not advance, the scene keeps rendering) until
+  the player presses Start.
+- **Proof.** `packages/agent/test/showcase.test.ts` builds every flagship
+  plan; `apps/studio/test/showcase.test.ts` checks the manifest against the
+  shipped files; `apps/studio/test/showcasePlaytest.test.ts` plays the games
+  with a bot (capsule or vehicle, keyboard-like input, real physics and
+  logic) to the win screen; `npm run e2e:showcase` opens and plays every
+  featured world in Chromium and Firefox.

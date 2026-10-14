@@ -1,7 +1,7 @@
 /**
  * The prompt set shared by `npm run smoke` (headless agent + verification)
  * and `npm run gallery` (browser screenshots): the showcase themes plus
- * every example-gallery card.
+ * every shown template (flagships and saved gallery worlds).
  */
 import { EXAMPLE_PROMPTS } from '../apps/studio/src/lib/examples';
 
@@ -20,8 +20,8 @@ export const ASSET_PROMPTS: readonly string[] = Object.freeze([
   'a town plaza with an ornate fountain, a gazebo and a vintage car',
 ]);
 
-/** Default smoke/gallery prompts, in report order. */
-export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
+/** Default smoke/gallery prompts, in report order (exact duplicates removed). */
+export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([...new Set([
   'a cozy forest camp with a campfire and tents',
   'a domino run that knocks over a bell',
   'a coin collecting game: grab 8 coins before time runs out',
@@ -34,4 +34,4 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
   ...ARCH_PROMPTS,
   ...ASSET_PROMPTS,
-]);
+])]);

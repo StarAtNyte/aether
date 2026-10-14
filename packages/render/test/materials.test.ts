@@ -57,6 +57,25 @@ describe('resolveMaterial', () => {
     expect(resolveMaterial({}, { hasVertexColors: true }).vertexColors).toBe(true);
     expect(resolveMaterial({ vertexColors: false }, { hasVertexColors: true }).vertexColors).toBe(false);
   });
+
+  // Regression: painted generator parts were multiplied by their preset colour (pink cherry
+  // blossom rendered olive green, stone castles and trees near black).
+  it('uses a white base for generator parts whose albedo is in their vertex colours', () => {
+    const leaf = resolveMaterial({ preset: 'leaf', vertexColors: true }, { hasVertexColors: true });
+    expect(leaf.color).toBe('#ffffff');
+    expect(leaf.vertexColors).toBe(true);
+    expect(leaf.roughness).toBe(MATERIAL_PRESETS.leaf.roughness);
+    // An explicit colour still tints the vertex colours (user recolouring).
+    expect(resolveMaterial({ preset: 'leaf', vertexColors: true, color: '#ff0000' }, { hasVertexColors: true }).color).toBe('#ff0000');
+    // Geometry without colours keeps the preset colour.
+    expect(resolveMaterial({ preset: 'leaf', vertexColors: true }).color).toBe(MATERIAL_PRESETS.leaf.color);
+    // Surfaces that merely allow vertex colours (the ground plane's tint variation) keep the preset colour.
+    expect(resolveMaterial({ preset: 'grass' }, { hasVertexColors: true }).color).toBe(MATERIAL_PRESETS.grass.color);
+    // Emissive presets that follow their colour still glow in the preset colour.
+    const neon = resolveMaterial({ preset: 'neon', vertexColors: true }, { hasVertexColors: true });
+    expect(neon.color).toBe('#ffffff');
+    expect(neon.emissive).toBe(MATERIAL_PRESETS.neon.color);
+  });
 });
 
 describe('materialKey', () => {

@@ -33,7 +33,7 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
           <span className="card__title">{template.title}</span>
           <span className="card__label">{TEMPLATE_KIND_LABEL[template.kind]}</span>
         </span>
-        <span className="card__desc" title={template.description}>
+        <span className="card__desc" title={`${template.description}\nPrompt: “${template.prompt}”`}>
           {template.description}
         </span>
       </span>

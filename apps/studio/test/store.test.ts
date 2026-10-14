@@ -64,7 +64,7 @@ describe('studio store', () => {
     s.setGame({ status: 'won', text: 'gg' });
     expect(store.getState().game.status).toBe('won');
     s.resetGame();
-    expect(store.getState().game).toEqual({ status: 'playing', text: '', hud: {}, time: 0 });
+    expect(store.getState().game).toEqual({ status: 'playing', text: '', hud: {}, time: 0, intro: false });
     s.setVerify({ status: 'running' });
     expect(store.getState().verify.status).toBe('running');
     s.setOutlinerFilter('y'.repeat(500));

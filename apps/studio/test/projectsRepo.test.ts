@@ -195,6 +195,21 @@ describe('project creation flows', () => {
     if (r.ok) expect(takeRun(r.value.id)).toMatchObject({ offline: true });
     expect((await createFromTemplate(repo, 'nope')).ok).toBe(false);
   });
+  it('creates from a template’s saved world with its prompt and thumbnail (no agent run)', async () => {
+    const { repo } = repoWith();
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const file = (rel: string): Uint8Array<ArrayBuffer> => new Uint8Array(readFileSync(fileURLToPath(new URL(`../public/templates/${rel}`, import.meta.url))));
+    const fetchImpl = async (url: string): Promise<Response> => new Response(url.endsWith('.json') ? file('worlds/coin-island.json') : file('coin-island.webp'));
+    const r = await createFromTemplate(repo, 'coin-island', fetchImpl);
+    expect(r.ok && r.value).toMatchObject({ name: 'Coin island', template: 'coin-island' });
+    if (!r.ok) return;
+    expect(takeRun(r.value.id)).toBeNull();
+    const opened = await repo.open(r.value.id);
+    expect(opened.ok && Object.keys(opened.value.world.entities).length).toBeGreaterThan(10);
+    expect(opened.ok && opened.value.chat[0]).toMatchObject({ role: 'user', text: 'A coin collecting game on a tropical island — collect 10 coins in 60 seconds' });
+    expect((await repo.thumbnail(r.value.id))?.type).toBe('image/webp');
+  });
   it('creates from a prompt with a queued live run and a short name', async () => {
     const { repo } = repoWith();
     const r = await createFromPrompt(repo, 'Build a lighthouse on a stormy cliff with crashing waves');

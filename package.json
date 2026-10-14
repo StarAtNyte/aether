@@ -2,7 +2,7 @@
   "name": "aether-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "Aether \u2014 an AI-native WebGL/WebGPU framework that turns natural language into physically verified, interactive 3D worlds.",
+  "description": "Aether — an AI-native WebGL/WebGPU framework that turns natural language into physically verified, interactive 3D worlds.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -46,7 +46,10 @@
     "assets:thumbs": "tsx scripts/assets/thumbs.ts",
     "e2e:assets": "tsx tests/e2e/assets.e2e.ts",
     "e2e:ux": "tsx tests/e2e/ux.e2e.ts",
-    "e2e:publish": "tsx tests/e2e/publish.e2e.ts"
+    "e2e:publish": "tsx tests/e2e/publish.e2e.ts",
+    "showcase:bake": "tsx scripts/showcase/bake.ts",
+    "showcase:thumbs": "tsx tests/e2e/showcase.e2e.ts --capture",
+    "e2e:showcase": "tsx tests/e2e/showcase.e2e.ts"
   },
   "engines": {
     "node": ">=22"

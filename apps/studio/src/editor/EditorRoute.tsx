@@ -9,6 +9,7 @@ import { memo, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useApp } from '../app/appContext';
 import { StudioProvider } from '../app/context';
 import { Studio } from '../engine/Studio';
+import { settleWithin } from '../lib/deadline';
 import { createLogger } from '../lib/log';
 import { takeRun } from '../projects/pending';
 import type { ProjectRepo } from '../projects/repo';
@@ -22,6 +23,8 @@ const log = createLogger('editor');
 const THUMB_AFTER_TURN_MS = 1600;
 /** Delay after opening a project without a thumbnail. */
 const THUMB_FIRST_MS = 2500;
+/** Longest wait for a fresh thumbnail when leaving the editor (navigation never hangs on it). */
+const LEAVE_THUMB_MS = 2500;
 
 declare global {
   interface Window {
@@ -165,7 +168,8 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
     if (!studio || !repo) return null;
     const settle = async (): Promise<void> => {
       await studio.flush();
-      await saveThumbnail(studio, repo, id);
+      // Best effort: a heavy world on a slow GPU must not hold the navigation (the project keeps its last thumbnail).
+      await settleWithin(saveThumbnail(studio, repo, id), LEAVE_THUMB_MS);
     };
     return {
       projectId: id,

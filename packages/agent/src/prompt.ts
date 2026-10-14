@@ -70,7 +70,7 @@ Shape = {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone"|"capsule"|
   | {kind:"asset", id, variant?, fitSize?, animation?, fallback?: primitive|procedural shape} — real-size library model (base y=0, centered x/z; ids via search_assets); characters/animals animate (idle/walk/run) from their movement
   | {kind:"none"} (groups, lights, invisible zones)
 Only entities with \`physics\` collide. Scenery players should bump into: physics {body:"static"}. Things that fall/roll/topple: "dynamic". Moved by behaviors: "kinematic" or no physics. Zones/triggers: physics {body:"static", sensor:true}.
-Environment: sky "day"|"dawn"|"sunset"|"night"|"overcast"|"space"|"studio", hdri?: library sky id (photo sky + light), timeOfDay 0..24, fog {color, density 0..1 (0.005 light .. 0.04 thick)}|null, weather "clear"|"rain"|"snow"|"dust"|"fireflies", ambientIntensity, sunIntensity, ground {material, size}|null, gravity [0,-9.81,0], bloom 0..3, exposure.
+Environment: sky "day"|"dawn"|"sunset"|"night"|"overcast"|"space"|"studio", hdri?: library sky id (photo sky + light), timeOfDay 0..24, fog {color, density 0..1 (0.005 light .. 0.04 thick)}|null, weather "clear"|"rain"|"snow"|"dust"|"fireflies"|"petals"|"leaves", ambientIntensity, sunIntensity, ground {material, size}|null, gravity [0,-9.81,0], bloom 0..3, exposure.
 Player: mode "orbit"(spectator camera) | "thirdPerson" | "firstPerson" | "vehicle" (with controls: entity id), spawn [x,y,z], moveSpeed, jumpSpeed.
 World: state {score: 0, ...} global variables; hud [{key, label}] shows state on screen; tests (below).`;
 
@@ -216,7 +216,7 @@ Meters, Y up, ground at y=0, rotations in degrees, colors "#rrggbb", ids are uni
 Entity = {id, name?, tags?, transform?: {position:[x,y,z], rotation?:[x,y,z], scale?:[x,y,z]}, shape?, material?: {preset?, color?, emissive?}, physics?: {body:"static"|"dynamic"|"kinematic"}, light?: {type:"point", color, intensity, range}, behaviors?: [{type, params}]}
 Shape = {kind:"procedural", generator:id, params?:{color?, size?}} (base at y=0) | {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone", size:[w,h,d]} (centered: a 1 m box on the ground has y=0.5) | {kind:"scatter", of:<shape>, count, area:[w,d], minSpacing?} (many copies)`,
     `## Patches
-{"op":"add","entity":{...}} | {"op":"update","id","set":{...}} | {"op":"remove","id"} | {"op":"setEnvironment","set":{"sky":"day"|"dawn"|"sunset"|"night"|"overcast"|"space","timeOfDay"?,"fog"?:{"color","density"},"weather"?:"rain"|"snow"|"fireflies"}} | {"op":"setPlayer","set":{"mode":"orbit"|"thirdPerson","spawn":[x,y,z]}} | {"op":"setMeta","name"}`,
+{"op":"add","entity":{...}} | {"op":"update","id","set":{...}} | {"op":"remove","id"} | {"op":"setEnvironment","set":{"sky":"day"|"dawn"|"sunset"|"night"|"overcast"|"space","timeOfDay"?,"fog"?:{"color","density"},"weather"?:"rain"|"snow"|"fireflies"|"petals"|"leaves"}} | {"op":"setPlayer","set":{"mode":"orbit"|"thirdPerson","spawn":[x,y,z]}} | {"op":"setMeta","name"}`,
     `## Generators\n${ids(catalogs.generators)}${library ? `, ${library}` : ''}`,
     `## Behaviors\n${behaviors}`,
     `## Example\nRequest: "${COMPACT_EXAMPLE.request}"\napply_patches ${stableStringify({ message: COMPACT_EXAMPLE.message, patches: COMPACT_EXAMPLE.patches })}`,

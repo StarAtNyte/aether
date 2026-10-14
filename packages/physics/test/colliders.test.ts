@@ -73,6 +73,25 @@ describe('explicit collider kinds', () => {
   });
 });
 
+// Regression: a kart racing over a canyon floor (a flat heightfield) caught the seams between
+// its triangles and was kicked metres into the air, then rolled over in the next hairpin.
+describe('heightfield internal edges', () => {
+  it('lets a fast box slide across a flat heightfield without being kicked upward', async () => {
+    const pw = await make([
+      { id: 'canyon', shape: { kind: 'procedural', generator: 'terrain', params: { variant: 3, size: 400, height: 40, resolution: 128 } }, physics: { body: 'static', friction: 0.9 } },
+      { id: 'sled', shape: { kind: 'primitive', primitive: 'box', size: [1.6, 1, 2.4] }, transform: { position: [0, 0.5, 150] }, physics: { body: 'dynamic', mass: 160, friction: 0.05, initialVelocity: [0, 0, -26] } },
+    ]);
+    let maxY = 0;
+    for (let i = 0; i < 360; i++) {
+      pw.stepFixed();
+      maxY = Math.max(maxY, pw.getState('sled')?.position[1] ?? 0);
+    }
+    // Rests at its half height (0.5 m); no hops.
+    expect(maxY).toBeLessThan(0.62);
+    expect(pw.getState('sled')?.position[2]).toBeLessThan(120);
+  });
+});
+
 describe('collider providers and fallbacks', () => {
   it('prefers provider colliders and survives malformed / throwing / huge providers', async () => {
     const provider = (e: Entity): ColliderDesc[] | undefined => {

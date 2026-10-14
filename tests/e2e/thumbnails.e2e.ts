@@ -2,9 +2,10 @@
  * Thumbnail renderer: produces the small WebP images the studio ships in
  * `apps/studio/public/`:
  *
- *  - `templates/<slug>.webp` (640×360, ≤ 30 KB): each built-in template is
- *    created through the real "new from template" route, built by the
- *    offline planner, framed by the editor and captured from the renderer;
+ *  - `templates/<slug>.webp` (640×360, ≤ 30 KB), only with `--templates`:
+ *    each built-in template is opened through the real "new from template"
+ *    route, framed by the editor and captured from the renderer (the shipped
+ *    cards come from `npm run showcase:thumbs` instead);
  *  - `palette/<id>.webp` (192×192, ≤ 12 KB): every asset with geometry is
  *    placed alone in a neutral studio scene and captured close up.
  *
@@ -150,7 +151,9 @@ try {
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`PAGE ERROR ${e.message}`));
-  if (!ONLY_PALETTE) await renderTemplates(page, server.url);
+  // Template cards are made by `npm run showcase:thumbs` (flagship covers) and
+  // `tsx tests/e2e/showcase.e2e.ts --gallery` (gallery shots); `--templates` re-renders them from the editor's framing.
+  if (ONLY_TEMPLATES) await renderTemplates(page, server.url);
   if (!ONLY_TEMPLATES) await renderPalette(page, server.url);
   log('done');
 } finally {

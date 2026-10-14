@@ -56,7 +56,9 @@ export function toRapierDesc(c: LocalCollider): RapierColliderDesc | null {
     case 'heightfield':
       // procgen stores heights X-major (heights[ix * (rows + 1) + iz]) = Rapier's column-major layout
       // with rows along Z and columns along X, so it is passed through unchanged.
-      desc = R.ColliderDesc.heightfield(s.rows, s.cols, s.heights, { x: s.scale[0], y: s.scale[1], z: s.scale[2] });
+      // FIX_INTERNAL_EDGES: without it, fast bodies catch the seams between the triangles of a
+      // flat heightfield and are kicked into the air (a kart hopping metres high on a flat floor).
+      desc = R.ColliderDesc.heightfield(s.rows, s.cols, s.heights, { x: s.scale[0], y: s.scale[1], z: s.scale[2] }, R.HeightFieldFlags.FIX_INTERNAL_EDGES);
       break;
   }
   if (!desc) return null;

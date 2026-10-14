@@ -248,6 +248,14 @@ export class Draft {
     else this.doc.voxel = value;
   }
 
+  /** Set (or with `undefined`, remove) the title card. */
+  setIntro(value: WorldDoc['intro']): void {
+    if (value === this.doc.intro) return;
+    this.dirty = true;
+    if (value === undefined) delete this.doc.intro;
+    else this.doc.intro = value;
+  }
+
   /** Assign a top-level value-like field. */
   set<K extends 'environment' | 'player' | 'hud' | 'name' | 'description' | 'seed' | 'rules' | 'tests' | 'state'>(key: K, value: WorldDoc[K]): void {
     this.dirty = true;

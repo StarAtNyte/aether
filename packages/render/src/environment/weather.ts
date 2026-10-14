@@ -1,20 +1,22 @@
 /**
- * Weather particles (rain, snow, dust, fireflies) as ONE instanced mesh of a
- * tiny unlit shape. Instancing (rather than `Points`) keeps particle size
+ * Weather particles (rain, snow, dust, fireflies, petals, leaves) as ONE
+ * instanced mesh of a tiny unlit shape. Instancing (rather than `Points`) keeps particle size
  * consistent on WebGPU, where point primitives are always 1 px. Particles
  * live in a box that wraps around the camera; each frame only the
- * translation (and for fireflies the scale) slots of preallocated matrices
- * are rewritten — no allocations.
+ * translation (for fireflies the scale, for petals and leaves the rotation)
+ * slots of preallocated matrices are rewritten — no allocations.
  */
 import {
   AdditiveBlending,
   BoxGeometry,
+  DoubleSide,
   DynamicDrawUsage,
   IcosahedronGeometry,
   InstancedMesh,
   MeshBasicMaterial,
   NormalBlending,
   OctahedronGeometry,
+  PlaneGeometry,
   type BufferGeometry,
   type Camera,
 } from 'three';
@@ -38,6 +40,8 @@ export interface WeatherConfig {
   additive: boolean;
   /** Pulsing size (fireflies). */
   flicker: boolean;
+  /** Tumbling flat flakes (petals, leaves): rotation speed in radians per second (0 = none). */
+  tumble?: number;
 }
 
 /** Per-kind configuration table. */
@@ -46,6 +50,8 @@ export const WEATHER_CONFIGS: Readonly<Record<Exclude<WeatherKind, 'clear'>, Wea
   snow: { count: 3500, half: [26, 14, 26], velocity: [0.3, -1.1, 0.15], sway: 0.45, swayHz: 0.35, color: '#ffffff', opacity: 0.9, additive: false, flicker: false },
   dust: { count: 1400, half: [24, 8, 24], velocity: [1.2, 0.05, 0.4], sway: 0.35, swayHz: 0.2, color: '#d8c39a', opacity: 0.45, additive: false, flicker: false },
   fireflies: { count: 260, half: [20, 3, 20], velocity: [0, 0, 0], sway: 0.6, swayHz: 0.25, color: '#e8ff7a', opacity: 1, additive: true, flicker: true },
+  petals: { count: 1400, half: [24, 10, 24], velocity: [0.9, -0.55, 0.35], sway: 0.7, swayHz: 0.3, color: '#ffc3d6', opacity: 0.95, additive: false, flicker: false, tumble: 2.4 },
+  leaves: { count: 500, half: [22, 9, 22], velocity: [1.1, -0.9, 0.3], sway: 0.9, swayHz: 0.22, color: '#d9782d', opacity: 0.95, additive: false, flicker: false, tumble: 1.8 },
 });
 
 const SEED = 0x7e47e3;
@@ -58,6 +64,10 @@ function particleGeometry(kind: Exclude<WeatherKind, 'clear'>): BufferGeometry {
       return new IcosahedronGeometry(0.035, 0);
     case 'dust':
       return new OctahedronGeometry(0.02, 0);
+    case 'petals':
+      return new PlaneGeometry(0.1, 0.07);
+    case 'leaves':
+      return new PlaneGeometry(0.11, 0.07);
     default:
       return new OctahedronGeometry(0.045, 0);
   }
@@ -66,6 +76,28 @@ function particleGeometry(kind: Exclude<WeatherKind, 'clear'>): BufferGeometry {
 function wrap(v: number, half: number): number {
   const span = half * 2;
   return ((((v + half) % span) + span) % span) - half;
+}
+
+/**
+ * Write the rotation part (column-major 3×3) of an instance matrix: a spin
+ * `a` around Y followed by a flip `b` around X — a flake turning over as it
+ * falls. Pure arithmetic, no allocation.
+ */
+export function writeTumble(m: Float32Array, k: number, a: number, b: number): void {
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  const cb = Math.cos(b);
+  const sb = Math.sin(b);
+  // R = Ry(a) · Rx(b)
+  m[k] = ca;
+  m[k + 1] = 0;
+  m[k + 2] = -sa;
+  m[k + 4] = sa * sb;
+  m[k + 5] = cb;
+  m[k + 6] = ca * sb;
+  m[k + 8] = sa * cb;
+  m[k + 9] = -sb;
+  m[k + 10] = ca * cb;
 }
 
 /** Camera-wrapped instanced weather particles. */
@@ -120,6 +152,8 @@ export class WeatherSystem {
       blending: cfg.additive ? AdditiveBlending : NormalBlending,
       fog: !cfg.additive,
     });
+    // Flat flakes are seen from both sides while they tumble.
+    if (cfg.tumble) material.side = DoubleSide;
     if (cfg.flicker) material.color.multiplyScalar(4); // HDR so fireflies bloom
     const mesh = new InstancedMesh(particleGeometry(kind), material, cfg.count);
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -149,6 +183,7 @@ export class WeatherSystem {
     const hx = half[0], hy = half[1], hz = half[2];
     const vx = vel[0], vy = vel[1], vz = vel[2];
     const w = cfg.swayHz * Math.PI * 2;
+    const tumble = cfg.tumble ?? 0;
     const cx = camera.position.x;
     const cy = camera.position.y;
     const cz = camera.position.z;
@@ -169,6 +204,7 @@ export class WeatherSystem {
       o[i3 + 1] = y;
       o[i3 + 2] = z;
       const k = i * 16;
+      if (tumble > 0) writeTumble(m, k, t * tumble + p, p * 1.7 + t * tumble * 0.6);
       if (cfg.flicker) {
         const s = Math.max(0.05, 0.5 + 0.5 * Math.sin(t * 2.3 + p * 3.1));
         m[k] = s;

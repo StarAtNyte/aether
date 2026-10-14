@@ -66,6 +66,8 @@ const MOODS = {
   snow: /\b(snow|snowy|snowing|blizzard|snowfall)\b/,
   fog: /\b(fog|foggy|mist|misty|haze|hazy|murky)\b/,
   water: /\b(lake(?:side|shore|front)?|river(?:side|bank)?|pond|creek|stream|waterside|shore)\b/,
+  petals: /\b(cherry blossoms?|sakura|falling petals|blossom petals|petals)\b/,
+  leaves: /\b(autumn leaves|falling leaves|fall foliage|leaves falling)\b/,
   clearSky: /\b(clear (?:sky|skies|weather)|stop (?:the )?(?:rain|snow)|no (?:rain|snow|fog))\b/,
   lowGravity: /\b(low|moon|lunar|reduced|weak|less) gravity\b|\bmoon ?jump/,
   zeroGravity: /\b(zero|no) gravity\b|\bweightless\b/,
@@ -151,6 +153,8 @@ function moodEnv(mood: Mood, text: string): Record<string, Json> {
   if (mood.dawn) Object.assign(env, { sky: 'dawn', timeOfDay: 6.5 });
   if (mood.dusk) Object.assign(env, { sky: 'sunset', timeOfDay: 17.5, bloom: 0.9 });
   if (mood.night) Object.assign(env, { sky: 'night', timeOfDay: 22, bloom: 1.2, ambientIntensity: 0.25, sunIntensity: 0.5 });
+  if (MOODS.petals.test(text)) env['weather'] = 'petals';
+  else if (MOODS.leaves.test(text)) env['weather'] = 'leaves';
   if (mood.rain) Object.assign(env, { weather: 'rain', fog: { color: mood.night ? '#1d2430' : '#8a96a3', density: 0.02 }, ...(mood.night ? {} : { sky: 'overcast' }) });
   if (mood.snow) Object.assign(env, { weather: 'snow', fog: { color: mood.night ? '#2a3240' : '#dfe7ef', density: 0.015 } });
   if (mood.fog) env['fog'] = { color: mood.night ? '#1b2030' : '#c9d2dc', density: 0.03 };

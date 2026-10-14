@@ -280,6 +280,56 @@ function newWorld(raw: string, t: string, wipe: boolean): VoxelPlan {
   };
 }
 
+/**
+ * Blockfall, the flagship block world: endless survival terrain (biomes,
+ * caves, ores), a village around a well with a watch tower, a stone castle,
+ * a giant tree, a bridge and the name spelled in gold blocks by the spawn;
+ * survival mode at sunrise with a starter kit, day/night cycle and mobs.
+ */
+export function planBlockfall(): VoxelPlan {
+  const raw = 'a survival world with a village, a stone castle, a giant tree, a bridge and a sign that says "BLOCKFALL"';
+  const t = raw.toLowerCase();
+  const seed = 4242;
+  const b = builds(t, raw, seed, 0, 0, 0, true);
+  const game: Record<string, Json> = {
+    mode: 'survival',
+    startHour: 6.6,
+    dayLength: 720,
+    mobs: true,
+    maxMobs: 24,
+    startItems: [
+      { item: 'wooden_pickaxe', count: 1 },
+      { item: 'wooden_axe', count: 1 },
+      { item: 'torch', count: 16 },
+      { item: 'bread', count: 6 },
+      { item: 'oak_planks', count: 24 },
+    ],
+  };
+  const patches: PatchInput[] = [
+    { op: 'clear', keepEnvironment: false },
+    { op: 'setMeta', name: 'Blockfall', description: 'Mine, craft and survive the night in an endless block world.', seed },
+    { op: 'setEnvironment', set: { sky: 'dawn', ground: null, weather: 'clear', bloom: 0.45 } },
+    { op: 'setPlayer', set: { mode: 'firstPerson', spawn: [0, 0, 0], moveSpeed: 4.3, jumpSpeed: 8.4 } },
+    { op: 'setVoxel', set: { preset: 'survival', seed, viewDistance: 8, game } },
+  ];
+  for (let k = 0; k < b.edits.length; k += 200) patches.push({ op: 'voxelEdit', edits: b.edits.slice(k, k + 200) });
+  patches.push({
+    op: 'setMeta',
+    intro: {
+      title: 'Blockfall',
+      tagline: 'An endless block world: mine by day, build a shelter, survive the night.',
+      objective: 'Gather wood and stone, craft better tools in the inventory (E), and light your shelter before dark.',
+      controls: ['WASD — move', 'Mouse — look', 'Left click — mine', 'Right click — place', 'E — inventory & crafting', '1–9 — hotbar'],
+      accent: '#7bd389',
+    },
+  });
+  return {
+    plan: `Plan: block world (survival terrain with biomes and caves) with ${b.notes.join(', ')}; survival mode at sunrise with a starter kit; ${b.edits.length} block edits.`,
+    patches,
+    message: `Built Blockfall: an endless survival block world with ${b.notes.join(', ')}. Press Play — WASD to move, left-click mines, right-click places, E opens the inventory and crafting. Night brings zombies: build a shelter!`,
+  };
+}
+
 /** Edit an existing block world. */
 function editWorld(raw: string, t: string, view: VoxelView): VoxelPlan | null {
   const seed = hashString(`${t}|${view.edits}`) % 100000;

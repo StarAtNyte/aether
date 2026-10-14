@@ -15,7 +15,7 @@ import { entityKind, MultiInspector, ObjectInspector } from '../components/panel
 import { PanelHeader } from './Panels';
 
 const SKIES = ['day', 'dawn', 'sunset', 'night', 'overcast', 'space', 'studio'] as const satisfies ReadonlyArray<Environment['sky']>;
-const WEATHER = ['clear', 'rain', 'snow', 'dust', 'fireflies'] as const satisfies ReadonlyArray<Environment['weather']>;
+const WEATHER = ['clear', 'rain', 'snow', 'dust', 'fireflies', 'petals', 'leaves'] as const satisfies ReadonlyArray<Environment['weather']>;
 const PLAYER_MODES = ['thirdPerson', 'firstPerson', 'orbit', 'vehicle'] as const satisfies ReadonlyArray<WorldDoc['player']['mode']>;
 const GROUND_PRESETS = MaterialPreset.options;
 const DEFAULT_FOG = { color: '#c9d3df', density: 0.015 };

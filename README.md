@@ -40,6 +40,16 @@ with your own API key, with your own Codex login through that same command
 | --- | --- | --- |
 | ![After a build, ghosts re-enact the verification run and the "Proved" seal lands](docs/screenshots/proof-replay.png) | ![A shared world opened from its link: Play, Export, Remix](docs/screenshots/shared-viewer.png) | ![Three-step tour: describe, proved, play](docs/screenshots/tour.png) |
 
+### Default projects
+
+Twelve finished worlds ship with the studio and open instantly from the projects home — each one built by the offline planner from the prompt on its card, verified by the physics checker, and (for games) played to the end by a headless bot in the test suite.
+
+| | | | |
+| --- | --- | --- | --- |
+| ![Lantern Isles](docs/screenshots/showcase/lantern-isles.webp) **Lantern Isles** — find twelve lanterns across floating islands | ![Chain Reaction](docs/screenshots/showcase/chain-reaction.webp) **Chain Reaction** — five verified Rube-Goldberg machines | ![Kart Canyon](docs/screenshots/showcase/kart-canyon.webp) **Kart Canyon** — three laps, checkpoints, boost pads | ![Blockfall](docs/screenshots/showcase/blockfall.webp) **Blockfall** — voxel survival with crafting and mobs |
+| ![Neon Rain City](docs/screenshots/showcase/neon-rain-city.webp) **Neon Rain City** — wet streets, traffic, five neon cats | ![Kyoto Temple Lanterns](docs/screenshots/showcase/kyoto-temple.webp) **Kyoto Temple Lanterns** — a story in four chapters | ![Painterly Meadow](docs/screenshots/showcase/painterly-meadow.webp) **Painterly Meadow** — a steam train in a wildflower valley | ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp) **Four-Seasons Garden** — switch seasons with 1–5 |
+| ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp) **Orbital Lab** — low gravity, motor-driven machines | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp) **Sakura River Journey** — paddle through four seasons | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp) **Skyline Penthouse** — walkthrough, light switches, photo mode | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp) **Dusk House by the Lake** — explode it, cut it, walk it |
+
 | Projects home | Starter scene in the editor | Play mode | Phone |
 | --- | --- | --- | --- |
 | ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |
@@ -300,8 +310,14 @@ explicit state, so the AI can be held to account:
   (IndexedDB, validated on load, quota-aware), with rendered thumbnails,
   "Recently opened" (grid or list), search, sort, rename, duplicate, delete
   with Undo, `.aether.json` export and drag-and-drop import. New projects
-  start from a prompt, an empty or starter scene, or one of 8 templates with
-  real rendered previews.
+  start from a prompt, an empty or starter scene, or a bundled default
+  project: twelve featured flagship worlds plus every saved gallery world,
+  all listed in one curation manifest (`apps/studio/src/showcase/manifest.ts`:
+  featured / candidate / hidden, array order is display order). Cards and
+  thumbnails load with the page; a world's JSON is fetched (size-capped,
+  validated) only when it is opened, and the new project keeps the card's
+  original prompt and thumbnail. Games open with a title card (title,
+  tagline, objective, controls) that holds the simulation until Start.
 - **Editor.** A quiet, professional layout: icon rail (Agent, Objects,
   Assets, Logic, Checks, History) and panel on the left, the viewport in the
   middle, a sectioned inspector on the right (scene settings when nothing is
@@ -492,7 +508,10 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
 | `npm run e2e:ux` | UX end to end in Chromium then Firefox: keyboard (Tab to the hero prompt with a visible focus ring, `?` overlay, Enter builds), the proof seal and ghost replay, full-window play, command palette (search, free text → agent), share link → read-only viewer → Remix, the 3-step tour (Next / Back / Esc, remembered), phone layout (hero, prompt, touch stick, viewer) |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
-| `npm run thumbnails` | Renders the template thumbnails (`public/templates/*.webp`, ≤ 30 KB) and asset previews (`public/palette/*.webp`) with the real renderer |
+| `npm run thumbnails` | Renders the asset previews (`public/palette/*.webp`) with the real renderer (`-- --templates` re-renders template cards from the editor's framing) |
+| `npm run showcase:bake` | Rebuilds every default project's saved world (`public/templates/worlds/<slug>.json`) from its manifest prompt with the offline planner and re-verifies it (`-- --check` fails on stale files, `--report` prints each verification) |
+| `npm run showcase:thumbs` | Renders each flagship from its saved world and art-directed cover camera: the cover (`docs/screenshots/showcase/<slug>.webp`) and the card thumbnail (≤ 30 KB); `tsx tests/e2e/showcase.e2e.ts --gallery` cuts gallery entries' thumbnails from their screenshots |
+| `npm run e2e:showcase` | Default projects in Chromium then Firefox: home row and Templates page, every featured world opens from its saved file with its prompt and thumbnail, title card → Start → a scripted run → Stop |
 | `npm run bridge` | Starts the local Aether Bridge (Codex / Claude Code through your own sign-in); `-- --origin https://host` allows a hosted studio |
 | `npm run eval` | Agent evaluation: patch error rate, verification pass rate, latency and quality score per prompt (`-- --provider=codex --effort=low --limit=3`, `--provider=claude-code --model=haiku`) |
 | `npm run library` | Rebuilds the offline generator library with Codex (sequential, call budget, resumable; `-- --only=piano`) |
@@ -718,7 +737,8 @@ All LLM output and all user input are treated as untrusted.
 | Layer | Command | Coverage |
 | --- | --- | --- |
 | Unit and integration | `npm test` | About 1,640 Vitest tests across 118 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials) and the scale-geometry algorithms (watertight LOD cuts, simplifier invariants, budgeted field culling, allocation-free view planning). No test makes a network call. |
-| Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 18 prompts (4 of them block worlds), including all 9 templates (the million-tree showcase among them). Every resulting world is re-validated and re-verified independently. |
+| Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on every shown template's prompt (the twelve flagships and the saved gallery worlds) plus the block-world, architecture and asset prompts. Every resulting world is re-validated and re-verified independently. |
+| Playtests | `npm test` (`apps/studio/test/showcasePlaytest.test.ts`) | A bot plays the shipped world files through real physics and logic with keyboard-like input: Lantern Isles end to end (guide, every bridge and lift, all twelve lanterns, the win) and the fall-respawn; Kart Canyon three laps through ordered checkpoints to the chequered flag, and a skipped checkpoint not counting. Chain Reaction's five machines are proven by its own verification tests. |
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
 | UX | `npm run build && npm run e2e:ux` | Chromium and Firefox: keyboard navigation and focus visibility, the shortcuts overlay, prompt from the home hero, the proof seal and ghost replay (cleared by full-window Play), command palette actions and free-text prompts, the share link round trip (viewer, play / stop, Remix into an editable project), the onboarding tour and the phone layout. |

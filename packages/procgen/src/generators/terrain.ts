@@ -3,6 +3,7 @@
  * height- and slope-based vertex colors and exact heightfield colliders.
  * Output meshes are centered in x/z with their lowest point at y = 0.
  */
+import { canyonHalfWidth, canyonMeander, riverHalfWidth, riverMeander } from '@aether/core';
 import type { InternalApi } from '../api';
 import type { GeneratorOutput } from '../types';
 import { mixLinear, type RGB } from '../color';
@@ -124,7 +125,7 @@ const terrain = defineGenerator({
     resolution: pInt(128, 16, 256, 'grid cells per side (detail)'),
     roughness: pNum(0.5, 0, 1, '0 smooth hills … 1 rugged'),
     color: pColor('#5a8f3c', 'grass color'),
-    variant: pVariant(3, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls)'),
+    variant: pVariant(4, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls), 4 river valley (meandering riverbed at y = 0 along Z between soft grassy banks)'),
   },
   run(p, api) {
     const size = p.num('size');
@@ -132,6 +133,7 @@ const terrain = defineGenerator({
     const rough = p.num('roughness');
     const variant = p.int('variant');
     if (variant === 3) return canyonTerrain(api, size, H, rough, p.int('resolution'), p.color('color'));
+    if (variant === 4) return riverValley(api, size, H, rough, p.int('resolution'), p.color('color'));
     const freq = 2.2 / size;
     const oct = 3 + Math.round(rough * 3);
     const pal = palette(p.color('color'));
@@ -165,7 +167,7 @@ const terrain = defineGenerator({
 function canyonTerrain(api: InternalApi, size: number, H: number, rough: number, resolution: number, grass: string): GeneratorOutput {
   const n = api.noise;
   const freq = 2.2 / size;
-  const floorHalf = size * 0.06;
+  const floorHalf = canyonHalfWidth(size);
   const pal = palette(grass);
   const sandstone = lin('#b0603a');
   const pale = lin('#d7a370');
@@ -174,7 +176,7 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
     resolution,
     fitHeight: H,
     height(x, z) {
-      const meander = Math.sin(z * 4.2 / size) * size * 0.025;
+      const meander = canyonMeander(z, size);
       const d = Math.abs(x - meander) - floorHalf - n.noise2(z * 0.02, 3.7) * size * 0.012;
       if (d <= 0) return 0;
       const wall = smoothstep(0, size * 0.09, d);
@@ -192,6 +194,40 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
       mixLinear(sandstone, pale, band * 0.6, out);
       mixLinear(out, pal.grass, smoothstep(0.82, 0.9, t + w) * (1 - smoothstep(0.3, 0.5, slope)), out);
       if (t < 0.01) mixLinear(pal.sand, sandstone, 0.35 + w * 2, out);
+    },
+  });
+}
+
+/**
+ * River valley: a meandering flat riverbed (exactly y = 0) along Z between
+ * soft, grassy banks rising to rolling hills — the place for water planes,
+ * boats and riverside paths (the curve is `riverMeander` in @aether/core).
+ */
+function riverValley(api: InternalApi, size: number, H: number, rough: number, resolution: number, grass: string): GeneratorOutput {
+  const n = api.noise;
+  const freq = 2.2 / size;
+  const half = riverHalfWidth(size);
+  const pal = palette(grass);
+  const bed = lin('#8c7f66');
+  const oct = 3 + Math.round(rough * 3);
+  return buildTerrain(api, {
+    size,
+    resolution,
+    fitHeight: H,
+    height(x, z) {
+      const d = Math.abs(x - riverMeander(z, size)) - half - n.noise2(z * 0.03, 1.9) * size * 0.006;
+      if (d <= 0) return 0;
+      // A gentle bank (rounded shoulder), then rolling hills that grow away from the water.
+      const bank = smoothstep(0, size * 0.05, d) * 0.22;
+      const hills = smoothstep(size * 0.03, size * 0.3, d) * (0.45 + 0.55 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, oct)));
+      return (bank + hills * 0.78) * H;
+    },
+    color(t, h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
+      mixLinear(pal.grassDark, pal.grass, smoothstep(0.05, 0.6, t + w), out);
+      mixLinear(out, pal.rock, smoothstep(0.32, 0.55, slope + w), out);
+      // Wet pebbles on the riverbed and the first metre of bank.
+      mixLinear(bed, out, smoothstep(0.15, 1.2, h + w * 4), out);
     },
   });
 }

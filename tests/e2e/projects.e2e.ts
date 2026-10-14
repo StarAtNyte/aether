@@ -4,8 +4,8 @@
  *
  *  1. the home loads with the template gallery (thumbnails decode) and an
  *     empty state;
- *  2. a template creates a project and opens the editor, which builds the
- *     world with the offline planner and autosaves;
+ *  2. a template creates a project from its saved world and opens the
+ *     editor, which autosaves it;
  *  3. back on the home page the project card shows a live thumbnail;
  *  4. rename, duplicate, delete with confirm and Undo from the card menu;
  *  5. export (.aether.json) and import round trip;
@@ -20,7 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { CHROME_ARGS, FIREFOX_PREFS, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
-import { TEMPLATES } from '../../apps/studio/src/lib/examples';
+import { FEATURED_TEMPLATES } from '../../apps/studio/src/lib/examples';
 
 const ARGS = process.argv.slice(2);
 const BROWSERS = ARGS.includes('--firefox') ? ['firefox'] : ARGS.includes('--chromium') ? ['chromium'] : ['chromium', 'firefox'];
@@ -69,13 +69,13 @@ async function homeFlow(page: Page, base: string): Promise<void> {
   await page.goto(`${base}/?debug=1#/`);
   await page.getByRole('heading', { name: 'Start from a template' }).waitFor({ timeout: 20_000 });
   const templates = page.locator('.card--template');
-  check((await templates.count()) === TEMPLATES.length, `expected ${TEMPLATES.length} template cards, got ${await templates.count()}`);
+  check((await templates.count()) === FEATURED_TEMPLATES.length, `expected ${FEATURED_TEMPLATES.length} featured template cards, got ${await templates.count()}`);
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.card--template img')].slice(0, 4).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
   await page.getByText('No projects yet').waitFor();
-  log(`  home: ${TEMPLATES.length} templates with thumbnails, empty state`);
+  log(`  home: ${FEATURED_TEMPLATES.length} featured templates with thumbnails, empty state`);
 
   // 2. Template → editor → built world → autosave.
-  await templates.filter({ hasText: 'Coin island' }).click();
+  await templates.filter({ hasText: 'Lantern Isles' }).click();
   await page.waitForURL(/#\/p\/[a-z0-9]+$/, { timeout: 20_000 });
   await waitEditorBuilt(page);
   const entities = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
@@ -190,7 +190,7 @@ async function phoneFlow(browser: Browser, name: string, base: string, errors: s
     await page.goto(`${base}/?debug=1#/`);
     await page.locator('.tabbar').waitFor();
     check(!(await page.locator('.sidebar').isVisible()), 'sidebar visible on a phone');
-    await page.locator('.card--template', { hasText: 'Domino run' }).click();
+    await page.locator('.card--template', { hasText: 'Chain Reaction' }).click();
     await page.waitForURL(/#\/p\/[a-z0-9]+$/, { timeout: 20_000 });
     await waitEditorBuilt(page);
     await page.locator('.sheet').waitFor();

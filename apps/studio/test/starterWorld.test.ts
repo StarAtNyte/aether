@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateWorld } from '@aether/core';
 import { BUILTIN_GENERATORS } from '@aether/procgen';
 import { createStarterWorld } from '../src/lib/starterWorld';
-import { EXAMPLE_PROMPTS } from '../src/lib/examples';
+import { EXAMPLE_PROMPTS, TEMPLATES } from '../src/lib/examples';
 
 describe('starter world', () => {
   it('is a valid world using only built-in generators', () => {
@@ -29,8 +29,9 @@ describe('starter world', () => {
 });
 
 describe('example prompts', () => {
-  it('ships the 8 curated prompts', () => {
-    expect(EXAMPLE_PROMPTS).toHaveLength(9);
-    expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(9);
+  it('ships one prompt per shown template, each with a unique title and prompt', () => {
+    expect(EXAMPLE_PROMPTS.length).toBe(TEMPLATES.length);
+    expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(EXAMPLE_PROMPTS.length);
+    expect(new Set(EXAMPLE_PROMPTS.map((p) => p.prompt)).size).toBe(EXAMPLE_PROMPTS.length);
   });
 });

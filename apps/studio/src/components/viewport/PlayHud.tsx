@@ -1,4 +1,5 @@
-import { memo, useMemo, type ReactElement } from 'react';
+import { memo, useMemo, type CSSProperties, type ReactElement } from 'react';
+import type { WorldIntro } from '@aether/core';
 import { useStudio, useUI, useWorld } from '../../app/context';
 import { Icon } from '../Icon';
 
@@ -6,6 +7,53 @@ function formatClock(t: number): string {
   const s = Math.max(0, Math.floor(t));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/**
+ * Title card: the world's title screen over the live scene (held until the
+ * player starts). Everything is rendered as plain text.
+ */
+const TitleCardView = memo(function TitleCardView({ intro, onStart, onExit }: { intro: WorldIntro; onStart: () => void; onExit: () => void }): ReactElement {
+  const style = intro.accent ? ({ '--title-accent': intro.accent } as CSSProperties) : undefined;
+  return (
+    <div className="title-card" role="dialog" aria-modal="false" aria-labelledby="title-card-title" style={style}>
+      <div className="title-card__body">
+        <h2 id="title-card-title" className="title-card__title">
+          {intro.title}
+        </h2>
+        {intro.tagline && <p className="title-card__tagline">{intro.tagline}</p>}
+        {intro.objective && <p className="title-card__objective">{intro.objective}</p>}
+        {intro.controls.length > 0 && (
+          <ul className="title-card__controls" aria-label="Controls">
+            {intro.controls.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        )}
+        <div className="title-card__actions">
+          <button type="button" className="btn btn--primary title-card__start" onClick={onStart} autoFocus>
+            <Icon name="play" /> Start
+          </button>
+          <button type="button" className="btn btn--ghost title-card__exit" onClick={onExit}>
+            Back to editor
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * The title card overlay while a play session is held (every kind of world,
+ * block worlds included): Start releases the game, Back to editor stops it.
+ */
+export const TitleCard = memo(function TitleCard(): ReactElement | null {
+  const studio = useStudio();
+  const world = useWorld();
+  const mode = useUI((s) => s.mode);
+  const showing = useUI((s) => s.game.intro);
+  if (mode !== 'play' || !showing || !world.intro) return null;
+  return <TitleCardView intro={world.intro} onStart={() => studio.startGame()} onExit={() => void studio.togglePlay()} />;
+});
 
 /** Play-mode HUD: bound state values, timer, controls hint and the win/lose overlay. */
 export const PlayHud = memo(function PlayHud(): ReactElement | null {
@@ -18,6 +66,8 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
   // The end screen credits the people behind the assets (required for CC-BY, a courtesy for CC0).
   const credits = useMemo(() => (mode === 'play' ? studio.assets.credits() : []), [mode, world, studio]);
   if (mode !== 'play') return null;
+  // The title card (rendered by the viewport) covers the held game: no HUD under it.
+  if (game.intro && world.intro) return null;
   const over = game.status !== 'playing';
   if (building && world.hud.length === 0) {
     // Building walkthrough: no score or clock, just the controls.

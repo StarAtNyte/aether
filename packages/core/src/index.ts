@@ -56,6 +56,7 @@ export { History, type HistoryEntryInfo, type HistorySource } from './history';
 export { rng, hashString } from './random';
 export { eulerDegToQuat, quatToEulerDeg, quatMultiply, rotateVec3, type Quat } from './math';
 export { slugify, uniqueId, isEntityId } from './ids';
+export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth } from './river';
 
 export { summarizeWorld, type SummaryOptions } from './summary';
 export { Emitter } from './emitter';

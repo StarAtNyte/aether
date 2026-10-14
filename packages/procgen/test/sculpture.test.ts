@@ -61,3 +61,27 @@ describe('terrain canyon variant', () => {
     expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
   });
 });
+
+describe('terrain river valley variant', () => {
+  it('carves a flat riverbed at y = 0 that follows riverMeander, with banks rising away from it', async () => {
+    const { riverMeander, riverHalfWidth } = await import('@aether/core');
+    const size = 400;
+    const out = generateBuiltinSync('terrain', { variant: 4, size, height: 30, resolution: 96 }, 5);
+    const p = out.parts[0]!.positions;
+    let bed = 0;
+    let bank = 0;
+    for (let i = 0; i < p.length; i += 3) {
+      const x = p[i]!;
+      const z = p[i + 2]!;
+      const d = Math.abs(x - riverMeander(z, size));
+      if (d < riverHalfWidth(size) * 0.6) {
+        expect(p[i + 1]).toBe(0);
+        bed++;
+      }
+      if (d > size * 0.25 && p[i + 1]! > 6) bank++;
+    }
+    expect(bed).toBeGreaterThan(50);
+    expect(bank).toBeGreaterThan(50);
+    expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
+  });
+});

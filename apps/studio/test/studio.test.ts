@@ -28,7 +28,9 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
       restoreEnvironment: () => undefined,
       setEnvironmentOverride: () => undefined,
       onQualityChange: null,
+      showCameraPath: () => undefined,
     },
+    stopProof: () => undefined,
     setShowColliders: () => undefined,
     setStatsWhileEditing: () => undefined,
     setPointerLock: () => undefined,
@@ -145,6 +147,65 @@ describe('Studio low-memory mode', () => {
     studio.store.getState().updateSettings({ backend: 'webgl2' });
     await Promise.resolve();
     expect(studio.store.getState().rendererEpoch).toBe(1);
+    studio.dispose();
+  });
+});
+
+describe('Studio title card', () => {
+  /** A fake simulation that tracks play mode and the hold flag. */
+  function playableSim(): { sim: Simulation; held: boolean[]; calls: string[] } {
+    const base = fakeSimulation().sim as unknown as Record<string, unknown>;
+    const held: boolean[] = [];
+    const calls: string[] = [];
+    const sim = Object.assign(base, {
+      mode: 'edit',
+      setHeld(on: boolean) {
+        held.push(on);
+      },
+      async play() {
+        calls.push(`play(held=${String(held[held.length - 1])})`);
+        sim.mode = 'play';
+      },
+      async stop() {
+        calls.push('stop');
+        sim.mode = 'edit';
+      },
+      async restart() {
+        calls.push('restart');
+      },
+    });
+    return { sim: sim as unknown as Simulation, held, calls };
+  }
+
+  it('holds a world with a title card before the first tick and releases it on Start', async () => {
+    const fake = playableSim();
+    vi.spyOn(Simulation, 'create').mockResolvedValue(fake.sim);
+    const studio = new Studio({ storage: memoryStorage(), safeMode: false });
+    await studio.attachCanvas(canvas);
+    studio.commitUser([{ op: 'setMeta', intro: { title: 'Lantern Isles', tagline: 'Light the way', controls: ['WASD — move'] } }], 'intro');
+    await studio.togglePlay();
+    expect(fake.calls).toEqual(['play(held=true)']);
+    expect(studio.store.getState().game.intro).toBe(true);
+    studio.startGame();
+    expect(fake.held[fake.held.length - 1]).toBe(false);
+    expect(studio.store.getState().game.intro).toBe(false);
+    // Restart never shows the card again; stopping releases any hold.
+    await studio.restart();
+    expect(studio.store.getState().game.intro).toBe(false);
+    await studio.togglePlay();
+    expect(fake.calls.at(-1)).toBe('stop');
+    expect(fake.held[fake.held.length - 1]).toBe(false);
+    studio.dispose();
+  });
+
+  it('never holds a world without a title card', async () => {
+    const fake = playableSim();
+    vi.spyOn(Simulation, 'create').mockResolvedValue(fake.sim);
+    const studio = new Studio({ storage: memoryStorage(), safeMode: false });
+    await studio.attachCanvas(canvas);
+    await studio.togglePlay();
+    expect(fake.calls).toEqual(['play(held=false)']);
+    expect(studio.store.getState().game.intro).toBe(false);
     studio.dispose();
   });
 });

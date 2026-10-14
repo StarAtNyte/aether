@@ -1625,3 +1625,109 @@
     display: none;
   }
 }
+
+/* Title card: the world's title screen over the live scene (play mode, held until Start). */
+.title-card {
+  --title-accent: #f2c46d;
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-overlay) + 1);
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(16px, 5vw, 56px);
+  background: linear-gradient(180deg, rgb(6 8 14 / 0) 30%, rgb(6 8 14 / 0.55) 62%, rgb(6 8 14 / 0.86) 100%);
+  color: #f5f3ee;
+  animation: fade-in var(--dur-slow) var(--ease);
+}
+
+.title-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-width: min(560px, 100%);
+  animation: title-card-rise 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.title-card__title {
+  margin: 0;
+  padding-top: var(--s-3);
+  border-top: 2px solid var(--title-accent);
+  width: fit-content;
+  font-size: clamp(30px, 5.2vw, 52px);
+  line-height: 1.04;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.45);
+  overflow-wrap: anywhere;
+}
+
+.title-card__tagline {
+  margin: 0;
+  font-size: clamp(15px, 1.8vw, 18px);
+  line-height: 1.45;
+  color: rgb(245 243 238 / 0.88);
+}
+
+.title-card__objective {
+  margin: var(--s-1) 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  color: var(--title-accent);
+}
+
+.title-card__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.title-card__controls li {
+  padding: 3px 9px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  font-size: var(--fs-12);
+  color: rgb(245 243 238 / 0.9);
+  backdrop-filter: blur(6px);
+}
+
+.title-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+
+.title-card__start {
+  min-width: 120px;
+}
+
+.title-card .title-card__exit {
+  color: rgb(245 243 238 / 0.85);
+}
+
+.title-card .title-card__exit:hover:not(:disabled) {
+  color: #fff;
+  background: rgb(255 255 255 / 0.1);
+}
+
+@keyframes title-card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-card,
+  .title-card__body {
+    animation: none;
+  }
+}

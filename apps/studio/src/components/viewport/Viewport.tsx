@@ -25,7 +25,7 @@ import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
-import { PlayHud } from './PlayHud';
+import { PlayHud, TitleCard } from './PlayHud';
 import { ArchBar } from './ArchBar';
 import { PlanView } from './PlanView';
 
@@ -395,6 +395,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       ) : (
         <PlayHud />
       )}
+      <TitleCard />
       {ready && playing && !voxelUi && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">

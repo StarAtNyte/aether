@@ -59,6 +59,7 @@ describe('invertPatches', () => {
     ]],
     ['tests', [{ op: 'addTest', test: { id: 'z', kind: 'noOverlap' } }, { op: 'removeTest', id: 'car-stays' }]],
     ['meta', [{ op: 'setMeta', name: 'Other', seed: 77, description: 'x' }]],
+    ['intro', [{ op: 'setMeta', intro: { title: 'Lantern Isles', tagline: 'Light the way home', controls: ['WASD — move'] } }]],
     ['clear', [{ op: 'clear' }]],
     ['clear all', [{ op: 'clear', keepEnvironment: false }]],
     ['reparent swap', [{ op: 'update', id: 'wheel', set: { parent: null, joint: null } }, { op: 'update', id: 'car', set: { parent: 'hub' } }]],
@@ -71,6 +72,24 @@ describe('invertPatches', () => {
 
   it.each(scenarios)('%s round-trips', (_name, patches) => {
     roundTrip(sampleWorld(), patches);
+  });
+
+  it('round-trips changing and removing an existing title card, and clear removes it', () => {
+    const base = applyPatches(sampleWorld(), [{ op: 'setMeta', intro: { title: 'Old', tagline: 't' } }]).world;
+    expect(base.intro?.title).toBe('Old');
+    expect(base.intro?.controls).toEqual([]);
+    roundTrip(base, [{ op: 'setMeta', intro: { title: 'New', objective: 'Win' } }]);
+    roundTrip(base, [{ op: 'setMeta', intro: null }]);
+    roundTrip(base, [{ op: 'clear' }]);
+    expect(applyPatches(base, [{ op: 'clear' }]).world.intro).toBeUndefined();
+    expect(applyPatches(base, [{ op: 'setMeta', intro: null }]).world.intro).toBeUndefined();
+    expect(diffWorlds(sampleWorld(), base).metaChanged).toBe(true);
+  });
+
+  it('rejects an invalid title card', () => {
+    const r = applyPatches(sampleWorld(), [{ op: 'setMeta', intro: { title: '', controls: Array(9).fill('x') } } as unknown as PatchInput]);
+    expect(r.errors.length).toBe(1);
+    expect(r.world.intro).toBeUndefined();
   });
 
   it('returns [] for no-ops and ignores failing patches', () => {

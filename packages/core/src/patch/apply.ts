@@ -28,7 +28,9 @@
  * - `clear` empties entities, rules, tests, state, HUD and meshes; custom generators and
  *   scripts are kept (they are reusable code); environment/player (and voxel
  *   terrain) are reset only with `keepEnvironment: false` (player.controls is
- *   always cleared).
+ *   always cleared). The title card (`intro`) is removed too.
+ * - `setMeta` sets name / description / seed and, additively, the title card
+ *   (`intro: null` removes it).
  * - `setVoxel` deep-merges voxel terrain settings (`set: null` removes the
  *   terrain); `voxelEdit` appends block edits. Block ids are checked against
  *   the registry and edit volumes against the voxel block limits.
@@ -492,6 +494,8 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
   if (p.name !== undefined && p.name !== d.world.name) d.set('name', p.name);
   if (p.description !== undefined && p.description !== d.world.description) d.set('description', p.description);
   if (p.seed !== undefined && p.seed !== d.world.seed) d.set('seed', p.seed);
+  if (p.intro === null) d.setIntro(undefined);
+  else if (p.intro !== undefined && !deepEqual(p.intro, d.world.intro)) d.setIntro(p.intro);
   return OK;
 }
 
@@ -502,6 +506,8 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
   if (Object.keys(d.world.state).length > 0) d.set('state', {});
   if (d.world.hud.length > 0) d.set('hud', []);
   for (const m of Object.keys(d.world.meshes)) delete d.meshes()[m];
+  // The title card describes the cleared content (its game), so it goes too.
+  d.setIntro(undefined);
   if (!p.keepEnvironment) {
     const env = EnvironmentSchema.parse({});
     const player = PlayerSchema.parse({});

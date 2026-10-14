@@ -58,6 +58,8 @@ export interface ScatterOpts extends PlaceOpts {
   scaleRange?: [number, number];
   minSpacing?: number;
   randomYaw?: boolean;
+  /** Terrain entity id to place the instances on. */
+  onSurface?: string;
 }
 
 /** A circle of reserved ground (x/z plane). */
@@ -279,9 +281,9 @@ export class Builder {
    * renderer shows `fallback` (or a box of the asset's size) when the asset
    * cannot be loaded.
    */
-  asset(base: string, assetId: string, pos: V3, o: PlaceOpts & { fallback?: EntityInput['shape']; fitSize?: number } = {}): string {
+  asset(base: string, assetId: string, pos: V3, o: PlaceOpts & { fallback?: EntityInput['shape']; fitSize?: number; animation?: string } = {}): string {
     const id = this.id(base);
-    const shape: EntityInput['shape'] = { kind: 'asset', id: assetId, ...(o.fallback && (o.fallback.kind === 'procedural' || o.fallback.kind === 'primitive') ? { fallback: o.fallback } : {}), ...(o.fitSize ? { fitSize: o.fitSize } : {}) };
+    const shape: EntityInput['shape'] = { kind: 'asset', id: assetId, ...(o.fallback && (o.fallback.kind === 'procedural' || o.fallback.kind === 'primitive') ? { fallback: o.fallback } : {}), ...(o.fitSize ? { fitSize: o.fitSize } : {}), ...(o.animation ? { animation: o.animation } : {}) };
     this.add(this.compose(id, pos, shape, o));
     return id;
   }
@@ -312,6 +314,7 @@ export class Builder {
       ...(o.scaleRange ? { scaleRange: o.scaleRange } : {}),
       ...(o.minSpacing !== undefined ? { minSpacing: o.minSpacing } : {}),
       ...(o.randomYaw === false ? { randomYaw: false } : {}),
+      ...(o.onSurface ? { onSurface: o.onSurface } : {}),
     };
     this.add(this.compose(id, pos, shape, o));
     return id;

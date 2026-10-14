@@ -19,6 +19,7 @@ import { DEFAULT_SETTING } from './themes-nature';
 import { parseWorldSummary, type WorldView } from './world-view';
 import { planVoxel } from './voxel';
 import { planArch } from './arch';
+import { planShowcase } from './showcase/index';
 
 /** Output of the mock planner. */
 export interface MockPlan {
@@ -199,6 +200,9 @@ function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem
  * Deterministic. `library` lists generator-library objects it may place.
  */
 export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = []): MockPlan {
+  // Flagship showcase worlds answer to their names.
+  const showcase = planShowcase(request, summary);
+  if (showcase) return showcase;
   // Block worlds (voxel terrain) have their own planner.
   const voxel = planVoxel(request, summary);
   if (voxel) return voxel;

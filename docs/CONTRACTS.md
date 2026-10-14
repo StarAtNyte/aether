@@ -1702,3 +1702,79 @@ Everything here is additive; the World IR is unchanged.
   endpoints answer `not_found`. The studio's `publish/hosting.ts` uses them
   through `PublishTransport` `{ kind: 'bridge', url, token }`
   (`AiConnection.bridgeEndpoint()`).
+
+## Default projects and flagship worlds (+ additions to core, procgen, render, physics, agent, studio)
+
+### World IR (additive, backward compatible)
+
+- `WorldDoc.intro?: WorldIntro` — the title card shown when play starts:
+  `{ title (1–80), tagline (≤ 200, default ''), objective? (≤ 240),
+  controls (≤ 6 strings of ≤ 60, default []), accent? (#rrggbb) }`. Plain
+  text, rendered as text only.
+- Patch `setMeta` takes `intro?: WorldIntro | null` (`null` removes it);
+  `patchesBetween` / `invertPatches` diff it; `diffWorlds().metaChanged`
+  includes it; `clear` removes the title card (it describes the cleared game).
+- `Environment.weather` adds `'petals'` (drifting blossom) and `'leaves'`
+  (tumbling autumn leaves).
+- `riverMeander(z, size)`, `riverHalfWidth(size)`, `canyonMeander(z, size)`,
+  `canyonHalfWidth(size)` (exported by `@aether/core`): the curves the
+  terrain generator carves, so worlds can lay water, boats and race tracks on
+  them.
+
+### `@aether/procgen`
+
+- `terrain` variant 4 — river valley: a meandering flat riverbed at y = 0
+  along Z (`riverMeander`, half-width `riverHalfWidth`) between soft grassy
+  banks rising to rolling hills. Variant 3 (canyon) now reads its floor curve
+  from `canyonMeander` (identical geometry).
+
+### `@aether/render`
+
+- Weather `petals` / `leaves`: flat double-sided flakes whose instance
+  rotation tumbles (`writeTumble`, allocation-free).
+- Material resolution: a part that asks for vertex colours
+  (`vertexColors: true`) without an explicit `color` gets a white base — its
+  albedo is in the vertex colours and the preset supplies only the surface
+  feel. An explicit `color` still tints; surfaces that merely allow vertex
+  colours (the ground plane) keep their preset colour.
+
+### `@aether/physics`
+
+- Heightfield colliders are built with `FIX_INTERNAL_EDGES`: fast bodies no
+  longer catch triangle seams on flat terrain.
+
+### `@aether/agent` (offline planner)
+
+- `showcase/index.ts`: `FLAGSHIPS` (id, title, name matcher, deterministic
+  `plan()`), `findFlagship(request, summary)`, `planShowcase(request,
+  summary)`. `planMock` routes a request that names a flagship ("Lantern
+  Isles", "build the kart canyon") before every other planner; in a world
+  with content the request must also ask to build it. Flagship plans start
+  with `clear` and end with `setMeta { intro }`; architecture flagships send
+  `build_architecture` ops; Blockfall is `planBlockfall()` in the voxel
+  planner. The `Builder` gains `asset(…, { animation })` and
+  `scatter(…, { onSurface })`.
+
+### Studio
+
+- `src/showcase/manifest.ts` — `SHOWCASE: ShowcaseEntry[]`, the single place
+  to curate default projects: `{ slug, title, description, prompt, kind,
+  curation: 'featured' | 'candidate' | 'hidden', origin: 'flagship' |
+  'gallery', shot? }`; array order is display order. `src/lib/examples.ts`
+  derives `FEATURED_TEMPLATES`, `MORE_TEMPLATES`, `TEMPLATES` (shown ones),
+  `templateBySlug` (hidden included), `templateThumbnail(slug)`
+  (`/templates/<slug>.webp`) and `templateWorldUrl(slug)`
+  (`/templates/worlds/<slug>.json`). `TemplateKind` adds `'architecture'`.
+- `src/showcase/load.ts` — `loadTemplateWorld(slug, fetch?, timeoutMs?)`
+  (slug pattern ≤ 64 chars, 20 s deadline over request and body, streamed
+  body cap = the import limit, then `parseWorldImport`) and
+  `loadTemplateThumbnail(slug, …)` (WebP magic + thumbnail budget); both
+  never throw.
+- `createFromTemplate(repo, slug, fetch?)` creates the project from the
+  saved world with the template's title, its thumbnail and a chat that starts
+  with the original prompt; if the saved world cannot be loaded it falls back
+  to an empty project rebuilt by the offline planner.
+- Play: `Studio.togglePlay()` holds a world with an `intro` before its first
+  tick (`Simulation.setHeld`), `GameState.intro` shows the title card
+  (`TitleCard`, every kind of world), `Studio.startGame()` releases it;
+  restart never shows it again and stopping always releases the hold.

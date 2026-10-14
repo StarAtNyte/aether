@@ -124,9 +124,15 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
   const fin = spec?.finish;
   if (typeof fin === 'string' && Object.hasOwn(FINISHES, fin)) return resolveFinish(spec as MaterialSpec, fin, opts);
   const p = presetOf(spec);
-  const color = hex(spec?.color, p.color);
+  const tint = hex(spec?.color, p.color);
+  const vertexColors = opts.hasVertexColors === true && spec?.vertexColors !== false;
+  // Generator parts that ask for vertex colours (`vertexColors: true`) carry their albedo per
+  // vertex; the preset only supplies the surface feel. Without an explicit colour the base is
+  // white — multiplying by the preset colour would darken every painted generator (a green leaf
+  // preset turned pink blossom olive, stone castles near black).
+  const color = vertexColors && spec?.vertexColors === true && !(typeof spec.color === 'string' && HEX.test(spec.color)) ? '#ffffff' : tint;
   const explicitEmissive = typeof spec?.emissive === 'string' && HEX.test(spec.emissive);
-  const emissive = explicitEmissive ? hex(spec?.emissive, '#000000') : p.emissiveFollowsColor ? color : hex(p.emissive, '#000000');
+  const emissive = explicitEmissive ? hex(spec?.emissive, '#000000') : p.emissiveFollowsColor ? tint : hex(p.emissive, '#000000');
   const defaultIntensity = p.emissiveIntensity ?? (explicitEmissive ? 1 : 0);
   const emissiveIntensity = emissive === '#000000' ? 0 : range(spec?.emissiveIntensity, 0, 50, defaultIntensity);
   const opacity = unit(spec?.opacity, p.opacity ?? 1);
@@ -139,7 +145,7 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     opacity,
     transparent: opacity < OPAQUE_THRESHOLD,
     flatShading: typeof spec?.flatShading === 'boolean' ? spec.flatShading : (p.flatShading ?? false),
-    vertexColors: opts.hasVertexColors === true && spec?.vertexColors !== false,
+    vertexColors,
     doubleSided: opts.doubleSided === true,
     surface: p.surface ?? opts.surface ?? null,
     finish: null,

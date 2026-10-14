@@ -279,6 +279,8 @@ export class Simulation {
   /** Reused per frame (the frame loop must not allocate). */
   private readonly renderOpts = { onDemand: true, animate: true };
   private hidden = false;
+  /** True while the play session is held (title card showing): the scene renders, the game does not advance. */
+  private held = false;
 
   private constructor(renderer: WorldRenderer, history: History, listener: SimulationListener, opts: SimulationOptions) {
     this.renderer = renderer;
@@ -329,6 +331,24 @@ export class Simulation {
   /** 'play' while a session runs. */
   get mode(): 'edit' | 'play' {
     return this.session ? 'play' : 'edit';
+  }
+
+  /**
+   * Hold (or release) the play session: while held, physics and logic do not
+   * advance (the title card is showing) but the scene keeps rendering.
+   * Set it before `play()` so not even the first tick runs.
+   */
+  setHeld(on: boolean): void {
+    if (on === this.held) return;
+    this.held = on;
+    // Releasing must not replay the held time as a burst of catch-up steps.
+    this.stepper.reset();
+    this.touch();
+  }
+
+  /** Whether the play session is held (see {@link setHeld}). */
+  get isHeld(): boolean {
+    return this.held;
   }
 
   /** Rendering backend in use. */
@@ -1164,6 +1184,10 @@ export class Simulation {
   }
 
   private stepSession(s: PlaySession, dt: number): void {
+    if (this.held) {
+      this.stepper.reset();
+      return;
+    }
     const steps = this.stepper.advance(dt);
     const { pw, logic, character } = s;
     const speed = s.world.player.moveSpeed;

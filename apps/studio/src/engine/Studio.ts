@@ -43,7 +43,7 @@ import { AssetController } from './assets';
 import { ForgeController } from './forge';
 import { ArchController } from './arch';
 import { PublishController } from './publish';
-import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
+import { createStudioStore, type MemoryState, type StudioMode, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread, type VerificationRun } from './AgentBridge';
 import type { VerifyTrace } from '@aether/physics';
 import { playUiSound } from '../lib/uiSound';
@@ -356,7 +356,10 @@ export class Studio {
           onModeChange: (mode) => {
             const s = this.store.getState();
             s.setMode(mode);
-            if (mode === 'edit') s.resetGame();
+            if (mode === 'edit') {
+              s.resetGame();
+              this.sim?.setHeld(false);
+            }
             s.setCameraView(mode === 'play' ? (this.history.current.player.mode === 'firstPerson' ? 'firstPerson' : 'follow') : 'orbit');
           },
           onError: (message) => this.store.getState().toast(message, 'error', 6),
@@ -728,19 +731,39 @@ export class Studio {
     if (this.sim.mode !== 'play') playUiSound(st.settings, 'play');
     st.setModeBusy(true);
     try {
-      if (this.sim.mode === 'play') await this.sim.stop();
-      else {
+      if (this.sim.mode === 'play') {
+        this.sim.setHeld(false);
+        await this.sim.stop();
+      } else {
         st.resetGame();
+        // A world with a title card starts held: the card shows until the player starts.
+        const intro = this.history.current.intro !== undefined;
+        this.sim.setHeld(intro);
         await this.sim.play();
+        // Read the mode afresh: play() may have failed and left the studio editing.
+        if (this.simMode() === 'play') this.store.getState().setGame({ intro });
+        else this.sim.setHeld(false);
       }
     } finally {
       this.store.getState().setModeBusy(false);
     }
   }
 
-  /** Restart the running game. */
+  /** The simulation's current mode (a method, so reads after an await are not narrowed away). */
+  private simMode(): StudioMode {
+    return this.sim?.mode ?? 'edit';
+  }
+
+  /** Dismiss the title card and let the game run. */
+  startGame(): void {
+    this.sim?.setHeld(false);
+    this.store.getState().setGame({ intro: false });
+  }
+
+  /** Restart the running game (the title card is not shown again). */
   async restart(): Promise<void> {
     this.store.getState().resetGame();
+    this.sim?.setHeld(false);
     await this.sim?.restart();
   }
 

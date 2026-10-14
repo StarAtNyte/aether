@@ -457,7 +457,8 @@ export const Environment = z.object({
   /** 0–24 hours; drives sun direction and color when set. */
   timeOfDay: z.number().min(0).max(24).optional(),
   fog: z.object({ color: Color, density: z.number().min(0).max(1) }).nullable().default(null),
-  weather: z.enum(['clear', 'rain', 'snow', 'dust', 'fireflies']).default('clear'),
+  /** Particle weather. Additive: 'petals' (drifting blossom) and 'leaves' (tumbling autumn leaves). */
+  weather: z.enum(['clear', 'rain', 'snow', 'dust', 'fireflies', 'petals', 'leaves']).default('clear'),
   ambientIntensity: z.number().min(0).default(0.4),
   sunIntensity: z.number().min(0).default(2.5),
   /** Infinite ground plane at y=0 with a collider. Set to null for no ground (space, sky islands). */
@@ -594,6 +595,26 @@ export type MeshAsset = z.infer<typeof MeshAsset>;
 export type MeshAssetInput = z.input<typeof MeshAsset>;
 
 // ---------------------------------------------------------------------------
+// Title card (additive)
+// ---------------------------------------------------------------------------
+
+/**
+ * Additive: the title card shown when play starts — the world's name as a
+ * game title, a one-line tagline, the objective and up to six control
+ * hints. Plain text only (rendered as text, never as HTML).
+ */
+export const WorldIntro = z.object({
+  title: z.string().min(1).max(80),
+  tagline: z.string().max(200).default(''),
+  objective: z.string().max(240).optional(),
+  /** Control hints such as "WASD — walk", "E — talk". */
+  controls: z.array(z.string().min(1).max(60)).max(6).default([]),
+  /** Accent colour of the card (defaults to the theme accent). */
+  accent: Color.optional(),
+});
+export type WorldIntro = z.infer<typeof WorldIntro>;
+
+// ---------------------------------------------------------------------------
 // World document
 // ---------------------------------------------------------------------------
 
@@ -621,6 +642,8 @@ export const WorldDoc = z.object({
    * game-kit settings. Absent for ordinary worlds. See `voxel-schema.ts`.
    */
   voxel: VoxelTerrain.optional(),
+  /** Additive: title card shown when play starts (see {@link WorldIntro}). */
+  intro: WorldIntro.optional(),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;
@@ -648,7 +671,14 @@ export const Patch = z.discriminatedUnion('op', [
   z.object({ op: z.literal('defineScript'), script: ScriptDef }),
   z.object({ op: z.literal('addTest'), test: WorldTest }),
   z.object({ op: z.literal('removeTest'), id: z.string() }),
-  z.object({ op: z.literal('setMeta'), name: z.string().optional(), description: z.string().optional(), seed: z.number().int().optional() }),
+  z.object({
+    op: z.literal('setMeta'),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    seed: z.number().int().optional(),
+    /** Additive: set the title card, or with `null` remove it. */
+    intro: WorldIntro.nullable().optional(),
+  }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
   /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */
   z.object({ op: z.literal('removeGenerator'), id: z.string().min(1) }),

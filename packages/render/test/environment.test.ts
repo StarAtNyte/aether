@@ -5,7 +5,7 @@ import { computeSkyState, mixHex, NIGHT_WINDOW, normalizeHour, PRESET_HOURS, PRE
 import { maxContentFogDensity, worldFogDensity } from '../src/environment/fog';
 import { fitShadowCamera } from '../src/environment/shadow-fit';
 import { EnvironmentRig, groundTint, MAX_FOG_DENSITY } from '../src/environment/environment-rig';
-import { WeatherSystem, WEATHER_CONFIGS } from '../src/environment/weather';
+import { WeatherSystem, WEATHER_CONFIGS, writeTumble } from '../src/environment/weather';
 import { MaterialCache } from '../src/materials/material-cache';
 import { Group } from 'three';
 
@@ -203,6 +203,47 @@ describe('WeatherSystem', () => {
     expect(w.count).toBe(0);
     w.update(0.016, cam);
     w.dispose();
+  });
+
+  it('tumbles petals and leaves with orthonormal, double-sided rotations', () => {
+    for (const kind of ['petals', 'leaves'] as const) {
+      const parent = new Group();
+      const w = new WeatherSystem(parent);
+      w.set(kind);
+      expect(w.count).toBe(WEATHER_CONFIGS[kind].count);
+      const mesh = parent.children[0] as unknown as { instanceMatrix: { array: Float32Array }; material: { side: number } };
+      expect(mesh.material.side).toBe(2); // DoubleSide
+      const cam = new PerspectiveCamera();
+      w.update(0.25, cam);
+      const before = Array.from(mesh.instanceMatrix.array.slice(0, 11));
+      w.update(0.25, cam);
+      const m = mesh.instanceMatrix.array;
+      // Rotation changes over time…
+      expect(Array.from(m.slice(0, 11))).not.toEqual(before);
+      // …and stays a pure rotation (unit columns, orthogonal).
+      for (let i = 0; i < 20; i++) {
+        const k = i * 16;
+        const c0 = [m[k], m[k + 1], m[k + 2]] as number[];
+        const c1 = [m[k + 4], m[k + 5], m[k + 6]] as number[];
+        const c2 = [m[k + 8], m[k + 9], m[k + 10]] as number[];
+        const dot = (a: number[], b: number[]): number => (a[0] as number) * (b[0] as number) + (a[1] as number) * (b[1] as number) + (a[2] as number) * (b[2] as number);
+        expect(dot(c0, c0)).toBeCloseTo(1, 5);
+        expect(dot(c1, c1)).toBeCloseTo(1, 5);
+        expect(dot(c2, c2)).toBeCloseTo(1, 5);
+        expect(dot(c0, c1)).toBeCloseTo(0, 5);
+        expect(dot(c1, c2)).toBeCloseTo(0, 5);
+      }
+      w.dispose();
+      expect(parent.children.length).toBe(0);
+    }
+  });
+
+  it('writeTumble writes a rotation without touching translation', () => {
+    const m = new Float32Array(16);
+    m[12] = 7;
+    m[15] = 1;
+    writeTumble(m, 0, 0, 0);
+    expect(Array.from(m)).toEqual([1, 0, -0, 0, 0, 1, 0, 0, 0, -0, 1, 0, 7, 0, 0, 1]);
   });
 
   it('updates 5000 particles quickly', () => {

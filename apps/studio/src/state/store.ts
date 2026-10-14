@@ -185,6 +185,8 @@ export interface GameState {
   /** HUD values keyed by state key (already formatted). */
   hud: Record<string, string>;
   time: number;
+  /** The world's title card is showing (the session is held until the player starts). */
+  intro: boolean;
 }
 
 /** Full UI state + actions. */
@@ -356,7 +358,7 @@ export interface StudioInit {
 
 const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0, sceneTriangles: 0, fieldInstances: 0, fieldDrawn: 0, virtualInstances: 0, virtualDrawn: 0 };
 const IDLE_VERIFY: VerifyState = { status: 'idle', summary: '', results: [], diagnostics: [], head: null, ms: 0 };
-const INITIAL_GAME: GameState = { status: 'playing', text: '', hud: {}, time: 0 };
+const INITIAL_GAME: GameState = { status: 'playing', text: '', hud: {}, time: 0, intro: false };
 const MAX_TOAST_TEXT = 240;
 
 /** Shallow equality of two flat records (numbers/strings). */

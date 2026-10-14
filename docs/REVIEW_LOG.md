@@ -1917,3 +1917,54 @@ user's own CLIs, LAN sharing and version snapshots.
   in both browsers. The publish styles are scoped (`.pub*`) and load only
   with the hub, so these are carried over, not introduced; they are left for
   the Assets panel's owner.
+
+## Stage: flagship default projects
+
+Twelve flagship worlds (Lantern Isles, Chain Reaction, Kart Canyon,
+Blockfall, Neon Rain City, Kyoto Temple Lanterns, Painterly Meadow,
+Four-Seasons Garden, Orbital Lab, Sakura River Journey, Skyline Penthouse,
+Dusk House by the Lake) as offline-planner plans, every gallery world kept as
+a bundled default project (23 entries), one curation manifest, lazy saved
+worlds, title cards, and four engine fixes found while art-directing them
+(vertex-coloured generators double-tinted by their preset colour, ghost
+bumps on flat heightfields, a too-long template slug accepted, title-card
+hold for block worlds).
+
+### Security checklist
+
+- [x] **New input boundary: template files.** `loadTemplateWorld` /
+  `loadTemplateThumbnail` treat the site's own static files as untrusted:
+  slug pattern with a 64-character cap (regression test: a 300-character
+  slug was accepted before), 20 s deadline covering request and body,
+  declared and streamed size caps (the stream is cancelled at the cap), the
+  world goes through `parseWorldImport` (prototype-pollution guard + schema
+  validation), thumbnails must carry the WebP magic and fit the thumbnail
+  budget (SVG refused). Never throws; failures fall back to the planner.
+- [x] **Title card.** `WorldIntro` is zod-validated (lengths, ≤ 6 controls,
+  `#rrggbb` accent) and rendered as React text only; the accent reaches CSS
+  only through a validated custom property.
+- [x] **No eval / innerHTML** added; no new dependencies (`npm audit
+  --omit=dev`: 0 vulnerabilities); no secrets; no network beyond same-origin
+  static files; CSP unchanged.
+- [x] **Scripts.** `showcase.e2e.ts` runs `cwebp` with argument arrays and a
+  timeout; bake writes only under `apps/studio/public/templates/worlds/`.
+
+### Performance checklist
+
+- [x] **Per-frame allocations.** Petal/leaf tumbling writes instance
+  rotations with arithmetic only (`writeTumble`); the held play session
+  returns before stepping (no work, no allocation).
+- [x] **GPU resources.** Weather layers dispose geometry and material on
+  switch (unit test); flagship windows (thousands) and groves are instanced
+  scatter layers, not entities; point lights kept to about a dozen per world.
+- [x] **Bundle.** First paint gains the manifest (~6 KB in `index`); the
+  flagship plans (99 KB min / 32 KB gzip) live in the lazily loaded agent
+  session chunk; saved worlds (2.2 MB total, 5–230 KB each) are fetched only
+  when a template is opened; thumbnails ≤ 30 KB each (eager only for the
+  featured row).
+- [x] **Repository growth.** About 3.6 MB (worlds 2.2 MB, thumbnails 0.6 MB,
+  covers 0.76 MB) — well under the 25 MB budget. No preview videos.
+- [x] **Physics.** `FIX_INTERNAL_EDGES` on heightfields removes metre-high
+  hops of fast bodies on flat terrain (regression test fails without it).
+- [x] **Firefox / WebGL2.** `e2e:showcase` opens and plays every featured
+  world in Firefox as well as Chromium.

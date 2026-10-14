@@ -7,7 +7,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
-import { TEMPLATES } from '../lib/examples';
+import { FEATURED_TEMPLATES, MORE_TEMPLATES, TEMPLATES } from '../lib/examples';
 import { shortcut } from '../lib/keys';
 import { formatRelative } from '../lib/relativeTime';
 import type { HomeSection } from '../lib/router';
@@ -45,6 +45,9 @@ const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'published', label: 'Published', icon: 'globe' },
   { id: 'docs', label: 'Documentation', icon: 'book' },
 ];
+
+/** The home page's template row: the featured templates (or the first shown ones when none is featured). */
+const HOME_ROW = FEATURED_TEMPLATES.length > 0 ? FEATURED_TEMPLATES : TEMPLATES.slice(0, 8);
 
 const TITLES: Readonly<Record<HomeSection, string>> = { home: 'Home', templates: 'Templates', projects: 'Projects', published: 'Published', docs: 'Documentation' };
 const RECENT_LIMIT = 12;
@@ -323,14 +326,38 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     );
   } else if (section === 'templates' && !searching) {
     content = (
-      <section className="home-section">
-        <p className="home-section__lead">Each template is a complete world built by the offline planner: open one, play it, then ask the agent to change it.</p>
-        <div className="template-grid">
-          {TEMPLATES.map((t, i) => (
-            <TemplateCard key={t.slug} template={t} onPick={pickTemplate} eager={i < 4} />
-          ))}
-        </div>
-      </section>
+      <>
+        {FEATURED_TEMPLATES.length > 0 && (
+          <section className="home-section" aria-labelledby="h-featured">
+            <div className="section-head">
+              <h2 id="h-featured" className="section-head__title">
+                Featured
+              </h2>
+            </div>
+            <p className="home-section__lead">Finished games and scenes built with the framework: open one, play it, then ask the agent to change it.</p>
+            <div className="template-grid">
+              {FEATURED_TEMPLATES.map((t, i) => (
+                <TemplateCard key={t.slug} template={t} onPick={pickTemplate} eager={i < 8} />
+              ))}
+            </div>
+          </section>
+        )}
+        {MORE_TEMPLATES.length > 0 && (
+          <section className="home-section" aria-labelledby="h-more">
+            <div className="section-head">
+              <h2 id="h-more" className="section-head__title">
+                More worlds
+              </h2>
+            </div>
+            <p className="home-section__lead">Saved worlds, each built from the prompt on its card.</p>
+            <div className="template-grid">
+              {MORE_TEMPLATES.map((t) => (
+                <TemplateCard key={t.slug} template={t} onPick={pickTemplate} />
+              ))}
+            </div>
+          </section>
+        )}
+      </>
     );
   } else {
     const showTemplates = section === 'home' && !searching;
@@ -348,7 +375,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
               </a>
             </div>
             <div className="template-row" role="list">
-              {TEMPLATES.map((t) => (
+              {HOME_ROW.map((t) => (
                 <div key={t.slug} role="listitem" className="template-row__item">
                   {/* Eager: ~10 KB each, and the cards at the faded edge of the row must never show a placeholder. */}
                   <TemplateCard template={t} onPick={pickTemplate} eager />
