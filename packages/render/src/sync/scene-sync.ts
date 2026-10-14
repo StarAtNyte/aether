@@ -285,7 +285,7 @@ export class SceneSync {
     this.variant = opts.variant ?? 'standard';
     this.maxInstances = Math.max(0, opts.maxInstances ?? DEFAULT_MAX_INSTANCES);
     this.maxScatterTriangles = Math.max(0, opts.maxScatterTriangles ?? DEFAULT_MAX_SCATTER_TRIANGLES);
-    this.root.name = this.variant === 'ghost' ? 'aether:ghost' : 'aether:entities';
+    this.root.name = this.variant === 'ghost' ? 'aether:ghost' : this.variant === 'proof' ? 'aether:proof-ghosts' : 'aether:entities';
     this.placeholderGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;

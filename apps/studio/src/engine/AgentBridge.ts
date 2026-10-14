@@ -12,7 +12,7 @@ import { userEditMarks, type EntityId, type GeneratorDef, type History, type Pat
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
-import type { ColliderProvider, TestResult, VerifyReport } from '@aether/physics';
+import type { ColliderProvider, TestResult, VerifyReport, VerifyTrace } from '@aether/physics';
 import { summarizeReport } from '@aether/physics/report';
 import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, loadLibraryGenerator, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
 import { API, GENERATOR_DRY_RUN_MS, HEALTH_TIMEOUT_MS, VERIFY_BUDGET_MS, VERIFY_MAX_SECONDS } from '../config';
@@ -107,6 +107,8 @@ export class AgentBridge implements AgentHost {
 
   /** Live progress of agent-triggered verification (the Verify panel streams it). */
   verifyListener: VerifyProgressListener | null = null;
+  /** Record motion traces for the proof replay (the studio turns this on; headless callers leave it off). */
+  traceProofs = false;
   /** Where and how fast the last agent-triggered verification ran. */
   lastVerify: { ms: number; lanes: number; worker: boolean; simulatedSeconds: number } | null = null;
 
@@ -167,6 +169,7 @@ export class AgentBridge implements AgentHost {
     listener?.start(world);
     const run = await runVerification(world, this.simulation, {
       service: this.verifier,
+      ...(this.traceProofs ? { trace: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
       ...(listener ? { onResult: (i: number, r: TestResult) => listener.result(i, r), onPlan: (p: { lanes: number; worker: boolean }) => listener.plan(p) } : {}),
     });
@@ -224,6 +227,8 @@ export interface RunVerificationOptions {
   onResult?: (index: number, result: TestResult) => void;
   /** Where and how wide the run goes, before it starts. */
   onPlan?: (plan: { lanes: number; worker: boolean }) => void;
+  /** Record a motion trace for the proof replay (returned in {@link VerificationRun.trace}, never in the report). */
+  trace?: boolean;
 }
 
 /** {@link BridgeVerifyResult} plus where it ran. */
@@ -234,6 +239,8 @@ export interface VerificationRun extends BridgeVerifyResult {
   worker: boolean;
   /** True when it was cancelled. */
   cancelled: boolean;
+  /** Motion of the bodies that moved most (when requested); kept out of `report`, which goes to the model. */
+  trace?: VerifyTrace;
 }
 
 /**
@@ -257,6 +264,7 @@ export async function verifyOnMainThread(world: WorldDoc, opts: VerifyRunOptions
       budgetMs: opts.budgetMs,
       ...(opts.signal ? { signal: opts.signal } : {}),
       ...(opts.onResult ? { onResult: opts.onResult } : {}),
+      ...(opts.trace ? { trace: true } : {}),
     });
   } finally {
     logic.dispose();
@@ -280,13 +288,16 @@ export async function runVerification(world: WorldDoc, sim: Simulation | null, o
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.onResult ? { onResult: opts.onResult } : {}),
     ...(opts.onPlan ? { onPlan: opts.onPlan } : {}),
+    ...(opts.trace ? { trace: true } : {}),
   };
   const service = opts.service ?? new VerificationService(null, verifyOnMainThread);
   const out = await service.run(world, runOpts);
   if (out.ok) {
+    // The trace is for the replay only: the report goes back to the model as text.
+    const { trace, ...report } = out.report;
     // The report module is tiny and Rapier-free: summarising never loads physics on the main thread.
-    const summary = summarizeReport(out.report);
-    return { report: out.report, summary, passed: out.report.passed, lanes: out.lanes, worker: out.worker, cancelled: false };
+    const summary = summarizeReport(report);
+    return { report, summary, passed: report.passed, lanes: out.lanes, worker: out.worker, cancelled: false, ...(trace ? { trace } : {}) };
   }
   const message = out.cancelled ? 'verification cancelled' : /unavailable|import|fetch|module/i.test(out.error) && !out.worker ? `verification unavailable: ${out.error}` : `verification crashed: ${out.error}`;
   return { report: { error: message }, summary: message, passed: false, lanes: 1, worker: out.worker, cancelled: out.cancelled };

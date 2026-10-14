@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import type { ColliderDesc } from '@aether/procgen';
-import type { Diagnostic, SettleReport, TestResult, VerifyReport } from '@aether/physics';
+import type { Diagnostic, SettleReport, TestResult, VerifyReport, VerifyTrace } from '@aether/physics';
 
 /** Entities that may carry renderer colliders in one request. */
 export const MAX_COLLIDER_ENTITIES = 5000;
@@ -81,6 +81,8 @@ export const VerifyRequestOptions = z
     tests: z.array(z.number().int().min(0).max(10_000)).max(1000).optional(),
     /** Compute static diagnostics in this request. */
     diagnostics: z.boolean(),
+    /** Record a motion trace for the proof replay (one shard per run). */
+    trace: z.boolean().optional(),
   })
   .strict();
 
@@ -126,6 +128,25 @@ export const DiagnosticSchema: z.ZodType<Diagnostic> = z.object({
   suggestion: text.optional(),
 }) as z.ZodType<Diagnostic>;
 
+/** Bodies in one motion trace. */
+export const MAX_TRACE_BODIES = 64;
+/** Frames in one motion trace (20 s at 30 Hz). */
+export const MAX_TRACE_FRAMES = 601;
+/** Floats per body per frame (position xyz + quaternion xyzw). */
+const TRACE_STRIDE = 7;
+
+/** A motion trace as reported by the worker: exact length, finite values. */
+export const VerifyTraceSchema: z.ZodType<VerifyTrace> = z
+  .object({
+    ids: z.array(z.string().min(1).max(128)).min(1).max(MAX_TRACE_BODIES),
+    dt: z.number().gt(0).max(1),
+    frames: z.number().int().min(2).max(MAX_TRACE_FRAMES),
+    poses: float32(MAX_TRACE_BODIES * MAX_TRACE_FRAMES * TRACE_STRIDE),
+  })
+  .strict()
+  .refine((t) => t.poses.length === t.frames * t.ids.length * TRACE_STRIDE, 'poses must hold frames × bodies × 7 values')
+  .refine((t) => t.poses.every(Number.isFinite), 'poses must be finite') as z.ZodType<VerifyTrace>;
+
 /** A verification report as reported by the worker. */
 export const VerifyReportSchema: z.ZodType<VerifyReport> = z.object({
   passed: z.boolean(),
@@ -134,6 +155,7 @@ export const VerifyReportSchema: z.ZodType<VerifyReport> = z.object({
   simulatedSeconds: finite,
   ms: finite,
   testIndices: z.array(count).max(MAX_REPLY_ITEMS).optional(),
+  trace: VerifyTraceSchema.optional(),
 }) as z.ZodType<VerifyReport>;
 
 /** A settle report as reported by the worker (patches are re-validated by History on commit). */

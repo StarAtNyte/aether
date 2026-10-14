@@ -38,7 +38,8 @@ function debugEnabled(): boolean {
   }
 }
 
-function exposeDebug(studio: Studio): void {
+/** Expose the `window.__aether` debug handle (dev builds or `?debug=1` only). */
+export function exposeDebug(studio: Studio): void {
   if (!debugEnabled()) return;
   window.__aether = {
     studio,

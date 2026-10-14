@@ -36,6 +36,10 @@ with your own API key, with your own Codex login through that same command
 | --- | --- | --- | --- |
 | ![The villa's open living room, kitchen and stair](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-room.png) | ![Café with counter, tables and washroom](docs/screenshots/gallery/arch-a-small-caf-interior-room.png) | ![Scandinavian living room at night, lamps on](docs/screenshots/gallery/arch-scandinavian-living-room-with-a-fireplace-night.png) | ![Section through the villa's upper floor](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-section.png) |
 
+| The proof: ghost replay + seal | Shared link, read-only viewer | First-visit tour |
+| --- | --- | --- |
+| ![After a build, ghosts re-enact the verification run and the "Proved" seal lands](docs/screenshots/proof-replay.png) | ![A shared world opened from its link: Play, Export, Remix](docs/screenshots/shared-viewer.png) | ![Three-step tour: describe, proved, play](docs/screenshots/tour.png) |
+
 | Projects home | Starter scene in the editor | Play mode | Phone |
 | --- | --- | --- | --- |
 | ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |
@@ -149,6 +153,21 @@ explicit state, so the AI can be held to account:
   several tests are verified as parallel forks: the checks panel fills in
   test by test ("12 s of physics in 340 ms · 2 parallel workers") while the
   viewport stays fully interactive.
+- **You watch the proof.** The verification worker records how the bodies
+  that moved actually moved. After a build, translucent ghosts re-enact that
+  run over the edited world (dominoes topple, the ball rolls into the pins)
+  and leave fading trails. A seal then lands: "Proved · 4 of 4 checks ·
+  7.3 s simulated", with Replay. Before that, the agent's plan is drawn on
+  the world: corner brackets where each new object will stand, and labels
+  that name what it is placing ("Palm ×12"). The objects then grow into their
+  brackets. The sent prompt flies from the composer into the world. Every
+  moment respects reduced motion ([docs/DESIGN.md](docs/DESIGN.md)).
+- **Share by link, no server needed.** Share copies a link that carries the
+  world itself (deflate-compressed in the URL fragment, validated like a file
+  import on the way in), so it works from any static host and nothing is
+  uploaded. It opens a read-only viewer with Play, Export and **Remix**,
+  which copies the world into your own projects. Export also writes the
+  static scene as a binary glTF (`.glb`).
 - **Procedural generator library.** 36 deterministic built-in generators
   (trees, rocks, houses, towers, bridges, windmills, vehicles, terrain and canyons,
   islands, mountains, crystals, portals, high-detail colossal sculptures and more), built on a typed-array
@@ -271,8 +290,13 @@ explicit state, so the AI can be held to account:
   viewport) and editable checks with "Run checks" complete the set. The
   agent sees your hand edits and never touches locked objects. A command palette (Ctrl/⌘+K)
   searches actions, objects, assets, templates and projects; every control
-  has a tooltip with its shortcut. Light theme by default (follows the system
-  on first visit), dark theme one click away.
+  has a tooltip with its shortcut, and free text in the palette becomes "Ask
+  the agent: …". `?` shows every shortcut, and a three-step tour (describe →
+  proved → play) greets a first visit. The home page leads with the prompt
+  ("Speak a world into being.") over a stage of example worlds. Play goes
+  full-window with an iris transition. Interface sounds are opt-in. Light
+  theme by default (follows the system on first visit), dark theme one click
+  away.
 - **Responsive.** Three columns on wide screens with resizable, balanced
   side panels; one panel at a time on laptops; slide-over drawers on
   tablets; on phones the viewport sits above a bottom sheet (drag handle,
@@ -405,8 +429,9 @@ The complete list (rate limits, storage, timeouts, generator validation) is in
 
 Routes are hash based (they work on any static host): `#/` home, `#/templates`,
 `#/projects`, `#/docs`, `#/p/<id>` the editor for a project, `#/new` a new
-project from the starter scene and `#/new/<template>` a new project from a
-template (for example `#/new/coin-island`).
+project from the starter scene, `#/new/<template>` a new project from a
+template (for example `#/new/coin-island`) and `#/view/<token>` the read-only
+viewer of a shared world (the token is the world itself, compressed).
 
 ## Scripts
 
@@ -427,6 +452,7 @@ template (for example `#/new/coin-island`).
 | `npm run e2e:voxel` | Block worlds in Chromium (WebGPU, WebGL2) and Firefox: prompt → streamed terrain without long tasks, edit → remesh latency, walk, break, place, craft, bounded memory while travelling, save and reload |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
+| `npm run e2e:ux` | UX end to end in Chromium then Firefox: keyboard (Tab to the hero prompt with a visible focus ring, `?` overlay, Enter builds), the proof seal and ghost replay, full-window play, command palette (search, free text → agent), share link → read-only viewer → Remix, the 3-step tour (Next / Back / Esc, remembered), phone layout (hero, prompt, touch stick, viewer) |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
 | `npm run thumbnails` | Renders the template thumbnails (`public/templates/*.webp`, ≤ 30 KB) and asset previews (`public/palette/*.webp`) with the real renderer |
 | `npm run bridge` | Starts the local Aether Bridge (Codex / Claude Code through your own sign-in); `-- --origin https://host` allows a hosted studio |
@@ -656,6 +682,7 @@ All LLM output and all user input are treated as untrusted.
 | Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on 18 prompts (4 of them block worlds), including all 9 templates (the million-tree showcase among them). Every resulting world is re-validated and re-verified independently. |
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
+| UX | `npm run build && npm run e2e:ux` | Chromium and Firefox: keyboard navigation and focus visibility, the shortcuts overlay, prompt from the home hero, the proof seal and ghost replay (cleared by full-window Play), command palette actions and free-text prompts, the share link round trip (viewer, play / stop, Remix into an editable project), the onboarding tour and the phone layout. |
 | Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
 | Architecture | `npm run build && npm run e2e:arch` | Chromium (WebGPU, WebGL2) and Firefox: the apartment prompt, every building view and the studio render (non-blank, refining), GPU objects flat over 20 view/quality cycles, floor-plan drawing as undoable checked edits, and a walkthrough that opens the front door with E and walks in, then night, lights and photo mode. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |

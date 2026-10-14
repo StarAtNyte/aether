@@ -40,6 +40,11 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
   cluck: { type: 'square', from: 950, to: 700, duration: 0.05, gain: 0.05, then: { from: 900, to: 650, delay: 0.09 } },
   groan: { type: 'sawtooth', from: 120, to: 78, duration: 0.7, gain: 0.07 },
   hiss: { type: 'noise', from: 4200, to: 3600, duration: 0.4, gain: 0.05 },
+  // Interface (opt-in, Settings → Interface sounds): quiet, short, consonant.
+  'ui-send': { type: 'sine', from: 520, to: 880, duration: 0.16, gain: 0.045 },
+  'ui-proof': { type: 'sine', from: 784, to: 790, duration: 0.32, gain: 0.05, then: { from: 1175, to: 1180, delay: 0.11 } },
+  'ui-play': { type: 'triangle', from: 330, to: 660, duration: 0.22, gain: 0.04 },
+  'ui-tick': { type: 'sine', from: 1400, to: 1300, duration: 0.03, gain: 0.025 },
 });
 
 /** Minimum seconds between two plays of the same sound. */

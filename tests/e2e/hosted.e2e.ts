@@ -27,7 +27,7 @@ import { PROMPT_EXAMPLES, type BridgeBackendStatus, type LoginState, type TextBa
 import type { LoginManager } from '../../apps/bridge/src/auth';
 import { Pairing } from '../../apps/bridge/src/pairing';
 import { createBridgeHandler } from '../../apps/bridge/src/server';
-import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, SKIP_TOUR, STUDIO_DIST, findChrome, findFirefox } from './support/env';
 
 const TURN_TIMEOUT_MS = 120_000;
 const KEY = 'sk-e2e-0123456789abcdefghijklmnopqrstuv';
@@ -277,6 +277,8 @@ const FIRST_RUN_DISMISSED: Readonly<Record<string, string>> = { 'aether.onboardi
 
 async function openEditor(browser: Browser, url: string, prefs: Record<string, unknown> | null, before?: (page: Page) => Promise<void>): Promise<{ page: Page; close: () => Promise<void>; cspViolations: string[] }> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  // The editor tour is covered by e2e:ux; here it would only sit beside the composer.
+  await ctx.addInitScript(SKIP_TOUR);
   const page = await ctx.newPage();
   const cspViolations: string[] = [];
   page.on('pageerror', (e) => log(`  [pageerror] ${e.message}`));

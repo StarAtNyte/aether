@@ -19,6 +19,8 @@ import { MaterialCache } from '../src/materials/material-cache';
 import { accelerateRaycast, triangleBvh } from '../src/geometry/raycast-bvh';
 import { describeSites, probeAllocations } from '../../../tests/unit/alloc-probe';
 import { makeSync } from './helpers';
+import { ProofReplay } from '../src/view/proof-replay';
+import { BlueprintMarks } from '../src/view/blueprint';
 
 const RENDER_SRC = /packages\/render\/src\//;
 /** Sampling noise allowance per frame (bytes): the probe must find no real per-frame garbage. */
@@ -224,5 +226,36 @@ describe('render loop allocation probe', () => {
     expect(sync.batchStats().merges).toBeGreaterThan(0);
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
     view.dispose();
+  });
+
+  it('proof replay playback (16 ghosts, trails) and blueprint fades allocate nothing per frame', async () => {
+    const { sync } = makeSync();
+    const ids = Array.from({ length: 16 }, (_, i) => `g-${i}`);
+    const map: Record<string, EntityInput> = {};
+    for (const id of ids) map[id] = { id, shape: { kind: 'primitive', primitive: 'box', size: [0.2, 1, 0.5] }, physics: { body: 'dynamic' } };
+    const world = createWorld({ entities: map });
+    const frames = 241;
+    const poses = new Float32Array(frames * ids.length * 7);
+    for (let f = 0; f < frames; f++) for (let b = 0; b < ids.length; b++) {
+      const o = (f * ids.length + b) * 7;
+      poses[o] = b + f * 0.01;
+      poses[o + 1] = 0.5;
+      poses[o + 6] = 1;
+    }
+    const replay = new ProofReplay(() => sync);
+    expect(await replay.start(world, { ids, dt: 1 / 30, frames, poses })).toBe(true);
+    const marks = new BlueprintMarks();
+    marks.show(ids.map((_, i) => ({ min: [i, 0, 0] as const, max: [i + 1, 1, 1] as const })));
+    const r = await probeAllocations(
+      () => {
+        replay.update(1e-5);
+        marks.update(1e-6);
+      },
+      { iterations: 400, warmup: 20_000, match: RENDER_SRC },
+    );
+    expect(replay.state).toBe('play');
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
+    replay.dispose();
+    marks.dispose();
   });
 });

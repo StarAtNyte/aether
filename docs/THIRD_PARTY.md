@@ -25,7 +25,7 @@ These are bundled into the studio or executed by the server.
 
 | Package | Installed version | Licence | Used by | Copyright / source |
 | --- | --- | --- | --- | --- |
-| [three](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | `@aether/render`, studio | © 2010–2026 three.js authors |
+| [three](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | `@aether/render`, studio (its `examples/jsm/exporters/GLTFExporter.js` powers Export → 3D model, loaded on demand as its own chunk; no new package) | © 2010–2026 three.js authors |
 | [@dimforge/rapier3d-compat](https://github.com/dimforge/rapier.js) | 0.21.0 | Apache-2.0 | `@aether/physics` (installed at `packages/physics/node_modules`) | Dimforge / rapier.js authors |
 | [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `@aether/logic` script sandbox (loaded lazily) | © 2019–2024 Jake Teton-Landis |
 | [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `@aether/logic`: the single QuickJS build the sandbox loads | © 2019–2024 Jake Teton-Landis |

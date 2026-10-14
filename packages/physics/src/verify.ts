@@ -11,6 +11,7 @@ import { diagnoseWorld, findOverlaps } from './diagnose';
 import { entityPose } from './plan';
 import { collidersBounds } from './shapes';
 import { resolveShapeColliders } from './source';
+import { TraceRecorder, type TraceOptions } from './trace';
 import { GROUND_ID, type ColliderProvider, type LogicHook, type PhysicsEvent, type Quat, type TestResult, type VerifyReport } from './types';
 import { distance, fmt, rotate, tiltDegrees } from './vec';
 import { yieldToHost } from './yield';
@@ -53,6 +54,13 @@ export interface VerifyOptions {
   signal?: AbortSignal;
   /** Called once per test as soon as it is decided (incremental progress). */
   onResult?: (index: number, result: TestResult) => void;
+  /**
+   * Record the motion of the bodies that move (`report.trace`) for a replay.
+   * The run then continues to at least `minSeconds` of simulated time
+   * (default 3 s, within `maxSeconds` and the budget) after the tests are
+   * decided.
+   */
+  trace?: boolean | TraceOptions;
 }
 
 /** Error thrown by {@link verify} when its `signal` aborts. */
@@ -393,12 +401,16 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
       if (v) decide(index, { id: test.id, kind: test.kind, ...v, atTime: 0 });
       else active.push({ ...ev, index });
     }
+    const recorder = opts.trace ? new TraceRecorder(pw, opts.trace === true ? {} : opts.trace) : null;
+    recorder?.sample(pw, 0);
     const horizon = Math.min(maxSeconds, active.reduce((m, e) => Math.max(m, e.horizon), 0));
+    // The replay wants a few seconds of motion even when every test was decided early.
+    const runFor = recorder ? Math.min(maxSeconds, Math.max(horizon, recorder.minSeconds)) : horizon;
     let budgetHit = false;
     // Compute time spent before stepping (world build, diagnostics) counts too.
     let spentMs = performance.now() - t0;
     let sliceStart = performance.now();
-    while (active.length > 0 && pw.time < horizon - 1e-9) {
+    while ((active.length > 0 || recorder?.wantsMore(pw.time) === true) && pw.time < runFor - 1e-9) {
       if (signal?.aborted) throw new VerifyAbortedError();
       const now = performance.now();
       if (spentMs + (now - sliceStart) > budgetMs) {
@@ -421,6 +433,7 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
         }
       }
       const t = pw.time;
+      recorder?.sample(pw, t);
       // In-place compaction (no per-step array allocation).
       let kept = 0;
       for (let i = 0; i < active.length; i++) {
@@ -443,6 +456,8 @@ export async function verify(world: WorldDoc, opts: VerifyOptions = {}): Promise
     const passed = ordered.every((r) => r.passed) && !diagnostics.some((d) => d.severity === 'error');
     const report: VerifyReport = { passed, results: ordered, diagnostics, simulatedSeconds: Number(pw.time.toFixed(3)), ms: performance.now() - t0 };
     if (opts.tests) report.testIndices = indices;
+    const trace = recorder?.finish();
+    if (trace) report.trace = trace;
     return report;
   } finally {
     pw.dispose();

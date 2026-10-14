@@ -33,7 +33,7 @@ import {
 } from '../lib/storage';
 import { paletteEntity, paletteItem } from '../lib/palette';
 import { dataUrlToBlob, fitThumbnail } from '../lib/thumbnail';
-import { downloadText } from '../lib/download';
+import { downloadBytes, downloadText } from '../lib/download';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
@@ -43,7 +43,11 @@ import { AssetController } from './assets';
 import { ForgeController } from './forge';
 import { ArchController } from './arch';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
-import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread } from './AgentBridge';
+import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread, type VerificationRun } from './AgentBridge';
+import type { VerifyTrace } from '@aether/physics';
+import { playUiSound } from '../lib/uiSound';
+import { planMarks } from '../lib/planMarks';
+import { encodeWorldToken, viewerUrl } from '../lib/shareLink';
 import { LiveVerifyFeed } from './verify/live';
 import { VerifyPool } from './verify/pool';
 import { VerificationService } from './verify/service';
@@ -143,6 +147,10 @@ export class Studio {
   private readonly verifier: VerificationService;
   /** Streams verification progress into the store. */
   private readonly liveVerify: LiveVerifyFeed;
+  /** Outcome of the last verification run, for the seal and its motion replay. */
+  private lastProof: { trace: VerifyTrace | null; passed: boolean; head: number; tests: number; passedTests: number; seconds: number } | null = null;
+  private proofSeq = 0;
+  private proofGen = 0;
   /** Cancels the running panel verification (dispose). */
   private verifyAbort: AbortController | null = null;
   private warmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -198,7 +206,18 @@ export class Studio {
       head: () => this.history.head,
     });
     this.bridge = new AgentBridge(this.history, this.sandbox, this.verifier);
-    this.bridge.verifyListener = this.liveVerify;
+    // The live feed fills the Checks panel; the run's outcome (and motion trace) also feeds the proof seal.
+    const live = this.liveVerify;
+    this.bridge.verifyListener = {
+      start: (w) => live.start(w),
+      plan: (p) => live.plan(p),
+      result: (i, r) => live.result(i, r),
+      end: (run, ms) => {
+        live.end(run, ms);
+        this.recordProof(run);
+      },
+    };
+    this.bridge.traceProofs = true;
     this.editor = new Editor(this, { storage: this.storage });
     this.arch = new ArchController(this);
     this.assets = new AssetController(this, { storage: this.storage });
@@ -210,6 +229,8 @@ export class Studio {
         this.store.getState().pruneEntities(new Set(Object.keys(world.entities)));
         const v = this.store.getState().verify;
         if (v.status !== 'idle' && v.status !== 'running' && v.head !== this.history.head) this.sim?.setDiagnostics([]);
+        // An edit makes a running replay stale.
+        if (this.lastProof && this.lastProof.head !== this.history.head && !this.store.getState().agentBusy) this.dismissProof();
       }),
     );
     let lastChat = this.store.getState().chat;
@@ -610,9 +631,45 @@ export class Studio {
     downloadText(exportFileName(world), exportWorld(world));
   }
 
-  /** Upload the world to the server and copy a share link. Returns the link or null. */
+  /** Download the world's meshes (static scene) as a binary glTF (.glb). Resolves to an error message or null. */
+  async exportGltf(): Promise<string | null> {
+    const st = this.store.getState();
+    const sim = this.sim;
+    if (!sim) return 'The 3D view is not ready yet.';
+    if (sim.mode === 'play') return 'Stop playing to export the scene.';
+    try {
+      const data = await sim.renderer.exportGlb();
+      downloadBytes(exportFileName(this.history.current).replace(/\.aether\.json$/, '.glb'), data, 'model/gltf-binary');
+      st.toast(`Exported a ${Math.max(1, Math.round(data.byteLength / 1024))} KB glTF model.`, 'success');
+      return null;
+    } catch (err) {
+      const msg = `Could not export glTF: ${errorMessage(err).slice(0, 200)}`;
+      st.toast(msg, 'error', 6);
+      return msg;
+    }
+  }
+
+  /**
+   * Copy a share link. The world travels inside the link itself (a URL
+   * fragment: no upload, works on any static host) and opens read-only with
+   * a Remix button; a world too large for a link is uploaded to the server
+   * instead when one is available. Returns the link or null.
+   */
   async share(): Promise<string | null> {
     const st = this.store.getState();
+    const imports = worldAssetIds(this.history.current).filter(isUserAssetId).length;
+    const note = imports > 0 ? ` ${imports} imported file${imports > 1 ? 's are' : ' is'} not included (stand-ins appear) — use Export package to share them.` : '';
+    const token = await encodeWorldToken(this.history.current).catch(() => null);
+    if (token) {
+      const link = viewerUrl(token);
+      try {
+        await navigator.clipboard.writeText(link);
+        st.toast(`Link copied: it opens this world read-only, ready to play or remix.${note}`, 'success', note ? 7 : 4);
+      } catch {
+        st.toast(`Copy this link to share the world: ${link.length > 160 ? `${link.slice(0, 160)}…` : link}`, 'info', 10);
+      }
+      return link;
+    }
     try {
       const res = await fetch(API.worlds, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(this.history.current) });
       if (!res.ok) throw new Error(res.status === 413 ? 'world too large to share' : `server responded ${res.status}`);
@@ -620,8 +677,6 @@ export class Studio {
       const id = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)['id'] : undefined;
       if (typeof id !== 'string' || !SHARE_ID.test(id)) throw new Error('unexpected server response');
       const link = `${location.origin}${location.pathname}?world=${id}`;
-      // Imported files stay in this browser: say so, and point at the package export.
-      const imports = worldAssetIds(this.history.current).filter(isUserAssetId).length;
       try {
         await navigator.clipboard.writeText(link);
         st.toast(imports > 0 ? `Share link copied. ${imports} imported file${imports > 1 ? 's are' : ' is'} not included (stand-ins appear) — use Export package to share them.` : 'Share link copied to clipboard', 'success', imports > 0 ? 7 : undefined);
@@ -630,7 +685,7 @@ export class Studio {
       }
       return link;
     } catch (err) {
-      st.toast(`Sharing needs the Aether server (${errorMessage(err)}). Use Export instead.`, 'error', 6);
+      st.toast(`This world is too large for a link and the share server is unavailable (${errorMessage(err)}). Use Export instead.`, 'error', 7);
       return null;
     }
   }
@@ -664,6 +719,8 @@ export class Studio {
   async togglePlay(): Promise<void> {
     const st = this.store.getState();
     if (!this.sim || st.modeBusy) return;
+    this.dismissProof();
+    if (this.sim.mode !== 'play') playUiSound(st.settings, 'play');
     st.setModeBusy(true);
     try {
       if (this.sim.mode === 'play') await this.sim.stop();
@@ -706,6 +763,52 @@ export class Studio {
     }
     const v = this.store.getState().verify;
     if (this.history.head === head && v.status !== 'idle') this.sim?.setDiagnostics(v.diagnostics);
+    if (this.history.head === head) void this.presentProof();
+  }
+
+  /** Remember a finished verification run for the seal and the replay. */
+  private recordProof(run: VerificationRun): void {
+    if (run.cancelled || 'error' in run.report) {
+      this.lastProof = null;
+      return;
+    }
+    const results = run.report.results;
+    this.lastProof = {
+      trace: run.trace ?? null,
+      passed: run.passed,
+      head: this.history.head,
+      tests: results.length,
+      passedTests: results.filter((r) => r.passed).length,
+      seconds: run.report.simulatedSeconds,
+    };
+  }
+
+  /**
+   * Show the outcome of the last verification: the seal, then (once the
+   * world finished materialising) the ghost replay of its motion.
+   */
+  async presentProof(): Promise<void> {
+    const proof = this.lastProof;
+    if (!proof || proof.head !== this.history.head || this.disposed) return;
+    const gen = ++this.proofGen;
+    const st = this.store.getState();
+    if (st.mode === 'play') return;
+    st.setProofSeal({ id: ++this.proofSeq, passed: proof.passed, tests: proof.tests, passedTests: proof.passedTests, seconds: proof.seconds, replay: proof.trace !== null });
+    if (proof.passed) playUiSound(st.settings, 'proof');
+    const sim = this.sim;
+    if (!proof.trace || !sim) return;
+    // Let grow-in and the camera flight finish first (bounded).
+    const deadline = performance.now() + 5000;
+    while (sim.renderer.animating && performance.now() < deadline && gen === this.proofGen && !this.disposed) await new Promise((r) => setTimeout(r, 120));
+    if (gen !== this.proofGen || this.disposed || this.sim !== sim || this.store.getState().mode === 'play' || proof.head !== this.history.head) return;
+    await sim.playProof(proof.trace);
+  }
+
+  /** Hide the seal and stop the replay. */
+  dismissProof(): void {
+    this.proofGen++;
+    this.sim?.stopProof();
+    if (this.store.getState().proofSeal) this.store.getState().setProofSeal(null);
   }
 
   /**
@@ -749,6 +852,8 @@ export class Studio {
     const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
     const history = buildAgentHistory(st.chat);
     const before = this.history.current;
+    this.dismissProof();
+    playUiSound(st.settings, 'send');
     st.addUserMessage(text);
     const entryId = st.startAssistant();
     st.setAgentBusy(true);
@@ -822,6 +927,7 @@ export class Studio {
       if (this.onSave) this.schedulePersist();
       else saveChat(this.storage, this.store.getState().chat);
     }
+    if (status === 'done' && this.history.current !== before) void this.presentProof();
   }
 
   /**
@@ -868,6 +974,7 @@ export class Studio {
   /** Stream agent events into the chat entry; returns the turn status. The agent's own 'done' is folded into `usage`. */
   private async streamRun(run: AsyncGenerator<AgentEvent>, entryId: number, abort: AbortController, usage: RunUsage): Promise<'done' | 'error' | 'aborted'> {
     let status: 'done' | 'error' | 'aborted' = 'done';
+    let shown = this.history.current;
     for await (const event of run) {
       if (event.type === 'done') {
         usage.inputTokens += event.usage.inputTokens;
@@ -879,6 +986,13 @@ export class Studio {
       const view = toEventView(event);
       this.store.getState().pushEvent(entryId, view);
       if (event.type === 'patches') {
+        // Name what was just placed while it materialises (the plan, annotated on the world).
+        const now = this.history.current;
+        if (now !== shown) {
+          const labels = planMarks(isNewWorld(shown, now) ? null : shown, now);
+          shown = now;
+          if (labels.length > 0) this.store.getState().setPlanMarks({ id: ++this.proofSeq, labels });
+        }
         const overwritten = this.bridge.takeOverwrites();
         if (overwritten.length > 0) this.store.getState().pushEvent(entryId, { type: 'notice', tone: 'info', text: `Changed things you set by hand: ${overwritten.join('; ')}. Undo to restore them.`.slice(0, 600) });
       }

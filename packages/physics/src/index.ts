@@ -22,6 +22,7 @@ export {
   type SettleReport,
   type TestResult,
   type VerifyReport,
+  type VerifyTrace,
 } from './types';
 export { PhysicsWorld, PHYSICS_LIMITS } from './world';
 export { VoxelTerrainColliders, brickBoxes, BRICK, MAX_TERRAIN_BRICKS, MAX_BRICK_BOXES, type VoxelSolidSource, type CellBox } from './voxel-terrain';
@@ -30,6 +31,7 @@ export { settle, SETTLE_LIMITS } from './settle';
 export { diagnose, findOverlaps, DIAGNOSE_LIMITS, type OverlapPair } from './diagnose';
 export { verify, shardIndices, VerifyAbortedError, VERIFY_LIMITS, VERIFY_SLICE_MS, type VerifyOptions } from './verify';
 export { summarizeReport, REPORT_LIMITS } from './report';
+export { TraceRecorder, TRACE_LIMITS, type TraceOptions } from './trace';
 export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';
 export { assetColliderDescs, assetGeneratorShape, usesAssets, ensureAssetCatalog } from './asset-colliders';

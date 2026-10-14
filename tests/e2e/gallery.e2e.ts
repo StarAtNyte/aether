@@ -119,8 +119,13 @@ async function renderPrompt(browser: Browser, url: string, prompt: string): Prom
       const r = window.__aether?.simulation?.renderer;
       return { fog: r?.fogState?.density ?? 0, radius: r?.contentSphere?.radius ?? 0 };
     });
-    await page.evaluate(() => window.__aether?.store.getState().updateSettings({ showPerf: false }));
-    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip { display: none !important; }' });
+    await page.evaluate(() => {
+      window.__aether?.store.getState().updateSettings({ showPerf: false });
+      // The gallery shows the worlds themselves: no proof replay, seal or plan marks.
+      window.__aether?.studio.dismissProof();
+      window.__aether?.simulation?.renderer.clearBlueprint();
+    });
+    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip, .proof-seal, .vp-label--plan { display: none !important; }' });
     await page.waitForTimeout(300);
     const file = join(OUT_DIR, `${slug}.png`);
     const png = await page.locator('.viewport').screenshot({ path: file });
@@ -227,8 +232,10 @@ async function renderArch(browser: Browser, url: string, prompt: string): Promis
       a?.store.getState().setPanel('left', false);
       a?.store.getState().setPanel('right', false);
       await a?.simulation?.whenSynced();
+      a?.studio.dismissProof();
+      a?.simulation?.renderer.clearBlueprint();
     });
-    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip, .vp-overlay, .arch-bar, .vp-bottom, .vp-gizmo, .vp-context { display: none !important; }' });
+    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip, .vp-overlay, .arch-bar, .vp-bottom, .vp-gizmo, .vp-context, .proof-seal, .vp-label--plan { display: none !important; }' });
     await page.waitForTimeout(800);
     await page.evaluate(() => window.__aether?.studio.viewPreset('reset'));
     await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });

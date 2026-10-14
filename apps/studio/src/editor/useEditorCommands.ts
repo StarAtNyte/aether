@@ -11,6 +11,8 @@ import { formatRelative } from '../lib/relativeTime';
 import type { ProjectMeta } from '../projects/model';
 import { useEditor } from './editorContext';
 import { LEFT_VIEWS } from './IconRail';
+import { setShortcutsOpen } from '../components/ShortcutsDialog';
+import { startTour } from '../onboarding/tour';
 
 const MAX_ENTITY_COMMANDS = 400;
 
@@ -40,6 +42,7 @@ export function useEditorCommands(projects: readonly ProjectMeta[]): Command[] {
       } },
       { id: 'share', title: 'Share link', group: 'Actions', icon: 'share', run: () => void studio.share() },
       { id: 'export', title: 'Export .aether.json', group: 'Actions', icon: 'download', run: () => studio.exportToFile() },
+      { id: 'export-gltf', title: 'Export 3D model (.glb)', group: 'Actions', icon: 'cube', keywords: 'gltf glb model download', run: () => void studio.exportGltf() },
       ...(selection.length > 0
         ? [
             { id: 'focus', title: 'Focus selection', group: 'Actions', icon: 'focus' as IconName, shortcut: 'F', run: () => selection[0] && studio.focus(selection[0]) },
@@ -62,6 +65,8 @@ export function useEditorCommands(projects: readonly ProjectMeta[]): Command[] {
       { id: 'colliders', title: settings.showColliders ? 'Hide colliders' : 'Show colliders', group: 'View', icon: 'physics', run: () => st().updateSettings({ showColliders: !settings.showColliders }) },
       { id: 'theme', title: settings.darkTheme ? 'Switch to light theme' : 'Switch to dark theme', group: 'View', icon: settings.darkTheme ? 'sun' : 'moon', run: () => st().updateSettings({ darkTheme: !settings.darkTheme }) },
       { id: 'settings', title: 'Settings', group: 'View', icon: 'settings', run: () => st().setSettingsOpen(true) },
+      { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Help', icon: 'keyboard', shortcut: '?', run: () => setShortcutsOpen(true) },
+      { id: 'tour', title: 'Take the quick tour', group: 'Help', icon: 'sparkles', run: () => startTour() },
       ...(editor
         ? [
             { id: 'home', title: 'Back to projects', group: 'Projects', icon: 'arrowLeft' as IconName, run: () => void editor.leave() },

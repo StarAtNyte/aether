@@ -12,6 +12,7 @@ import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
 import { roomLabels, worldLabels } from '../../lib/labels';
 import { MAX_LABELS } from '../../engine/viewOverlay';
+import { PLAN_MARK_SECONDS } from '../../lib/planMarks';
 import { sectionLevel } from '../../state/archUi';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { MATERIAL_DRAG_TYPE, parseMaterialDrag } from '../../lib/materials';
@@ -30,6 +31,7 @@ import { PlanView } from './PlanView';
 
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
+import { ProofSeal } from './ProofSeal';
 
 /** Block-world game HUD (and its stylesheet): loaded only when a voxel game runs. */
 const VoxelHud = lazy(() => import('./VoxelHud').then((m) => ({ default: m.VoxelHud })));
@@ -176,6 +178,15 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
     if (a.levelMode === 'solo') return a.level;
     return a.section === null ? null : sectionLevel(a.levels, a.section);
   });
+  // What the agent just placed is named for a few seconds (then the normal labels return).
+  const plan = useUI((s) => s.planMarks);
+  const [planShown, setPlanShown] = useState<number | null>(null);
+  useEffect(() => {
+    if (!plan) return;
+    setPlanShown(plan.id);
+    const t = setTimeout(() => setPlanShown((cur) => (cur === plan.id ? null : cur)), PLAN_MARK_SECONDS * 1000);
+    return () => clearTimeout(t);
+  }, [plan]);
   const gizmoRef = useRef<SVGSVGElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<ViewOverlay | null>(null);
@@ -200,9 +211,13 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
       overlayRef.current?.setLabels([]);
       return;
     }
+    if (plan && planShown === plan.id) {
+      overlayRef.current?.setLabels(plan.labels.slice(0, MAX_LABELS));
+      return;
+    }
     const rooms = roomsLevel === undefined ? [] : roomLabels(world, roomsLevel);
     overlayRef.current?.setLabels([...rooms, ...(showLabels ? worldLabels(world) : [])].slice(0, MAX_LABELS));
-  }, [world, showLabels, playing, sim, roomsLevel]);
+  }, [world, showLabels, playing, sim, roomsLevel, plan, planShown]);
 
   return (
     <>
@@ -264,6 +279,15 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const voxelUi = useUI((s) => s.voxelHud?.inventoryOpen === true || s.voxelHud?.dead === true);
   const photo = useUI((s) => s.arch.photo && s.mode === 'play');
   const planOpen = useUI((s) => s.arch.plan && s.arch.building !== null && s.mode === 'edit');
+  const viewer = useUI((s) => s.viewer);
+  // Entering play: a short iris opens the viewport (CSS; skipped with reduced motion).
+  const [entering, setEntering] = useState(false);
+  useEffect(() => {
+    if (!playing) return;
+    setEntering(true);
+    const t = setTimeout(() => setEntering(false), 700);
+    return () => clearTimeout(t);
+  }, [playing]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -289,11 +313,11 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const ready = !loading && !fatal;
   return (
     <section
-      className={`viewport${playing ? ' is-playing' : ''}${dropping ? ' is-dropping' : ''}${photo ? ' is-photo' : ''}${planOpen ? ' is-plan' : ''}`}
+      className={`viewport${playing ? ' is-playing' : ''}${entering ? ' is-entering' : ''}${dropping ? ' is-dropping' : ''}${photo ? ' is-photo' : ''}${planOpen ? ' is-plan' : ''}`}
       aria-label="Viewport"
       onDragOver={(e) => {
         const types = [...e.dataTransfer.types];
-        if (playing || (!types.includes(PALETTE_DRAG_TYPE) && !types.includes(MATERIAL_DRAG_TYPE) && !types.includes(ASSET_DRAG_TYPE) && !types.includes('Files'))) return;
+        if (playing || viewer || (!types.includes(PALETTE_DRAG_TYPE) && !types.includes(MATERIAL_DRAG_TYPE) && !types.includes(ASSET_DRAG_TYPE) && !types.includes('Files'))) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setDropping(true);
@@ -310,7 +334,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
         setDropping(false);
         studio.assets.clearPreview();
         dragState.asset = null;
-        if (playing) return;
+        if (playing || viewer) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const ndc = { x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1, y: -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1 };
         const assetId = e.dataTransfer.getData(ASSET_DRAG_TYPE);
@@ -357,12 +381,13 @@ export const Viewport = memo(function Viewport(): ReactElement {
         {playing ? !voxelGame && <CameraToggle /> : ready && <VerifyPill />}
         {ready && !playing && <DisplayMenu />}
       </div>
-      {ready && !playing && (
+      {ready && !playing && !viewer && (
         <div className="vp-context">
           <ContextBar />
         </div>
       )}
       <BusyIndicator />
+      {ready && <ProofSeal />}
       {voxelGame ? (
         <Suspense fallback={null}>
           <VoxelHud />
@@ -374,7 +399,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       {ready && !playing && (
         <div className="vp-bottom">
           <NavHint />
-          <ToolDock />
+          {!viewer && <ToolDock />}
         </div>
       )}
       {loading && !fatal && <ViewportLoading text={loading} />}

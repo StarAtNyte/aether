@@ -1,0 +1,528 @@
+/* ==========================================================================
+   Signature moments (see docs/DESIGN.md → "Moments"): the prompt flight,
+   the world ripple, the proof seal, full-window play, the viewport cursor.
+   Same tokens, one accent, short ease-out motion; every animation stops
+   under prefers-reduced-motion.
+   ========================================================================== */
+
+/* --- Prompt flight: the sent prompt travels from the composer into the world */
+
+.prompt-flight {
+  position: fixed;
+  z-index: var(--z-toast);
+  left: 0;
+  top: 0;
+  max-width: 320px;
+  padding: 6px 12px;
+  overflow: hidden;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Ripple where the prompt lands: one accent ring widening into the world. */
+.vp-ripple {
+  position: absolute;
+  z-index: var(--z-overlay);
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  pointer-events: none;
+  animation: vp-ripple 900ms var(--ease) forwards;
+}
+
+@keyframes vp-ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(14);
+  }
+}
+
+/* --- Proof seal --- */
+
+.proof-seal {
+  position: absolute;
+  z-index: var(--z-overlay);
+  top: var(--s-3);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: min(420px, calc(100% - 2 * var(--s-3)));
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-2);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transform: translateX(-50%);
+  animation: seal-in 360ms var(--ease) both;
+}
+
+@keyframes seal-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Buildings: the building view bar owns the top centre, the seal sits under it. */
+.viewport:has(.arch-bar) .proof-seal {
+  top: calc(var(--s-3) + var(--control-h) + var(--s-3));
+}
+
+/* Narrow viewports: under the top overlay row instead of between its ends. */
+@container viewport (max-width: 900px) {
+  .proof-seal {
+    top: calc(var(--s-3) + var(--control-h) + var(--s-2));
+  }
+}
+
+.proof-seal__mark {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.proof-seal.is-failed .proof-seal__mark {
+  width: 32px;
+  height: 32px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.proof-seal__mark svg {
+  overflow: visible;
+}
+
+.proof-seal__ring,
+.proof-seal__ticks,
+.proof-seal__check {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The outer ring draws itself closed, the check follows: the stamp lands. */
+.proof-seal__ring {
+  stroke-width: 2;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transform: rotate(-90deg);
+  transform-origin: 20px 20px;
+  animation: seal-draw 620ms var(--ease) 120ms forwards;
+}
+
+.proof-seal__ticks {
+  stroke-width: 1.25;
+  stroke-dasharray: 0.02 0.03;
+  opacity: 0.45;
+  transform-origin: 20px 20px;
+  animation: seal-turn 12s linear infinite;
+}
+
+.proof-seal__check {
+  stroke-width: 2.25;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: seal-draw 320ms var(--ease) 560ms forwards;
+}
+
+@keyframes seal-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes seal-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.proof-seal__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.proof-seal__title {
+  color: var(--text);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.proof-seal__detail {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.proof-seal__btn {
+  display: grid;
+  flex: none;
+  min-width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.proof-seal__btn--text {
+  padding: 0 var(--s-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+
+.proof-seal__btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.proof-seal__btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* --- Full-window play: side panels step aside, the world fills the window --- */
+
+.editor[data-immersive='true'] .editor__left,
+.editor[data-immersive='true'] .editor__right,
+.editor[data-immersive='true'] .editor__body > .rail {
+  display: none;
+}
+
+.editor[data-immersive='true'] .editor__canvas {
+  padding: 0;
+}
+
+.editor[data-immersive='true'] .viewport {
+  border-radius: 0;
+}
+
+/* The iris: entering play, the viewport opens from a soft vignette. */
+.viewport.is-entering::after {
+  content: '';
+  position: absolute;
+  z-index: var(--z-overlay);
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 55%, transparent 0%, transparent 38%, oklch(12% 0.02 265 / 0.85) 100%);
+  pointer-events: none;
+  animation: play-iris 650ms var(--ease) forwards;
+}
+
+@keyframes play-iris {
+  from {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* --- Viewport cursor: a fine ring with a centre dot while selecting --- */
+
+.editor[data-mode='edit'][data-tool='select'] .viewport__canvas {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='7.5' fill='none' stroke='white' stroke-width='3' opacity='.9'/%3E%3Ccircle cx='12' cy='12' r='7.5' fill='none' stroke='%235b5bd6' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%235b5bd6' stroke='white' stroke-width='.8'/%3E%3C/svg%3E") 12 12, crosshair;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-ripple,
+  .viewport.is-entering::after {
+    display: none;
+  }
+
+  .proof-seal,
+  .proof-seal__ring,
+  .proof-seal__ticks,
+  .proof-seal__check {
+    animation: none;
+  }
+
+  .proof-seal__ring,
+  .proof-seal__check {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* --- Plan annotations: what the agent is placing, named on the world --- */
+
+.vp-label--plan {
+  border-color: var(--accent-border);
+  border-style: dashed;
+  animation: plan-mark 3.2s var(--ease) both;
+}
+
+.vp-label--plan .vp-label__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.vp-label--plan .vp-label__metric {
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Opacity only: the overlay owns the transform (position). */
+@keyframes plan-mark {
+  0% {
+    opacity: 0;
+  }
+  10%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-label--plan {
+    animation: none;
+  }
+}
+
+/* --- Shared-world viewer (#/view/…): a slim bar over a full-bleed world --- */
+
+.viewer-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  height: var(--topbar-h);
+  padding: 0 var(--s-2) 0 var(--s-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.viewer-bar__brand {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--r-2);
+  color: var(--logo-tile);
+}
+
+.viewer-bar__brand:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.viewer-bar__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.viewer-bar__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-bar__badge {
+  gap: 4px;
+}
+
+.viewer__canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--s-2);
+  background: var(--bg);
+}
+
+@media (max-width: 767px) {
+  .viewer__canvas {
+    padding: 0;
+  }
+
+  .viewer__canvas .viewport {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .viewer-bar__badge,
+  .viewer-bar .hide-phone {
+    display: none;
+  }
+}
+
+/* --- Keyboard shortcuts overlay --- */
+
+.shortcuts .dialog__body {
+  max-height: min(70vh, 640px);
+}
+
+.shortcuts__grid {
+  columns: 2 300px;
+  column-gap: var(--s-8);
+}
+
+.shortcuts__group {
+  break-inside: avoid;
+  margin-bottom: var(--s-5);
+}
+
+.shortcuts__title {
+  margin: 0 0 var(--s-1);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+/* --- Tour coach marks (non-modal: nothing here takes the pointer except the card) --- */
+
+.tour-ring {
+  position: fixed;
+  z-index: var(--z-menu);
+  border-radius: var(--r-3);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px var(--accent-soft);
+  pointer-events: none;
+  transition: left var(--dur-slow) var(--ease), top var(--dur-slow) var(--ease), width var(--dur-slow) var(--ease), height var(--dur-slow) var(--ease);
+  animation: tour-pulse 2.4s var(--ease) infinite;
+}
+
+@keyframes tour-pulse {
+  50% {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 11px oklch(54% 0.19 268 / 0);
+  }
+}
+
+.tour-card {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-width: calc(100vw - 2 * var(--s-3));
+  padding: var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  transition: left var(--dur-slow) var(--ease), top var(--dur-slow) var(--ease);
+  animation: tour-in 220ms var(--ease) both;
+}
+
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.tour-card__step {
+  color: var(--accent-text);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-card__title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-16);
+  line-height: var(--lh-16);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tour-card__body {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+}
+
+.tour-card__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin-top: var(--s-2);
+}
+
+.tour-card__dots {
+  display: flex;
+  flex: 1;
+  gap: 5px;
+}
+
+.tour-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.tour-card__dot.is-on {
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring,
+  .tour-card {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Phones: the play HUD sits under the camera switcher, so game messages go below both. */
+@media (max-width: 767px) {
+  .toasts--game {
+    top: calc(var(--topbar-h) + 112px);
+  }
+}

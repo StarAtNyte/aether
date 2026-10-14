@@ -20,10 +20,18 @@ const HEALTH_TIMEOUT_MS = 30_000;
 
 /**
  * Init script that marks the first-run "Connect your AI" screen as already
- * answered ("offline"), for suites that test something else. Only sets the
- * marker when absent, so a suite can still clear it to test the screen.
+ * answered ("offline") and the editor tour as seen, for suites that test
+ * something else. Only sets the markers when absent, so a suite can still
+ * clear them to test the screens.
  */
-export const SKIP_FIRST_RUN = "try { if (!localStorage.getItem('aether.onboarding.v1')) localStorage.setItem('aether.onboarding.v1', JSON.stringify({ choice: 'offline', at: 1 })); } catch {}";
+export const SKIP_FIRST_RUN =
+  "try { if (!localStorage.getItem('aether.onboarding.v1')) localStorage.setItem('aether.onboarding.v1', JSON.stringify({ choice: 'offline', at: 1 })); if (!localStorage.getItem('aether.tour.v1')) localStorage.setItem('aether.tour.v1', JSON.stringify({ done: true, at: 1 })); } catch {}";
+
+/**
+ * Init script that marks the three-step editor tour as seen (suites that
+ * test the first-run screen but not the tour). Only when absent.
+ */
+export const SKIP_TOUR = "try { if (!localStorage.getItem('aether.tour.v1')) localStorage.setItem('aether.tour.v1', JSON.stringify({ done: true, at: 1 })); } catch {}";
 
 /**
  * Chromium flags for GPU coverage on GPU-less machines. The first three

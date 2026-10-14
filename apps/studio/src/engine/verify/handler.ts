@@ -144,6 +144,7 @@ export function createVerifyHandler(deps: VerifyHandlerDeps): VerifyHandler {
         sliceMs,
         signal,
         ...(req.options.tests ? { tests: req.options.tests } : {}),
+        ...(req.options.trace ? { trace: true } : {}),
         onResult: (index, result) => send({ type: 'progress', id: req.id, index, result }),
       });
       send({ type: 'verified', id: req.id, report });

@@ -383,6 +383,11 @@ async function assertCanvasRendered(page: Page, label: string): Promise<void> {
 async function setPresentationMode(page: Page, on: boolean): Promise<void> {
   await page.evaluate((enable) => {
     window.__aether?.store.getState().updateSettings({ showPerf: !enable });
+    // World shots show the world: no proof replay, seal or plan marks (e2e:ux covers those).
+    if (enable) {
+      window.__aether?.studio.dismissProof();
+      window.__aether?.simulation?.renderer.clearBlueprint();
+    }
     const id = 'e2e-presentation';
     document.getElementById(id)?.remove();
     if (enable) {
@@ -697,7 +702,8 @@ async function homeAndPhoneShots(browser: Browser, page: Page, url: string): Pro
 
 async function exportJson(page: Page): Promise<void> {
   const expected = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export world JSON' }).click()]);
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'World (.aether.json)' }).click()]);
   const path = await download.path();
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
   const envelope = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
@@ -708,6 +714,14 @@ async function exportJson(page: Page): Promise<void> {
   check(count === expected, `exported JSON has ${count} entities, expected ${expected}`);
   check(/\.json$/.test(download.suggestedFilename()), `unexpected export filename ${download.suggestedFilename()}`);
   log(`  exported ${download.suggestedFilename()} (${count} entities)`);
+  // The static scene as binary glTF: a GLB header ("glTF", version 2) and real geometry.
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const [glb] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.getByRole('menuitem', { name: '3D model (.glb)' }).click()]);
+  const bytes = readFileSync(await glb.path());
+  check(bytes.length > 2048, `glTF export is only ${bytes.length} bytes`);
+  check(bytes.subarray(0, 4).toString('latin1') === 'glTF' && bytes.readUInt32LE(4) === 2, 'glTF export is not a GLB v2 file');
+  check(/\.glb$/.test(glb.suggestedFilename()), `unexpected glTF filename ${glb.suggestedFilename()}`);
+  log(`  exported ${glb.suggestedFilename()} (${Math.round(bytes.length / 1024)} KB)`);
 }
 
 // ---------------------------------------------------------------------------

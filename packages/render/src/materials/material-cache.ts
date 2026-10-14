@@ -16,6 +16,9 @@ import { FinishTextures, finishHasMaps } from './finish-textures';
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
 const GHOST_OPACITY = 0.34;
+/** Proof-replay ghost tint (indigo-cyan, readable over any ground). */
+const PROOF_COLOR = new Color('#8c95ff');
+const PROOF_OPACITY = 0.62;
 
 /** A material handle: release it with {@link MaterialCache.release} using `key`. */
 export interface MaterialHandle {
@@ -39,12 +42,14 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     vertexColors: r.vertexColors,
     side: r.doubleSided ? DoubleSide : FrontSide,
   });
-  if (variant === 'ghost') {
-    m.color.lerp(GHOST_COLOR, 0.65);
-    m.emissive.copy(GHOST_COLOR);
-    m.emissiveIntensity = 0.35;
+  const ghostLike = variant === 'ghost' || variant === 'proof';
+  if (ghostLike) {
+    const tint = variant === 'proof' ? PROOF_COLOR : GHOST_COLOR;
+    m.color.lerp(tint, variant === 'proof' ? 0.55 : 0.65);
+    m.emissive.copy(tint);
+    m.emissiveIntensity = variant === 'proof' ? 0.45 : 0.35;
     m.transparent = true;
-    m.opacity = GHOST_OPACITY * (r.transparent ? r.opacity : 1);
+    m.opacity = (variant === 'proof' ? PROOF_OPACITY : GHOST_OPACITY) * (r.transparent ? r.opacity : 1);
     m.depthWrite = false;
   } else if (r.transparent) {
     m.transparent = true;
@@ -52,7 +57,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     // Sorted alpha blending without depth writes avoids self-occlusion artifacts on water/glass.
     m.depthWrite = r.opacity > 0.9;
   }
-  if (variant !== 'ghost' && surfaces && r.surface) {
+  if (!ghostLike && surfaces && r.surface) {
     const maps = surfaces.get(r.surface);
     m.map = maps.map;
     if (maps.emissiveMap && r.emissiveIntensity > 0) m.emissiveMap = maps.emissiveMap;
@@ -61,7 +66,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
       m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
     }
   }
-  if (variant !== 'ghost' && r.finish) applyFinish(m, r, finishes);
+  if (!ghostLike && r.finish) applyFinish(m, r, finishes);
   if (variant === 'foliage') applyWind(m);
   m.name = `aether:${variant}`;
   return m;

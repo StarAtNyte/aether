@@ -19,6 +19,7 @@ import { formatElapsed } from '../components/chat/ChatEvent';
 import { Thumb } from '../home/cards';
 import { aiConnection } from '../ai/connection';
 import { useAi } from '../ai/useAi';
+import { launchPromptFlight } from '../lib/promptFlight';
 
 /** Connection card shown in the empty state: "Connect Codex" until an AI connection is ready. */
 const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
@@ -299,6 +300,7 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
     const t = text.trim();
     if (!t || busy) return;
     stickToBottom.current = true;
+    launchPromptFlight(t, document.getElementById('prompt-input'));
     void studio.send(t, { images, offline });
   };
 

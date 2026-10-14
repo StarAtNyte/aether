@@ -24,7 +24,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
-import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox } from './support/env';
+import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, SKIP_TOUR, STUDIO_DIST, findChrome, findFirefox } from './support/env';
 
 const CLI = join(REPO_ROOT, 'apps/cli/bin/aether.mjs');
 const TURN_TIMEOUT_MS = 120_000;
@@ -151,6 +151,7 @@ const BENIGN = [/GL Driver Message/i, /GPU stall due to ReadPixels/i, /valid ext
 
 async function browserRun(name: 'chromium' | 'firefox', browser: Browser, link: string, port: number): Promise<void> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript(SKIP_TOUR);
   const errors: string[] = [];
   try {
     const page = await ctx.newPage();
@@ -224,6 +225,7 @@ async function browserRun(name: 'chromium' | 'firefox', browser: Browser, link: 
  */
 async function signedInRun(browser: Browser, link: string): Promise<void> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.addInitScript(SKIP_TOUR);
   const errors: string[] = [];
   try {
     const page = await ctx.newPage();

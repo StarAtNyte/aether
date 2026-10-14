@@ -132,6 +132,10 @@ export interface StudioSettings {
   showNavHint: boolean;
   /** Automatic repair rounds the agent may spend when physics checks fail (0–3). */
   repairs: number;
+  /** Subtle interface sounds (prompt sent, proof passed, play). Off by default. */
+  uiSounds: boolean;
+  /** Play mode hides the side panels so the world fills the window. */
+  immersivePlay: boolean;
 }
 
 /** Default preferences. */
@@ -146,12 +150,14 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   showLabels: false,
   showNavHint: true,
   repairs: 2,
+  uiSounds: false,
+  immersivePlay: true,
 });
 
 /** Largest accepted value of the `repairs` setting. */
 export const MAX_REPAIRS_SETTING = 3;
 
-const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint'] as const satisfies ReadonlyArray<keyof StudioSettings>;
+const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint', 'uiSounds', 'immersivePlay'] as const satisfies ReadonlyArray<keyof StudioSettings>;
 const BACKENDS: readonly BackendSetting[] = ['auto', 'webgpu', 'webgl2'];
 const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
 

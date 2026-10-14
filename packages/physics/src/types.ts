@@ -89,6 +89,25 @@ export interface VerifyReport {
    * indices that `results` correspond to, in the same order.
    */
   testIndices?: number[];
+  /**
+   * Motion of the bodies that moved most during the run (only when
+   * `VerifyOptions.trace` was set and something moved): for a replay of the
+   * proof. Not meant for model prompts (strip it before serialising).
+   */
+  trace?: VerifyTrace;
+}
+
+/**
+ * Sampled poses of moving bodies. `poses` is frame-major:
+ * `poses[(frame * ids.length + body) * 7 + k]`, k = position xyz then
+ * quaternion xyzw (world space). Frame f was taken at `f * dt` seconds.
+ */
+export interface VerifyTrace {
+  ids: EntityId[];
+  /** Seconds between frames. */
+  dt: number;
+  frames: number;
+  poses: Float32Array;
 }
 
 /** Hooks gameplay logic into headless verification. */

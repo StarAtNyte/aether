@@ -129,6 +129,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { id: 'import', label: 'Import world or package…', icon: 'upload', disabled: playing, onSelect: () => fileRef.current?.click() },
     { id: 'export', label: 'Export .aether.json', icon: 'download', onSelect: () => studio.exportToFile() },
     { id: 'export-package', label: 'Export package (.zip with assets)', icon: 'package', onSelect: () => void studio.assets.exportPackage() },
+    { id: 'export-gltf', label: 'Export 3D model (.glb)', icon: 'cube', disabled: playing, onSelect: () => void studio.exportGltf() },
     { id: 'credits', label: 'Credits', icon: 'credits', onSelect: () => studio.assets.setCreditsOpen(true) },
     { kind: 'separator', id: 's1' },
     { id: 'palette', label: 'Command palette', icon: 'command', shortcut: shortcut('Mod+K'), onSelect: () => st().setPaletteOpen(true) },
@@ -295,14 +296,26 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
             <button type="button" className="icon-btn" onClick={() => st().setPaletteOpen(true)} aria-label="Command palette" data-tip="Command palette" data-kbd={shortcut('Mod+K')}>
               <Icon name="command" />
             </button>
-            <button type="button" className="btn btn--sm hide-tablet" onClick={() => void studio.share()} disabled={playing} data-tip="Upload and copy a share link">
+            <button type="button" className="btn btn--sm hide-tablet" onClick={() => void studio.share()} disabled={playing} data-tip="Copy a link that opens this world read-only">
               <Icon name="share" />
               <span className="btn__label">Share</span>
             </button>
-            <button type="button" className="btn btn--sm" onClick={() => studio.exportToFile()} aria-label="Export world JSON" data-tip="Download .aether.json">
-              <Icon name="download" />
-              <span className="btn__label">Export</span>
-            </button>
+            <Menu
+              label="Export"
+              align="end"
+              width={248}
+              items={[
+                { id: 'json', label: 'World (.aether.json)', icon: 'download', onSelect: () => studio.exportToFile() },
+                { id: 'glb', label: '3D model (.glb)', icon: 'cube', disabled: playing, onSelect: () => void studio.exportGltf() },
+                { id: 'zip', label: 'Package with assets (.zip)', icon: 'package', onSelect: () => void studio.assets.exportPackage() },
+              ]}
+              trigger={(t) => (
+                <button {...t} type="button" className="btn btn--sm" aria-label="Export" data-tip="Export the world">
+                  <Icon name="download" />
+                  <span className="btn__label">Export</span>
+                </button>
+              )}
+            />
             <button
               type="button"
               className="icon-btn"

@@ -40,15 +40,47 @@ function rank(commands: readonly Command[], query: string): Command[] {
   return scored.slice(0, MAX_RESULTS).map((x) => x.c);
 }
 
+/** Shortest query offered to the {@link CommandPalette} `fallback` (e.g. "Ask the agent: …"). */
+export const MIN_FALLBACK_QUERY = 3;
+
+/**
+ * Ranked results plus the fallback command for free text. The fallback
+ * comes first when the query reads like a sentence (two or more words) that
+ * no command title contains — Enter then sends it — and last otherwise. Pure.
+ */
+export function paletteResults(commands: readonly Command[], query: string, fallback?: (query: string) => Command | null): Command[] {
+  const ranked = rank(commands, query);
+  const q = query.trim();
+  const extra = fallback && q.length >= MIN_FALLBACK_QUERY ? fallback(q) : null;
+  if (!extra) return ranked;
+  const lower = q.toLowerCase();
+  const sentence = /\S\s+\S/.test(q) && !ranked.some((c) => c.title.toLowerCase().includes(lower));
+  if (ranked.length === 0 || sentence) return [extra, ...ranked.slice(0, MAX_RESULTS - 1)];
+  return [...ranked.slice(0, MAX_RESULTS - 1), extra];
+}
+
 /** Command palette overlay. */
-export const CommandPalette = memo(function CommandPalette({ open, onClose, commands, placeholder = 'Type a command or search…' }: { open: boolean; onClose: () => void; commands: readonly Command[]; placeholder?: string }): ReactElement | null {
+export const CommandPalette = memo(function CommandPalette({
+  open,
+  onClose,
+  commands,
+  placeholder = 'Type a command or search…',
+  fallback,
+}: {
+  open: boolean;
+  onClose: () => void;
+  commands: readonly Command[];
+  placeholder?: string;
+  /** Command for free text that matches nothing better (e.g. send it to the agent as a prompt). */
+  fallback?: (query: string) => Command | null;
+}): ReactElement | null {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<Element | null>(null);
   const listId = useId();
-  const results = useMemo(() => rank(commands, query), [commands, query]);
+  const results = useMemo(() => paletteResults(commands, query, fallback), [commands, query, fallback]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +125,7 @@ export const CommandPalette = memo(function CommandPalette({ open, onClose, comm
             ref={inputRef}
             className="palette__input"
             value={query}
-            maxLength={64}
+            maxLength={200}
             placeholder={placeholder}
             role="combobox"
             aria-expanded="true"

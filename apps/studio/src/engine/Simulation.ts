@@ -25,7 +25,7 @@ import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type Scrip
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -742,8 +742,28 @@ export class Simulation {
   // Play / stop
   // ---------------------------------------------------------------------------
 
+  /**
+   * Replay a verification run's motion over the edited world (ghosts and
+   * trails). Edit mode only; resolves true once it plays.
+   */
+  async playProof(trace: ProofTrace): Promise<boolean> {
+    if (this.disposed || this.session) return false;
+    await this.whenSynced();
+    if (this.disposed || this.session) return false;
+    this.touch();
+    return this.renderer.playProof(trace, { reducedMotion: prefersReducedMotion() });
+  }
+
+  /** Stop a running proof replay. */
+  stopProof(): void {
+    this.renderer.stopProof();
+  }
+
   /** Enter play mode from the current world. No-op while already playing. */
   play(): Promise<void> {
+    // Edit-mode decorations (proof replay, plan marks) never carry into play.
+    this.renderer.stopProof();
+    this.renderer.clearBlueprint();
     this.transition = this.transition.then(() => this.startSession()).catch((err: unknown) => {
       log.error('play failed', err);
       this.listener.onError?.(`Could not start the simulation: ${errorMessage(err)}`);

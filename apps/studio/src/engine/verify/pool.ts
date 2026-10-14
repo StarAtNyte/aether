@@ -52,6 +52,8 @@ export interface PoolVerifyOptions {
   onResult?: (index: number, result: TestResult) => void;
   /** Called once the run is planned, with the number of lanes it uses. */
   onPlan?: (lanes: number) => void;
+  /** Record a motion trace for the proof replay (in the shard that simulates longest). */
+  trace?: boolean;
 }
 
 /** Result of {@link VerifyPool.verify}. */
@@ -279,6 +281,7 @@ export class VerifyPool {
     if (opts.signal?.aborted) throw abortError();
     opts.signal?.addEventListener('abort', forward, { once: true });
     let first: Error | null = null;
+    const traceLane = opts.trace ? longestShard(shards) : -1;
     const runs = shards.map(async (shard, laneIndex): Promise<ShardReport> => {
       try {
         const reply = await this.request(
@@ -287,7 +290,7 @@ export class VerifyPool {
             type: 'verify',
             world,
             colliders: opts.colliders,
-            options: { maxSeconds: opts.maxSeconds, budgetMs: opts.budgetMs, diagnostics: shard.diagnostics, ...(shards.length > 1 ? { tests: shard.tests } : {}) },
+            options: { maxSeconds: opts.maxSeconds, budgetMs: opts.budgetMs, diagnostics: shard.diagnostics, ...(shards.length > 1 ? { tests: shard.tests } : {}), ...(laneIndex === traceLane ? { trace: true } : {}) },
           },
           timeoutMs,
           ctrl.signal,
@@ -320,4 +323,11 @@ export class VerifyPool {
     this.idleTimer = null;
     for (const l of this.lanes) if (l) this.killLane(l, new WorkerUnavailableError('verification pool disposed'));
   }
+}
+
+/** Index of the shard with the most simulated seconds (its trace covers the longest motion). */
+export function longestShard(shards: ReadonlyArray<{ load: number }>): number {
+  let best = 0;
+  for (let i = 1; i < shards.length; i++) if ((shards[i]?.load ?? 0) > (shards[best]?.load ?? 0)) best = i;
+  return best;
 }

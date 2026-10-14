@@ -14,6 +14,7 @@ import { DEFAULT_ARCH_UI, mergeArchUi, type ArchUiState } from './archUi';
 import type { EditorTool } from '../engine/Simulation';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 import type { VoxelHudState } from '../voxel/hudState';
+import type { LabelSpec } from '../engine/viewOverlay';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -92,6 +93,20 @@ export interface VerifyState {
   worker?: boolean;
   /** Simulated seconds of the last run. */
   simulatedSeconds?: number;
+}
+
+/** The "proved" seal shown over the viewport after a verification run (with its replay). */
+export interface ProofSeal {
+  /** Increments per seal (restarts its animation). */
+  id: number;
+  passed: boolean;
+  /** Tests run and tests passed. */
+  tests: number;
+  passedTests: number;
+  /** Simulated seconds. */
+  seconds: number;
+  /** True when a motion replay exists (the seal offers "Replay"). */
+  replay: boolean;
 }
 
 /** Live view of a running verification. */
@@ -200,6 +215,12 @@ export interface StudioState {
   fatal: string | null;
   stats: PerfStats;
   verify: VerifyState;
+  /** Seal of the last verification run, while shown (null otherwise). */
+  proofSeal: ProofSeal | null;
+  /** Read-only viewer of a shared world (no editing tools, no agent). */
+  viewer: boolean;
+  /** Annotations of what the agent just placed (shown briefly over the viewport). */
+  planMarks: { id: number; labels: LabelSpec[] } | null;
   game: GameState;
   /** Voxel game HUD (null unless a block world is being played). */
   voxelHud: VoxelHudState | null;
@@ -260,6 +281,9 @@ export interface StudioState {
   setFatal(msg: string | null): void;
   setStats(stats: PerfStats): void;
   setVerify(v: Partial<VerifyState>): void;
+  setProofSeal(seal: ProofSeal | null): void;
+  setPlanMarks(marks: { id: number; labels: LabelSpec[] } | null): void;
+  setViewer(on: boolean): void;
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
   setVoxelHud(v: VoxelHudState | null): void;
@@ -379,6 +403,9 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     fatal: null,
     stats: EMPTY_STATS,
     verify: IDLE_VERIFY,
+    proofSeal: null,
+    planMarks: null,
+    viewer: false,
     game: INITIAL_GAME,
     voxelHud: null,
     cameraView: 'orbit',
@@ -463,6 +490,9 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setFatal: (fatal) => set({ fatal }),
     setStats: (stats) => set((s) => (shallowEqual(s.stats, stats) ? s : { stats })),
     setVerify: (v) => set((s) => ({ verify: { ...s.verify, ...v } })),
+    setProofSeal: (proofSeal) => set({ proofSeal }),
+    setPlanMarks: (planMarks) => set({ planMarks }),
+    setViewer: (viewer) => set({ viewer }),
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
     resetGame: () => set({ game: INITIAL_GAME }),
     setVoxelHud: (v) => set({ voxelHud: v }),

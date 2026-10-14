@@ -18,6 +18,8 @@ import { FirstRunHost } from './onboarding/FirstRunHost';
  * loads on demand: the projects home never pays for it.
  */
 const EditorRoute = lazy(() => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute })));
+/** Read-only viewer of a world carried in a share link (same engine chunk as the editor). */
+const ViewerRoute = lazy(() => import('./editor/ViewerRoute').then((m) => ({ default: m.ViewerRoute })));
 
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
@@ -76,13 +78,19 @@ export const App = memo(function App(): ReactElement {
         <EditorRoute key={route.id} id={route.id} />
       </Suspense>
     );
+  } else if (route.name === 'view') {
+    page = (
+      <Suspense fallback={<EditorSkeleton />}>
+        <ViewerRoute key={route.token} token={route.token} />
+      </Suspense>
+    );
   } else if (route.name === 'new') page = <NewRoute key={route.template ?? 'starter'} template={route.template} />;
   else page = <Home section={route.name} />;
   return (
     <>
       {page}
-      {/* First-run "Connect your AI" screen: probes once, loads lazily, never blocks the app. */}
-      <FirstRunHost />
+      {/* First-run "Connect your AI" screen: probes once, loads lazily, never blocks the app (not over a shared world). */}
+      {route.name !== 'view' && <FirstRunHost />}
     </>
   );
 });

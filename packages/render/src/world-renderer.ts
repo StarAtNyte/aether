@@ -27,6 +27,9 @@ import { CameraRig, type FollowSource, type OrbitControlsLike } from './view/cam
 import type { GizmoMode } from './view/transform-gizmo';
 import { createSelectionControls, SelectionGizmo, type GizmoCommit, type GizmoOptions, type GizmoTarget, type SnapHit } from './view/selection-gizmo';
 import { EditOverlay, type ComponentMode } from './view/edit-overlay';
+import { ProofReplay, type ProofReplayOptions, type ProofTrace } from './view/proof-replay';
+import { exportGlb } from './view/gltf-export';
+import { BlueprintMarks, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, markBoxOf, type MarkBox } from './view/blueprint';
 import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 import type { MeshGeometryBundle } from './geometry/mesh-asset';
 import { Avatar } from './view/avatar';
@@ -94,6 +97,11 @@ export interface RendererOptions {
    * world is built or edited. Default true; pass false for reduced motion.
    */
   growIn?: boolean;
+  /**
+   * Draw corner-bracket plan marks around newly built objects before they
+   * grow in (only with `growIn`). Default true.
+   */
+  blueprint?: boolean;
   /**
    * Lower the drawing-buffer resolution while continuous rendering stays
    * under 40 fps, and restore it when there is headroom (default true).
@@ -215,6 +223,8 @@ export const FRAME_DURATION = 1.1;
 const FLY_IN_DURATION = 1.6;
 /** Screen share (of the half view height) below which revealed content is considered too small to read. */
 const MIN_VISIBLE_SHARE = 0.06;
+/** A proof replay brings its moving bodies to at least this share of the view. */
+const PROOF_MIN_SHARE = 0.22;
 
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
@@ -426,6 +436,12 @@ export class WorldRenderer {
   private componentHandle: Group | null = null;
   /** Editor overlays: mesh components, brush ring, joints. */
   private readonly editOverlay = new EditOverlay();
+  /** Ghost re-enactment of the last verification run (lazily creates its own ghost sync). */
+  private readonly proof: ProofReplay;
+  private proofSync: SceneSync | null = null;
+  /** Corner-bracket plan marks drawn around newly built objects before they grow in. */
+  private readonly blueprint = new BlueprintMarks();
+  private blueprintEnabled = true;
   /** Block terrain layer (loaded lazily for voxel worlds). */
   private voxelLayer: VoxelLayer | null = null;
   private voxelLoading: Promise<VoxelLayer> | null = null;
@@ -512,6 +528,15 @@ export class WorldRenderer {
     });
     this.archView = new ArchView(this.sync);
     this.growEnabled = opts.growIn !== false;
+    this.blueprintEnabled = this.growEnabled && opts.blueprint !== false;
+    this.proof = new ProofReplay(() => {
+      if (!this.proofSync) {
+        this.proofSync = new SceneSync({ ...common, variant: 'proof', maxInstances: 5_000, fields: false, virtual: false, onContentChanged: () => (this.needsDraw = true) });
+        this.scene.add(this.proofSync.root);
+        this.proof.ghostsIfCreated = this.proofSync;
+      }
+      return this.proofSync;
+    }, (id) => this.sync.object(id));
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false, opts.hdriSource);
     this.env.onAsyncChange = () => {
       this.needsDraw = true;
@@ -519,7 +544,7 @@ export class WorldRenderer {
     this.qualityPlan = qualityPlan('realtime', this.budget);
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.blueprint.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -703,7 +728,8 @@ export class WorldRenderer {
     this.needsDraw = true;
     await done;
     if (this.disposed) return;
-    if (added.length > 0) this.startGrow(added);
+    // The first world of a session just materialises; later builds show their plan marks first.
+    if (added.length > 0) this.startGrow(added, prev !== null);
     if (!this.framed) this.framed = this.frameContent({ duration: 0 });
   }
 
@@ -719,7 +745,7 @@ export class WorldRenderer {
   }
 
   /** Start the grow-in ripple of `targets`, staggered by distance from the content center. */
-  private startGrow(targets: readonly Object3D[]): void {
+  private startGrow(targets: readonly Object3D[], marks = true): void {
     const plan = this.grow.withFullScale(() => {
       const framing = contentFraming(collectFramingItems(this.sync));
       const cx = framing?.center[0] ?? 0;
@@ -732,8 +758,76 @@ export class WorldRenderer {
         return { target, delay: growDelay(Math.hypot(_pos.x - cx, _pos.z - cz)), overshoot: radius <= GROW_OVERSHOOT_MAX_RADIUS };
       });
     });
-    for (const p of plan) this.grow.start(p.target, p.delay, p.overshoot);
+    // The plan first: corner brackets where each object will stand, then it grows into them.
+    const lead = this.blueprintEnabled && marks ? this.showBlueprint(targets) : 0;
+    for (const p of plan) this.grow.start(p.target, p.delay + lead, p.overshoot);
     this.needsDraw = true;
+  }
+
+  /** Bracket the largest of `targets` (full-scale bounds); returns the grow lead time (s). */
+  private showBlueprint(targets: readonly Object3D[]): number {
+    const boxes = this.grow.withFullScale(() => {
+      const out: Array<{ box: MarkBox; size: number }> = [];
+      for (const target of targets) {
+        if (!target.parent) continue;
+        _one.setFromObject(target);
+        if (_one.isEmpty()) continue;
+        const size = _one.getSize(_corner).lengthSq();
+        if (!Number.isFinite(size) || size > 400 * 400) continue; // terrain-sized backdrops are not "objects"
+        out.push({ box: markBoxOf(_one), size });
+      }
+      return out;
+    });
+    if (boxes.length === 0) return 0;
+    boxes.sort((a, b) => b.size - a.size);
+    this.blueprint.show(boxes.slice(0, MAX_BLUEPRINT_BOXES).map((b) => b.box));
+    return BLUEPRINT_LEAD_SECONDS;
+  }
+
+  /**
+   * Replay a verification run's motion trace: ghost copies of the bodies
+   * that moved re-enact it over the edited world, leaving fading trails.
+   * Resolves true once it plays (false when there is nothing to show).
+   */
+  async playProof(trace: ProofTrace, opts: ProofReplayOptions = {}): Promise<boolean> {
+    const world = this.sync.world;
+    if (this.disposed || !world) return false;
+    // Bring the motion close enough to read; the replay waits for the camera to arrive.
+    this.reveal(trace.ids, FRAME_DURATION, PROOF_MIN_SHARE);
+    const ok = await this.proof.start(world, trace, opts);
+    this.needsDraw = true;
+    return ok;
+  }
+
+  /**
+   * Export the world's meshes (static scene, current pose) as binary glTF.
+   * Waits (bounded) for grow-in to finish so nothing is exported mid-scale.
+   */
+  async exportGlb(): Promise<ArrayBuffer> {
+    if (this.disposed) throw new Error('renderer disposed');
+    const deadline = now() + 4000;
+    while (this.grow.active && now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    this.sync.root.updateMatrixWorld(true);
+    return exportGlb(this.sync.root);
+  }
+
+  /** Remove the plan marks (corner brackets) of the last build. */
+  clearBlueprint(): void {
+    if (!this.blueprint.active) return;
+    this.blueprint.clear();
+    this.needsDraw = true;
+  }
+
+  /** Stop a running proof replay. */
+  stopProof(): void {
+    if (!this.proof.active) return;
+    this.proof.stop();
+    this.needsDraw = true;
+  }
+
+  /** True while a proof replay runs. */
+  get proofActive(): boolean {
+    return this.proof.active;
   }
 
   private applyEnvironment(world: WorldDoc): void {
@@ -1077,7 +1171,7 @@ export class WorldRenderer {
    * small to read), re-frame the content with them as focus. Returns true when
    * the camera moves.
    */
-  reveal(ids: readonly EntityId[], duration = FRAME_DURATION): boolean {
+  reveal(ids: readonly EntityId[], duration = FRAME_DURATION, minShare = MIN_VISIBLE_SHARE): boolean {
     if (this.disposed || ids.length === 0) return false;
     _bounds.makeEmpty();
     this.grow.withFullScale(() => {
@@ -1101,7 +1195,7 @@ export class WorldRenderer {
       const radius = _bounds.getSize(_corner).length() / 2;
       const distance = Math.max(0.01, cam.position.distanceTo(_center));
       const share = radius / (distance * Math.tan((cam.fov * Math.PI) / 360));
-      if (share >= MIN_VISIBLE_SHARE) return false;
+      if (share >= minShare) return false;
     }
     return this.frameContent({ focus: ids, duration });
   }
@@ -1574,6 +1668,8 @@ export class WorldRenderer {
     }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
+    if (this.blueprint.active && this.blueprint.update(step)) this.needsDraw = true;
+    if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
     if (opts.animate !== false && this.sync.updateAnimations(step)) this.needsDraw = true;
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
@@ -1828,7 +1924,7 @@ export class WorldRenderer {
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
-    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.blueprint.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
     const aspect = this.perspective.aspect;
@@ -1935,7 +2031,7 @@ export class WorldRenderer {
     _savedCamUp.copy(cam.up);
     const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
     // Hide view-dependent decorations; give the background a flat sky color.
-    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.blueprint.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = hidden.map((o) => o.visible);
     // Neutralize fog through its density uniform: removing it (scene.fog = null) changes every
     // material's shader, and each capture then built a fog-less variant of every object's GPU
@@ -2178,6 +2274,10 @@ export class WorldRenderer {
     this.gizmo = null;
     this.archView.dispose();
     this.editOverlay.dispose();
+    this.proof.dispose();
+    this.proofSync?.dispose();
+    this.proofSync = null;
+    this.blueprint.dispose();
     this.post?.dispose();
     this.post = null;
     this.postGen++;

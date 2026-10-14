@@ -19,6 +19,8 @@ export interface VerifyRunOptions {
   onResult?: (index: number, result: TestResult) => void;
   /** Called once the run is planned: lane count and whether it runs in workers. */
   onPlan?: (plan: { lanes: number; worker: boolean }) => void;
+  /** Record a motion trace of the bodies that move (`report.trace`) for the proof replay. */
+  trace?: boolean;
 }
 
 /** Outcome of {@link VerificationService.run}. */
@@ -58,6 +60,7 @@ export class VerificationService {
           ...(opts.signal ? { signal: opts.signal } : {}),
           ...(opts.onResult ? { onResult: opts.onResult } : {}),
           onPlan: (lanes) => opts.onPlan?.({ lanes, worker: true }),
+          ...(opts.trace ? { trace: true } : {}),
         });
         return { ok: true, report: r.report, lanes: r.lanes, worker: true };
       } catch (err) {

@@ -5,7 +5,7 @@ import * as physics from '@aether/physics';
 import { createVerifyHandler } from '../src/engine/verify/handler';
 import { colliderNumbers, MAX_COLLIDER_FLOATS, parseVerifyReply, parseVerifyRequest, type VerifyReply } from '../src/engine/verify/protocol';
 import { mergeShardReports, MIN_PARALLEL_SECONDS, planShards, testHorizon, verifyLanes } from '../src/engine/verify/shards';
-import { VerifyPool, VerifyTimeoutError, WorkerUnavailableError } from '../src/engine/verify/pool';
+import { longestShard, VerifyPool, VerifyTimeoutError, WorkerUnavailableError } from '../src/engine/verify/pool';
 import { VerificationService } from '../src/engine/verify/service';
 import { needsRendererColliders, workerColliders } from '../src/engine/verify/colliders';
 import { LiveVerifyFeed, FLUSH_MS } from '../src/engine/verify/live';
@@ -64,6 +64,37 @@ describe('verify worker protocol (pure handler)', () => {
     // Every reply passes the main thread's validation.
     for (const r of replies) expect(parseVerifyReply(JSON.parse(JSON.stringify(r)))).not.toBeNull();
     expect(handler.running).toBe(0);
+  });
+
+  it('records a motion trace on request; the reply validates and malformed traces are refused', async () => {
+    const { handler, replies } = harness();
+    await handler.handle({ type: 'verify', id: 3, world: multiTestWorld(), colliders: [], options: { ...OPTIONS, trace: true } });
+    const done = replies.find((r) => r.type === 'verified');
+    expect(done?.type).toBe('verified');
+    if (done?.type !== 'verified') return;
+    const trace = done.report.trace;
+    expect(trace).toBeDefined();
+    expect(trace?.ids).toContain('ball');
+    expect(trace?.poses).toBeInstanceOf(Float32Array);
+    // Survives the structured clone a worker reply goes through, and the main thread's validation.
+    const cloned = parseVerifyReply(structuredClone(done));
+    expect(cloned?.type === 'verified' && cloned.report.trace?.frames).toBe(trace?.frames);
+    // Without the option there is no trace.
+    const plain = harness();
+    await plain.handler.handle({ type: 'verify', id: 4, world: multiTestWorld(), colliders: [], options: OPTIONS });
+    const p = plain.replies.find((r) => r.type === 'verified');
+    expect(p?.type === 'verified' && p.report.trace).toBeUndefined();
+    // Tampered traces: wrong length, non-finite values, too many bodies.
+    if (!trace) return;
+    const bad = [
+      { ...trace, poses: trace.poses.slice(1) },
+      { ...trace, poses: Float32Array.from(trace.poses, (v, i) => (i === 5 ? Number.NaN : v)) },
+      { ...trace, ids: Array.from({ length: 65 }, (_, i) => `b${i}`) },
+      { ...trace, poses: Array.from(trace.poses) },
+    ];
+    for (const t of bad) expect(parseVerifyReply({ ...done, report: { ...done.report, trace: t } })).toBeNull();
+    // The request option is a boolean only.
+    expect(parseVerifyRequest({ type: 'verify', id: 5, world: {}, colliders: [], options: { ...OPTIONS, trace: 'yes' } })).toBeNull();
   });
 
   it('runs a shard (subset of tests) without diagnostics', async () => {
@@ -257,6 +288,19 @@ describe('VerifyPool (fake workers running the real handler)', () => {
     expect(r.report.passed).toBe(direct.passed);
     pool.dispose();
     expect(workers.every((w) => w.terminated)).toBe(true);
+  });
+
+  it('records the trace in exactly one lane (the longest shard) and keeps it in the merged report', async () => {
+    const workers: FakeWorker[] = [];
+    const pool = new VerifyPool({ lanes: 2, idleMs: 0, createWorker: () => (workers.push(new FakeWorker()), workers[workers.length - 1] as FakeWorker) });
+    const r = await pool.verify(multiTestWorld(), { colliders: [], maxSeconds: 12, budgetMs: 10_000, trace: true });
+    expect(r.lanes).toBe(2);
+    const asked = workers.flatMap((w) => w.received).filter((m) => (m as { type?: string }).type === 'verify' && (m as { options: { trace?: boolean } }).options.trace === true);
+    expect(asked).toHaveLength(1);
+    expect(r.report.trace?.ids.length ?? 0).toBeGreaterThan(0);
+    expect(longestShard([{ load: 1 }, { load: 5 }, { load: 2 }])).toBe(1);
+    expect(longestShard([{ load: 3 }])).toBe(0);
+    pool.dispose();
   });
 
   it('cancels: the abort rejects at once and a cancel message reaches every running lane', async () => {

@@ -102,6 +102,7 @@ export const SettingsDialog = memo(function SettingsDialog({
                 ]}
               />
             </div>
+            <Toggle label="Interface sounds" hint="Quiet cues when a prompt is sent, a proof passes and play starts." checked={settings.uiSounds} onChange={(v) => update({ uiSounds: v })} />
           </section>
           <section className="settings__group">
             <h3 className="settings__heading">Viewport</h3>
@@ -111,6 +112,7 @@ export const SettingsDialog = memo(function SettingsDialog({
           </section>
           <section className="settings__group">
             <h3 className="settings__heading">Play</h3>
+            <Toggle label="Full-window play" hint="Side panels step aside while you play, so the world fills the window." checked={settings.immersivePlay} onChange={(v) => update({ immersivePlay: v })} />
             <Toggle label="Capture the mouse" hint="Click the viewport in play mode to lock the pointer for mouse-look." checked={settings.pointerLock} onChange={(v) => update({ pointerLock: v })} />
           </section>
           <section className="settings__group">

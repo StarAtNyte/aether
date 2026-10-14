@@ -92,7 +92,11 @@ export function mergeShardReports(tests: readonly WorldTest[], shards: readonly 
   }
   const results: TestResult[] = tests.map((t, i) => byIndex.get(i) ?? { id: t.id, kind: t.kind, passed: false, message: 'not decided: no verification result' });
   const passed = results.every((r) => r.passed) && !diagnostics.some((d) => d.severity === 'error');
-  return { passed, results, diagnostics, simulatedSeconds, ms };
+  const merged: VerifyReport = { passed, results, diagnostics, simulatedSeconds, ms };
+  // At most one shard records the motion trace (see VerifyPool); keep the first one found.
+  const trace = shards.find((s) => s.report.trace)?.report.trace;
+  if (trace) merged.trace = trace;
+  return merged;
 }
 
 /** Environment signals for {@link verifyLanes}. */

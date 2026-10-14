@@ -895,3 +895,275 @@
     display: none;
   }
 }
+
+/* ==========================================================================
+   Hero: the prompt bar front and centre, examples, a stage of example worlds
+   ========================================================================== */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-10);
+  min-width: 0;
+}
+
+.hero__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.hero__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 32px;
+  line-height: 38px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.hero__lead {
+  max-width: 480px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-14);
+  line-height: 22px;
+}
+
+.hero-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 52px;
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.hero-bar:hover {
+  border-color: var(--border-hover);
+}
+
+.hero-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1);
+}
+
+.hero-bar__icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.hero-bar__input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  max-height: 96px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-16);
+  line-height: 24px;
+  resize: none;
+}
+
+.hero-bar__input::placeholder {
+  color: var(--text-3);
+}
+
+.hero-bar__go {
+  flex: none;
+  height: 36px;
+  padding: 0 var(--s-4);
+}
+
+.hero-bar__go-icon {
+  transform: rotate(90deg);
+}
+
+.hero__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.hero__examples .chip {
+  height: 28px;
+  padding: 0 var(--s-3);
+}
+
+/* The stage: example worlds drift through (cross-fade + slow push-in). */
+.hero-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+  margin: 0;
+}
+
+.hero-stage__frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--r-3);
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-2);
+  isolation: isolate;
+}
+
+.hero-stage__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1.02);
+  transition: opacity 900ms var(--ease);
+  user-select: none;
+}
+
+.hero-stage__img.is-on {
+  opacity: 1;
+  animation: stage-push 5.4s linear both;
+}
+
+@keyframes stage-push {
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.09);
+  }
+}
+
+.hero-stage__open {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-10) var(--s-4) var(--s-3);
+  border: 0;
+  background: linear-gradient(to top, oklch(15% 0.01 265 / 0.72), transparent);
+  color: oklch(98% 0.003 265);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hero-stage__prompt {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-stage__cta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.hero-stage__open:hover .hero-stage__cta {
+  opacity: 1;
+}
+
+.hero-stage__open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.hero-stage__dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.hero-stage__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: width var(--dur-slow) var(--ease), background var(--dur-slow) var(--ease);
+}
+
+.hero-stage__dot.is-on {
+  width: 18px;
+  background: var(--accent);
+}
+
+@media (max-width: 1023px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-6);
+  }
+
+  .hero-stage {
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 767px) {
+  .hero__title {
+    font-size: 26px;
+    line-height: 32px;
+  }
+
+  .hero-bar {
+    padding-left: var(--s-3);
+  }
+
+  .hero-bar__go {
+    padding: 0 var(--s-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-stage__img,
+  .hero-stage__img.is-on,
+  .hero-stage__dot {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Template cards: the world leans in on hover (a slow push-in, like the hero stage). */
+.card--template .thumb img {
+  transition: transform 600ms var(--ease);
+}
+
+.card--template:hover .thumb img,
+.card--template:focus-visible .thumb img {
+  transform: scale(1.045);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card--template .thumb img {
+    transition: none;
+  }
+
+  .card--template:hover .thumb img,
+  .card--template:focus-visible .thumb img {
+    transform: none;
+  }
+}

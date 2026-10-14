@@ -223,7 +223,12 @@ export async function diagnose(world: WorldDoc, opts?: { colliders?: ColliderPro
 export interface TestResult { id: string; kind: string; passed: boolean; message: string; atTime?: number; }
 export interface VerifyReport { passed: boolean; results: TestResult[]; diagnostics: Diagnostic[]; simulatedSeconds: number; ms: number;
   testIndices?: number[];          // shard runs only: the world.tests indices `results` belong to
+  trace?: VerifyTrace;             // only with `opts.trace` and when something moved; replay data, never for prompts
 }
+// Poses of the bodies that moved most: frame-major, 7 floats per body per frame (position xyz, quaternion xyzw)
+export interface VerifyTrace { ids: EntityId[]; dt: number; frames: number; poses: Float32Array; }
+export interface TraceOptions { hz?: number /* 12, ≤30 */; maxBodies?: number /* 16, ≤64 */; maxTracked?: number /* 128, ≤512 */; minPath?: number /* 0.2 m */; maxSeconds?: number /* 10, ≤20 */; minSeconds?: number /* 3 */; }
+export class TraceRecorder { constructor(pw: PhysicsWorld, opts?: TraceOptions); sample(pw, time): void; wantsMore(time): boolean; finish(): VerifyTrace | undefined; }
 export interface LogicHook { tick(dt: number, pw: PhysicsWorld, events: PhysicsEvent[]): void; readState(key: string): Json | undefined; }
 export interface VerifyOptions {
   colliders?: ColliderProvider; logic?: (pw: PhysicsWorld) => LogicHook; maxSeconds?: number; budgetMs?: number;
@@ -232,6 +237,8 @@ export interface VerifyOptions {
   diagnostics?: boolean;           // default true; shards other than one skip the static diagnostics
   signal?: AbortSignal;            // abort → rejects with VerifyAbortedError (name 'AbortError') at the next step
   onResult?: (index: number, result: TestResult) => void;   // each test as soon as it is decided (listener errors are ignored)
+  trace?: boolean | TraceOptions;  // record report.trace; the run continues to ≥ minSeconds of simulated time after the
+                                   // tests are decided (bounded by maxSeconds and the budget). Verdicts are unchanged.
 }
 export async function verify(world: WorldDoc, opts?: VerifyOptions): Promise<VerifyReport>;
 export class VerifyAbortedError extends Error {}           // name 'AbortError'
@@ -317,6 +324,7 @@ export interface RendererOptions {
   lowMemory?: boolean;                                    // low-memory budget (see renderBudget); lowPower is a deprecated alias
   onContextLost?: (info: { backend: 'webgpu' | 'webgl2'; message: string }) => void;   // device/context lost: renderer stops drawing; host replaces it
   growIn?: boolean;                                       // default true: new entities grow in (false for reduced motion)
+  blueprint?: boolean;                                    // default true (with growIn): later builds show corner-bracket plan marks first
   adaptiveResolution?: boolean;                           // default true: scale the drawing buffer down while continuous frames stay < 40 fps
   staticBatching?: boolean;                               // default true: ≥ 6 identical static primitives draw as one InstancedMesh
   fields?: boolean; virtualGeometry?: boolean; workerGeneration?: boolean;   // default true (see "Scale geometry" below)
@@ -353,6 +361,12 @@ export class WorldRenderer {
   pick(ndcX: number, ndcY: number): EntityId | null;
   highlight(ids: EntityId[]): void;                       // selection outline
   showGhost(world: WorldDoc | null): void;                // translucent preview of a proposed world
+  playProof(trace: ProofTrace, opts?: { reducedMotion?: boolean; speed?: number }): Promise<boolean>;
+                                                          // ghost replay of a verification run (own 'proof' ghost sync, trails;
+                                                          // frames the motion first; originals hidden while their ghosts play)
+  stopProof(): void; readonly proofActive: boolean;
+  clearBlueprint(): void;                                 // drop the plan marks (corner brackets) of the last build
+  exportGlb(): Promise<ArrayBuffer>;                      // static scene (entity graph only) as binary glTF; ≤ 3M triangles
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: Diagnostic[] }): void;
   screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (VLM critique, thumbnails); never a mid-grow frame; no selection box or gizmo
   renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size?: number): Promise<string[]>;
@@ -999,7 +1013,27 @@ Two halves behind hash routes (`src/lib/router.ts`, untrusted input matched
 against strict patterns): the projects home (`#/`, `#/templates`,
 `#/projects`, `#/published`, `#/docs`) and the editor (`#/p/<id>`, loaded
 lazily with the engine). `#/new` and `#/new/<template>` create a project and
-replace themselves with its editor.
+replace themselves with its editor. `#/view/<token>` is the read-only viewer
+of a shared world (`src/editor/ViewerRoute.tsx`, same lazy chunk): Play,
+Export, Remix (copy into a new project); nothing is persisted.
+
+Share links (`src/lib/shareLink.ts`): the world travels in the URL fragment,
+`z1.<base64url(deflate-raw(JSON))>` (or `j1.<base64url(JSON)>` without
+`CompressionStream`), ≤ 60,000 characters; decoding caps the inflated size
+at `MAX_IMPORT_BYTES` and validates like a file import. `Studio.share()`
+copies such a link, falling back to `POST /api/worlds` (`?world=<id>`) only
+for worlds too large for a link.
+
+UX additions (see `docs/DESIGN.md`): `Studio.presentProof()` /
+`dismissProof()` (seal + ghost replay of the last verification run; the
+trace is recorded in the verification worker and kept out of the report
+sent to the model), `Studio.exportGltf()`, plan annotations
+(`store.planMarks`, `src/lib/planMarks.ts`), the proof seal
+(`store.proofSeal`), the editor tour (`src/onboarding/tour.ts`, marker
+`aether.tour.v1`), the shortcuts overlay (`?`), the home hero, and the
+settings `uiSounds` (default off) and `immersivePlay` (default on). The
+verification worker protocol adds `options.trace?: boolean` (requests) and
+`report.trace?` (replies, exact-length finite `Float32Array` checked by zod).
 
 Editor + player: agent panel (streaming agent events, reference images),
 objects outliner, assets palette, sectioned inspector (scene or object),

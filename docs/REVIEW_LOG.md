@@ -1631,3 +1631,152 @@ two allocation probes; both fixed as described, and the render suite
 OK. Smoke 25/25 (two new library prompts: city street, town plaza).
 `npm run e2e` passes in Chromium WebGPU, Chromium WebGL2 and Firefox
 WebGL2; `npm run e2e:assets` and `npm run e2e:arch` pass.
+
+## UX completion: moments, proof replay, sharing, onboarding
+
+**What changed**
+
+- `docs/DESIGN.md` writes down the established direction ("a quiet
+  instrument for a loud world": neutral chrome, one indigo accent, the
+  expressive layer drawn on the world), the directions it was weighed
+  against, the tokens, and how it extends to the block-world HUD,
+  architecture views, asset browser, publish hub and settings.
+- Signature moments:
+  - The **proof replay** records the motion in the verification worker
+    (`@aether/physics` `TraceRecorder`, `VerifyOptions.trace`,
+    `VerifyReport.trace`) and plays it back (`@aether/render` `ProofReplay`,
+    `'proof'` ghost material). The camera frames the motion first, the
+    originals step aside while their ghosts replay, and trails are left
+    behind. The **proof seal** (`ProofSeal.tsx`) lands with it.
+  - **Plan marks**: corner brackets (`BlueprintMarks`) around each newly
+    built object before it grows in, plus group labels ("Palm ×12").
+  - The **prompt flight** and world ripple.
+  - **Full-window play** with an iris.
+  - Opt-in **interface sounds**.
+  - An accent **cursor** in the viewport.
+- Home hero: the prompt bar front and centre, one-tap examples and a stage
+  of example worlds. Template cards push in on hover.
+- The editor **tour** (3 steps, non-modal), the **shortcuts overlay**
+  (`?`), and **free text in the command palette** ("Ask the agent: …" /
+  "Build a new world: …").
+- **Serverless share links**: the world is carried in the URL fragment
+  (`#/view/<token>`) and opens a read-only **viewer** with Play, Export and
+  Remix. The server upload is used only for worlds too large for a link.
+  **Export → 3D model (.glb)** uses three's GLTFExporter as a lazy chunk.
+- Fixes found in the screenshot rounds: the quality card squeezed its
+  title into a narrow column; "Refine ×1" overflowed the composer bar;
+  plan marks were still visible after Play on slow GPUs; on phones, game
+  messages covered the play HUD; the seal could overlap the building bar
+  and the top-left overlays on narrow viewports. The e2e caught one more:
+  the glTF export threw on procedural textures. Three's exporter draws
+  normal, roughness and metalness maps into a canvas, and raw pixel data
+  cannot be drawn. The export now works on a cloned graph whose 8-bit RGBA
+  data textures are converted to canvases (float data is left out), so the
+  live scene is never touched. Coin island and the villa now export
+  (1.9 MB and 13.6 MB). The layout test turned up three more defects, all
+  fixed: the hero's "Open" link overflowed (its icon was rotated); the
+  "Materials" tab in Assets overflowed at 1280–1440 px; and on phones the
+  Assets footer was pushed below the screen. The last two come from the Assets panel, which this stage did not touch (not checked against an older build). The
+  tour's ring now wraps the whole composer, not just its text
+  field.
+
+### Security checklist
+
+- [x] **Share tokens (URL fragment)**: the router accepts only
+  `#/view/(z1|j1).[A-Za-z0-9_-]+` up to 60,016 characters. The decoder
+  rejects bad base64url, caps the inflated size at `MAX_IMPORT_BYTES`
+  (decompression bombs are stopped mid-stream, see the test), requires
+  strict UTF-8, then runs `parseWorldImport` (prototype-pollution guard +
+  `validateWorld`). The viewer never persists anything. Remix stores only
+  that validated world. Fragments never reach a server.
+- [x] **Worker messages**: `options.trace` must be a boolean. `report.trace`
+  is checked by zod: ≤ 64 ids of ≤ 128 characters, `dt` in (0, 1], 2–601
+  frames, a `Float32Array` of exactly frames × bodies × 7 finite values
+  (tested with truncated, NaN, oversized and plain-array payloads). The
+  trace is stripped from the report before it reaches the model (tested),
+  so it never inflates prompts.
+- [x] **localStorage**: the tour marker is read back as `{ done: true }`
+  only (tampered values tested). The new settings `uiSounds` and
+  `immersivePlay` go through the boolean allowlist in `loadSettings`.
+- [x] **DOM**: prompt text in the flight pill, plan labels, seal text and
+  viewer names are set through `textContent` or React text. No
+  `innerHTML`, `eval` or `new Function` added (grep).
+- [x] **CSP unchanged**: the cursor is a CSS `data:` image (`img-src` allows
+  `data:`). There is no new origin and no inline script. GLTFExporter is a
+  same-origin lazy chunk.
+- [x] **Clipboard**: write only, on a user action, with a toast fallback
+  when the browser refuses (Firefox).
+- [x] **Export**: refused above 3 M triangles before the exporter loads;
+  only the entity graph is exported, as a copy (no ghosts, helpers or sky;
+  live materials untouched; copied materials and textures disposed).
+- [x] **Dependencies**: no new npm packages. `npm audit --omit=dev`:
+  0 vulnerabilities.
+
+### Performance checklist
+
+- [x] **Per-frame allocations**: the replay writes interpolated poses
+  straight into the ghost nodes' local matrices with plain arithmetic.
+  Clocks live in `Float64Array` slots. An allocation probe (16 ghosts,
+  trails and blueprint fade) stays under the 16-byte sampling-noise budget per frame. The probe first
+  caught boxed doubles in the clock field, in the getter and in
+  `lerpVectors`/`slerpQuaternions` calls; all three were fixed.
+- [x] **Workers**: the trace is recorded in the verification worker, only
+  in the shard that simulates longest. Its cost: up to 3 s of extra
+  simulated time when tests decide early and something can move. Nothing
+  extra runs for static worlds.
+- [x] **GPU resources**: 20 replay start/stop cycles leave GPU geometries
+  (74 → 74), textures (26 → 26 Chromium, 24 → 24 Firefox), cached
+  geometries and materials (21 → 21) flat (`e2e:ux`). Trail and blueprint
+  geometries are disposed when they end, and the ghost sync is cleared.
+- [x] **Bundle**: the eager three chunk is unchanged (1,243.0 KB). It had
+  briefly grown by 37 KB because the `three` chunk group captured the
+  dynamically imported exporter; the exporter now has its own lazy 36.8 KB
+  chunk. The EditorRoute chunk grew from 450.5 to 468.4 KB (+17.9 KB raw)
+  and ViewerRoute is a new 3.9 KB lazy chunk. The home path gained the hero
+  and overlays (≈ +9 KB raw). The stylesheet gained `moments.css` (11.3 KB,
+  3.2 KB gzip) plus about 6.5 KB of hero styles. Hero images are the
+  template thumbnails the page already loads; four of the six load lazily.
+- [x] **First frame**: the first world of a session shows no plan marks, and
+  the blueprint lead (0.3 s) only applies to agent builds. Grow-in timing is
+  otherwise unchanged.
+- [x] **Memory bounded**: a trace holds at most 64 bodies × 601 frames
+  (default 16 × 121, about 54 KB). The worker's recording buffer is
+  128 × 121 × 7 floats. The studio keeps one trace, plan marks are capped
+  at 8 groups, and blueprint marks at 400 boxes.
+- [x] **Firefox / WebGL2** measured throughout: every `e2e:ux` step,
+  including the GPU check, passes in Firefox.
+
+**Visual review.** Four rounds of screenshots, each at 1440×900, 1024×768
+and 390×844, in Chromium and Firefox, light and dark, every one looked at
+before changing anything. They covered the home hero, the shortcuts
+overlay, the tour steps, the viewer and its play mode, the seal after
+builds, full-window play, the palette with a sentence, Settings, and the
+dark home. The rounds found and fixed: the cramped quality card, the
+overflowing composer bar, plan marks lingering into play, game messages
+over the phone HUD, the seal colliding with the overlays (narrow
+viewports, building bar), replays too small to read (the camera now
+frames the motion, and the originals step aside for their indigo ghosts),
+and the tour ring.
+
+**Gates.**
+- tsc: 0 errors.
+- Vitest: 168 files, all pass on both full runs: 2,167 tests on the
+  first, and 2,169 on the second, after the export and layout fixes
+  (which added two tests).
+- Studio build: OK.
+- Smoke: 25/25.
+- `npm run e2e`: Chromium WebGPU, Chromium WebGL2 and Firefox WebGL2 pass,
+  including the new GLB export check (2,015 KB and 1,832 KB). The first
+  attempt failed on that check, which is what led to the export fix.
+- `npm run e2e:ux` (new): passes in Chromium and Firefox.
+- `npm run e2e:layout`: passes in both browsers after the fixes above.
+- `npm run e2e:projects`: passes in both browsers.
+- `npm audit --omit=dev`: 0 vulnerabilities.
+
+Not done: the brief's static mocks of three competing directions. The
+direction was already settled and this stage was asked not to replace it,
+so the comparison is recorded in `docs/DESIGN.md` as a scored decision, not
+as new mock pages. The gallery (`npm run gallery`) was not re-rendered: it
+captures worlds only, those renders did not change, and its capture now
+hides the proof overlays. The README screenshots were regenerated by
+`e2e` and `e2e:ux`.

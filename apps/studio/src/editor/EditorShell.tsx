@@ -3,7 +3,7 @@
  * layout mode, so resizing across breakpoints never remounts the canvas
  * (which would recreate the renderer).
  */
-import { lazy, memo, Suspense, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
@@ -27,7 +27,8 @@ const AssetDialogs = memo(function AssetDialogs(): ReactElement {
 import { SettingsDialog } from '../components/SettingsDialog';
 import { Toasts } from '../components/Toasts';
 import { TopBar } from '../components/TopBar';
-import { CommandPalette } from '../components/ui/CommandPalette';
+import { CommandPalette, type Command } from '../components/ui/CommandPalette';
+import { launchPromptFlight } from '../lib/promptFlight';
 import { Viewport } from '../components/viewport/Viewport';
 import { useProjectList } from '../home/useProjects';
 import { IconRail } from './IconRail';
@@ -36,6 +37,8 @@ import { LeftPanel, ResizeHandle, RightPanel, RightRail } from './Panels';
 import { useEditorCommands } from './useEditorCommands';
 import { useLayoutMode, usePanelWidths } from './useLayout';
 import { useAiPrefsEvent } from '../onboarding/useAiPrefsEvent';
+import { ShortcutsDialog } from '../components/ShortcutsDialog';
+import { Tour } from '../onboarding/Tour';
 
 const EditorSettings = memo(function EditorSettings(): ReactElement {
   const studio = useStudio();
@@ -75,7 +78,23 @@ const EditorPalette = memo(function EditorPalette(): ReactElement {
   const open = useUI((s) => s.paletteOpen);
   const projects = useProjectList(open ? repo : null);
   const commands = useEditorCommands(projects ?? []);
-  return <CommandPalette open={open} onClose={() => studio.store.getState().setPaletteOpen(false)} commands={commands} placeholder="Search actions, objects, assets…" />;
+  // Free text the palette cannot match is a prompt: send it to the agent.
+  const fallback = useCallback(
+    (q: string): Command => ({
+      id: 'ask-agent',
+      title: `Ask the agent: “${q}”`,
+      group: 'Agent',
+      icon: 'sparkles',
+      shortcut: '↵',
+      run: () => {
+        studio.store.getState().showLeftView('agent');
+        launchPromptFlight(q, document.querySelector('.palette') ?? document.getElementById('prompt-input'));
+        void studio.send(q);
+      },
+    }),
+    [studio],
+  );
+  return <CommandPalette open={open} onClose={() => studio.store.getState().setPaletteOpen(false)} commands={commands} placeholder="Search actions, objects, assets — or describe a change…" fallback={fallback} />;
 });
 
 /** The editor. */
@@ -85,6 +104,8 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
   const panels = useUI((s) => s.panels);
   const mode = useUI((s) => s.mode);
   const busy = useUI((s) => s.agentBusy);
+  const tool = useUI((s) => s.tool);
+  const immersive = useUI((s) => s.mode === 'play' && s.settings.immersivePlay);
   const widths = usePanelWidths();
   const rootRef = useRef<HTMLDivElement>(null);
   useShortcuts();
@@ -107,6 +128,8 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
       className="editor"
       data-layout={layout}
       data-mode={mode}
+      data-tool={tool}
+      data-immersive={immersive && (layout === 'wide' || layout === 'medium') ? 'true' : undefined}
       data-busy={busy ? 'true' : undefined}
       data-left={panels.left ? 'open' : 'closed'}
       data-right={panels.right ? 'open' : 'closed'}
@@ -149,6 +172,8 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
       <EditorSettings />
       <EditorPalette />
       <AssetDialogs />
+      <ShortcutsDialog />
+      <Tour />
     </div>
   );
 });

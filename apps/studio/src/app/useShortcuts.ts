@@ -6,46 +6,18 @@
  */
 import { useEffect } from 'react';
 import { isTypingTarget } from '../engine/input';
-import { shortcut } from '../lib/keys';
 import type { LeftView } from '../state/store';
 import type { EditorTool } from '../engine/Simulation';
 import { useStudio } from './context';
+import { isHelpKey, SHORTCUT_GROUPS, setShortcutsOpen, shortcutsStore } from '../components/ShortcutsDialog';
 
 const VIEW_KEYS: Readonly<Record<string, LeftView>> = { '1': 'agent', '2': 'objects', '3': 'assets', '4': 'logic', '5': 'verify', '6': 'history' };
 const TOOL_KEYS: Readonly<Record<string, EditorTool>> = { v: 'select', b: 'box', w: 'move', e: 'rotate', r: 'scale', s: 'sculpt', p: 'paint', t: 'scatter' };
 const CAMERA_KEYS: Readonly<Record<string, 'reset' | 'iso' | 'top' | 'front' | 'side'>> = { '0': 'reset', '1': 'iso', '2': 'top', '3': 'front', '4': 'side' };
 const COMPONENT_KEYS: Readonly<Record<string, 'vertex' | 'edge' | 'face'>> = { '1': 'vertex', '2': 'edge', '3': 'face' };
 
-/** Shortcut reference shown in Settings and the docs: [keys, action]. */
-export const SHORTCUTS: ReadonlyArray<[string, string]> = [
-  [shortcut('Mod+K'), 'Command palette'],
-  [shortcut('Mod+Enter'), 'Play / stop'],
-  [shortcut('Mod+Z'), 'Undo'],
-  [shortcut('Mod+Shift+Z'), 'Redo'],
-  ['/', 'Write a prompt'],
-  ['A', 'Add an object'],
-  ['V · B', 'Select · box select'],
-  ['W · E · R', 'Move · rotate · scale'],
-  ['S · P · T', 'Sculpt · paint · scatter brushes'],
-  ['[ / ]', 'Brush size (Shift: strength)'],
-  [shortcut('Shift+S'), 'Toggle snapping (hold Ctrl while dragging to invert)'],
-  [`${shortcut('Mod+D')} · ${shortcut('Mod+C')} · ${shortcut('Mod+V')}`, 'Duplicate · copy · paste'],
-  [`${shortcut('Mod+G')} · ${shortcut('Mod+Shift+G')}`, 'Group · ungroup'],
-  [shortcut('Mod+A'), 'Select all'],
-  ['H · Alt+H', 'Hide selection · show all'],
-  [shortcut('Shift+L'), 'Lock / unlock selection'],
-  ['Tab', 'Edit mesh (vertices · edges · faces: 1 · 2 · 3)'],
-  ['F', 'Focus selection'],
-  ['Delete', 'Delete selection'],
-  ['Esc', 'Stop play / leave mesh editing / deselect'],
-  ['0 – 4', 'Frame world / 3D / top / front / side view'],
-  ['L', 'Object labels'],
-  [shortcut('Shift+P'), 'Performance overlay'],
-  ['Alt+1 – 6', 'Agent, Objects, Assets, Logic, Checks, History'],
-  [shortcut('Mod+[') + ' / ]', 'Toggle left panel / inspector'],
-  ['WASD · Space · E', 'Move · jump · act (play)'],
-  ['Mouse · 1–9 · E · V', 'Block worlds: break / place · hotbar · inventory · view'],
-];
+/** Shortcut reference shown in Settings and the docs: [keys, action] (flattened from the grouped overlay). */
+export const SHORTCUTS: ReadonlyArray<readonly [string, string]> = SHORTCUT_GROUPS.flatMap((g) => g.items);
 
 /** Install the global shortcut handler. */
 export function useShortcuts(): void {
@@ -79,6 +51,11 @@ export function useShortcuts(): void {
         return;
       }
       if (st.mode === 'play' || typing || st.paletteOpen) return;
+      if (isHelpKey(e)) {
+        e.preventDefault();
+        setShortcutsOpen(!shortcutsStore.getState().open);
+        return;
+      }
       if (mod && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) studio.redo();

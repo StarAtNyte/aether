@@ -2285,3 +2285,56 @@ button.chip:disabled {
 .assets__more:hover {
   text-decoration: underline;
 }
+
+/* Composer fit: the bar never overflows a narrow panel (labels truncate, then fold to icons). */
+.composer {
+  container: composer / inline-size;
+}
+
+.composer__bar {
+  min-width: 0;
+}
+
+.composer__select {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.composer__select > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container composer (max-width: 300px) {
+  .composer__select[data-testid='refine-menu'] > span,
+  .composer__select[data-testid='deep-build'] > span {
+    display: none;
+  }
+}
+
+.quality__source {
+  margin-top: 2px;
+}
+
+/* Assets in narrow places: the source tabs truncate instead of overflowing, and in the phone
+   sheet the whole panel scrolls (toolbar, tiles and footer) rather than pushing the footer
+   below the screen. */
+.assets__toolbar .segmented__btn {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet__body .assets {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet__body .assets__scroll {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}

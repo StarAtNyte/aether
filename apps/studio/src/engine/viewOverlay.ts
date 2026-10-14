@@ -20,6 +20,8 @@ export interface LabelSpec {
   /** Secondary text ("12 kg", "Point light"). */
   metric: string;
   position: readonly [number, number, number];
+  /** Visual tone: 'plan' marks what the agent is placing (accent outline). */
+  tone?: 'plan';
 }
 
 /** Most labels shown at once. */
@@ -130,6 +132,7 @@ export class ViewOverlay {
       if (slot.name.textContent !== spec.name) slot.name.textContent = spec.name;
       if (slot.metric.textContent !== spec.metric) slot.metric.textContent = spec.metric;
       slot.el.dataset['id'] = spec.id;
+      slot.el.classList.toggle('vp-label--plan', spec.tone === 'plan');
       slot.pos[0] = spec.position[0];
       slot.pos[1] = spec.position[1];
       slot.pos[2] = spec.position[2];

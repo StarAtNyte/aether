@@ -44,7 +44,8 @@
     "assets:fetch": "tsx scripts/assets/fetch.ts",
     "assets:build": "tsx scripts/assets/build.ts",
     "assets:thumbs": "tsx scripts/assets/thumbs.ts",
-    "e2e:assets": "tsx tests/e2e/assets.e2e.ts"
+    "e2e:assets": "tsx tests/e2e/assets.e2e.ts",
+    "e2e:ux": "tsx tests/e2e/ux.e2e.ts"
   },
   "engines": {
     "node": ">=22"

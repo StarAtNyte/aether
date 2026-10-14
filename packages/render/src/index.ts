@@ -21,6 +21,9 @@ export type { EntityNode, MeshBinding } from './sync/entity-node';
 export { ENTITY_ID_KEY } from './sync/entity-node';
 export { renderableIds } from './sync/renderable';
 export { ghostWorld, MAX_GHOST_ENTITIES } from './sync/ghost';
+export { ProofReplay, replayWorld, trailBuffers, validTrace, PROOF_FADE_SECONDS, PROOF_HOLD_SECONDS, PROOF_MAX_SECONDS, PROOF_STATIC_SECONDS, type ProofTrace, type ProofReplayOptions } from './view/proof-replay';
+export { exportGlb, countTriangles, exportScene, rgbaPixels, textureExportMode, MAX_EXPORT_TRIANGLES } from './view/gltf-export';
+export { BlueprintMarks, bracketSegments, BLUEPRINT_FADE_SECONDS, BLUEPRINT_HOLD_SECONDS, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, type MarkBox } from './view/blueprint';
 export { setEntityPath, parsePropertyPath, MAX_PATH_DEPTH, MAX_PATH_LENGTH } from './sync/property-path';
 export { createEntityLight, updateLightParams, enforceShadowCap, LOCAL_LIGHT_SCALE, MAX_SHADOW_LIGHTS, type EntityLight } from './sync/lights';
 

@@ -28,6 +28,8 @@ import { Segmented } from '../components/ui/Segmented';
 import { ProjectCard, ProjectRow, TemplateCard, type ProjectCardActions } from './cards';
 import { NewProjectDialog, RenameDialog } from './dialogs';
 import { Docs } from './Docs';
+import { Hero } from './Hero';
+import { isHelpKey, setShortcutsOpen, ShortcutsDialog } from '../components/ShortcutsDialog';
 import { useProjectActions } from './useProjectActions';
 import { useProjectList, useThumbnails } from './useProjects';
 import { prefetchEditor } from '../editor/prefetch';
@@ -262,7 +264,10 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (document.querySelector('dialog[open]')) return;
-      if (e.key === '/') {
+      if (isHelpKey(e)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      } else if (e.key === '/') {
         e.preventDefault();
         searchRef.current?.focus();
       } else if ((e.key === 'n' || e.key === 'N') && !mod && !e.altKey) {
@@ -274,6 +279,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     return () => window.removeEventListener('keydown', onKey);
   }, [store, openNew]);
 
+  const newFromPrompt = useCallback((q: string): Command => ({ id: 'new-from-prompt', title: `Build a new world: “${q}”`, group: 'Create', icon: 'sparkles', shortcut: '↵', run: () => void actions.createFromPrompt(q) }), [actions]);
   const commands = useMemo<Command[]>(() => {
     const out: Command[] = [
       { id: 'new', title: 'New project…', group: 'Actions', icon: 'plus', shortcut: 'N', run: openNew },
@@ -281,6 +287,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
       { id: 'import', title: 'Import project…', group: 'Actions', icon: 'fileImport', run: () => fileRef.current?.click() },
       { id: 'theme', title: settings.darkTheme ? 'Switch to light theme' : 'Switch to dark theme', group: 'Actions', icon: settings.darkTheme ? 'sun' : 'moon', run: () => store.getState().updateSettings({ darkTheme: !settings.darkTheme }) },
       { id: 'settings', title: 'Settings', group: 'Actions', icon: 'settings', run: () => setSettingsOpen(true) },
+      { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Actions', icon: 'keyboard', shortcut: '?', run: () => setShortcutsOpen(true) },
       ...NAV.map((n) => ({ id: `go-${n.id}`, title: `Go to ${n.label}`, group: 'Navigation', icon: n.icon, run: () => navigate({ name: n.id }) })),
       ...TEMPLATES.map((t) => ({ id: `tpl-${t.slug}`, title: t.title, group: 'Templates', icon: 'template' as IconName, keywords: `${t.description} template`, hint: 'New from template', run: () => pickTemplate(t.slug) })),
       ...projects.map((p) => ({ id: `proj-${p.id}`, title: p.name, group: 'Projects', icon: 'cube' as IconName, hint: formatRelative(p.updatedAt, now), run: () => actions.open(p.id) })),
@@ -329,6 +336,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     const showTemplates = section === 'home' && !searching;
     content = (
       <>
+        {showTemplates && <Hero onPrompt={(p) => void actions.createFromPrompt(p)} onTemplate={pickTemplate} />}
         {showTemplates && (
           <section className="home-section" aria-labelledby="h-templates">
             <div className="section-head">
@@ -513,8 +521,15 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
             }),
         }}
       />
-      <CommandPalette open={paletteOpen} onClose={() => store.getState().setPaletteOpen(false)} commands={commands} placeholder="Search projects, templates and actions…" />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => store.getState().setPaletteOpen(false)}
+        commands={commands}
+        placeholder="Search projects, templates, actions — or describe a world…"
+        fallback={newFromPrompt}
+      />
       <ToastStack toasts={toasts} onDismiss={store.getState().dismissToast} />
+      <ShortcutsDialog />
     </div>
   );
 });

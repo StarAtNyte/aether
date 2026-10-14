@@ -198,8 +198,8 @@ const QualityView = memo(function QualityView({ event }: { event: Extract<ChatEv
         <span className="quality__text">
           <span className="quality__title">{title}</span>
           <span className="quality__summary">{event.applied.length > 0 ? `Improved: ${event.applied.join(', ')}.` : event.summary}</span>
+          <span className="quality__source">{event.source === 'heuristic' ? 'Measured' : 'Measured + model review'}</span>
         </span>
-        <span className="quality__source">{event.source === 'heuristic' ? 'measured' : 'measured + model review'}</span>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} className="quality__chev" />
       </button>
       {open && (

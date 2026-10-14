@@ -101,6 +101,20 @@ describe('headless verification', () => {
     expect(report.results.map((x) => x.id).sort()).toEqual(['rests', 'scores']);
   }, 20_000);
 
+  it('keeps the motion trace out of the report the model sees', async () => {
+    const world = createWorld({
+      entities: { ball: { id: 'ball', transform: { position: [0, 3, 0] }, shape: { kind: 'primitive', primitive: 'sphere' }, physics: { body: 'dynamic' } } },
+      tests: [{ id: 'falls', kind: 'moves', target: 'ball', distance: 0.5, within: 2 }],
+    });
+    const r = await runVerification(world, null, { trace: true });
+    expect(r.passed).toBe(true);
+    expect(r.trace?.ids).toEqual(['ball']);
+    expect('trace' in (r.report as object)).toBe(false);
+    expect(JSON.stringify(r.report)).not.toContain('poses');
+    const plain = await runVerification(world, null);
+    expect(plain.trace).toBeUndefined();
+  }, 20_000);
+
   it('fails tests that cannot pass', async () => {
     const world = createWorld({
       entities: { ball: { id: 'ball', transform: { position: [0, 3, 0] }, shape: { kind: 'primitive', primitive: 'sphere' }, physics: { body: 'dynamic' } } },
