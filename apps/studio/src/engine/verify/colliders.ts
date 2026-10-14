@@ -7,6 +7,7 @@
  * the cap fall back to physics' placeholder colliders (with a warning).
  */
 import type { Entity, WorldDoc } from '@aether/core';
+import { isUserAssetId } from '@aether/assets';
 import type { ColliderProvider } from '@aether/physics';
 import type { ColliderDesc } from '@aether/procgen';
 import { colliderNumbers, MAX_COLLIDER_ENTITIES, MAX_COLLIDER_FLOATS, MAX_COLLIDERS_PER_ENTITY } from './protocol';
@@ -15,6 +16,8 @@ import { colliderNumbers, MAX_COLLIDER_ENTITIES, MAX_COLLIDER_FLOATS, MAX_COLLID
 export function needsRendererColliders(world: WorldDoc, e: Entity): boolean {
   if (e.template) return false;
   if (e.shape.kind === 'model') return true;
+  // Library assets are resolved in the worker from the catalog; user imports only exist on this page.
+  if (e.shape.kind === 'asset') return isUserAssetId(e.shape.id);
   return e.shape.kind === 'procedural' && Object.hasOwn(world.generators, e.shape.generator);
 }
 

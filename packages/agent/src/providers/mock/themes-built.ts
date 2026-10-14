@@ -157,7 +157,7 @@ function libraryStreet(c: ThemeCtx): void {
   const z0 = c.z - (tiles * tile) / 2 + tile / 2;
   for (let i = 0; i < tiles; i++) {
     const crossing = i === 4 || i === 9;
-    b.asset('road', crossing ? 'road-crossing' : 'road', [c.x, 0, r2(z0 + i * tile)], { castShadow: false, name: crossing ? 'Crossing' : 'Road' });
+    b.asset('road', crossing ? 'road-crossing' : 'road', [c.x, 0, r2(z0 + i * tile)], { yaw: 90, castShadow: false, name: crossing ? 'Crossing' : 'Road' });
   }
   for (const side of [-1, 1]) {
     b.prim('sidewalk', 'box', [3, 0.2, tiles * tile], [r2(c.x + side * 5.5), 0.1, c.z], { material: { preset: 'concrete', color: '#b9bcc0' }, physics: 'static', castShadow: false });
@@ -229,6 +229,8 @@ const city: Theme = {
     const library = hasAssets(...CITY_BUILDINGS, ...CITY_CARS, ...PEOPLE, 'road', 'road-crossing', 'streetlight', 'sports-car', 'traffic-light', 'dumpster', 'bench-painted', 'planter');
     if (library) {
       libraryStreet(c);
+      // Photographic daylight for the real models (image-based lighting), unless it is night.
+      if (c.primary && !b.mood.night && !b.mood.dusk && hasAssets('sky-partly-cloudy')) b.env({ hdri: 'sky-partly-cloudy', timeOfDay: 14 });
       if (c.primary) {
         const car = b.asset('player-car', 'sports-car', [r2(c.x - 1.8), 0, r2(c.z + 10)], {
           name: 'Your car',

@@ -97,6 +97,15 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   return { doc, tris, size: [r(sx), r(sy), r(sz)], animated };
 }
 
+/** Short, descriptive ids for the HDR skies (Poly Haven names are long). */
+const HDRI_IDS: Readonly<Record<string, string>> = {
+  kloofendal_48d_partly_cloudy_puresky: 'sky-partly-cloudy',
+  venice_sunset: 'sky-venice-sunset',
+  lebombo: 'sky-sunny-interior',
+  moonlit_golf: 'sky-moonlit',
+  brown_photostudio_02: 'sky-photo-studio',
+};
+
 /** Movers (characters, animals, vehicles) are turned to face −Z, the engine's forward axis. */
 const facesBackward = (category: string): boolean => category === 'characters' || category === 'animals' || category === 'vehicles';
 
@@ -245,7 +254,7 @@ async function main(): Promise<void> {
     if (!rec) throw new Error(`${id}: HDRI not downloaded`);
     const src = join(SOURCE_DIR, 'polyhaven', 'hdris', rec.files[0]!.path);
     const data = readFileSync(src);
-    const assetId = `sky-${kebab(id).replace(/-\d+k$/, '')}`.slice(0, 64);
+    const assetId = HDRI_IDS[id] ?? `sky-${kebab(id)}`.slice(0, 64);
     const f = writeLib('h', assetId, '', 'hdr', data);
     built.push({
       entry: {

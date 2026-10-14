@@ -1,9 +1,16 @@
 /**
- * Assets: the object palette as large tiles with rendered previews, grouped
- * by section. Click places an object at the centre of the view; tiles can
- * also be dragged onto the viewport.
+ * Assets panel, in four tabs sharing one search field:
+ * - Library: the curated real-world asset catalog (see `library/LibraryView`).
+ * - Basics: the procedural object palette (primitives, generators, lights).
+ * - Materials: drag-on material swatches.
+ * - Imports: the user's own models, images and HDR skies.
+ * Click places at the centre of the view; tiles can be dragged onto the viewport.
  */
 import { memo, useMemo, useState, type ReactElement } from 'react';
+import { Segmented } from '../components/ui/Segmented';
+import { LibraryView } from './library/LibraryView';
+import { ImportsView } from './library/ImportsView';
+import { useLibrary } from './library/useLibrary';
 import { useStudio, useUI } from '../app/context';
 import { fuzzyScore } from '../lib/fuzzy';
 import { PALETTE_ITEMS, PALETTE_SECTIONS, type PaletteItem } from '../lib/palette';
@@ -61,14 +68,91 @@ const Tile = memo(function Tile({ item, disabled, onPlace }: { item: PaletteItem
   );
 });
 
+type AssetsTab = 'library' | 'basics' | 'materials' | 'imports';
+
 /** The assets panel. */
 export const AssetsPanel = memo(function AssetsPanel(): ReactElement {
   const studio = useStudio();
-  const playing = useUI((s) => s.mode === 'play');
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<AssetsTab>('library');
+  const busy = useLibrary((s) => s.busy);
+  return (
+    <div className="assets">
+      <div className="panel-toolbar assets__toolbar">
+        <label className="search-field search-field--sm">
+          <Icon name="search" />
+          <input type="search" value={query} maxLength={64} placeholder={tab === 'library' ? 'Search 350+ assets (sofa, oak, taxi…)' : 'Search'} aria-label="Search assets" onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <Segmented<AssetsTab>
+          value={tab}
+          onChange={setTab}
+          label="Asset source"
+          size="sm"
+          stretch
+          options={[
+            ['library', 'Library'],
+            ['basics', 'Basics'],
+            ['materials', 'Materials'],
+            ['imports', 'Imports'],
+          ]}
+          titles={{ library: 'Ready-made real-world assets', basics: 'Shapes, procedural objects and lights', materials: 'Drag a material onto an object', imports: 'Your own models, images and skies' }}
+        />
+      </div>
+      <div className="assets__scroll scroll-y">
+        {tab === 'library' && <LibraryView query={query} />}
+        {tab === 'basics' && <BasicsView query={query} />}
+        {tab === 'materials' && <MaterialsView query={query} />}
+        {tab === 'imports' && <ImportsView query={query} />}
+      </div>
+      <footer className="assets__footer">
+        <span className="assets__footnote">{busy ?? 'CC0 assets by Kenney and Poly Haven'}</span>
+        <button type="button" className="btn btn--ghost btn--xs" onClick={() => studio.assets.setCreditsOpen(true)}>
+          <Icon name="credits" size={13} />
+          Credits
+        </button>
+      </footer>
+    </div>
+  );
+});
+
+/** Procedural palette sections (primitives, nature, buildings, props, gameplay, lights, effects). */
+const BasicsView = memo(function BasicsView({ query }: { query: string }): ReactElement {
+  const studio = useStudio();
+  const playing = useUI((s) => s.mode === 'play');
   const q = query.trim();
   const items = useMemo(() => (q ? PALETTE_ITEMS.filter((p) => fuzzyScore(q, p.label) !== null || fuzzyScore(q, p.keywords) !== null) : PALETTE_ITEMS), [q]);
   const place = (id: string): void => void studio.addFromPalette(id);
+  if (items.length === 0) return <p className="panel-empty">No objects match “{q}”.</p>;
+  return (
+    <>
+      {PALETTE_SECTIONS.map((s) => {
+        const list = items.filter((i) => i.section === s.id);
+        if (list.length === 0) return null;
+        return (
+          <section key={s.id} className="assets__section" aria-labelledby={`assets-${s.id}`}>
+            <header className="assets__head">
+              <h3 id={`assets-${s.id}`} className="assets__title">
+                {s.title}
+              </h3>
+              <span className="assets__hint">{s.hint}</span>
+            </header>
+            <div className="tile-grid">
+              {list.map((it) => (
+                <Tile key={it.id} item={it} disabled={playing} onPlace={place} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </>
+  );
+});
+
+/** Material swatches. */
+const MaterialsView = memo(function MaterialsView({ query }: { query: string }): ReactElement {
+  const studio = useStudio();
+  const playing = useUI((s) => s.mode === 'play');
+  const q = query.trim();
   const mats = useMemo(() => (q ? MATERIAL_LIBRARY.filter((m) => fuzzyScore(q, m.name) !== null) : MATERIAL_LIBRARY), [q]);
   const applyMaterial = (m: LibraryMaterial): void => {
     const sel = studio.store.getState().selection;
@@ -78,51 +162,20 @@ export const AssetsPanel = memo(function AssetsPanel(): ReactElement {
     }
     studio.editor.applyMaterial(sel, { ...m.spec, color: m.spec.color ?? null, roughness: m.spec.roughness ?? null, metalness: m.spec.metalness ?? null } as never, `Apply ${m.name}`);
   };
+  if (mats.length === 0) return <p className="panel-empty">No materials match “{q}”.</p>;
   return (
-    <div className="assets">
-      <div className="panel-toolbar">
-        <label className="search-field search-field--sm">
-          <Icon name="search" />
-          <input type="search" value={query} maxLength={64} placeholder="Search assets" aria-label="Search assets" onChange={(e) => setQuery(e.target.value)} />
-        </label>
+    <section className="assets__section" aria-labelledby="assets-materials">
+      <header className="assets__head">
+        <h3 id="assets-materials" className="assets__title">
+          Materials
+        </h3>
+        <span className="assets__hint">Drag onto an object</span>
+      </header>
+      <div className="mat-grid">
+        {mats.map((m) => (
+          <MaterialSwatch key={m.id} m={m} disabled={playing} onApply={applyMaterial} />
+        ))}
       </div>
-      <div className="assets__scroll scroll-y">
-        {PALETTE_SECTIONS.map((s) => {
-          const list = items.filter((i) => i.section === s.id);
-          if (list.length === 0) return null;
-          return (
-            <section key={s.id} className="assets__section" aria-labelledby={`assets-${s.id}`}>
-              <header className="assets__head">
-                <h3 id={`assets-${s.id}`} className="assets__title">
-                  {s.title}
-                </h3>
-                <span className="assets__hint">{s.hint}</span>
-              </header>
-              <div className="tile-grid">
-                {list.map((it) => (
-                  <Tile key={it.id} item={it} disabled={playing} onPlace={place} />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-        {mats.length > 0 && (
-          <section className="assets__section" aria-labelledby="assets-materials">
-            <header className="assets__head">
-              <h3 id="assets-materials" className="assets__title">
-                Materials
-              </h3>
-              <span className="assets__hint">Drag onto an object</span>
-            </header>
-            <div className="mat-grid">
-              {mats.map((m) => (
-                <MaterialSwatch key={m.id} m={m} disabled={playing} onApply={applyMaterial} />
-              ))}
-            </div>
-          </section>
-        )}
-        {items.length === 0 && mats.length === 0 && <p className="panel-empty">No assets match “{q}”.</p>}
-      </div>
-    </div>
+    </section>
   );
 });

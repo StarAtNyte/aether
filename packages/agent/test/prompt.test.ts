@@ -34,9 +34,10 @@ describe('system prompt', () => {
     expect(prompt).toContain(RULE_DOCS.trim().slice(0, 200));
   });
 
-  it('stays under ~12.6k tokens (chars/4) and is deterministic', () => {
-    // 12k before the architecture section (build_architecture plan format, ~500 tokens).
-    expect(prompt.length / 4).toBeLessThan(12_600);
+  it('stays under ~12.75k tokens (chars/4) and is deterministic', () => {
+    // 12k before the architecture section (build_architecture plan format, ~500 tokens),
+    // 12.6k before the asset library (asset shape, HDRI sky, asset guideline, ~130 tokens).
+    expect(prompt.length / 4).toBeLessThan(12_750);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
@@ -65,7 +66,7 @@ describe('system prompt', () => {
 
   it('tool schemas are strict objects with documented properties', () => {
     const names = AGENT_TOOLS.map((t) => t.name);
-    expect(names).toEqual(['apply_patches', 'build_architecture', 'write_generator', 'write_script', 'request_asset', 'inspect', 'run_verification', 'finish']);
+    expect(names).toEqual(['apply_patches', 'build_architecture', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'inspect', 'run_verification', 'finish']);
     for (const t of AGENT_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });

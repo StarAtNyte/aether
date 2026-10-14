@@ -7,6 +7,7 @@ import { memo, useEffect, useRef, type CSSProperties, type ReactElement } from '
 import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
+import { CreditsDialog } from './library/CreditsDialog';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { Toasts } from '../components/Toasts';
 import { TopBar } from '../components/TopBar';
@@ -131,6 +132,7 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
       <Toasts />
       <EditorSettings />
       <EditorPalette />
+      <CreditsDialog />
     </div>
   );
 });

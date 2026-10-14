@@ -16,7 +16,7 @@
  * runs in the verification worker, in Node tests and in agent tools.
  */
 import { resolveSelector, type Entity, type EntityId, type Json, type WorldDoc } from '@aether/core';
-import { furnitureById, furnitureSize } from './furniture/index';
+import { furnitureOfEntity } from './furniture/assets';
 import { convexOverlap, obb, tucksUnder } from './layout';
 import { pointInPolygon, rotateYaw, type P2 } from './math2';
 import { DOOR_CLEARANCE, LINING } from './openings';
@@ -102,10 +102,10 @@ function placedPolygon(e: Entity, key = 'polygon'): P2[] | null {
 
 /** Floor footprint of a furniture entity (null for wall / ceiling / surface pieces and rugs). */
 function furnitureFootprint(e: Entity): Footprint | null {
-  const gen = generatorOf(e);
-  const def = gen ? furnitureById(gen) : undefined;
-  if (!def || def.mount !== 'floor' || def.kind === 'rug') return null;
-  const [w, h, d] = furnitureSize(def, params(e));
+  const f = furnitureOfEntity(e);
+  const def = f?.def;
+  if (!f || !def || def.mount !== 'floor' || def.kind === 'rug') return null;
+  const [w, h, d] = f.size;
   const p = e.transform.position;
   return { id: e.id, kind: def.kind, poly: obb(p[0], p[2], e.transform.rotation[1], w, d), top: p[1] + h };
 }
@@ -470,10 +470,11 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     }
     // Support.
     for (const e of L.children) {
-      const gen = generatorOf(e);
-      const def = gen ? furnitureById(gen) : undefined;
-      if (!def) continue;
-      const y = e.transform.position[1];
+      const f = furnitureOfEntity(e);
+      const def = f?.def;
+      if (!f || !def) continue;
+      // Ceiling library models hang from their top (procedural fixtures have their origin at the ceiling).
+      const y = e.transform.position[1] + (def.mount === 'ceiling' && e.shape.kind === 'asset' ? f.size[1] : 0);
       let ok = true;
       if (def.mount === 'floor') ok = Math.abs(y) <= 0.03;
       else if (def.mount === 'ceiling') ok = Math.abs(y - (L.height - 0.22)) <= 0.06;

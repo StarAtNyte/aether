@@ -49,7 +49,7 @@ describe('validateWorld', () => {
     const byPath = Object.fromEntries(issues.map((i) => [i.path, i.message]));
     expect(byPath['entities.car.physics.body']).toBe('must be one of static|dynamic|kinematic');
     expect(byPath['entities.car.material.color']).toBe('must be a hex color "#rrggbb"');
-    expect(byPath['entities.car.shape.kind']).toBe('must be one of primitive|procedural|model|scatter|none|mesh');
+    expect(byPath['entities.car.shape.kind']).toBe('must be one of primitive|procedural|model|scatter|none|mesh|asset');
     expect(byPath['entities.car.transform.position.1']).toBe('must be number (received string)');
     expect(byPath['rules.0.then']).toBe('must have at least 1 item(s)');
   });

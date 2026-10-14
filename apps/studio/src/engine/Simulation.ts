@@ -23,6 +23,7 @@
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
+import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import type { SandboxRunner } from '@aether/procgen';
 import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
@@ -341,7 +342,8 @@ export class Simulation {
   }
 
   /** Colliders for physics: procedural outputs the renderer already generated (physics falls back to its defaults). */
-  readonly colliders: ColliderProvider = (entity: Entity) => this.renderer.getGeneratorOutput(entity.id)?.colliders;
+  readonly colliders: ColliderProvider = (entity: Entity) =>
+    this.renderer.getGeneratorOutput(entity.id)?.colliders ?? (entity.shape.kind === 'asset' ? (assetColliderDescs(entity.shape) ?? undefined) : undefined);
 
   // ---------------------------------------------------------------------------
   // Edit-mode world sync

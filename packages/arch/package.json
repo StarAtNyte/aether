@@ -11,6 +11,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@aether/assets": "*",
     "@aether/core": "*",
     "zod": "^4.6.6"
   }

@@ -244,6 +244,11 @@ export function gltfBounds(json: GltfJson): { min: [number, number, number]; max
 function normaliseRoot(json: GltfJson): [number, number, number] {
   const b = gltfBounds(json);
   if (!b) return [1, 1, 1];
+  const r = (v: number): number => Math.round(v * 1000) / 1000;
+  const size: [number, number, number] = [r(b.max[0] - b.min[0]), r(b.max[1] - b.min[1]), r(b.max[2] - b.min[2])];
+  // Already normalised (e.g. re-importing an exported package): keep the bytes identical so ids match.
+  const eps = 1e-4 * Math.max(1, ...size);
+  if (Math.abs(b.min[1]) <= eps && Math.abs(b.min[0] + b.max[0]) <= eps && Math.abs(b.min[2] + b.max[2]) <= eps) return size;
   const root = json as Record<string, unknown>;
   const nodes = (Array.isArray(root['nodes']) ? root['nodes'] : (root['nodes'] = [])) as Array<Record<string, unknown>>;
   const scenes = (Array.isArray(root['scenes']) ? root['scenes'] : (root['scenes'] = [{ nodes: nodes.map((_, i) => i) }])) as Array<Record<string, unknown>>;
@@ -255,8 +260,7 @@ function normaliseRoot(json: GltfJson): [number, number, number] {
     nodes.push({ name: 'aether-root', translation, children });
     scene['nodes'] = [nodes.length - 1];
   }
-  const r = (v: number): number => Math.round(v * 1000) / 1000;
-  return [r(b.max[0] - b.min[0]), r(b.max[1] - b.min[1]), r(b.max[2] - b.min[2])];
+  return size;
 }
 
 function report(json: GltfJson, size: [number, number, number]): GltfReport {

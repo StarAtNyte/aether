@@ -6009,7 +6009,7 @@
    ]
   },
   {
-   "id": "table-wood",
+   "id": "side-table-wood",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
    "authors": [
@@ -6021,7 +6021,7 @@
    },
    "files": [
     {
-     "path": "m/table-wood.f50f7256.glb",
+     "path": "m/side-table-wood.f50f7256.glb",
      "sha256": "f50f725654919a74b133c6d19c94e92528327c1e1331e38b2121c88db4119ba8",
      "bytes": 444212
     }
@@ -6318,7 +6318,7 @@
    ]
   },
   {
-   "id": "sky-kloofendal-48d-partly-cloudy-puresky",
+   "id": "sky-partly-cloudy",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
    "authors": [
@@ -6331,7 +6331,7 @@
    },
    "files": [
     {
-     "path": "h/sky-kloofendal-48d-partly-cloudy-puresky.fd94c849.hdr",
+     "path": "h/sky-partly-cloudy.fd94c849.hdr",
      "sha256": "fd94c84997b8a3c353b62c2125a9b44e19509956986a126e472684432a02d798",
      "bytes": 1435119
     }
@@ -6357,7 +6357,7 @@
    ]
   },
   {
-   "id": "sky-lebombo",
+   "id": "sky-sunny-interior",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
    "authors": [
@@ -6369,14 +6369,14 @@
    },
    "files": [
     {
-     "path": "h/sky-lebombo.a02c9615.hdr",
+     "path": "h/sky-sunny-interior.a02c9615.hdr",
      "sha256": "a02c9615adeba91a753c3e4737c3ce7a719273df822eeaa85d24982bd43c9ecb",
      "bytes": 1476953
     }
    ]
   },
   {
-   "id": "sky-moonlit-golf",
+   "id": "sky-moonlit",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
    "authors": [
@@ -6388,14 +6388,14 @@
    },
    "files": [
     {
-     "path": "h/sky-moonlit-golf.cff71a58.hdr",
+     "path": "h/sky-moonlit.cff71a58.hdr",
      "sha256": "cff71a58efa0c06e06b54046ee877c933d74e7292be1d71511aca1a36749d60c",
      "bytes": 1725527
     }
    ]
   },
   {
-   "id": "sky-brown-photostudio-02",
+   "id": "sky-photo-studio",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
    "authors": [
@@ -6407,7 +6407,7 @@
    },
    "files": [
     {
-     "path": "h/sky-brown-photostudio-02.469abc5e.hdr",
+     "path": "h/sky-photo-studio.469abc5e.hdr",
      "sha256": "469abc5e6035b6c450bae8adbb448f8d1fa7c51d9e384e501516c28352c91b58",
      "bytes": 1648130
     }

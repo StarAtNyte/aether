@@ -15,6 +15,7 @@ import { MAX_LABELS } from '../../engine/viewOverlay';
 import { sectionLevel } from '../../state/archUi';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { MATERIAL_DRAG_TYPE, PALETTE_DRAG_TYPE, parseMaterialDrag } from '../../editor/AssetsPanel';
+import { ASSET_DRAG_TYPE } from '../../editor/library/useLibrary';
 import { Icon } from '../Icon';
 import { ToolDock } from './ToolDock';
 import { ContextBar } from './ContextBar';
@@ -291,7 +292,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       aria-label="Viewport"
       onDragOver={(e) => {
         const types = [...e.dataTransfer.types];
-        if (playing || (!types.includes(PALETTE_DRAG_TYPE) && !types.includes(MATERIAL_DRAG_TYPE))) return;
+        if (playing || (!types.includes(PALETTE_DRAG_TYPE) && !types.includes(MATERIAL_DRAG_TYPE) && !types.includes(ASSET_DRAG_TYPE) && !types.includes('Files'))) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setDropping(true);
@@ -299,6 +300,20 @@ export const Viewport = memo(function Viewport(): ReactElement {
       onDragLeave={() => setDropping(false)}
       onDrop={(e) => {
         setDropping(false);
+        if (playing) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const ndc = { x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1, y: -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1 };
+        const assetId = e.dataTransfer.getData(ASSET_DRAG_TYPE);
+        if (assetId) {
+          e.preventDefault();
+          void studio.assets.place(assetId, ndc);
+          return;
+        }
+        if (e.dataTransfer.files.length > 0) {
+          e.preventDefault();
+          void studio.assets.importFiles([...e.dataTransfer.files], ndc);
+          return;
+        }
         const material = parseMaterialDrag(e.dataTransfer.getData(MATERIAL_DRAG_TYPE));
         if (material) {
           e.preventDefault();

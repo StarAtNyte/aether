@@ -8,6 +8,7 @@
  */
 import type { Json, LightSpec } from '@aether/core';
 import { furnitureByKind, furnitureSize, type FurnitureDef } from './furniture/index';
+import { furnitureAsset } from './furniture/assets';
 import { pointInPolygon, type P2 } from './math2';
 import type { ArchStyle, RoomType } from './plan';
 import { edgePoint, roomEdges, type RoomEdge } from './rooms';
@@ -68,6 +69,8 @@ export interface Placed {
   /** Floor footprint (oriented rectangle corners); empty for wall / ceiling / surface pieces. */
   footprint: P2[];
   name: string;
+  /** Library model shown instead of the generator (see `furniture/assets.ts`); `size` is then the model's. */
+  asset?: string;
 }
 
 /** Walkway kept free in front of furniture fronts and doors (metres). */
@@ -257,9 +260,11 @@ export class RoomLayout {
 
   /** Make a placement record. */
   make(def: FurnitureDef, params: Record<string, Json>, x: number, z: number, yaw: number, y = 0, name?: string): Placed {
-    const size = furnitureSize(def, params);
+    const asset = furnitureAsset(def.kind);
+    const size = asset ? asset.size : furnitureSize(def, params);
     const floor = def.mount === 'floor';
     return {
+      ...(asset ? { asset: asset.id } : {}),
       kind: def.kind,
       generator: def.id,
       params,
@@ -292,7 +297,7 @@ export class RoomLayout {
   againstWall(kind: string, params: Record<string, Json>, edge: number, t: number | null, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
-    const size = furnitureSize(def, params);
+    const size = furnitureAsset(def.kind)?.size ?? furnitureSize(def, params);
     const e = this.ctx.edges[edge] as RoomEdge;
     const yaw = yawFacingIn(e);
     const free = this.freeIntervals(edge, size[1]);

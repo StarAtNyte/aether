@@ -522,7 +522,7 @@ export const SELECTION: readonly PackSel[] = [
       ['Sofa_01', 'sofa-classic', { name: 'Classic sofa', tags: 'realistic couch velvet' }],
       ['coffee_table_round_01', 'coffee-table-round', { name: 'Round coffee table', tags: 'realistic wood' }],
       ['ClassicNightstand_01', 'nightstand-classic', { name: 'Classic nightstand', tags: 'realistic bedside' }],
-      ['WoodenTable_02', 'table-wood', { name: 'Wooden table', tags: 'realistic rustic dining' }],
+      ['WoodenTable_02', 'side-table-wood', { name: 'Wooden side table', tags: 'realistic rustic stool end table' }],
       ['painted_wooden_bench', 'bench-painted', { name: 'Painted bench', tags: 'realistic garden' }],
       ['potted_plant_04', 'succulent', { name: 'Potted succulent', cat: 'plants', tags: 'realistic houseplant', place: 'surface', collider: 'hull' }],
       ['planter_pot_clay', 'clay-pot', { name: 'Clay pot', cat: 'decor', tags: 'realistic terracotta planter', collider: 'hull' }],

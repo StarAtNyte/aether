@@ -119,6 +119,10 @@ function createSkirtGeometry(size: number): RingGeometry {
 const VIEW_FOG_K = 1.2;
 /** Share of the view distance where the terrain's linear fog starts. */
 const TERRAIN_FOG_START = 0.5;
+/** Image-based light of a photographed HDRI relative to the analytic sky's (HDR skies are far brighter). */
+const HDRI_ENV_SCALE = 0.6;
+/** Hemisphere ambient kept while an HDRI lights the scene. */
+const HDRI_HEMI_SCALE = 0.2;
 
 /** Owns every environment object; add {@link group} to the scene. */
 export class EnvironmentRig {
@@ -314,11 +318,14 @@ export class EnvironmentRig {
    */
   private updateEnvironmentMap(scene: Scene, horizon: string): void {
     // A loaded HDRI owns lighting (and, by default, the background); the analytic sky hides behind it.
-    if (this.hdri.bind(scene, this.state.envIntensity)) {
+    if (this.hdri.bind(scene, this.state.envIntensity * HDRI_ENV_SCALE)) {
       this.sky.group.visible = !this.hdri.showsBackground;
+      // The photographed sky already lights every surface: the analytic ambient would double it (and tint it blue).
+      this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL * HDRI_HEMI_SCALE;
       return;
     }
     this.sky.group.visible = true;
+    this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL;
     const groundSpec = this.state.showGround ? this.env?.ground : null;
     const groundColor = groundSpec ? resolveMaterial(groundSpec.material).color : null;
     const pixels = skyEnvironmentPixels(this.state, groundColor, horizon);

@@ -97,6 +97,13 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    // World packages (.zip with the world, its asset files and credits).
+    if (/\.zip$/i.test(file.name)) {
+      void studio.assets.importPackage(file).then((err) => {
+        if (err) st().toast(err, 'error', 7);
+      });
+      return;
+    }
     if (file.size > MAX_IMPORT_BYTES) {
       st().toast(`That file is too large (limit ${MAX_IMPORT_BYTES / 1024 / 1024} MB).`, 'error');
       return;
@@ -119,8 +126,10 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
           { id: 'dup', label: 'Duplicate project', icon: 'copy', onSelect: () => void editor.duplicate() },
         ] satisfies MenuEntry[])
       : []),
-    { id: 'import', label: 'Import world…', icon: 'upload', disabled: playing, onSelect: () => fileRef.current?.click() },
+    { id: 'import', label: 'Import world or package…', icon: 'upload', disabled: playing, onSelect: () => fileRef.current?.click() },
     { id: 'export', label: 'Export .aether.json', icon: 'download', onSelect: () => studio.exportToFile() },
+    { id: 'export-package', label: 'Export package (.zip with assets)', icon: 'package', onSelect: () => void studio.assets.exportPackage() },
+    { id: 'credits', label: 'Credits', icon: 'credits', onSelect: () => studio.assets.setCreditsOpen(true) },
     { kind: 'separator', id: 's1' },
     { id: 'palette', label: 'Command palette', icon: 'command', shortcut: shortcut('Mod+K'), onSelect: () => st().setPaletteOpen(true) },
     { id: 'theme', label: settings.darkTheme ? 'Light theme' : 'Dark theme', icon: settings.darkTheme ? 'sun' : 'moon', onSelect: () => st().updateSettings({ darkTheme: !settings.darkTheme }) },
@@ -133,7 +142,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { kind: 'heading', id: 'h-light', label: 'Lights' },
     ...PALETTE_ITEMS.filter((p) => p.section === 'lights').map((p) => ({ id: p.id, label: p.label, icon: 'lightbulb' as const, onSelect: () => void studio.addFromPalette(p.id) })),
     { kind: 'separator', id: 's-all' },
-    { id: 'all', label: 'All assets…', icon: 'shapes', onSelect: () => st().showLeftView('assets') },
+    { id: 'all', label: 'Asset library…', icon: 'shapes', onSelect: () => st().showLeftView('assets') },
   ];
 
   const viewMenu: MenuEntry[] = [
@@ -308,7 +317,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
             </button>
           </>
         )}
-        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={onFile} />
+        <input ref={fileRef} type="file" accept="application/json,.json,.zip,application/zip" hidden onChange={onFile} />
       </div>
     </header>
   );

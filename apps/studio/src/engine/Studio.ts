@@ -38,6 +38,7 @@ import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
 import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
+import { AssetController } from './assets';
 import { ArchController } from './arch';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread } from './AgentBridge';
@@ -119,6 +120,9 @@ export interface StudioMemoryReport {
 }
 
 /** Application controller. See module docs. */
+/** Delay before the asset catalog is preloaded after the renderer starts (ms). */
+const CATALOG_PRELOAD_MS = 1500;
+
 export class Studio {
   readonly history: History;
   readonly store: StoreApi<StudioState>;
@@ -127,6 +131,8 @@ export class Studio {
   readonly editor: Editor;
   /** Architecture tools: building views, floor-plan editing, render quality, daylight study. */
   readonly arch: ArchController;
+  /** Asset library, user imports, placement and world packages. */
+  readonly assets: AssetController;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   /** Physics verification in workers (main-thread fallback). */
@@ -191,6 +197,7 @@ export class Studio {
     this.bridge.verifyListener = this.liveVerify;
     this.editor = new Editor(this, { storage: this.storage });
     this.arch = new ArchController(this);
+    this.assets = new AssetController(this, { storage: this.storage });
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -356,6 +363,10 @@ export class Studio {
       this.store.getState().setBackend(sim.backend);
       this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });
       for (const fn of this.simListeners) fn(sim);
+      // The asset catalog is not needed for the first frame: load it once the editor has settled.
+      setTimeout(() => {
+        if (!this.disposed) void this.assets.ready().catch(() => undefined);
+      }, CATALOG_PRELOAD_MS);
       sim.setGizmo(this.store.getState().selection, this.store.getState().tool);
       const unsubSel = this.store.subscribe((s, prev) => {
         if (s.selection !== prev.selection) sim.setSelection(s.selection);
@@ -734,6 +745,8 @@ export class Studio {
     st.addUserMessage(text);
     const entryId = st.startAssistant();
     st.setAgentBusy(true);
+    // The planner (online or offline) places library assets: make sure the catalog is in.
+    await this.assets.ready().catch(() => undefined);
     const startedAt = performance.now();
     let via = primary ? resolved.label : 'Offline planner';
     st.setAgentRun({ startedAt: Date.now(), via, step: 'Planning…' });
@@ -1044,6 +1057,7 @@ export class Studio {
     this.verifier.dispose();
     for (const c of this.cleanups.splice(0)) c();
     this.arch.dispose();
+    this.assets.dispose();
     this.editor.dispose();
     this.sim?.dispose();
     this.sim = null;

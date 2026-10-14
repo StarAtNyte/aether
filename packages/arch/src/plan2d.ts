@@ -10,7 +10,7 @@
  * can be sent straight back as an `add_room` op. Pure and bounded.
  */
 import type { Entity, EntityId, WorldDoc } from '@aether/core';
-import { furnitureById, furnitureSize } from './furniture/index';
+import { furnitureOfEntity } from './furniture/assets';
 import { area, bounds, interiorPoint, rotateYaw, type P2 } from './math2';
 import { SlabParams, StairParams, WallParams } from './params';
 import { stairFootprint, stairLayout } from './stair';
@@ -214,10 +214,11 @@ export function floorPlan2d(world: WorldDoc, building: EntityId, level: number):
       const w = typeof p['width'] === 'number' ? p['width'] : 1.2;
       const t = typeof p['wallThickness'] === 'number' ? p['wallThickness'] : (wallThickness.get(e.arch?.wall ?? '') ?? 0.2);
       out.windows.push({ id: e.id, a: toPlan(at, -w / 2, 0), b: toPlan(at, w / 2, 0), thickness: t });
-    } else if ((role === 'furniture' || role === 'fixture' || role === 'light') && e.shape.kind === 'procedural') {
-      const def = furnitureById(e.shape.generator);
-      if (!def || def.mount === 'ceiling' || def.mount === 'wall') continue;
-      const [sx, , sz] = furnitureSize(def, e.shape.params);
+    } else if (role === 'furniture' || role === 'fixture' || role === 'light') {
+      const f = furnitureOfEntity(e);
+      const def = f?.def;
+      if (!f || !def || def.mount === 'ceiling' || def.mount === 'wall') continue;
+      const [sx, , sz] = f.size;
       const hx = sx / 2;
       const hz = sz / 2;
       out.items.push({ id: e.id, kind: e.arch?.kind ?? def.kind, polygon: [toPlan(at, -hx, -hz), toPlan(at, hx, -hz), toPlan(at, hx, hz), toPlan(at, -hx, hz)] });
