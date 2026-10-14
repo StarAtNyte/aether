@@ -1607,9 +1607,6 @@ export class WorldRenderer {
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
-    // Shaders for the capture target compile off the frame first (decorations stay visible meanwhile).
-    await this.precompileCapture(w, h);
-    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
     const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
@@ -1701,34 +1698,6 @@ export class WorldRenderer {
     }
     this.captureTargets.set(key, rt);
     return rt;
-  }
-
-  /**
-   * Compile the scene's shaders for the capture target asynchronously
-   * before a capture draws into it. The capture target has its own output
-   * format, so its first draw would otherwise compile every visible
-   * material synchronously (hundreds of milliseconds on WebGL2 / software
-   * rasterisers, once per world). Best effort: errors are ignored and the
-   * draw then compiles as before.
-   */
-  private async precompileCapture(w: number, h: number): Promise<void> {
-    const r = this.renderer;
-    const rt = this.captureTarget(w, h);
-    const prevOutput = r.getOutputRenderTarget();
-    const prevTarget = r.getRenderTarget();
-    let pending: Promise<unknown> = Promise.resolve();
-    try {
-      r.setOutputRenderTarget(rt);
-      r.setRenderTarget(null);
-      // compileAsync reads the render target synchronously, before its first await.
-      pending = r.compileAsync(this.scene, this.perspective);
-    } catch {
-      /* compile on draw instead */
-    } finally {
-      r.setOutputRenderTarget(prevOutput);
-      r.setRenderTarget(prevTarget);
-    }
-    await pending.catch(() => undefined);
   }
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */

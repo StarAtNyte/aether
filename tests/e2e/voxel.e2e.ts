@@ -32,6 +32,8 @@ const AGENT_MS = 120_000;
 const STREAM_MS = 120_000;
 /** Longest main-thread task allowed while terrain streams (ms). */
 const MAX_LONG_TASK_MS = 50;
+/** Longest piece of the voxel engine's own main-thread work (scheduling, reply, upload batch; ms). */
+const MAX_VOXEL_WORK_MS = 16;
 /**
  * Median edit → new chunk mesh installed (ms). A remesh job is ~7 ms on a
  * laptop core; the software rasteriser shares the CPU, so the headless
@@ -208,9 +210,11 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
         api,
       };
     }, tFirst);
+    const work = await page.evaluate(() => window.__aether?.simulation?.voxel?.workStats() ?? { update: -1, reply: -1, upload: -1 });
     const maxLongTask = Math.max(0, ...tasks.long);
     const maxFrameGap = Math.max(0, ...tasks.gaps);
-    log(`[${label}] view ${view}: ${chunks} chunks meshed in ${Math.round(streamMs)} ms (first chunk after ${Math.round(tFirst - tAgent)} ms); while streaming: longest task ${Math.round(maxLongTask)} ms${tasks.api ? '' : ' (no long-task API)'}, longest frame gap ${Math.round(maxFrameGap)} ms; agent turn + first frame: longest task ${Math.round(Math.max(0, ...tasks.before))} ms`);
+    log(`[${label}] view ${view}: ${chunks} chunks meshed in ${Math.round(streamMs)} ms (first chunk after ${Math.round(tFirst - tAgent)} ms); while streaming: longest task ${Math.round(maxLongTask)} ms${tasks.api ? '' : ' (no long-task API)'}, longest frame gap ${Math.round(maxFrameGap)} ms; agent turn + first frame: longest task ${Math.round(Math.max(0, ...tasks.before))} ms; voxel main-thread work: update ${work.update.toFixed(1)} ms, reply ${work.reply.toFixed(1)} ms, uploads ${work.upload.toFixed(1)} ms per task`);
+    check(work.update >= 0 && Math.max(work.update, work.reply, work.upload) <= MAX_VOXEL_WORK_MS, `${label}: voxel main-thread work too long: ${JSON.stringify(work)}`);
     await page.waitForTimeout(800);
     if (label === 'chromium-webgpu') await screenshot(page, 'voxel-survival');
 
@@ -443,7 +447,10 @@ async function main(): Promise<void> {
   }
   for (const { name, m } of results) {
     log(`${name}: backend ${m.backend}, view ${m.view}, ${m.chunks} chunks in ${Math.round(m.streamMs)} ms, longest task ${Math.round(m.maxLongTask)} ms${m.longTaskApi ? '' : ' (n/a)'}, frame gap ${Math.round(m.maxFrameGap)} ms, edit ${m.editMs.join('/')} ms, peak ${m.peakLoaded}/${m.peakDrawn} chunks, ${m.fps} fps`);
-    if (m.longTaskApi) check(m.maxLongTask <= MAX_LONG_TASK_MS, `${name}: a main-thread task took ${Math.round(m.maxLongTask)} ms while streaming (max ${MAX_LONG_TASK_MS})`);
+    // WebGPU submits asynchronously, so a long task there is the page's own work. On WebGL2 over a
+    // software rasteriser, GL calls block on the CPU-bound GPU process (draw, readback, link status):
+    // those numbers are reported, and the engine's own work is bounded by MAX_VOXEL_WORK_MS above.
+    if (m.longTaskApi && m.backend === 'webgpu') check(m.maxLongTask <= MAX_LONG_TASK_MS, `${name}: a main-thread task took ${Math.round(m.maxLongTask)} ms while streaming (max ${MAX_LONG_TASK_MS})`);
   }
   log('voxel e2e passed');
 }

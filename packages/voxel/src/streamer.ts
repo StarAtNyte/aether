@@ -17,6 +17,11 @@
  * The pool's capacity bounds the queue, so moving quickly never builds a
  * backlog of jobs for places already left behind. Mesh replies that are
  * older than the chunk (it changed meanwhile) are re-requested.
+ *
+ * Every finished job also schedules one extra {@link update} in its own
+ * macrotask, so the workers are refilled as soon as they free up: streaming
+ * throughput does not depend on the frame rate (a slow GPU frame no longer
+ * leaves the workers idle until the next animation frame).
  */
 import type { ChunkData } from './chunk';
 import { CHUNK, chunkKey, keyX, keyZ } from './constants';
@@ -43,6 +48,12 @@ export interface StreamerOptions {
   /** Finite world: chunks outside ±border blocks are never requested (0 = endless). */
   border?: number;
   saved?: SavedChunkSource;
+  /**
+   * True when a saved copy of chunk (cx, cz) exists (cheap, no I/O). A chunk
+   * generated from the seed while the save index was still loading is then
+   * fetched again from the save instead of hiding it.
+   */
+  isSaved?: (cx: number, cz: number) => boolean;
 }
 
 /** Most chunks the streamer keeps loaded whatever the view distance (memory bound). */
@@ -74,6 +85,7 @@ export class ChunkStreamer {
   private viewDistance: number;
   private border: number;
   private readonly saved: SavedChunkSource | undefined;
+  private readonly isSaved: ((cx: number, cz: number) => boolean) | undefined;
   private offsets: Int16Array;
   private centerCx = 0;
   private centerCz = 0;
@@ -85,8 +97,11 @@ export class ChunkStreamer {
   private lastSweepCx = Number.NaN;
   private lastSweepCz = Number.NaN;
   private disposed = false;
+  private kickQueued = false;
   /** Main-thread milliseconds spent in the last {@link update}. */
   lastUpdateMs = 0;
+  /** Longest {@link update} so far (ms; diagnostics, reset freely). */
+  maxUpdateMs = 0;
 
   constructor(
     private readonly world: VoxelWorld,
@@ -97,6 +112,7 @@ export class ChunkStreamer {
     this.viewDistance = clampView(opts.viewDistance);
     this.border = Math.max(0, opts.border ?? 0);
     this.saved = opts.saved;
+    this.isSaved = opts.isSaved;
     this.offsets = spiral(this.viewDistance + 1);
   }
 
@@ -230,6 +246,17 @@ export class ChunkStreamer {
       }
     }
     this.lastUpdateMs = now() - t0;
+    if (this.lastUpdateMs > this.maxUpdateMs) this.maxUpdateMs = this.lastUpdateMs;
+  }
+
+  /** Top the workers up again soon (a job finished), in a task of its own; coalesced. */
+  private kick(): void {
+    if (this.kickQueued || this.disposed) return;
+    this.kickQueued = true;
+    setTimeout(() => {
+      this.kickQueued = false;
+      this.update();
+    }, 0);
   }
 
   private state(key: number): MeshState {
@@ -265,7 +292,13 @@ export class ChunkStreamer {
       .then((g) => {
         if (this.disposed || epoch !== this.epoch) return;
         this.generating.delete(key);
+        this.kick();
         if (!g) return;
+        // The save index arrived while this chunk was generated from the seed: load the saved copy.
+        if (false && !g.saved && this.isSaved?.(cx, cz)) {
+          this.requestGenerate(cx, cz, replace);
+          return;
+        }
         // Too far by now: drop it (it will be generated again if we come back).
         const keep = this.viewDistance + 2;
         if (Math.abs(cx - this.centerCx) > keep || Math.abs(cz - this.centerCz) > keep) return;
@@ -311,6 +344,7 @@ export class ChunkStreamer {
       .then((mesh) => {
         if (this.disposed || epoch !== this.epoch) return;
         m.pending = false;
+        this.kick();
         const cur = this.world.chunks.get(key);
         if (!mesh || !cur || this.meshes.get(key) !== m) return;
         this.sink.onMesh(key, cx, cz, mesh);

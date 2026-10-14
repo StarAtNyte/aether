@@ -103,6 +103,10 @@ export class VoxelSession {
   private epoch = 0;
   /** View distance currently applied to streaming and fog (0: none yet). */
   private appliedDistance = 0;
+  /** The save index of a new terrain is loading (streaming holds until it is known). */
+  private indexLoading: Promise<void> | null = null;
+  /** Longest upload batch (ms) since {@link resetWorkStats}. */
+  private maxUploadMs = 0;
   /** Streamed chunk meshes waiting for their GPU upload (insertion order = nearest first). */
   private readonly uploads = new Map<number, { cx: number; cz: number; mesh: ChunkMesh }>();
   private readonly center: [number, number, number] = [0, 0, 0];
@@ -124,6 +128,28 @@ export class VoxelSession {
     return this.play;
   }
 
+  /** Every chunk within the view distance is meshed and on screen (shaders compiled). */
+  get settled(): boolean {
+    return (this.streamer?.settled ?? true) && this.uploads.size === 0 && !(this.layer?.compiling ?? false);
+  }
+
+  /**
+   * Longest main-thread costs of block terrain since the last
+   * {@link resetWorkStats} (ms): a streamer update (scheduling + unload sweep),
+   * one worker reply (validation + install), one frame's GPU upload batch.
+   * Environment-independent evidence that streaming never blocks the page.
+   */
+  workStats(): { update: number; reply: number; upload: number } {
+    return { update: this.streamer?.maxUpdateMs ?? 0, reply: this.pool?.stats.maxReplyMs ?? 0, upload: this.maxUploadMs };
+  }
+
+  /** Restart {@link workStats}. */
+  resetWorkStats(): void {
+    if (this.streamer) this.streamer.maxUpdateMs = 0;
+    if (this.pool) this.pool.stats.maxReplyMs = 0;
+    this.maxUploadMs = 0;
+  }
+
   /** Streaming status (tests, e2e, stats overlay). */
   status(): { chunks: number; meshed: number; pending: number; settled: boolean; inline: boolean; changed: number; view: number; compiling: boolean } {
     return {
@@ -132,7 +158,7 @@ export class VoxelSession {
       chunks: this.world?.chunks.size ?? 0,
       meshed: this.streamer?.meshedCount ?? 0,
       pending: this.pool?.pending ?? 0,
-      settled: (this.streamer?.settled ?? true) && this.uploads.size === 0,
+      settled: this.settled,
       inline: this.pool?.inlineMode ?? false,
       changed: [...(this.world?.chunks.values() ?? [])].filter((s) => s.modified).length,
     };
@@ -245,7 +271,17 @@ export class VoxelSession {
     this.applyViewDistance();
     this.applyEditLighting(doc.environment);
     const saveKey = `${this.host.saveBase}::${saveIdentity(identity)}`;
-    if (saveKey !== this.saveKey) await this.loadSaveIndex(saveKey, epoch);
+    if (saveKey !== this.saveKey) {
+      // Streaming waits for the save index: a chunk generated from the seed while the
+      // index loads would otherwise hide the player's saved copy of it.
+      const loading = this.loadSaveIndex(saveKey);
+      this.indexLoading = loading;
+      try {
+        await loading;
+      } finally {
+        if (this.indexLoading === loading) this.indexLoading = null;
+      }
+    }
   }
 
   /** The world's view distance, capped by the device's render budget (low-memory mode lowers it). */
@@ -275,6 +311,7 @@ export class VoxelSession {
   private flushUploads(): void {
     const layer = this.layer;
     if (!layer || this.uploads.size === 0) return;
+    const t0 = performance.now();
     let n = 0;
     let quads = 0;
     for (const [key, u] of this.uploads) {
@@ -284,6 +321,8 @@ export class VoxelSession {
       quads += (u.mesh.opaque?.quads ?? 0) + (u.mesh.cutout?.quads ?? 0) + (u.mesh.liquid?.quads ?? 0);
       n++;
     }
+    const ms = performance.now() - t0;
+    if (ms > this.maxUploadMs) this.maxUploadMs = ms;
   }
 
   /**
@@ -320,7 +359,7 @@ export class VoxelSession {
           this.layer?.removeChunk(key);
         },
         onEvict: (slot) => void this.saveSlots([slot]),
-      }, { viewDistance: this.viewDistance(t), border: identity.border, saved: (cx, cz) => this.savedChunk(cx, cz) });
+      }, { viewDistance: this.viewDistance(t), border: identity.border, saved: (cx, cz) => this.savedChunk(cx, cz), isSaved: (cx, cz) => this.savedKeys.has(`${cx},${cz}`) });
     } else {
       this.streamer?.reset(identity.border);
     }
@@ -367,13 +406,14 @@ export class VoxelSession {
     return { atlasUrl: this.atlasUrl, itemsUrl: this.itemsUrl === 'pending' ? '' : this.itemsUrl, itemCount: this.itemIndex.size };
   }
 
-  private async loadSaveIndex(saveKey: string, epoch: number): Promise<void> {
+  /** Load which chunks the save of `saveKey` holds (the index belongs to the key, whatever syncs happen meanwhile). */
+  private async loadSaveIndex(saveKey: string): Promise<void> {
     this.saveKey = saveKey;
     this.savedKeys = new Set();
     try {
       this.store ??= await voxelSaveStore();
       const keys = await this.store.listChunks(saveKey);
-      if (epoch !== this.epoch || this.disposed) return;
+      if (saveKey !== this.saveKey || this.disposed) return;
       this.savedKeys = new Set(keys.filter((k) => parseChunkKey(k) !== null));
       if (this.savedKeys.size > 0) {
         // Chunks generated before the index arrived: reload the saved ones.
@@ -516,7 +556,7 @@ export class VoxelSession {
 
   /** Per animation frame: stream around the camera (edit) or the player (play). */
   frame(dt: number): void {
-    if (!this.terrain || !this.streamer) return;
+    if (!this.terrain || !this.streamer || this.indexLoading !== null) return;
     this.applyViewDistance();
     if (this.play) this.play.frame(dt);
     else {
@@ -558,6 +598,7 @@ export class VoxelSession {
 
   private teardown(): void {
     this.epoch++;
+    this.indexLoading = null;
     this.play?.dispose();
     this.play = null;
     this.streamer?.dispose();

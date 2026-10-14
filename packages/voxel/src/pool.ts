@@ -97,7 +97,7 @@ export class VoxelJobPool {
   /** Current terrain key ('' before {@link configure}). */
   key = '';
   /** Counters (tests, stats overlay). */
-  readonly stats = { generated: 0, meshed: 0, genMs: 0, meshMs: 0, dropped: 0, errors: 0 };
+  readonly stats = { generated: 0, meshed: 0, genMs: 0, meshMs: 0, dropped: 0, errors: 0, maxReplyMs: 0 };
 
   constructor(opts: VoxelPoolOptions = {}) {
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
@@ -262,6 +262,14 @@ export class VoxelJobPool {
 
   private onReply(i: number, lane: Lane, raw: unknown): void {
     if (this.lanes[i] !== lane) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    this.handleReply(i, lane, raw);
+    const ms = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+    if (ms > this.stats.maxReplyMs) this.stats.maxReplyMs = ms;
+  }
+
+  /** Validate and settle one worker reply (main-thread cost is measured by {@link onReply}). */
+  private handleReply(i: number, lane: Lane, raw: unknown): void {
     const parsed = FromWorker.safeParse(raw);
     if (!parsed.success) {
       this.killLane(i, lane, 'malformed voxel worker reply');

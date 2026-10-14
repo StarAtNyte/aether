@@ -39,6 +39,8 @@ import type { VoxelHudState } from '../voxel/hudState';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
+/** Longest wait for block terrain to finish streaming before a thumbnail (ms). */
+const VOXEL_THUMBNAIL_WAIT_MS = 30_000;
 
 const log = createLogger('sim');
 
@@ -583,6 +585,11 @@ export class Simulation {
       while (this.renderer.animating && performance.now() < deadline && !this.disposed) {
         this.touch();
         await new Promise((r) => setTimeout(r, 100));
+      }
+      // Block terrain: wait (bounded) for the chunks around the view, so the still shows the world.
+      const voxelDeadline = performance.now() + VOXEL_THUMBNAIL_WAIT_MS;
+      while (this.voxel?.active && !this.voxel.settled && performance.now() < voxelDeadline && !this.disposed && !this.session) {
+        await new Promise((r) => setTimeout(r, 200));
       }
       if (this.session || this.disposed) return null;
       const webp = await this.renderer.screenshot({ width, height, mime: 'image/webp' });

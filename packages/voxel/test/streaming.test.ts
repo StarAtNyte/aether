@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BlockRegistry } from '../src/blocks';
-import { chunkKey } from '../src/constants';
+import { ChunkData } from '../src/chunk';
+import { cellIndex, chunkKey } from '../src/constants';
 import { terrainIdentity, type TerrainIdentity } from '../src/jobs';
 import type { ChunkMesh } from '../src/mesher';
 import { VoxelJobPool, type VoxelWorkerLike } from '../src/pool';
@@ -155,5 +156,46 @@ describe('chunk streaming', () => {
     expect(g?.top).toBeGreaterThan(40);
     expect(pool.inlineMode).toBe(true);
     pool.dispose();
+  });
+});
+
+describe('chunk streaming throughput', () => {
+  it('keeps the workers busy between frames: one update() streams the whole view', async () => {
+    const { streamer } = setup(terrainIdentity(terrain({ preset: 'flat' }), 1), 2);
+    streamer.setCenter(8, 8);
+    // A single "frame": finished jobs schedule the next ones themselves.
+    streamer.update();
+    const end = Date.now() + 20_000;
+    while (!streamer.settled && Date.now() < end) await new Promise((r) => setTimeout(r, 5));
+    expect(streamer.settled).toBe(true);
+    expect(streamer.meshedCount).toBe(25);
+    expect(streamer.maxUpdateMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('chunk streaming and saves', () => {
+  it('a chunk generated from the seed while the save index loaded is replaced by its saved copy', async () => {
+    const identity = terrainIdentity(terrain({ preset: 'flat' }), 1);
+    const reg = new BlockRegistry(identity.blocks);
+    const world = new VoxelWorld(reg);
+    const pool = new VoxelJobPool({ createWorker: null });
+    pool.configure(identity, reg.size - 1);
+    // The saved copy of chunk (0, 0): solid gold up to y = 3.
+    const gold = reg.idOr('gold_block');
+    const dense = new Uint16Array(16 * 16 * 128);
+    for (let y = 0; y < 4; y++) for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) dense[cellIndex(x, y, z)] = gold;
+    const saved = ChunkData.fromDense(dense);
+    let indexKnown = false;
+    const streamer = new ChunkStreamer(world, pool, { onMesh: () => undefined, onUnload: () => undefined }, {
+      viewDistance: 2,
+      saved: (cx, cz) => (indexKnown && cx === 0 && cz === 0 ? Promise.resolve({ chunk: saved, top: 3 }) : null),
+      isSaved: (cx, cz) => indexKnown && cx === 0 && cz === 0,
+    });
+    streamer.setCenter(8, 8);
+    streamer.update(); // (0, 0) starts generating from the seed …
+    indexKnown = true; // … and the save index arrives meanwhile.
+    await settle(streamer);
+    expect(world.get(5, 1, 5)).toBe(gold);
+    expect(world.slot(0, 0)?.modified).toBe(true);
   });
 });
