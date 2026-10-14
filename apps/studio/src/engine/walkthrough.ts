@@ -38,6 +38,8 @@ export interface WalkTarget {
   /** Room entity the piece belongs to (lights, switches). */
   room: string | null;
   position: Vec3;
+  /** Wall-mounted pieces (switches): the horizontal direction their face points to; usable only from that side. */
+  facing?: [number, number];
 }
 
 /** A light source with its document intensity. */
@@ -73,6 +75,11 @@ export function walkIndex(world: WorldDoc): WalkIndex {
     if (!t) continue;
     n++;
     const target: WalkTarget = { id, kind: a.kind ?? a.role, room: a.room ?? null, position: [t.position[0], t.position[1], t.position[2]] };
+    if (a.role === 'switch') {
+      // Local +Z (the plate's face) in the world: a switch is used from inside its room, not through the wall.
+      const [qx, qy, qz, qw] = t.quaternion;
+      target.facing = [2 * (qx * qz + qw * qy), 1 - 2 * (qx * qx + qy * qy)];
+    }
     if (a.role === 'switch') out.switches.push(target);
     if (a.role === 'light' && LAMP_KINDS.has(a.kind ?? '')) out.lamps.push(target);
     if (e.light) out.lights.push({ id, room: a.room ?? null, intensity: e.light.intensity, glows: e.shape.kind === 'procedural' && e.shape.generator.startsWith('furn-') });
@@ -99,6 +106,7 @@ export function nearestTarget<T extends WalkTarget>(targets: readonly T[], pos: 
     if (Math.abs(t.position[1] - pos[1]) > 2) continue;
     const d = Math.hypot(dx, dz);
     if (d > bestD) continue;
+    if (t.facing && -dx * t.facing[0] - dz * t.facing[1] < -0.05) continue;
     if (d > 0.6 && (dx * fx + dz * fz) / d < minDot) continue;
     bestD = d;
     best = t;

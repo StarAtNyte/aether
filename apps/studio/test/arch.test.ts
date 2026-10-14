@@ -116,6 +116,10 @@ describe('walkthrough interactions', () => {
     expect(nearestTarget(targets, [0, 0, 0], [0, 1], 1.7, 0.2)?.id).toBe('behind');
     expect(nearestTarget([t('close', 0.3, 0.3)], [0, 0, 0], [1, 0], 1, 0.9)?.id).toBe('close');
     expect(nearestTarget(targets, [0, 0, 0], [0, -1], 0.5)).toBeNull();
+    // A switch is only reachable from the side its plate faces (not through the wall).
+    const plate: WalkTarget = { ...t('switch', 0, -1), facing: [0, -1] };
+    expect(nearestTarget([plate], [0, 0, 0], [0, -1], 1.7)).toBeNull();
+    expect(nearestTarget([plate], [0, 0, -2], [0, 1], 1.7)?.id).toBe('switch');
   });
 
   it('switches a room off when any light is on, else on', () => {
