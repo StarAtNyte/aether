@@ -108,13 +108,18 @@ export function clipConvexX(poly: readonly P2[], x0: number, x1: number): P2[] {
   return clip(clip(poly, x0, true), x1, false);
 }
 
+/** Material of the cut face of a sectioned wall (architectural poche). */
+export const SECTION_CAP: Readonly<MaterialSpec> = Object.freeze({ finish: 'paint', color: '#2b2d31', roughness: 0.9 });
+
 /** Build a wall (see the module docs). */
 export function buildWall(p: WallParams): ArchOutput {
   const set = new PartSet();
   const L = p.length;
-  const H = p.height;
+  const cut = p.cut !== undefined && p.cut < p.height ? p.cut : null;
+  const H = cut ?? p.height;
   const t = p.thickness / 2;
-  const spans = openingSpans(p);
+  // A section fills window holes (the glass is hidden) and keeps doorways open.
+  const spans = openingSpans({ length: L, height: H, openings: cut === null ? p.openings : p.openings.filter((o) => o.kind !== 'window') });
   const aStart = -p.startA;
   const aEnd = L + p.endA;
   const bStart = -p.startB;
@@ -163,9 +168,10 @@ export function buildWall(p: WallParams): ArchOutput {
     cursor = Math.max(cursor, c1);
   }
   if (cursor < fx1) topPieces.push([cursor, fx1]);
+  const geomTop = cut === null ? geomEdge : new Geom();
   for (const [x0, x1] of topPieces) {
     const piece = clipConvexX(footprint, x0, x1);
-    if (piece.length >= 3) geomEdge.flatPolygon(piece, H, true);
+    if (piece.length >= 3) geomTop.flatPolygon(piece, H, true);
   }
   // Bottom: visible in exploded views and from below.
   const bottomCuts = spans.filter((s) => s.y0 <= 1e-4).map((s) => [s.x0, s.x1] as [number, number]);
@@ -189,6 +195,7 @@ export function buildWall(p: WallParams): ArchOutput {
   set.add(geomA, p.finishA);
   set.add(geomB, p.finishB);
   set.add(geomEdge, p.finishA);
+  if (geomTop !== geomEdge) set.add(geomTop, { ...SECTION_CAP });
 
   // Skirting boards, interrupted by doorways.
   if (p.skirting !== 'none') {

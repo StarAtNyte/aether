@@ -16,7 +16,7 @@ export type { ArchCollider, ArchOutput, ArchPart } from './types';
 export { FINISHES, FINISH_IDS, finish, type FinishDef, type FinishPattern } from './finishes';
 export { PartSet, MAX_ELEMENT_COLLIDERS, MAX_ELEMENT_PARTS } from './parts';
 export * from './params';
-export { buildWall, openingSpans, clipConvexX, SKIRTING_HEIGHT, SKIRTING_DEPTH, type OpeningSpan } from './wall';
+export { buildWall, openingSpans, clipConvexX, SKIRTING_HEIGHT, SKIRTING_DEPTH, SECTION_CAP, type OpeningSpan } from './wall';
 export { solveWallJoins, JOIN_TOLERANCE, type JoinWall, type WallJoin } from './wall-joins';
 export { wallNetwork, type NetworkRoom, type NetworkWall } from './wall-network';
 export { buildSlab, buildCeiling, buildColumn, buildRailing, buildBasin, slabArea } from './elements';

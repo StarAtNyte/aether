@@ -194,6 +194,9 @@ export interface FrameContentOptions {
   flyIn?: boolean;
 }
 
+/** Framing of worlds with buildings: a higher, tighter three-quarter view (archviz axonometric feel). */
+const ARCH_FRAMING = Object.freeze({ elevationDeg: 38, margin: 0.86 });
+
 /** Lowest orbit camera height above a ground plane (metres). */
 const MIN_ORBIT_HEIGHT = 0.4;
 /** Default camera flight time of automatic framing (seconds). */
@@ -996,7 +999,9 @@ export class WorldRenderer {
     if (!framing) return false;
     const groundY = this.env.groundMesh ? 0 : null;
     const cam = this.perspective;
-    const pose = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY });
+    // Buildings read best from higher up and closer (their bounding sphere is loose around a flat box).
+    const arch = this.archView.active ? ARCH_FRAMING : null;
+    const pose = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, ...(arch ?? {}) });
     _pos.set(pose.position[0], pose.position[1], pose.position[2]);
     _target.set(pose.target[0], pose.target[1], pose.target[2]);
     const duration = opts.duration ?? FRAME_DURATION;

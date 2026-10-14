@@ -70,6 +70,14 @@ export const WallParams = z.object({
   /** Skirting boards on interior faces. */
   skirting: z.enum(['none', 'a', 'b', 'both']).default('both'),
   skirtingMaterial: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }),
+  /**
+   * View-only section cut (metres above the base): the wall is drawn only up
+   * to this height with a dark cap on the cut face, like a plan section.
+   * Window holes below the cut are filled; doorways stay open. Used by the
+   * cutaway / walls-down views as a render override, never stored by the
+   * building compiler. Omit (or ≥ height) for the full wall.
+   */
+  cut: z.number().min(0.05).max(ARCH_LIMITS.MAX_HEIGHT).optional(),
 });
 export type WallParams = z.infer<typeof WallParams>;
 

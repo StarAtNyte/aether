@@ -588,6 +588,25 @@ export class SceneSync {
     return true;
   }
 
+  /**
+   * Restore one overridden node to its document entity (view modes undo
+   * their own overrides without touching others). Returns true when the
+   * node was overridden.
+   */
+  restoreNode(id: EntityId): boolean {
+    const node = this.nodes.get(id);
+    const docEntity = this.current?.entities[id];
+    if (!node || !node.overridden || node.transient || !docEntity) return false;
+    this.batchesStale = true;
+    node.overridden = false;
+    const flags = this.updateNode(node, node.entity, docEntity);
+    if (flags.rebuild) void this.rebuild(node);
+    else if (node.bindings.some((b) => b.ownedMaterial)) this.rematerial(node);
+    this.applyTransform(node);
+    if (this.lightsDirty) this.applyShadowCap();
+    return true;
+  }
+
   /** Drop every runtime override, restoring document values (e.g. on play reset). */
   clearOverrides(): void {
     const world = this.current;
