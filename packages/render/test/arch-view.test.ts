@@ -179,6 +179,21 @@ describe('ArchView on a scene', () => {
     av.dispose();
   });
 
+  it('sections the upper storey correctly while it settles back from the exploded view (regression)', async () => {
+    const { av, sync, world } = await setup();
+    av.set({ levels: 'exploded' });
+    av.update(camera(20, 15, 20), 1);
+    // Collapse and cut in one change: the cut must not use the still-lifted storey height.
+    av.set({ levels: 'stacked', section: 4.4 });
+    av.update(camera(20, 15, 20), 0.1);
+    const upper = walls(world).filter((id) => world.entities[id]?.parent === 'house-l1');
+    expect(upper.length).toBeGreaterThan(0);
+    for (const id of upper) {
+      expect(sync.node(id)!.content.visible).toBe(true);
+      expect(cut(sync, id)).toBeGreaterThan(1);
+    }
+  });
+
   it('section height maps to the lowest storey and validates input', async () => {
     const { av } = await setup();
     av.set({ section: 1.5 });

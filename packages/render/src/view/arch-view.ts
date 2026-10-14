@@ -343,7 +343,8 @@ export class ArchView {
     this.loweredIds.clear();
     for (const w of this.walls) {
       const facing = w.exterior && this.facesCamera(w, camera);
-      const wallBase = w.node.object.matrixWorld.elements[13] as number;
+      // The storey's resting height: an exploded storey's lift (also while it animates back) is not part of the cut.
+      const wallBase = (w.node.object.matrixWorld.elements[13] as number) - explodeLift(w.level, false, this.explode);
       const sectionAt = sectionY === null ? null : sectionY - wallBase - SECTION_CAP_OFFSET;
       const d = archDecision(this.state, { role: 'wall', level: w.level, facesCamera: facing, hostLowered: false, sectionAt: sectionAt !== null && sectionAt < w.height ? sectionAt : null });
       const cut = d.lowered !== null && d.lowered < w.height ? round3(d.lowered) : null;

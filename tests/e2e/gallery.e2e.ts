@@ -274,8 +274,11 @@ async function renderArch(browser: Browser, url: string, prompt: string): Promis
         window.__aether?.store.getState().setArch({ walls: 'cutaway', levelMode: multi ? 'solo' : 'stacked', level });
         window.__aether?.simulation?.renderer.frameSphere(c, r, dir, 0);
       }, { ...room, multi: levels > 1 });
+      // A close shot: the room chips of the whole building would only clutter it.
+      await page.evaluate(() => document.querySelector<HTMLElement>('.vp-labels')?.style.setProperty('display', 'none'));
       log(`  ${slug}: room refined ${(await refined(page)).toFixed(2)}`);
       await archShot(page, slug, 'room');
+      await page.evaluate(() => document.querySelector<HTMLElement>('.vp-labels')?.style.removeProperty('display'));
     }
     // 3. Night: lamps on.
     await page.evaluate(() => {
