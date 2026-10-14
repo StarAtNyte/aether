@@ -925,8 +925,25 @@ and scatter was already instanced, so no impostor LOD was added.
 - First frame: unchanged path for ordinary worlds (fields/virtual mount
   only for ≥ 2 000 instances / ≥ 20k triangles); built-ins now generate in
   the worker, so heavy generators no longer block it.
-- Firefox/WebGL2 measured (hardware GPU): showcase p50 33 ms, p90 83 ms
-  while orbiting, 236 M scene triangles → 2.3 M drawn; Chromium on
-  SwiftShader is GPU-bound at ~1.5 s per frame for the same scene (software
+- Firefox/WebGL2 measured (integrated Intel GPU): showcase p50 33 ms,
+  p90 67–83 ms while orbiting, 236 M scene triangles → 1.5 M drawn, 70
+  draws (the classic engine: 33 ms for 27 M triangles, a tenth of the
+  forest); Chromium on
+  SwiftShader is GPU-bound at ~1.3 s per frame for the same scene (software
   rasterizer), with software-tier budgets lowered to 300k field / 250k
   virtual triangles.
+
+**Gates** (this stage, final runs): `tsc -p tsconfig.json --noEmit` 0
+errors; Vitest 1 640 tests in 118 files passing; studio build OK;
+`npm run smoke` 14/14 (the showcase template is now part of the set);
+`npm run e2e` passed in Chromium WebGPU, Chromium WebGL2 and Firefox
+WebGL2; `e2e:layout` and `e2e:projects` pass in Chromium and Firefox.
+Two earlier `npm run e2e` attempts failed on timing checks while another
+process on the machine used a full core (a 646 ms long task during "Run
+checks" on WebGL2, and a verification run not observed by the probe on a
+fast world); neither reproduced on the next run. Fixed on the way:
+the projects e2e counted 8 templates (now reads the template list), the
+tool dock overflowed into the axis gizmo at 1024–1366 px and off screen on
+phones (it now scrolls within its column), and the connect card's text
+shrank below a word's width in the landscape-phone agent panel (it wraps
+onto its own row).

@@ -104,9 +104,9 @@ explicit state, so the AI can be held to account:
   layer) into spatial chunks with automatic LOD meshes, culled per chunk and
   spent against a per-GPU triangle budget, far chunks first. The built-in
   showcase — "a canyon with a million trees and ancient statues", also a
-  template — holds 236 M triangles and draws about 2.3 M (≈ 100× fewer),
-  at the same median frame time (33 ms in Firefox) as the full-detail
-  renderer needs for a tenth of that forest; the viewport shows both
+  template — holds 236 M triangles and draws about 1.5 M (≈ 157× fewer),
+  at the same median frame time (33 ms in Firefox on an integrated GPU) as
+  the full-detail renderer needs for a tenth of that forest; the viewport shows both
   numbers, and the camera button flies through any world. Vegetation fields sway in a procedural wind, and the post
   pass applies a colour grade derived from the sky (split tone, saturation,
   contrast). Research notes and numbers: [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md),

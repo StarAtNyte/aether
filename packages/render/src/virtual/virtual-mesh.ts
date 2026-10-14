@@ -104,8 +104,9 @@ export class VirtualGroup {
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(source.matrix);
     mesh.raycast = noRaycast;
-    // The cut is planned on the CPU per cluster: three's per-object culling would only add work.
-    mesh.frustumCulled = false;
+    // Keep three's per-object culling (bounding sphere = the source's): an instance outside the
+    // view or the shadow camera is not submitted at all in that pass.
+    mesh.frustumCulled = true;
     this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN) });
     return mesh;
   }

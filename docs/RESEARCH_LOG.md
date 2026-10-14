@@ -80,14 +80,16 @@ carved standing stones and 10 boulders. Smoke (Node): builds and verifies
 in 1.5 s.
 
 `npm run e2e:benchmark` (1280×800, camera orbiting for 6 s). Firefox ran on
-the machine's hardware GPU (WebGL2); headless Chromium on SwiftShader:
+the machine's integrated Intel GPU (WebGL2, hardware); headless Chromium on
+SwiftShader (the hardware-GPU headless Chromium path fails here with Vulkan
+texture-allocation errors unrelated to Aether):
 
 | Browser / engine | Scene triangles | Drawn | Draws | CPU in render() | Frame p50 / p90 |
 | --- | --- | --- | --- | --- | --- |
-| Firefox WebGL2, scale engine | **236 M** (1 M pines, 60k grass, 41 sculptures) | 2.3 M (103× fewer) | 115 | 21 ms | **33 ms / 83 ms** |
+| Firefox WebGL2, scale engine | **236 M** (1 M pines, 60k grass, 41 sculptures) | 1.5 M (157× fewer) | 70 | 20–21 ms | **33 ms / 67–83 ms** |
 | Firefox WebGL2, classic (`?engine=classic`) | 27 M (instance budget dropped 90 % of the trees) | 26.4 M | 66 | 9 ms | 33 ms / 50 ms |
-| Chromium WebGPU (SwiftShader), scale | 223 M | 1.2 M (192×) | 113 | GPU-bound | 1.5 s / 3.2 s |
-| Chromium WebGL2 (SwiftShader), scale | 223 M | 0.8–1.2 M | 119 | GPU-bound | 1.5 s / 2.0 s |
+| Chromium WebGPU (SwiftShader), scale | 223 M (software budgets drop the grass) | 0.76 M (293×) | 70 | 32 ms (GPU-bound) | 1.25 s |
+| Chromium WebGL2 (SwiftShader), scale | 223 M | 0.72 M (311×) | 70 | 18 ms (GPU-bound) | 1.28 s |
 | Chromium WebGPU (SwiftShader), classic | 223 M requested | — | — | — | agent turn did not finish in 240 s (critique views of 18 M full-detail triangles) |
 
 The classic engine can only show a tenth of the forest and still draws 26 M
@@ -95,7 +97,7 @@ triangles; the scale engine shows the whole scene at the same median frame
 time. Its p90 comes from re-plan frames (every 120 ms while the camera
 moves); a static or slowly moving camera re-plans nothing.
 
-Two findings made the difference between 100 ms and 33 ms per frame in
+Three findings made the difference between 100 ms and 33 ms per frame in
 Firefox:
 
 1. **`DynamicDrawUsage` re-uploads every draw.** three's `Attributes.update`
@@ -110,6 +112,11 @@ Firefox:
    culling, so 18 colossal heads walked their whole hierarchy every 120 ms.
    A caster now keeps its cut while the camera moved < 1.5 % of its
    distance or while it is more than three radii outside the view.
+3. **Per-object culling still matters.** Virtual meshes first disabled
+   three's frustum culling ("the cut is planned per cluster"), so every
+   sculpture was submitted in the main and the shadow pass even when off
+   screen: 116 draws per frame instead of 70. With culling on (the bounding
+   sphere is the source mesh's), drawn triangles fell from 2.3 M to 1.5 M.
 
 Other measured checks: GPU objects stay flat over showcase rebuilds
 (`--cycles=2`: 66 GPU geometries vs a 68 baseline, 28 textures, 22 cached
