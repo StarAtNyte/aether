@@ -14,11 +14,11 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 
 | | |
 | --- | --- |
-| Entries | 364: 351 models (43 animated: 41 people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 8 forge originals |
-| Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 26, people 19, animals 23, food 24, tools 5, props 31, skies 5 |
-| Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 8 first-party forge originals (MIT) |
-| Disk | 35 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 192 px WebP thumbnails, 1k HDR) |
-| Catalog | `assets/catalog.json`, 213 KB (36 KB gzip), loaded lazily after the editor starts |
+| Entries | 374: 351 models (43 animated: 41 people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 10 photographed surfaces, 8 forge originals |
+| Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 26, people 19, animals 23, food 24, tools 5, props 31, skies 5, surfaces 10 |
+| Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 10 ambientCG PBR materials (CC0), 8 first-party forge originals (MIT) |
+| Disk | 37 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR) |
+| Catalog | `assets/catalog.json`, 224 KB (38 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
 
 Every asset is real-world sized in metres, its base on y = 0 and centred in
@@ -37,7 +37,7 @@ npx tsx scripts/assets/sheet.ts 0 120 sheet.png   # contact sheet for review
 ```
 
 - `assets/sources.json` lists every download (URL, version, licence, SHA-256).
-  The fetch script refuses hosts outside kenney.nl / polyhaven, anything not
+  The fetch script refuses hosts outside kenney.nl / polyhaven / ambientCG, anything not
   CC0-1.0 / CC-BY-4.0, checksum mismatches, archives with absolute or `..`
   paths, and Kenney archives whose `License.txt` does not state CC0.
 - `scripts/assets/selection.ts` is the curation: which files ship, their ids,
@@ -57,6 +57,15 @@ npx tsx scripts/assets/sheet.ts 0 120 sheet.png   # contact sheet for review
      content-hashed file names (served with immutable caching).
 - Realistic textures are re-encoded to JPEG q0.8 ≤ 1024 px (a third of the
   bytes) with the browser's encoder.
+- `scripts/assets/materials.ts` turns ambientCG PBR sets (CC0) into photo
+  finishes for `material.finish` (oak, walnut, brick, tile, marble,
+  concrete, stone, fabric, plaster, terrazzo): 512 px albedo divided by its
+  mean (so the finish colour and `material.color` tints still apply), an
+  ORM map whose roughness is rescaled to the finish's calibrated value, and
+  the OpenGL normal map. Catalog entries have kind `material`, id
+  `finish-<finish>`, category `materials` ("Surfaces" in the library).
+  When the catalog is loaded, the renderer swaps its procedural finish
+  textures for the photos; without it the procedural ones stay.
 
 ### Licences
 
@@ -74,7 +83,8 @@ assets, which a public repository would do.
   favourites (per browser). Click places at the centre of the view (several
   clicks line objects up); drag drops under the cursor with a translucent
   preview, snapped to the surface below, against walls (back to the wall)
-  or under ceilings; wall items hang on walls. Skies set `environment.hdri`.
+  or under ceilings; wall items hang on walls. Skies set `environment.hdri`;
+  surfaces dropped on an object set its `material.finish`.
 - **Inspector**: source and licence, real size, look (variants), fit size
   and animation (auto / none / a clip).
 - **Agent**: `search_assets` tool and a compact library summary in the

@@ -1403,7 +1403,7 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 
 | Export | Contract |
 | --- | --- |
-| `Catalog`, `CatalogEntry`, `CatalogPack`, `CatalogCollider`, `CatalogAnims`, `AssetCategory`, `AssetLicence` | zod schemas of `assets/catalog.json` (version 1). Paths are content-hashed (`m/<id>[.lod1|.lod2].<sha8>.glb`, `h/…hdr`, `t/…webp`) relative to `base` (`/assets/lib/`). Licences: `CC0-1.0`, `CC-BY-4.0` (third party), `MIT` (first-party forge originals). |
+| `Catalog`, `CatalogEntry`, `CatalogPack`, `CatalogCollider`, `CatalogAnims`, `AssetCategory`, `AssetLicence` | zod schemas of `assets/catalog.json` (version 1). Paths are content-hashed (`m/<id>[.lod1|.lod2].<sha8>.glb`, `h/…hdr`, `t/…webp`) relative to `base` (`/assets/lib/`). Licences: `CC0-1.0`, `CC-BY-4.0` (third party), `MIT` (first-party forge originals). Kinds: `model`, `hdri`, `generator` (a library procedural generator + params) and `material` (category `materials`: `material: { finish, tile, maps: { albedo, orm, normal } }`, photographed maps of a `MaterialFinish`; `x/<finish>.<map>.<sha8>.jpg`). Older catalogs without the new kind / category stay valid. |
 | `loadCatalog()` / `getCatalog()` / `setCatalog(c)` / `catalogEntry(id)` / `libraryUrl(path)` | Lazy registry. `loadCatalog` imports the JSON once (own bundle chunk), validates it and never rejects (empty catalog when missing). |
 | `searchAssets(catalog, query)` / `bestAsset(catalog, text, filter)` | Tokenised, plural-folded, synonym-expanded (`SYNONYM_GROUPS`), typo-tolerant (one edit or swap) AND search with category / kind / style / placement / animated filters; ties prefer lighter models; ≤ 200 results. |
 | `selectLod(entry, distance, fovY, scale?, bias?)`, `lodDistances(…)`, `screenFraction(…)` | LOD choice by projected height (`LOD_SCREEN_FRACTIONS` = 0.25 / 0.08 of the viewport). |
@@ -1433,6 +1433,13 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 - `HdriController` (`environment.hdri`): lazy `HDRLoader`, binds
   `scene.environment` (× 0.6 of the sky's IBL scale) and the background,
   dims the hemisphere ambient; the analytic sky stays the fallback.
+- `FinishTextures.usePhotos(resolver, loader?)` switches `material.finish`
+  maps to photographed ones (`photoFinishResolver()` over the installed
+  catalog's `material` entries): albedo is a pattern ratio around 1 that
+  is multiplied by the finish colour (tints keep working), ORM roughness is
+  rescaled to the finish's calibrated value. Unknown finishes, a missing
+  catalog or a failed fetch keep the procedural maps. `WorldRenderer`
+  calls it when the catalog is installed (`refreshAssets()`).
 - `WorldRenderer`: options `textureSource`, `hdriSource`; methods
   `cursorRay(ndcX, ndcY)`, `refreshAssets(ids?)`, `gaitOf(id)`, `animatedCount`.
   Animated assets update only while `render(dt, { animate: true })`.

@@ -174,10 +174,13 @@ packages).
 | [Kenney Mini Market](https://kenney.nl/assets/mini-market) | 1.0 | Kenney | CC0-1.0 | 6 models (1 animated character) |
 | [Poly Haven](https://polyhaven.com) models (API, 1k textures), retrieved 2026-10-14 | per asset (`assets/manifest.json`) | Kirill Sannikov, Ulan Cabanilla, Fran Calvente, James Ray Cock, Amal Kumar, Jorge Camacho, Rico Cilliers, Riley Queen, Josh Dean, Gabriel Radić (per asset in the manifest) | CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)) | 16 models: armchair, sofa, round coffee table, nightstand, wooden side table, painted bench, succulent, clay pot, ceramic vase, pendant lamp, wooden lantern, barrel, cat and horse statues, street lamp, retro TV |
 | [Poly Haven](https://polyhaven.com) HDRIs (1k `.hdr`) | per asset | Greg Zaal, Jarod Guest, Sergej Majboroda | CC0-1.0 | 5 skies: Kloofendal 48d Partly Cloudy (Pure Sky), Venice Sunset, Lebombo, Moonlit Golf, Brown Photostudio 02 |
+| [ambientCG](https://ambientcg.com) PBR materials (1K-JPG), retrieved 2026-10-14 | per material (`assets/sources.json`, SHA-256 pinned) | Lennart Demes (ambientCG) | CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)) | 10 surface finishes: WoodFloor051 (oak), WoodFloor041 (walnut), Bricks090 (brick), Tiles107 (tile), Marble016 (marble), Concrete042A (concrete), PavingStones070 (stone), Fabric026 (fabric), Plaster001 (plaster), Terrazzo009 (terrazzo) |
 
 Processing (`scripts/assets/build.ts`) changes the files: scale to metres,
 pivot, merged meshes, LODs, linearised colours of two older Kenney kits,
-re-encoded realistic textures, meshopt compression. Thumbnails in
+re-encoded realistic textures, meshopt compression; ambientCG maps are
+resampled to 512 px and converted to the renderer's finish format
+(`scripts/assets/materials.ts`). Thumbnails in
 `assets/lib/t/` are renders of these assets by this project.
 
 **Evaluated and excluded:** Quaternius packs — the pack pages say CC0, but

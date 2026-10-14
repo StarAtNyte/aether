@@ -115,7 +115,7 @@ describe('asset shapes in SceneSync', () => {
     expect(sync.node('a')!.keyed?.output.parts.length).toBeGreaterThan(0);
     expect(sync.node('b')!.content.children.some((o) => o.name === 'placeholder')).toBe(true);
     expect(sync.getWarnings().get('b')).toContain('not available');
-    expect(sync.getWarnings().get('s')).toContain('environment map');
+    expect(sync.getWarnings().get('s')).toContain('is a sky, not an object');
   });
 
   it('a load failure falls back instead of leaving a hole', async () => {
