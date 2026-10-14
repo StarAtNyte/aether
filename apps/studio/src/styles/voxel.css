@@ -577,6 +577,14 @@
   right: 12px;
 }
 
+/* The key hint inside the light Close button uses the button's own text colour. */
+.vx-screen__close kbd {
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.7;
+}
+
 /* Room for the Close button at the top right (it sits over the crafting column). */
 .vx-screen__craft .vx-screen__head {
   padding-right: 92px;
