@@ -12,11 +12,12 @@
  * Only the URL and code the CLI prints are relayed to the local user. One
  * sign-in runs at a time; it is stopped after 10 minutes.
  */
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { runProcess, type SpawnFn } from './process';
 import { restrictedEnv } from './sandbox';
+import { spawnCli } from './spawn-plan';
 
 /** Backends with a sign-in flow. */
 export type LoginBackend = 'codex' | 'claude-code';
@@ -127,7 +128,7 @@ export class LoginManager {
       if (typeof v === 'string' && v.length > 0 && v.length < 1024) desktop[k] = v;
     }
     const env = restrictedEnv(this.opts.env, { ...desktop, ...(opts.home ? { CODEX_HOME: opts.home } : {}) });
-    const doSpawn = this.opts.spawn ?? spawn;
+    const doSpawn = this.opts.spawn ?? ((c: string, a: readonly string[], o: SpawnOptions): ChildProcess => spawnCli(c, a, o));
     const child = doSpawn(command, loginArgs(backend), { cwd: tmpdir(), env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child = child;
     const state: LoginState = { backend, running: true, output: '', startedAt: this.now(), ...(opts.accountId ? { accountId: opts.accountId } : {}) };

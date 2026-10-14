@@ -900,8 +900,9 @@ Exit codes: 0 ok, 1 failure, 2 usage error, 3 `status`: not running.
   and with `--origin` `AETHER_BRIDGE_ORIGINS` / `AETHER_BRIDGE_PORT`.
   Hosting-platform markers are removed from the child env.
 - **stop**: `POST /api/admin/shutdown` with `X-Aether-Admin: <secret>`
-  (graceful), then SIGTERM / SIGKILL of the process group (Windows: the
-  process). A pid that does not answer health and is not recognisably the
+  (graceful), then SIGTERM / SIGKILL of the process group (Windows:
+  `taskkill /PID <pid> /T /F`, so AI workers and the CLIs they started end
+  too). A pid that does not answer health and is not recognisably the
   server (`/proc/<pid>/cmdline` on Linux) is never signalled without `--force`.
 - **login / logout**: run `codex login` (`--device-auth`: `codex login
   --device-auth`) / `codex logout`, or `claude auth login --claudeai` /
@@ -910,6 +911,18 @@ Exit codes: 0 ok, 1 failure, 2 usage error, 3 `status`: not running.
   via `cmd.exe /d /s /c` with fixed quoted arguments). An existing login is
   detected with `codex login status` / `claude auth status --json` and
   reported instead of signing in again.
+- **Cross-platform process helpers** (exported by `@aether/bridge`, used by
+  the CLI, the server's sign-in manager, CLI probes and AI workers):
+  `commandPlan(command, args, platform, comSpec?)` → `{ command, args,
+  verbatim }` (Windows `.cmd` / `.bat` → `cmd.exe /d /s /c` with quoted fixed
+  arguments; any of `"%^&|<>` or a newline throws), `spawnCli(...)` (spawn
+  with that plan, `shell: false`, `windowsHide`), `sdkExecutable(path)`
+  (undefined for a Windows batch shim, so the Codex SDK uses its bundled
+  binary with the same `CODEX_HOME`), `killTree(pid, signal)` /
+  `killTreePlan` (POSIX: signal `-pid`, falling back to `pid`; Windows:
+  `taskkill /T /F`; invalid pids ignored). `which(name, env, platform)` on
+  Windows tries only `PATHEXT` extensions for a bare name (npm's
+  extensionless sh shim is not runnable there).
 - **pair**: `POST /api/local/bridge/pair` (admin header) → `{ url, code,
   links[] }`; each link is `<origin>/?bridge=<url>#aether-bridge=<token>`.
 

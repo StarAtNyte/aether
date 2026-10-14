@@ -4,8 +4,9 @@
  * optional per-line observer that may stop the process early (used to kill a
  * run the moment the CLI reports a tool call).
  */
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { spawnCli } from './spawn-plan';
 
 /** `spawn`-compatible function (injectable for tests). */
 export type SpawnFn = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
@@ -43,7 +44,7 @@ export interface RunResult {
 export function runProcess(command: string, args: readonly string[], opts: RunOptions): Promise<RunResult> {
   const maxStdout = opts.maxStdout ?? 8 * 1024 * 1024;
   const maxStderr = opts.maxStderr ?? 64 * 1024;
-  const doSpawn = opts.spawn ?? (spawn as SpawnFn);
+  const doSpawn: SpawnFn = opts.spawn ?? ((c, a, o) => spawnCli(c, a, o));
   return new Promise<RunResult>((resolve) => {
     let child: ChildProcess;
     try {

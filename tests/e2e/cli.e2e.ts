@@ -10,7 +10,9 @@
  *     device sign-in code through the real server + fake Codex CLI, cancel,
  *     choose "Continue offline", check the "Sign in" chip and that a reload
  *     does not nag, then generate a world with the offline planner.
- *  3. `aether stop`: the server process is gone and status says so.
+ *  3. Chromium again: the device sign-in completes, the screen shows the
+ *     account and the CLI's models; `aether login` / `doctor` / `logout`.
+ *  4. `aether stop`: the server process is gone and status says so.
  *
  * The server's DNS-rebinding defence and session cookie are checked on the
  * way. Run: `npm run build && npm run e2e:cli`.
@@ -52,19 +54,37 @@ async function waitFor<T>(what: string, timeoutMs: number, probe: () => Promise<
   throw new E2EFailure(`timed out after ${timeoutMs} ms waiting for ${what} (last=${JSON.stringify(last)})`);
 }
 
-/** A fake `codex`: never signed in; device sign-in prints a link + code and waits. */
+/**
+ * A fake `codex`. Signed out until a device sign-in completes: by default the
+ * device sign-in prints a link + code and waits (so it can be cancelled);
+ * once the test creates \`<bin>/../complete\` it signs in after a moment
+ * (marker file in CODEX_HOME), exactly like the real CLI finishing.
+ */
 const FAKE_CODEX = `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
 const a = process.argv.slice(2).join(' ');
-if (a === 'login status') { process.stdout.write('Not logged in\\n'); process.exit(1); }
-if (a === 'login --device-auth') {
+const home = process.env.CODEX_HOME || '';
+const marker = path.join(home, 'fake-auth');
+const signedIn = () => home !== '' && fs.existsSync(marker);
+if (a === 'login status') {
+  if (signedIn()) { process.stdout.write('Logged in using ChatGPT\\n'); process.exit(0); }
+  process.stdout.write('Not logged in\\n'); process.exit(1);
+}
+if (a === 'login --device-auth' || a === 'login') {
   process.stdout.write('Follow these steps to sign in with ChatGPT using device code authorization:\\n');
   process.stdout.write('1. Open this link in your browser and sign in to your account\\n   https://auth.openai.com/codex/device\\n');
   process.stdout.write('2. Enter this one-time code (expires in 15 minutes)\\n   FAKE-12345\\n');
-  setTimeout(() => process.exit(1), 60000);
+  if (fs.existsSync(path.join(__dirname, '..', 'complete'))) {
+    setTimeout(() => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(marker, 'ok'); process.stdout.write('Successfully logged in\\n'); process.exit(0); }, 5000);
+  } else setTimeout(() => process.exit(1), 60000);
   process.on('SIGTERM', () => process.exit(143));
-} else if (a === 'logout') { process.exit(0); }
+} else if (a === 'logout') { try { fs.rmSync(marker); } catch {} process.stdout.write('Successfully logged out\\n'); process.exit(0); }
 else if (a === 'mcp list --json') { process.stdout.write('[]'); }
-else if (a === 'debug models') { process.stdout.write('{"models":[]}'); }
+else if (a === 'debug models') {
+  const m = (slug, name) => ({ slug, display_name: name, visibility: 'list', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }], input_modalities: ['text'] });
+  process.stdout.write(JSON.stringify({ models: [m('fake-model-a', 'Fake Model A'), m('fake-model-b', 'Fake Model B')] }));
+}
 else { process.stderr.write('fake codex: unsupported ' + a + '\\n'); process.exit(2); }
 `;
 
@@ -197,6 +217,46 @@ async function browserRun(name: 'chromium' | 'firefox', browser: Browser, link: 
   }
 }
 
+/**
+ * The sign-in completes: a fresh visitor starts the device sign-in, the fake
+ * CLI finishes it, and the screen switches by itself to the signed-in account
+ * with the CLI's model list; choosing a model closes it, no "Sign in" chip.
+ */
+async function signedInRun(browser: Browser, link: string): Promise<void> {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors: string[] = [];
+  try {
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await page.goto(link, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('first-run').waitFor({ state: 'visible', timeout: 60_000 });
+    const startLogin = page.getByTestId('first-run-login-start');
+    await startLogin.waitFor({ state: 'visible', timeout: 40_000 });
+    await startLogin.click();
+    await page.getByTestId('first-run-device-code').waitFor({ state: 'visible', timeout: 20_000 });
+    const signedIn = page.getByTestId('first-run-signed-in');
+    await signedIn.waitFor({ state: 'visible', timeout: 30_000 });
+    const account = await signedIn.innerText();
+    check(/Signed in/.test(account) && /ChatGPT/.test(account), `the signed-in panel shows "${account.replace(/\s+/g, ' ')}"`);
+    const select = page.getByLabel('Codex model');
+    const options = await select.locator('option').allInnerTexts();
+    check(options.join('|') === 'Fake Model A|Fake Model B', `the model picker lists ${options.join(', ')}`);
+    await select.selectOption('fake-model-b');
+    await page.getByTestId('first-run-done').click();
+    await page.getByTestId('first-run').waitFor({ state: 'detached', timeout: 10_000 });
+    const prefs = await page.evaluate(() => localStorage.getItem('aether.ai.prefs.v1') ?? JSON.stringify(Object.fromEntries(Object.entries(localStorage))));
+    check(prefs.includes('fake-model-b'), `the chosen model was not remembered: ${prefs.slice(0, 300)}`);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+    check((await page.getByTestId('first-run').count()) === 0, 'the first-run screen came back after signing in');
+    check((await page.getByTestId('signin-chip').count()) === 0, 'the "Sign in" chip shows although signed in');
+    check(errors.length === 0, `page errors:\n  ${errors.join('\n  ')}`);
+    log('chromium: device sign-in completed by itself, account + model picker shown, choice remembered');
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main(): Promise<void> {
   check(existsSync(join(STUDIO_DIST, 'index.html')), 'apps/studio/dist is missing: run `npm run build` first');
   const root = mkdtempSync(join(tmpdir(), 'aether-cli-e2e-'));
@@ -265,7 +325,24 @@ async function main(): Promise<void> {
       await fox.close();
     }
 
-    // 3. Stop.
+    // 3. The sign-in completes (fake CLI finishes it); the CLI then sees the login too.
+    writeFileSync(join(root, 'complete'), '1');
+    const chrome2 = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: true });
+    try {
+      await signedInRun(chrome2, link);
+    } finally {
+      await chrome2.close();
+    }
+    const login = await aether(['login'], env);
+    check(login.code === 0 && /already signed in/.test(login.out), `aether login did not detect the login:\n${login.out}${login.err}`);
+    const doctor = await aether(['doctor', '--json'], env);
+    const checks = JSON.parse(doctor.out) as Array<{ name: string; status: string }>;
+    check(checks.some((c) => /codex/i.test(c.name) && c.status === 'ok'), `doctor does not report Codex signed in: ${doctor.out}`);
+    const logout = await aether(['logout'], env);
+    check(logout.code === 0 && /Signed out/.test(logout.out), `aether logout failed:\n${logout.out}${logout.err}`);
+    log('aether login (already signed in), doctor and logout OK');
+
+    // 4. Stop.
     const stopped = await aether(['stop'], env);
     check(stopped.code === 0 && stopped.out.includes('Aether stopped.'), `aether stop failed:\n${stopped.out}${stopped.err}`);
     await waitFor('the server process to exit', 10_000, async () => !pidAlive(pid));

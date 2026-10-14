@@ -21,6 +21,7 @@ import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCom
 import { BridgeError, classifyCliFailure } from '../errors';
 import { restrictedEnv, withTempDir } from '../sandbox';
 import { sha256, type SessionStore } from '../sessions';
+import { sdkExecutable } from '../spawn-plan';
 
 /** Thread item types that mean the agent tried to act instead of answer. */
 export const FORBIDDEN_ITEM_TYPES: ReadonlySet<string> = new Set(['command_execution', 'file_change', 'mcp_tool_call', 'web_search']);
@@ -130,7 +131,7 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
         let codex: CodexLike;
         try {
           codex = factory({
-            ...(opts.codexPath ? { codexPathOverride: opts.codexPath } : {}),
+            ...(sdkExecutable(opts.codexPath ?? null) ? { codexPathOverride: sdkExecutable(opts.codexPath ?? null) } : {}),
             env: restrictedEnv(opts.env),
             config: codexLockdownConfig(),
             configOverrides: overrides,

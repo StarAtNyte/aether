@@ -63,7 +63,8 @@ hosted copy has no server-side AI at all.
   with an allowlisted environment (no API keys, tokens or cloud
   credentials), the CLI's tools disabled, an empty throwaway working folder
   and a hard timeout. Cancelling a job kills the whole group (SIGTERM, then
-  SIGKILL after 3 s).
+  SIGKILL after 3 s; on Windows, which has no process groups, the process
+  tree is ended with `taskkill /T /F`).
 - The account and model are frozen into a job when it is queued; switching
   accounts is refused while jobs run.
 
@@ -71,7 +72,10 @@ hosted copy has no server-side AI at all.
 
 - All subprocesses are spawned with argument arrays and `shell: false`.
   Windows `.cmd` shims run through `cmd.exe /d /s /c` with fixed arguments
-  that are checked for shell metacharacters.
+  that are checked for shell metacharacters. This one helper (`spawnCli` in
+  `@aether/bridge`) is used by the CLI, the sign-in manager, the CLI probes
+  and the AI workers. The Codex SDK is never handed a batch shim; it then
+  uses its own bundled binary.
 - State folder: `$XDG_STATE_HOME/aether` or `~/.local/state/aether`
   (`%LOCALAPPDATA%\Aether` on Windows), mode 0700. `server.json`, `secret`,
   `access-token` and the logs are 0600. Everything read back is validated

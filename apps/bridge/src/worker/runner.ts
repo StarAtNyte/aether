@@ -12,6 +12,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { BridgeError } from '../errors';
+import { killTree } from '../kill-tree';
 import { restrictedEnv } from '../sandbox';
 import { parseProgressLine, WorkerResult, type WorkerJob, type WorkerProgress } from './protocol';
 
@@ -40,18 +41,10 @@ export function runningWorkers(): number {
   return running.size;
 }
 
-/** Signal a whole process group (falls back to the process). */
+/** Signal the worker's whole process tree (group on POSIX, `taskkill /T` on Windows). */
 function signalGroup(child: ChildProcess, sig: NodeJS.Signals): void {
   if (child.pid === undefined) return;
-  try {
-    process.kill(-child.pid, sig);
-  } catch {
-    try {
-      child.kill(sig);
-    } catch {
-      /* already gone */
-    }
-  }
+  killTree(child.pid, sig);
 }
 
 /** SIGTERM the group now, SIGKILL after the grace period if it is still alive. */

@@ -5,6 +5,7 @@
  */
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { commandPlan as bridgeCommandPlan, killTree, spawnCli } from '@aether/bridge';
 import { z } from 'zod';
 
 /** Header carrying the per-install secret on admin calls (same as the server's). */
@@ -53,24 +54,13 @@ export async function adminPost(port: number, path: string, secret: string, time
   }
 }
 
-/**
- * Spawn a CLI found on PATH. Windows `.cmd` / `.bat` shims (how npm installs
- * `codex`) cannot be spawned directly, so they run through `cmd.exe /d /s /c`
- * with the fixed, quoted arguments this program passes (never user text).
- */
+/** Spawn a CLI found on PATH (Windows `.cmd` shims go through cmd.exe with fixed arguments; see `@aether/bridge` spawn-plan). */
 export function spawnCommand(command: string, args: readonly string[], options: SpawnOptions, platform: NodeJS.Platform = process.platform): ChildProcess {
-  const plan = commandPlan(command, args, platform, process.env['ComSpec']);
-  return spawn(plan.command, plan.args, { ...options, shell: false, windowsHide: true, ...(plan.verbatim ? { windowsVerbatimArguments: true } : {}) });
+  return spawnCli(command, args, options, platform);
 }
 
-/** How {@link spawnCommand} runs `command` (exported for tests). */
-export function commandPlan(command: string, args: readonly string[], platform: NodeJS.Platform, comSpec?: string): { command: string; args: string[]; verbatim: boolean } {
-  if (platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
-    for (const a of [command, ...args]) if (/["%^&|<>\r\n]/.test(a)) throw new Error('unsafe argument for a Windows command shim');
-    return { command: comSpec && comSpec.length > 0 ? comSpec : 'cmd.exe', args: ['/d', '/s', '/c', `"${[command, ...args].map((a) => `"${a}"`).join(' ')}"`], verbatim: true };
-  }
-  return { command, args: [...args], verbatim: false };
-}
+/** How {@link spawnCommand} runs `command` (re-exported for tests). */
+export const commandPlan = bridgeCommandPlan;
 
 /** The command that opens `url` in the default browser on this platform. */
 export function browserCommand(url: string, platform: NodeJS.Platform): { command: string; args: string[] } {
@@ -109,18 +99,9 @@ export function pidIsAetherServer(pid: number, platform: NodeJS.Platform = proce
   }
 }
 
-/** Terminate a detached server: its whole process group on POSIX, the process on Windows. */
+/** Terminate a detached server and its AI workers: the process group on POSIX, the tree (`taskkill /T`) on Windows. */
 export function killServer(pid: number, signal: NodeJS.Signals): void {
-  try {
-    if (process.platform === 'win32') process.kill(pid, signal);
-    else process.kill(-pid, signal);
-  } catch {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      /* already gone */
-    }
-  }
+  killTree(pid, signal);
 }
 
 /** Sleep (ms). */

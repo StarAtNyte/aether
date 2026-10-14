@@ -28,6 +28,7 @@ import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess } from '../process';
 import { restrictedEnv } from '../sandbox';
 import { which } from '../which';
+import { sdkExecutable } from '../spawn-plan';
 import { bundledCheckScript } from './workspace';
 import type { WorkerJob, WorkerResult } from './protocol';
 
@@ -237,7 +238,7 @@ async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: n
     const servers = deps.mcpServers ? await deps.mcpServers() : await listCodexMcpServers({ codexCommand: codexPath, claudeCommand: null, env: deps.env });
     if (servers === null) throw new BridgeError('tool_violation', 'Refused: the MCP servers in your Codex config could not be listed to disable them.');
     const options: CodexOptions = {
-      ...(codexPath ? { codexPathOverride: codexPath } : {}),
+      ...(sdkExecutable(codexPath) ? { codexPathOverride: sdkExecutable(codexPath) } : {}),
       env: restrictedEnv(deps.env),
       config: codexAgenticConfig(),
       configOverrides: mcpDisableOverrides(servers),
