@@ -36,7 +36,7 @@ import {
 // The director, share-link codec and QR encoder load on first use.
 import type { DirectorScene, Subject } from '../publish/director';
 import { SHARE_KEY } from '../publish/share-key';
-import { defaultControls } from '../publish/manifest';
+import { defaultControls, defaultDescription, defaultTitle } from '../publish/manifest';
 import { defaultTitles, type TitleSpec } from '../publish/video/titles';
 import type { Mood } from '../publish/video/music';
 import type { VideoFormat } from '../publish/video/export';
@@ -167,9 +167,9 @@ function initialState(world: WorldDoc): PublishState {
     showPath: true,
     directing: false,
     directNote: null,
-    meta: { title: world.name, description: '', author: '', controls: defaultControls(world) },
+    meta: { title: defaultTitle(world), description: defaultDescription(world), author: '', controls: defaultControls(world) },
     music: null,
-    video: { preset: '1080p', fps: 30, format: 'auto', quality: 1, titles: defaultTitles(world.name), music: 'cinematic', volume: 0.7 },
+    video: { preset: '1080p', fps: 30, format: 'auto', quality: 1, titles: defaultTitles(defaultTitle(world)), music: 'cinematic', volume: 0.7 },
     still: { preset: 'hd', width: 1920, height: 1080, format: 'png', photoreal: false, source: 'view' },
     model: { binary: true },
     plan: { building: null, level: 0, format: 'svg', scale: 50 },
@@ -301,8 +301,8 @@ export class PublishController {
     const st = this.state.getState();
     const buildings = listBuildings(world);
     const plan = st.plan.building && buildings.some((b) => b.id === st.plan.building) ? st.plan : { ...st.plan, building: buildings[0]?.id ?? null, level: 0 };
-    const meta = this.titleEdited && st.meta.title ? st.meta : { ...st.meta, title: world.name, controls: st.meta.controls || defaultControls(world) };
-    const video = this.videoTitleEdited ? st.video : { ...st.video, titles: { ...st.video.titles, title: world.name.slice(0, 80) } };
+    const meta = this.titleEdited && st.meta.title ? st.meta : { ...st.meta, title: defaultTitle(world), description: st.meta.description || defaultDescription(world), controls: st.meta.controls || defaultControls(world) };
+    const video = this.videoTitleEdited ? st.video : { ...st.video, titles: { ...st.video.titles, title: defaultTitle(world) } };
     this.set({ open: true, plan, meta, video, ...(target ? { target } : {}) });
     // A first visit gets a shot that starts at the current view.
     if (st.path.keys.length === 1 && st.path.keys[0]?.pos.join() === '12,9,16') this.resetPath();

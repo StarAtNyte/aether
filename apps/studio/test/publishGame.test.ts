@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createWorld } from '@aether/core';
 import { readZip } from '@aether/assets/zip';
 import { BUILD_CSP, buildGame, buildId, publishedIndexHtml, webManifest } from '../src/publish/gameBuild';
-import { gameJson, parseGameManifest } from '../src/publish/manifest';
+import { defaultControls, defaultDescription, defaultTitle, gameJson, parseGameManifest } from '../src/publish/manifest';
 import { serviceWorkerSource } from '../src/player/offline';
 import { MemoryLibrary, PublishLibrary, MAX_SNAPSHOTS } from '../src/publish/library';
 
@@ -167,5 +167,23 @@ describe('publish library', () => {
     expect(await lib.path('abcdefgh12')).toEqual(path);
     await lib.backend.put('paths', 'abcdefgh13', { v: 1, keys: 'nope' });
     expect(await lib.path('abcdefgh13')).toBeNull();
+  });
+});
+
+describe('title-screen defaults', () => {
+  it('fall back to the world name and derived controls without a title card', () => {
+    expect(defaultTitle(world)).toBe('Beaver <Pond>');
+    expect(defaultDescription(world)).toBe('');
+    expect(defaultControls(world)).toMatch(/orbit|WASD|throttle/);
+  });
+
+  it("come from the world's title card when it has one (capped to the title-screen limits)", () => {
+    const carded = createWorld({ ...world, intro: { title: 'Lantern Isles', tagline: 'Light the way home', objective: 'Find twelve lanterns', controls: ['WASD — move', 'Space — jump'] } });
+    expect(defaultTitle(carded)).toBe('Lantern Isles');
+    expect(defaultDescription(carded)).toBe('Light the way home — Find twelve lanterns');
+    expect(defaultControls(carded)).toBe('WASD — move · Space — jump');
+    const long = createWorld({ ...world, intro: { title: 'T', tagline: '', controls: Array.from({ length: 6 }, () => 'x'.repeat(60)) } });
+    expect(defaultControls(long).length).toBeLessThanOrEqual(300);
+    expect(defaultDescription(long)).toBe('');
   });
 });

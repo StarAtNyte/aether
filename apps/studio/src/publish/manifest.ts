@@ -97,8 +97,30 @@ export function gameJson(game: GameManifest): string {
   });
 }
 
-/** Controls text derived from how the world is played. */
+/** Longest default controls line (the title screen's `controls` cap). */
+const MAX_CONTROLS_CHARS = 300;
+/** Longest default description (the title screen's `description` cap). */
+const MAX_DESCRIPTION_CHARS = 600;
+
+/** Title-screen title: the world's title card when it has one, else its name. */
+export function defaultTitle(world: WorldDoc): string {
+  return (world.intro?.title ?? world.name).slice(0, 80);
+}
+
+/** Title-screen description: the title card's tagline and objective (empty without a card). */
+export function defaultDescription(world: WorldDoc): string {
+  const intro = world.intro;
+  if (!intro) return '';
+  return [intro.tagline, intro.objective ?? ''].filter((t) => t.trim().length > 0).join(' — ').slice(0, MAX_DESCRIPTION_CHARS);
+}
+
+/**
+ * Controls text: the title card's own control lines when the world has
+ * them, else derived from how the world is played.
+ */
 export function defaultControls(world: WorldDoc): string {
+  const lines = world.intro?.controls ?? [];
+  if (lines.length > 0) return lines.join(' · ').slice(0, MAX_CONTROLS_CHARS);
   if (world.voxel) return 'WASD move · Space jump · mouse look · left click break · right click place · E inventory · 1–9 hotbar · Esc pause';
   switch (world.player.mode) {
     case 'firstPerson':
