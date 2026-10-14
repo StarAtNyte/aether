@@ -799,12 +799,12 @@ export class WorldRenderer {
 
   /** Current locomotion gait of an animated asset entity (idle / walk / run), or null. */
   gaitOf(id: EntityId): 'idle' | 'walk' | 'run' | null {
-    return this.sync.animator.gaitOf(id);
+    return this.sync.gaitOf(id);
   }
 
   /** Number of animated asset entities. */
   get animatedCount(): number {
-    return this.sync.animator.size;
+    return this.sync.animatedCount;
   }
 
   /** Generator output of an entity (procedural colliders for physics). */

@@ -13,8 +13,8 @@ import { checkBuilding, compileBuilding, floorPlan2d } from '../src/index';
 import { FURNITURE_ASSETS, furnitureAsset, furnitureOfEntity } from '../src/furniture/assets';
 import { APARTMENT } from './fixtures';
 
-function build(): WorldDoc {
-  const c = compileBuilding(APARTMENT);
+function build(style: 'modern' | 'classic' = 'classic'): WorldDoc {
+  const c = compileBuilding({ ...APARTMENT, style });
   const res = applyPatches(createWorld({ environment: { ground: { material: { preset: 'grass' }, size: 200 } } }), c.patches as PatchInput[], { atomic: true });
   expect(res.errors).toEqual([]);
   return res.world;
@@ -27,8 +27,10 @@ afterEach(() => {
 describe('library furniture in buildings', () => {
   it('uses photographed models for mapped kinds, with the generator as fallback', async () => {
     await loadCatalog();
-    expect(furnitureAsset('sofa')?.id).toBe('sofa-classic');
-    expect(furnitureAsset('bed')).toBeNull();
+    expect(furnitureAsset('sofa', 'classic')?.id).toBe('sofa-classic');
+    expect(furnitureAsset('sofa', 'modern')).toBeNull();
+    expect(furnitureAsset('pendant', 'modern')?.id).toBe('pendant-lamp');
+    expect(furnitureAsset('bed', 'classic')).toBeNull();
     const world = build();
     const sofa = Object.values(world.entities).find((e) => e.arch?.kind === 'sofa')!;
     expect(sofa.shape).toMatchObject({ kind: 'asset', id: 'sofa-classic', fallback: { kind: 'procedural', generator: 'furn-sofa' } });
@@ -42,9 +44,17 @@ describe('library furniture in buildings', () => {
     for (const b of beds) expect(b.shape.kind).toBe('procedural');
   });
 
+  it('a modern flat keeps parametric seating but gets real coffee tables and pendants', async () => {
+    await loadCatalog();
+    const world = build('modern');
+    const ids = Object.values(world.entities).flatMap((e) => (e.shape.kind === 'asset' ? [e.shape.id] : []));
+    expect(ids).not.toContain('sofa-classic');
+    expect(ids).toContain('pendant-lamp');
+  });
+
   it('hangs ceiling models from their top and the checks agree', async () => {
     await loadCatalog();
-    const world = build();
+    const world = build('modern');
     const pendant = Object.values(world.entities).find((e) => e.shape.kind === 'asset' && e.shape.id === 'pendant-lamp');
     expect(pendant).toBeTruthy();
     const report = checkBuilding(world, 'apt');
@@ -70,6 +80,6 @@ describe('library furniture in buildings', () => {
   it('maps only kinds whose models exist in the shipped catalog', async () => {
     const catalog = await loadCatalog();
     const ids = new Set(catalog.entries.map((e) => e.id));
-    for (const list of Object.values(FURNITURE_ASSETS)) for (const id of list) expect(ids.has(id), id).toBe(true);
+    for (const list of Object.values(FURNITURE_ASSETS)) for (const opt of list) expect(ids.has(opt.id), opt.id).toBe(true);
   });
 });

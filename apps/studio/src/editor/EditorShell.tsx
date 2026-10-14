@@ -3,12 +3,27 @@
  * layout mode, so resizing across breakpoints never remounts the canvas
  * (which would recreate the renderer).
  */
-import { memo, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
-import { CreditsDialog } from './library/CreditsDialog';
-import { ForgeDialog } from './library/ForgeDialog';
+import { useStore } from 'zustand';
+
+/** Dialogs of the asset pipeline load only when first opened. */
+const CreditsDialog = lazy(async () => ({ default: (await import('./library/CreditsDialog')).CreditsDialog }));
+const ForgeDialog = lazy(async () => ({ default: (await import('./library/ForgeDialog')).ForgeDialog }));
+
+const AssetDialogs = memo(function AssetDialogs(): ReactElement {
+  const studio = useStudio();
+  const credits = useStore(studio.assets.state, (s) => s.creditsOpen);
+  const forge = useStore(studio.forge.state, (s) => s.open);
+  return (
+    <Suspense fallback={null}>
+      {credits && <CreditsDialog />}
+      {forge && <ForgeDialog />}
+    </Suspense>
+  );
+});
 import { SettingsDialog } from '../components/SettingsDialog';
 import { Toasts } from '../components/Toasts';
 import { TopBar } from '../components/TopBar';
@@ -133,8 +148,7 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
       <Toasts />
       <EditorSettings />
       <EditorPalette />
-      <CreditsDialog />
-      <ForgeDialog />
+      <AssetDialogs />
     </div>
   );
 });

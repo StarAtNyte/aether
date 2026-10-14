@@ -260,7 +260,7 @@ export class RoomLayout {
 
   /** Make a placement record. */
   make(def: FurnitureDef, params: Record<string, Json>, x: number, z: number, yaw: number, y = 0, name?: string): Placed {
-    const asset = furnitureAsset(def.kind);
+    const asset = furnitureAsset(def.kind, this.ctx.style);
     const size = asset ? asset.size : furnitureSize(def, params);
     const floor = def.mount === 'floor';
     return {
@@ -297,7 +297,7 @@ export class RoomLayout {
   againstWall(kind: string, params: Record<string, Json>, edge: number, t: number | null, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
-    const size = furnitureAsset(def.kind)?.size ?? furnitureSize(def, params);
+    const size = furnitureAsset(def.kind, this.ctx.style)?.size ?? furnitureSize(def, params);
     const e = this.ctx.edges[edge] as RoomEdge;
     const yaw = yawFacingIn(e);
     const free = this.freeIntervals(edge, size[1]);

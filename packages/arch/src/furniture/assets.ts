@@ -10,22 +10,29 @@
 import type { Entity, Json } from '@aether/core';
 import { assetShapeSize, catalogEntry, getCatalog } from '@aether/assets';
 import { furnitureById, furnitureByKind, furnitureSize, type FurnitureDef } from './index';
+import type { ArchStyle } from '../plan';
 
-/** Library models per furniture kind, in order of preference (realistic, real-world sized). */
-export const FURNITURE_ASSETS: Readonly<Record<string, readonly string[]>> = {
-  sofa: ['sofa-classic'],
-  armchair: ['armchair-classic'],
-  'coffee-table': ['coffee-table-round'],
-  nightstand: ['nightstand-classic'],
-  pendant: ['pendant-lamp'],
+/**
+ * Library models per furniture kind, in order of preference (realistic,
+ * real-world sized), each with the building styles it suits — a carved
+ * classic sofa would clash with a modern flat, so modern styles keep the
+ * parametric piece there.
+ */
+export const FURNITURE_ASSETS: Readonly<Record<string, ReadonlyArray<{ id: string; styles: readonly ArchStyle[] }>>> = {
+  sofa: [{ id: 'sofa-classic', styles: ['classic'] }],
+  armchair: [{ id: 'armchair-classic', styles: ['classic'] }],
+  'coffee-table': [{ id: 'coffee-table-round', styles: ['modern', 'scandinavian', 'japandi', 'classic', 'industrial'] }],
+  nightstand: [{ id: 'nightstand-classic', styles: ['classic'] }],
+  pendant: [{ id: 'pendant-lamp', styles: ['modern', 'scandinavian', 'industrial', 'japandi'] }],
 };
 
-/** The library model a layout should use for a kind, or null (catalog not loaded, or none fits). */
-export function furnitureAsset(kind: string): { id: string; size: [number, number, number] } | null {
+/** The library model a layout should use for a kind in a style, or null (catalog not loaded, or none fits). */
+export function furnitureAsset(kind: string, style: ArchStyle = 'modern'): { id: string; size: [number, number, number] } | null {
   if (!getCatalog()) return null;
-  for (const id of FURNITURE_ASSETS[kind] ?? []) {
-    const e = catalogEntry(id);
-    if (e && e.kind === 'model') return { id, size: [e.size[0], e.size[1], e.size[2]] };
+  for (const opt of FURNITURE_ASSETS[kind] ?? []) {
+    if (!opt.styles.includes(style)) continue;
+    const e = catalogEntry(opt.id);
+    if (e && e.kind === 'model') return { id: opt.id, size: [e.size[0], e.size[1], e.size[2]] };
   }
   return null;
 }

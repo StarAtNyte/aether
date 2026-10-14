@@ -6,6 +6,9 @@
  */
 import type { EntityInput, Vec3, WorldDoc } from '@aether/core';
 
+/** Drag-and-drop MIME type of palette tiles. */
+export const PALETTE_DRAG_TYPE = 'application/x-aether-palette';
+
 /** Palette sections in display order. */
 export type PaletteSection = 'primitives' | 'nature' | 'buildings' | 'props' | 'gameplay' | 'lights' | 'effects';
 

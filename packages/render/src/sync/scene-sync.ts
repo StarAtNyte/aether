@@ -56,7 +56,7 @@ import { FOLIAGE_GENERATORS } from '../materials/wind';
 import { createMaterial } from '../materials/material-cache';
 import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
-import { AssetAnimator } from './asset-animator';
+import type { AssetAnimator } from './asset-animator';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
 import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
@@ -262,8 +262,24 @@ export class SceneSync {
   private readonly dags: DagClient | null;
   private readonly virtualTriangles: number;
   private readonly virtualGroups = new Map<string, { group: VirtualGroup; refs: number }>();
-  /** Locomotion / clip playback of animated assets. */
-  readonly animator = new AssetAnimator();
+  /** Locomotion / clip playback of animated assets (loaded with the first animated model). */
+  private animatorRef: AssetAnimator | null = null;
+  private animatorLoad: Promise<AssetAnimator> | null = null;
+
+  private loadAnimator(): Promise<AssetAnimator> {
+    this.animatorLoad ??= import('./asset-animator').then((m) => (this.animatorRef = new m.AssetAnimator()));
+    return this.animatorLoad;
+  }
+
+  /** Current gait of an animated asset entity, or null. */
+  gaitOf(id: EntityId): 'idle' | 'walk' | 'run' | null {
+    return this.animatorRef?.gaitOf(id) ?? null;
+  }
+
+  /** Number of animated asset entities. */
+  get animatedCount(): number {
+    return this.animatorRef?.size ?? 0;
+  }
 
   constructor(private readonly opts: SceneSyncOptions) {
     this.variant = opts.variant ?? 'standard';
@@ -1030,7 +1046,7 @@ export class SceneSync {
 
   /** Advance asset animations (characters, animals). Returns true when a redraw is needed. */
   updateAnimations(dt: number): boolean {
-    return this.animator.update(dt);
+    return this.animatorRef?.update(dt) ?? false;
   }
 
   /**
@@ -1122,8 +1138,10 @@ export class SceneSync {
     node.content.add(content);
     const clipRoot = main.children[0];
     if (standard && info.anims && clipRoot && clipRoot.animations.length > 0) {
-      this.animator.add(node.id, clipRoot, node.object, info.anims, shape.animation);
-      node.releases.push(() => this.animator.remove(node.id));
+      const animator = await this.loadAnimator();
+      if (!this.isCurrent(node, token)) return;
+      animator.add(node.id, clipRoot, node.object, info.anims, shape.animation);
+      node.releases.push(() => animator.remove(node.id));
     }
   }
 

@@ -202,8 +202,8 @@ describe('asset animation', () => {
     const { sync } = makeSync({ models, textures });
     await sync.setWorld(doc(ent('w', 'walker', { transform: { position: [0, 0, 0] } })));
     await sync.whenIdle();
-    expect(sync.animator.size).toBe(1);
-    expect(sync.animator.gaitOf('w')).toBe('idle');
+    expect(sync.animatedCount).toBe(1);
+    expect(sync.gaitOf('w')).toBe('idle');
     const obj = sync.object('w')!;
     const step = (speed: number, frames: number): void => {
       for (let i = 0; i < frames; i++) {
@@ -214,21 +214,21 @@ describe('asset animation', () => {
       }
     };
     step(1.5, 60);
-    expect(sync.animator.gaitOf('w')).toBe('walk');
+    expect(sync.gaitOf('w')).toBe('walk');
     step(6, 60);
-    expect(sync.animator.gaitOf('w')).toBe('run');
+    expect(sync.gaitOf('w')).toBe('run');
     step(0, 90);
-    expect(sync.animator.gaitOf('w')).toBe('idle');
+    expect(sync.gaitOf('w')).toBe('idle');
     await sync.setWorld(doc());
-    expect(sync.animator.size).toBe(0);
+    expect(sync.animatedCount).toBe(0);
   });
 
   it('a named clip loops regardless of movement; "none" does not animate', async () => {
     const { sync } = makeSync({ models, textures });
     await sync.setWorld(doc({ id: 'a', shape: { kind: 'asset', id: 'walker', animation: 'run' } }, { id: 'b', shape: { kind: 'asset', id: 'walker', animation: 'none' } }));
     await sync.whenIdle();
-    expect(sync.animator.size).toBe(1);
-    expect(sync.animator.gaitOf('a')).toBe('idle');
+    expect(sync.animatedCount).toBe(1);
+    expect(sync.gaitOf('a')).toBe('idle');
   });
 
   it('the animator frame allocates nothing (20 walkers)', async () => {

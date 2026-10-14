@@ -14,6 +14,12 @@ export const ARCH_PROMPTS: readonly string[] = Object.freeze([
   'an office floor with meeting rooms',
 ]);
 
+/** Worlds built from the curated asset library (real models, HDR sky, animated people, forge originals). */
+export const ASSET_PROMPTS: readonly string[] = Object.freeze([
+  'a city street with traffic and pedestrians',
+  'a town plaza with an ornate fountain, a gazebo and a vintage car',
+]);
+
 /** Default smoke/gallery prompts, in report order. */
 export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'a cozy forest camp with a campfire and tents',
@@ -27,4 +33,5 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'a blocky stone castle on a hill',
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
   ...ARCH_PROMPTS,
+  ...ASSET_PROMPTS,
 ]);

@@ -3,7 +3,7 @@
  * right inspector, the collapsed right rail (medium layout) and the resize
  * handle shared by both sides.
  */
-import { memo, useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react';
 import { useStudio, useUI } from '../app/context';
 import type { LeftView } from '../state/store';
 import { PANEL_WIDTH } from '../lib/layout';
@@ -14,7 +14,9 @@ import { LogicPanel } from '../components/panels/LogicPanel';
 import { Outliner } from '../components/panels/Outliner';
 import { VerifyPanel } from '../components/panels/VerifyPanel';
 import { AgentPanel } from './AgentPanel';
-import { AssetsPanel } from './AssetsPanel';
+
+/** The asset browser (library, imports, forge entry) loads with its first use. */
+const AssetsPanel = lazy(async () => ({ default: (await import('./AssetsPanel')).AssetsPanel }));
 import { LEFT_VIEWS } from './IconRail';
 import { InspectorPanel } from './InspectorPanel';
 
@@ -49,7 +51,11 @@ export function LeftViewBody({ view }: { view: LeftView }): ReactElement {
     case 'objects':
       return <Outliner />;
     case 'assets':
-      return <AssetsPanel />;
+      return (
+        <Suspense fallback={<p className="panel-empty">Loading assets…</p>}>
+          <AssetsPanel />
+        </Suspense>
+      );
     case 'logic':
       return <LogicPanel />;
     case 'verify':

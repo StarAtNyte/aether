@@ -13,13 +13,11 @@ import { ImportsView } from './library/ImportsView';
 import { useLibrary } from './library/useLibrary';
 import { useStudio, useUI } from '../app/context';
 import { fuzzyScore } from '../lib/fuzzy';
-import { PALETTE_ITEMS, PALETTE_SECTIONS, type PaletteItem } from '../lib/palette';
+import { PALETTE_DRAG_TYPE, PALETTE_ITEMS, PALETTE_SECTIONS, type PaletteItem } from '../lib/palette';
 import { Icon } from '../components/Icon';
 import { MATERIAL_DRAG_TYPE, MATERIAL_LIBRARY, materialDragData, parseMaterialDrag, type LibraryMaterial } from '../lib/materials';
 
-/** Drag-and-drop MIME type of palette tiles. */
-export const PALETTE_DRAG_TYPE = 'application/x-aether-palette';
-export { MATERIAL_DRAG_TYPE, parseMaterialDrag };
+export { MATERIAL_DRAG_TYPE, parseMaterialDrag, PALETTE_DRAG_TYPE };
 
 /** A draggable material swatch: drop it on an object, or click to apply it to the selection. */
 const MaterialSwatch = memo(function MaterialSwatch({ m, disabled, onApply }: { m: LibraryMaterial; disabled: boolean; onApply: (m: LibraryMaterial) => void }): ReactElement {

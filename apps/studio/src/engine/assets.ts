@@ -15,7 +15,6 @@ import {
   catalogEntry,
   creditsFor,
   creditsText,
-  importUserAsset,
   isUserAssetId,
   loadCatalog,
   libraryUrl,
@@ -32,7 +31,7 @@ import type { Simulation } from './Simulation';
 import { placeAsset, type Placement } from '../assets/placement';
 import { readFavorites, toggleFavorite } from '../assets/favorites';
 import { openUserAssetStore, type Creation, type UserAssetStore } from '../assets/userStore';
-import { readZip, writeZip, type ZipEntry } from '../assets/zip';
+import type { ZipEntry } from '../assets/zip';
 import { browserStorage, type StorageLike } from '../lib/storage';
 import { exportFileName, exportWorld, validateImportedValue } from '../lib/worldIO';
 import { createLogger } from '../lib/log';
@@ -316,6 +315,7 @@ export class AssetController {
       this.state.setState({ busy: `Importing ${file.name.slice(0, 40)}…` });
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        const { importUserAsset } = await import('@aether/assets/import');
         const r = await importUserAsset(bytes, file.name);
         if (!r.ok) {
           st.toast(`${file.name.slice(0, 40)}: ${r.error}`, 'error', 6);
@@ -444,6 +444,7 @@ export class AssetController {
       ...(await this.packageFiles(world)),
     ];
     const base = exportFileName(world).replace(/\.aether\.json$/, '');
+    const { writeZip } = await import('../assets/zip');
     return { name: `${base}.aether.zip`, bytes: await writeZip(entries) };
   }
 
@@ -475,6 +476,7 @@ export class AssetController {
     if (file.size > MAX_PACKAGE_BYTES) return `The package is too large (limit ${Math.round(MAX_PACKAGE_BYTES / 1024 / 1024)} MB).`;
     this.state.setState({ busy: `Opening ${file.name.slice(0, 40)}…` });
     try {
+      const { readZip } = await import('../assets/zip');
       const zip = await readZip(new Uint8Array(await file.arrayBuffer()));
       if (!zip.ok) return `Package rejected: ${zip.error}`;
       const worldEntry = zip.entries.find((e) => e.name === 'world.aether.json');
@@ -491,6 +493,7 @@ export class AssetController {
       for (const e of zip.entries) {
         const m = /^assets\/(user-[0-9a-f]{12})\.(glb|png|jpg|webp|hdr)$/.exec(e.name);
         if (!m) continue;
+        const { importUserAsset } = await import('@aether/assets/import');
         const imported = await importUserAsset(e.data, e.name.slice(7));
         // Content-addressed: the id must match what the world references, else the file was altered.
         if (!imported.ok || imported.asset.meta.id !== m[1]) continue;
