@@ -36,6 +36,7 @@ import {
   type Entity,
   type EntityId,
   type Json,
+  type LightSpec,
   type MaterialSpec,
   type ProceduralShape,
   type ScatterShape,
@@ -62,7 +63,7 @@ import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareBudget, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
-import { createEntityLight, disposeEntityLight, enforceShadowCap, updateLightParams } from './lights';
+import { createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, updateLightParams } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { setEntityPath } from './property-path';
@@ -563,7 +564,8 @@ export class SceneSync {
     if (path === 'light.intensity' && typeof value === 'number' && Number.isFinite(value) && value >= 0 && node.entity.light && node.light) {
       const light = { ...node.entity.light, intensity: value };
       node.entity = { ...node.entity, light };
-      updateLightParams(node.light.light, light, this.lightScale(node));
+      if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, light);
+      else updateLightParams(node.light.light, light);
       node.overridden = true;
       return true;
     }
@@ -599,8 +601,19 @@ export class SceneSync {
     if (s === this.archLampScale) return;
     this.archLampScale = s;
     for (const node of this.nodes.values()) {
-      if (node.light && node.entity.light && node.entity.arch?.role === 'light') updateLightParams(node.light.light, node.entity.light, s);
+      if (node.light && node.entity.light && node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, node.entity.light);
     }
+  }
+
+  /**
+   * Intensity of an architectural lamp under the daylight scale. Below
+   * {@link LAMP_CUTOFF} the light is switched off entirely (invisible lights
+   * cost nothing per pixel; a dozen point lights in a sunlit room otherwise
+   * do, for no visible effect).
+   */
+  private applyLampScale(light: Light, spec: LightSpec): void {
+    updateLightParams(light, spec, this.archLampScale);
+    light.visible = this.archLampScale >= LAMP_CUTOFF && spec.intensity > 0;
   }
 
   private lightScale(node: Readonly<EntityNode>): number {
@@ -1420,7 +1433,8 @@ export class SceneSync {
     const old = before?.light;
     if (this.variant !== 'standard') return;
     if (node.light && spec && old && old.type === spec.type && old.range === spec.range && old.angle === spec.angle && old.castShadow === spec.castShadow) {
-      updateLightParams(node.light.light, spec, this.lightScale(node));
+      if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, spec);
+      else updateLightParams(node.light.light, spec);
       return;
     }
     if (node.light) {
@@ -1429,6 +1443,7 @@ export class SceneSync {
     }
     if (spec) {
       node.light = createEntityLight(spec, this.lightScale(node));
+      if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, spec);
       node.object.add(node.light.light);
       if (node.light.target) node.object.add(node.light.target);
     }

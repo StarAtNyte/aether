@@ -65,9 +65,11 @@ export class ArchController {
       }),
       host.onSimulation((sim) => {
         if (sim) {
+          // Only a fallback (the studio pipeline failed on this device) is reported back to the UI;
+          // studio quality asked for by photo mode is not the user's choice and must not stick.
           sim.renderer.onQualityChange = (q) => {
             const st = host.store.getState();
-            if (st.arch.quality !== q) st.setArch({ quality: q, studioAvailable: sim.renderer.studioQualityAvailable });
+            if (q === 'realtime' && !sim.renderer.studioQualityAvailable) st.setArch({ quality: 'realtime', photo: false, studioAvailable: false });
           };
           this.applyAll();
         }

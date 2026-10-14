@@ -204,6 +204,43 @@ describe('ArchController', () => {
     c.dispose();
   });
 
+  it('photo mode renders in studio quality without making it the user choice (regression)', () => {
+    const h = host(flatWorld());
+    const calls: string[] = [];
+    let quality = 'realtime';
+    const renderer = {
+      onQualityChange: null as ((q: string) => void) | null,
+      studioQualityAvailable: true,
+      setArchView: () => undefined,
+      restoreEnvironment: () => undefined,
+      setEnvironmentOverride: () => undefined,
+      setRenderQuality(q: string) {
+        calls.push(q);
+        const changed = q !== quality;
+        quality = q;
+        if (changed) this.onQualityChange?.(q);
+        return q;
+      },
+    };
+    let listener: ((sim: unknown) => void) | null = null;
+    const sim = { renderer } as unknown as NonNullable<ArchHost['simulation']>;
+    const withSim: ArchHost = { ...h, get simulation() { return sim; }, onSimulation: (fn) => { listener = fn as (s: unknown) => void; return () => undefined; } };
+    const c = new ArchController(withSim);
+    listener!(sim);
+    h.store.getState().setArch({ photo: true });
+    expect(quality).toBe('studio');
+    expect(h.store.getState().arch.quality).toBe('realtime');
+    h.store.getState().setArch({ photo: false });
+    expect(quality).toBe('realtime');
+    // A real fallback (studio unavailable) is reported back to the UI.
+    h.store.getState().setArch({ quality: 'studio' });
+    renderer.studioQualityAvailable = false;
+    renderer.setRenderQuality('realtime');
+    expect(h.store.getState().arch).toMatchObject({ quality: 'realtime', studioAvailable: false });
+    expect(calls.length).toBeGreaterThan(2);
+    c.dispose();
+  });
+
   it('suspends view modes while playing and restores them on Stop', () => {
     const h = host(flatWorld());
     const c = new ArchController(h);

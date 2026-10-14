@@ -3,7 +3,7 @@ import { Mesh, PerspectiveCamera, PointLight } from 'three';
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
 import { compileBuilding } from '@aether/arch';
 import { ArchView, archDecision, CUTAWAY_WALL_HEIGHT, DEFAULT_ARCH_VIEW, distanceToWall, DOWN_WALL_HEIGHT, EXPLODE_GAP, explodeLift, looksInside, type ArchViewState } from '../src/view/arch-view';
-import { daylightLampFactor, DAYLIGHT_LAMP_FACTOR, LOCAL_LIGHT_SCALE } from '../src/sync/lights';
+import { daylightLampFactor, DAYLIGHT_LAMP_FACTOR, LAMP_CUTOFF, LOCAL_LIGHT_SCALE } from '../src/sync/lights';
 import { makeSync, tick } from './helpers';
 
 const view = (patch: Partial<ArchViewState> = {}): ArchViewState => ({ ...DEFAULT_ARCH_VIEW, ...patch });
@@ -219,6 +219,13 @@ describe('daylight lamp dimming', () => {
     sync.setProperty('lamp', 'light.intensity', 1);
     expect(lamp.intensity).toBeCloseTo(LOCAL_LIGHT_SCALE * 0.25);
     expect(lamp).toBeInstanceOf(PointLight);
+    // Full daylight switches lamps off entirely (no per-pixel cost); other lights are untouched.
+    expect(lamp.visible).toBe(true);
+    sync.setArchLampScale(LAMP_CUTOFF / 2);
+    expect(lamp.visible).toBe(false);
+    expect(torch.visible).toBe(true);
+    sync.setArchLampScale(1);
+    expect(lamp.visible).toBe(true);
     expect(sync.node('lamp')!.content.children.every((c) => !(c instanceof Mesh) || c.visible)).toBe(true);
   });
 });
