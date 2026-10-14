@@ -17,7 +17,7 @@
  *
  * Numbers are relative (software rasterizer); they are printed as a report.
  * Run: `npm run build && npm run e2e:voxel` (`-- --chromium` / `-- --firefox`
- * for one browser).
+ * for one browser, `-- --chromium --webgpu` for the WebGPU run only).
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -217,13 +217,13 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
         long: w.__vxLong.filter((e) => e[0] >= from).map((e) => e[1]),
         gaps: w.__vxGaps.filter((e) => e[0] >= from).map((e) => e[1]),
         before: w.__vxLong.filter((e) => e[0] >= w.__vxMark && e[0] < from).map((e) => e[1]),
-        loaf: (window as unknown as { __vxLoaf: Array<[number, number, number, number, unknown]> }).__vxLoaf.filter((e) => e[0] >= from && e[2] > 50).map((e) => e.slice(1)),
+        loaf: (window as unknown as { __vxLoaf: Array<[number, number, number, number, unknown]> }).__vxLoaf.filter((e) => e[0] >= from && e[2] > 0).map((e) => e.slice(1)),
         api,
       };
     }, tFirst);
     const work = await page.evaluate(() => window.__aether?.simulation?.voxel?.workStats() ?? { update: -1, reply: -1, upload: -1 });
     const maxLongTask = Math.max(0, ...tasks.long);
-    if (tasks.loaf.length > 0) log(`[${label}] long frames while streaming [duration, blocking, render, scripts]: ${JSON.stringify(tasks.loaf.slice(0, 6))}`);
+    if (tasks.loaf.length > 0) log(`[${label}] frames with blocking work while streaming [duration, blocking, render, scripts]: ${JSON.stringify(tasks.loaf.slice(0, 6))}`);
     const maxFrameGap = Math.max(0, ...tasks.gaps);
     log(`[${label}] view ${view}: ${chunks} chunks meshed in ${Math.round(streamMs)} ms (first chunk after ${Math.round(tFirst - tAgent)} ms); while streaming: longest task ${Math.round(maxLongTask)} ms${tasks.api ? '' : ' (no long-task API)'}, longest frame gap ${Math.round(maxFrameGap)} ms; agent turn + first frame: longest task ${Math.round(Math.max(0, ...tasks.before))} ms; voxel main-thread work: update ${work.update.toFixed(1)} ms, reply ${work.reply.toFixed(1)} ms, uploads ${work.upload.toFixed(1)} ms per task`);
     check(work.update >= 0 && Math.max(work.update, work.reply, work.upload) <= MAX_VOXEL_WORK_MS, `${label}: voxel main-thread work too long: ${JSON.stringify(work)}`);
@@ -443,7 +443,7 @@ async function main(): Promise<void> {
     if (only !== '--firefox') {
       browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
       results.push({ name: 'chromium-webgpu', m: await run(browser, server.url, 'chromium-webgpu', false) });
-      results.push({ name: 'chromium-webgl2', m: await run(browser, server.url, 'chromium-webgl2', true) });
+      if (!ARGS.includes('--webgpu')) results.push({ name: 'chromium-webgl2', m: await run(browser, server.url, 'chromium-webgl2', true) });
       await browser.close();
       browser = null;
     }
