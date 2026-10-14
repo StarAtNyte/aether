@@ -7,7 +7,7 @@
  * small weight so they do not drag the camera away from the set-pieces. A
  * world made only of scenery ("a mountain range") frames that scenery.
  */
-import { Box3 } from 'three';
+import { Box3, type Object3D } from 'three';
 import type { EntityId, Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
 import type { FramingItem } from './framing';
@@ -34,8 +34,23 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
   const items: FramingItem[] = [];
   const scenery: FramingItem[] = [];
   sync.root.updateMatrixWorld(true);
+  // A parametric building frames as one whole (its hundreds of walls and pieces would
+  // otherwise pull the camera into the furniture).
+  const buildings = new Set<Object3D>();
+  sync.forEachNode((node) => {
+    if (node.entity.arch?.role === 'building' && node.object.visible && !node.entity.template) buildings.add(node.object);
+  });
+  const inBuilding = (o: Object3D): boolean => {
+    for (let p = o.parent; p; p = p.parent) if (buildings.has(p)) return true;
+    return false;
+  };
+  for (const b of buildings) {
+    _box.setFromObject(b);
+    if (!_box.isEmpty()) items.push({ min: _box.min.toArray() as Vec3, max: _box.max.toArray() as Vec3, focus: true });
+  }
   sync.forEachNode((node) => {
     if (node.transient || node.entity.template || !node.object.visible) return;
+    if (buildings.size > 0 && (buildings.has(node.object) || inBuilding(node.object))) return;
     const focused = focus.has(node.id) || node.entity.tags.includes(FOCUS_TAG);
     const shape = node.entity.shape;
     const isScenery = !focused && (node.entity.tags.some((t) => FRAMING_EXCLUDED_TAGS.has(t)) || (shape.kind === 'procedural' && SCENERY_GENERATORS.has(shape.generator)));

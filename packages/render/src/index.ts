@@ -76,3 +76,5 @@ export { DEFAULT_VIRTUAL_TRIANGLES, VIEW_INTERVAL_MS } from './sync/scene-sync';
 export { gradeFor, NEUTRAL_GRADE, type Grade } from './gpu/grade';
 export { CameraTour, tourKeys, TOUR_SECONDS, type TourKey } from './view/tour';
 export { applyWind, FOLIAGE_GENERATORS, WIND_LINEAR, WIND_QUADRATIC } from './materials/wind';
+export { ArchView, archDecision, explodeLift, DEFAULT_ARCH_VIEW, CUTAWAY_WALL_HEIGHT, DOWN_WALL_HEIGHT, EXPLODE_GAP, EXPLODE_ROOF_GAP, EXPLODE_SECONDS, type ArchViewState, type ArchDecision, type ArchEntityContext, type WallMode, type LevelMode } from './view/arch-view';
+export { FinishTextures, finishHasMaps, type FinishMaps, type FinishSynth } from './materials/finish-textures';

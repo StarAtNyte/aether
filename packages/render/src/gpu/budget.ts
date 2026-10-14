@@ -38,6 +38,8 @@ export interface RenderBudget {
   virtualTriangles: number;
   /** Largest block-terrain view distance in chunks (the world's own setting is capped to it). */
   voxelViewDistance: number;
+  /** Edge (pixels) of the procedural finish textures (architecture materials; 3 maps per finish). */
+  finishTextureSize: number;
 }
 
 /** Lowest pixel ratio the budget ever applies (keeps text-free 3D legible). */
@@ -77,17 +79,17 @@ export function classifyGpu(description: string | null | undefined): GpuTier {
  */
 export function renderBudget(tier: GpuTier, lowMemory: boolean): RenderBudget {
   if (lowMemory) {
-    return { pixelRatioCap: 1, maxPixels: 1.05e6, shadowMapCap: 1024, post: false, antialias: false, maxInstances: 40_000, generatorCacheBytes: 16 * MB, fieldInstances: 300_000, fieldTriangles: 600_000, virtualTriangles: 400_000, voxelViewDistance: 6 };
+    return { pixelRatioCap: 1, maxPixels: 1.05e6, shadowMapCap: 1024, post: false, antialias: false, maxInstances: 40_000, generatorCacheBytes: 16 * MB, fieldInstances: 300_000, fieldTriangles: 600_000, virtualTriangles: 400_000, voxelViewDistance: 6, finishTextureSize: 256 };
   }
   switch (tier) {
     case 'discrete':
-      return { pixelRatioCap: 1.5, maxPixels: 3.7e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 150_000, generatorCacheBytes: 64 * MB, fieldInstances: 2_000_000, fieldTriangles: 4_000_000, virtualTriangles: 3_000_000, voxelViewDistance: 16 };
+      return { pixelRatioCap: 1.5, maxPixels: 3.7e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 150_000, generatorCacheBytes: 64 * MB, fieldInstances: 2_000_000, fieldTriangles: 4_000_000, virtualTriangles: 3_000_000, voxelViewDistance: 16, finishTextureSize: 512 };
     case 'software':
-      return { pixelRatioCap: 1, maxPixels: 1.4e6, shadowMapCap: 1024, post: true, antialias: true, maxInstances: 80_000, generatorCacheBytes: 32 * MB, fieldInstances: 1_000_000, fieldTriangles: 300_000, virtualTriangles: 250_000, voxelViewDistance: 8 };
+      return { pixelRatioCap: 1, maxPixels: 1.4e6, shadowMapCap: 1024, post: true, antialias: true, maxInstances: 80_000, generatorCacheBytes: 32 * MB, fieldInstances: 1_000_000, fieldTriangles: 300_000, virtualTriangles: 250_000, voxelViewDistance: 8, finishTextureSize: 256 };
     case 'integrated':
     case 'unknown':
     default:
-      return { pixelRatioCap: 1.25, maxPixels: 2.1e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 120_000, generatorCacheBytes: 48 * MB, fieldInstances: 1_200_000, fieldTriangles: 2_000_000, virtualTriangles: 1_500_000, voxelViewDistance: 12 };
+      return { pixelRatioCap: 1.25, maxPixels: 2.1e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 120_000, generatorCacheBytes: 48 * MB, fieldInstances: 1_200_000, fieldTriangles: 2_000_000, virtualTriangles: 1_500_000, voxelViewDistance: 12, finishTextureSize: 256 };
   }
 }
 

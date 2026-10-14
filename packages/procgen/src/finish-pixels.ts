@@ -335,7 +335,7 @@ function mottled(strength: number, pores: number): Pattern {
       const p = fine[i] as number;
       f.accent[i] = clamp01((l - 0.5) * 1.6 * strength + 0.5 * strength);
       f.shade[i] = 1 - strength * 0.06 + (p - 0.5) * 0.05;
-      f.height[i] = 0.5 + (l - 0.5) * 0.6 + (p - 0.5) * pores;
+      f.height[i] = 0.5 + (l - 0.5) * 0.12 + (p - 0.5) * pores;
       f.rough[i] = 1 + (p - 0.5) * 0.15;
       f.ao[i] = 1 - pores * 0.25 * clamp01(0.4 - p);
     }
@@ -380,13 +380,13 @@ const flagstone: Pattern = (f, random, seed) => {
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const k = y * n + x;
-      worley(seed, 5, x / n, y / n, w);
-      const edge = (w.f2 - w.f1) * (n / 5);
-      const g = joint(edge, 2.2);
+      worley(seed, 4, x / n, y / n, w);
+      const edge = (w.f2 - w.f1) * (n / 4);
+      const g = joint(edge, 1.3);
       const th = cellHash(seed, w.id, 11);
       const r = rough[k] as number;
-      f.accent[k] = clamp01((1 - g) * 0.9 + th * 0.25 + (r - 0.5) * 0.4);
-      f.shade[k] = 0.88 + th * 0.2;
+      f.accent[k] = clamp01((1 - g) * 0.75 + th * 0.2 + (r - 0.5) * 0.3);
+      f.shade[k] = 0.92 + th * 0.12;
       f.height[k] = 0.25 + 0.75 * g * (0.8 + 0.2 * r);
       f.rough[k] = 1 + (1 - g) * 0.2;
       f.ao[k] = 0.55 + 0.45 * g;
@@ -626,7 +626,7 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   herringbone: herringbone(4),
   veined,
   speckle,
-  plaster: mottled(0.55, 0.35),
+  plaster: mottled(0.5, 0.14),
   smooth: subtle(0.12, 3),
   'grid-tiles': gridTiles(4, 1.3),
   subway: gridTiles(4, 1.4, 2, true),
@@ -674,7 +674,7 @@ export function finishPixels(id: MaterialFinish, size = FINISH_TEXTURE_SIZE): Fi
   const albedo = new Uint8Array(n * n * 4);
   const orm = new Uint8Array(n * n * 4);
   const normal = new Uint8Array(n * n * 4);
-  const strength = def.bump * 6;
+  const strength = def.bump * 3.5;
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const k = y * n + x;

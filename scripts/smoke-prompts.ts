@@ -5,6 +5,15 @@
  */
 import { EXAMPLE_PROMPTS } from '../apps/studio/src/lib/examples';
 
+/** Real-life architecture and interiors (build_architecture). */
+export const ARCH_PROMPTS: readonly string[] = Object.freeze([
+  'a modern two-bedroom apartment',
+  'scandinavian living room with a fireplace',
+  'a small café interior',
+  'a two-storey villa with a pool',
+  'an office floor with meeting rooms',
+]);
+
 /** Default smoke/gallery prompts, in report order. */
 export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'a cozy forest camp with a campfire and tents',
@@ -17,4 +26,5 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([
   'pixel art heart in the sky over a blocky world',
   'a blocky stone castle on a hill',
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
+  ...ARCH_PROMPTS,
 ]);

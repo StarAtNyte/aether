@@ -219,4 +219,24 @@ export const SWITCH: FurnitureDef = {
 };
 
 /** Lighting definitions. */
-export const LIGHTING: readonly FurnitureDef[] = [PENDANT, CEILING_LIGHT, FLOOR_LAMP, TABLE_LAMP, SCONCE, SWITCH];
+/**
+ * Give a fitting a `lit` switch: switched off, its diffusers / bulbs stop
+ * glowing (the light source itself is the entity's `light`, toggled by the
+ * walkthrough's light switches).
+ */
+function switchable(def: FurnitureDef): FurnitureDef {
+  return {
+    ...def,
+    params: { ...def.params, lit: { type: 'boolean', default: true, description: 'switched on (diffuser glows)' } },
+    build(p, seed) {
+      const out = def.build(p, seed);
+      if (p.bool('lit')) return out;
+      for (const part of out.parts) {
+        if (part.material.emissiveIntensity !== undefined && part.material.emissiveIntensity > 0) part.material = { ...part.material, emissiveIntensity: 0, ...(part.material.preset === 'emissive' ? { preset: 'plastic' as const } : {}) };
+      }
+      return out;
+    },
+  };
+}
+
+export const LIGHTING: readonly FurnitureDef[] = [PENDANT, CEILING_LIGHT, FLOOR_LAMP, TABLE_LAMP, SCONCE].map(switchable).concat([SWITCH]);

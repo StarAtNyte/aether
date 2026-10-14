@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
+import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -35,6 +35,7 @@ import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { contentFraming, framingPose, type Framing } from './view/framing';
+import { ArchView, type ArchViewState } from './view/arch-view';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
@@ -341,6 +342,14 @@ export class WorldRenderer {
   private readonly grow = new GrowIn();
   private growEnabled = true;
   private post: PostPipeline | null = null;
+  /** Architectural view modes (cutaway, exploded levels, x-ray, section) of buildings. */
+  private readonly archView: ArchView;
+  /** Clipping group around the scene content for the section cut (created on first use). */
+  private clipGroup: (Group & { enabled: boolean; clippingPlanes: Plane[] }) | null = null;
+  private clipLoading = false;
+  /** Section plane: keeps y ≤ constant. */
+  private readonly sectionPlane = new Plane(new Vector3(0, -1, 0), 0);
+  private wasGrowing = false;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
   private viewCanvas: HTMLCanvasElement | null = null;
   /** CPU-backed canvas that encodes asynchronous captures. */
@@ -441,6 +450,14 @@ export class WorldRenderer {
         ...(this.generatorCache ? { cache: this.generatorCache } : {}),
         ...(compute ? { builtin: (g: string, p: Record<string, Json>, seed: number) => compute.generate(g, p, seed) } : {}),
       });
+    // Finish textures (architecture) synthesise in the compute worker and redraw when they land.
+    this.materials.finishes.configure({
+      ...(compute ? { synth: (f, size) => compute.finish(f, size) } : {}),
+      onUpdate: () => {
+        this.needsDraw = true;
+      },
+      size: this.budget.finishTextureSize,
+    });
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models };
     this.sync = new SceneSync({
@@ -454,6 +471,7 @@ export class WorldRenderer {
         this.boundsDirty = true;
         this.debugDirty = true;
         this.needsDraw = true;
+        this.archView?.invalidate();
       },
     });
     this.ghost = new SceneSync({
@@ -466,6 +484,7 @@ export class WorldRenderer {
         this.needsDraw = true;
       },
     });
+    this.archView = new ArchView(this.sync);
     this.growEnabled = opts.growIn !== false;
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false);
     this.env.sun.shadow.radius = 3;
@@ -553,7 +572,47 @@ export class WorldRenderer {
 
   /** True while content is still materialising (grow-in) or the camera is flying: captures should wait. */
   get animating(): boolean {
-    return this.grow.active || this.cameraFlying;
+    return this.grow.active || this.cameraFlying || this.archView.animating;
+  }
+
+  /** Change the architectural view (walls, levels, x-ray, section); see {@link ArchViewState}. */
+  setArchView(patch: Partial<ArchViewState>): void {
+    this.archView.set(patch);
+    if (this.archView.value.section !== null) void this.ensureClipGroup();
+    this.needsDraw = true;
+  }
+
+  /** The current architectural view. */
+  get archViewState(): ArchViewState {
+    return this.archView.value;
+  }
+
+  /** The world shows at least one parametric building. */
+  get hasBuildings(): boolean {
+    return this.archView.active;
+  }
+
+  /** Wrap the scene content in a clipping group (section cuts). Loaded lazily: it lives in the node renderer module. */
+  private async ensureClipGroup(): Promise<void> {
+    if (this.clipGroup || this.clipLoading || this.disposed) return;
+    this.clipLoading = true;
+    try {
+      const { ClippingGroup } = await import('three/webgpu');
+      if (this.disposed) return;
+      const group = new ClippingGroup() as unknown as Group & { enabled: boolean; clippingPlanes: Plane[] };
+      group.name = 'section';
+      group.clippingPlanes = [this.sectionPlane];
+      group.enabled = false;
+      this.scene.remove(this.sync.root);
+      group.add(this.sync.root);
+      this.scene.add(group);
+      this.clipGroup = group;
+      this.needsDraw = true;
+    } catch (e) {
+      log.warn(`section cut unavailable: ${errorMessage(e)}`);
+    } finally {
+      this.clipLoading = false;
+    }
   }
 
   /** True while an automatic camera flight (framing, focus) is in progress. */
@@ -605,6 +664,7 @@ export class WorldRenderer {
     const prev = this.sync.world;
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
     const done = this.sync.setWorld(world);
+    this.archView.invalidate();
     // New entities stay hidden while their geometry streams in, then grow in together.
     const added = this.growEnabled ? this.addedContent(prev, world) : [];
     for (const target of added) this.grow.hide(target);
@@ -1447,6 +1507,25 @@ export class WorldRenderer {
     }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
+    // Grow-in rescales content groups: re-apply the architectural view once it settles.
+    if (this.wasGrowing && !this.grow.active) this.archView.invalidate();
+    this.wasGrowing = this.grow.active;
+    if (this.archView.update(this.perspective, step)) {
+      this.needsDraw = true;
+      this.boundsDirty = true;
+    }
+    const sectionY = this.archView.sectionY;
+    if (this.clipGroup) {
+      const on = sectionY !== null;
+      if (this.clipGroup.enabled !== on) {
+        this.clipGroup.enabled = on;
+        this.needsDraw = true;
+      }
+      if (on && this.sectionPlane.constant !== sectionY) {
+        this.sectionPlane.constant = sectionY;
+        this.needsDraw = true;
+      }
+    }
     const animate = opts.animate !== false;
     this.env.update(animate ? step : 0, this.perspective);
     this.sinceRefit += step;
@@ -1961,6 +2040,7 @@ export class WorldRenderer {
     this.domElement.removeEventListener('wheel', this.onUserCamera);
     this.gizmo?.dispose();
     this.gizmo = null;
+    this.archView.dispose();
     this.editOverlay.dispose();
     this.post?.dispose();
     this.post = null;
