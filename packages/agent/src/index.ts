@@ -27,6 +27,21 @@ export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';
 export { CONTEXT_LIMITS, formatUserTurn, parseUserTurn, sanitizeHistory } from './context';
 export { SUBMIT_GENERATOR_TOOL, requestGenerator, type CoderDeps, type CoderResult } from './coder';
+export {
+  forgeGenerator,
+  forgeScore,
+  parseCritique,
+  FORGE_CRITERIA,
+  FORGE_GATE,
+  FORGE_LIMITS,
+  FORGE_METHOD,
+  type ForgeCriterion,
+  type ForgeCritique,
+  type ForgeDeps,
+  type ForgeIteration,
+  type ForgeRequest,
+  type ForgeResult,
+} from './forge';
 export { CompletionRequestSchema, CompletionResponseSchema, ContentBlockSchema, ChatMessageSchema, ToolDefSchema, WIRE_LIMITS } from './wire';
 
 export { createAnthropicProvider, type AnthropicProviderOptions, type AnthropicEffort } from './providers/anthropic';

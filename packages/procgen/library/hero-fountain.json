@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-fountain",
+    "description": "Ornate fountain: Three-tier sandstone fountain, 3.4 m wide x 3 m tall: octagonal basin R1.7 h0.82 with moulded rim and 8 carved panels; fluted column r0.22 to y1.3; scalloped bowl 1 r1.0 (y1.25-1.7); stem r0.14; bowl 2 r0.62 (y1.95-2.3); stem r0.08; pinecone finial to y3.0; blue em",
+    "category": "architecture",
+    "keywords": [
+      "ornate fountain",
+      "tiered fountain",
+      "plaza fountain"
+    ],
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 3.4,
+        "min": 1.5,
+        "max": 8,
+        "description": "overall width in meters"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#c9a77c",
+        "description": "sandstone color"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#4fa8e8",
+        "description": "water color"
+      },
+      "panels": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "carved panels on basin (1 = yes)"
+      }
+    },
+    "size": [
+      3.44,
+      3.15,
+      3.44
+    ]
+  },
+  "def": {
+    "id": "hero-fountain",
+    "description": "Three-tier sandstone fountain, 3.4 m wide x 3 m tall: octagonal basin R1.7 h0.82 with moulded rim and 8 carved panels; fluted column r0.22 to y1.3; scalloped bowl 1 r1.0 (y1.25-1.7); stem r0.14; bowl 2 r0.62 (y1.95-2.3); stem r0.08; pinecone finial to y3.0; blue emissive translucent water in each bowl plus thin falling sheets.",
+    "params": {
+      "width": {
+        "type": "number",
+        "default": 3.4,
+        "min": 1.5,
+        "max": 8,
+        "description": "overall width in meters"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#c9a77c",
+        "description": "sandstone color"
+      },
+      "waterColor": {
+        "type": "color",
+        "default": "#4fa8e8",
+        "description": "water color"
+      },
+      "panels": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "carved panels on basin (1 = yes)"
+      }
+    },
+    "source": "const s = params.width / 3.4;\nconst stoneMat = { preset: 'stone', roughness: 0.92, flatShading: true };\nconst waterMat = { preset: 'water', color: params.waterColor, opacity: 0.7, roughness: 0.05, emissive: params.waterColor, emissiveIntensity: 0.5 };\nconst sheetMat = { preset: 'water', color: '#bfe6ff', opacity: 0.45, roughness: 0.05, emissive: '#7fc8ff', emissiveIntensity: 0.8 };\nfunction stone(m, dark) {\n  m.vertexColor((x, y, z) => {\n    const n = api.noise3(x * 3, y * 3, z * 3);\n    let c = api.mix(params.stoneColor, '#8a6c4a', 0.2 + 0.2 * n + (dark || 0));\n    if (y < 0.3) c = api.mix(c, '#5f6b45', 0.2);\n    return c;\n  });\n  api.add(m.scale(s), stoneMat);\n}\nfunction water(m) { api.add(m.scale(s), waterMat); }\nfunction sheet(m) { api.add(m.scale(s), sheetMat); }\n// basin\nstone(api.lathe([[0,0],[1.45,0],[1.55,0.08],[1.6,0.15],[1.6,0.68],[1.68,0.7],[1.72,0.76],[1.72,0.82],[1.55,0.82],[1.5,0.74],[1.45,0.7],[1.45,0.28],[0,0.28]], 8));\nstone(api.cylinder(1.5, 1.55, 0.06, 8).translate(0, 0.03, 0), 0.1);\nwater(api.cylinder(1.43, 1.43, 0.03, 8).translate(0, 0.62, 0));\nif (params.panels) {\n  const ap = 1.6 * Math.cos(Math.PI / 8);\n  for (let k = 0; k < 8; k++) {\n    const a = 22.5 + 45 * k, r = a * Math.PI / 180;\n    const px = Math.sin(r) * (ap + 0.015), pz = Math.cos(r) * (ap + 0.015);\n    stone(api.box(0.8, 0.38, 0.05).rotate(0, a, 0).translate(px, 0.4, pz), -0.1);\n    stone(api.box(0.6, 0.22, 0.06).rotate(0, a, 0).translate(Math.sin(r) * (ap + 0.03), 0.4, Math.cos(r) * (ap + 0.03)), 0.12);\n  }\n}\n// pedestal\nstone(api.lathe([[0,0.28],[0.5,0.28],[0.5,0.36],[0.36,0.45],[0.3,0.6],[0.24,0.7],[0.24,1.1],[0.3,1.2],[0.34,1.3],[0,1.3]], 16));\nstone(api.cylinder(0.22, 0.22, 0.5, 16).translate(0, 0.9, 0));\nfor (let i = 0; i < 12; i++) {\n  const a = i / 12 * Math.PI * 2;\n  stone(api.cylinder(0.03, 0.03, 0.5, 6).translate(Math.sin(a) * 0.235, 0.9, Math.cos(a) * 0.235), 0.12);\n}\n// bowl 1 scalloped\nconst b1 = api.lathe([[0,1.25],[0.2,1.25],[0.3,1.35],[0.95,1.6],[1.0,1.66],[1.0,1.72],[0.92,1.72],[0.85,1.6],[0.2,1.45],[0,1.45]], 24);\nb1.displace((x, y, z) => y > 1.4 ? 0.03 * Math.cos(Math.atan2(x, z) * 12) : 0);\nstone(b1);\nwater(api.cylinder(0.85, 0.85, 0.03, 24).translate(0, 1.62, 0));\nstone(api.cylinder(0.14, 0.16, 0.6, 12).translate(0, 1.75, 0));\n// bowl 2\nconst b2 = api.lathe([[0,1.95],[0.12,1.95],[0.2,2.02],[0.57,2.2],[0.62,2.25],[0.62,2.3],[0.55,2.3],[0.5,2.2],[0.12,2.1],[0,2.1]], 20);\nb2.displace((x, y, z) => y > 2.1 ? 0.025 * Math.cos(Math.atan2(x, z) * 10) : 0);\nstone(b2);\nwater(api.cylinder(0.48, 0.48, 0.03, 20).translate(0, 2.2, 0));\n// finial\nstone(api.cylinder(0.06, 0.09, 0.5, 10).translate(0, 2.35, 0));\nstone(api.cylinder(0.12, 0.1, 0.05, 10).translate(0, 2.58, 0));\nconst pc = api.sphere(0.17, 2).scale(1, 1.4, 1).translate(0, 2.8, 0);\npc.displace((x, y, z) => 0.025 * Math.sin(y * 40 + Math.atan2(x, z) * 6));\nstone(pc, 0.05);\nstone(api.cone(0.05, 0.12, 8).translate(0, 3.0, 0));\n// falling sheets\nfor (let i = 0; i < 8; i++) {\n  const a = i * 45 + 22.5, r = a * Math.PI / 180;\n  sheet(api.box(0.1, 0.4, 0.012).rotate(0, a, 0).translate(Math.sin(r) * 0.63, 1.95, Math.cos(r) * 0.63));\n  sheet(api.box(0.12, 1.0, 0.012).rotate(0, a, 0).translate(Math.sin(r) * 1.0, 1.12, Math.cos(r) * 1.0));\n}\nsheet(api.cylinder(0.025, 0.025, 0.2, 6).translate(0, 3.05, 0));\n// colliders\napi.collider({ kind: 'cylinder', radius: 1.7 * s, halfHeight: 0.41 * s, offset: [0, 0.41 * s, 0] });\napi.collider({ kind: 'cylinder', radius: 0.3 * s, halfHeight: 0.8 * s, offset: [0, 1.0 * s, 0] });\napi.collider({ kind: 'cylinder', radius: 1.0 * s, halfHeight: 0.25 * s, offset: [0, 1.5 * s, 0] });\napi.collider({ kind: 'cylinder', radius: 0.6 * s, halfHeight: 0.2 * s, offset: [0, 2.15 * s, 0] });\napi.collider({ kind: 'cylinder', radius: 0.1 * s, halfHeight: 0.4 * s, offset: [0, 2.6 * s, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:27:25.232Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 2504,
+    "parts": 3,
+    "colliders": 5
+  }
+}

@@ -19,6 +19,8 @@ import { scrub, silentLogger, type Logger } from './logger';
 import { accessGate, ADMIN_HEADER, hostGuard, secretEquals, sessionCookie } from './local-guard';
 import { accessLog, corsAllowlist, jsonBodyLimit, originGuard, rateLimit, securityHeaders } from './middleware';
 import { TokenBucketLimiter } from './rate-limit';
+import { createTrellisProvider, type ImageTo3DProvider } from '@aether/assets';
+import { registerImageTo3dRoutes } from './routes/image-to-3d';
 import { GENERATOR_HASH_RE, registerGeneratorRoutes } from './routes/generators';
 import { registerLlmRoutes, type LiveLlm } from './routes/llm';
 import { registerLocalRoutes, type LocalRouteDeps } from './routes/local';
@@ -48,6 +50,8 @@ export interface AppDeps {
   isLoopback?: LocalRouteDeps['isLoopback'];
   /** Graceful shutdown requested by the `aether` CLI (`POST /api/admin/shutdown`, session secret required). */
   requestShutdown?: () => void;
+  /** Image → 3D provider override (tests); default: TRELLIS wrapper from `config.imageTo3d`. */
+  imageTo3d?: ImageTo3DProvider;
   /** The in-process bridge for hosted studios (only with `config.local.bridge`). */
   bridge?: LocalRouteDeps['bridge'];
 }
@@ -135,7 +139,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   }
   const instance = config.local.instanceId;
   app.get('/api/health', (c) =>
-    c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, ...(instance ? { instance } : {}) }, 200),
+    c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, imageTo3d: config.imageTo3d !== null, ...(instance ? { instance } : {}) }, 200),
   );
   if (local) {
     registerLocalRoutes(app, {
@@ -158,6 +162,10 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   });
   registerGeneratorRoutes(app, { store: generatorStore, validator: deps.generatorValidator ?? null, logger });
   registerWorldRoutes(app, { store: worldStore, maxWorldBytes: config.storage.maxWorldBytes });
+  if (config.imageTo3d) {
+    const provider = deps.imageTo3d ?? createTrellisProvider(config.imageTo3d);
+    registerImageTo3dRoutes(app, { provider, logger, ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}) });
+  }
 
   if (config.serveStatic) registerStatic(app, config.staticDir, logger);
 

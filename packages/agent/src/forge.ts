@@ -35,7 +35,7 @@ export const FORGE_GATE = 0.8;
 export const FORGE_LIMITS = Object.freeze({ MAX_ITERATIONS: 6, MAX_CALLS: 16, MAX_DESCRIPTION: 1_500 });
 
 const CritiqueSchema = z.object({
-  scores: z.object({ silhouette: z.number(), proportions: z.number(), parts: z.number(), colours: z.number() }).partial(),
+  scores: z.record(z.string().max(40), z.unknown()),
   matched: z.array(z.string().max(200)).max(12).optional(),
   missing: z.array(z.string().max(200)).max(12).optional(),
   fixes: z.array(z.string().max(300)).max(10).optional(),
@@ -145,10 +145,11 @@ export function parseCritique(text: string): ForgeCritique | null {
   const r = CritiqueSchema.safeParse(extractJsonObject(text));
   if (!r.success) return null;
   const s = r.data.scores;
-  const num = (v: number | undefined): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(10, v)) : 0);
-  if (s.silhouette === undefined && s.proportions === undefined && s.parts === undefined && s.colours === undefined) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(10, v)) : 0);
+  const keys: ForgeCriterion[] = ['silhouette', 'proportions', 'parts', 'colours'];
+  if (!keys.some((k) => typeof s[k] === 'number')) return null;
   return {
-    scores: { silhouette: num(s.silhouette), proportions: num(s.proportions), parts: num(s.parts), colours: num(s.colours) },
+    scores: { silhouette: num(s['silhouette']), proportions: num(s['proportions']), parts: num(s['parts']), colours: num(s['colours'] ?? s['colors']) },
     matched: r.data.matched ?? [],
     missing: r.data.missing ?? [],
     fixes: r.data.fixes ?? [],
@@ -287,9 +288,9 @@ export async function forgeGenerator(deps: ForgeDeps, req: ForgeRequest): Promis
     const fixes = critique ? [...critique.fixes, ...critique.missing.map((m) => `missing / wrong: ${m}`)].slice(0, 10) : ['The review could not be parsed; improve the silhouette and proportions against the reference.'];
     messages.push({
       role: 'user',
+      // Text only: subscription backends accept at most four images per request, and the
+      // conversation already carries the reference.
       content: [
-        ...(req.reference ? [] : []),
-        { type: 'image', dataUrl: sheet },
         {
           type: 'text',
           text: `Review of your model (score ${it.score !== null ? Math.round(it.score * 100) : '?'}/100, gate ${Math.round(gate * 100)}): ${critique?.summary ?? ''}\nKeep: ${(critique?.matched ?? []).join('; ') || '—'}\nFix:\n- ${fixes.join('\n- ')}\nSubmit the improved generator (same id).`,

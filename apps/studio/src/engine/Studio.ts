@@ -4,7 +4,8 @@
  * once the viewport canvas exists. React components call into this object
  * and subscribe to History / the store; they never own engine state.
  */
-import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type Patch, type WorldDoc } from '@aether/core';
+import { isUserAssetId, worldAssetIds } from '@aether/assets';
+import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
@@ -39,6 +40,7 @@ import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, 
 import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { AssetController } from './assets';
+import { ForgeController } from './forge';
 import { ArchController } from './arch';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread } from './AgentBridge';
@@ -133,6 +135,8 @@ export class Studio {
   readonly arch: ArchController;
   /** Asset library, user imports, placement and world packages. */
   readonly assets: AssetController;
+  /** Image / text → parametric generator (the asset forge). */
+  readonly forge: ForgeController;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   /** Physics verification in workers (main-thread fallback). */
@@ -198,6 +202,7 @@ export class Studio {
     this.editor = new Editor(this, { storage: this.storage });
     this.arch = new ArchController(this);
     this.assets = new AssetController(this, { storage: this.storage });
+    this.forge = new ForgeController(this);
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -615,9 +620,11 @@ export class Studio {
       const id = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)['id'] : undefined;
       if (typeof id !== 'string' || !SHARE_ID.test(id)) throw new Error('unexpected server response');
       const link = `${location.origin}${location.pathname}?world=${id}`;
+      // Imported files stay in this browser: say so, and point at the package export.
+      const imports = worldAssetIds(this.history.current).filter(isUserAssetId).length;
       try {
         await navigator.clipboard.writeText(link);
-        st.toast('Share link copied to clipboard', 'success');
+        st.toast(imports > 0 ? `Share link copied. ${imports} imported file${imports > 1 ? 's are' : ' is'} not included (stand-ins appear) — use Export package to share them.` : 'Share link copied to clipboard', 'success', imports > 0 ? 7 : undefined);
       } catch {
         st.toast(`Share link: ${link}`, 'success', 10);
       }
@@ -1015,6 +1022,16 @@ export class Studio {
     return null;
   }
 
+  /** Sandbox check of a generator (static check + dry run), for the asset forge. */
+  validateGenerator(def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {
+    return this.bridge.validateGenerator(def);
+  }
+
+  /** The generator sandbox (custom generators run only there). */
+  get generatorSandbox(): SandboxRunner | null {
+    return this.sandbox;
+  }
+
   /** Place a palette item at the camera's focus point (one undoable edit) and select it. */
   addFromPalette(itemId: string): string | null {
     const item = paletteItem(itemId);
@@ -1057,6 +1074,8 @@ export class Studio {
     this.verifier.dispose();
     for (const c of this.cleanups.splice(0)) c();
     this.arch.dispose();
+    this.forge.cancel();
+    this.forge.close();
     this.assets.dispose();
     this.editor.dispose();
     this.sim?.dispose();

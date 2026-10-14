@@ -13,3 +13,6 @@ export const ASSET_DRAG_TYPE = 'application/x-aether-asset';
 
 /** Accept-list of the import file picker. */
 export const IMPORT_ACCEPT = '.glb,.gltf,.png,.jpg,.jpeg,.webp,.hdr,.zip,model/gltf-binary,model/gltf+json,image/png,image/jpeg,image/webp,application/zip';
+
+/** Asset id being dragged from the library (drag data cannot be read during dragover). */
+export const dragState: { asset: string | null } = { asset: null };

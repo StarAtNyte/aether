@@ -8,13 +8,19 @@
  *
  * Budgets: {@link MAX_USER_ASSETS} files and {@link MAX_USER_BYTES} bytes.
  */
+import { GeneratorDef } from '@aether/core';
 import { UserAssetMeta } from '@aether/assets';
 
 /** Database name. */
 export const ASSETS_DB = 'aether-assets';
 const STORE_META = 'meta';
 const STORE_BLOBS = 'blobs';
-const DB_VERSION = 1;
+const STORE_GENERATORS = 'generators';
+const DB_VERSION = 2;
+/** Most saved creations (forged generators). */
+export const MAX_CREATIONS = 100;
+/** Largest stored creation thumbnail (data URL characters). */
+const MAX_THUMB_CHARS = 200_000;
 const TIMEOUT_MS = 5000;
 /** Most stored imports. */
 export const MAX_USER_ASSETS = 200;
@@ -27,6 +33,16 @@ export interface StoredAsset {
   blob: Blob;
 }
 
+/** A forged generator saved to the user's library (editable, parametric). */
+export interface Creation {
+  def: GeneratorDef;
+  /** Contact sheet / thumbnail of the best iteration (JPEG data URL). */
+  thumb: string | null;
+  /** Quality gate score 0–1 of the saved version (null without a critic). */
+  score: number | null;
+  createdAt: number;
+}
+
 /** Storage backend (IndexedDB or memory). */
 export interface UserAssetStore {
   readonly persistent: boolean;
@@ -34,6 +50,21 @@ export interface UserAssetStore {
   get(id: string): Promise<StoredAsset | null>;
   put(meta: UserAssetMeta, data: Uint8Array): Promise<void>;
   remove(id: string): Promise<void>;
+  listCreations(): Promise<Creation[]>;
+  putCreation(c: Creation): Promise<void>;
+  removeCreation(id: string): Promise<void>;
+}
+
+/** Validate a creation read back from storage (null when malformed). */
+export function reviveCreation(value: unknown): Creation | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const def = GeneratorDef.safeParse(v['def']);
+  if (!def.success) return null;
+  const thumb = typeof v['thumb'] === 'string' && v['thumb'].length <= MAX_THUMB_CHARS && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v['thumb']) ? v['thumb'] : null;
+  const score = typeof v['score'] === 'number' && Number.isFinite(v['score']) ? Math.max(0, Math.min(1, v['score'])) : null;
+  const createdAt = typeof v['createdAt'] === 'number' && Number.isFinite(v['createdAt']) ? v['createdAt'] : 0;
+  return { def: def.data, thumb, score, createdAt };
 }
 
 function timed<T>(p: Promise<T>, what: string): Promise<T> {
@@ -112,6 +143,26 @@ class IdbAssetStore implements UserAssetStore {
     tx.objectStore(STORE_BLOBS).delete(id);
     await timed(txDone(tx), 'delete');
   }
+
+  async listCreations(): Promise<Creation[]> {
+    const tx = this.db.transaction(STORE_GENERATORS, 'readonly');
+    const all = await timed(req<unknown[]>(tx.objectStore(STORE_GENERATORS).getAll()), 'read');
+    return (Array.isArray(all) ? all : []).map(reviveCreation).filter((c): c is Creation => c !== null).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async putCreation(c: Creation): Promise<void> {
+    const existing = await this.listCreations();
+    if (!existing.some((x) => x.def.id === c.def.id) && existing.length >= MAX_CREATIONS) throw new Error(`you can keep up to ${MAX_CREATIONS} creations; remove some first`);
+    const tx = this.db.transaction(STORE_GENERATORS, 'readwrite');
+    tx.objectStore(STORE_GENERATORS).put(c, c.def.id);
+    await timed(txDone(tx), 'write');
+  }
+
+  async removeCreation(id: string): Promise<void> {
+    const tx = this.db.transaction(STORE_GENERATORS, 'readwrite');
+    tx.objectStore(STORE_GENERATORS).delete(id);
+    await timed(txDone(tx), 'delete');
+  }
 }
 
 /** Session-only store (no IndexedDB). */
@@ -135,6 +186,23 @@ export class MemoryAssetStore implements UserAssetStore {
   async remove(id: string): Promise<void> {
     this.items.delete(id);
   }
+
+  private readonly creations = new Map<string, Creation>();
+
+  async listCreations(): Promise<Creation[]> {
+    return [...this.creations.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async putCreation(c: Creation): Promise<void> {
+    if (!this.creations.has(c.def.id) && this.creations.size >= MAX_CREATIONS) throw new Error(`you can keep up to ${MAX_CREATIONS} creations; remove some first`);
+    const r = reviveCreation(c);
+    if (!r) throw new Error('invalid creation');
+    this.creations.set(c.def.id, r);
+  }
+
+  async removeCreation(id: string): Promise<void> {
+    this.creations.delete(id);
+  }
 }
 
 /** Open the IndexedDB store, falling back to memory when IndexedDB is unavailable. */
@@ -148,6 +216,8 @@ export async function openUserAssetStore(factory: IDBFactory | undefined = typeo
           const d = r.result;
           if (!d.objectStoreNames.contains(STORE_META)) d.createObjectStore(STORE_META);
           if (!d.objectStoreNames.contains(STORE_BLOBS)) d.createObjectStore(STORE_BLOBS);
+          // Version 2: forged generators ("creations").
+          if (!d.objectStoreNames.contains(STORE_GENERATORS)) d.createObjectStore(STORE_GENERATORS);
         };
         r.onsuccess = () => {
           r.result.onversionchange = () => r.result.close();

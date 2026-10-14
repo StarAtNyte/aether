@@ -9,11 +9,12 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@aether/core": "*",
     "@aether/agent": "*",
-    "hono": "^4.13.13",
+    "@aether/assets": "*",
+    "@aether/bridge": "*",
+    "@aether/core": "*",
     "@hono/node-server": "^2.1.4",
-    "tsx": "^4.23.15",
-    "@aether/bridge": "*"
+    "hono": "^4.13.13",
+    "tsx": "^4.23.15"
   }
 }

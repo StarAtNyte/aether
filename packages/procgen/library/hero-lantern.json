@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-lantern",
+    "description": "Victorian street lantern: Victorian gas street lantern, 4.2 m default. Plinth step 0.1 h r0.3; fluted lathe base 0.9 h (r0.22 -> 0.09) with 8 half-round rib flutes 0.03 deep; tapered post r0.075->0.045 to 3.4 m; brass rings 0.02 h at 0.95/1.5/3.2 m; ladder bar 0.7 wide r0.0125 at 3",
+    "category": "props",
+    "keywords": [
+      "victorian lantern",
+      "gas lamp",
+      "old street lamp"
+    ],
+    "params": {
+      "brassColor": {
+        "type": "color",
+        "default": "#c8963c",
+        "description": "brass color"
+      },
+      "glowColor": {
+        "type": "color",
+        "default": "#ffb840",
+        "description": "glass glow color"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.2,
+        "min": 2,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "ironColor": {
+        "type": "color",
+        "default": "#1f2b25",
+        "description": "iron color"
+      }
+    },
+    "size": [
+      0.78,
+      4.48,
+      0.64
+    ]
+  },
+  "def": {
+    "id": "hero-lantern",
+    "description": "Victorian gas street lantern, 4.2 m default. Plinth step 0.1 h r0.3; fluted lathe base 0.9 h (r0.22 -> 0.09) with 8 half-round rib flutes 0.03 deep; tapered post r0.075->0.045 to 3.4 m; brass rings 0.02 h at 0.95/1.5/3.2 m; ladder bar 0.7 wide r0.0125 at 3.0 m with 0.04 brass balls; hex glass head 0.55 h r0.2 amber #ffb840 with 6 corner posts 0.04 sq, top/bottom rings r0.22, flame core; dome 0.25 h r0.26; brass ball 0.05 and spike 0.12.",
+    "params": {
+      "brassColor": {
+        "type": "color",
+        "default": "#c8963c",
+        "description": "brass color"
+      },
+      "glowColor": {
+        "type": "color",
+        "default": "#ffb840",
+        "description": "glass glow color"
+      },
+      "height": {
+        "type": "number",
+        "default": 4.2,
+        "min": 2,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "ironColor": {
+        "type": "color",
+        "default": "#1f2b25",
+        "description": "iron color"
+      }
+    },
+    "source": "const s = params.height / 4.2;\nconst iron = { preset: 'metal', color: params.ironColor, metalness: 0.6, roughness: 0.5 };\nconst brass = { preset: 'metal', color: params.brassColor, metalness: 0.8, roughness: 0.22, emissive: '#3a2605', emissiveIntensity: 0.4 };\nconst glass = { preset: 'emissive', color: params.glowColor, emissive: params.glowColor, emissiveIntensity: 2.2, opacity: 0.9 };\nconst flame = { preset: 'emissive', color: '#ffe080', emissive: '#ffd060', emissiveIntensity: 6 };\n// plinth\napi.add(api.cylinder(0.3*s, 0.32*s, 0.08*s, 8).translate(0, 0.04*s, 0), iron);\napi.add(api.cylinder(0.25*s, 0.28*s, 0.06*s, 8).translate(0, 0.11*s, 0), iron);\n// fluted base\nconst base = api.lathe([[0,0.14*s],[0.22*s,0.14*s],[0.23*s,0.2*s],[0.2*s,0.35*s],[0.17*s,0.55*s],[0.12*s,0.75*s],[0.09*s,0.88*s],[0.09*s,0.92*s],[0,0.92*s]], 16);\napi.add(base, iron);\nfor (let i = 0; i < 8; i++) {\n  const a = i / 8 * Math.PI * 2;\n  const rib = api.cylinder(0.014*s, 0.03*s, 0.7*s, 6);\n  rib.translate(0, 0.51*s, 0);\n  // taper handled by cylinder radii; place at base surface\n  rib.translate(Math.cos(a)*0.165*s, 0, Math.sin(a)*0.165*s);\n  api.add(rib, iron);\n}\napi.add(api.cylinder(0.12*s, 0.1*s, 0.04*s, 16).translate(0, 0.94*s, 0), brass);\nconst postTop = 3.4 * s;\napi.add(api.cylinder(0.045*s, 0.075*s, postTop - 0.95*s, 14).translate(0, (postTop + 0.95*s)/2, 0), iron);\nconst rr = [[0.95,0.095],[1.5,0.085],[3.2,0.062]];\nfor (const q of rr) api.add(api.cylinder(q[1]*s, q[1]*s, 0.04*s, 16).translate(0, q[0]*s, 0), brass);\napi.add(api.sphere(0.08*s, 2).translate(0, 2.2*s, 0), iron);\n// cross bar\napi.add(api.cylinder(0.0125*s*1.6, 0.0125*s*1.6, 0.7*s, 8).rotate(0,0,90).translate(0, 3.0*s, 0), iron);\nfor (const sx of [-1, 1]) api.add(api.sphere(0.04*s, 3).translate(sx*0.35*s, 3.0*s, 0), brass);\n// head\nconst hy = postTop, hh = 0.55 * s, hr = 0.2 * s;\nconst gy = hy + 0.08*s;\napi.add(api.cylinder(0.22*s, 0.09*s, 0.08*s, 6).translate(0, hy + 0.04*s, 0), iron);\napi.add(api.cylinder(hr, hr, hh, 6).translate(0, gy + hh/2, 0), glass);\napi.add(api.sphere(0.075*s, 2).translate(0, gy + hh*0.45, 0), flame);\nfor (let i = 0; i < 6; i++) {\n  const a = i / 6 * Math.PI * 2;\n  api.add(api.box(0.04*s, hh + 0.02*s, 0.04*s).rotate(0, -a*180/Math.PI, 0).translate(Math.cos(a)*hr*1.02, gy + hh/2, -Math.sin(a)*hr*1.02), iron);\n}\napi.add(api.cylinder(0.22*s, 0.22*s, 0.03*s, 6).translate(0, gy + 0.015*s, 0), iron);\nconst top = gy + hh;\napi.add(api.cylinder(0.23*s, 0.22*s, 0.03*s, 6).translate(0, top + 0.015*s, 0), brass);\nconst dome = api.lathe([[0,0],[0.27*s,0],[0.26*s,0.04*s],[0.2*s,0.11*s],[0.12*s,0.18*s],[0.05*s,0.23*s],[0,0.25*s]], 12).translate(0, top + 0.03*s, 0);\napi.add(dome, iron);\napi.add(api.sphere(0.05*s, 3).translate(0, top + 0.3*s, 0), brass);\napi.add(api.cone(0.02*s, 0.12*s, 8).translate(0, top + 0.39*s, 0), brass);\napi.collider({ kind: 'cylinder', radius: 0.3*s, halfHeight: 0.46*s, offset: [0, 0.46*s, 0] });\napi.collider({ kind: 'cylinder', radius: 0.08*s, halfHeight: 2.1*s, offset: [0, 2.1*s, 0] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:29:25.724Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 2656,
+    "parts": 4,
+    "colliders": 2
+  }
+}

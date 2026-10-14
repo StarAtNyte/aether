@@ -267,7 +267,7 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". Use a built-in generator, request_asset, or primitives.`, isError: false, events: [], edited: false };
   const lines = hits.map(({ entry: e }) => {
     const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');
-    const extra = [e.kind === 'hdri' ? 'environment: use setEnvironment {"hdri":"' + e.id + '"}' : `size ${size} m`, e.placement !== 'floor' ? `goes on ${e.placement}` : '', e.anims && e.anims.clips.length > 0 ? 'animated (idle/walk/run follow movement)' : ''].filter(Boolean).join(', ');
+    const extra = [e.kind === 'hdri' ? 'environment: use setEnvironment {"hdri":"' + e.id + '"}' : e.kind === 'generator' ? `parametric generator: shape {"kind":"procedural","generator":"${e.generator?.id ?? e.id}"}, about ${size} m` : `size ${size} m`, e.placement !== 'floor' ? `goes on ${e.placement}` : '', e.anims && e.anims.clips.length > 0 ? 'animated (idle/walk/run follow movement)' : ''].filter(Boolean).join(', ');
     return `${e.id} — ${e.name} [${e.category}] ${extra}`;
   });
   return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).`), isError: false, events: [], edited: false };

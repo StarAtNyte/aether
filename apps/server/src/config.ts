@@ -5,6 +5,7 @@
  * environment (mock mode). Secrets are only ever held in {@link ServerConfig.keys}
  * and are stripped by {@link redactConfig} before anything is logged.
  */
+import { isAllowedEndpoint } from '@aether/assets';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +97,8 @@ export interface ServerConfig {
      */
     readonly bridge: { readonly origins: readonly string[]; readonly port: number } | null;
   };
+  /** Optional image → 3D wrapper (TRELLIS.2, user-run); null = off (default). */
+  readonly imageTo3d: { readonly endpoint: string; readonly token?: string } | null;
   readonly generators: {
     /**
      * Dry-run uploaded generators in the procgen node sandbox before caching them.
@@ -262,6 +265,13 @@ const EnvSchema = z.object({
     }),
   AETHER_BRIDGE_PORT: int(8790, 0, 65535),
   AETHER_VALIDATE_GENERATORS: bool(false),
+  AETHER_IMAGE_TO_3D_URL: z
+    .string()
+    .trim()
+    .max(512)
+    .optional()
+    .refine((v) => v === undefined || v === '' || isAllowedEndpoint(v), 'AETHER_IMAGE_TO_3D_URL must be http://127.0.0.1 / localhost or https'),
+  AETHER_IMAGE_TO_3D_TOKEN: z.string().max(512).optional(),
   AETHER_GENERATOR_TIMEOUT_MS: int(1_000, 50, 5_000),
   AETHER_GENERATOR_MAX_QUEUE: int(8, 1, 256),
 });
@@ -368,6 +378,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
       logFile: e.AETHER_LOG_FILE ? resolvePath(e.AETHER_LOG_FILE, '') : null,
       bridge: e.AETHER_BRIDGE_ORIGINS.length > 0 ? { origins: e.AETHER_BRIDGE_ORIGINS, port: e.AETHER_BRIDGE_PORT } : null,
     },
+    imageTo3d: e.AETHER_IMAGE_TO_3D_URL ? { endpoint: e.AETHER_IMAGE_TO_3D_URL, ...(e.AETHER_IMAGE_TO_3D_TOKEN ? { token: e.AETHER_IMAGE_TO_3D_TOKEN } : {}) } : null,
     generators: {
       validate: e.AETHER_VALIDATE_GENERATORS,
       timeoutMs: e.AETHER_GENERATOR_TIMEOUT_MS,
@@ -385,10 +396,11 @@ export function redactConfig(config: ServerConfig): Record<string, unknown> {
       openai: config.keys.openai ? '[set]' : '[unset]',
     },
     local: { ...config.local, sessionSecret: config.local.sessionSecret ? '[set]' : '[unset]', accessToken: config.local.accessToken ? '[set]' : '[unset]' },
+    imageTo3d: config.imageTo3d ? { endpoint: config.imageTo3d.endpoint, token: config.imageTo3d.token ? '[set]' : '[unset]' } : null,
   };
 }
 
 /** Every secret value in the config, for scrubbing free text (e.g. upstream error messages). */
 export function secretValues(config: ServerConfig): string[] {
-  return [config.keys.anthropic, config.keys.openai, config.local.sessionSecret ?? undefined, config.local.accessToken ?? undefined].filter((k): k is string => typeof k === 'string' && k.length > 0);
+  return [config.keys.anthropic, config.keys.openai, config.local.sessionSecret ?? undefined, config.local.accessToken ?? undefined, config.imageTo3d?.token].filter((k): k is string => typeof k === 'string' && k.length > 0);
 }

@@ -207,6 +207,14 @@ function assignVariants(entries: CatalogEntryInput[]): void {
   }
 }
 
+/** Hero generator records written by forge-heroes.ts (empty when none were made). */
+function readHeroes(): Array<{ id: string; name: string; category: CatalogEntryInput['category']; keywords: string[]; size: [number, number, number]; thumb: string }> {
+  const path = join(OUT, 'heroes.json');
+  if (!existsSync(path)) return [];
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as { heroes?: unknown };
+  return Array.isArray(raw.heroes) ? (raw.heroes as ReturnType<typeof readHeroes>) : [];
+}
+
 async function main(): Promise<void> {
   const sources = readSources();
   const nio = await io();
@@ -285,6 +293,29 @@ async function main(): Promise<void> {
   }
   const entries = built.map((b) => b.entry);
   assignVariants(entries);
+  // Hero generators made with the asset forge (scripts/assets/forge-heroes.ts).
+  for (const h of readHeroes()) {
+    if (ids.has(h.id)) throw new Error(`duplicate asset id ${h.id}`);
+    entries.push({
+      id: h.id,
+      name: h.name,
+      kind: 'generator',
+      category: h.category,
+      tags: tagsFor(h.id, h.name, h.category, h.keywords.join(' '), 'stylised'),
+      style: 'stylised',
+      pack: 'aether-forge',
+      size: h.size,
+      tris: 0,
+      bytes: 0,
+      lods: [],
+      ...(existsSync(join(LIB, h.thumb)) ? { thumb: h.thumb } : {}),
+      collider: { type: 'box' },
+      placement: 'floor',
+      facing: '+z',
+      generator: { id: h.id, params: {} },
+      source: `packages/procgen/library/${h.id}.json`,
+    });
+  }
   // Keep thumbnails from a previous thumbnail pass when the model is unchanged.
   const previous = existsSync(join(OUT, 'catalog.json')) ? (JSON.parse(readFileSync(join(OUT, 'catalog.json'), 'utf8')) as { entries?: Array<{ id: string; file?: string; thumb?: string }> }) : {};
   const prevThumb = new Map((previous.entries ?? []).filter((e) => e.thumb && e.file).map((e) => [`${e.id}|${e.file}`, e.thumb!]));
@@ -295,6 +326,7 @@ async function main(): Promise<void> {
   const packs: CatalogPack[] = [
     ...sources.packs.map((p) => ({ id: p.id, title: `Kenney ${p.title}`, author: p.author, licence: 'CC0-1.0' as const, licenceUrl: p.licenceUrl, url: p.page, version: p.version })),
     { id: 'polyhaven', title: 'Poly Haven', author: 'Poly Haven contributors', licence: 'CC0-1.0', licenceUrl: 'https://polyhaven.com/license', url: 'https://polyhaven.com', version: '2026-10-14' },
+    { id: 'aether-forge', title: 'Aether forge originals', author: 'Aether (procedural code written with an AI model)', licence: 'MIT', licenceUrl: 'https://opensource.org/license/mit', url: 'https://opensource.org/license/mit', version: '1' },
   ];
   const catalog = Catalog.parse({ version: 1, base: '/assets/lib/', packs, entries: entries.sort((a, b) => (a.category === b.category ? (a.id < b.id ? -1 : 1) : a.category < b.category ? -1 : 1)) });
   writeFileSync(join(OUT, 'catalog.json'), `${JSON.stringify(catalog)}\n`);

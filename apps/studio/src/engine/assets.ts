@@ -8,8 +8,8 @@
  * re-renders the editor.
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { EntityInput, History, Patch, Vec3, WorldDoc } from '@aether/core';
-import { uniqueId } from '@aether/core';
+import type { EntityInput, GeneratorDef, History, Patch, Vec3, WorldDoc } from '@aether/core';
+import { applyPatches, uniqueId } from '@aether/core';
 import {
   assetInfo,
   catalogEntry,
@@ -26,11 +26,12 @@ import {
   type Credit,
   type UserAssetMeta,
 } from '@aether/assets';
+import { loadLibraryGenerator } from '@aether/procgen';
 import type { StudioState } from '../state/store';
 import type { Simulation } from './Simulation';
 import { placeAsset, type Placement } from '../assets/placement';
 import { readFavorites, toggleFavorite } from '../assets/favorites';
-import { openUserAssetStore, type UserAssetStore } from '../assets/userStore';
+import { openUserAssetStore, type Creation, type UserAssetStore } from '../assets/userStore';
 import { readZip, writeZip, type ZipEntry } from '../assets/zip';
 import { browserStorage, type StorageLike } from '../lib/storage';
 import { exportFileName, exportWorld, validateImportedValue } from '../lib/worldIO';
@@ -55,6 +56,8 @@ export interface LibraryState {
   imports: UserAssetMeta[];
   /** Imports survive reloads (false: IndexedDB unavailable, session only). */
   persistent: boolean;
+  /** Forged generators saved to the library (newest first). */
+  creations: Creation[];
   favorites: string[];
   /** Credits dialog open. */
   creditsOpen: boolean;
@@ -95,7 +98,7 @@ export class AssetController {
 
   constructor(private readonly host: AssetHost, opts: { storage?: StorageLike | null } = {}) {
     this.storage = opts.storage === undefined ? browserStorage() : opts.storage;
-    this.state = createStore<LibraryState>()(() => ({ catalog: null, imports: [], persistent: true, favorites: readFavorites(this.storage), creditsOpen: false, busy: null }));
+    this.state = createStore<LibraryState>()(() => ({ catalog: null, imports: [], persistent: true, creations: [], favorites: readFavorites(this.storage), creditsOpen: false, busy: null }));
     // User imports referenced by the world are registered as soon as a world loads or changes.
     this.cleanups.push(host.history.subscribe((world) => void this.syncWorld(world)));
     void this.syncWorld(host.history.current);
@@ -194,6 +197,32 @@ export class AssetController {
     return placeAsset({ hit: hit ? { point: hit.point, normal: hit.normal } : null, ray, camera, asset, floorAt });
   }
 
+  private previewAt = 0;
+
+  /**
+   * Translucent preview of where a dragged asset would land (the ghost
+   * layer), throttled to ~20 updates a second. {@link clearPreview} hides it.
+   */
+  previewDrop(id: string, ndc: { x: number; y: number }): void {
+    const sim = this.host.simulation;
+    const now = performance.now();
+    if (!sim || now - this.previewAt < 50) return;
+    this.previewAt = now;
+    const info = assetInfo(id);
+    if (!info || info.kind === 'hdri' || info.kind === 'generator') return;
+    const at = this.placement(id, ndc);
+    if (!at) return;
+    const world = this.host.history.current;
+    const r = applyPatches(world, [{ op: 'add', entity: { id: uniqueId(world, 'drop-preview'), transform: { position: at.position, rotation: [0, at.yaw, 0] }, shape: { kind: 'asset', id } } }]);
+    if (r.errors.length === 0) sim.renderer.showGhost(r.world);
+  }
+
+  /** Hide the drop preview. */
+  clearPreview(): void {
+    this.previewAt = 0;
+    this.host.simulation?.renderer.showGhost(null);
+  }
+
   /**
    * Place an asset (click: at the view's focus; drop: under the cursor) as
    * one undoable edit and select it. Skies set the environment instead.
@@ -212,6 +241,15 @@ export class AssetController {
       return null;
     }
     const name = info.entry?.name ?? info.user?.name ?? id;
+    if (info.kind === 'generator') {
+      // Forge originals are ordinary (editable) library generators: define and place one.
+      const def = info.entry?.generator ? await loadLibraryGenerator(info.entry.generator.id) : null;
+      if (!def) {
+        st.toast('That generator is not available.', 'error');
+        return null;
+      }
+      return this.placeCreation(def, ndc);
+    }
     if (info.kind === 'hdri') {
       this.host.commitUser([{ op: 'setEnvironment', set: { hdri: id } }], `Sky: ${name}`);
       st.toast(`Sky set to ${name}`, 'success', 2.5);
@@ -279,6 +317,57 @@ export class AssetController {
     }
     await this.refreshImports();
     return placed;
+  }
+
+  /** Refresh the list of saved creations. */
+  async refreshCreations(): Promise<void> {
+    try {
+      const list = await (await this.userStore()).listCreations();
+      if (!this.disposed) this.state.setState({ creations: list });
+    } catch (err) {
+      log.warn('listing creations failed', err);
+    }
+  }
+
+  /** Save (or update) a forged generator in the library. */
+  async saveCreation(c: Creation): Promise<void> {
+    await (await this.userStore()).putCreation(c);
+    await this.refreshCreations();
+  }
+
+  /** Delete a saved creation (worlds keep their own copy of the generator). */
+  async removeCreation(id: string): Promise<void> {
+    await (await this.userStore()).removeCreation(id);
+    await this.refreshCreations();
+  }
+
+  /**
+   * Place a forged generator: defines it in the world (once) and adds an
+   * entity using it at the view's focus, as one undoable edit.
+   */
+  async placeCreation(def: GeneratorDef, ndc: { x: number; y: number } | null = null): Promise<string | null> {
+    const st = this.host.store.getState();
+    if (st.mode === 'play') {
+      st.toast('Stop the simulation before adding objects.', 'info');
+      return null;
+    }
+    const world = this.host.history.current;
+    const sim = this.host.simulation;
+    let position: Vec3 = sim ? sim.placementPoint() : [0, 0, 0];
+    if (ndc && sim) {
+      const hit = sim.renderer.raycastEntity(ndc.x, ndc.y);
+      const g = placeAsset({ hit: hit ? { point: hit.point, normal: hit.normal } : null, ray: sim.renderer.cursorRay(ndc.x, ndc.y), camera: [sim.renderer.camera.position.x, sim.renderer.camera.position.y, sim.renderer.camera.position.z], asset: { size: [1, 1, 1], placement: 'floor', facing: '+z' } });
+      position = g.position;
+    }
+    const entityId = uniqueId(world, def.id.replace(/^custom-/, '').slice(0, 40) || 'creation');
+    const patches: unknown[] = [];
+    const existing = Object.hasOwn(world.generators, def.id) ? world.generators[def.id] : undefined;
+    if (!existing || existing.source !== def.source || JSON.stringify(existing.params) !== JSON.stringify(def.params)) patches.push({ op: 'defineGenerator', generator: def });
+    patches.push({ op: 'add', entity: { id: entityId, name: def.description.split(/[.;\n]/)[0]?.slice(0, 60) || def.id, transform: { position }, shape: { kind: 'procedural', generator: def.id, params: {} }, physics: { body: 'static' }, tags: ['creation'] } });
+    if (this.host.commitUser(patches, `Add ${def.id}`) !== null) return null;
+    this.host.store.getState().select([entityId]);
+    void sim?.revealEntities([entityId]);
+    return entityId;
   }
 
   /** Delete an import from this browser (worlds using it show stand-ins). */

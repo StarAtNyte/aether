@@ -8,7 +8,7 @@ import { memo, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { libraryUrl, searchAssets, type AssetCategory, type Catalog, type CatalogEntry } from '@aether/assets';
 import { useStudio, useUI } from '../../app/context';
 import { Icon } from '../../components/Icon';
-import { ASSET_DRAG_TYPE, useLibrary } from './useLibrary';
+import { ASSET_DRAG_TYPE, dragState, useLibrary } from './useLibrary';
 
 /** Category chips in display order, with labels. */
 export const CATEGORY_LABELS: ReadonlyArray<readonly [AssetCategory, string]> = [
@@ -43,7 +43,12 @@ const AssetTile = memo(function AssetTile({ entry, catalog, favorite, disabled }
         className="tile asset-tile__btn"
         disabled={disabled}
         draggable={!disabled}
+        onDragEnd={() => {
+          dragState.asset = null;
+          studio.assets.clearPreview();
+        }}
         onDragStart={(e) => {
+          dragState.asset = entry.id;
           e.dataTransfer.setData(ASSET_DRAG_TYPE, entry.id);
           e.dataTransfer.setData('text/plain', entry.name);
           e.dataTransfer.effectAllowed = 'copy';
@@ -103,6 +108,13 @@ export const LibraryView = memo(function LibraryView({ query }: { query: string 
   const fav = new Set(favorites);
   return (
     <div className="library">
+      <button type="button" className="forge-cta" disabled={playing} onClick={() => studio.forge.open()}>
+        <Icon name="sparkles" size={16} />
+        <span>
+          <strong>Create from an image or text</strong>
+          <span className="forge-cta__sub">A model writes an editable 3D generator and checks it against your photo</span>
+        </span>
+      </button>
       <div className="chip-row scroll-x" role="toolbar" aria-label="Asset categories">
         <button type="button" className={`chip${filter === 'all' ? ' is-on' : ''}`} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
           All

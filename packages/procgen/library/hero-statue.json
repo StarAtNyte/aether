@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "entry": {
+    "id": "hero-statue",
+    "description": "Ancient statue: Classical marble statue, 2.8 m default. Plinth: base 0.9x0.2, step 0.75x0.15, die 0.6x0.5 with 0.4x0.12 inscription plate and 3 raised lines, cap 0.72x0.1 (top at 0.95). Figure on top: wide robe lathe hem r0.30 to waist 0.2 to shoulders 0.22 with 0.03-0.04 ring step",
+    "category": "props",
+    "keywords": [
+      "ancient statue",
+      "marble statue",
+      "classical statue"
+    ],
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 2.8,
+        "min": 1,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "marbleColor": {
+        "type": "color",
+        "default": "#f0eee8",
+        "description": "marble color"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#6b6b68",
+        "description": "plinth stone color"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 8,
+        "min": -20,
+        "max": 20,
+        "description": "head tilt degrees"
+      },
+      "veining": {
+        "type": "number",
+        "default": 0.45,
+        "min": 0,
+        "max": 1,
+        "description": "vein strength"
+      },
+      "wreathColor": {
+        "type": "color",
+        "default": "#d9d6cb",
+        "description": "wreath color"
+      }
+    },
+    "size": [
+      0.974,
+      2.838,
+      0.9
+    ]
+  },
+  "def": {
+    "id": "hero-statue",
+    "description": "Classical marble statue, 2.8 m default. Plinth: base 0.9x0.2, step 0.75x0.15, die 0.6x0.5 with 0.4x0.12 inscription plate and 3 raised lines, cap 0.72x0.1 (top at 0.95). Figure on top: wide robe lathe hem r0.30 to waist 0.2 to shoulders 0.22 with 0.03-0.04 ring steps, sash tube across torso, drape rings hugging robe, feet at hem, arms r0.05 (left hanging with hand r0.045, right bent ~100deg raising a wreath R0.11), head r0.1 tilted 8deg with curl cap. White marble with grey veining vertex colours; mid-grey stone plinth.",
+    "params": {
+      "height": {
+        "type": "number",
+        "default": 2.8,
+        "min": 1,
+        "max": 8,
+        "description": "total height in meters"
+      },
+      "marbleColor": {
+        "type": "color",
+        "default": "#f0eee8",
+        "description": "marble color"
+      },
+      "stoneColor": {
+        "type": "color",
+        "default": "#6b6b68",
+        "description": "plinth stone color"
+      },
+      "tilt": {
+        "type": "number",
+        "default": 8,
+        "min": -20,
+        "max": 20,
+        "description": "head tilt degrees"
+      },
+      "veining": {
+        "type": "number",
+        "default": 0.45,
+        "min": 0,
+        "max": 1,
+        "description": "vein strength"
+      },
+      "wreathColor": {
+        "type": "color",
+        "default": "#d9d6cb",
+        "description": "wreath color"
+      }
+    },
+    "source": "const S = params.height / 2.8;\nconst marble = { preset: 'stone', roughness: 0.35, metalness: 0.0, color: '#ffffff' };\nconst stoneM = { preset: 'stone', roughness: 0.9, flatShading: true, color: '#ffffff' };\nconst darkM = { preset: 'stone', color: '#2b2a29', roughness: 0.8 };\nconst lineM = { preset: 'stone', color: '#c9c3b4', roughness: 0.7 };\nconst vein = (m) => m.vertexColor((x, y, z) => {\n  const n = Math.abs(api.noise3(x * 3.2, y * 2.4, z * 3.2));\n  const n2 = Math.abs(api.noise3(x * 7 + 5, y * 5, z * 7));\n  let t = 0;\n  if (n < 0.09) t = params.veining; else if (n2 < 0.05) t = params.veining * 0.6;\n  return api.mix(params.marbleColor, '#8a8c92', t);\n});\nconst stoneCol = (m) => m.vertexColor((x, y, z) => api.mix(params.stoneColor, '#4d4b48', 0.4 * (0.5 + 0.5 * api.noise3(x * 4, y * 4, z * 4))));\nconst add = (m, isStone) => { m.scale(S); if (isStone) { stoneCol(m); api.add(m, stoneM); } else { vein(m); api.add(m, marble); } };\nadd(api.box(0.9, 0.2, 0.9).translate(0, 0.1, 0), true);\nadd(api.box(0.75, 0.15, 0.75).translate(0, 0.275, 0), true);\nadd(api.box(0.6, 0.5, 0.6).translate(0, 0.6, 0), true);\nadd(api.box(0.72, 0.1, 0.72).translate(0, 0.9, 0), true);\nfor (let s = 0; s < 4; s++) {\n  const plate = api.box(0.4, 0.12, 0.014).translate(0, 0.6, 0.303).rotate(0, s * 90, 0).scale(S);\n  api.add(plate, darkM);\n  for (let l = 0; l < 3; l++) {\n    const w = [0.32, 0.28, 0.22][l];\n    api.add(api.box(w, 0.012, 0.012).translate(0, 0.635 - l * 0.035, 0.312).rotate(0, s * 90, 0).scale(S), lineM);\n  }\n}\nconst y0 = 0.95;\nconst P = [[0, 0], [0.30, 0], [0.31, 0.04], [0.27, 0.08], [0.285, 0.12], [0.255, 0.16], [0.27, 0.2], [0.24, 0.26], [0.255, 0.3], [0.225, 0.4], [0.24, 0.44], [0.21, 0.55], [0.225, 0.59], [0.195, 0.7], [0.21, 0.74], [0.185, 0.85], [0.2, 0.89], [0.19, 1.0], [0.21, 1.04], [0.2, 1.15], [0.23, 1.25], [0.23, 1.33], [0.17, 1.42], [0.07, 1.47], [0.05, 1.5], [0, 1.5]];\nconst robe = api.lathe(P.map(p => [p[0], p[1] + y0]), 28);\nrobe.displace((x, y, z) => 0.012 * Math.sin(Math.atan2(z, x) * 7 + y * 3));\nadd(robe, false);\nadd(api.sphere(0.2, 2).scale(1.25, 0.55, 0.8).translate(0, y0 + 1.33, 0), false);\n// drape rings hugging the robe\nfor (let i = 0; i < 4; i++) {\n  const yy = 0.18 + i * 0.22;\n  const r = 0.27 - i * 0.022;\n  add(api.torus(r, 0.03).rotate(90, 0, 0).scale(1, 1, 0.85).rotate(0, 0, (i % 2 ? 6 : -6)).translate(0, y0 + yy, 0), false);\n}\n// diagonal sash\nadd(api.tube([[-0.2, y0 + 1.3, 0.05], [-0.08, y0 + 1.1, 0.19], [0.05, y0 + 0.85, 0.2], [0.17, y0 + 0.6, 0.19]], 0.05, 10), false);\nadd(api.tube([[0.17, y0 + 0.6, 0.19], [0.2, y0 + 0.4, 0.2], [0.18, y0 + 0.2, 0.25]], 0.045, 8), false);\n// feet\nfor (const sx of [-1, 1]) add(api.sphere(0.07, 2).scale(0.9, 0.5, 1.9).translate(sx * 0.1, y0 + 0.035, 0.29), false);\n// left arm\nadd(api.sphere(0.07, 2).translate(-0.22, y0 + 1.3, 0), false);\nadd(api.tube([[-0.22, y0 + 1.3, 0], [-0.28, y0 + 1.1, 0.03], [-0.27, y0 + 0.88, 0.06]], 0.055, 10), false);\nadd(api.sphere(0.045, 2).translate(-0.27, y0 + 0.82, 0.07), false);\n// right arm bent\nadd(api.sphere(0.07, 2).translate(0.22, y0 + 1.3, 0), false);\nadd(api.tube([[0.22, y0 + 1.3, 0], [0.31, y0 + 1.15, 0.06], [0.36, y0 + 1.1, 0.12]], 0.055, 10), false);\nadd(api.sphere(0.055, 2).translate(0.36, y0 + 1.1, 0.12), false);\nadd(api.tube([[0.36, y0 + 1.1, 0.12], [0.4, y0 + 1.35, 0.12], [0.4, y0 + 1.6, 0.1]], 0.05, 10), false);\nadd(api.sphere(0.05, 2).translate(0.4, y0 + 1.63, 0.1), false);\n// wreath\nconst wc = [0.4, y0 + 1.76, 0.1];\nconst wr = api.torus(0.11, 0.018).rotate(0, 20, 0).translate(wc[0], wc[1], wc[2]);\nwr.scale(S); wr.vertexColor(() => params.wreathColor); api.add(wr, marble);\nfor (let i = 0; i < 16; i++) {\n  const a = i / 16 * Math.PI * 2;\n  const lf = api.sphere(0.025, 1).scale(1, 0.5, 2).rotate(0, 0, a * 57.3 + 90).translate(Math.cos(a) * 0.11, Math.sin(a) * 0.11, 0).rotate(0, 20, 0).translate(wc[0], wc[1], wc[2]);\n  lf.scale(S); lf.vertexColor(() => params.wreathColor); api.add(lf, marble);\n}\n// neck and head\nadd(api.cylinder(0.045, 0.055, 0.1, 10).translate(0, y0 + 1.52, 0), false);\nconst hc = y0 + 1.66;\nconst head = api.sphere(0.1, 3).scale(0.9, 1.1, 1).rotate(0, 0, params.tilt).translate(0, hc, 0);\nadd(head, false);\nfor (let i = 0; i < 30; i++) {\n  const a = i * 2.4, k = i / 30;\n  const el = 0.2 + k * 1.2;\n  const hx = Math.cos(a) * Math.cos(el) * 0.1, hy = Math.sin(el) * 0.11, hz = Math.sin(a) * Math.cos(el) * 0.1;\n  if (hz > 0.05 && hy < 0.07) continue;\n  add(api.sphere(0.03, 1).translate(hx, hy, hz).rotate(0, 0, params.tilt).translate(0, hc, 0), false);\n}\napi.collider({ kind: 'box', halfExtents: [0.45 * S, 0.475 * S, 0.45 * S], offset: [0, 0.475 * S, 0] });\napi.collider({ kind: 'cylinder', radius: 0.28 * S, halfHeight: 0.75 * S, offset: [0, 1.7 * S, 0] });\napi.collider({ kind: 'box', halfExtents: [0.15 * S, 0.4 * S, 0.12 * S], offset: [0.35 * S, 2.45 * S, 0.1 * S] });\nreturn api.build();"
+  },
+  "provenance": {
+    "source": "claude-code",
+    "effort": "medium",
+    "createdAt": "2026-10-14T18:28:34.184Z",
+    "attempts": 2
+  },
+  "checks": {
+    "triangles": 11524,
+    "parts": 4,
+    "colliders": 3
+  }
+}

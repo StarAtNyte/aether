@@ -28,8 +28,13 @@ export type AssetStyle = z.infer<typeof AssetStyle>;
 export const AssetPlacement = z.enum(['floor', 'wall', 'ceiling', 'surface']);
 export type AssetPlacement = z.infer<typeof AssetPlacement>;
 
-/** Licences the library accepts. Anything else (NC, ND, editorial, unclear) is never shipped. */
-export const AssetLicence = z.enum(['CC0-1.0', 'CC-BY-4.0']);
+/**
+ * Licences the library accepts. Third-party assets must be CC0-1.0 or
+ * CC-BY-4.0; "MIT" marks first-party content (procedural generators made
+ * with the asset forge, shipped under the project licence). Anything else
+ * (NC, ND, editorial-only, unclear) is never shipped.
+ */
+export const AssetLicence = z.enum(['CC0-1.0', 'CC-BY-4.0', 'MIT']);
 export type AssetLicence = z.infer<typeof AssetLicence>;
 
 /** Library file path relative to the catalog base: `m/sofa.0123abcd.glb`. */

@@ -15,7 +15,7 @@ import { MAX_LABELS } from '../../engine/viewOverlay';
 import { sectionLevel } from '../../state/archUi';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { MATERIAL_DRAG_TYPE, PALETTE_DRAG_TYPE, parseMaterialDrag } from '../../editor/AssetsPanel';
-import { ASSET_DRAG_TYPE } from '../../editor/library/useLibrary';
+import { ASSET_DRAG_TYPE, dragState } from '../../editor/library/useLibrary';
 import { Icon } from '../Icon';
 import { ToolDock } from './ToolDock';
 import { ContextBar } from './ContextBar';
@@ -296,10 +296,19 @@ export const Viewport = memo(function Viewport(): ReactElement {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setDropping(true);
+        if (dragState.asset) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          studio.assets.previewDrop(dragState.asset, { x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1, y: -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1 });
+        }
       }}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={() => {
+        setDropping(false);
+        studio.assets.clearPreview();
+      }}
       onDrop={(e) => {
         setDropping(false);
+        studio.assets.clearPreview();
+        dragState.asset = null;
         if (playing) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const ndc = { x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1, y: -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1 };

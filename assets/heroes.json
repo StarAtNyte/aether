@@ -1,0 +1,62 @@
+{
+  "$comment": "AI-generated procedural generators (asset forge). Merged into the catalog by scripts/assets/build.ts.",
+  "heroes": [
+    {
+      "id": "hero-fountain",
+      "name": "Ornate fountain",
+      "category": "street",
+      "keywords": [
+        "ornate fountain",
+        "tiered fountain",
+        "plaza fountain"
+      ],
+      "size": [
+        3.44,
+        3.15,
+        3.44
+      ],
+      "thumb": "t/hero-fountain.0f07ec72.webp",
+      "score": 0.575,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-statue",
+      "name": "Ancient statue",
+      "category": "decor",
+      "keywords": [
+        "ancient statue",
+        "marble statue",
+        "classical statue"
+      ],
+      "size": [
+        0.974,
+        2.838,
+        0.9
+      ],
+      "thumb": "t/hero-statue.284d9463.webp",
+      "score": 0.575,
+      "iterations": 2,
+      "model": "claude-code"
+    },
+    {
+      "id": "hero-lantern",
+      "name": "Victorian street lantern",
+      "category": "lighting",
+      "keywords": [
+        "victorian lantern",
+        "gas lamp",
+        "old street lamp"
+      ],
+      "size": [
+        0.78,
+        4.48,
+        0.64
+      ],
+      "thumb": "t/hero-lantern.79a483de.webp",
+      "score": 0.675,
+      "iterations": 2,
+      "model": "claude-code"
+    }
+  ]
+}

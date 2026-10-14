@@ -46,3 +46,4 @@ export {
   type UserAssetImport,
   type UserAssetResult,
 } from './user';
+export { createTrellisProvider, isAllowedEndpoint, type ImageTo3DProvider, type TrellisOptions } from './image-to-3d';

@@ -1,4 +1,4 @@
-import { memo, type ReactElement } from 'react';
+import { memo, useMemo, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../../app/context';
 import { Icon } from '../Icon';
 
@@ -15,6 +15,8 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
   const game = useUI((s) => s.game);
   const building = useUI((s) => s.arch.building !== null);
   const photo = useUI((s) => s.arch.photo);
+  // The end screen credits the people behind the assets (required for CC-BY, a courtesy for CC0).
+  const credits = useMemo(() => (mode === 'play' ? studio.assets.credits() : []), [mode, world, studio]);
   if (mode !== 'play') return null;
   const over = game.status !== 'playing';
   if (building && world.hud.length === 0) {
@@ -94,6 +96,15 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
             </span>
             <h2>{game.status === 'won' ? 'You win!' : 'Game over'}</h2>
             {game.text && <p>{game.text}</p>}
+            {credits.length > 0 && (
+              <p className="game-over__credits">
+                Assets: {credits.slice(0, 3).map((c) => `${c.source} (${c.licence})`).join(', ')}
+                {credits.length > 3 ? ` and ${credits.length - 3} more` : ''}.{' '}
+                <button type="button" className="link-btn" onClick={() => studio.assets.setCreditsOpen(true)}>
+                  Full credits
+                </button>
+              </p>
+            )}
             <div className="game-over__actions">
               <button type="button" className="btn" onClick={() => void studio.togglePlay()}>
                 Back to editor
