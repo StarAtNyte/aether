@@ -246,6 +246,23 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       addDoor(rec, t, width, d, ra, rb);
     }
 
+    /**
+     * Side of wall `rec` (1 = side B, the left of a→b; -1 = side A) on which room `roomId` lies at
+     * point `c`. Sampled geometrically: merged collinear walls run past several rooms, so their
+     * stored `roomA` / `roomB` only name the rooms at one end.
+     */
+    function roomSide(rec: WallRec, c: P2, roomId: string): 1 | -1 | 0 {
+      const poly = polys.get(roomId);
+      if (poly) {
+        const nx = -rec.dir[1];
+        const nz = rec.dir[0];
+        const off = rec.thickness / 2 + 0.05;
+        if (pointInPolygon(c[0] + nx * off, c[1] + nz * off, poly)) return 1;
+        if (pointInPolygon(c[0] - nx * off, c[1] - nz * off, poly)) return -1;
+      }
+      return rec.w.roomB === roomId ? 1 : rec.w.roomA === roomId ? -1 : 0;
+    }
+
     function addDoor(rec: WallRec, t: number, width: number, d: PlanDoor, ra: string, rb: string): void {
       const kind = d.kind === 'opening' ? 'opening' : 'door';
       const height = Math.min(d.height, ceiling - 0.1);
@@ -257,7 +274,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const name = d.main ? 'Front door' : `Door ${NAMES[roomType(ra) as RoomType] ?? 'outside'} / ${roomType(rb) === 'outside' ? 'outside' : (NAMES[roomType(rb) as RoomType] ?? rb)}`;
       add({ id: fid, parent: lid, name, transform: { position: [round(c[0]), 0, round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-frame', params: { width: round(width), height: round(height), wallThickness: rec.thickness, finish: { finish: 'paint', color: pal.doorColor } } }, arch: { role: 'opening', wall: rec.id, kind }, tags: d.main ? ['arch', 'entrance'] : ['arch'] });
       // Which side does each room lie on? Side B is the left of a→b (+Z local).
-      const sideOf = (roomId: string): 1 | -1 | 0 => (roomId === 'outside' ? 0 : rec.w.roomB === roomId ? 1 : rec.w.roomA === roomId ? -1 : 0);
+      const sideOf = (roomId: string): 1 | -1 | 0 => (roomId === 'outside' ? 0 : roomSide(rec, c, roomId));
       let sa = sideOf(ra);
       let sb = sideOf(rb);
       if (sa === 0 && sb !== 0) sa = (-sb) as 1 | -1;
@@ -324,7 +341,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       rec.openings.push({ kind: 'window', offset: round(t), width: round(width), height: round(height), sill: round(sill) });
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
       const c: P2 = [rec.w.a[0] + rec.dir[0] * t, rec.w.a[1] + rec.dir[1] * t];
-      const interior = rec.w.roomB === roomId ? 'b' : 'a';
+      const interior = roomSide(rec, c, roomId) === 1 ? 'b' : 'a';
       const frosted = roomType(roomId) === 'bathroom';
       add({ id: `${lid}-win${winN++}`, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' } } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
       const poly = polys.get(roomId);

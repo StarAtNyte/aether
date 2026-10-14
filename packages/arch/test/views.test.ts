@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWall, compileBuilding, furnitureById, SECTION_CAP, variantsFor, WallParams } from '../src/index';
+import { buildWall, compileBuilding, furnitureById, SECTION_CAP, variantsFor, WallParams, type BuildingPlanInput } from '../src/index';
 
 function maxY(out: ReturnType<typeof buildWall>): number {
   let m = -Infinity;
@@ -70,5 +70,70 @@ describe('walkthrough finish variants', () => {
     // A light switch next to a door, in the room it controls.
     const sw = b.entities.find((e) => e.arch?.role === 'switch');
     expect(sw?.arch?.room).toMatch(/^flat-l0-/);
+  });
+});
+
+describe('doors and windows on long merged walls (regression)', () => {
+  // An east facade running past a kitchen, a hall and a bedroom is one merged wall whose stored
+  // room sides only name the kitchen: the hall's front door used to swing outwards.
+  const plan: BuildingPlanInput = {
+    id: 'flat',
+    levels: [
+      {
+        rooms: [
+          { id: 'kitchen', type: 'kitchen', rect: [0, 0, 10, 5] },
+          { id: 'hall', type: 'hall', rect: [0, 5, 10, 6.6] },
+          { id: 'bed', type: 'bedroom', rect: [0, 6.6, 10, 10.6] },
+        ],
+        doors: [
+          { between: ['hall', 'outside'], side: 'east', main: true },
+          { between: ['hall', 'kitchen'], kind: 'opening', width: 1.6 },
+          { between: ['hall', 'bed'] },
+        ],
+        windows: [{ room: 'bed', side: 'east', count: 1, width: 1.2 }],
+      },
+    ],
+  };
+
+  /** Plan position of the free edge of a swing door leaf when fully open (the door behaviour's maths). */
+  function openTip(e: { transform?: { position?: number[]; rotation?: number[] }; shape?: unknown; behaviors?: Array<{ params?: Record<string, unknown> }> }): [number, number] {
+    const p = e.behaviors?.[0]?.params ?? {};
+    const width = (e.shape as { params: { width: number } }).params.width;
+    const hingeX = p['hinge'] === 'right' ? width / 2 : -width / 2;
+    const yaw = ((e.transform?.rotation?.[1] ?? 0) * Math.PI) / 180;
+    const th = ((p['swingAngle'] as number) * Math.PI) / 180;
+    const rot = (x: number, z: number, a: number): [number, number] => [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
+    const base = [e.transform?.position?.[0] ?? 0, e.transform?.position?.[2] ?? 0] as const;
+    const h = rot(hingeX, 0, yaw);
+    const pivot = [base[0] + h[0], base[1] + h[1]];
+    const back = rot(-h[0], -h[1], th);
+    const far = rot(-hingeX, 0, yaw + th);
+    return [pivot[0]! + back[0] + far[0], pivot[1]! + back[1] + far[1]];
+  }
+
+  it('every swing door opens into its room, never outdoors', () => {
+    const b = compileBuilding(plan);
+    const leaves = b.entities.filter((e) => e.arch?.role === 'door' && e.behaviors?.[0]?.params?.['motion'] === 'swing');
+    expect(leaves.length).toBeGreaterThanOrEqual(2);
+    for (const leaf of leaves) {
+      const [x, z] = openTip(leaf as Parameters<typeof openTip>[0]);
+      // Inside the building outline [0..10] × [0..10.6].
+      expect(x, leaf.id).toBeLessThan(10);
+      expect(x).toBeGreaterThan(0);
+      expect(z).toBeGreaterThan(0);
+      expect(z).toBeLessThan(10.6);
+    }
+  });
+
+  it('windows put their interior sill on the room side', () => {
+    const b = compileBuilding(plan);
+    const win = b.entities.find((e) => e.arch?.role === 'window' && e.arch.room === 'flat-l0-bed' && Math.abs((e.transform?.position?.[0] ?? 0) - 10) < 0.01);
+    expect(win).toBeDefined();
+    const params = (win!.shape as unknown as { params: { interior: 'a' | 'b' } }).params;
+    // East wall runs along +Z or −Z; side B is the left of a→b. Interior = west (x < 10).
+    const yaw = ((win!.transform?.rotation?.[1] ?? 0) * Math.PI) / 180;
+    const nB: [number, number] = [Math.sin(yaw), Math.cos(yaw)];
+    const interiorX = (params.interior === 'b' ? 1 : -1) * nB[0];
+    expect(interiorX).toBeLessThan(0);
   });
 });

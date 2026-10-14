@@ -13,6 +13,10 @@
  * to render only the prompts whose slug contains one of the arguments.
  * `npm run gallery -- --skies` instead renders the starter world under each
  * of the seven sky presets (`sky-<preset>.png`) to compare them side by side.
+ * `npm run gallery -- --arch` renders every architecture prompt as an
+ * archviz set (`arch-<slug>-<view>.png`): the studio-render overview, a
+ * close room shot, night with the lamps on, the floor plan, and for
+ * multi-storey buildings the exploded and section views.
  * `--firefox` renders with Firefox (WebGL2) instead of Chromium, and
  * `--out=<dir>` writes the PNGs elsewhere (e.g. a scratch folder for a
  * Firefox/Chromium parity check).
@@ -20,7 +24,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, firefox, type Browser, type Page } from 'playwright';
-import { DEFAULT_PROMPTS } from '../../scripts/smoke-prompts';
+import { ARCH_PROMPTS, DEFAULT_PROMPTS } from '../../scripts/smoke-prompts';
 import { decodePng, pixelStats } from './support/png';
 import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
@@ -176,6 +180,115 @@ async function renderSkies(browser: Browser, url: string): Promise<void> {
   }
 }
 
+/** Wait until the studio render has refined the still (or `timeoutMs` passed). */
+async function refined(page: Page, timeoutMs = 40_000): Promise<number> {
+  const deadline = performance.now() + timeoutMs;
+  let p = 0;
+  // Let the change register first (the refinement restarts on the next drawn frame).
+  await page.waitForTimeout(600);
+  while (performance.now() < deadline) {
+    p = await page.evaluate(() => window.__aether?.simulation?.renderer.refineProgress ?? 1);
+    const flying = await page.evaluate(() => window.__aether?.simulation?.renderer.animating === true);
+    if (p >= 0.98 && !flying) break;
+    await page.waitForTimeout(400);
+  }
+  return p;
+}
+
+async function archShot(page: Page, slug: string, view: string, full = false): Promise<void> {
+  const file = join(OUT_DIR, `arch-${slug}-${view}.png`);
+  const png = full ? await page.screenshot({ path: file }) : await page.locator('.viewport').screenshot({ path: file });
+  const stats = pixelStats(decodePng(png));
+  if (stats.stdDev < MIN_CANVAS_STDDEV) throw new Error(`arch ${slug} ${view}: blank canvas`);
+  log(`  arch-${slug}-${view}: mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)} → ${file}`);
+}
+
+/** Render one architecture prompt as an archviz set (see the module docs). */
+async function renderArch(browser: Browser, url: string, prompt: string): Promise<void> {
+  const slug = gallerySlug(prompt);
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await context.addInitScript({ content: SKIP_FIRST_RUN });
+  await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+  try {
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
+    await waitFor(page, 'boot', BOOT_TIMEOUT_MS, (p) => p.ready && p.entities > 0);
+    const input = page.getByLabel('Prompt', { exact: true });
+    await input.fill(prompt);
+    await input.press('Enter');
+    await waitFor(page, 'the agent to start', 10_000, (p) => p.busy || p.last !== null);
+    const done = await waitFor(page, `the agent to finish "${slug}"`, AGENT_TIMEOUT_MS, (p) => !p.busy && p.last !== 'streaming' && p.ready);
+    if (done.last !== 'done') throw new Error(`agent turn ended with ${done.last}`);
+    await page.evaluate(async () => {
+      const a = window.__aether;
+      a?.store.getState().updateSettings({ showPerf: false, showNavHint: false });
+      a?.store.getState().setPanel('left', false);
+      a?.store.getState().setPanel('right', false);
+      await a?.simulation?.whenSynced();
+    });
+    await page.addStyleTag({ content: '.nav-hint, .toasts, .toast, .tooltip, .vp-overlay, .arch-bar, .vp-bottom, .vp-gizmo, .vp-context { display: none !important; }' });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => window.__aether?.studio.viewPreset('reset'));
+    await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
+    const levels = await page.evaluate(() => window.__aether?.store.getState().arch.levels.length ?? 0);
+    // 1. Overview in studio quality.
+    await page.evaluate(() => window.__aether?.store.getState().setArch({ quality: 'studio' }));
+    log(`  ${slug}: overview refined ${(await refined(page)).toFixed(2)}`);
+    await archShot(page, slug, 'overview');
+    // 2. A close shot of the main room, through the cutaway.
+    const room = await page.evaluate(() => {
+      const a = window.__aether!;
+      const w = a.history.current;
+      const rank = (k: string | undefined): number => (k === 'living' ? 5 : k === 'cafe' || k === 'open-office' ? 4 : k === 'kitchen' ? 2 : k === 'terrace' ? -9 : 1);
+      const rooms = Object.values(w.entities).filter((e) => e.arch?.role === 'room').map((e) => ({ id: e.id, kind: e.arch?.kind, b: a.simulation?.entityBounds(e.id) ?? null }));
+      const scored = rooms.filter((r) => r.b).map((r) => ({ ...r, area: (r.b!.max[0] - r.b!.min[0]) * (r.b!.max[2] - r.b!.min[2]) }));
+      scored.sort((p, q) => rank(q.kind) - rank(p.kind) || q.area - p.area);
+      const best = scored[0];
+      if (!best?.b) return null;
+      const c: [number, number, number] = [(best.b.min[0] + best.b.max[0]) / 2, best.b.max[1] + 1.1, (best.b.min[2] + best.b.max[2]) / 2];
+      const r = Math.max(2.4, Math.hypot(best.b.max[0] - best.b.min[0], best.b.max[2] - best.b.min[2]) * 0.42);
+      return { c, r };
+    });
+    if (room) {
+      await page.evaluate(({ c, r }) => {
+        window.__aether?.store.getState().setArch({ walls: 'cutaway', levelMode: 'stacked' });
+        window.__aether?.simulation?.renderer.frameSphere(c, r, [r * 0.9, r * 1.05, r * 1.2], 0);
+      }, room);
+      log(`  ${slug}: room refined ${(await refined(page)).toFixed(2)}`);
+      await archShot(page, slug, 'room');
+    }
+    // 3. Night: lamps on.
+    await page.evaluate(() => {
+      window.__aether?.store.getState().setArch({ sunHour: 21.5 });
+      window.__aether?.studio.viewPreset('reset');
+    });
+    await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
+    log(`  ${slug}: night refined ${(await refined(page)).toFixed(2)}`);
+    await archShot(page, slug, 'night');
+    await page.evaluate(() => window.__aether?.store.getState().setArch({ sunHour: null }));
+    // 4. Multi-storey: exploded and section.
+    if (levels > 1) {
+      await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up', levelMode: 'exploded' }));
+      await page.waitForTimeout(1500);
+      log(`  ${slug}: exploded refined ${(await refined(page)).toFixed(2)}`);
+      await archShot(page, slug, 'exploded');
+      await page.evaluate(() => window.__aether?.store.getState().setArch({ levelMode: 'stacked', section: 4.4 }));
+      log(`  ${slug}: section refined ${(await refined(page)).toFixed(2)}`);
+      await archShot(page, slug, 'section');
+      await page.evaluate(() => window.__aether?.store.getState().setArch({ section: null }));
+    }
+    // 5. Floor plan (with the building bar, as the user sees it).
+    await page.evaluate(() => window.__aether?.store.getState().setArch({ quality: 'realtime', plan: true, level: 0 }));
+    await page.waitForTimeout(1200);
+    await archShot(page, slug, 'plan');
+    if (errors.length > 0) throw new Error(`page errors: ${errors.join('; ')}`);
+  } finally {
+    await context.close();
+  }
+}
+
 /** The one browser of the run: Chromium (WebGPU via SwiftShader) or, with `--firefox`, Firefox (WebGL2). */
 function launchBrowser(): Promise<Browser> {
   if (USE_FIREFOX) return firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } });
@@ -184,6 +297,23 @@ function launchBrowser(): Promise<Browser> {
 
 async function main(): Promise<void> {
   const args = ARGS.filter((a) => a !== '--firefox' && !a.startsWith('--out='));
+  if (args.includes('--arch')) {
+    const filters = args.filter((a) => a !== '--arch').map((f) => f.toLowerCase());
+    const prompts = ARCH_PROMPTS.filter((p) => filters.length === 0 || filters.some((f) => gallerySlug(p).includes(f)));
+    mkdirSync(OUT_DIR, { recursive: true });
+    const server = await startServer(log);
+    let browser: Browser | null = null;
+    try {
+      browser = await launchBrowser();
+      log(`rendering ${prompts.length} architecture sets`);
+      for (const p of prompts) await renderArch(browser, server.url, p);
+      log('GALLERY DONE');
+    } finally {
+      await browser?.close();
+      await server.stop();
+    }
+    return;
+  }
   if (args.includes('--skies')) {
     mkdirSync(OUT_DIR, { recursive: true });
     const server = await startServer(log);
