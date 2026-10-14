@@ -155,6 +155,29 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     await page.evaluate(() => window.__aether?.store.getState().setArch({ sunHour: null }));
     log(`[${label}] views: walls down, x-ray, section, golden hour, studio render (refine ${(Number(studio) * 100).toFixed(0)}%, stddev ${still.stdDev.toFixed(1)})`);
 
+    // GPU resources stay flat over 20 view / quality cycles (sectioned walls, x-ray, studio pipeline).
+    const gpu = (): Promise<{ geometries: number; textures: number; cached: number; materials: number }> =>
+      page.evaluate(() => {
+        const m = window.__aether!.simulation!.memoryStats();
+        return { geometries: m?.geometries ?? 0, textures: m?.textures ?? 0, cached: m?.cachedGeometries ?? 0, materials: m?.materials ?? 0 };
+      });
+    const cycle = async (): Promise<void> => {
+      await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'down', xray: true, quality: 'studio' }));
+      await waitFor(page, 'studio frame', 30_000, () => page.evaluate(() => (window.__aether?.simulation?.renderer.refineProgress ?? 0) > 0 && window.__aether?.simulation?.renderer.renderQuality === 'studio'), 100);
+      await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'cutaway', xray: false, quality: 'realtime' }));
+      await page.waitForTimeout(250);
+    };
+    await cycle();
+    await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
+    await page.waitForTimeout(800);
+    const base = await gpu();
+    for (let i = 0; i < 20; i++) await cycle();
+    await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
+    await page.waitForTimeout(800);
+    const after = await gpu();
+    check(after.textures <= base.textures + 2 && after.geometries <= base.geometries + 8 && after.cached <= base.cached + 4 && after.materials <= base.materials + 4, `[${label}] GPU resources grew over 20 view cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)}`);
+    log(`[${label}] 20 view/quality cycles: geometries ${base.geometries}→${after.geometries}, textures ${base.textures}→${after.textures}, cached ${base.cached}→${after.cached}, materials ${base.materials}→${after.materials}`);
+
     // 3. Floor plan: chips, draw a room, add a door, undo both.
     await bar.getByRole('radio', { name: 'Plan' }).click();
     await page.locator('.plan-view__svg').waitFor({ state: 'visible', timeout: 10_000 });

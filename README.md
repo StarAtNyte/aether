@@ -28,6 +28,10 @@ with your own API key, with your own Codex login through that same command
 | --- | --- | --- | --- |
 | ![Domino run](docs/screenshots/world-domino-run.png) | ![Coin island](docs/screenshots/world-coin-island.png) | ![Bowling alley](docs/screenshots/world-bowling-alley.png) | ![Lakeside camp](docs/screenshots/world-lakeside-camp.png) |
 
+| Apartment, studio render (cutaway) | Living room close-up | Villa, exploded storeys | Floor plan with room areas |
+| --- | --- | --- | --- |
+| ![Two-bedroom apartment in the studio render: a doll's-house cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-overview.png) | ![The apartment's living room through the cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-room.png) | ![Two-storey villa with the storeys lifted apart](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-exploded.png) | ![Floor plan: poche walls, door swings, room chips with areas, dimensions](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-plan.png) |
+
 | Projects home | Starter scene in the editor | Play mode | Phone |
 | --- | --- | --- | --- |
 | ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |
@@ -78,6 +82,23 @@ explicit state, so the AI can be held to account:
   `setEnvironment`, `defineGenerator`, `addTest` and so on). Each is
   validated, reference-checked, protected against prototype pollution and
   limit-checked, and errors are written for the LLM to read.
+- **Real-life architecture, verified.** Ask for "a modern two-bedroom
+  apartment", "a small café interior", "a two-storey villa with a pool" or
+  "an office floor with meeting rooms" and the agent writes a building plan
+  (`@aether/arch`): rooms on storeys, doors, windows, stairs, a roof, a site.
+  It compiles into mitred walls with real openings (no CSG), floors,
+  ceilings, swinging and sliding doors, framed windows, stairs, roofs and a
+  procedural furniture kit with realistic proportions in five styles, lit by
+  real lamps. Then it is **checked like a building inspector would**: every
+  room reachable on foot through a 5 cm navigation grid, every door swing
+  free, all furniture standing on the floor without overlaps. The building
+  bar gives a doll's-house cutaway, walls down, exploded and single storeys,
+  x-ray, a section cut, a daylight study and a **studio render** (ambient
+  occlusion, soft shadows, temporal anti-aliasing that refines while the view
+  rests). The 2D floor plan shows rooms with their areas and dimensions, and
+  you can draw rooms, doors and windows on it. Press Walk for a first-person
+  walkthrough: E opens doors and flips light switches, 1–4 change the time of
+  day, L switches every light, R swaps finishes, P is photo mode.
 - **Block worlds with a full game kit.** Ask for "a minecraft-like
   survival world" or "a village of block houses" and the world gets endless,
   seeded voxel terrain (`@aether/voxel`): biomes, caves, ores, trees, water
@@ -379,6 +400,7 @@ template (for example `#/new/coin-island`).
 | `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, a device sign-in that completes (account + model picker), `aether login` / `doctor` / `logout`, `aether stop` |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
+| `npm run e2e:arch` | Real-life architecture in Chromium (WebGPU, WebGL2) and Firefox: apartment prompt → cutaway, walls down, x-ray, section, daylight, studio render, GPU objects flat over 20 view cycles → floor plan (draw a room, add a door, undo) → walkthrough through the front door, night, lights, photo mode |
 | `npm run e2e:voxel` | Block worlds in Chromium (WebGPU, WebGL2) and Firefox: prompt → streamed terrain without long tasks, edit → remesh latency, walk, break, place, craft, bounded memory while travelling, save and reload |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
@@ -389,7 +411,7 @@ template (for example `#/new/coin-island`).
 | `npm run library` | Rebuilds the offline generator library with Codex (sequential, call budget, resumable; `-- --only=piano`) |
 | `npm run e2e:bridge` | Real end-to-end check through the bridge: one prompt via Codex and one via Claude Code from the built studio (uses your subscription) |
 | `npm run e2e:connection` | AI connection check at no cost: the real bridge HTTP layer with scripted backends, in Chromium and Firefox (pairing, badges, a bridged turn with the vision critic, CORS preflight, and fallback when not signed in, rate limited or the bridge stops) |
-| `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset) |
+| `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset; `-- --arch`: each building as an archviz set — studio overview, room close-up, night, exploded, section, floor plan) |
 
 ## How a prompt becomes a playable world
 
@@ -601,6 +623,7 @@ All LLM output and all user input are treated as untrusted.
 | End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
 | Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
 | Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
+| Architecture | `npm run build && npm run e2e:arch` | Chromium (WebGPU, WebGL2) and Firefox: the apartment prompt, every building view and the studio render (non-blank, refining), GPU objects flat over 20 view/quality cycles, floor-plan drawing as undoable checked edits, and a walkthrough that opens the front door with E and walks in, then night, lights and photo mode. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
 | Benchmark | `npm run build && npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles, CPU in the renderer and the view planner while the camera orbits; `--classic` for the full-detail engine, `--cycles=N` checks GPU objects stay flat across rebuilds. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors (including `experiments/`) |
