@@ -239,23 +239,33 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(start, 'no player');
     // "Click to play" captures the mouse (or, where pointer lock is refused, engages drag-to-look).
     await page.getByRole('button', { name: /Click to play/ }).click({ timeout: 10_000 });
+    // Hold W until the player has covered 1.5 blocks (software rendering can run the game below real time).
     await page.keyboard.down('KeyW');
-    await page.waitForTimeout(1500);
+    await waitFor(page, 'the player to walk', 15_000, async () => {
+      const p = await player(page);
+      return p && Math.hypot(p.x - start.x, p.z - start.z) > 1.5 ? true : null;
+    }).catch(() => undefined);
     await page.keyboard.up('KeyW');
     await page.waitForTimeout(400);
     const walked = await player(page);
     check(walked && Math.hypot(walked.x - start.x, walked.z - start.z) > 1.5, `the player did not walk (${JSON.stringify([start, walked])})`);
     log(`[${label}] walked ${Math.hypot((walked?.x ?? 0) - start.x, (walked?.z ?? 0) - start.z).toFixed(1)} blocks`);
 
-    // Look straight down and break the block underfoot.
-    const before = await page.evaluate(() => {
+    // Look straight down and break the block the crosshair targets (under the feet), once landed.
+    await page.evaluate(() => {
+      const play = window.__aether?.simulation?.voxel?.game;
+      play?.input.setLook(play.input.yawRad, -1.5);
+    });
+    const before = await waitFor(page, 'the player to stand on a targeted block', 15_000, () => page.evaluate(() => {
       const play = window.__aether?.simulation?.voxel?.game;
       if (!play) return null;
-      play.input.setLook(play.input.yawRad, -1.5);
-      const b = play.game.player.body;
-      return { x: Math.floor(b.x), y: Math.floor(b.y) - 1, z: Math.floor(b.z) };
-    });
-    check(before, 'no game');
+      const g = play.game;
+      const b = g.player.body;
+      const t = g.target;
+      if (!b.onGround || Math.abs(b.vy) > 0.01 || !t.valid) return null;
+      return { x: t.hit.x, y: t.hit.y, z: t.hit.z, block: window.__aether?.simulation?.voxel?.blockAt(t.hit.x, t.hit.y, t.hit.z) ?? null };
+    }));
+    check(before.block && before.block !== 'air', `the targeted cell is not solid (${JSON.stringify(before)})`);
     const cx = VIEWPORT.width / 2;
     const cy = VIEWPORT.height / 2;
     await page.mouse.move(cx, cy);
@@ -266,28 +276,33 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       return id === 'air' ? true : null;
     }, before));
     await page.mouse.up({ button: 'left' });
-    await page.waitForTimeout(1500);
+    // The drop falls and is pulled in by the pickup magnet (game time; may run slower than real time here).
+    const startItems = new Set(start.slots.filter((x) => x !== null).map((x) => x.item));
+    const dug = await waitFor(page, 'the broken block to be picked up', 15_000, async () => {
+      const p = await player(page);
+      return p?.slots.find((x) => x !== null && !startItems.has(x.item)) ?? null;
+    }).catch(async (e: unknown) => {
+      const state = await page.evaluate(() => {
+        const g = window.__aether?.simulation?.voxel?.game?.game;
+        if (!g) return null;
+        const b = g.player.body;
+        return { player: [b.x, b.y, b.z, b.onGround], mode: g.settings.mode, drops: g.drops.map((d) => [d.item, d.count, d.body.x, d.body.y, d.body.z, d.delay, d.age]) };
+      });
+      throw new E2EFailure(`${e instanceof Error ? e.message : String(e)}; state ${JSON.stringify(state)}; broken ${JSON.stringify(before)}`);
+    });
     const afterBreak = await player(page);
-    const dug = afterBreak?.slots.find((s) => s && (s.item === 'dirt' || s.item === 'cobblestone' || s.item === 'sand' || s.item === 'gravel'));
-    check(dug, `the broken block was not picked up (${JSON.stringify(afterBreak?.slots.slice(0, 9))})`);
     log(`[${label}] broke ${before.x},${before.y},${before.z} and picked up ${dug.item}`);
 
     // Place it back: select its slot, right click while looking down.
-    const slot = afterBreak?.slots.indexOf(dug) ?? 0;
+    const slot = afterBreak?.slots.findIndex((x) => x?.item === dug.item) ?? 0;
     if (slot < 9) await page.keyboard.press(`Digit${slot + 1}`);
     const placedAt = await page.evaluate(() => {
       const play = window.__aether?.simulation?.voxel?.game;
       return play ? { x: Math.floor(play.game.target.hit.x + play.game.target.hit.nx), y: play.game.target.hit.y + play.game.target.hit.ny, z: Math.floor(play.game.target.hit.z + play.game.target.hit.nz) } : null;
     });
-    // Jump so the cell under the feet is free, and place in mid-air (classic pillar-up).
-    await page.keyboard.down('Space');
-    await page.waitForTimeout(180);
-    await page.mouse.down({ button: 'right' });
-    await page.waitForTimeout(250);
-    await page.mouse.up({ button: 'right' });
-    await page.keyboard.up('Space');
-    await page.waitForTimeout(600);
-    const placed = await page.evaluate((c) => {
+    // Jump so the cell under the feet is free, and place in mid-air (classic pillar-up):
+    // hold jump + use until a block appears (the game may run below real time here).
+    const isPlaced = (): Promise<boolean> => page.evaluate((c) => {
       const v = window.__aether?.simulation?.voxel;
       if (!c || !v) return false;
       // Anything solid back in the dug cell or the pillar cell above it.
@@ -295,6 +310,12 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       const b = v.blockAt(c.x, c.y + 1, c.z);
       return (a !== null && a !== 'air') || (b !== null && b !== 'air');
     }, placedAt);
+    await page.keyboard.down('Space');
+    await page.mouse.down({ button: 'right' });
+    const placed = await waitFor(page, 'a block to be placed', 15_000, async () => ((await isPlaced()) ? true : null)).catch(() => false);
+    await page.mouse.up({ button: 'right' });
+    await page.keyboard.up('Space');
+    await page.waitForTimeout(300);
     check(placed, 'the block was not placed');
     log(`[${label}] placed a block`);
 

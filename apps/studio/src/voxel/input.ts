@@ -15,6 +15,8 @@ import { isTypingTarget } from '../engine/input';
 export const LOOK_PER_PX = 0.0024;
 /** Double-tap window (ms). */
 const DOUBLE_TAP_MS = 280;
+/** How long a pointer-lock request may stay unanswered before clicks act directly (ms). */
+const LOCK_GRACE_MS = 1000;
 /** Most keys tracked at once. */
 const MAX_KEYS = 32;
 
@@ -56,6 +58,8 @@ export class VoxelInput {
   private lockFailed = false;
   /** The player clicked "Click to play" at least once this session. */
   private engaged = false;
+  /** When pointer lock was last requested (−∞: never). */
+  private lockRequestedAt = Number.NEGATIVE_INFINITY;
   private virtualForward = 0;
   private virtualRight = 0;
   /** True while the UI (inventory screen) owns the mouse. */
@@ -104,6 +108,7 @@ export class VoxelInput {
     el.addEventListener('wheel', this.onWheel, { passive: false });
     el.addEventListener('contextmenu', this.onContextMenu);
     document.addEventListener('pointerlockerror', this.onLockError);
+    document.addEventListener('pointerlockchange', this.onLockChange);
   }
 
   detach(): void {
@@ -113,6 +118,7 @@ export class VoxelInput {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('pointerlockerror', this.onLockError);
+    document.removeEventListener('pointerlockchange', this.onLockChange);
     if (this.el) {
       this.el.removeEventListener('mousedown', this.onMouseDown);
       this.el.removeEventListener('wheel', this.onWheel);
@@ -130,6 +136,7 @@ export class VoxelInput {
     // Keys must reach the game, not a chat box that still holds the focus.
     releaseTextFocus();
     if (!el || this.locked || typeof el.requestPointerLock !== 'function') return;
+    this.lockRequestedAt = performance.now();
     try {
       const p = el.requestPointerLock() as unknown;
       if (p instanceof Promise) {
@@ -260,6 +267,9 @@ export class VoxelInput {
     if (this.uiOpen) return;
     if (!this.locked) {
       this.dragging = true;
+      // A lock request that was neither granted nor refused within a second (headless
+      // browsers, some embedded views) counts as refused: clicks then act directly.
+      if (this.engaged && !this.lockFailed && Number.isFinite(this.lockRequestedAt) && performance.now() - this.lockRequestedAt > LOCK_GRACE_MS) this.lockFailed = true;
       // A click that captures the mouse is not an action (unless capture is impossible here).
       if (!this.lockFailed && typeof this.el?.requestPointerLock === 'function') {
         this.lock();
@@ -301,6 +311,12 @@ export class VoxelInput {
 
   private readonly onLockError = (): void => {
     this.lockFailed = true;
+    this.lockRequestedAt = Number.NEGATIVE_INFINITY;
+  };
+
+  /** The browser answered the lock request (granted, or released later): no request is pending. */
+  private readonly onLockChange = (): void => {
+    this.lockRequestedAt = Number.NEGATIVE_INFINITY;
   };
 
   private readonly onContextMenu = (e: Event): void => {

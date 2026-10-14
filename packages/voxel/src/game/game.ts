@@ -136,6 +136,10 @@ const FLY = 10.5;
 const FLY_SPRINT = 21;
 const TERMINAL = -60;
 const PICKUP_RANGE = 1.6;
+/** Largest vertical gap between a drop and the player's body that still picks it up (blocks). */
+const PICKUP_REACH_Y = 1.1;
+/** Drops closer than this drift toward the player (blocks). */
+const MAGNET_RANGE = 2.6;
 const DROP_LIFETIME = 300;
 const SPAWN_INTERVAL = 1;
 const DESPAWN_RANGE = 96;
@@ -799,13 +803,16 @@ export class VoxelGame {
       b.vz *= f;
       moveBody(this.world, b, dt, false);
       resolvePenetration(this.world, b, 2);
-      // Magnet + pickup.
+      // Magnet + pickup, measured against the player's body (feet to head), so a drop
+      // lying in the hole just dug under or beside the player is collected too.
       if (!p.dead && d.delay <= 0 && this.settings.mode !== 'explore') {
         const dx = pb.x - b.x;
-        const dy = pb.y + 0.6 - b.y;
         const dz = pb.z - b.z;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist < PICKUP_RANGE) {
+        const horiz = Math.hypot(dx, dz);
+        const below = pb.y - (b.y + b.height);
+        const above = b.y - (pb.y + pb.height);
+        const gap = below > 0 ? below : above > 0 ? above : 0;
+        if (horiz < PICKUP_RANGE && gap < PICKUP_REACH_Y) {
           const left = this.inventory.add(d.item, d.count);
           const taken = d.count - left;
           if (taken > 0) {
@@ -817,7 +824,8 @@ export class VoxelGame {
             this.drops.splice(i, 1);
             continue;
           }
-        } else if (dist < 2.6) {
+        } else if (horiz < MAGNET_RANGE && gap < MAGNET_RANGE) {
+          const dist = Math.max(0.05, horiz);
           b.vx += (dx / dist) * dt * 18;
           b.vz += (dz / dist) * dt * 18;
         }

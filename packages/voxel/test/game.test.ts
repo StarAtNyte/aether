@@ -129,6 +129,23 @@ describe('VoxelGame', () => {
     expect(g.inventory.count('dirt')).toBeGreaterThan(0);
   });
 
+  it('picks up a drop lying in the hole dug beside the feet (player still standing)', () => {
+    const g = game();
+    run(g, 0.5);
+    const b = g.player.body;
+    // Stand across two cells so digging one keeps the player up.
+    b.x = 0.02;
+    b.z = 0.5;
+    run(g, 0.3);
+    expect(b.onGround).toBe(true);
+    const feet = Math.floor(b.y);
+    g.breakBlock(-1, feet - 1, 0);
+    run(g, 3);
+    expect(Math.floor(b.y)).toBe(feet);
+    expect(g.inventory.count('dirt')).toBe(1);
+    expect(g.drops.length).toBe(0);
+  });
+
   it('places the held block on the targeted face', () => {
     const g = game();
     g.inventory.add('oak_planks', 3);

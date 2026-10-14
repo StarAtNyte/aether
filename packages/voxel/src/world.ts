@@ -175,6 +175,36 @@ export class VoxelWorld {
     return 0;
   }
 
+  /**
+   * A good place to stand near (x, z): the nearest loaded column (square
+   * rings out to `radius`) whose surface block is a full opaque cube — not
+   * leaves, a plant, glass or a liquid — with two free cells above it.
+   * Returns the feet position (cell centre), or null when no loaded column
+   * within the radius qualifies (the caller then keeps its fallback).
+   */
+  findSpawn(x: number, z: number, radius = 24): [number, number, number] | null {
+    const x0 = Math.floor(x);
+    const z0 = Math.floor(z);
+    const r = Math.max(0, Math.min(64, Math.floor(radius)));
+    for (let ring = 0; ring <= r; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+          const cx = x0 + dx;
+          const cz = z0 + dz;
+          if (!this.isLoaded(cx, cz)) continue;
+          const y = this.surfaceY(cx, cz);
+          if (y <= 0 || y >= HEIGHT - 2) continue;
+          const ground = this.get(cx, y - 1, cz);
+          if (this.reg.render[ground] !== 1 || this.reg.opaque[ground] !== 1) continue;
+          if (this.get(cx, y, cz) !== 0 || this.get(cx, y + 1, cz) !== 0) continue;
+          return [cx + 0.5, y, cz + 0.5];
+        }
+      }
+    }
+    return null;
+  }
+
   /** Total bytes of block storage held. */
   get byteLength(): number {
     let n = 0;

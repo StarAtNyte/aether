@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInput } from '@aether/voxel/game';
 import { VoxelInput } from '../src/voxel/input';
 
 /** Minimal DOM stand-ins (the suite runs in Node). */
@@ -80,6 +81,35 @@ describe('VoxelInput capture overlay', () => {
     const input = new VoxelInput();
     input.attach(new FakeElement() as unknown as HTMLElement);
     expect(box.blur).toHaveBeenCalledTimes(1);
+    input.detach();
+  });
+});
+
+describe('VoxelInput clicks without an answered pointer lock', () => {
+  it('a lock request that is never answered stops swallowing clicks after a grace period', () => {
+    const handlers = new Map<string, (e: unknown) => void>();
+    const el = new FakeElement();
+    el.addEventListener = ((type: string, fn: (e: unknown) => void) => handlers.set(type, fn)) as never;
+    el.requestPointerLock = () => undefined; // silently ignored (headless, embedded views)
+    const input = new VoxelInput();
+    input.attach(el as unknown as HTMLElement);
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValue(1000);
+    input.lock();
+    const down = handlers.get('mousedown');
+    if (!down) throw new Error('no mousedown handler');
+    // Within the grace period the click is still the capture click.
+    now.mockReturnValue(1500);
+    down({ button: 0 });
+    const a = createInput();
+    input.sample(a);
+    expect(a.primary).toBe(false);
+    // Unanswered for over a second: clicks act directly.
+    now.mockReturnValue(3000);
+    down({ button: 0 });
+    input.sample(a);
+    expect(a.primary).toBe(true);
+    now.mockRestore();
     input.detach();
   });
 });

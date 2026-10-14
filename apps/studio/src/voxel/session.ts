@@ -21,7 +21,7 @@ import type { Environment, VoxelEdit, VoxelTerrain, WorldDoc } from '@aether/cor
 import { deepEqual } from '@aether/core';
 import {
   BlockRegistry, buildAtlas, ChunkStreamer, compileEdits, createHit, decodeChunk, decodeSave, encodeChunk, encodeSave, identityKey, raycastVoxels, saveIdentity,
-  SavedPlayer, TerrainGenerator, terrainIdentity, VoxelJobPool, VoxelWorld, CHUNK, chunkKey, type BlockAtlas, type ChunkData, type ChunkSlot, type TerrainIdentity, type VoxelSave,
+  SavedPlayer, TerrainGenerator, terrainIdentity, VoxelJobPool, VoxelWorld, CHUNK, chunkKey, type BlockAtlas, type ChunkData, type ChunkMesh, type ChunkSlot, type TerrainIdentity, type VoxelSave,
 } from '@aether/voxel';
 import { createInput, daylightAt, EYE_HEIGHT, skyForHour, skyTintAt, VoxelGame, type GameEvent, type GameInput, type ItemDef } from '@aether/voxel/game';
 import { createLogger, errorMessage } from '../lib/log';
@@ -36,6 +36,10 @@ const log = createLogger('voxel');
 const AUTOSAVE_S = 8;
 /** HUD refresh interval (ms). */
 const HUD_MS = 100;
+/** Most newly streamed chunk meshes handed to the GPU per frame. */
+const UPLOADS_PER_FRAME = 4;
+/** Quad budget of those uploads per frame (one big chunk may exceed it alone). */
+const UPLOAD_QUADS_PER_FRAME = 12_000;
 /** Seconds of game time between sky updates. */
 const SKY_STEP_HOURS = 0.08;
 
@@ -99,6 +103,8 @@ export class VoxelSession {
   private epoch = 0;
   /** View distance currently applied to streaming and fog (0: none yet). */
   private appliedDistance = 0;
+  /** Streamed chunk meshes waiting for their GPU upload (insertion order = nearest first). */
+  private readonly uploads = new Map<number, { cx: number; cz: number; mesh: ChunkMesh }>();
   private readonly center: [number, number, number] = [0, 0, 0];
   /** Chunk slot versions already written to the save. */
   private readonly savedVersions = new Map<number, number>();
@@ -126,7 +132,7 @@ export class VoxelSession {
       chunks: this.world?.chunks.size ?? 0,
       meshed: this.streamer?.meshedCount ?? 0,
       pending: this.pool?.pending ?? 0,
-      settled: this.streamer?.settled ?? true,
+      settled: (this.streamer?.settled ?? true) && this.uploads.size === 0,
       inline: this.pool?.inlineMode ?? false,
       changed: [...(this.world?.chunks.values() ?? [])].filter((s) => s.modified).length,
     };
@@ -246,6 +252,39 @@ export class VoxelSession {
     return Math.max(2, Math.min(t.viewDistance, this.renderer.voxelViewDistanceCap));
   }
 
+  /**
+   * A chunk mesh arrived from the workers. Replacements (edits,
+   * regenerated chunks) and removals apply at once, so an edit shows in the
+   * next frame; newly streamed chunks wait in {@link uploads} and
+   * {@link flushUploads} hands a few per frame to the GPU, so a burst of
+   * worker replies never turns into one long frame of buffer uploads.
+   */
+  private queueMesh(key: number, cx: number, cz: number, mesh: ChunkMesh | null): void {
+    const layer = this.layer;
+    if (!layer) return;
+    if (!mesh || layer.hasChunk(key)) {
+      this.uploads.delete(key);
+      layer.setChunk(key, cx, cz, mesh);
+      return;
+    }
+    this.uploads.set(key, { cx, cz, mesh });
+  }
+
+  /** Install queued chunk meshes: at most {@link UPLOADS_PER_FRAME} chunks / {@link UPLOAD_QUADS_PER_FRAME} quads. */
+  private flushUploads(): void {
+    const layer = this.layer;
+    if (!layer || this.uploads.size === 0) return;
+    let n = 0;
+    let quads = 0;
+    for (const [key, u] of this.uploads) {
+      if (n >= UPLOADS_PER_FRAME || (n > 0 && quads >= UPLOAD_QUADS_PER_FRAME)) break;
+      this.uploads.delete(key);
+      layer.setChunk(key, u.cx, u.cz, u.mesh);
+      quads += (u.mesh.opaque?.quads ?? 0) + (u.mesh.cutout?.quads ?? 0) + (u.mesh.liquid?.quads ?? 0);
+      n++;
+    }
+  }
+
   /** Apply the (capped) view distance to streaming and fog; cheap when unchanged. */
   private applyViewDistance(): void {
     const t = this.terrain;
@@ -266,10 +305,14 @@ export class VoxelSession {
     if (!this.world || this.world.reg !== reg) {
       this.streamer?.dispose();
       this.layer?.clearChunks();
+      this.uploads.clear();
       this.world = new VoxelWorld(reg);
       this.streamer = new ChunkStreamer(this.world, this.pool, {
-        onMesh: (key, cx, cz, mesh) => this.layer?.setChunk(key, cx, cz, mesh),
-        onUnload: (key) => this.layer?.removeChunk(key),
+        onMesh: (key, cx, cz, mesh) => this.queueMesh(key, cx, cz, mesh),
+        onUnload: (key) => {
+          this.uploads.delete(key);
+          this.layer?.removeChunk(key);
+        },
         onEvict: (slot) => void this.saveSlots([slot]),
       }, { viewDistance: this.viewDistance(t), border: identity.border, saved: (cx, cz) => this.savedChunk(cx, cz) });
     } else {
@@ -475,6 +518,7 @@ export class VoxelSession {
       this.streamer.setCenter(this.center[0], this.center[2]);
     }
     this.streamer.update();
+    this.flushUploads();
   }
 
   /** Ground height (feet y) near (x, z) from the generator (frames the camera before chunks exist). */
@@ -512,6 +556,7 @@ export class VoxelSession {
     this.play = null;
     this.streamer?.dispose();
     this.streamer = null;
+    this.uploads.clear();
     this.pool?.dispose();
     this.pool = null;
     this.world = null;

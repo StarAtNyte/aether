@@ -326,6 +326,11 @@ export class VoxelLayer {
     this.version++;
   }
 
+  /** A mesh is installed for chunk `key`. */
+  hasChunk(key: number): boolean {
+    return this.chunks.has(key);
+  }
+
   /** Drop a chunk's meshes and free their GPU buffers. */
   removeChunk(key: number): void {
     const e = this.chunks.get(key);
