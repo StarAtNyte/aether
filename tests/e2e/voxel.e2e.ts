@@ -76,8 +76,18 @@ const LONG_TASK_PROBE = `
   w.__vxLong = [];
   w.__vxGaps = [];
   w.__vxMark = 0;
+  w.__vxLoaf = [];
   try {
     new PerformanceObserver((list) => { for (const e of list.getEntries()) w.__vxLong.push([e.startTime, e.duration]); }).observe({ type: 'longtask', buffered: true });
+  } catch {}
+  try {
+    // Long animation frames (Chromium): which scripts ran in a long frame, and how long the rest (render, GPU waits) took.
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        const scripts = (e.scripts || []).map((s) => [Math.round(s.duration), String(s.invoker || '').slice(0, 60), String(s.sourceFunctionName || '').slice(0, 40)]);
+        w.__vxLoaf.push([e.startTime, Math.round(e.duration), Math.round(e.blockingDuration || 0), Math.round((e.renderStart || 0) ? e.startTime + e.duration - e.renderStart : 0), scripts]);
+      }
+    }).observe({ type: 'long-animation-frame', buffered: true });
   } catch {}
   let last = performance.now();
   const tick = (t) => { const gap = t - last; last = t; if (gap > 34) w.__vxGaps.push([t - gap, gap]); requestAnimationFrame(tick); };
@@ -207,11 +217,13 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
         long: w.__vxLong.filter((e) => e[0] >= from).map((e) => e[1]),
         gaps: w.__vxGaps.filter((e) => e[0] >= from).map((e) => e[1]),
         before: w.__vxLong.filter((e) => e[0] >= w.__vxMark && e[0] < from).map((e) => e[1]),
+        loaf: (window as unknown as { __vxLoaf: Array<[number, number, number, number, unknown]> }).__vxLoaf.filter((e) => e[0] >= from && e[2] > 50).map((e) => e.slice(1)),
         api,
       };
     }, tFirst);
     const work = await page.evaluate(() => window.__aether?.simulation?.voxel?.workStats() ?? { update: -1, reply: -1, upload: -1 });
     const maxLongTask = Math.max(0, ...tasks.long);
+    if (tasks.loaf.length > 0) log(`[${label}] long frames while streaming [duration, blocking, render, scripts]: ${JSON.stringify(tasks.loaf.slice(0, 6))}`);
     const maxFrameGap = Math.max(0, ...tasks.gaps);
     log(`[${label}] view ${view}: ${chunks} chunks meshed in ${Math.round(streamMs)} ms (first chunk after ${Math.round(tFirst - tAgent)} ms); while streaming: longest task ${Math.round(maxLongTask)} ms${tasks.api ? '' : ' (no long-task API)'}, longest frame gap ${Math.round(maxFrameGap)} ms; agent turn + first frame: longest task ${Math.round(Math.max(0, ...tasks.before))} ms; voxel main-thread work: update ${work.update.toFixed(1)} ms, reply ${work.reply.toFixed(1)} ms, uploads ${work.upload.toFixed(1)} ms per task`);
     check(work.update >= 0 && Math.max(work.update, work.reply, work.upload) <= MAX_VOXEL_WORK_MS, `${label}: voxel main-thread work too long: ${JSON.stringify(work)}`);

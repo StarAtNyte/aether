@@ -295,7 +295,7 @@ export class ChunkStreamer {
         this.kick();
         if (!g) return;
         // The save index arrived while this chunk was generated from the seed: load the saved copy.
-        if (false && !g.saved && this.isSaved?.(cx, cz)) {
+        if (!g.saved && this.isSaved?.(cx, cz)) {
           this.requestGenerate(cx, cz, replace);
           return;
         }
