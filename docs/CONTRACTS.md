@@ -1236,3 +1236,133 @@ addedVoxelEdits(prev, next) → index | null   // first block edit a turn added 
 
 Saves live in IndexedDB database `aether-voxel` (stores `chunks`,
 `players`), keyed `<project id>::<preset>:<seed>:<border>`.
+
+## Real-life architecture: `@aether/arch` (+ additions to core, procgen, render, agent, studio)
+
+### World IR (additive, backward compatible)
+
+```ts
+Entity.arch?: ArchMeta     // role in a parametric building; absent for everything else
+ArchMeta = { role: ArchRole, name?, level? (storey index), height? (storey height), room? (room entity),
+  wall? (host wall of a door / window / opening), kind? (furniture kind or room type),
+  variants?: Array<Record<string, Json>> (≤ 6; generator param overrides for the walkthrough's finish swap),
+  plan?: Json (buildings: the BuildingPlan they were compiled from; validated by @aether/arch) }
+ArchRole = building level wall room ceiling door window opening stair roof railing column furniture fixture light switch site pool
+MaterialSpec.finish?: MaterialFinish   // oak walnut ash herringbone marble terrazzo concrete plaster paint tile subway-tile stone brick
+                                       // fabric velvet leather carpet brushed-metal chrome brass black-metal glass frosted-glass ceramic
+                                       // mirror roof-tile metal-roof decking grass gravel water (procedural PBR texture sets)
+WorldTest += { kind: 'navigable', target: building id | '*', clearance: 0.4..2 = 0.8 }
+```
+
+### `@aether/arch` (pure TypeScript, typed-array geometry, no three.js)
+
+```ts
+BuildingPlan (zod) = { id, name, style: modern|scandinavian|industrial|japandi|classic, origin [x,z], rotation°, plinth,
+  exteriorWall { thickness, finish }, interiorWall { thickness }, levels: PlanLevel[1..6], roof: PlanRoof, site?: PlanSite }
+PlanLevel = { name?, height 2.4..8, rooms: PlanRoom[1..40], doors ≤ 80, windows ≤ 80, autoWindows, stairs ≤ 4, railings ≤ 16 }
+PlanRoom = { id (slug), name?, type: RoomType, rect [x0,z0,x1,z1] | polygon, floor?, wallColor?, furnish, items ≤ 60, omit ≤ 20 }
+PlanDoor = { between: [room, room|'outside'], at 0..1, width 0.6..4, height, kind swing|sliding|opening, style?, side?, main }
+compileBuilding(plan, { seed? }) → CompiledBuilding { id, entities, patches, stats, spawn, spawnYaw, bounds, rooms[{ id, level, name, type, area }], notes }
+  // mitred wall network (T-junctions butt), CSG-free openings, slabs / ceilings / stairwells, swing / sliding doors
+  // (door behaviour, E), windows, stairs (straight / L / U), roofs (flat / gable / hip / shed), railings, site works,
+  // furniture layouts per room type and style, ≤ MAX_BUILDING_LIGHTS (14) real light sources, switches; ≤ 1800 entities
+  // door swing side and window interior side are sampled geometrically (merged collinear walls pass several rooms)
+PlanError { code, message, hint }        // every refusal carries a machine-readable code and a concrete fix
+applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ index, op, code, message, hint }], compiled, reports, target }
+  ArchOp = create_building {plan, walkthrough=true} | remove_building | add_level | add_room {level, room, doors?} | remove_room
+         | add_door | add_window | add_stairs | set_roof | set_style | furnish_room {items?, omit?} | place_item | remove_item
+         | set_material {target: exterior|roof|floor|walls, room?, material}
+  // ops apply in order to the stored plans; touched buildings are re-compiled, locked entities kept, a `navigable`
+  // test added, the player set to first person in front of the main entrance; minimal patches via patchesBetween
+checkBuilding(world, id, clearance=0.8) / checkBuildings(world, '*') → BuildingReport { passed, rooms, reachable, doors, doorsClear, issues }
+  // 5 cm nav grid per storey from the document (walls, door linings, floor furniture; walkway inflation); flood fill
+  // from the entrance through doorways and up stairs; door swing discs free of furniture; furniture grounded, no overlaps
+navigableVerdict(world, target, clearance)  // the physics verifier's `navigable` test
+floorPlan2d(world, building, level) → FloorPlan2d { rooms (polygon, area m², label point), walls (solid pieces), doors (hinge,
+  open leaf, arc), windows, items (footprints), stairs (outline, treads, arrow), dimensions, bounds }   // plan frame, ≤ 4000 elements
+listBuildings(world) / listLevels(world, building) / planToWorld / worldToPlan
+// Plan editing for interactive tools (plan frame; all return ordinary ArchOps):
+snapPlanPoint(p, level, grid=0.1)        // room corner within 0.3 m, else onto a room edge at grid steps, else the grid
+roomShape(points) → { rect } | { polygon } // PlanError for < 3 corners, self-crossing, < 1.5 m²
+drawRoomOp(plan, level, points, type, name?)  // refuses overlaps; adds a door to the neighbour sharing the longest wall
+                                              // (≥ 1.1 m), or an entrance for a free-standing room
+pickWall(level, p) → WallPick | null     // shared wall [roomA, roomB] or exterior wall [room, 'outside'] + side, within 0.45 m
+doorAtOp(plan, level, p, { width?, kind? }) / windowAtOp(plan, level, p, { width? }) / doorAtFraction(span, t, width)
+nextRoomId(plan, type) / levelPolygons(level)
+variantsFor({ kind }) → param overrides of sofas, armchairs, rugs, beds (walkthrough finish swap)
+buildWall(WallParams) … buildStructure(id, params) / buildFurniture(def, params, seed)   // the arch-* / furn-* generators
+WallParams.cut?: 0.05..30   // VIEW-ONLY section: the wall is drawn up to `cut` with a dark cap (SECTION_CAP); window holes
+                            // below fill in, doorways stay open. Set by the renderer's view modes; never compiled into documents.
+```
+
+`@aether/procgen` wraps every structural element (`arch-wall`, `arch-slab`,
+`arch-ceiling`, `arch-roof`, `arch-stair`, `arch-door`, `arch-frame`,
+`arch-window`, `arch-railing`, `arch-column`, `arch-basin`) and every
+furniture piece (`furn-*`, light fittings with a `lit` switch) as built-in
+generators; their params are zod-validated by `@aether/arch`. Finish
+textures (albedo / roughness / normal per `MaterialFinish`) are synthesised
+in the compute worker (`compute.finish(finish, size)`).
+
+### `@aether/render`
+
+```ts
+WorldRenderer.setArchView(patch: Partial<ArchViewState>); .archViewState; .hasBuildings
+  ArchViewState = { walls: 'up'|'cutaway'|'down', levels: 'stacked'|'exploded'|'solo', level, xray, section: metres | null }
+  // cutaway: exterior walls facing the camera sectioned at CUTAWAY_WALL_HEIGHT (1.05 m); down: every wall at 0.3 m;
+  // exploded: storeys + roof lift apart (EXPLODE_GAP 3.4 m, animated 0.9 s); solo: one storey; x-ray: structure as glass;
+  // section: GPU clipping plane (ClippingGroup, loaded lazily) + walls rebuilt to the plane with their cap.
+  // Ceilings, roofs and ceiling fittings hide while looking in; wall-mounted pieces hide with their sectioned wall.
+  // All view state: sectioned walls are runtime overrides of `shape.params.cut`, restored per node.
+archDecision(state, ctx) / explodeLift(level, isRoof, t) / distanceToWall(...) / looksInside(state)   // pure, unit-tested
+WorldRenderer.setRenderQuality('realtime' | 'studio') → quality in effect; .renderQuality; .studioQualityAvailable; .refineProgress
+WorldRenderer.onQualityChange: ((q) => void) | null   // fired when the effective quality changes (e.g. studio fell back)
+  qualityPlan(quality, budget, software?) → { post: 'standard'|'studio'|null, shadowMapCap, shadowRadius, accumulateFrames, adaptiveResolution }
+  // studio = pre-pass (packed view normals + velocity, single-sampled) → GTAO (half resolution, temporal) applied to
+  // indirect light only (builtinAOContext) → scene pass → bloom + grade → TRAA; sun shadow map ×2 (≤ 4096), PCF radius 6;
+  // keeps drawing 48 refinement frames (16 on software rasterizers) after the view rests, then idles; adaptive
+  // resolution suspended. Unavailable without the post budget (low-memory mode) or when the pipeline fails (→ realtime).
+createPostPipeline(renderer, scene, camera, bloom, quality = 'standard')   // PostPipeline.quality
+SceneSync.restoreNode(id)            // drop one node's runtime overrides (view modes undo their own)
+SceneSync.setArchLampScale(scale)    // architectural lamps (arch.role 'light') dimmed in daylight; off below LAMP_CUTOFF (0.2)
+daylightLampFactor(sunElevationDeg)  // 1 at night → DAYLIGHT_LAMP_FACTOR (0.14) in full daylight (smoothstep, −3°..22°)
+```
+
+Frame fitting: worlds with buildings frame from 38° elevation, without sky
+tilt, tighter than other content (`ARCH_FRAMING`).
+
+### Agent
+
+`build_architecture { ops: ArchOp[], message }` (see the tool description
+and the "Architecture" section of the system prompt: plan format, room
+types, finishes, realistic proportions, floor-plan images and room photos).
+The offline planner (`providers/mock/arch.ts`) plans apartments (1–4
+bedrooms), lofts, single rooms, cafés, office floors and two-storey villas
+(with terrace and pool), gives buildings without site works a paved
+forecourt with planters, and turns edits of an existing building ("make it
+scandinavian", "marble floors in the kitchen", "a gable roof", "remove the
+tv") into ops.
+
+### Studio
+
+```ts
+state/archUi.ts   ArchUiState { building, levels, walls, levelMode, level, xray, section, plan, planTool, roomType,
+                  quality, studioAvailable, sunHour, photo }; mergeArchUi (validates every field); skyForHour; TIME_PRESETS
+store.arch / store.setArch(patch)
+engine/arch.ts    ArchController(host): tracks buildings + storeys; a new single-storey building opens as a cutaway;
+                  applies views / quality / daylight study (environment override, document untouched); suspends view
+                  modes while playing; edit(ops, message) → one undoable user commit (refusals and usability issues as toasts);
+                  drawRoom(points) / addDoor(p) / addWindow(p) / removeRoom(id) / restyle(op, message); .walkthrough
+engine/walkthrough.ts  Walkthrough (play mode, worlds with a building): 1–4 time of day, E switch / lamp (consumed only at a
+                  switch facing the player or a lamp; elsewhere E opens doors), L all lights, R finish swap, V first/third
+                  person, P photo mode; walkIndex / nearestTarget / roomToggle / nextVariant (pure)
+Simulation        walkthroughs start facing the entrance (entranceYawDeg); worlds with a building frame themselves
+components/viewport/ArchBar.tsx   3D | Plan · walls · storeys · x-ray · section · daylight · Studio · Walk
+components/viewport/PlanView.tsx  SVG floor plan: poche walls, doors with swing arcs, windows, stairs, furniture,
+                  room chips (dot · name · m²), dimensions; tools select / rectangle / polygon / door / window; snapping
+lib/planView.ts   fitPlan / zoomAt / panBy / viewBox / roomColors / areaLabel / dragRect / closesPolygon (pure)
+```
+
+E2E: `npm run e2e:arch` (Chromium WebGPU, Chromium WebGL2, Firefox WebGL2):
+prompt → cutaway → walls down, x-ray, section, golden hour, studio render →
+floor plan (draw a room, add a door, undo) → walk in through the front door
+(E) → night, all lights, photo mode → Stop restores the views.

@@ -41,7 +41,7 @@ export function skyEnvironmentPixels(state: SkyState, ground: string | null, hor
   const out = new Uint8Array(w * h * 4);
   // The zenith's deep blue is a small solid angle of what a wall or floor sees: lighten it toward the
   // horizon so shaded white surfaces read pale blue-grey, as they do outdoors, not saturated blue.
-  const zen = rgb(mixHex(state.zenith, horizon, 0.35));
+  const zen = rgb(mixHex(mixHex(state.zenith, horizon, 0.35), '#d6d9dc', 0.3));
   const hor = rgb(horizon);
   // Light bouncing off the ground: its albedo darkened by how little light there is.
   const lit = state.moon ? 0.18 : state.showGround ? 0.42 : 0.1;

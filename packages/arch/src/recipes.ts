@@ -12,9 +12,17 @@ import { bounds, interiorPoint, type P2 } from './math2';
 import type { PlanItem } from './plan';
 import { compassNormal, type RoomEdge } from './rooms';
 
+/**
+ * Level of interior lamps relative to the recipe strengths below. World IR
+ * light units are calibrated against a full sun of 2.5: at night the
+ * evening exposure makes a 0.4–1.4 lamp read as a warm, lit room, while
+ * stronger lamps blow white walls out.
+ */
+export const LAMP_LEVEL = 0.45;
+
 /** Warm interior light (≈ 2700 K) of a given strength. */
 function warm(intensity: number, range: number): Partial<LightSpec> {
-  return { type: 'point', color: '#ffd7a6', intensity, range, castShadow: false };
+  return { type: 'point', color: '#ffd7a6', intensity: Math.round(intensity * LAMP_LEVEL * 100) / 100, range, castShadow: false };
 }
 
 /** Edges sorted by their longest free interval for a piece of height h. */
@@ -120,13 +128,15 @@ function living(L: RoomLayout): void {
   const fire = L.placed.find((p) => p.kind === 'fireplace');
   let sofa: Placed | null = null;
   let sofaEdge = -1;
-  const candidates = fire ? [{ edge: opposite(L, edgeOf(L, fire)) ?? 0, s: 0, t: 0 }] : edgesByFree(L, 0.8);
+  // Facing the fireplace when its opposite wall has room, else along the freest other wall.
+  const fireEdge = fire ? edgeOf(L, fire) : -1;
+  const candidates = fire ? [{ edge: opposite(L, fireEdge) ?? 0, s: 0, t: 0 }, ...edgesByFree(L, 0.8).filter((c) => c.edge !== fireEdge)] : edgesByFree(L, 0.8);
   for (const c of candidates.slice(0, 6)) {
     const free = L.freeIntervals(c.edge, 0.8).sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
     if (!free || free[1] - free[0] < 1.7) continue;
     const width = Math.min(2.6, Math.max(1.6, free[1] - free[0] - 0.5));
     const e = ctx.edges[c.edge] as RoomEdge;
-    const target = fire ? tAlong(e, [fire.x, fire.z]) : (free[0] + free[1]) / 2;
+    const target = fire && c.edge === opposite(L, fireEdge) ? tAlong(e, [fire.x, fire.z]) : (free[0] + free[1]) / 2;
     sofa = L.againstWall('sofa', { width, upholstery: pal.upholstery, color: pal.sofa, accent: pal.accent, legs: pal.wood }, c.edge, target);
     if (sofa) {
       sofaEdge = c.edge;
@@ -565,9 +575,13 @@ function explicitItems(L: RoomLayout, items: readonly PlanItem[]): void {
       const edge = L.ctx.edges.findIndex((e) => e.out[0] * n[0] + e.out[1] * n[1] > 0.9);
       if (edge >= 0) {
         const e = L.ctx.edges[edge] as RoomEdge;
-        if (def.mount === 'wall') L.onWall(item.kind, params, edge, e.length / 2, 1.3);
-        else if (!L.againstWall(item.kind, params, edge, e.length / 2)) L.notes.push(`no room for ${item.kind} on the ${item.against} wall of ${L.ctx.id}`);
-        continue;
+        if (def.mount === 'wall') {
+          L.onWall(item.kind, params, edge, e.length / 2, 1.3);
+          continue;
+        }
+        // Anywhere free along the requested wall; else fall through to the freest wall.
+        if (L.againstWall(item.kind, params, edge, e.length / 2) || L.againstWall(item.kind, params, edge, null)) continue;
+        L.notes.push(`no room for ${item.kind} on the ${item.against} wall of ${L.ctx.id}; placed elsewhere`);
       }
     }
     const best = edgesByFree(L, furnitureSize(def, params)[1])[0];

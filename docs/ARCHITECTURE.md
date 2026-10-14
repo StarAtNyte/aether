@@ -54,6 +54,8 @@ packages/
   logic     rules, behaviours, QuickJS script runner
   render    three.js WebGPU/WebGL2 renderer, scene sync, cameras, tools
   agent     WorldAgent loop, tools, system prompt, providers, offline mock
+  arch      parametric buildings: plans, walls, openings, roofs, stairs, furniture, nav checks
+  voxel     block terrain, meshing, streaming, the block game kit
 apps/
   server    Hono API: LLM proxy, share links, generator cache, static hosting
   studio    React 19 + Vite editor and player
@@ -64,6 +66,11 @@ tests/e2e/              Playwright browser run of the built studio
 ```mermaid
 flowchart LR
     core --> procgen --> render --> studio
+    core --> arch --> procgen
+    arch --> render
+    arch --> physics
+    arch --> agent
+    arch --> studio
     core --> physics --> studio
     procgen --> physics
     core --> logic --> studio
@@ -1008,3 +1015,64 @@ HUD snapshot to the store only when something visible changed. Player
 changes are saved per modified chunk (compressed) to IndexedDB every few
 seconds, on unload and on stop, and load again on the next play — also
 after a reload. Saves can be exported and imported as files.
+
+## 18. Real-life architecture and the studio render
+
+**Model.** A building is a `BuildingPlan` (`@aether/arch`, zod): storeys of
+rooms (rectangles or polygons whose edges are wall centrelines; neighbours
+share edges), doors between rooms or to the outside, windows, stairs,
+railings, a roof and optional site works. The plan is the single source of
+truth: it is stored on the building entity (`arch.plan`) and compiled into
+ordinary World IR entities — walls, slabs, ceilings, door frames and leaves
+(with the `door` behaviour), windows, stairs, roof, furniture, lamps with
+real light sources and switches — every one tagged with `arch` metadata. So
+physics, logic, verification, undo, sharing and the renderer need no
+special case. Edits (`applyArchOps`, used by the agent's
+`build_architecture` tool and by the studio's plan tools) change the plan,
+re-compile the building and emit the minimal patch list.
+
+**Geometry without CSG.** The wall network merges collinear segments,
+solves L-corner mitres and T-junction butts, and each wall tiles its side
+faces into rectangles around its openings, with reveal faces for jambs,
+heads and sills. UVs are in metres, so tiling finishes keep their real
+scale on any wall. Colliders are boxes for the solid parts only: doorways
+stay walkable, window holes stay closed. Door swing and window interior
+sides are sampled geometrically from the room outlines, because a merged
+facade passes several rooms.
+
+**Usability, proven.** `checkBuilding` rasterises each storey into a 5 cm
+navigation grid from the document (walls, door linings, floor furniture,
+inflated by half the walkway width), floods it from the entrance through
+doorways and up the stairs, and checks that every room is reached, every
+swing leaf's quarter disc is free and every piece of furniture stands on
+the floor without overlaps. The `navigable` world test runs it in the
+verification worker; the agent gets the issues back with concrete fixes.
+
+**Views.** `ArchView` (render) applies view state to the scene graph only:
+a cutaway sections the exterior walls between the camera and the building,
+"walls down" sections every wall, storeys explode apart or show one at a
+time, x-ray swaps structure materials for glass, and a section plane clips
+the scene (lazily loaded `ClippingGroup`). Sectioned walls are rebuilt by
+the wall generator with a view-only `cut` param (a runtime override, never
+in the document), which also draws the dark cut cap. The decision per
+entity is a pure function; nothing allocates per frame.
+
+**Studio render.** A second post pipeline: a single-sampled pre-pass writes
+packed view normals, velocity and depth; GTAO (half resolution, temporally
+filtered) darkens only the indirect light through three's AO context; the
+scene pass, bloom and grade follow; TRAA resolves jitter and noise. The
+renderer keeps drawing a few dozen refinement frames after the view rests
+(then idles again), doubles the sun shadow map and softens it. Low-memory
+mode (no post budget) and pipeline failures fall back to the realtime look.
+Lamps (`arch.role` "light") are dimmed by daylight and switched off in full
+sun, which keeps a dozen point lights from costing per-pixel work.
+
+**Studio.** The building bar switches 3D and the SVG floor plan (read back
+with `floorPlan2d`, so manual edits show up), wall and storey modes, x-ray,
+section, the daylight study (an environment override) and the studio
+render. The plan tools draw rectangle and polygon rooms, doors and windows
+as ordinary undoable edits that are compiled and checked like the agent's.
+Playing a world with a building is a walkthrough: first person facing the
+entrance, E for doors and light switches, 1–4 time of day, L all lights, R
+finish swap, V view, P photo mode.
+

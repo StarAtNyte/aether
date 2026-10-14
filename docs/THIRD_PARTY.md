@@ -266,3 +266,30 @@ Lysenko (0fps.net, 2013); greedy meshing after the same author's write-up.
 Block textures, item icons, mob models and sounds are generated procedurally
 at run time (no image, model or audio assets). Saves use the platform's
 `CompressionStream('deflate-raw')`.
+
+### Real-life architecture (`@aether/arch`) and the studio render
+
+No new dependency. The building model, wall network and mitre solver,
+CSG-free openings, roofs, stairs, procedural furniture, navigation checks,
+floor-plan drawing and editing tools, architectural view modes and the
+walkthrough are original TypeScript written for Aether. Finish textures
+(wood, stone, tiles, fabric, metals …) are synthesised procedurally at run
+time; no texture, HDRI, model or audio asset was downloaded or added.
+
+**Inspiration, credited:** [Pascal Editor](https://github.com/pascalorg/editor)
+(MIT, © Pascal Group Inc.) was studied as a reference for an architectural
+editor's user experience and data model: the site / building / level / wall /
+slab / opening / roof / zone / item vocabulary, wall drafting with mitred
+joins, room labels showing a coloured dot and the area, level selectors,
+cutaway / exploded / single-level / x-ray views, and agent tools that edit a
+building. Aether's implementation shares no code, assets or materials with
+Pascal; the ideas listed above were re-implemented from scratch on Aether's
+World IR, patch system and renderer. Walkthrough interactions (time-of-day
+presets, light switches, a finish swap, photo mode) follow common
+architectural-visualisation viewer conventions.
+
+The studio render uses three.js's own post-processing nodes, part of the
+`three` dependency (MIT, © three.js authors): `GTAONode` (ground-truth
+ambient occlusion after Jimenez et al., *Practical Real-Time Strategies for
+Accurate Indirect Occlusion*, 2016) and `TRAANode` (temporal reprojection
+anti-aliasing), wired by Aether's `packages/render/src/gpu/post.ts`.

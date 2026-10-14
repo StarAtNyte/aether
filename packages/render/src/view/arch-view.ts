@@ -417,10 +417,9 @@ export class ArchView {
   private setHidden(node: Readonly<EntityNode>, hide: boolean, whole = false): void {
     const o: Object3D = whole ? node.object : node.content;
     if (hide) {
-      if (!this.hidden.has(node)) {
-        this.hidden.add(node);
-        o.visible = false;
-      }
+      // Always enforce: the grow-in animation shows content groups again when it settles.
+      this.hidden.add(node);
+      o.visible = false;
     } else if (this.hidden.delete(node)) {
       o.visible = true;
     }

@@ -10,9 +10,12 @@ import { Geom, box, cylinder, lathe, roundedBox, sphere, tube } from '../mesh';
 import { PartSet } from '../parts';
 import { choice, color, mat, num, type FurnitureDef } from './kit';
 
+/** Brightness of diffusers relative to the nominal values below (keeps night bloom to a soft halo). */
+export const GLOW_LEVEL = 0.6;
+
 /** Emissive diffuser material (warm white). */
 export function glowMaterial(intensity = 3, tint = '#ffe7c4'): MaterialSpec {
-  return { preset: 'emissive', color: tint, emissive: tint, emissiveIntensity: intensity, roughness: 0.4 };
+  return { preset: 'emissive', color: tint, emissive: tint, emissiveIntensity: Math.round(intensity * GLOW_LEVEL * 100) / 100, roughness: 0.4 };
 }
 
 export const PENDANT: FurnitureDef = {

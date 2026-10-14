@@ -15,7 +15,8 @@ type Style = 'modern' | 'scandinavian' | 'industrial' | 'japandi' | 'classic';
 type Rect = [number, number, number, number];
 type Room = { id: string; type: string; rect: Rect; name?: string; items?: Array<Record<string, unknown>>; omit?: string[]; floor?: Record<string, unknown> };
 type Door = { between: [string, string]; kind?: 'swing' | 'sliding' | 'opening'; width?: number; side?: 'north' | 'south' | 'east' | 'west'; main?: boolean };
-type Level = { name?: string; height: number; rooms: Room[]; doors: Door[]; stairs?: Array<Record<string, unknown>> };
+type Win = { room: string; side: 'north' | 'south' | 'east' | 'west'; count?: number; width?: number; height?: number; sill?: number; style?: string };
+type Level = { name?: string; height: number; rooms: Room[]; doors: Door[]; windows?: Win[]; autoWindows?: boolean; stairs?: Array<Record<string, unknown>> };
 type Plan = { id: string; name: string; style: Style; levels: Level[]; roof?: Record<string, unknown>; site?: Record<string, unknown> };
 
 /** Requests that describe a building or an interior (checked after block worlds). */
@@ -132,10 +133,15 @@ function loft(style: Style): Plan {
   };
 }
 
-/** A single furnished room (living room, bedroom, kitchen, office …) with an entry. */
+/**
+ * A single furnished room (living room, bedroom, kitchen, office …) with an
+ * entry. With a fireplace the north wall stays solid for it (the sofa faces
+ * it from under the south windows) and the door moves to the east.
+ */
 function singleRoom(style: Style, type: string, name: string, items: Array<Record<string, unknown>>): Plan {
   const size: Record<string, [number, number]> = { living: [7, 5.6], bedroom: [4.6, 4.2], kitchen: [5, 4], bathroom: [3.2, 2.8], office: [4.4, 3.8], dining: [5.2, 4.2], kids: [4.2, 3.8] };
   const [w, d] = size[type] ?? [6, 5];
+  const fireplace = items.some((i) => i['kind'] === 'fireplace');
   return {
     id: 'home',
     name,
@@ -143,7 +149,10 @@ function singleRoom(style: Style, type: string, name: string, items: Array<Recor
     levels: [{
       height: 2.9,
       rooms: [{ id: 'room', type, name, rect: [0, 0, w, d], items }],
-      doors: [{ between: ['room', 'outside'], side: 'south', main: true, width: 1 }],
+      doors: [{ between: ['room', 'outside'], side: fireplace ? 'east' : 'south', main: true, width: 1 }],
+      ...(fireplace
+        ? { autoWindows: false, windows: [{ room: 'room', side: 'south', count: 2, width: 1.8, height: 1.6, sill: 0.9 }, { room: 'room', side: 'west', count: 1, width: 1.4, height: 1.5, sill: 0.9 }] }
+        : {}),
     }],
   };
 }
@@ -159,7 +168,7 @@ function cafe(style: Style): Plan {
       rooms: [
         { id: 'cafe', type: 'cafe', name: 'Café', rect: [0, 0, 9, 7] },
         { id: 'kitchen', type: 'kitchen', name: 'Back kitchen', rect: [9, 0, 12, 4] },
-        { id: 'wc', type: 'bathroom', name: 'Washroom', rect: [9, 4, 12, 7] },
+        { id: 'wc', type: 'bathroom', name: 'Washroom', rect: [9, 4, 12, 7], omit: ['bathtub', 'shower'] },
       ],
       doors: [
         { between: ['cafe', 'outside'], side: 'south', main: true, width: 1.2, kind: 'swing' },
@@ -185,7 +194,7 @@ function office(style: Style): Plan {
         { id: 'meet2', type: 'meeting', name: 'Meeting room B', rect: [14, 4, 19, 8] },
         { id: 'lobby', type: 'lobby', name: 'Reception', rect: [0, 8, 6, 11.5] },
         { id: 'break', type: 'kitchen', name: 'Break room', rect: [6, 8, 11, 11.5] },
-        { id: 'wc', type: 'bathroom', name: 'Washroom', rect: [11, 8, 14, 11.5] },
+        { id: 'wc', type: 'bathroom', name: 'Washroom', rect: [11, 8, 14, 11.5], omit: ['bathtub', 'shower'] },
       ],
       doors: [
         { between: ['lobby', 'outside'], side: 'south', main: true, width: 1.4, kind: 'sliding' },
