@@ -66,55 +66,107 @@ export function overlapsSolid(w: SolidQuery, x: number, y: number, z: number, hw
 }
 
 /**
+ * Scratch of the hot sweep: BOX = [minX, minY, minZ, maxX, maxY, maxZ, d],
+ * SWEEP[0] = result. Doubles passed as call arguments (or returned) are
+ * boxed on every call in V8; typed-array slots are not.
+ */
+const BOX = new Float64Array(7);
+const SWEEP = new Float64Array(1);
+
+/**
  * Largest movement (signed, |result| ≤ |d|) along `axis` (0 x, 1 y, 2 z)
  * before the box [min, max] hits a solid cell.
  */
 export function sweepAxis(w: SolidQuery, axis: 0 | 1 | 2, minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, d: number): number {
-  if (d === 0 || !Number.isFinite(d)) return 0;
-  // Cross-section cells on the two other axes.
-  const ax0 = axis === 0 ? 0 : Math.floor(minX + SKIN);
-  const ax1 = axis === 0 ? 0 : Math.floor(maxX - SKIN);
-  const ay0 = axis === 1 ? 0 : Math.floor(minY + SKIN);
-  const ay1 = axis === 1 ? 0 : Math.floor(maxY - SKIN);
-  const az0 = axis === 2 ? 0 : Math.floor(minZ + SKIN);
-  const az1 = axis === 2 ? 0 : Math.floor(maxZ - SKIN);
-  const lo = axis === 0 ? minX : axis === 1 ? minY : minZ;
-  const hi = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
-  if (d > 0) {
-    const target = hi + d;
-    for (let c = Math.ceil(hi - SKIN); c < target; c++) {
-      if (layerSolid(w, axis, c, ax0, ax1, ay0, ay1, az0, az1)) return Math.max(0, Math.min(d, c - hi - SKIN));
-    }
-    return d;
-  }
-  const target = lo + d;
-  for (let c = Math.floor(lo + SKIN) - 1; c + 1 > target; c--) {
-    if (layerSolid(w, axis, c, ax0, ax1, ay0, ay1, az0, az1)) return Math.min(0, Math.max(d, c + 1 - lo + SKIN));
-  }
-  return d;
+  BOX[0] = minX;
+  BOX[1] = minY;
+  BOX[2] = minZ;
+  BOX[3] = maxX;
+  BOX[4] = maxY;
+  BOX[5] = maxZ;
+  BOX[6] = d;
+  sweepBox(w, axis);
+  return SWEEP[0] as number;
 }
 
-function layerSolid(w: SolidQuery, axis: 0 | 1 | 2, c: number, ax0: number, ax1: number, ay0: number, ay1: number, az0: number, az1: number): boolean {
+/** Load the body's box and a delta into BOX. */
+function loadBody(b: VoxelBody): void {
+  const hw = b.halfWidth;
+  BOX[0] = b.x - hw;
+  BOX[1] = b.y;
+  BOX[2] = b.z - hw;
+  BOX[3] = b.x + hw;
+  BOX[4] = b.y + b.height;
+  BOX[5] = b.z + hw;
+}
+
+/** Sweep the box in BOX along `axis` by BOX[6]; result in SWEEP[0]. Allocation-free. */
+function sweepBox(w: SolidQuery, axis: number): void {
+  const d = BOX[6] as number;
+  if (d === 0 || !Number.isFinite(d)) {
+    SWEEP[0] = 0;
+    return;
+  }
+  // Cross-section cells on the two other axes (int32: loop counters stay small integers).
+  const x0 = Math.floor((BOX[0] as number) + SKIN) | 0;
+  const x1 = Math.floor((BOX[3] as number) - SKIN) | 0;
+  const y0 = Math.floor((BOX[1] as number) + SKIN) | 0;
+  const y1 = Math.floor((BOX[4] as number) - SKIN) | 0;
+  const z0 = Math.floor((BOX[2] as number) + SKIN) | 0;
+  const z1 = Math.floor((BOX[5] as number) - SKIN) | 0;
+  const lo = BOX[axis] as number;
+  const hi = BOX[axis + 3] as number;
+  if (d > 0) {
+    const target = hi + d;
+    for (let c = Math.ceil(hi - SKIN) | 0; c < target; c++) {
+      if (layerSolid(w, axis, c, x0, x1, y0, y1, z0, z1)) {
+        SWEEP[0] = Math.max(0, Math.min(d, c - hi - SKIN));
+        return;
+      }
+    }
+    SWEEP[0] = d;
+    return;
+  }
+  const target = lo + d;
+  for (let c = (Math.floor(lo + SKIN) | 0) - 1; c + 1 > target; c--) {
+    if (layerSolid(w, axis, c, x0, x1, y0, y1, z0, z1)) {
+      SWEEP[0] = Math.min(0, Math.max(d, c + 1 - lo + SKIN));
+      return;
+    }
+  }
+  SWEEP[0] = d;
+}
+
+function layerSolid(w: SolidQuery, axis: number, c: number, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number): boolean {
   if (axis === 0) {
-    for (let y = ay0; y <= ay1; y++) for (let z = az0; z <= az1; z++) if (w.isSolid(c, y, z)) return true;
+    for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) if (w.isSolid(c, y, z)) return true;
   } else if (axis === 1) {
-    for (let z = az0; z <= az1; z++) for (let x = ax0; x <= ax1; x++) if (w.isSolid(x, c, z)) return true;
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) if (w.isSolid(x, c, z)) return true;
   } else {
-    for (let y = ay0; y <= ay1; y++) for (let x = ax0; x <= ax1; x++) if (w.isSolid(x, y, c)) return true;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (w.isSolid(x, y, c)) return true;
   }
   return false;
 }
 
+/** Sweep the body along `axis` by `BOX[6]` (set by the caller); result in SWEEP[0]. */
+function sweepBodyAxis(w: SolidQuery, b: VoxelBody, axis: number): number {
+  loadBody(b);
+  sweepBox(w, axis);
+  return SWEEP[0] as number;
+}
+
 /** Move the box by (dx, dy, dz) with collision; updates position, hit flags and onGround (not velocity). */
 function slide(w: SolidQuery, b: VoxelBody, dx: number, dy: number, dz: number): void {
-  const hw = b.halfWidth;
-  const my = sweepAxis(w, 1, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, dy);
+  BOX[6] = dy;
+  const my = sweepBodyAxis(w, b, 1);
   b.hitY = my !== dy;
   b.y += my;
-  const mx = sweepAxis(w, 0, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, dx);
+  BOX[6] = dx;
+  const mx = sweepBodyAxis(w, b, 0);
   b.hitX = mx !== dx;
   b.x += mx;
-  const mz = sweepAxis(w, 2, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, dz);
+  BOX[6] = dz;
+  const mz = sweepBodyAxis(w, b, 2);
   b.hitZ = mz !== dz;
   b.z += mz;
 }
@@ -146,11 +198,12 @@ export function moveBody(w: SolidQuery, b: VoxelBody, dt: number, autoStep = fal
     b.x = sx;
     b.y = sy;
     b.z = sz;
-    const hw = b.halfWidth;
-    const up = sweepAxis(w, 1, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, STEP_HEIGHT + SKIN * 2);
+    BOX[6] = STEP_HEIGHT + SKIN * 2;
+    const up = sweepBodyAxis(w, b, 1);
     b.y += up;
     slide(w, b, dx, 0, dz);
-    const down = sweepAxis(w, 1, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, -(up + Math.max(0, -dy)));
+    BOX[6] = -(up + Math.max(0, -dy));
+    const down = sweepBodyAxis(w, b, 1);
     b.y += down;
     const gained = (b.x - sx) * (b.x - sx) + (b.z - sz) * (b.z - sz) - ((ex - sx) * (ex - sx) + (ez - sz) * (ez - sz));
     if (gained > 1e-6 && down !== -(up + Math.max(0, -dy))) {
@@ -171,8 +224,8 @@ export function moveBody(w: SolidQuery, b: VoxelBody, dt: number, autoStep = fal
   if (b.hitY) b.vy = 0;
   if (!b.onGround && dy === 0) {
     // At rest vertically: probe just below so standing still keeps `onGround`.
-    const hw = b.halfWidth;
-    b.onGround = sweepAxis(w, 1, b.x - hw, b.y, b.z - hw, b.x + hw, b.y + b.height, b.z + hw, -0.01) > -0.01;
+    BOX[6] = -0.01;
+    b.onGround = sweepBodyAxis(w, b, 1) > -0.01;
   }
   sampleLiquid(w, b);
 }

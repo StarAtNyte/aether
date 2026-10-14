@@ -95,9 +95,12 @@ describe('ChunkData', () => {
   });
 
   it('chunk keys are unique and reversible', () => {
-    for (const [x, z] of [[0, 0], [-1, 0], [5, -7], [-32000, 32000]] as const) {
+    for (const [x, z] of [[0, 0], [-1, 0], [5, -7], [-16383, 16383]] as const) {
       const k = chunkKey(x, z);
       expect([keyX(k), keyZ(k)]).toEqual([x, z]);
+      // Small-integer range: Map lookups never box the key.
+      expect(k).toBeLessThan(2 ** 30);
+      expect(k).toBeGreaterThanOrEqual(0);
     }
     expect(HEIGHT).toBe(128);
   });

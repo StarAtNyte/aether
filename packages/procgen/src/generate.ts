@@ -4,7 +4,7 @@
  * `world.generators` only ever run through a {@link SandboxRunner}.
  */
 import { hashString, stableStringify, type GeneratorDef, type Json, type ProceduralShape, type WorldDoc } from '@aether/core';
-import type { GeneratorOutput, SandboxRunner } from './types';
+import type { BuiltinGenerator, GeneratorOutput, SandboxRunner } from './types';
 import { createGeneratorApi } from './api';
 import { DEFAULT_SEED, GeneratorCache, generatorCacheKey } from './cache';
 import { getBuiltinGenerator } from './generators/index';
@@ -51,7 +51,23 @@ export function proceduralOutputKey(shape: ProceduralShape, world: Pick<WorldDoc
   const custom = customGenerator(world, shape.generator);
   if (custom) return generatorCacheKey({ ...shape, params: resolveParams(custom.params ?? {}, params), seed }, generatorSourceHash(custom));
   const gen = getBuiltinGenerator(shape.generator);
-  return generatorCacheKey({ ...shape, params: gen ? resolveParams(gen.params, params) : params, seed });
+  return generatorCacheKey({ ...shape, params: gen ? resolveBuiltin(gen, params) : params, seed });
+}
+
+/**
+ * Resolve a built-in generator's params: its own resolver when it has one
+ * (nested architecture params; invalid input falls back to the raw params,
+ * which the generator then rejects with a readable error), else the spec.
+ */
+export function resolveBuiltin(gen: BuiltinGenerator, params: Record<string, Json>): Record<string, Json> {
+  if (gen.resolve) {
+    try {
+      return gen.resolve(params);
+    } catch {
+      return params;
+    }
+  }
+  return resolveParams(gen.params, params);
 }
 
 const inflight = new WeakMap<GeneratorCache, Map<string, Promise<GeneratorOutput>>>();
@@ -106,7 +122,7 @@ export async function generate(
   } else {
     const gen = getBuiltinGenerator(id);
     if (!gen) throw new Error(`unknown generator "${String(id).slice(0, 64)}"`);
-    const resolved = resolveParams(gen.params, params);
+    const resolved = resolveBuiltin(gen, params);
     key = cache?.key({ ...shape, params: resolved, seed });
     const remote = opts.builtin;
     run = async () => {

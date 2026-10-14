@@ -12,8 +12,10 @@
  *    the provider's API straight from the browser (CSP allows it, CORS
  *    preflight passes), the key never reaches this origin, the composer shows
  *    the key connection, and the usage counter moves.
- * 2. The local bridge stays available on the hosted build: pairing with the
- *    printed code shows Codex ready.
+ * 2. The local bridge stays available on the hosted build: the first-run
+ *    screen leads with "Use your own Codex / ChatGPT login" (pair, device
+ *    code through the bridge, model pick), and Settings pairing shows Codex
+ *    ready.
  * 3. Offline: with no key and no bridge a prompt still builds a world.
  */
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -21,7 +23,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { chromium, firefox, type Browser, type Page, type Route } from 'playwright';
-import { PROMPT_EXAMPLES, type BridgeBackendStatus, type TextBackend } from '@aether/agent';
+import { PROMPT_EXAMPLES, type BridgeBackendStatus, type LoginState, type TextBackend } from '@aether/agent';
+import type { LoginManager } from '../../apps/bridge/src/auth';
 import { Pairing } from '../../apps/bridge/src/pairing';
 import { createBridgeHandler } from '../../apps/bridge/src/server';
 import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, STUDIO_DIST, findChrome, findFirefox } from './support/env';
@@ -169,36 +172,67 @@ async function routeOpenAI(page: Page, logp: ProviderLog): Promise<void> {
 interface FakeBridge {
   url: string;
   pairing: Pairing;
+  /** Sign-in starts seen by the scripted login (device-code flow). */
+  logins: number;
   close(): Promise<void>;
 }
 
-async function startFakeBridge(studioOrigin: string): Promise<FakeBridge> {
+/**
+ * The real bridge handler with scripted backends. `codexSignedIn: false`
+ * starts with Codex signed out and scripts a device-code sign-in that
+ * completes on the second status poll (no CLI runs, no quota is used).
+ */
+async function startFakeBridge(studioOrigin: string, opts: { codexSignedIn?: boolean; claudeSignedIn?: boolean } = {}): Promise<FakeBridge> {
   const idle: TextBackend = { name: 'scripted', strictSchema: false, complete: async () => ({ text: JSON.stringify({ final_message: 'ok' }) }) };
   const pairing = new Pairing();
   let port = 0;
+  let codexIn = opts.codexSignedIn ?? true;
+  let login: LoginState | null = null;
+  let polls = 0;
+  const fake: FakeBridge = { url: '', pairing, logins: 0, close: async () => undefined };
+  const scriptedLogin = {
+    status: (): LoginState | null => {
+      if (login?.running && ++polls >= 2) {
+        codexIn = true;
+        login = { ...login, running: false, finished: { ok: true, message: 'Signed in.' } };
+      }
+      return login;
+    },
+    start: (backend: LoginState['backend']): LoginState => {
+      fake.logins++;
+      polls = 0;
+      login = { backend, running: true, url: 'https://auth.openai.com/codex/device', code: 'WXYZ-12345', output: '', startedAt: Date.now() };
+      return login;
+    },
+    cancel: (): void => {
+      if (login?.running) login = { ...login, running: false, finished: { ok: false, message: 'Cancelled.' } };
+    },
+    logout: async (): Promise<{ ok: boolean; message: string }> => ({ ok: true, message: 'Signed out.' }),
+  };
   const models: BridgeBackendStatus['models'] = [{ id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol', efforts: ['low'], vision: true }];
   const handler = createBridgeHandler({
     config: { origins: [studioOrigin], maxBodyBytes: 1024 * 1024, maxWaiting: 2 },
     port: () => port,
     pairing,
     backends: { codex: idle, 'claude-code': idle },
+    login: scriptedLogin as unknown as LoginManager,
     status: async () => [
-      { id: 'codex', label: 'Codex', installed: true, loggedIn: true, detail: 'Logged in using ChatGPT', models, defaultModel: 'gpt-6.1-sol' },
-      { id: 'claude-code', label: 'Claude Code', installed: false, loggedIn: false, detail: 'not found', models: [] },
+      { id: 'codex', label: 'Codex', installed: true, loggedIn: codexIn, detail: codexIn ? 'Logged in using ChatGPT' : 'Not logged in', models: codexIn ? models : [], ...(codexIn ? { defaultModel: 'gpt-6.1-sol' } : {}) },
+      opts.claudeSignedIn
+        ? { id: 'claude-code', label: 'Claude Code', installed: true, loggedIn: true, detail: 'Logged in', models: [{ id: 'sonnet', label: 'Sonnet', efforts: ['low'], vision: true }], defaultModel: 'sonnet' }
+        : { id: 'claude-code', label: 'Claude Code', installed: false, loggedIn: false, detail: 'not found', models: [] },
     ],
   });
   const server = createServer((req, res) => handler(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as AddressInfo).port;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    pairing,
-    close: () =>
-      new Promise<void>((resolve) => {
-        server.closeAllConnections();
-        server.close(() => resolve());
-      }),
-  };
+  fake.url = `http://127.0.0.1:${port}`;
+  fake.close = () =>
+    new Promise<void>((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    });
+  return fake;
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +410,49 @@ async function firstRunKey(browser: Browser, host: StaticHost): Promise<void> {
   }
 }
 
+/**
+ * The hosted first-run screen leads with the user's own Codex / ChatGPT
+ * login through the local bridge: pair from the screen, get a device code,
+ * finish signing in, pick the model, and the composer uses the bridge.
+ */
+async function firstRunBridge(browser: Browser, host: StaticHost): Promise<void> {
+  const bridge = await startFakeBridge(host.url, { codexSignedIn: false, claudeSignedIn: true });
+  const { page, close } = await openEditor(browser, `${host.url}/?debug=1#/new`, null);
+  try {
+    const screen = page.getByTestId('first-run');
+    await screen.waitFor({ timeout: 15_000 });
+    check((await screen.getAttribute('data-variant')) === 'hosted', 'expected the hosted first-run variant');
+    // Order: own Codex login first, then the API key, then offline.
+    const order = await screen.locator('.first-run__option').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+    check(order.join(',') === 'first-run-local,first-run-byok,first-run-offline', `hosted first-run order: ${order.join(',')}`);
+    await screen.getByTestId('first-run-local').click();
+    const command = await screen.locator('.cmd__text').first().innerText();
+    check(command.includes('npx aether start --origin') && command.includes(host.url), `install command lacks this origin: ${command}`);
+    await screen.locator('.first-run__more summary').click();
+    await screen.getByTestId('first-run-bridge-url').fill(bridge.url);
+    await screen.getByTestId('first-run-pair-code').fill(bridge.pairing.currentCode);
+    await screen.getByTestId('first-run-pair').click();
+    await screen.getByTestId('first-run-bridge-paired').waitFor({ timeout: 15_000 });
+    // Codex is signed out on that computer: the device-code sign-in runs through the bridge.
+    await screen.getByTestId('first-run-login-start').click();
+    const code = await screen.getByTestId('first-run-device-code').innerText({ timeout: 10_000 });
+    check(code === 'WXYZ-12345' && bridge.logins === 1, `device code via the bridge: ${code} (${bridge.logins} starts)`);
+    await screen.getByTestId('first-run-signed-in').waitFor({ timeout: 20_000 });
+    check(await screen.getByTestId('first-run-bridge-claude').isVisible(), 'a signed-in Claude Code is not offered on the paired computer');
+    await screen.getByTestId('first-run-done').click();
+    await screen.waitFor({ state: 'detached', timeout: 10_000 });
+    await waitFor('the composer to use the bridge', 15_000, async () => {
+      const p = await picker(page);
+      return p.kind === 'bridge' && p.status === 'ready' ? p : null;
+    });
+    const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ai.prefs.v1') ?? '{}') as Record<string, unknown>);
+    check(prefs['mode'] === 'bridge' && prefs['backend'] === 'codex' && prefs['codexModel'] === 'gpt-6.1-sol', `prefs after the bridge choice: ${JSON.stringify(prefs)}`);
+  } finally {
+    await close();
+    await bridge.close();
+  }
+}
+
 async function bridgeOnHosted(browser: Browser, host: StaticHost): Promise<void> {
   const bridge = await startFakeBridge(host.url);
   const { page, close } = await openEditor(browser, `${host.url}/?debug=1#/new`, { mode: 'bridge', backend: 'codex', effort: 'low' });
@@ -418,6 +495,8 @@ async function runBrowser(name: string, launch: () => Promise<Browser>, host: St
     log('  ✓ own key: session-only storage, direct provider calls, CSP + CORS, key never sent to this origin, usage counter, forget');
     await firstRunKey(browser, host);
     log('  ✓ first-run screen (hosted variant): key path builds a world, choice remembered');
+    await firstRunBridge(browser, host);
+    log('  ✓ first-run screen (hosted variant): own Codex login via the bridge (pair, device code, model) leads');
     await bridgeOnHosted(browser, host);
     log('  ✓ local bridge pairing available on the hosted build');
     await offlineTurn(browser, host);

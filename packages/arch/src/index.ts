@@ -25,4 +25,4 @@ export { buildStair, stairFootprint, stairLayout, stairRisers, DEFAULT_RISER } f
 export { buildDoor, buildFrame, buildWindow, DOOR_CLEARANCE, LINING } from './openings';
 export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructureParams, buildStructure, ArchParamsError } from './structure';
 export { FURNITURE, furnitureById, furnitureByKind, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
-export { checkBuildings, navigableVerdict, furnitureFootprint, NAV_CELL, MAX_NAV_CELLS, type BuildingReport } from './checks';
+export { navigableVerdict } from './checks';

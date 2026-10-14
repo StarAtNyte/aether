@@ -53,6 +53,7 @@ describe('voxel save store', () => {
     expect(parseChunkKey('-3,17')).toEqual([-3, 17]);
     expect(parseChunkKey('1,2,3')).toBeNull();
     expect(parseChunkKey('99999,0')).toBeNull();
+    expect(parseChunkKey('16384,0')).toBeNull();
     expect(parseChunkKey('__proto__')).toBeNull();
   });
 });

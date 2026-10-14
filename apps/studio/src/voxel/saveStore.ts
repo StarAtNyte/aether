@@ -184,5 +184,5 @@ export function parseChunkKey(k: string): [number, number] | null {
   if (!m) return null;
   const cx = Number(m[1]);
   const cz = Number(m[2]);
-  return Math.abs(cx) <= 32767 && Math.abs(cz) <= 32767 ? [cx, cz] : null;
+  return Math.abs(cx) <= 16383 && Math.abs(cz) <= 16383 ? [cx, cz] : null;
 }

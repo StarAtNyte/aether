@@ -28,7 +28,7 @@ const Keyword = z.string().regex(/^[a-z]+( [a-z]+){0,2}$/);
 export const LibraryEntrySchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
   description: z.string().min(1).max(300),
-  category: z.enum(['nature', 'architecture', 'props', 'vehicles', 'terrain', 'fx']),
+  category: z.enum(['nature', 'architecture', 'props', 'vehicles', 'terrain', 'fx', 'interior']),
   keywords: z.array(Keyword).min(1).max(LIBRARY_LIMITS.MAX_KEYWORDS),
   params: z.record(z.string(), ParamSpec),
   /** Bounding size [w, h, d] in metres at default params (placement footprint). */

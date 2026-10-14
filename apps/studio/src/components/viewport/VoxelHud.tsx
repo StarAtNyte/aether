@@ -6,7 +6,7 @@
  * running {@link VoxelPlay} for actions. Never renders untrusted HTML.
  */
 import { memo, useCallback, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
-import { useSimulation, useUI } from '../../app/context';
+import { useSimulation, useStudio, useUI } from '../../app/context';
 import type { HudRecipe, HudSlot, ItemIcon, VoxelHudState } from '../../voxel/hudState';
 import '../../styles/voxel.css';
 
@@ -133,6 +133,71 @@ function RecipeCard({ r, hud, onCraft }: { r: HudRecipe; hud: VoxelHudState; onC
   );
 }
 
+/** Largest save file accepted for import. */
+const MAX_SAVE_FILE = 64 * 1024 * 1024;
+
+/** Export / import / reset of the world save (footer of the inventory screen). */
+function SaveActions(): ReactElement {
+  const studio = useStudio();
+  const sim = useSimulation();
+  const play = sim?.voxel?.game ?? null;
+  const [confirmReset, setConfirmReset] = useState(false);
+  const toast = studio.store.getState().toast;
+  const onExport = async (): Promise<void> => {
+    const bytes = await play?.exportSave();
+    if (!bytes) return;
+    const blob = new Blob([bytes as BlobPart], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'world.aethersave';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const onImport = async (file: File | undefined): Promise<void> => {
+    if (!file || !play) return;
+    if (file.size > MAX_SAVE_FILE) {
+      toast('That save file is too large.', 'error', 4);
+      return;
+    }
+    try {
+      await play.importSave(new Uint8Array(await file.arrayBuffer()));
+      toast('World loaded from the save file.', 'success', 3);
+    } catch (err) {
+      toast(`Could not load that save: ${err instanceof Error ? err.message : 'invalid file'}`, 'error', 5);
+    }
+  };
+  return (
+    <div className="vx-save">
+      <button type="button" className="btn btn--sm" onClick={() => void onExport()}>
+        Export world
+      </button>
+      <label className="btn btn--sm vx-save__import">
+        Import…
+        <input type="file" accept=".aethersave,application/octet-stream" onChange={(e) => void onImport(e.target.files?.[0])} />
+      </label>
+      <button
+        type="button"
+        className={`btn btn--sm${confirmReset ? ' btn--danger' : ''}`}
+        onClick={() => {
+          if (!confirmReset) {
+            setConfirmReset(true);
+            return;
+          }
+          setConfirmReset(false);
+          void play?.resetWorld();
+        }}
+        onBlur={() => setConfirmReset(false)}
+      >
+        {confirmReset ? 'Click again to reset' : 'Reset world'}
+      </button>
+    </div>
+  );
+}
+
 /** The inventory + crafting screen. */
 function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
   const sim = useSimulation();
@@ -195,6 +260,7 @@ function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
             ))}
           </ul>
         </section>
+        <SaveActions />
         <button type="button" className="btn vx-screen__close" onClick={() => play?.setInventoryOpen(false)}>
           Close <kbd>E</kbd>
         </button>

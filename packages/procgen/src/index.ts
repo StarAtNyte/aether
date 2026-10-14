@@ -21,7 +21,8 @@ export type {
 
 export { createGeneratorApi, type BuildOptions } from './api';
 export { BUILTIN_GENERATORS, catalog, getBuiltinGenerator } from './generators/index';
-export { generate, generateBuiltinSync, generatorSourceHash, proceduralOutputKey, yieldToEventLoop } from './generate';
+export { generate, generateBuiltinSync, generatorSourceHash, proceduralOutputKey, resolveBuiltin, yieldToEventLoop } from './generate';
+export { archToOutput } from './generators/arch';
 export { primitiveOutput, fallbackOutput, validateOutput } from './output';
 export { resolveParams } from './params';
 export { GeneratorCache, DEFAULT_CACHE_BYTES, DEFAULT_SEED, generatorCacheKey, outputBytes } from './cache';

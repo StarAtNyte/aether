@@ -252,20 +252,22 @@ export function rayMob(m: Mob, ox: number, oy: number, oz: number, dx: number, d
   const b = m.body;
   let t0 = 0;
   let t1 = max;
-  const lo = [b.x - b.halfWidth, b.y, b.z - b.halfWidth];
-  const hi = [b.x + b.halfWidth, b.y + b.height, b.z + b.halfWidth];
-  const o = [ox, oy, oz];
-  const d = [dx, dy, dz];
   for (let a = 0; a < 3; a++) {
-    const da = d[a] as number;
-    const oa = o[a] as number;
+    const da = a === 0 ? dx : a === 1 ? dy : dz;
+    const oa = a === 0 ? ox : a === 1 ? oy : oz;
+    const lo = a === 0 ? b.x - b.halfWidth : a === 1 ? b.y : b.z - b.halfWidth;
+    const hi = a === 0 ? b.x + b.halfWidth : a === 1 ? b.y + b.height : b.z + b.halfWidth;
     if (Math.abs(da) < 1e-9) {
-      if (oa < (lo[a] as number) || oa > (hi[a] as number)) return Infinity;
+      if (oa < lo || oa > hi) return Infinity;
       continue;
     }
-    let ta = ((lo[a] as number) - oa) / da;
-    let tb = ((hi[a] as number) - oa) / da;
-    if (ta > tb) [ta, tb] = [tb, ta];
+    let ta = (lo - oa) / da;
+    let tb = (hi - oa) / da;
+    if (ta > tb) {
+      const t = ta;
+      ta = tb;
+      tb = t;
+    }
     t0 = Math.max(t0, ta);
     t1 = Math.min(t1, tb);
     if (t0 > t1) return Infinity;

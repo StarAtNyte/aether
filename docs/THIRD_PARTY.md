@@ -254,3 +254,15 @@ components, and the only third-party media are the two OFL fonts above.
 Before each release,
 regenerate this list if dependencies change, for example with
 `npm ls --all` and a licence scan of `package-lock.json`.
+
+### Block worlds (`@aether/voxel`)
+
+No new dependency. Everything is original code; the published algorithms it
+follows are credited here: 2D/3D simplex noise after Stefan Gustavson's
+public-domain description; voxel ray traversal after Amanatides & Woo, "A
+Fast Voxel Traversal Algorithm for Ray Tracing" (1987); per-vertex ambient
+occlusion after the well-known "side1/side2/corner" rule described by Mikola
+Lysenko (0fps.net, 2013); greedy meshing after the same author's write-up.
+Block textures, item icons, mob models and sounds are generated procedurally
+at run time (no image, model or audio assets). Saves use the platform's
+`CompressionStream('deflate-raw')`.

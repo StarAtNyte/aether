@@ -102,6 +102,35 @@
   padding: 0 var(--s-3) var(--s-3) calc(var(--s-3) + 32px + var(--s-3));
 }
 
+/* Hosted page, after pairing with the local bridge: the account rows sit in one column. */
+.first-run__paired {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: 0 var(--s-3) var(--s-3) calc(var(--s-3) + 32px + var(--s-3));
+}
+
+.first-run__paired .first-run__detail {
+  padding: 0;
+}
+
+.first-run__more {
+  width: 100%;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.first-run__more summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.first-run__more .input {
+  width: 100%;
+  margin-top: var(--s-2);
+}
+
 .first-run__form {
   align-items: stretch;
 }
@@ -240,8 +269,13 @@
 }
 
 @media (max-width: 640px) {
-  .first-run__detail {
+  .first-run__detail,
+  .first-run__paired {
     padding-left: var(--s-3);
+  }
+
+  .first-run__paired .first-run__detail {
+    padding-left: 0;
   }
 
   .first-run__field {

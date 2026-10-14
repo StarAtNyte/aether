@@ -25,20 +25,29 @@ export function cellIndex(x: number, y: number, z: number): number {
   return x + z * CHUNK + y * LAYER;
 }
 
-/** Numeric key of chunk (cx, cz) — a safe integer, usable as a Map key. */
+/** Offset that makes chunk coordinates non-negative inside a key. */
+const KEY_OFFSET = 0x4000;
+/** Key stride (15 bits per coordinate). */
+const KEY_STRIDE = 0x8000;
+
+/**
+ * Numeric key of chunk (cx, cz), usable as a Map key. Keys stay below 2³⁰,
+ * so V8 keeps them as small integers: lookups in the hot paths (collision,
+ * ray casts, streaming) never box a number.
+ */
 export function chunkKey(cx: number, cz: number): number {
-  return (cx + 0x8000) * 0x10000 + (cz + 0x8000);
+  return (cx + KEY_OFFSET) * KEY_STRIDE + (cz + KEY_OFFSET);
 }
 
 /** Chunk x of a key. */
 export function keyX(key: number): number {
-  return Math.floor(key / 0x10000) - 0x8000;
+  return Math.floor(key / KEY_STRIDE) - KEY_OFFSET;
 }
 
 /** Chunk z of a key. */
 export function keyZ(key: number): number {
-  return (key % 0x10000) - 0x8000;
+  return (key % KEY_STRIDE) - KEY_OFFSET;
 }
 
-/** Largest chunk coordinate magnitude (keys stay unique within ±32767). */
-export const MAX_CHUNK_COORD = 0x7fff;
+/** Largest chunk coordinate magnitude (±16 383 chunks = ±262 000 blocks; keys stay unique). */
+export const MAX_CHUNK_COORD = 0x3fff;

@@ -10,6 +10,7 @@ import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { SCULPTURE_GENERATORS } from './sculpture';
+import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS } from './arch';
 
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
@@ -19,6 +20,8 @@ const ALL: readonly BuiltinGenerator[] = [
   ...SCULPTURE_GENERATORS,
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,
+  ...ARCH_STRUCTURE_GENERATORS,
+  ...ARCH_FURNITURE_GENERATORS,
 ];
 
 /**

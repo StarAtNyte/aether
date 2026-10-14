@@ -9,16 +9,17 @@
  *   2. Use Claude Code: when the `claude` CLI is installed and signed in.
  *   3. Continue offline.
  * Hosted variant (any other origin):
- *   1. Use your API key: provider, key (kept in this browser), link to the
+ *   1. Use your own Codex / ChatGPT login: the one-command install starts the
+ *      local bridge; pair this page with it, then sign in (device code) or
+ *      pick a signed-in Codex / Claude Code on the user's own computer.
+ *   2. Use your API key: provider, key (kept in this browser), link to the
  *      provider's key page.
- *   2. Run locally with your Codex / ChatGPT login: the one-command install,
- *      then pair this page with the local bridge.
  *   3. Explore offline.
  *
  * Nothing blocks the app: closing the screen equals "continue offline".
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import type { BridgeBackendStatus, LoginState } from '@aether/agent';
+import { normalizeBridgeUrl, type AiAccountApi, type BridgeBackendStatus, type LoginState } from '@aether/agent';
 import { aiConnection, DEFAULT_BRIDGE_URL } from '../ai/connection';
 import { BYOK_CATALOG, BYOK_PROVIDERS, isByokProvider, type ByokProvider } from '../ai/byokCatalog';
 import { loadAiPrefs, saveAiPrefs, type AiPrefs } from '../ai/prefs';
@@ -110,9 +111,19 @@ function backendOf(list: readonly BridgeBackendStatus[], id: 'codex' | 'claude-c
   return list.find((b) => b.id === id);
 }
 
-/** Codex device sign-in through the local server. */
-const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendStatus | undefined }): ReactElement {
-  const api = aiConnection().localApi;
+/** Where a Codex sign-in runs: this computer's Aether server, or the paired local bridge. */
+interface SignInTarget {
+  /** Sign-in API (null: not reachable yet). */
+  api: AiAccountApi | null;
+  /** Re-read the backend status after a sign-in ends. */
+  refresh: () => void;
+  /** Use Codex with the chosen model (empty: the CLI's default). */
+  done: (model: string) => void;
+}
+
+/** Codex device sign-in (through the local server, or the paired bridge on a hosted page). */
+const CodexSignIn = memo(function CodexSignIn({ codex, target }: { codex: BridgeBackendStatus | undefined; target: SignInTarget }): ReactElement {
+  const { api, refresh, done } = target;
   const [login, setLogin] = useState<LoginState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>('');
@@ -125,19 +136,19 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
   }, []);
   // Poll while the CLI's sign-in runs; refresh the backend status when it ends.
   useEffect(() => {
-    if (!login?.running) return;
+    if (!login?.running || !api) return;
     const t = setInterval(() => {
       void api.loginStatus().then(
         (s) => {
           if (!alive.current) return;
           setLogin(s);
-          if (s && !s.running) void aiConnection().refreshLocal();
+          if (s && !s.running) refresh();
         },
         () => undefined,
       );
     }, POLL_MS);
     return () => clearInterval(t);
-  }, [api, login?.running]);
+  }, [api, refresh, login?.running]);
   useEffect(() => {
     if (codex?.loggedIn && !model) setModel(codex.defaultModel ?? codex.models[0]?.id ?? '');
   }, [codex, model]);
@@ -147,7 +158,7 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
       <div className="first-run__detail" data-testid="first-run-codex-missing">
         <p className="first-run__note">The Codex CLI is not installed on this computer. Install it, then press Check again:</p>
         <Command text="npm i -g @openai/codex" />
-        <button type="button" className="btn btn--sm" onClick={() => void aiConnection().refreshLocal()}>
+        <button type="button" className="btn btn--sm" onClick={refresh}>
           <Icon name="refresh" /> Check again
         </button>
       </div>
@@ -171,13 +182,14 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
             </select>
           </label>
         )}
-        <button type="button" className="btn btn--primary" data-testid="first-run-done" onClick={() => finish('codex', { mode: 'auto', backend: 'codex', ...(model ? { codexModel: model } : {}) })}>
+        <button type="button" className="btn btn--primary" data-testid="first-run-done" onClick={() => done(model)}>
           Start creating
         </button>
       </div>
     );
   }
   const start = (): void => {
+    if (!api) return;
     setError(null);
     void api.login('codex').then(setLogin, (e: unknown) => setError((e instanceof Error ? e.message : 'Sign-in could not start.').slice(0, 200)));
   };
@@ -186,7 +198,7 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
       {!login?.running ? (
         <>
           {login?.finished && !login.finished.ok && <p className="setup-error">{login.finished.message}</p>}
-          <button type="button" className="btn btn--primary" onClick={start} data-testid="first-run-login-start">
+          <button type="button" className="btn btn--primary" onClick={start} disabled={!api} data-testid="first-run-login-start">
             {login ? 'Try again' : 'Get a sign-in code'}
           </button>
         </>
@@ -219,7 +231,7 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
           <p className="first-run__status" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" /> Waiting for you to finish signing in…
           </p>
-          <button type="button" className="btn btn--sm" onClick={() => void api.cancelLogin().then(setLogin, () => undefined)}>
+          <button type="button" className="btn btn--sm" onClick={() => void api?.cancelLogin().then(setLogin, () => undefined)}>
             Cancel
           </button>
         </>
@@ -233,6 +245,15 @@ const CodexSignIn = memo(function CodexSignIn({ codex }: { codex: BridgeBackendS
   );
 });
 
+const refreshLocal = (): void => void aiConnection().refreshLocal();
+const LOCAL_TARGET: SignInTarget = {
+  get api() {
+    return aiConnection().localApi;
+  },
+  refresh: refreshLocal,
+  done: (model) => finish('codex', { mode: 'auto', backend: 'codex', ...(model ? { codexModel: model } : {}) }),
+};
+
 const LocalScreen = memo(function LocalScreen(): ReactElement {
   const local = useAi((s) => s.local);
   const [expanded, setExpanded] = useState(true);
@@ -245,7 +266,7 @@ const LocalScreen = memo(function LocalScreen(): ReactElement {
   return (
     <div className="first-run__choices">
       <Choice testId="first-run-codex" icon="sparkles" primary title="Sign in with ChatGPT (Codex)" hint="Your own ChatGPT account, through the Codex CLI on this computer. Aether never sees your password or tokens." onClick={() => setExpanded((v) => !v)}>
-        {expanded && (checking ? <p className="first-run__note first-run__detail">Checking this computer…</p> : <CodexSignIn codex={codex} />)}
+        {expanded && (checking ? <p className="first-run__note first-run__detail">Checking this computer…</p> : <CodexSignIn codex={codex} target={LOCAL_TARGET} />)}
       </Choice>
       {claude?.installed && claude.loggedIn && (
         <Choice testId="first-run-claude" icon="code" title="Use Claude Code" hint={`Signed in${claude.account ? ` as ${claude.account}` : ''} on this computer.`} onClick={() => finish('claude-code', { mode: 'auto', backend: 'claude-code' })} />
@@ -323,25 +344,61 @@ const KeyForm = memo(function KeyForm(): ReactElement {
   );
 });
 
+/** After pairing: sign in to / pick Codex or Claude Code on the user's own computer. */
+const BridgeBackends = memo(function BridgeBackends(): ReactElement {
+  const bridge = useAi((s) => s.bridge);
+  const target = useMemo<SignInTarget>(
+    () => ({
+      api: bridge.paired ? aiConnection().bridgeAccounts() : null,
+      refresh: () => void aiConnection().refreshBridge(),
+      done: (model) => finish('bridge', { mode: 'bridge', backend: 'codex', ...(model ? { codexModel: model } : {}) }),
+    }),
+    // A new pairing (url or token) needs a new client.
+    [bridge.paired, bridge.url],
+  );
+  const codex = backendOf(bridge.backends, 'codex');
+  const claude = backendOf(bridge.backends, 'claude-code');
+  return (
+    <div className="first-run__paired" data-testid="first-run-bridge-paired">
+      <p className="first-run__account">
+        <span className="status-chip is-ok">Paired</span> {bridge.detail || 'Your computer'}
+      </p>
+      {bridge.state === 'checking' && bridge.backends.length === 0 ? <p className="first-run__note">Checking your computer…</p> : <CodexSignIn codex={codex} target={target} />}
+      {claude?.installed && claude.loggedIn && (
+        <button type="button" className="btn btn--sm" data-testid="first-run-bridge-claude" onClick={() => finish('bridge', { mode: 'bridge', backend: 'claude-code' })}>
+          <Icon name="code" /> Use Claude Code instead{claude.account ? ` (${claude.account})` : ''}
+        </button>
+      )}
+    </div>
+  );
+});
+
+/** The local bridge path on a hosted page: one command, then pair (or a deep link from the terminal). */
 const RunLocally = memo(function RunLocally(): ReactElement {
   const bridge = useAi((s) => s.bridge);
   const [code, setCode] = useState('');
+  const [address, setAddress] = useState(bridge.url || DEFAULT_BRIDGE_URL);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const origin = typeof location !== 'undefined' ? location.origin : 'https://your-studio';
+  if (bridge.paired && bridge.state !== 'unpaired') return <BridgeBackends />;
   const pair = async (): Promise<void> => {
+    const url = normalizeBridgeUrl(address);
+    if (!url) {
+      setError('The bridge runs on this computer: use http://127.0.0.1:<port> (or localhost).');
+      return;
+    }
     setBusy(true);
     setError(null);
-    const err = await aiConnection().pair(DEFAULT_BRIDGE_URL, code);
+    const err = await aiConnection().pair(url, code);
     setBusy(false);
     if (err) setError(err);
-    else finish('bridge', { mode: 'auto' });
   };
   return (
     <div className="first-run__detail" data-testid="first-run-local-steps">
-      <p className="first-run__note">On your computer (Node.js 22+), one command installs and starts Aether with your own Codex / ChatGPT login:</p>
+      <p className="first-run__note">On your computer (Node.js 22+), one command installs Aether and starts its local bridge. It uses your own Codex / ChatGPT or Claude Code login; nothing runs on our servers:</p>
       <Command text={`git clone ${REPO_URL} && cd aether && npm ci && npx aether start --origin ${origin}`} />
-      <p className="first-run__note">Then run <code>npx aether login</code> if Codex is not signed in yet. Use the local link it prints, or pair this page with the code it shows:</p>
+      <p className="first-run__note">Open the pairing link it prints, or enter the pairing code here:</p>
       <form
         className="pair-form"
         onSubmit={(e) => {
@@ -350,11 +407,14 @@ const RunLocally = memo(function RunLocally(): ReactElement {
         }}
       >
         <input className="input input--sm input--mono" aria-label="Pairing code" data-testid="first-run-pair-code" placeholder="ABCD-EFGH" value={code} maxLength={9} onChange={(e) => setCode(e.target.value.toUpperCase())} spellCheck={false} autoComplete="off" />
-        <button type="submit" className="btn btn--sm btn--primary" disabled={busy || code.replace('-', '').length !== 8}>
+        <button type="submit" className="btn btn--sm btn--primary" data-testid="first-run-pair" disabled={busy || code.replace('-', '').length !== 8}>
           {busy ? 'Pairing…' : 'Pair'}
         </button>
       </form>
-      {bridge.paired && bridge.state === 'ready' && <p className="first-run__note">Paired: {bridge.detail}</p>}
+      <details className="first-run__more">
+        <summary>Bridge address</summary>
+        <input className="input input--sm input--mono" aria-label="Bridge address" data-testid="first-run-bridge-url" value={address} maxLength={64} onChange={(e) => setAddress(e.target.value)} spellCheck={false} autoComplete="off" />
+      </details>
       {error && (
         <p className="setup-error" role="alert">
           {error}
@@ -365,14 +425,15 @@ const RunLocally = memo(function RunLocally(): ReactElement {
 });
 
 const HostedScreen = memo(function HostedScreen(): ReactElement {
-  const [open, setOpen] = useState<'key' | 'local' | null>(null);
+  const paired = useAi((s) => s.bridge.paired);
+  const [open, setOpen] = useState<'key' | 'local' | null>(paired ? 'local' : null);
   return (
     <div className="first-run__choices">
-      <Choice testId="first-run-byok" icon="lock" primary title="Use your API key" hint="Anthropic, OpenAI, OpenRouter or Google Gemini. Called straight from this browser; never sent to us." onClick={() => setOpen((v) => (v === 'key' ? null : 'key'))}>
-        {open === 'key' && <KeyForm />}
-      </Choice>
-      <Choice testId="first-run-local" icon="code" title="Run locally with your Codex / ChatGPT login" hint="One command on your computer; your own subscription, no API key." onClick={() => setOpen((v) => (v === 'local' ? null : 'local'))}>
+      <Choice testId="first-run-local" icon="sparkles" primary title="Use your own Codex / ChatGPT login" hint="Runs on your computer with one command and your own subscription (Claude Code works too). No API key." onClick={() => setOpen((v) => (v === 'local' ? null : 'local'))}>
         {open === 'local' && <RunLocally />}
+      </Choice>
+      <Choice testId="first-run-byok" icon="lock" title="Use your API key" hint="Anthropic, OpenAI, OpenRouter or Google Gemini. Called straight from this browser; never sent to us." onClick={() => setOpen((v) => (v === 'key' ? null : 'key'))}>
+        {open === 'key' && <KeyForm />}
       </Choice>
       <Choice testId="first-run-offline" icon="cube" title="Explore offline" hint="Templates and the built-in planner, right here. Connect an AI any time from the top bar." onClick={() => finish('offline')} />
     </div>

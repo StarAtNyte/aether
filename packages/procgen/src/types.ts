@@ -67,7 +67,7 @@ export interface GeneratorOutput {
 }
 
 /** Built-in generator categories. */
-export type GeneratorCategory = 'nature' | 'architecture' | 'props' | 'vehicles' | 'terrain' | 'fx';
+export type GeneratorCategory = 'nature' | 'architecture' | 'props' | 'vehicles' | 'terrain' | 'fx' | 'interior';
 
 /** A built-in procedural generator. `generate` resolves (defaults/clamps) params itself. */
 export interface BuiltinGenerator {
@@ -75,6 +75,12 @@ export interface BuiltinGenerator {
   description: string;
   category: GeneratorCategory;
   params: Record<string, ParamSpec>;
+  /**
+   * Custom param resolution for generators whose params are nested JSON
+   * (architecture: polylines, openings, finishes). Must validate untrusted
+   * input and may throw; defaults to `resolveParams(params, …)`.
+   */
+  resolve?: (params: Record<string, Json>) => Record<string, Json>;
   generate(params: Record<string, Json>, api: GeneratorApi): GeneratorOutput;
 }
 

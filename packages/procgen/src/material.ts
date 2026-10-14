@@ -3,10 +3,11 @@
  * sandbox worker). Mirrors the `MaterialSpec` schema of @aether/core: unknown
  * keys are dropped, numbers are clamped, colors normalized to "#rrggbb".
  */
-import { MaterialPreset, type MaterialSpec } from '@aether/core';
+import { MaterialFinish, MaterialPreset, type MaterialSpec } from '@aether/core';
 import { normalizeHex } from './color';
 
 const PRESETS: ReadonlySet<string> = new Set(MaterialPreset.options);
+const FINISHES: ReadonlySet<string> = new Set(MaterialFinish.options);
 
 function clampNumber(v: unknown, min: number, max: number, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`material.${what}: expected a number`);
@@ -41,6 +42,11 @@ export function sanitizeMaterial(input: unknown): MaterialSpec {
       throw new TypeError(`material.preset: must be one of ${[...PRESETS].join(', ')}`);
     }
     out.preset = preset as MaterialSpec['preset'];
+  }
+  const fin = read('finish');
+  if (fin !== undefined) {
+    if (typeof fin !== 'string' || !FINISHES.has(fin)) throw new TypeError(`material.finish: must be one of ${[...FINISHES].join(', ')}`);
+    out.finish = fin as MaterialSpec['finish'];
   }
   const c = read('color');
   if (c !== undefined) out.color = color(c, 'color');

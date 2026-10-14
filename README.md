@@ -78,6 +78,19 @@ explicit state, so the AI can be held to account:
   `setEnvironment`, `defineGenerator`, `addTest` and so on). Each is
   validated, reference-checked, protected against prototype pollution and
   limit-checked, and errors are written for the LLM to read.
+- **Block worlds with a full game kit.** Ask for "a minecraft-like
+  survival world" or "a village of block houses" and the world gets endless,
+  seeded voxel terrain (`@aether/voxel`): biomes, caves, ores, trees, water
+  and lava, palette-compressed 16 × 16 × 128 chunks, greedy meshing with
+  ambient occlusion and smooth sky/torch light, generated and meshed in up to
+  two Web Workers and streamed around the player. The agent builds with
+  block edits (boxes, spheres, stairs, castles, houses, towers, bridges,
+  pixel art, block letters) anchored to the generated ground. Press Play for
+  a first-person survival game: break and place blocks, a hotbar and
+  inventory, crafting, tools, health and hunger, fall/lava/drowning damage,
+  a day/night cycle, animals by day and zombies and spiders at night,
+  synthesized sounds, and saves that persist in the browser (export and
+  import as files). Same look and parity on WebGPU and WebGL2.
 - **Self-verifying physics.** `verify` builds an isolated headless physics
   world from the document, fast-forwards it with gameplay logic attached and
   checks 7 test kinds: `stable`, `noOverlap`, `reaches`, `eventually`,
@@ -358,10 +371,11 @@ template (for example `#/new/coin-island`).
 | `npm run start` | Production server in the foreground: API plus the built studio on one origin |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
-| `npm run smoke` | Runs the real agent with the offline planner against 14 prompts and re-verifies every world headless |
+| `npm run smoke` | Runs the real agent with the offline planner against 17 prompts and re-verifies every world headless (block worlds: their edits compile and the spawn area meshes) |
 | `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, `aether stop` |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
+| `npm run e2e:voxel` | Block worlds in Chromium (WebGPU, WebGL2) and Firefox: prompt → streamed terrain without long tasks, edit → remesh latency, walk, break, place, craft, bounded memory while travelling, save and reload |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |

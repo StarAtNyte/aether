@@ -433,6 +433,16 @@ export class VoxelLayer {
     this.version++;
   }
 
+  /** Mobs currently drawn. */
+  get mobCount(): number {
+    return this.mobs.size;
+  }
+
+  /** Drops currently drawn. */
+  get dropCount(): number {
+    return this.drops.size;
+  }
+
   /** Ids of mobs currently drawn (for pruning). */
   mobIds(): IterableIterator<number> {
     return this.mobs.keys();

@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import { applyPatches, createWorld, type PatchInput } from '@aether/core';
+import { compileBuilding, navigableVerdict, PlanError, type BuildingPlanInput } from '../src/index';
+
+/** A two-bedroom apartment: hall spine, living + kitchen, two bedrooms, bathroom. */
+export const APARTMENT: BuildingPlanInput = {
+  id: 'apt',
+  name: 'Two-bedroom apartment',
+  style: 'modern',
+  levels: [
+    {
+      height: 2.9,
+      rooms: [
+        { id: 'living', type: 'living', rect: [0, 0, 6, 5] },
+        { id: 'kitchen', type: 'kitchen', rect: [6, 0, 10, 5] },
+        { id: 'hall', type: 'hall', rect: [0, 5, 10, 6.6] },
+        { id: 'bed1', type: 'bedroom', rect: [0, 6.6, 4, 10.6] },
+        { id: 'bath', type: 'bathroom', rect: [4, 6.6, 6.6, 10.6] },
+        { id: 'bed2', type: 'bedroom', rect: [6.6, 6.6, 10, 10.6] },
+      ],
+      doors: [
+        { between: ['hall', 'outside'], side: 'east', main: true, width: 1 },
+        { between: ['hall', 'living'], kind: 'opening', width: 1.6 },
+        { between: ['living', 'kitchen'], kind: 'opening', width: 2.2 },
+        { between: ['hall', 'bed1'] },
+        { between: ['hall', 'bath'], width: 0.8 },
+        { between: ['hall', 'bed2'] },
+      ],
+    },
+  ],
+};
+
+function build(plan: BuildingPlanInput) {
+  const c = compileBuilding(plan);
+  const world = createWorld({ environment: { ground: { material: { preset: 'grass' }, size: 200 } } });
+  const res = applyPatches(world, c.patches as PatchInput[], { atomic: true });
+  return { c, world: res.world, errors: res.errors };
+}
+
+describe('compileBuilding', () => {
+  it('compiles a valid World IR building', () => {
+    const { c, errors, world } = build(APARTMENT);
+    expect(errors).toEqual([]);
+    expect(c.stats.rooms).toBe(6);
+    expect(c.stats.walls).toBeGreaterThan(6);
+    expect(c.stats.doors).toBeGreaterThanOrEqual(6);
+    expect(c.stats.windows).toBeGreaterThan(2);
+    expect(c.stats.furniture).toBeGreaterThan(15);
+    expect(c.stats.lights).toBeGreaterThan(3);
+    expect(c.stats.lights).toBeLessThanOrEqual(14);
+    expect(Object.keys(world.entities).length).toBe(c.entities.length);
+    // Every door leaf swings with the door behaviour on E.
+    const leaves = Object.values(world.entities).filter((e) => e.arch?.role === 'door');
+    expect(leaves.length).toBe(4);
+    for (const l of leaves) expect(l.behaviors[0]?.params['key']).toBe('e');
+  });
+
+  it('is deterministic', () => {
+    expect(JSON.stringify(compileBuilding(APARTMENT).entities)).toBe(JSON.stringify(compileBuilding(APARTMENT).entities));
+  });
+
+  it('produces a physically usable apartment (reachable rooms, free door swings, no overlaps)', () => {
+    const { world } = build(APARTMENT);
+    const v = navigableVerdict(world, 'apt', 0.8);
+    expect(v.message).toMatch(/.*/);
+    expect(v.passed, v.message).toBe(true);
+  });
+
+  it('detects a blocked room', () => {
+    const plan = structuredClone(APARTMENT) as BuildingPlanInput & { levels: Array<{ doors: unknown[] }> };
+    plan.levels[0]!.doors = plan.levels[0]!.doors.filter((d) => JSON.stringify(d) !== JSON.stringify({ between: ['hall', 'bed2'] }));
+    const { world } = build(plan);
+    const v = navigableVerdict(world, 'apt', 0.8);
+    expect(v.passed).toBe(false);
+    expect(v.message).toMatch(/bed2|Bedroom/);
+  });
+
+  it('rejects bad plans with a code and hint', () => {
+    try {
+      compileBuilding({ levels: [] } as unknown as BuildingPlanInput);
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(PlanError);
+      expect((e as PlanError).code).toBe('invalid_plan');
+      expect((e as PlanError).hint.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('compiles a two-storey house with a stair, pitched roof, terrace and pool', () => {
+    const { c, errors, world } = build({
+      id: 'villa',
+      style: 'japandi',
+      levels: [
+        { height: 3.1, rooms: [{ id: 'living', type: 'living', rect: [0, 0, 8, 6] }, { id: 'kitchen', type: 'kitchen', rect: [8, 0, 12, 6] }], doors: [{ between: ['living', 'outside'], side: 'south', main: true }, { between: ['living', 'kitchen'], kind: 'opening', width: 2 }], stairs: [{ at: [1, 1.2], heading: 'east', width: 1 }] },
+        { height: 2.9, rooms: [{ id: 'landing', type: 'hall', rect: [0, 0, 6, 3] }, { id: 'master', type: 'bedroom', rect: [0, 3, 6, 6] }, { id: 'bath', type: 'bathroom', rect: [6, 0, 9, 6] }], doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'] }] },
+      ],
+      roof: { shape: 'gable', pitch: 30 },
+      site: { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 } },
+    });
+    expect(errors).toEqual([]);
+    expect(c.stats.stairs).toBe(1);
+    expect(c.notes.join(' ')).toMatch(/flat roof/);
+    const v = navigableVerdict(world, 'villa', 0.8);
+    expect(v.passed, v.message).toBe(true);
+  });
+});

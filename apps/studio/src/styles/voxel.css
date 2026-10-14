@@ -540,6 +540,27 @@
   color: var(--vx-text-2);
 }
 
+.vx-save {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vx-edge);
+}
+
+.vx-save__import {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.vx-save__import input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .vx-screen__close {
   position: absolute;
   top: 12px;

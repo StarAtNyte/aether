@@ -354,18 +354,20 @@ export class VoxelSession {
     }
   }
 
-  /** Forget the save (fresh world from the seed). */
+  /** Forget the save (fresh world from the seed): every chunk regenerates. */
   async resetSave(): Promise<void> {
     if (!this.store || !this.saveKey) return;
     await this.store.clear(this.saveKey);
     this.savedKeys.clear();
     this.savedVersions.clear();
-    if (this.identity && this.terrain) {
-      const id = this.identity;
-      this.identity = null;
-      this.world = null;
-      this.resetStreaming(id, this.terrain);
-    }
+    this.restream();
+  }
+
+  /** Drop all loaded chunks (the same block world object) and stream again. */
+  private restream(): void {
+    if (!this.world || !this.identity) return;
+    for (const slot of this.world.chunks.values()) slot.modified = false;
+    this.streamer?.reset(this.identity.border);
   }
 
   /** Export the whole save (loaded and stored chunks + player) as bytes. */
@@ -389,8 +391,8 @@ export class VoxelSession {
     return encodeSave({ meta: { terrain: this.saveKey, savedAt: Date.now(), player: player ?? (await this.loadPlayer()) }, chunks });
   }
 
-  /** Import a save file (replaces the current save). Throws on invalid files. */
-  async importSave(bytes: Uint8Array): Promise<void> {
+  /** Import a save file (replaces the current save); returns its player. Throws on invalid files. */
+  async importSave(bytes: Uint8Array): Promise<SavedPlayer | null> {
     const store = this.store;
     const reg = this.reg;
     if (!store || !reg || !this.saveKey) throw new Error('no voxel world is open');
@@ -402,11 +404,8 @@ export class VoxelSession {
     if (save.meta.player) await this.savePlayer(save.meta.player);
     this.savedKeys = new Set(save.chunks.map((c) => `${c.cx},${c.cz}`));
     this.savedVersions.clear();
-    if (this.identity && this.terrain) {
-      const id = this.identity;
-      this.world = null;
-      this.resetStreaming(id, this.terrain);
-    }
+    this.restream();
+    return save.meta.player;
   }
 
   private applyEditLighting(env: Environment): void {
@@ -511,7 +510,7 @@ export class VoxelPlay {
   private readonly hit = createHit();
   private readonly tint: [number, number, number] = [1, 1, 1];
   private inventoryOpen = false;
-  private readonly saved: SavedPlayer | null;
+  private saved: SavedPlayer | null;
 
   constructor(
     private readonly session: VoxelSession,
@@ -675,27 +674,34 @@ export class VoxelPlay {
   private drawActors(): void {
     const g = this.game;
     const n = this.frameNo;
-    for (const m of g.mobs) {
+    for (let i = 0; i < g.mobs.length; i++) {
+      const m = g.mobs[i] as (typeof g.mobs)[number];
       this.layer.setMob(m.id, m.spec.kind, m.body.x, m.body.y, m.body.z, m.yaw, m.phase, m.walk, m.hurt > 0);
       this.mobStamp.set(m.id, n);
     }
-    for (const id of this.layer.mobIds()) {
-      if (this.mobStamp.get(id) !== n) {
-        this.layer.removeMob(id);
-        this.mobStamp.delete(id);
+    // Prune only when something disappeared (no iteration in the common case).
+    if (this.layer.mobCount > g.mobs.length) {
+      for (const id of this.layer.mobIds()) {
+        if (this.mobStamp.get(id) !== n) {
+          this.layer.removeMob(id);
+          this.mobStamp.delete(id);
+        }
       }
     }
     const time = g.time;
-    for (const d of g.drops) {
+    for (let i = 0; i < g.drops.length; i++) {
+      const d = g.drops[i] as (typeof g.drops)[number];
       const def = g.items.get(d.item);
       const bob = Math.sin(time * 2.4 + d.id) * 0.06 + 0.16;
       this.layer.setDrop(d.id, def && def.block >= 0 ? def.block : -1, def?.color ?? '#cccccc', d.body.x, d.body.y + bob, d.body.z, time * 1.6 + d.id);
       this.dropStamp.set(d.id, n);
     }
-    for (const id of this.layer.dropIds()) {
-      if (this.dropStamp.get(id) !== n) {
-        this.layer.removeDrop(id);
-        this.dropStamp.delete(id);
+    if (this.layer.dropCount > g.drops.length) {
+      for (const id of this.layer.dropIds()) {
+        if (this.dropStamp.get(id) !== n) {
+          this.layer.removeDrop(id);
+          this.dropStamp.delete(id);
+        }
       }
     }
   }
@@ -812,6 +818,34 @@ export class VoxelPlay {
     this.game.drainEvents(this.onEvent);
     this.deathCause = '';
     this.hudTimer = HUD_MS;
+  }
+
+  /** The whole save as a file (bytes). */
+  exportSave(): Promise<Uint8Array | null> {
+    return this.session.exportSave(this.game.snapshotPlayer());
+  }
+
+  /** Replace the world with a save file. */
+  async importSave(bytes: Uint8Array): Promise<void> {
+    const player = await this.session.importSave(bytes);
+    this.ready = false;
+    if (player) {
+      this.saved = player;
+      this.spawnXZ[0] = player.position[0];
+      this.spawnXZ[1] = player.position[2];
+    }
+  }
+
+  /** Start over: forget the save and respawn on fresh terrain. */
+  async resetWorld(): Promise<void> {
+    await this.session.resetSave();
+    this.saved = null;
+    this.game.inventory.clear();
+    for (const st of this.game.settings.startItems) this.game.inventory.add(st.item, st.count);
+    this.spawnXZ[0] = this.doc.player.spawn[0];
+    this.spawnXZ[1] = this.doc.player.spawn[2];
+    this.game.respawn();
+    this.ready = false;
   }
 
   /** Capture the mouse (from a user gesture). */
