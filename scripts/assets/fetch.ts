@@ -124,7 +124,7 @@ async function fetchPack(p: z.infer<typeof Pack>): Promise<void> {
   const zipPath = join(SOURCE_DIR, 'kenney', `${slug}.zip`);
   const dir = join(SOURCE_DIR, 'kenney', slug);
   mkdirSync(join(SOURCE_DIR, 'kenney'), { recursive: true });
-  let data = existsSync(zipPath) ? readFileSync(zipPath) : null;
+  let data: Buffer | null = existsSync(zipPath) ? readFileSync(zipPath) : null;
   if (!data || hash('sha256', data) !== p.sha256) {
     console.log(`download ${p.id} (${(p.bytes / 1e6).toFixed(1)} MB)`);
     data = await download(p.url, MAX_ARCHIVE_BYTES);

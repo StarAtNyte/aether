@@ -171,13 +171,42 @@ export const MeshShape = z.object({
 
 export const NoneShape = z.object({ kind: z.literal('none') });
 
-export const ShapeSpec = z.discriminatedUnion('kind', [PrimitiveShape, ProceduralShape, ModelShape, ScatterShape, NoneShape, MeshShape]);
+/** Asset id: a library catalog id ("sofa", "tree-oak") or a user import ("user-1a2b3c4d5e6f"). */
+export const AssetRef = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'asset ids are lowercase slugs');
+
+/**
+ * Additive: a ready-made asset from the curated library (@aether/assets
+ * catalog) or one the user imported. Models are real-world sized (metres,
+ * base on y = 0, centred), so no scale is needed; physics colliders come
+ * from the catalog. Fallback chain: when the asset is unknown or fails to
+ * load, `fallback` is shown (a built-in or custom generator, or a
+ * primitive), else a box of the asset's size — never nothing.
+ */
+export const AssetShape = z.object({
+  kind: z.literal('asset'),
+  /** Catalog id or user asset id. */
+  id: AssetRef,
+  /** Alternative look: one of the catalog entry's `variants` (another catalog id). */
+  variant: AssetRef.optional(),
+  /** Optional uniform resize: the largest dimension in metres (default: the asset's real size). */
+  fitSize: z.number().positive().max(500).optional(),
+  /**
+   * Animated models: "auto" (default) plays idle / walk / run from the
+   * entity's movement; a clip name loops that clip; "none" holds the rest pose.
+   */
+  animation: z.string().min(1).max(64).optional(),
+  /** Shown when the asset is unavailable. */
+  fallback: z.union([PrimitiveShape, ProceduralShape]).optional(),
+});
+
+export const ShapeSpec = z.discriminatedUnion('kind', [PrimitiveShape, ProceduralShape, ModelShape, ScatterShape, NoneShape, MeshShape, AssetShape]);
 export type ShapeSpec = z.infer<typeof ShapeSpec>;
 export type MeshShape = z.infer<typeof MeshShape>;
 export type PrimitiveShape = z.infer<typeof PrimitiveShape>;
 export type ProceduralShape = z.infer<typeof ProceduralShape>;
 export type ModelShape = z.infer<typeof ModelShape>;
 export type ScatterShape = z.infer<typeof ScatterShape>;
+export type AssetShape = z.infer<typeof AssetShape>;
 
 // ---------------------------------------------------------------------------
 // Physics
@@ -437,6 +466,17 @@ export const Environment = z.object({
   /** Post effects. */
   bloom: z.number().min(0).max(3).default(0.4),
   exposure: z.number().min(0.1).max(4).default(1),
+  /**
+   * Additive: image-based lighting and background from an HDR environment
+   * map — a library HDRI id (kind "hdri" in the asset catalog) or a user
+   * import ("user-…"). The analytic sky stays the fallback while it loads
+   * or when the id is unknown.
+   */
+  hdri: AssetRef.optional(),
+  /** HDRI lighting strength (default 1). */
+  hdriIntensity: z.number().min(0).max(8).optional(),
+  /** Show the HDRI as the background (default true); false keeps the analytic sky behind HDRI lighting. */
+  hdriBackground: z.boolean().optional(),
 });
 export type Environment = z.infer<typeof Environment>;
 
