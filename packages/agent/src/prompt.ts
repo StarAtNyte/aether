@@ -89,11 +89,19 @@ Blocks: stone cobblestone mossy_cobblestone dirt coarse_dirt grass snowy_grass s
 Game kit ("game"): mode "survival"|"creative"(flight)|"explore", dayLength seconds (600), startHour (8), cycle, mobs, passive ["sheep","pig","chicken"], hostile ["zombie","spider"] (night), maxMobs, hunger, fallDamage, keepInventory, startItems [{item,count}] (blocks, or items like stick coal iron_ingot diamond, <wooden|stone|iron|diamond>_<pickaxe|axe|shovel|sword>, apple bread), recipes [{id,inputs:[{item,count}],output:{item,count}}] (extra shapeless).
 Block worlds: environment ground null, a matching sky, player "firstPerson" with spawn [x,0,z] (y comes from the terrain). Build near the spawn with anchor "surface"; prefer few large edits over single blocks.`;
 
+const ARCHITECTURE = `## Architecture (build_architecture): houses, apartments, offices, cafés, interiors
+Use build_architecture for buildings and rooms, never boxes. Plan metres: x east, z SOUTH; room rects are wall centrelines and neighbours SHARE edges exactly.
+Plan = {"id","name","style":"modern"|"scandinavian"|"industrial"|"japandi"|"classic","origin"?:[x,z],"levels":[{"height":3,"rooms":[{"id","type","rect":[x0,z0,x1,z1]|"polygon":[[x,z],..],"floor"?,"wallColor"?,"furnish"?:true,"items"?:[{"kind","at"?,"yaw"?,"against"?}],"omit"?}],"doors":[{"between":[id,id|"outside"],"kind"?:"swing"|"sliding"|"opening","width"?,"main"?:true}],"windows"?:[{"room","side":"north"|..,"count"}],"stairs"?:[{"at":[x,z],"heading","shape":"straight"|"l"|"u"}]}],"roof"?:{"shape":"flat"|"gable"|"hip"|"shed"},"site"?:{"terrace":[[x,z],..],"pool"?:{"at","width","length"}}}
+Room types: living kitchen dining bedroom bathroom office hall entry cafe meeting open-office lobby storage laundry terrace garage studio kids (auto-furnished by type + style). Item kinds: sofa armchair dining-table desk bed bookshelf plant rug tv fireplace island … Materials: {"finish":"oak"|"walnut"|"marble"|"terrazzo"|"concrete"|"plaster"|"paint"|"tile"|"brick"|"velvet"|"leather"|"brass"|…,"color"?}.
+Ops: create_building {plan} | add_level | add_room {building, level, room, doors?} | remove_room | add_door | add_window | add_stairs | set_roof | set_style | furnish_room {building, room, items?, omit?} | place_item | remove_item | set_material {building, target:"exterior"|"roof"|"floor"|"walls", room?, material}.
+Proportions: doors 0.9×2.1 m, storeys 2.9–3.2 m, bedrooms ≥ 3×3.2, bathrooms ≥ 2×2.4, halls ≥ 1.2 wide, counters 0.9 m high; one main door to "outside"; every room reachable through doors; stairs need a landing above. From a floor-plan image, copy its rooms as rects. Fix every problem the usability report lists.`;
+
 const TESTS = `## Verification tests (addTest) — proven by running physics + rules headless; the player does NOT move during tests
 {"id","kind":"stable","target":sel="*","seconds":3,"maxDrift":0.15} things at rest stay put
 {"id","kind":"noOverlap","target":sel="*"} no dynamic bodies start interpenetrating
 {"id","kind":"reaches","target":sel,"zone":sel|{"center":[x,y,z],"radius"},"within":10}
 {"id","kind":"eventually","condition":{"key","op","value"},"within":10} a state condition becomes true (rules run)
+{"id","kind":"navigable","target":buildingId|"*","clearance":0.8} every room reachable on foot, doors swing free, furniture grounded (build_architecture adds it)
 {"id","kind":"moves","target":sel,"distance":0.5,"within":10} | {"id","kind":"topples","target":sel,"degrees":45,"within":10} | {"id","kind":"staysAbove","target":sel,"y":-1,"within":10}
 moves/topples/staysAbove require EVERY matched target to pass: name a specific id (e.g. the last domino) rather than a broad tag.`;
 
@@ -130,6 +138,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string {
     IR,
     PATCHES,
     VOXEL,
+    ARCHITECTURE,
     `## Worked examples\n${renderExamples()}`,
     `## Built-in generators (shape {"kind":"procedural","generator":id,"params":{...}}; unknown params are ignored; every param has a default)\n${renderGeneratorCatalog(catalogs.generators)}`,
     ...(catalogs.libraryGenerators && catalogs.libraryGenerators.length > 0

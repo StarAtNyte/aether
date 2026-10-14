@@ -7,7 +7,7 @@ import { hashString, stableStringify, type GeneratorDef, type Json, type Procedu
 import type { BuiltinGenerator, GeneratorOutput, SandboxRunner } from './types';
 import { createGeneratorApi } from './api';
 import { DEFAULT_SEED, GeneratorCache, generatorCacheKey } from './cache';
-import { getBuiltinGenerator } from './generators/index';
+import { ARCH_GENERATOR_IDS, getBuiltinGenerator } from './generators/index';
 import { resolveParams } from './params';
 import { validateOutput } from './output';
 
@@ -73,6 +73,8 @@ export function resolveBuiltin(gen: BuiltinGenerator, params: Record<string, Jso
 const inflight = new WeakMap<GeneratorCache, Map<string, Promise<GeneratorOutput>>>();
 
 function customGenerator(world: Pick<WorldDoc, 'generators'>, id: string): GeneratorDef | undefined {
+  // Architecture generators are reserved: a custom generator may never shadow a building's walls.
+  if (ARCH_GENERATOR_IDS.has(id)) return undefined;
   const gens = world?.generators;
   if (!gens || typeof gens !== 'object') return undefined;
   return Object.hasOwn(gens, id) ? gens[id] : undefined;

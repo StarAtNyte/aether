@@ -41,7 +41,16 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'write_generator' | 'write_script' | 'request_asset' | 'inspect' | 'run_verification' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'write_generator' | 'write_script' | 'request_asset' | 'inspect' | 'run_verification' | 'finish';
+
+/** Operations of build_architecture (mirrors @aether/arch `ArchOp`). */
+export const ARCH_OPS = [
+  'create_building', 'remove_building', 'add_level', 'add_room', 'remove_room', 'add_door', 'add_window', 'add_stairs', 'set_roof', 'set_style',
+  'furnish_room', 'place_item', 'remove_item', 'set_material',
+] as const;
+
+/** Upper bound of architecture ops per call (mirrors @aether/arch `MAX_ARCH_OPS`). */
+export const MAX_ARCH_OPS_PER_CALL = 40;
 
 /** All tools available to the planner (stable order: part of the prompt-cache prefix). */
 export const AGENT_TOOLS: ToolDef[] = [
@@ -62,6 +71,26 @@ export const AGENT_TOOLS: ToolDef[] = [
         message: { type: 'string', description: 'Short commit message for the history timeline, e.g. "Add pine forest".' },
       },
       required: ['patches', 'message'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'build_architecture',
+    description:
+      'Create and edit real-world buildings and interiors (houses, apartments, offices, cafés, villas) from a declarative plan (see "Architecture" in the system prompt). The plan compiles into walls with mitred corners, floors, ceilings, doors that open with E, windows, stairs, a roof, furniture and real lights, then is checked: every room reachable on foot, doors swing free, furniture grounded without overlaps. Ops apply in order; refused ops come back with a code and a fix hint while the others still apply.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ops: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MAX_ARCH_OPS_PER_CALL,
+          items: { type: 'object', properties: { op: { type: 'string', enum: [...ARCH_OPS] } }, required: ['op'] },
+          description: 'e.g. {"op":"create_building","plan":{...}} or {"op":"furnish_room","building":"house","room":"living"}.',
+        },
+        message: { type: 'string', description: 'Short commit message, e.g. "Two-bedroom apartment".' },
+      },
+      required: ['ops', 'message'],
       additionalProperties: false,
     },
   },
@@ -165,6 +194,10 @@ export const ToolInputs = {
   apply_patches: z.object({
     patches: z.array(z.unknown()).min(1).max(TOOL_LIMITS.MAX_PATCHES_PER_CALL),
     message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('Agent edit'),
+  }),
+  build_architecture: z.object({
+    ops: z.array(z.unknown()).min(1).max(MAX_ARCH_OPS_PER_CALL),
+    message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('Architecture edit'),
   }),
   write_generator: z.object({
     id: z.string(),

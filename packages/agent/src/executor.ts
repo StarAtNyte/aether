@@ -4,6 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
+import { applyArchOps } from '@aether/arch';
 import { GeneratorDef, ScriptDef, hasOwn, summarizeWorld, type PatchError } from '@aether/core';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
@@ -40,6 +41,8 @@ export interface ExecutorContext {
 }
 
 const MAX_RESULT_CHARS = 20_000;
+/** Ids of the architecture generators (`arch-*`, `furn-*`), reserved for buildings. */
+const RESERVED_GENERATOR_PREFIX = /^(arch|furn)-/;
 const MAX_LISTED_ERRORS = 25;
 const MAX_ENTITY_JSON = 3_000;
 
@@ -119,6 +122,35 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
 }
 
+/**
+ * build_architecture: apply the ops to the buildings' plans (pure, in
+ * @aether/arch), commit the minimal patch list as one undo step and report
+ * per-op refusals (code + fix hint) plus the usability check of every
+ * touched building.
+ */
+function buildArchitectureTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.build_architecture>): ToolOutcome {
+  const message = input.message.trim().slice(0, 200) || 'Architecture edit';
+  const res = applyArchOps(ctx.host.getWorld(), input.ops);
+  const events: AgentEvent[] = [];
+  const lines: string[] = [];
+  let edited = false;
+  if (res.patches.length > 0) {
+    const applied = ctx.host.applyPatches(res.patches, message);
+    events.push({ type: 'patches', patches: applied.applied, message, result: { applied: applied.applied.length, errors: applied.errors } });
+    edited = applied.applied.length > 0;
+    if (applied.errors.length > 0) lines.push(formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length));
+  }
+  lines.push(...res.lines.map((l) => l.slice(0, 600)));
+  if (res.errors.length > 0) {
+    lines.push(`${res.errors.length} op(s) were refused — fix and resend only these:`);
+    for (const e of res.errors.slice(0, MAX_LISTED_ERRORS)) lines.push(`- [${e.index}] ${e.op} ${e.code}: ${e.message.slice(0, 300)} Fix: ${e.hint.slice(0, 300)}`);
+  }
+  const failing = res.reports.filter((r) => !r.passed);
+  if (failing.length > 0) lines.push('Fix the usability problems above (move doors, remove or re-place items, widen rooms) with further build_architecture ops.');
+  const refusedAll = res.errors.length > 0 && res.patches.length === 0;
+  return { content: clip(lines.join('\n') || 'No change.'), isError: refusedAll, events, edited };
+}
+
 async function defineGenerator(ctx: ExecutorContext, def: GeneratorDef, events: AgentEvent[]): Promise<ToolOutcome> {
   const res = ctx.host.applyPatches([{ op: 'defineGenerator', generator: def }], `Define generator ${def.id}`);
   if (res.errors.length > 0) {
@@ -137,7 +169,7 @@ async function defineGenerator(ctx: ExecutorContext, def: GeneratorDef, events: 
 }
 
 async function validateGenerator(ctx: ExecutorContext, def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {
-  if (ctx.builtinGenerators.has(def.id)) return { ok: false, error: `"${def.id}" is a built-in generator id; choose another id` };
+  if (ctx.builtinGenerators.has(def.id) || RESERVED_GENERATOR_PREFIX.test(def.id)) return { ok: false, error: `"${def.id}" is a built-in generator id; choose another id` };
   if (!ctx.host.validateGenerator) return { ok: true };
   try {
     return await raceAbort(ctx.host.validateGenerator(def), ctx.signal);
@@ -188,7 +220,7 @@ async function buildAssetDeep(ctx: ExecutorContext, input: z.infer<typeof ToolIn
 }
 
 async function requestAssetTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.request_asset>): Promise<ToolOutcome> {
-  if (ctx.builtinGenerators.has(input.id)) return fail(`"${input.id}" is a built-in generator; use it directly or pick another id.`);
+  if (ctx.builtinGenerators.has(input.id) || RESERVED_GENERATOR_PREFIX.test(input.id)) return fail(`"${input.id}" is a built-in generator; use it directly or pick another id.`);
   const deep = await buildAssetDeep(ctx, input);
   if (deep && !deep.isError) return deep;
   const events: AgentEvent[] = [...(deep?.events ?? []), { type: 'status', text: `Writing a custom generator "${input.id}"…` }];
@@ -252,7 +284,7 @@ export async function runVerification(ctx: ExecutorContext): Promise<{ event: Ag
 
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, write_generator, write_script, request_asset, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, write_generator, write_script, request_asset, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -260,6 +292,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'apply_patches': {
         const p = ToolInputs.apply_patches.safeParse(rawInput);
         return p.success ? await applyPatchesTool(ctx, p.data) : fail(`Invalid apply_patches input: ${issuesText(p.error)}`);
+      }
+      case 'build_architecture': {
+        const p = ToolInputs.build_architecture.safeParse(rawInput);
+        return p.success ? buildArchitectureTool(ctx, p.data) : fail(`Invalid build_architecture input: ${issuesText(p.error)}`);
       }
       case 'write_generator': {
         const p = ToolInputs.write_generator.safeParse(rawInput);

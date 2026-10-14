@@ -1262,3 +1262,133 @@ with the new completed-sign-in phase in Chromium. `npm run e2e:hosted`
 (static build with no `/api`, mocked bridge) passes in Chromium and Firefox:
 own-key turn, hosted first-run key path, the Codex login via the bridge
 (pair, device code, model), Settings pairing, and an offline world.
+
+## Block worlds (voxel engine + game kit), completion pass
+
+**Scope.** The stage's earlier parts were checked against the brief and
+kept: `@aether/voxel` (registry, palette chunks, seeded biomes / caves /
+ores / structures, light, greedy meshing with AO, worker pool, streaming,
+persistence, collision, DDA ray casts), the World IR additions
+(`voxel`, `setVoxel`, `voxelEdit`, limits), agent tools and offline planner,
+Rapier terrain colliders, the game kit and HUD, and `npm run e2e:voxel`.
+This pass rendered the voxel prompts and played the game in both browsers,
+on desktop and on phones, and fixed what that showed. Each fix has a
+regression test.
+
+- **Editor camera underground after a block-world prompt.** `isNewWorld`
+  returned false for any world without entities, and most block worlds
+  have none. The camera stayed at the starter world's height, inside the
+  generated caves. Block terrain that appears or changes seed / preset now
+  counts as a new world. Framing aims at what was built
+  (`VoxelSession.editFocus`, compiled edit bounds), else the spawn, and a
+  turn that only adds block edits reveals them (`addedVoxelEdits`,
+  `Simulation.revealVoxelEdits`).
+- **Hills hiding the subject.** The framing direction was fixed, so a
+  mountain could cover half a castle. `clearViewOffset`
+  (`apps/studio/src/voxel/framing.ts`) checks sight lines to the subject's
+  centre and edges against the generator heightfield (no loaded chunks
+  needed) and turns to the first clear side of eight, or steepens the view
+  when every side is walled in.
+- **Washed-out terrain.** Exp² fog reaching 95 % at the view distance
+  fogged half-distance terrain by 53 %. Terrain now fogs itself: a linear
+  fade over the horizontal distance to the streaming centre (the player in
+  play, the orbit target in the editor), from half the view distance to the
+  edge, plus the document's own fog density. The scene `FogExp2` keeps a
+  lighter density for mobs and props. No material changes type, so no
+  shader variants are added.
+- **Structures.** Columns that carve are cleared up to the sky (no
+  floating mountain tops above castles). Foundations reach down to the
+  natural ground under the footprint, up to 48 blocks (no buildings
+  overhanging slopes). `CompiledEdit.content` keeps the model's own extent
+  for framing. Sand and sandstone are a little deeper so desert faces read.
+- **Inventory overflowing the viewport.** The breakpoint was a window media
+  query while the HUD lives in a viewport next to the editor panels. The
+  HUD is now a size container (`container: vx-hud / inline-size`). The
+  panel stacks below 820 px of viewport, slots share the width on phones,
+  and Close no longer covers the header.
+- **No touch play.** A phone could move and place, but not look, break or
+  open the inventory. `VoxelInput` now handles touch: drag on the view to
+  look, tap to place, touch and hold (280 ms) to break while aiming, a
+  coarse primary pointer starts in touch mode, and touch never requests
+  pointer lock. The HUD shows touch hints and an inventory button, the
+  touch stick / buttons step aside while the inventory or death screen is
+  open, and the hotbar clears them, including the safe area.
+- **120 ms first-draw stalls while streaming (WebGPU).** three creates a
+  mesh's GPU buffers and render object at its first draw. Chunks entering
+  the view together (camera flights, the reveal after the shader warm-up)
+  were all built inside one frame. `VoxelLayer.flushPrebuild` now builds
+  new chunk meshes once per frame through the renderer's asynchronous
+  compiler, even outside the view. That compiler yields between objects. A
+  chunk removed while its build is pending is freed only after the build
+  (no disposed geometry uploaded again).
+- **Main-thread memory.** Chunk vertex arrays were kept on the CPU after
+  upload (23–62 MiB at view distance 8). They are released once the
+  pre-build has uploaded them. The release waits for the compiler's promise,
+  because three calls `onAfterRender` during the compiler's projection pass,
+  before anything is uploaded; the first attempt released on that callback
+  and produced empty GPU buffers, which the e2e caught as WebGPU validation
+  errors. Counts, bounds and versions stay. Chunk meshes are never ray cast,
+  and a lost context rebuilds the terrain.
+- **Copies per mesh request.** `VoxelJobPool.mesh` copied nine chunks into
+  fresh buffers per request (about 2,600 buffers for one view). Jobs now keep
+  chunk references, and `ChunkData.view()` packs them when the job is
+  posted. Structured clone copies the indices natively, with no transfer,
+  and the references are dropped once sent.
+- E2E: `voxel.e2e.ts` checks that the inventory panel fits the viewport
+  and that Close covers no header text. It adds a phone scenario
+  (390 × 844, touch) in Chromium (CDP touch drag) and Firefox (touch
+  pointer events), reports the JS heap and the frames that held blocking
+  work, and gains `--webgl2` / `--touch` options. A fourth block prompt
+  ("a blocky stone castle on a hill") joins smoke and the gallery. The
+  committed scratch probes (`tests/e2e/.probe-*.ts`) were removed.
+
+**SECURITY.**
+- New input boundaries:
+  - Touch pointer events: coordinates must be finite, only the first finger
+    is tracked, gestures are ignored while UI is open, and `preventDefault`
+    suppresses emulated mouse events, so no action fires twice.
+    `matchMedia` is wrapped in try/catch.
+  - Worker mesh messages: same schema as before (`ToWorker` with
+    `instanceof` checks), still re-validated by the worker handler and
+    `ChunkData.fromPacked`. Replies are checked by `checkMesh` /
+    `fromPacked` as before.
+  - No new network, storage, URL, postMessage-from-page or LLM paths.
+- No `innerHTML`, `eval` or `new Function` in the voxel, HUD or render code
+  (grep). The HUD's new strings are static React text. CSP unchanged. No
+  secrets. No subprocesses or downloads.
+- `npm audit --omit=dev`: 0 vulnerabilities. No new dependencies.
+
+**PERFORMANCE** (headless SwiftShader, so relative numbers; the machine's
+load average was 4–13 from other processes).
+- Streaming view 8 (289 chunks), longest main-thread task after the first
+  chunk: Chromium WebGPU **0 ms**. It was 116–125 ms in 4 of 6 runs
+  before the pre-build; the profiler probe reproduced it 2/2 before the fix
+  and 0/2 after. Chromium WebGL2 over SwiftShader still blocks inside GL
+  calls (reported, not gated, as before). Firefox: frame gaps ≤ 100 ms.
+- The voxel engine's own main-thread work per task (update / reply /
+  upload batch): Chromium 2–3 / 3–4 / 0.9–1.3 ms, Firefox 6 / 5 / 5 ms.
+  Firefox's worst streamer update was 14–27 ms before the copy-free
+  packing. In-page timing in Firefox: `update` max 11 → 2 ms (total 202 →
+  105 ms), `pool.mesh` total 121 → 15 ms.
+- JS heap after streaming view 8 (Chromium WebGPU): **73 → 34–39 MB**.
+- Edit → remesh median 16–22 ms in both browsers (the 16 ms desktop
+  budget; SwiftShader shares the CPU).
+- Memory while travelling: at most 348–382 chunks loaded (bound 441),
+  meshes drawn ≤ 289; chunk meshes removed with a pending build are freed
+  after it (20 create/destroy cycles: every geometry disposed, unit test).
+- Allocation probe (`--expose-gc`, 10⁶ frames): `setFog`, `setFogOrigin`
+  and an empty `flushPrebuild` allocate ≈ 0 B/frame (≤ 0.02, noise). The
+  pre-build allocates only on frames that install chunks.
+- Bundle: EditorRoute +1.4 KB; lazy chunks `session` (voxel) +5.1 KB,
+  `voxel-layer` +2.1 KB, `VoxelHud` +0.5 KB JS. Nothing new on the first
+  frame of ordinary worlds (the voxel code stays lazy).
+- Non-voxel worlds: the new paths are behind `if (voxelLayer)`, and
+  `npm run e2e` timings are unchanged.
+
+**Gates.** tsc 0 errors. Full Vitest: 143 files, 1919 tests pass (+ the
+lifecycle test added afterwards). Studio build OK. Smoke: 18/18. `npm run
+e2e` passes in Chromium WebGPU, Chromium WebGL2 and Firefox WebGL2. One
+earlier run hit an 827 ms SwiftShader WebGL2 frame during "Run checks",
+which did not recur. `npm run e2e:voxel` passes in Chromium WebGPU,
+Chromium WebGL2, Firefox WebGL2 and the phone / touch runs in both
+browsers. Gallery renders of the four block prompts were inspected.

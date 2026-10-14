@@ -90,7 +90,10 @@ explicit state, so the AI can be held to account:
   inventory, crafting, tools, health and hunger, fall/lava/drowning damage,
   a day/night cycle, animals by day and zombies and spiders at night,
   synthesized sounds, and saves that persist in the browser (export and
-  import as files). Same look and parity on WebGPU and WebGL2.
+  import as files). On phones and tablets: a stick to move, drag to look,
+  tap to place, touch and hold to break. The camera frames what was built
+  from the side where no hill hides it. Same look and parity on WebGPU and
+  WebGL2.
 - **Self-verifying physics.** `verify` builds an isolated headless physics
   world from the document, fast-forwards it with gameplay logic attached and
   checks 7 test kinds: `stable`, `noOverlap`, `reaches`, `eventually`,

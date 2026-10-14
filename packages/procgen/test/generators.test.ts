@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rng, type Json, type ParamSpec } from '@aether/core';
-import { BUILTIN_GENERATORS, catalog, generateBuiltinSync, validateOutput } from '../src/index';
+import { ARCH_GENERATOR_IDS, BUILTIN_GENERATORS, catalog, generateBuiltinSync, validateOutput } from '../src/index';
 import type { GeneratorOutput } from '../src/types';
 import { expectValidPart, sameGeometry, windingMismatch } from './helpers';
 
@@ -70,7 +70,7 @@ function checkOutput(id: string, out: GeneratorOutput): void {
 
 describe('built-in generators', () => {
   it('implements exactly the required id list with rich catalog entries', () => {
-    expect(Object.keys(BUILTIN_GENERATORS).sort()).toEqual([...REQUIRED_IDS].sort());
+    expect(Object.keys(BUILTIN_GENERATORS).filter((id) => !ARCH_GENERATOR_IDS.has(id)).sort()).toEqual([...REQUIRED_IDS].sort());
     const cat = catalog();
     expect(cat).toHaveLength(REQUIRED_IDS.length);
     for (const entry of cat) {
@@ -88,6 +88,21 @@ describe('built-in generators', () => {
     (cat[0] as { params: Record<string, unknown> }).params.size = 'mutated';
     expect(catalog()[0]?.params.size).not.toBe('mutated');
     expect(BUILTIN_GENERATORS.__proto__).toBeUndefined();
+  });
+
+  it('registers the architecture generators for lookup but keeps them out of the prompt catalog', () => {
+    expect(ARCH_GENERATOR_IDS.size).toBeGreaterThan(40);
+    const cat = new Set(catalog().map((g) => g.id));
+    for (const id of ARCH_GENERATOR_IDS) {
+      expect(id).toMatch(/^(arch|furn)-/);
+      expect(BUILTIN_GENERATORS[id], id).toBeDefined();
+      expect(cat.has(id), id).toBe(false);
+    }
+    const wall = generateBuiltinSync('arch-wall', { length: 4, height: 2.7, thickness: 0.2, openings: [{ kind: 'door', offset: 2, width: 0.9, height: 2.1, sill: 0 }] }, 1);
+    expect(wall.parts.length).toBeGreaterThan(0);
+    expect(wall.colliders.length).toBeGreaterThan(0);
+    const sofa = generateBuiltinSync('furn-sofa', {}, 1);
+    expect(sofa.stats.triangles).toBeGreaterThan(50);
   });
 
   for (const id of REQUIRED_IDS) {

@@ -170,3 +170,33 @@ describe('VoxelLayer chunk memory', () => {
     layer.dispose();
   });
 });
+
+describe('VoxelLayer resource lifecycle', () => {
+  it('frees every chunk geometry over 20 create/destroy cycles, with and without pending pre-builds', async () => {
+    for (const withCompiler of [false, true]) {
+      const layer = layerWithAtlas();
+      if (withCompiler) layer.setCompiler(() => new Promise<void>((r) => setTimeout(r, 0)));
+      let created = 0;
+      let disposed = 0;
+      const group = layer.group.children.find((c) => c.name === 'aether:voxel-chunks');
+      for (let cycle = 0; cycle < 20; cycle++) {
+        for (let k = 0; k < 4; k++) {
+          layer.setChunk(k, k, cycle, { opaque: quadPass(), cutout: quadPass(), liquid: quadPass(), minY: 0, maxY: 1 });
+        }
+        for (const c of group?.children ?? []) {
+          created++;
+          (c as Mesh).geometry.addEventListener('dispose', () => disposed++);
+        }
+        layer.flushPrebuild();
+        if (cycle % 2 === 0) await new Promise((r) => setTimeout(r, 1));
+        for (let k = 0; k < 4; k++) layer.removeChunk(k);
+        expect(group?.children).toHaveLength(0);
+      }
+      await new Promise((r) => setTimeout(r, 5));
+      expect(created).toBe(20 * 4 * 3);
+      expect(disposed).toBe(created);
+      expect(layer.stats()).toMatchObject({ chunks: 0, triangles: 0 });
+      layer.dispose();
+    }
+  });
+});

@@ -10,6 +10,7 @@ import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { SCULPTURE_GENERATORS } from './sculpture';
+import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS } from './arch';
 
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
@@ -20,9 +21,18 @@ const ALL: readonly BuiltinGenerator[] = [
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,
 ];
-// The architecture generators (`./arch`: `arch-*`, `furn-*`) are not registered
-// yet: they are not recentred like these, and the planner catalog has no
-// compact form for them (it would add ~2k tokens to every system prompt).
+/**
+ * Parametric architecture generators (`./arch`: `arch-*` structure, `furn-*`
+ * furniture). They are registered for lookup (render, physics, workers) but
+ * kept out of {@link catalog}: the planner reaches them through the
+ * `build_architecture` tool (building plans compiled by @aether/arch), not
+ * as free-form shapes, and listing them would add ~2k tokens to every
+ * system prompt. Their geometry is in the entity frame (not recentred).
+ */
+const ARCH: readonly BuiltinGenerator[] = [...ARCH_STRUCTURE_GENERATORS, ...ARCH_FURNITURE_GENERATORS];
+
+/** Ids of the architecture generators (reserved: custom generators may not shadow them). */
+export const ARCH_GENERATOR_IDS: ReadonlySet<string> = new Set(ARCH.map((g) => g.id));
 
 /**
  * All built-in generators keyed by id. Null-prototype record, frozen, so a
@@ -30,7 +40,7 @@ const ALL: readonly BuiltinGenerator[] = [
  * inherited properties.
  */
 export const BUILTIN_GENERATORS: Readonly<Record<string, BuiltinGenerator>> = Object.freeze(
-  ALL.reduce<Record<string, BuiltinGenerator>>((acc, g) => {
+  [...ALL, ...ARCH].reduce<Record<string, BuiltinGenerator>>((acc, g) => {
     acc[g.id] = g;
     return acc;
   }, Object.create(null) as Record<string, BuiltinGenerator>),
