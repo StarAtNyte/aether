@@ -186,6 +186,15 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     const chips = await page.locator('.plan-chip').count();
     check(chips === rooms, `[${label}] expected ${rooms} room labels on the plan, got ${chips}`);
     await page.getByRole('button', { name: 'Rectangle room' }).click();
+    // Zoom out so the space beside the building (where the new room goes) is on screen.
+    const box = await page.locator('.plan-view__svg').boundingBox();
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      for (let i = 0; i < 2; i++) {
+        await page.mouse.wheel(0, 200);
+        await page.waitForTimeout(150);
+      }
+    }
     const a = await planToClient(page, 0, 10.6);
     const b = await planToClient(page, 3.6, 13.6);
     await page.mouse.move(a.x, a.y);
