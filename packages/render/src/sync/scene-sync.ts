@@ -10,6 +10,7 @@
  */
 import { accelerateRaycast } from '../geometry/raycast-bvh';
 import { StaticBatches } from './static-batches';
+import { StaticMerges } from './static-merges';
 import {
   Box3,
   BoxGeometry,
@@ -234,6 +235,10 @@ export class SceneSync {
   private readonly batches: StaticBatches | null;
   /** Content changed since the batches were grouped. */
   private batchesStale = true;
+  /** Merged building geometry (null when batching is disabled). */
+  private readonly merges: StaticMerges | null;
+  /** Merging paused (e.g. while content grows in and every matrix changes). */
+  private mergesSuspended = false;
   /** Field budgets (null: fields disabled). */
   private readonly fieldBudget: FieldBudget | null;
   /** Nodes currently showing a scatter field. */
@@ -258,6 +263,7 @@ export class SceneSync {
     this.placeholderGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
+    this.merges = this.variant === 'standard' && opts.staticBatching !== false ? new StaticMerges() : null;
     this.fieldBudget = this.variant === 'standard' && opts.fields !== false ? (opts.fields ?? DEFAULT_FIELD_BUDGET) : null;
     const virtual = this.variant === 'standard' && opts.virtual !== false ? (opts.virtual ?? { triangles: DEFAULT_VIRTUAL_TRIANGLES }) : null;
     this.dags = virtual ? new DagClient(virtual.dag) : null;
@@ -360,22 +366,47 @@ export class SceneSync {
     const b = this.batches;
     if (!b) return false;
     let regrouped = false;
+    const stale = this.batchesStale;
     if (this.batchesStale || b.needsRebuild) {
       this.batchesStale = false;
       regrouped = b.rebuild(this.nodes.values());
     }
     const moved = b.count > 0 ? b.update() : false;
-    return regrouped || moved;
+    let merged = false;
+    const m = this.merges;
+    if (m && !this.mergesSuspended) {
+      if (stale || this.mergesPending) {
+        this.mergesPending = false;
+        merged = m.rebuild(this.nodes.values());
+      }
+      if (m.count > 0 && m.update()) merged = true;
+    }
+    return regrouped || moved || merged;
+  }
+
+  /** A regroup of the merges is due when merging resumes. */
+  private mergesPending = true;
+
+  /**
+   * Pause or resume building merges. While paused (content growing in, every
+   * matrix animating) members draw themselves; resuming regroups.
+   */
+  setMergesSuspended(on: boolean): void {
+    if (on === this.mergesSuspended) return;
+    this.mergesSuspended = on;
+    if (on) this.merges?.clear();
+    this.mergesPending = true;
   }
 
   /** Whether {@link updateBatches} has work (batches exist or a regroup is pending). */
   get batchesActive(): boolean {
-    return this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild);
+    const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0);
+    return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging;
   }
 
-  /** Static-prop batches and the draw calls they save per pass. */
-  batchStats(): { batches: number; drawCallsSaved: number } {
-    return { batches: this.batches?.count ?? 0, drawCallsSaved: this.batches?.drawCallsSaved ?? 0 };
+  /** Static-prop batches / building merges and the draw calls they save per pass. */
+  batchStats(): { batches: number; drawCallsSaved: number; merges: number } {
+    return { batches: this.batches?.count ?? 0, drawCallsSaved: (this.batches?.drawCallsSaved ?? 0) + (this.merges?.drawCallsSaved ?? 0), merges: this.merges?.count ?? 0 };
   }
 
   /** The last world passed to {@link setWorld}. */
@@ -749,7 +780,9 @@ export class SceneSync {
   /** Remove everything (keeps caches alive for reuse). */
   clear(): void {
     this.batches?.clear();
+    this.merges?.clear();
     this.batchesStale = true;
+    this.mergesPending = true;
     for (const node of [...this.nodes.values()]) this.removeNode(node);
     this.current = null;
     this.warnings.clear();

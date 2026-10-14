@@ -37,7 +37,7 @@ describe('static-prop batches', () => {
     const batches = batchesOf(sync);
     expect(batches).toHaveLength(1);
     expect(batches[0]?.count).toBe(10);
-    expect(sync.batchStats()).toEqual({ batches: 1, drawCallsSaved: 9 });
+    expect(sync.batchStats()).toEqual({ batches: 1, drawCallsSaved: 9, merges: 0 });
     expect(memberMesh(sync, 'post-3').layers.isEnabled(BATCHED_LAYER)).toBe(true);
     expect(memberMesh(sync, 'post-3').layers.isEnabled(0)).toBe(false);
     expect(memberMesh(sync, 'odd').layers.isEnabled(0)).toBe(true);

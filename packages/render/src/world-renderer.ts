@@ -1532,8 +1532,10 @@ export class WorldRenderer {
     }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
-    // Grow-in rescales content groups: re-apply the architectural view once it settles.
+    // Grow-in rescales content groups: re-apply the architectural view once it settles,
+    // and merge building geometry only once nothing animates any more.
     if (this.wasGrowing && !this.grow.active) this.archView.invalidate();
+    this.sync.setMergesSuspended(this.grow.active);
     this.wasGrowing = this.grow.active;
     if (this.archView.update(this.perspective, step)) {
       this.needsDraw = true;

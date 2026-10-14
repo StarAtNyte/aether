@@ -61,6 +61,25 @@ export function bloomStrength(bloom: number): number {
   return Math.max(0, Math.min(MAX_BLOOM_STRENGTH, (Number.isFinite(bloom) ? bloom : 0) * BLOOM_SCALE));
 }
 
+/**
+ * Textures the TRAA node owns but does not release in its own `dispose`
+ * (three r186): the placeholder previous-depth texture and the history
+ * target's depth texture. Without this, every studio-render toggle leaked
+ * three GPU textures.
+ */
+function disposeTraaTextures(node: unknown): void {
+  const n = node as { _previousDepthNode?: { value?: { dispose?: () => void } }; _historyRenderTarget?: { depthTexture?: { dispose?: () => void } | null } };
+  n._previousDepthNode?.value?.dispose?.();
+  n._historyRenderTarget?.depthTexture?.dispose?.();
+}
+
+/** Every texture of a pass's render target (MRT attachments and depth), which the target's own dispose may not release. */
+function disposeTargetTextures(pass: unknown): void {
+  const rt = (pass as { renderTarget?: { textures?: Array<{ dispose(): void }>; depthTexture?: { dispose(): void } | null } }).renderTarget;
+  for (const t of rt?.textures ?? []) t.dispose();
+  rt?.depthTexture?.dispose();
+}
+
 /** Build the pipeline, or null when unsupported. */
 export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard'): Promise<PostPipeline | null> {
   try {
@@ -72,7 +91,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       studio ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
       studio ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
     ]);
-    const { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext } = tsl;
+    const { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, convertToTexture } = tsl;
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA in the studio pipeline (its depth copies need single-sampled targets).
     const scenePass = studio ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
@@ -98,7 +117,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       aoPass.scale.value = STUDIO_AO.scale;
       aoPass.samples.value = STUDIO_AO.samples;
       scenePass.contextNode = builtinAOContext(aoPass.getTextureNode().sample(screenUV).r);
-      disposables.push(prePass, aoPass);
+      disposables.push(prePass, aoPass, { dispose: () => disposeTargetTextures(prePass) }, { dispose: () => disposeTargetTextures(scenePass) });
     }
     const color = scenePass.getTextureNode('output');
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
@@ -120,8 +139,10 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const gradedNode = vec4(graded, color.a);
     let pipeline: InstanceType<typeof RenderPipeline>;
     if (studio && traaMod && prePassDepth && prePassVelocity) {
-      const traaNode = traaMod.traa(gradedNode, prePassDepth, prePassVelocity, camera);
-      disposables.push(traaNode);
+      // The graded image as a texture of our own, so its render target is disposed with the pipeline.
+      const beauty = convertToTexture(gradedNode);
+      const traaNode = traaMod.traa(beauty, prePassDepth, prePassVelocity, camera);
+      disposables.push(beauty, traaNode, { dispose: () => disposeTraaTextures(traaNode) });
       pipeline = new RenderPipeline(renderer, traaNode);
     } else {
       pipeline = new RenderPipeline(renderer, gradedNode);
