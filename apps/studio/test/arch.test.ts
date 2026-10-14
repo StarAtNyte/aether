@@ -6,6 +6,7 @@ import { areaLabel, clampZoom, closesPolygon, dragRect, fitPlan, lengthLabel, ou
 import { nearestTarget, nextVariant, roomToggle, walkIndex, type WalkTarget } from '../src/engine/walkthrough';
 import { ArchController, initialViewFor, type ArchHost } from '../src/engine/arch';
 import { entranceYawDeg } from '../src/engine/Simulation';
+import { roomLabels } from '../src/lib/labels';
 import { createStudioStore } from '../src/state/store';
 
 const PLAN = {
@@ -61,6 +62,28 @@ describe('architecture UI state', () => {
   it('opens single storeys as a cutaway and taller buildings as built', () => {
     expect(initialViewFor(1).walls).toBe('cutaway');
     expect(initialViewFor(2).walls).toBe('up');
+  });
+});
+
+describe('room label chips', () => {
+  it('label every room with its name and area above its floor, in world space (rotated buildings too)', () => {
+    const w = flatWorld();
+    const labels = roomLabels(w);
+    expect(labels.map((l) => l.metric.endsWith('m²'))).toEqual([true, true]);
+    const living = labels.find((l) => l.id.endsWith('-living'));
+    expect(living?.name).toBe('Living room');
+    expect(living?.position[1]).toBeGreaterThan(1);
+    // Living room spans x 0..6 (wall centrelines): its centroid sits inside.
+    expect(living?.position[0]).toBeGreaterThan(1);
+    expect(living?.position[0]).toBeLessThan(5);
+    const res = applyArchOps(createWorld(), [{ op: 'create_building', plan: { ...PLAN, rotation: 90 } }]);
+    const rotated = applyPatches(createWorld(), res.patches).world;
+    const r = roomLabels(rotated).find((l) => l.id.endsWith('-living'));
+    // A 90° turn about Y maps plan x to world −z.
+    expect(r?.position[2]).toBeLessThan(-1);
+    expect(Math.abs(r?.position[0] ?? 9)).toBeLessThan(3.2);
+    expect(roomLabels(w, 3)).toEqual([]);
+    expect(roomLabels(createWorld())).toEqual([]);
   });
 });
 

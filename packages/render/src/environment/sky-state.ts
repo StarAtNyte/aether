@@ -270,7 +270,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     sunGlow: keys.sun,
     sunGlowStrength: moon ? 0 : 0.25 + 0.75 * glow,
     // Skylight is bluish but not the zenith's saturated blue: shaded white walls read pale blue-grey.
-    hemiSky: moon ? '#4d5a80' : mixHex(mixHex(keys.zenith, keys.horizon, 0.45), '#d6d9dc', 0.5),
+    hemiSky: moon ? '#4d5a80' : mixHex(mixHex(keys.zenith, keys.horizon, 0.45), '#dcdad6', 0.62),
     hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * glow),
     hemiIntensity: ambient * 2 * (moon ? 0.75 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),

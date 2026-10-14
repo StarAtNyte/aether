@@ -577,7 +577,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     }
     add({ id: `${bid}-terrace`, parent: bid, name: 'Terrace', transform: { position: [0, round(plan.plinth - 0.03), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: terrace.map((p) => [round(p[0]), round(p[1])]), holes: holes.map((h) => h.map((p) => [round(p[0]), round(p[1])])), thickness: round(plan.plinth - 0.03 + 0.05), finish: site.terraceFinish, edge: { finish: 'stone', color: '#cfc8ba' } } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'site', kind: 'terrace', name: 'Terrace' }, tags: ['arch', 'site'] });
     if (site.pool) {
-      add({ id: `${bid}-pool`, parent: bid, name: 'Pool', transform: { position: [round(site.pool.at[0]), round(plan.plinth - 0.03), round(site.pool.at[1])] }, shape: { kind: 'procedural', generator: 'arch-basin', params: { width: site.pool.width, length: site.pool.length, depth: 1.4 } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'pool', name: 'Pool' }, tags: ['arch', 'pool'] });
+      add({ id: `${bid}-pool`, parent: bid, name: 'Pool', transform: { position: [round(site.pool.at[0]), round(plan.plinth - 0.03), round(site.pool.at[1])] }, shape: { kind: 'procedural', generator: 'arch-basin', params: { width: site.pool.width, length: site.pool.length, depth: 1.4, freeboard: poolFreeboard(plan.plinth) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'pool', name: 'Pool' }, tags: ['arch', 'pool'] });
       // Loungers along the long side.
       for (let k = 0; k < 3; k++) {
         const x = site.pool.at[0] - site.pool.width / 2 + 1 + k * 1.1;
@@ -642,6 +642,15 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     notes,
   };
 
+}
+
+/**
+ * Water level below the pool coping. The pool sits on the terrace (the
+ * plinth above the ground plane); its water must stay above the ground
+ * plane, which would otherwise cover it.
+ */
+export function poolFreeboard(plinth: number): number {
+  return round(Math.max(0.005, Math.min(0.12, plinth - 0.03 - 0.015)));
 }
 
 function defaultWindowStyle(style: BuildingPlan['style']): string {

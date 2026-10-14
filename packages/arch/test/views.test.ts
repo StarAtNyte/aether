@@ -137,3 +137,15 @@ describe('doors and windows on long merged walls (regression)', () => {
     expect(interiorX).toBeLessThan(0);
   });
 });
+
+describe('pool (regression)', () => {
+  it('keeps the water above the ground plane', () => {
+    for (const plinth of [0.05, 0.15, 0.6]) {
+      const b = compileBuilding({ id: 'v', plinth, levels: [{ rooms: [{ id: 'living', type: 'living', rect: [0, 0, 6, 5] }], doors: [{ between: ['living', 'outside'], main: true }] }], site: { terrace: [[-3, -3], [12, -3], [12, 12], [-3, 12]], pool: { at: [6, 9], width: 6, length: 3 } } });
+      const pool = b.entities.find((e) => e.arch?.role === 'pool');
+      const y = pool?.transform?.position?.[1] ?? 0;
+      const freeboard = (pool?.shape as unknown as { params: { freeboard: number } }).params.freeboard;
+      expect(y - freeboard, `plinth ${plinth}`).toBeGreaterThan(0.005);
+    }
+  });
+});

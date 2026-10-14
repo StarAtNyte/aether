@@ -10,7 +10,8 @@ import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactElement } 
 import { useSimulation, useStudio, useUI, useWorld } from '../../app/context';
 import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
-import { worldLabels } from '../../lib/labels';
+import { roomLabels, worldLabels } from '../../lib/labels';
+import { MAX_LABELS } from '../../engine/viewOverlay';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { MATERIAL_DRAG_TYPE, PALETTE_DRAG_TYPE, parseMaterialDrag } from '../../editor/AssetsPanel';
 import { Icon } from '../Icon';
@@ -164,6 +165,13 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
   const sim = useSimulation();
   const world = useWorld();
   const showLabels = useUI((s) => s.settings.showLabels);
+  // Room chips (name · area) while looking into a building: cutaway, walls down, a section or one storey.
+  const roomsLevel = useUI((s) => {
+    const a = s.arch;
+    if (!a.building || a.plan || a.levelMode === 'exploded') return undefined;
+    if (a.walls === 'up' && a.section === null && a.levelMode !== 'solo') return undefined;
+    return a.levelMode === 'solo' ? a.level : null;
+  });
   const gizmoRef = useRef<SVGSVGElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<ViewOverlay | null>(null);
@@ -184,8 +192,13 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
   }, [sim]);
 
   useEffect(() => {
-    overlayRef.current?.setLabels(showLabels && !playing ? worldLabels(world) : []);
-  }, [world, showLabels, playing, sim]);
+    if (playing) {
+      overlayRef.current?.setLabels([]);
+      return;
+    }
+    const rooms = roomsLevel === undefined ? [] : roomLabels(world, roomsLevel);
+    overlayRef.current?.setLabels([...rooms, ...(showLabels ? worldLabels(world) : [])].slice(0, MAX_LABELS));
+  }, [world, showLabels, playing, sim, roomsLevel]);
 
   return (
     <>

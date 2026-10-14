@@ -300,7 +300,7 @@ function environment(text: string): PatchInput[] {
   const time = night ? 21.5 : sunset ? 17.6 : 16.2;
   return [
     { op: 'clear', keepEnvironment: false },
-    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#e3e8ec', density: 0.003 }, bloom: night ? 1 : 0.35, ground: { material: { preset: 'grass', color: '#8b9f6c' }, size: 160 } } },
+    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#e3e8ec', density: 0.003 }, bloom: night ? 1 : 0.35, ground: { material: { finish: 'grass', color: '#8b9f6c' }, size: 160 } } },
   ];
 }
 

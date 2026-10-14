@@ -242,26 +242,29 @@ async function renderArch(browser: Browser, url: string, prompt: string): Promis
       const a = window.__aether!;
       const w = a.history.current;
       const rank = (k: string | undefined): number => (k === 'living' ? 5 : k === 'cafe' || k === 'open-office' ? 4 : k === 'kitchen' ? 2 : k === 'terrace' ? -9 : 1);
-      const rooms = Object.values(w.entities).filter((e) => e.arch?.role === 'room').map((e) => ({ id: e.id, kind: e.arch?.kind, b: a.simulation?.entityBounds(e.id) ?? null }));
+      const rooms = Object.values(w.entities)
+        .filter((e) => e.arch?.role === 'room')
+        .map((e) => ({ id: e.id, kind: e.arch?.kind, level: (e.parent ? w.entities[e.parent]?.arch?.level : 0) ?? 0, b: a.simulation?.entityBounds(e.id) ?? null }));
       const scored = rooms.filter((r) => r.b).map((r) => ({ ...r, area: (r.b!.max[0] - r.b!.min[0]) * (r.b!.max[2] - r.b!.min[2]) }));
       scored.sort((p, q) => rank(q.kind) - rank(p.kind) || q.area - p.area);
       const best = scored[0];
       if (!best?.b) return null;
       const c: [number, number, number] = [(best.b.min[0] + best.b.max[0]) / 2, best.b.max[1] + 1.1, (best.b.min[2] + best.b.max[2]) / 2];
       const r = Math.max(2.4, Math.hypot(best.b.max[0] - best.b.min[0], best.b.max[2] - best.b.min[2]) * 0.42);
-      return { c, r };
+      return { c, r, level: best.level };
     });
     if (room) {
-      await page.evaluate(({ c, r }) => {
-        window.__aether?.store.getState().setArch({ walls: 'cutaway', levelMode: 'stacked' });
+      await page.evaluate(({ c, r, level, multi }) => {
+        // Multi-storey buildings: show only the room's storey, so the floor above does not block the shot.
+        window.__aether?.store.getState().setArch({ walls: 'cutaway', levelMode: multi ? 'solo' : 'stacked', level });
         window.__aether?.simulation?.renderer.frameSphere(c, r, [r * 0.9, r * 1.05, r * 1.2], 0);
-      }, room);
+      }, { ...room, multi: levels > 1 });
       log(`  ${slug}: room refined ${(await refined(page)).toFixed(2)}`);
       await archShot(page, slug, 'room');
     }
     // 3. Night: lamps on.
     await page.evaluate(() => {
-      window.__aether?.store.getState().setArch({ sunHour: 21.5 });
+      window.__aether?.store.getState().setArch({ sunHour: 21.5, levelMode: 'stacked' });
       window.__aether?.studio.viewPreset('reset');
     });
     await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });

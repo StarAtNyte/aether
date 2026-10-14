@@ -4,7 +4,7 @@
  * scenery and scatters are skipped; gameplay pieces and dynamic bodies
  * first. Pure.
  */
-import type { Entity, WorldDoc } from '@aether/core';
+import { worldTransform, type Entity, type WorldDoc } from '@aether/core';
 import { MAX_LABELS, type LabelSpec } from '../engine/viewOverlay';
 
 const BACKDROP_GENERATORS = new Set(['terrain', 'mountain', 'island', 'cloud', 'grass-tuft']);
@@ -58,3 +58,65 @@ export function worldLabels(world: Pick<WorldDoc, 'entities'>): LabelSpec[] {
   out.sort((a, b) => b.score - a.score || (a.spec.id < b.spec.id ? -1 : 1));
   return out.slice(0, MAX_LABELS).map((x) => x.spec);
 }
+
+/** Height of a room label above its floor (metres). */
+const ROOM_LABEL_HEIGHT = 1.1;
+
+/** Shoelace area and centroid of a plan polygon `[[x, z], …]`. */
+function polygonStats(poly: ReadonlyArray<readonly [number, number]>): { area: number; cx: number; cz: number } {
+  let a = 0;
+  let cx = 0;
+  let cz = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i] as readonly [number, number];
+    const q = poly[(i + 1) % poly.length] as readonly [number, number];
+    const cross = p[0] * q[1] - q[0] * p[1];
+    a += cross;
+    cx += (p[0] + q[0]) * cross;
+    cz += (p[1] + q[1]) * cross;
+  }
+  if (Math.abs(a) < 1e-9) {
+    const n = Math.max(1, poly.length);
+    return { area: 0, cx: poly.reduce((s, p) => s + p[0], 0) / n, cz: poly.reduce((s, p) => s + p[1], 0) / n };
+  }
+  return { area: Math.abs(a) / 2, cx: cx / (3 * a), cz: cz / (3 * a) };
+}
+
+function isPolygon(v: unknown): v is Array<[number, number]> {
+  return Array.isArray(v) && v.length >= 3 && v.length <= 128 && v.every((p) => Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+}
+
+/**
+ * Room labels of parametric buildings ("Kitchen · 20 m²"), floating above
+ * each room's floor — the chips of the cutaway views. `level` limits them to
+ * one storey (null: all). Terraces are skipped. Pure and bounded.
+ */
+export function roomLabels(world: Pick<WorldDoc, 'entities'>, level: number | null = null): LabelSpec[] {
+  const out: LabelSpec[] = [];
+  for (const id of Object.keys(world.entities)) {
+    if (out.length >= MAX_LABELS) break;
+    const e = world.entities[id];
+    if (!e || e.arch?.role !== 'room' || e.arch.kind === 'terrace' || e.shape.kind !== 'procedural') continue;
+    const storey = e.parent ? world.entities[e.parent]?.arch?.level : undefined;
+    if (level !== null && storey !== undefined && storey !== level) continue;
+    const poly = e.shape.params['polygon'];
+    if (!isPolygon(poly)) continue;
+    const { area, cx, cz } = polygonStats(poly);
+    let t: ReturnType<typeof worldTransform>;
+    try {
+      t = worldTransform(world as WorldDoc, id);
+    } catch {
+      continue;
+    }
+    // Rotate the plan centroid by the room's world rotation (buildings may be rotated about Y): v' = v + w·t + q×t, t = 2·q×v.
+    const [qx, qy, qz, qw] = t.quaternion;
+    const tx = 2 * (qy * cz);
+    const ty = 2 * (qz * cx - qx * cz);
+    const tz = 2 * (-qy * cx);
+    const rx = cx + qw * tx + (qy * tz - qz * ty);
+    const rz = cz + qw * tz + (qx * ty - qy * tx);
+    out.push({ id, name: e.arch.name ?? e.name, metric: `${area >= 100 ? Math.round(area) : Math.round(area * 10) / 10} m²`, position: [t.position[0] + rx, t.position[1] + ROOM_LABEL_HEIGHT, t.position[2] + rz] });
+  }
+  return out;
+}
+

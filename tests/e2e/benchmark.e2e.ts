@@ -21,7 +21,9 @@ import { chromium, firefox, type Browser, type Page } from 'playwright';
 import { decodePng, pixelStats } from './support/png';
 import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, findChrome, findFirefox, startServer, SKIP_FIRST_RUN } from './support/env';
 
-const PROMPT = 'a canyon with a million trees and ancient statues';
+/** `--prompt=<text>`: benchmark another world (e.g. an apartment) instead of the showcase. */
+const PROMPT_ARG = process.argv.slice(2).find((a) => a.startsWith('--prompt='))?.slice('--prompt='.length);
+const PROMPT = PROMPT_ARG && PROMPT_ARG.trim().length > 0 ? PROMPT_ARG.slice(0, 200) : 'a canyon with a million trees and ancient statues';
 const VIEWPORT = { width: 1280, height: 800 };
 const ARGS = process.argv.slice(2);
 const arg = (name: string): string | undefined => ARGS.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -189,13 +191,15 @@ async function run(target: Target, url: string): Promise<Result> {
     await page.evaluate(async () => {
       await window.__aether?.simulation?.whenSynced();
     });
-    // Virtual geometry swaps in once the worker built each hierarchy.
-    await page.waitForFunction(() => {
-      const r = window.__aether?.simulation?.renderer;
-      if (!r) return false;
-      const s = r.stats();
-      return (s.virtualInstances ?? 0) >= 30 || new URLSearchParams(location.search).get('engine') === 'classic';
-    }, null, { timeout: 120_000 });
+    // Virtual geometry swaps in once the worker built each hierarchy (the showcase's statues).
+    if (!PROMPT_ARG) {
+      await page.waitForFunction(() => {
+        const r = window.__aether?.simulation?.renderer;
+        if (!r) return false;
+        const s = r.stats();
+        return (s.virtualInstances ?? 0) >= 30 || new URLSearchParams(location.search).get('engine') === 'classic';
+      }, null, { timeout: 120_000 });
+    }
     await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000 });
     const buildSeconds = (performance.now() - t0) / 1000;
     const cdp = PROFILE && target.name.startsWith('chromium') ? await context.newCDPSession(page) : null;
