@@ -21,7 +21,7 @@
  * "... N more entities", but `focus` entities (and their ancestors) are
  * always included.
  */
-import type { Action, Entity, EntityId, Json, ShapeSpec, Trigger, Vec3, WorldDoc, WorldTest } from './schema';
+import type { Action, Entity, EntityId, Json, ShapeSpec, Trigger, Vec3, VoxelEdit, VoxelTerrain, WorldDoc, WorldTest } from './schema';
 import { hasOwn, isPlainObject, truncate } from './json';
 
 /** Options for {@link summarizeWorld}. */
@@ -191,6 +191,50 @@ function testText(t: WorldTest): string {
   return `${t.kind}(${body})`;
 }
 
+// -- voxel terrain ------------------------------------------------------------
+
+/** Most voxel edits listed (the newest ones; older ones are counted). */
+const MAX_VOXEL_EDIT_LINES = 24;
+
+function pos(p: readonly number[]): string {
+  return p.join(',');
+}
+
+function voxelEditText(e: VoxelEdit): string {
+  const at = e.anchor === 'surface' ? ' above ground' : '';
+  switch (e.shape) {
+    case 'box': return `${e.hollow ? 'hollow ' : ''}box ${e.block} ${pos(e.from)}..${pos(e.to)}${at}`;
+    case 'sphere': return `${e.hollow ? 'hollow ' : ''}sphere ${e.block} c=${pos(e.center)} r=${n1(e.radius)}${at}`;
+    case 'cylinder': return `${e.hollow ? 'hollow ' : ''}cylinder ${e.block} base=${pos(e.base)} r=${n1(e.radius)} h=${e.height}${e.axis !== 'y' ? ` axis=${e.axis}` : ''}${at}`;
+    case 'line': return `line ${e.block} ${pos(e.from)}..${pos(e.to)}${e.radius > 0 ? ` r=${n1(e.radius)}` : ''}${at}`;
+    case 'stairs': return `stairs ${e.block} from=${pos(e.from)} ${e.direction} steps=${e.steps} w=${e.width}${at}`;
+    case 'structure': return `structure ${e.structure} ${e.size} at=${pos(e.at)} facing=${e.facing}${e.length !== undefined ? ` len=${e.length}` : ''}${at}`;
+    case 'pixels': return `pixels ${e.rows.length}x${e.rows.reduce((m, r) => Math.max(m, r.length), 0)} at=${pos(e.at)} plane=${e.plane}${e.scale > 1 ? ` scale=${e.scale}` : ''}${at}`;
+    case 'text': return `text ${JSON.stringify(truncate(e.text, 24))} ${e.block} at=${pos(e.at)} plane=${e.plane}${at}`;
+    case 'replace': return `replace ${e.block}->${e.with} ${pos(e.from)}..${pos(e.to)}${at}`;
+    case 'clear': return `clear ${pos(e.from)}..${pos(e.to)}${at}`;
+  }
+}
+
+function voxelLines(v: VoxelTerrain, worldSeed: number): string[] {
+  const g = v.game;
+  const head = [`preset=${v.preset}`, `seed=${v.seed ?? worldSeed}`, `view=${v.viewDistance}`];
+  if (v.border > 0) head.push(`border=${v.border}`);
+  head.push(`edits=${v.edits.length}`);
+  if (v.blocks.length > 0) head.push(`blocks=${v.blocks.map((b) => b.id).join(',')}`);
+  const lines = [`voxel ${head.join(' ')}`];
+  const game = [`mode=${g.mode}`, `day=${n1(g.dayLength)}s`, `start=${n1(g.startHour)}h`];
+  if (!g.cycle) game.push('cycle=off');
+  game.push(g.mobs ? `mobs=${g.passive.join(',') || '-'}/${g.hostile.join(',') || '-'}` : 'mobs=off');
+  if (g.startItems.length > 0) game.push(`items=${g.startItems.map((s) => `${s.item}x${s.count}`).join(',')}`);
+  if (g.recipes.length > 0) game.push(`recipes=${g.recipes.map((r) => r.id).join(',')}`);
+  lines.push(`voxel-game ${game.join(' ')}`);
+  const first = Math.max(0, v.edits.length - MAX_VOXEL_EDIT_LINES);
+  if (first > 0) lines.push(`voxel-edit ... ${first} older edits`);
+  for (let i = first; i < v.edits.length; i++) lines.push(`voxel-edit ${i}: ${voxelEditText(v.edits[i] as VoxelEdit)}`);
+  return lines;
+}
+
 // -- main ---------------------------------------------------------------------
 
 /** Deterministic, token-efficient summary of `world` (see module docs for the format). */
@@ -207,6 +251,8 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   envParts.push(env.ground ? `ground=${env.ground.material.preset ?? env.ground.material.color ?? 'custom'}` : 'ground=none');
   envParts.push(`gravity=${vec(env.gravity)}`);
   lines.push(`env ${envParts.join(' ')}`);
+
+  if (world.voxel) lines.push(...voxelLines(world.voxel, world.seed));
 
   const pl = world.player;
   lines.push(`player ${pl.mode} spawn=${vec(pl.spawn)}${pl.controls ? ` controls=${pl.controls}` : ''} speed=${n1(pl.moveSpeed)} jump=${n1(pl.jumpSpeed)}`);
