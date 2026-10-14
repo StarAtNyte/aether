@@ -59,6 +59,7 @@ export class VoxelJobContext {
   private readonly dense = new Uint16Array(CHUNK_VOLUME);
   private readonly scratch = new Uint16Array(CHUNK_VOLUME);
   private volume: LightVolume | null = null;
+  private readonly tops = new Int32Array(9);
   private mesher: ChunkMesher | null = null;
 
   constructor(identity: TerrainIdentity) {
@@ -83,15 +84,22 @@ export class VoxelJobContext {
 
   /**
    * Mesh the centre of a 3 × 3 neighbourhood. `chunks[(dz + 1) * 3 + (dx + 1)]`;
-   * missing neighbours count as air.
+   * missing neighbours count as air. `tops` (same order) are the chunks'
+   * highest non-air y when known (saves a scan); −1 entries are computed.
    */
-  mesh(chunks: ReadonlyArray<ChunkData | null>): ChunkMesh {
+  mesh(chunks: ReadonlyArray<ChunkData | null>, tops?: ArrayLike<number>): ChunkMesh {
     const vol = (this.volume ??= new LightVolume());
     const mesher = (this.mesher ??= new ChunkMesher(this.reg));
     const scratch = this.scratch;
     const blocks = vol.blocks;
+    const top9 = this.tops;
     let top = -1;
-    for (let k = 0; k < 9; k++) top = Math.max(top, chunks[k] ? (chunks[k] as ChunkData).topY() : -1);
+    for (let k = 0; k < 9; k++) {
+      const c = chunks[k];
+      const known = tops ? (tops[k] as number) : -1;
+      top9[k] = c ? (known >= 0 && known < HEIGHT ? known : c.topY()) : -1;
+      if ((top9[k] as number) > top) top = top9[k] as number;
+    }
     vol.top = top;
     const rows = Math.min(HEIGHT, top + 2);
     blocks.fill(AIR, 0, Math.max(0, rows) * REGION_LAYER);
@@ -99,14 +107,17 @@ export class VoxelJobContext {
     for (let k = 0; k < 9; k++) {
       const c = chunks[k];
       if (!c) continue;
-      for (let id = 1; id < this.reg.size && !emitters; id++) if (this.reg.emissive[id] && c.has(id)) emitters = true;
-      c.toDense(scratch);
+      if (!emitters && c.hasAny(this.reg.emissive)) emitters = true;
+      const crows = Math.min(rows, (top9[k] as number) + 1);
+      if (crows <= 0) continue;
+      c.toDenseRows(scratch, crows);
       const ox = (k % 3) * CHUNK;
       const oz = Math.floor(k / 3) * CHUNK;
-      for (let y = 0; y < rows; y++) {
+      for (let y = 0; y < crows; y++) {
         for (let z = 0; z < CHUNK; z++) {
           const src = z * CHUNK + y * LAYER;
-          blocks.set(scratch.subarray(src, src + CHUNK), ox + (oz + z) * REGION + y * REGION_LAYER);
+          const dst = ox + (oz + z) * REGION + y * REGION_LAYER;
+          for (let x = 0; x < CHUNK; x++) blocks[dst + x] = scratch[src + x] as number;
         }
       }
     }

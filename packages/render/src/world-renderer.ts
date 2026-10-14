@@ -42,6 +42,8 @@ import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadow
 import { createPostPipeline, type PostPipeline } from './gpu/post';
 import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { errorMessage, log } from './log';
+import type { VoxelLayer } from './voxel/voxel-layer';
+import type { Environment } from '@aether/core';
 
 /** Renderer construction options. */
 export interface RendererOptions {
@@ -391,6 +393,10 @@ export class WorldRenderer {
   private componentHandle: Group | null = null;
   /** Editor overlays: mesh components, brush ring, joints. */
   private readonly editOverlay = new EditOverlay();
+  /** Block terrain layer (loaded lazily for voxel worlds). */
+  private voxelLayer: VoxelLayer | null = null;
+  private voxelLoading: Promise<VoxelLayer> | null = null;
+  private voxelVersion = -1;
   /** Last pointer position over the canvas in NDC (gizmo snapping). */
   private readonly pointerNdc = new Vector2();
   /** Direct camera input ends a fly-through. */
@@ -783,6 +789,75 @@ export class WorldRenderer {
   setPlayerAvatar(position: Vec3, yawDeg: number): void {
     this.avatar.set(position[0], position[1], position[2], yawDeg);
     this.needsDraw = true;
+  }
+
+  /**
+   * The block-terrain layer, created (and its module loaded) on first use
+   * and added to the scene. Voxel worlds only: other worlds never load it.
+   */
+  voxel(): Promise<VoxelLayer> {
+    if (this.voxelLayer) return Promise.resolve(this.voxelLayer);
+    this.voxelLoading ??= import('./voxel/voxel-layer').then(({ VoxelLayer: Layer }) => {
+      if (this.disposed) throw new Error('renderer disposed');
+      const layer = new Layer();
+      this.scene.add(layer.group);
+      this.voxelLayer = layer;
+      this.needsDraw = true;
+      return layer;
+    });
+    const loading = this.voxelLoading;
+    loading.catch(() => {
+      if (this.voxelLoading === loading) this.voxelLoading = null;
+    });
+    return loading;
+  }
+
+  /** The voxel layer if it exists (no loading). */
+  get voxelIfLoaded(): VoxelLayer | null {
+    return this.voxelLayer;
+  }
+
+  /** Remove the voxel layer and free its GPU resources (world without terrain). */
+  releaseVoxel(): void {
+    this.voxelLoading = null;
+    this.voxelLayer?.dispose();
+    this.voxelLayer = null;
+    this.env.setFogDistance(null);
+    this.needsDraw = true;
+  }
+
+  /** Fog that fades everything out at `metres` (voxel view distance); null restores the environment's fog. */
+  setFogDistance(metres: number | null): void {
+    this.env.setFogDistance(metres);
+    this.needsDraw = true;
+  }
+
+  /**
+   * Apply an environment that is not the document's (e.g. the voxel game's
+   * day/night clock). The document environment comes back on the next
+   * {@link setWorld} that changes it, or with {@link restoreEnvironment}.
+   */
+  setEnvironmentOverride(env: Environment): void {
+    if (this.disposed) return;
+    this.env.apply(env, this.scene);
+    this.renderer.toneMappingExposure = this.env.exposure;
+    this.post?.setGrade(gradeFor(this.env.skyState));
+    this.needsDraw = true;
+  }
+
+  /** Re-apply the current document's environment (after {@link setEnvironmentOverride}). */
+  restoreEnvironment(): void {
+    const w = this.sync.world;
+    if (w) this.applyEnvironment(w);
+  }
+
+  /**
+   * Pose the camera directly (`manual` camera mode, switched on by this
+   * call): eye position, yaw (radians, 0 looks along −Z) and pitch.
+   */
+  setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void {
+    if (this.rig.mode !== 'manual') this.setCameraMode('manual');
+    this.rig.setPose(x, y, z, yaw, pitch);
   }
 
   /**
@@ -1347,6 +1422,11 @@ export class WorldRenderer {
     const cameraMoved = this.rig.update(step);
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     if (this.sync.viewNeedsUpdate) this.needsDraw = true;
+    const vox = this.voxelLayer;
+    if (vox && vox.version !== this.voxelVersion) {
+      this.voxelVersion = vox.version;
+      this.needsDraw = true;
+    }
     const growing = this.grow.active && this.grow.update(step);
     if (growing) this.needsDraw = true;
     const animate = opts.animate !== false;
@@ -1801,7 +1881,7 @@ export class WorldRenderer {
       instances: this.sync.instanceCount,
       resolutionScale: this.adaptive.scale,
       batchedDrawsSaved: this.sync.batchStats().drawCallsSaved,
-      sceneTriangles: this.sync.sceneTriangles(),
+      sceneTriangles: this.sync.sceneTriangles() + (this.voxelLayer?.stats().triangles ?? 0),
       fieldInstances: fields.instances,
       fieldDrawn: fields.drawnInstances,
       virtualInstances: virtual.instances,
@@ -1874,6 +1954,8 @@ export class WorldRenderer {
     this.rig.dispose();
     this.sync.dispose();
     this.ghost.dispose();
+    this.voxelLayer?.dispose();
+    this.voxelLayer = null;
     this.highlighter.dispose();
     this.debug.dispose();
     this.avatar.dispose();

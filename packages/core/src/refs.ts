@@ -94,7 +94,7 @@ export function forEachTestSelector(test: WorldTest, fn: (s: string) => void): v
 
 /**
  * Rewrite references from entity `from` to entity `to` inside one entity:
- * parent, joint target, scatter surface, and behavior params whose value is
+ * parent, joint target, scatter surface, architecture room / host wall, and behavior params whose value is
  * exactly the old id (or an array of strings containing it).
  */
 export function renameEntityRefs(e: Entity, from: string, to: string): Entity {
@@ -102,6 +102,9 @@ export function renameEntityRefs(e: Entity, from: string, to: string): Entity {
   if (e.parent === from) out = { ...out, parent: to };
   if (e.joint && e.joint.target === from) out = { ...out, joint: { ...e.joint, target: to } };
   if (e.shape.kind === 'scatter' && e.shape.onSurface === from) out = { ...out, shape: { ...e.shape, onSurface: to } };
+  if (e.arch && (e.arch.room === from || e.arch.wall === from)) {
+    out = { ...out, arch: { ...e.arch, ...(e.arch.room === from ? { room: to } : {}), ...(e.arch.wall === from ? { wall: to } : {}) } };
+  }
   const behaviors = mapList(e.behaviors, (b) => {
     let params = b.params;
     for (const [k, v] of Object.entries(b.params)) {

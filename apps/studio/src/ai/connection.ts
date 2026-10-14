@@ -412,7 +412,7 @@ export class AiConnection {
       const model = choice.model;
       const label = `${BACKEND_LABEL[id]}${model ? ` · ${model}` : ''}`;
       if (!s.bridge.paired) return { kind: 'bridge', label, ready: false, reason: 'the local bridge is not paired', vision: false };
-      if (s.bridge.state === 'offline') return { kind: 'bridge', label, ready: false, reason: 'the local bridge is not running (start it with npm run bridge)', vision: false };
+      if (s.bridge.state === 'offline') return { kind: 'bridge', label, ready: false, reason: 'the local bridge is not running (start it with npx aether start --origin <this site>)', vision: false };
       if (s.bridge.state === 'not_logged_in') return { kind: 'bridge', label, ready: false, reason: `${BACKEND_LABEL[id]} is not signed in on this computer`, vision: false };
       const vision = s.bridge.backends.find((b) => b.id === id)?.models.find((m) => m.id === model)?.vision ?? true;
       return { kind: 'bridge', label, ready: true, vision };

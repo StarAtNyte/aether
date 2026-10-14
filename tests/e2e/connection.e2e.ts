@@ -302,7 +302,7 @@ async function failuresMidSession(browser: Browser, server: TestServer, bridge: 
     const offline = await sendPrompt(page, 'a bowling alley with ten pins');
     log(`    bridge stopped: ${offline.status} via ${offline.via ?? '?'}`);
     check(offline.status === 'done' && offline.via === 'Offline planner', `bridge stopped: expected the offline planner, got ${offline.via}`);
-    check(offline.events.some((e) => e.startsWith('notice(') && /npm run bridge/.test(e)), 'no "start the bridge" notice');
+    check(offline.events.some((e) => e.startsWith('notice(') && /npx aether start/.test(e)), 'no "start the bridge" notice');
     await waitFor('the badge to show the bridge offline', 15_000, async () => {
       const p = await picker(page);
       return p.bridge === 'offline' && p.status === 'unavailable' ? p : null;

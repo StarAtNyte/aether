@@ -861,9 +861,105 @@ sandbox. Files live in `packages/procgen/library/<id>.json`
 run, output validation, plausible size, grounded + centred, visible silhouette
 that is not a bare box, ≤ 60 000 triangles).
 
+## Local app: `aether` CLI (`apps/cli`) and the first-run screen
+
+One command runs the studio on the user's computer with their own AI login.
+`npx aether` (workspace bin `@aether/cli`, root `bin` + `npm run aether`):
+
+```
+aether [start]  [--port N] [--open] [--no-build|--rebuild] [--origin https://studio]… [--bridge-port N]
+                [--host H --allow-lan] [--foreground] [--state-dir DIR]
+aether stop [--force] · status [--json] · logs [-f] [-n N] · login [--device-auth] [--claude]
+aether logout [--claude] · pair · doctor [--json] · help · version
+```
+
+Exit codes: 0 ok, 1 failure, 2 usage error, 3 `status`: not running.
+
+- **State folder** (`resolveStateDir`): `--state-dir` > `AETHER_STATE_DIR` >
+  Windows `%LOCALAPPDATA%\Aether` > `$XDG_STATE_HOME/aether` (absolute
+  only) > `~/.local/state/aether`; created 0700. Files (0600): `server.json`
+  (`ServerRecord { version: 1, pid, port, host, url, instance, startedAt,
+  lan, bridge: { port, origins } | null }`, zod-validated, ≤ 16 KiB),
+  `secret` (per-install, 43-char base64url, created once), `access-token`
+  (LAN only, fresh per start), `server.log` (+ `.1`–`.3`), `server.out`
+  (crash output of the last start), `data/` (server `DATA_DIR`).
+- **start**: an existing record is `running` (health answers with its
+  `instance`): print the link and exit; `unresponsive` (pid alive, no
+  matching health): refuse; `stale` (pid gone): remove the record. Build when
+  `apps/studio/dist/index.html` is missing or older than any file under the
+  studio sources and `packages/*` (tests and node_modules ignored). Port:
+  the explicit `--port` or fail; otherwise 4280, the next 19, then an
+  ephemeral one. Spawns `node --import tsx apps/server/src/main.ts` with
+  `detached: true` (own process group), `windowsHide`, stdin ignored,
+  output to `server.out`, then waits ≤ 60 s for `/api/health` with the new
+  random `instance`. Server env: `HOST`, `PORT`, `NODE_ENV=production`,
+  `SERVE_STATIC=true`, `AETHER_LOCAL_AI=on`, `AETHER_PROVIDER=mock` unless
+  set, `ALLOWED_ORIGINS` = `AETHER_ALLOWED_HOSTS` (as origins) =
+  `127.0.0.1:<port>`, `localhost:<port>` (+ LAN addresses),
+  `AETHER_SECRET_FILE`, `AETHER_INSTANCE_ID`, `AETHER_LOG_FILE`, `DATA_DIR`,
+  and with `--origin` `AETHER_BRIDGE_ORIGINS` / `AETHER_BRIDGE_PORT`.
+  Hosting-platform markers are removed from the child env.
+- **stop**: `POST /api/admin/shutdown` with `X-Aether-Admin: <secret>`
+  (graceful), then SIGTERM / SIGKILL of the process group (Windows: the
+  process). A pid that does not answer health and is not recognisably the
+  server (`/proc/<pid>/cmdline` on Linux) is never signalled without `--force`.
+- **login / logout**: run `codex login` (`--device-auth`: `codex login
+  --device-auth`) / `codex logout`, or `claude auth login --claudeai` /
+  `claude auth logout` with `--claude`, interactively (inherit stdio,
+  allowlisted env + desktop variables, argument arrays; Windows `.cmd` shims
+  via `cmd.exe /d /s /c` with fixed quoted arguments). An existing login is
+  detected with `codex login status` / `claude auth status --json` and
+  reported instead of signing in again.
+- **pair**: `POST /api/local/bridge/pair` (admin header) → `{ url, code,
+  links[] }`; each link is `<origin>/?bridge=<url>#aether-bridge=<token>`.
+
+### Server additions (all off unless configured; the CLI configures them)
+
+```
+AETHER_ALLOWED_HOSTS=h:p,…    any other Host → 421 { error: 'host-not-allowed' } on every route
+AETHER_SECRET_FILE=path       HTML responses set `aether_session=<secret>; HttpOnly; SameSite=Strict; Path=/`;
+                              /api/local/* requires that cookie or `X-Aether-Admin` (else 401 { error: { code: 'unauthorized' } })
+AETHER_ACCESS_TOKEN_FILE=path LAN gate: `GET …?access=<token>` → 303 to the same URL without it + `aether_access` cookie;
+                              anything else without the cookie → 403 (except /api/health)
+AETHER_INSTANCE_ID=id         echoed as `instance` by /api/health
+AETHER_LOG_FILE=path          JSON log lines appended (0600), rotated at 5 MiB keeping 3
+AETHER_BRIDGE_ORIGINS=https://…  also start the token-paired bridge on 127.0.0.1:AETHER_BRIDGE_PORT (default 8790)
+POST /api/admin/shutdown      X-Aether-Admin only (the cookie is not enough) → 202 { ok, stopping }
+POST /api/local/bridge/pair   X-Aether-Admin only → { url, code, links }
+```
+
+`AETHER_BRIDGE_ORIGINS` without local AI is a startup error. Secrets are
+compared in constant time and scrubbed from logs.
+
+### Studio: first-run screen (`apps/studio/src/onboarding/`)
+
+- `probeFirstRun(fetch, storage, hostedBuild)` → `{ marker, local, signedIn,
+  hostedBuild }` from `/api/health` (`local === true`) and, only for a local
+  server without a remembered choice, `/api/local/status` (any backend
+  installed and signed in). `decideFirstRun(facts)` → `{ show, variant:
+  'local' | 'hosted' }`: never shows with a remembered choice, nor locally
+  when a CLI is already signed in. `VITE_AETHER_HOSTED=1` forces `hosted`.
+- Remembered choice: localStorage `aether.onboarding.v1` = `{ choice:
+  'offline' | 'codex' | 'claude-code' | 'byok' | 'bridge', at }` (validated;
+  closing the screen = `offline`).
+- Local variant test ids: `first-run` (with `data-variant`), `first-run-codex`,
+  `first-run-login-start`, `first-run-device-code`, `first-run-signed-in`,
+  `first-run-done`, `first-run-claude` (only when signed in),
+  `first-run-offline`. Hosted: `first-run-byok` (toggles the form:
+  `first-run-provider`, `first-run-key`, `first-run-remember`,
+  `first-run-key-submit`), `first-run-local` (install command + pairing:
+  `first-run-pair-code`), `first-run-offline`. Chip while offline:
+  `signin-chip`.
+- A choice saves the global AI prefs and dispatches `aether:ai-prefs`
+  (`CustomEvent<Partial<AiPrefs>>`; receivers keep only known keys and
+  re-validate) so an open editor applies it at once.
+- e2e suites that test something else seed the marker with
+  `SKIP_FIRST_RUN` (`tests/e2e/support/env.ts`).
+
 ## apps/server (Hono on Node)
 
-- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock', byok: false, local: boolean }` (`local`: `/api/local/*` is served, see "Local AI")
+- `GET  /api/health` → `{ ok, providers: string[], mode: 'live' | 'mock', byok: false, local: boolean, instance?: string }` (`local`: `/api/local/*` is served, see "Local AI"; `instance`: only with `AETHER_INSTANCE_ID`, see "Local app")
+- `HOST` defaults to `127.0.0.1` (the Docker image sets `0.0.0.0`).
 - `POST /api/llm` body `CompletionRequest` (zod-validated, body ≤ 1 MB, ≤ 4 images) → `CompletionResponse`.
   The server maps `role` to an allowlisted model; clients cannot pick arbitrary models.
 - `GET/PUT /api/generators/:hash` — content-addressed cache of validated generator defs.

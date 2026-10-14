@@ -33,7 +33,7 @@ describe('Studio.send with an unreachable bridge', () => {
     expect(types).toContain('patches');
     expect(types).toContain('quality');
     const notice = entry.events.find((e) => e.type === 'notice');
-    expect(notice?.type === 'notice' && notice.text).toContain('npm run bridge');
+    expect(notice?.type === 'notice' && notice.text).toContain('npx aether start');
     const done = entry.events[entry.events.length - 1];
     expect(done?.type === 'done' && done.via).toBe('Offline planner');
     expect(Object.keys(studio.history.current.entities).length).toBeGreaterThan(5);
@@ -58,7 +58,7 @@ describe('Studio.send with an unreachable bridge', () => {
     expect(calls.some((u) => u.endsWith('/v1/status'))).toBe(true);
     const resolved = ai.resolve(studio.store.getState().aiPrefs);
     expect(resolved.ready).toBe(false);
-    expect(resolved.reason).toContain('npm run bridge');
+    expect(resolved.reason).toContain('npx aether start');
     calls.length = 0;
     await studio.send('add a campfire');
     expect(calls.filter((u) => u.endsWith('/v1/complete'))).toEqual([]);

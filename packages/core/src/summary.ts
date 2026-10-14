@@ -104,6 +104,19 @@ function meshText(world: WorldDoc, s: ShapeSpec): string | null {
   return `mesh ${m.vertexCount}v/${m.triangleCount}t${from} (hand-edited geometry; change it with transform/material, not shape params)`;
 }
 
+/** Compact architecture metadata: `room "Kitchen"`, `level 1 h=3`, `door wall=w-3`. */
+function archText(a: NonNullable<Entity['arch']>): string {
+  const out: string[] = [a.role];
+  if (a.kind) out.push(a.kind);
+  if (a.name) out.push(JSON.stringify(truncate(a.name, 40)));
+  if (a.level !== undefined) out.push(`#${a.level}`);
+  if (a.height !== undefined) out.push(`h=${n1(a.height)}`);
+  if (a.room) out.push(`room=${a.room}`);
+  if (a.wall) out.push(`wall=${a.wall}`);
+  if (a.variants && a.variants.length > 0) out.push(`variants=${a.variants.length}`);
+  return out.join(' ');
+}
+
 function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: readonly string[]; age: number } | undefined): string {
   const parts = [e.id, e.name ? truncate(e.name, 40) : '-', meshText(world, e.shape) ?? shapeText(e.shape), `pos ${vec(e.transform.position)}`];
   const r = e.transform.rotation;
@@ -123,8 +136,9 @@ function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: re
     }).join(',')}`);
   }
   if (e.tags.length > 0) parts.push(`tags ${e.tags.join(',')}`);
+  if (e.arch) parts.push(`arch ${archText(e.arch)}`);
   if (e.material) {
-    const m = [e.material.preset, e.material.color].filter((x) => x !== undefined).join(' ');
+    const m = [e.material.preset, e.material.finish, e.material.color].filter((x) => x !== undefined).join(' ');
     if (m) parts.push(`mat ${m}`);
   }
   if (e.light) parts.push(`light ${e.light.type} ${e.light.color} i=${n1(e.light.intensity)}`);

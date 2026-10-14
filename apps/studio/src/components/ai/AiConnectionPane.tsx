@@ -76,7 +76,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
   const local = isLocalOrigin(origin);
   const browserNote = hostedBridgeNote(origin, typeof navigator !== 'undefined' ? navigator.userAgent : '');
   const choice = effectiveBridgeChoice(prefs, bridge.backends);
-  const command = local ? 'npm run bridge' : `npm run bridge -- --origin ${origin}`;
+  const command = local ? 'npx aether start' : `npx aether start --origin ${origin}`;
   const backend = bridge.backends.find((b) => b.id === prefs.backend);
   const models = backend?.models ?? [];
   const pair = async (): Promise<void> => {
@@ -187,7 +187,7 @@ const BridgeSetup = memo(function BridgeSetup({ prefs, update }: { prefs: AiPref
         <summary>Troubleshooting</summary>
         <ul>
           <li>
-            <strong>Bridge offline:</strong> keep the terminal with <code>npm run bridge</code> open; it listens on 127.0.0.1 only.
+            <strong>Bridge offline:</strong> start it with <code>npx aether start --origin &lt;this site&gt;</code> (it runs in the background; <code>npx aether status</code> / <code>npx aether pair</code>). It listens on 127.0.0.1 only.
           </li>
           <li>
             <strong>Hosted page cannot connect:</strong> Safari blocks HTTPS pages from reaching local services; use Chrome, Edge or Firefox, or run the studio locally. Chrome may first ask to allow access to your local network.

@@ -9,6 +9,19 @@ press Play. It does this by fast-forwarding a headless copy of the physics
 simulation and running the world's own tests ("the domino chain topples", "the
 player can reach the flag", "the coin counter reaches 10").
 
+**Run it on your computer with one command** (Node.js 22+):
+
+```bash
+git clone https://github.com/StarAtNyte/aether && cd aether && npm ci && npx aether start --open
+```
+
+It builds the studio, starts Aether in the background and prints a local link
+(`http://127.0.0.1:4280`). On first open, sign in with your **own** ChatGPT
+account (Codex), use Claude Code if it is signed in, or continue offline.
+`npx aether stop` stops it. The hosted copy of the studio works in any browser
+with your own API key, with your own Codex login through that same command
+(`npx aether start --origin <hosted address>`), or offline.
+
 ![Aether editor: agent panel, live viewport with tool dock, scene inspector](docs/screenshots/studio-overview.png)
 
 | Domino run | Coin island | Bowling alley | Lakeside camp |
@@ -214,19 +227,51 @@ Requirements: **Node.js 22 or newer** and npm 10 or newer. A GPU browser
 (Chrome or Edge for WebGPU; any WebGL2 browser works).
 
 ```bash
-git clone <this repository> aether && cd aether
-npm install
+git clone https://github.com/StarAtNyte/aether && cd aether
+npm ci
+npx aether start --open      # or: npm run aether -- start --open
+```
 
+No API key is needed: everything works with the offline planner, and signing
+in uses your own Codex / Claude Code login.
+
+### The `aether` command
+
+| Command | What it does |
+| --- | --- |
+| `aether start` (default) | Builds the studio if it is missing or older than its sources, starts the server **detached** (it survives closing the terminal), waits until it answers and prints `http://127.0.0.1:<port>` (4280, or the next free port). Running it again just prints the link. `--open` opens the browser, `--port N`, `--no-build`, `--rebuild`, `--foreground` |
+| `aether stop` | Graceful shutdown (then the process group is ended if needed) |
+| `aether status [--json]` | Running or not, link, pid, uptime |
+| `aether logs [-f] [-n N]` | The server log (rotated at 5 MiB); `-f` follows it |
+| `aether login [--device-auth]` | Runs `codex login` for **your own** ChatGPT account; says so if you are already signed in. `--claude` signs in to Claude Code |
+| `aether logout [--claude]` | Signs out |
+| `aether doctor` | Checks Node, dependencies, the build, the state folder, disk space, the port, and whether Codex / Claude Code are installed and signed in |
+| `aether start --origin https://<hosted studio>` / `aether pair` | Also acts as the bridge for a hosted copy of the studio and prints a pairing code + one-click link |
+
+State (pid, port, per-install secret, logs, local data) lives in
+`$XDG_STATE_HOME/aether` or `~/.local/state/aether` (`%LOCALAPPDATA%\Aether`
+on Windows); `--state-dir` or `AETHER_STATE_DIR` override it. The server binds
+127.0.0.1 only; `--host 0.0.0.0` is refused unless `--allow-lan` is added,
+which prints a warning and requires an access token (in the printed link). It
+works the same on Linux, macOS and Windows. See
+[docs/SECURITY.md](docs/SECURITY.md) for the local hardening (Host and Origin
+allowlists against DNS rebinding, HttpOnly session cookie, process-group
+cancellation).
+
+**Developing Aether itself** (hot reload):
+
+```bash
 npm run dev:server   # API server on http://localhost:8787 (terminal 1)
 npm run dev          # Studio on http://localhost:5173, proxies /api (terminal 2)
 ```
 
-No API key is needed: everything works with the offline planner.
-
 ### Use your Codex or Claude Code subscription (no API key)
 
 ```bash
-npm run bridge       # Aether Bridge on http://127.0.0.1:8790 (terminal 3)
+npx aether start --origin https://your-hosted-studio   # app + bridge, one command, background
+npx aether pair                                        # a fresh pairing code / link later
+# or, standalone in a terminal:
+npm run bridge       # Aether Bridge on http://127.0.0.1:8790
 ```
 
 The bridge prints a pairing code and a one-click link. In the studio open
@@ -244,8 +289,8 @@ the bridge (Chrome may first ask to allow access to your local network).
 Safari and iOS browsers block https pages from calling local services, so
 there run the studio locally (`npm run dev`) and pair from that page.
 
-**Running Aether locally?** You do not need the bridge: with `npm run
-dev:server` on your own computer the studio finds Codex and Claude Code
+**Running Aether locally?** You do not need the bridge: with `aether start`
+(or `npm run dev:server`) on your own computer the studio finds Codex and Claude Code
 automatically (Settings → AI connection → *Codex or Claude Code on this
 computer*, or the **Connect Codex** card in the agent panel), runs them in
 worker processes and offers deep builds. `AETHER_LOCAL_AI=off` disables it;
@@ -309,10 +354,12 @@ template (for example `#/new/coin-island`).
 | `npm run dev` | Vite dev server for the studio (port 5173, `/api` proxied to 8787) |
 | `npm run dev:server` | API server with `tsx watch` (port 8787) |
 | `npm run build` | Production build of the studio into `apps/studio/dist` |
-| `npm run start` | Production server: API plus the built studio on one origin |
+| `npx aether start` / `npm run aether -- <command>` | The local app: see [The `aether` command](#the-aether-command) |
+| `npm run start` | Production server in the foreground: API plus the built studio on one origin |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
 | `npm run smoke` | Runs the real agent with the offline planner against 14 prompts and re-verifies every world headless |
+| `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, `aether stop` |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
 | `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |

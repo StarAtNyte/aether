@@ -5,7 +5,7 @@
 import type { FallbackNotice } from '@aether/agent';
 
 const ACTIONS: Readonly<Record<string, string>> = {
-  bridge_offline: 'the local bridge is not running. Start it with "npm run bridge" and pair it in Settings → AI connection',
+  bridge_offline: 'the local bridge is not running. Start it with "npx aether start" and pair it in Settings → AI connection',
   unauthorized: 'the bridge pairing expired (the bridge restarted). Pair again in Settings → AI connection',
   not_logged_in: 'it is not signed in on this computer. Run "codex login" or start "claude" once to sign in',
   cli_missing: 'its command-line tool is not installed on this computer',
@@ -45,7 +45,7 @@ export function hostedBridgeNote(origin: string, userAgent: string): { tone: 'wa
   const chromium = /(?:Chrome|Chromium|Edg)\//.test(userAgent);
   const firefox = /Firefox\//.test(userAgent);
   if (!chromium && !firefox && /Safari\//.test(userAgent)) {
-    return { tone: 'warn', text: 'Safari blocks hosted pages from reaching services on this computer. Use Chrome, Edge or Firefox here, or run the studio locally (npm run dev) and pair from there.' };
+    return { tone: 'warn', text: 'Safari blocks hosted pages from reaching services on this computer. Use Chrome, Edge or Firefox here, or run Aether locally (npx aether start) and use it there.' };
   }
   if (chromium) return { tone: 'info', text: 'If the browser asks to access apps or devices on your local network, choose Allow: that is how this page reaches the bridge.' };
   return null;

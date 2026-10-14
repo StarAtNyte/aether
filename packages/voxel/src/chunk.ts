@@ -189,6 +189,31 @@ export class ChunkData {
     return out;
   }
 
+  /** True when any block of the palette has a non-zero entry in `flags` (indexed by block id). */
+  hasAny(flags: Uint8Array): boolean {
+    for (let k = 0; k < this.size; k++) if ((flags[this.palette[k] as number] ?? 0) !== 0) return true;
+    return false;
+  }
+
+  /** Expand only the first `rows` layers (y < rows) into `out`. */
+  toDenseRows(out: Uint16Array, rows: number): Uint16Array {
+    const end = Math.max(0, Math.min(HEIGHT, rows)) * LAYER;
+    const bits = this.bitsPerCell;
+    if (bits === 0) {
+      out.fill(this.palette[0] as number, 0, end);
+      return out;
+    }
+    const mask = (1 << bits) - 1;
+    const perWord = 32 / bits;
+    const pal = this.palette;
+    const lastWord = (end * bits) >>> 5;
+    for (let w = 0, i = 0; w < lastWord; w++) {
+      const word = this.words[w] as number;
+      for (let k = 0; k < perWord; k++, i++) out[i] = pal[(word >>> (k * bits)) & mask] as number;
+    }
+    return out;
+  }
+
   /** Copy into a transferable packed form (palette trimmed). */
   pack(): PackedChunk {
     return { palette: this.palette.slice(0, this.size), bits: this.bitsPerCell, words: this.words.slice() };

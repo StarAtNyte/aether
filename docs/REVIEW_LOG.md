@@ -951,3 +951,96 @@ tool dock overflowed into the axis gizmo at 1024–1366 px and off screen on
 phones (it now scrolls within its column), and the connect card's text
 shrank below a word's width in the landscape-phone agent panel (it wraps
 onto its own row).
+
+## Local-first app: the `aether` command, local hardening, first-run sign-in
+
+Scope of this section: `apps/cli` (new), `apps/server/src/{local-guard,
+log-file}.ts` (new), `app.ts`, `config.ts`, `main.ts`, `routes/local.ts`,
+`apps/studio/src/onboarding/` (new), the chip in the top bar and home
+header, `tests/e2e/cli.e2e.ts`, `SKIP_FIRST_RUN` in the other e2e suites.
+The hosted bring-your-own-key path (direct browser calls, provider CSP
+origins, removal of the server key passthrough) was built in parallel and is
+reviewed in its own section.
+
+**SECURITY**
+
+- New input boundaries, each validated with caps:
+  - CLI arguments: a hand-written parser with an allowlist of commands and
+    flags, numeric ranges for ports and line counts, a host regex, and
+    https-only `--origin` (no credentials, paths or wildcards; at most 8).
+    Unknown input exits with code 2.
+  - State files: `server.json` is read through a strict zod schema (unknown
+    keys rejected, ≤ 16 KiB). The `secret` / `access-token` files must match
+    `^[A-Za-z0-9_-]{32,128}$`, and a damaged secret is replaced. Everything
+    is written atomically (temp file + rename) with mode 0600, in a 0700
+    folder.
+  - Server env: `AETHER_ALLOWED_HOSTS` (regex per `host:port`, ≤ 16),
+    `AETHER_BRIDGE_ORIGINS` (https or loopback http, ≤ 16),
+    `AETHER_INSTANCE_ID` (regex), and secret *files* whose values are never
+    echoed in config errors. `redactConfig` masks the secrets, and
+    `secretValues` adds them to the log scrubber.
+  - HTTP: Host header (exact allowlist, ≤ 300 chars, 421 otherwise), cookies
+    and the `X-Aether-Admin` header (constant-time SHA-256 +
+    `timingSafeEqual`, ≤ 256 chars), and the `?access=` query (constant time,
+    then a 303 that strips it from the URL).
+  - Health / status bodies in the CLI and the studio: zod / manual shape
+    checks, size caps (16 KiB CLI, 256 KiB studio) and timeouts (1.5 s CLI
+    health; 2.5 s studio health; 25 s local status).
+  - `aether:ai-prefs` window event: only known `AiPrefs` keys pass
+    (`pickPrefsPatch`, regression-tested against `__proto__`), and the
+    receivers re-validate every value with the prefs schema.
+  - localStorage `aether.onboarding.v1`: validated on read; invalid records
+    count as absent.
+  - Log lines shown by `aether logs`: control characters stripped, ≤ 2000
+    chars per line, at most 512 KiB tailed or 4 MiB per follow read.
+- Subprocesses: the server child, Vite, codex/claude login/logout and the
+  browser opener all use argument arrays with `shell: false` and
+  `windowsHide`. Windows `.cmd` shims go through `cmd.exe /d /s /c` with fixed
+  arguments, and any argument containing `"%^&|<>` or a newline throws
+  (tested). Interactive sign-in gets the allowlisted env plus
+  DISPLAY/WAYLAND/DBUS/BROWSER/TERM only (`restrictedEnv` drops anything
+  named like KEY/TOKEN/SECRET/AUTH). The server child keeps the user's env
+  (it needs PATH, HOME, CODEX_HOME), minus hosting markers. Its own AI
+  workers restrict their env as before.
+- No eval / `new Function` was added. No `innerHTML` is used. Every first-run
+  text is rendered by React, and the sign-in URL is the CLI's sanitised
+  https URL in an `<a rel="noopener noreferrer">`.
+- CSP unchanged by this part (same-origin studio needs nothing new; the
+  provider origins belong to the BYOK section). The csp tests still pass.
+- No secrets in the client bundle or logs. The session secret only travels
+  in an HttpOnly cookie (the e2e checks `document.cookie` cannot see it) and
+  the CLI header. Device codes go only to the local page that asked for
+  them, never into logs (they are not log fields).
+- DNS rebinding: the Host allowlist applies to every route, static files
+  included. The e2e sends a rebound Host to the running app and gets 421.
+  Cross-site: SameSite=Strict cookie + Origin allowlist + JSON-only bodies
+  (preflight). LAN mode needs an explicit flag, prints a warning, requires a
+  fresh 32-byte token, and keeps local AI loopback-only.
+- Stopping: only a pid confirmed by health instance id or `/proc` cmdline
+  is signalled; anything else needs `--force`. Shutdown and pairing links
+  need the CLI header; the studio's cookie is not enough (tested).
+- Path traversal: no user-controlled paths. The state folder comes from the
+  CLI flag or env of the same user, and every file name is a constant.
+- Dependency audit: `npm audit --omit=dev` → 0 vulnerabilities. No new
+  external dependencies (the CLI reuses tsx and zod already in the lockfile;
+  `npm install` only registered the `@aether/cli` workspace).
+
+**PERFORMANCE**
+
+- Hot loops: none added. The first-run probe runs once per page load
+  (StrictMode-safe guard), the sign-in poll is a 2 s interval only while a
+  CLI sign-in runs, and nothing runs per frame. No allocation probe was
+  needed.
+- Bundle: eager JS +≈2.2 KB gzip (`firstRun.ts` 1.1 KB, host 0.7 KB, prefs
+  event 0.4 KB), CSS +4.6 KB raw (≈1.2 KB gzip). The screen itself is a lazy
+  11.2 KB (3.7 KB gzip) chunk, loaded only when it has to show. It pulls the
+  already-lazy AI connection chunk then, never on a returning visit.
+- First frame: unaffected. The probe is asynchronous and the modal mounts
+  only after it decides to show.
+- Memory: the first-run store is one small object, and the log follower
+  reads bounded chunks. The rotating log keeps at most 4 × 5 MiB.
+- Server: the Host/session guards are O(1) per request (a Set lookup and
+  two SHA-256s over ≤ 256 bytes). Log writes are synchronous appends of one
+  line per request (a local app; crash-safe).
+- Firefox/WebGL2: the CLI e2e runs the complete flow (first-run screen,
+  device code, offline world) in Firefox as well as Chromium.

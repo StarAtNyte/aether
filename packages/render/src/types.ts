@@ -40,7 +40,8 @@ export interface GeometrySource {
 }
 
 /** Camera modes supported by the renderer. */
-export type CameraMode = 'orbit' | 'follow' | 'firstPerson';
+/** `manual`: the host poses the camera every frame (`WorldRenderer.setCameraPose`, e.g. the voxel game). */
+export type CameraMode = 'orbit' | 'follow' | 'firstPerson' | 'manual';
 
 /** Axis-aligned bounds as plain tuples. */
 export interface Bounds {

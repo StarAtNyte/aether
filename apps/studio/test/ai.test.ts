@@ -193,7 +193,7 @@ describe('AiConnection', () => {
   });
 
   it('explains fallbacks with an action', () => {
-    expect(fallbackText('Codex · gpt-6.1-sol', { from: 'codex', to: 'mock', code: 'network', reason: 'bridge_offline', message: 'x' })).toContain('npm run bridge');
+    expect(fallbackText('Codex · gpt-6.1-sol', { from: 'codex', to: 'mock', code: 'network', reason: 'bridge_offline', message: 'x' })).toContain('npx aether start');
     expect(fallbackText('Claude Code', { from: 'claude-code', to: 'mock', code: 'rate_limit', reason: 'rate_limited', message: 'x' })).toContain('usage limit');
   });
 });

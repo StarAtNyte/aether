@@ -57,7 +57,7 @@ Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are
 
 | Variable | Default |
 | --- | --- |
-| `PORT` / `HOST` | `8787` / `0.0.0.0` |
+| `PORT` / `HOST` | `8787` / `127.0.0.1` (the Docker image sets `HOST=0.0.0.0`) |
 | `NODE_ENV` | `development` (`production` turns on static serving and HSTS) |
 | `AETHER_PROVIDER` | `anthropic` (`openai`, `mock`). Falls back to the other provider if only its key is set. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | none |
@@ -75,6 +75,19 @@ Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are
 | `RATE_LIMIT_GENERATOR_PUT_PER_MIN` / `RATE_LIMIT_GENERATOR_PUT_BURST` | `10` / `5` |
 | `AETHER_VALIDATE_GENERATORS` / `AETHER_GENERATOR_TIMEOUT_MS` / `AETHER_GENERATOR_MAX_QUEUE` | `false` / `1000` / `8` |
 | `LOG_LEVEL` | `info` |
+| `AETHER_ALLOWED_HOSTS` | none (any Host). Comma list of exact `host:port` values; any other `Host` gets 421 (DNS-rebinding defence). Set by `aether start`. |
+| `AETHER_SECRET_FILE` | none. File holding the per-install secret: set as an HttpOnly SameSite=Strict cookie on the studio page and required on `/api/local/*`; the `X-Aether-Admin` header with it unlocks `POST /api/admin/shutdown` and `POST /api/local/bridge/pair`. |
+| `AETHER_ACCESS_TOKEN_FILE` | none. LAN mode: every request except `/api/health` needs this token (`?access=` once, then a cookie). |
+| `AETHER_INSTANCE_ID` | none. Echoed by `/api/health` so the CLI recognises its own server. |
+| `AETHER_LOG_FILE` | none (stdout). Append logs here, rotated at 5 MiB, 3 copies. |
+| `AETHER_BRIDGE_ORIGINS` / `AETHER_BRIDGE_PORT` | none / `8790`. Also run the token-paired bridge (127.0.0.1) for these https studio origins; needs local AI. |
+
+## Local app
+
+`aether start` (see the root README) runs this server detached with
+`HOST=127.0.0.1`, `NODE_ENV=production`, `AETHER_LOCAL_AI=on`, the Host and
+Origin allowlists, the session secret, the instance id and a rotating log
+file in the user's state folder. Nothing extra is needed.
 
 ## Deploying
 

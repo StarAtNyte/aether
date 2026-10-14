@@ -302,9 +302,9 @@ export const LocalAiSetup = memo(function LocalAiSetup({ prefs, update }: { pref
   if (local.state === 'off') {
     return (
       <div className="local-setup">
-        <p className="setup-note">Runs Codex or Claude Code on this computer with the login you already have. Start Aether locally to use it:</p>
-        <code className="inline-code">npm run dev</code>
-        <p className="setup-note">Hosted copies of the studio never use anyone else&apos;s subscription; use the local bridge there.</p>
+        <p className="setup-note">Runs Codex or Claude Code on this computer with the login you already have. Start Aether locally with one command (in the Aether folder):</p>
+        <code className="inline-code">npx aether start --open</code>
+        <p className="setup-note">Hosted copies of the studio never use anyone else&apos;s subscription: there, use your own key, or pair with your computer through the local bridge (add <code className="inline-code">--origin {typeof location !== 'undefined' ? location.origin : 'https://your-studio'}</code> to the command above).</p>
       </div>
     );
   }

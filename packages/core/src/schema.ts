@@ -63,8 +63,26 @@ export const MaterialPreset = z.enum([
 ]);
 export type MaterialPreset = z.infer<typeof MaterialPreset>;
 
+/**
+ * Additive: physically based surface finishes for architecture and interiors.
+ * The renderer gives each one procedural, tileable albedo / roughness /
+ * normal maps at real-world scale (metre UVs), so a finish looks the same on
+ * a 2 m wall and a 20 m facade. Tintable finishes (plaster, paint, fabric,
+ * velvet, leather, carpet, tile, subway-tile, ceramic) take their colour from
+ * `color`; natural ones (woods, marble, terrazzo, stone, brick, metals) carry
+ * their own and `color` tints them.
+ */
+export const MaterialFinish = z.enum([
+  'oak', 'walnut', 'ash', 'herringbone', 'marble', 'terrazzo', 'concrete', 'plaster', 'paint', 'tile', 'subway-tile',
+  'stone', 'brick', 'fabric', 'velvet', 'leather', 'carpet', 'brushed-metal', 'chrome', 'brass', 'black-metal', 'glass',
+  'frosted-glass', 'ceramic', 'mirror', 'roof-tile', 'metal-roof', 'decking', 'grass', 'gravel', 'water',
+]);
+export type MaterialFinish = z.infer<typeof MaterialFinish>;
+
 export const MaterialSpec = z.object({
   preset: MaterialPreset.optional(),
+  /** Additive: physically based finish with procedural texture maps (see {@link MaterialFinish}). */
+  finish: MaterialFinish.optional(),
   color: Color.optional(),
   roughness: z.number().min(0).max(1).optional(),
   metalness: z.number().min(0).max(1).optional(),
@@ -260,6 +278,44 @@ export const BehaviorSpec = z.object({
 export type BehaviorSpec = z.infer<typeof BehaviorSpec>;
 
 // ---------------------------------------------------------------------------
+// Architecture metadata (additive) — see @aether/arch
+// ---------------------------------------------------------------------------
+
+/**
+ * Role of an entity in a parametric building. The geometry itself comes from
+ * the `arch-*` / `furn-*` procedural generators; this metadata lets tools,
+ * views (cutaway, exploded levels, floor plan) and checks (navigation, door
+ * clearance) understand the building without parsing generator params.
+ */
+export const ArchRole = z.enum([
+  'building', 'level', 'wall', 'room', 'ceiling', 'door', 'window', 'opening', 'stair', 'roof', 'railing', 'column',
+  'furniture', 'fixture', 'light', 'switch', 'site', 'pool',
+]);
+export type ArchRole = z.infer<typeof ArchRole>;
+
+export const ArchMeta = z.object({
+  role: ArchRole,
+  /** Display name (room "Kitchen", level "Ground floor", furniture "Sofa"). */
+  name: z.string().max(80).optional(),
+  /** Levels: storey index (0 = ground floor, negative = basement). */
+  level: z.number().int().min(-8).max(200).optional(),
+  /** Levels: floor-to-floor height in metres. */
+  height: z.number().min(1).max(30).optional(),
+  /** Furniture / fixtures / lights / switches: the room entity they belong to. */
+  room: EntityId.optional(),
+  /** Doors / windows / openings: the host wall entity. */
+  wall: EntityId.optional(),
+  /** Furniture / fixture kind ("sofa", "bed", "pendant") or room type ("kitchen"). */
+  kind: z.string().max(40).optional(),
+  /**
+   * Alternative looks for the interactive material swap (walkthrough key R).
+   * Each is merged over the entity's own material.
+   */
+  variants: z.array(MaterialSpec).max(6).optional(),
+});
+export type ArchMeta = z.infer<typeof ArchMeta>;
+
+// ---------------------------------------------------------------------------
 // Entity
 // ---------------------------------------------------------------------------
 
@@ -289,6 +345,8 @@ export const Entity = z.object({
    * agent must not change it (its patches are refused with an explanation).
    */
   locked: z.boolean().optional(),
+  /** Additive: role in a parametric building (walls, rooms, doors, furniture …). */
+  arch: ArchMeta.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -441,6 +499,14 @@ export const WorldTest = z.discriminatedUnion('kind', [
   z.object({ id: z.string(), kind: z.literal('topples'), target: Selector, degrees: z.number().positive().default(45), within: z.number().positive().default(10) }),
   /** Target stays above y (never falls through the world / off the island). */
   z.object({ id: z.string(), kind: z.literal('staysAbove'), target: Selector, y: z.number().default(-1), within: z.number().positive().default(10) }),
+  /**
+   * Additive: the building(s) matched by `target` are physically usable —
+   * every room is reachable on foot from the entrance over a coarse
+   * navigation grid (walls, closed glass and furniture block; doorways and
+   * stairs connect), every door can swing open without hitting anything,
+   * walkways keep `clearance` metres, and no furniture floats or overlaps.
+   */
+  z.object({ id: z.string(), kind: z.literal('navigable'), target: Selector.default('*'), clearance: z.number().min(0.4).max(2).default(0.8) }),
 ]);
 export type WorldTest = z.infer<typeof WorldTest>;
 

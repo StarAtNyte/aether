@@ -11,6 +11,9 @@ export { SelectionGizmo, readLocal, topLevelTargets, type GizmoCommit, type Gizm
 export { EditOverlay, MAX_VERTEX_MARKERS, type ComponentMode, type ComponentView } from './view/edit-overlay';
 export { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle, type MeshSlotGeometry } from './geometry/mesh-asset';
 export { MESH_TRIANGLES_KEY } from './sync/scene-sync';
+// Block terrain (loaded lazily through `WorldRenderer.voxel()`; types only here).
+export type { VoxelLayer, VoxelChunkMesh, VoxelMeshPass } from './voxel/voxel-layer';
+export type { MobModelKind } from './voxel/mob-models';
 export type { Bounds, CameraMode, GeometrySource, KeyedOutput, RenderDiagnostic, ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner } from './types';
 
 export { SceneSync, DEFAULT_MAX_INSTANCES, type SceneSyncOptions } from './sync/scene-sync';

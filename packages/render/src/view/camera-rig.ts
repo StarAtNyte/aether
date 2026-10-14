@@ -125,11 +125,27 @@ export class CameraRig {
     if (this.controls) this.controls.target.copy(this.look);
   }
 
+  /** Pending host pose in `manual` mode (set by {@link setPose}). */
+  private poseDirty = false;
+
+  /**
+   * Manual mode: place the camera at `x, y, z` with a yaw (radians, 0 looks
+   * along −Z) and pitch (radians, clamped ±89°). Allocation-free.
+   */
+  setPose(x: number, y: number, z: number, yaw: number, pitch: number): void {
+    if (!Number.isFinite(x + y + z + yaw + pitch)) return;
+    this.camera.position.set(x, y, z);
+    _euler.set(Math.max(-1.553, Math.min(1.553, pitch)), yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(_euler);
+    this.look.set(x - Math.sin(yaw) * 4, y + Math.tan(pitch) * 4, z - Math.cos(yaw) * 4);
+    this.poseDirty = true;
+  }
+
   /** Switch mode. `source` provides the follow/first-person target. */
   setMode(mode: CameraMode, source: FollowSource | null): void {
     this.tour = null;
     this.mode = mode;
-    this.follow = mode === 'orbit' ? null : source;
+    this.follow = mode === 'orbit' || mode === 'manual' ? null : source;
     if (this.controls) {
       this.controls.enabled = mode === 'orbit';
       if (mode === 'orbit') this.controls.target.copy(this.look);
@@ -205,6 +221,11 @@ export class CameraRig {
       if (this.controls) this.controls.target.copy(this.look);
       this.camera.lookAt(this.look);
       return true;
+    }
+    if (this.mode === 'manual') {
+      const moved = this.poseDirty;
+      this.poseDirty = false;
+      return moved;
     }
     if (this.mode === 'orbit') {
       if (!this.controls) return false;

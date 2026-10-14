@@ -109,6 +109,9 @@ function createSkirtGeometry(size: number): RingGeometry {
   return g;
 }
 
+/** FogExp2 density × distance giving ≈ 95 % fog (√−ln 0.05). */
+const VIEW_FOG_K = 1.73;
+
 /** Owns every environment object; add {@link group} to the scene. */
 export class EnvironmentRig {
   readonly group = new Group();
@@ -211,6 +214,8 @@ export class EnvironmentRig {
   setContentRadius(radius: number): void {
     if (!Number.isFinite(radius) || radius <= 0 || Math.abs(radius - this.contentRadius) < 0.5) return;
     this.contentRadius = radius;
+    // A view-distance fog does not follow the content.
+    if (this.fogDistance !== null) return;
     const env = this.env;
     const scene = this.scene;
     if (!env || !scene) return;
@@ -224,13 +229,30 @@ export class EnvironmentRig {
     }
   }
 
+  /** Distance (metres) at which terrain fades fully into the fog (voxel view distance), or null. */
+  private fogDistance: number | null = null;
+
+  /**
+   * Fog that ends at `distance` metres (≈ 95 % at that range), whatever the
+   * environment says, and a horizon that melts into it: streamed terrain
+   * then fades out instead of ending at a hard edge. Null restores the
+   * environment's own fog.
+   */
+  setFogDistance(distance: number | null): void {
+    const d = distance !== null && Number.isFinite(distance) && distance > 1 ? distance : null;
+    if (d === this.fogDistance) return;
+    this.fogDistance = d;
+    this.applyFog();
+  }
+
   /** Fog, dome colors and sky reflections (they share the horizon color). */
   private applyFog(): void {
     const env = this.env;
     const scene = this.scene;
     if (!env || !scene) return;
     const s = this.state;
-    const fog = resolveFog(env, s, this.contentRadius);
+    const own = resolveFog(env, s, this.contentRadius);
+    const fog = this.fogDistance === null ? own : { color: own?.color ?? s.fogColor, density: Math.max(own?.density ?? 0, VIEW_FOG_K / this.fogDistance) };
     this.fogParams = fog;
     if (fog) {
       this.fog.color.set(fog.color);
@@ -239,8 +261,8 @@ export class EnvironmentRig {
     } else {
       scene.fog = null;
     }
-    // Only a visible horizon (ground worlds) blends into the fog; space keeps its black.
-    const horizon = fog && s.showGround ? fog.color : undefined;
+    // Only a visible horizon (ground or terrain worlds) blends into the fog; space keeps its black.
+    const horizon = fog && (s.showGround || this.fogDistance !== null) ? fog.color : undefined;
     this.sky.apply(s, horizon);
     this.updateEnvironmentMap(scene, horizon ?? s.horizon);
   }
