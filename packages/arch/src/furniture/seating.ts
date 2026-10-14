@@ -199,7 +199,7 @@ export const BAR_STOOL: FurnitureDef = {
     const frame = new Geom();
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-      frame.merge(tube([[Math.cos(a) * 0.21, 0, Math.sin(a) * 0.21], [Math.cos(a) * 0.14, h - 0.04, Math.sin(a) * 0.14]], 0.011, 8));
+      frame.merge(tube([[Math.cos(a) * 0.21, 0.012, Math.sin(a) * 0.21], [Math.cos(a) * 0.14, h - 0.04, Math.sin(a) * 0.14]], 0.011, 8));
     }
     const ring: Array<readonly [number, number, number]> = [];
     for (let k = 0; k <= 24; k++) {

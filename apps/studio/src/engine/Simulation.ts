@@ -34,6 +34,8 @@ import { SoundBoard } from './sound';
 import { PosePool } from './posePool';
 import { TransformTable } from './TransformTable';
 import { findAvatar, framingSphere, movingIds } from './worldQueries';
+import { VoxelSession, type VoxelPlay } from '../voxel/session';
+import type { VoxelHudState } from '../voxel/hudState';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
@@ -134,6 +136,8 @@ export interface SimulationListener {
   onFatal?(message: string): void;
   /** The GPU device / WebGL context was lost; the simulation must be replaced. */
   onContextLost?(info: ContextLossInfo): void;
+  /** Voxel game HUD snapshot (null when no voxel game runs). */
+  onVoxelHud?(state: VoxelHudState | null): void;
 }
 
 /** Construction options. */
@@ -153,6 +157,8 @@ export interface SimulationOptions {
    * layer and sculpture at full detail (`?engine=classic`, comparisons).
    */
   scaleGeometry?: boolean;
+  /** Namespace of voxel game saves (the project id; default 'scratch'). */
+  saveBase?: string;
 }
 
 /** Session state the logic host needs (everything except the runtime itself). */
@@ -165,6 +171,8 @@ interface SessionCore {
   transients: Set<EntityId>;
   destroyed: Set<EntityId>;
   ended: boolean;
+  /** The voxel game (voxel worlds): it owns the player instead of the capsule controller. */
+  voxel: VoxelPlay | null;
 }
 
 /** Everything that exists only while playing. */
@@ -191,6 +199,8 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
+  /** Block terrain + voxel game (inactive for worlds without `voxel`). */
+  readonly voxel: VoxelSession;
   private readonly unsubscribe: () => void;
   private readonly resizeObserver: ResizeObserver | null;
   private session: PlaySession | null = null;
@@ -239,6 +249,12 @@ export class Simulation {
     this.listener = listener;
     this.pointerLock = opts.pointerLock === true;
     this.statsWhileEditing = opts.statsWhileEditing !== false;
+    this.voxel = new VoxelSession(renderer, {
+      onHud: (state) => listener.onVoxelHud?.(state),
+      sound: (name) => this.sound.play(name),
+      error: (message) => listener.onError?.(message),
+      saveBase: opts.saveBase ?? 'scratch',
+    });
     this.unsubscribe = history.subscribe((world) => {
       if (!this.session) this.requestSync(world);
     });
@@ -332,6 +348,7 @@ export class Simulation {
         const next = this.pendingWorld;
         try {
           await this.renderer.setWorld(next);
+          await this.voxel.sync(next);
           this.syncedWorldDoc = next;
         } catch (err) {
           log.error('renderer sync failed', err);
@@ -450,6 +467,12 @@ export class Simulation {
     if (this.disposed || this.session) return;
     const world = this.history.current;
     const p = world.player;
+    if (world.voxel && this.voxel.active) {
+      // Block terrain: an elevated view over the spawn area (chunks stream in around the target).
+      const g = this.voxel.groundAt(p.spawn[0], p.spawn[2]);
+      this.renderer.frameSphere([p.spawn[0], g + 6, p.spawn[2]], 34, [1, 0.62, 1.25], opts.flyIn ? FRAME_DURATION * 1.6 : FRAME_DURATION);
+      return;
+    }
     const spawnFocus = p.mode !== 'orbit' && !findAvatar(world);
     if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}) })) return;
     // Nothing rendered yet (e.g. every entity failed to build): fall back to document positions.
@@ -513,6 +536,7 @@ export class Simulation {
   /** Switch the play camera between follow/first-person/orbit. */
   setCameraView(view: 'orbit' | 'follow' | 'firstPerson'): void {
     const s = this.session;
+    if (s?.voxel) return;
     if (!s || view === 'orbit') {
       this.renderer.setCameraMode('orbit');
       return;
@@ -614,16 +638,19 @@ export class Simulation {
 
   /** On-screen touch stick (play mode). */
   setVirtualStick(forward: number, right: number): void {
+    this.session?.voxel?.input.setVirtualStick(forward, right);
     this.input.setVirtualStick(forward, right);
   }
 
   /** On-screen jump / action buttons (play mode). */
   tapVirtual(code: 'Space' | 'KeyE'): void {
+    this.session?.voxel?.input.tap(code);
     this.input.tapVirtual(code);
   }
 
   /** Touch look: turn by degrees (play mode). */
   turnBy(deg: number): void {
+    this.session?.voxel?.input.turnBy(deg);
     this.input.turnBy(deg);
   }
 
@@ -704,13 +731,16 @@ export class Simulation {
       }
       if (this.disposed) throw new Error('simulation disposed');
       const avatarId = findAvatar(world);
-      if (!avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
+      const voxelGame = world.voxel !== undefined && this.voxel.active;
+      if (!voxelGame && !avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
         character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID });
       }
-      core = { world, pw, scripts, character, avatarId, transients: new Set(), destroyed: new Set(), ended: false };
+      const voxel = voxelGame ? await this.voxel.startPlay(world, this.renderer.domElement) : null;
+      core = { world, pw, scripts, character, avatarId, transients: new Set(), destroyed: new Set(), ended: false, voxel };
       logic = new LogicRuntime(world, this.createHost(core), scripts ? { scripts, seed: world.seed } : { seed: world.seed });
     } catch (err) {
       if (core) core.ended = true;
+      if (core?.voxel) await this.voxel.stopPlay().catch(() => undefined);
       safely('logic dispose', () => logic?.dispose());
       safely('scripts dispose', () => scripts?.dispose());
       safely('character dispose', () => character?.dispose());
@@ -735,8 +765,10 @@ export class Simulation {
     try {
       this.renderer.highlight([]);
       this.input.setYaw(cameraYawDeg(this.renderer));
-      this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
-      if (session.avatarId) this.renderer.setCameraMode('follow', session.avatarId);
+      // The voxel game has its own input (mouse look, hotbar, break/place).
+      if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
+      if (session.voxel) this.renderer.setCameraMode('manual');
+      else if (session.avatarId) this.renderer.setCameraMode('follow', session.avatarId);
       else if (character) {
         this.renderer.setPlayerAvatar(character.position, this.input.yawDeg);
         this.renderer.setCameraMode(world.player.mode === 'firstPerson' ? 'firstPerson' : 'follow');
@@ -764,6 +796,7 @@ export class Simulation {
     this.applyGizmo();
     try {
       safely('input detach', () => this.input.detach());
+      if (s.voxel) await this.voxel.stopPlay().catch((err: unknown) => log.warn('voxel stop failed', err));
       safely('logic dispose', () => s.logic.dispose());
       safely('scripts dispose', () => s.scripts?.dispose());
       safely('character dispose', () => s.character?.dispose());
@@ -803,6 +836,18 @@ export class Simulation {
       getTransform(id) {
         if (s.ended || s.destroyed.has(id)) return undefined;
         const slot = poses.slot(id);
+        if (id === PLAYER_PSEUDO_ID && s.voxel) {
+          const b = s.voxel.game.player.body;
+          const h = s.voxel.game.player.yaw / 2;
+          slot.position[0] = b.x;
+          slot.position[1] = b.y;
+          slot.position[2] = b.z;
+          slot.quaternion[0] = 0;
+          slot.quaternion[1] = Math.sin(h);
+          slot.quaternion[2] = 0;
+          slot.quaternion[3] = Math.cos(h);
+          return slot;
+        }
         if (id === PLAYER_PSEUDO_ID && s.character) {
           const p = s.character.position;
           const h = (sim.input.yawDeg * Math.PI) / 360;
@@ -883,7 +928,7 @@ export class Simulation {
       },
       playerId() {
         if (s.avatarId) return s.avatarId;
-        return s.character ? PLAYER_PSEUDO_ID : undefined;
+        return s.character || s.voxel ? PLAYER_PSEUDO_ID : undefined;
       },
     };
   }
@@ -902,6 +947,7 @@ export class Simulation {
     const s = this.session;
     try {
       if (s) this.stepSession(s, dt);
+      if (this.voxel.active) this.voxel.frame(dt);
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
       this.renderOpts.onDemand = s === null;
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
@@ -948,6 +994,7 @@ export class Simulation {
     const jump = s.world.player.jumpSpeed;
     for (let i = 0; i < steps && !s.ended; i++) {
       const input = this.input.sample(FIXED_DT);
+      if (s.voxel) s.voxel.step(FIXED_DT);
       if (character) {
         character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, speed, jump);
         if (character.position[1] < PLAYER_KILL_Y) character.teleport(s.world.player.spawn);
@@ -1126,6 +1173,7 @@ export class Simulation {
     this.marquee = null;
     const s = this.session;
     this.session = null;
+    this.voxel.dispose();
     if (s) {
       s.ended = true;
       this.input.detach();

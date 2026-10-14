@@ -68,6 +68,40 @@ export function solveWallJoins(walls: readonly JoinWall[], tolerance = JOIN_TOLE
     nodeOf(w.a).ends.push({ wall: i, atStart: true, ux, uz, half, angle: Math.atan2(uz, ux) });
     nodeOf(w.b).ends.push({ wall: i, atStart: false, ux: -ux, uz: -uz, half, angle: Math.atan2(-uz, -ux) });
   });
+  // Free ends lying on another wall's span (T-junction into the middle of a wall): butt into its face.
+  for (const node of nodes) {
+    if (node.ends.length !== 1) continue;
+    const e = node.ends[0] as End;
+    for (let k = 0; k < walls.length; k++) {
+      if (k === e.wall) continue;
+      const w = walls[k] as JoinWall;
+      const dx = w.b[0] - w.a[0];
+      const dz = w.b[1] - w.a[1];
+      const len = Math.hypot(dx, dz);
+      if (len < EPS) continue;
+      const wx = dx / len;
+      const wz = dz / len;
+      const s = (node.x - w.a[0]) * wx + (node.z - w.a[1]) * wz;
+      const off = -(node.x - w.a[0]) * wz + (node.z - w.a[1]) * wx;
+      if (s <= tolerance || s >= len - tolerance || Math.abs(off) > tolerance) continue;
+      const cross = e.ux * wz - e.uz * wx;
+      if (Math.abs(cross) < 1e-6) continue; // collinear overlap: leave it
+      // The face of w on the side the stem leaves toward.
+      const side = -e.ux * wz + e.uz * wx > 0 ? 1 : -1;
+      const half = Math.max(0.005, w.thickness / 2);
+      const fx = -wz * half * side;
+      const fz = wx * half * side;
+      const extFor = (ox: number, oz: number): number => {
+        // Edge point (ox, oz) + t·u meets the face line f + r·w.
+        const t = ((fx - ox) * wz - (fz - oz) * wx) / cross;
+        const cap = MAX_EXTENSION_FACTOR * Math.max(e.half, half) * 2;
+        return clamp(-t, -cap, cap);
+      };
+      assign(out, walls, e, 'left', extFor(-e.uz * e.half, e.ux * e.half));
+      assign(out, walls, e, 'right', extFor(e.uz * e.half, -e.ux * e.half));
+      break;
+    }
+  }
   for (const node of nodes) {
     const ends = node.ends;
     if (ends.length < 2) continue;

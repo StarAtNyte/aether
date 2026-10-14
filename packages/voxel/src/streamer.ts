@@ -156,6 +156,20 @@ export class ChunkStreamer {
     this.meshes.clear();
   }
 
+  /**
+   * Regenerate these loaded chunks (document edits touched them) while the
+   * old meshes stay on screen until the new ones arrive. Chunks the player
+   * modified are kept as they are.
+   */
+  regenerate(keys: Iterable<number>): void {
+    for (const key of keys) {
+      const slot = this.world.chunks.get(key);
+      if (!slot || slot.modified) continue;
+      this.generating.delete(key);
+      this.requestGenerate(slot.cx, slot.cz, true);
+    }
+  }
+
   private inWorld(cx: number, cz: number): boolean {
     const b = this.border;
     if (b <= 0) return true;
@@ -235,7 +249,7 @@ export class ChunkStreamer {
     return true;
   }
 
-  private requestGenerate(cx: number, cz: number): void {
+  private requestGenerate(cx: number, cz: number, replace = false): void {
     const key = chunkKey(cx, cz);
     if (this.generating.has(key)) return;
     this.generating.add(key);
@@ -250,6 +264,8 @@ export class ChunkStreamer {
         // Too far by now: drop it (it will be generated again if we come back).
         const keep = this.viewDistance + 2;
         if (Math.abs(cx - this.centerCx) > keep || Math.abs(cz - this.centerCz) > keep) return;
+        // A replacement must not clobber player changes made while it was generating.
+        if (replace && this.world.chunks.get(key)?.modified) return;
         this.world.put(cx, cz, g.chunk, g.top, g.saved);
         // Neighbours meshed without this chunk get its light/AO border now.
         for (let dz = -1; dz <= 1; dz++) {
@@ -259,6 +275,7 @@ export class ChunkStreamer {
             if (!n) continue;
             const m = this.meshes.get(n.key);
             if (m && m.shown >= 0) m.requested = -1;
+            if (replace) this.world.markDirty(cx + dx, cz + dz);
           }
         }
       })

@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
 import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
 import type { EditorTool } from '../engine/Simulation';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
+import type { VoxelHudState } from '../voxel/hudState';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -199,6 +200,8 @@ export interface StudioState {
   stats: PerfStats;
   verify: VerifyState;
   game: GameState;
+  /** Voxel game HUD (null unless a block world is being played). */
+  voxelHud: VoxelHudState | null;
   cameraView: CameraView;
   toasts: Toast[];
   settings: StudioSettings;
@@ -256,6 +259,7 @@ export interface StudioState {
   setVerify(v: Partial<VerifyState>): void;
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
+  setVoxelHud(v: VoxelHudState | null): void;
   setCameraView(v: CameraView): void;
   toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
   dismissToast(id: number): void;
@@ -372,6 +376,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     stats: EMPTY_STATS,
     verify: IDLE_VERIFY,
     game: INITIAL_GAME,
+    voxelHud: null,
     cameraView: 'orbit',
     toasts: [],
     settings: init.settings ? { ...init.settings } : { ...DEFAULT_SETTINGS },
@@ -455,6 +460,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setVerify: (v) => set((s) => ({ verify: { ...s.verify, ...v } })),
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
     resetGame: () => set({ game: INITIAL_GAME }),
+    setVoxelHud: (v) => set({ voxelHud: v }),
     setCameraView: (cameraView) => set({ cameraView }),
     toast: (text, kind = 'info', duration = 3, action) => {
       const id = nextToastId++;

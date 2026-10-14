@@ -785,6 +785,12 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  /** Show or hide the player avatar (e.g. the voxel game's first/third-person switch). */
+  setAvatarVisible(on: boolean): void {
+    this.avatar.setHidden(!on);
+    this.needsDraw = true;
+  }
+
   /** Place the player avatar (feet position, yaw in degrees; yaw 0 faces −Z). */
   setPlayerAvatar(position: Vec3, yawDeg: number): void {
     this.avatar.set(position[0], position[1], position[2], yawDeg);

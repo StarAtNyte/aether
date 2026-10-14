@@ -5,7 +5,8 @@
  */
 
 interface Tone {
-  type: OscillatorType;
+  /** Oscillator wave, or 'noise' (band-passed white noise at `from` Hz: digging, steps, splashes). */
+  type: OscillatorType | 'noise';
   from: number;
   to: number;
   duration: number;
@@ -23,6 +24,22 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
   click: { type: 'square', from: 1200, to: 900, duration: 0.04, gain: 0.08 },
   whoosh: { type: 'sawtooth', from: 300, to: 1200, duration: 0.3, gain: 0.08 },
   bell: { type: 'sine', from: 988, to: 980, duration: 1.2, gain: 0.18 },
+  // Block worlds.
+  dig: { type: 'noise', from: 900, to: 700, duration: 0.07, gain: 0.12 },
+  break: { type: 'noise', from: 620, to: 380, duration: 0.16, gain: 0.2 },
+  place: { type: 'noise', from: 1500, to: 900, duration: 0.07, gain: 0.14 },
+  step: { type: 'noise', from: 420, to: 300, duration: 0.05, gain: 0.05 },
+  hurt: { type: 'square', from: 260, to: 140, duration: 0.15, gain: 0.12 },
+  eat: { type: 'noise', from: 2100, to: 1500, duration: 0.12, gain: 0.08, then: { from: 1900, to: 1400, delay: 0.14 } },
+  craft: { type: 'triangle', from: 660, to: 990, duration: 0.1, gain: 0.12, then: { from: 990, to: 1320, delay: 0.07 } },
+  splash: { type: 'noise', from: 1300, to: 500, duration: 0.35, gain: 0.14 },
+  death: { type: 'sine', from: 300, to: 80, duration: 0.9, gain: 0.18 },
+  poof: { type: 'noise', from: 800, to: 300, duration: 0.25, gain: 0.12 },
+  baa: { type: 'sawtooth', from: 430, to: 380, duration: 0.35, gain: 0.05 },
+  oink: { type: 'square', from: 190, to: 140, duration: 0.18, gain: 0.06, then: { from: 170, to: 130, delay: 0.16 } },
+  cluck: { type: 'square', from: 950, to: 700, duration: 0.05, gain: 0.05, then: { from: 900, to: 650, delay: 0.09 } },
+  groan: { type: 'sawtooth', from: 120, to: 78, duration: 0.7, gain: 0.07 },
+  hiss: { type: 'noise', from: 4200, to: 3600, duration: 0.4, gain: 0.05 },
 });
 
 /** Minimum seconds between two plays of the same sound. */
@@ -52,6 +69,11 @@ export class SoundBoard {
     }
     if (++this.voices > MAX_VOICES_PER_SECOND) return;
     this.lastPlayed.set(name, t);
+    if (tone.type === 'noise') {
+      this.noise(ctx, tone.from, tone.to, t, tone.duration, tone.gain);
+      if (tone.then) this.noise(ctx, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, tone.gain);
+      return;
+    }
     this.voice(ctx, tone.type, tone.from, tone.to, t, tone.duration, tone.gain);
     if (tone.then) this.voice(ctx, tone.type, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, tone.gain);
   }
@@ -65,6 +87,7 @@ export class SoundBoard {
   dispose(): void {
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
+    this.noiseBuffer = null;
   }
 
   private context(): AudioContext | null {
@@ -79,6 +102,43 @@ export class SoundBoard {
       this.ctx = null;
     }
     return this.ctx;
+  }
+
+  /** One second of white noise, made once per context. */
+  private noiseBuffer: AudioBuffer | null = null;
+
+  private noise(ctx: AudioContext, from: number, to: number, start: number, duration: number, gain: number): void {
+    if (!this.noiseBuffer) {
+      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      let s = 0x1234567;
+      for (let i = 0; i < data.length; i++) {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        data[i] = ((s >>> 0) / 4294967296) * 2 - 1;
+      }
+      this.noiseBuffer = buf;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 1.4;
+    filter.frequency.setValueAtTime(from, start);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(1, to), start + duration);
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, start);
+    amp.gain.exponentialRampToValueAtTime(gain, start + 0.005);
+    amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    src.connect(filter).connect(amp).connect(ctx.destination);
+    src.start(start, Math.random() * 0.5);
+    src.stop(start + duration + 0.02);
+    src.onended = () => {
+      src.disconnect();
+      filter.disconnect();
+      amp.disconnect();
+    };
   }
 
   private voice(ctx: AudioContext, type: OscillatorType, from: number, to: number, start: number, duration: number, gain: number): void {

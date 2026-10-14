@@ -44,6 +44,7 @@ export const SHORTCUTS: ReadonlyArray<[string, string]> = [
   ['Alt+1 – 6', 'Agent, Objects, Assets, Logic, Checks, History'],
   [shortcut('Mod+[') + ' / ]', 'Toggle left panel / inspector'],
   ['WASD · Space · E', 'Move · jump · act (play)'],
+  ['Mouse · 1–9 · E · V', 'Block worlds: break / place · hotbar · inventory · view'],
 ];
 
 /** Install the global shortcut handler. */
@@ -67,7 +68,8 @@ export function useShortcuts(): void {
       }
       if (e.key === 'Escape') {
         if (st.paletteOpen || st.settingsOpen || document.querySelector('dialog[open]')) return;
-        if (st.mode === 'play') void studio.togglePlay();
+        if (st.mode === 'play' && st.voxelHud?.inventoryOpen) studio.simulation?.voxel.game?.setInventoryOpen(false);
+        else if (st.mode === 'play') void studio.togglePlay();
         else if (st.agentBusy && typing) studio.stopAgent();
         else if (typing && e.target instanceof HTMLElement) e.target.blur();
         else if (st.materialPick) editor.armEyedropper(false);

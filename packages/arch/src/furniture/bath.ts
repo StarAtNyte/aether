@@ -96,7 +96,7 @@ export const BATHTUB: FurnitureDef = {
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.7,
-  size: (p) => [p.num('length'), 0.58, 0.78],
+  size: (p) => [p.num('length') + 0.3, 1.0, 0.78],
   build(p) {
     const set = new PartSet();
     const L = p.num('length');

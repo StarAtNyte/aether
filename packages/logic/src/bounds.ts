@@ -46,6 +46,15 @@ export function zoneShapeOf(entity: Entity): ZoneShape {
   if (shape.kind === 'scatter') {
     return { kind: 'box', half: [(shape.area[0] / 2) * sx, MIN_HALF_HEIGHT * sy, (shape.area[1] / 2) * sz] };
   }
+  if (shape.kind === 'procedural' && shape.generator === 'arch-door') {
+    // Door leaves (@aether/arch): the hinge sits on the leaf edge, so the zone must be the real leaf.
+    const p = shape.params;
+    const num = (k: string, d: number, lo: number, hi: number): number => {
+      const v = Object.hasOwn(p, k) ? p[k] : undefined;
+      return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
+    };
+    return { kind: 'box', half: [(num('width', 0.9, 0.4, 3) / 2) * sx, (num('height', 2.1, 1.5, 4) / 2) * sy, (num('thickness', 0.045, 0.02, 0.12) / 2) * sz] };
+  }
   if (shape.kind === 'model' && shape.fitSize !== undefined) {
     const h = shape.fitSize / 2;
     return { kind: 'box', half: [h * sx, h * sy, h * sz] };

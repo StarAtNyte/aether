@@ -322,6 +322,7 @@ export class Studio {
           onContextLost: (info) => {
             if (gen === this.attachGen) this.handleContextLost(info);
           },
+          onVoxelHud: (state) => this.store.getState().setVoxelHud(state),
         },
         {
           backend: this.forceWebGL2 ? 'webgl2' : st.settings.backend,
@@ -330,6 +331,7 @@ export class Studio {
           lowMemory: st.memory.lowMemory,
           statsWhileEditing: st.settings.showPerf,
           scaleGeometry: !classicEngineRequested(),
+          saveBase: this.projectId ?? 'scratch',
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),
         },

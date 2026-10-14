@@ -312,6 +312,12 @@ export const ArchMeta = z.object({
    * Each is merged over the entity's own material.
    */
   variants: z.array(MaterialSpec).max(6).optional(),
+  /**
+   * Buildings: the plan they were compiled from (see @aether/arch
+   * `BuildingPlan`), so architecture tools can edit and re-compile the
+   * building parametrically. Opaque JSON here; validated by @aether/arch.
+   */
+  plan: Json.optional(),
 });
 export type ArchMeta = z.infer<typeof ArchMeta>;
 

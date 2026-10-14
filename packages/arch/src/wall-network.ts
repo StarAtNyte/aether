@@ -95,17 +95,22 @@ export function wallNetwork(rooms: readonly NetworkRoom[], tolerance = 0.01): Ne
   return mergeCollinear(classified, tolerance);
 }
 
-/** Merge collinear walls joined at nodes of degree 2 with matching classification. */
+/**
+ * Merge collinear walls through a shared node when no third wall continues
+ * straight through it (other walls there are stems of a T, which then butt
+ * into the merged wall's face). Pieces must agree on exterior-ness and, for
+ * exterior walls, have the outdoors on the same side.
+ */
 function mergeCollinear(walls: NetworkWall[], tolerance: number): NetworkWall[] {
   const list = walls.slice();
+  const dirAt = (w: NetworkWall, node: P2): P2 => {
+    const other = samePoint(w.a, node, tolerance) ? w.b : w.a;
+    const len = Math.hypot(other[0] - node[0], other[1] - node[1]) || 1;
+    return [(other[0] - node[0]) / len, (other[1] - node[1]) / len];
+  };
   let merged = true;
   while (merged) {
     merged = false;
-    const degree = new Map<string, number>();
-    for (const w of list) {
-      degree.set(key(w.a), (degree.get(key(w.a)) ?? 0) + 1);
-      degree.set(key(w.b), (degree.get(key(w.b)) ?? 0) + 1);
-    }
     outer: for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const w = list[i] as NetworkWall;
@@ -118,7 +123,7 @@ function mergeCollinear(walls: NetworkWall[], tolerance: number): NetworkWall[] 
         else if (samePoint(w.a, v.b, tolerance)) [shared, wa, vb] = [w.a, w.b, v.a];
         else if (samePoint(w.b, v.b, tolerance)) [shared, wa, vb] = [w.b, w.a, v.a];
         else if (samePoint(w.a, v.a, tolerance)) [shared, wa, vb] = [w.a, w.b, v.b];
-        if (!shared || !wa || !vb || degree.get(key(shared)) !== 2) continue;
+        if (!shared || !wa || !vb) continue;
         // Collinear and pointing the same way through the shared node.
         const d1x = shared[0] - wa[0];
         const d1z = shared[1] - wa[1];
@@ -127,13 +132,18 @@ function mergeCollinear(walls: NetworkWall[], tolerance: number): NetworkWall[] 
         const cross = d1x * d2z - d1z * d2x;
         const dot = d1x * d2x + d1z * d2z;
         if (Math.abs(cross) > tolerance * Math.hypot(d1x, d1z) || dot <= 0) continue;
-        // Same rooms on the same sides (orientation-aware).
+        // Any other wall at the node must be a stem (not continuing w or v).
+        const node = shared;
+        const others = list.filter((x, k) => k !== i && k !== j && (samePoint(x.a, node, tolerance) || samePoint(x.b, node, tolerance)));
+        const dw = dirAt(w, node);
+        if (others.some((x) => Math.abs(Math.abs(dw[0] * dirAt(x, node)[0] + dw[1] * dirAt(x, node)[1]) - 1) < 1e-3)) continue;
+        // Orientation-aware sides of the merged wall (a = wa → b = vb).
         const wForward = samePoint(w.b, shared, tolerance);
         const vForward = samePoint(v.a, shared, tolerance);
         const wSides = wForward ? [w.roomA, w.roomB] : [w.roomB, w.roomA];
         const vSides = vForward ? [v.roomA, v.roomB] : [v.roomB, v.roomA];
-        if (wSides[0] !== vSides[0] || wSides[1] !== vSides[1]) continue;
-        const next: NetworkWall = { a: wa, b: vb, exterior: w.exterior, roomA: wSides[0] ?? null, roomB: wSides[1] ?? null };
+        if (w.exterior && ((wSides[0] === null) !== (vSides[0] === null) || (wSides[1] === null) !== (vSides[1] === null))) continue;
+        const next: NetworkWall = { a: wa, b: vb, exterior: w.exterior, roomA: wSides[0] ?? vSides[0] ?? null, roomB: wSides[1] ?? vSides[1] ?? null };
         list.splice(j, 1);
         list.splice(i, 1, next);
         merged = true;

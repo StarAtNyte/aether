@@ -1,0 +1,427 @@
+/**
+ * Decor and fittings: rugs, curtains, potted plants, framed art, mirrors,
+ * TVs, a fireplace, a café counter with an espresso machine and a
+ * whiteboard. Wall-mounted pieces have their back at z = 0 (the wall face)
+ * and their own `mountHeight` handled by the layout helpers.
+ */
+import { Geom, box, cylinder, extrude, lathe, roundedBox, sphere, tube } from '../mesh';
+import { PartSet } from '../parts';
+import { choice, color, int, mat, num, roundedRect, seeded, type FurnitureDef } from './kit';
+import type { P2 } from '../math2';
+
+export const RUG: FurnitureDef = {
+  id: 'furn-rug',
+  kind: 'rug',
+  description: 'Low-pile rug with a bound edge (rectangular or round).',
+  params: {
+    width: num(2.4, 0.6, 5, 'width (m)'),
+    depth: num(1.7, 0.6, 4, 'depth (m)'),
+    shape: choice(['rect', 'round'], 'rect', 'shape'),
+    color: color('#c9bfae', 'field colour'),
+    border: color('#8a7f70', 'border colour'),
+  },
+  mount: 'floor',
+  againstWall: false,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), 0.012, p.str('shape') === 'round' ? p.num('width') : p.num('depth')],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const d = p.str('shape') === 'round' ? w : p.num('depth');
+    const r = p.str('shape') === 'round' ? w / 2 - 0.001 : 0.02;
+    const outline = roundedRect(w, d, r, p.str('shape') === 'round' ? 16 : 2);
+    const inner = roundedRect(w - 0.16, d - 0.16, Math.max(0.01, r - 0.08), p.str('shape') === 'round' ? 16 : 2);
+    const border = new Geom().flatPolygon(outline, 0.01, true, [inner]);
+    const edge = extrude(outline, 0.001, 0.01, { top: false, bottom: false });
+    set.add(border.merge(edge), mat('carpet', p.color('border')));
+    set.add(new Geom().flatPolygon(inner, 0.011, true), mat('carpet', p.color('color')));
+    return set.build();
+  },
+};
+
+export const CURTAIN: FurnitureDef = {
+  id: 'furn-curtain',
+  kind: 'curtain',
+  description: 'Pleated curtain panel on a slim rod, hung in front of a window (back at z = 0 on the wall).',
+  params: {
+    width: num(1.6, 0.4, 6, 'gathered width (m)'),
+    height: num(2.6, 1, 4, 'drop (m)'),
+    color: color('#e6dfd2', 'fabric colour'),
+    sheer: choice(['linen', 'sheer'], 'linen', 'fabric weight'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), p.num('height'), 0.14],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const h = p.num('height');
+    const g = new Geom();
+    // Sinusoidal pleats (smooth normals), double-sided by a back copy.
+    const folds = Math.max(4, Math.round(w / 0.11));
+    const cols = folds * 4;
+    const rows = 6;
+    for (let j = 0; j <= rows; j++) {
+      const y = 0.02 + ((h - 0.06) * j) / rows;
+      for (let i = 0; i <= cols; i++) {
+        const t = i / cols;
+        const x = -w / 2 + w * t;
+        const ph = t * folds * Math.PI * 2;
+        const z = 0.07 + 0.035 * Math.sin(ph);
+        const dz = 0.035 * Math.cos(ph) * folds * Math.PI * 2 / w;
+        const len = Math.hypot(dz, 1);
+        g.vertex(x, y, z, -dz / len, 0, 1 / len, x, y);
+      }
+    }
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const a = j * (cols + 1) + i;
+        const b = a + 1;
+        const c = a + cols + 2;
+        const e = a + cols + 1;
+        g.i.push(a, b, c, a, c, e);
+      }
+    }
+    const back = g.clone().flip();
+    for (let k = 0; k < back.n.length; k++) back.n[k] = -(back.n[k] as number);
+    g.merge(back);
+    const sheer = p.str('sheer') === 'sheer';
+    set.add(g, sheer ? { finish: 'fabric', color: p.color('color'), opacity: 0.55 } : mat('fabric', p.color('color')));
+    set.add(tube([[-w / 2 - 0.08, h - 0.02, 0.07], [w / 2 + 0.08, h - 0.02, 0.07]], 0.012, 8), mat('black-metal'));
+    return set.build();
+  },
+};
+
+export const PLANT: FurnitureDef = {
+  id: 'furn-plant',
+  kind: 'plant',
+  description: 'Potted indoor plant (fiddle-leaf fig, olive tree or snake plant) in a ceramic or terracotta pot.',
+  params: {
+    height: num(1.4, 0.3, 2.4, 'overall height (m)'),
+    species: choice(['fig', 'olive', 'snake'], 'fig', 'plant type'),
+    pot: choice(['ceramic', 'terracotta', 'concrete'], 'ceramic', 'pot finish'),
+    potColor: color('#e9e4dc', 'pot colour'),
+  },
+  mount: 'floor',
+  againstWall: false,
+  frontClearance: 0,
+  size: (p) => [Math.max(0.4, p.num('height') * 0.5), p.num('height'), Math.max(0.4, p.num('height') * 0.5)],
+  build(p, seed) {
+    const set = new PartSet();
+    const H = p.num('height');
+    const potH = Math.min(0.45, H * 0.28);
+    const potR = Math.min(0.22, H * 0.14);
+    const pot = lathe(
+      [
+        [0.001, 0],
+        [potR * 0.78, 0],
+        [potR * 0.82, 0.01],
+        [potR, potH],
+        [potR * 0.93, potH],
+        [potR * 0.9, potH - 0.04],
+        [0.001, potH - 0.04],
+      ],
+      28,
+    );
+    const potMat = p.str('pot') === 'terracotta' ? { finish: 'ceramic' as const, color: '#b5643f', roughness: 0.8 } : p.str('pot') === 'concrete' ? mat('concrete') : mat('ceramic', p.color('potColor'));
+    set.add(pot, potMat);
+    set.add(new Geom().flatPolygon(roundedRect(potR * 1.7, potR * 1.7, potR * 0.85 - 0.001, 8), potH - 0.035, true), { finish: 'gravel', color: '#5a4636' });
+    const rnd = seeded(seed * 747796405 + 3);
+    const leaves = new Geom();
+    const stems = new Geom();
+    const species = p.str('species');
+    if (species === 'snake') {
+      const n = 9 + Math.floor(rnd() * 5);
+      for (let k = 0; k < n; k++) {
+        const a = rnd() * Math.PI * 2;
+        const lh = (H - potH) * (0.6 + rnd() * 0.4);
+        leaves.merge(leaf(0.06, lh, rnd() * 0.15).rotateZ((rnd() - 0.5) * 18).rotateY((a * 180) / Math.PI).translate(Math.cos(a) * potR * 0.4, potH - 0.04, Math.sin(a) * potR * 0.4));
+      }
+    } else {
+      const trunkTop = potH + (H - potH) * (species === 'olive' ? 0.45 : 0.25);
+      stems.merge(tube([[0, potH - 0.04, 0], [0.02, trunkTop * 0.7, 0.01], [-0.01, trunkTop, 0]], species === 'olive' ? 0.02 : 0.012, 8));
+      const n = species === 'olive' ? 160 : 34;
+      const crownR = species === 'olive' ? (H - potH) * 0.33 : (H - potH) * 0.28;
+      const crownC = species === 'olive' ? trunkTop + crownR * 0.9 : potH + (H - potH) * 0.62;
+      for (let k = 0; k < n; k++) {
+        const u = rnd() * 2 - 1;
+        const th = rnd() * Math.PI * 2;
+        const rr = crownR * Math.cbrt(rnd());
+        const x = Math.sqrt(1 - u * u) * Math.cos(th) * rr;
+        const z = Math.sqrt(1 - u * u) * Math.sin(th) * rr;
+        const y = crownC + u * rr * (species === 'fig' ? 1.6 : 0.8);
+        const size = species === 'olive' ? 0.08 : 0.24 + rnd() * 0.08;
+        const width = species === 'olive' ? 0.018 : size * 0.62;
+        leaves.merge(leaf(width, size, 0.2 + rnd() * 0.3).rotateX(-40 - rnd() * 50).rotateY(rnd() * 360).translate(x, y - size * 0.3, z));
+        if (species === 'fig') stems.merge(tube([[0, crownC - crownR * 0.8, 0], [x, y - size * 0.3, z]], 0.006, 5));
+      }
+    }
+    set.add(stems, { finish: 'walnut', color: '#6b5440' });
+    set.add(leaves, { preset: 'leaf', color: species === 'olive' ? '#7d8b5e' : species === 'snake' ? '#4f6b3a' : '#3f6b2f', roughness: 0.55 });
+    set.boxMinMax(-potR, 0, -potR, potR, potH, potR);
+    return set.build();
+  },
+};
+
+/** A double-sided leaf blade (ellipse-ish), base at the origin, pointing +Y, with a cupped midrib. */
+function leaf(w: number, h: number, cup: number): Geom {
+  const g = new Geom();
+  const rows = 6;
+  for (let j = 0; j <= rows; j++) {
+    const t = j / rows;
+    const half = (w / 2) * Math.sin(Math.PI * Math.min(1, t * 1.05)) + 0.002;
+    const y = h * t;
+    const bend = cup * 0.25 * h * t * t;
+    for (const s of [-1, 0, 1] as const) {
+      const z = bend + (s === 0 ? 0 : -cup * 0.15 * half);
+      g.vertex(s * half, y, z, 0, 0, 1, s * half, y);
+    }
+  }
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < 2; i++) {
+      const a = j * 3 + i;
+      g.i.push(a, a + 1, a + 4, a, a + 4, a + 3);
+    }
+  }
+  const back = g.clone().flip();
+  for (let k = 0; k < back.n.length; k++) back.n[k] = -(back.n[k] as number);
+  return g.merge(back);
+}
+
+const ART_PALETTES: readonly (readonly string[])[] = [
+  ['#e8dfd0', '#c96f4a', '#2f4858', '#d9a55b'],
+  ['#efe9e1', '#9aa58f', '#3a4a3f', '#c8b79e'],
+  ['#f1ece4', '#1f2a36', '#b9783f', '#e3c9a0'],
+  ['#ebe5dc', '#7d4b5f', '#e0b8a8', '#2d2d2d'],
+];
+
+export const FRAME: FurnitureDef = {
+  id: 'furn-frame',
+  kind: 'art',
+  description: 'Framed abstract artwork (seeded composition) with a white mat; hangs on a wall (back at z = 0).',
+  params: {
+    width: num(0.8, 0.2, 3, 'frame width (m)'),
+    height: num(1.0, 0.2, 2.5, 'frame height (m)'),
+    frame: choice(['oak', 'walnut', 'black-metal', 'brass'], 'black-metal', 'frame finish'),
+    palette: int(0, 0, 3, 'colour palette'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), p.num('height'), 0.035],
+  build(p, seed) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const h = p.num('height');
+    const fw = 0.025;
+    const frame = new Geom();
+    frame.merge(box(-w / 2, -h / 2, 0, w / 2, -h / 2 + fw, 0.035));
+    frame.merge(box(-w / 2, h / 2 - fw, 0, w / 2, h / 2, 0.035));
+    frame.merge(box(-w / 2, -h / 2 + fw, 0, -w / 2 + fw, h / 2 - fw, 0.035));
+    frame.merge(box(w / 2 - fw, -h / 2 + fw, 0, w / 2, h / 2 - fw, 0.035));
+    set.add(frame.translate(0, h / 2, 0), mat(p.str('frame')));
+    const matBoard = new Geom().quadAuto([-w / 2 + fw, fw, 0.02], [w / 2 - fw, fw, 0.02], [w / 2 - fw, h - fw, 0.02], [-w / 2 + fw, h - fw, 0.02]);
+    set.add(matBoard, { finish: 'paint', color: '#f3f1ec' });
+    // Composition: a few overlapping blocks and a circle in the palette.
+    const pal = ART_PALETTES[p.int('palette') % ART_PALETTES.length] as readonly string[];
+    const rnd = seeded(seed * 2246822519 + 11);
+    const aw = w - 2 * fw - 0.12;
+    const ah = h - 2 * fw - 0.12;
+    const x0 = -aw / 2;
+    const y0 = fw + 0.06;
+    set.add(new Geom().quadAuto([x0, y0, 0.021], [x0 + aw, y0, 0.021], [x0 + aw, y0 + ah, 0.021], [x0, y0 + ah, 0.021]), { finish: 'paint', color: pal[0] as string });
+    for (let k = 0; k < 3; k++) {
+      const bw = aw * (0.25 + rnd() * 0.45);
+      const bh = ah * (0.2 + rnd() * 0.45);
+      const bx = x0 + rnd() * (aw - bw);
+      const by = y0 + rnd() * (ah - bh);
+      const z = 0.0215 + k * 0.0004;
+      set.add(new Geom().quadAuto([bx, by, z], [bx + bw, by, z], [bx + bw, by + bh, z], [bx, by + bh, z]), { finish: 'paint', color: pal[1 + (k % 3)] as string });
+    }
+    const r = Math.min(aw, ah) * (0.12 + rnd() * 0.12);
+    const disc: P2[] = [];
+    for (let k = 0; k < 32; k++) disc.push([Math.cos((k / 32) * Math.PI * 2) * r, Math.sin((k / 32) * Math.PI * 2) * r]);
+    const circle = new Geom().flatPolygon(disc, 0, true).rotateX(90).translate(x0 + aw * (0.2 + rnd() * 0.6), y0 + ah * (0.2 + rnd() * 0.6), 0.0235);
+    set.add(circle, { finish: 'paint', color: pal[3] as string });
+    return set.build();
+  },
+};
+
+export const MIRROR: FurnitureDef = {
+  id: 'furn-mirror',
+  kind: 'mirror',
+  description: 'Wall mirror (rectangular, round or arched) with a thin frame; back at z = 0 on the wall.',
+  params: {
+    width: num(0.7, 0.3, 2.5, 'width (m)'),
+    height: num(1.0, 0.3, 2.2, 'height (m)'),
+    shape: choice(['rect', 'round', 'arch'], 'round', 'outline'),
+    frame: choice(['brass', 'black-metal', 'oak'], 'brass', 'frame finish'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), p.str('shape') === 'round' ? p.num('width') : p.num('height'), 0.03],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const shape = p.str('shape');
+    const h = shape === 'round' ? w : p.num('height');
+    let outline: P2[];
+    if (shape === 'round') outline = roundedRect(w, h, w / 2 - 0.001, 16);
+    else if (shape === 'arch') {
+      outline = [];
+      const r = w / 2;
+      outline.push([-r, -h / 2], [r, -h / 2]);
+      for (let k = 0; k <= 16; k++) {
+        const a = (k / 16) * Math.PI;
+        outline.push([Math.cos(a) * r, h / 2 - r + Math.sin(a) * r]);
+      }
+    } else outline = roundedRect(w, h, 0.01, 2);
+    // Outline is in (x, z): stand it up so plan z becomes height and plan y the depth off the wall.
+    const toWall = (g: Geom): Geom => g.rotateX(-90).translate(0, h / 2, 0.025);
+    const frame = extrude(outline, 0, 0.025);
+    set.add(toWall(frame), mat(p.str('frame')));
+    const inner = outline.map((q): P2 => [q[0] * (1 - 0.05 / w), q[1] * (1 - 0.05 / h)]);
+    set.add(toWall(new Geom().flatPolygon(inner, -0.002, false)), { finish: 'mirror' });
+    return set.build();
+  },
+};
+
+export const TV: FurnitureDef = {
+  id: 'furn-tv',
+  kind: 'tv',
+  description: 'Wall-mounted flat TV (55–85 inch); back at z = 0 on the wall.',
+  params: {
+    inches: num(65, 32, 100, 'diagonal (inches)'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => {
+    const diag = p.num('inches') * 0.0254;
+    return [diag * 0.8716, diag * 0.4903, 0.04];
+  },
+  build(p) {
+    const set = new PartSet();
+    const diag = p.num('inches') * 0.0254;
+    const w = diag * 0.8716;
+    const h = diag * 0.4903;
+    set.add(roundedBox(w, h, 0.03, 0.004, 1).translate(0, h / 2, 0.025), mat('black-metal', '#1b1c1f'));
+    set.add(new Geom().quadAuto([-w / 2 + 0.006, 0.006, 0.0405], [w / 2 - 0.006, 0.006, 0.0405], [w / 2 - 0.006, h - 0.006, 0.0405], [-w / 2 + 0.006, h - 0.006, 0.0405]), { finish: 'glass', color: '#0b0c0e', opacity: 1, roughness: 0.05 });
+    return set.build();
+  },
+};
+
+export const FIREPLACE: FurnitureDef = {
+  id: 'furn-fireplace',
+  kind: 'fireplace',
+  description: 'Fireplace with a stone surround, raised hearth, chimney breast to the ceiling and a glowing firebox (emissive). Back against a wall.',
+  params: {
+    width: num(1.6, 1, 3, 'surround width (m)'),
+    height: num(2.7, 2, 4, 'chimney breast height (m)'),
+    stone: choice(['stone', 'marble', 'concrete', 'brick', 'plaster'], 'stone', 'surround finish'),
+  },
+  mount: 'floor',
+  againstWall: true,
+  frontClearance: 1.0,
+  size: (p) => [p.num('width') + 0.3, p.num('height'), 0.7],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const H = p.num('height');
+    const d = 0.45;
+    const surround = new Geom();
+    surround.merge(box(-w / 2, 0, -d / 2, -0.4, 0.95, d / 2));
+    surround.merge(box(0.4, 0, -d / 2, w / 2, 0.95, d / 2));
+    surround.merge(box(-0.4, 0.75, -d / 2, 0.4, 0.95, d / 2));
+    surround.merge(box(-w / 2 - 0.05, 0.95, -d / 2, w / 2 + 0.05, 1.0, d / 2 + 0.04));
+    surround.merge(box(-w / 2 + 0.1, 1.0, -d / 2, w / 2 - 0.1, H, d / 2 - 0.08));
+    set.add(surround, mat(p.str('stone')));
+    set.add(box(-w / 2 - 0.15, 0, -d / 2, w / 2 + 0.15, 0.08, d / 2 + 0.25), mat('stone', '#5f5a54'));
+    set.add(box(-0.4, 0.08, -d / 2, 0.4, 0.75, d / 2 - 0.15), mat('black-metal', '#141414'));
+    // Firebox glow and logs.
+    const glow = new Geom().quadAuto([-0.32, 0.12, d / 2 - 0.2], [0.32, 0.12, d / 2 - 0.2], [0.32, 0.45, d / 2 - 0.2], [-0.32, 0.45, d / 2 - 0.2]);
+    set.add(glow, { preset: 'emissive', color: '#ff8a3c', emissive: '#ff7a2a', emissiveIntensity: 6 });
+    const logs = new Geom();
+    for (const [x, a] of [
+      [-0.12, 10],
+      [0.12, -12],
+    ] as const) logs.merge(cylinder(0.05, 0.05, 0.45, 12).rotateZ(90).rotateY(a).translate(x + 0.22, 0.14, 0.02));
+    set.add(logs, mat('walnut', '#3d2a1d'));
+    set.boxMinMax(-w / 2, 0, -d / 2, w / 2, H, d / 2);
+    return set.build();
+  },
+};
+
+export const CAFE_COUNTER: FurnitureDef = {
+  id: 'furn-cafe-counter',
+  kind: 'cafe-counter',
+  description: 'Café service counter: fluted front, stone top, pastry display case with warm light and an espresso machine. Customers on +Z, barista side −Z.',
+  params: {
+    length: num(3.2, 1.6, 6, 'length (m)'),
+    front: choice(['oak', 'walnut', 'paint', 'terrazzo'], 'oak', 'front finish'),
+    top: choice(['marble', 'terrazzo', 'concrete'], 'terrazzo', 'top finish'),
+  },
+  mount: 'floor',
+  againstWall: false,
+  frontClearance: 1.2,
+  size: (p) => [p.num('length'), 1.45, 0.75],
+  build(p) {
+    const set = new PartSet();
+    const L = p.num('length');
+    const d = 0.7;
+    const h = 1.05;
+    const front = p.str('front') === 'paint' ? mat('paint', '#d9cbb6') : mat(p.str('front'));
+    set.add(box(-L / 2, 0, -d / 2, L / 2, h - 0.04, d / 2 - 0.03), mat('paint', '#e9e4dc'));
+    const flutes = new Geom();
+    for (let x = -L / 2 + 0.03; x < L / 2 - 0.02; x += 0.06) flutes.merge(cylinder(0.026, 0.026, h - 0.1, 12, { top: false, bottom: false }).translate(x + 0.026, 0.06, d / 2 - 0.03));
+    set.add(flutes, front);
+    set.add(box(-L / 2 - 0.02, h - 0.04, -d / 2, L / 2 + 0.02, h, d / 2 + 0.03), mat(p.str('top')));
+    // Display case on the left third.
+    const cx0 = -L / 2 + 0.1;
+    const cx1 = -L / 2 + Math.min(1.3, L * 0.4);
+    set.add(box(cx0, h, -0.05, cx1, h + 0.4, d / 2 - 0.02), { finish: 'glass', opacity: 0.22 });
+    set.add(box(cx0, h + 0.4, -0.05, cx1, h + 0.42, d / 2 - 0.02), mat('brass'));
+    const pastries = new Geom();
+    for (let k = 0; k < 8; k++) pastries.merge(sphere(0.045, 10).scale(1.4, 0.55, 1).translate(cx0 + 0.12 + k * ((cx1 - cx0 - 0.24) / 7), h + 0.03, 0.15 + (k % 2) * 0.12));
+    set.add(pastries, { finish: 'paint', color: '#c88a4a', roughness: 0.6 });
+    set.add(box(cx0 + 0.02, h + 0.38, 0, cx1 - 0.02, h + 0.39, d / 2 - 0.06), { preset: 'emissive', color: '#fff0d6', emissive: '#ffe2b0', emissiveIntensity: 2 });
+    // Espresso machine.
+    const mx = L / 2 - 0.55;
+    const machine = new Geom();
+    machine.merge(roundedBox(0.75, 0.42, 0.52, 0.03, 2).translate(mx, h + 0.21, -0.05));
+    for (const gx of [-0.18, 0.18]) machine.merge(cylinder(0.035, 0.035, 0.1, 14).translate(mx + gx, h + 0.1, 0.22));
+    set.add(machine, mat('chrome'));
+    set.add(box(mx - 0.38, h + 0.42, -0.31, mx + 0.38, h + 0.47, 0.2), mat('black-metal'));
+    const cups = new Geom();
+    for (let k = 0; k < 5; k++) cups.merge(cylinder(0.035, 0.04, 0.07, 14).translate(mx - 0.2 + k * 0.1, h + 0.47, -0.05));
+    set.add(cups, mat('ceramic'));
+    set.boxMinMax(-L / 2, 0, -d / 2, L / 2, h, d / 2);
+    return set.build();
+  },
+};
+
+export const WHITEBOARD: FurnitureDef = {
+  id: 'furn-whiteboard',
+  kind: 'whiteboard',
+  description: 'Wall-mounted whiteboard with an aluminium frame and marker tray; back at z = 0.',
+  params: {
+    width: num(1.8, 0.6, 4, 'width (m)'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), 1.2, 0.03],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    set.add(box(-w / 2, 0, 0, w / 2, 1.2, 0.018), mat('brushed-metal'));
+    set.add(new Geom().quadAuto([-w / 2 + 0.02, 0.02, 0.019], [w / 2 - 0.02, 0.02, 0.019], [w / 2 - 0.02, 1.18, 0.019], [-w / 2 + 0.02, 1.18, 0.019]), { finish: 'ceramic', color: '#f7f7f5' });
+    set.add(box(-w / 4, -0.03, 0, w / 4, 0.0, 0.07), mat('brushed-metal'));
+    return set.build();
+  },
+};
+
+/** Decor definitions. */
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, FIREPLACE, CAFE_COUNTER, WHITEBOARD];

@@ -16,6 +16,7 @@
     "@aether/procgen": "*",
     "@aether/logic": "*",
     "@aether/agent": "*",
+    "@aether/voxel": "*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15",

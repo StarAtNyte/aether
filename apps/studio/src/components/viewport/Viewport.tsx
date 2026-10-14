@@ -21,6 +21,7 @@ import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
 import { PlayHud } from './PlayHud';
+import { VoxelHud } from './VoxelHud';
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
 
@@ -236,6 +237,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
   // A new epoch (context-loss recovery, backend switch) remounts the canvas: a lost context is never reused.
   const epoch = useUI((s) => s.rendererEpoch);
   const playing = mode === 'play';
+  const voxelGame = useUI((s) => s.voxelHud !== null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -301,7 +303,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
         {ready && <GeometryBadge />}
       </div>
       <div className="vp-overlay vp-overlay--tr">
-        {playing ? <CameraToggle /> : ready && <VerifyPill />}
+        {playing ? !voxelGame && <CameraToggle /> : ready && <VerifyPill />}
         {ready && !playing && <DisplayMenu />}
       </div>
       {ready && !playing && (
@@ -310,7 +312,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
         </div>
       )}
       <BusyIndicator />
-      <PlayHud />
+      {voxelGame ? <VoxelHud /> : <PlayHud />}
       {ready && playing && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">
