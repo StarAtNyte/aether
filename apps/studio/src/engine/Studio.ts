@@ -42,6 +42,7 @@ import { Editor } from './editor/Editor';
 import { AssetController } from './assets';
 import { ForgeController } from './forge';
 import { ArchController } from './arch';
+import { PublishController } from './publish';
 import { createStudioStore, type MemoryState, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread, type VerificationRun } from './AgentBridge';
 import type { VerifyTrace } from '@aether/physics';
@@ -141,6 +142,8 @@ export class Studio {
   readonly assets: AssetController;
   /** Image / text → parametric generator (the asset forge). */
   readonly forge: ForgeController;
+  /** Publishing: games, videos, renders, models, floor plans, share links, history, versions. */
+  readonly publish: PublishController;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   /** Physics verification in workers (main-thread fallback). */
@@ -158,7 +161,8 @@ export class Studio {
   /** Bumped per attach so a superseded (StrictMode / remount) attach discards its renderer. */
   private attachGen = 0;
   readonly ai: AiConnection;
-  private readonly projectId: string | null;
+  /** Id of the open project (null: the legacy single world). */
+  readonly projectId: string | null;
   private abort: AbortController | null = null;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly cleanups: Array<() => void> = [];
@@ -222,6 +226,7 @@ export class Studio {
     this.arch = new ArchController(this);
     this.assets = new AssetController(this, { storage: this.storage });
     this.forge = new ForgeController(this);
+    this.publish = new PublishController(this);
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -1175,6 +1180,24 @@ export class Studio {
     else this.sim.viewPreset(preset);
   }
 
+  /** A language model for the camera director (null when only the offline planner is available). */
+  directorProvider(): Provider | null {
+    const prefs = this.store.getState().aiPrefs;
+    const resolved = this.ai.resolve(prefs);
+    if (resolved.kind === 'offline' || !resolved.ready) return null;
+    return this.ai.createProvider(prefs, resolved);
+  }
+
+  /** The paired local bridge (a hosted studio publishes to the user's hosting through it), or null. */
+  bridgeEndpoint(): { url: string; token: string } | null {
+    return this.ai.bridgeEndpoint();
+  }
+
+  /** The user's imported files the current world uses (published games carry them). */
+  bundledImports(): Promise<Array<{ meta: { id: string; mime: string } & Record<string, unknown>; data: Uint8Array }>> {
+    return this.assets.importsFor(this.history.current);
+  }
+
   /** Release everything (leaving the editor, tests, HMR). Pending changes are written first. */
   dispose(): void {
     if (this.memoryTimer !== null) clearInterval(this.memoryTimer);
@@ -1188,6 +1211,7 @@ export class Studio {
     this.verifier.dispose();
     for (const c of this.cleanups.splice(0)) c();
     this.arch.dispose();
+    this.publish.dispose();
     this.forge.cancel();
     this.forge.close();
     this.assets.dispose();

@@ -1,10 +1,10 @@
 /**
  * Projects home: sidebar navigation, search, templates, recently opened
- * projects (grid or list), all projects with sorting, a published-worlds
- * placeholder and the documentation page. Files dropped anywhere on the
+ * projects (grid or list), all projects with sorting, everything published
+ * from this browser and the documentation page. Files dropped anywhere on the
  * page are imported as projects.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
 import { TEMPLATES } from '../lib/examples';
@@ -33,6 +33,10 @@ import { isHelpKey, setShortcutsOpen, ShortcutsDialog } from '../components/Shor
 import { useProjectActions } from './useProjectActions';
 import { useProjectList, useThumbnails } from './useProjects';
 import { prefetchEditor } from '../editor/prefetch';
+
+/** The publish history (IndexedDB library) loads with the page that shows it. */
+const PublishedPage = lazy(async () => ({ default: (await import('./Published')).PublishedPage }));
+const RecentlyPublished = lazy(async () => ({ default: (await import('./Published')).RecentlyPublished }));
 
 const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -313,13 +317,9 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   if (section === 'docs') content = <Docs />;
   else if (section === 'published') {
     content = (
-      <div className="empty-state empty-state--page">
-        <span className="empty-state__icon">
-          <Icon name="globe" size={20} />
-        </span>
-        <h3 className="empty-state__title">Nothing published yet</h3>
-        <p className="empty-state__text">Published worlds get a public link anyone can open and play. Until then, use Share in the editor to send a link to a world.</p>
-      </div>
+      <Suspense fallback={null}>
+        <PublishedPage now={now} />
+      </Suspense>
     );
   } else if (section === 'templates' && !searching) {
     content = (
@@ -356,6 +356,11 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
               ))}
             </div>
           </section>
+        )}
+        {showTemplates && (
+          <Suspense fallback={null}>
+            <RecentlyPublished now={now} />
+          </Suspense>
         )}
         <section className="home-section" aria-labelledby="h-projects">
           <div className="section-head">

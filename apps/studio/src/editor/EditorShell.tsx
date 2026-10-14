@@ -9,6 +9,10 @@ import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
 import { useStore } from 'zustand';
 
+/** The Publish hub and its camera timeline load only when first opened. */
+const PublishHub = lazy(async () => ({ default: (await import('./publish/PublishHub')).PublishHub }));
+const CameraTimeline = lazy(async () => ({ default: (await import('./publish/CameraTimeline')).CameraTimeline }));
+
 /** Dialogs of the asset pipeline load only when first opened. */
 const CreditsDialog = lazy(async () => ({ default: (await import('./library/CreditsDialog')).CreditsDialog }));
 const ForgeDialog = lazy(async () => ({ default: (await import('./library/ForgeDialog')).ForgeDialog }));
@@ -108,6 +112,8 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
   const immersive = useUI((s) => s.mode === 'play' && s.settings.immersivePlay);
   const widths = usePanelWidths();
   const rootRef = useRef<HTMLDivElement>(null);
+  const publishOpen = useStore(studio.publish.state, (s) => s.open);
+  const publishTarget = useStore(studio.publish.state, (s) => s.target);
   useShortcuts();
 
   useEffect(() => studio.store.getState().setLayout(layout), [layout, studio]);
@@ -133,6 +139,7 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
       data-busy={busy ? 'true' : undefined}
       data-left={panels.left ? 'open' : 'closed'}
       data-right={panels.right ? 'open' : 'closed'}
+      data-publish={publishOpen ? (publishTarget === 'video' ? 'video' : 'open') : undefined}
       style={style}
     >
       <TopBar layout={layout} />
@@ -151,7 +158,17 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
         ) : null}
         <main className="editor__canvas">
           <Viewport />
+          {publishOpen && publishTarget === 'video' && mode === 'edit' && (desktop || layout === 'tablet') ? (
+            <Suspense fallback={null}>
+              <CameraTimeline />
+            </Suspense>
+          ) : null}
         </main>
+        {publishOpen ? (
+          <Suspense fallback={null}>
+            <PublishHub />
+          </Suspense>
+        ) : null}
         {desktop && panels.right ? (
           <div className="editor__right">
             <ResizeHandle side="right" width={widths.right} onCommit={(w) => widths.setWidth('right', w)} hostRef={rootRef} />

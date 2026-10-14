@@ -26,6 +26,8 @@ import { registerLlmRoutes, type LiveLlm } from './routes/llm';
 import { registerLocalRoutes, type LocalRouteDeps } from './routes/local';
 import type { LocalAi } from '@aether/bridge';
 import { registerWorldRoutes, WORLD_ID_RE } from './routes/worlds';
+import { registerPublishRoutes } from './routes/publish';
+import { createPublishServices, MAX_BUILD_UPLOAD_BYTES, type PublishServiceOptions, type PublishServices } from './publish/services';
 import { registerStatic } from './static';
 import { DailyTokenBudget } from './token-budget';
 
@@ -54,7 +56,19 @@ export interface AppDeps {
   imageTo3d?: ImageTo3DProvider;
   /** The in-process bridge for hosted studios (only with `config.local.bridge`). */
   bridge?: LocalRouteDeps['bridge'];
+  /**
+   * Publishing from the local app (only with local AI): the build library
+   * directory and the environment / spawn the hosting CLIs run with (tests
+   * put fake CLIs on PATH). Created by default from `config.dataDir`.
+   */
+  publish?: Partial<PublishServiceOptions>;
+  /** Publish services created by the process (shared with the bridge); default: created here. */
+  publishServices?: PublishServices;
+  /** Receives the publish services (so the process can stop them on shutdown). */
+  onPublish?: (services: PublishServices) => void;
 }
+
+export { MAX_BUILD_UPLOAD_BYTES } from './publish/services';
 
 /** Per-route request body caps (bytes). */
 function bodyCaps(config: ServerConfig): { llm: number; worlds: number; generators: number } {
@@ -121,7 +135,10 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   const generatorPutRate = rateLimit(generatorPutLimiter, clientIp);
   app.on('PUT', '/api/generators/*', generatorPutRate);
   app.use('/api/llm', jsonBodyLimit(caps.llm));
-  app.use('/api/local/*', jsonBodyLimit(caps.llm));
+  const localLimit = jsonBodyLimit(caps.llm);
+  const buildLimit = jsonBodyLimit(MAX_BUILD_UPLOAD_BYTES);
+  // Build uploads are zips (large); everything else under /api/local is small JSON.
+  app.use('/api/local/*', (c, next) => (c.req.path === '/api/local/publish/builds' && c.req.method === 'POST' ? buildLimit(c, next) : localLimit(c, next)));
   app.use('/api/worlds', jsonBodyLimit(caps.worlds));
   app.use('/api/worlds/*', jsonBodyLimit(caps.worlds));
   app.use('/api/generators/*', jsonBodyLimit(caps.generators));
@@ -150,6 +167,10 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
       ...(deps.isLoopback ? { isLoopback: deps.isLoopback } : {}),
       ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
     });
+    const services = deps.publishServices ?? createPublishServices({ dir: `${config.dataDir}/published`, now, ...deps.publish });
+    registerPublishRoutes(app, { store: services.store, jobs: services.jobs, lan: services.lan, logger, maxUploadBytes: MAX_BUILD_UPLOAD_BYTES });
+    deps.onPublish?.(services);
+    deps.shutdownSignal?.addEventListener('abort', () => void services.dispose());
   }
 
   registerLlmRoutes(app, {

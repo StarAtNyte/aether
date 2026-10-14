@@ -135,8 +135,16 @@ export type CatalogPack = z.infer<typeof CatalogPack>;
 
 export const Catalog = z.object({
   version: z.literal(1),
-  /** URL prefix the library files are served under. */
-  base: z.string().regex(/^\/[a-z/]*\/$/),
+  /**
+   * URL path prefix the library files are served under: `/assets/lib/` on
+   * the studio's origin, or e.g. `/html/12345/assets/lib/` for a published
+   * game hosted under a sub-path. Path segments only (no `.` / `..`).
+   */
+  base: z
+    .string()
+    .max(200)
+    .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*$/)
+    .refine((b) => b.split('/').every((seg) => seg !== '.' && seg !== '..'), 'no dot segments'),
   packs: z.array(CatalogPack).max(64),
   entries: z.array(CatalogEntry).max(2000),
 });

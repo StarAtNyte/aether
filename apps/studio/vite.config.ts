@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
 import { assetLibrary } from '../../scripts/vite/asset-library.ts';
+import { playerManifest } from '../../scripts/vite/player-manifest.ts';
 
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
@@ -14,9 +15,36 @@ const apiProxy = {
   '/api': { target: API_TARGET, changeOrigin: true },
 };
 
+/** The standalone player: `play.html` (published games, share links at `/play#w=…`). */
+const PLAYER_HTML = fileURLToPath(new URL('./play.html', import.meta.url));
+const STUDIO_HTML = fileURLToPath(new URL('./index.html', import.meta.url));
+
+interface DevServerLike {
+  middlewares: { use(fn: (req: { url?: string }, res: unknown, next: () => void) => void): void };
+}
+
+/** `/play` serves the player page in dev and preview too (static hosts and the server map it the same way). */
+function playRoute() {
+  const rewrite = (server: DevServerLike): void => {
+    server.middlewares.use((req, _res, next) => {
+      if (req.url === '/play' || req.url?.startsWith('/play?') || req.url?.startsWith('/play#')) req.url = `/play.html${req.url.slice(5)}`;
+      next();
+    });
+  };
+  return { name: 'aether-play-route', configureServer: rewrite, configurePreviewServer: rewrite };
+}
+
 export default defineConfig({
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR)],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR), playRoute(), playerManifest()],
+  experimental: {
+    // The player page and every chunk reference files relative to themselves, so a published
+    // build works from any sub-path (itch.io, GitHub Pages, a folder on any static host).
+    renderBuiltUrl(filename: string, { hostType, hostId }: { hostType: 'js' | 'css' | 'html'; hostId: string }) {
+      if (hostType === 'html') return hostId === 'play.html' ? `./${filename}` : undefined;
+      return { relative: true };
+    },
+  },
   server: {
     port: 5173,
     proxy: apiProxy,
@@ -43,6 +71,7 @@ export default defineConfig({
     // Rapier's wasm is a separate .wasm asset (see scripts/vite/rapier-wasm.ts).
     chunkSizeWarningLimit: 6200,
     rolldownOptions: {
+      input: { index: STUDIO_HTML, play: PLAYER_HTML },
       output: {
         codeSplitting: {
           groups: [

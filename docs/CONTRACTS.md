@@ -1540,3 +1540,165 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 - `studio.forge` (`ForgeController`): `availability()`, `open(base?)`,
   `run(description, reference)`, `cancel()`, `accept()`; renders with a
   private off-screen WebGL2 `WorldRenderer` (disposed on close).
+
+## Publishing: games, videos, renders, models, floor plans, share links
+
+Everything here is additive; the World IR is unchanged.
+
+### `@aether/render`
+
+- `WorldRenderer.beginCapture(width, height, { vignette? })` → `CaptureSession`
+  (`view/capture-session.ts`): exclusive; the viewport stops drawing and
+  `resize()` is deferred until `end()`. The drawing buffer is set to the
+  capture size once (pixel ratio 1). `frame(pose, { dt?, frames?, view? })`
+  poses the camera (`{ pos, target, fov? }`), advances animations and the
+  environment by `dt`, renders `frames` times (temporal accumulation) and
+  resolves to the session's one reused RGBA8 buffer (tight, top-down,
+  opaque). `view` renders a sub-rectangle of a larger virtual image through
+  the camera view offset (temporal AA jitter is composed with it). Frames
+  must be awaited one at a time. Editor decorations, the path overlay,
+  debug and ghost objects are hidden; grow-in is finished first.
+- `renderStill({ width, height, pose, frames?, tileSize?, signal?, onProgress? })`
+  → `{ width, height, data }`: up to 8192 px on the long side; one draw
+  when it fits `tileSize` (default 2048), else overlapping tiles (48 px
+  margin on split axes) assembled on the CPU with the vignette applied to
+  the whole image (`applyVignette`, the CPU twin of the shader).
+- `preparePost(timeoutMs?)` resolves once the post pipeline of the current
+  quality exists; `setPixelRatioCap(cap)`; `capturing`.
+- `exportGltf({ binary?, maxTriangles? })` → `{ data: Uint8Array | string,
+  meshes, triangles, skipped }`: what the camera draws, flattened (static
+  batches and merged buildings instead of their hidden members; scatter
+  fields and virtual geometry at their current detail), node materials
+  copied to `MeshStandardMaterial`, RGBA8 / image textures only, ≤ 6 M
+  triangles. `verifyGltf(data)` (exported) parses a file back with
+  `GLTFLoader` and counts meshes, materials, triangles and textures.
+- `lookAt(pos, target, fov?)`, `cameraPose()`, `cameraFloorY`,
+  `showCameraPath(points | null, keys | null, markerSize?)` (editor-only
+  line + key markers; `view/path-overlay.ts`).
+- `PostPipeline.setVignette(strength)`; `vignetteFactor`, `VIGNETTE_STRENGTH`
+  exported. Pure helpers: `tileLayout`, `normalizePixels` (drops WebGPU's
+  256-byte row padding, flips WebGL2 rows — screenshots now use it too),
+  `blitTile`, `stillSize`, `MAX_STILL_SIZE`, `MAX_TILE_SIZE`, `TILE_MARGIN`.
+
+### `@aether/assets`
+
+- `@aether/assets/zip` (moved from the studio; `apps/studio/src/assets/zip.ts`
+  re-exports it): `writeZip` (deflate via `CompressionStream` unless the
+  entry is already compressed: png/jpg/webp/woff/mp4/webm/zip/glb),
+  `readZip(bytes, limits)` (caps, safe names, CRC), `safeEntryName`, `crc32`.
+- `Catalog.base` accepts any absolute path of safe segments
+  (`/html/12345/assets/lib/`), never `.` / `..` segments or another origin:
+  published games set it to their own sub-path.
+
+### Studio (`apps/studio/src/publish/`, `src/engine/publish.ts`, `src/editor/publish/`)
+
+- `studio.publish` (`PublishController`, own zustand store `PublishState`):
+  `open(target?)`, `close()`, `setTarget`, `setMeta`, `setMusic`, `setVideo`,
+  `setTitles`, `setStill`, `setModel`, `setPlan`, `setGame`; camera path:
+  `applyPreset(id)`, `addKeyFromView()`, `updateKeyFromView(i)`,
+  `deleteKey(i)`, `selectKey(i)`, `setKeyEase`, `setKeyFov`, `retime`,
+  `setDuration`, `scrub(t)`, `startPreview` / `stopPreview` /
+  `togglePreview`, `restoreCamera`, `direct(text)`; jobs (one at a time,
+  `cancel()`): `exportVideo`, `exportStill`, `exportModel`, `exportPlan`,
+  `downloadGame`, `deploy(target, { name?, itch? })`, `setLan(on)`;
+  share: `makeShareLink`, `shareLink`, `embedSnippet`, `copyShareLink`,
+  `setPlayerBase(url)`; history: `refreshHistory`, `downloadItem`,
+  `removeItem`, `snapshot(label)`, `restoreVersion(id)`, `removeVersion(id)`.
+  `Studio` adds `publish`, a public `projectId`, `directorProvider()` and
+  `bundledImports()`; `AssetController.importsFor(world)`.
+- Share links (`publish/share.ts`): `#w=` + format letter (`D` deflate-raw,
+  `J` JSON) + base64url of `{ v: 1, world, meta: { title?, description?,
+  author?, controls?, music? } }`. Limits: fragment ≤ 1.5 M characters,
+  inflated ≤ 8 MB (enforced while inflating), envelope strict, world through
+  `validateImportedValue`. `encodeShare`, `decodeShare`, `shareUrl`,
+  `shareValueFromHash`.
+- QR codes (`publish/qr.ts`): `encodeQr(text, { ecc, boostEcc, minVersion,
+  maxVersion })` → `{ version, ecc, mask, size, modules }` (byte mode,
+  versions 1–40); `qrPath`, `qrSvg`, `byteCapacity`.
+- Camera paths (`publish/cameraPath.ts`): `CameraPath` (zod) =
+  `{ v: 1, name, duration ≤ 300, keys (1–64): { t, pos, target, fov 12–100,
+  ease: linear|ease|easeIn|easeOut|cut }, easeInOut }`; `CompiledPath.sample(t,
+  out)` (Catmull–Rom, allocation-free); presets `orbit, turntable,
+  flythrough, dolly, crane, topdown, reveal`.
+- Director (`publish/director.ts`): `ShotPlan` = `{ shots (1–12): { move,
+  subject?, speed?, seconds?, direction?, height?, turns? } }` with moves
+  `dolly, orbit, rise, descend, flythrough, push, pull, topdown, pan,
+  establish, turntable, hold`; `parseShotScript(text)` (offline),
+  `directorPrompt(subjects)` + `parseModelPlan(text)` (language model),
+  `resolvePlan(plan, scene)` (the only place words become coordinates).
+- Video (`publish/video/`): `exportVideo(source, opts)` → `{ blob, mime, ext,
+  codec, width, height, fps, seconds, frames, audio, method }`;
+  `chooseVideoCodec(w, h, fps, 'auto'|'mp4'|'webm')` (auto prefers MP4 only
+  when this browser can play it back); `Mp4Muxer` (H.264 + Opus, fast
+  start), `WebmMuxer` (VP8/VP9/AV1 + Opus, cues, seek head); music
+  `scheduleMusic` / `renderMusic` / `playMusic` (moods `calm, cinematic,
+  playful, mystery`); titles `drawOverlay`, `overlayAt`, `letterboxBar`.
+- Floor plans: `planDrawing(plan2d, { title })` → primitives, `planSvg(d,
+  scale)`, `planPdf(d, scale)` (one page, Helvetica, WinAnsi).
+- Game builds (`publish/gameBuild.ts`): `buildGame(input)` → `{ zip,
+  fileName, files, bytes, id }` from `play-manifest.json` (written by
+  `scripts/vite/player-manifest.ts`; the build fails if editor code reaches
+  the player). `game.json` (`publish/manifest.ts`): `{ format:
+  "aether-game", v: 1, title, description, author, controls, publishedAt?,
+  music, save?: "saves/<name>.aethersave", imports?: [{ meta, file:
+  "assets/user/user-<id>.<ext>" }], world }` (strict). Index CSP: `BUILD_CSP`.
+- Publish library (`publish/library.ts`, IndexedDB `aether-publish` v1:
+  `items`, `blobs`, `paths`, `snapshots`; memory fallback): ≤ 300 items,
+  files ≤ 120 MB each and 400 MB total (oldest files dropped first),
+  ≤ 30 snapshots per project (worlds ≤ 6 M characters, validated on read).
+- Hosting client (`publish/hosting.ts`): `localPublishing()`,
+  `hostTargets(fresh?)`, `uploadBuild(zip)`, `startDeploy`, `followDeploy`,
+  `cancelDeploy`, `lanStatus`, `setLan`, `isPublicHostUrl`, `siteSlug`.
+- `Simulation`: `setPaused(on)`, `isPaused`, `setVolume(v)`,
+  `setLookSensitivity(m)`; listener `onPauseRequest()`; controllers through
+  `engine/gamepad.ts` (`GamepadPoller`, standard mapping, dead zone 0.18).
+  `SoundBoard.setVolume`. `VoxelHudView` / `TouchControlsView` render from
+  props (used by the player).
+
+### Player (`apps/studio/play.html`, `src/player/`)
+
+- `/play#w=…` plays a share link; next to a build it reads `./game.json`.
+  Title screen over a fly-through, pause menu (Esc / Start), settings
+  (`aether.player.settings.v1`: volume, music, sensitivity, quality
+  low/medium/high), credits from `creditsFor`, HUD, touch, gamepad; bundled
+  imports are re-validated (`importUserAsset`, id must match) before use; a
+  bundled block-world save is imported once per browser. `window.__aetherPlayer`
+  exposes `phase`, `title`, `entities`, `backend`, `world`, `start()`.
+- Builds register `./sw.js` (offline precache, per-scope cache names) only
+  when the page links a web-app manifest.
+
+### `apps/server` (local app only; behind the `/api/local/*` guard)
+
+- `GET /api/local/publish/targets` → `{ targets: [{ id: netlify|vercel|github|itch,
+  label, bin, installed, signedIn, account?, hint? }] }`.
+- `GET|POST /api/local/publish/builds` (POST: `application/zip` ≤ 256 MB →
+  `201 { build: { v, id, title, createdAt, bytes, files }, url: "/published/<id>/" }`),
+  `DELETE /api/local/publish/builds/:id`.
+- `POST /api/local/publish/deploy` `{ build, target, name?, itch?, channel? }`
+  → `202 { job }`; `GET /api/local/publish/jobs/:id`,
+  `GET …/jobs/:id/events?after=<seq>` (SSE `progress`, `ping`, `end`),
+  `DELETE …/jobs/:id` (cancel). One deploy at a time (409).
+- `GET|POST /api/local/publish/lan` `{ on, build? }` → `{ on, build, urls, until }`.
+- `GET /published/:id/…` serves a library build with `PLAY_CSP`.
+- `GET /play` serves `play.html`. `/play`, `/play.html` and published builds
+  get `PLAY_CSP` (no third-party hosts, `frame-ancestors *`), no
+  `X-Frame-Options`, `Cross-Origin-Resource-Policy: cross-origin`,
+  `Referrer-Policy: no-referrer`; `vercel.json` mirrors it.
+- `createApp` deps: `publish?: Partial<PublishServiceOptions>` (`dir, env, spawn,
+  lanHost, lanAddresses, tmpRoot, now`), `publishServices?` (created by `main.ts`
+  and shared with the bridge), `onPublish?(services)`.
+- `createPublishServices(options)` → `{ store, jobs, lan, dispose() }`;
+  `bridgePublish(services)` adapts them to the bridge.
+
+### Bridge (`apps/bridge`, hosted studios paired with the local app)
+
+- `BridgeDeps.publish?: BridgePublish` / `startBridge(config, { publish })`:
+  `GET /v1/publish/targets[?fresh=1]`, `GET|POST /v1/publish/builds`
+  (`application/zip` ≤ `maxBuildBytes` → `201 { build, url: null }`),
+  `POST /v1/publish/deploy`, `GET|DELETE /v1/publish/jobs/:id`,
+  `GET|POST /v1/publish/lan` — all behind the pairing token and the origin
+  allowlist; publishing errors map to bridge codes (`invalid_request`,
+  `not_found`, `busy`, `too_large`, `backend_error`); without `publish` the
+  endpoints answer `not_found`. The studio's `publish/hosting.ts` uses them
+  through `PublishTransport` `{ kind: 'bridge', url, token }`
+  (`AiConnection.bridgeEndpoint()`).

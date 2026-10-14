@@ -59,10 +59,29 @@ export class SoundBoard {
   private windowStart = 0;
   private voices = 0;
   muted = false;
+  /** Master volume 0–1 (player settings). */
+  private volume = 1;
+  private master: GainNode | null = null;
+
+  /** Set the master volume (0 mutes). */
+  setVolume(v: number): void {
+    this.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+    if (this.master) this.master.gain.value = this.volume;
+  }
+
+  /** Where voices connect: the master gain of the current context. */
+  private output(ctx: AudioContext): AudioNode {
+    if (!this.master || this.master.context !== ctx) {
+      this.master = ctx.createGain();
+      this.master.gain.value = this.volume;
+      this.master.connect(ctx.destination);
+    }
+    return this.master;
+  }
 
   /** Play a named effect (ignored when unknown, muted or rate-limited). */
   play(name: string): void {
-    if (this.muted || !Object.prototype.hasOwnProperty.call(TONES, name)) return;
+    if (this.muted || this.volume <= 0 || !Object.prototype.hasOwnProperty.call(TONES, name)) return;
     const tone = TONES[name] as Tone;
     const ctx = this.context();
     if (!ctx) return;
@@ -92,6 +111,7 @@ export class SoundBoard {
   dispose(): void {
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
+    this.master = null;
     this.noiseBuffer = null;
   }
 
@@ -136,7 +156,7 @@ export class SoundBoard {
     amp.gain.setValueAtTime(0.0001, start);
     amp.gain.exponentialRampToValueAtTime(gain, start + 0.005);
     amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    src.connect(filter).connect(amp).connect(ctx.destination);
+    src.connect(filter).connect(amp).connect(this.output(ctx));
     src.start(start, Math.random() * 0.5);
     src.stop(start + duration + 0.02);
     src.onended = () => {
@@ -155,7 +175,7 @@ export class SoundBoard {
     amp.gain.setValueAtTime(0.0001, start);
     amp.gain.exponentialRampToValueAtTime(gain, start + 0.01);
     amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(amp).connect(ctx.destination);
+    osc.connect(amp).connect(this.output(ctx));
     osc.start(start);
     osc.stop(start + duration + 0.02);
     osc.onended = () => {

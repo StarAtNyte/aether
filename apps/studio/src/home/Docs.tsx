@@ -46,7 +46,18 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; body: ReadonlyArray<s
     title: 'Projects and files',
     body: [
       'Projects are saved automatically in this browser (IndexedDB). Export a project as a .aether.json file to back it up or move it to another browser, and import it from the home page — drag a file anywhere onto the page.',
-      'Share uploads a copy of the world to the server and copies a link anyone can open.',
+      'Versions: save a named version of a project from Publish → History and restore any of them later as one undoable change. Every publish saves one automatically.',
+    ],
+  },
+  {
+    id: 'publish',
+    title: 'Publishing',
+    body: [
+      'Publish (top bar) turns the open world into a game, a video, a still, a 3D model, a floor plan or a link, with a preview, progress, Cancel and a history you can download from again.',
+      'Share link: the whole world travels inside the link, after the #, so nothing is uploaded — the link is the game. Copy it, scan its QR code, or embed it in a page.',
+      'Game: download a complete static website (.zip) for itch.io, GitHub Pages, Netlify or any host, with a title screen, pause menu, settings, credits, touch and controller support; it plays offline. In the Aether app on your computer you can also publish it to your own Netlify, Vercel, GitHub Pages or itch.io account, or share it on your local network.',
+      'Video: pick a preset or describe the shot ("slow dolly through the living room then rise above the roof"), adjust keyframes on the timeline under the viewport, add titles and music, and render — every frame at full quality.',
+      'Render, 3D model and floor plan: stills up to 4K (photoreal for buildings), GLB / glTF with materials, and print-ready SVG / PDF plans with rooms, areas and dimensions.',
     ],
   },
 ];

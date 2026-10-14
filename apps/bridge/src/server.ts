@@ -67,7 +67,79 @@ export interface BridgeDeps {
   sessions?: SessionStore;
   /** Called after a sign-in finished or a sign-out (refresh cached status). */
   onAuthChange?: () => void;
+  /**
+   * Publishing of the local app (`aether start --origin …`): lets a paired
+   * hosted studio add a game build to the local library, deploy it to the
+   * user's own hosting and share it on the local network. Absent: the
+   * `/v1/publish/*` endpoints answer not_found.
+   */
+  publish?: BridgePublish;
 }
+
+/**
+ * The local app's publishing services as the bridge exposes them. Methods
+ * validate their own input and throw errors carrying an HTTP-like `status`
+ * (400, 404, 409, 413, 507) and a safe message.
+ */
+export interface BridgePublish {
+  /** Largest build upload (bytes). */
+  readonly maxBuildBytes: number;
+  targets(fresh: boolean): Promise<unknown>;
+  builds(): Promise<unknown>;
+  addBuild(zip: Uint8Array): Promise<unknown>;
+  deploy(body: unknown): Promise<unknown>;
+  /** A deploy job's view, or null when unknown. */
+  job(id: string): unknown;
+  cancel(id: string): boolean;
+  lan(): unknown;
+  setLan(body: unknown): Promise<unknown>;
+}
+
+/** Map a publishing error to a bridge error (never forwarding stack traces). */
+function publishError(e: unknown): BridgeError {
+  if (e instanceof BridgeError) return e;
+  const status = typeof e === 'object' && e !== null && typeof (e as { status?: unknown }).status === 'number' ? (e as { status: number }).status : 500;
+  const message = e instanceof Error ? e.message.slice(0, 300) : 'Publishing failed.';
+  if (status === 400) return new BridgeError('invalid_request', message);
+  if (status === 404) return new BridgeError('not_found', message);
+  if (status === 409) return new BridgeError('busy', message);
+  if (status === 413 || status === 507) return new BridgeError('too_large', message);
+  return new BridgeError('backend_error', status < 500 ? message : 'Publishing failed on this computer.');
+}
+
+/** Read a binary body up to `max` bytes. */
+function readBytes(req: IncomingMessage, max: number): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const declared = Number(req.headers['content-length'] ?? '0');
+    if (Number.isFinite(declared) && declared > max) {
+      reject(new BridgeError('too_large', `The upload exceeds ${max} bytes.`));
+      req.resume();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let failed = false;
+    req.on('data', (c: Buffer) => {
+      if (failed) return;
+      size += c.length;
+      if (size > max) {
+        failed = true;
+        reject(new BridgeError('too_large', `The upload exceeds ${max} bytes.`));
+        req.resume();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!failed) resolve(new Uint8Array(Buffer.concat(chunks)));
+    });
+    req.on('error', (e) => {
+      if (!failed) reject(new BridgeError('invalid_request', 'Could not read the upload.', { cause: e }));
+    });
+  });
+}
+
+const PUBLISH_JOB = /^\/v1\/publish\/jobs\/([a-z0-9]{12})$/;
 
 /** Global pairing attempts per minute (on top of the per-code limit). */
 const PAIR_PER_MINUTE = 20;
@@ -173,9 +245,39 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
       return;
     }
     const sessionMatch = req.method === 'DELETE' ? /^\/v1\/sessions\/([a-z0-9-]{1,80})$/.exec(url.pathname) : null;
-    const known = route === 'GET /v1/status' || route === 'POST /v1/complete' || route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login' || sessionMatch !== null;
+    const publishRoute = url.pathname.startsWith('/v1/publish/');
+    const known = route === 'GET /v1/status' || route === 'POST /v1/complete' || route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login' || sessionMatch !== null || publishRoute;
     if (!known) throw new BridgeError('not_found', 'Unknown endpoint.');
     if (!deps.pairing.verify(bearer(req))) throw new BridgeError('unauthorized', 'Not paired with this bridge (or it restarted). Pair again with the code it printed.');
+
+    if (publishRoute) {
+      const pub = deps.publish;
+      if (!pub) throw new BridgeError('not_found', 'Publishing is not available on this bridge. Start the Aether app with "npx aether start --origin <this site>".');
+      try {
+        if (route === 'GET /v1/publish/targets') return send(res, 200, await pub.targets(url.searchParams.get('fresh') === '1'), cors);
+        if (route === 'GET /v1/publish/builds') return send(res, 200, await pub.builds(), cors);
+        if (route === 'POST /v1/publish/builds') {
+          if (!/^application\/zip\s*(;|$)/i.test(String(req.headers['content-type'] ?? ''))) throw new BridgeError('invalid_request', 'Upload the build as application/zip.');
+          return send(res, 201, await pub.addBuild(await readBytes(req, pub.maxBuildBytes)), cors);
+        }
+        if (route === 'POST /v1/publish/deploy') return send(res, 202, await pub.deploy(parseJson(await readBody(req, 4096))), cors);
+        if (route === 'GET /v1/publish/lan') return send(res, 200, pub.lan(), cors);
+        if (route === 'POST /v1/publish/lan') return send(res, 200, await pub.setLan(parseJson(await readBody(req, 1024))), cors);
+        const jm = PUBLISH_JOB.exec(url.pathname);
+        if (jm && req.method === 'GET') {
+          const job = pub.job(jm[1] as string);
+          if (!job) throw new BridgeError('not_found', 'No such job.');
+          return send(res, 200, { job }, cors);
+        }
+        if (jm && req.method === 'DELETE') {
+          if (!pub.cancel(jm[1] as string)) throw new BridgeError('not_found', 'No running job with that id.');
+          return send(res, 200, { ok: true }, cors);
+        }
+      } catch (e) {
+        throw publishError(e);
+      }
+      throw new BridgeError('not_found', 'Unknown endpoint.');
+    }
 
     if (sessionMatch) {
       const project = sessionMatch[1] ?? '';

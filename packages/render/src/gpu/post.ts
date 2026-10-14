@@ -29,6 +29,12 @@ export interface PostPipeline {
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
   setGrade(grade: Grade): void;
+  /**
+   * Vignette strength (0 = none, default {@link VIGNETTE_STRENGTH}). Tiled
+   * captures switch it off and apply {@link vignetteFactor} to the assembled
+   * image instead (a screen-space vignette per tile would darken every tile).
+   */
+  setVignette(strength: number): void;
   dispose(): void;
 }
 
@@ -123,7 +129,8 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const color = scenePass.getTextureNode('output');
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     disposables.push(bloomNode);
-    const vignette = float(1).sub(smoothstep(float(VIGNETTE_RANGE[0]), float(VIGNETTE_RANGE[1]), screenUV.sub(0.5).length()).mul(VIGNETTE_STRENGTH));
+    const uVignette = uniform(VIGNETTE_STRENGTH);
+    const vignette = float(1).sub(smoothstep(float(VIGNETTE_RANGE[0]), float(VIGNETTE_RANGE[1]), screenUV.sub(0.5).length()).mul(uVignette));
     // Grade in linear HDR before the output transform: split tone, saturation, contrast pivot.
     const uSat = uniform(NEUTRAL_GRADE.saturation);
     const uContrast = uniform(NEUTRAL_GRADE.contrast);
@@ -161,6 +168,9 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         uContrast.value = g.contrast;
         uShadow.value.set(...g.shadowTint);
         uHigh.value.set(...g.highlightTint);
+      },
+      setVignette: (strength: number) => {
+        uVignette.value = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : VIGNETTE_STRENGTH;
       },
       dispose: () => {
         pipeline.dispose();

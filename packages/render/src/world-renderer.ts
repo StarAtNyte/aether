@@ -28,7 +28,6 @@ import type { GizmoMode } from './view/transform-gizmo';
 import { createSelectionControls, SelectionGizmo, type GizmoCommit, type GizmoOptions, type GizmoTarget, type SnapHit } from './view/selection-gizmo';
 import { EditOverlay, type ComponentMode } from './view/edit-overlay';
 import { ProofReplay, type ProofReplayOptions, type ProofTrace } from './view/proof-replay';
-import { exportGlb } from './view/gltf-export';
 import { BlueprintMarks, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, markBoxOf, type MarkBox } from './view/blueprint';
 import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 import type { MeshGeometryBundle } from './geometry/mesh-asset';
@@ -48,7 +47,11 @@ import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
-import { createPostPipeline, type PostPipeline, type PostQuality } from './gpu/post';
+import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
+import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
+import { normalizePixels } from './view/still';
+import { exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
+import { PathOverlay } from './view/path-overlay';
 import { qualityPlan, Refinement, studioAvailable, type QualityPlan, type RenderQuality } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { errorMessage, log } from './log';
@@ -313,13 +316,9 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
   const ctx = out.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2D canvas unavailable');
   const image = ctx.createImageData(w, h);
-  const row = w * 4;
-  for (let y = 0; y < h; y++) {
-    const src = (flipY ? h - 1 - y : y) * row;
-    image.data.set(pixels.subarray(src, src + row), y * row);
-  }
-  // Opaque output (JPEG has no alpha; PNG/WebP thumbnails should not be see-through).
-  for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+  // Tight top-down rows (WebGPU pads rows to 256 bytes, WebGL2 reads bottom-up), opaque
+  // (JPEG has no alpha; PNG/WebP thumbnails should not be see-through).
+  normalizePixels(pixels, w, h, flipY, new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength));
   ctx.putImageData(image, 0, 0);
   const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, mime, JPEG_QUALITY));
   if (!blob) return out.toDataURL(mime, JPEG_QUALITY);
@@ -411,8 +410,8 @@ export class WorldRenderer {
   private readonly generatorCache: GeneratorCache | null;
   /** Worker for built-in generators (null in Node or when disabled). */
   private readonly compute: ComputeClient | null;
-  /** Extra pixel-ratio cap from the options. */
-  private readonly ratioCap: number;
+  /** Extra pixel-ratio cap from the options (or {@link setPixelRatioCap}). */
+  private ratioCap: number;
   private cssWidth = 1;
   private cssHeight = 1;
   /** Bumped whenever the post pipeline is dropped, so a late async creation is discarded. */
@@ -448,6 +447,14 @@ export class WorldRenderer {
   private voxelVersion = -1;
   /** Last pointer position over the canvas in NDC (gizmo snapping). */
   private readonly pointerNdc = new Vector2();
+  /** Cinematic camera path drawn over the viewport (publishing). */
+  private readonly pathOverlay = new PathOverlay();
+  /** An exclusive capture (video / still export) owns the drawing buffer: the viewport does not draw. */
+  private captureActive = false;
+  /** Viewport size requested while a capture ran (applied when it ends). */
+  private pendingResize: [number, number] | null = null;
+  /** The running capture session (ended on dispose). */
+  private capture: CaptureSession | null = null;
   /** Direct camera input ends a fly-through. */
   private readonly onUserCamera = (): void => {
     if (this.rig.touring) this.rig.stopTour();
@@ -544,7 +551,7 @@ export class WorldRenderer {
     this.qualityPlan = qualityPlan('realtime', this.budget);
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.blueprint.group);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -800,15 +807,14 @@ export class WorldRenderer {
   }
 
   /**
-   * Export the world's meshes (static scene, current pose) as binary glTF.
-   * Waits (bounded) for grow-in to finish so nothing is exported mid-scale.
+   * Export the world's meshes (current pose) as binary glTF: the same
+   * flattened pipeline as {@link exportGltf}, so grow-in is finished first
+   * and batched / merged meshes export as drawn.
    */
   async exportGlb(): Promise<ArrayBuffer> {
-    if (this.disposed) throw new Error('renderer disposed');
-    const deadline = now() + 4000;
-    while (this.grow.active && now() < deadline) await new Promise((r) => setTimeout(r, 100));
-    this.sync.root.updateMatrixWorld(true);
-    return exportGlb(this.sync.root);
+    const r = await this.exportGltf({ binary: true });
+    if (typeof r.data === 'string') throw new Error('the exporter returned no binary data');
+    return r.data.buffer.slice(r.data.byteOffset, r.data.byteOffset + r.data.byteLength) as ArrayBuffer;
   }
 
   /** Remove the plan marks (corner brackets) of the last build. */
@@ -1650,7 +1656,7 @@ export class WorldRenderer {
    * when a frame was drawn.
    */
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
-    if (this.disposed || this.lost) return false;
+    if (this.disposed || this.lost || this.captureActive) return false;
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
@@ -1849,6 +1855,7 @@ export class WorldRenderer {
         if (gen !== this.postGen || this.disposed || this.wantedPostQuality !== want) p.dispose();
         else {
           p.setGrade(gradeFor(this.env.skyState));
+          if (this.vignetteOff) p.setVignette(0);
           this.post = p;
           this.needsDraw = true;
         }
@@ -1916,15 +1923,177 @@ export class WorldRenderer {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Publishing: posed captures, stills, glTF, camera paths
+  // ---------------------------------------------------------------------------
+
+  /** Change the extra pixel-ratio cap (quality settings of published games; Infinity removes it). */
+  setPixelRatioCap(cap: number): void {
+    const next = Number.isFinite(cap) && cap > 0 ? Math.max(0.5, cap) : Number.POSITIVE_INFINITY;
+    if (next === this.ratioCap) return;
+    this.ratioCap = next;
+    this.resize(this.cssWidth, this.cssHeight);
+  }
+
+  /** True while an exclusive capture (video or still export) runs. */
+  get capturing(): boolean {
+    return this.captureActive;
+  }
+
+  /**
+   * Start an exclusive capture at `width`×`height` pixels (see
+   * `view/capture-session.ts`): the viewport stops drawing until the
+   * session ends. Throws while another capture runs.
+   */
+  beginCapture(width: number, height: number, opts: { vignette?: boolean } = {}): CaptureSession {
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+    if (this.captureActive || this.capture) throw new Error('a capture is already running');
+    const session = openCaptureSession(this.captureHost(), width, height, opts);
+    this.capture = session;
+    return session;
+  }
+
+  /**
+   * Resolve once the post-processing pipeline the current quality wants
+   * exists (it is built asynchronously), so the first captured frames get
+   * the same look as the viewport. Gives up after `timeoutMs`.
+   */
+  async preparePost(timeoutMs = 8000): Promise<void> {
+    const deadline = now() + timeoutMs;
+    this.syncPost();
+    while (!this.disposed && this.postPending && now() < deadline) await new Promise((r) => setTimeout(r, 16));
+  }
+
+  /** Render a still image up to 8192 px on the long side (tiled above the tile size). */
+  renderStill(opts: StillOptions): Promise<StillImage> {
+    return captureStill((w, h, vignette) => this.beginCapture(w, h, { vignette }), opts);
+  }
+
+  /** Export the drawn scene content as GLB (or glTF JSON); see `view/gltf-export.ts`. */
+  async exportGltf(opts: GltfExportOptions = {}): Promise<GltfExportResult> {
+    if (this.disposed) throw new Error('renderer disposed');
+    this.grow.finishAll();
+    return exportSceneGltf(this.sync.root, this.perspective, opts);
+  }
+
+  /** Place the editor camera at `pos` looking at `target` (immediately), optionally with a field of view. */
+  lookAt(pos: Vec3, target: Vec3, fov?: number): void {
+    if (this.disposed || !pos.every(Number.isFinite) || !target.every(Number.isFinite)) return;
+    _pos.set(pos[0], pos[1], pos[2]);
+    _target.set(target[0], target[1], target[2]);
+    this.rig.flyTo(_pos, _target, 0);
+    if (fov !== undefined && Number.isFinite(fov) && Math.abs(fov - this.perspective.fov) > 1e-6) {
+      this.perspective.fov = Math.min(120, Math.max(5, fov));
+      this.perspective.updateProjectionMatrix();
+    }
+    this.needsDraw = true;
+  }
+
+  /** The editor camera now: eye, orbit target and vertical field of view. */
+  cameraPose(): { pos: Vec3; target: Vec3; fov: number } {
+    const p = this.perspective.position;
+    return { pos: [p.x, p.y, p.z], target: this.orbitTarget(), fov: this.perspective.fov };
+  }
+
+  /** Lowest height the camera may take over the ground (presets use it). */
+  get cameraFloorY(): number {
+    return this.rig.floorY;
+  }
+
+  /** Draw a camera path over the viewport (sampled eye points, keys as eye+target), or hide it with null. */
+  showCameraPath(points: Float32Array | null, keys: Float32Array | null, markerSize?: number): void {
+    this.pathOverlay.set(points, keys, markerSize);
+    this.needsDraw = true;
+  }
+
+  /** The renderer side of capture sessions. */
+  private captureHost(): CaptureHost {
+    let hidden: Object3D[] = [];
+    let wasVisible: boolean[] = [];
+    let savedRatio = 1;
+    let adaptive = false;
+    return {
+      camera: this.perspective,
+      flipY: this.backend === 'webgl2',
+      alive: () => !this.disposed && !this.lost,
+      begin: (w, h, vignette) => {
+        this.captureActive = true;
+        this.rig.stopTour();
+        this.grow.finishAll();
+        hidden = [this.highlighter.group, this.editOverlay.group, this.pathOverlay.group, this.debug.group, this.ghost.root, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+        wasVisible = hidden.map((o) => o.visible);
+        for (const o of hidden) o.visible = false;
+        savedRatio = this.renderer.getPixelRatio();
+        adaptive = this.adaptive.enabled;
+        this.adaptive.enabled = false;
+        this.renderer.setPixelRatio(1);
+        this.renderer.setSize(w, h, false);
+        this.vignetteOff = !vignette;
+        this.post?.setVignette(vignette ? VIGNETTE_STRENGTH : 0);
+        if (this.boundsDirty) this.refresh();
+      },
+      advance: (dt) => {
+        if (this.boundsDirty) this.refresh();
+        const vox = this.voxelLayer;
+        if (vox) {
+          const tf = this.env.terrainFog;
+          vox.setFog(tf.color, tf.near, tf.far, tf.density);
+          vox.flushPrebuild();
+        }
+        this.sync.updateAnimations(dt);
+        this.archView.update(this.perspective, dt);
+        this.env.update(dt, this.perspective);
+        if (this.materials.surfaces.active) this.materials.surfaces.advance(dt);
+      },
+      drawToTarget: (w, h) => {
+        const rt = this.captureTarget(w, h);
+        const prevOutput = this.renderer.getOutputRenderTarget();
+        const prevTarget = this.renderer.getRenderTarget();
+        try {
+          this.renderer.setOutputRenderTarget(rt);
+          this.renderer.setRenderTarget(null);
+          if (this.vignetteOff) this.post?.setVignette(0);
+          this.draw(true);
+        } finally {
+          this.renderer.setOutputRenderTarget(prevOutput);
+          this.renderer.setRenderTarget(prevTarget);
+        }
+      },
+      readback: (w, h) => {
+        if (this.vignetteOff) this.post?.setVignette(0);
+        return this.renderToPixels(w, h, () => this.draw(true), () => undefined);
+      },
+      finish: () => {
+        hidden.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
+        this.vignetteOff = false;
+        this.post?.setVignette(VIGNETTE_STRENGTH);
+        this.adaptive.enabled = adaptive;
+        this.captureActive = false;
+        this.capture = null;
+        if (!this.disposed) {
+          this.renderer.setPixelRatio(savedRatio);
+          const [cw, ch] = this.pendingResize ?? [this.cssWidth, this.cssHeight];
+          this.pendingResize = null;
+          this.resize(cw, ch);
+        }
+        this.needsDraw = true;
+      },
+    };
+  }
+
+  /** A tiled capture runs: the screen-space vignette is applied on the CPU instead. */
+  private vignetteOff = false;
+
   /** Capture the current view as a data URL (JPEG quality 0.8 by default). */
   async screenshot(opts: { width?: number; height?: number; mime?: string } = {}): Promise<string> {
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+    if (this.captureActive) throw new Error('a capture is running');
     const canvas = this.domElement;
     const w = captureSize(opts.width, canvas.width);
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
-    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.blueprint.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
     const aspect = this.perspective.aspect;
@@ -2019,6 +2188,7 @@ export class WorldRenderer {
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
   async renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size = 512): Promise<string[]> {
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+    if (this.captureActive) throw new Error('a capture is running');
     const list = (Array.isArray(views) ? views : []).filter((v): v is CaptureView => VIEW_NAMES.has(v)).slice(0, MAX_VIEWS);
     if (list.length === 0) return [];
     const px = captureSize(size, 512);
@@ -2031,7 +2201,7 @@ export class WorldRenderer {
     _savedCamUp.copy(cam.up);
     const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
     // Hide view-dependent decorations; give the background a flat sky color.
-    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.blueprint.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = hidden.map((o) => o.visible);
     // Neutralize fog through its density uniform: removing it (scene.fog = null) changes every
     // material's shader, and each capture then built a fog-less variant of every object's GPU
@@ -2189,6 +2359,10 @@ export class WorldRenderer {
    */
   resize(width: number, height: number): void {
     if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) return;
+    if (this.captureActive) {
+      this.pendingResize = [width, height];
+      return;
+    }
     this.cssWidth = width;
     this.cssHeight = height;
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
@@ -2266,7 +2440,10 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    this.capture?.end();
+    this.capture = null;
     this.disposed = true;
+    this.pathOverlay.dispose();
     this.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.domElement.removeEventListener('pointerdown', this.onUserCamera);
     this.domElement.removeEventListener('wheel', this.onUserCamera);

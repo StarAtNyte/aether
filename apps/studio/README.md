@@ -24,6 +24,9 @@ built-in offline mock agent and shows an "offline demo mode" badge.
 | `src/engine/sound.ts` | Procedural WebAudio sound effects (no audio files) |
 | `src/components`, `src/app` | Chat panel, viewport overlays, outliner, inspector, logic, verify and history panels, settings |
 | `src/lib/examples.ts` | The 8-prompt example gallery |
+| `src/engine/publish.ts`, `src/editor/publish/` | The Publish hub (game, video, render, 3D model, floor plan, share link, history) and the camera timeline |
+| `src/publish/` | Share-link codec, QR encoder, camera paths and director, MP4 / WebM muxers, video export, music, title cards, floor-plan SVG / PDF, game builder, publish library, hosting client |
+| `play.html`, `src/player/` | The standalone player of published games and share links (`/play#w=…`): no editor, no agent |
 
 ## Controls
 

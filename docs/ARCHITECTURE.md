@@ -21,6 +21,7 @@ each package). This document explains the design behind them.
 - [14. Studio runtime](#14-studio-runtime)
 - [15. Determinism](#15-determinism)
 - [16. Known limitations](#16-known-limitations)
+- [20. Publishing](#20-publishing)
 
 ---
 
@@ -953,6 +954,15 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
 - A `null` stored inside free-form JSON state cannot be restored by
   `invertPatches`, because `null` means "delete" in updates. History undo is
   unaffected because it does not replay inverse patches.
+- Publishing: a QR code fits share links up to about 2.9 KB (most worlds
+  are larger and share the link itself); Firefox opens links up to about
+  1 MB, Chromium up to the player's 1.5 MB cap. Videos are ≤ 120 s and
+  ≤ 1920 px; MP4 is chosen only where the browser can also play H.264
+  back, else WebM; browsers without WebCodecs record in real time with MediaRecorder,
+  dropping frames on a slow device. glTF exports what the camera draws
+  (scatter fields and virtual geometry at their current detail). Deploys
+  to the user's hosting need the local app (or a hosted studio paired with
+  it); GitHub Pages can take a minute to go live after the first deploy.
 
 ## 17. Block worlds (voxel terrain and the game kit)
 
@@ -1132,3 +1142,70 @@ parses source formats at run time.
   check and renderer, shared by the studio (private off-screen WebGL2
   renderer) and the offline hero script (headless Chromium).
 
+
+## 20. Publishing
+
+One **Publish** hub in the editor turns the open world into a game, a video,
+a still, a 3D model, a floor plan or a link. The product is local-first and
+its hosted copy is a static site with no storage, so publishing never relies
+on a server the owner pays for: everything is produced in the browser, and
+anything that goes online goes to the user's own accounts.
+
+```mermaid
+flowchart LR
+    W["World IR"] --> SL["Share link<br/>#w=deflate+base64url"]
+    W --> GB["Game build (zip)<br/>player files + game.json + assets"]
+    GB --> DL["Download<br/>itch.io · Pages · any host"]
+    GB --> LIB["Local library<br/>/published/&lt;id&gt;/"]
+    LIB --> CLI["User's CLIs<br/>netlify · vercel · gh · butler"]
+    LIB --> LAN["LAN share<br/>token URL"]
+    W --> CAP["Capture session"] --> V["Video<br/>WebCodecs → MP4/WebM"]
+    CAP --> S["Still ≤ 8K<br/>tiles + accumulation"]
+    W --> G["glTF / GLB<br/>parsed back to verify"]
+    W --> FP["Floor plan<br/>SVG / PDF"]
+```
+
+- **The link is the game.** A share link carries the world (with its
+  generator and script source) in the URL fragment, compressed with the
+  platform's `CompressionStream` — typically a few tens of kilobytes.
+  Browsers never send the fragment to a server, so sharing costs nothing,
+  stores nothing and needs no account. The player decodes it under strict
+  caps (1.5 MB fragment, 8 MB inflated, enforced while inflating) and runs
+  model-written code only in the existing sandboxes. Worlds too large for a
+  link are published as builds instead.
+- **A player without the editor.** `play.html` is a second Vite entry:
+  renderer, physics (lazy), logic, the block game and a small player UI —
+  no editor and no agent code; a build-time guard fails the build if editor
+  chunks become reachable. All its URLs are relative, so the same files run
+  at `/play`, from a sub-folder on itch.io or GitHub Pages, or from the
+  local library. A build-time manifest lists exactly the files the player
+  can load; the studio zips those files with `game.json`, the world's
+  library assets, the user's imports, covers and icons, a web-app manifest
+  and a service worker for offline play — all client-side, with our own zip
+  writer.
+- **Your hosting, your login.** In the local app, a deploy copies a library
+  build to a throwaway folder and runs the user's own CLI with argument
+  arrays, an allow-listed environment (no tokens or API keys), per-step
+  timeouts in their own process groups, and no stdin. GitHub Pages uses the
+  Git Data API through `gh api --input` (no git, no shell). The public URL
+  is read from the CLI's output and only well-known hosting domains are
+  shown as links.
+- **Capture sessions.** Video and stills take the renderer over exclusively:
+  the drawing buffer is resized once to the capture size, decorations hide,
+  and each frame is posed, advanced by the frame time (animations, weather)
+  and read back asynchronously into one reused buffer. Videos are rendered
+  offline frame by frame — never dropped frames — and encoded with
+  WebCodecs into our own MP4 (H.264 + Opus) or WebM (VP9/VP8 + Opus)
+  muxers; browsers without WebCodecs record in real time with
+  MediaRecorder. Stills larger than one draw are rendered as overlapping
+  tiles through camera view offsets (temporal AA jitter composes with
+  them), and the vignette is applied once to the assembled image.
+- **Directing the camera.** A shot is a keyframed path (Catmull–Rom through
+  eyes and targets, per-segment easing, cuts). Words become shots through a
+  small shot language (`dolly`, `orbit`, `rise`, …) resolved against the
+  scene's rooms, buildings and named objects; a connected language model
+  may write the shot plan, but only the resolver turns it into
+  coordinates. The path is drawn in the viewport and edited on a timeline.
+- **History and versions.** Every publish is recorded in an IndexedDB
+  library of its own (files kept for re-download within a budget), and the
+  project gets a version snapshot that restores as one undoable change.

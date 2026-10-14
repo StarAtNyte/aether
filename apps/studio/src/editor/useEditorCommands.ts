@@ -40,9 +40,16 @@ export function useEditorCommands(projects: readonly ProjectMeta[]): Command[] {
         st().showLeftView('verify');
         void studio.runVerify();
       } },
-      { id: 'share', title: 'Share link', group: 'Actions', icon: 'share', run: () => void studio.share() },
+      { id: 'share', title: 'Share link', group: 'Publish', icon: 'share', run: () => studio.publish.open('share') },
+      { id: 'share-remix', title: 'Copy remix link (read-only viewer)', group: 'Publish', icon: 'share', keywords: 'share view remix', run: () => void studio.share() },
+      { id: 'publish-game', title: 'Publish as a game', group: 'Publish', icon: 'gamepad', run: () => studio.publish.open('game') },
+      { id: 'publish-video', title: 'Make a video (camera path)', group: 'Publish', icon: 'film', run: () => studio.publish.open('video') },
+      { id: 'publish-render', title: 'Render a still (up to 4K)', group: 'Publish', icon: 'image', run: () => studio.publish.open('render') },
+      { id: 'publish-model', title: 'Export 3D model (glTF / GLB)', group: 'Publish', icon: 'box3d', run: () => studio.publish.open('model') },
+      { id: 'publish-plan', title: 'Export floor plan (SVG / PDF)', group: 'Publish', icon: 'plan', run: () => studio.publish.open('plan') },
+      { id: 'publish-history', title: 'Versions and publish history', group: 'Publish', icon: 'history', run: () => studio.publish.open('history') },
       { id: 'export', title: 'Export .aether.json', group: 'Actions', icon: 'download', run: () => studio.exportToFile() },
-      { id: 'export-gltf', title: 'Export 3D model (.glb)', group: 'Actions', icon: 'cube', keywords: 'gltf glb model download', run: () => void studio.exportGltf() },
+      { id: 'export-gltf', title: 'Quick export 3D model (.glb)', group: 'Actions', icon: 'cube', keywords: 'gltf glb model download', run: () => void studio.exportGltf() },
       ...(selection.length > 0
         ? [
             { id: 'focus', title: 'Focus selection', group: 'Actions', icon: 'focus' as IconName, shortcut: 'F', run: () => selection[0] && studio.focus(selection[0]) },

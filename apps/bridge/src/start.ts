@@ -10,7 +10,7 @@ import { createHeadlessBackends, resolveCommands } from './headless';
 import { LoginManager } from './auth';
 import { Pairing } from './pairing';
 import { createWorkerSessionStore } from './worker/text-backend';
-import { createBridgeHandler, type BridgeLogger } from './server';
+import { createBridgeHandler, type BridgeLogger, type BridgePublish } from './server';
 
 /** A listening bridge. */
 export interface RunningBridge {
@@ -38,7 +38,7 @@ function listen(server: Server, port: number): Promise<number> {
 }
 
 /** Start listening; `onCode` receives every pairing code (rotations included). */
-export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeLogger; onCode?: (code: string) => void } = {}): Promise<RunningBridge> {
+export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeLogger; onCode?: (code: string) => void; publish?: BridgePublish } = {}): Promise<RunningBridge> {
   const commands = resolveCommands({ codexPath: config.codexPath, claudePath: config.claudePath });
   const sessions = createWorkerSessionStore();
   const backends = createHeadlessBackends({ codexPath: config.codexPath, claudePath: config.claudePath, timeoutMs: config.timeoutMs, sessions }, commands);
@@ -55,7 +55,7 @@ export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeL
   };
   const pairing = new Pairing(opts.onCode);
   let boundPort = config.port;
-  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status: () => status(), login, sessions, onAuthChange, ...(opts.logger ? { logger: opts.logger } : {}) }));
+  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status: () => status(), login, sessions, onAuthChange, ...(opts.logger ? { logger: opts.logger } : {}), ...(opts.publish ? { publish: opts.publish } : {}) }));
   server.requestTimeout = config.timeoutMs + 60_000;
   server.headersTimeout = 30_000;
   server.keepAliveTimeout = 5_000;

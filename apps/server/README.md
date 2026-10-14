@@ -26,7 +26,9 @@ local deterministic mock provider.
 | `src/routes/llm.ts` | `POST /api/llm` proxy |
 | `src/routes/generators.ts` | content-addressed generator cache |
 | `src/routes/worlds.ts` | world share links |
-| `src/static.ts` | studio hosting plus SPA fallback |
+| `src/static.ts` | studio hosting, `/play` (standalone player) plus SPA fallback |
+| `src/routes/publish.ts` | local app only: build library, deploys, LAN share, `/published/:id/…` |
+| `src/publish/*` | build store, hosting CLIs (`hosts.ts`), deploy jobs, LAN share, shared services |
 
 ## API
 
@@ -41,6 +43,10 @@ local deterministic mock provider.
 | `PUT /api/worlds/:id` | Replaces the world. Requires `X-Edit-Token` from creation; only its SHA-256 is stored. |
 
 Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are never returned.
+
+`GET /play` (and `/play.html`) serve the standalone player of share links
+(`/play#w=…`; the world travels in the fragment, so nothing is stored) with
+the player's own CSP (`PLAY_CSP`: no third-party hosts, embeddable).
 
 ## Security model
 
@@ -88,6 +94,16 @@ Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are
 `HOST=127.0.0.1`, `NODE_ENV=production`, `AETHER_LOCAL_AI=on`, the Host and
 Origin allowlists, the session secret, the instance id and a rotating log
 file in the user's state folder. Nothing extra is needed.
+
+Publishing from the local app (`/api/local/publish/*`, see
+`docs/CONTRACTS.md`): game builds are stored immutably under
+`DATA_DIR/published/` and played at `/published/<id>/`; deploys run the
+user's own `netlify`, `vercel`, `gh` or `butler` (argument arrays, no
+secrets in their environment, per-step timeouts, cancellable); "Share on
+local network" opens a second, read-only listener on all interfaces for one
+build behind a random token, off by default and stopped after two hours.
+With `--origin`, a paired hosted studio reaches the same services through
+the bridge (`/v1/publish/*`).
 
 ## Deploying
 

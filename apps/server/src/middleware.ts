@@ -116,6 +116,8 @@ export const CSP_DIRECTIVES = Object.freeze({
   scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
   workerSrc: ["'self'", 'blob:'],
   imgSrc: ["'self'", 'data:', 'blob:'],
+  // Exported videos and music previews play from blob: URLs.
+  mediaSrc: ["'self'", 'blob:'],
   // blob:/data: so locally imported glTF models (blob URLs, data URIs) can be fetched.
   // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
   // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries)
@@ -158,6 +160,20 @@ export const DAG_WORKER_CSP = "default-src 'none'; script-src 'self'";
 /** Built path of the geometry worker. */
 export const DAG_WORKER_PATH = /^\/assets\/dag\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
+/**
+ * Content-Security-Policy of the standalone player (`/play`, published
+ * builds): the same strict script policy as the studio, but no third-party
+ * hosts at all (the player talks to no AI and no bridge) and embeddable in
+ * other sites (`frame-ancestors *`), so a published game can be put in an
+ * `<iframe>`. It runs no editor and holds no keys.
+ */
+export const PLAY_CSP =
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
+/** Paths of the player page (the static `play.html` and its clean URL). */
+export const PLAY_PATH = /^\/play(\.html)?$/;
+/** Paths of builds in the local library of published games (`/published/<id>/…`). */
+export const PUBLISHED_PATH = /^\/published\/[a-z0-9]{12}(\/.*)?$/;
+
 /** Security headers: CSP, nosniff, referrer policy, COOP, frame denial, HSTS (production only). */
 export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> {
   const base = secureHeaders({
@@ -173,7 +189,14 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
   });
   return async (c, next) => {
     await base(c, next);
-    if (SANDBOX_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
+    if (PLAY_PATH.test(c.req.path) || (PUBLISHED_PATH.test(c.req.path) && !/\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/.test(c.req.path))) {
+      c.res.headers.set('Content-Security-Policy', PLAY_CSP);
+      // Embeddable: the frame policy lives in frame-ancestors.
+      c.res.headers.delete('X-Frame-Options');
+      c.res.headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+      c.res.headers.set('Referrer-Policy', 'no-referrer');
+    } else if (PUBLISHED_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
+    else if (SANDBOX_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', SANDBOX_WORKER_CSP);
     else if (VERIFY_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', VERIFY_WORKER_CSP);
     else if (DAG_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', DAG_WORKER_CSP);
   };

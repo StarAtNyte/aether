@@ -31,6 +31,7 @@ import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
 import { IdleClock } from './IdleClock';
 import { InputController } from './input';
+import { GamepadPoller, STICK_TURN_SPEED } from './gamepad';
 import { SoundBoard } from './sound';
 import { PosePool } from './posePool';
 import { TransformTable } from './TransformTable';
@@ -163,6 +164,8 @@ export interface SimulationListener {
   onContextLost?(info: ContextLossInfo): void;
   /** Voxel game HUD snapshot (null when no voxel game runs). */
   onVoxelHud?(state: VoxelHudState | null): void;
+  /** The player pressed Start / Options on a controller (published games open their pause menu). */
+  onPauseRequest?(): void;
 }
 
 /** Construction options. */
@@ -224,6 +227,13 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
+  private readonly pad = new GamepadPoller();
+  /** The controller moved the player last frame (its stick is released once it goes idle). */
+  private padMoving = false;
+  /** Physics, logic and the voxel game are frozen (pause menu of published games). */
+  private paused = false;
+  /** Mouse look multiplier applied to both play inputs. */
+  private lookSensitivity = 1;
   /** Block terrain + voxel game, loaded on the first world with `voxel` (null until then). */
   voxel: VoxelSession | null = null;
   private voxelLoading: Promise<VoxelSession> | null = null;
@@ -628,7 +638,8 @@ export class Simulation {
    * Prefers WebP; browsers that cannot encode it (Safari) fall back to JPEG.
    */
   async thumbnail(width = 480, height = 270): Promise<string | null> {
-    if (this.session || this.disposed) return null;
+    // A video or still export owns the renderer: the autosave thumbnail waits for the next save.
+    if (this.session || this.disposed || this.renderer.capturing) return null;
     try {
       await this.whenSynced();
       // Let the grow-in animation and any camera flight finish (bounded wait).
@@ -860,6 +871,7 @@ export class Simulation {
       if (t) this.table.ensure(id, t.position, t.quaternion);
     }
     this.session = session;
+    if (session.voxel) session.voxel.input.sensitivity = this.lookSensitivity;
     this.applyGizmo();
     if (this.toolDragging) this.viewportTool?.cancel?.();
     this.toolDragging = false;
@@ -898,6 +910,8 @@ export class Simulation {
     if (!s) return;
     this.session = null;
     s.ended = true;
+    this.paused = false;
+    this.padMoving = false;
     this.applyGizmo();
     try {
       safely('input detach', () => this.input.detach());
@@ -1051,8 +1065,11 @@ export class Simulation {
     this.lastFrame = t;
     const s = this.session;
     try {
-      if (s) this.stepSession(s, dt);
-      if (this.voxel?.active) this.voxel.frame(dt);
+      if (s && !this.paused) {
+        this.pollGamepad(dt);
+        this.stepSession(s, dt);
+      }
+      if (this.voxel?.active && !this.paused) this.voxel.frame(dt);
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
       this.renderOpts.onDemand = s === null;
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
@@ -1090,6 +1107,60 @@ export class Simulation {
       this.raf = 0;
       this.listener.onFatal?.(`The renderer stopped after repeated errors (${message}). Reload the page to continue.`);
     }
+  }
+
+  /** Controller input → the same virtual stick / taps the touch controls use. */
+  private pollGamepad(dt: number): void {
+    const g = this.pad.poll();
+    if (!g.active) {
+      if (this.padMoving) {
+        this.padMoving = false;
+        this.setVirtualStick(0, 0);
+      }
+      return;
+    }
+    const moving = g.forward !== 0 || g.right !== 0;
+    if (moving || this.padMoving) this.setVirtualStick(g.forward, g.right);
+    this.padMoving = moving;
+    if (g.lookX !== 0) this.turnBy(-g.lookX * STICK_TURN_SPEED * Math.min(0.1, dt));
+    if (g.jump) this.tapVirtual('Space');
+    if (g.action) this.tapVirtual('KeyE');
+    if (g.pause) this.listener.onPauseRequest?.();
+  }
+
+  /**
+   * Freeze or resume the running game (physics, logic, voxel game) while the
+   * world keeps rendering — the pause menu of published games. Held keys
+   * and pointer lock are released when pausing.
+   */
+  setPaused(on: boolean): void {
+    if (this.paused === on) return;
+    this.paused = on;
+    if (on) {
+      this.input.releaseAll();
+      if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock();
+    } else {
+      this.stepper.reset();
+      this.lastFrame = -1;
+    }
+    this.renderer.requestRender();
+  }
+
+  /** True while paused (see {@link setPaused}). */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Master volume of game sounds (0–1). */
+  setVolume(v: number): void {
+    this.sound.setVolume(v);
+  }
+
+  /** Mouse look multiplier (0.25–3) for the character and block-world games. */
+  setLookSensitivity(m: number): void {
+    this.lookSensitivity = Number.isFinite(m) ? Math.max(0.25, Math.min(3, m)) : 1;
+    this.input.sensitivity = this.lookSensitivity;
+    if (this.session?.voxel) this.session.voxel.input.sensitivity = this.lookSensitivity;
   }
 
   private stepSession(s: PlaySession, dt: number): void {
@@ -1293,6 +1364,7 @@ export class Simulation {
       s.pw.dispose();
     }
     this.sound.dispose();
+    this.pad.dispose();
     this.renderer.dispose();
   }
 }

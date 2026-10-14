@@ -16,6 +16,7 @@ import { createRotatingSink } from './log-file';
 import { createLogger } from './logger';
 import type { LiveLlm } from './routes/llm';
 import type { LocalBridgeInfo } from './routes/local';
+import { bridgePublish, createPublishServices } from './publish/services';
 import { LocalAi, parseBridgeConfig, startBridge, type RunningBridge } from '@aether/bridge';
 
 /** Hard deadline for draining in-flight requests on shutdown. */
@@ -37,12 +38,16 @@ async function main(): Promise<void> {
   const local = config.localAi ? new LocalAi({ dataDir: resolve(config.dataDir, 'local-ai') }) : null;
   if (local) await local.init();
 
+  // Publishing to the user's own hosting and the local network (local app only), shared by the
+  // studio's same-origin routes and the bridge of hosted copies.
+  const publish = local ? createPublishServices({ dir: resolve(config.dataDir, 'published') }) : null;
+
   // Optional bridge for hosted copies of the studio (same process, 127.0.0.1 only, token-paired).
   let bridge: RunningBridge | null = null;
   let bridgeInfo: LocalBridgeInfo | undefined;
   if (local && config.local.bridge) {
     const bridgeConfig = parseBridgeConfig(['--port', String(config.local.bridge.port), ...config.local.bridge.origins.flatMap((o) => ['--origin', o])], {});
-    bridge = await startBridge(bridgeConfig, { logger: { info: (msg) => logger.info(`bridge: ${msg}`), warn: (msg) => logger.warn(`bridge: ${msg}`) } });
+    bridge = await startBridge(bridgeConfig, { logger: { info: (msg) => logger.info(`bridge: ${msg}`), warn: (msg) => logger.warn(`bridge: ${msg}`) }, ...(publish ? { publish: bridgePublish(publish) } : {}) });
     const running = bridge;
     bridgeInfo = { url: running.url, origins: config.local.bridge.origins, code: () => running.pairing.currentCode, issue: () => running.pairing.issue() };
     logger.info('bridge listening', { url: running.url, origins: config.local.bridge.origins.join(',') });
@@ -55,6 +60,7 @@ async function main(): Promise<void> {
     requestShutdown: () => setImmediate(() => stopRef.current?.('aether stop')),
     local,
     ...(bridgeInfo ? { bridge: bridgeInfo } : {}),
+    ...(publish ? { publishServices: publish } : {}),
     logger,
     llm,
     providers: plan.mode === 'live' ? plan.available : ['mock'],
@@ -83,6 +89,7 @@ async function main(): Promise<void> {
     shutdown.abort();
     void generatorValidator?.dispose();
     void bridge?.close();
+    void publish?.dispose();
     local?.dispose();
     const force = setTimeout(() => {
       logger.warn('forced exit after grace period');

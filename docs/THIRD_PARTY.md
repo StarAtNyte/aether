@@ -135,6 +135,7 @@ Licence count across all 148 lockfile entries: 99 MIT, 27 Apache-2.0,
 
 | Codex CLI with the user's own ChatGPT sign-in (via the local bridge) | Optional AI connection | Runs on the user's computer under the user's own OpenAI account and terms; nothing is proxied through the hosted server |
 | Claude Code CLI with the user's own sign-in (via the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
+| Netlify CLI, Vercel CLI, GitHub CLI (`gh`), itch.io `butler` — the user's own installs and logins | Optional "publish to your own hosting" from the local app | Spawned on the user's computer with the user's own accounts and under each service's terms; Aether ships none of them, passes them no credentials, and never deploys to an account of its own |
 | Hugging Face / MLC model hosts (`huggingface.co`, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered (Qwen2.5 1.5B Instruct, Apache-2.0; Phi-3.5 mini Instruct, MIT; SmolLM2 1.7B Instruct, Apache-2.0); they are downloaded by the visitor's browser directly from the model host and cached there; Aether does not redistribute them |
 
 Model ids are configuration (`.env`, Settings), not code. No model weights are
@@ -361,3 +362,19 @@ The studio render uses three.js's own post-processing nodes, part of the
 ambient occlusion after Jimenez et al., *Practical Real-Time Strategies for
 Accurate Indirect Occlusion*, 2016) and `TRAANode` (temporal reprojection
 anti-aliasing), wired by Aether's `packages/render/src/gpu/post.ts`.
+
+### Publishing (games, videos, renders, models, floor plans, share links)
+
+No new dependency. The zip writer, share-link codec, QR code encoder, MP4
+and WebM muxers, PDF writer, floor-plan drawing, camera paths and director,
+title cards, the generated score and the standalone player are original
+TypeScript written for Aether. Algorithms followed, credited: QR Code Model 2
+(ISO/IEC 18004) — the encoder's structure follows Project Nayuki's QR Code
+generator (MIT); ISO/IEC 14496-12 (MP4) and the "Opus in ISOBMFF"
+specification; the Matroska / WebM element specification; RFC 7845 (Opus
+identification header); the PDF 1.4 reference (base-14 Helvetica, WinAnsi).
+Video and audio are encoded by the browser's own WebCodecs encoders (or
+MediaRecorder); glTF export and its parse-back check use `GLTFExporter` and
+`GLTFLoader` from the `three` dependency (MIT). No codec library, font,
+music or image asset is bundled; the soundtrack is synthesised with Web
+Audio at run time.

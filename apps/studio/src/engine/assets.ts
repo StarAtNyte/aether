@@ -416,6 +416,19 @@ export class AssetController {
     await this.refreshImports();
   }
 
+  /** The user's imports `world` references, with their bytes (validated metadata from the store). */
+  async importsFor(world: WorldDoc): Promise<Array<{ meta: UserAssetMeta; data: Uint8Array }>> {
+    const out: Array<{ meta: UserAssetMeta; data: Uint8Array }> = [];
+    const ids = worldAssetIds(world).filter(isUserAssetId);
+    if (ids.length === 0) return out;
+    const store = await this.userStore();
+    for (const id of ids) {
+      const rec = await store.get(id);
+      if (rec) out.push({ meta: rec.meta, data: new Uint8Array(await rec.blob.arrayBuffer()) });
+    }
+    return out;
+  }
+
   /** Bytes of every file a package needs: library files fetched, imports read from storage. */
   private async packageFiles(world: WorldDoc): Promise<ZipEntry[]> {
     const out: ZipEntry[] = [];

@@ -6,7 +6,7 @@
  *   #/            home (recently opened)
  *   #/templates   template gallery
  *   #/projects    all projects
- *   #/published   published worlds (placeholder)
+ *   #/published   everything published from this browser
  *   #/docs        documentation
  *   #/p/<id>      editor for project <id>
  *   #/new         create a project from the starter scene and open it

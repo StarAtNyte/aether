@@ -238,9 +238,12 @@ async function paletteFlow(page: Page): Promise<void> {
 async function shareFlow(page: Page, ctx: BrowserContext, errors: string[]): Promise<void> {
   const name = await page.evaluate(() => window.__aether?.history.current.name ?? '');
   const count = await entityCount(page);
-  // The Share button copies a link (the toast confirms); the debug handle returns the same link.
+  // The Share button opens the publish hub's Share tab; its remix link is copied (the toast
+  // confirms); the debug handle returns the same link.
   await page.getByRole('button', { name: 'Share', exact: true }).click();
+  await page.getByTestId('publish-share-remix').click();
   await page.locator('.toast', { hasText: /link/i }).first().waitFor({ timeout: 15_000 });
+  await page.keyboard.press('Escape');
   const link = await page.evaluate(() => window.__aether?.studio.share());
   check(typeof link === 'string' && /#\/view\/z1\.[A-Za-z0-9_-]+$/.test(link), `unexpected share link ${String(link).slice(0, 80)}`);
   log(`  share: link of ${link.length} chars (world in the URL fragment)`);

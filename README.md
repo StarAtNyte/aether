@@ -258,6 +258,44 @@ explicit state, so the AI can be held to account:
 - **Undo, branches and time travel.** Every agent or user edit is a history
   commit. You can undo and redo, check out any past state without losing
   later ones, create named branches, export and import JSON, and share links.
+- **Publish from within: games, films, renders, models, plans, links.** One
+  **Publish** hub in the editor, every target with presets, a preview,
+  progress and Cancel, and a history you can download from again:
+  - **Game.** A standalone web build made in your browser — the player only
+    (renderer, physics, logic; no editor, no agent), your world with its
+    generator and script code, the library models and your own imports it
+    uses, a cover and icons, a title screen over a slow fly-through of your
+    world, a pause menu, settings (volume, music, look sensitivity, graphics
+    quality), credits generated from the assets, touch controls and
+    controller support. Download it as a `.zip` ready for itch.io, GitHub
+    Pages, Netlify or any static host (it plays offline and installs as an
+    app), or — in the local app — publish it to **your own** Netlify,
+    Vercel, GitHub Pages or itch.io account through the command-line tools
+    you are signed in to, or share it on your local network behind a random
+    token.
+  - **Share link.** The whole world travels **inside the link**, after the
+    `#` (compressed, typically tens of kilobytes), so nothing is uploaded or
+    stored anywhere: `…/play#w=…` plays it in any browser. With a QR code and
+    an `<iframe>` embed snippet; worlds too large for a link say so.
+  - **Video.** A cinematic camera tool: a keyframe timeline under the
+    viewport (add a key from the current view, easing, cuts, field of view,
+    drag keys in time, play the shot in the viewport, the path drawn in 3D),
+    presets (orbit, turntable, fly-through, dolly, crane, top-down, reveal)
+    and a **director** that turns words into shots — "slow dolly through the
+    living room then rise above the roof" — offline or with your AI. Every
+    frame is rendered offline at full quality and encoded in the browser
+    (WebCodecs into our own MP4 / WebM writers, MediaRecorder elsewhere),
+    with title cards, cinematic bars, fades and a generated score.
+  - **Render.** Stills up to 4K in PNG, JPEG or WebP, rendered in tiles so
+    they never need a 4K screen; **photoreal** accumulates 24 samples per
+    pixel with ambient occlusion and soft shadows for architecture.
+  - **3D model** as GLB or glTF with PBR materials, parsed back with the
+    glTF loader before it is offered. **Floor plans** of buildings as SVG or
+    PDF at 1:50 / 1:100 with rooms, areas, doors, windows, stairs,
+    dimensions, a scale bar and a north arrow.
+  - **Versions.** Save named versions of a project and restore any of them
+    as one undoable change; every publish saves one automatically. The home
+    page lists everything published from this browser.
 - **Projects home.** Every world is a project saved in the browser
   (IndexedDB, validated on load, quota-aware), with rendered thumbnails,
   "Recently opened" (grid or list), search, sort, rename, duplicate, delete
@@ -463,6 +501,7 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm run assets:fetch` | Downloads and verifies the curated CC0 sources listed in `assets/sources.json` into `~/.cache/aether-asset-src` (sequential, checksums, licence checks) |
 | `npm run assets:build` | Builds the asset library into `assets/lib/` + `assets/catalog.json` + `assets/manifest.json` (normalise, merge, LOD, meshopt, colliders) |
 | `npm run assets:thumbs` | Renders library thumbnails in one headless Chromium (`-- --force`, `-- --only id1,id2`) |
+| `npm run e2e:publish` | Publishing in Chromium then Firefox: a 1920×1080 still, a directed video (MP4 or WebM, plays with the right length), a verified GLB, a share link opened in a fresh browser (same world; malformed, hostile and oversized links rejected), the game zip unpacked and served by a plain static server (title screen, plays), history and versions, and an apartment's floor plan as SVG |
 | `npm run e2e:assets` | Asset pipeline in Chromium (WebGPU, WebGL2) and Firefox: library search with thumbnails, drag a sofa onto the floor (model + collider), HDR sky, GLB / PNG imports (junk refused), package export with models and CREDITS.txt, GPU objects flat over 20 place / undo cycles |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset; `-- --arch`: each building as an archviz set — studio overview, room close-up, night, exploded, section, floor plan) |
 
@@ -687,6 +726,7 @@ All LLM output and all user input are treated as untrusted.
 | Architecture | `npm run build && npm run e2e:arch` | Chromium (WebGPU, WebGL2) and Firefox: the apartment prompt, every building view and the studio render (non-blank, refining), GPU objects flat over 20 view/quality cycles, floor-plan drawing as undoable checked edits, and a walkthrough that opens the front door with E and walks in, then night, lights and photo mode. |
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
 | Benchmark | `npm run build && npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles, CPU in the renderer and the view planner while the camera orbits; `--classic` for the full-detail engine, `--cycles=N` checks GPU objects stay flat across rebuilds. |
+| Publish | `npm run build && npm run e2e:publish` | See the scripts table. Hosting publishers (Netlify, Vercel, GitHub Pages, itch.io) are tested in `apps/server/test/publish.test.ts` against fake command-line tools on PATH — never real deploys. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors (including `experiments/`) |
 
 Install the browsers for e2e once with `npx playwright install chromium firefox`.
@@ -707,6 +747,11 @@ Chromium and Firefox.
   deployment can be reproduced exactly.
 - Every visitor path keeps working without any server: when a key or the
   bridge fails, the studio falls back to the offline planner.
+- `/play` is the standalone player of share links: the world is in the URL
+  fragment, so the static site stores nothing and serves every link the
+  same way. Set `VITE_AETHER_PLAYER_URL` at build time when share links
+  should open on another deployment (the local app asks for one, because
+  its own links only open on the computer that made them).
 
 **Self-hosted server (optional).** For your own team you can run the API and
 the studio from one container:

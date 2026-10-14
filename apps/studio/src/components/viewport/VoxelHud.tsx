@@ -8,6 +8,10 @@
 import { memo, useCallback, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 import { useSimulation, useStudio, useUI } from '../../app/context';
 import type { HudRecipe, HudSlot, ItemIcon, VoxelHudState } from '../../voxel/hudState';
+import type { VoxelPlay } from '../../voxel/session';
+
+/** How the HUD reports a message (the studio's toasts, or a published game's own). */
+export type HudToast = (text: string, kind: 'success' | 'error' | 'info', seconds?: number) => void;
 import '../../styles/voxel.css';
 
 const TILES = 16;
@@ -137,12 +141,8 @@ function RecipeCard({ r, hud, onCraft }: { r: HudRecipe; hud: VoxelHudState; onC
 const MAX_SAVE_FILE = 64 * 1024 * 1024;
 
 /** Export / import / reset of the world save (footer of the inventory screen). */
-function SaveActions(): ReactElement {
-  const studio = useStudio();
-  const sim = useSimulation();
-  const play = sim?.voxel?.game ?? null;
+function SaveActions({ play, toast }: { play: VoxelPlay | null; toast: HudToast }): ReactElement {
   const [confirmReset, setConfirmReset] = useState(false);
-  const toast = studio.store.getState().toast;
   const onExport = async (): Promise<void> => {
     const bytes = await play?.exportSave();
     if (!bytes) return;
@@ -199,9 +199,7 @@ function SaveActions(): ReactElement {
 }
 
 /** The inventory + crafting screen. */
-function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
-  const sim = useSimulation();
-  const play = sim?.voxel?.game ?? null;
+function InventoryScreen({ hud, play, toast }: { hud: VoxelHudState; play: VoxelPlay | null; toast: HudToast }): ReactElement {
   const [picked, setPicked] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
   const onSlot = useCallback(
@@ -260,7 +258,7 @@ function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
             ))}
           </ul>
         </section>
-        <SaveActions />
+        <SaveActions play={play} toast={toast} />
         <button type="button" className="btn vx-screen__close" onClick={() => play?.setInventoryOpen(false)}>
           Close {!hud.touch && <kbd>E</kbd>}
         </button>
@@ -269,13 +267,18 @@ function InventoryScreen({ hud }: { hud: VoxelHudState }): ReactElement {
   );
 }
 
-/** The HUD. */
+/** The HUD in the studio (state from the studio store). */
 export const VoxelHud = memo(function VoxelHud(): ReactElement | null {
+  const studio = useStudio();
   const hud = useUI((s) => s.voxelHud);
   const mode = useUI((s) => s.mode);
   const sim = useSimulation();
   if (!hud || mode !== 'play') return null;
-  const play = sim?.voxel?.game ?? null;
+  return <VoxelHudView hud={hud} play={sim?.voxel?.game ?? null} toast={studio.store.getState().toast} />;
+});
+
+/** The HUD itself, from props (the studio and published games share it). */
+export const VoxelHudView = memo(function VoxelHudView({ hud, play, toast }: { hud: VoxelHudState; play: VoxelPlay | null; toast: HudToast }): ReactElement {
   const survival = hud.mode === 'survival';
   const night = hud.hour < 5 || hud.hour >= 19.5;
   return (
@@ -339,7 +342,7 @@ export const VoxelHud = memo(function VoxelHud(): ReactElement | null {
           )}
         </button>
       )}
-      {hud.inventoryOpen && <InventoryScreen hud={hud} />}
+      {hud.inventoryOpen && <InventoryScreen hud={hud} play={play} toast={toast} />}
       {hud.dead && (
         <div className="vx-death" role="dialog" aria-modal="true" aria-label="You died">
           <h2>You died</h2>

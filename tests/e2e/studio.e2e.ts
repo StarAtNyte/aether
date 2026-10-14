@@ -702,8 +702,9 @@ async function homeAndPhoneShots(browser: Browser, page: Page, url: string): Pro
 
 async function exportJson(page: Page): Promise<void> {
   const expected = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'World (.aether.json)' }).click()]);
+  // Export lives in the app menu (the top bar's primary action is Publish).
+  await page.getByRole('button', { name: 'Aether menu' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'Export .aether.json' }).click()]);
   const path = await download.path();
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
   const envelope = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};

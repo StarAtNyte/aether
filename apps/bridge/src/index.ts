@@ -2,7 +2,7 @@
  * @aether/bridge — run Codex / Claude Code headless (the user's own
  * subscription login) behind the agent's Provider interface, locally only.
  */
-export { createBridgeHandler, BRIDGE_VERSION, type BridgeDeps, type BridgeLogger } from './server';
+export { createBridgeHandler, BRIDGE_VERSION, type BridgeDeps, type BridgeLogger, type BridgePublish } from './server';
 export { startBridge, type RunningBridge } from './start';
 export { parseBridgeConfig, normalizeOrigin, DEFAULT_ORIGINS, USAGE, type BridgeConfig } from './config';
 export { Pairing, newPairingCode, newToken, MAX_PAIR_ATTEMPTS } from './pairing';

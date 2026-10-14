@@ -49,6 +49,8 @@ function releaseTextFocus(): void {
 
 /** See the module docs. */
 export class VoxelInput {
+  /** Mouse look multiplier (player settings; 0.25–3). */
+  sensitivity = 1;
   private readonly held = new Set<string>();
   private readonly tapped = new Set<string>();
   private el: HTMLElement | null = null;
@@ -347,8 +349,8 @@ export class VoxelInput {
     const dy = Number.isFinite(e.movementY) ? e.movementY : 0;
     // Browsers occasionally report a huge jump right after locking: ignore it.
     if (Math.abs(dx) > 400 || Math.abs(dy) > 400) return;
-    this.yaw -= dx * LOOK_PER_PX;
-    this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * LOOK_PER_PX));
+    this.yaw -= dx * LOOK_PER_PX * this.sensitivity;
+    this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * LOOK_PER_PX * this.sensitivity));
   };
 
   private readonly onWheel = (e: WheelEvent): void => {

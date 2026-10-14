@@ -59,6 +59,8 @@ export class InputController {
   private pointerLock = false;
   /** On-screen (touch) stick: forward/right in [-1, 1]. */
   private virtualForward = 0;
+  /** Mouse look multiplier (player settings; 0.25–3). */
+  sensitivity = 1;
   private virtualRight = 0;
 
   constructor() {
@@ -96,6 +98,12 @@ export class InputController {
   /** Turn the camera/player by a number of degrees (touch look). */
   turnBy(deg: number): void {
     if (Number.isFinite(deg)) this.yaw = wrapDeg(this.yaw + deg);
+  }
+
+  /** Release every held key and the virtual stick (pause menus, focus loss). */
+  releaseAll(): void {
+    this.onBlur();
+    this.latched.clear();
   }
 
   /** Start listening. `pointerLock` requests mouse capture on canvas click. */
@@ -185,6 +193,6 @@ export class InputController {
   private readonly onPointerMove = (e: PointerEvent): void => {
     const locked = this.attached !== null && document.pointerLockElement === this.attached;
     if (!locked && !this.dragging) return;
-    if (Number.isFinite(e.movementX)) this.yaw = wrapDeg(this.yaw - e.movementX * MOUSE_YAW_PER_PX);
+    if (Number.isFinite(e.movementX)) this.yaw = wrapDeg(this.yaw - e.movementX * MOUSE_YAW_PER_PX * this.sensitivity);
   };
 }

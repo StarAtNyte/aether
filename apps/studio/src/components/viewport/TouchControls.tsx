@@ -6,6 +6,7 @@
  */
 import { memo, useRef, type PointerEvent, type ReactElement } from 'react';
 import { useSimulation } from '../../app/context';
+import type { Simulation } from '../../engine/Simulation';
 import { Icon } from '../Icon';
 
 /** Stick travel radius (px). */
@@ -20,9 +21,13 @@ export function stickVector(dx: number, dy: number, radius: number = RADIUS): { 
   return { forward: radius > 0 ? -y / radius : 0, right: radius > 0 ? x / radius : 0, x, y };
 }
 
-/** Touch controls. */
+/** Touch controls of the studio's play mode. */
 export const TouchControls = memo(function TouchControls(): ReactElement {
-  const sim = useSimulation();
+  return <TouchControlsView sim={useSimulation()} />;
+});
+
+/** Touch controls driving `sim` (the studio and published games share it). */
+export const TouchControlsView = memo(function TouchControlsView({ sim }: { sim: Pick<Simulation, 'setVirtualStick' | 'tapVirtual'> | null }): ReactElement {
   const knob = useRef<HTMLSpanElement>(null);
   const origin = useRef<{ x: number; y: number; id: number } | null>(null);
 

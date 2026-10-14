@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, DataTexture, FloatType, Group, InstancedMesh, Mesh, MeshBasicMaterial, MeshStandardMaterial, RGBAFormat, Texture } from 'three';
 import { createWorld, type WorldDoc } from '@aether/core';
-import { exportScene, textureExportMode, countTriangles, exportGlb, createMaterial, resolveMaterial, BlueprintMarks, bracketSegments, BLUEPRINT_FADE_SECONDS, BLUEPRINT_HOLD_SECONDS, MAX_BLUEPRINT_BOXES, PROOF_FADE_SECONDS, PROOF_HOLD_SECONDS, PROOF_MAX_SECONDS, ProofReplay, replayWorld, trailBuffers, validTrace, type ProofTrace } from '../src/index';
+import { buildExportScene, textureExportMode, countTriangles, exportGlb, createMaterial, resolveMaterial, BlueprintMarks, bracketSegments, BLUEPRINT_FADE_SECONDS, BLUEPRINT_HOLD_SECONDS, MAX_BLUEPRINT_BOXES, PROOF_FADE_SECONDS, PROOF_HOLD_SECONDS, PROOF_MAX_SECONDS, ProofReplay, replayWorld, trailBuffers, validTrace, type ProofTrace } from '../src/index';
 import type { SceneSync } from '../src/sync/scene-sync';
 
 function trace(frames: number, bodies: string[], dt = 0.1): ProofTrace {
@@ -263,13 +263,20 @@ describe('glTF export copy', () => {
     const mat = new MeshStandardMaterial({ roughnessMap: tex });
     const plain = new MeshBasicMaterial();
     root.add(new Mesh(new BoxGeometry(), mat), new Mesh(new BoxGeometry(), plain));
-    const { scene, dispose } = exportScene(root);
+    let liveDisposed = 0;
+    plain.addEventListener('dispose', () => liveDisposed++);
+    mat.addEventListener('dispose', () => liveDisposed++);
+    const { root: scene, dispose } = buildExportScene(root, null);
     const [a, b] = scene.children as Mesh[];
     expect(a?.material).not.toBe(mat);
     expect((a?.material as MeshStandardMaterial).roughnessMap).toBeNull();
-    expect(b?.material).toBe(plain);
+    // Every material becomes a plain PBR copy; the live ones are never touched.
+    expect(b?.material).not.toBe(plain);
+    expect(b?.material).toBeInstanceOf(MeshStandardMaterial);
     expect(mat.roughnessMap).toBe(tex);
     expect(root.children[0]).not.toBe(a);
+    expect(root.children).toHaveLength(2);
     dispose();
+    expect(liveDisposed).toBe(0);
   });
 });

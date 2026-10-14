@@ -147,3 +147,49 @@ AI-written generators and behaviour scripts run in the existing sandboxes
 (see [ARCHITECTURE.md](ARCHITECTURE.md)): a locked-down worker with its own
 CSP for generators, and QuickJS (WebAssembly) for scripts. Nothing in the
 local app adds an `eval` path.
+
+## Publishing
+
+- **Share links are data, never code paths.** The world travels in the URL
+  fragment (never sent to a server). The player caps the fragment
+  (1.5 MB) and the inflated JSON (8 MB, enforced while inflating, so a
+  compression bomb stops at the cap), checks a strict envelope, guards
+  against prototype pollution and validates the world with `validateWorld`.
+  Generator and script code in it runs only in the existing sandboxes.
+  Malformed, hostile and oversized links show an error screen (e2e).
+- **The player page is narrower than the studio.** `/play` and published
+  builds get their own CSP (`PLAY_CSP`): same-origin scripts and WebAssembly
+  only, `connect-src 'self' blob: data:` (no model APIs, no bridge), no
+  inline or eval'd script on the page, and `frame-ancestors *` so games can
+  be embedded — the player runs no editor and holds no keys. Builds carry
+  the same policy as a `<meta>` tag because static hosts send no headers.
+- **Game builds** are made in the browser from a build-time file list
+  (`play-manifest.json`); the build fails if editor code becomes reachable
+  from the player. Bundled imports are re-validated by the player exactly
+  like a fresh import, and their content id must match. Titles and
+  descriptions are cleaned (control and bidi characters) and escaped in
+  `index.html`; README / CREDITS are plain text.
+- **Local library of builds** (local app only, behind the loopback +
+  session guard): uploads are `application/zip` ≤ 256 MB, read with entry,
+  per-file and total caps; every name must be a safe relative path with an
+  allowed extension; `game.json` must be an Aether game with a valid world.
+  Builds are written to a temporary folder and renamed into place
+  (immutable), at most 100 builds / 2 GB. Nothing uploaded is executed by
+  the server; files are served with the player CSP and `nosniff`.
+- **Deploying to the user's hosting** runs the user's own CLI (`netlify`,
+  `vercel`, `gh`, `butler`) with argument arrays (no shell; values are
+  regex-validated slugs or `user/game`), the allow-listed environment of
+  the bridge (no API keys, tokens or other secrets — the CLIs use their own
+  saved logins), no stdin, per-step timeouts in their own process group
+  (cancel and timeout end the whole tree), capped output, and a throwaway
+  copy of the build that is deleted afterwards. GitHub Pages goes through
+  `gh api --input <file>` (no git, no shell). Only URLs on the hosting
+  services' own domains are shown as links. Tests use fake CLIs on PATH.
+- **LAN sharing** is off by default and explicit: a second, read-only
+  listener serves exactly one build under a random 128-bit token path
+  (constant-time compare), GET / HEAD only, with the player CSP, a request
+  rate limit and an automatic stop after two hours. Everything else,
+  including `/api` and the studio, is 404 on that port.
+- **Publish history** lives in its own IndexedDB database; records are
+  validated on read (only `https://` and local URLs, image data-URL
+  thumbnails), with count and byte caps.

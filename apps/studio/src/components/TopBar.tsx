@@ -2,7 +2,7 @@
  * Editor top bar, three zones:
  *  - left: app menu (projects, file actions), panel toggle, editable project name, save status
  *  - centre: Edit | Play mode switch, undo / redo, Add and View menus
- *  - right: performance overlay toggle, command palette, Share, Export, inspector toggle
+ *  - right: performance overlay toggle, command palette, Share, Publish, inspector toggle
  * On phones it collapses to logomark menu + name + Play + overflow menu.
  */
 import { memo, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
@@ -127,6 +127,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
         ] satisfies MenuEntry[])
       : []),
     { id: 'import', label: 'Import world or package…', icon: 'upload', disabled: playing, onSelect: () => fileRef.current?.click() },
+    { id: 'publish', label: 'Publish…', icon: 'rocket', onSelect: () => studio.publish.open() },
+    { id: 'versions', label: 'Versions and publish history…', icon: 'history', onSelect: () => studio.publish.open('history') },
     { id: 'export', label: 'Export .aether.json', icon: 'download', onSelect: () => studio.exportToFile() },
     { id: 'export-package', label: 'Export package (.zip with assets)', icon: 'package', onSelect: () => void studio.assets.exportPackage() },
     { id: 'export-gltf', label: 'Export 3D model (.glb)', icon: 'cube', disabled: playing, onSelect: () => void studio.exportGltf() },
@@ -164,7 +166,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { id: 'undo', label: 'Undo', icon: 'undo', disabled: !canUndo || playing, onSelect: () => studio.undo() },
     { id: 'redo', label: 'Redo', icon: 'redo', disabled: !canRedo || playing, onSelect: () => studio.redo() },
     { kind: 'separator', id: 'p0' },
-    { id: 'share', label: 'Share link', icon: 'share', disabled: playing, onSelect: () => void studio.share() },
+    { id: 'share', label: 'Share link', icon: 'share', disabled: playing, onSelect: () => studio.publish.open('share') },
+    { id: 'publish-phone', label: 'Publish…', icon: 'rocket', disabled: playing, onSelect: () => studio.publish.open() },
     ...viewMenu.filter((m) => m.kind !== 'heading' && m.id !== 'focus'),
     { kind: 'separator', id: 'p1' },
     ...appMenu,
@@ -296,26 +299,14 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
             <button type="button" className="icon-btn" onClick={() => st().setPaletteOpen(true)} aria-label="Command palette" data-tip="Command palette" data-kbd={shortcut('Mod+K')}>
               <Icon name="command" />
             </button>
-            <button type="button" className="btn btn--sm hide-tablet" onClick={() => void studio.share()} disabled={playing} data-tip="Copy a link that opens this world read-only">
+            <button type="button" className="btn btn--sm hide-tablet" onClick={() => studio.publish.open('share')} disabled={playing} data-tip="Copy a link that plays this world — no upload">
               <Icon name="share" />
               <span className="btn__label">Share</span>
             </button>
-            <Menu
-              label="Export"
-              align="end"
-              width={248}
-              items={[
-                { id: 'json', label: 'World (.aether.json)', icon: 'download', onSelect: () => studio.exportToFile() },
-                { id: 'glb', label: '3D model (.glb)', icon: 'cube', disabled: playing, onSelect: () => void studio.exportGltf() },
-                { id: 'zip', label: 'Package with assets (.zip)', icon: 'package', onSelect: () => void studio.assets.exportPackage() },
-              ]}
-              trigger={(t) => (
-                <button {...t} type="button" className="btn btn--sm" aria-label="Export" data-tip="Export the world">
-                  <Icon name="download" />
-                  <span className="btn__label">Export</span>
-                </button>
-              )}
-            />
+            <button type="button" className="btn btn--sm btn--primary" onClick={() => studio.publish.open()} disabled={playing} data-tip="Game, video, render, 3D model, floor plan or link" data-testid="topbar-publish">
+              <Icon name="rocket" />
+              <span className="btn__label">Publish</span>
+            </button>
             <button
               type="button"
               className="icon-btn"

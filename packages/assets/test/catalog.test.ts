@@ -153,3 +153,10 @@ describe('asset catalog', () => {
     expect(c.entries.length).toBe(catalog.entries.length);
   });
 });
+
+describe('catalog base path', () => {
+  it('accepts sub-path hosting of published games but never dot segments or other origins', () => {
+    for (const base of ['/assets/lib/', '/html/12345/assets/lib/', '/my-game_v2/assets/lib/', '/']) expect(Catalog.safeParse({ ...catalog, base }).success, base).toBe(true);
+    for (const base of ['assets/lib/', '/a/../lib/', '/./lib/', '//other.example/lib/', 'https://other.example/lib/', '/a b/', '/assets/lib']) expect(Catalog.safeParse({ ...catalog, base }).success, base).toBe(false);
+  });
+});

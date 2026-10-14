@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -80,13 +80,20 @@ describe('generator sandbox worker policy', () => {
     const file = fileURLToPath(new URL('../../../vercel.json', import.meta.url));
     const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
     const rules = config.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
-    expect(rules.map((r) => r.source)).toEqual(['/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-).*)', '/assets/sandbox.worker-(.*)', '/assets/verify.worker-(.*)', '/assets/dag.worker-(.*)']);
-    expect(rules[1]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(SANDBOX_WORKER_CSP);
-    expect(rules[2]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(VERIFY_WORKER_CSP);
+    expect(rules.map((r) => r.source)).toEqual([
+      '/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-|play$|play\\.html$).*)',
+      '/play(\\.html)?',
+      '/assets/sandbox.worker-(.*)',
+      '/assets/verify.worker-(.*)',
+      '/assets/dag.worker-(.*)',
+    ]);
+    expect(rules[1]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(PLAY_CSP);
+    expect(rules[2]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(SANDBOX_WORKER_CSP);
+    expect(rules[3]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(VERIFY_WORKER_CSP);
     // Both worker rules keep the other security headers of the page.
-    expect(rules[3]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(DAG_WORKER_CSP);
-    expect(rules[2]?.headers.map((x) => x.key).sort()).toEqual(rules[1]?.headers.map((x) => x.key).sort());
-    expect(rules[3]?.headers.map((x) => x.key).sort()).toEqual(rules[1]?.headers.map((x) => x.key).sort());
+    expect(rules[4]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(DAG_WORKER_CSP);
+    expect(rules[3]?.headers.map((x) => x.key).sort()).toEqual(rules[2]?.headers.map((x) => x.key).sort());
+    expect(rules[4]?.headers.map((x) => x.key).sort()).toEqual(rules[2]?.headers.map((x) => x.key).sort());
   });
 
   it('is sent by the Node server for the worker only', async () => {
@@ -131,6 +138,44 @@ describe('geometry worker policy', () => {
     const app = makeApp(makeConfig());
     const worker = await app.request('/assets/dag.worker-DKylClzY.js');
     expect(worker.headers.get('content-security-policy')).toBe(DAG_WORKER_CSP);
+    cleanupDirs();
+  });
+});
+
+describe('player page policy (/play, published builds)', () => {
+  it('is strict, talks to no third-party host and may be embedded', () => {
+    const p = parsePolicy(PLAY_CSP);
+    expect(p.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"].sort());
+    expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
+    expect(p.get('object-src')).toEqual(["'none'"]);
+    expect(p.get('frame-ancestors')).toEqual(['*']);
+    for (const [name, sources] of p) {
+      expect(sources, name).not.toContain("'unsafe-eval'");
+      if (name !== 'style-src') expect(sources, name).not.toContain("'unsafe-inline'");
+      if (name !== 'frame-ancestors') for (const s of sources) expect(s, `${name} ${s}`).not.toMatch(/^https?:|\*/);
+    }
+  });
+
+  it('is the same on the static deployment and the Node server, which also serves /play', async () => {
+    const file = fileURLToPath(new URL('../../../vercel.json', import.meta.url));
+    const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>; rewrites: Array<{ source: string; destination: string }> };
+    const rule = config.headers.find((h) => h.source === '/play(\\.html)?');
+    expect(rule?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(PLAY_CSP);
+    expect(rule?.headers.some((x) => x.key === 'X-Frame-Options')).toBe(false);
+    expect(config.rewrites[0]).toEqual({ source: '/play', destination: '/play.html' });
+    // The page rule does not also apply to /play (two CSP headers would combine).
+    const main = new RegExp(`^${config.headers[0]?.source}$`);
+    expect(main.test('/play')).toBe(false);
+    expect(main.test('/play.html')).toBe(false);
+    expect(main.test('/playground')).toBe(true);
+    const app = makeApp(makeConfig());
+    for (const path of ['/play', '/play.html']) {
+      const res = await app.request(path);
+      expect(res.headers.get('content-security-policy'), path).toBe(PLAY_CSP);
+      expect(res.headers.get('x-frame-options'), path).toBeNull();
+    }
+    const studio = await app.request('/api/health');
+    expect(studio.headers.get('x-frame-options')).toBe('DENY');
     cleanupDirs();
   });
 });

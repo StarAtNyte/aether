@@ -3,6 +3,7 @@
  *
  * - Hashed build assets (`/assets/*`) get a one-year immutable cache.
  * - Everything else is revalidated (`no-cache`) so new deploys show up at once.
+ * - `/play` serves the standalone player (`play.html`).
  * - Unknown non-API GET routes that accept HTML fall back to `index.html`
  *   (client-side routing), never for `/api/*`.
  */
@@ -38,6 +39,16 @@ export function registerStatic(app: Hono<AppEnv>, dir: string, logger: Logger): 
       },
     }),
   );
+
+  // The standalone player (published games and share links: `/play#w=…`).
+  const playPath = join(dir, 'play.html');
+  let playHtml: string | null = null;
+  app.get('/play', async (c, next) => {
+    if (!existsSync(playPath)) return next();
+    playHtml ??= await readFile(playPath, 'utf8');
+    c.header('Cache-Control', 'no-cache');
+    return c.html(playHtml, 200);
+  });
 
   let indexHtml: string | null = null;
   app.get('*', async (c, next) => {

@@ -208,6 +208,12 @@ export class AiConnection {
     this.store.setState((s) => ({ local: { ...s.local, ...patch } }));
   }
 
+  /** Address and pairing token of a ready, paired bridge (publishing through it), or null. */
+  bridgeEndpoint(): { url: string; token: string } | null {
+    const b = this.store.getState().bridge;
+    return this.token && b.paired && b.state !== 'offline' && b.state !== 'unpaired' ? { url: b.url, token: this.token } : null;
+  }
+
   /** Sign-in/sign-out API of the bridge (null when not paired). */
   bridgeAccounts(): ReturnType<typeof createBridgeAccountApi> | null {
     if (!this.token) return null;
