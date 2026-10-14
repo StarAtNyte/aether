@@ -1543,3 +1543,82 @@ wait for a quiet moment (2 s with no input and no animation, at most 15 s;
 tasks, and the full suite passed. The architecture gallery
 (`npm run gallery -- --arch`) was rendered and inspected in three rounds;
 README shows eight of the renders.
+
+## Asset pipeline: library, imports, forge, packages, photo finishes
+
+**Scope.** New `@aether/assets` package (catalog schema, search, credits,
+glTF / image / HDR validation, user-asset registry, optional image → mesh
+provider), the offline asset build (`scripts/assets/*`), 374 library
+entries (351 models, 5 HDR skies, 10 ambientCG photo surfaces, 8 forge
+originals), the `asset` shape across core / render / physics / logic /
+arch / agent, the studio Library, Imports, Credits and Forge UI, world
+packages (`.aether.zip`) and the off-by-default TRELLIS.2 server route.
+Self-review against both checklists follows; failed items were fixed
+before the gates ran.
+
+### Security checklist
+
+- [x] **Untrusted model input.** `validateGltf` never throws: exact GLB
+  header / chunk checks, `inspectUntrusted` JSON guard, zod structure, no
+  external URIs (data URIs only), supported extensions only, budgets
+  (32 MB, 500 k triangles, 4096 nodes, 64 textures, 64 clips), names
+  sanitised, `extras` dropped. Images and HDR are sniffed by magic bytes
+  with byte and pixel caps. Covered by `packages/assets/test/import.test.ts`.
+- [x] **Packages.** Zip reader enforces entry count and inflated-size caps
+  while inflating, checks CRCs, rejects unsafe names, and re-derives
+  content ids (mismatch = rejected). Tested in `apps/studio/test/assets.test.ts`.
+- [x] **IndexedDB revive.** Stored metadata is re-parsed with zod and
+  blobs are re-validated before registration; caps of 200 files / 400 MB;
+  session-only fallback when storage is blocked.
+- [x] **Fetch script.** Host allowlist (kenney.nl, polyhaven, ambientCG
+  download host), licence allowlist (CC0-1.0 / CC-BY-4.0), SHA-256 /
+  MD5 verification, `unzip` called with argument arrays (no shell), archive
+  listings checked for absolute and `..` paths; downloads cached outside
+  the repository. Kenney archives must state CC0 in `License.txt`.
+- [x] **Image → mesh route.** Off unless `AETHER_IMAGE_TO_3D_URL` is set;
+  endpoint must be loopback http or credential-free https; redirects
+  refused; token never logged or returned (scrubbed from errors); one
+  conversion at a time, 12 MB image cap; returned GLB passes `validateGltf`.
+- [x] **Forge.** Model-written generator code runs only in the existing
+  procgen sandbox; critique output parsed with zod and capped; renders use
+  a private WebGL2 renderer.
+- [x] **DOM.** No `innerHTML` with catalog, import or model data; names
+  are rendered as React text. CSP unchanged (blob:/data: already allowed for
+  imports); no new runtime origins.
+- [x] **Secrets / licences.** No credentials written; only CC0 / MIT
+  assets ship; every file has provenance in `assets/manifest.json`;
+  Quaternius excluded (redistribution forbidden). `npm audit --omit=dev`:
+  0 vulnerabilities; the three new packages are dev-only, exact versions.
+- [x] **Fixed during review:** health tests did not expect the new
+  `imageTo3d` flag; a scene-sync warning test still expected the old text
+  after `material` entries were rejected as shapes.
+
+### Performance checklist
+
+- [x] **Per-frame allocations.** `AssetAnimator.update` iterates an array
+  by index with module scratch vectors; allocation probe covers it (an
+  earlier `for…of` over a Map allocated, fixed).
+- [x] **GPU resources.** 20 place / undo cycles leave geometries, textures
+  and materials flat in Chromium WebGPU, Chromium WebGL2 and Firefox
+  (`e2e:assets`); models are refcounted per URL, textures through an LRU
+  `TextureCache`; LOD levels reuse LOD 0 materials.
+- [x] **Loading.** Catalog JSON (224 KB / 38 KB gzip) is its own lazy
+  chunk, preloaded 1.5 s after the renderer starts; the animator, HDR
+  loader, meshopt decoder, zip and library panels are lazy. Models are
+  meshopt-compressed with content-hashed names (immutable caching).
+- [x] **Bundle.** Index closure +1.2 KB (+0.5 KB gzip); EditorRoute static
+  closure +118 KB (+40 KB gzip, library / imports UI); three chunk +33 KB
+  (GLTF / HDR loaders, SkeletonUtils). All under the lazy-loading threshold
+  for ordinary worlds.
+- [x] **Photo finishes.** 512 px maps, fetched only when a world uses that
+  finish; procedural maps stay until they arrive and remain the fallback.
+- [x] **Architecture views.** The arch e2e GPU check now waits for settled
+  counts (photographed furniture loads asynchronously); counts are flat.
+- Known: the "building views allocate nothing" probe is load-sensitive and
+  pre-existing; it passes on re-run.
+
+**Gates.** tsc 0 errors. Vitest 164 files, 2126 tests: one failure (the
+outdated warning text above), fixed and its file re-run green. Studio build
+OK. Smoke 25/25 (two new library prompts: city street, town plaza).
+`npm run e2e` passes in Chromium WebGPU, Chromium WebGL2 and Firefox
+WebGL2; `npm run e2e:assets` and `npm run e2e:arch` pass.

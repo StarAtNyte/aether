@@ -193,6 +193,8 @@ describe('render loop allocation probe', () => {
     const w = applyPatches(createWorld(), b.patches).world;
     const { sync } = makeSync();
     await sync.setWorld(w);
+    // Furniture are library assets: wait for the catalog and their (fallback) builds to settle.
+    await sync.whenIdle();
     for (let i = 0; i < 10; i++) await Promise.resolve();
     const view = new ArchView(sync);
     view.set({ walls: 'down', xray: false });
@@ -206,6 +208,7 @@ describe('render loop allocation probe', () => {
     const pending: Array<Promise<void>> = [];
     sync.forEachNode((n) => pending.push(n.ready));
     await Promise.all(pending);
+    await sync.whenIdle();
     sync.root.updateMatrixWorld(true);
     for (let i = 0; i < 3; i++) {
       view.update(cam, 0.016);
