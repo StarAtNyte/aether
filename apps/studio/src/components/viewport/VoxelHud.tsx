@@ -317,7 +317,7 @@ export const VoxelHud = memo(function VoxelHud(): ReactElement | null {
           </div>
         </div>
       )}
-      {!hud.locked && !hud.inventoryOpen && !hud.dead && hud.loading === null && (
+      {hud.capture && !hud.inventoryOpen && !hud.dead && hud.loading === null && (
         <button type="button" className="vx-capture" onClick={() => play?.lockPointer()}>
           <b>Click to play</b>
           <span>

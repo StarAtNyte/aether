@@ -806,6 +806,8 @@ export class WorldRenderer {
     this.voxelLoading ??= import('./voxel/voxel-layer').then(({ VoxelLayer: Layer }) => {
       if (this.disposed) throw new Error('renderer disposed');
       const layer = new Layer();
+      // Terrain shaders compile asynchronously (no multi-hundred-ms first frame).
+      layer.setCompiler((object) => (this.disposed ? Promise.resolve() : this.renderer.compileAsync(object, this.perspective, this.scene)));
       this.scene.add(layer.group);
       this.voxelLayer = layer;
       this.needsDraw = true;
@@ -816,6 +818,11 @@ export class WorldRenderer {
       if (this.voxelLoading === loading) this.voxelLoading = null;
     });
     return loading;
+  }
+
+  /** Largest block-terrain view distance this device's budget allows (chunks; lower in low-memory mode). */
+  get voxelViewDistanceCap(): number {
+    return this.budget.voxelViewDistance;
   }
 
   /** The voxel layer if it exists (no loading). */

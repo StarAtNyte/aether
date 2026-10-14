@@ -50,7 +50,14 @@ describe('renderBudget', () => {
       expect(b.maxPixels).toBeLessThanOrEqual(1.1e6);
       expect(b.generatorCacheBytes).toBeLessThan(renderBudget(tier, false).generatorCacheBytes);
       expect(b.maxInstances).toBeLessThan(renderBudget(tier, false).maxInstances);
+      expect(b.voxelViewDistance).toBeLessThanOrEqual(renderBudget(tier, false).voxelViewDistance);
     }
+  });
+
+  it('caps block-terrain view distance by class (software still streams 8 chunks)', () => {
+    expect(renderBudget('software', false).voxelViewDistance).toBe(8);
+    expect(renderBudget('discrete', false).voxelViewDistance).toBe(16);
+    expect(renderBudget('integrated', true).voxelViewDistance).toBe(6);
   });
 });
 

@@ -268,7 +268,7 @@ function newWorld(raw: string, t: string, wipe: boolean): VoxelPlan {
     { op: 'setMeta', name, description: raw.slice(0, 200), seed },
     { op: 'setEnvironment', set: skyOf(t, game) },
     { op: 'setPlayer', set: { mode: 'firstPerson', spawn: [0, 0, 0], moveSpeed: 4.3, jumpSpeed: 8.4 } },
-    { op: 'setVoxel', set: { preset, seed, viewDistance: 6, game } },
+    { op: 'setVoxel', set: { preset, seed, viewDistance: 8, game } },
   );
   for (let k = 0; k < b.edits.length; k += 200) patches.push({ op: 'voxelEdit', edits: b.edits.slice(k, k + 200) });
   const mode = game['mode'] as string;

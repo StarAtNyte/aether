@@ -5,6 +5,8 @@
  * cubes by the HUD).
  */
 
+import { encodePng } from './png';
+
 /** Icon edge in pixels. */
 export const ICON = 16;
 
@@ -167,34 +169,18 @@ export function paintItemIcons(items: ReadonlyArray<{ id: string; color: string 
 
 /**
  * RGBA pixels → PNG object URL (browser only; resolves to an empty string
- * when no canvas is available). Encoding is asynchronous (`toBlob`) and the
- * canvas is CPU-backed (`willReadFrequently`), so it never blocks the main
- * thread on a GPU read-back; a synchronous `toDataURL` of the 256² atlas
- * took seconds on software rasterisers. The caller owns the URL and must
- * `URL.revokeObjectURL` it when replaced.
+ * when encoding is unavailable or fails). Encoding is asynchronous and
+ * canvas-free ({@link encodePng}), so it never blocks the main thread; a
+ * synchronous canvas `toDataURL` of the 256² atlas took seconds on software
+ * rasterisers. The caller owns the URL and must `URL.revokeObjectURL` it
+ * when replaced.
  */
-export function pixelsToObjectUrl(pixels: Uint8ClampedArray | Uint8Array, width: number, height: number): Promise<string> {
-  if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') return Promise.resolve('');
-  return new Promise((resolve) => {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) {
-        resolve('');
-        return;
-      }
-      const copy = new Uint8ClampedArray(width * height * 4);
-      copy.set(pixels.subarray(0, width * height * 4));
-      ctx.putImageData(new ImageData(copy, width, height), 0, 0);
-      canvas.toBlob((blob) => {
-        canvas.width = 0;
-        canvas.height = 0;
-        resolve(blob ? URL.createObjectURL(blob) : '');
-      }, 'image/png');
-    } catch {
-      resolve('');
-    }
-  });
+export async function pixelsToObjectUrl(pixels: Uint8ClampedArray | Uint8Array, width: number, height: number): Promise<string> {
+  if (typeof URL.createObjectURL !== 'function' || typeof CompressionStream === 'undefined') return '';
+  try {
+    const png = await encodePng(pixels, width, height);
+    return URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }));
+  } catch {
+    return '';
+  }
 }

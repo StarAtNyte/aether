@@ -157,6 +157,9 @@ export class VoxelLayer {
   private readonly mobKit = new MobKit();
   private triangles = 0;
   private faceTiles: Uint16Array | null = null;
+  private compiler: ((object: Group) => Promise<unknown>) | null = null;
+  /** Materials whose shaders are compiling: chunk meshes stay hidden until they are ready. */
+  private warming: TerrainMaterials | null = null;
   /** Bumped whenever something visible changed (the renderer redraws on demand). */
   version = 0;
 
@@ -187,6 +190,56 @@ export class VoxelLayer {
   }
 
   /**
+   * Install the renderer's asynchronous shader compiler (three's
+   * `compileAsync`). New terrain materials are then compiled off the frame
+   * (parallel pipeline creation on WebGPU, `KHR_parallel_shader_compile` on
+   * WebGL2) on three one-quad stand-in meshes while the chunk meshes stay
+   * hidden, instead of compiling synchronously inside the first frame that
+   * draws a chunk (hundreds of milliseconds on software rasterisers).
+   */
+  setCompiler(compile: ((object: Group) => Promise<unknown>) | null): void {
+    this.compiler = compile;
+  }
+
+  /** Terrain shaders are still compiling (chunks hidden). */
+  get compiling(): boolean {
+    return this.warming !== null;
+  }
+
+  private warmUp(mats: TerrainMaterials): void {
+    const compile = this.compiler;
+    if (!compile) return;
+    const quad: VoxelMeshPass = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1]),
+      uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+      data: new Uint8Array(16).fill(255),
+      indices: new Uint16Array([0, 2, 1, 0, 3, 2]),
+      quads: 1,
+    };
+    const warm = new Group();
+    warm.name = 'aether:voxel-warmup';
+    const geo = passGeometry(quad, 0, 1);
+    for (const m of [mats.opaque, mats.cutout, mats.liquid]) warm.add(new Mesh(geo, m));
+    this.warming = mats;
+    this.chunkGroup.visible = false;
+    const done = (): void => {
+      geo.dispose();
+      if (this.warming !== mats) return;
+      this.warming = null;
+      this.chunkGroup.visible = true;
+      this.version++;
+    };
+    let pending: Promise<unknown>;
+    try {
+      pending = compile(warm);
+    } catch {
+      pending = Promise.resolve();
+    }
+    // A failed pre-compile is harmless: the first frame then compiles synchronously.
+    pending.then(done, done);
+  }
+
+  /**
    * Set (or replace) the block atlas: RGBA pixels, row 0 at the top, and
    * the per-block face tiles (`[top, bottom, side]` per numeric block id)
    * used to texture dropped blocks.
@@ -212,6 +265,7 @@ export class VoxelLayer {
       const oldMats = this.mats;
       this.atlas = tex;
       this.mats = createTerrainMaterials(tex);
+      this.warmUp(this.mats);
       for (const e of this.chunks.values()) this.rebind(e);
       oldMats?.dispose();
       old?.dispose();
@@ -495,6 +549,8 @@ export class VoxelLayer {
     this.crack.geometry.dispose();
     (this.crack.material as Material).dispose();
     this.crackTexture.dispose();
+    this.warming = null;
+    this.compiler = null;
     this.mats?.dispose();
     this.mats = null;
     this.atlas?.dispose();

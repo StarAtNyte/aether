@@ -34,5 +34,11 @@ try {
   const counts = new Map<number, number>();
   profile.samples.forEach((id: number, i: number) => counts.set(id, (counts.get(id) ?? 0) + (dt[i] ?? 0)));
   for (const [id, us] of counts) { const n: any = byId.get(id); const f = n.callFrame; const k = `${f.functionName || '(anon)'} ${f.url.split('/').pop()}:${f.lineNumber}`; self.set(k, (self.get(k) ?? 0) + us); }
+  // Attribute samples in each long task window (profile start ≈ mark).
+  let t = 0; const win = new Map<number, Map<string, number>>();
+  profile.samples.forEach((id: number, i: number) => { t += dt[i] ?? 0; const ms = t / 1000; const w = lt.findIndex((e: number[]) => ms >= e[0] - mark - 20 && ms <= e[0] - mark + e[1] + 20); if (w < 0) return; const n: any = byId.get(id); let stack = ''; let cur: any = n; let d = 0; const par = new Map<number, any>(); for (const nn of profile.nodes as any[]) for (const c of nn.children ?? []) par.set(c, nn);
+    while (cur && d < 60) { const f = cur.callFrame; const file = f.url.split('/').pop(); if (d === 0 || (f.functionName && !/^(react|three|vendor)/.test(file))) { if (stack.split('<').length < 6) stack += `${f.functionName || '?'}@${file}:${f.lineNumber}` + '<'; } cur = par.get(cur.id); d++; }
+    const m = win.get(w) ?? new Map(); m.set(stack, (m.get(stack) ?? 0) + (dt[i] ?? 0)); win.set(w, m); });
+  for (const [w, m] of win) { log(`-- window ${w} ${JSON.stringify(lt[w])}`); [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([k, us]) => log(`   ${(us / 1000).toFixed(0)} ms ${k}`)); }
   [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).forEach(([k, us]) => log(`${(us / 1000).toFixed(0).padStart(7)} ms  ${k}`));
 } finally { await browser.close(); await server.stop(); }

@@ -29,6 +29,13 @@ export interface VoxelCommands {
   scroll: number;
 }
 
+/** Blur a focused text field (prompt box, search) so game keys are not typed into it. */
+function releaseTextFocus(): void {
+  if (typeof document === 'undefined') return;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && isTypingTarget(active)) active.blur();
+}
+
 /** See the module docs. */
 export class VoxelInput {
   private readonly held = new Set<string>();
@@ -47,6 +54,8 @@ export class VoxelInput {
   private flyTap = false;
   /** Pointer lock was refused (headless, iframe, permissions): clicks act directly and drags look. */
   private lockFailed = false;
+  /** The player clicked "Click to play" at least once this session. */
+  private engaged = false;
   private virtualForward = 0;
   private virtualRight = 0;
   /** True while the UI (inventory screen) owns the mouse. */
@@ -56,6 +65,19 @@ export class VoxelInput {
   /** Pointer is locked to the canvas. */
   get locked(): boolean {
     return this.el !== null && typeof document !== 'undefined' && document.pointerLockElement === this.el;
+  }
+
+  /**
+   * The "click to play" overlay should show: the mouse is not captured and
+   * capturing is still possible. Once the player has engaged and the browser
+   * refused pointer lock (iframes without the permission, some mobile
+   * browsers), the overlay stays away and drag-to-look / direct clicks work
+   * on the canvas instead of an overlay that could never be dismissed.
+   */
+  get needsCapture(): boolean {
+    if (this.locked) return false;
+    if (!this.engaged) return true;
+    return !this.lockFailed && typeof this.el?.requestPointerLock === 'function';
   }
 
   /** Look direction (radians). */
@@ -72,6 +94,7 @@ export class VoxelInput {
   attach(el: HTMLElement): void {
     this.detach();
     this.el = el;
+    releaseTextFocus();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
@@ -103,12 +126,20 @@ export class VoxelInput {
   /** Request mouse capture (must run inside a user gesture). */
   lock(): void {
     const el = this.el;
+    this.engaged = true;
+    // Keys must reach the game, not a chat box that still holds the focus.
+    releaseTextFocus();
     if (!el || this.locked || typeof el.requestPointerLock !== 'function') return;
     try {
       const p = el.requestPointerLock() as unknown;
-      if (p instanceof Promise) p.catch(() => undefined);
+      if (p instanceof Promise) {
+        p.catch(() => {
+          this.lockFailed = true;
+        });
+      }
     } catch {
       /* pointer lock unsupported: drag to look */
+      this.lockFailed = true;
     }
   }
 

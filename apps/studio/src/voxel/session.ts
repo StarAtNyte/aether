@@ -97,6 +97,8 @@ export class VoxelSession {
   private doc: WorldDoc | null = null;
   private disposed = false;
   private epoch = 0;
+  /** View distance currently applied to streaming and fog (0: none yet). */
+  private appliedDistance = 0;
   private readonly center: [number, number, number] = [0, 0, 0];
   /** Chunk slot versions already written to the save. */
   private readonly savedVersions = new Map<number, number>();
@@ -117,8 +119,10 @@ export class VoxelSession {
   }
 
   /** Streaming status (tests, e2e, stats overlay). */
-  status(): { chunks: number; meshed: number; pending: number; settled: boolean; inline: boolean; changed: number } {
+  status(): { chunks: number; meshed: number; pending: number; settled: boolean; inline: boolean; changed: number; view: number; compiling: boolean } {
     return {
+      view: this.appliedDistance,
+      compiling: this.layer?.compiling ?? false,
       chunks: this.world?.chunks.size ?? 0,
       meshed: this.streamer?.meshedCount ?? 0,
       pending: this.pool?.pending ?? 0,
@@ -129,28 +133,36 @@ export class VoxelSession {
   }
 
   /**
-   * Diagnostics: change one block and resolve with the milliseconds until
-   * its chunk's new mesh is on screen (−1 when the chunk is not loaded or it
-   * took over 5 s). Used by the end-to-end performance checks.
+   * Diagnostics: change one block the way a game edit does (the streamer
+   * is told at once, as in the play loop) and resolve with
+   * `mesh` — milliseconds until the chunk's new mesh is installed in the
+   * render layer — and `frame` — until the first animation frame after
+   * that, i.e. when it is on screen. Both are −1 when the chunk is not
+   * loaded or nothing arrived within 5 s. Used by the end-to-end checks.
    */
-  async measureEdit(x: number, y: number, z: number, block: string): Promise<number> {
+  async measureEdit(x: number, y: number, z: number, block: string): Promise<{ mesh: number; frame: number }> {
     const world = this.world;
     const streamer = this.streamer;
     const id = this.reg?.id(block);
-    if (!world || !streamer || id === undefined) return -1;
+    const none = { mesh: -1, frame: -1 };
+    if (!world || !streamer || id === undefined) return none;
     const slot = world.slot(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
-    if (!slot) return -1;
+    if (!slot) return none;
     const t0 = performance.now();
-    if (world.set(x, y, z, id) < 0) return -1;
+    if (world.set(x, y, z, id) < 0) return none;
     const want = slot.version;
-    return new Promise((resolve) => {
+    streamer.update();
+    const mesh = await new Promise<number>((resolve) => {
       const check = (): void => {
         if (streamer.shownVersion(slot.key) >= want) resolve(performance.now() - t0);
         else if (performance.now() - t0 > 5000) resolve(-1);
-        else requestAnimationFrame(check);
+        else setTimeout(check, 1);
       };
       check();
     });
+    if (mesh < 0) return none;
+    const frame = await new Promise<number>((resolve) => requestAnimationFrame(() => resolve(performance.now() - t0)));
+    return { mesh, frame };
   }
 
   /** Solid-block source for Rapier terrain colliders (dynamic entities in block worlds). */
@@ -188,8 +200,7 @@ export class VoxelSession {
     const prev = this.identity;
     this.terrain = t;
     if (prev && identityKey(prev) === identityKey(identity)) {
-      this.streamer?.setViewDistance(t.viewDistance);
-      this.renderer.setFogDistance(t.viewDistance * CHUNK);
+      this.applyViewDistance();
       return;
     }
     const epoch = ++this.epoch;
@@ -224,11 +235,26 @@ export class VoxelSession {
     } else {
       this.resetStreaming(identity, t);
     }
-    this.streamer?.setViewDistance(t.viewDistance);
-    this.renderer.setFogDistance(t.viewDistance * CHUNK);
+    this.applyViewDistance();
     this.applyEditLighting(doc.environment);
     const saveKey = `${this.host.saveBase}::${saveIdentity(identity)}`;
     if (saveKey !== this.saveKey) await this.loadSaveIndex(saveKey, epoch);
+  }
+
+  /** The world's view distance, capped by the device's render budget (low-memory mode lowers it). */
+  private viewDistance(t: VoxelTerrain): number {
+    return Math.max(2, Math.min(t.viewDistance, this.renderer.voxelViewDistanceCap));
+  }
+
+  /** Apply the (capped) view distance to streaming and fog; cheap when unchanged. */
+  private applyViewDistance(): void {
+    const t = this.terrain;
+    if (!t || !this.streamer) return;
+    const vd = this.viewDistance(t);
+    if (vd === this.appliedDistance) return;
+    this.appliedDistance = vd;
+    this.streamer.setViewDistance(vd);
+    this.renderer.setFogDistance(vd * CHUNK);
   }
 
   private resetStreaming(identity: TerrainIdentity, t: VoxelTerrain): void {
@@ -245,7 +271,7 @@ export class VoxelSession {
         onMesh: (key, cx, cz, mesh) => this.layer?.setChunk(key, cx, cz, mesh),
         onUnload: (key) => this.layer?.removeChunk(key),
         onEvict: (slot) => void this.saveSlots([slot]),
-      }, { viewDistance: t.viewDistance, border: identity.border, saved: (cx, cz) => this.savedChunk(cx, cz) });
+      }, { viewDistance: this.viewDistance(t), border: identity.border, saved: (cx, cz) => this.savedChunk(cx, cz) });
     } else {
       this.streamer?.reset(identity.border);
     }
@@ -442,6 +468,7 @@ export class VoxelSession {
   /** Per animation frame: stream around the camera (edit) or the player (play). */
   frame(dt: number): void {
     if (!this.terrain || !this.streamer) return;
+    this.applyViewDistance();
     if (this.play) this.play.frame(dt);
     else {
       this.renderer.orbitTarget(this.center);
@@ -494,6 +521,7 @@ export class VoxelSession {
     this.identity = null;
     this.terrain = null;
     this.layer = null;
+    this.appliedDistance = 0;
     this.saveKey = '';
     this.releaseItemsUrl();
     this.setAtlasUrl('');
@@ -798,7 +826,7 @@ export class VoxelPlay {
       nearTable,
       hour: Math.round(g.clock.hour * 4) / 4,
       day: g.clock.day,
-      locked: this.input.locked,
+      capture: this.input.needsCapture,
       view: this.view,
       flying: p.flying,
       target: t.valid ? reg.type(t.hit.block).label : '',
