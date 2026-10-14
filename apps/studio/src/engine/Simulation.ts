@@ -825,7 +825,8 @@ export class Simulation {
     this.stopRequested = false;
     try {
       this.renderer.highlight([]);
-      this.input.setYaw(cameraYawDeg(this.renderer));
+      // Walkthroughs start facing the entrance; other games face where the editor camera looked.
+      this.input.setYaw(entranceYawDeg(world) ?? cameraYawDeg(this.renderer));
       // The voxel game has its own input (mouse look, hotbar, break/place).
       if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
       if (session.voxel) this.renderer.setCameraMode('manual');
@@ -1299,6 +1300,24 @@ function cameraYawDeg(renderer: WorldRenderer): number {
   scratchDir.z = -(e[10] as number);
   if (Math.abs(scratchDir.x) + Math.abs(scratchDir.z) < 1e-6) return 0;
   return (Math.atan2(-scratchDir.x, -scratchDir.z) * 180) / Math.PI;
+}
+
+/**
+ * Yaw in degrees (0 faces −Z) from the player spawn toward the building's
+ * entrance (an entity tagged "entrance"), or null when there is none.
+ */
+export function entranceYawDeg(world: WorldDoc): number | null {
+  for (const id in world.entities) {
+    const e = world.entities[id];
+    if (!e || !e.tags.includes('entrance')) continue;
+    const t = worldTransform(world, id);
+    if (!t) continue;
+    const dx = t.position[0] - world.player.spawn[0];
+    const dz = t.position[2] - world.player.spawn[2];
+    if (Math.hypot(dx, dz) < 0.2) return null;
+    return (Math.atan2(-dx, -dz) * 180) / Math.PI;
+  }
+  return null;
 }
 
 /** True when the user asked the OS/browser for reduced motion (no grow-in animation then). */

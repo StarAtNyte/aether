@@ -319,7 +319,7 @@ export class Studio {
             const s = this.store.getState();
             s.setMode(mode);
             if (mode === 'edit') s.resetGame();
-            s.setCameraView(mode === 'play' ? 'follow' : 'orbit');
+            s.setCameraView(mode === 'play' ? (this.history.current.player.mode === 'firstPerson' ? 'firstPerson' : 'follow') : 'orbit');
           },
           onError: (message) => this.store.getState().toast(message, 'error', 6),
           onFatal: (message) => this.store.getState().setFatal(message),

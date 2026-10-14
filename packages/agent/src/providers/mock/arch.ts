@@ -235,8 +235,29 @@ function villa(style: Style, pool: boolean, roof: string): Plan {
   };
 }
 
+/**
+ * Give a plan without site works a paved forecourt around its ground floor
+ * (`margin` metres) with planters at the corners: buildings then stand on a
+ * real site instead of bare lawn.
+ */
+function withForecourt(plan: Plan, margin = 1.8): Plan {
+  if (plan.site) return plan;
+  const rooms = plan.levels[0]?.rooms ?? [];
+  if (rooms.length === 0) return plan;
+  const x0 = Math.min(...rooms.map((r) => r.rect[0])) - margin;
+  const z0 = Math.min(...rooms.map((r) => r.rect[1])) - margin;
+  const x1 = Math.max(...rooms.map((r) => r.rect[2])) + margin;
+  const z1 = Math.max(...rooms.map((r) => r.rect[3])) + margin;
+  return { ...plan, site: { terrace: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], terraceFinish: { finish: 'stone', color: '#d8d3c9' }, planting: true } };
+}
+
 /** Recognise a building request and choose its plan. */
 function choosePlan(text: string): { plan: Plan; blurb: string } | null {
+  const chosen = choosePlanBare(text);
+  return chosen ? { ...chosen, plan: withForecourt(chosen.plan) } : null;
+}
+
+function choosePlanBare(text: string): { plan: Plan; blurb: string } | null {
   const style = (fallback: Style): Style => styleOf(text, fallback);
   if (/\boffice|meeting rooms?|co-?working|workspace\b/.test(text) && !/\bhome office\b/.test(text)) return { plan: office(style('modern')), blurb: 'an office floor with an open office, two meeting rooms, reception, break room and washroom' };
   if (/\bcaf[eé]s?|coffee (shop|house)|restaurant|bistro\b/.test(text)) return { plan: cafe(style('industrial')), blurb: 'a café with a counter, tables, a back kitchen and a washroom' };
@@ -266,10 +287,11 @@ function environment(text: string): PatchInput[] {
   const night = /\bnight|evening|dusk\b/.test(text);
   const sunset = /\bsunset|golden hour\b/.test(text);
   const sky = night ? 'night' : sunset ? 'sunset' : 'day';
-  const time = night ? 21.5 : sunset ? 17.6 : 15.2;
+  // Late-afternoon sun: long, soft shadows and warm light through the windows.
+  const time = night ? 21.5 : sunset ? 17.6 : 16.2;
   return [
     { op: 'clear', keepEnvironment: false },
-    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : '#dfe7ef', density: 0.004 }, bloom: night ? 1 : 0.35, ground: { material: { preset: 'grass', color: '#7c9a5a' }, size: 160 } } },
+    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#e3e8ec', density: 0.003 }, bloom: night ? 1 : 0.35, ground: { material: { preset: 'grass', color: '#8b9f6c' }, size: 160 } } },
   ];
 }
 

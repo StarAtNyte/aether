@@ -197,7 +197,7 @@ export interface FrameContentOptions {
 }
 
 /** Framing of worlds with buildings: a higher, tighter three-quarter view (archviz axonometric feel). */
-const ARCH_FRAMING = Object.freeze({ elevationDeg: 38, margin: 0.86 });
+const ARCH_FRAMING = Object.freeze({ elevationDeg: 38, margin: 0.7, tiltDeg: 0 });
 
 /** Lowest orbit camera height above a ground plane (metres). */
 const MIN_ORBIT_HEIGHT = 0.4;

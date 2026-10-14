@@ -20,7 +20,7 @@ import { NEUTRAL_GRADE, type Grade } from './grade';
 export type PostQuality = 'standard' | 'studio';
 
 /** Ambient occlusion tuning of the studio pipeline (metres / unitless). */
-export const STUDIO_AO = Object.freeze({ radius: 0.6, thickness: 0.6, distanceExponent: 1.4, scale: 1.15, samples: 12, resolutionScale: 0.5 });
+export const STUDIO_AO = Object.freeze({ radius: 0.85, thickness: 0.8, distanceExponent: 1.2, scale: 1.7, samples: 12, resolutionScale: 0.5 });
 
 /** A running post pipeline. */
 export interface PostPipeline {
