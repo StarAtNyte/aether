@@ -311,6 +311,7 @@ export class JobManager {
     let outcome: { status: JobState; error?: string } = { status: 'failed', error: 'The build failed.' };
     try {
       ws = await (this.opts.createWorkspace ?? createAssetWorkspace)(rec.spec as AssetSpec);
+      if (signal.aborted) throw new BridgeError('backend_error', 'cancelled');
       const r = await this.opts.runWorker(
         {
           kind: 'agentic',
@@ -332,6 +333,8 @@ export class JobManager {
       if (!parsed.ok) throw new BridgeError('backend_error', parsed.error);
       const problem = await (this.opts.validate ?? ((d: GeneratorDefType, w: string) => validateInWorkspace(d, w)))(parsed.def, ws.dir);
       if (problem) throw new BridgeError('backend_error', `The generator failed validation: ${problem}`);
+      // A cancel that arrives while the result is being validated still wins.
+      if (signal.aborted) throw new BridgeError('backend_error', 'cancelled');
       rec.result = { def: parsed.def, turns: r.turns, checkerPassed: r.passed, ...(r.usage ? { usage: r.usage } : {}), ...(r.model ? { model: r.model } : {}) };
       outcome = { status: 'done' };
     } catch (e) {

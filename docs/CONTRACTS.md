@@ -790,10 +790,12 @@ type WorkerResult = { ok: true; kind: 'complete'; text; structured?; usage?; mod
                   | { ok: false; code: BridgeErrorCode; message };
 // stdin: the job (JSON); stdout: the result (JSON, ≤ 16 MB); stderr: `AETHER_PROGRESS {"phase","message"}` lines (validated) + noise
 function runWorker(job, { timeoutMs, signal?, onProgress?, env?, command? }): Promise<WorkerResult>;
-//   detached process group, allowlisted environment, SIGTERM then SIGKILL after 3 s on timeout/cancel, stopAllWorkers() on shutdown
+//   detached process group (Windows: taskkill /T /F), allowlisted environment, SIGTERM then SIGKILL after 3 s on timeout/cancel, stopAllWorkers() on shutdown
 class JobManager {   // durable build queue: one job at a time, ≤ 4 waiting; records + JSONL events (0600) under <data>/local-ai/ai-jobs
   enqueueAsset(req): Promise<LocalJob>;  get(id); eventsAfter(id, after); subscribe(id, fn); cancel(id); activeCount(); init(); dispose();
 }
+// cancel(id): a queued job ends 'cancelled' at once; a running one is aborted, and the abort wins at every
+// stage (workspace setup, worker run, validation): it never ends 'done' after a cancel.
 class LocalAi { status(); provider(backend, model?, effort?); jobs; accounts; login; sessions; clearProject(project); refresh(); dispose() }
 ```
 

@@ -1184,3 +1184,81 @@ Settings pairing, offline turn with no `/api`) and `npm run e2e:cli`
 (`aether start` on a temporary state folder and a free port, local
 first-run screen, device code via a fake Codex CLI, continue offline, world
 built, `aether stop`, process gone; Chromium + Firefox) both pass.
+
+## Local-first app, final pass: Windows process handling, cancel race, completed sign-in e2e
+
+**Scope.** I re-checked the stage against the brief: the `aether` command,
+local hardening, the local and hosted first-run screens, bring-your-own-key,
+and the bridge on the hosted build. Everything was already in place and was
+kept. This pass fixed three defects, each with a regression test, and filled
+one test gap:
+
+- **Windows: `.cmd` shims could not be spawned by the server.** npm installs
+  `codex` / `claude` on Windows as `.cmd` shims, and Node refuses to spawn
+  those with `shell: false`. Only the CLI's own `login` had the
+  `cmd.exe /d /s /c` plan. The server's sign-in manager, the CLI probes
+  (`login status`, `debug models`, `mcp list`) and the Codex SDK path did
+  not. The plan now lives in `@aether/bridge` (`spawn-plan.ts`: `commandPlan`,
+  `spawnCli`, `sdkExecutable`) and every one of those spawn sites uses it.
+  The Codex SDK is never handed a batch shim; it then uses its bundled
+  binary with the same `CODEX_HOME`. `which` on Windows also tried the
+  extensionless file first. That file is npm's POSIX sh shim, which Windows
+  cannot run, so `which` now tries only `PATHEXT` extensions for a bare name.
+- **Windows: cancel and stop orphaned the CLI.** `process.kill(-pid)` does
+  not exist on Windows. The fallback ended only the worker or server
+  process and left the Codex / Claude Code process it had started.
+  `killTree` (`kill-tree.ts`) now ends the whole tree with
+  `taskkill /PID <pid> /T /F` (argument array). The AI worker runner and
+  `aether stop` use it. On POSIX, behaviour is unchanged: the process group
+  is signalled, falling back to the pid.
+- **Cancel race in the durable build queue.** A cancel that arrived while
+  the workspace was being prepared, or while the result was being
+  validated, was ignored when the worker did not see the abort. The job then
+  ended `done` with a result. The full suite showed this as an intermittent
+  failure of "cancels queued and running jobs" under load. `runAsset` now
+  re-checks the abort after workspace setup and after validation. The new
+  test "a cancel during workspace setup or validation wins" fails without
+  the fix (`expected 'done' to be 'cancelled'`) and passes with it. The
+  test's `wait` helper now uses a 10 s deadline instead of 200 iterations;
+  no assertion was relaxed.
+- **e2e gap: a completed sign-in.** `npm run e2e:cli` previously only
+  cancelled the device sign-in. The fake Codex CLI can now finish it.
+  A third phase in Chromium checks that the screen switches by itself to
+  "Signed in · ChatGPT" with the CLI's own model list, that the chosen model
+  is remembered, and that a reload shows neither the screen nor the
+  "Sign in" chip. It then checks that `aether login` reports the existing
+  login, that `aether doctor --json` reports Codex OK, and that
+  `aether logout` works. No real CLI or quota is touched (PATH holds only
+  the fakes and node).
+
+**SECURITY.**
+- No new input boundaries reach the network or the page. `commandPlan`
+  refuses any argument with `"%^&|<>`, CR or LF for a batch shim instead of
+  escaping it (tested with 7 metacharacter cases). Every spawn keeps
+  argument arrays, `shell: false`, `windowsHide` and the allowlisted env.
+  `taskkill` gets a numeric pid only. `killTreePlan` rejects pids ≤ 0 and
+  non-integers, so `kill(-0)` / `kill(-(-1))` (every process of the user)
+  can never be sent.
+- `PATHEXT` entries are filtered to `^\.[a-z0-9]{1,8}$`.
+- No eval / `new Function` / `innerHTML`. CSP unchanged. No secrets added
+  anywhere. The fake CLIs in the e2e write only to the temporary folder.
+- `npm audit --omit=dev`: 0 vulnerabilities. No new dependencies.
+
+**PERFORMANCE.**
+- No studio, render or frame-loop code changed in this pass, so there are
+  no new per-frame allocations, the GPU resource lifecycle is unchanged, the
+  bundle delta is 0 KB, and first frame is unaffected. The `npm run e2e`
+  bundle report is identical in shape (total 14 485 KB, gzip 4 951 KB).
+- `killTree` spawns one short-lived `taskkill` on Windows only, and only on
+  cancel, timeout or stop. The abort checks in `runAsset` are two boolean
+  reads per job.
+- Firefox/WebGL2 was measured through the gates below. The hosted own-key
+  turn took 2.7 s in Firefox and 19.5 s in Chromium (SwiftShader).
+
+**Gates.** tsc 0 errors. Full Vitest: 137 files, 1 878 tests pass. Studio
+build OK. Smoke 17/17. `npm run e2e` passes in Chromium WebGPU, Chromium
+WebGL2 and Firefox WebGL2. `npm run e2e:cli` passes in Chromium and Firefox,
+with the new completed-sign-in phase in Chromium. `npm run e2e:hosted`
+(static build with no `/api`, mocked bridge) passes in Chromium and Firefox:
+own-key turn, hosted first-run key path, the Codex login via the bridge
+(pair, device code, model), Settings pairing, and an offline world.

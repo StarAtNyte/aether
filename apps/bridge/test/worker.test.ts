@@ -293,7 +293,9 @@ describe('durable build jobs', () => {
     return { dir: ws, task: 'task', artifact: 'out/generator.json' };
   };
   const wait = async (m: JobManager, id: string): Promise<void> => {
-    for (let i = 0; i < 200; i++) {
+    // Deadline-based (not iteration-based) so a loaded machine cannot fail it spuriously.
+    const until = Date.now() + 10_000;
+    while (Date.now() < until) {
       const s = m.get(id)?.status;
       if (s && s !== 'queued' && s !== 'running') return;
       await new Promise((r) => setTimeout(r, 10));
@@ -359,6 +361,44 @@ describe('durable build jobs', () => {
     await wait(m, a.id);
     expect(m.get(a.id)?.status).toBe('cancelled');
     expect(m.activeCount()).toBe(0);
+  });
+
+  it('a cancel during workspace setup or validation wins over a finished run', async () => {
+    let releaseWs: () => void = () => undefined;
+    const slowWorkspace = async (): Promise<{ dir: string; task: string; artifact: string }> => {
+      await new Promise<void>((r) => (releaseWs = r));
+      return createWorkspace();
+    };
+    let ran = 0;
+    // A runner that ignores the abort signal entirely.
+    const deaf: WorkerRunner = async (j) => {
+      ran++;
+      if (j.kind === 'agentic') await writeFile(join(j.workspace, j.artifact), JSON.stringify(LIGHTHOUSE));
+      return { ok: true, kind: 'agentic', turns: 1, passed: true } satisfies WorkerResult;
+    };
+    const m1 = new JobManager({ dir: join(dir, 'jobs1'), runWorker: deaf, createWorkspace: slowWorkspace, validate: async () => null });
+    const a = await m1.enqueueAsset({ kind: 'asset', backend: 'codex', spec: { id: 'tower', description: 'x' } });
+    await new Promise((r) => setTimeout(r, 20));
+    await m1.cancel(a.id);
+    releaseWs();
+    await wait(m1, a.id);
+    expect(m1.get(a.id)?.status).toBe('cancelled');
+    expect(ran).toBe(0);
+
+    let m2: JobManager | null = null;
+    m2 = new JobManager({
+      dir: join(dir, 'jobs2'),
+      runWorker: deaf,
+      createWorkspace,
+      validate: async () => {
+        await m2?.cancel(b.id);
+        return null;
+      },
+    });
+    const b = await m2.enqueueAsset({ kind: 'asset', backend: 'codex', spec: { id: 'lamp', description: 'x' } });
+    await wait(m2, b.id);
+    expect(m2.get(b.id)?.status).toBe('cancelled');
+    expect(m2.get(b.id)?.result).toBeUndefined();
   });
 
   it('marks jobs interrupted by a restart as failed and caps the queue', async () => {

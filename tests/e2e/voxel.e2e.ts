@@ -141,6 +141,8 @@ function player(page: Page): Promise<{ x: number; y: number; z: number; slots: A
 async function run(browser: Browser, url: string, label: string, forceWebGL2: boolean): Promise<Metrics> {
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
   await context.addInitScript({ content: SKIP_FIRST_RUN });
+  // tsx keeps function names with an `__name` helper that page.evaluate bodies reference.
+  await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await context.addInitScript({ content: LONG_TASK_PROBE });
   if (forceWebGL2) await context.addInitScript({ content: 'try { delete Navigator.prototype.gpu; } catch {}' });
   const page = await context.newPage();

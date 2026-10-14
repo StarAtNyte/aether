@@ -27,7 +27,7 @@ import { createInput, daylightAt, EYE_HEIGHT, skyForHour, skyTintAt, VoxelGame, 
 import { createLogger, errorMessage } from '../lib/log';
 import { hudEqual, type HudRecipe, type HudSlot, type ItemIcon, type VoxelHudState } from './hudState';
 import { VoxelInput } from './input';
-import { paintItemIcons, pixelsToDataUrl, ICON } from './itemIcons';
+import { paintItemIcons, pixelsToObjectUrl, ICON } from './itemIcons';
 import { parseChunkKey, voxelSaveStore, type VoxelSaveStore } from './saveStore';
 
 const log = createLogger('voxel');
@@ -80,6 +80,8 @@ export class VoxelSession {
   private atlas: BlockAtlas | null = null;
   private atlasUrl = '';
   private itemsUrl = '';
+  /** Generation of the item-icon image (an encode that finishes after a release is discarded). */
+  private itemsGen = 0;
   private itemIndex = new Map<string, number>();
   private gen: TerrainGenerator | null = null;
   private pool: VoxelJobPool | null = null;
@@ -200,7 +202,12 @@ export class VoxelSession {
       this.registryKey = regKey;
       this.atlas = buildAtlas(this.reg);
       layer.setAtlas(this.atlas.pixels, this.atlas.size, this.reg.faceTiles);
-      this.atlasUrl = pixelsToDataUrl(this.atlas.pixels, this.atlas.size, this.atlas.size);
+      this.setAtlasUrl('');
+      const atlas = this.atlas;
+      void pixelsToObjectUrl(atlas.pixels, atlas.size, atlas.size).then((url) => {
+        if (this.atlas === atlas && !this.disposed) this.setAtlasUrl(url);
+        else if (url) URL.revokeObjectURL(url);
+      });
       this.buildItemIcons();
       // A new registry renumbers blocks: everything regenerates.
       this.resetStreaming(identity, t);
@@ -251,7 +258,25 @@ export class VoxelSession {
     const game = new VoxelGame({ world: new VoxelWorld(reg), reg, settings: (this.terrain as VoxelTerrain).game, seed: 0, spawn: [0, 0, 0] });
     const items = game.items.list.filter((i) => i.block < 0);
     this.itemIndex = new Map(items.map((i, k) => [i.id, k] as const));
-    this.itemsUrl = pixelsToDataUrl(paintItemIcons(items), ICON * Math.max(1, items.length), ICON);
+    // Placeholder until the asynchronous encode lands (also blocks a second build meanwhile).
+    this.itemsUrl = 'pending';
+    const gen = ++this.itemsGen;
+    void pixelsToObjectUrl(paintItemIcons(items), ICON * Math.max(1, items.length), ICON).then((url) => {
+      if (this.itemsUrl === 'pending' && gen === this.itemsGen && !this.disposed) this.itemsUrl = url;
+      else if (url) URL.revokeObjectURL(url);
+    });
+  }
+
+  /** Replace the atlas image URL, releasing the previous object URL. */
+  private setAtlasUrl(url: string): void {
+    if (this.atlasUrl.startsWith('blob:')) URL.revokeObjectURL(this.atlasUrl);
+    this.atlasUrl = url;
+  }
+
+  private releaseItemsUrl(): void {
+    this.itemsGen++;
+    if (this.itemsUrl.startsWith('blob:')) URL.revokeObjectURL(this.itemsUrl);
+    this.itemsUrl = '';
   }
 
   /** Icon of an item. */
@@ -264,7 +289,7 @@ export class VoxelSession {
   }
 
   get hudAssets(): { atlasUrl: string; itemsUrl: string; itemCount: number } {
-    return { atlasUrl: this.atlasUrl, itemsUrl: this.itemsUrl, itemCount: this.itemIndex.size };
+    return { atlasUrl: this.atlasUrl, itemsUrl: this.itemsUrl === 'pending' ? '' : this.itemsUrl, itemCount: this.itemIndex.size };
   }
 
   private async loadSaveIndex(saveKey: string, epoch: number): Promise<void> {
@@ -470,7 +495,9 @@ export class VoxelSession {
     this.terrain = null;
     this.layer = null;
     this.saveKey = '';
-    this.itemsUrl = '';
+    this.releaseItemsUrl();
+    this.setAtlasUrl('');
+    this.atlas = null;
     this.renderer.releaseVoxel();
   }
 
