@@ -12,6 +12,7 @@ import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
 import { roomLabels, worldLabels } from '../../lib/labels';
 import { MAX_LABELS } from '../../engine/viewOverlay';
+import { sectionLevel } from '../../state/archUi';
 import { ViewOverlay } from '../../engine/viewOverlay';
 import { MATERIAL_DRAG_TYPE, PALETTE_DRAG_TYPE, parseMaterialDrag } from '../../editor/AssetsPanel';
 import { Icon } from '../Icon';
@@ -170,7 +171,8 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
     const a = s.arch;
     if (!a.building || a.plan || a.levelMode === 'exploded') return undefined;
     if (a.walls === 'up' && a.section === null && a.levelMode !== 'solo') return undefined;
-    return a.levelMode === 'solo' ? a.level : null;
+    if (a.levelMode === 'solo') return a.level;
+    return a.section === null ? null : sectionLevel(a.levels, a.section);
   });
   const gizmoRef = useRef<SVGSVGElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);

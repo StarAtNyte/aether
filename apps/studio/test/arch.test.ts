@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, History, type WorldDoc } from '@aether/core';
 import { applyArchOps } from '@aether/arch';
-import { DEFAULT_ARCH_UI, hourLabel, mergeArchUi, SECTION_RANGE, skyForHour, TIME_PRESETS } from '../src/state/archUi';
+import { DEFAULT_ARCH_UI, hourLabel, mergeArchUi, SECTION_RANGE, sectionLevel, skyForHour, TIME_PRESETS } from '../src/state/archUi';
 import { areaLabel, clampZoom, closesPolygon, dragRect, fitPlan, lengthLabel, outlineArea, panBy, pathOf, PLAN_ZOOM, roomColors, viewBox, zoomAt } from '../src/lib/planView';
 import { nearestTarget, nextVariant, roomToggle, walkIndex, type WalkTarget } from '../src/engine/walkthrough';
 import { ArchController, initialViewFor, type ArchHost } from '../src/engine/arch';
@@ -57,6 +57,17 @@ describe('architecture UI state', () => {
     expect(hourLabel(14.5)).toBe('14:30');
     expect(hourLabel(9.999)).toBe('10:00');
     expect(TIME_PRESETS.map((p) => skyForHour(p.hour).sky)).toEqual(['day', 'day', 'sunset', 'night']);
+  });
+
+  it('finds the storey a section cuts through (its rooms get the labels)', () => {
+    const levels = [
+      { index: 0, height: 3.1 },
+      { index: 1, height: 2.9 },
+    ];
+    expect(sectionLevel(levels, 1.3)).toBe(0);
+    expect(sectionLevel(levels, 4.4)).toBe(1);
+    expect(sectionLevel(levels, 40)).toBe(1);
+    expect(sectionLevel([], 1)).toBeNull();
   });
 
   it('opens single storeys as a cutaway and taller buildings as built', () => {

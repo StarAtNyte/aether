@@ -251,13 +251,28 @@ async function renderArch(browser: Browser, url: string, prompt: string): Promis
       if (!best?.b) return null;
       const c: [number, number, number] = [(best.b.min[0] + best.b.max[0]) / 2, best.b.max[1] + 1.1, (best.b.min[2] + best.b.max[2]) / 2];
       const r = Math.max(2.4, Math.hypot(best.b.max[0] - best.b.min[0], best.b.max[2] - best.b.min[2]) * 0.42);
-      return { c, r, level: best.level };
+      // Look in from the room's outside wall (lowered by the cutaway), turned a little for a three-quarter view.
+      const building = Object.values(w.entities).find((e) => e.arch?.role === 'building');
+      const bb = building ? a.simulation?.entityBounds(building.id) : null;
+      let dx = 0.6;
+      let dz = 0.8;
+      if (bb) {
+        const ox = c[0] - (bb.min[0] + bb.max[0]) / 2;
+        const oz = c[2] - (bb.min[2] + bb.max[2]) / 2;
+        const len = Math.hypot(ox, oz);
+        if (len > 0.5) {
+          const turn = 0.45;
+          dx = (ox * Math.cos(turn) - oz * Math.sin(turn)) / len;
+          dz = (ox * Math.sin(turn) + oz * Math.cos(turn)) / len;
+        }
+      }
+      return { c, r, level: best.level, dir: [dx * r * 1.3, r * 1.15, dz * r * 1.3] as [number, number, number] };
     });
     if (room) {
-      await page.evaluate(({ c, r, level, multi }) => {
+      await page.evaluate(({ c, r, level, multi, dir }) => {
         // Multi-storey buildings: show only the room's storey, so the floor above does not block the shot.
         window.__aether?.store.getState().setArch({ walls: 'cutaway', levelMode: multi ? 'solo' : 'stacked', level });
-        window.__aether?.simulation?.renderer.frameSphere(c, r, [r * 0.9, r * 1.05, r * 1.2], 0);
+        window.__aether?.simulation?.renderer.frameSphere(c, r, dir, 0);
       }, { ...room, multi: levels > 1 });
       log(`  ${slug}: room refined ${(await refined(page)).toFixed(2)}`);
       await archShot(page, slug, 'room');

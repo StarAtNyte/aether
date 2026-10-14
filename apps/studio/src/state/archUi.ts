@@ -127,3 +127,13 @@ export function hourLabel(hour: number): string {
   const hh = min === 60 ? whole + 1 : whole;
   return `${String(hh % 24).padStart(2, '0')}:${String(min === 60 ? 0 : min).padStart(2, '0')}`;
 }
+
+/** Storey a horizontal section at `height` (metres above the ground floor) cuts through: only its rooms are labelled. */
+export function sectionLevel(levels: ReadonlyArray<{ index: number; height: number }>, height: number): number | null {
+  let base = 0;
+  for (const l of levels) {
+    if (height < base + l.height) return l.index;
+    base += l.height;
+  }
+  return levels.length > 0 ? (levels[levels.length - 1] as { index: number }).index : null;
+}

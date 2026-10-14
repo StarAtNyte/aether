@@ -560,6 +560,13 @@ All LLM output and all user input are treated as untrusted.
 
 ## Performance
 
+- **Buildings.** The static parts of a building (walls, floors, windows,
+  furniture) merge per storey and material into a few dozen meshes, while
+  every entity stays pickable and editable: a furnished two-bedroom
+  apartment drops from 488 to 202 draw calls per pass. Lamps switch off in
+  full daylight (no per-pixel cost for a dozen point lights), the studio
+  render only refines while the view rests and then idles, and its
+  pipeline releases every GPU texture it made (20 toggles: flat).
 - **Instancing and scatter fields.** Small `scatter` layers are one
   instanced mesh; layers of 2 000+ instances become fields (packed 20-byte
   instances in ~128-instance chunks, QEM LOD levels, CPU chunk culling
