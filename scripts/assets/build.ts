@@ -154,11 +154,15 @@ async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: st
   const files = [writeLib('m', id, '', 'glb', glb)];
   const lods: Array<{ file: string; tris: number }> = [];
   if (!main.animated && main.tris > LOD_MIN_TRIS) {
+    let previous = main.tris;
     for (let i = 0; i < LOD_RATIOS.length; i++) {
       const lod = await prepare(nio, srcPath, pack, o, LOD_RATIOS[i]!);
+      // A level that barely simplifies is not worth a download.
+      if (lod.tris > previous * 0.8) break;
       const f = writeLib('m', id, `.lod${i + 1}`, 'glb', await encode(nio, lod.doc));
       files.push(f);
       lods.push({ file: f.path, tris: lod.tris });
+      previous = lod.tris;
     }
   }
   const category = o.cat ?? pack.category;

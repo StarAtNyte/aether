@@ -70,12 +70,22 @@ function indexOf(catalog: Catalog): Indexed[] {
   return idx;
 }
 
-/** Levenshtein distance ≤ 1 (one insert, delete or substitution). */
+/** Edit distance ≤ 1: one insert, delete, substitution or swap of adjacent letters ("armchiar"). */
 function withinOneEdit(a: string, b: string): boolean {
   if (a === b) return true;
   const la = a.length;
   const lb = b.length;
   if (Math.abs(la - lb) > 1) return false;
+  if (la === lb) {
+    let first = -1;
+    let diffs = 0;
+    for (let k = 0; k < la; k++) {
+      if (a.charCodeAt(k) === b.charCodeAt(k)) continue;
+      if (diffs === 0) first = k;
+      if (++diffs > 2) return false;
+    }
+    if (diffs === 2 && a[first] === b[first + 1] && a[first + 1] === b[first]) return true;
+  }
   let i = 0;
   let j = 0;
   let edits = 0;

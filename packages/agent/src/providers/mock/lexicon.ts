@@ -274,17 +274,17 @@ export function lookupAsset(phrase: string): { asset: Asset; noun: string; color
     const asset = preferLibrary(noun, base) ?? base;
     return asset ? { asset, noun, ...(color ? { color } : {}) } : null;
   };
+  // A two-word noun ("police car", "palm tree") beats its last word; the built-in vocabulary
+  // beats the library for the same words; any other noun the library knows works too ("a fridge").
   for (let i = rest.length - 1; i >= 0; i--) {
-    const two = i > 0 ? `${rest[i - 1]} ${singular(rest[i] as string)}` : undefined;
-    if (two && ASSETS[two]) return pick(two, ASSETS[two] as Asset);
     const one = singular(rest[i] as string);
+    const two = i > 0 ? `${rest[i - 1]} ${one}` : undefined;
+    if (two && ASSETS[two]) return pick(two, ASSETS[two] as Asset);
+    const twoLib = two ? pick(two, null) : null;
+    if (twoLib) return twoLib;
     if (Object.prototype.hasOwnProperty.call(ASSETS, one)) return pick(one, ASSETS[one] as Asset);
-  }
-  // Not in the built-in vocabulary: any noun the library knows ("add a sofa", "two police cars").
-  for (let i = rest.length - 1; i >= 0; i--) {
-    const two = i > 0 ? `${rest[i - 1]} ${singular(rest[i] as string)}` : undefined;
-    const hit = (two ? pick(two, null) : null) ?? pick(singular(rest[i] as string), null);
-    if (hit) return hit;
+    const oneLib = pick(one, null);
+    if (oneLib) return oneLib;
   }
   return null;
 }

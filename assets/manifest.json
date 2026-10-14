@@ -3815,16 +3815,6 @@
      "path": "m/garbage-truck.5c2e3c9d.glb",
      "sha256": "5c2e3c9d38719e2deb1e32a9c6daa15c4b72825eab91a04bc8a2667fe282f228",
      "bytes": 105984
-    },
-    {
-     "path": "m/garbage-truck.lod1.0bed4a8e.glb",
-     "sha256": "0bed4a8efc9fb3ed9dc8b58092e927a260d2141b0ecfa80b7c643492af449f2f",
-     "bytes": 93288
-    },
-    {
-     "path": "m/garbage-truck.lod2.0bed4a8e.glb",
-     "sha256": "0bed4a8efc9fb3ed9dc8b58092e927a260d2141b0ecfa80b7c643492af449f2f",
-     "bytes": 93288
     }
    ]
   },
@@ -5920,14 +5910,14 @@
      "bytes": 657600
     },
     {
-     "path": "m/armchair-classic.lod1.65216067.glb",
-     "sha256": "65216067d7f83173fd042d442391ef0819a9b6f3d7f6688fedbe07d7d632f500",
-     "bytes": 106732
+     "path": "m/armchair-classic.lod1.9709463f.glb",
+     "sha256": "9709463f024e36e645094c2d0d74e74bc68edc87bb7d8899f9a3b621d305cd6a",
+     "bytes": 106848
     },
     {
-     "path": "m/armchair-classic.lod2.279be707.glb",
-     "sha256": "279be707bb5e468bc9e68fc5a86a8e271e06acdc6530ddddb0f3995638fa790a",
-     "bytes": 98844
+     "path": "m/armchair-classic.lod2.2bdd3dc6.glb",
+     "sha256": "2bdd3dc6f706705ef70f49c128a5ffe41022f30acaed34b510ae00a597ba6db9",
+     "bytes": 98428
     }
    ]
   },
@@ -5949,14 +5939,14 @@
      "bytes": 441996
     },
     {
-     "path": "m/sofa-classic.lod1.fcea9b82.glb",
-     "sha256": "fcea9b823b2966ef502307afafd93e8984ce4ad3270a0869029a14b67bee46ba",
-     "bytes": 80988
+     "path": "m/sofa-classic.lod1.b006add4.glb",
+     "sha256": "b006add4f29b59722fcd57a58124dc5ba6a02b6c9f2244edaef6af19849e0cf5",
+     "bytes": 80964
     },
     {
-     "path": "m/sofa-classic.lod2.d2291403.glb",
-     "sha256": "d2291403881a11848f0622af42514835fb8f5ec1ee168b82c312f62aa4b7e8b3",
-     "bytes": 74008
+     "path": "m/sofa-classic.lod2.e7aa640f.glb",
+     "sha256": "e7aa640fda5d1f90e952a64fd434f833e33c8164b48eebad886462356b8e3f0a",
+     "bytes": 74076
     }
    ]
   },
@@ -5978,14 +5968,14 @@
      "bytes": 364560
     },
     {
-     "path": "m/coffee-table-round.lod1.380c0baa.glb",
-     "sha256": "380c0baaa38b16ae1e000116921fc03f53f48652d2433036ba69b2735f6a04dd",
-     "bytes": 83992
+     "path": "m/coffee-table-round.lod1.219e8e63.glb",
+     "sha256": "219e8e639306270e4c3d83147c335184dc80f5a96abdc8cce39d7dfb5da55176",
+     "bytes": 84016
     },
     {
-     "path": "m/coffee-table-round.lod2.b83d7f9e.glb",
-     "sha256": "b83d7f9eb2bb0537fca9d1769be6c3cc5c4e0b727e2c0967e604c9cbfde1becc",
-     "bytes": 78672
+     "path": "m/coffee-table-round.lod2.56317c52.glb",
+     "sha256": "56317c5219f7aa313947642d5fd7b0ebe5f7489081cc944f387edbc56f9a1d6a",
+     "bytes": 78896
     }
    ]
   },
@@ -6064,14 +6054,14 @@
      "bytes": 624600
     },
     {
-     "path": "m/succulent.lod1.a0410f69.glb",
-     "sha256": "a0410f69eb00c8f1580b6cb70003462bfac3304fde5425c1be514995b062b391",
-     "bytes": 155832
+     "path": "m/succulent.lod1.c166635c.glb",
+     "sha256": "c166635cef95af588fb8c8d9f4871e4316b24160d157bb97dd92e878a13a7d4a",
+     "bytes": 155664
     },
     {
-     "path": "m/succulent.lod2.baeb2947.glb",
-     "sha256": "baeb29473cffe14bcfa4748cefeb5149d230737a05d61c15722f8f6b54caf0bb",
-     "bytes": 146144
+     "path": "m/succulent.lod2.3459232d.glb",
+     "sha256": "3459232d586d856027d82f9aa1f23fd34605dc84eb53bfa6efea9390fdd4068f",
+     "bytes": 145260
     }
    ]
   },
@@ -6151,14 +6141,14 @@
      "bytes": 344196
     },
     {
-     "path": "m/pendant-lamp.lod1.6121152e.glb",
-     "sha256": "6121152eb836897005e883eeb97354e81d7c7ac367db34106760d5d5cd0137fb",
-     "bytes": 97108
+     "path": "m/pendant-lamp.lod1.00f06ff3.glb",
+     "sha256": "00f06ff38634cbbd3258c88b7322610200c25d6a0a50a1fee9e1aa0460d8b4f2",
+     "bytes": 97080
     },
     {
-     "path": "m/pendant-lamp.lod2.cda37d67.glb",
-     "sha256": "cda37d6747eb20074d795c6103941ba0602e7c0aca4eabec5d4fbc42a307c3d1",
-     "bytes": 91636
+     "path": "m/pendant-lamp.lod2.df464db5.glb",
+     "sha256": "df464db53fd25acb75d3457918d72f2394a44f707e92055a5bf972f3aef2bc8a",
+     "bytes": 91552
     }
    ]
   },
@@ -6180,14 +6170,14 @@
      "bytes": 851132
     },
     {
-     "path": "m/lantern-wood.lod1.eb019450.glb",
-     "sha256": "eb01945052daceb49dab44cce2f40b75c6e44738f4c0aebf2d07e8db843e9699",
-     "bytes": 181100
+     "path": "m/lantern-wood.lod1.d187bc4d.glb",
+     "sha256": "d187bc4d99b11e23243ced36665a1f6fc583a354f9283cc57f0443cb64b3969f",
+     "bytes": 181088
     },
     {
-     "path": "m/lantern-wood.lod2.6d9d1de4.glb",
-     "sha256": "6d9d1de40ebdc0b1a472bad217bb106603805ff4be015684b41adb8a743b47e3",
-     "bytes": 170176
+     "path": "m/lantern-wood.lod2.13bdf2b6.glb",
+     "sha256": "13bdf2b61868d67275f8ae21a1fff4f1bcef426ca1c7f43bb9f280b060099c16",
+     "bytes": 170324
     }
    ]
   },
@@ -6258,14 +6248,14 @@
      "bytes": 794092
     },
     {
-     "path": "m/horse-statue.lod1.ec8fca97.glb",
-     "sha256": "ec8fca97dfe9bd64b82e94d68484f612968267996053ab34c049c5a6376d3b70",
-     "bytes": 362212
+     "path": "m/horse-statue.lod1.c451b048.glb",
+     "sha256": "c451b0481ffb2d3a211d2c046349ee436ec31b229a900eddffb60057005e7778",
+     "bytes": 362200
     },
     {
-     "path": "m/horse-statue.lod2.8dabeaa0.glb",
-     "sha256": "8dabeaa0b909826890338f3614b8dbb2a46fa664e4ee4afb1fff44ab351c581e",
-     "bytes": 335904
+     "path": "m/horse-statue.lod2.5bc450a6.glb",
+     "sha256": "5bc450a614893dddbcf0b23f44a08aeeb2a27b2d107aa7da15ee92bff05c0260",
+     "bytes": 335948
     }
    ]
   },
@@ -6287,14 +6277,14 @@
      "bytes": 720548
     },
     {
-     "path": "m/street-lamp-realistic.lod1.6e17d0cc.glb",
-     "sha256": "6e17d0cc1219d081d9a2f8cc96e0ba5b25cf4bca7b69b13468e254641aa8e09f",
-     "bytes": 337448
+     "path": "m/street-lamp-realistic.lod1.e4bbf505.glb",
+     "sha256": "e4bbf5052cf8c724d0c5ca98487feda6c5c4b475b20313e183a42ff4e1b895a0",
+     "bytes": 337400
     },
     {
-     "path": "m/street-lamp-realistic.lod2.5371cbd7.glb",
-     "sha256": "5371cbd75f256bf4915de12020d23a1a39c5d9cf531906fa5cb879ec86fcad74",
-     "bytes": 312848
+     "path": "m/street-lamp-realistic.lod2.4f4853ff.glb",
+     "sha256": "4f4853ff0af1229013609a68b56500ce32fcabe093a5c7246d65db22afd5fae6",
+     "bytes": 312860
     }
    ]
   },

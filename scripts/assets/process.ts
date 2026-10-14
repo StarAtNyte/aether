@@ -198,8 +198,7 @@ export function normaliseAnimated(doc: Document, scale: number, offset: Vec3, fl
 
 /**
  * Simplify every primitive to about `ratio` of its triangles (meshoptimizer,
- * attribute-blind, borders locked so material seams do not open). Returns
- * the new triangle count.
+ * attribute-blind). Returns the new triangle count.
  */
 export async function simplifyDocument(doc: Document, ratio: number): Promise<number> {
   await MeshoptSimplifier.ready;
@@ -218,7 +217,9 @@ export async function simplifyDocument(doc: Document, ratio: number): Promise<nu
       const indices = new Uint32Array(idx.getCount());
       for (let i = 0; i < indices.length; i++) indices[i] = idx.getScalar(i);
       const target = Math.max(3, Math.floor((indices.length / 3) * ratio) * 3);
-      const [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, 0.05, ['LockBorder']);
+      // UV / normal seams split vertices, so locking borders would freeze most edges; LOD files are
+      // only drawn when small on screen, where a hairline seam is invisible.
+      const [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, 0.05, []);
       const arr = pos.getCount() > 65535 ? new Uint32Array(out) : new Uint16Array(out);
       idx.setArray(arr);
       tris += out.length / 3;
