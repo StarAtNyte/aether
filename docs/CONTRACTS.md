@@ -945,11 +945,20 @@ compared in constant time and scrubbed from logs.
 - Local variant test ids: `first-run` (with `data-variant`), `first-run-codex`,
   `first-run-login-start`, `first-run-device-code`, `first-run-signed-in`,
   `first-run-done`, `first-run-claude` (only when signed in),
-  `first-run-offline`. Hosted: `first-run-byok` (toggles the form:
-  `first-run-provider`, `first-run-key`, `first-run-remember`,
-  `first-run-key-submit`), `first-run-local` (install command + pairing:
-  `first-run-pair-code`), `first-run-offline`. Chip while offline:
-  `signin-chip`.
+  `first-run-offline`. Hosted, in this order: `first-run-local` ("Use your
+  own Codex / ChatGPT login": install command with `--origin <this
+  origin>`, pairing `first-run-pair-code` + `first-run-pair`, optional
+  `first-run-bridge-url` under "Bridge address"; once paired,
+  `first-run-bridge-paired` reuses the Codex rows above through the
+  bridge's `/v1/auth/login` (`first-run-login-start`,
+  `first-run-device-code`, `first-run-signed-in`, `first-run-done` → prefs
+  `{ mode: 'bridge', backend: 'codex', codexModel }`) and
+  `first-run-bridge-claude` when Claude Code is signed in there → `{ mode:
+  'bridge', backend: 'claude-code' }`; choice `bridge`), `first-run-byok`
+  (toggles the form: `first-run-provider`, `first-run-key`,
+  `first-run-remember`, `first-run-key-submit`), `first-run-offline`. The
+  hosted screen never runs a CLI itself and never uses anyone else's
+  account or key. Chip while offline: `signin-chip`.
 - A choice saves the global AI prefs and dispatches `aether:ai-prefs`
   (`CustomEvent<Partial<AiPrefs>>`; receivers keep only known keys and
   re-validate) so an open editor applies it at once.

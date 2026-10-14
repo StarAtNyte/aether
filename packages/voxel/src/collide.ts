@@ -148,27 +148,32 @@ function layerSolid(w: SolidQuery, axis: number, c: number, x0: number, x1: numb
   return false;
 }
 
-/** Sweep the body along `axis` by `BOX[6]` (set by the caller); result in SWEEP[0]. */
-function sweepBodyAxis(w: SolidQuery, b: VoxelBody, axis: number): number {
+/** Sweep the body along `axis` by `BOX[6]` (set by the caller); result in SWEEP[0] (no boxed return). */
+function sweepBodyAxis(w: SolidQuery, b: VoxelBody, axis: number): void {
   loadBody(b);
   sweepBox(w, axis);
-  return SWEEP[0] as number;
 }
 
-/** Move the box by (dx, dy, dz) with collision; updates position, hit flags and onGround (not velocity). */
-function slide(w: SolidQuery, b: VoxelBody, dx: number, dy: number, dz: number): void {
+/** Scratch delta of {@link slide}: MOVE = [dx, dy, dz] (doubles passed as arguments would be boxed). */
+const MOVE = new Float64Array(3);
+
+/** Move the box by MOVE = (dx, dy, dz) with collision; updates position and hit flags (not velocity). */
+function slide(w: SolidQuery, b: VoxelBody): void {
+  const dy = MOVE[1] as number;
   BOX[6] = dy;
-  const my = sweepBodyAxis(w, b, 1);
-  b.hitY = my !== dy;
-  b.y += my;
+  sweepBodyAxis(w, b, 1);
+  b.hitY = SWEEP[0] !== dy;
+  b.y += SWEEP[0] as number;
+  const dx = MOVE[0] as number;
   BOX[6] = dx;
-  const mx = sweepBodyAxis(w, b, 0);
-  b.hitX = mx !== dx;
-  b.x += mx;
+  sweepBodyAxis(w, b, 0);
+  b.hitX = SWEEP[0] !== dx;
+  b.x += SWEEP[0] as number;
+  const dz = MOVE[2] as number;
   BOX[6] = dz;
-  const mz = sweepBodyAxis(w, b, 2);
-  b.hitZ = mz !== dz;
-  b.z += mz;
+  sweepBodyAxis(w, b, 2);
+  b.hitZ = SWEEP[0] !== dz;
+  b.z += SWEEP[0] as number;
 }
 
 /**
@@ -186,7 +191,10 @@ export function moveBody(w: SolidQuery, b: VoxelBody, dt: number, autoStep = fal
   const sx = b.x;
   const sy = b.y;
   const sz = b.z;
-  slide(w, b, dx, dy, dz);
+  MOVE[0] = dx;
+  MOVE[1] = dy;
+  MOVE[2] = dz;
+  slide(w, b);
   if (autoStep && (b.hitX || b.hitZ) && (wasGround || b.liquid > 0) && dy <= 0.05) {
     const ex = b.x;
     const ey = b.y;
@@ -199,11 +207,16 @@ export function moveBody(w: SolidQuery, b: VoxelBody, dt: number, autoStep = fal
     b.y = sy;
     b.z = sz;
     BOX[6] = STEP_HEIGHT + SKIN * 2;
-    const up = sweepBodyAxis(w, b, 1);
+    sweepBodyAxis(w, b, 1);
+    const up = SWEEP[0] as number;
     b.y += up;
-    slide(w, b, dx, 0, dz);
+    MOVE[0] = dx;
+    MOVE[1] = 0;
+    MOVE[2] = dz;
+    slide(w, b);
     BOX[6] = -(up + Math.max(0, -dy));
-    const down = sweepBodyAxis(w, b, 1);
+    sweepBodyAxis(w, b, 1);
+    const down = SWEEP[0] as number;
     b.y += down;
     const gained = (b.x - sx) * (b.x - sx) + (b.z - sz) * (b.z - sz) - ((ex - sx) * (ex - sx) + (ez - sz) * (ez - sz));
     if (gained > 1e-6 && down !== -(up + Math.max(0, -dy))) {
@@ -225,7 +238,8 @@ export function moveBody(w: SolidQuery, b: VoxelBody, dt: number, autoStep = fal
   if (!b.onGround && dy === 0) {
     // At rest vertically: probe just below so standing still keeps `onGround`.
     BOX[6] = -0.01;
-    b.onGround = sweepBodyAxis(w, b, 1) > -0.01;
+    sweepBodyAxis(w, b, 1);
+    b.onGround = (SWEEP[0] as number) > -0.01;
   }
   sampleLiquid(w, b);
 }

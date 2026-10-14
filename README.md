@@ -287,20 +287,21 @@ npx aether pair                                        # a fresh pairing code / 
 npm run bridge       # Aether Bridge on http://127.0.0.1:8790
 ```
 
-The bridge prints a pairing code and a one-click link. In the studio open
-**Settings → AI connection → Local bridge**, enter the code (or open the
-link), then pick **Codex** or **Claude Code**, a model and the reasoning
-effort under the prompt. Requirements: the `codex` CLI signed in with
+The bridge prints a pairing code and a one-click link. On a first visit the
+hosted studio leads with **Use your own Codex / ChatGPT login**: enter the
+code there (or open the link), sign in with a device code if Codex is not
+signed in yet, and pick the model. Later, **Settings → AI connection → Local
+bridge** has the same controls, and the composer picks **Codex** or
+**Claude Code**, a model and the reasoning effort. Requirements: the `codex` CLI signed in with
 `codex login` (ChatGPT), and/or the `claude` CLI signed in. The bridge listens
 on 127.0.0.1 only, accepts only paired, allowlisted studio origins (`--origin
 https://your-host` adds a hosted studio), and runs each request in an empty
-temporary folder with all tools, shell, file and network access disabled. A
-published `npx aether-bridge` command is planned.
+temporary folder with all tools, shell, file and network access disabled.
 
 From a hosted (https) copy of the studio, Chrome, Edge and Firefox can reach
 the bridge (Chrome may first ask to allow access to your local network).
 Safari and iOS browsers block https pages from calling local services, so
-there run the studio locally (`npm run dev`) and pair from that page.
+there open the local link that `aether start` prints instead.
 
 **Running Aether locally?** You do not need the bridge: with `aether start`
 (or `npm run dev:server`) on your own computer the studio finds Codex and Claude Code
@@ -605,31 +606,36 @@ Install the browsers for e2e once with `npx playwright install chromium firefox`
 
 ## Deployment
 
-The hosted demo is one container that serves the API and the built studio
-from the same origin:
+**Hosted copy (static).** The public copy of the studio is a static site:
+`vercel.json` builds `apps/studio` (`npm run build -w @aether/studio`), serves
+`apps/studio/dist` with a strict CSP and security headers, and has **no
+`/api`**. Visitors bring their own AI: their own Codex / ChatGPT or Claude
+Code login through the local bridge (`npx aether start --origin <hosted
+address>`), their own API key (called straight from the browser), or the
+offline planner. The site carries no key and never uses the operator's
+account. `npm run build && npm run e2e:hosted` checks exactly this setup in
+Chromium and Firefox.
+
+- Point an uptime monitor at the hosted page, and tag every release so a
+  deployment can be reproduced exactly.
+- Every visitor path keeps working without any server: when a key or the
+  bridge fails, the studio falls back to the offline planner.
+
+**Self-hosted server (optional).** For your own team you can run the API and
+the studio from one container:
 
 ```bash
 docker build -f apps/server/Dockerfile -t aether .
-docker run -p 8787:8787 \
-  -e ANTHROPIC_API_KEY=... \
-  -e AETHER_DAILY_TOKEN_BUDGET=2000000 \
-  -v aether-data:/data aether
+docker run -p 8787:8787 -e AETHER_DAILY_TOKEN_BUDGET=2000000 -v aether-data:/data aether
 ```
 
 The image is multi-stage on `node:22-slim`, runs as non-root and includes a
-`HEALTHCHECK` on `/api/health`. SIGTERM drains requests gracefully. Fly.io,
-Render and Railway notes are in
-[`apps/server/README.md`](apps/server/README.md#deploying) (set
-`TRUST_PROXY_HOPS=1` and mount a volume at `/data`).
-
-**Keeping the hosted demo reliable.**
-
-- Disable scale-to-zero or auto-stop (for example, keep at least one machine
-  running on Fly.io) and point an uptime monitor at `/api/health`.
-- Keep `AETHER_DAILY_TOKEN_BUDGET` set. When the budget is spent or a provider
-  fails, the studio falls back to the offline planner automatically, so
-  visitors always get a working world.
-- Tag every production release so a deployment can be reproduced exactly.
+`HEALTHCHECK` on `/api/health`. SIGTERM drains requests gracefully. It uses
+the offline mock planner unless you configure a server model
+(`AETHER_PROVIDER` plus a key); a server key is spent by everyone who can
+reach the server, so keep it off for public deployments. Fly.io, Render and
+Railway notes are in [`apps/server/README.md`](apps/server/README.md#deploying)
+(set `TRUST_PROXY_HOPS=1` and mount a volume at `/data`).
 
 ## Research inspirations
 

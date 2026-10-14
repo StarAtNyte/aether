@@ -94,6 +94,13 @@ hosted copy has no server-side AI at all.
   token comes from a one-time code (8 characters, at most 5 guesses per
   code) or from a link whose token travels in the URL fragment. It is kept
   in `sessionStorage` only.
+- The hosted first-run screen leads with that bridge ("Use your own Codex /
+  ChatGPT login"). A Codex sign-in started from the page runs the CLI's own
+  device-code flow **on the visitor's computer** (bridge `/v1/auth/login`,
+  bearer token required). The page only shows the verification link (https
+  only, `rel="noopener noreferrer"`) and the one-time code the CLI printed;
+  it never sees a password or token. The bridge address field accepts only
+  loopback origins (`normalizeBridgeUrl`).
 
 ## Bring your own key
 
