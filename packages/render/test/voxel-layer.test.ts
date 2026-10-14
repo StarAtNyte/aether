@@ -122,28 +122,51 @@ describe('VoxelLayer chunk pre-build', () => {
 });
 
 describe('VoxelLayer chunk memory', () => {
-  it('releases the CPU vertex copies after the first draw, keeping counts and bounds', () => {
+  it('releases the CPU vertex copies once the pre-build uploaded them, keeping counts and bounds', async () => {
     const layer = layerWithAtlas();
+    let finish: () => void = () => undefined;
+    const pending = new Promise<void>((r) => {
+      finish = r;
+    });
+    layer.setCompiler(() => pending);
     layer.setChunk(1, 0, 0, { opaque: quadPass(), cutout: null, liquid: null, minY: 0, maxY: 1 });
+    layer.flushPrebuild();
     const group = layer.group.children.find((c) => c.name === 'aether:voxel-chunks');
     const mesh = group?.children[0] as Mesh;
     const g = mesh.geometry;
     const version = (g.getAttribute('position') as BufferAttribute).version;
-    expect(g.getAttribute('position').array.length).toBe(12);
-    // three calls this right after the mesh was drawn (its buffers are on the GPU then).
+    // Not built yet: the arrays stay (the build reads them; regression: empty GPU buffers).
     mesh.onAfterRender(null as never, null as never, null as never, g, null as never, null as never);
+    expect(g.getAttribute('position').array.length).toBe(12);
+    finish();
+    await pending;
+    await Promise.resolve();
     expect(g.getAttribute('position').array.length).toBe(0);
     expect(g.getAttribute('uv').array.length).toBe(0);
     expect(g.getAttribute('data').array.length).toBe(0);
     expect(g.getIndex()?.array.length).toBe(0);
     expect(g.getAttribute('position').count).toBe(4);
     expect(g.getIndex()?.count).toBe(6);
-    // No re-upload is triggered, and later draws do nothing more.
     expect((g.getAttribute('position') as BufferAttribute).version).toBe(version);
     expect(g.boundingSphere).not.toBeNull();
-    const after = mesh.onAfterRender;
-    mesh.onAfterRender(null as never, null as never, null as never, g, null as never, null as never);
-    expect(mesh.onAfterRender).toBe(after);
+    layer.dispose();
+  });
+
+  it('keeps the arrays when the build fails or without a compiler', async () => {
+    const layer = layerWithAtlas();
+    const failed = Promise.reject(new Error('device lost'));
+    failed.catch(() => undefined);
+    layer.setCompiler(() => failed);
+    layer.setChunk(1, 0, 0, { opaque: quadPass(), cutout: null, liquid: null, minY: 0, maxY: 1 });
+    layer.flushPrebuild();
+    await failed.catch(() => undefined);
+    await Promise.resolve();
+    const group = layer.group.children.find((c) => c.name === 'aether:voxel-chunks');
+    expect((group?.children[0] as Mesh).geometry.getAttribute('position').array.length).toBe(12);
+    layer.setCompiler(null);
+    layer.setChunk(2, 1, 0, { opaque: quadPass(), cutout: null, liquid: null, minY: 0, maxY: 1 });
+    layer.flushPrebuild();
+    expect((group?.children[1] as Mesh).geometry.getAttribute('position').array.length).toBe(12);
     layer.dispose();
   });
 });

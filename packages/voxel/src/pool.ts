@@ -18,7 +18,7 @@ import type { ChunkData } from './chunk';
 import { ChunkData as Chunk } from './chunk';
 import { identityKey, type TerrainIdentity } from './jobs';
 import type { ChunkMesh } from './mesher';
-import { checkMesh, FromWorker, packedTransfer, type ToWorker } from './protocol';
+import { checkMesh, FromWorker, type ToWorker } from './protocol';
 import { VoxelWorkerHandler } from './worker/handler';
 
 /** Minimal worker surface (tests inject fakes). */
@@ -56,6 +56,8 @@ interface Job {
   key: string;
   message: ToWorker;
   transfer: ArrayBuffer[];
+  /** Mesh jobs: the neighbourhood, packed into the message only when it is sent (see {@link VoxelJobPool.mesh}). */
+  chunks?: ReadonlyArray<Chunk | null>;
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
   kind: 'generate' | 'mesh';
@@ -155,21 +157,28 @@ export class VoxelJobPool {
    * null = air) and their top heights. Resolves null when outdated.
    */
   mesh(cx: number, cz: number, chunks: ReadonlyArray<ChunkData | null>, tops: ArrayLike<number>, urgent = false): Promise<ChunkMesh | null> {
-    const packed = chunks.map((c) => (c ? c.pack() : null));
-    const transfer: ArrayBuffer[] = [];
-    for (const p of packed) if (p) transfer.push(...packedTransfer(p));
     const t: number[] = [];
     for (let i = 0; i < 9; i++) t.push(Math.max(-1, Math.min(1024, Math.floor((tops[i] as number) ?? -1))));
-    return this.submit('mesh', { type: 'mesh', id: 0, key: this.key, cx, cz, chunks: packed, tops: t }, transfer, urgent) as Promise<ChunkMesh | null>;
+    // The chunks are packed when the job is sent: the snapshot is the chunks at that moment, and the
+    // structured clone of postMessage copies their indices natively (no per-request buffer copies to
+    // collect on this thread; streaming a view of 8 sent ~2 600 of them).
+    return this.submit('mesh', { type: 'mesh', id: 0, key: this.key, cx, cz, chunks: [], tops: t }, [], urgent, chunks.slice(0, 9)) as Promise<ChunkMesh | null>;
   }
 
-  private submit(kind: Job['kind'], message: ToWorker, transfer: ArrayBuffer[], urgent: boolean): Promise<unknown> {
+  /** Fill a mesh job's chunks into its message (just before it is posted or run inline). */
+  private prepare(job: Job): ToWorker {
+    const m = job.message;
+    if (m.type === 'mesh' && job.chunks) m.chunks = job.chunks.map((c) => (c ? c.view() : null));
+    return m;
+  }
+
+  private submit(kind: Job['kind'], message: ToWorker, transfer: ArrayBuffer[], urgent: boolean, chunks?: ReadonlyArray<ChunkData | null>): Promise<unknown> {
     if (this.disposed) return Promise.resolve(null);
     if (!this.key) return Promise.reject(new Error('voxel pool not configured'));
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
       (message as { id: number }).id = id;
-      const job: Job = { id, key: this.key, message, transfer, resolve, reject, kind, urgent };
+      const job: Job = { id, key: this.key, message, transfer, resolve, reject, kind, urgent, ...(chunks ? { chunks } : {}) };
       if (urgent) {
         // After the urgent jobs already queued (first come, first served), before all others.
         let at = 0;
@@ -229,7 +238,9 @@ export class VoxelJobPool {
         lane.worker.postMessage({ type: 'config', key: this.key, identity: this.identity });
         lane.configured = this.key;
       }
-      lane.worker.postMessage(job.message, job.transfer);
+      lane.worker.postMessage(this.prepare(job), job.transfer);
+      // Sent: the clone holds the data now; drop the references (they would pin unloaded chunks).
+      if (job.message.type === 'mesh') job.message.chunks = [];
     } catch {
       this.queue.unshift(job);
       this.killLane(i, lane, 'could not post to the voxel worker');
@@ -331,7 +342,8 @@ export class VoxelJobPool {
           this.stats.dropped++;
           job.resolve(null);
         } else {
-          const reply = this.inline.handle(job.message);
+          const reply = this.inline.handle(this.prepare(job));
+          if (job.message.type === 'mesh') job.message.chunks = [];
           if (reply) this.settle(job, reply.message);
           else job.resolve(null);
         }

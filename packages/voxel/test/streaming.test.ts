@@ -199,3 +199,55 @@ describe('chunk streaming and saves', () => {
     expect(world.slot(0, 0)?.modified).toBe(true);
   });
 });
+
+describe('mesh job packing', () => {
+  it('packs the neighbourhood when the job is posted, copies by structured clone (no transfer) and drops the references', async () => {
+    const posted: Array<{ message: unknown; transfer: unknown }> = [];
+    const h = new VoxelWorkerHandler();
+    let w: VoxelWorkerLike | null = null;
+    const pool = new VoxelJobPool({
+      workers: 1,
+      createWorker: () => {
+        const worker: VoxelWorkerLike = {
+          onmessage: null,
+          onerror: null,
+          postMessage(m: unknown, transfer?: unknown) {
+            // A real postMessage clones synchronously: snapshot the message now.
+            const message = structuredClone(m);
+            posted.push({ message, transfer });
+            setTimeout(() => {
+              const r = h.handle(message);
+              if (r) worker.onmessage?.({ data: r.message } as MessageEvent);
+            }, 0);
+          },
+          terminate() {},
+        };
+        w = worker;
+        return worker;
+      },
+    });
+    const reg = new BlockRegistry();
+    pool.configure(terrainIdentity(terrain({ preset: 'flat' }), 1), reg.size - 1);
+    const stone = reg.id('stone') as number;
+    const glass = reg.id('glass') as number;
+    const centre = ChunkData.filled(stone);
+    const chunks: Array<ChunkData | null> = [null, null, null, null, centre, null, null, null, null];
+    // Fill the lane (IN_FLIGHT generate jobs) so the mesh job waits in the queue.
+    const gens = [pool.generate(5, 5), pool.generate(6, 6)];
+    const meshed = pool.mesh(0, 0, chunks, [-1, -1, -1, -1, 127, -1, -1, -1, -1]);
+    chunks[4] = null; // the caller reuses its array: the pool keeps its own copy
+    // Changed while queued: the job sends the chunk as it is when posted.
+    centre.set(cellIndex(3, 127, 3), glass);
+    await Promise.all(gens);
+    const mesh = await meshed;
+    expect(mesh).not.toBeNull();
+    const sent = posted.map((p) => p.message as { type: string; chunks?: Array<{ palette: Uint16Array; words: Uint32Array } | null> }).find((m) => m.type === 'mesh');
+    expect(sent?.chunks?.[4]?.palette).toContain(glass);
+    // Nothing was transferred: the main thread's chunk is intact.
+    expect(posted.filter((p) => (p.message as { type: string }).type === 'mesh').every((p) => p.transfer === undefined || (Array.isArray(p.transfer) && p.transfer.length === 0))).toBe(true);
+    expect(centre.get(cellIndex(0, 0, 0))).toBe(stone);
+    expect(centre.get(cellIndex(3, 127, 3))).toBe(glass);
+    expect(w).not.toBeNull();
+    pool.dispose();
+  });
+});

@@ -28,7 +28,6 @@ import {
   MeshBasicMaterial,
   NearestFilter,
   NearestMipmapLinearFilter,
-  Object3D,
   RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
@@ -36,6 +35,7 @@ import {
   UnsignedByteType,
   Vector3,
   type Material,
+  type Object3D,
 } from 'three';
 import { MobKit, MobModel, type MobModelKind } from './mob-models';
 import { createTerrainMaterials, type TerrainMaterials } from './terrain-material';
@@ -95,17 +95,14 @@ const NO_F32 = new Float32Array(0);
 const NO_U8 = new Uint8Array(0);
 const NO_U16 = new Uint16Array(0);
 const NO_U32 = new Uint32Array(0);
-const keepArrays = Object3D.prototype.onAfterRender;
 
 /**
- * `onAfterRender` of chunk meshes: once drawn, the vertex data lives on the
- * GPU (uploads copy it synchronously on both backends), so the CPU copies
- * (20–60 MiB at view distance 8) are released. Counts and bounds stay; the
- * version is unchanged, so nothing is uploaded again. Chunk meshes are
- * never ray cast (picking only tests document entities), and a lost GPU
- * context rebuilds the whole terrain.
+ * Release a chunk geometry's CPU vertex copies once its GPU buffers exist
+ * (20–60 MiB at view distance 8). Counts, bounds and versions stay, so
+ * nothing is uploaded again. Chunk meshes are never ray cast (picking only
+ * tests document entities), and a lost GPU context rebuilds the terrain.
  */
-function releaseVertexArrays(this: Object3D, _r: unknown, _s: unknown, _c: unknown, geometry: BufferGeometry): void {
+function releaseVertexArrays(geometry: BufferGeometry): void {
   for (const name of ['position', 'uv'] as const) {
     const a = geometry.getAttribute(name) as BufferAttribute | undefined;
     if (a) a.array = NO_F32;
@@ -114,7 +111,6 @@ function releaseVertexArrays(this: Object3D, _r: unknown, _s: unknown, _c: unkno
   if (data) data.array = NO_U8;
   const index = geometry.getIndex();
   if (index) index.array = index.array instanceof Uint32Array ? NO_U32 : NO_U16;
-  this.onAfterRender = keepArrays;
 }
 
 /** Cutout crack pattern for each stage, stacked vertically (16 × 16·stages RGBA). */
@@ -386,7 +382,6 @@ export class VoxelLayer {
       m.receiveShadow = false;
       m.renderOrder = i === 2 ? 2 : 0;
       m.name = `voxel:${cx},${cz}:${i}`;
-      m.onAfterRender = releaseVertexArrays;
       this.chunkGroup.add(m);
       entry.meshes[i] = m;
       entry.triangles += p.quads * 2;
@@ -443,8 +438,15 @@ export class VoxelLayer {
     const done = (): void => {
       for (const m of built) if (this.prebuilding.get(m) === pending) this.prebuilding.delete(m);
     };
+    // Built (buffers uploaded from the full arrays): the CPU copies of meshes still shown can go.
+    // The compiler's projection pass already calls onAfterRender before anything is uploaded,
+    // so the release waits for the compiler instead. A failed build keeps them (first draw uploads).
+    const built0 = (): void => {
+      for (const m of built) if (m.parent !== null && this.prebuilding.get(m) === pending) releaseVertexArrays(m.geometry);
+      done();
+    };
     for (const m of built) this.prebuilding.set(m, pending);
-    pending.then(done, done);
+    pending.then(built0, done);
   }
 
   /** Free a chunk mesh's geometry, after its pending pre-build (which would upload a disposed geometry again). */

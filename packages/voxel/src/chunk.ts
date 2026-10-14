@@ -214,6 +214,16 @@ export class ChunkData {
     return out;
   }
 
+  /**
+   * The packed form *without* copying the indices: `words` is this chunk's
+   * live array (only the small palette is copied). For a synchronous read or
+   * a `postMessage` without transfer (structured clone copies it in native
+   * code, so no JavaScript buffer is allocated); never transfer or mutate it.
+   */
+  view(): PackedChunk {
+    return { palette: this.palette.slice(0, this.size), bits: this.bitsPerCell, words: this.words as Uint32Array<ArrayBuffer> };
+  }
+
   /** Copy into a transferable packed form (palette trimmed). */
   pack(): PackedChunk {
     return { palette: this.palette.slice(0, this.size), bits: this.bitsPerCell, words: this.words.slice() };

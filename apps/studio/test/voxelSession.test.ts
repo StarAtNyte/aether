@@ -51,6 +51,7 @@ function fakeRenderer(cap = 8): { renderer: never; layer: FakeLayer; fog: number
     removeChunk: (key: number) => chunks.delete(key),
     clearChunks: () => chunks.clear(),
     setLighting: () => undefined,
+    setFogOrigin: () => undefined,
     clearActors: () => undefined,
     stats: () => ({ chunks: chunks.size, triangles: 0, mobs: 0, drops: 0 }),
   };

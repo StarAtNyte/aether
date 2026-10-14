@@ -1194,7 +1194,8 @@ ChunkMesher.mesh(volume) → ChunkMesh     // greedy, per-vertex AO + smooth lig
 VoxelJobContext(identity).generate(cx, cz) / .mesh(chunks[9], tops?)        // the two worker jobs
 VoxelJobPool({ createWorker?, workers? (1–2 by deviceMemory/cores), timeoutMs? })
   .configure(identity, maxBlockId) → key; .generate(cx, cz, urgent?) / .mesh(cx, cz, chunks, tops, urgent?) → Promise<… | null (outdated)>
-  // module workers (voxel.worker.ts) with inline fallback; zod-validated messages; checkMesh / fromPacked on every reply; timeouts
+  // module workers (voxel.worker.ts) with inline fallback; zod-validated messages; checkMesh / fromPacked on every reply; timeouts;
+  // mesh jobs keep chunk references and pack them when posted (ChunkData.view(): structured clone copies, no transfer)
 VoxelWorld(reg)                          // loaded chunk slots (version, modified), get/set/isSolid/isLiquid/surfaceY, dirty set for remeshing
 ChunkStreamer(world, pool, sink, { viewDistance, border?, saved? })
   .setCenter(x, z); .update(); .regenerate(keys); .reset(); .settled; .meshedCount; .shownVersion(key)
