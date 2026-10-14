@@ -333,7 +333,8 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     report.ms = 0;
     return report;
   }
-  const radius = Math.max(0.2, clearance / 2 - 0.04);
+  // Doorways are short: a leaf width equal to the walkway passes (4 cm slack + half a cell for grid quantisation).
+  const radius = Math.max(0.2, clearance / 2 - 0.04 - NAV_CELL / 2);
   // Entrance: the player spawn in this building's frame (world → building: inverse yaw).
   const bp = building.transform.position;
   const sp = world.player.spawn;

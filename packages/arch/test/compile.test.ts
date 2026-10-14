@@ -87,20 +87,36 @@ describe('compileBuilding', () => {
   });
 
   it('compiles a two-storey house with a stair, pitched roof, terrace and pool', () => {
-    const { c, errors, world } = build({
-      id: 'villa',
-      style: 'japandi',
-      levels: [
-        { height: 3.1, rooms: [{ id: 'living', type: 'living', rect: [0, 0, 8, 6] }, { id: 'kitchen', type: 'kitchen', rect: [8, 0, 12, 6] }], doors: [{ between: ['living', 'outside'], side: 'south', main: true }, { between: ['living', 'kitchen'], kind: 'opening', width: 2 }], stairs: [{ at: [1, 1.2], heading: 'east', width: 1 }] },
-        { height: 2.9, rooms: [{ id: 'landing', type: 'hall', rect: [0, 0, 6, 3] }, { id: 'master', type: 'bedroom', rect: [0, 3, 6, 6] }, { id: 'bath', type: 'bathroom', rect: [6, 0, 9, 6] }], doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'] }] },
-      ],
-      roof: { shape: 'gable', pitch: 30 },
-      site: { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 } },
-    });
+    const { c, errors, world } = build(villa(0.5));
     expect(errors).toEqual([]);
     expect(c.stats.stairs).toBe(1);
-    expect(c.notes.join(' ')).toMatch(/flat roof/);
+    // The top floor is a rectangle, so the requested gable roof is built (no flat-roof fallback).
+    expect(c.notes.join(' ')).not.toMatch(/flat roof/);
+    const roof = world.entities['villa-roof'];
+    expect(roof?.shape.kind === 'procedural' ? roof.shape.generator : null).toBe('arch-roof');
     const v = navigableVerdict(world, 'villa', 0.8);
     expect(v.passed, v.message).toBe(true);
   });
+
+  it('flags a stair whose top arrives boxed in against a wall', () => {
+    // From x = 1 the 4.6 m flight ends 0.4 m short of the landing's east wall: no 0.8 m walkway onward.
+    const { world } = build(villa(1));
+    const v = navigableVerdict(world, 'villa', 0.8);
+    expect(v.passed).toBe(false);
+    expect(v.message).toMatch(/master|Bedroom/);
+  });
 });
+
+/** Two-storey house; `stairX` is where the straight flight starts on the ground floor. */
+function villa(stairX: number): BuildingPlanInput {
+  return {
+    id: 'villa',
+    style: 'japandi',
+    levels: [
+      { height: 3.1, rooms: [{ id: 'living', type: 'living', rect: [0, 0, 8, 6] }, { id: 'kitchen', type: 'kitchen', rect: [8, 0, 12, 6] }], doors: [{ between: ['living', 'outside'], side: 'south', main: true }, { between: ['living', 'kitchen'], kind: 'opening', width: 2 }], stairs: [{ at: [stairX, 1.2], heading: 'east', width: 1 }] },
+      { height: 2.9, rooms: [{ id: 'landing', type: 'hall', rect: [0, 0, 6, 3] }, { id: 'master', type: 'bedroom', rect: [0, 3, 6, 6] }, { id: 'bath', type: 'bathroom', rect: [6, 0, 9, 6] }], doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'] }] },
+    ],
+    roof: { shape: 'gable', pitch: 30 },
+    site: { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 } },
+  };
+}

@@ -10,7 +10,6 @@ import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { SCULPTURE_GENERATORS } from './sculpture';
-import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS } from './arch';
 
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
@@ -20,9 +19,10 @@ const ALL: readonly BuiltinGenerator[] = [
   ...SCULPTURE_GENERATORS,
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,
-  ...ARCH_STRUCTURE_GENERATORS,
-  ...ARCH_FURNITURE_GENERATORS,
 ];
+// The architecture generators (`./arch`: `arch-*`, `furn-*`) are not registered
+// yet: they are not recentred like these, and the planner catalog has no
+// compact form for them (it would add ~2k tokens to every system prompt).
 
 /**
  * All built-in generators keyed by id. Null-prototype record, frozen, so a
