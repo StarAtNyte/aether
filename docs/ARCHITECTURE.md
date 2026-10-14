@@ -56,6 +56,7 @@ packages/
   agent     WorldAgent loop, tools, system prompt, providers, offline mock
   arch      parametric buildings: plans, walls, openings, roofs, stairs, furniture, nav checks
   voxel     block terrain, meshing, streaming, the block game kit
+  assets    asset catalog (search, LOD, credits), import validation, image→3D provider
 apps/
   server    Hono API: LLM proxy, share links, generator cache, static hosting
   studio    React 19 + Vite editor and player
@@ -76,6 +77,14 @@ flowchart LR
     core --> logic --> studio
     core --> agent --> server
     agent --> studio
+    core --> assets
+    assets --> render
+    assets --> physics
+    assets --> logic
+    assets --> arch
+    assets --> agent
+    assets --> server
+    assets --> studio
 ```
 
 Arrows point from a dependency to its consumer. There are no cycles. The
@@ -1084,4 +1093,42 @@ as ordinary undoable edits that are compiled and checked like the agent's.
 Playing a world with a building is a walkthrough: first person facing the
 entrance, E for doors and light switches, 1–4 time of day, L all lights, R
 finish swap, V view, P photo mode.
+
+## 19. Asset pipeline
+
+The curated library ([ASSETS.md](ASSETS.md)) is **data, not code**: an
+offline build (`scripts/assets/*`, glTF-Transform + meshoptimizer, Node)
+turns pinned, checksummed CC0 sources into content-hashed files under
+`assets/lib/` and a zod-validated `assets/catalog.json`. The app never
+parses source formats at run time.
+
+- **One shape kind, one fallback chain.** `{kind:'asset', id}` names a
+  catalog entry or a user import. Render and physics resolve it through
+  `@aether/assets` `assetInfo` and agree on the chain: model / poster →
+  generator asset → the shape's `fallback` → a box of the asset's size.
+  Library models are normalised at build time (metres, base on y = 0,
+  centred), so instances need no measuring; colliders come from the catalog
+  (box, capsule, or a hull of 26 support points), which also works in the
+  verification workers and in Node.
+- **Lazy everywhere.** The catalog (36 KB gzip) loads after the editor's
+  first frame (and in a worker only when its world uses assets); GLTFLoader,
+  the meshopt decoder, `SkeletonUtils`, `HDRLoader`, the animator, the asset
+  panel, the forge and credits dialogs and the ZIP code load on first use.
+  Models are refcounted per URL; LOD files carry geometry only and share LOD
+  0's materials, so textures download once.
+- **Animation from simulation.** Characters do not run behaviours of their
+  own: the animator reads each animated entity's world-space speed (physics
+  or the logic runtime moved it) and cross-fades idle / walk / run, scaling
+  the gait to the speed. Movers face −Z (the engine's forward axis), props
+  +Z — fixed at build time so behaviours, layouts and drops agree.
+- **Untrusted inputs.** Imports, packages and image→3D results pass header /
+  chunk checks, the JSON guard, zod, budgets, external-URI and extension
+  allowlists and name sanitisation before three.js sees them; packages are
+  checked entry by entry while inflating; user files stay in the browser.
+- **The forge** reuses the generator sandbox: the model's output is code, so
+  a forged object is as safe, editable and diffable as any generator. The
+  loop (observe → spec → build → render four views → critique → patch) is
+  pure orchestration in `@aether/agent` with injected provider, sandbox
+  check and renderer, shared by the studio (private off-screen WebGL2
+  renderer) and the offline hero script (headless Chromium).
 

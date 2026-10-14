@@ -86,6 +86,25 @@ explicit state, so the AI can be held to account:
   `setEnvironment`, `defineGenerator`, `addTest` and so on). Each is
   validated, reference-checked, protected against prototype pollution and
   limit-checked, and errors are written for the LLM to read.
+- **A real asset library, an AI forge and your own files.** 364 curated
+  assets ([docs/ASSETS.md](docs/ASSETS.md)): CC0 models from Kenney and
+  Poly Haven (furniture, kitchens, bathrooms, plants, trees, rocks, city
+  buildings, road tiles, street props, vehicles, food, tools), 41 animated
+  people and animals that walk, run and idle from their actual movement,
+  five photographic HDR skies, and eight AI-forged originals. Everything is
+  real-world sized, meshopt-compressed with LODs and physics colliders, and
+  searchable with synonyms ("couch" finds the sofa). Drag a tile into the
+  viewport and it lands on the floor under the cursor, against a wall or
+  under a ceiling, with a live preview. The agent searches the library
+  (`search_assets`), the offline planner dresses streets and rooms with it,
+  and furnished buildings get photographed furniture that suits their style.
+  **Create from an image or text**: a connected model rebuilds the object as
+  an editable parametric generator, renders it from four sides, critiques it
+  against your photo and patches its own code until it matches — every pass
+  is shown live. Import your own GLB / glTF models, images (framed posters)
+  and HDR skies (validated, stored in the browser), export a world as a
+  `.zip` package with every file it uses, and every source is credited in
+  the credits panel, on the end-of-game screen and in `CREDITS.txt`.
 - **Real-life architecture, verified.** Ask for "a modern two-bedroom
   apartment", "a small café interior", "a two-storey villa with a pool" or
   "an office floor with meeting rooms" and the agent writes a building plan
@@ -400,7 +419,7 @@ template (for example `#/new/coin-island`).
 | `npm run start` | Production server in the foreground: API plus the built studio on one origin |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
-| `npm run smoke` | Runs the real agent with the offline planner against 18 prompts and re-verifies every world headless (block worlds: their edits compile and the spawn area meshes) |
+| `npm run smoke` | Runs the real agent with the offline planner against 25 prompts and re-verifies every world headless (block worlds: their edits compile and the spawn area meshes) |
 | `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, a device sign-in that completes (account + model picker), `aether login` / `doctor` / `logout`, `aether stop` |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
@@ -415,6 +434,10 @@ template (for example `#/new/coin-island`).
 | `npm run library` | Rebuilds the offline generator library with Codex (sequential, call budget, resumable; `-- --only=piano`) |
 | `npm run e2e:bridge` | Real end-to-end check through the bridge: one prompt via Codex and one via Claude Code from the built studio (uses your subscription) |
 | `npm run e2e:connection` | AI connection check at no cost: the real bridge HTTP layer with scripted backends, in Chromium and Firefox (pairing, badges, a bridged turn with the vision critic, CORS preflight, and fallback when not signed in, rate limited or the bridge stops) |
+| `npm run assets:fetch` | Downloads and verifies the curated CC0 sources listed in `assets/sources.json` into `~/.cache/aether-asset-src` (sequential, checksums, licence checks) |
+| `npm run assets:build` | Builds the asset library into `assets/lib/` + `assets/catalog.json` + `assets/manifest.json` (normalise, merge, LOD, meshopt, colliders) |
+| `npm run assets:thumbs` | Renders library thumbnails in one headless Chromium (`-- --force`, `-- --only id1,id2`) |
+| `npm run e2e:assets` | Asset pipeline in Chromium (WebGPU, WebGL2) and Firefox: library search with thumbnails, drag a sofa onto the floor (model + collider), HDR sky, GLB / PNG imports (junk refused), package export with models and CREDITS.txt, GPU objects flat over 20 place / undo cycles |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset; `-- --arch`: each building as an archviz set — studio overview, room close-up, night, exploded, section, floor plan) |
 
 ## How a prompt becomes a playable world

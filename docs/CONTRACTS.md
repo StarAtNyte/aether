@@ -1377,3 +1377,125 @@ E2E: `npm run e2e:arch` (Chromium WebGPU, Chromium WebGL2, Firefox WebGL2):
 prompt → cutaway → walls down, x-ray, section, golden hour, studio render →
 floor plan (draw a room, add a door, undo) → walk in through the front door
 (E) → night, all lights, photo mode → Stop restores the views.
+
+## Asset pipeline: `@aether/assets` (+ additions to core, render, physics, logic, arch, agent, server, studio)
+
+### World IR (additive, backward compatible)
+
+- `ShapeSpec` gains `AssetShape`:
+  `{ kind: 'asset', id: AssetRef, variant?: AssetRef, fitSize?: number (0..500 m), animation?: string, fallback?: PrimitiveShape | ProceduralShape }`.
+  `id` is a library catalog id (`sofa`, `tree-oak`) or a user import
+  (`user-` + 12 hex of the content SHA-256). Models are real-world sized
+  (metres), base on y = 0, centred in x/z. `variant` must be one of the
+  catalog entry's `variants`, else the base id is shown. `animation`:
+  absent / `"auto"` = idle / walk / run from the entity's movement,
+  `"none"` = rest pose, any other value loops that clip.
+- **Fallback chain** (render and physics agree): catalog / import → a
+  generator asset's procedural shape → the shape's `fallback` → a
+  translucent box of the asset's size (or 1 m), with a warning. Never empty.
+- `Environment` gains `hdri?: AssetRef`, `hdriIntensity?: number (0..8, default 1)`,
+  `hdriBackground?: boolean (default true)`.
+- Library models face +Z (props, like `furn-*` furniture); characters,
+  animals and vehicles face −Z (the engine's forward axis) — catalog field
+  `facing`.
+
+### `@aether/assets` (pure TypeScript; `sideEffects: false`; subpath `@aether/assets/import`)
+
+| Export | Contract |
+| --- | --- |
+| `Catalog`, `CatalogEntry`, `CatalogPack`, `CatalogCollider`, `CatalogAnims`, `AssetCategory`, `AssetLicence` | zod schemas of `assets/catalog.json` (version 1). Paths are content-hashed (`m/<id>[.lod1|.lod2].<sha8>.glb`, `h/…hdr`, `t/…webp`) relative to `base` (`/assets/lib/`). Licences: `CC0-1.0`, `CC-BY-4.0` (third party), `MIT` (first-party forge originals). |
+| `loadCatalog()` / `getCatalog()` / `setCatalog(c)` / `catalogEntry(id)` / `libraryUrl(path)` | Lazy registry. `loadCatalog` imports the JSON once (own bundle chunk), validates it and never rejects (empty catalog when missing). |
+| `searchAssets(catalog, query)` / `bestAsset(catalog, text, filter)` | Tokenised, plural-folded, synonym-expanded (`SYNONYM_GROUPS`), typo-tolerant (one edit or swap) AND search with category / kind / style / placement / animated filters; ties prefer lighter models; ≤ 200 results. |
+| `selectLod(entry, distance, fovY, scale?, bias?)`, `lodDistances(…)`, `screenFraction(…)` | LOD choice by projected height (`LOD_SCREEN_FRACTIONS` = 0.25 / 0.08 of the viewport). |
+| `assetInfo(id)`, `assetShapeSize(shape)`, `effectiveAssetId(shape)`, `fitScale(size, fitSize)`, `pickRoles(clips)` | Uniform facts for library entries and registered imports (URL, LOD URLs, size, collider, clips). |
+| `registerUserAsset({ meta, url, size? })`, `unregisterUserAsset(id)`, `userAsset(id)`, `userAssets()`, `onUserAssetsChanged(fn)` | Host registry of imports (the studio registers `blob:` URLs). Images become posters (`POSTER_WIDTH` 1.2 m). |
+| `creditsFor(world, catalog?)`, `creditsText(name, credits)`, `worldAssetIds(world)` | Attribution grouped by pack + author (imports last). |
+| `catalogSummary(catalog)` | ≤ 1800 characters: per category count + example ids (prompt). |
+| `validateGltf(bytes, limits?)` → `{ ok, glb, report } \| { ok:false, error }` | Never throws. GLB or self-contained `.gltf` (data URIs only). Exact header / chunk checks, `inspectUntrusted` JSON guard, zod structure, no external URIs, supported extensions only (no Draco / Basis), budgets (`DEFAULT_GLTF_LIMITS`: 32 MB, 500 k triangles, 4096 nodes, 64 textures, 64 clips …), names sanitised, `extras` dropped, pivot normalised by a new root node (idempotent). |
+| `validateImage(bytes)` / `validateHdr(bytes)` | PNG / JPEG / WebP / Radiance RGBE by magic bytes; byte and pixel caps. |
+| `importUserAsset(bytes, fileName)` (`@aether/assets/import`) | Sniffs the kind by content, validates, returns sanitised bytes + `UserAssetMeta` with a content-derived id. |
+| `createTrellisProvider({ endpoint, token?, timeoutMs?, maxOutputBytes?, fetch? })`, `isAllowedEndpoint(url)` | Optional image → GLB through a user-run TRELLIS.2 wrapper (see docs/IMAGE_TO_3D.md). Loopback over http or https only; results pass `validateGltf`. |
+
+### `@aether/render`
+
+- `SceneSync` mounts `asset` shapes (placeholder sized from the catalog while
+  loading; refcounted per URL; LOD chains as three.js `LOD` whose lower
+  levels reuse LOD 0's materials; posters for image imports;
+  `refreshAssets(ids?)`; `gaitOf(id)`; `animatedCount`; `updateAnimations(dt)`).
+  New option `textures?: TextureCache`.
+- `AssetAnimator` (lazy chunk): idle / walk / run cross-fades from tracked
+  world-space speed (`GAIT`: walk ≥ 0.25 m/s, run ≥ 3.2 m/s), gait scaled
+  to speed, zero allocations per frame.
+- `createGltfModelLoader()` now decodes `EXT_meshopt_compression`
+  (three's `MeshoptDecoder`, lazy) and keeps clips on `scene.animations`;
+  `cloneModel` / `instantiateAsset` clone skinned models with
+  `SkeletonUtils`.
+- `HdriController` (`environment.hdri`): lazy `HDRLoader`, binds
+  `scene.environment` (× 0.6 of the sky's IBL scale) and the background,
+  dims the hemisphere ambient; the analytic sky stays the fallback.
+- `WorldRenderer`: options `textureSource`, `hdriSource`; methods
+  `cursorRay(ndcX, ndcY)`, `refreshAssets(ids?)`, `gaitOf(id)`, `animatedCount`.
+  Animated assets update only while `render(dt, { animate: true })`.
+
+### `@aether/physics`
+
+- `autoColliders` handles `asset`: provider colliders → catalog
+  (`assetColliderDescs`: box / upright capsule / hull support points) →
+  fallback chain. `PhysicsWorld.create` / `restore` await the catalog when
+  the world uses assets. Subpath `@aether/physics/asset-colliders` (no Rapier).
+
+### `@aether/logic`, `@aether/arch`
+
+- Trigger zones of asset entities use the asset's size.
+- `furnitureAsset(kind, style)` / `FURNITURE_ASSETS`: when the catalog is
+  loaded, layouts place photographed models for kinds that suit the
+  building style (classic: sofa, armchair, nightstand; all: round coffee
+  table; modern styles: pendant), sized by the model, with the `furn-*`
+  generator as `fallback`. `furnitureOfEntity(e)` gives the definition and
+  size of procedural or asset furniture (floor plan, nav and support checks).
+  Ceiling models hang from their top.
+
+### `@aether/agent`
+
+- Tool `search_assets({ query ≤ 120, category?, limit 1..20 })` (between
+  `request_asset` and `inspect`). `AgentCatalogs.assetSummary?` adds an
+  "Asset library" prompt section.
+- `forgeGenerator(deps, req)` — the asset forge: OBSERVE → SPEC → BUILD →
+  PARAMETRISE (`FORGE_METHOD`), sandbox check, four-view contact sheet,
+  critic scores (`FORGE_CRITERIA` silhouette .35, proportions .25, parts .25,
+  colours .15; gate `FORGE_GATE` 0.8), coder patches from text critique;
+  `maxIterations` ≤ 6, `maxCalls` ≤ 16; best iteration wins; reasons
+  `passed | iterations | calls | no-vision | failed | aborted`.
+- The offline planner places library models for everyday nouns
+  (`PROCEDURAL_NOUNS` stay procedural), brings characters / animals to life
+  (npc / wander / follow), and dresses the city street with library models and
+  an HDR sky when the catalog is loaded.
+
+### `apps/server`
+
+- `GET /api/health` adds `imageTo3d: boolean`.
+- `POST /api/image-to-3d` (only with `AETHER_IMAGE_TO_3D_URL`; optional
+  `AETHER_IMAGE_TO_3D_TOKEN`, scrubbed from logs): raw PNG / JPEG / WebP
+  ≤ 12 MB → validated GLB (`model/gltf-binary`); one job at a time (429);
+  upstream failures → 502 without details.
+- `/assets/lib/*` is served from the build output with the immutable cache
+  rule of `/assets/*` (`scripts/vite/asset-library.ts` serves it in dev and
+  preview and copies it into `dist`).
+
+### Studio (`apps/studio/src/engine/assets.ts`, `forge.ts`, `src/assets/*`, `src/editor/library/*`)
+
+- `studio.assets` (`AssetController`): `ready()`, `place(id, ndc?)`,
+  `placement(id, ndc)`, `previewDrop` / `clearPreview` (ghost),
+  `importFiles(files, ndc?)`, `removeImport`, `saveCreation` /
+  `placeCreation` / `removeCreation`, `credits()`, `buildPackage()` /
+  `exportPackage()` / `importPackage(file)`, `toggleFavorite`,
+  `setCreditsOpen`; its own zustand store (`LibraryState`).
+- Imports live in IndexedDB `aether-assets` (v2: `meta`, `blobs`,
+  `generators`), ≤ 200 files / 400 MB, ≤ 100 creations; memory fallback.
+- Packages (`.aether.zip`): `world.aether.json`, `package.json`
+  (`format: "aether-package"`), `CREDITS.txt`, `assets/lib/<library path>`,
+  `assets/user-<id>.<ext>`. Import re-validates every file and keeps only
+  files whose content id matches the name.
+- `studio.forge` (`ForgeController`): `availability()`, `open(base?)`,
+  `run(description, reference)`, `cancel()`, `accept()`; renders with a
+  private off-screen WebGL2 `WorldRenderer` (disposed on close).

@@ -50,6 +50,8 @@ export function gaitFor(speed: number): Gait {
 /** Drives every animated asset of one scene. */
 export class AssetAnimator {
   private readonly items = new Map<string, Animated>();
+  /** Same items as an array: the frame loop iterates it by index (no iterator allocation). */
+  private readonly list: Animated[] = [];
 
   /** Number of animated entities. */
   get size(): number {
@@ -92,6 +94,7 @@ export class AssetAnimator {
     tracked.getWorldPosition(item.last);
     mixer.update(0);
     this.items.set(id, item);
+    this.list.push(item);
   }
 
   /** Stop and forget one entity's animation. */
@@ -101,6 +104,8 @@ export class AssetAnimator {
     it.mixer.stopAllAction();
     it.mixer.uncacheRoot(it.root);
     this.items.delete(id);
+    const i = this.list.indexOf(it);
+    if (i >= 0) this.list.splice(i, 1);
   }
 
   /** Current gait of an entity (tests / HUD), or null when it is not animated. */
@@ -110,9 +115,11 @@ export class AssetAnimator {
 
   /** Advance every animation by `dt` seconds. Returns true when anything animated (a redraw is needed). */
   update(dt: number): boolean {
-    if (this.items.size === 0 || !(dt > 0)) return false;
+    const list = this.list;
+    if (list.length === 0 || !(dt > 0)) return false;
     const k = Math.min(1, dt * 8);
-    for (const it of this.items.values()) {
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i] as Animated;
       it.tracked.getWorldPosition(_pos);
       const dx = _pos.x - it.last.x;
       const dz = _pos.z - it.last.z;

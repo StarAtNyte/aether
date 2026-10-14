@@ -69,6 +69,11 @@ test.
 | @types/react | 19.3.0 | MIT | React type definitions |
 | @types/react-dom | 19.3.0 | MIT | React DOM type definitions |
 | @types/three | 0.186.0 | MIT | three.js type definitions |
+| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT, © 2024 Don McCurdy | Asset library build script only (`scripts/assets/build.ts`): read, normalise, merge, write glTF. Never in the app bundle. |
+| [@gltf-transform/extensions](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT, © 2024 Don McCurdy | Same script: `EXT_meshopt_compression` writing and the material / texture extensions of the sources. |
+| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1.1 (exact; was already installed as a dependency of @types/three) | MIT, © 2016–2026 Arseny Kapoulkine | Same script: meshopt encoder and the simplifier for LOD files. The browser decodes with the copy of the decoder that ships inside `three` (examples/jsm/libs/meshopt_decoder.module.js, MIT). |
+| property-graph | 4.1.0 | MIT, © 2021 Don McCurdy | Dependency of @gltf-transform/core (dev only) |
+| ktx-parse | 1.1.0 | MIT, © 2020 Don McCurdy | Dependency of @gltf-transform/extensions (dev only) |
 
 Transitive development packages (versions from the lockfile):
 
@@ -140,14 +145,63 @@ uses an owner-paid key by default.
 
 ## 5. Assets
 
-**No third-party 3D models, textures, HDRIs, images or audio are
-included.** The only third-party media are two open-source fonts (below).
+### 5.1 Curated asset library (`assets/`)
 
-- **Geometry:** every mesh is generated at runtime by Aether's own
-  procedural kernel and its 36 built-in generators, or by sandboxed
-  generators written by the coder model at runtime.
+The library is described in [ASSETS.md](ASSETS.md). Every shipped file is
+listed with its source archive, the file inside it, its licence, authors
+and SHA-256 in the machine-readable **`assets/manifest.json`**; downloads
+and their checksums are pinned in `assets/sources.json`. Only CC0-1.0 and
+CC-BY-4.0 third-party assets are accepted; there are currently **no CC-BY
+assets**, so no attribution is legally required — the app still credits
+every source (credits panel, end-of-game screen, `CREDITS.txt` in exported
+packages).
+
+| Source | Version / date | Author | Licence (evidence) | Shipped |
+| --- | --- | --- | --- | --- |
+| [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) | 2.0 | Kenney (www.kenney.nl) | CC0-1.0 (`License.txt` in the archive) | 94 models |
+| [Kenney Nature Kit](https://kenney.nl/assets/nature-kit) | 2.1 | Kenney | CC0-1.0 | 56 models |
+| [Kenney Food Kit](https://kenney.nl/assets/food-kit) | 2.0 | Kenney | CC0-1.0 | 27 models |
+| [Kenney Cube Pets](https://kenney.nl/assets/cube-pets) | 2.0 | Kenney | CC0-1.0 | 23 animated animals |
+| [Kenney Car Kit](https://kenney.nl/assets/car-kit) | 3.1 | Kenney | CC0-1.0 | 18 models |
+| [Kenney Graveyard Kit](https://kenney.nl/assets/graveyard-kit) | 5.0 | Kenney | CC0-1.0 | 18 models (5 animated characters) |
+| [Kenney Pirate Kit](https://kenney.nl/assets/pirate-kit) | 2.1 | Kenney | CC0-1.0 | 15 models |
+| [Kenney Survival Kit](https://kenney.nl/assets/survival-kit) | 2.0 | Kenney | CC0-1.0 | 15 models |
+| [Kenney City Kit (Roads)](https://kenney.nl/assets/city-kit-roads) | 2.2 | Kenney | CC0-1.0 | 15 models |
+| [Kenney City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) | 2.1 | Kenney | CC0-1.0 | 13 models |
+| [Kenney Fantasy Town Kit](https://kenney.nl/assets/fantasy-town-kit) | 2.0 | Kenney | CC0-1.0 | 12 models |
+| [Kenney Mini Characters](https://kenney.nl/assets/mini-characters) | 1.0 | Kenney | CC0-1.0 | 12 animated characters |
+| [Kenney City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) | 2.0 | Kenney | CC0-1.0 | 11 models |
+| [Kenney Mini Market](https://kenney.nl/assets/mini-market) | 1.0 | Kenney | CC0-1.0 | 6 models (1 animated character) |
+| [Poly Haven](https://polyhaven.com) models (API, 1k textures), retrieved 2026-10-14 | per asset (`assets/manifest.json`) | Kirill Sannikov, Ulan Cabanilla, Fran Calvente, James Ray Cock, Amal Kumar, Jorge Camacho, Rico Cilliers, Riley Queen, Josh Dean, Gabriel Radić (per asset in the manifest) | CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)) | 16 models: armchair, sofa, round coffee table, nightstand, wooden side table, painted bench, succulent, clay pot, ceramic vase, pendant lamp, wooden lantern, barrel, cat and horse statues, street lamp, retro TV |
+| [Poly Haven](https://polyhaven.com) HDRIs (1k `.hdr`) | per asset | Greg Zaal, Jarod Guest, Sergej Majboroda | CC0-1.0 | 5 skies: Kloofendal 48d Partly Cloudy (Pure Sky), Venice Sunset, Lebombo, Moonlit Golf, Brown Photostudio 02 |
+
+Processing (`scripts/assets/build.ts`) changes the files: scale to metres,
+pivot, merged meshes, LODs, linearised colours of two older Kenney kits,
+re-encoded realistic textures, meshopt compression. Thumbnails in
+`assets/lib/t/` are renders of these assets by this project.
+
+**Evaluated and excluded:** Quaternius packs — the pack pages say CC0, but
+quaternius.com/license.html forbids redistributing the assets as assets,
+which a public repository would do (unclear licence → not shipped). No
+Pascal Editor, Sketchfab or other assets are included.
+
+### 5.2 Forge originals (first-party, AI-written code)
+
+`hero-fountain`, `hero-statue`, `hero-lantern`, `hero-ship`, `hero-car`,
+`hero-explorer`, `hero-cherry-tree`, `hero-gazebo` in
+`packages/procgen/library/` (catalog pack `aether-forge`, MIT like the rest of
+the project) are procedural generators written by **Anthropic Claude Code**
+through the asset forge (`scripts/assets/forge-heroes.ts`) from text briefs
+in that script — no reference images were used. See the AI disclosure below.
+
+### 5.3 Other media
+
+- **Geometry:** everything else is generated at runtime by Aether's own
+  procedural kernel and its built-in generators, or by sandboxed generators
+  written by the coder model at runtime.
 - **Materials and skies:** procedural, built from colour and parameter
-  presets plus shaders that ship with three.js. No texture files.
+  presets plus shaders that ship with three.js, except the library models'
+  own textures and the five HDR skies above.
 - **Audio:** synthesised at runtime with WebAudio oscillators
   (`apps/studio/src/engine/sound.ts`). No audio files.
 - **Fonts:** two variable web fonts are self-hosted from
@@ -169,15 +223,17 @@ included.** The only third-party media are two open-source fonts (below).
 - **Template and asset previews:** `apps/studio/public/templates/*.webp` and
   `apps/studio/public/palette/*.webp` are renders of Aether's own procedural
   worlds and objects, produced by `npm run thumbnails` with this
-  application's renderer. No third-party imagery.
+  application's renderer.
 - **Transform gizmo:** three.js's `TransformControls` (examples/jsm, part of
   the MIT-licensed `three` package above), loaded lazily by the editor.
 - **Screenshots:** `docs/screenshots/*.png` are captures of this application
   made by the e2e test.
-- **`model` shapes:** the World IR can reference glTF models, but the default
-  configuration allows only same-origin, `blob:` or `data:` URLs (the https
-  allowlist is empty). The repository includes no model files. Anyone who
-  adds models must record their source and licence here.
+- **User imports and `model` shapes:** models, images and HDRIs users import
+  stay in their browser (IndexedDB) and are listed as "Your imports" in
+  credits; they are never uploaded by the app. `model` URLs are restricted
+  to same-origin, `blob:` or `data:` (the https allowlist is empty).
+- **Optional image → 3D (TRELLIS.2, MIT):** off by default and not bundled;
+  see [IMAGE_TO_3D.md](IMAGE_TO_3D.md).
 
 ## 6. Research references
 
@@ -220,8 +276,10 @@ not installed.
   validated before use.
 - **AI-generated assets.** 3D content created by AI at runtime is produced
   *as code*: procedural generators and behaviour scripts that run in
-  sandboxes (see [ARCHITECTURE.md §9](ARCHITECTURE.md#9-sandbox-design)). No
-  pre-generated AI meshes, images or audio are committed to the repository.
+  sandboxes (see [ARCHITECTURE.md §9](ARCHITECTURE.md#9-sandbox-design)),
+  including the asset forge's image / text → generator results. No AI-made
+  meshes, images or audio are committed to the repository (the curated
+  library models are human-made CC0 assets, see §5.1).
 - **Offline generator library (AI-generated code).** The procedural
   generators in `packages/procgen/library/*.json` whose `provenance.source`
   is `"codex"` were **written by OpenAI Codex** (through the author's own
@@ -232,6 +290,13 @@ not installed.
   validation, size/grounding/silhouette checks). The four entries with
   `"source": "example"` are the hand-reviewed few-shot examples. They are
   code, not meshes, and always execute in the generator sandbox.
+- **Forge originals (AI-written code).** The eight `hero-*` generators in
+  `packages/procgen/library/` (`provenance.source: "claude-code"`) were
+  **written by Anthropic Claude Code** through the author's own sign-in,
+  using the asset forge loop (`scripts/assets/forge-heroes.ts`: text brief →
+  generator → sandbox acceptance checks → four rendered views → critique by
+  the same model → patched code; two passes each, 33 model calls in total).
+  They are code, not meshes; their thumbnails are renders by this project.
 - **Offline mock.** The built-in mock provider is ordinary deterministic
   code (keyword matching plus world templates). It is not a model.
 
