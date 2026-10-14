@@ -39,6 +39,19 @@ import type { VoxelHudState } from '../voxel/hudState';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
+/**
+ * Quiet time (no input, nothing animating) a thumbnail waits for: reading
+ * pixels back stalls slow GPUs for a few hundred milliseconds (WebGL2 on a
+ * software rasterizer), which must not land in the middle of an interaction.
+ */
+export const THUMBNAIL_QUIET_MS = 2000;
+/** True when nothing animated since `stillSince` and no input came since `lastInputAt` for {@link THUMBNAIL_QUIET_MS}. */
+export function quietReached(now: number, stillSince: number, lastInputAt: number, quietMs = THUMBNAIL_QUIET_MS): boolean {
+  return now - Math.max(stillSince, lastInputAt) >= quietMs;
+}
+
+/** Longest a thumbnail waits for that quiet moment before capturing anyway. */
+const THUMBNAIL_QUIET_MAX_MS = 15_000;
 /** Longest wait for block terrain to finish streaming before a thumbnail (ms). */
 const VOXEL_THUMBNAIL_WAIT_MS = 30_000;
 
@@ -620,6 +633,14 @@ export class Simulation {
       const deadline = performance.now() + THUMBNAIL_SETTLE_MS;
       while (this.renderer.animating && performance.now() < deadline && !this.disposed) {
         this.touch();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      // Wait (bounded) for a quiet moment: no input and nothing animating for THUMBNAIL_QUIET_MS.
+      const quietDeadline = performance.now() + THUMBNAIL_QUIET_MAX_MS;
+      let stillSince = performance.now();
+      while (performance.now() < quietDeadline && !this.disposed && !this.session) {
+        if (this.renderer.animating) stillSince = performance.now();
+        if (quietReached(performance.now(), stillSince, this.lastInputAt)) break;
         await new Promise((r) => setTimeout(r, 100));
       }
       // Block terrain: wait (bounded) for the chunks around the view, so the still shows the world.
@@ -1204,8 +1225,12 @@ export class Simulation {
   };
 
   private readonly onActivity = (): void => {
+    this.lastInputAt = performance.now();
     this.touch();
   };
+
+  /** Time of the last pointer / key / wheel input (thumbnail captures wait for a quiet moment). */
+  private lastInputAt = 0;
 
   private resize(): void {
     const parent = this.renderer.domElement.parentElement;

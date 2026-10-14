@@ -6,7 +6,7 @@ import { DEFAULT_ARCH_UI, hourLabel, mergeArchUi, SECTION_RANGE, sectionLevel, s
 import { areaLabel, clampZoom, closesPolygon, dragRect, fitPlan, lengthLabel, outlineArea, panBy, pathOf, PLAN_ZOOM, roomColors, viewBox, zoomAt } from '../src/lib/planView';
 import { nearestTarget, nextVariant, roomToggle, walkIndex, type WalkTarget } from '../src/engine/walkthrough';
 import { ArchController, initialViewFor, type ArchHost } from '../src/engine/arch';
-import { entranceYawDeg } from '../src/engine/Simulation';
+import { entranceYawDeg, quietReached, THUMBNAIL_QUIET_MS } from '../src/engine/Simulation';
 import { roomLabels } from '../src/lib/labels';
 import { createStudioStore } from '../src/state/store';
 
@@ -74,6 +74,16 @@ describe('architecture UI state', () => {
   it('opens single storeys as a cutaway and taller buildings as built', () => {
     expect(initialViewFor(1).walls).toBe('cutaway');
     expect(initialViewFor(2).walls).toBe('up');
+  });
+});
+
+describe('thumbnail capture timing (regression)', () => {
+  it('waits for a quiet moment: nothing animating and no input', () => {
+    // A readback right after content settles stalled "Run checks" on slow GPUs.
+    expect(quietReached(10_000, 9_500, 0)).toBe(false);
+    expect(quietReached(10_000, 7_000, 9_000)).toBe(false);
+    expect(quietReached(10_000, 7_000, 7_500)).toBe(true);
+    expect(THUMBNAIL_QUIET_MS).toBeGreaterThanOrEqual(1500);
   });
 });
 
