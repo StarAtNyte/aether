@@ -148,7 +148,10 @@ export class StaticMerges {
     for (let i = this.merges.length - 1; i >= 0; i--) {
       const merge = this.merges[i] as Merge;
       _inv.copy(merge.parent.matrixWorld).invert();
-      for (const m of merge.members) {
+      const members = merge.members;
+      // Index loop: no iterator object per merge per frame.
+      for (let j = 0; j < members.length; j++) {
+        const m = members[j] as Member;
         if (this.evicted.has(m.mesh)) continue;
         if (!memberIntact(m, merge.parent)) {
           this.evict(m.mesh);

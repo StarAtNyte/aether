@@ -1614,11 +1614,20 @@ before the gates ran.
   finish; procedural maps stay until they arrive and remain the fallback.
 - [x] **Architecture views.** The arch e2e GPU check now waits for settled
   counts (photographed furniture loads asynchronously); counts are flat.
-- Known: the "building views allocate nothing" probe is load-sensitive and
-  pre-existing; it passes on re-run.
+- [x] **Allocation probe flakiness fixed.** The "building views" and
+  "scatter-field" probes failed intermittently on a busy machine. Cause:
+  V8 optimises on a background thread, so after the warm-up loop baseline
+  code (which boxes doubles) could still be running while sampling.
+  `probeAllocations` now yields 50 ms after warm-up and warms again before
+  measuring; `StaticMerges.update` iterates members by index. The probe
+  file then passed 10 consecutive runs, four of them with two extra
+  CPU-bound processes running; the building probe also waits for asset
+  builds (`whenIdle`) because furniture are now library assets.
 
-**Gates.** tsc 0 errors. Vitest 164 files, 2126 tests: one failure (the
-outdated warning text above), fixed and its file re-run green. Studio build
+**Gates.** tsc 0 errors. Vitest 164 files, 2126 tests: the second full
+run had one failure (the outdated warning text above), the third only the
+two allocation probes; both fixed as described, and the render suite
+(329 tests) plus every probe file then passed three runs in a row. Studio build
 OK. Smoke 25/25 (two new library prompts: city street, town plaza).
 `npm run e2e` passes in Chromium WebGPU, Chromium WebGL2 and Firefox
 WebGL2; `npm run e2e:assets` and `npm run e2e:arch` pass.

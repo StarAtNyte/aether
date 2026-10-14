@@ -35,7 +35,12 @@ interface ProfileNode {
  */
 export async function probeAllocations(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number }): Promise<AllocationReport> {
   // Warm up long enough for the optimizing compiler: baseline code boxes doubles that optimized code keeps unboxed.
-  for (let i = 0; i < (opts.warmup ?? 20_000); i++) fn();
+  const warmup = opts.warmup ?? 20_000;
+  for (let i = 0; i < warmup; i++) fn();
+  // Optimisation runs on a background thread: on a busy machine it may not have finished yet. Give it
+  // time, then warm again so the installed optimized code (not baseline code) is what gets measured.
+  await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < Math.ceil(warmup / 4); i++) fn();
   const session = new Session();
   session.connect();
   try {
