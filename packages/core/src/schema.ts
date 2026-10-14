@@ -12,6 +12,9 @@
  */
 import './zod-config';
 import { z } from 'zod';
+import { VoxelEdit, VoxelTerrain } from './voxel-schema';
+
+export * from './voxel-schema';
 
 export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 export type Vec3 = z.infer<typeof Vec3>;
@@ -499,6 +502,11 @@ export const WorldDoc = z.object({
   tests: z.array(WorldTest).default([]),
   /** Editable mesh data referenced by `mesh` shapes. */
   meshes: z.record(MeshId, MeshAsset).default({}),
+  /**
+   * Additive: block terrain (Minecraft-like voxel world) with its edits and
+   * game-kit settings. Absent for ordinary worlds. See `voxel-schema.ts`.
+   */
+  voxel: VoxelTerrain.optional(),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;
@@ -536,6 +544,13 @@ export const Patch = z.discriminatedUnion('op', [
   z.object({ op: z.literal('setMesh'), mesh: MeshAsset }),
   /** Additive: delete a mesh asset (rejected while entities still use it). */
   z.object({ op: z.literal('removeMesh'), id: MeshId }),
+  /**
+   * Additive: create, configure (deep merge, arrays replace) or with `set: null`
+   * remove the voxel terrain.
+   */
+  z.object({ op: z.literal('setVoxel'), set: z.record(z.string(), Json).nullable() }),
+  /** Additive: append block edits (boxes, spheres, structures, pixel art …) to the voxel terrain. */
+  z.object({ op: z.literal('voxelEdit'), edits: z.array(VoxelEdit).min(1).max(256) }),
 ]);
 export type Patch = z.infer<typeof Patch>;
 export type PatchInput = z.input<typeof Patch>;

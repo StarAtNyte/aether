@@ -240,6 +240,14 @@ export class Draft {
     return this.writable('meshes');
   }
 
+  /** Set (or with `undefined`, remove) the voxel terrain. */
+  setVoxel(value: WorldDoc['voxel']): void {
+    if (value === this.doc.voxel) return;
+    this.dirty = true;
+    if (value === undefined) delete this.doc.voxel;
+    else this.doc.voxel = value;
+  }
+
   /** Assign a top-level value-like field. */
   set<K extends 'environment' | 'player' | 'hud' | 'name' | 'description' | 'seed' | 'rules' | 'tests' | 'state'>(key: K, value: WorldDoc[K]): void {
     this.dirty = true;

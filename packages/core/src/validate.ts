@@ -12,6 +12,7 @@ import { isEntityId } from './ids';
 import { forEachRuleSelector, forEachTestSelector } from './refs';
 import { isAllowedModelUrl } from './urls';
 import { checkMeshAssetSizes, meshAssetBytes } from './mesh/codec';
+import { checkVoxelTerrain } from './patch/voxel-ops';
 
 export type { Issue } from './issues';
 
@@ -187,6 +188,11 @@ export function checkIntegrity(world: WorldDoc): Issue[] {
   const stateKeys = Object.keys(world.state).length;
   if (stateKeys > LIMITS.MAX_STATE_KEYS) issues.push({ path: 'state', message: `has ${stateKeys} variables (max ${LIMITS.MAX_STATE_KEYS})` });
   if (world.hud.length > LIMITS.MAX_HUD) issues.push({ path: 'hud', message: `has ${world.hud.length} entries (max ${LIMITS.MAX_HUD})` });
+  if (world.voxel) {
+    let hints = 4;
+    const bad = checkVoxelTerrain(world.voxel, { takeHint: () => hints-- > 0 });
+    if (bad) issues.push({ path: 'voxel', message: bad });
+  }
   return issues;
 }
 

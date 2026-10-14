@@ -34,6 +34,8 @@ export const RULE_MERGE: MergeConfig = { nullable: new Set(), discriminants: { w
 export const ENVIRONMENT_MERGE: MergeConfig = { nullable: new Set(['fog', 'ground']), discriminants: {} };
 /** Player merge rules. */
 export const PLAYER_MERGE: MergeConfig = { nullable: new Set(), discriminants: {} };
+/** Voxel terrain merge rules (`setVoxel`; arrays such as `edits` and `blocks` replace). */
+export const VOXEL_MERGE: MergeConfig = { nullable: new Set(), discriminants: {} };
 
 function childPath(path: string, key: string): string {
   return path ? `${path}.${key}` : key;

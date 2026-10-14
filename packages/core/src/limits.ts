@@ -42,6 +42,12 @@ export const LIMITS = Object.freeze({
   MAX_MESH_BYTES: 24 * 1024 * 1024,
   /** Maximum hand-placed points of one scatter entity. */
   MAX_SCATTER_POINTS: 20_000,
+  /** Maximum blocks (upper bound) one `voxelEdit` patch may write. */
+  MAX_VOXEL_PATCH_BLOCKS: 2_000_000,
+  /** Maximum blocks (upper bound) all voxel edits of a world may write together. */
+  MAX_VOXEL_TOTAL_BLOCKS: 32_000_000,
+  /** Maximum voxel edits in a world (`voxel.edits`). */
+  MAX_VOXEL_EDITS: 2000,
 });
 
 /** Type of {@link LIMITS}. */

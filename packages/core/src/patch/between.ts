@@ -11,7 +11,7 @@
  *      other new entities (restored in D);
  *   D. update changed entities (scatter-shrinking updates first, to respect
  *      MAX_SCATTER_TOTAL);
- *   E. generators, scripts, rules, tests, environment, player, state, HUD, meta.
+ *   E. generators, scripts, rules, tests, environment, voxel terrain, player, state, HUD, meta.
  * Mesh assets are set before step A (entities may reference them) and removed
  * after step E (once nothing references them).
  *
@@ -21,7 +21,7 @@
  */
 import type { Entity, Json, Patch, Rule, WorldDoc, WorldTest } from '../schema';
 import { deepEqual, hasOwn } from '../json';
-import { deepMerge, diffForMerge, ENTITY_MERGE, ENVIRONMENT_MERGE, PLAYER_MERGE, RULE_MERGE } from '../merge';
+import { deepMerge, diffForMerge, ENTITY_MERGE, ENVIRONMENT_MERGE, PLAYER_MERGE, RULE_MERGE, VOXEL_MERGE } from '../merge';
 import { scatterCount } from '../validate';
 import { applyPatches } from './apply';
 
@@ -169,6 +169,14 @@ export function patchesBetween(from: WorldDoc, to: WorldDoc): Patch[] {
 
   const env = diffForMerge(from.environment, to.environment, ENVIRONMENT_MERGE);
   if (env) out.push({ op: 'setEnvironment', set: env });
+  if (from.voxel !== to.voxel && !deepEqual(from.voxel, to.voxel)) {
+    if (to.voxel === undefined) out.push({ op: 'setVoxel', set: null });
+    else if (from.voxel === undefined) out.push({ op: 'setVoxel', set: to.voxel as unknown as Record<string, Json> });
+    else {
+      const set = diffForMerge(from.voxel, to.voxel, VOXEL_MERGE);
+      if (set) out.push({ op: 'setVoxel', set });
+    }
+  }
 
   let playerBase = from.player;
   if (playerBase.controls !== undefined && removed.has(playerBase.controls)) {

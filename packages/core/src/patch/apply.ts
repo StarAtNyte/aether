@@ -26,8 +26,12 @@
  *   while an entity still uses the mesh; `remove` drops mesh assets that no
  *   entity uses any more.
  * - `clear` empties entities, rules, tests, state, HUD and meshes; custom generators and
- *   scripts are kept (they are reusable code); environment/player are reset only
- *   with `keepEnvironment: false` (player.controls is always cleared).
+ *   scripts are kept (they are reusable code); environment/player (and voxel
+ *   terrain) are reset only with `keepEnvironment: false` (player.controls is
+ *   always cleared).
+ * - `setVoxel` deep-merges voxel terrain settings (`set: null` removes the
+ *   terrain); `voxelEdit` appends block edits. Block ids are checked against
+ *   the registry and edit volumes against the voxel block limits.
  */
 import type { z } from 'zod';
 import {
@@ -49,6 +53,7 @@ import { forEachRuleSelector, forEachTestSelector, mapRuleRefs, mapTestRefs, ren
 import { generatorUsers, meshTotalBytes, meshUsers, scatterCount } from '../validate';
 import { checkMeshAssetSizes, decodeMesh, meshAssetBytes } from '../mesh/codec';
 import { Draft } from './draft';
+import { applySetVoxel, applyVoxelEdit } from './voxel-ops';
 
 /** A rejected patch. `index` is the position in the input array (-1 for batch-level errors). */
 export interface PatchError {
@@ -502,6 +507,7 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
     const player = PlayerSchema.parse({});
     if (!deepEqual(env, d.world.environment)) d.set('environment', env);
     if (!deepEqual(player, d.world.player)) d.set('player', player);
+    d.setVoxel(undefined);
   } else if (d.world.player.controls !== undefined) {
     const { controls: _dropped, ...player } = d.world.player;
     d.set('player', player);
@@ -532,6 +538,14 @@ function applyOne(d: Draft, p: Patch): Outcome {
     case 'clear': return opClear(d, p);
     case 'setMesh': return opSetMesh(d, p);
     case 'removeMesh': return opRemoveMesh(d, p);
+    case 'setVoxel': {
+      const err = applySetVoxel(d, p.set);
+      return err ? fail(err) : OK;
+    }
+    case 'voxelEdit': {
+      const err = applyVoxelEdit(d, p.edits);
+      return err ? fail(err) : OK;
+    }
     default: {
       const exhaustive: never = p;
       return fail(`unsupported op ${JSON.stringify((exhaustive as { op?: unknown }).op)}`);
