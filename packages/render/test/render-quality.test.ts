@@ -1,21 +1,75 @@
 import { describe, expect, it } from 'vitest';
-import { qualityPlan, Refinement, SHADOW_RADIUS, STUDIO_ACCUMULATE_FRAMES, STUDIO_ACCUMULATE_FRAMES_SOFTWARE, STUDIO_SHADOW_MAP_MAX, studioAvailable } from '../src/gpu/render-quality';
+import {
+  FINAL_ACCUMULATE_FRAMES,
+  FINAL_ACCUMULATE_FRAMES_SOFTWARE,
+  postQualityOf,
+  qualityPlan,
+  Refinement,
+  SHADOW_RADIUS,
+  STUDIO_ACCUMULATE_FRAMES,
+  STUDIO_ACCUMULATE_FRAMES_SOFTWARE,
+  STUDIO_SHADOW_MAP_MAX,
+  studioAvailable,
+  TIER_ACCUMULATE_FRAMES,
+  TIER_SHADOW_RADIUS,
+} from '../src/gpu/render-quality';
+import { effectsOf } from '../src/gpu/finishing';
 import { renderBudget } from '../src/gpu/budget';
 
 describe('qualityPlan', () => {
   it('realtime follows the budget and keeps adaptive resolution', () => {
     const b = renderBudget('discrete', false);
-    expect(qualityPlan('realtime', b)).toEqual({ quality: 'realtime', post: 'standard', shadowMapCap: b.shadowMapCap, shadowRadius: SHADOW_RADIUS.realtime, accumulateFrames: 0, adaptiveResolution: true });
+    const p = qualityPlan('realtime', b);
+    expect(p).toEqual({
+      quality: 'realtime',
+      tier: 'medium',
+      effects: effectsOf('medium'),
+      post: 'standard',
+      shadowMapCap: b.shadowMapCap,
+      shadowRadius: SHADOW_RADIUS.realtime,
+      accumulateFrames: 0,
+      adaptiveResolution: true,
+    });
   });
-  it('studio asks for the studio pipeline, bigger softer shadows and refinement frames', () => {
+  it('the tier picks the effect set, the pipeline variant and the refinement of the realtime look', () => {
+    const b = renderBudget('discrete', false);
+    const low = qualityPlan('realtime', b, false, 'low');
+    expect(low.post).toBeNull();
+    expect(low.effects.composite).toBe(false);
+    const high = qualityPlan('realtime', b, false, 'high');
+    expect(high.post).toBe('studio');
+    expect(high.effects.ao && high.effects.taa).toBe(true);
+    expect(high.accumulateFrames).toBe(TIER_ACCUMULATE_FRAMES);
+    expect(high.shadowRadius).toBe(TIER_SHADOW_RADIUS);
+    expect(high.adaptiveResolution).toBe(true);
+    const ultra = qualityPlan('realtime', b, false, 'ultra');
+    expect(ultra.effects.ssr && ultra.effects.shafts && ultra.effects.halation).toBe(true);
+    expect(ultra.effects.dof).toBe(false);
+  });
+  it('software rasterizers default to the low tier', () => {
+    expect(qualityPlan('realtime', renderBudget('software', false), true).tier).toBe('low');
+  });
+  it('studio asks for the ultra chain, bigger softer shadows and refinement frames', () => {
     const b = renderBudget('integrated', false);
     const p = qualityPlan('studio', b);
     expect(p.quality).toBe('studio');
     expect(p.post).toBe('studio');
+    expect(p.tier).toBe('ultra');
+    expect(p.effects.ssr).toBe(true);
+    expect(p.effects.dof).toBe(false);
     expect(p.shadowMapCap).toBe(Math.min(STUDIO_SHADOW_MAP_MAX, b.shadowMapCap * 2));
     expect(p.shadowRadius).toBeGreaterThan(SHADOW_RADIUS.realtime);
     expect(p.accumulateFrames).toBe(STUDIO_ACCUMULATE_FRAMES);
     expect(p.adaptiveResolution).toBe(false);
+  });
+  it('final adds depth of field and refines much longer', () => {
+    const b = renderBudget('discrete', false);
+    const p = qualityPlan('final', b);
+    expect(p.quality).toBe('final');
+    expect(p.effects.dof).toBe(true);
+    expect(p.accumulateFrames).toBe(FINAL_ACCUMULATE_FRAMES);
+    expect(p.accumulateFrames).toBeGreaterThan(STUDIO_ACCUMULATE_FRAMES);
+    expect(qualityPlan('final', renderBudget('software', false), true).accumulateFrames).toBe(FINAL_ACCUMULATE_FRAMES_SOFTWARE);
   });
   it('software rasterizers refine fewer frames and keep their shadow map', () => {
     const b = renderBudget('software', false);
@@ -26,8 +80,16 @@ describe('qualityPlan', () => {
   it('falls back to realtime without the post pass (low memory)', () => {
     const b = renderBudget('discrete', true);
     expect(studioAvailable(b)).toBe(false);
-    expect(qualityPlan('studio', b).quality).toBe('realtime');
-    expect(qualityPlan('studio', b).post).toBeNull();
+    for (const q of ['studio', 'final'] as const) {
+      expect(qualityPlan(q, b).quality).toBe('realtime');
+      expect(qualityPlan(q, b).post).toBeNull();
+      expect(qualityPlan(q, b).tier).toBe('low');
+    }
+  });
+  it('maps an effect set to its pipeline variant', () => {
+    expect(postQualityOf(effectsOf('low'))).toBeNull();
+    expect(postQualityOf(effectsOf('medium'))).toBe('standard');
+    expect(postQualityOf(effectsOf('high'))).toBe('studio');
   });
 });
 

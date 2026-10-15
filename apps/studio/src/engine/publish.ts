@@ -114,7 +114,7 @@ export interface PublishState {
   meta: { title: string; description: string; author: string; controls: string };
   music: Mood | null;
   video: { preset: VideoPresetId; fps: 24 | 30 | 60; format: VideoFormat; quality: 1 | 2 | 4; titles: TitleSpec; music: Mood | null; volume: number };
-  still: { preset: StillPresetId | 'custom'; width: number; height: number; format: 'png' | 'jpeg' | 'webp'; photoreal: boolean; source: 'view' | 'shot' };
+  still: { preset: StillPresetId | 'custom'; width: number; height: number; format: 'png' | 'jpeg' | 'webp'; photoreal: boolean; /** Final render: depth of field, a long refinement and 2× supersampling on top of photoreal. */ final: boolean; /** Path-traced render (global illumination, soft area lights, real glass; converges over many samples). */ pathTraced: boolean; /** Samples per pixel of a path-traced render. */ samples: number; source: 'view' | 'shot' };
   model: { binary: boolean };
   plan: { building: string | null; level: number; format: 'svg' | 'pdf'; scale: 50 | 100 };
   share: { value: string | null; chars: number; fits: boolean; qr: string | null; qrSize: number; note: string | null };
@@ -192,7 +192,7 @@ function initialState(world: WorldDoc): PublishState {
     meta: { title: defaultTitle(world), description: defaultDescription(world), author: '', controls: defaultControls(world) },
     music: null,
     video: { preset: '1080p', fps: 30, format: 'auto', quality: 1, titles: defaultTitles(defaultTitle(world)), music: 'cinematic', volume: 0.7 },
-    still: { preset: 'hd', width: 1920, height: 1080, format: 'png', photoreal: false, source: 'view' },
+    still: { preset: 'hd', width: 1920, height: 1080, format: 'png', photoreal: false, final: false, pathTraced: false, samples: 256, source: 'view' },
     model: { binary: true },
     plan: { building: null, level: 0, format: 'svg', scale: 50 },
     share: { value: null, chars: 0, fits: true, qr: null, qrSize: 0, note: null },
@@ -869,23 +869,40 @@ export class PublishController {
       const first = st.path.keys[0];
       const pose = st.still.source === 'shot' && first ? { pos: first.pos, target: first.target, fov: first.fov } : cam;
       const photoreal = st.still.photoreal && r.studioQualityAvailable;
-      if (photoreal) r.setRenderQuality('studio');
+      const final = photoreal && st.still.final;
+      if (photoreal) r.setRenderQuality(final ? 'final' : 'studio');
       await r.preparePost();
-      const img = await r.renderStill({
-        width: st.still.width,
-        height: st.still.height,
-        pose,
-        frames: photoreal ? 24 : 1,
-        tileSize: photoreal ? 1024 : 2048,
-        signal,
-        onProgress: (done, total) => this.progress(`Rendering tile ${done} of ${total}`, done / total),
-      });
+      const traced = st.still.pathTraced;
+      const plan = photoreal && !traced ? r.planStill(st.still.width, st.still.height, final ? 'final' : 'studio') : null;
+      const img = traced
+        ? await r.pathTraceStill({
+            width: st.still.width,
+            height: st.still.height,
+            samples: st.still.samples,
+            pose,
+            ...(st.still.final ? { fStop: 5.6 } : {}),
+            signal,
+            onProgress: (done, total, phase) =>
+              phase === 'sample'
+                ? this.progress(`Path tracing: sample ${done} of ${total}`, done / total)
+                : this.progress(phase === 'build' ? 'Preparing the scene…' : 'Compiling the path tracer (the first render of a session takes a moment)…', null),
+          })
+        : await r.renderStill({
+            width: st.still.width,
+            height: st.still.height,
+            pose,
+            frames: plan?.frames ?? 1,
+            tileSize: plan?.tileSize ?? 2048,
+            ...(plan && plan.supersample > 1 ? { supersample: plan.supersample } : {}),
+            signal,
+            onProgress: (done, total) => this.progress(`Rendering tile ${done} of ${total}`, done / total),
+          });
       this.progress('Encoding…', null);
       const blob = await encodeImage(img.data, img.width, img.height, st.still.format);
       // A browser without the requested encoder returns PNG: name the file after what it holds.
       const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
       const name = `${slugOf(this.host.history.current.name)}-${img.width}x${img.height}.${ext}`;
-      const detail = `${img.width}×${img.height} · ${ext.toUpperCase()}${photoreal ? ' · photoreal' : ''} · ${sizeLabel(blob.size)}`;
+      const detail = `${img.width}×${img.height} · ${ext.toUpperCase()}${traced ? ` · path traced, ${st.still.samples} samples` : final ? ' · final render' : photoreal ? ' · photoreal' : ''} · ${sizeLabel(blob.size)}`;
       this.finish(this.resultFor('render', blob, name, detail));
       void this.record('render', blob, { fileName: name, mime: blob.type, detail, ...(await this.thumbOpt()) });
       this.toast(`Render ready: ${detail}`, 'success', 4);

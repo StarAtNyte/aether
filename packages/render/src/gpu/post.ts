@@ -1,30 +1,47 @@
 /**
- * Post-processing: scene pass + bloom + a sky-derived colour grade + a soft vignette through three's node
- * `RenderPipeline` (formerly `PostProcessing`, renamed in r183). Tone
- * mapping and color space conversion happen in the pipeline's output
- * transform. Any failure (missing feature, shader compile error) disables
- * post and the caller renders directly.
+ * The cinematic finishing chain, built from three's TSL post nodes so one implementation serves the
+ * WebGPU backend and the WebGL2 fallback (Firefox looks like Chromium). Tone mapping and colour-space
+ * conversion happen in the chain's own output transform; any failure (missing feature, shader compile
+ * error) is reported to the caller, which drops the failing effect and rebuilds (see `finishing.ts`).
  *
- * The `studio` quality (architectural stills) adds a depth/normal/velocity
- * pre-pass, ground-truth ambient occlusion applied to the indirect light
- * only (three's built-in AO context, so sunlit faces keep their contrast)
- * and temporal reprojection anti-aliasing, which also accumulates the AO
- * and shadow noise into a clean image while the camera rests.
+ * Chain order, all in linear HDR until the output transform:
+ *
+ *   scene pass (+ ground-truth AO on the indirect light only)
+ *     → screen-space reflections → sun shafts → bloom + warm halation → depth of field
+ *     → chromatic aberration → exposure / white balance / split-tone / saturation / contrast / vignette
+ *     → temporal anti-aliasing → tone curve + sRGB → film grain (display space, also dithers banding)
+ *
+ * The AO, reflections, shafts, DOF and TAA read a half-resolution-capable normal / velocity / material
+ * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
-import type { Camera, Scene } from 'three';
+import type { Camera, DirectionalLight, Scene } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
+import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
 import { NEUTRAL_GRADE, type Grade } from './grade';
 
-/** Post pipeline quality: the realtime look, or the studio still (AO + temporal AA). */
+/** Post pipeline variant: composite only, or with the opaque pre-pass (AO, TAA, reflections, shafts, DOF). */
 export type PostQuality = 'standard' | 'studio';
 
-/** Ambient occlusion tuning of the studio pipeline (metres / unitless). */
+/** Ambient occlusion tuning of the pre-pass pipeline (metres / unitless). */
 export const STUDIO_AO = Object.freeze({ radius: 0.85, thickness: 0.8, distanceExponent: 1.2, scale: 1.7, samples: 12, resolutionScale: 0.5 });
+
+/** Screen-space reflection tuning: reach in metres, thickness, intensity. */
+export const SSR_TUNING = Object.freeze({ maxDistance: 40, thickness: 0.35, intensity: 0.85, resolutionScale: 0.5, quality: 0.5 });
+
+/** Sun shaft tuning: ray-march steps, density, maximum opacity and the resolution scale of the pass. */
+export const SHAFT_TUNING = Object.freeze({ steps: 28, density: 0.1, maxDensity: 0.06, distanceAttenuation: 2, resolutionScale: 0.5, brightness: 1.2 });
+
+/** Halation: strength and radius of the wide warm bloom around bright lights. */
+export const HALATION_TUNING = Object.freeze({ strength: 0.12, radius: 0.8, threshold: 1.1 });
 
 /** A running post pipeline. */
 export interface PostPipeline {
   readonly quality: PostQuality;
+  /** The effects this pipeline was built with. */
+  readonly effects: Readonly<PostEffects>;
+  /** Stable key of {@link effects} (rebuild when it differs from what is wanted). */
+  readonly key: string;
   render(): void;
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
@@ -35,6 +52,8 @@ export interface PostPipeline {
    * image instead (a screen-space vignette per tile would darken every tile).
    */
   setVignette(strength: number): void;
+  /** Focus the depth of field on `distance` metres in front of the camera (no-op without DOF). */
+  setFocus(distance: number): void;
   dispose(): void;
 }
 
@@ -67,6 +86,12 @@ export function bloomStrength(bloom: number): number {
   return Math.max(0, Math.min(MAX_BLOOM_STRENGTH, (Number.isFinite(bloom) ? bloom : 0) * BLOOM_SCALE));
 }
 
+/** Depth-of-field parameters for a focus distance: focal range (metres) and the bokeh scale. */
+export function dofParams(distance: number): { focus: number; range: number; bokeh: number } {
+  const d = Number.isFinite(distance) ? Math.max(0.3, Math.min(2000, distance)) : 10;
+  return { focus: d, range: Math.max(1.5, d * 0.55), bokeh: 2.2 };
+}
+
 /**
  * Textures the TRAA node owns but does not release in its own `dispose`
  * (three r186): the placeholder previous-depth texture and the history
@@ -87,90 +112,202 @@ function disposeTargetTextures(pass: unknown): void {
   rt?.depthTexture?.dispose();
 }
 
+/** Extra inputs of the chain. */
+export interface PostOptions {
+  /** The effects to build (default: composite only). */
+  effects?: PostEffects;
+  /** The shadow-casting sun (sun shafts march through its shadow map). */
+  sun?: DirectionalLight | null;
+}
+
+const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+
 /** Build the pipeline, or null when unsupported. */
-export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard'): Promise<PostPipeline | null> {
+export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard', opts: PostOptions = {}): Promise<PostPipeline | null> {
+  const effects: PostEffects = opts.effects ?? (quality === 'studio' ? { ...COMPOSITE_ONLY, ao: true, taa: true } : COMPOSITE_ONLY);
   try {
-    const studio = quality === 'studio';
-    const [{ RenderPipeline, Vector3, UnsignedByteType }, tsl, { bloom }, gtao, traaMod] = await Promise.all([
+    const prepass = needsPrePass(effects);
+    const sun = effects.shafts && opts.sun?.castShadow ? opts.sun : null;
+    const [three, tsl, bloomMod, gtao, traaMod, ssrMod, godMod, blendMod, dofMod, caMod] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
-      studio ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
-      studio ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
+      effects.ao ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
+      effects.taa ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
+      effects.ssr ? import('three/addons/tsl/display/SSRNode.js') : Promise.resolve(null),
+      sun ? import('three/addons/tsl/display/GodraysNode.js') : Promise.resolve(null),
+      sun ? import('three/addons/tsl/display/depthAwareBlend.js') : Promise.resolve(null),
+      effects.dof ? import('three/addons/tsl/display/DepthOfFieldNode.js') : Promise.resolve(null),
+      effects.aberration ? import('three/addons/tsl/display/ChromaticAberrationNode.js') : Promise.resolve(null),
     ]);
-    const { pass, screenUV, smoothstep, float, uniform, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, convertToTexture } = tsl;
+    const { RenderPipeline, Vector3, UnsignedByteType, Color } = three;
+    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
-    // Temporal AA replaces MSAA in the studio pipeline (its depth copies need single-sampled targets).
-    const scenePass = studio ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
+    // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
+    const scenePass = effects.taa ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
     disposables.push(scenePass);
+    let prePass: ReturnType<typeof pass> | null = null;
     let prePassDepth: ReturnType<typeof scenePass.getTextureNode> | null = null;
     let prePassVelocity: ReturnType<typeof scenePass.getTextureNode> | null = null;
-    if (studio && gtao) {
-      // Opaque pre-pass: view normals (8-bit) + velocity, and its depth for AO and TRAA.
-      const prePass = pass(scene, camera, { samples: 0 });
+    let prePassNormal: ReturnType<typeof sample> | null = null;
+    if (prepass) {
+      // Opaque pre-pass: view normals (8-bit), velocity (TAA) and metalness / roughness (reflections), plus depth.
+      prePass = pass(scene, camera, { samples: 0 });
       prePass.transparent = false;
-      prePass.setMRT(mrt({ output: packNormalToRGB(normalView), velocity }));
+      const attachments: Record<string, unknown> = { output: packNormalToRGB(normalView) };
+      if (effects.taa) attachments['velocity'] = velocity;
+      if (effects.ssr) attachments['material'] = vec4(metalness, roughness, 0, 1);
+      prePass.setMRT(mrt(attachments as Parameters<typeof mrt>[0]));
       const normalTexture = prePass.getTexture('output');
       normalTexture.type = UnsignedByteType;
-      const prePassNormal = sample((uv) => unpackRGBToNormal(prePass.getTextureNode().sample(uv)));
+      const pp = prePass;
+      prePassNormal = sample((uv) => unpackRGBToNormal(pp.getTextureNode().sample(uv)));
       prePassDepth = prePass.getTextureNode('depth');
-      prePassVelocity = prePass.getTextureNode('velocity');
+      if (effects.taa) prePassVelocity = prePass.getTextureNode('velocity');
+      disposables.push(prePass, { dispose: () => disposeTargetTextures(pp) }, { dispose: () => disposeTargetTextures(scenePass) });
+    }
+    if (effects.ao && gtao && prePassDepth && prePassNormal) {
       const aoPass = gtao.ao(prePassDepth, prePassNormal, camera);
       aoPass.resolutionScale = STUDIO_AO.resolutionScale;
-      aoPass.useTemporalFiltering = true;
+      aoPass.useTemporalFiltering = effects.taa;
       aoPass.radius.value = STUDIO_AO.radius;
       aoPass.thickness.value = STUDIO_AO.thickness;
       aoPass.distanceExponent.value = STUDIO_AO.distanceExponent;
       aoPass.scale.value = STUDIO_AO.scale;
       aoPass.samples.value = STUDIO_AO.samples;
       scenePass.contextNode = builtinAOContext(aoPass.getTextureNode().sample(screenUV).r);
-      disposables.push(prePass, aoPass, { dispose: () => disposeTargetTextures(prePass) }, { dispose: () => disposeTargetTextures(scenePass) });
+      disposables.push(aoPass);
     }
     const color = scenePass.getTextureNode('output');
+    let hdr = color.rgb;
+    // Screen-space reflections of the opaque scene (glass, polished floors, water, metals).
+    if (effects.ssr && ssrMod && prePass && prePassDepth && prePassNormal) {
+      const materialTex = prePass.getTextureNode('material');
+      const ssrPass = ssrMod.ssr(color, prePassDepth, prePassNormal as unknown as Parameters<typeof ssrMod.ssr>[2], { metalnessNode: materialTex.r, roughnessNode: materialTex.g, reflectNonMetals: true, camera });
+      ssrPass.resolutionScale = SSR_TUNING.resolutionScale;
+      ssrPass.maxDistance.value = SSR_TUNING.maxDistance;
+      ssrPass.thickness.value = SSR_TUNING.thickness;
+      ssrPass.intensity.value = SSR_TUNING.intensity;
+      ssrPass.quality.value = SSR_TUNING.quality;
+      hdr = hdr.add(ssrPass.getTextureNode().rgb);
+      disposables.push(ssrPass);
+    }
+    // Sun shafts ray-marched through the sun's shadow map, blended depth-aware (no halos on edges).
+    if (sun && godMod && blendMod && prePassDepth) {
+      const shafts = godMod.godrays(prePassDepth, camera, sun);
+      shafts.raymarchSteps.value = SHAFT_TUNING.steps;
+      shafts.density.value = SHAFT_TUNING.density;
+      shafts.maxDensity.value = SHAFT_TUNING.maxDensity;
+      shafts.distanceAttenuation.value = SHAFT_TUNING.distanceAttenuation;
+      shafts.resolutionScale = SHAFT_TUNING.resolutionScale;
+      const shaftColor = new Color(sun.color).multiplyScalar(SHAFT_TUNING.brightness);
+      const blendInput = convertToTexture(vec4(hdr, 1));
+      const blended = blendMod.depthAwareBlend(blendInput, shafts.getTextureNode(), prePassDepth, camera, { blendColor: vec3(shaftColor.r, shaftColor.g, shaftColor.b), edgeRadius: 2, edgeStrength: 2 });
+      hdr = blended.rgb;
+      // The render-to-texture node owns a target of its own: release it with the chain.
+      disposables.push(shafts, blendInput);
+    }
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     disposables.push(bloomNode);
+    hdr = hdr.add(bloomNode.rgb);
+    if (effects.halation) {
+      const halo = bloom(color, HALATION_TUNING.strength, HALATION_TUNING.radius, HALATION_TUNING.threshold);
+      disposables.push(halo);
+      // Film halation is red-orange: the wide glow bleeds through the emulsion.
+      hdr = hdr.add(halo.rgb.mul(vec3(1.0, 0.55, 0.32)));
+    }
+    let image = vec4(hdr, color.a);
+    // Depth of field around the orbit target (final stills).
+    const uFocus = uniform(10);
+    const uRange = uniform(6);
+    const uBokeh = uniform(2.2);
+    if (effects.dof && dofMod && prePass) {
+      const viewZ = prePass.getViewZNode('depth');
+      // The node's own render-to-texture input is not released by the node's dispose: keep a handle to free it.
+      const dofInput = convertToTexture(image);
+      const blurred = dofMod.dof(dofInput, viewZ, uFocus, uRange, uBokeh);
+      image = vec4((blurred as unknown as { rgb: typeof hdr }).rgb, color.a);
+      disposables.push(blurred, dofInput);
+    }
+    if (effects.aberration && caMod) {
+      const strengthNode = uniform(ABERRATION_STRENGTH * 10);
+      const caCentre = vec2(0.5, 0.5);
+      const caInput = convertToTexture(image);
+      const ca = caMod.chromaticAberration(caInput, strengthNode, caCentre, float(1.1));
+      image = vec4((ca as unknown as { rgb: typeof hdr }).rgb, color.a);
+      disposables.push(ca, caInput);
+    }
     const uVignette = uniform(VIGNETTE_STRENGTH);
     const vignette = float(1).sub(smoothstep(float(VIGNETTE_RANGE[0]), float(VIGNETTE_RANGE[1]), screenUV.sub(0.5).length()).mul(uVignette));
-    // Grade in linear HDR before the output transform: split tone, saturation, contrast pivot.
+    // Grade in linear HDR before the output transform: exposure, white balance, split tone, saturation, contrast pivot.
     const uSat = uniform(NEUTRAL_GRADE.saturation);
     const uContrast = uniform(NEUTRAL_GRADE.contrast);
+    const uExposure = uniform(1);
+    const uBalance = uniform(new Vector3(1, 1, 1));
     const uShadow = uniform(new Vector3(1, 1, 1));
     const uHigh = uniform(new Vector3(1, 1, 1));
-    const hdr = color.add(bloomNode).rgb;
-    const luma = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
-    const toned = hdr.mul(mix(uShadow, uHigh, smoothstep(float(0.02), float(0.6), luma)));
+    const luma = dot(image.rgb, vec3(0.2126, 0.7152, 0.0722));
+    const toned = image.rgb.mul(uExposure).mul(uBalance).mul(mix(uShadow, uHigh, smoothstep(float(0.02), float(0.6), luma)));
     const toneLuma = dot(toned, vec3(0.2126, 0.7152, 0.0722));
     const saturated = max(mix(vec3(toneLuma), toned, uSat), vec3(0));
     const pivot = float(0.18);
     const contrasted = pow(saturated.div(pivot).add(1e-5), vec3(uContrast)).mul(pivot);
     const graded = clamp(contrasted, vec3(0), vec3(64)).mul(vignette);
     const gradedNode = vec4(graded, color.a);
-    let pipeline: InstanceType<typeof RenderPipeline>;
-    if (studio && traaMod && prePassDepth && prePassVelocity) {
+    let output: ReturnType<typeof vec4> = gradedNode;
+    if (effects.taa && traaMod && prePassDepth && prePassVelocity) {
       // The graded image as a texture of our own, so its render target is disposed with the pipeline.
       const beauty = convertToTexture(gradedNode);
       const traaNode = traaMod.traa(beauty, prePassDepth, prePassVelocity, camera);
       // The placeholder depth texture is replaced after the first frame: keep a handle to free it.
       const placeholder = (traaNode as unknown as { _previousDepthNode?: { value?: { dispose?: () => void } } })._previousDepthNode?.value;
       disposables.push(beauty, traaNode, { dispose: () => disposeTraaTextures(traaNode, placeholder) });
-      pipeline = new RenderPipeline(renderer, traaNode);
-    } else {
-      pipeline = new RenderPipeline(renderer, gradedNode);
+      output = vec4(traaNode.rgb, color.a);
     }
+    const uGrain = uniform(effects.grain ? GRAIN_AMPLITUDE : 0);
+    const uSeed = uniform(0);
+    const pipeline = new RenderPipeline(renderer);
+    if (effects.grain) {
+      // Tone curve and sRGB first, then grain in display space: it dithers 8-bit banding and sells the "photograph".
+      pipeline.outputColorTransform = false;
+      const mapped = renderOutput(output);
+      const noise = interleavedGradientNoise(screenCoordinate.add(vec2(uSeed.mul(5.588238), uSeed.mul(2.7132)))).sub(0.5);
+      pipeline.outputNode = vec4(mapped.rgb.add(noise.mul(uGrain)), mapped.a);
+    } else {
+      pipeline.outputNode = output;
+    }
+    let seed = 0;
     return {
-      quality,
-      render: () => pipeline.render(),
+      quality: prepass ? 'studio' : 'standard',
+      effects,
+      key: effectsKey(effects),
+      render: () => {
+        seed = (seed + 1) % 4096;
+        uSeed.value = seed;
+        pipeline.render();
+      },
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);
       },
       setGrade: (g: Grade) => {
         uSat.value = g.saturation;
         uContrast.value = g.contrast;
+        uExposure.value = g.exposure ?? 1;
+        const wb = g.balance ?? [1, 1, 1];
+        uBalance.value.set(wb[0], wb[1], wb[2]);
         uShadow.value.set(...g.shadowTint);
         uHigh.value.set(...g.highlightTint);
+        if (effects.grain) uGrain.value = GRAIN_AMPLITUDE * (g.grain ?? 1);
       },
       setVignette: (strength: number) => {
         uVignette.value = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : VIGNETTE_STRENGTH;
+      },
+      setFocus: (distance: number) => {
+        const p = dofParams(distance);
+        uFocus.value = p.focus;
+        uRange.value = p.range;
+        uBokeh.value = p.bokeh;
       },
       dispose: () => {
         pipeline.dispose();
@@ -178,7 +315,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       },
     };
   } catch (e) {
-    log.warn(`post-processing (${quality}) disabled: ${errorMessage(e)}`);
+    log.warn(`post-processing (${effectsKey(effects)}) disabled: ${errorMessage(e)}`);
     return null;
   }
 }

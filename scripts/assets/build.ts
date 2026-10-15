@@ -24,7 +24,7 @@ import { colliderFor, kebab, prettyName, tagsFor } from './describe';
 import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
 import { reencodedTextures } from './textures';
-import { buildPhotoFinishes } from './materials';
+import { buildPhotoFinishes, type PhotoFinish } from './materials';
 
 /** Re-encoded realistic textures by source basename (see textures.ts). */
 let TEXTURES = new Map<string, Uint8Array>();
@@ -142,6 +142,66 @@ function writeLib(dir: string, id: string, suffix: string, ext: string, data: Ui
   mkdirSync(join(LIB, dir), { recursive: true });
   writeFileSync(join(LIB, rel), data);
   return { path: rel, sha256: h, bytes: data.byteLength };
+}
+
+/** Write one photo finish's maps into the library and describe it as a catalog entry. */
+function photoFinishEntry(pf: PhotoFinish): Built {
+  const id = `finish-${pf.finish}`;
+  const albedo = writeLib('x', pf.finish, '.albedo', 'jpg', pf.albedo);
+  const orm = writeLib('x', pf.finish, '.orm', 'jpg', pf.orm);
+  const normal = writeLib('x', pf.finish, '.normal', 'jpg', pf.normal);
+  const thumb = writeLib('t', id, '', 'webp', pf.thumb);
+  const label = pf.finish.replace(/-/g, ' ');
+  return {
+    entry: {
+      id,
+      name: `${label.charAt(0).toUpperCase()}${label.slice(1)} (photo)`,
+      kind: 'material',
+      category: 'materials',
+      tags: tagsFor(id, label, 'materials', 'pbr texture surface finish', 'realistic'),
+      style: 'realistic',
+      pack: 'ambientcg',
+      size: [0, 0, 0],
+      tris: 0,
+      bytes: albedo.bytes + orm.bytes + normal.bytes,
+      lods: [],
+      thumb: thumb.path,
+      collider: { type: 'box' },
+      placement: 'floor',
+      facing: '+z',
+      material: { finish: pf.finish, tile: pf.tile, maps: { albedo: albedo.path, orm: orm.path, normal: normal.path } },
+      source: pf.source,
+    },
+    files: [albedo, orm, normal, thumb],
+    source: { archive: pf.source, path: pf.source },
+  };
+}
+
+/**
+ * `--photo-only`: convert the downloaded photo finishes and merge them into the existing catalog and
+ * manifest (entries with the same id are replaced; every other asset is left untouched). Needs only
+ * `fetch.ts --only=ambientcg`, not the model packs.
+ */
+async function buildPhotoOnly(): Promise<void> {
+  const sources = readSources();
+  const photos = (await buildPhotoFinishes(sources.ambientcg)).map(photoFinishEntry);
+  const catalogPath = join(OUT, 'catalog.json');
+  const manifestPath = join(OUT, 'manifest.json');
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as { entries: CatalogEntryInput[] };
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { sources: Array<{ id: string }>; assets: Array<{ id: string }> };
+  const ids = new Set(photos.map((p) => p.entry.id));
+  catalog.entries = [...catalog.entries.filter((e) => !ids.has(e.id)), ...photos.map((p) => p.entry)];
+  catalog.entries.sort((a, b) => (a.category === b.category ? (a.id < b.id ? -1 : 1) : (a.category ?? '') < (b.category ?? '') ? -1 : 1));
+  Catalog.parse(catalog);
+  manifest.assets = [...manifest.assets.filter((a) => !ids.has(a.id)), ...photos.map((b) => ({ id: b.entry.id, pack: b.entry.pack, licence: 'CC0-1.0', authors: b.entry.authors ?? null, source: b.source, files: b.files }))];
+  const srcIds = new Set((sources.ambientcg?.materials ?? []).map((m) => `ambientcg-${m.id}`));
+  manifest.sources = [
+    ...manifest.sources.filter((s) => !srcIds.has(s.id)),
+    ...(sources.ambientcg?.materials ?? []).map((m) => ({ id: `ambientcg-${m.id}`, provider: 'ambientCG', title: m.id, version: '1K-JPG', author: 'ambientCG (Lennart Demes)', licence: 'CC0-1.0', licenceUrl: 'https://docs.ambientcg.com/license/', page: `https://ambientcg.com/view?id=${m.id}`, archive: `https://ambientcg.com/get?file=${m.id}_1K-JPG.zip`, sha256: m.sha256 ?? null, retrieved: '2026-10-15', usedFor: `finish "${m.finish}"` })),
+  ];
+  writeFileSync(catalogPath, `${JSON.stringify(catalog)}\n`);
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 1)}\n`);
+  console.log(`${photos.length} photo finishes merged into the catalog`);
 }
 
 async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: string, archive: string, phAuthors: string[] | undefined): Promise<Built> {
@@ -295,37 +355,7 @@ async function main(): Promise<void> {
     });
   }
   // Photo finishes (ambientCG) for `material.finish` surfaces.
-  for (const pf of await buildPhotoFinishes(sources.ambientcg)) {
-    const id = `finish-${pf.finish}`;
-    const albedo = writeLib('x', pf.finish, '.albedo', 'jpg', pf.albedo);
-    const orm = writeLib('x', pf.finish, '.orm', 'jpg', pf.orm);
-    const normal = writeLib('x', pf.finish, '.normal', 'jpg', pf.normal);
-    const thumb = writeLib('t', id, '', 'webp', pf.thumb);
-    const label = pf.finish.replace(/-/g, ' ');
-    built.push({
-      entry: {
-        id,
-        name: `${label.charAt(0).toUpperCase()}${label.slice(1)} (photo)`,
-        kind: 'material',
-        category: 'materials',
-        tags: tagsFor(id, label, 'materials', 'pbr texture surface finish', 'realistic'),
-        style: 'realistic',
-        pack: 'ambientcg',
-        size: [0, 0, 0],
-        tris: 0,
-        bytes: albedo.bytes + orm.bytes + normal.bytes,
-        lods: [],
-        thumb: thumb.path,
-        collider: { type: 'box' },
-        placement: 'floor',
-        facing: '+z',
-        material: { finish: pf.finish, tile: pf.tile, maps: { albedo: albedo.path, orm: orm.path, normal: normal.path } },
-        source: pf.source,
-      },
-      files: [albedo, orm, normal, thumb],
-      source: { archive: pf.source, path: pf.source },
-    });
-  }
+  for (const pf of await buildPhotoFinishes(sources.ambientcg)) built.push(photoFinishEntry(pf));
   const entries = built.map((b) => b.entry);
   assignVariants(entries);
   // Hero generators made with the asset forge (scripts/assets/forge-heroes.ts).
@@ -381,7 +411,7 @@ async function main(): Promise<void> {
   console.log(`${entries.length} assets, ${(total / 1024 / 1024).toFixed(1)} MB → ${relative(ROOT, LIB)}`);
 }
 
-main().catch((err: unknown) => {
+(process.argv.includes("--photo-only") ? buildPhotoOnly() : main()).catch((err: unknown) => {
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
   process.exit(1);
 });

@@ -114,6 +114,13 @@ export type BackendSetting = 'auto' | 'webgpu' | 'webgl2';
 /** Low-memory mode: decided by device detection, or forced on/off. */
 export type LowMemorySetting = 'auto' | 'on' | 'off';
 
+/** Interactive graphics quality: automatic from the GPU, or a fixed render tier. */
+export type RenderTierSetting = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
+/** The finishing-chain effects a user can switch individually. */
+export type EffectSetting = 'ao' | 'taa' | 'ssr' | 'shafts' | 'halation' | 'aberration' | 'grain';
+/** Per-effect overrides: true forces an effect on, false off; a missing key follows the tier. */
+export type EffectSettings = Partial<Record<EffectSetting, boolean>>;
+
 /** User preferences persisted across sessions. */
 export interface StudioSettings {
   showPerf: boolean;
@@ -136,6 +143,10 @@ export interface StudioSettings {
   uiSounds: boolean;
   /** Play mode hides the side panels so the world fills the window. */
   immersivePlay: boolean;
+  /** Graphics quality tier (auto follows the GPU). */
+  renderTier: RenderTierSetting;
+  /** Individual effect switches on top of the tier. */
+  effects: EffectSettings;
 }
 
 /** Default preferences. */
@@ -152,6 +163,8 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   repairs: 2,
   uiSounds: false,
   immersivePlay: true,
+  renderTier: 'auto',
+  effects: Object.freeze({}) as EffectSettings,
 });
 
 /** Largest accepted value of the `repairs` setting. */
@@ -160,6 +173,21 @@ export const MAX_REPAIRS_SETTING = 3;
 const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint', 'uiSounds', 'immersivePlay'] as const satisfies ReadonlyArray<keyof StudioSettings>;
 const BACKENDS: readonly BackendSetting[] = ['auto', 'webgpu', 'webgl2'];
 const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
+/** Tier values accepted from storage. */
+export const RENDER_TIER_SETTINGS: readonly RenderTierSetting[] = ['auto', 'low', 'medium', 'high', 'ultra'];
+/** Effects the settings can toggle, in display order. */
+export const EFFECT_SETTINGS: readonly EffectSetting[] = ['ao', 'taa', 'ssr', 'shafts', 'halation', 'aberration', 'grain'];
+
+/** Keep only known effect keys with boolean values (untrusted storage input; no prototype keys survive). */
+export function parseEffectSettings(raw: unknown): EffectSettings {
+  const out: EffectSettings = {};
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out;
+  for (const k of EFFECT_SETTINGS) {
+    const v = Object.prototype.hasOwnProperty.call(raw, k) ? (raw as Record<string, unknown>)[k] : undefined;
+    if (typeof v === 'boolean') out[k] = v;
+  }
+  return out;
+}
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
@@ -183,6 +211,8 @@ export function loadSettings(storage: StorageLike | null, prefersDark = false): 
     }
     out.backend = oneOf(own('backend'), BACKENDS) ?? (own('preferWebGPU') === false ? 'webgl2' : DEFAULT_SETTINGS.backend);
     out.lowMemory = oneOf(own('lowMemory'), LOW_MEMORY) ?? (own('lowPower') === true ? 'on' : DEFAULT_SETTINGS.lowMemory);
+    out.renderTier = oneOf(own('renderTier'), RENDER_TIER_SETTINGS) ?? DEFAULT_SETTINGS.renderTier;
+    out.effects = parseEffectSettings(own('effects'));
     const repairs = own('repairs');
     if (typeof repairs === 'number' && Number.isInteger(repairs) && repairs >= 0 && repairs <= MAX_REPAIRS_SETTING) out.repairs = repairs;
   }

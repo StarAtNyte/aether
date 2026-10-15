@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Mesh, type Object3D } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
@@ -37,7 +37,8 @@ import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
-import { gradeFor } from './gpu/grade';
+import { gradeFor, gradeWithPreset } from './gpu/grade';
+import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
@@ -51,10 +52,12 @@ import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadow
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
 import { normalizePixels } from './view/still';
-import { exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
+import type { PathTraceOptions } from './view/pathtrace';
+import { buildExportScene, exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
 import { PathOverlay } from './view/path-overlay';
-import { qualityPlan, Refinement, studioAvailable, type QualityPlan, type RenderQuality } from './gpu/render-quality';
+import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
+import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } from './sync/lights';
 import { errorMessage, log } from './log';
 import type { VoxelLayer } from './voxel/voxel-layer';
 import type { Environment } from '@aether/core';
@@ -250,6 +253,22 @@ const _savedCamQuat = new Quaternion();
 const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
+/** True when an RGBA8 image is one colour (within noise): sampled sparsely, so it costs nothing. */
+export function isFlat(data: Uint8Array): boolean {
+  const step = Math.max(4, (Math.floor(data.length / 4 / 4096) | 0) * 4);
+  for (let c = 0; c < 3; c++) {
+    let lo = 255;
+    let hi = 0;
+    for (let i = c; i < data.length; i += step) {
+      const v = data[i] as number;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (hi - lo >= 6) return false;
+  }
+  return true;
+}
+
 const _target = new Vector3();
 const _frustum = new Frustum();
 const _viewProj = new Matrix4();
@@ -372,6 +391,16 @@ export class WorldRenderer {
   private readonly refinement = new Refinement();
   /** The studio pipeline failed on this device: studio quality is unavailable. */
   private studioFailed = false;
+  /** Interactive render tier: a fixed choice, or 'auto' (follows the GPU budget). */
+  private tierChoice: RenderTier | 'auto' = 'auto';
+  /** User toggles of single effects (undefined keeps the tier's choice). */
+  private effectOverrides: EffectOverrides = {};
+  /** Effects that failed to build or draw on this device (never retried). */
+  private readonly failedEffects = new Set<keyof PostEffects>();
+  /** Colour-grade preset chosen by the host (null: follows the sky). */
+  private gradeId: GradePresetId | null = null;
+  /** The grade preset currently applied. */
+  private look: GradePreset = GRADE_PRESETS['archviz-daylight'];
   /** Called when the effective render quality changes (e.g. studio fell back to realtime). */
   onQualityChange: ((quality: RenderQuality) => void) | null = null;
   /** Architectural view modes (cutaway, exploded levels, x-ray, section) of buildings. */
@@ -484,6 +513,8 @@ export class WorldRenderer {
     this.budget = renderBudget(this.gpu.tier, this.lowMemory);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
+    // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
+    this.materials.antiTile = this.gpu.tier !== 'software' && !this.lowMemory;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
@@ -550,8 +581,9 @@ export class WorldRenderer {
     this.env.onAsyncChange = () => {
       this.needsDraw = true;
     };
-    this.qualityPlan = qualityPlan('realtime', this.budget);
+    this.qualityPlan = qualityPlan('realtime', this.budget, this.gpu.tier === 'software', autoTier(this.gpu.tier, this.budget));
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
+    this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
     this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
@@ -589,6 +621,19 @@ export class WorldRenderer {
     } catch (e) {
       log.warn(`orbit controls unavailable: ${errorMessage(e)}`);
     }
+    // What only the GPU renderer provides for lights: IES-profile spots now, rectangular-light tables on first use.
+    try {
+      const three = await import('three/webgpu');
+      registerLightSupport({
+        ies: three.IESSpotLight as unknown as IesSpotLightCtor,
+        loadArea: async () => {
+          const lib = await import('three/addons/lights/RectAreaLightTexturesLib.js');
+          three.RectAreaLightNode.setLTC(lib.RectAreaLightTexturesLib.init());
+        },
+      });
+    } catch (e) {
+      log.warn(`IES and area lights unavailable: ${errorMessage(e)}`);
+    }
     const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts, gpu);
     // A lost device/context stops drawing and tells the host (three's default only logs an error).
     renderer.onDeviceLost = (info: { message?: unknown }) => wr.handleContextLost(typeof info?.message === 'string' ? info.message : 'unknown reason');
@@ -596,8 +641,11 @@ export class WorldRenderer {
     onControlsChange?.(() => wr.requestRender());
     wr.resize(width, height);
     if (wr.budget.post) {
-      wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4);
-      wr.post?.setGrade(gradeFor(wr.env.skyState));
+      const want = wr.wantedEffects();
+      if (want) {
+        wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.sun });
+        wr.applyLook();
+      }
     }
     opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
     return wr;
@@ -900,11 +948,10 @@ export class WorldRenderer {
 
   private applyEnvironment(world: WorldDoc): void {
     const env = world.environment;
+    this.shaftsUnavailable = false;
     this.env.apply(env, this.scene);
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
-    this.renderer.toneMappingExposure = this.env.exposure;
-    this.post?.setBloom(env.bloom);
-    this.post?.setGrade(gradeFor(this.env.skyState));
+    this.applyLook();
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
     this.boundsDirty = true;
     this.needsDraw = true;
@@ -1133,8 +1180,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     this.env.apply(env, this.scene);
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
-    this.renderer.toneMappingExposure = this.env.exposure;
-    this.post?.setGrade(gradeFor(this.env.skyState));
+    this.applyLook();
     this.needsDraw = true;
   }
 
@@ -1718,7 +1764,7 @@ export class WorldRenderer {
    * when a frame was drawn.
    */
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
-    if (this.disposed || this.lost || this.captureActive) return false;
+    if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
@@ -1839,24 +1885,123 @@ export class WorldRenderer {
 
   /** Post pass wanted for the current world and budget. */
   private get wantsPost(): boolean {
-    return this.wantedPostQuality !== null;
+    return this.wantedEffects() !== null;
+  }
+
+  /**
+   * The effect set to run now: the quality plan's, with the user's toggles and the effects that failed
+   * on this device applied. The low tier keeps the classic bloom-only pass for worlds that ask for
+   * bloom. Null: render directly.
+   */
+  private wantedEffects(): PostEffects | null {
+    if (!this.budget.post) return null;
+    const plan = this.qualityPlan;
+    let effects = resolveEffects(plan.effects, this.effectOverrides, this.failedEffects);
+    if (!effects.composite && plan.tier === 'low' && this.effectOverrides.composite !== false && this.env.bloom > 0.001) effects = { ...effects, composite: true };
+    if (!effects.composite || this.postFailed) return null;
+    // Sun shafts march through the sun's shadow map: they need a shadow-casting sun with a map in use.
+    if (effects.shafts && (!this.env.sun.castShadow || this.shaftsUnavailable)) effects = { ...effects, shafts: false };
+    return effects;
   }
 
   /** Post variant the current quality and world need (null: render directly). */
   private get wantedPostQuality(): PostQuality | null {
-    if (this.qualityPlan.post === 'studio') return 'studio';
-    return this.budget.post && this.env.bloom > 0.001 ? 'standard' : null;
+    const effects = this.wantedEffects();
+    return effects ? postQualityOf(effects) : null;
   }
 
   /**
-   * Switch the render quality. `studio` (architectural stills: ambient
-   * occlusion, temporal anti-aliasing, larger soft shadows, progressive
-   * refinement while the view rests) needs the post pass; returns the
-   * quality actually in effect (realtime when studio is unavailable).
+   * Switch the render quality. `studio` (stills: the ultra chain with larger soft shadows and
+   * progressive refinement while the view rests) and `final` (plus depth of field and a long
+   * refinement) need the post pass; returns the quality actually in effect (realtime when stills are
+   * unavailable).
    */
   setRenderQuality(quality: RenderQuality): RenderQuality {
-    const want: RenderQuality = quality === 'studio' && !this.studioFailed ? 'studio' : 'realtime';
+    const want: RenderQuality = quality !== 'realtime' && !this.studioFailed ? quality : 'realtime';
     return this.applyQuality(want);
+  }
+
+  /**
+   * Choose the interactive render tier (`low`, `medium`, `high`, `ultra`) or `'auto'` to follow the
+   * GPU budget. Takes effect immediately; stills ignore it (they always run the ultra chain). Returns
+   * the tier now in effect.
+   */
+  setRenderTier(tier: RenderTier | 'auto'): RenderTier {
+    this.tierChoice = tier;
+    this.applyQuality(this.qualityPlan.quality);
+    return this.qualityPlan.tier;
+  }
+
+  /** The tier in effect (stills report `ultra`). */
+  get renderTier(): RenderTier {
+    return this.qualityPlan.tier;
+  }
+
+  /** The tier the GPU budget picks by itself. */
+  get autoRenderTier(): RenderTier {
+    return autoTier(this.gpu.tier, this.budget);
+  }
+
+  /**
+   * Set the user's effect toggles, replacing the previous set: a key mapped to true forces the effect
+   * on, false forces it off, a missing key follows the tier. Takes effect on the next frame (the
+   * pipeline is rebuilt when the effect set changes). Effects that failed on this device stay off.
+   */
+  setEffects(overrides: EffectOverrides): void {
+    const next: EffectOverrides = {};
+    for (const k of Object.keys(overrides) as (keyof PostEffects)[]) {
+      const v = overrides[k];
+      if (typeof v === 'boolean' && Object.hasOwn(effectsOf('ultra'), k)) next[k] = v;
+    }
+    this.effectOverrides = next;
+    this.applyQuality(this.qualityPlan.quality);
+  }
+
+  /** Names of the effects the current tier, toggles and device failures ask for (what the chain converges to). */
+  get intendedEffects(): string[] {
+    const e = this.wantedEffects();
+    return e ? (Object.keys(e) as (keyof PostEffects)[]).filter((k) => e[k] && k !== 'composite') : [];
+  }
+
+  /** The effects currently running (all false when drawing directly). */
+  get activeEffects(): Readonly<PostEffects> {
+    return this.post?.effects ?? resolveEffects({ composite: false, ao: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+  }
+
+  /** Effects that failed on this device (and were dropped from the chain). */
+  get failedEffectNames(): readonly string[] {
+    return [...this.failedEffects];
+  }
+
+  /** Pick a colour-grade preset (null: follow the sky). Unknown ids are ignored. */
+  setGradePreset(id: GradePresetId | null): void {
+    if (id !== null && !isGradePresetId(id)) return;
+    this.gradeId = id;
+    this.applyLook();
+    this.needsDraw = true;
+  }
+
+  /** The colour-grade preset in effect. */
+  get gradePreset(): GradePresetId {
+    return this.look.id;
+  }
+
+  /**
+   * Apply the colour look: the preset's tone curve (AgX and friends — the classic ACES curve while no
+   * post pass runs, so the direct low tier looks as it always did), exposure, grade and bloom.
+   */
+  private applyLook(): void {
+    const sky = this.env.skyState;
+    const id = this.gradeId ?? presetFor({ elevation: sky.elevation, moon: sky.moon, sunGlowStrength: sky.sunGlowStrength, preset: sky.preset });
+    const preset = GRADE_PRESETS[id];
+    this.look = preset;
+    const post = this.post;
+    this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = this.env.exposure * (post ? 1 : 1);
+    if (post) {
+      post.setGrade(gradeWithPreset(gradeFor(sky), preset));
+      post.setBloom(this.env.bloom * preset.bloom);
+    }
   }
 
   /** The render quality in effect. */
@@ -1874,10 +2019,16 @@ export class WorldRenderer {
     return this.refinement.progress;
   }
 
+  /** Sun shadow map edge the current (or pending) post pipeline was built against. */
+  private postShadowSize = 0;
+
   private applyQuality(quality: RenderQuality): RenderQuality {
     const before = this.qualityPlan.quality;
-    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software');
+    this.shaftsUnavailable = false;
+    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? autoTier(this.gpu.tier, this.budget) : this.tierChoice);
     const plan = this.qualityPlan;
+    // The high and ultra tiers (and stills) light and reflect with a photographed sky.
+    this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
     this.env.shadowMapCap = plan.shadowMapCap;
     this.env.sun.shadow.radius = plan.shadowRadius;
     this.refinement.setFrames(plan.accumulateFrames);
@@ -1898,28 +2049,31 @@ export class WorldRenderer {
    * off and rebuilt asynchronously when it comes back.
    */
   private syncPost(): void {
-    const want = this.wantedPostQuality;
-    if (this.post && this.post.quality !== want) {
+    const want = this.wantedEffects();
+    const wantKey = want ? effectsKey(want) : null;
+    if (this.post && this.post.key !== wantKey) {
       this.post.dispose();
       this.post = null;
       this.postGen++;
+      this.applyLook();
     }
     if (want === null || this.post || this.postPending) return;
-    if (want === 'standard' && this.postFailed) return;
     this.postPending = true;
+    this.postShadowSize = this.env.sun.shadow.mapSize.x;
     const gen = ++this.postGen;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, want)
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.sun })
       .then((p) => {
         this.postPending = false;
         if (!p) {
           this.postCreationFailed(want);
           return;
         }
-        if (gen !== this.postGen || this.disposed || this.wantedPostQuality !== want) p.dispose();
+        const now = this.wantedEffects();
+        if (gen !== this.postGen || this.disposed || !now || effectsKey(now) !== p.key) p.dispose();
         else {
-          p.setGrade(gradeFor(this.env.skyState));
-          if (this.vignetteOff) p.setVignette(0);
           this.post = p;
+          this.applyLook();
+          if (this.vignetteOff) p.setVignette(0);
           this.needsDraw = true;
         }
       })
@@ -1929,18 +2083,29 @@ export class WorldRenderer {
       });
   }
 
-  /** A pipeline could not be built (or crashed): studio falls back to realtime, standard to direct rendering. */
-  private postCreationFailed(quality: PostQuality): void {
-    if (quality === 'studio') {
-      this.studioFailed = true;
-      this.applyQuality('realtime');
+  /**
+   * A pipeline could not be built (or crashed): drop the costliest effect that is on and rebuild
+   * without it; when only the composite is left it is dropped too (direct rendering), and stills fall
+   * back to realtime.
+   */
+  private postCreationFailed(effects: PostEffects): void {
+    const next = degrade(effects);
+    if (next) {
+      this.failedEffects.add(next.dropped);
+      log.warn(`post effect "${next.dropped}" disabled on this device`);
     } else {
       this.postFailed = true;
+      if (this.qualityPlan.quality !== 'realtime') {
+        this.studioFailed = true;
+        this.applyQuality('realtime');
+      }
     }
     this.needsDraw = true;
   }
 
   private postFailed = false;
+  /** The sun has no shadow map to march through (nothing receives its shadows): the shafts stay off until the environment or quality changes. */
+  private shaftsUnavailable = false;
 
   /**
    * Bring the static-prop batches up to date before any draw: regroup after
@@ -1968,18 +2133,53 @@ export class WorldRenderer {
       const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
       this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now());
     }
+    // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
+    // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.
+    if ((this.post || this.postPending) && this.postShadowSize !== this.env.sun.shadow.mapSize.x && (this.post?.effects.shafts || this.postPending)) {
+      this.post?.dispose();
+      this.post = null;
+      this.postGen++;
+      this.postPending = false;
+      this.postShadowSize = this.env.sun.shadow.mapSize.x;
+      this.renderer.render(this.scene, this.perspective);
+      this.needsDraw = true;
+      return;
+    }
     this.syncPost();
+    // Water joins the depth pre-pass (and so the screen-space reflections) while they run.
+    const reflective = this.post?.effects.ssr === true;
+    if (reflective !== this.materials.waterIsReflective) this.materials.setReflectiveWater(reflective);
     try {
-      if (this.post) this.post.render();
-      else this.renderer.render(this.scene, this.perspective);
+      if (this.post) {
+        // Depth of field focuses on the orbit target (allocation-free: scratch vectors).
+        if (this.post.effects.dof) {
+          this.rig.getTarget(_target);
+          this.post.setFocus(this.perspective.position.distanceTo(_target));
+        }
+        // The shafts node reads the sun shadow map's textures when its shader is built: the map must exist.
+        // Content that never receives shadows (block terrain) has none: drop the shafts for this world.
+        if (this.post.effects.shafts && !this.env.sun.shadow.map) {
+          this.renderer.render(this.scene, this.perspective);
+          if (!this.env.sun.shadow.map) {
+            this.shaftsUnavailable = true;
+            this.post.dispose();
+            this.post = null;
+            this.postGen++;
+            this.needsDraw = true;
+            return;
+          }
+        }
+        this.post.render();
+      } else this.renderer.render(this.scene, this.perspective);
     } catch (e) {
       // A post pipeline failure must not kill the viewport: drop post and keep rendering directly.
       if (this.post) {
-        log.warn(`post-processing (${this.post.quality}) failed, disabling: ${errorMessage(e)}`);
-        const quality = this.post.quality;
+        log.warn(`post-processing (${effectsKey(this.post.effects)}) failed: ${errorMessage(e)}`);
+        const effects = this.post.effects;
         this.post.dispose();
         this.post = null;
-        this.postCreationFailed(quality);
+        this.postGen++;
+        this.postCreationFailed({ ...effects });
       } else {
         throw e;
       }
@@ -2027,9 +2227,89 @@ export class WorldRenderer {
     while (!this.disposed && this.postPending && now() < deadline) await new Promise((r) => setTimeout(r, 16));
   }
 
+  /**
+   * Render a path-traced still (global illumination, soft area lights, glass, depth of field): a
+   * progressive physically based render on a private WebGL2 context, in its own module that is only
+   * downloaded now. The viewport pauses while it runs. Rejects when cancelled (`AbortError`), when a render
+   * is already running or when the scene is too large; see `view/pathtrace.ts`.
+   */
+  async pathTraceStill(opts: PathTraceOptions & { pose: CameraPose }): Promise<StillImage> {
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+    if (this.captureActive || this.capture || this.tracing) throw new Error('a render is already running');
+    this.tracing = true;
+    let exported: ReturnType<typeof buildExportScene> | null = null;
+    try {
+      const { runPathTrace, MAX_PATH_TRACE_TRIANGLES } = await import('./view/pathtrace');
+      this.grow.finishAll();
+      if (this.boundsDirty) this.refresh();
+      this.scene.updateMatrixWorld(true);
+      const cam = this.perspective.clone();
+      const pose = opts.pose;
+      if (pose.pos.every(Number.isFinite) && pose.target.every(Number.isFinite)) {
+        cam.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+        cam.up.set(0, 1, 0);
+        cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+      }
+      if (pose.fov !== undefined && Number.isFinite(pose.fov)) cam.fov = Math.min(120, Math.max(5, pose.fov));
+      cam.zoom = 1;
+      cam.clearViewOffset();
+      cam.updateMatrixWorld(true);
+      exported = buildExportScene(this.sync.root, this.perspective, MAX_PATH_TRACE_TRIANGLES);
+      if (exported.meshes === 0) throw new Error('nothing to render');
+      if (exported.skipped > 0) log.warn(`path trace: ${exported.skipped} meshes left out (triangle budget ${MAX_PATH_TRACE_TRIANGLES})`);
+      const lights: Light[] = [this.env.sun];
+      this.sync.root.traverse((o) => {
+        if ((o as Light).isLight) lights.push(o as Light);
+      });
+      const target = new Vector3(pose.target[0], pose.target[1], pose.target[2]);
+      const look = this.look;
+      const exposure = this.env.exposure * evScale(look.exposureEv);
+      const dofRequested = opts.fStop !== undefined;
+      return await runPathTrace(
+        {
+          content: exported.root,
+          lights,
+          camera: cam,
+          environment: (this.scene.environment as Texture | null) ?? null,
+          skyColor: this.env.skyState.horizon,
+          environmentIntensity: this.scene.environmentIntensity,
+          environmentRotationY: this.scene.environmentRotation.y,
+          toneMapping: look.tone,
+          exposure,
+        },
+        { ...opts, ...(dofRequested ? { focusDistance: opts.focusDistance ?? cam.position.distanceTo(target) } : {}) },
+      );
+    } finally {
+      exported?.dispose();
+      this.tracing = false;
+      this.needsDraw = true;
+    }
+  }
+
+  /** True while a path-traced still renders (the viewport does not draw). */
+  get pathTracing(): boolean {
+    return this.tracing;
+  }
+
+  private tracing = false;
+
+  /** How a `width`×`height` still of `quality` should be drawn on this GPU (single draw, supersampling, samples). */
+  planStill(width: number, height: number, quality: 'studio' | 'final'): StillPlan {
+    return stillPlan(width, height, quality, this.gpu.tier);
+  }
+
   /** Render a still image up to 8192 px on the long side (tiled above the tile size). */
-  renderStill(opts: StillOptions): Promise<StillImage> {
-    return captureStill((w, h, vignette) => this.beginCapture(w, h, { vignette }), opts);
+  async renderStill(opts: StillOptions): Promise<StillImage> {
+    await this.preparePost();
+    const open = (w: number, h: number, vignette: boolean): CaptureSession => this.beginCapture(w, h, { vignette });
+    const image = await captureStill(open, opts);
+    // The first capture after a post pipeline is (re)built can come out as one flat colour on some software GPUs
+    // (temporal AA history primed at the viewport size); an identical second render is right. Render once more.
+    if (this.post && !this.disposed && !this.lost && isFlat(image.data)) {
+      log.warn('still came out as one flat colour: rendering it again');
+      return captureStill(open, opts);
+    }
+    return image;
   }
 
   /** Export the drawn scene content as GLB (or glTF JSON); see `view/gltf-export.ts`. */
@@ -2542,6 +2822,7 @@ export class WorldRenderer {
     this.ghost.dispose();
     this.voxelLayer?.dispose();
     this.voxelLayer = null;
+    disposeProfileTextures();
     this.highlighter.dispose();
     this.debug.dispose();
     this.avatar.dispose();

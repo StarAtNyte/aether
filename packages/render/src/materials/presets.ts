@@ -74,6 +74,25 @@ export const MATERIAL_PRESETS: Readonly<Record<MaterialPreset, PresetDef>> = Obj
   emissive: { color: '#ffffff', roughness: 0.5, metalness: 0, emissiveFollowsColor: true, emissiveIntensity: 2 },
 });
 
+/**
+ * Photographed detail under the stylised presets: the preset keeps its colour, roughness and metalness
+ * (art direction), the finish only contributes the surface structure — albedo variation, micro normals,
+ * ambient occlusion and a roughness pattern — so a "grass" ground or a "bark" trunk reads as a material
+ * instead of a flat colour. Presets without an entry (plastic, glass, neon, leaf…) stay plain.
+ */
+export const PRESET_DETAIL: Readonly<Partial<Record<MaterialPreset, MaterialFinish>>> = Object.freeze({
+  wood: 'oak',
+  stone: 'rock',
+  brick: 'brick',
+  concrete: 'concrete',
+  grass: 'grass',
+  dirt: 'soil',
+  sand: 'sand',
+  snow: 'snow',
+  bark: 'bark',
+  fabric: 'fabric',
+});
+
 /** Defaults when a spec names no preset. */
 const DEFAULT_PRESET: PresetDef = MATERIAL_PRESETS.plastic;
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -148,7 +167,7 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     vertexColors,
     doubleSided: opts.doubleSided === true,
     surface: p.surface ?? opts.surface ?? null,
-    finish: null,
+    finish: opacity >= OPAQUE_THRESHOLD && typeof spec?.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? (PRESET_DETAIL[spec.preset] ?? null) : null,
   };
 }
 
@@ -190,6 +209,14 @@ export function materialKey(resolved: ResolvedMaterial, variant: MaterialVariant
 }
 
 /**
+ * Presets of organic surfaces (ground, foliage, bark, rock, cloth). Generators author their parts
+ * flat-shaded as a house style; for these presets that is a default rather than an intent, so the
+ * renderer shades them softly (see `geometry/soften.ts`) unless the entity itself asks for
+ * `flatShading: true`.
+ */
+export const SOFT_SHADED_PRESETS: ReadonlySet<string> = new Set(['grass', 'dirt', 'sand', 'snow', 'leaf', 'bark', 'stone', 'fabric']);
+
+/**
  * Combine a generator part's material with the entity's material.
  *
  * - Single-part outputs (primitives, simple generators): the entity material
@@ -201,6 +228,10 @@ export function materialKey(resolved: ResolvedMaterial, variant: MaterialVariant
  *   are whole-object intents like "make it see-through").
  */
 export function mergeMaterial(part: MaterialSpec | undefined, entity: MaterialSpec | undefined, partCount: number): MaterialSpec {
+  return softShaded(mergeRaw(part, entity, partCount), entity);
+}
+
+function mergeRaw(part: MaterialSpec | undefined, entity: MaterialSpec | undefined, partCount: number): MaterialSpec {
   if (!entity) return part ?? {};
   if (!part) return entity;
   if (partCount <= 1) return { ...part, ...entity };
@@ -209,4 +240,11 @@ export function mergeMaterial(part: MaterialSpec | undefined, entity: MaterialSp
   if (entity.opacity !== undefined) merged.opacity = entity.opacity;
   if (entity.flatShading !== undefined) merged.flatShading = entity.flatShading;
   return merged;
+}
+
+/** Organic presets drop a generator's default flat shading unless the entity explicitly asked for it. */
+function softShaded(merged: MaterialSpec, entity: MaterialSpec | undefined): MaterialSpec {
+  if (merged.flatShading !== true || entity?.flatShading === true) return merged;
+  if (typeof merged.preset !== 'string' || !SOFT_SHADED_PRESETS.has(merged.preset)) return merged;
+  return { ...merged, flatShading: false };
 }

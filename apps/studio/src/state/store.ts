@@ -64,6 +64,8 @@ export interface MemoryState {
 export interface GpuState {
   tier: 'discrete' | 'integrated' | 'software' | 'unknown';
   description: string;
+  /** Render tier in effect and the effects running (filled in once the renderer has applied the settings). */
+  render?: { tier: string; auto: string; effects: string[] };
 }
 
 /** A transient notification. */

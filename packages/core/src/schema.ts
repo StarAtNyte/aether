@@ -78,6 +78,8 @@ export const MaterialFinish = z.enum([
   'oak', 'walnut', 'ash', 'herringbone', 'marble', 'terrazzo', 'concrete', 'plaster', 'paint', 'tile', 'subway-tile',
   'stone', 'brick', 'fabric', 'velvet', 'leather', 'carpet', 'brushed-metal', 'chrome', 'brass', 'black-metal', 'glass',
   'frosted-glass', 'ceramic', 'mirror', 'roof-tile', 'metal-roof', 'decking', 'grass', 'gravel', 'water',
+  // Additive: natural ground and trunk surfaces (photographed detail under the stylised presets).
+  'bark', 'rock', 'soil', 'snow', 'sand', 'asphalt',
 ]);
 export type MaterialFinish = z.infer<typeof MaterialFinish>;
 
@@ -272,8 +274,20 @@ export type JointSpec = z.infer<typeof JointSpec>;
 // Lights
 // ---------------------------------------------------------------------------
 
+/**
+ * Additive: photometric profile of a spot light, shaping its falloff like an IES file
+ * (`soft` cosine falloff, `downlight` flat with a soft edge, `narrow` a tight beam, `wash` wide and
+ * even, `batwing` dimmer on the axis with a bright ring).
+ */
+export const LightProfile = z.enum(['soft', 'downlight', 'narrow', 'wash', 'batwing']);
+export type LightProfile = z.infer<typeof LightProfile>;
+
 export const LightSpec = z.object({
-  type: z.enum(['point', 'spot', 'directional', 'ambient', 'hemisphere']),
+  /**
+   * `area` (additive) is a rectangular panel of `size` metres that shines along the entity's local −Y
+   * axis, like a spot light (soft, wrapped illumination: windows, ceiling panels, strip lights).
+   */
+  type: z.enum(['point', 'spot', 'directional', 'ambient', 'hemisphere', 'area']),
   color: Color.default('#ffffff'),
   intensity: z.number().min(0).default(1),
   /** point/spot range in meters (0 = infinite). */
@@ -281,6 +295,10 @@ export const LightSpec = z.object({
   /** spot cone angle in degrees. */
   angle: z.number().min(1).max(89).default(30),
   castShadow: z.boolean().default(false),
+  /** Additive: width and depth in metres of an `area` light (default 1 × 1). */
+  size: z.tuple([z.number().min(0.01).max(100), z.number().min(0.01).max(100)]).optional(),
+  /** Additive: IES-like falloff of a `spot` light (default: the plain cone). */
+  profile: LightProfile.optional(),
 });
 export type LightSpec = z.infer<typeof LightSpec>;
 

@@ -1824,6 +1824,66 @@ Everything here is additive; the World IR is unchanged.
   (`TitleCard`, every kind of world), `Studio.startGame()` releases it;
   restart never shows it again and stopping always releases the hold.
 
+## Photoreal renderer (additions to core, arch, render, studio; all additive)
+
+### `@aether/core`
+
+- `LightSpec.type` gains `'area'`: a rectangular panel that shines along the
+  entity's local -Y axis. New optional `size: [width, depth]` (metres, 0.01 to
+  100 each, default 1 x 1) and `profile?: LightProfile` (`soft`, `downlight`,
+  `narrow`, `wash`, `batwing`: the photometric falloff of a `spot`, like an IES
+  file). Older worlds parse unchanged.
+- `MaterialFinish` gains `bark`, `rock`, `soil`, `snow`, `sand`, `asphalt`
+  (photographed CC0 sets; `grass`, `gravel` and `leather` already existed and now
+  carry photographed maps too). `@aether/arch` `FINISHES` has matching entries.
+
+### `@aether/render`
+
+```
+RenderTier = 'low' | 'medium' | 'high' | 'ultra'
+PostEffects = { composite, ao, taa, ssr, shafts, halation, aberration, grain, dof }   // booleans
+EffectOverrides = Partial<Record<keyof PostEffects, boolean>>
+RenderQuality = 'realtime' | 'studio' | 'final'      // `final` adds depth of field and the heaviest still plan
+GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior' | 'overcast' | 'night' | 'neutral'
+
+WorldRenderer.setRenderTier(tier | 'auto') → tier in effect; .renderTier; .autoRenderTier
+WorldRenderer.setEffects(overrides)          // replaces the whole override set; {} follows the tier again
+WorldRenderer.activeEffects / .intendedEffects / .failedEffectNames   // what runs / is asked for / failed on this device
+WorldRenderer.setGradePreset(id | null) / .gradePreset                // null follows the sky
+WorldRenderer.setRenderQuality('realtime' | 'studio' | 'final')
+WorldRenderer.planStill(w, h, 'studio' | 'final') → StillPlan { supersample: 1|2, tileSize, single, frames }
+WorldRenderer.preparePost(timeoutMs?)        // waits for the post pipeline to exist (stills call it themselves)
+WorldRenderer.renderStill({ width, height, pose, frames?, tileSize?, supersample?, signal?, onProgress? })
+  // up to 8192 px on the long side; supersampled stills are filtered down in linear light;
+  // a still that comes out as one flat colour is rendered once more
+WorldRenderer.pathTraceStill({ width, height, samples, pose, denoise?, bounces?, fStop?, focusDistance?, signal?, onProgress? })
+  // lazy module (view/pathtrace.ts) on a private WebGL2 context; rejects on cancel (AbortError), when a render
+  // is running, or when the scene exceeds MAX_PATH_TRACE_TRIANGLES (2 000 000); samples 1..4096, size <= 4096
+WorldRenderer.pathTracing                     // true while a path-traced still runs (the viewport pauses)
+qualityPlan(quality, budget, software, tier) → { tier, effects, shadowMapCap, shadowRadius, accumulateFrames, adaptiveResolution }
+```
+
+Tiers: `low` draws directly (a bloom-only composite stays for worlds with bloom), `medium`
+adds the composite and grain, `high` adds ambient occlusion and temporal AA, `ultra` adds
+reflections, sun shafts, halation and chromatic aberration. `auto` is chosen from the GPU
+class and memory budget; an effect that fails to build on a device is dropped (and listed in
+`failedEffectNames`) instead of failing the viewport. The high and ultra tiers, and stills,
+light and reflect with a photographed sky chosen from the sky preset when the world names no
+HDRI.
+
+Pure modules, unit-tested: `gpu/finishing.ts` (tiers, effect sets, degradation order, grade
+presets), `gpu/render-quality.ts`, `environment/clouds.ts`, `materials/anti-tile.ts`,
+`geometry/soften.ts`, `view/still.ts`, `view/pathtrace.ts` helpers.
+
+### `apps/studio`
+
+- Settings, Graphics: render tier (`auto`, `low`, `medium`, `high`, `ultra`) and one
+  switch per effect; stored in `lib/storage.ts` as `renderTier` and `effects`
+  (validated with zod on load; unknown names are dropped).
+- Publish, Render still: `quality` gains Final render (`final`) and a Path traced (beta)
+  option with a samples selector (64, 256, 1024); defaults `pathTraced: false`,
+  `samples: 256`.
+
 ## Replay proofs: `@aether/verifier` (+ additions to studio, procgen; format in `docs/PROOFS.md`)
 
 ### `@aether/verifier` (new; deps: core, logic, physics, playtest (evidence schema only), procgen, zod; bin `aether-verify`)

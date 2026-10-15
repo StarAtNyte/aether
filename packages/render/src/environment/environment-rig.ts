@@ -33,7 +33,7 @@ import { WeatherSystem } from './weather';
 import { fitShadowCamera } from './shadow-fit';
 import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
-import { createHdriSource, HdriController, type HdriSource } from './hdri';
+import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
 
 export { MAX_FOG_DENSITY };
 
@@ -47,6 +47,18 @@ const SKIRT_DROP = 0.04;
  * lighting) also contribute ambient light.
  */
 export const HEMI_SHARE_WITH_IBL = 0.6;
+/**
+ * Photographed skies used for image-based light (reflections and ambient colour) by the high and ultra
+ * tiers when a world names none: one bundled Poly Haven HDRI per sky preset. Space has none.
+ */
+export const AUTO_HDRI: Readonly<Record<string, string>> = Object.freeze({
+  day: 'sky-partly-cloudy',
+  overcast: 'sky-partly-cloudy',
+  dawn: 'sky-venice-sunset',
+  sunset: 'sky-venice-sunset',
+  night: 'sky-moonlit',
+  studio: 'sky-photo-studio',
+});
 /** Content radius assumed before the first content bounds arrive. */
 const DEFAULT_CONTENT_RADIUS = 20;
 
@@ -163,10 +175,21 @@ export class EnvironmentRig {
   }
 
   private setShadowMapSize(size: number): void {
+    // The node renderer's shadow node owns the map and resizes it (reallocating its textures) the next
+    // time it draws; `shadow.map` must stay in place because effects such as the sun shafts read it.
     this.sun.shadow.mapSize.set(size, size);
-    // Force the shadow map to be reallocated at the new size.
-    this.sun.shadow.map?.dispose();
-    this.sun.shadow.map = null;
+  }
+
+  private autoHdri = false;
+
+  /**
+   * Use a photographed sky for image-based light when the world names no HDRI (the renderer turns this on for the
+   * high and ultra tiers). Rebuilds the environment lighting at once.
+   */
+  setAutoHdri(on: boolean): void {
+    if (on === this.autoHdri) return;
+    this.autoHdri = on;
+    if (this.env && this.scene) this.apply(this.env, this.scene);
   }
 
   /** HDR environment map (`environment.hdri`), when the world asks for one. */
@@ -231,7 +254,10 @@ export class EnvironmentRig {
     this.hemi.groundColor.set(s.hemiGround);
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
     this.syncGround(s.showGround ? env.ground : null);
-    this.hdri.set(env.hdri, { intensity: env.hdriIntensity, background: env.hdriBackground });
+    const explicit = env.hdri;
+    const id = explicit ?? (this.autoHdri ? AUTO_HDRI[s.preset] : undefined);
+    // An automatic HDRI only lights and reflects (the dome and clouds stay the background) and loses its sun.
+    this.hdri.set(id, { intensity: env.hdriIntensity, background: explicit ? env.hdriBackground : false, lightOnly: !explicit });
     this.applyFog();
     this.weather.set(env.weather);
   }
@@ -319,11 +345,14 @@ export class EnvironmentRig {
   private updateEnvironmentMap(scene: Scene, horizon: string): void {
     // A loaded HDRI owns lighting (and, by default, the background); the analytic sky hides behind it.
     if (this.hdri.bind(scene, this.state.envIntensity * HDRI_ENV_SCALE)) {
+      this.alignHdriSun(scene);
       this.sky.group.visible = !this.hdri.showsBackground;
       // The photographed sky already lights every surface: the analytic ambient would double it (and tint it blue).
       this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL * HDRI_HEMI_SCALE;
       return;
     }
+    scene.environmentRotation.set(0, 0, 0);
+    scene.backgroundRotation.set(0, 0, 0);
     this.sky.group.visible = true;
     this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL;
     const groundSpec = this.state.showGround ? this.env?.ground : null;
@@ -345,6 +374,15 @@ export class EnvironmentRig {
     tex.needsPMREMUpdate = true;
     scene.environment = tex;
     scene.environmentIntensity = this.state.envIntensity;
+  }
+
+  /** Turn the HDRI around the vertical axis so its sun sits where the sun light is (reflections agree with the shadows). */
+  private alignHdriSun(scene: Scene): void {
+    const sun = this.hdri.sun;
+    const l = this.state.lightDirection;
+    const turn = sun ? hdriRotationFor(sun.azimuth, l[0], l[2]) : 0;
+    scene.environmentRotation.set(0, turn, 0);
+    scene.backgroundRotation.set(0, turn, 0);
   }
 
   private syncGround(spec: { material: MaterialSpec; size: number } | null): void {

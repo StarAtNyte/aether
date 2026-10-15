@@ -11,6 +11,7 @@
  * pass: no extra render target, no extra pass.
  */
 import type { SkyState } from '../environment/sky-state';
+import { evScale, whiteBalance, type GradePreset } from './finishing';
 
 /** Grade parameters (linear RGB tints). */
 export interface Grade {
@@ -18,6 +19,12 @@ export interface Grade {
   contrast: number;
   shadowTint: [number, number, number];
   highlightTint: [number, number, number];
+  /** Linear exposure multiplier applied in the post pass (default 1). */
+  exposure?: number;
+  /** Linear white-balance multipliers (default identity). */
+  balance?: [number, number, number];
+  /** Grain amplitude multiplier (default 1). */
+  grain?: number;
 }
 
 /** Neutral grade (identity). */
@@ -54,5 +61,21 @@ export function gradeFor(sky: Pick<SkyState, 'lightColor' | 'zenith' | 'elevatio
     contrast: night ? 1.02 : 1.05,
     shadowTint: tint(hexLinear(sky.zenith), night ? 0.22 : 0.14),
     highlightTint: tint(hexLinear(sky.lightColor), night ? 0.12 : 0.1 + 0.12 * golden),
+  };
+}
+
+/**
+ * Layer a named look on a sky-derived grade: the preset's saturation and contrast scale the grade's,
+ * its exposure offset and white balance go to the post pass, and the grain follows it.
+ */
+export function gradeWithPreset(base: Grade, preset: Pick<GradePreset, 'saturation' | 'contrast' | 'exposureEv' | 'temperature' | 'tint' | 'grain'>): Grade {
+  return {
+    saturation: base.saturation * preset.saturation,
+    contrast: base.contrast * preset.contrast,
+    shadowTint: base.shadowTint,
+    highlightTint: base.highlightTint,
+    exposure: (base.exposure ?? 1) * evScale(preset.exposureEv),
+    balance: whiteBalance(preset.temperature, preset.tint),
+    grain: preset.grain,
   };
 }

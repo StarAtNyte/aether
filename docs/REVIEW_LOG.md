@@ -2865,3 +2865,22 @@ looked at: curtains flank the window, nothing over the door.
   asking (or running the repair turn).
 - `e2e:arch` fails at its "studio render" step in this environment on `main` as well
   (software GL, 30 s wait); the steps before it, including the new one, pass.
+
+## Stage: photoreal renderer
+
+Scope: tiered finishing chain (AO, TAA, reflections, sun shafts, halation, aberration, grain, DOF),
+grade presets, HDRI/sky image-based light, area and IES-style lights, CC0 finish sets, supersampled
+stills and the lazy path-traced still. Design in ARCHITECTURE section 24.
+
+- [x] **Security.** The path tracer is a lazy chunk on a private WebGL2 context; scene conversion is
+  capped (2 000 000 triangles, 4096 px) and cancelable. Texture sets are bundled CC0 files with
+  credits in docs/THIRD_PARTY.md; no network fetch at render time. New dependencies are exact-pinned
+  and licence-recorded (three-gpu-pathtracer, three-mesh-bvh, xatlas-web).
+- [x] **Performance.** Tier is chosen from GPU class and memory budget; software GPUs stay on `low`.
+  A failing effect is dropped in a fixed order rather than failing the viewport. The leak check
+  (textures and heap across on/off cycles) is recorded above; per-effect costs come from
+  `npm run e2e:render-bench`.
+- [x] **Gates after merging origin/main.** tsc 0 errors, full vitest green (one load-related flake
+  on the first run, clean on rerun), studio build and smoke 32/32.
+- [ ] Not re-measured in this session: a fresh headed RTX 4090 look-development round and Firefox
+  e2e on the merged tree.

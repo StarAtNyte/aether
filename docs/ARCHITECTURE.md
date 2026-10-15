@@ -1280,6 +1280,66 @@ npm run showcase:thumbs flagship covers from art-directed cameras (docs/screensh
   logic) to the win screen; `npm run e2e:showcase` opens and plays every
   featured world in Chromium and Firefox.
 
+## 24. Photoreal finishing
+
+![Final render](screenshots/photoreal/final-render-garden.jpg)
+
+The viewport, stills and exports share one finishing chain. It is built from pure,
+unit-tested decisions (`gpu/finishing.ts`, `gpu/render-quality.ts`) and a TSL pipeline
+(`gpu/post.ts`) that only runs what the tier asks for.
+
+**Tiers.** `low` draws the scene directly (worlds with bloom keep a bloom-only composite),
+`medium` runs the composite with grain, `high` adds screen-space ambient occlusion (GTAO as an AO
+context of the scene pass) and temporal AA, `ultra` adds screen-space reflections, sun shafts
+(ray-marched through the sun's shadow map and blended depth-aware), halation and chromatic
+aberration. `auto` picks from the GPU class and memory budget (software GPUs and low-memory mode
+stay low). Each effect can be switched on or off in Settings, Graphics. An effect that fails to
+build on a device is dropped by a fixed degradation order instead of failing the viewport; the
+failures are reported by `failedEffectNames`.
+
+**Stills.** `RenderQuality` is `realtime`, `studio` or `final`. A still is planned with
+`stillPlan` (supersampling 1 or 2 where the GPU allows it, tile size, accumulated frames; depth of
+field only for `final`) and drawn through capture sessions: one draw when the image fits the tile
+size, otherwise overlapping tiles. Supersampled images are filtered down in linear light. The first
+capture after a pipeline is built can come out as one flat colour on some software GPUs; it is
+detected and rendered once more.
+
+**Path-traced stills (beta).** `view/pathtrace.ts` wraps `three-gpu-pathtracer` 0.0.27 (MIT). It
+was chosen after comparing the options: it is the only maintained tracer that runs on WebGL2, so
+it works in Firefox and on software GPUs, and the WebGPU variant upstream is not needed. The module,
+the BVH library and the UV unwrapper are lazy chunks (`pathtrace` about 8 kB plus `pathtracer`
+about 214 kB), downloaded only when a path-traced still is requested. The tracer runs on a private
+WebGL2 context, so the viewport's context, tier and post pipeline are untouched; the viewport pauses
+while it runs. The scene is converted from the live scene (opaque materials only for traced
+look-alikes, area and IES-profile lights copied across), capped at 2 000 000 triangles and 4096 px,
+traced progressively with a yield between samples (and while shaders compile), filtered for
+fireflies on the GPU, denoised with a bundled BSD-2 smart denoise, and downsampled like any other still.
+
+**Materials, light and sky.** Photographed ambientCG finishes are the detail layer of the stylised
+presets (`PRESET_DETAIL`); isotropic finishes use a stochastic second texture lookup so tiling is not
+visible (`materials/anti-tile.ts`, off on software GPUs and in low-memory mode). Organic presets get
+creased-angle soft normals (`geometry/soften.ts`). Area lights are `RectAreaLight`s (LTC data loaded
+on first use); spot profiles are IES textures. The high and ultra tiers light with a photographed
+sky chosen from the sky preset, rotated so its sun lines up with the world's sun and clamped so the
+sun disc cannot burn shadows. Procedural clouds, round weather sprites and a darker, opaque water
+while reflections run complete the look.
+
+**GPU resources.** Everything the chain creates is released with the pipeline: the temporal AA
+history and placeholders, the render-to-texture inputs of shafts, aberration and depth of field, and
+the automatic sky map is parked and reused when a tier switches off and on (a leak the leak check
+found). A resized sun shadow map reallocates its textures; a pipeline built against the old ones is
+dropped and rebuilt rather than left sampling destroyed textures.
+
+**Tooling.** `npm run e2e:render` (tiers, effect toggles, a final still, area-light brightness, a
+small path trace, a 12-switch leak check and a console-error check; flags `--chromium`, `--webgl2`,
+`--firefox`, `--no-pathtrace`), `npm run e2e:photoreal` (before/after captures of any world, labs
+for lights, materials, water, area lights and the sun, `--pt` for path-traced stills) and
+`npm run e2e:render-bench` (uncapped orbit benchmark per tier and effect). Set `AETHER_E2E_GPU=1`
+to use the machine's GPU in Chromium instead of SwiftShader; Firefox needs a display with WebGL
+(on a headless machine run it under `xvfb-run`).
+
+![Path traced still](screenshots/photoreal/path-traced-penthouse.jpg)
+
 ## Aether as an MCP server (`apps/cli/src/mcp`)
 
 `aether mcp` puts the same loop behind the Model Context Protocol so other

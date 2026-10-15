@@ -12,6 +12,7 @@ import { applyWind } from './wind';
 import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
 import { FinishTextures, finishHasMaps } from './finish-textures';
+import { applyAntiTile, FINISH_NODES_KEY, needsAntiTile } from './anti-tile';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -19,6 +20,32 @@ const GHOST_OPACITY = 0.34;
 /** Proof-replay ghost tint (indigo-cyan, readable over any ground). */
 const PROOF_COLOR = new Color('#8c95ff');
 const PROOF_OPACITY = 0.62;
+
+/** Marks the water materials (their look changes with the screen-space reflection mode, see {@link MaterialCache.setReflectiveWater}). */
+export const WATER_KEY = 'aetherWater';
+/** Colour and glow of water drawn as an opaque reflective surface, relative to its see-through look. */
+export const OPAQUE_WATER_COLOR = 0.55;
+export const OPAQUE_WATER_GLOW = 0.45;
+
+/** Switch one water material between its see-through and its opaque reflective look (reversible, no new program unless blending changes). */
+export function setWaterLook(m: MeshStandardMaterial, reflective: boolean): void {
+  const base = m.userData['aetherWaterBase'] as { color: Color; emissive: number; opacity: number; transparent: boolean; depthWrite: boolean } | undefined;
+  if (!base) return;
+  if (reflective) {
+    m.color.copy(base.color).multiplyScalar(OPAQUE_WATER_COLOR);
+    m.emissiveIntensity = base.emissive * OPAQUE_WATER_GLOW;
+    m.opacity = 1;
+    m.transparent = false;
+    m.depthWrite = true;
+  } else {
+    m.color.copy(base.color);
+    m.emissiveIntensity = base.emissive;
+    m.opacity = base.opacity;
+    m.transparent = base.transparent;
+    m.depthWrite = base.depthWrite;
+  }
+  m.needsUpdate = true;
+}
 
 /** A material handle: release it with {@link MaterialCache.release} using `key`. */
 export interface MaterialHandle {
@@ -31,7 +58,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -66,8 +93,12 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
       m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
     }
   }
-  if (!ghostLike && r.finish) applyFinish(m, r, finishes);
+  if (!ghostLike && r.finish) applyFinish(m, r, finishes, antiTile);
   if (variant === 'foliage') applyWind(m);
+  if (!ghostLike && r.surface === 'water') {
+    m.userData[WATER_KEY] = true;
+    m.userData['aetherWaterBase'] = { color: m.color.clone(), emissive: m.emissiveIntensity, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite };
+  }
   m.name = `aether:${variant}`;
   return m;
 }
@@ -78,16 +109,23 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
  * roughness comes from the ORM map (absolute), so the factor carries only
  * the spec's deviation from the finish default.
  */
-function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: FinishTextures | undefined): void {
+function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: FinishTextures | undefined, antiTile: boolean): void {
   const id = r.finish;
   if (!id) return;
   const def = FINISHES[id];
   if (!finishes || !finishHasMaps(id)) return;
   const maps = finishes.get(id);
   m.color.multiplyScalar(finishAlbedoScale(def));
+  m.roughness = Math.min(3, r.roughness / Math.max(0.01, def.roughness));
+  if (antiTile && needsAntiTile(id, def.tile)) {
+    // Large-tile surfaces (floors, walls, lawns): the maps are sampled twice by nodes (stochastic blend
+    // that hides the repeat), so they are not bound as classic maps.
+    m.userData[FINISH_NODES_KEY] = id;
+    applyAntiTile(m, maps, def.bump > 0 ? 1 : 0);
+    return;
+  }
   m.map = maps.map;
   m.roughnessMap = maps.orm;
-  m.roughness = Math.min(3, r.roughness / Math.max(0.01, def.roughness));
   m.aoMap = maps.orm;
   m.aoMapIntensity = 1;
   if (def.bump > 0) {
@@ -106,12 +144,40 @@ export class MaterialCache {
   readonly surfaces = new SurfaceTextures();
   /** Texture maps of the physically based finishes (architecture). */
   readonly finishes = new FinishTextures();
+  /**
+   * Hide the repeat of large textured surfaces with a second, blended texture lookup (costs extra texture
+   * reads per pixel; the renderer turns it off on software rasterisers). Applies to materials created afterwards.
+   */
+  antiTile = true;
+  private reflectiveWater = false;
+
+  /**
+   * Draw water as an opaque, darker, reflective surface (true) instead of see-through (false). Opaque
+   * water takes part in the depth pre-pass, so screen-space reflections mirror the shore and the sky in
+   * it like a real lake. Applies to existing and later water materials.
+   */
+  setReflectiveWater(on: boolean): void {
+    if (on === this.reflectiveWater) return;
+    this.reflectiveWater = on;
+    this.cache.forEach((m) => {
+      if (m.userData[WATER_KEY] === true) setWaterLook(m as MeshStandardMaterial, on);
+    });
+  }
+
+  /** True while water is drawn as an opaque reflective surface. */
+  get waterIsReflective(): boolean {
+    return this.reflectiveWater;
+  }
 
   /** Acquire (and retain) the material for `spec`. Pair every call with {@link release}. */
   acquire(spec: MaterialSpec | undefined, opts: ResolveOptions = {}, variant: MaterialVariant = 'standard'): MaterialHandle {
     const resolved = resolveMaterial(spec, opts);
     const key = materialKey(resolved, variant);
-    const material = this.cache.acquire(key, () => createMaterial(resolved, variant, this.surfaces, this.finishes));
+    const material = this.cache.acquire(key, () => {
+      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile);
+      if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
+      return m;
+    });
     return { key, material, resolved };
   }
 

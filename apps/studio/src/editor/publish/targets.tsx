@@ -407,7 +407,19 @@ export const RenderTarget = memo(function RenderTarget(): ReactElement {
             <Segmented<'view' | 'shot'> label="Camera" stretch size="sm" value={still.source} options={[['view', 'Current view'], ['shot', 'First keyframe']]} disabled={keys === 0} onChange={(v) => studio.publish.setStill({ source: v })} />
           </Field>
         </div>
-        <Toggle label="Photoreal" hint={photorealAvailable ? 'Ambient occlusion, soft shadows and 24 accumulated samples per pixel — for architecture and stills' : 'Needs the studio render, which this device cannot run'} checked={still.photoreal && photorealAvailable} disabled={!photorealAvailable} onChange={(v) => studio.publish.setStill({ photoreal: v })} />
+        <Toggle label="Photoreal" hint={photorealAvailable ? 'Ambient occlusion, reflections, sun shafts, soft shadows and 24 accumulated samples per pixel — for architecture and stills' : 'Needs the studio render, which this device cannot run'} checked={still.photoreal && photorealAvailable} disabled={!photorealAvailable} onChange={(v) => studio.publish.setStill({ photoreal: v })} />
+        <Toggle
+          label="Path traced (beta)"
+          hint="Global illumination, soft area lights and real glass, accumulated sample by sample like Blender Cycles. Slow, and the first one in a session compiles a large shader; cancel any time."
+          checked={still.pathTraced}
+          onChange={(v) => studio.publish.setStill({ pathTraced: v })}
+        />
+        {still.pathTraced && (
+          <Field label="Quality" wide>
+            <Segmented<'64' | '256' | '1024'> label="Path tracing samples" stretch size="sm" value={String(still.samples) as '64' | '256' | '1024'} options={[['64', 'Draft 64'], ['256', 'Good 256'], ['1024', 'Best 1024']]} onChange={(v) => studio.publish.setStill({ samples: Number(v) })} />
+          </Field>
+        )}
+        <Toggle label="Final render" hint="Adds depth of field (and, for a raster render, 48 samples per pixel with 2× supersampling). Slower: the cleanest result the renderer can make." checked={still.final && (still.pathTraced || (still.photoreal && photorealAvailable))} disabled={!still.pathTraced && (!photorealAvailable || !still.photoreal)} onChange={(v) => studio.publish.setStill({ final: v })} />
       </Section>
       <Primary icon="image" onClick={() => void studio.publish.exportStill()} disabled={busy} testId="publish-still-export" hint={`${still.width} × ${still.height}. Larger images render in tiles, so even 4K never needs a 4K screen.`}>
         Render still

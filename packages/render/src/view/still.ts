@@ -11,6 +11,8 @@ import { vignetteFactor } from '../gpu/post';
 export const MAX_STILL_SIZE = 8192;
 /** Largest tile rendered in one draw (pixels per side). */
 export const MAX_TILE_SIZE = 2048;
+/** Largest single draw a capture session accepts (an explicit `tileSize` may go up to this). */
+export const MAX_DRAW_SIZE = MAX_TILE_SIZE * 2;
 /** Overlap rendered around each tile and discarded (bloom and AO near tile edges). */
 export const TILE_MARGIN = 48;
 
@@ -50,6 +52,56 @@ export function tileLayout(width: number, height: number, tileW: number, tileH: 
     }
   }
   return tiles;
+}
+
+const SRGB_TO_LINEAR = ((): Float32Array => {
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const c = i / 255;
+    lut[i] = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+  return lut;
+})();
+
+function linearToSrgb8(l: number): number {
+  const c = l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055;
+  return c <= 0 ? 0 : c >= 1 ? 255 : Math.round(c * 255);
+}
+
+/**
+ * Box-filter a `W`×`H` RGBA8 image down by an integer `factor` (supersampled stills): the
+ * `factor`² pixels of each output pixel are averaged in linear light, so edges and highlights keep
+ * their weight. `W` and `H` must be multiples of `factor`. Returns tight RGBA8, alpha opaque.
+ */
+export function downsample(src: Uint8Array, W: number, H: number, factor: number): Uint8Array {
+  const f = Math.floor(factor);
+  if (f < 1 || W % f !== 0 || H % f !== 0 || src.length < W * H * 4) throw new Error('invalid downsample');
+  if (f === 1) return src.slice(0, W * H * 4);
+  const w = W / f;
+  const h = H / f;
+  const out = new Uint8Array(w * h * 4);
+  const inv = 1 / (f * f);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let j = 0; j < f; j++) {
+        let k = ((y * f + j) * W + x * f) * 4;
+        for (let i = 0; i < f; i++, k += 4) {
+          r += SRGB_TO_LINEAR[src[k] as number] as number;
+          g += SRGB_TO_LINEAR[src[k + 1] as number] as number;
+          b += SRGB_TO_LINEAR[src[k + 2] as number] as number;
+        }
+      }
+      const o = (y * w + x) * 4;
+      out[o] = linearToSrgb8(r * inv);
+      out[o + 1] = linearToSrgb8(g * inv);
+      out[o + 2] = linearToSrgb8(b * inv);
+      out[o + 3] = 255;
+    }
+  }
+  return out;
 }
 
 /**

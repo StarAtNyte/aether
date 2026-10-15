@@ -301,6 +301,60 @@
         "finish": "terrazzo",
         "id": "Terrazzo009",
         "sha256": "667b610ce2548056359bb5f928a048db561bc30976547cffa88bf4ad83e78ffd"
+      },
+      {
+        "finish": "bark",
+        "id": "Bark001",
+        "tile": 1,
+        "sha256": "a1dbd08cb545b27f42e7208caca06488460de42e27fe34860619d32556e10f60"
+      },
+      {
+        "finish": "rock",
+        "id": "Rock030",
+        "tile": 2.5,
+        "sha256": "2fd0bc2d214e2487c19062ed0798a85dd135b41cfc12bbaed42d5acae238f989"
+      },
+      {
+        "finish": "soil",
+        "id": "Ground078",
+        "tile": 1.5,
+        "sha256": "ab21b8c558be116bfc462124bc0e93919901882dae48ea57e5bffac0aedd8e4f"
+      },
+      {
+        "finish": "snow",
+        "id": "Snow006",
+        "tile": 2,
+        "sha256": "442ff74e547014523aaa7a4579ba6bf3e61992644e44a8cb539dd430cda1a321"
+      },
+      {
+        "finish": "sand",
+        "id": "Ground054",
+        "tile": 2,
+        "sha256": "b325ec2f167dce95a0fabc61a2104641288cf20915419578c3efdb46200c563e"
+      },
+      {
+        "finish": "asphalt",
+        "id": "Asphalt031",
+        "tile": 2.5,
+        "sha256": "f98114b8fb083fc65925c3b4568b131e37c9a23357d432a16e59676dbc69f964"
+      },
+      {
+        "finish": "grass",
+        "id": "Grass004",
+        "tile": 1.6,
+        "sha256": "4b63495f459db8481f4d5144e4e9069345c81cf898cc71f2216f5dd3bb344469"
+      },
+      {
+        "finish": "gravel",
+        "id": "Gravel023",
+        "tile": 1.2,
+        "sha256": "a00e7fd6246db4ae228473aac14f1bc427bd93f228ebe347a5d6390dd838b0a8"
+      },
+      {
+        "finish": "leather",
+        "id": "Leather026",
+        "tile": 0.45,
+        "sha256": "6af2f446f9855c641da2a072f128d30965431ffae3306d22d75dbfff99c04646"
       }
     ]
   }

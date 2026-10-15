@@ -16,6 +16,7 @@
  */
 import { CanvasTexture, DoubleSide, Group, InstancedMesh, Mesh, MeshStandardMaterial, RGBAFormat, type Camera, type Material, type Object3D, type Texture } from 'three';
 import { ENTITY_ID_KEY } from '../sync/entity-node';
+import { FINISH_MAPS_KEY, type AntiTileMaps } from '../materials/anti-tile';
 
 /** Most triangles written (instances included). */
 export const MAX_EXPORT_TRIANGLES = 6_000_000;
@@ -142,7 +143,14 @@ function standardCopy(src: Material, cache: Map<Material, MeshStandardMaterial>,
     side: src.side === DoubleSide ? DoubleSide : src.side,
     vertexColors: s.vertexColors === true,
   });
-  const slots = s as unknown as Record<string, Texture | null | undefined>;
+  const slots = { ...(s as unknown as Record<string, Texture | null | undefined>) };
+  // Anti-tiled finishes sample their maps with nodes and bind none: export the textures they carry.
+  const finish = src.userData[FINISH_MAPS_KEY] as AntiTileMaps | undefined;
+  if (finish) {
+    slots['map'] ??= finish.map;
+    slots['roughnessMap'] ??= finish.orm;
+    slots['normalMap'] ??= finish.normal;
+  }
   const out = m as unknown as Record<string, Texture | null>;
   for (const k of MAP_KEYS) {
     const t = slots[k];

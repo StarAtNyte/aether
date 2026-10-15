@@ -25,6 +25,7 @@ import {
   previousBootFailed,
   saveChat,
   saveRecoveryWorld,
+  EFFECT_SETTINGS,
   MAX_REPAIRS_SETTING,
   saveSettings,
   saveWorld,
@@ -284,6 +285,7 @@ export class Studio {
           if (prev.lowMemory !== s.settings.lowMemory) this.applyMemory();
           if (prev.backend !== s.settings.backend) void this.restartRenderer('Switching renderer…');
           if (prev.showPerf !== s.settings.showPerf) this.sim?.setStatsWhileEditing(s.settings.showPerf);
+          if (prev.renderTier !== s.settings.renderTier || prev.effects !== s.settings.effects) this.applyGraphics();
         }
       }),
     );
@@ -413,6 +415,7 @@ export class Studio {
       sim.setSelection(this.store.getState().selection);
       this.store.getState().setBackend(sim.backend);
       this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });
+      this.applyGraphics();
       for (const fn of this.simListeners) fn(sim);
       // The asset catalog is not needed for the first frame: load it once the editor has settled.
       setTimeout(() => {
@@ -477,6 +480,26 @@ export class Studio {
     st.toast(`The graphics context was lost (${info.message}). Restoring the viewport…`, 'info', 6);
     this.applyMemory();
     void this.restartRenderer('Restoring the renderer…');
+  }
+
+  /**
+   * Apply the graphics settings (render tier and effect switches) to the renderer and publish what is in
+   * effect, so Settings can show it.
+   */
+  private applyGraphics(): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const st = this.store.getState();
+    const r = sim.renderer;
+    const overrides: Record<string, boolean> = {};
+    for (const k of EFFECT_SETTINGS) {
+      const v = st.settings.effects[k];
+      if (typeof v === 'boolean') overrides[k] = v;
+    }
+    r.setRenderTier(st.settings.renderTier);
+    r.setEffects(overrides);
+    const gpu = st.gpu ?? { tier: r.gpu.tier, description: r.gpu.description };
+    st.setGpu({ ...gpu, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects } });
   }
 
   /** Re-decide low-memory mode from the setting and the session's signals, and apply it everywhere. */

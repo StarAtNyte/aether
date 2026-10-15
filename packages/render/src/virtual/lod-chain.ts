@@ -9,6 +9,7 @@
  * are dropped, so a chain always gets strictly cheaper.
  */
 import { simplifyMesh, weldPositions } from './simplify';
+import { normalsAreSoft } from '../geometry/soften';
 
 /** Geometry of one part at one LOD level. */
 export interface LodPart {
@@ -73,8 +74,11 @@ function compact(src: LodSource, indices: Uint32Array): LodPart {
   return { positions, normals, indices: out, ...(uvs ? { uvs } : {}), ...(colors ? { colors } : {}) };
 }
 
-/** Rebuild a flat-shaded part: three own vertices and the face normal per triangle. */
-function flatten(src: LodSource, indices: Uint32Array): LodPart {
+/**
+ * Rebuild a faceted part: three own vertices per triangle and either the face normal (flat shading) or,
+ * for parts softened by the renderer (`geometry/soften.ts`), the source's blended vertex normals.
+ */
+function flatten(src: LodSource, indices: Uint32Array, soft: boolean): LodPart {
   const t = indices.length / 3;
   const positions = new Float32Array(t * 9);
   const normals = new Float32Array(t * 9);
@@ -91,6 +95,7 @@ function flatten(src: LodSource, indices: Uint32Array): LodPart {
     nx /= l;
     ny /= l;
     nz /= l;
+    const sn = src.normals;
     const corners = [a, b, c];
     for (let k = 0; k < 3; k++) {
       const v = corners[k] as number;
@@ -98,9 +103,9 @@ function flatten(src: LodSource, indices: Uint32Array): LodPart {
       positions[o] = p[v * 3] as number;
       positions[o + 1] = p[v * 3 + 1] as number;
       positions[o + 2] = p[v * 3 + 2] as number;
-      normals[o] = nx;
-      normals[o + 1] = ny;
-      normals[o + 2] = nz;
+      normals[o] = soft ? (sn[v * 3] as number) : nx;
+      normals[o + 1] = soft ? (sn[v * 3 + 1] as number) : ny;
+      normals[o + 2] = soft ? (sn[v * 3 + 2] as number) : nz;
       if (colors) {
         const cs = src.colors as Float32Array;
         colors[o] = cs[v * 3] as number;
@@ -128,6 +133,7 @@ export function buildLodChain(parts: readonly LodSource[], ratios: readonly numb
   const triangles = (ps: readonly LodPart[]): number => ps.reduce((s, p) => s + Math.floor(p.indices.length / 3), 0);
   const levels: LodLevel[] = [{ parts: parts.slice(), triangles: triangles(parts) }];
   const faceted = parts.map((p) => isFaceted(p.positions));
+  const soft = parts.map((p, i) => faceted[i] === true && normalsAreSoft(p.positions, p.indices, p.normals));
   for (const ratio of ratios) {
     const prev = levels[levels.length - 1] as LodLevel;
     const next: LodPart[] = [];
@@ -140,7 +146,7 @@ export function buildLodChain(parts: readonly LodSource[], ratios: readonly numb
         continue;
       }
       const res = simplifyMesh(src.positions, src.indices, { targetIndexCount: target * 3, lockBorder: false });
-      next.push(faceted[i] ? flatten(src, res.indices) : compact(src, res.indices));
+      next.push(faceted[i] ? flatten(src, res.indices, soft[i] === true) : compact(src, res.indices));
     }
     const tris = triangles(next);
     if (tris > prev.triangles * MIN_STEP) continue;

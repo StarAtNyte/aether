@@ -9,7 +9,7 @@ import type { AiPrefs } from '../ai/prefs';
 // Lazy: the AI pane pulls in the agent package; the home page must not pay for it up front.
 const AiConnectionPane = lazy(async () => ({ default: (await import('./ai/AiConnectionPane')).AiConnectionPane }));
 import { SHORTCUTS } from '../app/useShortcuts';
-import type { BackendSetting, LowMemorySetting, StudioSettings } from '../lib/storage';
+import { EFFECT_SETTINGS, type BackendSetting, type EffectSetting, type LowMemorySetting, type RenderTierSetting, type StudioSettings } from '../lib/storage';
 import { Toggle } from './fields';
 import { Dialog } from './ui/Dialog';
 import { Segmented } from './ui/Segmented';
@@ -23,6 +23,33 @@ const VIEWPORT_OPTIONS: ReadonlyArray<[BooleanSetting, string, string]> = [
   ['shadows', 'Shadows', 'Soft shadows (applies after reload).'],
   ['showNavHint', 'Navigation hint', 'Mouse and touch controls shown over an idle viewport.'],
 ];
+
+const TIER_CHOICES: ReadonlyArray<[RenderTierSetting, string]> = [
+  ['auto', 'Auto'],
+  ['low', 'Low'],
+  ['medium', 'Medium'],
+  ['high', 'High'],
+  ['ultra', 'Ultra'],
+];
+
+/** Effects the tiers switch on, in the order they are listed (id, label, what it does). */
+const EFFECT_LABELS: Readonly<Record<EffectSetting, [string, string]>> = {
+  ao: ['Ambient occlusion', 'Contact shadows in corners and under objects.'],
+  taa: ['Temporal anti-aliasing', 'Smooth edges and shimmer-free foliage.'],
+  ssr: ['Reflections', 'Glass, water, polished floors and metal mirror the scene.'],
+  shafts: ['Sun shafts', 'Light beams through gaps and shadows.'],
+  halation: ['Glow', 'A wide warm bloom around bright lights.'],
+  aberration: ['Lens fringing', 'A trace of colour fringing towards the corners.'],
+  grain: ['Film grain', 'Fine grain that also hides colour banding in skies.'],
+};
+
+/** Effects each tier runs by default (mirrors the renderer's tier table; used to show the state of the switches). */
+export const TIER_EFFECTS: Readonly<Record<Exclude<RenderTierSetting, 'auto'>, readonly EffectSetting[]>> = {
+  low: [],
+  medium: ['grain'],
+  high: ['ao', 'taa', 'grain'],
+  ultra: ['ao', 'taa', 'ssr', 'shafts', 'halation', 'aberration', 'grain'],
+};
 
 const LOW_MEMORY_CHOICES: ReadonlyArray<[LowMemorySetting, string]> = [
   ['auto', 'Auto'],
@@ -43,7 +70,7 @@ type Tab = SettingsTab;
 /** Extra (editor-only) information shown in Settings. */
 export interface SettingsContext {
   memory?: { lowMemory: boolean; reason: string | null };
-  gpu?: { description: string } | null;
+  gpu?: { description: string; render?: { tier: string; auto: string; effects: string[] } } | null;
 }
 
 /** Settings dialog. */
@@ -114,6 +141,38 @@ export const SettingsDialog = memo(function SettingsDialog({
             <h3 className="settings__heading">Play</h3>
             <Toggle label="Full-window play" hint="Side panels step aside while you play, so the world fills the window." checked={settings.immersivePlay} onChange={(v) => update({ immersivePlay: v })} />
             <Toggle label="Capture the mouse" hint="Click the viewport in play mode to lock the pointer for mouse-look." checked={settings.pointerLock} onChange={(v) => update({ pointerLock: v })} />
+          </section>
+          <section className="settings__group">
+            <h3 className="settings__heading">Graphics</h3>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Quality</span>
+                <span className="setting-row__hint">
+                  {gpu?.render ? `In effect: ${gpu.render.tier}${settings.renderTier === 'auto' ? ' (chosen for this GPU)' : ''}. ` : ''}Higher tiers add ambient occlusion, reflections and sun shafts; the Render still dialog has a Final render mode.
+                </span>
+              </span>
+              <Segmented<RenderTierSetting> label="Graphics quality" value={settings.renderTier} onChange={(v) => update({ renderTier: v })} options={TIER_CHOICES} />
+            </div>
+            {EFFECT_SETTINGS.map((key) => {
+              const tier = settings.renderTier === 'auto' ? ((gpu?.render?.auto ?? 'medium') as Exclude<RenderTierSetting, 'auto'>) : settings.renderTier;
+              const byTier = (TIER_EFFECTS[tier] ?? TIER_EFFECTS.medium).includes(key);
+              const [label, hint] = EFFECT_LABELS[key];
+              return (
+                <Toggle
+                  key={key}
+                  label={label}
+                  hint={hint}
+                  checked={settings.effects[key] ?? byTier}
+                  onChange={(v) => {
+                    const next = { ...settings.effects };
+                    // Matching the tier's own choice drops the override, so the switch follows the tier again.
+                    if (v === byTier) delete next[key];
+                    else next[key] = v;
+                    update({ effects: next });
+                  }}
+                />
+              );
+            })}
           </section>
           <section className="settings__group">
             <h3 className="settings__heading">Performance</h3>

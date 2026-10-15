@@ -5,14 +5,21 @@
 import {
   AmbientLight,
   Color,
+  DataTexture,
   DirectionalLight,
   HemisphereLight,
+  LinearFilter,
+  NoColorSpace,
   Object3D,
   PointLight,
+  RectAreaLight,
+  RedFormat,
   SpotLight,
+  UnsignedByteType,
+  type ColorRepresentation,
   type Light,
 } from 'three';
-import type { LightSpec } from '@aether/core';
+import type { LightProfile, LightSpec } from '@aether/core';
 
 /**
  * three.js uses physical units (candela) for point/spot lights; World IR
@@ -20,6 +27,113 @@ import type { LightSpec } from '@aether/core';
  * one to the other.
  */
 export const LOCAL_LIGHT_SCALE = 20;
+/**
+ * Area lights use luminance-style units: a 1 × 1 m panel at intensity 1 lights a surface a few metres
+ * away about as much as a point light of intensity 1 does.
+ */
+export const LOCAL_AREA_SCALE = 14;
+
+/** Constructor of three's IES-capable spot light (`three/webgpu`), registered by the renderer. */
+export type IesSpotLightCtor = new (color: ColorRepresentation, intensity: number, distance: number, angle: number, penumbra: number, decay: number) => SpotLight & { iesMap: DataTexture | null };
+
+interface LightSupport {
+  ies: IesSpotLightCtor | null;
+  loadArea: (() => Promise<void>) | null;
+  areaReady: boolean;
+  areaLoading: Promise<void> | null;
+}
+
+const support: LightSupport = { ies: null, loadArea: null, areaReady: false, areaLoading: null };
+
+/**
+ * Register what only the GPU renderer can provide: the IES spot light class and the loader of the
+ * rectangular-light lookup tables (a lazily imported ~100 KB addon). Without them (Node tests) spot
+ * profiles fall back to the plain cone and area lights wait forever.
+ */
+export function registerLightSupport(s: { ies?: IesSpotLightCtor; loadArea?: () => Promise<void> }): void {
+  if (s.ies) support.ies = s.ies;
+  if (s.loadArea) {
+    support.loadArea = s.loadArea;
+    support.areaReady = false;
+    support.areaLoading = null;
+  }
+}
+
+/** True once rectangular lights can be built (the lookup tables are loaded). */
+export function areaLightsReady(): boolean {
+  return support.areaReady;
+}
+
+/** Load the rectangular-light tables (once); resolves when {@link areaLightsReady}. Rejects when unsupported. */
+export function loadAreaLights(): Promise<void> {
+  if (support.areaReady) return Promise.resolve();
+  if (!support.loadArea) return Promise.reject(new Error('area lights are not supported by this renderer'));
+  support.areaLoading ??= support.loadArea().then(() => {
+    support.areaReady = true;
+  });
+  return support.areaLoading;
+}
+
+/**
+ * Falloff of a photometric profile at `theta` radians off the axis, for a cone of half-angle `alpha`
+ * (radians): 1 on the brightest ring, 0 at and beyond the cone edge. Pure.
+ */
+export function profileIntensity(profile: LightProfile, theta: number, alpha: number): number {
+  if (!(alpha > 0) || theta >= alpha) return 0;
+  const t = Math.max(0, theta) / alpha;
+  const smooth = (e0: number, e1: number, x: number): number => {
+    const k = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+    return k * k * (3 - 2 * k);
+  };
+  switch (profile) {
+    case 'soft':
+      return Math.cos((Math.PI / 2) * t);
+    case 'narrow':
+      return Math.cos((Math.PI / 2) * t) ** 4;
+    case 'downlight':
+      return smooth(1, 0.55, t);
+    case 'wash':
+      return 0.35 + 0.65 * smooth(1, 0.45, t);
+    case 'batwing':
+      return smooth(1, 0.8, t) * (0.55 + 0.45 * Math.sin(Math.PI * Math.min(1, t * 1.15)));
+  }
+}
+
+/** Texels of the 1-D profile texture (angle 0…π). */
+export const PROFILE_TEXELS = 180;
+
+/** The profile as 8-bit texels over 0…π off the axis (what the IES spot light samples). */
+export function profilePixels(profile: LightProfile, angleDeg: number): Uint8Array {
+  const alpha = (Math.max(1, Math.min(89, angleDeg)) * Math.PI) / 180;
+  const out = new Uint8Array(PROFILE_TEXELS);
+  for (let i = 0; i < PROFILE_TEXELS; i++) out[i] = Math.round(255 * profileIntensity(profile, ((i + 0.5) / PROFILE_TEXELS) * Math.PI, alpha));
+  return out;
+}
+
+const profileTextures = new Map<string, DataTexture>();
+
+function profileTexture(profile: LightProfile, angleDeg: number): DataTexture {
+  const deg = Math.round(Math.max(1, Math.min(89, angleDeg)));
+  const key = `${profile}|${deg}`;
+  let tex = profileTextures.get(key);
+  if (!tex) {
+    tex = new DataTexture(profilePixels(profile, deg), PROFILE_TEXELS, 1, RedFormat, UnsignedByteType);
+    tex.colorSpace = NoColorSpace;
+    tex.magFilter = LinearFilter;
+    tex.minFilter = LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    profileTextures.set(key, tex);
+  }
+  return tex;
+}
+
+/** Release the shared profile textures (renderer disposal). */
+export function disposeProfileTextures(): void {
+  for (const t of profileTextures.values()) t.dispose();
+  profileTextures.clear();
+}
+
 /** Max shadow-casting entity lights (shadows are expensive, especially point lights). */
 export const MAX_SHADOW_LIGHTS = 2;
 
@@ -67,7 +181,13 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
       break;
     }
     case 'spot': {
-      const l = new SpotLight(color, spec.intensity * LOCAL_LIGHT_SCALE * scale, spec.range, (spec.angle * Math.PI) / 180, 0.35, 2);
+      const args = [color, spec.intensity * LOCAL_LIGHT_SCALE * scale, spec.range, (spec.angle * Math.PI) / 180, 0.35, 2] as const;
+      let l: SpotLight;
+      if (spec.profile && support.ies) {
+        const ies = new support.ies(...args);
+        ies.iesMap = profileTexture(spec.profile, spec.angle);
+        l = ies;
+      } else l = new SpotLight(...args);
       l.shadow.mapSize.set(1024, 1024);
       l.shadow.bias = -0.0008;
       target = new Object3D();
@@ -92,6 +212,14 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
       light = l;
       break;
     }
+    case 'area': {
+      const [w, h] = spec.size ?? [1, 1];
+      const l = new RectAreaLight(color, spec.intensity * LOCAL_AREA_SCALE * scale, w, h);
+      // The panel shines along the entity's local −Y axis like a spot light does.
+      l.rotation.x = -Math.PI / 2;
+      light = l;
+      break;
+    }
     case 'hemisphere': {
       _ground.set(color).multiplyScalar(0.35);
       light = new HemisphereLight(color, _ground.getHex(), spec.intensity);
@@ -108,7 +236,7 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
 /** Update intensity and color in place (cheap path for pulsing/animated lights). */
 export function updateLightParams(light: Light, spec: Pick<LightSpec, 'type' | 'intensity' | 'color'>, scale = 1): void {
   const local = spec.type === 'point' || spec.type === 'spot';
-  light.intensity = Math.max(0, spec.intensity) * (local ? LOCAL_LIGHT_SCALE * scale : 1);
+  light.intensity = Math.max(0, spec.intensity) * (local ? LOCAL_LIGHT_SCALE * scale : spec.type === 'area' ? LOCAL_AREA_SCALE * scale : 1);
   light.color.set(spec.color);
   if (light instanceof HemisphereLight) light.groundColor.set(spec.color).multiplyScalar(0.35);
 }

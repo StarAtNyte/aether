@@ -87,7 +87,7 @@ describe('textured presets', () => {
   it('lava and water carry their surface; other presets none', () => {
     expect(resolveMaterial({ preset: 'lava' }).surface).toBe('lava');
     expect(resolveMaterial({ preset: 'water', color: '#123456' }).surface).toBe('water');
-    expect(resolveMaterial({ preset: 'stone' }).surface).toBeNull();
+    expect(resolveMaterial({ preset: 'plastic' }).surface).toBeNull();
     expect(resolveMaterial(undefined).surface).toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe('textured presets', () => {
     const water = cache.acquire({ preset: 'water' }).material as MeshStandardMaterial;
     expect(water.normalMap).not.toBeNull();
     expect(water.emissiveMap).toBeNull();
-    const plain = cache.acquire({ preset: 'stone' }).material as MeshStandardMaterial;
+    const plain = cache.acquire({ preset: 'plastic' }).material as MeshStandardMaterial;
     expect(plain.map).toBeNull();
     const ghost = cache.acquire({ preset: 'lava' }, {}, 'ghost').material as MeshStandardMaterial;
     expect(ghost.map).toBeNull();

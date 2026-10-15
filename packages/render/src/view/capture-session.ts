@@ -13,7 +13,7 @@
  */
 import { Vector3, type PerspectiveCamera } from 'three';
 import type { Vec3 } from '@aether/core';
-import { MAX_STILL_SIZE, MAX_TILE_SIZE, applyVignette, blitTile, normalizePixels, stillSize, tileLayout } from './still';
+import { MAX_DRAW_SIZE, MAX_STILL_SIZE, MAX_TILE_SIZE, applyVignette, blitTile, downsample, normalizePixels, stillSize, tileLayout } from './still';
 
 /** Where the camera is and what it looks at. */
 export interface CameraPose {
@@ -71,8 +71,8 @@ const _target = new Vector3();
 
 /** Start a session on `host` (the renderer guarantees exclusivity). */
 export function openCaptureSession(host: CaptureHost, width: number, height: number, opts: { vignette?: boolean } = {}): CaptureSession {
-  const w = Math.max(16, Math.min(MAX_TILE_SIZE * 2, Math.floor(width)));
-  const h = Math.max(16, Math.min(MAX_TILE_SIZE * 2, Math.floor(height)));
+  const w = Math.max(16, Math.min(MAX_DRAW_SIZE, Math.floor(width)));
+  const h = Math.max(16, Math.min(MAX_DRAW_SIZE, Math.floor(height)));
   const out = new Uint8Array(w * h * 4);
   const cam = host.camera;
   const saved = {
@@ -178,8 +178,13 @@ export interface StillOptions {
   pose: CameraPose;
   /** Frames per tile (temporal accumulation, e.g. 24 for the studio quality); default 1. */
   frames?: number;
-  /** Largest draw (tile) size; default {@link MAX_TILE_SIZE}. */
+  /** Largest draw (tile) size; default {@link MAX_TILE_SIZE}, at most {@link MAX_DRAW_SIZE}. */
   tileSize?: number;
+  /**
+   * Render at `supersample`× the size in each direction and filter down (1–3; default 1). Clamped so the
+   * oversampled image stays within {@link MAX_STILL_SIZE}.
+   */
+  supersample?: number;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }
@@ -196,13 +201,23 @@ export interface StillImage {
  * fits the tile size, otherwise overlapping tiles assembled on the CPU (the
  * vignette is then applied once to the whole image).
  */
-export async function captureStill(open: (w: number, h: number, vignette: boolean) => CaptureSession, opts: StillOptions): Promise<StillImage> {
-  const { width: W, height: H } = stillSize(opts.width, opts.height);
-  if (Math.max(W, H) > MAX_STILL_SIZE) throw new Error('still too large');
-  const cap = Math.max(256, Math.min(MAX_TILE_SIZE, Math.floor(opts.tileSize ?? MAX_TILE_SIZE)));
+export function stillLayout(opts: StillOptions): { OW: number; OH: number; ss: number; W: number; H: number; single: boolean; tw: number; th: number } {
+  const { width: OW, height: OH } = stillSize(opts.width, opts.height);
+  if (Math.max(OW, OH) > MAX_STILL_SIZE) throw new Error('still too large');
+  const wanted = Number.isFinite(opts.supersample) ? Math.max(1, Math.min(3, Math.floor(opts.supersample as number))) : 1;
+  let ss = wanted;
+  while (ss > 1 && Math.max(OW, OH) * ss > MAX_STILL_SIZE) ss--;
+  const W = OW * ss;
+  const H = OH * ss;
+  const cap = Math.max(256, Math.min(MAX_DRAW_SIZE, Math.floor(opts.tileSize ?? MAX_TILE_SIZE)));
   const single = W <= cap && H <= cap;
   const tw = single ? W : Math.min(cap, W);
   const th = single ? H : Math.min(cap, H);
+  return { OW, OH, ss, W, H, single, tw, th };
+}
+
+export async function captureStill(open: (w: number, h: number, vignette: boolean) => CaptureSession, opts: StillOptions): Promise<StillImage> {
+  const { OW, OH, ss, W, H, single, tw, th } = stillLayout(opts);
   const tiles = tileLayout(W, H, tw, th);
   const session = open(tw, th, single);
   const image = single ? null : new Uint8Array(W * H * 4);
@@ -211,14 +226,19 @@ export async function captureStill(open: (w: number, h: number, vignette: boolea
     for (const tile of tiles) {
       if (opts.signal?.aborted) throw new DOMException('cancelled', 'AbortError');
       const px = await session.frame(opts.pose, { frames: opts.frames ?? 1, ...(single ? {} : { view: { fullWidth: W, fullHeight: H, x: tile.rx, y: tile.ry } }) });
-      if (single) return { width: W, height: H, data: px.slice(0, W * H * 4) };
+      if (single) return finish(px.slice(0, W * H * 4));
       blitTile(px, session.width, tile, image as Uint8Array, W);
       opts.onProgress?.(++done, tiles.length);
     }
   } finally {
     session.end();
   }
-  const data = image as Uint8Array;
-  applyVignette(data, W, H);
-  return { width: W, height: H, data };
+  return finish(image as Uint8Array);
+
+  /** Filter the oversampled image down and, for an assembled image, apply the vignette once. */
+  function finish(px: Uint8Array): StillImage {
+    const data = ss > 1 ? downsample(px, W, H, ss) : px;
+    if (!single) applyVignette(data, OW, OH);
+    return { width: OW, height: OH, data };
+  }
 }

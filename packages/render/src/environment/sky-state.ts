@@ -65,6 +65,10 @@ export interface SkyState {
   exposure: number;
   /** Image-based (sky reflection) lighting intensity. */
   envIntensity: number;
+  /** The sky preset this state was computed for. */
+  preset: SkyPreset;
+  /** 0..1 cloud cover painted on the dome (0 in space and the studio). */
+  clouds: number;
 }
 
 /**
@@ -280,6 +284,8 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     showGround: true,
     exposure: PRESET_EXPOSURE[preset],
     envIntensity: moon ? 0.35 : 0.45 + 0.15 * glow,
+    preset,
+    clouds: moon ? 0.28 : golden ? 0.5 : 0.42,
   };
 
   switch (preset) {
@@ -311,6 +317,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         fogColor: '#9ea7b2',
         hazeDensity: 0.9,
         envIntensity: 0.55,
+        clouds: 0.9,
       };
     case 'space':
       return {
@@ -333,6 +340,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         hazeDensity: 0,
         showGround: false,
         envIntensity: 0.25,
+        clouds: 0,
       };
     case 'studio':
       return {
@@ -354,6 +362,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
         fogColor: '#e9ebee',
         hazeDensity: 0,
         envIntensity: 0.6,
+        clouds: 0,
       };
     default:
       return state;

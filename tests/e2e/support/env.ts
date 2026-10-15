@@ -39,7 +39,10 @@ export const SKIP_TOUR = "try { if (!localStorage.getItem('aether.tour.v1')) loc
  * Vulkan, without which headless Chromium returns a null adapter and the
  * studio (correctly) falls back to WebGL2.
  */
-export const CHROME_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
+const SOFTWARE_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
+/** `AETHER_E2E_GPU=1`: the machine's real GPU through ANGLE/Vulkan (WebGL2 backend; for frame-cost measurements). */
+const GPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--ignore-gpu-blocklist'];
+export const CHROME_ARGS: readonly string[] = process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
 
 /**
  * Resolve the Chromium executable: `AETHER_E2E_CHROME`, then Playwright's

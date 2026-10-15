@@ -78,6 +78,12 @@ export default defineConfig({
           groups: [
             // Vite's dynamic-import preload helper is used by the entry: keep it in the eager vendor chunk.
             { name: 'vendor', test: /vite[\\/]preload-helper/, priority: 40 },
+            // The area-light lookup tables (about 315 kB of source) load the first time a world has an area light.
+            { name: 'ltc', test: /[\\/]node_modules[\\/]three[\\/]examples[\\/]jsm[\\/]lights[\\/]RectAreaLightTexturesLib/, priority: 35 },
+            // three's WebGL build (about 660 kB) is used only by the path tracer, which runs on its own WebGL2 context:
+            // the shared core stays in the eager three chunk, the WebGL renderer goes to a lazy one.
+            { name: 'three', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.core\.js/, priority: 45 },
+            { name: 'three-webgl', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.module\.js/, priority: 40 },
             // three's exporters (glTF export, on demand) stay out of every group: they get their own lazy chunk.
             { name: 'three', test: /[\\/]node_modules[\\/]three[\\/](?!examples[\\/]jsm[\\/]exporters[\\/])/, priority: 30 },
             { name: 'rapier', test: /[\\/]node_modules[\\/]@dimforge[\\/]rapier3d-compat[\\/]/, priority: 30 },
@@ -85,6 +91,8 @@ export default defineConfig({
             { name: 'quickjs', test: /[\\/]node_modules[\\/](quickjs-emscripten-core|@jitl)[\\/]/, priority: 30 },
             // The opt-in on-device model runtime (multi-MB): only loaded from Settings → AI connection.
             { name: 'webllm', test: /[\\/]node_modules[\\/](@mlc-ai|loglevel)[\\/]/, priority: 30 },
+            // The path tracer (BVH, light-map unwrapping, tracing shaders) loads only when a path-traced still is requested.
+            { name: 'pathtracer', test: /[\\/]node_modules[\\/](three-gpu-pathtracer|three-mesh-bvh|xatlas-web)[\\/]/, priority: 30 },
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler|zustand)[\\/]/, priority: 20 },
             { name: 'vendor', test: /[\\/]node_modules[\\/](?!three[\\/]examples[\\/]jsm[\\/]exporters[\\/])/, priority: 10 },
           ],

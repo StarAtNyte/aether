@@ -24,6 +24,7 @@ import {
 import { rng } from '@aether/core';
 import { SKY_GRADIENT_POWER, type SkyState } from './sky-state';
 import { nebulaAt } from './nebula';
+import { CloudLayer } from './clouds';
 
 /** Dome radius in meters (camera far plane must exceed it). */
 export const SKY_RADIUS = 900;
@@ -47,6 +48,8 @@ export class SkyDome {
   private readonly dome: Mesh<SphereGeometry, MeshBasicMaterial>;
   private readonly disc: Mesh<CircleGeometry, MeshBasicMaterial>;
   private readonly stars: Points<BufferGeometry, PointsMaterial>;
+  /** Procedural cloud cover (follows the sky preset). */
+  readonly clouds = new CloudLayer(SKY_RADIUS * 0.985);
   private readonly sunDir = new Vector3(0, 1, 0);
 
   constructor() {
@@ -65,7 +68,7 @@ export class SkyDome {
     this.stars = new Points(createStarGeometry(), new PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false, blending: AdditiveBlending }));
     this.stars.renderOrder = -9;
     this.stars.frustumCulled = false;
-    this.group.add(this.dome, this.stars, this.disc);
+    this.group.add(this.dome, this.clouds.mesh, this.stars, this.disc);
   }
 
   /**
@@ -110,6 +113,7 @@ export class SkyDome {
       col.setXYZ(i, _c.r, _c.g, _c.b);
     }
     col.needsUpdate = true;
+    this.clouds.apply(state, _horizon);
 
     const above = state.lightDirection[1] > -0.02;
     this.disc.visible = above && (glow > 0 || state.moon);
@@ -136,6 +140,7 @@ export class SkyDome {
     this.disc.material.dispose();
     this.stars.geometry.dispose();
     this.stars.material.dispose();
+    this.clouds.dispose();
     this.group.removeFromParent();
   }
 }

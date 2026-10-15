@@ -90,3 +90,6 @@ export { vignetteFactor, VIGNETTE_STRENGTH } from './gpu/post';
 export { applyWind, FOLIAGE_GENERATORS, WIND_LINEAR, WIND_QUADRATIC } from './materials/wind';
 export { ArchView, archDecision, explodeLift, DEFAULT_ARCH_VIEW, CUTAWAY_WALL_HEIGHT, DOWN_WALL_HEIGHT, EXPLODE_GAP, EXPLODE_ROOF_GAP, EXPLODE_SECONDS, type ArchViewState, type ArchDecision, type ArchEntityContext, type WallMode, type LevelMode } from './view/arch-view';
 export { FinishTextures, finishHasMaps, type FinishMaps, type FinishSynth } from './materials/finish-textures';
+export { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, isRenderTier, needsPrePass, presetFor, RENDER_TIERS, resolveEffects, stillEffects, whiteBalance, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier, type ToneCurve } from './gpu/finishing';
+export { gradeWithPreset } from './gpu/grade';
+export { qualityPlan, postQualityOf, stillPlan, STILL_DRAW_CAP, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';

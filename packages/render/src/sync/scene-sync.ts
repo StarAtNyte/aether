@@ -52,6 +52,8 @@ import type { MaterialCache } from '../materials/material-cache';
 import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
 import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMaterial } from '../materials/presets';
+import { softenKeyed } from '../geometry/soften';
+import { FINISH_NODES_KEY } from '../materials/anti-tile';
 import { FOLIAGE_GENERATORS } from '../materials/wind';
 import { createMaterial } from '../materials/material-cache';
 import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
@@ -69,7 +71,7 @@ import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareBudget, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
-import { createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, updateLightParams } from './lights';
+import { areaLightsReady, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { setEntityPath } from './property-path';
@@ -190,7 +192,7 @@ function applyLiveUniforms(m: MeshStandardMaterial, r: ResolvedMaterial): void {
   m.emissiveIntensity = r.emissiveIntensity;
   m.roughness = r.roughness;
   // Textured finishes store albedo / roughness relative to the finish (see `applyFinish`).
-  if (r.finish && m.map) {
+  if (r.finish && (m.map || m.userData[FINISH_NODES_KEY])) {
     const def = FINISHES[r.finish];
     m.color.multiplyScalar(finishAlbedoScale(def));
     m.roughness = Math.min(3, r.roughness / Math.max(0.01, def.roughness));
@@ -1239,7 +1241,8 @@ export class SceneSync {
    * sorted into chunks, automatic LOD levels from the QEM simplifier, and a
    * share of the renderer's field triangle budget.
    */
-  private mountField(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput, requested: number, budget: FieldBudget): void {
+  private mountField(node: EntityNode, shape: ScatterShape, plain: KeyedOutput, requested: number, budget: FieldBudget): void {
+    const keyed = softenKeyed(plain, node.entity.material);
     const available = Math.max(0, budget.maxInstances - this.fieldInstances);
     const count = Math.min(requested, available);
     if (count < requested) this.warn(node.id, `scatter field limited to ${count} of ${requested} instances (renderer field budget ${budget.maxInstances})`);
@@ -1408,7 +1411,8 @@ export class SceneSync {
   }
 
   /** Mount one mesh (or instanced mesh) per generator part. */
-  private mountOutput(node: EntityNode, keyed: KeyedOutput, doubleSided: boolean, instances?: InstancedBufferAttribute): void {
+  private mountOutput(node: EntityNode, plain: KeyedOutput, doubleSided: boolean, instances?: InstancedBufferAttribute): void {
+    const keyed = softenKeyed(plain, node.entity.material);
     const parts = keyed.output.parts;
     node.keyed = keyed;
     node.partCount = parts.length;
@@ -1658,7 +1662,8 @@ export class SceneSync {
     const spec = node.entity.light;
     const old = before?.light;
     if (this.variant !== 'standard') return;
-    if (node.light && spec && old && old.type === spec.type && old.range === spec.range && old.angle === spec.angle && old.castShadow === spec.castShadow) {
+    const sameSize = old?.size?.[0] === spec?.size?.[0] && old?.size?.[1] === spec?.size?.[1];
+    if (node.light && spec && old && old.type === spec.type && old.range === spec.range && old.angle === spec.angle && old.castShadow === spec.castShadow && old.profile === spec.profile && sameSize) {
       if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, spec);
       else updateLightParams(node.light.light, spec);
       return;
@@ -1666,6 +1671,19 @@ export class SceneSync {
     if (node.light) {
       disposeEntityLight(node.light);
       node.light = null;
+    }
+    if (spec?.type === 'area' && !areaLightsReady()) {
+      // The rectangular-light tables load on first use; the light appears as soon as they are in.
+      void loadAreaLights().then(
+        () => {
+          if (this.nodes.get(node.id) === node && node.entity.light?.type === 'area' && !node.light) {
+            this.syncLight(node, undefined);
+            this.contentChanged(node);
+          }
+        },
+        (e: unknown) => this.warn(node.id, `area light unavailable: ${errorMessage(e)}`),
+      );
+      return;
     }
     if (spec) {
       node.light = createEntityLight(spec, this.lightScale(node));

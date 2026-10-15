@@ -144,7 +144,7 @@ export const MAT = {
   paint: { preset: 'plastic', vertexColors: true, roughness: 0.35, metalness: 0.25 },
   glass: { preset: 'glass', color: '#9fd3ff', roughness: 0.08, metalness: 0.1, opacity: 0.55 },
   rubber: { preset: 'rubber', color: '#2a2a2e', roughness: 0.95 },
-  ground: { vertexColors: true, roughness: 0.96, flatShading: true },
+  ground: { preset: 'dirt', vertexColors: true, roughness: 0.96, flatShading: true },
 } as const satisfies Record<string, MaterialSpec>;
 
 /** Emissive glow material. */

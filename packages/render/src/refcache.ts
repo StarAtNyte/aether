@@ -53,6 +53,11 @@ export class RefCache<V> {
     return this.entries.get(key)?.refs ?? 0;
   }
 
+  /** Call `fn` with every live value (no particular order). */
+  forEach(fn: (value: V) => void): void {
+    for (const { value } of this.entries.values()) fn(value);
+  }
+
   /** Number of live entries. */
   get size(): number {
     return this.entries.size;

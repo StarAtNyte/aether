@@ -259,8 +259,11 @@ async function fetchAmbientcg(src: NonNullable<Sources['ambientcg']>): Promise<v
 async function main(): Promise<void> {
   const sources = readSources();
   mkdirSync(SOURCE_DIR, { recursive: true });
-  for (const p of sources.packs) await fetchPack(p);
-  await fetchPolyhaven(sources.polyhaven);
+  // `--only=ambientcg`: just the photographed finish materials (small, no model packs).
+  if (!process.argv.includes('--only=ambientcg')) {
+    for (const p of sources.packs) await fetchPack(p);
+    await fetchPolyhaven(sources.polyhaven);
+  }
   if (sources.ambientcg) await fetchAmbientcg(sources.ambientcg);
   console.log(`sources ready in ${SOURCE_DIR}`);
 }

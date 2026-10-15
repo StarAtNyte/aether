@@ -2,21 +2,24 @@
  * Weather particles (rain, snow, dust, fireflies, petals, leaves) as ONE
  * instanced mesh of a tiny unlit shape. Instancing (rather than `Points`) keeps particle size
  * consistent on WebGPU, where point primitives are always 1 px. Particles
- * live in a box that wraps around the camera; each frame only the
- * translation (for fireflies the scale, for petals and leaves the rotation)
- * slots of preallocated matrices are rewritten — no allocations.
+ * live in a box that wraps around the camera. Snow, dust and fireflies are soft round sprites and
+ * rain tapered streaks (camera-facing quads with a baked soft texture, never solid boxes or
+ * polyhedra), so they read as light and water instead of confetti; petals and leaves tumble as flat
+ * flakes. Each frame only the preallocated instance matrices are rewritten — no allocations.
  */
 import {
   AdditiveBlending,
-  BoxGeometry,
+  DataTexture,
   DoubleSide,
   DynamicDrawUsage,
-  IcosahedronGeometry,
   InstancedMesh,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   MeshBasicMaterial,
+  NoColorSpace,
   NormalBlending,
-  OctahedronGeometry,
   PlaneGeometry,
+  RGBAFormat,
   type BufferGeometry,
   type Camera,
 } from 'three';
@@ -42,35 +45,87 @@ export interface WeatherConfig {
   flicker: boolean;
   /** Tumbling flat flakes (petals, leaves): rotation speed in radians per second (0 = none). */
   tumble?: number;
+  /**
+   * How a particle is drawn: a round `sprite` facing the camera, a tapered `streak` along the velocity
+   * (rain), or a flat `flake` that tumbles (petals, leaves).
+   */
+  shape: 'sprite' | 'streak' | 'flake';
+  /** Particle width and height in metres (at flicker scale 1). */
+  size: [number, number];
+  /** Sprite edge: 'glow' fades smoothly (fireflies, dust), 'flake' stays crisper (snow). */
+  edge?: 'glow' | 'flake';
 }
 
 /** Per-kind configuration table. */
 export const WEATHER_CONFIGS: Readonly<Record<Exclude<WeatherKind, 'clear'>, WeatherConfig>> = Object.freeze({
-  rain: { count: 5000, half: [28, 16, 28], velocity: [1.5, -17, 0.6], sway: 0, swayHz: 0, color: '#a9bfd6', opacity: 0.5, additive: false, flicker: false },
-  snow: { count: 3500, half: [26, 14, 26], velocity: [0.3, -1.1, 0.15], sway: 0.45, swayHz: 0.35, color: '#ffffff', opacity: 0.9, additive: false, flicker: false },
-  dust: { count: 1400, half: [24, 8, 24], velocity: [1.2, 0.05, 0.4], sway: 0.35, swayHz: 0.2, color: '#d8c39a', opacity: 0.45, additive: false, flicker: false },
-  fireflies: { count: 260, half: [20, 3, 20], velocity: [0, 0, 0], sway: 0.6, swayHz: 0.25, color: '#e8ff7a', opacity: 1, additive: true, flicker: true },
-  petals: { count: 1400, half: [24, 10, 24], velocity: [0.9, -0.55, 0.35], sway: 0.7, swayHz: 0.3, color: '#ffc3d6', opacity: 0.95, additive: false, flicker: false, tumble: 2.4 },
-  leaves: { count: 500, half: [22, 9, 22], velocity: [1.1, -0.9, 0.3], sway: 0.9, swayHz: 0.22, color: '#d9782d', opacity: 0.95, additive: false, flicker: false, tumble: 1.8 },
+  rain: { count: 5000, half: [28, 16, 28], velocity: [1.5, -17, 0.6], sway: 0, swayHz: 0, color: '#c4d4e6', opacity: 0.55, additive: false, flicker: false, shape: 'streak', size: [0.02, 0.75] },
+  snow: { count: 3500, half: [26, 14, 26], velocity: [0.3, -1.1, 0.15], sway: 0.45, swayHz: 0.35, color: '#ffffff', opacity: 0.9, additive: false, flicker: false, shape: 'sprite', size: [0.085, 0.085], edge: 'flake' },
+  dust: { count: 1400, half: [24, 8, 24], velocity: [1.2, 0.05, 0.4], sway: 0.35, swayHz: 0.2, color: '#d8c39a', opacity: 0.4, additive: false, flicker: false, shape: 'sprite', size: [0.07, 0.07], edge: 'glow' },
+  fireflies: { count: 260, half: [20, 3, 20], velocity: [0, 0, 0], sway: 0.6, swayHz: 0.25, color: '#e8ff7a', opacity: 1, additive: true, flicker: true, shape: 'sprite', size: [0.24, 0.24], edge: 'glow' },
+  petals: { count: 1400, half: [24, 10, 24], velocity: [0.9, -0.55, 0.35], sway: 0.7, swayHz: 0.3, color: '#ffc3d6', opacity: 0.95, additive: false, flicker: false, tumble: 2.4, shape: 'flake', size: [0.1, 0.07], edge: 'flake' },
+  leaves: { count: 500, half: [22, 9, 22], velocity: [1.1, -0.9, 0.3], sway: 0.9, swayHz: 0.22, color: '#d9782d', opacity: 0.95, additive: false, flicker: false, tumble: 1.8, shape: 'flake', size: [0.11, 0.07], edge: 'flake' },
 });
 
 const SEED = 0x7e47e3;
 
-function particleGeometry(kind: Exclude<WeatherKind, 'clear'>): BufferGeometry {
-  switch (kind) {
-    case 'rain':
-      return new BoxGeometry(0.012, 0.55, 0.012);
-    case 'snow':
-      return new IcosahedronGeometry(0.035, 0);
-    case 'dust':
-      return new OctahedronGeometry(0.02, 0);
-    case 'petals':
-      return new PlaneGeometry(0.1, 0.07);
-    case 'leaves':
-      return new PlaneGeometry(0.11, 0.07);
-    default:
-      return new OctahedronGeometry(0.045, 0);
+/** Sprites and streaks are scaled copies of a unit quad; flakes are modelled at their size and only rotate. */
+function particleGeometry(cfg: WeatherConfig): BufferGeometry {
+  return cfg.shape === 'flake' ? new PlaneGeometry(cfg.size[0], cfg.size[1]) : new PlaneGeometry(1, 1);
+}
+
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Soft round sprite texture: opacity 1 in the middle, fading to 0 at the rim (`glow`) or a crisper disc (`flake`). */
+export function spritePixels(size: number, edge: 'glow' | 'flake'): Uint8Array {
+  const px = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = ((x + 0.5) / size) * 2 - 1;
+      const dy = ((y + 0.5) / size) * 2 - 1;
+      const r = Math.hypot(dx, dy);
+      const a = edge === 'glow' ? Math.pow(1 - smoothstep(0, 1, r), 1.6) : 1 - smoothstep(0.55, 1, r);
+      const o = (y * size + x) * 4;
+      px[o] = 255;
+      px[o + 1] = 255;
+      px[o + 2] = 255;
+      px[o + 3] = Math.round(a * 255);
+    }
   }
+  return px;
+}
+
+/** Rain streak texture: a thin, soft-edged line whose tail (top, v = 1) fades out and whose head is bright. */
+export function streakPixels(w: number, h: number): Uint8Array {
+  const px = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    // Row 0 is the bottom (the head of a falling drop).
+    const along = y / (h - 1);
+    const tail = Math.pow(1 - along, 1.3);
+    const head = smoothstep(0, 0.06, along);
+    for (let x = 0; x < w; x++) {
+      const across = 1 - Math.abs(((x + 0.5) / w) * 2 - 1);
+      const a = smoothstep(0, 0.7, across) * tail * head;
+      const o = (y * w + x) * 4;
+      px[o] = 255;
+      px[o + 1] = 255;
+      px[o + 2] = 255;
+      px[o + 3] = Math.round(a * 255);
+    }
+  }
+  return px;
+}
+
+function spriteTexture(cfg: WeatherConfig): DataTexture | null {
+  const tex = cfg.shape === 'streak' ? new DataTexture(streakPixels(8, 64), 8, 64, RGBAFormat) : new DataTexture(spritePixels(32, cfg.edge ?? 'glow'), 32, 32, RGBAFormat);
+  tex.colorSpace = NoColorSpace;
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function wrap(v: number, half: number): number {
@@ -144,7 +199,9 @@ export class WeatherSystem {
       this.offsets[i * 3 + 2] = (random() * 2 - 1) * cfg.half[2];
       this.phases[i] = random() * Math.PI * 2;
     }
+    const map = spriteTexture(cfg);
     const material = new MeshBasicMaterial({
+      ...(map ? { map } : {}),
       color: cfg.color,
       transparent: true,
       opacity: cfg.opacity,
@@ -155,7 +212,7 @@ export class WeatherSystem {
     // Flat flakes are seen from both sides while they tumble.
     if (cfg.tumble) material.side = DoubleSide;
     if (cfg.flicker) material.color.multiplyScalar(4); // HDR so fireflies bloom
-    const mesh = new InstancedMesh(particleGeometry(kind), material, cfg.count);
+    const mesh = new InstancedMesh(particleGeometry(cfg), material, cfg.count);
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.frustumCulled = false;
     mesh.castShadow = false;
@@ -184,6 +241,32 @@ export class WeatherSystem {
     const vx = vel[0], vy = vel[1], vz = vel[2];
     const w = cfg.swayHz * Math.PI * 2;
     const tumble = cfg.tumble ?? 0;
+    const shape = cfg.shape;
+    const sizeX = cfg.size[0];
+    const sizeY = cfg.size[1];
+    // Billboard basis shared by every sprite / streak this frame (the camera's right, up and back axes;
+    // for streaks the up axis follows the fall direction instead).
+    const ce = camera.matrixWorld.elements;
+    let rx = ce[0] as number, ry = ce[1] as number, rz = ce[2] as number;
+    let ux = ce[4] as number, uy = ce[5] as number, uz = ce[6] as number;
+    let bx = ce[8] as number, by = ce[9] as number, bz = ce[10] as number;
+    if (shape === 'streak') {
+      const vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+      // The tail points up the fall direction; the quad turns around that axis to face the camera.
+      ux = -vx / vl;
+      uy = -vy / vl;
+      uz = -vz / vl;
+      rx = uy * bz - uz * by;
+      ry = uz * bx - ux * bz;
+      rz = ux * by - uy * bx;
+      const rl = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1;
+      rx /= rl;
+      ry /= rl;
+      rz /= rl;
+      bx = ry * uz - rz * uy;
+      by = rz * ux - rx * uz;
+      bz = rx * uy - ry * ux;
+    }
     const cx = camera.position.x;
     const cy = camera.position.y;
     const cz = camera.position.z;
@@ -204,12 +287,21 @@ export class WeatherSystem {
       o[i3 + 1] = y;
       o[i3 + 2] = z;
       const k = i * 16;
-      if (tumble > 0) writeTumble(m, k, t * tumble + p, p * 1.7 + t * tumble * 0.6);
-      if (cfg.flicker) {
-        const s = Math.max(0.05, 0.5 + 0.5 * Math.sin(t * 2.3 + p * 3.1));
-        m[k] = s;
-        m[k + 5] = s;
-        m[k + 10] = s;
+      if (shape === 'flake') {
+        writeTumble(m, k, t * tumble + p, p * 1.7 + t * tumble * 0.6);
+      } else {
+        const s = cfg.flicker ? Math.max(0.05, 0.5 + 0.5 * Math.sin(t * 2.3 + p * 3.1)) : 1;
+        const sx = sizeX * s;
+        const sy = sizeY * s;
+        m[k] = rx * sx;
+        m[k + 1] = ry * sx;
+        m[k + 2] = rz * sx;
+        m[k + 4] = ux * sy;
+        m[k + 5] = uy * sy;
+        m[k + 6] = uz * sy;
+        m[k + 8] = bx;
+        m[k + 9] = by;
+        m[k + 10] = bz;
       }
       m[k + 12] = x;
       m[k + 13] = y;
@@ -222,7 +314,9 @@ export class WeatherSystem {
     if (!this.mesh) return;
     this.mesh.removeFromParent();
     this.mesh.geometry.dispose();
-    (this.mesh.material as MeshBasicMaterial).dispose();
+    const material = this.mesh.material as MeshBasicMaterial;
+    material.map?.dispose();
+    material.dispose();
     this.mesh.dispose();
     this.mesh = null;
     this.config = null;

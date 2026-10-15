@@ -185,6 +185,17 @@
    "retrieved": "2026-10-14"
   },
   {
+   "id": "polyhaven",
+   "provider": "Poly Haven",
+   "title": "Poly Haven models and HDRIs",
+   "author": "see per-asset authors",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://polyhaven.com/license",
+   "page": "https://polyhaven.com",
+   "archive": "https://api.polyhaven.com (per-file MD5 verified)",
+   "retrieved": "2026-10-14"
+  },
+  {
    "id": "ambientcg-WoodFloor051",
    "provider": "ambientCG",
    "title": "WoodFloor051",
@@ -325,15 +336,130 @@
    "usedFor": "finish \"terrazzo\""
   },
   {
-   "id": "polyhaven",
-   "provider": "Poly Haven",
-   "title": "Poly Haven models and HDRIs",
-   "author": "see per-asset authors",
+   "id": "ambientcg-Bark001",
+   "provider": "ambientCG",
+   "title": "Bark001",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
    "licence": "CC0-1.0",
-   "licenceUrl": "https://polyhaven.com/license",
-   "page": "https://polyhaven.com",
-   "archive": "https://api.polyhaven.com (per-file MD5 verified)",
-   "retrieved": "2026-10-14"
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Bark001",
+   "archive": "https://ambientcg.com/get?file=Bark001_1K-JPG.zip",
+   "sha256": "a1dbd08cb545b27f42e7208caca06488460de42e27fe34860619d32556e10f60",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"bark\""
+  },
+  {
+   "id": "ambientcg-Rock030",
+   "provider": "ambientCG",
+   "title": "Rock030",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Rock030",
+   "archive": "https://ambientcg.com/get?file=Rock030_1K-JPG.zip",
+   "sha256": "2fd0bc2d214e2487c19062ed0798a85dd135b41cfc12bbaed42d5acae238f989",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"rock\""
+  },
+  {
+   "id": "ambientcg-Ground078",
+   "provider": "ambientCG",
+   "title": "Ground078",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Ground078",
+   "archive": "https://ambientcg.com/get?file=Ground078_1K-JPG.zip",
+   "sha256": "ab21b8c558be116bfc462124bc0e93919901882dae48ea57e5bffac0aedd8e4f",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"soil\""
+  },
+  {
+   "id": "ambientcg-Snow006",
+   "provider": "ambientCG",
+   "title": "Snow006",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Snow006",
+   "archive": "https://ambientcg.com/get?file=Snow006_1K-JPG.zip",
+   "sha256": "442ff74e547014523aaa7a4579ba6bf3e61992644e44a8cb539dd430cda1a321",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"snow\""
+  },
+  {
+   "id": "ambientcg-Ground054",
+   "provider": "ambientCG",
+   "title": "Ground054",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Ground054",
+   "archive": "https://ambientcg.com/get?file=Ground054_1K-JPG.zip",
+   "sha256": "b325ec2f167dce95a0fabc61a2104641288cf20915419578c3efdb46200c563e",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"sand\""
+  },
+  {
+   "id": "ambientcg-Asphalt031",
+   "provider": "ambientCG",
+   "title": "Asphalt031",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Asphalt031",
+   "archive": "https://ambientcg.com/get?file=Asphalt031_1K-JPG.zip",
+   "sha256": "f98114b8fb083fc65925c3b4568b131e37c9a23357d432a16e59676dbc69f964",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"asphalt\""
+  },
+  {
+   "id": "ambientcg-Grass004",
+   "provider": "ambientCG",
+   "title": "Grass004",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Grass004",
+   "archive": "https://ambientcg.com/get?file=Grass004_1K-JPG.zip",
+   "sha256": "4b63495f459db8481f4d5144e4e9069345c81cf898cc71f2216f5dd3bb344469",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"grass\""
+  },
+  {
+   "id": "ambientcg-Gravel023",
+   "provider": "ambientCG",
+   "title": "Gravel023",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Gravel023",
+   "archive": "https://ambientcg.com/get?file=Gravel023_1K-JPG.zip",
+   "sha256": "a00e7fd6246db4ae228473aac14f1bc427bd93f228ebe347a5d6390dd838b0a8",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"gravel\""
+  },
+  {
+   "id": "ambientcg-Leather026",
+   "provider": "ambientCG",
+   "title": "Leather026",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Leather026",
+   "archive": "https://ambientcg.com/get?file=Leather026_1K-JPG.zip",
+   "sha256": "6af2f446f9855c641da2a072f128d30965431ffae3306d22d75dbfff99c04646",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"leather\""
   }
  ],
  "assets": [
@@ -6860,6 +6986,294 @@
      "path": "t/finish-terrazzo.62964c18.webp",
      "sha256": "62964c188f089592bd317f1ad242f53563ee72acba2541dc5cec9c8bbeb262c0",
      "bytes": 78882
+    }
+   ]
+  },
+  {
+   "id": "finish-bark",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Bark001",
+    "path": "ambientcg/Bark001"
+   },
+   "files": [
+    {
+     "path": "x/bark.albedo.67cb24fe.jpg",
+     "sha256": "67cb24fe4071fd2f920bbc87f0655d06c7975ed4792bdd80c444fc859f517909",
+     "bytes": 160861
+    },
+    {
+     "path": "x/bark.orm.50a37358.jpg",
+     "sha256": "50a373581f102d749f9b759bfaf409e8e24046b059af98e0ed8120ba266a1f16",
+     "bytes": 102459
+    },
+    {
+     "path": "x/bark.normal.38db1ba4.jpg",
+     "sha256": "38db1ba4f92997bee697cdcc28a39065ea27d333d409074391b3b23c3499002c",
+     "bytes": 159517
+    },
+    {
+     "path": "t/finish-bark.cb15ea83.webp",
+     "sha256": "cb15ea83edf6743ed6b269d66ea309a78bea1a0f7b32bc2b12b8f328c9b22560",
+     "bytes": 94016
+    }
+   ]
+  },
+  {
+   "id": "finish-rock",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Rock030",
+    "path": "ambientcg/Rock030"
+   },
+   "files": [
+    {
+     "path": "x/rock.albedo.12b53713.jpg",
+     "sha256": "12b53713c13549dbcfb8fc3f17d70bfa523f93daf9ecc5eb4d5e6908424d009a",
+     "bytes": 163597
+    },
+    {
+     "path": "x/rock.orm.42974232.jpg",
+     "sha256": "42974232109a5bb3860d6a9f364fec7499439fa80e03346423b4566cc3e621a7",
+     "bytes": 86009
+    },
+    {
+     "path": "x/rock.normal.ef77bad3.jpg",
+     "sha256": "ef77bad3cd34b9681d2cf2a3e96f111ee9cfc53aa5fba40a2beae5f31f8c1f23",
+     "bytes": 170716
+    },
+    {
+     "path": "t/finish-rock.56b6e930.webp",
+     "sha256": "56b6e93066ca7f0745732f0bc9eaae985092d40d19f9b0cf58d4b957452ad8ee",
+     "bytes": 109532
+    }
+   ]
+  },
+  {
+   "id": "finish-soil",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Ground078",
+    "path": "ambientcg/Ground078"
+   },
+   "files": [
+    {
+     "path": "x/soil.albedo.7e196c07.jpg",
+     "sha256": "7e196c079be2ffdce522e098e42b9ffdaf5172145d96ab660b265047cfbab3ca",
+     "bytes": 166162
+    },
+    {
+     "path": "x/soil.orm.41d6110d.jpg",
+     "sha256": "41d6110d77a6906569524fe85d2b35c622b168d1401325ffeb2a3198ec6af956",
+     "bytes": 70258
+    },
+    {
+     "path": "x/soil.normal.66c356af.jpg",
+     "sha256": "66c356af4d3c32874891a7773afd8c005ebcaff14f1b731509c696055b95ad66",
+     "bytes": 96029
+    },
+    {
+     "path": "t/finish-soil.1cce2076.webp",
+     "sha256": "1cce20763ed89892c858e203600e38b1eb1022a09d85307590e1369a32025964",
+     "bytes": 89164
+    }
+   ]
+  },
+  {
+   "id": "finish-snow",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Snow006",
+    "path": "ambientcg/Snow006"
+   },
+   "files": [
+    {
+     "path": "x/snow.albedo.dde9004b.jpg",
+     "sha256": "dde9004bd59b4eebff2b21a3c2fe52decd0df9c48e9c0dc3a4551004b7f24143",
+     "bytes": 44896
+    },
+    {
+     "path": "x/snow.orm.7f7f5b51.jpg",
+     "sha256": "7f7f5b5149f4c34370c8202f359571c417a39b66ad3937ab364f8be36b71613e",
+     "bytes": 37218
+    },
+    {
+     "path": "x/snow.normal.5e2ea9b9.jpg",
+     "sha256": "5e2ea9b9e42d2a2f7f7d25ee17de95a7254fe60bb36e58b536af76a4ae7511fa",
+     "bytes": 86301
+    },
+    {
+     "path": "t/finish-snow.aea5dfa7.webp",
+     "sha256": "aea5dfa7bd9a0fd4fc70b76e303dee8ee60f2e5ffc4a2ceb09e818e28de1933c",
+     "bytes": 11068
+    }
+   ]
+  },
+  {
+   "id": "finish-sand",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Ground054",
+    "path": "ambientcg/Ground054"
+   },
+   "files": [
+    {
+     "path": "x/sand.albedo.c98f9251.jpg",
+     "sha256": "c98f9251dc63cc1302ab3ae7f1c773d3a94a3163fe4fc481545136709152004c",
+     "bytes": 118262
+    },
+    {
+     "path": "x/sand.orm.c7317d14.jpg",
+     "sha256": "c7317d147e378ca9831825c3a87cc69c6a3efbed3083d76e8227f72afb51f209",
+     "bytes": 60550
+    },
+    {
+     "path": "x/sand.normal.0c18e9b1.jpg",
+     "sha256": "0c18e9b111240ed1e3cc0eddff3c14bcb959ddf1f7f348fe848b02a9e9ce67b2",
+     "bytes": 103809
+    },
+    {
+     "path": "t/finish-sand.1b9cdfed.webp",
+     "sha256": "1b9cdfedced3f3991ae111659603733f421c08500f4290ac5a79447722820af1",
+     "bytes": 65374
+    }
+   ]
+  },
+  {
+   "id": "finish-asphalt",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Asphalt031",
+    "path": "ambientcg/Asphalt031"
+   },
+   "files": [
+    {
+     "path": "x/asphalt.albedo.c657d3c6.jpg",
+     "sha256": "c657d3c651f5e99e6e663b7d3002a0f98f7261d242e0031b1624f83a503b2455",
+     "bytes": 150322
+    },
+    {
+     "path": "x/asphalt.orm.a02c2e8a.jpg",
+     "sha256": "a02c2e8a7aca13e5ff4fb5695859ede5cd7944296adb1fcd6a1d1a620039418c",
+     "bytes": 102046
+    },
+    {
+     "path": "x/asphalt.normal.1aa3ea15.jpg",
+     "sha256": "1aa3ea15982b63ca311c7a7bd14022a75738a1320bf92ecbc6ca3ec0399b3703",
+     "bytes": 83798
+    },
+    {
+     "path": "t/finish-asphalt.1dbded18.webp",
+     "sha256": "1dbded1847a4b7d6310402155372ed88f963d9dfbe538d7648672d712a7ea1d8",
+     "bytes": 65706
+    }
+   ]
+  },
+  {
+   "id": "finish-grass",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Grass004",
+    "path": "ambientcg/Grass004"
+   },
+   "files": [
+    {
+     "path": "x/grass.albedo.f22989f6.jpg",
+     "sha256": "f22989f665028ae7921560c0975ecd9e246feb16a793222028d82e9782e24888",
+     "bytes": 194469
+    },
+    {
+     "path": "x/grass.orm.281fcd30.jpg",
+     "sha256": "281fcd30aa257e5a626f3bce2344325877caa779a88ea19d602e0fe3a86ea679",
+     "bytes": 161589
+    },
+    {
+     "path": "x/grass.normal.3fb42c9c.jpg",
+     "sha256": "3fb42c9cdc30037fd60a7e83408465c5b6cbea8a7a2d729e354f4ebc6e755e67",
+     "bytes": 137689
+    },
+    {
+     "path": "t/finish-grass.4ea2eeef.webp",
+     "sha256": "4ea2eeefe280e6071b58818c6999cce8c4a675de0a8f965bee8b7a809b4152f8",
+     "bytes": 121764
+    }
+   ]
+  },
+  {
+   "id": "finish-gravel",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Gravel023",
+    "path": "ambientcg/Gravel023"
+   },
+   "files": [
+    {
+     "path": "x/gravel.albedo.9f537fd0.jpg",
+     "sha256": "9f537fd08b350dff949889a86bebbb8ba855d617e98daff13cec72234aa4206a",
+     "bytes": 123007
+    },
+    {
+     "path": "x/gravel.orm.7bed9b70.jpg",
+     "sha256": "7bed9b70e1f987907af01d23131aeeaa8e4f5b6d19c5520bd19bd11cf1dfd36e",
+     "bytes": 136239
+    },
+    {
+     "path": "x/gravel.normal.2e30174f.jpg",
+     "sha256": "2e30174fb32e550d551aa478ad3b9f90f8d9f90bdf8f85976976e1acc008c82e",
+     "bytes": 187445
+    },
+    {
+     "path": "t/finish-gravel.2f0c0a7b.webp",
+     "sha256": "2f0c0a7be6ff28523d10603fb659305e90f17f0afa49dd7e76f1685e256cf03e",
+     "bytes": 59292
+    }
+   ]
+  },
+  {
+   "id": "finish-leather",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Leather026",
+    "path": "ambientcg/Leather026"
+   },
+   "files": [
+    {
+     "path": "x/leather.albedo.acaba05c.jpg",
+     "sha256": "acaba05c280e5edc13d7ae69efd4b89f905de809d5f1771ac31eb9ae739c7916",
+     "bytes": 121294
+    },
+    {
+     "path": "x/leather.orm.73dfd561.jpg",
+     "sha256": "73dfd561b1793c0bf2f073c5b50a27ae0f96820ab74e26d9215c1cf7cbe8d286",
+     "bytes": 41474
+    },
+    {
+     "path": "x/leather.normal.66f4db21.jpg",
+     "sha256": "66f4db212d96f962a2e2cf401397d7fdc1256f9154740740872f06c74ce5dd8b",
+     "bytes": 46817
+    },
+    {
+     "path": "t/finish-leather.51ce0be4.webp",
+     "sha256": "51ce0be4612683ad5e9f3bcf895bb21fa8108866d6cf23eb6788133360d336b3",
+     "bytes": 35806
     }
    ]
   }
