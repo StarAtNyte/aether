@@ -173,5 +173,7 @@ export function formatTest(t: WorldTest): string {
       return `${formatSelector(t.target)} stays above y ${formatNumber(t.y)} for ${formatNumber(t.within)}s`;
     case 'navigable':
       return `${formatSelector(t.target)}: every room reachable on foot, doors open freely (walkways ≥ ${formatNumber(t.clearance)}m)`;
+    case 'npcs':
+      return `${formatSelector(t.target)}: characters stand on walkable floor, reach their patrol points and never get stuck (${formatNumber(t.seconds)}s)`;
   }
 }

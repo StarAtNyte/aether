@@ -198,7 +198,7 @@ export function lake(b: Builder, x: number, z: number, radius: number): string {
 
 /** Campfire with a flickering light. */
 export function campfire(b: Builder, x: number, z: number): string {
-  const id = b.gen('campfire', 'campfire', { size: 1.2 }, [x, 0, z], { physics: 'static', footprint: 2.2, name: 'Campfire', tags: ['focus'] });
+  const id = b.gen('campfire', 'campfire', { size: 1.2 }, [x, 0, z], { physics: 'static', footprint: 2.2, name: 'Campfire', tags: ['focus', 'fire'] });
   b.light(id, [0, 0.8, 0], '#ff8a3d', 3, 12, [{ type: 'pulseLight', params: { min: 2, max: 3.6, period: 0.35 } }]);
   return id;
 }

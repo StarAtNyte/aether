@@ -7,6 +7,7 @@
 import { worldTransform, type Entity, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import { EMPTY_INPUT, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner } from '@aether/logic';
 import type { LogicHook, PhysicsWorld } from '@aether/physics';
+import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import { PosePool } from './pose-pool';
 
 /** Outcome recorded by the headless host. */
@@ -119,6 +120,19 @@ export class HeadlessLogicHost implements LogicHost {
 
   playerId(): EntityId | undefined {
     return undefined;
+  }
+
+  getBounds(id: EntityId): { min: Vec3; max: Vec3 } | undefined {
+    return entityWorldBounds(this.world, id) ?? undefined;
+  }
+
+  getColliderBounds(id: EntityId): Array<{ min: Vec3; max: Vec3 }> {
+    return entityColliderBounds(this.world, id);
+  }
+
+  groundHeight(x: number, z: number, fromY: number, exclude?: EntityId): number | undefined {
+    const hit = this.pw.raycast([x, fromY, z], [0, -1, 0], fromY + 8, exclude);
+    return hit ? hit.point[1] : undefined;
   }
 }
 

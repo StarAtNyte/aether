@@ -15,7 +15,9 @@ import { Simulation } from '../engine/Simulation';
 import { formatStateValue } from '../lib/format';
 import type { VoxelHudState } from '../voxel/hudState';
 import { VoxelHudView } from '../components/viewport/VoxelHud';
+import { NpcSpeechView } from '../components/viewport/NpcSpeech';
 import { TouchControlsView } from '../components/viewport/TouchControls';
+import type { NpcFrame } from '../engine/npcFrame';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
 import type { GameManifest } from '../publish/manifest';
 import { ProofBadge } from './ProofBadge';
@@ -154,6 +156,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const [time, setTime] = useState(0);
   const [over, setOver] = useState<{ win: boolean; text: string } | null>(null);
   const [voxelHud, setVoxelHud] = useState<VoxelHudState | null>(null);
+  const [npc, setNpc] = useState<NpcFrame | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
   const storage = useMemo(() => browserSettingsStorage(), []);
@@ -311,6 +314,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               setTime(Math.floor(t));
             },
             onMessage: (text) => toast(text),
+            onNpc: (frame) => setNpc(frame),
             onGameOver: (result, text) => {
               setOver({ win: result === 'win', text });
               go('over');
@@ -528,6 +532,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         </div>
       )}
       {playing && world.voxel && voxelHud && <VoxelHudView hud={voxelHud} play={sim?.voxel?.game ?? null} toast={(t) => toast(t)} />}
+      {phase === 'playing' && !world.voxel && <NpcSpeechView frame={npc} actions={sim} />}
       {phase === 'playing' && !world.voxel && <TouchControlsView sim={sim} />}
       {phase === 'playing' && (
         <button type="button" className="pl-pausebtn" aria-label="Pause" onClick={() => pause(true)}>

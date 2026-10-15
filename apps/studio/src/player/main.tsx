@@ -7,6 +7,7 @@
 import '@aether/core';
 import { createRoot } from 'react-dom/client';
 import './player.css';
+import '../styles/npc.css';
 import { PlayerApp } from './PlayerApp';
 import { registerOfflineCache } from './offline';
 

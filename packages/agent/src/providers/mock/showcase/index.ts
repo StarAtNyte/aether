@@ -9,6 +9,7 @@
 import type { MockPlan } from '../planner';
 import { duskLakeHouse, skylinePenthouse } from './architecture';
 import { chainReaction } from './chain-reaction';
+import { hollowGate } from './hollow-gate';
 import { kartCanyon } from './kart-canyon';
 import { lanternIsles } from './lantern-isles';
 import { kyotoTemple } from './kyoto-temple';
@@ -44,6 +45,7 @@ export const FLAGSHIPS: readonly Flagship[] = Object.freeze([
   { id: 'orbital-lab', title: 'Orbital Lab', match: /\borbital lab\b/, plan: orbitalLab },
   { id: 'sakura-river', title: 'Sakura River Journey', match: /\bsakura river\b|\bcherry[- ]blossom river\b/, plan: sakuraRiver },
   { id: 'skyline-penthouse', title: 'Skyline Penthouse', match: /\bskyline penthouse\b/, plan: skylinePenthouse },
+  { id: 'hollow-gate', title: 'The Hollow Gate', match: /\bhollow gate\b/, plan: hollowGate },
   { id: 'dusk-lake-house', title: 'Dusk House by the Lake', match: /\bdusk house\b|\bhouse by the lake at dusk\b/, plan: duskLakeHouse },
 ]);
 

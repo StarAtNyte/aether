@@ -410,3 +410,13 @@ original TypeScript; the renderer follows textbook techniques (edge-function
 rasterisation with perspective-correct barycentrics, shadow mapping with
 percentage-closer filtering, Blinn-Phong, the Narkowicz ACES filmic fit).
 No model, image or font is bundled.
+
+## Intelligent characters
+
+The NPC system (navigation grid, A*, line of sight, perception, behaviour
+graph, dialogue, speech overlay, free-conversation controller and the offline
+character planner) is original TypeScript written for Aether. It adds no
+dependency and bundles no asset. Algorithms followed: A* search (Hart, Nilsson
+and Raphael, 1968) with an octile heuristic; the supercover grid walk of
+Amanatides and Woo (1987) for line of sight; separation steering after
+Reynolds (1999); string pulling of grid paths by greedy visibility.

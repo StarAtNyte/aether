@@ -97,12 +97,19 @@ Room types: living kitchen dining bedroom bathroom office hall entry cafe meetin
 Ops: create_building {plan} | add_level | add_room {building, level, room, doors?} | remove_room | add_door | add_window | add_stairs | set_roof | set_style | furnish_room {building, room, items?, omit?} | place_item | remove_item | set_material {building, target:"exterior"|"roof"|"floor"|"walls", room?, material}.
 Proportions: doors 0.9×2.1 m, storeys 2.9–3.2 m, bedrooms ≥ 3×3.2, bathrooms ≥ 2×2.4, halls ≥ 1.2 wide, counters 0.9 m high; one main door to "outside"; every room reachable through doors; stairs need a landing above. From a floor-plan image: copy its rooms as rects/polygons (read the printed dimensions; without them scale by a 0.9 m door), map room labels to types, keep its doors and windows. From room photos: pick the style, floor finish, wall colour and the furniture you see. Fix every problem the usability report lists.`;
 
+const NPCS = `## Characters (entity.npc): guards, shopkeepers, wolves, villagers, companions
+A character is an ordinary entity (physics body "kinematic", capsule/box primitive or an animated library model, tag "npc") plus npc: {role:"guard" (how the user names it), archetype:"villager"|"guard"|"merchant"|"predator"|"prey"|"follower"|"sentinel", faction:"watch", enemies?:["player"|faction], allies?:[...], fears?:["fire"] (tags it flees), fearRange?, speed? (walk m/s), runSpeed?, health?, perception?:{sight 14, fov 110, hearing 7, memory 6, alert?}, attack?:{damage, range, cooldown}, waypoints?:[[x,0,z],..], patrol?:{mode:"loop"|"pingpong"|"random", wait}, wander? (idle roaming radius), activeHours?:[19,6] (rests outside; hunters at night), follow?, carries?:["torch"], barks?:{spot:[..],lose,flee,hurt,alert,idle}, dialogue?, transitions?:[{from?:state|"*", to:state, when:Cond, priority?, say?}]}.
+Archetypes carry the behaviour graph (states idle patrol investigate chase flee attack talk trade follow): guard patrols, hears noise, chases and strikes foes (hostile to "player" unless allies has "player"); predator hunts and flees fear tags or low health; merchant/villager greet and flee foes; prey bolts; follower trails the player; sentinel only turns and strikes. Add transitions only to change that: Cond = {k:"seesFoe"|"hearsFoe"|"remembersFoe"|"fearNear"|"arrived"|"talkRequested"|"following"|"always"} | {k:"foeWithin"|"foeBeyond"|"playerWithin"|"playerBeyond", r} | {k:"healthBelow", frac} | {k:"timer", t} | {k:"time", from, to} | {k:"flag", key, op, value} | {k:"not", c} | {k:"all"|"any", cs:[..]}.
+dialogue = {start:"start", nodes:{id:{text, speaker?, variants?:[{if:[Cond],text}], choices?:[{text, if?:[{key,op,value}], effects?:[Effect], next: id|null, once?}], effects?, next?: id|null, mode?:"talk"|"trade"}}}; Effect = {do:"give"|"take", item, count} (items and coins are world-state counters: setState + setHud them) | {do:"set"|"add", key, value|amount} | {do:"openDoor", target} (sets "<target>-unlocked"; a door behavior {trigger:"state", stateKey:"<target>-unlocked"} opens) | {do:"emit"|"message"|"provoke"|"calm"|"follow"|"win"}. The player presses E near a character to talk, 1-6 to choose. Characters hurt the player through the world state "health" (setState health 100 + HUD); they die at 0 health and emit "<id>-died".
+Edit characters with minimal updates, e.g. {"op":"update","id":"guard-1","set":{"npc":{"speed":2.4}}} (objects merge, arrays replace); address them by role/name via the summary line \`npc "guard" arch=… fac=…\`. "Give him a torch" = a child entity (light + tag "fire") under it and carries:["torch"]. Always add {"kind":"npcs","target":"#npc"} to tests: it proves patrol points are reachable and nobody gets stuck or falls.`;
+
 const TESTS = `## Verification tests (addTest) — proven by running physics + rules headless; the player does NOT move during tests
 {"id","kind":"stable","target":sel="*","seconds":3,"maxDrift":0.15} things at rest stay put
 {"id","kind":"noOverlap","target":sel="*"} no dynamic bodies start interpenetrating
 {"id","kind":"reaches","target":sel,"zone":sel|{"center":[x,y,z],"radius"},"within":10}
 {"id","kind":"eventually","condition":{"key","op","value"},"within":10} a state condition becomes true (rules run)
 {"id","kind":"navigable","target":buildingId|"*","clearance":0.8} every room reachable on foot, doors swing free, furniture grounded (build_architecture adds it)
+{"id","kind":"npcs","target":"#npc"|"*","seconds":20,"stuckAfter":6} characters stand on walkable floor, reach every waypoint, never get stuck or fall
 {"id","kind":"moves","target":sel,"distance":0.5,"within":10} | {"id","kind":"topples","target":sel,"degrees":45,"within":10} | {"id","kind":"staysAbove","target":sel,"y":-1,"within":10}
 moves/topples/staysAbove require EVERY matched target to pass: name a specific id (e.g. the last domino) rather than a broad tag.`;
 
@@ -141,6 +148,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string {
     PATCHES,
     VOXEL,
     ARCHITECTURE,
+    NPCS,
     `## Worked examples\n${renderExamples()}`,
     `## Built-in generators (shape {"kind":"procedural","generator":id,"params":{...}}; unknown params are ignored; every param has a default)\n${renderGeneratorCatalog(catalogs.generators)}`,
     ...(catalogs.libraryGenerators && catalogs.libraryGenerators.length > 0

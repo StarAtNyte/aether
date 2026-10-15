@@ -41,6 +41,7 @@ import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { AssetController } from './assets';
 import { ForgeController } from './forge';
+import { NpcChatController, type ChatResult } from './npcChat';
 import { ArchController } from './arch';
 import { PublishController } from './publish';
 import { createStudioStore, type MemoryState, type StudioMode, type StudioState } from '../state/store';
@@ -142,6 +143,8 @@ export class Studio {
   readonly assets: AssetController;
   /** Image / text → parametric generator (the asset forge). */
   readonly forge: ForgeController;
+  /** Free conversation with characters through the connected model (off offline). */
+  readonly npcChat: NpcChatController;
   /** Publishing: games, videos, renders, models, floor plans, share links, history, versions. */
   readonly publish: PublishController;
   private readonly storage: StorageLike | null;
@@ -226,6 +229,7 @@ export class Studio {
     this.arch = new ArchController(this);
     this.assets = new AssetController(this, { storage: this.storage });
     this.forge = new ForgeController(this);
+    this.npcChat = new NpcChatController(this);
     this.publish = new PublishController(this);
 
     this.cleanups.push(
@@ -349,6 +353,7 @@ export class Studio {
             this.store.getState().setGame({ hud: out, time: Math.floor(time) });
           },
           onMessage: (text, duration) => this.store.getState().toast(text, 'game', duration),
+          onNpc: (frame) => this.store.getState().setNpc(frame),
           onGameOver: (result, text) => this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text }),
           onPick: (id, additive) => this.pick(id, additive),
           onTransform: (commit) => this.editor.commitGizmo(commit),
@@ -356,6 +361,7 @@ export class Studio {
           onModeChange: (mode) => {
             const s = this.store.getState();
             s.setMode(mode);
+            this.npcChat.reset();
             if (mode === 'edit') {
               s.resetGame();
               this.sim?.setHeld(false);
@@ -755,6 +761,19 @@ export class Studio {
   }
 
   /** Dismiss the title card and let the game run. */
+  /**
+   * The player said something to the character they are talking to. With a
+   * connected model the character answers in its own words (capped, plain
+   * text); otherwise nothing is sent and the authored dialogue carries on.
+   */
+  async npcSay(line: string): Promise<ChatResult> {
+    const ctx = this.sim?.npcChatContext() ?? null;
+    if (!ctx) return { ok: false, reason: 'Nobody is listening.' };
+    const result = await this.npcChat.ask(ctx, line);
+    if (result.ok && !this.sim?.npcFreeReply(ctx.npc, result.reply)) return { ok: false, reason: 'The conversation ended.' };
+    return result;
+  }
+
   startGame(): void {
     this.sim?.setHeld(false);
     this.store.getState().setGame({ intro: false });

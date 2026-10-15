@@ -36,6 +36,7 @@
     "e2e:bridge": "tsx tests/e2e/bridge.e2e.ts",
     "e2e:connection": "tsx tests/e2e/connection.e2e.ts",
     "e2e:editing": "tsx tests/e2e/editing.e2e.ts",
+    "e2e:npc": "tsx tests/e2e/npc.e2e.ts",
     "e2e:local": "tsx tests/e2e/local.e2e.ts",
     "e2e:hosted": "tsx tests/e2e/hosted.e2e.ts",
     "eval": "tsx scripts/eval-agent.ts",

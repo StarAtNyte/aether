@@ -100,6 +100,22 @@ explicit state, so the AI can be held to account:
   `setEnvironment`, `defineGenerator`, `addTest` and so on). Each is
   validated, reference-checked, protected against prototype pollution and
   limit-checked, and errors are written for the LLM to read.
+- **Characters from a sentence.** "A guard who patrols the gate and chases me
+  when he sees me", "a shopkeeper who greets me and sells a key", "a wolf pack
+  that hunts at night": the offline planner (and any connected model) turns it
+  into plain World IR (`entity.npc`): a behaviour graph over idle, patrol,
+  investigate, chase, flee, attack, talk, trade and follow; sight cones with
+  line of sight, hearing, memory and fear; waypoints, factions and night hours;
+  dialogue trees with conditions and effects (give an item, open a door, set a
+  flag). Characters walk a navigation grid with obstacle avoidance, strike, flee,
+  call their allies and die; 400 of them cost about 1 ms per tick. Edits are
+  one-line patches ("make the guard faster", "give him a torch", "make the
+  wolves afraid of fire"). In play, speech bubbles and a dialogue card (E, 1–6,
+  touch) carry the conversation; with a connected model a character can also talk
+  freely (off offline, capped, the authored tree is the fallback). The
+  verification proves patrols are reachable and nobody gets stuck or falls
+  (`npcs` test); the flagship **The Hollow Gate** shows a guard, a shopkeeper and a
+  wolf pack off, and a bot wins it with every character active.
 - **A real asset library, an AI forge and your own files.** 364 curated
   assets ([docs/ASSETS.md](docs/ASSETS.md)): CC0 models from Kenney and
   Poly Haven (furniture, kitchens, bathrooms, plants, trees, rocks, city

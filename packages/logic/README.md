@@ -35,6 +35,22 @@ logic.log;                                   // "rule 'coin-pickup' fired: â€¦ â
   and caps on spawns and zone checks. Unsafe property paths are rejected.
   `tick` never throws; failures go to `log`.
 
+## Characters
+
+`entity.npc` (see `docs/CONTRACTS.md`, "Intelligent characters") adds a
+perceiving, navigating, talking character to any entity. The runtime lives in
+`src/npc/`: `nav.ts` (grid, A*, line of sight), `obstacles.ts` (grids from the
+document), `graph.ts` (archetype graphs and conditions), `brain.ts` (one NPC),
+`system.ts` (all NPCs, noise, bubbles, the conversation), `dialogue.ts`
+(trees) and `analyze.ts` (static checks used by the `npcs` verification test).
+
+```ts
+logic.npcs.prompt;               // { npc, name } when a character is in reach (E talks)
+logic.npcs.dialogue;             // the running conversation, or null
+logic.npcs.choose(0);            // pointer / touch route to the number keys
+logic.npcs.damage('guard-1', 30);
+```
+
 ## Behaviours
 
 `BEHAVIOR_CATALOG` documents all 26 behaviours with params and requirements,

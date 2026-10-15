@@ -32,6 +32,7 @@ export function testHorizon(test: WorldTest, maxSeconds: number): number {
     case 'navigable':
       return 0;
     case 'stable':
+    case 'npcs':
       return Math.min(maxSeconds, test.seconds);
     default:
       return Math.min(maxSeconds, test.within);

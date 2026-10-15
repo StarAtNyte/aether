@@ -25,4 +25,5 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   'sakura-river': { pos: [31, 5.5, 229], target: [19, 2.2, 182] },
   'skyline-penthouse': { pos: [-20, 9, -25], target: [2, 2, 2], arch: { walls: 'cutaway' } },
   'dusk-lake-house': { pos: [30, 13, 38], target: [6, 4.5, 4], arch: { levelMode: 'exploded' } },
+  'hollow-gate': { pos: [10, 2.8, 0.5], target: [-1.5, 1.9, -11] },
 });

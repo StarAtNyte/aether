@@ -1296,6 +1296,7 @@ MaterialSpec.finish?: MaterialFinish   // oak walnut ash herringbone marble terr
                                        // fabric velvet leather carpet brushed-metal chrome brass black-metal glass frosted-glass ceramic
                                        // mirror roof-tile metal-roof decking grass gravel water (procedural PBR texture sets)
 WorldTest += { kind: 'navigable', target: building id | '*', clearance: 0.4..2 = 0.8 }
+// (see "Intelligent characters" below for WorldTest.npcs)
 ```
 
 ### `@aether/arch` (pure TypeScript, typed-array geometry, no three.js)
@@ -1904,3 +1905,158 @@ protocol messages. Full guide, client configs and safety model:
   (`outcome: 'win'|'lose'|'incomplete'`, `reason?`, `objectives[{id, kind, reached, collected}]`, `state`, `messages`, `path`).
 - CLI: new command `mcp` and options `--project-dir`, `--player-dir`, `--provider`
   (`CliOptions.projectDir | playerDir | provider`); `AETHER_PROJECT_DIR` sets the default folder.
+
+
+## Intelligent characters: `entity.npc` (+ additions to core, logic, physics, agent, studio)
+
+A character is an ordinary entity plus one optional field. Everything is plain
+JSON, validated by zod with size caps, produced by the agent from language and
+edited with minimal `update` patches (objects merge, arrays replace).
+
+### World IR (additive, backward compatible)
+
+```ts
+Entity.npc?: NpcSpec          // absent for everything else; worlds without it are unchanged
+NpcSpec = {
+  role ('' ≤ 40; how the user names it: "guard"), faction (slug, 'neutral'), archetype: NpcArchetype ('villager'),
+  enemies, allies: slug[] ≤ 8      // factions, or "player"
+  fears: string[] ≤ 8 (tags, e.g. "fire"), fearRange (7 m)
+  speed (1.5 m/s), runSpeed (4.2), turnRate (420°/s), radius (0.4), height (1.8), health (100)
+  perception: { sight 14, fov 110°, hearing 7, memory 6 s, alert 0 }      // alert = radius in which allies learn of a foe
+  attack?: { range 1.7, damage 12, cooldown 1.1 }, fleeAt? (0..1), leash (40 m)
+  waypoints: Vec3[] ≤ 32, patrol: { mode: loop|pingpong|random, wait 1.5 }, wander (0 m)
+  activeHours?: [from, to] (hours; rests outside, may wrap midnight), follow (false), carries: slug[] ≤ 8
+  talkRange (2.8 m), dialogue?: Dialogue, chat?: NpcChat, barks?: { spot, lose, flee, hurt, alert, idle: string[] ≤ 6 }
+  transitions: NpcTransition[] ≤ 24                                         // extra graph edges, win ties
+}
+NpcArchetype = villager | guard | merchant | predator | prey | follower | sentinel
+NpcMode      = idle | patrol | investigate | chase | flee | attack | trade | talk | follow
+NpcTransition = { from: NpcMode | '*' ('*'), to: NpcMode, when: NpcCond, priority -100..100 (50), say? ≤ 120 }
+NpcCond = seesFoe | hearsFoe | remembersFoe | fearNear | arrived | talkRequested | following | always
+        | { foeWithin | foeBeyond | playerWithin | playerBeyond, r } | { healthBelow, frac } | { timer, t }
+        | { time, from, to } | { flag, key, op, value } | { farFromHome, r } | { not, c } | { all | any, cs ≤ 8 }
+Dialogue = { start ('start'), nodes: Record<slug, DialogueNode> ≤ 48 }       // links are validated (no dangling next / start)
+DialogueNode = { text ≤ 320, speaker?, variants ≤ 6 [{ if: Cond[], text }], choices ≤ 6, effects ≤ 8, next: slug | null, mode: talk | trade }
+DialogueChoice = { text ≤ 140, if: Cond[] ≤ 6 (shown only while true), effects ≤ 8, next: slug | null, once }
+DialogueEffect = give | take {item, count} | set {key, value} | add {key, amount} | openDoor {target} | emit {event}
+               | message {text} | provoke | calm | follow {on} | win {text}
+NpcChat = { persona ≤ 500, facts ≤ 8 × 160, maxTurns 1..50 (12) }            // free conversation through a connected model
+WorldTest += { kind: 'npcs', target: Selector ('*'), seconds (20), stuckAfter (6) }
+```
+
+Conventions: items and currencies are numeric world-state counters named after
+the item (`give` adds, `take` subtracts down to 0); `openDoor` sets the world
+flag `<target>-unlocked`, which a door with `trigger: "state"` and that
+`stateKey` opens; the player's health is the world state `health` (an NPC hit
+creates it at 100 when absent; 0 ends the game); each NPC's own health is its
+entity state `health` (rules can `add guard.health -10`; at 0 it dies, emits
+`npc-died` and `<id>-died`). Archetypes that hunt (guard, predator, sentinel)
+are hostile to `"player"` unless `allies` lists it; timid kinds (prey, villager,
+merchant, follower) treat anything that hunts their faction as a threat.
+
+### `@aether/logic` (`src/npc/`)
+
+```ts
+LogicRuntime.npcs: NpcSystem        // always present, inert without NPCs
+NpcSystem.dialogue: DialogueView | null          // { npc, speaker, text, choices, mode, node, version, chat, free }
+NpcSystem.prompt: TalkPrompt | null              // nearest character in reach: { npc, name, distance }
+NpcSystem.bubbleCount / bubbleAt(i) / activeBubbles()   // barks above characters (world position included)
+NpcSystem.startDialogue(id) / choose(i) / advance() / endDialogue()      // pointer and touch route; keys: E talk / continue, 1–6 choose
+NpcSystem.damage(id, n) / info(id) / infos() / count / chatContext() / freeReply(text) / reset() / invalidate()
+analyzeNpcs(world, { target?, bounds? }) → { errors, warnings, npcs }    // static checks used by the `npcs` test
+NavGrid.build(obstacles, opts) / findPath / lineClear / lineOfSight      // A* over the walkable floor, preallocated, bounded
+buildNavFor(world, { refY, radius, height, points }, bounds?), collectObstacles(...)
+LogicHost (optional, additive): getBounds(id), getColliderBounds(id), groundHeight(x, z, fromY, exclude?)
+```
+
+- **Determinism.** Same world + seed + inputs ⇒ identical positions, modes and
+  log (each brain has its own seeded stream; perception is staggered by index,
+  not by wall time). Nothing in `@aether/logic` touches a network or a clock.
+- **Per-tick published state** on each NPC entity: `npcState`, `npcAnim`
+  (idle walk run attack talk hurt dead), `npcSpeed`, `npcStuck` (seconds
+  without progress while trying to move), `npcLegs` (waypoints reached),
+  `health`, `talking`. The renderer's asset animator already picks idle / walk /
+  run from the entity's speed.
+- **Perception.** Sight = range × cone (`fov`) × line of sight over the grid's
+  sight mask (tall solids block; a crate under 1 m does not), reduced to 70 % in
+  the dark unless the NPC carries a light (predators are unaffected). Hearing =
+  `hearing` × the player's noise (full pace loud, sneak quiet, standing silent;
+  relative to `player.moveSpeed`; a jump is audible). Foes seen are remembered
+  for `memory` seconds at their last known position; allies within `alert` are
+  told. Fear: any entity tagged with a `fears` tag within `fearRange` (a flame
+  child of a torch carrier burns where its carrier stands).
+- **Navigation.** One grid per (floor level, body radius, body height), cell
+  0.5 m (larger for huge areas, ≤ 320 cells per axis), built lazily from the
+  document: primitives exactly, generated shapes from per-collider bounds when the
+  host provides them (trunk and canopy are different heights), open ground as
+  floor. A* is 8-connected with corner-cutting rules, a 9000-expansion budget and
+  string-pulled output; steering adds separation from neighbours and a stuck
+  detector (re-plan, then nudge back onto walkable floor, then skip the goal).
+- **Allocation.** No arrays, strings, closures or objects are created per tick
+  in steady state (typed-array paths, pooled buckets); what remains is boxed
+  numbers passed between non-inlined calls. Measured on the test machine: 50
+  NPCs 0.05 ms per tick, 100 → 0.11 ms, 400 → 1.0 ms (`npc-perf.test.ts` asserts
+  the budget and an allocation probe).
+
+### `@aether/physics`
+
+- `verify`: the `npcs` test. Decided at t = 0 from `analyzeNpcs` (standing on
+  walkable floor, every waypoint reachable from the spawn, dialogue links, items
+  and flags the dialogue reads exist somewhere) and then over `seconds` of
+  simulation: nobody falls through the floor, nobody is stuck for `stuckAfter`
+  seconds, and every patrolling NPC reaches a waypoint. Without a logic hook only
+  the static part runs.
+- `entityWorldBounds(world, id, margin?)`, `entityColliderBounds(world, id)`
+  (also at `@aether/physics/bounds`, which does not pull Rapier). `@aether/physics`
+  now depends on `@aether/logic`.
+
+### `@aether/agent`
+
+- Offline planner (`providers/mock/npc.ts`, `npc-kinds.ts`): guards, bandits,
+  shopkeepers, villagers, wolves/predators, prey, companions, dogs, monsters and
+  sentinels from sentences ("a guard who patrols the gate and chases me when he
+  sees me", "a shopkeeper who greets me and sells a key", "a wolf pack that hunts
+  at night"). It builds the characters (primitive bodies, or library models when
+  the catalog is loaded), a gate / stall / campfire / coins when the sentence
+  needs them, the `health` / `coins` / item counters with HUD entries, and an
+  `npcs` test. Counts, names, patrol places, prices, fears, followers,
+  torches and props, night hours and free conversation are read from the text.
+  Scene prompts that name characters ("a bandit camp with two bandits") place them
+  with the scene's own builder.
+- Edits by role, name, id, faction or archetype, with pronouns carrying the
+  subject inside one request: "make the guard faster" →
+  `{ op: 'update', id, set: { npc: { speed, runSpeed } } }`; "give him a torch" adds
+  a flame child with a light and `carries`; "make the wolves afraid of fire" sets
+  `fears` (and lights a campfire when none exists); also slower / stronger /
+  tougher, sees farther / hears better, friendly / hostile, patrol / stand still
+  / wander / follow me, night only, sells X for N, renames, lines, free
+  conversation on and off. Ambiguous requests ask which character; locked
+  characters are left alone. `resolveTargets` (generic edits, removal) also
+  matches NPC role and faction.
+- The world summary lists each NPC on its entity line:
+  `npc "guard" arch=guard fac=watch spd=1.5 run=4.2 hp=100 sight=14 fov=110 hear=7 dmg=10 wp=2 dlg=3 foes=player fears=fire carries=torch chat`.
+- The LLM system prompt has a "Characters" section (schema, archetypes, graph
+  conditions, dialogue effects, minimal edits, the `npcs` test) and a verified
+  worked example.
+
+### `apps/studio`
+
+- Play mode shows bubbles above characters, a "Talk to …" hint and a dialogue card
+  with numbered choices (keys 1–6, E, buttons for pointer and touch). The overlay
+  (`NpcSpeechView`) is shared by the studio and the standalone player.
+  `Simulation` samples the NPC system into an `NpcFrame` on change and about
+  12 times a second; bubbles are projected with the camera matrices (no three.js
+  allocation). Holding Shift sneaks (half pace, quiet).
+- Free conversation (`NpcChatController`): available only when the user's model
+  connection resolves to something other than the offline planner and is ready.
+  It uses `AiConnection.createProvider`, so the existing metered per-session call
+  cap of bring-your-own keys applies; on top: ≤ 40 free replies per play session,
+  `chat.maxTurns` per character, one request at a time, a 25 s timeout, 200
+  output tokens, no tools. The player's line is quoted as data
+  (`<player>…</player>`), replies are reduced to plain capped text, and any
+  failure leaves the authored dialogue running. Off offline: the input explains
+  that a connected model is needed.
+- Flagship world **The Hollow Gate** (`hollow-gate`): a walled hamlet with a
+  locked gate, a torch-carrying guard, a shopkeeper selling the key, a night wolf
+  pack that fears fire and two villagers; playtested by a bot
+  (`apps/studio/test/hollowGate.test.ts`) and verified (`npcs` test).

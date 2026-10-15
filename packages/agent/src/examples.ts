@@ -92,6 +92,56 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
     ],
   },
   {
+    request: 'a guard who patrols the gate and chases me, and a shopkeeper who sells a key',
+    message: 'Gate guard and key seller',
+    patches: [
+      { op: 'setMeta', name: 'The Locked Gate' },
+      { op: 'setPlayer', set: { mode: 'thirdPerson', spawn: [0, 1, 12] } },
+      { op: 'add', entity: { id: 'gate-door', name: 'Locked gate', transform: { position: [0, 1.8, -6] }, shape: { kind: 'primitive', primitive: 'box', size: [3.6, 3.6, 0.3] }, material: { preset: 'wood' }, physics: { body: 'kinematic' }, behaviors: [{ type: 'door', params: { trigger: 'state', stateKey: 'gate-door-unlocked', slide: [0, 3.8, 0] } }] } },
+      {
+        op: 'add',
+        entity: {
+          id: 'guard-1',
+          name: 'Bram',
+          tags: ['npc'],
+          transform: { position: [-4, 0.9, -2] },
+          shape: { kind: 'primitive', primitive: 'capsule', size: [0.56, 1.7, 0.56] },
+          material: { preset: 'fabric', color: '#3d5a80' },
+          physics: { body: 'kinematic' },
+          npc: { role: 'guard', archetype: 'guard', faction: 'watch', waypoints: [[-4, 0, -2], [4, 0, -2]], patrol: { mode: 'pingpong', wait: 1.5 }, attack: { damage: 10 }, barks: { spot: ['Halt!'] } },
+        },
+      },
+      {
+        op: 'add',
+        entity: {
+          id: 'shopkeeper-1',
+          name: 'Mira',
+          tags: ['npc'],
+          transform: { position: [7, 0.9, 4] },
+          shape: { kind: 'primitive', primitive: 'capsule', size: [0.56, 1.7, 0.56] },
+          material: { preset: 'fabric', color: '#8c5a3c' },
+          physics: { body: 'kinematic' },
+          npc: {
+            role: 'shopkeeper',
+            archetype: 'merchant',
+            dialogue: {
+              start: 'start',
+              nodes: {
+                start: { text: 'Welcome! A key for 5 coins?', choices: [{ text: 'Buy the key (5 coins)', if: [{ key: 'coins', op: '>=', value: 5 }, { key: 'key', op: '<', value: 1 }], effects: [{ do: 'take', item: 'coins', count: 5 }, { do: 'give', item: 'key' }, { do: 'openDoor', target: 'gate-door' }], next: 'sold' }, { text: 'Not now.', next: null }] },
+                sold: { text: 'The gate is yours.', mode: 'trade' },
+              },
+            },
+          },
+        },
+      },
+      { op: 'setState', key: 'coins', value: 5 },
+      { op: 'setState', key: 'key', value: 0 },
+      { op: 'setState', key: 'health', value: 100 },
+      { op: 'setHud', hud: [{ key: 'health', label: 'Health' }, { key: 'coins', label: 'Coins' }, { key: 'key', label: 'Key' }] },
+      { op: 'addTest', test: { id: 'npcs-work', kind: 'npcs', target: '#npc', seconds: 10 } },
+    ],
+  },
+  {
     request: '(edit) make it a foggy night and light the lamps',
     message: 'Foggy night',
     patches: [

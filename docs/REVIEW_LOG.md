@@ -2542,3 +2542,97 @@ PERFORMANCE
 
 **Gates.** tsc 0 errors; `apps/cli` Vitest 3 files / 59 tests; studio build OK;
 smoke 28/28; `npm run e2e:mcp` passes against the real studio build.
+
+
+## Intelligent characters (stage `npc`)
+
+**What changed**
+
+- World IR: `entity.npc` (perception, archetype behaviour graph, waypoints,
+  factions, fear tags, activity hours, dialogue trees with conditions and
+  effects, optional free conversation) and the `npcs` world test. All additive,
+  all zod-validated with caps (`docs/CONTRACTS.md`, "Intelligent characters").
+- `@aether/logic` `src/npc/`: navigation grid (A*, string pulling, line of sight),
+  perception, the graph evaluator, `NpcBrain`, `NpcSystem` (noise, speech
+  bubbles, the single running conversation), dialogue trees and the static
+  analysis behind the `npcs` test. `LogicHost` gained three optional members
+  (`getBounds`, `getColliderBounds`, `groundHeight`).
+- `@aether/physics`: the `npcs` test (static at t = 0, then falls / stuck /
+  patrol progress while simulated), `entityWorldBounds` / `entityColliderBounds`
+  (`@aether/physics/bounds`); depends on `@aether/logic` now.
+- `@aether/agent`: the offline planner understands guards, bandits, shopkeepers,
+  villagers, wolves, prey, companions, dogs, monsters and sentinels from
+  sentences and edits them by role / name / faction with minimal patches; the
+  summary lists NPCs; the LLM prompt has a "Characters" section and a verified
+  worked example (prompt ceiling 12.75k → 14k tokens).
+- Studio: bubbles, "Talk to …" hint and dialogue card (keys, pointer, touch) in
+  the studio and the player; free conversation through the connected model;
+  Shift sneaks. Flagship **The Hollow Gate** (baked world, cover, thumbnail).
+- Tests: logic navigation / brain / dialogue / analysis / crowd performance;
+  core schema; planner (30 cases); studio frame and chat controller; a bot that
+  plays The Hollow Gate to the win condition; `tests/e2e/npc.e2e.ts`.
+- One existing assertion changed on purpose: `assets.test.ts` ("brings
+  characters and animals to life") asserted the legacy `npc` greeter behaviour
+  on an added villager and a `wander` behaviour on an added dog; characters are
+  intelligent NPCs now, so it asserts `entity.npc` (archetype, dialogue nodes,
+  `wander`). The legacy `npc` behaviour still exists and works.
+
+**Bugs the new tests caught (all fixed)**
+
+- Navigation grids were shared by every NPC of the same radius, so a guard's
+  1.8 m body height decided what blocked the wolves: grids are keyed by level,
+  radius and height. A regression test builds a canopy a tall guard cannot pass
+  and a low animal can.
+- A generated pine's colliders as one box made woods impassable; per-collider
+  bounds (trunk and canopy) are used when the host can provide them.
+- Library-model NPCs were placed with a capsule's centre height (models have
+  their base at y = 0), which the analyzer flagged as "stands on ground it
+  cannot walk on".
+- The locked-gate door's unlock flag did not match the id the sale unlocked.
+
+**SECURITY**
+
+- [x] New input boundaries: `entity.npc` (zod, every list and string capped,
+  dialogue links validated, condition depth guarded at run time), dialogue
+  effects write world state through `writeState` (forbidden keys, size and key
+  caps; failures are caught and logged), prototype keys inside NPC data are
+  rejected by `inspectUntrusted` (test).
+- [x] Free conversation: off unless a model is connected; reuses
+  `AiConnection.createProvider`, so bring-your-own-key calls count toward the
+  existing metered per-session cap; extra caps of 40 replies per session, the
+  spec's `maxTurns` per character, one request at a time, a 25 s timeout and
+  200 output tokens; the model has no tools; the player's line is quoted as data;
+  replies are reduced to plain capped text (markup, control characters, links
+  and name prefixes removed) before they reach the screen, and the UI renders
+  text only (no `innerHTML`). Prompt-injection and limit tests are in
+  `npcChat.test.ts`. The logic package never touches a network.
+- [x] No new dependency, no new network surface, no eval; CSP unchanged.
+
+**PERFORMANCE**
+
+- [x] Per tick, 50 NPCs cost about 0.05 ms, 100 → 0.11 ms, 200 → 0.32 ms and
+  400 → 1.0 ms (patrolling guards, wandering wolves with fear checks, villagers,
+  shopkeepers, a moving player, six walls; `npc-perf.test.ts` asserts < 3 ms for
+  60). Perception runs on every third tick per NPC (staggered), A* is bounded
+  (9000 expansions, re-planned at most every 0.4–1.2 s), neighbours come from a
+  hash grid, grids are built once per level and body size.
+- [x] No arrays, strings, closures or objects per tick in steady state: the
+  allocation probe (60 NPCs, 1500 ticks) measures about 10.6 KB per tick, all of
+  it boxed numbers passed between non-inlined calls (a Map rebuilt every tick,
+  `Math.hypot` results and a `length = 0` that freed bucket storage were found
+  and removed by the probe). The test fails above 16 KB per tick.
+- [x] The studio samples the NPC system at most about 12 times a second and
+  only publishes a frame when something changed; bubbles are projected with
+  the camera matrices (no three.js objects).
+
+**Gates.** tsc 0 errors; Vitest (Node 24) 198+ files / 2500+ tests pass (the
+render allocation probes and two server / sandbox tests are timing- and
+Node-version-sensitive: under Node 22 with parallel workers they flake, alone on
+Node 24 they pass); studio build OK; smoke 32/32 (three NPC prompts added);
+`showcase:bake hollow-gate` verifies (`npcs` test, 16 s simulated); the bot
+plays The Hollow Gate to the win; `e2e:npc` passes in Chromium WebGPU
+(prompts → patrol → chase and damage → talk, keys and the close button, no
+console errors). Firefox could not start WebGL2 in this environment (the
+existing `e2e:editing --firefox` fails identically at renderer start), so the
+Firefox run of `e2e:npc` was not executed here; nothing in the NPC code is
+renderer-specific.

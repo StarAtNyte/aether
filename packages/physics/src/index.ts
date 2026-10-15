@@ -35,3 +35,4 @@ export { TraceRecorder, TRACE_LIMITS, type TraceOptions } from './trace';
 export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';
 export { assetColliderDescs, assetGeneratorShape, usesAssets, ensureAssetCatalog } from './asset-colliders';
+export { entityColliderBounds, entityWorldBounds } from './bounds';

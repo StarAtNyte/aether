@@ -30,3 +30,11 @@ export { MAX_ABANDONED_RUNTIMES, SCRIPT_HEAP_BUDGET_BYTES, type ManagedScriptRun
 export { MAX_INTENTS_PER_CALL, validateIntents, type IntentValidation } from './scripting/intents';
 export { SCRIPT_API_DTS } from './scripting/api';
 export { normalizeKey } from './keys';
+export { NpcSystem, MAX_BUBBLES, MAX_NPCS, type NpcBubble, type TalkPrompt } from './npc/system';
+export type { NpcInfo } from './npc/brain';
+export type { DialogueView, DialogueHost } from './npc/dialogue';
+export { DialogueSession } from './npc/dialogue';
+export { NavGrid, NAV_MAX_PATH, type Obstacle } from './npc/nav';
+export { buildNavFor, collectObstacles, type BoundsProvider } from './npc/obstacles';
+export { resolveNpc, defaultTransitions, evalCond, inHours, type NpcEff, type Senses } from './npc/graph';
+export { analyzeNpcs, type NpcAnalysis } from './npc/analyze';

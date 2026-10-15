@@ -1264,3 +1264,47 @@ renderer (`render_still`) and a glTF writer (`export`). The project folder is
 the only thing the server reads or writes. See [MCP.md](MCP.md) for the tools,
 client configuration and safety model.
 
+
+
+## 22. Intelligent characters
+
+Characters are data (`entity.npc`) executed by one deterministic system in the
+logic loop, proven by the same headless verification as everything else, and
+authored from language by the planner.
+
+```text
+prompt ──▶ planner (offline kinds + clause parser │ LLM with the Characters prompt) ──▶ add / update patches
+                                                                                       │
+entity.npc (zod, capped) ◀─────────────────────────────────────────────────────────────┘
+   │
+   ▼ per tick, after physics, inside LogicRuntime.tick
+NpcSystem.beginTick     noise of the player, neighbour hash, speech bubbles, E / 1–6 / dialogue lifecycle
+NpcBrain.update ×N      perceive (staggered) → senses → graph transition → mode behaviour → steer → animate
+   │                    nav grid (A*, LOS) · separation · stuck handling · kinematic pose or dynamic velocity
+   ▼
+host.setKinematic / setVelocity     entity state (npcState, npcAnim, health …)     NpcFrame → React overlay
+```
+
+**Behaviour graph.** Each archetype expands into a prioritised list of
+transitions over nine states; an NPC's own `transitions` come first, so they win
+ties. The first edge whose `from` matches and whose condition holds fires (a
+self-edge is a "hold" that blocks lower-priority edges). Conditions read a small
+`Senses` record (sees / hears / remembers a foe, foe distance, fear nearby,
+health fraction, time in state, hour, talk requested, following, distance from
+home, world flags) filled by the brain. Conversations override the graph and
+restore the previous state; resting hours (`activeHours`) force idle.
+
+**Why a grid.** The logic package must run without a renderer or a physics
+engine (workers, tests, headless verification), so navigation and sight are
+computed from the document (plus optional host bounds). That also makes the
+static half of the `npcs` test possible: reachability of patrol points is a
+path query on the same grid the NPC uses.
+
+**Proof.** The `npcs` test runs `analyzeNpcs` at t = 0, then lets the NPCs run in
+the forked physics world for `seconds`: no falls, no sticking, patrols progress.
+A scripted bot plays The Hollow Gate through real physics and logic with every
+character active and reaches the win condition.
+
+**Free conversation** is deliberately outside the logic package: the runtime
+exposes `chatContext()` and `freeReply()`, and the studio decides whether a model
+is connected, applies the caps and sanitises the reply (see `docs/CONTRACTS.md`).

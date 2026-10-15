@@ -6,6 +6,29 @@
 import type { Json } from '@aether/core';
 import type { V3 } from './builder';
 
+/** An NPC as seen through the summary (`npc "guard" arch=guard fac=watch spd=1.5 ...`). */
+export interface NpcView {
+  role: string;
+  archetype: string;
+  faction: string;
+  speed: number;
+  runSpeed: number;
+  health: number;
+  sight: number;
+  fov: number;
+  hearing: number;
+  damage?: number;
+  waypoints: number;
+  wander: number;
+  dialogueNodes: number;
+  chat: boolean;
+  foes: string[];
+  allies: string[];
+  fears: string[];
+  carries: string[];
+  hours?: string;
+}
+
 /** One entity as seen through the summary. */
 export interface EntityView {
   id: string;
@@ -32,6 +55,8 @@ export interface EntityView {
   locked: boolean;
   /** The user edited it by hand recently (commits ago; 0 = latest), when known. */
   userEditedAge?: number;
+  /** Present for intelligent characters. */
+  npc?: NpcView;
 }
 
 /** The parsed world. */
@@ -132,6 +157,41 @@ function parseShape(text: string, e: EntityView): void {
   }
 }
 
+function parseNpc(text: string): NpcView | undefined {
+  const m = /^npc (?:"((?:[^"\\]|\\.)*)"|-)((?: [a-z]+=\S+)*)/.exec(text);
+  if (!m) return undefined;
+  const kv = new Map<string, string>();
+  for (const [, k, v] of (m[2] ?? '').matchAll(/ ([a-z]+)=(\S+)/g)) kv.set(k as string, v as string);
+  const num = (k: string, d: number): number => {
+    const v = Number(kv.get(k));
+    return Number.isFinite(v) && kv.has(k) ? v : d;
+  };
+  const list = (k: string): string[] => (kv.get(k) ?? '').split('/').filter(Boolean);
+  const view: NpcView = {
+    role: m[1] ?? '',
+    archetype: kv.get('arch') ?? 'villager',
+    faction: kv.get('fac') ?? 'neutral',
+    speed: num('spd', 1.5),
+    runSpeed: num('run', 4.2),
+    health: num('hp', 100),
+    sight: num('sight', 14),
+    fov: num('fov', 110),
+    hearing: num('hear', 7),
+    waypoints: num('wp', 0),
+    wander: num('wander', 0),
+    dialogueNodes: num('dlg', 0),
+    chat: / chat(?: |$)/.test(text),
+    foes: list('foes'),
+    allies: list('allies'),
+    fears: list('fears'),
+    carries: list('carries'),
+  };
+  if (kv.has('dmg')) view.damage = num('dmg', 0);
+  const hours = kv.get('hours');
+  if (hours) view.hours = hours;
+  return view;
+}
+
 function parseEntityLine(line: string): EntityView | null {
   const depth = Math.floor((line.length - line.trimStart().length) / 2);
   const parts = line.trim().split(' | ');
@@ -150,6 +210,9 @@ function parseEntityLine(line: string): EntityView | null {
       e.sensor = part.includes('sensor');
       const m = /m=(\d+(?:\.\d+)?)/.exec(part);
       if (m) e.mass = Number(m[1]);
+    } else if (part.startsWith('npc ')) {
+      const npc = parseNpc(part);
+      if (npc) e.npc = npc;
     } else if (part.startsWith('behaviors ')) e.behaviors = parseBehaviors(part.slice(10));
     else if (part.startsWith('tags ')) e.tags = part.slice(5).split(',').filter(Boolean);
     else if (part.startsWith('mat ')) {

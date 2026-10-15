@@ -20,6 +20,7 @@ import { parseWorldSummary, type WorldView } from './world-view';
 import { planVoxel } from './voxel';
 import { planArch } from './arch';
 import { planShowcase } from './showcase/index';
+import { addCharactersToScene, planNpc } from './npc';
 
 /** Output of the mock planner. */
 export interface MockPlan {
@@ -145,6 +146,8 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const libraryDone = placeLibraryHits(b, libHits, hero !== undefined);
   const added = [...libraryDone, ...(extras.length > 0 ? applyEdits(b, { ...intent, edits: extras }, view, library) : [])];
   b.env(intent.env);
+  const crowd = addCharactersToScene(b, intent.text, view, intent);
+  if (crowd) added.push(crowd);
   const weather = b.envValue('weather');
   if (intent.mood.night && (weather === undefined || weather === 'clear')) b.env({ weather: 'fireflies' });
   b.test({ id: 'no-overlap', kind: 'noOverlap' });
@@ -203,6 +206,9 @@ export function planMock(request: string, summary: string, library: readonly Moc
   // Flagship showcase worlds answer to their names.
   const showcase = planShowcase(request, summary);
   if (showcase) return showcase;
+  // Characters: guards, shopkeepers, wolf packs and edits of them ("make the guard faster").
+  const npc = planNpc(request, summary);
+  if (npc) return npc;
   // Block worlds (voxel terrain) have their own planner.
   const voxel = planVoxel(request, summary);
   if (voxel) return voxel;

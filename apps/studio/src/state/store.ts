@@ -15,6 +15,7 @@ import type { EditorTool } from '../engine/Simulation';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 import type { VoxelHudState } from '../voxel/hudState';
 import type { LabelSpec } from '../engine/viewOverlay';
+import type { NpcFrame } from '../engine/npcFrame';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -224,6 +225,8 @@ export interface StudioState {
   /** Annotations of what the agent just placed (shown briefly over the viewport). */
   planMarks: { id: number; labels: LabelSpec[] } | null;
   game: GameState;
+  /** Characters in play mode: conversation, talk hint, speech bubbles (null when nothing is showing). */
+  npc: NpcFrame | null;
   /** Voxel game HUD (null unless a block world is being played). */
   voxelHud: VoxelHudState | null;
   cameraView: CameraView;
@@ -288,6 +291,7 @@ export interface StudioState {
   setViewer(on: boolean): void;
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
+  setNpc(frame: NpcFrame | null): void;
   setVoxelHud(v: VoxelHudState | null): void;
   setCameraView(v: CameraView): void;
   toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
@@ -409,6 +413,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     planMarks: null,
     viewer: false,
     game: INITIAL_GAME,
+    npc: null,
     voxelHud: null,
     cameraView: 'orbit',
     toasts: [],
@@ -496,7 +501,8 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setPlanMarks: (planMarks) => set({ planMarks }),
     setViewer: (viewer) => set({ viewer }),
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
-    resetGame: () => set({ game: INITIAL_GAME }),
+    resetGame: () => set({ game: INITIAL_GAME, npc: null }),
+    setNpc: (frame) => set({ npc: frame }),
     setVoxelHud: (v) => set({ voxelHud: v }),
     setCameraView: (cameraView) => set({ cameraView }),
     toast: (text, kind = 'info', duration = 3, action) => {

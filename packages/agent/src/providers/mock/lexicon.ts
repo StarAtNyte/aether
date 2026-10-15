@@ -33,7 +33,7 @@ export function parseCount(word: string | undefined): number | undefined {
 /** Naive singularization good enough for our nouns. */
 export function singular(noun: string): string {
   const n = noun.trim();
-  const irregular: Readonly<Record<string, string>> = { cacti: 'cactus', sheep: 'sheep', dominoes: 'domino', people: 'person', geese: 'goose', mice: 'mouse', leaves: 'leaf', boxes: 'box', benches: 'bench', bushes: 'bush', torches: 'torch', ponies: 'pony', bodies: 'body', fireflies: 'firefly', berries: 'berry' };
+  const irregular: Readonly<Record<string, string>> = { cacti: 'cactus', sheep: 'sheep', dominoes: 'domino', people: 'person', geese: 'goose', mice: 'mouse', leaves: 'leaf', boxes: 'box', benches: 'bench', bushes: 'bush', torches: 'torch', ponies: 'pony', bodies: 'body', fireflies: 'firefly', berries: 'berry', wolves: 'wolf', thieves: 'thief', men: 'man', women: 'woman', foxes: 'fox' };
   if (irregular[n]) return irregular[n] as string;
   if (n.endsWith('ies') && n.length > 4) return `${n.slice(0, -3)}y`;
   if (/(ches|shes|xes|sses)$/.test(n)) return n.slice(0, -2);

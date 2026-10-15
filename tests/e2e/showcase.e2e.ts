@@ -88,7 +88,7 @@ function toWebp(png: string, out: string, w: number, h: number, budget: number):
   const cx = Math.floor((sw - cw) / 2);
   const cy = Math.floor((sh - ch) / 2);
   for (const q of [82, 74, 66, 58, 50, 42]) {
-    execFileSync('cwebp', ['-quiet', '-q', String(q), '-m', '6', '-sharp_yuv', '-crop', String(cx), String(cy), String(cw), String(ch), '-resize', String(w), String(h), png, '-o', out], { timeout: 60_000 });
+    execFileSync(process.env['AETHER_CWEBP'] ?? 'cwebp', ['-quiet', '-q', String(q), '-m', '6', '-sharp_yuv', '-crop', String(cx), String(cy), String(cw), String(ch), '-resize', String(w), String(h), png, '-o', out], { timeout: 60_000 });
     const size = statSync(out).size;
     if (size <= budget) return size;
   }

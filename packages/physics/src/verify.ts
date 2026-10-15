@@ -5,8 +5,10 @@
  * wall-clock budget runs out.
  */
 import { navigableVerdict } from '@aether/arch';
+import { analyzeNpcs } from '@aether/logic';
 import type { EntityId, Vec3, WorldDoc, WorldTest } from '@aether/core';
 import { compare, readStateKey, resolveSelector } from '@aether/core';
+import { entityColliderBounds, entityWorldBounds } from './bounds';
 import { diagnoseWorld, findOverlaps } from './diagnose';
 import { entityPose } from './plan';
 import { collidersBounds } from './shapes';
@@ -124,23 +126,7 @@ function noTargets(test: WorldTest, selector: string): Evaluator {
 
 /** World-space AABB of an entity's shape. */
 function zoneBounds(ctx: Ctx, id: EntityId): { min: Vec3; max: Vec3 } | null {
-  const e = ctx.world.entities[id];
-  if (!e) return null;
-  const local = collidersBounds(resolveShapeColliders(e, 'auto', ctx.world).colliders);
-  if (!local) return null;
-  const pose = entityPose(ctx.world, id);
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const x of [local.min[0], local.max[0]]) for (const y of [local.min[1], local.max[1]]) for (const z of [local.min[2], local.max[2]]) {
-    const p = rotate(pose.quaternion, [x * pose.scale[0], y * pose.scale[1], z * pose.scale[2]]);
-    for (let k = 0; k < 3; k++) {
-      const v = (p[k] as number) + (pose.position[k] as number);
-      if (v < (min[k] as number)) min[k] = v;
-      if (v > (max[k] as number)) max[k] = v;
-    }
-  }
-  const m = VERIFY_LIMITS.ZONE_MARGIN;
-  return { min: [min[0] - m, min[1] - m, min[2] - m], max: [max[0] + m, max[1] + m, max[2] + m] };
+  return entityWorldBounds(ctx.world, id, VERIFY_LIMITS.ZONE_MARGIN);
 }
 
 function inBox(p: Vec3, b: { min: Vec3; max: Vec3 }): boolean {
@@ -311,6 +297,46 @@ function staysAboveTest(ctx: Ctx, test: Extract<WorldTest, { kind: 'staysAbove' 
   };
 }
 
+/** Characters work: static reachability at t = 0, then no falling and no sticking while they run. */
+function npcsTest(ctx: Ctx, test: Extract<WorldTest, { kind: 'npcs' }>): Evaluator {
+  const world = ctx.world;
+  const analysis = analyzeNpcs(world, { target: test.target, bounds: { getBounds: (id) => entityWorldBounds(world, id) ?? undefined, getColliderBounds: (id) => entityColliderBounds(world, id) } });
+  if (analysis.npcs === 0) return noTargets(test, test.target);
+  if (analysis.errors.length > 0) {
+    const verdict: Verdict = { passed: false, message: analysis.errors.slice(0, 3).join('; ') + (analysis.errors.length > 3 ? ` (+${analysis.errors.length - 3} more)` : '') };
+    return { test, horizon: 0, check: () => verdict, timeout: () => '' };
+  }
+  const ids = targets(ctx, test.target).filter((id) => ctx.world.entities[id]?.npc !== undefined && !ctx.world.entities[id]?.template);
+  const startY = new Map(ids.map((id) => [id, position(ctx, id)[1]] as const));
+  const walkers = ids.filter((id) => {
+    const n = ctx.world.entities[id]?.npc;
+    return n !== undefined && n.waypoints.length >= 2 && n.speed > 0 && n.archetype !== 'sentinel' && n.archetype !== 'merchant' && n.activeHours === undefined;
+  });
+  const num = (key: string): number => {
+    const v = ctx.hook?.readState(key);
+    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  };
+  const note = analysis.warnings.length > 0 ? ` (note: ${analysis.warnings.slice(0, 2).join('; ')})` : '';
+  return {
+    test,
+    horizon: test.seconds,
+    check: (t) => {
+      for (const id of ids) {
+        const y = position(ctx, id)[1];
+        if (y < (startY.get(id) as number) - 2) return { passed: false, message: `${id} fell through the floor (y ${fmt(y)}) at t=${fmt(t, 1)}s` };
+        const stuck = num(`${id}.npcStuck`);
+        if (stuck >= test.stuckAfter) return { passed: false, message: `${id} is stuck: it has been unable to make progress for ${fmt(stuck, 1)}s (at t=${fmt(t, 1)}s)` };
+      }
+      if (t < test.seconds) return null;
+      if (!ctx.hook) return { passed: true, message: `${ids.length} NPC(s) stand on walkable floor and every patrol point is reachable (rules did not run)${note}` };
+      const idle = walkers.filter((id) => num(`${id}.npcLegs`) < 1);
+      if (idle.length > 0) return { passed: false, message: `${list(idle)} never reached a first patrol point in ${fmt(test.seconds, 1)}s` };
+      return { passed: true, message: `${ids.length} NPC(s) stood on walkable floor, ${walkers.length} patrolled without sticking, nobody fell through the floor${note}` };
+    },
+    timeout: (t) => `not decided: simulation stopped at t=${fmt(t, 1)}s (needs ${fmt(test.seconds, 1)}s)`,
+  };
+}
+
 function evaluator(ctx: Ctx, test: WorldTest): Evaluator {
   switch (test.kind) {
     case 'stable':
@@ -350,6 +376,8 @@ function evaluator(ctx: Ctx, test: WorldTest): Evaluator {
       const verdict = navigableVerdict(ctx.world, test.target, test.clearance);
       return { test, horizon: 0, check: () => verdict, timeout: () => '' };
     }
+    case 'npcs':
+      return npcsTest(ctx, test);
   }
 }
 

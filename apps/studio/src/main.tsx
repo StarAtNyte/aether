@@ -17,6 +17,7 @@ import './styles/home.css';
 import './styles/editing.css';
 import './styles/onboarding.css';
 import './styles/arch.css';
+import './styles/npc.css';
 import './styles/moments.css';
 import { App } from './App';
 import { AppProvider, openRepo } from './app/appContext';

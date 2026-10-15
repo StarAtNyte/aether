@@ -21,14 +21,16 @@
  * Play or verification.
  */
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
-import { initScripting, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
+import { initScripting, LogicRuntime, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
+import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
 import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
+import { buildNpcFrame, frameSignature, type NpcFrame } from './npcFrame';
 import { IdleClock } from './IdleClock';
 import { InputController } from './input';
 import { GamepadPoller, STICK_TURN_SPEED } from './gamepad';
@@ -151,6 +153,12 @@ export interface SimulationListener {
   /** Play-mode HUD refresh (4 Hz): values of `world.hud` keys + game time. */
   onHud?(hud: Record<string, Json | undefined>, time: number): void;
   onMessage?(text: string, duration: number): void;
+  /**
+   * Characters: the running conversation, the talk hint and speech bubbles.
+   * Called when something changes (and about 12 times a second while bubbles
+   * follow their speakers); `null` when there is nothing to show.
+   */
+  onNpc?(frame: NpcFrame | null): void;
   onGameOver?(result: 'win' | 'lose', text: string): void;
   onPick?(id: EntityId | null, additive: boolean): void;
   /** A gizmo drag ended: the new local transforms of every moved entity (one undoable edit). */
@@ -209,6 +217,9 @@ interface PlaySession extends SessionCore {
   logic: LogicRuntime;
 }
 
+/** Interval between NPC overlay samples while bubbles follow their speakers (ms). */
+const NPC_FRAME_MS = 80;
+
 const scratchPos: Vec3 = [0, 0, 0];
 const scratchQuat: [number, number, number, number] = [0, 0, 0, 1];
 const scratchDir = { x: 0, y: 0, z: 0 };
@@ -228,6 +239,10 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
+  private npcSig = '';
+  private npcQuick = '';
+  private npcAt = 0;
+  private npcTalking = false;
   private readonly pad = new GamepadPoller();
   /** The controller moved the player last frame (its stick is released once it goes idle). */
   private padMoving = false;
@@ -938,6 +953,11 @@ export class Simulation {
     if (!s) return;
     this.session = null;
     s.ended = true;
+    if (this.npcSig !== '') {
+      this.npcSig = '';
+      this.npcQuick = '';
+      this.listener.onNpc?.(null);
+    }
     this.paused = false;
     this.padMoving = false;
     this.applyGizmo();
@@ -1077,6 +1097,14 @@ export class Simulation {
         if (s.avatarId) return s.avatarId;
         return s.character || s.voxel ? PLAYER_PSEUDO_ID : undefined;
       },
+      // NPC navigation: footprints of generated shapes, and the ground under hills.
+      getBounds: (id) => (!s.ended && isDoc(id) ? (entityWorldBounds(s.world, id) ?? undefined) : undefined),
+      getColliderBounds: (id) => (!s.ended && isDoc(id) ? entityColliderBounds(s.world, id) : []),
+      groundHeight(x, z, fromY, exclude) {
+        if (s.ended) return undefined;
+        const hit = s.pw.raycast([x, fromY, z], [0, -1, 0], fromY + 8, exclude);
+        return hit ? hit.point[1] : undefined;
+      },
     };
   }
 
@@ -1204,16 +1232,84 @@ export class Simulation {
       const input = this.input.sample(FIXED_DT);
       if (s.voxel) s.voxel.step(FIXED_DT);
       if (character) {
-        character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, speed, jump);
+        // Holding Shift sneaks: half pace, quiet enough for guards not to hear.
+        const sneak = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+        character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, sneak ? speed * 0.5 : speed, jump);
         if (character.position[1] < PLAYER_KILL_Y) character.teleport(s.world.player.spawn);
       }
       const events = pw.stepFixed();
       logic.tick(FIXED_DT, input, events);
     }
     if (s.ended) return;
+    this.pumpNpc(s);
     pw.writeTransforms(this.table.packed, this.table.order);
     this.renderer.applyTransforms(this.table.packed, this.table.order);
     if (character) this.renderer.setPlayerAvatar(character.position, this.input.yawDeg);
+  }
+
+  /** Sample the NPC system for the UI: on change, and at ~12 Hz while bubbles are on screen. */
+  private pumpNpc(s: PlaySession): void {
+    const listener = this.listener.onNpc;
+    if (!listener) return;
+    const npcs = s.logic.npcs;
+    if (npcs.count === 0) {
+      if (this.npcSig !== '') {
+        this.npcSig = '';
+        listener(null);
+      }
+      return;
+    }
+    const now = performance.now();
+    const d = npcs.dialogue;
+    const quick = (d ? `${d.npc}:${d.version}` : '') + (npcs.prompt?.npc ?? '');
+    const changed = quick !== this.npcQuick;
+    if (!changed && now - this.npcAt < NPC_FRAME_MS) return;
+    // Mouse-look captures the pointer; a conversation needs it back for the choice buttons.
+    const talking = d !== null;
+    if (talking && !this.npcTalking && typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock();
+    this.npcTalking = talking;
+    this.npcQuick = quick;
+    this.npcAt = now;
+    const cam = this.renderer.camera;
+    const frame = buildNpcFrame(npcs, { view: cam.matrixWorldInverse.elements, projection: cam.projectionMatrix.elements });
+    const sig = frameSignature(frame);
+    if (sig === this.npcSig) return;
+    this.npcSig = sig;
+    listener(frame);
+  }
+
+  /** Take choice `i` (0-based) of the running conversation (touch and pointer input). */
+  npcChoose(i: number): void {
+    this.session?.logic.npcs.choose(i);
+    this.npcQuick = '';
+  }
+
+  /** Continue the running conversation, or start one with the nearest character in reach. */
+  npcAdvance(): void {
+    const npcs = this.session?.logic.npcs;
+    if (!npcs) return;
+    if (npcs.dialogue) npcs.advance();
+    else if (npcs.prompt) npcs.startDialogue(npcs.prompt.npc);
+    this.npcQuick = '';
+  }
+
+  /** What a language model needs to play the character of the running conversation (null without one). */
+  npcChatContext(): ReturnType<NpcSystem['chatContext']> {
+    return this.session?.logic.npcs.chatContext() ?? null;
+  }
+
+  /** Show a free reply, only while the conversation is still with `npcId`. */
+  npcFreeReply(npcId: string, text: string): boolean {
+    const npcs = this.session?.logic.npcs;
+    if (!npcs || npcs.dialogue?.npc !== npcId) return false;
+    this.npcQuick = '';
+    return npcs.freeReply(text);
+  }
+
+  /** Close the running conversation. */
+  npcClose(): void {
+    this.session?.logic.npcs.endDialogue();
+    this.npcQuick = '';
   }
 
   private emitStats(): void {

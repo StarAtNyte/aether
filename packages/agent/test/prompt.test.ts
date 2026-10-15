@@ -34,10 +34,15 @@ describe('system prompt', () => {
     expect(prompt).toContain(RULE_DOCS.trim().slice(0, 200));
   });
 
-  it('stays under ~12.75k tokens (chars/4) and is deterministic', () => {
+  it('teaches characters: archetypes, dialogue effects, minimal edits and the npcs test', () => {
+    for (const phrase of ['entity.npc', 'archetype', 'predator', 'waypoints', 'activeHours', 'openDoor', 'seesFoe', '"kind":"npcs"', 'minimal updates', 'dialogue']) expect(prompt).toContain(phrase);
+  });
+
+  it('stays under ~14k tokens (chars/4) and is deterministic', () => {
     // 12k before the architecture section (build_architecture plan format, ~500 tokens),
-    // 12.6k before the asset library (asset shape, HDRI sky, asset guideline, ~130 tokens).
-    expect(prompt.length / 4).toBeLessThan(12_750);
+    // 12.6k before the asset library (asset shape, HDRI sky, asset guideline, ~130 tokens),
+    // 12.75k before characters (npc spec, behaviour graph, dialogue, one worked example; ~1.2k tokens).
+    expect(prompt.length / 4).toBeLessThan(14_000);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

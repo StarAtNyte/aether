@@ -13,8 +13,10 @@
 import './zod-config';
 import { z } from 'zod';
 import { VoxelEdit, VoxelTerrain } from './voxel-schema';
+import { NpcSpec } from './npc-schema';
 
 export * from './voxel-schema';
+export * from './npc-schema';
 
 export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 export type Vec3 = z.infer<typeof Vec3>;
@@ -384,6 +386,11 @@ export const Entity = z.object({
   locked: z.boolean().optional(),
   /** Additive: role in a parametric building (walls, rooms, doors, furniture …). */
   arch: ArchMeta.optional(),
+  /**
+   * Additive: an intelligent character (perception, behaviour graph,
+   * waypoints, dialogue). See `npc-schema.ts` and `@aether/logic` `npc/`.
+   */
+  npc: NpcSpec.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -556,6 +563,14 @@ export const WorldTest = z.discriminatedUnion('kind', [
    * walkways keep `clearance` metres, and no furniture floats or overlaps.
    */
   z.object({ id: z.string(), kind: z.literal('navigable'), target: Selector.default('*'), clearance: z.number().min(0.4).max(2).default(0.8) }),
+  /**
+   * Additive: the NPCs matched by `target` work. Decided from the document at
+   * t = 0 (spawn and waypoints stand on walkable floor, every patrol point is
+   * reachable on the navigation grid, dialogue trees have no dead ends) and
+   * then over `seconds` of simulation (nobody falls through the floor and no
+   * NPC that should be walking is stuck for `stuckAfter` seconds).
+   */
+  z.object({ id: z.string(), kind: z.literal('npcs'), target: Selector.default('*'), seconds: z.number().positive().default(20), stuckAfter: z.number().positive().default(6) }),
 ]);
 export type WorldTest = z.infer<typeof WorldTest>;
 

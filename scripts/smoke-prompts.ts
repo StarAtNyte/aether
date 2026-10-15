@@ -20,6 +20,13 @@ export const ASSET_PROMPTS: readonly string[] = Object.freeze([
   'a town plaza with an ornate fountain, a gazebo and a vintage car',
 ]);
 
+/** Characters from a sentence (guards, shopkeepers, wolf packs): verified with the `npcs` test. */
+export const NPC_PROMPTS: readonly string[] = Object.freeze([
+  'a guard who patrols the gate and chases me when he sees me',
+  'a shopkeeper who greets me and sells a key',
+  'a wolf pack that hunts at night',
+]);
+
 /** Default smoke/gallery prompts, in report order (exact duplicates removed). */
 export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([...new Set([
   'a cozy forest camp with a campfire and tents',
@@ -34,4 +41,5 @@ export const DEFAULT_PROMPTS: readonly string[] = Object.freeze([...new Set([
   ...EXAMPLE_PROMPTS.map((e) => e.prompt),
   ...ARCH_PROMPTS,
   ...ASSET_PROMPTS,
+  ...NPC_PROMPTS,
 ])]);

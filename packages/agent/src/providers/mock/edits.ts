@@ -76,7 +76,7 @@ function matchTargets(view: WorldView, target: string, all: boolean): EntityView
   const hits = view.entities.filter((e) => {
     if (e.depth > 0 || e.tags.includes('backdrop')) return false;
     const name = e.name.toLowerCase();
-    return [noun, synonym].some((n) => n.length > 1 && (e.id === n || e.id.startsWith(`${n}-`) || name.includes(n) || e.tags.includes(n) || (e.generator ?? '').includes(n) || e.primitive === n));
+    return [noun, synonym].some((n) => n.length > 1 && (e.id === n || e.id.startsWith(`${n}-`) || name.includes(n) || e.tags.includes(n) || (e.generator ?? '').includes(n) || e.primitive === n || e.npc?.role === n || e.npc?.faction === n));
   });
   if (hits.length === 0) return [];
   if (all) return hits.slice(0, MAX_TARGETS);

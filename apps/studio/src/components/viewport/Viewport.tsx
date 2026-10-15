@@ -25,6 +25,7 @@ import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
+import { NpcSpeech } from './NpcSpeech';
 import { PlayHud, TitleCard } from './PlayHud';
 import { ArchBar } from './ArchBar';
 import { PlanView } from './PlanView';
@@ -395,6 +396,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       ) : (
         <PlayHud />
       )}
+      <NpcSpeech />
       <TitleCard />
       {ready && playing && !voxelUi && <TouchControls />}
       {ready && !playing && (

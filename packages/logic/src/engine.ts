@@ -23,6 +23,7 @@ import { moveToward } from './behaviors/move';
 import type { BehaviorEnv, BehaviorSlot, ContactInfo } from './behaviors/types';
 import { EntityRegistry, lookupEntity, quatFromEulerDeg, RuntimeEntity } from './entities';
 import { KeyEdges } from './keys';
+import { NpcSystem } from './npc/system';
 import { ParamReader } from './params';
 import { errorText, RuleEngine, type RuleHost } from './rules';
 import { checkIntent } from './scripting/intents';
@@ -148,10 +149,13 @@ export class Engine implements BehaviorEnv, RuleHost {
   private readonly quatScratch: QuatTuple = [0, 0, 0, 1];
   private readonly warned = new Set<string>();
   respawnPoint: Vec3 | undefined;
+  /** NPC minds, navigation, dialogue and speech (see `./npc`). */
+  readonly npcs: NpcSystem;
 
   constructor(world: WorldDoc, host: LogicHost, opts: EngineOptions = {}) {
     this.world = world;
     this.host = host;
+    this.npcs = new NpcSystem({ env: this, world: () => this.world, bounds: host });
     this.scripts = opts.scripts;
     this.seed = (Number.isFinite(opts.seed) ? (opts.seed as number) : world.seed) >>> 0;
     this.spawnRandom = rng(this.seed ^ 0x5bd1e995);
@@ -279,6 +283,7 @@ export class Engine implements BehaviorEnv, RuleHost {
     this.world = next;
     this.loadScripts(next);
     this.worldJson = null;
+    this.npcs.invalidate();
     for (const k of Object.keys(next.state)) {
       if (!hasOwn(this.worldState, k) && Object.keys(this.worldState).length < LIMITS.MAX_STATE_KEYS) {
         this.worldState[k] = cloneState({ [k]: next.state[k] as Json })[k] as Json;
@@ -399,6 +404,7 @@ export class Engine implements BehaviorEnv, RuleHost {
       if (!hasOwn(e.state, k)) e.state[k] = cloneState({ [k]: spec.state[k] as Json })[k] as Json;
     }
     const keys = spec.behaviors.map((b, i) => `${i}:${stableStringify(b)}`);
+    if (spec.npc) keys.push(npcKey(spec.npc));
     const same = keys.length === e.behaviors.length && keys.every((k, i) => e.behaviors[i]?.key === k);
     if (!same) {
       this.disposeBehaviors(e);
@@ -431,6 +437,13 @@ export class Engine implements BehaviorEnv, RuleHost {
         this.log(`behavior ${b.type} on ${e.id} failed to start: ${errorText(err)}`);
       }
     });
+    if (e.spec.npc) {
+      try {
+        slots.push({ type: 'npc-brain', enabled: true, key: npcKey(e.spec.npc), instance: this.npcs.createBrain(e, rng(this.seed ^ hashString(`${e.id}#npc`))) });
+      } catch (err) {
+        this.log(`npc brain on ${e.id} failed to start: ${errorText(err)}`);
+      }
+    }
     e.behaviors = slots;
   }
 
@@ -457,6 +470,7 @@ export class Engine implements BehaviorEnv, RuleHost {
     this.host.reset();
     for (const e of this.registry.all()) this.disposeBehaviors(e);
     this.rules.resetState();
+    this.npcs.reset();
     this.spawnCounters.clear();
     this.spawnRandom = rng(this.seed ^ 0x5bd1e995);
     this.contacts.clear();
@@ -541,6 +555,7 @@ export class Engine implements BehaviorEnv, RuleHost {
   }
 
   private updateBehaviors(dt: number): void {
+    if (this.npcs.count > 0) this.guard('npc tick', () => this.npcs.beginTick(dt));
     const list = this.registry.all();
     const n = list.length;
     for (let i = 0; i < n; i++) {
@@ -1023,6 +1038,11 @@ export class Engine implements BehaviorEnv, RuleHost {
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
+/** Hot-reload key of an entity's NPC spec. */
+function npcKey(npc: unknown): string {
+  return `npc:${stableStringify(npc)}`;
+}
 
 /** Accept any iterable set-like (e.g. a ReadonlySet from another realm). */
 function isKeySet(v: unknown): v is ReadonlySet<string> {

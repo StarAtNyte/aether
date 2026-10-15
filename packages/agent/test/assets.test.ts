@@ -99,8 +99,10 @@ describe('offline planner with the asset library', () => {
     const villager = Object.values((await mockApply('add a villager', w)).result.world.entities).find((e) => !w.entities[e.id] && e.shape.kind === 'asset');
     const dog = Object.values((await mockApply('add a dog', w)).result.world.entities).find((e) => !w.entities[e.id] && e.shape.kind === 'asset');
     expect(villager?.tags).toContain('npc');
-    expect(villager?.behaviors.some((b) => b.type === 'npc')).toBe(true);
-    expect(dog?.behaviors.some((b) => b.type === 'wander')).toBe(true);
+    // Characters are intelligent NPCs (perception, behaviour graph, dialogue), not the legacy greeter.
+    expect(villager?.npc).toMatchObject({ archetype: 'villager', role: 'villager' });
+    expect(Object.keys(villager?.npc?.dialogue?.nodes ?? {}).length).toBeGreaterThan(1);
+    expect(dog?.npc?.wander).toBeGreaterThan(0);
   });
 
   it('dresses the city street with library models and an HDR sky when the catalog is loaded', async () => {

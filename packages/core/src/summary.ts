@@ -119,6 +119,30 @@ function archText(a: NonNullable<Entity['arch']>): string {
   return out.join(' ');
 }
 
+/**
+ * Compact NPC facts, enough for the agent to address and edit a character:
+ * `npc guard arch=guard fac=guards spd=1.5 run=4.2 hp=100 sight=14 fov=110 wp=4 dlg=5 foes=player fears=fire carries=torch`.
+ */
+function npcText(n: NonNullable<Entity['npc']>): string {
+  const out: string[] = ['npc', n.role ? JSON.stringify(truncate(n.role, 24)) : '-', `arch=${n.archetype}`, `fac=${n.faction}`];
+  out.push(`spd=${n1(n.speed)}`, `run=${n1(n.runSpeed)}`, `hp=${n1(n.health)}`, `sight=${n1(n.perception.sight)}`, `fov=${n1(n.perception.fov)}`, `hear=${n1(n.perception.hearing)}`);
+  if (n.attack) out.push(`dmg=${n1(n.attack.damage)}`);
+  if (n.waypoints.length > 0) out.push(`wp=${n.waypoints.length}`);
+  if (n.wander > 0) out.push(`wander=${n1(n.wander)}`);
+  if (n.dialogue) out.push(`dlg=${Object.keys(n.dialogue.nodes).length}`);
+  if (n.chat) out.push('chat');
+  // Hunters are hostile to the player unless allied: show the effective foes so the agent can edit them.
+  const hostile = n.archetype === 'guard' || n.archetype === 'predator' || n.archetype === 'sentinel';
+  const foes = hostile && !n.allies.includes('player') && n.faction !== 'player' && !n.enemies.includes('player') ? ['player', ...n.enemies] : n.enemies;
+  if (foes.length > 0) out.push(`foes=${foes.join('/')}`);
+  if (n.allies.length > 0) out.push(`allies=${n.allies.join('/')}`);
+  if (n.fears.length > 0) out.push(`fears=${n.fears.join('/')}`);
+  if (n.carries.length > 0) out.push(`carries=${n.carries.join('/')}`);
+  if (n.activeHours) out.push(`hours=${n1(n.activeHours[0])}-${n1(n.activeHours[1])}`);
+  if (n.transitions.length > 0) out.push(`edges=${n.transitions.length}`);
+  return out.join(' ');
+}
+
 function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: readonly string[]; age: number } | undefined): string {
   const parts = [e.id, e.name ? truncate(e.name, 40) : '-', meshText(world, e.shape) ?? shapeText(e.shape), `pos ${vec(e.transform.position)}`];
   const r = e.transform.rotation;
@@ -139,6 +163,7 @@ function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: re
   }
   if (e.tags.length > 0) parts.push(`tags ${e.tags.join(',')}`);
   if (e.arch) parts.push(`arch ${archText(e.arch)}`);
+  if (e.npc) parts.push(npcText(e.npc));
   if (e.material) {
     const m = [e.material.preset, e.material.finish, e.material.color].filter((x) => x !== undefined).join(' ');
     if (m) parts.push(`mat ${m}`);

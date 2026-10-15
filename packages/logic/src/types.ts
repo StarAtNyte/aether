@@ -58,6 +58,24 @@ export interface LogicHost {
   reset(): void;
   /** Id of the entity the player controls, if any. */
   playerId(): EntityId | undefined;
+  /**
+   * Optional (additive): world-space bounds of an entity's colliders, used to
+   * build NPC navigation grids around generated buildings and assets. Without
+   * it, such shapes are approximated by their scaled unit box.
+   */
+  getBounds?(id: EntityId): { min: Vec3; max: Vec3 } | undefined;
+  /**
+   * Optional (additive): world-space bounds of each collider of an entity
+   * separately (a trunk and a canopy, not one box). Preferred over
+   * `getBounds` for navigation when present.
+   */
+  getColliderBounds?(id: EntityId): ReadonlyArray<{ min: Vec3; max: Vec3 }>;
+  /**
+   * Optional (additive): height of the first solid surface below (x, fromY, z),
+   * from a ray cast that skips the `exclude` entity. NPCs use it to follow
+   * hills; without it they use the navigation grid's flat floor.
+   */
+  groundHeight?(x: number, z: number, fromY: number, exclude?: EntityId): number | undefined;
 }
 
 /** Player input sampled by the caller once per fixed tick. */

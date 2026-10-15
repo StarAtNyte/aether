@@ -16,6 +16,7 @@
  */
 import type { EntityId, Json, WorldDoc } from '@aether/core';
 import { Engine, type GameStatus } from './engine';
+import type { NpcSystem } from './npc/system';
 import type { InputState, LogEntry, LogicHost, PhysicsEventLike, ScriptRunner } from './types';
 
 /** Options for {@link LogicRuntime}. */
@@ -89,6 +90,16 @@ export class LogicRuntime {
   /** 'playing' until a win/lose action or behavior ends the session. */
   get status(): GameStatus {
     return this.engine.status;
+  }
+
+  /**
+   * NPC services: the running conversation (`dialogue`), the talk prompt,
+   * speech bubbles, `choose` / `advance` / `startDialogue` for touch and
+   * pointer input, damage and introspection. Always present; inert when the
+   * world has no NPCs.
+   */
+  get npcs(): NpcSystem {
+    return this.engine.npcs;
   }
 
   /** Hot-reload rules, behaviors and entities while preserving runtime state. */
