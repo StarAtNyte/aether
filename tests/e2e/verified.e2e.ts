@@ -6,7 +6,7 @@
  *     bot plays it in a worker; the badge turns "Verified playable" only
  *     after a real passed run, the ghost replay of the bot's run appears with
  *     its controls (pause, scrub, speed), and the Checks tab shows the proof;
- *  2. break it by prompt ("remove a coin"): the bot catches that the win can
+ *  2. break it by prompt ("remove the first coin"): the bot catches that the win can
  *     no longer happen, proposes the smallest patch as an ordinary undoable
  *     history entry, plays again and tells the user in one sentence; Undo
  *     brings the broken world back and the badge is no longer green;
@@ -202,9 +202,9 @@ async function gameFlow(page: Page, base: string): Promise<void> {
 
 async function breakFlow(page: Page): Promise<void> {
   const before = await snap(page);
-  await sendPrompt(page, 'remove a coin');
+  await sendPrompt(page, 'remove the first coin');
   // The badge cannot be green for the changed world until the bot has played it again.
-  const s = await verdict(page, 'after "remove a coin"');
+  const s = await verdict(page, 'after "remove the first coin"');
   check(s.currentHead !== before.currentHead, 'the prompt did not change the world');
   check(s.repairs.length > 0, 'the bot did not repair the broken win condition');
   check(/Lowered the win target/.test(s.repairs.join(' ')), `unexpected repair: ${s.repairs.join(' | ')}`);
@@ -231,7 +231,7 @@ async function breakFlow(page: Page): Promise<void> {
   await page.getByTestId('playtest-run').click();
   const again = await verdict(page, 're-check after undo');
   check(again.status === 'passed', 'the re-check did not pass');
-  log('  break: "remove a coin" → caught, repaired in one undoable step, Undo drops the green badge');
+  log('  break: "remove the first coin" → caught, repaired in one undoable step, Undo drops the green badge');
 }
 
 // ---------------------------------------------------------------------------
