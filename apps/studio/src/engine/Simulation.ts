@@ -38,6 +38,7 @@ import { TransformTable } from './TransformTable';
 import { findAvatar, framingSphere, movingIds } from './worldQueries';
 import type { VoxelSession, VoxelPlay } from '../voxel/session';
 import type { VoxelHudState } from '../voxel/hudState';
+import { nextFrame } from '../lib/frame';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
@@ -646,6 +647,9 @@ export class Simulation {
   async screenshot(): Promise<string | null> {
     try {
       await this.whenSynced();
+      // Draw as frame work, not inside whichever task resolved the caller (see lib/frame).
+      await nextFrame();
+      if (this.disposed) return null;
       return await this.renderer.screenshot({ width: 768, height: 432, mime: 'image/jpeg' });
     } catch (err) {
       log.warn('screenshot failed', err);
@@ -704,6 +708,10 @@ export class Simulation {
         this.touch();
         await new Promise((r) => setTimeout(r, 100));
       }
+      // Draw as frame work, not inside whichever task resolved the caller: the agent's
+      // critique follows a verification result, and the capture's pipeline compilation
+      // would otherwise stretch that worker message task (see lib/frame).
+      await nextFrame();
       if (this.session || this.disposed) return [];
       return await this.renderer.renderViews(['top', 'front', 'side', 'iso'], size);
     } catch (err) {

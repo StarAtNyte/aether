@@ -20,6 +20,7 @@ import { Thumb } from '../home/cards';
 import { aiConnection } from '../ai/connection';
 import { useAi } from '../ai/useAi';
 import { launchPromptFlight } from '../lib/promptFlight';
+import { onNextFrame as scheduleScroll } from '../lib/frame';
 
 /** Connection card shown in the empty state: "Connect Codex" until an AI connection is ready. */
 const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
@@ -291,9 +292,15 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    // The empty state reads top-down; a conversation follows its newest entry.
-    if (chat.length === 0) el.scrollTop = 0;
-    else if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    // The empty state reads top-down; a conversation follows its newest entry. Scrolling
+    // waits for the next frame: chat updates stream in from worker and network messages
+    // (every verification result), and scrolling inside each of those tasks forced a layout
+    // per message; one scroll per frame covers any number of updates.
+    const empty = chat.length === 0;
+    return scheduleScroll(() => {
+      if (empty) el.scrollTop = 0;
+      else if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
   }, [chat]);
 
   const send = (text: string, images: readonly string[] = [], offline = false): void => {

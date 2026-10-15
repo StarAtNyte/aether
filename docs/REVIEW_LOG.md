@@ -1706,7 +1706,8 @@ WebGL2; `npm run e2e:assets` and `npm run e2e:arch` pass.
   same-origin lazy chunk.
 - [x] **Clipboard**: write only, on a user action, with a toast fallback
   when the browser refuses (Firefox).
-- [x] **Export**: refused above 3 M triangles before the exporter loads;
+- [x] **Export**: refused above 3 M triangles before the exporter loads
+  (after integration: the shared publishing pipeline, cap 6 M);
   only the entity graph is exported, as a copy (no ghosts, helpers or sky;
   live materials untouched; copied materials and textures disposed).
 - [x] **Dependencies**: no new npm packages. `npm audit --omit=dev`:
@@ -1968,3 +1969,88 @@ hold for block worlds).
   hops of fast bodies on flat terrain (regression test fails without it).
 - [x] **Firefox / WebGL2.** `e2e:showcase` opens and plays every featured
   world in Firefox as well as Chromium.
+
+## Integration: studio UX, publishing and flagship default projects
+
+Three pieces of work developed side by side were merged one at a time
+(studio UX → publishing → flagship default projects), each followed by a
+type check and the affected package tests, then the full gate on the result.
+
+**Conflicts resolved**
+
+- **glTF export.** Both the UX work (a quick "Export 3D model" action) and
+  publishing (the Publish hub's 3D model target) added
+  `packages/render/src/view/gltf-export.ts`. They are now one pipeline: the
+  publishing flatten (`buildExportScene`: what the camera draws, batches and
+  merged buildings as drawn, PBR material copies, verified with
+  `verifyGltf`) with the UX module's texture classification
+  (`textureExportMode` / `rgbaPixels`: keep drawable images, convert RGBA8
+  data to a canvas copy, drop float / compressed / render-target textures).
+  `WorldRenderer.exportGlb()` and the module-level `exportGlb(root)` go
+  through it; a scene whose every mesh is over the cap is refused with
+  "over the export limit" before the exporter loads. The cap is the
+  publishing one (6 M triangles).
+- **Top bar and sharing.** Publishing replaced Export with a primary Publish
+  button and pointed Share at the hub; the UX work had Share copy a
+  read-only viewer link and added an Export menu. Result: Share opens the
+  hub's Share tab, which now offers both the player link (QR, embed) and a
+  "Copy remix link" (the read-only viewer with Remix); the command palette
+  has both; JSON / zip / GLB exports live in the app menu. The e2e suites
+  were updated to these entry points.
+- **Renderer scene graph and captures.** The proof replay, plan marks and
+  camera-path overlay groups are all added to the scene and all hidden from
+  screenshots and critique views.
+- **Docs.** README tables, ARCHITECTURE (§20 Publishing, §21 Default
+  projects), CONTRACTS and this log keep every stage's section.
+
+**Integration fixes**
+
+- Publishing's title screen and video titles default to a world's title
+  card (`intro`: title, tagline + objective, control lines; capped to the
+  title-screen limits) — flagships publish with their own card.
+- The studio test fake gained the proof and camera-path hooks both merged
+  stages call (`stopProof`, `showCameraPath`).
+- **Main-thread stall during verification (e2e failure).** With the UX
+  stage's longer verification (extra seconds while something moves), the
+  agent's quality critique no longer waited for grow-in and drew its four
+  views synchronously inside the worker message that delivered the
+  verification result (0.6–3 s on a software GPU), and the chat auto-scroll
+  ran inside every streamed message. Captures (`Simulation.renderViews`,
+  `screenshot`) now start from an animation frame (`lib/frame.ts`
+  `nextFrame`, 1 s timer fallback for hidden tabs) and the chat scroll is
+  coalesced to one per frame (`onNextFrame`). Measured with
+  long-animation-frame attribution: the worst non-render script during
+  verification went from 3034 ms to 6–39 ms in Chromium.
+- The asset-animator allocation probe failed intermittently under the full
+  suite: its 3000-run warm-up left `update()` in baseline code (boxed
+  doubles). Warm-up raised to 12 000; three consecutive render-suite runs
+  under load pass. (Moving the speed into a typed slot was tried and made it
+  worse, so the source is unchanged.)
+
+### Security checklist
+
+- [x] No new input boundary: the remix link reuses the validated
+  `shareLink` decoder; title-screen defaults read an already validated
+  `WorldIntro` and are capped again; export accepts only in-memory scene
+  data. No eval / innerHTML; CSP unchanged. `npm audit --omit=dev`:
+  0 vulnerabilities; no new dependencies.
+
+### Performance checklist
+
+- [x] **Per-frame allocations.** Nothing added to frame loops; the frame
+  helpers allocate one closure per capture or per chat update, not per frame.
+- [x] **GPU resources.** The unified export disposes its material and canvas
+  texture copies and releases canvas backing stores (unit tests).
+- [x] **Bundle.** Merged vs. the pre-merge base: first-page preload
+  617 → 650 KB (177 → 185 KB gzip) — hero, shortcuts, template manifest and
+  publish entry points; the GLTF exporter stays a lazy 36 KB chunk; the
+  Publish hub (30 KB), Published page, viewer and player are lazy chunks.
+- [x] **Firefox / WebGL2.** `e2e` (Chromium WebGPU, Chromium WebGL2,
+  Firefox WebGL2), `e2e:ux`, `e2e:publish`, `e2e:showcase` and `e2e:layout`
+  all pass in Chromium and Firefox.
+
+**Gates.** tsc 0 errors; Vitest 185 files / 2318 tests pass; studio build
+OK; smoke 37/37; `showcase:bake -- --check` up to date; `e2e`, `e2e:ux`,
+`e2e:publish`, `e2e:showcase` and `e2e:layout` pass. README screenshots
+were regenerated by `e2e` / `e2e:ux` (they now show the brighter generator
+colours).

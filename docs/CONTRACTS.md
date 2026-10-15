@@ -366,7 +366,7 @@ export class WorldRenderer {
                                                           // frames the motion first; originals hidden while their ghosts play)
   stopProof(): void; readonly proofActive: boolean;
   clearBlueprint(): void;                                 // drop the plan marks (corner brackets) of the last build
-  exportGlb(): Promise<ArrayBuffer>;                      // static scene (entity graph only) as binary glTF; ≤ 3M triangles
+  exportGlb(): Promise<ArrayBuffer>;                      // binary glTF of what is drawn: the exportGltf pipeline below (≤ 6 M triangles)
   showDebug(opts: { colliders?: boolean; bounds?: boolean; diagnostics?: Diagnostic[] }): void;
   screenshot(opts?: { width?: number; height?: number; mime?: string }): Promise<string>;   // data URL (VLM critique, thumbnails); never a mid-grow frame; no selection box or gizmo
   renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size?: number): Promise<string[]>;
@@ -1572,6 +1572,12 @@ Everything here is additive; the World IR is unchanged.
   copied to `MeshStandardMaterial`, RGBA8 / image textures only, ≤ 6 M
   triangles. `verifyGltf(data)` (exported) parses a file back with
   `GLTFLoader` and counts meshes, materials, triangles and textures.
+  The module-level `exportGltf(content, camera | null, opts)` (no camera:
+  every visible mesh) rejects with "nothing to export" or "over the export
+  limit" before the exporter loads; `exportGlb(root, maxTriangles?)`,
+  `buildExportScene(content, camera | null, max?)`, `countTriangles(root)`,
+  `textureExportMode(tex)` ('keep' | 'canvas' | 'drop') and `rgbaPixels`
+  are exported. One pipeline serves the quick export and the Publish hub.
 - `lookAt(pos, target, fov?)`, `cameraPose()`, `cameraFloorY`,
   `showCameraPath(points | null, keys | null, markerSize?)` (editor-only
   line + key markers; `view/path-overlay.ts`).
@@ -1642,6 +1648,10 @@ Everything here is additive; the World IR is unchanged.
   "aether-game", v: 1, title, description, author, controls, publishedAt?,
   music, save?: "saves/<name>.aethersave", imports?: [{ meta, file:
   "assets/user/user-<id>.<ext>" }], world }` (strict). Index CSP: `BUILD_CSP`.
+  Title-screen defaults: `defaultTitle(world)` / `defaultDescription(world)`
+  / `defaultControls(world)` read the world's title card (`intro`) when it
+  has one (capped to 80 / 600 / 300 characters), else the world name, an
+  empty description and controls derived from the player mode.
 - Publish library (`publish/library.ts`, IndexedDB `aether-publish` v1:
   `items`, `blobs`, `paths`, `snapshots`; memory fallback): ≤ 300 items,
   files ≤ 120 MB each and 400 MB total (oldest files dropped first),

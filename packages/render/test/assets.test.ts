@@ -253,7 +253,9 @@ describe('asset animation', () => {
         }
         animator.update(1 / 60);
       },
-      { iterations: 400, warmup: 3000, match: /packages\/render\/src\/sync\/asset-animator/ },
+      // A long warm-up: on a busy machine 3000 runs left update() in baseline code, which boxes
+      // doubles that the optimized code keeps unboxed (intermittent failures under the full suite).
+      { iterations: 400, warmup: 12_000, match: /packages\/render\/src\/sync\/asset-animator/ },
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(16);
   });

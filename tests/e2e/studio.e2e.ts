@@ -715,9 +715,10 @@ async function exportJson(page: Page): Promise<void> {
   check(count === expected, `exported JSON has ${count} entities, expected ${expected}`);
   check(/\.json$/.test(download.suggestedFilename()), `unexpected export filename ${download.suggestedFilename()}`);
   log(`  exported ${download.suggestedFilename()} (${count} entities)`);
-  // The static scene as binary glTF: a GLB header ("glTF", version 2) and real geometry.
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
-  const [glb] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.getByRole('menuitem', { name: '3D model (.glb)' }).click()]);
+  // The scene as binary glTF (the app menu's quick export, the same pipeline as Publish → 3D model):
+  // a GLB header ("glTF", version 2) and real geometry.
+  await page.getByRole('button', { name: 'Aether menu' }).click();
+  const [glb] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.getByRole('menuitem', { name: 'Export 3D model (.glb)' }).click()]);
   const bytes = readFileSync(await glb.path());
   check(bytes.length > 2048, `glTF export is only ${bytes.length} bytes`);
   check(bytes.subarray(0, 4).toString('latin1') === 'glTF' && bytes.readUInt32LE(4) === 2, 'glTF export is not a GLB v2 file');
