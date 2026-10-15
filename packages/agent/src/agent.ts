@@ -24,6 +24,7 @@ import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { findingKey } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
+import { isRoomPhotoRequest, reconstructRoom } from './photo/pipeline';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
@@ -50,6 +51,12 @@ export interface RunOptions {
    * 'new': replace the world (templates, the home prompt). 'refine': never replace.
    */
   intent?: 'auto' | 'new' | 'refine';
+  /**
+   * Rooms from photographs. 'recreate' (the composer's "Recreate this image") rebuilds the room in the first
+   * attached picture; 'auto' (default) does it when a picture comes with a prompt about a room or interior and the
+   * agent was given `photo` options; 'off' never does.
+   */
+  photo?: 'auto' | 'recreate' | 'off';
 }
 
 /** Stand-in for a declined local plan when local edits are switched off. */
@@ -232,6 +239,14 @@ export class WorldAgent {
 
     // Library furniture and models are resolved by name: the catalog must be in before anything is planned.
     await loadCatalog().catch(() => undefined);
+    // A picture of a room with a prompt about it: rebuild THAT room from the photo (never a preset room).
+    const photoMode = opts.photo ?? 'auto';
+    if (photoMode !== 'off' && (this.opts.photo !== undefined || photoMode === 'recreate') && images[0] !== undefined && isRoomPhotoRequest(request, images.length, photoMode === 'recreate')) {
+      const sessionKey = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
+      const options = this.compact ? { ...(this.opts.photo ?? {}), vision: false } : (this.opts.photo ?? {});
+      yield* reconstructRoom({ ctx, system: this.system, tools: this.tools, maxTokens: this.maxTokens, maxToolCalls: this.maxToolCalls, ...(sessionKey ? { session: sessionKey } : {}), request, image: images[0], options, replace: opts.intent !== 'refine' });
+      return;
+    }
     const world0 = host.getWorld();
     const hasWorld = Object.keys(world0.entities).length > 0 || world0.voxel !== undefined;
     const intent = opts.intent ?? 'auto';

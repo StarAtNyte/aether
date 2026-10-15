@@ -12,6 +12,7 @@ import { userEditMarks, type EntityId, type GeneratorDef, type History, type Pat
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { drawMarks } from '../ai/marks';
+import { decodeImageData } from '../ai/decode';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
 import type { ColliderProvider, TestResult, VerifyReport, VerifyTrace } from '@aether/physics';
 import { summarizeReport } from '@aether/physics/report';
@@ -230,6 +231,10 @@ export class AgentBridge implements AgentHost {
       out.push({ name: view.name, dataUrl: await drawMarks(image, view.marks) });
     }
     return out;
+  }
+
+  decodeImage(dataUrl: string, maxSide: number): Promise<{ width: number; height: number; data: Uint8ClampedArray } | null> {
+    return decodeImageData(dataUrl, maxSide);
   }
 
   async screenshot(): Promise<string | null> {

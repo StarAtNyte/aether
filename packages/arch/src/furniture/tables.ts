@@ -6,7 +6,7 @@
 import type { MaterialSpec } from '@aether/core';
 import { Geom, box, cylinder, extrude, roundedBox } from '../mesh';
 import { PartSet } from '../parts';
-import { choice, flag, leg, mat, num, roundedRect, squareLeg, type FurnitureDef } from './kit';
+import { choice, color, flag, leg, mat, num, roundedRect, squareLeg, type FurnitureDef } from './kit';
 
 const TOPS = ['oak', 'walnut', 'ash', 'marble', 'terrazzo', 'concrete', 'black-metal', 'glass'];
 const BASES = ['oak', 'walnut', 'ash', 'black-metal', 'brass', 'chrome'];
@@ -185,6 +185,7 @@ export const SIDEBOARD: FurnitureDef = {
     body: choice(['oak', 'walnut', 'ash', 'paint'], 'walnut', 'carcass finish'),
     fronts: choice(['doors', 'drawers', 'slats'], 'doors', 'front style'),
     legs: choice(BASES, 'black-metal', 'leg finish'),
+    color: color('#e7e3dc', 'paint colour (body = paint)'),
   },
   mount: 'floor',
   againstWall: true,
@@ -196,7 +197,7 @@ export const SIDEBOARD: FurnitureDef = {
     const h = p.num('height');
     const d = 0.45;
     const legH = 0.12;
-    const body = p.str('body') === 'paint' ? mat('paint', '#e7e3dc') : mat(p.str('body'));
+    const body = p.str('body') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('body'));
     const n = Math.max(2, Math.round(w / 0.45));
     if (p.str('fronts') === 'slats') {
       set.add(roundedBox(w, h - legH, d, 0.006, 1).translate(0, legH + (h - legH) / 2, 0), body);
@@ -218,6 +219,7 @@ export const NIGHTSTAND: FurnitureDef = {
   description: 'Bedside table with one drawer and an open shelf on slim legs.',
   params: {
     body: choice(['oak', 'walnut', 'ash', 'paint'], 'oak', 'finish'),
+    color: color('#ece8e1', 'paint colour (body = paint)'),
   },
   mount: 'floor',
   againstWall: true,
@@ -225,7 +227,7 @@ export const NIGHTSTAND: FurnitureDef = {
   size: () => [0.48, 0.55, 0.4],
   build(p) {
     const set = new PartSet();
-    const body = p.str('body') === 'paint' ? mat('paint', '#ece8e1') : mat(p.str('body'));
+    const body = p.str('body') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('body'));
     const w = 0.48;
     const d = 0.4;
     const g = new Geom();

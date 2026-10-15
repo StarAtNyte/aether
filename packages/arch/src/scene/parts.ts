@@ -130,6 +130,8 @@ export function defaultWallBottom(kind: string, h: number, ceiling: number): num
       return 0.9;
     case 'curtain':
       return 0;
+    case 'cornice':
+      return Math.max(0, ceiling - h);
     default:
       return Math.max(0, Math.min(1.2, ceiling - h - 0.2));
   }
@@ -152,6 +154,8 @@ export function wallBottomRange(kind: string, h: number, ceiling: number): [numb
       return [0.4, 1.5];
     case 'curtain':
       return [0, 1.2];
+    case 'cornice':
+      return [Math.max(0, ceiling - h - 0.05), Math.max(0, ceiling - h + 0.02)];
     default:
       return [0, Math.max(0.1, ceiling - h)];
   }
@@ -161,7 +165,7 @@ export function wallBottomRange(kind: string, h: number, ceiling: number): [numb
 export const KIND_SIZE_LIMITS: Readonly<Record<string, { w?: [number, number]; d?: [number, number]; h?: [number, number] }>> = Object.freeze({
   sofa: { w: [1.0, 3.8], d: [0.65, 1.3], h: [0.55, 1.1] },
   armchair: { w: [0.55, 1.2], d: [0.6, 1.2], h: [0.6, 1.2] },
-  bed: { w: [0.7, 2.3], d: [1.7, 2.4], h: [0.3, 1.5] },
+  bed: { w: [0.7, 2.3], d: [1.7, 2.4], h: [0.3, 1.8] },
   nightstand: { w: [0.3, 0.8], d: [0.3, 0.6], h: [0.35, 0.8] },
   wardrobe: { w: [0.6, 3.5], d: [0.4, 0.8], h: [1.6, 2.7] },
   desk: { w: [0.8, 2.4], d: [0.45, 1.0], h: [0.65, 0.85] },

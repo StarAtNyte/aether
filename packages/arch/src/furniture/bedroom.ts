@@ -18,11 +18,14 @@ export const BED: FurnitureDef = {
     headboard: color('#b8ab98', 'headboard colour'),
     linen: color('#f1eee8', 'duvet colour'),
     throw: color('#9a7b5f', 'throw blanket colour'),
+    headboardHeight: num(1.05, 0.7, 1.7, 'height of the headboard above the floor (m)'),
+    accents: int(0, 0, 4, 'accent cushions leaning on the pillows (0 = none)'),
+    accent: color('#6b2f73', 'accent cushion colour'),
   },
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.6,
-  size: (p) => [(BED_WIDTHS[p.str('size')] ?? 1.6) + 0.12, 1.05, 2.12],
+  size: (p) => [(BED_WIDTHS[p.str('size')] ?? 1.6) + 0.12, p.num('headboardHeight'), 2.12],
   build(p) {
     const set = new PartSet();
     const mw = BED_WIDTHS[p.str('size')] ?? 1.6;
@@ -33,7 +36,7 @@ export const BED: FurnitureDef = {
     frame.merge(roundedBox(w, 0.22, L - 0.08, 0.02, 2).translate(0, 0.14, 0.04));
     for (const sx of [-1, 1] as const) for (const sz of [-1, 1] as const) frame.merge(squareLeg(sx * (w / 2 - 0.06), sz * (L / 2 - 0.08) + 0.04, 0.05, 0.05));
     set.add(frame, frameMat);
-    set.add(cushion(w, 1.05 - 0.05, 0.1, 0.05, 0.02).translate(0, 0, -L / 2 + 0.05), mat('fabric', p.color('headboard')));
+    set.add(cushion(w, p.num('headboardHeight') - 0.05, 0.1, 0.05, 0.02).translate(0, 0, -L / 2 + 0.05), mat('fabric', p.color('headboard')));
     // Mattress and bedding.
     const linen = mat('fabric', p.color('linen'));
     set.add(roundedBox(mw, 0.24, 2.0, 0.05, 3).translate(0, 0.25 + 0.12, 0.05), mat('fabric', '#f4f2ee'));
@@ -49,8 +52,18 @@ export const BED: FurnitureDef = {
       pillows.merge(cushion(Math.min(0.66, mw / n - 0.06), 0.14, 0.42, -0.07, 0.04).rotateX(-62).translate(x, 0.66, -L / 2 + 0.3));
     }
     set.add(pillows, linen);
+    const accents = p.int('accents');
+    if (accents > 0) {
+      // Square accent cushions leaning against the headboard in front of the pillows, spread across the bed.
+      const cush = new Geom();
+      for (let k = 0; k < accents; k++) {
+        const x = accents === 1 ? 0 : ((k + 0.5) / accents - 0.5) * (mw - 0.5);
+        cush.merge(cushion(0.42, 0.12, 0.4, -0.06, 0.03).rotateX(-58).rotateY(k % 2 === 0 ? -8 : 10).translate(x, 0.74, -L / 2 + 0.52));
+      }
+      set.add(cush, mat('velvet', p.color('accent')));
+    }
     set.boxMinMax(-w / 2, 0, -L / 2 + 0.1, w / 2, 0.55, L / 2);
-    set.boxMinMax(-w / 2, 0, -L / 2, w / 2, 1.05, -L / 2 + 0.1);
+    set.boxMinMax(-w / 2, 0, -L / 2, w / 2, p.num('headboardHeight'), -L / 2 + 0.1);
     return set.build();
   },
 };

@@ -41,7 +41,47 @@ export type ChatEventView =
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string }
   | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit'; text: string; score?: number; findings?: number }
+  | PhotoEventView
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
+
+/** Progress of a room rebuilt from a photograph (reading it, the assumptions as chips, each compare round, the final score). */
+export interface PhotoEventView {
+  type: 'photo';
+  phase: 'analysing' | 'described' | 'building' | 'built' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+  text: string;
+  round?: number;
+  assumptions?: Array<{ id: string; text: string; confidence: number; adjust: string }>;
+  score?: { passed: number; total: number; objective?: number; structuralFailed: boolean; failing: Array<{ id: string; text: string; note: string }> };
+  palette?: string[];
+}
+
+const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
+
+/** Bounded, validated view of a photo event (live or stored). */
+function photoView(v: Record<string, unknown>): PhotoEventView {
+  const phase = PHOTO_PHASES.find((p) => p === v['phase']) ?? 'analysing';
+  const out: PhotoEventView = { type: 'photo', phase, text: str(v['text'], 900) };
+  if (typeof v['round'] === 'number' && Number.isFinite(v['round'])) out.round = Math.max(0, Math.min(50, Math.round(v['round'])));
+  if (Array.isArray(v['assumptions'])) {
+    out.assumptions = v['assumptions']
+      .filter(isRecord)
+      .slice(0, 24)
+      .map((a) => ({ id: str(a['id'], 40), text: str(a['text'], 260), confidence: Math.max(0, Math.min(1, num(a['confidence']))), adjust: str(a['adjust'], 200) }));
+  }
+  if (isRecord(v['score'])) {
+    const sc = v['score'];
+    const failing = Array.isArray(sc['failing']) ? sc['failing'].filter(isRecord).slice(0, 24).map((f) => ({ id: str(f['id'], 60), text: str(f['text'], 200), note: str(f['note'], 240) })) : [];
+    out.score = {
+      passed: Math.max(0, Math.min(500, Math.round(num(sc['passed'])))),
+      total: Math.max(0, Math.min(500, Math.round(num(sc['total'])))),
+      structuralFailed: sc['structuralFailed'] === true,
+      failing,
+      ...(typeof sc['objective'] === 'number' && Number.isFinite(sc['objective']) ? { objective: Math.max(0, Math.min(1, sc['objective'])) } : {}),
+    };
+  }
+  if (Array.isArray(v['palette'])) out.palette = v['palette'].filter((c): c is string => typeof c === 'string' && HEX.test(c)).slice(0, 8);
+  return out;
+}
 
 /** One line of a small-edit diff ("Sofa · colour: grey → dark green"). */
 export interface EditLineView {
@@ -159,6 +199,8 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
       if (typeof e.findings === 'number' && Number.isFinite(e.findings)) v.findings = Math.max(0, Math.min(999, Math.round(e.findings)));
       return v;
     }
+    case 'photo':
+      return photoView(e as unknown as Record<string, unknown>);
     case 'done':
       return { type: 'done', inputTokens: num(e.usage.inputTokens), outputTokens: num(e.usage.outputTokens), calls: num(e.usage.calls) };
   }
@@ -271,6 +313,8 @@ export function reviveEvent(v: unknown): ChatEventView | null {
       if (typeof v['findings'] === 'number' && Number.isFinite(v['findings'])) r.findings = Math.max(0, Math.min(999, Math.round(v['findings'])));
       return r;
     }
+    case 'photo':
+      return photoView(v);
     case 'notice':
       return { type: 'notice', tone: v['tone'] === 'warning' ? 'warning' : 'info', text: str(v['text'], 600) };
     case 'quality': {

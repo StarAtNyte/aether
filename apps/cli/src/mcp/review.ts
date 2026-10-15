@@ -22,6 +22,8 @@ export interface HeadlessReviewOptions {
   width?: number;
   maxTriangles?: number;
   signal?: AbortSignal;
+  /** Overrides of the review environment (the photo flow lifts the light to the exposure of a photograph). */
+  environment?: Partial<WorldDoc['environment']>;
 }
 
 /** The document with ceilings and roofs hidden (plan views from above). */
@@ -73,7 +75,7 @@ export async function captureReviewHeadless(world: WorldDoc, views: readonly Rev
       const height = Math.round(width / Math.max(0.5, Math.min(3, v.aspect)));
       const scene = await sceneFor(v.hideTops);
       const from = v.hideTops ? nonDegenerate(v.pose.position, v.pose.target) : v.pose.position;
-      const still = renderStill(scene, reviewEnvironment(world), { width, height, from, lookAt: v.pose.target, fovDeg: v.pose.fov });
+      const still = renderStill(scene, { ...reviewEnvironment(world), ...(opts.environment ?? {}) }, { width, height, from, lookAt: v.pose.target, fovDeg: v.pose.fov });
       drawMarksRgba(still.rgba, still.width, still.height, v.marks);
       out.push({ name: v.name, dataUrl: `data:image/png;base64,${encodePng(still.rgba, still.width, still.height).toString('base64')}` });
     } catch (e) {

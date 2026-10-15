@@ -91,4 +91,4 @@ export {
   type DesignToolName,
   type DesignToolResult,
 } from './dispatch';
-export { reviewPoses, markIndex, projectMarks, legendText, type ReviewPose, type MarkEntry, type ImageMark, type PoseOptions } from './views';
+export { reviewPoses, markIndex, projectMarks, legendText, customPose, entityGeometry, projectGeometry, type EntityGeometry, type ImageBox, type ReviewPose, type MarkEntry, type ImageMark, type PoseOptions, type CustomPoseSpec } from './views';

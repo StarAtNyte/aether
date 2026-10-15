@@ -99,14 +99,14 @@ export const FLOOR_LAMP: FurnitureDef = {
   kind: 'floor-lamp',
   description: 'Floor lamp: arc lamp with a dome shade, or a tripod with a linen drum shade.',
   params: {
-    style: choice(['arc', 'tripod'], 'tripod', 'style'),
+    style: choice(['arc', 'tripod', 'pole'], 'tripod', 'style (pole: slim straight stem on a round foot)'),
     finish: choice(['brass', 'black-metal', 'oak', 'chrome'], 'brass', 'stand finish'),
     shade: color('#efe6d6', 'shade colour'),
   },
   mount: 'floor',
   againstWall: false,
   frontClearance: 0,
-  size: (p) => (p.str('style') === 'arc' ? [1.6, 2.0, 0.4] : [0.5, 1.6, 0.5]),
+  size: (p) => (p.str('style') === 'arc' ? [1.6, 2.0, 0.4] : p.str('style') === 'pole' ? [0.46, 1.6, 0.46] : [0.5, 1.6, 0.5]),
   build(p) {
     const set = new PartSet();
     const stand = new Geom();
@@ -129,6 +129,14 @@ export const FLOOR_LAMP: FurnitureDef = {
       ).translate(end[0], end[1], 0);
       set.add(shade, mat('black-metal'));
       set.add(sphere(0.05, 12).translate(end[0], end[1] - 0.1, 0), glowMaterial(6));
+    } else if (p.str('style') === 'pole') {
+      stand.merge(cylinder(0.14, 0.15, 0.025, 28).translate(0, 0, 0));
+      stand.merge(cylinder(0.009, 0.009, 1.2, 8).translate(0, 0.02, 0));
+      const shell = lathe([[0.2, 1.2], [0.15, 1.5]], 40);
+      const back = shell.clone().flip();
+      for (let k = 0; k < back.n.length; k++) back.n[k] = -(back.n[k] as number);
+      set.add(shell.merge(back), { finish: 'fabric', color: p.color('shade'), emissive: '#ffd9a6', emissiveIntensity: 1.6 });
+      set.add(sphere(0.045, 12).translate(0, 1.3, 0), glowMaterial(5));
     } else {
       for (let k = 0; k < 3; k++) {
         const a = (k / 3) * Math.PI * 2;

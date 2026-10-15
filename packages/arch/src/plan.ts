@@ -58,6 +58,8 @@ export const PlanRoom = z
     floor: MaterialSpec.optional(),
     /** Interior wall paint colour (default from style). */
     wallColor: Color.optional(),
+    /** Additive: paint colour of single walls, by the compass side each faces from inside (overrides `wallColor`). */
+    wallColors: z.partialRecord(Compass, Color).optional(),
     /** Auto-furnish (layouts per room type). */
     furnish: z.boolean().default(true),
     /** Explicit pieces (in addition to, or instead of with `furnish: false`, the layout). */

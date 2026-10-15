@@ -2460,3 +2460,57 @@ button.chip:disabled {
   min-height: auto;
   overflow: visible;
 }
+
+/* Room from a photograph: assumptions as chips, swatches, items that still differ. */
+.ev--photo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.photo__score {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+}
+
+.photo__swatches {
+  display: flex;
+  gap: var(--s-1);
+}
+
+.photo__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.photo__assume {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.photo__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.photo__text {
+  flex: 1 1 200px;
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-2);
+}
+
+.photo__failing {
+  margin: 0;
+  padding-left: var(--s-4);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-2);
+}

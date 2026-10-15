@@ -1,0 +1,323 @@
+{
+  "summary": "A hotel bedroom seen from the south-east corner toward the north-west corner: a tall window with floor-length plum curtains on the west wall, a double bed with a tall padded headboard against the north wall under two framed round pictures, a floor lamp, a bedside table with a lamp, a white armchair at the window and a TV on a dark cabinet.",
+  "roomType": "bedroom",
+  "style": "classic",
+  "footprint": {
+    "width": 3.7,
+    "depth": 4.5,
+    "ceiling": 2.85
+  },
+  "camera": {
+    "x": 3.35,
+    "z": 4.25,
+    "height": 1.3,
+    "heading": -38,
+    "pitch": 3,
+    "fov": 82
+  },
+  "walls": {
+    "north": {
+      "color": "#7d6a74",
+      "material": "painted plaster",
+      "visible": true
+    },
+    "west": {
+      "color": "#6f5d68",
+      "material": "painted plaster",
+      "visible": true
+    }
+  },
+  "floor": {
+    "material": "carpet",
+    "color": "#46363f",
+    "note": "dark fitted carpet, mostly hidden by the bed"
+  },
+  "ceiling": {
+    "color": "#f4efe6",
+    "cornice": {
+      "height": 0.16,
+      "depth": 0.12,
+      "color": "#f4efe6"
+    }
+  },
+  "openings": [
+    {
+      "id": "win-1",
+      "kind": "window",
+      "wall": "west",
+      "along": 3.3,
+      "width": 1.3,
+      "height": 2.05,
+      "sill": 0.55,
+      "visible": true,
+      "note": "tall white sash window, pale bright view of a stone building",
+      "box": [
+        0.23,
+        0.05,
+        0.39,
+        0.72
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "bed",
+      "kind": "bed",
+      "label": "double bed with a tall padded headboard and white linen",
+      "wall": "north",
+      "along": 2.55,
+      "gap": 0.02,
+      "params": {
+        "size": "queen",
+        "frame": "oak",
+        "headboard": "#4a3541",
+        "linen": "#f6f2ea",
+        "throw": "#f1ece2",
+        "accents": 2,
+        "accent": "#7a2c80"
+      },
+      "confidence": 0.9,
+      "box": [
+        0.18,
+        0.59,
+        0.96,
+        1.0
+      ]
+    },
+    {
+      "id": "nightstand",
+      "kind": "nightstand",
+      "label": "dark bedside table",
+      "wall": "north",
+      "along": 1.3,
+      "gap": 0.02,
+      "params": {
+        "body": "paint",
+        "color": "#2b2229"
+      },
+      "confidence": 0.8,
+      "box": [
+        0.5,
+        0.74,
+        0.57,
+        0.8
+      ]
+    },
+    {
+      "id": "bedside-lamp",
+      "kind": "table-lamp",
+      "label": "small lamp with a cream shade on the bedside table",
+      "on": "nightstand",
+      "offset": [
+        0,
+        0
+      ],
+      "params": {
+        "base": "#c9c3b6",
+        "shade": "#efe6d2"
+      },
+      "confidence": 0.85,
+      "box": [
+        0.54,
+        0.65,
+        0.59,
+        0.78
+      ]
+    },
+    {
+      "id": "floor-lamp",
+      "kind": "floor-lamp",
+      "label": "slim floor lamp with a cream empire shade",
+      "wall": "north",
+      "along": 0.42,
+      "gap": 0.03,
+      "params": {
+        "style": "pole",
+        "finish": "chrome",
+        "shade": "#efe6d2"
+      },
+      "confidence": 0.85,
+      "box": [
+        0.47,
+        0.48,
+        0.53,
+        0.74
+      ]
+    },
+    {
+      "id": "armchair",
+      "kind": "armchair",
+      "label": "white upholstered armchair in front of the window",
+      "wall": "west",
+      "along": 3.55,
+      "gap": 0.02,
+      "faces": "east",
+      "params": {
+        "color": "#ebe5d6"
+      },
+      "confidence": 0.8,
+      "box": [
+        0.37,
+        0.66,
+        0.47,
+        0.81
+      ]
+    },
+    {
+      "id": "side-table",
+      "kind": "nightstand",
+      "label": "small dark table with a magazine",
+      "wall": "west",
+      "along": 2.65,
+      "gap": 0.02,
+      "params": {
+        "body": "paint",
+        "color": "#2b2229"
+      },
+      "confidence": 0.6,
+      "box": [
+        0.34,
+        0.77,
+        0.45,
+        0.84
+      ]
+    },
+    {
+      "id": "tv-cabinet",
+      "kind": "sideboard",
+      "label": "tall dark cabinet under the television",
+      "wall": "west",
+      "along": 0.7,
+      "gap": 0.02,
+      "faces": "east",
+      "params": {
+        "width": 0.8,
+        "height": 0.9,
+        "body": "paint",
+        "color": "#2a2326"
+      },
+      "confidence": 0.7,
+      "box": [
+        0.0,
+        0.55,
+        0.13,
+        1.0
+      ]
+    },
+    {
+      "id": "tv",
+      "kind": "tv-set",
+      "label": "small silver flat-screen television",
+      "on": "tv-cabinet",
+      "offset": [
+        0,
+        0
+      ],
+      "faces": "east",
+      "params": {
+        "inches": 20,
+        "shell": "#cfd0cc"
+      },
+      "confidence": 0.8,
+      "box": [
+        0.03,
+        0.38,
+        0.125,
+        0.54
+      ]
+    },
+    {
+      "id": "picture-left",
+      "kind": "art",
+      "label": "framed round fisheye photograph, dark wood frame, white mat",
+      "wall": "north",
+      "along": 2.1,
+      "above": "bed",
+      "aboveGap": 0.45,
+      "params": {
+        "width": 0.62,
+        "height": 0.72,
+        "frame": "walnut",
+        "subject": "round",
+        "ink": "#2a2630"
+      },
+      "confidence": 0.9,
+      "box": [
+        0.67,
+        0.36,
+        0.77,
+        0.55
+      ]
+    },
+    {
+      "id": "picture-right",
+      "kind": "art",
+      "label": "second framed round photograph, slightly larger",
+      "wall": "north",
+      "along": 3.0,
+      "above": "bed",
+      "aboveGap": 0.5,
+      "params": {
+        "width": 0.68,
+        "height": 0.76,
+        "frame": "walnut",
+        "subject": "round",
+        "ink": "#2a2630"
+      },
+      "confidence": 0.9,
+      "box": [
+        0.83,
+        0.32,
+        0.99,
+        0.57
+      ]
+    },
+    {
+      "id": "curtains",
+      "kind": "curtain",
+      "label": "floor-length plum curtains either side of the window",
+      "opening": "win-1",
+      "params": {
+        "width": 0.95,
+        "height": 2.75,
+        "color": "#6c5063"
+      },
+      "confidence": 0.95,
+      "box": [
+        0.09,
+        0.02,
+        0.51,
+        0.9
+      ]
+    }
+  ],
+  "light": {
+    "timeOfDay": 13,
+    "sky": "overcast",
+    "from": "west",
+    "warmth": "neutral",
+    "brightness": 0.55,
+    "note": "soft bright daylight from the window, the room itself is moody"
+  },
+  "palette": [
+    "#7d6a74",
+    "#46363f",
+    "#f6f2ea",
+    "#7a2c80",
+    "#6c5063"
+  ],
+  "assumptions": [
+    {
+      "id": "room-size",
+      "text": "The room is about 3.7 m wide and 4.5 m deep with a 2.85 m ceiling.",
+      "confidence": 0.4,
+      "adjust": "make the room 4.2 m wide"
+    },
+    {
+      "id": "door",
+      "text": "The door is not in the photo; it is assumed in the wall behind the camera.",
+      "confidence": 0.3,
+      "adjust": "move the door to the east wall"
+    }
+  ]
+}

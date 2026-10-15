@@ -446,3 +446,17 @@ clips; those were authored for Aether (keyframed on the Biped, `scripts/characte
 and no third-party animation pack is vendored. Textures were downscaled and
 re-encoded (WebP masks plus tint maps), meshes meshopt-compressed
 (`scripts/characters/`, using `@gltf-transform/*`, MIT, already a dev dependency).
+
+### Reference photographs of the room-from-photo tests (stage `imageroom`)
+
+Committed in `tests/fixtures/photo/` (redistributable only); the CC BY photograph used locally is not committed.
+
+| File | Title and source | Author | Licence |
+|---|---|---|---|
+| `bedroom-cc0-hotel.jpg` | Hotel bedroom windows (Unsplash), https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg | Markus Spiske | CC0 1.0 |
+| `bedroom-cc0-twin.jpg` | Twin room in a German youth hostel with single beds and wardrobe A, https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg | Profpcde | CC0 1.0 |
+| `bedroom-pd-1.jpg` | USVI IMG 5175, white-walled bedroom with a four-poster bed, https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg | Government of the United States Virgin Islands | Public domain |
+| `bedroom-pd-2.jpg` | USVI IMG 5201, bright modern bedroom with a vaulted ceiling, https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg | Government of the United States Virgin Islands | Public domain |
+
+No dependency was added: the similarity measures (colour histogram overlap, SSIM, Sobel edge correlation, median-cut
+palette) are original TypeScript.

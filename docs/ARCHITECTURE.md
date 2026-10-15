@@ -1602,3 +1602,47 @@ terrain makes about 28 texture reads per pixel, so software rasterisers and low-
 (`MaterialCache.layeredTerrain`); conversation and lift games
 are walked by the headless bots and the sealed replay, not by the real-time driver; Blockfall, Kart Canyon and
 Sakura River are driven by their own hand-written bots.
+
+## 25. A room from a photograph: reconstruct, never template
+
+A picture of a room with a prompt about it ("make this bedroom in 3D", or the composer's "Recreate this image")
+rebuilds that room. There is no preset theme in this path and no generic room with decor laid on top: the photo
+is the only source of layout, and everything the model decides goes through the section 24 tools.
+
+```
+photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, openings, pieces with wall-relative
+                          positions, light, palette, ASSUMPTIONS with confidence and an "adjust" sentence)
+      ─▶ deriveBuild ─▶ design_plan (shell only: exactly the described rectangle and openings, assumed door
+                          behind the camera when none is visible)
+                       ─▶ place_items in phases: floor pieces large to small, surface pieces, wall pieces
+                          (pictures hung above the piece beneath), curtains anchored to their window, cornices
+      ─▶ compare rounds: render from the photo's own camera (numbered marks) + a clean render
+                          model: report_verdicts for EVERY checklist id, then fixes with edit_items / place_items
+                          host: objective similarity (colour, SSIM, edges), keep the best round, roll back a worse one
+      ─▶ verification, final message with the measured score and the assumptions as one-tap chips
+```
+
+- **Checklist before building.** `buildChecklist` lists what the photo shows (room proportions, wall colour, floor,
+  cornice, each opening, each piece, light) with the structural items (shell, windows, the main piece of furniture)
+  marked. The judge answers pass or fail per id against the PHOTO; unjudged ids fail; a structural failure is
+  reported whatever the pass rate.
+- **Honest numbers.** The final score is always the verdict of a render that was actually judged: when the last
+  round changed the room, one judge-only call measures it before it is kept; a round that scores worse than the
+  best (0.7 × pass rate + 0.3 × objective similarity, margin 0.03) is rolled back with `restorePatches` before any
+  further change.
+- **Photo estimates are rarely exact**, so `fitOpening` brings a window under the ceiling and inside its wall (and says
+  so) rather than losing the run to a refused shell; a shell the builder still refuses goes back to the model once with
+  the reason.
+- **No vision model, no guess.** The offline planner, a connection without image input, or a chain that falls back
+  to the offline planner mid-run builds nothing: the user gets the palette and brightness read from the picture,
+  a plain statement that the layout needs a connected assistant, and an offer to build from words.
+- **Cost.** One analysis call (about 2 more when a description is refused), then one call per compare round in the
+  usual case (verdicts and fixes travel in the same reply), one judge-only call at the end when needed. Rounds are
+  capped (6 on subscription backends, 4 on paid keys) and stop early on approval or stall. Provider failures are
+  shown with the provider's own reason; the studio's connection chain moves to the user's other assistant first.
+- **Editing afterwards.** The assumptions are listed as chips ("make the room 4.2 m wide"); a tap sends the sentence
+  through the ordinary minimal-patch edit path.
+- **Known limits.** One room per photo; the shell has a flat ceiling (vaulted ceilings, four-poster beds, open
+  stairs are not parts yet); the part library decides what a piece can look like (a patterned duvet is a colour);
+  one photo cannot give depth, so room size and the camera are always assumptions; walls of one room share one
+  colour in the shell.

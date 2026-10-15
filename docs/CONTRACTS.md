@@ -2499,3 +2499,82 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
   screens in Chromium through the on-screen controls, driven by the verified bot's recorded route;
   `apps/studio/test/gamesVerified.test.ts` plays every shipped game with the verified bot and seals the run;
   `tests/e2e/photoreal.e2e.ts --lab=flora` shoots the vegetation lab.
+
+## Room from a photograph (additive, backward compatible)
+
+A photograph of a room plus a prompt about it rebuilds THAT room: no preset room, no template with decor laid
+over it. Everything the model decides goes through the design tools; the photo flow only reads the picture into
+a structured description and derives tool calls from it.
+
+### `@aether/arch` (`packages/arch/src/photo`)
+
+- `RoomDescription` (zod) and `parseRoomDescription(raw, partKinds) → {ok, value, fixes} | {ok:false, error}`: footprint
+  (interior width, depth, ceiling), `camera` {x, z, height, heading, pitch, horizontal `fov`}, per-wall colour and
+  material, floor, `ceiling.cornice`, `openings` (window / door / opening with wall, `along`, width, height, sill,
+  `visible`), `items` (a part `kind`, wall-relative `wall` + `along` + `gap`, or `at`, or `on` a host + `offset`,
+  curtains with `opening`, wall pieces with `bottom` or `above` + `aboveGap`, part `params`, `visible`, `confidence`),
+  `light`, `palette` and `assumptions` ({text, confidence, adjust}). Frame: metres on the INSIDE faces, x east, z
+  south; `along` is measured from the LEFT corner of a wall as seen from inside (the scene tools' `t` minus the
+  half wall thickness). Free text is clipped, numbers written as strings are accepted, kind synonyms map to parts
+  (`picture` → `art`, `television` → `tv-set`), a piece with no matching part is left out and reported in `fixes`.
+- `deriveBuild(description) → PhotoBuild {plan: DesignPlan, steps: PlaceStep[], environment, notes, assumedDoor?}`:
+  the plan builds only the shell (a rectangle of exactly the described size, openings at their exact positions, an
+  assumed door behind the camera when none is visible, said so in `notes`); `steps` are ordered rug and floor
+  pieces (large to small), surface pieces, wall pieces, curtains (anchored to a window), ceiling pieces, cornice
+  runs per wall. `PHOTO_WALL_INSET` (0.14 m) converts description `along` values to wall `t`.
+- `runBuild(world, build, call: ToolCaller) → {world, shellOk, shellText, outcomes, openings}` runs the plan and the
+  steps through `design_plan` / `place_items` (`memoryCaller` applies patches in memory); wall pieces hung `above`
+  another get their height from the host piece once it is placed; refusals are in `outcomes[].text`.
+- `buildChecklist(description) → ChecklistItem[]` (`{id, category, text, structural, target?}`; shell, wall colour,
+  floor, cornice, every visible opening, every visible piece, light), `ItemVerdict` (zod), `scoreVerdicts(list,
+  verdicts) → {total, passed, rate, failing, structuralFailed}` (unjudged items fail), `scoreLine`.
+- `customPose(world, building, spec) → ReviewPose | null` (a camera at a plan position, heading and pitch, in world
+  coordinates), `photoCameraSpec(description, aspect)`, `verticalFov(horizontal, aspect)`.
+- Parts library additions: `cornice` (wall mount, runs the top of a wall, ignored by wall-space checks), `tv-set`
+  (surface mount), `art` parameters `subject` (`abstract` | `round` | `blank`), `matColor`, `ink`; `bed` parameters
+  `accents` (0..4) and `accent`; `floor-lamp` style `pole`; `nightstand` and `sideboard` `color`. `place_items` for
+  curtains honours `params.width` (gathered width of one panel).
+
+### `@aether/agent` (`packages/agent/src/photo`)
+
+- `AgentOptions.photo?: {vision?, maxRounds?, stallRounds?, maxViews?}`; `RunOptions.photo?: 'auto' | 'recreate' | 'off'`.
+  With `photo` options a picture plus a prompt about a room ('auto'), or the composer's "Recreate this image"
+  ('recreate'), runs the photo flow instead of the planner. Without a vision model (`vision` false, the offline
+  planner, or the chain falling back to it mid-run) NOTHING is built: the event says why, gives the palette and
+  brightness read from the picture, and offers to build from words.
+- Flow: `describe_room` (one tool, zod-validated, refused descriptions are sent back up to three times) → build →
+  compare rounds. A round renders the room from the photo's camera at the photo's aspect (numbered marks) plus a
+  clean render to measure; the model answers with `report_verdicts` (a verdict for every checklist id) and fixes
+  failures in the same reply with the design tools; edits before verdicts are refused. `compareImages` (colour
+  histogram overlap, SSIM on standardised luminance, Sobel edge correlation) gives an objective similarity; a
+  round whose quality (0.7 × pass rate + 0.3 × similarity) falls more than 0.03 below the best is rolled back
+  (`restorePatches`) before anything else changes. The loop ends when every item passes, the model stops with
+  nothing to change, progress stalls (`StallTracker`) or `maxRounds` (default 6) is reached; edits made after the
+  last judged render get one judge-only final check and are kept only if not worse.
+- `AgentEvent` gains `{type:'photo', phase: 'analysing'|'described'|'building'|'built'|'comparing'|'round'|'done'|
+  'offline'|'unavailable', text, round?, assumptions?: [{id, text, confidence, adjust}], score?: {passed, total,
+  rate, objective?, structuralFailed, failing}, palette?}`.
+- `AgentHost.decodeImage?(dataUrl, maxSide) → {width, height, data} | null` (the studio decodes with a canvas, the
+  eval script with ffmpeg); without it the objective score is skipped and the aspect comes from the image header
+  (`imageSize`, PNG / JPEG / WebP).
+- Exports: `reconstructRoom`, `isRoomPhotoRequest`, `compareImages`, `extractPalette`, `restorePatches`, `imageSize`.
+
+### Studio
+
+- `SendOptions.photo`, the composer's "Recreate this image" button (shown with an attached picture), the
+  `ChatEventView` `photo` card: assumptions as chips (one tap sends the `adjust` sentence through the minimal-patch
+  edit path), item score, what still differs, palette swatches. `AgentBridge.decodeImage`.
+- `scripts/eval-photo.ts` (`npm run eval:photo`): live or replayed runs with software renders; montages and
+  scoreboards go to `~/.local/share/aether/imageroom/`.
+
+### Framing and calibration (same stage)
+
+- `RoomDescription` items and openings may carry `box: [x0, y0, x1, y1]` (0..1 of the photo, origin top-left; unusable boxes
+  are dropped). `framingTargets(description, builtOpenings)`, `framingOf(geometry, targets, pose, aspect) → {score, rows}`,
+  `calibrateCamera(world, description, aspect, targets) → {camera, before, after, improved} | null` (needs 4 targets;
+  deterministic), `framingText(report)`; `entityGeometry` / `projectGeometry` in the scene views project every piece and
+  opening through any pose. `PlanRoom.wallColors` / `DesignRoom.wallColors` (per compass side) are additive.
+- `deriveBuild` fits openings first (`fitOpening`: under the ceiling, inside the wall, 0.3 m clear of corners).
+- The agent measures framing and pixel similarity each round; the round quality is 0.5 pass rate + 0.5 measured agreement
+  (0.6 framing, 0.4 similarity, whichever exist). `RunOptions.intent === 'refine'` builds the room beside the existing world,
+  any other intent replaces it (one undo step).

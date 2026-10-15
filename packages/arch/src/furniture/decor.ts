@@ -189,6 +189,12 @@ function leaf(w: number, h: number, cup: number): Geom {
   return g.merge(back);
 }
 
+/** Linear mix of two #rrggbb colours (t = 0 gives `a`). */
+function mixHex(a: string, b: string, t: number): string {
+  const ch = (h: string, i: number): number => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  return `#${[0, 1, 2].map((i) => Math.round(ch(a, i) * (1 - t) + ch(b, i) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
 const ART_PALETTES: readonly (readonly string[])[] = [
   ['#e8dfd0', '#c96f4a', '#2f4858', '#d9a55b'],
   ['#efe9e1', '#9aa58f', '#3a4a3f', '#c8b79e'],
@@ -205,6 +211,9 @@ export const FRAME: FurnitureDef = {
     height: num(1.0, 0.2, 2.5, 'frame height (m)'),
     frame: choice(['oak', 'walnut', 'black-metal', 'brass'], 'black-metal', 'frame finish'),
     palette: int(0, 0, 3, 'colour palette'),
+    subject: choice(['abstract', 'round', 'blank'], 'abstract', 'abstract composition, a round (fisheye-like) photo on a wide white mat, or a blank mat'),
+    matColor: color('#f3f1ec', 'mat board colour'),
+    ink: color('#2b2833', 'dominant tone of a round photo'),
   },
   mount: 'wall',
   againstWall: true,
@@ -222,7 +231,20 @@ export const FRAME: FurnitureDef = {
     frame.merge(box(w / 2 - fw, -h / 2 + fw, 0, w / 2, h / 2 - fw, 0.035));
     set.add(frame.translate(0, h / 2, 0), mat(p.str('frame')));
     const matBoard = new Geom().quadAuto([-w / 2 + fw, fw, 0.02], [w / 2 - fw, fw, 0.02], [w / 2 - fw, h - fw, 0.02], [-w / 2 + fw, h - fw, 0.02]);
-    set.add(matBoard, { finish: 'paint', color: '#f3f1ec' });
+    set.add(matBoard, { finish: 'paint', color: p.color('matColor') });
+    if (p.str('subject') === 'blank') return set.build();
+    if (p.str('subject') === 'round') {
+      // A round photograph centred on a wide mat: a dark disc with a lighter lens-like ring and a bright core.
+      const r = Math.min(w, h) / 2 - fw - 0.1;
+      const ring = (rad: number): P2[] => Array.from({ length: 40 }, (_, k): P2 => [Math.cos((k / 40) * Math.PI * 2) * rad, Math.sin((k / 40) * Math.PI * 2) * rad]);
+      const disc = (rad: number, z: number, col: string): void => {
+        set.add(new Geom().flatPolygon(ring(rad), 0, true).rotateX(90).translate(0, h / 2, z), { finish: 'paint', color: col });
+      };
+      disc(r, 0.021, p.color('ink'));
+      disc(r * 0.78, 0.0215, mixHex(p.color('ink'), '#ffffff', 0.45));
+      disc(r * 0.5, 0.022, mixHex(p.color('ink'), '#ffffff', 0.15));
+      return set.build();
+    }
     // Composition: a few overlapping blocks and a circle in the palette.
     const pal = ART_PALETTES[p.int('palette') % ART_PALETTES.length] as readonly string[];
     const rnd = seeded(seed * 2246822519 + 11);
@@ -309,6 +331,68 @@ export const TV: FurnitureDef = {
     const h = diag * 0.4903;
     set.add(roundedBox(w, h, 0.03, 0.004, 1).translate(0, h / 2, 0.025), mat('black-metal', '#1b1c1f'));
     set.add(new Geom().quadAuto([-w / 2 + 0.006, 0.006, 0.0405], [w / 2 - 0.006, 0.006, 0.0405], [w / 2 - 0.006, h - 0.006, 0.0405], [-w / 2 + 0.006, h - 0.006, 0.0405]), { finish: 'glass', color: '#0b0c0e', opacity: 1, roughness: 0.05 });
+    return set.build();
+  },
+};
+
+export const TV_SET: FurnitureDef = {
+  id: 'furn-tv-set',
+  kind: 'tv-set',
+  description: 'Television standing on a cabinet or table (flat screen on a small foot, with a box set below it); sits on a host piece.',
+  params: {
+    inches: num(22, 14, 60, 'diagonal (inches)'),
+    shell: color('#d9d8d4', 'casing colour'),
+  },
+  mount: 'surface',
+  againstWall: false,
+  frontClearance: 0.8,
+  size: (p) => {
+    const diag = p.num('inches') * 0.0254;
+    return [diag * 0.8716 + 0.06, diag * 0.4903 + 0.1, 0.14];
+  },
+  build(p) {
+    const set = new PartSet();
+    const diag = p.num('inches') * 0.0254;
+    const w = diag * 0.8716 + 0.06;
+    const h = diag * 0.4903 + 0.06;
+    set.add(cylinder(0.12, 0.14, 0.02, 20).translate(0, 0, 0), mat('black-metal', '#2a2a2c'));
+    set.add(roundedBox(w, h, 0.07, 0.008, 1).translate(0, 0.04 + h / 2, 0), { preset: 'plastic', color: p.color('shell') });
+    set.add(new Geom().quadAuto([-w / 2 + 0.03, 0.07, 0.0355], [w / 2 - 0.03, 0.07, 0.0355], [w / 2 - 0.03, h + 0.01, 0.0355], [-w / 2 + 0.03, h + 0.01, 0.0355]), { finish: 'glass', color: '#0b0c0e', opacity: 1, roughness: 0.08 });
+    set.boxMinMax(-w / 2, 0, -0.07, w / 2, h + 0.06, 0.07);
+    return set.build();
+  },
+};
+
+export const CORNICE: FurnitureDef = {
+  id: 'furn-cornice',
+  kind: 'cornice',
+  description: 'Plaster cornice (crown moulding) along the top of one wall: a stepped, coved profile; place one per wall at the ceiling line.',
+  params: {
+    width: num(4, 0.5, 14, 'length of the wall run (m)'),
+    height: num(0.14, 0.04, 0.4, 'drop on the wall (m)'),
+    depth: num(0.12, 0.03, 0.3, 'projection from the wall (m)'),
+    color: color('#f3f0ea', 'paint colour'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), p.num('height'), p.num('depth')],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const h = p.num('height');
+    const d = p.num('depth');
+    const prof = new Geom();
+    // Stepped profile from the bottom edge up to the ceiling: fillet, cove, then a bead, as stacked boxes of growing projection.
+    const steps: Array<[number, number, number]> = [
+      [0, 0.18, 0.28],
+      [0.18, 0.5, 0.62],
+      [0.5, 0.74, 0.88],
+      [0.74, 1, 1],
+    ];
+    for (const [a, b, k] of steps) prof.merge(box(-w / 2, h * (1 - b), 0, w / 2, h * (1 - a), d * k));
+    set.add(prof, { finish: 'paint', color: p.color('color') });
+    set.boxMinMax(-w / 2, 0, 0, w / 2, h, d);
     return set.build();
   },
 };
@@ -424,4 +508,4 @@ export const WHITEBOARD: FurnitureDef = {
 };
 
 /** Decor definitions. */
-export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, FIREPLACE, CAFE_COUNTER, WHITEBOARD];
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD];

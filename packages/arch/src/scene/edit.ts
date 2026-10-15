@@ -414,7 +414,9 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
   if (openRoom.id !== room.id) return fail(`window ${opening.id} belongs to ${openRoom.key}, not ${room.key}`);
   if (opening.kind !== 'window') return fail(`${opening.id} is a ${opening.kind}, not a window: a curtain over it would hide the way through. Curtains go beside windows only`);
   const len = opening.t1 - opening.t0;
-  const full = Math.min(0.9, Math.max(0.45, len * 0.28));
+  // The caller may ask for the gathered width of one panel (the photo shows it); otherwise it follows the window.
+  const askedWidth = spec.params && typeof spec.params['width'] === 'number' && Number.isFinite(spec.params['width']) ? Math.min(2.5, Math.max(0.3, spec.params['width'])) : null;
+  const full = askedWidth ?? Math.min(0.9, Math.max(0.45, len * 0.28));
   const sillLength = ['kitchen', 'bathroom', 'laundry', 'cafe', 'terrace'].includes(String(room.type)) && opening.sill > 0.5;
   const y0 = sillLength ? Math.max(0, opening.sill - 0.1) : 0;
   const top = sillLength ? opening.top + 0.12 : Math.max(1.3, room.ceiling - 0.04);

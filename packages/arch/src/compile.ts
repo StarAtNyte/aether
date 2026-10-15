@@ -10,11 +10,11 @@
  * the single source of truth and can be re-compiled after edits.
  */
 import type { EntityInput, Json, LightSpec, MaterialSpec, PatchInput } from '@aether/core';
-import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type PlanDoor, type PlanLevel, type PlanRoom, type RoomType } from './plan';
+import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type Compass, type PlanDoor, type PlanLevel, type PlanRoom, type RoomType } from './plan';
 import { palette, floorFor, habitable, type StylePalette } from './style';
 import { wallNetwork, type NetworkWall } from './wall-network';
 import { solveWallJoins } from './wall-joins';
-import { compassNormal, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
+import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
 import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, positive, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
 import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
@@ -418,7 +418,18 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const j = joins.get(`w${walls.indexOf(rec)}`) ?? { startA: 0, startB: 0, endA: 0, endB: 0 };
       const roomA = rec.w.roomA ? lvl.rooms.find((r) => r.id === rec.w.roomA) : undefined;
       const roomB = rec.w.roomB ? lvl.rooms.find((r) => r.id === rec.w.roomB) : undefined;
-      const sideFinish = (room: PlanRoom | undefined): MaterialSpec => (room ? wallFinish(room, pal) : plan.exteriorWall.finish);
+      // The compass side a wall face has from inside a room (named by its outward normal), for per-wall colours.
+      const faceOf = (room: PlanRoom | undefined): Compass | undefined => {
+        if (!room?.wallColors) return undefined;
+        const poly = polys.get(room.id);
+        if (!poly) return undefined;
+        const m: P2 = [(rec.w.a[0] + rec.w.b[0]) / 2, (rec.w.a[1] + rec.w.b[1]) / 2];
+        const nx = -rec.dir[1];
+        const nz = rec.dir[0];
+        const inside = pointInPolygon(m[0] + nx * 0.3, m[1] + nz * 0.3, poly) ? [nx, nz] : pointInPolygon(m[0] - nx * 0.3, m[1] - nz * 0.3, poly) ? [-nx, -nz] : null;
+        return inside ? compassOf(-(inside[0] as number), -(inside[1] as number)) : undefined;
+      };
+      const sideFinish = (room: PlanRoom | undefined): MaterialSpec => (room ? wallFinish(room, pal, faceOf(room)) : plan.exteriorWall.finish);
       const skirting = roomA && roomB ? 'both' : roomA ? 'a' : roomB ? 'b' : 'none';
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
       add({
@@ -704,10 +715,10 @@ export function hashId(s: string): number {
 }
 
 /** Interior wall paint of a room (wet rooms get tiles, kitchens a washable paint). */
-function wallFinish(room: PlanRoom, pal: StylePalette): MaterialSpec {
+function wallFinish(room: PlanRoom, pal: StylePalette, face?: Compass): MaterialSpec {
   if (room.type === 'bathroom') return { finish: 'tile', color: '#ece9e3' };
   if (room.type === 'terrace') return { finish: 'plaster', color: '#ece9e3' };
-  return { finish: 'paint', color: room.wallColor ?? pal.wall };
+  return { finish: 'paint', color: (face ? room.wallColors?.[face] : undefined) ?? room.wallColor ?? pal.wall };
 }
 
 /** Half the thickness of the wall along a room edge (distance from centreline to face). */

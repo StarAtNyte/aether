@@ -169,6 +169,72 @@ const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEv
   );
 });
 
+/**
+ * A room rebuilt from a photograph: what is happening, the assumptions as one-tap "adjust" chips (each sends a
+ * plain-language edit to the same minimal-patch path as any other message), the swatches read from the picture
+ * when no assistant could look at it, and the item-by-item score with what still differs.
+ */
+const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventView, { type: 'photo' }> }): ReactElement {
+  const studio = useStudio();
+  const busy = useUI((s) => s.agentBusy);
+  const [open, setOpen] = useState(false);
+  const tone = event.phase === 'done' ? 'ok' : event.phase === 'offline' || event.phase === 'unavailable' ? 'warn' : 'info';
+  const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
+  const pct = event.score && event.score.total > 0 ? Math.round((event.score.passed / event.score.total) * 100) : null;
+  return (
+    <div className="ev ev--photo" data-testid={`photo-${event.phase}`}>
+      <div className="ev__label">
+        <Icon name="image" /> <span className={`status-chip is-${tone}`}>{label}</span>
+        {pct !== null && (
+          <span className="photo__score" aria-label={`${event.score?.passed} of ${event.score?.total} items match`}>
+            {event.score?.passed}/{event.score?.total} · {pct}%{event.score?.objective !== undefined ? ` · look ${Math.round(event.score.objective * 100)}%` : ''}
+          </span>
+        )}
+      </div>
+      <p className="ev__desc">{event.text}</p>
+      {event.palette && event.palette.length > 0 && (
+        <div className="photo__swatches" aria-label="Colours read from the picture">
+          {event.palette.map((c) => (
+            <span key={c} className="photo__swatch" style={{ background: c }} title={c} />
+          ))}
+        </div>
+      )}
+      {event.assumptions && event.assumptions.length > 0 && (
+        <div className="photo__assume" role="group" aria-label="Assumptions">
+          <p className="clarify__hint">What I assumed (tap one to change it):</p>
+          {event.assumptions.map((a) => (
+            <div key={a.id} className="photo__row">
+              <span className="photo__text">{a.text}</span>
+              {a.adjust && (
+                <button type="button" className="chip chip--action" disabled={busy} onClick={() => void studio.send(a.adjust, { intent: 'refine' })} data-testid="photo-adjust" title={`Send: ${a.adjust}`}>
+                  {a.adjust.length > 38 ? `${a.adjust.slice(0, 36)}…` : a.adjust}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {event.score && event.score.failing.length > 0 && (
+        <>
+          <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <span className="diff-chips__msg">{event.score.failing.length} still differ{event.score.failing.length === 1 ? 's' : ''}</span>
+            <Icon name={open ? 'chevronUp' : 'chevronDown'} className="diff-chips__chev" />
+          </button>
+          {open && (
+            <ul className="photo__failing">
+              {event.score.failing.map((f) => (
+                <li key={f.id}>
+                  <b>{f.id}</b> {f.note && f.note !== 'not judged' ? f.note : f.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+});
+
 /** Verification result card with per-test badges. */
 const VerifyView = memo(function VerifyView({ event }: { event: Extract<ChatEventView, { type: 'verify' }> }): ReactElement {
   const [open, setOpen] = useState(!event.passed);
@@ -281,6 +347,8 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       );
     case 'quality':
       return <QualityView event={event} />;
+    case 'photo':
+      return <PhotoView event={event} />;
     case 'review': {
       const tone = event.phase === 'approved' ? 'ok' : event.phase === 'stalled' || event.phase === 'limit' ? 'warn' : 'info';
       const label = event.phase === 'checking' ? 'Checking' : event.phase === 'found' ? 'Found' : event.phase === 'fixing' ? 'Fixing' : event.phase === 'approved' ? 'Checked' : 'Stopped';

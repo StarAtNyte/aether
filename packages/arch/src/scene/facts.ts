@@ -86,7 +86,7 @@ export function wallBlockers(scene: Scene, room: SceneRoom, wall: SceneWall, ign
   ];
   for (const o of wall.openings) out.push({ kind: o.kind === 'window' ? 'window' : 'door', t0: o.t0, t1: o.t1, y0: o.sill, y1: o.top, ref: o.id });
   for (const it of scene.items) {
-    if (ignore.has(it.id) || it.room !== room.id) continue;
+    if (ignore.has(it.id) || it.room !== room.id || it.kind === 'cornice') continue;
     if (it.mount === 'wall' && it.wall?.edge === wall.edge) {
       const reach = mountRule(it.kind).reach;
       out.push({ kind: 'item', t0: it.wall.t - it.wall.width / 2 - reach, t1: it.wall.t + it.wall.width / 2 + reach, y0: it.y0, y1: it.y1, ref: it.id });

@@ -74,6 +74,8 @@ export type AgentEvent =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number }
+  /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[] }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -87,6 +89,31 @@ export type AgentEvent =
 
 /** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
 export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit';
+
+/** Where the photo flow is. */
+export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+
+/** One assumption of a reconstruction, with the sentence that changes it (the UI shows it as a chip). */
+export interface PhotoAssumptionView {
+  id: string;
+  text: string;
+  confidence: number;
+  /** A prompt the user can send to correct it; empty when there is none. */
+  adjust: string;
+}
+
+/** The judged state of a reconstruction against its photo. */
+export interface PhotoScoreView {
+  passed: number;
+  total: number;
+  /** passed / total. */
+  rate: number;
+  /** Objective similarity of the render to the photo (0..1), when images could be measured. */
+  objective?: number;
+  structuralFailed: boolean;
+  /** Items that still differ: id, what to look for, and what differs. */
+  failing: Array<{ id: string; text: string; note: string }>;
+}
 
 /** One image the review loop wants rendered, with the numbered marks to draw on it. */
 export interface ReviewViewRequest {
@@ -126,6 +153,11 @@ export interface AgentHost {
    * (the host draws; coordinates are normalised). Returns the images it could make, in any order.
    */
   captureReview?(views: readonly ReviewViewRequest[], opts?: { signal?: AbortSignal; size?: number }): Promise<Array<{ name: string; dataUrl: string }>>;
+  /**
+   * Decode an image data URL to pixels, reduced to at most `maxSide` pixels on its longer side (the photo flow
+   * measures the aspect of a photo and compares it with renders). Null when it cannot be decoded.
+   */
+  decodeImage?(dataUrl: string, maxSide: number): Promise<{ width: number; height: number; data: Uint8ClampedArray | Uint8Array } | null>;
 }
 
 /** Catalog data injected into prompts (procgen + logic export these). */
@@ -203,6 +235,23 @@ export interface AgentOptions {
    * can run physics (`runLevelTool` of @aether/playtest). Absent: the two tools are not offered.
    */
   levelTools?: LevelToolRunner;
+  /**
+   * Rooms from photographs. Without it a prompt with a picture goes through the normal planner. `vision` says
+   * whether the active assistant can see images (a function is asked at every call: the active one can change);
+   * `maxRounds` caps the compare rounds (default 6 on subscription backends, set it for paid keys).
+   */
+  photo?: PhotoOptions;
+}
+
+/** Options of the room-from-photo flow. */
+export interface PhotoOptions {
+  vision?: boolean | (() => boolean);
+  /** Most compare-and-correct rounds (default 6). */
+  maxRounds?: number;
+  /** Rounds without progress before the loop stops (default 3). */
+  stallRounds?: number;
+  /** Most images per compare round (default 3). */
+  maxViews?: number;
 }
 
 /** Result of one level tool call (patches commit as one undo step). */

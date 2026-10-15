@@ -83,6 +83,8 @@ const SHARE_ID = /^[0-9A-Za-z]{12}$/;
 const MAX_REPAIRS = 2;
 /** Review rounds on a paid API key (subscription backends have no cap: they stop on approval or stall). */
 const REVIEW_ROUNDS_METERED = 10;
+/** Compare rounds of a room from a photo on a paid key (each is a vision call). */
+const PHOTO_ROUNDS_METERED = 4;
 /** A house is dozens of tool calls (rooms, pieces, fixes): the AI-first run gets room to finish it. */
 const REVIEW_MAX_TURNS = 40;
 const REVIEW_MAX_TOOL_CALLS = 300;
@@ -128,6 +130,8 @@ export interface SendOptions {
    * 'new': build a new world (templates, the home prompt). 'refine': never replace.
    */
   intent?: 'auto' | 'new' | 'refine';
+  /** 'recreate': rebuild the room of the first attached photo (the composer's "Recreate this image"); 'off': never. */
+  photo?: 'recreate' | 'off';
   /** Start playing again once the edit is done (the in-game tweak bar). */
   resumePlay?: boolean;
   /** What the chat shows as the user's message when it differs from the prompt (an answer to a question). */
@@ -1028,11 +1032,14 @@ export class Studio {
       // approves or progress stalls); paid keys keep a high finite cap. Small on-device models skip it.
       const subscription = resolved.kind === 'bridge' || resolved.kind === 'local';
       const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6 } : undefined;
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}), ...(primary && promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      // A photo of a room is rebuilt from the photo through the design tools; without an assistant that can see it,
+      // nothing is guessed (the offline planner would build some other room) and the user is told so.
+      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED }) } : { vision: false };
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(primary && promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
-      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(session ? { session } : {}) } as const;
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo ? { photo: opts.photo } : {}), ...(session ? { session } : {}) } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null) {
@@ -1171,6 +1178,7 @@ export class Studio {
         if (overwritten.length > 0) this.store.getState().pushEvent(entryId, { type: 'notice', tone: 'info', text: `Changed things you set by hand: ${overwritten.join('; ')}. Undo to restore them.`.slice(0, 600) });
       }
       if (view.type === 'status') this.store.getState().setAgentStep(view.text);
+      if (view.type === 'photo' && view.phase !== 'done') this.store.getState().setAgentStep(`Photo: ${view.text}`.slice(0, 120));
       if (view.type === 'review' && (view.phase === 'checking' || view.phase === 'fixing')) this.store.getState().setAgentStep(`Review ${view.round}: ${view.text}`.slice(0, 120));
       if (event.type === 'error') status = 'error';
       // The Verify panel was already updated live by the bridge's verification listener.

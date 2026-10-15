@@ -3174,3 +3174,51 @@ verified bot and the hand-written bots, not by the real-time browser driver. Blo
 the orbit-view scenes are not driven by the verified bot. Foliage cards have no translucency. The stylised flagships
 (Lantern Isles, Painterly Meadow, Sakura River) keep their art direction on purpose; Highland Trail is the realistic
 one. Highland Trail shows the vegetation and terrain at their best, not photographs.
+
+## Stage `imageroom`: a room from a reference photo (reconstruct, never template)
+
+**What was built.** A picture with a prompt about a room, or the composer's "Recreate this image", rebuilds that room.
+The vision model reads the photo into a zod-validated `RoomDescription` (footprint, camera, per-wall colours, openings
+with wall / along / size / sill, every piece with wall-relative position or host, curtains tied to a window, pictures
+hung above the piece beneath, cornice, light, palette, stated assumptions with confidence and a one-tap "adjust" sentence,
+and for everything visible a box saying where it appears in the photo). `deriveBuild` turns it into a shell-only
+`design_plan` and ordered `place_items` steps that run through the section 24 tools. `buildChecklist` is made before
+building; compare rounds render the room from the photo's own camera, the model answers `report_verdicts` for every id and
+fixes in the same reply. Measured next to the judge: a camera fitted to the described boxes (`calibrateCamera`, deterministic
+pattern search, 0.4 s), framing of every box, and pixel similarity (colour, SSIM, edges). A round that scores worse by
+more than one and a half items is rolled back (`restorePatches`); the last edits get one judge-only check before they are
+kept. Without a vision model nothing is built: palette, brightness and a plain statement. The world is replaced by the room
+as one undo step (not when refining). Parts added because the photos needed them: cornice, tv-set, round pictures, accent
+cushions, pole floor lamp, headboard height, per-wall colours (`PlanRoom.wallColors`), curtain panel width.
+
+**Tests.** Schema, derivation, fitting, checklist and scoring, framing and calibration (a badly off camera is recovered, the
+fit is deterministic), similarity measures, `restorePatches`, image-size parsing; the whole pipeline with fake vision providers
+(refused descriptions, edits before verdicts, rollback, round cap with final check, provider failure with its real reason,
+unavailable mid-run, no renders, offline, vision off, replacing the world); replay of real recorded descriptions (hotel,
+pd1) through the design tools with no checker error; `tests/e2e/photo.e2e.ts` (Chromium and Firefox: button, description,
+shell and 16 pieces, real renders from the photo camera, a fix, assumption chips).
+
+**Security.** Everything the model sends is zod-validated with caps (80 pieces, 24 openings, 16 assumptions, param records of at
+most 40 keys with bounded values, forbidden keys dropped, free text clipped); numbers are finite and bounded; ids are slugs;
+boxes are clamped. The photo goes only to the user's chosen assistant (as before for attachments). Decoded pixels are capped
+(4 M pixels) and a failed decode only costs the pixel similarity. Nothing is evaluated.
+
+**Performance.** One analysis call, then one call per compare round in the usual case, one judge-only call at the end when
+needed: 7 to 10 model calls and 2 to 3 minutes per photo in the live runs (the AI-first review loop averaged 22 calls and
+several minutes per room). Rounds are capped (6 on subscription backends, 4 on paid keys) and end early on approval or stall.
+Renders: the photo camera plus a clean render and up to two wall views per round; calibration 0.4 s; similarity on a 96 px grid.
+
+**Measured (live Claude Code, because Codex had hit its subscription limit; software renders, flat light).** Judge pass rate of
+the checklist, first attempt to final, and the measured agreement with the photo (0.6 framing + 0.4 similarity), per photo:
+hotel 11/17 to 12/17 (structural failure: window height and bed framing; framing 76% to 83%), modern teal (CC BY, local only)
+9/14 to 12/14, pd1 white four-poster room 8/17 to 15/17. So the 90 % target was NOT reached on any photo; the earlier runs
+before framing (hotel 7/17 at first, then 12/17 and one judged 17/17 with a render whose framing was clearly wrong) showed that a
+judge alone is too lenient and a flat render too harsh, which is why framing is now measured. What still fails: the window of the
+hotel is shorter and greyer than the photo's glowing sash window (no light through glass in the software renderer), a patterned
+duvet is a colour, a four-poster bed and a vaulted ceiling are not parts, curtains near a corner get one panel, a plant frond is a
+whole fig. Montages (photo | first attempt | final) and scoreboards are in `~/.local/share/aether/imageroom/`.
+Codex was not usable (usage limit until 21:59); it was not run live.
+
+**Known limits.** One room per photo; the shell has a flat ceiling and one colour per wall; depth from one photo is an
+assumption (the chips say so); judge noise is about one item in fourteen to seventeen, hence the rollback margin; the studio's
+photoreal renders were not part of the measured runs (the e2e used them but with a scripted model).

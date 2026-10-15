@@ -39,6 +39,8 @@ export const DesignRoom = z
     polygon: PlanPolygon.optional(),
     floor: MaterialSpec.optional(),
     wallColor: Color.optional(),
+    /** Paint colour of single walls by the compass side each faces from inside (overrides `wallColor`). */
+    wallColors: z.partialRecord(Compass, Color).optional(),
   })
   .refine((r) => r.rect !== undefined || r.polygon !== undefined, { message: 'a room needs rect [x0,z0,x1,z1] or polygon' });
 
@@ -309,7 +311,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       ...(lvl.name ? { name: lvl.name } : {}),
       ...(lvl.height !== undefined ? { height: lvl.height } : {}),
       autoWindows: false,
-      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), furnish: false, items: [] })),
+      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), furnish: false, items: [] })),
       doors,
       windows,
       stairs: lvl.stairs,

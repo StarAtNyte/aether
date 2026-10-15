@@ -81,6 +81,8 @@ export function mountExtent(spec: MountSpec): [number, number] {
 
 /** The wall stretch (min, max) forbidden to `spec` by one blocker, or null when it does not block. */
 export function forbiddenBy(spec: MountSpec, b: WallBlocker, anchor?: string): [number, number] | null {
+  // A cornice runs along the whole top of a wall, over windows, curtains and corners alike.
+  if (spec.kind === 'cornice') return null;
   const rule = mountRule(spec.kind);
   if (b.kind === 'furniture' && b.y1 <= rule.furnitureMinTop) return null;
   // Furniture may reach 10 cm into a piece's height (a lamp or cistern top behind a frame); openings need a clear margin.

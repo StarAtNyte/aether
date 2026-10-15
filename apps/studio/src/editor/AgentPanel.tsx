@@ -204,7 +204,7 @@ const RefineHint = memo(function RefineHint(): ReactElement | null {
 });
 
 /** Prompt composer with reference images. */
-const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: string, images: string[]) => void; busy: boolean }): ReactElement {
+const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: string, images: string[], photo?: 'recreate') => void; busy: boolean }): ReactElement {
   const studio = useStudio();
   const world = useWorld();
   const selection = useUI((s) => s.selection);
@@ -224,6 +224,13 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
     const t = draft.trim();
     if (!t || busy) return;
     onSend(t, images);
+    setDraft('');
+    setImages([]);
+  };
+  // "Recreate this image": rebuild the room in the first attached photo from the photo itself.
+  const recreate = (): void => {
+    if (busy || images.length === 0) return;
+    onSend(draft.trim() || 'Recreate this room from the photo', images, 'recreate');
     setDraft('');
     setImages([]);
   };
@@ -299,6 +306,11 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
         <ModelPicker />
         <RefineMenu />
         <DeepBuildToggle />
+        {images.length > 0 && !busy && (
+          <button type="button" className="chip chip--action" onClick={recreate} data-testid="recreate-image" data-tip="Rebuild the room in this photo: its walls, windows, furniture and colours">
+            <Icon name="image" /> Recreate this image
+          </button>
+        )}
         <span className="spacer" />
         {busy ? (
           <button type="button" className="send-btn send-btn--stop" onClick={() => studio.stopAgent()} aria-label="Stop generating" data-tip="Stop" data-kbd="Esc">
@@ -338,12 +350,12 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
     });
   }, [chat]);
 
-  const send = (text: string, images: readonly string[] = [], offline = false, intent?: 'new'): void => {
+  const send = (text: string, images: readonly string[] = [], offline = false, intent?: 'new', photo?: 'recreate'): void => {
     const t = text.trim();
     if (!t || busy) return;
     stickToBottom.current = true;
     launchPromptFlight(t, document.getElementById('prompt-input'));
-    void studio.send(t, { images, offline, ...(intent ? { intent } : {}) });
+    void studio.send(t, { images, offline, ...(intent ? { intent } : {}), ...(photo ? { photo } : {}) });
   };
 
   return (
@@ -361,7 +373,7 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
         {!busy && lastDone && <RefineHint />}
         {!busy && lastDone && <RemixChips onPick={(p) => send(p)} />}
       </div>
-      <Composer onSend={(t, imgs) => send(t, imgs)} busy={busy} />
+      <Composer onSend={(t, imgs, photo) => send(t, imgs, false, undefined, photo)} busy={busy} />
     </div>
   );
 });

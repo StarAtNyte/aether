@@ -367,3 +367,107 @@ export function legendText(index: readonly MarkEntry[], shown: ReadonlySet<numbe
   const lines = index.filter((m) => shown.has(m.n)).slice(0, limit).map((m) => `${m.n} = ${m.line}`);
   return lines.length === 0 ? 'no numbered marks in these images' : lines.join('\n');
 }
+
+/** What {@link customPose} needs. */
+export interface CustomPoseSpec {
+  name: string;
+  label: string;
+  /** Plan id of the room the camera is in (marks of other rooms are left out). */
+  room: string;
+  /** Camera position on the level plan (x east, z south) and height above the floor top. */
+  at: [number, number];
+  height: number;
+  /** Degrees clockwise from north (0 = north, 90 = east). */
+  heading: number;
+  /** Degrees looking up (positive) or down. */
+  pitch?: number;
+  /** Vertical field of view, degrees. */
+  fov: number;
+  /** Level index (default 0). */
+  level?: number;
+}
+
+/**
+ * A camera at a given spot of a building (the photo's camera, a viewpoint the user names), as a world-space
+ * {@link ReviewPose}. Null when the building or level does not exist.
+ */
+export function customPose(world: WorldDoc, building: EntityId, spec: CustomPoseSpec): ReviewPose | null {
+  const scene = readScene(world, building);
+  if (!scene) return null;
+  const lvl = scene.levels.find((l) => l.index === (spec.level ?? 0)) ?? scene.levels[0];
+  if (!lvl) return null;
+  const f = frameOf(world, scene);
+  const h = (spec.heading * Math.PI) / 180;
+  const pitch = ((spec.pitch ?? 0) * Math.PI) / 180;
+  const reach = 6;
+  const dx = Math.sin(h) * Math.cos(pitch) * reach;
+  const dz = -Math.cos(h) * Math.cos(pitch) * reach;
+  const dy = Math.sin(pitch) * reach;
+  const to: P2 = [spec.at[0] + dx, spec.at[1] + dz];
+  return {
+    name: spec.name,
+    label: spec.label,
+    room: spec.room,
+    kind: 'corner',
+    position: toWorld(f, spec.at, spec.height, lvl.id),
+    target: toWorld(f, to, spec.height + dy, lvl.id),
+    up: [0, 1, 0],
+    fov: Math.max(20, Math.min(120, spec.fov)),
+    hideTops: false,
+  };
+}
+
+/** The world-space corner points of every piece and opening of a building, for repeated projection from many cameras. */
+export interface EntityGeometry {
+  id: EntityId;
+  pts: Vec3[];
+}
+
+/** Corner points of each piece and opening (the same boxes {@link projectMarks} draws), computed once. */
+export function entityGeometry(world: WorldDoc, building: EntityId): EntityGeometry[] {
+  const scene = readScene(world, building);
+  if (!scene) return [];
+  const f = frameOf(world, scene);
+  const out: EntityGeometry[] = [];
+  for (const it of scene.items) {
+    const pts: Vec3[] = [];
+    for (const p of it.footprint) pts.push(toWorld(f, p, it.y0, it.levelId), toWorld(f, p, it.y1, it.levelId));
+    out.push({ id: it.id, pts });
+  }
+  const seen = new Set<string>();
+  for (const r of scene.rooms) {
+    for (const w of r.walls) {
+      for (const o of w.openings) {
+        if (seen.has(o.id)) continue;
+        seen.add(o.id);
+        out.push({ id: o.id, pts: openingCorners(f, r, w, o) });
+      }
+    }
+  }
+  return out;
+}
+
+/** A normalised image box (x0, y0, x1, y1; origin top-left). */
+export type ImageBox = [number, number, number, number];
+
+/**
+ * Project precomputed geometry through a camera: the box of each entity that is in front of it and inside the frame
+ * (clipped to the image). Entities that cannot be seen are left out. No occlusion.
+ */
+export function projectGeometry(geometry: readonly EntityGeometry[], pose: ReviewPose, aspect: number): Map<EntityId, ImageBox> {
+  const cam = camOf(pose, aspect);
+  const out = new Map<EntityId, ImageBox>();
+  for (const g of geometry) {
+    const proj = g.pts.map((p) => project(cam, p)).filter((p): p is NonNullable<typeof p> => p !== null);
+    if (proj.length < Math.ceil(g.pts.length / 2)) continue;
+    const xs = proj.map((p) => p.x);
+    const ys = proj.map((p) => p.y);
+    const x0 = Math.max(0, Math.min(...xs));
+    const x1 = Math.min(1, Math.max(...xs));
+    const y0 = Math.max(0, Math.min(...ys));
+    const y1 = Math.min(1, Math.max(...ys));
+    if (x1 <= x0 || y1 <= y0) continue;
+    out.set(g.id, [x0, y0, x1, y1]);
+  }
+  return out;
+}
