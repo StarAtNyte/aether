@@ -19,6 +19,7 @@ import './styles/onboarding.css';
 import './styles/arch.css';
 import './styles/npc.css';
 import './styles/moments.css';
+import './styles/verified.css';
 import { App } from './App';
 import { AppProvider, openRepo } from './app/appContext';
 import { createAppStore } from './app/appStore';

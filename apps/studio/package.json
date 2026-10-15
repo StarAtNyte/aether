@@ -14,6 +14,7 @@
     "@aether/assets": "*",
     "@aether/core": "*",
     "@aether/physics": "*",
+    "@aether/playtest": "*",
     "@aether/render": "*",
     "@aether/procgen": "*",
     "@aether/logic": "*",

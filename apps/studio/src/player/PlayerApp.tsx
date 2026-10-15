@@ -234,6 +234,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     if (!sim || (phaseRef.current !== 'title' && phaseRef.current !== 'over')) return;
     go('starting');
     sim.renderer.stopTour();
+    sim.renderer.stopGhost();
     setOver(null);
     setHud({});
     setTime(0);
@@ -508,7 +509,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               {game.author && <p className="pl-title__by">by {game.author}</p>}
               {game.description && <p className="pl-title__desc">{game.description}</p>}
               {menu(false)}
-              {game.proof !== undefined && <ProofBadge proof={game.proof} world={world} />}
+              {game.proof !== undefined && <ProofBadge proof={game.proof} world={world} sim={sim} />}
               <p className="pl-title__controls">{game.controls}</p>
               <p className="pl-title__made">Made with Aether</p>
             </div>

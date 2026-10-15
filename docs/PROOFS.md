@@ -36,6 +36,11 @@ the proof is untrusted input). Canonical JSON = keys sorted, no whitespace,
     "diagnostics": [ { "severity": "warning", "code": "floating", "entities": ["…"] } ],
     "hash": "sha256:…"                        // of { passed, simulatedSeconds, tests, diagnostics }
   },
+  "playtest": {                              // optional: the playtest bot's winning run (see below)
+    "v": 1, "bot": 1, "kind": "game", "status": "passed", "worldHash": "<16 hex, gameplay content>",
+    "seconds": 27.7, "steps": 1662, "summary": "…", "objectives": { "done": 8, "total": 8 }, "falls": 0,
+    "trace": { "dt": 0.0833, "frames": 333, "box": [ … ], "data": "<base64 uint16 x,y,z,yaw>", "events": [ … ] }
+  },
   "trace": { "hash": "sha256:…", "frames": 88, "bodies": 16, "dt": 0.083333 },
   "hash": "sha256:…",                         // of the canonical body (everything but hash and signature)
   "signature": { "alg": "Ed25519", "publicKey": "<b64url raw 32 B>", "sig": "<b64url 64 B over the UTF-8 of hash>" }
@@ -66,7 +71,31 @@ the proof is untrusted input). Canonical JSON = keys sorted, no whitespace,
 | --- | --- |
 | `proof.json` | a proof, optionally with the full world under `worldDoc` (so it is self-contained) |
 | published game build | `game.json` `proof` member, a standalone `proof.json`, `<meta name="aether:proof">` in `index.html`, a "Replay-sealed" caption on `cover.png` / `screenshot.png`, a README section |
-| share link | `#w=…` payload member `proof` (omitted above 16 KB; the publish hub says so) |
+| share link | `#w=…` payload member `proof` (omitted above 16 KB; the publish hub says so; the bot's run is part of the seal) |
+
+## The bot's run inside the seal
+
+The playtest bot (`@aether/playtest`) is the other half of "playable": the
+physics replay shows the world's own checks hold, and the bot shows a player
+can actually reach the end (collect what is needed, talk to the character who
+sells the key, open the gate). Both claims travel as **one** proof: when the
+studio (or `aether-verify seal`) has a passed bot run for exactly this world it
+is embedded as the `playtest` member, covered by the content hash and the
+signature. Nothing about the bot is a second badge or a second file:
+
+- The seal horizon is the longest of the default (12 s) and what the world's
+  own tests need (`replaySettingsFor`), so a world whose NPC test runs 16 s is
+  decided rather than left "not decided".
+- The evidence carries a thinned winning run (at most 400 trace frames, 20
+  events; a sealed Hollow Gate proof is about 6 KB) so it fits in a share link.
+- `checkProof` verifies the evidence is about this gameplay (`worldHash`
+  against `@aether/playtest` `hashWorld`) and, when the caller supplies a
+  re-player (`CheckOptions.playtest`; the CLI and the player do), has the bot
+  play the game again: a bot that no longer wins is `replay-diverged`. Without a
+  re-player the step is reported as skipped, never as passed.
+- A failed, stale or `unsupported` bot run is not sealed in; sealing a world
+  whose own checks fail is still refused. The bot adds a stronger claim, it
+  never lowers the bar of the replay.
 
 ## The verifier (`@aether/verifier`)
 
@@ -76,8 +105,8 @@ studio's verification workers also use; the hashing is a dependency-free
 SHA-256, signing is Web Crypto Ed25519 in Node 22+ and current browsers).
 
 ```
-aether-verify <proof.json | game.json | build-dir> [--world file] [--trust <publicKey>]… [--no-replay] [--json]
-aether-verify seal <game.json | world.json> [--out proof.json] [--key key.json] [--seconds 12]
+aether-verify <proof.json | game.json | build-dir> [--world file] [--trust <publicKey>]… [--no-replay] [--no-bot] [--json]
+aether-verify seal <game.json | world.json> [--out proof.json] [--key key.json] [--seconds <n>] [--no-bot]
 aether-verify keygen <key.json>
 ```
 
@@ -155,4 +184,10 @@ Limits, stated plainly:
 agree: *Sealed playable* (the author's claim, before any check), *Checking…*,
 *Verified playable*, *Verification failed*, *Seal out of date*, *Cannot
 re-check*, *Not sealed*. The player's title screen shows the badge with a
-"Check it yourself" button; the result lists what was checked.
+"Check it yourself" button; the result lists what was checked. When the seal
+carries the bot's run, the same badge adds one sentence ("A bot played it to the
+win in 28 s of play (8 of 8 goals reached)"), a "Watch the bot's run" ghost
+replay and, after a check, "Re-played on this device: it won again." In the
+studio, a live bot run on the world on screen reads *Verified playable* too (it
+is a check you can see happen); what is published is the sealed claim, which
+becomes *Verified playable* for a viewer once they check it.

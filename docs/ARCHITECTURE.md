@@ -22,6 +22,7 @@ each package). This document explains the design behind them.
 - [15. Determinism](#15-determinism)
 - [16. Known limitations](#16-known-limitations)
 - [20. Publishing](#20-publishing)
+- [21. The verified-playable flow](#21-the-verified-playable-flow)
 
 ---
 
@@ -1308,3 +1309,90 @@ character active and reaches the win condition.
 **Free conversation** is deliberately outside the logic package: the runtime
 exposes `chatContext()` and `freeReply()`, and the studio decides whether a model
 is connected, applies the caps and sanitises the reply (see `docs/CONTRACTS.md`).
+
+
+---
+
+## 23. The verified-playable flow
+
+Aether's claim is that the AI *proves* what it built works. The physics tests
+of section 7 prove the world is stable; the playtest agent
+(`packages/playtest`) proves it is **playable**: a bot plays the game, or
+walks the house, in front of the user, and a sealed proof shows the result.
+
+```
+World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
+   │
+   ├─ isolated physics world (doors in their open pose) ──▶ NavGraph
+   │     grid of downward rays → capsule-fit test → walk edges (two-way),
+   │     jump / drop edges for ledges (validated by simulating the controller),
+   │     portal nodes on every doorway (a 2 cm slack is below the grid)
+   │
+   └─ live physics world + logic runtime + bot capsule (the studio's own
+      CharacterController, fixed 1/60 s step, keys pressed like a person):
+        loop: Dijkstra to the nearest reachable pending objective
+              (win objectives last) → walk the path (look-ahead, door opening
+              by proximity or key press, crawl through tight doorways,
+              hop / sidestep / replan when stuck) → touch it (stand, then
+              jump) → the logic reacts → repeat
+        report: won, time, path, trace, unreachable / blocked objectives,
+                locked doors, unwinnable conditions, soft-locks, falls
+```
+
+- **Isolation.** The bot never touches the editor session: it builds its own
+  physics world from the document. It runs in a module worker
+  (`engine/playtest/playtest.worker.ts`) with a simulated-time cap (240 s), a
+  wall-clock budget (20 s), cooperative yielding (so cancel works) and a
+  progress stream; a main-thread fallback exists for browsers without module
+  workers.
+- **Honest verdicts.** `passed` requires the win (or every room) to have
+  *happened* in the run. A failure names the cause in one sentence ("the key at
+  12,3 is unreachable: 4.2 m from the nearest place the player can stand and
+  3.1 m too high"). Worlds the bot cannot drive are `unsupported`; a gap that a
+  moving lift may bridge is a caution, not a verdict. The badge is green only
+  for a passed run that was *proven* for the history entry on screen
+  (`lib/playtestView.ts`).
+- **Self-repair.** Findings map to the smallest patch that removes them: move
+  the small platform a pickup sits on (with what stands on it) or the pickup
+  itself within reach; open an unlockable door by proximity; lower a win target
+  that needs more pickups than exist; add a "win when everything is collected"
+  rule; move the spawn out of a wall; widen a building door the player's body
+  cannot pass (door, frame, wall opening and the building plan stay in step);
+  give a countdown the time the bot measured plus a margin. Each repair is one
+  ordinary, undoable history entry (`Playtest fix: …`), then the bot plays
+  again (3 rounds at most) and the user gets one sentence in the chat.
+  Findings without a safe fix (soft-locks, stuck points) are reported, never
+  guessed at.
+- **Characters.** A conversation the game depends on is an objective too
+  (`talk`): when a character's dialogue tree can write a state key the game
+  needs (a key sold, a door unlocked with `openDoor`, a win), the bot walks to
+  where that character stands now, waits for the "press E" hint, presses E and
+  the numbered option keys like a person, and the objective is done when the
+  state really changed. The options a conversation needs (gold to pay with)
+  make those pickups required. A tree that cannot deliver is a `talk_failed`
+  finding. The Hollow Gate is won this way in about 4 s of wall time.
+- **One proof, one story.** The bot's run does not travel as a second badge.
+  Sealing (`@aether/verifier` `createProof({ playtest })`) embeds the passed
+  run as `playtest` evidence in the replay seal, so the content hash and the
+  Ed25519 signature cover it and it rides in the same places (share link,
+  `game.json`, `proof.json`). The evidence keeps a thinned trace (at most 400
+  frames and 20 events) so a sealed Hollow Gate proof is about 6 KB. The player
+  shows one badge: *Sealed playable* (the author's claim, with a sentence about
+  the bot's win and "Watch the bot's run"), and *Check it yourself*
+  re-simulates the world with the verifier and has the bot play it again on the
+  viewer's device (`checkProof({ playtest })`; `aether-verify` does the same in
+  Node). Both are deterministic replay checks, not formal proofs.
+- **Replay.** `GhostRun` draws the recorded path and a translucent player over
+  the real rendered world; the replay bar has play / pause, speed (0.5–8×) and
+  a scrub bar with a tick per pickup, door and goal. The physics proof seal of
+  section 7 is reused: in the studio the bot's verdict appears as its own seal (a live run on this device); only a passed run on exactly the world on screen is ever sealed into a published proof.
+
+Measured on the offline planner's worlds (software GL, one core): the coin
+hunt (8 coins) verifies in about 2 s of wall time (22 s of play), the key-and-
+door vault in 4 s, a 6-room apartment walkthrough in 3 s (20 s of walking).
+
+Known limits: moving platforms and lifts are planned on their starting pose;
+pressure plates that must stay pressed are visited, not held; custom scripts
+run but their goals are not derived; vehicles, block worlds and avatar
+entities are `unsupported`; narrow snug doorways (clear width within a
+centimetre of the player's body) are crossed at a crawl and can still fail.

@@ -420,3 +420,13 @@ dependency and bundles no asset. Algorithms followed: A* search (Hart, Nilsson
 and Raphael, 1968) with an octile heuristic; the supercover grid walk of
 Amanatides and Woo (1987) for line of sight; separation steering after
 Reynolds (1999); string pulling of grid paths by greedy visibility.
+
+
+### Verified playable (autonomous playtest agent)
+
+No new dependency. The goal derivation, navigation graph (Dijkstra on typed
+arrays with a binary heap, ballistic reach analysis), bot, self-repair, proof
+format and ghost replay are original TypeScript written for Aether. The bot
+drives the existing Rapier (`@dimforge/rapier3d-compat`, Apache-2.0)
+KinematicCharacterController through `@aether/physics` and the existing logic
+runtime. `zod` (MIT) validates reports and proofs, as elsewhere.

@@ -9,6 +9,7 @@
  * claimed outcome", never "the game is correct".
  */
 import { validateWorld, type WorldDoc } from '@aether/core';
+import { evidenceSentence, hashWorld as botWorldHash, type Evidence } from '@aether/playtest/proof';
 import { hashJson } from './hash';
 import { PHYSICS_ENGINE, PROOF_LIMITS, REPLAY_ENGINE, parseProof, type Proof } from './proof';
 import { claimHash, diffClaims, resimulate, type ReplaySettings } from './resimulate';
@@ -39,7 +40,7 @@ export type ProofStatus =
 
 /** One step of a check. */
 export interface CheckStep {
-  name: 'format' | 'content-hash' | 'signature' | 'engine' | 'world' | 'replay';
+  name: 'format' | 'content-hash' | 'signature' | 'engine' | 'world' | 'replay' | 'bot';
   /** `ok`, `fail`, or `skip` (not applicable / not reached). */
   result: 'ok' | 'fail' | 'skip';
   detail: string;
@@ -61,6 +62,10 @@ export interface ProofCheck {
   differences: string[];
   /** The proof, when it parsed. */
   proof: Proof | null;
+  /** The bot's winning run sealed in the proof (null when the proof carries none). */
+  playtest: Evidence | null;
+  /** True when a bot re-played the game on this device and won again (see {@link CheckOptions.playtest}). */
+  botReproduced: boolean;
   /** Wall time of the check (ms). */
   ms: number;
 }
@@ -73,6 +78,12 @@ export interface CheckOptions {
   trustedKeys?: readonly string[];
   signal?: AbortSignal;
   budgetMs?: number;
+  /**
+   * Re-plays the game with the playtest bot (`@aether/playtest`) and reports whether it won again.
+   * Injected so browsers can run it in a worker and this package does not load the bot's engine.
+   * Without it a sealed bot run is checked for freshness but not re-played.
+   */
+  playtest?: (world: WorldDoc, evidence: Evidence, signal?: AbortSignal) => Promise<{ passed: boolean; detail?: string }>;
 }
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -104,7 +115,7 @@ export function statusSummary(status: ProofStatus): string {
 }
 
 function base(status: ProofStatus, steps: CheckStep[], t0: number, extra: Partial<ProofCheck> = {}): ProofCheck {
-  const merged: ProofCheck = { status, ok: status === 'verified', playable: false, summary: statusSummary(status), steps, signature: null, differences: [], proof: null, ms: Math.round(now() - t0), ...extra };
+  const merged: ProofCheck = { status, ok: status === 'verified', playable: false, summary: statusSummary(status), steps, signature: null, differences: [], proof: null, playtest: null, botReproduced: false, ms: Math.round(now() - t0), ...extra };
   merged.playable = status === 'verified' && merged.proof?.claim.passed === true;
   if (status === 'verified' && !merged.playable) merged.summary = 'Replay verified: an independent re-simulation reproduced the claimed outcome, which is that some checks FAIL. Not a playable seal.';
   return merged;
@@ -126,7 +137,7 @@ export async function checkProof(proofValue: unknown, world: WorldDoc | unknown,
   }
   const proof = parsed.proof;
   steps.push({ name: 'format', result: 'ok', detail: `aether-proof v${proof.v}` });
-  const fail = (status: ProofStatus, rest: CheckStep[], extra: Partial<ProofCheck> = {}): ProofCheck => base(status, [...steps, ...rest], t0, { proof, ...extra });
+  const fail = (status: ProofStatus, rest: CheckStep[], extra: Partial<ProofCheck> = {}): ProofCheck => base(status, [...steps, ...rest], t0, { proof, playtest: proof.playtest ?? null, ...extra });
 
   // 1. Content hash: the proof is exactly what was sealed (and internally consistent).
   let internal = true;
@@ -183,7 +194,7 @@ export async function checkProof(proofValue: unknown, world: WorldDoc | unknown,
   }
   steps.push({ name: 'world', result: 'ok', detail: `${proof.world.name} · ${proof.world.entities} entities · ${proof.world.hash.slice(0, 19)}…` });
 
-  if (opts.replay === false) return base('intact', [...steps, SKIP('replay', 'skipped on request')], t0, { proof, signature });
+  if (opts.replay === false) return base('intact', [...steps, SKIP('replay', 'skipped on request'), ...(proof.playtest ? [SKIP('bot', 'skipped on request')] : [])], t0, { proof, playtest: proof.playtest ?? null, signature });
   if (proof.colliders.mode === 'external') {
     return fail('unverifiable', [{ name: 'replay', result: 'skip', detail: 'the world needs renderer shapes the proof does not carry' }], { signature });
   }
@@ -207,7 +218,32 @@ export async function checkProof(proofValue: unknown, world: WorldDoc | unknown,
   if (differences.length > 0) return fail('replay-diverged', [{ name: 'replay', result: 'fail', detail: differences[0] as string }], { signature, differences });
   const passedTests = fresh.claim.tests.filter((t) => t.passed).length;
   steps.push({ name: 'replay', result: 'ok', detail: `${passedTests}/${fresh.claim.tests.length} checks ${fresh.claim.passed ? 'passed' : 'as claimed'} over ${fresh.claim.simulatedSeconds}s of simulation${fresh.trace ? `, ${fresh.trace.bodies} moving bodies matched to 1 mm` : ''}` });
-  return base('verified', steps, t0, { proof, signature });
+
+  // 6. The bot's sealed winning run (only when the proof carries one).
+  const ev = proof.playtest;
+  let botReproduced = false;
+  if (ev) {
+    if (ev.worldHash !== botWorldHash(v.world)) {
+      return fail('replay-diverged', [{ name: 'bot', result: 'fail', detail: "the bot's run was recorded for another version of the gameplay" }], { signature, differences: ["the bot's run was recorded for another version of the gameplay"] });
+    }
+    if (opts.playtest) {
+      try {
+        const again = await opts.playtest(v.world, ev, opts.signal);
+        if (!again.passed) {
+          const why = `the bot could not win it again${again.detail ? `: ${again.detail.slice(0, 200)}` : ''}`;
+          return fail('replay-diverged', [{ name: 'bot', result: 'fail', detail: why }], { signature, differences: [why] });
+        }
+        botReproduced = true;
+        steps.push({ name: 'bot', result: 'ok', detail: `a bot played it to the win again on this device${again.detail ? ` (${again.detail.slice(0, 120)})` : ''}` });
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return fail(aborted ? 'inconclusive' : 'replay-diverged', [{ name: 'bot', result: 'fail', detail: aborted ? 'cancelled' : `the bot could not run: ${e instanceof Error ? e.message.slice(0, 160) : 'error'}` }], { signature });
+      }
+    } else {
+      steps.push({ name: 'bot', result: 'skip', detail: `${evidenceSentence(ev)} Recorded in the seal; not re-played in this check.` });
+    }
+  }
+  return base('verified', steps, t0, { proof, playtest: ev ?? null, botReproduced, signature });
 }
 
 /** The recorded claim in one line, for display next to a status. */

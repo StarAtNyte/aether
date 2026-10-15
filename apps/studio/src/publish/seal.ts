@@ -74,6 +74,8 @@ export interface SealOptions {
   /** Sign with this browser's key (default true). */
   sign?: boolean;
   signal?: AbortSignal;
+  /** The playtest bot's proof for exactly `world`; a passed run is sealed in with the replay. */
+  playtest?: import('@aether/playtest/proof').Proof | null;
 }
 
 /** Outcome of {@link sealWorld}. */
@@ -89,6 +91,7 @@ export async function sealWorld(world: WorldDoc, opts: SealOptions = {}): Promis
       ...(colliders.length > 0 ? { colliders } : {}),
       ...(key ? { key } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.playtest ? { playtest: opts.playtest } : {}),
     });
     return { ok: true, proof, signed: proof.signature !== undefined };
   } catch (e) {

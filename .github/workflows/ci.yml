@@ -70,6 +70,7 @@ jobs:
       - run: npm run e2e:security
       - run: npm run e2e:proof
       - run: npm run e2e:mcp
+      - run: npm run e2e:verified
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

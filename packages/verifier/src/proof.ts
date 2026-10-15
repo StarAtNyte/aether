@@ -7,6 +7,7 @@
  * simulation and compares; the proof is untrusted input and is validated
  * with zod and hard size caps before any of it is used.
  */
+import { EvidenceWire } from '@aether/playtest/proof';
 import { z } from 'zod';
 
 /** Format marker. */
@@ -121,6 +122,12 @@ export const ProofBodySchema = z
         hash: Digest,
       })
       .strict(),
+    /**
+     * Optional: the playtest bot's winning run (`@aether/playtest`), sealed with the rest. It makes the
+     * seal one story: the replay check reproduces the world's own tests, and this says a bot also
+     * played the game to its win. Covered by the content hash and the signature.
+     */
+    playtest: EvidenceWire.optional(),
     /** Fingerprint of the recorded motion (quantised to 1 mm); absent when nothing moved. */
     trace: z
       .object({

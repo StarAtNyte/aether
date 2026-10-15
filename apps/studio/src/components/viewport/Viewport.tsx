@@ -33,6 +33,8 @@ import { PlanView } from './PlanView';
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
 import { ProofSeal } from './ProofSeal';
+import { PlaytestPill } from './PlaytestPill';
+import { ReplayBar } from './ReplayBar';
 
 /** Block-world game HUD (and its stylesheet): loaded only when a voxel game runs. */
 const VoxelHud = lazy(() => import('./VoxelHud').then((m) => ({ default: m.VoxelHud })));
@@ -379,7 +381,12 @@ export const Viewport = memo(function Viewport(): ReactElement {
         {ready && <GeometryBadge />}
       </div>
       <div className="vp-overlay vp-overlay--tr">
-        {playing ? !voxelGame && <CameraToggle /> : ready && <VerifyPill />}
+        {playing ? !voxelGame && <CameraToggle /> : ready && (
+          <>
+            <PlaytestPill />
+            <VerifyPill />
+          </>
+        )}
         {ready && !playing && <DisplayMenu />}
       </div>
       {ready && !playing && !viewer && (
@@ -389,6 +396,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       )}
       <BusyIndicator />
       {ready && <ProofSeal />}
+      {ready && <ReplayBar />}
       {voxelGame ? (
         <Suspense fallback={null}>
           <VoxelHud />

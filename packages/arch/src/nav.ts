@@ -86,7 +86,8 @@ function generatorOf(e: Entity): string | null {
 }
 
 /** Plan polygon of a slab-like entity (polygon param + transform), in its parent's frame. */
-function placedPolygon(e: Entity, key = 'polygon'): P2[] | null {
+/** World-space outline of a room or slab entity (`polygon` param), or null. */
+export function placedPolygon(e: Entity, key = 'polygon'): P2[] | null {
   const raw = params(e)[key];
   if (!Array.isArray(raw)) return null;
   const pos = e.transform.position;

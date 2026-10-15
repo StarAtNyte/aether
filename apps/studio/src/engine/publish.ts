@@ -16,6 +16,7 @@ import { floorPlan2d, listBuildings, listLevels, planToWorld } from '@aether/arc
 import type { Provider } from '@aether/agent';
 import type { ColliderProvider } from '@aether/physics';
 import type { Proof } from '@aether/verifier';
+import type { Proof as BotProof } from '@aether/playtest/proof';
 import type { StudioState } from '../state/store';
 import type { Simulation } from './Simulation';
 import { createLogger, errorMessage } from '../lib/log';
@@ -170,6 +171,8 @@ export interface PublishHost {
   bundledImports(): Promise<Array<{ meta: { id: string; mime: string } & Record<string, unknown>; data: Uint8Array }>>;
   /** The paired local bridge (hosted studios), or null. */
   bridgeEndpoint(): { url: string; token: string } | null;
+  /** The playtest bot's proof for the world on screen (a real passed run on exactly this world), or null. Optional: hosts without a playtest omit it. */
+  playtestProof?(): Promise<BotProof | null>;
 }
 
 function initialState(world: WorldDoc): PublishState {
@@ -396,7 +399,7 @@ export class PublishController {
   }
 
   /** The last seal attempt, keyed by the exact world and signing choice (a seal is reused until either changes). */
-  private sealCache: { world: WorldDoc; sign: boolean; proof: Promise<Proof | null> } | null = null;
+  private sealCache: { world: WorldDoc; sign: boolean; bot: string | null; proof: Promise<Proof | null> } | null = null;
 
   /**
    * Replay the current world and seal the outcome (null when sealing is off,
@@ -406,8 +409,15 @@ export class PublishController {
   async sealCurrent(signal?: AbortSignal): Promise<Proof | null> {
     const st = this.state.getState().seal;
     if (!st.on) return null;
+    let playtest: BotProof | null = null;
+    try {
+      playtest = (await this.host.playtestProof?.()) ?? null;
+    } catch {
+      playtest = null;
+    }
     const world = this.host.history.current;
-    if (this.sealCache && this.sealCache.world === world && this.sealCache.sign === st.sign) return this.sealCache.proof;
+    const botKey = playtest?.worldHash ?? null;
+    if (this.sealCache && this.sealCache.world === world && this.sealCache.sign === st.sign && this.sealCache.bot === botKey) return this.sealCache.proof;
     const run = (async (): Promise<Proof | null> => {
       this.set({ seal: { ...this.state.getState().seal, status: 'sealing', note: 'Replaying the physics to seal the world…' } });
       const sim = this.sim;
@@ -420,8 +430,9 @@ export class PublishController {
           colliders = undefined;
         }
       }
+      // The bot's winning run (when there is one for exactly this world) is sealed with the replay: one proof, one story.
       const { sealWorld } = await import('../publish/seal');
-      const out = await sealWorld(world, { colliders, sign: st.sign, ...(signal ? { signal } : {}) });
+      const out = await sealWorld(world, { colliders, sign: st.sign, playtest, ...(signal ? { signal } : {}) });
       if (this.host.history.current !== world) return null;
       if (!out.ok) {
         this.set({ seal: { ...this.state.getState().seal, status: 'failed', note: `Not sealed: ${out.error}`, hash: null, keyId: null } });
@@ -438,14 +449,14 @@ export class PublishController {
         seal: {
           ...this.state.getState().seal,
           status: 'sealed',
-          note: `Sealed playable: ${proof.claim.tests.length === 0 ? 'settles cleanly' : `${proof.claim.tests.length} check${proof.claim.tests.length === 1 ? '' : 's'} passed`} over ${proof.claim.simulatedSeconds.toFixed(1)} s${out.signed ? ', signed with this browser\'s key' : ''}. A deterministic replay check, not a formal proof.`,
+          note: `Sealed playable: ${proof.claim.tests.length === 0 ? 'settles cleanly' : `${proof.claim.tests.length} check${proof.claim.tests.length === 1 ? '' : 's'} passed`} over ${proof.claim.simulatedSeconds.toFixed(1)} s${proof.playtest ? `, and a bot played it to the win in ${Math.round(proof.playtest.seconds)} s` : ''}${out.signed ? ', signed with this browser\'s key' : ''}. A deterministic replay check, not a formal proof.`,
           hash: proof.hash.slice(7, 19),
           keyId: proof.signature ? keyId(proof.signature.publicKey) : null,
         },
       });
       return proof;
     })();
-    this.sealCache = { world, sign: st.sign, proof: run };
+    this.sealCache = { world, sign: st.sign, bot: botKey, proof: run };
     return run;
   }
 

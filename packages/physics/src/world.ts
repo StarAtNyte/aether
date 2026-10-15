@@ -576,6 +576,20 @@ export class PhysicsWorld {
     return [...found];
   }
 
+  /**
+   * True when an upright capsule standing with its feet at `feet` (raised by
+   * `lift` so the floor it stands on does not count) overlaps no solid
+   * collider. Sensors are ignored. Used to find places a player can stand.
+   */
+  capsuleFree(feet: Vec3, radius: number, height: number, lift = 0.05): boolean {
+    if (this.disposed || !safeVec(feet) || !Number.isFinite(radius) || !Number.isFinite(height) || radius <= 0 || height <= radius * 2) return true;
+    const R = rapier();
+    const half = Math.max(0, (height - lift) / 2 - radius);
+    const centre = feet[1] + lift + half + radius;
+    const hit = this.world.intersectionWithShape({ x: feet[0], y: centre, z: feet[2] }, { x: 0, y: 0, z: 0, w: 1 }, new R.Capsule(half, radius), R.QueryFilterFlags.EXCLUDE_SENSORS);
+    return hit === null;
+  }
+
   // -------------------------------------------------------------------------
   // Snapshots
   // -------------------------------------------------------------------------

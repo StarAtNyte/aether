@@ -38,3 +38,4 @@ export { NavGrid, NAV_MAX_PATH, type Obstacle } from './npc/nav';
 export { buildNavFor, collectObstacles, type BoundsProvider } from './npc/obstacles';
 export { resolveNpc, defaultTransitions, evalCond, inHours, type NpcEff, type Senses } from './npc/graph';
 export { analyzeNpcs, type NpcAnalysis } from './npc/analyze';
+export { zoneShapeOf, insideZone, type ZoneShape } from './bounds';

@@ -715,3 +715,49 @@ kbd {
     animation-duration: 2.5s;
   }
 }
+
+/* The bot's sealed winning run, inside the replay seal: a sentence, Watch, and the ghost replay controls. */
+.pl-bot {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.pl-bot__line {
+  flex: 1 1 24ch;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.pl-bot__replay {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pl-bot__replay input[type='range'] {
+  flex: 1 1 120px;
+  min-width: 80px;
+  accent-color: #7fd6ff;
+}
+
+.pl-bot__time {
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-btn--small {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+}

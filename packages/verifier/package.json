@@ -12,7 +12,8 @@
     ".": "./src/index.ts",
     "./headless-host": "./src/headless-host.ts",
     "./pose-pool": "./src/pose-pool.ts",
-    "./format": "./src/format.ts"
+    "./format": "./src/format.ts",
+    "./bot": "./src/bot.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -20,6 +21,7 @@
     "@aether/core": "*",
     "@aether/logic": "*",
     "@aether/physics": "*",
+    "@aether/playtest": "*",
     "@aether/procgen": "*",
     "tsx": "^4.23.15",
     "zod": "^4.6.6"

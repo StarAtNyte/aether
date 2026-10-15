@@ -188,6 +188,24 @@ explicit state, so the AI can be held to account:
   that name what it is placing ("Palm ×12"). The objects then grow into their
   brackets. The sent prompt flies from the composer into the world. Every
   moment respects reduced motion ([docs/DESIGN.md](docs/DESIGN.md)).
+- **A bot plays it, and proves it works.** After a build, an autonomous
+  playtest bot plays the game (or walks the house) in a background worker: it
+  plans routes over a navigation graph sampled from the physics world, jumps
+  gaps (validated against the real character controller), fetches the key
+  before the locked door, opens doors, and presses on until the win — then the
+  badge reads "Verified playable" and a ghost player replays the winning run
+  over the real world, with speed and scrub controls. If it finds a defect —
+  an unreachable pickup, a door nothing can unlock, a win target above the
+  number of coins, a doorway too narrow for the player's body — it applies the
+  smallest fix as one undoable step, plays again and tells you in one sentence
+  what it fixed. The badge is never green without a real passed run on exactly
+  the world on screen. It also talks: a shopkeeper who sells the key to the
+  gate is a goal like any other (walk up, press E, pick the option). The bot's
+  winning run is sealed inside the same replay proof as the physics checks
+  (one badge, one file; `aether-verify` re-plays both), so share links and
+  published games carry it and a viewer can replay the run and check it on
+  their own device ([docs/ARCHITECTURE.md §23](docs/ARCHITECTURE.md),
+  [docs/PROOFS.md](docs/PROOFS.md)).
 - **Share by link, no server needed.** Share copies a link that carries the
   world itself (deflate-compressed in the URL fragment, validated like a file
   import on the way in), so it works from any static host and nothing is
@@ -525,6 +543,7 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm run e2e:security` | Exploit attempts in real Chromium and Firefox: generator-sandbox escapes through the worker's prototype chain and interface objects must all be blocked while a normal generator still builds |
 | `npm run e2e:soak` | Heavy-session soak, one browser at a time: a 5-minute block-world walk, a held studio render and a million-instance scatter; reports frame-time percentiles and long tasks and fails on unbounded chunks, GPU objects or memory growth (`-- --walk-s=60`, `-- --only=firefox`) |
 | `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
+| `npm run e2e:verified` | Verified playable in Chromium then Firefox: prompt a small game and watch the bot win it (badge green only after the pass, ghost replay with pause / scrub / speed), break it by prompt ("remove a coin", "remove the key") and see it caught and repaired in one undoable step, a café walked room by room with a too-narrow door widened, and a share link whose player page shows the one sealed proof, replays the bot's run and re-verifies both the replay and the bot on this device |
 | `npm run e2e:ux` | UX end to end in Chromium then Firefox: keyboard (Tab to the hero prompt with a visible focus ring, `?` overlay, Enter builds), the proof seal and ghost replay, full-window play, command palette (search, free text → agent), share link → read-only viewer → Remix, the 3-step tour (Next / Back / Esc, remembered), phone layout (hero, prompt, touch stick, viewer) |
 | `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
 | `npm run thumbnails` | Renders the asset previews (`public/palette/*.webp`) with the real renderer (`-- --templates` re-renders template cards from the editor's framing) |

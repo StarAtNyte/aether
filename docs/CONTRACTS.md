@@ -1819,7 +1819,7 @@ Everything here is additive; the World IR is unchanged.
 
 ## Replay proofs: `@aether/verifier` (+ additions to studio, procgen; format in `docs/PROOFS.md`)
 
-### `@aether/verifier` (new; deps: core, logic, physics, procgen, zod; bin `aether-verify`)
+### `@aether/verifier` (new; deps: core, logic, physics, playtest (evidence schema only), procgen, zod; bin `aether-verify`)
 ```ts
 PROOF_FORMAT = 'aether-proof'; PROOF_VERSION = 1; REPLAY_ENGINE = 'aether-replay/1'; PHYSICS_ENGINE = 'rapier3d-compat@0.21.0'
 PROOF_LIMITS   // MAX_BYTES 24 MB, MAX_TESTS 512, MAX_MESSAGE 600, MAX_SECONDS 60, collider caps
@@ -2060,3 +2060,130 @@ LogicHost (optional, additive): getBounds(id), getColliderBounds(id), groundHeig
   locked gate, a torch-carrying guard, a shopkeeper selling the key, a night wolf
   pack that fears fire and two villagers; playtested by a bot
   (`apps/studio/test/hollowGate.test.ts`) and verified (`npcs` test).
+
+
+## Verified playable: `@aether/playtest` (+ additions to physics, logic, arch, render, agent, studio)
+
+The autonomous playtest agent: it derives what a player has to do in a World
+IR, plays the game (or walks the building) headless on the real character
+controller and logic runtime, and reports whether it can be won and what is
+broken. A new workspace package; no new third-party dependency.
+
+### `@aether/playtest` (headless: no three.js, no DOM)
+
+- `playtest(world, opts?) → PlaytestReport` — plays a game. Never throws except
+  `AbortError` (`opts.signal`). Options: `maxSimSeconds` (default 240, max 900),
+  `budgetMs` (default 20 000, max 120 000), `trace` (replay recording, default
+  true), `traceHz`, `onProgress`, `scripts`.
+- `walkthrough(world, opts?) → PlaytestReport` — walks a building: every room
+  of every `arch` building must be reached through its doors and stairs.
+- `selfRepair(world, opts?) → SelfRepairResult` — play → propose the smallest
+  patch → apply → play again, at most `maxRounds` (default 4, max 8). `opts.run`
+  and `opts.apply` let a host run the bot in a worker and commit repairs through
+  its history. `proposeRepairs(world, report)` is the pure part.
+- `deriveGoals(world)` / `deriveWalkGoals(world)` — objectives (pickups that
+  count, goals, winning zones, rooms), doors with their openers, hazards,
+  movers. A pickup is *required* when its state key is (transitively) read by a
+  winning rule or a door.
+- `NavGraph` — navigation graph sampled from the physics world (grid of
+  downward rays, capsule fit test, walk / jump / drop edges, jumps validated by
+  simulating the real controller, Dijkstra on typed arrays).
+- `toProof(report)`, `parseProof(raw)`, `proofTrace(proof)`, `hashWorld(world)`,
+  `proofFreshness`, `proofIsGreen`, `playtestKindOf(world)` — the bot's own
+  compact proof (subpath `@aether/playtest/proof`, dependency-light).
+- `toEvidence(proof)`, `EvidenceWire`, `evidenceTrace`, `evidenceSentence`,
+  `thinTrace`, `EVIDENCE_LIMITS` — the winning run in the form that is sealed
+  *inside* an `@aether/verifier` proof (see below). Only `passed` runs become
+  evidence; the trace is thinned to ≤ 400 frames and ≤ 20 events.
+- `talk` objectives (`ObjectiveKind`), the `talk_failed` finding and
+  `planDialogue(tree, wantedKeys)`: characters whose dialogue writes a state
+  key the game needs are talked to (E, then the numbered options).
+- `parseReport`, `ReportWire`, `ProgressWire` — validation of a report that
+  crossed a boundary (subpath `@aether/playtest/wire`).
+
+`PlaytestReport` (`v: 1`): `kind` (`game` | `walkthrough`), `status`
+(`passed` | `failed` | `inconclusive` | `unsupported`), `won`, `outcome`,
+`seconds` (simulated), `steps`, `wallMs`, `objectives[]` (`done` | `unreachable` |
+`blocked` | `untouched` | `pending`, with `reason`), `findings[]` (`code`,
+`severity`, a plain-sentence `message`, `entities`, `position`, `hint`, `data`),
+`falls`, `stuckPoints`, `path`, optional `trace` (`Float32Array` of x, y, z, yaw
+per frame + events), `summary` (one sentence), `worldHash`, `stats`. A report is
+`passed` only when the game's win (or every room) was actually reached in the
+run and no error-severity finding exists. Finding codes: `unreachable_objective`,
+`door_locked`, `door_stuck`, `door_blocked`, `unwinnable`, `lost`,
+`spawn_blocked`, `stuck`, `soft_lock`, `fell`, `no_win_condition`, `budget`,
+`unsupported`, `room_unreachable`, `clipping`, `no_entrance`.
+
+What the bot does not drive (reported `unsupported`, never green): block worlds,
+orbit-camera worlds, vehicles and avatar-entity players. Lifts and other
+moving platforms are planned on their starting pose only; a gap they may bridge
+is reported as a caution ("could not check"), never a verdict.
+
+**Proof wire format** (`Proof`, zod `ProofWire`): `v: 1`, `bot` (bot version),
+`kind`, `status`, `worldHash` (16 hex digits over the gameplay content: entities'
+pose, shape, physics and behaviours, rules, state, player, gravity, ground,
+generators, scripts — not colours, names or lighting), `seconds`, `steps`,
+`summary`, `objectives[]`, `issues[]`, `falls`, optional `trace` (box-quantised
+16-bit frames in base64, ≤ 6001 frames, ≤ 400 events), `ms`. A viewer recomputes
+`hashWorld`; a mismatch means the proof is *stale* and is never shown green.
+
+### `@aether/physics` (additive)
+
+`entityBounds(world, id, provider?)` (world-space AABB of an entity's collision
+geometry), `yieldToHost()` exported, `PhysicsWorld.capsuleFree(feet, radius,
+height, lift?)` (an upright capsule overlaps no solid collider).
+
+### `@aether/logic`, `@aether/arch` (additive)
+
+`zoneShapeOf`, `insideZone`, `ZoneShape` exported from logic (the touch
+volumes the runtime itself uses); `placedPolygon` exported from arch.
+
+### `@aether/render` (additive)
+
+`GhostRun`, `ghostPoseAt`, `validGhostTrace`, `GhostTrace`;
+`WorldRenderer.startGhost / stopGhost / seekGhost / playGhost / pauseGhost /
+setGhostSpeed / ghostState / ghostPosition` — a translucent player figure that
+walks a recorded path over the rendered world with the route drawn and a
+marker per event. Decorations are excluded from captures and exports like the
+proof replay.
+
+### `@aether/agent` (offline planner)
+
+New activity theme `vault` ("a locked vault with a key and a door"): a walled
+room with a state-locked door (`keys`), a golden key and a treasure goal.
+
+### Studio
+
+- `engine/playtest/` — `protocol.ts` (zod request / reply), `handler.ts` (pure,
+  testable), `playtest.worker.ts`, `client.ts` (one module worker, timeout,
+  cancel, progress, main-thread fallback), `controller.ts`
+  (`PlaytestController`: `run({repair, auto})`, `cancel`, replay control, `proof()`).
+- Store: `playtest: PlaytestState` and `replay: ReplayState | null`;
+  `ProofSeal` gained `kind`, `title`, `detail`.
+- `Studio.playtest`, `Studio.playtestProof()`; the app runs the bot (quiet when
+  there is nothing to play) after every agent turn that changed the world.
+- UI: `PlaytestPill` (the badge), `ReplayBar` (play, pause, scrub, speed),
+  `VerifiedSection` at the top of the Checks tab, the seal over the viewport.
+  `lib/playtestView.ts` decides when the badge may be green: only for a
+  `passed` run that was `proven` for the history entry on screen.
+- Share links and published builds carry **one** proof: the `@aether/verifier`
+  replay seal (`SharePayload.proof?`, `game.json` key `proof`, `proof.json`),
+  which contains the bot's run as its optional `playtest` member (see
+  "Replay proofs" above: `aether-proof` v1, `playtest` is an additive,
+  hashed and signed field). `PublishHost.playtestProof()` hands the bot's passed
+  run for exactly the world on screen to `sealCurrent`; a failed, stale or
+  missing run is simply not sealed in. The player title screen shows one badge
+  (`player/ProofBadge.tsx`): *Sealed playable* until a viewer checks it, with a
+  sentence about the bot's win and "Watch the bot's run" (ghost replay); "Check
+  it yourself" re-simulates the world and has the bot play again on the viewer's
+  device (`recheckProof` wires `checkProof({ playtest })` to the playtest worker).
+- `@aether/verifier` additions for this: `ProofBody.playtest?` (the evidence),
+  `createProof({ playtest })`, `CheckOptions.playtest` (a re-player; without it
+  the evidence is checked for freshness only), `CheckStep` name `bot`,
+  `ProofCheck.playtest` / `botReproduced`, `replaySettingsFor(world)` (the seal
+  horizon grows to the longest test, so a 16 s NPC test is decided), subpath
+  `@aether/verifier/bot` (`botEvidenceFor`, `rerunBot`, Node-side glue), and
+  `aether-verify seal` (runs the bot, `--no-bot` skips) / `aether-verify`
+  (re-plays the bot, `--no-bot` skips).
+- Commit label of a repair: `Playtest fix: <sentence>`, source `agent`; every repair
+  is one undo step.

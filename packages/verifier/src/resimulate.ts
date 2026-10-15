@@ -22,6 +22,20 @@ export interface ReplaySettings {
 /** Defaults of a sealed replay. */
 export const DEFAULT_REPLAY: ReplaySettings = Object.freeze({ maxSeconds: 12, traceHz: 12 });
 
+/**
+ * Replay settings for sealing `world`: the default horizon, extended (up to
+ * the proof cap) when one of the world's own tests needs longer to be decided
+ * (an NPC test that runs 16 s would otherwise stop undecided at 12 s).
+ */
+export function replaySettingsFor(world: WorldDoc): ReplaySettings {
+  let need = 0;
+  for (const t of world.tests) {
+    const v = (t as { within?: number; seconds?: number }).within ?? (t as { seconds?: number }).seconds ?? 0;
+    if (Number.isFinite(v) && v > need) need = v;
+  }
+  return { ...DEFAULT_REPLAY, maxSeconds: Math.min(60, Math.max(DEFAULT_REPLAY.maxSeconds, Math.ceil(need + 1))) };
+}
+
 /** Wall-clock budget of a replay (ms): large, because a replay must run to its horizon, not be cut short. */
 export const REPLAY_BUDGET_MS = 30_000;
 

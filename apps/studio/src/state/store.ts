@@ -96,6 +96,62 @@ export interface VerifyState {
   simulatedSeconds?: number;
 }
 
+/** One thing the bot found, as shown in the Verified panel. */
+export interface PlaytestFindingView {
+  severity: 'error' | 'warning' | 'info';
+  code: string;
+  message: string;
+  entities: string[];
+  /** World position of the problem, for a "show me" action. */
+  position?: [number, number, number];
+}
+
+/** One objective of a playtest, as shown in the Verified panel. */
+export interface PlaytestObjectiveView {
+  id: string;
+  label: string;
+  kind: string;
+  status: string;
+  required: boolean;
+  at?: number;
+  reason?: string;
+}
+
+/** Latest autonomous playtest ("is it playable?") of the world. */
+export interface PlaytestState {
+  /** `running` while the bot plays; the others are verdicts (a green badge needs `passed` on the current world). */
+  status: 'idle' | 'running' | 'passed' | 'failed' | 'inconclusive' | 'unsupported' | 'error';
+  kind: 'game' | 'walkthrough';
+  /** History entry id the verdict belongs to (stale when the head moved). */
+  head: number | null;
+  /** While running: 0..1 and what the bot is doing. */
+  progress: { fraction: number; note: string; seconds: number; round: number } | null;
+  /** The plain sentence about the outcome (what was found or fixed). */
+  sentence: string;
+  /** Sentences of the repairs applied by the last run (in order). */
+  repairs: string[];
+  findings: PlaytestFindingView[];
+  objectives: PlaytestObjectiveView[];
+  /** Simulated seconds of the winning run (or of the run that ended). */
+  seconds: number;
+  /** Wall-clock milliseconds the bot needed. */
+  ms: number;
+  /** A replay of the run exists. */
+  replay: boolean;
+  /** The proof (hash, trace, verdict) travels with shares and published builds only when this is true. */
+  proven: boolean;
+  /** Where the bot ran. */
+  worker: boolean;
+}
+
+/** State of the ghost replay of the bot's run. */
+export interface ReplayState {
+  playing: boolean;
+  time: number;
+  length: number;
+  speed: number;
+}
+
 /** The "proved" seal shown over the viewport after a verification run (with its replay). */
 export interface ProofSeal {
   /** Increments per seal (restarts its animation). */
@@ -108,6 +164,11 @@ export interface ProofSeal {
   seconds: number;
   /** True when a motion replay exists (the seal offers "Replay"). */
   replay: boolean;
+  /** Which proof this is: the physics tests (default) or the bot's playthrough. */
+  kind?: 'physics' | 'playtest';
+  /** Text overrides (the playtest seal speaks in its own words). */
+  title?: string;
+  detail?: string;
 }
 
 /** Live view of a running verification. */
@@ -218,6 +279,10 @@ export interface StudioState {
   fatal: string | null;
   stats: PerfStats;
   verify: VerifyState;
+  /** Autonomous playtest verdict (the Verified badge). */
+  playtest: PlaytestState;
+  /** Ghost replay of the bot's run, while shown (null otherwise). */
+  replay: ReplayState | null;
   /** Seal of the last verification run, while shown (null otherwise). */
   proofSeal: ProofSeal | null;
   /** Read-only viewer of a shared world (no editing tools, no agent). */
@@ -286,6 +351,8 @@ export interface StudioState {
   setFatal(msg: string | null): void;
   setStats(stats: PerfStats): void;
   setVerify(v: Partial<VerifyState>): void;
+  setPlaytest(v: Partial<PlaytestState>): void;
+  setReplay(v: ReplayState | null): void;
   setProofSeal(seal: ProofSeal | null): void;
   setPlanMarks(marks: { id: number; labels: LabelSpec[] } | null): void;
   setViewer(on: boolean): void;
@@ -362,6 +429,7 @@ export interface StudioInit {
 
 const EMPTY_STATS: PerfStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, bodies: 0, entities: 0, stepMs: 0, gpuMB: 0, heapMB: 0, sceneTriangles: 0, fieldInstances: 0, fieldDrawn: 0, virtualInstances: 0, virtualDrawn: 0 };
 const IDLE_VERIFY: VerifyState = { status: 'idle', summary: '', results: [], diagnostics: [], head: null, ms: 0 };
+const IDLE_PLAYTEST: PlaytestState = { status: 'idle', kind: 'game', head: null, progress: null, sentence: '', repairs: [], findings: [], objectives: [], seconds: 0, ms: 0, replay: false, proven: false, worker: false };
 const INITIAL_GAME: GameState = { status: 'playing', text: '', hud: {}, time: 0, intro: false };
 const MAX_TOAST_TEXT = 240;
 
@@ -409,6 +477,8 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     fatal: null,
     stats: EMPTY_STATS,
     verify: IDLE_VERIFY,
+    playtest: IDLE_PLAYTEST,
+    replay: null,
     proofSeal: null,
     planMarks: null,
     viewer: false,
@@ -497,6 +567,8 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setFatal: (fatal) => set({ fatal }),
     setStats: (stats) => set((s) => (shallowEqual(s.stats, stats) ? s : { stats })),
     setVerify: (v) => set((s) => ({ verify: { ...s.verify, ...v } })),
+    setPlaytest: (v) => set((s) => ({ playtest: { ...s.playtest, ...v } })),
+    setReplay: (replay) => set({ replay }),
     setProofSeal: (proofSeal) => set({ proofSeal }),
     setPlanMarks: (planMarks) => set({ planMarks }),
     setViewer: (viewer) => set({ viewer }),

@@ -359,5 +359,71 @@ const tower: Theme = {
   },
 };
 
+/**
+ * A locked vault: find the key lying outside, walk up to the vault door (it opens once the
+ * key is in the bag), and grab the treasure inside. The classic key-and-door dependency the
+ * playtest bot proves can be solved.
+ */
+const vault: Theme = {
+  id: 'vault',
+  kind: 'activity',
+  title: 'Locked Vault',
+  // A key alone is not enough ("a shopkeeper who sells a key" is a character, not a vault): it must be hunted or paired with a door.
+  match: /\b(locked (?:door|room|vault|chest)|vault|dungeon|escape room|door puzzle|keys? (?:and|&|for|to) (?:a |an |the )?(?:locked )?(?:door|vault|gate|chest)|(?:find|fetch|grab|collect|hunt for|search for|look for) (?:the |a |an )?(?:\w+ )?keys?)\b/,
+  radius: 16,
+  blurb: 'a locked vault: find the golden key, open the stone door and grab the treasure inside (keys on the HUD)',
+  env(b) {
+    b.env({ sky: 'day', timeOfDay: 15, bloom: 0.7, ground: { material: { preset: 'grass', color: '#6fa84f' }, size: 300 } });
+  },
+  player(b) {
+    b.player({ mode: 'thirdPerson', moveSpeed: 6, jumpSpeed: 6 });
+  },
+  build(c) {
+    const { b } = c;
+    b.player({ mode: 'thirdPerson', spawn: [r2(c.x), 1, r2(c.z + 15)], moveSpeed: 6, jumpSpeed: 6 });
+    const stone = { preset: 'stone', color: '#8c867b' } as const;
+    const half = 5;
+    const wall = (name: string, size: [number, number, number], at: [number, number, number]): string => b.prim(name, 'box', size, at, { material: stone, physics: 'static', tags: ['vault', 'wall'] });
+    wall('vault-wall', [10.4, 3.2, 0.4], [r2(c.x), 1.6, r2(c.z - half)]);
+    wall('vault-wall', [0.4, 3.2, 10.4], [r2(c.x - half), 1.6, r2(c.z)]);
+    wall('vault-wall', [0.4, 3.2, 10.4], [r2(c.x + half), 1.6, r2(c.z)]);
+    // The front wall leaves a doorway 2.2 m wide with a lintel over it.
+    wall('vault-wall', [3.9, 3.2, 0.4], [r2(c.x - 3.05), 1.6, r2(c.z + half)]);
+    wall('vault-wall', [3.9, 3.2, 0.4], [r2(c.x + 3.05), 1.6, r2(c.z + half)]);
+    wall('vault-lintel', [2.2, 0.6, 0.4], [r2(c.x), 2.9, r2(c.z + half)]);
+    b.prim('vault-roof', 'box', [10.8, 0.4, 10.8], [r2(c.x), 3.4, r2(c.z)], { material: { preset: 'stone', color: '#6f695f' }, physics: 'static', tags: ['vault'] });
+    b.prim('vault-door', 'box', [2.2, 2.6, 0.3], [r2(c.x), 1.3, r2(c.z + half)], {
+      name: 'Vault door',
+      material: { preset: 'metal', color: '#4a4f57', metalness: 0.7, roughness: 0.4 },
+      physics: 'kinematic',
+      behaviors: [{ type: 'door', params: { trigger: 'state', stateKey: 'keys', radius: 4, slide: [0, 2.8, 0], duration: 0.8 } }],
+      tags: ['door', 'vault'],
+    });
+    const key = b.prim('key', 'cylinder', [0.5, 0.12, 0.5], [r2(c.x - 9), 1.1, r2(c.z + 9)], {
+      name: 'Golden key',
+      rot: [90, 0, 0],
+      material: { preset: 'gold', emissive: '#ffb703', emissiveIntensity: 1.2 },
+      behaviors: [
+        { type: 'spin', params: { axis: [0, 0, 1], speed: 120 } },
+        { type: 'bob', params: { amplitude: 0.15, period: 1.6, phase: 0 } },
+        { type: 'collectible', params: { scoreKey: 'keys', value: 1, message: 'You found the key!' } },
+      ],
+      tags: ['key', 'focus'],
+    });
+    b.prim('treasure', 'box', [1.2, 1.2, 1.2], [r2(c.x), 0.8, r2(c.z - 2.5)], {
+      name: 'Treasure',
+      material: { preset: 'gold', emissive: '#ffd166', emissiveIntensity: 1.6 },
+      physics: { body: 'static', sensor: true },
+      behaviors: [{ type: 'spin', params: { speed: 60 } }, { type: 'goal', params: { text: 'You opened the vault!' } }],
+      tags: ['treasure', 'focus'],
+    });
+    b.state('keys', 0);
+    b.hud('keys', 'Keys');
+    b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: 'Find the golden key, open the vault and grab the treasure!', duration: 4 }] });
+    b.test({ id: 'key-stays-put', kind: 'staysAbove', target: key, y: 0.3, within: 4 });
+    b.meta('Locked Vault', 'Find the key, open the door, take the treasure');
+  },
+};
+
 /** Activities (order = tie-break priority). */
-export const GAME_THEMES: readonly Theme[] = [domino, coins, parkour, bowling, tower];
+export const GAME_THEMES: readonly Theme[] = [domino, coins, parkour, bowling, tower, vault];

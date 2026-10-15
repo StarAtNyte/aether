@@ -1,0 +1,22 @@
+{
+  "name": "@aether/playtest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./wire": "./src/wire.ts",
+    "./proof": "./src/proof.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@aether/arch": "*",
+    "@aether/core": "*",
+    "@aether/logic": "*",
+    "@aether/physics": "*",
+    "zod": "^4.6.6"
+  }
+}

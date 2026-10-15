@@ -14,7 +14,8 @@ import { Icon } from '../Icon';
 export const SEAL_SECONDS = 6;
 
 /** One-line summary of a seal (also the live-region text). Pure. */
-export function sealText(seal: { passed: boolean; tests: number; passedTests: number; seconds: number }): { title: string; detail: string } {
+export function sealText(seal: { passed: boolean; tests: number; passedTests: number; seconds: number; title?: string; detail?: string }): { title: string; detail: string } {
+  if (seal.title !== undefined) return { title: seal.title, detail: seal.detail ?? '' };
   const sim = seal.seconds > 0 ? ` · ${seal.seconds.toFixed(1)} s simulated` : '';
   if (seal.passed) {
     const checks = seal.tests === 0 ? 'Settles cleanly' : `${seal.passedTests} of ${seal.tests} check${seal.tests === 1 ? '' : 's'}`;
@@ -48,7 +49,7 @@ export const ProofSeal = memo(function ProofSeal(): ReactElement | null {
   if (!seal || playing) return null;
   const { title, detail } = sealText(seal);
   return (
-    <div key={seal.id} className={`proof-seal${seal.passed ? ' is-passed' : ' is-failed'}`} role="status" aria-live="polite">
+    <div key={seal.id} className={`proof-seal${seal.passed ? ' is-passed' : ' is-failed'}`} role="status" aria-live="polite" data-testid="proof-seal" data-kind={seal.kind ?? 'physics'}>
       <span className="proof-seal__mark" aria-hidden="true">
         {seal.passed ? (
           <svg viewBox="0 0 40 40" width="40" height="40" focusable="false">
@@ -65,7 +66,7 @@ export const ProofSeal = memo(function ProofSeal(): ReactElement | null {
         <span className="proof-seal__detail">{detail}</span>
       </span>
       {seal.passed && seal.replay ? (
-        <button type="button" className="proof-seal__btn" onClick={() => void studio.presentProof()} aria-label="Replay the physics proof" data-tip="Replay the proof">
+        <button type="button" className="proof-seal__btn" onClick={() => (seal.kind === 'playtest' ? void studio.playtest.startReplay() : void studio.presentProof())} aria-label={seal.kind === 'playtest' ? "Replay the bot's run" : 'Replay the physics proof'} data-tip={seal.kind === 'playtest' ? "Watch the bot's run again" : 'Replay the proof'}>
           <Icon name="refresh" />
         </button>
       ) : !seal.passed ? (

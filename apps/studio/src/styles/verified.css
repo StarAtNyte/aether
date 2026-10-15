@@ -1,0 +1,265 @@
+/* ==========================================================================
+   Verified playable: the badge, the replay bar and the Checks section.
+   Green is reserved for a real pass on the world on screen.
+   ========================================================================== */
+
+/* --- Badge in the viewport --- */
+
+.playtest-pill.is-verified {
+  color: var(--success-text);
+}
+
+.playtest-pill.is-verified .vp-btn__status {
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.playtest-pill.is-running .vp-btn__status {
+  background: var(--accent);
+}
+
+/* --- Replay bar --- */
+
+.replay-bar {
+  position: absolute;
+  z-index: var(--z-overlay);
+  left: 50%;
+  bottom: calc(var(--s-3) + 52px);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: min(560px, calc(100% - 2 * 76px));
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--overlay);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transform: translateX(-50%);
+  animation: replay-in 260ms var(--ease) both;
+}
+
+@keyframes replay-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replay-bar {
+    animation: none;
+  }
+}
+
+@container viewport (max-width: 700px) {
+  .replay-bar {
+    width: calc(100% - 2 * var(--s-3));
+    bottom: calc(var(--s-3) + 96px);
+  }
+}
+
+.replay-bar__btn,
+.replay-bar__speed {
+  display: inline-grid;
+  flex: none;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--s-2);
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.replay-bar__btn:hover,
+.replay-bar__speed:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.replay-bar__btn:focus-visible,
+.replay-bar__speed:focus-visible,
+.replay-bar__scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.replay-bar__track {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+  height: 28px;
+}
+
+.replay-bar__scrub {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.replay-bar__ticks {
+  position: absolute;
+  inset: auto 6px 3px;
+  height: 6px;
+  pointer-events: none;
+}
+
+.replay-bar__tick {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 6px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-3);
+}
+
+.replay-bar__tick.is-goal,
+.replay-bar__tick.is-win,
+.replay-bar__tick.is-room {
+  background: var(--success);
+}
+
+.replay-bar__tick.is-pickup {
+  background: var(--accent);
+}
+
+.replay-bar__time {
+  flex: none;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- Checks tab section --- */
+
+.verified {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.verified__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+
+.verified__mark {
+  display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.verified__mark.is-ok {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.verified__mark.is-bad {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.verified__mark.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.verified__mark.is-running {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.verified__text {
+  min-width: 0;
+}
+
+.verified__sentence {
+  margin: var(--s-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.verified__bar {
+  height: 3px;
+  margin-bottom: var(--s-2);
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.verified__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.verified__repairs,
+.verified__findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+}
+
+.verified__repairs li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  color: var(--text-2);
+}
+
+.verified__findings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.verified__finding {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.verified__objectives {
+  margin-top: var(--s-2);
+  font-size: var(--fs-12);
+}
+
+.verified__objectives summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.verified__replay {
+  margin: var(--s-2) 0 0;
+  font-size: var(--fs-11);
+}

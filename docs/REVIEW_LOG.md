@@ -2636,3 +2636,153 @@ console errors). Firefox could not start WebGL2 in this environment (the
 existing `e2e:editing --firefox` fails identically at renderer start), so the
 Firefox run of `e2e:npc` was not executed here; nothing in the NPC code is
 renderer-specific.
+
+
+## Stage: verified-playable hero flow
+
+An autonomous playtest agent (`packages/playtest`) plays a game or walks a
+building in a worker, a self-repair loop fixes what it finds with small
+undoable patches, the studio shows a "Verified playable" badge with a ghost
+replay of the winning run and the proof seal, and share links and published
+games carry the proof. Design in ARCHITECTURE §21, contracts in CONTRACTS
+("Verified playable").
+
+**Bugs found while building and testing it (all fixed, each with a test).**
+- Dijkstra with float32 distances re-expanded nodes without end (82 M
+  expansions for 37 k nodes: 15 s per plan) because a relaxation that
+  improved a float64 value by less than a float32 ulp pushed the same key
+  again. Distances and heap keys are float64 now: 80 k expansions, 19 ms.
+- Walk edges were chosen per direction ("nearest node in the next cell"), so
+  a room entered through a doorway could not be left again. An edge now exists
+  when either end picks the other; edges are two-way.
+- A stairway had no nodes: the capsule fit test lifted the capsule 7 cm, so
+  every tread overlapped the next riser. The lift is the step height (the
+  controller's own autostep) plus 1 cm.
+- A doorway with a few centimetres of slack fell between grid cells, and the
+  bot jumped over walls through "open" doorways: doorways now get nodes on
+  their own axis (portals), jump candidates need a clear line at chest
+  height, and a doorway the body cannot pass is measured and reported ("about
+  0.74 m of room, the player needs 0.75 m").
+- Hazards were blocked by their bounding box with a 1.8 m height band, which
+  blocked every platform above a lava pit; they use the logic runtime's own
+  touch volume now.
+- The stuck watchdog measured distance to a look-ahead waypoint that recedes
+  as fast as the bot walks, so it called every walk stuck. It measures the
+  player's own displacement.
+- A `grounded` flag flickers while the capsule climbs a wall edge; landing now
+  also needs a non-positive vertical speed.
+- Blame for being stuck went to the nearest door; it now names what the
+  capsule actually overlaps (furniture first).
+
+**Real findings about the product (reported, not hidden).** The offline
+architecture planner builds 0.8 m interior doors whose leaf folds against the
+jamb and leaves 0.74 m of clear opening — not enough for the studio's
+0.7 m capsule plus the controller skin. Five of the eight planner buildings
+pass the walkthrough as built; the café and loft fail honestly with "the
+washroom door is too narrow for the player", and the repair widens the door,
+its frame, the wall opening and the building plan to 0.9 m (café then passes).
+The loft stays reported: furniture next to its bathroom door leaves too
+little room (a layout problem the bot names but does not move). In the
+two-storey villa the bot climbs the stairs and visits the landing and the
+bathroom but finds no walkable way on to the main bedroom (the doorways sit at
+the stair top); it says "no walkable route to Main bedroom, the way passes
+villa-l1-d0-leaf" and does not guess a repair.
+
+SECURITY
+- [x] Worker boundary: requests and replies are zod-validated both ways
+  (strict objects, bounded numbers, request ids, one terminal reply per id);
+  the world is re-validated with `validateWorld`; reports and proofs crossing
+  the boundary are re-validated (`parseReport`, `parseProof`: finite numbers,
+  bounded lists, clipped strings, exact trace lengths, base64 shape).
+- [x] Resource caps: 900 s simulated and 120 s wall-clock at most (defaults 240
+  / 20), 200 objectives, 24 findings, 160 k nav nodes / 120 k cells, 6 000
+  trace frames, 400 events; the client times out and terminates a worker that
+  overruns (budget + 20 s) and supports cancellation. The Dijkstra expansion
+  is not interruptible mid-search (a pathological ledge-rich world is bounded
+  by the node cap and by the worker kill), which is the one known overrun.
+- [x] The proof is evidence, not authority: the hash binds it to gameplay
+  content (it is an integrity check, not a signature — anyone can forge a
+  proof for their own world), so the viewer's badge is green only for a
+  passed proof whose hash matches the world on the page, and "Re-run the
+  check" runs the bot on the viewer's own device. A malformed proof is dropped
+  with the world still opening; share links stay under the existing size caps.
+- [x] Repairs go through `History.commit` / `applyPatches` (validated,
+  invertible, one undo step each, never over a newer user edit, locked
+  entities untouched); the sentences shown contain entity names as plain text.
+- [x] Scripts: worlds with QuickJS scripts run in the worker with the existing
+  sandboxed runner; the bot adds no eval, network or file access.
+- [x] No new dependency (`zod` already in use); `docs/THIRD_PARTY.md` says so.
+
+PERFORMANCE
+- [x] Off the main thread: the bot, physics and logic run in a module worker
+  with progress at ≤ 10 Hz; the main thread only runs the repair proposals
+  (pure document analysis) and the cheap proof functions (`@aether/playtest/proof`
+  and `/wire` are physics-free; the bot chunk loads lazily on first use).
+- [x] Measured (Node, one core, software GL browser for the e2e): coin hunt
+  with 8 coins — 22 s of play in about 2 s wall (navigation graph 0.8 s for 37 k
+  nodes, planning 19 ms in total); locked vault — 7 s of play in 4 s wall (grid
+  0.1 m: 79 k nodes, 1.1 s); a six-room apartment walkthrough — 20 s of walking in
+  2.5 s wall; Firefox runs the same worker in 1.7 s.
+- [x] Memory: typed arrays only (positions, normals, edge caches 2 bits per
+  node and direction); the trace is at most 96 KB; the ghost builds its route
+  geometry once and disposes it; 20 start / stop cycles of the replay leave GPU
+  geometry counts flat (same probe as the physics proof).
+- [x] The grid adapts: 0.1 m for rooms and corridors (doorways), up to 1 m for
+  open fields, about 45 k–90 k cells.
+
+**Not done / known limits.** Lifts and moving platforms are planned on their
+starting pose (reported as a caution, never a verdict); pressure plates that
+must be held are visited, not held; vehicles, block worlds, orbit-camera worlds
+and avatar-entity players are `unsupported`; the Firefox WebGL part of the e2e
+could not run on this machine (`FEATURE_FAILURE_WEBGL_EXHAUSTED_DRIVERS`, the
+existing `e2e:ux` fails the same way) — the Firefox worker path was exercised
+without a renderer instead; custom model-written generators that need renderer
+colliders are built from their built-in fallback shapes in the bot's world.
+
+## Integration: characters + verified playable + replay seal
+
+Three finished stages met on `main`: prompt-defined characters (`npc`), the
+playtest bot with Verified playable (`verified`) and the replay verifier with
+signed seals (`@aether/verifier`). The first two were built before the third
+existed, so each carried its own proof concept.
+
+**Reconciled: one proof, one badge, one file format.**
+- The bot's own proof (`@aether/playtest/proof`) stays the bot's report format
+  inside the studio. What ships is the verifier's `aether-proof`: a passed bot
+  run is embedded as the additive, hashed and signed `playtest` member
+  (`createProof({ playtest })`), thinned to <= 400 frames / 20 events (a sealed
+  Hollow Gate proof is about 6 KB, inside the 16 KB link limit).
+- The branch's second badge and its `game.json` / share `proof` handling were
+  dropped; `player/ProofBadge.tsx` is the verifier's badge plus one sentence
+  about the bot, "Watch the bot's run" (the ghost replay) and, after "Check it
+  yourself", "Re-played on this device: it won again."
+- `checkProof` takes an injected re-player (`CheckOptions.playtest`), so the
+  verifier package does not load the bot engine: the CLI wires the Node bot,
+  the player wires the playtest worker. `aether-verify seal` runs the bot,
+  `aether-verify` re-plays it (`--no-bot` to skip). Hash, sign and format code
+  are the verifier's; nothing was duplicated.
+- Wording stays "deterministic replay check, not a formal proof". In the
+  studio a live bot run on the world on screen still reads "Verified playable"
+  (a visible check on this device); the published artefact is "Sealed
+  playable" until a viewer checks it.
+
+**Bugs the combination exposed, fixed at the root.**
+- The seal replayed 12 s, but The Hollow Gate's `npcs` test needs 16 s, so it
+  sealed as "not decided": the horizon is now the longest test (`replaySettingsFor`).
+- The bot could not win a world where a shopkeeper's dialogue unlocks the gate
+  ("nothing in the game ever sets it"). It now has `talk` objectives (press E,
+  numbered options, required gold becomes required pickups) and the headless
+  hosts expose collider bounds so characters navigate around buildings.
+- `aether-verify` could not read a world export (`aether-world`); it can.
+- `hashWorld` now covers `entity.npc` (a changed dialogue changes the gameplay).
+
+**Follow-ups (not done).**
+- `apps/cli/src/mcp/playtest.ts` (MCP autoplay) is an older, simpler bot with its
+  own result type; it should call `@aether/playtest` so MCP clients get talk
+  objectives, repair and the same evidence. Left alone to keep the MCP contract stable.
+- The seal horizon grows to the longest test but is capped at 60 s; a test
+  that needs longer is cut and reads "not decided" (the seal then fails, honestly).
+- The bot does not yet hold conversations that depend on the NPC's mood or
+  daylight (it waits for the hint and gives up after 1.5 s of simulated time).
+- A proof from a pre-merge bot (`aether-bot` format) no longer exists in the
+  wild (the branch never shipped), so there is no migration.

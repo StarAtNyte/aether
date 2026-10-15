@@ -34,5 +34,7 @@ export { summarizeReport, REPORT_LIMITS } from './report';
 export { TraceRecorder, TRACE_LIMITS, type TraceOptions } from './trace';
 export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';
+export { entityBounds, type Aabb } from './bounds';
+export { yieldToHost } from './yield';
 export { assetColliderDescs, assetGeneratorShape, usesAssets, ensureAssetCatalog } from './asset-colliders';
 export { entityColliderBounds, entityWorldBounds } from './bounds';

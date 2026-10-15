@@ -28,6 +28,7 @@ import type { GizmoMode } from './view/transform-gizmo';
 import { createSelectionControls, SelectionGizmo, type GizmoCommit, type GizmoOptions, type GizmoTarget, type SnapHit } from './view/selection-gizmo';
 import { EditOverlay, type ComponentMode } from './view/edit-overlay';
 import { ProofReplay, type ProofReplayOptions, type ProofTrace } from './view/proof-replay';
+import { GhostRun, type GhostTrace } from './view/ghost-run';
 import { BlueprintMarks, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, markBoxOf, type MarkBox } from './view/blueprint';
 import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 import type { MeshGeometryBundle } from './geometry/mesh-asset';
@@ -437,6 +438,7 @@ export class WorldRenderer {
   private readonly editOverlay = new EditOverlay();
   /** Ghost re-enactment of the last verification run (lazily creates its own ghost sync). */
   private readonly proof: ProofReplay;
+  private readonly ghostRun = new GhostRun();
   private proofSync: SceneSync | null = null;
   /** Corner-bracket plan marks drawn around newly built objects before they grow in. */
   private readonly blueprint = new BlueprintMarks();
@@ -551,7 +553,7 @@ export class WorldRenderer {
     this.qualityPlan = qualityPlan('realtime', this.budget);
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -822,6 +824,66 @@ export class WorldRenderer {
     if (!this.blueprint.active) return;
     this.blueprint.clear();
     this.needsDraw = true;
+  }
+
+  /**
+   * Replay a playtest run: a ghost player walks the recorded path over the
+   * rendered world. Time is controlled with {@link seekGhost}, {@link pauseGhost},
+   * {@link playGhost} and {@link setGhostSpeed}. Returns false for a malformed trace.
+   */
+  startGhost(trace: GhostTrace, opts: { speed?: number; autoplay?: boolean; onEnd?: () => void } = {}): boolean {
+    if (this.disposed) return false;
+    const ok = this.ghostRun.start(trace, opts);
+    this.needsDraw = true;
+    return ok;
+  }
+
+  /** Show the ghost at a live position while the bot is still playing (null removes it). */
+  ghostLive(pos: Vec3 | null): void {
+    if (this.disposed) return;
+    if (pos) this.ghostRun.live(pos[0], pos[1], pos[2]);
+    else this.ghostRun.stopLive();
+    this.needsDraw = true;
+  }
+
+  /** Remove the ghost player. */
+  stopGhost(): void {
+    if (!this.ghostRun.active) return;
+    this.ghostRun.stop();
+    this.needsDraw = true;
+  }
+
+  /** Jump the ghost to a time in seconds. */
+  seekGhost(t: number): void {
+    this.ghostRun.seek(t);
+    this.needsDraw = true;
+  }
+
+  /** Resume the ghost (from the start if it had finished). */
+  playGhost(): void {
+    this.ghostRun.play();
+    this.needsDraw = true;
+  }
+
+  /** Pause the ghost. */
+  pauseGhost(): void {
+    this.ghostRun.pause();
+  }
+
+  /** Playback speed of the ghost (0.1–16). */
+  setGhostSpeed(v: number): void {
+    this.ghostRun.setSpeed(v);
+  }
+
+  /** State of the ghost for a player UI. */
+  get ghostState(): { active: boolean; playing: boolean; time: number; length: number; speed: number } {
+    const g = this.ghostRun;
+    return { active: g.active, playing: g.playing, time: g.time, length: g.length, speed: g.rate };
+  }
+
+  /** The ghost's world position (feet), or null when there is none. */
+  ghostPosition(): [number, number, number] | null {
+    return this.ghostRun.active ? this.ghostRun.position() : null;
   }
 
   /** Stop a running proof replay. */
@@ -1676,6 +1738,7 @@ export class WorldRenderer {
     if (growing) this.needsDraw = true;
     if (this.blueprint.active && this.blueprint.update(step)) this.needsDraw = true;
     if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
+    if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
     if (opts.animate !== false && this.sync.updateAnimations(step)) this.needsDraw = true;
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
@@ -2093,7 +2156,7 @@ export class WorldRenderer {
     const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     const mime = captureMime(opts.mime);
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
-    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
     const aspect = this.perspective.aspect;
@@ -2201,7 +2264,7 @@ export class WorldRenderer {
     _savedCamUp.copy(cam.up);
     const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
     // Hide view-dependent decorations; give the background a flat sky color.
-    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const hidden: Object3D[] = [this.env.sky.group, this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = hidden.map((o) => o.visible);
     // Neutralize fog through its density uniform: removing it (scene.fog = null) changes every
     // material's shader, and each capture then built a fog-less variant of every object's GPU
@@ -2452,6 +2515,7 @@ export class WorldRenderer {
     this.archView.dispose();
     this.editOverlay.dispose();
     this.proof.dispose();
+    this.ghostRun.dispose();
     this.proofSync?.dispose();
     this.proofSync = null;
     this.blueprint.dispose();

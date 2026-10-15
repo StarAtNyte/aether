@@ -4,6 +4,7 @@ import type { DiagnosticView } from '../../lib/chat';
 import { formatMs } from '../../lib/format';
 import { Icon } from '../Icon';
 import { RichText } from '../RichText';
+import { VerifiedSection } from './VerifiedSection';
 
 /** One line on where and how fast the last run went, e.g. "12 s of physics in 340 ms · 2 parallel workers". */
 export function runMeta(v: { ms: number; lanes?: number | undefined; worker?: boolean | undefined; simulatedSeconds?: number | undefined }): string {
@@ -35,6 +36,7 @@ export const VerifyPanel = memo(function VerifyPanel(): ReactElement {
 
   return (
     <div className="verify">
+      <VerifiedSection />
       <div className="panel-toolbar">
         <button type="button" className="btn btn--primary btn--sm" disabled={running || playing} onClick={() => void studio.runVerify()}>
           <Icon name="shield" /> {running ? 'Checking…' : 'Run checks'}

@@ -5,10 +5,11 @@
  * hashing is the dependency-free SHA-256 of `./hash`.
  */
 import { validateWorld, type WorldDoc } from '@aether/core';
+import { hashWorld as botWorldHash, toEvidence, type Evidence, type Proof as BotProof } from '@aether/playtest/proof';
 import type { ColliderDesc } from '@aether/procgen';
 import { fromBase64Url, hashJson, toBase64Url, utf8 } from './hash';
 import { PHYSICS_ENGINE, PROOF_FORMAT, PROOF_LIMITS, PROOF_VERSION, REPLAY_ENGINE, parseProof, type Proof, type ProofBody, type ProofColliderEntries, type ProofSignature } from './proof';
-import { claimHash, DEFAULT_REPLAY, resimulate, type ReplaySettings } from './resimulate';
+import { claimHash, replaySettingsFor, resimulate, type ReplaySettings } from './resimulate';
 
 /** Fixed physics step of the replay (the engine's default; recorded in the proof). */
 export const REPLAY_FIXED_DT = 1 / 60;
@@ -119,6 +120,12 @@ export interface CreateProofOptions {
   now?: number;
   signal?: AbortSignal;
   budgetMs?: number;
+  /**
+   * The playtest bot's proof for exactly this world. A passed run is embedded as the seal's
+   * `playtest` evidence (hashed and signed with it); any other verdict is left out. A proof for a
+   * different version of the gameplay content is refused.
+   */
+  playtest?: BotProof | Evidence | null;
 }
 
 function colliderNumbers(list: ReadonlyArray<readonly [string, readonly ColliderDesc[]]>): number {
@@ -140,10 +147,10 @@ function colliderNumbers(list: ReadonlyArray<readonly [string, readonly Collider
  * verdict of a complete replay.
  */
 export async function createProof(world: WorldDoc, opts: CreateProofOptions = {}): Promise<Proof> {
-  const settings = opts.settings ?? DEFAULT_REPLAY;
   const v = validateWorld(world);
   if (!v.ok) throw new Error(`invalid world: ${v.issues.slice(0, 3).map((i) => `${i.path} ${i.message}`).join('; ')}`);
   const doc = v.world;
+  const settings = opts.settings ?? replaySettingsFor(doc);
   const given = opts.colliders ?? [];
   const embeddable = given.length <= PROOF_LIMITS.MAX_COLLIDER_ENTITIES && colliderNumbers(given) <= PROOF_LIMITS.MAX_COLLIDER_NUMBERS;
   const entries = embeddable ? ([...given].map(([id, d]) => [id, [...d]]) as unknown as ProofColliderEntries) : undefined;
@@ -155,6 +162,11 @@ export async function createProof(world: WorldDoc, opts: CreateProofOptions = {}
   });
   if (replay.inconclusive) throw new Error('The replay ran out of time before it could reach a verdict, so no proof was sealed.');
   const claim = { ...replay.claim, hash: claimHash(replay.claim) };
+  let playtest: Evidence | null = null;
+  if (opts.playtest) {
+    playtest = Array.isArray(opts.playtest.objectives) ? toEvidence(opts.playtest as BotProof) : (opts.playtest as Evidence);
+    if (playtest && playtest.worldHash !== botWorldHash(doc)) throw new Error("The playtest bot's proof is for another version of this world, so it was not sealed.");
+  }
   const body: ProofBody = {
     format: PROOF_FORMAT,
     v: PROOF_VERSION,
@@ -169,6 +181,7 @@ export async function createProof(world: WorldDoc, opts: CreateProofOptions = {}
           ? { mode: 'embedded', hash: hashJson(entries), entries }
           : { mode: 'external', hash: hashJson(given.map(([id, d]) => [id, d])) },
     claim,
+    ...(playtest ? { playtest } : {}),
     ...(replay.trace ? { trace: replay.trace } : {}),
   };
   const proof: Proof = { ...body, hash: proofBodyHash(body) };

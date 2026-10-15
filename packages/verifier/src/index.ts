@@ -20,7 +20,7 @@ export {
   type ProofColliderEntries,
   type ParsedProof,
 } from './proof';
-export { resimulate, claimOf, claimHash, diffClaims, DEFAULT_REPLAY, REPLAY_BUDGET_MS, type ReplaySettings, type ReplayResult, type ResimulateOptions } from './resimulate';
+export { resimulate, claimOf, claimHash, diffClaims, DEFAULT_REPLAY, replaySettingsFor, REPLAY_BUDGET_MS, type ReplaySettings, type ReplayResult, type ResimulateOptions } from './resimulate';
 export { createProof, signProof, verifySignature, generateSigningKey, generateNonExtractableKey, keyId, worldHash, proofBodyHash, REPLAY_FIXED_DT, type CreateProofOptions, type SigningKey, type SigningKeyPair } from './seal';
 export { checkProof, describeClaim, statusSummary, type CheckOptions, type CheckStep, type ProofCheck, type ProofStatus } from './check';
 export { splitBundle, parseProofJson, stringifyBundle, type Bundle } from './embed';

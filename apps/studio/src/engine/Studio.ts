@@ -4,6 +4,7 @@
  * once the viewport canvas exists. React components call into this object
  * and subscribe to History / the store; they never own engine state.
  */
+import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
@@ -50,6 +51,7 @@ import type { VerifyTrace } from '@aether/physics';
 import { playUiSound } from '../lib/uiSound';
 import { planMarks } from '../lib/planMarks';
 import { encodeWorldToken, viewerUrl } from '../lib/shareLink';
+import { PlaytestController } from './playtest/controller';
 import { LiveVerifyFeed } from './verify/live';
 import { VerifyPool } from './verify/pool';
 import { VerificationService } from './verify/service';
@@ -147,6 +149,8 @@ export class Studio {
   readonly npcChat: NpcChatController;
   /** Publishing: games, videos, renders, models, floor plans, share links, history, versions. */
   readonly publish: PublishController;
+  /** The Verified-playable flow: an autonomous bot plays or walks the world, repairs it, replays its run. */
+  readonly playtest: PlaytestController;
   private readonly storage: StorageLike | null;
   private readonly sandbox: SandboxRunner | null;
   /** Physics verification in workers (main-thread fallback). */
@@ -157,6 +161,11 @@ export class Studio {
   private lastProof: { trace: VerifyTrace | null; passed: boolean; head: number; tests: number; passedTests: number; seconds: number } | null = null;
   private proofSeq = 0;
   private proofGen = 0;
+  /** The bot's proof for the world on screen (a real passed run), or null; shares and builds carry it. */
+  playtestProof(): Promise<Proof | null> {
+    return this.playtest.proof();
+  }
+
   /** Cancels the running panel verification (dispose). */
   private verifyAbort: AbortController | null = null;
   private warmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -231,6 +240,7 @@ export class Studio {
     this.forge = new ForgeController(this);
     this.npcChat = new NpcChatController(this);
     this.publish = new PublishController(this);
+    this.playtest = new PlaytestController(this);
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -867,7 +877,10 @@ export class Studio {
     this.warmTimer = setTimeout(() => {
       const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
       const warm = (): void => {
-        if (!this.disposed) this.verifier.warm(Object.keys(this.history.current.scripts).length > 0);
+        if (!this.disposed) {
+          this.verifier.warm(Object.keys(this.history.current.scripts).length > 0);
+          this.playtest.warm();
+        }
       };
       if (typeof idle === 'function') idle(warm, { timeout: 4000 });
       else warm();
@@ -974,7 +987,11 @@ export class Studio {
       if (this.onSave) this.schedulePersist();
       else saveChat(this.storage, this.store.getState().chat);
     }
-    if (status === 'done' && this.history.current !== before) void this.presentProof();
+    if (status === 'done' && this.history.current !== before) {
+      void this.presentProof();
+      // Then the bot plays or walks what was just built (quiet when there is nothing to play).
+      void this.playtest.run({ auto: true });
+    }
   }
 
   /**
@@ -1251,6 +1268,7 @@ export class Studio {
     if (this.warmTimer !== null) clearTimeout(this.warmTimer);
     this.warmTimer = null;
     this.verifier.dispose();
+    this.playtest.dispose();
     for (const c of this.cleanups.splice(0)) c();
     this.arch.dispose();
     this.publish.dispose();

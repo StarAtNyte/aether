@@ -817,6 +817,7 @@ export class Simulation {
   play(): Promise<void> {
     // Edit-mode decorations (proof replay, plan marks) never carry into play.
     this.renderer.stopProof();
+    this.renderer.stopGhost();
     this.renderer.clearBlueprint();
     this.transition = this.transition.then(() => this.startSession()).catch((err: unknown) => {
       log.error('play failed', err);

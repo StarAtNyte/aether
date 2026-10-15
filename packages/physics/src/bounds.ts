@@ -7,6 +7,7 @@ import type { EntityId, Vec3, WorldDoc } from '@aether/core';
 import { entityPose } from './plan';
 import { collidersBounds } from './shapes';
 import { resolveShapeColliders } from './source';
+import type { ColliderProvider } from './types';
 import { rotate } from './vec';
 
 /**
@@ -14,10 +15,10 @@ import { rotate } from './vec';
  * applied), expanded by `margin` on every side. Null when it has no extent or
  * is unknown.
  */
-export function entityWorldBounds(world: WorldDoc, id: EntityId, margin = 0): { min: Vec3; max: Vec3 } | null {
+export function entityWorldBounds(world: WorldDoc, id: EntityId, margin = 0, provider?: ColliderProvider): { min: Vec3; max: Vec3 } | null {
   const e = Object.hasOwn(world.entities, id) ? world.entities[id] : undefined;
   if (!e) return null;
-  const local = collidersBounds(resolveShapeColliders(e, 'auto', world).colliders);
+  const local = collidersBounds(resolveShapeColliders(e, 'auto', world, provider).colliders);
   if (!local) return null;
   const pose = entityPose(world, id);
   const min: Vec3 = [Infinity, Infinity, Infinity];
@@ -71,4 +72,24 @@ export function entityColliderBounds(world: WorldDoc, id: EntityId): Array<{ min
     out.push({ min, max });
   }
   return out;
+}
+
+/** An axis-aligned box in world space. */
+export interface Aabb {
+  min: Vec3;
+  max: Vec3;
+}
+
+/**
+ * World-space AABB of the collider geometry of `id` (transform, rotation and
+ * scale applied), or null when it has none. Never throws; an optional
+ * provider resolves asset colliders.
+ */
+export function entityBounds(world: WorldDoc, id: EntityId, provider?: ColliderProvider): Aabb | null {
+  try {
+    const b = entityWorldBounds(world, id, 0, provider);
+    return b && b.min.every(Number.isFinite) && b.max.every(Number.isFinite) ? b : null;
+  } catch {
+    return null;
+  }
 }

@@ -14,6 +14,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { checkProof, describeClaim, type ProofCheck } from './check';
 import { parseProofJson, splitBundle, stringifyBundle } from './embed';
+import { evidenceSentence } from '@aether/playtest/proof';
 import { PROOF_LIMITS } from './proof';
 import { createProof, generateSigningKey, type SigningKeyPair } from './seal';
 
@@ -26,12 +27,14 @@ export interface CliIo {
 const HELP = `aether-verify - re-simulate a sealed Aether world and check its proof
 
 Usage:
-  aether-verify <proof.json | game.json | build-dir> [--world <file>] [--trust <publicKey>]... [--no-replay] [--json]
-  aether-verify seal <game.json | world.json> [--out proof.json] [--key key.json] [--seconds 12]
+  aether-verify <proof.json | game.json | build-dir> [--world <file>] [--trust <publicKey>]... [--no-replay] [--no-bot] [--json]
+  aether-verify seal <game.json | world.json> [--out proof.json] [--key key.json] [--seconds <n>] [--no-bot]
   aether-verify keygen <key.json>
 
 A pass means an independent deterministic replay reproduced the claimed
-outcome. It is not a formal proof that the game is correct.
+outcome. A seal can also carry the playtest bot's winning run; checking it
+re-plays the game with the bot (skip with --no-bot). It is not a formal proof
+that the game is correct.
 Exit status: 0 verified, 1 not verified, 2 usage error.
 `;
 
@@ -42,6 +45,12 @@ async function readJson(path: string): Promise<unknown> {
   const v = parseProofJson(await readFile(path, 'utf8'));
   if (v === null) throw new Error(`${path}: not valid JSON (or over the size cap)`);
   return v;
+}
+
+/** The world inside a game manifest (`aether-game`) or a world export (`aether-world`); a bare world is itself. */
+function worldOf(raw: unknown): unknown {
+  const f = (raw as { format?: string } | null)?.format;
+  return f === 'aether-game' || f === 'aether-world' ? (raw as { world: unknown }).world : raw;
 }
 
 function flag(args: string[], name: string): string | undefined {
@@ -68,6 +77,7 @@ function printCheck(c: ProofCheck, io: CliIo): void {
   for (const s of c.steps) io.out(`  ${mark(s.result)} ${s.name.padEnd(12)} ${s.detail}`);
   for (const d of c.differences.slice(0, 10)) io.out(`  ! ${d}`);
   if (c.proof) io.out(describeClaim(c.proof));
+  if (c.playtest) io.out(`${evidenceSentence(c.playtest)}${c.botReproduced ? ' Re-played just now: it won again.' : ''}`);
   if (c.signature) io.out(`signed by key ${c.signature.keyId} (${c.signature.valid ? 'signature valid' : 'signature INVALID'}); the key is not tied to an identity`);
   io.out(`${c.ms} ms`);
 }
@@ -96,14 +106,14 @@ export async function main(argv: string[], io: CliIo = { out: (t) => process.std
       args.shift();
       const out = flag(args, '--out') ?? 'proof.json';
       const keyPath = flag(args, '--key');
-      const seconds = Number(flag(args, '--seconds') ?? '12');
+      const secondsFlag = flag(args, '--seconds');
       const file = args[0];
       if (!file) {
         io.err('seal needs a game.json or world file');
         return 2;
       }
       const raw = await readJson(file);
-      const world = (raw as { format?: string; world?: unknown }).format === 'aether-game' ? (raw as { world: unknown }).world : raw;
+      const world = worldOf(raw);
       const key = keyPath ? ((await readJson(keyPath)) as SigningKeyPair) : undefined;
       const { validateWorld } = await import('@aether/core');
       const v = validateWorld(world);
@@ -111,13 +121,20 @@ export async function main(argv: string[], io: CliIo = { out: (t) => process.std
         io.err(`${file}: not a valid world`);
         return 2;
       }
-      const proof = await createProof(v.world, { settings: { maxSeconds: Number.isFinite(seconds) ? seconds : 12, traceHz: 12 }, ...(key ? { key } : {}) });
+      const noBot = args.includes('--no-bot');
+      let bot: import('./bot').BotRun | null = null;
+      if (!noBot) {
+        bot = await (await import('./bot')).botEvidenceFor(v.world);
+        if (!bot.passed) io.err(`note: the bot did not win it (${bot.summary}); sealing without bot evidence`);
+      }
+      const proof = await createProof(v.world, { ...(secondsFlag !== undefined && Number.isFinite(Number(secondsFlag)) ? { settings: { maxSeconds: Number(secondsFlag), traceHz: 12 } } : {}), ...(key ? { key } : {}), ...(bot?.passed ? { playtest: bot.proof } : {}) });
       await writeFile(out, stringifyBundle(proof, v.world));
-      io.out(`sealed ${out}: ${describeClaim(proof)}${key ? '; signed' : '; unsigned'}`);
+      io.out(`sealed ${out}: ${describeClaim(proof)}${proof.playtest ? '; a bot played it to the win' : ''}${key ? '; signed' : '; unsigned'}`);
       return 0;
     }
     const json = args.includes('--json');
     const noReplay = args.includes('--no-replay');
+    const noBot = args.includes('--no-bot');
     const trusted = flagAll(args, '--trust');
     const worldPath = flag(args, '--world');
     const file = args.find((a) => !a.startsWith('--'));
@@ -133,10 +150,12 @@ export async function main(argv: string[], io: CliIo = { out: (t) => process.std
     let world = bundle.world;
     if (worldPath) {
       const w = await readJson(worldPath);
-      world = (w as { format?: string; world?: unknown }).format === 'aether-game' ? (w as { world: unknown }).world : w;
+      world = worldOf(w);
     }
-    const check = await checkProof(bundle.proof, world, { replay: !noReplay, ...(trusted.length > 0 ? { trustedKeys: trusted } : {}) });
-    if (json) io.out(JSON.stringify({ status: check.status, ok: check.ok, playable: check.playable, summary: check.summary, steps: check.steps, signature: check.signature, differences: check.differences, ms: check.ms }));
+    const sealedBot = typeof bundle.proof === 'object' && bundle.proof !== null && 'playtest' in bundle.proof;
+    const rerun = sealedBot && !noBot && !noReplay ? (await import('./bot')).rerunBot : undefined;
+    const check = await checkProof(bundle.proof, world, { replay: !noReplay, ...(rerun ? { playtest: rerun } : {}), ...(trusted.length > 0 ? { trustedKeys: trusted } : {}) });
+    if (json) io.out(JSON.stringify({ status: check.status, ok: check.ok, playable: check.playable, summary: check.summary, steps: check.steps, signature: check.signature, differences: check.differences, bot: check.playtest ? { reproduced: check.botReproduced, kind: check.playtest.kind, seconds: check.playtest.seconds } : null, ms: check.ms }));
     else printCheck(check, io);
     return check.ok || check.status === 'intact' ? 0 : 1;
   } catch (e) {
