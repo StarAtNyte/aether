@@ -50,7 +50,7 @@ function watch(page: Page, errors: string[]): void {
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const text = m.text();
-    if (!BENIGN_CONSOLE.some((re) => re.test(text))) errors.push(`console.error: ${text.slice(0, 300)}`);
+    if (!BENIGN_CONSOLE.some((re) => re.test(text))) errors.push(`console.error: ${text.slice(0, 300)} @ ${m.location().url.slice(0, 160)}`);
   });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message.slice(0, 300)}`));
 }
@@ -76,8 +76,14 @@ async function buildFromHero(page: Page, base: string, prompt: string): Promise<
   await page.locator('#hero-prompt').waitFor({ timeout: 30_000 });
   await page.locator('#hero-prompt').focus();
   await page.keyboard.type(prompt);
-  await page.keyboard.press('Enter');
-  await page.waitForURL(/#\/p\/[a-z0-9]+/, { timeout: 30_000 });
+  // The projects store opens asynchronously (a few seconds on a software-GL Firefox): an Enter before it is
+  // ready only shows "Projects are still loading", so submit again until the project opens.
+  const opened = /#\/p\/[a-z0-9]+/;
+  for (let attempt = 0; attempt < 8 && !opened.test(page.url()); attempt++) {
+    await page.keyboard.press('Enter');
+    await page.waitForURL(opened, { timeout: 4_000 }).catch(() => undefined);
+  }
+  await page.waitForURL(opened, { timeout: 30_000 });
   log(`  project opened for "${prompt}"`);
   await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 60_000 });
   log('  the agent started');

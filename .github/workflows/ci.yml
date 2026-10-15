@@ -65,6 +65,8 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium firefox
+      # Firefox gets WebGL from a headed run on a virtual display (tests/e2e/support/firefox-gl.sh).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
       - run: npm run e2e
       - run: npm run e2e:hosted
       - run: npm run e2e:security

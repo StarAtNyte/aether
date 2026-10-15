@@ -563,6 +563,15 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm run e2e:assets` | Asset pipeline in Chromium (WebGPU, WebGL2) and Firefox: library search with thumbnails, drag a sofa onto the floor (model + collider), HDR sky, GLB / PNG imports (junk refused), package export with models and CREDITS.txt, GPU objects flat over 20 place / undo cycles |
 | `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset; `-- --arch`: each building as an archviz set — studio overview, room close-up, night, exploded, section, floor plan) |
 
+**Firefox on a machine without a GPU or a display.** Playwright's headless Firefox
+cannot create a WebGL context there, so the Firefox runs of every e2e suite use a
+headed Firefox on a virtual display: `tests/e2e/support/firefox-gl.sh` (what
+`findFirefox()` returns on Linux when `xvfb-run` is installed) drops the
+`-headless` flag and runs Firefox under `xvfb-run` with `LIBGL_ALWAYS_SOFTWARE=1`;
+Mesa's llvmpipe then provides WebGL 2 ("llvmpipe, or similar") and the studio's
+WebGL2 path runs for real. Install `xvfb` (`apt install xvfb`), nothing else.
+`AETHER_E2E_FIREFOX_GL=0` goes back to plain headless Firefox.
+
 ## How a prompt becomes a playable world
 
 ```mermaid

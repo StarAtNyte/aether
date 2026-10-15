@@ -41,13 +41,16 @@ export function useThumbnails(repo: ProjectRepo | null, projects: readonly Proje
     if (!repo) return;
     let live = true;
     const want = new Map(projects.filter((p) => p.hasThumbnail).map((p) => [p.id, `${p.id}:${p.updatedAt}`]));
-    // Drop stale entries.
+    // Drop stale entries, and stop showing them at once: an <img> left on a revoked URL fails to load.
+    let dropped = false;
     for (const [id, entry] of cache.current) {
       if (want.get(id) !== entry.key) {
         URL.revokeObjectURL(entry.url);
         cache.current.delete(id);
+        dropped = true;
       }
     }
+    if (dropped) setUrls(new Map([...cache.current].map(([id, e]) => [id, e.url])));
     const missing = [...want].filter(([id]) => !cache.current.has(id));
     void Promise.all(
       missing.map(async ([id, key]) => {

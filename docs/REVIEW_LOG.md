@@ -2786,3 +2786,15 @@ existed, so each carried its own proof concept.
   daylight (it waits for the hint and gives up after 1.5 s of simulated time).
 - A proof from a pre-merge bot (`aether-bot` format) no longer exists in the
   wild (the branch never shipped), so there is no migration.
+
+**Firefox WebGL in the e2e suites.** Earlier stages recorded that headless
+Firefox here has no WebGL (`FEATURE_FAILURE_WEBGL_EXHAUSTED_DRIVERS`) and ran
+Firefox without a renderer. A headed Firefox on an Xvfb virtual display does get
+WebGL 2 (llvmpipe), so `tests/e2e/support/firefox-gl.sh` now wraps the Firefox
+executable (see the README, "Firefox on a machine without a GPU or a display")
+and `e2e`, `e2e:npc`, `e2e:proof` and `e2e:verified` run their Firefox halves for
+real. Software GL makes Firefox start its project store a few seconds late, which
+`e2e:verified` now tolerates (it submits the hero prompt again until the project
+opens). Also fixed: the project home kept showing a thumbnail whose object URL it
+had just revoked (a `Failed to load resource` console error, seen once in
+`e2e:verified`).

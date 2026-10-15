@@ -81,6 +81,23 @@ export const FIREFOX_PREFS: Readonly<Record<string, boolean | number | string>> 
  * pinned build, then any cached Playwright Firefox, then a system Firefox.
  */
 export function findFirefox(): string {
+  const real = findRealFirefox();
+  // Headless Firefox has no WebGL on machines without a GPU; a headed one on a virtual display has (llvmpipe).
+  if (process.platform === 'linux' && process.env['AETHER_E2E_FIREFOX_GL'] !== '0' && hasXvfbRun()) {
+    process.env['AETHER_E2E_FIREFOX_REAL'] = real;
+    return FIREFOX_GL_WRAPPER;
+  }
+  return real;
+}
+
+/** Wrapper that runs Firefox headed under Xvfb with software WebGL (see the script's header). */
+const FIREFOX_GL_WRAPPER = join(REPO_ROOT, 'tests/e2e/support/firefox-gl.sh');
+
+function hasXvfbRun(): boolean {
+  return (process.env['PATH'] ?? '').split(':').some((d) => d !== '' && existsSync(join(d, 'xvfb-run')) && existsSync(join(d, 'Xvfb')));
+}
+
+function findRealFirefox(): string {
   const fromEnv = process.env['AETHER_E2E_FIREFOX'];
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
   const pinned = firefox.executablePath();
