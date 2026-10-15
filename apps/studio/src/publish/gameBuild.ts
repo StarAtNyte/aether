@@ -68,6 +68,8 @@ export interface GameBuildInput {
   save?: Uint8Array | null;
   /** The user's imports the world references. */
   imports?: readonly BundledImport[];
+  /** Sealed replay proof of exactly `world` (`@aether/verifier`); shipped in `game.json` and `proof.json`. */
+  proof?: ProofLike;
   /** Fetch a file of the studio's own build (default: `fetch` from the site root). */
   fetchFile?: (path: string) => Promise<Uint8Array>;
   /** Image processing (default: canvas). Tests pass a stub. */
@@ -91,10 +93,17 @@ export interface GameBuild {
   id: string;
 }
 
+/** The parts of a proof the build reads (the full value is validated by the viewer's check, never here). */
+export interface ProofLike {
+  hash: string;
+  claim: { passed: boolean };
+  signature?: { publicKey: string };
+}
+
 /** Cuts cover images and icons (browser canvas by default). */
 export interface ImageKit {
-  /** Cover-crop `image` to `w`×`h` and encode PNG. */
-  crop(image: Blob, w: number, h: number): Promise<Uint8Array>;
+  /** Cover-crop `image` to `w`×`h` and encode PNG. `stamp` is a short caption drawn in the corner (share cards). */
+  crop(image: Blob, w: number, h: number, stamp?: string): Promise<Uint8Array>;
 }
 
 const ITCH_COVER: readonly [number, number] = [630, 500];
@@ -102,7 +111,7 @@ const ITCH_COVER: readonly [number, number] = [630, 500];
 /** Browser canvas image kit. */
 export function canvasImageKit(): ImageKit {
   return {
-    async crop(image: Blob, w: number, h: number): Promise<Uint8Array> {
+    async crop(image: Blob, w: number, h: number, stamp?: string): Promise<Uint8Array> {
       const bitmap = await createImageBitmap(image);
       try {
         const canvas = document.createElement('canvas');
@@ -116,6 +125,7 @@ export function canvasImageKit(): ImageKit {
         ctx.fillStyle = '#07080b';
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(bitmap, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        if (stamp) drawStamp(ctx, stamp, w, h);
         const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
         canvas.width = 0;
         canvas.height = 0;
@@ -126,6 +136,34 @@ export function canvasImageKit(): ImageKit {
       }
     },
   };
+}
+
+/** A small caption pill in the lower-left corner of a share card. */
+function drawStamp(ctx: CanvasRenderingContext2D, text: string, w: number, h: number): void {
+  const size = Math.max(11, Math.round(h * 0.034));
+  const pad = Math.round(size * 0.7);
+  ctx.font = `600 ${size}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+  const width = Math.min(w - pad * 2, ctx.measureText(text).width + pad * 2);
+  const height = size + pad;
+  const x = pad;
+  const y = h - pad - height;
+  ctx.fillStyle = 'rgba(7, 8, 11, 0.78)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, height / 2);
+  ctx.fill();
+  ctx.fillStyle = '#7ee0a8';
+  ctx.beginPath();
+  ctx.arc(x + pad * 0.9, y + height / 2, size * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#f2f4f8';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + pad * 1.5, y + height / 2 + 1, width - pad * 2);
+}
+
+/** Caption of a sealed share card (never claims more than a recorded replay). */
+export function sealStamp(proof: ProofLike | undefined): string | undefined {
+  if (!proof || !proof.claim.passed) return undefined;
+  return `Replay-sealed · ${proof.hash.slice(7, 15)}`;
 }
 
 async function defaultFetch(path: string): Promise<Uint8Array> {
@@ -149,7 +187,7 @@ export function buildId(gameText: string, files: readonly string[]): string {
 }
 
 /** The published index.html from the player page. */
-export function publishedIndexHtml(playHtml: string, game: { title: string; description: string }): string {
+export function publishedIndexHtml(playHtml: string, game: { title: string; description: string; proof?: ProofLike }): string {
   const title = escapeXml(game.title.slice(0, 80) || 'Untitled game');
   const desc = escapeXml((game.description || `${game.title} — a playable 3D world made with Aether.`).replace(/\s+/g, ' ').slice(0, 300));
   // Function replacers: a replacement STRING would expand `$'`, `$&`, `$1` … typed into a title,
@@ -161,6 +199,7 @@ export function publishedIndexHtml(playHtml: string, game: { title: string; desc
     '<link rel="apple-touch-icon" href="icon-192.png" />',
     `<meta property="og:title" content="${title}" />`,
     `<meta property="og:description" content="${desc}" />`,
+    ...(game.proof && game.proof.claim.passed && /^sha256:[0-9a-f]{64}$/.test(game.proof.hash) ? [`<meta name="aether:proof" content="${game.proof.hash}" />`] : []),
   ].join('\n    ');
   // The CSP must come before anything it governs: right after the charset.
   html = html.replace(/(<meta charset="UTF-8"\s*\/?>)/i, (charset: string) => `${charset}\n    ${head}`);
@@ -191,7 +230,7 @@ export function webManifest(title: string, description: string): string {
 }
 
 /** README.md of a build: what it is and how to put it online. */
-export function buildReadme(game: { title: string; description: string; author: string; controls: string }, credits: string): string {
+export function buildReadme(game: { title: string; description: string; author: string; controls: string }, credits: string, sealed = false): string {
   return [
     `# ${game.title}`,
     '',
@@ -214,6 +253,14 @@ export function buildReadme(game: { title: string; description: string; author: 
     '',
     'It works offline after the first visit and can be installed as an app.',
     '',
+    ...(sealed
+      ? [
+          '## Replay seal',
+          '',
+          'This game ships a replay proof (`proof.json`, also inside `game.json`): a record that re-simulating the world with its physics and rules reproduced the author\'s checks. The title screen has a "Check it yourself" button, or run `npx aether-verify game.json` from the Aether repository. It is a deterministic replay check, not a formal proof that the game is correct.',
+          '',
+        ]
+      : []),
     '## Credits',
     '',
     '```',
@@ -327,6 +374,7 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     controls: input.controls.trim().slice(0, 300),
     publishedAt: input.now ?? Date.now(),
     music: input.music,
+    ...(input.proof ? { proof: input.proof } : {}),
     ...(input.save && input.save.byteLength > 0 ? { save: 'saves/world.aethersave' } : {}),
     ...(imports.length > 0 ? { imports } : {}),
     world,
@@ -335,7 +383,7 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
   add('game.json', enc.encode(gameText));
   if (game.save && input.save) add(game.save, input.save);
   const playHtml = new TextDecoder().decode(await fetchFile('play.html'));
-  add('index.html', enc.encode(publishedIndexHtml(playHtml, game)));
+  add('index.html', enc.encode(publishedIndexHtml(playHtml, { title: game.title, description: game.description, ...(input.proof ? { proof: input.proof } : {}) })));
   try {
     add('favicon.svg', await fetchFile('favicon.svg'));
   } catch {
@@ -344,16 +392,18 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
   const images = input.images ?? (typeof document !== 'undefined' ? canvasImageKit() : null);
   if (input.cover && images) {
     progress(done, total, 'Cutting covers and icons…');
-    add('cover.png', await images.crop(input.cover, ITCH_COVER[0], ITCH_COVER[1]));
-    add('screenshot.png', await images.crop(input.cover, 1280, 720));
+    const stamp = sealStamp(input.proof);
+    add('cover.png', await images.crop(input.cover, ITCH_COVER[0], ITCH_COVER[1], stamp));
+    add('screenshot.png', await images.crop(input.cover, 1280, 720, stamp));
     add('icon-192.png', await images.crop(input.cover, 192, 192));
     add('icon-512.png', await images.crop(input.cover, 512, 512));
   }
   add('manifest.webmanifest', enc.encode(webManifest(game.title, game.description)));
   const credits = creditsText(game.title, creditsFor(world, getCatalog()));
   add('CREDITS.txt', enc.encode(credits));
-  add('README.md', enc.encode(buildReadme(game, credits)));
+  add('README.md', enc.encode(buildReadme(game, credits, input.proof !== undefined)));
   add(`project/${exportFileName(world)}`, enc.encode(exportWorld(world)));
+  if (input.proof) add('proof.json', enc.encode(JSON.stringify(input.proof, null, 2)));
   add('.nojekyll', new Uint8Array(0));
   const files = entries.map((e) => e.name).sort();
   const id = buildId(gameText, files);

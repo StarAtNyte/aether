@@ -13,6 +13,7 @@ import { validateWorld } from '@aether/core';
 import { createMockProvider, WorldAgent, type AgentEvent } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
+import { checkProof, createProof } from '@aether/verifier';
 import { GENERATOR_LIBRARY, loadLibraryGenerator, type SandboxRunner } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, runVerify } from './lib/headless-world';
@@ -72,6 +73,17 @@ async function runPrompt(prompt: string, sandbox: SandboxRunner): Promise<SmokeR
   const final = await runVerify(world);
   if (!final.passed) problems.push(`final verify failed: ${final.summary}`);
   if (lastVerify && !lastVerify.passed) problems.push(`agent verify failed: ${lastVerify.summary}`);
+
+  // The sealed replay of the final world reproduces itself through JSON (the proof is portable and deterministic).
+  if (final.passed && !world.voxel) {
+    try {
+      const proof = await createProof(world);
+      const check = await checkProof(JSON.parse(JSON.stringify(proof)), JSON.parse(JSON.stringify(world)));
+      if (check.status !== 'verified') problems.push(`replay proof did not re-verify: ${check.status} ${check.differences.join('; ')}`);
+    } catch (e) {
+      problems.push(`replay proof failed: ${e instanceof Error ? e.message.slice(0, 160) : 'error'}`);
+    }
+  }
 
   return {
     prompt,

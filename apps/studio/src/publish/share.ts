@@ -49,9 +49,14 @@ export interface SharePayload {
   v: typeof SHARE_VERSION;
   world: WorldDoc;
   meta: ShareMeta;
+  /** Sealed replay proof (`@aether/verifier`), untrusted until a viewer re-checks it. */
+  proof?: unknown;
 }
 
-const Envelope = z.object({ v: z.literal(SHARE_VERSION), world: z.unknown(), meta: ShareMeta.optional() }).strict();
+const Envelope = z.object({ v: z.literal(SHARE_VERSION), world: z.unknown(), meta: ShareMeta.optional(), proof: z.unknown().optional() }).strict();
+
+/** Largest proof (JSON characters) a share link carries: links stay short; bigger proofs ship with downloaded games. */
+export const MAX_LINK_PROOF_CHARS = 16 * 1024;
 
 /** Result of {@link decodeShare}. */
 export type ShareDecodeResult = { ok: true; payload: SharePayload } | { ok: false; error: string };
@@ -66,6 +71,8 @@ export interface ShareEncodeResult {
   jsonBytes: number;
   /** False when the link exceeds {@link MAX_FRAGMENT_CHARS}. */
   fits: boolean;
+  /** True when the link carries the replay proof (false: none given, or too large for a link). */
+  sealed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +178,9 @@ export function cleanMeta(meta: ShareMeta): ShareMeta {
 }
 
 /** Serialize, compress and encode a world for a share link. */
-export async function encodeShare(world: WorldDoc, meta: ShareMeta = {}): Promise<ShareEncodeResult> {
+export async function encodeShare(world: WorldDoc, meta: ShareMeta = {}, proof?: object | null): Promise<ShareEncodeResult> {
   const payload: SharePayload = { v: SHARE_VERSION, world, meta: cleanMeta(meta) };
+  if (proof && JSON.stringify(proof).length <= MAX_LINK_PROOF_CHARS) payload.proof = proof;
   const json = new TextEncoder().encode(JSON.stringify(payload));
   let value: string;
   if (canCompress()) {
@@ -181,7 +189,7 @@ export async function encodeShare(world: WorldDoc, meta: ShareMeta = {}): Promis
   } else {
     value = `J${toBase64Url(json)}`;
   }
-  return { value, chars: value.length, jsonBytes: json.byteLength, fits: value.length <= MAX_FRAGMENT_CHARS };
+  return { value, chars: value.length, jsonBytes: json.byteLength, fits: value.length <= MAX_FRAGMENT_CHARS, sealed: payload.proof !== undefined };
 }
 
 /**
@@ -226,7 +234,9 @@ export async function decodeShare(value: string): Promise<ShareDecodeResult> {
   if (!env.success) return { ok: false, error: 'This link does not contain an Aether world.' };
   const world = validateImportedValue(env.data.world);
   if (!world.ok) return { ok: false, error: world.error };
-  return { ok: true, payload: { v: SHARE_VERSION, world: world.world, meta: cleanMeta(env.data.meta ?? {}) } };
+  const payload: SharePayload = { v: SHARE_VERSION, world: world.world, meta: cleanMeta(env.data.meta ?? {}) };
+  if (typeof env.data.proof === 'object' && env.data.proof !== null && JSON.stringify(env.data.proof).length <= MAX_LINK_PROOF_CHARS * 4) payload.proof = env.data.proof;
+  return { ok: true, payload };
 }
 
 /** Full share URL for a player page (`base` like `https://host/play`). */

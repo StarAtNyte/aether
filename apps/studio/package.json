@@ -17,6 +17,7 @@
     "@aether/render": "*",
     "@aether/procgen": "*",
     "@aether/logic": "*",
+    "@aether/verifier": "*",
     "@aether/agent": "*",
     "@aether/voxel": "*",
     "react": "^19.3.0",

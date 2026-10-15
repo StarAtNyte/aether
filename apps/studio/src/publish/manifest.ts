@@ -36,6 +36,8 @@ const Envelope = z
     save: z.string().regex(SAVE_PATH).optional(),
     /** User imports (models, posters, skies) shipped with the build; metadata is validated by the player. */
     imports: z.array(z.object({ meta: z.unknown(), file: z.string().regex(IMPORT_PATH) }).strict()).max(MAX_GAME_IMPORTS).default([]),
+    /** Replay proof (`@aether/verifier`); untrusted, validated only when a viewer re-checks it. */
+    proof: z.unknown().optional(),
     world: z.unknown(),
   })
   .strict();
@@ -51,6 +53,8 @@ export interface GameManifest {
   save?: string;
   /** Bundled user imports (metadata still untrusted: the player validates it and the file). */
   imports?: Array<{ meta: unknown; file: string }>;
+  /** Sealed replay proof, if the author sealed the game (untrusted until checked). */
+  proof?: unknown;
   world: WorldDoc;
 }
 
@@ -75,9 +79,22 @@ export function parseGameManifest(value: unknown): GameParseResult {
       music: e.music,
       ...(e.save ? { save: e.save } : {}),
       ...(e.imports.length > 0 ? { imports: e.imports.map((i) => ({ meta: i.meta, file: i.file })) } : {}),
+      ...(e.proof !== undefined && proofFits(e.proof) ? { proof: e.proof } : {}),
       world: w.world,
     },
   };
+}
+
+/** Largest proof (JSON characters) a game or link carries; larger ones are dropped, never trusted. */
+export const MAX_PROOF_CHARS = 24 * 1024 * 1024;
+
+/** True when `value` is a plain JSON value small enough to carry. */
+function proofFits(value: unknown): boolean {
+  try {
+    return typeof value === 'object' && value !== null && JSON.stringify(value).length <= MAX_PROOF_CHARS;
+  } catch {
+    return false;
+  }
 }
 
 /** Serialize a game for `game.json`. */
@@ -93,6 +110,7 @@ export function gameJson(game: GameManifest): string {
     music: game.music,
     ...(game.save ? { save: game.save } : {}),
     ...(game.imports && game.imports.length > 0 ? { imports: game.imports } : {}),
+    ...(game.proof !== undefined ? { proof: game.proof } : {}),
     world: game.world,
   });
 }

@@ -20,6 +20,7 @@ export type {
 } from './types';
 
 export { createGeneratorApi, type BuildOptions } from './api';
+export { parseCollider } from './colliders';
 export { ARCH_GENERATOR_IDS, BUILTIN_GENERATORS, catalog, getBuiltinGenerator } from './generators/index';
 export { generate, generateBuiltinSync, generatorSourceHash, proceduralOutputKey, resolveBuiltin, yieldToEventLoop } from './generate';
 export { archToOutput } from './generators/arch';

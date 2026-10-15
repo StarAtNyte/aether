@@ -47,7 +47,7 @@ These are bundled into the studio or executed by the server.
 | scheduler | 0.28.0 | MIT | react-dom |
 | @types/react | 19.3.0 | MIT | Type-only peer of zustand. Not present at runtime. |
 | csstype | 3.2.3 | MIT | Type-only dependency of @types/react |
-| esbuild | 0.28.2 | MIT (© 2020 Evan Wallace) | tsx (TypeScript transform on the server); also a direct, exactly pinned dependency of `@aether/bridge`, which bundles the asset checker (`check.mjs`) handed to the local coding agent. Its platform binary package `@esbuild/<platform>` 0.28.2 is MIT as well. |
+| esbuild | 0.28.2 | MIT (© 2020 Evan Wallace) | tsx (TypeScript transform on the server); the proof e2e (`tests/e2e/proof.e2e.ts`) bundles the verifier for browsers with it; also a direct, exactly pinned dependency of `@aether/bridge`, which bundles the asset checker (`check.mjs`) handed to the local coding agent. Its platform binary package `@esbuild/<platform>` 0.28.2 is MIT as well. |
 | fsevents | 2.3.3 | MIT | Optional, macOS only (file watching) |
 | @openai/codex | 0.162.1 | Apache-2.0 | @openai/codex-sdk (the Codex CLI; its platform package `@openai/codex-<platform>` ships a native binary, Apache-2.0). Runs only on the user's machine inside the bridge. |
 | loglevel | 1.9.2 | MIT (© Tim Perry) | @mlc-ai/web-llm |
@@ -380,3 +380,11 @@ MediaRecorder); glTF export and its parse-back check use `GLTFExporter` and
 `GLTFLoader` from the `three` dependency (MIT). No codec library, font,
 music or image asset is bundled; the soundtrack is synthesised with Web
 Audio at run time.
+
+Replay proofs (`packages/verifier`, docs/PROOFS.md) add no dependency: the
+SHA-256 is a small in-repo implementation (checked against `node:crypto` and
+the published vectors), signatures use Web Crypto Ed25519, and the package
+reuses `@aether/core`, `@aether/physics`, `@aether/logic`, `@aether/procgen`,
+`zod` and `tsx` (the `aether-verify` bin runs the TypeScript sources like the
+`aether` CLI).
+

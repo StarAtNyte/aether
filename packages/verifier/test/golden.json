@@ -1,0 +1,33 @@
+{
+  "engine": "aether-replay/1",
+  "worlds": {
+    "turntable": {
+      "world": "sha256:002810885e0f404909e089cb5243f0da362174874898f4bb0a94a6e7cd701901",
+      "claim": "sha256:fc2b77ad5e87db2d6332c5a00dac8de86efed30e179388ce0ad3c40f10ade233",
+      "trace": "sha256:90b9ac87640bc980a6d948df96ba0883881bae7e8f8e0aba2b4023dc17b93dcc",
+      "tests": 1,
+      "passed": true
+    },
+    "dominoes": {
+      "world": "sha256:c4b43d480b18194d3b9a7eedca30c9c70b2d6ae58a05dd027fc4010e1073246d",
+      "claim": "sha256:a58f41e6204bf418a033815c995b42ae2d5e5e310c10aee4510f573daec4fcfa",
+      "trace": "sha256:43f980094f562e0bf11340072784b954e65f2dabc3efaf18da4445ce917da32a",
+      "tests": 1,
+      "passed": true
+    },
+    "ramp": {
+      "world": "sha256:dd4ec9c1316586ff3853e5c72d0ee6e637570d26fe684fbbb263609c743a0ebe",
+      "claim": "sha256:4ab1361f20acbde7b0444ea0e97404c149eecf76e85717c83859f53e05884993",
+      "trace": "sha256:c695f9c9bcd1abea3ddba3a6057eb1e57711a476a64e73bb33ecf5df5f19aa3b",
+      "tests": 1,
+      "passed": true
+    },
+    "rules": {
+      "world": "sha256:44aae3458622551625aec1ea6e5769fa20dbd9f18ee23c6c551e78066e700760",
+      "claim": "sha256:d148a496db6cc8501865fe7eb31838265c8188c3266d84ff53d4cfef9e989e51",
+      "trace": "sha256:3c3c4b27859c103f9ef9e8335930d3ea8029d45098f93ce55938dd903e3da55a",
+      "tests": 1,
+      "passed": true
+    }
+  }
+}

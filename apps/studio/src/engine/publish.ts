@@ -14,6 +14,8 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { History, Vec3, WorldDoc } from '@aether/core';
 import { floorPlan2d, listBuildings, listLevels, planToWorld } from '@aether/arch';
 import type { Provider } from '@aether/agent';
+import type { ColliderProvider } from '@aether/physics';
+import type { Proof } from '@aether/verifier';
 import type { StudioState } from '../state/store';
 import type { Simulation } from './Simulation';
 import { createLogger, errorMessage } from '../lib/log';
@@ -120,6 +122,8 @@ export interface PublishState {
   /** This page runs on this computer or the local network: its links do not work elsewhere. */
   playerLocal: boolean;
   game: { includeSave: boolean };
+  /** Replay seal (docs/PROOFS.md): published games and share links carry a proof of a deterministic replay. */
+  seal: SealState;
   hosting: {
     /** Publishing to hosting / LAN is available (local app, or a paired bridge); null while checking. */
     local: boolean | null;
@@ -138,6 +142,21 @@ export interface PublishState {
 }
 
 /** What the controller needs from the studio. */
+/** State of the replay seal shown in the publish hub. */
+export interface SealState {
+  /** Seal published games and share links (default on). */
+  on: boolean;
+  /** Sign with this browser's key (default on). */
+  sign: boolean;
+  status: 'idle' | 'sealing' | 'sealed' | 'failed';
+  /** What happened, in plain words (null while idle). */
+  note: string | null;
+  /** Short content hash of the last seal. */
+  hash: string | null;
+  /** Short id of the signing key, when signed. */
+  keyId: string | null;
+}
+
 export interface PublishHost {
   readonly store: StoreApi<StudioState>;
   readonly history: History;
@@ -177,6 +196,7 @@ function initialState(world: WorldDoc): PublishState {
     playerBase: initialPlayerBase(),
     playerLocal: isLocalUrl(initialPlayerBase()),
     game: { includeSave: false },
+    seal: { on: true, sign: true, status: 'idle', note: null, hash: null, keyId: null },
     hosting: { local: null, via: null, targets: null, checking: false, buildId: null, buildUrl: null, deploying: null, log: [], lan: null },
     history: [],
     versions: [],
@@ -367,6 +387,66 @@ export class PublishController {
 
   setGame(patch: Partial<PublishState['game']>): void {
     this.set({ game: { ...this.state.getState().game, ...patch } });
+  }
+
+  setSeal(patch: Partial<Pick<SealState, 'on' | 'sign'>>): void {
+    this.sealCache = null;
+    const st = this.state.getState();
+    this.set({ seal: { ...st.seal, ...patch, status: 'idle', note: null, hash: null, keyId: null }, share: { ...st.share, value: null, qr: null, note: null } });
+  }
+
+  /** The last seal attempt, keyed by the exact world and signing choice (a seal is reused until either changes). */
+  private sealCache: { world: WorldDoc; sign: boolean; proof: Promise<Proof | null> } | null = null;
+
+  /**
+   * Replay the current world and seal the outcome (null when sealing is off,
+   * failed, or some check fails: a failing world is never sealed as playable).
+   * Cached per world version. Never throws.
+   */
+  async sealCurrent(signal?: AbortSignal): Promise<Proof | null> {
+    const st = this.state.getState().seal;
+    if (!st.on) return null;
+    const world = this.host.history.current;
+    if (this.sealCache && this.sealCache.world === world && this.sealCache.sign === st.sign) return this.sealCache.proof;
+    const run = (async (): Promise<Proof | null> => {
+      this.set({ seal: { ...this.state.getState().seal, status: 'sealing', note: 'Replaying the physics to seal the world…' } });
+      const sim = this.sim;
+      let colliders: ColliderProvider | undefined;
+      if (sim) {
+        try {
+          await sim.whenSynced();
+          if (sim.syncedWorld === world) colliders = sim.colliders;
+        } catch {
+          colliders = undefined;
+        }
+      }
+      const { sealWorld } = await import('../publish/seal');
+      const out = await sealWorld(world, { colliders, sign: st.sign, ...(signal ? { signal } : {}) });
+      if (this.host.history.current !== world) return null;
+      if (!out.ok) {
+        this.set({ seal: { ...this.state.getState().seal, status: 'failed', note: `Not sealed: ${out.error}`, hash: null, keyId: null } });
+        return null;
+      }
+      const { keyId } = await import('@aether/verifier');
+      const proof = out.proof;
+      if (!proof.claim.passed) {
+        const failed = proof.claim.tests.filter((t) => !t.passed).length;
+        this.set({ seal: { ...this.state.getState().seal, status: 'failed', note: `Not sealed: ${failed > 0 ? `${failed} check${failed === 1 ? '' : 's'} fail` : 'the physics report errors'}. Fix them and publish again.`, hash: null, keyId: null } });
+        return null;
+      }
+      this.set({
+        seal: {
+          ...this.state.getState().seal,
+          status: 'sealed',
+          note: `Sealed playable: ${proof.claim.tests.length === 0 ? 'settles cleanly' : `${proof.claim.tests.length} check${proof.claim.tests.length === 1 ? '' : 's'} passed`} over ${proof.claim.simulatedSeconds.toFixed(1)} s${out.signed ? ', signed with this browser\'s key' : ''}. A deterministic replay check, not a formal proof.`,
+          hash: proof.hash.slice(7, 19),
+          keyId: proof.signature ? keyId(proof.signature.publicKey) : null,
+        },
+      });
+      return proof;
+    })();
+    this.sealCache = { world, sign: st.sign, proof: run };
+    return run;
   }
 
   // ---------------------------------------------------------------------------
@@ -895,7 +975,9 @@ export class PublishController {
     try {
       const [{ cleanMeta, encodeShare, LONG_LINK_CHARS, shareUrl }, { encodeQr, qrPath }] = await Promise.all([import('../publish/share'), import('../publish/qr')]);
       const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}) });
-      const enc = await encodeShare(world, meta);
+      const proof = await this.sealCurrent();
+      if (this.host.history.current !== world) return;
+      const enc = await encodeShare(world, meta, proof);
       const url = shareUrl(this.playerBase(), enc.value);
       let qr: string | null = null;
       let qrSize = 0;
@@ -912,6 +994,7 @@ export class PublishController {
       else if (enc.chars > 1_000_000) notes.push('Firefox opens links up to about 1 MB and this one is larger: for Firefox players, download the game or publish it to your hosting.');
       else if (enc.chars > LONG_LINK_CHARS) notes.push('This is a long link: it works in browsers, but some chat apps cut long links. A downloaded or hosted game always works.');
       if (!qr && enc.fits) notes.push('Too long for a QR code: share the link itself.');
+      if (proof && !enc.sealed) notes.push('The replay seal is too large for a link: publish the game to include it.');
       if (imports > 0) notes.push(`${imports} imported file${imports > 1 ? 's' : ''} cannot travel in a link and show as stand-ins. Publish the game to include them.`);
       this.set({ share: { value: enc.fits ? enc.value : null, chars: enc.chars, fits: enc.fits, qr, qrSize, note: notes.join(' ') || null } });
     } catch (e) {
@@ -979,6 +1062,8 @@ export class PublishController {
         log.warn('voxel save export failed', e);
       }
     }
+    this.progress('Sealing the replay…', null);
+    const proof = await this.sealCurrent(signal);
     const { buildGame } = await import('../publish/gameBuild');
     const imports = await this.host.bundledImports();
     const b = await buildGame({
@@ -991,6 +1076,7 @@ export class PublishController {
       cover,
       save,
       imports,
+      ...(proof ? { proof } : {}),
       signal,
       onProgress: (done, total, label) => this.progress(label, total > 0 ? (done / total) * 0.9 : null),
     });

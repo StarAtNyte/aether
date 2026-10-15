@@ -622,6 +622,7 @@ flowchart TB
 | [`@aether/physics`](packages/physics) | Rapier 0.21 wrapper: incremental sync, joints, character controller, events, snapshots and forks, `verify`, `diagnose`, `settle` |
 | [`@aether/logic`](packages/logic) | Deterministic gameplay runtime: rules engine, 26 behaviours, QuickJS script sandbox, host-agnostic through `LogicHost` |
 | [`@aether/render`](packages/render) | `WorldRenderer`: WebGPU/WebGL2, incremental `SceneSync`, instanced scatter, environment, cameras, picking, ghost preview, debug overlays, screenshots |
+| [`@aether/verifier`](packages/verifier) | Independent replay verifier and signed proofs: re-simulates a sealed world headless and checks content hash, signature, engine version and outcome (`aether-verify`, also in the browser); see [docs/PROOFS.md](docs/PROOFS.md) |
 | [`@aether/agent`](packages/agent) | `WorldAgent` plan → patch → verify → repair loop, tools, system prompt, Anthropic, OpenAI, HTTP and mock providers |
 | [`apps/server`](apps/server) | LLM proxy with server-held keys, world share links, generator cache, static hosting, hardening |
 | [`apps/studio`](apps/studio) | The editor and player |

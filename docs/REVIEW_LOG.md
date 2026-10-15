@@ -2405,3 +2405,69 @@ PERFORMANCE
 smoke 28/28. The full Vitest run passes on Node 24; on Node 22.19 three
 unrelated suites (render allocation probe, procgen sandbox lockdown, server
 generator cache) fail identically without this stage and pass on Node 24.
+
+## Stage: independent replay verifier and signed proofs
+
+Scope: `packages/verifier` (`@aether/verifier`, `aether-verify`), proofs in
+game builds and share links, the player's "Check it yourself" badge,
+`docs/PROOFS.md`. The headless logic host and pose pool moved from the studio
+into the verifier package (the studio re-exports them), so the verification
+workers, the smoke test and the standalone verifier run the same code.
+
+SECURITY
+- [x] Every proof read from outside is untrusted: zod `.strict()` schema, caps
+  (24 MB file, 512 tests, message length, 60 simulated seconds, collider
+  count and numbers), canonical-JSON hashing that rejects non-finite numbers
+  and cycles. Hostile `__proto__` members are rejected (tested).
+- [x] Check order is fixed and fails closed: format, content hash, signature,
+  engine version, world hash, replay. An edited proof is `tampered`; an edited
+  and re-hashed one `replay-diverged`; a re-hashed signed one `bad-signature`;
+  a grafted signature or key does not verify (all tested, plus in browsers).
+- [x] The replay of a hostile world is as safe as playing it: `validateWorld`,
+  scripts only in the QuickJS sandbox, replay bounded by the 60 s simulated
+  horizon and a 30 s wall-clock budget (a budget cut is `inconclusive`, never
+  sealed or judged).
+- [x] Embedded colliders are re-validated with `parseCollider`; modified
+  colliders change their hash (`tampered`). Worlds needing colliders a proof
+  does not carry are `unverifiable` instead of being replayed with guesses.
+- [x] Signing key: non-extractable Ed25519 `CryptoKey` in IndexedDB. A
+  signature is never described as identity; docs/PROOFS.md lists what a proof
+  does not say (the world's own tests may be meaningless; `sealedAt` is the
+  sealer's clock; engine changes need a `REPLAY_ENGINE` bump, pinned by
+  golden hashes).
+- [x] Honest wording is centralised in `@aether/verifier/format`; "Verified
+  playable" needs both a reproduced claim and an all-pass claim; a sealed
+  failure is never shown as playable, and publishing does not seal a world
+  with failing checks. The page meta tag and image caption use only validated
+  `sha256:` hashes.
+- [x] Share links drop proofs above 16 KB (decoded proofs are capped at 4x
+  that before use); `game.json` drops proofs above 24 MB.
+- [x] `npm audit`/new dependencies: none added (SHA-256 in-repo, checked
+  against `node:crypto` for every length around the block boundaries).
+
+PERFORMANCE
+- [x] The verifier is imported lazily (seal at publish time, check on
+  click); the player's first load is unchanged apart from the small badge
+  component and the `format` strings.
+- [x] Sealing replays at most 12 simulated seconds on the main thread with
+  the verifier's cooperative yielding, cached per world version; typical
+  worlds take 0.05 to 1 s (the slowest bundled game, 0.7 s). Share-link
+  creation waits for the seal on its first call only.
+- [x] Proofs are small (about 1 KB per 4 tests; 0.7 KB added to a link).
+
+Tests: 47 verifier tests (hash vectors, tampering, signature grafting, engine
+and world mismatch, budgets, embedded colliders, golden determinism pins, every
+bundled game seals and re-verifies, CLI and the real `aether-verify`
+executable), 9 studio tests (world hash survives `game.json` and share links
+for all 35 bundled games; builds, links, forged links), smoke seals and
+re-verifies each of the 28 prompt worlds. `npm run e2e:proof`: Chromium runs
+the Node-sealed link through the player ("Verified playable" after one click),
+four forged links each fail with their own message, the studio seals a link
+and a game that Node and `aether-verify` verify (exit 0; tampered exit 1), and
+the extracted build verifies in the browser. The engine matrix (verifier
+bundled for browsers, no WebGL needed) seals four pinned worlds, one driven by
+kinematic trigonometry, in Chromium and Firefox and requires proofs that are
+byte-identical to Node's. Firefox's player/studio flows could not run in this
+sandbox (headless Firefox has no WebGL here: `AETHER_E2E_SKIP_NO_GL=1`
+limited it to the engine matrix); CI has WebGL and runs everything.
+

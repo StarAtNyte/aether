@@ -1815,3 +1815,47 @@ Everything here is additive; the World IR is unchanged.
   tick (`Simulation.setHeld`), `GameState.intro` shows the title card
   (`TitleCard`, every kind of world), `Studio.startGame()` releases it;
   restart never shows it again and stopping always releases the hold.
+
+## Replay proofs: `@aether/verifier` (+ additions to studio, procgen; format in `docs/PROOFS.md`)
+
+### `@aether/verifier` (new; deps: core, logic, physics, procgen, zod; bin `aether-verify`)
+```ts
+PROOF_FORMAT = 'aether-proof'; PROOF_VERSION = 1; REPLAY_ENGINE = 'aether-replay/1'; PHYSICS_ENGINE = 'rapier3d-compat@0.21.0'
+PROOF_LIMITS   // MAX_BYTES 24 MB, MAX_TESTS 512, MAX_MESSAGE 600, MAX_SECONDS 60, collider caps
+parseProof(value): { ok: true; proof: Proof } | { ok: false; error }       // zod .strict(); never throws
+createProof(world, { settings?, colliders?, key?: SigningKey, now?, signal?, budgetMs? }): Promise<Proof>
+                                   // replays once, throws if the wall-clock budget cut it short or the proof would not parse
+checkProof(proof, world, { replay?, trustedKeys?, signal?, budgetMs? }): Promise<ProofCheck>
+                                   // status: verified | intact | tampered | bad-signature | engine-mismatch |
+                                   //         world-mismatch | replay-diverged | unverifiable | inconclusive | invalid
+                                   // + steps[], signature, differences[], playable (verified AND claim.passed), summary
+resimulate(world, opts)            // the one place a claim is computed (sealing and checking share it)
+signProof / verifySignature / generateSigningKey / generateNonExtractableKey / keyId   // Ed25519, Web Crypto
+worldHash(world) / hashJson / canonicalJson / sha256 / digest / hashQuantized          // dependency-free SHA-256
+splitBundle(json) / stringifyBundle(proof, world?)   // proof.json (`worldDoc` member), game.json (`proof`), share payload
+BADGES / badgeFor(status, playable) / PROOF_DISCLAIMER    // "@aether/verifier/format": the shared wording, no engine
+createVerifyLogic / HeadlessLogicHost                    // moved here from apps/studio (re-exported there)
+```
+`aether-verify <proof.json|game.json|build-dir> [--world f] [--trust key] [--no-replay] [--json]`,
+`aether-verify seal <world|game.json> [--out] [--key] [--seconds]`, `aether-verify keygen <file>`;
+exit 0 verified, 1 not verified, 2 usage. Any change that can alter a replay's
+outcome bumps `REPLAY_ENGINE` (pinned by `packages/verifier/test/golden.json`).
+
+### `@aether/procgen`
+- `parseCollider` is exported (the verifier validates embedded colliders with it).
+
+### Studio
+- `game.json` gains an optional `proof` member (untrusted until re-checked);
+  `GameManifest.proof?: unknown`. Builds add `proof.json`, `<meta name="aether:proof">`
+  and a "Replay-sealed" caption on `cover.png` / `screenshot.png` (`ImageKit.crop(image, w, h, stamp?)`).
+- Share payload gains an optional `proof` (≤ 16 KB); `encodeShare(world, meta, proof?)`
+  returns `sealed`; `decodeShare` passes it through as untrusted `payload.proof`.
+- `PublishState.seal` (`on`, `sign`, `status`, `note`, `hash`, `keyId`),
+  `PublishController.setSeal`, `sealCurrent(signal?)` (cached per world version;
+  a world with failing checks is not sealed). `publish/seal.ts`: `sealWorld`,
+  `browserSigningKey` (non-extractable Ed25519 key in IndexedDB `aether-signing`).
+- Player: `ProofBadge` on the title screen (`data-testid` `proof-badge` / `proof-check` /
+  `proof-detail`, `data-state` sealed|checking|verified|failed|mismatch|unverifiable|none;
+  `window.__aetherProof`). The verifier loads only on click.
+- `npm run e2e:proof` (Chromium + Firefox).
+

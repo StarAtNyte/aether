@@ -18,6 +18,7 @@ import { VoxelHudView } from '../components/viewport/VoxelHud';
 import { TouchControlsView } from '../components/viewport/TouchControls';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
 import type { GameManifest } from '../publish/manifest';
+import { ProofBadge } from './ProofBadge';
 import { loadGame, loadSave, registerBundledImports, type GameSource } from './source';
 import { browserSettingsStorage, defaultSettings, loadSettings, qualityPlan, QUALITIES, saveSettings, type PlayerSettings, type Quality } from './settings';
 
@@ -503,6 +504,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               {game.author && <p className="pl-title__by">by {game.author}</p>}
               {game.description && <p className="pl-title__desc">{game.description}</p>}
               {menu(false)}
+              {game.proof !== undefined && <ProofBadge proof={game.proof} world={world} />}
               <p className="pl-title__controls">{game.controls}</p>
               <p className="pl-title__made">Made with Aether</p>
             </div>

@@ -205,6 +205,25 @@ const Hosting = memo(function Hosting(): ReactElement {
   );
 });
 
+/** Replay seal: what it is, whether it is on, and what the last seal said. */
+export const SealSection = memo(function SealSection(): ReactElement {
+  const studio = useStudio();
+  const seal = useStore(studio.publish.state, (s) => s.seal);
+  return (
+    <Section title="Replay seal" hint="Re-simulates your world's physics and rules headless and ships the result with it, so anyone can re-run the check on their own device. It is a deterministic replay check, not a formal proof.">
+      <Toggle label="Seal this world when publishing" hint="Adds a verifiable replay proof to the game and to share links" checked={seal.on} onChange={(v) => studio.publish.setSeal({ on: v })} />
+      {seal.on && <Toggle label="Sign with this browser's key" hint="Shows later seals come from the same browser. It does not prove who you are" checked={seal.sign} onChange={(v) => studio.publish.setSeal({ sign: v })} />}
+      {seal.on && seal.note && (
+        <p className={`pub-muted${seal.status === 'failed' ? ' field-error' : ''}`} role="status" data-testid="publish-seal-note">
+          {seal.note}
+          {seal.hash ? ` · ${seal.hash}` : ''}
+          {seal.keyId ? ` · key ${seal.keyId}` : ''}
+        </p>
+      )}
+    </Section>
+  );
+});
+
 /** Game: download, your own hosting, your network. */
 export const GameTarget = memo(function GameTarget(): ReactElement {
   const studio = useStudio();
@@ -217,6 +236,7 @@ export const GameTarget = memo(function GameTarget(): ReactElement {
         <MetaFields />
         {world.voxel && <Toggle label="Include my block-world save" hint="Players start from the world as you left it in play mode" checked={includeSave} onChange={(v) => studio.publish.setGame({ includeSave: v })} />}
       </Section>
+      <SealSection />
       <Primary icon="download" onClick={() => void studio.publish.downloadGame()} disabled={busy} testId="publish-game-download" hint="A complete static website: index.html, the player, your world and its assets. Upload it to itch.io (HTML game), GitHub Pages, Netlify or any static host. Plays offline and installs as an app.">
         Download game (.zip)
       </Primary>
@@ -529,6 +549,7 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
         <MetaFields compact />
       </Section>
       <PlayerAddress />
+      <SealSection />
       <Section title="Link" hint="The whole world travels inside the link, after the #. Browsers never send that part to a server, so nothing is uploaded or stored anywhere — the link is the game.">
         <div className="pub-link">
           <input className="input input--mono" readOnly value={link ?? (share.fits ? 'Making the link…' : 'Too large for a link')} aria-label="Share link" data-testid="publish-share-link" onFocus={(e) => e.target.select()} />

@@ -19,7 +19,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
   if (value !== null) {
     const r = await decodeShare(value);
     if (!r.ok) return { kind: 'error', message: r.error };
-    const { world, meta } = r.payload;
+    const { world, meta, proof } = r.payload;
     return {
       kind: 'game',
       from: 'link',
@@ -29,6 +29,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         author: meta.author ?? '',
         controls: meta.controls ?? defaultControls(world),
         music: meta.music ?? null,
+        ...(proof !== undefined ? { proof } : {}),
         world,
       },
     };

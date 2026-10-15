@@ -1,0 +1,27 @@
+{
+  "name": "@aether/verifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Independent replay verifier and signed proofs: re-simulates a sealed world headless and checks hash, outcome and engine version.",
+  "bin": {
+    "aether-verify": "./bin/aether-verify.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./headless-host": "./src/headless-host.ts",
+    "./pose-pool": "./src/pose-pool.ts",
+    "./format": "./src/format.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@aether/core": "*",
+    "@aether/logic": "*",
+    "@aether/physics": "*",
+    "@aether/procgen": "*",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.6"
+  }
+}
