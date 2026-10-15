@@ -51,6 +51,7 @@
     "showcase:thumbs": "tsx tests/e2e/showcase.e2e.ts --capture",
     "e2e:showcase": "tsx tests/e2e/showcase.e2e.ts",
     "e2e:security": "tsx tests/e2e/security.e2e.ts",
+    "shots": "tsx tests/e2e/shots.e2e.ts",
     "e2e:soak": "tsx tests/e2e/soak.e2e.ts"
   },
   "engines": {
