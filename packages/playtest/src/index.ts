@@ -3,6 +3,7 @@
  * a World IR, plays the game headless on the real character controller and
  * logic runtime, and reports whether it can be won (and what is broken).
  */
+export { probeLevel, type LevelProbe, type LevelObjectiveReach, type LevelReachAnswer } from './agent';
 export { playtest, walkthrough, unsupportedReason, withoutEntities, downsample, PlaytestAbortedError } from './agent';
 export { deriveGoals, touches, winThresholds, entityPosition, type GoalModel, type GoalObjective, type DoorInfo, type HazardZone, type TouchVolume } from './goals';
 export { NavGraph, EdgeKind, jumpHeight, jumpReach, dropReach, type NavParams } from './nav';
@@ -28,3 +29,4 @@ export {
 } from './types';
 export { selfRepair, proposeRepairs, countdownOf, type RepairProposal, type RepairRound, type SelfRepairOptions, type SelfRepairResult } from './repair';
 export { ReportWire, ProgressWire, parseReport, parseProgress } from './wire';
+export * from './level';

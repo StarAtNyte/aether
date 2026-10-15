@@ -13,6 +13,7 @@
     "@aether/arch": "*",
     "@aether/assets": "*",
     "@aether/core": "*",
+    "@aether/procgen": "*",
     "zod": "^4.6.6"
   }
 }

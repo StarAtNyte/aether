@@ -249,6 +249,42 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
 ];
 
+/** Names of the level tools (offered only when the host supplies `AgentOptions.levelTools`). */
+export const LEVEL_TOOL_NAMES = ['query_level', 'place_level_items'] as const;
+
+/** True when `name` is a level tool. */
+export function isLevelToolName(name: string): name is (typeof LEVEL_TOOL_NAMES)[number] {
+  return (LEVEL_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/** Tools for games and outdoor worlds: look things up and place with measured feedback. Appended after {@link AGENT_TOOLS}. */
+export const LEVEL_TOOLS: ToolDef[] = [
+  {
+    name: 'query_level',
+    description:
+      'Measure the level instead of guessing (games, terrain, outdoor worlds). {op:"summary"} the player, extent, win, objectives and which are reachable | {op:"ground", points:[{x,z,below?}]} top surface height, what it is and the slope at each point (up to 24) | {op:"clearance", x, z, radius?, height?} free radius, headroom and whether a body fits | {op:"sightline", from:[x,y,z], to:[x,y,z]} what blocks it | {op:"reach", points:[{x,z,y?}]} whether the player can walk, jump or ride a lift there from the spawn, and if not how far and how high the gap is | {op:"objectives"} every pickup, goal and zone with its reach | {op:"review"} the level checked as a designer would (no win condition, spawn, unreachable objectives, pacing) with the fix for each. Use it before and after placing.',
+    inputSchema: {
+      type: 'object',
+      properties: { op: { type: 'string', enum: ['summary', 'ground', 'clearance', 'sightline', 'reach', 'objectives', 'review'] } },
+      required: ['op'],
+    },
+  },
+  {
+    name: 'place_level_items',
+    description:
+      'Place pickups, goals, checkpoints, hazards, enemies, props and decor by x,z: each is snapped to the ground there (y = ground + above + half its height), refused when nothing is under it, when it is buried in something solid, when a standing item sits on a cliff, or (pickup, goal, checkpoint, enemy) when the player cannot reach it, with the distance and height gap and the nearest standable spot. Item: {id, role: pickup|goal|checkpoint|hazard|enemy|prop|decor, x, z, above?, below?, yaw?, key? (state key a pickup raises), reach?, entity: {shape, name?, material?, behaviors?, physics?, tags?, npc?}}. Roles fill in the behaviours (collectible, goal, checkpoint, hazard) and a sensor body. Send {id,x,z} without entity to move an existing item. Up to 40 per call, one undo step; refused items do not stop the others.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', minItems: 1, maxItems: 40, items: { type: 'object', properties: { id: { type: 'string' }, role: { type: 'string', enum: ['pickup', 'goal', 'checkpoint', 'hazard', 'enemy', 'prop', 'decor'] }, x: { type: 'number' }, z: { type: 'number' } }, required: ['id', 'x', 'z'] } },
+        message: { type: 'string' },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+  },
+];
+
 /**
  * Tools of the compact prompt profile (small on-device models): only
  * apply_patches and finish, with short descriptions and minimal schemas so

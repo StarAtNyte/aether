@@ -929,7 +929,7 @@ export class Simulation {
     await this.whenSynced();
     if (this.disposed) return;
     // Lazy: the Rapier chunk is only downloaded/compiled when the user first plays.
-    const { PhysicsWorld, CharacterController } = await import('@aether/physics');
+    const { PhysicsWorld, CharacterController, CHARACTER_FEEL } = await import('@aether/physics');
     if (this.disposed) return;
     let pw: PhysicsWorld | null = null;
     let scripts: ScriptRunner | undefined;
@@ -951,7 +951,7 @@ export class Simulation {
       const avatarId = findAvatar(world);
       const voxelGame = world.voxel !== undefined && this.voxel !== null && this.voxel.active;
       if (!voxelGame && !avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
-        character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID });
+        character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID, feel: CHARACTER_FEEL });
       }
       const voxel = voxelGame && this.voxel ? await this.voxel.startPlay(world, this.renderer.domElement) : null;
       if (voxelGame) {

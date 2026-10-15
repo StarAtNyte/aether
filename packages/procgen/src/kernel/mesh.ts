@@ -131,6 +131,8 @@ export class Mesh implements MeshHandle {
   indices: Uint32Array;
   /** @internal linear rgb per vertex or null */
   colors: Float32Array | null;
+  /** @internal terrain layer weights (4 per vertex) for `api.addSplat`; dropped by every mesh operation */
+  splat: Float32Array | null = null;
   /** @internal shared allocation budget */
   readonly budget: VertexBudget;
 

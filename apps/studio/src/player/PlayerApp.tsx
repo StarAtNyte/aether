@@ -553,10 +553,21 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           <div className="pl-panel" role="dialog" aria-label="Game over">
             <h2 className={`pl-over ${over.win ? 'is-win' : 'is-lose'}`}>{over.win ? 'You win!' : 'Game over'}</h2>
             {over.text && <p className="pl-muted">{over.text}</p>}
-            <p className="pl-muted">Time {clock(time)}</p>
+            <ul className="pl-stats" aria-label="Your run">
+              {world.hud.map((b) => (
+                <li key={b.key}>
+                  <span>{b.label}</span>
+                  <strong>{hud[b.key] ?? '–'}</strong>
+                </li>
+              ))}
+              <li>
+                <span>Time</span>
+                <strong>{clock(time)}</strong>
+              </li>
+            </ul>
             <div className="pl-stack pl-stack--row">
               <Button primary onClick={() => void restart()} autoFocus>
-                Play again
+                {over.win ? 'Play again' : 'Try again'}
               </Button>
               <Button onClick={() => setPanel('credits')}>Credits</Button>
               <Button onClick={() => void quitToTitle()}>Title screen</Button>

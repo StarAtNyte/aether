@@ -2415,3 +2415,87 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
 - `apps/cli/src/mcp/review.ts`: `captureReviewHeadless` (software renderer, marks with `drawMarksRgba`).
 - `ChatEventView` gains `review`. Review rounds: no cap on `bridge` / `local` connections, 10 on paid keys.
 - Scripts: `npm run eval:design` (replay; `-- --mode=live` records with the logged-in Codex), `npm run e2e:design`.
+
+## Realistic, playable games: level tools, layered terrain, foliage cards, game feel (additive, backward compatible)
+
+### `@aether/core`
+
+- `MaterialSpec.splat?: boolean`: terrain layering. The generator part carries four per-vertex weights (grass, rock,
+  dry ground, snow) and the renderer blends the photographed grass, rock, soil and snow surfaces by them, per pixel,
+  with the vertex colours as the base tint. Without the flag, or without weights, the part is drawn with its vertex
+  colours (CLI renders, glTF and path-traced exports do exactly that).
+- `MaterialSpec.foliage?: 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern'`: alpha-tested foliage cards. The part is
+  a set of quads with authored 0..1 UVs, both faces in the geometry (the material is single-sided), and a soft normal;
+  the renderer cuts a leaf cluster, needle spray, blade tuft or frond out of each quad and the vertex colours tint it.
+
+### `@aether/procgen`
+
+- `MeshPart.splat?: Float32Array` (4 per vertex, in [0, 1], summing to 1), present when `material.splat` is true.
+  Validated by `validateOutput` (length, finite, range), transferred with the other buffers, counted in cache bytes.
+- Generators: `tree-broadleaf`, `tree-birch`, `tree-spruce`, `shrub`, `fern`, `meadow-grass`, `boulder`
+  (`generators/flora.ts`; each has `variant`; trees and shrubs `detail` 0.3..2). Trees are 1 to 3 k triangles, grass tufts 12.
+  `terrain`, `island` and `mountain` now paint the layer weights and a meadow colour variation.
+- `foliagePixels(kind, size) → {size, rgba}`: the deterministic cut-out cards (`FOLIAGE_ALPHA_CUT`).
+
+### `@aether/render`
+
+- `FoliageTextures` (shared per `MaterialCache`: `cache.foliage`), `applySplat` (`materials/terrain-splat.ts`),
+  `terrainUvs` (metre top-down UVs; the rock layer is triplanar). `ResolvedMaterial` gains `splat` and `foliage`;
+  `ResolveOptions.hasSplat`. `createMaterial(resolved, variant, surfaces?, finishes?, antiTile?, foliage?, layered?)`;
+  `MaterialCache.layeredTerrain` is false on software rasterisers and in low-memory mode (terrain keeps its vertex colours).
+- `FOLIAGE_GENERATORS` (wind sway) includes the new vegetation generators.
+- Block terrain: `VoxelLayer.setLighting(daylight, tint, hour?)` puts the sun in the sky for an hour (warm and low at dusk,
+  white and high at noon, dim cool moonlight at night; `TerrainUniforms.sunDirection` / `sunColor`). The block shader
+  lights faces by it where the vertex sees the sky, adds a distance-faded texture relief and a per-block brightness
+  variation, and draws water with animated ripples, a fresnel sky reflection and a sun glint.
+
+### `@aether/physics`
+
+- `CharacterOptions.feel?: CharacterFeel` and `CHARACTER_FEEL`: acceleration 48 and deceleration 60 m/s², air control
+  0.55, coyote time 0.11 s, jump buffer 0.12 s, jump cut 0.55. The studio's player uses it; without `feel` the
+  controller takes the input velocity instantly (the playtest bot and the replays use that, unchanged).
+
+### `@aether/playtest`
+
+- New objective kind `press` (also in the proof and report wire schemas): a rule chain "press key K while the
+  conditions hold (standing on a plate) and an event it emits wins" is derived from the rules; `GoalObjective.pressKey`.
+- Goals a rule switches on (`enableBehavior goal`) count as the way to win (`GoalObjective.gated`).
+- Vertical lifts (a kinematic platform on a straight up and down `patrol`) become one-way `Ride` edges
+  (`EdgeKind.Ride`, `NavGraph.addRide`, `RideInfo`); the bot waits for the platform, boards, rides and steps off.
+- Low gravity: jumps ease off their forward thrust over the last stretch (`airThrust`) and are simulated longer.
+- Larger levels: the walking map reaches 330 m from the spawn (was 160); a game plan tries up to 160 searches
+  (a walkthrough keeps 14).
+- `probeLevel(world) → LevelProbe {ok, problem, objectives(), reachFrom(point), dispose()}`: the walking map for
+  reach questions without playing. Subpath `@aether/playtest/level`: `runLevelTool(world, name, input) →
+  {ok, text, patches, message, accepted, refused}` for `query_level` and `place_level_items` (`LEVEL_TOOL_NAMES`,
+  `QueryLevelInput`, `PlaceLevelInput`, `LEVEL_LIMITS`: 24 points, 40 items, 5000 m coordinates, 4000 rays).
+  The walking map is cached for one world's gameplay content for 30 s (`withProbe`, `clearProbeCache`,
+  `probeCacheStats`; calls are serialised), so a run of reach questions about one world builds it once.
+
+| tool | input | result |
+| --- | --- | --- |
+| `query_level` | `{op: summary \| ground \| clearance \| sightline \| reach \| objectives \| review, …}` | facts: top surface height, what it is and the slope; free radius and headroom; what blocks a line; whether the player can walk, jump or ride there and the gap if not; every objective's reach; `review`: the level checked as a designer would (`LevelReview {applicable, findings, poses, score}`: no win, spawn, unreachable required or optional objectives, first reward too far) with the cameras of the review renders |
+| `place_level_items` | `{items: [{id, role: pickup \| goal \| checkpoint \| hazard \| enemy \| prop \| decor, x, z, above?, below?, yaw?, key?, reach?, entity?}], message?}` | each item snapped to the ground, refused when nothing is under it, buried, on a cliff, or out of reach (with the gap and the nearest standable spot); accepted items are one undo step; `{id, x, z}` without `entity` moves an existing item |
+
+### `@aether/agent`
+
+- `AgentOptions.levelTools?: LevelToolRunner` (`(world, name, input) → Promise<{ok, text, patches, message}>`):
+  when set, `query_level` and `place_level_items` (`LEVEL_TOOLS`) are appended to the tool list after `AGENT_TOOLS`
+  and the system prompt gains the level-design section; absent, nothing changes. `ExecutorContext.levelTools`.
+- The review loop covers levels: with `levelTools` and no building in the world, each round calls `query_level` op
+  `review` (`LevelToolOutput.data`, validated by `LevelReviewData`), renders the overview and the player's first view
+  through `AgentHost.captureReview` (no marks), shows the findings with their fixes, and ends on approval or the same
+  stall detector; a world with no gameplay (scenery) is not reviewed. `levelSnapshot`, `levelTurnText`.
+- The offline planner exchanges stylised nature for the realistic generators when the request says realistic,
+  photoreal or lifelike (`providers/mock/realistic.ts`).
+- New flagship `highland-trail` (`providers/mock/showcase/highland-trail.ts`); the agent package now depends on
+  `@aether/procgen` (it samples the generated heightfield to place the route).
+
+### Studio
+
+- `engine/levelTools.ts` (`lazyLevelTools`: the measuring code loads on first use); the end screen shows the run's
+  numbers and "Try again" after a loss; the player's controller uses `CHARACTER_FEEL`.
+- Scripts and tests: `tests/e2e/gameplay.e2e.ts` plays Highland Trail, Neon Rain City and Kyoto Temple to their win
+  screens in Chromium through the on-screen controls, driven by the verified bot's recorded route;
+  `apps/studio/test/gamesVerified.test.ts` plays every shipped game with the verified bot and seals the run;
+  `tests/e2e/photoreal.e2e.ts --lab=flora` shoots the vegetation lab.

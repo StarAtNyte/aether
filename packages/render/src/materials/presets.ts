@@ -26,6 +26,10 @@ export interface ResolvedMaterial {
   surface: SurfaceKind | null;
   /** Physically based finish with procedural texture maps (architecture), null otherwise. */
   finish: MaterialFinish | null;
+  /** Layered terrain: the geometry carries `splat` weights and the photographed layers are blended by them. */
+  splat: boolean;
+  /** Alpha-tested foliage card kind, null for ordinary materials. */
+  foliage: NonNullable<MaterialSpec['foliage']> | null;
 }
 
 /** One entry of the preset table. */
@@ -125,6 +129,8 @@ export interface ResolveOptions {
   hasVertexColors?: boolean;
   /** Render both faces (planes, cards). */
   doubleSided?: boolean;
+  /** False when the geometry has no `splat` weights (the layered look is then off). Default: assumed present. */
+  hasSplat?: boolean;
   /**
    * Procedural detail for presets that define none (the environment ground
    * plane passes `'ground'`). A preset's own surface (lava, water) wins.
@@ -155,6 +161,10 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
   const defaultIntensity = p.emissiveIntensity ?? (explicitEmissive ? 1 : 0);
   const emissiveIntensity = emissive === '#000000' ? 0 : range(spec?.emissiveIntensity, 0, 50, defaultIntensity);
   const opacity = unit(spec?.opacity, p.opacity ?? 1);
+  // Layered terrain needs its weights and its base tint per vertex; opaque only.
+  const splat = spec?.splat === true && vertexColors && opts.hasSplat !== false && opacity >= OPAQUE_THRESHOLD;
+  // Foliage cards are cut out by an alpha test, so they are opaque; their quads carry authored 0..1 UVs.
+  const foliage = typeof spec?.foliage === 'string' && opacity >= OPAQUE_THRESHOLD ? spec.foliage : null;
   return {
     color,
     roughness: unit(spec?.roughness, p.roughness),
@@ -167,7 +177,9 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     vertexColors,
     doubleSided: opts.doubleSided === true,
     surface: p.surface ?? opts.surface ?? null,
-    finish: opacity >= OPAQUE_THRESHOLD && typeof spec?.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? (PRESET_DETAIL[spec.preset] ?? null) : null,
+    finish: !splat && !foliage && opacity >= OPAQUE_THRESHOLD && typeof spec?.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? (PRESET_DETAIL[spec.preset] ?? null) : null,
+    splat,
+    foliage,
   };
 }
 
@@ -195,6 +207,8 @@ function resolveFinish(spec: MaterialSpec, id: MaterialFinish, opts: ResolveOpti
     doubleSided: opts.doubleSided === true,
     surface: null,
     finish: id,
+    splat: false,
+    foliage: null,
   };
 }
 

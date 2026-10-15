@@ -1550,3 +1550,55 @@ prompt ─▶ design_plan  ─▶ shell built at the planned positions, read bac
 
 Security: every model output (plans, tool inputs, review replies) is zod-validated with size caps, ids are
 slugs, numbers are finite and bounded, objects are checked for prototype keys, and nothing is evaluated.
+
+## 25. Realistic, genuinely playable games
+
+The game side of the framework follows the same rule as the architecture side: the assistant decides, the code
+measures. Four pieces make a game that looks like a game and plays to the end.
+
+```
+prompt ─▶ plan (assistant) ─▶ place_level_items / query_level ─▶ world ─▶ verified-playable bot ─▶ sealed proof
+                              ground, slope, clearance,          layered terrain, foliage cards,   plays to the win screen
+                              sight lines, reach (walk,          realistic characters, game feel   (headless, then in Chromium)
+                              jump, lift) from the spawn
+```
+
+- **Level tools** (`@aether/playtest/level`). `query_level` and `place_level_items` are typed
+  `(document, input) -> facts + patches | refusal` like the architecture tools. Ground, clearance and sight lines
+  are Rapier ray casts on the document; *reach* is the verified-playable bot's own walking map (jumps, drops and
+  lifts included), so a pickup that no jump can reach is refused while the assistant is still placing it, with the
+  gap in metres and the nearest standable spot. The studio and the CLI hand the tool runner to `WorldAgent`
+  (`AgentOptions.levelTools`); the measuring code loads on first use. `scripts` and the tests exercise it with the
+  scripted-model loop (`packages/playtest/test/level-agent.test.ts`).
+- **Review for levels.** The review loop of section 24 runs on a game too: `query_level review` measures the win
+  condition, the spawn, every objective's reach and the pacing, names the cameras (the whole level from above, the
+  player's first view, the worst problem up close), the studio renders them, and the assistant fixes with the same
+  tools until it approves or progress stalls. Scenery with no gameplay is left alone.
+- **The bot plays what people play.** It rides lifts, presses a key where a rule chain needs it (the Kyoto bell), plays
+  goals a rule switches on later (the Lantern Isles summit), crosses low-gravity gaps and maps levels of 300 m. Every
+  shipped game that the bot can drive is played to its win and sealed in `apps/studio/test/gamesVerified.test.ts`,
+  and `tests/e2e/gameplay.e2e.ts` replays the bot's route in Chromium, through the on-screen controls with the real
+  controller, to the real win screen (Highland Trail in about 95 s, Neon Rain City in 67 s, Kyoto Temple in 46 s).
+  Real defects found this way and fixed: Orbital Lab spawned the player inside a pod and had a roof only a 5 m jump
+  could reach; the bot could not see 160 m from the spawn.
+- **Realistic outdoors.** Terrain generators write four layer weights per vertex (grass, rock, dry ground, snow,
+  from the same height and slope rules as their vertex colours); the renderer blends the photographed surfaces by
+  them per pixel (height blend, anti-tiling, triplanar rock). Vegetation is cards: a quad shows a cut-out leaf
+  cluster, needle spray, blade tuft or fern frond (procedural, alpha-tested, so it needs no sorting and casts leaf
+  shadows), with soft crown normals and vertex colours that darken toward the inside of a crown. A broadleaf tree is
+  about 3 k triangles instead of 11 k of loose leaves. `tree-broadleaf`, `tree-birch`, `tree-spruce`, `shrub`,
+  `fern`, `meadow-grass` and `boulder` are in the generator catalog; a request that says realistic gets them in
+  place of the stylised parts.
+- **Game feel.** The player's controller accelerates and stops firmly, forgives a ledge for 0.11 s, buffers a jump
+  for 0.12 s and hops lower when jump is released early; the bot and the replay verifier keep the instant controller,
+  so proofs stay comparable.
+- **Highland Trail** is the realism reference: a misty river valley, a gravel trail that follows the ground, a
+  footbridge between two measured banks, six survey stakes and a summit cairn chosen by a flood fill over measured
+  slopes, a hiker with dialogue, river hazards with checkpoints and a daylight timer. The verified bot wins it in
+  111 s of play.
+
+Known limits: the foliage cards are alpha-tested (no translucency, shimmer at a distance without TAA); the layered
+terrain makes about 28 texture reads per pixel, so software rasterisers and low-memory mode keep the vertex colours
+(`MaterialCache.layeredTerrain`); conversation and lift games
+are walked by the headless bots and the sealed replay, not by the real-time driver; Blockfall, Kart Canyon and
+Sakura River are driven by their own hand-written bots.

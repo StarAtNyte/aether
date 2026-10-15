@@ -24,7 +24,7 @@ export const DEFAULT_CACHE_BYTES = 64 * 1024 * 1024;
 export function outputBytes(out: GeneratorOutput): number {
   let n = 0;
   for (const p of out.parts) {
-    n += p.positions.byteLength + p.normals.byteLength + p.indices.byteLength + (p.uvs?.byteLength ?? 0) + (p.colors?.byteLength ?? 0);
+    n += p.positions.byteLength + p.normals.byteLength + p.indices.byteLength + (p.uvs?.byteLength ?? 0) + (p.colors?.byteLength ?? 0) + (p.splat?.byteLength ?? 0);
   }
   for (const c of out.colliders) {
     if (c.kind === 'hull') n += c.points.byteLength;

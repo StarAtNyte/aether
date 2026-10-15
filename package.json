@@ -67,6 +67,7 @@
     "shots": "tsx tests/e2e/shots.e2e.ts",
     "e2e:soak": "tsx tests/e2e/soak.e2e.ts",
     "e2e:photoreal": "tsx tests/e2e/photoreal.e2e.ts",
+    "e2e:gameplay": "tsx tests/e2e/gameplay.e2e.ts",
     "e2e:render-bench": "tsx tests/e2e/render-bench.e2e.ts",
     "e2e:render": "tsx tests/e2e/render-quality.e2e.ts"
   },

@@ -24,7 +24,7 @@ const Finding = z.object({
 
 const ObjectiveResult = z.object({
   id: text(160),
-  kind: z.enum(['collect', 'goal', 'zone', 'room', 'plate', 'talk']),
+  kind: z.enum(['collect', 'goal', 'zone', 'room', 'plate', 'talk', 'press']),
   label: text(160),
   entity: text(128).optional(),
   position: vec3,

@@ -233,7 +233,7 @@ export class AetherSession {
     const text = prompt.trim();
     if (text === '' || text.length > MCP_LIMITS.MAX_PROMPT_CHARS) throw new ToolError('invalid_input', `The prompt must be 1-${MCP_LIMITS.MAX_PROMPT_CHARS} characters.`);
     const chosen = await this.provider();
-    const agent = new WorldAgent({ provider: chosen.provider, catalogs: this.engine.catalogs, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, review: { maxRounds: 6 } });
+    const agent = new WorldAgent({ provider: chosen.provider, catalogs: this.engine.catalogs, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, review: { maxRounds: 6 }, levelTools: async (world, name, input) => (await import('@aether/playtest/level')).runLevelTool(world, name, input) });
     const timeout = AbortSignal.timeout(MCP_LIMITS.AGENT_TIMEOUT_MS);
     const sig = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const out: AgentSummary = { provider: chosen.label, message: '', plan: '', patchesApplied: 0, patchesRejected: 0, rejected: [], repairs: 0, verify: null, errors: [], notes: [], usage: { calls: 0, inputTokens: 0, outputTokens: 0 } };

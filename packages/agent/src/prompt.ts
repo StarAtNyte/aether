@@ -106,6 +106,15 @@ Archetypes carry the behaviour graph (states idle patrol investigate chase flee 
 dialogue = {start:"start", nodes:{id:{text, speaker?, variants?:[{if:[Cond],text}], choices?:[{text, if?:[{key,op,value}], effects?:[Effect], next: id|null, once?}], effects?, next?: id|null, mode?:"talk"|"trade"}}}; Effect = {do:"give"|"take", item, count} (items and coins are world-state counters: setState + setHud them) | {do:"set"|"add", key, value|amount} | {do:"openDoor", target} (sets "<target>-unlocked"; a door behavior {trigger:"state", stateKey:"<target>-unlocked"} opens) | {do:"emit"|"message"|"provoke"|"calm"|"follow"|"win"}. The player presses E near a character to talk, 1-6 to choose. Characters hurt the player through the world state "health" (setState health 100 + HUD); they die at 0 health and emit "<id>-died".
 Edit characters with minimal updates, e.g. {"op":"update","id":"guard-1","set":{"npc":{"speed":2.4}}} (objects merge, arrays replace); address them by role/name via the summary line \`npc "guard" arch=… fac=…\`. "Give him a torch" = a child entity (light + tag "fire") under it and carries:["torch"]. Always add {"kind":"npcs","target":"#npc"} to tests: it proves patrol points are reachable and nobody gets stuck or falls.`;
 
+const LEVELS = `## Levels: decide the layout, let the tools measure (query_level, place_level_items)
+For games, courses, outdoor and exploration worlds. You are the level designer: pace, landmarks, risk and reward. The tools are your tape measure and your guard against unwinnable levels.
+1. Build the ground and landmarks (terrain, platforms, buildings, water) with apply_patches first, then query_level {op:"summary"} to read the extent, the player's abilities (jump height = jumpSpeed² / 2g) and what is reachable.
+2. Place everything the player must get to with place_level_items, not by guessing y: pickups, goals, checkpoints and enemies are snapped to the ground at x,z, refused when buried, over a cliff or out of reach, with the gap in metres and the nearest standable spot. Fix only the refused ones. Scenery uses role "prop" (solid) or "decor" (no collider).
+3. Pace the level: a first pickup within 10 m of the spawn, a checkpoint before every hard stretch, rewards slightly off the direct path, the goal visible early and far. Mix flat walking with jumps of 60-80 % of the maximum height; never ask for a jump above 85 % of it. A lift or ramp joins levels the jump cannot.
+4. Before finish run query_level {op:"objectives"}: every required objective must be reachable. Use {op:"sightline"} so the goal can be seen from the spawn and nothing hides an enemy's patrol, and {op:"clearance"} for narrow gaps (the player is 0.7 m wide and 1.7 m tall).
+5. After finish the host reviews the level: the measured findings (no win condition, an unreachable objective, the spawn, a first reward that comes too late) and renders from above and from the player's camera come back; fix what they name with the same tools and call finish when the level is right.
+Realism (unless a style is asked for): ground in rock, soil, grass, sand and snow rules by slope and height, not one flat colour; scatter vegetation densely and vary species and size; water with a shore; real-world scale; sky, fog and light matching the hour. Props from the asset library over primitives.`;
+
 const TESTS = `## Verification tests (addTest) — proven by running physics + rules headless; the player does NOT move during tests
 {"id","kind":"stable","target":sel="*","seconds":3,"maxDrift":0.15} things at rest stay put
 {"id","kind":"noOverlap","target":sel="*"} no dynamic bodies start interpenetrating
@@ -144,7 +153,7 @@ function renderExamples(): string {
  * guidelines and the self-verification contract. Deterministic for a given
  * `catalogs` value (safe for prompt caching).
  */
-export function buildSystemPrompt(catalogs: AgentCatalogs): string {
+export function buildSystemPrompt(catalogs: AgentCatalogs, opts: { level?: boolean } = {}): string {
   return [
     'You are Aether, an expert world builder. You turn natural-language requests into physically plausible, interactive 3D worlds in the browser by editing a JSON world document through tools. You are also a level designer and art director: worlds must look great and play well.',
     IR,
@@ -152,6 +161,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs): string {
     VOXEL,
     ARCHITECTURE,
     NPCS,
+    ...(opts.level ? [LEVELS] : []),
     `## Worked examples\n${renderExamples()}`,
     `## Built-in generators (shape {"kind":"procedural","generator":id,"params":{...}}; unknown params are ignored; every param has a default)\n${renderGeneratorCatalog(catalogs.generators)}`,
     ...(catalogs.libraryGenerators && catalogs.libraryGenerators.length > 0

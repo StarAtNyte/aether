@@ -554,7 +554,7 @@ export class VoxelSession {
   private applyEditLighting(env: Environment): void {
     const hour = env.timeOfDay ?? PRESET_HOURS[env.sky] ?? 12;
     const space = env.sky === 'space';
-    this.layer?.setLighting(space ? 0.55 : env.sky === 'studio' ? 1 : daylightAt(hour), skyTintAt(hour, [0, 0, 0]));
+    this.layer?.setLighting(space ? 0.55 : env.sky === 'studio' ? 1 : daylightAt(hour), skyTintAt(hour, [0, 0, 0]), hour);
   }
 
   /** Per animation frame: stream around the camera (edit) or the player (play). */
@@ -916,7 +916,7 @@ export class VoxelPlay {
       const env = this.doc.environment;
       this.renderer.setEnvironmentOverride({ ...env, sky: preset, timeOfDay: hour, ground: null });
     }
-    this.layer.setLighting(clock.daylight, skyTintAt(hour, this.tint));
+    this.layer.setLighting(clock.daylight, skyTintAt(hour, this.tint), hour);
   }
 
   private pushHud(): void {

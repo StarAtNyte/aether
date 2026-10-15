@@ -31,12 +31,22 @@ interface TerrainShape {
   trimFlat?: boolean;
   /** Raw height in meters at (x, z). */
   height(x: number, z: number): number;
+  /** Strength of the meadow colour variation (default 1; 0 for none). */
+  variation?: number;
   /**
    * Color for a vertex: t = normalized height (0 lowest … 1 highest),
    * h = height above the lowest point in meters, slope = 1 - normal.y.
    */
   color(t: number, h: number, slope: number, x: number, z: number, out: RGB): void;
+  /**
+   * Layer weights of a vertex (same inputs as `color`): grass, rock, dry ground (sand, soil, pebbles),
+   * snow, written into `out` (they are normalised afterwards). Absent: plain vertex colours.
+   */
+  splat?(t: number, h: number, slope: number, x: number, z: number, out: Splat): void;
 }
+
+/** Layer weights: grass, rock, dry ground, snow. */
+type Splat = [number, number, number, number];
 
 /** Normalized height removed from the bottom of a mountain (its foothill plate). */
 const MOUNTAIN_BASE = 0.05;
@@ -89,9 +99,40 @@ function buildTerrain(api: InternalApi, shape: TerrainShape): GeneratorOutput {
   const range = Math.max(0.01, natural * scale);
   for (let i = 0; i < raw.length; i++) raw[i] = ((raw[i] as number) - lo) * scale;
   const mesh = api.grid(res, res, size, size, raw);
-  mesh.paintFn((x, y, z, _nx, ny, _nz, out) => shape.color(y / range, y, 1 - ny, x, z, out));
+  // Meadow variation: broad dry and lush patches and a finer mottling over the palette, so a lawn never reads as one flat colour.
+  const vary = shape.variation ?? 1;
+  const noise = api.noise;
+  mesh.paintFn((x, y, z, _nx, ny, _nz, out) => {
+    shape.color(y / range, y, 1 - ny, x, z, out);
+    if (vary <= 0) return;
+    const broad = noise.fbm2(x * 0.03 + 7.1, z * 0.03 - 3.3, 3);
+    const fine = noise.noise2(x * 0.24, z * 0.24);
+    const k = vary * (ny > 0.7 ? 1 : 0.4);
+    out[0] *= 1 + k * (0.3 * broad + 0.09 * fine);
+    out[1] *= 1 + k * (0.12 * broad + 0.08 * fine);
+    out[2] *= 1 - k * (0.26 * broad - 0.05 * fine);
+  });
+  const layer = shape.splat;
+  if (layer && mesh instanceof Mesh) {
+    const pos = mesh.positions;
+    const nrm = mesh.normals;
+    const nv = pos.length / 3;
+    const sp = new Float32Array(nv * 4);
+    const w: Splat = [1, 0, 0, 0];
+    for (let i = 0; i < nv; i++) {
+      const y = pos[i * 3 + 1] as number;
+      w[0] = 1;
+      w[1] = 0;
+      w[2] = 0;
+      w[3] = 0;
+      layer(y / range, y, 1 - (nrm[i * 3 + 1] as number), pos[i * 3] as number, pos[i * 3 + 2] as number, w);
+      const sum = Math.max(1e-6, w[0] + w[1] + w[2] + w[3]);
+      for (let k = 0; k < 4; k++) sp[i * 4 + k] = Math.max(0, w[k] as number) / sum;
+    }
+    mesh.splat = sp;
+  }
   if (shape.trimFlat === true && mesh instanceof Mesh) trimFlatTriangles(mesh, range * FLAT_EPSILON);
-  api.add(mesh, MAT.ground);
+  api.add(mesh, layer ? MAT.terrain : MAT.ground);
   const heights = new Float32Array(n * n);
   for (let ix = 0; ix < n; ix++) {
     for (let iz = 0; iz < n; iz++) heights[ix * n + iz] = (raw[iz * n + ix] as number) / range;
@@ -156,6 +197,16 @@ const terrain = defineGenerator({
         mixLinear(out, pal.rock, Math.max(smoothstep(0.28, 0.5, slope + w), smoothstep(0.72, 0.85, t)), out);
         if (H > 12) mixLinear(out, pal.snow, smoothstep(0.86, 0.94, t + w) * (1 - smoothstep(0.45, 0.6, slope)), out);
       },
+      splat(t, _h, slope, x, z, out) {
+        const w = 0.06 * n.noise2(x * 0.3, z * 0.3);
+        const snow = H > 12 ? smoothstep(0.86, 0.94, t + w) * (1 - smoothstep(0.45, 0.6, slope)) : 0;
+        const rock = Math.max(smoothstep(0.28, 0.5, slope + w), smoothstep(0.72, 0.85, t)) * (1 - snow);
+        const dry = (1 - smoothstep(0.03, 0.1, t + w * 0.5)) * (1 - snow) * (1 - rock);
+        out[3] = snow;
+        out[1] = rock;
+        out[2] = dry;
+        out[0] = Math.max(0, 1 - snow - rock - dry);
+      },
     });
   },
 });
@@ -195,6 +246,16 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
       mixLinear(out, pal.grass, smoothstep(0.82, 0.9, t + w) * (1 - smoothstep(0.3, 0.5, slope)), out);
       if (t < 0.01) mixLinear(pal.sand, sandstone, 0.35 + w * 2, out);
     },
+    splat(t, _h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.2, z * 0.2);
+      const grassTop = smoothstep(0.82, 0.9, t + w) * (1 - smoothstep(0.3, 0.5, slope));
+      const floor = t < 0.01 ? 1 : 0;
+      const wall = (1 - grassTop) * (1 - floor);
+      out[0] = grassTop;
+      out[1] = wall;
+      out[2] = floor;
+      out[3] = 0;
+    },
   });
 }
 
@@ -228,6 +289,15 @@ function riverValley(api: InternalApi, size: number, H: number, rough: number, r
       mixLinear(out, pal.rock, smoothstep(0.32, 0.55, slope + w), out);
       // Wet pebbles on the riverbed and the first metre of bank.
       mixLinear(bed, out, smoothstep(0.15, 1.2, h + w * 4), out);
+    },
+    splat(_t, h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
+      const rock = smoothstep(0.32, 0.55, slope + w);
+      const wet = 1 - smoothstep(0.15, 1.2, h + w * 4);
+      out[1] = rock * (1 - wet);
+      out[2] = wet;
+      out[0] = Math.max(0, 1 - out[1] - out[2]);
+      out[3] = 0;
     },
   });
 }
@@ -279,6 +349,16 @@ const island = defineGenerator({
         mixLinear(out, pal.grassDark, g * smoothstep(0.45, 0.8, t + w), out);
         mixLinear(out, pal.rock, smoothstep(0.35, 0.55, slope + w) * g, out);
       },
+      splat(_t, h, slope, x, z, out) {
+        const beachTop = sea + (H - sea) * beach * 0.6;
+        const w = 0.05 * n.noise2(x * 0.5, z * 0.5);
+        const g = smoothstep(beachTop, beachTop + H * 0.06, h + w * H);
+        const rock = smoothstep(0.35, 0.55, slope + w) * g;
+        out[2] = 1 - g;
+        out[1] = rock;
+        out[0] = Math.max(0, g - rock);
+        out[3] = 0;
+      },
     });
   },
 });
@@ -327,6 +407,16 @@ const mountain = defineGenerator({
         mixLinear(rockD, rockC, 0.5 + 0.5 * n.noise2(x * 0.15, z * 0.9), out);
         mixLinear(grass, out, smoothstep(0.08, 0.25, t + w) * 0.85 + smoothstep(0.3, 0.5, slope) * 0.15, out);
         if (snowLine < 1) mixLinear(out, snow, smoothstep(snowLine, snowLine + 0.08, t + w) * (1 - smoothstep(0.55, 0.75, slope)), out);
+      },
+      splat(t, _h, slope, x, z, out) {
+        const w = 0.05 * n.noise2(x * 0.4, z * 0.4);
+        const snowAmount = snowLine < 1 ? smoothstep(snowLine, snowLine + 0.08, t + w) * (1 - smoothstep(0.55, 0.75, slope)) : 0;
+        const grassAmount = (smoothstep(0.08, 0.25, t + w) * 0.85 + smoothstep(0.3, 0.5, slope) * 0.15);
+        const lowland = 1 - grassAmount;
+        out[3] = snowAmount;
+        out[0] = lowland * 0.9 * (1 - snowAmount);
+        out[2] = lowland * 0.1 * (1 - snowAmount);
+        out[1] = Math.max(0, (1 - out[0] - out[2] - snowAmount));
       },
     });
   },

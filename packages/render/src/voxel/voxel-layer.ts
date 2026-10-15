@@ -37,6 +37,7 @@ import {
   type Material,
   type Object3D,
 } from 'three';
+import { sunPosition } from '../environment/sky-state';
 import { MobKit, MobModel, type MobModelKind } from './mob-models';
 import { createTerrainMaterials, type TerrainMaterials } from './terrain-material';
 
@@ -314,10 +315,14 @@ export class VoxelLayer {
     if (e.meshes[2]) e.meshes[2].material = m.liquid;
   }
 
-  /** Lighting: daylight 0…1 scales sky light; `tint` is the sky light colour (linear RGB 0…1). */
-  setLighting(daylight: number, tint: readonly [number, number, number]): void {
+  /**
+   * Lighting: daylight 0…1 scales sky light; `tint` is the sky light colour (linear RGB 0…1); `hour` (0…24) puts the
+   * sun in the sky and warms its light as it sinks (without it the sun keeps its default high position).
+   */
+  setLighting(daylight: number, tint: readonly [number, number, number], hour?: number): void {
     const m = this.mats;
     if (!m) return;
+    if (hour !== undefined && Number.isFinite(hour)) this.setSun(hour, daylight);
     const d = Number.isFinite(daylight) ? Math.max(0, Math.min(1, daylight)) : 1;
     if (m.uniforms.daylight.value !== d) {
       m.uniforms.daylight.value = d;
@@ -326,6 +331,35 @@ export class VoxelLayer {
     const c = m.uniforms.skyTint.value;
     if (c.r !== tint[0] || c.g !== tint[1] || c.b !== tint[2]) {
       c.setRGB(tint[0], tint[1], tint[2]);
+      this.version++;
+    }
+  }
+
+  /** The sun's direction and colour for an hour: warm and low at dusk and dawn, white and high at noon, cool moonlight at night. */
+  private setSun(hour: number, daylight: number): void {
+    const m = this.mats;
+    if (!m) return;
+    const { elevation, direction } = sunPosition(hour);
+    const d = Number.isFinite(daylight) ? Math.max(0, Math.min(1, daylight)) : 1;
+    const high = Math.max(0, Math.min(1, elevation / 45));
+    // Below the horizon the light is the moon: from the opposite side, dim and blue.
+    const night = elevation <= 1;
+    const dir = night ? [-direction[0], Math.max(0.35, -direction[1]), -direction[2]] : direction;
+    const len = Math.hypot(dir[0] as number, dir[1] as number, dir[2] as number) || 1;
+    const u = m.uniforms;
+    const dx = (dir[0] as number) / len;
+    const dy = (dir[1] as number) / len;
+    const dz = (dir[2] as number) / len;
+    // Warm toward the horizon: (1, 0.55, 0.28) at the horizon to (1, 0.97, 0.9) high up.
+    const r = night ? 0.28 : 1;
+    const g = night ? 0.34 : 0.55 + 0.42 * high;
+    const b = night ? 0.5 : 0.28 + 0.62 * high;
+    const k = night ? 0.5 * (1 - d) : d * (0.35 + 0.65 * Math.min(1, elevation / 14));
+    const cur = u.sunDirection.value;
+    const col = u.sunColor.value;
+    if (cur.x !== dx || cur.y !== dy || cur.z !== dz || col.r !== r * k || col.g !== g * k || col.b !== b * k) {
+      cur.set(dx, dy, dz);
+      col.setRGB(r * k, g * k, b * k);
       this.version++;
     }
   }

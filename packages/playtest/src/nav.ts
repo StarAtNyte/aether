@@ -42,6 +42,19 @@ export enum EdgeKind {
   Walk = 0,
   Jump = 1,
   Drop = 2,
+  /** Standing on a vertical lift that carries the player up to a landing. */
+  Ride = 3,
+}
+
+/** What the bot needs to ride a lift (see {@link NavGraph.addRide}). */
+export interface RideInfo {
+  entity: string;
+  /** Horizontal centre of the lift platform. */
+  centre: [number, number];
+  /** Height of the platform's centre when the graph was built (its lowest pose). */
+  startY: number;
+  /** How far the platform rises. */
+  dyUp: number;
 }
 
 /**
@@ -118,8 +131,10 @@ const NAV_TARGET_CELLS = 90_000;
 /** A candidate jump or drop from a ledge node. */
 export interface LinkEdge {
   to: number;
-  kind: EdgeKind.Jump | EdgeKind.Drop;
+  kind: EdgeKind.Jump | EdgeKind.Drop | EdgeKind.Ride;
   cost: number;
+  /** Lift rides: how to board and ride. */
+  ride?: RideInfo;
   /** 0 = not validated, 1 = simulated OK, 2 = simulated and failed. */
   state: 0 | 1 | 2;
 }
@@ -756,12 +771,12 @@ export class NavGraph {
     for (let k = 0; k < 2; k++) ch.move({ forward: 0, right: 0, jump: false, yawDeg: 0 }, dt, speed, jumpSpeed);
     let ok = false;
     let airborne = false;
-    for (let t = 0; t < 240; t++) {
+    for (let t = 0; t < (this.params.gravity < 6 ? 600 : 240); t++) {
       const p = ch.position;
       const dx = bx - p[0], dz = bz - p[2];
       const yaw = (Math.atan2(-dx, -dz) * 180) / Math.PI;
       const near = Math.hypot(dx, dz);
-      ch.move({ forward: near < 0.1 ? 0 : 1, right: 0, jump: link.kind === EdgeKind.Jump && t === 0, yawDeg: yaw }, dt, speed, jumpSpeed);
+      ch.move({ forward: near < 0.1 ? 0 : airThrust(near, speed, this.params.gravity, !ch.grounded), right: 0, jump: link.kind === EdgeKind.Jump && t === 0, yawDeg: yaw }, dt, speed, jumpSpeed);
       const q = ch.position;
       if (!ch.grounded) airborne = true;
       const landed = ch.grounded && ch.verticalSpeed <= 0.01 && (airborne || t > 12);
@@ -777,6 +792,18 @@ export class NavGraph {
     return ok;
   }
 
+  /**
+   * Add a one-way edge `from → to` that rides a lift: `from` is a node beside
+   * the platform at its lowest pose, `to` a node level with the platform at its
+   * highest. The ride is performed by playing it (the bot waits for the lift),
+   * so it is never validated by the probe character.
+   */
+  addRide(from: number, to: number, info: RideInfo): void {
+    const list = this.linksOf(from);
+    if (list.some((l) => l.to === to)) return;
+    list.push({ to, kind: EdgeKind.Ride, cost: 4 + info.dyUp * 0.5, state: 1, ride: info });
+  }
+
   /** Release the probe character. */
   dispose(): void {
     this.walker?.dispose();
@@ -787,6 +814,16 @@ export class NavGraph {
   get topY(): number {
     return this.spawnY;
   }
+}
+
+/**
+ * Forward input while crossing a jump. In low gravity a jump hangs for seconds
+ * and full speed overshoots the landing, so the thrust eases off over the last
+ * stretch; at normal gravity it is full speed all the way (unchanged).
+ */
+export function airThrust(near: number, speed: number, gravity: number, airborne: boolean): number {
+  if (!airborne || gravity >= 6) return 1;
+  return Math.max(0.12, Math.min(1, near / (speed * 0.9)));
 }
 
 function sectorToDir(sector: number): number {

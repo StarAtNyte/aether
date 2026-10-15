@@ -8,6 +8,8 @@ export type {
   AgentEvent,
   AgentHost,
   AgentOptions,
+  LevelToolOutput,
+  LevelToolRunner,
   ChatMessage,
   CompletionRequest,
   CompletionResponse,
@@ -31,7 +33,7 @@ export { diffLineText, type DiffLine } from './refine/diff-text';
 export type { Command, Ref, Look, EnvIntent } from './refine/command';
 export type { FineEditResult, FineEditInput, FineCatalogs, DeclineReason } from './refine/plan';
 export type { RequestScope, PatchAudit } from './refine/guard';
-export { AGENT_TOOLS, COMPACT_TOOLS, PATCH_OPS, TOOL_LIMITS, type AgentToolName } from './tools';
+export { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS, LEVEL_TOOL_NAMES, isLevelToolName, PATCH_OPS, TOOL_LIMITS, type AgentToolName } from './tools';
 export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';
 export { summarizeWorldForModel, type ModelSummaryOptions } from './world-text';

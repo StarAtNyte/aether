@@ -160,7 +160,7 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
                 Back to editor
               </button>
               <button type="button" className="btn btn--primary" onClick={() => void studio.restart()} autoFocus>
-                <Icon name="refresh" /> Play again
+                <Icon name="refresh" /> {game.status === 'won' ? 'Play again' : 'Try again'}
               </button>
             </div>
           </div>

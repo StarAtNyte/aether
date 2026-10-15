@@ -88,7 +88,13 @@ function toWebp(png: string, out: string, w: number, h: number, budget: number):
   const cx = Math.floor((sw - cw) / 2);
   const cy = Math.floor((sh - ch) / 2);
   for (const q of [82, 74, 66, 58, 50, 42]) {
-    execFileSync(process.env['AETHER_CWEBP'] ?? 'cwebp', ['-quiet', '-q', String(q), '-m', '6', '-sharp_yuv', '-crop', String(cx), String(cy), String(cw), String(ch), '-resize', String(w), String(h), png, '-o', out], { timeout: 60_000 });
+    try {
+      execFileSync(process.env['AETHER_CWEBP'] ?? 'cwebp', ['-quiet', '-q', String(q), '-m', '6', '-sharp_yuv', '-crop', String(cx), String(cy), String(cw), String(ch), '-resize', String(w), String(h), png, '-o', out], { timeout: 60_000 });
+    } catch (e) {
+      // No cwebp on this machine: Pillow does the same crop, resize and encode.
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      execFileSync('python3', ['-I', join(REPO_ROOT, 'scripts/showcase/to-webp.py'), png, out, String(w), String(h), String(q)], { timeout: 60_000 });
+    }
     const size = statSync(out).size;
     if (size <= budget) return size;
   }

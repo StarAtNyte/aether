@@ -13,6 +13,8 @@ import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
 import { FinishTextures, finishHasMaps } from './finish-textures';
 import { applyAntiTile, FINISH_NODES_KEY, needsAntiTile } from './anti-tile';
+import { applySplat } from './terrain-splat';
+import { FoliageTextures } from './foliage-textures';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -58,7 +60,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -94,6 +96,17 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     }
   }
   if (!ghostLike && r.finish) applyFinish(m, r, finishes, antiTile);
+  if (!ghostLike && r.foliage && foliage) {
+    // Leaf cards: the cut-out is the alpha test; both faces are in the geometry, so the material stays single-sided.
+    m.map = foliage.get(r.foliage);
+    m.alphaTest = 0.5;
+    m.shadowSide = DoubleSide;
+    m.userData['aetherFoliage'] = r.foliage;
+  }
+  if (!ghostLike && r.splat && finishes && layered) {
+    m.roughness = 1;
+    applySplat(m, (id) => finishes.get(id));
+  }
   if (variant === 'foliage') applyWind(m);
   if (!ghostLike && r.surface === 'water') {
     m.userData[WATER_KEY] = true;
@@ -144,11 +157,19 @@ export class MaterialCache {
   readonly surfaces = new SurfaceTextures();
   /** Texture maps of the physically based finishes (architecture). */
   readonly finishes = new FinishTextures();
+  /** Cut-out leaf, needle, grass and fern cards of the foliage materials. */
+  readonly foliage = new FoliageTextures();
   /**
    * Hide the repeat of large textured surfaces with a second, blended texture lookup (costs extra texture
    * reads per pixel; the renderer turns it off on software rasterisers). Applies to materials created afterwards.
    */
   antiTile = true;
+  /**
+   * Blend the photographed terrain layers by the splat weights (about 28 texture reads per pixel; the renderer turns it
+   * off on software rasterisers and in low-memory mode, where terrain keeps its vertex colours). Applies to materials
+   * created afterwards.
+   */
+  layeredTerrain = true;
   private reflectiveWater = false;
 
   /**
@@ -174,7 +195,7 @@ export class MaterialCache {
     const resolved = resolveMaterial(spec, opts);
     const key = materialKey(resolved, variant);
     const material = this.cache.acquire(key, () => {
-      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile);
+      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       return m;
     });
@@ -201,5 +222,6 @@ export class MaterialCache {
     this.cache.clear();
     this.surfaces.dispose();
     this.finishes.dispose();
+    this.foliage.dispose();
   }
 }

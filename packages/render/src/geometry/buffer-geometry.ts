@@ -55,6 +55,21 @@ export function boxProjectedUvs(positions: Float32Array, normals: Float32Array):
 }
 
 /**
+ * Metre UVs for layered terrain: plain top-down (x, z). Every layer samples with them, so the tangent
+ * frame of the normal maps matches; the rock layer adds side projections in the shader (triplanar)
+ * where the ground leans over, and there is no seam where a dominant axis would flip.
+ */
+export function terrainUvs(positions: Float32Array): Float32Array {
+  const n = positions.length / 3;
+  const uvs = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    uvs[i * 2] = positions[i * 3] as number;
+    uvs[i * 2 + 1] = positions[i * 3 + 2] as number;
+  }
+  return uvs;
+}
+
+/**
  * Build a `BufferGeometry` from one mesh part. Validates array lengths
  * (positions/normals/uvs/colors per vertex, triangle-multiple indices) and
  * computes bounding volumes for frustum culling.
@@ -68,12 +83,25 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   g.setAttribute('position', new BufferAttribute(positions, 3));
   if (normals instanceof Float32Array && normals.length === positions.length) g.setAttribute('normal', new BufferAttribute(normals, 3));
   if (colors instanceof Float32Array && colors.length === vertexCount * 3) g.setAttribute('color', new BufferAttribute(colors, 3));
+  if (part.material?.splat === true) {
+    // Terrain layer weights; a part that asks for layering without weights is plain grass.
+    if (part.splat instanceof Float32Array && part.splat.length === vertexCount * 4) g.setAttribute('splat', new BufferAttribute(part.splat, 4));
+    else {
+      const w = new Float32Array(vertexCount * 4);
+      for (let i = 0; i < vertexCount; i++) w[i * 4] = 1;
+      g.setAttribute('splat', new BufferAttribute(w, 4));
+    }
+  }
   if (indices.length > 0) g.setIndex(new BufferAttribute(narrowIndices(indices, vertexCount), 1));
   if (!g.getAttribute('normal')) g.computeVertexNormals();
   // Parts with a physically based finish (architecture) carry authored metre UVs (boards along a
   // floor, courses along a wall); everything else gets box-projected metre UVs.
-  const authored = part.material?.finish !== undefined && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
-  const uvs = authored ? (part.uvs as Float32Array) : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
+  const authored = (part.material?.finish !== undefined || part.material?.foliage !== undefined) && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
+  const uvs = authored
+    ? (part.uvs as Float32Array)
+    : part.material?.splat === true
+      ? terrainUvs(positions)
+      : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
   g.setAttribute('uv', new BufferAttribute(uvs, 2));
   g.computeBoundingBox();
   g.computeBoundingSphere();

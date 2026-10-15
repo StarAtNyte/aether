@@ -27,6 +27,12 @@ export interface MeshPart {
   indices: Uint32Array;
   uvs?: Float32Array;
   colors?: Float32Array;
+  /**
+   * Terrain layer weights, 4 per vertex in [0, 1] (grass, rock, dry ground, snow; they sum to 1).
+   * Present when `material.splat` is true; renderers that do not layer terrain ignore it and draw
+   * the vertex colours.
+   */
+  splat?: Float32Array;
   /** Per-part material (merged with the entity material by the renderer). */
   material: MaterialSpec;
 }

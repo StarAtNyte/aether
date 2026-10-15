@@ -4,6 +4,7 @@
  */
 import type { BuiltinGenerator, CatalogEntry } from '../types';
 import { NATURE_GENERATORS } from './nature';
+import { FLORA_GENERATORS } from './flora';
 import { TERRAIN_GENERATORS } from './terrain';
 import { ARCHITECTURE_GENERATORS } from './architecture';
 import { PROP_GENERATORS } from './props';
@@ -15,6 +16,7 @@ import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS } from './arch';
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
   ...NATURE_GENERATORS,
+  ...FLORA_GENERATORS,
   ...ARCHITECTURE_GENERATORS,
   ...PROP_GENERATORS,
   ...SCULPTURE_GENERATORS,

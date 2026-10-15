@@ -118,5 +118,31 @@ const water: Lab = {
   ],
 };
 
+function gen(id: string, generator: string, position: Vec3, params: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): unknown {
+  return { op: 'add', entity: { id, shape: { kind: 'procedural', generator, params }, transform: { position, rotation: [0, 0, 0], scale: [1, 1, 1] }, physics: { body: 'static' }, ...extra } };
+}
+
+/** Realistic vegetation and layered terrain under the day sun: broadleaf, birch, spruce, shrubs, ferns, grass, boulders on a hill. */
+const flora: Lab = {
+  cam: { pos: [-2, 2.4, 20], target: [2, 3.4, -4] },
+  patches: [
+    { op: 'clear', keepEnvironment: false },
+    { op: 'setEnvironment', set: { sky: 'day', timeOfDay: 15.5, sunIntensity: 3, ambientIntensity: 0.45, weather: 'clear', fog: { color: '#bcd0e0', density: 0.004 }, ground: null, bloom: 0.25 } },
+    gen('hills', 'terrain', [0, -2, -10], { size: 120, height: 14, resolution: 160, variant: 0, roughness: 0.55 }),
+    gen('oak', 'tree-broadleaf', [-9, 1.4, 2], { height: 10, variant: 0 }),
+    gen('oak-2', 'tree-broadleaf', [6, 1.1, -3], { height: 12, variant: 2, color: '#5c8a34' }),
+    gen('birch', 'tree-birch', [-3, 1.3, -2], { height: 8 }),
+    gen('birch-2', 'tree-birch', [1, 1.2, 4], { height: 7 }),
+    gen('spruce', 'tree-spruce', [12, 1.0, 5], { height: 14 }),
+    gen('spruce-2', 'tree-spruce', [-14, 1.5, -6], { height: 10 }),
+    gen('shrub', 'shrub', [-5, 1.3, 7], { size: 1.6 }),
+    gen('shrub-2', 'shrub', [4, 1.2, 8], { size: 1.3, color: '#5a7a2a' }),
+    gen('fern', 'fern', [-1, 1.2, 9], { size: 0.9 }),
+    gen('boulder', 'boulder', [2, 1.1, 10], { size: 2.2, variant: 0 }),
+    gen('boulder-2', 'boulder', [-7, 1.2, 10], { size: 1.4, variant: 2 }),
+    { op: 'add', entity: { id: 'grass', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'meadow-grass', params: { size: 0.6 } }, count: 900, area: [30, 18], minSpacing: 0.35 }, transform: { position: [0, 1.2, 4], rotation: [0, 0, 0], scale: [1, 1, 1] } } },
+  ],
+};
+
 /** The labs by name. */
-export const LABS: Readonly<Record<string, Lab>> = Object.freeze({ lights, materials, water, area, sun });
+export const LABS: Readonly<Record<string, Lab>> = Object.freeze({ lights, materials, water, area, sun, flora });

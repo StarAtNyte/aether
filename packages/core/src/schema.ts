@@ -98,6 +98,19 @@ export const MaterialSpec = z.object({
   flatShading: z.boolean().optional(),
   /** Use per-vertex colors produced by a procedural generator. */
   vertexColors: z.boolean().optional(),
+  /**
+   * Additive: terrain layering. The generator's part carries four per-vertex layer weights (grass,
+   * rock, dry ground, snow) and the renderer blends the photographed grass, rock, soil and snow
+   * surfaces by them, keeping the vertex colours as the base tint. Without the flag (or without
+   * weights) the part is drawn with its plain vertex colours.
+   */
+  splat: z.boolean().optional(),
+  /**
+   * Additive: alpha-tested foliage cards. The part is a set of quads with 0..1 UVs; the renderer draws
+   * a procedural leaf cluster, needle spray, grass blade or fern frond cut out of each quad (no
+   * sorting, real leaf shadows), tinted by the vertex colours.
+   */
+  foliage: z.enum(['broadleaf', 'shrub', 'needles', 'grass', 'fern']).optional(),
 });
 export type MaterialSpec = z.infer<typeof MaterialSpec>;
 

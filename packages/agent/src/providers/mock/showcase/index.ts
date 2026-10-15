@@ -10,6 +10,7 @@ import type { MockPlan } from '../planner';
 import { duskLakeHouse, skylinePenthouse } from './architecture';
 import { chainReaction } from './chain-reaction';
 import { hollowGate } from './hollow-gate';
+import { highlandTrail } from './highland-trail';
 import { kartCanyon } from './kart-canyon';
 import { lanternIsles } from './lantern-isles';
 import { kyotoTemple } from './kyoto-temple';
@@ -34,6 +35,7 @@ export interface Flagship {
 
 /** Every flagship, in showcase order. */
 export const FLAGSHIPS: readonly Flagship[] = Object.freeze([
+  { id: 'highland-trail', title: 'Highland Trail', match: /\bhighland trail\b/, plan: highlandTrail },
   { id: 'lantern-isles', title: 'Lantern Isles', match: /\blantern isles?\b/, plan: lanternIsles },
   { id: 'chain-reaction', title: 'Chain Reaction', match: /\bchain reaction\b(?=.*\b(machines?|rube|goldberg|five|puzzle)\b)|\bchain reaction machines?\b/, plan: chainReaction },
   { id: 'kart-canyon', title: 'Kart Canyon', match: /\bkart canyon\b/, plan: kartCanyon },

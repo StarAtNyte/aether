@@ -8,6 +8,7 @@ import { normalizeHex } from './color';
 
 const PRESETS: ReadonlySet<string> = new Set(MaterialPreset.options);
 const FINISHES: ReadonlySet<string> = new Set(MaterialFinish.options);
+const FOLIAGE_KINDS: ReadonlySet<string> = new Set(['broadleaf', 'shrub', 'needles', 'grass', 'fern']);
 
 function clampNumber(v: unknown, min: number, max: number, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`material.${what}: expected a number`);
@@ -64,5 +65,12 @@ export function sanitizeMaterial(input: unknown): MaterialSpec {
   if (flat !== undefined) out.flatShading = bool(flat, 'flatShading');
   const vc = read('vertexColors');
   if (vc !== undefined) out.vertexColors = bool(vc, 'vertexColors');
+  const splat = read('splat');
+  if (splat !== undefined) out.splat = bool(splat, 'splat');
+  const foliage = read('foliage');
+  if (foliage !== undefined) {
+    if (typeof foliage !== 'string' || !FOLIAGE_KINDS.has(foliage)) throw new TypeError(`material.foliage: must be one of ${[...FOLIAGE_KINDS].join(', ')}`);
+    out.foliage = foliage as MaterialSpec['foliage'];
+  }
   return out;
 }

@@ -64,7 +64,7 @@ export class VirtualGroup {
    */
   constructor(readonly dag: ClusterDag, source: BufferGeometry, capacityTriangles: number) {
     this.scratch = createCutScratch(dag);
-    for (const name of ['position', 'normal', 'color', 'uv'] as const) {
+    for (const name of ['position', 'normal', 'color', 'uv', 'splat'] as const) {
       const a = source.getAttribute(name);
       if (a instanceof BufferAttribute) this.attributes.push([name, new BufferAttribute(a.array, a.itemSize, a.normalized)]);
     }

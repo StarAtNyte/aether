@@ -8,6 +8,7 @@
  * Existing worlds: edit commands (add/remove/modify) plus mood overrides; a
  * request that describes a whole themed scene replaces the world instead.
  */
+import { realisticPlan } from './realistic';
 import { hashString, type Json, type PatchInput } from '@aether/core';
 import { Builder } from './builder';
 import type { ThemeCtx } from './decor';
@@ -240,6 +241,10 @@ function refineWithThemes(intent: Intent, view: WorldView, library: readonly Moc
  * Deterministic. `library` lists generator-library objects it may place.
  */
 export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = [], mode?: 'new' | 'refine'): MockPlan {
+  return realisticPlan(request, planMockPlain(request, summary, library, mode));
+}
+
+function planMockPlain(request: string, summary: string, library: readonly MockLibraryItem[], mode: 'new' | 'refine' | undefined): MockPlan {
   // Flagship showcase worlds answer to their names.
   const showcase = planShowcase(request, summary);
   if (showcase) return showcase;

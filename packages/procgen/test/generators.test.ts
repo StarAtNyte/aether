@@ -8,11 +8,15 @@ const REQUIRED_IDS = [
   'terrain', 'island', 'mountain', 'tree-pine', 'tree-oak', 'tree-palm', 'bush', 'rock', 'grass-tuft', 'flowers', 'mushroom',
   'house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'lamp-post', 'bench', 'table', 'chair', 'crate',
   'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus',
+  // Realistic vegetation (flora.ts).
+  'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'boulder',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus']);
 const TERRAIN = new Set(['terrain', 'island', 'mountain']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
+/** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
+const CARDS = new Set(['tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass']);
 
 function randomParams(spec: Record<string, ParamSpec>, random: () => number): Record<string, Json> {
   const out: Record<string, Json> = {};
@@ -57,12 +61,15 @@ function checkOutput(id: string, out: GeneratorOutput): void {
     expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
   } else if (SCULPTURES.has(id)) {
     expect(tris).toBeLessThanOrEqual(12 * 256 * 256);
+  } else if (CARDS.has(id)) {
+    expect(tris).toBeLessThan(12_000);
   } else if (TREES.has(id)) {
     expect(tris).toBeLessThan(2000);
   } else {
     expect(tris).toBeLessThan(3000);
   }
   for (const p of out.parts) {
+    if (CARDS.has(id) && p.material.foliage !== undefined) continue;
     const mismatch = windingMismatch(p.positions, p.normals, p.indices);
     expect(mismatch).toBeLessThan(TERRAIN.has(id) ? 0.01 : 0.001);
   }

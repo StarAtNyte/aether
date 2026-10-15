@@ -63,6 +63,13 @@ function validatePart(raw: unknown, index: number): { part: MeshPart; vertices: 
     if (e) return e;
     part.colors = colors;
   }
+  const splat = own(raw, 'splat');
+  if (splat !== undefined) {
+    if (!(splat instanceof Float32Array) || splat.length !== n * 4) return `${where}.splat must be a Float32Array with 4 values per vertex`;
+    const e = checkFloats(splat, `${where}.splat`, 1);
+    if (e) return e;
+    part.splat = splat;
+  }
   try {
     part.material = sanitizeMaterial(own(raw, 'material'));
   } catch (err) {

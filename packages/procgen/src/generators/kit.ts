@@ -145,6 +145,8 @@ export const MAT = {
   glass: { preset: 'glass', color: '#9fd3ff', roughness: 0.08, metalness: 0.1, opacity: 0.55 },
   rubber: { preset: 'rubber', color: '#2a2a2e', roughness: 0.95 },
   ground: { preset: 'dirt', vertexColors: true, roughness: 0.96, flatShading: true },
+  /** Layered terrain: vertex colours tint, per-vertex weights (grass, rock, dry ground, snow) pick the photographed surface. */
+  terrain: { preset: 'grass', vertexColors: true, roughness: 0.95, splat: true },
 } as const satisfies Record<string, MaterialSpec>;
 
 /** Emissive glow material. */

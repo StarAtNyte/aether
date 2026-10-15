@@ -1659,7 +1659,7 @@ export class SceneSync {
       });
       let owned = b.ownedMaterial;
       if (!owned) {
-        owned = createMaterial(resolved, b.variant ?? this.variant, this.opts.materials.surfaces, this.opts.materials.finishes);
+        owned = createMaterial(resolved, b.variant ?? this.variant, this.opts.materials.surfaces, this.opts.materials.finishes, this.opts.materials.antiTile, this.opts.materials.foliage, this.opts.materials.layeredTerrain);
         if (field === 'opacity' && !owned.transparent) {
           // Opacity animations blend from the start so the program never flips per tick.
           owned.transparent = true;

@@ -19,7 +19,7 @@ export type PlaytestKind = 'game' | 'walkthrough';
 export type PlaytestStatus = 'passed' | 'failed' | 'inconclusive' | 'unsupported';
 
 /** What an objective is. */
-export type ObjectiveKind = 'collect' | 'goal' | 'zone' | 'room' | 'plate' | 'talk';
+export type ObjectiveKind = 'collect' | 'goal' | 'zone' | 'room' | 'plate' | 'talk' | 'press';
 
 /** Final state of an objective after a run. */
 export type ObjectiveStatus = 'done' | 'unreachable' | 'blocked' | 'untouched' | 'pending';

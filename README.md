@@ -367,7 +367,7 @@ explicit state, so the AI can be held to account:
   "Recently opened" (grid or list), search, sort, rename, duplicate, delete
   with Undo, `.aether.json` export and drag-and-drop import. New projects
   start from a prompt, an empty or starter scene, or a bundled default
-  project: twelve featured flagship worlds plus every saved gallery world,
+  project: the featured flagship worlds (fourteen, including the realistic Highland Trail) plus every saved gallery world,
   all listed in one curation manifest (`apps/studio/src/showcase/manifest.ts`:
   featured / candidate / hidden, array order is display order). Cards and
   thumbnails load with the page; a world's JSON is fetched (size-capped,
@@ -574,6 +574,7 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm run thumbnails` | Renders the asset previews (`public/palette/*.webp`) with the real renderer (`-- --templates` re-renders template cards from the editor's framing) |
 | `npm run showcase:bake` | Rebuilds every default project's saved world (`public/templates/worlds/<slug>.json`) from its manifest prompt with the offline planner and re-verifies it (`-- --check` fails on stale files, `--report` prints each verification) |
 | `npm run showcase:thumbs` | Renders each flagship from its saved world and art-directed cover camera: the cover (`docs/screenshots/showcase/<slug>.webp`) and the card thumbnail (≤ 30 KB); `tsx tests/e2e/showcase.e2e.ts --gallery` cuts gallery entries' thumbnails from their screenshots |
+| `npm run e2e:gameplay` | Plays Highland Trail, Neon Rain City and Kyoto Temple to their win screens in Chromium with the real character controller, through the on-screen controls, following the route the verified-playable bot recorded for each (about 1-2 minutes of real time per game; `AETHER_E2E_GPU=1` for the machine's GPU) |
 | `npm run e2e:showcase` | Default projects in Chromium then Firefox: home row and Templates page, every featured world opens from its saved file with its prompt and thumbnail, title card → Start → a scripted run → Stop |
 | `npm run bridge` | Starts the local Aether Bridge (Codex / Claude Code through your own sign-in); `-- --origin https://host` allows a hosted studio |
 | `npm run eval` | Agent evaluation: patch error rate, verification pass rate, latency and quality score per prompt (`-- --provider=codex --effort=low --limit=3`, `--provider=claude-code --model=haiku`) |

@@ -27,7 +27,7 @@ import { validateWorld, type Entity, type EntityId, type Vec3, type WorldDoc } f
 import { PhysicsWorld, entityBounds, yieldToHost, type Aabb } from '@aether/physics';
 import { deriveGoals, inRegion, needsHold, touches, winThresholds, type DoorInfo, type GoalModel, type GoalObjective } from './goals';
 import { PLAYER_CAPSULE } from './host';
-import { EdgeKind, NavGraph, doorFitRadius, doorSlack, jumpHeight, type NavParams, type NavPortal } from './nav';
+import { EdgeKind, NavGraph, airThrust, type RideInfo, doorFitRadius, doorSlack, jumpHeight, type NavParams, type NavPortal } from './nav';
 import { hashWorld } from './proof';
 import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
@@ -64,7 +64,17 @@ function clamp(v: number | undefined, def: number, lo: number, hi: number): numb
 
 const nowMs = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const r1 = (v: number): number => Math.round(v * 10) / 10;
+/** Searches per game plan before giving up: every invalid jump or drop found on the best path is excluded and the search repeats (a raised walkway has hundreds of side drops). A walkthrough keeps 14: it must not find its way through a door that is too narrow. */
+const PLAN_ATTEMPTS = 160;
 const r2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** The key code a rule's key name stands for ("e" → KeyE, "1" → Digit1, "space" → Space). */
+function keyCode(name: string): string {
+  const k = name.trim();
+  if (/^[a-zA-Z]$/.test(k)) return `Key${k.toUpperCase()}`;
+  if (/^[0-9]$/.test(k)) return `Digit${k}`;
+  return k.length > 0 ? k[0]?.toUpperCase() + k.slice(1) : 'KeyE';
+}
 
 function truthy(v: unknown): boolean {
   if (v === true) return true;
@@ -170,7 +180,7 @@ function navBounds(doc: WorldDoc, points: readonly Vec3[]): { minX: number; maxX
     }
     if (!grew) break;
   }
-  const reach = 160;
+  const reach = 330;
   const spawn = doc.player.spawn;
   return {
     minX: Math.max(minX, spawn[0] - reach),
@@ -232,6 +242,8 @@ class Bot {
   private fellCount = 0;
   /** `talk` objectives whose conversation delivered what the game needs. */
   private readonly talkDone = new Set<string>();
+  private readonly pressed = new Set<string>();
+  private readonly lifts = new Map<string, RideInfo>();
   /** Why a conversation did not deliver (plain words), per objective. */
   private readonly talkWhy = new Map<string, string>();
   private startNode = -1;
@@ -321,7 +333,10 @@ class Bot {
           done = o.entity !== undefined && (s.host.seen.destroyed.has(o.entity) || s.host.seen.hidden.has(o.entity));
           break;
         case 'goal':
-          done = won || touches(o.touch, feet);
+          done = won || (o.gated !== true && touches(o.touch, feet));
+          break;
+        case 'press':
+          done = this.pressed.has(o.id) || won;
           break;
         case 'zone':
           done = (o.completes === 'game-over' && won) || touches(o.touch, feet);
@@ -486,6 +501,7 @@ class Bot {
       },
     });
     this.navMs = Math.round(nowMs() - navT0);
+    this.registerLifts();
     this.startNode = this.graph.nearest(landed, 2.5, 3);
     if (this.startNode < 0 || landed[1] < -20) {
       const inside = this.solidAt(spawn);
@@ -694,6 +710,11 @@ class Bot {
     return o.kind === 'goal' || (o.kind === 'zone' && o.completes === 'game-over');
   }
 
+  /** Objectives done last: the ones that end the game and the key presses that set it off. */
+  private isFinale(o: GoalObjective): boolean {
+    return this.isWinObjective(o) || o.kind === 'press';
+  }
+
   /** Nearest reachable pending objective and the path to it, or null. */
   private plan(from: number): { objective: GoalObjective; path: number[]; jumpAt: boolean } | null {
     const planT0 = nowMs();
@@ -712,14 +733,14 @@ class Bot {
       for (const o of this.pending.values()) {
         if (this.failedReason.has(o.id)) continue;
         if (o.kind === 'talk' && !this.talkReady(o)) continue;
-        if ((phase === 0) === this.isWinObjective(o)) continue;
+        if ((phase === 0) === this.isFinale(o)) continue;
         for (const t of this.targetsFor(o)) {
           const prev = owner.get(t.node);
           if (!prev || (prev.jump && !t.jump)) owner.set(t.node, { o, jump: t.jump });
         }
       }
       if (owner.size === 0) continue;
-      for (let attempt = 0; attempt < 14; attempt++) {
+      for (let attempt = 0; attempt < (this.kind === 'walkthrough' ? 14 : PLAN_ATTEMPTS); attempt++) {
         const res = g.search(from, (n) => owner.has(n));
         if (res.hit < 0) break;
         const path = g.pathTo(res.parent, res.hit);
@@ -793,7 +814,7 @@ class Bot {
           }
           continue;
         }
-        const res = await this.doLink(a, b, kind);
+        const res = kind === EdgeKind.Ride ? await this.doRide(a, b) : await this.doLink(a, b, kind);
         if (res !== 'arrived') return res;
         idx++;
         resetWatch();
@@ -915,6 +936,100 @@ class Bot {
     this.session.note('stuck', blocker ? `blocked by ${blocker}` : 'stuck', [p[0], p[1], p[2]]);
   }
 
+  /**
+   * Vertical lifts (a kinematic platform that patrols straight up and down) become one-way ride edges
+   * from a node beside the platform at its lowest pose to a node level with it at its highest.
+   */
+  private registerLifts(): void {
+    const g = this.graph;
+    for (const id in this.world.entities) {
+      const e = this.world.entities[id] as Entity;
+      if (e.template || e.physics?.body !== 'kinematic') continue;
+      const patrol = e.behaviors.find((b) => b.type === 'patrol' && b.enabled);
+      const wps = patrol?.params['waypoints'];
+      if (!Array.isArray(wps) || wps.length < 2 || wps.length > 16) continue;
+      const pts: Vec3[] = [];
+      for (const w of wps) {
+        if (!Array.isArray(w) || w.length !== 3 || !w.every((n) => typeof n === 'number' && Number.isFinite(n))) break;
+        pts.push([w[0] as number, w[1] as number, w[2] as number]);
+      }
+      if (pts.length !== wps.length) continue;
+      const first = pts[0] as Vec3;
+      const relative = patrol?.params['relative'] === true;
+      const offs = pts.map((p) => [p[0] - (relative ? 0 : first[0]), p[1] - (relative ? 0 : first[1]), p[2] - (relative ? 0 : first[2])] as Vec3);
+      const lateral = Math.max(...offs.map((o) => Math.hypot(o[0] - (offs[0] as Vec3)[0], o[2] - (offs[0] as Vec3)[2])));
+      const rise = Math.max(...offs.map((o) => o[1] - (offs[0] as Vec3)[1]));
+      if (lateral > 0.3 || rise < 1) continue;
+      const bounds = entityBounds(this.world, id);
+      const st = this.session.pw.getState(id);
+      if (!bounds || !st) continue;
+      const cx = (bounds.min[0] + bounds.max[0]) / 2;
+      const cz = (bounds.min[2] + bounds.max[2]) / 2;
+      const topY = bounds.max[1];
+      const dist = (x: number, z: number, b: Aabb): number => {
+        const dx = Math.max(b.min[0] - x, 0, x - b.max[0]);
+        const dz = Math.max(b.min[2] - z, 0, z - b.max[2]);
+        return Math.hypot(dx, dz);
+      };
+      let from = -1, to = -1, bestFrom = Infinity, bestTo = Infinity;
+      for (let n = 0; n < g.count; n++) {
+        const x = g.px[n] as number, y = g.py[n] as number, z = g.pz[n] as number;
+        const d = dist(x, z, bounds);
+        if (Math.abs(y - topY) < 0.6 && d >= 0.2 && d <= 2.8 && d < bestFrom) {
+          bestFrom = d;
+          from = n;
+        }
+        // Landings beside the platform at its highest pose.
+        if (Math.abs(y - (topY + rise)) < 0.6 && d >= 0.2 && d <= 3.2) {
+          const dd = Math.hypot(x - cx, z - cz);
+          if (dd < bestTo) {
+            bestTo = dd;
+            to = n;
+          }
+        }
+      }
+      if (from < 0 || to < 0 || from === to) continue;
+      const info: RideInfo = { entity: id, centre: [cx, cz], startY: st.position[1], dyUp: rise };
+      g.addRide(from, to, info);
+      this.lifts.set(id, info);
+    }
+  }
+
+  /** Board a lift when it is down, ride it up and step off at the landing. */
+  private async doRide(a: number, b: number): Promise<TravelResult> {
+    const g = this.graph;
+    const s = this.session;
+    const info = g.linkOf(a, b)?.ride;
+    if (!info) return 'stuck';
+    const liftY = (): number => s.pw.getState(info.entity)?.position[1] ?? info.startY;
+    const target = g.pos(b);
+    // Wait at the edge until the platform is down.
+    for (let i = 0; i < 60 * 40 && liftY() - info.startY > 0.1; i++) if (!(await this.step(0, 0, false, s.yawDeg))) return s.over ? 'ended' : 'stopped';
+    // Step onto its middle.
+    const t0 = s.time;
+    while (s.time - t0 < 5) {
+      const pos = s.position;
+      const d = Math.hypot(info.centre[0] - pos[0], info.centre[1] - pos[2]);
+      if (d < 0.3) break;
+      if (!(await this.step(Math.min(1, d / 0.6 + 0.2), 0, false, this.yawTo(pos, info.centre[0], info.centre[1])))) return s.over ? 'ended' : 'stopped';
+    }
+    // Ride up.
+    const r0 = s.time;
+    while (s.time - r0 < 60 && s.position[1] < target[1] - 0.35) {
+      if (!(await this.step(0, 0, false, s.yawDeg))) return s.over ? 'ended' : 'stopped';
+    }
+    // Step off towards the landing.
+    const w0 = s.time;
+    while (s.time - w0 < 4) {
+      const pos = s.position;
+      const d = Math.hypot(target[0] - pos[0], target[2] - pos[2]);
+      if (d < 0.3 && Math.abs(target[1] - pos[1]) < 0.7 && s.character.grounded) return 'arrived';
+      if (!(await this.step(d < 0.08 ? 0 : Math.min(1, d / 0.5 + 0.3), 0, false, this.yawTo(pos, target[0], target[2])))) return s.over ? 'ended' : 'stopped';
+    }
+    g.markBad(a, b);
+    return 'stuck';
+  }
+
   private async doLink(a: number, b: number, kind: EdgeKind): Promise<TravelResult> {
     const g = this.graph;
     const s = this.session;
@@ -922,7 +1037,7 @@ class Bot {
     const t0 = s.time;
     let first = true;
     let airborne = false;
-    while (s.time - t0 < 4) {
+    while (s.time - t0 < (this.params.gravity < 6 ? 10 : 4)) {
       const pos = s.position;
       const dx = target[0] - pos[0];
       const dz = target[2] - pos[2];
@@ -930,7 +1045,7 @@ class Bot {
       const yaw = this.yawTo(pos, target[0], target[2]);
       const wantJump = kind === EdgeKind.Jump && first;
       first = false;
-      if (!(await this.step(near < 0.08 ? 0 : 1, 0, wantJump, yaw))) return s.over ? 'ended' : 'stopped';
+      if (!(await this.step(near < 0.08 ? 0 : airThrust(near, this.params.speed, this.params.gravity, !s.character.grounded), 0, wantJump, yaw))) return s.over ? 'ended' : 'stopped';
       const q = s.position;
       if (!s.character.grounded) airborne = true;
       if (s.character.grounded && s.character.verticalSpeed <= 0.01 && (airborne || s.time - t0 > 0.25)) {
@@ -985,6 +1100,31 @@ class Bot {
         if (!(await this.step(near < 0.12 ? 0 : Math.min(1, near / 0.6 + 0.2), 0, jumpHere && s.character.grounded, yaw))) return !this.pending.has(o.id);
       }
     }
+    return !this.pending.has(o.id);
+  }
+
+  /**
+   * Stand on the spot a rule needs (a pressure plate) and press its key the way a person does; done once
+   * the key was pressed with the player standing there and the logic had a moment to react.
+   */
+  private async pressKey(o: GoalObjective, endNode: number): Promise<boolean> {
+    const s = this.session;
+    const end = this.graph.pos(endNode);
+    for (let i = 0; i < 60; i++) {
+      const pos = s.position;
+      const d = Math.hypot(end[0] - pos[0], end[2] - pos[2]);
+      if (d < 0.06 || Math.abs(end[1] - pos[1]) > 1.2) break;
+      if (!(await this.step(Math.min(1, d / 0.3 + 0.1), 0, false, this.yawTo(pos, end[0], end[2])))) return false;
+    }
+    // Let the plate register, then press and release a few times (the rule's conditions may take a tick).
+    if (!(await this.idle(0.3))) return false;
+    const key = keyCode(o.pressKey ?? 'e');
+    for (let n = 0; n < 4 && !s.over; n++) {
+      if (!(await this.step(0, 0, false, s.yawDeg, [key]))) return false;
+      if (!(await this.idle(0.35))) return false;
+    }
+    this.pressed.add(o.id);
+    this.scanObjectives();
     return !this.pending.has(o.id);
   }
 
@@ -1081,7 +1221,7 @@ class Bot {
       const res = await this.travel(plan.path);
       if (res === 'ended' || res === 'stopped') break;
       if (res === 'arrived') {
-        const ok = o.kind === 'talk' ? await this.converse(o) : await this.touch(o, plan.jumpAt, plan.path[plan.path.length - 1] as number);
+        const ok = o.kind === 'talk' ? await this.converse(o) : o.kind === 'press' ? await this.pressKey(o, plan.path[plan.path.length - 1] as number) : await this.touch(o, plan.jumpAt, plan.path[plan.path.length - 1] as number);
         if (!ok && !this.stopped) {
           this.markFailed(o, 'the player reached it but it did not trigger');
           const r = this.results.get(o.id);
@@ -1576,6 +1716,92 @@ class Bot {
       stats: { searches: this.graph ? this.graph.searches : 0, expanded: this.graph ? this.graph.expandedTotal : 0, navNodes: this.graph ? this.graph.count : 0, navCell: this.graph ? this.graph.cell : 0, navMs: this.navMs, planMs: Math.round(this.planMs) },
     };
   }
+
+  /**
+   * Build the walking map of the world and answer reach questions about it without playing: the level
+   * tools use this to tell the assistant, while it places things, what the player can get to.
+   */
+  async openProbe(): Promise<LevelProbe> {
+    const none = (problem: string): LevelProbe => ({ ok: false, problem, objectives: () => [], reachFrom: () => null, spawnOk: false, dispose: () => undefined });
+    const verdict = validateWorld(this.world);
+    if (!verdict.ok) return none('the world document is invalid');
+    const why = unsupportedReason(this.world);
+    if (why) return none(`reach cannot be measured here: ${why}`);
+    this.goals = deriveGoals(this.world);
+    const session = await Session.create(this.world, { trace: false });
+    this.session = session;
+    const dispose = (): void => {
+      this.graph?.dispose();
+      this.probe?.dispose();
+      session.dispose();
+    };
+    try {
+      await this.prepare();
+    } catch (e) {
+      dispose();
+      throw e;
+    }
+    const spawnOk = this.startNode >= 0 && this.findings.every((f) => f.code !== 'spawn_blocked');
+    const problem = spawnOk ? '' : (this.findings.find((f) => f.code === 'spawn_blocked')?.message ?? 'the player has nowhere to stand at the spawn point');
+    const explain = (pos: Readonly<Vec3>): LevelReachAnswer => {
+      const jumpH = jumpHeight(this.params);
+      const reach = this.reachableFromStart;
+      if (!spawnOk || !reach) return { reachable: false, reason: problem, gapH: 0, gapV: 0, nearest: null };
+      const touch: GoalObjective['touch'] = { shape: { kind: 'cylinder', half: [0.5, 0.9, 0.5] }, center: [pos[0], pos[1], pos[2]], rot: [0, 0, 0, 1], margin: 0.3 };
+      const targets = this.scanTargets(touch, Math.max(0, jumpH * 0.9));
+      if (targets.some((t) => Number.isFinite(reach[t.node] as number))) return { reachable: true, reason: '', gapH: 0, gapV: 0, nearest: null };
+      const near = this.nearestReachable(pos);
+      if (!near) return { reachable: false, reason: 'there is no floor near it', gapH: 0, gapV: 0, nearest: null };
+      const tooHigh = near.v > jumpH * 0.9;
+      const reason = `${r1(near.h)} m from the nearest place the player can stand${tooHigh ? ` and ${r1(near.v)} m too high (a jump reaches ${r1(jumpH * 0.85)} m)` : near.v < -2 ? ` and ${r1(-near.v)} m below it` : ''}`;
+      return { reachable: false, reason, gapH: near.h, gapV: near.v, nearest: g3(this.graph, near.node) };
+    };
+    const objectives = (): LevelObjectiveReach[] =>
+      this.goals.objectives.map((o) => {
+        const e = explain(o.position);
+        return { id: o.id, kind: o.kind, label: o.label, position: [o.position[0], o.position[1], o.position[2]], required: o.required, reachable: e.reachable, reason: e.reason, nearest: e.nearest };
+      });
+    return { ok: spawnOk, problem, objectives, reachFrom: (pos) => explain(pos), spawnOk, dispose };
+  }
+}
+
+/** One objective of a game and whether the player can get to it on foot (jumps, drops and lifts included). */
+export interface LevelObjectiveReach {
+  id: string;
+  kind: GoalObjective['kind'];
+  label: string;
+  position: Vec3;
+  required: boolean;
+  reachable: boolean;
+  /** Why not: distance to the nearest standable place and how much too high or low. */
+  reason: string;
+  nearest: Vec3 | null;
+}
+
+/** The answer to "can the player stand within reach of this point?". */
+export interface LevelReachAnswer {
+  reachable: boolean;
+  reason: string;
+  gapH: number;
+  gapV: number;
+  nearest: Vec3 | null;
+}
+
+/** Reach questions about a game's walking map (see {@link probeLevel}). */
+export interface LevelProbe {
+  ok: boolean;
+  /** What is wrong when `ok` is false (spawn buried, world invalid, a view the bot cannot walk). */
+  problem: string;
+  spawnOk: boolean;
+  objectives: () => LevelObjectiveReach[];
+  /** Whether the player can stand within reach of a point, and if not why not. */
+  reachFrom: (pos: Readonly<Vec3>) => LevelReachAnswer | null;
+  dispose: () => void;
+}
+
+/** Build the walking map of a game for reach questions. The caller disposes it. */
+export async function probeLevel(input: WorldDoc): Promise<LevelProbe> {
+  return new Bot(input, {}, 'game').openProbe();
 }
 
 function g3(g: NavGraph, node: number): Vec3 {

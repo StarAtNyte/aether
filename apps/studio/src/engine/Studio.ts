@@ -49,6 +49,7 @@ import { ArchController } from './arch';
 import { PublishController } from './publish';
 import { createStudioStore, type MemoryState, type StudioMode, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread, type VerificationRun } from './AgentBridge';
+import { lazyLevelTools } from './levelTools';
 import type { VerifyTrace } from '@aether/physics';
 import { playUiSound } from '../lib/uiSound';
 import { planMarks } from '../lib/planMarks';
@@ -1027,7 +1028,7 @@ export class Studio {
       // approves or progress stalls); paid keys keep a high finite cap. Small on-device models skip it.
       const subscription = resolved.kind === 'bridge' || resolved.kind === 'local';
       const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6 } : undefined;
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}), ...(primary && promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');

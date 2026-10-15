@@ -44,7 +44,8 @@ describe('system prompt', () => {
     // 12.75k before characters (npc spec, behaviour graph, dialogue, one worked example; ~1.2k tokens).
     // 14k -> 14.2k for the wall-placement diagnosis paragraph (~130 tokens: read walls from the summary, never ask the user which wall).
     // 14.2k -> 14.6k for the design-first workflow replacing the preset-recipe plan format (design_plan, place_items, query_scene).
-    expect(prompt.length / 4).toBeLessThan(14_600);
+    // 14.6k -> 15k for the seven realistic vegetation generators in the catalog (~260 tokens).
+    expect(prompt.length / 4).toBeLessThan(15_000);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

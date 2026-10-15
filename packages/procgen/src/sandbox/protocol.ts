@@ -64,6 +64,7 @@ export function transferables(out: GeneratorOutput): ArrayBuffer[] {
     addBuf(p.indices);
     addBuf(p.uvs);
     addBuf(p.colors);
+    addBuf(p.splat);
   }
   for (const c of out.colliders) {
     if (c.kind === 'hull') addBuf(c.points);

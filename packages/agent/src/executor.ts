@@ -12,7 +12,7 @@ import type { z } from 'zod';
 import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
 import { errorMessage } from './providers/errors';
-import { TOOL_LIMITS, ToolInputs, isAgentTool } from './tools';
+import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
 import type { AgentEvent, AgentHost, AgentOptions, Provider, UsageTotals } from './types';
 
 /** Result of one tool execution. */
@@ -40,6 +40,8 @@ export interface ExecutorContext {
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
   /** Agentic asset builder (deep build); see `AgentOptions.buildAsset`. */
   buildAsset?: AgentOptions['buildAsset'];
+  /** Level tools (`query_level`, `place_level_items`); see `AgentOptions.levelTools`. */
+  levelTools?: AgentOptions['levelTools'];
   /** Set for a small edit: checks a patch list against what the request named; `ok: false` patches are refused with the message. */
   audit?: (patches: readonly unknown[]) => { ok: boolean; message: string };
 }
@@ -327,9 +329,36 @@ export async function runVerification(ctx: ExecutorContext): Promise<{ event: Ag
   return { event: { type: 'verify', passed, summary, report: res.report }, passed, summary };
 }
 
+/** query_level / place_level_items: measured by the host's physics, committed here as one undo step. */
+async function levelTool(ctx: ExecutorContext, name: 'query_level' | 'place_level_items', rawInput: unknown): Promise<ToolOutcome> {
+  const run = ctx.levelTools;
+  if (!run) return fail(`${name} is not available in this session: use apply_patches and inspect.`);
+  const res = await raceAbort(run(ctx.host.getWorld(), name, rawInput ?? {}), ctx.signal);
+  const events: AgentEvent[] = [];
+  let edited = false;
+  let text = res.text;
+  if (res.patches.length > 0) {
+    const applied = ctx.host.applyPatches(res.patches, res.message);
+    events.push({ type: 'patches', patches: applied.applied, message: res.message, result: { applied: applied.applied.length, errors: applied.errors } });
+    edited = applied.applied.length > 0;
+    if (applied.errors.length > 0) text += `\n${formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length)}`;
+  }
+  return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (isLevelToolName(name)) {
+    if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
+    if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
+    try {
+      return await levelTool(ctx, name, rawInput);
+    } catch (e) {
+      if (ctx.signal?.aborted) throw e;
+      return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
+    }
+  }
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {

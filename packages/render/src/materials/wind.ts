@@ -36,4 +36,4 @@ export function applyWind(material: Material): void {
 }
 
 /** Built-in generators whose scatter fields sway in the wind. */
-export const FOLIAGE_GENERATORS: ReadonlySet<string> = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'bush', 'grass-tuft', 'flowers']);
+export const FOLIAGE_GENERATORS: ReadonlySet<string> = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'bush', 'grass-tuft', 'flowers', 'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass']);

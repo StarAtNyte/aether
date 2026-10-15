@@ -45,6 +45,8 @@ export function bakeOutput(output: GeneratorOutput): BakedMesh {
   let io = 0;
   for (const part of output.parts) {
     const material: MaterialSpec = { ...part.material };
+    // A baked mesh carries no terrain layer weights: it keeps its vertex colours.
+    delete material.splat;
     const key = stableStringify(material);
     let slot = slotByKey.get(key);
     if (slot === undefined) {

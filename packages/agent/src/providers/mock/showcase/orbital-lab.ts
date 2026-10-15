@@ -58,7 +58,7 @@ export function orbitalLab(): MockPlan {
 
   // --- Pods (the cells hide on and between them) ----------------------------------------------------
   const roofs: Array<{ x: number; z: number; y: number }> = [];
-  const podDefs: Array<[number, number, string, string]> = [[0, 2.2, 'Habitat', '#ff8fab'], [Math.PI * 0.5, 4.2, 'Greenhouse', '#3ddc97'], [Math.PI, 3, 'Workshop', '#ffd166'], [Math.PI * 1.5, 5, 'Observatory', '#9b5dff']];
+  const podDefs: Array<[number, number, string, string]> = [[0, 2.2, 'Habitat', '#ff8fab'], [Math.PI * 0.5, 4.2, 'Greenhouse', '#3ddc97'], [Math.PI, 3, 'Workshop', '#ffd166'], [Math.PI * 1.5, 4, 'Observatory', '#9b5dff']];
   for (const [a, h, name, color] of podDefs) {
     const [x, , z] = onCircle(0, 0, 13, a);
     roofs.push({ x, z, y: pod(b, x, z, h, name, color) });
@@ -133,7 +133,7 @@ export function orbitalLab(): MockPlan {
   b.prim('void-catch', 'box', [400, 2, 400], [0, -8, 0], { visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'hazard', params: { mode: 'respawn', cooldown: 0.5 } }] });
 
   // --- Rules ------------------------------------------------------------------------------------------
-  b.player({ mode: 'thirdPerson', spawn: [0, r2(DECK + 0.4), 14], moveSpeed: 5.5, jumpSpeed: 6 });
+  b.player({ mode: 'thirdPerson', spawn: [0, r2(DECK + 0.4), 8.5], moveSpeed: 5.5, jumpSpeed: 6 });
   b.state('cells', 0);
   b.hud('cells', 'Power cells / 5');
   b.rule({ id: 'hint', when: { on: 'start' }, then: [{ do: 'message', text: 'Low gravity! Talk to K-7, then find the five power cells.', duration: 4 }] });

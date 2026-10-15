@@ -79,7 +79,7 @@ export const TraceWire = z.object({
 const ObjectiveWire = z.object({
   id: z.string().max(120),
   label: z.string().max(120),
-  kind: z.enum(['collect', 'goal', 'zone', 'room', 'plate', 'talk']),
+  kind: z.enum(['collect', 'goal', 'zone', 'room', 'plate', 'talk', 'press']),
   status: z.enum(['done', 'unreachable', 'blocked', 'untouched', 'pending']),
   required: z.boolean(),
   at: z.number().finite().optional(),

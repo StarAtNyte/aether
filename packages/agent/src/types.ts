@@ -197,7 +197,26 @@ export interface AgentOptions {
    * until it declares the result right or progress stalls. Absent: no review.
    */
   review?: ReviewOptions;
+  /**
+   * Level tools for games and outdoor worlds (`query_level`, `place_level_items`): the assistant decides
+   * where things go, this runner measures ground, clearance, sight lines and reach. Supplied by hosts that
+   * can run physics (`runLevelTool` of @aether/playtest). Absent: the two tools are not offered.
+   */
+  levelTools?: LevelToolRunner;
 }
+
+/** Result of one level tool call (patches commit as one undo step). */
+export interface LevelToolOutput {
+  ok: boolean;
+  text: string;
+  patches: unknown[];
+  message: string;
+  /** Structured result of a level review (`query_level` op "review"): validated by the agent before use. */
+  data?: unknown;
+}
+
+/** Runs a level tool against a world. Never throws except for cancellation. */
+export type LevelToolRunner = (world: WorldDoc, name: 'query_level' | 'place_level_items', input: unknown) => Promise<LevelToolOutput>;
 
 /** Options of the review loop. */
 export interface ReviewOptions {

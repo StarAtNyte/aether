@@ -70,12 +70,15 @@ class PartAccumulator {
   normals: Float32Array = new Float32Array(3 * 256);
   uvs: Float32Array = new Float32Array(2 * 256);
   colors: Float32Array | null;
+  /** Terrain layer weights (4 per vertex), only for materials with `splat: true`. */
+  splat: Float32Array | null;
   indices: Uint32Array = new Uint32Array(3 * 256);
   vcount = 0;
   icount = 0;
 
   constructor(readonly material: MaterialSpec) {
     this.colors = material.vertexColors === true ? new Float32Array(3 * 256) : null;
+    this.splat = material.splat === true ? new Float32Array(4 * 256) : null;
   }
 
   append(mesh: Mesh): { start: number; end: number } {
@@ -89,6 +92,13 @@ class PartAccumulator {
     if (this.colors) {
       if (mesh.colors) this.colors.set(mesh.colors, base * 3);
       else this.colors.fill(1, base * 3, (base + nv) * 3);
+    }
+    if (this.splat) {
+      if (mesh.splat && mesh.splat.length === nv * 4) this.splat.set(mesh.splat, base * 4);
+      else {
+        // No weights: plain grass.
+        for (let i = 0; i < nv; i++) this.splat[(base + i) * 4] = 1;
+      }
     }
     const src = mesh.indices;
     const dst = this.indices;
@@ -106,6 +116,7 @@ class PartAccumulator {
       this.normals = resize(this.normals, cap * 3);
       this.uvs = resize(this.uvs, cap * 2);
       if (this.colors) this.colors = resize(this.colors, cap * 3);
+      if (this.splat) this.splat = resize(this.splat, cap * 4);
     }
     if (ni > this.indices.length) {
       let cap = this.indices.length;
@@ -295,6 +306,7 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
           material: { ...p.material },
         };
         if (p.colors) part.colors = p.colors.slice(0, p.vcount * 3);
+        if (p.splat) part.splat = p.splat.slice(0, p.vcount * 4);
         return part;
       });
       const outColliders = all.slice(0, PROCGEN_LIMITS.MAX_COLLIDERS).map((c) => translateCollider(c, dx, dy, dz));

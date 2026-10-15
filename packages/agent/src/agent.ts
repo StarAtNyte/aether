@@ -20,9 +20,10 @@ import { EMPTY_MEMORY, sanitizeMemory, sanitizeSelection, type RefineMemory } fr
 import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
-import { AGENT_TOOLS, COMPACT_TOOLS } from './tools';
+import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { findingKey } from '@aether/arch';
-import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker } from './review';
+import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
+import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
@@ -154,7 +155,7 @@ export class WorldAgent {
     this.fineEdit = opts.fineEdit !== false;
     this.localEdits = opts.localEdits ?? this.fineEdit;
     this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
-    this.tools = this.compact ? COMPACT_TOOLS : AGENT_TOOLS;
+    this.tools = this.compact ? COMPACT_TOOLS : opts.levelTools ? [...AGENT_TOOLS, ...LEVEL_TOOLS] : AGENT_TOOLS;
     const ids = new Set<string>();
     for (const g of opts.catalogs.generators) {
       if (typeof g === 'object' && g !== null && 'id' in g && typeof (g as { id: unknown }).id === 'string') ids.add((g as { id: string }).id);
@@ -164,7 +165,7 @@ export class WorldAgent {
 
   /** The (cached) planner system prompt. */
   get system(): string {
-    this.systemPrompt ??= this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs);
+    this.systemPrompt ??= this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs, { level: this.opts.levelTools !== undefined });
     return this.systemPrompt;
   }
 
@@ -225,6 +226,7 @@ export class WorldAgent {
       usage,
       ...(this.opts.resolveGenerator ? { resolveGenerator: this.opts.resolveGenerator } : {}),
       ...(this.opts.buildAsset ? { buildAsset: this.opts.buildAsset } : {}),
+      ...(this.opts.levelTools ? { levelTools: this.opts.levelTools } : {}),
       ...(signal ? { signal } : {}),
     };
 
@@ -436,9 +438,15 @@ export class WorldAgent {
       // The offline planner is only a labelled fallback: it does not review.
       if (this.opts.provider.name === 'mock') return;
       const withViews = (typeof cfg.vision === 'function' ? cfg.vision() : cfg.vision === true) && typeof host.captureReview === 'function';
-      const snap = snapshotForReview(world, before, { maxViews, withViews });
-      if (snap.buildings.length === 0) return;
-      yield { type: 'review', round, phase: 'checking', text: round === 1 ? 'Checking the building…' : 'Checking again…', score: snap.score, findings: snap.findings.length };
+      let snap: ReviewSnapshot = snapshotForReview(world, before, { maxViews, withViews });
+      // No building: a game or outdoor level is reviewed with the level tools, when the host has them.
+      if (snap.buildings.length === 0) {
+        const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;
+        if (!lvl) return;
+        snap = lvl;
+      }
+      const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
+      yield { type: 'review', round, phase: 'checking', text: round === 1 ? (isLevel ? 'Checking the level…' : 'Checking the building…') : 'Checking again…', score: snap.score, findings: snap.findings.length };
       const verdict = tracker.observe({ keys: snap.keys, score: snap.score, edited: lastEdited });
       if (verdict.stalled) {
         yield { type: 'review', round, phase: 'stalled', text: `Stopped reviewing: ${verdict.reason}. ${snap.findings.length > 0 ? `${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'} remain.` : ''}`.trim(), score: snap.score, findings: snap.findings.length };
@@ -468,7 +476,7 @@ export class WorldAgent {
       images.forEach((im, i) => {
         content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
       });
-      content.push({ type: 'text', text: reviewTurnText(round, snap, { hasImages: images.length > 0, lastEdited }) });
+      content.push({ type: 'text', text: (isLevel ? levelTurnText : reviewTurnText)(round, snap, { hasImages: images.length > 0, lastEdited }) });
       pushUserBlocks(messages, content);
       // One round: the model works with the tools until it calls finish (or answers without a tool call).
       let editedThisRound = false;
@@ -524,7 +532,7 @@ export class WorldAgent {
       lastEdited = editedThisRound;
       before = world;
       if (!editedThisRound && declared) {
-        const after = snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
+        const after: ReviewSnapshot = isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
         const errors = after.findings.filter((f) => f.severity === 'error');
         // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
         const open = after.findings.filter((f) => f.severity === 'warning');

@@ -26,7 +26,7 @@ export {
 } from './types';
 export { PhysicsWorld, PHYSICS_LIMITS } from './world';
 export { VoxelTerrainColliders, brickBoxes, BRICK, MAX_TERRAIN_BRICKS, MAX_BRICK_BOXES, type VoxelSolidSource, type CellBox } from './voxel-terrain';
-export { CharacterController, type CharacterInput, type CharacterOptions } from './character';
+export { CharacterController, CHARACTER_FEEL, type CharacterFeel, type CharacterInput, type CharacterOptions } from './character';
 export { settle, SETTLE_LIMITS } from './settle';
 export { diagnose, findOverlaps, DIAGNOSE_LIMITS, type OverlapPair } from './diagnose';
 export { verify, shardIndices, VerifyAbortedError, VERIFY_LIMITS, VERIFY_SLICE_MS, type VerifyOptions } from './verify';

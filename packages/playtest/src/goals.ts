@@ -36,6 +36,10 @@ export interface GoalObjective extends Objective {
   completes: 'destroyed' | 'state' | 'game-over';
   /** `talk` objectives: the conversation that gets what the game needs from this character. */
   talk?: TalkPlan;
+  /** `goal` objectives: the goal is switched on by a rule, so touching it before then does not count. */
+  gated?: boolean;
+  /** `press` objectives: the key the player presses (as the rule names it) while standing here. */
+  pressKey?: string;
 }
 
 /** How to get what the game needs out of a character's dialogue tree. */
@@ -276,6 +280,51 @@ export function deriveGoals(world: WorldDoc): GoalModel {
     }
   }
 
+  // Event chains: a win rule may wait for an event another rule emits, often when the player presses a
+  // key at a place ("press E at the bell once every chapter is told"). The emitting rules' conditions
+  // are required too, and a key rule on the chain becomes a `press` objective.
+  const wantedEvents = new Set<string>();
+  for (const r of winRules) if (r.when.on === 'event') wantedEvents.add(r.when.name);
+  const pressRules = new Map<string, Rule>();
+  for (let guard = 0; guard < 16; guard++) {
+    let changed = false;
+    for (const r of world.rules) {
+      if (!r.enabled) continue;
+      const emits = r.then.some((a) => a.do === 'emit' && wantedEvents.has(a.event));
+      const wins = hasAction(r, 'win');
+      const feeds = writtenKeys(r.then).some((k) => required.has(k));
+      if (r.when.on === 'key' && (emits || wins || feeds) && !pressRules.has(r.id)) {
+        pressRules.set(r.id, r);
+        changed = true;
+      }
+      if (!emits) continue;
+      for (const k of readKeys(r)) {
+        if (!required.has(k)) {
+          required.add(k);
+          changed = true;
+        }
+      }
+      if (r.when.on === 'event' && !wantedEvents.has(r.when.name)) {
+        wantedEvents.add(r.when.name);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  for (const r of pressRules.values()) {
+    winDefined = winDefined || hasAction(r, 'win') || r.then.some((a) => a.do === 'emit');
+    for (const k of conditionKeys(r.if)) required.add(k);
+  }
+
+  // Goals a rule switches on later still end the game once they are on.
+  const gatedGoals = new Set<string>();
+  for (const r of world.rules) {
+    if (!r.enabled) continue;
+    for (const a of r.then) {
+      if (a.do === 'enableBehavior' && a.enabled && a.behavior === 'goal') for (const gid of resolveSelector(world, a.target)) gatedGoals.add(gid);
+    }
+  }
+
   const add = (o: GoalObjective): void => {
     if (objectives.length < PLAYTEST_LIMITS.MAX_OBJECTIVES) objectives.push(o);
   };
@@ -293,11 +342,12 @@ export function deriveGoals(world: WorldDoc): GoalModel {
         add({ id: `collect:${id}`, kind: 'collect', label: e.name && e.name !== 'Coin' ? `${e.name} (${id})` : id, entity: id, position: t.center, required: false, key, touch: t, completes: 'destroyed' });
       }
     }
-    const g = behaviorOf(e, 'goal');
+    const gated = gatedGoals.has(id);
+    const g = behaviorOf(e, 'goal') ?? (gated ? { params: e.behaviors.find((x) => x.type === 'goal')?.params ?? {} } : undefined);
     if (g) {
       winDefined = true;
       const t = touchOf(world, e, Math.max(0, num(g.params['margin'], TOUCH_MARGIN_DEFAULT)));
-      if (t) add({ id: `goal:${id}`, kind: 'goal', label: e.name ? `${e.name} (${id})` : id, entity: id, position: t.center, required: true, touch: t, completes: 'game-over' });
+      if (t) add({ id: `goal:${id}`, kind: 'goal', label: e.name ? `${e.name} (${id})` : id, entity: id, position: t.center, required: true, touch: t, completes: 'game-over', ...(gated && !behaviorOf(e, 'goal') ? { gated: true } : {}) });
     }
     const plate = behaviorOf(e, 'pressurePlate');
     if (plate) {
@@ -307,6 +357,16 @@ export function deriveGoals(world: WorldDoc): GoalModel {
         if (t) add({ id: `plate:${id}`, kind: 'plate', label: e.name ? `${e.name} (${id})` : id, entity: id, position: t.center, required: true, key: baseKey(key), touch: t, completes: 'state' });
       }
     }
+  }
+
+  // Key presses on the chain: the player stands where the rule's conditions hold (a pressure plate) and presses the key.
+  for (const r of pressRules.values()) {
+    if (r.when.on !== 'key') continue;
+    const wanted = new Set(conditionKeys(r.if));
+    const plate = objectives.find((o) => o.kind === 'plate' && o.key !== undefined && wanted.has(o.key));
+    if (!plate && wanted.size > 0) continue;
+        const t: TouchVolume = plate ? plate.touch : { shape: { kind: 'cylinder', half: [1, 1.5, 1] }, center: [world.player.spawn[0], world.player.spawn[1], world.player.spawn[2]], rot: [0, 0, 0, 1], margin: 0 };
+    add({ id: `press:${r.id}`, kind: 'press', label: `press ${r.when.key.toUpperCase()}${plate ? ` at ${plate.label}` : ''}`, ...(plate?.entity !== undefined ? { entity: plate.entity } : {}), position: t.center, required: true, touch: t, completes: 'state', pressKey: r.when.key });
   }
 
   // Zones that rules react to (enter): winning zones and zones feeding a required key.

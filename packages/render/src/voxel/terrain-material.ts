@@ -28,10 +28,10 @@
  * Three materials share the uniforms: opaque cubes, alpha-cutout (leaves,
  * glass, plants; double-sided) and liquids (translucent, animated).
  */
-import { Color, DoubleSide, FrontSide, Vector2, type DataTexture } from 'three';
+import { Color, DoubleSide, FrontSide, Vector2, Vector3, type DataTexture } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
-  abs, attribute, cameraPosition, clamp, cross, dFdx, dFdy, exp, float, floor, fract, length, max, min, mix, mod, normalize, positionWorld, pow, select, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4,
+  abs, attribute, cameraPosition, clamp, cross, dFdx, dFdy, dot, exp, float, floor, fract, length, max, min, mix, mod, mx_noise_float, normalize, positionWorld, pow, reflect, select, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl';
 
 /** Tiles per atlas row. */
@@ -59,6 +59,10 @@ export interface TerrainUniforms {
   fogFar: { value: number };
   /** The environment's own exponential haze density (0: none). */
   fogDensity: { value: number };
+  /** Unit vector toward the sun (world space). */
+  sunDirection: { value: Vector3 };
+  /** Sun light colour (linear RGB, already scaled by how high and bright the sun is; black at night). */
+  sunColor: { value: Color };
 }
 
 /** The three terrain materials and their uniforms. */
@@ -85,6 +89,8 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
   const fogNear = uniform(1e5);
   const fogFar = uniform(2e5);
   const fogDensity = uniform(0);
+  const sunDirection = uniform(new Vector3(0.43, 0.76, 0.33));
+  const sunColor = uniform(new Color(1, 0.97, 0.9));
 
   const build = (kind: 'opaque' | 'cutout' | 'liquid'): MeshBasicNodeMaterial => {
     const data = attribute('data', 'vec4');
@@ -106,19 +112,52 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
 
     const ao = data.y.mul(0.5).add(0.5);
     const n = normalize(cross(dFdx(positionWorld), dFdy(positionWorld)));
-    const an = abs(n);
     const toCam = cameraPosition.sub(positionWorld);
+    const camDist = length(toCam);
+    const view = toCam.div(max(camDist, float(1e-4)));
+    // The outward normal of the face (derivatives give its direction, the camera side its sign).
+    const nOut = select(dot(n, view).greaterThan(0), n, n.negate());
+    const an = abs(nOut);
     const isY = an.y.greaterThan(max(an.x, an.z));
-    const isX = an.x.greaterThan(an.z);
-    const shade = select(isY, select(toCam.y.greaterThan(0), float(1), float(0.5)), select(isX, float(0.8), float(0.64)));
+    const faceAmbient = select(isY, select(nOut.y.greaterThan(0), float(1), float(0.7)), select(an.x.greaterThan(an.z), float(0.9), float(0.82)));
     const sky = curve(data.z).mul(daylight);
     const torch = curve(data.w);
-    const light = max(skyTint.mul(sky), vec3(1.0, 0.86, 0.66).mul(torch));
-    const lit = tex.rgb.mul(ao).mul(kind === 'cutout' ? mix(shade, float(1), float(0.35)) : shade).mul(light);
+    // Sun: a warm directional light on the faces turned to it, only where the vertex sees the open sky (so caves,
+    // overhangs and the lee of walls stay in the ambient light); the ambient light is the sky's own tint.
+    const sunVisible = smoothstep(float(0.72), float(1), data.z);
+    const diffuse = max(dot(nOut, sunDirection), float(0)).mul(sunVisible);
+    const ambient = skyTint.mul(sky).mul(faceAmbient).mul(0.55);
+    const direct = sunColor.mul(diffuse).mul(0.62);
+    const torchLight = vec3(1.0, 0.86, 0.66).mul(torch);
+    const light = max(ambient.add(direct), torchLight);
+
+    // Texture relief: the atlas luminance's screen-space gradient lit from the upper left, fading with distance.
+    const lum = dot(tex.rgb, vec3(0.3, 0.59, 0.11));
+    const relief = clamp(dFdx(lum).mul(-0.7).add(dFdy(lum).mul(0.7)).mul(1.8), -0.16, 0.16).mul(float(1).sub(smoothstep(float(14), float(55), camDist)));
+    // Block-to-block variation: a stable hash of the block the face belongs to.
+    const blockPos = floor(positionWorld.sub(nOut.mul(0.5)));
+    const h = fract(sin(dot(blockPos, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
+    const variation = h.mul(0.12).add(0.94);
+    const base = tex.rgb.mul(kind === 'liquid' ? float(1) : variation).mul(float(1).add(relief));
+    const lit = base.mul(ao).mul(light);
     const flat = length(positionWorld.xz.sub(fogOrigin));
     const haze = float(1).sub(exp(fogDensity.mul(length(toCam)).pow(2).negate()));
     const fogged = clamp(max(smoothstep(fogNear, fogFar, flat), haze), 0, 1);
-    const rgb = mix(lit, fogColor, fogged);
+    let shaded: Node<'vec3'> = lit;
+    let alpha: Node<'float'> = float(1);
+    if (kind === 'liquid') {
+      // Water: animated ripples tilt the surface; a fresnel term mirrors the sky at grazing angles, the sun glints.
+      const p = positionWorld.xz;
+      const wx = mx_noise_float(vec3(p.x.mul(0.9), p.y.mul(0.9), time.mul(0.45)));
+      const wz = mx_noise_float(vec3(p.x.mul(0.9).add(31.7), p.y.mul(0.9).add(11.3), time.mul(0.4)));
+      const nW = normalize(vec3(wx.mul(0.16), float(1), wz.mul(0.16)));
+      const fres = pow(float(1).sub(max(dot(nW, view), float(0))), float(4)).mul(0.85).add(0.06);
+      const mirror = fogColor.mul(float(0.55).add(daylight.mul(0.45)));
+      const glint = pow(max(dot(reflect(sunDirection.negate(), nW), view), float(0)), float(120)).mul(daylight.mul(2.4));
+      shaded = mix(lit, mirror, fres).add(sunColor.mul(glint));
+      alpha = mix(liquidOpacity, float(0.96), fres);
+    }
+    const rgb = mix(shaded, fogColor, fogged);
 
     const m = new MeshBasicNodeMaterial();
     m.colorNode = vec4(rgb, float(1));
@@ -130,7 +169,7 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
       m.side = DoubleSide;
     } else if (kind === 'liquid') {
       m.transparent = true;
-      m.opacityNode = liquidOpacity;
+      m.opacityNode = alpha;
       m.depthWrite = false;
       m.side = DoubleSide;
     } else {
@@ -156,6 +195,8 @@ export function createTerrainMaterials(atlas: DataTexture): TerrainMaterials {
       fogNear,
       fogFar,
       fogDensity,
+      sunDirection: sunDirection as unknown as TerrainUniforms['sunDirection'],
+      sunColor: sunColor as unknown as TerrainUniforms['sunColor'],
     },
     dispose() {
       opaque.dispose();

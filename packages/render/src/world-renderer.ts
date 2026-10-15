@@ -564,6 +564,8 @@ export class WorldRenderer {
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
     this.materials.antiTile = this.gpu.tier !== 'software' && !this.lowMemory;
+    // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
+    this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);

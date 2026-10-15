@@ -13,6 +13,7 @@ export interface CoverCamera {
 }
 
 export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freeze({
+  'highland-trail': { pos: [44, 11.9, 143], target: [18, 9.2, 80] },
   'lantern-isles': { pos: [30, 23, 30], target: [-10, 29, -42] },
   'chain-reaction': { pos: [-38, 4.2, 10], target: [-22, 1.3, -3] },
   blockfall: { pos: [-38, 24, -62], target: [6, 3, -6], overGround: true },

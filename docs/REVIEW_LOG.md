@@ -3121,3 +3121,56 @@ raised); they need a re-recording when the quota is back.
 - Fixtures were recorded with the tool descriptions of this commit; changing them can make a replay take a
   different path (the tolerant replay then ends the run and the test checks it is no worse than recorded).
 
+
+## Stage gamereal: realistic, genuinely playable games
+
+**What changed.**
+- Verified-playable bot: rides vertical lifts, derives and plays key-press-on-a-plate endings (`press` objective), plays
+  goals a rule switches on, eases low-gravity jumps, maps 330 m levels, tries up to 160 searches per game plan (a
+  walkthrough keeps 14 so a too-narrow door is still found). Honest results on the shipped flagships: it won five
+  (Lantern Isles, Hollow Gate, Neon Rain City, Kyoto Temple, Orbital Lab) plus the new Highland Trail; before it won two.
+- Real defects fixed: Orbital Lab put the player inside a pod and a roof beyond a 5 m jump; the bot could not see more
+  than 160 m from the spawn; a one-button ending was reported "unwinnable".
+- Level tools (`query_level`, `place_level_items`): the assistant places things in games and outdoor worlds with
+  measured ground, clearance, sight lines and reach; wired into the studio, the MCP session and the agent loop, and
+  the review loop now reviews levels (measured findings plus overview and player-camera renders).
+- Layered terrain (per-vertex grass, rock, dry ground, snow weights; photographed surfaces blended per pixel),
+  alpha-tested foliage cards and seven realistic generators; a "realistic" request swaps the offline planner's stylised
+  nature for them; Highland Trail flagship.
+- Block worlds: a time-of-day sun (warm at dusk, cool moonlight), sun-lit faces where the sky is open, texture relief,
+  per-block variation and reflective, glinting water (still pixel-art block textures: no photographic block surfaces yet).
+- Game feel for the human player (acceleration, firm stop, coyote time, jump buffer, jump cut); the end screen shows
+  the run's numbers and a loss offers "Try again".
+- Tests: `finale`, `level`, `level-agent` (playtest), `level-tools` (agent loop), `realistic` (planner),
+  `terrain-splat` and `flora` (procgen), `terrain-splat` and `foliage-material` (render), `character-feel` (physics),
+  `gamesVerified` (every shipped game, sealed), `tests/e2e/gameplay.e2e.ts` (three games won in Chromium).
+
+**Screenshot rounds** (stills in `~/.local/share/aether/photoreal/gamereal/r1..r9`, assessed against "not cartoonish").
+1. r1 baseline: flat green ground, cone pines, blobby fire: cartoonish. Gaps: no ground detail, toy trees.
+2. r2 layered terrain: hills and mountains read as ground and rock with snow caps; trees still toys.
+3. r3 realistic vegetation (loose leaf quads): trees read as trees but sparse and skeletal; terrain streaks on slopes.
+4. r4-r5 denser crowns, top-down terrain UVs with triplanar rock: slope streaks gone, rock grain on cliffs.
+5. r6 foliage cards (cut-out clusters): dense crowns with real leaf shadows on the ground; spruce wispy.
+6. r7-r9 Highland Trail from the player camera: a river valley with spruce, birch, oaks, a hiker and a tent; assessed
+   honestly: no longer toy-like, still a game and not a photograph (flat hillside colour, chunky foreground grass
+   tufts, tent and hiker simple).
+
+**Security.** Every level tool input is zod-validated with bounds (24 points, 40 items, 5000 m, 4000 rays, 600 000
+characters); ids are slugs, entities are re-parsed with the `Entity` schema before they can become a patch, prototype
+keys never reach a record, a hostile entity is refused; the tools never evaluate anything. The new `MeshPart.splat`
+and `material.foliage` pass the same validators as the other part data (length, finite, range, enum); a baked mesh
+drops `splat`. The page-side gameplay driver only calls the studio's own debug handle and runs in the e2e browser.
+
+**Performance.** A tree is 1-3 k triangles (was 11 k as loose leaves), a grass tuft 12; the foliage textures are
+synthesised once per cache in a few milliseconds each. The layered terrain costs about 28 texture reads per pixel on
+steep rock and fewer elsewhere (60 fps on the RTX 4090 at ultra); software rasterisers and low-memory mode keep the
+vertex colours (the first full e2e run stalled the page 472 ms compiling it on software GL; with layering off it passes). Ground, clearance and sight-line queries take 3-4 ms. The first reach question about a world builds
+its walking map (2.3-5 s on Highland Trail's 330 m level, the physics world and the bot's session dominate the 0.4 s
+grid); the next ones about the same gameplay content (objectives, review, reach, the result of a placement) take
+10 ms from a 30 s one-entry cache (measured: objectives 2444 ms to 9 ms, review 2359 ms to 8 ms). The bot verifies Highland Trail in about 3 s of wall time for 111 s of play.
+
+**Known limits.** Conversation and lift games (Hollow Gate, Lantern Isles, Orbital Lab) are won by the headless
+verified bot and the hand-written bots, not by the real-time browser driver. Blockfall, Kart Canyon, Sakura River and
+the orbit-view scenes are not driven by the verified bot. Foliage cards have no translucency. The stylised flagships
+(Lantern Isles, Painterly Meadow, Sakura River) keep their art direction on purpose; Highland Trail is the realistic
+one. Highland Trail shows the vegetation and terrain at their best, not photographs.
