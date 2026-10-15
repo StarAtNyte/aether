@@ -281,6 +281,21 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       );
     case 'quality':
       return <QualityView event={event} />;
+    case 'review': {
+      const tone = event.phase === 'approved' ? 'ok' : event.phase === 'stalled' || event.phase === 'limit' ? 'warn' : 'info';
+      const label = event.phase === 'checking' ? 'Checking' : event.phase === 'found' ? 'Found' : event.phase === 'fixing' ? 'Fixing' : event.phase === 'approved' ? 'Checked' : 'Stopped';
+      return (
+        <div className="ev ev--repair" role="status">
+          <span className={`status-chip is-${tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'info'}`}>
+            {label} {event.round > 0 ? event.round : ''}
+          </span>
+          <span className="ev__text">
+            {event.text}
+            {event.score !== undefined ? ` (${event.score}/100)` : ''}
+          </span>
+        </div>
+      );
+    }
   }
 });
 

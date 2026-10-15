@@ -2653,6 +2653,97 @@ export class WorldRenderer {
     return rt;
   }
 
+  /**
+   * Perspective captures from explicit camera poses (world space), for reviewing interiors: the AI's
+   * corner, wall and plan views. Each image is `width`×`height` pixels; the main camera is restored
+   * afterwards. Editing decorations are hidden; fog, sky and lights stay as the viewport shows them.
+   */
+  async capturePoses(
+    poses: ReadonlyArray<{ position: Vec3; target: Vec3; up: Vec3; fov: number }>,
+    opts: { width?: number; height?: number; mime?: string } = {},
+  ): Promise<string[]> {
+    if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+    if (this.captureActive) throw new Error('a capture is running');
+    const list = (Array.isArray(poses) ? poses : []).slice(0, MAX_VIEWS * 2);
+    if (list.length === 0) return [];
+    const w = captureSize(opts.width, 768);
+    const h = captureSize(opts.height, 512);
+    const mime = captureMime(opts.mime);
+    const cam = this.perspective;
+    _savedCamPos.copy(cam.position);
+    _savedCamQuat.copy(cam.quaternion);
+    _savedCamUp.copy(cam.up);
+    const saved = { fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far, zoom: cam.zoom };
+    const decorations: Object3D[] = [this.highlighter.group, this.debug.group, this.ghost.root, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+    const wasVisible = decorations.map((o) => o.visible);
+    for (const o of decorations) o.visible = false;
+    const restoreCamera = (): void => {
+      cam.position.copy(_savedCamPos);
+      cam.quaternion.copy(_savedCamQuat);
+      cam.up.copy(_savedCamUp);
+      cam.fov = saved.fov;
+      cam.aspect = saved.aspect;
+      cam.near = saved.near;
+      cam.far = saved.far;
+      cam.zoom = saved.zoom;
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    };
+    const restore = (): void => {
+      decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
+      restoreCamera();
+    };
+    const aim = (pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }): void => {
+      cam.fov = Math.max(20, Math.min(120, pose.fov));
+      cam.aspect = w / h;
+      cam.zoom = 1;
+      cam.near = 0.05;
+      cam.far = 400;
+      cam.position.set(pose.position[0], pose.position[1], pose.position[2]);
+      cam.up.set(pose.up[0], pose.up[1], pose.up[2]);
+      cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    };
+    const out: string[] = [];
+    try {
+      for (const pose of list) {
+        if (!this.asyncCaptureFailed) {
+          try {
+            const pixels = await this.grow.withFullScale(() =>
+              this.renderToPixels(w, h, () => {
+                aim(pose);
+                this.prepareBatches();
+                this.renderer.render(this.scene, cam);
+              }, restoreCamera),
+            );
+            out.push(await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas'))));
+            continue;
+          } catch (e) {
+            this.asyncCaptureFailed = true;
+            log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
+          }
+        }
+        out.push(
+          this.grow.withFullScale(() =>
+            this.withTemporarySize(w, h, () => {
+              aim(pose);
+              this.prepareBatches();
+              this.renderer.render(this.scene, cam);
+              const image = grab(this.domElement, w, h, mime);
+              restoreCamera();
+              return image;
+            }),
+          ),
+        );
+      }
+      return out;
+    } finally {
+      restore();
+      this.needsDraw = true;
+    }
+  }
+
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
   async renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size = 512): Promise<string[]> {
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');

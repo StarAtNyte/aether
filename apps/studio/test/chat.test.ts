@@ -20,6 +20,16 @@ describe('chat model', () => {
     }
   });
 
+  it('keeps review progress events, bounded, and revives them defensively', () => {
+    const v = toEventView({ type: 'review', round: 3, phase: 'found', text: 'x'.repeat(5000), score: 140, findings: 2 });
+    expect(v).toMatchObject({ type: 'review', round: 3, phase: 'found', score: 100, findings: 2 });
+    if (v.type === 'review') expect(v.text.length).toBeLessThanOrEqual(400);
+    const revived = reviveChat([{ id: 1, role: 'assistant', status: 'done', events: [{ type: 'review', round: 99999, phase: 'nonsense', text: 5, score: 'x' }, { type: 'review', round: 2, phase: 'approved', text: 'Looks right.', score: 91, findings: 0 }] }]);
+    const events = (revived[0] as Extract<ChatEntry, { role: 'assistant' }>).events;
+    expect(events[0]).toMatchObject({ type: 'review', round: 500, phase: 'checking', text: '' });
+    expect(events[1]).toMatchObject({ phase: 'approved', score: 91, findings: 0 });
+  });
+
   it('extracts verify results from untrusted reports', () => {
     const report = {
       results: [{ id: 't1', kind: 'stable', passed: true, message: 'ok' }, 'junk', { id: 5 }],

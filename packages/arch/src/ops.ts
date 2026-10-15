@@ -309,8 +309,17 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       throw e;
     }
     compiled.push(result);
+    // Pieces placed through the design tools belong to the document, not to the plan: they survive a
+    // re-compile while the room they stand in still exists.
+    const kept: Entity[] = [];
     const removedPieces = new Set<string>(Object.hasOwn(world.entities, id) ? (world.entities[id]?.arch?.removed ?? []) : []);
-    if (Object.hasOwn(world.entities, id)) dropSubtree(id);
+    if (Object.hasOwn(world.entities, id)) {
+      for (const x of subtree(world, id)) {
+        const e = world.entities[x];
+        if (e && e.tags.includes('placed') && !e.locked) kept.push(e);
+      }
+      dropSubtree(id);
+    }
     for (const raw of result.entities) {
       let parsed = Entity.parse(raw);
       if (removedPieces.has(parsed.id)) continue;
@@ -320,6 +329,10 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       if (parsed.arch?.role === 'building' && removedPieces.size > 0 && parsed.arch) parsed = { ...parsed, arch: { ...parsed.arch, removed: [...removedPieces].slice(-400) } };
       if (old?.arch?.overrides && parsed.arch) parsed = withOverrides(parsed, old.arch.overrides);
       entities[parsed.id] = old && deepEqual(old, parsed) ? old : parsed;
+    }
+    for (const e of kept) {
+      const room = e.arch?.room;
+      if (room !== undefined && Object.hasOwn(entities, room) && e.parent !== null && Object.hasOwn(entities, e.parent) && !Object.hasOwn(entities, e.id)) entities[e.id] = e;
     }
     if (!tests.some((t) => t.kind === 'navigable' && t.target === id)) tests = [...tests, WorldTest.parse({ id: `${id}-usable`.slice(0, 64), kind: 'navigable', target: id })];
     if (walkthrough.has(id) && result.spawn) player = PlayerSpec.parse({ ...player, mode: 'firstPerson', spawn: result.spawn, moveSpeed: 3.2, jumpSpeed: 4 });

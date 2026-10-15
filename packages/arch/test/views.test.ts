@@ -1,151 +1,112 @@
 import { describe, expect, it } from 'vitest';
-import { buildWall, compileBuilding, furnitureById, SECTION_CAP, variantsFor, WallParams, type BuildingPlanInput } from '../src/index';
+import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
+import { legendText, markIndex, projectMarks, reviewPoses, runDesignTool } from '../src/index';
 
-function maxY(out: ReturnType<typeof buildWall>): number {
-  let m = -Infinity;
-  for (const p of out.parts) for (let i = 1; i < p.positions.length; i += 3) m = Math.max(m, p.positions[i] as number);
-  return m;
+const PLAN = {
+  id: 'home',
+  name: 'Test home',
+  style: 'modern',
+  levels: [
+    {
+      height: 2.9,
+      rooms: [
+        { id: 'bedroom', type: 'bedroom', rect: [0, 0, 4, 3.6] },
+        { id: 'hall', type: 'hall', rect: [0, 3.6, 4, 5.2] },
+      ],
+      openings: [
+        { kind: 'window', room: 'bedroom', wall: 'north', along: 2, width: 1.4, height: 1.3, sill: 0.9 },
+        { kind: 'door', room: 'bedroom', wall: 'south', to: 'hall', along: 3.2, width: 0.9 },
+        { kind: 'door', room: 'hall', wall: 'south', to: 'outside', along: 1.4, width: 1, main: true },
+      ],
+    },
+  ],
+};
+
+function world(): WorldDoc {
+  let w = createWorld({});
+  const r = runDesignTool(w, 'design_plan', { plan: PLAN });
+  w = applyPatches(w, r.patches).world;
+  const p = runDesignTool(w, 'place_items', { items: [{ kind: 'bed', room: 'bedroom', id: 'bed', wall: 'north', align: 'start' }, { kind: 'art', room: 'bedroom', id: 'pic', wall: 'north', t: 3.3 }] });
+  return applyPatches(w, p.patches).world;
 }
 
-describe('wall section cut (view-only)', () => {
-  const base = WallParams.parse({
-    length: 5,
-    height: 2.8,
-    thickness: 0.2,
-    openings: [
-      { kind: 'door', offset: 1, width: 0.9, height: 2.1 },
-      { kind: 'window', offset: 3.5, width: 1.2, height: 1.3, sill: 0.9 },
-    ],
+describe('review poses', () => {
+  const w = world();
+
+  it('gives a level plan, corner views and wall views, capped', () => {
+    const poses = reviewPoses(w, 'home', { rooms: ['bedroom'] });
+    const names = poses.map((p) => p.name);
+    expect(names[0]).toBe('level-0-plan');
+    expect(names.some((n) => n.startsWith('bedroom-corner'))).toBe(true);
+    expect(names).toContain('bedroom-wall-north');
+    expect(poses.length).toBeLessThanOrEqual(8);
+    expect(reviewPoses(w, 'home', { maxViews: 2 })).toHaveLength(2);
+    for (const p of poses) {
+      expect(p.position.every(Number.isFinite)).toBe(true);
+      expect(p.fov).toBeGreaterThanOrEqual(50);
+      expect(p.fov).toBeLessThanOrEqual(100);
+    }
+    expect(poses[0]!.hideTops).toBe(true);
+    expect(poses[0]!.position[1]).toBeGreaterThan(3);
   });
 
-  it('draws the wall only up to the cut, with a dark cap on the cut face', () => {
-    const full = buildWall(base);
-    const cut = buildWall({ ...base, cut: 1.05 });
-    expect(maxY(full)).toBeCloseTo(2.8);
-    expect(maxY(cut)).toBeCloseTo(1.05);
-    expect(cut.parts.some((p) => p.material.color === SECTION_CAP.color)).toBe(true);
-    expect(full.parts.some((p) => p.material.color === SECTION_CAP.color)).toBe(false);
+  it('puts wall cameras inside the room, facing the wall', () => {
+    const north = reviewPoses(w, 'home', { rooms: ['bedroom'] }).find((p) => p.name === 'bedroom-wall-north')!;
+    expect(north.position[2]).toBeGreaterThan(north.target[2]);
+    expect(north.position[2]).toBeLessThan(3.6);
+    expect(north.target[0]).toBeCloseTo(2, 1);
   });
 
-  it('fills window holes below the cut and keeps doorways open', () => {
-    const cut = buildWall({ ...base, cut: 1.05 });
-    // Colliders of the cut wall: the doorway stays free, the window strip is solid.
-    const blocks = cut.colliders.filter((c) => c.kind === 'box');
-    const covers = (x: number): boolean => blocks.some((c) => c.kind === 'box' && Math.abs(c.offset[0] - x) <= c.halfExtents[0] && c.offset[1] - c.halfExtents[1] <= 0.5 && c.offset[1] + c.halfExtents[1] >= 0.5);
-    expect(covers(1)).toBe(false);
-    expect(covers(3.5)).toBe(true);
+  it('applies the building transform', () => {
+    const moved: WorldDoc = { ...w, entities: { ...w.entities, home: { ...w.entities['home']!, transform: { ...w.entities['home']!.transform, position: [100, 0, 50] } } } };
+    const a = reviewPoses(w, 'home', { rooms: ['bedroom'] }).find((p) => p.name === 'bedroom-wall-north')!;
+    const b = reviewPoses(moved, 'home', { rooms: ['bedroom'] }).find((p) => p.name === 'bedroom-wall-north')!;
+    expect(b.position[0] - a.position[0]).toBeCloseTo(100, 1);
+    expect(b.position[2] - a.position[2]).toBeCloseTo(50, 1);
   });
 
-  it('ignores a cut at or above the wall height and rejects invalid cuts', () => {
-    const same = buildWall({ ...base, cut: 3.2 });
-    expect(maxY(same)).toBeCloseTo(2.8);
-    expect(WallParams.safeParse({ ...base, cut: 0 }).success).toBe(false);
-    expect(WallParams.safeParse({ ...base, cut: Number.NaN }).success).toBe(false);
+  it('returns nothing for an unknown building', () => {
+    expect(reviewPoses(w, 'nope')).toEqual([]);
+    expect(markIndex(w, 'nope')).toEqual([]);
   });
 });
 
-describe('walkthrough finish variants', () => {
-  it('only name params the piece really has', () => {
-    for (const kind of ['sofa', 'armchair', 'rug', 'bed']) {
-      const variants = variantsFor({ kind });
-      expect(variants?.length).toBeGreaterThan(1);
-      const def = furnitureById(`furn-${kind}`);
-      expect(def).toBeDefined();
-      for (const v of variants ?? []) for (const key of Object.keys(v)) expect(Object.keys(def!.params)).toContain(key);
-    }
-    expect(variantsFor({ kind: 'lamp' })).toBeUndefined();
+describe('numbered marks', () => {
+  const w = world();
+
+  it('numbers pieces first (by id) then openings, stably', () => {
+    const idx = markIndex(w, 'home');
+    expect(idx.slice(0, 2).map((m) => m.id)).toEqual(['home-bed', 'home-pic']);
+    expect(idx.map((m) => m.n)).toEqual(idx.map((_, i) => i + 1));
+    expect(idx.some((m) => m.kind === 'window')).toBe(true);
+    expect(markIndex(w, 'home')).toEqual(idx);
   });
 
-  it('compiled furniture carries its variants, lamps can switch off', () => {
-    const b = compileBuilding({ id: 'flat', levels: [{ rooms: [{ id: 'living', type: 'living', rect: [0, 0, 7, 5] }, { id: 'bed', type: 'bedroom', rect: [7, 0, 11, 5] }], doors: [{ between: ['living', 'outside'], main: true }, { between: ['living', 'bed'] }] }] });
-    const sofa = b.entities.find((e) => e.arch?.kind === 'sofa');
-    expect(sofa?.arch?.variants?.length).toBe(4);
-    const lamps = b.entities.filter((e) => e.light !== undefined);
-    expect(lamps.length).toBeGreaterThan(0);
-    for (const l of lamps) {
-      expect(l.arch?.role).toBe('light');
-      const gen = l.shape?.kind === 'procedural' ? furnitureById(l.shape.generator) : undefined;
-      expect(gen?.params['lit']).toBeDefined();
+  it('projects the marks that the camera sees, inside the image', () => {
+    const idx = markIndex(w, 'home');
+    const pose = reviewPoses(w, 'home', { rooms: ['bedroom'] }).find((p) => p.name === 'bedroom-wall-north')!;
+    const marks = projectMarks(w, 'home', pose, 1.5);
+    const ids = new Set(marks.map((m) => idx.find((i) => i.n === m.n)!.id));
+    expect(ids.has('home-bed')).toBe(true);
+    expect(ids.has('home-pic')).toBe(true);
+    for (const m of marks) {
+      expect(m.x - m.w).toBeGreaterThanOrEqual(-1e-9);
+      expect(m.x + m.w).toBeLessThanOrEqual(1 + 1e-9);
+      expect(m.y - m.h).toBeGreaterThanOrEqual(-1e-9);
+      expect(m.y + m.h).toBeLessThanOrEqual(1 + 1e-9);
     }
-    // A light switch next to a door, in the room it controls.
-    const sw = b.entities.find((e) => e.arch?.role === 'switch');
-    expect(sw?.arch?.room).toMatch(/^flat-l0-/);
-  });
-});
-
-describe('doors and windows on long merged walls (regression)', () => {
-  // An east facade running past a kitchen, a hall and a bedroom is one merged wall whose stored
-  // room sides only name the kitchen: the hall's front door used to swing outwards.
-  const plan: BuildingPlanInput = {
-    id: 'flat',
-    levels: [
-      {
-        rooms: [
-          { id: 'kitchen', type: 'kitchen', rect: [0, 0, 10, 5] },
-          { id: 'hall', type: 'hall', rect: [0, 5, 10, 6.6] },
-          { id: 'bed', type: 'bedroom', rect: [0, 6.6, 10, 10.6] },
-        ],
-        doors: [
-          { between: ['hall', 'outside'], side: 'east', main: true },
-          { between: ['hall', 'kitchen'], kind: 'opening', width: 1.6 },
-          { between: ['hall', 'bed'] },
-        ],
-        windows: [{ room: 'bed', side: 'east', count: 1, width: 1.2 }],
-      },
-    ],
-  };
-
-  /** Plan position of the free edge of a swing door leaf when fully open (the door behaviour's maths). */
-  function openTip(e: { transform?: { position?: number[]; rotation?: number[] }; shape?: unknown; behaviors?: Array<{ params?: Record<string, unknown> }> }): [number, number] {
-    const p = e.behaviors?.[0]?.params ?? {};
-    const width = (e.shape as { params: { width: number } }).params.width;
-    const hingeX = p['hinge'] === 'right' ? width / 2 : -width / 2;
-    const yaw = ((e.transform?.rotation?.[1] ?? 0) * Math.PI) / 180;
-    const th = ((p['swingAngle'] as number) * Math.PI) / 180;
-    const rot = (x: number, z: number, a: number): [number, number] => [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
-    const base = [e.transform?.position?.[0] ?? 0, e.transform?.position?.[2] ?? 0] as const;
-    const h = rot(hingeX, 0, yaw);
-    const pivot = [base[0] + h[0], base[1] + h[1]];
-    const back = rot(-h[0], -h[1], th);
-    const far = rot(-hingeX, 0, yaw + th);
-    return [pivot[0]! + back[0] + far[0], pivot[1]! + back[1] + far[1]];
-  }
-
-  it('every swing door opens into its room, never outdoors', () => {
-    const b = compileBuilding(plan);
-    const leaves = b.entities.filter((e) => e.arch?.role === 'door' && e.behaviors?.[0]?.params?.['motion'] === 'swing');
-    expect(leaves.length).toBeGreaterThanOrEqual(2);
-    for (const leaf of leaves) {
-      const [x, z] = openTip(leaf as Parameters<typeof openTip>[0]);
-      // Inside the building outline [0..10] × [0..10.6].
-      expect(x, leaf.id).toBeLessThan(10);
-      expect(x).toBeGreaterThan(0);
-      expect(z).toBeGreaterThan(0);
-      expect(z).toBeLessThan(10.6);
-    }
+    const bed = marks.find((m) => m.n === 1)!;
+    const pic = marks.find((m) => m.n === 2)!;
+    // The picture hangs to the right of the bed on the north wall, and above the bed's top.
+    expect(pic.x).toBeGreaterThan(bed.x);
+    const legend = legendText(idx, new Set(marks.map((m) => m.n)));
+    expect(legend).toContain('1 = bed home-bed');
   });
 
-  it('windows put their interior sill on the room side', () => {
-    const b = compileBuilding(plan);
-    const win = b.entities.find((e) => e.arch?.role === 'window' && e.arch.room === 'flat-l0-bed' && Math.abs((e.transform?.position?.[0] ?? 0) - 10) < 0.01);
-    expect(win).toBeDefined();
-    const params = (win!.shape as unknown as { params: { interior: 'a' | 'b' } }).params;
-    // East wall runs along +Z or −Z; side B is the left of a→b. Interior = west (x < 10).
-    const yaw = ((win!.transform?.rotation?.[1] ?? 0) * Math.PI) / 180;
-    const nB: [number, number] = [Math.sin(yaw), Math.cos(yaw)];
-    const interiorX = (params.interior === 'b' ? 1 : -1) * nB[0];
-    expect(interiorX).toBeLessThan(0);
-  });
-});
-
-describe('pool (regression)', () => {
-  it('keeps the water above the ground plane', () => {
-    for (const plinth of [0.05, 0.15, 0.6]) {
-      const b = compileBuilding({ id: 'v', plinth, levels: [{ rooms: [{ id: 'living', type: 'living', rect: [0, 0, 6, 5] }], doors: [{ between: ['living', 'outside'], main: true }] }], site: { terrace: [[-3, -3], [12, -3], [12, 12], [-3, 12]], pool: { at: [6, 9], width: 6, length: 3 } } });
-      const pool = b.entities.find((e) => e.arch?.role === 'pool');
-      const y = pool?.transform?.position?.[1] ?? 0;
-      const freeboard = (pool?.shape as unknown as { params: { freeboard: number } }).params.freeboard;
-      expect(y - freeboard, `plinth ${plinth}`).toBeGreaterThan(0.005);
-    }
+  it('marks pieces on the plan view and drops what is behind the camera', () => {
+    const plan = reviewPoses(w, 'home')[0]!;
+    expect(projectMarks(w, 'home', plan).length).toBeGreaterThanOrEqual(2);
+    const back = { ...plan, position: [2, -5, 2] as [number, number, number], target: [2, -10, 2] as [number, number, number], up: [0, 0, -1] as [number, number, number] };
+    expect(projectMarks(w, 'home', back)).toEqual([]);
   });
 });

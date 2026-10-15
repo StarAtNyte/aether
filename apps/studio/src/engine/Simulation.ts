@@ -752,6 +752,52 @@ export class Simulation {
     }
   }
 
+  /**
+   * Renders explicit camera poses for the review loop (edit mode only), one image per pose in order (null where a
+   * pose could not be captured). Poses flagged `hideTops` (plan views from above) are taken with the building
+   * view lowered to a plan, so ceilings and the roof do not hide the rooms; the view is restored afterwards.
+   */
+  async capturePoses(poses: ReadonlyArray<{ position: Vec3; target: Vec3; up: Vec3; fov: number; hideTops: boolean }>, size: { width: number; height: number }): Promise<Array<string | null>> {
+    if (this.session || this.disposed) return poses.map(() => null);
+    const out: Array<string | null> = poses.map(() => null);
+    try {
+      await this.whenSynced();
+      const deadline = performance.now() + THUMBNAIL_SETTLE_MS;
+      while (this.renderer.animating && performance.now() < deadline && !this.disposed) {
+        this.touch();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      await nextFrame();
+      if (this.session || this.disposed) return out;
+      const run = async (indices: number[]): Promise<void> => {
+        if (indices.length === 0) return;
+        const images = await this.renderer.capturePoses(indices.map((i) => poses[i] as (typeof poses)[number]), { ...size, mime: 'image/jpeg' });
+        indices.forEach((poseIndex, k) => {
+          out[poseIndex] = images[k] ?? null;
+        });
+      };
+      const normal = poses.map((p, i) => (p.hideTops ? -1 : i)).filter((i) => i >= 0);
+      const plans = poses.map((p, i) => (p.hideTops ? i : -1)).filter((i) => i >= 0);
+      await run(normal);
+      if (plans.length > 0) {
+        const previous = this.renderer.archViewState;
+        this.renderer.setArchView({ walls: 'down' });
+        try {
+          const settle = performance.now() + THUMBNAIL_SETTLE_MS;
+          await nextFrame();
+          while (this.renderer.animating && performance.now() < settle && !this.disposed) await new Promise((r) => setTimeout(r, 60));
+          await nextFrame();
+          await run(plans);
+        } finally {
+          this.renderer.setArchView({ walls: previous.walls });
+        }
+      }
+    } catch (err) {
+      log.warn('capturePoses failed', err);
+    }
+    return out;
+  }
+
   /** World-space bounds of an entity at full scale (null when not rendered). */
   entityBounds(id: EntityId): { min: Vec3; max: Vec3 } | null {
     return this.renderer.entityBounds(id);

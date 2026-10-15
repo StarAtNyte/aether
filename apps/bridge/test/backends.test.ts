@@ -234,6 +234,12 @@ describe('Codex backend', () => {
       throw new Error('Codex Exec exited with code 1: Not logged in. Please run `codex login`.');
     });
     await expect(createCodexBackend({ createCodex: login.create, tmpRoot: root }).complete(REQ)).rejects.toMatchObject({ code: 'not_logged_in' });
+    // The CLI printed the real reason as an error event, then the SDK threw its generic exit-code error: keep the reason.
+    const hidden = fakeCodex(async function* () {
+      yield { type: 'error', message: "You've hit your usage limit. Try again at 4:59 PM." } as ThreadEvent;
+      throw new Error('Codex Exec exited with code 1: Reading prompt from stdin...');
+    });
+    await expect(createCodexBackend({ createCodex: hidden.create, tmpRoot: root }).complete(REQ)).rejects.toMatchObject({ code: 'rate_limited' });
     const missing = createCodexBackend({
       createCodex: () => {
         throw new Error('Unable to locate Codex CLI binaries');

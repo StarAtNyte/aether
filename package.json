@@ -28,6 +28,8 @@
     "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
     "e2e:voxel": "tsx tests/e2e/voxel.e2e.ts",
     "e2e:arch": "tsx tests/e2e/arch.e2e.ts",
+    "e2e:design": "tsx tests/e2e/design.e2e.ts",
+    "eval:design": "tsx scripts/eval-design.ts",
     "e2e:benchmark": "tsx tests/e2e/benchmark.e2e.ts",
     "gallery": "tsx tests/e2e/gallery.e2e.ts",
     "thumbnails": "tsx tests/e2e/thumbnails.e2e.ts",

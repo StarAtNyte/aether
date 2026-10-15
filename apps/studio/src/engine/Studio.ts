@@ -7,6 +7,7 @@
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
+import { hasBuilding } from '@aether/arch';
 import { EMPTY_MEMORY, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
@@ -79,6 +80,11 @@ const log = createLogger('studio');
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
 const MAX_REPAIRS = 2;
+/** Review rounds on a paid API key (subscription backends have no cap: they stop on approval or stall). */
+const REVIEW_ROUNDS_METERED = 10;
+/** A house is dozens of tool calls (rooms, pieces, fixes): the AI-first run gets room to finish it. */
+const REVIEW_MAX_TURNS = 40;
+const REVIEW_MAX_TOOL_CALLS = 300;
 /** Offline refinement only applies physical and lighting fixes (the offline planner's art direction stays intact). */
 const OFFLINE_FIXES: ReadonlySet<QualityFix> = new Set(['ground', 'separate', 'light-night']);
 
@@ -1016,7 +1022,12 @@ export class Studio {
       // Small on-device models get the condensed prompt that fits their ~4k-token context.
       const promptProfile: PromptProfile = primary && resolved.kind === 'webllm' ? 'compact' : 'full';
       const buildAsset = primary && resolved.kind === 'local' && resolved.worker && prefs.deep ? this.deepBuilder(entryId, prefs) : undefined;
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}) });
+      // Review loop: the AI looks at every building it makes or edits and fixes it until it judges it right.
+      // Subscription backends are not metered, so the loop has no round cap there (it stops when the model
+      // approves or progress stalls); paid keys keep a high finite cap. Small on-device models skip it.
+      const subscription = resolved.kind === 'bridge' || resolved.kind === 'local';
+      const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6 } : undefined;
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1026,7 +1037,7 @@ export class Studio {
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
-        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
+        const result = hasBuilding(this.history.current) && primary !== null && promptProfile === 'full' ? 'done' : await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
@@ -1159,6 +1170,7 @@ export class Studio {
         if (overwritten.length > 0) this.store.getState().pushEvent(entryId, { type: 'notice', tone: 'info', text: `Changed things you set by hand: ${overwritten.join('; ')}. Undo to restore them.`.slice(0, 600) });
       }
       if (view.type === 'status') this.store.getState().setAgentStep(view.text);
+      if (view.type === 'review' && (view.phase === 'checking' || view.phase === 'fixing')) this.store.getState().setAgentStep(`Review ${view.round}: ${view.text}`.slice(0, 120));
       if (event.type === 'error') status = 'error';
       // The Verify panel was already updated live by the bridge's verification listener.
       if (view.type === 'verify') this.sim?.setDiagnostics(view.diagnostics);

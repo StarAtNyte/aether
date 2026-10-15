@@ -83,6 +83,15 @@ export class PlaytestController {
         if (this.studio.store.getState().replay && this.studio.history.head !== this.reportHead && !this.studio.store.getState().agentBusy) this.stopReplay();
       }),
       studio.store.subscribe((s, prev) => {
+        // A playing ghost moves the scene every frame, so the studio still would restart its refinement
+        // forever (progress stays at 0): choosing Studio render pauses the replay (play resumes it).
+        if (s.arch.quality === 'studio' && prev.arch.quality !== 'studio' && s.replay?.playing) {
+          const r = this.studio.simulation?.renderer;
+          if (r) {
+            r.pauseGhost();
+            this.refreshReplay();
+          }
+        }
         if (s.mode === 'play' && prev.mode !== 'play') {
           // The user started playing: the bot steps aside (it resumes when they come back).
           this.stopReplay();
@@ -184,7 +193,7 @@ export class PlaytestController {
             if (gen !== this.gen) return;
             store.getState().setPlaytest({ progress: { fraction: p.fraction, note: p.note, seconds: p.seconds, round: Math.max(0, round) } });
             // The bot shows up in the world while it plays.
-            if (r >= 0 && p.position && p.phase === 'play') this.studio.simulation?.renderer.ghostLive(p.position);
+            if (r >= 0 && p.position && p.phase === 'play' && store.getState().arch.quality !== 'studio') this.studio.simulation?.renderer.ghostLive(p.position);
           },
         };
         const out = await this.client.run(w, ro);

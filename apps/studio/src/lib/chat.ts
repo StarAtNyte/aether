@@ -40,6 +40,7 @@ export type ChatEventView =
   | { type: 'error'; text: string }
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string }
+  | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit'; text: string; score?: number; findings?: number }
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
 
 /** One line of a small-edit diff ("Sofa · colour: grey → dark green"). */
@@ -152,6 +153,12 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
     }
     case 'verify':
       return { type: 'verify', passed: e.passed, summary: str(e.summary), results: toTestResults(e.report), diagnostics: toDiagnostics(e.report) };
+    case 'review': {
+      const v: ChatEventView = { type: 'review', round: Math.max(0, Math.min(500, Math.round(num(e.round)))), phase: e.phase, text: str(e.text, 400) };
+      if (typeof e.score === 'number' && Number.isFinite(e.score)) v.score = Math.max(0, Math.min(100, Math.round(e.score)));
+      if (typeof e.findings === 'number' && Number.isFinite(e.findings)) v.findings = Math.max(0, Math.min(999, Math.round(e.findings)));
+      return v;
+    }
     case 'done':
       return { type: 'done', inputTokens: num(e.usage.inputTokens), outputTokens: num(e.usage.outputTokens), calls: num(e.usage.calls) };
   }
@@ -255,6 +262,14 @@ export function reviveEvent(v: unknown): ChatEventView | null {
         if (models.length > 0) d.models = models;
       }
       return d;
+    }
+    case 'review': {
+      const phases = ['checking', 'found', 'fixing', 'approved', 'stalled', 'limit'] as const;
+      const phase = phases.find((p) => p === v['phase']) ?? 'checking';
+      const r: ChatEventView = { type: 'review', round: Math.max(0, Math.min(500, Math.round(num(v['round'])))), phase, text: str(v['text'], 400) };
+      if (typeof v['score'] === 'number' && Number.isFinite(v['score'])) r.score = Math.max(0, Math.min(100, Math.round(v['score'])));
+      if (typeof v['findings'] === 'number' && Number.isFinite(v['findings'])) r.findings = Math.max(0, Math.min(999, Math.round(v['findings'])));
+      return r;
     }
     case 'notice':
       return { type: 'notice', tone: v['tone'] === 'warning' ? 'warning' : 'info', text: str(v['text'], 600) };

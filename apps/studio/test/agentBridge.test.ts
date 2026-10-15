@@ -30,6 +30,35 @@ describe('provider selection', () => {
   });
 });
 
+describe('AgentBridge review captures', () => {
+  const view = (name: string) => ({ name, label: name, kind: 'wall' as const, pose: { position: [0, 1.5, 0] as [number, number, number], target: [0, 1, 1] as [number, number, number], up: [0, 1, 0] as [number, number, number], fov: 70 }, hideTops: false, aspect: 1.5, marks: [] });
+
+  it('returns nothing without a viewport (after waiting) and nothing for no views', async () => {
+    const bridge = new AgentBridge(new History(createWorld()), null);
+    expect(await bridge.captureReview([])).toEqual([]);
+    const ctrl = new AbortController();
+    const p = bridge.captureReview([view('a')], { signal: ctrl.signal });
+    setTimeout(() => ctrl.abort(), 20);
+    expect(await p).toEqual([]);
+  });
+
+  it('waits for the viewport to mount, then renders each pose and keeps only the views that came out', async () => {
+    const bridge = new AgentBridge(new History(createWorld()), null);
+    const calls: Array<{ hideTops: boolean }[]> = [];
+    const sim = {
+      capturePoses: async (poses: Array<{ hideTops: boolean }>) => {
+        calls.push(poses);
+        return poses.map((_, i) => (i === 1 ? null : 'data:image/jpeg;base64,/9j/'));
+      },
+    };
+    const p = bridge.captureReview([view('a'), view('b'), { ...view('c'), hideTops: true }]);
+    setTimeout(() => bridge.attach(sim as never), 30);
+    const out = await p;
+    expect(out.map((o) => o.name)).toEqual(['a', 'c']);
+    expect(calls[0]?.map((c) => c.hideTops)).toEqual([false, false, true]);
+  });
+});
+
 describe('AgentBridge', () => {
   it('exposes the agent catalogs', () => {
     const c = agentCatalogs();

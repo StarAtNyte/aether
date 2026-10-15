@@ -29,7 +29,7 @@ describe('system prompt', () => {
   });
 
   it('teaches IR conventions, patch ops, tests and the verification contract', () => {
-    for (const phrase of ['Y is up', 'DEGREES', 'BASE at y=0', 'lowercase slugs', 'self-verification', 'scatter', 'ARRAYS REPLACE', 'noOverlap', 'topples', 'build_architecture', 'SHARE edges', 'navigable']) expect(prompt).toContain(phrase);
+    for (const phrase of ['Y is up', 'DEGREES', 'BASE at y=0', 'lowercase slugs', 'self-verification', 'scatter', 'ARRAYS REPLACE', 'noOverlap', 'topples', 'build_architecture', 'SHARE edges', 'navigable', 'design_plan', 'place_items']) expect(prompt).toContain(phrase);
     for (const op of PATCH_OPS) expect(prompt).toContain(`"op":"${op}"`);
     expect(prompt).toContain(RULE_DOCS.trim().slice(0, 200));
   });
@@ -43,7 +43,8 @@ describe('system prompt', () => {
     // 12.6k before the asset library (asset shape, HDRI sky, asset guideline, ~130 tokens),
     // 12.75k before characters (npc spec, behaviour graph, dialogue, one worked example; ~1.2k tokens).
     // 14k -> 14.2k for the wall-placement diagnosis paragraph (~130 tokens: read walls from the summary, never ask the user which wall).
-    expect(prompt.length / 4).toBeLessThan(14_200);
+    // 14.2k -> 14.6k for the design-first workflow replacing the preset-recipe plan format (design_plan, place_items, query_scene).
+    expect(prompt.length / 4).toBeLessThan(14_600);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
@@ -72,7 +73,7 @@ describe('system prompt', () => {
 
   it('tool schemas are strict objects with documented properties', () => {
     const names = AGENT_TOOLS.map((t) => t.name);
-    expect(names).toEqual(['apply_patches', 'build_architecture', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'inspect', 'run_verification', 'finish']);
+    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'inspect', 'run_verification', 'finish']);
     for (const t of AGENT_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });

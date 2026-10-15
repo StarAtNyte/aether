@@ -2354,3 +2354,64 @@ Visual only: the entity's shape stays the collider, animation is a pure function
 simulation state, so physics, NPC navigation, the playtest bot and proofs are unchanged
 (`hashWorld` is not affected by animation). Variant resolution is deterministic per entity id
 (`resolveLook` in `@aether/assets`). The cast and motion sets are listed in `assets/characters.json`.
+
+
+## The AI is the brain: design tools, review loop, replay (additive, backward compatible)
+
+### `@aether/arch` (scene tools; `packages/arch/src/scene`)
+
+- `readScene(world, building) → Scene`: rooms (outline, walls with compass, length, openings with `t0/t1/centre`,
+  sill, top, what they lead to), pieces (kind, mount, footprint, y range, wall `t` span or the walls it stands
+  against, asset, `placed`), obstacles. Reads the document, never the plan, so hand edits are measured.
+  Wall `t` runs along the wall face from the left end as seen from inside (north: west to east).
+- Measuring tools: `queryWall`, `measure`, `listEntities`, `reviewScene` / `reviewBuildings`
+  (`Finding {code, severity, message, entities, room?, fix, moveTo?}`; `scoreFindings`, `findingKey`, `findingsText`),
+  `checkConformance(scene, design)` (planned pieces missing or off their relations: `plan_missing`,
+  `plan_mismatch`), `reviewFindings(world, building)` (both).
+- Placement tools (each `(world, buildingRef, …) → EditResult {ok, patches, message, text, ids, warnings} | {ok:false, error}`):
+  `placeItem`, `moveItem`, `rotateItem`, `resizeItem`, `removeItem`, `snapToWall`, `anchorToOpening`, `centerOver`.
+  A change is applied to a copy, audited, and refused when it overlaps, crosses a wall, covers an opening,
+  blocks a doorway or swing, or walls a room in. Parts library: `listParts`, `partInfo`, `describeParts`.
+- Design plan: `DesignPlan` (zod), `validateDesign`, `designToBuildingPlan(plan, aliases?)`, `describeShell`.
+  `BuildingPlan.design?: DesignRecord` (brief, programme, circulation, `furniture` with `relations`, `openingAliases`),
+  `PlanDoor.along?`, `PlanWindow.centres?` (exact positions). A re-compile keeps entities tagged `placed` while
+  their room exists.
+- Tool dispatcher: `runDesignTool(world, name, input) → {ok, text, patches, message, ids, accepted, refused, world}`
+  for `design_plan`, `place_items`, `edit_items`, `query_scene` (`DESIGN_TOOL_NAMES`, `DesignToolInputs`,
+  `PlaceItemInput`, `EditItemInput`, `QueryInput`, `DESIGN_LIMITS`: 40 items / 40 edits / 12 queries per call).
+- Eyes: `reviewPoses(world, building, {rooms?, maxViews?, aspect?}) → ReviewPose[]` (world-space camera:
+  position, target, up, vertical fov, `hideTops`), `markIndex`, `projectMarks(world, building, pose, aspect) →
+  ImageMark[]` (normalised centre and half size), `legendText`.
+
+### Tool reference (what the model sends)
+
+| tool | input | result |
+| --- | --- | --- |
+| `design_plan` | `{plan: DesignPlan}` | the shell described (rooms, walls, openings with built ids), or the refusals |
+| `place_items` | `{items: [{kind, room, id?, wall+t \| wall+align \| at \| on+offset, y?, yaw?, faces?, params?, opening?}], building?, message?}` | per item: facts (position, wall span, clearance, nearest pieces) or the refusal with a fix |
+| `edit_items` | `{edits: [{op: move \| rotate \| resize \| remove \| snap_to_wall \| anchor_to_opening \| center_over, ref, …}], building?, message?}` | as above |
+| `query_scene` | `{queries: [{q: wall \| measure \| list \| parts \| shell \| review, …}], building?}` | facts |
+
+All inputs are zod-validated (finite bounded numbers, slug ids, no unknown keys, ≤ 600 000 serialised
+characters); unknown ids, `NaN`/huge values and prototype keys are refused with a message, never thrown.
+
+### `@aether/agent`
+
+- Tools `design_plan`, `place_items`, `edit_items`, `query_scene` join `AGENT_TOOLS` (the compact profile is unchanged).
+- `AgentOptions.review?: {maxRounds?, stallRounds?, vision?, maxViews?}`; absent: no review. `maxRounds` unset or
+  `Infinity` means no cap (subscription backends). `vision` may be a function asked every round.
+- `AgentEvent` gains `{type:'review', round, phase: 'checking'|'found'|'fixing'|'approved'|'stalled'|'limit', text, score?, findings?}`.
+- `AgentHost.captureReview?(views: ReviewViewRequest[], {signal?, size?}) → [{name, dataUrl}]` renders the views
+  (pose, `hideTops`, `aspect`, numbered `marks`) with the marks drawn; without it the review is checker-only.
+- Exports: `StallTracker`, `snapshotForReview`, `reviewTurnText`, `drawMarksRgba`, `createRecordingProvider`,
+  `createReplayProvider` (`onExhausted: 'throw' | 'finish'`), `TranscriptSchema` (`{version:1, prompt, source, responses}`).
+- Bridge: a Codex failure now carries the stream's own reason (usage limit, sign-in) instead of "exited with code 1".
+
+### Studio / CLI
+
+- `WorldRenderer.capturePoses(poses, {width, height, mime})` (perspective captures from explicit poses),
+  `Simulation.capturePoses` (plan views are taken with the building view lowered to a plan, then restored),
+  `AgentBridge.captureReview` (waits for the viewport, draws marks with canvas 2D: `ai/marks.ts`).
+- `apps/cli/src/mcp/review.ts`: `captureReviewHeadless` (software renderer, marks with `drawMarksRgba`).
+- `ChatEventView` gains `review`. Review rounds: no cap on `bridge` / `local` connections, 10 on paid keys.
+- Scripts: `npm run eval:design` (replay; `-- --mode=live` records with the logged-in Codex), `npm run e2e:design`.

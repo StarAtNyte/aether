@@ -73,6 +73,7 @@ export type AgentEvent =
   | { type: 'verify'; passed: boolean; summary: string; report: unknown }
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
+  | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -83,6 +84,26 @@ export type AgentEvent =
   | { type: 'memory'; memory: RefineMemory }
   | { type: 'error'; text: string }
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] } };
+
+/** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
+export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit';
+
+/** One image the review loop wants rendered, with the numbered marks to draw on it. */
+export interface ReviewViewRequest {
+  /** Stable name ("bedroom-wall-north"). */
+  name: string;
+  /** What it shows, for the model. */
+  label: string;
+  kind: 'corner' | 'wall' | 'plan';
+  /** World-space camera. */
+  pose: { position: [number, number, number]; target: [number, number, number]; up: [number, number, number]; fov: number };
+  /** Hide ceilings and roofs for this view (a plan from above). */
+  hideTops: boolean;
+  /** Image aspect (width / height) the marks were projected for. */
+  aspect: number;
+  /** Numbered boxes in normalised image coordinates (centre and half size, origin top-left). */
+  marks: Array<{ n: number; x: number; y: number; w: number; h: number }>;
+}
 
 /** The environment the agent edits (studio: history + physics; tests: fakes). */
 export interface AgentHost {
@@ -100,6 +121,11 @@ export interface AgentHost {
   userEdits?(): ReadonlyMap<EntityId, { paths: readonly string[]; age: number }>;
   validateGenerator?(def: GeneratorDef): Promise<{ ok: boolean; error?: string }>;
   validateScript?(def: ScriptDef): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Render the requested review views of the current world with their numbered marks drawn on
+   * (the host draws; coordinates are normalised). Returns the images it could make, in any order.
+   */
+  captureReview?(views: readonly ReviewViewRequest[], opts?: { signal?: AbortSignal; size?: number }): Promise<Array<{ name: string; dataUrl: string }>>;
 }
 
 /** Catalog data injected into prompts (procgen + logic export these). */
@@ -165,6 +191,28 @@ export interface AgentOptions {
    * model-path tests, which exercise the guard without the fast path.
    */
   localEdits?: boolean;
+  /**
+   * Review loop after every generation and edit that leaves a building in the world: the model looks at
+   * the checker's findings (and rendered views when it can see), fixes with the design tools, and repeats
+   * until it declares the result right or progress stalls. Absent: no review.
+   */
+  review?: ReviewOptions;
+}
+
+/** Options of the review loop. */
+export interface ReviewOptions {
+  /**
+   * Most review rounds. Leave unset (or Infinity) on subscription backends, where calls are not metered:
+   * the loop then ends only when the model approves or progress stalls. Set a high finite number for
+   * paid API keys.
+   */
+  maxRounds?: number;
+  /** Rounds without progress (same findings, no gain) before the loop stops (default 3). */
+  stallRounds?: number;
+  /** The model can look at images: render the views with numbered marks. A function is asked every round (the active assistant can change). */
+  vision?: boolean | (() => boolean);
+  /** Images per round (default 6, at most 8). */
+  maxViews?: number;
 }
 
 /** Size of the planner prompt: everything, or a condensed form for small models. */

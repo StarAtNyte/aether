@@ -8,6 +8,7 @@
  * fully validated by `applyPatches` anyway.
  */
 import { z } from 'zod';
+import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
 import type { ToolDef } from './types';
 
 /** Upper bounds on tool arguments. */
@@ -41,7 +42,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -97,6 +98,67 @@ export const AGENT_TOOLS: ToolDef[] = [
         message: { type: 'string', description: 'Short commit message, e.g. "Two-bedroom apartment".' },
       },
       required: ['ops', 'message'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'design_plan',
+    description:
+      'FIRST step for any building, house, apartment, room or interior: write the design plan BEFORE anything is placed. Programme (what each room is for), rooms as rects [x0,z0,x1,z1] in metres (x east, z SOUTH; neighbours share edges), circulation, the storey height (levels[].height, floor to floor: about 0.22 m above the ceiling the shell reports), EVERY opening with room, wall (north|south|east|west), along (centre, metres from the wall\'s left end seen from inside) and width, and every piece of furniture with its relations (against_wall, centred_on_wall, in_corner, flanks, beside, above_centred, centred_on_opening, on_top, faces) plus your intent in words. The shell (walls, floors, doors, windows) is built at exactly those positions and read back to you; nothing is furnished until you place it. A refused plan says what to change. Send it again to revise the shell (pieces you placed stay).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        plan: {
+          type: 'object',
+          description:
+            '{"id":"house","name":"…","style":"modern|scandinavian|industrial|japandi|classic","brief":"one or two sentences","programme":[{"room":"bedroom","purpose":"sleep","targetArea":14}],"circulation":{"entrance":"hall","notes":"…"},"levels":[{"height":2.9,"rooms":[{"id":"bedroom","type":"bedroom","rect":[0,0,4,3.6]}],"openings":[{"kind":"window|door|sliding|opening","room":"bedroom","wall":"north","along":2,"width":1.4,"height":1.3,"sill":0.9,"to":"hall|outside","main":true}],"stairs":[]}],"furniture":[{"id":"bed","kind":"bed","room":"bedroom","intent":"bed centred on the north wall","relations":[{"type":"against_wall","wall":"north"},{"type":"centred_on_wall","wall":"north"}]}],"roof":{"shape":"flat|gable|hip|shed"}}',
+        },
+      },
+      required: ['plan'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'place_items',
+    description:
+      'Place pieces from the parts library (see query_scene parts) into rooms of the building: furniture, appliances, rugs, plants, curtains, art, mirrors, lights. Each item: {kind, room, id (your handle from the plan), and WHERE: wall + t (metres along that wall, left to right as seen from inside) or wall + align centre|start|end, or at [x,z], or on (a host piece) + offset, y (bottom height of wall pieces), yaw, faces, params (size, colour, materials), opening (curtains: the window)}. Items apply in order against the evolving room; each one is measured and REFUSED with the exact reason and a fix when it would overlap, cross a wall, cover a door or window, block a doorway or its swing, or wall a room in. Refusals do not stop the others. Up to 40 per call, one undo step.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', minItems: 1, maxItems: DESIGN_LIMITS.MAX_ITEMS, items: { type: 'object', properties: { kind: { type: 'string' }, room: { type: 'string' } }, required: ['room'] } },
+        building: { type: 'string', description: 'Building id (only when there are several).' },
+        message: { type: 'string', description: 'Short commit message.' },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'edit_items',
+    description:
+      'Change placed pieces with measured, validated edits. Each edit: {op:"move", ref, wall|edge, t|align, at, on, offset, y, yaw, faces} | {op:"rotate", ref, yaw|delta|faces} | {op:"resize", ref, params} | {op:"remove", ref} | {op:"snap_to_wall", ref, wall, align|t, gap} | {op:"anchor_to_opening", ref, opening, mode:"centre|left|right"} | {op:"center_over", ref, target, gap}. `ref` is an entity id from query_scene or the summary (or your handle). Refused with the reason when the result would be wrong; the others still apply. Use it to fix what the review reports: never rebuild a room to move one piece.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edits: { type: 'array', minItems: 1, maxItems: DESIGN_LIMITS.MAX_EDITS, items: { type: 'object', properties: { op: { type: 'string', enum: ['move', 'rotate', 'resize', 'remove', 'snap_to_wall', 'anchor_to_opening', 'center_over'] }, ref: { type: 'string' } }, required: ['op', 'ref'] } },
+        building: { type: 'string' },
+        message: { type: 'string' },
+      },
+      required: ['edits'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'query_scene',
+    description:
+      'Look things up instead of guessing or asking the user. Queries (up to 12 per call): {q:"wall", room, wall, kind?, y0?, y1?} openings, pieces and the free stretches of a wall | {q:"measure", a, b} distance, gap, heights and wall offsets between two pieces, openings, "room/north" wall faces or {point:[x,z]} | {q:"list", room?, wall?, kind?, level?} | {q:"parts"} the parts library with sizes and parameters | {q:"shell"} rooms, walls and openings with exact positions | {q:"review"} every check (overlaps, blocked doors and swings, floating or intersecting pieces, scale, clearance, reachability, lighting, emptiness) plus whether the building still matches your plan.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        queries: { type: 'array', minItems: 1, maxItems: DESIGN_LIMITS.MAX_QUERIES, items: { type: 'object', properties: { q: { type: 'string', enum: ['wall', 'measure', 'list', 'parts', 'shell', 'review'] } }, required: ['q'] } },
+        building: { type: 'string' },
+      },
+      required: ['queries'],
       additionalProperties: false,
     },
   },
@@ -220,6 +282,10 @@ export const ToolInputs = {
     ops: z.array(z.unknown()).min(1).max(MAX_ARCH_OPS_PER_CALL),
     message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('Architecture edit'),
   }),
+  design_plan: DesignToolInputs.design_plan,
+  place_items: DesignToolInputs.place_items,
+  edit_items: DesignToolInputs.edit_items,
+  query_scene: DesignToolInputs.query_scene,
   write_generator: z.object({
     id: z.string(),
     description: z.string().max(TOOL_LIMITS.MAX_MESSAGE),

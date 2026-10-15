@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { Color, MaterialSpec } from '@aether/core';
 import { PlanPoint, PlanPolygon } from './params';
+import { DesignRecord } from './design-record';
 
 /** Room types (drive furniture layouts, floor finishes, lighting and windows). */
 export const RoomType = z.enum([
@@ -80,6 +81,11 @@ export const PlanDoor = z.object({
   side: Compass.optional(),
   /** The main entrance (player starts in front of it; at most one). */
   main: z.boolean().default(false),
+  /**
+   * Exact centre in metres along the wall of the first room (or of the inner room for a door to
+   * "outside"), from the left end seen from inside the room. Overrides `at`.
+   */
+  along: z.number().min(0).max(200).optional(),
 });
 export type PlanDoor = z.infer<typeof PlanDoor>;
 
@@ -92,6 +98,11 @@ export const PlanWindow = z.object({
   height: z.number().min(0.4).max(4).default(1.4),
   sill: z.number().min(0).max(2.5).default(0.9),
   style: z.enum(['casement', 'fixed', 'sliding', 'grid', 'picture']).optional(),
+  /**
+   * Exact centres in metres along the exterior wall of `side`, from the left end seen from inside
+   * the room (one window per centre). Overrides the even spread of `count`.
+   */
+  centres: z.array(z.number().min(0).max(200)).max(8).optional(),
 });
 export type PlanWindow = z.infer<typeof PlanWindow>;
 
@@ -162,6 +173,8 @@ export const BuildingPlan = z.object({
   levels: z.array(PlanLevel).min(1).max(6),
   roof: PlanRoof.default({ shape: 'flat', pitch: 30, overhang: 0.4 }),
   site: PlanSite.optional(),
+  /** What the designer intended (see `design-record.ts`); kept with the plan, never compiled. */
+  design: DesignRecord.optional(),
 });
 export type BuildingPlan = z.infer<typeof BuildingPlan>;
 export type BuildingPlanInput = z.input<typeof BuildingPlan>;

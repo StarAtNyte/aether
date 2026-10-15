@@ -192,7 +192,9 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
           } else if (timedOut) throw new BridgeError('timeout', `Codex did not answer within ${Math.round(timeoutMs / 1000)} s.`);
           else if (signal?.aborted) throw new BridgeError('backend_error', 'cancelled');
           else if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new BridgeError('cli_missing', 'The Codex CLI could not be started. Install it and run "codex login".');
-          else throw classifyCliFailure('Codex', e instanceof Error ? e.message : String(e));
+          // The stream's own error event names the real reason (usage limit, sign-in, model); the SDK's exit-code
+          // exception only carries the CLI's first stderr line ("Reading prompt from stdin").
+          else throw classifyCliFailure('Codex', failure ?? (e instanceof Error ? e.message : String(e)));
         } finally {
           clearTimeout(timer);
           signal?.removeEventListener('abort', onAbort);

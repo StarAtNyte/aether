@@ -308,7 +308,9 @@ describe('VerifyPool (fake workers running the real handler)', () => {
     const pool = new VerifyPool({ lanes: 2, idleMs: 0, createWorker: () => (workers.push(new FakeWorker()), workers[workers.length - 1] as FakeWorker) });
     const ctrl = new AbortController();
     const run = pool.verify(multiTestWorld(), { colliders: [], maxSeconds: 12, budgetMs: 10_000, signal: ctrl.signal });
-    await new Promise((r) => setTimeout(r, 5));
+    // Wait until every lane really has its job; aborting earlier would race the lane start-up.
+    const started = (w: FakeWorker) => w.received.some((m) => (m as { type?: string }).type === 'verify');
+    for (let i = 0; i < 400 && !(workers.length === 2 && workers.every(started)); i++) await new Promise((r) => setTimeout(r, 5));
     ctrl.abort();
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
     for (const w of workers) expect(w.received.some((m) => (m as { type?: string }).type === 'cancel')).toBe(true);

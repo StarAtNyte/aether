@@ -10,7 +10,8 @@
 import { catalogSummary, getCatalog } from '@aether/assets';
 import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
-import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider } from '@aether/agent';
+import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { drawMarks } from '../ai/marks';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
 import type { ColliderProvider, TestResult, VerifyReport, VerifyTrace } from '@aether/physics';
 import { summarizeReport } from '@aether/physics/report';
@@ -126,6 +127,29 @@ export class AgentBridge implements AgentHost {
   /** Attach the simulation once the viewport exists (screenshots, collider reuse). */
   attach(sim: Simulation | null): void {
     this.simulation = sim;
+    if (sim) for (const wake of this.simulationWaiters.splice(0)) wake(sim);
+  }
+
+  /** Callers waiting for the viewport to come up (a prompt can arrive before the first frame). */
+  private readonly simulationWaiters: Array<(sim: Simulation) => void> = [];
+
+  /** The simulation, waiting up to `ms` for the viewport to mount (null when it never does). */
+  private whenSimulation(ms: number, signal?: AbortSignal): Promise<Simulation | null> {
+    if (this.simulation) return Promise.resolve(this.simulation);
+    return new Promise((resolve) => {
+      const done = (sim: Simulation | null): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        const i = this.simulationWaiters.indexOf(wake);
+        if (i >= 0) this.simulationWaiters.splice(i, 1);
+        resolve(sim);
+      };
+      const wake = (sim: Simulation): void => done(sim);
+      const onAbort = (): void => done(null);
+      const timer = setTimeout(() => done(null), ms);
+      this.simulationWaiters.push(wake);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 
   getWorld(): WorldDoc {
@@ -178,6 +202,34 @@ export class AgentBridge implements AgentHost {
     this.lastVerify = { ms, lanes: run.lanes, worker: run.worker, simulatedSeconds: simulated };
     listener?.end(run, ms);
     return { report: run.report, summary: run.summary, passed: run.passed };
+  }
+
+  /**
+   * Review images: each requested pose rendered from the live scene with its numbered marks drawn on.
+   * Returns only the views that could be captured (none when the viewport is not available).
+   */
+  async captureReview(views: readonly ReviewViewRequest[], opts: { signal?: AbortSignal; size?: number } = {}): Promise<Array<{ name: string; dataUrl: string }>> {
+    if (views.length === 0) return [];
+    const sim = await this.whenSimulation(30_000, opts.signal);
+    if (!sim) return [];
+    const width = Math.max(256, Math.min(1024, Math.round(opts.size ?? 768)));
+    const aspect = views[0]?.aspect ?? 1.5;
+    const height = Math.round(width / Math.max(0.5, Math.min(3, aspect)));
+    // A capture can collide with a thumbnail or another capture that is just finishing: try again a few times.
+    let images: Array<string | null> = [];
+    for (let attempt = 0; attempt < 4 && !opts.signal?.aborted; attempt++) {
+      images = await sim.capturePoses(views.map((v) => ({ ...v.pose, hideTops: v.hideTops })), { width, height });
+      if (images.some((i) => i !== null)) break;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+    const out: Array<{ name: string; dataUrl: string }> = [];
+    for (let i = 0; i < views.length; i++) {
+      const view = views[i];
+      const image = images[i];
+      if (!view || !image || opts.signal?.aborted) continue;
+      out.push({ name: view.name, dataUrl: await drawMarks(image, view.marks) });
+    }
+    return out;
   }
 
   async screenshot(): Promise<string | null> {

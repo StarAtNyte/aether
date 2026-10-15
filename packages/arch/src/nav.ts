@@ -100,7 +100,7 @@ function furnitureFootprint(e: Entity): Footprint | null {
 }
 
 /** Grid over a rectangle with a blocked mask. */
-class Grid {
+export class Grid {
   readonly nx: number;
   readonly nz: number;
   readonly blocked: Uint8Array;
@@ -200,7 +200,7 @@ class Grid {
 }
 
 /** Flood fill from seed cells over a walkable mask; returns the reached mask. */
-function flood(grid: Grid, walk: Uint8Array, seeds: readonly number[], reached: Uint8Array): void {
+export function flood(grid: Grid, walk: Uint8Array, seeds: readonly number[], reached: Uint8Array): void {
   const queue: number[] = [];
   for (const s of seeds) {
     if (s >= 0 && walk[s] && !reached[s]) {
@@ -222,7 +222,7 @@ function flood(grid: Grid, walk: Uint8Array, seeds: readonly number[], reached: 
 }
 
 /** Nearest walkable cell to a point within `maxDist` metres (or -1). */
-function nearestWalkable(grid: Grid, walk: Uint8Array, p: P2, maxDist: number, within?: readonly P2[]): number {
+export function nearestWalkable(grid: Grid, walk: Uint8Array, p: P2, maxDist: number, within?: readonly P2[]): number {
   const r = Math.ceil(maxDist / grid.cell);
   const ci = Math.floor((p[0] - grid.x0) / grid.cell);
   const ck = Math.floor((p[1] - grid.z0) / grid.cell);
@@ -283,7 +283,7 @@ function wallObstacles(e: Entity): P2[][] {
 }
 
 /** Quarter disc swept by a swing door leaf (in its parent's frame), or null. */
-function doorSweep(e: Entity): P2[] | null {
+export function doorSweep(e: Entity): P2[] | null {
   const behavior = e.behaviors.find((b) => b.type === 'door');
   if (!behavior || behavior.params['motion'] !== 'swing') return null;
   const w = typeof params(e)['width'] === 'number' ? (params(e)['width'] as number) : 0.9;

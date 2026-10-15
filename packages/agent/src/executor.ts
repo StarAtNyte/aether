@@ -5,7 +5,7 @@
  * here, and patches are validated again by the host's `applyPatches`.
  */
 import { loadCatalog, searchAssets } from '@aether/assets';
-import { applyArchOps } from '@aether/arch';
+import { applyArchOps, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, hasOwn, type PatchError } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
@@ -159,6 +159,26 @@ function buildArchitectureTool(ctx: ExecutorContext, input: z.infer<typeof ToolI
   return { content: clip(lines.join('\n') || 'No change.'), isError: refusedAll, events, edited };
 }
 
+/**
+ * design_plan / place_items / edit_items / query_scene: the typed design tools of
+ * @aether/arch. They validate the model's arguments themselves, measure against the
+ * document and return the accepted steps as patches, which are committed here as one
+ * undo step; refusals come back as text with their reason and a fix.
+ */
+function designTool(ctx: ExecutorContext, name: DesignToolName, rawInput: unknown): ToolOutcome {
+  const res = runDesignTool(ctx.host.getWorld(), name, rawInput);
+  const events: AgentEvent[] = [];
+  let edited = false;
+  let text = res.text;
+  if (res.patches.length > 0) {
+    const applied = ctx.host.applyPatches(res.patches, res.message);
+    events.push({ type: 'patches', patches: applied.applied, message: res.message, result: { applied: applied.applied.length, errors: applied.errors } });
+    edited = applied.applied.length > 0;
+    if (applied.errors.length > 0) text += `\n${formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length)}`;
+  }
+  return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
+}
+
 async function defineGenerator(ctx: ExecutorContext, def: GeneratorDef, events: AgentEvent[]): Promise<ToolOutcome> {
   const res = ctx.host.applyPatches([{ op: 'defineGenerator', generator: def }], `Define generator ${def.id}`);
   if (res.errors.length > 0) {
@@ -309,7 +329,7 @@ export async function runVerification(ctx: ExecutorContext): Promise<{ event: Ag
 
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -322,6 +342,11 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
         const p = ToolInputs.build_architecture.safeParse(rawInput);
         return p.success ? buildArchitectureTool(ctx, p.data) : fail(`Invalid build_architecture input: ${issuesText(p.error)}`);
       }
+      case 'design_plan':
+      case 'place_items':
+      case 'edit_items':
+      case 'query_scene':
+        return designTool(ctx, name, rawInput ?? {});
       case 'write_generator': {
         const p = ToolInputs.write_generator.safeParse(rawInput);
         return p.success ? await writeGeneratorTool(ctx, p.data) : fail(`Invalid write_generator input: ${issuesText(p.error)}`);

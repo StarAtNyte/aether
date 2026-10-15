@@ -21,7 +21,9 @@ import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS } from './tools';
-import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ToolDef, UsageTotals } from './types';
+import { findingKey } from '@aether/arch';
+import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker } from './review';
+import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
 /** Limits of the compact prompt profile (small on-device models, ~4k-token context). */
@@ -84,14 +86,41 @@ export function noteModel(usage: UsageTotals, model: string | undefined): void {
   if (!list.includes(m) && list.length < 4) list.push(m);
 }
 
+/** Most model turns inside one review round (a round is one look and one batch of fixes). */
+const REVIEW_TURNS_PER_ROUND = 8;
+/** Hard ceiling of review rounds when no cap is set: stall detection ends the loop long before it. */
+const REVIEW_ROUND_CEILING = 200;
+
 const SESSION_RE = /^[a-z0-9][a-z0-9-]{7,79}$/;
 
 function clampInt(v: number | undefined, fallback: number, min: number, max: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.floor(v))) : fallback;
 }
 
+/** Keep the conversation small: the images of earlier review rounds are replaced by a note. */
+function dropOldReviewImages(messages: ChatMessage[]): void {
+  for (const m of messages) {
+    if (m.role !== 'user' || typeof m.content === 'string') continue;
+    if (!m.content.some((b) => b.type === 'image')) continue;
+    const text = m.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text' && !b.text.startsWith('Image ')).map((b) => b.text);
+    if (text.length > 0 && text.some((t) => t.startsWith('REVIEW round'))) m.content = [{ type: 'text', text: `${text.join('\n')}\n(The images of this round were removed to save space.)` }];
+  }
+}
+
+/** A reply that says the tools are missing: models sometimes claim this before ever trying them. */
+function claimsNoTools(text: string): boolean {
+  return /(unavailable|not available|isn'?t available|aren'?t available|can'?t|cannot|couldn'?t|could not|unable|don'?t have|do not have|no access).{0,100}(tool|build|edit|access|session|world)/i.test(text);
+}
+
 function textOf(blocks: readonly ContentBlock[]): string {
   return blocks.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n').trim();
+}
+
+/** Append blocks to the conversation as a user turn (merging into a trailing user turn of blocks). */
+function pushUserBlocks(messages: ChatMessage[], blocks: ContentBlock[]): void {
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user' && Array.isArray(last.content)) last.content.push(...blocks);
+  else messages.push({ role: 'user', content: blocks });
 }
 
 /** Append text to the conversation as a user turn (merging into a trailing tool-result turn). */
@@ -253,15 +282,22 @@ export class WorldAgent {
     const history = trimmed.length > 0 && trimmed[0]?.role !== 'user' ? trimmed.slice(1) : trimmed;
     const messages: ChatMessage[] = [...history, { role: 'user', content: first }];
 
+    const startWorld = host.getWorld();
+    const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
     let repairs = 0;
+    let nudges = 0;
+    let lastRefused = false;
     let toolCalls = 0;
     let dirty = false; // edits since the last verification
     let lastVerifyPassed: boolean | undefined;
+    // A small edit that names objects (move the lamp, make the door red) is not reviewed like a whole building: only a run that
+    // re-plans or rebuilds the shell is. This keeps one-property chat edits fast on a big house.
+    let structural = false;
+    const reviewable = () => scope === undefined || scope.kind !== 'small' || scope.allowed.size === 0 || structural;
 
     yield { type: 'status', text: 'Planning…' };
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
-      const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
       const res: CompletionResponse = await raceAbort(
         this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
         signal,
@@ -284,6 +320,7 @@ export class WorldAgent {
       let finished: { message: string } | undefined;
       if (calls.length > 0) {
         const results: ContentBlock[] = [];
+        let batchRefused = false;
         for (const call of calls) {
           if (signal?.aborted) throw new Error('aborted');
           if (toolCalls >= this.maxToolCalls) {
@@ -294,12 +331,20 @@ export class WorldAgent {
           const out = await executeTool(ctx, call.name, call.input);
           for (const ev of out.events) yield ev;
           if (out.edited) dirty = true;
+          if (out.edited && (call.name === 'design_plan' || call.name === 'build_architecture')) structural = true;
+          lastRefused = out.isError && !out.edited;
+          if (out.isError && call.name !== 'finish') batchRefused = true;
           if (out.verified) {
             dirty = false;
             lastVerifyPassed = out.verified.passed;
           }
           if (out.finished) finished = out.finished;
           results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
+        }
+        if (finished && batchRefused && calls.length > 1) {
+          // finish came in the same reply as a call that was refused: it was sent before the result was read.
+          finished = undefined;
+          results.push({ type: 'text', text: 'A call in that reply was refused, so finish was ignored: read the reasons above, fix them and call the tools again, then finish.' });
         }
         messages.push({ role: 'user', content: results });
         if (finished?.message) yield { type: 'message', text: finished.message };
@@ -308,11 +353,21 @@ export class WorldAgent {
         continue;
       }
 
+      // The model gave up in words after a refusal ("the tools are not available"): they are, and nothing is built yet.
+      const gaveUp = calls.length === 0 && finished === undefined && !dirty && nudges < 3 && res.stopReason !== 'max_tokens';
+      if (gaveUp && (lastRefused || (host.getWorld() === startWorld && claimsNoTools(text)))) {
+        nudges++;
+        const refusal = lastRefused;
+        lastRefused = false;
+        pushUserText(messages, refusal ? 'Your last tool call was refused, so nothing has changed yet. All the tools are still available: read the reasons in that result, fix exactly those problems and call the tool again. Only call finish if the request truly cannot be done.' : 'The tools in the tool list ARE available in this session: call them through tool_calls (design_plan, place_items, edit_items, query_scene, apply_patches, build_architecture, finish). Do the work now; do not reply that you cannot.');
+        continue;
+      }
       const turnEnded = finished !== undefined || calls.length === 0;
       if (!turnEnded) continue;
 
       if (!dirty) {
         if (lastVerifyPassed === false) yield { type: 'status', text: 'Finished with verification issues remaining.' };
+        else if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal);
         return;
       }
       yield { type: 'status', text: 'Verifying physics and tests…' };
@@ -320,7 +375,10 @@ export class WorldAgent {
       yield v.event;
       dirty = false;
       lastVerifyPassed = v.passed;
-      if (v.passed) return;
+      if (v.passed) {
+        if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal);
+        return;
+      }
       if (repairs >= this.maxRepairs) {
         yield { type: 'status', text: `Verification still failing after ${repairs} repair attempt(s).` };
         return;
@@ -342,5 +400,152 @@ export class WorldAgent {
       const v = await runVerification(ctx);
       yield v.event;
     }
+  }
+  /**
+   * The review-and-fix loop. After a run that left a building in the world, the model sees the checker's
+   * findings (and numbered renders when it can see), fixes with the design tools, and the loop repeats until
+   * the model declares the result right or progress stalls. Events report each step.
+   */
+  private async *review(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+    const entered = host.getWorld();
+    yield* this.reviewLoop(ctx, messages, host, startWorld, session, signal);
+    // The review fixed things after the physics run: the world that is sealed and shown as verified must be the one
+    // that was checked, so verify again when the review changed anything.
+    if (host.getWorld() !== entered) {
+      yield { type: 'status', text: 'Verifying physics and tests after the review…' };
+      const v = await runVerification(ctx);
+      yield v.event;
+    }
+  }
+
+  private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+    const cfg: ReviewOptions | undefined = this.opts.review;
+    if (!cfg) return;
+    const world0 = host.getWorld();
+    if (world0 === startWorld) return;
+    const rounds = cfg.maxRounds === undefined || !Number.isFinite(cfg.maxRounds) ? REVIEW_ROUND_CEILING : Math.max(1, Math.min(REVIEW_ROUND_CEILING, Math.floor(cfg.maxRounds)));
+    const unlimited = cfg.maxRounds === undefined || !Number.isFinite(cfg.maxRounds);
+    const maxViews = Math.max(1, Math.min(MAX_REVIEW_VIEWS, Math.floor(cfg.maxViews ?? 6)));
+    const tracker = new StallTracker(cfg.stallRounds ?? 3);
+    let lastEdited = false;
+    const pushedBack = new Set<string>();
+    let before: WorldDoc | null = startWorld;
+    for (let round = 1; round <= rounds; round++) {
+      if (signal?.aborted) throw new Error('aborted');
+      const world = host.getWorld();
+      // The offline planner is only a labelled fallback: it does not review.
+      if (this.opts.provider.name === 'mock') return;
+      const withViews = (typeof cfg.vision === 'function' ? cfg.vision() : cfg.vision === true) && typeof host.captureReview === 'function';
+      const snap = snapshotForReview(world, before, { maxViews, withViews });
+      if (snap.buildings.length === 0) return;
+      yield { type: 'review', round, phase: 'checking', text: round === 1 ? 'Checking the building…' : 'Checking again…', score: snap.score, findings: snap.findings.length };
+      const verdict = tracker.observe({ keys: snap.keys, score: snap.score, edited: lastEdited });
+      if (verdict.stalled) {
+        yield { type: 'review', round, phase: 'stalled', text: `Stopped reviewing: ${verdict.reason}. ${snap.findings.length > 0 ? `${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'} remain.` : ''}`.trim(), score: snap.score, findings: snap.findings.length };
+        return;
+      }
+      // Nothing to look at and nothing to judge: the checks are clean and the model cannot see.
+      if (snap.findings.length === 0 && !withViews) {
+        yield { type: 'review', round, phase: 'approved', text: lastEdited ? 'All checks pass after the fixes.' : 'All checks pass.', score: snap.score, findings: 0 };
+        return;
+      }
+      if (snap.findings.length > 0) yield { type: 'review', round, phase: 'found', text: `Found ${snap.findings.length}: ${snap.findings.slice(0, 3).map((f) => f.message).join('; ').slice(0, 280)}`, score: snap.score, findings: snap.findings.length };
+      // Renders with numbered marks (the host draws them); a failed capture only costs the images.
+      const images: Array<{ name: string; label: string; dataUrl: string }> = [];
+      if (withViews && snap.views.length > 0 && host.captureReview) {
+        try {
+          const got = await raceAbort(host.captureReview(snap.views, signal ? { signal } : {}), signal);
+          for (const g of got) {
+            const v = snap.views.find((x) => x.name === g.name);
+            if (v && isImageDataUrl(g.dataUrl) && images.length < MAX_REVIEW_VIEWS) images.push({ name: g.name, label: v.label, dataUrl: g.dataUrl });
+          }
+        } catch (e) {
+          if (signal?.aborted) throw e;
+        }
+      }
+      dropOldReviewImages(messages);
+      const content: ContentBlock[] = [];
+      images.forEach((im, i) => {
+        content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
+      });
+      content.push({ type: 'text', text: reviewTurnText(round, snap, { hasImages: images.length > 0, lastEdited }) });
+      pushUserBlocks(messages, content);
+      // One round: the model works with the tools until it calls finish (or answers without a tool call).
+      let editedThisRound = false;
+      let declared = false;
+      let toolCalls = 0;
+      yield { type: 'review', round, phase: 'fixing', text: snap.findings.length > 0 ? 'Fixing what the checks found…' : 'Looking at the renders…', score: snap.score, findings: snap.findings.length };
+      for (let turn = 0; turn < REVIEW_TURNS_PER_ROUND && !declared; turn++) {
+        if (signal?.aborted) throw new Error('aborted');
+        const res: CompletionResponse = await raceAbort(
+          this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
+          signal,
+        );
+        ctx.usage.calls += 1;
+        ctx.usage.inputTokens += res.usage?.inputTokens ?? 0;
+        ctx.usage.outputTokens += res.usage?.outputTokens ?? 0;
+        noteModel(ctx.usage, res.model);
+        messages.push({ role: 'assistant', content: res.content });
+        const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
+        const text = textOf(res.content);
+        if (res.stopReason === 'error' && calls.length === 0) {
+          yield { type: 'error', text: text || 'The model could not complete the review.' };
+          return;
+        }
+        if (calls.length === 0) {
+          if (res.stopReason === 'max_tokens') {
+            pushUserText(messages, 'Your reply was cut off. Continue with smaller tool calls, then call finish.');
+            continue;
+          }
+          if (text) yield { type: 'message', text };
+          declared = true;
+          break;
+        }
+        if (text) yield { type: 'plan', text };
+        const results: ContentBlock[] = [];
+        for (const call of calls) {
+          if (signal?.aborted) throw new Error('aborted');
+          if (toolCalls >= this.maxToolCalls) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'Tool-call budget of this review round used up. Call finish.', isError: true });
+            continue;
+          }
+          toolCalls++;
+          const out = await executeTool(ctx, call.name, call.input);
+          for (const ev of out.events) yield ev;
+          if (out.edited) editedThisRound = true;
+          if (out.finished) {
+            declared = true;
+            if (out.finished.message) yield { type: 'message', text: out.finished.message };
+          }
+          results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
+        }
+        messages.push({ role: 'user', content: results });
+      }
+      lastEdited = editedThisRound;
+      before = world;
+      if (!editedThisRound && declared) {
+        const after = snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
+        const errors = after.findings.filter((f) => f.severity === 'error');
+        // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
+        const open = after.findings.filter((f) => f.severity === 'warning');
+        const signature = open.map(findingKey).sort().join('|');
+        if (errors.length === 0 && open.length > 0 && !pushedBack.has(signature)) {
+          pushedBack.add(signature);
+          continue;
+        }
+        if (errors.length === 0) {
+          yield { type: 'review', round, phase: 'approved', text: after.findings.length > 0 ? `Looks right to me; ${after.findings.length} note${after.findings.length === 1 ? '' : 's'} left as they are.` : 'Looks right.', score: after.score, findings: after.findings.length };
+          return;
+        }
+        // The model approved while the checker still reports errors: show them again (a repeat stalls).
+        continue;
+      }
+      if (!editedThisRound && !declared) {
+        yield { type: 'review', round, phase: 'stalled', text: 'The model made no changes and did not approve; stopped reviewing.', score: snap.score, findings: snap.findings.length };
+        return;
+      }
+    }
+    if (!unlimited) yield { type: 'review', round: rounds, phase: 'limit', text: `Stopped after ${rounds} review rounds.` };
+    else yield { type: 'review', round: rounds, phase: 'limit', text: 'Stopped reviewing after the safety ceiling of rounds.' };
   }
 }

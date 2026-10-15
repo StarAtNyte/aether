@@ -1483,3 +1483,70 @@ pressure plates that must stay pressed are visited, not held; custom scripts
 run but their goals are not derived; vehicles, block worlds and avatar
 entities are `unsupported`; narrow snug doorways (clear width within a
 centimetre of the player's body) are crossed at a crawl and can still fail.
+
+## 24. The AI is the brain: plan first, place by tools, review with eyes
+
+For buildings (and, through the same interfaces, worlds) the connected assistant (the user's Codex or
+Claude Code login first, any LLM provider otherwise) is the decision-maker at every step. Deterministic code
+is its measuring instrument and its parts library; it never decides a layout when an assistant is connected.
+The offline planner remains a labelled fallback and a fixture generator only.
+
+```
+prompt ─▶ design_plan  ─▶ shell built at the planned positions, read back with built opening ids
+          place_items  ─▶ pieces from the parts library, each measured and accepted or refused with a reason
+          edit_items   ─▶ move / rotate / resize / remove / snap / anchor / centre, same refusals
+          query_scene  ─▶ wall, measure, list, parts, shell, review (checks + agreement with the plan)
+ finish ─▶ verification (physics, walkability) ─▶ REVIEW LOOP
+              checker findings + numbered renders ─▶ the model fixes with the tools ─▶ re-check … ─▶ it approves, or progress stalls
+```
+
+- **Plan first.** `design_plan` is validated against `DesignPlan` (zod) and `validateDesign`: rooms that
+  overlap or do not connect, openings that do not fit their wall or overlap each other, a missing entrance,
+  unreachable rooms, unknown kinds are refused with the range that would work and nothing is built. The
+  accepted plan compiles to a shell with the openings at their exact `along` positions and no preset
+  furnishing (`designToBuildingPlan`), and is stored on the building (`DesignRecord`: brief, programme,
+  circulation, every piece with its relations, and the plan's opening ids mapped to the built ones).
+  Resending the plan revises the shell; pieces placed by the tools survive a re-compile while their room exists.
+- **Placement by tool calls.** `place_items` / `edit_items` run the functions of `@aether/arch/scene`
+  (`placeItem`, `moveItem`, `snapToWall`, `anchorToOpening`, `centerOver`, …) on a working copy of the document,
+  audit the result with the same checks the review uses, and refuse a change that overlaps, crosses a wall,
+  covers a door or window, blocks a doorway or its swing, or walls a room in. A batch keeps going after a
+  refusal and commits the accepted steps as one undo step. The existing generators (furniture, windows,
+  doors, curtains, frames) are the parts library; the model picks kind, size parameters and position.
+- **Eyes.** `reviewPoses` gives corner-to-corner views, each wall straight on, and a top-down plan per level
+  with the ceilings removed; `projectMarks` projects every piece, door and window into each image as a numbered
+  box, and the same numbers appear in a legend beside the images ("14 = nightstand home-ns-left, north wall
+  t 0.46..0.94"). The studio renders the poses with the live renderer (`WorldRenderer.capturePoses`) and draws
+  the marks with canvas 2D; the CLI, MCP server and eval render them with the deterministic software renderer
+  (`apps/cli/src/mcp/review.ts`) and `drawMarksRgba`.
+- **Review loop** (`WorldAgent`, option `review`). After every run that leaves a building in the world, whether
+  generation or an edit or a chat question, the model gets the findings (errors first, each with a fix) and the
+  images, fixes with the tools, and the loop repeats. It ends when the model calls `finish` in a round where it
+  changed nothing and the checker reports no error (`approved`), or when `StallTracker` sees the same findings
+  for `stallRounds` rounds, no better score over `stallRounds + 1` rounds, or only cosmetic edits on a clean
+  building (`stalled`). **Subscription backends (bridge, local Codex / Claude Code) have no round cap**: the
+  calls are not metered, so only approval or a stall stops the loop; paid API keys keep a finite cap
+  (`REVIEW_ROUNDS_METERED`). Progress is streamed (`review` events: checking, found, fixing, approved,
+  stalled, limit) and shown in the chat; cancel stops it. The first result is visible while the loop refines
+  it in place with small patch groups.
+- **Diagnosis and chat.** "Why is the curtain over the door?" is answered by the model with `query_scene`, then
+  fixed with `edit_items` and explained; the summary lists every wall face with its openings and pieces, and
+  the prompt says never to ask the user for a fact that can be looked up.
+- **Providers.** Codex has no native tool calls here, so the tools travel over the existing JSON protocol of
+  `emulation/` (`tool_calls` with validated inputs); Claude and OpenAI-compatible providers use native tool
+  calls. A failing provider is reported with its real reason (a Codex usage limit is named as such, not as
+  "exited with code 1"), the run is retried on the user's other signed-in assistant, and only then on the
+  offline planner, which says so in the UI and skips the review.
+- **Games and worlds.** The pattern is domain-neutral: the tool layer is typed `(document, input) → patches +
+  facts | refusal`, the review is `(document) → findings`, the images are `pose + numbered marks`. A game or
+  outdoor world adopts it by adding its own measuring tools (terrain height and slope at a point, clearance
+  around a spawn, line of sight) and parts, and by passing `review` to `WorldAgent`; `reviewPoses` /
+  `projectMarks` need only entity boxes.
+- **Evaluation.** `scripts/eval-design.ts` runs 44 room and house prompts through both paths (the AI-first
+  loop and the generator-decides offline planner), measures checker violations and, live, has a vision model
+  judge software-rendered stills against a five-criterion rubric. Recorded transcripts in
+  `tests/fixtures/aifirst` replay deterministically in CI; the numbers are in `docs/EVAL_AIFIRST.md`, including
+  where AI-first loses.
+
+Security: every model output (plans, tool inputs, review replies) is zod-validated with size caps, ids are
+slugs, numbers are finite and bounded, objects are checked for prototype keys, and nothing is evaluated.

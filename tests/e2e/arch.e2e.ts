@@ -142,6 +142,13 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check((await page.evaluate(() => window.__aether?.history.head ?? '')) === headBefore, `[${label}] a clean building must not be edited by the placement question`);
     log(`[${label}] placement question answered from the wall data`);
 
+    // The bot that walks a fresh building (and its ghost replay) keeps the scene moving, which would keep a studio
+    // still from refining: this suite is about the views, so let the bot step aside first.
+    await page.evaluate(() => {
+      window.__aether?.studio.playtest.cancel();
+      window.__aether?.studio.playtest.stopReplay();
+    });
+
     // 2. 3D views.
     await bar.getByRole('button', { name: /^Walls/ }).click();
     await page.getByRole('menuitemradio', { name: 'Walls down' }).or(page.getByRole('menuitemcheckbox', { name: 'Walls down' })).or(page.getByRole('menuitem', { name: 'Walls down' })).first().click();

@@ -19,6 +19,9 @@ export type {
   UsageTotals,
   AssetBuildSpec,
   AssetBuildResult,
+  ReviewOptions,
+  ReviewPhase,
+  ReviewViewRequest,
 } from './types';
 
 export { WorldAgent, COMPACT_LIMITS, SLICE_THRESHOLD, type RunOptions } from './agent';
@@ -73,3 +76,6 @@ export { createFallbackProvider, type FallbackNotice, type FallbackProvider, typ
 export { createWebLlmBackend, createWebLlmProvider, type WebLlmEngineLike, type WebLlmProviderOptions } from './providers/webllm';
 export { errorMessage } from './providers/errors';
 export * from './quality/index';
+export { drawMarksRgba, MAX_RGBA_MARKS } from './review-draw';
+export { StallTracker, snapshotForReview, reviewTurnText, REVIEW_ASPECT, MAX_REVIEW_VIEWS, type ReviewSnapshot, type RoundObservation, type StallVerdict } from './review';
+export { createRecordingProvider, createReplayProvider, TranscriptSchema, TRANSCRIPT_LIMITS, type RecordingProvider, type Transcript } from './providers/replay';

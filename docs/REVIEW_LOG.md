@@ -3064,3 +3064,60 @@ Rocketbox (MIT) bodies and motion replace capsule and procedural figures for the
 - **Tests**: `packages/assets/test/characters.test.ts` (cast, look resolution, retarget maps, state
   machine incl. stride match, death, bad dt), `packages/core/test/character-schema.test.ts`,
   `tests/e2e/characters.e2e.ts`.
+
+## Stage aifirst: the AI is the brain (plan first, tool placement, eyes, review loop)
+
+**What changed.**
+- `@aether/arch/scene`: scene model read from the document, measuring tools, placement tools that refuse
+  nonsense, the design plan schema, conformance with the plan, tool dispatcher (`design_plan`, `place_items`,
+  `edit_items`, `query_scene`), review cameras and numbered marks.
+- `@aether/agent`: the four tools, a plan-first prompt, the review-and-fix loop (`review` option) with
+  `StallTracker`, transcript recording and replay, `drawMarksRgba`. Behaviour added after live runs with Codex:
+  a model that claims "the tools are unavailable" is told they are; a `finish` sent in the same reply as a
+  refused call is ignored; warnings are shown once more before the model may approve; plan relations the checker
+  cannot measure are dropped (and reported) rather than refusing the plan; plan opening ids are aliases of the
+  built ones; a changed storey height re-seats placed ceiling lights.
+- Providers: a Codex failure keeps the stream's own reason (the usage limit was shown as "exited with code 1"),
+  the protocol text says a JSON reply is how tools are called, the chain falls back as before and the offline
+  planner skips the review.
+- Studio: `WorldRenderer.capturePoses`, `Simulation.capturePoses`, `AgentBridge.captureReview` (waits for the
+  viewport), canvas marks, review events in the chat and the agent step, no round cap on subscription backends
+  (10 on paid keys), 40 turns and 300 tool calls per run for AI-first.
+- CLI/MCP: headless review renders with the software renderer; review enabled in the MCP session.
+- Tests and tooling: unit tests for every tool (including NaN, huge numbers, unknown ids, prototype keys), the
+  loop with scripted models, stall detection, replay of recorded Codex transcripts, `npm run e2e:design`
+  (Chromium and Firefox, real renders with marks), `npm run eval:design`.
+- The `e2e:arch` studio-render step was fixed earlier in this stage (the automatic playtest ghost kept the
+  scene moving, so the still never refined).
+
+**Security.** Every model output (plans, tool inputs, review replies, transcripts) is zod-validated with size
+caps (40 items / 40 edits / 12 queries per call, 600 000 characters, transcripts of at most 400 answers); ids are
+slugs, numbers finite and bounded, record keys cannot reach the prototype (`hasOwn` lookups, strict objects),
+nothing is evaluated. Review images are rendered from the document and drawn on locally; the only data that
+leaves is what the user's chosen assistant already receives. The Codex reason shown to the user is the CLI's own
+error line, scrubbed by `classifyCliFailure`.
+
+**Performance.** The checkers run on a scene read once per call (a house reviews in tens of milliseconds); the
+review loop adds renders only when the model can see (six views of 768 px per round in the studio, 640 px in
+Node at about 0.6 s each). Old review images are dropped from the conversation. A round is bounded (8 model turns,
+the tool budget) and the whole loop by approval, stall detection, abort, or the paid-key cap.
+
+**Evaluation (live Codex, `docs/EVAL_AIFIRST.md`).** 29 of the 45 prompts were recorded before the subscription's
+usage limit stopped further runs (all 29 rooms; the 15 houses and one room are not recorded and say so). On those
+29: no checker errors in 29 against 17 for the generator path (which builds nothing at all for 12 of them);
+where both built, warnings 3.6 against 5.9 and score 87.7 against 86.2; the vision judge scores AI-first 5.0
+against 4.8 (better on 10, worse on 4, level on 3 of 17 judged), mostly through completeness. AI-first loses on
+layout of very small rooms (a bed too large for the room, missing pieces the loop stalled on), costs 22 model
+calls and about six minutes per room against none, and hit the stall detector in 11 of 29 runs. Houses were
+exercised only in the earlier partial run (many warnings left after the turn budget ran out, before it was
+raised); they need a re-recording when the quota is back.
+
+**Known limits.**
+- The review renders are the software renderer in Node (flat light, library models not drawn); the studio uses
+  the live renderer. Marks are not occlusion-tested.
+- Plan views are taken with walls lowered to a plan, so wall pieces are not visible in them.
+- Codex sometimes returns invalid JSON for very large plans (retried; the prompt asks for compact plans).
+- The games/worlds adoption is at the interface level (docs/ARCHITECTURE.md section 24); no game generator was changed.
+- Fixtures were recorded with the tool descriptions of this commit; changing them can make a replay take a
+  different path (the tolerant replay then ends the run and the test checks it is no worse than recorded).
+

@@ -220,7 +220,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         notes.push(`door ${ra}↔${rb}: shared wall too short for a door`);
         continue;
       }
-      const tCentre = span.t0 + 0.15 + width / 2 + (span.t1 - span.t0 - 0.3 - width) * d.at;
+      const tCentre = d.along !== undefined ? Math.max(span.t0 + 0.15 + width / 2, Math.min(span.t1 - 0.15 - width / 2, d.along)) : span.t0 + 0.15 + width / 2 + (span.t1 - span.t0 - 0.3 - width) * d.at;
       const c = edgePoint(span.edge, tCentre);
       const hit = wallAt(c);
       if (!hit) {
@@ -371,6 +371,20 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         continue;
       }
       const height = Math.min(w.height, ceiling - w.sill - 0.15);
+      if (w.centres) {
+        // Exact positions: each centre on the exterior span (of that side) that contains it.
+        const spans = exteriorSpans(poly, others, w.side);
+        for (const c of w.centres) {
+          const sp = spans.find((s) => c >= s.t0 - 1e-6 && c <= s.t1 + 1e-6);
+          const hit = sp ? wallAt(edgePoint(sp.edge, c)) : null;
+          if (!hit) {
+            notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: no exterior wall there`);
+            continue;
+          }
+          if (!placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style))) notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: overlaps another opening or the wall end`);
+        }
+        continue;
+      }
       const len = span.t1 - span.t0;
       const n = Math.max(1, Math.min(w.count, Math.floor((len - 0.4) / (w.width + 0.4))));
       for (let k = 0; k < n; k++) {
@@ -682,7 +696,8 @@ function polyArea(poly: readonly P2[]): number {
   return a / 2;
 }
 
-function hashId(s: string): number {
+/** Stable 32-bit hash of an id (seeds). */
+export function hashId(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
@@ -706,8 +721,8 @@ function insetFor(e: RoomEdge, walls: readonly WallRec[]): number {
   return 0.06;
 }
 
-/** Furniture placement → entity. */
-function placedEntity(p: Placed, id: string, parent: string, room: string, level: number, withLight: boolean): EntityInput {
+/** Furniture placement → entity (also used by the design tools to instantiate parts). */
+export function placedEntity(p: Placed, id: string, parent: string, room: string, level: number, withLight: boolean): EntityInput {
   const def = furnitureById(p.generator);
   const lightRole = p.kind === 'pendant' || p.kind === 'ceiling-light' || p.kind === 'floor-lamp' || p.kind === 'table-lamp' || p.kind === 'sconce';
   const role = p.kind === 'switch' ? 'switch' : lightRole ? 'light' : def?.mount === 'floor' || def?.mount === 'surface' ? 'furniture' : 'fixture';
