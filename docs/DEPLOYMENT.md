@@ -195,5 +195,6 @@ Before announcing an address, and again after every deploy:
 - [ ] **Logs.** JSON lines on stdout; `fly logs`, Render logs or
       `docker compose logs -f aether`. 5xx responses are logged at `error`.
 - [ ] **CI green.** `.github/workflows/ci.yml` runs typecheck, unit tests,
-      build, smoke, both e2e browsers, a dependency audit and a container
+      build, smoke, the studio, hosted-copy and sandbox-security e2e suites
+      in both browsers, a dependency audit and a container
       build + probe on every push and pull request.

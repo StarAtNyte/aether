@@ -148,22 +148,32 @@ export class DeployJobs {
     return true;
   }
 
+  /** True while a job still in the `running` state holds the deploy slot. */
+  private busy(): boolean {
+    return this.running?.state === 'running';
+  }
+
   /** Start a deploy. Throws when one is already running or the CLI is not ready. */
   async start(req: DeployRequest): Promise<DeployJobView> {
     this.prune();
-    if (this.running) throw new DeployError(409, 'A deploy is already running. Wait for it or cancel it.');
+    // Only a job still in the `running` state holds the slot: a finished job that is merely
+    // removing its own temporary folder must not refuse the next deploy (clients start one
+    // as soon as they see the previous job end).
+    if (this.busy()) throw new DeployError(409, 'A deploy is already running. Wait for it or cancel it.');
     if (req.target === 'itch' && !req.itch) throw new DeployError(400, 'itch.io needs the game page as user/game.');
     if ((req.target === 'github' || req.target === 'netlify') && !req.name) throw new DeployError(400, 'Choose a name for the site.');
     const st = (await this.status(true)).find((s) => s.id === req.target);
     if (!st?.installed) throw new DeployError(409, `${HOSTS[req.target].label}: the ${HOSTS[req.target].bin} command is not installed (${HOSTS[req.target].install}).`);
     if (!st.signedIn) throw new DeployError(409, `${HOSTS[req.target].label}: sign in first with "${HOSTS[req.target].login}".`);
     if (!(await this.deps.store.meta(req.build))) throw new DeployError(404, 'That build does not exist any more. Publish it again.');
+    // The checks above awaited: a concurrent request may have taken the slot meanwhile.
+    if (this.busy()) throw new DeployError(409, 'A deploy is already running. Wait for it or cancel it.');
     const id = randomBytes(9).toString('base64url').replace(/[^A-Za-z0-9]/g, 'x').toLowerCase().slice(0, 12);
     const job: Job = { id, target: req.target, build: req.build, state: 'running', step: 0, steps: 0, url: null, error: null, events: [], ctrl: new AbortController(), listeners: new Set(), finishedAt: 0 };
     this.jobs.set(id, job);
     this.running = job;
     void this.run(job, req).finally(() => {
-      this.running = null;
+      if (this.running === job) this.running = null;
       job.finishedAt = this.now();
     });
     return this.view(id) as DeployJobView;

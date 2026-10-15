@@ -16,7 +16,7 @@ import { serviceWorkerSource } from '@aether/assets/offline-sw';
 import { PLAY_CSP } from '../src/middleware';
 import { checkGameJson, PublishStore } from '../src/publish/store';
 import { deploySteps, findUrl, netlifyUrl, parseStatus, substitute, vercelUrl } from '../src/publish/hosts';
-import { butlerCredsPath, cleanLine, type DeployEvent } from '../src/publish/jobs';
+import { butlerCredsPath, cleanLine, DeployJobs, type DeployEvent } from '../src/publish/jobs';
 import type { PublishServices } from '../src/publish/services';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
@@ -281,6 +281,48 @@ describe.runIf(posix)('publishing routes with fake CLIs', () => {
     expect(bad.status).toBe(400);
     const missing = await app.request('/api/local/publish/deploy', { method: 'POST', headers: { 'content-type': 'application/json', ...host }, body: JSON.stringify({ build: 'zzzzzzzzzzzz', target: 'vercel', name: 'x' }) });
     expect(missing.status).toBe(404);
+  });
+
+  it.skipIf(!posix)('frees the deploy slot the moment a job ends, before its temporary folder is removed', async () => {
+    // Regression: the slot was released only after cleanup, so a client starting the next
+    // deploy as soon as it saw "done" was refused with 409 (seen under load).
+    const { env } = fakeClis({ slowDeploy: true });
+    const store = new PublishStore(temp('aether-store-'), undefined, undefined, playerDir());
+    const jobs = new DeployJobs({ store, env, tmpRoot: temp('aether-jobs-') });
+    const meta = await store.add(await buildZip());
+    const first = await jobs.start({ build: meta.id, target: 'vercel', name: 'first' });
+    // Start the next (slow) deploy synchronously from the final event: the old job is still cleaning up.
+    const next = await new Promise<Promise<{ id: string; state: string }>>((res) => {
+      jobs.listen(first.id, (e) => {
+        if (e.kind === 'done' || e.kind === 'error') res(jobs.start({ build: meta.id, target: 'netlify', name: 'second' }));
+      });
+    });
+    const second = await next;
+    expect(jobs.view(first.id)?.state).toBe('done');
+    expect(second.state).toBe('running');
+    // The finished job's cleanup must not clear the new job's slot: a third start is refused.
+    await new Promise((r) => setTimeout(r, 100));
+    await expect(jobs.start({ build: meta.id, target: 'vercel', name: 'third' })).rejects.toMatchObject({ status: 409 });
+    jobs.dispose();
+    for (let i = 0; i < 200 && jobs.view(second.id)?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(jobs.view(second.id)?.state).toBe('cancelled');
+  });
+
+  it.skipIf(!posix)('lets only one of two concurrent deploy requests run', async () => {
+    const { env } = fakeClis({ slowDeploy: true });
+    const store = new PublishStore(temp('aether-store-'), undefined, undefined, playerDir());
+    const jobs = new DeployJobs({ store, env, tmpRoot: temp('aether-jobs-') });
+    const meta = await store.add(await buildZip());
+    const results = await Promise.allSettled([
+      jobs.start({ build: meta.id, target: 'netlify', name: 'one' }),
+      jobs.start({ build: meta.id, target: 'netlify', name: 'two' }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+    jobs.dispose();
+    const ok = results.find((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{ id: string }>;
+    for (let i = 0; i < 200 && jobs.view(ok.value.id)?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(jobs.view(ok.value.id)?.state).toBe('cancelled');
   });
 
   it('streams progress over server-sent events and cancels a running deploy', async () => {
