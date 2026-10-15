@@ -1859,3 +1859,48 @@ outcome bumps `REPLAY_ENGINE` (pinned by `packages/verifier/test/golden.json`).
   `window.__aetherProof`). The verifier loads only on click.
 - `npm run e2e:proof` (Chromium + Firefox).
 
+
+## Aether as an MCP server: `aether mcp` (`apps/cli/src/mcp`, additive)
+
+`aether mcp [--project-dir DIR] [--provider auto|offline|local] [--player-dir DIR] [--state-dir DIR]`
+serves MCP (protocol 2025 revision, SDK 1.32.1) on stdio; stdout carries only
+protocol messages. Full guide, client configs and safety model:
+[docs/MCP.md](MCP.md). No change to `@aether/core`, the agent or the server.
+
+- `startMcpServer(opts: SessionOptions, transport, version?) → { server, session, close() }`
+  and `createAetherMcpServer(session)` (`mcp/server.ts`) build the server on any
+  SDK `Transport` (tests use the in-memory pair; `runStdioServer` the stdio one).
+  `SessionOptions = { projectDir, provider: 'auto'|'offline'|'local', stateDir, playerDir?, providerOverride?, log? }`.
+- `AetherSession` (`mcp/session.ts`) owns a core `History`, the headless `Engine`
+  (Rapier, logic runtime, script and generator sandboxes) and the project
+  folder. Operations: `createWorld`, `edit` (a `WorldAgent` run through an
+  `AgentHost` over the history, `source: 'agent'`), `applyPatch` (`atomic`
+  default), `undo`/`redo` (one step per tool action, via history checkouts),
+  `listEntities`, `getEntity`, `verify`, `playtest`, `replay`, `renderStill`,
+  `export`. Mutations are serialized.
+- Tools (all strict zod inputs): `create_world {prompt}`, `edit {prompt}`,
+  `apply_patch {patches[≤200], message?, atomic?}`, `list_entities`,
+  `get_entity {id}`, `get_world_summary`, `verify`, `playtest {seconds?≤120, goal?}`,
+  `replay`, `render_still {width?, height?, yawDeg?, pitchDeg?, fovDeg?, from?, lookAt?, at?, name?}`,
+  `export {format: 'gltf'|'build'|'plan'|'project', name?}`, `undo`, `redo`.
+  Failures: `isError: true`, text `"<code>: <message>"`, `structuredContent.error = { code, message }`
+  with `code` one of `invalid_input | invalid_patch | not_found | too_large | timeout | cancelled | busy | unavailable | path_denied | nothing_to_undo | internal`.
+- Resources: `aether://world/current`, `aether://world/summary`, `aether://schema/world`,
+  `aether://schema/patch`, `aether://entity/{id}`, `aether://guide`.
+- Project folder layout (the only paths ever touched): `.aether/world.json`
+  (the studio's `aether-world` envelope; loaded on start, validated),
+  `exports/<name>.glb | <name>-web.zip | <name>-<building>-level-<n>.svg | <name>.aether.json`,
+  `renders/<name>.png`, `replays/replay.json`. `ProjectDir` (`mcp/fsguard.ts`) is
+  the single gate: names through `safeFileName`, real-path containment, no
+  symbolic links, atomic 0600 writes, size caps (`MCP_LIMITS`, `mcp/limits.ts`).
+- Provider (`mcp/provider.ts`): `offline` = the mock planner; `local` = `createLocalProvider`
+  against the running local server over `loopbackFetch` (only
+  `http://127.0.0.1:<port>/api/local/*`, the admin secret header, redirects refused).
+- Stills (`mcp/scene.ts`, `mcp/raster.ts`, `mcp/png.ts`): `buildScene(world, opts) → Scene`
+  (world-space meshes from procgen; model/asset/mesh shapes are listed in `skipped`),
+  `renderStill(scene, environment, opts) → Still` (deterministic software renderer),
+  `encodePng`. glTF: `sceneToGlb(scene, name)` (`mcp/gltf.ts`).
+- Playtest (`mcp/playtest.ts`): `findObjectives(world, goal?)`, `playtest(world, opts) → PlaytestResult`
+  (`outcome: 'win'|'lose'|'incomplete'`, `reason?`, `objectives[{id, kind, reached, collected}]`, `state`, `messages`, `path`).
+- CLI: new command `mcp` and options `--project-dir`, `--player-dir`, `--provider`
+  (`CliOptions.projectDir | playerDir | provider`); `AETHER_PROJECT_DIR` sets the default folder.

@@ -10,6 +10,7 @@
  *   aether logout   [--claude]
  *   aether pair
  *   aether doctor   [--json]
+ *   aether mcp      [--project-dir DIR] [--provider auto|offline|local]
  *   aether help | --help | version | --version
  *
  * Global: `--state-dir <dir>` (or AETHER_STATE_DIR) for the pid, port, log and
@@ -17,7 +18,7 @@
  */
 
 /** Sub-commands. */
-export const COMMANDS = ['start', 'stop', 'status', 'logs', 'login', 'logout', 'pair', 'doctor', 'help', 'version'] as const;
+export const COMMANDS = ['start', 'stop', 'status', 'logs', 'login', 'logout', 'pair', 'doctor', 'mcp', 'help', 'version'] as const;
 /** A sub-command. */
 export type Command = (typeof COMMANDS)[number];
 
@@ -48,6 +49,12 @@ export interface CliOptions {
   foreground: boolean;
   json: boolean;
   force: boolean;
+  /** `mcp`: the only folder the server reads and writes (default ./aether-project). */
+  projectDir: string | null;
+  /** `mcp`: which model answers prompts. */
+  provider: 'auto' | 'offline' | 'local';
+  /** `mcp`: the studio build used for `export build` (default: this checkout's apps/studio/dist). */
+  playerDir: string | null;
 }
 
 /** Result of {@link parseArgs}. */
@@ -105,6 +112,9 @@ export function parseArgs(argv: readonly string[], env: Readonly<Record<string, 
     foreground: false,
     json: false,
     force: false,
+    projectDir: env['AETHER_PROJECT_DIR'] && env['AETHER_PROJECT_DIR'] !== '' ? env['AETHER_PROJECT_DIR'] : null,
+    provider: 'auto',
+    playerDir: null,
   };
   const warnings: string[] = [];
   let sawCommand = false;
@@ -204,6 +214,24 @@ export function parseArgs(argv: readonly string[], env: Readonly<Record<string, 
         if (o.origins.length > 8) return { ok: false, error: 'at most 8 --origin values' };
         break;
       }
+      case '--project-dir': {
+        const v = value();
+        if (v === null || v === '' || v.length > 1024 || v.includes('\0')) return { ok: false, error: '--project-dir needs a folder' };
+        o.projectDir = v;
+        break;
+      }
+      case '--player-dir': {
+        const v = value();
+        if (v === null || v === '' || v.length > 1024 || v.includes('\0')) return { ok: false, error: '--player-dir needs a folder' };
+        o.playerDir = v;
+        break;
+      }
+      case '--provider': {
+        const v = value();
+        if (v !== 'auto' && v !== 'offline' && v !== 'local') return { ok: false, error: '--provider must be auto, offline or local' };
+        o.provider = v;
+        break;
+      }
       case '--foreground':
         o.foreground = true;
         break;
@@ -248,6 +276,7 @@ Commands:
   logout           Sign out of Codex (--claude for Claude Code)
   pair             Print a pairing code and link for a hosted copy of the studio (needs start --origin)
   doctor           Check Node, the Codex / Claude Code CLIs, the port and disk space
+  mcp              Run Aether as an MCP server on stdio, so Claude Code, Codex and editors can drive it (see docs/MCP.md)
   help, version
 
 Start options:
@@ -259,5 +288,7 @@ Start options:
   --host H --allow-lan
                    Listen on another address (e.g. 0.0.0.0); an access token is then required
   --foreground     Run in this terminal instead of the background
+  --project-dir D  (mcp) The only folder the MCP server reads and writes (default ./aether-project)
+  --provider P     (mcp) auto (default), offline, or local (this computer's Aether server and AI login)
   --state-dir DIR  Where the pid, port, log and secret files live (default: your user state folder)
 `;

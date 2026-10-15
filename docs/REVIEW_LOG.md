@@ -2471,3 +2471,74 @@ byte-identical to Node's. Firefox's player/studio flows could not run in this
 sandbox (headless Firefox has no WebGL here: `AETHER_E2E_SKIP_NO_GL=1`
 limited it to the engine matrix); CI has WebGL and runs everything.
 
+
+## Stage: Aether as an MCP server (`aether mcp`)
+
+**What shipped.** `aether mcp` serves the loop over stdio on the official MCP
+SDK (1.32.1, MIT, pinned): `create_world`, `edit`, `apply_patch`,
+`list_entities`, `get_entity`, `get_world_summary`, `verify`, `playtest`,
+`replay`, `render_still`, `export` (glTF, standalone web build, floor-plan SVG,
+project file), `undo`, `redo`, plus resources for the world, its summary, both
+JSON Schemas, each entity and an authoring guide. It works offline on the
+planner and, when `aether start` runs and an account is signed in, through the
+local server's providers. `docs/MCP.md` has the Claude Code and Codex configs.
+New original code: a headless scene builder, a software renderer (visibility
+buffer, shadow map, sky, fog, glass), a PNG encoder, a glTF writer, and a
+playtest bot that walks, jumps and drives toward pickups, rule zones and goals
+(it found that a floating coin is only collected by a hop, and now hops).
+
+**Tests.** `apps/cli/test/mcp.test.ts` (in-memory transport, 19 cases: tool
+and resource surface, the offline create / verify / playtest / export loop,
+patches and undo, a scripted model through `create_world` and `edit`,
+rejection of bad patches, prototype-pollution keys, oversized and unknown
+input, symlink and traversal attempts, persistence and a corrupt saved world),
+`apps/cli/test/mcp-units.test.ts` (16 cases: project-folder guard, error scrubbing,
+loopback-only fetch, objectives, renderer determinism and sun shading, PNG and
+glTF round trips, arguments) and `tests/e2e/mcp.e2e.ts` (a real MCP client
+spawns `aether mcp` over stdio, builds a coin game, verifies it, plays it to a
+win, exports glTF and the web build from the real studio build, replays a
+falling ball, renders stills, undoes). Wired into CI after `e2e:security`.
+
+SECURITY
+- [x] The client is untrusted. No tool takes a path or reads a file; every
+  output name goes through `safeFileName` and `ProjectDir`, which resolves the
+  real path against the real project root, refuses symbolic links (including a
+  planted `exports/` link) and writes atomically with mode 0600. Tests plant
+  links and `../` names.
+- [x] No network. The only connection is the loopback Aether server in
+  `local`/`auto` mode, through a fetch that throws for any other URL, sends
+  the install secret, and refuses redirects (tested). The SDK's HTTP transports
+  are never started.
+- [x] Strict zod on every input (unknown keys refused, prompt 4,000 chars, 200
+  patches, 512 KB), `inspectUntrusted` before the patch validator, the same
+  patch/limit code as the studio. Entity ids and selectors reach no `eval`,
+  path or shell.
+- [x] Time and size caps: agent 5 min, verify / playtest / render / export
+  60 s plus the client's cancel signal; images 64-1920 px; 3 M triangles; 256 MB
+  per file; world files 32 MB. Mutations are serialized.
+- [x] Errors are `code: message`, scrubbed of absolute paths and control
+  characters; anything unexpected is a generic internal error with detail on
+  stderr only. The stdio server redirects `console.log` to stderr so a library
+  cannot corrupt the protocol.
+- [x] Dependencies: one new package tree (the SDK and its Express-based HTTP
+  helpers, unused at run time), all MIT / BSD / ISC; `npm audit` reports 0
+  vulnerabilities. Recorded in `docs/THIRD_PARTY.md`.
+- Known limit: a hostile model-written generator still runs in the existing
+  `node:vm` sandbox (documented in `@aether/procgen/node`, not a hard boundary);
+  the MCP server inherits that, as the studio server does.
+
+PERFORMANCE
+- [x] Engine starts once per process (Rapier, QuickJS, catalog): about 0.3 s.
+  A 67-patch game is created and verified in under 0.2 s, played in about
+  0.1 s of wall time per 19 game seconds.
+- [x] Stills: 960x540 with 2x supersampling and a 1536 px shadow map in about
+  1 s for 180-310 k triangles (typed arrays and a visibility buffer, one pass
+  per triangle); a deadline is checked per mesh and per 32 scanlines.
+- [x] glTF export is world-space and un-instanced, so scatter-heavy worlds
+  are large (the 8-coin game is 14 MB); capped by the triangle budget and the
+  256 MB file cap. Instancing is a follow-up if exports of forests matter.
+- [x] No change to any browser bundle: all new code is Node-only in
+  `apps/cli`, and the studio build is unchanged.
+
+**Gates.** tsc 0 errors; `apps/cli` Vitest 3 files / 59 tests; studio build OK;
+smoke 28/28; `npm run e2e:mcp` passes against the real studio build.

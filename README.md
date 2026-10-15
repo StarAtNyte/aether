@@ -384,6 +384,7 @@ in uses your own Codex / Claude Code login.
 | `aether login [--device-auth]` | Runs `codex login` for **your own** ChatGPT account; says so if you are already signed in. `--claude` signs in to Claude Code |
 | `aether logout [--claude]` | Signs out |
 | `aether doctor` | Checks Node, dependencies, the build, the state folder, disk space, the port, and whether Codex / Claude Code are installed and signed in |
+| `aether mcp [--project-dir DIR] [--provider auto\|offline\|local]` | Runs Aether as an **MCP server** on stdio so Claude Code, Codex and editors can drive it: `create_world`, `edit`, `apply_patch`, `verify`, `playtest`, `replay`, `render_still`, `export`, `undo`. Works offline; confined to one project folder. See [docs/MCP.md](docs/MCP.md) |
 | `aether start --origin https://<hosted studio>` / `aether pair` | Also acts as the bridge for a hosted copy of the studio and prints a pairing code + one-click link |
 
 State (pid, port, per-install secret, logs, local data) lives in

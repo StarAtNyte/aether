@@ -1251,3 +1251,16 @@ npm run showcase:thumbs flagship covers from art-directed cameras (docs/screensh
   with a bot (capsule or vehicle, keyboard-like input, real physics and
   logic) to the win screen; `npm run e2e:showcase` opens and plays every
   featured world in Chromium and Firefox.
+
+## Aether as an MCP server (`apps/cli/src/mcp`)
+
+`aether mcp` puts the same loop behind the Model Context Protocol so other
+agents can drive it. It adds no new engine: a session wraps a core `History`
+(every change is a patch, so every tool action is one undo step), the
+`WorldAgent` over an `AgentHost` (offline planner or the local server's
+providers), the headless physics and logic runtime for `verify` and
+`playtest`, and a scene builder over the procgen kernel that feeds a software
+renderer (`render_still`) and a glTF writer (`export`). The project folder is
+the only thing the server reads or writes. See [MCP.md](MCP.md) for the tools,
+client configuration and safety model.
+

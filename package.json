@@ -43,6 +43,7 @@
     "bench:quick": "tsx scripts/bench/run.ts --quick",
     "library": "tsx scripts/build-generator-library.ts",
     "e2e:cli": "tsx tests/e2e/cli.e2e.ts",
+    "e2e:mcp": "tsx tests/e2e/mcp.e2e.ts",
     "assets:fetch": "tsx scripts/assets/fetch.ts",
     "assets:build": "tsx scripts/assets/build.ts",
     "assets:thumbs": "tsx scripts/assets/thumbs.ts",

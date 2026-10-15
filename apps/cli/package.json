@@ -12,8 +12,17 @@
     "start": "node bin/aether.mjs start"
   },
   "dependencies": {
+    "@aether/agent": "*",
+    "@aether/arch": "*",
+    "@aether/assets": "*",
     "@aether/bridge": "*",
+    "@aether/core": "*",
+    "@aether/logic": "*",
+    "@aether/physics": "*",
+    "@aether/procgen": "*",
     "@aether/server": "*",
+    "@gltf-transform/core": "4.5.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "tsx": "^4.23.15",
     "zod": "^4.6.6"
   }

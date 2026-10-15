@@ -294,6 +294,17 @@ async function cmdDoctor(o: CliOptions, paths: StatePaths): Promise<number> {
   return checks.some((c) => c.status === 'fail') ? 1 : 0;
 }
 
+/** `aether mcp`: serve the MCP protocol on stdio (stdout belongs to the protocol; nothing else may print there). */
+async function cmdMcp(o: CliOptions, paths: StatePaths): Promise<number> {
+  const { runStdioServer } = await import('./mcp/server');
+  const playerDir = o.playerDir ?? join(REPO_ROOT, 'apps/studio/dist');
+  err(`aether mcp: project folder ${resolve(o.projectDir ?? 'aether-project')} (the only place this server reads or writes)`);
+  return runStdioServer(
+    { projectDir: o.projectDir ?? 'aether-project', provider: o.provider, stateDir: paths.dir, playerDir, log: (l) => err(`aether mcp: ${l}`) },
+    version(),
+  );
+}
+
 /** Run the CLI; resolves to the exit code. */
 export async function main(argv: readonly string[]): Promise<number> {
   const parsed = parseArgs(argv, process.env);
@@ -328,5 +339,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       return cmdPair(paths);
     case 'doctor':
       return cmdDoctor(o, paths);
+    case 'mcp':
+      return cmdMcp(o, paths);
   }
 }

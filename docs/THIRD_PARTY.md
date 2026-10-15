@@ -38,6 +38,8 @@ These are bundled into the studio or executed by the server.
 | [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | server runtime (TypeScript loader), `smoke` and `e2e` scripts | © Hiroki Osame |
 | [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 (exact) | Apache-2.0 | `apps/bridge` only (local Aether Bridge; never in the browser bundle or the hosted server) | © OpenAI |
 | [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86 (exact) | Apache-2.0 | studio, **lazy chunk** loaded only after the user opts in to on-device AI | © MLC contributors |
+| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.1 (exact) | MIT | `@aether/cli` only (`aether mcp`, the stdio MCP server; never in the studio bundle or the hosted server) | © Anthropic, PBC and contributors |
+| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT | `@aether/cli` (`aether mcp` writes glTF without a browser; already a dev dependency of the repository) | © Don McCurdy |
 
 ## 2. Transitive runtime dependencies
 
@@ -388,3 +390,23 @@ reuses `@aether/core`, `@aether/physics`, `@aether/logic`, `@aether/procgen`,
 `zod` and `tsx` (the `aether-verify` bin runs the TypeScript sources like the
 `aether` CLI).
 
+
+### Aether as an MCP server (`aether mcp`)
+
+One new runtime dependency, `@modelcontextprotocol/sdk` 1.32.1 (MIT), pinned
+exactly and used only by `apps/cli`. Its transitive packages are all
+permissively licensed: MIT (`express` 5.3.0, `cors`, `cross-spawn`, `jose`,
+`ajv`, `ajv-formats`, `eventsource`, `eventsource-parser`, `express-rate-limit`,
+`ip-address`, `pkce-challenge`, `raw-body`, `body-parser`, `content-type`,
+`debug`, `iconv-lite`, `mime-types` and the small Express helpers),
+BSD-3-Clause (`qs`, `fast-uri`), BSD-2-Clause (`json-schema-typed`) and ISC
+(`zod-to-json-schema`, `which`, `isexe`, `once`, `wrappy`, `inherits`,
+`setprototypeof`). The stdio server uses only the SDK's server, client (tests)
+and stdio and in-memory transports; the HTTP transports (and so Express) are
+never started. `@gltf-transform/core` 4.5.1 (MIT, already a repository dev
+dependency) writes the headless glTF. The software renderer (`render_still`),
+the PNG encoder (on `node:zlib`), the scene builder and the playtest bot are
+original TypeScript; the renderer follows textbook techniques (edge-function
+rasterisation with perspective-correct barycentrics, shadow mapping with
+percentage-closer filtering, Blinn-Phong, the Narkowicz ACES filmic fit).
+No model, image or font is bundled.
