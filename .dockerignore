@@ -1,0 +1,28 @@
+# Build context of the root Dockerfile: sources only. Never secrets, local
+# data, git history, dependencies or build output (all rebuilt in the image).
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!.env.example
+**/*.log
+**/*.tsbuildinfo
+.git
+.github
+.claude
+.private
+.cache
+apps/server/data
+AGENTS.md
+research.md
+docs
+tests
+experiments
+packages/*/test
+apps/*/test
+Dockerfile
+.dockerignore
+docker-compose.yml
+fly.toml
+render.yaml
+vercel.json

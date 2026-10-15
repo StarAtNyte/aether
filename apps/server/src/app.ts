@@ -14,6 +14,7 @@ import { createClientIpResolver, type ClientIpResolver } from './client-ip';
 import { secretValues, type ServerConfig } from './config';
 import { JsonFileStore } from './file-store';
 import type { GeneratorValidator } from './generator-validation';
+import { sendErrorPage, wantsHtmlPage } from './error-pages';
 import { fail } from './http';
 import { scrub, silentLogger, type Logger } from './logger';
 import { accessGate, ADMIN_HEADER, hostGuard, secretEquals, sessionCookie } from './local-guard';
@@ -190,7 +191,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
 
   if (config.serveStatic) registerStatic(app, config.staticDir, logger);
 
-  app.notFound((c) => fail(c, 404, 'not-found', 'Route not found.'));
+  app.notFound((c) => (wantsHtmlPage(c) ? sendErrorPage(c, 404) : fail(c, 404, 'not-found', 'Route not found.')));
   app.onError((err, c) => {
     if (err instanceof HTTPException && err.status < 500) {
       return fail(c, err.status === 413 ? 413 : 400, err.status === 413 ? 'payload-too-large' : 'bad-request', 'The request could not be processed.');
@@ -201,7 +202,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
       errorName: err instanceof Error ? err.name : typeof err,
       error: scrub(err instanceof Error ? err.message : String(err), secrets),
     });
-    return fail(c, 500, 'internal', 'Internal server error.');
+    return wantsHtmlPage(c) ? sendErrorPage(c, 500) : fail(c, 500, 'internal', 'Internal server error.');
   });
 
   return app;

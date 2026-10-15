@@ -749,6 +749,7 @@ All LLM output and all user input are treated as untrusted.
 | Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
 | Benchmark | `npm run build && npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles, CPU in the renderer and the view planner while the camera orbits; `--classic` for the full-detail engine, `--cycles=N` checks GPU objects stay flat across rebuilds. |
 | Publish | `npm run build && npm run e2e:publish` | See the scripts table. Hosting publishers (Netlify, Vercel, GitHub Pages, itch.io) are tested in `apps/server/test/publish.test.ts` against fake command-line tools on PATH — never real deploys. |
+| Deployment | `npm test` (`apps/server/test/deploy.test.ts`); `docker build -t aether . && docker run -d -p 127.0.0.1:8787:8787 aether && BASE_URL=http://127.0.0.1:8787 npm run e2e` | Precompressed static files (Brotli / gzip, identity for ranges), cache policy, 404 / 500 pages, socket timeouts, and the invariants of `Dockerfile`, `fly.toml`, `render.yaml`, `docker-compose.yml`, `vercel.json` and CI. Any e2e suite runs against a live deployment with `BASE_URL`. |
 | Types | `npm run typecheck` | Strict TypeScript, zero errors (including `experiments/`) |
 
 Install the browsers for e2e once with `npx playwright install chromium firefox`.
@@ -779,17 +780,26 @@ Chromium and Firefox.
 the studio from one container:
 
 ```bash
-docker build -f apps/server/Dockerfile -t aether .
-docker run -p 8787:8787 -e AETHER_DAILY_TOKEN_BUDGET=2000000 -v aether-data:/data aether
+docker build -t aether .
+docker run --rm -p 127.0.0.1:8787:8787 -v aether-data:/data aether
+# or: docker compose up -d --build
 ```
 
-The image is multi-stage on `node:22-slim`, runs as non-root and includes a
-`HEALTHCHECK` on `/api/health`. SIGTERM drains requests gracefully. It uses
-the offline mock planner unless you configure a server model
-(`AETHER_PROVIDER` plus a key); a server key is spent by everyone who can
-reach the server, so keep it off for public deployments. Fly.io, Render and
-Railway notes are in [`apps/server/README.md`](apps/server/README.md#deploying)
-(set `TRUST_PROXY_HOPS=1` and mount a volume at `/data`).
+The image is multi-stage on `node:24-bookworm-slim`: production dependencies
+only, a precompressed (Brotli + gzip) studio, the unprivileged `node` user, a
+`HEALTHCHECK` on `/api/health`, a capped heap and a graceful drain on
+SIGTERM. It never runs anyone's Codex / Claude Code login and uses the
+offline planner unless you configure a server model (`AETHER_PROVIDER` plus
+a key); a server key is spent by everyone who can reach the server, so keep
+it off for public deployments. `fly.toml` (always-on machine) and
+`render.yaml` are ready to use.
+
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) has the step-by-step for Vercel,
+the local app, Docker, Fly.io and Render, the environment variable
+reference and the uptime checklist. CI (`.github/workflows/ci.yml`) runs the
+typecheck, unit tests, build, smoke, both e2e browsers and a container build
+on every push. Any e2e suite can test a running deployment with
+`BASE_URL=http://127.0.0.1:8787 npm run e2e`.
 
 ## Research inspirations
 

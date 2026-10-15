@@ -98,11 +98,15 @@ async function startStaticHost(): Promise<StaticHost> {
         res.writeHead(400).end();
         return;
       }
+      // Like the static host: a directory serves its index.html.
+      if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
       const isFile = existsSync(file) && statSync(file).isFile();
       if (!isFile) {
         const rw = rewrites.find((r) => r.source.test(path));
         if (!rw) {
-          res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
+          // Like Vercel: unmatched paths get the build's 404.html with a 404 status.
+          const notFound = join(STUDIO_DIST, '404.html');
+          res.writeHead(404, { 'content-type': MIME['.html'] ?? 'text/html' }).end(existsSync(notFound) ? readFileSync(notFound) : 'not found');
           return;
         }
         file = join(STUDIO_DIST, rw.destination);
@@ -514,6 +518,12 @@ async function main(): Promise<void> {
   try {
     const health = await fetch(`${host.url}/api/health`);
     check(health.status === 404, 'the static host must not serve /api');
+    // Unknown paths get the designed 404 page; the link-preview card and icons are served.
+    const lost = await fetch(`${host.url}/no/such/page`);
+    check(lost.status === 404 && (await lost.text()).includes('Page not found'), 'unknown paths must answer the 404 page');
+    for (const asset of ['/og.jpg', '/apple-touch-icon.png', '/site.webmanifest', '/robots.txt']) {
+      check((await fetch(`${host.url}${asset}`)).status === 200, `${asset} must be served`);
+    }
     const chromiumMs = await runBrowser('Chromium', () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] }), host);
     const firefoxMs = await runBrowser('Firefox', () => firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }), host);
     log(`\nhosted e2e passed (own-key turn: Chromium ${chromiumMs} ms, Firefox ${firefoxMs} ms)`);

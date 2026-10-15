@@ -4,6 +4,7 @@
  *
  * Run with `npm run start -w @aether/server` (or `dev` for watch mode).
  */
+import { Server as HttpServer } from 'node:http';
 import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
@@ -13,7 +14,8 @@ import { loadSandboxValidator } from './generator-validation';
 import { createLiveProvider } from './llm/providers';
 import { planProviders } from './llm/provider-plan';
 import { createRotatingSink } from './log-file';
-import { createLogger } from './logger';
+import { createLogger, scrub } from './logger';
+import { applyHttpTimeouts } from './server-timeouts';
 import type { LiveLlm } from './routes/llm';
 import type { LocalBridgeInfo } from './routes/local';
 import { bridgePublish, createPublishServices } from './publish/services';
@@ -80,11 +82,15 @@ async function main(): Promise<void> {
     });
   });
   logger.debug('config', { config: JSON.stringify(redactConfig(config)) });
+  // Outlive proxy idle timeouts (no 502 races on reused connections) and bound slow request uploads.
+  if (server instanceof HttpServer) applyHttpTimeouts(server);
 
   let stopping = false;
-  const stop = (signal: string): void => {
+  /** Drain and exit. `exitCode` 1 marks a crash so the supervisor (Docker, Fly, Render) restarts us. */
+  const stop = (signal: string, exitCode = 0): void => {
     if (stopping) return;
     stopping = true;
+    if (exitCode !== 0) process.exitCode = exitCode;
     logger.info('shutting down', { signal });
     shutdown.abort();
     void generatorValidator?.dispose();
@@ -98,7 +104,7 @@ async function main(): Promise<void> {
     force.unref();
     server.close((err) => {
       if (err) logger.error('error while closing server', { error: err.message });
-      process.exit(err ? 1 : 0);
+      process.exit(err ? 1 : exitCode);
     });
     if ('closeIdleConnections' in server && typeof server.closeIdleConnections === 'function') server.closeIdleConnections();
   };
@@ -106,6 +112,19 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => stop('SIGINT'));
   if (process.platform === 'win32') process.once('SIGBREAK', () => stop('SIGBREAK'));
   stopRef.current = stop;
+
+  // A programming error left the process in an unknown state: log it (scrubbed, no stack in
+  // production logs) and drain gracefully with a failure code instead of dying mid-response.
+  const secrets = secretValues(config);
+  const fatal = (kind: string, err: unknown): void => {
+    logger.error(kind, {
+      errorName: err instanceof Error ? err.name : typeof err,
+      error: scrub(err instanceof Error ? err.message : String(err), secrets),
+    });
+    stop(kind, 1);
+  };
+  process.on('uncaughtException', (err) => fatal('uncaught exception', err));
+  process.on('unhandledRejection', (reason) => fatal('unhandled rejection', reason));
 }
 
 main().catch((err: unknown) => {

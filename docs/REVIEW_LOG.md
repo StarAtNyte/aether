@@ -2214,3 +2214,112 @@ complete run after it passed); studio build OK; smoke 37/37; `npm run e2e`
 passes in Chromium WebGPU, Chromium WebGL2 and Firefox WebGL2;
 `npm run e2e:security` and `npm run e2e:soak` pass in Chromium and Firefox;
 `e2e:memory` passes in Chromium (Firefox: see above).
+
+## Stage: deployment
+
+Product shape: the public address is the static copy (`vercel.json`, no
+server, nothing paid by the owner); the local app is `npx aether start`; the
+container (`Dockerfile`, `docker-compose.yml`, `fly.toml`, `render.yaml`) is
+an optional self-hosting extra that can never run anyone's Codex / Claude
+Code login (`AETHER_HOSTED=1`, `AETHER_LOCAL_AI=off`).
+
+### Bugs found and fixed during the stage
+
+- **The container could not build.** `apps/server/Dockerfile` copied only
+  `packages/` and `apps/`, but the studio build imports `scripts/vite/*` and
+  `assets/catalog.json` and copies `assets/lib`. Replaced by a root
+  `Dockerfile` (build → production deps → runtime) and `.dockerignore`;
+  `deploy.test.ts` pins its invariants.
+- **The runtime image shipped every dev dependency** (Playwright, Vitest,
+  TypeScript, Vite) and the 432 MB Codex binaries. The runtime now holds
+  `npm ci --omit=dev` (71 MB of `node_modules`) without the Codex binaries.
+- **The server sent the studio uncompressed** (three.js 1.24 MB on the wire).
+  Brotli / gzip siblings are written at build time (`precompress.ts`) and
+  sent with `Vary: Accept-Encoding`: three.js 269 KB Brotli, the entry chunk
+  106 → 29 KB, the whole build 49 → 25 MB. Byte ranges always get the
+  identity file (a precompressed range would be corrupt).
+- **Cache headers on non-hashed files were never applied.** `serveStatic`
+  calls `onFound` after building its response, so `Cache-Control: no-cache`
+  set there was dropped (only the separate `/assets/*` middleware worked).
+  Cache policy is now applied to the returned response; regression tests
+  cover `/`, `/fonts/*`, `/assets/*` and root files.
+- **Unknown paths answered 200 with the app** (soft 404s on both hosts). The
+  studio routes only with the URL hash, so the server and `vercel.json` now
+  answer a designed, script-free 404 page with status 404; `/api/*` keeps
+  JSON. Server errors show a 500 page to browsers (never the error text).
+- **Keep-alive raced proxy idle timeouts.** Node's 5 s keep-alive is shorter
+  than Fly / Render proxies' ~60 s idle timeout (sporadic 502s). Now 65 s
+  keep-alive, 66 s headers, 120 s per request (`server-timeouts.ts`).
+- **Crashes skipped the graceful drain.** Uncaught exceptions / unhandled
+  rejections are now logged scrubbed and drain like SIGTERM with exit code 1.
+- **No link preview.** `index.html` had no Open Graph / Twitter tags, no
+  touch icon or manifest. Added a 1200×630 share card rendered from the
+  project's own showcase renders (`scripts/brand/render.ts`), icons, a web
+  app manifest and `robots.txt`; a Vite plugin makes the preview URLs absolute
+  from `VITE_AETHER_SITE_URL` / `VERCEL_PROJECT_PRODUCTION_URL` (strict https
+  origin validation).
+- `apps/server/README.md` still said `AETHER_PROVIDER` defaults to
+  `anthropic`; it defaults to `mock`.
+- Platform health checks (every 15–30 s) flooded info-level logs; a 2xx
+  `/api/health` is now logged at debug (test).
+
+### Container verification
+
+`docker build -t aether:deploy-check .` (one build): image 177 MB
+compressed / 623 MB on disk, `node_modules` 73 MB, no Codex binaries, runs
+as uid 1000 (`node`). Healthy ~3 s after start, 86–128 MB memory, Docker
+health status `healthy`. `curl /api/health` → mock mode; `/` → 200 Brotli,
+`no-cache`; unknown page → 404. `BASE_URL=http://127.0.0.1:18788 npm run e2e`
+against the container passed in Chromium WebGPU, Chromium WebGL2 and
+Firefox WebGL2 (241 × 200, one expected 404, no 5xx; 10.9 MB sent for the
+whole suite). `docker stop` drained and exited in 0.35 s. Container and
+image removed afterwards. `docker compose config` validates; `docker build
+--check` reports no warnings.
+
+### Security checklist
+
+- [x] **New input boundaries.** `BASE_URL` / `AETHER_E2E_URL` (test-only):
+  parsed with `URL`, http(s) only, no credentials / query / fragment
+  (`externalBaseUrl`, tests). Build env `VITE_AETHER_SITE_URL` /
+  `VERCEL_PROJECT_PRODUCTION_URL`: strict https-origin regex, otherwise
+  ignored, so no markup can be injected into `index.html` (tests with
+  injection attempts). `precompressDir` never follows symlinks and stops at a
+  file cap (tests). Siblings are never served under their own names.
+- [x] **No eval / innerHTML.** Error pages are constant strings with no
+  script or external resource; they never echo request data or errors.
+- [x] **CSP unchanged** and still identical between the server and
+  `vercel.json` (`csp.test.ts`); the 404 page, card and icons are same-origin.
+- [x] **No secrets.** No key in any manifest (test); the image needs none;
+  CI sets `AETHER_PROVIDER=mock`. Built bundle grepped for key patterns:
+  none. Build context checked by exporting it: 48 MB, no `.env`, `.git`,
+  `node_modules`, `dist`, tests or private notes.
+- [x] **Container.** Non-root `node` user, production dependencies only,
+  exec-form CMD, `HEALTHCHECK`; compose adds read-only root FS,
+  `no-new-privileges`, `cap_drop: ALL`, memory / CPU / PID limits and a
+  loopback-only port. Fly / Render trust exactly one proxy hop.
+- [x] **Dependencies.** No new npm dependency. `npm audit --omit=dev`:
+  0 vulnerabilities (also a CI step).
+
+### Performance checklist
+
+- [x] **Per-frame allocations / GPU resources.** No client render code
+  changed.
+- [x] **Bundle.** First-frame bytes unchanged except `index.html`
+  (950 → 983 B gzip, preview tags). The card (96 KB) and icons are fetched
+  only by link-preview crawlers and installs. On the self-hosted server the
+  first-load transfer drops by about 75 % (Brotli instead of identity).
+- [x] **Server memory.** Production-deps runtime, same env and CMD as the
+  image: 170 MB RSS after boot, 130 MB peak HWM over a full `npm run e2e`
+  run with no 5xx (heap capped at 384 MB in the image). Precompression of
+  the full build: 18 s (Brotli 11 for text, 5 for binaries, two lanes).
+- [x] **Firefox / WebGL2.** `BASE_URL=… npm run e2e` against the
+  production-deps server passed in Chromium WebGPU (first frame 4.1 s),
+  Chromium WebGL2 (3.0 s) and Firefox WebGL2 (3.7 s) on a software GPU, with
+  precompressed assets served; `e2e:hosted` (the Vercel setup) passed in
+  Chromium and Firefox, including the new 404 / card / icon checks.
+
+**Gates.** tsc 0 errors; Vitest 187 files / 2353 tests pass; studio build
+OK; smoke 37/37; `npm run e2e` passes against the container and against the
+production-dependencies server (Chromium WebGPU, Chromium WebGL2, Firefox
+WebGL2); `e2e:hosted` (Vercel setup) and `e2e:cli` (one-command local app)
+pass in Chromium and Firefox; `npm audit --omit=dev` 0 vulnerabilities.

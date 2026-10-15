@@ -150,6 +150,25 @@ boundary, so do not turn it on for a public server.
   it never sees a password or token. The bridge address field accepts only
   loopback origins (`normalizeBridgeUrl`).
 
+## Self-hosted container
+
+- The image (`Dockerfile`) sets `AETHER_HOSTED=1` and `AETHER_LOCAL_AI=off`:
+  the server refuses local AI, so it can never run a Codex / Claude Code
+  login on behalf of visitors. Without a configured key it serves the
+  offline planner; it needs no secret.
+- Runs as the unprivileged `node` user with production dependencies only
+  (no compilers, test tools or the Codex binaries); the build context
+  excludes `.env*`, `.git`, local data and private notes (`.dockerignore`).
+- `docker-compose.yml` adds a read-only root file system, `no-new-privileges`,
+  `cap_drop: ALL`, memory / CPU / PID limits and a loopback-only port.
+- Browser navigations to unknown paths and server errors get static,
+  script-free error pages that never echo the request or the error;
+  `/api/*` keeps JSON errors. Logs carry method, path, status, duration and
+  request id only (no bodies, queries or keys); uncaught errors are logged
+  scrubbed and the process drains and exits for a clean restart.
+- Socket timeouts bound slow clients (whole request within 120 s) while
+  keep-alive outlives proxy idle timeouts (65 s).
+
 ## Bring your own key
 
 A user's own API key (Anthropic, OpenAI, OpenRouter or Google Gemini) is

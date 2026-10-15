@@ -65,7 +65,7 @@ the player's own CSP (`PLAY_CSP`: no third-party hosts, embeddable).
 | --- | --- |
 | `PORT` / `HOST` | `8787` / `127.0.0.1` (the Docker image sets `HOST=0.0.0.0`) |
 | `NODE_ENV` | `development` (`production` turns on static serving and HSTS) |
-| `AETHER_PROVIDER` | `anthropic` (`openai`, `mock`). Falls back to the other provider if only its key is set. |
+| `AETHER_PROVIDER` | `mock` (offline planner). `anthropic` / `openai` use that provider's key; `codex` / `claude-code` (local only) the signed-in CLI. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | none |
 | `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic models per role (critic defaults to planner) |
 | `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI models per role |
@@ -107,15 +107,18 @@ the bridge (`/v1/publish/*`).
 
 ## Deploying
 
-The image runs the server and serves the studio from a single container:
+The root `Dockerfile` runs this server and serves the studio from a single container
+(see [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) for Vercel, Docker, Fly.io and Render):
 
 ```
-docker build -f apps/server/Dockerfile -t aether .
-docker run -p 8787:8787 -e ANTHROPIC_API_KEY=… -e TRUST_PROXY_HOPS=0 -v aether-data:/data aether
+docker build -t aether .
+docker run --rm -p 127.0.0.1:8787:8787 -v aether-data:/data aether
 ```
 
-- **Fly.io**: run `fly launch --dockerfile apps/server/Dockerfile` and set `internal_port = 8787`. Then run `fly secrets set ANTHROPIC_API_KEY=…` and set `TRUST_PROXY_HOPS=1`. Mount a volume at `/data`. Health check: `GET /api/health`.
-- **Render** and **Railway**: create a Docker service from the repo with Dockerfile path `apps/server/Dockerfile`, set the env vars above (`TRUST_PROXY_HOPS=1`), and attach a disk at `/data`. Health check path: `/api/health`.
+- **Fly.io**: `fly.toml` at the repository root (one always-on machine, `/api/health` check, volume at `/data`, `TRUST_PROXY_HOPS=1`).
+- **Render**: `render.yaml` at the repository root (Docker web service, health check path `/api/health`, `TRUST_PROXY_HOPS=1`).
+- **Docker Compose**: `docker-compose.yml` (loopback port, read-only root file system, resource limits, restart policy).
 - The studio is served from the same origin, so `ALLOWED_ORIGINS` only matters for other origins, such as a separately hosted studio.
-- Keep `AETHER_DAILY_TOKEN_BUDGET` set on public deployments.
-- SIGTERM drains in-flight requests (10 s grace) and aborts upstream LLM calls.
+- Keep `AETHER_DAILY_TOKEN_BUDGET` set if you configure a key; by default the server needs none (offline planner).
+- SIGTERM drains in-flight requests (10 s grace) and aborts upstream LLM calls; uncaught errors drain the same way with exit code 1.
+- Static files are sent precompressed (`.br` / `.gz` written by `scripts/precompress.ts` in the image build); browser navigations to unknown paths get a 404 page, `/api/*` keeps JSON errors.

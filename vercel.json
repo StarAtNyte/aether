@@ -10,10 +10,6 @@
     {
       "source": "/play",
       "destination": "/play.html"
-    },
-    {
-      "source": "/((?!assets/|fonts/|api/).*)",
-      "destination": "/index.html"
     }
   ],
   "headers": [

@@ -1,0 +1,26 @@
+# Render Blueprint: optional self-hosting of the Aether server + studio
+# container. The public copy of the studio is the static site (vercel.json);
+# see docs/DEPLOYMENT.md before exposing a server to the internet.
+#
+# Free instances sleep after 15 idle minutes (the first visit then waits
+# ~1 minute). For an always-on copy use a paid instance type, or the static
+# site, which never sleeps. Free instances have no persistent disk: shared
+# world links stored on the server are lost on restart (projects live in the
+# visitor's browser and are unaffected).
+services:
+  - type: web
+    name: aether
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Render's proxy is one hop: trust its X-Forwarded-For entry for rate limiting.
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: LOG_LEVEL
+        value: info
+      - key: AETHER_DAILY_TOKEN_BUDGET
+        value: "2000000"

@@ -28,6 +28,8 @@ export function accessLog(logger: Logger): MiddlewareHandler<AppEnv> {
     };
     if (status >= 500) logger.error('request', fields);
     else if (status >= 400) logger.warn('request', fields);
+    // Platform health checks hit /api/health every few seconds: keep them out of info-level logs.
+    else if (fields.path === '/api/health') logger.debug('request', fields);
     else logger.info('request', fields);
   };
 }

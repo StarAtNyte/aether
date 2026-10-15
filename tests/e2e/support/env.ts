@@ -119,12 +119,38 @@ export interface TestServer {
 }
 
 /**
+ * The already-running deployment to test instead of starting a server:
+ * `AETHER_E2E_URL`, or `BASE_URL` (e.g. a container: `BASE_URL=http://127.0.0.1:8787 npm run e2e`).
+ * Only plain http(s) origins with an optional path are accepted; null when unset.
+ */
+export function externalBaseUrl(env: Readonly<Record<string, string | undefined>> = process.env): string | null {
+  const raw = (env['AETHER_E2E_URL'] || env['BASE_URL'] || '').trim();
+  if (raw === '') return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`invalid AETHER_E2E_URL / BASE_URL: ${raw.slice(0, 80)}`);
+  }
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password || url.search || url.hash) {
+    throw new Error('AETHER_E2E_URL / BASE_URL must be a plain http(s) URL');
+  }
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+}
+
+/**
  * Start the Aether server (mock LLM, static studio) on a free port, or reuse
- * `AETHER_E2E_URL` when set (then `stop()` is a no-op).
+ * the deployment named by {@link externalBaseUrl} (then `stop()` is a no-op
+ * and the health endpoint is checked first).
  */
 export async function startServer(log: (line: string) => void): Promise<TestServer> {
-  const external = process.env['AETHER_E2E_URL'];
-  if (external) return { url: external.replace(/\/+$/, ''), stop: async () => undefined };
+  const external = externalBaseUrl();
+  if (external) {
+    const res = await fetch(`${external}/api/health`).catch(() => null);
+    if (!res?.ok) throw new Error(`${external}/api/health is not healthy`);
+    log(`testing the running deployment at ${external}`);
+    return { url: external, stop: async () => undefined };
+  }
   if (!existsSync(join(STUDIO_DIST, 'index.html'))) throw new Error('apps/studio/dist is missing — run `npm run build` first.');
 
   const port = await freePort();

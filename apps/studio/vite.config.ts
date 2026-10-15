@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
 import { assetLibrary } from '../../scripts/vite/asset-library.ts';
 import { playerManifest } from '../../scripts/vite/player-manifest.ts';
+import { siteMeta } from '../../scripts/vite/site-meta.ts';
 
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
@@ -36,7 +37,7 @@ function playRoute() {
 
 export default defineConfig({
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR), playRoute(), playerManifest()],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR), playRoute(), playerManifest(), siteMeta()],
   experimental: {
     // The player page and every chunk reference files relative to themselves, so a published
     // build works from any sub-path (itch.io, GitHub Pages, a folder on any static host).

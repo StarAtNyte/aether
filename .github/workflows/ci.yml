@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  # Never reach a paid model from CI: everything runs on the offline planner.
+  AETHER_PROVIDER: mock
+
+jobs:
+  check:
+    name: Typecheck, tests, build, smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test -- --maxWorkers=2
+      - run: npm run build
+      - run: npm run smoke
+      - run: npm audit --omit=dev --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-dist
+          path: apps/studio/dist
+          retention-days: 3
+
+  e2e:
+    name: End to end (Chromium WebGPU + WebGL2, Firefox WebGL2)
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-dist
+          path: apps/studio/dist
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run e2e
+      - run: npm run e2e:hosted
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: docs/screenshots
+          retention-days: 7
+
+  docker:
+    name: Container image
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: aether:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run and probe
+        run: |
+          docker run -d --name aether-ci -p 127.0.0.1:8787:8787 aether:ci
+          for i in $(seq 1 60); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' aether-ci)" = healthy ]; then break; fi
+            sleep 2
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' aether-ci)" = healthy
+          curl -fsS http://127.0.0.1:8787/api/health
+          curl -fsS -o /dev/null -H 'Accept: text/html' http://127.0.0.1:8787/
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: text/html' http://127.0.0.1:8787/no-such-page)" = 404
+          curl -fsS -D - -o /dev/null -H 'Accept-Encoding: br' http://127.0.0.1:8787/ | grep -i '^content-encoding: br'
+          test "$(docker exec aether-ci id -u)" != 0
+      - if: always()
+        run: docker logs aether-ci || true
+      - if: always()
+        run: docker rm -f aether-ci || true

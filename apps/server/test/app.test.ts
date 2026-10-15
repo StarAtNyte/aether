@@ -177,15 +177,17 @@ describe('static studio hosting', () => {
     expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
-  it('serves index.html with no-cache and falls back to it for SPA routes', async () => {
+  it('serves index.html with no-cache, and a real 404 page for unknown pages (the studio routes by hash)', async () => {
     const app = staticApp();
     const root = await app.request('/');
     expect(root.status).toBe(200);
+    expect(root.headers.get('cache-control')).toBe('no-cache');
     expect(await root.text()).toContain('<title>Aether</title>');
-    const spa = await app.request('/play/abc', { headers: { Accept: 'text/html' } });
-    expect(spa.status).toBe(200);
-    expect(spa.headers.get('cache-control')).toBe('no-cache');
-    expect(await spa.text()).toContain('Aether');
+    const unknown = await app.request('/play/abc', { headers: { Accept: 'text/html' } });
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get('content-type')).toContain('text/html');
+    expect(unknown.headers.get('cache-control')).toBe('no-store');
+    expect(await unknown.text()).toContain('Page not found');
   });
 
   it('does not SPA-fallback API routes or non-HTML requests', async () => {

@@ -1,0 +1,50 @@
+# Self-host the Aether server + studio on your own machine or server.
+#
+#   docker compose up -d --build        # http://127.0.0.1:8787
+#   docker compose logs -f aether
+#   docker compose down
+#
+# Listens on loopback only by default. To serve other machines, put it behind
+# a TLS reverse proxy (set TRUST_PROXY_HOPS=1) rather than publishing the
+# port directly. Variables come from your shell or a `.env` file next to this
+# file (never committed); see docs/DEPLOYMENT.md for the full reference.
+
+services:
+  aether:
+    build: .
+    image: aether:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AETHER_PORT:-8787}:8787"
+    environment:
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # Offline planner unless you name a provider and give it your own key.
+      AETHER_PROVIDER: ${AETHER_PROVIDER:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AETHER_DAILY_TOKEN_BUDGET: ${AETHER_DAILY_TOKEN_BUDGET:-2000000}
+    volumes:
+      - aether-data:/data
+    # Hardening: read-only root file system (tsx's transpile cache goes to /tmp),
+    # no added privileges, no Linux capabilities, bounded memory and CPU.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  aether-data:
