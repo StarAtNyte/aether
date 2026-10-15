@@ -37,10 +37,13 @@ function errorText(err: unknown): string {
 
 /** Node AgentHost: History for edits, Rapier + logic for verification. */
 export class NodeAgentHost implements AgentHost {
-  readonly history = new History(createWorld());
+  readonly history: History;
   verifyRuns = 0;
 
-  constructor(private readonly sandbox: SandboxRunner) {}
+  /** @param initial the world to start from (default: an empty world) */
+  constructor(private readonly sandbox: SandboxRunner, initial?: WorldDoc) {
+    this.history = new History(initial ?? createWorld());
+  }
 
   getWorld(): WorldDoc {
     return this.history.current;

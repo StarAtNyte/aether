@@ -39,6 +39,8 @@
     "e2e:local": "tsx tests/e2e/local.e2e.ts",
     "e2e:hosted": "tsx tests/e2e/hosted.e2e.ts",
     "eval": "tsx scripts/eval-agent.ts",
+    "bench": "tsx scripts/bench/run.ts",
+    "bench:quick": "tsx scripts/bench/run.ts --quick",
     "library": "tsx scripts/build-generator-library.ts",
     "e2e:cli": "tsx tests/e2e/cli.e2e.ts",
     "assets:fetch": "tsx scripts/assets/fetch.ts",
