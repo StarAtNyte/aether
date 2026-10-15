@@ -23,10 +23,14 @@ import { DOOR_CLEARANCE, LINING } from './openings';
 import { openingSpans } from './wall';
 import { StairParams, WallParams } from './params';
 import { stairFootprint, stairLayout } from './stair';
+import { analyzeRoomPlacements } from './placement';
+import { placedPolygon } from './entity-geom';
+
+export { placedPolygon };
 
 /** One problem found by the checks, with the entities involved and a concrete fix. */
 export interface ArchIssue {
-  code: 'unreachable_room' | 'door_blocked' | 'furniture_overlap' | 'floating' | 'no_entrance';
+  code: 'unreachable_room' | 'door_blocked' | 'furniture_overlap' | 'floating' | 'no_entrance' | 'wall_item_on_opening' | 'wall_item_overlap' | 'curtain_off_window';
   message: string;
   entities: EntityId[];
   hint: string;
@@ -83,22 +87,6 @@ function params(e: Entity): Record<string, Json> {
 
 function generatorOf(e: Entity): string | null {
   return e.shape.kind === 'procedural' ? e.shape.generator : null;
-}
-
-/** Plan polygon of a slab-like entity (polygon param + transform), in its parent's frame. */
-/** World-space outline of a room or slab entity (`polygon` param), or null. */
-export function placedPolygon(e: Entity, key = 'polygon'): P2[] | null {
-  const raw = params(e)[key];
-  if (!Array.isArray(raw)) return null;
-  const pos = e.transform.position;
-  const yaw = e.transform.rotation[1];
-  const out: P2[] = [];
-  for (const p of raw.slice(0, 256)) {
-    if (!Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number') return null;
-    const r = rotateYaw(p[0], p[1], yaw);
-    out.push([pos[0] + r[0], pos[2] + r[1]]);
-  }
-  return out.length >= 3 ? out : null;
 }
 
 /** Floor footprint of a furniture entity (null for wall / ceiling / surface pieces and rugs). */
@@ -486,6 +474,8 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
       if (!ok) issues.push({ code: 'floating', message: `${def.kind} ${e.id} is not supported (y = ${y.toFixed(2)})`, entities: [e.id], hint: def.mount === 'floor' ? 'Set its y to 0 (floor level of its storey).' : def.mount === 'surface' ? 'Put it on top of a table or nightstand (y = the host top).' : `Hang it at the ceiling (y = ${(L.height - 0.22).toFixed(2)}).` });
     }
   }
+  // Wall pieces (pictures, curtains, mirrors, TVs …) must not sit over doors, windows or each other.
+  for (const p of analyzeRoomPlacements(world, buildingId)) issues.push({ code: p.code, message: p.message, entities: p.entities, hint: p.hint });
   report.passed = issues.length === 0;
   report.ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 10) / 10;
   return report;

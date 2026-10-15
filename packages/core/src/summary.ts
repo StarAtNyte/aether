@@ -35,6 +35,12 @@ export interface SummaryOptions {
    * even past `maxEntities` and tagged `user-edited(paths)`, newest first.
    */
   userEdits?: ReadonlyMap<EntityId, { paths: readonly string[]; age: number }>;
+  /**
+   * Extra lines listed under a parametric building's digest (the architecture
+   * package supplies its walls, openings and wall pieces here, so a model sees
+   * what hangs where without the hundreds of part entities).
+   */
+  buildingDetail?: (world: WorldDoc, buildingId: EntityId) => string[];
 }
 
 const DEFAULT_MAX_ENTITIES = 300;
@@ -380,7 +386,10 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
       if (!include.has(id)) continue;
       lines.push(entityLine(world, world.entities[id] as Entity, depth, opts.userEdits?.get(id)));
       const digest = buildings.get(id);
-      if (digest) lines.push(`${'  '.repeat(depth + 1)}${digest}`);
+      if (digest) {
+        lines.push(`${'  '.repeat(depth + 1)}${digest}`);
+        if (opts.buildingDetail) for (const extra of opts.buildingDetail(world, id)) lines.push(`${'  '.repeat(depth + 1)}${extra}`);
+      }
     }
     const omitted = order.length - include.size;
     if (omitted > 0) lines.push(`... ${omitted} more entities`);

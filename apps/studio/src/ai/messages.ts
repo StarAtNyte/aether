@@ -16,13 +16,17 @@ const ACTIONS: Readonly<Record<string, string>> = {
   forbidden_origin: 'the bridge does not allow this site yet. Restart it with --origin set to this address',
   invalid_url: 'the bridge address is not a local address',
   webllm_error: 'the on-device model failed',
+  model_unavailable: 'it does not offer the selected model on this account. Pick another model in Settings → AI connection',
+  context_too_large: 'the request is too large for its context window. Start from a smaller world or shorten the prompt',
+  network_error: 'it could not reach its own service (network error). Check your internet connection',
   webllm_context: 'this request is too long for the small on-device model. Try a shorter prompt, start from a smaller world, or use the local bridge',
 };
 
-/** Notice shown when a run falls back to the offline planner. */
-export function fallbackText(label: string, n: FallbackNotice): string {
-  const action = (n.reason && ACTIONS[n.reason]) ?? (n.code === 'network' ? 'it could not be reached' : n.code === 'auth' ? 'it rejected the credentials' : n.message);
-  return `${label} could not answer: ${action}. Finished with the offline planner instead.`.slice(0, 600);
+/** Notice shown when a run switches away from a failed assistant: to `next` (another assistant) or to the offline planner. */
+export function fallbackText(label: string, n: FallbackNotice, next?: string): string {
+  const action = ((n.reason && ACTIONS[n.reason]) ?? (n.code === 'network' ? 'it could not be reached' : n.code === 'auth' ? 'it rejected the credentials' : n.message)).replace(/[\s.]+$/, '');
+  const tail = next ? `Trying ${next} instead.` : 'Finished with the offline planner instead (it only handles simple edits, so fix the connection to get the full assistant).';
+  return `${label} could not answer: ${action}. ${tail}`.slice(0, 700);
 }
 
 /** True for a loopback studio origin (`http://localhost:…`, `http://127.0.0.1:…`). */

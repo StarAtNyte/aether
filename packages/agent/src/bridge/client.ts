@@ -44,6 +44,9 @@ const CODE_FOR: Readonly<Record<BridgeErrorCode, ProviderErrorCode>> = {
   tool_violation: 'invalid_response',
   backend_error: 'server',
   pairing_locked: 'rate_limit',
+  model_unavailable: 'not_found',
+  context_too_large: 'too_large',
+  network_error: 'network',
 };
 
 /** One request to the bridge or to local AI (internal to the clients). */

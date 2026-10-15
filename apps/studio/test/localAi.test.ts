@@ -121,3 +121,25 @@ describe('local AI connection', () => {
     expect(projectSessionKey(null)).toBeNull();
   });
 });
+
+describe('alternate assistants', () => {
+  it('lists the other signed-in backend (own default model), never the chosen one or a signed-out one', async () => {
+    const r = router({ '/api/health': () => json({ ok: true, mode: 'mock', providers: [], byok: true, local: true }), '/api/local/status': () => json(LOCAL(true, true)) });
+    const ai = new AiConnection({ fetch: r.fetch, session: null });
+    await ai.refresh();
+    const p = prefs({ mode: 'local', backend: 'codex' });
+    const resolved = ai.resolve(p);
+    expect(resolved).toMatchObject({ kind: 'local', ready: true });
+    const alts = ai.alternates(p, resolved);
+    expect(alts.map((a) => a.resolved.label)).toEqual(['Claude Code on this computer · sonnet']);
+    expect(ai.alternates(p, { kind: 'offline', label: 'x', ready: true, vision: false })).toEqual([]);
+  });
+
+  it('has no alternates when the other assistant is signed out', async () => {
+    const r = router({ '/api/health': () => json({ ok: true, mode: 'mock', providers: [], byok: true, local: true }), '/api/local/status': () => json(LOCAL(true, false)) });
+    const ai = new AiConnection({ fetch: r.fetch, session: null });
+    await ai.refresh();
+    const p = prefs({ mode: 'local', backend: 'codex' });
+    expect(ai.alternates(p, ai.resolve(p))).toEqual([]);
+  });
+});

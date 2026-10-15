@@ -2798,3 +2798,70 @@ real. Software GL makes Firefox start its project store a few seconds late, whic
 opens). Also fixed: the project home kept showing a thumbnail whose object URL it
 had just revoked (a `Failed to load resource` console error, seen once in
 `e2e:verified`).
+
+## Fix: wall decor over doors and windows, blind agent, silent provider failure
+
+**The report.** "why is the curtain over the door and the painting over the
+window": the Codex assistant failed with "Codex failed to answer.." and the offline
+planner then said it could not map the question; the Claude Code assistant said it
+could not see the textiles generator or which wall the door was on, and asked the user.
+
+**Root causes (all confirmed in code and by regression tests that fail on the old code).**
+- A. `RoomLayout.onWall` placed every wall piece at the requested offset with no check
+  against the wall's doors, windows, other pieces or tall furniture; `curtains()` hung
+  panels 12 cm *into* each window and past doors and corners; explicit plan items
+  (`place_item {kind:"curtain"|"art"}`, what "a bedroom with a curtain and a painting"
+  becomes) were put at the middle of a wall at 1.3 m, or fell through to the floor
+  placer. The old code produced such overlaps in the stock two-bedroom apartment itself.
+- B. A parametric building collapsed to one digest line in the model's world summary:
+  no walls, no openings, no wall pieces. A model could not diagnose anything and the
+  `inspect` tool returned the same summary.
+- C. The bridge swallowed the CLI's reason (every unknown failure became "<CLI> failed
+  to answer."), the studio appended another full stop, and the studio went straight from
+  the failed assistant to the offline planner, which only handles simple edits, without
+  trying the user's other signed-in assistant. (The reason Codex itself failed on that
+  machine is not recoverable from the report: the text was discarded. The new
+  classification and excerpt make the next occurrence legible.)
+
+**What changed.**
+- `wall-space.ts`: one rule set for wall pieces (blockers, per-kind margins, vertical
+  extents, nearest clear stretch). `RoomLayout.onWall` slides to the nearest clear
+  stretch (art and mirrors shrink first) or returns null; `onAnyWall` tries other walls;
+  `hangCurtain` anchors panels to a window (rod past the frame, narrower panels near a
+  door or corner, none when there is no room; sill-length in kitchens and baths).
+  Floor furniture and `againstWall` avoid hanging pieces; explicit curtains are placed
+  before pictures so they keep their window.
+- `placement.ts`: `analyzeRoomPlacements` audits any document (generated, hand-edited or
+  agent-built) with the same rules and returns wall, compass side, offsets, entity ids
+  and a minimal fix. `checkBuilding` includes it, so the `navigable` test, the repair
+  turn and `build_architecture` results flag it.
+- The model's summary (`summarizeWorldForModel`, also used by `inspect` and the MCP
+  summary) lists every wall face with its openings and wall pieces plus `placement-issue`
+  lines with ready fixes. MCP `get_entity` / `list_entities` carry `wall` and
+  `placementProblems` for wall pieces. The system prompt says to read these and never to
+  ask the user which wall (ceiling raised 14k to 14.2k tokens for it; ~130 tokens).
+- The offline planner answers "why is X over Y" / "fix the curtain" from the summary:
+  explains each problem and applies the minimal `update` patches; on a clean building it
+  says so instead of "couldn't map".
+- Bridge: `classifyCliFailure` now separates model unavailable, context too large and
+  network failures from rate limit and sign-in, and otherwise names the real reason with
+  a scrubbed excerpt (no paths, URLs, addresses or tokens). New codes are additive
+  (`BridgeErrorSchema` reads an unknown code from a newer bridge as `backend_error`).
+- Studio: `createProviderChain` runs chosen assistant, then the other signed-in assistant
+  (own default model), then offline; each switch reports the exact reason and what comes
+  next; a dead bridge or expired pairing skips straight to offline.
+
+**Verification.** New tests: property sweep of 120 random rooms (types, styles, narrow
+walls, doors beside windows) plus the apartment fixture over every style and several
+seeds, planner tests for the user's exact prompts and the diagnostic question, bridge
+classification, provider chain with fake providers, alternates selection; the `e2e:arch`
+chat step asks the question in a real browser. Screenshots of the three prompts were
+looked at: curtains flank the window, nothing over the door.
+
+**Known limits.**
+- Wall pieces are boxes; a mirror may overlap a cistern or lamp top by up to 10 cm.
+- With two windows less than ~1 m apart one shared curtain panel hangs between them.
+- Pieces the user moved by hand are audited and flagged but never auto-moved except by
+  asking (or running the repair turn).
+- `e2e:arch` fails at its "studio render" step in this environment on `main` as well
+  (software GL, 30 s wait); the steps before it, including the new one, pass.

@@ -26,6 +26,8 @@ export { buildDoor, buildFrame, buildWindow, DOOR_CLEARANCE, LINING } from './op
 export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructureParams, buildStructure, ArchParamsError } from './structure';
 export { FURNITURE, furnitureById, furnitureByKind, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
 export { navigableVerdict } from './checks';
+export { analyzeRoomPlacements, wallViews, summarizePlacementIssues, describeWallPlacements, wallMountIndex, type PlacementIssue, type PlacementFix, type WallView, type WallMount, type WallOpeningInfo } from './placement';
+export { WALL_MOUNT_KINDS, freeWallSpans, nearestMountCentre, mountRule, collisions as wallCollisions, type WallBlocker, type MountSpec } from './wall-space';
 export { BuildingPlan, type BuildingPlanInput } from './plan';
 export { compileBuilding, parsePlan, PlanError, variantsFor, MAX_BUILDING_LIGHTS, FLOOR_THICKNESS, type CompiledBuilding } from './compile';
 export { applyArchOps, describeBuilding, planOf, ArchOp, MAX_ARCH_OPS, type ArchOpError, type ArchOpsResult } from './ops';

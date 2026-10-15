@@ -7,7 +7,7 @@
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
+import { WorldAgent, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -60,6 +60,7 @@ import { aiConnection, effectiveBridgeChoice, projectSessionKey, type AiConnecti
 import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
 import { fallbackText } from '../ai/messages';
+import { createProviderChain, type ChainLink } from '../ai/chain';
 import { Simulation } from './Simulation';
 
 /** Token usage of one turn (all agent runs of a prompt). */
@@ -926,23 +927,22 @@ export class Studio {
     if (!opts.offline && resolved.kind !== 'offline' && !resolved.ready) {
       push({ type: 'notice', tone: 'warning', text: `${resolved.label} is unavailable (${resolved.reason ?? 'not ready'}). Building with the offline planner instead.` });
     }
+    // The chosen assistant first, then the user's other signed-in assistants, then the offline planner.
     let fell: FallbackNotice | null = null;
-    const provider: Provider = primary
-      ? createFallbackProvider({
-          primary,
-          fallback: createOfflinePlanner(),
-          onFallback: (n) => {
-            fell = n;
-            via = 'Offline planner';
-            const s = this.store.getState();
-            s.setAgentRun(s.agentRun ? { ...s.agentRun, via } : null);
-            push({ type: 'notice', tone: 'warning', text: fallbackText(resolved.label, n) });
-            // Re-probe in the background so the status badge stops claiming a live connection
-            // and the next prompt goes straight to the offline planner instead of retrying.
-            this.reprobe(resolved.kind);
-          },
+    const links: ChainLink[] = primary ? [{ label: resolved.label, provider: primary, vision: resolved.vision }, ...this.ai.alternates(prefs, resolved).map((a) => ({ label: a.resolved.label, provider: a.provider, vision: a.resolved.vision }))] : [];
+    const chain = primary
+      ? createProviderChain(links, createOfflinePlanner(), ({ from, to, notice }) => {
+          via = to ? to.label : 'Offline planner';
+          if (!to) fell = notice;
+          const s = this.store.getState();
+          s.setAgentRun(s.agentRun ? { ...s.agentRun, via } : null);
+          push({ type: 'notice', tone: 'warning', text: fallbackText(from.label, notice, to?.label) });
+          // Re-probe in the background so the status badge stops claiming a live connection
+          // and the next prompt goes straight to a working assistant instead of retrying.
+          this.reprobe(resolved.kind);
         })
-      : createOfflinePlanner();
+      : null;
+    const provider: Provider = chain ?? createOfflinePlanner();
     const abort = new AbortController();
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
@@ -959,7 +959,7 @@ export class Studio {
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
-        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && resolved.vision && prefs.refine > 0 ? primary : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
+        const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';

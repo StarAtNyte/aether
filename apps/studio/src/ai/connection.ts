@@ -505,6 +505,32 @@ export class AiConnection {
     }
   }
 
+  /**
+   * The user's other signed-in assistants behind the same door as `resolved`
+   * (local AI or the bridge): when the chosen one fails, a run tries these
+   * before the offline planner. Each uses its own default model.
+   */
+  alternates(prefs: AiPrefs, resolved: ResolvedConnection): Array<{ resolved: ResolvedConnection; provider: Provider }> {
+    if (!resolved.ready || (resolved.kind !== 'local' && resolved.kind !== 'bridge')) return [];
+    const s = this.store.getState();
+    const backends = resolved.kind === 'local' ? s.local.backends : s.bridge.backends;
+    const chosen = effectiveBridgeChoice(prefs, backends).backend;
+    const out: Array<{ resolved: ResolvedConnection; provider: Provider }> = [];
+    for (const b of backends) {
+      if (b.id === chosen || !b.installed || !b.loggedIn) continue;
+      const model = b.defaultModel ?? b.models[0]?.id;
+      const efforts = b.models.find((m) => m.id === model)?.efforts;
+      const effort: AiPrefs['effort'] = efforts && efforts.length > 0 ? (efforts.includes(prefs.effort) ? prefs.effort : efforts.includes('low') ? 'low' : (efforts[0] ?? prefs.effort)) : prefs.effort;
+      const vision = b.models.find((m) => m.id === model)?.vision ?? true;
+      if (resolved.kind === 'local') {
+        out.push({ resolved: { kind: 'local', label: `${BACKEND_LABEL[b.id]} on this computer${model ? ` · ${model}` : ''}`, ready: true, vision, worker: true }, provider: createLocalProvider({ backend: b.id, effort, fetch: this.fetchImpl, ...(model ? { model } : {}) }) });
+      } else if (this.token) {
+        out.push({ resolved: { kind: 'bridge', label: `${BACKEND_LABEL[b.id]}${model ? ` · ${model}` : ''}`, ready: true, vision }, provider: createBridgeProvider({ baseUrl: s.bridge.url, token: this.token, backend: b.id, effort, fetch: this.fetchImpl, ...(model ? { model } : {}) }) });
+      }
+    }
+    return out;
+  }
+
   /** The offline planner. */
   offline(): Provider {
     return createMockProvider({ library: GENERATOR_LIBRARY });

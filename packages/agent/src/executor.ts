@@ -6,7 +6,8 @@
  */
 import { loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps } from '@aether/arch';
-import { GeneratorDef, ScriptDef, hasOwn, summarizeWorld, type PatchError } from '@aether/core';
+import { GeneratorDef, ScriptDef, hasOwn, type PatchError } from '@aether/core';
+import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
@@ -278,7 +279,7 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
 
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {
   const world = ctx.host.getWorld();
-  if (!input.ids || input.ids.length === 0) return { content: clip(summarizeWorld(world, { maxEntities: 400 })), isError: false, events: [], edited: false };
+  if (!input.ids || input.ids.length === 0) return { content: clip(summarizeWorldForModel(world, { maxEntities: 400 })), isError: false, events: [], edited: false };
   const parts: string[] = [];
   const missing: string[] = [];
   for (const id of input.ids) {

@@ -48,6 +48,27 @@ describe('restrictedEnv', () => {
   });
 });
 
+describe('classifyCliFailure detail', () => {
+  it('names the real reason instead of a bare "failed to answer"', () => {
+    const e = classifyCliFailure('Codex', 'stream error: unexpected response format from backend');
+    expect(e.code).toBe('backend_error');
+    expect(e.message).toContain('Codex failed to answer: ');
+    expect(e.message).toContain('unexpected response format');
+    expect(e.message).not.toMatch(/\.\.$/);
+  });
+
+  it('says so when the CLI gave no detail, and scrubs paths, urls and tokens from the excerpt', () => {
+    expect(classifyCliFailure('Codex', '').message).toBe('Codex failed to answer (no further detail from its output).');
+    const e = classifyCliFailure('Codex', 'panic reading /home/me/.codex/auth.json via https://chatgpt.com/backend with abcdefghijklmnopqrstuvwxyz0123456789ABCDEF for me@example.com');
+    expect(e.message).not.toMatch(/home|chatgpt\.com|abcdefghijkl|example\.com/);
+  });
+
+  it('model and context problems tell the user what to change', () => {
+    expect(classifyCliFailure('Codex', 'model not supported').message).toMatch(/Pick another model/);
+    expect(classifyCliFailure('Codex', 'prompt is too long').message).toMatch(/smaller world|shorten/);
+  });
+});
+
 describe('classifyCliFailure', () => {
   it.each([
     ['Not logged in · Please run /login', 'not_logged_in'],
@@ -55,6 +76,12 @@ describe('classifyCliFailure', () => {
     ["You've hit your usage limit. Try again in 3 hours.", 'rate_limited'],
     ['429 Too Many Requests', 'rate_limited'],
     ['segfault at 0x0', 'backend_error'],
+    ['The model `gpt-6.1-sol` does not exist or you do not have access to it', 'model_unavailable'],
+    ['unknown model: gpt-9', 'model_unavailable'],
+    ['maximum context length is 400000 tokens, resulting in a prompt too long', 'context_too_large'],
+    ['error sending request for url: connection reset by peer', 'network_error'],
+    ['getaddrinfo ENOTFOUND chatgpt.com', 'network_error'],
+    ['503 Service Unavailable', 'backend_error'],
   ])('%s → %s', (text, code) => {
     const e = classifyCliFailure('Codex', text);
     expect(e).toBeInstanceOf(BridgeError);

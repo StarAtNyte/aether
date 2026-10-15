@@ -42,7 +42,8 @@ describe('system prompt', () => {
     // 12k before the architecture section (build_architecture plan format, ~500 tokens),
     // 12.6k before the asset library (asset shape, HDRI sky, asset guideline, ~130 tokens),
     // 12.75k before characters (npc spec, behaviour graph, dialogue, one worked example; ~1.2k tokens).
-    expect(prompt.length / 4).toBeLessThan(14_000);
+    // 14k -> 14.2k for the wall-placement diagnosis paragraph (~130 tokens: read walls from the summary, never ask the user which wall).
+    expect(prompt.length / 4).toBeLessThan(14_200);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

@@ -125,6 +125,23 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     check(rooms >= 6, `[${label}] expected at least 6 rooms, got ${rooms}`);
     log(`[${label}] apartment: ${rooms} rooms, cutaway view`);
 
+    // 1b. The user's own question about wall decor is answered from the building, not guessed: a generated
+    // apartment has no curtain over a door or picture over a window, and the offline planner says so.
+    const headBefore = await page.evaluate(() => window.__aether?.history.head ?? '');
+    await input.fill('why is the curtain over the door and the painting over the window');
+    await input.press('Enter');
+    const answer = await waitFor(page, 'the placement answer', AGENT_MS, () =>
+      page.evaluate(() => {
+        const st = window.__aether?.store.getState();
+        const last = st?.chat[st.chat.length - 1];
+        return st && !st.agentBusy && last?.role === 'assistant' && last.status === 'done' ? JSON.stringify(last) : null;
+      }),
+    );
+    check(/checked every wall/.test(answer), `[${label}] the placement question should be answered from the walls, got ${answer.slice(0, 300)}`);
+    check(!/couldn't map/.test(answer), `[${label}] the offline planner must not give up on the placement question`);
+    check((await page.evaluate(() => window.__aether?.history.head ?? '')) === headBefore, `[${label}] a clean building must not be edited by the placement question`);
+    log(`[${label}] placement question answered from the wall data`);
+
     // 2. 3D views.
     await bar.getByRole('button', { name: /^Walls/ }).click();
     await page.getByRole('menuitemradio', { name: 'Walls down' }).or(page.getByRole('menuitemcheckbox', { name: 'Walls down' })).or(page.getByRole('menuitem', { name: 'Walls down' })).first().click();

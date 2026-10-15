@@ -19,6 +19,7 @@ import { DEFAULT_SETTING } from './themes-nature';
 import { parseWorldSummary, type WorldView } from './world-view';
 import { planVoxel } from './voxel';
 import { planArch } from './arch';
+import { planPlacement } from './placement';
 import { planShowcase } from './showcase/index';
 import { addCharactersToScene, planNpc } from './npc';
 
@@ -212,6 +213,9 @@ export function planMock(request: string, summary: string, library: readonly Moc
   // Block worlds (voxel terrain) have their own planner.
   const voxel = planVoxel(request, summary);
   if (voxel) return voxel;
+  // "Why is the curtain over the door": explain and fix wall pieces over openings.
+  const placement = planPlacement(request, summary);
+  if (placement) return placement;
   // Real-life buildings and interiors go through build_architecture.
   const arch = planArch(request, summary);
   if (arch) return arch;

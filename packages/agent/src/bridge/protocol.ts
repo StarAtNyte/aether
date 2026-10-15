@@ -46,6 +46,12 @@ export const BRIDGE_ERROR_CODES = [
   'tool_violation',
   'backend_error',
   'pairing_locked',
+  /** The chosen model is unknown or not offered on this account. */
+  'model_unavailable',
+  /** The request does not fit the model's context window. */
+  'context_too_large',
+  /** The CLI could not reach its own service (no internet, DNS, TLS). */
+  'network_error',
 ] as const;
 /** A bridge error code. */
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];
@@ -108,7 +114,8 @@ export const BridgeStatusSchema = z.object({
 export type BridgeStatus = z.infer<typeof BridgeStatusSchema>;
 
 /** Error body. */
-export const BridgeErrorSchema = z.object({ error: z.object({ code: z.enum(BRIDGE_ERROR_CODES), message: z.string().max(500) }) });
+/** Codes from a newer bridge than this client read as a plain backend error (the message still explains). */
+export const BridgeErrorSchema = z.object({ error: z.object({ code: z.enum(BRIDGE_ERROR_CODES).catch('backend_error'), message: z.string().max(500) }) });
 
 /**
  * Normalize a user-supplied bridge URL. Only loopback HTTP(S) origins are

@@ -13,6 +13,7 @@ import { pointInPolygon, type P2 } from './math2';
 import type { ArchStyle, RoomType } from './plan';
 import { edgePoint, roomEdges, type RoomEdge } from './rooms';
 import type { StylePalette } from './style';
+import { collisions, freeWallSpans, mountRule, nearestMountCentre, type MountSpec, type WallBlocker } from './wall-space';
 
 /** A door as seen from one room. */
 export interface RoomDoor {
@@ -71,7 +72,12 @@ export interface Placed {
   name: string;
   /** Library model shown instead of the generator (see `furniture/assets.ts`); `size` is then the model's. */
   asset?: string;
+  /** Wall pieces: the edge they hang on and their centre along it. */
+  wall?: { edge: number; t: number };
 }
+
+/** Standard door leaf height used for wall-space checks. */
+export const DOOR_HEIGHT = 2.1;
 
 /** Walkway kept free in front of furniture fronts and doors (metres). */
 export const WALKWAY = 0.8;
@@ -211,6 +217,12 @@ export class RoomLayout {
       }
     }
     for (const w of this.ctx.windows) if (w.edge === edge && height > w.sill - 0.05) cut(w.t0 - 0.08, w.t1 + 0.08);
+    // Wall pieces already hanging here (a picture, a curtain) stay clear of tall furniture.
+    for (const p of this.placed) {
+      if (!p.wall || p.wall.edge !== edge || p.y >= height - 0.1) continue;
+      const half = p.size[0] / 2 + mountRule(p.kind).reach;
+      cut(p.wall.t - half - 0.02, p.wall.t + half + 0.02);
+    }
     return free.filter(([s, t]) => t - s > 0.1);
   }
 
@@ -239,8 +251,9 @@ export class RoomLayout {
   }
 
   /** True when a floor footprint is valid: in the room, clear of doors and other pieces. */
-  fits(fp: readonly P2[], kind: string, ignore: ReadonlySet<Placed> = new Set()): boolean {
+  fits(fp: readonly P2[], kind: string, ignore: ReadonlySet<Placed> = new Set(), height = 0): boolean {
     if (!this.insideRoom(fp)) return false;
+    if (height > 0 && kind !== 'rug' && this.hitsWallPiece(fp, height)) return false;
     if (kind !== 'rug') {
       for (const k of this.keepouts) if (convexOverlap(fp, k, 0.01)) return false;
       for (const p of this.placed) {
@@ -250,6 +263,28 @@ export class RoomLayout {
       }
     }
     return true;
+  }
+
+  /** True when a floor piece of `height` standing against a wall would run into a picture, curtain or other piece hanging there. */
+  private hitsWallPiece(fp: readonly P2[], height: number): boolean {
+    for (const w of this.placed) {
+      if (!w.wall || w.y >= height - 0.1) continue;
+      const e = this.ctx.edges[w.wall.edge] as RoomEdge;
+      const inset = this.ctx.inset[w.wall.edge] ?? 0.06;
+      let near = Infinity;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const q of fp) {
+        near = Math.min(near, -((q[0] - e.a[0]) * e.out[0] + (q[1] - e.a[1]) * e.out[1]) - inset);
+        const along = (q[0] - e.a[0]) * e.dir[0] + (q[1] - e.a[1]) * e.dir[1];
+        lo = Math.min(lo, along);
+        hi = Math.max(hi, along);
+      }
+      if (near > 0.12) continue;
+      const half = w.size[0] / 2 + mountRule(w.kind).reach;
+      if (hi > w.wall.t - half + 0.01 && lo < w.wall.t + half - 0.01) return true;
+    }
+    return false;
   }
 
   /** Add a placement (no validation). */
@@ -301,7 +336,7 @@ export class RoomLayout {
     // A library model can be larger than the parametric piece the spot was planned for.
     return this.withFallback(() => {
       const p = this.make(def, params, x, z, yaw, 0, name);
-      if (def.mount === 'floor' && !this.fits(p.footprint, kind)) return null;
+      if (def.mount === 'floor' && !this.fits(p.footprint, kind, new Set(), p.size[1])) return null;
       return this.push(p);
     });
   }
@@ -337,18 +372,139 @@ export class RoomLayout {
     for (const c of candidates) {
       const p = this.facePoint(edge, c, WALL_GAP + size[2] / 2);
       const placed = this.make(def, params, p[0], p[1], yaw, 0, name);
-      if (this.fits(placed.footprint, kind)) return this.push(placed);
+      if (this.fits(placed.footprint, kind, new Set(), placed.size[1])) return this.push(placed);
     }
     return null;
   }
 
-  /** Wall-mounted piece (art, TV, mirror, curtain, sconce, switch) on an edge face at height `y`. */
+  /**
+   * Everything on an edge's wall face that keeps wall pieces away: the
+   * corners, door and window openings, pieces already hanging there and
+   * furniture standing against it.
+   */
+  wallBlockers(edge: number): WallBlocker[] {
+    const e = this.ctx.edges[edge] as RoomEdge;
+    const n = this.ctx.edges.length;
+    const prevInset = this.ctx.inset[(edge + n - 1) % n] ?? 0.06;
+    const nextInset = this.ctx.inset[(edge + 1) % n] ?? 0.06;
+    const out: WallBlocker[] = [
+      { kind: 'corner', t0: -1, t1: prevInset + 0.04, y0: 0, y1: 99, ref: 'corner' },
+      { kind: 'corner', t0: e.length - nextInset - 0.04, t1: e.length + 1, y0: 0, y1: 99, ref: 'corner' },
+    ];
+    this.ctx.doors.forEach((d, i) => {
+      if (d.edge === edge) out.push({ kind: 'door', t0: d.t - d.width / 2, t1: d.t + d.width / 2, y0: 0, y1: DOOR_HEIGHT, ref: `door:${i}` });
+    });
+    this.ctx.windows.forEach((w, i) => {
+      if (w.edge === edge) out.push({ kind: 'window', t0: w.t0, t1: w.t1, y0: w.sill, y1: w.sill + w.height, ref: `window:${i}` });
+    });
+    for (const p of this.placed) {
+      if (p.wall && p.wall.edge === edge) {
+        const half = p.size[0] / 2 + mountRule(p.kind).reach;
+        out.push({ kind: 'item', t0: p.wall.t - half, t1: p.wall.t + half, y0: p.y, y1: p.y + p.size[1], ref: p.kind });
+      } else if (p.footprint.length > 0 && p.kind !== 'rug') {
+        // Floor piece close to this wall face: its stretch along the wall.
+        const inset = this.ctx.inset[edge] ?? 0.06;
+        let near = Infinity;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const q of p.footprint) {
+          const dist = -((q[0] - e.a[0]) * e.out[0] + (q[1] - e.a[1]) * e.out[1]) - inset;
+          const along = (q[0] - e.a[0]) * e.dir[0] + (q[1] - e.a[1]) * e.dir[1];
+          near = Math.min(near, dist);
+          lo = Math.min(lo, along);
+          hi = Math.max(hi, along);
+        }
+        if (near < 0.12) out.push({ kind: 'furniture', t0: lo, t1: hi, y0: 0, y1: p.size[1], ref: p.kind });
+      }
+    }
+    return out;
+  }
+
+  /** True when a wall piece of this kind and size fits exactly at `t` (no blocker touches it). */
+  wallSpotFree(kind: string, edge: number, t: number, width: number, y: number, height: number, anchor?: string): boolean {
+    const spec: MountSpec = { kind, t, width, y0: y, y1: y + height };
+    return collisions(spec, this.wallBlockers(edge), anchor).length === 0;
+  }
+
+  /**
+   * Wall-mounted piece (art, TV, mirror, sconce, switch) on an edge face with
+   * its bottom at `y`. It never overlaps a door, a window, a corner, another
+   * wall piece or tall furniture: when `t` is blocked it slides to the
+   * nearest clear stretch of that wall, and when none is wide enough art and
+   * mirrors shrink before giving up (null). Curtains go through
+   * {@link hangCurtain}.
+   */
   onWall(kind: string, params: Record<string, Json>, edge: number, t: number, y: number, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
     const e = this.ctx.edges[edge] as RoomEdge;
-    const p = this.facePoint(edge, t, 0.001);
-    return this.push(this.make(def, params, p[0], p[1], yawFacingIn(e), y, name));
+    const shrinkable = kind === 'art' || kind === 'mirror';
+    for (const f of shrinkable ? [1, 0.8, 0.65, 0.5] : [1]) {
+      const pr: Record<string, Json> = f === 1 ? params : { ...params, width: Number(params['width'] ?? 1) * f, ...(typeof params['height'] === 'number' ? { height: params['height'] * f } : {}) };
+      const size = furnitureSize(def, pr);
+      const c = nearestMountCentre(e.length, { kind, t, width: size[0], y0: y, y1: y + size[1] }, this.wallBlockers(edge));
+      if (c === null) continue;
+      const p = this.facePoint(edge, c, 0.001);
+      const placed = this.push(this.make(def, pr, p[0], p[1], yawFacingIn(e), y, name));
+      placed.wall = { edge, t: c };
+      return placed;
+    }
+    return null;
+  }
+
+  /** Like {@link onWall}, but tries the other walls (longest clear stretch first) when the preferred one has no room. */
+  onAnyWall(kind: string, params: Record<string, Json>, edge: number, t: number, y: number, name?: string): Placed | null {
+    const first = this.onWall(kind, params, edge, t, y, name);
+    if (first) return first;
+    const def = this.def(kind);
+    if (!def) return null;
+    const h = furnitureSize(def, params)[1];
+    const others = this.ctx.edges
+      .map((_, i) => i)
+      .filter((i) => i !== edge)
+      .map((i) => ({ i, room: Math.max(0, ...freeWallSpans((this.ctx.edges[i] as RoomEdge).length, kind, y, y + h, this.wallBlockers(i)).map(([s, u]) => u - s)) }))
+      .sort((a, b) => b.room - a.room);
+    for (const o of others) {
+      const p = this.onWall(kind, params, o.i, (this.ctx.edges[o.i] as RoomEdge).length / 2, y, name);
+      if (p) return p;
+    }
+    return null;
+  }
+
+  /**
+   * Hang the curtain panels of one window (index into `ctx.windows`): a
+   * panel each side, its rod reaching past the frame, anchored to the
+   * window. A side with a door, a corner, a neighbouring window or a tall
+   * piece too close gets a narrower panel, or none.
+   */
+  hangCurtain(windowIndex: number, color: string): Placed[] {
+    const def = this.def('curtain');
+    const w = this.ctx.windows[windowIndex];
+    if (!def || !w) return [];
+    const e = this.ctx.edges[w.edge] as RoomEdge;
+    const len = w.t1 - w.t0;
+    const full = Math.min(0.9, Math.max(0.45, len * 0.28));
+    const sillLength = ['kitchen', 'bathroom', 'laundry', 'cafe', 'terrace'].includes(this.ctx.type) && w.sill > 0.5;
+    const y0 = sillLength ? Math.max(0, w.sill - 0.1) : 0;
+    const top = sillLength ? w.sill + w.height + 0.12 : Math.max(1.3, this.ctx.ceiling - 0.04);
+    const height = Math.max(0.8, top - y0);
+    const out: Placed[] = [];
+    const anchor = `window:${windowIndex}`;
+    for (const side of [-1, 1] as const) {
+      for (const f of [1, 0.8, 0.62, 0.48]) {
+        const panel = full * f;
+        if (panel < 0.35) break;
+        // Inner edge overlaps the window frame by 8 cm.
+        const t = side < 0 ? w.t0 + 0.08 - panel / 2 : w.t1 - 0.08 + panel / 2;
+        if (!this.wallSpotFree('curtain', w.edge, t, panel, y0, height, anchor)) continue;
+        const p = this.facePoint(w.edge, t, 0.001);
+        const placed = this.push(this.make(def, { width: Math.round(panel * 100) / 100, height: Math.round(height * 100) / 100, color }, p[0], p[1], yawFacingIn(e), y0, 'Curtain'));
+        placed.wall = { edge: w.edge, t };
+        out.push(placed);
+        break;
+      }
+    }
+    return out;
   }
 
   /** Surface piece (table lamp …) standing on another placement's top. */

@@ -543,13 +543,16 @@ export function replyJsonSchema(tools: ToolDef[], strict: boolean): object;
 //   GET  /v1/status (Bearer) → { ok, name: 'aether-bridge', version, backends: BridgeBackendStatus[] }
 //   POST /v1/complete (Bearer) { backend: 'codex' | 'claude-code', model?, effort?, request: CompletionRequest } → CompletionResponse
 //     `model` must match MODEL_ID_RE; the inner `request.model` is ignored (it is free-form and would otherwise reach the CLI)
-//   errors: { error: { code: BridgeErrorCode, message } }  (unauthorized, forbidden_origin, busy, not_logged_in, cli_missing, timeout, rate_limited, tool_violation, …)
+//   errors: { error: { code: BridgeErrorCode, message } }  (unauthorized, forbidden_origin, busy, not_logged_in, cli_missing, timeout, rate_limited, tool_violation, model_unavailable, context_too_large, network_error, …; a code from a newer bridge reads as backend_error)
 export function createBridgeProvider(opts: { baseUrl: string; token: string; backend; model?; effort?; fetch? }): Provider;
 export function fetchBridgeStatus(baseUrl, token, fetch?): Promise<BridgeStatus>;
 export function pairBridge(baseUrl, code, fetch?): Promise<string>;   // → token
 export function normalizeBridgeUrl(raw: string): string | null;        // loopback origins only
 
 // Fallback: any primary failure (offline, not signed in, rate limited, timeout…) → offline planner, reported once.
+// The studio wraps a run in `createProviderChain(links, offline, onSwitch)` (apps/studio/src/ai/chain.ts) instead: chosen assistant →
+// the user's other signed-in assistant (AiConnection.alternates) → offline planner; shared-door failures (bridge_offline, unauthorized,
+// forbidden_origin…) skip straight to offline; every switch carries the FallbackNotice of the link that failed.
 export function createFallbackProvider(opts: { primary: Provider; fallback: Provider; onFallback?: (n: FallbackNotice) => void }): FallbackProvider;
 // On-device (experimental; the engine is created lazily by the studio, WebGPU only):
 export function createWebLlmProvider(opts: { engine: WebLlmEngineLike; model: string; maxTokens?: number /* 1200 */; contextTokens?: number /* 4096 */ }): Provider;
@@ -1312,6 +1315,10 @@ compileBuilding(plan, { seed? }) → CompiledBuilding { id, entities, patches, s
   // (door behaviour, E), windows, stairs (straight / L / U), roofs (flat / gable / hip / shed), railings, site works,
   // furniture layouts per room type and style, ≤ MAX_BUILDING_LIGHTS (14) real light sources, switches; ≤ 1800 entities
   // door swing side and window interior side are sampled geometrically (merged collinear walls pass several rooms)
+analyzeRoomPlacements(world, scope='*') → PlacementIssue[] { code: wall_item_on_opening | wall_item_overlap | curtain_off_window, message, hint,
+  entities, wall, compass ('north wall'), room?, t, fix: { entity, position? | remove? } }   // wall pieces vs doors / windows / each other
+wallViews(world, scope) / describeWallPlacements(world, building) / wallMountIndex(world)     // per wall face: openings {kind,t,width,sill,height}, pieces {id,kind,t,width,y0,y1}
+RoomLayout.onWall / onAnyWall / hangCurtain(windowIndex, color)                                // opening-aware placement (wall-space.ts); null when no clear stretch
 PlanError { code, message, hint }        // every refusal carries a machine-readable code and a concrete fix
 applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ index, op, code, message, hint }], compiled, reports, target }
   ArchOp = create_building {plan, walkthrough=true} | remove_building | add_level | add_room {level, room, doors?} | remove_room

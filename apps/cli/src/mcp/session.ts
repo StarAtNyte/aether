@@ -7,8 +7,9 @@
  * Mutating operations are serialized (one at a time per session), so two
  * clients that call at once cannot interleave half-finished edits.
  */
-import { WorldAgent, type AgentEvent, type AgentHost } from '@aether/agent';
-import { createWorld, History, inspectUntrusted, resolveSelector, summarizeWorld, type Entity, type Vec3, type WorldDoc } from '@aether/core';
+import { WorldAgent, summarizeWorldForModel, type AgentEvent, type AgentHost } from '@aether/agent';
+import { analyzeRoomPlacements, wallMountIndex } from '@aether/arch';
+import { createWorld, History, inspectUntrusted, resolveSelector, type Entity, type Vec3, type WorldDoc } from '@aether/core';
 import type { VerifyTrace } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
 import { Engine } from './engine';
@@ -68,6 +69,8 @@ export interface EntityRow {
   position: Vec3;
   behaviors: string[];
   body: string | null;
+  /** Wall pieces (pictures, curtains, mirrors …): the wall face they hang on and where. */
+  wall?: { wall: string; compass: string; room?: string; offset: number; width: number; y0: number; y1: number };
 }
 
 /** Filters of {@link AetherSession.listEntities}. */
@@ -202,7 +205,7 @@ export class AetherSession {
 
   /** Text summary for LLM context (same as the agent sees). */
   summary(maxEntities = 80): string {
-    return clip(summarizeWorld(this.world, { maxEntities }), MCP_LIMITS.MAX_TEXT_CHARS);
+    return clip(summarizeWorldForModel(this.world, { maxEntities }), MCP_LIMITS.MAX_TEXT_CHARS);
   }
 
   private async provider(): Promise<ResolvedProvider> {
@@ -354,6 +357,7 @@ export class AetherSession {
     } else ids = Object.keys(w.entities);
     const text = f.text?.toLowerCase();
     const rows: EntityRow[] = [];
+    let mounts: ReturnType<typeof wallMountIndex> | undefined;
     for (const id of ids) {
       const e = w.entities[id];
       if (!e) continue;
@@ -371,6 +375,11 @@ export class AetherSession {
         behaviors: e.behaviors.map((b) => b.type),
         body: e.physics ? e.physics.body : null,
       });
+      if (e.arch?.role === 'fixture' || e.arch?.role === 'switch' || e.arch?.role === 'light') {
+        mounts ??= wallMountIndex(w);
+        const m = mounts.get(e.id);
+        if (m) (rows[rows.length - 1] as EntityRow).wall = { wall: m.wall, compass: m.compass, ...(m.room ? { room: m.room } : {}), offset: m.t, width: m.width, y0: m.y0, y1: m.y1 };
+      }
     }
     return { total: rows.length, offset: f.offset, rows: rows.slice(f.offset, f.offset + f.limit) };
   }
@@ -380,6 +389,13 @@ export class AetherSession {
     const e = Object.hasOwn(this.world.entities, id) ? this.world.entities[id] : undefined;
     if (!e) throw new ToolError('not_found', `There is no entity "${clip(id, 64)}". Use list_entities to see the ids.`);
     return e;
+  }
+
+  /** Where a wall piece hangs and what, if anything, it overlaps (null for other entities). */
+  wallPlacement(id: string): { mount: NonNullable<ReturnType<ReturnType<typeof wallMountIndex>['get']>>; problems: ReturnType<typeof analyzeRoomPlacements> } | null {
+    const mount = wallMountIndex(this.world).get(id);
+    if (!mount) return null;
+    return { mount, problems: analyzeRoomPlacements(this.world).filter((p) => p.entities.includes(id)) };
   }
 
   /** Run the world's tests (physics as unit tests). */

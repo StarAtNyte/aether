@@ -85,19 +85,11 @@ function plantInCorners(L: RoomLayout, count: number, height: number): void {
 }
 
 function curtains(L: RoomLayout): void {
-  for (const w of L.ctx.windows) {
-    const e = L.ctx.edges[w.edge] as RoomEdge;
-    const len = w.t1 - w.t0;
-    const panel = Math.min(0.9, Math.max(0.45, len * 0.28));
-    for (const t of [w.t0 - panel / 2 + 0.12, w.t1 + panel / 2 - 0.12]) {
-      if (t - panel / 2 < 0.05 || t + panel / 2 > e.length - 0.05) continue;
-      L.onWall('curtain', { width: panel, height: Math.max(1.2, L.ctx.ceiling - 0.04), color: L.ctx.palette.curtain }, w.edge, t, 0);
-    }
-  }
+  L.ctx.windows.forEach((_, i) => L.hangCurtain(i, L.ctx.palette.curtain));
 }
 
 function art(L: RoomLayout, edge: number, t: number, bottom: number, width: number, height: number): void {
-  L.onWall('art', { width, height, frame: L.ctx.palette.metal === 'brass' ? 'brass' : 'black-metal', palette: L.ctx.palette.artPalette }, edge, t, bottom);
+  L.onAnyWall('art', { width, height, frame: L.ctx.palette.metal === 'brass' ? 'brass' : 'black-metal', palette: L.ctx.palette.artPalette }, edge, t, bottom);
 }
 
 function mainLight(L: RoomLayout, x: number, z: number, intensity: number): void {
@@ -559,15 +551,72 @@ function storage(L: RoomLayout): void {
   switchByDoor(L);
 }
 
+/**
+ * A wall piece the plan asks for on a compass wall. Curtains hang on the
+ * windows (of that wall, else of the room); everything else takes the
+ * nearest clear stretch of the wall, then of the other walls, so nothing
+ * lands on a door or a window.
+ */
+function hangExplicit(L: RoomLayout, kind: string, params: Record<string, Json>, edge: number, side: string, at: number | null = null): void {
+  const e = L.ctx.edges[edge] as RoomEdge;
+  if (kind === 'curtain') {
+    const color = typeof params['color'] === 'string' ? params['color'] : L.ctx.palette.curtain;
+    let idx = L.ctx.windows.map((w, i) => (w.edge === edge ? i : -1)).filter((i) => i >= 0);
+    if (idx.length === 0) {
+      idx = L.ctx.windows.map((_, i) => i);
+      if (idx.length > 0) L.notes.push(`no window on the ${side} wall of ${L.ctx.id}; the curtain hangs on a window of the room`);
+    }
+    if (idx.length === 0) {
+      L.notes.push(`no window in ${L.ctx.id} for the curtain`);
+      return;
+    }
+    let hung = 0;
+    for (const i of idx) hung += L.hangCurtain(i, color).length;
+    if (hung === 0) L.notes.push(`no clear wall beside the windows of ${L.ctx.id} for the curtain`);
+    return;
+  }
+  const y = kind === 'tv' ? 1.05 : kind === 'sconce' ? 1.7 : kind === 'switch' ? 1.1 : kind === 'whiteboard' ? 0.9 : 1.3;
+  const p = L.onAnyWall(kind, params, edge, at ?? e.length / 2, y);
+  if (!p) L.notes.push(`no clear wall in ${L.ctx.id} for the ${kind} (doors and windows take the rest)`);
+  else if (p.wall && p.wall.edge !== edge) L.notes.push(`the ${side} wall of ${L.ctx.id} had no clear stretch for the ${kind}; hung on the ${(L.ctx.edges[p.wall.edge] as RoomEdge).side} wall`);
+}
+
 /** Place explicit plan items first (they win over the recipe). */
 function explicitItems(L: RoomLayout, items: readonly PlanItem[]): void {
-  for (const item of items) {
+  // Curtains claim the wall beside their windows before pictures and mirrors take what is left.
+  const ordered = [...items.filter((i) => i.kind === 'curtain'), ...items.filter((i) => i.kind !== 'curtain')];
+  for (const item of ordered) {
     const def = L.def(item.kind);
     if (!def) {
       L.notes.push(`unknown furniture kind "${item.kind}" in room ${L.ctx.id}`);
       continue;
     }
     const params = item.params as Record<string, Json>;
+    if (def.mount === 'wall') {
+      // Wall pieces snap to a wall: the requested one, the one nearest `at`, else the freest.
+      let edge = -1;
+      let t: number | null = null;
+      let side = 'room';
+      if (item.against) {
+        const n = compassNormal(item.against);
+        edge = L.ctx.edges.findIndex((e) => e.out[0] * n[0] + e.out[1] * n[1] > 0.9);
+        side = item.against;
+      } else if (item.at) {
+        let bestD = Infinity;
+        L.ctx.edges.forEach((e, i) => {
+          const along = (item.at![0] - e.a[0]) * e.dir[0] + (item.at![1] - e.a[1]) * e.dir[1];
+          const off = Math.abs((item.at![0] - e.a[0]) * e.out[0] + (item.at![1] - e.a[1]) * e.out[1]);
+          if (along < 0 || along > e.length || off >= bestD) return;
+          bestD = off;
+          edge = i;
+          t = along;
+        });
+        if (edge >= 0) side = (L.ctx.edges[edge] as RoomEdge).side;
+      }
+      if (edge < 0) edge = edgesByFree(L, 1.5)[0]?.edge ?? 0;
+      hangExplicit(L, item.kind, params, edge, side, t);
+      continue;
+    }
     if (item.at) {
       const placed = L.make(def, params, item.at[0], item.at[1], item.yaw ?? 0, def.mount === 'ceiling' ? L.ctx.ceiling : 0);
       L.push(placed);
@@ -578,10 +627,6 @@ function explicitItems(L: RoomLayout, items: readonly PlanItem[]): void {
       const edge = L.ctx.edges.findIndex((e) => e.out[0] * n[0] + e.out[1] * n[1] > 0.9);
       if (edge >= 0) {
         const e = L.ctx.edges[edge] as RoomEdge;
-        if (def.mount === 'wall') {
-          L.onWall(item.kind, params, edge, e.length / 2, 1.3);
-          continue;
-        }
         // Anywhere free along the requested wall; else fall through to the freest wall.
         if (L.againstWall(item.kind, params, edge, e.length / 2) || L.againstWall(item.kind, params, edge, null)) continue;
         L.notes.push(`no room for ${item.kind} on the ${item.against} wall of ${L.ctx.id}; placed elsewhere`);

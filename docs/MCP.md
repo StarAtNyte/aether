@@ -76,9 +76,9 @@ capped). Results are JSON text plus `structuredContent`.
 | `create_world {prompt}` | New world from a description. Plans, builds with patches, verifies by fast-forwarding the physics, repairs what fails. The old world stays one `undo` away |
 | `edit {prompt}` | Change the current world from a request; minimal patches, re-verified. One `undo` reverts the whole request |
 | `apply_patch {patches, message?, atomic?}` | Exact World IR edits with no model. All-or-nothing by default; every failure is explained per patch. Read `aether://schema/patch` first |
-| `list_entities {selector?, tag?, behavior?, text?, parent?, offset?, limit?}` | Compact rows (id, name, shape, position, behaviors, body), paged |
-| `get_entity {id}` | One entity in full, as `apply_patch` would write it |
-| `get_world_summary {}` | The planner's text summary plus counts and the active provider |
+| `list_entities {selector?, tag?, behavior?, text?, parent?, offset?, limit?}` | Compact rows (id, name, shape, position, behaviors, body; wall pieces add `wall`), paged |
+| `get_entity {id}` | One entity in full, as `apply_patch` would write it. A wall piece (picture, curtain, mirror, TV, switch) also carries `wall` (wall id, compass side, room, offset along the wall, width, heights) and `placementProblems` (what it overlaps, with a fix) |
+| `get_world_summary {}` | The planner's text summary (for each building: every wall face with its doors, windows and wall pieces, and any placement problem with a fix) plus counts and the active provider |
 | `verify {}` | Run `world.tests` and diagnostics (physics as unit tests): stability, `reaches`, `eventually`, navigable buildings, floating or overlapping objects |
 | `playtest {seconds?, goal?}` | A bot plays: walks, jumps, rides lifts, drives, toward pickups, rule zones, goals and checkpoints with real physics and logic. Reports win / lose / incomplete, objectives reached and collected, the game state, messages and the path |
 | `replay {}` | Fast-forward the physics and summarise every body that moves (start, end, path, peak, keyframes); the full motion goes to `replays/replay.json` |

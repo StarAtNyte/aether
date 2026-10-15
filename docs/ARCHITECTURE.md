@@ -683,8 +683,14 @@ resolves the preferred mode per project: `auto` uses Codex / Claude Code on
 this computer, else a paired, signed-in bridge, else a live server, else the
 user's own API key, else a loaded on-device model, else the offline planner; `offline`, `server`,
 `bridge`, `webllm` and `byok` force one. Every networked choice is wrapped in
-the fallback provider, so a failure never leaves a blank world or a stuck
-spinner: the chat shows a notice and the offline planner finishes the turn.
+a provider chain (`apps/studio/src/ai/chain.ts`), so a failure never leaves a
+blank world or a stuck spinner: the chat shows a notice with the precise reason
+(the bridge classifies CLI failures into model unavailable, context too large,
+network, rate limit, sign-in, or an excerpt of the real error with paths and
+tokens removed), the run retries with the user's other signed-in assistant
+(Codex then Claude Code, or the reverse) and only then does the offline planner
+finish the turn. A dead bridge or expired pairing skips the second assistant
+(it sits behind the same door).
 On the server, `AETHER_PROVIDER` defaults to `mock`; `codex` / `claude-code`
 use this machine's signed-in CLI through the same locked-down backends as the
 bridge; `anthropic` / `openai` need a key and are never used by default.
@@ -1067,6 +1073,27 @@ doorways and up the stairs, and checks that every room is reached, every
 swing leaf's quarter disc is free and every piece of furniture stands on
 the floor without overlaps. The `navigable` world test runs it in the
 verification worker; the agent gets the issues back with concrete fixes.
+
+**Wall space.** Everything hung on a wall (art, mirror, TV, whiteboard, sconce,
+switch, curtain) goes through one rule set (`wall-space.ts`): a wall is a line
+of metres with blockers on it (corners, door and window openings with their
+heights, pieces already hanging, floor furniture standing against it), each
+kind of piece wants a margin from each kind of blocker, and a piece takes the
+nearest clear stretch or is skipped (art and mirrors shrink first; a request for
+a wall piece falls through to the other walls). Curtains are the one kind that
+may touch a window: anchored to a specific window, a panel each side with the
+rod reaching past the frame, never over a door, a corner, another window or a
+tall piece. `RoomLayout.onWall` / `onAnyWall` / `hangCurtain` place with it,
+and `placement.ts` (`analyzeRoomPlacements`) audits a finished document with the
+same rules: it resolves every wall piece onto its wall face, reports pieces
+over an opening, over each other or (curtains) not beside a window, with the
+wall's compass side, offsets, entity ids and a minimal fix (a new position on
+the same wall, or removal). `checkBuilding` includes those issues, so the
+`navigable` test and the agent's repair turn flag them. The agent's world
+summary lists, under each building, every wall face with its doors, windows and
+wall pieces plus `placement-issue` lines carrying the fix, so a model (or the
+offline planner) can answer "why is the curtain over the door" and repair it
+with one `update` patch instead of asking which wall.
 
 **Views.** `ArchView` (render) applies view state to the scene graph only:
 a cutaway sections the exterior walls between the camera and the building,

@@ -9,7 +9,7 @@
  * failure (provider, host, abort) becomes an `error` event and the stream
  * always ends with exactly one `done` event carrying token usage.
  */
-import { summarizeWorld } from '@aether/core';
+import { summarizeWorldForModel } from './world-text';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
@@ -129,7 +129,7 @@ export class WorldAgent {
     };
 
     const userEdits = host.userEdits?.();
-    const summary = summarizeWorld(host.getWorld(), { maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : CONTEXT_LIMITS.SUMMARY_ENTITIES, ...(userEdits && userEdits.size > 0 ? { userEdits } : {}) });
+    const summary = summarizeWorldForModel(host.getWorld(), { compact: this.compact, maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : CONTEXT_LIMITS.SUMMARY_ENTITIES, ...(userEdits && userEdits.size > 0 ? { userEdits } : {}) });
     const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn(summary, request) }];
     const prior = sanitizeHistory(opts.history);
     const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;

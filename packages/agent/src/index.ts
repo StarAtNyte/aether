@@ -25,6 +25,7 @@ export { WorldAgent, COMPACT_LIMITS, type RunOptions } from './agent';
 export { AGENT_TOOLS, COMPACT_TOOLS, PATCH_OPS, TOOL_LIMITS, type AgentToolName } from './tools';
 export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';
+export { summarizeWorldForModel, type ModelSummaryOptions } from './world-text';
 export { CONTEXT_LIMITS, formatUserTurn, parseUserTurn, sanitizeHistory } from './context';
 export { SUBMIT_GENERATOR_TOOL, requestGenerator, type CoderDeps, type CoderResult } from './coder';
 export {

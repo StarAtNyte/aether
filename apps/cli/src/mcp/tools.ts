@@ -124,11 +124,15 @@ export function registerTools(server: McpServer, session: AetherSession): void {
     'get_entity',
     {
       title: 'Get an entity',
-      description: 'The full definition of one entity (transform, shape, material, physics, behaviors, state, tags), exactly as `apply_patch` would write it.',
+      description: 'The full definition of one entity (transform, shape, material, physics, behaviors, state, tags), exactly as `apply_patch` would write it. Wall pieces (pictures, curtains, mirrors, TVs) also carry `wall` (the wall face, room and offset along it) and `placementProblems` (what they overlap, with a fix).',
       inputSchema: { id: z.string().min(1).max(64) },
       annotations: READ,
     },
-    guarded(session, 'get_entity', async ({ id }) => ok({ entity: session.getEntity(id) as unknown as Record<string, unknown> })),
+    guarded(session, 'get_entity', async ({ id }) => {
+      const entity = session.getEntity(id) as unknown as Record<string, unknown>;
+      const wall = session.wallPlacement(id);
+      return ok({ entity, ...(wall ? { wall: wall.mount, placementProblems: wall.problems } : {}) });
+    }),
   );
 
   server.registerTool(
