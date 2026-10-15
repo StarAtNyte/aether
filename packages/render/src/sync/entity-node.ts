@@ -81,6 +81,10 @@ export interface EntityNode {
   placeholder: boolean;
   /** Fallback content is shown because generation/loading failed. */
   failed: boolean;
+  /** Cast id of the person shown for this entity (null: none; the entity's own shape is shown). */
+  characterBody: string | null;
+  /** Bumped on every character mount; stale loads are ignored. */
+  charToken: number;
   /** Release callbacks of asset content (cache refs, owned geometry, animation), run on teardown. */
   releases: Array<() => void>;
 }
@@ -120,5 +124,7 @@ export function createEntityNode(entity: Entity, transient: boolean): EntityNode
     placeholder: false,
     failed: false,
     releases: [],
+    characterBody: null,
+    charToken: 0,
   };
 }

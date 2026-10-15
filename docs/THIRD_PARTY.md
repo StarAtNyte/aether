@@ -433,3 +433,16 @@ format and ghost replay are original TypeScript written for Aether. The bot
 drives the existing Rapier (`@dimforge/rapier3d-compat`, Apache-2.0)
 KinematicCharacterController through `@aether/physics` and the existing logic
 runtime. `zod` (MIT) validates reports and proofs, as elsewhere.
+
+### People (stage `characters`)
+
+| Asset | Author | Licence | Source |
+|---|---|---|---|
+| Microsoft Rocketbox avatars (10 adult bodies, converted) and motion clips (walk, run, idle, talk, sit, gestures; retargeted onto the shared Biped, baked into two shared motion files) | Microsoft (Rocketbox Libraries), (c) 2020 Microsoft | MIT | https://github.com/microsoft/Microsoft-Rocketbox |
+
+The MIT notice ships as `assets/characters-LICENSE.md` and in the in-app
+credits (`characterCredit`). Rocketbox has no jump, death, hit-react or attack
+clips; those were authored for Aether (keyframed on the Biped, `scripts/characters/authored.ts`)
+and no third-party animation pack is vendored. Textures were downscaled and
+re-encoded (WebP masks plus tint maps), meshes meshopt-compressed
+(`scripts/characters/`, using `@gltf-transform/*`, MIT, already a dev dependency).

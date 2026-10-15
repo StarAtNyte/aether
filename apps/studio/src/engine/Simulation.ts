@@ -21,6 +21,7 @@
  * Play or verification.
  */
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
+import { Vector3 } from 'three';
 import { initScripting, LogicRuntime, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
@@ -239,6 +240,10 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
+  /** The player is holding Shift (sneaking): quieter steps, crouched body. */
+  private sneaking = false;
+  private readonly speakingScratch = new Set<string>();
+  private readonly lookScratch = new Vector3();
   private npcSig = '';
   private npcQuick = '';
   private npcAt = 0;
@@ -305,6 +310,7 @@ export class Simulation {
     this.pointerLock = opts.pointerLock === true;
     this.statsWhileEditing = opts.statsWhileEditing !== false;
     this.saveBase = opts.saveBase ?? 'scratch';
+    renderer.onFootstep((id, _foot, speed, position) => this.footstep(id, speed, position));
     this.unsubscribe = history.subscribe((world) => {
       if (!this.session) this.requestSync(world);
     });
@@ -1246,6 +1252,7 @@ export class Simulation {
       if (character) {
         // Holding Shift sneaks: half pace, quiet enough for guards not to hear.
         const sneak = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+        this.sneaking = sneak;
         character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, sneak ? speed * 0.5 : speed, jump);
         if (character.position[1] < PLAYER_KILL_Y) character.teleport(s.world.player.spawn);
       }
@@ -1254,9 +1261,59 @@ export class Simulation {
     }
     if (s.ended) return;
     this.pumpNpc(s);
+    this.feedCharacters(s);
     pw.writeTransforms(this.table.packed, this.table.order);
     this.renderer.applyTransforms(this.table.packed, this.table.order);
-    if (character) this.renderer.setPlayerAvatar(character.position, this.input.yawDeg);
+    if (character) {
+      this.renderer.setPlayerAvatar(character.position, this.input.yawDeg, {
+        grounded: character.grounded,
+        vy: character.verticalSpeed,
+        crouching: this.sneaking,
+        sprinting: false,
+      });
+    }
+  }
+
+  /** Footstep of a person: the sound of the surface underfoot, quieter with distance and softer when sneaking. */
+  private footstep(id: string, speed: number, position: readonly [number, number, number]): void {
+    if (!this.session || this.held || this.paused) return;
+    const cam = this.renderer.camera.position;
+    const dx = position[0] - cam.x;
+    const dy = position[1] - cam.y;
+    const dz = position[2] - cam.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const own = id === 'aether:player';
+    // The player's own steps stay audible in third person; others fade out by ~24 m.
+    const level = own ? (this.sneaking ? 0.35 : 1) * Math.min(1.2, 0.5 + speed * 0.1) : Math.max(0, 1 - d / 24) * Math.min(1.1, 0.45 + speed * 0.1);
+    if (level <= 0.02) return;
+    this.sound.play(`step-${this.renderer.surfaceAt(position[0], position[1], position[2])}`, level);
+  }
+
+  /**
+   * Hand each person on screen what the NPC runtime knows (animation hint,
+   * conversation, who to look at). Visual only: nothing here is read back by
+   * the simulation, so the playtest bot and replay proofs are unaffected.
+   */
+  private feedCharacters(s: PlaySession): void {
+    if (this.renderer.characterCount === 0) return;
+    const npcs = s.logic.npcs;
+    const speaking = this.speakingScratch;
+    speaking.clear();
+    for (let i = 0; i < npcs.bubbleCount; i++) {
+      const b = npcs.bubbleAt(i);
+      if (b) speaking.add(b.npc);
+    }
+    const pos = s.character?.position;
+    const target = this.lookScratch;
+    if (pos) target.set(pos[0], pos[1] + 1.55, pos[2]);
+    for (const brain of npcs.brains) {
+      const rig = this.renderer.characterRig(brain.id);
+      if (!rig) continue;
+      const hint = brain.animation;
+      rig.input.hint = hint === 'idle' || hint === 'walk' || hint === 'run' || hint === 'attack' || hint === 'talk' || hint === 'hurt' || hint === 'dead' ? hint : 'idle';
+      rig.input.talking = brain.conversing || speaking.has(brain.id);
+      rig.lookTarget = pos && (brain.attentive || speaking.has(brain.id)) ? target : null;
+    }
   }
 
   /** Sample the NPC system for the UI: on change, and at ~12 Hz while bubbles are on screen. */

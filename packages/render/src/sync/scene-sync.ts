@@ -59,6 +59,8 @@ import { createMaterial } from '../materials/material-cache';
 import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
 import type { AssetAnimator } from './asset-animator';
+import type { CharacterSystem } from '../characters/system';
+import { resolveLook } from '@aether/assets';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
 import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
@@ -124,6 +126,8 @@ export interface SceneSyncOptions {
   onContentChanged?: (id: EntityId) => void;
   /** Draw identical static props as instanced batches (default true; never for the ghost variant). */
   staticBatching?: boolean;
+  /** The scene's people: entities with `character` show a cast member instead of their shape. */
+  characters?: CharacterSystem;
   /**
    * Huge scatter layers (≥ {@link FIELD_MIN_INSTANCES}) become culled, LOD'd
    * instance fields with these budgets (default {@link DEFAULT_FIELD_BUDGET});
@@ -839,7 +843,53 @@ export class SceneSync {
     this.root.add(node.object);
     this.syncLight(node, undefined);
     this.indexScatter(node.id, undefined, entity.shape);
+    this.syncCharacter(node);
     return node;
+  }
+
+  /**
+   * Show the entity's person (when it has a `character`): the cast member is
+   * mounted at the feet of the entity's collider shape, which stays in place
+   * (physics, picking and bounds) but is not drawn. If the person cannot be
+   * loaded the shape is drawn as before.
+   */
+  private syncCharacter(node: EntityNode): void {
+    const chars = this.opts.characters;
+    if (!chars || this.variant !== 'standard') return;
+    const spec = node.entity.character;
+    if (!spec) {
+      if (node.characterBody !== null) {
+        chars.remove(node.id);
+        node.characterBody = null;
+        node.content.visible = true;
+      }
+      return;
+    }
+    const taken = new Set<string>();
+    for (const other of this.nodes.values()) if (other !== node && other.characterBody) taken.add(other.characterBody);
+    const look = resolveLook(spec, node.id, { taken });
+    node.characterBody = look.body.id;
+    node.content.visible = false;
+    const shape = node.entity.shape;
+    // Collider shapes are centred on the body; models and assets stand on their origin.
+    const footOffset = shape.kind === 'primitive' ? -(shape.size[1] * 0.5) : 0;
+    const token = ++node.charToken;
+    void this.track(
+      chars.add(node.id, look, node.object, { footOffset, track: node.object, castShadow: node.entity.castShadow }).then((rig) => {
+        if (!rig && node.charToken === token && this.nodes.get(node.id) === node) node.content.visible = true;
+        if (rig) this.opts.onContentChanged?.(node.id);
+      }),
+    );
+  }
+
+  /** True when the entity shows a person (its own shape is only the collider). */
+  hasCharacter(id: EntityId): boolean {
+    return (this.nodes.get(id)?.characterBody ?? null) !== null;
+  }
+
+  /** The animated person of an entity, or null (tests, the studio's NPC feed). */
+  characterRig(id: EntityId): import('../characters/rig').CharacterRig | null {
+    return this.opts.characters?.rig(id) ?? null;
   }
 
   /** Keep the surface → scatter index in sync with a shape change. */
@@ -861,6 +911,7 @@ export class SceneSync {
 
   private removeNode(node: EntityNode): void {
     node.token++;
+    if (node.characterBody !== null) this.opts.characters?.remove(node.id);
     this.batchesStale = true;
     this.teardownContent(node);
     if (node.light) {
@@ -916,6 +967,7 @@ export class SceneSync {
     if (!rebuild && !deepEqual(before.material, after.material)) this.rematerial(node);
     if (!rebuild && (before.castShadow !== after.castShadow || before.receiveShadow !== after.receiveShadow)) this.applyShadowFlags(node);
     if (!deepEqual(before.light, after.light)) this.syncLight(node, before);
+    if (!deepEqual(before.character, after.character) || !deepEqual(before.shape, after.shape)) this.syncCharacter(node);
     return { rebuild, reparent, moved: transformChanged || reparent };
   }
 

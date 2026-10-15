@@ -14,7 +14,7 @@
  * backs both the editor's quick "Export 3D model" action ({@link exportGlb})
  * and the Publish hub ({@link exportGltf}).
  */
-import { CanvasTexture, DoubleSide, Group, InstancedMesh, Mesh, MeshStandardMaterial, RGBAFormat, type Camera, type Material, type Object3D, type Texture } from 'three';
+import { BufferGeometry, CanvasTexture, DoubleSide, Float32BufferAttribute, Group, InstancedMesh, Mesh, MeshStandardMaterial, RGBAFormat, Vector3, type Camera, type SkinnedMesh, type Material, type Object3D, type Texture } from 'three';
 import { ENTITY_ID_KEY } from '../sync/entity-node';
 import { FINISH_MAPS_KEY, type AntiTileMaps } from '../materials/anti-tile';
 
@@ -162,6 +162,35 @@ function standardCopy(src: Material, cache: Map<Material, MeshStandardMaterial>,
   return m;
 }
 
+const _skinV = new Vector3();
+
+/**
+ * A copy of a skinned mesh's geometry with the current pose baked into its
+ * vertices (the exported graph has no skeleton, so a person would otherwise
+ * be drawn in the bind pose). Positions are in the mesh's local space.
+ */
+function bakeSkinned(mesh: SkinnedMesh): BufferGeometry {
+  const src = mesh.geometry;
+  const pos = src.getAttribute('position');
+  const out = new Float32Array(pos.count * 3);
+  mesh.skeleton.update();
+  for (let i = 0; i < pos.count; i++) {
+    mesh.getVertexPosition(i, _skinV);
+    out[i * 3] = _skinV.x;
+    out[i * 3 + 1] = _skinV.y;
+    out[i * 3 + 2] = _skinV.z;
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(out, 3));
+  const uv = src.getAttribute('uv');
+  if (uv) g.setAttribute('uv', uv);
+  const index = src.getIndex();
+  if (index) g.setIndex(index);
+  for (const group of src.groups) g.addGroup(group.start, group.count, group.materialIndex);
+  g.computeVertexNormals();
+  return g;
+}
+
 function entityOf(o: Object3D): string | null {
   for (let p: Object3D | null = o; p; p = p.parent) {
     const id = p.userData[ENTITY_ID_KEY] as unknown;
@@ -200,6 +229,7 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
   let meshes = 0;
   let skipped = 0;
   const seen = new Set<string>();
+  const baked: BufferGeometry[] = [];
   content.traverse((o) => {
     if (!(o instanceof Mesh) || (o as { isBatchedMesh?: boolean }).isBatchedMesh) return;
     if ((camera && !o.layers.test(camera.layers)) || !visibleChain(o, content)) return;
@@ -220,6 +250,10 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
       im.instanceMatrix.array.set(o.instanceMatrix.array.subarray(0, o.count * 16));
       im.instanceMatrix.needsUpdate = true;
       node = im;
+    } else if ((o as SkinnedMesh).isSkinnedMesh && (o as SkinnedMesh).skeleton) {
+      const geometry = bakeSkinned(o as SkinnedMesh);
+      baked.push(geometry);
+      node = new Mesh(geometry, material);
     } else {
       node = new Mesh(o.geometry, material);
     }
@@ -240,6 +274,7 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
     skipped,
     dispose: () => {
       for (const m of cache.values()) m.dispose();
+      for (const g of baked) g.dispose();
       for (const t of copies.values()) {
         const img = t.image as { width?: number; height?: number } | null;
         t.dispose();

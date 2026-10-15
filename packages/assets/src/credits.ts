@@ -8,6 +8,8 @@ import type { WorldDoc } from '@aether/core';
 import { assetInfo, effectiveAssetId } from './info';
 import { getCatalog } from './registry';
 import type { Catalog, CatalogPack } from './schema';
+import { characterCredit } from './characters/credits';
+import { castById } from './characters/library';
 
 /** One credit line. */
 export interface Credit {
@@ -34,7 +36,7 @@ export function worldAssetIds(world: Pick<WorldDoc, 'entities' | 'environment'>)
 }
 
 /** Credits for a world's assets (library packs first, then per-author entries, then user imports). */
-export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'>, catalog: Catalog | null = getCatalog()): Credit[] {
+export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'> & { player?: Pick<WorldDoc['player'], 'character'> }, catalog: Catalog | null = getCatalog()): Credit[] {
   const packs = new Map<string, CatalogPack>((catalog?.packs ?? []).map((p) => [p.id, p]));
   const groups = new Map<string, Credit>();
   for (const id of worldAssetIds(world)) {
@@ -56,7 +58,16 @@ export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'>, ca
     g.assets.push(e.name);
     groups.set(key, g);
   }
+  const people = new Set<string>();
+  let anyPerson = Boolean(world.player?.character);
+  if (world.player?.character?.body) people.add(world.player.character.body);
+  for (const e of Object.values(world.entities)) {
+    if (!e.character) continue;
+    anyPerson = true;
+    if (e.character.body && castById(e.character.body)) people.add(e.character.body);
+  }
   const out = [...groups.values()];
+  if (anyPerson) out.push(characterCredit(people.size > 0 ? [...people] : undefined));
   for (const g of out) g.assets = [...new Set(g.assets)].sort();
   return out.sort((a, b) => (a.source === 'Your imports' ? 1 : b.source === 'Your imports' ? -1 : a.source.localeCompare(b.source) || a.author.localeCompare(b.author)));
 }

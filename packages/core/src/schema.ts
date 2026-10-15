@@ -14,9 +14,11 @@ import './zod-config';
 import { z } from 'zod';
 import { VoxelEdit, VoxelTerrain } from './voxel-schema';
 import { NpcSpec } from './npc-schema';
+import { CharacterSpec } from './character-schema';
 
 export * from './voxel-schema';
 export * from './npc-schema';
+export * from './character-schema';
 
 export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 export type Vec3 = z.infer<typeof Vec3>;
@@ -418,6 +420,12 @@ export const Entity = z.object({
    * waypoints, dialogue). See `npc-schema.ts` and `@aether/logic` `npc/`.
    */
   npc: NpcSpec.optional(),
+  /**
+   * Additive: a human look (a person from the cast, tinted and animated) shown
+   * instead of the entity's own shape; the shape stays the collider. See
+   * `character-schema.ts`.
+   */
+  character: CharacterSpec.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -522,6 +530,8 @@ export const PlayerSpec = z.object({
   controls: EntityId.optional(),
   moveSpeed: z.number().positive().default(6),
   jumpSpeed: z.number().min(0).default(6),
+  /** Additive: how the player's body looks in third person (default: chosen from the world's seed). */
+  character: CharacterSpec.optional(),
 });
 export type PlayerSpec = z.infer<typeof PlayerSpec>;
 

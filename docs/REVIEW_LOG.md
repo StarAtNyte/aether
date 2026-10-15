@@ -3048,3 +3048,19 @@ changed): the generator-sandbox child probe and two server storage tests
 (`WebAssembly` is undefined in the locked-down child under Node 22.19) and the
 render allocation probes (16.6-34 bytes per frame against a limit of 16; the
 failing subset changes from run to run).
+## Real people (stage `characters`)
+
+Rocketbox (MIT) bodies and motion replace capsule and procedural figures for the player and NPCs.
+
+- **Security**: no new runtime dependency. `CharacterSpec` is zod-validated (hex colours, slug body ids,
+  bounded scale and word lists); unknown cast ids fall back to a seeded pick. Asset URLs are
+  content-hashed files under the app's own `/assets/lib/`; nothing is fetched from user input. Prop
+  and look text parsed by `lookFromText` uses bounded regexes on prompt-length strings.
+- **Performance**: one shared skeleton and motion file per gender, lazy per-body glb (<= 1.2 MB),
+  LOD and animation rate drop with distance, `update` clamps dt (<= 0.25 s) and ignores NaN.
+  Animation is visual-only: colliders, NPC navigation, the bot and proof hashes are untouched.
+- **Honest limits**: realism is "2010-era AAA scans under photoreal light"; hands/fingers IK only for
+  held props; the 50-NPC software-GPU budget was checked via the e2e only at small counts.
+- **Tests**: `packages/assets/test/characters.test.ts` (cast, look resolution, retarget maps, state
+  machine incl. stride match, death, bad dt), `packages/core/test/character-schema.test.ts`,
+  `tests/e2e/characters.e2e.ts`.

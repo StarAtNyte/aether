@@ -1,0 +1,1256 @@
+{
+ "source": "Microsoft Rocketbox",
+ "licence": "MIT",
+ "url": "https://github.com/microsoft/Microsoft-Rocketbox",
+ "commit": "0943055db6ec570bcef9f2c8b41c9e5467c808f9",
+ "cast": [
+  {
+   "id": "marcus",
+   "src": "Male_Adult_03",
+   "gender": "male",
+   "look": "older man, grey hair, grey jacket",
+   "triangles": 7200,
+   "vertices": 4426,
+   "bones": 80,
+   "height": 1.807,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.069,
+   "tintBottom": 0.009,
+   "tintHair": 0.167,
+   "file": "c/marcus.487e0040.glb",
+   "sha256": "487e00400a678a2648b3a6eedda74af979e4dfb6491bf5403bdc41e9994619c9",
+   "bytes": 1168480,
+   "masks": "c/marcus.masks.25fbd7f2.webp",
+   "maskBytes": 14176,
+   "source": "Assets/Avatars/Adults/Male_Adult_03"
+  },
+  {
+   "id": "dario",
+   "src": "Male_Adult_04",
+   "gender": "male",
+   "look": "young man, dark curly hair, dark hoodie",
+   "triangles": 8684,
+   "vertices": 5448,
+   "bones": 80,
+   "height": 1.869,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.035,
+   "tintBottom": 0.035,
+   "tintHair": 0.011,
+   "file": "c/dario.26754f25.glb",
+   "sha256": "26754f251218f3b344bfb1bd5120ea97ff1cdcc0101c1d03fc5359dfb13a7748",
+   "bytes": 840032,
+   "masks": "c/dario.masks.b1f6a6f1.webp",
+   "maskBytes": 12200,
+   "source": "Assets/Avatars/Adults/Male_Adult_04"
+  },
+  {
+   "id": "tomas",
+   "src": "Male_Adult_05",
+   "gender": "male",
+   "look": "man in a green jacket and tan vest",
+   "triangles": 7836,
+   "vertices": 4883,
+   "bones": 80,
+   "height": 1.812,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.193,
+   "tintBottom": 0.037,
+   "tintHair": 0.021,
+   "file": "c/tomas.bab0c4aa.glb",
+   "sha256": "bab0c4aa099b1d013e81eeef39870c769dba2337b02b3c83d219573424ec8df1",
+   "bytes": 812908,
+   "masks": "c/tomas.masks.c8bd41a2.webp",
+   "maskBytes": 11754,
+   "source": "Assets/Avatars/Adults/Male_Adult_05"
+  },
+  {
+   "id": "felix",
+   "src": "Male_Adult_06",
+   "gender": "male",
+   "look": "young man, red sweater",
+   "triangles": 7456,
+   "vertices": 4569,
+   "bones": 80,
+   "height": 1.831,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.097,
+   "tintBottom": 0.024,
+   "tintHair": 0.033,
+   "file": "c/felix.367a5261.glb",
+   "sha256": "367a5261e4d184c3d627adf45d44f0476c5c29a22b55a931e2c216f8dd82bd57",
+   "bytes": 930296,
+   "masks": "c/felix.masks.378477bb.webp",
+   "maskBytes": 9008,
+   "source": "Assets/Avatars/Adults/Male_Adult_06"
+  },
+  {
+   "id": "kofi",
+   "src": "Male_Adult_12",
+   "gender": "male",
+   "look": "man, denim jacket and white shirt",
+   "triangles": 6722,
+   "vertices": 4043,
+   "bones": 80,
+   "height": 1.807,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.072,
+   "tintBottom": 0.156,
+   "tintHair": 0.007,
+   "file": "c/kofi.2c7bc66b.glb",
+   "sha256": "2c7bc66b5d1428881998dadc475e987576eed8bd526862e4b46d0bb9683681fe",
+   "bytes": 525464,
+   "masks": "c/kofi.masks.7a1cec1b.webp",
+   "maskBytes": 11416,
+   "source": "Assets/Avatars/Adults/Male_Adult_12"
+  },
+  {
+   "id": "walter",
+   "src": "Male_Adult_14",
+   "gender": "male",
+   "look": "balding middle-aged man, grey shirt, khakis",
+   "triangles": 6842,
+   "vertices": 4090,
+   "bones": 80,
+   "height": 1.796,
+   "hip": 0.895,
+   "faces": 1,
+   "tintTop": 0.15,
+   "tintBottom": 0.217,
+   "tintHair": 0.04,
+   "file": "c/walter.f1bb6e49.glb",
+   "sha256": "f1bb6e4945cfe5eab1ab68ae00f6fe59db316e85f0c5cfa9d59712b3580f26b5",
+   "bytes": 448428,
+   "masks": "c/walter.masks.a9e9f7bd.webp",
+   "maskBytes": 9494,
+   "source": "Assets/Avatars/Adults/Male_Adult_14"
+  },
+  {
+   "id": "sophie",
+   "src": "Female_Adult_02",
+   "gender": "female",
+   "look": "woman, white blouse and skirt",
+   "triangles": 8940,
+   "vertices": 5600,
+   "bones": 80,
+   "height": 1.735,
+   "hip": 0.923,
+   "faces": 1,
+   "tintTop": 0.471,
+   "tintBottom": 0.035,
+   "tintHair": 0.012,
+   "file": "c/sophie.cba6c5f3.glb",
+   "sha256": "cba6c5f3e8d716f3a9459caf8ef7379767db342de4517bda6b23437ee010d46b",
+   "bytes": 782148,
+   "masks": "c/sophie.masks.ac99bbe4.webp",
+   "maskBytes": 10868,
+   "source": "Assets/Avatars/Adults/Female_Adult_02"
+  },
+  {
+   "id": "edith",
+   "src": "Female_Adult_04",
+   "gender": "female",
+   "look": "older woman, brown jacket and trousers",
+   "triangles": 9284,
+   "vertices": 6016,
+   "bones": 80,
+   "height": 1.766,
+   "hip": 0.923,
+   "faces": 1,
+   "tintTop": 0.027,
+   "tintBottom": 0.097,
+   "tintHair": 0.3,
+   "file": "c/edith.492fe791.glb",
+   "sha256": "492fe7916e1ad0ec54553caec53d529b24a0507c061e33fa986056fc3b817070",
+   "bytes": 829524,
+   "masks": "c/edith.masks.89d618af.webp",
+   "maskBytes": 16910,
+   "source": "Assets/Avatars/Adults/Female_Adult_04"
+  },
+  {
+   "id": "rosa",
+   "src": "Female_Adult_11",
+   "gender": "female",
+   "look": "woman, brown dress and boots",
+   "triangles": 8896,
+   "vertices": 6179,
+   "bones": 80,
+   "height": 1.736,
+   "hip": 0.923,
+   "faces": 1,
+   "tintTop": 0.015,
+   "tintBottom": 0.036,
+   "tintHair": 0.026,
+   "file": "c/rosa.07c2fb46.glb",
+   "sha256": "07c2fb46b748b92bf5cb33347d2ffa4c38a314649e4110cf060b85b8d6cbbd15",
+   "bytes": 768628,
+   "masks": "c/rosa.masks.6adda7e8.webp",
+   "maskBytes": 12834,
+   "source": "Assets/Avatars/Adults/Female_Adult_11"
+  },
+  {
+   "id": "juno",
+   "src": "Female_Adult_17",
+   "gender": "female",
+   "look": "blonde woman, green top and jeans",
+   "triangles": 8516,
+   "vertices": 5210,
+   "bones": 80,
+   "height": 1.751,
+   "hip": 0.923,
+   "faces": 1,
+   "tintTop": 0.283,
+   "tintBottom": 0.288,
+   "tintHair": 0.058,
+   "file": "c/juno.34d73378.glb",
+   "sha256": "34d733785f5ca125bd0ccd3519f543597a6afb537089e457f0c6322b47f06992",
+   "bytes": 764232,
+   "masks": "c/juno.masks.6bbb1748.webp",
+   "maskBytes": 9688,
+   "source": "Assets/Avatars/Adults/Female_Adult_17"
+  }
+ ],
+ "motions": [
+  {
+   "gender": "male",
+   "file": "c/motions-male.6abfab55.glb",
+   "sha256": "6abfab55c5726eeb901e106b0bbcd206ac34b83e43454db59d8c8001c24b73c5",
+   "bytes": 2314896,
+   "clips": [
+    {
+     "name": "idle",
+     "duration": 11.667,
+     "stride": 0
+    },
+    {
+     "name": "idle_breathe",
+     "duration": 2.733,
+     "stride": 0
+    },
+    {
+     "name": "idle_look",
+     "duration": 4.633,
+     "stride": 0
+    },
+    {
+     "name": "idle_nervous",
+     "duration": 30.9,
+     "stride": 0
+    },
+    {
+     "name": "idle_wait",
+     "duration": 47,
+     "stride": 0
+    },
+    {
+     "name": "idle_b",
+     "duration": 33.333,
+     "stride": 0
+    },
+    {
+     "name": "idle_angry",
+     "duration": 28.333,
+     "stride": 0
+    },
+    {
+     "name": "idle_yawn",
+     "duration": 9.233,
+     "stride": 0
+    },
+    {
+     "name": "idle_scratch",
+     "duration": 4.967,
+     "stride": 0
+    },
+    {
+     "name": "walk",
+     "duration": 1.067,
+     "stride": 1.402,
+     "contacts": [
+      [
+       0.281,
+       0
+      ],
+      [
+       0.75,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_slow",
+     "duration": 1.467,
+     "stride": 0.821,
+     "contacts": [
+      [
+       0.227,
+       0
+      ],
+      [
+       0.773,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_fast",
+     "duration": 1.067,
+     "stride": 1.495,
+     "contacts": [
+      [
+       0.219,
+       1
+      ],
+      [
+       0.625,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "stroll",
+     "duration": 1.567,
+     "stride": 0.693,
+     "contacts": [
+      [
+       0.064,
+       1
+      ],
+      [
+       0.191,
+       1
+      ],
+      [
+       0.574,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "walk_hurt",
+     "duration": 2.533,
+     "stride": 0.713,
+     "contacts": [
+      [
+       0.092,
+       0
+      ],
+      [
+       0.355,
+       1
+      ],
+      [
+       0.592,
+       0
+      ],
+      [
+       0.829,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_drunk",
+     "duration": 2.5,
+     "stride": 0.816,
+     "contacts": [
+      [
+       0.027,
+       1
+      ],
+      [
+       0.36,
+       0
+      ],
+      [
+       0.587,
+       1
+      ],
+      [
+       0.853,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "walk_start",
+     "duration": 0.967,
+     "stride": 0.628,
+     "contacts": [
+      [
+       0,
+       0
+      ],
+      [
+       0.655,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_stop",
+     "duration": 2,
+     "stride": 0.696,
+     "contacts": [
+      [
+       0.167,
+       0
+      ],
+      [
+       0.4,
+       1
+      ],
+      [
+       0.533,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "jog",
+     "duration": 0.767,
+     "stride": 2.411,
+     "contacts": [
+      [
+       0.261,
+       1
+      ],
+      [
+       0.739,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "run",
+     "duration": 0.767,
+     "stride": 3.075,
+     "contacts": [
+      [
+       0.348,
+       0
+      ],
+      [
+       0.826,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "sprint",
+     "duration": 0.6,
+     "stride": 5.839,
+     "contacts": [
+      [
+       0.278,
+       1
+      ],
+      [
+       0.778,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "run_start",
+     "duration": 0.633,
+     "stride": 0.903,
+     "contacts": [
+      [
+       0,
+       0
+      ],
+      [
+       0.684,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "run_stop",
+     "duration": 1.267,
+     "stride": 1.285,
+     "contacts": [
+      [
+       0.211,
+       0
+      ],
+      [
+       0.316,
+       1
+      ],
+      [
+       0.632,
+       0
+      ]
+     ]
+    },
+    {
+     "name": "crouch",
+     "duration": 6.867,
+     "stride": 0
+    },
+    {
+     "name": "crouch_talk",
+     "duration": 10.867,
+     "stride": 0
+    },
+    {
+     "name": "crouch_in",
+     "duration": 4.5,
+     "stride": 0.042
+    },
+    {
+     "name": "crouch_out",
+     "duration": 4.5,
+     "stride": 0.042
+    },
+    {
+     "name": "talk",
+     "duration": 35.567,
+     "stride": 0
+    },
+    {
+     "name": "talk_b",
+     "duration": 44.4,
+     "stride": 0
+    },
+    {
+     "name": "talk_excited",
+     "duration": 26.533,
+     "stride": 0
+    },
+    {
+     "name": "talk_angry",
+     "duration": 39.267,
+     "stride": 0
+    },
+    {
+     "name": "talk_calm",
+     "duration": 32.333,
+     "stride": 0
+    },
+    {
+     "name": "listen",
+     "duration": 32.533,
+     "stride": 0
+    },
+    {
+     "name": "nod",
+     "duration": 3.7,
+     "stride": 0
+    },
+    {
+     "name": "shake_head",
+     "duration": 3,
+     "stride": 0
+    },
+    {
+     "name": "shrug",
+     "duration": 1.833,
+     "stride": 0
+    },
+    {
+     "name": "think",
+     "duration": 13.5,
+     "stride": 0
+    },
+    {
+     "name": "laugh",
+     "duration": 16.567,
+     "stride": 0
+    },
+    {
+     "name": "present",
+     "duration": 22.367,
+     "stride": 0
+    },
+    {
+     "name": "wave",
+     "duration": 2.833,
+     "stride": 0
+    },
+    {
+     "name": "wave_b",
+     "duration": 6.2,
+     "stride": 0
+    },
+    {
+     "name": "cheer",
+     "duration": 24.633,
+     "stride": 0
+    },
+    {
+     "name": "clap",
+     "duration": 7,
+     "stride": 0
+    },
+    {
+     "name": "sit_down",
+     "duration": 2.9,
+     "stride": 0.159
+    },
+    {
+     "name": "sit",
+     "duration": 36.1,
+     "stride": 0
+    },
+    {
+     "name": "sit_shrug",
+     "duration": 3,
+     "stride": 0
+    },
+    {
+     "name": "sit_breathe",
+     "duration": 12.7,
+     "stride": 0
+    },
+    {
+     "name": "stand_up",
+     "duration": 2.5,
+     "stride": 0.169
+    },
+    {
+     "name": "take",
+     "duration": 5,
+     "stride": 0
+    },
+    {
+     "name": "read",
+     "duration": 16.1,
+     "stride": 0
+    },
+    {
+     "name": "hold_papers",
+     "duration": 26.9,
+     "stride": 0
+    },
+    {
+     "name": "knock",
+     "duration": 8,
+     "stride": 0
+    },
+    {
+     "name": "door",
+     "duration": 6.2,
+     "stride": 0
+    },
+    {
+     "name": "drink",
+     "duration": 35,
+     "stride": 0
+    },
+    {
+     "name": "phone",
+     "duration": 31.9,
+     "stride": 0
+    },
+    {
+     "name": "turn_left",
+     "duration": 2.333,
+     "stride": 0
+    },
+    {
+     "name": "turn_right",
+     "duration": 2.167,
+     "stride": 0
+    },
+    {
+     "name": "turn_around",
+     "duration": 2.433,
+     "stride": 0
+    },
+    {
+     "name": "jump_start",
+     "duration": 0.3,
+     "stride": 0
+    },
+    {
+     "name": "jump_air",
+     "duration": 0.8,
+     "stride": 0
+    },
+    {
+     "name": "fall",
+     "duration": 0.7,
+     "stride": 0
+    },
+    {
+     "name": "land",
+     "duration": 0.45,
+     "stride": 0
+    },
+    {
+     "name": "hit",
+     "duration": 0.5,
+     "stride": 0
+    },
+    {
+     "name": "attack",
+     "duration": 0.85,
+     "stride": 0
+    },
+    {
+     "name": "throw",
+     "duration": 0.9,
+     "stride": 0
+    },
+    {
+     "name": "pickup",
+     "duration": 1.3,
+     "stride": 0
+    },
+    {
+     "name": "death",
+     "duration": 1.7,
+     "stride": 0
+    },
+    {
+     "name": "crouch_walk",
+     "duration": 1,
+     "stride": 0.95,
+     "contacts": [
+      [
+       0.133,
+       0
+      ],
+      [
+       0.2,
+       1
+      ],
+      [
+       0.667,
+       1
+      ],
+      [
+       0.7,
+       0
+      ]
+     ]
+    }
+   ],
+   "hip": 0.895
+  },
+  {
+   "gender": "female",
+   "file": "c/motions-female.8e2e2850.glb",
+   "sha256": "8e2e28504335c4cd95a3740f782b8491496d8f64b562e50948730e7d1a7c96aa",
+   "bytes": 2274076,
+   "clips": [
+    {
+     "name": "idle",
+     "duration": 15.533,
+     "stride": 0
+    },
+    {
+     "name": "idle_breathe",
+     "duration": 2.667,
+     "stride": 0
+    },
+    {
+     "name": "idle_look",
+     "duration": 4.467,
+     "stride": 0
+    },
+    {
+     "name": "idle_nervous",
+     "duration": 46.167,
+     "stride": 0
+    },
+    {
+     "name": "idle_wait",
+     "duration": 47.5,
+     "stride": 0
+    },
+    {
+     "name": "idle_b",
+     "duration": 16.667,
+     "stride": 0
+    },
+    {
+     "name": "idle_angry",
+     "duration": 23.833,
+     "stride": 0
+    },
+    {
+     "name": "idle_yawn",
+     "duration": 6.467,
+     "stride": 0
+    },
+    {
+     "name": "idle_scratch",
+     "duration": 4,
+     "stride": 0
+    },
+    {
+     "name": "walk",
+     "duration": 1.233,
+     "stride": 1.295,
+     "contacts": [
+      [
+       0.108,
+       0
+      ],
+      [
+       0.73,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_slow",
+     "duration": 1.5,
+     "stride": 0.887,
+     "contacts": [
+      [
+       0.133,
+       0
+      ],
+      [
+       0.222,
+       0
+      ],
+      [
+       0.622,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_fast",
+     "duration": 1.033,
+     "stride": 1.53,
+     "contacts": [
+      [
+       0.226,
+       0
+      ],
+      [
+       0.581,
+       1
+      ],
+      [
+       0.774,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "stroll",
+     "duration": 1.4,
+     "stride": 0.926,
+     "contacts": [
+      [
+       0.238,
+       0
+      ],
+      [
+       0.667,
+       1
+      ],
+      [
+       0.738,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_hurt",
+     "duration": 1.033,
+     "stride": 1.305,
+     "contacts": [
+      [
+       0.226,
+       0
+      ],
+      [
+       0.71,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_drunk",
+     "duration": 1.3,
+     "stride": 0.904,
+     "contacts": [
+      [
+       0.154,
+       0
+      ],
+      [
+       0.641,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_start",
+     "duration": 0.933,
+     "stride": 0.823,
+     "contacts": [
+      [
+       0,
+       0
+      ],
+      [
+       0.643,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "walk_stop",
+     "duration": 1.767,
+     "stride": 0.381,
+     "contacts": [
+      [
+       0.113,
+       0
+      ],
+      [
+       0.377,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "jog",
+     "duration": 0.833,
+     "stride": 2.269,
+     "contacts": [
+      [
+       0.12,
+       0
+      ],
+      [
+       0.6,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "run",
+     "duration": 0.833,
+     "stride": 3.157,
+     "contacts": [
+      [
+       0.16,
+       0
+      ],
+      [
+       0.68,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "sprint",
+     "duration": 0.7,
+     "stride": 5.379,
+     "contacts": [
+      [
+       0.095,
+       0
+      ],
+      [
+       0.667,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "run_start",
+     "duration": 1.067,
+     "stride": 0.868,
+     "contacts": [
+      [
+       0,
+       0
+      ],
+      [
+       0.813,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "run_stop",
+     "duration": 1.667,
+     "stride": 1.839,
+     "contacts": [
+      [
+       0.16,
+       0
+      ],
+      [
+       0.32,
+       1
+      ],
+      [
+       0.38,
+       1
+      ],
+      [
+       0.62,
+       0
+      ],
+      [
+       0.8,
+       1
+      ]
+     ]
+    },
+    {
+     "name": "crouch",
+     "duration": 9.933,
+     "stride": 0
+    },
+    {
+     "name": "crouch_talk",
+     "duration": 23.567,
+     "stride": 0
+    },
+    {
+     "name": "crouch_in",
+     "duration": 2.5,
+     "stride": 0.013
+    },
+    {
+     "name": "crouch_out",
+     "duration": 2.667,
+     "stride": 0.012
+    },
+    {
+     "name": "talk",
+     "duration": 27.333,
+     "stride": 0
+    },
+    {
+     "name": "talk_b",
+     "duration": 27.667,
+     "stride": 0
+    },
+    {
+     "name": "talk_excited",
+     "duration": 29.033,
+     "stride": 0
+    },
+    {
+     "name": "talk_angry",
+     "duration": 32.767,
+     "stride": 0
+    },
+    {
+     "name": "talk_calm",
+     "duration": 27.5,
+     "stride": 0
+    },
+    {
+     "name": "listen",
+     "duration": 21.433,
+     "stride": 0
+    },
+    {
+     "name": "nod",
+     "duration": 2.033,
+     "stride": 0
+    },
+    {
+     "name": "shake_head",
+     "duration": 3.167,
+     "stride": 0
+    },
+    {
+     "name": "shrug",
+     "duration": 1.833,
+     "stride": 0
+    },
+    {
+     "name": "think",
+     "duration": 9.433,
+     "stride": 0
+    },
+    {
+     "name": "laugh",
+     "duration": 10.333,
+     "stride": 0
+    },
+    {
+     "name": "present",
+     "duration": 16,
+     "stride": 0
+    },
+    {
+     "name": "wave",
+     "duration": 5.533,
+     "stride": 0
+    },
+    {
+     "name": "wave_b",
+     "duration": 8.4,
+     "stride": 0
+    },
+    {
+     "name": "cheer",
+     "duration": 15.3,
+     "stride": 0
+    },
+    {
+     "name": "clap",
+     "duration": 15.933,
+     "stride": 0
+    },
+    {
+     "name": "sit_down",
+     "duration": 4.9,
+     "stride": 0.093
+    },
+    {
+     "name": "sit",
+     "duration": 33.233,
+     "stride": 0
+    },
+    {
+     "name": "sit_shrug",
+     "duration": 1.467,
+     "stride": 0
+    },
+    {
+     "name": "sit_breathe",
+     "duration": 19.2,
+     "stride": 0
+    },
+    {
+     "name": "stand_up",
+     "duration": 3.333,
+     "stride": 0.12
+    },
+    {
+     "name": "take",
+     "duration": 7.633,
+     "stride": 0
+    },
+    {
+     "name": "read",
+     "duration": 12.133,
+     "stride": 0
+    },
+    {
+     "name": "hold_papers",
+     "duration": 27.333,
+     "stride": 0
+    },
+    {
+     "name": "knock",
+     "duration": 3.167,
+     "stride": 0
+    },
+    {
+     "name": "door",
+     "duration": 9,
+     "stride": 0
+    },
+    {
+     "name": "drink",
+     "duration": 11.9,
+     "stride": 0
+    },
+    {
+     "name": "phone",
+     "duration": 41.167,
+     "stride": 0
+    },
+    {
+     "name": "turn_left",
+     "duration": 2.333,
+     "stride": 0.028
+    },
+    {
+     "name": "turn_right",
+     "duration": 2.333,
+     "stride": 0.067
+    },
+    {
+     "name": "turn_around",
+     "duration": 1.867,
+     "stride": 0.03
+    },
+    {
+     "name": "jump_start",
+     "duration": 0.3,
+     "stride": 0
+    },
+    {
+     "name": "jump_air",
+     "duration": 0.8,
+     "stride": 0
+    },
+    {
+     "name": "fall",
+     "duration": 0.7,
+     "stride": 0
+    },
+    {
+     "name": "land",
+     "duration": 0.45,
+     "stride": 0
+    },
+    {
+     "name": "hit",
+     "duration": 0.5,
+     "stride": 0
+    },
+    {
+     "name": "attack",
+     "duration": 0.85,
+     "stride": 0
+    },
+    {
+     "name": "throw",
+     "duration": 0.9,
+     "stride": 0
+    },
+    {
+     "name": "pickup",
+     "duration": 1.3,
+     "stride": 0
+    },
+    {
+     "name": "death",
+     "duration": 1.7,
+     "stride": 0
+    },
+    {
+     "name": "crouch_walk",
+     "duration": 1,
+     "stride": 0.95,
+     "contacts": [
+      [
+       0.133,
+       0
+      ],
+      [
+       0.2,
+       1
+      ],
+      [
+       0.667,
+       1
+      ],
+      [
+       0.7,
+       0
+      ]
+     ]
+    }
+   ],
+   "hip": 0.919
+  }
+ ]
+}

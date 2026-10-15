@@ -185,6 +185,21 @@ export class NpcBrain implements BehaviorInstance {
     return Number.isFinite(this.feetOffset) ? y - this.feetOffset : this.sys.feetGuess(this.self, y);
   }
 
+  /** Current animation hint (`npcAnim`): what a renderer should show. Visual only. */
+  get animation(): string {
+    return this.anim;
+  }
+
+  /** True while in a conversation or trading (a renderer shows talking gestures). */
+  get conversing(): boolean {
+    return this.mode === 'talk' || this.mode === 'trade';
+  }
+
+  /** True while the character is paying attention to the player (a renderer turns its head). */
+  get attentive(): boolean {
+    return this.conversing || this.mode === 'chase' || this.mode === 'attack' || this.mode === 'investigate' || this.mode === 'flee' || this.mode === 'follow' || this.targetKind === T_PLAYER;
+  }
+
   /** Kind (1 player, 2 npc) and id of the current target, for alarms. */
   get targetRef(): { kind: number; id: EntityId | null } {
     targetOut.kind = this.targetKind;
@@ -1111,6 +1126,8 @@ export class NpcBrain implements BehaviorInstance {
     s.state['npcSpeed'] = Math.round(this.speedNow * 10) / 10;
     if (s.dynamic) return;
     env.pose(s);
+    // A person drawn by the character renderer animates itself (skeleton clips); no bob or lunge.
+    if (this.self.spec.character) return;
     // Procedural life: a walking bob, a lean into runs, a lunge when striking.
     const moving = this.speedNow > 0.15;
     if (moving) {

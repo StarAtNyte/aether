@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./import": "./src/user.ts",
     "./zip": "./src/zip.ts",
+    "./characters": "./src/characters/index.ts",
     "./offline-sw": "./src/offline-sw.ts"
   },
   "main": "./src/index.ts",

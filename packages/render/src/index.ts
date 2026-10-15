@@ -55,7 +55,8 @@ export { GrowIn, growDelay, growScale, GROW_DURATION, GROW_MAX_DELAY } from './v
 export { viewPose, captureSize, captureMime, MAX_CAPTURE_SIZE, MAX_VIEWS, type CaptureView, type ViewPose } from './view/capture';
 export { Highlighter, MAX_HIGHLIGHTS } from './view/highlighter';
 export { DebugOverlay, MAX_DEBUG_ITEMS, type DebugOptions } from './view/debug-overlay';
-export { Avatar } from './view/avatar';
+export { Avatar, AVATAR_ID, turnToward, type AvatarState } from './view/avatar';
+export * from './characters';
 export { FrameStats } from './view/frame-stats';
 
 export { RefCache } from './refcache';

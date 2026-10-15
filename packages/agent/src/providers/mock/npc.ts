@@ -9,12 +9,13 @@
  * characters are addressed by role, name, id or faction, so the same target
  * resolution serves chat edits and the LLM tool path.
  */
-import { slugify, type Json } from '@aether/core';
+import { slugify, type CharacterSpecInput, type Json } from '@aether/core';
 import { Builder, r2, type V3 } from './builder';
 import { campfire } from './decor';
 import { parseIntent, normalizeRequest, type Intent } from './intent';
 import { ASSETS, parseCount, singular } from './lexicon';
 import type { MockPlan } from './planner';
+import { lookFromText } from '@aether/assets';
 import { addProp, addTorch, chatFor, isPluralNoun, kindOf, nameFor, NPC_KINDS, placeNpc, pluralOf, shopDialogue, type BuildOpts, type NpcKind } from './npc-kinds';
 import { parseWorldSummary, type EntityView, type WorldView } from './world-view';
 
@@ -251,6 +252,8 @@ interface Group {
   count: number;
   traits: Traits;
   text: string;
+  /** Look the request gave this group ("a tired old shopkeeper in a green coat"). */
+  look: CharacterSpecInput | null;
 }
 
 /** Split a request into one group per character noun. */
@@ -292,9 +295,21 @@ function groupsOf(text: string): Group[] {
     count = Math.max(1, Math.min(12, count));
     // Behaviours may be phrased before the noun ("a patrolling guard") as well as after it.
     const lead = text.slice(Math.max(0, h.at - 40), h.at);
-    groups.push({ kind: h.kind, count, traits: parseTraits(`${seg} ${/\b(?:patrolling|hunting|friendly|hostile|peaceful|angry|armed)\s*$/.test(lead) ? lead : ''}`), text: seg });
+    groups.push({ kind: h.kind, count, look: lookOf(text, h.at, h.word.length, seg), traits: parseTraits(`${seg} ${/\b(?:patrolling|hunting|friendly|hostile|peaceful|angry|armed)\s*$/.test(lead) ? lead : ''}`), text: seg });
   });
   return groups;
+}
+
+/**
+ * The look a phrase gives a character: the words just before the noun
+ * ("a tired old shopkeeper") and the clothes after it ("in a green coat"),
+ * bounded by the clause so a neighbour's description does not leak over.
+ */
+function lookOf(text: string, at: number, wordLen: number, seg: string): CharacterSpecInput | null {
+  const lead = (text.slice(Math.max(0, at - 44), at).split(/[.,;!?]|\band\b|\bthen\b/).pop() ?? '').trim();
+  const tail = (seg.slice(wordLen).split(/[.,;!?]|\band\b|\bthen\b|\bwho\b|\bthat\b|\bwhen\b/)[0] ?? '').slice(0, 48);
+  const noun = seg.slice(0, wordLen);
+  return lookFromText(`${lead} ${noun} ${tail}`);
 }
 
 /** Waypoints around a place: a front arc for gates, a ring for everything else. */
@@ -435,7 +450,9 @@ function buildGroup(c: CreateCtx, g: Group, index: number): void {
       x = r2(ax + Math.cos(a) * ring);
       z = r2(az + Math.sin(a) * ring);
     }
-    const own: BuildOpts = { ...opts, yaw: yawToward(x, z, opts.waypoints?.[1]?.[0] ?? spawn[0], opts.waypoints?.[1]?.[2] ?? spawn[2]) };
+    const heldProp = kind.look === 'human' && !g.look?.hold ? (t.props.find((p) => p === 'sword' || p === 'spear' || p === 'axe') as 'sword' | 'spear' | 'axe' | undefined) : undefined;
+    const asked: CharacterSpecInput | undefined = g.look || heldProp ? { ...(g.look ?? {}), ...(heldProp ? { hold: heldProp } : {}) } : undefined;
+    const own: BuildOpts = { ...opts, ...(asked ? { character: asked } : {}), yaw: yawToward(x, z, opts.waypoints?.[1]?.[0] ?? spawn[0], opts.waypoints?.[1]?.[2] ?? spawn[2]) };
     if (t.name && g.count === 1) own.name = t.name;
     if (shop) {
       const nameForShop = own.name ?? b.pick(kind.names.length > 0 ? kind.names : ['Mira']);
@@ -450,8 +467,9 @@ function buildGroup(c: CreateCtx, g: Group, index: number): void {
     }
     const placed = placeNpc(b, kind, x, z, own);
     c.made.push({ id: placed.id, name: placed.name, kind });
-    if (own.carries?.includes('torch')) addTorch(b, placed.id, kind.look === 'human' ? 1.7 : 0.9);
-    for (const prop of t.props) if (kind.look === 'human' && kind.id !== 'guard') addProp(b, placed.id, prop);
+    if (own.carries?.includes('torch')) addTorch(b, placed.id, kind.look === 'human' ? 1.7 : 0.9, kind.look === 'human');
+    // A person holds sword, spear or axe in the hand (`character.hold`); only a shield or bow is still a loose prop.
+    for (const prop of t.props) if (kind.look === 'human' && (prop === 'shield' || prop === 'bow')) addProp(b, placed.id, prop);
     if (shop && n === 0) {
       makeStall(b, r2(x + Math.sin((own.yaw ?? 0) * (Math.PI / 180)) * -1.2), r2(z + Math.cos((own.yaw ?? 0) * (Math.PI / 180)) * -1.2), r2(own.yaw ?? 0));
     }

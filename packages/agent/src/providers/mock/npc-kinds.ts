@@ -4,7 +4,8 @@
  * model when one is available), what it says, and how to build one into a
  * world. Pure construction; request parsing lives in `npc.ts`.
  */
-import type { EntityInput, Json, NpcSpecInput } from '@aether/core';
+import type { CharacterSpecInput, EntityInput, Json, NpcSpecInput } from '@aether/core';
+import { defaultWardrobe } from '@aether/assets';
 import { r2, type Builder, type V3 } from './builder';
 import { libraryEntry } from './library-assets';
 
@@ -164,6 +165,8 @@ export interface BuildOpts {
   /** Yaw in degrees (the character's −Z side faces this way). */
   yaw?: number;
   tags?: string[];
+  /** Look read from the request ("a tired old shopkeeper in a green coat"); defaults come from the kind. */
+  character?: CharacterSpecInput;
 }
 
 /** The NPC spec of a kind, before per-request edits. */
@@ -232,25 +235,6 @@ export function nameFor(kind: NpcKind, b: Builder, requested?: string): string {
   return kind.label.replace(/^./, (c) => c.toUpperCase());
 }
 
-const SKIN = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
-
-function human(b: Builder, id: string, kind: NpcKind, extra: { hat?: boolean; spear?: boolean; apron?: boolean; scarf?: string }): void {
-  b.prim(`${id}-head`, 'sphere', [0.42, 0.42, 0.42], [0, 1.02, 0], { parent: id, material: { preset: 'plastic', color: kind.id === 'monster' ? '#7fa36b' : b.pick(SKIN), roughness: 0.7 } });
-  if (extra.hat) {
-    b.prim(`${id}-hat`, 'cylinder', [0.5, 0.16, 0.5], [0, 1.22, 0], { parent: id, material: { preset: 'fabric', color: '#5a3d2b' } });
-    b.prim(`${id}-hat-top`, 'cylinder', [0.3, 0.2, 0.3], [0, 1.34, 0], { parent: id, material: { preset: 'fabric', color: '#5a3d2b' } });
-  }
-  if (kind.id === 'guard') {
-    b.prim(`${id}-helmet`, 'sphere', [0.5, 0.36, 0.5], [0, 1.1, 0], { parent: id, material: { preset: 'metal', color: '#9aa4b0' } });
-  }
-  if (extra.spear) {
-    b.prim(`${id}-spear`, 'cylinder', [0.05, 2.1, 0.05], [0.42, 0.95, -0.1], { parent: id, material: { preset: 'wood', color: '#6d4c2f' } });
-    b.prim(`${id}-spear-tip`, 'cone', [0.1, 0.28, 0.1], [0.42, 2.1, -0.1], { parent: id, material: { preset: 'metal', color: '#cfd6dd' } });
-  }
-  if (extra.apron) b.prim(`${id}-apron`, 'box', [0.5, 0.7, 0.08], [0, 0.55, -0.26], { parent: id, material: { preset: 'fabric', color: '#e9e4d6' } });
-  if (extra.scarf) b.prim(`${id}-scarf`, 'torus', [0.4, 0.1, 0.4], [0, 0.82, 0], { parent: id, rot: [90, 0, 0], material: { preset: 'fabric', color: extra.scarf } });
-}
-
 function wolfBody(b: Builder, id: string, coat: string): void {
   const dark = '#3b3e45';
   b.prim(`${id}-head`, 'sphere', [0.42, 0.4, 0.46], [0, 0.18, -0.7], { parent: id, material: { preset: 'fabric', color: coat } });
@@ -266,6 +250,32 @@ function deerBody(b: Builder, id: string, coat: string): void {
   b.prim(`${id}-neck`, 'capsule', [0.2, 0.7, 0.2], [0, 0.55, -0.55], { parent: id, rot: [-30, 0, 0], material: { preset: 'fabric', color: coat } });
   b.prim(`${id}-head`, 'sphere', [0.3, 0.3, 0.4], [0, 0.95, -0.85], { parent: id, material: { preset: 'fabric', color: coat } });
   b.prim(`${id}-antler`, 'cone', [0.06, 0.4, 0.06], [0, 1.2, -0.8], { parent: id, material: { preset: 'wood', color: '#5a4630' } });
+}
+
+/** What each kind wears when the request does not say: wardrobe, a mood and the watch/gang colours. */
+const KIND_LOOK: Readonly<Record<string, { mood?: NonNullable<CharacterSpecInput['mood']>; top?: string; hold?: NonNullable<CharacterSpecInput['hold']> }>> = {
+  guard: { top: '#2f4a73', hold: 'spear' },
+  bandit: { mood: 'angry', top: '#5b2b2b' },
+  merchant: { mood: 'cheerful' },
+  monster: { mood: 'hurt', top: '#3f4636' },
+  companion: { mood: 'cheerful' },
+  villager: {},
+};
+
+/** The `character` of a human kind: kind defaults, then what the request said. */
+export function characterFor(kind: NpcKind, o: BuildOpts): CharacterSpecInput {
+  const d = KIND_LOOK[kind.id] ?? {};
+  const out: CharacterSpecInput = { wardrobe: defaultWardrobe(kind.id) };
+  if (d.mood) out.mood = d.mood;
+  if (d.top) out.top = d.top;
+  if (d.hold) out.hold = d.hold;
+  const asked = o.character;
+  if (asked) {
+    for (const [k, v] of Object.entries(asked)) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  // A torch the character carries is held in the hand (the light stays on the entity).
+  if (o.carries?.includes('torch') && !out.hold) out.hold = 'torch';
+  return out;
 }
 
 /** Result of drawing a character. */
@@ -287,23 +297,9 @@ export function placeNpc(b: Builder, kind: NpcKind, x: number, z: number, o: Bui
   let id: string;
   const common = { name, yaw: r2(yaw), physics: { body: 'kinematic' as const }, npc: spec, tags, footprint: 0.9 };
   if (kind.look === 'human') {
-    const color = kind.id === 'villager' ? b.pick(['#3f6e8c', '#8c3f5d', '#5d8c3f', '#8c7a3f']) : kind.coat;
-    const entry = kind.models.map((m) => libraryEntry(m)).find((e) => e !== null && (e.category === 'characters' || e.category === 'animals')) ?? null;
-    if (entry) {
-      id = b.asset(kind.label, entry.id, [x, 0, z], {
-        ...common,
-        physics: { body: 'kinematic', collider: 'capsule' },
-        fallback: { kind: 'primitive', primitive: 'capsule', size: [0.56, 1.7, 0.56] },
-      });
-      return { id, name };
-    }
-    id = b.prim(kind.label, 'capsule', [0.56, 1.7, 0.56], [x, 0.85, z], { ...common, material: { preset: 'fabric', color } });
-    human(b, id, kind, {
-      hat: kind.id === 'merchant' || (kind.id === 'villager' && b.chance(0.4)),
-      spear: kind.id === 'guard',
-      apron: kind.id === 'merchant',
-      ...(kind.id === 'companion' ? { scarf: '#d1495b' } : {}),
-    });
+    // A person from the cast (see `@aether/assets` characters): the capsule below is only the collider.
+    const character = characterFor(kind, o);
+    id = b.prim(kind.label, 'capsule', [0.56, 1.7, 0.56], [x, 0.85, z], { ...common, character, material: { preset: 'fabric', color: kind.coat } });
     return { id, name };
   }
   if (kind.look === 'wolf') {
@@ -329,9 +325,12 @@ export function placeNpc(b: Builder, kind: NpcKind, x: number, z: number, o: Bui
 }
 
 /** A torch child entity (handle, flame, flickering light) for a character; returns the flame id. */
-export function addTorch(b: Builder, parent: string, tall = 1.7): string {
-  const handle = b.prim(`${parent}-torch`, 'cylinder', [0.06, 0.55, 0.06], [-0.4, tall * 0.55, -0.15], { parent, material: { preset: 'wood', color: '#5a3d2b' }, tags: ['torch'] });
-  const flame = b.prim(`${handle}-flame`, 'sphere', [0.2, 0.28, 0.2], [0, 0.34, 0], { parent: handle, material: { color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 3 }, tags: ['fire'], castShadow: false });
+export function addTorch(b: Builder, parent: string, tall = 1.7, held = false): string {
+  // A person holds the torch in a hand (`character.hold`); only its light and fire tag stay on the entity.
+  const handle = held
+    ? b.empty(`${parent}-torch`, [0.38, 0.5, -0.22], { parent, tags: ['torch'] })
+    : b.prim(`${parent}-torch`, 'cylinder', [0.06, 0.55, 0.06], [-0.4, tall * 0.55, -0.15], { parent, material: { preset: 'wood', color: '#5a3d2b' }, tags: ['torch'] });
+  const flame = b.prim(`${handle}-flame`, 'sphere', held ? [0.04, 0.04, 0.04] : [0.2, 0.28, 0.2], [0, held ? 0 : 0.34, 0], { parent: handle, material: { color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 3 }, tags: ['fire'], castShadow: false });
   b.light(flame, [0, 0.1, 0], '#ffb066', 2.6, 11, [{ type: 'pulseLight', params: { min: 1.9, max: 3, period: 0.4 } }]);
   return flame;
 }

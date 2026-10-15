@@ -47,6 +47,8 @@ export interface PlaceOpts {
   state?: Record<string, Json>;
   /** An intelligent character (see the NPC schema in @aether/core). */
   npc?: EntityInput['npc'];
+  /** A person's look (a cast member shown instead of the shape; see `character-schema.ts`). */
+  character?: EntityInput['character'];
   parent?: string;
   visible?: boolean;
   castShadow?: boolean;
@@ -264,6 +266,7 @@ export class Builder {
     if (o.joint) e.joint = o.joint;
     if (o.state) e.state = o.state;
     if (o.npc) e.npc = o.npc;
+    if (o.character) e.character = o.character;
     if (o.parent) e.parent = o.parent;
     if (o.visible === false) e.visible = false;
     if (o.castShadow === false) e.castShadow = false;

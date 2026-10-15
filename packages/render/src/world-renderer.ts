@@ -32,7 +32,9 @@ import { GhostRun, type GhostTrace } from './view/ghost-run';
 import { BlueprintMarks, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, markBoxOf, type MarkBox } from './view/blueprint';
 import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 import type { MeshGeometryBundle } from './geometry/mesh-asset';
-import { Avatar } from './view/avatar';
+import { Avatar, type AvatarState } from './view/avatar';
+import { CharacterSystem } from './characters/system';
+import type { CharacterRig, Foot } from './characters/rig';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
@@ -161,6 +163,46 @@ export interface RenderMemoryStats {
   estimatedGpuMB: number;
 }
 
+/** Ground classes that have their own footstep sound. */
+export type SurfaceClass = 'grass' | 'stone' | 'wood' | 'metal' | 'dirt' | 'sand' | 'snow' | 'water' | 'fabric';
+
+/** Footstep class of a material preset. */
+export function surfaceOfPreset(preset: string): SurfaceClass {
+  switch (preset) {
+    case 'grass':
+    case 'leaf':
+      return 'grass';
+    case 'wood':
+    case 'bark':
+      return 'wood';
+    case 'metal':
+    case 'gold':
+      return 'metal';
+    case 'dirt':
+      return 'dirt';
+    case 'sand':
+      return 'sand';
+    case 'snow':
+    case 'ice':
+      return 'snow';
+    case 'water':
+      return 'water';
+    case 'fabric':
+    case 'rubber':
+      return 'fabric';
+    default:
+      return 'stone';
+  }
+}
+
+/** Footstep class of an architectural finish. */
+export function surfaceOfFinish(finish: string): SurfaceClass {
+  if (/oak|walnut|ash|herringbone|wood|parquet|plank/.test(finish)) return 'wood';
+  if (/carpet|fabric|velvet|leather/.test(finish)) return 'fabric';
+  if (/metal|steel|brass|copper|chrome/.test(finish)) return 'metal';
+  return 'stone';
+}
+
 /** A raycaster that also tests batched static props (their meshes live on {@link BATCHED_LAYER}). */
 function createRaycaster(): Raycaster {
   const r = new Raycaster();
@@ -250,6 +292,9 @@ const _savedViewport = new Vector4();
 const _savedScissor = new Vector4();
 const _savedCamPos = new Vector3();
 const _savedCamQuat = new Quaternion();
+const _avatarHead = new Vector3();
+const _footOrigin = new Vector3();
+const _down = new Vector3(0, -1, 0);
 const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
@@ -377,9 +422,13 @@ export class WorldRenderer {
   private readonly highlighter = new Highlighter();
   private readonly debug = new DebugOverlay();
   private readonly avatar = new Avatar();
+  /** The scene's people (NPCs and the player's body). */
+  private readonly characters: CharacterSystem;
+  private footstepHandler: ((id: string, foot: Foot, speed: number, position: Vec3) => void) | null = null;
   private readonly frameStats = new FrameStats();
   private readonly raycaster = createRaycaster();
   private readonly occlusionRay = createRaycaster();
+  private readonly footRay = createRaycaster();
   /** Entity the chase camera follows (its own meshes never block the view). */
   private followId: EntityId | null = null;
   private readonly grow = new GrowIn();
@@ -542,8 +591,15 @@ export class WorldRenderer {
     this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
     this.textures = new TextureCache(opts.textureSource ?? createTextureSource());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models, textures: this.textures };
+    this.characters = new CharacterSystem({
+      models: this.models,
+      shadows: opts.shadows !== false,
+      onFootstep: (id, foot, speed, p) => this.footstepHandler?.(id, foot, speed, [p.x, p.y, p.z]),
+    });
+    this.avatar.setSystem(this.characters);
     this.sync = new SceneSync({
       ...common,
+      characters: this.characters,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
       fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
@@ -775,6 +831,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     const prev = this.sync.world;
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
+    this.avatar.setLook(world.player.character);
     const done = this.sync.setWorld(world);
     this.archView.invalidate();
     // New entities stay hidden while their geometry streams in, then grow in together.
@@ -1117,10 +1174,78 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
-  /** Place the player avatar (feet position, yaw in degrees; yaw 0 faces −Z). */
-  setPlayerAvatar(position: Vec3, yawDeg: number): void {
-    this.avatar.set(position[0], position[1], position[2], yawDeg);
+  /**
+   * Place the player avatar (feet position, yaw in degrees; yaw 0 faces −Z).
+   * `state` is what the controller knows (grounded, vertical speed, crouch, sprint) so the body can jump and land.
+   */
+  setPlayerAvatar(position: Vec3, yawDeg: number, state?: AvatarState): void {
+    this.avatar.set(position[0], position[1], position[2], yawDeg, state);
     this.needsDraw = true;
+  }
+
+  /** Choose the player's look (`world.player.character`). */
+  setPlayerLook(spec: Parameters<Avatar['setLook']>[0]): void {
+    this.avatar.setLook(spec);
+  }
+
+  /** The animated person of an entity (NPC feed, tests), or null while it loads or when the entity has no character. */
+  characterRig(id: EntityId): CharacterRig | null {
+    return this.sync.characterRig(id);
+  }
+
+  /** The player's animated body, or null (not placed yet, still loading, or no character files). */
+  playerRig(): CharacterRig | null {
+    return this.avatar.character;
+  }
+
+  /**
+   * What the ground under a world point is made of, as a footstep class: the
+   * material of the entity just below, else the environment's ground. Used by
+   * the studio to pick a footstep sound.
+   */
+  surfaceAt(x: number, y: number, z: number): SurfaceClass {
+    const world = this.sync.world;
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      this.footRay.set(_footOrigin.set(x, y + 0.45, z), _down);
+      this.footRay.near = 0;
+      this.footRay.far = 1.4;
+      _hits.length = 0;
+      this.footRay.intersectObject(this.sync.root, true, _hits);
+      for (const hit of _hits) {
+        const id = this.sync.idOf(hit.object);
+        if (id && this.sync.hasCharacter(id)) continue;
+        const preset = id ? world?.entities[id]?.material?.preset : undefined;
+        _hits.length = 0;
+        if (preset) return surfaceOfPreset(preset);
+        const finish = id ? world?.entities[id]?.material?.finish : undefined;
+        if (finish) return surfaceOfFinish(finish);
+        break;
+      }
+      _hits.length = 0;
+    }
+    return surfaceOfPreset(world?.environment.ground?.material.preset ?? 'grass');
+  }
+
+  /** Receive footstep events (body id, foot, speed m/s, world position); the studio plays the surface sound. */
+  onFootstep(handler: ((id: string, foot: Foot, speed: number, position: Vec3) => void) | null): void {
+    this.footstepHandler = handler;
+  }
+
+  /** Number of animated people in the scene (NPCs and the player). */
+  get characterCount(): number {
+    return this.characters.size;
+  }
+
+  /** Advance people and animated assets; true when a redraw is needed. */
+  private stepAnimations(dt: number): boolean {
+    this.characters.setCamera(this.perspective);
+    let animated = this.sync.updateAnimations(dt);
+    if (this.characters.update(dt)) animated = true;
+    if (this.avatar.isPlaced && this.avatar.character) {
+      this.avatar.headPosition(_avatarHead);
+      this.avatar.setCameraDistance(this.perspective.position.distanceTo(_avatarHead));
+    }
+    return animated;
   }
 
   /**
@@ -1786,7 +1911,7 @@ export class WorldRenderer {
     if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
     if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
-    if (opts.animate !== false && this.sync.updateAnimations(step)) this.needsDraw = true;
+    if (opts.animate !== false && this.stepAnimations(step)) this.needsDraw = true;
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
     // and merge building geometry only once nothing animates any more.
     if (this.wasGrowing && !this.grow.active) this.archView.invalidate();
@@ -2383,7 +2508,7 @@ export class WorldRenderer {
           vox.setFog(tf.color, tf.near, tf.far, tf.density);
           vox.flushPrebuild();
         }
-        this.sync.updateAnimations(dt);
+        this.stepAnimations(dt);
         this.archView.update(this.perspective, dt);
         this.env.update(dt, this.perspective);
         if (this.materials.surfaces.active) this.materials.surfaces.advance(dt);
@@ -2829,6 +2954,7 @@ export class WorldRenderer {
     this.env.dispose();
     this.materials.dispose();
     this.geometries.dispose();
+    this.characters.dispose();
     this.models.dispose();
     this.textures.dispose();
     this.scene.clear();

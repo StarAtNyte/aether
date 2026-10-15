@@ -29,6 +29,16 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
   break: { type: 'noise', from: 620, to: 380, duration: 0.16, gain: 0.2 },
   place: { type: 'noise', from: 1500, to: 900, duration: 0.07, gain: 0.14 },
   step: { type: 'noise', from: 420, to: 300, duration: 0.05, gain: 0.05 },
+  // Footsteps by surface (people walking: the cast's feet land on the sound of what they stand on).
+  'step-grass': { type: 'noise', from: 1700, to: 900, duration: 0.09, gain: 0.05 },
+  'step-stone': { type: 'noise', from: 2300, to: 1100, duration: 0.045, gain: 0.07, then: { from: 520, to: 380, delay: 0.004 } },
+  'step-wood': { type: 'noise', from: 700, to: 420, duration: 0.07, gain: 0.09, then: { from: 300, to: 220, delay: 0.006 } },
+  'step-metal': { type: 'noise', from: 3600, to: 2200, duration: 0.07, gain: 0.07, then: { from: 1200, to: 900, delay: 0.005 } },
+  'step-dirt': { type: 'noise', from: 900, to: 520, duration: 0.07, gain: 0.06 },
+  'step-sand': { type: 'noise', from: 2600, to: 1500, duration: 0.11, gain: 0.04 },
+  'step-snow': { type: 'noise', from: 1900, to: 800, duration: 0.12, gain: 0.04 },
+  'step-water': { type: 'noise', from: 1300, to: 500, duration: 0.14, gain: 0.07 },
+  'step-fabric': { type: 'noise', from: 500, to: 300, duration: 0.06, gain: 0.03 },
   hurt: { type: 'square', from: 260, to: 140, duration: 0.15, gain: 0.12 },
   eat: { type: 'noise', from: 2100, to: 1500, duration: 0.12, gain: 0.08, then: { from: 1900, to: 1400, delay: 0.14 } },
   craft: { type: 'triangle', from: 660, to: 990, duration: 0.1, gain: 0.12, then: { from: 990, to: 1320, delay: 0.07 } },
@@ -80,12 +90,13 @@ export class SoundBoard {
   }
 
   /** Play a named effect (ignored when unknown, muted or rate-limited). */
-  play(name: string): void {
+  play(name: string, level = 1): void {
     if (this.muted || this.volume <= 0 || !Object.prototype.hasOwnProperty.call(TONES, name)) return;
     const tone = TONES[name] as Tone;
     const ctx = this.context();
     if (!ctx) return;
     const t = ctx.currentTime;
+    if (!(level > 0.002)) return;
     if (t - (this.lastPlayed.get(name) ?? -1) < MIN_INTERVAL) return;
     if (t - this.windowStart >= 1) {
       this.windowStart = t;
@@ -94,12 +105,16 @@ export class SoundBoard {
     if (++this.voices > MAX_VOICES_PER_SECOND) return;
     this.lastPlayed.set(name, t);
     if (tone.type === 'noise') {
-      this.noise(ctx, tone.from, tone.to, t, tone.duration, tone.gain);
-      if (tone.then) this.noise(ctx, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, tone.gain);
+      // A little variation so repeated steps do not sound stamped.
+      const k = 0.92 + Math.random() * 0.16;
+      const g = tone.gain * Math.min(1.5, level);
+      this.noise(ctx, tone.from * k, tone.to * k, t, tone.duration, g);
+      if (tone.then) this.noise(ctx, tone.then.from * k, tone.then.to * k, t + tone.then.delay, tone.duration, g);
       return;
     }
-    this.voice(ctx, tone.type, tone.from, tone.to, t, tone.duration, tone.gain);
-    if (tone.then) this.voice(ctx, tone.type, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, tone.gain);
+    const g = tone.gain * Math.min(1.5, level);
+    this.voice(ctx, tone.type, tone.from, tone.to, t, tone.duration, g);
+    if (tone.then) this.voice(ctx, tone.type, tone.then.from, tone.then.to, t + tone.then.delay, tone.duration, g);
   }
 
   /** Pause the audio clock (page hidden); the next {@link play} resumes it. */

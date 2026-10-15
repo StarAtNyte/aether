@@ -96,9 +96,11 @@ describe('offline planner with the asset library', () => {
   it('brings characters and animals to life', async () => {
     await loadCatalog();
     const w = await meadow();
-    const villager = Object.values((await mockApply('add a villager', w)).result.world.entities).find((e) => !w.entities[e.id] && e.shape.kind === 'asset');
+    const villager = Object.values((await mockApply('add a villager', w)).result.world.entities).find((e) => !w.entities[e.id] && (e.shape.kind === 'asset' || e.character !== undefined));
     const dog = Object.values((await mockApply('add a dog', w)).result.world.entities).find((e) => !w.entities[e.id] && e.shape.kind === 'asset');
     expect(villager?.tags).toContain('npc');
+    // People are real animated humans (a cast member), not a library model.
+    expect(villager?.character).toBeDefined();
     // Characters are intelligent NPCs (perception, behaviour graph, dialogue), not the legacy greeter.
     expect(villager?.npc).toMatchObject({ archetype: 'villager', role: 'villager' });
     expect(Object.keys(villager?.npc?.dialogue?.nodes ?? {}).length).toBeGreaterThan(1);

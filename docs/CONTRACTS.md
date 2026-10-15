@@ -2344,3 +2344,13 @@ through the plan), scatter density and instance size, game goal / time limit
 rule actions (no entity or environment field), so there is nothing to edit
 beyond the rules.
 
+
+## People: `entity.character`, `player.character` (stage `characters`)
+
+Additive and optional. `CharacterSpec` (`packages/core/src/character-schema.ts`):
+`body` (cast id slug), `gender`, `age` (`young|adult|old`), `wardrobe`, `top`/`bottom`/`hair`
+(`#rrggbb` tints), `scale` (0.85 to 1.15, default 1), `mood`, `hold`, `words` (<= 6 of <= 24 chars).
+Visual only: the entity's shape stays the collider, animation is a pure function of published
+simulation state, so physics, NPC navigation, the playtest bot and proofs are unchanged
+(`hashWorld` is not affected by animation). Variant resolution is deterministic per entity id
+(`resolveLook` in `@aether/assets`). The cast and motion sets are listed in `assets/characters.json`.
