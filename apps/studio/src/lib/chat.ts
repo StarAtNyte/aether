@@ -4,7 +4,7 @@
  * so the transcript stays small in memory and in localStorage, and anything
  * loaded back from storage is re-validated field by field.
  */
-import type { AgentEvent, ChatMessage } from '@aether/agent';
+import { diffLineText, type AgentEvent, type ChatMessage } from '@aether/agent';
 import { AGENT_CONTEXT_TURNS, MAX_CHAT_ENTRIES, MAX_EVENTS_PER_ENTRY, MAX_EVENT_TEXT } from '../config';
 import { summarizePatches, type PatchSummary } from './patchSummary';
 import { clip } from './format';
@@ -35,10 +35,20 @@ export type ChatEventView =
   | { type: 'verify'; passed: boolean; summary: string; results: TestResultView[]; diagnostics: DiagnosticView[] }
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
+  | { type: 'edit'; summary: string; lines: EditLineView[]; notes: string[]; ms: number; local: boolean; cosmetic: boolean; head?: number }
+  | { type: 'clarify'; text: string; candidates: Array<{ id: string; label: string }> }
   | { type: 'error'; text: string }
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string }
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
+
+/** One line of a small-edit diff ("Sofa · colour: grey → dark green"). */
+export interface EditLineView {
+  text: string;
+  kind: 'change' | 'add' | 'remove';
+  fromColor?: string;
+  toColor?: string;
+}
 
 /** One rubric row of a quality event. */
 export interface QualityCriterionView {
@@ -100,9 +110,27 @@ export function toDiagnostics(report: unknown): DiagnosticView[] {
   return out;
 }
 
-/** Convert a live agent event into its stored view. */
-export function toEventView(e: AgentEvent): ChatEventView {
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Convert a live agent event into its stored view. `history` and `memory` are control events: callers handle them first (they map to an empty status line). */
+export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEventView {
   switch (e.type) {
+    case 'history':
+    case 'memory':
+      return { type: 'status', text: '' };
+    case 'edit':
+      return {
+        type: 'edit',
+        summary: str(e.summary, 200),
+        lines: e.diff.slice(0, 12).map((l): EditLineView => ({ text: str(diffLineText(l), 160), kind: l.kind, ...(l.fromColor && HEX.test(l.fromColor) ? { fromColor: l.fromColor } : {}), ...(l.toColor && HEX.test(l.toColor) ? { toColor: l.toColor } : {}) })),
+        notes: e.notes.slice(0, 3).map((n) => str(n, 200)),
+        ms: num(e.ms),
+        local: e.local === true,
+        cosmetic: e.cosmetic === true,
+        ...(ctx.head !== undefined ? { head: ctx.head } : {}),
+      };
+    case 'clarify':
+      return { type: 'clarify', text: str(e.text, 200), candidates: e.candidates.slice(0, 8).map((c) => ({ id: str(c.id, 64), label: str(c.label, 80) })) };
     case 'status':
     case 'plan':
     case 'message':

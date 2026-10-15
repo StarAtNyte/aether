@@ -383,11 +383,12 @@ function editOps(text: string, building: { id: string; rooms: Array<{ id: string
  * Plan an architecture request, or null when it is not one. `summary` is the
  * current world summary (edits apply to the building it lists).
  */
-export function planArch(request: string, summary: string): MockPlan | null {
+export function planArch(request: string, summary: string, mode?: 'new' | 'refine'): MockPlan | null {
   const text = request.toLowerCase();
   const building = summaryBuilding(summary);
   const describesNew = /\b(build|create|make|design|generate|give me|show me|i want|new|an?|the)\b/.test(text) && ARCH_REQUEST.test(text) && !NOT_ARCH.test(text);
-  if (building && !(describesNew && /\b(build|create|design|generate|new|another|instead)\b/.test(text))) {
+  const explicitNew = mode === 'new' || /\b(build|create|design|generate|new|another|instead)\b/.test(text);
+  if (building && !(describesNew && explicitNew)) {
     const edit = editOps(text, building);
     if (edit) {
       return {
@@ -397,7 +398,8 @@ export function planArch(request: string, summary: string): MockPlan | null {
         message: `Done — ${edit.done.join('; ')}. The building was re-compiled and re-checked.`,
       };
     }
-    if (!describesNew) return null;
+    // A request that merely mentions the building ("make the whole apartment warmer") refines it; it never rebuilds it.
+    if (mode !== undefined || !describesNew) return null;
   }
   if (!ARCH_REQUEST.test(text) || NOT_ARCH.test(text)) return null;
   const chosen = choosePlan(text);

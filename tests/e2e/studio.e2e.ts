@@ -312,6 +312,10 @@ function lastTurnEvents(page: Page): Promise<string[]> {
           return `repair#${e.attempt}`;
         case 'quality':
           return `quality(${e.score})`;
+        case 'edit':
+          return `edit(${e.summary.slice(0, 100)})`;
+        case 'clarify':
+          return `clarify(${e.text.slice(0, 100)})`;
         default:
           return `${e.type}(${e.text.slice(0, 100)})`;
       }
@@ -769,7 +773,8 @@ async function run(browser: Browser, url: string, opts: RunOptions): Promise<Run
     if (opts.screenshots) await screenshot(page, 'studio-default-world', 'page');
 
     const prompts = opts.full ? PROMPTS : PROMPTS.slice(-1);
-    for (const p of prompts) await sendPrompt(page, p, metrics, opts.screenshots);
+    // Messages refine the world they find; the later examples each ask for a fresh one.
+    for (const [i, p] of prompts.entries()) await sendPrompt(page, i === 0 ? p : { ...p, text: `Start over: ${p.text}` }, metrics, opts.screenshots);
     metrics.checks = await verifyResponsiveness(page);
     await playAndStop(page, opts.screenshots);
     if (opts.full) {

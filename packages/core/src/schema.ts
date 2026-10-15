@@ -369,6 +369,15 @@ export const ArchMeta = z.object({
    * building parametrically. Opaque JSON here; validated by @aether/arch.
    */
   plan: Json.optional(),
+  /**
+   * Property edits made to this generated piece (by hand or by a prompt),
+   * keyed by dotted entity path ("shape.params.color", "transform.position").
+   * They are re-applied when the building is re-compiled, so a small edit
+   * is not lost when the plan changes. Compiled pieces only.
+   */
+  overrides: z.record(z.string(), Json).refine((r) => Object.keys(r).length <= 64, 'at most 64 recorded edits per piece').optional(),
+  /** Building entity only: ids of compiled pieces the user removed; they stay removed on re-compile. */
+  removed: z.array(EntityId).max(400).optional(),
 });
 export type ArchMeta = z.infer<typeof ArchMeta>;
 

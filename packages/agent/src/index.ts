@@ -21,7 +21,13 @@ export type {
   AssetBuildResult,
 } from './types';
 
-export { WorldAgent, COMPACT_LIMITS, type RunOptions } from './agent';
+export { WorldAgent, COMPACT_LIMITS, SLICE_THRESHOLD, type RunOptions } from './agent';
+// The small-edit engine loads lazily (see ./refine/runtime); only its light data types and helpers are exported statically.
+export { EMPTY_MEMORY, type RefineMemory } from './refine/memory';
+export { diffLineText, type DiffLine } from './refine/diff-text';
+export type { Command, Ref, Look, EnvIntent } from './refine/command';
+export type { FineEditResult, FineEditInput, FineCatalogs, DeclineReason } from './refine/plan';
+export type { RequestScope, PatchAudit } from './refine/guard';
 export { AGENT_TOOLS, COMPACT_TOOLS, PATCH_OPS, TOOL_LIMITS, type AgentToolName } from './tools';
 export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';

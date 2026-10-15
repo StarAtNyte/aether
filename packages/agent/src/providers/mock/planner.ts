@@ -199,11 +199,47 @@ function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem
   return { plan: `Plan: ${done.join('; ')}.`, patches, message: `Done — ${done.join('; ')}.` };
 }
 
+/** Wording that clearly asks for a different world rather than a change to this one. */
+const NEW_WORLD = /\b(?:new (?:world|scene|level|map|game|project)|brand new|different (?:world|scene)|instead of (?:this|the current)|replace (?:the )?(?:whole|entire|current) (?:world|scene)|scrap (?:this|it)|throw (?:this|it) away|build me an? (?:entirely|completely) )\b/;
+
+/**
+ * A scene described in a world that already exists: atmospheric settings
+ * (winter, haunted, space…) re-dress the environment; other themes are added
+ * in a free spot. Nothing existing is removed or moved.
+ */
+function refineWithThemes(intent: Intent, view: WorldView, library: readonly MockLibraryItem[]): MockPlan {
+  const b = new Builder(hashString(`${intent.text}|${view.entityCount}`), view.entities.map((e) => e.id), intent.mood, view.testIds, view.ruleIds);
+  b.keepHud(view.hud);
+  reserveExisting(b, view);
+  const done: string[] = [];
+  for (const s of intent.settings) {
+    if (ATMOSPHERIC.has(s.id)) {
+      const keep = b.playerSnapshot();
+      s.env(b);
+      b.player(keep);
+      if (s.id === 'winter' && view.hasGround) b.env({ ground: { material: { preset: 'snow', color: '#f4f7fb' } } });
+      done.push(`${s.title.toLowerCase()} atmosphere`);
+    } else {
+      const d = applyEdits(b, { ...intent, edits: [{ kind: 'add', phrase: intent.text, count: 1 }] }, view, library);
+      done.push(...d);
+      break;
+    }
+  }
+  for (const a of intent.activities) {
+    const d = applyEdits(b, { ...intent, edits: [{ kind: 'add', phrase: a.id, count: 1 }] }, view, library);
+    done.push(...d);
+  }
+  b.env(intent.env);
+  const patches = b.build();
+  if (patches.length === 0) return { plan: '', patches: [], message: `I couldn't map "${intent.text.slice(0, 80)}" to a change. Name what to change, e.g. "make the car red" or "add a tent".` };
+  return { plan: `Plan: ${done.join('; ') || 'adjust the mood'}.`, patches, message: `Done — ${done.join('; ') || 'adjusted the mood'}.` };
+}
+
 /**
  * Plan a response to `request` given the current world `summary`.
  * Deterministic. `library` lists generator-library objects it may place.
  */
-export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = []): MockPlan {
+export function planMock(request: string, summary: string, library: readonly MockLibraryItem[] = [], mode?: 'new' | 'refine'): MockPlan {
   // Flagship showcase worlds answer to their names.
   const showcase = planShowcase(request, summary);
   if (showcase) return showcase;
@@ -217,14 +253,23 @@ export function planMock(request: string, summary: string, library: readonly Moc
   const placement = planPlacement(request, summary);
   if (placement) return placement;
   // Real-life buildings and interiors go through build_architecture.
-  const arch = planArch(request, summary);
+  const arch = planArch(request, summary, mode);
   if (arch) return arch;
   const intent = parseIntent(request);
   const view = parseWorldSummary(summary);
   const hasThemes = intent.settings.length > 0 || intent.activities.length > 0;
   if (view.entityCount === 0) return generate(intent, view, false, library);
-  if (intent.clear || (hasThemes && (intent.create || intent.describesScene))) return generate(intent, view, true, library);
+  // Messages refine the current world by default; it is replaced only on a clear "new world" request.
+  if (mode === undefined) {
+    // No edit mode on the turn (older hosts): a described scene replaces the world.
+    if (intent.clear || (hasThemes && (intent.create || intent.describesScene))) return generate(intent, view, true, library);
+    const legacy = edit(intent, view, library);
+    if (legacy.patches.length === 0 && hasThemes) return generate(intent, view, true, library);
+    return legacy;
+  }
+  const replace = mode === 'new' || intent.clear || (mode !== 'refine' && NEW_WORLD.test(intent.text)) || (mode === 'refine' && NEW_WORLD.test(intent.text));
+  if (replace) return generate(intent, view, true, library);
   const result = edit(intent, view, library);
-  if (result.patches.length === 0 && hasThemes) return generate(intent, view, true, library);
+  if (result.patches.length === 0 && hasThemes) return refineWithThemes(intent, view, library);
   return result;
 }

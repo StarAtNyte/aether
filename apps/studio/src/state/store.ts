@@ -207,6 +207,14 @@ export interface GizmoSettings {
   vertex: boolean;
 }
 
+/** A question about which object a small edit means. */
+export interface ClarifyState {
+  /** The prompt to run again once one is chosen. */
+  prompt: string;
+  text: string;
+  items: Array<{ id: string; label: string; position: readonly [number, number, number] }>;
+}
+
 /** Mesh component selection while editing a mesh (indices into its vertex / triangle arrays). */
 export interface MeshEditState {
   id: string;
@@ -274,6 +282,8 @@ export interface StudioState {
   selection: string[];
   outlinerFilter: string;
   chat: ChatEntry[];
+  /** A small edit that needs a choice: the candidates are outlined and numbered in the viewport. */
+  clarify: ClarifyState | null;
   agentBusy: boolean;
   provider: ProviderState;
   backend: 'webgpu' | 'webgl2' | null;
@@ -357,6 +367,7 @@ export interface StudioState {
   setReplay(v: ReplayState | null): void;
   setProofSeal(seal: ProofSeal | null): void;
   setPlanMarks(marks: { id: number; labels: LabelSpec[] } | null): void;
+  setClarify(c: ClarifyState | null): void;
   setViewer(on: boolean): void;
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
@@ -483,6 +494,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     replay: null,
     proofSeal: null,
     planMarks: null,
+    clarify: null,
     viewer: false,
     game: INITIAL_GAME,
     npc: null,
@@ -573,6 +585,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setReplay: (replay) => set({ replay }),
     setProofSeal: (proofSeal) => set({ proofSeal }),
     setPlanMarks: (planMarks) => set({ planMarks }),
+    setClarify: (clarify) => set({ clarify }),
     setViewer: (viewer) => set({ viewer }),
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
     resetGame: () => set({ game: INITIAL_GAME, npc: null }),

@@ -535,6 +535,17 @@ export class Simulation {
     this.renderer.highlight(this.selection);
   }
 
+  /** Outline the candidates of a question without touching the selection (empty restores it). */
+  setCandidates(ids: readonly EntityId[]): void {
+    this.renderer.highlight(ids.length > 0 ? ids.slice(0, 32) : this.selection);
+  }
+
+  /** Where the camera looks, in the convention of the small-edit parser: 0 = toward −Z, 90 = toward +X. */
+  cameraHeading(): number {
+    const h = -cameraYawDeg(this.renderer);
+    return Number.isFinite(h) ? h : 0;
+  }
+
   /** Fly the camera to an entity. */
   focus(id: EntityId): void {
     this.renderer.focus(id);

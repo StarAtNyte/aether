@@ -18,28 +18,34 @@ export const CONTEXT_LIMITS = Object.freeze({
 
 const SUMMARY_OPEN = '<world_summary>';
 const SUMMARY_CLOSE = '</world_summary>';
+const MODE_OPEN = '<edit_mode>';
+const MODE_CLOSE = '</edit_mode>';
 const REQUEST_OPEN = '<request>';
 const REQUEST_CLOSE = '</request>';
 
 /** Neutralize our envelope tags inside untrusted text so it cannot close or forge a section. */
 function escapeTags(text: string): string {
-  return text.replace(/<\/?(world_summary|request)>/gi, (m) => m.replace('<', '‹').replace('>', '›'));
+  return text.replace(/<\/?(world_summary|request|edit_mode)>/gi, (m) => m.replace('<', '‹').replace('>', '›'));
 }
 
 /** Build the text of the planner's user turn. */
-export function formatUserTurn(summary: string, prompt: string): string {
-  return `${SUMMARY_OPEN}\n${escapeTags(summary)}\n${SUMMARY_CLOSE}\n${REQUEST_OPEN}\n${escapeTags(prompt)}\n${REQUEST_CLOSE}`;
+export function formatUserTurn(summary: string, prompt: string, mode?: string): string {
+  const hint = mode ? `${MODE_OPEN}\n${escapeTags(mode)}\n${MODE_CLOSE}\n` : '';
+  return `${SUMMARY_OPEN}\n${escapeTags(summary)}\n${SUMMARY_CLOSE}\n${hint}${REQUEST_OPEN}\n${escapeTags(prompt)}\n${REQUEST_CLOSE}`;
 }
 
 /** Inverse of {@link formatUserTurn}; `null` when the text is not an envelope. */
-export function parseUserTurn(text: string): { summary: string; request: string } | null {
+export function parseUserTurn(text: string): { summary: string; request: string; mode?: string } | null {
   const s0 = text.indexOf(SUMMARY_OPEN);
   const s1 = text.indexOf(SUMMARY_CLOSE);
   const r0 = text.indexOf(REQUEST_OPEN);
   const r1 = text.lastIndexOf(REQUEST_CLOSE);
   if (r0 < 0 || r1 < r0) return null;
   const summary = s0 >= 0 && s1 > s0 ? text.slice(s0 + SUMMARY_OPEN.length, s1).trim() : '';
-  return { summary, request: text.slice(r0 + REQUEST_OPEN.length, r1).trim() };
+  const m0 = text.indexOf(MODE_OPEN);
+  const m1 = text.indexOf(MODE_CLOSE);
+  const mode = m0 >= 0 && m1 > m0 ? text.slice(m0 + MODE_OPEN.length, m1).trim() : '';
+  return { summary, request: text.slice(r0 + REQUEST_OPEN.length, r1).trim(), ...(mode ? { mode } : {}) };
 }
 
 /** Plain text of a message (text blocks only). */

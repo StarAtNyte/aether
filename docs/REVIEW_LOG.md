@@ -2884,3 +2884,167 @@ stills and the lazy path-traced still. Design in ARCHITECTURE section 24.
   on the first run, clean on rerun), studio build and smoke 32/32.
 - [ ] Not re-measured in this session: a fresh headed RTX 4090 look-development round and Firefox
   e2e on the merged tree.
+## Stage: small, precise edits by prompt (refine by default)
+
+**Goal.** After a world exists, any small change typed in plain language
+gives exactly that change (nothing else regenerated or moved), every
+following message refines the current world, and each step is one undo.
+
+**Audit first (offline planner through the real agent loop, before any
+change).** 199 prompts over the bundled default projects: two apartments and a
+penthouse (generated buildings), a living room, three games (Lantern Isles,
+Coin Island, Kart Canyon), a camp, a meadow and a block world; 139 written
+while building the parser, 12 regressions found by hand-trying prompts
+afterwards, and 48 holdout prompts in different wording. The
+unassisted planner passed **53 of 199 (27%)**: target accuracy 40%, over-edit
+rate 24% (a request that moved or recoloured unrelated things). Failure
+causes (a case can have several): 114 changed nothing or the wrong thing, 48
+changed other objects (the planner only saw an elided summary of big worlds;
+"make the sofa dark green" in an apartment rebuilt 100+ entities), 5 guessed
+instead of asking which one, 2 painted wrong wall faces, 4 changed the world
+when they should not have (the planner rebuilt a whole apartment for "make the
+whole apartment warmer" and read "make" as "add"; both fixed). "Undo that", "this", "the other bedroom", walls,
+doors, speeds, game numbers and every furniture slot were not reachable at
+all. The mock itself answers instantly; a real model call (seconds) was needed
+for every one of these and often got it wrong.
+
+**Root causes fixed.**
+1. *Target resolution* (`refine/resolve.ts`, `scene.ts`, `walls.ts`): name,
+   type with synonyms, room ("the bedroom's back wall"), ordinal ("the second
+   chair"), relation ("left of the window", "above the fireplace", relative to
+   the viewer's heading), selection ("this", "it"), conversation ("do the
+   same for the other bedroom", "that"), group tags ("the train"), field
+   families ("the pine forest"); genuinely ambiguous references return the
+   candidates (numbered and outlined in the viewport) instead of a guess.
+   Walls resolve by geometry: room polygon edges, the wall face looking into
+   the room.
+2. *Minimal patches* (`draft.ts`, `ops-*.ts`): an op edits a copy-on-write
+   draft; the patch list is `patchesBetween(before, draft)` so it is exactly
+   the property-level difference. Parametric furniture is edited through its
+   declared parameters (upholstery, legs, width), not stretched or rebuilt;
+   `describe.ts` renders the compact diff from the real changes. A guard
+   (`guard.ts`) refuses model patches that touch unrelated existing entities
+   and tells the model why.
+3. *Fast path*: about 0.7 ms median, at most 5 ms p95, zero model calls
+   (`planFineEdit` runs before the model); cosmetic edits (colour, light,
+   name, sky) skip physics verification, geometric ones verify once; for a
+   model the world summary is a focused slice (55-62% fewer tokens on 290-350
+   entity worlds) plus the in-scope entities in full (generated buildings fold
+   their furniture out of the summary, so the model could not even see the
+   sofa).
+4. *Coverage*: `refine-coverage.test.ts` proves a prompt for every property
+   class (transform, parametric size and variants, per-slot materials, wall
+   faces, floors, ground, opacity / glow / metal, physics feel, lights,
+   sky / time / weather / fog / gravity / bloom, player speed / jump /
+   camera, behaviour speeds, NPC names and dialogue, doors, visibility, names,
+   add / duplicate / remove, scatter density and size, goal / time limit /
+   difficulty, block-world structures, blocks, settings). Schema additions
+   (backward compatible): `ArchMeta.overrides` and `ArchMeta.removed` so an
+   edit or removal of a generated piece survives a rebuild of its building
+   (`applyArchOps` re-applies them; before, any later architecture edit
+   silently undid hand edits). Sounds are rule actions, not properties.
+5. *Refine by default everywhere*: the model gets `<edit_mode>` (refine or
+   new world) every turn and a refining rule in its system prompt; the
+   offline planner no longer replaces a world because the text describes a
+   scene (atmosphere re-dresses, other themes are added in a free spot);
+   templates and example chips send `intent: 'new'`; the first prompt on the
+   untouched default glade builds a new world; a project with content shows
+   refine chips instead of new-world chips; composer placeholder, first-run
+   hint, home hero copy and selection-aware chips say so; in play mode a
+   "Tweak" prompt edits and restarts the game.
+
+**Results (`npm run eval:edits`, same 199 prompts).**
+
+| Engine | Pass | Target accuracy | Over-edit rate | p50 / p95 | Model calls per edit |
+| --- | --- | --- | --- | --- | --- |
+| Offline planner alone (before) | 53 / 199 | 40% | 24% | 1.3 / 20 ms | 1.00 |
+| Local fast path | 199 / 199 | 100% | 0% | 0.5 / 2 ms | 0 |
+| Fast path + planner (product path) | 199 / 199 | 100% | 0% | 0.9 / 4 ms | 0.03 |
+| Careless recorded model, guard off | 0 / 102 | 100% | 100% | n/a | 2.0 |
+| Careless recorded model, guard on | 99 / 102 | 98% | 1% | n/a | 3.0 |
+
+The 48 holdout prompts scored 38 / 48 (79%) on their first run, before
+any generic fix for what they exposed (a scene description swallowed as a
+sky change, "take X out", "X too", implicit subjects, "forest" read as a
+colour); all 48 pass now, so they are no longer an independent estimate.
+The tuned / holdout split stays in the eval so new wording can be added as
+fresh holdout. The recorded model is the fast path's own patch plus two
+unrelated nudges on its first turn and the minimal patch once refused: it
+measures the guard and the loop, not a real model (none is available
+offline; the latency of a live provider is the seconds a model call costs,
+which the fast path removes). The guard also refuses a `clear` for a small
+request. Scene-describing and chatty prompts ("a cozy village by a lake at
+sunset", "build me a castle with a moat", "make the sky purple", "surprise
+me") are never swallowed: 21 of them are asserted to be declined by the fast
+path.
+
+**Tests added.** `refine-parse` (46), `refine-edit` (49: minimal patches,
+overrides, tombstones, walls, viewer-relative moves, resolution,
+conversation, refusals, game edits, the guard, 21 never-swallow prompts),
+`refine-agent` (16: zero model calls, events, clarify / undo / memory,
+guard rejecting a sloppy model, focused slice, refine-by-default, hostile
+host context), `refine-coverage` (56), the eval suite (4), arch `overrides`
+(3), studio `refine` (9) and `refineStudio` (5: first prompt replaces the
+glade, later ones refine, ask and answer, undo, selection). Playwright
+`e2e:refine` (Chromium and Firefox): build a camp, five chained small edits
+each changing only their target (world compared before and after: same
+entities, same rules and state, exactly one undo step, zero model calls, diff
+card shown), an ambiguous request that asks and is answered, undo of
+everything back to the exact built world, GPU objects flat over 20 edit /
+undo cycles. `e2e` (studio) now asks for a fresh world with "Start over:"
+before its later example prompts.
+
+SECURITY
+- [x] New input boundaries: the prompt (existing 8,000-character cap; the
+  parser reads at most 1,000 characters, regexes fuzzed with 5,000-character
+  and pathological inputs, under 500 ms), `RunOptions.selection` / `memory` /
+  `heading` from the host (`sanitizeSelection`, `sanitizeMemory`: valid id
+  slugs only, at most 256 ids, a command only with a known op, plain JSON
+  through `inspectUntrusted`, at most 4 KB; tested with `__proto__`,
+  path-traversal and oversized values), `arch.overrides` / `arch.removed` in
+  imported worlds (zod; at most 64 overrides and 400 removed; applied by a
+  path walker that skips `id`, `parent`, `arch` and prototype keys and falls
+  back to the compiled piece when the result does not validate; tested),
+  model patches (a new guard in front of the existing validation).
+- [x] Every patch the fast path emits is validated atomically with
+  `applyPatches` before it is committed and again by the host; locked objects
+  never resolve and the host still screens them.
+- [x] No eval / `new Function`; chat text goes through React text nodes; the
+  diff swatches only accept `#rrggbb` (tested with a hostile value); CSP is
+  unchanged; no secrets; no new network or subprocess use; no dependency
+  added. `npm audit --omit=dev`: 0 vulnerabilities.
+
+PERFORMANCE
+- [x] The edit engine (parser, lexicon, 17 operations, about 145 KB / 49 KB
+  gzip) is a separate lazy chunk loaded on the first prompt through a dynamic
+  import in `agent.ts`; the first-load bundle grows by about 8 KB raw / 2.5 KB
+  gzip (chat cards, hints, tweak bar). First frame unchanged (e2e boot:
+  Chromium WebGPU about 2 s, Firefox WebGL2 about 2 s on software GL).
+- [x] Not a per-frame path: an edit allocates a handful of small objects once
+  per prompt (p95 at most 5 ms on 355 entities). `sceneOf` is cached per world
+  object (WeakMap); a draft clones only the entities it touches.
+- [x] GPU resources: 20 add / recolour / undo cycles by prompt leave renderer
+  geometries and textures flat (limit +6 / +4) in Chromium and Firefox (the
+  e2e prints the numbers).
+- [x] Firefox / WebGL2 measured: `e2e:refine` and `e2e` pass in Firefox
+  (these runs need a display on this machine: `xvfb-run -a`).
+- [x] Physics re-verification only where it matters: colour, light, name,
+  sky and text edits skip it; geometric ones verify once.
+
+**Known limits (stated in the product, not hidden).** A long wall that
+bounds several rooms has one finish per face, so painting one room's wall
+changes the whole wall (the reply says so); real wallpaper patterns need a
+wallpaper finish in the library (a tinted woven finish stands in, and the
+reply says that stripes and florals are not available yet); lamps without a
+light source cannot be switched; furniture that only comes in wood and metal
+finishes says so instead of faking a paint colour.
+
+**Gates.** tsc 0 errors; studio build OK; smoke 28/28; `npm run e2e`
+(Chromium WebGPU, Chromium WebGL2, Firefox WebGL2) and `npm run e2e:refine`
+pass in Chromium and Firefox. Vitest: everything passes except five tests that
+fail identically on the base commit in this environment and are unrelated to
+this stage (no file of `packages/procgen`, `packages/render` or `apps/server`
+changed): the generator-sandbox child probe and two server storage tests
+(`WebAssembly` is undefined in the locked-down child under Node 22.19) and the
+render allocation probes (16.6-34 bytes per frame against a limit of 16; the
+failing subset changes from run to run).

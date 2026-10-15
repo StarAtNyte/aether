@@ -4,7 +4,7 @@
  * five glowing gems to collect — so a visitor can press Play immediately.
  * Built only from built-in generators and primitives (no external assets).
  */
-import { createWorld, type EntityInput, type RuleInput, type WorldDoc, type WorldDocInput } from '@aether/core';
+import { createWorld, stableStringify, type EntityInput, type RuleInput, type WorldDoc, type WorldDocInput } from '@aether/core';
 
 const GEM_SPOTS: ReadonlyArray<[number, number]> = [
   [-9, 6],
@@ -217,4 +217,15 @@ const WORLD: WorldDocInput = {
 /** A fresh copy of the starter world (validated). */
 export function createStarterWorld(): WorldDoc {
   return createWorld(WORLD);
+}
+
+/**
+ * True while the world is still the untouched default glade: a first prompt
+ * then builds a NEW world instead of refining a placeholder.
+ */
+export function isPristineStarter(world: WorldDoc): boolean {
+  const starter = createStarterWorld();
+  const ids = Object.keys(world.entities);
+  const want = Object.keys(starter.entities);
+  return ids.length === want.length && ids.every((id) => Object.hasOwn(starter.entities, id)) && world.name === starter.name && stableStringify(world.entities) === stableStringify(starter.entities);
 }

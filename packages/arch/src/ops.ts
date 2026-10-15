@@ -7,7 +7,7 @@
  * Failures are refusals with a code and a fix hint, per op; the other ops
  * still apply.
  */
-import { deepEqual, Entity, patchesBetween, PlayerSpec, WorldTest, type EntityId, type Patch, type WorldDoc } from '@aether/core';
+import { deepEqual, Entity, isForbiddenKey, patchesBetween, PlayerSpec, WorldTest, type EntityId, type Json, type Patch, type WorldDoc } from '@aether/core';
 import { z } from 'zod';
 import { MaterialSpec } from '@aether/core';
 import { compileBuilding, parsePlan, PlanError, type CompiledBuilding } from './compile';
@@ -116,6 +116,26 @@ function subtree(world: WorldDoc, root: EntityId): Set<EntityId> {
     }
   }
   return ids;
+}
+
+/** Re-apply recorded property edits to a freshly compiled piece (invalid results keep the compiled piece). */
+function withOverrides(piece: Entity, overrides: Readonly<Record<string, Json>>): Entity {
+  const draft = structuredClone(piece) as unknown as Record<string, unknown>;
+  for (const [path, value] of Object.entries(overrides)) {
+    const keys = path.split('.');
+    if (keys.some((k) => isForbiddenKey(k)) || keys[0] === 'id' || keys[0] === 'parent' || keys[0] === 'arch') continue;
+    let cur = draft;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const k = keys[i] as string;
+      const next = cur[k];
+      if (typeof next !== 'object' || next === null || Array.isArray(next)) cur[k] = {};
+      cur = cur[k] as Record<string, unknown>;
+    }
+    cur[keys[keys.length - 1] as string] = value;
+  }
+  const arch = { ...(piece.arch as NonNullable<Entity['arch']>), overrides: { ...overrides } };
+  const parsed = Entity.safeParse({ ...draft, arch });
+  return parsed.success ? parsed.data : piece;
 }
 
 /** Apply a batch of architecture ops to `world` (pure). */
@@ -289,11 +309,16 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       throw e;
     }
     compiled.push(result);
+    const removedPieces = new Set<string>(Object.hasOwn(world.entities, id) ? (world.entities[id]?.arch?.removed ?? []) : []);
     if (Object.hasOwn(world.entities, id)) dropSubtree(id);
     for (const raw of result.entities) {
-      const parsed = Entity.parse(raw);
+      let parsed = Entity.parse(raw);
+      if (removedPieces.has(parsed.id)) continue;
       const old = Object.hasOwn(world.entities, parsed.id) ? world.entities[parsed.id] : undefined;
       if (old?.locked) continue;
+      // Edits made to a piece (by hand or by prompt) and pieces the user removed survive a re-compile.
+      if (parsed.arch?.role === 'building' && removedPieces.size > 0 && parsed.arch) parsed = { ...parsed, arch: { ...parsed.arch, removed: [...removedPieces].slice(-400) } };
+      if (old?.arch?.overrides && parsed.arch) parsed = withOverrides(parsed, old.arch.overrides);
       entities[parsed.id] = old && deepEqual(old, parsed) ? old : parsed;
     }
     if (!tests.some((t) => t.kind === 'navigable' && t.target === id)) tests = [...tests, WorldTest.parse({ id: `${id}-usable`.slice(0, 64), kind: 'navigable', target: id })];

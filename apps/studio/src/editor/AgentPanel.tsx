@@ -11,6 +11,8 @@ import type { ChatEntry } from '../lib/chat';
 import { FEATURED_TEMPLATES, SUGGESTION_CHIPS, TEMPLATES, templateThumbnail } from '../lib/examples';
 import { MAX_REFERENCE_IMAGES, prepareReferenceImage } from '../lib/images';
 import { remixSuggestions } from '../lib/remix';
+import { composerPlaceholder, hasContent, refineChips } from '../lib/refine';
+import { isPristineStarter } from '../lib/starterWorld';
 import { ChatEvent } from '../components/chat/ChatEvent';
 import { Icon } from '../components/Icon';
 import { Logomark } from '../components/Logo';
@@ -65,20 +67,35 @@ const ConnectionCard = memo(function ConnectionCard(): ReactElement | null {
 });
 
 /** Empty state: greeting, suggestions, templates. */
-const EmptyAgent = memo(function EmptyAgent({ onPrompt, onTemplate }: { onPrompt: (p: string) => void; onTemplate: (prompt: string) => void }): ReactElement {
+const EmptyAgent = memo(function EmptyAgent({ onPrompt, onRefine, onTemplate }: { onPrompt: (p: string) => void; onRefine: (p: string) => void; onTemplate: (prompt: string) => void }): ReactElement {
+  const world = useWorld();
+  const selection = useUI((s) => s.selection);
+  // A project that already has something of the user's in it is refined, not replaced.
+  const mine = useMemo(() => hasContent(world) && !isPristineStarter(world), [world]);
+  const chips = useMemo(() => refineChips(world, selection), [world, selection]);
   return (
     <div className="agent-empty">
       <ConnectionCard />
       <div className="agent-empty__hero">
         <Logomark size={28} />
-        <h2 className="agent-empty__title">Let’s build!</h2>
-        <p className="agent-empty__text">Describe a world. The agent builds it, checks the physics and makes it playable.</p>
+        <h2 className="agent-empty__title">{mine ? 'Refine your world' : 'Let’s build!'}</h2>
+        <p className="agent-empty__text">
+          {mine
+            ? 'Say what to change, in plain words: only what you mention changes, and every step is undoable. Select something and say “make it bigger”.'
+            : 'Describe a world. The agent builds it, checks the physics and makes it playable. Then keep refining it in plain words: only what you mention changes, and every step is undoable.'}
+        </p>
         <div className="suggestions" role="group" aria-label="Suggestions">
-          {SUGGESTION_CHIPS.map((s) => (
-            <button key={s} type="button" className="chip chip--action" onClick={() => onPrompt(s)}>
-              {s}
-            </button>
-          ))}
+          {mine
+            ? chips.map((c) => (
+                <button key={c.prompt} type="button" className="chip chip--action" onClick={() => onRefine(c.prompt)}>
+                  {c.label}
+                </button>
+              ))
+            : SUGGESTION_CHIPS.map((s) => (
+                <button key={s} type="button" className="chip chip--action" onClick={() => onPrompt(s)}>
+                  {s}
+                </button>
+              ))}
         </div>
       </div>
       <div className="agent-empty__section">
@@ -143,6 +160,8 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
     <div className={`msg msg--assistant${live ? ' is-live' : ''}`}>
       {entry.events.length === 0 && live && <ThinkingSkeleton text="Thinking…" />}
       {entry.events.map((ev, i) =>
+        // A small edit's card already says what changed: the generic patch summary before it is redundant.
+        ev.type === 'patches' && entry.events[i + 1]?.type === 'edit' ? null :
         // While streaming only the newest progress line is relevant.
         ev.type === 'status' && i !== entry.events.length - 1 ? null : ev.type === 'status' && live ? <ThinkingSkeleton key={i} text={ev.text} /> : <ChatEvent key={i} event={ev} live={live && i === entry.events.length - 1} />,
       )}
@@ -154,25 +173,41 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
 
 /** One-tap follow-ups under the latest finished turn. */
 const RemixChips = memo(function RemixChips({ onPick }: { onPick: (prompt: string) => void }): ReactElement | null {
-  const env = useWorld().environment;
+  const world = useWorld();
+  const selection = useUI((s) => s.selection);
   const mode = useUI((s) => s.mode);
-  const { sky, weather, gravity } = env;
-  const chips = useMemo(() => remixSuggestions({ sky, weather, gravity }), [sky, weather, gravity]);
+  const { sky, weather, gravity } = world.environment;
+  const remix = useMemo(() => remixSuggestions({ sky, weather, gravity }), [sky, weather, gravity]);
+  const refine = useMemo(() => refineChips(world, selection), [world, selection]);
+  const chips = selection.length > 0 ? refine : [...refine.slice(0, 1), ...remix.map((r) => ({ label: r.prompt, prompt: r.prompt }))].slice(0, 3);
   if (mode !== 'edit' || chips.length === 0) return null;
   return (
-    <div className="remix" role="group" aria-label="Try a variation">
+    <div className="remix" role="group" aria-label="Refine it">
       {chips.map((c) => (
         <button key={c.prompt} type="button" className="chip chip--action" onClick={() => onPick(c.prompt)}>
-          {c.prompt}
+          {c.label}
         </button>
       ))}
     </div>
   );
 });
 
+/** First-run nudge: the world exists, so the next message edits it. Shown until the first small edit. */
+const RefineHint = memo(function RefineHint(): ReactElement | null {
+  const edited = useUI((s) => s.chat.some((e) => e.role === 'assistant' && e.events.some((ev) => ev.type === 'edit')));
+  if (edited) return null;
+  return (
+    <p className="refine-hint" data-testid="refine-hint">
+      <Icon name="info" /> Your world is ready. Keep going in plain words: every message tweaks it (“make the roof red”, “move that a bit left”) and only what you name changes. Select something and say “make it bigger”.
+    </p>
+  );
+});
+
 /** Prompt composer with reference images. */
 const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: string, images: string[]) => void; busy: boolean }): ReactElement {
   const studio = useStudio();
+  const world = useWorld();
+  const selection = useUI((s) => s.selection);
   const [draft, setDraft] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -234,7 +269,7 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
         value={draft}
         rows={2}
         maxLength={MAX_PROMPT_CHARS}
-        placeholder={busy ? 'The agent is building…' : 'Describe a world or a change…'}
+        placeholder={composerPlaceholder(world, selection, busy)}
         aria-label="Prompt"
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
@@ -303,12 +338,12 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
     });
   }, [chat]);
 
-  const send = (text: string, images: readonly string[] = [], offline = false): void => {
+  const send = (text: string, images: readonly string[] = [], offline = false, intent?: 'new'): void => {
     const t = text.trim();
     if (!t || busy) return;
     stickToBottom.current = true;
     launchPromptFlight(t, document.getElementById('prompt-input'));
-    void studio.send(t, { images, offline });
+    void studio.send(t, { images, offline, ...(intent ? { intent } : {}) });
   };
 
   return (
@@ -322,7 +357,8 @@ export const AgentPanel = memo(function AgentPanel(): ReactElement {
         }}
         aria-live="polite"
       >
-        {chat.length === 0 ? <EmptyAgent onPrompt={(p) => send(p)} onTemplate={(p) => send(p, [], true)} /> : chat.map((entry) => <ChatItem key={entry.id} entry={entry} />)}
+        {chat.length === 0 ? <EmptyAgent onPrompt={(p) => send(p, [], false, 'new')} onRefine={(p) => send(p)} onTemplate={(p) => send(p, [], true, 'new')} /> : chat.map((entry) => <ChatItem key={entry.id} entry={entry} />)}
+        {!busy && lastDone && <RefineHint />}
         {!busy && lastDone && <RemixChips onPick={(p) => send(p)} />}
       </div>
       <Composer onSend={(t, imgs) => send(t, imgs)} busy={busy} />

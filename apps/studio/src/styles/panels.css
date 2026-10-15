@@ -1605,6 +1605,128 @@
   margin-top: 2px;
 }
 
+/* Small edits: what changed, at a glance */
+.ev--edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-2);
+  background: var(--accent-soft);
+}
+
+.edit__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.edit__icon {
+  flex: none;
+  align-self: center;
+  color: var(--accent-text);
+}
+
+.edit__summary {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.edit__meta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+.edit__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.edit__line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  overflow-wrap: anywhere;
+}
+
+.edit__line.is-add {
+  color: var(--success-text, var(--text-2));
+}
+
+.edit__line.is-remove {
+  color: var(--danger-text, var(--text-2));
+}
+
+.edit__line .swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.edit__note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+.edit__actions {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.ev--clarify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.clarify__text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.clarify__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.clarify__choices .chip b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 11px;
+}
+
+.clarify__hint,
+.refine-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+}
+
+.refine-hint .icon {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
 .ev--quality {
   border: 1px solid var(--border);
   border-radius: var(--r-2);

@@ -7,14 +7,14 @@
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
-import { WorldAgent, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix } from '@aether/agent';
+import { EMPTY_MEMORY, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
 import { buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
-import { createStarterWorld } from '../lib/starterWorld';
+import { createStarterWorld, isPristineStarter } from '../lib/starterWorld';
 import {
   browserStorage,
   clearBooting,
@@ -116,6 +116,15 @@ export interface SendOptions {
   offline?: boolean;
   /** Reference images (data URLs) sent with the prompt; at most 4. */
   images?: readonly string[];
+  /**
+   * 'auto' (default): the message refines the current world and only a clear "start over" replaces it.
+   * 'new': build a new world (templates, the home prompt). 'refine': never replace.
+   */
+  intent?: 'auto' | 'new' | 'refine';
+  /** Start playing again once the edit is done (the in-game tweak bar). */
+  resumePlay?: boolean;
+  /** What the chat shows as the user's message when it differs from the prompt (an answer to a question). */
+  echo?: string;
 }
 
 /** Memory picture of the whole studio (debug handle, memory e2e). */
@@ -162,6 +171,11 @@ export class Studio {
   /** Outcome of the last verification run, for the seal and its motion replay. */
   private lastProof: { trace: VerifyTrace | null; passed: boolean; head: number; tests: number; passedTests: number; seconds: number } | null = null;
   private proofSeq = 0;
+  /** What the next prompt can refer to ("it", "the same", "the other one"). Reset with the conversation. */
+  private refineMemory: RefineMemory = EMPTY_MEMORY;
+  private lastPrompt = '';
+  /** What the agent last told the user in one line (shown as a toast for edits made while playing). */
+  private lastReply = '';
   private proofGen = 0;
   /** The bot's proof for the world on screen (a real passed run), or null; shares and builds carry it. */
   playtestProof(): Promise<Proof | null> {
@@ -178,6 +192,8 @@ export class Studio {
   /** Id of the open project (null: the legacy single world). */
   readonly projectId: string | null;
   private abort: AbortController | null = null;
+  /** The last prompt was a small edit applied locally (no quality loop, no proof replay for cosmetic ones). */
+  private localEdit: { cosmetic: boolean; head: number } | null = null;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly cleanups: Array<() => void> = [];
   private readonly simListeners = new Set<(sim: Simulation | null) => void>();
@@ -424,6 +440,8 @@ export class Studio {
       sim.setGizmo(this.store.getState().selection, this.store.getState().tool);
       const unsubSel = this.store.subscribe((s, prev) => {
         if (s.selection !== prev.selection) sim.setSelection(s.selection);
+        // Clicking one of the outlined candidates answers the question.
+        if (s.clarify && s.selection !== prev.selection && s.selection.length === 1 && s.clarify.items.some((i) => i.id === s.selection[0])) this.answerClarify(s.selection[0] as string);
         if (s.selection !== prev.selection || s.tool !== prev.tool) sim.setGizmo(s.selection, s.tool);
       });
       // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
@@ -600,6 +618,24 @@ export class Studio {
 
   undo(): void {
     if (this.store.getState().mode === 'edit') this.history.undo();
+  }
+
+  /** Answer "which one?": select the chosen object and run the question's prompt again. */
+  answerClarify(id: string): void {
+    const c = this.store.getState().clarify;
+    if (!c || this.store.getState().agentBusy) return;
+    const label = c.items.find((i) => i.id === id)?.label ?? id;
+    this.store.getState().setClarify(null);
+    this.sim?.setCandidates([]);
+    this.store.getState().select([id]);
+    void this.send(c.prompt, { intent: 'refine', echo: label });
+  }
+
+  /** Dismiss a pending question (the next prompt starts fresh). */
+  dismissClarify(): void {
+    if (this.store.getState().clarify === null) return;
+    this.store.getState().setClarify(null);
+    this.sim?.setCandidates([]);
   }
 
   redo(): void {
@@ -938,8 +974,12 @@ export class Studio {
     const before = this.history.current;
     this.dismissProof();
     playUiSound(st.settings, 'send');
-    st.addUserMessage(text);
+    st.addUserMessage(opts.echo ?? text);
     const entryId = st.startAssistant();
+    this.lastPrompt = text;
+    this.lastReply = '';
+    st.setClarify(null);
+    this.sim?.setCandidates([]);
     st.setAgentBusy(true);
     // The planner (online or offline) places library assets: make sure the catalog is in.
     await this.assets.ready().catch(() => undefined);
@@ -978,8 +1018,12 @@ export class Studio {
       const buildAsset = primary && resolved.kind === 'local' && resolved.worker && prefs.deep ? this.deepBuilder(entryId, prefs) : undefined;
       const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, ...(buildAsset ? { buildAsset } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
-      status = await this.streamRun(agent.run(text, this.bridge, { signal: abort.signal, history, ...(images.length > 0 ? { images } : {}), ...(session ? { session } : {}) }), entryId, abort, usage);
-      if (status === 'done' && !abort.signal.aborted && this.history.current !== before) {
+      // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
+      const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(session ? { session } : {}) } as const;
+      this.localEdit = null;
+      status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
+      if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null) {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
         const result = await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
@@ -1010,11 +1054,14 @@ export class Studio {
       if (this.onSave) this.schedulePersist();
       else saveChat(this.storage, this.store.getState().chat);
     }
+    const local = this.localEdit;
     if (status === 'done' && this.history.current !== before) {
-      void this.presentProof();
+      if (!(local && local.cosmetic)) void this.presentProof();
       // Then the bot plays or walks what was just built (quiet when there is nothing to play).
       void this.playtest.run({ auto: true });
     }
+    if (opts.resumePlay && this.lastReply) this.store.getState().toast(this.lastReply.slice(0, 140), status === 'done' ? 'info' : 'error', 4);
+    if (opts.resumePlay && this.store.getState().mode === 'edit' && this.sim && !this.disposed) void this.togglePlay();
   }
 
   /**
@@ -1070,7 +1117,35 @@ export class Studio {
         for (const m of event.usage.models ?? []) if (!usage.models.includes(m) && usage.models.length < 6) usage.models.push(m.slice(0, 64));
         continue;
       }
-      const view = toEventView(event);
+      if (event.type === 'memory') {
+        this.refineMemory = event.memory;
+        continue;
+      }
+      if (event.type === 'history') {
+        this.store.getState().pushEvent(entryId, { type: 'message', text: event.action === 'undo' ? 'Undone. Your world is back to how it was.' : 'Redone.' });
+        if (event.action === 'undo') this.undo();
+        else this.redo();
+        continue;
+      }
+      if (event.type === 'clarify') {
+        const world = this.history.current;
+        const items = event.candidates.flatMap((c) => {
+          const e = getEntity(world, c.id);
+          if (!e) return [];
+          // Above the object as drawn (its bounds), else above its own position.
+          const b = this.sim?.entityBounds(c.id) ?? null;
+          const position: readonly [number, number, number] = b ? [(b.min[0] + b.max[0]) / 2, b.max[1] + 0.2, (b.min[2] + b.max[2]) / 2] : [e.transform.position[0], e.transform.position[1] + 1, e.transform.position[2]];
+          return [{ id: c.id, label: c.label, position }];
+        });
+        this.store.getState().setClarify({ prompt: this.lastPrompt, text: event.text, items });
+        this.sim?.setCandidates(items.map((i) => i.id));
+      } else if (event.type === 'edit') {
+        this.store.getState().setClarify(null);
+        this.localEdit = { cosmetic: event.cosmetic, head: this.history.head };
+      }
+      if (event.type === 'edit') this.lastReply = event.summary;
+      else if (event.type === 'message' && this.lastReply === '') this.lastReply = event.text;
+      const view = toEventView(event, { head: this.history.head });
       this.store.getState().pushEvent(entryId, view);
       if (event.type === 'patches') {
         // Name what was just placed while it materialises (the plan, annotated on the world).

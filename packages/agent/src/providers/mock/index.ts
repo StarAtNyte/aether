@@ -95,7 +95,7 @@ export function createMockProvider(opts: MockProviderOptions = {}): Provider {
 
       const raw = messageText(last);
       const envelope = parseUserTurn(raw);
-      const plan = planMock(envelope?.request ?? raw, envelope?.summary ?? '', library);
+      const plan = planMock(envelope?.request ?? raw, envelope?.summary ?? '', library, envelope?.mode?.startsWith('new') ? 'new' : envelope?.mode ? 'refine' : undefined);
       if (plan.patches.length === 0 && !plan.arch) return respond(req, [{ type: 'text', text: plan.message }], 'end');
 
       const key = hashString(raw).toString(36);

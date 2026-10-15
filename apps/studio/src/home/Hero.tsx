@@ -118,7 +118,7 @@ export const Hero = memo(function Hero({ onPrompt, onTemplate }: { onPrompt: (pr
         <h2 id="hero-title" className="hero__title">
           Speak a world into being.
         </h2>
-        <p className="hero__lead">Describe it in plain words. Aether builds it in 3D, proves the physics, and makes it playable, right here in your browser.</p>
+        <p className="hero__lead">Describe it in plain words. Aether builds it in 3D, proves the physics, and makes it playable, right here in your browser. Then keep refining it the same way: “make the sofa dark green”, “a bit more to the left”.</p>
         <form
           className="hero-bar"
           onSubmit={(e) => {

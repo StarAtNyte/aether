@@ -116,6 +116,28 @@ explicit state, so the AI can be held to account:
   verification proves patrols are reachable and nobody gets stuck or falls
   (`npcs` test); the flagship **The Hollow Gate** shows a guard, a shopkeeper and a
   wolf pack off, and a bot wins it with every character active.
+- **Keep refining by prompt: small, precise edits.** After the first prompt
+  builds a world, every message in the same chat refines it. "Make the sofa
+  dark green velvet", "wallpaper on the main bedroom's back wall", "move the
+  lamp a bit left", "make the coins spin faster", "collect 15 coins to win",
+  "make it night" are understood locally in about a millisecond (no model
+  call), resolved by name, type, room, position ("left of the window", "the
+  second chair"), selection ("make this red") or conversation ("do the same
+  for the other bedroom"), and applied as the smallest possible patch:
+  only the named property of the named thing changes. The chat shows a
+  compact diff ("Sofa · upholstery: fabric → velvet") with one-click Undo and
+  Redo; ambiguous requests ask which one and outline the candidates in the
+  viewport. A model-written patch that also touches unrelated objects is
+  refused and retried. In play mode a "Tweak" prompt edits the game and
+  restarts it. Parametric furniture is edited through its own parameters
+  (upholstery, legs, width), walls by the face that looks into the room, and
+  edits survive a rebuild of the building. See
+  [docs/CONTRACTS.md](docs/CONTRACTS.md#fine-edits-small-precise-changes-by-prompt-additions-to-core-arch-agent-studio)
+  and `npm run eval:edits`.
+
+  | Five chained edits, each with its compact diff, Undo and "no model call" | An ambiguous request asks which one (numbered in the viewport) |
+  | --- | --- |
+  | ![Chat after five small edits: the diff card of "make it night" with Undo](docs/screenshots/refine-chat-edits.png) | !["Which tent?" with numbered candidates](docs/screenshots/refine-chat-clarify.png) |
 - **A real asset library, an AI forge and your own files.** 364 curated
   assets ([docs/ASSETS.md](docs/ASSETS.md)): CC0 models from Kenney and
   Poly Haven (furniture, kitchens, bathrooms, plants, trees, rocks, city
@@ -535,6 +557,9 @@ viewer of a shared world (the token is the world itself, compressed).
 | `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
 | `npm run smoke` | Runs the real agent with the offline planner against 25 prompts and re-verifies every world headless (block worlds: their edits compile and the spawn area meshes) |
 | `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, a device sign-in that completes (account + model picker), `aether login` / `doctor` / `logout`, `aether stop` |
+| `npm run eval:edits` | Small-edit evaluation: 199 prompts over the default projects (apartment, penthouse, living room, games, camp, meadow, block world), scored on target accuracy, over-edit rate and latency for the unassisted planner, the local fast path and a careless recorded model with the minimal-patch guard off and on (`-- --set holdout`, `-- --engine fast`, `-- --only a-sofa`) |
+| `npx tsx scripts/fine-probe.ts <world> "<prompt>"` | Shows what the small-edit engine understood for a prompt on a default project (`apartment`, `lakeside-camp`, …): parsed command, compact diff, patches, time (`@selected-id` to select, several prompts with `--chain` to test "do the same for the other one") |
+| `npm run e2e:refine` | Refining by prompt in Chromium then Firefox: build a camp, five chained small edits that each change only their target (world compared before and after, no model call, diff card shown), an ambiguous request that asks and is answered, undo of everything back to the exact built world, GPU objects flat over 20 edit/undo cycles |
 | `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
 | `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
 | `npm run e2e:arch` | Real-life architecture in Chromium (WebGPU, WebGL2) and Firefox: apartment prompt → cutaway, walls down, x-ray, section, daylight, studio render, GPU objects flat over 20 view cycles → floor plan (draw a room, add a door, undo) → walkthrough through the front door, night, lights, photo mode |

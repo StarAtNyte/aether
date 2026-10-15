@@ -2254,3 +2254,93 @@ room with a state-locked door (`keys`), a golden key and a treasure goal.
   (re-plays the bot, `--no-bot` skips).
 - Commit label of a repair: `Playtest fix: <sentence>`, source `agent`; every repair
   is one undo step.
+## Fine edits: small, precise changes by prompt (+ additions to core, arch, agent, studio)
+
+After a world exists, every message in the same chat REFINES it. A small
+request ("make the sofa dark green velvet", "move the lamp a bit left",
+"collect 15 coins to win") becomes the smallest possible patch on exactly the
+named things: nothing else is regenerated or moved. Big requests ("make it a
+winter scene") are scene-wide patches on the current world, never a rebuild.
+A new world is built only when the user clearly asks for one ("start over",
+"a new world") or the host says so (`intent: 'new'`: templates, example
+chips, the first prompt on the untouched default glade).
+
+### World IR (additive, backward compatible)
+
+- `ArchMeta.overrides?: Record<string, Json>` — property edits made to a
+  generated piece (dotted entity paths: `"shape.params.color"`,
+  `"transform.position"`), at most 64. `applyArchOps` re-applies them when a
+  building is re-compiled (invalid results keep the compiled piece; `id`,
+  `parent`, `arch` and prototype keys are never applied).
+- `ArchMeta.removed?: EntityId[]` (building entity, at most 400) — compiled
+  pieces the user removed; they stay removed after a re-compile.
+
+### `@aether/agent`
+
+- `RunOptions` gains `selection?: EntityId[]` ("make this red"), `memory?:
+  RefineMemory`, `heading?: number` (viewer heading in degrees; 0 looks
+  toward −Z, 90 toward +X: "left" and "back" are the viewer's) and
+  `intent?: 'auto' | 'new' | 'refine'`. Selection, memory and heading come
+  from the host and are sanitised (`sanitizeSelection`, `sanitizeMemory`).
+- `AgentOptions` gains `fineEdit?: boolean` (default true: local edits +
+  the over-edit guard) and `localEdits?: boolean` (default = `fineEdit`).
+- `AgentEvent` gains `edit` (`{ summary, diff: DiffLine[], targets, cosmetic,
+  notes, ms, local }`), `clarify` (`{ text, candidates: {id, label}[] }`),
+  `history` (`{ action: 'undo' | 'redo' }`, the host steps its history) and
+  `memory` (`{ memory }`, hand it back on the next run). A local edit emits
+  `patches`, `edit`, `memory`, `message` (and `verify` for geometric edits).
+- `planFineEdit(input): FineEditResult` (`packages/agent/src/refine/`, loaded
+  lazily by the agent; tests import it from source): `{ kind: 'edit' | 'question' | 'undo' | 'redo' | 'none',
+  reason?, detail?, patches, world, summary, changes, diff, targets, scope,
+  added, cosmetic, notes, question?, memory, ms }`. Pipeline: `parseEdit`
+  (clauses → `Command`s) → `resolveRef` (name, type, room, ordinal, relation,
+  selection, conversation) → an op edits a copy-on-write `Draft` → the patch
+  list is `patchesBetween(before, draft)`, validated atomically and checked
+  against the named scope. Anything not fully understood is `none` and goes
+  to the model; a final capability answer ("the sofa legs only come in oak,
+  walnut…", "already walnut") is `none` with `reason: 'refused'` and the text
+  is the reply (no model call).
+- Resolution rules: locked objects never resolve; a group tag ("the train")
+  or a field family ("the pine forest") is one thing; a singular reference
+  with several equally likely matches is a `question` with the candidates;
+  walls resolve by geometry (room polygon edges ↔ wall entities, the face
+  that looks into the room, `back/front/left/right/north…/feature` relative to
+  the heading).
+- The model path is guarded: `classifyScope(world, text, ctx)` decides what a
+  request may touch (`small` with the named entities, or `broad`);
+  `apply_patches` calls that change unrelated existing entities are refused
+  with a message the model can act on (`auditPatches`). Large worlds
+  (`SLICE_THRESHOLD` = 80 entities) send a focused summary plus the in-scope
+  entities in full; every turn carries `<edit_mode>` (refine or new world).
+  The offline planner honours the mode: a described scene re-dresses the
+  world (atmosphere) or adds in a free spot, it never wipes it.
+
+### Studio
+
+- `Studio.send(prompt, { intent?, resumePlay?, echo? })`; the first prompt on
+  the pristine default glade is `new`. The conversation memory lives on the
+  `Studio`; `answerClarify(id)` selects the chosen object and re-runs the
+  question's prompt; clicking one of the numbered candidates in the viewport
+  answers too (`store.clarify`, `Simulation.setCandidates`).
+- Chat: the `edit` card (compact diff with colour swatches, "N ms · no model
+  call", one-click Undo / Redo), the `clarify` card (numbered chips), a
+  refine hint after the first build, selection-aware placeholder and chips.
+- `PlayTweak`: a prompt over the running game; the edit is applied and play
+  restarts with it.
+- `Simulation.cameraHeading()`, `Simulation.setCandidates(ids)`.
+
+### Coverage
+
+Every editable property class is reachable by prompt (proved by
+`packages/agent/test/refine-coverage.test.ts`): transform (move, rotate,
+scale), parametric size and variants (generator parameters), per-slot
+materials (upholstery, legs, wall faces, floors, ground), opacity / glow /
+metal, physics feel, lights (intensity, warmth, on/off), sky / time /
+weather / fog / gravity / ground / bloom, player speed / jump / camera,
+behaviour speeds (spin, bob, patrol, wander, vehicle), NPC names and
+dialogue, doors, show / hide, rename, add / duplicate / remove (in buildings
+through the plan), scatter density and instance size, game goal / time limit
+/ difficulty, block-world structures, blocks and game settings. Sounds are
+rule actions (no entity or environment field), so there is nothing to edit
+beyond the rules.
+

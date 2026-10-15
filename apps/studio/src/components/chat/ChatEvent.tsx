@@ -1,4 +1,5 @@
 import { memo, useState, type ReactElement } from 'react';
+import { useStudio, useUI, useWorld } from '../../app/context';
 import type { ChatEventView } from '../../lib/chat';
 import { patchChips } from '../../lib/patchSummary';
 import { compactCount } from '../../lib/format';
@@ -62,6 +63,108 @@ const PatchesView = memo(function PatchesView({ event }: { event: Extract<ChatEv
           ))}
         </ul>
       )}
+    </div>
+  );
+});
+
+/** A small edit applied on the spot: what changed, in one glance, with one-click undo / redo. */
+const EditView = memo(function EditView({ event }: { event: Extract<ChatEventView, { type: 'edit' }> }): ReactElement {
+  const studio = useStudio();
+  useWorld(); // re-render when the history moves (the buttons follow it)
+  const [undone, setUndone] = useState(false);
+  const head = event.head;
+  const here = studio.history.head;
+  const canUndo = !undone && head !== undefined && here === head && studio.history.canUndo();
+  const canRedo = undone && head !== undefined && here !== head && studio.history.canRedo();
+  const time = event.ms < 1 ? 'under 1 ms' : event.ms < 10 ? `${event.ms.toFixed(1)} ms` : `${Math.round(event.ms)} ms`;
+  return (
+    <div className="ev ev--edit" data-testid="edit-card">
+      <div className="edit__head">
+        <Icon name="check" className="edit__icon" />
+        <span className="edit__summary" data-testid="edit-summary">
+          {event.summary}
+        </span>
+        {event.local && (
+          <span className="edit__meta" title="Applied locally: no model call, only the named property changed">
+            {time} · no model call
+          </span>
+        )}
+      </div>
+      {event.lines.length > 0 && (
+        <ul className="edit__lines" aria-label="What changed">
+          {event.lines.map((l, i) => (
+            <li key={i} className={`edit__line is-${l.kind}`}>
+              {l.fromColor && <span className="swatch" style={{ background: l.fromColor }} aria-hidden="true" />}
+              {l.toColor && <span className="swatch" style={{ background: l.toColor }} aria-hidden="true" />}
+              <span>{l.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {event.notes.map((n, i) => (
+        <p key={i} className="edit__note">
+          {n}
+        </p>
+      ))}
+      {(canUndo || canRedo || undone) && (
+        <div className="edit__actions">
+          {!undone ? (
+            <button
+              type="button"
+              className="btn btn--sm"
+              disabled={!canUndo}
+              onClick={() => {
+                studio.undo();
+                setUndone(true);
+              }}
+              data-testid="edit-undo"
+            >
+              <Icon name="undo" /> Undo
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn--sm"
+              disabled={!canRedo}
+              onClick={() => {
+                studio.redo();
+                setUndone(false);
+              }}
+              data-testid="edit-redo"
+            >
+              <Icon name="redo" /> Redo
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** "Which one?": numbered candidates (outlined in the viewport) to click. */
+const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEventView, { type: 'clarify' }> }): ReactElement {
+  const studio = useStudio();
+  const active = useUI((s) => s.clarify !== null && s.clarify.text === event.text);
+  return (
+    <div className="ev ev--clarify" role="group" aria-label="Which one?" data-testid="clarify">
+      <p className="clarify__text">{event.text}</p>
+      <div className="clarify__choices">
+        {event.candidates.map((c, i) => (
+          <button
+            key={c.id}
+            type="button"
+            className="chip chip--action"
+            disabled={!active}
+            onClick={() => studio.answerClarify(c.id)}
+            onMouseEnter={() => active && studio.simulation?.setCandidates([c.id])}
+            onMouseLeave={() => active && studio.simulation?.setCandidates(event.candidates.map((x) => x.id))}
+            data-testid="clarify-choice"
+          >
+            <b>{i + 1}</b> {c.label}
+          </button>
+        ))}
+      </div>
+      {active && <p className="clarify__hint">They are numbered in the viewport: click one there, or pick here.</p>}
     </div>
   );
 });
@@ -144,6 +247,10 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       );
     case 'patches':
       return <PatchesView event={event} />;
+    case 'edit':
+      return <EditView event={event} />;
+    case 'clarify':
+      return <ClarifyView event={event} />;
     case 'verify':
       return <VerifyView event={event} />;
     case 'generator':

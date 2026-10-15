@@ -40,6 +40,8 @@ export interface ExecutorContext {
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
   /** Agentic asset builder (deep build); see `AgentOptions.buildAsset`. */
   buildAsset?: AgentOptions['buildAsset'];
+  /** Set for a small edit: checks a patch list against what the request named; `ok: false` patches are refused with the message. */
+  audit?: (patches: readonly unknown[]) => { ok: boolean; message: string };
 }
 
 const MAX_RESULT_CHARS = 20_000;
@@ -108,6 +110,10 @@ function inputSize(input: unknown): number {
 
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
+  if (ctx.audit) {
+    const audit = ctx.audit(input.patches);
+    if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
+  }
   const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
   const events: AgentEvent[] = [];
   if (defs.length > 0) {

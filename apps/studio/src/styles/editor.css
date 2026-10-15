@@ -1095,6 +1095,35 @@
 
 /* ---- Play mode ---------------------------------------------------------- */
 
+.play-tweak {
+  position: absolute;
+  inset: auto 0 var(--s-4) 0;
+  z-index: 6;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.play-tweak > * {
+  pointer-events: auto;
+}
+
+.play-tweak__form {
+  display: flex;
+  gap: var(--s-2);
+  width: min(560px, calc(100% - 2 * var(--s-4)));
+  padding: var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-3, 0 8px 28px rgb(0 0 0 / 0.3));
+}
+
+.play-tweak__input {
+  flex: 1;
+  min-width: 0;
+}
+
 .play-hud {
   position: absolute;
   top: var(--s-3);

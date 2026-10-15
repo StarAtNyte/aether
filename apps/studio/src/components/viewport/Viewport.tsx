@@ -27,6 +27,7 @@ import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
 import { NpcSpeech } from './NpcSpeech';
 import { PlayHud, TitleCard } from './PlayHud';
+import { PlayTweak } from './PlayTweak';
 import { ArchBar } from './ArchBar';
 import { PlanView } from './PlanView';
 
@@ -183,6 +184,8 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
   });
   // What the agent just placed is named for a few seconds (then the normal labels return).
   const plan = useUI((s) => s.planMarks);
+  // A question about which object an edit means: candidates are numbered where they stand.
+  const clarify = useUI((s) => s.clarify);
   const [planShown, setPlanShown] = useState<number | null>(null);
   useEffect(() => {
     if (!plan) return;
@@ -214,13 +217,17 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
       overlayRef.current?.setLabels([]);
       return;
     }
+    if (clarify) {
+      overlayRef.current?.setLabels(clarify.items.slice(0, MAX_LABELS).map((c, i) => ({ id: `clarify-${c.id}`, name: String(i + 1), metric: c.label, position: c.position, tone: 'plan' as const })));
+      return;
+    }
     if (plan && planShown === plan.id) {
       overlayRef.current?.setLabels(plan.labels.slice(0, MAX_LABELS));
       return;
     }
     const rooms = roomsLevel === undefined ? [] : roomLabels(world, roomsLevel);
     overlayRef.current?.setLabels([...rooms, ...(showLabels ? worldLabels(world) : [])].slice(0, MAX_LABELS));
-  }, [world, showLabels, playing, sim, roomsLevel, plan, planShown]);
+  }, [world, showLabels, playing, sim, roomsLevel, plan, planShown, clarify]);
 
   return (
     <>
@@ -406,6 +413,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       )}
       <NpcSpeech />
       <TitleCard />
+      {ready && playing && !voxelUi && <PlayTweak />}
       {ready && playing && !voxelUi && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">

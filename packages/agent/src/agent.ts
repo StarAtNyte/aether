@@ -10,8 +10,14 @@
  * always ends with exactly one `done` event carrying token usage.
  */
 import { summarizeWorldForModel } from './world-text';
+import type { EntityId, WorldDoc } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
+import { loadCatalog } from '@aether/assets';
+import { libraryDefinitions } from './library-refs';
+import type { RequestScope } from './refine/guard';
+import { EMPTY_MEMORY, sanitizeMemory, sanitizeSelection, type RefineMemory } from './refine/memory';
+import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS } from './tools';
@@ -30,7 +36,45 @@ export interface RunOptions {
   history?: ChatMessage[];
   /** Conversation key forwarded to providers that keep threads (see `CompletionRequest.session`). */
   session?: string;
+  /** Entities selected in the viewport: "make this red", "delete it". */
+  selection?: readonly EntityId[];
+  /** Memory returned by the previous run's `memory` event ("do the same for the other one"). */
+  memory?: RefineMemory;
+  /** Viewer heading in degrees (0 = looking toward −Z): "left" and "back" are the viewer's. */
+  heading?: number;
+  /**
+   * 'auto' (default): a message refines the current world; a new world only when it clearly asks for one.
+   * 'new': replace the world (templates, the home prompt). 'refine': never replace.
+   */
+  intent?: 'auto' | 'new' | 'refine';
 }
+
+/** Stand-in for a declined local plan when local edits are switched off. */
+const NO_LOCAL_EDIT: FineEditResult = Object.freeze({ kind: 'none', reason: 'not-understood', patches: [], summary: '', changes: [], diff: [], targets: [], scope: [], added: [], cosmetic: true, notes: [], memory: EMPTY_MEMORY, unparsed: [], ms: 0 }) as FineEditResult;
+
+/** Most entities detailed in a focused slice, and the size of each. */
+const SCOPE_ENTITIES = 12;
+const SCOPE_ENTITY_CHARS = 700;
+
+/**
+ * The entities a small edit may touch, in full (generated buildings fold their
+ * furniture into the summary, so without this the model could not even see the
+ * sofa it is asked to recolour).
+ */
+function scopeBlock(world: WorldDoc, scope: RequestScope): string {
+  const lines: string[] = [];
+  for (const id of [...scope.allowed].filter((x) => Object.hasOwn(world.entities, x)).slice(0, SCOPE_ENTITIES)) {
+    const e = world.entities[id];
+    if (!e) continue;
+    const { arch, ...rest } = e;
+    const slim = { ...rest, ...(arch ? { arch: { role: arch.role, kind: arch.kind, room: arch.room } } : {}) };
+    lines.push(`${id} = ${JSON.stringify(slim).slice(0, SCOPE_ENTITY_CHARS)}`);
+  }
+  return lines.length > 0 ? `in scope (edit only these, with update patches):\n${lines.join('\n')}` : '';
+}
+
+/** Worlds with more entities than this send the model a focused slice for small edits. */
+export const SLICE_THRESHOLD = 80;
 
 /** Record a provider's reported model in the usage totals (at most 4, first use order). */
 export function noteModel(usage: UsageTotals, model: string | undefined): void {
@@ -66,6 +110,8 @@ export class WorldAgent {
   private readonly maxTokens: number;
   private readonly builtinGenerators: ReadonlySet<string>;
   private readonly compact: boolean;
+  private readonly fineEdit: boolean;
+  private readonly localEdits: boolean;
   private readonly tools: ToolDef[];
   private systemPrompt: string | undefined;
   private coderPrompt: string | undefined;
@@ -76,6 +122,8 @@ export class WorldAgent {
     this.maxTurns = clampInt(opts.maxTurns, DEFAULTS.maxTurns, 1, 50);
     this.maxToolCalls = clampInt(opts.maxToolCalls, DEFAULTS.maxToolCalls, 1, 500);
     this.compact = opts.promptProfile === 'compact';
+    this.fineEdit = opts.fineEdit !== false;
+    this.localEdits = opts.localEdits ?? this.fineEdit;
     this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
     this.tools = this.compact ? COMPACT_TOOLS : AGENT_TOOLS;
     const ids = new Set<string>();
@@ -108,6 +156,29 @@ export class WorldAgent {
     yield { type: 'done', usage: { ...usage, ...(usage.models ? { models: [...usage.models] } : {}) } };
   }
 
+  /** Apply a locally planned small edit: no model call, a compact diff, physics only when it matters. */
+  private async *applyLocal(fe: FineEditResult, ctx: ExecutorContext, host: AgentHost): AsyncGenerator<AgentEvent> {
+    const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(fe.patches, host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
+    // One edit is one undo step, library definitions included.
+    const result = host.applyPatches([...defs, ...fe.patches], fe.summary.slice(0, 200) || 'Edit');
+    yield { type: 'patches', patches: result.applied, message: fe.summary, result: { applied: result.applied.length, errors: result.errors } };
+    if (result.applied.length === 0) {
+      yield { type: 'error', text: result.errors[0]?.message ? `Could not apply that: ${result.errors[0].message.slice(0, 200)}` : 'Could not apply that change.' };
+      return;
+    }
+    yield { type: 'edit', summary: fe.summary, diff: fe.diff, targets: fe.targets, cosmetic: fe.cosmetic, notes: fe.notes, ms: Math.round(fe.ms * 10) / 10, local: true };
+    yield { type: 'memory', memory: fe.memory };
+    const refused = result.errors.length;
+    yield { type: 'message', text: `${fe.summary}.${fe.notes.length > 0 ? ` ${fe.notes[0]?.charAt(0).toUpperCase()}${fe.notes[0]?.slice(1)}.` : ''}${refused > 0 ? ` ${refused} part${refused === 1 ? ' was' : 's were'} refused (locked objects).` : ''}` };
+    // Colours, lights, names and sky cannot break physics: only geometric edits are re-verified.
+    if (!fe.cosmetic) {
+      yield { type: 'status', text: 'Checking physics…' };
+      const v = await runVerification(ctx);
+      yield v.event;
+      if (!v.passed) yield { type: 'message', text: `Heads up: the checks flagged something after this change (${v.summary.split('\n')[0]?.slice(0, 160) ?? 'see the verification panel'}). Undo reverts it.` };
+    }
+  }
+
   private async *loop(prompt: string, host: AgentHost, opts: RunOptions, usage: UsageTotals): AsyncGenerator<AgentEvent> {
     const signal = opts.signal;
     const request = typeof prompt === 'string' ? prompt.trim() : '';
@@ -128,9 +199,53 @@ export class WorldAgent {
       ...(signal ? { signal } : {}),
     };
 
+    // Library furniture and models are resolved by name: the catalog must be in before anything is planned.
+    await loadCatalog().catch(() => undefined);
+    const world0 = host.getWorld();
+    const hasWorld = Object.keys(world0.entities).length > 0 || world0.voxel !== undefined;
+    const intent = opts.intent ?? 'auto';
+    let scope: RequestScope | undefined;
+    if (this.fineEdit && hasWorld && intent !== 'new' && images.length === 0) {
+      const memory = sanitizeMemory(opts.memory);
+      const selection = sanitizeSelection(opts.selection);
+      const heading = typeof opts.heading === 'number' && Number.isFinite(opts.heading) ? opts.heading % 360 : 0;
+      // The edit engine (parser, lexicon, operations) is a separate chunk, loaded on the first prompt.
+      const refine = await import('./refine/runtime');
+      const fe = !this.localEdits ? NO_LOCAL_EDIT : refine.planFineEdit({ world: world0, text: request, selection, memory, heading, catalogs: { generators: [...this.opts.catalogs.generators, ...(this.opts.catalogs.libraryGenerators ?? [])] } });
+      if (fe.kind === 'question' && fe.question) {
+        yield { type: 'clarify', text: fe.question.text, candidates: fe.question.candidates };
+        yield { type: 'memory', memory: fe.memory };
+        return;
+      }
+      if (fe.kind === 'undo' || fe.kind === 'redo') {
+        yield { type: 'history', action: fe.kind };
+        return;
+      }
+      if (fe.kind === 'edit') {
+        yield* this.applyLocal(fe, ctx, host);
+        return;
+      }
+      if (fe.kind === 'none' && fe.reason === 'refused' && fe.detail) {
+        yield { type: 'message', text: fe.detail };
+        return;
+      }
+      scope = refine.classifyScope(world0, request, { selection, focus: memory.targets, heading });
+      if (scope.kind === 'small') {
+        const small = scope;
+        ctx.audit = (patches) => refine.auditPatches(host.getWorld(), patches, small);
+      }
+    }
+    const slice = scope !== undefined && scope.kind === 'small' && scope.allowed.size > 0 && Object.keys(world0.entities).length > SLICE_THRESHOLD;
     const userEdits = host.userEdits?.();
-    const summary = summarizeWorldForModel(host.getWorld(), { compact: this.compact, maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : CONTEXT_LIMITS.SUMMARY_ENTITIES, ...(userEdits && userEdits.size > 0 ? { userEdits } : {}) });
-    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn(summary, request) }];
+    const summary = summarizeWorldForModel(world0, {
+      compact: this.compact,
+      maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : slice ? SLICE_THRESHOLD : CONTEXT_LIMITS.SUMMARY_ENTITIES,
+      ...(slice && scope ? { focus: [...scope.allowed].filter((id) => Object.hasOwn(world0.entities, id)).slice(0, 60) } : {}),
+      ...(userEdits && userEdits.size > 0 ? { userEdits } : {}),
+    });
+    const inScope = slice && scope ? scopeBlock(world0, scope) : '';
+    const mode = !hasWorld || !this.fineEdit ? undefined : intent === 'new' ? 'new world: replace the current world with the one described' : 'refine: change the current world as asked and keep everything the user did not mention exactly as it is; start a new world only if the user clearly asks for one';
+    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn(inScope ? `${summary}\n${inScope}` : summary, request, mode) }];
     const prior = sanitizeHistory(opts.history);
     const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;
     // History must start with a user turn.

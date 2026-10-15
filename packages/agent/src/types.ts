@@ -5,6 +5,8 @@
  * the server proxy and the studio never depend on a vendor API.
  */
 import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, WorldDoc } from '@aether/core';
+import type { DiffLine } from './refine/describe';
+import type { RefineMemory } from './refine/memory';
 
 /** One block of message content. Images travel as `data:` URLs. */
 export type ContentBlock =
@@ -71,6 +73,14 @@ export type AgentEvent =
   | { type: 'verify'; passed: boolean; summary: string; report: unknown }
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
+  /** A small edit applied locally (no model call): what changed, as a compact diff. */
+  | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
+  /** The request is ambiguous: the candidates to choose from (the host highlights them). */
+  | { type: 'clarify'; text: string; candidates: Array<{ id: EntityId; label: string }> }
+  /** "undo that" / "redo": the host steps its history. */
+  | { type: 'history'; action: 'undo' | 'redo' }
+  /** Conversation memory for the next prompt ("it", "the same", "the other one"). */
+  | { type: 'memory'; memory: RefineMemory }
   | { type: 'error'; text: string }
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] } };
 
@@ -144,6 +154,17 @@ export interface AgentOptions {
    * and a smaller output cap.
    */
   promptProfile?: PromptProfile;
+  /**
+   * Handle small edits locally, without a model round trip, and refuse model
+   * patches that touch unrelated entities (default true). Off only for
+   * measuring the unassisted planner.
+   */
+  fineEdit?: boolean;
+  /**
+   * Handle small edits locally (default: the value of `fineEdit`). Off in the
+   * model-path tests, which exercise the guard without the fast path.
+   */
+  localEdits?: boolean;
 }
 
 /** Size of the planner prompt: everything, or a condensed form for small models. */
