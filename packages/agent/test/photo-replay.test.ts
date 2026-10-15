@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PHOTO_BUILDING_ID, readScene, reviewFindings } from '@aether/arch';
+import { PHOTO_BUILDING_ID } from '@aether/arch/photo';
+import { readScene, reviewFindings } from '@aether/arch';
 import { WorldAgent } from '../src/agent';
 import { createReplayProvider, TranscriptSchema } from '../src/providers/replay';
 import type { AgentEvent } from '../src/types';

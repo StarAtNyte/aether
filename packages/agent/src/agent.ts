@@ -24,7 +24,6 @@ import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { findingKey } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
-import { isRoomPhotoRequest, reconstructRoom } from './photo/pipeline';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
@@ -241,7 +240,10 @@ export class WorldAgent {
     await loadCatalog().catch(() => undefined);
     // A picture of a room with a prompt about it: rebuild THAT room from the photo (never a preset room).
     const photoMode = opts.photo ?? 'auto';
-    if (photoMode !== 'off' && (this.opts.photo !== undefined || photoMode === 'recreate') && images[0] !== undefined && isRoomPhotoRequest(request, images.length, photoMode === 'recreate')) {
+    // The room-from-photo pipeline is large and rarely used: loaded on demand so it stays out of the first-load bundle.
+    const photoPipeline = photoMode !== 'off' && (this.opts.photo !== undefined || photoMode === 'recreate') && images[0] !== undefined ? await import('./photo/pipeline') : undefined;
+    if (photoPipeline && photoPipeline.isRoomPhotoRequest(request, images.length, photoMode === 'recreate') && images[0] !== undefined) {
+      const { reconstructRoom } = photoPipeline;
       const sessionKey = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
       const options = this.compact ? { ...(this.opts.photo ?? {}), vision: false } : (this.opts.photo ?? {});
       yield* reconstructRoom({ ctx, system: this.system, tools: this.tools, maxTokens: this.maxTokens, maxToolCalls: this.maxToolCalls, ...(sessionKey ? { session: sessionKey } : {}), request, image: images[0], options, replace: opts.intent !== 'refine' });

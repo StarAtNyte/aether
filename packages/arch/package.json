@@ -6,7 +6,8 @@
   "license": "MIT",
   "description": "Parametric architecture and interiors for Aether: walls with mitred joins and openings, slabs, roofs, stairs, doors, windows, procedural furniture, building plans, navigation and clearance checks. Pure TypeScript, typed-array output.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./photo": "./src/photo/index.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

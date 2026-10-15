@@ -8,26 +8,21 @@ import {
   alongToT,
   buildChecklist,
   calibrateCamera,
-  entityGeometry,
   framingOf,
   framingTargets,
   framingText,
-  customPose,
   fitOpening,
   deriveBuild,
   floorFinish,
   memoryCaller,
   parseRoomDescription,
-  partKinds,
   photoCameraSpec,
-  projectMarks,
-  readScene,
-  reviewFindings,
   runBuild,
   scoreVerdicts,
   verticalFov,
   wallBehind,
-} from '../src/index';
+} from '../src/photo/index';
+import { customPose, entityGeometry, partKinds, projectMarks, readScene, reviewFindings } from '../src/index';
 
 const FIXTURE = resolve(__dirname, '../../../tests/fixtures/photo/hotel.description.json');
 const raw = (): unknown => JSON.parse(readFileSync(FIXTURE, 'utf8')) as unknown;

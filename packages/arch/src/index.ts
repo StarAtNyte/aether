@@ -40,4 +40,4 @@ export { floorPlan2d, listBuildings, listLevels, planToWorld, worldToPlan, type 
 export { snapPlanPoint, nextRoomId, roomShape, drawRoomOp, drawRoomCandidates, pickWall, doorAtFraction, doorAtOp, windowAtOp, levelPolygons, PLAN_GRID, SNAP_REACH, MIN_DRAWN_ROOM_AREA, MAX_DRAWN_POINTS, WALL_PICK_REACH, type WallPick } from './plan-edit';
 export * from './scene/index';
 export { DesignRecord, DesignItem, DesignRelation, DesignProgramme, DesignCirculation, RELATION_TYPES, ItemHandle } from './design-record';
-export * from './photo/index';
+// The room-from-photo modules (./photo) are large and loaded on demand: import them from '@aether/arch/photo'.

@@ -22,13 +22,13 @@ import {
   WorldAgent,
   createRecordingProvider,
   createReplayProvider,
-  imageSize,
   TranscriptSchema,
   type AgentEvent,
   type PhotoScoreView,
   type Provider,
   type ReviewViewRequest,
 } from '@aether/agent';
+import { imageSize } from '../packages/agent/src/photo/image-size';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { createHeadlessProvider } from '../apps/bridge/src/headless';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';

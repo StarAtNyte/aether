@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, partKinds, readScene, type RoomDescription } from '@aether/arch';
+import { PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, type RoomDescription } from '@aether/arch/photo';
+import { partKinds, readScene } from '@aether/arch';
 import { WorldAgent } from '../src/agent';
 import { createMockProvider } from '../src/providers/mock/index';
 import type { Raster } from '../src/photo/score';

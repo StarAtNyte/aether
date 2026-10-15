@@ -15,7 +15,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, firefox, type Browser, type Page, type Route } from 'playwright';
 import type { WorldDoc } from '@aether/core';
-import { PHOTO_BUILDING_ID, readScene, reviewFindings } from '@aether/arch';
+import { PHOTO_BUILDING_ID } from '@aether/arch/photo';
+import { readScene, reviewFindings } from '@aether/arch';
 import { CHROME_ARGS, FIREFOX_PREFS, REPO_ROOT, SKIP_FIRST_RUN, findChrome, findFirefox, startServer, type TestServer } from './support/env';
 
 const PHOTO = join(REPO_ROOT, 'tests/fixtures/photo/bedroom-cc0-hotel.jpg');
