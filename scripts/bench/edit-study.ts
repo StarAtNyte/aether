@@ -44,7 +44,8 @@ export interface EditCase {
 }
 
 const COLOR_PATHS = [/^material\.color$/, /^shape\.params\.color$/, /^shape\.of\.params\.color$/];
-const SCALE_PATHS = [/^transform\.scale\.[012]$/, /^transform\.position\.1$/];
+// A resize is either the transform scale or, for shapes sized by their own parameters (a tree's height, a rock's size), that parameter.
+const SCALE_PATHS = [/^transform\.scale\.[012]$/, /^transform\.position\.1$/, /^shape\.params\.(size|height|radius|width|depth|length|scale)(\.[012])?$/];
 const GLOW_PATHS = [/^material\.emissive/, /^shape\.params\.emissive/];
 
 /** Things a person names in a world: top-level entity tags with 2..40 instances, most frequent first. */
