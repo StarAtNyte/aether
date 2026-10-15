@@ -114,6 +114,9 @@ export class PlaytestHost implements LogicHost {
   setAngularVelocity(id: EntityId, v: Vec3): void {
     this.pw.setAngularVelocity(id, v);
   }
+  driveJoint(id: EntityId, target: number): void {
+    this.pw.driveJoint(id, target);
+  }
 
   teleport(id: EntityId, p: Vec3): void {
     if (id === PLAYER_ID) {

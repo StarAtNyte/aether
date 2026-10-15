@@ -26,6 +26,8 @@ export interface NetworkRoom {
   polygon: readonly P2[];
   /** Outdoor rooms (terraces) get no walls of their own. */
   outdoor?: boolean;
+  /** Keep this room's walls as pieces of their own (no merging with collinear neighbours) so per-wall finishes stay exact. */
+  split?: boolean;
 }
 
 const KEY_SCALE = 1000;
@@ -92,7 +94,7 @@ export function wallNetwork(rooms: readonly NetworkRoom[], tolerance = 0.01): Ne
     if (roomA === null && roomB === null) continue;
     classified.push({ a, b, exterior: roomA === null || roomB === null, roomA, roomB });
   }
-  return mergeCollinear(classified, tolerance);
+  return mergeCollinear(classified, tolerance, new Set(indoor.filter((r) => r.split).map((r) => r.id)));
 }
 
 /**
@@ -101,7 +103,7 @@ export function wallNetwork(rooms: readonly NetworkRoom[], tolerance = 0.01): Ne
  * into the merged wall's face). Pieces must agree on exterior-ness and, for
  * exterior walls, have the outdoors on the same side.
  */
-function mergeCollinear(walls: NetworkWall[], tolerance: number): NetworkWall[] {
+function mergeCollinear(walls: NetworkWall[], tolerance: number, split: ReadonlySet<string> = new Set()): NetworkWall[] {
   const list = walls.slice();
   const dirAt = (w: NetworkWall, node: P2): P2 => {
     const other = samePoint(w.a, node, tolerance) ? w.b : w.a;
@@ -143,6 +145,10 @@ function mergeCollinear(walls: NetworkWall[], tolerance: number): NetworkWall[] 
         const wSides = wForward ? [w.roomA, w.roomB] : [w.roomB, w.roomA];
         const vSides = vForward ? [v.roomA, v.roomB] : [v.roomB, v.roomA];
         if (w.exterior && ((wSides[0] === null) !== (vSides[0] === null) || (wSides[1] === null) !== (vSides[1] === null))) continue;
+        if (split.size > 0) {
+          const differs = [0, 1].some((side) => wSides[side] !== vSides[side] && (split.has(wSides[side] ?? '') || split.has(vSides[side] ?? '')));
+          if (differs) continue;
+        }
         const next: NetworkWall = { a: wa, b: vb, exterior: w.exterior, roomA: wSides[0] ?? vSides[0] ?? null, roomB: wSides[1] ?? vSides[1] ?? null };
         list.splice(j, 1);
         list.splice(i, 1, next);

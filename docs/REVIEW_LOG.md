@@ -3222,3 +3222,35 @@ Codex was not usable (usage limit until 21:59); it was not run live.
 **Known limits.** One room per photo; the shell has a flat ceiling and one colour per wall; depth from one photo is an
 assumption (the chips say so); judge noise is about one item in fourteen to seventeen, hence the rollback margin; the studio's
 photoreal renders were not part of the measured runs (the e2e used them but with a scripted model).
+
+
+## Stage `archreal`: architecture that looks like a render, and is interactive
+
+**What was built.** Wall coverings as World IR fields (five wallpapers, panelling, slats, per-room `finish`, per-wall `walls`, `dado`, the `set_wall` op,
+`design_plan` pass-through, prompt mapping of "floral wallpaper"), named material slots for every furniture kind, recessed downlights, a mediterranean
+style, garden trees and a foliage finish, openable window casements, drawers / cabinet doors / fridge doors / a tap as their own entities (`furn-part`,
+`operable`, `toggle`), physical hinged doors on revolute joints, props to pick up and throw, sofas and chairs to sit on, the aim-and-use crosshair prompt
+with first-person look pitch, the plan reveal, the Casa del Patio flagship, `archshots` for eye-level stills. Fixes found on the way: wide sliding doors (> 3 m)
+built an error placeholder (the leaf limit was 3 m), roof plates covered courtyards, `Walkthrough` ignored ceilings with lights.
+
+**Verification.** `tsc` 0 errors; vitest suites for every behaviour (wall finishes and dado geometry, slots, parts and their generators, operable / toggle,
+joint driving, raycastAll, setEnabled, interaction decisions and controller, reveal timeline / ink / camera, headless interactive apartment: props stay on tables,
+drawer slides, cabinet door swings, tap, thrown mug, casement, physical door); Playwright `e2e:interact` and `e2e:reveal` in Chromium (WebGPU, WebGL2) and Firefox
+(WebGL2), `e2e:arch` after the physical-door default.
+
+**Security review.** `furn-part` params are untrusted: `of` must be an interactive furniture id (prototype keys refused), `part` matches `/^[a-z][a-z0-9-]{0,31}$/`,
+the piece params are resolved against the generator's own spec, `size` is bounded; hostile inputs are covered by tests. `set_wall` and the new plan fields are zod
+schemas with bounded numbers and the same prototype-key guards as the rest of the plan. The interaction controller only acts on entities of the validated world
+(ids from the physics world), the use queue is capped, and prompts render as plain text (no markup from entity names). The ink overlay cleans room labels (control
+characters removed, 40 characters) and caps strokes at 1 500. Joint driving takes finite numbers only and clamps to the joint's own limits (the solver, not the
+caller, decides how far a door can open). No dependency was added.
+
+**Performance review.** Drawers and doors are separate kinematic bodies: a kitchen adds about 13 parts, a furnished apartment about 40 bodies, well inside the
+1 800-entity cap (one extra stat check in `compile`). The aim ray is one `raycastAll` per frame (≤ 10 hits); the carried prop is one `setVelocity`. Downlights add
+two small meshes per ceiling. Foliage masses cost 3 k to 25 k triangles per tree (bounded by a test at 60 k). The reveal rebuilds the walls 24 times in 7.5 s
+(about 50 ms each on a GPU, measured; the first section pays a one-off 1.5 s clipping setup that the paper overlay hides); frame time is clamped so a slow device
+slows the reveal down instead of dropping frames of ink. Software rasterizers run the e2e within the existing timeouts.
+
+**Honest gaps.** Photoreal quality is still short of Blender for trees, terrain and far hills; the studio render's ceiling patches under a low sun are an engine issue
+(logged in `docs/ARCHITECTURE.md` section 25); casement windows are single-pane (no multi-sash); the fridge was not placed in the offline apartment layouts (its
+doors are exercised in the unit test); sitting has no body animation; the live AI-first loop was not re-run (the Codex subscription limit), the replay fixtures still pass.

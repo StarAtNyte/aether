@@ -8,6 +8,7 @@
  */
 import type { MockPlan } from '../planner';
 import { duskLakeHouse, skylinePenthouse } from './architecture';
+import { casaPatio } from './casa';
 import { chainReaction } from './chain-reaction';
 import { hollowGate } from './hollow-gate';
 import { highlandTrail } from './highland-trail';
@@ -48,6 +49,7 @@ export const FLAGSHIPS: readonly Flagship[] = Object.freeze([
   { id: 'sakura-river', title: 'Sakura River Journey', match: /\bsakura river\b|\bcherry[- ]blossom river\b/, plan: sakuraRiver },
   { id: 'skyline-penthouse', title: 'Skyline Penthouse', match: /\bskyline penthouse\b/, plan: skylinePenthouse },
   { id: 'hollow-gate', title: 'The Hollow Gate', match: /\bhollow gate\b/, plan: hollowGate },
+  { id: 'casa-patio', title: 'Casa del Patio', match: /\bcasa del patio\b|\bcourtyard house\b(?=.*\b(sintra|hills?|patio)\b)|\bsintra\b(?=.*\bhouse\b)/, plan: casaPatio },
   { id: 'dusk-lake-house', title: 'Dusk House by the Lake', match: /\bdusk house\b|\bhouse by the lake at dusk\b/, plan: duskLakeHouse },
 ]);
 

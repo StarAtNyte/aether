@@ -156,7 +156,9 @@ describe('walkthrough interactions', () => {
     const idx = walkIndex(flatWorld());
     expect(idx.switches.length).toBeGreaterThan(0);
     expect(idx.lights.length).toBeGreaterThan(0);
-    expect(idx.lights.every((l) => l.intensity > 0)).toBe(true);
+    expect(idx.lights.filter((l) => !l.noLight).every((l) => l.intensity > 0)).toBe(true);
+    // Ceilings of recessed downlights switch with their room (glow only, no light source of their own).
+    expect(idx.lights.some((l) => l.noLight === true && l.glows)).toBe(true);
     expect(idx.swappable.some((s) => s.kind === 'sofa' || s.kind === 'bed')).toBe(true);
     expect(walkIndex(createWorld())).toEqual({ switches: [], lamps: [], lights: [], swappable: [] });
   });

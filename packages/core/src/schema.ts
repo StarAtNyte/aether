@@ -82,6 +82,10 @@ export const MaterialFinish = z.enum([
   'frosted-glass', 'ceramic', 'mirror', 'roof-tile', 'metal-roof', 'decking', 'grass', 'gravel', 'water',
   // Additive: natural ground and trunk surfaces (photographed detail under the stylised presets).
   'bark', 'rock', 'soil', 'snow', 'sand', 'asphalt',
+  // Additive: wall coverings (tintable papers with a pattern, shaker panelling, timber slats).
+  'wallpaper', 'wallpaper-stripe', 'wallpaper-floral', 'wallpaper-damask', 'wallpaper-geometric', 'panelling', 'wood-slats',
+  // Additive: dense overlapping leaves for tree crowns and hedges.
+  'foliage',
 ]);
 export type MaterialFinish = z.infer<typeof MaterialFinish>;
 
@@ -330,6 +334,8 @@ export const BuiltinBehavior = z.enum([
   'collectible', 'door', 'pressurePlate', 'spawner', 'lifetime', 'explosive',
   'playerController', 'vehicle', 'npc', 'pulseLight', 'conveyor', 'buoyancy',
   'windZone', 'checkpoint', 'goal', 'hazard', 'launcher', 'magnet',
+  // Additive: drawers, cabinet doors, windows and taps used by aiming at them (see `Entity.interact`).
+  'operable', 'toggle',
 ]);
 export type BuiltinBehavior = z.infer<typeof BuiltinBehavior>;
 
@@ -354,6 +360,8 @@ export type BehaviorSpec = z.infer<typeof BehaviorSpec>;
 export const ArchRole = z.enum([
   'building', 'level', 'wall', 'room', 'ceiling', 'door', 'window', 'opening', 'stair', 'roof', 'railing', 'column',
   'furniture', 'fixture', 'light', 'switch', 'site', 'pool',
+  // Additive: a drawer, cabinet door or appliance door that is its own entity (child of its piece).
+  'part',
 ]);
 export type ArchRole = z.infer<typeof ArchRole>;
 
@@ -400,6 +408,21 @@ export type ArchMeta = z.infer<typeof ArchMeta>;
 // Entity
 // ---------------------------------------------------------------------------
 
+/**
+ * Additive: something the player can use in play mode by aiming at it
+ * (crosshair + "E: open"). The motion itself is an `operable` / `toggle` /
+ * `door` behavior (or a physical joint); this field names the verb and the
+ * reach for the prompt, and marks pick-up-able props.
+ */
+export const InteractSpec = z.object({
+  kind: z.enum(['door', 'drawer', 'cabinet', 'window', 'appliance', 'switch', 'tap', 'pickup', 'seat']),
+  /** Noun shown in the prompt ("drawer", "front door"). */
+  label: z.string().max(40).optional(),
+  /** How close (metres) the player must be; default 2.4. */
+  reach: z.number().min(0.4).max(6).optional(),
+});
+export type InteractSpec = z.infer<typeof InteractSpec>;
+
 export const Entity = z.object({
   id: EntityId,
   name: z.string().default(''),
@@ -439,6 +462,8 @@ export const Entity = z.object({
    * `character-schema.ts`.
    */
   character: CharacterSpec.optional(),
+  /** Additive: usable by aiming at it in play mode (see {@link InteractSpec}). */
+  interact: InteractSpec.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;

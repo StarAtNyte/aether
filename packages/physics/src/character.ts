@@ -235,6 +235,16 @@ export class CharacterController {
     this.collider.setTranslation({ x: p[0], y: p[1] + this.halfTotal, z: p[2] });
   }
 
+  /**
+   * Switch the capsule's collisions on or off (sitting in a sofa: the capsule
+   * would otherwise overlap it). A disabled character is moved only by
+   * {@link teleport}.
+   */
+  setEnabled(on: boolean): void {
+    if (this.disposed || this.pw.isDisposed) return;
+    this.collider.setEnabled(on);
+  }
+
   /** Remove the capsule and controller from the world. */
   dispose(): void {
     if (this.disposed) return;

@@ -25,6 +25,9 @@ export { buildStair, stairFootprint, stairLayout, stairRisers, DEFAULT_RISER } f
 export { buildDoor, buildFrame, buildWindow, DOOR_CLEARANCE, LINING } from './openings';
 export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructureParams, buildStructure, ArchParamsError } from './structure';
 export { FURNITURE, furnitureById, furnitureByKind, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
+export { buildPart, parsePartParams, type PartParams } from './furniture/part';
+export { furnitureMovables, buildFurniturePart, type MovableSpec, type MovableMotion } from './furniture/index';
+export { FURNITURE_SLOTS, findSlot, slotNames, slotPatch, type SlotDef } from './furniture/slots';
 export { navigableVerdict } from './checks';
 export { analyzeRoomPlacements, wallViews, summarizePlacementIssues, describeWallPlacements, wallMountIndex, type PlacementIssue, type PlacementFix, type WallView, type WallMount, type WallOpeningInfo } from './placement';
 export { WALL_MOUNT_KINDS, freeWallSpans, nearestMountCentre, mountRule, collisions as wallCollisions, type WallBlocker, type MountSpec } from './wall-space';

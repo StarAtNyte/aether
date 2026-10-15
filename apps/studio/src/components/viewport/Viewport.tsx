@@ -26,7 +26,8 @@ import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GeometryBadge } from './GeometryBadge';
 import { NpcSpeech } from './NpcSpeech';
-import { PlayHud, TitleCard } from './PlayHud';
+import { InteractPromptView, PlayHud, TitleCard } from './PlayHud';
+import { RevealOverlay } from './RevealOverlay';
 import { PlayTweak } from './PlayTweak';
 import { ArchBar } from './ArchBar';
 import { PlanView } from './PlanView';
@@ -412,6 +413,8 @@ export const Viewport = memo(function Viewport(): ReactElement {
         <PlayHud />
       )}
       <NpcSpeech />
+      {!voxelGame && <InteractPromptView />}
+      <RevealOverlay />
       <TitleCard />
       {ready && playing && !voxelUi && <PlayTweak />}
       {ready && playing && !voxelUi && <TouchControls />}

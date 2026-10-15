@@ -62,6 +62,11 @@ export class LogicRuntime {
     this.engine.click(id);
   }
 
+  /** The player aimed at an entity and pressed the use key (handled at the next tick). */
+  use(id: EntityId): void {
+    this.engine.use(id);
+  }
+
   /** Emit a named event from outside (handled at the next tick). */
   emit(event: string): void {
     this.engine.emitExternal(event);

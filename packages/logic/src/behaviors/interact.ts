@@ -3,7 +3,7 @@
  * lifetime, explosive, checkpoint, goal, hazard, launcher.
  */
 import { rotateVec3, type EntityId, type Json, type Vec3 } from '@aether/core';
-import type { QuatTuple } from '../types';
+import type { BehaviorParamSpec, QuatTuple } from '../types';
 import { normalize3, yawQuat } from '../vec';
 import { Occupancy } from './occupancy';
 import type { BehaviorDef, BehaviorEnv } from './types';
@@ -93,12 +93,13 @@ export const door: BehaviorDef = {
     'Opens and closes smoothly by sliding or swinging. Opens when the player is near (proximity), when a state key is truthy (state), or toggles with a key press near it (key). Writes "<id>.open".',
   requires: 'physics.body = kinematic or no physics',
   params: {
-    trigger: { type: 'enum', default: 'proximity', options: ['proximity', 'state', 'key'], description: 'what opens the door' },
+    trigger: { type: 'enum', default: 'proximity', options: ['proximity', 'state', 'key', 'use'], description: 'what opens the door' },
     stateKey: { type: 'string', default: '', description: 'for trigger=state: key that opens it while truthy, e.g. "unlocked" or "lever-1.on"' },
     key: { type: 'string', default: 'e', description: 'for trigger=key: key that toggles it' },
     radius: { type: 'number', default: 3, min: 0, max: 100, description: 'proximity/key range in meters' },
     who: { type: 'selector', default: 'player', description: 'for trigger=proximity: who opens it' },
-    motion: { type: 'enum', default: 'slide', options: ['slide', 'swing'], description: 'slide along `slide` or swing around a hinge' },
+    motion: { type: 'enum', default: 'slide', options: ['slide', 'swing', 'joint'], description: 'slide, swing around a hinge, or joint (drive its own physics joint)' },
+    jointOpen: { type: 'number', default: 90, min: -360, max: 360, description: 'motion=joint: open position (deg or m)' },
     slide: { type: 'vec3', default: [0, 0, 0], description: 'slide offset when open; [0,0,0] = up by its own height' },
     swingAngle: { type: 'number', default: 90, min: -180, max: 180, description: 'degrees to swing open' },
     hinge: { type: 'enum', default: 'left', options: ['left', 'right', 'center'], description: 'hinge edge for swing' },
@@ -121,7 +122,10 @@ export const door: BehaviorDef = {
     let progress = open ? 1 : 0;
     let lastProgress = progress;
     let announced: boolean | undefined;
+    let lastDriven: boolean | undefined = open ? undefined : false;
     const hingeX = hinge === 'center' ? 0 : (hinge === 'right' ? 1 : -1) * self.zone.half[0];
+    const jointMode = p.str('motion') === 'joint';
+    const jointOpen = p.num('jointOpen');
 
     const someoneNear = (env: BehaviorEnv, sel: string): boolean => {
       for (const id of candidates(env, sel)) {
@@ -136,10 +140,13 @@ export const door: BehaviorDef = {
 
     return {
       update(env, dt) {
-        if (self.dynamic) return;
-        if (trigger === 'state') open = stateKey !== '' && truthy(env.readState(stateKey));
+        if (self.dynamic && !jointMode) return;
+        if (trigger === 'use') {
+          if (env.used.has(self.id)) open = !open;
+        } else if (trigger === 'state') open = stateKey !== '' && truthy(env.readState(stateKey));
         else if (trigger === 'key') {
-          if (env.pressed.has(key) && (radius <= 0 || someoneNear(env, 'player'))) open = !open;
+          // Aimed use (the host's crosshair) always works; the bare key opens whatever is within reach.
+          if (env.used.has(self.id) || (env.pressed.has(key) && (radius <= 0 || someoneNear(env, 'player')))) open = !open;
         } else open = someoneNear(env, who);
         if (announced !== open) {
           if (announced !== undefined) {
@@ -148,6 +155,14 @@ export const door: BehaviorDef = {
           }
           announced = open;
           self.state['open'] = open;
+        }
+        if (jointMode) {
+          // Physical door: the solver moves it; we only set the servo target when the state changes.
+          if (lastDriven !== open) {
+            lastDriven = open;
+            env.host.driveJoint?.(self.id, open ? jointOpen : 0);
+          }
+          return;
         }
         const target = open ? 1 : 0;
         const step = dt / duration;
@@ -177,6 +192,58 @@ export const door: BehaviorDef = {
         self.offset[1] += pivotScratch[1] - by;
         self.offset[2] += pivotScratch[2] - bz;
         self.yawDeg = theta;
+      },
+    };
+  },
+};
+
+/**
+ * Drawers, cabinet doors, fridge doors, windows: the `door` mechanics under a
+ * name of their own (the playtest bot treats `door` behaviors as obstacles
+ * to open; furniture parts are not), toggled by aiming and pressing use.
+ */
+export const operable: BehaviorDef = {
+  ...door,
+  type: 'operable',
+  description: 'Drawer, cabinet door or window opened by aiming and pressing E (same motions as door). Writes "<id>.open".',
+  params: { trigger: { type: 'enum', default: 'use', options: ['use', 'state', 'proximity'], description: 'use: aim + E' }, motion: door.params['motion'] as BehaviorParamSpec, slide: door.params['slide'] as BehaviorParamSpec, swingAngle: door.params['swingAngle'] as BehaviorParamSpec, hinge: door.params['hinge'] as BehaviorParamSpec, jointOpen: door.params['jointOpen'] as BehaviorParamSpec, stateKey: door.params['stateKey'] as BehaviorParamSpec, duration: { type: 'number', default: 0.6, min: 0.01, max: 60, description: 'seconds' } },
+};
+
+/**
+ * An on/off switch the player flips by aiming at it (a tap, a stove knob, a
+ * fan): writes "<id>.on", shows `show` entities while on, hides them while off
+ * and switches the `light` entity's intensity.
+ */
+export const toggle: BehaviorDef = {
+  type: 'toggle',
+  description: 'On/off switch used by aiming and pressing E (tap, knob). Writes "<id>.on"; `show` entities are visible while on.',
+  requires: 'none',
+  params: {
+    show: { type: 'string[]', default: [], description: 'ids visible only while on' },
+    light: { type: 'string[]', default: [], description: 'ids whose light follows' },
+    lightIntensity: { type: 'number', default: 2, min: 0, max: 50, description: 'light intensity when on' },
+    startOn: { type: 'boolean', default: false, description: 'initially on' },
+    sound: { type: 'enum', default: 'click', options: SOUNDS, description: 'flip sound' },
+  },
+  create(self, p) {
+    const show = p.strList('show');
+    const lights = p.strList('light');
+    const intensity = p.num('lightIntensity');
+    const sound = p.str('sound');
+    let on = p.bool('startOn');
+    let applied: boolean | undefined;
+    return {
+      update(env) {
+        if (env.used.has(self.id)) {
+          on = !on;
+          if (sound) env.host.sound(sound);
+          env.log(`${self.id} turns ${on ? 'on' : 'off'}`);
+        }
+        if (applied === on) return;
+        applied = on;
+        self.state['on'] = on;
+        for (const id of show) env.host.setProperty(id, 'visible', on);
+        for (const id of lights) env.host.setProperty(id, 'light.intensity', on ? intensity : 0);
       },
     };
   },
@@ -519,5 +586,7 @@ export const launcher: BehaviorDef = {
 
 /** All interaction behaviors. */
 export const INTERACT_BEHAVIORS: readonly BehaviorDef[] = [
+  operable,
+  toggle,
   collectible, door, pressurePlate, spawner, lifetime, explosive, checkpoint, goal, hazard, launcher,
 ];

@@ -9,12 +9,83 @@
  * back (−Z) touches the wall. Dimensions are real-world metres.
  */
 import type { Json, MaterialFinish, MaterialSpec, ParamSpec } from '@aether/core';
-import { Geom, cylinder, roundedBox } from '../mesh';
+import { Geom, box, cylinder, roundedBox } from '../mesh';
 import type { ArchOutput } from '../types';
 import type { P2 } from '../math2';
 
 /** How a piece is placed in a room. */
 export type Mount = 'floor' | 'wall' | 'ceiling' | 'surface';
+
+/** Most movable parts one piece may expose. */
+export const MAX_MOVABLES = 16;
+
+/** How a movable part opens, in the piece's frame. */
+export type MovableMotion =
+  | { type: 'slide'; offset: [number, number, number] }
+  | { type: 'swing'; hinge: 'left' | 'right'; angle: number }
+  /** A tap or knob: flips on use; while on, a stream of water runs along the given line (piece frame). */
+  | { type: 'toggle'; stream: { from: [number, number, number]; to: [number, number, number] } };
+
+/** A drawer, cabinet door or appliance door that is its own entity so it can open. */
+export interface MovableSpec {
+  /** Stable id within the piece ("drawer-0", "door-1"). */
+  id: string;
+  /** Shown to the player ("Drawer", "Cabinet door"). */
+  name: string;
+  kind: 'drawer' | 'door' | 'tap';
+  /** Centre of the part box in the piece frame (the part entity sits here). */
+  center: [number, number, number];
+  /** Box size (width, height, depth) of the part: collider and hinge reference. */
+  size: [number, number, number];
+  motion: MovableMotion;
+  /** Geometry in the piece frame (re-centred on `center` when the part is built). */
+  parts: Array<{ geom: Geom; material: MaterialSpec }>;
+}
+
+/** Collects the movable parts a builder hands out instead of merging them into the carcass. */
+export class MovableSink {
+  readonly specs: MovableSpec[] = [];
+  add(spec: MovableSpec): void {
+    if (this.specs.length < MAX_MOVABLES) this.specs.push(spec);
+  }
+}
+
+/**
+ * A front (cabinet door, drawer face) that is either merged into the static
+ * geometry (`sink` undefined) or handed out as a movable part. `front` and
+ * `handle` are in the piece frame; `body` (drawer box behind the face) is only
+ * drawn for movable parts, since the carcass hides it otherwise.
+ */
+export function emitFront(
+  sink: MovableSink | undefined,
+  statics: { front: Geom; handle: Geom },
+  spec: Omit<MovableSpec, 'parts'> & { front: Geom; handle: Geom; body?: Geom; frontMaterial: MaterialSpec; handleMaterial: MaterialSpec; bodyMaterial?: MaterialSpec },
+): void {
+  if (!sink) {
+    statics.front.merge(spec.front);
+    statics.handle.merge(spec.handle);
+    return;
+  }
+  const parts: MovableSpec['parts'] = [{ geom: spec.front, material: spec.frontMaterial }, { geom: spec.handle, material: spec.handleMaterial }];
+  if (spec.body) parts.push({ geom: spec.body, material: spec.bodyMaterial ?? spec.frontMaterial });
+  sink.add({ id: spec.id, name: spec.name, kind: spec.kind, center: spec.center, size: spec.size, motion: spec.motion, parts });
+}
+
+/** An open-top drawer box (sides, back, bottom) behind a front, in the piece frame; the front plane is at z = zFront. */
+export function drawerBox(cx: number, cy: number, width: number, height: number, zFront: number, depth: number): Geom {
+  const t = 0.012;
+  const g = new Geom();
+  const x0 = cx - width / 2 + 0.012;
+  const x1 = cx + width / 2 - 0.012;
+  const y0 = cy - height / 2 + 0.015;
+  const y1 = cy + height / 2 - 0.03;
+  const zBack = zFront - depth;
+  g.merge(box(x0, y0, zBack, x1, y0 + t, zFront - 0.01));
+  g.merge(box(x0, y0, zBack, x0 + t, y1, zFront - 0.01));
+  g.merge(box(x1 - t, y0, zBack, x1, y1, zFront - 0.01));
+  g.merge(box(x0, y0, zBack, x1, y1, zBack + t));
+  return g;
+}
 
 /** A furniture generator. */
 export interface FurnitureDef {
@@ -31,7 +102,16 @@ export interface FurnitureDef {
   frontClearance: number;
   /** Footprint (width along X, depth along Z) and height for resolved params. */
   size(p: ParamReader): [number, number, number];
-  build(p: ParamReader, seed: number): ArchOutput;
+  /**
+   * Build the piece. With a `sink` the builder hands its drawers, cabinet
+   * doors and appliance doors to the sink (via {@link emitFront}) instead of
+   * merging them, so they can become their own, openable entities.
+   */
+  build(p: ParamReader, seed: number, sink?: MovableSink): ArchOutput;
+  /** A small prop the player can pick up, carry and throw (a dynamic body in play mode). */
+  portable?: { mass: number };
+  /** True when the piece hands out movable parts (it has an `interactive` param). */
+  interactive?: boolean;
 }
 
 /** Typed access to resolved params. */

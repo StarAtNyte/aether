@@ -36,6 +36,13 @@ export interface LogicHost {
    * velocity in rad/s. Used by vehicle steering; ignored when absent.
    */
   setAngularVelocity?(id: EntityId, v: Vec3): void;
+  /**
+   * Optional (additive): servo the hinge or rail joint of an entity to
+   * `target` (degrees for revolute, metres for prismatic joints). Behaviors
+   * with `motion: "joint"` (physical doors and drawers) call it every time
+   * their open state changes; without it they stay where they are.
+   */
+  driveJoint?(id: EntityId, target: number): void;
   /** Instantly move an entity (any body type). */
   teleport(id: EntityId, p: Vec3): void;
   /** Radial impulse on every dynamic body within `radius` of `center`. */

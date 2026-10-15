@@ -54,7 +54,23 @@ export function zoneShapeOf(entity: Entity): ZoneShape {
       const v = Object.hasOwn(p, k) ? p[k] : undefined;
       return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
     };
-    return { kind: 'box', half: [(num('width', 0.9, 0.4, 3) / 2) * sx, (num('height', 2.1, 1.5, 4) / 2) * sy, (num('thickness', 0.045, 0.02, 0.12) / 2) * sz] };
+    return { kind: 'box', half: [(num('width', 0.9, 0.4, 4) / 2) * sx, (num('height', 2.1, 1.5, 4) / 2) * sy, (num('thickness', 0.045, 0.02, 0.12) / 2) * sz] };
+  }
+  if (shape.kind === 'procedural' && shape.generator === 'arch-sash') {
+    // Window casements: the hinge sits on the left edge, so the zone must be the real casement.
+    const q = shape.params;
+    const num = (k: string, d: number): number => {
+      const v = Object.hasOwn(q, k) ? q[k] : undefined;
+      return typeof v === 'number' && Number.isFinite(v) ? Math.min(3, Math.max(0.2, v)) : d;
+    };
+    return { kind: 'box', half: [(num('width', 1) / 2) * sx, (num('height', 1.2) / 2) * sy, 0.03 * sz] };
+  }
+  if (shape.kind === 'procedural' && shape.generator === 'furn-part') {
+    // Drawers and cabinet doors: the part box recorded by the arch compiler (the hinge sits on its edge).
+    const dims = shape.params['size'];
+    if (Array.isArray(dims) && dims.length === 3 && dims.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0 && n < 20)) {
+      return { kind: 'box', half: [((dims[0] as number) / 2) * sx, ((dims[1] as number) / 2) * sy, ((dims[2] as number) / 2) * sz] };
+    }
   }
   if (shape.kind === 'asset') {
     const size = assetShapeSize(shape);

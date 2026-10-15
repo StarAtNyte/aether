@@ -460,3 +460,12 @@ Committed in `tests/fixtures/photo/` (redistributable only); the CC BY photograp
 
 No dependency was added: the similarity measures (colour histogram overlap, SSIM, Sobel edge correlation, median-cut
 palette) are original TypeScript.
+
+### Architecture realism (stage `archreal`)
+
+No third-party asset or dependency was added. The wallpapers, panelling, timber slats and foliage textures, the wall
+dado, downlights, window casements, drawers, trees (olive, cypress, umbrella pine) and the Casa del Patio flagship are
+original, procedural work (MIT, with the project). The studied reference (a courtyard-house walkthrough) has no
+licence: only its ideas (plan-to-3D reveal, ink-on-paper drawing, golden-hour staging) informed the design; none of its
+code, shaders or files were used.
+

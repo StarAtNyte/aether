@@ -507,5 +507,45 @@ export const WHITEBOARD: FurnitureDef = {
   },
 };
 
+export const MUG: FurnitureDef = {
+  id: 'furn-mug',
+  kind: 'mug',
+  description: 'Ceramic mug with a handle and a little coffee; a prop to pick up, carry and throw.',
+  params: { color: color('#e9e4da', 'glaze colour') },
+  mount: 'surface',
+  againstWall: false,
+  frontClearance: 0,
+  portable: { mass: 0.35 },
+  size: () => [0.11, 0.095, 0.08],
+  build(p) {
+    const set = new PartSet();
+    const wall = lathe([[0, 0], [0.038, 0], [0.04, 0.004], [0.04, 0.095], [0.0365, 0.095], [0.0365, 0.01], [0, 0.01]], 28);
+    const handle = tube([[0.039, 0.082, 0], [0.062, 0.078, 0], [0.066, 0.05, 0], [0.058, 0.022, 0], [0.039, 0.016, 0]], 0.0065, 8);
+    set.add(wall.merge(handle), mat('ceramic', p.color('color')));
+    set.add(cylinder(0.0362, 0.0362, 0.002, 24).translate(0, 0.081, 0), { finish: 'paint', color: '#3b2a20', roughness: 0.12 });
+    set.boxMinMax(-0.04, 0, -0.04, 0.068, 0.095, 0.04);
+    return set.build();
+  },
+};
+
+export const BOOK: FurnitureDef = {
+  id: 'furn-book',
+  kind: 'book',
+  description: 'Hardback book lying flat; a prop to pick up, carry and throw.',
+  params: { color: color('#7a3b2e', 'cover colour') },
+  mount: 'surface',
+  againstWall: false,
+  frontClearance: 0,
+  portable: { mass: 0.6 },
+  size: () => [0.16, 0.03, 0.23],
+  build(p) {
+    const set = new PartSet();
+    set.add(roundedBox(0.16, 0.006, 0.23, 0.002, 1).translate(0, 0.003, 0).merge(roundedBox(0.16, 0.006, 0.23, 0.002, 1).translate(0, 0.027, 0)).merge(roundedBox(0.016, 0.03, 0.23, 0.004, 1).translate(-0.072, 0.015, 0)), mat('leather', p.color('color')));
+    set.add(box(-0.064, 0.006, -0.108, 0.08, 0.024, 0.108), mat('plaster', '#efe9dc'));
+    set.boxMinMax(-0.08, 0, -0.115, 0.08, 0.03, 0.115);
+    return set.build();
+  },
+};
+
 /** Decor definitions. */
-export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD];
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK];

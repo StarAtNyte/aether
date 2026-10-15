@@ -33,10 +33,22 @@ interface Decided {
   roughness?: number;
 }
 
+/** Wallpaper finish for a requested pattern word ("floral", "striped", "damask"…). */
+export function wallpaperFinish(pattern: string | undefined): string {
+  switch (pattern) {
+    case 'striped': return 'wallpaper-stripe';
+    case 'floral': return 'wallpaper-floral';
+    case 'damask': case 'patterned': return 'wallpaper-damask';
+    case 'geometric': case 'scallop': case 'checkered': case 'checked': case 'plaid': case 'polka dot': case 'dotted': return 'wallpaper-geometric';
+    default: return 'wallpaper';
+  }
+}
+
 function materialWord(look: Look): MaterialWord | undefined {
   if (look.material === 'wallpaper') {
     // Use a dedicated wallpaper finish once the library has one.
-    return FINISH_IDS.has('wallpaper') ? { finish: 'wallpaper' as MaterialFinish, label: 'wallpaper', kind: 'wall' } : WALLPAPER;
+    const finish = wallpaperFinish(look.pattern);
+    return FINISH_IDS.has(finish) ? { finish: finish as MaterialFinish, label: 'wallpaper', kind: 'wall' } : WALLPAPER;
   }
   return look.material ? MATERIAL_WORDS[look.material] : undefined;
 }
@@ -429,7 +441,7 @@ export function planPaint(env: OpEnv, cmd: Extract<Command, { op: 'paint' }>): O
   // Walls by face.
   if (res.faces && res.faces.length > 0) {
     const touched = paintWallFaces(env, res.faces, cmd.look);
-    if (cmd.look.pattern && cmd.look.material === 'wallpaper') notes.push(`"${cmd.look.pattern}" isn't available as a pattern yet, so I used plain ${looked.replace(cmd.look.pattern, '').trim()} wallpaper`);
+    if (cmd.look.pattern && cmd.look.material === 'wallpaper' && wallpaperFinish(cmd.look.pattern) === 'wallpaper') notes.push(`"${cmd.look.pattern}" isn't available as a pattern yet, so I used plain ${looked.replace(cmd.look.pattern, '').trim()} wallpaper`);
     const spilled = (res.walls ?? []).filter((w) => w.spill > 0.6);
     if (spilled.length > 0) notes.push(`${spilled.length === 1 ? 'one of these walls continues' : `${spilled.length} of these walls continue`} past the room, so the new finish runs along the whole wall`);
     const where = res.room ? `the ${res.room.label.toLowerCase()}'s ${ref.side ? `${ref.side} ` : ''}wall${new Set(touched).size > 1 ? 's' : ''}` : 'the walls';

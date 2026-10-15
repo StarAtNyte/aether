@@ -15,7 +15,8 @@ import type { MaterialFinish, MaterialSpec } from '@aether/core';
 export type FinishPattern =
   | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'bricks'
   | 'weave' | 'velvet' | 'grain-leather' | 'pile' | 'brushed' | 'mirror' | 'glass' | 'frosted' | 'glaze' | 'roof-tiles'
-  | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples';
+  | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
+  | 'leaves' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats';
 
 /** One entry of the finish library. */
 export interface FinishDef {
@@ -76,6 +77,15 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   snow: { color: '#eef2f6', accent: '#d8e0e8', roughness: 0.8, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.3 },
   sand: { color: '#d3bb8a', accent: '#b89f6e', roughness: 0.97, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.45 },
   asphalt: { color: '#3b3d41', accent: '#2c2e31', roughness: 0.92, metalness: 0, tintable: false, tile: 2.5, pattern: 'pebbles', bump: 0.35 },
+  // Wall coverings (World IR finishes prompts can target): tintable papers, panelling and slats.
+  wallpaper: { color: '#cfc7b6', accent: '#bdb4a2', roughness: 0.82, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-plain', bump: 0.3 },
+  'wallpaper-stripe': { color: '#e3dccb', accent: '#9fb0a0', roughness: 0.78, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-stripe', bump: 0.25 },
+  'wallpaper-floral': { color: '#d9dccd', accent: '#7f9a78', roughness: 0.8, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-floral', bump: 0.3 },
+  'wallpaper-damask': { color: '#d8cfba', accent: '#a99a76', roughness: 0.74, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-damask', bump: 0.35 },
+  'wallpaper-geometric': { color: '#cdd3d1', accent: '#8c9a9b', roughness: 0.76, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-geometric', bump: 0.3 },
+  panelling: { color: '#e4e0d8', accent: '#e4e0d8', roughness: 0.55, metalness: 0, tintable: true, tile: 1.0, pattern: 'panel-shaker', bump: 0.8, clearcoat: 0.15 },
+  'wood-slats': { color: '#b48a5e', accent: '#2a2420', roughness: 0.55, metalness: 0, tintable: false, tile: 0.8, pattern: 'slats', bump: 0.6, clearcoat: 0.1 },
+  foliage: { color: '#6f8a52', accent: '#8ea75d', roughness: 0.62, metalness: 0, tintable: true, tile: 0.7, pattern: 'leaves', bump: 1.1 },
   water: { color: '#3d8fb0', accent: '#2a6f8f', roughness: 0.05, metalness: 0, opacity: 0.78, tintable: false, tile: 4, pattern: 'ripples', bump: 0.4 },
 });
 

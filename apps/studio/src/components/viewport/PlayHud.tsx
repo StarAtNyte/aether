@@ -55,6 +55,29 @@ export const TitleCard = memo(function TitleCard(): ReactElement | null {
   return <TitleCardView intro={world.intro} onStart={() => studio.startGame()} onExit={() => void studio.togglePlay()} />;
 });
 
+/**
+ * Crosshair and the use prompt ("E · Open drawer") in play mode: a small dot
+ * always, the prompt only while the crosshair is on something usable.
+ */
+export const InteractPromptView = memo(function InteractPromptView(): ReactElement | null {
+  const mode = useUI((s) => s.mode);
+  const prompt = useUI((s) => s.interact);
+  const photo = useUI((s) => s.arch.photo);
+  const intro = useUI((s) => s.game.intro);
+  if (mode !== 'play' || photo || intro) return null;
+  return (
+    <div className="interact" aria-live="polite" data-testid="interact">
+      <span className={`interact__dot${prompt ? ' is-active' : ''}`} aria-hidden="true" />
+      {prompt && (
+        <span className="interact__prompt" role="status">
+          <kbd>{prompt.key}</kbd> {prompt.verb} {prompt.noun}
+          {prompt.hint && <span className="interact__hint">{prompt.hint}</span>}
+        </span>
+      )}
+    </div>
+  );
+});
+
 /** Play-mode HUD: bound state values, timer, controls hint and the win/lose overlay. */
 export const PlayHud = memo(function PlayHud(): ReactElement | null {
   const studio = useStudio();
@@ -82,7 +105,7 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
           <kbd>D</kbd> Walk
         </span>
         <span>
-          <kbd>E</kbd> Doors · lights
+          <kbd>E</kbd> Open · use
         </span>
         <span>
           <kbd>L</kbd> All lights

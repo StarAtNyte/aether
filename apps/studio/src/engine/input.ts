@@ -8,6 +8,8 @@ import type { InputState } from '@aether/logic';
 
 /** Degrees of yaw per pixel of horizontal mouse movement. */
 export const MOUSE_YAW_PER_PX = 0.18;
+/** Steepest first-person look up / down (degrees). */
+export const MAX_PITCH_DEG = 80;
 /** Degrees per second of yaw from the arrow keys. */
 export const KEY_YAW_SPEED = 120;
 /** Most simultaneously held keys tracked (bounds hostile/odd input). */
@@ -54,6 +56,8 @@ export class InputController {
   private readonly merged = new Set<string>();
   private readonly state: { forward: number; right: number; jump: boolean; action: boolean; keys: ReadonlySet<string>; pointerYawDeg: number };
   private yaw = 0;
+  /** First-person pitch in degrees (negative looks down), clamped to ±{@link MAX_PITCH_DEG}. */
+  private pitch = 0;
   private dragging = false;
   private attached: HTMLElement | null = null;
   private pointerLock = false;
@@ -70,6 +74,16 @@ export class InputController {
   /** Camera/player yaw in degrees (0 faces −Z). */
   get yawDeg(): number {
     return this.yaw;
+  }
+
+  /** First-person pitch in degrees (0 level, negative looks down). */
+  get pitchDeg(): number {
+    return this.pitch;
+  }
+
+  /** Set the pitch in degrees (clamped). */
+  setPitch(deg: number): void {
+    this.pitch = Number.isFinite(deg) ? Math.max(-MAX_PITCH_DEG, Math.min(MAX_PITCH_DEG, deg)) : 0;
   }
 
   /** Set the yaw (e.g. from the camera when play starts). */
@@ -194,5 +208,6 @@ export class InputController {
     const locked = this.attached !== null && document.pointerLockElement === this.attached;
     if (!locked && !this.dragging) return;
     if (Number.isFinite(e.movementX)) this.yaw = wrapDeg(this.yaw - e.movementX * MOUSE_YAW_PER_PX * this.sensitivity);
+    if (Number.isFinite(e.movementY)) this.setPitch(this.pitch - e.movementY * MOUSE_YAW_PER_PX * this.sensitivity);
   };
 }

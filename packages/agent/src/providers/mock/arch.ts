@@ -11,7 +11,7 @@ import type { PatchInput } from '@aether/core';
 import type { MockPlan } from './planner';
 
 /** Interior styles of @aether/arch plans. */
-type Style = 'modern' | 'scandinavian' | 'industrial' | 'japandi' | 'classic';
+type Style = 'modern' | 'scandinavian' | 'industrial' | 'japandi' | 'classic' | 'mediterranean';
 type Rect = [number, number, number, number];
 type Room = { id: string; type: string; rect: Rect; name?: string; items?: Array<Record<string, unknown>>; omit?: string[]; floor?: Record<string, unknown> };
 type Door = { between: [string, string]; kind?: 'swing' | 'sliding' | 'opening'; width?: number; side?: 'north' | 'south' | 'east' | 'west'; main?: boolean };
@@ -29,6 +29,7 @@ const STYLE_WORDS: ReadonlyArray<[RegExp, Style]> = [
   [/\bscandi(navian)?|nordic|hygge\b/, 'scandinavian'],
   [/\bjapandi|japanese|zen|wabi\b/, 'japandi'],
   [/\bindustrial|warehouse|brick loft|exposed\b/, 'industrial'],
+  [/\bmediterranean|tuscan|andalusian|portuguese|sintra|spanish|riviera|courtyard|limewash(ed)?\b/, 'mediterranean'],
   [/\bclassic|traditional|victorian|parisian|haussmann|elegant\b/, 'classic'],
   [/\bmodern|contemporary|minimal(ist)?\b/, 'modern'],
 ];

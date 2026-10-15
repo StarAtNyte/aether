@@ -4,7 +4,7 @@
  */
 import { Geom, box, roundedBox } from '../mesh';
 import { PartSet } from '../parts';
-import { choice, color, cushion, int, mat, num, seeded, squareLeg, type FurnitureDef } from './kit';
+import { choice, color, cushion, emitFront, flag, int, mat, num, seeded, squareLeg, type FurnitureDef } from './kit';
 
 const BED_WIDTHS: Record<string, number> = { single: 0.9, double: 1.4, queen: 1.6, king: 1.8 };
 
@@ -77,12 +77,14 @@ export const WARDROBE: FurnitureDef = {
     height: num(2.3, 1.8, 2.7, 'height (m)'),
     finish: choice(['paint', 'oak', 'walnut', 'ash'], 'paint', 'door finish'),
     color: color('#e8e4dd', 'paint colour'),
+    interactive: flag(false, 'the doors are separate parts that open'),
   },
+  interactive: true,
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.9,
   size: (p) => [p.num('width'), p.num('height'), 0.6],
-  build(p) {
+  build(p, _seed, sink) {
     const set = new PartSet();
     const w = p.num('width');
     const h = p.num('height');
@@ -96,9 +98,14 @@ export const WARDROBE: FurnitureDef = {
     const dw = w / n;
     for (let k = 0; k < n; k++) {
       const x = -w / 2 + dw * (k + 0.5);
-      doors.merge(roundedBox(dw - 0.004, h - 0.085, 0.02, 0.003, 1).translate(x, 0.08 + (h - 0.08) / 2, d / 2 - 0.01));
       const px = x + (k % 2 === 0 ? 1 : -1) * (dw / 2 - 0.045);
-      pulls.merge(roundedBox(0.014, 0.42, 0.024, 0.006, 2).translate(px, 1.05, d / 2 + 0.014));
+      const hinge = k < n / 2 ? 'left' : 'right';
+      emitFront(sink, { front: doors, handle: pulls }, {
+        id: `door-${k}`, name: 'Wardrobe door', kind: 'door', center: [x, 0.08 + (h - 0.08) / 2, d / 2 - 0.01], size: [dw - 0.004, h - 0.085, 0.02], motion: { type: 'swing', hinge, angle: hinge === 'left' ? -105 : 105 },
+        front: roundedBox(dw - 0.004, h - 0.085, 0.02, 0.003, 1).translate(x, 0.08 + (h - 0.08) / 2, d / 2 - 0.01),
+        handle: roundedBox(0.014, 0.42, 0.024, 0.006, 2).translate(px, 1.05, d / 2 + 0.014),
+        frontMaterial: face, handleMaterial: mat('brass'),
+      });
     }
     set.add(doors, face).add(pulls, mat('brass'));
     set.boxMinMax(-w / 2, 0, -d / 2, w / 2, h, d / 2);

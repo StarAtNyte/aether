@@ -24,6 +24,7 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   'four-seasons-garden': { pos: [36, 20, 42], target: [0, 0.5, 0] },
   'orbital-lab': { pos: [24, 9, 27], target: [0, 3, 0] },
   'sakura-river': { pos: [31, 5.5, 229], target: [19, 2.2, 182] },
+  'casa-patio': { pos: [-22, 11, -26], target: [0, 1, 0], arch: { walls: 'cutaway' } },
   'skyline-penthouse': { pos: [-20, 9, -25], target: [2, 2, 2], arch: { walls: 'cutaway' } },
   'dusk-lake-house': { pos: [30, 13, 38], target: [6, 4.5, 4], arch: { levelMode: 'exploded' } },
   'hollow-gate': { pos: [10, 2.8, 0.5], target: [-1.5, 1.9, -11] },

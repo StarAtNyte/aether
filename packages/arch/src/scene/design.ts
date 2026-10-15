@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import { MaterialSpec, Color, type EntityId } from '@aether/core';
 import { ArchStyle, Compass, PlanDoor, PlanRoof, PlanSite, PlanStair, RoomType, type BuildingPlanInput } from '../plan';
-import { PlanPoint, PlanPolygon } from '../params';
+import { PlanPoint, PlanPolygon, WallDado } from '../params';
 import { DesignItem, DesignRecord, DesignProgramme, DesignCirculation } from '../design-record';
 import { area, isSimplePolygon, positive, type P2 } from '../math2';
 import { roomPolygon, roomEdges, sharedSpans, exteriorSpans } from '../rooms';
@@ -41,6 +41,10 @@ export const DesignRoom = z
     wallColor: Color.optional(),
     /** Paint colour of single walls by the compass side each faces from inside (overrides `wallColor`). */
     wallColors: z.partialRecord(Compass, Color).optional(),
+    /** Wall covering of the whole room (wallpaper, panelling, brick, tiles…), per-wall accents by compass side from inside, and a wainscot. */
+    finish: MaterialSpec.optional(),
+    walls: z.partialRecord(Compass, MaterialSpec).optional(),
+    dado: WallDado.optional(),
   })
   .refine((r) => r.rect !== undefined || r.polygon !== undefined, { message: 'a room needs rect [x0,z0,x1,z1] or polygon' });
 
@@ -311,7 +315,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       ...(lvl.name ? { name: lvl.name } : {}),
       ...(lvl.height !== undefined ? { height: lvl.height } : {}),
       autoWindows: false,
-      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), furnish: false, items: [] })),
+      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), furnish: false, items: [] })),
       doors,
       windows,
       stairs: lvl.stairs,

@@ -13,7 +13,8 @@ import { MaterialSpec } from '@aether/core';
 import { compileBuilding, parsePlan, PlanError, type CompiledBuilding } from './compile';
 import { checkBuilding, summarizeBuildingReports, type BuildingReport } from './nav';
 import { area } from './math2';
-import { ArchStyle, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanStair, PlanWindow, type BuildingPlan } from './plan';
+import { WallDado } from './params';
+import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
 
 /** Upper bound of ops per call. */
@@ -37,6 +38,8 @@ export const ArchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('furnish_room'), building: Id, room: Id, furnish: z.boolean().default(true), items: z.array(Unknown).max(60).optional(), omit: z.array(z.string().max(40)).max(20).optional() }),
   z.object({ op: z.literal('place_item'), building: Id, room: Id, item: Unknown }),
   z.object({ op: z.literal('remove_item'), building: Id, room: Id, kind: z.string().min(1).max(40) }),
+  // One wall of a room ("the bedroom's back wall") or all of them: a finish (wallpaper, panelling, brick...) and / or a dado; `clear` resets.
+  z.object({ op: z.literal('set_wall'), building: Id, room: Id, wall: z.union([Compass, z.literal('all')]).default('all'), material: MaterialSpec.optional(), dado: z.union([WallDado, z.null()]).optional(), clear: z.boolean().default(false) }),
   z.object({ op: z.literal('set_material'), building: Id, target: z.enum(['exterior', 'roof', 'floor', 'walls']), room: Id.optional(), material: MaterialSpec }),
 ]);
 export type ArchOp = z.infer<typeof ArchOp>;
@@ -89,6 +92,11 @@ function levelOf(plan: BuildingPlan, index: number): PlanLevel {
   const l = plan.levels[index];
   if (!l) throw new PlanError('level_not_found', `building "${plan.id}" has no level ${index}`, `Levels are 0..${plan.levels.length - 1}; add one with add_level.`);
   return l;
+}
+
+/** Remove a property (plans are stored as JSON: no undefined values). */
+function dropKey(target: object, key: string): void {
+  Reflect.deleteProperty(target, key);
 }
 
 function roomOf(plan: BuildingPlan, id: string): { level: PlanLevel; room: PlanRoom } {
@@ -264,6 +272,33 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
           lines.push(`remove_item ${op.kind} from ${room.id}`);
           break;
         }
+        case 'set_wall': {
+          const plan = load(op.building);
+          const { room } = roomOf(plan, op.room);
+          if (!op.clear && !op.material && op.dado === undefined) throw new PlanError('empty_wall_op', 'set_wall needs a material, a dado or clear', 'Send { op: "set_wall", building, room, wall: "north"|"south"|"east"|"west"|"all", material: { finish: "wallpaper-floral", color: "#d8e0cf" } }.');
+          if (op.clear) {
+            if (op.wall === 'all') {
+              dropKey(room, 'walls');
+              dropKey(room, 'finish');
+              dropKey(room, 'dado');
+            } else if (room.walls) {
+              const rest = { ...room.walls };
+              dropKey(rest, op.wall);
+              if (Object.keys(rest).length > 0) room.walls = rest;
+              else dropKey(room, 'walls');
+            }
+          }
+          if (op.material) {
+            if (op.wall === 'all') {
+              room.finish = op.material;
+              dropKey(room, 'walls');
+            } else room.walls = { ...(room.walls ?? {}), [op.wall]: op.material };
+          }
+          if (op.dado === null) dropKey(room, 'dado');
+          else if (op.dado) room.dado = op.dado;
+          lines.push(`set_wall ${room.id} ${op.wall}`);
+          break;
+        }
         case 'set_material': {
           const plan = load(op.building);
           if (op.target === 'exterior') plan.exteriorWall.finish = op.material;
@@ -272,7 +307,14 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
             const rooms = op.room ? [roomOf(plan, op.room).room] : plan.levels.flatMap((l) => l.rooms);
             for (const r of rooms) {
               if (op.target === 'floor') r.floor = op.material;
-              else if (op.material.color) r.wallColor = op.material.color;
+              else {
+                if (op.material.finish && op.material.finish !== 'paint') r.finish = op.material;
+                else {
+                  if (op.material.color) r.wallColor = op.material.color;
+                  if (op.material.finish === 'paint') dropKey(r, 'finish');
+                }
+                if (op.material.color && r.finish && !r.finish.color && op.material.finish === undefined) r.wallColor = op.material.color;
+              }
             }
           }
           lines.push(`set_material ${op.target}${op.room ? ` (${op.room})` : ''}`);

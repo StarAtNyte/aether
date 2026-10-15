@@ -10,7 +10,7 @@
  * - Snapshots carry the handle ↔ entity maps so `restore`/`fork` are exact.
  */
 import { ensureAssetCatalog } from './asset-colliders';
-import type { Collider, EventQueue, ImpulseJoint, RigidBody, World } from '@dimforge/rapier3d-compat';
+import type { Collider, EventQueue, ImpulseJoint, RigidBody, UnitImpulseJoint, World } from '@dimforge/rapier3d-compat';
 import type { BodyType, Entity, EntityId, Vec3, WorldDiff, WorldDoc } from '@aether/core';
 import { diffWorlds, Entity as EntitySchema, eulerDegToQuat, inspectUntrusted, LIMITS } from '@aether/core';
 import { EventCollector } from './events';
@@ -407,6 +407,23 @@ export class PhysicsWorld {
     if (rec && safeVec(v)) rec.body.setAngvel({ x: v[0], y: v[1], z: v[2] }, true);
   }
 
+  /**
+   * Servo the joint of `id` to `target` (degrees for revolute, metres for
+   * prismatic joints): doors, drawers and windows drive their hinge or rail
+   * to the open or closed position and a push from the player moves them
+   * against the spring. Returns false when the entity has no such joint.
+   */
+  driveJoint(id: EntityId, target: number, stiffness = 60, damping = 12): boolean {
+    const rec = this.records.get(id);
+    const spec = rec?.entity.joint;
+    if (!rec || this.disposed || !spec || !rec.joint || !rec.joint.isValid() || !Number.isFinite(target)) return false;
+    if (spec.type !== 'revolute' && spec.type !== 'prismatic') return false;
+    const unit = spec.type === 'revolute' ? Math.PI / 180 : 1;
+    (rec.joint as UnitImpulseJoint).configureMotorPosition(target * unit, Math.max(0, stiffness), Math.max(0, damping));
+    rec.body.wakeUp();
+    return true;
+  }
+
   /** Linear velocity of a body, or undefined. */
   getVelocity(id: EntityId): Vec3 | undefined {
     const rec = this.records.get(id);
@@ -561,6 +578,44 @@ export class PhysicsWorld {
       normal: [hit.normal.x, hit.normal.y, hit.normal.z],
       distance: t,
     };
+  }
+
+  /**
+   * Every solid hit along a ray, nearest first (sensors ignored), at most
+   * `limit` (default 8). Overlapping colliders (a drawer front inside its
+   * cabinet's box) all report, which a nearest-only cast cannot do.
+   */
+  raycastAll(origin: Vec3, dir: Vec3, maxDist: number, limit = 8, excludeId?: EntityId): RaycastHit[] {
+    if (this.disposed || !safeVec(origin) || !safeVec(dir) || !Number.isFinite(maxDist) || maxDist <= 0) return [];
+    const len = Math.hypot(dir[0], dir[1], dir[2]);
+    if (len < 1e-9) return [];
+    const R = rapier();
+    const d = { x: dir[0] / len, y: dir[1] / len, z: dir[2] / len };
+    const ray = new R.Ray({ x: origin[0], y: origin[1], z: origin[2] }, d);
+    const exclude = excludeId !== undefined ? this.records.get(excludeId)?.body : undefined;
+    const cap = Math.min(maxDist, PHYSICS_LIMITS.MAX_RAY_DISTANCE);
+    const hits: RaycastHit[] = [];
+    this.world.intersectionsWithRay(
+      ray,
+      cap,
+      true,
+      (h) => {
+        const id = this.owner.get(h.collider.handle);
+        hits.push({
+          id: id === undefined || id === GROUND_ID ? null : id,
+          point: [origin[0] + d.x * h.timeOfImpact, origin[1] + d.y * h.timeOfImpact, origin[2] + d.z * h.timeOfImpact],
+          normal: [h.normal.x, h.normal.y, h.normal.z],
+          distance: h.timeOfImpact,
+        });
+        return hits.length < 64;
+      },
+      R.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined,
+      undefined,
+      exclude,
+    );
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits.slice(0, Math.max(1, Math.min(limit, 64)));
   }
 
   /** Entities (sensors included, ground excluded) overlapping a sphere. */

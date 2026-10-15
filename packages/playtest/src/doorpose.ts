@@ -32,8 +32,9 @@ export function openDoorPose(world: WorldDoc, door: DoorInfo): { position: Vec3;
   }
   const half = zoneShapeOf(e).half;
   const baseQ: Quat = [base.quaternion[0], base.quaternion[1], base.quaternion[2], base.quaternion[3]];
-  if (b.params['motion'] === 'swing') {
-    const theta = Math.max(-180, Math.min(180, num(b.params['swingAngle'], 90)));
+  if (b.params['motion'] === 'swing' || b.params['motion'] === 'joint') {
+    // A joint-driven (physical) door opens to the same pose: its hinge limit is the swing angle.
+    const theta = Math.max(-180, Math.min(180, num(b.params['motion'] === 'joint' ? b.params['jointOpen'] : b.params['swingAngle'], 90)));
     const hinge = b.params['hinge'];
     const hingeX = hinge === 'center' ? 0 : (hinge === 'right' ? 1 : -1) * half[0];
     const h = rotateVec3(baseQ, [hingeX, 0, 0]);

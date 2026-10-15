@@ -1317,6 +1317,16 @@ export class WorldRenderer {
     if (w) this.applyEnvironment(w);
   }
 
+  /** First-person eye height above the feet in metres (1.6 standing, about 0.7 sitting); clamped 0.3..2.2. */
+  setEyeHeight(h: number): void {
+    if (Number.isFinite(h)) this.rig.eyeHeight = Math.min(2.2, Math.max(0.3, h));
+  }
+
+  /** First-person look pitch in radians (negative looks down); the rig clamps it. Ignored in other camera modes. */
+  setLookPitch(pitch: number): void {
+    if (Number.isFinite(pitch)) this.rig.pitch = pitch;
+  }
+
   /**
    * Pose the camera directly (`manual` camera mode, switched on by this
    * call): eye position, yaw (radians, 0 looks along −Z) and pitch.

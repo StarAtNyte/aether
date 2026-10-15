@@ -12,7 +12,7 @@ import { buildWall } from './wall';
 import { buildBasin, buildCeiling, buildColumn, buildRailing, buildSlab } from './elements';
 import { buildRoof } from './roof';
 import { buildStair } from './stair';
-import { buildDoor, buildFrame, buildWindow } from './openings';
+import { buildDoor, buildFrame, buildSash, buildWindow } from './openings';
 
 /** Ids of the structural generators. */
 export const STRUCTURE_IDS: readonly StructureId[] = Object.freeze(Object.keys(STRUCTURE_SCHEMAS) as StructureId[]);
@@ -64,6 +64,8 @@ export function buildStructure(id: StructureId, params: Record<string, Json> | u
       return buildFrame(parseWith(id, S[id], params));
     case 'arch-window':
       return buildWindow(parseWith(id, S[id], params));
+    case 'arch-sash':
+      return buildSash(parseWith(id, S[id], params));
     case 'arch-railing':
       return buildRailing(parseWith(id, S[id], params));
     case 'arch-column':
@@ -83,6 +85,7 @@ export const STRUCTURE_DESCRIPTIONS: Readonly<Record<StructureId, string>> = Obj
   'arch-door': 'Door leaf (panel, flush, glass, slab) with lever handles and hinges.',
   'arch-frame': 'Door frame: jamb linings and architraves on both faces.',
   'arch-window': 'Window: frame, mullions, sashes, glass, interior sill and drip sill.',
+  'arch-sash': 'Opening casement of a window: frame, glass and handle; swings on its left edge.',
   'arch-railing': 'Railing along a plan polyline (glass, bars, cable or solid).',
   'arch-column': 'Round or square column.',
   'arch-basin': 'Swimming pool basin recessed below y = 0 with coping and water.',

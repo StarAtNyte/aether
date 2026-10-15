@@ -36,6 +36,7 @@ const OTHER_BOTS: Record<string, string> = {
   'four-seasons-garden': 'a scene: no goal to play',
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
+  'casa-patio': 'architecture: walked by the walkthrough bot',
 };
 
 beforeAll(async () => {

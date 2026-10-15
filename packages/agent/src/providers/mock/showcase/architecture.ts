@@ -50,7 +50,7 @@ export function skylinePenthouse(): MockPlan {
   // Rooftop planting and loungers on the deck outside the glass.
   for (const [x, z] of [[-15.5, -13], [15.5, -13], [-15.5, 13], [15.5, 13], [-15.5, 0], [15.5, 0]] as const) {
     b.asset('planter', 'planter', [x, 0, z], { physics: 'static', footprint: 1 });
-    b.gen('olive', 'tree-oak', { height: 3.4, color: '#7d9461', density: 6, variant: 0 }, [x, 0.6, z], { physics: 'static' });
+    b.gen('olive', 'furn-tree', { height: 3.4, species: 'olive', leaf: '#74845a' }, [x, 0.6, z], { physics: 'static' });
   }
   // The city: towers standing on streets 40 m below the roof, their crowns rising around the
   // terrace, landmark spires beyond.

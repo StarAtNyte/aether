@@ -49,6 +49,16 @@ export type WallOpening = z.infer<typeof WallOpening>;
 
 const ext = z.number().min(-3).max(3).default(0);
 
+/** Lower wall covering (dado / wainscot) with an optional chair rail at its top edge. */
+export const WallDado = z.object({
+  /** Height of the covering above the floor (metres). */
+  height: z.number().min(0.2).max(2.4).default(1.0),
+  material: MaterialSpec.default({ finish: 'panelling', color: '#e4e0d8' }),
+  /** Moulded rail along the top edge. */
+  rail: z.boolean().default(true),
+});
+export type WallDado = z.infer<typeof WallDado>;
+
 /** `arch-wall` params. */
 export const WallParams = z.object({
   length: z.number().min(0.05).max(ARCH_LIMITS.MAX_WALL_LENGTH),
@@ -67,6 +77,9 @@ export const WallParams = z.object({
   /** Side A (−Z) and side B (+Z) finishes; the top and ends use side A's. */
   finishA: MaterialSpec.default({ finish: 'plaster' }),
   finishB: MaterialSpec.default({ finish: 'plaster' }),
+  /** Optional lower covering (wainscot) of side A / B; the face above keeps `finishA` / `finishB`. */
+  dadoA: WallDado.optional(),
+  dadoB: WallDado.optional(),
   /** Skirting boards on interior faces. */
   skirting: z.enum(['none', 'a', 'b', 'both']).default('both'),
   skirtingMaterial: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }),
@@ -101,6 +114,10 @@ export const CeilingParams = z.object({
   finish: MaterialSpec.default({ finish: 'paint', color: '#f4f2ee' }),
   /** Recessed cove depth around the edge (0 = flat). */
   cove: z.number().min(0).max(0.4).default(0),
+  /** Recessed downlights (plan points): a trim ring and a glowing lens each; no light source of their own. */
+  downlights: z.array(PlanPoint).max(24).default([]),
+  /** Downlights glow (the walkthrough switches this with the room's lights). */
+  lit: z.boolean().default(true),
 });
 export type CeilingParams = z.infer<typeof CeilingParams>;
 
@@ -147,7 +164,7 @@ export type StairParams = z.infer<typeof StairParams>;
 
 /** `arch-door` (moving leaf) params. */
 export const DoorParams = z.object({
-  width: z.number().min(0.4).max(3).default(0.9),
+  width: z.number().min(0.4).max(4).default(0.9),
   height: z.number().min(1.5).max(4).default(2.1),
   thickness: z.number().min(0.02).max(0.12).default(0.045),
   style: z.enum(['panel', 'flush', 'glass', 'slab']).default('panel'),
@@ -183,8 +200,22 @@ export const WindowParams = z.object({
   /** Which side of the wall is indoors (`b` = +Z): the sill board goes there, the drip sill outside. */
   interior: z.enum(['a', 'b']).default('b'),
   sillMaterial: MaterialSpec.default({ finish: 'marble' }),
+  /**
+   * The opening casement is its own entity (`arch-sash`, a child that swings): the window then draws its
+   * outer frame, transom and the glass above the transom only. Casement windows without mullions.
+   */
+  sash: z.boolean().default(false),
 });
 export type WindowParams = z.infer<typeof WindowParams>;
+
+/** `arch-sash` params: the opening casement of a window (origin at the centre of its sill rail; hinge on its left edge). */
+export const SashParams = z.object({
+  width: z.number().min(0.2).max(3).default(1),
+  height: z.number().min(0.2).max(3).default(1.2),
+  frame: MaterialSpec.default({ finish: 'black-metal' }),
+  glass: MaterialSpec.default({ finish: 'glass' }),
+});
+export type SashParams = z.infer<typeof SashParams>;
 
 /** `arch-railing` params: a polyline railing (balconies, terraces, stair wells). */
 export const RailingParams = z.object({
@@ -227,6 +258,7 @@ export const STRUCTURE_SCHEMAS = Object.freeze({
   'arch-door': DoorParams,
   'arch-frame': FrameParams,
   'arch-window': WindowParams,
+  'arch-sash': SashParams,
   'arch-railing': RailingParams,
   'arch-column': ColumnParams,
   'arch-basin': BasinParams,

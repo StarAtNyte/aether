@@ -20,9 +20,9 @@ import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
 import { stairFootprint, stairLayout } from './stair';
 import { StairParams } from './params';
-import { DOOR_CLEARANCE, LINING } from './openings';
+import { DOOR_CLEARANCE, LINING, sashHeight } from './openings';
 import { roofRise } from './roof';
-import { furnitureById } from './furniture/index';
+import { furnitureById, furnitureMovables } from './furniture/index';
 
 /** Light sources kept per building (each costs per-pixel work); further fittings only glow. */
 export const MAX_BUILDING_LIGHTS = 14;
@@ -150,7 +150,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     const polys = new Map<string, P2[]>();
     for (const r of lvl.rooms) polys.set(r.id, simplifyPolygon(roomPolygon(r)));
     // --- walls ------------------------------------------------------------
-    const network = wallNetwork(indoor.map((r) => ({ id: r.id, polygon: polys.get(r.id) as P2[] })));
+    const network = wallNetwork(indoor.map((r) => ({ id: r.id, polygon: polys.get(r.id) as P2[], split: r.finish !== undefined || r.walls !== undefined || r.dado !== undefined })));
     const thick = (w: NetworkWall): number => (w.exterior ? plan.exteriorWall.thickness : plan.interiorWall.thickness);
     const joins = solveWallJoins(network.map((w, k) => ({ id: `w${k}`, a: w.a, b: w.b, thickness: thick(w) })));
     const walls: WallRec[] = network.map((w, k) => {
@@ -309,6 +309,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         physics: { body: 'kinematic', collider: 'auto' },
         arch: { role: 'door', wall: rec.id, kind: d.kind, room: into === 'outside' ? undefined : `${lid}-${into}` },
         tags: d.main ? ['arch', 'door', 'entrance'] : ['arch', 'door'],
+        interact: { kind: 'door', label: d.main ? 'front door' : d.kind === 'sliding' ? 'sliding door' : 'door', reach: 2.6 },
         state: { open: false },
       };
       if (d.kind === 'sliding') {
@@ -317,7 +318,21 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       } else {
         // Positive swing turns local +X toward −Z: a left-hinged leaf swings into side B with a negative angle.
         const angle = (hinge === 'left' ? -1 : 1) * 92 * side;
-        door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'swing', swingAngle: angle, hinge, duration: 0.85 } }];
+        if (d.physical ?? plan.physicalDoors) {
+          // A real hinge: the leaf is a dynamic body on a revolute joint to the world (axis up, at the hinge edge, limited
+          // to its swing), held shut by a spring motor; the door behavior servos it open and shut, the solver does the rest.
+          door.physics = { body: 'dynamic', collider: 'auto', mass: 18, friction: 0.5, restitution: 0, angularDamping: 2, linearDamping: 1 };
+          door.joint = {
+            type: 'revolute',
+            target: 'world',
+            anchor: [round((hinge === 'left' ? -1 : 1) * (leafW / 2)), 0, 0],
+            targetAnchor: [0, 0, 0],
+            axis: [0, 1, 0],
+            limits: [Math.min(0, angle), Math.max(0, angle)],
+            motor: { targetVelocity: 0, targetPosition: 0, stiffness: 60, damping: 12, maxForce: 400 },
+          };
+          door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'joint', jointOpen: angle, swingAngle: angle, hinge, duration: 0.85 } }];
+        } else door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'swing', swingAngle: angle, hinge, duration: 0.85 } }];
       }
       add(door);
       const hingeP: P2 = [c[0] + rec.dir[0] * (hinge === 'left' ? -leafW / 2 : leafW / 2), c[1] + rec.dir[1] * (hinge === 'left' ? -leafW / 2 : leafW / 2)];
@@ -343,7 +358,30 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const c: P2 = [rec.w.a[0] + rec.dir[0] * t, rec.w.a[1] + rec.dir[1] * t];
       const interior = roomSide(rec, c, roomId) === 1 ? 'b' : 'a';
       const frosted = roomType(roomId) === 'bathroom';
-      add({ id: `${lid}-win${winN++}`, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' } } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
+      // Plain casement windows open: the casement is a child entity that swings inward on its left hinge.
+      const openable = style === 'casement' && !frosted && width <= 1.8 && width >= 0.6 && height >= 0.7;
+      const winId = `${lid}-win${winN++}`;
+      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
+      if (openable) {
+        const fw = 0.055;
+        const sashW = round(width - 2 * fw);
+        const sashH = round(sashHeight(height));
+        // Inward = toward the indoor side of the wall (local −Z when side A is indoors): a positive yaw turns +X toward −Z.
+        const angle = interior === 'b' ? -78 : 78;
+        add({
+          id: `${winId}-sash`,
+          parent: winId,
+          name: 'Window casement',
+          transform: { position: [0, fw, interior === 'b' ? 0.02 : -0.02] },
+          shape: { kind: 'procedural', generator: 'arch-sash', params: { width: sashW, height: sashH, frame: pal.windowFrame, glass: { finish: 'glass' } } },
+          physics: { body: 'kinematic', collider: 'auto' },
+          behaviors: [{ type: 'operable', params: { trigger: 'use', motion: 'swing', swingAngle: angle, hinge: 'left', duration: 0.9 } }],
+          state: { open: false },
+          interact: { kind: 'window', label: 'window', reach: 2.4 },
+          arch: { role: 'part', kind: 'sash', room: `${lid}-${roomId}`, name: 'Window casement' },
+          tags: ['arch', 'part'],
+        });
+      }
       const poly = polys.get(roomId);
       if (poly) {
         const edges = roomEdges(poly);
@@ -418,18 +456,15 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const j = joins.get(`w${walls.indexOf(rec)}`) ?? { startA: 0, startB: 0, endA: 0, endB: 0 };
       const roomA = rec.w.roomA ? lvl.rooms.find((r) => r.id === rec.w.roomA) : undefined;
       const roomB = rec.w.roomB ? lvl.rooms.find((r) => r.id === rec.w.roomB) : undefined;
-      // The compass side a wall face has from inside a room (named by its outward normal), for per-wall colours.
-      const faceOf = (room: PlanRoom | undefined): Compass | undefined => {
-        if (!room?.wallColors) return undefined;
-        const poly = polys.get(room.id);
-        if (!poly) return undefined;
-        const m: P2 = [(rec.w.a[0] + rec.w.b[0]) / 2, (rec.w.a[1] + rec.w.b[1]) / 2];
-        const nx = -rec.dir[1];
-        const nz = rec.dir[0];
-        const inside = pointInPolygon(m[0] + nx * 0.3, m[1] + nz * 0.3, poly) ? [nx, nz] : pointInPolygon(m[0] - nx * 0.3, m[1] - nz * 0.3, poly) ? [-nx, -nz] : null;
-        return inside ? compassOf(-(inside[0] as number), -(inside[1] as number)) : undefined;
+      // Compass side of the wall seen from inside a room: the room lies on side B (+n) or side A (−n) of the wall.
+      const sideFinish = (room: PlanRoom | undefined, side: 1 | -1): MaterialSpec => {
+        if (!room) return plan.exteriorWall.finish;
+        const compass = compassOf(-side * -rec.dir[1], -side * rec.dir[0]);
+        return wallFinish(room, pal, compass);
       };
-      const sideFinish = (room: PlanRoom | undefined): MaterialSpec => (room ? wallFinish(room, pal, faceOf(room)) : plan.exteriorWall.finish);
+      const sideDado = (room: PlanRoom | undefined): Record<string, Json> | undefined => (room?.dado ? (room.dado as unknown as Record<string, Json>) : undefined);
+      const dadoA = sideDado(roomA);
+      const dadoB = sideDado(roomB);
       const skirting = roomA && roomB ? 'both' : roomA ? 'a' : roomB ? 'b' : 'none';
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
       add({
@@ -437,7 +472,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         parent: lid,
         name: rec.w.exterior ? 'Exterior wall' : 'Wall',
         transform: { position: [round(rec.w.a[0]), 0, round(rec.w.a[1])], rotation: [0, yaw, 0] },
-        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA), finishB: sideFinish(roomB), skirting, skirtingMaterial: { finish: 'paint', color: plan.style === 'industrial' ? '#2f3033' : '#f2f0eb' } } as unknown as Record<string, Json> },
+        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA, -1), finishB: sideFinish(roomB, 1), ...(dadoA ? { dadoA } : {}), ...(dadoB ? { dadoB } : {}), skirting, skirtingMaterial: { finish: 'paint', color: plan.style === 'industrial' ? '#2f3033' : '#f2f0eb' } } as unknown as Record<string, Json> },
         physics: { body: 'static', collider: 'auto' },
         arch: { role: 'wall', ...(rec.w.exterior ? { kind: 'exterior' } : { kind: 'interior' }) },
         tags: rec.w.exterior ? ['arch', 'wall', 'exterior'] : ['arch', 'wall'],
@@ -464,7 +499,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       });
       const areaM2 = Math.abs(polyArea(poly)) - holes.reduce((s, h) => s + Math.abs(polyArea(h)), 0);
       roomsOut.push({ id: rid, level: li, name, type: r.type, area: Math.round(areaM2 * 10) / 10 });
-      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: [], finish: { finish: 'paint', color: '#f4f2ee' }, cove: r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0 } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
+      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: [], finish: { finish: 'paint', color: '#f4f2ee' }, cove: r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
       // Furniture.
       const ctx: RoomContext = {
         id: rid,
@@ -492,6 +527,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         const e = placedEntity(p, `${rid}-f${n++}`, lid, rid, li, lights < MAX_BUILDING_LIGHTS);
         if (e.light) lights++;
         add(e);
+        for (const part of placedParts(p, e.id, rid, li, plan.rotation)) add(part);
       }
     }
 
@@ -577,11 +613,19 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     maxY += roofRise({ shape: plan.roof.shape, width, depth, pitch: plan.roof.pitch, ridgeAlongX: width >= depth }) + 0.3;
   } else {
     if (plan.roof.shape !== 'flat') notes.push('pitched roofs need a rectangular top floor; used a flat roof');
-    topLoops.forEach((loop, k) => {
+    // Loops inside another loop are courtyards: the roof plate stops at them (with the same overhang) instead of covering them.
+    const insideOther = (loop: P2[]): boolean => topLoops.some((o) => o !== loop && polyArea(o) > polyArea(loop) && loop.every((q) => pointInPolygon(q[0], q[1], o) || pointOnBoundary(q, o)));
+    const solid = topLoops.filter((l) => !insideOther(l));
+    const voids = topLoops.filter((l) => insideOther(l));
+    solid.forEach((loop, k) => {
       const outline = offsetPolygon(loop, ext + 0.12);
-      add({ id: `${bid}-roof${k === 0 ? '' : k}`, parent: topLevelId, name: 'Roof', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: outline.map((p) => [round(p[0]), round(p[1])]), thickness: 0.28, finish: { finish: 'gravel', color: '#9d968b' }, edge: { finish: 'plaster', color: '#f0eee9' }, bottom: true } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'flat' }, tags: ['arch', 'roof'] });
-      // Parapet as a thin railing-like solid band.
-      add({ id: `${bid}-parapet${k === 0 ? '' : k}`, parent: topLevelId, name: 'Parapet', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-railing', params: { points: [...outline, outline[0] as P2].map((p) => [round(p[0]), round(p[1])]), height: 0.35, style: 'solid', finish: { finish: 'plaster', color: '#f0eee9' } } as unknown as Record<string, Json> }, arch: { role: 'roof', kind: 'parapet' }, tags: ['arch', 'roof'] });
+      const holes = voids.filter((v) => v.every((q) => pointInPolygon(q[0], q[1], loop) || pointOnBoundary(q, loop))).map((v) => offsetPolygon(v, -(ext + 0.12)).map((q) => [round(q[0]), round(q[1])]));
+      add({ id: `${bid}-roof${k === 0 ? '' : k}`, parent: topLevelId, name: 'Roof', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: outline.map((p) => [round(p[0]), round(p[1])]), holes, thickness: 0.28, finish: { finish: 'gravel', color: '#9d968b' }, edge: { finish: 'plaster', color: '#f0eee9' }, bottom: true } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'flat' }, tags: ['arch', 'roof'] });
+      // Parapet as a thin railing-like solid band (round the outside and round every courtyard).
+      const rings: P2[][] = [outline, ...holes.map((h) => h as P2[])];
+      rings.forEach((ring, ri) => {
+        add({ id: `${bid}-parapet${k === 0 && ri === 0 ? '' : `${k}-${ri}`}`, parent: topLevelId, name: 'Parapet', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-railing', params: { points: [...ring, ring[0] as P2].map((p) => [round(p[0]), round(p[1])]), height: 0.35, style: 'solid', finish: { finish: 'plaster', color: '#f0eee9' } } as unknown as Record<string, Json> }, arch: { role: 'roof', kind: 'parapet' }, tags: ['arch', 'roof'] });
+      });
     });
     maxY += 0.7;
   }
@@ -714,11 +758,56 @@ export function hashId(s: string): number {
   return h >>> 0;
 }
 
+/** True when `q` lies on the boundary of `poly` (within a millimetre). */
+function pointOnBoundary(q: P2, poly: readonly P2[]): boolean {
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i] as P2;
+    const b = poly[(i + 1) % poly.length] as P2;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const l2 = dx * dx + dz * dz;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / l2));
+    if (Math.hypot(q[0] - (a[0] + dx * t), q[1] - (a[1] + dz * t)) < 1e-3) return true;
+  }
+  return false;
+}
+
+/** Room types that get recessed downlights (not terraces, garages or storage). */
+const DOWNLIGHT_ROOMS: ReadonlySet<RoomType> = new Set<RoomType>(['living', 'kitchen', 'dining', 'hall', 'entry', 'bedroom', 'office', 'bathroom', 'cafe', 'lobby', 'meeting', 'studio', 'kids']);
+
+/**
+ * Recessed downlight positions of a room: a regular grid about 1.9 m apart
+ * kept 0.7 m off the walls (one or two for small rooms), at most 12.
+ */
+export function downlightGrid(poly: readonly P2[], type: RoomType, style: string): P2[] {
+  if (!DOWNLIGHT_ROOMS.has(type) || style === 'industrial') return [];
+  const [x0, z0, x1, z1] = [Math.min(...poly.map((p) => p[0])), Math.min(...poly.map((p) => p[1])), Math.max(...poly.map((p) => p[0])), Math.max(...poly.map((p) => p[1]))];
+  const w = x1 - x0;
+  const d = z1 - z0;
+  if (w < 1.6 || d < 1.6) return [];
+  const nx = Math.max(1, Math.min(4, Math.round((w - 1.2) / 1.9)));
+  const nz = Math.max(1, Math.min(4, Math.round((d - 1.2) / 1.9)));
+  const out: P2[] = [];
+  for (let i = 0; i < nx; i++) {
+    for (let k = 0; k < nz; k++) {
+      const x = x0 + ((i + 0.5) / nx) * w;
+      const z = z0 + ((k + 0.5) / nz) * d;
+      if (pointInPolygon(x, z, poly as P2[]) && out.length < 12) out.push([x, z]);
+    }
+  }
+  return out;
+}
+
 /** Interior wall paint of a room (wet rooms get tiles, kitchens a washable paint). */
-function wallFinish(room: PlanRoom, pal: StylePalette, face?: Compass): MaterialSpec {
+function wallFinish(room: PlanRoom, pal: StylePalette, compass?: Compass): MaterialSpec {
+  const own = compass ? room.walls?.[compass] : undefined;
+  if (own) return own;
+  const own2 = compass ? room.wallColors?.[compass] : undefined;
+  if (!room.finish && own2) return { finish: 'paint', color: own2 };
+  if (room.finish) return room.wallColor && !room.finish.color ? { ...room.finish, color: room.wallColor } : room.finish;
   if (room.type === 'bathroom') return { finish: 'tile', color: '#ece9e3' };
   if (room.type === 'terrace') return { finish: 'plaster', color: '#ece9e3' };
-  return { finish: 'paint', color: (face ? room.wallColors?.[face] : undefined) ?? room.wallColor ?? pal.wall };
+  return { finish: 'paint', color: room.wallColor ?? pal.wall };
 }
 
 /** Half the thickness of the wall along a room edge (distance from centreline to face). */
@@ -732,9 +821,14 @@ function insetFor(e: RoomEdge, walls: readonly WallRec[]): number {
   return 0.06;
 }
 
+/** Furniture kinds the player can sit on (see the studio's seat poses). */
+const SEAT_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'office-chair', 'bar-stool']);
+
 /** Furniture placement → entity (also used by the design tools to instantiate parts). */
 export function placedEntity(p: Placed, id: string, parent: string, room: string, level: number, withLight: boolean): EntityInput {
   const def = furnitureById(p.generator);
+  // Interactive pieces hand their drawers and doors to child entities (see placedParts).
+  if (def?.interactive && !p.asset && !p.params['interactive']) p = { ...p, params: { ...p.params, interactive: true } };
   const lightRole = p.kind === 'pendant' || p.kind === 'ceiling-light' || p.kind === 'floor-lamp' || p.kind === 'table-lamp' || p.kind === 'sconce';
   const role = p.kind === 'switch' ? 'switch' : lightRole ? 'light' : def?.mount === 'floor' || def?.mount === 'surface' ? 'furniture' : 'fixture';
   const e: EntityInput = {
@@ -750,7 +844,11 @@ export function placedEntity(p: Placed, id: string, parent: string, room: string
     tags: ['arch', role],
     castShadow: p.kind !== 'rug' && p.kind !== 'switch',
   };
-  if (def?.mount === 'floor' && p.kind !== 'rug') e.physics = { body: 'static', collider: 'auto' };
+  if (SEAT_KINDS.has(p.kind) && (def?.mount === 'floor' || def?.mount === 'surface')) e.interact = { kind: 'seat', label: p.kind.replace('-', ' '), reach: 2.4 };
+  if (def?.portable && !p.asset) {
+    e.physics = { body: 'dynamic', collider: 'auto', mass: def.portable.mass, friction: 0.7, restitution: 0.1 };
+    e.interact = { kind: 'pickup', label: p.kind, reach: 2.2 };
+  } else if (def?.mount === 'floor' && p.kind !== 'rug') e.physics = { body: 'static', collider: 'auto' };
   if (p.light && withLight && Object.keys(p.light).length > 0) {
     const l = p.light as Partial<LightSpec>;
     // Light source sits just under the fitting.
@@ -758,6 +856,78 @@ export function placedEntity(p: Placed, id: string, parent: string, room: string
     e.state = { on: true };
   }
   return e;
+}
+
+/**
+ * The openable parts (drawers, cabinet doors, appliance doors) of a placed
+ * interactive piece as child entities of the piece: each has its own
+ * kinematic body and an `operable` behavior that slides or swings it when the
+ * player uses it. `frameYaw` is the yaw of the parent frame (the building's
+ * rotation) so slide offsets, given in the world frame, point out of the front.
+ */
+export function placedParts(p: Placed, id: string, room: string, level: number, frameYaw = 0): EntityInput[] {
+  const def = furnitureById(p.generator);
+  if (!def?.interactive || p.asset) return [];
+  const seed = (hashId(id) % 100000) + level;
+  const params: Record<string, Json> = { ...p.params, interactive: true };
+  const out: EntityInput[] = [];
+  for (const m of furnitureMovables(def, params, seed)) {
+    if (m.motion.type === 'toggle') {
+      // A tap: the part flips "<id>.on" and shows a stream of water between spout and basin.
+      const { from, to } = m.motion.stream;
+      const len = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      const mid: [number, number, number] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2];
+      const streamId = `${id}-${m.id}-water`;
+      out.push({
+        id: streamId,
+        parent: id,
+        name: 'Water',
+        transform: { position: [round(mid[0]), round(mid[1]), round(mid[2])] },
+        shape: { kind: 'primitive', primitive: 'cylinder', size: [0.014, round(len), 0.014] },
+        material: { finish: 'water', color: '#a9d8ee', opacity: 0.6, roughness: 0.05 },
+        visible: false,
+        castShadow: false,
+        arch: { role: 'part', kind: 'water', room, name: 'Water' },
+        tags: ['arch', 'part', 'water'],
+      });
+      out.push({
+        id: `${id}-${m.id}`,
+        parent: id,
+        name: m.name,
+        transform: { position: [round(m.center[0]), round(m.center[1]), round(m.center[2])] },
+        shape: { kind: 'procedural', generator: 'furn-part', params: { of: p.generator, part: m.id, p: params, size: m.size.map((n) => round(n, 10000)) }, seed },
+        physics: { body: 'kinematic', collider: 'auto' },
+        behaviors: [{ type: 'toggle', params: { show: [streamId], sound: 'click' } }],
+        state: { on: false },
+        interact: { kind: 'tap', label: 'tap', reach: 2.4 },
+        arch: { role: 'part', kind: 'tap', room, name: m.name },
+        tags: ['arch', 'part'],
+      });
+      continue;
+    }
+    const behavior: Record<string, Json> =
+      m.motion.type === 'slide'
+        ? (() => {
+            const w = rotateYaw(m.motion.offset[0], m.motion.offset[2], p.yaw + frameYaw);
+            return { trigger: 'use', motion: 'slide', slide: [round(w[0]), round(m.motion.offset[1]), round(w[1])], duration: 0.55 };
+          })()
+        : { trigger: 'use', motion: 'swing', swingAngle: m.motion.angle, hinge: m.motion.hinge, duration: 0.7 };
+    out.push({
+      id: `${id}-${m.id}`,
+      parent: id,
+      name: m.name,
+      transform: { position: [round(m.center[0]), round(m.center[1]), round(m.center[2])] },
+      shape: { kind: 'procedural', generator: 'furn-part', params: { of: p.generator, part: m.id, p: params, size: m.size.map((n) => round(n, 10000)) }, seed },
+      physics: { body: 'kinematic', collider: 'auto' },
+      behaviors: [{ type: 'operable', params: behavior }],
+      state: { open: false },
+      interact: { kind: m.kind === 'drawer' ? 'drawer' : /fridge|freezer/i.test(m.name) ? 'appliance' : 'cabinet', label: m.name.toLowerCase(), reach: 2.4 },
+      arch: { role: 'part', kind: m.kind, room, name: m.name },
+      tags: ['arch', 'part'],
+      castShadow: true,
+    });
+  }
+  return out;
 }
 
 /**

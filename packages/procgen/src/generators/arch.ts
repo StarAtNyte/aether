@@ -8,7 +8,7 @@
  * slabs use plan coordinates), so outputs are NOT recentred.
  */
 import type { Json, ParamSpec } from '@aether/core';
-import { FURNITURE, STRUCTURE_DESCRIPTIONS, STRUCTURE_IDS, buildFurniture, buildStructure, parseStructureParams, type ArchOutput, type StructureId } from '@aether/arch';
+import { FURNITURE, buildPart, parsePartParams, STRUCTURE_DESCRIPTIONS, STRUCTURE_IDS, buildFurniture, buildStructure, parseStructureParams, type ArchOutput, type StructureId } from '@aether/arch';
 import type { Bounds, BuiltinGenerator, ColliderDesc, GeneratorOutput, MeshPart } from '../types';
 
 function now(): number {
@@ -49,9 +49,10 @@ const STRUCTURE_HINTS: Record<StructureId, Record<string, ParamSpec>> = {
   'arch-ceiling': { cove: { type: 'number', default: 0, min: 0, max: 0.4, description: 'polygon [[x,z]…] required' } },
   'arch-roof': { width: { type: 'number', default: 10, min: 0.5, max: 200, description: 'footprint X' }, depth: { type: 'number', default: 8, min: 0.5, max: 200, description: 'footprint Z' }, shape: { type: 'enum', default: 'gable', options: ['flat', 'gable', 'hip', 'shed'], description: 'roof form' } },
   'arch-stair': { rise: { type: 'number', default: 3, min: 0.2, max: 30, description: 'floor-to-floor height' }, shape: { type: 'enum', default: 'straight', options: ['straight', 'l', 'u'], description: 'layout' } },
-  'arch-door': { width: { type: 'number', default: 0.9, min: 0.4, max: 3, description: 'leaf width' }, style: { type: 'enum', default: 'panel', options: ['panel', 'flush', 'glass', 'slab'], description: 'leaf style' } },
+  'arch-door': { width: { type: 'number', default: 0.9, min: 0.4, max: 4, description: 'leaf width' }, style: { type: 'enum', default: 'panel', options: ['panel', 'flush', 'glass', 'slab'], description: 'leaf style' } },
   'arch-frame': { width: { type: 'number', default: 0.9, min: 0.4, max: 12, description: 'opening width' }, height: { type: 'number', default: 2.1, min: 0.4, max: 30, description: 'opening height' } },
   'arch-window': { width: { type: 'number', default: 1.2, min: 0.3, max: 12, description: 'width' }, height: { type: 'number', default: 1.4, min: 0.3, max: 10, description: 'height' } },
+  'arch-sash': { width: { type: 'number', default: 1, min: 0.2, max: 3, description: 'casement width' }, height: { type: 'number', default: 1.2, min: 0.2, max: 3, description: 'casement height' } },
   'arch-railing': { height: { type: 'number', default: 1.05, min: 0.3, max: 2, description: 'points [[x,z]…] required' } },
   'arch-column': { size: { type: 'number', default: 0.3, min: 0.05, max: 3, description: 'diameter / side' }, height: { type: 'number', default: 2.8, min: 0.2, max: 30, description: 'height' } },
   'arch-basin': { width: { type: 'number', default: 8, min: 0.5, max: 60, description: 'pool X' }, length: { type: 'number', default: 4, min: 0.5, max: 60, description: 'pool Z' } },
@@ -85,3 +86,19 @@ export const ARCH_FURNITURE_GENERATORS: readonly BuiltinGenerator[] = FURNITURE.
     return archToOutput(buildFurniture(def, params, api.seed), now() - t0);
   },
 }));
+
+/** A drawer, cabinet door or appliance door of an interactive piece (own entity so it can open). */
+export const FURN_PART_GENERATOR: BuiltinGenerator = {
+  id: 'furn-part',
+  description: 'One openable part (drawer, cabinet door, fridge door) of an interactive furniture piece; params: of (furn-* id), part (e.g. "drawer-0"), p (the piece params), size.',
+  category: 'interior',
+  params: { part: { type: 'enum', default: 'drawer-0', options: ['drawer-0'], description: 'part id within the piece (see the piece entity children)' } },
+  resolve: (params) => {
+    const r = parsePartParams(params);
+    return { of: r.of, part: r.part, p: r.p as Json, size: r.size };
+  },
+  generate(params, api) {
+    const t0 = now();
+    return archToOutput(buildPart(params, api.seed), now() - t0);
+  },
+};

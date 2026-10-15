@@ -79,6 +79,8 @@ export class CameraRig {
   private focusDuration = 0.9;
   /** First-person pitch in radians (clamped ±85°). */
   pitch = 0;
+  /** Eye height above the player's feet in first person (lowered while sitting). */
+  eyeHeight = EYE_HEIGHT;
   /**
    * Lowest camera height in orbit mode (ground + clearance), or -Infinity
    * when the world has no ground. Keeps orbiting and fly-tos above ground.
@@ -241,11 +243,11 @@ export class CameraRig {
     const yaw = this.follow ? this.follow(_target) : Number.NaN;
     if (!Number.isFinite(yaw)) return false;
     if (this.mode === 'firstPerson') {
-      this.camera.position.set(_target.x, _target.y + EYE_HEIGHT, _target.z);
+      this.camera.position.set(_target.x, _target.y + this.eyeHeight, _target.z);
       this.pitch = Math.max(-1.48, Math.min(1.48, this.pitch));
       _euler.set(this.pitch, yaw, 0, 'YXZ');
       this.camera.quaternion.setFromEuler(_euler);
-      this.look.set(_target.x - Math.sin(yaw) * 4, _target.y + EYE_HEIGHT, _target.z - Math.cos(yaw) * 4);
+      this.look.set(_target.x - Math.sin(yaw) * 4, _target.y + this.eyeHeight, _target.z - Math.cos(yaw) * 4);
       return true;
     }
     // Follow: chase from behind the target's heading.

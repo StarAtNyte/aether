@@ -788,3 +788,11 @@ kbd {
   padding: 4px 12px;
   font-size: 13px;
 }
+
+/* Crosshair and use prompt ("E · Open drawer"). */
+.interact { position: absolute; left: 50%; top: 50%; z-index: var(--z-overlay); display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); pointer-events: none; }
+.interact__dot { width: 6px; height: 6px; border-radius: 50%; background: rgb(255 255 255 / 0.75); box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.45); transition: transform 120ms ease, background 120ms ease; }
+.interact__dot.is-active { background: #fff; transform: scale(1.8); }
+.interact__prompt { position: absolute; top: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--overlay-border); border-radius: 10px; background: var(--glass-strong); color: var(--text); font-size: 13px; white-space: nowrap; }
+.interact__prompt kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--edge); border-radius: 4px; font: inherit; font-weight: 600; text-align: center; }
+.interact__hint { margin-left: 6px; color: var(--text-2); }

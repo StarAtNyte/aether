@@ -1646,3 +1646,38 @@ photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, o
   stairs are not parts yet); the part library decides what a piece can look like (a patterned duvet is a colour);
   one photo cannot give depth, so room size and the camera are always assumptions; walls of one room share one
   colour in the shell.
+
+
+## 25. Architecture realism and interactive rooms
+
+What a generated building is made of, and what you can do in it. (Contracts: `docs/CONTRACTS.md`, "Architecture realism and interactive rooms".)
+
+**Surfaces are fields, not baked colours.** A room has `finish` (every wall face), `walls` (one wall by the compass side it is on seen from inside:
+"the bedroom's back wall") and `dado` (a panelled lower half with a chair rail); the finish library gained five wallpapers (plain, stripe, floral,
+damask, geometric), shaker panelling, timber slats and foliage, all synthesised procedurally and tintable. Treated rooms keep their walls as pieces
+of their own so a papered wall never runs on into the next room. Every furniture kind publishes named material slots (`FURNITURE_SLOTS`), so
+"dark green velvet sofa" resolves to `sofa.upholstery` and "brass legs" to `sofa.legs` and becomes a minimal parameter patch.
+
+**Detail that reads as real.** Recessed downlights (trim ring, flush lens, switched with the room's lights), cornice and cove, skirting, panelled dado
+with rails, windows with an opening casement, wide sliding patio doors, drawers with a tray, fridge doors, a kitchen tap with a stream of water, books
+and mugs, olive / cypress / umbrella-pine trees, a mediterranean style kit (limewash, terracotta tile, oak and wrought iron).
+
+**Everything that should open does, and it is physics.** Drawers slide on their rail, cabinet and fridge doors swing on their hinges, window casements
+swing inward, taps run, and swing doors are dynamic leaves on revolute joints with limits and a spring motor (the player's capsule pushes a door;
+a door stops against the player instead of passing through). Each is its own entity with an `interact` verb; `operable` / `toggle` behaviors drive
+them, headless verification drives the same joints, and the playtest bot plans through doors as before. In play mode a crosshair ray from the eye
+finds the piece (through overlapping colliders), the HUD shows "E · Open drawer", E acts on exactly that piece, a mug can be picked up, carried in
+front of you, thrown with a click and lands with its own mass, and a sofa can be sat on (capsule off, eye down, walk to stand).
+
+**Plan to 3D.** The Architecture bar's Reveal draws the plan in ink on paper (walls, openings, furniture outlines, room names and areas), then the
+walls rise out of it as an animated section cut while the camera descends from overhead. The pure timeline and the ink strokes live in
+`apps/studio/src/lib/reveal.ts`; `ArchController.scrubReveal(t)` shows any single frame (stills, tests).
+
+**Flagship.** *Casa del Patio*, a courtyard house in the hills above Sintra: seven rooms ring a stone patio with a lap pool and a pergola, sliding glass
+from every room, a papered library with a panelled dado, a panelled living room, a damask-papered master bedroom, golden hour, an olive grove, cypress
+drive and the serra behind. Flat roofs stop at the courtyard.
+
+**Known limits.** The studio render shows blotchy light patches on ceilings when a low sun enters a courtyard (a bounce / shadow-map artefact of the
+renderer, not of the geometry); terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
+cards; seats are sit-and-stand only (no pose animation for the body in third person); physical doors are not pushed by thrown objects hard enough
+to open them (the motor wins over a book).

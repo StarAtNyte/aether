@@ -113,6 +113,11 @@ export class FakeHost implements LogicHost {
     this.resets++;
     this.rec('reset');
   }
+  /** Joint servo targets requested by physical doors and drawers. */
+  readonly driven: Array<{ id: EntityId; target: number }> = [];
+  driveJoint(id: EntityId, target: number): void {
+    this.driven.push({ id, target });
+  }
   playerId(): EntityId | undefined {
     return this.player;
   }

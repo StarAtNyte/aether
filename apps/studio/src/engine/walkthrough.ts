@@ -49,6 +49,8 @@ export interface WalkLight {
   intensity: number;
   /** The fitting has a `lit` param (its diffuser glows when on). */
   glows: boolean;
+  /** No light source of its own (a ceiling of recessed downlights): only the glow switches. */
+  noLight?: boolean;
 }
 
 /** Interactive pieces of a world. */
@@ -69,7 +71,8 @@ export function walkIndex(world: WorldDoc): WalkIndex {
     const e = world.entities[id];
     const a = e?.arch;
     if (!e || !a || n >= MAX_TARGETS) continue;
-    const relevant = a.role === 'switch' || a.role === 'light' || (a.variants !== undefined && a.variants.length > 0);
+    const downlit = a.role === 'ceiling' && e.shape.kind === 'procedural' && Array.isArray(e.shape.params['downlights']) && (e.shape.params['downlights'] as unknown[]).length > 0;
+    const relevant = downlit || a.role === 'switch' || a.role === 'light' || (a.variants !== undefined && a.variants.length > 0);
     if (!relevant) continue;
     const t = worldTransform(world, id);
     if (!t) continue;
@@ -80,6 +83,7 @@ export function walkIndex(world: WorldDoc): WalkIndex {
       const [qx, qy, qz, qw] = t.quaternion;
       target.facing = [2 * (qx * qz + qw * qy), 1 - 2 * (qx * qx + qy * qy)];
     }
+    if (downlit) out.lights.push({ id, room: a.room ?? null, intensity: 0, glows: true, noLight: true });
     if (a.role === 'switch') out.switches.push(target);
     if (a.role === 'light' && LAMP_KINDS.has(a.kind ?? '')) out.lamps.push(target);
     if (e.light) out.lights.push({ id, room: a.room ?? null, intensity: e.light.intensity, glows: e.shape.kind === 'procedural' && e.shape.generator.startsWith('furn-') });
@@ -245,7 +249,7 @@ export class Walkthrough {
       const l = this.index.lights.find((x) => x.id === id);
       if (!l || this.lightOn.get(id) === on) continue;
       this.lightOn.set(id, on);
-      r.setEntityProperty(id, 'light.intensity', on ? l.intensity : 0);
+      if (!l.noLight) r.setEntityProperty(id, 'light.intensity', on ? l.intensity : 0);
       if (l.glows) r.setEntityProperty(id, 'shape.params.lit', on);
     }
   }

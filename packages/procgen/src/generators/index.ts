@@ -11,7 +11,7 @@ import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { SCULPTURE_GENERATORS } from './sculpture';
-import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS } from './arch';
+import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS, FURN_PART_GENERATOR } from './arch';
 
 const ALL: readonly BuiltinGenerator[] = [
   ...TERRAIN_GENERATORS,
@@ -31,7 +31,7 @@ const ALL: readonly BuiltinGenerator[] = [
  * as free-form shapes, and listing them would add ~2k tokens to every
  * system prompt. Their geometry is in the entity frame (not recentred).
  */
-const ARCH: readonly BuiltinGenerator[] = [...ARCH_STRUCTURE_GENERATORS, ...ARCH_FURNITURE_GENERATORS];
+const ARCH: readonly BuiltinGenerator[] = [...ARCH_STRUCTURE_GENERATORS, ...ARCH_FURNITURE_GENERATORS, FURN_PART_GENERATOR];
 
 /** Ids of the architecture generators (reserved: custom generators may not shadow them). */
 export const ARCH_GENERATOR_IDS: ReadonlySet<string> = new Set(ARCH.map((g) => g.id));

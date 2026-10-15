@@ -619,6 +619,274 @@ const ripples: Pattern = (f, random) => {
   }
 };
 
+/**
+ * Foliage: about `count` small overlapping leaves stamped at random angles (wrapped, so the tile repeats), drawn in
+ * random layer order; gaps between leaves are dark, a pale midrib runs along each, and leaves differ in tone.
+ */
+function leaves(count: number): Pattern {
+  return (f, _random, seed) => {
+    const n = f.n;
+    const layer = new Float32Array(n * n).fill(-1);
+    for (let i = 0; i < n * n; i++) {
+      f.accent[i] = 0.1;
+      f.shade[i] = 0.5;
+      f.height[i] = 0.05;
+      f.rough[i] = 1;
+      f.ao[i] = 0.28;
+    }
+    const L = n * 0.085;
+    const W = n * 0.03;
+    for (let k = 0; k < count; k++) {
+      const cx = cellHash(seed, k, 1) * n;
+      const cy = cellHash(seed, k, 2) * n;
+      const ang = cellHash(seed, k, 3) * Math.PI;
+      const z = cellHash(seed, k, 4);
+      const tone = cellHash(seed, k, 5);
+      const scale = 0.75 + 0.5 * cellHash(seed, k, 6);
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      const r = Math.ceil(L * scale) + 1;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const u = (dx * ca + dy * sa) / (L * scale);
+          const v = (-dx * sa + dy * ca) / (W * scale);
+          // Leaf outline: widest a third along, pointed at both ends.
+          const t = (u + 1) / 2;
+          if (t < 0 || t > 1) continue;
+          const half = Math.sin(Math.PI * Math.pow(t, 0.8));
+          if (Math.abs(v) > half) continue;
+          const x = (((Math.round(cx) + dx) % n) + n) % n;
+          const y = (((Math.round(cy) + dy) % n) + n) % n;
+          const idx = y * n + x;
+          if (z < (layer[idx] as number)) continue;
+          layer[idx] = z;
+          const rib = 1 - clamp01(Math.abs(v) / 0.16);
+          const edge = 1 - Math.abs(v) / Math.max(0.05, half);
+          f.accent[idx] = clamp01(0.25 + tone * 0.55 + rib * 0.35);
+          f.shade[idx] = 0.72 + z * 0.4 + edge * 0.1;
+          f.height[idx] = 0.35 + z * 0.55 + edge * 0.1;
+          f.rough[idx] = 0.9;
+          f.ao[idx] = 0.45 + z * 0.55;
+        }
+      }
+    }
+  };
+}
+
+// --- wall coverings ----------------------------------------------------------------
+
+/** Signed distance between two tile coordinates in [0, 1) with wrap-around, in tile units (-0.5..0.5). */
+function wrapDelta(a: number, b: number): number {
+  const d = a - b;
+  return d - Math.round(d);
+}
+
+/** Anti-aliased step: 0 below `edge - w`, 1 above `edge + w`. */
+function aaStep(x: number, edge: number, w: number): number {
+  return smooth(clamp01((x - edge + w) / (2 * w)));
+}
+
+/** Fine paper fibre: horizontal and vertical flecks that every wallpaper carries. */
+function paperFibre(f: Fields, random: () => number, amount: number): Float32Array {
+  const n = f.n;
+  const fibre = fbmField(random, n, 64, 8, 2);
+  const tooth = fbmField(random, n, 128, 128, 1);
+  for (let i = 0; i < n * n; i++) {
+    const v = (fibre[i] as number) - 0.5;
+    const t = (tooth[i] as number) - 0.5;
+    f.shade[i] = 1 + v * amount * 0.5 + t * amount * 0.25;
+    f.height[i] = 0.5 + v * 0.1 + t * 0.12;
+    f.rough[i] = 1 + t * 0.12;
+    f.ao[i] = 1;
+  }
+  return fibre;
+}
+
+/** Plain textured paper (lining paper, grasscloth): fibres only. */
+const wallpaperPlain: Pattern = (f, random) => {
+  const n = f.n;
+  const weave = fbmField(random, n, 4, 96, 2);
+  paperFibre(f, random, 0.16);
+  for (let i = 0; i < n * n; i++) {
+    const w = (weave[i] as number) - 0.5;
+    f.accent[i] = clamp01(0.45 + w * 0.9);
+    f.shade[i] = (f.shade[i] as number) * (1 + w * 0.06);
+    f.height[i] = (f.height[i] as number) + w * 0.25;
+  }
+};
+
+/** Regency stripes: `count` broad bands with a hairline each, on a paper ground. */
+function wallpaperStripe(count: number): Pattern {
+  return (f, random) => {
+    const n = f.n;
+    paperFibre(f, random, 0.1);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const k = y * n + x;
+        const u = (((x / n) * count) % 1 + 1) % 1;
+        const off = Math.abs(wrapDelta(u, 0.5));
+        const motif = 1 - aaStep(off, 0.3, 0.02);
+        const edgeLine = 1 - aaStep(Math.abs(off - 0.38), 0.02, 0.008);
+        f.accent[k] = clamp01(motif * 0.9 + edgeLine * 0.6);
+        f.height[k] = (f.height[k] as number) + (motif > 0.5 ? 0.12 : 0);
+      }
+    }
+  };
+}
+
+/**
+ * Small-scale floral in half-drop: a five-petal flower with a centre on a stem
+ * with two leaves, repeated on a 2×2 lattice per tile.
+ */
+const wallpaperFloral: Pattern = (f, random, seed) => {
+  const n = f.n;
+  paperFibre(f, random, 0.1);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const u = x / n;
+      const v = y / n;
+      let motif = 0;
+      let centre = 0;
+      let leaf = 0;
+      // Flowers sit at (0.25, 0.25) and (0.75, 0.75); small sprigs at the other two lattice points.
+      for (const [cx, cy] of [[0.25, 0.25], [0.75, 0.75]] as const) {
+        const dx = wrapDelta(u, cx);
+        const dy = wrapDelta(v, cy);
+        const r = Math.sqrt(dx * dx + dy * dy);
+        const th = Math.atan2(dy, dx);
+        const petal = 0.135 * (0.55 + 0.45 * Math.abs(Math.cos(2.5 * th + (cellHash(seed, Math.round(cx * 4), 1) - 0.5))));
+        motif = Math.max(motif, 1 - aaStep(r, petal, 0.006));
+        centre = Math.max(centre, 1 - aaStep(r, 0.035, 0.006));
+      }
+      for (const [cx, cy] of [[0.75, 0.25], [0.25, 0.75]] as const) {
+        // A pair of leaves: two ellipses tilted ±35°.
+        for (const tilt of [-0.6, 0.6]) {
+          const dx = wrapDelta(u, cx);
+          const dy = wrapDelta(v, cy);
+          const c = Math.cos(tilt);
+          const s = Math.sin(tilt);
+          const lx = (dx * c + dy * s) / 0.085;
+          const ly = (-dx * s + dy * c) / 0.032;
+          leaf = Math.max(leaf, 1 - aaStep(lx * lx + ly * ly, 1, 0.12));
+        }
+      }
+      const ink = Math.max(motif, leaf);
+      f.accent[k] = clamp01(ink * (0.78 - centre * 0.5));
+      f.height[k] = (f.height[k] as number) + ink * 0.1 - centre * 0.05;
+      f.shade[k] = (f.shade[k] as number) * (1 - centre * 0.08);
+    }
+  }
+};
+
+/** Damask: mirrored ogee medallions on a diamond lattice, drawn with lobed outlines. */
+const wallpaperDamask: Pattern = (f, random) => {
+  const n = f.n;
+  paperFibre(f, random, 0.08);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const u = x / n;
+      const v = y / n;
+      let ink = 0;
+      for (const [cx, cy] of [[0.25, 0.25], [0.75, 0.75]] as const) {
+        const dx = Math.abs(wrapDelta(u, cx)) * 2;
+        const dy = wrapDelta(v, cy) * 2;
+        // Ogee outline: |x| <= profile(y) where the profile swells in the middle and pinches to a point.
+        const t = Math.abs(dy);
+        const profile = 0.62 * Math.sin(Math.PI * Math.min(1, t * 1.05)) ** 0.8 * (1 + 0.28 * Math.cos(t * Math.PI * 3));
+        const inside = 1 - aaStep(dx, profile, 0.03);
+        const ring = (1 - aaStep(Math.abs(dx - profile * 0.72), 0.05, 0.015)) * (t < 0.95 ? 1 : 0);
+        const core = 1 - aaStep(Math.hypot(dx * 1.2, dy * 0.9), 0.17, 0.02);
+        const lace = 0.5 + 0.5 * Math.sin((dx * 22 + t * 14));
+        ink = Math.max(ink, ring * 0.9, core * 0.95, inside * (lace > 0.72 ? 0.55 : 0) * (t < 0.8 ? 1 : 0));
+      }
+      f.accent[k] = clamp01(ink * 0.85);
+      f.height[k] = (f.height[k] as number) + ink * 0.14;
+      f.shade[k] = (f.shade[k] as number) * (1 + ink * 0.03);
+    }
+  }
+};
+
+/** Geometric scallops (art-deco fans): overlapping arcs in half-drop. */
+const wallpaperGeometric: Pattern = (f, random) => {
+  const n = f.n;
+  paperFibre(f, random, 0.08);
+  const cells = 4;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const gu = (x / n) * cells;
+      const gv = (y / n) * cells;
+      let best = 0;
+      // Fan centred on the lower edge of every cell; odd rows shift by half a cell.
+      for (let dj = 0; dj <= 1; dj++) {
+        const row = Math.floor(gv) + dj;
+        const shift = row % 2 === 0 ? 0 : 0.5;
+        const cu = Math.round(gu - shift) + shift;
+        const dx = gu - cu;
+        const dy = gv - row;
+        const r = Math.hypot(dx, dy) * 2;
+        for (const radius of [0.5, 0.75, 1.0]) {
+          const line = 1 - aaStep(Math.abs(r - radius), 0.045, 0.012);
+          best = Math.max(best, line * (dy <= 0 ? 1 : 0));
+        }
+      }
+      f.accent[k] = clamp01(best * 0.9);
+      f.height[k] = (f.height[k] as number) + best * 0.14;
+    }
+  }
+};
+
+/** Shaker wall panelling: recessed rectangular fields with bevelled rails, `cells` fields per tile across. */
+function panelling(cells: number): Pattern {
+  return (f, random) => {
+    const n = f.n;
+    const fine = fbmField(random, n, 32, 32, 2);
+    const pw = n / cells;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const k = y * n + x;
+        const ix = x % pw;
+        const iy = y % pw;
+        const edge = Math.min(ix, pw - ix, iy, pw - iy) / pw;
+        // Rail (flat frame) 0..0.14, bevel 0.14..0.2, recessed field after.
+        const bevel = smooth(clamp01((edge - 0.14) / 0.06));
+        f.height[k] = 0.9 - 0.5 * bevel;
+        f.accent[k] = bevel * 0.0;
+        f.shade[k] = 1 - 0.06 * bevel + ((fine[k] as number) - 0.5) * 0.02;
+        f.rough[k] = 1;
+        f.ao[k] = 0.7 + 0.3 * (1 - bevel * (edge < 0.2 ? 1 : 0.4)) + 0.0;
+        if (edge >= 0.2) f.ao[k] = 0.88;
+      }
+    }
+  };
+}
+
+/** Vertical timber slats on a dark felt backing. */
+const woodSlats: Pattern = (f, random, seed) => {
+  const n = f.n;
+  const grain = fbmField(random, n, 2, 64, 3);
+  const slats = 8;
+  const sw = n / slats;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const s = Math.floor(x / sw);
+      const ix = x - s * sw;
+      const edge = Math.min(ix, sw - ix);
+      const gap = 1 - joint(edge, sw * 0.14);
+      const th = cellHash(seed, s, 3);
+      const g = grain[k] as number;
+      f.accent[k] = clamp01(gap * 0.95 + (1 - gap) * (0.1 + g * 0.5 + th * 0.2));
+      f.shade[k] = gap > 0.5 ? 0.55 : 0.88 + th * 0.2;
+      f.height[k] = 0.2 + 0.8 * (1 - gap);
+      f.rough[k] = 0.95 + (1 - gap) * 0.1;
+      f.ao[k] = 0.35 + 0.65 * (1 - gap);
+    }
+  }
+};
+
 /** Pattern of every texture recipe. */
 const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze({
   planks: boards(12, 0.9, 0.85, 0.8),
@@ -646,6 +914,14 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   turf,
   pebbles: pebbles(22),
   ripples,
+  leaves: leaves(520),
+  'paper-plain': wallpaperPlain,
+  'paper-stripe': wallpaperStripe(4),
+  'paper-floral': wallpaperFloral,
+  'paper-damask': wallpaperDamask,
+  'paper-geometric': wallpaperGeometric,
+  'panel-shaker': panelling(2),
+  slats: woodSlats,
 });
 
 function seedOf(id: string): number {

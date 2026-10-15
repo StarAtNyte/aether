@@ -174,6 +174,17 @@ explicit state, so the AI can be held to account:
   you can draw rooms, doors and windows on it. Press Walk for a first-person
   walkthrough: E opens doors and flips light switches, 1–4 change the time of
   day, L switches every light, R swaps finishes, P is photo mode.
+  **Rooms you can touch and dress by prompt.** Walls take wallpaper (stripe,
+  floral, damask, geometric), panelling or slats per room or per wall
+  ("floral wallpaper on the bedroom's back wall"), with wainscot and chair
+  rail; every furniture kind has named material slots ("dark green velvet
+  upholstery"). In play, aim and press E: drawers slide, cabinet and fridge
+  doors and window casements swing, taps run, hinged doors are real physics
+  joints (the solver stops them against you), a mug can be picked up,
+  carried and thrown, and a sofa can be sat on. The Architecture bar's
+  **Reveal** draws the floor plan in ink on paper and raises the walls out
+  of it. *Casa del Patio*, a courtyard house in the hills above Sintra, is
+  the flagship (`docs/screenshots/archreal/`).
 - **Block worlds with a full game kit.** Ask for "a minecraft-like
   survival world" or "a village of block houses" and the world gets endless,
   seeded voxel terrain (`@aether/voxel`): biomes, caves, ores, trees, water

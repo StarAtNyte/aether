@@ -698,5 +698,26 @@ export function furnishRoom(ctx: RoomContext, items: readonly PlanItem[], auto: 
         break;
     }
   }
+  if (auto) props(L);
   return { placed: L.placed, notes: L.notes };
+}
+
+/**
+ * Things to pick up, carry and throw: a book and a mug on the coffee table, a book on a nightstand, a mug on
+ * the desk and on the kitchen island. Added after the layout so the ids of every other piece stay as they were.
+ */
+function props(L: RoomLayout): void {
+  const pal = L.ctx.palette;
+  const first = (kind: string): Placed | undefined => L.placed.find((p) => p.kind === kind && !p.asset);
+  const coffee = first('coffee-table');
+  if (coffee) {
+    L.onTop('book', { color: L.ctx.seed % 2 === 0 ? '#2f4858' : '#7a3b2e' }, coffee, -coffee.size[0] * 0.22, 0.04, 'Book');
+    L.onTop('mug', { color: pal.linen }, coffee, coffee.size[0] * 0.2, -0.06, 'Mug');
+  }
+  const nightstand = first('nightstand');
+  if (nightstand) L.onTop('book', { color: '#556b4f' }, nightstand, -0.1, 0.06, 'Book');
+  const desk = first('desk');
+  if (desk) L.onTop('mug', { color: '#d9d2c3' }, desk, -desk.size[0] / 2 + 0.25, 0.05, 'Mug');
+  const island = first('island');
+  if (island) L.onTop('mug', { color: pal.linen }, island, island.size[0] * 0.3, -0.25, 'Mug');
 }

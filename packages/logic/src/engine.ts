@@ -77,6 +77,7 @@ export interface EngineOptions {
 export type GameStatus = 'playing' | 'won' | 'lost';
 
 const EMPTY_STATE: Readonly<Record<string, Json>> = Object.freeze({});
+const EMPTY_USED: ReadonlySet<string> = new Set<string>();
 const EMPTY_CONTACTS: readonly ContactInfo[] = Object.freeze([]) as readonly ContactInfo[];
 
 function clampAxis(v: unknown): number {
@@ -122,6 +123,8 @@ export class Engine implements BehaviorEnv, RuleHost {
   private disposed = false;
   private resetPending = false;
   private clicks: EntityId[] = [];
+  private uses: EntityId[] = [];
+  private usedNow: ReadonlySet<EntityId> = new Set<EntityId>();
   private externalEvents: string[] = [];
   private readonly contacts = new Map<EntityId, ContactInfo[]>();
   private readonly active = new Map<EntityId, Set<EntityId>>();
@@ -222,6 +225,16 @@ export class Engine implements BehaviorEnv, RuleHost {
     if (this.clicks.length < MAX_PENDING_INPUTS) this.clicks.push(id);
   }
 
+  /** Queue a use (aim + use key) of an entity; its `operable` behaviors react at the next tick. */
+  use(id: EntityId): void {
+    if (typeof id !== 'string' || id.length === 0 || id.length > 64) return;
+    if (this.uses.length < MAX_PENDING_INPUTS) this.uses.push(id);
+  }
+
+  get used(): ReadonlySet<EntityId> {
+    return this.usedNow;
+  }
+
   /** Queue an external event; processed at the next tick. */
   emitExternal(event: string): void {
     if (typeof event !== 'string' || event.length === 0 || event.length > 100) return;
@@ -264,6 +277,8 @@ export class Engine implements BehaviorEnv, RuleHost {
     this.guard('collisions', () => this.rules.collisions(events));
     this.guard('zones', () => this.rules.zones());
     this.guard('falls', () => this.rules.falls());
+    this.usedNow = this.uses.length > 0 ? new Set(this.uses) : EMPTY_USED;
+    this.uses = [];
     this.updateBehaviors(step);
     this.guard('state rules', () => this.rules.states());
     this.guard('poses', () => this.flushPoses());
@@ -480,6 +495,8 @@ export class Engine implements BehaviorEnv, RuleHost {
     this.liveSpawned = 0;
     this.respawnPoint = undefined;
     this.clicks = [];
+    this.uses = [];
+    this.usedNow = EMPTY_USED;
     this.externalEvents = [];
     this._time = 0;
     this._status = 'playing';

@@ -2578,3 +2578,112 @@ a structured description and derives tool calls from it.
 - The agent measures framing and pixel similarity each round; the round quality is 0.5 pass rate + 0.5 measured agreement
   (0.6 framing, 0.4 similarity, whichever exist). `RunOptions.intent === 'refine'` builds the room beside the existing world,
   any other intent replaces it (one undo step).
+
+
+## Architecture realism and interactive rooms (`archreal`)
+
+All additive: older worlds, plans and ops keep working unchanged.
+
+### World IR
+
+```ts
+MaterialFinish += wallpaper wallpaper-stripe wallpaper-floral wallpaper-damask wallpaper-geometric   // tintable papers (tile 0.64 m)
+                  panelling (shaker wainscot, tintable)  wood-slats (timber on dark felt)  foliage (overlapping leaves, tintable)
+Entity.interact?: InteractSpec = { kind: door | drawer | cabinet | window | appliance | switch | tap | pickup | seat, label? (≤ 40), reach? 0.4..6 = 2.4 }
+ArchRole += part                      // a drawer, cabinet door, appliance door, tap or window casement: its own entity, child of its piece
+BuiltinBehavior += operable, toggle
+```
+
+- `operable` is the `door` mechanics under another name (the playtest bot treats `door` behaviors as obstacles to open,
+  furniture parts are not): `trigger` `use` (default) | `state` | `proximity`; `motion` `slide` (`slide: [x,y,z]` world
+  offset) | `swing` (`swingAngle`, `hinge` left/right) | `joint`. Writes `<id>.open`.
+- `toggle`: on/off by use, writes `<id>.on`; `show: ids[]` are visible only while on (a tap's water), `light: ids[]` follow it.
+- `door` gains `trigger: 'use'`, `motion: 'joint'` and `jointOpen` (degrees or metres): the entity is a dynamic body with its
+  own revolute / prismatic `joint`; the behavior servos the joint to `jointOpen` / 0 through `LogicHost.driveJoint`.
+  A `door` with trigger `key` also opens when it is the aimed `used` entity.
+- `LogicHost.driveJoint?(id, target)`, `BehaviorEnv.used: ReadonlySet<EntityId>`, `LogicRuntime.use(id)` (queued like `click`).
+- `PhysicsWorld.driveJoint(id, target, stiffness = 60, damping = 12)`: motor servo of a revolute (degrees) or prismatic
+  (metres) joint, false for entities without one. `PhysicsWorld.raycastAll(origin, dir, maxDist, limit = 8, excludeId?)`:
+  every solid hit nearest first (overlapping colliders all report). `CharacterController.setEnabled(on)`.
+- `WorldRenderer.setLookPitch(rad)`, `setEyeHeight(m)`; `InputController.pitchDeg` (mouse look up and down in first person).
+- Studio: `Simulation.placePlayer(feet, yawDeg, pitchDeg)`, `sitOn(id)`, `standUp()`, `isSitting`,
+  `SimulationListener.onInteract(prompt | null)`, `useUI().interact`.
+
+### `@aether/arch`
+
+```ts
+WallDado = { height 0.2..2.4 = 1, material = panelling, rail = true }          // lower covering with a chair rail
+WallParams += dadoA?: WallDado, dadoB?: WallDado                                 // splits the face of a wall side at the dado height
+PlanRoom  += finish?: MaterialSpec                                               // every interior wall face of the room (wallpaper, panelling, brick, tile…)
+             walls?: { north|south|east|west: MaterialSpec }                     // per wall, by the compass side it is on seen from INSIDE the room
+             dado?: WallDado
+// precedence per wall face: walls[compass] > finish (tinted by wallColor when it has no colour) > the type default (bathroom tile…)
+// rooms with finish / walls / dado keep their walls as pieces of their own (no merging with collinear neighbours), so a papered
+// back wall never spills onto the next room; the other side of a shared wall belongs to the room on that side.
+ArchOp += set_wall { building, room, wall: north|south|east|west|all = all, material?, dado?: WallDado | null, clear = false }
+          // refused with `empty_wall_op` (and a hint) when it carries nothing; `set_material walls` with a non-paint finish sets `finish`
+DesignRoom += finish, walls, dado       // the AI-first design_plan carries wall coverings into the plan
+PlanDoor += physical?: boolean; BuildingPlan += physicalDoors = true
+ArchStyle += mediterranean
+CeilingParams += downlights: [x,z][] (≤ 24), lit = true     // recessed cans: trim ring + emissive lens (no light source of their own)
+downlightGrid(poly, type, style) → P2[]                      // ~1.9 m grid, 0.7 m off the walls, ≤ 12, none for terraces / industrial / tiny rooms
+WindowParams += sash = false;  SashParams = { width, height, frame, glass }   // generators arch-window / arch-sash
+sashHeight(windowHeight)
+```
+
+- Swing doors are physical by default: the leaf is a `dynamic` body (18 kg) on a `revolute` joint to the world (axis up at
+  the hinge edge, limits `[min(0, angle), max(0, angle)]`, spring motor to 0), a `door` behavior with `motion: 'joint'`,
+  `jointOpen = swingAngle`. The playtest bot's `openDoorPose` treats joint doors like swing doors. `physicalDoors: false`
+  (or `physical: false` on a door) keeps the kinematic leaf.
+- Casement windows (width 0.6..1.8 m, plain casement style, not frosted) compile with `sash: true` and a child entity
+  `<window id>-sash` (`arch-sash`, kinematic, `operable` swing about the left edge, 78° inward, `interact: window`).
+- Interactive furniture: `FurnitureDef.build(p, seed, sink?: MovableSink)`, `FurnitureDef.interactive`,
+  `emitFront(sink, statics, spec)`, `drawerBox(...)`, `MovableSpec { id, name, kind: drawer | door | tap, center, size, motion: slide | swing | toggle, parts }`,
+  `furnitureMovables(def, params, seed)`, `buildFurniturePart(def, params, seed, partId)` (geometry re-centred on the part, one box
+  collider around everything it draws, so the inside of an open drawer can be aimed at), `placedParts(...)`.
+  Pieces with an `interactive` param (kitchen, island, fridge, wardrobe, sideboard, nightstand) compile with `interactive: true`:
+  the carcass has no fronts and every drawer / door / the kitchen tap is a child entity of the piece with generator
+  `furn-part` (`params: { of, part, p (the piece params), size }`, validated by `parsePartParams`), a kinematic body,
+  an `operable` (`toggle` for taps, with a `<id>-water` stream that shows while on) and an `interact`.
+  Door leaves of buildings carry `interact: door`.
+- Portable props (`FurnitureDef.portable = { mass }`): `mug`, `book` compile as dynamic bodies with `interact: pickup`; they are
+  placed on coffee tables, desks, nightstands and the kitchen island. Seats (`sofa armchair chair office-chair bar-stool`) get `interact: seat`.
+- Material slots: `FURNITURE_SLOTS[kind][slot] = { finish?: param, color?: param, aliases }`, `slotNames(kind)`, `findSlot(kind, word)`,
+  `slotPatch(kind, slot, { finish?, color? }) → { params, dropped }` (the minimal param override for "dark green velvet upholstery";
+  a finish or colour the slot cannot take is reported in `dropped`). Slots: sofa/armchair `upholstery cushions legs`, chair `frame seat`,
+  table `top legs`, kitchen `worktop fronts splashback`, bed `frame headboard linen throw`, rug `field border`, plant `pot`, mug `glaze`, tree `foliage`…
+- `furn-tree` (`species` olive | cypress | umbrella-pine, `height`, `leaf`): barked trunk and limbs with a crown of noise-displaced foliage
+  masses (olive, pine) or a fluted spindle (cypress), `foliage` finish; `foliageMass`, ≤ 60 000 triangles.
+- Roof plates stop at courtyards: loops of the outline that lie inside another loop become holes of the roof slab (with a parapet round
+  them); wide sliding leaves up to 4 m are valid (`DoorParams.width` ≤ 4).
+
+### Agent
+
+`build_architecture` ops include `set_wall`; `design_plan` rooms accept `finish`, `walls`, `dado`; the style list includes `mediterranean`
+(the offline planner understands "courtyard", "mediterranean", "sintra"…). Flagship `casa-patio` ("Casa del Patio: a courtyard house in the
+hills above Sintra"): `casaPlan()` in `providers/mock/showcase/casa.ts`.
+
+### Studio
+
+```ts
+engine/interaction.ts   PlayInteraction(session, aim, events): frame() (prompt "E · Open drawer"), use(), throwCarried(), drop();
+                        usableEntity / describeInteraction / promptFor / holdPoint / carryVelocity / throwVelocity / seatPose (pure)
+                        aim = ray from the eye along the camera through every collider (HIT_TOLERANCE 0.14 m: a drawer front inside its
+                        cabinet's collider still counts); E acts on the aimed entity and keeps the key from reaching other doors;
+                        pick up (dynamic props follow the hold point, click throws), sit (sofa, chair, stool: capsule off, eye 0.72 m above the seat),
+                        taps, drawers, cabinets, fridge, windows, doors; touch / gamepad "action" uses the same path
+components/viewport/PlayHud.tsx  InteractPromptView (crosshair dot + prompt; the standalone player has the same markup)
+lib/reveal.ts           revealPhase(t), sectionHeightFor, inkPlan(floorPlan2d) → strokes with lengths and labels, cameraArc / cameraAt (pure)
+engine/arch.ts          ArchController.startReveal(seconds = 7.5) / scrubReveal(t) / cancelReveal() / isRevealing
+state/archUi.ts         ArchUiState.reveal: number | null
+components/viewport/RevealOverlay.tsx   the plan in ink on paper over the viewport; click, any key or Stop skips
+```
+
+The reveal draws the ground-floor plan in ink (walls first, openings, furniture, room names), dissolves the paper into the 3D view while the walls
+rise out of it (an animated section cut, 24 steps) and the camera comes down from overhead to where the editor camera was, then restores the
+previous view. Frame time is clamped (slow devices play it slower instead of skipping the ink); `prefers-reduced-motion` skips it.
+
+### Scripts
+
+`npm run e2e:interact` (Chromium WebGPU + WebGL2, Firefox: drawer, cabinet door, window, front door on its joint, tap, mug pick-up and throw, sofa),
+`npm run e2e:reveal`, `tests/e2e/archshots.e2e.ts` (eye-level stills of any building: `--slug` / `--prompt`, `--cams=<json>`, `--gpu`, `--hide`, `--set`).

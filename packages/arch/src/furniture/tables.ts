@@ -6,7 +6,7 @@
 import type { MaterialSpec } from '@aether/core';
 import { Geom, box, cylinder, extrude, roundedBox } from '../mesh';
 import { PartSet } from '../parts';
-import { choice, color, flag, leg, mat, num, roundedRect, squareLeg, type FurnitureDef } from './kit';
+import { choice, color, drawerBox, emitFront, flag, leg, mat, MovableSink, num, roundedRect, squareLeg, type FurnitureDef } from './kit';
 
 const TOPS = ['oak', 'walnut', 'ash', 'marble', 'terrazzo', 'concrete', 'black-metal', 'glass'];
 const BASES = ['oak', 'walnut', 'ash', 'black-metal', 'brass', 'chrome'];
@@ -22,7 +22,7 @@ function top(w: number, d: number, h: number, t: number, round: boolean): Geom {
 }
 
 /** Cabinet carcass with drawer / door fronts (front faces +Z). */
-function cabinet(w: number, h: number, d: number, y0: number, fronts: number, horizontal: boolean, body: MaterialSpec, front: MaterialSpec, pull: MaterialSpec, set: PartSet): void {
+function cabinet(w: number, h: number, d: number, y0: number, fronts: number, horizontal: boolean, body: MaterialSpec, front: MaterialSpec, pull: MaterialSpec, set: PartSet, sink?: MovableSink): void {
   set.add(roundedBox(w, h, d, 0.006, 1).translate(0, y0 + h / 2, 0), body);
   const g = new Geom();
   const handles = new Geom();
@@ -31,14 +31,24 @@ function cabinet(w: number, h: number, d: number, y0: number, fronts: number, ho
     if (horizontal) {
       const fh = (h - 0.02) / fronts;
       const y = y0 + 0.01 + fh * (k + 0.5);
-      g.merge(roundedBox(w - 0.02, fh - gap, 0.018, 0.003, 1).translate(0, y, d / 2 + 0.009));
-      handles.merge(roundedBox(Math.min(0.22, w * 0.4), 0.012, 0.02, 0.005, 1).translate(0, y + fh * 0.25, d / 2 + 0.028));
+      emitFront(sink, { front: g, handle: handles }, {
+        id: `drawer-${k}`, name: 'Drawer', kind: 'drawer', center: [0, y, d / 2 + 0.009], size: [w - 0.02, fh - gap, 0.018], motion: { type: 'slide', offset: [0, 0, Math.min(0.4, d * 0.85)] },
+        front: roundedBox(w - 0.02, fh - gap, 0.018, 0.003, 1).translate(0, y, d / 2 + 0.009),
+        handle: roundedBox(Math.min(0.22, w * 0.4), 0.012, 0.02, 0.005, 1).translate(0, y + fh * 0.25, d / 2 + 0.028),
+        body: drawerBox(0, y, w - 0.02, fh - gap, d / 2 + 0.018, d * 0.8),
+        frontMaterial: front, handleMaterial: pull, bodyMaterial: body,
+      });
     } else {
       const fw = (w - 0.02) / fronts;
       const x = -w / 2 + 0.01 + fw * (k + 0.5);
-      g.merge(roundedBox(fw - gap, h - 0.02, 0.018, 0.003, 1).translate(x, y0 + h / 2, d / 2 + 0.009));
       const hx = x + (k % 2 === 0 ? 1 : -1) * (fw / 2 - 0.04);
-      handles.merge(roundedBox(0.012, Math.min(0.18, h * 0.35), 0.02, 0.005, 1).translate(hx, y0 + h * 0.7, d / 2 + 0.028));
+      const hinge = k % 2 === 0 ? 'left' : 'right';
+      emitFront(sink, { front: g, handle: handles }, {
+        id: `door-${k}`, name: 'Cabinet door', kind: 'door', center: [x, y0 + h / 2, d / 2 + 0.009], size: [fw - gap, h - 0.02, 0.018], motion: { type: 'swing', hinge, angle: hinge === 'left' ? -105 : 105 },
+        front: roundedBox(fw - gap, h - 0.02, 0.018, 0.003, 1).translate(x, y0 + h / 2, d / 2 + 0.009),
+        handle: roundedBox(0.012, Math.min(0.18, h * 0.35), 0.02, 0.005, 1).translate(hx, y0 + h * 0.7, d / 2 + 0.028),
+        frontMaterial: front, handleMaterial: pull,
+      });
     }
   }
   set.add(g, front).add(handles, pull);
@@ -186,12 +196,14 @@ export const SIDEBOARD: FurnitureDef = {
     fronts: choice(['doors', 'drawers', 'slats'], 'doors', 'front style'),
     legs: choice(BASES, 'black-metal', 'leg finish'),
     color: color('#e7e3dc', 'paint colour (body = paint)'),
+    interactive: flag(false, 'the doors and drawers are separate parts that open'),
   },
+  interactive: true,
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.6,
   size: (p) => [p.num('width'), p.num('height'), 0.45],
-  build(p) {
+  build(p, _seed, sink) {
     const set = new PartSet();
     const w = p.num('width');
     const h = p.num('height');
@@ -204,7 +216,7 @@ export const SIDEBOARD: FurnitureDef = {
       const slats = new Geom();
       for (let x = -w / 2 + 0.03; x < w / 2 - 0.02; x += 0.035) slats.merge(roundedBox(0.022, h - legH - 0.04, 0.02, 0.004, 1).translate(x + 0.011, legH + (h - legH) / 2, d / 2 + 0.01));
       set.add(slats, body);
-    } else cabinet(w, h - legH, d, legH, p.str('fronts') === 'drawers' ? 3 : n, p.str('fronts') === 'drawers', body, body, mat('brass'), set);
+    } else cabinet(w, h - legH, d, legH, p.str('fronts') === 'drawers' ? 3 : n, p.str('fronts') === 'drawers', body, body, mat('brass'), set, sink);
     const legs = new Geom();
     for (const sx of [-1, 1] as const) for (const sz of [-1, 1] as const) legs.merge(leg(sx * (w / 2 - 0.06), sz * (d / 2 - 0.06), legH, 0.015, 0.8));
     set.add(legs, mat(p.str('legs')));
@@ -220,12 +232,14 @@ export const NIGHTSTAND: FurnitureDef = {
   params: {
     body: choice(['oak', 'walnut', 'ash', 'paint'], 'oak', 'finish'),
     color: color('#ece8e1', 'paint colour (body = paint)'),
+    interactive: flag(false, 'the drawer is a separate part that opens'),
   },
+  interactive: true,
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.3,
   size: () => [0.48, 0.55, 0.4],
-  build(p) {
+  build(p, _seed, sink) {
     const set = new PartSet();
     const body = p.str('body') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('body'));
     const w = 0.48;
@@ -236,10 +250,19 @@ export const NIGHTSTAND: FurnitureDef = {
     g.merge(box(-w / 2, 0.3, -d / 2, -w / 2 + 0.018, 0.53, d / 2));
     g.merge(box(w / 2 - 0.018, 0.3, -d / 2, w / 2, 0.53, d / 2));
     g.merge(box(-w / 2, 0.3, -d / 2, w / 2, 0.53, -d / 2 + 0.012));
-    g.merge(roundedBox(w - 0.04, 0.12, 0.018, 0.003, 1).translate(0, 0.46, d / 2 - 0.01));
     for (const sx of [-1, 1] as const) for (const sz of [-1, 1] as const) g.merge(squareLeg(sx * (w / 2 - 0.02), sz * (d / 2 - 0.02), 0.3, 0.03));
     set.add(g, body);
-    set.add(roundedBox(0.1, 0.014, 0.018, 0.006, 1).translate(0, 0.46, d / 2 + 0.008), mat('brass'));
+    const drawerFront = new Geom();
+    const drawerPull = new Geom();
+    emitFront(sink, { front: drawerFront, handle: drawerPull }, {
+      id: 'drawer-0', name: 'Drawer', kind: 'drawer', center: [0, 0.46, d / 2 - 0.01], size: [w - 0.04, 0.12, 0.018], motion: { type: 'slide', offset: [0, 0, 0.3] },
+      front: roundedBox(w - 0.04, 0.12, 0.018, 0.003, 1).translate(0, 0.46, d / 2 - 0.01),
+      handle: roundedBox(0.1, 0.014, 0.018, 0.006, 1).translate(0, 0.46, d / 2 + 0.008),
+      body: drawerBox(0, 0.46, w - 0.04, 0.12, d / 2 - 0.001, 0.34),
+      frontMaterial: body, handleMaterial: mat('brass'), bodyMaterial: body,
+    });
+    set.add(drawerFront, body);
+    set.add(drawerPull, mat('brass'));
     set.boxMinMax(-w / 2, 0, -d / 2, w / 2, 0.555, d / 2);
     return set.build();
   },

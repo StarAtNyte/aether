@@ -28,7 +28,7 @@ const SIZE_WORDS = new Set([...SIZE_UP, ...SIZE_DOWN]);
 const SHAPE_WORDS = new Set(['round', 'circular', 'square', 'rectangular', 'oval', 'hexagonal', 'octagonal', 'rounded', 'curved', 'straight', 'triangular', 'angular', 'elliptical']);
 const SPEED_WORDS = new Set(['faster', 'slower', 'quicker', 'speedier', 'swifter', 'fast', 'slow', 'quick']);
 const TONE_WORDS = new Set(['darker', 'lighter', 'brighter', 'dimmer', 'warmer', 'cooler', 'duller', 'paler', 'richer', 'deeper', 'softer']);
-const LOOK_WORDS = new Set(['translucent', 'glow', 'glowing', 'luminous', 'emissive', 'see', 'through', 'striped', 'checkered', 'checked', 'plaid', 'floral', 'patterned', 'polka', 'dotted', 'textured', 'glossy', 'matte', 'shiny', 'metallic', 'transparent', 'wallpaper', 'wallpapered', 'colour', 'color', 'finish', 'material', 'subway', 'brushed', 'frosted', 'black', 'gloss']);
+const LOOK_WORDS = new Set(['translucent', 'glow', 'glowing', 'luminous', 'emissive', 'see', 'through', 'striped', 'damask', 'geometric', 'scallop', 'checkered', 'checked', 'plaid', 'floral', 'patterned', 'polka', 'dotted', 'textured', 'glossy', 'matte', 'shiny', 'metallic', 'transparent', 'wallpaper', 'wallpapered', 'colour', 'color', 'finish', 'material', 'subway', 'brushed', 'frosted', 'black', 'gloss']);
 const VIS_WORDS = new Set(['invisible', 'hidden', 'visible', 'gone']);
 const PHYS_WORDS = new Set(['bouncy', 'bouncier', 'heavier', 'heavy', 'static', 'slippery', 'sticky', 'solid', 'floating']);
 const DOOR_WORDS = new Set(['open', 'closed', 'shut', 'outwards', 'outward', 'inwards', 'inward']);
@@ -120,7 +120,7 @@ function lookOf(text: string): Look {
   if (/\b(transparent|see[- ]through|translucent)\b/.test(text)) look.opacity = 0.35;
   if (/\b(glowing|glow|luminous|emissive)\b/.test(text)) look.glow = true;
   if (/\bmetallic\b/.test(text)) look.metal = true;
-  const pattern = /\b(striped|checkered|checked|plaid|floral|patterned|polka dot|dotted)\b/.exec(text);
+  const pattern = /\b(striped|checkered|checked|plaid|floral|patterned|polka dot|dotted|damask|geometric|scallop)\b/.exec(text);
   if (pattern) look.pattern = pattern[1] as string;
   if (/\b(glossy|shiny|gloss|polished)\b/.test(text)) look.finish = 'glossy';
   else if (/\bmatte\b/.test(text)) look.finish = 'matte';

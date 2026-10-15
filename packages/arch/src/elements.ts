@@ -63,6 +63,21 @@ export function buildCeiling(p: CeilingParams): ArchOutput {
     } else g.flatPolygon(p.polygon, 0, false, p.holes);
   } else g.flatPolygon(p.polygon, 0, false, p.holes);
   set.add(g, p.finish);
+  if (p.downlights.length > 0) {
+    // Recessed cans: a white trim ring and a flush lens; inside a cove the field is raised by the cove depth.
+    const inset = p.cove > 0.005 ? insetRect(p.polygon, 0.35) : null;
+    const trim = new Geom();
+    const lens = new Geom();
+    for (const [x, z] of p.downlights) {
+      const y0 = inset && x > Math.min(...inset.map((q) => q[0])) && x < Math.max(...inset.map((q) => q[0])) && z > Math.min(...inset.map((q) => q[1])) && z < Math.max(...inset.map((q) => q[1])) ? p.cove : 0;
+      trim.merge(cylinder(0.062, 0.062, 0.014, 20).translate(x, y0 - 0.014, z));
+      const ring: P2[] = [];
+      for (let k = 0; k < 20; k++) ring.push([x + Math.cos((k / 20) * Math.PI * 2) * 0.046, z + Math.sin((k / 20) * Math.PI * 2) * 0.046]);
+      lens.flatPolygon(ring, y0 - 0.0145, false);
+    }
+    set.add(trim, { finish: 'paint', color: '#f6f4f0', roughness: 0.4 });
+    set.add(lens, { preset: 'emissive', color: '#ffe6c2', emissive: '#ffe0b0', emissiveIntensity: p.lit ? 1.5 : 0, roughness: 0.3 });
+  }
   return set.build();
 }
 

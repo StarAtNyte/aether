@@ -394,6 +394,7 @@ export class Studio {
           },
           onMessage: (text, duration) => this.store.getState().toast(text, 'game', duration),
           onNpc: (frame) => this.store.getState().setNpc(frame),
+          onInteract: (prompt) => this.store.getState().setInteract(prompt),
           onGameOver: (result, text) => this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text }),
           onPick: (id, additive) => this.pick(id, additive),
           onTransform: (commit) => this.editor.commitGizmo(commit),

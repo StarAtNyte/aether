@@ -26,6 +26,8 @@ export interface BehaviorEnv {
   readonly input: InputState;
   /** Normalized keys that went down this tick. */
   readonly pressed: ReadonlySet<string>;
+  /** Entities the player used (aimed at and pressed the use key) this tick. */
+  readonly used: ReadonlySet<EntityId>;
   playerId(): EntityId | undefined;
   entity(id: EntityId): RuntimeEntity | undefined;
   positionOf(id: EntityId): Readonly<Vec3> | undefined;

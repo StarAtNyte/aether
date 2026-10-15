@@ -127,21 +127,41 @@ export function buildWall(p: WallParams): ArchOutput {
   const geomA = new Geom();
   const geomB = new Geom();
   const geomEdge = new Geom();
+  const dadoGeomA = new Geom();
+  const dadoGeomB = new Geom();
 
-  // Side faces, tiled around openings.
-  const face = (g: Geom, xs0: number, xs1: number, side: -1 | 1): void => {
+  // Side faces, tiled around openings; a dado splits each face at its height.
+  const face = (g: Geom, xs0: number, xs1: number, side: -1 | 1, dado: { height: number; rail: boolean; geom: Geom } | null): void => {
     const xs = breakpoints(spans, xs0, xs1);
+    const quad = (target: Geom, a: number, b: number, y0: number, y1: number): void => {
+      if (side < 0) target.quadAuto([b, y0, -t], [a, y0, -t], [a, y1, -t], [b, y1, -t], -b, y0);
+      else target.quadAuto([a, y0, t], [b, y0, t], [b, y1, t], [a, y1, t], a, y0);
+    };
+    const dh = dado ? Math.min(dado.height, H - 0.05) : 0;
     for (let k = 0; k + 1 < xs.length; k++) {
       const a = xs[k] as number;
       const b = xs[k + 1] as number;
       for (const [y0, y1] of solidIntervals(spans, a, b, H)) {
-        if (side < 0) g.quadAuto([b, y0, -t], [a, y0, -t], [a, y1, -t], [b, y1, -t], -b, y0);
-        else g.quadAuto([a, y0, t], [b, y0, t], [b, y1, t], [a, y1, t], a, y0);
+        if (!dado || y0 >= dh) quad(g, a, b, y0, y1);
+        else if (y1 <= dh) quad(dado.geom, a, b, y0, y1);
+        else {
+          quad(dado.geom, a, b, y0, dh);
+          quad(g, a, b, dh, y1);
+        }
+      }
+      // Chair rail: a small moulding standing off the face along the top of the dado.
+      if (dado?.rail && b - a > 0.02) {
+        const solidAtRail = solidIntervals(spans, a, b, H).some(([y0, y1]) => y0 <= dh && y1 >= dh);
+        if (solidAtRail) {
+          const z0 = side < 0 ? -t - 0.018 : t;
+          const z1 = side < 0 ? -t : t + 0.018;
+          dado.geom.merge(box(a, dh - 0.012, z0, b, dh + 0.028, z1, { bottom: true }));
+        }
       }
     }
   };
-  face(geomA, aStart, aEnd, -1);
-  face(geomB, bStart, bEnd, 1);
+  face(geomA, aStart, aEnd, -1, p.dadoA ? { height: p.dadoA.height, rail: p.dadoA.rail, geom: dadoGeomA } : null);
+  face(geomB, bStart, bEnd, 1, p.dadoB ? { height: p.dadoB.height, rail: p.dadoB.rail, geom: dadoGeomB } : null);
 
   // Reveals: jambs, head, sill (edge material = side A's).
   for (const s of spans) {
@@ -194,6 +214,8 @@ export function buildWall(p: WallParams): ArchOutput {
 
   set.add(geomA, p.finishA);
   set.add(geomB, p.finishB);
+  if (p.dadoA) set.add(dadoGeomA, p.dadoA.material);
+  if (p.dadoB) set.add(dadoGeomB, p.dadoB.material);
   set.add(geomEdge, p.finishA);
   if (geomTop !== geomEdge) set.add(geomTop, { ...SECTION_CAP });
 

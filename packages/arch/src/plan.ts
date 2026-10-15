@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { Color, MaterialSpec } from '@aether/core';
-import { PlanPoint, PlanPolygon } from './params';
+import { PlanPoint, PlanPolygon, WallDado } from './params';
 import { DesignRecord } from './design-record';
 
 /** Room types (drive furniture layouts, floor finishes, lighting and windows). */
@@ -20,7 +20,7 @@ export const RoomType = z.enum([
 export type RoomType = z.infer<typeof RoomType>;
 
 /** Interior styles (palettes and furniture choices). */
-export const ArchStyle = z.enum(['modern', 'scandinavian', 'industrial', 'japandi', 'classic']);
+export const ArchStyle = z.enum(['modern', 'scandinavian', 'industrial', 'japandi', 'classic', 'mediterranean']);
 export type ArchStyle = z.infer<typeof ArchStyle>;
 
 /** Compass sides (north = −Z). */
@@ -60,6 +60,18 @@ export const PlanRoom = z
     wallColor: Color.optional(),
     /** Additive: paint colour of single walls, by the compass side each faces from inside (overrides `wallColor`). */
     wallColors: z.partialRecord(Compass, Color).optional(),
+    /**
+     * Finish of every interior wall face of the room (paint, wallpaper, panelling, brick, tiles…).
+     * Overrides the type default; `wallColor` still tints it when it has no colour of its own.
+     */
+    finish: MaterialSpec.optional(),
+    /**
+     * Per-wall finishes keyed by the compass side the wall is on seen from inside the room
+     * ("the back wall" = the one opposite the entrance): an accent wall or one wallpapered wall.
+     */
+    walls: z.partialRecord(Compass, MaterialSpec).optional(),
+    /** Lower covering of every wall face of the room (wainscot / dado with a chair rail). */
+    dado: WallDado.optional(),
     /** Auto-furnish (layouts per room type). */
     furnish: z.boolean().default(true),
     /** Explicit pieces (in addition to, or instead of with `furnish: false`, the layout). */
@@ -88,6 +100,8 @@ export const PlanDoor = z.object({
    * "outside"), from the left end seen from inside the room. Overrides `at`.
    */
   along: z.number().min(0).max(200).optional(),
+  /** Swing doors only: a dynamic leaf on a revolute hinge joint with limits, driven by a motor (overrides `physicalDoors`). */
+  physical: z.boolean().optional(),
 });
 export type PlanDoor = z.infer<typeof PlanDoor>;
 
@@ -174,6 +188,8 @@ export const BuildingPlan = z.object({
   interiorWall: z.object({ thickness: z.number().min(0.06).max(0.3).default(0.12) }).default({ thickness: 0.12 }),
   levels: z.array(PlanLevel).min(1).max(6),
   roof: PlanRoof.default({ shape: 'flat', pitch: 30, overhang: 0.4 }),
+  /** Swing doors are physical: dynamic leaves on hinge joints (stops, no clipping through the player). */
+  physicalDoors: z.boolean().default(true),
   site: PlanSite.optional(),
   /** What the designer intended (see `design-record.ts`); kept with the plan, never compiled. */
   design: DesignRecord.optional(),

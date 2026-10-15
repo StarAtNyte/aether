@@ -16,6 +16,7 @@ import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 import type { VoxelHudState } from '../voxel/hudState';
 import type { LabelSpec } from '../engine/viewOverlay';
 import type { NpcFrame } from '../engine/npcFrame';
+import type { InteractPrompt } from '../engine/interaction';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -306,6 +307,8 @@ export interface StudioState {
   npc: NpcFrame | null;
   /** Voxel game HUD (null unless a block world is being played). */
   voxelHud: VoxelHudState | null;
+  /** What the crosshair is on and can use in play mode (null when nothing). */
+  interact: InteractPrompt | null;
   cameraView: CameraView;
   toasts: Toast[];
   settings: StudioSettings;
@@ -372,6 +375,7 @@ export interface StudioState {
   setGame(g: Partial<GameState>): void;
   resetGame(): void;
   setNpc(frame: NpcFrame | null): void;
+  setInteract(prompt: InteractPrompt | null): void;
   setVoxelHud(v: VoxelHudState | null): void;
   setCameraView(v: CameraView): void;
   toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
@@ -499,6 +503,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     game: INITIAL_GAME,
     npc: null,
     voxelHud: null,
+    interact: null,
     cameraView: 'orbit',
     toasts: [],
     settings: init.settings ? { ...init.settings } : { ...DEFAULT_SETTINGS },
@@ -588,9 +593,10 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setClarify: (clarify) => set({ clarify }),
     setViewer: (viewer) => set({ viewer }),
     setGame: (g) => set((s) => (changesNothing(s.game, g) ? s : { game: { ...s.game, ...g } })),
-    resetGame: () => set({ game: INITIAL_GAME, npc: null }),
+    resetGame: () => set({ game: INITIAL_GAME, npc: null, interact: null }),
     setNpc: (frame) => set({ npc: frame }),
     setVoxelHud: (v) => set({ voxelHud: v }),
+    setInteract: (p) => set((s) => (s.interact === p ? s : { interact: p })),
     setCameraView: (cameraView) => set({ cameraView }),
     toast: (text, kind = 'info', duration = 3, action) => {
       const id = nextToastId++;

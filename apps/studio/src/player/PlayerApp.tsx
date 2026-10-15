@@ -18,6 +18,7 @@ import { VoxelHudView } from '../components/viewport/VoxelHud';
 import { NpcSpeechView } from '../components/viewport/NpcSpeech';
 import { TouchControlsView } from '../components/viewport/TouchControls';
 import type { NpcFrame } from '../engine/npcFrame';
+import type { InteractPrompt } from '../engine/interaction';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
 import type { GameManifest } from '../publish/manifest';
 import { ProofBadge } from './ProofBadge';
@@ -157,6 +158,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const [over, setOver] = useState<{ win: boolean; text: string } | null>(null);
   const [voxelHud, setVoxelHud] = useState<VoxelHudState | null>(null);
   const [npc, setNpc] = useState<NpcFrame | null>(null);
+  const [interact, setInteract] = useState<InteractPrompt | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
   const storage = useMemo(() => browserSettingsStorage(), []);
@@ -316,6 +318,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             },
             onMessage: (text) => toast(text),
             onNpc: (frame) => setNpc(frame),
+            onInteract: (prompt) => setInteract(prompt),
             onGameOver: (result, text) => {
               setOver({ win: result === 'win', text });
               go('over');
@@ -534,6 +537,17 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       )}
       {playing && world.voxel && voxelHud && <VoxelHudView hud={voxelHud} play={sim?.voxel?.game ?? null} toast={(t) => toast(t)} />}
       {phase === 'playing' && !world.voxel && <NpcSpeechView frame={npc} actions={sim} />}
+      {phase === 'playing' && !world.voxel && (
+        <div className="interact" aria-live="polite">
+          <span className={`interact__dot${interact ? ' is-active' : ''}`} aria-hidden="true" />
+          {interact && (
+            <span className="interact__prompt" role="status">
+              <kbd>{interact.key}</kbd> {interact.verb} {interact.noun}
+              {interact.hint && <span className="interact__hint">{interact.hint}</span>}
+            </span>
+          )}
+        </div>
+      )}
       {phase === 'playing' && !world.voxel && <TouchControlsView sim={sim} />}
       {phase === 'playing' && (
         <button type="button" className="pl-pausebtn" aria-label="Pause" onClick={() => pause(true)}>

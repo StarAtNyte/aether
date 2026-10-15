@@ -53,7 +53,7 @@ export const ASSET_CATEGORIES = [
 /** Operations of build_architecture (mirrors @aether/arch `ArchOp`). */
 export const ARCH_OPS = [
   'create_building', 'remove_building', 'add_level', 'add_room', 'remove_room', 'add_door', 'add_window', 'add_stairs', 'set_roof', 'set_style',
-  'furnish_room', 'place_item', 'remove_item', 'set_material',
+  'furnish_room', 'place_item', 'remove_item', 'set_wall', 'set_material',
 ] as const;
 
 /** Upper bound of architecture ops per call (mirrors @aether/arch `MAX_ARCH_OPS`). */
@@ -84,7 +84,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'build_architecture',
     description:
-      'Create and edit real-world buildings and interiors (houses, apartments, offices, cafés, villas) from a declarative plan (see "Architecture" in the system prompt). The plan compiles into walls with mitred corners, floors, ceilings, doors that open with E, windows, stairs, a roof, furniture and real lights, then is checked: every room reachable on foot, doors swing free, furniture grounded without overlaps. Ops apply in order; refused ops come back with a code and a fix hint while the others still apply.',
+      'Create and edit real-world buildings and interiors (houses, apartments, offices, cafés, villas) from a declarative plan (see "Architecture" in the system prompt). The plan compiles into walls with mitred corners, floors, ceilings, doors that open with E, windows, stairs, a roof, furniture and real lights, then is checked: every room reachable on foot, doors swing free, furniture grounded without overlaps. Ops apply in order; refused ops come back with a code and a fix hint while the others still apply. Wall coverings: {"op":"set_wall","building":"b","room":"bed","wall":"north"|"south"|"east"|"west"|"all" (seen from inside),"material":{"finish":"wallpaper"|"wallpaper-stripe"|"wallpaper-floral"|"wallpaper-damask"|"wallpaper-geometric"|"panelling"|"wood-slats"|"brick"|"tile","color"?},"dado"?:{"height":1,"material":{...}}} changes one wall or a lower wainscot without touching the others.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,7 +111,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         plan: {
           type: 'object',
           description:
-            '{"id":"house","name":"…","style":"modern|scandinavian|industrial|japandi|classic","brief":"one or two sentences","programme":[{"room":"bedroom","purpose":"sleep","targetArea":14}],"circulation":{"entrance":"hall","notes":"…"},"levels":[{"height":2.9,"rooms":[{"id":"bedroom","type":"bedroom","rect":[0,0,4,3.6]}],"openings":[{"kind":"window|door|sliding|opening","room":"bedroom","wall":"north","along":2,"width":1.4,"height":1.3,"sill":0.9,"to":"hall|outside","main":true}],"stairs":[]}],"furniture":[{"id":"bed","kind":"bed","room":"bedroom","intent":"bed centred on the north wall","relations":[{"type":"against_wall","wall":"north"},{"type":"centred_on_wall","wall":"north"}]}],"roof":{"shape":"flat|gable|hip|shed"}}',
+            '{"id":"house","name":"…","style":"modern|scandinavian|industrial|japandi|classic|mediterranean","brief":"one or two sentences","programme":[{"room":"bedroom","purpose":"sleep","targetArea":14}],"circulation":{"entrance":"hall","notes":"…"},"levels":[{"height":2.9,"rooms":[{"id":"bedroom","type":"bedroom","rect":[0,0,4,3.6],"walls":{"north":{"finish":"wallpaper-floral","color":"#dfe5d2"}}}],"openings":[{"kind":"window|door|sliding|opening","room":"bedroom","wall":"north","along":2,"width":1.4,"height":1.3,"sill":0.9,"to":"hall|outside","main":true}],"stairs":[]}],"furniture":[{"id":"bed","kind":"bed","room":"bedroom","intent":"bed centred on the north wall","relations":[{"type":"against_wall","wall":"north"},{"type":"centred_on_wall","wall":"north"}]}],"roof":{"shape":"flat|gable|hip|shed"}}',
         },
       },
       required: ['plan'],

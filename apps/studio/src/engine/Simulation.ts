@@ -42,6 +42,7 @@ import { findAvatar, framingSphere, movingIds } from './worldQueries';
 import type { VoxelSession, VoxelPlay } from '../voxel/session';
 import type { VoxelHudState } from '../voxel/hudState';
 import { nextFrame } from '../lib/frame';
+import { PlayInteraction, seatPose, type InteractPrompt, type SeatPose } from './interaction';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
@@ -176,6 +177,8 @@ export interface SimulationListener {
   onVoxelHud?(state: VoxelHudState | null): void;
   /** The player pressed Start / Options on a controller (published games open their pause menu). */
   onPauseRequest?(): void;
+  /** What the crosshair is on and can use ("E · Open drawer"); null when nothing. */
+  onInteract?(prompt: InteractPrompt | null): void;
 }
 
 /** Construction options. */
@@ -242,6 +245,14 @@ export class Simulation {
   private readonly sound = new SoundBoard();
   /** The player is holding Shift (sneaking): quieter steps, crouched body. */
   private sneaking = false;
+  /** Aim-and-use controller of the running session (drawers, doors, taps, props to carry). */
+  private interaction: PlayInteraction | null = null;
+  /** The player sits on a piece of furniture (capsule disabled, eye lowered, movement locked until they stand). */
+  private sitting: { id: EntityId; pose: SeatPose } | null = null;
+  private readonly interactionKeys = (e: KeyboardEvent): void => this.onInteractionKey(e);
+  private readonly interactionClick = (e: PointerEvent): void => {
+    if (e.button === 0 && this.interaction?.throwCarried()) e.stopImmediatePropagation();
+  };
   private readonly speakingScratch = new Set<string>();
   private readonly lookScratch = new Vector3();
   private npcSig = '';
@@ -833,6 +844,20 @@ export class Simulation {
     if (fn) fn(this.renderer.camera);
   }
 
+  /**
+   * Put the walking player at `feet` looking along `yawDeg` / `pitchDeg` (play
+   * mode, worlds with a walking player). Used by guided tours and tests; returns
+   * false when there is nothing to move.
+   */
+  placePlayer(feet: Vec3, yawDeg: number, pitchDeg = 0): boolean {
+    const c = this.session?.character;
+    if (!c || !Number.isFinite(yawDeg + pitchDeg + feet[0] + feet[1] + feet[2])) return false;
+    c.teleport(feet);
+    this.input.setYaw(yawDeg);
+    this.input.setPitch(pitchDeg);
+    return true;
+  }
+
   /** On-screen touch stick (play mode). */
   setVirtualStick(forward: number, right: number): void {
     this.session?.voxel?.input.setVirtualStick(forward, right);
@@ -841,6 +866,7 @@ export class Simulation {
 
   /** On-screen jump / action buttons (play mode). */
   tapVirtual(code: 'Space' | 'KeyE'): void {
+    if (code === 'KeyE' && this.interaction?.use()) return;
     this.session?.voxel?.input.tap(code);
     this.input.tapVirtual(code);
   }
@@ -978,6 +1004,7 @@ export class Simulation {
       if (t) this.table.ensure(id, t.position, t.quaternion);
     }
     this.session = session;
+    this.startInteraction(session);
     if (session.voxel) session.voxel.input.sensitivity = this.lookSensitivity;
     this.applyGizmo();
     if (this.toolDragging) this.viewportTool?.cancel?.();
@@ -989,6 +1016,7 @@ export class Simulation {
       this.renderer.highlight([]);
       // Walkthroughs start facing the entrance; other games face where the editor camera looked.
       this.input.setYaw(entranceYawDeg(world) ?? cameraYawDeg(this.renderer));
+      this.input.setPitch(0);
       // The voxel game has its own input (mouse look, hotbar, break/place).
       if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
       if (session.voxel) this.renderer.setCameraMode('manual');
@@ -1017,6 +1045,9 @@ export class Simulation {
     if (!s) return;
     this.session = null;
     s.ended = true;
+    this.stopInteraction();
+    this.sitting = null;
+    this.renderer.setEyeHeight(1.6);
     if (this.npcSig !== '') {
       this.npcSig = '';
       this.npcQuick = '';
@@ -1055,6 +1086,111 @@ export class Simulation {
       if (this.history.current !== s.world) this.requestSync(this.history.current);
     }
     await this.whenSynced();
+  }
+
+  /** Sit on a seat entity of the world (sofa, chair…); false when there is no walking player or the piece is no seat. */
+  sitOn(id: EntityId): boolean {
+    const s = this.session;
+    const character = s?.character;
+    const e = s?.world.entities[id];
+    if (!s || !character || !e || this.sitting) return false;
+    const kind = e.arch?.kind ?? '';
+    const t = safeWorldTransform(s.world, id);
+    if (!t) return false;
+    const q = t.quaternion;
+    const yaw = (Math.atan2(2 * (q[3] * q[1] + q[0] * q[2]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180) / Math.PI;
+    const b = entityWorldBounds(s.world, id);
+    const width = b ? Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]) : 1;
+    const pose = seatPose(kind, [t.position[0], t.position[1], t.position[2]], yaw, character.position, width);
+    if (!pose) return false;
+    character.setEnabled(false);
+    character.teleport(pose.feet);
+    this.input.setYaw(pose.yawDeg);
+    this.input.setPitch(-8);
+    this.renderer.setEyeHeight(pose.eye);
+    this.sitting = { id, pose };
+    return true;
+  }
+
+  /** Stand up in front of the seat. */
+  standUp(): void {
+    const s = this.session;
+    const sit = this.sitting;
+    if (!sit) return;
+    this.sitting = null;
+    this.renderer.setEyeHeight(1.6);
+    const c = s?.character;
+    if (c) {
+      c.teleport(sit.pose.stand);
+      c.setEnabled(true);
+    }
+  }
+
+  /** True while the player sits. */
+  get isSitting(): boolean {
+    return this.sitting !== null;
+  }
+
+  /** Start the aim-and-use controller for a session that has a walking player. */
+  private startInteraction(s: PlaySession): void {
+    this.stopInteraction();
+    if (s.voxel) return;
+    const sim = this;
+    const pos: Vec3 = [0, 0, 0];
+    const quat: [number, number, number, number] = [0, 0, 0, 1];
+    this.interaction = new PlayInteraction(
+      {
+        world: s.world,
+        // The player's own capsule is a body of the physics world too: the ray must look through it.
+        raycastAll: (o, d, max, ex) => s.pw.raycastAll(o, d, max, 10, ex).filter((h) => h.id !== PLAYER_PSEUDO_ID),
+        position: (id) => (s.pw.readPose(id, pos, quat) ? [pos[0], pos[1], pos[2]] : null),
+        setVelocity: (id, v) => s.pw.setVelocity(id, v),
+        setAngularVelocity: (id, v) => s.pw.setAngularVelocity(id, v),
+        isDynamic: (id) => bodyTypeOf(s.world, id) === 'dynamic',
+        entityState: (id) => s.logic.entityState(id),
+        use: (id) => s.logic.use(id),
+        sit: (id) => this.sitOn(id),
+        isSitting: () => this.sitting !== null,
+        stand: () => this.standUp(),
+      },
+      {
+        aim() {
+          const feet = s.character?.position ?? sim.playerPosition;
+          const m = sim.renderer.camera.matrixWorld.elements;
+          const dir: Vec3 = [-(m[8] as number), -(m[9] as number), -(m[10] as number)];
+          const c = sim.renderer.camera.position;
+          const eye: Vec3 = feet ? [feet[0], feet[1] + (sim.sitting ? sim.sitting.pose.eye : 1.55), feet[2]] : [c.x, c.y, c.z];
+          return { eye, dir };
+        },
+        playerVelocity: () => [0, 0, 0],
+        floorY: () => s.character?.position[1] ?? 0,
+      },
+      {
+        prompt: (p) => this.listener.onInteract?.(p),
+        sound: (name) => this.sound.play(name),
+        toast: (text) => this.listener.onMessage?.(text, 1.4),
+      },
+    );
+    window.addEventListener('keydown', this.interactionKeys, true);
+    this.renderer.domElement.addEventListener('pointerdown', this.interactionClick, true);
+  }
+
+  private stopInteraction(): void {
+    window.removeEventListener('keydown', this.interactionKeys, true);
+    this.renderer.domElement.removeEventListener('pointerdown', this.interactionClick, true);
+    this.interaction?.dispose();
+    this.interaction = null;
+  }
+
+  private onInteractionKey(e: KeyboardEvent): void {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.key.toLowerCase() !== 'e' || this.paused || this.held || !this.session) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    // Acted: keep the key from also opening the door next to you.
+    if (this.interaction?.use()) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
   }
 
   /** LogicHost bound to one play session (stale calls after Stop are ignored). */
@@ -1111,6 +1247,9 @@ export class Simulation {
       setVelocity: (id, v) => s.pw.setVelocity(id, v),
       getVelocity: (id) => (id === PLAYER_PSEUDO_ID && s.character ? [0, s.character.verticalSpeed, 0] : s.pw.getVelocity(id)),
       setAngularVelocity: (id, v) => s.pw.setAngularVelocity(id, v),
+      driveJoint: (id, target) => {
+        s.pw.driveJoint(id, target);
+      },
       teleport(id, p) {
         if (s.ended) return;
         if (id === PLAYER_PSEUDO_ID && s.character) s.character.teleport(p);
@@ -1295,7 +1434,11 @@ export class Simulation {
     for (let i = 0; i < steps && !s.ended; i++) {
       const input = this.input.sample(FIXED_DT);
       if (s.voxel) s.voxel.step(FIXED_DT);
-      if (character) {
+      if (character && this.sitting) {
+        // Seated: held in place; any walking or jumping input stands the player up.
+        character.teleport(this.sitting.pose.feet);
+        if (Math.abs(input.forward) > 0.4 || Math.abs(input.right) > 0.4 || input.jump) this.standUp();
+      } else if (character) {
         // Holding Shift sneaks: half pace, quiet enough for guards not to hear.
         const sneak = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
         this.sneaking = sneak;
@@ -1308,6 +1451,8 @@ export class Simulation {
     if (s.ended) return;
     this.pumpNpc(s);
     this.feedCharacters(s);
+    this.renderer.setLookPitch((this.input.pitchDeg * Math.PI) / 180);
+    this.interaction?.frame();
     pw.writeTransforms(this.table.packed, this.table.order);
     this.renderer.applyTransforms(this.table.packed, this.table.order);
     if (character) {
@@ -1594,6 +1739,8 @@ export class Simulation {
     canvas.removeEventListener('pointercancel', this.onPointerCancel);
     this.marquee?.remove();
     this.marquee = null;
+    this.stopInteraction();
+    this.sitting = null;
     const s = this.session;
     this.session = null;
     this.voxel?.dispose();
