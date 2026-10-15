@@ -85,6 +85,41 @@ describe('chunk streaming', () => {
     expect(meshes.size).toBe(25);
   });
 
+  it('never installs a mesh that finished after its chunk left the view (regression)', async () => {
+    const { streamer, pool, meshes } = setup(terrainIdentity(terrain({ preset: 'flat' }), 1), 2);
+    streamer.setCenter(8, 8);
+    await settle(streamer);
+    // Hold mesh results back so they finish only after the player has turned around.
+    const held: Array<() => void> = [];
+    const mesh = pool.mesh.bind(pool);
+    pool.mesh = (...args: Parameters<typeof pool.mesh>) => {
+      const p = mesh(...args);
+      return new Promise((resolve) => held.push(() => void p.then(resolve)));
+    };
+    streamer.setCenter(8 + 16 * 2, 8);
+    for (let i = 0; i < 2000 && held.length === 0; i++) {
+      streamer.update();
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    expect(held.length).toBeGreaterThan(0);
+    // Back home before those meshes arrive: the east columns are now outside the view (but still loaded).
+    streamer.setCenter(8, 8);
+    streamer.update();
+    pool.mesh = mesh;
+    for (const release of held.splice(0)) release();
+    await settle(streamer);
+    for (let i = 0; i < 20; i++) {
+      streamer.update();
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const inView = new Set<number>();
+    for (let cz = -2; cz <= 2; cz++) for (let cx = -2; cx <= 2; cx++) inView.add(chunkKey(cx, cz));
+    const outside = [...meshes.keys()].filter((k) => !inView.has(k));
+    expect(outside).toEqual([]);
+    expect(meshes.size).toBe(25);
+    expect(streamer.settled).toBe(true);
+  });
+
   it('drops results computed for an outdated configuration', async () => {
     const pool = new VoxelJobPool({ createWorker: null });
     const reg = new BlockRegistry();

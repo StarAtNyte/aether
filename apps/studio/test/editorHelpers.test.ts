@@ -5,7 +5,7 @@ import { History, validateWorld, type WorldDoc } from '@aether/core';
 import { createStarterWorld } from '../src/lib/starterWorld';
 import { PALETTE_ITEMS, PALETTE_SECTIONS, paletteEntity, paletteItem, uniqueEntityId } from '../src/lib/palette';
 import { dataUrlToBlob, fitThumbnail } from '../src/lib/thumbnail';
-import { checkReferenceFile, fitWithin, MAX_REFERENCE_BYTES } from '../src/lib/images';
+import { checkReferenceBytes, checkReferenceFile, fitWithin, MAX_REFERENCE_BYTES } from '../src/lib/images';
 import { worldLabels } from '../src/lib/labels';
 import { axisDirections, MAX_LABELS, projectPoint } from '../src/engine/viewOverlay';
 import { shortcut, isApplePlatform } from '../src/lib/keys';
@@ -81,6 +81,18 @@ describe('reference images', () => {
     expect(checkReferenceFile({ type: 'image/svg+xml', size: 100 })).toMatch(/PNG/);
     expect(checkReferenceFile({ type: 'image/jpeg', size: 0 })).toMatch(/empty/);
     expect(checkReferenceFile({ type: 'image/webp', size: MAX_REFERENCE_BYTES + 1 })).toMatch(/large/);
+    // The header is read before any decode: a tiny PNG declaring 60000 x 60000 px is a decompression bomb.
+    const png = (w: number, h: number): Uint8Array => {
+      const b = new Uint8Array(33);
+      b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+      new DataView(b.buffer).setUint32(16, w);
+      new DataView(b.buffer).setUint32(20, h);
+      return b;
+    };
+    expect(checkReferenceBytes(png(1920, 1080))).toBeNull();
+    expect(checkReferenceBytes(png(60000, 60000))).toMatch(/too large/);
+    expect(checkReferenceBytes(png(10000, 10000))).toMatch(/megapixels/);
+    expect(checkReferenceBytes(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toMatch(/PNG/);
   });
   it('downscales to the longest edge without upscaling', () => {
     expect(fitWithin(4000, 2000)).toEqual({ width: 1024, height: 512 });

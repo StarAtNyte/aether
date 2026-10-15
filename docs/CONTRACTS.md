@@ -163,6 +163,11 @@ export const DEFAULT_CACHE_BYTES: number;
 // Sandbox for LLM-written generator source (SECURITY CRITICAL)
 export interface SandboxRunner { run(def: GeneratorDef, params: Record<string, Json>, seed: number, opts?: { timeoutMs?: number }): Promise<GeneratorOutput>; dispose(): void; }
 export function createWorkerSandbox(opts?: { timeoutMs?: number; poolSize?: number }): SandboxRunner;   // browser: Worker pool, watchdog terminate, no network, output size caps
+// Worker lockdown (procgen/sandbox/lockdown.ts): BLOCKED_GLOBALS are shadowed, then stripHostGlobals(scope)
+// removes every property that is not in ALLOWED_GLOBALS (ECMAScript intrinsics + console) from the
+// scope AND its prototype chain (WorkerGlobalScope.prototype, EventTarget.prototype …), so web APIs
+// cannot be recovered through interface objects / property descriptors. Exploit tests: procgen
+// sandbox.test.ts (child-process probe) and `npm run e2e:security` (real Chromium + Firefox workers).
 // Exported from the `@aether/procgen/node` SUBPATH only (not src/index.ts), so node:vm never enters the browser bundle.
 export function createNodeSandbox(opts?: { timeoutMs?: number }): SandboxRunner;      // tests/server validation: node:vm with timeout, no require/process; NOT a security boundary (server runs it in a resource-limited worker thread, off by default)
 export function staticCheckSource(source: string): { ok: boolean; problems: string[] }; // reject import/require/fetch/eval/Function/globalThis/postMessage/etc.
@@ -1592,6 +1597,16 @@ Everything here is additive; the World IR is unchanged.
   re-exports it): `writeZip` (deflate via `CompressionStream` unless the
   entry is already compressed: png/jpg/webp/woff/mp4/webm/zip/glb),
   `readZip(bytes, limits)` (caps, safe names, CRC), `safeEntryName`, `crc32`.
+  `safeEntryName` also refuses Windows device names (`con`, `nul`, `com1` …,
+  any extension) and parts ending in a dot or a space.
+- `@aether/assets/offline-sw`: `serviceWorkerSource(buildId, files)` (the
+  `sw.js` of published builds; the studio's `player/offline.ts` re-exports
+  it) and `isGeneratedServiceWorker(text)` (exactly a generated worker).
+- `GltfLimits` gained `maxAccessorBytes` (256 MB decoded vertex data,
+  accessors without a buffer view included), `maxTextureSide` (8192) and
+  `maxTexturePixels` (80 M): every embedded image's header (buffer view or
+  data URI) is read and must be PNG / JPEG / WebP within those caps before
+  any decoder sees it. `accessorBytes(json)` is exported.
 - `Catalog.base` accepts any absolute path of safe segments
   (`/html/12345/assets/lib/`), never `.` / `..` segments or another origin:
   published games set it to their own sub-path.
@@ -1690,6 +1705,13 @@ Everything here is additive; the World IR is unchanged.
   `DELETE …/jobs/:id` (cancel). One deploy at a time (409).
 - `GET|POST /api/local/publish/lan` `{ on, build? }` → `{ on, build, urls, until }`.
 - `GET /published/:id/…` serves a library build with `PLAY_CSP`.
+- Library builds carry no foreign code: every `.js` / `.mjs` must be
+  byte-identical (SHA-256) to a player file of this computer's studio build
+  (`playerDir/play-manifest.json`), and `sw.js` must satisfy
+  `isGeneratedServiceWorker`; otherwise `400 publish-rejected`. Without a
+  player build no build with scripts is accepted.
+  `new PublishStore(dir, limits?, now?, playerDir?)`;
+  `PublishServiceOptions.playerDir` (default `config.staticDir`).
 - `GET /play` serves `play.html`. `/play`, `/play.html` and published builds
   get `PLAY_CSP` (no third-party hosts, `frame-ancestors *`), no
   `X-Frame-Options`, `Cross-Origin-Resource-Policy: cross-origin`,

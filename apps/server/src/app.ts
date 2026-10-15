@@ -167,7 +167,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
       ...(deps.isLoopback ? { isLoopback: deps.isLoopback } : {}),
       ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
     });
-    const services = deps.publishServices ?? createPublishServices({ dir: `${config.dataDir}/published`, now, ...deps.publish });
+    const services = deps.publishServices ?? createPublishServices({ dir: `${config.dataDir}/published`, playerDir: config.staticDir, now, ...deps.publish });
     registerPublishRoutes(app, { store: services.store, jobs: services.jobs, lan: services.lan, logger, maxUploadBytes: MAX_BUILD_UPLOAD_BYTES });
     deps.onPublish?.(services);
     deps.shutdownSignal?.addEventListener('abort', () => void services.dispose());

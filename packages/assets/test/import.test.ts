@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gltfBounds, sanitizeName, validateGltf, writeGlb } from '../src/import/glb';
+import { accessorBytes, gltfBounds, sanitizeName, validateGltf, writeGlb } from '../src/import/glb';
 import { validateHdr, validateImage } from '../src/import/image';
 import { assetNameFromFile, importUserAsset, isUserAssetId, sniffAssetKind } from '../src/user';
 import { hdrHeader, jpegHeader, pngHeader, triangleGlb, triangleGltf, triangleGltfText } from './fixtures';
@@ -81,6 +81,43 @@ describe('glTF / GLB import validation', () => {
     expect(validateGltf(writeGlb(json, bin))).toMatchObject({ ok: false, error: expect.stringContaining('triangles') });
     const many = triangleGltf({ extra: { nodes: Array.from({ length: 5000 }, () => ({})) } });
     expect(validateGltf(writeGlb(many.json, many.bin))).toMatchObject({ ok: false, error: expect.stringContaining('nodes') });
+  });
+
+  it('reads embedded texture headers before any decoder: pixel bombs and fake images are refused (exploit attempts)', () => {
+    /** The triangle plus one embedded image (bufferView after the geometry). */
+    const withImage = (image: Uint8Array, mimeType = 'image/png'): Uint8Array => {
+      const { json, bin } = triangleGltf();
+      const at = (bin.byteLength + 3) & ~3;
+      const all = new Uint8Array(at + image.byteLength);
+      all.set(bin, 0);
+      all.set(image, at);
+      (json['buffers'] as Array<Record<string, unknown>>)[0]!['byteLength'] = all.byteLength;
+      (json['bufferViews'] as Array<Record<string, unknown>>).push({ buffer: 0, byteOffset: at, byteLength: image.byteLength });
+      json['images'] = [{ bufferView: 2, mimeType }];
+      json['textures'] = [{ source: 0 }];
+      return writeGlb(json, all);
+    };
+    expect(validateGltf(withImage(pngHeader(256, 256)))).toMatchObject({ ok: true });
+    // 65535 x 65535 declared in a 33-byte header: ~17 GB once decoded.
+    expect(validateGltf(withImage(pngHeader(65535, 65535)))).toMatchObject({ ok: false, error: expect.stringContaining('texture') });
+    expect(validateGltf(withImage(jpegHeader(9000, 16)))).toMatchObject({ ok: false, error: expect.stringContaining('texture') });
+    // Not an image at all (e.g. SVG / HTML posing as a texture).
+    expect(validateGltf(withImage(new TextEncoder().encode('<svg onload="alert(1)"/>'), 'image/png'))).toMatchObject({ ok: false, error: expect.stringContaining('texture') });
+    // Individually fine textures that add up past the pixel budget.
+    expect(validateGltf(withImage(pngHeader(4096, 4096)), { maxTexturePixels: 8 * 1024 * 1024 })).toMatchObject({ ok: false, error: expect.stringContaining('megapixels') });
+    // The same checks on a data URI image of a .gltf.
+    let b = '';
+    for (const c of pngHeader(60000, 60000)) b += String.fromCharCode(c);
+    const text = triangleGltfText({ images: [{ uri: `data:image/png;base64,${btoa(b)}` }] });
+    expect(validateGltf(text)).toMatchObject({ ok: false, error: expect.stringContaining('texture') });
+  });
+
+  it('caps decoded vertex data, including zero-filled accessors without a buffer view (exploit attempt)', () => {
+    const { json, bin } = triangleGltf();
+    // An accessor the loader would allocate as 100M x VEC4 floats (1.6 GB) from no data at all.
+    (json['accessors'] as Array<Record<string, unknown>>).push({ componentType: 5126, count: 100_000_000, type: 'VEC4' });
+    expect(validateGltf(writeGlb(json, bin))).toMatchObject({ ok: false, error: expect.stringContaining('vertex data') });
+    expect(accessorBytes(triangleGltf().json as Parameters<typeof accessorBytes>[0])).toBe(3 * 12 + 3 * 2);
   });
 
   it('blocks prototype-pollution keys and strips extras / hostile names', () => {

@@ -11,6 +11,50 @@ Aether runs in two shapes, and the rules differ:
 The site operator's keys and subscriptions are never used for visitors. A
 hosted copy has no server-side AI at all.
 
+## Threat model
+
+**What we protect.**
+
+| Asset | Where it lives |
+| --- | --- |
+| The user's AI logins (Codex / Claude Code subscriptions) and quota | The CLIs' own credential files; reached only through the local server's `/api/local/*` routes and the token-paired bridge |
+| A personal API key (bring your own key) | `sessionStorage` (or `localStorage` when the user asks to remember it) of the studio's origin |
+| Projects, history, imports, publish history | IndexedDB of the studio's origin |
+| The user's computer | Files, processes and network reachable by the local server, the bridge and the CLIs they start |
+| Other visitors of a published game or share link | The player page (`/play`, published builds) |
+
+**Who might attack.**
+
+- **A web page the user visits** while Aether runs locally: tries to reach
+  `127.0.0.1` (CSRF, DNS rebinding, Private Network Access), or embeds a
+  share link / published game in an iframe.
+- **A crafted world**: a share link, a project file, a game build, a model
+  or image import. It contains attacker data, and may contain generator and
+  behaviour-script *code*.
+- **The model itself**: generator code, scripts, patches and tool calls come
+  from an LLM that can be steered by prompt injection (a malicious image, a
+  shared project, text in a prompt).
+- **A device on the same network** when LAN sharing / LAN access is on.
+- **A compromised or impersonated hosted page** that the user paired with
+  their local bridge.
+
+**Trust boundaries and what holds each one.**
+
+| Boundary | Mitigation |
+| --- | --- |
+| Model output → code | Generators: static screen (advisory) + locked-down module worker (below) + output validation on the main thread; scripts: QuickJS (WebAssembly) with memory, stack and time limits; patches and tool calls: zod schemas + `validateWorld`. Nothing the model writes reaches `eval` on the page. |
+| Model output → the user's computer | CLI runs have every tool, MCP server, plugin, hook and setting source disabled, an allowlisted environment, an empty throwaway folder and a timeout; a tool use kills the run (`tool_violation`). |
+| Web page → local server / bridge | Host allowlist (421), Origin allowlist (403), JSON-only bodies (preflight), `HttpOnly; SameSite=Strict` session secret, loopback-socket check, bearer token from a one-time pairing code (bridge). |
+| Untrusted files → browser | Header-level validation before any decoder (glTF structure and budgets, embedded texture sizes, image pixel counts), zip caps enforced while inflating, prototype-pollution guards, `validateWorld`. |
+| Published build → the studio's origin | Builds in the local library are served on the studio's origin, so they may carry no code of their own: every script must be the installed player byte for byte, `sw.js` must be the generated worker (below). |
+| Visitor → published game | `PLAY_CSP` (no inline or eval'd script, no third-party hosts), titles escaped, share links capped and validated. |
+
+**Out of scope.** Malware already running as the user (it can read the CLI
+credentials directly); a user who pastes their own key into a page they do
+not trust; the optional server-side generator dry run
+(`AETHER_VALIDATE_GENERATORS`, off by default) — `node:vm` is not a security
+boundary, so do not turn it on for a public server.
+
 ## Local app
 
 ### Network exposure
@@ -148,6 +192,51 @@ AI-written generators and behaviour scripts run in the existing sandboxes
 CSP for generators, and QuickJS (WebAssembly) for scripts. Nothing in the
 local app adds an `eval` path.
 
+**Generator worker lockdown.** Before any generator runs, the worker:
+
+1. captures the two capabilities it needs (`postMessage`, the `Function`
+   constructor used to compile) in closures;
+2. makes the constructors reachable from any function
+   (`(() => 0).constructor`, async / generator variants) throw;
+3. removes every global that is not a plain ECMAScript intrinsic
+   (`ALLOWED_GLOBALS`) **from the worker scope and from its whole prototype
+   chain** (`DedicatedWorkerGlobalScope.prototype`,
+   `WorkerGlobalScope.prototype`, `EventTarget.prototype`). Browsers keep
+   `fetch`, the `indexedDB` getter, `caches` and friends on those
+   prototypes, and interface objects such as `WorkerGlobalScope` hand them
+   out through `Object.getOwnPropertyDescriptor`; a WebIDL getter called with
+   an undefined receiver falls back to the global object. Shadowing names on
+   the scope alone (the previous lockdown) left that path open — see the
+   hardening review in [REVIEW_LOG.md](REVIEW_LOG.md);
+4. freezes the shared intrinsics so one run cannot tamper with the next.
+
+The worker also gets its own CSP (`default-src 'none'`) where the host sends
+headers. `npm run e2e:security` runs the escape attempts in the real bundled
+worker in Chromium and Firefox; they must all fail while a normal generator
+still builds.
+
+## Imported files
+
+- **Models** (`.glb`, self-contained `.gltf`): exact GLB header and chunk
+  checks; JSON size cap and prototype-pollution guard; zod structure; no
+  external URIs (buffers and images must be embedded); only extensions the
+  studio decodes; caps on bytes, triangles, nodes, meshes, materials,
+  textures, clips, accessors and **decoded vertex bytes** (256 MB — an
+  accessor without a buffer view is zero-filled by the loader, so its
+  declared count counts too); every **embedded texture's header** is read
+  before any decoder sees it (PNG / JPEG / WebP only, ≤ 8192 px per side,
+  ≤ 80 megapixels per model): a 33-byte PNG can declare 65535 × 65535
+  pixels. The output is a fresh, canonical GLB.
+- **Images and skies**: format by magic bytes, never by extension or MIME;
+  byte and pixel caps. Reference images attached to a prompt are checked the
+  same way (≤ 12 000 px per side, ≤ 50 megapixels) before the browser
+  decodes them, then downscaled to 1024 px.
+- **Archives**: entry count, per-entry and total caps enforced while
+  inflating (a deflate bomb stops at the cap), CRC checked, encrypted
+  entries refused, names must be safe relative paths — no `..`, no absolute
+  paths, no backslashes or control characters, no Windows device names
+  (`con`, `nul`, `com1` …) and no parts ending in a dot or space.
+
 ## Publishing
 
 - **Share links are data, never code paths.** The world travels in the URL
@@ -176,6 +265,23 @@ local app adds an `eval` path.
   Builds are written to a temporary folder and renamed into place
   (immutable), at most 100 builds / 2 GB. Nothing uploaded is executed by
   the server; files are served with the player CSP and `nosniff`.
+- **No foreign code in the library.** Library builds are served from
+  `/published/<id>/` on the studio's own origin — the origin of the session
+  cookie, the local AI routes and the user's projects. A script there could
+  drive the user's Codex / Claude Code login, read projects or a remembered
+  key; a service worker there would keep doing it. So every `.js` / `.mjs`
+  in an upload must be byte-identical (SHA-256) to a player file of the
+  studio installed on this computer (its `play-manifest.json`), and `sw.js`
+  must be exactly the offline worker the studio generates
+  (`isGeneratedServiceWorker`). Everything else in a build is inert under
+  `PLAY_CSP` and `nosniff` (no inline script; script only from `'self'`,
+  where every script is now trusted code). A build made by a different
+  Aether version is refused with a message saying so; rebuild it in this
+  computer's studio.
+- **Page text is never markup.** Titles and descriptions are escaped and
+  spliced with function replacers (a replacement string would expand
+  `$'` / `$&` typed into a title and paste the rest of the page into an
+  attribute).
 - **Deploying to the user's hosting** runs the user's own CLI (`netlify`,
   `vercel`, `gh`, `butler`) with argument arrays (no shell; values are
   regex-validated slugs or `user/game`), the allow-listed environment of
@@ -193,3 +299,16 @@ local app adds an `eval` path.
 - **Publish history** lives in its own IndexedDB database; records are
   validated on read (only `https://` and local URLs, image data-URL
   thumbnails), with count and byte caps.
+
+## Reporting a vulnerability
+
+Please report security issues privately, not in a public issue: use
+**Security → Report a vulnerability** (a private security advisory) on the
+project's GitHub repository. Include what you tried, what happened, the
+browser / OS and, if you can, a minimal world, file or request that
+reproduces it. You will get an acknowledgement within a few days; fixes for
+confirmed issues ship with a regression test (an exploit attempt that must
+fail) and a note in [REVIEW_LOG.md](REVIEW_LOG.md).
+
+When testing, use your own machine and your own accounts: never point
+exploit attempts at someone else's hosted copy or local bridge.

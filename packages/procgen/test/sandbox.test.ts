@@ -347,6 +347,10 @@ describe('worker lockdown (child process probe)', () => {
     expect(r.globalThisAccess).toMatch(/^blocked:TypeError/);
     expect(r.evalAccess).toMatch(/^blocked:TypeError/);
     expect(r.timer).toMatch(/^blocked:TypeError/);
+    // Web APIs held on the global's prototype chain (browser workers) are gone too.
+    for (const k of ['protoGetterEscape', 'protoMethodEscape', 'interfaceObject']) expect(r[k], k).not.toMatch(/LEAK|REACHED/);
+    expect(r.protoGetterEscape).toMatch(/^blocked:TypeError/);
+    expect(r.intrinsicsKept).toBe('ok:1');
     expect(r.pollutedAfter).toBe('undefined');
     expect(r.fetchType).toBe('undefined');
     expect(r.functionGlobal).toBe('undefined');

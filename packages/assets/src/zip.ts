@@ -41,12 +41,19 @@ export function crc32(data: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
+/**
+ * Windows device names (`con`, `nul`, `com1`, … with any extension): writing
+ * `aux.json` on Windows talks to a device instead of creating a file.
+ */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]|conin\$|conout\$)(\..*)?$/i;
+
 /** True for a safe relative entry name (`world.json`, `assets/user-1a2b.glb`). */
 export function safeEntryName(name: string): boolean {
   // eslint-disable-next-line no-control-regex
   if (name.length === 0 || name.length > 200 || /[\u0000-\u001f\\:*?"<>|]/.test(name)) return false;
   if (name.startsWith('/') || name.endsWith('/')) return false;
-  return name.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+  // Parts must not be empty, `.`/`..`, a Windows device, or end in a dot or space (Windows strips those, aliasing two names).
+  return name.split('/').every((part) => part !== '' && part !== '.' && part !== '..' && !WINDOWS_DEVICE.test(part) && !/[. ]$/.test(part));
 }
 
 async function pipe(data: Uint8Array, stream: TransformStream<Uint8Array, Uint8Array>, cap: number): Promise<Uint8Array | null> {

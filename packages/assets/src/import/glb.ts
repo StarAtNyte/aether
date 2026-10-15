@@ -8,13 +8,18 @@
  *   bombs (`inspectUntrusted`), then validated with zod;
  * - references: no external URIs anywhere (only embedded buffer views or
  *   `data:` URIs), so a model can never make the viewer fetch a URL;
- * - budgets: bytes, triangles, nodes, meshes, materials, textures, clips;
+ * - budgets: bytes, triangles, nodes, meshes, materials, textures, clips,
+ *   decoded vertex data (accessors without a buffer view are zero-filled
+ *   by the loader, so their declared size counts too) and texture pixels:
+ *   every embedded image's header is read and its size checked before any
+ *   decoder sees it (a few-KB PNG can declare 65535 × 65535 pixels);
  * - extensions: only ones the studio can decode (no Draco / Basis);
  * - names: control characters stripped, clamped to 64 characters, `extras`
  *   dropped. The output is a fresh, canonical GLB.
  */
 import { inspectUntrusted } from '@aether/core';
 import { z } from 'zod';
+import { validateImage } from './image';
 
 /** Budgets for one imported model. */
 export interface GltfLimits {
@@ -27,6 +32,12 @@ export interface GltfLimits {
   maxTextures: number;
   maxAnimations: number;
   maxAccessors: number;
+  /** Decoded size of all accessors together (bytes). */
+  maxAccessorBytes: number;
+  /** Longest side of one embedded texture (px). */
+  maxTextureSide: number;
+  /** Pixels of all embedded textures together. */
+  maxTexturePixels: number;
 }
 
 export const DEFAULT_GLTF_LIMITS: GltfLimits = {
@@ -39,6 +50,9 @@ export const DEFAULT_GLTF_LIMITS: GltfLimits = {
   maxTextures: 64,
   maxAnimations: 64,
   maxAccessors: 16_384,
+  maxAccessorBytes: 256 * 1024 * 1024,
+  maxTextureSide: 8192,
+  maxTexturePixels: 80 * 1024 * 1024,
 };
 
 /** Extensions the studio's GLTFLoader can handle without extra decoders. */
@@ -59,7 +73,7 @@ const GltfJson = z
     asset: z.object({ version: z.string().regex(/^2\.\d+$/, 'only glTF 2.x is supported') }).passthrough(),
     buffers: z.array(z.object({ byteLength: z.number().int().min(0), uri: Uri.optional() }).passthrough()).max(64).optional(),
     bufferViews: z.array(z.object({ buffer: z.number().int().min(0), byteLength: z.number().int().min(0), byteOffset: z.number().int().min(0).optional() }).passthrough()).max(16_384).optional(),
-    accessors: z.array(z.object({ count: z.number().int().min(0), bufferView: z.number().int().min(0).optional() }).passthrough()).optional(),
+    accessors: z.array(z.object({ count: z.number().int().min(0), bufferView: z.number().int().min(0).optional(), componentType: z.number().int().optional(), type: z.string().max(16).optional() }).passthrough()).optional(),
     meshes: z.array(z.object({ primitives: z.array(z.object({ attributes: z.record(z.string(), z.number().int().min(0)), indices: z.number().int().min(0).optional(), mode: z.number().int().min(0).max(6).optional() }).passthrough()).max(256) }).passthrough()).optional(),
     nodes: z.array(z.object({}).passthrough()).optional(),
     materials: z.array(z.object({}).passthrough()).optional(),
@@ -154,6 +168,46 @@ function checkJson(json: GltfJson, limits: GltfLimits): string | null {
   let tris = 0;
   for (const mesh of json.meshes ?? []) for (const prim of mesh.primitives) tris += primitiveTriangles(json, prim);
   if (tris > limits.maxTriangles) return `too many triangles (${tris.toLocaleString('en-US')}, limit ${limits.maxTriangles.toLocaleString('en-US')})`;
+  return null;
+}
+
+/** Bytes per component of a glTF accessor component type (unknown: the widest). */
+const COMPONENT_BYTES: Readonly<Record<number, number>> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+/** Components per element of a glTF accessor type (unknown: the largest). */
+const TYPE_COMPONENTS: Readonly<Record<string, number>> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
+
+/** Decoded bytes of every accessor together (what the loader allocates). */
+export function accessorBytes(json: GltfJson): number {
+  let total = 0;
+  for (const a of json.accessors ?? []) total += a.count * (COMPONENT_BYTES[a.componentType ?? 0] ?? 4) * (TYPE_COMPONENTS[a.type ?? ''] ?? 16);
+  return total;
+}
+
+/**
+ * Check the decoded-size budgets that need the binary data: accessor bytes
+ * and every embedded image (format by magic bytes, side and total pixels).
+ * `bin` is the (single, rebased) binary buffer.
+ */
+function checkPayload(json: GltfJson, bin: Uint8Array | null, limits: GltfLimits): string | null {
+  if (accessorBytes(json) > limits.maxAccessorBytes) return `the model's vertex data is too large when decoded (limit ${Math.round(limits.maxAccessorBytes / 1024 / 1024)} MB)`;
+  let pixels = 0;
+  for (const img of json.images ?? []) {
+    let bytes: Uint8Array | null = null;
+    if (img.bufferView !== undefined) {
+      const view = json.bufferViews?.[img.bufferView];
+      if (!view || !bin) return 'an embedded image points outside the binary data';
+      const at = view.byteOffset ?? 0;
+      if (at + view.byteLength > bin.byteLength) return 'an embedded image points outside the binary data';
+      bytes = bin.subarray(at, at + view.byteLength);
+    } else if (img.uri !== undefined) {
+      bytes = decodeDataUri(img.uri, limits.maxBytes);
+      if (!bytes) return 'an embedded image data URI is malformed';
+    } else continue;
+    const r = validateImage(bytes, { maxBytes: limits.maxBytes, maxSide: limits.maxTextureSide });
+    if (!r.ok) return `an embedded texture was rejected (${r.error})`;
+    pixels += r.info.width * r.info.height;
+    if (pixels > limits.maxTexturePixels) return `the model's textures are too large together (limit ${Math.round(limits.maxTexturePixels / 1024 / 1024)} megapixels)`;
+  }
   return null;
 }
 
@@ -355,7 +409,7 @@ function validateGlb(bytes: Uint8Array, limits: GltfLimits): GltfResult {
   for (const v of parsed.bufferViews ?? []) {
     if (v.buffer !== 0 || !bin || (v.byteOffset ?? 0) + v.byteLength > bin.byteLength) return fail('a buffer view points outside the binary chunk');
   }
-  const err = checkJson(parsed, limits);
+  const err = checkJson(parsed, limits) ?? checkPayload(parsed, bin, limits);
   if (err) return fail(err);
   sanitizeJson(parsed);
   const size = normaliseRoot(parsed);
@@ -392,7 +446,7 @@ function validateGltfJson(bytes: Uint8Array, limits: GltfLimits): GltfResult {
     (v as { byteOffset?: number }).byteOffset = base + (v.byteOffset ?? 0);
     (v as { buffer: number }).buffer = 0;
   }
-  const err = checkJson(parsed, limits);
+  const err = checkJson(parsed, limits) ?? checkPayload(parsed, size > 0 ? bin : null, limits);
   if (err) return fail(err);
   (parsed as { buffers?: unknown }).buffers = size > 0 ? [{ byteLength: size }] : undefined;
   sanitizeJson(parsed);

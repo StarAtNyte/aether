@@ -25,6 +25,8 @@ export interface PublishServices {
 /** Options of {@link createPublishServices}. */
 export interface PublishServiceOptions {
   dir: string;
+  /** The studio's production build (trusted player scripts); null/absent: builds with scripts are refused. */
+  playerDir?: string | null;
   env?: NodeJS.ProcessEnv;
   spawn?: DeployDeps['spawn'];
   tmpRoot?: string;
@@ -35,7 +37,7 @@ export interface PublishServiceOptions {
 
 /** Create the services (nothing listens until LAN sharing is turned on). */
 export function createPublishServices(o: PublishServiceOptions): PublishServices {
-  const store = new PublishStore(o.dir, undefined, o.now);
+  const store = new PublishStore(o.dir, undefined, o.now, o.playerDir ?? null);
   const jobs = new DeployJobs({ store, ...(o.env ? { env: o.env } : {}), ...(o.spawn ? { spawn: o.spawn } : {}), ...(o.tmpRoot ? { tmpRoot: o.tmpRoot } : {}), ...(o.now ? { now: o.now } : {}) });
   const lan = new LanShare({ store, ...(o.lanHost ? { host: o.lanHost } : {}), ...(o.lanAddresses ? { addresses: o.lanAddresses } : {}), ...(o.now ? { now: o.now } : {}) });
   return {

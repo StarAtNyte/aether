@@ -16,35 +16,5 @@ export function registerOfflineCache(): void {
   });
 }
 
-/**
- * Source of the service worker for a build with these files (relative
- * URLs). The cache is named after the scope and the build id, and only
- * this scope's older caches are removed (hosts like itch.io serve many
- * games from one origin).
- */
-export function serviceWorkerSource(buildId: string, files: readonly string[]): string {
-  const id = buildId.replace(/[^a-z0-9-]/gi, '').slice(0, 40) || 'build';
-  const list = JSON.stringify(['./', ...files.filter((f) => /^[A-Za-z0-9._~/-]+$/.test(f) && !f.split('/').includes('..')).map((f) => `./${f}`)]);
-  return `/* Offline cache of a published Aether game (generated). */
-const PREFIX = 'aether-game:' + self.registration.scope + ':';
-const CACHE = PREFIX + ${JSON.stringify(id)};
-const FILES = ${list};
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
-});
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
-});
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin || !url.href.startsWith(self.registration.scope)) return;
-  e.respondWith(caches.open(CACHE).then((c) => c.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req))));
-});
-`;
-}
+/** The generated `sw.js` of a build (shared with the local app's build library, which verifies it). */
+export { serviceWorkerSource } from '@aether/assets/offline-sw';

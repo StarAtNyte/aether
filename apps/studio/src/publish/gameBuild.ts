@@ -152,7 +152,9 @@ export function buildId(gameText: string, files: readonly string[]): string {
 export function publishedIndexHtml(playHtml: string, game: { title: string; description: string }): string {
   const title = escapeXml(game.title.slice(0, 80) || 'Untitled game');
   const desc = escapeXml((game.description || `${game.title} — a playable 3D world made with Aether.`).replace(/\s+/g, ' ').slice(0, 300));
-  let html = playHtml.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`).replace(/<meta name="description" content="[^"]*"\s*\/?>/, `<meta name="description" content="${desc}" />`);
+  // Function replacers: a replacement STRING would expand `$'`, `$&`, `$1` … typed into a title,
+  // pasting the rest of the page into an attribute (markup injection).
+  let html = playHtml.replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`).replace(/<meta name="description" content="[^"]*"\s*\/?>/, () => `<meta name="description" content="${desc}" />`);
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${BUILD_CSP}" />`,
     '<link rel="manifest" href="manifest.webmanifest" />',
@@ -161,7 +163,7 @@ export function publishedIndexHtml(playHtml: string, game: { title: string; desc
     `<meta property="og:description" content="${desc}" />`,
   ].join('\n    ');
   // The CSP must come before anything it governs: right after the charset.
-  html = html.replace(/(<meta charset="UTF-8"\s*\/?>)/i, `$1\n    ${head}`);
+  html = html.replace(/(<meta charset="UTF-8"\s*\/?>)/i, (charset: string) => `${charset}\n    ${head}`);
   return html;
 }
 

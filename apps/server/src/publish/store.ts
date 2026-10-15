@@ -7,18 +7,32 @@
  * a safe relative path with an allowed extension, `game.json` must be an
  * Aether game whose world validates, and files are written to a temporary
  * directory that is renamed into place only when complete.
+ *
+ * Builds are served from this computer's own origin (`/published/<id>/`),
+ * the origin of the studio, its session cookie and its local AI routes. So a
+ * build may carry no code of its own: every script (`.js` / `.mjs`) must be
+ * byte-identical to a file of the player that this computer's Aether ships
+ * (listed in its `play-manifest.json`), and `sw.js` must be exactly the
+ * offline-cache worker the studio generates. HTML, styles, JSON and media
+ * are inert under the player's CSP (no inline script, scripts from 'self'
+ * only, and every script on 'self' is now trusted).
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { inspectUntrusted, validateWorld } from '@aether/core';
 import { readZip, safeEntryName } from '@aether/assets/zip';
+import { isGeneratedServiceWorker } from '@aether/assets/offline-sw';
 
 /** Build ids: 12 lowercase base36 characters. */
 export const BUILD_ID_RE = /^[a-z0-9]{12}$/;
 /** File types a build may contain. */
 export const ALLOWED_EXT = /\.(html|js|mjs|css|json|webmanifest|wasm|png|jpe?g|webp|svg|glb|hdr|woff2?|txt|md|aethersave)$/i;
+/** Files a browser can run as script (served with a JavaScript MIME type). */
+export const SCRIPT_EXT = /\.m?js$/i;
+/** The player's file list written by the studio build (see scripts/vite/player-manifest.ts). */
+const PlayerManifest = z.object({ version: z.literal(1), entry: z.string().max(200), files: z.array(z.string().max(200)).max(1000) });
 /** Names that may appear without an extension. */
 const ALLOWED_PLAIN = new Set(['.nojekyll']);
 
@@ -90,12 +104,76 @@ export function checkGameJson(bytes: Uint8Array): { ok: true; title: string } | 
 export class PublishStore {
   readonly dir: string;
 
+  /** Trusted player scripts: build-relative path → SHA-256 (loaded once from `playerDir`). */
+  private trusted: Promise<ReadonlyMap<string, string>> | null = null;
+
+  /**
+   * @param dir where builds are kept
+   * @param limits size and count caps
+   * @param now clock (tests)
+   * @param playerDir the studio's own production build (`play-manifest.json` + the player's
+   *   files); scripts in an uploaded build must match it byte for byte. Null: no build
+   *   with scripts is accepted.
+   */
   constructor(
     dir: string,
     private readonly limits: PublishStoreLimits = DEFAULT_PUBLISH_LIMITS,
     private readonly now: () => number = Date.now,
+    private readonly playerDir: string | null = null,
   ) {
     this.dir = resolve(dir);
+  }
+
+  /** The player's scripts this computer trusts (path → SHA-256). Empty when there is no player build. */
+  private async trustedScripts(): Promise<ReadonlyMap<string, string>> {
+    this.trusted ??= (async () => {
+      const out = new Map<string, string>();
+      if (!this.playerDir) return out;
+      try {
+        const manifest = PlayerManifest.safeParse(JSON.parse(await readFile(join(this.playerDir, 'play-manifest.json'), 'utf8')));
+        if (!manifest.success) return out;
+        for (const f of manifest.data.files) {
+          if (!SCRIPT_EXT.test(f) || !safeEntryName(f)) continue;
+          const data = await readFile(this.inside(this.playerDir, f)).catch(() => null);
+          if (data) out.set(f, sha256Hex(data));
+        }
+      } catch {
+        // no player build (development server): nothing is trusted
+      }
+      return out;
+    })();
+    const map = await this.trusted;
+    // Nothing found (e.g. the studio is being built right now): look again next time.
+    if (map.size === 0) this.trusted = null;
+    return map;
+  }
+
+  /** Reject any script in a build that is not this computer's own player code. */
+  private async checkScripts(entries: ReadonlyArray<{ name: string; data: Uint8Array }>): Promise<void> {
+    const scripts = entries.filter((e) => SCRIPT_EXT.test(e.name));
+    if (scripts.length === 0) return;
+    const trusted = await this.trustedScripts();
+    for (const e of scripts) {
+      if (e.name === 'sw.js') {
+        let text = '';
+        try {
+          text = new TextDecoder('utf-8', { fatal: true }).decode(e.data);
+        } catch {
+          text = '';
+        }
+        if (!isGeneratedServiceWorker(text)) throw new PublishStoreError(400, 'The build was rejected: its sw.js is not the offline worker Aether generates.');
+        continue;
+      }
+      const want = trusted.get(e.name);
+      if (want === undefined || want !== sha256Hex(e.data)) {
+        throw new PublishStoreError(
+          400,
+          trusted.size === 0
+            ? 'Builds can only be added to the library of the installed Aether app (its player build is missing here).'
+            : `The build was rejected: ${e.name.slice(0, 80)} is not part of the Aether player installed on this computer. Rebuild the game with this computer's studio, or update Aether so both use the same version.`,
+        );
+      }
+    }
   }
 
   /** Every build, newest first. */
@@ -147,6 +225,7 @@ export class PublishStore {
     if (!index || !game) throw new PublishStoreError(400, 'The build has no index.html or game.json.');
     const check = checkGameJson(game.data);
     if (!check.ok) throw new PublishStoreError(400, `The build was rejected: ${check.error}.`);
+    await this.checkScripts(r.entries);
     const id = randomId();
     const tmp = join(this.dir, `.tmp-${id}-${randomBytes(4).toString('hex')}`);
     const meta: BuildMeta = { v: 1, id, title: check.title, createdAt: this.now(), bytes, files: r.entries.length };
@@ -228,6 +307,10 @@ export class PublishStore {
     if (!file.startsWith(base + sep)) throw new PublishStoreError(400, 'unsafe path');
     return file;
   }
+}
+
+function sha256Hex(data: Uint8Array): string {
+  return createHash('sha256').update(data).digest('hex');
 }
 
 /** A random build id. */

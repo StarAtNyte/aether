@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createWorld } from '@aether/core';
 import { LocalAi } from '@aether/bridge';
 import { writeZip, type ZipEntry } from '@aether/assets/zip';
+import { serviceWorkerSource } from '@aether/assets/offline-sw';
 import { PLAY_CSP } from '../src/middleware';
 import { checkGameJson, PublishStore } from '../src/publish/store';
 import { deploySteps, findUrl, netlifyUrl, parseStatus, substitute, vercelUrl } from '../src/publish/hosts';
@@ -45,11 +46,23 @@ const gameJson = JSON.stringify({ format: 'aether-game', v: 1, title: 'Coin Isla
 async function buildZip(extra: ZipEntry[] = [], opts: { game?: string | null; index?: boolean } = {}): Promise<Uint8Array> {
   const entries: ZipEntry[] = [
     ...(opts.index === false ? [] : [{ name: 'index.html', data: enc.encode('<!doctype html><title>Coin Island</title><script type="module" src="./assets/play-x.js"></script>') }]),
-    { name: 'assets/play-x.js', data: enc.encode('console.log("player")') },
+    { name: 'assets/play-x.js', data: enc.encode(PLAYER_JS) },
     ...(opts.game === null ? [] : [{ name: 'game.json', data: enc.encode(opts.game ?? gameJson) }]),
     ...extra,
   ];
   return writeZip(entries);
+}
+
+const PLAYER_JS = 'console.log("player")';
+
+/** A stand-in for the studio's production build: the trusted player files. */
+function playerDir(): string {
+  const d = temp('aether-player-');
+  mkdirSync(join(d, 'assets'), { recursive: true });
+  writeFileSync(join(d, 'play-manifest.json'), JSON.stringify({ version: 1, entry: 'play.html', files: ['assets/play-x.js', 'play.html'], bytes: 1 }));
+  writeFileSync(join(d, 'assets', 'play-x.js'), PLAYER_JS);
+  writeFileSync(join(d, 'play.html'), '<!doctype html>');
+  return d;
 }
 
 /** A directory of fake hosting CLIs (POSIX shell scripts) and a fake HOME. */
@@ -103,7 +116,7 @@ function setup(env?: NodeJS.ProcessEnv): ReturnType<typeof makeApp> {
   return makeApp(makeConfig({ AETHER_LOCAL_AI: 'on' }), {
     local,
     isLoopback: () => true,
-    publish: { dir: join(dataDir, 'published'), ...(env ? { env } : {}), lanHost: '127.0.0.1', lanAddresses: () => ['192.168.1.20'], tmpRoot: dataDir },
+    publish: { dir: join(dataDir, 'published'), playerDir: playerDir(), ...(env ? { env } : {}), lanHost: '127.0.0.1', lanAddresses: () => ['192.168.1.20'], tmpRoot: dataDir },
     onPublish: (s) => {
       publishServices = s;
     },
@@ -127,7 +140,7 @@ async function waitJob(app: ReturnType<typeof makeApp>, id: string): Promise<{ s
 
 describe('published build store', () => {
   it('stores valid builds immutably and serves only their files', async () => {
-    const store = new PublishStore(temp('aether-store-'));
+    const store = new PublishStore(temp('aether-store-'), undefined, undefined, playerDir());
     const meta = await store.add(await buildZip([{ name: 'assets/lib/m/x.0123abcd.glb', data: new Uint8Array([1, 2, 3]) }]));
     expect(meta.title).toBe('Coin Island');
     expect(meta.files).toBe(4);
@@ -141,7 +154,7 @@ describe('published build store', () => {
   });
 
   it('rejects builds without a game, with unknown file types, invalid worlds or over the caps', async () => {
-    const store = new PublishStore(temp('aether-store-'), { maxBuilds: 1, maxBuildBytes: 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024, maxFiles: 10, maxFileBytes: 512 * 1024 });
+    const store = new PublishStore(temp('aether-store-'), { maxBuilds: 1, maxBuildBytes: 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024, maxFiles: 10, maxFileBytes: 512 * 1024 }, undefined, playerDir());
     await expect(store.add(await buildZip([], { game: null }))).rejects.toThrow(/index.html or game.json/);
     await expect(store.add(await buildZip([], { index: false }))).rejects.toThrow(/index.html or game.json/);
     await expect(store.add(await buildZip([{ name: 'run.exe', data: new Uint8Array(4) }]))).rejects.toThrow(/not allowed/);
@@ -152,6 +165,40 @@ describe('published build store', () => {
     await store.add(await buildZip());
     await expect(store.add(await buildZip())).rejects.toThrow(/holds 1 builds/);
     expect(checkGameJson(enc.encode('{"format":"aether-game","world":{},"__proto__":{"x":1}}')).ok).toBe(false);
+  });
+});
+
+describe('published build store: no foreign code on this origin (exploit attempts)', () => {
+  it('rejects scripts that are not the installed player, byte for byte', async () => {
+    const store = new PublishStore(temp('aether-store-'), undefined, undefined, playerDir());
+    // An extra script the player never had (would run on the studio's origin with its session cookie).
+    await expect(store.add(await buildZip([{ name: 'assets/evil.js', data: enc.encode('fetch("/api/local/accounts")') }]))).rejects.toThrow(/not part of the Aether player/);
+    await expect(store.add(await buildZip([{ name: 'evil.mjs', data: enc.encode('1') }]))).rejects.toThrow(/not part of the Aether player/);
+    // A trusted name with different bytes.
+    const tampered = await writeZip([
+      { name: 'index.html', data: enc.encode('<!doctype html>') },
+      { name: 'assets/play-x.js', data: enc.encode('fetch("/api/local/complete", { method: "POST" })') },
+      { name: 'game.json', data: enc.encode(gameJson) },
+    ]);
+    await expect(store.add(tampered)).rejects.toThrow(/not part of the Aether player/);
+    // A hand-made service worker (it would sit in front of /published/<id>/ on this origin).
+    await expect(store.add(await buildZip([{ name: 'sw.js', data: enc.encode('self.addEventListener("fetch", () => fetch("/api/local/accounts"))') }]))).rejects.toThrow(/sw\.js/);
+    const generated = serviceWorkerSource('abc123', ['index.html', 'game.json', 'assets/play-x.js']);
+    await expect(store.add(await buildZip([{ name: 'sw.js', data: enc.encode(`${generated}fetch("/x");\n`) }]))).rejects.toThrow(/sw\.js/);
+    // The real thing is accepted.
+    const ok = await store.add(await buildZip([{ name: 'sw.js', data: enc.encode(generated) }]));
+    expect(ok.files).toBe(4);
+  });
+
+  it('accepts no scripts at all without a player build', async () => {
+    const store = new PublishStore(temp('aether-store-'));
+    await expect(store.add(await buildZip())).rejects.toThrow(/player build is missing/);
+    // A build of data only (no code) needs no player.
+    const dataOnly = await writeZip([
+      { name: 'index.html', data: enc.encode('<!doctype html>') },
+      { name: 'game.json', data: enc.encode(gameJson) },
+    ]);
+    expect((await store.add(dataOnly)).files).toBe(2);
   });
 });
 

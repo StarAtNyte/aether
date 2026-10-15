@@ -7,8 +7,24 @@ import { lockdown, type LockableScope } from '../../src/sandbox/lockdown';
 import { compileGenerator, errorMessage, runCompiled } from '../../src/sandbox/runner';
 
 const scope = globalThis as unknown as LockableScope & Record<string, unknown>;
+const out = process.stdout;
 scope.postMessage = () => undefined;
 scope.addEventListener = () => undefined;
+
+// Mimic a browser worker: web APIs live on the global's PROTOTYPE chain (like
+// WorkerGlobalScope.prototype.fetch / the indexedDB getter) and an interface
+// object exposes that prototype. WebIDL calls these with an undefined receiver
+// on the global object, so reaching the descriptor is enough to escape.
+const hostProto: Record<string, unknown> = {};
+Object.defineProperty(hostProto, 'indexedDB', { configurable: true, enumerable: true, get: () => 'IDB-REACHED' });
+Object.defineProperty(hostProto, 'fetch', { configurable: true, enumerable: true, writable: true, value: () => 'FETCH-REACHED' });
+Object.setPrototypeOf(hostProto, Object.getPrototypeOf(globalThis) as object);
+Object.setPrototypeOf(globalThis, hostProto);
+function WorkerGlobalScope(): void {}
+WorkerGlobalScope.prototype = hostProto;
+Object.defineProperty(globalThis, 'WorkerGlobalScope', { configurable: true, writable: true, value: WorkerGlobalScope });
+Object.defineProperty(globalThis, 'IDBFactory', { configurable: true, writable: true, value: function IDBFactory() {} });
+
 const caps = lockdown(scope, () => undefined);
 
 const results: Record<string, string> = {};
@@ -34,7 +50,11 @@ attempt('fetch', `fetch('https://example.com'); ${FINISH}`);
 attempt('globalThisAccess', `const g = globalThis; g.x = 1; ${FINISH}`);
 attempt('evalAccess', `eval('1'); ${FINISH}`);
 attempt('timer', `setTimeout(() => 0, 1); ${FINISH}`);
+attempt('protoGetterEscape', `const P = 'proto' + 'type'; const d = Object.getOwnPropertyDescriptor(WorkerGlobalScope[P], 'indexedDB'); throw new Error('LEAK:' + d.get.call(undefined));`);
+attempt('protoMethodEscape', `const P = 'proto' + 'type'; const d = Object.getOwnPropertyDescriptor(WorkerGlobalScope[P], 'fetch'); throw new Error('LEAK:' + d.value.call(undefined));`);
+attempt('interfaceObject', `if (typeof IDBFactory !== 'undefined') throw new Error('LEAK:IDBFactory'); ${FINISH}`);
+attempt('intrinsicsKept', `const m = new Map([[1, Math.max(1, 2)]]); if (JSON.stringify([...m]) !== '[[1,2]]' || !Number.isFinite(parseFloat('1.5'))) throw new Error('intrinsics broken'); ${FINISH}`);
 results.pollutedAfter = String(({} as Record<string, unknown>).polluted);
 results.fetchType = typeof scope.fetch;
 results.functionGlobal = typeof scope.Function;
-process.stdout.write(JSON.stringify(results));
+out.write(JSON.stringify(results));

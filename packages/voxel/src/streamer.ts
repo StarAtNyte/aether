@@ -347,6 +347,13 @@ export class ChunkStreamer {
         this.kick();
         const cur = this.world.chunks.get(key);
         if (!mesh || !cur || this.meshes.get(key) !== m) return;
+        // Left the view while meshing (the sweep could not hide a mesh that was not shown yet):
+        // drop it instead of installing a mesh nobody sees until the next sweep.
+        if (Math.abs(cx - this.centerCx) > this.viewDistance || Math.abs(cz - this.centerCz) > this.viewDistance) {
+          if (m.shown < 0) this.meshes.delete(key);
+          else this.hide(key, cx, cz);
+          return;
+        }
         this.sink.onMesh(key, cx, cz, mesh);
         m.shown = version;
         // The chunk changed while meshing: ask again (urgently if it was an edit).

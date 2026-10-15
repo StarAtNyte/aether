@@ -1,10 +1,15 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createWorld } from '@aether/core';
 import { readZip } from '@aether/assets/zip';
 import { BUILD_CSP, buildGame, buildId, publishedIndexHtml, webManifest } from '../src/publish/gameBuild';
 import { defaultControls, defaultDescription, defaultTitle, gameJson, parseGameManifest } from '../src/publish/manifest';
 import { serviceWorkerSource } from '../src/player/offline';
+import { isGeneratedServiceWorker } from '@aether/assets/offline-sw';
 import { MemoryLibrary, PublishLibrary, MAX_SNAPSHOTS } from '../src/publish/library';
+import { PublishStore } from '../../server/src/publish/store';
 
 const PLAY_HTML = `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -83,11 +88,35 @@ describe('game build (zip)', () => {
     expect(sw).toContain('"./index.html"');
     expect(sw).toContain('"./assets/lib/m/beaver.088f13b3.glb"');
     expect(sw).not.toContain('project/');
+    // The local app's build library accepts only the generated worker: a real build's must pass.
+    expect(isGeneratedServiceWorker(sw)).toBe(true);
     expect(JSON.parse(text('manifest.webmanifest'))).toMatchObject({ start_url: './', display: 'fullscreen' });
     expect(text('README.md')).toMatch(/itch\.io/);
     expect(text('CREDITS.txt')).toMatch(/Beaver/);
     // Library files are fetched from the studio's own library path.
     expect(log).toContain('assets/lib/m/beaver.088f13b3.glb');
+  });
+
+  it("is accepted by the local app's build library, which trusts only its own player code", async () => {
+    // Producer / consumer contract: the zip the studio builds passes the library's no-foreign-code check
+    // when the library's player build is the one the studio packed (same files, same bytes).
+    const dir = mkdtempSync(join(tmpdir(), 'aether-player-'));
+    try {
+      const fetchFile = fakeFetch([]);
+      for (const f of ['play-manifest.json', 'play.html', 'assets/play-abc.js', 'assets/three-x.js', 'assets/rapier_wasm3d_bg-y.wasm']) {
+        mkdirSync(dirname(join(dir, 'player', f)), { recursive: true });
+        writeFileSync(join(dir, 'player', f), await fetchFile(f));
+      }
+      const store = new PublishStore(join(dir, 'library'), undefined, undefined, join(dir, 'player'));
+      const b = await buildGame({ world, title: 'Pond', description: '', author: '', controls: '', music: null, cover: null, fetchFile, now: 1 });
+      const meta = await store.add(b.zip);
+      expect(meta.title).toBe('Pond');
+      // The same build from a player this computer does not have is refused.
+      const other = await buildGame({ world, title: 'Pond', description: '', author: '', controls: '', music: null, cover: null, now: 1, fetchFile: async (path) => (path === 'assets/three-x.js' ? new TextEncoder().encode('fetch("/api/local/accounts")') : fetchFile(path)) });
+      await expect(store.add(other.zip)).rejects.toThrow(/not part of the Aether player/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('refuses an unsafe player manifest and reports a missing player build', async () => {
@@ -112,6 +141,15 @@ describe('game build (zip)', () => {
     const html = publishedIndexHtml(PLAY_HTML, { title: '"><script>x</script>', description: 'a "b" <c>' });
     expect(html).not.toContain('<script>x');
     expect(html).toContain('&quot;&gt;&lt;script&gt;');
+    // Replacement patterns typed into a title must stay literal text (no `$'` page splicing).
+    for (const t of ["$'", '$`', '$&', '$1', '$$']) {
+      const page = publishedIndexHtml(PLAY_HTML, { title: `Game ${t}`, description: `About ${t}` });
+      const e = t.replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+      expect(page, t).toContain(`<title>Game ${e}</title>`);
+      expect(page, t).toContain(`<meta property="og:description" content="About ${e}" />`);
+      expect(page.split('<title>').length, t).toBe(2);
+      expect(page.match(/http-equiv="Content-Security-Policy"/g)?.length, t).toBe(1);
+    }
     expect(buildId('a', ['x'])).toBe(buildId('a', ['x']));
     expect(buildId('a', ['x'])).not.toBe(buildId('b', ['x']));
     expect(JSON.parse(webManifest('T', 'D')).icons).toHaveLength(2);

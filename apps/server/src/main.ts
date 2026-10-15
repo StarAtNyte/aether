@@ -40,7 +40,7 @@ async function main(): Promise<void> {
 
   // Publishing to the user's own hosting and the local network (local app only), shared by the
   // studio's same-origin routes and the bridge of hosted copies.
-  const publish = local ? createPublishServices({ dir: resolve(config.dataDir, 'published') }) : null;
+  const publish = local ? createPublishServices({ dir: resolve(config.dataDir, 'published'), playerDir: config.staticDir }) : null;
 
   // Optional bridge for hosted copies of the studio (same process, 127.0.0.1 only, token-paired).
   let bridge: RunningBridge | null = null;

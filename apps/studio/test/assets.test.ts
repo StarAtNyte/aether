@@ -109,6 +109,9 @@ describe('zip', () => {
     expect(safeEntryName('/abs')).toBe(false);
     expect(safeEntryName('a\\b')).toBe(false);
     expect(safeEntryName('ok/x.txt')).toBe(true);
+    // Windows devices and names Windows would silently alias (trailing dot / space).
+    for (const bad of ['aux.json', 'assets/CON', 'nul.txt', 'com1.glb', 'lpt9', 'x/conout$.js', 'game.json.', 'a /b.txt']) expect(safeEntryName(bad), bad).toBe(false);
+    for (const good of ['.nojekyll', 'console.json', 'auxiliary.txt', 'com10.txt', 'assets/con-x.js']) expect(safeEntryName(good), good).toBe(true);
     await expect(writeZip([{ name: '../x', data: new Uint8Array(1) }])).rejects.toThrow();
     const zip = await writeZip([{ name: 'a.txt', data: new TextEncoder().encode('hello hello hello hello') }], { compress: false });
     const corrupt = zip.slice();
