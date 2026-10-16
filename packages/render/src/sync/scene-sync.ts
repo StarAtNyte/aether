@@ -883,9 +883,12 @@ export class SceneSync {
     // Collider shapes are centred on the body; models and assets stand on their origin.
     const footOffset = shape.kind === 'primitive' ? -(shape.size[1] * 0.5) : 0;
     const token = ++node.charToken;
+    const seated = spec.pose === 'sit';
     void this.track(
       chars.add(node.id, look, node.object, { footOffset, track: node.object, castShadow: node.entity.castShadow }).then((rig) => {
         if (!rig && node.charToken === token && this.nodes.get(node.id) === node) node.content.visible = true;
+        // A seated person (a paddler, a guest): the sit clip replaces locomotion whatever the carrier does.
+        if (rig) rig.input.sitting = seated;
         if (rig) this.opts.onContentChanged?.(node.id);
       }),
     );

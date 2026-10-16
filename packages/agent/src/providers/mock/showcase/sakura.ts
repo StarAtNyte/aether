@@ -68,7 +68,7 @@ export function sakuraRiver(): MockPlan {
     sky: 'sunset',
     timeOfDay: 17.25,
     sunIntensity: 2.8,
-    ambientIntensity: 0.5,
+    ambientIntensity: 0.74,
     fog: { color: '#f2d3c9', density: 0.0035, visibility: 520 },
     weather: 'petals',
     bloom: 0.75,
@@ -84,13 +84,20 @@ export function sakuraRiver(): MockPlan {
 
   // The canoe the player paddles (vehicle mode; it faces −Z, downstream).
   const sx = riverX(START_Z);
-  const canoe = b.asset('canoe', 'canoe', [sx, 0.05, START_Z], {
+  const canoe = b.gen('canoe', 'boat', { length: 4.6, variant: 3, color: '#9a5b32' }, [sx, 0.3, START_Z], {
     name: 'Canoe',
     yaw: faceToward(sx, START_Z, riverX(START_Z - 10), START_Z - 10) + 180,
-    physics: { body: 'dynamic', mass: 120, friction: 0, linearDamping: 0.3, angularDamping: 2, lockRotation: false }, // A slippery hull on a smooth riverbed: the vehicle behaviour supplies the water's grip.
+    // The hull rides on the water (its keel a hand below the surface, weightless so the shallow bed does not hold it), a slippery body: the vehicle behaviour supplies the water's grip.
+    physics: { body: 'dynamic', mass: 120, friction: 0, linearDamping: 0.3, angularDamping: 2, lockRotation: false, gravityScale: 0 },
     behaviors: [{ type: 'vehicle', params: { maxSpeed: 11, acceleration: 4, brake: 6, drag: 1.2, turnRate: 70, grip: 3.5 } }],
     tags: ['canoe', 'focus'],
-    fallback: { kind: 'procedural', generator: 'boat', params: { length: 4.5, variant: 0, color: '#9a6a3c' } },
+  });
+  // The paddler: a seated person in the stern holding a paddle (no collider of their own; the hull carries them).
+  b.prim('paddler', 'capsule', [0.5, 0.9, 0.5], [0, 0.42, 0.55], {
+    parent: canoe,
+    name: 'Paddler',
+    character: { wardrobe: 'traveller', gender: 'female', age: 'young', top: '#c8453f', bottom: '#2f3a4a', hold: 'paddle', pose: 'sit', mood: 'calm' },
+    castShadow: true,
   });
   b.player({ mode: 'vehicle', controls: canoe, spawn: [sx, 1, START_Z + 6], moveSpeed: 6 });
 

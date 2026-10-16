@@ -108,7 +108,11 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
   const slopeOf = [slopes.x, slopes.y, slopes.z, slopes.w];
   for (let i = 0; i < 4; i++) {
     const w = waves.element(i);
-    const phase = w.z.mul(dot(w.xy, advected)).sub(w.w.mul(t));
+    // Straight parallel crests read as stripes from a distance: wander each wave front sideways by a slow, wavy offset
+    // (a domain warp, in radians of this wave's phase), so crests bend, break and merge as on a real surface.
+    const across = dot(vec2(w.y.negate(), w.x), advected);
+    const warp = sin(across.mul(w.z.mul(0.33)).add(i * 1.9).add(t.mul(0.21))).mul(1.5).add(sin(across.mul(w.z.mul(0.81)).sub(t.mul(0.37)).add(i * 0.7)).mul(0.65));
+    const phase = w.z.mul(dot(w.xy, advected)).sub(w.w.mul(t)).add(warp);
     // Waves shorter than a few pixels alias into shimmer: fade each out beyond ~35 of its wavelengths.
     const fade = float(1).sub(smoothstep(14, 55, distance.mul(w.z).div(Math.PI * 2)));
     const s = (slopeOf[i] as Nd).mul(fade);

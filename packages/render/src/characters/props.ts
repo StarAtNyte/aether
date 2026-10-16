@@ -5,7 +5,7 @@
  * small procedural meshes (no files, no licences); two-handed carries
  * (`crate`) use the chest anchor instead of a hand.
  */
-import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry, type BufferGeometry, type Material } from 'three';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry, TorusGeometry, type BufferGeometry, type Material } from 'three';
 import type { CharacterHold } from '@aether/core';
 
 /** A built prop with the resources it owns. */
@@ -13,6 +13,8 @@ export interface Prop {
   group: Group;
   /** True for props carried in both hands in front of the chest. */
   twoHanded: boolean;
+  /** True for a pack worn on the back (mounted on the spine, both hands stay free). */
+  onBack?: boolean;
   dispose(): void;
 }
 
@@ -36,6 +38,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
     return m;
   };
   let twoHanded = false;
+  let onBack = false;
   switch (kind) {
     case 'torch': {
       const w = wood();
@@ -75,8 +78,38 @@ export function buildProp(kind: CharacterHold): Prop | null {
       break;
     }
     case 'bag': {
-      add(new BoxGeometry(0.34, 0.26, 0.1), new MeshStandardMaterial({ color: '#7a5232', roughness: 0.9 }), 0, -0.2, 0);
-      add(new BoxGeometry(0.34, 0.09, 0.11), new MeshStandardMaterial({ color: '#5e3d24', roughness: 0.9 }), 0, -0.1, 0);
+      // A canvas satchel on a strap: a rounded body, a stitched flap with a buckle, and the strap looping up to the hand.
+      const canvas = new MeshStandardMaterial({ color: '#6f5a3c', roughness: 0.95 });
+      const leather = new MeshStandardMaterial({ color: '#4a3220', roughness: 0.7 });
+      add(new SphereGeometry(0.5, 16, 12), canvas, 0, -0.24, 0).scale.set(0.38, 0.3, 0.15);
+      add(new SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), leather, 0, -0.17, 0.004).scale.set(0.4, 0.3, 0.165);
+      add(new BoxGeometry(0.035, 0.05, 0.02), iron(), 0, -0.22, 0.082);
+      const strap = add(new TorusGeometry(0.14, 0.009, 6, 20), leather, 0, -0.02, 0);
+      strap.scale.set(0.55, 1.2, 1);
+      break;
+    }
+    case 'paddle': {
+      // A canoe paddle: ash shaft, a crossbar grip and a wide spruce blade at the foot.
+      const ash = new MeshStandardMaterial({ color: '#b98d5a', roughness: 0.6 });
+      add(new CylinderGeometry(0.014, 0.016, 1.25, 8), ash, 0, 0.1, 0);
+      add(new BoxGeometry(0.1, 0.022, 0.022), ash, 0, 0.73, 0);
+      const blade = add(new SphereGeometry(0.5, 14, 8), new MeshStandardMaterial({ color: '#8a5a32', roughness: 0.55 }), 0, -0.82, 0);
+      blade.scale.set(0.095, 0.3, 0.018);
+      break;
+    }
+    case 'backpack': {
+      // A hiker's rucksack: canvas body, a lid with a buckle, two side pockets and a rolled mat on top. Origin: the pack's centre.
+      onBack = true;
+      const canvas = new MeshStandardMaterial({ color: '#53603b', roughness: 0.95 });
+      const darker = new MeshStandardMaterial({ color: '#3d4a2c', roughness: 0.92 });
+      const strap = new MeshStandardMaterial({ color: '#2a2a26', roughness: 0.8 });
+      add(new SphereGeometry(0.5, 18, 14), canvas, 0, 0, 0).scale.set(0.34, 0.5, 0.2);
+      add(new SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), darker, 0, 0.1, 0.004).scale.set(0.355, 0.26, 0.215);
+      for (const sx of [-1, 1]) add(new SphereGeometry(0.5, 12, 10), darker, sx * 0.19, -0.1, 0).scale.set(0.1, 0.26, 0.15);
+      add(new BoxGeometry(0.05, 0.07, 0.02), iron(), 0, 0.02, 0.108);
+      const mat = add(new CylinderGeometry(0.06, 0.06, 0.4, 14), new MeshStandardMaterial({ color: '#b9632f', roughness: 0.9 }), 0, 0.3, 0.02);
+      mat.rotation.z = Math.PI / 2;
+      for (const sx of [-1, 1]) add(new BoxGeometry(0.045, 0.5, 0.02), strap, sx * 0.1, 0.02, -0.098);
       break;
     }
     case 'crate': {
@@ -96,6 +129,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
   return {
     group: g,
     twoHanded,
+    ...(onBack ? { onBack } : {}),
     dispose() {
       for (const x of geos) x.dispose();
       for (const x of mats) x.dispose();

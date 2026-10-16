@@ -27,7 +27,7 @@ export const CharacterMood = z.enum(['neutral', 'tired', 'cheerful', 'angry', 'n
 export type CharacterMood = z.infer<typeof CharacterMood>;
 
 /** What the person holds in a hand (a prop attached to the right hand bone). */
-export const CharacterHold = z.enum(['none', 'torch', 'lantern', 'sword', 'spear', 'axe', 'staff', 'bag', 'crate', 'book', 'cup']);
+export const CharacterHold = z.enum(['none', 'torch', 'lantern', 'sword', 'spear', 'axe', 'staff', 'bag', 'crate', 'book', 'cup', 'paddle', 'backpack']);
 export type CharacterHold = z.infer<typeof CharacterHold>;
 
 /** Which kind of wardrobe the planner picks a body for. */
@@ -48,6 +48,8 @@ export const CharacterSpec = z.object({
   scale: z.number().min(0.85).max(1.15).default(1),
   mood: CharacterMood.optional(),
   hold: CharacterHold.optional(),
+  /** Additive: `sit` shows the person seated (a paddler in a canoe, a guest on a sofa); the collider and the entity's position are unchanged. Default `stand`. */
+  pose: z.enum(['stand', 'sit']).optional(),
   /** Free-form words the resolver may use ("tired", "old") when the fields above are not set. */
   words: z.array(z.string().min(1).max(24)).max(6).optional(),
 });

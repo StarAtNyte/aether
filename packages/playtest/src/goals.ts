@@ -228,6 +228,10 @@ export function deriveGoals(world: WorldDoc): GoalModel {
   const winRules = world.rules.filter((r) => r.enabled && hasAction(r, 'win'));
   if (winRules.length > 0) winDefined = true;
   for (const r of winRules) for (const k of readKeys(r)) required.add(k);
+  // A rule that switches a goal on gates the win just as much as a winning rule does: what it reads is required.
+  for (const r of world.rules) {
+    if (r.enabled && r.then.some((a) => a.do === 'enableBehavior' && a.enabled && a.behavior === 'goal')) for (const k of readKeys(r)) required.add(k);
+  }
   for (const r of world.rules) {
     if (r.enabled && r.when.on === 'timer') timerSeconds = Math.max(timerSeconds, r.when.at);
   }

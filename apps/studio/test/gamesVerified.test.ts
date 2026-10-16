@@ -24,7 +24,7 @@ function savedWorld(slug: string): WorldDoc {
 }
 
 /** Games the bot plays itself: it must win, and its run must seal. */
-const BOT_PLAYS = ['highland-trail', 'lantern-isles', 'hollow-gate', 'neon-rain-city', 'kyoto-temple', 'orbital-lab'] as const;
+const BOT_PLAYS = ['highland-trail', 'lantern-isles', 'hollow-gate', 'neon-rain-city', 'kyoto-temple', 'orbital-lab', 'painterly-meadow', 'four-seasons-garden'] as const;
 
 /** Why the bot cannot drive the rest, and what plays them to the end instead. */
 const OTHER_BOTS: Record<string, string> = {
@@ -32,8 +32,6 @@ const OTHER_BOTS: Record<string, string> = {
   'kart-canyon': 'vehicle: showcasePlaytest.test.ts drives three laps',
   'sakura-river': 'vehicle: showcasePlaytest.test.ts paddles the river',
   blockfall: 'block world: the voxel game tests',
-  'painterly-meadow': 'a scene: no goal to play',
-  'four-seasons-garden': 'a scene: no goal to play',
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
   'casa-patio': 'architecture: walked by the walkthrough bot',

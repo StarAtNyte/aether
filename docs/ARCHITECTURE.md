@@ -1608,10 +1608,17 @@ prompt ─▶ plan (assistant) ─▶ place_level_items / query_level ─▶ wor
 - **Game feel.** The player's controller accelerates and stops firmly, forgives a ledge for 0.11 s, buffers a jump
   for 0.12 s and hops lower when jump is released early; the bot and the replay verifier keep the instant controller,
   so proofs stay comparable.
-- **Highland Trail** is the realism reference: a misty river valley, a gravel trail that follows the ground, a
-  footbridge between two measured banks, six survey stakes and a summit cairn chosen by a flood fill over measured
-  slopes, a hiker with dialogue, river hazards with checkpoints and a daylight timer. The verified bot wins it in
-  111 s of play.
+- **Highland Trail** is the realism reference: a misty river valley with a flat, walkable floodplain and a clear
+  waterline, a gravel trail draped over the ground as one mesh (`groundRibbon`, no seams or floating slabs), a
+  footbridge as long as the river is wide, six survey stakes and a summit cairn chosen by a flood fill over measured
+  slopes, a hiker with a rucksack, a camp with a person to talk to, river sensors that cover the whole wet width and
+  both ends of the valley (the bridge is the only way over, the bot and the real-time driver both use it) and a
+  daylight timer. The verified bot wins it in 79 s of play and the real-time driver in about 90 s.
+- **Outdoor flagships, the same engine fixes everywhere.** Clouds are billowing smooth puffs, not faceted blobs; water
+  crests are domain-warped so they stop reading as stripes; the canoe is a modelled hull with a seated paddler (the
+  character `pose: "sit"`, the `paddle` prop); a railway is two draped meshes with sleepers and steel rails; bare winter
+  trees come from `leaf: 0`. Four-Seasons Garden and Painterly Meadow became walks with people, stops and a goal that a
+  rule switches on, and the bot plays both (a rule that enables a goal now makes what it reads required).
 
 Known limits: the foliage cards are alpha-tested (no translucency, shimmer at a distance without TAA); the layered
 terrain makes about 28 texture reads per pixel, so software rasterisers and low-memory mode keep the vertex colours

@@ -225,6 +225,7 @@ const treeBroadleaf = defineGenerator({
     detail: pNum(1, 0.3, 2, 'card count multiplier (lower for distant forests)'),
     variant: pVariant(2, '0 round, 1 tall oval, 2 wide spreading'),
     blossom: pNum(0, 0, 1, 'above 0.5: blossoms, not leaves'),
+    leaf: pNum(1, 0, 1, 'share of the crown that carries leaves: 0 is a bare winter tree with fine twigs, 1 is full summer foliage'),
   },
   run(p, api) {
     const H = p.num('height');
@@ -267,12 +268,33 @@ const treeBroadleaf = defineGenerator({
       }
     }
     clusters.push({ c: crownC, r: crownR * 0.62 });
+    const leafShare = p.num('leaf');
+    if (leafShare < 0.5) {
+      // Winter: the crown is a net of fine twigs forking off every limb tip.
+      const nTwigs = leafShare < 0.1 ? 7 : 4;
+      for (const cl of clusters) {
+        for (let f = 0; f < nTwigs; f++) {
+          const a = api.rng() * Math.PI * 2;
+          const up = 0.25 + api.rng() * 0.7;
+          const len = cl.r * api.range(0.75, 1.25);
+          const tip: Vec3 = [cl.c[0] + Math.cos(a) * len * (1 - up * 0.4), cl.c[1] + up * len, cl.c[2] + Math.sin(a) * len * (1 - up * 0.4)];
+          wood = limb(api, wood, cl.c, tip, trunkR * 0.1, trunkR * 0.025, [0, 0, 0], true);
+          const fork: Vec3 = [(cl.c[0] + tip[0]) / 2, (cl.c[1] + tip[1]) / 2, (cl.c[2] + tip[2]) / 2];
+          const a2 = a + (api.rng() < 0.5 ? 0.9 : -0.9);
+          wood = limb(api, wood, fork, [fork[0] + Math.cos(a2) * len * 0.45, fork[1] + len * 0.3, fork[2] + Math.sin(a2) * len * 0.45], trunkR * 0.05, trunkR * 0.015, [0, 0, 0], true);
+        }
+      }
+    }
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
     api.add(wood, BARK);
 
     const blossoming = p.num('blossom') > 0.5;
-    const count = Math.round((blossoming ? 440 : 520) * detail);
+    const count = Math.round((blossoming ? 440 : 520) * detail * leafShare);
+    if (count < 8) {
+      api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
+      return api.build();
+    }
     const sheets = new Sheets(count + clusters.length);
     crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * (blossoming ? 0.13 : 0.1), h: H * (blossoming ? 0.13 : 0.1) }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
     const leaves = sheets.build(api);

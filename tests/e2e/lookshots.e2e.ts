@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') log(`  console.${m.type()}: ${m.text().slice(0, 200)}`);
     });
+    let camNo = 0;
     for (const spec of specs) {
       const [slug = '', mode = 'cover'] = spec.split(':');
       log(`${spec}`);
@@ -117,8 +118,8 @@ async function main(): Promise<void> {
       } else if (mode.includes('>')) {
         const [a = '', b = ''] = mode.split('>');
         await setCam(page, a.split(',').map(Number), b.split(',').map(Number));
-        await page.waitForTimeout(2500);
-        await shoot(page, join(outDir!, `${slug}-cam.png`));
+        await page.waitForTimeout(Number(process.env['SHOT_SETTLE'] ?? 2500));
+        await shoot(page, join(outDir!, `${slug}-cam${++camNo}.png`));
       } else {
         const cam = COVER_CAMERAS[slug];
         if (cam) {

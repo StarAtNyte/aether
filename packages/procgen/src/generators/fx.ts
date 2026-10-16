@@ -7,7 +7,7 @@ import type { InternalApi } from '../api';
 import type { Mesh } from '../kernel/mesh';
 import { boxCollider } from '../colliders';
 import { mixHex } from '../color';
-import { defineGenerator, glow, hullOf, jitter, MAT, paintGradientY, paintNoise, pColor, pInt, pNum, pVariant, shade } from './kit';
+import { defineGenerator, glow, hullOf, jitter, lin, MAT, paintGradientY, paintNoise, pColor, pInt, pNum, pVariant, shade } from './kit';
 
 const DEG = 180 / Math.PI;
 
@@ -88,7 +88,7 @@ const crystal = defineGenerator({
 
 const cloud = defineGenerator({
   id: 'cloud',
-  description: 'Puffy low-poly cloud made of overlapping faceted blobs with a flat base (cumulus, flat stratus, or dark storm cloud). Place it high in the sky.',
+  description: 'Billowing cloud made of many overlapping smooth puffs with cauliflower relief and a soft blue-grey underside (cumulus, flat stratus, or dark storm cloud). Place it high in the sky.',
   category: 'fx',
   params: {
     size: pNum(4, 1, 40, 'length in meters'),
@@ -100,24 +100,50 @@ const cloud = defineGenerator({
     const variant = p.int('variant');
     const top = variant === 2 && p.color('color') === '#ffffff' ? '#8d939e' : p.color('color');
     const bottom = variant === 2 ? '#4a4f5a' : shade(mixHex(top, '#b8c6d9', 0.6), -0.05);
-    const flat = variant === 1 ? 0.45 : 0.8;
-    const n = 6 + Math.floor(api.rng() * 3);
+    const flat = variant === 1 ? 0.42 : 0.72;
+    // Billowing cloud: many overlapping smooth puffs, a rounded (not cut) belly, cauliflower relief from layered noise and a soft
+    // gradient from a sunlit crown to a blue-grey underside. Smooth normals and vertex colours: no facets, no flat base.
+    const big = S > 22;
+    const n = (big ? 7 : variant === 1 ? 10 : 13) + Math.floor(api.rng() * (big ? 3 : 4));
+    const detail = big ? 3 : 2;
     let body: Mesh | null = null;
     for (let k = 0; k < n; k++) {
       const t = n === 1 ? 0.5 : k / (n - 1);
-      const x = (t - 0.5) * S * 0.75 + api.range(-0.05, 0.05) * S;
-      const r = S * (0.17 + 0.16 * Math.sin(t * Math.PI)) * api.range(0.85, 1.15);
-      const z = api.range(-0.12, 0.12) * S;
-      const blob = api.icosphere(r, 1).scale(1, flat, 0.9).translate(x, r * flat * 0.55, z);
+      const x = (t - 0.5) * S * 0.78 + api.range(-0.05, 0.05) * S;
+      const r = S * (0.1 + 0.15 * Math.sin(t * Math.PI)) * api.range(0.75, 1.2);
+      const z = api.range(-0.14, 0.14) * S;
+      const lift = variant === 1 ? 0 : api.range(0, 0.1) * S * Math.sin(t * Math.PI);
+      const blob = api.icosphere(r, detail).scale(1, flat, 0.85).translate(x, r * flat * 0.5 + lift, z);
       body = body ? body.merge(blob) : blob;
     }
     if (body) {
       const pos = body.positions;
-      for (let i = 1; i < pos.length; i += 3) if ((pos[i] as number) < 0) pos[i] = 0;
-      body.toFlat();
+      const nz = api.noise;
+      const relief = S * 0.035;
+      for (let i = 0; i < pos.length; i += 3) {
+        const px = pos[i] as number;
+        const py = pos[i + 1] as number;
+        const pz = pos[i + 2] as number;
+        const k = 3 / S;
+        const w = 0.6 * nz.noise3(px * k * 3, py * k * 3, pz * k * 3) + 0.4 * nz.noise3(px * k * 8, py * k * 8, pz * k * 8);
+        pos[i + 1] = py < 0 ? py * 0.35 : py;
+        pos[i] = px + (body.normals[i] as number) * w * relief;
+        pos[i + 1] = (pos[i + 1] as number) + (body.normals[i + 1] as number) * w * relief;
+        pos[i + 2] = pz + (body.normals[i + 2] as number) * w * relief;
+      }
+      body.recomputeNormals();
       const b = body.bounds();
-      paintGradientY(body, api, bottom, top, b.min[1], b.max[1] * 0.8, 0.06);
-      api.add(body, { vertexColors: true, roughness: 1, flatShading: true, opacity: variant === 1 ? 0.92 : 1 });
+      const lo = lin(bottom);
+      const hi = lin(top);
+      body.paintFn((x, y, z, _nx, ny, _nz, out) => {
+        const h = Math.max(0, Math.min(1, (y - b.min[1]) / Math.max(1e-6, (b.max[1] - b.min[1]) * 0.85)));
+        const wob = 0.12 * nz.noise3(x * 0.5 / S * 6, y * 0.5 / S * 6, z * 0.5 / S * 6);
+        const m = Math.max(0, Math.min(1, h * 0.75 + ny * 0.25 + 0.1 + wob));
+        out[0] = lo[0] + (hi[0] - lo[0]) * m;
+        out[1] = lo[1] + (hi[1] - lo[1]) * m;
+        out[2] = lo[2] + (hi[2] - lo[2]) * m;
+      });
+      api.add(body, { vertexColors: true, roughness: 1, flatShading: false, opacity: variant === 1 ? 0.9 : 1 });
       api.collider(boxCollider((b.min[0] + b.max[0]) / 2, b.max[1] * 0.4, (b.min[2] + b.max[2]) / 2, (b.max[0] - b.min[0]) * 0.8, b.max[1] * 0.8, (b.max[2] - b.min[2]) * 0.7));
     }
     return api.build();

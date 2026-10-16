@@ -61,7 +61,7 @@ export const WEATHER_CONFIGS: Readonly<Record<Exclude<WeatherKind, 'clear'>, Wea
   rain: { count: 5000, half: [28, 16, 28], velocity: [1.5, -17, 0.6], sway: 0, swayHz: 0, color: '#c4d4e6', opacity: 0.55, additive: false, flicker: false, shape: 'streak', size: [0.02, 0.75] },
   snow: { count: 3500, half: [26, 14, 26], velocity: [0.3, -1.1, 0.15], sway: 0.45, swayHz: 0.35, color: '#ffffff', opacity: 0.9, additive: false, flicker: false, shape: 'sprite', size: [0.085, 0.085], edge: 'flake' },
   dust: { count: 1400, half: [24, 8, 24], velocity: [1.2, 0.05, 0.4], sway: 0.35, swayHz: 0.2, color: '#d8c39a', opacity: 0.4, additive: false, flicker: false, shape: 'sprite', size: [0.07, 0.07], edge: 'glow' },
-  fireflies: { count: 260, half: [20, 3, 20], velocity: [0, 0, 0], sway: 0.6, swayHz: 0.25, color: '#e8ff7a', opacity: 1, additive: true, flicker: true, shape: 'sprite', size: [0.24, 0.24], edge: 'glow' },
+  fireflies: { count: 260, half: [20, 3, 20], velocity: [0, 0, 0], sway: 0.6, swayHz: 0.25, color: '#e8ff7a', opacity: 1, additive: true, flicker: true, shape: 'sprite', size: [0.13, 0.13], edge: 'glow' },
   petals: { count: 1400, half: [24, 10, 24], velocity: [0.9, -0.55, 0.35], sway: 0.7, swayHz: 0.3, color: '#ffc3d6', opacity: 0.95, additive: false, flicker: false, tumble: 2.4, shape: 'flake', size: [0.1, 0.07], edge: 'flake' },
   leaves: { count: 500, half: [22, 9, 22], velocity: [1.1, -0.9, 0.3], sway: 0.9, swayHz: 0.22, color: '#d9782d', opacity: 0.95, additive: false, flicker: false, tumble: 1.8, shape: 'flake', size: [0.11, 0.07], edge: 'flake' },
 });

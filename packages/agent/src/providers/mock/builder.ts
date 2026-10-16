@@ -5,7 +5,7 @@
  * state, HUD, rules, tests), hands out unique slug ids, and keeps a simple
  * occupancy map of footprint circles so generated objects do not overlap.
  */
-import { rng, slugify, type EntityInput, type Json, type PatchInput, type RuleInput, type WorldTest } from '@aether/core';
+import { rng, slugify, type EntityInput, type MeshAssetInput, type Json, type PatchInput, type RuleInput, type WorldTest } from '@aether/core';
 import type { z } from 'zod';
 import { realisticStandIn } from './realistic';
 import { CLUSTERED_GENERATORS, clusterPoints } from './cluster';
@@ -105,6 +105,7 @@ export class Builder {
   private readonly ruleIds = new Set<string>();
   private readonly testIds = new Set<string>();
   private readonly extra: PatchInput[] = [];
+  private readonly meshPatches: PatchInput[] = [];
   private metaName: string | undefined;
   private metaDescription: string | undefined;
   /** Kind of theme currently building (see {@link setPhase}). */
@@ -433,6 +434,11 @@ export class Builder {
     this.keptHud = this.hudList.length;
   }
 
+  /** Add an editable mesh asset (a `setMesh` patch applied before every entity, so a `mesh` shape can reference it). */
+  mesh(asset: MeshAssetInput): void {
+    this.meshPatches.push({ op: 'setMesh', mesh: asset });
+  }
+
   /** Append a raw patch after entities (updates/removes in edits). */
   patch(p: PatchInput): void {
     this.extra.push(p);
@@ -457,7 +463,7 @@ export class Builder {
     }
     if (Object.keys(this.envSet).length > 0) out.push({ op: 'setEnvironment', set: { ...this.envSet } });
     if (Object.keys(this.playerSet).length > 0) out.push({ op: 'setPlayer', set: { ...this.playerSet } });
-    out.push(...this.entities, ...this.extra);
+    out.push(...this.meshPatches, ...this.entities, ...this.extra);
     for (const [key, value] of this.stateSet) out.push({ op: 'setState', key, value });
     if (this.hudList.length > this.keptHud) out.push({ op: 'setHud', hud: [...this.hudList] });
     out.push(...this.rules, ...this.tests);

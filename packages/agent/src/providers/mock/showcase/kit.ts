@@ -3,7 +3,7 @@
  * explicit mood, the finishing step (clear + patches + title card), and
  * small placement utilities (rings, curves, glowing lanterns).
  */
-import type { Json, PatchInput, WorldIntro } from '@aether/core';
+import { encodeMesh, type Json, type MaterialSpec, type MeshData, type PatchInput, type WorldIntro } from '@aether/core';
 import { generateBuiltinSync } from '@aether/procgen';
 import { Builder, r2, type Mood, type V3 } from '../builder';
 import type { MockPlan } from '../planner';
@@ -147,4 +147,126 @@ export function terrainHeight(params: Record<string, Json>, seed: number, size: 
     const tz = fz - iz;
     return at(ix, iz) * (1 - tx) * (1 - tz) + at(ix + 1, iz) * tx * (1 - tz) + at(ix, iz + 1) * (1 - tx) * tz + at(ix + 1, iz + 1) * tx * tz;
   };
+}
+
+/** Options of {@link groundRibbon}. */
+export interface GroundRibbonOptions {
+  /** Entity id (also the mesh id slug base). */
+  id: string;
+  name?: string;
+  /** Polylines of (x, z) the ribbon follows, one strip each (a gap such as a bridge is a separate polyline). */
+  paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>;
+  /** Ground height under (x, z). */
+  height: (x: number, z: number) => number;
+  /** Average width in metres (default 1.8); it breathes by about a quarter along the way. */
+  width?: number;
+  /** Height above the ground in metres (default 0.05). */
+  lift?: number;
+  /** Distance between cross-sections (default 0.8 m). */
+  step?: number;
+  /** Colour of the worn centre and of the verges, "#rrggbb" (the verge fades towards the ground tone). */
+  centre?: string;
+  edge?: string;
+  /** Surface finish and tint of the strip. */
+  material?: MaterialSpec;
+  tags?: string[];
+}
+
+function chaikin(pts: ReadonlyArray<readonly [number, number]>, rounds: number): Array<[number, number]> {
+  let cur: Array<[number, number]> = pts.map((p) => [p[0], p[1]]);
+  for (let r = 0; r < rounds && cur.length > 2; r++) {
+    const next: Array<[number, number]> = [cur[0] as [number, number]];
+    for (let i = 0; i + 1 < cur.length; i++) {
+      const a = cur[i] as [number, number];
+      const c = cur[i + 1] as [number, number];
+      next.push([a[0] * 0.75 + c[0] * 0.25, a[1] * 0.75 + c[1] * 0.25], [a[0] * 0.25 + c[0] * 0.75, a[1] * 0.25 + c[1] * 0.75]);
+    }
+    next.push(cur[cur.length - 1] as [number, number]);
+    cur = next;
+  }
+  return cur;
+}
+
+function srgb(hex: string): [number, number, number] {
+  const n = Number.parseInt(hex.replace('#', ''), 16);
+  const lin = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return [lin(((n >> 16) & 255) / 255), lin(((n >> 8) & 255) / 255), lin((n & 255) / 255)];
+}
+
+/**
+ * A worn path as one mesh draped over the terrain: cross-sections every `step` metres sample the ground under five points
+ * across the strip (so it follows slope across the path as well as along it), the width breathes, the line wanders a little
+ * and the verges darken towards the ground tone. It has no collider (the terrain carries the walker) and no seams to
+ * float or sink, unlike a row of boxes. Returns the entity id.
+ */
+export function groundRibbon(b: Builder, o: GroundRibbonOptions): string {
+  const width = o.width ?? 1.8;
+  const lift = o.lift ?? 0.05;
+  const step = o.step ?? 0.8;
+  const centre = srgb(o.centre ?? '#cdbf9e');
+  const edge = srgb(o.edge ?? '#7d7656');
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const ACROSS = 5;
+  const phase = b.rand(0, 100);
+  let run = 0;
+  for (const raw of o.paths) {
+    if (raw.length < 2) continue;
+    const pts = chaikin(raw, 2);
+    // Resample at an even step along the smoothed line.
+    const samples: Array<[number, number, number, number]> = [];
+    let carry = 0;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i] as [number, number];
+      const c = pts[i + 1] as [number, number];
+      const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (len < 1e-6) continue;
+      const dx = (c[0] - a[0]) / len;
+      const dz = (c[1] - a[1]) / len;
+      for (let t = carry; t < len; t += step) samples.push([a[0] + dx * t, a[1] + dz * t, dx, dz]);
+      carry = (carry + Math.ceil((len - carry) / step) * step) - len;
+    }
+    const last = pts[pts.length - 1] as [number, number];
+    const prev = samples[samples.length - 1];
+    if (prev) samples.push([last[0], last[1], prev[2], prev[3]]);
+    if (samples.length < 2) continue;
+    const base = positions.length / 3;
+    samples.forEach((sm, k) => {
+      const dist = run + k * step;
+      const wob = 0.35 * Math.sin(dist * 0.21 + phase) + 0.2 * Math.sin(dist * 0.53 + phase * 1.7);
+      const half = (width / 2) * (1 + 0.22 * Math.sin(dist * 0.17 + phase * 0.6) + 0.1 * Math.sin(dist * 0.61));
+      const nx = -sm[3];
+      const nz = sm[2];
+      const cx = sm[0] + nx * wob;
+      const cz = sm[1] + nz * wob;
+      for (let j = 0; j < ACROSS; j++) {
+        const u = (j / (ACROSS - 1)) * 2 - 1;
+        const x = cx + nx * half * u;
+        const z = cz + nz * half * u;
+        // The verge sinks a little so it meets the turf instead of standing proud of it.
+        positions.push(x, o.height(x, z) + lift - 0.03 * u * u, z);
+        const e = Math.min(1, Math.abs(u) ** 2.2);
+        const grain = 0.88 + 0.12 * Math.sin(dist * 1.7 + j * 2.3);
+        colors.push((centre[0] + (edge[0] - centre[0]) * e) * grain, (centre[1] + (edge[1] - centre[1]) * e) * grain, (centre[2] + (edge[2] - centre[2]) * e) * grain);
+        uvs.push((u * half) / 1.5, dist / 1.5);
+      }
+    });
+    for (let k = 0; k + 1 < samples.length; k++) {
+      for (let j = 0; j + 1 < ACROSS; j++) {
+        const a = base + k * ACROSS + j;
+        const c = a + ACROSS;
+        // Counter-clockwise seen from above: along +path, across +normal.
+        indices.push(a, a + 1, c, a + 1, c + 1, c);
+      }
+    }
+    run += samples.length * step + 3;
+  }
+  const data: MeshData = { positions: new Float32Array(positions), indices: new Uint32Array(indices), colors: new Float32Array(colors), uvs: new Float32Array(uvs), faceMaterials: null };
+  const mat: MaterialSpec = { finish: 'gravel', roughness: 0.95, ...(o.material ?? {}) };
+  const meshId = `${o.id}-mesh`;
+  b.mesh(encodeMesh(meshId, data, { materials: [mat] }));
+  b.add({ id: o.id, name: o.name ?? 'Path', shape: { kind: 'mesh', mesh: meshId }, transform: { position: [0, 0, 0] }, castShadow: false, ...(o.tags ? { tags: o.tags } : {}) });
+  return o.id;
 }

@@ -65,6 +65,9 @@ function checkOutput(id: string, out: GeneratorOutput): void {
     expect(tris).toBeLessThanOrEqual(12 * 256 * 256);
   } else if (CARDS.has(id)) {
     expect(tris).toBeLessThan(12_000);
+  } else if (id === 'cloud') {
+    // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.
+    expect(tris).toBeLessThan(14_000);
   } else if (TREES.has(id)) {
     expect(tris).toBeLessThan(2000);
   } else {

@@ -16,6 +16,27 @@ import { planMock } from './planner';
 
 /** Patches per apply_patches call (mirrors the tool limit). */
 const PATCH_CHUNK = 400;
+/** Serialised characters per apply_patches call (the tool refuses 600 000; mesh assets are large), with room for the rest of the call. */
+const PATCH_CHUNK_CHARS = 380_000;
+
+/** Split patches into calls of at most `PATCH_CHUNK` patches and `PATCH_CHUNK_CHARS` serialised characters. */
+export function chunkPatches<T>(patches: readonly T[]): T[][] {
+  const out: T[][] = [];
+  let cur: T[] = [];
+  let chars = 0;
+  for (const p of patches) {
+    const n = stableStringify(p as never).length;
+    if (cur.length > 0 && (cur.length >= PATCH_CHUNK || chars + n > PATCH_CHUNK_CHARS)) {
+      out.push(cur);
+      cur = [];
+      chars = 0;
+    }
+    cur.push(p);
+    chars += n;
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
+}
 
 function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);
@@ -100,15 +121,16 @@ export function createMockProvider(opts: MockProviderOptions = {}): Provider {
 
       const key = hashString(raw).toString(36);
       const content: ContentBlock[] = [{ type: 'text', text: plan.plan }];
-      for (let i = 0; i < plan.patches.length; i += PATCH_CHUNK) {
-        const part = i / PATCH_CHUNK + 1;
+      const chunks = chunkPatches(plan.patches);
+      chunks.forEach((chunk, i) => {
+        const part = i + 1;
         content.push({
           type: 'tool_use',
           id: `mock-${key}-${part}`,
           name: 'apply_patches',
-          input: { patches: plan.patches.slice(i, i + PATCH_CHUNK), message: plan.patches.length > PATCH_CHUNK ? `${plan.message.slice(0, 60)} (${part})` : plan.message.slice(0, 120) },
+          input: { patches: chunk, message: chunks.length > 1 ? `${plan.message.slice(0, 60)} (${part})` : plan.message.slice(0, 120) },
         });
-      }
+      });
       if (plan.arch) content.push({ type: 'tool_use', id: `mock-${key}-arch`, name: 'build_architecture', input: { ops: plan.arch.ops, message: plan.arch.message } });
       content.push({ type: 'tool_use', id: `mock-${key}-finish`, name: 'finish', input: { message: plan.message } });
       return respond(req, content, 'tool_use');

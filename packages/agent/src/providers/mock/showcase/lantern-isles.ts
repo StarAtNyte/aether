@@ -205,9 +205,14 @@ export function lanternIsles(): MockPlan {
   const glow = b.light(great, [0, 5.4, 0], '#ffcf6b', 0.4, 26);
 
   // --- Below the islands: a sea of clouds, and drifting rocks far off -------------------
-  for (let i = 0; i < 16; i++) {
-    const [x, , z] = onCircle(18, -18, b.rand(25, 120), (i / 16) * Math.PI * 2 + b.rand(-0.2, 0.2));
-    b.gen('cloud-sea', 'cloud', { size: r2(b.rand(26, 44)), color: '#ffe6d2', variant: 1 }, [x, r2(b.rand(2, 8)), z], { castShadow: false, tags: ['sky'], material: { emissive: '#ffd8b8', emissiveIntensity: 0.25 }, behaviors: [{ type: 'bob', params: { amplitude: 0.8, period: r2(b.rand(8, 12)) } }] });
+  // Two layers: a low stratus floor and, nearer the horizon, tall cumulus banks lit from the side, so the sea has depth.
+  for (let i = 0; i < 26; i++) {
+    const [x, , z] = onCircle(18, -18, b.rand(22, 135), (i / 26) * Math.PI * 2 + b.rand(-0.2, 0.2));
+    b.gen('cloud-sea', 'cloud', { size: r2(b.rand(26, 44)), color: '#ffe6d2', variant: 1 }, [x, r2(b.rand(2, 9)), z], { castShadow: false, tags: ['sky'], material: { emissive: '#ffd8b8', emissiveIntensity: 0.25 }, behaviors: [{ type: 'bob', params: { amplitude: 0.8, period: r2(b.rand(8, 12)) } }] });
+  }
+  for (let i = 0; i < 14; i++) {
+    const [x, , z] = onCircle(18, -18, b.rand(105, 175), (i / 14) * Math.PI * 2 + b.rand(-0.3, 0.3));
+    b.gen('cloud-bank', 'cloud', { size: r2(b.rand(34, 60)), color: '#fff0e0', variant: 0 }, [x, r2(b.rand(6, 24)), z], { castShadow: false, tags: ['sky'], material: { emissive: '#ffd0a8', emissiveIntensity: 0.3 }, behaviors: [{ type: 'bob', params: { amplitude: 1, period: r2(b.rand(10, 15)) } }] });
   }
   for (let i = 0; i < 9; i++) {
     const [x, , z] = onCircle(18, -18, b.rand(80, 140), (i / 9) * Math.PI * 2 + 0.3);

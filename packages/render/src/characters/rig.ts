@@ -88,6 +88,9 @@ export class CharacterRig {
   /** Right arm rotations of the idle pose: a held long prop damps the arm swing toward them. */
   private readonly armRest: Array<{ bone: Bone; q: Quaternion }> = [];
   private footPhase = -1;
+  private airBlend = 0;
+  private strokeAmp = 0;
+  private strokePhase = 0;
   private readonly meshes: Mesh[] = [];
   private shadowOnly = false;
   private swapped = new Map<Mesh, Material | Material[]>();
@@ -189,6 +192,25 @@ export class CharacterRig {
   // Props
   // ---------------------------------------------------------------------------
 
+  /** A pack on the spine: upright and centred on the shoulder blades in the rest pose, then carried by the torso. */
+  private mountOnBack(prop: Prop): void {
+    const spine = this.bones.spine;
+    if (!spine) {
+      prop.group.position.set(0, 1.2, 0.2);
+      this.root.add(prop.group);
+      return;
+    }
+    this.mixer.update(0);
+    this.root.updateMatrixWorld(true);
+    const spineQ = spine.getWorldQuaternion(new Quaternion());
+    const rootQ = this.root.getWorldQuaternion(new Quaternion());
+    const anchor = new Object3D();
+    anchor.quaternion.copy(spineQ.invert()).multiply(rootQ);
+    anchor.position.copy(spine.worldToLocal(this.root.localToWorld(_v.set(0, 1.2, 0.2))));
+    anchor.add(prop.group);
+    spine.add(anchor);
+  }
+
   /** Hold (or put down) a prop. */
   setHold(kind: CharacterHold): void {
     if (kind === this.propHold && (kind === 'none') === (this.prop === null)) return;
@@ -203,6 +225,10 @@ export class CharacterRig {
     if (prop.twoHanded) {
       prop.group.position.set(0, 1.14, -0.4);
       this.root.add(prop.group);
+      return;
+    }
+    if (prop.onBack) {
+      this.mountOnBack(prop);
       return;
     }
     const hand = this.bones.rHand;
@@ -300,6 +326,8 @@ export class CharacterRig {
     if (this.bones.root && this.hipScale !== 1) this.bones.root.position.y = this.bones.root.position.y * this.hipScale;
     this.checkFootsteps();
     this.dampHeldArm(plan.state);
+    if (detail >= 1) this.relaxAirArms(plan.state, step);
+    if (detail >= 1) this.paddleStroke(plan.state, step);
     if (detail >= 1) {
       this.updateLook(step, detail);
       if (detail >= 2) this.updateCarry();
@@ -315,6 +343,51 @@ export class CharacterRig {
     if (this.armRest.length === 0 || !this.prop || this.prop.twoHanded) return;
     const w = state === 'loco' || state === 'crouch' ? 0.9 : state === 'talk' || state === 'action' ? 0.35 : 0.6;
     for (const a of this.armRest) a.bone.quaternion.slerp(a.q, w);
+  }
+
+  /**
+   * The authored jump and fall poses throw the arms out sideways (they read as a T-pose from a chase camera). While airborne
+   * bring both upper arms in towards the body by up to 44 degrees, eased in and out, as a person jumping does.
+   */
+  private relaxAirArms(state: string, dt: number): void {
+    const want = state === 'jump' || state === 'air' || state === 'fall' ? 1 : 0;
+    this.airBlend += (want - this.airBlend) * Math.min(1, dt * 10);
+    const lo = this.bones.lUpper;
+    const ro = this.bones.rUpper;
+    if (this.airBlend < 0.02 || !lo || !ro) return;
+    const k = MathUtils.degToRad(state === 'fall' ? 44 : 32) * this.airBlend;
+    this.root.updateWorldMatrix(true, true);
+    this.model.getWorldQuaternion(_qm);
+    for (const [bone, sign] of [[lo, -1], [ro, 1]] as const) {
+      const parent = bone.parent;
+      if (!parent) continue;
+      parent.getWorldQuaternion(_qp);
+      bone.quaternion.copy(armRelaxed(bone.quaternion, _qp, _qm, sign * k));
+    }
+  }
+
+  /**
+   * A seated person holding a paddle paddles while their boat moves: both upper arms swing together, fore and aft, at a pace that
+   * rises with the speed (about one stroke every 1.2 s at a walk), and rest when the boat does.
+   */
+  private paddleStroke(state: string, dt: number): void {
+    const paddling = this.propHold === 'paddle' && state === 'sit';
+    const want = paddling ? Math.min(1, this.smoothSpeed / 2.2) : 0;
+    this.strokeAmp += (want - this.strokeAmp) * Math.min(1, dt * 4);
+    if (this.strokeAmp < 0.02) return;
+    this.strokePhase += dt * Math.PI * 2 * (0.55 + 0.35 * this.strokeAmp);
+    const ro = this.bones.rUpper;
+    const lo = this.bones.lUpper;
+    if (!ro || !lo) return;
+    this.root.updateWorldMatrix(true, true);
+    this.model.getWorldQuaternion(_qm);
+    const swing = MathUtils.degToRad(26) * this.strokeAmp * Math.sin(this.strokePhase);
+    for (const [bone, k] of [[ro, 1], [lo, 0.7]] as const) {
+      const parent = bone.parent;
+      if (!parent) continue;
+      parent.getWorldQuaternion(_qp);
+      bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, swing * k));
+    }
   }
 
   private transition(plan: Plan): void {
@@ -428,6 +501,31 @@ export class CharacterRig {
   }
 }
 
+const _qm = new Quaternion();
+const _qmi = new Quaternion();
+const _qp = new Quaternion();
+const _qpi = new Quaternion();
+const _qd = new Quaternion();
+const _zAxis = new Vector3(0, 0, 1);
+const _xAxis = new Vector3(1, 0, 0);
+
+/**
+ * The local rotation of a bone after turning it by `angle` radians about the model-space `axis` (a unit vector in the model's
+ * frame: +X the character's left, +Y up, +Z forward) as seen in world space: `local' = P^-1 * D * P * local`, with `P` the
+ * parent's world rotation, `M` the model's world rotation and `D = M * R(axis, angle) * M^-1`. Returns a shared scratch
+ * quaternion (copy it before the next call).
+ */
+export function boneTurned(local: Quaternion, parentWorld: Quaternion, modelWorld: Quaternion, axis: Vector3, angle: number): Quaternion {
+  _qd.setFromAxisAngle(axis, angle).premultiply(modelWorld).multiply(_qmi.copy(modelWorld).invert());
+  _qpi.copy(parentWorld).invert();
+  return _qd.premultiply(_qpi).multiply(parentWorld).multiply(local);
+}
+
+/** {@link boneTurned} about the model's forward axis: an arm swung in towards (or out from) the body. */
+export function armRelaxed(local: Quaternion, parentWorld: Quaternion, modelWorld: Quaternion, angle: number): Quaternion {
+  return boneTurned(local, parentWorld, modelWorld, _zAxis, angle);
+}
+
 function propTilt(kind: CharacterHold): number {
   switch (kind) {
     case 'sword':
@@ -439,6 +537,8 @@ function propTilt(kind: CharacterHold): number {
       return -0.2;
     case 'book':
       return Math.PI / 2 - 0.4;
+    case 'paddle':
+      return -0.5;
     default:
       return 0;
   }

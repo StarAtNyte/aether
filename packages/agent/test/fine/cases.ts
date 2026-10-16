@@ -150,7 +150,7 @@ const scenes: EditCase[] = [
   { id: 'm-windmill-red', world: 'meadow', prompt: 'make the windmill red', expect: { t: ['windmill-1'] } },
   { id: 'm-windmill-taller', world: 'meadow', prompt: 'make the windmill taller', expect: { t: ['windmill-1'] } },
   { id: 'm-station-rename', world: 'meadow', prompt: 'rename the station to Hilltop', expect: { t: ['station-house-1'], p: ['name'] } },
-  { id: 'm-animals-slower', world: 'meadow', prompt: 'make the animals slower', expect: { t: Array.from({ length: 10 }, (_, i) => `animal-${i + 1}`), p: ['speed'] } },
+  { id: 'm-animals-slower', world: 'meadow', prompt: 'make the animals slower', expect: { t: [...Array.from({ length: 12 }, (_, i) => `sheep-1-${i + 1}`), ...Array.from({ length: 5 }, (_, i) => `cows-1-${i + 1}`)], p: ['speed'] } },
   { id: 'm-autumn', world: 'meadow', prompt: 'make it autumn', expect: { env: ['weather'], allow: [/^meadow-tree/] } },
   { id: 'm-cottage-add', world: 'meadow', prompt: 'add another cottage', expect: { added: [1, 1] } },
   { id: 'm-dawn', world: 'meadow', prompt: 'make it dusk', expect: { env: ['sky'] } },

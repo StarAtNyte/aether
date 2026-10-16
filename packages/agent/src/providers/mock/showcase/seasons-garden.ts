@@ -4,11 +4,14 @@
  * autumn fire and winter frost. Keys 1–4 turn the whole garden to one
  * season (every tree, lawn and flower bed has all four looks), 5 brings the
  * four seasons back side by side. Fireflies at dusk, koi under a moon bridge.
+ *
+ * You walk it: a visitor enters at the south gate, strolls the gravel paths among gardeners and other visitors, stands in
+ * each quarter to take in its season (a line of verse each) and, once all four are seen, takes tea with the tea master.
  */
 import type { Json } from '@aether/core';
 import { r2, type Builder, type V3 } from '../builder';
 import type { MockPlan } from '../planner';
-import { finish, flagshipBuilder, glowLantern, onCircle } from './kit';
+import { faceToward, finish, flagshipBuilder, glowLantern, onCircle } from './kit';
 
 type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 const SEASONS: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
@@ -31,7 +34,7 @@ function seasonalTree(season: Season): { generator: string; params: Record<strin
     case 'autumn':
       return { generator: 'tree-broadleaf', params: { height: 6, color: '#d4542a', variant: 1 } };
     default:
-      return { generator: 'tree-broadleaf', params: { height: 5.8, color: '#e3ebf2', variant: 1, trunkColor: '#3f3530', detail: 0.5 } };
+      return { generator: 'tree-broadleaf', params: { height: 5.8, color: '#e3ebf2', variant: 1, trunkColor: '#4a413a', leaf: 0 } };
   }
 }
 
@@ -46,20 +49,20 @@ export function seasonsGarden(): MockPlan {
   b.env({
     sky: 'sunset',
     timeOfDay: 17.75,
-    sunIntensity: 2.4,
-    ambientIntensity: 0.5,
-    fog: { color: '#efc9b4', density: 0.006 },
+    sunIntensity: 3.1,
+    ambientIntensity: 0.7,
+    fog: { color: '#efc9b4', density: 0.005 },
     weather: 'fireflies',
     bloom: 0.9,
-    exposure: 1.05,
-    ground: { material: { preset: 'grass', color: '#6f8f4a' }, size: 300 },
+    exposure: 1.25,
+    ground: { material: { preset: 'grass', color: '#86a85d' }, size: 300 },
   });
 
   // --- Paths, pond, bridge, tea house -------------------------------------------------------
-  for (const [w, d] of [[64, 3.2], [3.2, 64]] as const) b.prim('gravel-path', 'box', [w, 0.06, d], [0, 0.03, 0], { material: { preset: 'sand', color: '#d6cdbb', roughness: 1 }, castShadow: false, tags: ['path'] });
+  for (const [w, d] of [[64, 3.2], [3.2, 64]] as const) b.prim('gravel-path', 'box', [w, 0.06, d], [0, 0.03, 0], { material: { finish: 'gravel', preset: 'sand', color: '#d6cdbb', roughness: 1 }, castShadow: false, tags: ['path'] });
   const pond = b.prim('koi-pond', 'cylinder', [16, 0.08, 16], [0, 0.05, 0], { name: 'Koi pond', material: { preset: 'water', waterKind: 'pond', color: '#2f5a63', opacity: 0.92, roughness: 0.03 }, castShadow: false, tags: ['water'] });
   void pond;
-  b.prim('pond-rim', 'cylinder', [17.4, 0.16, 17.4], [0, 0.04, 0], { material: { preset: 'stone', color: '#8a857c' }, castShadow: false });
+  b.prim('pond-rim', 'cylinder', [17.4, 0.16, 17.4], [0, 0.04, 0], { material: { finish: 'limestone', preset: 'stone', color: '#8a857c' }, castShadow: false });
   b.keepClear(0, 0, 9.5);
   b.gen('moon-bridge', 'bridge', { length: 19, width: 2, height: 2.4, color: '#b8382a', variant: 0 }, [0, 0, 0], { physics: 'static', name: 'Moon bridge', tags: ['landmark'] });
   for (let i = 0; i < 8; i++) {
@@ -95,22 +98,77 @@ export function seasonsGarden(): MockPlan {
       const base = { visible, tags, minSpacing: 0.7, scaleRange: [0.7, 1.3] as [number, number] };
       if (s === 'spring') b.scatter('spring-bed', 'flowers', { size: 0.5, color: '#ffc0d6', centerColor: '#ffe9a8', count: 6 }, 160, [22, 22], [q.x, 0, q.z], base);
       else if (s === 'summer') b.scatter('summer-bed', 'flowers', { size: 0.65, color: '#8f6bff', centerColor: '#ffd23f', count: 5, variant: 1 }, 160, [22, 22], [q.x, 0, q.z], base);
-      else if (s === 'autumn') b.scatter('autumn-leaves', 'rock', { size: 0.35, color: '#d0642a', variant: 1 }, 260, [24, 24], [q.x, 0, q.z], base);
-      else b.scatter('snow-drifts', 'rock', { size: 1.1, color: '#f4f7fa', variant: 3 }, 90, [24, 24], [q.x, 0, q.z], base);
+      else if (s === 'autumn') {
+        // Straw-gold grass and late chrysanthemums: the lawn itself is already russet.
+        b.scatter('autumn-grass', 'grass-tuft', { size: 0.5, color: '#c79a45', blades: 11 }, 260, [24, 24], [q.x, 0, q.z], { ...base, scaleRange: [0.7, 1.3] });
+        b.scatter('autumn-blooms', 'flowers', { size: 0.4, color: '#e0702a', centerColor: '#7a3b12', count: 6, variant: 1 }, 90, [22, 22], [q.x, 0, q.z], base);
+      } else {
+        // Snow drifts: low white swells, not boulders.
+        for (let k = 0; k < 14; k++) {
+          const dx = b.rand(-11, 11);
+          const dz = b.rand(-11, 11);
+          if (Math.hypot(dx, dz) < 3) continue;
+          const w = r2(b.rand(1.2, 2.6));
+          b.prim('snow-drift', 'sphere', [w, r2(w * 0.28), r2(w * b.rand(0.7, 1.1))], [r2(q.x + dx), 0.04, r2(q.z + dz)], { visible, tags, castShadow: false, material: { preset: 'snow', color: '#f5f8fb', roughness: 0.9 } });
+        }
+      }
     });
   }
   // A clipped hedge around the garden, with gates on the paths.
   for (const side of [-1, 1]) {
     for (const half of [-1, 1]) {
-      const hedge = { material: { preset: 'leaf' as const, color: '#3f6b35', roughness: 0.9, flatShading: true }, physics: 'static' as const, tags: ['hedge'] };
+      const hedge = { material: { finish: 'foliage' as const, preset: 'leaf' as const, color: '#355f31', roughness: 0.9 }, physics: 'static' as const, tags: ['hedge'] };
       b.prim('hedge', 'box', [27, 1.5, 1.4], [r2(half * 17.8), 0.75, r2(side * 32)], hedge);
       b.prim('hedge', 'box', [1.4, 1.5, 27], [r2(side * 32), 0.75, r2(half * 17.8)], hedge);
     }
   }
-  for (let i = 0; i < 6; i++) {
-    const [x, , z] = onCircle(0, 0, b.rand(110, 140), Math.PI * 1.05 + (i / 6) * Math.PI * 0.9);
-    b.gen('mountain', 'mountain', { size: r2(b.rand(80, 120)), height: r2(b.rand(30, 50)), color: '#6a6a80', snowLine: 0.85, groundColor: '#6f8f4a' }, [x, 0, z], { tags: ['backdrop'] });
+  // Rolling hills close in the garden, the far mountains stand blue behind them; meadow grass and wildflowers run up to the hedge.
+  for (let i = 0; i < 9; i++) {
+    const [x, , z] = onCircle(0, 0, b.rand(85, 115), (i / 9) * Math.PI * 2 + b.rand(-0.2, 0.2));
+    b.gen('hill', 'mountain', { size: r2(b.rand(90, 130)), height: r2(b.rand(10, 20)), color: '#7a9a55', snowLine: 1, groundColor: '#6f8f4a', variant: 0 }, [x, 0, z], { tags: ['backdrop'] });
   }
+  for (let i = 0; i < 6; i++) {
+    const [x, , z] = onCircle(0, 0, b.rand(170, 210), Math.PI * 1.05 + (i / 6) * Math.PI * 0.9);
+    b.gen('mountain', 'mountain', { size: r2(b.rand(110, 150)), height: r2(b.rand(40, 62)), color: '#6c7088', snowLine: 0.85, groundColor: '#6f8f4a' }, [x, 0, z], { tags: ['backdrop'] });
+  }
+  for (const [x, z, w, d] of [[0, 52, 120, 40], [0, -52, 120, 40], [52, 0, 40, 70], [-52, 0, 40, 70]] as const) {
+    b.scatter('meadow-grass', 'grass-tuft', { size: 0.6, color: '#86a955', blades: 12 }, 4200, [w, d], [x, 0, z], { minSpacing: 0.55, scaleRange: [0.7, 1.5] });
+    b.scatter('meadow-flowers', 'flowers', { size: 0.5, color: b.pick(['#ffffff', '#ffd23f', '#d98cff']), centerColor: '#ffd23f', count: 5 }, 400, [w, d], [x, 0, z], { minSpacing: 1.0, scaleRange: [0.8, 1.4] });
+  }
+
+  // --- People and the walk -------------------------------------------------------------------------
+  const person = (base: string, name: string, pos: V3, look: Record<string, Json>, lines: string[], persona: string, wander: boolean, extra: { yawToward?: [number, number]; patrol?: V3[] } = {}): string =>
+    b.prim(base, 'capsule', [0.56, 1.7, 0.56], [pos[0], 0.85, pos[2]], {
+      name,
+      character: look as never,
+      ...(extra.yawToward ? { yaw: faceToward(pos[0], pos[2], extra.yawToward[0], extra.yawToward[1]) } : {}),
+      physics: { body: 'kinematic', sensor: true },
+      behaviors: [
+        { type: 'npc' as const, params: { name, persona, lines, greetRadius: 4, talkInterval: 5, wander } },
+        ...(extra.patrol ? [{ type: 'patrol' as const, params: { waypoints: extra.patrol, relative: true, speed: 1.05, mode: 'pingpong', wait: 2, face: true } }] : []),
+      ],
+      tags: ['npc'],
+    });
+  person('tea-master', 'Aiko', [2.2, 0, -31], { wardrobe: 'elder', gender: 'female', age: 'old', top: '#7f3b4a', bottom: '#3a3340', hold: 'cup', mood: 'calm' }, ['The garden changes its coat four times a year. Sit in each quarter, then come and take tea.', 'Tea tastes of whichever season you last stood in.'], 'a calm elderly tea master who speaks in short, gentle sentences about the seasons', false, { yawToward: [0, 40] });
+  person('gardener', 'Haru', [r2(QUARTERS[2]!.x - 8), 0, r2(QUARTERS[2]!.z + 6)], { wardrobe: 'worker', gender: 'male', age: 'adult', top: '#5a6a48', bottom: '#4a4034', hold: 'staff', mood: 'calm' }, ['The maples turn the week the first frost comes. I just rake what they give me.'], 'a quiet gardener raking leaves', true);
+  person('visitor', 'Visitor', [r2(-3.4), 0, 24], { wardrobe: 'casual', gender: 'female', age: 'adult', top: '#d8d2c4', bottom: '#51606e', mood: 'cheerful' }, ['The blossom here is better than the postcards.'], 'a visitor admiring the garden', false, { patrol: [[0, 0, 0], [0, 0, -14]] });
+  person('visitor', 'Visitor', [r2(3.4), 0, -22], { wardrobe: 'formal', gender: 'male', age: 'adult', top: '#3d4757', bottom: '#2c2f38', mood: 'calm' }, ['I come every season. Never the same garden twice.'], 'a visitor who loves the garden', false, { patrol: [[0, 0, 0], [0, 0, 16]] });
+
+  b.state('quarters', 0);
+  b.hud('quarters', 'Quarters seen / 4');
+  const verse: Record<Season, string> = {
+    spring: 'Spring: petals fall like slow snow on the water.',
+    summer: 'Summer: deep green, and the cicadas begin.',
+    autumn: 'Autumn: the maples burn without smoke.',
+    winter: 'Winter: frost on every branch, and the pond holds its breath.',
+  };
+  for (const q of QUARTERS) {
+    const zone = b.prim('quarter-zone', 'cylinder', [9, 3, 9], [q.x, 1.5, q.z], { name: `${q.season} quarter`, visible: false, physics: { body: 'static', sensor: true }, tags: ['quarter-zone'], castShadow: false });
+    b.rule({ id: `quarter-${q.id}`, description: `Standing in the ${q.season} quarter counts it as seen`, when: { on: 'enter', zone }, then: [{ do: 'message', text: verse[q.season], duration: 4.5 }, { do: 'add', key: 'quarters', amount: 1 }, { do: 'sound', sound: 'bell' }], once: true });
+  }
+  const teaGoal = b.prim('tea-goal', 'box', [6, 3, 5], [0, 1.5, -31], { name: 'Tea house steps', visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'goal', enabled: false, params: { text: 'You take tea as the light goes. The garden is the same garden, in four coats.' } }], tags: ['goal'], castShadow: false });
+  b.rule({ id: 'tea-ready', description: 'All four quarters seen: the tea house is open', when: { on: 'state', key: 'quarters', op: '>=', value: 4 }, then: [{ do: 'enableBehavior', target: teaGoal, behavior: 'goal', enabled: true }, { do: 'message', text: 'You have seen all four seasons. Aiko is waiting at the tea house.', duration: 5 }, { do: 'sound', sound: 'win' }], once: true });
+  b.rule({ id: 'reset-key', when: { on: 'key', key: 'r' }, then: [{ do: 'reset' }] });
 
   // --- Season keys -------------------------------------------------------------------------------
   const show = (season: Season | 'all'): Array<{ do: 'setProperty'; target: string; path: string; value: Json }> => {
@@ -125,8 +183,8 @@ export function seasonsGarden(): MockPlan {
   });
   b.rule({ id: 'season-all', description: 'Key 5: all four seasons side by side', when: { on: 'key', key: '5' }, then: [...show('all'), { do: 'message', text: 'Four seasons', duration: 1.6 }, { do: 'set', key: 'season', value: 'all' }] });
   b.state('season', 'all');
-  b.rule({ id: 'hint', when: { on: 'start' }, then: [{ do: 'message', text: 'Press 1–4 to change the season, 5 for all four.', duration: 5 }] });
-  b.player({ mode: 'orbit', spawn: [34, 22, 46] });
+  b.rule({ id: 'hint', when: { on: 'start' }, then: [{ do: 'message', text: 'Walk the garden and stand in each quarter. Press 1–4 to change the season, 5 for all four.', duration: 6 }] });
+  b.player({ mode: 'thirdPerson', spawn: [0, 0.2, 29], moveSpeed: 4.6, jumpSpeed: 5, character: { wardrobe: 'casual', gender: 'female', age: 'adult', top: '#e7dcc8', bottom: '#44525f' } });
   b.test({ id: 'koi-swim', kind: 'moves', target: '#koi', distance: 1, within: 6 });
 
   return finish(b, {
@@ -135,8 +193,8 @@ export function seasonsGarden(): MockPlan {
     intro: {
       title: 'Four-Seasons Garden',
       tagline: 'Blossom, green, fire and frost around one quiet koi pond.',
-      objective: 'Turn the garden through the seasons and find your favourite.',
-      controls: ['1 — spring', '2 — summer', '3 — autumn', '4 — winter', '5 — all four', 'Drag — orbit'],
+      objective: 'Stand in each of the four quarters, then take tea at the tea house. Keys 1–5 turn the seasons.',
+      controls: ['WASD — walk', 'Mouse — look', '1–4 — season', '5 — all four', 'E — talk'],
       accent: '#ff9fb8',
     },
     plan: 'Plan: a hedged Japanese garden with gravel paths, a koi pond with fish, lily pads and a moon bridge, a tea house and lanterns; four quarters each holding all four seasonal looks (trees, lawn, beds) toggled by key rules, dusk with fireflies.',

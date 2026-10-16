@@ -294,22 +294,25 @@ function riverValley(api: InternalApi, size: number, H: number, rough: number, r
     height(x, z) {
       const d = Math.abs(x - riverMeander(z, size)) - half - n.noise2(z * 0.03, 1.9) * size * 0.006;
       if (d <= 0) return 0;
-      // A gentle bank (rounded shoulder), then rolling hills that grow away from the water.
-      const bank = smoothstep(0, size * 0.05, d) * 0.22;
-      const hills = smoothstep(size * 0.03, size * 0.3, d) * (0.45 + 0.55 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, oct)));
-      return (bank + hills * 0.78) * H;
+      // A flat, walkable floodplain beside the water (a few degrees, about 2 m above the bed on the 320 m valley), then the valley
+      // walls: rolling hills that grow away from the floodplain, so camps, paths and trees have somewhere flat to stand.
+      const bank = smoothstep(0, size * 0.1, d) * 0.05;
+      // The waterline: the bed climbs 0.7 m within the first 5 m, so the water (0.38 m) has a clear edge and trees never stand in it.
+      const lip = (smoothstep(0, 5, d) * 0.7) / H;
+      const hills = smoothstep(size * 0.1, size * 0.4, d) * (0.45 + 0.55 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, oct)));
+      return (bank + lip + hills * 0.82) * H;
     },
     color(t, h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
       mixLinear(pal.grassDark, pal.grass, smoothstep(0.05, 0.6, t + w), out);
       mixLinear(out, pal.rock, smoothstep(0.32, 0.55, slope + w), out);
       // Wet pebbles on the riverbed and the first metre of bank.
-      mixLinear(bed, out, smoothstep(0.15, 1.2, h + w * 4), out);
+      mixLinear(bed, out, smoothstep(0.2, 1.0, h + w * 2), out);
     },
     splat(_t, h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
       const rock = smoothstep(0.32, 0.55, slope + w);
-      const wet = 1 - smoothstep(0.15, 1.2, h + w * 4);
+      const wet = 1 - smoothstep(0.2, 1.0, h + w * 2);
       out[1] = rock * (1 - wet);
       out[2] = wet;
       out[0] = Math.max(0, 1 - out[1] - out[2]);

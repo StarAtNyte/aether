@@ -18,7 +18,7 @@ import { riverHalfWidth, riverMeander, type Json } from '@aether/core';
 import { generateBuiltinSync } from '@aether/procgen';
 import { r2, type Builder, type V3 } from '../builder';
 import type { MockPlan } from '../planner';
-import { finish, flagshipBuilder } from './kit';
+import { finish, flagshipBuilder, groundRibbon } from './kit';
 import { addLife } from './life';
 
 const SIZE = 320;
@@ -102,8 +102,8 @@ export function highlandTrail(): MockPlan {
     { name: 'Birch grove stake', at: [eastX(62, 15), 62] },
     { name: 'Waterfall pool stake', at: [eastX(24, 20), 24] },
     { name: "Shepherd's hut stake", at: [westX(-4, 15), -4] },
-    { name: 'Fern gully stake', at: [westX(-42, 22), -42] },
-    { name: 'Ridge saddle stake', at: [westX(-84, 36), -84] },
+    { name: 'Fern gully stake', at: [westX(-42, 40), -42] },
+    { name: 'Ridge saddle stake', at: [westX(-84, 70), -84] },
   ];
   // The summit: the highest point the player can walk to from the last stake. A flood fill over the
   // measured slopes (cells of 2 m, at most 28 degrees) finds what is connected, so the cairn never
@@ -121,7 +121,7 @@ export function highlandTrail(): MockPlan {
     const z = iz * CELL;
     const y = h(x, z);
     const far = Math.hypot(x - last[0], z - last[1]);
-    if (y > best.y && far > 22 && far < 70 && slope(x, z) < 14 && Math.abs(x) < SIZE / 2 - 30 && Math.abs(z) < SIZE / 2 - 30) best = { x, z, y };
+    if (y > best.y && far > 30 && far < 105 && slope(x, z) < 14 && Math.abs(x) < SIZE / 2 - 30 && Math.abs(z) < SIZE / 2 - 30) best = { x, z, y };
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nx = ix + dx;
       const nz = iz + dz;
@@ -136,23 +136,15 @@ export function highlandTrail(): MockPlan {
   }
   const summit: V3 = [best.x, r2(best.y), best.z];
 
-  // The footbridge crosses where the banks are measured: the deck stands a hand above the higher bank shoulder,
-  // runs out to where the ground comes up to it, and a ramp on each side meets the terrain, so there is never a step.
+  // The footbridge crosses where the banks are measured: the deck stands a hand above the higher bank shoulder six metres past the
+  // water on each side, with a ramp on each end that meets the ground, so there is never a step. (The valley's floodplain is
+  // flat, so the bridge is as long as the river is wide, not a causeway.)
   const bridgeZ = 10;
   const cx = riverX(bridgeZ);
-  const shoulder = (dir: number): number => {
-    let top = 0;
-    for (let d = HALF; d < HALF + 30; d += 1) top = Math.max(top, h(cx + dir * d, bridgeZ));
-    return top;
-  };
-  // The valley's banks are steep for the first 15 m; the shoulder above them is where the ground levels out.
-  const deckY = r2(Math.min(shoulder(-1), shoulder(1), 14) * 0.8 + 0.1);
-  const deckEnd = (dir: number): number => {
-    for (let d = HALF + 4; d < HALF + 45; d += 0.5) if (h(cx + dir * d, bridgeZ) >= deckY - 0.2) return r2(cx + dir * d);
-    return r2(cx + dir * (HALF + 30));
-  };
-  const xWest = deckEnd(-1);
-  const xEast = deckEnd(1);
+  const shoulderOff = HALF + 6;
+  const deckY = r2(Math.max(h(cx - shoulderOff, bridgeZ), h(cx + shoulderOff, bridgeZ)) + 0.6);
+  const xWest = r2(cx - shoulderOff);
+  const xEast = r2(cx + shoulderOff);
   const RAMP = 7;
   const lx = r2(xWest - RAMP);
   const rx = r2(xEast + RAMP);
@@ -173,25 +165,8 @@ export function highlandTrail(): MockPlan {
   // The trailhead camp stays open: a clearing around the fire, the tent and the spawn.
   b.reserve(start[0], start[2] + 3, 7);
   b.reserve(start[0] + 5, start[2] + 4, 5);
-  const strip = (pts: ReadonlyArray<readonly [number, number]>): void => {
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const a = pts[i] as readonly [number, number];
-      const c = pts[i + 1] as readonly [number, number];
-      const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
-      const yaw = (Math.atan2(c[0] - a[0], c[1] - a[1]) * 180) / Math.PI;
-      for (let t = 0; t < len; t += 3) {
-        const l = Math.min(3.4, len - t + 0.4);
-        const mx = a[0] + ((c[0] - a[0]) * (t + l / 2)) / len;
-        const mz = a[1] + ((c[1] - a[1]) * (t + l / 2)) / len;
-        const h0 = h(a[0] + ((c[0] - a[0]) * t) / len, a[1] + ((c[1] - a[1]) * t) / len);
-        const h1 = h(a[0] + ((c[0] - a[0]) * (t + l)) / len, a[1] + ((c[1] - a[1]) * (t + l)) / len);
-        const pitch = (Math.atan2(h1 - h0, l) * 180) / Math.PI;
-        b.prim('trail', 'box', [1.9, 0.07, r2(l)], [r2(mx), r2(h(mx, mz) + 0.025), r2(mz)], { rot: [r2(-pitch), r2(yaw), 0], material: { finish: 'gravel', color: '#c9bba0' }, castShadow: false, tags: ['trail'] });
-      }
-    }
-  };
-  strip(route);
-  strip(west);
+  // One draped mesh per leg of the route (the gap over the river is its own strip), following the ground across and along.
+  groundRibbon(b, { id: 'trail', name: 'Worn trail', paths: [route, west], height: h, width: 1.9, lift: 0.045, centre: '#cbbd9b', edge: '#7c7552', material: { finish: 'gravel', roughness: 0.96 }, tags: ['trail'] });
 
   // --- The footbridge ------------------------------------------------------------------------------------------------
   const bridge = b.empty('footbridge', [r2((xWest + xEast) / 2), deckY, bridgeZ], { name: 'Footbridge', physics: 'static', footprint: 3 });
@@ -217,14 +192,16 @@ export function highlandTrail(): MockPlan {
   }
   for (const sd of [-1, 1]) {
     b.add({ id: b.id('rail'), parent: bridge, shape: { kind: 'primitive', primitive: 'box', size: [r2(spanLen), 0.1, 0.1] }, transform: { position: [0, 0.95, sd * 1.0] }, material: { finish: 'oak', color: '#7a5c3e' }, castShadow: true, tags: ['bridge'] });
-    for (let k = 0; k <= 6; k++) {
-      b.add({ id: b.id('post'), parent: bridge, shape: { kind: 'primitive', primitive: 'box', size: [0.12, 1.0, 0.12] }, transform: { position: [r2((k / 6 - 0.5) * spanLen), 0.45, sd * 1.0] }, material: { finish: 'oak', color: '#7a5c3e' }, tags: ['bridge'] });
+    for (let k = 0; k <= 10; k++) {
+      b.add({ id: b.id('post'), parent: bridge, shape: { kind: 'primitive', primitive: 'box', size: [0.12, 1.0, 0.12] }, transform: { position: [r2((k / 10 - 0.5) * spanLen), 0.45, sd * 1.0] }, material: { finish: 'oak', color: '#7a5c3e' }, tags: ['bridge'] });
     }
   }
 
   // --- The river is cold: it carries you back to the last checkpoint ---------------------------------------------
-  for (let z = 150; z > -150; z -= 12) {
-    b.prim('current', 'box', [r2(HALF * 1.7), 1.6, 14], [r2(riverX(z - 6)), 0.5, z - 6], { visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'hazard', params: { mode: 'respawn', cooldown: 1 } }], tags: ['river-hazard'], castShadow: false });
+  // The sensors cover the whole wet width (the bed plus the shallow margin where the bank climbs through the 0.38 m water, about
+  // three metres each side) and run past both ends of the valley, so there is no wading around them: the bridge is the way over.
+  for (let z = 172; z > -172; z -= 8) {
+    b.prim('current', 'box', [r2((HALF + 4.5) * 2), 0.7, 8.6], [r2(riverX(z - 4)), 0.15, z - 4], { visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'hazard', params: { mode: 'respawn', cooldown: 1 } }], tags: ['river-hazard'], castShadow: false });
   }
   const checkpoint = (x: number, z: number, name: string): void => {
     b.prim('checkpoint', 'box', [5, 3, 5], [x, r2(h(x, z) + 1.5), z], { name, visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'checkpoint', params: {} }], tags: ['checkpoint'], castShadow: false });
@@ -267,6 +244,30 @@ export function highlandTrail(): MockPlan {
     tags: ['npc', 'villager'],
   });
 
+  // Two walkers on the trail between the first and second stakes: the valley is not empty, and a person on the path shows its scale.
+  const leg: [[number, number], [number, number]] = [(markers[0] as { at: [number, number] }).at, (markers[1] as { at: [number, number] }).at];
+  const along = (u: number, lateral: number): V3 => {
+    const dx = leg[1][0] - leg[0][0];
+    const dz = leg[1][1] - leg[0][1];
+    const len = Math.hypot(dx, dz);
+    const x = leg[0][0] + dx * u + (-dz / len) * lateral;
+    const z = leg[0][1] + dz * u + (dx / len) * lateral;
+    return [r2(x), r2(h(x, z) + 0.85), r2(z)];
+  };
+  const walk = (name: string, u0: number, lateral: number, look: Record<string, Json>): void => {
+    const waypoints: V3[] = [];
+    for (let k = 0; k <= 8; k++) waypoints.push(along(0.15 + (0.7 * k) / 8, lateral));
+    b.prim('walker', 'capsule', [0.56, 1.7, 0.56], along(u0, lateral), {
+      name,
+      character: look as never,
+      physics: { body: 'kinematic', sensor: true },
+      behaviors: [{ type: 'patrol' as const, params: { waypoints, speed: 1.15, mode: 'pingpong', wait: 3, face: true } }],
+      tags: ['npc', 'walker'],
+    });
+  };
+  walk('Walker Marta', 0.35, 0.8, { wardrobe: 'traveller', gender: 'female', age: 'adult', top: '#b5483a', bottom: '#3d4656', hold: 'backpack', mood: 'cheerful' });
+  walk('Walker Jon', 0.42, -0.9, { wardrobe: 'traveller', gender: 'male', age: 'adult', top: '#3f6a8a', bottom: '#4a4337', hold: 'backpack', mood: 'calm' });
+
   // The shepherd's hut on the west bank: stone and timber.
   const hx = westX(-4, 28);
   const hz = -10;
@@ -274,7 +275,7 @@ export function highlandTrail(): MockPlan {
   b.gen('fence', 'fence', { length: 14, height: 1.1, color: '#7a6048' }, [r2(hx - 6), r2(h(hx - 6, hz + 8)), r2(hz + 8)], { yaw: 0, physics: 'static', footprint: 1 });
   // The waterfall pool above the third stake.
   const wz = 16;
-  b.gen('waterfall', 'waterfall', { height: 8, waterColor: '#9cc9d6' }, [eastX(wz, 34), r2(h(eastX(wz, 34), wz) - 0.2), wz], { yaw: 90, physics: 'static', name: 'Waterfall', footprint: 8 });
+  b.gen('waterfall', 'waterfall', { height: 8, waterColor: '#9cc9d6' }, [eastX(wz, 46), r2(h(eastX(wz, 46), wz) - 1.6), wz], { yaw: 90, physics: 'static', name: 'Waterfall', footprint: 8 });
 
   // --- The six stakes and the cairn --------------------------------------------------------------------------------
   b.state('stakes', 0);
@@ -376,7 +377,7 @@ export function highlandTrail(): MockPlan {
   grove('grass', 'meadow-grass', { size: 0.5, color: '#7aa83f' }, tufts, [0.65, 1.25], 'Meadow grass');
 
   // --- Rules --------------------------------------------------------------------------------------------------------------------
-  b.player({ mode: 'thirdPerson', spawn: [r2(start[0] + 2), r2(start[1] + 1), r2(start[2] + 6)], moveSpeed: 5.2, jumpSpeed: 6.2, character: { wardrobe: 'traveller', gender: 'male', age: 'adult', hold: 'bag' } });
+  b.player({ mode: 'thirdPerson', spawn: [r2(start[0] + 2), r2(start[1] + 1), r2(start[2] + 6)], moveSpeed: 5.2, jumpSpeed: 6.2, character: { wardrobe: 'traveller', gender: 'male', age: 'adult', hold: 'backpack' } });
   b.rule({ id: 'welcome', when: { on: 'start' }, then: [{ do: 'message', text: 'First light on the trail. Find the six survey stakes, then climb to the summit cairn.', duration: 6 }] });
   b.rule({ id: 'halfway', when: { on: 'state', key: 'stakes', op: '>=', value: 3 }, then: [{ do: 'message', text: 'Halfway. Cross the footbridge: the river is too cold to wade.', duration: 5 }], once: true });
   b.rule({

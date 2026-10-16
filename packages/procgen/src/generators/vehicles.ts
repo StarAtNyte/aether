@@ -106,6 +106,115 @@ const car = defineGenerator({
   },
 });
 
+
+/**
+ * Canoe hull and fittings, long axis along Z with the bow at -Z (the engine's forward axis, so a vehicle drives it).
+ * Station sections are U-shaped, the keel has rocker and the sheer sweeps up at both ends; an outer and an inner shell with a
+ * gunwale strip between them give the hull real thickness, and the thwarts, a seat and the floor slats sit inside.
+ */
+function canoeParts(api: InternalApi, L: number, color: string): void {
+  const W = L * 0.255;
+  const D = L * 0.085;
+  const wall = Math.max(0.018, L * 0.005);
+  const N = 30;
+  const R = 12;
+  const half = (s: number): number => (W / 2) * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(s), 2.1)), 0.6);
+  const keel = (s: number): number => D * 0.55 * Math.pow(Math.abs(s), 3);
+  const sheer = (s: number): number => D + D * 0.7 * Math.pow(Math.abs(s), 2.6);
+  const section = (s: number, u: number, inner: boolean): [number, number, number] => {
+    const bw = Math.max(0.0015, half(s) - (inner ? wall : 0));
+    const yb = keel(s) + (inner ? wall : 0);
+    const ys = sheer(s);
+    return [bw * u, yb + (ys - yb) * Math.pow(Math.abs(u), 1.9), (s * L) / 2];
+  };
+  const shell = (inner: boolean): Mesh => {
+    const b = new MeshBuilder((N + 1) * (R + 1), N * R * 6);
+    for (let i = 0; i <= N; i++) {
+      const s = (i / N) * 2 - 1;
+      for (let k = 0; k <= R; k++) {
+        const u = (k / R) * 2 - 1;
+        const [x, y, z] = section(s, u, inner);
+        b.vertex(x, y, z, 0, 1, 0, k / R, i / N);
+      }
+    }
+    for (let i = 0; i < N; i++) {
+      for (let k = 0; k < R; k++) {
+        const a = i * (R + 1) + k;
+        b.quad(a, a + R + 1, a + R + 2, a + 1);
+      }
+    }
+    const m = api.fromBuilder(b).recomputeNormals();
+    // The outer skin faces away from the hull's middle, the inner skin towards it.
+    let score = 0;
+    const pos = m.positions;
+    const nrm = m.normals;
+    for (let i = 0; i < pos.length; i += 3) score += (nrm[i] as number) * (pos[i] as number) + (nrm[i + 1] as number) * ((pos[i + 1] as number) - D * 0.5);
+    if ((score < 0) !== inner) {
+      m.flipWinding();
+      for (let i = 0; i < nrm.length; i++) nrm[i] = -(nrm[i] as number);
+    }
+    return m;
+  };
+  const cedar = shade(color, 0.0);
+  const outer = shell(false);
+  const seam = lin(shade(color, -0.3));
+  const plank = lin(shade(color, 0.07));
+  const plank2 = lin(shade(color, -0.07));
+  outer.paintFn((x, y, z, _nx, _ny, _nz, out) => {
+    // Strakes: a darker seam every hand's breadth up the side, with a long grain.
+    const course = y * 11 / D;
+    const f = course - Math.floor(course);
+    mixLinear(Math.floor(course) % 2 === 0 ? plank : plank2, seam, f < 0.07 ? 0.8 : 0, out);
+    const grain = 0.06 * api.noise.noise3(x * 3, y * 3, z * 0.7);
+    out[0] *= 1 + grain;
+    out[1] *= 1 + grain;
+    out[2] *= 1 + grain;
+  });
+  api.add(outer, MAT.wood);
+  api.collider(hullOf(outer));
+  const inside = shell(true);
+  paintNoise(inside, api, shade(cedar, 0.12), shade(cedar, 0.28), 4);
+  api.add(inside, MAT.wood);
+  // Gunwale: the strip that closes the wall at the top edge, on both sides, plus an inwale cap standing proud of it.
+  const gb = new MeshBuilder((N + 1) * 4, N * 12);
+  for (let i = 0; i <= N; i++) {
+    const s = (i / N) * 2 - 1;
+    for (const u of [-1, 1]) {
+      const o = section(s, u, false);
+      const n = section(s, u, true);
+      gb.vertex(o[0], o[1] + 0.012, o[2], 0, 1, 0, 0, i / N);
+      gb.vertex(n[0], n[1] + 0.012, n[2], 0, 1, 0, 1, i / N);
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    const a = i * 4;
+    gb.quad(a, a + 1, a + 5, a + 4);
+    gb.quad(a + 2, a + 6, a + 7, a + 3);
+  }
+  const rim = api.fromBuilder(gb).recomputeNormals();
+  const rn = rim.normals;
+  let up = 0;
+  for (let i = 1; i < rn.length; i += 3) up += rn[i] as number;
+  if (up < 0) {
+    rim.flipWinding();
+    for (let i = 0; i < rn.length; i++) rn[i] = -(rn[i] as number);
+  }
+  rim.paint(lin(shade(color, -0.42)));
+  api.add(rim, MAT.wood);
+  // Thwarts across the hull, a wide stern seat and slats on the floor.
+  const thwart = (s: number, w: number, y: number, th: number, depth: number): void => {
+    const bw = half(s) - wall * 0.5;
+    piece(api, api.box(bw * 2 * w, th, depth).translate(0, y, (s * L) / 2), shade(color, -0.2), MAT.wood, 0.05);
+  };
+  thwart(-0.32, 1, sheer(0.32) - D * 0.16, 0.026, 0.1);
+  thwart(0.02, 1, sheer(0.02) - D * 0.1, 0.026, 0.1);
+  thwart(0.5, 0.9, D * 0.52, 0.03, 0.26);
+  for (let k = -5; k <= 5; k++) {
+    const s = k * 0.11;
+    piece(api, api.box(half(s) * 1.1, 0.012, 0.045).translate(0, keel(s) + wall + 0.006, (s * L) / 2), shade(cedar, 0.22), MAT.wood, 0.05);
+  }
+}
+
 /** Lofted boat hull: stations along X from stern to bow, V-shaped sections. Open at the top. */
 function hull(api: InternalApi, L: number, W: number, D: number, stations: number, ring: number): Mesh {
   const b = new MeshBuilder((stations + 1) * (ring + 1) + ring + 2, stations * ring * 6 + ring * 3);
@@ -153,17 +262,21 @@ function hull(api: InternalApi, L: number, W: number, D: number, stations: numbe
 
 const boat = defineGenerator({
   id: 'boat',
-  description: 'Boat facing +X with a lofted V hull: wooden rowboat with oars, sailboat with mast and sails, or motorboat with cabin.',
+  description: 'Boat facing +X with a lofted V hull: rowboat with oars, sailboat, or motorboat; variant 3 is a canoe along -Z (bow at -Z).',
   category: 'vehicles',
   params: {
     length: pNum(5, 2, 30, 'length in meters'),
     color: pColor('#f2efe6', 'hull color'),
     accentColor: pColor('#2c5d8a', 'stripe / trim color'),
-    variant: pVariant(2, '0 rowboat, 1 sailboat, 2 motorboat'),
+    variant: pVariant(3, '0 rowboat, 1 sailboat, 2 motorboat, 3 canoe (long axis -Z)'),
   },
   run(p, api) {
     const L = p.num('length');
     const variant = p.int('variant');
+    if (variant === 3) {
+      canoeParts(api, L, p.color('color') === '#f2efe6' ? '#9a5b32' : p.color('color'));
+      return api.build();
+    }
     const W = L * (variant === 0 ? 0.36 : 0.32);
     const D = L * (variant === 0 ? 0.12 : 0.14);
     const hullC = variant === 0 && p.color('color') === '#f2efe6' ? '#9a6a3c' : p.color('color');
