@@ -469,3 +469,10 @@ original, procedural work (MIT, with the project). The studied reference (a cour
 licence: only its ideas (plan-to-3D reveal, ink-on-paper drawing, golden-hour staging) informed the design; none of its
 code, shaders or files were used.
 
+
+### Realistic games (stage `gamereal`)
+
+No third-party asset or dependency was added. The layered terrain blends the four ambientCG finishes (CC0, listed
+above) that the material library already ships: no new texture files. The leaf cards, trees, shrubs, grass and the
+Highland Trail world are original, procedural work (MIT, with the project); the Highland Trail and vegetation preview
+images are renders made by this project.

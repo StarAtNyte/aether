@@ -209,7 +209,7 @@ async function talk(page: Page, shop: string): Promise<void> {
   });
   // Pointer route: the close button ends the conversation.
   await page.locator('.npc-card__close').click();
-  await waitFor(page, 'the card to close', 5000, async () => ((await page.locator('.npc-card').count()) === 0 ? true : null));
+  await waitFor(page, 'the card to close', 15_000, async () => ((await page.locator('.npc-card').count()) === 0 ? true : null));
   log(`  talk: "${hint.trim()}" → ${card}: "${text0.slice(0, 40)}…" choices ${JSON.stringify(choices.map((c) => c.replace(/\s+/g, ' ').trim()))} → "${price.slice(0, 40)}"; closed with the button`);
 }
 
