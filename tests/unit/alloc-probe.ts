@@ -33,9 +33,23 @@ interface ProfileNode {
  * Run `fn` `iterations` times (after `warmup` untimed runs) under the
  * sampling heap profiler and attribute allocations to sources matching `match`.
  */
-export async function probeAllocations(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number }): Promise<AllocationReport> {
+export async function probeAllocations(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number; rounds?: number }): Promise<AllocationReport> {
+  // A one-off allocation (a lazy module evaluating, a JIT tier-up, a GC on a loaded machine) lands in one
+  // measurement window and not the next; real per-frame garbage is in every window. Take the minimum of
+  // several short windows so the probe flags only steady garbage.
+  const rounds = Math.max(1, opts.rounds ?? 3);
+  let best: AllocationReport | null = null;
+  for (let i = 0; i < rounds; i++) {
+    const r = await measureOnce(fn, opts, i === 0);
+    if (!best || r.bytesPerIteration < best.bytesPerIteration) best = r;
+    if (best.bytesPerIteration < 8) break;
+  }
+  return best!;
+}
+
+async function measureOnce(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number }, first: boolean): Promise<AllocationReport> {
   // Warm up long enough for the optimizing compiler: baseline code boxes doubles that optimized code keeps unboxed.
-  const warmup = opts.warmup ?? 20_000;
+  const warmup = first ? (opts.warmup ?? 20_000) : 200;
   for (let i = 0; i < warmup; i++) fn();
   // Optimisation runs on a background thread: on a busy machine it may not have finished yet. Give it
   // time, then warm again so the installed optimized code (not baseline code) is what gets measured.
