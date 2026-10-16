@@ -1735,3 +1735,30 @@ has 64 towers 105 to 230 m away, 60 to 115 m high, rising above the deck.
 - **Scatter budgets.** When several huge scatter fields together exceed the renderer's field budget, one field may take at most 45 percent of it, so ground cover is not starved by forests mounted before it.
 - **Imports.** An imported JSON file must carry at least one world field; `{"hello":"world"}` is refused instead of becoming an empty world.
 - **Memory.** `npm run e2e:switch` opens seven worlds in one tab for several rounds, plays and stops each and compares the JS heap after a forced collection at the home page.
+
+## 29. Outdoor look, part A: a physical sky, vegetation variety and natural cover (`outdoora`)
+
+**Sky.** `environment/atmosphere.ts` integrates single scattering (Rayleigh, Mie, and a thin ozone layer, which is what turns a dusk zenith deep blue instead of
+green) along each view ray through a spherical atmosphere, with the sunlight attenuated on its way in. It runs on the CPU, per dome vertex (96 x 48), only when the
+environment changes (about 10 to 80 ms; nothing per frame), so the dome stays a plain vertex-coloured classic mesh that draws the same on WebGPU, WebGL2 and a
+software rasteriser. A luminance exposure curve, a saturation lift and a small correction for the green cast that single scattering leaves on a long daytime
+horizon turn radiance into display colour. `computeSkyState` takes the zenith, horizon, sun colour and fog colour from the same model, so ambient light, reflections,
+fog and clouds agree with the sky. Night keeps its keyed colours (the model is physically black there; moonlit sky is art-directed) and the stars and nebula.
+Sun, moon (a textured disc with maria, craters and a phase) and the crepuscular rays are small additive or alpha sprites.
+
+**Clouds.** Two layers: the cumulus deck bakes self-shadowing into its texture (optical depth along five steps toward the sun, rebuilt only when the cover or the
+sun's azimuth, quantised to 15 degrees, changes), and a high cirrus veil of long wisps. Clouds are per-vertex lit and melt into the horizon haze as before.
+Cloud shadows on the ground were not done (a cookie on the sun light costs a texture lookup per lit fragment on every tier; the sun-shadow map already carries the
+real occluders).
+
+**Vegetation.** Every flagship except the deliberately painterly one now builds with the realistic generators (`Builder.realisticNature`): the stylised oak and
+pine, bushes, grass, rocks and the hero cherry tree are exchanged for the leaf-card trees, spruce, shrubs, meadow grass, boulders and a blossoming broadleaf. New
+`blossom` and `flower` card kinds and a `wildflowers` generator add species; ground cover is laid out by a cluster process (tussocks, drifts and a few lone plants)
+instead of uniform scatter. Far trees use card-aware LOD levels (a share of the cards, grown to keep the crown's coverage) in place of a QEM collapse of loose quads.
+Wind sway, bark, leaf shadows and the soft crown normals were already there.
+
+**Terrain.** The layered terrain colour gets world-space macro variation (90 m patches, 11 m mottle, warm-cool drift) so a large lawn is not one tint.
+
+**Tiers.** The low tier (software rasterisers, low-memory mode) drops the cirrus veil and the rays (`SkyDome.setDetail(false)`: two full-screen blended layers);
+the dome, the cumulus deck, sun, moon and stars stay, so the sky keeps its physical colours everywhere. The layered terrain was already off on that tier.
+God rays through the shadow map remain the ultra tier's (`effects.shafts`).

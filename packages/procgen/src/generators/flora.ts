@@ -25,7 +25,7 @@ const BARK = { finish: 'bark', vertexColors: true } as const;
 /** Rock: the photographed rock surface, tinted per vertex. */
 const ROCK = { finish: 'rock', vertexColors: true } as const;
 /** Foliage cards (the renderer cuts the leaves out of each quad). */
-const foliage = (kind: 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern') => ({ foliage: kind, vertexColors: true, roughness: 0.8, metalness: 0 }) as const;
+const foliage = (kind: 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern' | 'blossom' | 'flower') => ({ foliage: kind, vertexColors: true, roughness: 0.8, metalness: 0 }) as const;
 
 /** Unit vector of `v`. */
 function unit(v: Vec3): Vec3 {
@@ -148,6 +148,11 @@ function paintBark(api: InternalApi, mesh: Mesh, base: string): void {
   });
 }
 
+/** Blossom tones of a crown: the shaded inside stays a warm rose (never purple), the lit outside the blossom colour, with white highlights. */
+function blossomTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
+  return { deep: lin(shade('#d07f94', -0.08)), mid: lin(shade(base, 0.12)), sun: lin(shade(base, 0.3)), warm: lin('#fff6f8') };
+}
+
 /** Leaf tones of a crown from one base colour (linear): deep shade, mid, sunlit, and a yellowing accent. */
 function leafTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
   return { deep: lin(shade(base, -0.5)), mid: lin(shade(base, 0.06)), sun: lin(shade(base, 0.32)), warm: lin(shade('#a9b83a', 0.05)) };
@@ -219,6 +224,7 @@ const treeBroadleaf = defineGenerator({
     trunkColor: pColor('#6b5a48', 'bark tint'),
     detail: pNum(1, 0.3, 2, 'card count multiplier (lower for distant forests)'),
     variant: pVariant(2, '0 round, 1 tall oval, 2 wide spreading'),
+    blossom: pNum(0, 0, 1, 'above 0.5: blossoms, not leaves'),
   },
   run(p, api) {
     const H = p.num('height');
@@ -265,12 +271,13 @@ const treeBroadleaf = defineGenerator({
     barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
     api.add(wood, BARK);
 
-    const count = Math.round(520 * detail);
+    const blossoming = p.num('blossom') > 0.5;
+    const count = Math.round((blossoming ? 440 : 520) * detail);
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * 0.1, h: H * 0.1 }, leafTones(p.color('color')), 0.1);
+    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * (blossoming ? 0.13 : 0.1), h: H * (blossoming ? 0.13 : 0.1) }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
     const leaves = sheets.build(api);
     if (leaves) {
-      api.add(leaves, foliage('broadleaf'));
+      api.add(leaves, foliage(blossoming ? 'blossom' : 'broadleaf'));
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
     }
     return api.build();
@@ -559,6 +566,39 @@ const meadowGrass = defineGenerator({
   },
 });
 
+const wildflowers = defineGenerator({
+  id: 'wildflowers',
+  description: 'Realistic wild flowers (card patch). Scatter in drifts.',
+  category: 'nature',
+  params: {
+    size: pNum(0.45, 0.1, 2, 'stem height in meters'),
+    color: pColor('#f4f1e8', 'flower colour'),
+    cards: pInt(3, 1, 6, 'cards'),
+    variant: pVariant(0, '0 one colour, 1 mixed meadow'),
+  },
+  run(p, api) {
+    const S = p.num('size');
+    const nC = p.int('cards');
+    const palette = p.int('variant') === 1 ? ['#f4f1e8', '#f2c230', '#b06ad8', '#e8484a', '#e98ac1'] : [p.color('color')];
+    const stem: RGB = lin('#4d7a2f');
+    const sheets = new Sheets(nC);
+    for (let k = 0; k < nC; k++) {
+      const a = (k / nC) * Math.PI + api.rng() * 0.5;
+      const u: Vec3 = [Math.cos(a), 0, Math.sin(a)];
+      const lean = (api.rng() - 0.5) * 0.2;
+      const v = unit([lean * Math.cos(a + 1.57), 1, lean * Math.sin(a + 1.57)]);
+      const n = unit([(api.rng() - 0.5) * 0.3, 1, (api.rng() - 0.5) * 0.3]);
+      const bloom = lin(shade(palette[Math.floor(api.rng() * palette.length)] as string, (api.rng() - 0.5) * 0.18));
+      // The vertex colour ramps from leaf green to the flower colour at about two thirds of the card's height.
+      sheets.add([(api.rng() - 0.5) * S * 0.2, 0, (api.rng() - 0.5) * S * 0.2], u, v, S * api.range(0.9, 1.25), S * api.range(0.85, 1.15), 'bottom', n, stem, bloom);
+    }
+    const m = sheets.build(api);
+    if (m) api.add(m, foliage('flower'));
+    api.collider(boxCollider(0, 0.01, 0, S * 0.8, 0.02, S * 0.8));
+    return api.build();
+  },
+});
+
 const boulder = defineGenerator({
   id: 'boulder',
   description: 'Realistic boulder: a displaced, weathered mass with strata, lichen on the top and the photographed rock surface. Flat base. Use rock for the stylised one.',
@@ -606,4 +646,4 @@ const boulder = defineGenerator({
 });
 
 /** Realistic vegetation and rock, registered with the nature category. */
-export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, boulder] as const;
+export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder] as const;

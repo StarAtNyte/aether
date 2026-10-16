@@ -28,10 +28,15 @@ export function realisticStandIn(generator: string, params: Params): { generator
   switch (generator) {
     case 'tree-oak':
       return { generator: 'tree-broadleaf', params: { ...copy(params, ['color', 'trunkColor']), height: Math.max(6, num(params['height'], 6) * 1.5), variant: Math.min(2, Math.max(0, Math.round(num(params['variant'], 2)))) } };
+    case 'hero-cherry-tree':
+      // Cherry blossom: a wide broadleaf crown in blossom pink on a dark, twisting trunk.
+      return { generator: 'tree-broadleaf', params: { color: typeof params['blossomColor'] === 'string' ? params['blossomColor'] : '#f1a9c0', trunkColor: typeof params['barkColor'] === 'string' ? params['barkColor'] : '#3b2a24', height: Math.max(5, num(params['height'], 5.5) * 1.35), variant: 2, blossom: 1 } };
     case 'tree-pine':
       return { generator: 'tree-spruce', params: { ...copy(params, ['color', 'trunkColor']), height: Math.max(8, num(params['height'], 7) * 1.6), snow: params['snow'] === true ? 0.8 : 0 } };
     case 'bush':
       return { generator: 'shrub', params: { ...copy(params, ['color']), size: num(params['size'], 1.2) } };
+    case 'flowers':
+      return { generator: 'wildflowers', params: { ...copy(params, ['color']), size: num(params['size'], 0.6) * 0.8 } };
     case 'grass-tuft':
       return { generator: 'meadow-grass', params: { ...copy(params, ['color']), size: num(params['size'], 0.5) } };
     case 'rock':

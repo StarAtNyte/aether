@@ -31,6 +31,13 @@ const HEIGHT_BIAS = 0.22;
 /** Weights below this vanish, so a layer never leaves a faint haze where it is not. */
 const SHARPEN = 2.4;
 
+/**
+ * Macro colour variation (world-space, so it is seamless across tiles and independent of the photographs'
+ * repeat): broad sun-dried and lush patches (about 90 m across) with a finer mottling (about 11 m), and a
+ * warm-cool hue drift. Strengths are the multiplier's deviation from 1.
+ */
+export const MACRO_VARIATION = Object.freeze({ patchScale: 1 / 90, mottleScale: 1 / 11, patch: 0.15, mottle: 0.05, hue: 0.05 });
+
 /** `userData` key marking a layered terrain material. */
 export const SPLAT_KEY = 'aetherSplat';
 
@@ -101,7 +108,12 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   // The photographs' own maps stay reachable for exporters that read classic maps.
   material.userData[FINISH_MAPS_KEY] = layerMaps[0];
   const m = material as Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
-  m.colorNode = vec4(materialColor.rgb.mul(vec3(rgb.r, rgb.g, rgb.b)), 1);
+  const patch = mx_noise_float(positionWorld.mul(MACRO_VARIATION.patchScale).add(vec3(7.3, 0, 2.1)));
+  const mottle = mx_noise_float(positionWorld.mul(MACRO_VARIATION.mottleScale));
+  const hue = mx_noise_float(positionWorld.mul(MACRO_VARIATION.patchScale * 1.7).add(vec3(31.7, 0, 11.9)));
+  const vary = float(1).add(patch.mul(MACRO_VARIATION.patch)).add(mottle.mul(MACRO_VARIATION.mottle));
+  const tint = vec3(float(1).add(hue.mul(MACRO_VARIATION.hue)), float(1).add(hue.mul(MACRO_VARIATION.hue * 0.25)), float(1).sub(hue.mul(MACRO_VARIATION.hue)));
+  m.colorNode = vec4(materialColor.rgb.mul(vec3(rgb.r, rgb.g, rgb.b)).mul(tint).mul(vary), 1);
   m.roughnessNode = ormMix.g;
   m.aoNode = ormMix.r;
   m.normalNode = normalMap(nrm, vec2(strength, strength));

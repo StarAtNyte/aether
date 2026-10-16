@@ -29,6 +29,80 @@ export interface LodLevel {
   triangles: number;
 }
 
+/** Largest scale a kept card grows by when its neighbours are dropped (so far crowns keep their silhouette without ballooning). */
+const CARD_GROW_MAX = 2.8;
+
+/**
+ * True when `part` is a foliage card set (the generators' `Sheets`): a `foliage` material, four vertices and
+ * twelve indices (both faces, two triangles each) per card, every card indexing its own four vertices.
+ */
+export function isCardPart(part: LodSource): boolean {
+  const material = (part as LodSource & { material?: { foliage?: unknown } }).material;
+  if (!material || typeof material.foliage !== 'string') return false;
+  const verts = part.positions.length / 3;
+  if (verts < 8 || verts % 4 !== 0 || part.indices.length !== (verts / 4) * 12) return false;
+  for (let c = 0; c < verts / 4; c++) {
+    for (let k = 0; k < 12; k++) {
+      const v = part.indices[c * 12 + k] as number;
+      if (v < c * 4 || v > c * 4 + 3) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Thin a card set to about `keep` (0..1) of its cards: an even stride picks the survivors (deterministic) and
+ * each grows about its centre by 1/sqrt(keep), capped at {@link CARD_GROW_MAX}, so the crown keeps its
+ * coverage and silhouette with far fewer, larger cards. Always keeps at least two cards.
+ */
+export function thinCards(src: LodSource, keep: number): LodPart {
+  const cards = src.positions.length / 12;
+  const want = Math.max(2, Math.min(cards, Math.round(cards * (Number.isFinite(keep) ? Math.max(0, Math.min(1, keep)) : 0))));
+  const grow = Math.min(CARD_GROW_MAX, 1 / Math.sqrt(want / cards));
+  const positions = new Float32Array(want * 12);
+  const normals = new Float32Array(want * 12);
+  const uvs = src.uvs && src.uvs.length >= cards * 8 ? new Float32Array(want * 8) : undefined;
+  const colors = src.colors && src.colors.length >= cards * 12 ? new Float32Array(want * 12) : undefined;
+  const indices = new Uint32Array(want * 12);
+  for (let k = 0; k < want; k++) {
+    const c = Math.min(cards - 1, Math.floor(((k + 0.5) * cards) / want));
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let v = 0; v < 4; v++) {
+      cx += (src.positions[(c * 4 + v) * 3] as number) / 4;
+      cy += (src.positions[(c * 4 + v) * 3 + 1] as number) / 4;
+      cz += (src.positions[(c * 4 + v) * 3 + 2] as number) / 4;
+    }
+    for (let v = 0; v < 4; v++) {
+      const s = (c * 4 + v) * 3;
+      const d = (k * 4 + v) * 3;
+      positions[d] = cx + ((src.positions[s] as number) - cx) * grow;
+      positions[d + 1] = cy + ((src.positions[s + 1] as number) - cy) * grow;
+      positions[d + 2] = cz + ((src.positions[s + 2] as number) - cz) * grow;
+      normals[d] = src.normals[s] as number;
+      normals[d + 1] = src.normals[s + 1] as number;
+      normals[d + 2] = src.normals[s + 2] as number;
+      if (colors) {
+        colors[d] = (src.colors as Float32Array)[s] as number;
+        colors[d + 1] = (src.colors as Float32Array)[s + 1] as number;
+        colors[d + 2] = (src.colors as Float32Array)[s + 2] as number;
+      }
+      if (uvs) {
+        uvs[(k * 4 + v) * 2] = (src.uvs as Float32Array)[(c * 4 + v) * 2] as number;
+        uvs[(k * 4 + v) * 2 + 1] = (src.uvs as Float32Array)[(c * 4 + v) * 2 + 1] as number;
+      }
+    }
+    for (let i = 0; i < 12; i++) indices[k * 12 + i] = (src.indices[c * 12 + i] as number) - c * 4 + k * 4;
+  }
+  return { positions, normals, indices, ...(uvs ? { uvs } : {}), ...(colors ? { colors } : {}) };
+}
+
+/** Share of cards kept at a QEM `ratio` (cards lose coverage faster than a solid mesh loses detail, so they keep more). */
+export function cardKeepRatio(ratio: number): number {
+  return Math.min(1, Math.sqrt(Math.max(0, ratio)) * 0.82);
+}
+
 /** Default target triangle ratios after level 0. */
 export const LOD_RATIOS: readonly number[] = [0.3, 0.1, 0.03];
 /** A level must keep at most this share of the previous level's triangles. */
@@ -132,7 +206,8 @@ function flatten(src: LodSource, indices: Uint32Array, soft: boolean): LodPart {
 export function buildLodChain(parts: readonly LodSource[], ratios: readonly number[] = LOD_RATIOS): LodLevel[] {
   const triangles = (ps: readonly LodPart[]): number => ps.reduce((s, p) => s + Math.floor(p.indices.length / 3), 0);
   const levels: LodLevel[] = [{ parts: parts.slice(), triangles: triangles(parts) }];
-  const faceted = parts.map((p) => isFaceted(p.positions));
+  const cardParts = parts.map((p) => isCardPart(p));
+  const faceted = parts.map((p, i) => cardParts[i] !== true && isFaceted(p.positions));
   const soft = parts.map((p, i) => faceted[i] === true && normalsAreSoft(p.positions, p.indices, p.normals));
   for (const ratio of ratios) {
     const prev = levels[levels.length - 1] as LodLevel;
@@ -140,6 +215,10 @@ export function buildLodChain(parts: readonly LodSource[], ratios: readonly numb
     for (let i = 0; i < parts.length; i++) {
       const src = parts[i] as LodSource;
       const srcTris = Math.floor(src.indices.length / 3);
+      if (cardParts[i] === true) {
+        next.push(thinCards(src, cardKeepRatio(ratio)));
+        continue;
+      }
       const target = Math.max(MIN_PART_TRIANGLES, Math.ceil(srcTris * ratio));
       if (target >= srcTris) {
         next.push((prev.parts[i] as LodPart));

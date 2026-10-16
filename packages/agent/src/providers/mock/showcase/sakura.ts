@@ -44,7 +44,8 @@ function bankPoints(b: Builder, z0: number, z1: number, step: number, inset: num
 }
 
 /** An instanced grove of one generator on hand-placed points, projected onto the valley. */
-function grove(b: Builder, base: string, generator: string, p: Record<string, Json>, points: V3[], terrain: string, scale: [number, number], name: string): string {
+function grove(b: Builder, base: string, generatorId: string, params: Record<string, Json>, points: V3[], terrain: string, scale: [number, number], name: string): string {
+  const { generator, params: p } = b.nature(generatorId, params);
   return b.add({
     id: b.id(base),
     name,

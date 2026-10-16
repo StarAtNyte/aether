@@ -8,7 +8,7 @@ import { normalizeHex } from './color';
 
 const PRESETS: ReadonlySet<string> = new Set(MaterialPreset.options);
 const FINISHES: ReadonlySet<string> = new Set(MaterialFinish.options);
-const FOLIAGE_KINDS: ReadonlySet<string> = new Set(['broadleaf', 'shrub', 'needles', 'grass', 'fern']);
+const FOLIAGE_KINDS: ReadonlySet<string> = new Set(['broadleaf', 'shrub', 'needles', 'grass', 'fern', 'blossom', 'flower']);
 
 function clampNumber(v: unknown, min: number, max: number, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`material.${what}: expected a number`);

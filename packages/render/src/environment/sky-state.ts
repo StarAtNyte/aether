@@ -15,6 +15,7 @@
  * it (silhouettes). No three.js — unit-tested directly.
  */
 import type { Environment, Vec3 } from '@aether/core';
+import { skyKeys, sunTransmittance, type Radiance } from './atmosphere';
 
 /** Sky preset id. */
 export type SkyPreset = Environment['sky'];
@@ -69,6 +70,12 @@ export interface SkyState {
   preset: SkyPreset;
   /** 0..1 cloud cover painted on the dome (0 in space and the studio). */
   clouds: number;
+  /**
+   * Set for the natural presets: the dome is painted per direction by the physical sky model from this
+   * sun (direction, elevation in degrees as used for the sky, i.e. after the golden-hour drop), blended
+   * over the keyed gradient by `weight` (0 at night, 1 in daylight).
+   */
+  physical?: { sunDirection: Vec3; elevation: number; weight: number; turbidity: number };
 }
 
 /**
@@ -205,6 +212,35 @@ function sampleKeys(elevation: number): { zenith: string; horizon: string; sun: 
   return NATURAL[NATURAL.length - 1] as Key;
 }
 
+/** Linear [0, 1] RGB to "#rrggbb" (sRGB encoded). */
+function linearToHex(c: Radiance): string {
+  const enc = (v: number): number => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055);
+  return toHex([enc(c[0]), enc(c[1]), enc(c[2])]);
+}
+
+/** Sky turbidity (aerosol amount) of the physical sky model. */
+const TURBIDITY = 1.6;
+
+/**
+ * Sky colours for a sun elevation: the physical single-scattering model ({@link skyKeys}) takes over from the
+ * art-directed night keyframes as the sun rises through the twilight belt (-9° to -2°), so dawn, noon and
+ * dusk skies come out of the same model as the dome's per-direction colours.
+ */
+function sampleSky(elevation: number): { zenith: string; horizon: string; sun: string } {
+  const legacy = sampleKeys(elevation);
+  const w = smoothstep(-9, -2, elevation);
+  if (w <= 0) return legacy;
+  const phys = skyKeys(elevation, TURBIDITY);
+  const t = sunTransmittance(elevation, [0, 0, 0]);
+  // Direct sun: the physical transmittance, softened toward the keyed colour (keeps a warm white at noon).
+  const sunPhys = linearToHex([Math.pow(t[0], 0.9), Math.pow(t[1], 1.15), Math.pow(t[2], 1.5)]);
+  return {
+    zenith: mixHex(legacy.zenith, linearToHex(phys.zenith), w),
+    horizon: mixHex(legacy.horizon, linearToHex(phys.horizon), w),
+    sun: mixHex(legacy.sun, mixHex(legacy.sun, sunPhys, 0.55), w),
+  };
+}
+
 /** Normalize an hour into [0, 24). Non-finite → 12. */
 export function normalizeHour(h: number): number {
   if (!Number.isFinite(h)) return 12;
@@ -255,7 +291,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
   // Golden-hour presets paint the sky (and tint the light) as if the sun sat a little lower.
   const skyElevation = golden ? elevation - GOLDEN_SKY_DROP : elevation;
   const day = smoothstep(-4, 10, elevation);
-  const keys = sampleKeys(skyElevation);
+  const keys = sampleSky(skyElevation);
   const moon = elevation < -4;
   const lightDirection: Vec3 = moon ? bearingDirection(MOON_BEARING, MOON_ELEVATION) : direction;
   normalize(lightDirection);
@@ -279,7 +315,8 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     hemiIntensity: ambient * 2 * (moon ? 0.75 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),
     nebula: 0.3 * smoothstep(-8, -20, elevation),
-    fogColor: keys.horizon,
+    // Fog is the horizon haze: pale at noon, tinted by the sunlight (gold, rose) as the sun gets low.
+    fogColor: mixHex(mixHex(keys.horizon, '#e4e2de', 0.32 * day), keys.sun, 0.28 * glow * day),
     hazeDensity: moon ? 0.5 : 0.4 + 0.25 * glow,
     showGround: true,
     exposure: PRESET_EXPOSURE[preset],
@@ -287,6 +324,11 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     preset,
     clouds: moon ? 0.28 : golden ? 0.5 : 0.42,
   };
+
+  if (preset === 'day' || preset === 'dawn' || preset === 'sunset' || preset === 'night') {
+    const weight = smoothstep(-9, -2, skyElevation);
+    if (weight > 0) state.physical = { sunDirection: normalize(bearingDirection(sunBearing(hour), skyElevation)), elevation: skyElevation, weight, turbidity: TURBIDITY };
+  }
 
   switch (preset) {
     case 'dawn':

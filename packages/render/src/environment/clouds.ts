@@ -37,26 +37,30 @@ export function quantiseCover(cover: number): number {
 }
 
 /** Cloud-plane texture coordinates of a unit view direction above the horizon. */
-export function cloudUv(dx: number, dy: number, dz: number, out: [number, number]): [number, number] {
-  const k = PLANE_SCALE / (Math.max(0, dy) + PLANE_LIFT);
+export function cloudUv(dx: number, dy: number, dz: number, out: [number, number], scale = PLANE_SCALE): [number, number] {
+  const k = scale / (Math.max(0, dy) + PLANE_LIFT);
   out[0] = dx * k;
   out[1] = dz * k;
   return out;
 }
 
-/** Tileable fractal noise in [0, 1], `OCTAVES` octaves starting at `BASE_PERIOD` lattice cells per tile. */
-function fractalNoise(size: number, seed: number): Float32Array {
+/**
+ * Tileable fractal noise in [0, 1], `OCTAVES` octaves starting at `BASE_PERIOD` lattice cells per tile.
+ * `stretch` (an integer ≥ 1) multiplies the lattice density along y, which draws streaks along x.
+ */
+function fractalNoise(size: number, seed: number, stretch = 1): Float32Array {
   const random = rng(seed);
   const out = new Float32Array(size * size);
   let amp = 1;
   let total = 0;
   for (let o = 0; o < OCTAVES; o++) {
     const period = BASE_PERIOD << o;
-    const lattice = new Float32Array(period * period);
+    const periodY = Math.min(256, period * stretch);
+    const lattice = new Float32Array(period * periodY);
     for (let i = 0; i < lattice.length; i++) lattice[i] = random();
-    const at = (i: number, j: number): number => lattice[(((j % period) + period) % period) * period + (((i % period) + period) % period)] as number;
+    const at = (i: number, j: number): number => lattice[(((j % periodY) + periodY) % periodY) * period + (((i % period) + period) % period)] as number;
     for (let y = 0; y < size; y++) {
-      const fy = (y / size) * period;
+      const fy = (y / size) * periodY;
       const yi = Math.floor(fy);
       const ty = fy - yi;
       const sy = ty * ty * (3 - 2 * ty);
@@ -78,24 +82,74 @@ function fractalNoise(size: number, seed: number): Float32Array {
   return out;
 }
 
+/** Direction (texels per step, in the texture plane) toward the sun, used to bake self-shadowing. */
+export interface CloudSun {
+  x: number;
+  y: number;
+}
+
+/** Steps taken toward the sun when estimating how much cloud shades a texel. */
+const SHADOW_STEPS = 5;
+
 /**
  * RGBA8 pixels of the cloud texture for a cloud `cover` in [0, 1]. R = G = B is the cloud's own
  * brightness (thick cores are darker, thin edges lit), A its opacity (soft-edged, `cover` moves the
- * threshold). Deterministic; `fbm` is the noise from {@link fractalNoise} (cached per size).
+ * threshold). With `sun`, the brightness is also baked from the cloud's own density along the way to the
+ * sun (Beer's law over a few samples): sun-facing flanks are bright, the far side and the thick belly are
+ * shaded, thin tufts glow (forward scattering). Deterministic; `fbm` is the noise from {@link fractalNoise}.
  */
-export function cloudPixels(size: number, cover: number, fbm: Float32Array): Uint8Array {
+export function cloudPixels(size: number, cover: number, fbm: Float32Array, sun?: CloudSun): Uint8Array {
   const c = quantiseCover(cover);
   const out = new Uint8Array(size * size * 4);
   // Cover 0 → threshold at the top of the noise range (clear sky); cover 1 → everything is cloud.
   const threshold = 1 - c * 1.1;
+  const dens = (i: number): number => smoothstep(threshold, threshold + 0.4, fbm[i] as number);
+  const mask = size - 1;
+  const sx = sun ? sun.x : 0;
+  const sy = sun ? sun.y : 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      const d = fbm[i] as number;
+      const alpha = smoothstep(threshold, threshold + 0.16, d);
+      const core = smoothstep(threshold + 0.04, threshold + 0.4, d);
+      let shade = 1 - 0.5 * core;
+      if (sun && alpha > 0) {
+        // Optical depth toward the sun (the texture is tileable, so sample with wrap-around).
+        let depth = 0;
+        for (let k = 1; k <= SHADOW_STEPS; k++) {
+          const px = (Math.round(x + sx * k) & mask) >>> 0;
+          const py = (Math.round(y + sy * k) & mask) >>> 0;
+          depth += dens(py * size + px);
+        }
+        const through = Math.exp(-0.62 * depth);
+        // Sunlit side up to 1, deep shade down to 0.3; thin cloud gets a forward-scatter glow.
+        shade = (0.58 + 0.42 * through) * (1 - 0.32 * core) + 0.22 * (1 - core) * through;
+        shade = Math.min(1.12, shade);
+      }
+      const v = Math.round(Math.max(0, Math.min(1, shade)) * 255);
+      out[i * 4] = v;
+      out[i * 4 + 1] = v;
+      out[i * 4 + 2] = v;
+      out[i * 4 + 3] = Math.round(alpha * 255);
+    }
+  }
+  return out;
+}
+
+/**
+ * RGBA8 pixels of a high, thin cirrus layer: long wisps (`fbm` made with a y-stretch) with feathered
+ * edges and a faint, even brightness. Opacity is capped well below 1, so the blue sky shows through.
+ */
+export function cirrusPixels(size: number, cover: number, fbm: Float32Array): Uint8Array {
+  const c = quantiseCover(cover);
+  const out = new Uint8Array(size * size * 4);
+  const threshold = 0.74 - c * 0.5;
   for (let i = 0; i < fbm.length; i++) {
-    const d = fbm[i] as number;
-    const alpha = smoothstep(threshold, threshold + 0.16, d);
-    const core = smoothstep(threshold + 0.04, threshold + 0.4, d);
-    const shade = 1 - 0.5 * core;
-    out[i * 4] = Math.round(shade * 255);
-    out[i * 4 + 1] = Math.round(shade * 255);
-    out[i * 4 + 2] = Math.round(shade * 255);
+    const alpha = smoothstep(threshold, threshold + 0.22, fbm[i] as number) * 0.42;
+    out[i * 4] = 255;
+    out[i * 4 + 1] = 255;
+    out[i * 4 + 2] = 255;
     out[i * 4 + 3] = Math.round(alpha * 255);
   }
   return out;
@@ -110,20 +164,35 @@ const _c = new Color();
 const _haze = new Color();
 const _uv: [number, number] = [0, 0];
 
+/** Which cloud deck a {@link CloudLayer} paints. */
+export type CloudKind = 'cumulus' | 'cirrus';
+
+/** Quantisation of the sun's azimuth (radians) before the baked shading is rebuilt. */
+const SUN_STEP = Math.PI / 12;
+
 /** The cloud layer: add {@link mesh} to the sky group. */
 export class CloudLayer {
   readonly mesh: Mesh<SphereGeometry, MeshBasicMaterial>;
+  readonly kind: CloudKind;
   private readonly texture: DataTexture;
+  private readonly scale: number;
   private fbm: Float32Array | null = null;
   private cover = -1;
+  private sunKey = Number.NaN;
 
-  constructor(radius: number) {
+  /**
+   * `kind` 'cumulus' is the low, lit and self-shadowed deck; 'cirrus' a high veil of thin wisps drawn
+   * with larger tiles (so it reads as higher and slower) over the cumulus.
+   */
+  constructor(radius: number, kind: CloudKind = 'cumulus') {
+    this.kind = kind;
+    this.scale = kind === 'cirrus' ? PLANE_SCALE * 0.42 : PLANE_SCALE;
     const geometry = new SphereGeometry(radius, 64, 20, 0, Math.PI * 2, 0, Math.PI / 2);
     const pos = geometry.getAttribute('position');
     const uvs = new Float32Array(pos.count * 2);
     for (let i = 0; i < pos.count; i++) {
       _d.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-      cloudUv(_d.x, _d.y, _d.z, _uv);
+      cloudUv(_d.x, _d.y, _d.z, _uv, this.scale);
       uvs[i * 2] = _uv[0];
       uvs[i * 2 + 1] = _uv[1];
     }
@@ -138,8 +207,8 @@ export class CloudLayer {
     this.texture.generateMipmaps = true;
     this.texture.anisotropy = 8;
     this.mesh = new Mesh(geometry, new MeshBasicMaterial({ map: this.texture, vertexColors: true, transparent: true, side: BackSide, fog: false, depthWrite: false }));
-    this.mesh.name = 'aether:clouds';
-    this.mesh.renderOrder = -9.5;
+    this.mesh.name = kind === 'cirrus' ? 'aether:cirrus' : 'aether:clouds';
+    this.mesh.renderOrder = kind === 'cirrus' ? -9.6 : -9.5;
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
   }
@@ -154,21 +223,31 @@ export class CloudLayer {
    * ground line. Rebuilds the texture only when the quantised cover changed.
    */
   apply(state: SkyState, horizon: Color): void {
-    const cover = state.moon ? Math.min(0.5, quantiseCover(state.clouds)) : quantiseCover(state.clouds);
+    const cirrus = this.kind === 'cirrus';
+    const base = state.moon ? Math.min(0.5, quantiseCover(state.clouds)) : quantiseCover(state.clouds);
+    // The high veil appears with fair-weather cover and thins out under an overcast deck.
+    const cover = cirrus ? (state.clouds > 0.8 || state.clouds <= 0.01 ? 0 : quantiseCover(0.25 + 0.5 * base)) : base;
     this.mesh.visible = cover > 0.01;
     if (!this.mesh.visible) return;
-    if (cover !== this.cover) {
-      this.fbm ??= fractalNoise(CLOUD_TEXTURE_SIZE, CLOUD_SEED);
-      (this.texture.image.data as Uint8Array).set(cloudPixels(CLOUD_TEXTURE_SIZE, cover, this.fbm));
+    _sun.set(state.lightDirection[0], state.lightDirection[1], state.lightDirection[2]).normalize();
+    // Baked self-shadowing: the sun's direction projected into the cloud plane (longer when the sun is low).
+    const az = Math.atan2(_sun.z, _sun.x);
+    const sunKey = Math.round(az / SUN_STEP) * 100 + Math.round(Math.min(1, Math.max(0, _sun.y)) * 4);
+    if (cover !== this.cover || (!cirrus && sunKey !== this.sunKey)) {
+      const sunAz = Math.round(az / SUN_STEP) * SUN_STEP;
+      const reach = 1.2 + 3.2 * (1 - Math.min(1, Math.max(0, _sun.y)));
+      this.fbm ??= fractalNoise(CLOUD_TEXTURE_SIZE, CLOUD_SEED + (cirrus ? 7 : 0), cirrus ? 4 : 1);
+      const pixels = cirrus ? cirrusPixels(CLOUD_TEXTURE_SIZE, cover, this.fbm) : cloudPixels(CLOUD_TEXTURE_SIZE, cover, this.fbm, { x: Math.cos(sunAz) * reach, y: Math.sin(sunAz) * reach });
+      (this.texture.image.data as Uint8Array).set(pixels);
       this.texture.needsUpdate = true;
       this.cover = cover;
+      this.sunKey = sunKey;
     }
-    _sun.set(state.lightDirection[0], state.lightDirection[1], state.lightDirection[2]).normalize();
     _haze.copy(horizon);
     // Lit tops carry the key light's colour; bellies the sky's. Night clouds are faint moonlit silhouettes.
     const brightness = state.moon ? 0.12 : 0.9 + 0.35 * Math.min(1, state.lightIntensity / 3);
     _lit.set('#ffffff').lerp(_c.set(state.lightColor), state.moon ? 0.4 : 0.5).multiplyScalar(brightness);
-    _shade.set(state.hemiSky).lerp(_c.set(state.zenith), 0.3).multiplyScalar(state.moon ? 0.16 : 0.62 + 0.12 * Math.min(1, state.lightIntensity / 3));
+    _shade.set(state.hemiSky).lerp(_c.set(state.zenith), 0.3).multiplyScalar(state.moon ? 0.16 : 0.8 + 0.1 * Math.min(1, state.lightIntensity / 3));
     _glow.set(state.sunGlow);
     const glow = state.moon ? 0 : state.sunGlowStrength;
     const geometry = this.mesh.geometry;

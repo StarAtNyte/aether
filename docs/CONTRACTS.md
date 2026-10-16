@@ -2748,3 +2748,40 @@ document served in place of the `apartment` template of the build output) and `-
 - Studio import: a JSON object with none of the world fields (`name`, `id`, `entities`, `environment`, `player`, `rules`, ...) is refused with "Not an Aether world".
 - Renderer: with more than one field-sized scatter layer asking for more than the field budget, each field is capped at `MAX_FIELD_SHARE` (0.45) of `maxInstances`. A single layer is unchanged.
 - `BlueprintMarks` expire by wall-clock time as well as by animation time.
+
+## Outdoor look, part A: physical sky, vegetation variety, clustered cover (stage `outdoora`, additive, backward compatible)
+
+### `@aether/core`
+
+- `MaterialSpec.foliage` gains `'blossom'` (round five-petal blossoms on a twig card) and `'flower'` (slim stems topped with open flowers).
+  Both cards are neutral: the part's vertex colours tint them (pink crown, or green stems rising to the flower colour).
+
+### `@aether/procgen`
+
+- `FoliageKind` and `foliagePixels(kind, size)` gain `'blossom'` and `'flower'`; the sandbox material sanitiser accepts them.
+- `tree-broadleaf` gains `blossom` (0..1): above 0.5 the crown carries blossom cards in rose-shaded tones instead of leaves
+  (cherry, plum; `color` is the blossom colour). Default 0, so existing worlds are unchanged.
+- New generator `wildflowers` (`size`, `color`, `cards`, `variant` 0 one colour / 1 mixed meadow): crossed flower cards, at most 24 triangles, collider.
+
+### `@aether/render`
+
+- `environment/atmosphere.ts` (pure): `skyRadiance` / `skyDisplay` (single-scattering Rayleigh + Mie + ozone through a spherical atmosphere, per direction,
+  `turbidity` scales the aerosols), `sunTransmittance(elevation)`, `skyKeys(elevation)` (zenith and horizon for the gradient consumers).
+- `SkyState.physical?: { sunDirection, elevation, weight, turbidity }`: set for the `day`, `dawn`, `sunset` and `night` presets once the sun is above about -9 degrees.
+  The dome is painted per direction from it (blended over the keyed gradient by `weight`, which is 0 at night, so night keeps its keyed colours and stars).
+  `SkyState.zenith`, `horizon` and the sun colour come from the same model; `fogColor` is the horizon haze (pale at noon, tinted by the sunlight as the sun gets low).
+- `SkyDome`: a 96x48 dome; sun sprite and moon disc (`sky-bodies.ts`: `sunSpritePixels`, `moonPixels(phase)`, `sunRaysPixels`); a high `cirrus` cloud layer over the
+  cumulus deck; `raysStrength(elevation, preset)` for the sun's crepuscular rays; `setDetail(boolean)` (the low tier turns off the cirrus layer and the rays).
+- `CloudLayer(radius, kind)` (`'cumulus'` default, `'cirrus'`); `cloudPixels(size, cover, fbm, sun?)` bakes self-shadowing from the cloud's own density along the
+  way to the sun; `cirrusPixels`.
+- `buildLodChain` thins foliage card sets (`isCardPart`, `thinCards`, `cardKeepRatio`): far levels keep a share of the cards, grown to keep coverage, instead of a
+  QEM collapse of disconnected quads.
+- `MACRO_VARIATION` (`materials/terrain-splat.ts`): world-space patch (90 m), mottle (11 m) and hue drift multiplied into the layered terrain colour.
+
+### `@aether/agent` (offline planner)
+
+- `Builder.realisticNature` (on for every flagship except those built with `flagshipBuilder(seed, mood, { stylised: true })`, today Painterly Meadow):
+  `gen` and `scatter` exchange the stylised nature generators for the realistic ones (`realisticStandIn`, which now also maps `flowers` to `wildflowers` and
+  `hero-cherry-tree` to a blossoming `tree-broadleaf`); `Builder.nature(generator, params)` does the same for hand-built shapes.
+- With it, scatters of `meadow-grass`, `grass-tuft`, `shrub`, `bush`, `fern`, `flowers`, `boulder` and `rock` of 12 or more instances are laid out by
+  `clusterPoints` (a Thomas cluster process plus 22 % lone plants, deterministic, as hand-placed scatter `points`), so ground cover grows in tussocks and drifts.

@@ -44,7 +44,10 @@ function island(b: Builder, name: string, x: number, z: number, r: number, top: 
   // Boulders clinging to the underside.
   for (let i = 0; i < 3; i++) {
     const [rx, , rz] = onCircle(x, z, r * b.rand(0.35, 0.7), b.rand(0, Math.PI * 2));
+    // The boulders cling upside down under the island, away from the sun: a plain rock reads better there than a lichen-topped one.
+    b.realisticNature = false;
     b.gen('isle-boulder', 'rock', { size: r2(r * b.rand(0.35, 0.55)), color: '#7b7166', mossy: true, variant: 2 }, [rx, r2(top - 3 - r * b.rand(0.3, 0.9)), rz], { rot: [180, r2(b.rand(0, 360)), 0], castShadow: false });
+    b.realisticNature = true;
   }
   return { x, z, r, top, id };
 }

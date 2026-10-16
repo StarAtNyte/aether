@@ -4,7 +4,8 @@
  *   npx tsx tests/e2e/lookshots.e2e.ts <outDir> <slug[:cover|:play|:x,y,z>x,y,z]>…
  *
  * `slug` or `slug:cover` uses the flagship cover camera, `slug:play` presses Play, runs forward for a
- * moment and captures the third-person view, `slug:px,py,pz>tx,ty,tz` is an explicit camera. Set
+ * moment and captures the third-person view, `slug:px,py,pz>tx,ty,tz` is an explicit camera,
+ * `slug:env-<sky>-<hour>` re-lights the flagship's cover view (for example `highland-trail:env-night-23`). Set
  * `AETHER_E2E_GPU=1` to use the real GPU. Everything started here is stopped in a `finally`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -86,6 +87,25 @@ async function main(): Promise<void> {
         await page.keyboard.up('w');
         await page.waitForTimeout(600);
         await shoot(page, join(outDir!, `${slug}-play.png`));
+      } else if (mode.startsWith('env-')) {
+        const [, sky = 'day', hour = '12'] = mode.split('-');
+        await page.evaluate(
+          ([s, h]) => {
+            const a = window.__aether;
+            if (!a?.simulation) return;
+            const cur = a.history.current.environment;
+            a.simulation.renderer.setEnvironmentOverride({ ...cur, sky: s as typeof cur.sky, timeOfDay: Number(h) });
+          },
+          [sky, hour] as const,
+        );
+        const cam = COVER_CAMERAS[slug];
+        const custom = process.env['SHOT_CAM'];
+        if (custom?.includes('>')) {
+          const [a = '', b = ''] = custom.split('>');
+          await setCam(page, a.split(',').map(Number), b.split(',').map(Number));
+        } else if (cam) await setCam(page, cam.pos, cam.target);
+        await page.waitForTimeout(2500);
+        await shoot(page, join(outDir!, `${slug}-${sky}-${hour}${custom ? '-up' : ''}.png`));
       } else if (mode.includes('>')) {
         const [a = '', b = ''] = mode.split('>');
         await setCam(page, a.split(',').map(Number), b.split(',').map(Number));

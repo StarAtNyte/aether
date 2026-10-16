@@ -7,6 +7,8 @@
  */
 import { rng, slugify, type EntityInput, type Json, type PatchInput, type RuleInput, type WorldTest } from '@aether/core';
 import type { z } from 'zod';
+import { realisticStandIn } from './realistic';
+import { CLUSTERED_GENERATORS, clusterPoints } from './cluster';
 
 /** Input shape of a world test (defaults optional). */
 export type WorldTestInput = z.input<typeof WorldTest>;
@@ -109,6 +111,12 @@ export class Builder {
   private phase: 'setting' | 'activity' = 'setting';
   /** When true, settings' `focus` tags are dropped: the activity owns the camera. */
   private activityOwnsFocus = false;
+  /**
+   * When true, `gen` and `scatter` exchange the stylised nature generators (tree-oak, tree-pine, bush,
+   * grass-tuft, rock) for the realistic leaf-card vegetation. Flagships turn it on unless they are
+   * painterly on purpose.
+   */
+  realisticNature = false;
 
   constructor(seed: number, existingIds: Iterable<string>, mood: Mood, existingTests: Iterable<string> = [], existingRules: Iterable<string> = []) {
     this.seed = seed >>> 0;
@@ -275,9 +283,24 @@ export class Builder {
     return e;
   }
 
+  /**
+   * The generator and params to use for a nature part: the realistic stand-in when {@link realisticNature}
+   * is on and the generator has one, else the arguments unchanged.
+   */
+  nature(generator: string, params: Record<string, Json>): { generator: string; params: Record<string, Json> } {
+    return (this.realisticNature ? realisticStandIn(generator, params) : null) ?? { generator, params };
+  }
+
   /** Procedural (generator) entity standing at `pos` (base at pos.y). */
   gen(base: string, generator: string, params: Record<string, Json>, pos: V3, o: PlaceOpts = {}): string {
     const id = this.id(base);
+    if (this.realisticNature) {
+      const stand = realisticStandIn(generator, params);
+      if (stand) {
+        generator = stand.generator;
+        params = stand.params;
+      }
+    }
     this.add(this.compose(id, pos, { kind: 'procedural', generator, params, seed: this.subSeed() % 100_000 }, o));
     return id;
   }
@@ -311,16 +334,27 @@ export class Builder {
   /** GPU-instanced scatter of a generator over a w×d area centered at pos. */
   scatter(base: string, generator: string, params: Record<string, Json>, count: number, area: [number, number], pos: V3, o: ScatterOpts = {}): string {
     const id = this.id(base);
+    if (this.realisticNature) {
+      const stand = realisticStandIn(generator, params);
+      if (stand) {
+        generator = stand.generator;
+        params = stand.params;
+      }
+    }
+    const scatterSeed = this.subSeed();
+    // Natural ground cover grows in clumps: lay it out as a clustered point process (deterministic).
+    const clustered = this.realisticNature && CLUSTERED_GENERATORS.has(generator) && count >= 12 ? clusterPoints(count, area[0], area[1], scatterSeed, { ...(o.minSpacing ? { minSpacing: o.minSpacing } : {}) }) : null;
     const shape: EntityInput['shape'] = {
       kind: 'scatter',
       of: { kind: 'procedural', generator, params },
-      count: Math.max(1, Math.floor(count)),
+      count: Math.max(1, clustered ? clustered.length : Math.floor(count)),
       area,
-      seed: this.subSeed() % 100_000,
+      seed: scatterSeed % 100_000,
       ...(o.scaleRange ? { scaleRange: o.scaleRange } : {}),
       ...(o.minSpacing !== undefined ? { minSpacing: o.minSpacing } : {}),
       ...(o.randomYaw === false ? { randomYaw: false } : {}),
       ...(o.onSurface ? { onSurface: o.onSurface } : {}),
+      ...(clustered && clustered.length > 0 ? { points: clustered } : {}),
     };
     this.add(this.compose(id, pos, shape, o));
     return id;

@@ -27,11 +27,11 @@ function seasonalTree(season: Season): { generator: string; params: Record<strin
     case 'spring':
       return { generator: 'hero-cherry-tree', params: { height: 5.2, spread: 6 } };
     case 'summer':
-      return { generator: 'tree-oak', params: { height: 6, color: '#4f8a3b', density: 8, variant: 0 } };
+      return { generator: 'tree-broadleaf', params: { height: 6.4, color: '#4f8a3b', variant: 0 } };
     case 'autumn':
-      return { generator: 'tree-oak', params: { height: 6, color: '#d4542a', density: 7, variant: 2 } };
+      return { generator: 'tree-broadleaf', params: { height: 6, color: '#d4542a', variant: 1 } };
     default:
-      return { generator: 'tree-oak', params: { height: 5.6, color: '#e3ebf2', density: 4, variant: 1, trunkColor: '#3f3530' } };
+      return { generator: 'tree-broadleaf', params: { height: 5.8, color: '#e3ebf2', variant: 1, trunkColor: '#3f3530', detail: 0.5 } };
   }
 }
 

@@ -77,7 +77,7 @@ export { buildClusterDag, selectCut, assembleCut, cutIndexCount, createCutScratc
 export { DagClient, dagBytes, type DagClientOptions, type DagWorkerLike } from './virtual/dag-client';
 export { parseDagRequest, validateDag, MAX_DAG_INDICES, MAX_DAG_VERTICES } from './virtual/dag-protocol';
 export { VirtualGroup, VIRTUAL_MIN_TRIANGLES, VIRTUAL_ERROR_PX } from './virtual/virtual-mesh';
-export { buildLodChain, isFaceted, LOD_RATIOS, type LodLevel, type LodPart } from './virtual/lod-chain';
+export { buildLodChain, cardKeepRatio, isCardPart, isFaceted, LOD_RATIOS, thinCards, type LodLevel, type LodPart } from './virtual/lod-chain';
 export { buildChunks, packMatrices, FieldCuller, FIELD_STRIDE, CHUNK_INSTANCES, DEFAULT_LOD_PIXELS, type FieldChunks, type FieldView, type FieldCullerOptions } from './virtual/field-culler';
 export { ScatterField, FIELD_MIN_INSTANCES } from './virtual/scatter-field';
 export { composeScatterPacked } from './geometry/scatter';

@@ -2269,6 +2269,7 @@ export class WorldRenderer {
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
     this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
+    this.env.sky.setDetail(plan.tier !== 'low');
     this.env.shadowMapCap = plan.shadowMapCap;
     this.env.sun.shadow.radius = plan.shadowRadius;
     this.voxelLayer?.setQuality(plan.tier);

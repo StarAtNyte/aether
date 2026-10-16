@@ -14,7 +14,7 @@ const RZ = 30;
 
 /** Plan Painterly Meadow. */
 export function meadowTrain(): MockPlan {
-  const b = flagshipBuilder(0x3ead);
+  const b = flagshipBuilder(0x3ead, {}, { stylised: true });
   b.env({
     sky: 'dawn',
     timeOfDay: 7.6,

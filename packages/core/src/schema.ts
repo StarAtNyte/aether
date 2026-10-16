@@ -114,7 +114,7 @@ export const MaterialSpec = z.object({
    * a procedural leaf cluster, needle spray, grass blade or fern frond cut out of each quad (no
    * sorting, real leaf shadows), tinted by the vertex colours.
    */
-  foliage: z.enum(['broadleaf', 'shrub', 'needles', 'grass', 'fern']).optional(),
+  foliage: z.enum(['broadleaf', 'shrub', 'needles', 'grass', 'fern', 'blossom', 'flower']).optional(),
 });
 export type MaterialSpec = z.infer<typeof MaterialSpec>;
 

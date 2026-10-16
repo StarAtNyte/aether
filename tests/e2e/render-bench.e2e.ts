@@ -78,9 +78,9 @@ interface Row {
   effects: string;
 }
 
-async function measure(page: Page, pose: readonly number[], tier: string, off: readonly string[], quality: 'realtime' | 'studio' | 'final'): Promise<Row & { failed: string }> {
+async function measure(page: Page, pose: readonly number[], tier: string, off: readonly string[], quality: 'realtime' | 'studio' | 'final', skyDetail?: boolean): Promise<Row & { failed: string }> {
   return page.evaluate(
-    async ([t, offList, q, frames, p]) => {
+    async ([t, offList, q, frames, p, sky]) => {
       const r = window.__aether?.simulation?.renderer as unknown as {
         setRenderTier(t: string): void;
         setRenderQuality(q: string): string;
@@ -97,6 +97,8 @@ async function measure(page: Page, pose: readonly number[], tier: string, off: r
       r.setRenderQuality(q as string);
       r.setRenderTier(t as string);
       r.setEffects(overrides);
+      // Sky detail (cirrus veil and sun rays) follows the tier unless a row forces it.
+      if (typeof sky === 'boolean') (r as unknown as { env: { sky: { setDetail(on: boolean): void } } }).env.sky.setDetail(sky);
       const pose = p as number[];
       let yaw = pose[3] as number;
       const times: number[] = [];
@@ -120,7 +122,7 @@ async function measure(page: Page, pose: readonly number[], tier: string, off: r
       const at = (f: number): number => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * f))] as number;
       return { label: '', median: at(0.5), p90: at(0.9), effects: r.intendedEffects.join('+') || '-', failed: r.failedEffectNames.join(',') };
     },
-    [tier, [...off], quality, FRAMES, [...pose]] as const,
+    [tier, [...off], quality, FRAMES, [...pose], skyDetail] as const,
   );
 }
 
@@ -187,6 +189,10 @@ async function runTarget(target: Target, url: string): Promise<void> {
           const r = await measure(page, pose, 'ultra', [e], 'realtime');
           log(`| ${e} | ${fmt(r.median)} | ${fmt((ultra?.median ?? 0) - r.median)} |`);
         }
+        // The sky layers of this stage (cirrus veil, sun rays): the medium tier with them forced off and on.
+        const skyOff = await measure(page, pose, 'medium', [], 'realtime', false);
+        const skyOn = await measure(page, pose, 'medium', [], 'realtime', true);
+        log(`| sky detail (medium, off / on) | ${fmt(skyOff.median)} / ${fmt(skyOn.median)} | ${fmt(skyOn.median - skyOff.median)} |`);
         const bare = await measure(page, pose, 'ultra', [...EFFECTS], 'realtime');
         log(`| (composite only) | ${fmt(bare.median)} | ${fmt((ultra?.median ?? 0) - bare.median)} (all seven) |`);
       } finally {

@@ -12,7 +12,7 @@
 import { rng } from '@aether/core';
 
 /** The foliage card kinds (mirrors `MaterialSpec.foliage`). */
-export type FoliageKind = 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern';
+export type FoliageKind = 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern' | 'blossom' | 'flower';
 
 /** Default card edge length in pixels. */
 export const FOLIAGE_TEXTURE_SIZE = 256;
@@ -261,6 +261,79 @@ function fernCard(n: number): Uint8Array {
   return c.bake();
 }
 
+/** A round blossom: five overlapping petals around a slightly darker heart (a neutral card: the vertex colour tints it). */
+function blossom(c: Canvas, cx: number, cy: number, r: number, tone: number): void {
+  const petals = 5;
+  const rot = (cx * 0.37 + cy * 0.21) % (Math.PI * 2);
+  for (let k = 0; k < petals; k++) {
+    const a = rot + (k / petals) * Math.PI * 2;
+    const px = cx + Math.cos(a) * r * 0.5;
+    const py = cy + Math.sin(a) * r * 0.5;
+    const pr = r * 0.52;
+    c.stamp(
+      px - pr - 1,
+      py - pr - 1,
+      px + pr + 1,
+      py + pr + 1,
+      (x, y) => Math.hypot(x - px, y - py) - pr,
+      (x, y) => {
+        const edge = Math.hypot(x - px, y - py) / pr;
+        const k2 = tone * (1 - 0.1 * edge * edge);
+        return [k2, k2 * 0.97, k2 * 0.98];
+      },
+    );
+  }
+  c.stamp(
+    cx - r * 0.25,
+    cy - r * 0.25,
+    cx + r * 0.25,
+    cy + r * 0.25,
+    (x, y) => Math.hypot(x - cx, y - cy) - r * 0.2,
+    () => [tone * 0.7, tone * 0.62, tone * 0.5],
+  );
+}
+
+function blossomCard(n: number): Uint8Array {
+  const r = rng(0xb105);
+  const c = new Canvas(n);
+  // A flowering twig from the bottom centre: sprays of blossoms along and at the end of dark side twigs.
+  const base: [number, number] = [n * 0.5, n * 0.97];
+  const spots: Array<{ x: number; y: number; s: number; tone: number }> = [];
+  for (let i = 0; i < 46; i++) {
+    const t = r();
+    const spread = (r() - 0.5) * 2;
+    const reach = (0.1 + 0.66 * Math.sqrt(t)) * n;
+    const ang = -Math.PI / 2 + spread * (0.3 + 0.62 * t);
+    spots.push({ x: base[0] + Math.cos(ang) * reach * (0.6 + 0.45 * Math.abs(spread)), y: base[1] + Math.sin(ang) * reach, s: 0.8 + r() * 0.5, tone: 0.8 + r() * 0.2 });
+  }
+  spots.sort((p, q) => q.y - p.y);
+  for (const it of spots) stroke(c, base[0] + (it.x - base[0]) * 0.3, base[1] + (it.y - base[1]) * 0.3, it.x, it.y, 1.8, () => [0.32, 0.26, 0.22]);
+  for (const it of spots) blossom(c, it.x, it.y, n * 0.075 * it.s, it.tone);
+  return c.bake();
+}
+
+function flowerCard(n: number): Uint8Array {
+  const r = rng(0xf10e);
+  const c = new Canvas(n);
+  // A clump of slim stems topped with open flowers. The card is neutral: the generator's vertex colours run from
+  // leaf green at the bottom to the flower colour at the top, so stems come out green and heads coloured.
+  const stems = 11;
+  for (let i = 0; i < stems; i++) {
+    const x0 = n * (0.12 + 0.76 * r());
+    const h = n * (0.45 + 0.45 * r());
+    const lean = (r() - 0.5) * n * 0.22;
+    const topX = x0 + lean;
+    const topY = n - h;
+    stroke(c, x0, n, topX, topY, 1.6, () => [0.78, 0.84, 0.66]);
+    // A pair of narrow leaves low on the stem.
+    leaf(c, x0, n - h * 0.25, -Math.PI / 2 - 0.9, n * 0.12, n * 0.035, 0.75, [0.78, 0.9, 0.62]);
+    leaf(c, x0, n - h * 0.3, -Math.PI / 2 + 0.9, n * 0.1, n * 0.03, 0.7, [0.78, 0.9, 0.62]);
+    const pr = n * (0.045 + 0.03 * r());
+    blossom(c, topX, topY, pr * 1.5, 0.85 + 0.15 * r());
+  }
+  return c.bake();
+}
+
 /**
  * RGBA8 pixels (`size × size`) of a foliage card. Deterministic; `size` is clamped to a power of two between
  * 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}.
@@ -278,5 +351,9 @@ export function foliagePixels(kind: FoliageKind, size: number = FOLIAGE_TEXTURE_
       return { size: n, rgba: grassCard(n) };
     case 'fern':
       return { size: n, rgba: fernCard(n) };
+    case 'blossom':
+      return { size: n, rgba: blossomCard(n) };
+    case 'flower':
+      return { size: n, rgba: flowerCard(n) };
   }
 }

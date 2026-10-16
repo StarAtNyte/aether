@@ -490,3 +490,9 @@ No third-party asset or dependency was added. The layered terrain blends the fou
 above) that the material library already ships: no new texture files. The leaf cards, trees, shrubs, grass and the
 Highland Trail world are original, procedural work (MIT, with the project); the Highland Trail and vegetation preview
 images are renders made by this project.
+
+### Outdoor look, part A (stage `outdoora`)
+
+No third-party asset or dependency was added. The atmosphere model is the published single-scattering integral (Nishita et al., 1993) written from scratch with
+published scattering coefficients (Rayleigh, Mie and ozone absorption of the Earth's atmosphere, which are physical constants, not a licensed work). The blossom
+and flower cards, the sun, moon and sunray sprites, the cirrus and cumulus textures and the clustered layouts are original, procedural work (MIT, with the project).

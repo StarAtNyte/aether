@@ -3362,3 +3362,46 @@ nothing. Grass cards are 512 px (one shared texture). The fog change is a unifor
 character-like entity uses them. Road cars are stylised-real (rounded bodies, no interior), not Blender-grade. Water foam and refraction were not added (the
 screen-space reflection path already mirrors the shore in Sakura River); volumetric shafts and the colour grade were left to the photoreal layer. Neon facades are still
 flat shapes with window layers. Firefox was not run on this machine this round.
+
+## Stage `outdoora`: outdoor look part A (physical sky, vegetation variety, natural cover)
+
+**What was built.** A physically based clear sky (`environment/atmosphere.ts`: single scattering by air, aerosols and ozone through a spherical atmosphere) that paints the
+dome per direction for the day, dawn, sunset and night presets, and feeds the zenith, horizon, sun colour and fog colour of the sky state; sun and moon sprites (moon with
+maria, craters and a phase), crepuscular rays, a second high cirrus cloud layer, cumulus clouds with self-shadowing baked from their own density toward the sun, fog tinted
+by the low sun. Vegetation: every flagship except the painterly one builds with the realistic leaf-card generators (stylised oaks, pines, bushes, grass, rocks and the hero
+cherry tree exchanged through `Builder.realisticNature`), new `blossom` and `flower` card kinds, a blossoming broadleaf, a `wildflowers` generator, ground cover laid out by a
+cluster process, card-aware LOD levels for far trees, macro colour variation in the layered terrain. Quality tier: the low tier drops the cirrus layer and the rays.
+The 38 baked worlds were regenerated (eight changed); `scripts/showcase/bake.ts` reproduces them. QA defect D10 (Canyon of Colossi bare ground) was re-verified as
+already fixed by the field-share cap and got its regression test (`scatter-demand.test.ts`); D16 (Orbital Lab fog) no longer applies (`fog: null`).
+
+**Verification.** `tsc` 0 errors; new suites `atmosphere`, `card-lod`, `scatter-demand` (render), `flora-blossom` (procgen), `cluster` (agent); full vitest 3 610 passed. Seven
+failures remain, none from this stage: two `storage` and one `sandbox` test need a `WebAssembly` global in a node child process (this machine's default node 22.19 under tsx;
+they pass on node 24), and the `alloc-probe` tests flake with machine load (they pick a different test each run and the unrelated sites, `static-batches`, `cluster-dag`,
+`applyTransforms`, fail the same way; the sky's own update site was reduced to one position write and one `lookAt`, as before). The prompt-size cap went 15.1k to 15.2k for
+the new generator and option. Studio build and `npm run smoke` (34 of 34 prompts) pass. Six look-shot rounds on the RTX 4090 (Chromium, ANGLE/Vulkan WebGL2):
+baseline, sky model, vegetation swap, ground cover and blossoms, relit flagships at dawn, dusk and night, final round over eleven views. `lookshots` gained
+`slug:env-<sky>-<hour>` (relight a flagship's cover view; `SHOT_CAM` sets the camera) and `render-bench` gained a sky-detail row.
+
+**Frame cost per tier** (render-bench, Chromium WebGL2, 1920x1080, 30 frames; median ms, p90 in brackets). RTX 4090: Lantern Isles low 10.2 (14.6), medium 9.5 (11.5), high 11.4
+(11.9), ultra 14.5 (16.4); Kyoto Temple low 11.8 (16.1), medium 11.8 (15.6), high 19.0 (33.4), ultra 21.9 (26.9). The sky layers added here (cirrus veil and rays) cost 0.0 ms at
+that resolution on the GPU (frames are bound by the CPU and the composite pass, not by two blended layers). On SwiftShader at 960x540 (Lantern Isles) the same two layers cost
+about 6 ms per frame (2.6 ms off, 8.9 ms on) in a noisy measurement, which is why the low tier, the default there, drops them; the measurement on software rasterisers is
+relative only. Sky colouring is CPU work paid when the environment changes: 8 to 80 ms (the first call includes JIT and the noise table), none per frame. Firefox was not run
+on this machine this round; nothing here uses features beyond what the dome already did (vertex colours, DataTexture, classic materials, additive sprites).
+
+**Security review.** No untrusted input reaches the new code: the atmosphere, bodies and clouds take numbers from the computed sky state (turbidity is clamped, `NaN` is
+tamed, tested); `blossom` and `flower` are added to the schema enum and the sandbox's material allow-list (unknown kinds are still dropped); `clusterPoints` clamps count (20 000)
+and area, rejects non-finite input and is deterministic; the card LOD reads generator output that `validateOutput` already checked, tolerates malformed card sets (falls back to the
+usual simplifier) and never indexes out of range (tested with a corrupted index list). No dependency or asset was added.
+
+**Performance review.** The dome is 96 x 48 vertices recoloured only on environment change; cloud textures (256 x 256) rebuild only when the quantised cover or the sun azimuth
+(15 degree steps) changes; sun, rays and moon share one billboard frame (one `lookAt` per frame, nothing allocated). Far trees get 45 %, 26 % and 14 % of their cards, grown up to
+2.8 times, so a field of 100 000 trees draws a fraction of the triangles; the clustered layouts are plain `points` (same render path as the Highland Trail). The macro variation is
+three noise lookups per terrain fragment, only where the layered terrain runs (not on software rasterisers).
+
+**Honest gaps.** No impostor billboards: far trees are thinned cards, not images; cloud shadows on the ground and wet shorelines were not done (the water level is not known to
+the terrain material); volumetric god rays through foliage stay the ultra tier's shadow-map shafts, the lower tiers get the sky-space rays only; the sky is baked per environment
+change, so clouds do not drift and the time-of-day slider recolours in steps of a few milliseconds rather than animating smoothly; night keeps its keyed colours (moonlit sky is not
+physically modelled); a world with a photographed HDRI (Highland Trail) shows that photograph as its sky instead of the dome; blossom crowns read mauve under purple dusk light
+(Kyoto Temple) and peach under golden light (Sakura River); the card trees still have visible card edges at the lowest LOD of close-ups; the Kart Canyon desert scrub is a leafy
+shrub, not a desert plant.

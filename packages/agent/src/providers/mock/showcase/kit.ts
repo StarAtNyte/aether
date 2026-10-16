@@ -11,8 +11,10 @@ import type { MockPlan } from '../planner';
 const CALM: Mood = Object.freeze({ night: false, dusk: false, dawn: false, rain: false, snow: false, fog: false, lowGravity: false, water: false });
 
 /** A builder for a whole new world, seeded from the flagship id. */
-export function flagshipBuilder(seed: number, mood: Partial<Mood> = {}): Builder {
-  return new Builder(seed, [], { ...CALM, ...mood });
+export function flagshipBuilder(seed: number, mood: Partial<Mood> = {}, opts: { stylised?: boolean } = {}): Builder {
+  const b = new Builder(seed, [], { ...CALM, ...mood });
+  b.realisticNature = opts.stylised !== true;
+  return b;
 }
 
 /** Title card input (defaults filled by the schema). */
