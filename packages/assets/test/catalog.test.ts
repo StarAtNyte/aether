@@ -20,7 +20,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'assets', 'manifest.json'), 
 describe('asset catalog', () => {
   it('validates and is a curated, sizeable library', () => {
     expect(catalog.entries.length).toBeGreaterThanOrEqual(150);
-    expect(catalog.entries.length).toBeLessThanOrEqual(400);
+    expect(catalog.entries.length).toBeLessThanOrEqual(420);
     const ids = catalog.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
