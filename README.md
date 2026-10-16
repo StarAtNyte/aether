@@ -9,7 +9,7 @@ press Play. It does this by fast-forwarding a headless copy of the physics
 simulation and running the world's own tests ("the domino chain topples", "the
 player can reach the flag", "the coin counter reaches 10").
 
-**Run it on your computer with one command** (Node.js 22+):
+**Run it on your computer with one command** (Node.js 24, see .nvmrc):
 
 ```bash
 git clone https://github.com/StarAtNyte/aether && cd aether && npm ci && npx aether start --open
@@ -428,7 +428,7 @@ explicit state, so the AI can be held to account:
 
 ## Quick start
 
-Requirements: **Node.js 22 or newer** and npm 10 or newer. A GPU browser
+Requirements: **Node.js 24** (22 still runs the CLI; development and the test suite need 24) and npm 10 or newer. A GPU browser
 (Chrome or Edge for WebGPU; any WebGL2 browser works).
 
 ```bash
