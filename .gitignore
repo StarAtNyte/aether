@@ -19,3 +19,6 @@ research.md
 **/*.tmp.*
 **/_tmp/
 eval-out/
+
+# Compiled output of tsc -b (never commit)
+*.tsbuildinfo
