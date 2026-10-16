@@ -12,11 +12,11 @@
  * - Pure node (TSL) code: identical on the WebGPU and WebGL2 backends. Like the anti-tiled finishes,
  *   the nodes are attached to the classic material, which the node renderer converts.
  */
-import { abs, attribute, float, materialColor, max, mix, mx_noise_float, normalMap, normalWorld, positionWorld, pow, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, cameraPosition, float, materialColor, max, mix, mx_noise_float, normalMap, normalWorld, positionWorld, pow, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material, Texture } from 'three';
 import type { MaterialFinish } from '@aether/core';
 import type { FinishMaps } from './finish-textures';
-import { FINISH_MAPS_KEY } from './anti-tile';
+import { DETAIL_MICRO_SCALE, DETAIL_NEAR, FINISH_MAPS_KEY } from './anti-tile';
 
 /** The four layers, in the order of the `splat` weights, and the finish whose photograph each one uses. */
 export const SPLAT_LAYERS: readonly MaterialFinish[] = Object.freeze(['grass', 'rock', 'soil', 'snow']) as readonly MaterialFinish[];
@@ -46,7 +46,7 @@ export const SPLAT_KEY = 'aetherSplat';
  * geometry must have a `splat` attribute (4 floats) and metre UVs. `maps` returns the textures of a
  * layer's finish.
  */
-export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps): void {
+export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps, detail = false): void {
   const w4 = attribute('splat', 'vec4');
   const base = uv();
   const rot = vec2(base.x.mul(0.8).sub(base.y.mul(0.6)), base.x.mul(0.6).add(base.y.mul(0.8)));
@@ -99,9 +99,17 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   const mixLayers = <T extends ReturnType<typeof albedoOf>>(values: readonly T[]) =>
     values.reduce((acc, v, i) => (acc === null ? v.mul(wn[i] as typeof w4.x) : acc.add(v.mul(wn[i] as typeof w4.x))), null as unknown as ReturnType<typeof albedoOf>);
 
-  const rgb = mixLayers(albedo);
+  const rgbLayers = mixLayers(albedo);
   const ormMix = mixLayers(orm);
-  const nrm = mixLayers([normalOf(0), normalOf(1), normalOf(2), normalOf(3)]);
+  const nrmLayers = mixLayers([normalOf(0), normalOf(1), normalOf(2), normalOf(3)]);
+  // Close-up detail: a lawn underfoot would otherwise show the magnified 1.6 m photograph (blurry). Past a few metres
+  // a finer lookup of the grass photograph (and its normals) adds blades and grain, weighted by how grassy the pixel is.
+  const dist = positionWorld.sub(cameraPosition).length();
+  const nearFade = float(1).sub(smoothstep(float(DETAIL_NEAR[0]), float(DETAIL_NEAR[1]), dist)).mul(wn[0] as typeof w4.x);
+  const grassMaps = layerMaps[0] as FinishMaps;
+  const microUv = base.mul(uniform(grassMaps.map.repeat)).mul(DETAIL_MICRO_SCALE);
+  const rgb = detail ? mix(rgbLayers, rgbLayers.mul(texture(grassMaps.map, microUv)), nearFade.mul(0.6)) : rgbLayers;
+  const nrm = detail ? nrmLayers.add(texture(grassMaps.normal, microUv).sub(vec4(0.5, 0.5, 0, 0)).mul(nearFade.mul(0.9))) : nrmLayers;
   const strength = (wn[0] as typeof w4.x).mul(NORMAL_STRENGTH[0] as number).add((wn[1] as typeof w4.x).mul(NORMAL_STRENGTH[1] as number)).add((wn[2] as typeof w4.x).mul(NORMAL_STRENGTH[2] as number)).add((wn[3] as typeof w4.x).mul(NORMAL_STRENGTH[3] as number));
 
   material.userData[SPLAT_KEY] = true;

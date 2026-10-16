@@ -93,7 +93,9 @@ export function kartCanyon(): MockPlan {
   for (let i = 0; i < n; i++) {
     const a = track[i] as V3;
     const c = track[(i + 1) % n] as V3;
-    segment(b, 'asphalt', a, c, 10, 0.06, { preset: 'concrete', color: '#45474d', roughness: 0.75 }, { y: 0.03 });
+    segment(b, 'asphalt', a, c, 10, 0.06, { finish: 'asphalt', color: '#55575d', roughness: 0.8 }, { y: 0.03 });
+    // The racing line: a narrower, darker, rubbered strip down the middle of every segment.
+    segment(b, 'racing-line', a, c, 3.4, 0.07, { finish: 'asphalt', color: '#3a3c42', roughness: 0.62 }, { y: 0.035 });
     // Red/white curbs on both edges, alternating.
     const dx = c[0] - a[0];
     const dz = c[2] - a[2];

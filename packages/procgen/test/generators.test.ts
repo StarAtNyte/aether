@@ -10,6 +10,8 @@ const REQUIRED_IDS = [
   'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus',
   // Realistic vegetation (flora.ts).
   'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'boulder',
+  // City skyline (skyline.ts).
+  'skyline-tower',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus']);

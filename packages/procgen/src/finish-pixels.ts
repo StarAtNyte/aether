@@ -28,7 +28,7 @@ export interface FinishPixels {
   size: number;
   /** Albedo ratio to the base colour, divided by {@link finishAlbedoScale} (linear, not sRGB). */
   albedo: Uint8Array;
-  /** R = ambient occlusion, G = roughness (absolute), B = 0, A = 255 (three's ORM layout). */
+  /** R = ambient occlusion, G = roughness (absolute), B = lit-window mask (facades; 0 elsewhere), A = 255 (three's ORM layout). */
   orm: Uint8Array;
   /** Tangent-space normal map (flat = 128, 128, 255). */
   normal: Uint8Array;
@@ -47,6 +47,8 @@ interface Fields {
   rough: Float32Array;
   /** Cavity darkening (1 = none). */
   ao: Float32Array;
+  /** Emission mask (facade windows that glow after dark); written to the ORM blue channel when a pattern sets it. */
+  lit?: Float32Array;
 }
 
 function hexRgb(hex: string): [number, number, number] {
@@ -423,6 +425,53 @@ function bricks(cols: number, rows: number, mortarPx: number): Pattern {
     }
   };
 }
+
+/**
+ * Building facade: 4 × 4 window bays per tile. Each bay is a recessed glass pane in a mullioned frame over a
+ * spandrel wall; panes vary in tint and reflectivity, some have blinds drawn, and the panes are marked in the `lit` mask (the
+ * renderer lights a share of them after dark). Everything is deterministic from the finish seed.
+ */
+const facade: Pattern = (f, random, seed) => {
+  const n = f.n;
+  const bays = 4;
+  const cell = n / bays;
+  const lit = new Float32Array(n * n);
+  f.lit = lit;
+  const grain = fbmField(random, n, 24, 24, 2);
+  const px = n / 256;
+  for (let y = 0; y < n; y++) {
+    const fy = Math.floor(y / cell);
+    const iy = y - fy * cell;
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const fx = Math.floor(x / cell);
+      const ix = x - fx * cell;
+      // Pane rectangle inside the bay: 2.1 m wide, 1.9 m tall, sill 0.5 m above the floor line.
+      const left = cell * 0.15;
+      const right = cell * 0.85;
+      const top = cell * 0.2;
+      const bottom = cell * 0.83;
+      const dIn = Math.min(ix - left, right - ix, iy - top, bottom - iy);
+      const pane = aaStep(dIn, 3 * px, 1 * px);
+      const frame = aaStep(dIn, -1 * px, 1 * px) * (1 - pane);
+      const h = cellHash(seed, fx, fy);
+      const h2 = cellHash(seed + 31, fx, fy);
+      const blind = h2 < 0.14 ? 1 : 0;
+      const g = grain[k] as number;
+      // Wall: weathered, with a slab edge line at each floor.
+      const slab = 1 - aaStep(Math.abs(iy - cell * 0.97), 1.5 * px, 1 * px) * 0.0;
+      const wallShade = 0.9 + (g - 0.5) * 0.25 + (iy > cell * 0.93 ? -0.1 : 0) * slab;
+      const paneShade = 0.55 + h * 0.85;
+      f.accent[k] = pane * (blind ? 0.35 : 1);
+      f.shade[k] = pane > 0.5 ? paneShade : frame > 0.5 ? 0.62 : wallShade;
+      f.height[k] = pane > 0.5 ? 0.15 : frame > 0.5 ? 1 : 0.7 + (g - 0.5) * 0.06;
+      f.rough[k] = pane > 0.5 ? (blind ? 1.4 : 0.22) : frame > 0.5 ? 0.8 : 1.5 + (g - 0.5) * 0.3;
+      f.ao[k] = pane > 0.5 ? 0.65 + 0.35 * clamp01(dIn / (14 * px)) : frame > 0.5 ? 0.8 : 1;
+      // Every pane may glow; which ones do is decided per window in the shader (world position hash), so the 4 × 4 tile's lit pattern never repeats.
+      lit[k] = pane > 0.5 ? (blind ? 0.5 : 1) : 0;
+    }
+  }
+};
 
 /** Woven fabric: over-under threads. */
 function weave(threads: number, depth: number): Pattern {
@@ -931,6 +980,7 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   'paper-geometric': wallpaperGeometric,
   'panel-shaker': panelling(2),
   slats: woodSlats,
+  facade,
 });
 
 function seedOf(id: string): number {
@@ -970,7 +1020,7 @@ export function finishPixels(id: MaterialFinish, size = FINISH_TEXTURE_SIZE): Fi
       albedo[o + 3] = 255;
       orm[o] = Math.round(clamp01(f.ao[k] as number) * 255);
       orm[o + 1] = Math.round(clamp01(def.roughness * (f.rough[k] as number)) * 255);
-      orm[o + 2] = 0;
+      orm[o + 2] = f.lit ? Math.round(clamp01(f.lit[k] as number) * 255) : 0;
       orm[o + 3] = 255;
       // Central differences with wrap-around (seamless).
       const xl = (x + n - 1) % n;

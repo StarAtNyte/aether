@@ -60,11 +60,48 @@ const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
 const EYE_HEIGHT = 1.6;
 
+/** Half-width of the chase camera's "lens" (m): the boom is probed with a ring of rays this far off its axis, so a wall beside the boom pulls the camera in before the near plane can cut into it. */
+export const BOOM_RADIUS = 0.3;
+/** Share of a first-person vertical jump (a stair step, a kerb) smoothed over a few frames; bigger drops and jumps pass through at once. */
+export const STEP_SMOOTH_MAX = 0.65;
 const _target = new Vector3();
+const _side = new Vector3();
+const _up = new Vector3();
+const _from = new Vector3();
+const _to = new Vector3();
+const _boom = new Vector3();
 const _lookAt = new Vector3();
 const _dir = new Vector3();
 const _desired = new Vector3();
 const _euler = new Euler(0, 0, 0, 'YXZ');
+
+/**
+ * Free length (m) of the boom from `from` toward `to`: the shortest of the centre ray and four rays offset by
+ * {@link BOOM_RADIUS} around the boom axis (a thick probe), so a camera beside a wall is pulled in and a corner
+ * never slices through the near plane. `Infinity` when nothing blocks. Allocation-free.
+ */
+export function boomFreeDistance(query: OcclusionQuery, from: Vector3, to: Vector3, radius: number = BOOM_RADIUS): number {
+  _boom.subVectors(to, from);
+  const len = _boom.length();
+  if (!(len > 1e-4)) return Number.POSITIVE_INFINITY;
+  _boom.multiplyScalar(1 / len);
+  // An orthonormal frame around the boom (world up unless the boom is vertical).
+  _up.set(0, 1, 0);
+  if (Math.abs(_boom.y) > 0.98) _up.set(1, 0, 0);
+  _side.crossVectors(_boom, _up).normalize();
+  _up.crossVectors(_side, _boom).normalize();
+  let free = query(from, to);
+  for (let i = 0; i < 4; i++) {
+    const sx = i < 2 ? (i === 0 ? 1 : -1) : 0;
+    const uy = i >= 2 ? (i === 2 ? 1 : -1) : 0;
+    _from.copy(from).addScaledVector(_side, sx * radius * 0.6).addScaledVector(_up, uy * radius * 0.6);
+    _to.copy(to).addScaledVector(_side, sx * radius).addScaledVector(_up, uy * radius);
+    const f = query(_from, _to);
+    // The offset ray is slightly longer than the boom: measure along the axis.
+    if (f < free) free = f * (len / Math.max(1e-4, _to.distanceTo(_from)));
+  }
+  return free;
+}
 
 /** Owns the main perspective camera and its behaviors. */
 export class CameraRig {
@@ -86,6 +123,8 @@ export class CameraRig {
    * when the world has no ground. Keeps orbiting and fly-tos above ground.
    */
   floorY = Number.NEGATIVE_INFINITY;
+  /** Last first-person eye height (null until the first frame in that mode). */
+  private stepY: number | null = null;
   /** Optional obstacle query for the chase camera (see {@link OcclusionQuery}). */
   occlusion: OcclusionQuery | null = null;
 
@@ -147,6 +186,7 @@ export class CameraRig {
   setMode(mode: CameraMode, source: FollowSource | null): void {
     this.tour = null;
     this.mode = mode;
+    this.stepY = null;
     this.follow = mode === 'orbit' || mode === 'manual' ? null : source;
     if (this.controls) {
       this.controls.enabled = mode === 'orbit';
@@ -243,7 +283,14 @@ export class CameraRig {
     const yaw = this.follow ? this.follow(_target) : Number.NaN;
     if (!Number.isFinite(yaw)) return false;
     if (this.mode === 'firstPerson') {
-      this.camera.position.set(_target.x, _target.y + this.eyeHeight, _target.z);
+      // Small height changes (stairs, kerbs) ease the eye by about 55 ms instead of snapping it; big drops and teleports pass at once.
+      let eyeY = _target.y + this.eyeHeight;
+      if (this.stepY !== null) {
+        const d = eyeY - this.stepY;
+        if (Math.abs(d) > 0.02 && Math.abs(d) < STEP_SMOOTH_MAX) eyeY = this.stepY + d * (1 - Math.exp(-18 * Math.max(0, dt)));
+      }
+      this.stepY = eyeY;
+      this.camera.position.set(_target.x, eyeY, _target.z);
       this.pitch = Math.max(-1.48, Math.min(1.48, this.pitch));
       _euler.set(this.pitch, yaw, 0, 'YXZ');
       this.camera.quaternion.setFromEuler(_euler);
@@ -258,7 +305,7 @@ export class CameraRig {
       _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
       _dir.subVectors(_desired, _lookAt);
       const full = _dir.length();
-      const free = full > 1e-4 ? this.occlusion(_lookAt, _desired) : Number.POSITIVE_INFINITY;
+      const free = full > 1e-4 ? boomFreeDistance(this.occlusion, _lookAt, _desired) : Number.POSITIVE_INFINITY;
       if (free < full) {
         _dir.multiplyScalar(1 / full);
         _desired.copy(_lookAt).addScaledVector(_dir, Math.max(MIN_FOLLOW_DISTANCE, free - OCCLUSION_PADDING));
@@ -267,6 +314,17 @@ export class CameraRig {
     }
     // Inline exponential damping (same as damp()): no boxed return values per frame.
     this.camera.position.lerp(_desired, 1 - Math.exp(-rate * Math.max(0, dt)));
+    if (this.occlusion) {
+      // The eased camera trails the pulled-in point when the player turns into a wall: never let it stay farther
+      // out than the boom is free, whatever the smoothing says (the pull-in is instant, the ease-out is not).
+      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
+      _dir.subVectors(this.camera.position, _lookAt);
+      const dist = _dir.length();
+      if (dist > MIN_FOLLOW_DISTANCE) {
+        const free = boomFreeDistance(this.occlusion, _lookAt, this.camera.position);
+        if (free - OCCLUSION_PADDING < dist) this.camera.position.copy(_lookAt).addScaledVector(_dir, Math.max(MIN_FOLLOW_DISTANCE, free - OCCLUSION_PADDING) / dist);
+      }
+    }
     _desired.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
     this.look.lerp(_desired, 1 - Math.exp(-10 * Math.max(0, dt)));
     this.camera.lookAt(this.look);

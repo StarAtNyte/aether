@@ -298,6 +298,8 @@ export class EnvironmentRig {
     this.scene = scene;
     const s = computeSkyState(env);
     this.state = s;
+    this.materials.setSkyElevation(s.elevation);
+    this.materials.setWetness(env.weather === 'rain' ? 1 : 0);
     this.sun.color.set(s.lightColor);
     this.sun.intensity = s.lightIntensity;
     this.hemi.color.set(s.hemiSky);
@@ -439,7 +441,7 @@ export class EnvironmentRig {
     scene.backgroundRotation.set(0, turn, 0);
   }
 
-  private syncGround(spec: { material: MaterialSpec; size: number } | null): void {
+  private syncGround(spec: { material: MaterialSpec; size: number; skirt?: boolean } | null): void {
     const key = spec ? stableStringify(spec) : '';
     if (key === this.groundKey) return;
     this.groundKey = key;
@@ -468,7 +470,7 @@ export class EnvironmentRig {
     ground.matrixAutoUpdate = false;
     this.ground = ground;
     this.group.add(ground);
-    if (size / 2 < GROUND_SKIRT_RADIUS) {
+    if (spec.skirt !== false && size / 2 < GROUND_SKIRT_RADIUS) {
       const skirt = new Mesh(createSkirtGeometry(size), handle.material);
       skirt.name = 'aether:ground-skirt';
       skirt.receiveShadow = false;

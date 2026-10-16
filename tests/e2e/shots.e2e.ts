@@ -72,10 +72,19 @@ async function capture(page: Page, url: string, slug: string): Promise<void> {
   }
   if (!REALTIME) await page.waitForFunction(() => (window.__aether?.simulation?.renderer.refineProgress ?? 1) >= 0.98, null, { timeout: 90_000, polling: 400 }).catch(() => log('  (refinement unfinished)'));
   const t0 = performance.now();
-  const dataUrl = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w, height: h, mime: 'image/png' })) ?? null, [W, H] as const);
-  if (!dataUrl?.startsWith('data:image/png;base64,')) throw new Error(`${slug}: capture failed`);
-  const png = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
-  const stats = pixelStats(decodePng(png));
+  // The first capture of a freshly opened world can come back black (the capture target was drawn before the first
+  // frame's pipelines finished compiling): draw a few frames and capture again until the picture has content.
+  let png = Buffer.alloc(0);
+  let stats = { mean: 0, stdDev: 0 };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const dataUrl = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w, height: h, mime: 'image/png' })) ?? null, [W, H] as const);
+    if (!dataUrl?.startsWith('data:image/png;base64,')) throw new Error(`${slug}: capture failed`);
+    png = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
+    stats = pixelStats(decodePng(png));
+    if (stats.mean >= 4) break;
+    log(`  ${slug}: black capture (mean ${stats.mean.toFixed(1)}), retrying`);
+    await page.waitForTimeout(1500);
+  }
   writeFileSync(join(OUT, `${slug}.png`), png);
   log(`  ${slug}: mean ${stats.mean.toFixed(0)}, stddev ${stats.stdDev.toFixed(1)}, capture ${(performance.now() - t0).toFixed(0)} ms`);
 }
@@ -97,6 +106,7 @@ async function main(): Promise<void> {
       try {
         const page = await context.newPage();
         page.on('pageerror', (err) => log(`  pageerror: ${err.message}`));
+        page.on('console', (m) => (m.type() === 'warning' || m.type() === 'error') && log(`  console.${m.type()}: ${m.text().slice(0, 240)}`));
         await capture(page, server.url, e.slug);
       } finally {
         await context.close();

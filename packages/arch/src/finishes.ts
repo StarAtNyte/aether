@@ -16,7 +16,7 @@ export type FinishPattern =
   | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'bricks'
   | 'weave' | 'velvet' | 'grain-leather' | 'pile' | 'brushed' | 'mirror' | 'glass' | 'frosted' | 'glaze' | 'roof-tiles'
   | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
-  | 'leaves' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats';
+  | 'leaves' | 'facade' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats';
 
 /** One entry of the finish library. */
 export interface FinishDef {
@@ -86,6 +86,13 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   panelling: { color: '#e4e0d8', accent: '#e4e0d8', roughness: 0.55, metalness: 0, tintable: true, tile: 1.0, pattern: 'panel-shaker', bump: 0.8, clearcoat: 0.15 },
   'wood-slats': { color: '#b48a5e', accent: '#2a2420', roughness: 0.55, metalness: 0, tintable: false, tile: 0.8, pattern: 'slats', bump: 0.6, clearcoat: 0.1 },
   foliage: { color: '#6f8a52', accent: '#8ea75d', roughness: 0.62, metalness: 0, tintable: true, tile: 0.7, pattern: 'leaves', bump: 1.1 },
+  // Building facade: 4 × 4 window bays in one 12 m tile (3 m floors and bays); the ORM blue channel marks the windows that glow at night.
+  facade: { color: '#b9b2a6', accent: '#2a3644', roughness: 0.55, metalness: 0, tintable: true, tile: 12, pattern: 'facade', bump: 0.5 },
+  // Ground and wall surfaces with real relief: granite setts, rough limestone masonry, packed dry earth, pine cladding.
+  cobble: { color: '#8d887e', accent: '#5f5b52', roughness: 0.88, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.6 },
+  limestone: { color: '#b9aa8c', accent: '#8b7f69', roughness: 0.9, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.75 },
+  'dry-earth': { color: '#9a7a45', accent: '#6b5430', roughness: 1, metalness: 0, tintable: false, tile: 3, pattern: 'pebbles', bump: 0.45 },
+  cladding: { color: '#c9b48a', accent: '#8a7650', roughness: 0.7, metalness: 0, tintable: false, tile: 1.5, pattern: 'planks', bump: 0.5 },
   water: { color: '#3d8fb0', accent: '#2a6f8f', roughness: 0.05, metalness: 0, opacity: 0.78, tintable: false, tile: 4, pattern: 'ripples', bump: 0.4 },
 });
 

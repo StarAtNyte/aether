@@ -1,6 +1,6 @@
 /**
  * Neon Rain City — a rain-soaked downtown at night: wet asphalt mirroring
- * neon, towers lit window by window (thousands of windows as two instanced
+ * neon, towers lit window by window (window-grid facades whose panes glow at night, no instanced
  * layers), signs that flicker, taxis and buses running the avenues, people
  * under the rain, steam from the street. Five neon cats hide around the
  * blocks — find them all.
@@ -23,37 +23,6 @@ interface Tower {
   h: number;
 }
 
-/** Window centres per facing (z-facing faces, x-facing faces) and colour. */
-interface WindowSets {
-  litZ: V3[];
-  litX: V3[];
-  coolZ: V3[];
-  coolX: V3[];
-}
-
-/** Window centres on the four faces of a tower (a grid, with some unlit). */
-function windows(b: Builder, t: Tower, out: WindowSets): void {
-  const sx = 2.6;
-  const sy = 3.4;
-  for (let face = 0; face < 4; face++) {
-    const along = face < 2 ? t.w : t.d;
-    const cols = Math.max(1, Math.floor((along - 2) / sx));
-    const rows = Math.max(1, Math.floor((t.h - 4) / sy));
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        const roll = b.rand(0, 1);
-        if (roll < 0.42) continue; // dark office
-        const u = -along / 2 + 1 + sx / 2 + c * sx + (along - 2 - cols * sx) / 2;
-        const y = r2(3.2 + r * sy);
-        const p: V3 =
-          face === 0 ? [r2(t.x + u), y, r2(t.z + t.d / 2 + 0.06)] : face === 1 ? [r2(t.x + u), y, r2(t.z - t.d / 2 - 0.06)] : face === 2 ? [r2(t.x + t.w / 2 + 0.06), y, r2(t.z + u)] : [r2(t.x - t.w / 2 - 0.06), y, r2(t.z + u)];
-        const zFacing = face < 2;
-        (roll < 0.86 ? (zFacing ? out.litZ : out.litX) : zFacing ? out.coolZ : out.coolX).push(p);
-      }
-    }
-  }
-}
-
 /** Plan Neon Rain City. */
 export function neonRainCity(): MockPlan {
   const b = flagshipBuilder(0x7e0c, { night: true, rain: true });
@@ -67,12 +36,12 @@ export function neonRainCity(): MockPlan {
     bloom: 1.5,
     exposure: 1.15,
     // Wet asphalt: dark and glossy so neon smears across it.
-    ground: { material: { preset: 'concrete', color: '#14161d', roughness: 0.12, metalness: 0.1 }, size: 360 },
+    ground: { material: { finish: 'asphalt', color: '#1d2028', roughness: 0.55 }, size: 360 },
   });
 
   // --- Streets ------------------------------------------------------------------------------
-  b.prim('avenue', 'box', [AVE * 2, 0.04, 220], [0, 0.02, 0], { name: 'Avenue', material: { preset: 'concrete', color: '#101218', roughness: 0.08, metalness: 0.2 }, castShadow: false });
-  b.prim('cross-street', 'box', [200, 0.04, CROSS * 2], [0, 0.022, 0], { name: 'Cross street', material: { preset: 'concrete', color: '#101218', roughness: 0.08, metalness: 0.2 }, castShadow: false });
+  b.prim('avenue', 'box', [AVE * 2, 0.04, 220], [0, 0.02, 0], { name: 'Avenue', material: { finish: 'asphalt', color: '#23262e', roughness: 0.5 }, castShadow: false });
+  b.prim('cross-street', 'box', [200, 0.04, CROSS * 2], [0, 0.022, 0], { name: 'Cross street', material: { finish: 'asphalt', color: '#23262e', roughness: 0.5 }, castShadow: false });
   for (let z = -104; z <= 104; z += 8) {
     if (Math.abs(z) < CROSS + 2) continue;
     b.prim('lane-mark', 'box', [0.18, 0.05, 3.2], [0, 0.03, z], { material: { preset: 'emissive', color: '#e8e0c8', emissive: '#c9c2aa', emissiveIntensity: 0.25 }, castShadow: false });
@@ -82,62 +51,39 @@ export function neonRainCity(): MockPlan {
   }
   // Raised sidewalks along both streets.
   for (const side of [-1, 1]) {
-    b.prim('sidewalk', 'box', [5, 0.22, 220], [r2(side * (AVE + 2.5)), 0.11, 0], { material: { preset: 'concrete', color: '#2a2d36', roughness: 0.25 }, physics: 'static', castShadow: false });
-    b.prim('sidewalk', 'box', [200, 0.22, 5], [0, 0.11, r2(side * (CROSS + 2.5))], { material: { preset: 'concrete', color: '#2a2d36', roughness: 0.25 }, physics: 'static', castShadow: false });
+    b.prim('sidewalk', 'box', [5, 0.22, 220], [r2(side * (AVE + 2.5)), 0.11, 0], { material: { finish: 'cobble', color: '#4b4f5a', roughness: 0.5 }, physics: 'static', castShadow: false });
+    b.prim('sidewalk', 'box', [200, 0.22, 5], [0, 0.11, r2(side * (CROSS + 2.5))], { material: { finish: 'cobble', color: '#4b4f5a', roughness: 0.5 }, physics: 'static', castShadow: false });
   }
 
   // --- Towers with lit windows ------------------------------------------------------------------
   const towers: Tower[] = [];
-  const sets: WindowSets = { litZ: [], litX: [], coolZ: [], coolX: [] };
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       // Each quadrant: two rows of towers back from the street corners.
       for (let k = 0; k < 5; k++) {
         for (let row = 0; row < 2; row++) {
-          const w = r2(b.rand(11, 16));
-          const d = r2(b.rand(11, 16));
+          // Footprints and heights on the facade's 3 m grid (bays and floors).
+          const w = Math.round(b.rand(11, 16) / 3) * 3;
+          const d = Math.round(b.rand(11, 16) / 3) * 3;
           const x = r2(sx * (AVE + 5 + w / 2 + row * 18 + b.rand(0, 2)));
           const z = r2(sz * (CROSS + 5 + d / 2 + k * 19 + b.rand(0, 2)));
           const near = row === 0 && k < 2;
-          const h = r2(near ? b.rand(26, 48) : b.rand(34, 92));
+          const h = Math.round((near ? b.rand(26, 48) : b.rand(34, 92)) / 3) * 3;
           towers.push({ x, z, w, d, h });
         }
       }
     }
   }
   towers.forEach((t, i) => {
+    // A real facade: window grid with recessed glass that lights up at night (the finish owns the emission), a concrete
+    // roof deck with plant rooms and a water tank, one box collider.
     const glass = i % 3 === 0;
-    b.prim('tower', 'box', [t.w, t.h, t.d], [t.x, r2(t.h / 2), t.z], { name: 'Tower', material: glass ? { preset: 'metal', color: '#1d2433', roughness: 0.18, metalness: 0.75 } : { preset: 'concrete', finish: i % 3 === 1 ? 'brick' : 'concrete', color: b.pick(['#4a4655', '#54545f', '#5d5360', '#3f4b58']), roughness: 0.5 }, physics: 'static', tags: ['tower'] });
-    // Rooftop clutter and a blinking mast: the skyline reads as a real city against the glow, not as bare boxes.
-    for (let k = 0; k < 3; k++) {
-      const bw = r2(b.rand(1.6, 3.2));
-      b.prim('rooftop-unit', 'box', [bw, r2(b.rand(1, 2)), r2(b.rand(1.6, 3))], [r2(t.x + b.rand(-t.w * 0.28, t.w * 0.28)), r2(t.h + 2 + 0.7), r2(t.z + b.rand(-t.d * 0.28, t.d * 0.28))], { material: { preset: 'metal', color: '#3b3f48', roughness: 0.5, metalness: 0.6 }, physics: 'static' });
-    }
-    if (i % 2 === 0) b.prim('water-tank', 'cylinder', [2.4, 2.6, 2.4], [r2(t.x + t.w * 0.2), r2(t.h + 2 + 1.3), r2(t.z - t.d * 0.2)], { material: { preset: 'wood', color: '#4a3a2c', roughness: 0.8 }, physics: 'static' });
-    const mast = b.prim('mast', 'cylinder', [0.18, r2(b.rand(6, 11)), 0.18], [r2(t.x - t.w * 0.25), r2(t.h + 2 + 4), r2(t.z + t.d * 0.25)], { material: { preset: 'metal', color: '#555a63' }, physics: 'static' });
+    b.gen('tower', 'skyline-tower', { width: t.w, depth: t.d, height: t.h, setbacks: 0, variant: glass ? 0 : i % 3 === 1 ? 2 : 1, color: glass ? b.pick(['#46586a', '#566873', '#3f4f60']) : b.pick(['#6b6675', '#74747f', '#7d7380', '#5f6b78']) }, [t.x, 0, t.z], { name: 'Tower', physics: 'static', tags: ['tower'] });
+    // A blinking mast and a glowing crown strip on some roofs against the glow.
+    const mast = b.prim('mast', 'cylinder', [0.18, r2(b.rand(6, 11)), 0.18], [r2(t.x - t.w * 0.25), r2(t.h + 0.6 + 4), r2(t.z + t.d * 0.25)], { material: { preset: 'metal', color: '#555a63' }, physics: 'static' });
     b.prim('mast-light', 'sphere', [0.5, 0.5, 0.5], [0, 5.3, 0], { parent: mast, material: { preset: 'emissive', color: '#ff2a2a', emissive: '#ff2a2a', emissiveIntensity: 3 }, castShadow: false, behaviors: [{ type: 'pulseLight', params: { min: 0.1, max: 3.4, period: r2(b.rand(1.2, 2.4)), property: 'material.emissiveIntensity' } }] });
-    b.prim('crown', 'box', [r2(t.w * 0.7), 2, r2(t.d * 0.7)], [t.x, r2(t.h + 1), t.z], { material: { preset: 'concrete', color: '#22222a' }, physics: 'static' });
-    if (i % 4 === 1) b.prim('crown-light', 'box', [r2(t.w * 0.72), 0.25, r2(t.d * 0.72)], [t.x, r2(t.h + 2.1), t.z], { material: { preset: 'neon', color: NEON[i % NEON.length] as string, emissive: NEON[i % NEON.length] as string, emissiveIntensity: 2.4 }, castShadow: false });
-    windows(b, t, sets);
+    if (i % 4 === 1) b.prim('crown-light', 'box', [r2(t.w * 0.72), 0.25, r2(t.d * 0.72)], [t.x, r2(t.h + 0.75), t.z], { material: { preset: 'neon', color: NEON[i % NEON.length] as string, emissive: NEON[i % NEON.length] as string, emissiveIntensity: 2.4 }, castShadow: false });
   });
-  // Shallow boxes just proud of each facade (thin along the face normal), as four instanced layers.
-  const windowLayer = (base: string, points: V3[], zFacing: boolean, color: string, intensity: number): void => {
-    if (points.length === 0) return;
-    b.add({
-      id: b.id(base),
-      name: base.startsWith('warm') ? 'Lit windows' : 'Screen-lit windows',
-      transform: { position: [0, 0, 0] },
-      shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box', size: zFacing ? [1.15, 1.55, 0.1] : [0.1, 1.55, 1.15] }, count: points.length, area: [400, 400], seed: 3, scaleRange: [1, 1], randomYaw: false, points: points.slice(0, 20_000) },
-      material: { preset: 'emissive', color, emissive: color, emissiveIntensity: intensity },
-      castShadow: false,
-      receiveShadow: false,
-      tags: ['windows'],
-    });
-  };
-  windowLayer('warm-windows', sets.litZ, true, '#ffc983', 1.0);
-  windowLayer('warm-windows', sets.litX, false, '#ffc983', 1.0);
-  windowLayer('cool-windows', sets.coolZ, true, '#8fd8ff', 1.1);
-  windowLayer('cool-windows', sets.coolX, false, '#8fd8ff', 1.1);
 
   // --- Neon signs on the street-facing towers ---------------------------------------------------------
   towers.filter((t) => Math.abs(t.x) < AVE + 14 || Math.abs(t.z) < CROSS + 14).forEach((t, i) => {
@@ -165,11 +111,7 @@ export function neonRainCity(): MockPlan {
       if (Math.abs(z) < 30) b.light(lamp, [r2(-side * 1.2), 4.6, 0], '#ffd9a8', 2.2, 14);
     }
   }
-  for (let i = 0; i < 18; i++) {
-    const x = r2(b.rand(-AVE + 1, AVE - 1));
-    const z = r2(b.rand(-90, 90));
-    b.prim('puddle', 'cylinder', [r2(b.rand(1.5, 3.5)), 0.01, r2(b.rand(1.2, 2.4))], [x, 0.045, z], { material: { preset: 'water', waterKind: 'puddle', color: '#0f1420', roughness: 0.02, opacity: 0.9 }, castShadow: false });
-  }
+  // Puddles are the asphalt's own: rain fills the low spots of the finish (flat and mirror-like), no extra discs on the road.
   for (const [x, z] of [[3, 30], [-4, -42], [5, -70], [-2, 60]] as const) {
     b.gen('steam', 'cloud', { size: 3, color: '#d9d4ff', variant: 1 }, [x, 0.6, z], { castShadow: false, material: { opacity: 0.45, emissive: '#5a4f8a', emissiveIntensity: 0.4 }, behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: 3.2 } }] });
   }
@@ -228,7 +170,7 @@ export function neonRainCity(): MockPlan {
       controls: ['WASD — walk', 'Space — jump', 'Mouse — look', 'R — restart', 'Esc — editor'],
       accent: '#ff2e88',
     },
-    plan: 'Plan: a night downtown in the rain — avenue and cross street with wet asphalt, 40 towers with two instanced layers of lit windows, flickering neon signs with coloured lights, street lamps, puddles and steam, eight cars and eight pedestrians on patrol, five neon cat pickups and a win rule.',
+    plan: 'Plan: a night downtown in the rain — avenue and cross street with wet asphalt, 40 towers with window-grid facades that light up at night, flickering neon signs with coloured lights, street lamps, rain puddles in the asphalt and steam, eight cars and eight pedestrians on patrol, five neon cat pickups and a win rule.',
     message: 'Built Neon Rain City: a rain-soaked downtown at night — towers lit window by window, flickering neon over wet asphalt, traffic and people. Press Play and find the five neon cats (WASD to walk).',
   });
 }

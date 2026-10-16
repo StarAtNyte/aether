@@ -92,7 +92,7 @@ export function casaPatio(): MockPlan {
     bloom: 0.4,
     exposure: 1.1,
     weather: 'clear',
-    ground: { material: { finish: 'grass', color: '#a29b5e' }, size: 320 },
+    ground: { material: { finish: 'grass', color: '#9a9654' }, size: 320 },
   });
   const [ox, oz] = ORIGIN;
   const at = (x: number, z: number): [number, number] => [r2(ox + x), r2(oz + z)];

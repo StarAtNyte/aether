@@ -14,6 +14,7 @@ import type { V3 } from '../builder';
 import { r2 } from '../builder';
 import type { MockPlan } from '../planner';
 import { finish, flagshipBuilder, onCircle } from './kit';
+import { cityStreets, skylineRing } from './skyline';
 
 const WALK_CONTROLS = ['WASD — walk', 'E — doors & lights', '1–4 — time of day', 'R — swap finishes', 'P — photo mode', 'V — view'];
 
@@ -30,7 +31,7 @@ export function skylinePenthouse(): MockPlan {
     exposure: 1.05,
     weather: 'clear',
     // The rooftop: a finite slab of concrete (the collider under it is infinite, so nobody falls).
-    ground: { material: { finish: 'concrete', color: '#a9a49c' }, size: 52 },
+    ground: { material: { finish: 'stone', color: '#b3ada3' }, size: 52, skirt: false },
   });
   // Parapet around the roof edge with a glass rail on top (the plan is centred on the roof: origin −9.5, −3).
   const half = 25;
@@ -54,16 +55,9 @@ export function skylinePenthouse(): MockPlan {
   }
   // The city: towers standing on streets 40 m below the roof, their crowns rising around the
   // terrace, landmark spires beyond.
-  const towers = ['skyscraper', 'skyscraper-b', 'skyscraper-c', 'tall-building'] as const;
-  for (let i = 0; i < 64; i++) {
-    const a = (i / 64) * Math.PI * 2 + b.rand(-0.04, 0.04);
-    const far = i % 9 === 0;
-    const d = far ? b.rand(190, 280) : b.rand(105, 230);
-    const [x, , z] = onCircle(cx, cz, d, a);
-    // Crowns rise well above the roof deck: a skyline around the terrace, not rooftops below it.
-    const h = far ? b.rand(120, 170) : b.rand(60, 115);
-    b.asset('tower', b.pick(towers), [x, -40, z], { fitSize: r2(h), yaw: r2(b.rand(0, 360)), tags: ['backdrop', 'city'], castShadow: false });
-  }
+  // 64 setback high-rises with window-grid facades (lit windows at dusk) over a street grid 40 m below.
+  cityStreets(b, [cx, cz], -40, 330);
+  skylineRing(b, { center: [cx, cz], count: 64, radius: [105, 285], height: [60, 125], baseY: -40, glass: 0.5 });
   // Warm beacons on a few crowns.
   for (let i = 0; i < 6; i++) {
     const [x, , z] = onCircle(cx, cz, b.rand(170, 250), b.rand(0, Math.PI * 2));

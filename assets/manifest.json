@@ -508,6 +508,62 @@
    "archive": "scripts/assets/living.ts",
    "sha256": null,
    "retrieved": "2026-10-16"
+  },
+  {
+   "id": "ambientcg-PavingStones138",
+   "provider": "ambientCG",
+   "title": "PavingStones138",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=PavingStones138",
+   "archive": "https://ambientcg.com/get?file=PavingStones138_1K-JPG.zip",
+   "sha256": "5e2aee8fde52a9f2799ff2f5036522d2d25673d235e1c42f86144bc5a8d83fdd",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"cobble\""
+  },
+  {
+   "id": "ambientcg-Bricks083",
+   "provider": "ambientCG",
+   "title": "Bricks083",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Bricks083",
+   "archive": "https://ambientcg.com/get?file=Bricks083_1K-JPG.zip",
+   "sha256": "baa5d5b82b607567c2604243f8dbe98208aba80be90d46d472d9ef8a042c0b5c",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"limestone\""
+  },
+  {
+   "id": "ambientcg-Ground102",
+   "provider": "ambientCG",
+   "title": "Ground102",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Ground102",
+   "archive": "https://ambientcg.com/get?file=Ground102_1K-JPG.zip",
+   "sha256": "7390f5b0508053ee661a90419d9afb655a5eb31eaf71f81c8d2bde49e15cfc3a",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"dry-earth\""
+  },
+  {
+   "id": "ambientcg-Planks021",
+   "provider": "ambientCG",
+   "title": "Planks021",
+   "version": "1K-JPG",
+   "author": "ambientCG (Lennart Demes)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://docs.ambientcg.com/license/",
+   "page": "https://ambientcg.com/view?id=Planks021",
+   "archive": "https://ambientcg.com/get?file=Planks021_1K-JPG.zip",
+   "sha256": "9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a",
+   "retrieved": "2026-10-15",
+   "usedFor": "finish \"cladding\""
   }
  ],
  "assets": [
@@ -7602,6 +7658,134 @@
      "path": "m/butterfly.69ddbef4.glb",
      "sha256": "69ddbef44921f7608a85f402b6164ff023994f97c807447eeaa05405f73fac6f",
      "bytes": 42384
+    }
+   ]
+  },
+  {
+   "id": "finish-cobble",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/PavingStones138",
+    "path": "ambientcg/PavingStones138"
+   },
+   "files": [
+    {
+     "path": "x/cobble.albedo.9c23d179.jpg",
+     "sha256": "9c23d179ed48cfff9135ff36d75dd1371b42a548fbdb2600dc4ee6e95c342136",
+     "bytes": 141952
+    },
+    {
+     "path": "x/cobble.orm.378dea9d.jpg",
+     "sha256": "378dea9d94bfe6bf9597066961cfcdd4917b8c4d426debca8247a7196a8ddcf2",
+     "bytes": 52610
+    },
+    {
+     "path": "x/cobble.normal.a35bba1c.jpg",
+     "sha256": "a35bba1c13a73ef3479e2035d5a654f5335a081e668c4b7b11f8ef71dc2d9625",
+     "bytes": 71840
+    },
+    {
+     "path": "t/finish-cobble.660eb692.webp",
+     "sha256": "660eb692de359f9a5f87aac805ed5490925f449463347dcd771ac1c5b6487e1c",
+     "bytes": 84102
+    }
+   ]
+  },
+  {
+   "id": "finish-limestone",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Bricks083",
+    "path": "ambientcg/Bricks083"
+   },
+   "files": [
+    {
+     "path": "x/limestone.albedo.5c342ea6.jpg",
+     "sha256": "5c342ea6ae152e409e7606fd89ca8dde87b43b9b63607280f6f1145998f77c0c",
+     "bytes": 132937
+    },
+    {
+     "path": "x/limestone.orm.da90042b.jpg",
+     "sha256": "da90042bf55bbcc4ed088bf478a16ceb41c6e5ba8667f3a1f697b0d9466ba601",
+     "bytes": 70536
+    },
+    {
+     "path": "x/limestone.normal.6fde4317.jpg",
+     "sha256": "6fde4317603196fee8086d39ad85f5a83908e260170b5be319d2e65ce633283a",
+     "bytes": 120953
+    },
+    {
+     "path": "t/finish-limestone.ddb2ac17.webp",
+     "sha256": "ddb2ac1737c83676772f0738a013d3f3a5954724e3ad010b7ec6fcced588916d",
+     "bytes": 75962
+    }
+   ]
+  },
+  {
+   "id": "finish-dry-earth",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Ground102",
+    "path": "ambientcg/Ground102"
+   },
+   "files": [
+    {
+     "path": "x/dry-earth.albedo.e797c3b5.jpg",
+     "sha256": "e797c3b535744fd5642679ccce08b502dbd7586f429c75cb1d5ee88a5d077d71",
+     "bytes": 128740
+    },
+    {
+     "path": "x/dry-earth.orm.fb6b9ce0.jpg",
+     "sha256": "fb6b9ce0d6f1fe6dbf6867a64ad8535797fba7be5330dbb1bd1b69f5e73cdb79",
+     "bytes": 77362
+    },
+    {
+     "path": "x/dry-earth.normal.4aa7e008.jpg",
+     "sha256": "4aa7e008b33b91068e12b5bf680e801499d33f2416a6b32b8d631d0174f361b1",
+     "bytes": 64607
+    },
+    {
+     "path": "t/finish-dry-earth.bc3db313.webp",
+     "sha256": "bc3db313c745b637e6d73b0d91eafc005c52407b8957af0a4fb4706ded4b2000",
+     "bytes": 64852
+    }
+   ]
+  },
+  {
+   "id": "finish-cladding",
+   "pack": "ambientcg",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "ambientcg/Planks021",
+    "path": "ambientcg/Planks021"
+   },
+   "files": [
+    {
+     "path": "x/cladding.albedo.0ea993c0.jpg",
+     "sha256": "0ea993c09fcc540b8dcc6c264e0f26fe9bcd27f7f19af3b643471030f101c268",
+     "bytes": 94260
+    },
+    {
+     "path": "x/cladding.orm.9c974970.jpg",
+     "sha256": "9c97497003bcf892f5cb7fb9a4f960cd98c89a63644b76db452436c389aecb56",
+     "bytes": 46206
+    },
+    {
+     "path": "x/cladding.normal.b543ec53.jpg",
+     "sha256": "b543ec534274f9273b712d36d2f32d17d43576d0f635a7bf964a34303489f763",
+     "bytes": 60107
+    },
+    {
+     "path": "t/finish-cladding.a859979a.webp",
+     "sha256": "a859979afcffb985e15a6ee03fb20e61e6cb6c521b1ca648e94f9e1def0f012c",
+     "bytes": 43442
     }
    ]
   }

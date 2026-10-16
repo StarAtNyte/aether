@@ -40,7 +40,7 @@ import { CharacterSystem } from './characters/system';
 import type { CharacterRig, Foot } from './characters/rig';
 import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
-import { captureMime, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
+import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset } from './gpu/grade';
 import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
@@ -332,7 +332,7 @@ const _snapTmp = new Vector3();
 const _inv4 = new Matrix4();
 const _rectCorner = new Vector3();
 /** Hits closer than this to the chase target (its own body) are ignored (m). */
-const OCCLUSION_NEAR = 0.6;
+const OCCLUSION_NEAR = 0.25;
 
 function isDescendant(object: Object3D, ancestor: Object3D): boolean {
   for (let o: Object3D | null = object; o; o = o.parent) if (o === ancestor) return true;
@@ -397,6 +397,20 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
     reader.onerror = () => reject(reader.error ?? new Error('capture encoding failed'));
     reader.readAsDataURL(blob);
   });
+}
+
+/** Attempts of a capture that comes back blank. */
+const MAX_BLANK_RETRIES = 3;
+
+/** Whether a drawn canvas is blank (see {@link pixelsAreBlank}): sampled through a 32 x 32 copy. */
+function canvasIsBlank(source: HTMLCanvasElement): boolean {
+  const probe = document.createElement('canvas');
+  probe.width = 32;
+  probe.height = 32;
+  const ctx = probe.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  ctx.drawImage(source, 0, 0, 32, 32);
+  return pixelsAreBlank(new Uint8Array(ctx.getImageData(0, 0, 32, 32).data.buffer));
 }
 
 function grab(source: HTMLCanvasElement, w: number, h: number, mime: string): string {
@@ -569,6 +583,7 @@ export class WorldRenderer {
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
     this.materials.antiTile = this.gpu.tier !== 'software' && !this.lowMemory;
+    this.materials.groundDetail = this.gpu.tier !== 'software' && !this.lowMemory;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
     this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
     // Water: waves and sky on software rasterisers, depth absorption, refraction and foam on GPUs (the planar mirror, tier high, is opt-in).
@@ -2462,6 +2477,10 @@ export class WorldRenderer {
    * camera immediately, never throttled.
    */
   private draw(capture = false): void {
+    // The post chain's scene passes update once per node frame, and the node frame advances once per animation frame:
+    // a capture drawn in the same frame as the viewport (another aspect, another size, a camera moved a moment ago) would
+    // reuse the viewport's scene pass and only re-composite it, stretched. Advance the frame so the capture renders fresh.
+    if (capture) this.advanceNodeFrame();
     this.prepareBatches();
     // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
     // (the viewport, or a capture view), only when the view or content changed.
@@ -2767,21 +2786,73 @@ export class WorldRenderer {
   /** A tiled capture runs: the screen-space vignette is applied on the CPU instead. */
   private vignetteOff = false;
 
-  /** Capture the current view as a data URL (JPEG quality 0.8 by default). */
+  /** Advance the node frame (see {@link draw}); a no-op if the renderer does not expose it. */
+  private advanceNodeFrame(): void {
+    const frame = (this.renderer as unknown as { _nodes?: { nodeFrame?: { update?: () => void } } })._nodes?.nodeFrame;
+    if (typeof frame?.update === 'function') frame.update();
+  }
+
+  /** Resolve once `count` frames have been drawn (or after `timeoutMs`). */
+  private waitForFrames(count: number, timeoutMs: number): Promise<void> {
+    if (this.framesDrawn >= count || typeof setTimeout !== 'function') return Promise.resolve();
+    this.needsDraw = true;
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const tick = (): void => {
+        if (this.disposed || this.lost || this.framesDrawn >= count || Date.now() - started > timeoutMs) resolve();
+        else setTimeout(tick, 30);
+      };
+      tick();
+    });
+  }
+
+  /**
+   * Capture the current view as a data URL (JPEG quality 0.8 by default). A capture that comes back blank (programs still
+   * compiling on a busy or cold GPU) is retried after a few more frames, up to three attempts.
+   */
   async screenshot(opts: { width?: number; height?: number; mime?: string } = {}): Promise<string> {
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     if (this.captureActive) throw new Error('a capture is running');
-    const canvas = this.domElement;
-    const w = captureSize(opts.width, canvas.width);
-    const h = captureSize(opts.height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
+    // A capture asked for before the viewport has shown a few frames would draw into targets whose pipelines are still
+    // compiling and come back black: let the normal loop run first (bounded; a hidden tab simply captures what it has).
+    await this.waitForFrames(3, 2500);
+    await this.compileForCapture();
     const mime = captureMime(opts.mime);
+    let last = '';
+    for (let attempt = 0; attempt < MAX_BLANK_RETRIES; attempt++) {
+      if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
+      const shot = await this.captureOnce(opts.width, opts.height, mime);
+      last = shot.url;
+      if (!shot.blank) return shot.url;
+      log.warn(`capture ${attempt + 1} was blank, retrying`);
+      await this.waitForFrames(this.framesDrawn + 3, 1500);
+    }
+    return last;
+  }
+
+  /** Wait (bounded) until the scene's programs are compiled, so the first capture does not draw nothing. */
+  private async compileForCapture(): Promise<void> {
+    try {
+      await Promise.race([this.renderer.compileAsync(this.scene, this.perspective, this.scene), new Promise<void>((resolve) => setTimeout(resolve, 4000))]);
+    } catch (e) {
+      log.warn(`compile before capture failed: ${errorMessage(e)}`);
+    }
+  }
+
+  private async captureOnce(width: number | undefined, height: number | undefined, mime: string): Promise<{ url: string; blank: boolean }> {
+    const canvas = this.domElement;
+    const w = captureSize(width, canvas.width);
+    const h = captureSize(height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
     // Captures (agent critique, project thumbnails) show the world itself: no selection box, no gizmo.
     const decorations: Object3D[] = [this.highlighter.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
     const wasVisible = decorations.map((o) => o.visible);
     for (const o of decorations) o.visible = false;
     const aspect = this.perspective.aspect;
     try {
-      if (!this.asyncCaptureFailed) {
+      // The post chain renders its scene passes at the drawing buffer's size: a capture of another aspect (a 16:9 still of a
+      // portrait panel) or one larger than the viewport would be stretched or upscaled, so the buffer is resized for the frame.
+      const sameAspect = !captureNeedsResize(w, h, canvas.width, canvas.height);
+      if (!this.asyncCaptureFailed && sameAspect) {
         try {
           // Asynchronous readback: the GPU renders and copies while the page keeps running.
           const pixels = await this.grow.withFullScale(() =>
@@ -2796,7 +2867,8 @@ export class WorldRenderer {
               decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
             }),
           );
-          return await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas')));
+          const url = await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas')));
+          return { url, blank: pixelsAreBlank(pixels) };
         } catch (e) {
           this.asyncCaptureFailed = true;
           log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
@@ -2809,7 +2881,7 @@ export class WorldRenderer {
           this.perspective.aspect = w / h;
           this.perspective.updateProjectionMatrix();
           this.draw(true);
-          return grab(canvas, w, h, mime);
+          return { url: grab(canvas, w, h, mime), blank: canvasIsBlank(canvas) };
         }),
       );
     } finally {

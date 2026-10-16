@@ -12,8 +12,9 @@ import { applyWind } from './wind';
 import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
 import { FinishTextures, finishHasMaps } from './finish-textures';
-import { applyAntiTile, FINISH_NODES_KEY, needsAntiTile } from './anti-tile';
+import { applyAntiTile, FINISH_NODES_KEY, groundWeather, GROUND_PATTERN_FINISHES, needsAntiTile, NORMAL_STRENGTH } from './anti-tile';
 import { applySplat } from './terrain-splat';
+import { applyFacadeGlow, facadeGlow, nightGlow } from './facade-glow';
 import { FoliageTextures } from './foliage-textures';
 import { applyWater, PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './water';
 import { SURFACE_TILE_METRES } from './surface-textures';
@@ -64,7 +65,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -99,7 +100,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
       m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
     }
   }
-  if (!ghostLike && r.finish) applyFinish(m, r, finishes, antiTile);
+  if (!ghostLike && r.finish) applyFinish(m, r, finishes, antiTile, groundDetail);
   if (!ghostLike && r.foliage && foliage) {
     // Leaf cards: the cut-out is the alpha test; both faces are in the geometry, so the material stays single-sided.
     m.map = foliage.get(r.foliage);
@@ -109,7 +110,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
   }
   if (!ghostLike && r.splat && finishes && layered) {
     m.roughness = 1;
-    applySplat(m, (id) => finishes.get(id));
+    applySplat(m, (id) => finishes.get(id), groundDetail);
   }
   if (variant === 'foliage') applyWind(m);
   if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
@@ -136,7 +137,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
  * roughness comes from the ORM map (absolute), so the factor carries only
  * the spec's deviation from the finish default.
  */
-function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: FinishTextures | undefined, antiTile: boolean): void {
+function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: FinishTextures | undefined, antiTile: boolean, groundDetail: boolean): void {
   const id = r.finish;
   if (!id) return;
   const def = FINISHES[id];
@@ -148,9 +149,10 @@ function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: Fin
     // Large-tile surfaces (floors, walls, lawns): the maps are sampled twice by nodes (stochastic blend
     // that hides the repeat), so they are not bound as classic maps.
     m.userData[FINISH_NODES_KEY] = id;
-    applyAntiTile(m, maps, def.bump > 0 ? 1 : 0);
+    applyAntiTile(m, maps, def.bump > 0 ? (NORMAL_STRENGTH[id] ?? 1) : 0, { finish: id, stochastic: !GROUND_PATTERN_FINISHES.has(id), detail: groundDetail });
     return;
   }
+  if (id === 'facade') applyFacadeGlow(m, maps.orm);
   m.map = maps.map;
   m.roughnessMap = maps.orm;
   m.aoMap = maps.orm;
@@ -184,6 +186,11 @@ export class MaterialCache {
    * created afterwards.
    */
   layeredTerrain = true;
+  /**
+   * Add the close-up micro and distance macro detail lookups to ground and masonry finishes (about six extra texture
+   * reads per pixel; the renderer turns it off on software rasterisers and in low-memory mode). Applies to materials created afterwards.
+   */
+  groundDetail = true;
   private reflectiveWater = false;
   /**
    * Water shader tier (`null` keeps the classic translucent water: tests and exports). Applies to materials created
@@ -227,13 +234,23 @@ export class MaterialCache {
     return this.reflectiveWater;
   }
 
+  /** Wet weather (0 dry .. 1 rain) for every ground material (darker, glossier, puddles on asphalt and paving; no recompile). */
+  setWetness(wet: number): void {
+    groundWeather.value = Number.isFinite(wet) ? Math.max(0, Math.min(1, wet)) : 0;
+  }
+
+  /** Light the facade windows for a sun at `elevationDeg` (shared by every facade material; no recompile). */
+  setSkyElevation(elevationDeg: number): void {
+    facadeGlow.value = nightGlow(elevationDeg);
+  }
+
   /** Acquire (and retain) the material for `spec`. Pair every call with {@link release}. */
   acquire(spec: MaterialSpec | undefined, opts: ResolveOptions = {}, variant: MaterialVariant = 'standard'): MaterialHandle {
     const resolved = resolveMaterial(spec, opts);
     const tier = resolved.water ? this.waterTier : null;
     const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '');
     const material = this.cache.acquire(key, () => {
-      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror);
+      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       return m;
     });

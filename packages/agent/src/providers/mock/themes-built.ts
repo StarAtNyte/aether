@@ -45,7 +45,7 @@ const village: Theme = {
   build(c) {
     const { b } = c;
     if (c.clear < 4) {
-      b.prim('plaza', 'cylinder', [14, 0.06, 14], [c.x, 0.03, c.z], { material: { preset: 'stone', color: '#b8b0a2' }, castShadow: false, name: 'Plaza' });
+      b.prim('plaza', 'cylinder', [14, 0.06, 14], [c.x, 0.03, c.z], { material: { finish: 'cobble', color: '#a29b8c' }, castShadow: false, name: 'Plaza' });
       b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue', tags: ['focus'] });
       for (let i = 0; i < 2; i++) {
         const tx = r2(c.x + (i === 0 ? -4.5 : 4.5));
@@ -119,6 +119,8 @@ const castle: Theme = {
     b.gen('keep', 'tower', { height: 20, radius: 4, color: '#a39d92', roofColor: '#7a1f1f' }, [cx, 0, r2(cz - 3)], { physics: 'static', name: 'Keep', tags: ['focus'] });
     b.prim('banner', 'box', [0.05, 2.4, 1.4], [r2(cx + 4.1), 16, r2(cz - 3)], { material: { preset: 'fabric', color: '#b5232f' }, castShadow: false, name: 'Royal banner' });
     b.reserve(cx, cz, half + 3);
+    // A cobbled courtyard inside the walls and a worn forecourt before the gate.
+    b.prim('courtyard', 'box', [2 * half - 3, 0.08, 2 * half - 3], [cx, 0.04, cz], { material: { finish: 'cobble', color: '#8e887c' }, castShadow: false, name: 'Courtyard' });
     for (const side of [-1, 1]) {
       const tx = r2(cx + side * 3.5);
       const tz = r2(cz + half + 2);
@@ -160,7 +162,7 @@ function libraryStreet(c: ThemeCtx): void {
     b.asset('road', crossing ? 'road-crossing' : 'road', [c.x, 0, r2(z0 + i * tile)], { yaw: 90, castShadow: false, name: crossing ? 'Crossing' : 'Road' });
   }
   for (const side of [-1, 1]) {
-    b.prim('sidewalk', 'box', [3, 0.2, tiles * tile], [r2(c.x + side * 5.5), 0.1, c.z], { material: { preset: 'concrete', color: '#b9bcc0' }, physics: 'static', castShadow: false });
+    b.prim('sidewalk', 'box', [3, 0.2, tiles * tile], [r2(c.x + side * 5.5), 0.1, c.z], { material: { finish: 'stone', color: '#b9bcc0' }, physics: 'static', castShadow: false });
     for (let i = 0; i < 6; i++) {
       const bz = r2(c.z - 36 + i * 14 + b.rand(-0.6, 0.6));
       const bx = r2(c.x + side * 14);
@@ -224,7 +226,7 @@ const city: Theme = {
   radius: 40,
   blurb: 'a city street lined with buildings, lamp posts, parked cars and traffic — hop in the red car and drive',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 17, fog: { color: '#c8cdd4', density: 0.008 }, bloom: 0.7, ground: { material: { preset: 'concrete', color: '#8f9399' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 17, fog: { color: '#c8cdd4', density: 0.008 }, bloom: 0.7, ground: { material: { finish: 'concrete', color: '#8f9399' }, size: 400 } });
   },
   build(c) {
     const { b } = c;
@@ -248,12 +250,12 @@ const city: Theme = {
       return;
     }
     const roadLen = 90;
-    b.prim('road', 'box', [8, 0.05, roadLen], [c.x, 0.025, c.z], { material: { preset: 'concrete', color: '#2f3237', roughness: 0.9 }, castShadow: false, name: 'Road' });
+    b.prim('road', 'box', [8, 0.05, roadLen], [c.x, 0.025, c.z], { material: { finish: 'asphalt', color: '#4a4d53', roughness: 0.9 }, castShadow: false, name: 'Road' });
     for (let i = 0; i < 14; i++) {
       b.prim('lane-mark', 'box', [0.2, 0.02, 2.4], [c.x, 0.06, r2(c.z - roadLen / 2 + 3 + i * 6.4)], { material: { preset: 'emissive', color: '#f5f0d0', emissive: '#f5f0d0', emissiveIntensity: 0.2 }, castShadow: false });
     }
     for (const side of [-1, 1]) {
-      b.prim('sidewalk', 'box', [3, 0.2, roadLen], [r2(c.x + side * 5.5), 0.1, c.z], { material: { preset: 'concrete', color: '#b9bcc0' }, physics: 'static', castShadow: false });
+      b.prim('sidewalk', 'box', [3, 0.2, roadLen], [r2(c.x + side * 5.5), 0.1, c.z], { material: { finish: 'stone', color: '#b9bcc0' }, physics: 'static', castShadow: false });
       for (let i = 0; i < 6; i++) {
         const bz = r2(c.z - 36 + i * 14 + b.rand(-1, 1));
         const bx = r2(c.x + side * 14);

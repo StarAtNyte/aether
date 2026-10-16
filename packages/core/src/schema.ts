@@ -86,6 +86,10 @@ export const MaterialFinish = z.enum([
   'wallpaper', 'wallpaper-stripe', 'wallpaper-floral', 'wallpaper-damask', 'wallpaper-geometric', 'panelling', 'wood-slats',
   // Additive: dense overlapping leaves for tree crowns and hedges.
   'foliage',
+  // Additive: building facades (window grid with recessed glass and mullions; a share of the windows glows after dark).
+  'facade',
+  // Additive: ground and wall surfaces with real relief (granite setts, rough limestone masonry, dry packed earth, pine cladding).
+  'cobble', 'limestone', 'dry-earth', 'cladding',
 ]);
 export type MaterialFinish = z.infer<typeof MaterialFinish>;
 
@@ -562,7 +566,15 @@ export const Environment = z.object({
   ambientIntensity: z.number().min(0).default(0.4),
   sunIntensity: z.number().min(0).default(2.5),
   /** Infinite ground plane at y=0 with a collider. Set to null for no ground (space, sky islands). */
-  ground: z.object({ material: MaterialSpec, size: z.number().positive().default(400) }).nullable().default({ material: { preset: 'grass' }, size: 400 }),
+  ground: z
+    .object({
+      material: MaterialSpec,
+      size: z.number().positive().default(400),
+      /** Additive: false leaves out the decorative horizon skirt (a rooftop or island that must end at its edge). */
+      skirt: z.boolean().optional(),
+    })
+    .nullable()
+    .default({ material: { preset: 'grass' }, size: 400 }),
   gravity: Vec3.default([0, -9.81, 0]),
   /**
    * Additive: the wind. `speed` in metres per second (0 calm, 4 breeze, 10 strong, 20 storm) and `direction` in degrees

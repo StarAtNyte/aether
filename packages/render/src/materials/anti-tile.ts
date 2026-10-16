@@ -11,7 +11,7 @@
  * copies when it converts the material (like the foliage wind, see `wind.ts`). The texture's `repeat`
  * stays a live uniform, so retiling a finish to its photo's real size later recompiles nothing.
  */
-import { float, materialColor, materialRoughness, mix, mx_noise_float, normalMap, positionWorld, smoothstep, texture, uniform, uv, vec2, vec4 } from 'three/tsl';
+import { cameraPosition, clamp, float, materialColor, materialRoughness, mix, mx_noise_float, normalMap, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material, Texture } from 'three';
 
 /** The second lookup's rotation (radians), scale and offset in tile units. */
@@ -33,11 +33,58 @@ export interface AntiTileMaps {
  * lookup breaks their repeat without trace. Patterned finishes (planks, brick, tiles, paving, veined
  * marble) are left out: their pattern *is* the repeat, and two shifted copies of it only ghost.
  */
-export const ANTI_TILE_FINISHES: ReadonlySet<string> = new Set(['concrete', 'plaster', 'terrazzo', 'grass', 'gravel', 'soil', 'sand', 'snow', 'rock', 'bark', 'asphalt', 'carpet']);
+export const ANTI_TILE_FINISHES: ReadonlySet<string> = new Set(['concrete', 'plaster', 'terrazzo', 'grass', 'gravel', 'soil', 'sand', 'snow', 'rock', 'bark', 'asphalt', 'carpet', 'dry-earth']);
+
+/**
+ * Patterned ground and masonry finishes that still get the distance and weather treatment (macro variation, near and far
+ * detail, puddles) but keep a single lookup: a second, rotated copy of cobbles or ashlar would only ghost.
+ */
+export const GROUND_PATTERN_FINISHES: ReadonlySet<string> = new Set(['stone', 'cobble', 'limestone']);
 
 /** Whether `finish` (whose tile is `tileMetres` wide) benefits from anti-tiling (small tiles repeat too finely to show). */
 export function needsAntiTile(finish: string, tileMetres: number): boolean {
-  return ANTI_TILE_FINISHES.has(finish) && Number.isFinite(tileMetres) && tileMetres >= 0.9;
+  return (ANTI_TILE_FINISHES.has(finish) || GROUND_PATTERN_FINISHES.has(finish)) && Number.isFinite(tileMetres) && tileMetres >= 0.9;
+}
+
+/**
+ * Normal-map strength per finish: the photographs of plaster and concrete carry a faint relief that reads as flat paint on
+ * a wall, so their maps are pushed harder; everything else uses 1 (0 without a bump in the finish definition).
+ */
+export const NORMAL_STRENGTH: Readonly<Record<string, number>> = Object.freeze({ plaster: 2.4, concrete: 1.7, terrazzo: 1.3, limestone: 1.3, cobble: 1.2, 'dry-earth': 1.3, rock: 1.2 });
+
+/** Share of a surface that stands in puddles when the weather is dry, and the extra share rain adds, per finish (0 = never wet). */
+export const WETNESS: Readonly<Record<string, { base: number; rain: number }>> = Object.freeze({
+  asphalt: { base: 0, rain: 0.62 },
+  concrete: { base: 0, rain: 0.42 },
+  stone: { base: 0, rain: 0.4 },
+  cobble: { base: 0, rain: 0.5 },
+  limestone: { base: 0, rain: 0.25 },
+  gravel: { base: 0, rain: 0.25 },
+  soil: { base: 0, rain: 0.3 },
+  'dry-earth': { base: 0, rain: 0.3 },
+  terrazzo: { base: 0, rain: 0.3 },
+});
+
+/**
+ * Wet weather (0 dry .. 1 rain) shared by every ground material: darkens and glosses surfaces and fills puddles in
+ * those that have a {@link WETNESS} entry. A uniform, so a change of weather recompiles nothing.
+ */
+export const groundWeather = uniform(0);
+/** Distances (m) over which the close-up micro detail fades out and the far macro detail fades in. */
+export const DETAIL_NEAR: readonly [number, number] = Object.freeze([1.5, 7]) as readonly [number, number];
+export const DETAIL_FAR: readonly [number, number] = Object.freeze([10, 60]) as readonly [number, number];
+/** Texture-repeat factors of the micro (finer) and macro (coarser) detail lookups. */
+export const DETAIL_MICRO_SCALE = 5.3;
+export const DETAIL_MACRO_SCALE = 0.113;
+
+/** Options of {@link applyAntiTile}. */
+export interface AntiTileOptions {
+  /** The finish's id (selects its puddle share, see {@link WETNESS}). */
+  finish?: string;
+  /** Take every lookup twice at different scales/rotations (isotropic finishes); false for patterned ones. */
+  stochastic?: boolean;
+  /** Add the close-up micro and distance macro lookups (costs about six extra texture reads; off on weak GPUs). */
+  detail?: boolean;
 }
 
 /** `userData` key holding the {@link AntiTileMaps} of a material whose maps are sampled by nodes. */
@@ -51,7 +98,9 @@ export const FINISH_NODES_KEY = 'aetherFinish';
  * `normalStrength` is the normal map's scale (0 skips the normal blend). The material must not bind
  * the maps itself (`map`, `roughnessMap`, `aoMap`, `normalMap`): the nodes replace them.
  */
-export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStrength: number): void {
+export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStrength: number, opts: AntiTileOptions = {}): void {
+  const stochastic = opts.stochastic !== false;
+  const detail = opts.detail === true;
   const repeat = uniform(maps.map.repeat);
   const base = uv().mul(repeat);
   const c = Math.cos(ANTI_TILE.rotation);
@@ -63,16 +112,55 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   // narrow soft seam: an even mix of two unrelated crops would wash the texture out to its average.
   const n = mx_noise_float(positionWorld.mul(BLEND_NOISE_SCALE)).mul(0.5).add(0.5);
   const w = smoothstep(float(SEAM[0]), float(SEAM[1]), n);
-  const blend = (tex: Texture) => mix(texture(tex, base), texture(tex, second), w);
+  const blend = (tex: Texture) => (stochastic ? mix(texture(tex, base), texture(tex, second), w) : texture(tex, base));
   const albedo = blend(maps.map);
   const orm = blend(maps.orm);
+  const nrm = blend(maps.normal);
+
+  // --- Distance and weather -----------------------------------------------------------------------------------
+  const dist = positionWorld.sub(cameraPosition).length();
+  const nearFade = float(1).sub(smoothstep(float(DETAIL_NEAR[0]), float(DETAIL_NEAR[1]), dist));
+  const farFade = smoothstep(float(DETAIL_FAR[0]), float(DETAIL_FAR[1]), dist);
+  // Macro variation: patches of lighter / darker and rougher / glossier surface several metres and tens of metres wide,
+  // so a lawn, a plaza or a street is never one flat tone even where the photograph's own variation is small.
+  const m1 = mx_noise_float(positionWorld.mul(0.045)).mul(0.5).add(0.5);
+  const m2 = mx_noise_float(positionWorld.mul(0.21).add(vec3(31.7, 4.2, 18.9))).mul(0.5).add(0.5);
+  // Contrast-stretched (smoothstep) so the patches read: noise alone clusters around its mean and looks like a flat tone.
+  const patch = smoothstep(float(0.22), float(0.78), m1);
+  const speck = smoothstep(float(0.3), float(0.7), m2);
+  const macro = float(0.74).add(patch.mul(0.46)).add(speck.sub(0.5).mul(0.2));
+  const warmth = patch.sub(0.5);
+  const flat = vec3(0.5, 0.5, 0);
+  // Close up the texels would magnify: a finer lookup of the same photograph adds grain and micro relief; far away a
+  // much coarser one adds the large patches a flat ground plane lacks. Both are ratios around 1, so the mean tone holds.
+  const micro = base.mul(DETAIL_MICRO_SCALE);
+  const far = base.mul(DETAIL_MACRO_SCALE);
+  const albedoBase = albedo.rgb.mul(macro).mul(vec3(float(1).add(warmth.mul(0.1)), float(1), float(1).sub(warmth.mul(0.14))));
+  const albedoNear = detail ? mix(albedoBase, albedoBase.mul(texture(maps.map, micro).rgb), nearFade.mul(0.55)) : albedoBase;
+  const albedoDetailed = detail ? mix(albedoNear, albedoNear.mul(texture(maps.map, far).rgb), farFade.mul(0.9)) : albedoNear;
+  const normalEnc =
+    detail && normalStrength > 0
+      ? nrm.rgb.add(texture(maps.normal, micro).rgb.sub(flat).mul(nearFade.mul(0.8))).add(texture(maps.normal, far).rgb.sub(flat).mul(farFade.mul(0.35)))
+      : nrm.rgb;
+  // Wet ground: the weather uniform darkens and glosses everything a little; surfaces with a puddle share (asphalt,
+  // concrete, paving) also pool water in the low spots, flat and mirror-like where screen-space reflections show the sky.
+  const flatUp = smoothstep(float(0.75), float(0.95), normalWorld.y);
+  const damp = groundWeather.mul(0.3);
+  const wet = opts.finish ? WETNESS[opts.finish] : undefined;
+  const pool = m1.mul(0.55).add(m2.mul(0.45));
+  const coverage = wet ? clamp(groundWeather.mul(wet.rain).add(wet.base), 0, 0.95) : float(0);
+  const puddle = wet ? smoothstep(float(1).sub(coverage), float(1).sub(coverage).add(0.07), pool).mul(flatUp) : float(0);
+  const roughBase = materialRoughness.mul(orm.g).mul(float(0.88).add(m2.mul(0.24))).mul(float(1).sub(damp.mul(0.55)));
+  const rgb = albedoDetailed.mul(float(1).sub(damp.mul(0.5))).mul(float(1).sub(puddle.mul(0.5)));
+  const roughness = mix(roughBase, float(0.035), puddle);
+  const normalScale = float(normalStrength).mul(float(1).sub(puddle.mul(0.92)));
   // Exporters (glTF, path tracing) read classic maps: keep the textures reachable for them.
   material.userData[FINISH_MAPS_KEY] = maps;
   const m = material as Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
   // The classic maps are not bound on this material (the nodes sample the textures), so the stock colour
   // and roughness accessors give the plain factors the lookups multiply.
-  m.colorNode = vec4(materialColor.rgb.mul(albedo.rgb), 1);
-  m.roughnessNode = materialRoughness.mul(orm.g);
+  m.colorNode = vec4(materialColor.rgb.mul(rgb), 1);
+  m.roughnessNode = roughness;
   m.aoNode = orm.r;
-  if (normalStrength > 0) m.normalNode = normalMap(blend(maps.normal), vec2(normalStrength, normalStrength));
+  if (normalStrength > 0) m.normalNode = normalMap(normalEnc, vec2(normalScale, normalScale));
 }

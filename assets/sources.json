@@ -355,6 +355,30 @@
         "id": "Leather026",
         "tile": 0.45,
         "sha256": "6af2f446f9855c641da2a072f128d30965431ffae3306d22d75dbfff99c04646"
+      },
+      {
+        "finish": "cobble",
+        "id": "PavingStones138",
+        "tile": 2,
+        "sha256": "5e2aee8fde52a9f2799ff2f5036522d2d25673d235e1c42f86144bc5a8d83fdd"
+      },
+      {
+        "finish": "limestone",
+        "id": "Bricks083",
+        "tile": 2,
+        "sha256": "baa5d5b82b607567c2604243f8dbe98208aba80be90d46d472d9ef8a042c0b5c"
+      },
+      {
+        "finish": "dry-earth",
+        "id": "Ground102",
+        "tile": 3,
+        "sha256": "7390f5b0508053ee661a90419d9afb655a5eb31eaf71f81c8d2bde49e15cfc3a"
+      },
+      {
+        "finish": "cladding",
+        "id": "Planks021",
+        "tile": 1.5,
+        "sha256": "9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a"
       }
     ]
   }

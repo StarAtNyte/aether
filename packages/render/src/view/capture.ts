@@ -37,6 +37,31 @@ export function captureMime(mime: string | undefined): string {
   return mime && ALLOWED_MIME.has(mime) ? mime : 'image/jpeg';
 }
 
+/**
+ * True when a `w`×`h` capture must resize the drawing buffer (`bw`×`bh`) for its frame: its aspect differs by more than
+ * 1.5 % (the scene passes draw at the buffer's size, so the picture would be stretched), or it is larger than the buffer
+ * by more than 5 % (it would be an upscale). Otherwise the asynchronous off-screen capture is used.
+ */
+export function captureNeedsResize(w: number, h: number, bw: number, bh: number): boolean {
+  if (!(w > 0 && h > 0 && bw > 0 && bh > 0)) return false;
+  return Math.abs(w / h / (bw / bh) - 1) > 0.015 || w > bw * 1.05 || h > bh * 1.05;
+}
+
+/**
+ * True when an RGBA8 pixel buffer is empty: sampled on a coarse grid, every sample fully transparent or black. A real
+ * frame (even a night scene) always has a lit pixel; an uncompiled or cleared frame has none.
+ */
+export function pixelsAreBlank(pixels: Uint8Array): boolean {
+  const n = Math.floor(pixels.length / 4);
+  if (n === 0) return true;
+  const step = Math.max(1, Math.floor(n / 1024));
+  for (let i = 0; i < n; i += step) {
+    const o = i * 4;
+    if ((pixels[o + 3] as number) > 0 && ((pixels[o] as number) > 2 || (pixels[o + 1] as number) > 2 || (pixels[o + 2] as number) > 2)) return false;
+  }
+  return true;
+}
+
 /** Orthographic pose framing `bounds` (null/empty → a 10 m area at the origin). */
 export function viewPose(bounds: Bounds | null, view: CaptureView): ViewPose {
   let c: Vec3 = [0, 0, 0];

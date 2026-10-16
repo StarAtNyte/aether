@@ -101,12 +101,15 @@ describe('architecture flagships start the walkthrough inside, facing the house'
     const { world } = build('skyline-penthouse');
     const towers = Object.values(world.entities).filter((e) => e.tags.includes('city'));
     expect(towers.length).toBeGreaterThanOrEqual(40);
-    // fitSize is the tower height; they stand on streets 40 m below the deck.
+    // Towers are `skyline-tower` volumes (window-grid facades) whose `height` param is their total height; they stand on
+    // streets 40 m below the deck, so a crown above the deck is taller than 40 m.
     const tall = towers.filter((t) => {
       const s = t.shape;
-      return s.kind === 'asset' && (s.fitSize ?? 0) > 60;
+      return s.kind === 'procedural' && s.generator === 'skyline-tower' && Number(s.params['height'] ?? 0) > 60;
     });
     expect(tall.length).toBeGreaterThanOrEqual(30);
+    // The ground skirt that would extend the roof to the horizon (over the street level) is off.
+    expect(world.environment.ground?.skirt).toBe(false);
   });
 
   it('the Dusk House has its lake and mountains', () => {
