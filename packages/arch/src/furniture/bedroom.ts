@@ -2,7 +2,7 @@
  * Bedroom and storage: beds (single to king), wardrobes and bookshelves
  * with seeded books. Mattress tops at ~55 cm, wardrobes 60 cm deep.
  */
-import { Geom, box, roundedBox } from '../mesh';
+import { Geom, box, boxC, roundedBox } from '../mesh';
 import { PartSet } from '../parts';
 import { choice, color, cushion, emitFront, flag, int, mat, num, seeded, squareLeg, type FurnitureDef } from './kit';
 
@@ -21,11 +21,15 @@ export const BED: FurnitureDef = {
     headboardHeight: num(1.05, 0.7, 1.7, 'height of the headboard above the floor (m)'),
     accents: int(0, 0, 4, 'accent cushions leaning on the pillows (0 = none)'),
     accent: color('#6b2f73', 'accent cushion colour'),
+    headboardStyle: choice(['slab', 'panel', 'tufted', 'slats'], 'slab', 'slab = upholstered slab to the floor; panel = tall floating panel on the wall side; tufted = diamond-quilted panel; slats = timber slats'),
+    pattern: choice(['plain', 'floral', 'stripe', 'damask'], 'plain', 'pattern printed on the duvet cover (the linen colour tints it)'),
+    canopy: flag(false, 'four-poster: corner posts with a top frame (posts are slim; set canopyHeight)'),
+    canopyHeight: num(2.1, 1.6, 3, 'height of the four-poster posts (m)'),
   },
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.6,
-  size: (p) => [(BED_WIDTHS[p.str('size')] ?? 1.6) + 0.12, p.num('headboardHeight'), 2.12],
+  size: (p) => [(BED_WIDTHS[p.str('size')] ?? 1.6) + 0.12, p.bool('canopy') ? Math.max(p.num('headboardHeight'), p.num('canopyHeight')) : p.num('headboardHeight'), 2.12],
   build(p) {
     const set = new PartSet();
     const mw = BED_WIDTHS[p.str('size')] ?? 1.6;
@@ -36,14 +40,53 @@ export const BED: FurnitureDef = {
     frame.merge(roundedBox(w, 0.22, L - 0.08, 0.02, 2).translate(0, 0.14, 0.04));
     for (const sx of [-1, 1] as const) for (const sz of [-1, 1] as const) frame.merge(squareLeg(sx * (w / 2 - 0.06), sz * (L / 2 - 0.08) + 0.04, 0.05, 0.05));
     set.add(frame, frameMat);
-    set.add(cushion(w, p.num('headboardHeight') - 0.05, 0.1, 0.05, 0.02).translate(0, 0, -L / 2 + 0.05), mat('fabric', p.color('headboard')));
+    const hh = p.num('headboardHeight');
+    const style = p.str('headboardStyle');
+    const hbMat = style === 'slats' ? mat(p.str('frame') === 'fabric' ? 'oak' : p.str('frame')) : mat('fabric', p.color('headboard'));
+    if (style === 'panel') {
+      // A tall panel a little wider than the mattress, standing clear of the frame (the common hotel and modern look).
+      set.add(cushion(w + 0.04, hh - 0.32, 0.08, 0.3, 0.012).translate(0, 0, -L / 2 + 0.04), hbMat);
+    } else if (style === 'tufted') {
+      set.add(cushion(w, hh - 0.05, 0.1, 0.05, 0.02).translate(0, 0, -L / 2 + 0.05), hbMat);
+      // Diamond quilting: buttons on a staggered grid and thin ridges between them.
+      const studs = new Geom();
+      const dx = 0.16;
+      const dy = 0.16;
+      const ridge = new Geom();
+      for (let row = 0, y = 0.42; y < hh - 0.12; row++, y += dy) {
+        for (let x = -w / 2 + 0.1 + (row % 2) * (dx / 2); x < w / 2 - 0.06; x += dx) studs.merge(boxC(x, y, -L / 2 + 0.12, 0.022, 0.022, 0.02));
+        ridge.merge(boxC(0, y, -L / 2 + 0.108, w - 0.08, 0.006, 0.008));
+      }
+      set.add(studs, mat('black-metal'));
+      set.add(ridge, mat('fabric', p.color('headboard')));
+    } else if (style === 'slats') {
+      const sl = new Geom();
+      for (let x = -w / 2 + 0.05; x <= w / 2 - 0.04; x += 0.11) sl.merge(box(x - 0.03, 0.12, -L / 2, x + 0.03, hh, -L / 2 + 0.05));
+      set.add(sl, hbMat);
+    } else {
+      set.add(cushion(w, hh - 0.05, 0.1, 0.05, 0.02).translate(0, 0, -L / 2 + 0.05), hbMat);
+    }
+    if (p.bool('canopy')) {
+      const top = p.num('canopyHeight');
+      const posts = new Geom();
+      const rails = new Geom();
+      for (const sx of [-1, 1] as const) {
+        for (const sz of [-1, 1] as const) posts.merge(box(sx * (w / 2 - 0.03) - 0.025, 0, sz * (L / 2 - 0.04) - 0.025, sx * (w / 2 - 0.03) + 0.025, top, sz * (L / 2 - 0.04) + 0.025));
+        rails.merge(box(sx * (w / 2 - 0.03) - 0.02, top - 0.04, -L / 2 + 0.015, sx * (w / 2 - 0.03) + 0.02, top, L / 2 - 0.015));
+      }
+      for (const sz of [-1, 1] as const) rails.merge(box(-w / 2 + 0.01, top - 0.04, sz * (L / 2 - 0.04) - 0.02, w / 2 - 0.01, top, sz * (L / 2 - 0.04) + 0.02));
+      set.add(posts, mat(p.str('frame') === 'fabric' ? 'paint' : p.str('frame'), p.str('frame') === 'fabric' ? p.color('linen') : undefined));
+      set.add(rails, mat(p.str('frame') === 'fabric' ? 'paint' : p.str('frame'), p.str('frame') === 'fabric' ? p.color('linen') : undefined));
+    }
     // Mattress and bedding.
     const linen = mat('fabric', p.color('linen'));
+    const printed = { plain: 'fabric', floral: 'wallpaper-floral', stripe: 'wallpaper-stripe', damask: 'wallpaper-damask' }[p.str('pattern')] ?? 'fabric';
+    const duvetMat = printed === 'fabric' ? linen : mat(printed, p.color('linen'));
     set.add(roundedBox(mw, 0.24, 2.0, 0.05, 3).translate(0, 0.25 + 0.12, 0.05), mat('fabric', '#f4f2ee'));
     const duvet = cushion(mw + 0.08, 0.07, 1.45, 0.47, 0.02).translate(0, 0, 0.32);
     // Duvet overhangs the sides.
     for (const s of [-1, 1] as const) duvet.merge(roundedBox(0.04, 0.3, 1.45, 0.02, 2).translate(s * (mw / 2 + 0.03), 0.4, 0.32));
-    set.add(duvet, linen);
+    set.add(duvet, duvetMat);
     set.add(cushion(mw + 0.1, 0.04, 0.45, 0.535, 0.01).translate(0, 0, 0.72), mat('fabric', p.color('throw')));
     const pillows = new Geom();
     const n = mw > 1.1 ? 2 : 1;

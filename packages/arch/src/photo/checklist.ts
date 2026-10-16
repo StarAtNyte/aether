@@ -55,7 +55,9 @@ export function buildChecklist(d: RoomDescription): ChecklistItem[] {
   });
   out.push({ id: 'wall-colour', category: 'material', structural: false, text: `Wall colour and finish${wallColors.length > 0 ? ` (${wallColors.join(', ')})` : ''}` });
   out.push({ id: 'floor', category: 'material', structural: false, text: `Floor: ${d.floor.material}${d.floor.color ? ` ${d.floor.color}` : ''}${d.floor.note ? `, ${d.floor.note}` : ''}` });
-  if (d.ceiling.cornice) {
+  const v = d.ceiling.vault;
+  if (v) out.push({ id: 'vault', category: 'shell', structural: false, text: `Vaulted ceiling rising to a ridge about ${Math.round((d.footprint.ceiling + v.rise) * 10) / 10} m (walls ${d.footprint.ceiling} m at the eaves)${v.trusses ? `, ${Math.round(v.trusses)} exposed timber trusses` : ''}` });
+  if (d.ceiling.cornice && !v) {
     out.push({ id: 'cornice', category: 'decor', structural: false, text: `Ceiling cornice / crown moulding along the walls, about ${Math.round(d.ceiling.cornice.height * 100)} cm deep${d.ceiling.cornice.color ? `, ${d.ceiling.cornice.color}` : ''}`, target: 'cornice-north' });
   }
   for (const o of d.openings) {

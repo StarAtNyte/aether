@@ -60,6 +60,8 @@ export const PlanRoom = z
     wallColor: Color.optional(),
     /** Additive: paint colour of single walls, by the compass side each faces from inside (overrides `wallColor`). */
     wallColors: z.partialRecord(Compass, Color).optional(),
+    /** Additive: a vaulted (gable) ceiling over a rectangular room: the ridge rises `rise` m above the eaves (the level must be that much taller), optional exposed trusses. */
+    vault: z.object({ rise: z.number().min(0.2).max(4), ridge: z.enum(['x', 'z']).default('z'), trusses: z.number().int().min(0).max(14).default(0), beam: Color.default('#f4f2ee') }).optional(),
     /**
      * Finish of every interior wall face of the room (paint, wallpaper, panelling, brick, tiles…).
      * Overrides the type default; `wallColor` still tints it when it has no colour of its own.
@@ -114,6 +116,8 @@ export const PlanWindow = z.object({
   height: z.number().min(0.4).max(4).default(1.4),
   sill: z.number().min(0).max(2.5).default(0.9),
   style: z.enum(['casement', 'fixed', 'sliding', 'grid', 'picture']).optional(),
+  /** Colour of the daylight that glows through the glass (an emissive pane outside it); omitted: the scene outside shows. */
+  daylight: Color.optional(),
   /**
    * Exact centres in metres along the exterior wall of `side`, from the left end seen from inside
    * the room (one window per centre). Overrides the even spread of `count`.

@@ -26,7 +26,7 @@ function header(): string {
  * derivation and the shell fitting.
  */
 describe('recorded vision descriptions build', () => {
-  for (const id of ['hotel', 'pd1']) {
+  for (const id of ['hotel', 'pd1', 'pd2', 'hotel.r2', 'pd1.r2', 'modern.r2']) {
     const file = resolve(DIR, `${id}.transcript.json`);
     it.skipIf(!existsSync(file))(`${id}: the recorded description becomes a clean room`, async () => {
       const t = TranscriptSchema.parse(JSON.parse(readFileSync(file, 'utf8')));

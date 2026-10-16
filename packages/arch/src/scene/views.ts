@@ -447,6 +447,15 @@ export function entityGeometry(world: WorldDoc, building: EntityId): EntityGeome
   return out;
 }
 
+/** The world-space displacement of a plan displacement `d` (the building may be turned and placed anywhere). */
+export function planDelta(world: WorldDoc, building: EntityId, d: P2): Vec3 | null {
+  const scene = readScene(world, building);
+  if (!scene) return null;
+  const f = frameOf(world, scene);
+  const r = rotateYaw(d[0], d[1], f.yaw);
+  return [r[0], 0, r[1]];
+}
+
 /** A normalised image box (x0, y0, x1, y1; origin top-left). */
 export type ImageBox = [number, number, number, number];
 

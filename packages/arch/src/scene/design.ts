@@ -41,6 +41,8 @@ export const DesignRoom = z
     wallColor: Color.optional(),
     /** Paint colour of single walls by the compass side each faces from inside (overrides `wallColor`). */
     wallColors: z.partialRecord(Compass, Color).optional(),
+    /** Additive: a vaulted (gable) ceiling over a rectangular room: the ridge rises `rise` m above the eaves (the level must be that much taller), optional exposed trusses. */
+    vault: z.object({ rise: z.number().min(0.2).max(4), ridge: z.enum(['x', 'z']).default('z'), trusses: z.number().int().min(0).max(14).default(0), beam: Color.default('#f4f2ee') }).optional(),
     /** Wall covering of the whole room (wallpaper, panelling, brick, tiles…), per-wall accents by compass side from inside, and a wainscot. */
     finish: MaterialSpec.optional(),
     walls: z.partialRecord(Compass, MaterialSpec).optional(),
@@ -65,6 +67,8 @@ export const DesignOpening = z.object({
   /** The main entrance (one). */
   main: z.boolean().optional(),
   style: z.string().max(20).optional(),
+  /** Windows: colour of the daylight glowing through the glass (#rrggbb). */
+  daylight: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 export type DesignOpening = z.infer<typeof DesignOpening>;
 
@@ -294,7 +298,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
     const windows: NonNullable<BuildingPlanInput['levels'][number]['windows']> = [];
     for (const o of lvl.openings) {
       if (o.kind === 'window') {
-        windows.push({ room: o.room, side: o.wall, count: 1, width: o.width, ...(o.height !== undefined ? { height: o.height } : {}), ...(o.sill !== undefined ? { sill: o.sill } : {}), centres: [o.along], ...(o.style && ['casement', 'fixed', 'sliding', 'grid', 'picture'].includes(o.style) ? { style: o.style as 'casement' } : {}) });
+        windows.push({ room: o.room, side: o.wall, count: 1, width: o.width, ...(o.height !== undefined ? { height: o.height } : {}), ...(o.sill !== undefined ? { sill: o.sill } : {}), centres: [o.along], ...(o.daylight ? { daylight: o.daylight } : {}), ...(o.style && ['casement', 'fixed', 'sliding', 'grid', 'picture'].includes(o.style) ? { style: o.style as 'casement' } : {}) });
         continue;
       }
       const to = o.to ?? 'outside';
@@ -315,7 +319,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       ...(lvl.name ? { name: lvl.name } : {}),
       ...(lvl.height !== undefined ? { height: lvl.height } : {}),
       autoWindows: false,
-      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), furnish: false, items: [] })),
+      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), furnish: false, items: [] })),
       doors,
       windows,
       stairs: lvl.stairs,

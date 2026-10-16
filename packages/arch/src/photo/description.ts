@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { Color } from '@aether/core';
 import { ArchStyle, Compass, RoomType } from '../plan';
+import { applyReality } from './reality';
 
 /** Largest room the photo flow reconstructs (metres per side). */
 export const PHOTO_MAX_SIDE = 16;
@@ -92,6 +93,10 @@ export const PhotoOpening = z.object({
   box: Box,
   /** What it looks like: frame colour, panes, view. */
   note: Text(160).default(''),
+  /** Windows: the daylight beyond the glass is bright and glowing in the photo (sunlit street, overexposed sky). */
+  glow: z.boolean().optional(),
+  /** Windows: colour of that glow (#rrggbb); default a warm white. */
+  daylight: Color.optional(),
 });
 export type PhotoOpening = z.infer<typeof PhotoOpening>;
 
@@ -191,6 +196,11 @@ export const RoomDescription = z.object({
       color: Color.optional(),
       /** Crown moulding along the top of the walls: drop, projection and colour. */
       cornice: z.object({ height: Num(0.04, 0.4), depth: Num(0.03, 0.3).optional(), color: Color.optional() }).optional(),
+      /**
+       * A vaulted (gable) ceiling: `footprint.ceiling` is then the height of the walls at the eaves, `rise` the extra height of
+       * the ridge, `ridge` the direction the ridge runs (default: along the longer side), `trusses` exposed timber trusses.
+       */
+      vault: z.object({ rise: Num(0.3, 3.5), ridge: z.enum(['x', 'z']).optional(), trusses: Num(0, 14).optional(), color: Color.optional() }).optional(),
     })
     .default({}),
   openings: z.array(PhotoOpening).max(24).default([]),
@@ -260,6 +270,18 @@ export const KIND_SYNONYMS: Readonly<Record<string, string>> = Object.freeze({
   houseplant: 'plant',
   'indoor-plant': 'plant',
   table: 'dining-table',
+  socket: 'switch',
+  outlet: 'switch',
+  'power-socket': 'switch',
+  'wall-socket': 'switch',
+  'light-switch': 'switch',
+  'four-poster': 'bed',
+  'four-poster-bed': 'bed',
+  'canopy-bed': 'bed',
+  'side-chair': 'chair',
+  palm: 'plant',
+  frond: 'plant',
+  'palm-frond': 'plant',
   'working-desk': 'desk',
 });
 
@@ -317,5 +339,6 @@ export function parseRoomDescription(raw: unknown, knownKinds: readonly string[]
     const along = it.wall ? clampAlong(it.along, it.wall, `${kind} ${id}`) : it.along;
     items.push({ ...it, id, kind, ...(along !== undefined ? { along } : {}) });
   }
-  return { ok: true, value: { ...d, openings, items }, fixes };
+  const real = applyReality({ ...d, openings, items });
+  return { ok: true, value: real.description, fixes: [...fixes, ...real.fixes] };
 }

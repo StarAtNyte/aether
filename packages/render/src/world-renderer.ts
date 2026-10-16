@@ -467,6 +467,8 @@ export class WorldRenderer {
   private readonly failedEffects = new Set<keyof PostEffects>();
   /** Colour-grade preset chosen by the host (null: follows the sky). */
   private gradeId: GradePresetId | null = null;
+  /** The colour grade of the document's environment (null: the sky's preset). */
+  private docGrade: Environment['grade'] | null = null;
   /** The grade preset currently applied. */
   private look: GradePreset = GRADE_PRESETS['archviz-daylight'];
   /** Called when the effective render quality changes (e.g. studio fell back to realtime). */
@@ -1037,6 +1039,7 @@ export class WorldRenderer {
     this.shaftsUnavailable = false;
     this.env.apply(env, this.scene);
     this.applyWind(env.wind);
+    this.docGrade = env.grade ?? null;
     this.env.setInteriorBounce(this.archView.active);
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
@@ -2302,7 +2305,12 @@ export class WorldRenderer {
   private applyLook(): void {
     const sky = this.env.skyState;
     const id = this.gradeId ?? presetFor({ elevation: sky.elevation, moon: sky.moon, sunGlowStrength: sky.sunGlowStrength, preset: sky.preset });
-    const preset = GRADE_PRESETS[id];
+    const base = GRADE_PRESETS[id];
+    // A grade carried by the document (a photo's white balance and tone) replaces the preset's own fields.
+    const g = this.docGrade;
+    const preset: GradePreset = g
+      ? { ...base, ...(g.temperature !== undefined ? { temperature: g.temperature } : {}), ...(g.tint !== undefined ? { tint: g.tint } : {}), ...(g.saturation !== undefined ? { saturation: g.saturation } : {}), ...(g.contrast !== undefined ? { contrast: g.contrast } : {}), ...(g.exposureEv !== undefined ? { exposureEv: base.exposureEv + g.exposureEv } : {}) }
+      : base;
     this.look = preset;
     const post = this.post;
     this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;

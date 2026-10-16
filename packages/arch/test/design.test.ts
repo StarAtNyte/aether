@@ -178,6 +178,22 @@ describe('loose opening references and curtains', () => {
     expect(g.some((x) => x.code === 'plan_mismatch')).toBe(true);
   });
 
+  it('hangs a panel on both sides of a window near a corner, gathering the corner side flush over the glass edge', () => {
+    const lvl = BASE.levels[0]!;
+    const openings = lvl.openings.map((o) => (o.id === 'win-n' ? { ...o, along: 2.85, width: 1.2 } : o));
+    const w0 = build(parse({ levels: [{ ...lvl, openings }] }));
+    const w = applyEdit(w0, placeItem(w0, undefined, { kind: 'curtain', room: 'bedroom', id: 'curt', opening: 'home-l0-win0', params: { width: 0.95 } }));
+    const scene = readScene(w, 'home')!;
+    const panels = scene.items.filter((i) => i.kind === 'curtain');
+    expect(panels).toHaveLength(2);
+    const wall = scene.rooms[0]!.walls.find((x) => x.openings.some((o) => o.id === 'home-l0-win0'))!;
+    const win = wall.openings.find((o) => o.id === 'home-l0-win0')!;
+    const right = panels.map((p) => p.wall!).sort((a, b) => a.t - b.t)[1]!;
+    // The right panel ends at the corner and still covers part of the window.
+    expect(right.t + right.width / 2).toBeLessThanOrEqual(wall.length);
+    expect(right.t - right.width / 2).toBeLessThan(win.t1);
+  });
+
   it('accepts "opening" as the name of a relation target', () => {
     const p = DesignPlan.parse({ ...BASE, furniture: [{ id: 'c', kind: 'curtain', room: 'bedroom', relations: [{ type: 'centred_on_opening', opening: 'win-n' }] }] });
     expect(p.furniture[0]!.relations[0]!.target).toBe('win-n');

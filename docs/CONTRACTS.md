@@ -1467,6 +1467,12 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   translucent box of the asset's size (or 1 m), with a warning. Never empty.
 - `Environment` gains `hdri?: AssetRef`, `hdriIntensity?: number (0..8, default 1)`,
   `hdriBackground?: boolean (default true)`.
+- `Environment` gains `grade?: { temperature?, tint?: -1..1, saturation?: 0.4..1.8, contrast?: 0.6..1.6, exposureEv?: -3..3 }`
+  (additive, optional): fields replace those of the sky's colour-grade preset in the renderer (`exposureEv` adds to it). The
+  room-from-photo flow sets it from the photograph's measured white balance, saturation and contrast.
+- Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
+  stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants
+  gain the `palm` species. `applyReality` repairs implausible numbers of a description (and reports them as fixes).
 - Library models face +Z (props, like `furn-*` furniture); characters,
   animals and vehicles face −Z (the engine's forward axis) — catalog field
   `facing`.

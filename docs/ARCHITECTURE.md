@@ -1658,10 +1658,19 @@ photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, o
   shown with the provider's own reason; the studio's connection chain moves to the user's other assistant first.
 - **Editing afterwards.** The assumptions are listed as chips ("make the room 4.2 m wide"); a tap sends the sentence
   through the ordinary minimal-patch edit path.
-- **Known limits.** One room per photo; the shell has a flat ceiling (vaulted ceilings, four-poster beds, open
-  stairs are not parts yet); the part library decides what a piece can look like (a patterned duvet is a colour);
-  one photo cannot give depth, so room size and the camera are always assumptions; walls of one room share one
-  colour in the shell.
+- **Second pass (engine gaps that repeated).** Real-world priors repair an implausible description before it is built
+  (`applyReality`: socket and picture heights, pieces standing in each other, plants and TVs that cannot be what was
+  described, words such as "four-poster" or "zigzag" mapped to part options); the camera is fitted to the boxes
+  (`calibrateCamera`) and then each piece's place along its wall (`fitLayout`, small bounded moves through `edit_items`);
+  photo-matched exposure, white balance and tone (`grade.ts`) grade the render before it is compared and set the
+  environment's exposure and additive `grade`; windows can glow (`daylight`), ceilings can be vaulted with exposed
+  trusses, beds, side tables, plants and rugs have the options the photos needed. Review stills come from the studio on
+  the GPU (`scripts/lib/gpu-room.ts`, `eval-photo --render=gpu`).
+- **Known limits.** One room per photo; the shell is a rectangle with a flat or gable ceiling (no hips, sloping walls,
+  open stairs); the part library decides what a piece can look like; one photo cannot give depth, so room size and the
+  camera are always assumptions; walls of one room share one colour in the shell; the vision judge is noisy (the same
+  room can score 30 points apart between runs), which is why the final score is always a judged render and rounds that
+  get worse are rolled back.
 
 
 ## 25. Architecture realism and interactive rooms

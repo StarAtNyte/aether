@@ -49,6 +49,7 @@ export function buildSlab(p: SlabParams): ArchOutput {
 
 /** Ceiling: a downward-facing surface at y = 0 (with an optional recessed cove). */
 export function buildCeiling(p: CeilingParams): ArchOutput {
+  if (p.vault && p.holes.length === 0 && isAxisRectangle(p.polygon)) return buildVault(p, p.vault);
   const set = new PartSet();
   const g = new Geom();
   if (p.cove > 0.005) {
@@ -77,6 +78,79 @@ export function buildCeiling(p: CeilingParams): ArchOutput {
     }
     set.add(trim, { finish: 'paint', color: '#f6f4f0', roughness: 0.4 });
     set.add(lens, { preset: 'emissive', color: '#ffe6c2', emissive: '#ffe0b0', emissiveIntensity: p.lit ? 1.5 : 0, roughness: 0.3 });
+  }
+  return set.build();
+}
+
+/** A quad whose normal points down, whatever order the corners were given in. */
+function downQuad(g: Geom, c0: readonly number[], c1: readonly number[], c2: readonly number[], c3: readonly number[]): void {
+  const ex = [(c1[0] as number) - (c0[0] as number), (c1[1] as number) - (c0[1] as number), (c1[2] as number) - (c0[2] as number)];
+  const ey = [(c3[0] as number) - (c0[0] as number), (c3[1] as number) - (c0[1] as number), (c3[2] as number) - (c0[2] as number)];
+  const ny = (ex[2] as number) * (ey[0] as number) - (ex[0] as number) * (ey[2] as number);
+  if (ny > 0) g.quadAuto(c0, c3, c2, c1);
+  else g.quadAuto(c0, c1, c2, c3);
+}
+
+/** A straight beam of rectangular section from `a` to `b`; `side` is the horizontal direction of its width. */
+function beam(a: readonly [number, number, number], b: readonly [number, number, number], width: number, depth: number, side: readonly [number, number, number]): Geom {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len = Math.hypot(d[0] as number, d[1] as number, d[2] as number) || 1;
+  const dn = d.map((v) => v / len) as [number, number, number];
+  // The depth direction is perpendicular to both the beam and its width.
+  const dx = [dn[1] * side[2] - dn[2] * side[1], dn[2] * side[0] - dn[0] * side[2], dn[0] * side[1] - dn[1] * side[0]];
+  const dl = Math.hypot(dx[0] as number, dx[1] as number, dx[2] as number) || 1;
+  const up = dx.map((v) => v / dl) as [number, number, number];
+  const corner = (p: readonly [number, number, number], sw: number, sd: number): [number, number, number] => [p[0] + side[0] * sw * (width / 2) + up[0] * sd * (depth / 2), p[1] + side[1] * sw * (width / 2) + up[1] * sd * (depth / 2), p[2] + side[2] * sw * (width / 2) + up[2] * sd * (depth / 2)];
+  const A = [corner(a, -1, -1), corner(a, 1, -1), corner(a, 1, 1), corner(a, -1, 1)];
+  const B = [corner(b, -1, -1), corner(b, 1, -1), corner(b, 1, 1), corner(b, -1, 1)];
+  const centre = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  const g = new Geom();
+  const face = (c0: number[], c1: number[], c2: number[], c3: number[]): void => {
+    const fc = [(c0[0]! + c2[0]!) / 2, (c0[1]! + c2[1]!) / 2, (c0[2]! + c2[2]!) / 2];
+    const ex = [c1[0]! - c0[0]!, c1[1]! - c0[1]!, c1[2]! - c0[2]!];
+    const ey = [c3[0]! - c0[0]!, c3[1]! - c0[1]!, c3[2]! - c0[2]!];
+    const n = [ex[1]! * ey[2]! - ex[2]! * ey[1]!, ex[2]! * ey[0]! - ex[0]! * ey[2]!, ex[0]! * ey[1]! - ex[1]! * ey[0]!];
+    const out = n[0]! * (fc[0]! - centre[0]!) + n[1]! * (fc[1]! - centre[1]!) + n[2]! * (fc[2]! - centre[2]!);
+    if (out >= 0) g.quadAuto(c0, c1, c2, c3);
+    else g.quadAuto(c0, c3, c2, c1);
+  };
+  for (let k = 0; k < 4; k++) face(A[k] as number[], A[(k + 1) % 4] as number[], B[(k + 1) % 4] as number[], B[k] as number[]);
+  face(A[0] as number[], A[1] as number[], A[2] as number[], A[3] as number[]);
+  face(B[0] as number[], B[1] as number[], B[2] as number[], B[3] as number[]);
+  return g;
+}
+
+/** Vaulted ceiling: two sloping planes to a ridge, with optional exposed trusses (see {@link CeilingParams.vault}). */
+function buildVault(p: CeilingParams, v: NonNullable<CeilingParams['vault']>): ArchOutput {
+  const set = new PartSet();
+  const [x0, z0, x1, z1] = bounds(p.polygon);
+  const alongZ = v.ridge === 'z';
+  // u runs across the ridge, w along it; (u, w, y) maps to the plan.
+  const u0 = alongZ ? x0 : z0;
+  const u1 = alongZ ? x1 : z1;
+  const w0 = alongZ ? z0 : x0;
+  const w1 = alongZ ? z1 : x1;
+  const um = (u0 + u1) / 2;
+  const pt = (u: number, w: number, y: number): [number, number, number] => (alongZ ? [u, y, w] : [w, y, u]);
+  const g = new Geom();
+  downQuad(g, pt(u0, w0, -v.rise), pt(um, w0, 0), pt(um, w1, 0), pt(u0, w1, -v.rise));
+  downQuad(g, pt(um, w0, 0), pt(u1, w0, -v.rise), pt(u1, w1, -v.rise), pt(um, w1, 0));
+  set.add(g, p.finish);
+  if (v.trusses > 0) {
+    const side: [number, number, number] = alongZ ? [0, 0, 1] : [1, 0, 0];
+    const beams = new Geom();
+    const sl = (w1 - w0) / (v.trusses + 1);
+    const inset = 0.04;
+    for (let k = 1; k <= v.trusses; k++) {
+      const w = w0 + sl * k;
+      // Rafters just under the slope, a tie beam a little above the eaves, a king post.
+      beams.merge(beam(pt(u0, w, -v.rise - 0.0), pt(um, w, -0.0), 0.07, 0.15, side).translate(0, -0.075, 0));
+      beams.merge(beam(pt(u1, w, -v.rise - 0.0), pt(um, w, -0.0), 0.07, 0.15, side).translate(0, -0.075, 0));
+      const tieY = -v.rise * 0.72;
+      beams.merge(beam(pt(u0 + inset, w, tieY), pt(u1 - inset, w, tieY), 0.07, 0.14, side));
+      beams.merge(beam(pt(um, w, tieY), pt(um, w, -0.1), 0.07, 0.12, side));
+    }
+    set.add(beams, { finish: 'paint', color: v.beam });
   }
   return set.build();
 }

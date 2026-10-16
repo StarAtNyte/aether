@@ -4,7 +4,7 @@
  * 74–76 cm, coffee tables at 38–42 cm, desks 74 cm with a 60–80 cm depth.
  */
 import type { MaterialSpec } from '@aether/core';
-import { Geom, box, cylinder, extrude, roundedBox } from '../mesh';
+import { Geom, box, cylinder, extrude, roundedBox, tube } from '../mesh';
 import { PartSet } from '../parts';
 import { choice, color, drawerBox, emitFront, flag, leg, mat, MovableSink, num, roundedRect, squareLeg, type FurnitureDef } from './kit';
 
@@ -233,15 +233,44 @@ export const NIGHTSTAND: FurnitureDef = {
     body: choice(['oak', 'walnut', 'ash', 'paint'], 'oak', 'finish'),
     color: color('#ece8e1', 'paint colour (body = paint)'),
     interactive: flag(false, 'the drawer is a separate part that opens'),
+    style: choice(['cabinet', 'round', 'wire'], 'cabinet', 'cabinet = drawer and shelf; round = pedestal table with a round top; wire = slim wire frame with a round tray top (side table)'),
+    height: num(0.55, 0.3, 0.8, 'height of a round or wire table (m)'),
+    diameter: num(0.42, 0.25, 0.8, 'top diameter of a round or wire table (m)'),
   },
   interactive: true,
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.3,
-  size: () => [0.48, 0.55, 0.4],
+  size: (p) => (p.str('style') === 'cabinet' ? [0.48, 0.55, 0.4] : [p.num('diameter'), p.num('height'), p.num('diameter')]),
   build(p, _seed, sink) {
     const set = new PartSet();
     const body = p.str('body') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('body'));
+    if (p.str('style') !== 'cabinet') {
+      const dia = p.num('diameter');
+      const h = p.num('height');
+      const top = cylinder(dia / 2, dia / 2, 0.025, 36, { top: true, bottom: true }).translate(0, h - 0.025, 0);
+      set.add(top, body);
+      const legs = new Geom();
+      if (p.str('style') === 'wire') {
+        // Four slim rods splayed to the floor, a ring halfway, a ring under the top.
+        const r = dia / 2 - 0.03;
+        for (let k = 0; k < 4; k++) {
+          const a = (k * Math.PI) / 2 + Math.PI / 4;
+          legs.merge(tube([[Math.cos(a) * r * 0.9, h - 0.025, Math.sin(a) * r * 0.9], [Math.cos(a) * r * 1.05, 0.01, Math.sin(a) * r * 1.05]], 0.004, 5));
+        }
+        for (const [y, rr] of [[h * 0.45, r * 0.98], [h - 0.03, r * 0.9]] as const) {
+          const ring: Array<[number, number, number]> = [];
+          for (let k = 0; k <= 24; k++) ring.push([Math.cos((k / 24) * Math.PI * 2) * rr, y, Math.sin((k / 24) * Math.PI * 2) * rr]);
+          legs.merge(tube(ring, 0.004, 5));
+        }
+      } else {
+        legs.merge(cylinder(0.035, 0.035, h - 0.03, 16, { top: false, bottom: false }));
+        legs.merge(cylinder(dia * 0.32, dia * 0.34, 0.02, 28, { top: true, bottom: true }));
+      }
+      set.add(legs, p.str('style') === 'wire' ? mat('paint', p.color('color')) : body);
+      set.boxMinMax(-dia / 2, 0, -dia / 2, dia / 2, h, dia / 2);
+      return set.build();
+    }
     const w = 0.48;
     const d = 0.4;
     const g = new Geom();

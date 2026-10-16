@@ -21,6 +21,7 @@ import {
   type FramingReport,
   type FramingTarget,
   deriveBuild,
+  fitLayout,
   ItemVerdict,
   parseRoomDescription,
   photoCameraSpec,
@@ -53,6 +54,7 @@ import type { AgentEvent, ChatMessage, CompletionResponse, ContentBlock, PhotoAs
 import { imageSize } from './image-size';
 import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
+import { applyGrade, estimatePhotoGrade, matchGrade, nextEnvironmentGrade, nextExposure, type PhotoGrade } from './grade';
 import { compareImages, extractPalette, type Raster } from './score';
 
 /** Everything the photo flow needs from the agent. */
@@ -183,6 +185,12 @@ interface Photo {
   dataUrl: string;
   aspect: number;
   raster: Raster | null;
+  /** Exposure, white balance and tone read off the photo (null without pixels). */
+  grade: PhotoGrade | null;
+  /** How many times the environment exposure was moved towards the photo's (bounded). */
+  exposureSteps: number;
+  /** How many times the environment's colour grade was moved towards the photo's (bounded). */
+  gradeSteps: number;
 }
 
 function toRequest(p: ReviewPose, aspect: number, marks: ReviewViewRequest['marks']): ReviewViewRequest {
@@ -232,7 +240,32 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   const cleanShot = got.find((x) => x.name === clean.name);
   if (cleanShot && photo.raster && host.decodeImage) {
     const r = await host.decodeImage(cleanShot.dataUrl, 256).catch(() => null);
-    if (r) similarity = compareImages(photo.raster, r)?.overall ?? null;
+    if (r) {
+      // The render is graded like the photo (white point, tone) before it is compared, so a correct room with another
+      // exposure or light colour is not punished; the exposure of the environment then moves towards the photo's.
+      const renderGrade = photo.grade ? estimatePhotoGrade(r) : null;
+      const match = photo.grade && renderGrade ? matchGrade(photo.grade, renderGrade) : null;
+      const graded = match ? applyGrade({ ...r, data: r.data.slice() }, match) : r;
+      if (match && photo.gradeSteps < 2) {
+        // The white balance, saturation and contrast of the photo go into the world's own colour grade, so the room shows
+        // them in the studio and in every later render (a delta below a few percent is not worth a patch).
+        const cur = run.ctx.host.getWorld().environment.grade;
+        const g = nextEnvironmentGrade(cur, match);
+        if (Math.abs(g.temperature - (cur?.temperature ?? 0)) > 0.03 || Math.abs(g.saturation - (cur?.saturation ?? 1)) > 0.04 || Math.abs(g.contrast - (cur?.contrast ?? 1)) > 0.04) {
+          photo.gradeSteps++;
+          run.ctx.host.applyPatches([{ op: 'setEnvironment', set: { grade: g } }], 'Match the colour grade of the photo');
+        }
+      }
+      similarity = compareImages(photo.raster, graded)?.overall ?? null;
+      if (photo.grade && renderGrade && photo.exposureSteps < 3 && Math.abs(photo.grade.median - renderGrade.median) > 0.06) {
+        const cur = run.ctx.host.getWorld().environment.exposure;
+        const next = nextExposure(cur, photo.grade, renderGrade);
+        if (Math.abs(next - cur) >= 0.05) {
+          photo.exposureSteps++;
+          run.ctx.host.applyPatches([{ op: 'setEnvironment', set: { exposure: next } }], 'Match the exposure of the photo');
+        }
+      }
+    }
   }
   const parts: Array<[number, number]> = [];
   if (framing) parts.push([framing.score, 0.6]);
@@ -303,7 +336,7 @@ async function decodePhoto(run: PhotoRun): Promise<Photo> {
   const size = imageSize(run.image);
   const raster = typeof run.ctx.host.decodeImage === 'function' ? await run.ctx.host.decodeImage(run.image, 256).catch(() => null) : null;
   const aspect = raster ? raster.width / raster.height : size ? size.width / size.height : 1.5;
-  return { dataUrl: run.image, aspect: Math.max(0.5, Math.min(3, aspect)), raster };
+  return { dataUrl: run.image, aspect: Math.max(0.5, Math.min(3, aspect)), raster, grade: raster ? estimatePhotoGrade(raster) : null, exposureSteps: 0, gradeSteps: 0 };
 }
 
 /** Offline notice: what can be said without a vision model. */
@@ -452,6 +485,25 @@ interface Judged {
 }
 
 /** The compare-and-correct loop. Returns the scoreboard of the room as it ends up. */
+/** Fit the pieces to their boxes (see `fitLayout`); returns what was moved, in words. */
+async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[]): AsyncGenerator<AgentEvent, string[]> {
+  const { ctx } = run;
+  const world = ctx.host.getWorld();
+  const cal = calibrateCamera(world, desc, photo.aspect, targets);
+  const withCamera: RoomDescription = cal?.improved ? { ...desc, camera: cal.camera } : desc;
+  const fit = fitLayout(world, withCamera, photo.aspect, targets);
+  if (!fit || fit.moves.length === 0) return [];
+  const done: string[] = [];
+  for (const m of fit.moves) {
+    if (ctx.signal?.aborted) throw new Error('aborted');
+    const out = await executeTool(ctx, 'edit_items', { edits: [m.edit] });
+    for (const ev of out.events) yield ev;
+    if (out.edited && !out.isError && m.shift !== 0) done.push(`${m.id} ${m.shift > 0 ? '+' : ''}${m.shift} m along its wall`);
+  }
+  if (done.length > 0) yield { type: 'photo', phase: 'building', text: `Fitted ${done.length} piece${done.length === 1 ? '' : 's'} to where the photo shows them: ${done.slice(0, 6).join(', ')}.` };
+  return done;
+}
+
 async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[]): AsyncGenerator<AgentEvent, LoopResult> {
   const { ctx } = run;
   const host = ctx.host;
@@ -493,6 +545,12 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     return { score: fin.score, objective: fin.objective };
   }
 
+  // Before the first look: put each piece where its box in the photo says (a few tens of centimetres along the wall are
+  // the commonest error of a position read off a flat picture). The moves go through the same tools; refusals stay as they are.
+  {
+    const fitted = yield* layoutStep(run, photo, desc, targets);
+    if (fitted.length > 0) build.notes.push(`Before this first look the builder fitted ${fitted.length} piece${fitted.length === 1 ? '' : 's'} to where the photo shows them (${fitted.slice(0, 8).join('; ')}).`);
+  }
   for (let round = 1; round <= maxRounds; round++) {
     if (ctx.signal?.aborted) throw new Error('aborted');
     yield { type: 'status', text: round === 1 ? 'Comparing the render with the photo…' : `Compare round ${round}…` };

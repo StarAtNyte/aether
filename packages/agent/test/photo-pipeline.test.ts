@@ -150,6 +150,42 @@ describe('room from a photo, with a vision model', () => {
     expect(spec).toContain('bed [floor');
   });
 
+  it('moves the exposure and the colour grade of the world towards the photo (warm and bright) when the render is dim and neutral', async () => {
+    const picture = (light: [number, number, number], e: number): Raster => {
+      const w = 60;
+      const h = 40;
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        const c = x > 24 ? 235 : y > 28 ? 80 : 150;
+        for (let k = 0; k < 3; k++) data[o + k] = Math.min(255, c * light[k]! * e);
+        data[o + 3] = 255;
+      }
+      return { width: w, height: h, data };
+    };
+    class Dim extends PhotoHost {
+      override async decodeImage(dataUrl: string): Promise<Raster | null> {
+        return dataUrl.startsWith('data:image/png;base64,iVBOR') ? picture([1, 0.85, 0.6], 1) : picture([1, 1, 1], 0.45);
+      }
+    }
+    const host = new Dim();
+    const before = host.world.environment.exposure;
+    const provider = scripted([describeCall(), verdicts([]), finish]);
+    await collect(agent(provider).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    const env = host.world.environment;
+    expect(env.exposure).toBeGreaterThan(before);
+    expect(env.grade?.temperature ?? 0).toBeGreaterThan(0.05);
+    expect(env.grade?.temperature ?? 0).toBeLessThanOrEqual(1);
+  });
+
+  it('leaves the exposure and the grade alone when the render already matches the photo', async () => {
+    const host = new PhotoHost();
+    const before = host.world.environment;
+    await collect(agent(scripted([describeCall(), verdicts([]), finish])).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    expect(host.world.environment.exposure).toBe(before.exposure);
+    expect(host.world.environment.grade).toBeUndefined();
+  });
+
   it('refuses to edit before judging, and applies a fix in the same reply as the verdicts', async () => {
     const provider = scripted([
       describeCall(),

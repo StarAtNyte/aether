@@ -19,6 +19,10 @@ export const RUG: FurnitureDef = {
     shape: choice(['rect', 'round'], 'rect', 'shape'),
     color: color('#c9bfae', 'field colour'),
     border: color('#8a7f70', 'border colour'),
+    pattern: choice(['plain', 'zigzag', 'stripes'], 'plain', 'woven pattern across the field: zigzag (chevron bands) or stripes, in the three accent colours and the field colour'),
+    accent1: color('#c0473f', 'first accent colour of a pattern'),
+    accent2: color('#e0a93b', 'second accent colour of a pattern'),
+    accent3: color('#3f7f8f', 'third accent colour of a pattern'),
   },
   mount: 'floor',
   againstWall: false,
@@ -35,6 +39,33 @@ export const RUG: FurnitureDef = {
     const edge = extrude(outline, 0.001, 0.01, { top: false, bottom: false });
     set.add(border.merge(edge), mat('carpet', p.color('border')));
     set.add(new Geom().flatPolygon(inner, 0.011, true), mat('carpet', p.color('color')));
+    const pattern = p.str('pattern');
+    if (pattern !== 'plain' && p.str('shape') !== 'round') {
+      // Bands across the depth of the field, cycling through the accents; zigzag bands have a chevron edge.
+      const iw = w - 0.16;
+      const id = d - 0.16;
+      const cols = [p.color('accent1'), p.color('accent2'), p.color('accent3')];
+      const bandH = 0.11;
+      const gap = 0.07;
+      const amp = pattern === 'zigzag' ? 0.07 : 0;
+      const n = Math.max(2, Math.round(iw / 0.22));
+      const bands: Geom[] = cols.map(() => new Geom());
+      let k = 0;
+      for (let y = -id / 2 + amp + 0.04; y + bandH + amp < id / 2 - 0.02; y += bandH + gap, k++) {
+        const top: P2[] = [];
+        const bottom: P2[] = [];
+        for (let i = 0; i <= n; i++) {
+          const x = -iw / 2 + (iw * i) / n;
+          const z = amp === 0 ? 0 : i % 2 === 0 ? -amp : amp;
+          top.push([x, y + z]);
+          bottom.push([x, y + bandH + z]);
+        }
+        (bands[k % cols.length] as Geom).flatPolygon([...top, ...bottom.reverse()], 0.0115, true);
+      }
+      cols.forEach((c, i) => {
+        if ((bands[i] as Geom).i.length > 0) set.add(bands[i] as Geom, mat('carpet', c));
+      });
+    }
     return set.build();
   },
 };
@@ -99,7 +130,7 @@ export const PLANT: FurnitureDef = {
   description: 'Potted indoor plant (fiddle-leaf fig, olive tree or snake plant) in a ceramic or terracotta pot.',
   params: {
     height: num(1.4, 0.3, 2.4, 'overall height (m)'),
-    species: choice(['fig', 'olive', 'snake'], 'fig', 'plant type'),
+    species: choice(['fig', 'olive', 'snake', 'palm'], 'fig', 'plant type (palm = arching feathered fronds, also for a single frond in a vase: use a small height)'),
     pot: choice(['ceramic', 'terracotta', 'concrete'], 'ceramic', 'pot finish'),
     potColor: color('#e9e4dc', 'pot colour'),
   },
@@ -131,7 +162,32 @@ export const PLANT: FurnitureDef = {
     const leaves = new Geom();
     const stems = new Geom();
     const species = p.str('species');
-    if (species === 'snake') {
+    if (species === 'palm') {
+      // Arching fronds from the pot: a curved rib with paired narrow leaflets drooping on both sides.
+      const fronds = H < 0.9 ? 4 : 9;
+      for (let k = 0; k < fronds; k++) {
+        const a = (k / fronds) * Math.PI * 2 + rnd() * 0.5;
+        const reach = (H - potH) * (0.55 + rnd() * 0.3);
+        const rise = (H - potH) * (0.6 + rnd() * 0.35);
+        const rib: Array<[number, number, number]> = [];
+        const steps = 8;
+        for (let j = 0; j <= steps; j++) {
+          const t = j / steps;
+          rib.push([Math.cos(a) * reach * t * t * 0.9 + Math.cos(a) * 0.02, potH - 0.04 + rise * Math.sin(t * Math.PI * 0.62) * 0.95, Math.sin(a) * reach * t * t * 0.9 + Math.sin(a) * 0.02]);
+        }
+        stems.merge(tube(rib, 0.006, 5));
+        const len = Math.max(0.1, reach * 0.34);
+        for (let j = 2; j <= steps; j++) {
+          const at = rib[j] as [number, number, number];
+          const prev = rib[j - 1] as [number, number, number];
+          const droop = 55 + j * 3;
+          const dir = (Math.atan2(at[2] - prev[2], at[0] - prev[0]) * 180) / Math.PI;
+          for (const side of [-1, 1] as const) {
+            leaves.merge(leaf(0.028, len * (1 - (j / steps) * 0.45), 0.1).rotateZ(side * droop).rotateY(-dir + 90).translate(at[0], at[1], at[2]));
+          }
+        }
+      }
+    } else if (species === 'snake') {
       const n = 9 + Math.floor(rnd() * 5);
       for (let k = 0; k < n; k++) {
         const a = rnd() * Math.PI * 2;
@@ -158,7 +214,7 @@ export const PLANT: FurnitureDef = {
       }
     }
     set.add(stems, { finish: 'walnut', color: '#6b5440' });
-    set.add(leaves, { preset: 'leaf', color: species === 'olive' ? '#7d8b5e' : species === 'snake' ? '#4f6b3a' : '#3f6b2f', roughness: 0.55 });
+    set.add(leaves, { preset: 'leaf', color: species === 'olive' ? '#7d8b5e' : species === 'snake' ? '#4f6b3a' : species === 'palm' ? '#4a7a35' : '#3f6b2f', roughness: 0.55 });
     set.boxMinMax(-potR, 0, -potR, potR, potH, potR);
     return set.build();
   },

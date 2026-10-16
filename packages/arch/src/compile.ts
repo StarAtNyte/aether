@@ -436,7 +436,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
 
     // --- windows ----------------------------------------------------------
     let winN = 0;
-    const placeWindow = (roomId: string, rec: WallRec, t: number, width: number, height: number, sill: number, style: string): boolean => {
+    const placeWindow = (roomId: string, rec: WallRec, t: number, width: number, height: number, sill: number, style: string, daylight?: string): boolean => {
       if (!free(rec, t - width / 2, t + width / 2)) return false;
       rec.openings.push({ kind: 'window', offset: round(t), width: round(width), height: round(height), sill: round(sill) });
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
@@ -446,7 +446,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       // Plain casement windows open: the casement is a child entity that swings inward on its left hinge.
       const openable = style === 'casement' && !frosted && width <= 1.8 && width >= 0.6 && height >= 0.7;
       const winId = `${lid}-win${winN++}`;
-      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
+      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
       if (openable) {
         const fw = 0.055;
         const sashW = round(width - 2 * fw);
@@ -504,7 +504,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
             notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: no exterior wall there`);
             continue;
           }
-          if (!placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style))) notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: overlaps another opening or the wall end`);
+          if (!placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight)) notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: overlaps another opening or the wall end`);
         }
         continue;
       }
@@ -513,7 +513,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       for (let k = 0; k < n; k++) {
         const t = span.t0 + (len * (k + 0.5)) / n;
         const hit = wallAt(edgePoint(span.edge, t));
-        if (hit) placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style));
+        if (hit) placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight);
       }
     }
     if (lvl.autoWindows) {
@@ -584,7 +584,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       });
       const areaM2 = Math.abs(polyArea(poly)) - holes.reduce((s, h) => s + Math.abs(polyArea(h)), 0);
       roomsOut.push({ id: rid, level: li, name, type: r.type, area: Math.round(areaM2 * 10) / 10 });
-      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: [], finish: { finish: 'paint', color: '#f4f2ee' }, cove: r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
+      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: [], finish: { finish: 'paint', color: '#f4f2ee' }, ...(r.vault && isAxisRectangle(poly) ? { vault: r.vault } : {}), cove: r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
       // Furniture.
       const ctx: RoomContext = {
         id: rid,

@@ -67,7 +67,8 @@ describe('room description schema', () => {
     expect(p.ok).toBe(true);
     if (!p.ok) return;
     expect(p.value.items.some((i) => i.id === 'bed-2')).toBe(true);
-    expect(p.value.items.find((i) => i.id === 'bed-2')?.along).toBe(3.7);
+    // Clamped to the wall's end (3.7), then brought in so the bed does not go through the corner (3.7 - half its width).
+    expect(p.value.items.find((i) => i.id === 'bed-2')?.along).toBeCloseTo(3.7 - (1.6 + 0.12) / 2, 2);
     expect(p.value.items.some((i) => i.id === 'ufo')).toBe(false);
     expect(p.fixes.join('\n')).toContain('flying-saucer');
   });

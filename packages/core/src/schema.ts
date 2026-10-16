@@ -596,6 +596,22 @@ export const Environment = z.object({
   hdriIntensity: z.number().min(0).max(8).optional(),
   /** Show the HDRI as the background (default true); false keeps the analytic sky behind HDRI lighting. */
   hdriBackground: z.boolean().optional(),
+  /**
+   * Additive: a colour grade that replaces the fields of the sky's own look (a room rebuilt from a photograph carries the
+   * photograph's white balance, saturation, contrast and exposure). Each field is optional; omitted fields keep the preset's.
+   */
+  grade: z
+    .object({
+      /** Warm (+) / cool (-) white balance. */
+      temperature: z.number().min(-1).max(1).optional(),
+      /** Green (+) / magenta (-) tint. */
+      tint: z.number().min(-1).max(1).optional(),
+      saturation: z.number().min(0.4).max(1.8).optional(),
+      contrast: z.number().min(0.6).max(1.6).optional(),
+      /** Exposure offset in stops, on top of `exposure`. */
+      exposureEv: z.number().min(-3).max(3).optional(),
+    })
+    .optional(),
 });
 export type Environment = z.infer<typeof Environment>;
 

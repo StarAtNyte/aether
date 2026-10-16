@@ -191,6 +191,11 @@ export function buildWindow(p: WindowParams): ArchOutput {
   else if (ys.length > 0) glass.merge(box(-W / 2 + fw, (ys[0] as number) + mw / 2, -0.004, W / 2 - fw, H - fw, 0.004));
   set.add(frame, p.frame);
   set.add(glass, p.glass);
+  if (p.daylight) {
+    // Daylight beyond the glass: a thin emissive pane inside the wall reveal, behind the frame (seen only through the window).
+    const z = (p.interior === 'b' ? -1 : 1) * (fd / 2 + 0.02);
+    set.add(box(-W / 2 + fw, fw, z - 0.003, W / 2 - fw, H - fw, z + 0.003), { color: p.daylight, emissive: p.daylight, emissiveIntensity: 1.8, roughness: 1 });
+  }
   const inside = p.interior === 'b' ? 1 : -1;
   if (p.sill) {
     const sill = roundedBox(W + 0.08, 0.025, T + 0.035, 0.004, 1).translate(0, -0.0125 + 0.002, inside * ((T + 0.035) / 2));

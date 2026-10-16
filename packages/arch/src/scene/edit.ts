@@ -16,7 +16,7 @@ import { furnitureByKind, furnitureSize } from '../furniture/index';
 import { yawFacingIn } from '../layout';
 import type { Compass } from '../plan';
 import type { RoomEdge } from '../rooms';
-import { collisions, nearestMountCentre, mountRule, type MountSpec } from '../wall-space';
+import { collisions, CURTAIN_WINDOW_OVERLAP, nearestMountCentre, mountRule, type MountSpec } from '../wall-space';
 import { reviewScene, walkability, freeFrontDepth, type Finding } from './checks';
 import { findItem, findOpening, findRoom, findWall, isLookupError, itemLine, wallBlockers, facingOf } from './facts';
 import { cmr, compassWord, describeOffset, mm, polygonGap } from './geom';
@@ -420,17 +420,38 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
   const sillLength = ['kitchen', 'bathroom', 'laundry', 'cafe', 'terrace'].includes(String(room.type)) && opening.sill > 0.5;
   const y0 = sillLength ? Math.max(0, opening.sill - 0.1) : 0;
   const top = sillLength ? opening.top + 0.12 : Math.max(1.3, room.ceiling - 0.04);
-  const height = Math.max(0.8, top - y0);
+  // The drop the photo shows (floor-length to the eaves, not to a vaulted ridge) when the caller gave one.
+  const askedHeight = spec.params && typeof spec.params['height'] === 'number' && Number.isFinite(spec.params['height']) ? Math.min(6, Math.max(0.8, spec.params['height'])) : null;
+  const height = Math.max(0.8, askedHeight !== null ? Math.min(top - y0, askedHeight) : top - y0);
   const color = typeof params['color'] === 'string' ? (params['color'] as string) : '#d8d2c6';
   const blockers = wallBlockers(scene, room, wall);
   const patches: Patch[] = [];
   const ids: EntityId[] = [];
   const hung: string[] = [];
+  const nEdges = room.walls.length;
+  const prevInset = room.walls[(wall.edge + nEdges - 1) % nEdges]?.inset ?? 0.06;
+  const nextInset = room.walls[(wall.edge + 1) % nEdges]?.inset ?? 0.06;
   for (const side of [-1, 1] as const) {
+    // A window near a corner has no room for a whole panel beside it: the panel then gathers flush into the corner and
+    // overlaps the glass edge, as hung curtains do. Tried after the panels that fit beside the window.
+    const candidates: Array<{ panel: number; t: number }> = [];
     for (const f of [1, 0.8, 0.62, 0.48]) {
       const panel = full * f;
       if (panel < 0.35) break;
-      const t = side < 0 ? opening.t0 + 0.08 - panel / 2 : opening.t1 - 0.08 + panel / 2;
+      candidates.push({ panel, t: side < 0 ? opening.t0 + 0.08 - panel / 2 : opening.t1 - 0.08 + panel / 2 });
+    }
+    {
+      // Room between the corner (rod included) and the part of the glass a panel may not cover.
+      const outer = side < 0 ? prevInset + 0.04 + 0.08 + 0.015 : wall.length - nextInset - 0.04 - 0.08 - 0.015; // panel edge, rod reach already allowed
+      const inner = side < 0 ? opening.t0 + CURTAIN_WINDOW_OVERLAP - 0.08 - 0.015 : opening.t1 - CURTAIN_WINDOW_OVERLAP + 0.08 + 0.015; // the glass a panel may not cover, rod reach allowed
+      const avail = Math.abs(outer - inner);
+      for (const f of [1, 0.85, 0.7]) {
+        const panel = Math.min(full * f, avail);
+        if (panel < 0.25) break;
+        candidates.push({ panel, t: side < 0 ? outer + panel / 2 : outer - panel / 2 });
+      }
+    }
+    for (const { panel, t } of candidates) {
       const mspec: MountSpec = { kind: 'curtain', t, width: panel, y0, y1: y0 + height };
       if (collisions(mspec, blockers, opening.id, 0.005).length > 0) continue;
       const pose = hungPose(wall, t);

@@ -143,7 +143,7 @@ function toPlanOpening(o: PhotoOpening, main: boolean): DesignPlan['levels'][num
     along: alongToT(o.along),
     width: o.width,
     ...(o.height !== undefined ? { height: o.height } : {}),
-    ...(isWindow ? { ...(o.sill !== undefined ? { sill: o.sill } : { sill: 0.9 }), style: 'picture' } : { to: 'outside' as const }),
+    ...(isWindow ? { ...(o.sill !== undefined ? { sill: o.sill } : { sill: 0.9 }), style: 'picture', ...(o.glow || o.daylight ? { daylight: o.daylight ?? '#fff4e2' } : {}) } : { to: 'outside' as const }),
     ...(main ? { main: true } : {}),
   };
 }
@@ -235,7 +235,7 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
     levels: [
       {
         name: 'Ground floor',
-        height: Math.round((d.footprint.ceiling + 0.22) * 100) / 100,
+        height: Math.round((d.footprint.ceiling + (d.ceiling.vault?.rise ?? 0) + 0.22) * 100) / 100,
         rooms: [
           {
             id: PHOTO_ROOM_ID,
@@ -244,6 +244,7 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
             rect: [-i, -i, Math.round((W + i) * 1000) / 1000, Math.round((D + i) * 1000) / 1000],
             floor: { finish, ...(d.floor.color ? { color: d.floor.color } : {}) },
             ...(wallColor ? { wallColor } : {}),
+            ...(d.ceiling.vault ? { vault: { rise: d.ceiling.vault.rise, ridge: d.ceiling.vault.ridge ?? (W >= D ? 'x' : 'z'), trusses: Math.round(d.ceiling.vault.trusses ?? 0), ...(d.ceiling.vault.color ? { beam: d.ceiling.vault.color } : {}) } } : {}),
             ...(Object.keys(perWall).length > 0 ? { wallColors: perWall } : {}),
           },
         ],
@@ -318,7 +319,7 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
     steps.push({ id: it.id, phase: it.kind === 'rug' ? 'rug' : 'floor', input });
   }
   // Crown moulding: one run per wall, mitred in plan by shortening the side walls by the projection.
-  const co = d.ceiling.cornice;
+  const co = d.ceiling.vault ? undefined : d.ceiling.cornice; // a vaulted ceiling has no crown moulding at the wall top
   if (co) {
     const depth = co.depth ?? Math.min(0.2, Math.max(0.06, co.height * 0.9));
     for (const wall of ['north', 'south', 'east', 'west'] as const) {

@@ -4,7 +4,9 @@
  *
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=replay            replay the recorded transcript (no model)
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=live              run the logged-in Codex and record the transcript
- *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --out=DIR --force
+ *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --out=DIR --force --record-fixture
+ *            --render=software|gpu   software: the flat headless rasteriser (default). gpu: photoreal stills of the photo camera drawn by
+ *            the studio on the GPU (AETHER_E2E_GPU=1 for the real card), for the judge, the measure and the montage
  *
  * Photos: hotel, twin, pd1, pd2 (redistributable, in tests/fixtures/photo) and modern (CC BY, local only: it is read
  * from the reference folder and never committed). Writes per photo into the output folder: the photo, the first
@@ -30,6 +32,9 @@ import {
 } from '@aether/agent';
 import { imageSize } from '../packages/agent/src/photo/image-size';
 import { createNodeSandbox } from '@aether/procgen/node';
+import { drawMarksRgba } from '@aether/agent';
+import { encodePng } from '../apps/cli/src/mcp/png';
+import { GpuRoom } from './lib/gpu-room';
 import { createHeadlessProvider } from '../apps/bridge/src/headless';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
@@ -59,6 +64,8 @@ interface Args {
   stall: number;
   out: string;
   force: boolean;
+  render: 'software' | 'gpu';
+  recordFixture: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -73,6 +80,8 @@ function parseArgs(argv: readonly string[]): Args {
     stall: Math.max(2, Math.min(8, Number(get('stall') ?? 3))),
     out: get('out') ?? DEFAULT_OUT,
     force: argv.includes('--force'),
+    render: get('render') === 'gpu' ? 'gpu' : 'software',
+    recordFixture: argv.includes('--record-fixture'),
   };
 }
 
@@ -108,8 +117,29 @@ class PhotoNodeHost extends NodeAgentHost {
   firstView: ReviewViewRequest | null = null;
   renders = 0;
 
+  /** Photoreal renderer for the photo camera (null: the software rasteriser draws everything). */
+  gpu: GpuRoom | null = null;
+  private gpuWorld: WorldDoc | null = null;
+
   constructor(sandbox: ConstructorParameters<typeof NodeAgentHost>[0]) {
     super(sandbox);
+  }
+
+  /** One view of the current world drawn on the GPU, with the marks of the request on top. */
+  private async gpuShot(world: WorldDoc, v: ReviewViewRequest, width: number): Promise<string> {
+    const gpu = this.gpu as GpuRoom;
+    if (this.gpuWorld !== world) {
+      await gpu.load(world);
+      this.gpuWorld = world;
+    }
+    const height = Math.round(width / Math.max(0.5, Math.min(3, v.aspect)));
+    const png = await gpu.still({ position: v.pose.position, target: v.pose.target, fov: v.pose.fov }, { width, height }, process.env['PHOTO_STILL_QUALITY'] === 'studio' ? 'studio' : 'final');
+    if (v.marks.length === 0) return `data:image/png;base64,${png.toString('base64')}`;
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+    const rgba = decode(dataUrl, Math.max(width, height));
+    if (!rgba) return dataUrl;
+    drawMarksRgba(new Uint8Array(rgba.data.buffer), rgba.width, rgba.height, v.marks);
+    return `data:image/png;base64,${encodePng(new Uint8Array(rgba.data.buffer), rgba.width, rgba.height).toString('base64')}`;
   }
 
   async captureReview(views: readonly ReviewViewRequest[], opts: { signal?: AbortSignal; size?: number } = {}): Promise<Array<{ name: string; dataUrl: string }>> {
@@ -122,6 +152,15 @@ class PhotoNodeHost extends NodeAgentHost {
         this.firstWorld = this.getWorld();
       }
     }
+    if (this.gpu) {
+      const world = this.getWorld();
+      const gpuViews = views.filter((v) => v.name === 'photo-camera' || v.name === 'photo-camera-clean');
+      const out: Array<{ name: string; dataUrl: string }> = [];
+      for (const v of gpuViews) out.push({ name: v.name, dataUrl: await this.gpuShot(world, v, opts.size ?? 960) });
+      const rest = views.filter((v) => !gpuViews.includes(v));
+      if (rest.length > 0) out.push(...(await captureReviewHeadless(world, rest, { sandbox: this.sb, width: opts.size ?? 800, environment: PHOTO_LIGHT, ...(opts.signal ? { signal: opts.signal } : {}) })));
+      return out;
+    }
     return captureReviewHeadless(this.getWorld(), views, { sandbox: this.sb, width: opts.size ?? 800, environment: PHOTO_LIGHT, ...(opts.signal ? { signal: opts.signal } : {}) });
   }
 
@@ -130,6 +169,7 @@ class PhotoNodeHost extends NodeAgentHost {
   }
 
   async renderClean(world: WorldDoc, view: ReviewViewRequest, width: number): Promise<Buffer> {
+    if (this.gpu) return Buffer.from((await this.gpuShot(world, { ...view, marks: [] }, width)).split(',')[1] ?? '', 'base64');
     const got = await captureReviewHeadless(world, [{ ...view, marks: [] }], { sandbox: this.sb, width, environment: PHOTO_LIGHT });
     return Buffer.from((got[0]?.dataUrl ?? '').split(',')[1] ?? '', 'base64');
   }
@@ -189,6 +229,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   }
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const host = new PhotoNodeHost(sandbox);
+  if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
   const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { maxRounds: args.rounds, stallRounds: args.stall, vision: true } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
@@ -223,11 +264,19 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   if (files.length > 1) montage(files, join(dir, 'montage.png'));
   await writeFile(join(dir, 'run.json'), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(join(dir, 'world.json'), `${JSON.stringify(host.getWorld())}\n`);
+  // What the GPU still renderer (scripts/photo-gpu-shots.ts) needs to draw the same two rooms from the same camera.
+  if (host.firstWorld) await writeFile(join(dir, 'first.world.json'), `${JSON.stringify(host.firstWorld)}\n`);
+  await writeFile(join(dir, 'views.json'), `${JSON.stringify({ first: host.firstView, last: host.lastView })}\n`);
   if (rec && report.errors.length === 0 && report.final) {
-    await mkdir(FIXTURES, { recursive: true });
-    await writeFile(fixturePath, `${JSON.stringify(rec.transcript(spec.prompt, source))}\n`);
-    console.log(`  recorded ${fixturePath}`);
+    // Always kept next to the run; replaces the committed fixture only on request (a weaker run must not overwrite a good one).
+    await writeFile(join(dir, 'transcript.json'), `${JSON.stringify(rec.transcript(spec.prompt, source))}\n`);
+    if (args.recordFixture) {
+      await mkdir(FIXTURES, { recursive: true });
+      await writeFile(fixturePath, `${JSON.stringify(rec.transcript(spec.prompt, source))}\n`);
+      console.log(`  recorded ${fixturePath}`);
+    } else console.log(`  recorded ${join(dir, 'transcript.json')}`);
   } else if (rec) console.log('  not recorded (the run had errors or did not finish)');
+  await host.gpu?.close();
   host.dispose();
   sandbox.dispose();
   return report;
@@ -240,7 +289,7 @@ function roundRow(round: number, s: PhotoScoreView): Report['rounds'][number] {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const live = args.mode === 'live' ? createHeadlessProvider(args.backend, { effort: args.effort, timeoutMs: 900_000 }) : null;
-  const ids = args.photo === 'all' ? ['hotel', 'modern', 'pd1'] : args.photo.split(',');
+  const ids = args.photo === 'all' ? ['hotel', 'modern', 'pd1', 'pd2'] : args.photo.split(',');
   for (const id of ids) {
     console.log(`\n== ${id} (${args.mode})`);
     const r = await runPhoto({ ...args, photo: id }, live);

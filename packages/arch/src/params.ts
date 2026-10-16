@@ -15,7 +15,7 @@
  * - roof: centred footprint, x = width, z = depth, eaves at y = 0.
  */
 import { z } from 'zod';
-import { MaterialSpec } from '@aether/core';
+import { Color, MaterialSpec } from '@aether/core';
 
 /** Hard caps of the parametric model. */
 export const ARCH_LIMITS = Object.freeze({
@@ -118,6 +118,19 @@ export const CeilingParams = z.object({
   downlights: z.array(PlanPoint).max(24).default([]),
   /** Downlights glow (the walkthrough switches this with the room's lights). */
   lit: z.boolean().default(true),
+  /**
+   * A vaulted (gable) ceiling over an axis-aligned rectangle: two sloping planes meeting at a ridge `rise` metres above the
+   * eaves (the plate's local y = 0 is the ridge; the eaves are at y = -rise). `ridge` is the direction the ridge runs;
+   * `trusses` exposed timber trusses (rafters and tie beams) are spaced along it. Other polygons stay flat.
+   */
+  vault: z
+    .object({
+      rise: z.number().min(0.2).max(4),
+      ridge: z.enum(['x', 'z']).default('z'),
+      trusses: z.number().int().min(0).max(14).default(0),
+      beam: Color.default('#f4f2ee'),
+    })
+    .optional(),
 });
 export type CeilingParams = z.infer<typeof CeilingParams>;
 
@@ -205,6 +218,11 @@ export const WindowParams = z.object({
    * outer frame, transom and the glass above the transom only. Casement windows without mullions.
    */
   sash: z.boolean().default(false),
+  /**
+   * Colour of the daylight seen through the glass: a bright emissive pane just outside it, so a window facing a sunlit
+   * street or sky glows the way it does in a photograph instead of showing the dim scene outside. Omitted: none.
+   */
+  daylight: Color.optional(),
 });
 export type WindowParams = z.infer<typeof WindowParams>;
 
