@@ -1,0 +1,55 @@
+/** The finish library. Frozen. */
+export const FINISHES = Object.freeze({
+    oak: { color: '#b48a5e', accent: '#8a6440', roughness: 0.48, metalness: 0, tintable: false, tile: 2.4, pattern: 'planks', bump: 0.35, clearcoat: 0.2 },
+    walnut: { color: '#6b4630', accent: '#4a2e1d', roughness: 0.42, metalness: 0, tintable: false, tile: 2.4, pattern: 'planks', bump: 0.35, clearcoat: 0.3 },
+    ash: { color: '#d2bc98', accent: '#b49a74', roughness: 0.5, metalness: 0, tintable: false, tile: 2.4, pattern: 'planks', bump: 0.3, clearcoat: 0.15 },
+    herringbone: { color: '#b98d5f', accent: '#8d6640', roughness: 0.45, metalness: 0, tintable: false, tile: 1.2, pattern: 'herringbone', bump: 0.35, clearcoat: 0.2 },
+    marble: { color: '#e9e6e1', accent: '#8f8b86', roughness: 0.14, metalness: 0, tintable: false, tile: 1.6, pattern: 'veined', bump: 0.05, clearcoat: 0.8 },
+    terrazzo: { color: '#d9d3ca', accent: '#7b6f66', roughness: 0.3, metalness: 0, tintable: false, tile: 0.8, pattern: 'speckle', bump: 0.05, clearcoat: 0.4 },
+    concrete: { color: '#a7a39d', accent: '#8a8680', roughness: 0.82, metalness: 0, tintable: false, tile: 3, pattern: 'plaster', bump: 0.25 },
+    plaster: { color: '#ece8e1', accent: '#d9d4cb', roughness: 0.92, metalness: 0, tintable: true, tile: 2.5, pattern: 'plaster', bump: 0.12 },
+    paint: { color: '#e8e4dc', accent: '#dcd7cf', roughness: 0.7, metalness: 0, tintable: true, tile: 2, pattern: 'smooth', bump: 0 },
+    tile: { color: '#e6e3dd', accent: '#b9b4ac', roughness: 0.22, metalness: 0, tintable: true, tile: 1.2, pattern: 'grid-tiles', bump: 0.3, clearcoat: 0.5 },
+    'subway-tile': { color: '#eeece7', accent: '#bdb8b0', roughness: 0.18, metalness: 0, tintable: true, tile: 0.6, pattern: 'subway', bump: 0.35, clearcoat: 0.6 },
+    stone: { color: '#a29a8e', accent: '#7c746a', roughness: 0.78, metalness: 0, tintable: false, tile: 2.4, pattern: 'flagstone', bump: 0.45 },
+    brick: { color: '#9a5a44', accent: '#cfc6b8', roughness: 0.86, metalness: 0, tintable: false, tile: 1.3, pattern: 'bricks', bump: 0.55 },
+    fabric: { color: '#8e8a84', accent: '#7a7670', roughness: 0.95, metalness: 0, tintable: true, tile: 0.5, pattern: 'weave', bump: 0.3 },
+    velvet: { color: '#3f5a52', accent: '#2c4039', roughness: 0.85, metalness: 0, tintable: true, tile: 0.6, pattern: 'velvet', bump: 0.15 },
+    leather: { color: '#6e4128', accent: '#4f2c1a', roughness: 0.55, metalness: 0, tintable: true, tile: 0.5, pattern: 'grain-leather', bump: 0.3, clearcoat: 0.2 },
+    carpet: { color: '#b3aa9d', accent: '#9a9184', roughness: 1, metalness: 0, tintable: true, tile: 0.6, pattern: 'pile', bump: 0.25 },
+    'brushed-metal': { color: '#b9bbbe', accent: '#a3a5a8', roughness: 0.32, metalness: 1, tintable: false, tile: 0.6, pattern: 'brushed', bump: 0.05 },
+    chrome: { color: '#e4e6e9', accent: '#d4d6d9', roughness: 0.06, metalness: 1, tintable: false, tile: 1, pattern: 'mirror', bump: 0 },
+    brass: { color: '#c9a35a', accent: '#a8843f', roughness: 0.28, metalness: 1, tintable: false, tile: 0.6, pattern: 'brushed', bump: 0.04 },
+    'black-metal': { color: '#232427', accent: '#1a1b1d', roughness: 0.45, metalness: 0.85, tintable: false, tile: 0.6, pattern: 'brushed', bump: 0.04 },
+    glass: { color: '#dfeef2', accent: '#cfe2e8', roughness: 0.03, metalness: 0, opacity: 0.18, tintable: false, tile: 1, pattern: 'glass', bump: 0 },
+    'frosted-glass': { color: '#eef3f4', accent: '#e2e9eb', roughness: 0.55, metalness: 0, opacity: 0.6, tintable: false, tile: 1, pattern: 'frosted', bump: 0.05 },
+    ceramic: { color: '#f2f0ec', accent: '#e4e1db', roughness: 0.12, metalness: 0, tintable: true, tile: 1, pattern: 'glaze', bump: 0, clearcoat: 0.9 },
+    mirror: { color: '#f3f5f6', accent: '#e8eaeb', roughness: 0.02, metalness: 1, tintable: false, tile: 1, pattern: 'mirror', bump: 0 },
+    'roof-tile': { color: '#5c4a44', accent: '#3e322e', roughness: 0.8, metalness: 0, tintable: true, tile: 1.2, pattern: 'roof-tiles', bump: 0.6 },
+    'metal-roof': { color: '#3b4046', accent: '#2c3035', roughness: 0.45, metalness: 0.7, tintable: true, tile: 1.5, pattern: 'standing-seam', bump: 0.4 },
+    decking: { color: '#8f6a4a', accent: '#6e4f35', roughness: 0.7, metalness: 0, tintable: false, tile: 2.4, pattern: 'deck-boards', bump: 0.45 },
+    grass: { color: '#5e8a3c', accent: '#46702b', roughness: 0.95, metalness: 0, tintable: false, tile: 3, pattern: 'turf', bump: 0.3 },
+    gravel: { color: '#a59d90', accent: '#7d756a', roughness: 0.95, metalness: 0, tintable: false, tile: 1.5, pattern: 'pebbles', bump: 0.6 },
+    bark: { color: '#6a5442', accent: '#4a3a2c', roughness: 0.95, metalness: 0, tintable: false, tile: 1, pattern: 'weave', bump: 0.7 },
+    rock: { color: '#8a857d', accent: '#615d57', roughness: 0.9, metalness: 0, tintable: false, tile: 2.5, pattern: 'flagstone', bump: 0.8 },
+    soil: { color: '#6b5238', accent: '#4a3826', roughness: 1, metalness: 0, tintable: false, tile: 1.5, pattern: 'pebbles', bump: 0.5 },
+    snow: { color: '#eef2f6', accent: '#d8e0e8', roughness: 0.8, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.3 },
+    sand: { color: '#d3bb8a', accent: '#b89f6e', roughness: 0.97, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.45 },
+    asphalt: { color: '#3b3d41', accent: '#2c2e31', roughness: 0.92, metalness: 0, tintable: false, tile: 2.5, pattern: 'pebbles', bump: 0.35 },
+    // Wall coverings (World IR finishes prompts can target): tintable papers, panelling and slats.
+    wallpaper: { color: '#cfc7b6', accent: '#bdb4a2', roughness: 0.82, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-plain', bump: 0.3 },
+    'wallpaper-stripe': { color: '#e3dccb', accent: '#9fb0a0', roughness: 0.78, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-stripe', bump: 0.25 },
+    'wallpaper-floral': { color: '#d9dccd', accent: '#7f9a78', roughness: 0.8, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-floral', bump: 0.3 },
+    'wallpaper-damask': { color: '#d8cfba', accent: '#a99a76', roughness: 0.74, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-damask', bump: 0.35 },
+    'wallpaper-geometric': { color: '#cdd3d1', accent: '#8c9a9b', roughness: 0.76, metalness: 0, tintable: true, tile: 0.64, pattern: 'paper-geometric', bump: 0.3 },
+    panelling: { color: '#e4e0d8', accent: '#e4e0d8', roughness: 0.55, metalness: 0, tintable: true, tile: 1.0, pattern: 'panel-shaker', bump: 0.8, clearcoat: 0.15 },
+    'wood-slats': { color: '#b48a5e', accent: '#2a2420', roughness: 0.55, metalness: 0, tintable: false, tile: 0.8, pattern: 'slats', bump: 0.6, clearcoat: 0.1 },
+    foliage: { color: '#6f8a52', accent: '#8ea75d', roughness: 0.62, metalness: 0, tintable: true, tile: 0.7, pattern: 'leaves', bump: 1.1 },
+    water: { color: '#3d8fb0', accent: '#2a6f8f', roughness: 0.05, metalness: 0, opacity: 0.78, tintable: false, tile: 4, pattern: 'ripples', bump: 0.4 },
+});
+/** Material spec of a finish, optionally tinted / recoloured. */
+export function finish(name, color) {
+    return color ? { finish: name, color } : { finish: name };
+}
+/** Every finish id. */
+export const FINISH_IDS = Object.freeze(Object.keys(FINISHES));

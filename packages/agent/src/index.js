@@ -1,0 +1,35 @@
+export { WorldAgent, COMPACT_LIMITS, SLICE_THRESHOLD } from './agent';
+// The small-edit engine loads lazily (see ./refine/runtime); only its light data types and helpers are exported statically.
+export { EMPTY_MEMORY } from './refine/memory';
+export { diffLineText } from './refine/diff-text';
+export { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS, LEVEL_TOOL_NAMES, isLevelToolName, PATCH_OPS, TOOL_LIMITS } from './tools';
+export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
+export { PROMPT_EXAMPLES } from './examples';
+export { summarizeWorldForModel } from './world-text';
+export { CONTEXT_LIMITS, formatUserTurn, parseUserTurn, sanitizeHistory } from './context';
+export { SUBMIT_GENERATOR_TOOL, requestGenerator } from './coder';
+export { forgeGenerator, forgeScore, parseCritique, FORGE_CRITERIA, FORGE_GATE, FORGE_LIMITS, FORGE_METHOD, } from './forge';
+export { CompletionRequestSchema, CompletionResponseSchema, ContentBlockSchema, ChatMessageSchema, ToolDefSchema, WIRE_LIMITS } from './wire';
+export { createAnthropicProvider } from './providers/anthropic';
+export { createOpenAIProvider } from './providers/openai';
+export { createChatCompletionsProvider, chatMessagesToWire, parseChatCompletion } from './providers/chat-completions';
+export { createHttpProvider } from './providers/http';
+export { createMockProvider } from './providers/mock/index';
+export { OFFLINE_EXAMPLES } from './providers/mock/planner';
+export { ProviderError, isAbortError } from './providers/errors';
+// Zero-cost AI connections: tool-use emulation for text-only backends, the local bridge, on-device models, fallback.
+export { createEmulatedProvider } from './emulation/provider';
+export { EMULATION_LIMITS, EmulatedReplySchema, parseEmulatedReply, replyJsonSchema } from './emulation/protocol';
+export { protocolInstructions, renderTranscript } from './emulation/transcript';
+export { extractJsonObject } from './emulation/json';
+export * from './bridge/protocol';
+export * from './bridge/local-protocol';
+export { BRIDGE_COMPLETE_TIMEOUT_MS, BRIDGE_PROBE_TIMEOUT_MS, createBridgeProvider, fetchBridgeStatus, pairBridge } from './bridge/client';
+export { createLocalAiApi, createLocalProvider, createBridgeAccountApi, parseSseBlock, LOCAL_AI_BASE } from './bridge/local-client';
+export { createFallbackProvider } from './providers/fallback';
+export { createWebLlmBackend, createWebLlmProvider } from './providers/webllm';
+export { errorMessage } from './providers/errors';
+export * from './quality/index';
+export { drawMarksRgba, MAX_RGBA_MARKS } from './review-draw';
+export { StallTracker, snapshotForReview, reviewTurnText, REVIEW_ASPECT, MAX_REVIEW_VIEWS } from './review';
+export { createRecordingProvider, createReplayProvider, TranscriptSchema, TRANSCRIPT_LIMITS } from './providers/replay';

@@ -679,7 +679,7 @@ flowchart TB
         AGENT["@aether/agent<br/>WorldAgent loop, providers, mock"]
     end
 
-    subgraph Server["apps/server (Hono on Node 22)"]
+    subgraph Server["apps/server (Hono on Node 24)"]
         API["/api/llm proxy · /api/worlds · /api/generators · /api/health"]
     end
 

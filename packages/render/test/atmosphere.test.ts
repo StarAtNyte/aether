@@ -188,7 +188,14 @@ describe('SkyDome with the physical sky', () => {
     dome.setDetail(false);
     expect(dome.cirrus.mesh.visible).toBe(false);
     expect(dome.clouds.mesh.visible).toBe(true);
-    const raysVisible = (): number => dome.group.children.filter((c) => c.visible && (c as unknown as { geometry: { parameters?: { width?: number } } }).geometry.parameters?.width === 900 * 1.5).length;
+    const raysVisible = (): number => {
+      let n = 0;
+      dome.group.traverse((c) => {
+        const g = (c as unknown as { geometry?: { parameters?: { width?: number } } }).geometry;
+        if (c.visible && g?.parameters?.width === 900 * 1.5) n++;
+      });
+      return n;
+    };
     expect(raysVisible()).toBe(0);
     dome.setDetail(true);
     expect(dome.cirrus.mesh.visible).toBe(true);

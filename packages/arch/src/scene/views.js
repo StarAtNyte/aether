@@ -1,0 +1,385 @@
+/**
+ * Eyes of the review loop: where to put the cameras (corner to corner, each
+ * wall, top-down plan) and which numbered marks to draw on each image, so the
+ * AI can say "item 14" and the tools know exactly which piece that is.
+ *
+ * Pure geometry. The studio renders the poses and draws the marks; nothing
+ * here touches a renderer. Poses are in WORLD coordinates (the building's
+ * position, rotation and the level's height applied).
+ */
+import { hasOwn } from '@aether/core';
+import { rotateYaw } from '../math2';
+import { cmr } from './geom';
+import { itemLine } from './facts';
+import { readScene } from './read';
+const HARD_MAX_VIEWS = 12;
+const SKIP_KINDS = new Set(['switch']);
+const MAX_MARKS = 99;
+function frameOf(world, scene) {
+    const b = hasOwn(world.entities, scene.building) ? world.entities[scene.building] : undefined;
+    const levelY = new Map();
+    for (const l of scene.levels) {
+        const e = hasOwn(world.entities, l.id) ? world.entities[l.id] : undefined;
+        levelY.set(l.id, e?.transform.position[1] ?? 0);
+    }
+    return { origin: [b?.transform.position[0] ?? 0, b?.transform.position[2] ?? 0], yaw: b?.transform.rotation[1] ?? 0, levelY };
+}
+function toWorld(f, p, y, levelId) {
+    const r = rotateYaw(p[0], p[1], f.yaw);
+    return [cmr(f.origin[0] + r[0]), cmr((f.levelY.get(levelId) ?? 0) + y), cmr(f.origin[1] + r[1])];
+}
+function centroid(poly) {
+    let x = 0;
+    let z = 0;
+    for (const p of poly) {
+        x += p[0];
+        z += p[1];
+    }
+    return [x / Math.max(1, poly.length), z / Math.max(1, poly.length)];
+}
+/** Distance from `from` along unit `dir` to the polygon boundary (inside → out), or 0. */
+function rayExit(poly, from, dir) {
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        const ex = b[0] - a[0];
+        const ez = b[1] - a[1];
+        const den = dir[0] * ez - dir[1] * ex;
+        if (Math.abs(den) < 1e-9)
+            continue;
+        const t = ((a[0] - from[0]) * ez - (a[1] - from[1]) * ex) / den;
+        const u = ((a[0] - from[0]) * dir[1] - (a[1] - from[1]) * dir[0]) / den;
+        if (t > 1e-6 && u >= -1e-9 && u <= 1 + 1e-9 && t < best)
+            best = t;
+    }
+    return Number.isFinite(best) ? best : 0;
+}
+function fovForWidth(width, distance, aspect) {
+    const h = 2 * Math.atan(width / 2 / Math.max(0.5, distance));
+    const v = 2 * Math.atan(Math.tan(h / 2) / aspect);
+    return Math.max(50, Math.min(100, (v * 180) / Math.PI + 6));
+}
+function itemsIn(scene, room) {
+    return scene.items.filter((i) => i.room === room.id);
+}
+/** Camera poses to review the given rooms of a building. */
+export function reviewPoses(world, building, opts = {}) {
+    const scene = readScene(world, building);
+    if (!scene)
+        return [];
+    const f = frameOf(world, scene);
+    const aspect = opts.aspect && Number.isFinite(opts.aspect) ? Math.max(0.5, Math.min(3, opts.aspect)) : 1.5;
+    const max = Math.max(1, Math.min(HARD_MAX_VIEWS, Math.floor(opts.maxViews ?? 8)));
+    const wanted = opts.rooms && opts.rooms.length > 0 ? new Set(opts.rooms) : null;
+    const rooms = scene.rooms.filter((r) => !wanted || wanted.has(r.key) || wanted.has(r.id));
+    const out = [];
+    // One plan per level that has a room in scope.
+    for (const lvl of scene.levels) {
+        const inLevel = rooms.filter((r) => r.levelId === lvl.id);
+        if (inLevel.length === 0)
+            continue;
+        const pts = inLevel.flatMap((r) => r.polygon);
+        const x0 = Math.min(...pts.map((p) => p[0]));
+        const x1 = Math.max(...pts.map((p) => p[0]));
+        const z0 = Math.min(...pts.map((p) => p[1]));
+        const z1 = Math.max(...pts.map((p) => p[1]));
+        const c = [(x0 + x1) / 2, (z0 + z1) / 2];
+        const fov = 50;
+        const half = Math.max((x1 - x0) / aspect, z1 - z0) / 2 + 0.4;
+        const height = Math.max(lvl.ceiling + 1, half / Math.tan((fov * Math.PI) / 360));
+        out.push({
+            name: `level-${lvl.index}-plan`,
+            label: `top-down plan of level ${lvl.index} (north is up, ceilings and roof removed)`,
+            room: `level-${lvl.index}`,
+            kind: 'plan',
+            position: toWorld(f, c, height, lvl.id),
+            target: toWorld(f, c, 0, lvl.id),
+            up: [0, 0, -1],
+            fov,
+            hideTops: true,
+        });
+    }
+    for (const room of rooms) {
+        const inside = room.polygon;
+        const c = centroid(inside);
+        const items = itemsIn(scene, room);
+        const eye = Math.min(1.55, room.ceiling - 0.4);
+        // Corner views: the two vertices that see the most pieces toward the room's middle.
+        const scored = inside
+            .map((v) => {
+            const d = [c[0] - v[0], c[1] - v[1]];
+            const l = Math.hypot(d[0], d[1]) || 1;
+            const dir = [d[0] / l, d[1] / l];
+            let seen = 0;
+            for (const it of items) {
+                const to = [it.pos[0] - v[0], it.pos[2] - v[1]];
+                const tl = Math.hypot(to[0], to[1]) || 1;
+                if ((to[0] * dir[0] + to[1] * dir[1]) / tl > 0.55)
+                    seen++;
+            }
+            return { v, dir, seen, far: l };
+        })
+            .sort((a, b) => b.seen - a.seen || b.far - a.far);
+        const picks = [];
+        for (const s of scored) {
+            if (picks.length >= (room.area > 9 ? 2 : 1))
+                break;
+            if (picks.every((p) => Math.hypot(p.v[0] - s.v[0], p.v[1] - s.v[1]) > 1.2))
+                picks.push(s);
+        }
+        picks.forEach((s, i) => {
+            const pos = [s.v[0] + s.dir[0] * 0.4, s.v[1] + s.dir[1] * 0.4];
+            out.push({
+                name: `${room.key}-corner-${i + 1}`,
+                label: `${room.key} seen from its ${compassOf(s.v, c)} corner toward the middle (eye height)`,
+                room: room.key,
+                kind: 'corner',
+                position: toWorld(f, pos, eye, room.levelId),
+                target: toWorld(f, c, 0.9, room.levelId),
+                up: [0, 1, 0],
+                fov: 78,
+                hideTops: false,
+            });
+        });
+        // Wall views: walls that carry something, longest first.
+        const busy = room.walls
+            .map((w) => ({
+            w,
+            n: w.openings.length + items.filter((i) => (i.wall && i.wall.edge === w.edge) || i.against?.some((a) => a.edge === w.edge)).length,
+        }))
+            .filter((x) => x.n > 0 && x.w.length >= 1)
+            .sort((a, b) => b.n - a.n || b.w.length - a.w.length);
+        for (const { w } of busy) {
+            const mid = [w.a[0] + w.dir[0] * (w.length / 2) - w.out[0] * w.inset, w.a[1] + w.dir[1] * (w.length / 2) - w.out[1] * w.inset];
+            const inward = [-w.out[0], -w.out[1]];
+            const reach = rayExit(inside, [mid[0] + inward[0] * 0.05, mid[1] + inward[1] * 0.05], inward);
+            const dist = Math.max(1.2, reach - 0.2);
+            const pos = [mid[0] + inward[0] * dist, mid[1] + inward[1] * dist];
+            out.push({
+                name: `${room.key}-wall-${w.compass}`,
+                label: `the ${w.compass} wall of ${room.key}, straight on from the opposite side (t grows left to right in the image)`,
+                room: room.key,
+                kind: 'wall',
+                position: toWorld(f, pos, eye, room.levelId),
+                target: toWorld(f, mid, Math.min(1.3, room.ceiling / 2), room.levelId),
+                up: [0, 1, 0],
+                fov: fovForWidth(w.length, dist, aspect),
+                hideTops: false,
+            });
+        }
+    }
+    // Level plans first, then per room: corners and walls interleaved by room order (already in `out` order).
+    return out.slice(0, max);
+}
+function compassOf(v, c) {
+    const ns = v[1] < c[1] ? 'north' : 'south';
+    const ew = v[0] < c[0] ? 'west' : 'east';
+    return `${ns}-${ew}`;
+}
+/** The numbered things of a building: pieces first (by id), then doors and windows. Stable for a given document. */
+export function markIndex(world, building) {
+    const scene = readScene(world, building);
+    if (!scene)
+        return [];
+    const out = [];
+    const items = scene.items.filter((i) => !SKIP_KINDS.has(i.kind)).sort((a, b) => a.id.localeCompare(b.id));
+    for (const it of items) {
+        if (out.length >= MAX_MARKS)
+            break;
+        out.push({ n: out.length + 1, id: it.id, kind: it.kind, line: itemLine(it, scene) });
+    }
+    const seen = new Set();
+    for (const r of scene.rooms) {
+        for (const w of r.walls) {
+            for (const o of w.openings) {
+                if (seen.has(o.id) || out.length >= MAX_MARKS)
+                    continue;
+                seen.add(o.id);
+                out.push({ n: out.length + 1, id: o.id, kind: o.kind, line: `${o.kind} ${o.id} in ${r.key} ${w.compass} wall t ${o.t0}..${o.t1}${o.kind === 'window' ? `, sill ${o.sill}` : ''}` });
+            }
+        }
+    }
+    return out;
+}
+function sub(a, b) {
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+function dot(a, b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function cross(a, b) {
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function norm(a) {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+}
+function camOf(pose, aspect) {
+    const fwd = norm(sub(pose.target, pose.position));
+    let right = cross(fwd, pose.up);
+    if (Math.hypot(right[0], right[1], right[2]) < 1e-6)
+        right = cross(fwd, [0, 0, -1]);
+    right = norm(right);
+    const upv = norm(cross(right, fwd));
+    return { p: pose.position, right, upv, fwd, tan: Math.tan((pose.fov * Math.PI) / 360), aspect };
+}
+function project(cam, w) {
+    const d = sub(w, cam.p);
+    const z = dot(d, cam.fwd);
+    if (z < 0.15)
+        return null;
+    const nx = dot(d, cam.right) / (z * cam.tan * cam.aspect);
+    const ny = dot(d, cam.upv) / (z * cam.tan);
+    return { x: (nx + 1) / 2, y: (1 - ny) / 2, z };
+}
+/**
+ * The marks to draw on one image: each numbered piece whose box is in front of
+ * the camera and inside the frame, as a normalised box. Occlusion is not
+ * modelled: a mark can sit on something hidden behind a nearer piece, so the
+ * legend says which pieces are meant (the model also gets the facts).
+ */
+export function projectMarks(world, building, pose, aspect = 1.5) {
+    const scene = readScene(world, building);
+    if (!scene)
+        return [];
+    const f = frameOf(world, scene);
+    const cam = camOf(pose, aspect);
+    const index = markIndex(world, building);
+    const byId = new Map(index.map((m) => [m.id, m.n]));
+    const marks = [];
+    const room = pose.kind === 'plan' ? null : scene.rooms.find((r) => r.key === pose.room);
+    const box = (pts, n) => {
+        const proj = pts.map((p) => project(cam, p)).filter((p) => p !== null);
+        if (proj.length < Math.ceil(pts.length / 2))
+            return;
+        const xs = proj.map((p) => p.x);
+        const ys = proj.map((p) => p.y);
+        const x0 = Math.max(0, Math.min(...xs));
+        const x1 = Math.min(1, Math.max(...xs));
+        const y0 = Math.max(0, Math.min(...ys));
+        const y1 = Math.min(1, Math.max(...ys));
+        if (x1 <= x0 || y1 <= y0 || x1 - x0 < 0.004 || y1 - y0 < 0.004)
+            return;
+        marks.push({ n, x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: (x1 - x0) / 2, h: (y1 - y0) / 2 });
+    };
+    for (const it of scene.items) {
+        const n = byId.get(it.id);
+        if (n === undefined)
+            continue;
+        // Pieces of other rooms are behind walls in a room view.
+        if (room && it.room !== room.id)
+            continue;
+        const pts = [];
+        for (const p of it.footprint) {
+            pts.push(toWorld(f, p, it.y0, it.levelId), toWorld(f, p, it.y1, it.levelId));
+        }
+        box(pts, n);
+    }
+    const seen = new Set();
+    for (const r of scene.rooms) {
+        for (const w of r.walls) {
+            for (const o of w.openings) {
+                const n = byId.get(o.id);
+                if (n === undefined || seen.has(o.id))
+                    continue;
+                seen.add(o.id);
+                if (room && r.id !== room.id)
+                    continue;
+                box(openingCorners(f, r, w, o), n);
+            }
+        }
+    }
+    return marks.sort((a, b) => a.n - b.n);
+}
+function openingCorners(f, room, w, o) {
+    const at = (t) => [w.a[0] + w.dir[0] * t - w.out[0] * w.inset, w.a[1] + w.dir[1] * t - w.out[1] * w.inset];
+    const a = at(o.t0);
+    const b = at(o.t1);
+    return [toWorld(f, a, o.sill, room.levelId), toWorld(f, a, o.top, room.levelId), toWorld(f, b, o.sill, room.levelId), toWorld(f, b, o.top, room.levelId)];
+}
+/** Legend text for the numbered marks of the given images (numbers that appear in at least one). */
+export function legendText(index, shown, limit = 60) {
+    const lines = index.filter((m) => shown.has(m.n)).slice(0, limit).map((m) => `${m.n} = ${m.line}`);
+    return lines.length === 0 ? 'no numbered marks in these images' : lines.join('\n');
+}
+/**
+ * A camera at a given spot of a building (the photo's camera, a viewpoint the user names), as a world-space
+ * {@link ReviewPose}. Null when the building or level does not exist.
+ */
+export function customPose(world, building, spec) {
+    const scene = readScene(world, building);
+    if (!scene)
+        return null;
+    const lvl = scene.levels.find((l) => l.index === (spec.level ?? 0)) ?? scene.levels[0];
+    if (!lvl)
+        return null;
+    const f = frameOf(world, scene);
+    const h = (spec.heading * Math.PI) / 180;
+    const pitch = ((spec.pitch ?? 0) * Math.PI) / 180;
+    const reach = 6;
+    const dx = Math.sin(h) * Math.cos(pitch) * reach;
+    const dz = -Math.cos(h) * Math.cos(pitch) * reach;
+    const dy = Math.sin(pitch) * reach;
+    const to = [spec.at[0] + dx, spec.at[1] + dz];
+    return {
+        name: spec.name,
+        label: spec.label,
+        room: spec.room,
+        kind: 'corner',
+        position: toWorld(f, spec.at, spec.height, lvl.id),
+        target: toWorld(f, to, spec.height + dy, lvl.id),
+        up: [0, 1, 0],
+        fov: Math.max(20, Math.min(120, spec.fov)),
+        hideTops: false,
+    };
+}
+/** Corner points of each piece and opening (the same boxes {@link projectMarks} draws), computed once. */
+export function entityGeometry(world, building) {
+    const scene = readScene(world, building);
+    if (!scene)
+        return [];
+    const f = frameOf(world, scene);
+    const out = [];
+    for (const it of scene.items) {
+        const pts = [];
+        for (const p of it.footprint)
+            pts.push(toWorld(f, p, it.y0, it.levelId), toWorld(f, p, it.y1, it.levelId));
+        out.push({ id: it.id, pts });
+    }
+    const seen = new Set();
+    for (const r of scene.rooms) {
+        for (const w of r.walls) {
+            for (const o of w.openings) {
+                if (seen.has(o.id))
+                    continue;
+                seen.add(o.id);
+                out.push({ id: o.id, pts: openingCorners(f, r, w, o) });
+            }
+        }
+    }
+    return out;
+}
+/**
+ * Project precomputed geometry through a camera: the box of each entity that is in front of it and inside the frame
+ * (clipped to the image). Entities that cannot be seen are left out. No occlusion.
+ */
+export function projectGeometry(geometry, pose, aspect) {
+    const cam = camOf(pose, aspect);
+    const out = new Map();
+    for (const g of geometry) {
+        const proj = g.pts.map((p) => project(cam, p)).filter((p) => p !== null);
+        if (proj.length < Math.ceil(g.pts.length / 2))
+            continue;
+        const xs = proj.map((p) => p.x);
+        const ys = proj.map((p) => p.y);
+        const x0 = Math.max(0, Math.min(...xs));
+        const x1 = Math.min(1, Math.max(...xs));
+        const y0 = Math.max(0, Math.min(...ys));
+        const y1 = Math.min(1, Math.max(...ys));
+        if (x1 <= x0 || y1 <= y0)
+            continue;
+        out.set(g.id, [x0, y0, x1, y1]);
+    }
+    return out;
+}

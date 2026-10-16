@@ -1,0 +1,138 @@
+/**
+ * Wall join solver: given the wall centrelines of one level, compute how far
+ * each side edge of each wall end extends past (or stops short of) its end
+ * point, so L-corners mitre, T-junctions butt into the through wall, X
+ * crossings meet cleanly and free ends stay square.
+ *
+ * Method: wall ends are clustered into junction nodes. Around a node the
+ * incident ends are sorted by angle; each pair of angular neighbours shares
+ * one corner point — the intersection of the facing side edges (offset by
+ * each wall's half thickness). An edge's extension is the signed distance of
+ * that corner behind the node along the wall. Collinear neighbours (a wall
+ * running straight through) keep their edges as they are.
+ */
+import { EPS } from './math2';
+/** Endpoints closer than this are one junction (metres). */
+export const JOIN_TOLERANCE = 0.02;
+/** Limit of a corner extension relative to the thicker wall (very acute angles). */
+const MAX_EXTENSION_FACTOR = 4;
+/** Solve the joins of a set of walls. Result is keyed by wall id. */
+export function solveWallJoins(walls, tolerance = JOIN_TOLERANCE) {
+    const out = new Map();
+    for (const w of walls)
+        out.set(w.id, { startA: 0, startB: 0, endA: 0, endB: 0 });
+    // Cluster end points into nodes.
+    const nodes = [];
+    const nodeOf = (p) => {
+        for (const n of nodes)
+            if (Math.abs(n.x - p[0]) <= tolerance && Math.abs(n.z - p[1]) <= tolerance)
+                return n;
+        const n = { x: p[0], z: p[1], ends: [] };
+        nodes.push(n);
+        return n;
+    };
+    walls.forEach((w, i) => {
+        const dx = w.b[0] - w.a[0];
+        const dz = w.b[1] - w.a[1];
+        const len = Math.hypot(dx, dz);
+        if (len < EPS)
+            return;
+        const ux = dx / len;
+        const uz = dz / len;
+        const half = Math.max(0.005, w.thickness / 2);
+        nodeOf(w.a).ends.push({ wall: i, atStart: true, ux, uz, half, angle: Math.atan2(uz, ux) });
+        nodeOf(w.b).ends.push({ wall: i, atStart: false, ux: -ux, uz: -uz, half, angle: Math.atan2(-uz, -ux) });
+    });
+    // Free ends lying on another wall's span (T-junction into the middle of a wall): butt into its face.
+    for (const node of nodes) {
+        if (node.ends.length !== 1)
+            continue;
+        const e = node.ends[0];
+        for (let k = 0; k < walls.length; k++) {
+            if (k === e.wall)
+                continue;
+            const w = walls[k];
+            const dx = w.b[0] - w.a[0];
+            const dz = w.b[1] - w.a[1];
+            const len = Math.hypot(dx, dz);
+            if (len < EPS)
+                continue;
+            const wx = dx / len;
+            const wz = dz / len;
+            const s = (node.x - w.a[0]) * wx + (node.z - w.a[1]) * wz;
+            const off = -(node.x - w.a[0]) * wz + (node.z - w.a[1]) * wx;
+            if (s <= tolerance || s >= len - tolerance || Math.abs(off) > tolerance)
+                continue;
+            const cross = e.ux * wz - e.uz * wx;
+            if (Math.abs(cross) < 1e-6)
+                continue; // collinear overlap: leave it
+            // The face of w on the side the stem leaves toward.
+            const side = -e.ux * wz + e.uz * wx > 0 ? 1 : -1;
+            const half = Math.max(0.005, w.thickness / 2);
+            const fx = -wz * half * side;
+            const fz = wx * half * side;
+            const extFor = (ox, oz) => {
+                // Edge point (ox, oz) + t·u meets the face line f + r·w.
+                const t = ((fx - ox) * wz - (fz - oz) * wx) / cross;
+                const cap = MAX_EXTENSION_FACTOR * Math.max(e.half, half) * 2;
+                return clamp(-t, -cap, cap);
+            };
+            assign(out, walls, e, 'left', extFor(-e.uz * e.half, e.ux * e.half));
+            assign(out, walls, e, 'right', extFor(e.uz * e.half, -e.ux * e.half));
+            break;
+        }
+    }
+    for (const node of nodes) {
+        const ends = node.ends;
+        if (ends.length < 2)
+            continue;
+        ends.sort((p, q) => p.angle - q.angle);
+        for (let k = 0; k < ends.length; k++) {
+            const e = ends[k];
+            const f = ends[(k + 1) % ends.length];
+            // Left edge of e (normal (-uz, ux)) meets the right edge of f (normal (uz, -ux)).
+            const pe = [-e.uz * e.half, e.ux * e.half];
+            const pf = [f.uz * f.half, -f.ux * f.half];
+            const cross = e.ux * f.uz - e.uz * f.ux;
+            let extE = 0;
+            let extF = 0;
+            if (Math.abs(cross) > 1e-6) {
+                // pe + s·ue = pf + r·uf
+                const s = ((pf[0] - pe[0]) * f.uz - (pf[1] - pe[1]) * f.ux) / cross;
+                const r = ((pf[0] - pe[0]) * e.uz - (pf[1] - pe[1]) * e.ux) / cross;
+                const cap = MAX_EXTENSION_FACTOR * Math.max(e.half, f.half) * 2;
+                extE = clamp(-s, -cap, cap);
+                extF = clamp(-r, -cap, cap);
+            }
+            assign(out, walls, e, 'left', extE);
+            assign(out, walls, f, 'right', extF);
+        }
+    }
+    return out;
+}
+function clamp(v, lo, hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+}
+/**
+ * Map an end's left/right edge onto the wall's sides: walking from the start
+ * (+X), the left edge is side B (+Z); walking back from the end, it is side A.
+ */
+function assign(out, walls, e, edge, value) {
+    const w = walls[e.wall];
+    if (!w)
+        return;
+    const j = out.get(w.id);
+    if (!j)
+        return;
+    const v = Math.round(value * 1000) / 1000;
+    if (e.atStart) {
+        if (edge === 'left')
+            j.startB = v;
+        else
+            j.startA = v;
+    }
+    else if (edge === 'left')
+        j.endA = v;
+    else
+        j.endB = v;
+}

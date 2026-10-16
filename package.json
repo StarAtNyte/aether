@@ -78,7 +78,7 @@
     "e2e:render": "tsx tests/e2e/render-quality.e2e.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "devDependencies": {
     "@gltf-transform/core": "4.5.1",

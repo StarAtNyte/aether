@@ -835,7 +835,7 @@ reports the same scores per prompt and model.
 
 ## 13. Server
 
-`apps/server` is a Hono app on Node 22. `createApp(config, deps)` receives
+`apps/server` is a Hono app on Node 24. `createApp(config, deps)` receives
 every side effect (provider, clock, client IP, generator check, shutdown
 signal), so the whole server is tested offline.
 

@@ -1,0 +1,155 @@
+/**
+ * Wall network of a level derived from its room outlines. Room polygons are
+ * wall CENTRELINES: every room edge becomes wall, shared edges become one
+ * interior wall, edges with a room on one side only are exterior walls.
+ *
+ * Steps: split every edge at every room vertex lying on it (T-junctions,
+ * partially shared edges), deduplicate, classify, then merge collinear runs
+ * through degree-2 nodes so a facade is one wall rather than many pieces.
+ */
+import { EPS, pointInPolygon, pointSegmentDistance, samePoint } from './math2';
+const KEY_SCALE = 1000;
+function key(p) {
+    return `${Math.round(p[0] * KEY_SCALE)},${Math.round(p[1] * KEY_SCALE)}`;
+}
+function segKey(a, b) {
+    const ka = key(a);
+    const kb = key(b);
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+}
+/** The room containing a plan point (first match), or null. */
+function roomAt(rooms, x, z) {
+    for (const r of rooms)
+        if (!r.outdoor && pointInPolygon(x, z, r.polygon))
+            return r.id;
+    return null;
+}
+/** Build the wall network of a level. Deterministic for a given input order. */
+export function wallNetwork(rooms, tolerance = 0.01) {
+    const indoor = rooms.filter((r) => !r.outdoor && r.polygon.length >= 3);
+    const vertices = [];
+    for (const r of indoor)
+        for (const p of r.polygon)
+            if (!vertices.some((v) => samePoint(v, p, tolerance)))
+                vertices.push([p[0], p[1]]);
+    // 1. Split edges at vertices lying on them.
+    const segs = new Map();
+    for (const r of indoor) {
+        const n = r.polygon.length;
+        for (let i = 0; i < n; i++) {
+            const a = r.polygon[i];
+            const b = r.polygon[(i + 1) % n];
+            const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (len < EPS)
+                continue;
+            const cuts = [0, 1];
+            for (const v of vertices) {
+                if (pointSegmentDistance(v[0], v[1], a[0], a[1], b[0], b[1]) > tolerance)
+                    continue;
+                const t = ((v[0] - a[0]) * (b[0] - a[0]) + (v[1] - a[1]) * (b[1] - a[1])) / (len * len);
+                if (t > tolerance / len && t < 1 - tolerance / len)
+                    cuts.push(t);
+            }
+            cuts.sort((p, q) => p - q);
+            for (let k = 0; k + 1 < cuts.length; k++) {
+                const t0 = cuts[k];
+                const t1 = cuts[k + 1];
+                if ((t1 - t0) * len < tolerance)
+                    continue;
+                const p = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0];
+                const q = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1];
+                const k2 = segKey(p, q);
+                if (!segs.has(k2))
+                    segs.set(k2, key(p) < key(q) ? { a: p, b: q } : { a: q, b: p });
+            }
+        }
+    }
+    // 2. Classify each segment by sampling both sides.
+    const classified = [];
+    for (const { a, b } of segs.values()) {
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const nx = -(b[1] - a[1]) / len;
+        const nz = (b[0] - a[0]) / len;
+        const mx = (a[0] + b[0]) / 2;
+        const mz = (a[1] + b[1]) / 2;
+        const off = 0.05;
+        const roomB = roomAt(indoor, mx + nx * off, mz + nz * off);
+        const roomA = roomAt(indoor, mx - nx * off, mz - nz * off);
+        if (roomA === null && roomB === null)
+            continue;
+        classified.push({ a, b, exterior: roomA === null || roomB === null, roomA, roomB });
+    }
+    return mergeCollinear(classified, tolerance, new Set(indoor.filter((r) => r.split).map((r) => r.id)));
+}
+/**
+ * Merge collinear walls through a shared node when no third wall continues
+ * straight through it (other walls there are stems of a T, which then butt
+ * into the merged wall's face). Pieces must agree on exterior-ness and, for
+ * exterior walls, have the outdoors on the same side.
+ */
+function mergeCollinear(walls, tolerance, split = new Set()) {
+    const list = walls.slice();
+    const dirAt = (w, node) => {
+        const other = samePoint(w.a, node, tolerance) ? w.b : w.a;
+        const len = Math.hypot(other[0] - node[0], other[1] - node[1]) || 1;
+        return [(other[0] - node[0]) / len, (other[1] - node[1]) / len];
+    };
+    let merged = true;
+    while (merged) {
+        merged = false;
+        outer: for (let i = 0; i < list.length; i++) {
+            for (let j = i + 1; j < list.length; j++) {
+                const w = list[i];
+                const v = list[j];
+                if (w.exterior !== v.exterior)
+                    continue;
+                let shared = null;
+                let wa = null;
+                let vb = null;
+                if (samePoint(w.b, v.a, tolerance))
+                    [shared, wa, vb] = [w.b, w.a, v.b];
+                else if (samePoint(w.a, v.b, tolerance))
+                    [shared, wa, vb] = [w.a, w.b, v.a];
+                else if (samePoint(w.b, v.b, tolerance))
+                    [shared, wa, vb] = [w.b, w.a, v.a];
+                else if (samePoint(w.a, v.a, tolerance))
+                    [shared, wa, vb] = [w.a, w.b, v.b];
+                if (!shared || !wa || !vb)
+                    continue;
+                // Collinear and pointing the same way through the shared node.
+                const d1x = shared[0] - wa[0];
+                const d1z = shared[1] - wa[1];
+                const d2x = vb[0] - shared[0];
+                const d2z = vb[1] - shared[1];
+                const cross = d1x * d2z - d1z * d2x;
+                const dot = d1x * d2x + d1z * d2z;
+                if (Math.abs(cross) > tolerance * Math.hypot(d1x, d1z) || dot <= 0)
+                    continue;
+                // Any other wall at the node must be a stem (not continuing w or v).
+                const node = shared;
+                const others = list.filter((x, k) => k !== i && k !== j && (samePoint(x.a, node, tolerance) || samePoint(x.b, node, tolerance)));
+                const dw = dirAt(w, node);
+                if (others.some((x) => Math.abs(Math.abs(dw[0] * dirAt(x, node)[0] + dw[1] * dirAt(x, node)[1]) - 1) < 1e-3))
+                    continue;
+                // Orientation-aware sides of the merged wall (a = wa → b = vb).
+                const wForward = samePoint(w.b, shared, tolerance);
+                const vForward = samePoint(v.a, shared, tolerance);
+                const wSides = wForward ? [w.roomA, w.roomB] : [w.roomB, w.roomA];
+                const vSides = vForward ? [v.roomA, v.roomB] : [v.roomB, v.roomA];
+                if (w.exterior && ((wSides[0] === null) !== (vSides[0] === null) || (wSides[1] === null) !== (vSides[1] === null)))
+                    continue;
+                if (split.size > 0) {
+                    const differs = [0, 1].some((side) => wSides[side] !== vSides[side] && (split.has(wSides[side] ?? '') || split.has(vSides[side] ?? '')));
+                    if (differs)
+                        continue;
+                }
+                const next = { a: wa, b: vb, exterior: w.exterior, roomA: wSides[0] ?? vSides[0] ?? null, roomB: wSides[1] ?? vSides[1] ?? null };
+                list.splice(j, 1);
+                list.splice(i, 1, next);
+                merged = true;
+                break outer;
+            }
+        }
+    }
+    return list;
+}

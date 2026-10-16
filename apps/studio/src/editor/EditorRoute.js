@@ -1,0 +1,183 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+/**
+ * Editor route: opens a project from the repository, creates the Studio
+ * controller bound to it (autosave through the repository), runs a queued
+ * template/prompt once the viewport is ready, captures thumbnails at
+ * natural moments (after an agent turn, when the tab is hidden, when
+ * leaving) and tears everything down when the route changes.
+ */
+import { memo, useEffect, useMemo, useState } from 'react';
+import { useApp } from '../app/appContext';
+import { StudioProvider } from '../app/context';
+import { Studio } from '../engine/Studio';
+import { settleWithin } from '../lib/deadline';
+import { createLogger } from '../lib/log';
+import { takeRun } from '../projects/pending';
+import { Icon } from '../components/Icon';
+import { EditorContext } from './editorContext';
+import { EditorShell } from './EditorShell';
+import { EditorSkeleton } from './EditorSkeleton';
+const log = createLogger('editor');
+/** Delay after an agent turn before the thumbnail is taken (grow-in animation, camera flight). */
+const THUMB_AFTER_TURN_MS = 1600;
+/** Delay after opening a project without a thumbnail. */
+const THUMB_FIRST_MS = 2500;
+/** Longest wait for a fresh thumbnail when leaving the editor (navigation never hangs on it). */
+const LEAVE_THUMB_MS = 2500;
+function debugEnabled() {
+    try {
+        return import.meta.env.DEV || new URLSearchParams(location.search).get('debug') === '1';
+    }
+    catch {
+        return false;
+    }
+}
+/** Expose the `window.__aether` debug handle (dev builds or `?debug=1` only). */
+export function exposeDebug(studio) {
+    if (!debugEnabled())
+        return;
+    window.__aether = {
+        studio,
+        get history() {
+            return studio.history;
+        },
+        get simulation() {
+            return studio.simulation;
+        },
+        get store() {
+            return studio.store;
+        },
+    };
+}
+/** Capture a thumbnail and store it (best effort). */
+async function saveThumbnail(studio, repo, id) {
+    try {
+        const blob = await studio.captureThumbnail();
+        if (blob)
+            await repo.setThumbnail(id, blob);
+    }
+    catch (err) {
+        log.warn('thumbnail capture failed', err);
+    }
+}
+/** Error page for a project that cannot be opened. */
+function EditorError({ message, onBack }) {
+    return (_jsx("div", { className: "page-center", children: _jsxs("div", { className: "empty-state", children: [_jsx("span", { className: "empty-state__icon", children: _jsx(Icon, { name: "alert", size: 20 }) }), _jsx("h3", { className: "empty-state__title", children: "Can\u2019t open this project" }), _jsx("p", { className: "empty-state__text", children: message }), _jsxs("button", { type: "button", className: "btn btn--primary", onClick: onBack, children: [_jsx(Icon, { name: "arrowLeft" }), " Back to projects"] })] }) }));
+}
+/** The editor route for project `id`. */
+export const EditorRoute = memo(function EditorRoute({ id }) {
+    const { repo, store, navigate } = useApp();
+    const [studio, setStudio] = useState(null);
+    const [error, setError] = useState(null);
+    useEffect(() => {
+        if (!repo)
+            return;
+        let cancelled = false;
+        let created = null;
+        const cleanups = [];
+        void repo.open(id).then((r) => {
+            if (cancelled)
+                return;
+            if (!r.ok) {
+                setError(r.error);
+                return;
+            }
+            const s = new Studio({
+                projectId: id,
+                project: { world: r.value.world, chat: r.value.chat },
+                onSave: async (world, chat) => {
+                    const x = await repo.save(id, world, chat);
+                    return x.ok ? null : x.error;
+                },
+                onSettings: (settings) => store.getState().mirrorSettings(settings),
+            });
+            created = s;
+            void s.boot();
+            exposeDebug(s);
+            // Queued template / prompt: run once the viewport is ready.
+            const pending = takeRun(id);
+            let thumbTimer = null;
+            const scheduleThumb = (ms) => {
+                if (thumbTimer !== null)
+                    clearTimeout(thumbTimer);
+                thumbTimer = setTimeout(() => {
+                    thumbTimer = null;
+                    const st = s.store.getState();
+                    if (st.agentBusy || st.mode === 'play')
+                        return;
+                    void saveThumbnail(s, repo, id);
+                }, ms);
+            };
+            let sentPending = pending === null;
+            let firstThumb = !r.value.meta.hasThumbnail;
+            const unsub = s.store.subscribe((st, prev) => {
+                const ready = st.loading === null && s.simulation !== null && st.fatal === null;
+                if (ready && !sentPending && pending) {
+                    sentPending = true;
+                    void s.send(pending.prompt, { offline: pending.offline });
+                }
+                if (ready && firstThumb && sentPending && !st.agentBusy) {
+                    firstThumb = false;
+                    scheduleThumb(THUMB_FIRST_MS);
+                }
+                if (prev.agentBusy && !st.agentBusy)
+                    scheduleThumb(THUMB_AFTER_TURN_MS);
+            });
+            const onHidden = () => {
+                if (document.visibilityState === 'hidden') {
+                    void s.flush();
+                    void saveThumbnail(s, repo, id);
+                }
+            };
+            document.addEventListener('visibilitychange', onHidden);
+            cleanups.push(unsub, () => document.removeEventListener('visibilitychange', onHidden), () => thumbTimer !== null && clearTimeout(thumbTimer));
+            setStudio(s);
+        });
+        return () => {
+            cancelled = true;
+            for (const c of cleanups.splice(0))
+                c();
+            if (created) {
+                if (window.__aether?.studio === created)
+                    delete window.__aether;
+                created.dispose();
+            }
+            setStudio(null);
+            setError(null);
+        };
+    }, [repo, id, store]);
+    const services = useMemo(() => {
+        if (!studio || !repo)
+            return null;
+        const settle = async () => {
+            await studio.flush();
+            // Best effort: a heavy world on a slow GPU must not hold the navigation (the project keeps its last thumbnail).
+            await settleWithin(saveThumbnail(studio, repo, id), LEAVE_THUMB_MS);
+        };
+        return {
+            projectId: id,
+            leave: async () => {
+                await settle();
+                navigate({ name: 'home' });
+            },
+            newProject: async () => {
+                await settle();
+                store.getState().setNewProjectOpen(true);
+                navigate({ name: 'home' });
+            },
+            duplicate: async () => {
+                await settle();
+                const r = await repo.duplicate(id);
+                if (r.ok)
+                    navigate({ name: 'editor', id: r.value.id });
+                else
+                    studio.store.getState().toast(r.error, 'error', 6);
+            },
+        };
+    }, [studio, repo, id, navigate, store]);
+    if (error)
+        return _jsx(EditorError, { message: error, onBack: () => navigate({ name: 'home' }) });
+    if (!studio || !services)
+        return _jsx(EditorSkeleton, {});
+    return (_jsx(StudioProvider, { studio: studio, children: _jsx(EditorContext.Provider, { value: services, children: _jsx(EditorShell, {}) }) }));
+});
