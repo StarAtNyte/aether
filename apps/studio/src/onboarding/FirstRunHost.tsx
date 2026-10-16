@@ -3,12 +3,13 @@
  * lazy-loads the screen only if it has to show (the agent package and the
  * screen stay out of the first paint), and offers the quiet "Sign in" chip.
  */
-import { lazy, memo, Suspense, useEffect, useState, type ReactElement } from 'react';
+import { lazyBoundary } from '../components/ErrorBoundary';
+import { memo, useEffect, useState, type ReactElement } from 'react';
 import { Icon } from '../components/Icon';
 import { browserStorage } from '../lib/storage';
 import { decideFirstRun, firstRunStore, hostedBuildFlag, openFirstRun, probeFirstRun, useFirstRun } from './firstRun';
 
-const FirstRun = lazy(async () => ({ default: (await import('./FirstRun')).FirstRun }));
+const FirstRun = lazyBoundary(async () => ({ default: (await import('./FirstRun')).FirstRun }), { what: 'sign-in screen', fallback: null, variant: 'inline' });
 
 let probed = false;
 
@@ -34,9 +35,7 @@ export const FirstRunHost = memo(function FirstRunHost(): ReactElement | null {
   }, [open]);
   if (!mounted) return null;
   return (
-    <Suspense fallback={null}>
-      <FirstRun />
-    </Suspense>
+    <FirstRun />
   );
 });
 

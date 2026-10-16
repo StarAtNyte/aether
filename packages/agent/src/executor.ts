@@ -6,7 +6,7 @@
  */
 import { loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps, runDesignTool, type DesignToolName } from '@aether/arch';
-import { GeneratorDef, ScriptDef, hasOwn, type PatchError } from '@aether/core';
+import { GeneratorDef, ScriptDef, characterPatches, hasOwn, type PatchError } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
@@ -110,6 +110,30 @@ function inputSize(input: unknown): number {
   }
 }
 
+/**
+ * Safety net for people: any entity that stands for a person but has no character gets a rigged one, so a capsule human
+ * never ships. Applied as its own undo step right after the edit that added it; returns the note for the model.
+ */
+function attachPeople(ctx: ExecutorContext, events: AgentEvent[], editPatches: readonly unknown[]): string {
+  // Only what this edit added or changed: a person the user left alone is not an "over-edit".
+  const touched = new Set<string>();
+  for (const p of editPatches) {
+    const op = p as { op?: string; id?: unknown; newId?: unknown; entity?: { id?: unknown } };
+    if (op.op === 'add' && typeof op.entity?.id === 'string') touched.add(op.entity.id);
+    else if (op.op === 'update' && typeof op.id === 'string') touched.add(op.id);
+    else if (op.op === 'rename' && typeof op.newId === 'string') touched.add(op.newId);
+  }
+  if (touched.size === 0) return '';
+  const fix = characterPatches(ctx.host.getWorld(), touched);
+  if (fix.length === 0) return '';
+  const message = `Give ${fix.length} ${fix.length === 1 ? 'person' : 'people'} a character`;
+  const applied = ctx.host.applyPatches(fix, message);
+  if (applied.applied.length === 0) return '';
+  events.push({ type: 'patches', patches: applied.applied, message, result: { applied: applied.applied.length, errors: applied.errors } });
+  const ids = fix.map((p) => (p.op === 'update' ? p.id : '')).filter(Boolean).slice(0, 8).join(', ');
+  return `Note: ${applied.applied.length} entit${applied.applied.length === 1 ? 'y' : 'ies'} (${ids}) stood for people without a character; a rigged character was attached. Set "character" yourself to choose the look.`;
+}
+
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
   if (ctx.audit) {
@@ -128,6 +152,8 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   const result = ctx.host.applyPatches(input.patches, message);
   events.push({ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } });
   let content = formatPatchOutcome(result.applied.length, input.patches.length, result.errors, Object.keys(result.world.entities).length);
+  const people = attachPeople(ctx, events, result.applied);
+  if (people) content += `\n${people}`;
   if (result.notes && result.notes.length > 0) content += `\n${result.notes.slice(0, 4).map((n) => `Note: ${n.slice(0, 400)}`).join('\n')}`;
   return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
 }
@@ -149,6 +175,8 @@ function buildArchitectureTool(ctx: ExecutorContext, input: z.infer<typeof ToolI
     events.push({ type: 'patches', patches: applied.applied, message, result: { applied: applied.applied.length, errors: applied.errors } });
     edited = applied.applied.length > 0;
     if (applied.errors.length > 0) lines.push(formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length));
+    const people = attachPeople(ctx, events, applied.applied);
+    if (people) lines.push(people);
   }
   lines.push(...res.lines.map((l) => l.slice(0, 600)));
   if (res.errors.length > 0) {
@@ -177,6 +205,8 @@ function designTool(ctx: ExecutorContext, name: DesignToolName, rawInput: unknow
     events.push({ type: 'patches', patches: applied.applied, message: res.message, result: { applied: applied.applied.length, errors: applied.errors } });
     edited = applied.applied.length > 0;
     if (applied.errors.length > 0) text += `\n${formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length)}`;
+    const people = attachPeople(ctx, events, applied.applied);
+    if (people) text += `\n${people}`;
   }
   return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
 }
@@ -342,6 +372,8 @@ async function levelTool(ctx: ExecutorContext, name: 'query_level' | 'place_leve
     events.push({ type: 'patches', patches: applied.applied, message: res.message, result: { applied: applied.applied.length, errors: applied.errors } });
     edited = applied.applied.length > 0;
     if (applied.errors.length > 0) text += `\n${formatPatchOutcome(applied.applied.length, res.patches.length, applied.errors, Object.keys(applied.world.entities).length)}`;
+    const people = attachPeople(ctx, events, applied.applied);
+    if (people) text += `\n${people}`;
   }
   return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
 }

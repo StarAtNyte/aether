@@ -55,9 +55,14 @@ describe('world checks', () => {
     expect(w.description.toLowerCase()).toContain('coin');
     expect(fidelity(w, ['coin']).score).toBe(1);
     expect(fidelity(w, ['coin', 'submarine']).missing).toEqual(['submarine']);
-    const meadow = await build('a submarine rescue game with oxygen management');
-    expect(meadow.description.toLowerCase()).toContain('submarine');
-    expect(fidelity(meadow, ['submarine']).score).toBe(0);
+    // A prompt the offline planner does not understand builds nothing (it used to build a default meadow whose
+    // description echoed the prompt): fidelity is zero either way.
+    const unknown = await build('a submarine rescue game with oxygen management');
+    expect(Object.keys(unknown.entities)).toHaveLength(0);
+    expect(fidelity(unknown, ['submarine']).score).toBe(0);
+    // An echoed description alone never counts as content.
+    const echo = { ...w, description: 'a submarine rescue game with oxygen management' };
+    expect(fidelity(echo, ['submarine']).score).toBe(0);
   });
 
   it('requires a win condition for games and a behavioural test for physics scenes', async () => {

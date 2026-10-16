@@ -1,6 +1,7 @@
 import { memo, useMemo, type CSSProperties, type ReactElement } from 'react';
 import type { WorldIntro } from '@aether/core';
 import { useStudio, useUI, useWorld } from '../../app/context';
+import { isTouchScreen, touchHints } from '../../lib/touchHints';
 import { Icon } from '../Icon';
 
 function formatClock(t: number): string {
@@ -14,6 +15,8 @@ function formatClock(t: number): string {
  */
 const TitleCardView = memo(function TitleCardView({ intro, onStart, onExit }: { intro: WorldIntro; onStart: () => void; onExit: () => void }): ReactElement {
   const style = intro.accent ? ({ '--title-accent': intro.accent } as CSSProperties) : undefined;
+  // Phones get the on-screen controls, never keyboard keys.
+  const controls = useMemo(() => (isTouchScreen() ? touchHints(intro.controls) : intro.controls), [intro.controls]);
   return (
     <div className="title-card" role="dialog" aria-modal="false" aria-labelledby="title-card-title" style={style}>
       <div className="title-card__body">
@@ -22,9 +25,9 @@ const TitleCardView = memo(function TitleCardView({ intro, onStart, onExit }: { 
         </h2>
         {intro.tagline && <p className="title-card__tagline">{intro.tagline}</p>}
         {intro.objective && <p className="title-card__objective">{intro.objective}</p>}
-        {intro.controls.length > 0 && (
+        {controls.length > 0 && (
           <ul className="title-card__controls" aria-label="Controls">
-            {intro.controls.map((c) => (
+            {controls.map((c) => (
               <li key={c}>{c}</li>
             ))}
           </ul>

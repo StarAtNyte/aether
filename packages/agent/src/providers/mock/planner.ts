@@ -82,6 +82,37 @@ function placeLibraryHits(b: Builder, hits: readonly LibraryHit[], heroAtOrigin:
   return done;
 }
 
+/** Example prompts the offline planner understands (shown when it cannot map a request). */
+export const OFFLINE_EXAMPLES: readonly string[] = ['a haunted castle at night', 'a coin collecting game on a tropical island', 'a cozy two-bedroom apartment', 'a medieval village with a market'];
+
+/** True when the request contains an edit command the planner can act on. */
+function hasKnownEdit(intent: Intent): boolean {
+  return intent.edits.length > 0;
+}
+
+/**
+ * The plain "I did not understand" answer of the offline planner: nothing is built or changed, offline mode is
+ * named as limited, and the way out (examples, connecting an AI) is spelled out.
+ */
+export function notUnderstood(text: string): MockPlan {
+  const shown = text.length > 60 ? `${text.slice(0, 57)}...` : text;
+  return {
+    plan: '',
+    patches: [],
+    message: `I did not understand "${shown}", and offline mode is limited: it only knows a fixed set of themes (landscapes, towns, rooms, buildings, games) and simple edits. Nothing was built or changed. Try for example ${OFFLINE_EXAMPLES.map((e) => `"${e}"`).join(', ')}, or connect an AI in Settings to build anything you describe.`,
+  };
+}
+
+/** A sentence about big quantities the offline planner does not honour ("1000 trees"), else an empty string. */
+export function quantityNote(text: string, countHonoured = false): string {
+  for (const m of text.matchAll(/\b\d{1,3}(?:,\d{3})+\b|\b\d{3,}\b|\b(?:hundreds?|thousands?|millions?)\b/gi)) {
+    const n = Number(m[0].replace(/,/g, ''));
+    if (Number.isFinite(n) && countHonoured && n < 1000) continue;
+    return ` Note: offline mode builds a fixed-size scene, so the quantity "${m[0]}" was not honoured. Connect an AI to build at that scale.`;
+  }
+  return '';
+}
+
 function generate(intent: Intent, view: WorldView, wipe: boolean, library: readonly MockLibraryItem[]): MockPlan {
   const seed = hashString(intent.text);
   const existing = wipe ? [] : view.entities.map((e) => e.id);
@@ -96,6 +127,9 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const libHits = sceneLibraryHits(intent, library);
   // Without a recognized theme, a named library object is the scene's subject.
   const hero = intent.settings.length === 0 && activities.length === 0 ? libHits[0] : undefined;
+  // Nothing in the request is a theme, a named object, an addition or a mood: building the default meadow
+  // would pretend to have understood. Say so instead and build nothing.
+  if (intent.settings.length === 0 && intent.activities.length === 0 && libHits.length === 0 && !hasKnownEdit(intent) && Object.keys(intent.env).length === 0) return notUnderstood(intent.text);
   const clear = Math.max(activities.reduce((m, t) => Math.max(m, t.radius), 0), hero ? libraryRadius(hero.item) + 1.5 : 0);
 
   // Environment: the primary setting, then atmospheric secondaries (snow, night fog…)
@@ -168,7 +202,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   return {
     plan: `Plan: ${[...settings.map((t) => `${t.id} setting`), ...activities.map((t) => `${t.id} activity`)].join(' + ')}${moodWords.length ? `; mood ${moodWords.join(', ')}` : ''}; ${b.entityCount} entities.`,
     patches,
-    message: `Built ${name}: ${blurbs.join('; ')}${added.length ? ` (${added.join(', ')})` : ''}.`,
+    message: `Built ${name}: ${blurbs.join('; ')}${added.length ? ` (${added.join(', ')})` : ''}.${quantityNote(intent.text, activities.length > 0)}`,
   };
 }
 
@@ -197,7 +231,7 @@ function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem
       message: `I couldn't map "${intent.text.slice(0, 80)}" to a change in offline mode. Try e.g. "add 5 trees", "make it night", "make the car red", "remove the tent", or describe a new world like "a haunted castle at night".`,
     };
   }
-  return { plan: `Plan: ${done.join('; ')}.`, patches, message: `Done — ${done.join('; ')}.` };
+  return { plan: `Plan: ${done.join('; ')}.`, patches, message: `Done — ${done.join('; ')}.${quantityNote(intent.text, true)}` };
 }
 
 /** Wording that clearly asks for a different world rather than a change to this one. */

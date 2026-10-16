@@ -360,12 +360,16 @@ describe('durable build jobs', () => {
     await m.cancel(a.id);
     await wait(m, a.id);
     expect(m.get(a.id)?.status).toBe('cancelled');
+    // The slot frees once the aborted runner settles; allow for a loaded machine.
+    for (let i = 0; i < 500 && m.activeCount() > 0; i++) await new Promise((r) => setTimeout(r, 10));
     expect(m.activeCount()).toBe(0);
   });
 
   it('a cancel during workspace setup or validation wins over a finished run', async () => {
     let releaseWs: () => void = () => undefined;
+    let wsStarted = false;
     const slowWorkspace = async (): Promise<{ dir: string; task: string; artifact: string }> => {
+      wsStarted = true;
       await new Promise<void>((r) => (releaseWs = r));
       return createWorkspace();
     };
@@ -378,7 +382,8 @@ describe('durable build jobs', () => {
     };
     const m1 = new JobManager({ dir: join(dir, 'jobs1'), runWorker: deaf, createWorkspace: slowWorkspace, validate: async () => null });
     const a = await m1.enqueueAsset({ kind: 'asset', backend: 'codex', spec: { id: 'tower', description: 'x' } });
-    await new Promise((r) => setTimeout(r, 20));
+    // Deadline-based so a loaded machine cannot cancel before the workspace step began.
+    for (let i = 0; i < 1000 && !wsStarted; i++) await new Promise((r) => setTimeout(r, 10));
     await m1.cancel(a.id);
     releaseWs();
     await wait(m1, a.id);

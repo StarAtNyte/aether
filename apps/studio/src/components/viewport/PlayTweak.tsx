@@ -13,6 +13,7 @@ export const PlayTweak = memo(function PlayTweak(): ReactElement | null {
   const studio = useStudio();
   const mode = useUI((s) => s.mode);
   const busy = useUI((s) => s.agentBusy);
+  const titleHeld = useUI((s) => s.game.intro);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -22,7 +23,8 @@ export const PlayTweak = memo(function PlayTweak(): ReactElement | null {
   useEffect(() => {
     if (mode !== 'play') setOpen(false);
   }, [mode]);
-  if (mode !== 'play') return null;
+  // The title card owns the screen until Start: no Tweak pill over its buttons.
+  if (mode !== 'play' || titleHeld) return null;
   const submit = (e: FormEvent): void => {
     e.preventDefault();
     const t = text.trim();

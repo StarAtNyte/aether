@@ -222,6 +222,9 @@ function finite3(v: readonly number[], fallback: number): [number, number, numbe
 }
 
 /** Incremental scene synchronizer. See the module docs. */
+/** Largest share of the field instance budget one scatter field may take. */
+export const MAX_FIELD_SHARE = 0.45;
+
 export class SceneSync {
   /** Parent of every entity object. Keep it untransformed (identity). */
   readonly root = new Group();
@@ -1257,6 +1260,23 @@ export class SceneSync {
     });
   }
 
+  /** True when several field-sized scatter layers together ask for more than `budget` instances. */
+  private fieldDemand(budget: number): boolean {
+    let sum = 0;
+    let layers = 0;
+    for (const e of Object.values(this.current?.entities ?? {})) {
+      const sh = e.shape;
+      if (sh && sh.kind === 'scatter') {
+        const n = Math.min(sh.points ? sh.points.length : sh.count, MAX_SCATTER_INSTANCES);
+        if (n >= FIELD_MIN_INSTANCES) {
+          sum += n;
+          layers++;
+        }
+      }
+    }
+    return layers > 1 && sum > budget;
+  }
+
   private mountScatter(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput): void {
     const requested = Math.min(shape.points ? shape.points.length : shape.count, MAX_SCATTER_INSTANCES);
     if (this.fieldBudget && requested >= FIELD_MIN_INSTANCES && keyed.output.parts.length > 0) {
@@ -1296,7 +1316,10 @@ export class SceneSync {
   private mountField(node: EntityNode, shape: ScatterShape, plain: KeyedOutput, requested: number, budget: FieldBudget): void {
     const keyed = softenKeyed(plain, node.entity.material);
     const available = Math.max(0, budget.maxInstances - this.fieldInstances);
-    const count = Math.min(requested, available);
+    // When the world asks for more than the budget, no single field may starve the rest: two huge forests used to take
+    // everything and leave the ground cover at 0.
+    const shareCap = this.fieldDemand(budget.maxInstances) ? Math.floor(budget.maxInstances * MAX_FIELD_SHARE) : Infinity;
+    const count = Math.min(requested, available, shareCap);
     if (count < requested) this.warn(node.id, `scatter field limited to ${count} of ${requested} instances (renderer field budget ${budget.maxInstances})`);
     if (count === 0) return;
     const placements = scatterPlacements(shape, count);

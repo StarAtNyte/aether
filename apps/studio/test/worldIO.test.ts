@@ -63,3 +63,13 @@ describe('world import/export', () => {
     expect(validateImportedValue({ format: 'aether-world', world: { name: 'ok' } }).ok).toBe(true);
   });
 });
+
+describe('import rejects non-world JSON', () => {
+  it('refuses an object with no world fields instead of making an empty world', () => {
+    expect(parseWorldImport('{"hello":"world"}').ok).toBe(false);
+    expect(parseWorldImport('{}').ok).toBe(false);
+  });
+  it('still accepts a bare world and a minimal one with entities', () => {
+    expect(parseWorldImport('{"entities":{}}').ok).toBe(true);
+  });
+});

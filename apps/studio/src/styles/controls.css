@@ -1297,6 +1297,29 @@ button.chip:hover {
   margin-top: var(--s-5);
 }
 
+/* ---- Error boundaries --------------------------------------------------- */
+
+.empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-2);
+}
+
+.empty-state__actions .btn {
+  margin-top: var(--s-5);
+}
+
+.error-inline {
+  display: grid;
+  place-items: center;
+  padding: var(--s-4);
+}
+
+.error-inline .empty-state {
+  padding: var(--s-4);
+}
+
 /* ---- Settings ----------------------------------------------------------- */
 
 .settings__pane {

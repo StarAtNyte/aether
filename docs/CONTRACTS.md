@@ -221,7 +221,7 @@ export interface SettleReport { patches: Patch[]; moved: Array<{ id: EntityId; d
 export async function settle(world: WorldDoc, opts?: { seconds?: number; colliders?: ColliderProvider; only?: EntityId[] }): Promise<SettleReport>;
 
 // Static checks without stepping: interpenetrations, floating objects, out-of-bounds
-export interface Diagnostic { severity: 'error' | 'warning' | 'info'; code: 'overlap' | 'floating' | 'outOfBounds' | 'jointInvalid' | 'tooManyBodies' | 'fellOut' | 'unstable'; entities: EntityId[]; message: string; suggestion?: string; }
+export interface Diagnostic { severity: 'error' | 'warning' | 'info'; code: 'overlap' | 'floating' | 'outOfBounds' | 'jointInvalid' | 'tooManyBodies' | 'fellOut' | 'unstable' | 'noCharacter'; entities: EntityId[]; message: string; suggestion?: string; }
 export async function diagnose(world: WorldDoc, opts?: { colliders?: ColliderProvider }): Promise<Diagnostic[]>;
 
 // Verification: run world.tests headless (fork, fast-forward), with logic hooked in via callback
@@ -2687,3 +2687,12 @@ previous view. Frame time is clamped (slow devices play it slower instead of ski
 
 `npm run e2e:interact` (Chromium WebGPU + WebGL2, Firefox: drawer, cabinet door, window, front door on its joint, tap, mug pick-up and throw, sofa),
 `npm run e2e:reveal`, `tests/e2e/archshots.e2e.ts` (eye-level stills of any building: `--slug` / `--prompt`, `--cams=<json>`, `--gpu`, `--hide`, `--set`).
+
+## People, imports and scatter budgets (`qafix`, additive, backward compatible)
+
+- `@aether/core`: `isBodylessPerson(entity)`, `characterFor(entity)`, `bodilessPeople(world, scope?)`, `characterPatches(world, scope?)`. A bodiless person is a capsule, cylinder or box of a person's size (0.8 to 2.6 m tall, at most 1.4 m wide) with no `character`, no `arch` role and no sensor body, whose id, name, tags or NPC role names a person ("guard", "villager", "shopkeeper"); statues, guard towers, zones and animals are excluded. `characterPatches` returns `update` patches that set `character` (wardrobe, gender and age from the words).
+- `@aether/physics` `Diagnostic.code` gains `'noCharacter'` (severity `warning`; never fails a verification). The studio's verify protocol accepts it.
+- `@aether/agent`: after `apply_patches`, `build_architecture`, the design tools and the level tools the executor applies `characterPatches` as one more undo step ("Give N people a character") and appends a note to the tool result. The review snapshot adds a `person-without-character` warning finding.
+- Studio import: a JSON object with none of the world fields (`name`, `id`, `entities`, `environment`, `player`, `rules`, ...) is refused with "Not an Aether world".
+- Renderer: with more than one field-sized scatter layer asking for more than the field budget, each field is capped at `MAX_FIELD_SHARE` (0.45) of `maxInstances`. A single layer is unchanged.
+- `BlueprintMarks` expire by wall-clock time as well as by animation time.

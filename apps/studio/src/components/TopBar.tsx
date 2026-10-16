@@ -83,6 +83,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
   const mode = useUI((s) => s.mode);
   const modeBusy = useUI((s) => s.modeBusy);
   const loading = useUI((s) => s.loading);
+  const agentBusy = useUI((s) => s.agentBusy);
   const panels = useUI((s) => s.panels);
   const settings = useUI((s) => s.settings);
   const memory = useUI((s) => s.memory);
@@ -163,8 +164,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
   ];
 
   const phoneMenu: MenuEntry[] = [
-    { id: 'undo', label: 'Undo', icon: 'undo', disabled: !canUndo || playing, onSelect: () => studio.undo() },
-    { id: 'redo', label: 'Redo', icon: 'redo', disabled: !canRedo || playing, onSelect: () => studio.redo() },
+    { id: 'undo', label: 'Undo', icon: 'undo', disabled: !canUndo || playing || agentBusy, onSelect: () => studio.undo() },
+    { id: 'redo', label: 'Redo', icon: 'redo', disabled: !canRedo || playing || agentBusy, onSelect: () => studio.redo() },
     { kind: 'separator', id: 'p0' },
     { id: 'share', label: 'Share link', icon: 'share', disabled: playing, onSelect: () => studio.publish.open('share') },
     { id: 'publish-phone', label: 'Publish…', icon: 'rocket', disabled: playing, onSelect: () => studio.publish.open() },
@@ -224,10 +225,10 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
         <div className="topbar__zone topbar__zone--center">
           {playButton}
           <span className="topbar__sep" aria-hidden="true" />
-          <button type="button" className="icon-btn" disabled={!canUndo || playing} onClick={() => studio.undo()} aria-label="Undo" data-tip="Undo" data-kbd={shortcut('Mod+Z')}>
+          <button type="button" className="icon-btn" disabled={!canUndo || playing || agentBusy} onClick={() => studio.undo()} aria-label="Undo" data-tip="Undo" data-kbd={shortcut('Mod+Z')}>
             <Icon name="undo" />
           </button>
-          <button type="button" className="icon-btn" disabled={!canRedo || playing} onClick={() => studio.redo()} aria-label="Redo" data-tip="Redo" data-kbd={shortcut('Mod+Shift+Z')}>
+          <button type="button" className="icon-btn" disabled={!canRedo || playing || agentBusy} onClick={() => studio.redo()} aria-label="Redo" data-tip="Redo" data-kbd={shortcut('Mod+Shift+Z')}>
             <Icon name="redo" />
           </button>
           <span className="topbar__sep" aria-hidden="true" />

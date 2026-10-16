@@ -67,11 +67,17 @@ describe('share links (world in the URL fragment)', () => {
   });
 
   it('routes only well-formed viewer hashes', () => {
-    expect(parseRoute('#/view/')).toEqual({ name: 'home' });
-    expect(parseRoute('#/view/z1.abc/extra')).toEqual({ name: 'home' });
-    expect(parseRoute('#/view/q9.abc')).toEqual({ name: 'home' });
-    expect(parseRoute('#/view/z1.<script>')).toEqual({ name: 'home' });
-    expect(parseRoute(`#/view/z1.${'a'.repeat(MAX_VIEW_HASH)}`)).toEqual({ name: 'home' });
+    // A malformed share link reaches the viewer (empty token), which shows the "can't be opened" page.
+    const bad = { name: 'view', token: '' };
+    expect(parseRoute('#/view/')).toEqual(bad);
+    expect(parseRoute('#/view')).toEqual(bad);
+    expect(parseRoute('#/view/hello')).toEqual(bad);
+    expect(parseRoute('#/view/z1.@@@@')).toEqual(bad);
+    expect(parseRoute('#/view/z1.abc/extra')).toEqual(bad);
+    expect(parseRoute('#/view/q9.abc')).toEqual(bad);
+    expect(parseRoute('#/view/z1.<script>')).toEqual(bad);
+    expect(parseRoute(`#/view/z1.${'a'.repeat(MAX_VIEW_HASH)}`)).toEqual(bad);
+    expect(parseRoute('#/viewer')).toEqual({ name: 'home' });
     expect(parseRoute('#/view/z1.AbC-_9')).toEqual({ name: 'view', token: 'z1.AbC-_9' });
   });
 });

@@ -155,3 +155,21 @@ describe('new settings', () => {
     expect(loaded.immersivePlay).toBe(true);
   });
 });
+
+describe('home hero stage never ends up empty (D17)', () => {
+  const t = (slug: string): never => ({ slug, title: slug } as never);
+  it('uses the preferred worlds that are shown and tops up with featured ones', async () => {
+    const { stageTemplates } = await import('../src/home/Hero');
+    const out = stageTemplates([t('a'), t('lakeside-camp'), t('b')], [t('c'), t('d')]);
+    expect(out.map((x: { slug: string }) => x.slug)).toEqual(['lakeside-camp', 'c', 'd', 'a', 'b']);
+    expect(stageTemplates([], [])).toEqual([]);
+  });
+  it('the bundled gallery fills the stage with worlds that have a thumbnail', async () => {
+    const { stageTemplates } = await import('../src/home/Hero');
+    const { TEMPLATES, FEATURED_TEMPLATES } = await import('../src/lib/examples');
+    const { existsSync } = await import('node:fs');
+    const stage = stageTemplates(TEMPLATES, FEATURED_TEMPLATES);
+    expect(stage.length).toBeGreaterThanOrEqual(3);
+    for (const w of stage) expect(existsSync(new URL(`../public/templates/${w.slug}.webp`, import.meta.url))).toBe(true);
+  });
+});

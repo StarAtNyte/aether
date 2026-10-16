@@ -17,6 +17,7 @@ import type { VoxelHudState } from '../voxel/hudState';
 import { VoxelHudView } from '../components/viewport/VoxelHud';
 import { NpcSpeechView } from '../components/viewport/NpcSpeech';
 import { TouchControlsView } from '../components/viewport/TouchControls';
+import { isTouchScreen, touchControlsLine } from '../lib/touchHints';
 import type { NpcFrame } from '../engine/npcFrame';
 import type { InteractPrompt } from '../engine/interaction';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
@@ -513,7 +514,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               {game.description && <p className="pl-title__desc">{game.description}</p>}
               {menu(false)}
               {game.proof !== undefined && <ProofBadge proof={game.proof} world={world} sim={sim} />}
-              <p className="pl-title__controls">{game.controls}</p>
+              <p className="pl-title__controls">{isTouchScreen() ? touchControlsLine(game.controls) : game.controls}</p>
               <p className="pl-title__made">Made with Aether</p>
             </div>
           ) : (

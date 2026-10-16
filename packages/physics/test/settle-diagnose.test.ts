@@ -125,3 +125,14 @@ describe('diagnose', () => {
     expect(diags[0]?.message).toMatch(/nothing below it/);
   });
 });
+
+describe('diagnose: people without a character', () => {
+  it('warns about a capsule that stands for a person and not about one with a character', async () => {
+    const bare: EntityInput = { id: 'villager-1', shape: { kind: 'primitive', primitive: 'capsule', size: [0.5, 1.75, 0.5] }, transform: { position: [3, 0.875, 0] }, physics: { body: 'static' } };
+    const dressed: EntityInput = { ...bare, id: 'villager-2', transform: { position: [-3, 0.875, 0] }, character: { wardrobe: 'villager', scale: 1 } };
+    const out = await diagnose(world([bare, dressed]));
+    const d = out.filter((x) => x.code === 'noCharacter');
+    expect(d.map((x) => x.entities[0])).toEqual(['villager-1']);
+    expect(d[0]?.severity).toBe('warning');
+  });
+});

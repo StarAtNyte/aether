@@ -3,29 +3,30 @@
  * layout mode, so resizing across breakpoints never remounts the canvas
  * (which would recreate the renderer).
  */
-import { lazy, memo, Suspense, useCallback, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
+import { lazyBoundary } from '../components/ErrorBoundary';
+import { memo, useCallback, useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import { useShortcuts } from '../app/useShortcuts';
 import { useStore } from 'zustand';
 
 /** The Publish hub and its camera timeline load only when first opened. */
-const PublishHub = lazy(async () => ({ default: (await import('./publish/PublishHub')).PublishHub }));
-const CameraTimeline = lazy(async () => ({ default: (await import('./publish/CameraTimeline')).CameraTimeline }));
+const PublishHub = lazyBoundary(async () => ({ default: (await import('./publish/PublishHub')).PublishHub }), { what: 'publish tools', fallback: null, variant: 'inline' });
+const CameraTimeline = lazyBoundary(async () => ({ default: (await import('./publish/CameraTimeline')).CameraTimeline }), { what: 'camera timeline', fallback: null, variant: 'inline' });
 
 /** Dialogs of the asset pipeline load only when first opened. */
-const CreditsDialog = lazy(async () => ({ default: (await import('./library/CreditsDialog')).CreditsDialog }));
-const ForgeDialog = lazy(async () => ({ default: (await import('./library/ForgeDialog')).ForgeDialog }));
+const CreditsDialog = lazyBoundary(async () => ({ default: (await import('./library/CreditsDialog')).CreditsDialog }), { what: 'credits', fallback: null, variant: 'inline' });
+const ForgeDialog = lazyBoundary(async () => ({ default: (await import('./library/ForgeDialog')).ForgeDialog }), { what: 'generator forge', fallback: null, variant: 'inline' });
 
 const AssetDialogs = memo(function AssetDialogs(): ReactElement {
   const studio = useStudio();
   const credits = useStore(studio.assets.state, (s) => s.creditsOpen);
   const forge = useStore(studio.forge.state, (s) => s.open);
   return (
-    <Suspense fallback={null}>
+    <>
       {credits && <CreditsDialog />}
       {forge && <ForgeDialog />}
-    </Suspense>
+    </>
   );
 });
 import { SettingsDialog } from '../components/SettingsDialog';
@@ -159,15 +160,11 @@ export const EditorShell = memo(function EditorShell(): ReactElement {
         <main className="editor__canvas">
           <Viewport />
           {publishOpen && publishTarget === 'video' && mode === 'edit' && (desktop || layout === 'tablet') ? (
-            <Suspense fallback={null}>
-              <CameraTimeline />
-            </Suspense>
+            <CameraTimeline />
           ) : null}
         </main>
         {publishOpen ? (
-          <Suspense fallback={null}>
-            <PublishHub />
-          </Suspense>
+          <PublishHub />
         ) : null}
         {desktop && panels.right ? (
           <div className="editor__right">

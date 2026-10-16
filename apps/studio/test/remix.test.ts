@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Environment } from '@aether/core';
-import { MAX_REMIXES, remixSuggestions } from '../src/lib/remix';
+import { MAX_REMIXES, followUpChips, remixSuggestions } from '../src/lib/remix';
 
 const env = (input: Record<string, unknown>): Environment => Environment.parse(input);
 
@@ -22,5 +22,16 @@ describe('remixSuggestions', () => {
     const out = remixSuggestions(env({ sky: 'day', weather: 'snow', gravity: [0, -1.6, 0] })).map((r) => r.prompt);
     expect(out).not.toContain('Make it snow');
     expect(out).not.toContain('Low gravity');
+  });
+});
+
+describe('followUpChips', () => {
+  const c = (prompt: string): { prompt: string } => ({ prompt });
+  it('offers nothing for an empty world and removes duplicate prompts', () => {
+    expect(followUpChips([c('Make it night')], 0, 0)).toEqual([]);
+    expect(followUpChips([c('Make it night'), c('make it night'), c('Make it sunset'), c('Add rain'), c('Add fog')], 0, 5).map((x) => x.prompt)).toEqual(['Make it night', 'Make it sunset', 'Add rain']);
+  });
+  it('keeps every chip of a selection', () => {
+    expect(followUpChips([c('a'), c('b'), c('c'), c('d')], 1, 5)).toHaveLength(4);
   });
 });

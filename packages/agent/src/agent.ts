@@ -23,6 +23,7 @@ import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { findingKey } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
+import { guardVerificationClaim } from './honesty';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
@@ -329,7 +330,7 @@ export class WorldAgent {
 
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
       const text = textOf(res.content);
-      if (text) yield { type: calls.length > 0 ? 'plan' : 'message', text };
+      if (text) yield { type: calls.length > 0 ? 'plan' : 'message', text: calls.length > 0 ? text : guardVerificationClaim(text, { ran: lastVerifyPassed !== undefined, pending: dirty }) };
 
       if (res.stopReason === 'error' && calls.length === 0) {
         yield { type: 'error', text: text || 'The model could not complete this request.' };
@@ -366,7 +367,7 @@ export class WorldAgent {
           results.push({ type: 'text', text: 'A call in that reply was refused, so finish was ignored: read the reasons above, fix them and call the tools again, then finish.' });
         }
         messages.push({ role: 'user', content: results });
-        if (finished?.message) yield { type: 'message', text: finished.message };
+        if (finished?.message) yield { type: 'message', text: guardVerificationClaim(finished.message, { ran: lastVerifyPassed !== undefined, pending: dirty }) };
       } else if (res.stopReason === 'max_tokens') {
         pushUserText(messages, 'Your reply was cut off by the output limit. Continue with smaller apply_patches calls.');
         continue;

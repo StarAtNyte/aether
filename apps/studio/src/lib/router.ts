@@ -39,9 +39,11 @@ const SECTIONS: ReadonlySet<string> = new Set<HomeSection>(['templates', 'projec
 /** Parse `location.hash` (with or without the leading `#`). Never throws. */
 export function parseRoute(hash: string): Route {
   if (typeof hash !== 'string') return { name: 'home' };
-  if (hash.length <= MAX_VIEW_HASH && /^#?\/view\//.test(hash)) {
-    const m = VIEW_TOKEN.exec(hash);
-    return m ? { name: 'view', token: m[1] as string } : { name: 'home' };
+  // Every hash under /view is a share link: a malformed one opens the viewer's "can't be opened" page (empty token)
+  // instead of silently redirecting home.
+  if (/^#?\/view(?:\/|$)/.test(hash)) {
+    const m = hash.length <= MAX_VIEW_HASH ? VIEW_TOKEN.exec(hash) : null;
+    return { name: 'view', token: m ? (m[1] as string) : '' };
   }
   if (hash.length > MAX_HASH) return { name: 'home' };
   const path = hash.replace(/^#/, '').replace(/[?].*$/, '');

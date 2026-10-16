@@ -7,13 +7,32 @@
  */
 import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../config';
-import { TEMPLATES, templateThumbnail, type WorldTemplate } from '../lib/examples';
+import { FEATURED_TEMPLATES, TEMPLATES, templateThumbnail, type WorldTemplate } from '../lib/examples';
 import { Icon } from '../components/Icon';
 
 /** Seconds each example world stays on the stage. */
 export const STAGE_SECONDS = 4.5;
+/** Slugs the stage prefers, when they are still shown. */
+const STAGE_PREFERRED: readonly string[] = ['lakeside-camp', 'coin-island', 'domino-run', 'haunted-forest', 'medieval-village', 'canyon-of-colossi'];
+/** Most worlds on the stage. */
+const STAGE_MAX = 6;
+
+/**
+ * The worlds the stage cycles through: the preferred ones that are still shown, topped up with the featured templates,
+ * so curating the gallery can never leave the stage empty (an empty grey box on the home page).
+ */
+export function stageTemplates(shown: readonly WorldTemplate[], featured: readonly WorldTemplate[]): WorldTemplate[] {
+  const out: WorldTemplate[] = [];
+  for (const slug of STAGE_PREFERRED) {
+    const t = shown.find((x) => x.slug === slug);
+    if (t) out.push(t);
+  }
+  for (const t of [...featured, ...shown]) if (out.length < STAGE_MAX && !out.includes(t)) out.push(t);
+  return out.slice(0, STAGE_MAX);
+}
+
 /** Example worlds on the stage, in order. */
-const STAGE: readonly WorldTemplate[] = TEMPLATES.filter((t) => ['lakeside-camp', 'coin-island', 'domino-run', 'haunted-forest', 'medieval-village', 'canyon-of-colossi'].includes(t.slug));
+const STAGE: readonly WorldTemplate[] = stageTemplates(TEMPLATES, FEATURED_TEMPLATES);
 /** One-tap example prompts under the bar. */
 export const HERO_EXAMPLES: readonly string[] = Object.freeze([
   'A coin collecting game on a tropical island',
@@ -37,7 +56,7 @@ export function stageIndex(elapsed: number, count: number, seconds = STAGE_SECON
 }
 
 /** The cycling stage of example worlds. */
-const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => void }): ReactElement {
+const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => void }): ReactElement | null {
   const [index, setIndex] = useState(0);
   useEffect(() => {
     if (prefersReducedMotion() || STAGE.length < 2) return;
@@ -58,6 +77,7 @@ const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => vo
     };
   }, []);
   const current = STAGE[index] ?? STAGE[0];
+  if (STAGE.length === 0) return null;
   return (
     <figure className="hero-stage" aria-label="Example worlds">
       <div className="hero-stage__frame">

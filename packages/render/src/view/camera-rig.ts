@@ -273,8 +273,19 @@ export class CameraRig {
     return true;
   }
 
-  /** Dispose controls. */
+  /**
+   * Dispose controls. three's OrbitControls registers its Ctrl-key interceptors on `getRootNode()` and removes them the
+   * same way, so once the canvas has left the page it removes them from the detached canvas and the ones on `document`
+   * stay forever, keeping the controls (and through their change listeners, the whole renderer) alive across world
+   * switches. They are removed from `document` here.
+   */
   dispose(): void {
-    this.controls?.dispose();
+    const c = this.controls;
+    if (!c) return;
+    c.dispose();
+    const k = c as unknown as { _interceptControlDown?: EventListener; _interceptControlUp?: EventListener };
+    if (typeof document === 'undefined') return;
+    if (typeof k._interceptControlDown === 'function') document.removeEventListener('keydown', k._interceptControlDown, { capture: true });
+    if (typeof k._interceptControlUp === 'function') document.removeEventListener('keyup', k._interceptControlUp, { capture: true });
   }
 }

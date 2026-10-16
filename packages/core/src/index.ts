@@ -35,6 +35,7 @@ export { applyPatches, type PatchResult, type PatchError, type ApplyOptions } fr
 export { invertPatches, patchesBetween } from './patch/between';
 export { deepMerge, diffForMerge, type MergeConfig } from './merge';
 
+export { isBodylessPerson, characterFor, bodilessPeople, characterPatches } from './people';
 export { diffWorlds, isEmptyDiff, type WorldDiff } from './diff';
 export * from './voxel-ids';
 export { voxelEditsVolume, checkVoxelTerrain, type HintBudget } from './patch/voxel-ops';

@@ -380,7 +380,7 @@ const meadow: Theme = {
   kind: 'setting',
   layerable: true,
   title: 'Mountain Meadow',
-  match: /\b(meadow|valley|hills?|mountains?|nature|lake|river|landscape|scenery)\b/,
+  match: /\b(meadow|valley|hills?|mountains?|nature|lake|river|landscape|scenery|calm|peaceful|serene|scenic|pretty)\b/,
   radius: 36,
   blurb: 'a peaceful mountain meadow with wildflowers, oaks and pines under distant snowy peaks',
   env(b) {

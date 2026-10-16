@@ -6,7 +6,8 @@
  * gizmo (bottom-right), the first-use navigation hint, floating labels,
  * the agent progress bar, play HUD and touch controls.
  */
-import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactElement } from 'react';
+import { lazyBoundary } from '../ErrorBoundary';
+import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
 import { useSimulation, useStudio, useUI, useWorld } from '../../app/context';
 import { liveAgentLine } from '../../lib/agentLine';
 import { shortcut } from '../../lib/keys';
@@ -39,7 +40,7 @@ import { PlaytestPill } from './PlaytestPill';
 import { ReplayBar } from './ReplayBar';
 
 /** Block-world game HUD (and its stylesheet): loaded only when a voxel game runs. */
-const VoxelHud = lazy(() => import('./VoxelHud').then((m) => ({ default: m.VoxelHud })));
+const VoxelHud = lazyBoundary(() => import('./VoxelHud').then((m) => ({ default: m.VoxelHud })), { what: 'block tools', fallback: null, variant: 'inline' });
 
 type CameraPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -286,6 +287,9 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const epoch = useUI((s) => s.rendererEpoch);
   const playing = mode === 'play';
   const voxelGame = useUI((s) => s.voxelHud !== null);
+  // The title card owns the screen until Start: no touch controls underneath it.
+  const introHeld = useUI((s) => s.game.intro);
+  const titleHeld = introHeld;
   // The inventory screen takes the touch area: no stick or buttons over it.
   const voxelUi = useUI((s) => s.voxelHud?.inventoryOpen === true || s.voxelHud?.dead === true);
   const photo = useUI((s) => s.arch.photo && s.mode === 'play');
@@ -406,9 +410,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       {ready && <ProofSeal />}
       {ready && <ReplayBar />}
       {voxelGame ? (
-        <Suspense fallback={null}>
-          <VoxelHud />
-        </Suspense>
+        <VoxelHud />
       ) : (
         <PlayHud />
       )}
@@ -417,7 +419,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       <RevealOverlay />
       <TitleCard />
       {ready && playing && !voxelUi && <PlayTweak />}
-      {ready && playing && !voxelUi && <TouchControls />}
+      {ready && playing && !voxelUi && !titleHeld && <TouchControls />}
       {ready && !playing && (
         <div className="vp-bottom">
           <NavHint />

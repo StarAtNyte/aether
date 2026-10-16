@@ -21,6 +21,7 @@ import './styles/npc.css';
 import './styles/moments.css';
 import './styles/verified.css';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppProvider, openRepo } from './app/appContext';
 import { createAppStore } from './app/appStore';
 import { applyTheme, themeFromSetting } from './lib/theme';
@@ -56,9 +57,11 @@ const rootEl = document.getElementById('root');
 if (rootEl) {
   createRoot(rootEl).render(
     <StrictMode>
-      <AppProvider store={store} repoPromise={repoPromise}>
-        <App />
-      </AppProvider>
+      <ErrorBoundary what="app">
+        <AppProvider store={store} repoPromise={repoPromise}>
+          <App />
+        </AppProvider>
+      </ErrorBoundary>
     </StrictMode>,
   );
 }

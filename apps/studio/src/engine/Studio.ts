@@ -8,7 +8,7 @@ import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -628,8 +628,19 @@ export class Studio {
     this.commitUser([{ op: 'setMeta', name: clean }], `Rename world to "${clean}"`);
   }
 
+  /**
+   * True (with a short notice) while the agent is building: history moves would change the world under it, so the
+   * agent's summary could end up describing a world that is not there. The controls are disabled too; this guards
+   * the keyboard, the command palette and every other caller.
+   */
+  private blockedByAgent(): boolean {
+    if (!this.store.getState().agentBusy) return false;
+    this.store.getState().toast('Wait for the agent to finish, or press Stop, before changing the history.', 'info', 3);
+    return true;
+  }
+
   undo(): void {
-    if (this.store.getState().mode === 'edit') this.history.undo();
+    if (this.store.getState().mode === 'edit' && !this.blockedByAgent()) this.history.undo();
   }
 
   /** Answer "which one?": select the chosen object and run the question's prompt again. */
@@ -651,12 +662,12 @@ export class Studio {
   }
 
   redo(): void {
-    if (this.store.getState().mode === 'edit') this.history.redo();
+    if (this.store.getState().mode === 'edit' && !this.blockedByAgent()) this.history.redo();
   }
 
   /** Time travel to a history entry. */
   checkout(entryId: number): void {
-    if (this.store.getState().mode !== 'edit') return;
+    if (this.store.getState().mode !== 'edit' || this.blockedByAgent()) return;
     try {
       this.history.checkout(entryId);
     } catch (err) {
@@ -677,7 +688,7 @@ export class Studio {
 
   /** Switch to an existing branch. */
   switchBranch(name: string): void {
-    if (this.store.getState().mode !== 'edit') return;
+    if (this.store.getState().mode !== 'edit' || this.blockedByAgent()) return;
     try {
       this.history.switchBranch(name);
     } catch (err) {
@@ -692,6 +703,7 @@ export class Studio {
 
   /** Replace the whole world as one undoable commit. */
   replaceWorld(world: WorldDoc, message: string): void {
+    if (this.blockedByAgent()) return;
     const current = this.history.current;
     const patches = patchesBetween(current, world);
     if (patches.length === 0) return;
@@ -1050,6 +1062,14 @@ export class Studio {
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
+      // The offline planner could not map the request: say so with the way out, never leave a bare "done".
+      if (status === 'done' && this.history.current === before && this.localEdit === null && (primary === null || fell !== null) && this.store.getState().clarify === null) {
+        push({ type: 'notice', tone: 'warning', text: 'Offline mode is limited and nothing was built or changed. Connect an AI to build anything you describe, or try one of these.', offline: { examples: [...OFFLINE_EXAMPLES] } });
+      }
+      // Stopped part-way: whatever was already applied stays, and the turn says so (Undo removes it).
+      if (status === 'aborted' && this.history.current !== before) {
+        push({ type: 'notice', tone: 'warning', text: 'Stopped before finishing. The world below is only the part built so far and was not checked. Undo removes it.' });
+      }
       const after = this.history.current;
       if (isNewWorld(before, after)) void this.sim?.frameWorld();
       else if (after !== before) {
@@ -1066,7 +1086,9 @@ export class Studio {
       }
     } finally {
       if (this.abort === abort) this.abort = null;
-      push({ type: 'done', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, calls: usage.calls, ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
+      // Offline answers are not model usage: no fabricated call or token counts.
+      const offlineOnly = usage.models.length > 0 && usage.models.every((m) => m === 'aether-mock');
+      push({ type: 'done', inputTokens: offlineOnly ? 0 : usage.inputTokens, outputTokens: offlineOnly ? 0 : usage.outputTokens, calls: offlineOnly ? 0 : usage.calls, ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
@@ -1143,8 +1165,9 @@ export class Studio {
       }
       if (event.type === 'history') {
         this.store.getState().pushEvent(entryId, { type: 'message', text: event.action === 'undo' ? 'Undone. Your world is back to how it was.' : 'Redone.' });
-        if (event.action === 'undo') this.undo();
-        else this.redo();
+        // The agent's own "undo" request: the turn is deciding this, so it is not blocked by the busy guard.
+        if (event.action === 'undo') this.history.undo();
+        else this.history.redo();
         continue;
       }
       if (event.type === 'clarify') {

@@ -1016,7 +1016,8 @@
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: var(--r-3);
-  background: var(--canvas);
+  /* A soft sky-to-ground wash shows while the first picture loads (or if it cannot), never a flat grey box. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--canvas)) 0%, var(--canvas) 62%, color-mix(in srgb, var(--accent) 10%, var(--canvas)) 100%);
   box-shadow: inset 0 0 0 1px var(--border), var(--shadow-2);
   isolation: isolate;
 }

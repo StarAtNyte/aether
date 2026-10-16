@@ -61,6 +61,7 @@ export { createOpenAIProvider, type OpenAIProviderOptions, type OpenAIEffort } f
 export { createChatCompletionsProvider, chatMessagesToWire, parseChatCompletion, type ChatCompletionsProviderOptions } from './providers/chat-completions';
 export { createHttpProvider, type HttpProviderOptions } from './providers/http';
 export { createMockProvider, type MockProviderOptions } from './providers/mock/index';
+export { OFFLINE_EXAMPLES } from './providers/mock/planner';
 export type { MockLibraryItem } from './providers/mock/library';
 export { ProviderError, isAbortError, type ProviderErrorCode } from './providers/errors';
 export type { RetryPolicy } from './providers/transport';

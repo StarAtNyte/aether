@@ -3061,6 +3061,8 @@ export class WorldRenderer {
     this.models.dispose();
     this.textures.dispose();
     this.scene.clear();
+    // The device's pending lost / error-scope promises keep the renderer alive; the callback must not keep this object alive too.
+    this.renderer.onDeviceLost = () => undefined;
     this.renderer.dispose().catch((e: unknown) => log.warn(`renderer dispose failed: ${errorMessage(e)}`));
   }
 }

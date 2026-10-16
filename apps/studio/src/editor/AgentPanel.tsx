@@ -10,7 +10,7 @@ import { useStudio, useUI, useWorld } from '../app/context';
 import type { ChatEntry } from '../lib/chat';
 import { FEATURED_TEMPLATES, SUGGESTION_CHIPS, TEMPLATES, templateThumbnail } from '../lib/examples';
 import { MAX_REFERENCE_IMAGES, prepareReferenceImage } from '../lib/images';
-import { remixSuggestions } from '../lib/remix';
+import { followUpChips, remixSuggestions } from '../lib/remix';
 import { composerPlaceholder, hasContent, refineChips } from '../lib/refine';
 import { isPristineStarter } from '../lib/starterWorld';
 import { ChatEvent } from '../components/chat/ChatEvent';
@@ -179,7 +179,8 @@ const RemixChips = memo(function RemixChips({ onPick }: { onPick: (prompt: strin
   const { sky, weather, gravity } = world.environment;
   const remix = useMemo(() => remixSuggestions({ sky, weather, gravity }), [sky, weather, gravity]);
   const refine = useMemo(() => refineChips(world, selection), [world, selection]);
-  const chips = selection.length > 0 ? refine : [...refine.slice(0, 1), ...remix.map((r) => ({ label: r.prompt, prompt: r.prompt }))].slice(0, 3);
+  const all = selection.length > 0 ? refine : [...refine.slice(0, 1), ...remix.map((r) => ({ label: r.prompt, prompt: r.prompt }))];
+  const chips = followUpChips(all, selection.length, Object.keys(world.entities).length);
   if (mode !== 'edit' || chips.length === 0) return null;
   return (
     <div className="remix" role="group" aria-label="Refine it">
@@ -195,7 +196,9 @@ const RemixChips = memo(function RemixChips({ onPick }: { onPick: (prompt: strin
 /** First-run nudge: the world exists, so the next message edits it. Shown until the first small edit. */
 const RefineHint = memo(function RefineHint(): ReactElement | null {
   const edited = useUI((s) => s.chat.some((e) => e.role === 'assistant' && e.events.some((ev) => ev.type === 'edit')));
-  if (edited) return null;
+  const empty = useWorld().entities;
+  // "Your world is ready" is only true when there is a world: never after a turn that built nothing.
+  if (edited || Object.keys(empty).length === 0) return null;
   return (
     <p className="refine-hint" data-testid="refine-hint">
       <Icon name="info" /> Your world is ready. Keep going in plain words: every message tweaks it (“make the roof red”, “move that a bit left”) and only what you name changes. Select something and say “make it bigger”.

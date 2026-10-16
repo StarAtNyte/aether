@@ -4,7 +4,8 @@
  * from this browser and the documentation page. Files dropped anywhere on the
  * page are imported as projects.
  */
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { lazyBoundary } from '../components/ErrorBoundary';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
 import { FEATURED_TEMPLATES, MORE_TEMPLATES, TEMPLATES } from '../lib/examples';
@@ -35,8 +36,8 @@ import { useProjectList, useThumbnails } from './useProjects';
 import { prefetchEditor } from '../editor/prefetch';
 
 /** The publish history (IndexedDB library) loads with the page that shows it. */
-const PublishedPage = lazy(async () => ({ default: (await import('./Published')).PublishedPage }));
-const RecentlyPublished = lazy(async () => ({ default: (await import('./Published')).RecentlyPublished }));
+const PublishedPage = lazyBoundary(async () => ({ default: (await import('./Published')).PublishedPage }), { what: 'published page', fallback: null, variant: 'inline' });
+const RecentlyPublished = lazyBoundary(async () => ({ default: (await import('./Published')).RecentlyPublished }), { what: 'published list', fallback: null, variant: 'inline' });
 
 const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -320,9 +321,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   if (section === 'docs') content = <Docs />;
   else if (section === 'published') {
     content = (
-      <Suspense fallback={null}>
-        <PublishedPage now={now} />
-      </Suspense>
+      <PublishedPage now={now} />
     );
   } else if (section === 'templates' && !searching) {
     content = (
@@ -385,9 +384,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
           </section>
         )}
         {showTemplates && (
-          <Suspense fallback={null}>
-            <RecentlyPublished now={now} />
-          </Suspense>
+          <RecentlyPublished now={now} />
         )}
         <section className="home-section" aria-labelledby="h-projects">
           <div className="section-head">

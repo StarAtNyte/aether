@@ -10,6 +10,7 @@ import { MAX_IMPORT_BYTES } from '../config';
 export const EXPORT_FORMAT = 'aether-world';
 const EXPORT_VERSION = 1;
 const MAX_REPORTED_ISSUES = 4;
+const WORLD_KEYS: ReadonlySet<string> = new Set(['name', 'id', 'version', 'description', 'seed', 'state', 'hud', 'entities', 'environment', 'player', 'rules', 'generators', 'scripts', 'tests', 'meshes', 'voxel', 'intro']);
 
 /** Result of {@link parseWorldImport}. */
 export type ImportResult = { ok: true; world: WorldDoc } | { ok: false; error: string };
@@ -43,6 +44,9 @@ export function validateImportedValue(value: unknown): ImportResult {
   if (!guard.ok) return { ok: false, error: `Rejected: ${guard.path ? `${guard.path}: ` : ''}${guard.message}` };
   const doc = unwrap(value);
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return { ok: false, error: 'Not an Aether world: expected a JSON object.' };
+  // Every WorldDoc field has a default, so `{"hello":"world"}` would "validate" as an empty world. Require real world content.
+  const keys = Object.keys(doc as Record<string, unknown>);
+  if (!keys.some((k) => WORLD_KEYS.has(k))) return { ok: false, error: 'Not an Aether world: none of the expected fields (entities, environment, player, rules …) are present.' };
   const r = validateWorld(doc);
   if (!r.ok) {
     const shown = r.issues.slice(0, MAX_REPORTED_ISSUES).map((i) => `${i.path || '(root)'}: ${i.message}`);

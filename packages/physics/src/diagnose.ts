@@ -6,7 +6,7 @@
  */
 import type { Collider } from '@dimforge/rapier3d-compat';
 import type { Entity, EntityId, Vec3, WorldDoc } from '@aether/core';
-import { LIMITS } from '@aether/core';
+import { LIMITS, bodilessPeople } from '@aether/core';
 import { rapier } from './rapier';
 import { GROUND_ID, type ColliderProvider, type Diagnostic } from './types';
 import { fmt } from './vec';
@@ -228,6 +228,17 @@ export function diagnoseWorld(pw: PhysicsWorld): Diagnostic[] {
     });
   }
   out.push(...pw.diagnostics());
+  // A person left as a capsule or box: the design tools attach a character, this catches every other path.
+  const bodiless = bodilessPeople(pw.document);
+  for (const id of bodiless.slice(0, DIAGNOSE_LIMITS.MAX_PER_CODE)) {
+    out.push({
+      severity: 'warning',
+      code: 'noCharacter',
+      entities: [id],
+      message: `${id} stands for a person but has no character, so it shows as a capsule or box`,
+      suggestion: `update ${id} with character {wardrobe:"casual"|"guard"|"merchant"|"villager"|…, gender?, age?}: a rigged, animated person replaces the shape (the shape stays the collider)`,
+    });
+  }
   const overlaps = findOverlaps(pw);
   for (const p of overlaps.slice(0, DIAGNOSE_LIMITS.MAX_PER_CODE)) out.push(overlapDiagnostic(pw.document, records, p));
   floatingDiagnostics(pw, out);

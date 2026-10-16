@@ -286,7 +286,7 @@ export const VoxelHudView = memo(function VoxelHudView({ hud, play, toast }: { h
       {hud.loading !== null && (
         <div className="vx-loading" role="status">
           <span className="vx-loading__bar" style={{ ['--p' as string]: `${Math.round(hud.loading * 100)}%` } as CSSProperties} />
-          <span>Generating terrain… {Math.round(hud.loading * 100)}%</span>
+          <span>{hud.loading >= 1 ? 'Placing you in the world…' : `Generating terrain… ${Math.round(hud.loading * 100)}%`}</span>
         </div>
       )}
       {hud.loading === null && !hud.dead && !hud.inventoryOpen && <span className="vx-crosshair" aria-hidden="true" />}

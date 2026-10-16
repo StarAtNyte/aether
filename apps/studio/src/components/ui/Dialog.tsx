@@ -44,6 +44,8 @@ export const Dialog = memo(function Dialog({
     <dialog
       ref={ref}
       className={`dialog dialog--${size}${className ? ` ${className}` : ''}`}
+      role="dialog"
+      aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={description ? descId : undefined}
       onClose={onClose}

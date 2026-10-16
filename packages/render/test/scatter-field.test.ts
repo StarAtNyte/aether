@@ -254,6 +254,14 @@ describe('SceneSync scatter fields', () => {
     expect(geometries.size).toBe(0);
   });
 
+  it('shares the field budget so a later ground-cover field is not starved by two huge forests', async () => {
+    const { sync } = makeSync({ fields: { maxInstances: 10_000, triangles: 100_000 } });
+    await sync.setWorld(world([{ ...field(8_000), id: 'east' }, { ...field(8_000), id: 'west' }, { ...field(3_000), id: 'grass' }]));
+    expect(sync.node('grass')!.instances).toBeGreaterThan(0);
+    expect(sync.node('east')!.instances).toBeLessThanOrEqual(4_500);
+    expect(sync.instanceCount).toBeLessThanOrEqual(10_000);
+  });
+
   it('keeps small layers plain and respects the field instance budget', async () => {
     const { sync } = makeSync({ fields: { maxInstances: 5_000, triangles: 100_000 } });
     await sync.setWorld(world([{ ...field(FIELD_MIN_INSTANCES - 1), id: 'small' }, field(8_000)]));

@@ -10,6 +10,7 @@ export const HistoryPanel = memo(function HistoryPanel(): ReactElement {
   const [revision, bump] = useReducer((x: number) => x + 1, 0);
   const { entries, head, branches, branch, canUndo, canRedo } = useHistoryState(revision);
   const playing = useUI((s) => s.mode === 'play');
+  const agentBusy = useUI((s) => s.agentBusy);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const reversed = [...entries].reverse();
@@ -28,10 +29,10 @@ export const HistoryPanel = memo(function HistoryPanel(): ReactElement {
   return (
     <div className="history">
       <div className="panel-toolbar">
-        <button type="button" className="btn btn--sm" disabled={!canUndo || playing} onClick={() => studio.undo()}>
+        <button type="button" className="btn btn--sm" disabled={!canUndo || playing || agentBusy} onClick={() => studio.undo()}>
           <Icon name="undo" /> Undo
         </button>
-        <button type="button" className="btn btn--sm" disabled={!canRedo || playing} onClick={() => studio.redo()}>
+        <button type="button" className="btn btn--sm" disabled={!canRedo || playing || agentBusy} onClick={() => studio.redo()}>
           <Icon name="redo" /> Redo
         </button>
         <span className="panel-toolbar__count">{entries.length - 1} edits</span>

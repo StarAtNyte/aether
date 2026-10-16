@@ -1340,6 +1340,40 @@
   background: var(--accent-press);
 }
 
+/*
+ * Touch screens: the Tweak pill sits above the stick and buttons (never between them), the keyboard strips are
+ * gone, and a short landscape screen moves the pill to the bottom centre and compacts the title card.
+ */
+@media (pointer: coarse) {
+  .play-tweak {
+    inset: auto 0 calc(112px + var(--s-5) * 2 + var(--s-3) + env(safe-area-inset-bottom, 0px)) 0;
+  }
+
+  .walk-hint {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+  /* Bottom centre: the stick is on the left, the buttons on the right, and the top-right corner holds the camera switch. */
+  .play-tweak {
+    inset: auto 0 max(var(--s-3), env(safe-area-inset-bottom, 0px)) 0;
+    justify-content: center;
+  }
+
+  .title-card .title-card__tagline {
+    display: none;
+  }
+
+  .title-card .title-card__title {
+    font-size: clamp(24px, 6vh, 34px);
+  }
+
+  .title-card .title-card__actions {
+    margin-top: var(--s-2);
+  }
+}
+
 /* Narrow viewports: drop secondary overlays before anything collides */
 @container viewport (max-width: 640px) {
   .nav-hint {
@@ -1669,11 +1703,24 @@
   animation: fade-in var(--dur-slow) var(--ease);
 }
 
+.title-card {
+  overflow-y: auto;
+  padding-bottom: max(clamp(16px, 5vw, 56px), env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-height: 520px) {
+  .title-card {
+    padding-top: var(--s-3);
+    padding-bottom: max(var(--s-3), env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .title-card__body {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
   max-width: min(560px, 100%);
+  margin-top: auto;
   animation: title-card-rise 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 

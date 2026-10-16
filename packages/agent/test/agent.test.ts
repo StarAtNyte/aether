@@ -406,3 +406,17 @@ describe('WorldAgent tools', () => {
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
   });
 });
+
+describe('people always get a body', () => {
+  it('attaches a rigged character to a capsule guard added by apply_patches and tells the model', async () => {
+    const guard = { op: 'add', entity: { id: 'guard-1', name: 'Gate guard', shape: { kind: 'primitive', primitive: 'capsule', size: [0.5, 1.75, 0.5] }, physics: { body: 'dynamic' } } };
+    const provider = new ScriptedProvider([turn(call('apply_patches', { patches: [guard], message: 'Add a guard' })), turn(call('finish', { message: 'done' }))]);
+    const host = new MemoryHost();
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('a guard at the gate', host));
+    expect(host.world.entities['guard-1']?.character?.wardrobe).toBe('guard');
+    expect(host.commits.map((c) => c.message)).toContain('Give 1 person a character');
+    const result = (provider.requests[1]!.messages.at(-1)!.content as ContentBlock[])[0] as { content: string };
+    expect(result.content).toMatch(/rigged character was attached/);
+    expect(events.filter((e) => e.type === 'patches')).toHaveLength(2);
+  });
+});

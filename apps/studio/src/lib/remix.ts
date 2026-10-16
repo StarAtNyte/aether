@@ -34,3 +34,13 @@ export function remixSuggestions(env: Pick<Environment, 'sky' | 'weather' | 'gra
   if (gy < -5) out.push({ prompt: 'Low gravity', sky });
   return out.slice(0, MAX_REMIXES);
 }
+
+/**
+ * The follow-up chips under a finished turn: one chip per prompt (the first refine chip and the remix of the sky can
+ * be the same words), at most three without a selection, and none for a world with nothing in it.
+ */
+export function followUpChips<T extends { prompt: string }>(all: readonly T[], selectionCount: number, entityCount: number): T[] {
+  if (entityCount === 0) return [];
+  const unique = all.filter((c, i) => all.findIndex((o) => o.prompt.toLowerCase() === c.prompt.toLowerCase()) === i);
+  return selectionCount > 0 ? unique : unique.slice(0, 3);
+}

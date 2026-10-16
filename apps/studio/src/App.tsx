@@ -4,7 +4,8 @@
  * replaces itself with the editor. A share link (`?world=<id>`) opened on
  * the home route becomes a new project that loads the shared world.
  */
-import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactElement } from 'react';
+import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
+import { ErrorBoundary, lazyBoundary } from './components/ErrorBoundary';
 import { useApp, useAppState } from './app/appContext';
 import { EditorSkeleton } from './editor/EditorSkeleton';
 import { Home } from './home/Home';
@@ -17,9 +18,9 @@ import { FirstRunHost } from './onboarding/FirstRunHost';
  * The editor (renderer, physics, agent — three.js and the engine packages)
  * loads on demand: the projects home never pays for it.
  */
-const EditorRoute = lazy(() => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute })));
+const EditorRoute = lazyBoundary(() => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute })), { what: 'editor', fallback: <EditorSkeleton /> });
 /** Read-only viewer of a world carried in a share link (same engine chunk as the editor). */
-const ViewerRoute = lazy(() => import('./editor/ViewerRoute').then((m) => ({ default: m.ViewerRoute })));
+const ViewerRoute = lazyBoundary(() => import('./editor/ViewerRoute').then((m) => ({ default: m.ViewerRoute })), { what: 'viewer', fallback: <EditorSkeleton /> });
 
 /** Share-link world ids (server-generated, 12 base62 chars). */
 const SHARE_ID = /^[0-9A-Za-z]{12}$/;
@@ -73,22 +74,16 @@ export const App = memo(function App(): ReactElement {
   useShareLink();
   let page: ReactElement;
   if (route.name === 'editor') {
-    page = (
-      <Suspense fallback={<EditorSkeleton />}>
-        <EditorRoute key={route.id} id={route.id} />
-      </Suspense>
-    );
+    page = <EditorRoute key={route.id} id={route.id} />;
   } else if (route.name === 'view') {
-    page = (
-      <Suspense fallback={<EditorSkeleton />}>
-        <ViewerRoute key={route.token} token={route.token} />
-      </Suspense>
-    );
+    page = <ViewerRoute key={route.token} token={route.token} />;
   } else if (route.name === 'new') page = <NewRoute key={route.template ?? 'starter'} template={route.template} />;
   else page = <Home section={route.name} />;
   return (
     <>
-      {page}
+      <ErrorBoundary key={route.name === 'editor' ? route.id : route.name} what="app">
+        {page}
+      </ErrorBoundary>
       {/* First-run "Connect your AI" screen: probes once, loads lazily, never blocks the app (not over a shared world). */}
       {route.name !== 'view' && <FirstRunHost />}
     </>

@@ -122,7 +122,7 @@ export const TestResultSchema: z.ZodType<TestResult> = z.object({
 /** A diagnostic as reported by the worker. */
 export const DiagnosticSchema: z.ZodType<Diagnostic> = z.object({
   severity: z.enum(['error', 'warning', 'info']),
-  code: z.enum(['overlap', 'floating', 'outOfBounds', 'jointInvalid', 'tooManyBodies', 'fellOut', 'unstable']),
+  code: z.enum(['overlap', 'floating', 'outOfBounds', 'jointInvalid', 'tooManyBodies', 'fellOut', 'unstable', 'noCharacter']),
   entities: z.array(text).max(MAX_REPLY_ITEMS),
   message: text,
   suggestion: text.optional(),

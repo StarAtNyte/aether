@@ -52,7 +52,7 @@ export const GROUND_ID = '__ground';
 /** A static-check finding, phrased so an LLM can act on it. */
 export interface Diagnostic {
   severity: 'error' | 'warning' | 'info';
-  code: 'overlap' | 'floating' | 'outOfBounds' | 'jointInvalid' | 'tooManyBodies' | 'fellOut' | 'unstable';
+  code: 'overlap' | 'floating' | 'outOfBounds' | 'jointInvalid' | 'tooManyBodies' | 'fellOut' | 'unstable' | 'noCharacter';
   entities: EntityId[];
   message: string;
   suggestion?: string;

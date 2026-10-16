@@ -1605,6 +1605,29 @@
   margin-top: 2px;
 }
 
+/* The offline "did not understand" notice carries buttons: the text takes the row, the buttons wrap underneath. */
+.ev--notice {
+  flex-wrap: wrap;
+}
+
+.ev--notice > span {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ev--notice > .clarify__choices {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.ev--notice .chip {
+  height: auto;
+  min-height: var(--control-h-sm);
+  padding-block: 4px;
+  white-space: normal;
+  text-align: left;
+}
+
 /* Small edits: what changed, at a glance */
 .ev--edit {
   display: flex;

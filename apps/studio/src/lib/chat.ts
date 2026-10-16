@@ -39,7 +39,7 @@ export type ChatEventView =
   | { type: 'clarify'; text: string; candidates: Array<{ id: string; label: string }> }
   | { type: 'error'; text: string }
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
-  | { type: 'notice'; tone: 'info' | 'warning'; text: string }
+  | { type: 'notice'; tone: 'info' | 'warning'; text: string; /** Offline planner could not map the request: show the connect-AI action and these examples. */ offline?: { examples: string[] } }
   | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit'; text: string; score?: number; findings?: number }
   | PhotoEventView
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
@@ -316,7 +316,11 @@ export function reviveEvent(v: unknown): ChatEventView | null {
     case 'photo':
       return photoView(v);
     case 'notice':
-      return { type: 'notice', tone: v['tone'] === 'warning' ? 'warning' : 'info', text: str(v['text'], 600) };
+    {
+      const off = v['offline'];
+      const examples = isRecord(off) && Array.isArray(off['examples']) ? off['examples'].filter((x): x is string => typeof x === 'string').slice(0, 6).map((x) => str(x, 120)) : null;
+      return { type: 'notice', tone: v['tone'] === 'warning' ? 'warning' : 'info', text: str(v['text'], 600), ...(examples ? { offline: { examples } } : {}) };
+    }
     case 'quality': {
       const criteria = Array.isArray(v['criteria'])
         ? v['criteria'].filter(isRecord).slice(0, 10).map((c) => ({ id: str(c['id'], 24), label: str(c['label'], 40), score: Math.max(0, Math.min(10, num(c['score']))), note: str(c['note'], 200) }))

@@ -1681,3 +1681,14 @@ drive and the serra behind. Flat roofs stop at the courtyard.
 renderer, not of the geometry); terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
 cards; seats are sit-and-stand only (no pose animation for the body in third person); physical doors are not pushed by thrown objects hard enough
 to open them (the motor wins over a book).
+
+## 26. Honest offline mode, failure states and people with bodies (`qafix`)
+
+- **Offline honesty.** The offline planner answers a prompt it does not map with a plain "I did not understand" message, the limits of offline mode, examples and the connect-AI action, and builds nothing (`notUnderstood` in `providers/mock/planner.ts`). It reports quantities it cannot honour ("1000 trees") instead of silently ignoring them. Offline turns show no model calls or token counts, and a check or quality claim with no run behind it gets a note (`packages/agent/src/honesty.ts`).
+- **Failure states.** `components/ErrorBoundary.tsx` wraps the app, the editor panels and every lazy chunk: a failed chunk load (offline) shows a friendly state with Retry instead of a white page. Every malformed share link ends on the same "this world link can't be opened" page.
+- **History while the agent builds.** Undo, redo and time travel are disabled and refused while a turn runs (`Studio.undo` and friends), so the summary can never describe a world that is not there. A stopped turn that already changed the world is labelled as partial.
+- **Touch.** The play intro lists touch controls on a coarse pointer (`lib/touchHints.ts`) and the card, joystick, buttons and Tweak pill do not overlap at 360x640, 390x844 and landscape.
+- **People always have bodies.** `@aether/core` `people.ts` recognises an entity that stands for a person (id, name, tags or NPC role) but is a capsule, cylinder or box of a person's size with no `character`. The executor attaches a rigged character after every tool edit (own undo step, the model is told), the review snapshot reports a `person-without-character` warning and the physics `diagnose` reports `noCharacter`, so a capsule human cannot ship.
+- **Scatter budgets.** When several huge scatter fields together exceed the renderer's field budget, one field may take at most 45 percent of it, so ground cover is not starved by forests mounted before it.
+- **Imports.** An imported JSON file must carry at least one world field; `{"hello":"world"}` is refused instead of becoming an empty world.
+- **Memory.** `npm run e2e:switch` opens seven worlds in one tab for several rounds, plays and stops each and compares the JS heap after a forced collection at the home page.

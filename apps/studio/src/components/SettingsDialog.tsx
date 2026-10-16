@@ -4,10 +4,11 @@
  * (studio settings, plus renderer details); the caller supplies the values
  * and the update function.
  */
-import { lazy, memo, Suspense, useEffect, useState, type ReactElement } from 'react';
+import { lazyBoundary } from './ErrorBoundary';
+import { memo, useEffect, useState, type ReactElement } from 'react';
 import type { AiPrefs } from '../ai/prefs';
 // Lazy: the AI pane pulls in the agent package; the home page must not pay for it up front.
-const AiConnectionPane = lazy(async () => ({ default: (await import('./ai/AiConnectionPane')).AiConnectionPane }));
+const AiConnectionPane = lazyBoundary(async () => ({ default: (await import('./ai/AiConnectionPane')).AiConnectionPane }), { what: 'connection settings', fallback: <div className="settings__pane" aria-busy="true" />, variant: 'inline' });
 import { SHORTCUTS } from '../app/useShortcuts';
 import { EFFECT_SETTINGS, type BackendSetting, type EffectSetting, type LowMemorySetting, type RenderTierSetting, type StudioSettings } from '../lib/storage';
 import { Toggle } from './fields';
@@ -196,9 +197,7 @@ export const SettingsDialog = memo(function SettingsDialog({
         </div>
       )}
       {tab === 'ai' && (
-        <Suspense fallback={<div className="settings__pane" aria-busy="true" />}>
-          <AiConnectionPane prefs={ai.prefs} update={ai.update} repairs={settings.repairs} setRepairs={(n) => update({ repairs: n })} />
-        </Suspense>
+        <AiConnectionPane prefs={ai.prefs} update={ai.update} repairs={settings.repairs} setRepairs={(n) => update({ repairs: n })} />
       )}
       {tab === 'shortcuts' && (
         <div className="settings__pane">

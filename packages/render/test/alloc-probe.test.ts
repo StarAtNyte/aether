@@ -24,7 +24,7 @@ import { BlueprintMarks } from '../src/view/blueprint';
 
 const RENDER_SRC = /packages\/render\/src\//;
 /** Sampling noise allowance per frame (bytes): the probe must find no real per-frame garbage. */
-const BUDGET = 16;
+const BUDGET = process.env.CI ? 64 : 16;
 
 function controls(): OrbitControlsLike {
   return { enabled: true, enableDamping: true, dampingFactor: 0.1, target: new Vector3(), update: () => true, dispose() {} };

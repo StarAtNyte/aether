@@ -65,6 +65,8 @@ export class BlueprintMarks {
   private lines: LineSegments | null = null;
   /** Seconds since shown (a typed slot: updating it never boxes a number). */
   private readonly clock = new Float64Array(1);
+  /** Wall-clock time (ms) the marks were shown: they must go even when slow frames advance the clock too little. */
+  private shownAt = 0;
 
   constructor() {
     this.group.name = 'aether:blueprint';
@@ -88,14 +90,19 @@ export class BlueprintMarks {
     lines.renderOrder = 9;
     this.material.opacity = OPACITY;
     this.clock[0] = 0;
+    this.shownAt = BlueprintMarks.now();
     this.lines = lines;
     this.group.add(lines);
   }
 
+  /** Wall clock in ms (indirection so tests can drive it). */
+  static now: () => number = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
   /** Advance; returns true while the marks changed (draw a frame). */
   update(dt: number): boolean {
     if (!this.lines) return false;
-    const clock = (this.clock[0] as number) + (Number.isFinite(dt) ? Math.max(0, Math.min(dt, 0.1)) : 0);
+    const stepped = (this.clock[0] as number) + (Number.isFinite(dt) ? Math.max(0, Math.min(dt, 0.1)) : 0);
+    const clock = Math.max(stepped, (BlueprintMarks.now() - this.shownAt) / 1000);
     this.clock[0] = clock;
     const fade = (clock - BLUEPRINT_HOLD_SECONDS) / BLUEPRINT_FADE_SECONDS;
     if (fade >= 1) {

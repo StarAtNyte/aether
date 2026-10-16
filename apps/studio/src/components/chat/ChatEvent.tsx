@@ -274,6 +274,29 @@ const VerifyView = memo(function VerifyView({ event }: { event: Extract<ChatEven
   );
 });
 
+/** A notice; when the offline planner could not map the request it also offers the examples and the connect-AI action. */
+const NoticeView = memo(function NoticeView({ event }: { event: Extract<ChatEventView, { type: 'notice' }> }): ReactElement {
+  const studio = useStudio();
+  const busy = useUI((s) => s.agentBusy);
+  return (
+    <div className={`ev ev--notice${event.tone === 'warning' ? ' is-warning' : ''}`} role="status" data-testid={event.offline ? 'offline-notice' : undefined}>
+      <Icon name={event.tone === 'warning' ? 'alert' : 'info'} /> <span>{event.text}</span>
+      {event.offline && (
+        <div className="clarify__choices">
+          <button type="button" className="chip chip--action" onClick={() => studio.store.getState().openSettings('ai')} data-testid="offline-connect">
+            Connect an AI
+          </button>
+          {event.offline.examples.map((ex) => (
+            <button key={ex} type="button" className="chip chip--action" disabled={busy} onClick={() => void studio.send(ex, { offline: true, intent: 'new' })}>
+              {ex}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 /** Renders one agent event. LLM text goes through the safe RichText renderer only. */
 export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatEventView; live: boolean }): ReactElement | null {
   switch (event.type) {
@@ -334,17 +357,16 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
     case 'done': {
       const parts: string[] = [];
       if (event.via) parts.push(event.via);
-      if (event.models && event.models.length > 0) parts.push(`answered by ${event.models.join(', ')}`);
+      // The built-in planner is not a model: its internal name is not shown as one.
+      const named = (event.models ?? []).filter((m) => m !== 'aether-mock');
+      if (named.length > 0) parts.push(`answered by ${named.join(', ')}`);
       if (event.ms !== undefined) parts.push(formatElapsed(event.ms));
-      if (event.calls > 0) parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in / ${compactCount(event.outputTokens)} out tokens`);
+      // The offline planner estimates tokens from text length: those are not real model usage, never shown.
+      if (event.calls > 0 && event.via !== 'Offline planner') parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in / ${compactCount(event.outputTokens)} out tokens`);
       return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;
     }
     case 'notice':
-      return (
-        <div className={`ev ev--notice${event.tone === 'warning' ? ' is-warning' : ''}`} role="status">
-          <Icon name={event.tone === 'warning' ? 'alert' : 'info'} /> <span>{event.text}</span>
-        </div>
-      );
+      return <NoticeView event={event} />;
     case 'quality':
       return <QualityView event={event} />;
     case 'photo':

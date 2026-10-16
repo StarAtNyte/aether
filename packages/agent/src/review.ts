@@ -2,7 +2,7 @@
  * Pieces of the review-and-fix loop that do not need a model: stall
  * detection, choosing which rooms to look at, and the text of a review turn.
  */
-import { hasOwn, type EntityId, type WorldDoc } from '@aether/core';
+import { bodilessPeople, hasOwn, type EntityId, type WorldDoc } from '@aether/core';
 import { findingKey, findingsText, legendText, markIndex, projectMarks, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
 import type { ReviewViewRequest } from './types';
 
@@ -93,6 +93,16 @@ export function snapshotForReview(world: WorldDoc, before: WorldDoc | null, opts
   const buildings = buildingIdsOf(world);
   const findings: Finding[] = [];
   for (const b of buildings.slice(0, 4)) findings.push(...reviewFindings(world, b));
+  const bodiless = bodilessPeople(world);
+  if (bodiless.length > 0) {
+    findings.push({
+      code: 'person-without-character',
+      severity: 'warning',
+      message: `${bodiless.length} ${bodiless.length === 1 ? 'entity stands' : 'entities stand'} for people but ${bodiless.length === 1 ? 'has' : 'have'} no character, so ${bodiless.length === 1 ? 'it shows' : 'they show'} as a capsule or box: ${bodiless.slice(0, 6).join(', ')}.`,
+      entities: bodiless.slice(0, 12),
+      fix: 'Update each with character {wardrobe, gender?, age?} (a rigged, animated person replaces the shape; the shape stays the collider).',
+    });
+  }
   const worst = buildings.slice(0, 4).sort((a, b) => countFor(findings, world, b) - countFor(findings, world, a))[0];
   const views: ReviewViewRequest[] = [];
   let legend = '';
