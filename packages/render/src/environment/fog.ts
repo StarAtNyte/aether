@@ -92,7 +92,9 @@ export function resolveFog(env: Pick<Environment, 'fog' | 'ground'>, sky: SkySta
   const haze = sky.showGround && env.ground ? hazeDensity(sky.hazeDensity, contentRadius) : 0;
   const fog = env.fog;
   if (fog && Number.isFinite(fog.density) && fog.density > 0) {
-    const density = Math.max(haze, worldFogDensity(fog.density, contentRadius));
+    // `visibility` is aerial perspective by distance (63 % haze at that range), independent of the content-size policy.
+    const aerial = fog.visibility !== undefined && fog.visibility > 0 ? Math.min(MAX_FOG_DENSITY, 1 / fog.visibility) : 0;
+    const density = Math.max(haze, aerial, worldFogDensity(fog.density, contentRadius));
     return { color: mixHex(fog.color, sky.fogColor, FOG_HORIZON_PULL), density };
   }
   return haze > 0 ? { color: sky.fogColor, density: haze } : null;

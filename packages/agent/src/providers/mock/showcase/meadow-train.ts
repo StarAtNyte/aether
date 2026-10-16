@@ -20,7 +20,7 @@ export function meadowTrain(): MockPlan {
     timeOfDay: 7.6,
     sunIntensity: 3,
     ambientIntensity: 0.55,
-    fog: { color: '#f3dcc0', density: 0.0045 },
+    fog: { color: '#f3dcc0', density: 0.0045, visibility: 480 },
     weather: 'dust',
     bloom: 0.7,
     exposure: 1.08,

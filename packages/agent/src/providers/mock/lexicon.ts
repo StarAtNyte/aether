@@ -104,13 +104,14 @@ const npc: Asset = {
   make: (b, x, z, color) => {
     const names = ['Ada', 'Bram', 'Cleo', 'Dorian', 'Esme', 'Finn'];
     const name = b.pick(names);
-    const id = b.prim('villager', 'capsule', [0.6, 1.7, 0.6], [x, 0.85, z], {
+    const top = color ?? b.pick(['#3f6e8c', '#8c3f5d', '#5d8c3f']);
+    const id = b.prim('villager', 'capsule', [0.56, 1.7, 0.56], [x, 0.85, z], {
       name,
-      material: { preset: 'fabric', color: color ?? b.pick(['#3f6e8c', '#8c3f5d', '#5d8c3f']) },
+      character: { wardrobe: 'villager', gender: b.chance(0.5) ? 'female' : 'male', top },
+      material: { preset: 'fabric', color: top },
       behaviors: [{ type: 'npc', params: { name, lines: ['Hello there, traveler!', 'Lovely day, isn\'t it?', 'Watch your step out there.'] } }],
       tags: ['npc'],
     });
-    b.prim(`${id}-head`, 'sphere', [0.45, 0.45, 0.45], [0, 1.05, 0], { parent: id, material: { color: '#f1c27d' } });
     return id;
   },
 };
@@ -119,8 +120,9 @@ const enemy: Asset = {
   label: 'enemy',
   radius: 1,
   make: (b, x, z, color) =>
-    b.prim('enemy', 'capsule', [0.8, 1.6, 0.8], [x, 0.8, z], {
+    b.prim('enemy', 'capsule', [0.56, 1.7, 0.56], [x, 0.85, z], {
       name: 'Enemy',
+      character: { wardrobe: 'bandit', gender: 'male', mood: 'angry', ...(color ? { top: color } : { top: '#7b1e1e' }) },
       material: { color: color ?? '#7b1e1e', emissive: '#ff2222', emissiveIntensity: 0.4 },
       behaviors: [{ type: 'follow', params: { target: 'player', distance: 0.5, speed: 2.2, range: 14 } }, { type: 'hazard', params: { mode: 'respawn', text: 'Caught!' } }],
       tags: ['enemy', 'hazard'],
@@ -131,8 +133,9 @@ const ghost: Asset = {
   label: 'ghost',
   radius: 1,
   make: (b, x, z) =>
-    b.prim('ghost', 'capsule', [0.9, 1.8, 0.9], [x, 1.6, z], {
+    b.prim('ghost', 'capsule', [0.56, 1.7, 0.56], [x, 1.4, z], {
       name: 'Ghost',
+      character: { wardrobe: 'elder', gender: 'female', age: 'old', top: '#dfe8ff', bottom: '#cfd9f2', hair: '#e9edf7', mood: 'nervous' },
       material: { color: '#e8f0ff', emissive: '#b8c8ff', emissiveIntensity: 1.5, opacity: 0.5 },
       behaviors: [{ type: 'bob', params: { amplitude: 0.4, period: 3 } }, { type: 'wander', params: { radius: 6, speed: 1.2 } }],
       castShadow: false,

@@ -11,6 +11,7 @@
  * - `assets/manifest.json` — provenance: source archive + checksum, file
  *   inside it, licence, authors and output checksums for every asset.
  */
+import { mergeIntoCatalog } from './creatures';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
@@ -408,6 +409,11 @@ async function main(): Promise<void> {
   };
   writeFileSync(join(OUT, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`);
   const total = built.reduce((s, b) => s + b.files.reduce((t, f) => t + f.bytes, 0), 0);
+  // First-party and vendored model sets built by their own scripts (animals, vehicles) survive a library rebuild.
+  for (const f of ['creatures.json', 'vehicles.json']) {
+    const file = join(OUT, f);
+    if (existsSync(file)) mergeIntoCatalog(JSON.parse(readFileSync(file, 'utf8')) as Parameters<typeof mergeIntoCatalog>[0]);
+  }
   console.log(`${entries.length} assets, ${(total / 1024 / 1024).toFixed(1)} MB → ${relative(ROOT, LIB)}`);
 }
 

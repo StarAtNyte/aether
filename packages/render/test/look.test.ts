@@ -250,4 +250,15 @@ describe('post vignette and bloom', () => {
     expect(bloomStrength(100)).toBe(MAX_BLOOM_STRENGTH);
     expect(bloomStrength(Number.NaN)).toBe(0);
   });
+
+  it('`visibility` gives aerial perspective on large worlds that the content policy would keep clear', () => {
+    const sky = computeSkyState(env({ sky: 'day' }));
+    const plain = resolveFog(env({ sky: 'day', fog: { color: '#cfdde8', density: 0.004 } }), sky, 400);
+    const aerial = resolveFog(env({ sky: 'day', fog: { color: '#cfdde8', density: 0.004, visibility: 600 } }), sky, 400);
+    expect(plain!.density).toBeLessThan(0.001);
+    expect(aerial!.density).toBeCloseTo(1 / 600, 6);
+    // A mountain 400 m away is clearly hazed (> 35 %), the foreground 20 m away is not (< 0.2 %).
+    expect(fogAmount(aerial!.density, 400)).toBeGreaterThan(0.35);
+    expect(fogAmount(aerial!.density, 20)).toBeLessThan(0.002);
+  });
 });

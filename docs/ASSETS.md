@@ -14,7 +14,7 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 
 | | |
 | --- | --- |
-| Entries | 374: 351 models (43 animated: 41 people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 10 photographed surfaces, 8 forge originals |
+| Entries | 374+: models (animated: people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 10 photographed surfaces, 8 forge originals; 13 code-authored vehicles (kart, race car, road cars) and 9 skinned, animated animals (Quaternius Farm Animals CC0, Khronos Fox) replace the block-style ones |
 | Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 26, people 19, animals 23, food 24, tools 5, props 31, skies 5, surfaces 10 |
 | Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 10 ambientCG PBR materials (CC0), 8 first-party forge originals (MIT) |
 | Disk | 37 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR) |
@@ -152,3 +152,16 @@ content ids must match).
 
 See [IMAGE_TO_3D.md](IMAGE_TO_3D.md) for the off-by-default TRELLIS.2
 provider (your own machine or cloud account).
+
+## Vehicles and animals
+
+- **Vehicles** (`scripts/assets/vehicles.ts`, `vehicle-geo.ts`; `npm run` is not needed: `npx tsx scripts/assets/vehicles.ts`)
+  are modelled in code (MIT): lofted superellipse bodies with a painted roof, glass, pillars, door seams, arches, lamps,
+  plates, lathe-turned tyres and spoked rims, brake discs, tube frames, and for the kart and the race car a helmeted driver
+  in a racing suit with arms on a steering wheel. Real size (a sedan is 4.7 m, a kart 2.6 m), base on y = 0, facing -Z.
+  Named nodes drive the visual rig (see `docs/CONTRACTS.md`, vehicle rig). `VEHICLE_DUMP=<dir>` writes plain GLBs and
+  `npx tsx scripts/assets/model-sheet.ts out.png a.glb b.glb` renders a contact sheet for art review.
+- **Animals** (`scripts/assets/creatures.ts`): skinned animals with idle / walk / run clips. `build.ts` re-merges
+  `assets/creatures.json` and `assets/vehicles.json` after every library rebuild.
+- **People** are never library models: use `entity.character` (Rocketbox cast). The block mini-figures stay in the library
+  for block worlds only and `findStandIns` flags them elsewhere.

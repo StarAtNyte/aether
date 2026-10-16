@@ -178,6 +178,8 @@ packages).
 | [Kenney Mini Characters](https://kenney.nl/assets/mini-characters) | 1.0 | Kenney | CC0-1.0 | 12 animated characters |
 | [Kenney City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) | 2.0 | Kenney | CC0-1.0 | 11 models |
 | [Kenney Mini Market](https://kenney.nl/assets/mini-market) | 1.0 | Kenney | CC0-1.0 | 6 models (1 animated character) |
+| [Farm Animals by Quaternius](https://opengameart.org/content/lowpoly-animated-farm-animal-pack) (OpenGameArt), 2018-06, SHA-256 `9ff42b7e…c39b` | 2018-06 | Quaternius | CC0-1.0, evidenced by the archive's own `License.txt` ("CC0 1.0 Universal"); the build refuses the archive otherwise | 7 skinned, animated animals (cow, horse, zebra, sheep, pig, llama, dog) converted by `scripts/assets/creatures.ts` |
+| [Fox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox) (glTF sample assets) | main | PixelMannen (model, CC0), tomkranis (rig and animation, CC-BY 4.0), @AsoboStudio and @scurest (glTF conversion, CC-BY 4.0) | CC0-1.0 and CC-BY-4.0 (credit is generated into the credits panel and `CREDITS.txt`) | fox, and a grey recolour as wolf |
 | [Poly Haven](https://polyhaven.com) models (API, 1k textures), retrieved 2026-10-14 | per asset (`assets/manifest.json`) | Kirill Sannikov, Ulan Cabanilla, Fran Calvente, James Ray Cock, Amal Kumar, Jorge Camacho, Rico Cilliers, Riley Queen, Josh Dean, Gabriel Radić (per asset in the manifest) | CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)) | 16 models: armchair, sofa, round coffee table, nightstand, wooden side table, painted bench, succulent, clay pot, ceramic vase, pendant lamp, wooden lantern, barrel, cat and horse statues, street lamp, retro TV |
 | [Poly Haven](https://polyhaven.com) HDRIs (1k `.hdr`) | per asset | Greg Zaal, Jarod Guest, Sergej Majboroda | CC0-1.0 | 5 skies: Kloofendal 48d Partly Cloudy (Pure Sky), Venice Sunset, Lebombo, Moonlit Golf, Brown Photostudio 02 |
 | [ambientCG](https://ambientcg.com) PBR materials (1K-JPG), retrieved 2026-10-14 | per material (`assets/sources.json`, SHA-256 pinned) | Lennart Demes (ambientCG) | CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)) | 19 surface finishes: WoodFloor051 (oak), WoodFloor041 (walnut), Bricks090 (brick), Tiles107 (tile), Marble016 (marble), Concrete042A (concrete), PavingStones070 (stone), Fabric026 (fabric), Plaster001 (plaster), Terrazzo009 (terrazzo); photographed detail for nature and ground (renderer stage): Bark001 (bark), Rock030 (rock), Ground078 (soil), Snow006 (snow), Ground054 (sand), Asphalt031 (asphalt), Grass004 (grass), Gravel023 (gravel), Leather026 (leather) |
@@ -189,9 +191,13 @@ resampled to 512 px and converted to the renderer's finish format
 (`scripts/assets/materials.ts`). Thumbnails in
 `assets/lib/t/` are renders of these assets by this project.
 
-**Evaluated and excluded:** Quaternius packs — the pack pages say CC0, but
-quaternius.com/license.html forbids redistributing the assets as assets,
-which a public repository would do (unclear licence → not shipped). No
+**Evaluated and excluded:** Quaternius packs fetched from quaternius.com — the
+pack pages say CC0, but quaternius.com/license.html forbids redistributing the
+assets as assets, which a public repository would do (unclear licence → not
+shipped). The single exception is the Farm Animals archive above: it carries
+its own `License.txt` stating CC0 1.0 and was taken from OpenGameArt, so the
+archive's own grant applies (the "Animals Pack" and "Animal Pack Vol.2"
+archives ship no licence file and are not used). No
 Pascal Editor, Sketchfab or other assets are included.
 
 ### 5.2 Forge originals (first-party, AI-written code)
@@ -202,6 +208,13 @@ Pascal Editor, Sketchfab or other assets are included.
 the project) are procedural generators written by **Anthropic Claude Code**
 through the asset forge (`scripts/assets/forge-heroes.ts`) from text briefs
 in that script — no reference images were used. See the AI disclosure below.
+
+**Vehicles** (`go-kart` in three colours, `race-car` in two, `car`, `taxi`,
+`police-car`, `sports-car`, `hatchback`, `suv`, `van`, `delivery-truck`; catalog
+pack `aether-vehicles`, MIT) are modelled in code by `scripts/assets/vehicles.ts`
+and `vehicle-geo.ts` (lofted bodies, lathe wheels, tube frames, a helmeted
+driver); no third-party mesh, texture or reference image is used. They replace
+the earlier Kenney Car Kit entries with the same ids.
 
 ### 5.3 Other media
 

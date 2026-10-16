@@ -111,6 +111,22 @@ function buildTerrain(api: InternalApi, shape: TerrainShape): GeneratorOutput {
     out[0] *= 1 + k * (0.3 * broad + 0.09 * fine);
     out[1] *= 1 + k * (0.12 * broad + 0.08 * fine);
     out[2] *= 1 - k * (0.26 * broad - 0.05 * fine);
+    // Hillside character: sun-bleached straw patches on the broad swells, darker lush clover in the hollows, and a
+    // mid-scale mottle, so a slope shows several greens instead of one.
+    const patchy = noise.fbm2(x * 0.011 + 31.7, z * 0.011 - 17.2, 2);
+    const mid = noise.fbm2(x * 0.085 - 5.5, z * 0.085 + 9.1, 2);
+    const straw = Math.min(1, Math.max(0, (patchy - 0.02) / 0.3)) * k;
+    out[0] *= 1 + 0.5 * straw;
+    out[1] *= 1 + 0.06 * straw;
+    out[2] *= 1 - 0.5 * straw;
+    const lush = Math.min(1, Math.max(0, (-patchy - 0.05) / 0.3)) * k;
+    out[0] *= 1 - 0.22 * lush;
+    out[1] *= 1 - 0.08 * lush;
+    out[2] *= 1 - 0.12 * lush;
+    const m = 1 + k * 0.22 * mid;
+    out[0] *= m;
+    out[1] *= 1 + k * 0.14 * mid;
+    out[2] *= m;
   });
   const layer = shape.splat;
   if (layer && mesh instanceof Mesh) {

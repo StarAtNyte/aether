@@ -114,7 +114,9 @@ describe('offline planner with the asset library', () => {
     const ids = assetIds(result.world);
     expect(ids.filter((i) => i === 'road' || i === 'road-crossing').length).toBeGreaterThanOrEqual(10);
     expect(ids).toContain('sports-car');
-    expect(ids.some((i) => i.startsWith('man') || i.startsWith('woman'))).toBe(true);
+    // Pedestrians are rigged people from the cast (a capsule collider plus `character`), not the library's block figures.
+    expect(Object.values(result.world.entities).filter((e) => e.character && e.tags.includes('npc')).length).toBeGreaterThan(0);
+    expect(ids.some((i) => i.startsWith('man') || i.startsWith('woman'))).toBe(false);
     expect(result.world.environment.hdri).toBe('sky-partly-cloudy');
     const player = result.world.player.controls;
     expect(player && result.world.entities[player]?.shape).toMatchObject({ kind: 'asset', id: 'sports-car', fallback: { kind: 'procedural', generator: 'car' } });

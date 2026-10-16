@@ -20,7 +20,8 @@ export class FoliageTextures {
   get(kind: FoliageKind): Texture {
     const hit = this.textures.get(kind);
     if (hit) return hit;
-    const { size, rgba } = foliagePixels(kind, this.size);
+    // Grass blades are hair-fine: the card gets twice the resolution so they survive the mip chain.
+    const { size, rgba } = foliagePixels(kind, kind === 'grass' ? this.size * 2 : this.size);
     const tex = new DataTexture(rgba, size, size, RGBAFormat);
     // Linear ratios and a hard alpha: no colour-space conversion, clamped edges, trilinear mips.
     tex.colorSpace = NoColorSpace;

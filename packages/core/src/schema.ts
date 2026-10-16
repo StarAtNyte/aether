@@ -536,7 +536,19 @@ export const Environment = z.object({
   sky: z.enum(['day', 'dawn', 'sunset', 'night', 'overcast', 'space', 'studio']).default('day'),
   /** 0–24 hours; drives sun direction and color when set. */
   timeOfDay: z.number().min(0).max(24).optional(),
-  fog: z.object({ color: Color, density: z.number().min(0).max(1) }).nullable().default(null),
+  fog: z
+    .object({
+      color: Color,
+      density: z.number().min(0).max(1),
+      /**
+       * Additive: aerial-perspective range in metres. Distant scenery reaches about 63 % haze at this distance whatever
+       * the content-size policy does to `density` (which keeps small worlds crisp): a river valley with a mountain 400 m
+       * away sets about 600 and the mountain turns blue-grey.
+       */
+      visibility: z.number().min(30).max(20000).optional(),
+    })
+    .nullable()
+    .default(null),
   /** Particle weather. Additive: 'petals' (drifting blossom) and 'leaves' (tumbling autumn leaves). */
   weather: z.enum(['clear', 'rain', 'snow', 'dust', 'fireflies', 'petals', 'leaves']).default('clear'),
   ambientIntensity: z.number().min(0).default(0.4),

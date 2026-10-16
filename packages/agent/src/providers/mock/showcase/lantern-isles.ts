@@ -68,7 +68,7 @@ export function lanternIsles(): MockPlan {
     timeOfDay: 17.35,
     sunIntensity: 3,
     ambientIntensity: 0.55,
-    fog: { color: '#f6cfa6', density: 0.0026 },
+    fog: { color: '#f6cfa6', density: 0.0026, visibility: 600 },
     weather: 'dust',
     bloom: 0.9,
     exposure: 1.05,
@@ -116,7 +116,8 @@ export function lanternIsles(): MockPlan {
   b.gen('cottage', 'house', { width: 6, depth: 5, color: '#efe2c4', roofColor: '#9a4a35', trimColor: '#5a3a22', lights: true, variant: 0 }, [-5, home.top, -3], { yaw: 35, physics: 'static', name: 'Keeper’s cottage', footprint: 4 });
   const fire = b.gen('campfire', 'campfire', { size: 1.1 }, [3.5, home.top, -1], { physics: 'static', name: 'Campfire', footprint: 1.6 });
   b.light(fire, [0, 0.8, 0], '#ff8a3d', 2.4, 10, [{ type: 'pulseLight', params: { min: 1.8, max: 2.8, period: 0.4 } }]);
-  b.asset('guide', 'woman', [1.5, home.top, 3.5], {
+  b.prim('guide', 'capsule', [0.56, 1.7, 0.56], [1.5, home.top + 0.85, 3.5], {
+    character: { wardrobe: 'traveller', gender: 'female', age: 'adult', top: '#a8541f', bottom: '#3b3f4a', mood: 'cheerful', hold: 'lantern' },
     name: 'Mira the lamplighter',
     yaw: 200,
     physics: 'kinematic',
@@ -136,7 +137,6 @@ export function lanternIsles(): MockPlan {
       wander: false,
     } }],
     tags: ['npc', 'focus'],
-    fallback: { kind: 'primitive', primitive: 'capsule', size: [0.6, 1.7, 0.6] },
   });
   for (const [x, z] of [[-1, 9], [6, 6], [-8, 5]] as const) glowLantern(b, [x, home.top, z], '#ffb35c', { lit: false });
   dress(b, home, 4, { leaf: '#9cb84a', flower: '#f6a6c1' });

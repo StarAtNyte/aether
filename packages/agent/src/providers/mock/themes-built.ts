@@ -53,14 +53,14 @@ const village: Theme = {
         b.gen('market-stall', 'table', { width: 2, depth: 1, color: '#9a6a3c' }, [tx, 0, tz], { physics: 'static', footprint: 1.4 });
         b.gen('crate', 'crate', { size: 0.7 }, [r2(tx + 1.4), 0, tz], { physics: 'static', footprint: 0.5 });
       }
-      const npc = b.prim('villager', 'capsule', [0.6, 1.7, 0.6], [r2(c.x + 3), 0.85, r2(c.z + 3)], {
+      b.prim('villager', 'capsule', [0.56, 1.7, 0.56], [r2(c.x + 3), 0.85, r2(c.z + 3)], {
         name: 'Villager',
+        character: { wardrobe: 'villager', gender: 'female', age: 'adult', top: '#3f6e8c', mood: 'cheerful' },
         material: { preset: 'fabric', color: '#3f6e8c' },
         behaviors: [{ type: 'npc', params: { name: 'Mira', persona: 'cheerful baker', lines: ['Welcome to our village!', 'Fresh bread at dawn, every day.', 'Have you seen the old windmill?'], wanderRadius: 4 } }],
         tags: ['npc'],
         footprint: 0.8,
       });
-      b.prim(`${npc}-head`, 'sphere', [0.45, 0.45, 0.45], [0, 1.05, 0], { parent: npc, material: { color: '#f1c27d' } });
     }
     housesAround(c, 8, 16, null);
     for (let i = 0; i < 6; i++) {
@@ -183,8 +183,10 @@ function libraryStreet(c: ThemeCtx): void {
       const px = r2(c.x + side * (5.1 + k * 0.8));
       const from = r2(c.z - 30 + b.rand(0, 20));
       const to = r2(from + side * 22);
-      b.asset('pedestrian', b.pick([...PEOPLE]), [px, 0.2, from], {
+      const model = b.pick([...PEOPLE]);
+      b.prim('pedestrian', 'capsule', [0.56, 1.7, 0.56], [px, 0.2 + 0.85, from], {
         name: b.pick(['Ada', 'Bram', 'Cleo', 'Dorian', 'Esme', 'Finn', 'Gwen', 'Hugo']),
+        character: { wardrobe: 'casual', gender: model.startsWith('w') ? 'female' : 'male', top: b.pick(['#2f5d8c', '#8c2f39', '#3d6b4f', '#c9a227', '#6b3f8c', '#2b2f3a']) },
         behaviors: [{ type: 'patrol', params: { waypoints: [[px, 0.2, from], [px, 0.2, to]], speed: r2(b.rand(1.2, 1.6)), mode: 'pingpong', face: true } }],
         tags: ['npc', 'character'],
       });
@@ -226,7 +228,7 @@ const city: Theme = {
   },
   build(c) {
     const { b } = c;
-    const library = hasAssets(...CITY_BUILDINGS, ...CITY_CARS, ...PEOPLE, 'road', 'road-crossing', 'streetlight', 'sports-car', 'traffic-light', 'dumpster', 'bench-painted', 'planter');
+    const library = hasAssets(...CITY_BUILDINGS, ...CITY_CARS, 'road', 'road-crossing', 'streetlight', 'sports-car', 'traffic-light', 'dumpster', 'bench-painted', 'planter');
     if (library) {
       libraryStreet(c);
       // Photographic daylight for the real models (image-based lighting), unless it is night.
@@ -333,8 +335,10 @@ const haunted: Theme = {
       b.light(pumpkin, [0, 0.4, 0], '#ff7b00', 1, 5, [{ type: 'pulseLight', params: { min: 0.5, max: 1.4, period: r2(b.rand(0.8, 1.6)) } }]);
     }
     for (let i = 0; i < 2; i++) {
-      b.prim('ghost', 'capsule', [0.9, 1.8, 0.9], [r2(c.x + (i === 0 ? -6 : 7)), 1.6, r2(c.z - 4 - i * 3)], {
+      // A pale, hovering figure from the cast (a spectre in a grave-white shroud; the capsule is only the collider).
+      b.prim('ghost', 'capsule', [0.56, 1.7, 0.56], [r2(c.x + (i === 0 ? -6 : 7)), 1.4, r2(c.z - 4 - i * 3)], {
         name: 'Ghost',
+        character: { wardrobe: 'elder', gender: i === 0 ? 'female' : 'male', age: 'old', top: '#dfe8ff', bottom: '#cfd9f2', hair: '#e9edf7', mood: 'nervous' },
         material: { color: '#e8f0ff', emissive: '#b8c8ff', emissiveIntensity: 1.5, opacity: 0.5 },
         behaviors: [{ type: 'bob', params: { amplitude: 0.4, period: 3 } }, { type: 'wander', params: { radius: 6, speed: 1.2, pause: 0.5 } }],
         castShadow: false,

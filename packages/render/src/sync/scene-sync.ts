@@ -59,6 +59,7 @@ import { createMaterial } from '../materials/material-cache';
 import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
 import type { AssetAnimator } from './asset-animator';
+import { isVehicleModel, VehicleRig } from './vehicle-rig';
 import type { CharacterSystem } from '../characters/system';
 import { resolveLook } from '@aether/assets';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
@@ -274,6 +275,10 @@ export class SceneSync {
   /** Locomotion / clip playback of animated assets (loaded with the first animated model). */
   private animatorRef: AssetAnimator | null = null;
   private animatorLoad: Promise<AssetAnimator> | null = null;
+  /** Wheels, steering and body sway of modelled vehicles. */
+  private readonly vehicles = new VehicleRig();
+  /** Per-entity clones of the "paint" materials of tinted vehicles (disposed with the content). */
+  private readonly paintClones = new Map<string, Material[]>();
 
   private loadAnimator(): Promise<AssetAnimator> {
     this.animatorLoad ??= import('./asset-animator').then((m) => (this.animatorRef = new m.AssetAnimator()));
@@ -967,7 +972,10 @@ export class SceneSync {
     const reparent = before.parent !== after.parent;
     // Mesh colliders depend on the body type (trimesh vs hull).
     const rebuild = !deepEqual(before.shape, after.shape) || (after.shape.kind === 'mesh' && before.physics?.body !== after.physics?.body);
-    if (!rebuild && !deepEqual(before.material, after.material)) this.rematerial(node);
+    if (!rebuild && !deepEqual(before.material, after.material)) {
+      if (after.shape.kind === 'asset' && before.material?.color !== after.material?.color) this.paintAsset(node);
+      this.rematerial(node);
+    }
     if (!rebuild && (before.castShadow !== after.castShadow || before.receiveShadow !== after.receiveShadow)) this.applyShadowFlags(node);
     if (!deepEqual(before.light, after.light)) this.syncLight(node, before);
     if (!deepEqual(before.character, after.character) || !deepEqual(before.shape, after.shape)) this.syncCharacter(node);
@@ -1103,7 +1111,34 @@ export class SceneSync {
 
   /** Advance asset animations (characters, animals). Returns true when a redraw is needed. */
   updateAnimations(dt: number): boolean {
-    return this.animatorRef?.update(dt) ?? false;
+    const animated = this.animatorRef?.update(dt) ?? false;
+    const driven = this.vehicles.update(dt);
+    return animated || driven;
+  }
+
+  /**
+   * Tint the "paint" material of a modelled vehicle (library models name their body paint "paint") with the
+   * entity's `material.color`. Each tinted entity gets its own clone, so a red kart and a blue one can share a file.
+   */
+  private paintAsset(node: EntityNode): void {
+    const color = node.entity.material?.color;
+    if (!color || this.variant !== 'standard') return;
+    let clones = this.paintClones.get(node.id);
+    node.content.traverse((o) => {
+      if (!(o instanceof Mesh)) return;
+      const m = o.material;
+      if (Array.isArray(m) || !(m instanceof MeshStandardMaterial) || (m.name !== 'paint' && m.userData['aetherPaint'] !== true)) return;
+      let own: MeshStandardMaterial = m;
+      if (m.userData['aetherPaint'] !== true) {
+        own = m.clone() as MeshStandardMaterial;
+        own.userData['aetherPaint'] = true;
+        o.material = own;
+        clones ??= [];
+        clones.push(own);
+        this.paintClones.set(node.id, clones);
+      }
+      (own as MeshStandardMaterial).color.set(color);
+    });
   }
 
   /**
@@ -1193,6 +1228,17 @@ export class SceneSync {
       }
     });
     node.content.add(content);
+    if (standard) {
+      this.paintAsset(node);
+      if (isVehicleModel(main)) {
+        this.vehicles.add(node.id, main, node.object);
+        node.releases.push(() => {
+          this.vehicles.remove(node.id);
+          for (const m of this.paintClones.get(node.id) ?? []) m.dispose();
+          this.paintClones.delete(node.id);
+        });
+      }
+    }
     const clipRoot = main.children[0];
     if (standard && info.anims && clipRoot && clipRoot.animations.length > 0) {
       const animator = await this.loadAnimator();

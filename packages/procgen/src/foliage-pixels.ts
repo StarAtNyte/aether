@@ -205,30 +205,33 @@ function needleCard(n: number): Uint8Array {
 function grassCard(n: number): Uint8Array {
   const r = rng(0x6a55);
   const c = new Canvas(n);
-  const blades = 15;
+  // Many thin, curved blades of different heights (a real tuft is dozens of hair-fine blades, not a few fat ones).
+  const blades = 44;
   for (let i = 0; i < blades; i++) {
-    const x0 = n * (0.12 + 0.76 * r());
-    const h = n * (0.5 + 0.48 * r());
-    const lean = (r() - 0.5) * n * 0.34;
-    const w0 = n * (0.028 + 0.02 * r());
-    const tone = 0.7 + r() * 0.3;
-    const dry = r() < 0.18;
+    const x0 = n * (0.08 + 0.84 * r());
+    const tall = r() < 0.3;
+    const h = n * ((tall ? 0.72 : 0.38) + (tall ? 0.26 : 0.3) * r());
+    const lean = (r() - 0.5) * n * 0.42;
+    const bend = (r() - 0.5) * n * 0.16;
+    const w0 = n * (0.009 + 0.011 * r());
+    const tone = 0.62 + r() * 0.38;
+    const dry = r() < 0.14;
     const top = n - h;
     c.stamp(
-      Math.min(x0, x0 + lean) - w0 - 2,
+      Math.min(x0, x0 + lean + bend) - w0 - 3,
       top - 2,
-      Math.max(x0, x0 + lean) + w0 + 2,
+      Math.max(x0, x0 + lean + bend) + w0 + 3,
       n,
       (px, py) => {
         const t = Math.min(1, Math.max(0, (n - py) / h));
         if (py < top - 1) return 5;
-        const xc = x0 + lean * t * t;
-        const w = w0 * Math.pow(Math.max(0, 1 - t), 0.75) + 0.35;
+        const xc = x0 + lean * t * t + bend * Math.sin(t * Math.PI);
+        const w = w0 * Math.pow(Math.max(0, 1 - t), 0.6) + 0.3;
         return Math.abs(px - xc) - w;
       },
       (_px, py) => {
         const t = Math.min(1, Math.max(0, (n - py) / h));
-        return dry ? [0.95 * tone, 0.9 * tone, 0.6 * tone] : [(0.55 + 0.4 * t) * tone, (0.78 + 0.2 * t) * tone, (0.4 + 0.14 * t) * tone];
+        return dry ? [0.95 * tone, 0.88 * tone, 0.55 * tone] : [(0.5 + 0.45 * t) * tone, (0.74 + 0.24 * t) * tone, (0.34 + 0.2 * t) * tone];
       },
     );
   }

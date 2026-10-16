@@ -65,6 +65,19 @@ export function libraryAsset(entry: CatalogEntry, noun: string, base: Asset | nu
     radius,
     make: (b, x, z) => {
       const live = liveliness(entry, noun, b);
+      if (entry.category === 'characters') {
+        // The library's people are block mini-figures: a person here is a rigged cast member (the capsule is only the collider).
+        const monster = /zombie|skeleton|vampire|monster|enemy|goblin/.test(`${entry.id} ${noun}`);
+        const ghost = entry.id === 'ghost';
+        const female = /woman|girl|female|lady/.test(`${entry.id} ${noun}`);
+        return b.prim(noun.replace(/\s+/g, '-'), 'capsule', [0.56, 1.7, 0.56], [x, ghost ? 1.4 : 0.85, z], {
+          yaw: r2(b.rand(0, 360)),
+          ...live,
+          character: ghost
+            ? { wardrobe: 'elder', gender: 'female', age: 'old', top: '#dfe8ff', bottom: '#cfd9f2', hair: '#e9edf7', mood: 'nervous' }
+            : { wardrobe: monster ? 'bandit' : 'villager', gender: female ? 'female' : 'male', mood: monster ? 'angry' : 'neutral' },
+        });
+      }
       return b.asset(noun.replace(/\s+/g, '-'), entry.id, [x, 0, z], {
         yaw: r2(b.rand(0, 360)),
         ...live,

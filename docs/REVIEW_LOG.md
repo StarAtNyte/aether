@@ -3269,3 +3269,30 @@ doors are exercised in the unit test); sitting has no body animation; the live A
 **Performance review.** `bodilessPeople` is one pass over the entities (capped at 1 800) after an edit and once per verification. The field share cap is evaluated once per mounted field. The blueprint expiry adds one `performance.now()` per frame while marks are shown.
 
 **Honest gaps.** Several bundled flagships still use blocky library figures for NPCs and spectators (Kart Canyon fans, Neon Rain City pedestrians, Kyoto monks, Lantern Isles' Mira); the fallback now flags them in verification and attaches rigged characters when they are edited through the tools, but the saved worlds themselves were not rewritten because the look stages own those files. The landscape title card and HUD toast are tight but no longer collide with the controls.
+
+## Stage `lookoutdoor`: outdoor look, and every character looks human or properly animated
+
+**What was built.** Part 2 (characters): `findStandIns` lint in `@aether/core` (people, animals and vehicles shown as capsules, boxes, block figures or cube pets),
+wired into the quality review as a major coherence issue; every shipped project and every planner archetype now uses rigged cast people (fans, pedestrians,
+monks, the lamplighter, villagers, ghosts as pale hovering figures, enemies); library "characters" resolve to capsule plus `character` in the planner; the prompt
+tells the model to do the same. Modelled, animated animals (Farm Animals CC0, Fox) are in the library. Thirteen code-authored vehicles (kart with a helmeted driver,
+race cars, sedan, taxi, police car, coupe, hatchback, SUV, van, delivery van) with a visual rig (wheels roll, front wheels and steering wheel turn, body pitches and
+rolls) and per-entity paint tint; Kart Canyon uses karts for the player and the rivals. Part 1 (outdoor): `environment.fog.visibility` (aerial perspective that the
+content-size policy no longer erases), richer hillside colour (straw, clover, mottle), hair-fine grass blades at twice the card resolution and denser tufts, rooftop
+clutter and brighter facades in Neon Rain City; outdoor flagships set a visibility range.
+
+**Verification.** `tsc` 0 errors; full vitest 3 461 tests (core lint over all bundled worlds and nine planner prompts, vehicle rig, vehicle catalog, fog visibility,
+catalog licences); studio build; look-shots rounds on the RTX 4090 (Chromium, ANGLE/Vulkan WebGL2): baseline, people and karts, outdoor look, city and temple, plus the
+model contact sheets of vehicles and animals.
+
+**Security review.** The lint reads entities only (no evaluation). `fog.visibility` is a bounded number (30 to 20 000). The paint tint takes the validated
+`material.color` hex only and clones materials per entity (disposed with the content). Vehicle files are first-party and built offline; the build refuses animal
+archives whose licence file or checksum differ. No dependency was added.
+
+**Performance review.** A vehicle is about 17 k triangles in 6 to 9 draw calls (merged per node and material); the rig is a few property writes per frame and allocates
+nothing. Grass cards are 512 px (one shared texture). The fog change is a uniform.
+
+**Honest gaps.** Deer, cats, birds and other cube pets still need modelled replacements (no permissive animated source was found); the lint flags them where a
+character-like entity uses them. Road cars are stylised-real (rounded bodies, no interior), not Blender-grade. Water foam and refraction were not added (the
+screen-space reflection path already mirrors the shore in Sakura River); volumetric shafts and the colour grade were left to the photoreal layer. Neon facades are still
+flat shapes with window layers. Firefox was not run on this machine this round.

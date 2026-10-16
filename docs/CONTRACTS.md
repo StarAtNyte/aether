@@ -437,7 +437,25 @@ particles (GPU points), bloom/tone mapping (ACES), dispose everything on removal
   framing distance (`maxContentFogDensity`); the preset haze fades backdrop
   scenery; world fog above `FOGGY_THRESHOLD` may thicken to twice the cap;
   the fog color is pulled toward the sky horizon and the dome's horizon band
-  matches it.
+  matches it. `environment.fog.visibility` (metres, additive, optional) is
+  aerial perspective by distance: density `1 / visibility` (63 % haze at that
+  range) is honoured whatever the content-size policy does, so a valley with a
+  mountain 400 m away turns the mountain blue-grey while the foreground stays
+  clear.
+- *Stand-in lint* (`findStandIns` in `@aether/core`): people, animals and
+  vehicles shown as a bare capsule / box primitive (collider proxies), as the
+  library's block mini-figures (`VOXEL_PERSON_ASSET_IDS`) or cube pets
+  (`CUBE_PET_ASSET_IDS`) are reported with a reason; entities with a
+  `character`, modelled creatures and vehicles, parts of a being and block
+  worlds (`world.voxel`) are exempt. The quality review turns findings into a
+  major `coherence` issue; the bundled worlds and the planner archetypes are
+  held to zero findings by tests.
+- *Vehicle rig* (`VehicleRig`, `isVehicleModel`): a library model with nodes
+  `chassis`, `wheel_{fl,fr,rl,rr}` (hub height = wheel radius), `steer_{fl,fr}`
+  and optionally `steer_wheel` rolls, steers and sways purely from how its
+  entity moved (wheels by distance over radius, steering from heading rate,
+  body pitch and roll on a damped spring). A material named `paint` is tinted
+  by the entity's `material.color` (one clone per entity).
 - *Framing* (`collectFramingItems` → `contentFraming` → `framingPose`):
   ground, sky, `backdrop`/`terrain` tags, terrain generators (mountain,
   island, terrain) and huge entities are scenery (framed only when nothing

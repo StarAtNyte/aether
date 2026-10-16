@@ -79,7 +79,7 @@ export function kartCanyon(): MockPlan {
     timeOfDay: 16.4,
     sunIntensity: 3.1,
     ambientIntensity: 0.5,
-    fog: { color: '#f0c9a0', density: 0.0018 },
+    fog: { color: '#f0c9a0', density: 0.0018, visibility: 900 },
     weather: 'dust',
     bloom: 0.55,
     exposure: 1.05,
@@ -128,9 +128,15 @@ export function kartCanyon(): MockPlan {
   b.prim('stand-roof', 'box', [8, 0.3, 26], [standX, 7.8, r2(start[2] - 2)], { material: { preset: 'metal', color: '#2b2f3a' }, castShadow: true });
   for (const dz of [-12, 12]) b.prim('stand-pillar', 'box', [0.3, 4.4, 0.3], [r2(standX + 3.6), 5.6, r2(start[2] - 2 + dz)], { material: { preset: 'metal', color: '#2b2f3a' }, physics: 'static' });
   // Crowd: animated people on the stand.
-  const people = ['man', 'woman', 'man-b', 'woman-b', 'man-c', 'woman-c'] as const;
+  const shirts = ['#d7263d', '#f5f3ee', '#1b98e0', '#ffd23f', '#2f7d4a', '#e8742a'] as const;
   for (let k = 0; k < 10; k++) {
-    b.asset('fan', b.pick(people), [r2(standX - 2.3 + (k % 4) * 1.5), r2(3.5 + (k % 4) * 0.5), r2(start[2] - 12 + k * 2.2)], { yaw: -90, animation: 'idle', castShadow: false, tags: ['crowd'] });
+    // Real people from the cast (the capsule is only the collider; the standing figure replaces it).
+    b.prim('fan', 'capsule', [0.56, 1.7, 0.56], [r2(standX - 2.3 + (k % 4) * 1.5), r2(3.5 + 0.85 + (k % 4) * 0.5), r2(start[2] - 12 + k * 2.2)], {
+      yaw: -90,
+      castShadow: true,
+      character: { wardrobe: 'casual', gender: k % 2 ? 'female' : 'male', age: k % 5 === 4 ? 'old' : k % 3 === 0 ? 'young' : 'adult', mood: 'cheerful', top: b.pick(shirts), scale: r2(b.rand(0.94, 1.06)) },
+      tags: ['crowd'],
+    });
   }
 
   // --- Boost pads on both straights ------------------------------------------------------
@@ -159,13 +165,13 @@ export function kartCanyon(): MockPlan {
   const rivalLine = (offset: number): Json[] => track.filter((_, i) => i % 3 === 0).map((p) => [r2(p[0] + offset), 0.05, p[2]] as Json);
   for (const [k, color, speed] of [[0, '#1b98e0', 15.5], [1, '#ffd23f', 17.5]] as const) {
     const line = rivalLine(k === 0 ? 2 : -2);
-    b.asset('rival', 'race-car', line[k * 6] as V3, {
+    b.asset('rival', k === 0 ? 'go-kart-blue' : 'go-kart-yellow', line[k * 6] as V3, {
       name: k === 0 ? 'Rival: Blue Comet' : 'Rival: Yellow Jacket',
       // Rivals are pace ghosts: sensor bodies lapping the racing line without colliding with you.
       physics: { body: 'kinematic', sensor: true },
       behaviors: [{ type: 'patrol', params: { waypoints: line, speed, mode: 'loop', face: true } }],
       tags: ['rival'],
-      fallback: { kind: 'procedural', generator: 'car', params: { length: 4, color } },
+      fallback: { kind: 'procedural', generator: 'car', params: { length: 2.6, color } },
     });
   }
 

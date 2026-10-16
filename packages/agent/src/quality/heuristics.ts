@@ -4,7 +4,7 @@
  * pixel statistics of rendered views. Pure and fast (O(n²) only over ≤ 300
  * content entities for the overlap check).
  */
-import type { Entity, Json, WorldDoc } from '@aether/core';
+import { findStandIns, type Entity, type Json, type WorldDoc } from '@aether/core';
 import { paletteStats } from './color';
 import { contentExtent, mayFloat, overlapVolume, placedContent, volume, type Placed } from './geometry';
 import { clamp10, QUALITY_CRITERIA, weightedScore, type CriterionScore, type QualityCriterion, type QualityInput, type QualityIssue, type QualityReport, type ViewStats } from './types';
@@ -300,8 +300,22 @@ function detail(c: Ctx): CriterionScore {
   return { score: clamp10(s), notes };
 }
 
+/** People, animals and vehicles shown as bare capsules, boxes or block figures (see `findStandIns`). */
+function standInPenalty(c: Ctx): { penalty: number; notes: string[] } {
+  const found = findStandIns(c.world);
+  if (found.length === 0) return { penalty: 0, notes: [] };
+  c.issues.push({
+    criterion: 'coherence',
+    severity: 'major',
+    message: `Characters must be real: ${found.slice(0, 3).map((f) => f.reason).join('; ')}.`,
+    entities: found.slice(0, 12).map((f) => f.id),
+  });
+  return { penalty: Math.min(4, 1 + found.length * 0.5), notes: [`${found.length} stand-in character(s) (capsule, box or block figure)`] };
+}
+
 function coherence(c: Ctx, words: readonly string[]): CriterionScore {
-  if (words.length === 0) return { score: 8, notes: ['no specific nouns to match'] };
+  const stand = standInPenalty(c);
+  if (words.length === 0) return { score: clamp10(8 - stand.penalty), notes: stand.notes.length > 0 ? stand.notes : ['no specific nouns to match'] };
   const texts = Object.values(c.world.entities).map(entityText);
   const meta = `${c.world.name} ${c.world.description ?? ''}`.toLowerCase();
   const missing: string[] = [];
@@ -315,8 +329,8 @@ function coherence(c: Ctx, words: readonly string[]): CriterionScore {
     else missing.push(w);
   }
   const ratio = hit / words.length;
-  const s = 2 + ratio * 8;
-  const notes = missing.length === 0 ? ['every key word of the prompt is represented'] : [`not visibly present: ${missing.slice(0, 5).join(', ')}`];
+  const s = 2 + ratio * 8 - stand.penalty;
+  const notes = [...stand.notes, ...(missing.length === 0 ? ['every key word of the prompt is represented'] : [`not visibly present: ${missing.slice(0, 5).join(', ')}`])];
   if (ratio < 0.6) c.issues.push({ criterion: 'coherence', severity: ratio < 0.35 ? 'major' : 'minor', message: `The world does not show: ${missing.slice(0, 5).join(', ')}.` });
   return { score: clamp10(s), notes };
 }

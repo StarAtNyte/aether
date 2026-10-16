@@ -71,7 +71,7 @@ export function highlandTrail(): MockPlan {
     timeOfDay: 8.2,
     sunIntensity: 2.6,
     ambientIntensity: 0.5,
-    fog: { color: '#cfdde8', density: 0.0042 },
+    fog: { color: '#cfdde8', density: 0.0042, visibility: 650 },
     weather: 'clear',
     bloom: 0.3,
     exposure: 1.05,
@@ -351,14 +351,14 @@ export function highlandTrail(): MockPlan {
     return false;
   };
   const tufts: V3[] = [];
-  for (let i = 0; i < 16000; i++) {
+  for (let i = 0; i < 30000; i++) {
     const x = r2(b.rand(-SIZE / 2 + 14, SIZE / 2 - 14));
     const z = r2(b.rand(-SIZE / 2 + 14, SIZE / 2 - 14));
     if (slope(x, z) > 36 || !(nearTrail(x, z, 34) || Math.abs(x - riverX(z)) < HALF + 14) || Math.abs(x - riverX(z)) < HALF + 0.4) continue;
     if (nearTrail(x, z, 1.1)) continue; // the worn trail stays bare
     tufts.push([x, 0, z]);
   }
-  grove('grass', 'meadow-grass', { size: 0.6, color: '#7aa83f' }, tufts, [0.65, 1.25], 'Meadow grass');
+  grove('grass', 'meadow-grass', { size: 0.5, color: '#7aa83f' }, tufts, [0.65, 1.25], 'Meadow grass');
 
   // --- Rules --------------------------------------------------------------------------------------------------------------------
   b.player({ mode: 'thirdPerson', spawn: [r2(start[0] + 2), r2(start[1] + 1), r2(start[2] + 6)], moveSpeed: 5.2, jumpSpeed: 6.2, character: { wardrobe: 'traveller', gender: 'male', age: 'adult', hold: 'bag' } });

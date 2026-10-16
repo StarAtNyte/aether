@@ -67,7 +67,7 @@ export function sakuraRiver(): MockPlan {
     timeOfDay: 17.25,
     sunIntensity: 2.8,
     ambientIntensity: 0.5,
-    fog: { color: '#f2d3c9', density: 0.0035 },
+    fog: { color: '#f2d3c9', density: 0.0035, visibility: 520 },
     weather: 'petals',
     bloom: 0.75,
     exposure: 1.05,

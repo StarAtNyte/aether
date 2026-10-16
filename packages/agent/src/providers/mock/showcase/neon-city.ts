@@ -61,7 +61,7 @@ export function neonRainCity(): MockPlan {
     sky: 'night',
     timeOfDay: 22.6,
     sunIntensity: 0.4,
-    ambientIntensity: 0.32,
+    ambientIntensity: 0.55,
     fog: { color: '#1c1838', density: 0.011 },
     weather: 'rain',
     bloom: 1.5,
@@ -107,7 +107,15 @@ export function neonRainCity(): MockPlan {
   }
   towers.forEach((t, i) => {
     const glass = i % 3 === 0;
-    b.prim('tower', 'box', [t.w, t.h, t.d], [t.x, r2(t.h / 2), t.z], { name: 'Tower', material: glass ? { preset: 'metal', color: '#1d2433', roughness: 0.18, metalness: 0.75 } : { preset: 'concrete', color: b.pick(['#2a2733', '#30303a', '#3a3340', '#26303a']), roughness: 0.55 }, physics: 'static', tags: ['tower'] });
+    b.prim('tower', 'box', [t.w, t.h, t.d], [t.x, r2(t.h / 2), t.z], { name: 'Tower', material: glass ? { preset: 'metal', color: '#1d2433', roughness: 0.18, metalness: 0.75 } : { preset: 'concrete', finish: i % 3 === 1 ? 'brick' : 'concrete', color: b.pick(['#4a4655', '#54545f', '#5d5360', '#3f4b58']), roughness: 0.5 }, physics: 'static', tags: ['tower'] });
+    // Rooftop clutter and a blinking mast: the skyline reads as a real city against the glow, not as bare boxes.
+    for (let k = 0; k < 3; k++) {
+      const bw = r2(b.rand(1.6, 3.2));
+      b.prim('rooftop-unit', 'box', [bw, r2(b.rand(1, 2)), r2(b.rand(1.6, 3))], [r2(t.x + b.rand(-t.w * 0.28, t.w * 0.28)), r2(t.h + 2 + 0.7), r2(t.z + b.rand(-t.d * 0.28, t.d * 0.28))], { material: { preset: 'metal', color: '#3b3f48', roughness: 0.5, metalness: 0.6 }, physics: 'static' });
+    }
+    if (i % 2 === 0) b.prim('water-tank', 'cylinder', [2.4, 2.6, 2.4], [r2(t.x + t.w * 0.2), r2(t.h + 2 + 1.3), r2(t.z - t.d * 0.2)], { material: { preset: 'wood', color: '#4a3a2c', roughness: 0.8 }, physics: 'static' });
+    const mast = b.prim('mast', 'cylinder', [0.18, r2(b.rand(6, 11)), 0.18], [r2(t.x - t.w * 0.25), r2(t.h + 2 + 4), r2(t.z + t.d * 0.25)], { material: { preset: 'metal', color: '#555a63' }, physics: 'static' });
+    b.prim('mast-light', 'sphere', [0.5, 0.5, 0.5], [0, 5.3, 0], { parent: mast, material: { preset: 'emissive', color: '#ff2a2a', emissive: '#ff2a2a', emissiveIntensity: 3 }, castShadow: false, behaviors: [{ type: 'pulseLight', params: { min: 0.1, max: 3.4, period: r2(b.rand(1.2, 2.4)), property: 'material.emissiveIntensity' } }] });
     b.prim('crown', 'box', [r2(t.w * 0.7), 2, r2(t.d * 0.7)], [t.x, r2(t.h + 1), t.z], { material: { preset: 'concrete', color: '#22222a' }, physics: 'static' });
     if (i % 4 === 1) b.prim('crown-light', 'box', [r2(t.w * 0.72), 0.25, r2(t.d * 0.72)], [t.x, r2(t.h + 2.1), t.z], { material: { preset: 'neon', color: NEON[i % NEON.length] as string, emissive: NEON[i % NEON.length] as string, emissiveIntensity: 2.4 }, castShadow: false });
     windows(b, t, sets);
@@ -119,15 +127,15 @@ export function neonRainCity(): MockPlan {
       id: b.id(base),
       name: base.startsWith('warm') ? 'Lit windows' : 'Screen-lit windows',
       transform: { position: [0, 0, 0] },
-      shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box', size: zFacing ? [1.5, 1.9, 0.1] : [0.1, 1.9, 1.5] }, count: points.length, area: [400, 400], seed: 3, scaleRange: [1, 1], randomYaw: false, points: points.slice(0, 20_000) },
+      shape: { kind: 'scatter', of: { kind: 'primitive', primitive: 'box', size: zFacing ? [1.15, 1.55, 0.1] : [0.1, 1.55, 1.15] }, count: points.length, area: [400, 400], seed: 3, scaleRange: [1, 1], randomYaw: false, points: points.slice(0, 20_000) },
       material: { preset: 'emissive', color, emissive: color, emissiveIntensity: intensity },
       castShadow: false,
       receiveShadow: false,
       tags: ['windows'],
     });
   };
-  windowLayer('warm-windows', sets.litZ, true, '#ffc983', 1.25);
-  windowLayer('warm-windows', sets.litX, false, '#ffc983', 1.25);
+  windowLayer('warm-windows', sets.litZ, true, '#ffc983', 1.0);
+  windowLayer('warm-windows', sets.litX, false, '#ffc983', 1.0);
   windowLayer('cool-windows', sets.coolZ, true, '#8fd8ff', 1.1);
   windowLayer('cool-windows', sets.coolX, false, '#8fd8ff', 1.1);
 
@@ -186,10 +194,11 @@ export function neonRainCity(): MockPlan {
     b.prim('headlights', 'box', [1.6, 0.18, 0.1], [0, 0.75, -2.3], { parent: car, material: { preset: 'emissive', color: '#fff6e0', emissive: '#fff6e0', emissiveIntensity: 4 }, castShadow: false });
     b.prim('taillights', 'box', [1.6, 0.16, 0.1], [0, 0.8, 2.3], { parent: car, material: { preset: 'emissive', color: '#ff2e3c', emissive: '#ff2e3c', emissiveIntensity: 3 }, castShadow: false });
   });
-  const people = ['man', 'woman', 'man-b', 'woman-b', 'man-c', 'woman-c', 'man-d', 'woman-d'] as const;
-  people.forEach((model, i) => {
+  const coats = ['#2b2f3a', '#8c2f39', '#2f5d8c', '#c9a227', '#3d6b4f', '#6b3f8c', '#1d1d24', '#b5651d'] as const;
+  coats.forEach((coat, i) => {
     const side = i % 2 ? 1 : -1;
-    b.asset('pedestrian', model, [r2(side * (AVE + 2.5)), 0.22, r2(-60 + i * 16)], { behaviors: [{ type: 'patrol', params: { waypoints: [[0, 0, -12], [0, 0, 12]], relative: true, speed: r2(b.rand(1.1, 1.5)), mode: 'pingpong', wait: 1, face: true } }], physics: { body: 'kinematic', sensor: true }, tags: ['pedestrian'] });
+    // Real pedestrians from the cast in rain coats (the capsule is only the collider).
+    b.prim('pedestrian', 'capsule', [0.56, 1.7, 0.56], [r2(side * (AVE + 2.5)), 0.22 + 0.85, r2(-60 + i * 16)], { character: { wardrobe: i % 4 === 3 ? 'worker' : 'casual', gender: i % 2 ? 'female' : 'male', top: coat, mood: i % 3 === 0 ? 'tired' : 'neutral', hold: i % 4 === 1 ? 'bag' : 'none' }, behaviors: [{ type: 'patrol', params: { waypoints: [[0, 0, -12], [0, 0, 12]], relative: true, speed: r2(b.rand(1.1, 1.5)), mode: 'pingpong', wait: 1, face: true } }], physics: { body: 'kinematic', sensor: true }, tags: ['pedestrian'] });
   });
 
   // --- The game: five neon cats -------------------------------------------------------------------------

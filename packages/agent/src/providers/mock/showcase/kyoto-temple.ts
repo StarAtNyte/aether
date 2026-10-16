@@ -38,7 +38,7 @@ export function kyotoTemple(): MockPlan {
     timeOfDay: 18.4,
     sunIntensity: 1.1,
     ambientIntensity: 0.4,
-    fog: { color: '#6d5a72', density: 0.012 },
+    fog: { color: '#6d5a72', density: 0.012, visibility: 260 },
     weather: 'rain',
     bloom: 1.2,
     exposure: 1.1,
@@ -103,13 +103,13 @@ export function kyotoTemple(): MockPlan {
       ],
       once: true,
     });
-    b.asset('monk', i % 2 ? 'man-d' : 'man-b', [r2(ch.at[0] - 1.6), 0, r2(ch.at[2] + 0.8)], {
+    b.prim('monk', 'capsule', [0.56, 1.7, 0.56], [r2(ch.at[0] - 1.6), 0.85, r2(ch.at[2] + 0.8)], {
+      character: { wardrobe: 'elder', gender: 'male', age: 'old', top: i % 2 ? '#7a4a22' : '#8a5a2b', bottom: '#4a3b2a', mood: 'calm', hold: i % 2 ? 'staff' : 'lantern' },
       name: 'The old monk',
       yaw: faceToward(ch.at[0] - 1.6, ch.at[2] + 0.8, 0, 46),
       physics: 'kinematic',
       behaviors: [{ type: 'npc', params: { name: 'Monk Ryōkan', persona: 'an old monk who tells the temple’s story in short, quiet sentences', lines: ch.lines, greetRadius: 4, talkInterval: 4.5, wander: false } }],
       tags: ['npc'],
-      fallback: { kind: 'primitive', primitive: 'capsule', size: [0.6, 1.7, 0.6] },
     });
   });
 

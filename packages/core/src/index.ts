@@ -61,3 +61,5 @@ export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth } from './
 
 export { summarizeWorld, type SummaryOptions } from './summary';
 export { Emitter } from './emitter';
+
+export { findStandIns, VOXEL_PERSON_ASSET_IDS, CUBE_PET_ASSET_IDS, type StandIn, type StandInKind } from './standins';
