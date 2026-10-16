@@ -588,9 +588,15 @@ export class WorldRenderer {
     this.materials.groundDetail = this.gpu.tier !== 'software' && !this.lowMemory;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
     this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
+    this.materials.compactSplat = backend === 'webgpu';
     // Water: waves and sky on software rasterisers, depth absorption, refraction and foam on GPUs (the planar mirror, tier high, is opt-in).
     const forcedWater = (globalThis as { __WATER_TIER?: string }).__WATER_TIER;
-    this.materials.waterTier = forcedWater === 'off' ? null : forcedWater === 'simple' || forcedWater === 'standard' || forcedWater === 'high' ? forcedWater : waterTierFor(this.gpu.tier, this.lowMemory, false);
+    let autoWater = waterTierFor(this.gpu.tier, this.lowMemory, false);
+    // The scene depth the standard tier reads is a copy of the frame buffer's depth. three cannot copy a multisampled depth buffer
+    // on the WebGPU backend (the sampled-depth binding is declared multisampled while the copy target is not: a validation error
+    // on every frame), so a WebGPU canvas with MSAA gets the tier that reads no scene depth.
+    if (backend === 'webgpu' && renderer.samples > 1 && autoWater !== 'simple') autoWater = 'simple';
+    this.materials.waterTier = forcedWater === 'off' ? null : forcedWater === 'simple' || forcedWater === 'standard' || forcedWater === 'high' ? forcedWater : autoWater;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);

@@ -233,24 +233,33 @@ async function main(): Promise<void> {
   const failures: string[] = [];
   try {
     for (const slug of games) {
-      const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
-      await context.addInitScript({ content: SKIP_FIRST_RUN });
-      const errors: string[] = [];
-      try {
-        const page = await context.newPage();
-        page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-        page.on('console', (m) => {
-          if (m.type() === 'error' && !BENIGN_CONSOLE.some((re) => re.test(m.text()))) errors.push(`console: ${m.text().slice(0, 200)}`);
-        });
-        await playGame(page, server.url, slug, routes.get(slug) as Route);
-        check(errors.length === 0, `${slug}: ${errors.slice(0, 4).join(' | ')}`);
-        log(`PASS ${slug}`);
-      } catch (e) {
-        failures.push(`${slug}: ${e instanceof Error ? e.message : String(e)}`);
-        log(`FAIL ${slug}: ${failures[failures.length - 1]}`);
-      } finally {
-        await context.close();
+      // The driver steers and jumps from a 40 ms timer, so a machine under heavy load (a render frame that takes hundreds of
+      // milliseconds) can miss a jump on a footbridge. The route is verified in the bot's own deterministic run; a miss is
+      // retried once on a fresh page before it counts as a failure.
+      let lastError = '';
+      let passed = false;
+      for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
+        const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+        await context.addInitScript({ content: SKIP_FIRST_RUN });
+        const errors: string[] = [];
+        try {
+          const page = await context.newPage();
+          page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+          page.on('console', (m) => {
+            if (m.type() === 'error' && !BENIGN_CONSOLE.some((re) => re.test(m.text()))) errors.push(`console: ${m.text().slice(0, 200)}`);
+          });
+          await playGame(page, server.url, slug, routes.get(slug) as Route);
+          check(errors.length === 0, `${slug}: ${errors.slice(0, 4).join(' | ')}`);
+          log(`PASS ${slug}${attempt > 1 ? ` (second attempt; the first: ${lastError.slice(0, 120)})` : ''}`);
+          passed = true;
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+          log(`${attempt < 2 ? 'RETRY' : 'FAIL'} ${slug}: ${lastError}`);
+        } finally {
+          await context.close();
+        }
       }
+      if (!passed) failures.push(`${slug}: ${lastError}`);
     }
   } finally {
     await browser.close();

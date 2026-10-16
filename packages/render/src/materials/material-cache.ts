@@ -65,7 +65,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false, compactSplat = false): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -110,7 +110,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
   }
   if (!ghostLike && r.splat && finishes && layered) {
     m.roughness = 1;
-    applySplat(m, (id) => finishes.get(id), groundDetail);
+    applySplat(m, (id) => finishes.get(id), groundDetail, compactSplat);
   }
   if (variant === 'foliage') applyWind(m);
   if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
@@ -186,6 +186,8 @@ export class MaterialCache {
    * created afterwards.
    */
   layeredTerrain = true;
+  /** Fewer photographs per terrain pixel (WebGPU's 16-sampler fragment limit; see applySplat). */
+  compactSplat = false;
   /**
    * Add the close-up micro and distance macro detail lookups to ground and masonry finishes (about six extra texture
    * reads per pixel; the renderer turns it off on software rasterisers and in low-memory mode). Applies to materials created afterwards.
@@ -250,7 +252,7 @@ export class MaterialCache {
     const tier = resolved.water ? this.waterTier : null;
     const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '');
     const material = this.cache.acquire(key, () => {
-      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail);
+      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail, this.compactSplat);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       return m;
     });

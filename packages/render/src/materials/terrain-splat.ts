@@ -46,7 +46,7 @@ export const SPLAT_KEY = 'aetherSplat';
  * geometry must have a `splat` attribute (4 floats) and metre UVs. `maps` returns the textures of a
  * layer's finish.
  */
-export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps, detail = false): void {
+export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps, detail = false, compact = false): void {
   const w4 = attribute('splat', 'vec4');
   const base = uv();
   const rot = vec2(base.x.mul(0.8).sub(base.y.mul(0.6)), base.x.mul(0.6).add(base.y.mul(0.8)));
@@ -75,11 +75,19 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
     const m = layerMaps[i] as FinishMaps;
     return i === 1 ? triplanar(m.map) : mix(sample(m.map, false), sample(m.map, true), wMacro);
   };
+  // Compact: WebGPU allows 16 samplers per fragment stage and a lit terrain already spends about five on the sun and
+  // point-light shadows and the environment map. The full set is 12 photographs (map, normal, orm per layer); compact
+  // drops the roughness/occlusion of the soil and snow layers and the snow's micro normals (both are near-uniform
+  // surfaces), keeping 9, so the shader links with room for more lights.
+  const FLAT_ORM = vec4(1, 0.85, 0, 1);
+  const FLAT_NORMAL = vec4(0.5, 0.5, 1, 1);
   const ormOf = (i: number) => {
+    if (compact && i >= 2) return FLAT_ORM;
     const m = layerMaps[i] as FinishMaps;
     return i === 1 ? triplanar(m.orm) : mix(sample(m.orm, false), sample(m.orm, true), wMacro);
   };
   const normalOf = (i: number) => {
+    if (compact && i === 3) return FLAT_NORMAL;
     const m = layerMaps[i] as FinishMaps;
     return mix(sample(m.normal, false), sample(m.normal, true), wMacro);
   };
