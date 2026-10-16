@@ -14,6 +14,7 @@ import { FINISHES } from '@aether/arch';
 import type { MaterialFinish } from '@aether/core';
 import { FINISH_TEXTURE_SIZE, finishAlbedoScale, finishPixels, type FinishPixels } from '@aether/procgen';
 import { errorMessage, log } from '../log';
+import { SplatArrays } from './splat-arrays';
 
 /** The maps of one finish. */
 export interface FinishMaps {
@@ -180,6 +181,7 @@ export class FinishTextures {
         for (const t of [maps.map, maps.orm, maps.normal]) t.repeat.set(k, k);
         maps.photo = true;
         maps.ready = true;
+        this.refreshStacks(maps);
         this.onUpdate?.();
       },
       (e: unknown) => log.warn(`photo maps of "${id}" failed (procedural kept): ${errorMessage(e)}`),
@@ -205,6 +207,7 @@ export class FinishTextures {
         fill(maps.orm, px.orm);
         fill(maps.normal, px.normal);
         maps.ready = true;
+        this.refreshStacks(maps);
         this.onUpdate?.();
       },
       (e: unknown) => log.warn(`finish "${id}" textures failed: ${errorMessage(e)}`),
@@ -212,9 +215,34 @@ export class FinishTextures {
     return maps;
   }
 
+  private readonly stacks = new Map<string, SplatArrays>();
+
+  /**
+   * The maps of `ids` packed as texture arrays (one layer per finish, in order), shared by every material that asks for
+   * the same list. The arrays follow their finishes: pixels that arrive later are copied in.
+   */
+  stack(ids: readonly MaterialFinish[]): SplatArrays {
+    const key = ids.join('|');
+    let hit = this.stacks.get(key);
+    if (!hit) {
+      hit = new SplatArrays(
+        ids.map((id) => this.get(id)),
+        this.size,
+      );
+      this.stacks.set(key, hit);
+    }
+    return hit;
+  }
+
+  private refreshStacks(maps: FinishMaps): void {
+    for (const s of this.stacks.values()) s.refreshSource(maps);
+  }
+
   /** Release every texture. */
   dispose(): void {
     this.disposed = true;
+    for (const s of this.stacks.values()) s.dispose();
+    this.stacks.clear();
     for (const m of this.maps.values()) {
       m.map.dispose();
       m.orm.dispose();

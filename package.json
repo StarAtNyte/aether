@@ -29,6 +29,8 @@
     "e2e:switch": "tsx tests/e2e/worldswitch.e2e.ts",
     "e2e:honesty": "tsx tests/e2e/honesty.e2e.ts",
     "e2e:voxel": "tsx tests/e2e/voxel.e2e.ts",
+    "e2e:backend": "tsx tests/e2e/backend.e2e.ts",
+    "e2e:parity": "tsx tests/e2e/gpu-parity.e2e.ts",
     "e2e:capture": "tsx tests/e2e/capture-aspect.e2e.ts",
     "e2e:arch": "tsx tests/e2e/arch.e2e.ts",
     "e2e:interact": "tsx tests/e2e/interact.e2e.ts",

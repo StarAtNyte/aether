@@ -26,6 +26,7 @@
 import { Color, Vector2, Vector4, type Material, type Texture } from 'three';
 import { T, type Nd } from './tsl-lite';
 import { PlanarMirror } from './planar-mirror';
+import type { SceneBackdrop } from './scene-backdrop';
 import { RIPPLE, WATER_CLASSES, waveSet, type WaterTier } from './water-params';
 import type { ResolvedWater } from './presets';
 import { currentWind, reflectionOn, reflectionY, rippleSlots, skyHorizon, skyZenith, waterClock, windSpeed } from './water-state';
@@ -84,7 +85,7 @@ interface MaterialNodes {
  * Attach the water shader to `material` (a classic standard material that keeps its colour and roughness as the
  * fallback). `maps.normalMap` is the shared procedural ripple normal map (its tile size is `tileMetres`).
  */
-export function applyWater(material: Material, water: ResolvedWater, tier: WaterTier, maps: { normalMap: Texture | null }, tileMetres: number, mirror: PlanarReflection): WaterShader {
+export function applyWater(material: Material, water: ResolvedWater, tier: WaterTier, maps: { normalMap: Texture | null }, tileMetres: number, mirror: PlanarReflection, backdrop: SceneBackdrop | null = null): WaterShader {
   const { float, vec2, vec3, vec4, mix, smoothstep, step, saturate, dot, normalize, exp, sin, cos, pow, abs, max } = T;
   const cls = WATER_CLASSES[water.kind];
   const waves = T.uniformArray([new Vector4(), new Vector4(), new Vector4(), new Vector4()], 'vec4');
@@ -181,7 +182,9 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
     foam = smoothstep(0.7, 1.0, crestH).mul(cls.crestFoam * 0.6).mul(saturate(wind.div(8)));
   } else {
     // Scene depth behind the surface (view space), then back to world height for the vertical water depth.
-    const raw = T.viewportDepthTexture(T.screenUV).r;
+    // WebGL2 copies the frame buffer; WebGPU reads the scene the renderer drew without the water (see scene-backdrop.ts).
+    const depthAt = (uv: Nd): Nd => (backdrop ? T.texture(backdrop.depthTexture(), uv).r : T.viewportDepthTexture(uv).r);
+    const raw = depthAt(T.screenUV);
     const viewPos = T.getViewPosition(T.screenUV, raw, T.cameraProjectionMatrixInverse);
     const sceneWorld = T.cameraWorldMatrix.mul(vec4(viewPos, 1)).xyz;
     const waterViewZ = T.positionView.z;
@@ -198,10 +201,10 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
     // something nearer than the water.
     const bend = vec2(gx, gz).mul(cls.refraction).mul(saturate(depth.mul(1.5))).mul(float(1).sub(smoothstep(20, 120, distance)));
     const uvR = T.screenUV.add(bend.mul(vec2(1, -1)));
-    const rawR = T.viewportDepthTexture(uvR).r;
+    const rawR = depthAt(uvR);
     const nearerR = step(waterViewZ.sub(0.02), T.perspectiveDepthToViewZ(rawR, T.cameraNear, T.cameraFar));
     const uvOk = mix(uvR, T.screenUV, nearerR);
-    const bg = T.viewportSharedTexture(uvOk).rgb;
+    const bg = (backdrop ? T.texture(backdrop.colorTexture(), uvOk) : T.viewportSharedTexture(uvOk)).rgb;
 
     // Beer-Lambert absorption per channel.
     const sigma = 1 / cls.clarity;

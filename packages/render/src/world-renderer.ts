@@ -53,7 +53,7 @@ import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
-import { createGpuRenderer, type BackendKind, type BackendPreference, type GpuInfo } from './gpu/backend';
+import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
@@ -72,6 +72,8 @@ import type { Environment } from '@aether/core';
 export interface RendererOptions {
   /** Backend policy (default 'auto', see `gpu/backend.ts`). */
   backend?: BackendPreference;
+  /** Why WebGL2 is forced (recorded in the backend report, e.g. 'device-lost' after a WebGPU device loss). */
+  backendReason?: BackendReason;
   /** @deprecated use `backend`; `false` means 'webgl2'. */
   preferWebGPU?: boolean;
   antialias?: boolean;
@@ -578,7 +580,7 @@ export class WorldRenderer {
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
-    this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description) });
+    this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.budget = renderBudget(this.gpu.tier, this.lowMemory);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
@@ -588,14 +590,12 @@ export class WorldRenderer {
     this.materials.groundDetail = this.gpu.tier !== 'software' && !this.lowMemory;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
     this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
-    this.materials.compactSplat = backend === 'webgpu';
     // Water: waves and sky on software rasterisers, depth absorption, refraction and foam on GPUs (the planar mirror, tier high, is opt-in).
     const forcedWater = (globalThis as { __WATER_TIER?: string }).__WATER_TIER;
-    let autoWater = waterTierFor(this.gpu.tier, this.lowMemory, false);
-    // The scene depth the standard tier reads is a copy of the frame buffer's depth. three cannot copy a multisampled depth buffer
-    // on the WebGPU backend (the sampled-depth binding is declared multisampled while the copy target is not: a validation error
-    // on every frame), so a WebGPU canvas with MSAA gets the tier that reads no scene depth.
-    if (backend === 'webgpu' && renderer.samples > 1 && autoWater !== 'simple') autoWater = 'simple';
+    const autoWater = waterTierFor(this.gpu.tier, this.lowMemory, false);
+    // WebGPU cannot copy a multisampled depth buffer (the WebGL2 way of reading the scene behind the water), so there the
+    // standard and high tiers read the scene the renderer draws without the water (see scene-backdrop.ts).
+    this.materials.backdropWater = backend === 'webgpu';
     this.materials.waterTier = forcedWater === 'off' ? null : forcedWater === 'simple' || forcedWater === 'standard' || forcedWater === 'high' ? forcedWater : autoWater;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
@@ -686,6 +686,7 @@ export class WorldRenderer {
     const lowMemory = opts.lowMemory === true || opts.lowPower === true;
     const { renderer, backend, gpu } = await createGpuRenderer(canvas, {
       preference: opts.backend ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto'),
+      ...(opts.backendReason ? { forcedReason: opts.backendReason } : {}),
       // MSAA is fixed at context creation: low-memory mode starts without it.
       antialias: opts.antialias !== false && !lowMemory,
       shadows: opts.shadows !== false,
@@ -1086,14 +1087,21 @@ export class WorldRenderer {
   }
 
   /** What the water is doing now (tier, planar mirror size and readiness, live rings, surfaces): diagnostics and benchmarks. */
-  waterDebug(): { tier: string; surfaces: number; mirrorUsed: boolean; mirrorReady: boolean; mirrorSize: [number, number]; captureMirrorSize: [number, number] | null; rings: number; underwater: boolean } {
+  waterDebug(): { tier: string; surfaces: number; mirrorUsed: boolean; backdrop: { used: boolean; draws: number; size: [number, number] }; mirrorReady: boolean; mirrorSize: [number, number]; captureMirrorSize: [number, number] | null; rings: number; underwater: boolean } {
     const m = this.materials.mirror.mirror;
-    return { tier: this.materials.waterTier ?? 'off', surfaces: this.water.all.length, mirrorUsed: this.materials.mirror.used, mirrorReady: m.ready, mirrorSize: [m.target.width, m.target.height], captureMirrorSize: m.peak, rings: RippleField.live(), underwater: this.env.isUnderwater };
+    return { tier: this.materials.waterTier ?? 'off', surfaces: this.water.all.length, mirrorUsed: this.materials.mirror.used, backdrop: { used: this.materials.backdrop.used, draws: this.materials.backdrop.draws, size: [this.materials.backdrop.target.width, this.materials.backdrop.target.height] }, mirrorReady: m.ready, mirrorSize: [m.target.width, m.target.height], captureMirrorSize: m.peak, rings: RippleField.live(), underwater: this.env.isUnderwater };
   }
 
   /** Start a ring on the water at world (x, z), strength 0..1 (a footstep 0.2, a splash 1). The surface answers wherever there is water. */
   emitRipple(x: number, z: number, strength = 0.6): void {
     if (RippleField.emit(x, z, strength) >= 0) this.needsDraw = true;
+  }
+
+  /** The scene without the water, drawn before the frame for the water's depth and refraction (WebGPU, standard and high tiers). */
+  private renderBackdrop(): void {
+    const backdrop = this.materials.backdrop;
+    if (!backdrop.used || this.water.all.length === 0) return;
+    backdrop.render(this.renderer, this.scene, this.perspective, this.materials.waterMaterials());
   }
 
   /** The planar water reflection, drawn before the frame (high tier, camera above the dominant surface). */
@@ -2519,6 +2527,7 @@ export class WorldRenderer {
     // Water joins the depth pre-pass (and so the screen-space reflections) while they run.
     const reflective = this.post?.effects.ssr === true;
     if (reflective !== this.materials.waterIsReflective) this.materials.setReflectiveWater(reflective);
+    this.renderBackdrop();
     this.renderMirror();
     try {
       if (this.post) {

@@ -27,7 +27,7 @@ import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aethe
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type BackendReason, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -185,6 +185,8 @@ export interface SimulationListener {
 export interface SimulationOptions {
   /** Backend policy (default 'auto'). */
   backend?: BackendPreference;
+  /** Why WebGL2 is forced (recorded in the backend report). */
+  backendReason?: BackendReason;
   shadows?: boolean;
   pointerLock?: boolean;
   sandbox?: SandboxRunner;
@@ -349,6 +351,7 @@ export class Simulation {
   static async create(canvas: HTMLCanvasElement, history: History, listener: SimulationListener, opts: SimulationOptions = {}): Promise<Simulation> {
     const renderer = await WorldRenderer.create(canvas, {
       backend: opts.backend ?? 'auto',
+      ...(opts.backendReason ? { backendReason: opts.backendReason } : {}),
       shadows: opts.shadows !== false,
       antialias: true,
       lowMemory: opts.lowMemory === true,

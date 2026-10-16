@@ -13,12 +13,13 @@ import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
 import { FinishTextures, finishHasMaps } from './finish-textures';
 import { applyAntiTile, FINISH_NODES_KEY, groundWeather, GROUND_PATTERN_FINISHES, needsAntiTile, NORMAL_STRENGTH } from './anti-tile';
-import { applySplat } from './terrain-splat';
+import { applySplat, SPLAT_LAYERS } from './terrain-splat';
 import { applyFacadeGlow, facadeGlow, nightGlow } from './facade-glow';
 import { FoliageTextures } from './foliage-textures';
 import { applyWater, PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './water';
 import { SURFACE_TILE_METRES } from './surface-textures';
 import type { WaterTier } from './water-params';
+import { SceneBackdrop } from './scene-backdrop';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
@@ -65,7 +66,7 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false, compactSplat = false): MeshStandardMaterial {
+export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false, backdrop: SceneBackdrop | null = null): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
     roughness: r.roughness,
@@ -110,7 +111,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
   }
   if (!ghostLike && r.splat && finishes && layered) {
     m.roughness = 1;
-    applySplat(m, (id) => finishes.get(id), groundDetail, compactSplat);
+    applySplat(m, (id) => finishes.get(id), finishes.stack(SPLAT_LAYERS), groundDetail);
   }
   if (variant === 'foliage') applyWind(m);
   if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
@@ -120,7 +121,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     m.transparent = true;
     m.opacity = 1;
     m.depthWrite = waterTier !== 'simple';
-    const shader = applyWater(m, r.water, waterTier, { normalMap: surfaces.get('water').normalMap }, SURFACE_TILE_METRES.water, mirror);
+    const shader = applyWater(m, r.water, waterTier, { normalMap: surfaces.get('water').normalMap }, SURFACE_TILE_METRES.water, mirror, backdrop);
     m.userData[WATER_SHADER_KEY] = shader;
     m.userData['aetherWaterNodes'] = true;
   } else if (!ghostLike && r.surface === 'water') {
@@ -201,6 +202,10 @@ export class MaterialCache {
   waterTier: WaterTier | null = null;
   /** The planar reflection of this cache's renderer (high water tier). */
   readonly mirror = new PlanarReflection();
+  /** The scene behind the water, drawn by the renderer (WebGPU; WebGL2 copies the frame buffer instead). */
+  readonly backdrop = new SceneBackdrop();
+  /** Standard and high water read {@link backdrop} instead of the frame buffer (set before water materials are created). */
+  backdropWater = false;
 
   /** The live water materials (hidden while the planar mirror is drawn). */
   waterMaterials(): Material[] {
@@ -252,7 +257,7 @@ export class MaterialCache {
     const tier = resolved.water ? this.waterTier : null;
     const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '');
     const material = this.cache.acquire(key, () => {
-      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail, this.compactSplat);
+      const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail, this.backdropWater ? this.backdrop : null);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       return m;
     });
@@ -281,5 +286,6 @@ export class MaterialCache {
     this.finishes.dispose();
     this.foliage.dispose();
     this.mirror.dispose();
+    this.backdrop.dispose();
   }
 }

@@ -20,6 +20,7 @@
 import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
+import { acquireAdapter, acquireDevice, type AdapterLike, type DeviceLike, type GpuLike } from './acquire';
 
 /** Active GPU backend. */
 export type BackendKind = 'webgpu' | 'webgl2';
@@ -33,6 +34,8 @@ export interface BackendOptions {
   preference?: BackendPreference;
   /** @deprecated use `preference`; `false` means 'webgl2'. */
   preferWebGPU?: boolean;
+  /** Recorded as the reason when WebGL2 was forced by the caller (default 'requested'). */
+  forcedReason?: BackendReason;
   antialias: boolean;
   shadows: boolean;
   pixelRatioCap: number;
@@ -43,6 +46,45 @@ export interface BackendOptions {
 export interface GpuInfo {
   /** Human-readable GPU description, e.g. "Mesa Intel(R) UHD Graphics 620". */
   description: string;
+  /** How the backend was chosen and why (shown in Settings, asserted by the e2e suites). */
+  report: BackendReport;
+}
+
+/** Why a renderer runs on the backend it runs on. */
+export type BackendReason =
+  | 'webgpu'
+  /** The user (or a test) asked for WebGL2. */
+  | 'requested'
+  /** The browser has no `navigator.gpu`. */
+  | 'no-webgpu'
+  /** A previous WebGPU start never finished (the browser died), so WebGPU is off for this origin. */
+  | 'blocked-after-crash'
+  /** Firefox on Linux, or a Firefox GPU that is not trusted: WebGL2 is the mature path there. */
+  | 'firefox-policy'
+  /** No WebGPU adapter after every retry. */
+  | 'no-adapter'
+  /** An adapter came but no device could be created from it. */
+  | 'no-device'
+  /** The renderer failed to initialize on WebGPU. */
+  | 'init-failed'
+  /** The WebGPU device was lost while running and the viewport was recreated on WebGL2. */
+  | 'device-lost';
+
+/** The record of one backend decision. */
+export interface BackendReport {
+  /** What was asked for. */
+  requested: BackendPreference;
+  /** What runs. */
+  active: BackendKind;
+  reason: BackendReason;
+  /** WebGPU adapter requests made. */
+  adapterAttempts: number;
+  /** The adapter is the browser's software one (slow). */
+  softwareAdapter: boolean;
+  /** Request level that produced the device ('raised' limits, 'features', 'default'), or null off WebGPU. */
+  deviceLevel: string | null;
+  /** What happened, oldest first (capped). */
+  events: string[];
 }
 
 /** Environment facts the policy needs (injectable for tests). */
@@ -172,7 +214,7 @@ async function probeAdapter(): Promise<boolean> {
 }
 
 /** Best-effort description of the GPU the renderer runs on. Never throws. */
-export function gpuInfoOf(renderer: WebGPURenderer): GpuInfo {
+export function gpuInfoOf(renderer: WebGPURenderer): { description: string } {
   try {
     const backend = renderer.backend as unknown as { device?: { adapterInfo?: AdapterInfoLike }; gl?: WebGL2RenderingContext };
     if (backend.device) return { description: describeAdapter(backend.device.adapterInfo) };
@@ -190,44 +232,94 @@ export function gpuInfoOf(renderer: WebGPURenderer): GpuInfo {
   return { description: '' };
 }
 
+const MAX_EVENTS = 24;
+
+/** `reason` of a WebGL2 start that the policy chose (as opposed to a failed WebGPU start). */
+export function policyReason(preference: BackendPreference, env: BackendEnvironment, decision: BackendDecision, forced?: BackendReason): BackendReason {
+  if (decision === 'webgpu') return 'webgpu';
+  if (preference === 'webgl2') return forced ?? 'requested';
+  if (!env.webgpuAvailable) return 'no-webgpu';
+  if (env.webgpuBlocked) return 'blocked-after-crash';
+  return 'firefox-policy';
+}
+
 /** Create and initialize the renderer with the project-wide color/shadow settings. */
 export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: BackendOptions): Promise<{ renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo }> {
   const { WebGPURenderer } = await import('three/webgpu');
-  const attempt = async (forceWebGL: boolean): Promise<WebGPURenderer> => {
-    const r = new WebGPURenderer({ canvas, antialias: opts.antialias, forceWebGL, powerPreference: 'high-performance', alpha: false });
+  const preference = opts.preference ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto');
+  const events: string[] = [];
+  const note = (line: string): void => {
+    if (events.length < MAX_EVENTS) events.push(line);
+  };
+  const report = (active: BackendKind, reason: BackendReason, extra: Partial<BackendReport> = {}): BackendReport => ({
+    requested: preference,
+    active,
+    reason,
+    adapterAttempts: 0,
+    softwareAdapter: false,
+    deviceLevel: null,
+    events: [...events],
+    ...extra,
+  });
+  const attempt = async (forceWebGL: boolean, device?: DeviceLike): Promise<WebGPURenderer> => {
+    const r = new WebGPURenderer({ canvas, antialias: opts.antialias, forceWebGL, powerPreference: 'high-performance', alpha: false, ...(device ? { device: device as unknown as GPUDevice } : {}) });
     // No dispose() on failure: nothing was allocated, and three's dispose() would re-run the
     // failed init through an un-awaited setAnimationLoop(), causing an unhandled rejection.
     await r.init();
     return r;
   };
-  const preference = opts.preference ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto');
-  let decision = pickBackend(preference, detectEnvironment());
-  let renderer: WebGPURenderer;
+  const env = detectEnvironment();
+  let decision = pickBackend(preference, env);
+  const why = policyReason(preference, env, decision, opts.forcedReason);
   if (decision !== 'webgl2') {
+    let failure: BackendReason = 'init-failed';
+    let attempts = 0;
     try {
       // The guard covers the adapter probe too: on broken drivers requesting an adapter can already crash.
       storageSet(GPU_INIT_PENDING_KEY, '1');
       if (decision === 'probe') decision = (await probeAdapter()) ? 'webgpu' : 'webgl2';
       if (decision === 'webgpu') {
         opts.onProgress?.('Initializing WebGPU…');
-        renderer = await attempt(false);
+        const gpu = (navigator as unknown as { gpu?: GpuLike }).gpu;
+        const got = gpu ? await acquireAdapter(gpu, { allowSoftwareAdapter: preference === 'webgpu' }) : null;
+        attempts = got?.attempts ?? 0;
+        for (const e of got?.events ?? []) note(e);
+        const adapter: AdapterLike | null = got?.adapter ?? null;
+        if (!adapter) {
+          failure = 'no-adapter';
+          throw new Error(`no WebGPU adapter after ${attempts} requests`);
+        }
+        const softwareAdapter = adapter.isFallbackAdapter === true || adapter.info?.isFallbackAdapter === true;
+        const dev = await acquireDevice(adapter);
+        for (const e of dev.events) note(e);
+        if (!dev.device) {
+          failure = 'no-device';
+          throw new Error('no WebGPU device could be created');
+        }
+        failure = 'init-failed';
+        const renderer = await attempt(false, dev.device);
         storageSet(GPU_INIT_PENDING_KEY, null);
-        return finish(renderer, opts);
+        note(`webgpu ready (${describeAdapter(adapter.info) || 'unknown adapter'}${softwareAdapter ? ', software' : ''})`);
+        return finish(renderer, opts, report('webgpu', 'webgpu', { adapterAttempts: attempts, softwareAdapter, deviceLevel: dev.level }));
       }
       storageSet(GPU_INIT_PENDING_KEY, null);
     } catch (e) {
       storageSet(GPU_INIT_PENDING_KEY, null);
-      log.warn(`WebGPU init failed (${errorMessage(e)}); falling back to WebGL2`);
+      log.warn(`WebGPU unavailable (${errorMessage(e)}); falling back to WebGL2`);
+      note(`fell back to WebGL2: ${errorMessage(e).slice(0, 160)}`);
       opts.onProgress?.('WebGPU unavailable, falling back to WebGL2…');
-      return finish(await attempt(true), opts);
+      return finish(await attempt(true), opts, report('webgl2', failure, { adapterAttempts: attempts }));
     }
+    note('Firefox WebGPU adapter not trusted; using WebGL2');
+    opts.onProgress?.('Initializing WebGL2…');
+    return finish(await attempt(true), opts, report('webgl2', 'firefox-policy'));
   }
+  note(`WebGL2 (${why})`);
   opts.onProgress?.('Initializing WebGL2…');
-  renderer = await attempt(true);
-  return finish(renderer, opts);
+  return finish(await attempt(true), opts, report('webgl2', why));
 }
 
-function finish(renderer: WebGPURenderer, opts: BackendOptions): { renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo } {
+function finish(renderer: WebGPURenderer, opts: BackendOptions, report: BackendReport): { renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo } {
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
@@ -236,5 +328,8 @@ function finish(renderer: WebGPURenderer, opts: BackendOptions): { renderer: Web
   renderer.shadowMap.type = PCFShadowMap;
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   renderer.setPixelRatio(Math.min(dpr, Math.max(0.5, opts.pixelRatioCap)));
-  return { renderer, backend: detectBackend(renderer), gpu: gpuInfoOf(renderer) };
+  const backend = detectBackend(renderer);
+  // three may land on WebGL2 although WebGPU was chosen (its own fallback); the report says what really runs.
+  const real: BackendReport = backend === report.active ? report : { ...report, active: backend, reason: report.reason === 'webgpu' ? 'init-failed' : report.reason };
+  return { renderer, backend, gpu: { ...gpuInfoOf(renderer), report: real } };
 }

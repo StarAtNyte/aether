@@ -10,6 +10,8 @@ import type { AiPrefs } from '../ai/prefs';
 // Lazy: the AI pane pulls in the agent package; the home page must not pay for it up front.
 const AiConnectionPane = lazyBoundary(async () => ({ default: (await import('./ai/AiConnectionPane')).AiConnectionPane }), { what: 'connection settings', fallback: <div className="settings__pane" aria-busy="true" />, variant: 'inline' });
 import { SHORTCUTS } from '../app/useShortcuts';
+import type { BackendReport } from '@aether/render';
+import { backendHeadline, backendWhy } from '../lib/backendLabel';
 import { EFFECT_SETTINGS, type BackendSetting, type EffectSetting, type LowMemorySetting, type RenderTierSetting, type StudioSettings } from '../lib/storage';
 import { Toggle } from './fields';
 import { Dialog } from './ui/Dialog';
@@ -72,7 +74,7 @@ type Tab = SettingsTab;
 /** Extra (editor-only) information shown in Settings. */
 export interface SettingsContext {
   memory?: { lowMemory: boolean; reason: string | null };
-  gpu?: { description: string; render?: { tier: string; auto: string; effects: string[] } } | null;
+  gpu?: { description: string; backend?: BackendReport; render?: { tier: string; auto: string; effects: string[] } } | null;
 }
 
 /** Settings dialog. */
@@ -191,6 +193,11 @@ export const SettingsDialog = memo(function SettingsDialog({
               <span className="setting-row__text">
                 <span className="setting-row__label">Renderer</span>
                 <span className="setting-row__hint">Auto uses WebGPU where it is reliable, WebGL2 elsewhere.{gpu?.description ? ` GPU: ${gpu.description}.` : ''}</span>
+                {gpu?.backend && (
+                  <span className="setting-row__hint" data-testid="backend-indicator" data-backend={gpu.backend.active} data-reason={gpu.backend.reason} role="status">
+                    Running on {backendHeadline(gpu.backend)}. {backendWhy(gpu.backend)}
+                  </span>
+                )}
               </span>
               <Segmented<BackendSetting> label="Renderer" value={settings.backend} onChange={(v) => update({ backend: v })} options={BACKEND_CHOICES} />
             </div>

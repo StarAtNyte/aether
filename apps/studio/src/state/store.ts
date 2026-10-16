@@ -17,6 +17,7 @@ import type { VoxelHudState } from '../voxel/hudState';
 import type { LabelSpec } from '../engine/viewOverlay';
 import type { NpcFrame } from '../engine/npcFrame';
 import type { InteractPrompt } from '../engine/interaction';
+import type { BackendReport } from '@aether/render';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -65,6 +66,8 @@ export interface MemoryState {
 export interface GpuState {
   tier: 'discrete' | 'integrated' | 'software' | 'unknown';
   description: string;
+  /** How the backend was chosen and why (adapter attempts, fallback reason). */
+  backend?: BackendReport;
   /** Render tier in effect and the effects running (filled in once the renderer has applied the settings). */
   render?: { tier: string; auto: string; effects: string[] };
 }

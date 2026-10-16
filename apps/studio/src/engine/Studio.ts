@@ -418,6 +418,7 @@ export class Studio {
         },
         {
           backend: this.forceWebGL2 ? 'webgl2' : st.settings.backend,
+          ...(this.forceWebGL2 ? { backendReason: 'device-lost' as const } : {}),
           shadows: st.settings.shadows,
           pointerLock: st.settings.pointerLock,
           lowMemory: st.memory.lowMemory,
@@ -442,7 +443,7 @@ export class Studio {
       sim.setPointerLock(now.pointerLock);
       sim.setSelection(this.store.getState().selection);
       this.store.getState().setBackend(sim.backend);
-      this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description });
+      this.store.getState().setGpu({ tier: sim.renderer.gpu.tier, description: sim.renderer.gpu.description, backend: sim.renderer.gpu.report });
       this.applyGraphics();
       for (const fn of this.simListeners) fn(sim);
       // The asset catalog is not needed for the first frame: load it once the editor has settled.
@@ -529,7 +530,7 @@ export class Studio {
     r.setRenderTier(st.settings.renderTier);
     r.setEffects(overrides);
     const gpu = st.gpu ?? { tier: r.gpu.tier, description: r.gpu.description };
-    st.setGpu({ ...gpu, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects } });
+    st.setGpu({ ...gpu, backend: r.gpu.report, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects } });
   }
 
   /** Re-decide low-memory mode from the setting and the session's signals, and apply it everywhere. */
