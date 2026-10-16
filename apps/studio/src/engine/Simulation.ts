@@ -1328,7 +1328,8 @@ export class Simulation {
         this.pollGamepad(dt);
         this.stepSession(s, dt);
       }
-      if (this.voxel?.active && !this.paused) this.voxel.frame(dt);
+      // While paused the block world still streams and finishes loading (a start card would otherwise sit over a loader stuck at 100 %).
+      if (this.voxel?.active && (!this.paused || this.voxel.loadingPlay)) this.voxel.frame(dt);
       // Edit mode renders on demand (frozen weather once idle); play mode renders every frame.
       this.renderOpts.onDemand = s === null;
       this.renderOpts.animate = s !== null || !this.idle.idle(t);

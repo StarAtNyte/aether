@@ -1254,7 +1254,7 @@ compileEdits(edits, reg, gen, seed) / applyEdits(compiled, cx, cz, dense)   // d
   // structures: columns that carve are also cleared up to the sky; foundation columns reach down to the
   // natural ground (≤ MAX_FOUNDATION_REACH = 48 below the model); `content` = the model's own extent
 LightVolume.compute(reg)                 // sky + block light flood over the 3×3 chunk region
-ChunkMesher.mesh(volume) → ChunkMesh     // greedy, per-vertex AO + smooth light; passes opaque / cutout / liquid
+ChunkMesher.mesh(volume) → ChunkMesh     // greedy, per-vertex AO + smooth light; passes opaque / cutout / liquid; heights: Uint8Array(512) column tops (256 solid, 256 foliage) for sun shadows (additive; checkMesh requires it)
   MeshBuffers = { positions f32×3, uvs f32×2 (block units), data u8×4 = [tile, AO×85, sky×17, block×17], indices, quads }
 VoxelJobContext(identity).generate(cx, cz) / .mesh(chunks[9], tops?)        // the two worker jobs
 VoxelJobPool({ createWorker?, workers? (1–2 by deviceMemory/cores), timeoutMs? })
@@ -1283,7 +1283,9 @@ shapeless recipes + `game.recipes`), `DayClock` / `daylightAt` /
 
 ```ts
 WorldRenderer.voxel(): Promise<VoxelLayer>   // lazy chunk; .voxelIfLoaded; .releaseVoxel()
-VoxelLayer.setAtlas(pixels, size, faceTiles); setChunk(key, cx, cz, mesh | null); removeChunk(key); setLighting(daylight, tint)
+VoxelLayer.setAtlas(pixels, size, faceTiles); setBlockMaterials(sheets | null, tileTable | null); setQuality(tier); setSkyZenith(color); setWaterLevel(y); setCharacters(system | null); setChunk(key, cx, cz, mesh | null) // mesh.heights optional; removeChunk(key); setLighting(daylight, tint)
+@aether/voxel: pbrBinding(tileSpec), buildTileTable(tiles, sheetMaterials) → Float32Array(256 × 4 rows × 4) (slot, class, roughness scale, metallic / tint, wet / tint2, slot2 / accent, emissive)
+@aether/render: loadBlockSheets(url, anisotropy) → BlockSheets | null; parseSheetIndex; SunShadowField (512² RG8, toroidal); SHADOW_MARCH per tier
           setFog(color, near, far, density); setFogOrigin(x, z)   // terrain's own fog: linear over the horizontal distance
           // to the streaming centre (near = ½ view distance, far = view distance) + the document's exp² fog density
 EnvironmentRig.terrainFog: { color, near, far, density }   // set by setFogDistance; the renderer copies it to the layer each frame

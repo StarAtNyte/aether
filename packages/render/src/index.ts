@@ -13,6 +13,9 @@ export { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle, type M
 export { MESH_TRIANGLES_KEY } from './sync/scene-sync';
 // Block terrain (loaded lazily through `WorldRenderer.voxel()`; types only here).
 export type { VoxelLayer, VoxelChunkMesh, VoxelMeshPass } from './voxel/voxel-layer';
+export { loadBlockSheets, parseSheetIndex, sheetToLayers, type BlockSheets, type SheetMaterial } from './voxel/block-sheets';
+export { SunShadowField } from './voxel/shadow-field';
+export { SHADOW_MARCH, SHADOW_FIELD_SIZE, type TerrainTier } from './voxel/terrain-material';
 export type { MobModelKind } from './voxel/mob-models';
 export type { Bounds, CameraMode, GeometrySource, KeyedOutput, RenderDiagnostic, ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner } from './types';
 

@@ -1171,6 +1171,18 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  private voxelZenithHex = '';
+  private readonly voxelZenith = new Color();
+
+  /** Tell the terrain the colour of the sky overhead (reflections, water); changes only when the sky does. */
+  private syncVoxelSky(vox: VoxelLayer): void {
+    const hex = this.env.skyState.zenith;
+    if (hex === this.voxelZenithHex) return;
+    this.voxelZenithHex = hex;
+    this.voxelZenith.set(hex);
+    vox.setSkyZenith(this.voxelZenith);
+  }
+
   /** Show or hide the player avatar (e.g. the voxel game's first/third-person switch). */
   setAvatarVisible(on: boolean): void {
     this.avatar.setHidden(!on);
@@ -1260,6 +1272,8 @@ export class WorldRenderer {
     this.voxelLoading ??= import('./voxel/voxel-layer').then(({ VoxelLayer: Layer }) => {
       if (this.disposed) throw new Error('renderer disposed');
       const layer = new Layer();
+      layer.setQuality(this.qualityPlan.tier);
+      layer.setCharacters(this.characters);
       // Terrain shaders compile asynchronously (no multi-hundred-ms first frame).
       layer.setCompiler((object) => (this.disposed ? Promise.resolve() : this.renderer.compileAsync(object, this.perspective, this.scene)));
       this.scene.add(layer.group);
@@ -1912,6 +1926,7 @@ export class WorldRenderer {
     if (vox) {
       const tf = this.env.terrainFog;
       vox.setFog(tf.color, tf.near, tf.far, tf.density);
+      this.syncVoxelSky(vox);
       vox.flushPrebuild();
     }
     if (vox && vox.version !== this.voxelVersion) {
@@ -2169,6 +2184,7 @@ export class WorldRenderer {
     this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
     this.env.shadowMapCap = plan.shadowMapCap;
     this.env.sun.shadow.radius = plan.shadowRadius;
+    this.voxelLayer?.setQuality(plan.tier);
     this.refinement.setFrames(plan.accumulateFrames);
     this.refinement.restart();
     this.adaptive.enabled = plan.adaptiveResolution && this.adaptiveWanted;
@@ -2519,6 +2535,7 @@ export class WorldRenderer {
         if (vox) {
           const tf = this.env.terrainFog;
           vox.setFog(tf.color, tf.near, tf.far, tf.density);
+          this.syncVoxelSky(vox);
           vox.flushPrebuild();
         }
         this.stepAnimations(dt);

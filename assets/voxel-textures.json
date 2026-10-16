@@ -1,0 +1,202 @@
+{
+  "$comment": "ambientCG CC0 materials behind the block textures (scripts/voxel/block-textures.ts). Every archive is pinned by SHA-256.",
+  "licence": "CC0-1.0",
+  "licenceUrl": "https://docs.ambientcg.com/license/",
+  "resolution": "1K-JPG",
+  "size": 256,
+  "columns": 8,
+  "materials": [
+    {
+      "key": "grass",
+      "id": "Grass004",
+      "note": "photo of short lawn grass",
+      "sha256": "4b63495f459db8481f4d5144e4e9069345c81cf898cc71f2216f5dd3bb344469"
+    },
+    {
+      "key": "moss",
+      "id": "Moss002",
+      "note": "moss carpet",
+      "sha256": "727d4e3134f604837c2e11aa3bf12417a022d3c668a6d7339efa572fdbb056bb"
+    },
+    {
+      "key": "dirt",
+      "id": "Ground103",
+      "note": "brown earth",
+      "sha256": "735471be048f8c41120c3777a22b1f417bf511897c06f6f473edf0a05254362d"
+    },
+    {
+      "key": "dirt-coarse",
+      "id": "Ground106",
+      "note": "dark soil with stones",
+      "sha256": "0402076d64f7e8802ef9a84b88aa87a8cdc0633adcaa0911f6c9568e4bfeff12"
+    },
+    {
+      "key": "sand",
+      "id": "Ground080",
+      "note": "rippled dune sand",
+      "sha256": "2a615944f0fe8ca943da459c362fff57f7065526f931d610b19026e49f0a7589"
+    },
+    {
+      "key": "gravel",
+      "id": "Rocks022",
+      "note": "river pebbles",
+      "sha256": "598d2c25479535d9538cef726eff641a99a3449ff58c82d94a4c84bb018ebc53"
+    },
+    {
+      "key": "gravel-grey",
+      "id": "Gravel041",
+      "note": "grey gravel",
+      "sha256": "89943da9f2aa8555235f16b0bc8eee22bf8eae471bfc5431bedc95eaec468f58"
+    },
+    {
+      "key": "stone",
+      "id": "Rock030",
+      "note": "grey rock",
+      "sha256": "2fd0bc2d214e2487c19062ed0798a85dd135b41cfc12bbaed42d5acae238f989"
+    },
+    {
+      "key": "rock-dark",
+      "id": "Rock035",
+      "note": "black cave rock",
+      "sha256": "c5e4dbd7d5555734498834c1e09b799ef3d1f00c61fe08c0d953b93a8fb1bb95"
+    },
+    {
+      "key": "rock-warm",
+      "id": "Rock029",
+      "note": "orange desert rock",
+      "sha256": "cd6e8a6820136cde7414671f64d328717fa12fd74927378094bc110f41f87568"
+    },
+    {
+      "key": "rock-mossy",
+      "id": "Rock064",
+      "note": "moss covered rock wall",
+      "sha256": "560f23fdd24f4abe27f5c272b86e69fd026c3d111e22f60d7fb647306830367b"
+    },
+    {
+      "key": "cobble",
+      "id": "PavingStones046",
+      "note": "grey cobble paving",
+      "sha256": "a479a3e8db7eea8f3e931850ccd41c0f31b1b6fceee9cbd4ac519c8fef4c0024"
+    },
+    {
+      "key": "planks",
+      "id": "Planks021",
+      "note": "light pine planks",
+      "sha256": "9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a"
+    },
+    {
+      "key": "planks-dark",
+      "id": "Planks037A",
+      "note": "dark weathered planks",
+      "sha256": "df255df16475bad251f194eb173017c46d5354d572348d435808717c478cf144"
+    },
+    {
+      "key": "wood",
+      "id": "Wood096",
+      "note": "pine board with knots",
+      "sha256": "3aa0d5cddd866f5993c03a1a9bb036c1f7e82695cdf40f765cbea9faf91684ef"
+    },
+    {
+      "key": "wood-dark",
+      "id": "Wood051",
+      "note": "dark walnut grain",
+      "sha256": "debf3d60f69a09c30613dc95a94da49c8116160ab8a29f77ac8e32cc33f1a1c3"
+    },
+    {
+      "key": "bark",
+      "id": "Bark014",
+      "note": "rough tree bark",
+      "sha256": "c73728c32d6f0f3610f9db204448eff7e3acc74da0f8c1878920419772397670"
+    },
+    {
+      "key": "bricks",
+      "id": "Bricks090",
+      "note": "red brick wall",
+      "sha256": "4386aadc14eb48fc60e6ab6a4c43e658bd6f424dbc7a4cdcaea3a44c5911581c"
+    },
+    {
+      "key": "stonebricks",
+      "id": "Bricks066",
+      "note": "grey stone brick wall",
+      "sha256": "88d35b7a9cd0e2085918e68a31e79a0a71420749bf1bde07a7ede001f6572cdb"
+    },
+    {
+      "key": "sandstone",
+      "id": "Ground093C",
+      "note": "pale sandstone",
+      "sha256": "5f1a1ec87a6d51e7a0391928a6ee9bb862b7e41524c36e0964eaa15c83630dd2"
+    },
+    {
+      "key": "ice",
+      "id": "Ice001",
+      "note": "cracked white ice",
+      "sha256": "721e7fc523524a7f09a90518be17205a2f4f8f99a48e481821e1b6c482ecdf25"
+    },
+    {
+      "key": "ice-green",
+      "id": "Ice002",
+      "note": "green lake ice",
+      "sha256": "acd7a8716588600efac0eff1380a9302975adc112fd25b464974a5880fdfce85"
+    },
+    {
+      "key": "clay",
+      "id": "Clay005",
+      "note": "smooth clay",
+      "sha256": "ad7dd46445c99281367a015fe33179310c97ddc7ab3df6fdc59286e20f04457e"
+    },
+    {
+      "key": "lava",
+      "id": "Lava004",
+      "note": "molten lava with emission",
+      "sha256": "fee9256befd26b59a7ff452ab6379dab4cdace5d7bee7f78cd9ad8176dd67c28"
+    },
+    {
+      "key": "metal",
+      "id": "Metal032",
+      "note": "painted grey metal",
+      "sha256": "9e4f363905a647958c273154fa125d2a6440892d0e583f9b3af24bb08b5afc3c"
+    },
+    {
+      "key": "snow",
+      "id": "Snow006",
+      "note": "packed snow",
+      "sha256": "442ff74e547014523aaa7a4579ba6bf3e61992644e44a8cb539dd430cda1a321"
+    },
+    {
+      "key": "rooftile",
+      "id": "Tiles144",
+      "note": "terracotta roof tiles",
+      "sha256": "08d56e04f36bd70c1f018014378a93e9c82cb46b2bc7d8d067831e95a45865ba"
+    },
+    {
+      "key": "thatch",
+      "id": "ThatchedRoof001A",
+      "note": "straw thatch",
+      "sha256": "b5a4f98009ee7df8c180cb0d969f1243704354ab43b72452bd36b1756121d2c3"
+    },
+    {
+      "key": "fabric",
+      "id": "Fabric026",
+      "note": "woven fabric",
+      "sha256": "b47a2965c035772400524000926be3afe2dd9afc2fff052346e1c264476afd1b"
+    },
+    {
+      "key": "plaster",
+      "id": "Plaster001",
+      "note": "plaster",
+      "sha256": "944b4831016e42ace4a89422e4e7190912ca2f7fed6f561354c48ec7bb54d3a4"
+    },
+    {
+      "key": "concrete",
+      "id": "Concrete042A",
+      "note": "concrete",
+      "sha256": "07f5a1d1389bd1ecef41a528c5a0b2acee571627b27b6de0b111fef0d28610e4"
+    },
+    {
+      "key": "dirt-dry",
+      "id": "Ground088",
+      "note": "dry earth",
+      "sha256": "8f77a7e4fe6bd81e84fd5322ba49ce4f718e00d75568a24929d7a7458196c7af"
+    }
+  ]
+}

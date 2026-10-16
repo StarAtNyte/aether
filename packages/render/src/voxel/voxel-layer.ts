@@ -21,6 +21,9 @@ import {
   BufferGeometry,
   DataTexture,
   EdgesGeometry,
+  FloatType,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -38,8 +41,11 @@ import {
   type Object3D,
 } from 'three';
 import { sunPosition } from '../environment/sky-state';
+import type { CharacterSystem } from '../characters/system';
 import { MobKit, MobModel, type MobModelKind } from './mob-models';
-import { createTerrainMaterials, type TerrainMaterials } from './terrain-material';
+import type { BlockSheets } from './block-sheets';
+import { SunShadowField } from './shadow-field';
+import { createTerrainMaterials, TILE_TABLE_WIDTH, type TerrainMaterials, type TerrainTier } from './terrain-material';
 
 /** One render pass of a chunk mesh (the voxel mesher's output). */
 export interface VoxelMeshPass {
@@ -58,8 +64,14 @@ export interface VoxelChunkMesh {
   liquid: VoxelMeshPass | null;
   minY: number;
   maxY: number;
+  /** Column tops for the sun shadows (256 solid, 256 foliage); absent: the chunk casts no shadow. */
+  heights?: Uint8Array;
 }
 
+/** Anisotropic filtering per tier. */
+const ANISOTROPY: Readonly<Record<TerrainTier, number>> = Object.freeze({ low: 1, medium: 4, high: 8, ultra: 16 });
+/** Sun updates per hour of day (the sun direction is recomputed at this rate). */
+const SUN_STEPS_PER_HOUR = 240;
 /** Chunk edge in blocks. */
 const CHUNK = 16;
 /** Most chunk meshes kept (a 16-chunk view distance needs 33² = 1089). */
@@ -74,6 +86,8 @@ export const CRACK_STAGES = 10;
 interface ChunkEntry {
   meshes: [Mesh | null, Mesh | null, Mesh | null];
   triangles: number;
+  cx: number;
+  cz: number;
 }
 
 const _box = new Box3();
@@ -169,7 +183,18 @@ export class VoxelLayer {
   private readonly chunkGroup = new Group();
   private readonly chunks = new Map<number, ChunkEntry>();
   private atlas: DataTexture | null = null;
+  private atlasSmooth: DataTexture | null = null;
   private mats: TerrainMaterials | null = null;
+  /** Column heights for the sun shadows and the water depth. */
+  private readonly field = new SunShadowField();
+  /** Chunks that wrote the height texture (so removing them clears their columns). */
+  private readonly shadowed = new Map<number, { cx: number; cz: number }>();
+  /** Photographic block materials (owned by the caller) and the tile table that binds the atlas tiles to them. */
+  private sheets: BlockSheets | null = null;
+  private tileTable: DataTexture | null = null;
+  private tier: TerrainTier = 'medium';
+  private sunHourKey = Number.NaN;
+  private sunDaylightKey = Number.NaN;
   private readonly outline: LineSegments;
   private readonly crack: Mesh;
   private readonly crackTexture: DataTexture;
@@ -180,6 +205,7 @@ export class VoxelLayer {
   private readonly mobGroup = new Group();
   private readonly mobs = new Map<number, MobModel>();
   private readonly mobKit = new MobKit();
+  private characters: CharacterSystem | null = null;
   private triangles = 0;
   private faceTiles: Uint16Array | null = null;
   private compiler: ((object: Object3D) => Promise<unknown>) | null = null;
@@ -235,6 +261,11 @@ export class VoxelLayer {
     this.compiler = compile;
   }
 
+  /** Give zombies the renderer's character system (they are then rigged people instead of a rounded stand-in). */
+  setCharacters(system: CharacterSystem | null): void {
+    this.characters = system;
+  }
+
   /** Terrain shaders are still compiling (chunks hidden). */
   get compiling(): boolean {
     return this.warming !== null;
@@ -286,6 +317,7 @@ export class VoxelLayer {
     if (this.atlas && this.atlas.image.width === size) {
       (this.atlas.image.data as Uint8Array).set(pixels);
       this.atlas.needsUpdate = true;
+      if (this.atlasSmooth) this.atlasSmooth.needsUpdate = true;
     } else {
       const tex = new DataTexture(pixels.slice(), size, size, RGBAFormat, UnsignedByteType);
       tex.colorSpace = SRGBColorSpace;
@@ -295,16 +327,132 @@ export class VoxelLayer {
       tex.generateMipmaps = true;
       tex.anisotropy = 1;
       tex.needsUpdate = true;
+      const smooth = new DataTexture(tex.image.data as Uint8Array, size, size, RGBAFormat, UnsignedByteType);
+      smooth.colorSpace = SRGBColorSpace;
+      smooth.flipY = false;
+      smooth.magFilter = LinearFilter;
+      smooth.minFilter = LinearMipmapLinearFilter;
+      smooth.generateMipmaps = true;
+      smooth.anisotropy = 4;
+      smooth.needsUpdate = true;
       const old = this.atlas;
-      const oldMats = this.mats;
+      const oldSmooth = this.atlasSmooth;
       this.atlas = tex;
-      this.mats = createTerrainMaterials(tex);
-      this.warmUp(this.mats);
-      for (const e of this.chunks.values()) this.rebind(e);
-      oldMats?.dispose();
+      this.atlasSmooth = smooth;
+      this.rebuildMaterials();
       old?.dispose();
+      oldSmooth?.dispose();
     }
     this.version++;
+  }
+
+  /**
+   * Install the photographic block materials (decoded sheets plus the per-tile table from
+   * `buildTileTable`); null returns to the pixel atlas. The sheets stay owned by the caller (they are
+   * shared and survive this layer). Terrain shaders are rebuilt.
+   */
+  setBlockMaterials(sheets: BlockSheets | null, table: Float32Array | null): void {
+    const prevTable = this.tileTable;
+    this.sheets = sheets && table && table.length === TILE_TABLE_WIDTH * 4 * 4 ? sheets : null;
+    if (this.sheets && table) {
+      const t = new DataTexture(table.slice(), TILE_TABLE_WIDTH, 4, RGBAFormat, FloatType);
+      t.magFilter = NearestFilter;
+      t.minFilter = NearestFilter;
+      t.generateMipmaps = false;
+      t.flipY = false;
+      t.needsUpdate = true;
+      this.tileTable = t;
+    } else {
+      this.tileTable = null;
+    }
+    this.applyAnisotropy();
+    this.rebuildMaterials();
+    prevTable?.dispose();
+  }
+
+  /** Quality tier of the terrain shaders (the render tier); a different tier rebuilds them. */
+  setQuality(tier: TerrainTier): void {
+    if (tier === this.tier) return;
+    this.tier = tier;
+    this.applyAnisotropy();
+    this.rebuildMaterials();
+  }
+
+  /** Anisotropic filtering follows the tier (software rasterisers pay per tap): 1, 4, 8, 16 (the backend clamps to what it supports). */
+  private applyAnisotropy(): void {
+    const sheets = this.sheets;
+    if (!sheets) return;
+    const level = ANISOTROPY[this.tier];
+    for (const t of [sheets.albedo, sheets.normal, sheets.orm]) {
+      if (t.anisotropy !== level) {
+        t.anisotropy = level;
+        t.needsUpdate = true;
+      }
+    }
+  }
+
+  /** The tier the terrain shaders were built for. */
+  get quality(): TerrainTier {
+    return this.tier;
+  }
+
+  /** True while the photographic materials (not the pixel atlas) are in use. */
+  get photographic(): boolean {
+    return this.sheets !== null && this.tileTable !== null;
+  }
+
+  private rebuildMaterials(): void {
+    const atlas = this.atlas;
+    const atlasSmooth = this.atlasSmooth;
+    if (!atlas || !atlasSmooth) return;
+    const sheets = this.sheets;
+    const table = this.tileTable;
+    const old = this.mats;
+    const mats = createTerrainMaterials(
+      { atlas, atlasSmooth, pbr: sheets && table ? { albedo: sheets.albedo, normal: sheets.normal, orm: sheets.orm, table } : null, field: this.field.texture },
+      this.tier,
+    );
+    if (old) {
+      const a = old.uniforms;
+      const b = mats.uniforms;
+      b.daylight.value = a.daylight.value;
+      b.skyTint.value.copy(a.skyTint.value);
+      b.liquidOpacity.value = a.liquidOpacity.value;
+      b.fogColor.value.copy(a.fogColor.value);
+      b.fogOrigin.value.copy(a.fogOrigin.value);
+      b.fogNear.value = a.fogNear.value;
+      b.fogFar.value = a.fogFar.value;
+      b.fogDensity.value = a.fogDensity.value;
+      b.sunDirection.value.copy(a.sunDirection.value);
+      b.sunColor.value.copy(a.sunColor.value);
+      b.skyZenith.value.copy(a.skyZenith.value);
+      b.waterLevel.value = a.waterLevel.value;
+    }
+    this.mats = mats;
+    this.warmUp(mats);
+    for (const e of this.chunks.values()) this.rebind(e);
+    old?.dispose();
+    this.version++;
+  }
+
+  /** The sky overhead (linear RGB) that terrain reflections and water mirror. */
+  setSkyZenith(color: Color): void {
+    const m = this.mats;
+    if (!m || !Number.isFinite(color.r + color.g + color.b)) return;
+    if (!m.uniforms.skyZenith.value.equals(color)) {
+      m.uniforms.skyZenith.value.copy(color);
+      this.version++;
+    }
+  }
+
+  /** World y of the water surface (wet shores, caustics). */
+  setWaterLevel(y: number): void {
+    const m = this.mats;
+    if (!m || !Number.isFinite(y)) return;
+    if (m.uniforms.waterLevel.value !== y) {
+      m.uniforms.waterLevel.value = y;
+      this.version++;
+    }
   }
 
   private rebind(e: ChunkEntry): void {
@@ -322,7 +470,16 @@ export class VoxelLayer {
   setLighting(daylight: number, tint: readonly [number, number, number], hour?: number): void {
     const m = this.mats;
     if (!m) return;
-    if (hour !== undefined && Number.isFinite(hour)) this.setSun(hour, daylight);
+    // The sun moves a hair per frame: recompute its direction only when the hour moved by a visible amount (no garbage per frame).
+    if (hour !== undefined && Number.isFinite(hour)) {
+      const q = Math.round(hour * SUN_STEPS_PER_HOUR);
+      const dq = Math.round((Number.isFinite(daylight) ? daylight : 1) * 255);
+      if (q !== this.sunHourKey || dq !== this.sunDaylightKey) {
+        this.sunHourKey = q;
+        this.sunDaylightKey = dq;
+        this.setSun(hour, daylight);
+      }
+    }
     const d = Number.isFinite(daylight) ? Math.max(0, Math.min(1, daylight)) : 1;
     if (m.uniforms.daylight.value !== d) {
       m.uniforms.daylight.value = d;
@@ -399,10 +556,12 @@ export class VoxelLayer {
   /** Install (or with null remove) the meshes of chunk (cx, cz). */
   setChunk(key: number, cx: number, cz: number, mesh: VoxelChunkMesh | null): void {
     this.removeChunk(key);
+    this.field.setChunk(cx, cz, mesh?.heights);
+    if (mesh?.heights) this.shadowed.set(key, { cx, cz });
     if (!mesh || !this.mats) return;
     if (!mesh.opaque && !mesh.cutout && !mesh.liquid) return;
     if (this.chunks.size >= MAX_VOXEL_CHUNKS) return;
-    const entry: ChunkEntry = { meshes: [null, null, null], triangles: 0 };
+    const entry: ChunkEntry = { meshes: [null, null, null], triangles: 0, cx, cz };
     const passes = [mesh.opaque, mesh.cutout, mesh.liquid] as const;
     const mats: Material[] = [this.mats.opaque, this.mats.cutout, this.mats.liquid];
     for (let i = 0; i < 3; i++) {
@@ -443,6 +602,13 @@ export class VoxelLayer {
    * this once per frame.
    */
   flushPrebuild(): void {
+    if (this.field.flush()) this.version++;
+    // Nothing queued (the usual frame): return before the closures below, whose captured context V8 allocates on entry.
+    if (this.toBuild.length === 0) return;
+    this.buildQueued();
+  }
+
+  private buildQueued(): void {
     const compile = this.compiler;
     const list = this.toBuild;
     if (list.length === 0) return;
@@ -505,6 +671,11 @@ export class VoxelLayer {
 
   /** Drop a chunk's meshes and free their GPU buffers. */
   removeChunk(key: number): void {
+    const sh = this.shadowed.get(key);
+    if (sh) {
+      this.field.setChunk(sh.cx, sh.cz, null);
+      this.shadowed.delete(key);
+    }
     const e = this.chunks.get(key);
     if (!e) return;
     for (const m of e.meshes) if (m) this.disposeChunkMesh(m);
@@ -515,7 +686,7 @@ export class VoxelLayer {
 
   /** Remove every chunk mesh. */
   clearChunks(): void {
-    for (const key of [...this.chunks.keys()]) this.removeChunk(key);
+    for (const key of [...new Set([...this.chunks.keys(), ...this.shadowed.keys()])]) this.removeChunk(key);
   }
 
   /** Highlight a block (null hides the outline). */
@@ -643,7 +814,7 @@ export class VoxelLayer {
     }
     if (!m) {
       if (this.mobs.size >= MAX_VOXEL_MOBS) return;
-      m = new MobModel(kind, this.mobKit);
+      m = new MobModel(kind, this.mobKit, this.characters ? { system: this.characters, id: String(id) } : undefined);
       this.mobGroup.add(m.group);
       this.mobs.set(id, m);
     }
@@ -712,6 +883,7 @@ export class VoxelLayer {
   dispose(): void {
     this.toBuild.length = 0;
     this.clearChunks();
+    this.shadowed.clear();
     this.clearActors();
     this.mobKit.dispose();
     for (const g of this.dropGeometries.values()) g.dispose();
@@ -729,6 +901,12 @@ export class VoxelLayer {
     this.mats = null;
     this.atlas?.dispose();
     this.atlas = null;
+    this.atlasSmooth?.dispose();
+    this.atlasSmooth = null;
+    this.tileTable?.dispose();
+    this.tileTable = null;
+    this.sheets = null;
+    this.field.dispose();
     this.group.removeFromParent();
   }
 }

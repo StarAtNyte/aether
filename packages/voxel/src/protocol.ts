@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type { PackedChunk } from './chunk';
 import { MAX_CHUNK_COORD } from './constants';
 import type { TerrainIdentity } from './jobs';
-import type { ChunkMesh, MeshBuffers } from './mesher';
+import { HEIGHTS_LENGTH, type ChunkMesh, type MeshBuffers } from './mesher';
 
 const Coord = z.number().int().min(-MAX_CHUNK_COORD).max(MAX_CHUNK_COORD);
 const JobId = z.number().int().nonnegative();
@@ -87,12 +87,14 @@ export function checkMesh(raw: unknown): ChunkMesh | null {
   const minY = r['minY'];
   const maxY = r['maxY'];
   if (typeof minY !== 'number' || typeof maxY !== 'number' || !Number.isFinite(minY) || !Number.isFinite(maxY)) return null;
-  return { opaque, cutout, liquid, minY, maxY };
+  const heights = r['heights'];
+  if (!(heights instanceof Uint8Array) || heights.length !== HEIGHTS_LENGTH) return null;
+  return { opaque, cutout, liquid, minY, maxY, heights };
 }
 
 /** Transferable buffers of a mesh (posting it moves them, no copy). */
 export function meshTransfer(m: ChunkMesh): ArrayBuffer[] {
-  const out: ArrayBuffer[] = [];
+  const out: ArrayBuffer[] = [m.heights.buffer as ArrayBuffer];
   for (const p of [m.opaque, m.cutout, m.liquid]) {
     if (!p) continue;
     out.push(p.positions.buffer as ArrayBuffer, p.uvs.buffer as ArrayBuffer, p.data.buffer as ArrayBuffer, p.indices.buffer as ArrayBuffer);

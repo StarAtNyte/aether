@@ -1014,12 +1014,28 @@ old meshes stay until the new ones arrive.
 **Rendering.** The voxel layer (a lazily loaded chunk of `@aether/render`)
 wraps transferred arrays directly in buffer geometries with tight bounds
 (per-chunk frustum culling) and draws them with TSL materials that run on
-WebGPU and WebGL2 alike: atlas sampling with gradients from the unwrapped
-block UVs (no tile seams, mips clamped before tiles bleed), AO, classic face
-shading derived from screen-space derivatives, and max(sky × daylight ×
-tint, torch light). The atlas (256², 16 px tiles) is painted procedurally
-from the block registry. Fog ends at the view distance and the sky dome
-melts into it, so streaming edges are never visible.
+WebGPU and WebGL2 alike. The look is a shader-pack look built from CC0
+photographs: every procedural tile is bound (`packages/voxel/src/pbr.ts`,
+`buildTileTable`) to an ambientCG material of the block sheets, decoded once
+into texture arrays (albedo, tangent normals, occlusion / roughness / height;
+mipmaps, anisotropy), re-coloured towards the block's own colour, offset
+randomly per block so nothing repeats; the 16 px atlas stays for sprites,
+glass and book spines (bilinear, so they read as soft shapes). Light is
+physically flavoured: a warm sun with cascaded soft shadows ray-marched over
+a column-height texture (`SunShadowField`, filled by the meshing worker with
+256 solid and 256 foliage tops per chunk), a sky hemisphere, vertex AO and
+smooth light baked into the mesh, torch and lava light that bounces warm,
+GGX-style highlights and analytic sky reflections, wet shores, lake-bed
+caustics, depth-tinted translucent water with ripples, glints and foam,
+leaves with wind and light shining through, grass drawn as blades, emissive
+lava, glowstone and flames, in-scattered haze toward the sun. Fog ends at
+the view distance and the sky dome melts into it, so streaming edges are
+never visible. The shaders are built per render tier (`low` baked light only,
+`medium` cascaded shadows, `high` parallax and caustics, `ultra` the longest
+and softest shadows), so the software-GPU path pays for nothing it skips;
+the bloom, grade, AO and TAA of the post chain apply on top. Animals are
+soft rounded forms with fur bump; zombies are rigged people from the cast
+(the same rig as every NPC).
 
 **Game kit (`@aether/voxel/game`).** Pure and deterministic: swept AABB
 collision against blocks (axis by axis, every layer between start and end

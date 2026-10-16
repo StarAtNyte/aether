@@ -42,7 +42,15 @@ export interface ChunkMesh {
   /** Vertical extent of the geometry (chunk-local y; minY > maxY when empty). */
   minY: number;
   maxY: number;
+  /**
+   * Column tops for sun shadows: 256 solid tops (`y + 1` of the highest opaque block, 0 when none; index
+   * `x + z·16`) followed by 256 foliage tops (highest leaf-like block that filters light, 0 when none).
+   */
+  heights: Uint8Array;
 }
+
+/** Entries of {@link ChunkMesh.heights}: solid tops, then foliage tops. */
+export const HEIGHTS_LENGTH = CHUNK * CHUNK * 2;
 
 /** Height of a liquid surface inside its block. */
 export const LIQUID_SURFACE = 0.875;
@@ -184,12 +192,41 @@ export class ChunkMesher {
       this.meshCross(vol, y1);
     }
     return {
+      heights: this.columnTops(vol, y1),
       opaque: (this.writers[PASS_OPAQUE] as QuadWriter).finish(),
       cutout: (this.writers[PASS_CUTOUT] as QuadWriter).finish(),
       liquid: (this.writers[PASS_LIQUID] as QuadWriter).finish(),
       minY: this.minY,
       maxY: this.maxY,
     };
+  }
+
+  /** Column tops of the centre chunk (see {@link ChunkMesh.heights}). */
+  private columnTops(vol: LightVolume, y1: number): Uint8Array {
+    const out = new Uint8Array(HEIGHTS_LENGTH);
+    if (y1 < 0) return out;
+    const blocks = vol.blocks;
+    const opaque = this.reg.opaque;
+    const render = this.reg.render;
+    const cost = this.reg.lightCost;
+    for (let z = 0; z < CHUNK; z++) {
+      for (let x = 0; x < CHUNK; x++) {
+        const base = x + CHUNK + (z + CHUNK) * REGION;
+        let foliage = 0;
+        let solid = 0;
+        for (let y = y1; y >= 0; y--) {
+          const b = blocks[base + y * REGION_LAYER] as number;
+          if (opaque[b] === 1) {
+            solid = y + 1;
+            break;
+          }
+          if (foliage === 0 && render[b] === 2 && (cost[b] as number) >= 2) foliage = y + 1;
+        }
+        out[x + z * CHUNK] = solid;
+        out[CHUNK * CHUNK + x + z * CHUNK] = foliage;
+      }
+    }
+    return out;
   }
 
   private meshDirection(vol: LightVolume, dir: Dir, y1: number): void {

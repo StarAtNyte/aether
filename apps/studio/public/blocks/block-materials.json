@@ -1,0 +1,334 @@
+{
+ "licence": "CC0-1.0",
+ "licenceUrl": "https://docs.ambientcg.com/license/",
+ "size": 256,
+ "columns": 8,
+ "rows": 4,
+ "files": {
+  "albedo": "dce4c1d17adda269",
+  "normal": "6ae42e7110a67815",
+  "orm": "5b046274bb51277d"
+ },
+ "materials": [
+  {
+   "key": "grass",
+   "slot": 0,
+   "source": "ambientcg/Grass004",
+   "mean": [
+    0.1201,
+    0.1539,
+    0.0312
+   ]
+  },
+  {
+   "key": "moss",
+   "slot": 1,
+   "source": "ambientcg/Moss002",
+   "mean": [
+    0.0691,
+    0.1322,
+    0.0097
+   ]
+  },
+  {
+   "key": "dirt",
+   "slot": 2,
+   "source": "ambientcg/Ground103",
+   "mean": [
+    0.1977,
+    0.1399,
+    0.0824
+   ]
+  },
+  {
+   "key": "dirt-coarse",
+   "slot": 3,
+   "source": "ambientcg/Ground106",
+   "mean": [
+    0.1867,
+    0.1249,
+    0.0657
+   ]
+  },
+  {
+   "key": "sand",
+   "slot": 4,
+   "source": "ambientcg/Ground080",
+   "mean": [
+    0.4571,
+    0.339,
+    0.1623
+   ]
+  },
+  {
+   "key": "gravel",
+   "slot": 5,
+   "source": "ambientcg/Rocks022",
+   "mean": [
+    0.3284,
+    0.3017,
+    0.2691
+   ]
+  },
+  {
+   "key": "gravel-grey",
+   "slot": 6,
+   "source": "ambientcg/Gravel041",
+   "mean": [
+    0.2741,
+    0.264,
+    0.1856
+   ]
+  },
+  {
+   "key": "stone",
+   "slot": 7,
+   "source": "ambientcg/Rock030",
+   "mean": [
+    0.0796,
+    0.0742,
+    0.0616
+   ]
+  },
+  {
+   "key": "rock-dark",
+   "slot": 8,
+   "source": "ambientcg/Rock035",
+   "mean": [
+    0.006,
+    0.0117,
+    0.014
+   ]
+  },
+  {
+   "key": "rock-warm",
+   "slot": 9,
+   "source": "ambientcg/Rock029",
+   "mean": [
+    0.1975,
+    0.0882,
+    0.0383
+   ]
+  },
+  {
+   "key": "rock-mossy",
+   "slot": 10,
+   "source": "ambientcg/Rock064",
+   "mean": [
+    0.1822,
+    0.1583,
+    0.0716
+   ]
+  },
+  {
+   "key": "cobble",
+   "slot": 11,
+   "source": "ambientcg/PavingStones046",
+   "mean": [
+    0.3212,
+    0.3287,
+    0.3193
+   ]
+  },
+  {
+   "key": "planks",
+   "slot": 12,
+   "source": "ambientcg/Planks021",
+   "mean": [
+    0.5476,
+    0.4021,
+    0.1781
+   ]
+  },
+  {
+   "key": "planks-dark",
+   "slot": 13,
+   "source": "ambientcg/Planks037A",
+   "mean": [
+    0.0802,
+    0.0475,
+    0.027
+   ]
+  },
+  {
+   "key": "wood",
+   "slot": 14,
+   "source": "ambientcg/Wood096",
+   "mean": [
+    0.4525,
+    0.3381,
+    0.2325
+   ]
+  },
+  {
+   "key": "wood-dark",
+   "slot": 15,
+   "source": "ambientcg/Wood051",
+   "mean": [
+    0.053,
+    0.0341,
+    0.027
+   ]
+  },
+  {
+   "key": "bark",
+   "slot": 16,
+   "source": "ambientcg/Bark014",
+   "mean": [
+    0.1948,
+    0.1352,
+    0.0827
+   ]
+  },
+  {
+   "key": "bricks",
+   "slot": 17,
+   "source": "ambientcg/Bricks090",
+   "mean": [
+    0.4611,
+    0.3045,
+    0.195
+   ]
+  },
+  {
+   "key": "stonebricks",
+   "slot": 18,
+   "source": "ambientcg/Bricks066",
+   "mean": [
+    0.2365,
+    0.2364,
+    0.2343
+   ]
+  },
+  {
+   "key": "sandstone",
+   "slot": 19,
+   "source": "ambientcg/Ground093C",
+   "mean": [
+    0.5951,
+    0.4753,
+    0.29
+   ]
+  },
+  {
+   "key": "ice",
+   "slot": 20,
+   "source": "ambientcg/Ice001",
+   "mean": [
+    0.2374,
+    0.2862,
+    0.2801
+   ]
+  },
+  {
+   "key": "ice-green",
+   "slot": 21,
+   "source": "ambientcg/Ice002",
+   "mean": [
+    0.139,
+    0.2115,
+    0.1764
+   ]
+  },
+  {
+   "key": "clay",
+   "slot": 22,
+   "source": "ambientcg/Clay005",
+   "mean": [
+    0.3391,
+    0.1853,
+    0.106
+   ]
+  },
+  {
+   "key": "lava",
+   "slot": 23,
+   "source": "ambientcg/Lava004",
+   "mean": [
+    0.4319,
+    0.0624,
+    0.0281
+   ]
+  },
+  {
+   "key": "metal",
+   "slot": 24,
+   "source": "ambientcg/Metal032",
+   "mean": [
+    0.2024,
+    0.2454,
+    0.2909
+   ]
+  },
+  {
+   "key": "snow",
+   "slot": 25,
+   "source": "ambientcg/Snow006",
+   "mean": [
+    0.5708,
+    0.5773,
+    0.581
+   ]
+  },
+  {
+   "key": "rooftile",
+   "slot": 26,
+   "source": "ambientcg/Tiles144",
+   "mean": [
+    0.2949,
+    0.1253,
+    0.0307
+   ]
+  },
+  {
+   "key": "thatch",
+   "slot": 27,
+   "source": "ambientcg/ThatchedRoof001A",
+   "mean": [
+    0.1546,
+    0.1214,
+    0.0875
+   ]
+  },
+  {
+   "key": "fabric",
+   "slot": 28,
+   "source": "ambientcg/Fabric026",
+   "mean": [
+    0.1832,
+    0.0329,
+    0.0396
+   ]
+  },
+  {
+   "key": "plaster",
+   "slot": 29,
+   "source": "ambientcg/Plaster001",
+   "mean": [
+    0.6741,
+    0.6477,
+    0.6246
+   ]
+  },
+  {
+   "key": "concrete",
+   "slot": 30,
+   "source": "ambientcg/Concrete042A",
+   "mean": [
+    0.1179,
+    0.1079,
+    0.0989
+   ]
+  },
+  {
+   "key": "dirt-dry",
+   "slot": 31,
+   "source": "ambientcg/Ground088",
+   "mean": [
+    0.2954,
+    0.2136,
+    0.1122
+   ]
+  }
+ ]
+}

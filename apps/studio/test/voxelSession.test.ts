@@ -40,6 +40,8 @@ function fakeRenderer(cap = 8): { renderer: never; layer: FakeLayer; fog: number
     installs,
     compiling: false,
     setAtlas: () => undefined,
+    setWaterLevel: () => undefined,
+    setBlockMaterials: () => undefined,
     setCompiler: () => undefined,
     setChunk: (key: number, _cx: number, _cz: number, mesh: unknown) => {
       if (mesh) {
@@ -56,8 +58,11 @@ function fakeRenderer(cap = 8): { renderer: never; layer: FakeLayer; fog: number
     stats: () => ({ chunks: chunks.size, triangles: 0, mobs: 0, drops: 0 }),
   };
   const fog: number[] = [];
+  // Anything else the play session calls on the renderer or the layer is a no-op.
+  const loose = <T extends object>(o: T): T => new Proxy(o, { get: (t, k) => (k in t ? (t as Record<string | symbol, unknown>)[k] : k === 'then' ? undefined : () => undefined) });
   const renderer = {
-    voxel: () => Promise.resolve(layer),
+    camera: { matrixWorld: { elements: new Array<number>(16).fill(0) } },
+    voxel: () => Promise.resolve(loose(layer)),
     voxelViewDistanceCap: cap,
     setFogDistance: (m: number | null) => fog.push(m ?? -1),
     orbitTarget: (out: number[]) => {
@@ -68,7 +73,7 @@ function fakeRenderer(cap = 8): { renderer: never; layer: FakeLayer; fog: number
     },
     releaseVoxel: () => undefined,
   };
-  return { renderer: renderer as never, layer, fog };
+  return { renderer: loose(renderer) as never, layer, fog };
 }
 
 const host = { onHud: () => undefined, sound: () => undefined, error: () => undefined, saveBase: 'test-project' };
@@ -125,6 +130,30 @@ describe('VoxelSession', () => {
     await settle(s);
     expect(s.blockAt(3, 40, 3)).toBe('gold_block');
     expect(s.status().changed).toBeGreaterThan(0);
+    s.dispose();
+  });
+
+  it('finishes loading the play session while the game is held back by a start card', async () => {
+    const doc = voxelWorld(2);
+    const { renderer } = fakeRenderer();
+    const s = new VoxelSession(renderer, host);
+    await s.sync(doc);
+    const target = { addEventListener: () => undefined, removeEventListener: () => undefined, requestPointerLock: () => undefined, focus: () => undefined };
+    vi.stubGlobal('HTMLElement', class {});
+    vi.stubGlobal('HTMLInputElement', class {});
+    vi.stubGlobal('window', target);
+    vi.stubGlobal('document', { ...target, pointerLockElement: null, exitPointerLock: () => undefined });
+    const play = await s.startPlay(doc, target as never);
+    expect(play).not.toBeNull();
+    expect(s.loadingPlay).toBe(true);
+    // Only frames run (the fixed step is paused behind the card): the terrain around the spawn still completes the load.
+    const end = Date.now() + 20_000;
+    while (s.loadingPlay) {
+      if (Date.now() > end) throw new Error(`still loading: ${JSON.stringify(s.status())}`);
+      s.frame(1 / 60);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    expect(s.loadingPlay).toBe(false);
     s.dispose();
   });
 

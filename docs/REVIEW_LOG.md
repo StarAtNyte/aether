@@ -3270,6 +3270,46 @@ doors are exercised in the unit test); sitting has no body animation; the live A
 
 **Honest gaps.** Several bundled flagships still use blocky library figures for NPCs and spectators (Kart Canyon fans, Neon Rain City pedestrians, Kyoto monks, Lantern Isles' Mira); the fallback now flags them in verification and attaches rigged characters when they are edited through the tools, but the saved worlds themselves were not rewritten because the look stages own those files. The landscape title card and HUD toast are tight but no longer collide with the controls.
 
+
+## Stage `lookvoxel`: block worlds look like a shader pack
+
+**What was done.** Block terrain no longer uses pixel-art tiles for its surfaces. 32 CC0 ambientCG materials (SHA-256 pinned in `assets/voxel-textures.json`, listed in `docs/THIRD_PARTY.md`)
+are scaled to 256 px into albedo, normal and occlusion / roughness / height sheets (`scripts/voxel/block-textures.ts`, committed output in `apps/studio/public/blocks/`) and loaded as
+texture arrays with mipmaps and tier-dependent anisotropy. `packages/voxel/src/pbr.ts` binds every procedural tile of a world's registry to a material (grass, dirt, sand, stone, bricks, planks,
+snow, ice, lava, metal, fabric …) with a tint that re-colours the photograph towards the block's own colour, so custom blocks and wool still work; sprites, glass frames and book spines keep the
+atlas (now bilinear). The terrain shader (`render/voxel/terrain-material.ts`): normal mapping from screen derivatives, per-block random texture offsets, a warm sun with cascaded soft shadows
+ray-marched over a column-height texture (the meshing worker now returns 256 solid and 256 foliage tops per chunk), sky hemisphere, baked vertex AO plus the post chain's SSAO, warm torch and
+lava light, GGX-style highlights and analytic sky reflections, wet shores, lake-bed caustics, grass drawn as shader blades, leaves with clumped alpha, translucency and wind, ore flecks, grass and
+snow fringes, emissive lava / glowstone / flames (bloom), depth-tinted translucent water with ripples, sun glints and shoreline foam, in-scattered haze toward the sun and, on `ultra`, sun shafts
+through canopies and ridges. Four shader variants (`low`, `medium`, `high`, `ultra`) follow the render tier. Animals are rounded forms with fur bump; zombies are rigged cast people (the character
+system's rig, tracked by the mob group). Also fixed: D19 (the "Generating terrain" card stayed at 100 % behind a start card because only the paused fixed step could finish the load; a frame now
+starts the game when the spawn chunks exist, regression test in `voxelSession.test.ts`), per-frame garbage in `VoxelLayer.flushPrebuild` (closure context allocated every frame) and in the sun
+update (recomputed only when the hour moves a visible step).
+
+**Verification.** `tsc` 0 errors; new suites `pbr`, `block-sheets` (index validation, sheet slicing, shadow field wrap), `voxel-frame` (allocation probe of the per-frame calls, tier cost table, meshing
+stays in the worker), `mesher-perf`, extended `light-mesh` (column tops, mesh validation requires them), `voxelSession` (loading finishes behind a start card). Full vitest: 2422 pass; the six that failed in
+the parallel run (sandbox, storage, two alloc probes, ghost run) pass alone and fail only under machine load. `npm run e2e:voxel` passes on Chromium WebGPU, Chromium WebGL2 and Firefox WebGL2 (software
+rasteriser); `npm run smoke` 34/34; studio build ok. Stills: `tests/e2e/voxelshots.e2e.ts` (cameras, hour, tier, mobs, `--bench`). Honest judgement of 22 screenshot rounds on the RTX 4090 (survival world,
+block village, Blockfall, castle hill): surfaces, brick and plank walls, dusk and night, water glitter and torch bloom read as a shader pack; the silhouettes are still blocks, noon light is
+flatter than a hand-tuned pack (cast shadows are soft and subtle), grass tops stay a little pale, tall grass and flowers are simple, glass is the old pixel frame, there is no moon-lit water refraction.
+Frame interval on the 4090 (Chromium WebGPU, 1440 x 900, uncapped): survival world low 2.8, medium 2.3, high 3.4, ultra 4.3 ms; dense village low 6.6, medium 5.2, high 10.7, ultra 14.8 ms (p95 33).
+Software rasteriser (SwiftShader, same size, `low`): 745 ms per frame with the photographs, 458 ms with the pixel atlas only (the first version took 1 701 ms; anisotropy 1 and a lean shader fixed most
+of it); `medium` and `high` cost 1.5 to 1.8 s there and are never chosen automatically.
+
+**Security review.** The sheets and their index are fetched from the app's own origin, size-capped (24 MiB per image, 64 KiB index, 4 096 px edge, 64 layers), decoded with `createImageBitmap` and
+validated (`parseSheetIndex` rejects bad sizes, keys, slots and colours); any failure returns null and the terrain keeps the atlas. The mesher's new `heights` array is validated by `checkMesh`
+(length 512) and transferred like the other buffers; the height texture only stores bytes. The texture download script allow-lists two hosts, checks every archive's SHA-256, lists archives before
+extracting and caps their size. No dependency was added; no stateful browser storage.
+
+**Performance review.** Meshing stays in the workers (a guard test reads the worker and layer sources); the height pass is one scan per column (256 per chunk). Per-frame calls allocate nothing in steady
+state (probe test). The shadow march is unrolled per tier (low 0, medium 10, high 16, ultra 22 samples) so cheaper tiers pay nothing; the height texture (512 x 512 RG8, toroidal) is re-uploaded at most
+once per frame and only when a chunk changed. Changing the tier rebuilds three materials (async compile, chunks stay hidden meanwhile). Texture memory: 3 arrays of 32 x 256 x 256 RGBA with mips, about 33 MB.
+
+**Honest gaps.** No screen-space refraction (an attempt through the viewport texture made the WebGPU pipeline creation fail in one world, so it was removed; water is translucent with depth tint and
+caustics on the bed); sun shafts are a height-texture approximation (no shadow-map rays), cascades are distance cascades of one heightfield (overhangs rely on the vertex sky light); the software
+path is 1.6x slower than the pixel atlas; the world's seven custom-pattern tiles (stripes, dots) and sprites use the atlas; zombie skin cannot be tinted by the cast system (clothes only); mobs other than
+zombies are soft but toy-like; an obvious tiling remains on very large flat grass fields at distance.
+
 ## Stage `lookoutdoor`: outdoor look, and every character looks human or properly animated
 
 **What was built.** Part 2 (characters): `findStandIns` lint in `@aether/core` (people, animals and vehicles shown as capsules, boxes, block figures or cube pets),

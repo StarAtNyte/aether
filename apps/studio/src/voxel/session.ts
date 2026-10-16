@@ -16,12 +16,12 @@
  * modified chunk unloads and when play stops. Saves load again on the next
  * play (or after a page reload) for the same project and terrain seed.
  */
-import { PRESET_HOURS, type VoxelLayer, type WorldRenderer } from '@aether/render';
+import { loadBlockSheets, PRESET_HOURS, type BlockSheets, type VoxelLayer, type WorldRenderer } from '@aether/render';
 import type { Environment, VoxelEdit, VoxelTerrain, WorldDoc } from '@aether/core';
 import { deepEqual } from '@aether/core';
 import {
-  BlockRegistry, buildAtlas, ChunkStreamer, compileEdits, createHit, decodeChunk, decodeSave, encodeChunk, encodeSave, identityKey, raycastVoxels, saveIdentity,
-  SavedPlayer, TerrainGenerator, terrainIdentity, VoxelJobPool, VoxelWorld, CHUNK, chunkKey, type BlockAtlas, type ChunkData, type ChunkMesh, type ChunkSlot, type TerrainIdentity, type VoxelSave,
+  BlockRegistry, buildAtlas, buildTileTable, ChunkStreamer, compileEdits, createHit, decodeChunk, decodeSave, encodeChunk, encodeSave, identityKey, raycastVoxels, saveIdentity,
+  SavedPlayer, TerrainGenerator, terrainIdentity, VoxelJobPool, VoxelWorld, CHUNK, LIQUID_SURFACE, SEA_LEVEL, chunkKey, type BlockAtlas, type ChunkData, type ChunkMesh, type ChunkSlot, type TerrainIdentity, type VoxelSave,
 } from '@aether/voxel';
 import { createInput, daylightAt, EYE_HEIGHT, skyForHour, skyTintAt, VoxelGame, type GameEvent, type GameInput, type ItemDef } from '@aether/voxel/game';
 import { createLogger, errorMessage } from '../lib/log';
@@ -32,6 +32,13 @@ import { paintItemIcons, pixelsToObjectUrl, ICON } from './itemIcons';
 import { parseChunkKey, voxelSaveStore, type VoxelSaveStore } from './saveStore';
 
 const log = createLogger('voxel');
+
+/** Photographic block materials, decoded once per page (null: unavailable, the pixel atlas stays). */
+let blockSheets: Promise<BlockSheets | null> | null = null;
+function photographicSheets(): Promise<BlockSheets | null> {
+  blockSheets ??= loadBlockSheets('/blocks/', 8);
+  return blockSheets;
+}
 
 /** Seconds between autosaves while playing (only when something changed). */
 const AUTOSAVE_S = 8;
@@ -129,6 +136,11 @@ export class VoxelSession {
   /** The play session (null in edit mode). */
   get game(): VoxelPlay | null {
     return this.play;
+  }
+
+  /** The play session is still waiting for the terrain around the spawn (the "Generating terrain" card is up). */
+  get loadingPlay(): boolean {
+    return this.play?.loading ?? false;
   }
 
   /** Every chunk within the view distance is meshed and on screen (shaders compiled). */
@@ -243,12 +255,17 @@ export class VoxelSession {
     const layer = await this.renderer.voxel();
     if (this.disposed || epoch !== this.epoch) return;
     this.layer = layer;
+    layer.setWaterLevel(SEA_LEVEL - 1 + LIQUID_SURFACE);
     const regKey = JSON.stringify(t.blocks);
     if (!this.reg || regKey !== this.registryKey) {
       this.reg = new BlockRegistry(t.blocks);
       this.registryKey = regKey;
       this.atlas = buildAtlas(this.reg);
       layer.setAtlas(this.atlas.pixels, this.atlas.size, this.reg.faceTiles);
+      const reg = this.reg;
+      void photographicSheets().then((sheets) => {
+        if (sheets && !this.disposed && this.layer === layer && this.reg === reg) layer.setBlockMaterials(sheets, buildTileTable(reg.tiles, sheets.materials));
+      });
       this.setAtlasUrl('');
       const atlas = this.atlas;
       void pixelsToObjectUrl(atlas.pixels, atlas.size, atlas.size).then((url) => {
@@ -752,6 +769,11 @@ export class VoxelPlay {
     }
   }
 
+  /** Waiting for the terrain around the spawn. */
+  get loading(): boolean {
+    return !this.ready;
+  }
+
   private tryStart(): void {
     const [x, z] = this.spawnXZ;
     const cx = Math.floor(x / CHUNK);
@@ -829,6 +851,9 @@ export class VoxelPlay {
   /** Per animation frame: camera, actors, sky, HUD. */
   frame(dt: number): void {
     this.frameNo++;
+    // Ready as soon as the terrain around the spawn exists, also while the game is held back by a start card
+    // (the fixed step that normally does this does not run then, and the loading card would stay up at 100 %).
+    if (!this.ready) this.tryStart();
     const g = this.game;
     const b = g.player.body;
     const fx = this.ready ? b.x : this.spawnXZ[0];

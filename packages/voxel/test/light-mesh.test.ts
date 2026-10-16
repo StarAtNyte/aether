@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ChunkData } from '../src/chunk';
 import { CHUNK_VOLUME, cellIndex } from '../src/constants';
 import { LightVolume, REGION, regionIndex } from '../src/light';
-import { ChunkMesher, LIQUID_SURFACE, type ChunkMesh, type MeshBuffers } from '../src/mesher';
+import { ChunkMesher, HEIGHTS_LENGTH, LIQUID_SURFACE, type ChunkMesh, type MeshBuffers } from '../src/mesher';
 import { VoxelJobContext, terrainIdentity } from '../src/jobs';
 import { checkMesh } from '../src/protocol';
 import { id, reg, terrain } from './helpers';
@@ -110,6 +110,26 @@ describe('greedy mesher', () => {
   it('draws plants as two crossed quads in the cutout pass', () => {
     const m = mesher.mesh(region([[3, 1, 3, 'poppy']]));
     expect(m.cutout?.quads).toBe(2);
+  });
+
+  it('records column tops for sun shadows: solid tops and foliage tops', () => {
+    const v = region([[3, 1, 4, 'stone'], [3, 2, 4, 'stone'], [5, 3, 6, 'oak_leaves'], [5, 1, 6, 'oak_log'], [7, 2, 7, 'glass']]);
+    const h = new ChunkMesher(reg).mesh(v).heights;
+    expect(h.length).toBe(HEIGHTS_LENGTH);
+    expect(h[0]).toBe(1); // the floor
+    expect(h[3 + 4 * 16]).toBe(3); // stone stack to y = 2
+    expect(h[5 + 6 * 16]).toBe(2); // log at y = 1; leaves above are foliage, not solid
+    expect(h[256 + 5 + 6 * 16]).toBe(4); // leaves at y = 3
+    expect(h[256 + 3 + 4 * 16]).toBe(0);
+    expect(h[256 + 7 + 7 * 16]).toBe(0); // glass casts no foliage shadow
+  });
+
+  it('rejects meshes without valid column tops', () => {
+    const v = region([[3, 1, 4, 'stone']]);
+    const m = new ChunkMesher(reg).mesh(v);
+    expect(checkMesh({ ...m })).not.toBeNull();
+    expect(checkMesh({ ...m, heights: new Uint8Array(10) })).toBeNull();
+    expect(checkMesh({ ...m, heights: undefined })).toBeNull();
   });
 
   it('meshes real terrain into valid buffers through a job context', () => {
