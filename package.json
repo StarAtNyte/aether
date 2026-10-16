@@ -27,6 +27,7 @@
     "e2e": "tsx tests/e2e/studio.e2e.ts",
     "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
     "e2e:switch": "tsx tests/e2e/worldswitch.e2e.ts",
+    "e2e:honesty": "tsx tests/e2e/honesty.e2e.ts",
     "e2e:voxel": "tsx tests/e2e/voxel.e2e.ts",
     "e2e:arch": "tsx tests/e2e/arch.e2e.ts",
     "e2e:interact": "tsx tests/e2e/interact.e2e.ts",

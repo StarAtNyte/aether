@@ -16,7 +16,6 @@
 import {
   BufferAttribute,
   BufferGeometry,
-  CapsuleGeometry,
   Color,
   ConeGeometry,
   Group,
@@ -24,9 +23,14 @@ import {
   LineSegments,
   Mesh,
   MeshBasicMaterial,
+  type Material,
+  type Texture,
   RingGeometry,
   SphereGeometry,
 } from 'three';
+import { resolveLook } from '@aether/assets';
+import type { CharacterRig } from '../characters/rig';
+import type { CharacterSystem } from '../characters/system';
 
 /** Floats per trace frame: x, y, z (feet), yaw in degrees. */
 const STRIDE = 4;
@@ -43,7 +47,8 @@ export interface GhostTrace {
 
 /** Player capsule of the studio (metres). */
 const RADIUS = 0.35;
-const HEIGHT = 1.7;
+/** Id of the ghost person inside the character system. */
+const GHOST_ID = 'aether:ghost-run';
 const FIGURE = new Color('#7fd6ff');
 const ROUTE_AHEAD = new Color('#6b72ff');
 const ROUTE_DONE = new Color('#c2ecff');
@@ -81,10 +86,12 @@ export class GhostRun {
   /** Everything of the ghost (add to the scene once). */
   readonly group = new Group();
   private readonly figure = new Group();
-  private readonly body: Mesh;
+  private system: CharacterSystem | null = null;
+  private person: CharacterRig | null = null;
+  private personMats: Material[] = [];
+  private mounting = false;
   private readonly nose: Mesh;
   private readonly ring: Mesh;
-  private readonly bodyMat = new MeshBasicMaterial({ color: FIGURE, transparent: true, opacity: 0.55, depthWrite: false });
   private readonly noseMat = new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, depthWrite: false });
   private readonly ringMat = new MeshBasicMaterial({ color: FIGURE, transparent: true, opacity: 0.45, depthWrite: false });
   private readonly routeMat = new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
@@ -108,20 +115,68 @@ export class GhostRun {
   constructor() {
     this.group.name = 'aether:ghost-run';
     this.group.renderOrder = 11;
-    const half = Math.max(0, (HEIGHT - 2 * RADIUS) / 1);
-    this.body = new Mesh(new CapsuleGeometry(RADIUS, half, 4, 12), this.bodyMat);
-    this.body.position.y = HEIGHT / 2;
     this.nose = new Mesh(new ConeGeometry(0.12, 0.3, 10), this.noseMat);
     // The cone points to the figure's front (−Z): lay it on its side.
     this.nose.rotation.x = -Math.PI / 2;
-    this.nose.position.set(0, HEIGHT * 0.72, -(RADIUS + 0.12));
+    this.nose.position.set(0, 0.06, -(RADIUS * 1.9));
     this.ring = new Mesh(new RingGeometry(RADIUS * 1.1, RADIUS * 1.5, 28), this.ringMat);
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.03;
-    this.figure.add(this.body, this.nose, this.ring);
+    // The figure is a real person (see setSystem); until it is mounted only the
+    // heading cone and the ground ring mark where the bot is: no capsule stand-in.
+    this.figure.add(this.nose, this.ring);
     this.figure.visible = false;
     this.group.add(this.figure);
     this.group.visible = false;
+  }
+
+  /** Give the ghost the scene's character system: the figure is then a translucent person, not a shape. */
+  setSystem(system: CharacterSystem): void {
+    this.system = system;
+  }
+
+  /** Mount the person (once, on first use); the cone and ring stay as the position marker. */
+  private mountPerson(): void {
+    const system = this.system;
+    if (!system || this.person || this.mounting) return;
+    this.mounting = true;
+    const look = resolveLook({ wardrobe: 'traveller' }, 'ghost-run');
+    void system
+      .add(GHOST_ID, look, this.figure, { footOffset: 0, track: this.figure, castShadow: false, autoMotion: true })
+      .then((rig) => {
+        this.mounting = false;
+        if (!rig) return;
+        if (this.system !== system || !this.figure.parent) {
+          system.remove(GHOST_ID);
+          return;
+        }
+        this.person = rig;
+        rig.root.traverse((o) => {
+          const m = o as Mesh;
+          if (!m.isMesh) return;
+          m.castShadow = false;
+          m.receiveShadow = false;
+          const make = (src: Material): Material => {
+            const c = new MeshBasicMaterial({ color: FIGURE, transparent: true, opacity: 0.55, depthWrite: false });
+            const map = (src as { map?: Texture | null }).map;
+            if (map) c.map = map;
+            this.personMats.push(c);
+            return c;
+          };
+          m.material = Array.isArray(m.material) ? m.material.map(make) : make(m.material);
+          m.renderOrder = 11;
+        });
+      })
+      .catch(() => {
+        this.mounting = false;
+      });
+  }
+
+  private unmountPerson(): void {
+    if (this.person) this.system?.remove(GHOST_ID);
+    this.person = null;
+    for (const m of this.personMats) m.dispose();
+    this.personMats = [];
   }
 
   /** True while a run is loaded (the renderer keeps drawing while it plays). */
@@ -167,6 +222,7 @@ export class GhostRun {
     this.buildMarkers(trace);
     this.group.visible = true;
     this.figure.visible = true;
+    this.mountPerson();
     this.shownUpTo = -1;
     this.apply();
     return true;
@@ -213,6 +269,7 @@ export class GhostRun {
       this.figure.position.set(x, y, z);
       this.figure.visible = true;
       this.group.visible = true;
+      this.mountPerson();
     } else {
       const dx = x - this.liveTarget[0];
       const dz = z - this.liveTarget[2];
@@ -269,16 +326,16 @@ export class GhostRun {
     this.duration = 0;
     this.figure.visible = false;
     this.group.visible = false;
+    this.unmountPerson();
     this.disposeRoute();
   }
 
   /** Free everything (the renderer is going away). */
   dispose(): void {
     this.stop();
-    this.body.geometry.dispose();
+    this.unmountPerson();
     this.nose.geometry.dispose();
     this.ring.geometry.dispose();
-    this.bodyMat.dispose();
     this.noseMat.dispose();
     this.ringMat.dispose();
     this.routeMat.dispose();

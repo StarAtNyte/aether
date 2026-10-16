@@ -599,6 +599,7 @@ export class WorldRenderer {
       onFootstep: (id, foot, speed, p) => this.footstepHandler?.(id, foot, speed, [p.x, p.y, p.z]),
     });
     this.avatar.setSystem(this.characters);
+    this.ghostRun.setSystem(this.characters);
     this.sync = new SceneSync({
       ...common,
       characters: this.characters,

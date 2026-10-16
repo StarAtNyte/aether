@@ -41,3 +41,16 @@ describe('offline planner quantities (D2)', () => {
     expect(quantityNote('make it 100,000 trees')).toMatch(/100,000/);
   });
 });
+
+describe('offline planner and other languages', () => {
+  it('names English as the limit for Spanish, French, German and CJK prompts, and builds nothing', async () => {
+    const { planMock, looksNonEnglish } = await import('../src/providers/mock/planner');
+    for (const text of ['Construye un castillo medieval con un foso y un puente levadizo', 'Construis un château avec une tour', 'Baue eine Burg mit einem Turm', '森の中の城を作って']) {
+      expect(looksNonEnglish(text)).toBe(true);
+      const plan = planMock(text, '');
+      expect(plan.patches).toHaveLength(0);
+      expect(plan.message).toMatch(/only reads English/i);
+    }
+    for (const text of ['a haunted castle at night', 'add a tent', 'make the car red', 'tropical island coin game']) expect(looksNonEnglish(text)).toBe(false);
+  });
+});

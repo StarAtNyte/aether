@@ -103,6 +103,33 @@ export function notUnderstood(text: string): MockPlan {
   };
 }
 
+const ENGLISH_WORDS = new Set(('the a an and or of in on at to for with without is are it its this that these those add make build create place put remove delete move turn change set my me some two three four five six seven eight nine ten more less bigger smaller taller darker brighter into over under near next by from as be i we you your our there here please can could would should all any every each no not new old big small tall short red green blue yellow white black orange purple pink brown grey gray night day sunset sunrise').split(' '));
+const FOREIGN_WORDS = new Set(('el la los las un una unos unas del al con sin para por y o es son que de en muy construye crea haz pon quita le les des du au avec sans pour et ou est sont une dans sur très construis crée fais der die das den dem ein eine einen einem und oder mit ohne für ist sind auf im baue erstelle mach o os um uma uns umas com sem para por e ou em no na nos nas muito il lo gli i un uno per di da e o ma con senza sono molto costruisci crea fai').split(' '));
+
+/** True when the request is written in a language other than English (the offline planner only reads English). */
+export function looksNonEnglish(text: string): boolean {
+  if (/[\u0400-\u04FF\u0590-\u06FF\u0900-\u0DFF\u0E00-\u0EFF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/.test(text)) return true;
+  const words = text.toLowerCase().match(/[a-z\u00C0-\u017F]+/g) ?? [];
+  let foreign = 0;
+  let english = 0;
+  for (const w of words) {
+    if (ENGLISH_WORDS.has(w)) english++;
+    else if (FOREIGN_WORDS.has(w)) foreign++;
+  }
+  const accented = /[\u00C0-\u017F]/.test(text);
+  return english === 0 && (foreign >= 2 || (foreign >= 1 && accented));
+}
+
+/** The answer to a request in another language: nothing is built, the limit is named. */
+export function notEnglish(text: string): MockPlan {
+  const shown = text.length > 60 ? `${text.slice(0, 57)}...` : text;
+  return {
+    plan: '',
+    patches: [],
+    message: `I did not understand "${shown}", and offline mode is limited: it only reads English. Nothing was built or changed. Try for example ${OFFLINE_EXAMPLES.map((e) => `"${e}"`).join(', ')}, or connect an AI in Settings to describe your world in any language.`,
+  };
+}
+
 /** A sentence about big quantities the offline planner does not honour ("1000 trees"), else an empty string. */
 export function quantityNote(text: string, countHonoured = false): string {
   for (const m of text.matchAll(/\b\d{1,3}(?:,\d{3})+\b|\b\d{3,}\b|\b(?:hundreds?|thousands?|millions?)\b/gi)) {
@@ -279,6 +306,8 @@ export function planMock(request: string, summary: string, library: readonly Moc
 }
 
 function planMockPlain(request: string, summary: string, library: readonly MockLibraryItem[], mode: 'new' | 'refine' | undefined): MockPlan {
+  // A request in another language cannot be understood by keyword rules: say so instead of guessing from stray words.
+  if (looksNonEnglish(request)) return notEnglish(request);
   // Flagship showcase worlds answer to their names.
   const showcase = planShowcase(request, summary);
   if (showcase) return showcase;

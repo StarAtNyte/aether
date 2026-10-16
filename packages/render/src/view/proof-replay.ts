@@ -15,7 +15,7 @@
  * disposed when it ends.
  */
 import { BufferAttribute, BufferGeometry, Color, Group, LineBasicMaterial, LineSegments, type Object3D } from 'three';
-import { quatToEulerDeg, type Entity, type EntityId, type WorldDoc, worldTransform } from '@aether/core';
+import { isBodylessPerson, quatToEulerDeg, type Entity, type EntityId, type WorldDoc, worldTransform } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
 
 /** A recorded motion trace (structurally `@aether/physics` `VerifyTrace`). */
@@ -71,6 +71,9 @@ export function replayWorld(world: WorldDoc, ids: readonly string[]): WorldDoc {
   for (const id of ids) {
     const e = world.entities[id];
     if (!e || e.template || e.shape.kind === 'none' || e.shape.kind === 'scatter') continue;
+    // People are rigged characters, drawn only by the live scene. Their collider shape (a capsule or box)
+    // must never be shown as a translucent body: the replay keeps their trail but no ghost.
+    if (e.character || e.npc || isBodylessPerson(e)) continue;
     let transform = e.transform;
     if (e.parent !== null) {
       try {
