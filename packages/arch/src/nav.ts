@@ -403,7 +403,7 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     const reached = new Uint8Array(walk.length);
     const seeds = (pending.get(L.index) ?? []).map((p) => nearestWalkable(grid, walk, p, 1.5));
     if (seeds.every((s) => s < 0)) {
-      if (ground) issues.push({ code: 'no_entrance', message: `${buildingId}: the entrance (player spawn) is not next to a walkable approach`, entities: [buildingId], hint: 'Add a door to "outside" (main: true) and keep 1 m in front of it clear; the player starts outside the main door.' });
+      if (ground) issues.push({ code: 'no_entrance', message: `${buildingId}: the entrance (player spawn) is not on walkable floor`, entities: [buildingId], hint: 'Add a door to "outside" (main: true) and keep 1 m in front of it clear; the player starts just inside the main door facing the house.' });
       // Fall back to the first room so the rest is still checked.
       const r0 = roomPolys[0];
       if (r0) seeds.push(nearestWalkable(grid, walk, r0.poly[0] ?? [0, 0], 50, r0.poly));

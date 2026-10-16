@@ -31,6 +31,7 @@ import { computeSkyState, type SkyState } from './sky-state';
 import { SkyDome, SKY_RADIUS } from './sky-dome';
 import { WeatherSystem } from './weather';
 import { fitShadowCamera } from './shadow-fit';
+import { INTERIOR_FILL, interiorBounce } from './bounce';
 import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
@@ -141,6 +142,15 @@ export class EnvironmentRig {
   readonly group = new Group();
   readonly sun = new DirectionalLight('#ffffff', 2.5);
   readonly hemi = new HemisphereLight('#bcd4f0', '#3b3326', 0.8);
+  /** Floor-bounce fill of buildings (black sky half, warm ground half); off until {@link setInteriorBounce}. */
+  readonly bounce = new HemisphereLight('#000000', '#b08a66', 0);
+  /** Neutral warm ambient fill of buildings, strongest when the eye is under a ceiling (see `view/eye-adapt.ts`). */
+  readonly fill = new HemisphereLight('#fff0e0', '#fff0e0', 0);
+  private fillLevel = 0;
+  private bounceOn = false;
+  /** Image-light intensity before the eye-adaptation scale, and that scale (1 outdoors). */
+  private envBase = 1;
+  private envScale = 1;
   readonly sky = new SkyDome();
   readonly weather: WeatherSystem;
   private readonly fog = new FogExp2('#c4def4', 0);
@@ -212,9 +222,49 @@ export class EnvironmentRig {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.group.add(this.sun, this.sun.target, this.hemi, this.sky.group);
+    this.group.add(this.sun, this.sun.target, this.hemi, this.bounce, this.fill, this.sky.group);
     this.weather = new WeatherSystem(this.group);
     this.state = computeSkyState({ sky: 'day', sunIntensity: 2.5, ambientIntensity: 0.4 });
+  }
+
+  /** Scale the image-based light (eye adaptation: a room is not lit by the open sky). 1 restores it. */
+  setEnvScale(scale: number): void {
+    const s = Number.isFinite(scale) ? Math.max(0, Math.min(2, scale)) : 1;
+    if (Math.abs(s - this.envScale) < 1e-4) return;
+    this.envScale = s;
+    if (this.scene) this.scene.environmentIntensity = this.envBase * s;
+  }
+
+  /** Turn the interior floor-bounce fill on for worlds with buildings (see `bounce.ts`). */
+  setInteriorBounce(on: boolean): void {
+    if (on === this.bounceOn) return;
+    this.bounceOn = on;
+    this.applyBounce();
+  }
+
+  private applyBounce(): void {
+    const b = interiorBounce(this.state);
+    this.bounce.groundColor.set(b.color);
+    this.bounce.intensity = this.bounceOn ? b.intensity : 0;
+    this.bounce.visible = this.bounceOn;
+    this.applyFill();
+  }
+
+  /**
+   * How much of the interior fill shows: 0 (eye outdoors) to 1 (under a ceiling). Buildings keep a third of it
+   * outdoors so a cutaway or an exterior shot through the glass is not a black box.
+   */
+  setInteriorFill(level: number): void {
+    const l = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+    if (Math.abs(l - this.fillLevel) < 1e-4) return;
+    this.fillLevel = l;
+    this.applyFill();
+  }
+
+  private applyFill(): void {
+    const b = interiorBounce(this.state);
+    this.fill.intensity = this.bounceOn ? Math.min(1.1, b.intensity) * INTERIOR_FILL * (0.35 + 0.65 * this.fillLevel) : 0;
+    this.fill.visible = this.bounceOn;
   }
 
   /** Current computed sky state. */
@@ -253,6 +303,7 @@ export class EnvironmentRig {
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
+    this.applyBounce();
     this.syncGround(s.showGround ? env.ground : null);
     const explicit = env.hdri;
     const id = explicit ?? (this.autoHdri ? AUTO_HDRI[s.preset] : undefined);
@@ -346,6 +397,8 @@ export class EnvironmentRig {
     // A loaded HDRI owns lighting (and, by default, the background); the analytic sky hides behind it.
     if (this.hdri.bind(scene, this.state.envIntensity * HDRI_ENV_SCALE)) {
       this.alignHdriSun(scene);
+      this.envBase = scene.environmentIntensity;
+      scene.environmentIntensity = this.envBase * this.envScale;
       this.sky.group.visible = !this.hdri.showsBackground;
       // The photographed sky already lights every surface: the analytic ambient would double it (and tint it blue).
       this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL * HDRI_HEMI_SCALE;
@@ -373,7 +426,8 @@ export class EnvironmentRig {
     tex.needsUpdate = true;
     tex.needsPMREMUpdate = true;
     scene.environment = tex;
-    scene.environmentIntensity = this.state.envIntensity;
+    this.envBase = this.state.envIntensity;
+    scene.environmentIntensity = this.envBase * this.envScale;
   }
 
   /** Turn the HDRI around the vertical axis so its sun sits where the sun light is (reflections agree with the shadows). */
@@ -480,6 +534,8 @@ export class EnvironmentRig {
     this.sun.shadow.map?.dispose();
     this.sun.dispose();
     this.hemi.dispose();
+    this.bounce.dispose();
+    this.fill.dispose();
     this.group.removeFromParent();
   }
 }

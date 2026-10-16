@@ -29,6 +29,8 @@ export interface PostEffects {
   composite: boolean;
   /** Ground-truth ambient occlusion on the indirect light. */
   ao: boolean;
+  /** Screen-space global illumination (experimental, off in every tier: a noisy single bounce of the lit surfaces on screen; switch it on in Settings). */
+  gi: boolean;
   /** Temporal anti-aliasing (needs the velocity pre-pass). */
   taa: boolean;
   /** Screen-space reflections (glass, polished floors, water, metals). */
@@ -46,14 +48,14 @@ export interface PostEffects {
 }
 
 /** The effect keys, in the order they degrade when one fails (first dropped first). */
-export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'shafts', 'ssr', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
+export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'gi', 'shafts', 'ssr', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
 
 /** Effects that need the normal / velocity pre-pass. */
 export function needsPrePass(e: PostEffects): boolean {
-  return e.ao || e.taa || e.ssr || e.shafts || e.dof;
+  return e.ao || e.gi || e.taa || e.ssr || e.shafts || e.dof;
 }
 
-const NONE: PostEffects = Object.freeze({ composite: false, ao: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+const NONE: PostEffects = Object.freeze({ composite: false, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
 
 /** The effects of a tier. */
 export function effectsOf(tier: RenderTier): PostEffects {

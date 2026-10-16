@@ -17,15 +17,21 @@ import { CHROME_ARGS, FIREFOX_PREFS, SKIP_FIRST_RUN, findChrome, findFirefox, st
 const ARGS = process.argv.slice(2);
 const arg = (name: string): string | undefined => ARGS.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const OUT = resolve(arg('out') ?? '/tmp/aether-archshots');
-const SLUG = arg('slug');
+const WORLD = arg('world');
+/** A `--world` file takes the place of the bundled `apartment` template in the (disposable) build output. */
+const SLUG = WORLD ? 'apartment' : arg('slug');
 const PROMPT = arg('prompt');
-const CAMS = JSON.parse(readFileSync(resolve(arg('cams') ?? 'cams.json'), 'utf8')) as Array<{ name: string; pos: [number, number, number]; target: [number, number, number]; walls?: 'up' | 'cutaway' | 'down'; fov?: number }>;
+const CAMS = JSON.parse(readFileSync(resolve(arg('cams') ?? 'cams.json'), 'utf8')) as Array<{ name: string; pos?: [number, number, number]; target?: [number, number, number]; walls?: 'up' | 'cutaway' | 'down'; fov?: number; js?: string; hour?: number }>;
 const REALTIME = ARGS.includes('--realtime');
 const GPU = ARGS.includes('--gpu');
 const FIREFOX = ARGS.includes('--firefox');
 const [W, H] = (arg('size') ?? '1600x900').split('x').map(Number) as [number, number];
 const HOUR = arg('hour');
 const PRESET = arg('preset');
+/** `--fx=ao:0,shafts:0`: force post effects on (1) or off (0) while debugging a look. */
+const FX = (arg('fx') ?? '').split(',').filter(Boolean).map((p) => p.split(':') as [string, string]);
+/** `--sunshadow=0`: switch the sun's shadow map off (isolates shadow artefacts). */
+const SUNSHADOW = arg('sunshadow');
 const GPU_ARGS = ['--ignore-gpu-blocklist', '--use-angle=vulkan', '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan', '--disable-vulkan-surface'];
 
 const startedAt = performance.now();
@@ -57,6 +63,13 @@ async function open(page: Page, url: string): Promise<void> {
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
+  if (WORLD) {
+    // `--world=<file>`: a bare world document (or an exported envelope) served as a template for this run.
+    const raw = JSON.parse(readFileSync(resolve(WORLD), 'utf8')) as { world?: unknown };
+    const dir = resolve(import.meta.dirname, '../../apps/studio/dist/templates/worlds');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'apartment.json'), JSON.stringify(raw.world ? raw : { format: 'aether-world', version: 1, world: raw }));
+  }
   const server = await startServer(log);
   let browser: Browser | null = null;
   try {
@@ -78,12 +91,25 @@ async function main(): Promise<void> {
       }, hour);
     }
     if (PRESET) await page.evaluate((p) => (window.__aether?.simulation?.renderer as unknown as { setGradePreset?: (n: string) => void })?.setGradePreset?.(p), PRESET);
+    if (FX.length > 0) await page.evaluate((fx) => window.__aether?.simulation?.renderer.setEffects(Object.fromEntries(fx.map(([k, v]) => [k, v === '1']))), FX);
+    if (SUNSHADOW !== undefined) await page.evaluate((on) => { (window.__aether!.simulation!.renderer as unknown as { env: { sun: { castShadow: boolean } } }).env.sun.castShadow = on; }, SUNSHADOW === '1');
     const hide = (arg('hide') ?? '').split(',').filter(Boolean);
     if (hide.length > 0) await page.evaluate((prefixes) => Object.keys(window.__aether!.history.current.entities).filter((id) => prefixes.some((p) => id.startsWith(p))).forEach((id) => window.__aether?.simulation?.renderer.setEntityProperty(id, 'visible', false)), hide);
     for (const cam of CAMS) {
+      if (cam.hour !== undefined) {
+        await page.evaluate((h) => {
+          const env = window.__aether!.history.current.environment;
+          window.__aether!.simulation!.renderer.setEnvironmentOverride({ ...env, timeOfDay: h, sky: h > 19 || h < 5 ? 'night' : env.sky });
+        }, cam.hour);
+      }
+      /** Per-camera look-development hook: `js` runs in the page with `renderer` in scope. */
+      if (cam.js) {
+        const res = await page.evaluate(([code]) => String(new Function('renderer', code)(window.__aether!.simulation!.renderer) ?? ''), [cam.js] as const);
+        if (res) log(`  js(${cam.name}): ${res}`);
+      }
       await page.evaluate(([walls, rt]) => window.__aether?.store.getState().setArch({ walls, ...(rt ? {} : { quality: 'studio' as const }) }), [cam.walls ?? 'up', REALTIME] as const);
       if (!REALTIME) await page.evaluate(() => window.__aether?.simulation?.renderer.setRenderQuality('studio'));
-      await page.evaluate(([p, t, fov]) => {
+      if (cam.pos && cam.target) await page.evaluate(([p, t, fov]) => {
         const sim = window.__aether?.simulation;
         const dx = t[0] - p[0];
         const dy = t[1] - p[1];

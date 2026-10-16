@@ -36,6 +36,7 @@ const TIER_CHOICES: ReadonlyArray<[RenderTierSetting, string]> = [
 /** Effects the tiers switch on, in the order they are listed (id, label, what it does). */
 const EFFECT_LABELS: Readonly<Record<EffectSetting, [string, string]>> = {
   ao: ['Ambient occlusion', 'Contact shadows in corners and under objects.'],
+  gi: ['Bounced light (experimental)', 'Screen-space bounce of lit surfaces; noisy, so off in every tier. Interiors already get a warm floor-bounce fill.'],
   taa: ['Temporal anti-aliasing', 'Smooth edges and shimmer-free foliage.'],
   ssr: ['Reflections', 'Glass, water, polished floors and metal mirror the scene.'],
   shafts: ['Sun shafts', 'Light beams through gaps and shadows.'],

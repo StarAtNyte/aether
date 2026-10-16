@@ -73,3 +73,45 @@ describe('flagship showcase plans', () => {
     expect(world.intro?.title).toBe('Sakura River Journey');
   });
 });
+
+describe('architecture flagships start the walkthrough inside, facing the house', () => {
+  it.each(['casa-patio', 'skyline-penthouse', 'dusk-lake-house'])('%s', (id) => {
+    const { world } = build(id);
+    const building = Object.values(world.entities).find((e) => e.arch?.role === 'building');
+    expect(building).toBeDefined();
+    const walls = Object.values(world.entities).filter((e) => e.arch?.role === 'wall' && e.arch.kind !== undefined);
+    expect(walls.length).toBeGreaterThan(0);
+    const yaw = world.player.yaw;
+    expect(yaw).toBeDefined();
+    // The spawn is inside the footprint of the exterior walls (their bounding box), not on the doorstep outside.
+    const xs: number[] = [];
+    const zs: number[] = [];
+    for (const e of Object.values(world.entities)) {
+      if (e.arch?.role !== 'wall' || !e.tags.includes('exterior')) continue;
+      xs.push(e.transform.position[0] + (building?.transform.position[0] ?? 0));
+      zs.push(e.transform.position[2] + (building?.transform.position[2] ?? 0));
+    }
+    expect(world.player.spawn[0]).toBeGreaterThan(Math.min(...xs) - 0.5);
+    expect(world.player.spawn[0]).toBeLessThan(Math.max(...xs) + 0.5);
+    expect(world.player.spawn[2]).toBeGreaterThan(Math.min(...zs) - 0.5);
+    expect(world.player.spawn[2]).toBeLessThan(Math.max(...zs) + 0.5);
+  });
+
+  it('the Skyline Penthouse has a skyline: towers that rise above the roof deck', () => {
+    const { world } = build('skyline-penthouse');
+    const towers = Object.values(world.entities).filter((e) => e.tags.includes('city'));
+    expect(towers.length).toBeGreaterThanOrEqual(40);
+    // fitSize is the tower height; they stand on streets 40 m below the deck.
+    const tall = towers.filter((t) => {
+      const s = t.shape;
+      return s.kind === 'asset' && (s.fitSize ?? 0) > 60;
+    });
+    expect(tall.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it('the Dusk House has its lake and mountains', () => {
+    const { world } = build('dusk-lake-house');
+    expect(world.entities['lake-1']).toBeDefined();
+    expect(Object.values(world.entities).filter((e) => e.tags.includes('backdrop')).length).toBeGreaterThanOrEqual(3);
+  });
+});

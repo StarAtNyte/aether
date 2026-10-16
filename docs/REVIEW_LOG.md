@@ -3255,6 +3255,32 @@ slows the reveal down instead of dropping frames of ink. Software rasterizers ru
 (logged in `docs/ARCHITECTURE.md` section 25); casement windows are single-pane (no multi-sash); the fridge was not placed in the offline apartment layouts (its
 doors are exercised in the unit test); sitting has no body animation; the live AI-first loop was not re-run (the Codex subscription limit), the replay fixtures still pass.
 
+## Stage `lookinterior`: interior and architecture look
+
+**What was built.** The root cause of the blotchy ceilings (a banded, low-frequency normal map on the `paint` finish seen at a grazing angle under close lamps;
+see `docs/ARCHITECTURE.md` section 27) and its fix with regression tests; an analytic global-illumination approximation (warm floor-bounce hemisphere light, neutral
+interior fill, eye adaptation of exposure and image light) that works on every tier; full-resolution ambient occlusion; an opt-in SSGI effect (off: too noisy); hero
+framing for buildings (garden side, 21 degrees, clear sight line); a first-person start inside the entrance facing doors, windows or archways (`PlayerSpec.yaw`);
+flagship scenery (realistic Dusk House vegetation, a skyline that rises above the Penthouse deck, lighter fog); calmer marble; look-development hooks in `archshots`.
+Screenshot rounds against the casa-serra stills and the room-from-photo montage: 15 (ceilings, AO radius/noise, bounce strength, fill, eye adaptation, GI on and
+off, framing, spawn views, photo bedroom).
+
+**Verification.** `tsc` 0 errors; unit suites for each behaviour (finish normal flatness, bounce, eye adaptation, framing helpers, entrance view incl. rotated plans,
+flagship spawn and scenery, effect tiers); `npm run showcase:bake -- --check` clean after re-baking the architecture worlds; `e2e:arch` updated for the new start.
+
+**Security review.** `PlayerSpec.yaw` is a bounded finite number (zod); the new render helpers accept untrusted numbers only through clamps or finite checks (`setAo`,
+`setEnvScale`, `setInteriorFill`, `adaptedLook`, `frontAzimuthDeg`) and are tested with NaN. `archshots --world` and the `js` hook are developer tools that run only
+against a local build in Playwright, never in the shipped app. No dependency was added.
+
+**Performance review.** Floor bounce and fill are two hemisphere lights (no shadows, no extra passes); eye adaptation touches uniforms at most every 80 ms and only
+when the factor changes, ceilings are cached per world change. GTAO at full resolution costs about 2x the half-resolution pass on a discrete GPU (software GPUs never
+run it: tier `low`). SSGI costs a full-resolution pass, which is why it is off by default.
+
+**Honest gaps.** No true multi-bounce GI or baked light probes: sun patches do not bleed onto walls in the way a path tracer shows, the analytic fill is room-agnostic
+(a windowless room is as bright as a sunlit one for the same sun); the photo-room render is closer (neutral light, soft contact shadows, no flat fills) but the
+furniture meshes and fabrics are still far from the photograph; glass keeps blended transparency with environment reflections (no refraction); the live AI
+photo loop was not re-run.
+
 
 ## Stage `qafix`: the QA defects that are not about looks
 

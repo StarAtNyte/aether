@@ -288,10 +288,11 @@ const veined: Pattern = (f, random) => {
       const k = y * n + x;
       const u = x / n;
       const v = y / n;
-      const t = (u * 2 + v * 1) * Math.PI * 2 + (warp[k] as number) * 9;
-      const vein = Math.pow(1 - Math.abs(Math.sin(t)), 18);
-      const vein2 = Math.pow(1 - Math.abs(Math.sin(t * 2 + (fine[k] as number) * 4)), 30) * 0.5;
-      const a = clamp01(vein * 0.9 + vein2 + ((cloud[k] as number) - 0.5) * 0.3);
+      // A few thin veins running diagonally, a faint second set and soft cloudiness: polished white marble, not frost.
+      const t = (u * 1 + v * 1) * Math.PI * 2 + (warp[k] as number) * 7;
+      const vein = Math.pow(1 - Math.abs(Math.sin(t)), 46);
+      const vein2 = Math.pow(1 - Math.abs(Math.sin(t * 2.3 + (fine[k] as number) * 4)), 60) * 0.3;
+      const a = clamp01(vein * 0.75 + vein2 + ((cloud[k] as number) - 0.5) * 0.12);
       f.accent[k] = a;
       f.shade[k] = 0.97 + ((cloud[k] as number) - 0.5) * 0.1;
       f.height[k] = 1 - a * 0.1;
@@ -440,11 +441,12 @@ function weave(threads: number, depth: number): Pattern {
         const fu = u - cu;
         const fv = v - cv;
         const h = warpOver ? Math.sin(fv * Math.PI) * 0.6 + Math.sin(fu * Math.PI) * 0.4 : Math.sin(fu * Math.PI) * 0.6 + Math.sin(fv * Math.PI) * 0.4;
-        f.height[k] = 0.5 + (h - 0.5) * depth + ((fuzz[k] as number) - 0.5) * 0.2;
-        f.accent[k] = clamp01((1 - h) * 0.6 + ((slub[k] as number) - 0.5) * 0.5);
+        f.height[k] = 0.5 + (h - 0.5) * depth + ((fuzz[k] as number) - 0.5) * 0.12;
+        // Even cloth: the thread relief carries the look; the slub streaks stay faint (strong ones read as marble on white linen).
+        f.accent[k] = clamp01((1 - h) * 0.45 + ((slub[k] as number) - 0.5) * 0.18);
         f.shade[k] = 1;
         f.rough[k] = 1;
-        f.ao[k] = 0.8 + 0.2 * h;
+        f.ao[k] = 0.85 + 0.15 * h;
       }
     }
   };
@@ -503,17 +505,24 @@ const brushed: Pattern = (f, random) => {
   }
 };
 
-/** Barely-there surface (paint, glaze, glass, mirror). */
+/**
+ * Barely-there surface (paint, glaze, glass, mirror). The relief is fine grain only (orange-peel
+ * scale): a low-frequency height field has slopes far below one 8-bit normal step, so the normal map
+ * turns into hard-edged bands that a close light at a grazing angle (a pendant under a ceiling)
+ * draws as blotches. Only the albedo keeps a very soft, low-frequency wash.
+ */
 function subtle(amount: number, cells: number): Pattern {
   return (f, random) => {
     const n = f.n;
     const low = fbmField(random, n, cells, cells, 3);
+    const grain = fbmField(random, n, 64, 64, 2);
     for (let i = 0; i < n * n; i++) {
       const l = low[i] as number;
-      f.accent[i] = clamp01(0.5 + (l - 0.5) * 2) * amount;
+      const g = grain[i] as number;
+      f.accent[i] = clamp01(0.5 + (l - 0.5) * 2) * amount * 0.5;
       f.shade[i] = 1;
-      f.height[i] = 0.5 + (l - 0.5) * amount;
-      f.rough[i] = 1 + (l - 0.5) * amount;
+      f.height[i] = 0.5 + (g - 0.5) * amount * 0.35;
+      f.rough[i] = 1 + (g - 0.5) * amount * 0.5;
       f.ao[i] = 1;
     }
   };

@@ -14,7 +14,7 @@
  * The AO, reflections, shafts, DOF and TAA read a half-resolution-capable normal / velocity / material
  * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
-import type { Camera, DirectionalLight, Scene } from 'three';
+import type { Camera, DirectionalLight, PerspectiveCamera, Scene } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
@@ -24,7 +24,14 @@ import { NEUTRAL_GRADE, type Grade } from './grade';
 export type PostQuality = 'standard' | 'studio';
 
 /** Ambient occlusion tuning of the pre-pass pipeline (metres / unitless). */
-export const STUDIO_AO = Object.freeze({ radius: 0.85, thickness: 0.8, distanceExponent: 1.2, scale: 1.7, samples: 12, resolutionScale: 0.5 });
+export const STUDIO_AO = Object.freeze({ radius: 0.9, thickness: 1.2, distanceExponent: 1.2, scale: 2.0, samples: 16, resolutionScale: 1 });
+
+/**
+ * Screen-space global illumination (one diffuse bounce of what is lit on screen, sampled in half
+ * resolution and cleaned by the temporal AA): `intensity` scales the bounce, `radius` is the reach in
+ * metres (room scale), `slices` and `steps` the sample budget per pixel.
+ */
+export const GI_TUNING = Object.freeze({ intensity: 3.2, radius: 4.5, slices: 1, steps: 10, thickness: 0.7 });
 
 /** Screen-space reflection tuning: reach in metres, thickness, intensity. */
 export const SSR_TUNING = Object.freeze({ maxDistance: 40, thickness: 0.35, intensity: 0.85, resolutionScale: 0.5, quality: 0.5 });
@@ -52,6 +59,8 @@ export interface PostPipeline {
    * image instead (a screen-space vignette per tile would darken every tile).
    */
   setVignette(strength: number): void;
+  /** Retune the ambient occlusion live (radius in metres, scale = strength); no-op without AO. */
+  setAo(tuning: { radius?: number; scale?: number; thickness?: number; resolutionScale?: number; samples?: number }): void;
   /** Focus the depth of field on `distance` metres in front of the camera (no-op without DOF). */
   setFocus(distance: number): void;
   dispose(): void;
@@ -120,7 +129,7 @@ export interface PostOptions {
   sun?: DirectionalLight | null;
 }
 
-const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
 
 /** Build the pipeline, or null when unsupported. */
 export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard', opts: PostOptions = {}): Promise<PostPipeline | null> {
@@ -128,11 +137,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
   try {
     const prepass = needsPrePass(effects);
     const sun = effects.shafts && opts.sun?.castShadow ? opts.sun : null;
-    const [three, tsl, bloomMod, gtao, traaMod, ssrMod, godMod, blendMod, dofMod, caMod] = await Promise.all([
+    const [three, tsl, bloomMod, gtao, ssgiMod, traaMod, ssrMod, godMod, blendMod, dofMod, caMod] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
       effects.ao ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
+      effects.gi ? import('three/addons/tsl/display/SSGINode.js') : Promise.resolve(null),
       effects.taa ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
       effects.ssr ? import('three/addons/tsl/display/SSRNode.js') : Promise.resolve(null),
       sun ? import('three/addons/tsl/display/GodraysNode.js') : Promise.resolve(null),
@@ -141,12 +151,13 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       effects.aberration ? import('three/addons/tsl/display/ChromaticAberrationNode.js') : Promise.resolve(null),
     ]);
     const { RenderPipeline, Vector3, UnsignedByteType, Color } = three;
-    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
     const scenePass = effects.taa ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
     disposables.push(scenePass);
+    let setAo = (_t: { radius?: number; scale?: number; thickness?: number; resolutionScale?: number; samples?: number }): void => undefined;
     let prePass: ReturnType<typeof pass> | null = null;
     let prePassDepth: ReturnType<typeof scenePass.getTextureNode> | null = null;
     let prePassVelocity: ReturnType<typeof scenePass.getTextureNode> | null = null;
@@ -157,6 +168,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       prePass.transparent = false;
       const attachments: Record<string, unknown> = { output: packNormalToRGB(normalView) };
       if (effects.taa) attachments['velocity'] = velocity;
+      if (effects.gi) attachments['diffuse'] = vec4(diffuseColor.rgb, 1);
       if (effects.ssr) attachments['material'] = vec4(metalness, roughness, 0, 1);
       prePass.setMRT(mrt(attachments as Parameters<typeof mrt>[0]));
       const normalTexture = prePass.getTexture('output');
@@ -176,11 +188,35 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       aoPass.distanceExponent.value = STUDIO_AO.distanceExponent;
       aoPass.scale.value = STUDIO_AO.scale;
       aoPass.samples.value = STUDIO_AO.samples;
+      setAo = (t) => {
+        if (t.radius !== undefined && Number.isFinite(t.radius)) aoPass.radius.value = Math.max(0.05, Math.min(8, t.radius));
+        if (t.scale !== undefined && Number.isFinite(t.scale)) aoPass.scale.value = Math.max(0, Math.min(8, t.scale));
+        if (t.resolutionScale !== undefined && Number.isFinite(t.resolutionScale)) aoPass.resolutionScale = Math.max(0.25, Math.min(1, t.resolutionScale));
+        if (t.samples !== undefined && Number.isFinite(t.samples)) aoPass.samples.value = Math.max(4, Math.min(48, Math.round(t.samples)));
+        if (t.thickness !== undefined && Number.isFinite(t.thickness)) aoPass.thickness.value = Math.max(0.05, Math.min(8, t.thickness));
+      };
       scenePass.contextNode = builtinAOContext(aoPass.getTextureNode().sample(screenUV).r);
       disposables.push(aoPass);
     }
     const color = scenePass.getTextureNode('output');
     let hdr = color.rgb;
+    // One bounce of the lit scene: the sunlit floor patch lights the walls and the ceiling above it, a
+    // bright wall tints its neighbours. The bounce is the lit colour gathered around each pixel times the
+    // surface's own albedo (so a white ceiling takes the floor's warmth and a dark one stays dark).
+    if (effects.gi && ssgiMod && prePass && prePassDepth && prePassNormal) {
+      const giPass = ssgiMod.ssgi(color, prePassDepth, prePassNormal as unknown as Parameters<typeof ssgiMod.ssgi>[2], camera as PerspectiveCamera);
+      giPass.sliceCount.value = GI_TUNING.slices;
+      giPass.stepCount.value = GI_TUNING.steps;
+      giPass.radius.value = GI_TUNING.radius;
+      giPass.thickness.value = GI_TUNING.thickness;
+      giPass.giIntensity.value = GI_TUNING.intensity * ((globalThis as { __GI?: number }).__GI ?? 1);
+      giPass.radius.value = GI_TUNING.radius * ((globalThis as { __GIR?: number }).__GIR ?? 1);
+      giPass.aoIntensity.value = 0;
+      giPass.useTemporalFiltering = effects.taa;
+      const albedo = prePass.getTextureNode('diffuse');
+      hdr = hdr.add(albedo.rgb.mul(giPass.getGINode().rgb));
+      disposables.push(giPass);
+    }
     // Screen-space reflections of the opaque scene (glass, polished floors, water, metals).
     if (effects.ssr && ssrMod && prePass && prePassDepth && prePassNormal) {
       const materialTex = prePass.getTextureNode('material');
@@ -303,6 +339,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       setVignette: (strength: number) => {
         uVignette.value = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : VIGNETTE_STRENGTH;
       },
+      setAo: (t) => setAo(t),
       setFocus: (distance: number) => {
         const p = dofParams(distance);
         uFocus.value = p.focus;

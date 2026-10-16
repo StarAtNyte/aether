@@ -130,7 +130,7 @@ export function casaPatio(): MockPlan {
     }
   }
   for (let i = 0; i < 5; i++) {
-    const p = b.spot(-26, 6, 4, 24, 4);
+    const p = b.spot(-30, -22, 4, 22, 4);
     if (!p) continue;
     b.gen('pine', 'furn-tree', { height: r2(b.rand(11, 15)), species: 'umbrella-pine', leaf: '#4d6a3c' }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }

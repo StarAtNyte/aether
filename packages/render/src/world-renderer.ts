@@ -44,7 +44,8 @@ import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGra
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
-import { contentFraming, framingPose, type Framing } from './view/framing';
+import { adaptStep, adaptedLook, interiorFactor, type CeilingBox } from './view/eye-adapt';
+import { contentFraming, framingPose, frontAzimuthDeg, pickClearAzimuth, type Framing } from './view/framing';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems } from './view/content-items';
@@ -262,7 +263,7 @@ export interface FrameContentOptions {
 }
 
 /** Framing of worlds with buildings: a higher, tighter three-quarter view (archviz axonometric feel). */
-const ARCH_FRAMING = Object.freeze({ elevationDeg: 38, margin: 0.7, tiltDeg: 0 });
+const ARCH_FRAMING = Object.freeze({ elevationDeg: 21, margin: 0.8, tiltDeg: 4 });
 
 /** Lowest orbit camera height above a ground plane (metres). */
 const MIN_ORBIT_HEIGHT = 0.4;
@@ -837,6 +838,8 @@ export class WorldRenderer {
     this.avatar.setLook(world.player.character);
     const done = this.sync.setWorld(world);
     this.archView.invalidate();
+    this.invalidateCeilings();
+    this.env.setInteriorBounce(this.archView.active);
     // New entities stay hidden while their geometry streams in, then grow in together.
     const added = this.growEnabled ? this.addedContent(prev, world) : [];
     for (const target of added) this.grow.hide(target);
@@ -1010,6 +1013,7 @@ export class WorldRenderer {
     const env = world.environment;
     this.shaftsUnavailable = false;
     this.env.apply(env, this.scene);
+    this.env.setInteriorBounce(this.archView.active);
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
@@ -1321,6 +1325,7 @@ export class WorldRenderer {
   setEnvironmentOverride(env: Environment): void {
     if (this.disposed) return;
     this.env.apply(env, this.scene);
+    this.env.setInteriorBounce(this.archView.active);
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
     this.needsDraw = true;
@@ -1416,7 +1421,17 @@ export class WorldRenderer {
     const cam = this.perspective;
     // Buildings read best from higher up and closer (their bounding sphere is loose around a flat box).
     const arch = this.archView.active ? ARCH_FRAMING : null;
-    const pose = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, ...(arch ?? {}) });
+    const front = arch ? this.archFrontAzimuth() : null;
+    const base = { fovDeg: cam.fov, aspect: cam.aspect, groundY, ...(arch ?? {}) };
+    let azimuthDeg: number | undefined;
+    if (front !== null) {
+      // The garden side, swung aside for a three-quarter view: of a few nearby directions, the one with the
+      // clearest line of sight to the house (no tree in the foreground).
+      const swings = [0, 28, -28, 55, -55, 80, -80].map((s) => front + s - 28);
+      const obstacles = items.filter((it) => !it.focus && it.max[1] - it.min[1] > 2.2 && Math.max(it.max[0] - it.min[0], it.max[2] - it.min[2]) < 30);
+      azimuthDeg = pickClearAzimuth(swings, (az) => framingPose(framing, { ...base, azimuthDeg: az }).position, framing.center, obstacles);
+    }
+    const pose = framingPose(framing, { ...base, ...(azimuthDeg !== undefined ? { azimuthDeg } : {}) });
     _pos.set(pose.position[0], pose.position[1], pose.position[2]);
     _target.set(pose.target[0], pose.target[1], pose.target[2]);
     const duration = opts.duration ?? FRAME_DURATION;
@@ -1430,6 +1445,36 @@ export class WorldRenderer {
     }
     this.needsDraw = true;
     return true;
+  }
+
+  /**
+   * Azimuth that shows the garden side of the first building: toward its terrace (pool, deck), else toward its
+   * entrance, three-quarter. Null when it has neither or the world is not built yet.
+   */
+  private archFrontAzimuth(): number | null {
+    const house = new Box3();
+    const terrace = new Box3();
+    const door = new Box3();
+    const piece = new Box3();
+    this.grow.withFullScale(() => {
+      this.sync.forEachNode((node) => {
+        const arch = node.entity.arch;
+        if (!arch || node.entity.template) return;
+        const target = arch.role === 'wall' ? house : arch.role === 'site' && arch.kind === 'terrace' ? terrace : node.entity.tags.includes('entrance') && arch.role === 'opening' ? door : null;
+        if (!target) return;
+        piece.setFromObject(node.object);
+        if (!piece.isEmpty()) target.union(piece);
+      });
+    });
+    if (house.isEmpty()) return null;
+    const c = house.getCenter(new Vector3());
+    for (const side of [terrace, door]) {
+      if (side.isEmpty()) continue;
+      const s = side.getCenter(new Vector3());
+      const az = frontAzimuthDeg(s.x - c.x, s.z - c.z);
+      if (az !== null) return az;
+    }
+    return null;
   }
 
   /**
@@ -1920,6 +1965,7 @@ export class WorldRenderer {
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    this.adaptEye(step);
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     if (this.sync.viewNeedsUpdate) this.needsDraw = true;
     const vox = this.voxelLayer;
@@ -2118,7 +2164,7 @@ export class WorldRenderer {
 
   /** The effects currently running (all false when drawing directly). */
   get activeEffects(): Readonly<PostEffects> {
-    return this.post?.effects ?? resolveEffects({ composite: false, ao: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+    return this.post?.effects ?? resolveEffects({ composite: false, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
   }
 
   /** Effects that failed on this device (and were dropped from the chain). */
@@ -2150,11 +2196,52 @@ export class WorldRenderer {
     this.look = preset;
     const post = this.post;
     this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = this.env.exposure * (post ? 1 : 1);
+    const eye = adaptedLook(this.eyeFactor);
+    this.env.setEnvScale(eye.envScale);
+    this.env.setInteriorFill(this.eyeFactor);
+    this.renderer.toneMappingExposure = this.env.exposure * eye.exposure;
     if (post) {
-      post.setGrade(gradeWithPreset(gradeFor(sky), preset));
+      const grade = gradeWithPreset(gradeFor(sky), preset);
+      post.setGrade({ ...grade, exposure: (grade.exposure ?? 1) * eye.exposure });
       post.setBloom(this.env.bloom * preset.bloom);
     }
+  }
+
+  /** Smoothed interior factor of the eye (0 outdoors, 1 under a ceiling), see `view/eye-adapt.ts`. */
+  private eyeFactor = 0;
+  private ceilings: CeilingBox[] | null = null;
+  private eyeClock = 0;
+
+  /** Drop the cached ceilings (the building changed). */
+  private invalidateCeilings(): void {
+    this.ceilings = null;
+  }
+
+  private adaptEye(dt: number): void {
+    this.eyeClock += dt;
+    if (this.eyeClock < 0.08) return;
+    const step = this.eyeClock;
+    this.eyeClock = 0;
+    if (this.ceilings === null) {
+      const list: CeilingBox[] = [];
+      if (this.archView.active) {
+        const box = new Box3();
+        this.grow.withFullScale(() => {
+          this.sync.forEachNode((node) => {
+            if (node.entity.arch?.role !== 'ceiling' || node.entity.template) return;
+            box.setFromObject(node.object);
+            if (!box.isEmpty()) list.push({ minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z, y: box.min.y });
+          });
+        });
+      }
+      this.ceilings = list;
+    }
+    const p = this.perspective.position;
+    const target = this.ceilings.length === 0 ? 0 : interiorFactor(p.x, p.y, p.z, this.ceilings);
+    if (Math.abs(target - this.eyeFactor) < 0.002) return;
+    this.eyeFactor = adaptStep(this.eyeFactor, target, step);
+    this.applyLook();
+    this.needsDraw = true;
   }
 
   /** The render quality in effect. */

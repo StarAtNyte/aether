@@ -53,13 +53,93 @@ export interface CompiledBuilding {
   notes: string[];
 }
 
-interface WallRec {
+export interface WallRec {
   id: string;
   w: NetworkWall;
   thickness: number;
   openings: Array<{ kind: 'door' | 'window' | 'opening'; offset: number; width: number; height: number; sill: number }>;
   len: number;
   dir: P2;
+}
+
+/** First-person start inside the entrance: where to stand and the plan-frame yaw (degrees, 0 faces −Z) to look along. */
+export interface EntranceView {
+  at: P2;
+  yaw: number;
+}
+
+/** Eye distance cap of a sight line (metres). */
+const SIGHT_CAP = 16;
+
+/** How far a sight line travels and through how many doorless openings it passed. */
+export interface Sight {
+  distance: number;
+  arches: number;
+  /** What stops the line: a door (reachable, reads as a destination), a window (a view out) or plain wall. */
+  end: 'door' | 'window' | 'wall';
+}
+
+/**
+ * Distance a ray from `from` along `dir` travels before a wall stops it. Doorless openings (arches) let it through;
+ * doors, windows and walls stop it. Pure plan geometry (the plan frame, metres).
+ */
+export function sightLine(from: P2, dir: P2, walls: readonly WallRec[]): Sight {
+  const hits: Array<{ t: number; through: boolean; end: 'door' | 'window' | 'wall' }> = [];
+  for (const rec of walls) {
+    const ex = rec.w.b[0] - rec.w.a[0];
+    const ez = rec.w.b[1] - rec.w.a[1];
+    const den = dir[0] * ez - dir[1] * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const qx = rec.w.a[0] - from[0];
+    const qz = rec.w.a[1] - from[1];
+    const t = (qx * ez - qz * ex) / den;
+    const u = (qx * dir[1] - qz * dir[0]) / den;
+    if (t <= 0.05 || t >= SIGHT_CAP || u < 0 || u > 1) continue;
+    const along = u * rec.len;
+    const at = rec.openings.find((o) => Math.abs(along - o.offset) < o.width / 2 - 0.05);
+    hits.push({ t, through: at?.kind === 'opening', end: at?.kind === 'door' ? 'door' : at?.kind === 'window' ? 'window' : 'wall' });
+  }
+  hits.sort((x, y) => x.t - y.t);
+  let arches = 0;
+  for (const h of hits) {
+    if (!h.through) return { distance: h.t, arches, end: h.end };
+    arches++;
+  }
+  return { distance: SIGHT_CAP, arches, end: 'wall' };
+}
+
+/**
+ * Where a walkthrough starts: 1.4 to 2.2 m inside the main entrance (clear of the door leaf's swing, inside the
+ * entrance room) looking along the direction, within 110° of straight in, that shows the most of the house (a long
+ * sight line, better still through an open archway into the next room), so the first frame is the interior and the
+ * door is behind the player. Null when no inside spot exists.
+ */
+export function entranceView(entry: { c: P2; n: P2; room: string }, walls: readonly WallRec[], polys: ReadonlyMap<string, P2[]>): EntranceView | null {
+  const poly = polys.get(entry.room);
+  if (!poly) return null;
+  const inward: P2 = [-entry.n[0], -entry.n[1]];
+  let at: P2 | null = null;
+  for (const d of [2.2, 1.9, 1.6, 1.4]) {
+    const p: P2 = [entry.c[0] + inward[0] * d, entry.c[1] + inward[1] * d];
+    if (pointInPolygon(p[0], p[1], poly) && pointInPolygon(p[0], p[1], offsetPolygon(poly, -0.35))) {
+      at = p;
+      break;
+    }
+  }
+  if (!at) return null;
+  let bestScore = -Infinity;
+  let bestDir: P2 = inward;
+  for (let deg = -110; deg <= 110; deg += 5) {
+    const r = (deg * Math.PI) / 180;
+    const dir: P2 = [inward[0] * Math.cos(r) - inward[1] * Math.sin(r), inward[0] * Math.sin(r) + inward[1] * Math.cos(r)];
+    const sight = sightLine(at, dir, walls);
+    const score = Math.min(sight.distance, 9) + 4 * Math.min(2, sight.arches) + (sight.end === 'door' ? 2.5 : sight.end === 'window' ? 2 : 0) - Math.abs(deg) * 0.02;
+    if (score > bestScore) {
+      bestScore = score;
+      bestDir = dir;
+    }
+  }
+  return { at, yaw: (Math.atan2(-bestDir[0], -bestDir[1]) * 180) / Math.PI };
 }
 
 /** Refusal with a machine-readable code and a concrete fix hint (agents act on the hint). */
@@ -126,6 +206,9 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   let elevation = plan.plinth;
   let spawnLocal: P2 | null = null;
   let spawnYaw = 0;
+  /** The main entrance: door centre, outward normal (plan frame) and the room behind it; the ground floor's walls and rooms. */
+  let entry: { c: P2; n: P2; room: string } | null = null;
+  let groundPlan: { walls: WallRec[]; polys: Map<string, P2[]> } | null = null;
   const levelOutlines: P2[][][] = [];
   const topLevelIndex = plan.levels.length - 1;
   let prevStairHoles: P2[][] = [];
@@ -157,6 +240,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
       return { id: `${lid}-w${k}`, w, thickness: thick(w), openings: [], len, dir: [(w.b[0] - w.a[0]) / len, (w.b[1] - w.a[1]) / len] };
     });
+    if (li === 0) groundPlan = { walls, polys };
     const wallAt = (p: P2, tol = 0.03): { rec: WallRec; t: number } | null => {
       for (const rec of walls) {
         const t = (p[0] - rec.w.a[0]) * rec.dir[0] + (p[1] - rec.w.a[1]) * rec.dir[1];
@@ -281,7 +365,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       if (sb === 0 && sa !== 0) sb = (-sa) as 1 | -1;
       if (kind === 'opening') {
         for (const r of [ra, rb]) if (r !== 'outside') pushRoomDoor(r, c, width, false, c);
-        if (d.main) setSpawn(c, rec, sa === 0 ? sb : sa, ra === 'outside' ? ra : rb);
+        if (d.main) setSpawn(c, rec, sa === 0 ? sb : sa, ra === 'outside' ? rb : ra);
         return;
       }
       // Swing into the more private room (bedrooms, bathrooms, offices), or inward from outside.
@@ -337,13 +421,14 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       add(door);
       const hingeP: P2 = [c[0] + rec.dir[0] * (hinge === 'left' ? -leafW / 2 : leafW / 2), c[1] + rec.dir[1] * (hinge === 'left' ? -leafW / 2 : leafW / 2)];
       for (const r of [ra, rb]) if (r !== 'outside') pushRoomDoor(r, c, width, d.kind !== 'sliding' && r === into, hingeP);
-      if (d.main) setSpawn(c, rec, into === ra ? sb : sa, 'outside');
+      if (d.main) setSpawn(c, rec, into === ra ? sb : sa, ra === 'outside' ? rb : ra);
     }
 
-    function setSpawn(c: P2, rec: WallRec, outsideSide: number, _r: string): void {
+    function setSpawn(c: P2, rec: WallRec, outsideSide: number, inner: string): void {
       if (li !== 0 || spawnLocal) return;
       const s = outsideSide === 0 ? -1 : outsideSide;
       const n: P2 = [-rec.dir[1] * s, rec.dir[0] * s];
+      entry = { c, n, room: inner };
       spawnLocal = [c[0] + n[0] * 2.2, c[1] + n[1] * 2.2];
       // Face the door.
       spawnYaw = (Math.atan2(-n[0], -n[1]) * 180) / Math.PI;
@@ -674,8 +759,14 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     maxZ = Math.max(maxZ, tz1);
   }
 
-  // Spawn: in front of the main entrance, else south of the building.
-  const sp: P2 = spawnLocal ?? [(minX + maxX) / 2, maxZ + 3];
+  // Spawn: just inside the main entrance facing into the house (the first frame of a walkthrough is the
+  // room, not a closed door), else in front of the entrance, else south of the building.
+  let sp: P2 = spawnLocal ?? [(minX + maxX) / 2, maxZ + 3];
+  const inside = entry && groundPlan ? entranceView(entry, groundPlan.walls, groundPlan.polys) : null;
+  if (inside) {
+    sp = inside.at;
+    spawnYaw = inside.yaw;
+  }
   const sw = rotateYaw(sp[0], sp[1], plan.rotation);
   const spawn: [number, number, number] = [round(plan.origin[0] + sw[0]), 0.1, round(plan.origin[1] + sw[1])];
   const corners = [

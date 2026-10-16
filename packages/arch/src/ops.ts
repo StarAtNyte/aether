@@ -377,7 +377,7 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       if (room !== undefined && Object.hasOwn(entities, room) && e.parent !== null && Object.hasOwn(entities, e.parent) && !Object.hasOwn(entities, e.id)) entities[e.id] = e;
     }
     if (!tests.some((t) => t.kind === 'navigable' && t.target === id)) tests = [...tests, WorldTest.parse({ id: `${id}-usable`.slice(0, 64), kind: 'navigable', target: id })];
-    if (walkthrough.has(id) && result.spawn) player = PlayerSpec.parse({ ...player, mode: 'firstPerson', spawn: result.spawn, moveSpeed: 3.2, jumpSpeed: 4 });
+    if (walkthrough.has(id) && result.spawn) player = PlayerSpec.parse({ ...player, mode: 'firstPerson', spawn: result.spawn, yaw: result.spawnYaw, moveSpeed: 3.2, jumpSpeed: 4 });
   }
   const target: WorldDoc = { ...world, entities, player, tests };
   const patches = patchesBetween(world, target);

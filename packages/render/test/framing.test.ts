@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Group, Mesh, Object3D } from 'three';
-import { contentFraming, DEFAULT_SKY_TILT, framingPose, MIN_CAMERA_CLEARANCE, type FramingItem } from '../src/view/framing';
+import { contentFraming, DEFAULT_SKY_TILT, framingPose, frontAzimuthDeg, pickClearAzimuth, segmentHitsBox, MIN_CAMERA_CLEARANCE, type FramingItem } from '../src/view/framing';
 import { collectFramingItems, HUGE_EXTENT } from '../src/view/content-items';
 import { easeOutBack, easeOutCubic, GROW_DURATION, GROW_MAX_DELAY, GrowIn, growDelay, growScale } from '../src/view/grow-in';
 import { box, makeSync, tick, world } from './helpers';
@@ -189,5 +189,36 @@ describe('grow-in', () => {
     expect(m.scale.x).toBe(1);
     expect(grow.size).toBe(0);
     expect(grow.update(Number.NaN)).toBe(false);
+  });
+});
+
+describe('frontAzimuthDeg', () => {
+  it('swings the camera aside of the garden direction', () => {
+    expect(frontAzimuthDeg(0, 10, 0)).toBeCloseTo(0);
+    expect(frontAzimuthDeg(10, 0, 0)).toBeCloseTo(90);
+    expect(Math.abs(frontAzimuthDeg(0, -10, 0) ?? 0)).toBeCloseTo(180);
+    expect(frontAzimuthDeg(0, 10)).toBeCloseTo(28);
+  });
+  it('wraps into -180..180 and refuses a missing direction', () => {
+    expect(Math.abs(frontAzimuthDeg(0, -10, 28) ?? 0)).toBeLessThanOrEqual(180);
+    expect(frontAzimuthDeg(0, 0)).toBeNull();
+    expect(frontAzimuthDeg(Number.NaN, 3)).toBeNull();
+  });
+});
+
+describe('pickClearAzimuth', () => {
+  const tree: FramingItem = { min: [-1, 0, 9], max: [1, 8, 11] };
+  const eye = (az: number): [number, number, number] => [Math.sin((az * Math.PI) / 180) * 20, 5, Math.cos((az * Math.PI) / 180) * 20];
+  it('keeps the first candidate when nothing is in the way', () => {
+    expect(pickClearAzimuth([28, -28, 55], eye, [0, 2, 0], [])).toBe(28);
+  });
+  it('moves aside when a tree stands between the camera and the house', () => {
+    // From azimuth 0 the camera is at z=20 and the tree at z=10 is on the line to the origin.
+    expect(pickClearAzimuth([0, 60], eye, [0, 2, 0], [tree])).toBe(60);
+  });
+  it('segmentHitsBox is exact for crossing and missing segments', () => {
+    expect(segmentHitsBox([0, 1, 20], [0, 1, 0], [-1, 0, 9], [1, 8, 11])).toBe(true);
+    expect(segmentHitsBox([10, 1, 20], [10, 1, 0], [-1, 0, 9], [1, 8, 11])).toBe(false);
+    expect(segmentHitsBox([0, 1, 5], [0, 1, 0], [-1, 0, 9], [1, 8, 11])).toBe(false);
   });
 });

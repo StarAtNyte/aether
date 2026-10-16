@@ -344,7 +344,8 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     const eyeStanding = await page.evaluate(() => window.__aether?.simulation?.renderer.camera.position.y ?? 0);
     await page.keyboard.press('KeyE');
     await waitFor(page, 'the player to sit', 10_000, () => page.evaluate(() => window.__aether?.simulation?.isSitting === true));
-    await page.waitForTimeout(600);
+    // The seated eye arrives with the next drawn frames (a software rasterizer draws a few per second).
+    await waitFor(page, 'the eye to drop', 30_000, () => page.evaluate((y) => ((window.__aether?.simulation?.renderer.camera.position.y ?? y) < y - 0.3 ? true : null), eyeStanding), 200).catch(() => undefined);
     const eyeSeated = await page.evaluate(() => window.__aether?.simulation?.renderer.camera.position.y ?? 0);
     check(eyeSeated < eyeStanding - 0.3, `[${label}] the eye should drop when sitting (${eyeStanding.toFixed(2)} -> ${eyeSeated.toFixed(2)})`);
     const stand = await prompt(page);

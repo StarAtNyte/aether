@@ -58,9 +58,10 @@ export function skylinePenthouse(): MockPlan {
   for (let i = 0; i < 64; i++) {
     const a = (i / 64) * Math.PI * 2 + b.rand(-0.04, 0.04);
     const far = i % 9 === 0;
-    const d = far ? b.rand(190, 280) : b.rand(95, 220);
+    const d = far ? b.rand(190, 280) : b.rand(105, 230);
     const [x, , z] = onCircle(cx, cz, d, a);
-    const h = far ? b.rand(90, 120) : b.rand(40, 70);
+    // Crowns rise well above the roof deck: a skyline around the terrace, not rooftops below it.
+    const h = far ? b.rand(120, 170) : b.rand(60, 115);
     b.asset('tower', b.pick(towers), [x, -40, z], { fitSize: r2(h), yaw: r2(b.rand(0, 360)), tags: ['backdrop', 'city'], castShadow: false });
   }
   // Warm beacons on a few crowns.
@@ -142,7 +143,7 @@ export function duskLakeHouse(): MockPlan {
     timeOfDay: 18.15,
     sunIntensity: 1.6,
     ambientIntensity: 0.4,
-    fog: { color: '#c9a7b8', density: 0.004 },
+    fog: { color: '#c9a7b8', density: 0.0026 },
     bloom: 0.95,
     exposure: 1.1,
     weather: 'fireflies',
@@ -161,7 +162,7 @@ export function duskLakeHouse(): MockPlan {
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2 + 0.3;
     const [x, , z] = onCircle(lx, lz, lr + 1.2, a);
-    b.scatter('reeds', 'grass-tuft', { color: '#6f8a3a', size: 1.2, blades: 14 }, 9, [2.6, 2.6], [x, 0, z], { minSpacing: 0.35, scaleRange: [0.9, 1.7] });
+    b.scatter('reeds', 'meadow-grass', { color: '#6f8a3a', size: 1.2 }, 9, [2.6, 2.6], [x, 0, z], { minSpacing: 0.35, scaleRange: [0.9, 1.7] });
   }
   // Pines and birches framing the house, a path to the jetty, mountains beyond the lake.
   for (let i = 0; i < 26; i++) {
@@ -169,9 +170,10 @@ export function duskLakeHouse(): MockPlan {
     if (!p) continue;
     if (Math.abs(p[0] - lx) < lr + 4 && p[1] > 14) continue;
     const pine = b.chance(0.6);
-    b.gen(pine ? 'pine' : 'birch', pine ? 'tree-pine' : 'tree-oak', pine ? { height: r2(b.rand(9, 15)), color: '#2f4f3a', tiers: 6, variant: 1 } : { height: r2(b.rand(6, 9)), color: '#9aa65a', trunkColor: '#d8d2c4', variant: 1 }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+    // Leaf-card spruce and broadleaf trees (the realistic vegetation generators), not the stylised cones.
+    b.gen(pine ? 'pine' : 'birch', pine ? 'tree-spruce' : 'tree-broadleaf', pine ? { height: r2(b.rand(11, 18)), color: '#2f4f3a' } : { height: r2(b.rand(8, 12)), color: '#8fa558', trunkColor: '#d8d2c4', variant: 1 }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
-  b.scatter('meadow', 'grass-tuft', { color: '#7d9a52', size: 0.6 }, 900, [70, 50], [7, 0, 6], { minSpacing: 0.6, scaleRange: [0.7, 1.4] });
+  b.scatter('meadow', 'meadow-grass', { color: '#7d9a52', size: 0.6 }, 900, [70, 50], [7, 0, 6], { minSpacing: 0.6, scaleRange: [0.7, 1.4] });
   for (let i = 0; i < 6; i++) {
     const [x, , z] = onCircle(lx, lz, b.rand(120, 150), Math.PI * 0.15 + (i / 6) * Math.PI * 0.7);
     b.gen('mountain', 'mountain', { size: r2(b.rand(90, 130)), height: r2(b.rand(35, 60)), color: '#5d6676', snowLine: 0.7, groundColor: '#6f8a52' }, [x, 0, z], { tags: ['backdrop'] });

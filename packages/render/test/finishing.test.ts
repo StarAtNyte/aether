@@ -34,6 +34,7 @@ describe('tiers', () => {
     expect(needsPrePass(effectsOf('medium'))).toBe(false);
     expect(effectsOf('medium').composite).toBe(true);
     expect(effectsOf('high').ao && effectsOf('high').taa).toBe(true);
+    expect(RENDER_TIERS.some((t) => effectsOf(t).gi)).toBe(false);
     expect(needsPrePass(effectsOf('high'))).toBe(true);
     const u = effectsOf('ultra');
     expect(u.ssr && u.shafts && u.halation && u.aberration).toBe(true);

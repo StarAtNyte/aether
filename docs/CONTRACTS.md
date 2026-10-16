@@ -1861,7 +1861,7 @@ Everything here is additive; the World IR is unchanged.
 
 ```
 RenderTier = 'low' | 'medium' | 'high' | 'ultra'
-PostEffects = { composite, ao, taa, ssr, shafts, halation, aberration, grain, dof }   // booleans
+PostEffects = { composite, ao, gi, taa, ssr, shafts, halation, aberration, grain, dof }   // booleans
 EffectOverrides = Partial<Record<keyof PostEffects, boolean>>
 RenderQuality = 'realtime' | 'studio' | 'final'      // `final` adds depth of field and the heaviest still plan
 GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior' | 'overcast' | 'night' | 'neutral'
@@ -2707,6 +2707,38 @@ previous view. Frame time is clamped (slow devices play it slower instead of ski
 
 `npm run e2e:interact` (Chromium WebGPU + WebGL2, Firefox: drawer, cabinet door, window, front door on its joint, tap, mug pick-up and throw, sofa),
 `npm run e2e:reveal`, `tests/e2e/archshots.e2e.ts` (eye-level stills of any building: `--slug` / `--prompt`, `--cams=<json>`, `--gpu`, `--hide`, `--set`).
+
+## Interior and architecture look (additive, backward compatible)
+
+### `@aether/core`
+
+- `PlayerSpec.yaw?: number` (degrees, -720..720, 0 faces -Z, counter-clockwise from above): the heading a first-person start looks along. Absent: toward the
+  building entrance (`entranceYawDeg`), else where the editor camera looked. Old documents are unchanged.
+
+### `@aether/arch`
+
+- `compileBuilding(...).spawn` is now just inside the main entrance (1.4 to 2.2 m, inside the entrance room) and `.spawnYaw` is the heading that shows the most of
+  the house (`entranceView`, `sightLine`, exported with `WallRec`; plan frame, rotation applied). Without a main door, or when no inside spot exists, the old
+  doorstep spawn applies. `applyArchOps` writes both into `player` for walkthrough buildings.
+- The `paint` finish has `bump: 0` (no normal map). Ceramic and glass keep only fine grain.
+
+### `@aether/render`
+
+```
+PostEffects.gi: boolean                     // SSGI bounce; off in every tier, opt-in (Settings, "Bounced light")
+PostPipeline.setAo({ radius?, scale?, thickness?, resolutionScale?, samples? })   // live AO retune (clamped); STUDIO_AO defaults
+EnvironmentRig.setInteriorBounce(on) / .setInteriorFill(level 0..1) / .setEnvScale(scale)  // building worlds only; bounce.ts: interiorBounce(sky)
+view/eye-adapt.ts: interiorFactor(x, y, z, ceilings) -> 0..1, adaptStep(current, target, dt), adaptedLook(f) -> { exposure, envScale }
+view/framing.ts: frontAzimuthDeg(dx, dz, swing?) -> degrees | null, pickClearAzimuth(candidates, eye, target, obstacles), segmentHitsBox(a, b, min, max)
+```
+
+`WorldRenderer.frameContent` frames buildings at 21 degrees elevation from the garden side with a clear sight line (was 38 degrees from +Z). Exposure and image
+light follow the camera: under a ceiling the exposure rises 0.45 stop and the image light is scaled to 60 %.
+
+### Scripts
+
+`tests/e2e/archshots.e2e.ts` gained per-camera `hour` and `js` (a snippet run with `renderer`), cameras without a pose (`frameContent` hooks), `--world=<file>` (a world
+document served in place of the `apartment` template of the build output) and `--fx` / `--sunshadow` switches for look development.
 
 ## People, imports and scatter budgets (`qafix`, additive, backward compatible)
 

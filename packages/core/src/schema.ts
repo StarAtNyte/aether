@@ -576,6 +576,8 @@ export type Environment = z.infer<typeof Environment>;
 export const PlayerSpec = z.object({
   mode: z.enum(['orbit', 'firstPerson', 'thirdPerson', 'vehicle']).default('thirdPerson'),
   spawn: Vec3.default([0, 1, 8]),
+  /** Additive: the heading (degrees, 0 faces −Z, counter-clockwise from above) a first-person start looks along; default: toward the building's entrance, else where the editor camera looked. */
+  yaw: z.number().min(-720).max(720).optional(),
   /** Entity the player controls in vehicle mode, or the avatar entity in third-person. */
   controls: EntityId.optional(),
   moveSpeed: z.number().positive().default(6),

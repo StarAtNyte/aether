@@ -117,7 +117,7 @@ export type LowMemorySetting = 'auto' | 'on' | 'off';
 /** Interactive graphics quality: automatic from the GPU, or a fixed render tier. */
 export type RenderTierSetting = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 /** The finishing-chain effects a user can switch individually. */
-export type EffectSetting = 'ao' | 'taa' | 'ssr' | 'shafts' | 'halation' | 'aberration' | 'grain';
+export type EffectSetting = 'ao' | 'gi' | 'taa' | 'ssr' | 'shafts' | 'halation' | 'aberration' | 'grain';
 /** Per-effect overrides: true forces an effect on, false off; a missing key follows the tier. */
 export type EffectSettings = Partial<Record<EffectSetting, boolean>>;
 
@@ -176,7 +176,7 @@ const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
 /** Tier values accepted from storage. */
 export const RENDER_TIER_SETTINGS: readonly RenderTierSetting[] = ['auto', 'low', 'medium', 'high', 'ultra'];
 /** Effects the settings can toggle, in display order. */
-export const EFFECT_SETTINGS: readonly EffectSetting[] = ['ao', 'taa', 'ssr', 'shafts', 'halation', 'aberration', 'grain'];
+export const EFFECT_SETTINGS: readonly EffectSetting[] = ['ao', 'gi', 'taa', 'ssr', 'shafts', 'halation', 'aberration', 'grain'];
 
 /** Keep only known effect keys with boolean values (untrusted storage input; no prototype keys survive). */
 export function parseEffectSettings(raw: unknown): EffectSettings {

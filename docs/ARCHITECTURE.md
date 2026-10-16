@@ -1693,10 +1693,37 @@ walls rise out of it as an animated section cut while the camera descends from o
 from every room, a papered library with a panelled dado, a panelled living room, a damask-papered master bedroom, golden hour, an olive grove, cypress
 drive and the serra behind. Flat roofs stop at the courtyard.
 
-**Known limits.** The studio render shows blotchy light patches on ceilings when a low sun enters a courtyard (a bounce / shadow-map artefact of the
-renderer, not of the geometry); terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
+**Known limits.** (The blotchy ceiling patches this section used to list were a material bug, fixed: see section 27.) Terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
 cards; seats are sit-and-stand only (no pose animation for the body in third person); physical doors are not pushed by thrown objects hard enough
 to open them (the motor wins over a book).
+
+## 27. Interior and architecture look
+
+**The blotchy ceilings: root cause.** Not the sun, the shadow map, AO, TAA, reflection probes or the HDRI (each was switched off in isolation: the blotches stayed).
+They appeared only when point lights stood near the ceiling and vanished when the ceiling's material lost its normal map. The `paint` finish carried a
+very low-frequency relief (`subtle` pattern, bump 0.04): its slopes were far below one 8-bit step of the normal map, so the normal map became hard-edged bands.
+A pendant 0.4 m under a ceiling lights it at a grazing angle, where N·L is tiny, so every one-step change of the normal is a large relative change in light: the
+bands read as camouflage patches around each lamp. Fix: paint is dead flat (`bump: 0`, no normal map bound at all); the `subtle` pattern (ceramic glaze, glass)
+keeps only fine grain and a soft albedo wash. Regression tests: `packages/procgen/test/finish-smooth-normals.test.ts`.
+
+**Light without a path tracer.** (1) *Floor bounce*: in worlds with a building the environment rig adds one hemisphere light with a black sky half and a warm
+ground half (`environment/bounce.ts`, strength from the sun's elevation and intensity), which is what makes a ceiling take the colour of the sunlit floor.
+(2) *Neutral fill*: a warm-white hemisphere light, a third of its strength outdoors, all of it when the eye is under a ceiling. (3) *Eye adaptation*
+(`view/eye-adapt.ts`): ceilings' footprints are cached; the interior factor of the camera (0 outdoors, 1 under a ceiling, faded over 0.9 m of the edge) is smoothed
+over 0.55 s and raises the exposure by 0.45 stop and eases the sky image light to 60 %, so bright windows and dark corners hold in the same frame without a pixel
+read-back. All three cost a few uniforms and work on every tier including the software GPU. (4) Ambient occlusion is full-resolution GTAO (radius 0.9 m, thickness
+1.2): half resolution speckled walls. (5) Screen-space GI (`gi`, three's SSGI) is wired as an opt-in effect, off in every tier: its single bounce is noisy
+(visible grain on ceilings even after temporal AA), and the analytic terms above give most of the benefit.
+
+**Hero shots.** The default framing of a building is a 21 degree three-quarter view from the garden side (toward the terrace or pool, else the entrance), swung
+aside by the candidate azimuth with the clearest sight line to the house (no tree in the foreground; `pickClearAzimuth`). Backdrop scenery is excluded from
+framing as before, so the lake, the mountains and the skyline are in the picture.
+
+**First-person start.** `compileBuilding` places the player 1.4 to 2.2 m inside the main entrance and `PlayerSpec.yaw` turns them toward the most inviting
+sight line within 110 degrees of straight ahead: long, through an archway, ending on a door (reachable) or a window (a view). The front door is behind them.
+
+**Flagships.** Dusk House by the Lake uses the leaf-card spruce and broadleaf generators and meadow grass, lighter fog so the mountains read; Skyline Penthouse
+has 64 towers 105 to 230 m away, 60 to 115 m high, rising above the deck.
 
 ## 26. Honest offline mode, failure states and people with bodies (`qafix`)
 

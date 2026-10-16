@@ -49,7 +49,7 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   terrazzo: { color: '#d9d3ca', accent: '#7b6f66', roughness: 0.3, metalness: 0, tintable: false, tile: 0.8, pattern: 'speckle', bump: 0.05, clearcoat: 0.4 },
   concrete: { color: '#a7a39d', accent: '#8a8680', roughness: 0.82, metalness: 0, tintable: false, tile: 3, pattern: 'plaster', bump: 0.25 },
   plaster: { color: '#ece8e1', accent: '#d9d4cb', roughness: 0.92, metalness: 0, tintable: true, tile: 2.5, pattern: 'plaster', bump: 0.12 },
-  paint: { color: '#e8e4dc', accent: '#dcd7cf', roughness: 0.7, metalness: 0, tintable: true, tile: 2, pattern: 'smooth', bump: 0.04 },
+  paint: { color: '#e8e4dc', accent: '#dcd7cf', roughness: 0.7, metalness: 0, tintable: true, tile: 2, pattern: 'smooth', bump: 0 },
   tile: { color: '#e6e3dd', accent: '#b9b4ac', roughness: 0.22, metalness: 0, tintable: true, tile: 1.2, pattern: 'grid-tiles', bump: 0.3, clearcoat: 0.5 },
   'subway-tile': { color: '#eeece7', accent: '#bdb8b0', roughness: 0.18, metalness: 0, tintable: true, tile: 0.6, pattern: 'subway', bump: 0.35, clearcoat: 0.6 },
   stone: { color: '#a29a8e', accent: '#7c746a', roughness: 0.78, metalness: 0, tintable: false, tile: 2.4, pattern: 'flagstone', bump: 0.45 },

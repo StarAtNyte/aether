@@ -11,8 +11,9 @@
  * 3. the floor plan: one label chip per room, a rectangle room drawn with
  *    the mouse becomes a checked, undoable edit, a door added with the door
  *    tool, both undone;
- * 4. walkthrough: Walk → first person facing the entrance; walk up to the
- *    front door, E opens it, walk in (the player ends up inside); 4 (night),
+ * 4. walkthrough: Walk → first person just inside the front door, facing the
+ *    house; back up to the door, E opens it, step out and walk in again (the
+ *    player ends up inside); 4 (night),
  *    L (all lights), P (photo mode hides the interface); Esc stops and the
  *    view modes come back.
  *
@@ -270,6 +271,21 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     });
     check(door, `[${label}] no front door`);
     await page.locator('.viewport__canvas').focus();
+    const insideNow = (): Promise<{ x: number; z: number; inside: boolean } | null> =>
+      page.evaluate(() => {
+        const w = window.__aether!.history.current;
+        const p = window.__aether!.simulation!.playerPosition;
+        const b = Object.values(w.entities).find((e) => e.arch?.role === 'building');
+        if (!p || !b) return null;
+        const plan = b.arch?.plan as { levels: Array<{ rooms: Array<{ rect?: number[] }> }> } | undefined;
+        const rects = plan?.levels[0]?.rooms.map((r) => r.rect).filter((r): r is number[] => Array.isArray(r)) ?? [];
+        const x = p[0] - b.transform.position[0];
+        const z = p[2] - b.transform.position[2];
+        return { x, z, inside: rects.some((r) => x > (r[0] as number) + 0.1 && x < (r[2] as number) - 0.1 && z > (r[1] as number) + 0.1 && z < (r[3] as number) - 0.1) };
+      });
+    // The walkthrough starts just inside the front door, facing the house (not at a closed door).
+    const start = await insideNow();
+    check(start?.inside === true, `[${label}] the walkthrough should start inside the house: ${JSON.stringify(start)}`);
     // Walk up to the door (software rasterizers run at a few frames per second: walk until close).
     const doorDistance = (): Promise<number> =>
       page.evaluate((id) => {
@@ -283,9 +299,10 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
         const dz = p[2] - (b.transform.position[2] + lvl.transform.position[2] + e.transform.position[2]);
         return Math.hypot(dx, dz);
       }, door);
-    await page.keyboard.down('KeyW');
+    // The door is behind the player: back up to it.
+    await page.keyboard.down('KeyS');
     await waitFor(page, 'the player to reach the door', 20_000, async () => ((await doorDistance()) < 1.45 ? true : null), 100);
-    await page.keyboard.up('KeyW');
+    await page.keyboard.up('KeyS');
     await page.waitForTimeout(300);
     await page.keyboard.press('KeyE');
     await waitFor(page, 'the front door to open', 10_000, () => page.evaluate((id) => window.__aether?.simulation?.logic?.entityState(id)['open'] === true, door));
@@ -293,18 +310,16 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     // Let the leaf finish its swing (0.85 s of simulated time; software rasterizers step slowly), then walk in.
     const simStart = await page.evaluate(() => window.__aether?.simulation?.logic?.time ?? 0);
     await waitFor(page, 'the door swing', 90_000, () => page.evaluate((t0) => (window.__aether?.simulation?.logic?.time ?? 0) > t0 + 1.2, simStart), 100);
-    const insideNow = (): Promise<{ x: number; z: number; inside: boolean } | null> =>
-      page.evaluate(() => {
-        const w = window.__aether!.history.current;
-        const p = window.__aether!.simulation!.playerPosition;
-        const b = Object.values(w.entities).find((e) => e.arch?.role === 'building');
-        if (!p || !b) return null;
-        const plan = b.arch?.plan as { levels: Array<{ rooms: Array<{ rect?: number[] }> }> } | undefined;
-        const rects = plan?.levels[0]?.rooms.map((r) => r.rect).filter((r): r is number[] => Array.isArray(r)) ?? [];
-        const x = p[0] - b.transform.position[0];
-        const z = p[2] - b.transform.position[2];
-        return { x, z, inside: rects.some((r) => x > (r[0] as number) + 0.1 && x < (r[2] as number) - 0.1 && z > (r[1] as number) + 0.1 && z < (r[3] as number) - 0.1) };
-      });
+    // Step out onto the doorstep, then walk back in through the open door.
+    await page.keyboard.down('KeyS');
+    let outside = await insideNow();
+    const outUntil = performance.now() + 20_000;
+    while (outside?.inside && performance.now() < outUntil) {
+      await page.waitForTimeout(150);
+      outside = await insideNow();
+    }
+    await page.keyboard.up('KeyS');
+    check(outside?.inside === false, `[${label}] the player should have stepped out through the open door: ${JSON.stringify(outside)}`);
     await page.keyboard.down('KeyW');
     let inside = await insideNow();
     const walkUntil = performance.now() + 20_000;

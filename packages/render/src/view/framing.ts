@@ -149,6 +149,57 @@ export interface FramingPoseOptions {
 
 /** Default horizontal camera direction: a three-quarter view from the +Z (player spawn) side. */
 export const DEFAULT_FRAMING_AZIMUTH = 28;
+/**
+ * Horizontal viewing direction (the `azimuthDeg` of {@link framingPose}: the camera stands at sin/cos of it around
+ * the content) that looks at a building's garden side: `dx, dz` point from the house toward its terrace or entrance,
+ * and the camera is swung `swingDeg` aside for a three-quarter view. Null for a zero or non-finite direction.
+ */
+export function frontAzimuthDeg(dx: number, dz: number, swingDeg = 28): number | null {
+  if (!Number.isFinite(dx + dz) || Math.hypot(dx, dz) < 0.5) return null;
+  const a = (Math.atan2(dx, dz) * 180) / Math.PI + swingDeg;
+  return ((((a + 180) % 360) + 360) % 360) - 180;
+}
+
+/** True when the segment from `a` to `b` passes through the axis-aligned box (slab test). */
+export function segmentHitsBox(a: Vec3, b: Vec3, min: Vec3, max: Vec3): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    const d = (b[i] as number) - (a[i] as number);
+    if (Math.abs(d) < 1e-9) {
+      if ((a[i] as number) < (min[i] as number) || (a[i] as number) > (max[i] as number)) return false;
+      continue;
+    }
+    let ta = ((min[i] as number) - (a[i] as number)) / d;
+    let tb = ((max[i] as number) - (a[i] as number)) / d;
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/**
+ * Of the candidate azimuths (degrees, in order of preference) the one whose camera sees `target` with the
+ * fewest tall things in the way (a tree trunk or crown in the foreground makes a poor first picture). Ties go
+ * to the earlier candidate. `eye` gives the camera position for an azimuth.
+ */
+export function pickClearAzimuth(candidates: readonly number[], eye: (azimuthDeg: number) => Vec3, target: Vec3, obstacles: readonly FramingItem[]): number {
+  let best = candidates[0] ?? DEFAULT_FRAMING_AZIMUTH;
+  let bestBlocked = Number.POSITIVE_INFINITY;
+  for (const az of candidates) {
+    const from = eye(az);
+    let blocked = 0;
+    for (const o of obstacles) if (finiteBox(o) && segmentHitsBox(from, target, o.min, o.max)) blocked++;
+    if (blocked < bestBlocked) {
+      bestBlocked = blocked;
+      best = az;
+    }
+  }
+  return best;
+}
+
 /** Minimum camera height above the ground (metres). */
 export const MIN_CAMERA_CLEARANCE = 1.2;
 /** Default upward view tilt in degrees (see {@link FramingPoseOptions.tiltDeg}). */

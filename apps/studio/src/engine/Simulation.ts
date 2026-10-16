@@ -1015,7 +1015,7 @@ export class Simulation {
     try {
       this.renderer.highlight([]);
       // Walkthroughs start facing the entrance; other games face where the editor camera looked.
-      this.input.setYaw(entranceYawDeg(world) ?? cameraYawDeg(this.renderer));
+      this.input.setYaw(world.player.yaw ?? entranceYawDeg(world) ?? cameraYawDeg(this.renderer));
       this.input.setPitch(0);
       // The voxel game has its own input (mouse look, hotbar, break/place).
       if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
