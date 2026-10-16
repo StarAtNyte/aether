@@ -2866,10 +2866,12 @@ export class WorldRenderer {
       // The post chain renders its scene passes at the drawing buffer's size: a capture of another aspect (a 16:9 still of a
       // portrait panel) or one larger than the viewport would be stretched or upscaled, so the buffer is resized for the frame.
       const sameAspect = !captureNeedsResize(w, h, canvas.width, canvas.height);
-      if (!this.asyncCaptureFailed && sameAspect) {
+      if (!this.asyncCaptureFailed) {
         try {
-          // Asynchronous readback: the GPU renders and copies while the page keeps running.
-          const pixels = await this.grow.withFullScale(() =>
+          // Asynchronous readback: the GPU renders and copies while the page keeps running. A capture of another aspect or size
+          // renders into a target of its own size while the drawing buffer is resized for the frame (the readback is of the
+          // target, never of the canvas: a WebGPU canvas read back in the same task comes back empty).
+          const shoot = (): Promise<Uint8Array> =>
             this.renderToPixels(w, h, () => {
               this.perspective.aspect = w / h;
               this.perspective.updateProjectionMatrix();
@@ -2879,8 +2881,8 @@ export class WorldRenderer {
               this.perspective.aspect = aspect;
               this.perspective.updateProjectionMatrix();
               decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
-            }),
-          );
+            });
+          const pixels = await this.grow.withFullScale(() => (sameAspect ? shoot() : this.withTemporarySize(w, h, shoot)));
           const url = await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas')));
           return { url, blank: pixelsAreBlank(pixels) };
         } catch (e) {
