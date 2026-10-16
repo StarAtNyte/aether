@@ -15,7 +15,7 @@
  *
  * Every input is validated with zod and bounded; nothing is evaluated.
  */
-import { Entity, validateWorld } from '@aether/core';
+import { Entity, findWaterBodies, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld } from '@aether/core';
 import { PhysicsWorld, entityBounds, initPhysics } from '@aether/physics';
 import { z } from 'zod';
 import { deriveGoals } from '../goals';
@@ -23,6 +23,7 @@ import { unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
 import { reviewLevel } from './review';
 export { clearProbeCache, probeCacheStats, PROBE_TTL_MS } from './probe-cache';
+export { LIFE_SPECIES, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife } from '@aether/core';
 export { reviewLevel, scoreLevel } from './review';
 /** Names of the level tools. */
 export const LEVEL_TOOL_NAMES = ['query_level', 'place_level_items'];
@@ -47,7 +48,7 @@ export const QueryLevelInput = z.discriminatedUnion('op', [
     z.object({ op: z.literal('review') }),
 ]);
 /** Roles an item can have; they set sensible defaults and decide whether reach is checked. */
-export const ItemRole = z.enum(['pickup', 'goal', 'checkpoint', 'hazard', 'enemy', 'prop', 'decor']);
+export const ItemRole = z.enum(['pickup', 'goal', 'checkpoint', 'hazard', 'enemy', 'prop', 'decor', 'life']);
 const LevelItem = z.object({
     id: Slug,
     role: ItemRole.default('prop'),
@@ -65,6 +66,12 @@ const LevelItem = z.object({
     key: z.string().min(1).max(40).optional(),
     /** Require the player to be able to reach it (default: pickup, goal, checkpoint and enemy). */
     reach: z.boolean().optional(),
+    /** role "life": the species (deer, cat, bird, crow, seagull, hawk, parrot, butterfly, fish, koi, duck, ...), how many (up to 24) and the radius (m) of the area they share around x,z. */
+    species: z.string().min(1).max(24).optional(),
+    count: z.number().int().min(1).max(MAX_LIFE_COUNT).default(1),
+    radius: z.number().min(1).max(150).default(8),
+    /** role "life": a bird sits on the solid surface at x,z instead of flying. */
+    perch: z.boolean().optional(),
 });
 /** Inputs of `place_level_items`. */
 export const PlaceLevelInput = z.object({ items: z.array(LevelItem).min(1).max(LEVEL_LIMITS.MAX_ITEMS), message: z.string().max(120).optional() });
@@ -319,6 +326,8 @@ async function levelSummary(world) {
 // ---------------------------------------------------------------------------
 // place_level_items
 // ---------------------------------------------------------------------------
+/** Most animals one call adds. */
+const LIFE_LIMIT = 60;
 const REACH_BY_DEFAULT = new Set(['pickup', 'goal', 'checkpoint', 'enemy']);
 function primitiveHalfHeight(e) {
     const shape = e['shape'];
@@ -345,6 +354,8 @@ function roleDefaults(item) {
             return { physics: { body: 'static' } };
         case 'decor':
             return { physics: { body: 'static', collider: 'none' } };
+        case 'life':
+            return {};
     }
 }
 async function runPlace(world, rawInput) {
@@ -357,6 +368,8 @@ async function runPlace(world, rawInput) {
     const candidates = [];
     const seen = new Set();
     const ground = await Ground.open(world);
+    const water = findWaterBodies(world);
+    let lifeEntities = 0;
     try {
         for (const item of items) {
             if (seen.has(item.id)) {
@@ -364,6 +377,43 @@ async function runPlace(world, rawInput) {
                 continue;
             }
             seen.add(item.id);
+            if (item.role === 'life') {
+                const species = item.species ?? '';
+                if (!isLifeSpecies(species)) {
+                    refused.push(`${item.id}: role "life" needs "species", one of ${LIFE_SPECIES_IDS.join(', ')}.`);
+                    continue;
+                }
+                if (lifeEntities + item.count > LIFE_LIMIT) {
+                    refused.push(`${item.id}: at most ${LIFE_LIMIT} animals per call; send the rest in another call.`);
+                    continue;
+                }
+                const plan = planLife({ id: item.id, species, count: item.count, x: item.x, z: item.z, radius: item.radius, ...(item.below !== undefined ? { below: item.below } : {}), ...(item.perch !== undefined ? { perch: item.perch } : {}), yaw: item.yaw }, {
+                    surface: (x, z, below) => ground.surface(x, z, below),
+                    clear: (x, y, z, r) => !ground.pw.overlapsSphere([x, y, z], r).some((id) => {
+                        const o = world.entities[id];
+                        return o?.physics && !o.physics.sensor && o.physics.collider !== 'none';
+                    }),
+                    water,
+                });
+                for (const m of plan.placed) {
+                    if (Object.hasOwn(world.entities, m.id) || seen.has(m.id)) {
+                        refused.push(`${m.id}: that id already exists. Use another group id.`);
+                        continue;
+                    }
+                    const parsed = Entity.safeParse(m.entity);
+                    if (!parsed.success) {
+                        refused.push(`${m.id}: the animal is not valid: ${issues(parsed.error)}.`);
+                        continue;
+                    }
+                    seen.add(m.id);
+                    lifeEntities++;
+                    candidates.push({ item, entity: parsed.data, wantReach: false, isMove: false, position: m.position });
+                }
+                if (plan.summary)
+                    notes.push(plan.summary);
+                refused.push(...plan.refused);
+                continue;
+            }
             const existing = Object.hasOwn(world.entities, item.id) ? world.entities[item.id] : null;
             const isMove = existing !== null && item.entity === undefined;
             if (existing && !isMove) {

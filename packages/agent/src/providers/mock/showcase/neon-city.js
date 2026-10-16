@@ -143,7 +143,7 @@ export function neonRainCity() {
     for (let i = 0; i < 18; i++) {
         const x = r2(b.rand(-AVE + 1, AVE - 1));
         const z = r2(b.rand(-90, 90));
-        b.prim('puddle', 'cylinder', [r2(b.rand(1.5, 3.5)), 0.01, r2(b.rand(1.2, 2.4))], [x, 0.045, z], { material: { preset: 'water', color: '#0f1420', roughness: 0.02, opacity: 0.9 }, castShadow: false });
+        b.prim('puddle', 'cylinder', [r2(b.rand(1.5, 3.5)), 0.01, r2(b.rand(1.2, 2.4))], [x, 0.045, z], { material: { preset: 'water', waterKind: 'puddle', color: '#0f1420', roughness: 0.02, opacity: 0.9 }, castShadow: false });
     }
     for (const [x, z] of [[3, 30], [-4, -42], [5, -70], [-2, 60]]) {
         b.gen('steam', 'cloud', { size: 3, color: '#d9d4ff', variant: 1 }, [x, 0.6, z], { castShadow: false, material: { opacity: 0.45, emissive: '#5a4f8a', emissiveIntensity: 0.4 }, behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: 3.2 } }] });

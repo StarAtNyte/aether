@@ -10,6 +10,9 @@
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4 } from 'three';
 import { Entity, deepEqual } from '@aether/core';
 import { MaterialCache } from './materials/material-cache';
+import { WaterSystem } from './sync/water-system';
+import { waterTierFor } from './materials/water-params';
+import { advanceWater, RippleField, reflectionOn, reflectionY, resetWater, setSkyColours, setWind } from './materials/water-state';
 import { GeometryCache } from './geometry/buffer-geometry';
 import { createProcgenGeometrySource } from './geometry/procgen-source';
 import { createGltfModelLoader, ModelCache } from './geometry/model-loader';
@@ -256,6 +259,7 @@ export class WorldRenderer {
     perspective;
     rig;
     materials = new MaterialCache();
+    water = new WaterSystem();
     geometries = new GeometryCache();
     models;
     textures;
@@ -403,6 +407,9 @@ export class WorldRenderer {
         this.materials.antiTile = this.gpu.tier !== 'software' && !this.lowMemory;
         // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
         this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
+        // Water: waves and sky on software rasterisers, depth absorption, refraction and foam on GPUs (the planar mirror, tier high, is opt-in).
+        const forcedWater = globalThis.__WATER_TIER;
+        this.materials.waterTier = forcedWater === 'off' ? null : forcedWater === 'simple' || forcedWater === 'standard' || forcedWater === 'high' ? forcedWater : waterTierFor(this.gpu.tier, this.lowMemory, false);
         this.ratioCap = Number.isFinite(opts.pixelRatioCap) && opts.pixelRatioCap > 0 ? opts.pixelRatioCap : Number.POSITIVE_INFINITY;
         this.onContextLost = opts.onContextLost;
         this.rig = new CameraRig(camera, controls);
@@ -670,6 +677,7 @@ export class WorldRenderer {
             this.applyEnvironment(world);
         this.avatar.setLook(world.player.character);
         const done = this.sync.setWorld(world);
+        this.trackWaterBodies(world);
         this.archView.invalidate();
         this.invalidateCeilings();
         this.env.setInteriorBounce(this.archView.active);
@@ -849,6 +857,7 @@ export class WorldRenderer {
         const env = world.environment;
         this.shaftsUnavailable = false;
         this.env.apply(env, this.scene);
+        this.applyWind(env.wind);
         this.env.setInteriorBounce(this.archView.active);
         this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
         this.applyLook();
@@ -856,6 +865,95 @@ export class WorldRenderer {
         this.boundsDirty = true;
         this.needsDraw = true;
     }
+    /** Set the wind of the world (grass and tree sway, wave heading and steepness) and re-tune the water shaders. */
+    applyWind(wind) {
+        const changed = wind ? setWind(wind.speed, wind.direction) : setWind(2.5, 20);
+        if (changed)
+            this.materials.retuneWater();
+    }
+    /** Water per frame: the clock, rings from bodies in the water, the planar reflection's height and the eye under the surface. */
+    stepWater(dt, animate) {
+        const surfaces = this.water.all;
+        if (surfaces.length === 0) {
+            if (this.env.isUnderwater)
+                this.env.setUnderwater(null);
+            reflectionOn.value = 0;
+            return;
+        }
+        if (animate) {
+            advanceWater(dt);
+            this.water.update(dt);
+            this.needsDraw = true;
+        }
+        const sky = this.env.skyState;
+        if (sky !== this.waterSky) {
+            this.waterSky = sky;
+            setSkyColours(sky.hemiSky, sky.zenith);
+        }
+        const dominant = this.water.dominant;
+        if (dominant)
+            reflectionY.value = dominant.y;
+        else
+            reflectionOn.value = 0;
+        const under = this.water.underwater(this.perspective);
+        this.env.setUnderwater(under);
+    }
+    /** What the water is doing now (tier, planar mirror size and readiness, live rings, surfaces): diagnostics and benchmarks. */
+    waterDebug() {
+        const m = this.materials.mirror.mirror;
+        return { tier: this.materials.waterTier ?? 'off', surfaces: this.water.all.length, mirrorUsed: this.materials.mirror.used, mirrorReady: m.ready, mirrorSize: [m.target.width, m.target.height], captureMirrorSize: m.peak, rings: RippleField.live(), underwater: this.env.isUnderwater };
+    }
+    /** Start a ring on the water at world (x, z), strength 0..1 (a footstep 0.2, a splash 1). The surface answers wherever there is water. */
+    emitRipple(x, z, strength = 0.6) {
+        if (RippleField.emit(x, z, strength) >= 0)
+            this.needsDraw = true;
+    }
+    /** The planar water reflection, drawn before the frame (high tier, camera above the dominant surface). */
+    renderMirror() {
+        const mirror = this.materials.mirror;
+        const dominant = this.water.dominant;
+        if (!mirror.used || !dominant || this.water.all.length === 0) {
+            reflectionOn.value = 0;
+            return;
+        }
+        const hide = this.materials.waterMaterials();
+        const drawn = mirror.mirror.render(this.renderer, this.scene, this.perspective, dominant.y, hide);
+        if (this.captureActive)
+            this.captureMirrorSize = [mirror.mirror.target.width, mirror.mirror.target.height];
+        reflectionOn.value = drawn ? 1 : 0;
+    }
+    /** Watch the moving bodies of `world` so water answers when they enter it. */
+    trackWaterBodies(world) {
+        this.water.clearMovers();
+        this.water.setWorld(world);
+        if (this.water.all.length === 0)
+            return;
+        for (const [id, e] of Object.entries(world.entities)) {
+            if (e.template || !e.visible || e.shape.kind === 'none')
+                continue;
+            const moves = e.physics?.body === 'dynamic' || e.physics?.body === 'kinematic' || e.npc !== undefined || e.character !== undefined || e.behaviors.length > 0;
+            if (!moves || e.material?.preset === 'water')
+                continue;
+            const s = e.shape;
+            const below = s.kind === 'primitive' ? ((s.size[1] ?? 0) * Math.abs(e.transform.scale[1] ?? 1)) / 2 : 0;
+            this.water.track(id, (out) => {
+                const node = this.sync.node(id);
+                if (!node)
+                    return false;
+                node.object.getWorldPosition(out);
+                out.y -= below;
+                return true;
+            });
+        }
+        this.water.track('avatar', (out) => {
+            if (!this.avatar.isPlaced || this.avatar.group.visible === false)
+                return false;
+            out.copy(this.avatar.group.position);
+            return true;
+        });
+    }
+    waterSky = null;
+    captureMirrorSize = null;
     /**
      * Switch the low-memory budget at runtime: the pixel ratio, shadow map,
      * post pass and generator cache follow immediately (GPU targets are
@@ -1821,6 +1919,7 @@ export class WorldRenderer {
         // Characters and animals animate while the world runs or the user works (not in an idle editor).
         if (opts.animate !== false && this.stepAnimations(step))
             this.needsDraw = true;
+        this.stepWater(step, opts.animate !== false);
         // Grow-in rescales content groups: re-apply the architectural view once it settles,
         // and merge building geometry only once nothing animates any more.
         if (this.wasGrowing && !this.grow.active)
@@ -2222,6 +2321,7 @@ export class WorldRenderer {
         const reflective = this.post?.effects.ssr === true;
         if (reflective !== this.materials.waterIsReflective)
             this.materials.setReflectiveWater(reflective);
+        this.renderMirror();
         try {
             if (this.post) {
                 // Depth of field focuses on the orbit target (allocation-free: scratch vectors).
@@ -2460,6 +2560,7 @@ export class WorldRenderer {
                     vox.flushPrebuild();
                 }
                 this.stepAnimations(dt);
+                this.stepWater(dt, true);
                 this.archView.update(this.perspective, dt);
                 this.env.update(dt, this.perspective);
                 if (this.materials.surfaces.active)
@@ -3008,6 +3109,7 @@ export class WorldRenderer {
         this.debug.dispose();
         this.avatar.dispose();
         this.env.dispose();
+        resetWater();
         this.materials.dispose();
         this.geometries.dispose();
         this.characters.dispose();

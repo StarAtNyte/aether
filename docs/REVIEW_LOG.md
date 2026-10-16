@@ -3405,3 +3405,40 @@ change, so clouds do not drift and the time-of-day slider recolours in steps of 
 physically modelled); a world with a photographed HDRI (Highland Trail) shows that photograph as its sky instead of the dome; blossom crowns read mauve under purple dusk light
 (Kyoto Temple) and peach under golden light (Sakura River); the card trees still have visible card edges at the lowest LOD of close-ups; the Kart Canyon desert scrub is a leafy
 shrub, not a desert plant.
+
+## Stage `outdoorb`: water that looks like water, real animals, ambient life
+
+**What was built.** Water: a TSL shader (WebGPU and WebGL2) for the `water` preset with six scale classes (`waterKind`: puddle, pond, stream, river, lake, sea; inferred from size and names when
+absent), four wind-driven waves plus a detail normal map, ripple rings where bodies and the player enter (the `WaterSystem`), per-channel depth absorption from the scene depth, refraction,
+shoreline and crest foam, caustics, sky reflection, a bright ceiling under the surface and underwater fog and sky when the camera dips, and an opt-in planar mirror (`high`). Tiers `simple`
+(software and low memory), `standard` (every GPU), `high`. `environment.wind` drives water and vegetation sway through shared uniforms. Animals: twelve code-authored, skinned and animated models
+(deer, doe, cat, bird, crow, seagull, hawk, duck, parrot, fish, koi, butterfly; MIT, first-party) built with a signed-distance sculpt kit (surface nets, bone weights from flesh distance, painted
+coats); the NPC deer is the model instead of a box body; the stand-in lint knows the new species and flags ball-shaped birds and fish. Ambient life: `place_level_items` role `life` (species,
+count, radius) with measured placement (ground slope and water, clear air, water depth and bank distance); Highland Trail, Sakura River Journey and Lantern Isles carry groups placed the same way
+(colliders off, so the verified routes are untouched), wind and flowing rivers; the other water-bearing flagships name their water kind. Bundled worlds were re-baked.
+
+**Screenshot rounds** (RTX 4090, Chromium, ANGLE WebGL2 and WebGPU; stills in `/tmp` only): r0 baseline (flat blue plane, no animals), r1 first shader (planar reflector via three's
+`ReflectorNode` filled the frame and raised "destroyed texture" errors inside the post chain: replaced by our own mirror drawn before the frame), r2 and r3 (mirror, blocky and muddy), r4 tiers side
+by side (the sky reflection of `standard` beat the half-size mirror, so `high` became opt-in), r5 gentler mirror, r6 all outdoor flagships on the default tier, r7 ripples, underwater and the
+life close-ups (deer on a slope, fish under a clear stream, ducks afloat). Honest judgement: the river, lake and shallow-stream looks now read as water (depth gradient, caustics on the bed,
+glitter path, rings that spread); the animals read as the right animal in the landscape but are stylised-real sculpts, not scans: the cat's head and limbs are rodent-like, wings are plates, fur has no
+strands. Puddles needed their own dark colours. The planar mirror is half-size and unfiltered, so it stays off by default.
+
+**Verification.** `tsc` 0 errors; new suites `water` (26), `water-mirror`, `water-bodies`, `life` (13), `life-flagships`, `living` (sculpt kit, 12 models), extended `standins`; Node 24 full vitest
+(see the run recorded with this stage); studio build ok; look-shots as above. `tests/e2e/water-bench.e2e.ts` frame intervals (median, 1600x900, 60 frames, orbiting camera): RTX 4090, Chromium WebGPU,
+Sakura River: classic water 12.6 ms, `simple` 13.4, `standard` 12.4, `high` 20.3; Highland Trail: 11.3, 11.7, 12.0, 20.4. Software rasteriser (SwiftShader, 800x450, 8 frames, Sakura River):
+classic 1494 ms, `simple` 1578 (+5.6 %), `standard` 1648 (+10 %), `high` 1882 (+26 %); software and low-memory pick `simple`. Firefox WebGL2 was not run on this machine this round.
+
+**Security review.** `planLife` and the level tool validate species against a table, cap counts (24 per group, 60 per call), radii (150 m) and coordinates (zod, 5000 m), limit rays per call, and
+only emit data that passes `Entity.safeParse`; the planner never evaluates input. `waterKind`, `waterFlow` and `environment.wind` are enums and bounded numbers. The models are generated offline from
+code (no network, no third-party files); the sculpt kit caps its grid by the primitives' boxes. The water shaders read only engine textures. No dependency was added.
+
+**Performance review.** The shader adds a scene-colour and a scene-depth read (copied once per frame by three) and about forty texture-free ALU terms per pixel on `standard`; none on `simple`.
+Rings are twelve slots in a uniform array, expired on the CPU; the `WaterSystem` loops over moving bodies only when the world has water and allocates nothing per frame. Wind is two uniforms. The
+mirror (opt-in) costs one scene pass at a quarter of the pixels (+8 ms measured). Models are 1.6 k to 13.5 k triangles (deer 13.5 k with antlers), 40 to 360 KB; the flagships add 20 to 35 animals.
+
+**Honest gaps.** The planar mirror is not good enough to be the default (muddy, half-size, no filtering); there is no screen-space reflection of the scene in `standard` (sky only), so a bank
+is not mirrored in a lake; sea waves are normals only (no vertex displacement or true swell); no foam trails behind swimmers, no splash particles, no wet-body effect; fish and birds do not react to
+the player (deer do, through the NPC brain); the cat and the wings are the weakest models; only butterflies exist as insects (no bee, dragonfly); `koi` cannot be placed in the shallow disc ponds of the
+themes because they have no depth (the tool says so); the Kyoto and Seasons flagships name their pond but keep no fish; Firefox was not measured; the alloc-probe and sandbox tests fail on Node 22
+(they need the Node 24 the project asks for).

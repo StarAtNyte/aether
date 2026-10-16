@@ -18,6 +18,7 @@ import { riverHalfWidth, riverMeander } from '@aether/core';
 import { generateBuiltinSync } from '@aether/procgen';
 import { r2 } from '../builder';
 import { finish, flagshipBuilder } from './kit';
+import { addLife } from './life';
 const SIZE = 320;
 const RELIEF = 44;
 const RES = 200;
@@ -69,11 +70,12 @@ export function highlandTrail() {
         weather: 'clear',
         bloom: 0.3,
         exposure: 1.05,
+        wind: { speed: 3.5, direction: 200 },
         ground: null,
     });
     // --- The valley ------------------------------------------------------------------------------------
     const terrain = b.add({ id: b.id('valley'), name: 'Highland valley', shape: { kind: 'procedural', generator: 'terrain', params: TERRAIN_PARAMS, seed: SEED }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.9 }, tags: ['terrain'] });
-    b.prim('river', 'plane', [SIZE, 0.1, SIZE], [0, WATER_Y, 0], { name: 'River', material: { preset: 'water', color: '#5f98a8', opacity: 0.82, roughness: 0.04 }, castShadow: false, tags: ['water'] });
+    b.prim('river', 'plane', [SIZE, 0.1, SIZE], [0, WATER_Y, 0], { name: 'River', material: { preset: 'water', waterKind: 'river', waterFlow: [0, 0.9], color: '#5f98a8', opacity: 0.82, roughness: 0.04 }, castShadow: false, tags: ['water', 'river'] });
     // Far ranges close the horizon (the terrain ends at the valley's edge).
     const ring = [[-1, -0.7, 220], [-0.35, -1, 260], [0.5, -1, 240], [1, -0.4, 250], [1, 0.6, 230], [0.2, 1, 240], [-0.7, 0.9, 250], [-1, 0.2, 230]];
     for (const [ux, uz, s] of ring) {
@@ -294,6 +296,18 @@ export function highlandTrail() {
     b.prim('cairn-flag', 'box', [1.1, 0.7, 0.03], [0.6, 4.4, 0], { parent: cairn, material: { preset: 'plastic', color: '#e8652a', roughness: 0.65 }, castShadow: false, behaviors: [{ type: 'spin', params: { axis: [0, 1, 0], speed: 0 } }] });
     const goal = b.prim('summit-goal', 'cylinder', [4, 3, 4], [summit[0], r2(summit[1] + 1.5), summit[2]], { name: 'Summit', visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'goal', enabled: false, params: { text: 'Summit reached. The whole valley lies below you.' } }], castShadow: false, tags: ['goal'] });
     b.reserve(summit[0], summit[2], 4);
+    // --- Life: measured placement (ground not steep, air clear, water deep enough) -------------------------------
+    const riverBody = { id: 'river', y: WATER_Y, minX: -SIZE / 2, maxX: SIZE / 2, minZ: -SIZE / 2, maxZ: SIZE / 2, round: false, area: SIZE * SIZE };
+    addLife(b, { height: (x, z) => (Math.abs(x) < SIZE / 2 && Math.abs(z) < SIZE / 2 ? h(x, z) : null), water: [riverBody] }, [
+        { id: 'deer', species: 'deer', count: 3, x: westX(26, 34), z: 26, radius: 12 },
+        { id: 'does', species: 'doe', count: 3, x: eastX(104, 36), z: 104, radius: 12 },
+        { id: 'songbirds', species: 'bird', count: 7, x: eastX(62, 10), z: 62, radius: 22 },
+        { id: 'crows', species: 'crow', count: 4, x: westX(-40, 30), z: -40, radius: 20 },
+        { id: 'hawk', species: 'hawk', count: 1, x: 0, z: -20, radius: 70 },
+        { id: 'butterflies', species: 'butterfly', count: 8, x: eastX(100, 9), z: 100, radius: 7 },
+        { id: 'trout', species: 'fish', count: 6, x: riverX(46), z: 46, radius: 7 },
+        { id: 'pool-trout', species: 'fish', count: 4, x: riverX(78), z: 78, radius: 6 },
+    ]);
     // --- Vegetation ------------------------------------------------------------------------------------------------------
     const points = (count, ok, spacing, tries = 40) => {
         const out = [];

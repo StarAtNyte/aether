@@ -179,7 +179,7 @@ export function lantern(b: Builder, x: number, z: number, color = '#ffb35c'): st
 
 /** A lake (flat water disc) with a reed fringe, a little jetty and a rowboat. Returns the lake id. */
 export function lake(b: Builder, x: number, z: number, radius: number): string {
-  const id = b.prim('lake', 'cylinder', [r2(radius * 2), 0.08, r2(radius * 2)], [x, 0.04, z], { name: 'Lake', material: { preset: 'water', color: '#2f7fae', opacity: 0.88, roughness: 0.04 }, castShadow: false, tags: ['water'] });
+  const id = b.prim('lake', 'cylinder', [r2(radius * 2), 0.08, r2(radius * 2)], [x, 0.04, z], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#2f7fae', opacity: 0.88, roughness: 0.04 }, castShadow: false, tags: ['water'] });
   b.prim(`${id}-shore`, 'cylinder', [r2(radius * 2 + 2.2), 0.05, r2(radius * 2 + 2.2)], [x, 0.025, z], { material: { preset: 'sand', color: '#b9a57a' }, castShadow: false });
   b.reserve(x, z, radius + 1);
   b.keepClear(x, z, radius + 0.5);

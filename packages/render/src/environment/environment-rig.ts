@@ -502,6 +502,40 @@ export class EnvironmentRig {
   }
 
   /** Per-frame update (sky follows the camera, weather animates). Zero allocations. */
+  private readonly underFog = new FogExp2('#1f5a66', 0.1);
+  private under = false;
+  private readonly underBackground = new Color('#1f5a66');
+
+  /**
+   * The eye below a water surface: everything fades into the water's colour with the water's clarity and the sky
+   * disappears. `null` restores the world's own fog and sky. Cheap (a fog swap), reversible.
+   */
+  setUnderwater(look: { color: string; density: number } | null): void {
+    const scene = this.scene;
+    if (!scene) return;
+    if (!look) {
+      if (!this.under) return;
+      this.under = false;
+      scene.background = null;
+      this.applyFog();
+      return;
+    }
+    this.underFog.color.set(look.color);
+    this.underFog.density = Math.max(0.01, Math.min(1, look.density));
+    this.underBackground.set(look.color);
+    if (!this.under) {
+      this.under = true;
+      scene.background = this.underBackground;
+    }
+    scene.fog = this.underFog;
+    this.sky.group.visible = false;
+  }
+
+  /** True while the eye is under water. */
+  get isUnderwater(): boolean {
+    return this.under;
+  }
+
   update(dt: number, camera: Camera): void {
     this.sky.update(camera);
     this.weather.update(dt, camera);

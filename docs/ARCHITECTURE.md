@@ -1736,7 +1736,7 @@ has 64 towers 105 to 230 m away, 60 to 115 m high, rising above the deck.
 - **Imports.** An imported JSON file must carry at least one world field; `{"hello":"world"}` is refused instead of becoming an empty world.
 - **Memory.** `npm run e2e:switch` opens seven worlds in one tab for several rounds, plays and stops each and compares the JS heap after a forced collection at the home page.
 
-## 29. Outdoor look, part A: a physical sky, vegetation variety and natural cover (`outdoora`)
+## 28. Outdoor look, part A: a physical sky, vegetation variety and natural cover (`outdoora`)
 
 **Sky.** `environment/atmosphere.ts` integrates single scattering (Rayleigh, Mie, and a thin ozone layer, which is what turns a dusk zenith deep blue instead of
 green) along each view ray through a spherical atmosphere, with the sunlight attenuated on its way in. It runs on the CPU, per dome vertex (96 x 48), only when the
@@ -1762,3 +1762,23 @@ Wind sway, bark, leaf shadows and the soft crown normals were already there.
 **Tiers.** The low tier (software rasterisers, low-memory mode) drops the cirrus veil and the rays (`SkyDome.setDetail(false)`: two full-screen blended layers);
 the dome, the cumulus deck, sun, moon and stars stay, so the sky keeps its physical colours everywhere. The layered terrain was already off on that tier.
 God rays through the shadow map remain the ultra tier's (`effects.shafts`).
+
+## 29. Water, animals and ambient life (`outdoorb`)
+
+Water is a shader, not a blue plane. `materials/water.ts` (TSL, so one description runs on WebGPU and WebGL2) turns the `water` preset into: four crossing waves whose heading and steepness
+come from the scale class (`waterKind`: puddle, pond, stream, river, lake, sea) and from `environment.wind`; a scrolling ripple normal map; expanding rings where something enters (the
+`WaterSystem` watches moving bodies and the avatar and writes `RippleField`); absorption per colour channel along the view ray through the water measured from the scene depth buffer, so
+any shore, bank or bed works without bespoke geometry; refraction through the wave normal with a guard against objects in front of the water; shoreline and crest foam (shore foam is
+measured from depth, not painted); caustics on a shallow bed; Fresnel reflection of the sky from the PBR environment. A body laid on flat ground (a disc "pond") reads as deep as its
+class through `WaterClass.basin`, while a carved basin keeps its real depth. Tiers: `simple` (software rasterisers, low memory: no scene reads), `standard` (every real GPU), `high`
+(adds `PlanarMirror`, the scene drawn from the camera mirrored about the dominant water height, an opt-in). Below the surface the world fades into the water's colour with its clarity
+(`EnvironmentRig.setUnderwater`). Wind is one set of uniforms shared by the water and the vegetation sway shader.
+
+Animals are real models: `scripts/assets/sdf.ts` sculpts a body as a smooth union of spheres, ellipsoids and tapered capsules and polygonises it with surface nets; every vertex is
+skinned to the bones by the distance to each bone's flesh; coats are painted per vertex (belly and back gradients, face masks, spots, stripes, contact shading from the field);
+ears, antlers, wings, fins and tails are rigid plates on bones; clips are bone rotations over time (the walk's period follows from the leg length so the feet plant). Species are numbers
+(`living.ts`). The result is a skinned GLB with idle, walk and run roles that the existing animator already plays by speed.
+
+Life is placed with the level tools: the assistant names a species, a count and an area (`place_level_items` role `life`), `planLife` (core) scatters candidates and the host measures
+each (ground slope, water above, clear air, water depth and distance to the bank) before accepting it. Bundled worlds use the same planner through a terrain sampler
+(`showcase/life.ts`) with colliders off, so animals never block the verified route.

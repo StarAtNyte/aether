@@ -30,6 +30,17 @@ export interface ResolvedMaterial {
   splat: boolean;
   /** Alpha-tested foliage card kind, null for ordinary materials. */
   foliage: NonNullable<MaterialSpec['foliage']> | null;
+  /** Scale and current of a water surface (preset water), null for every other material. */
+  water: ResolvedWater | null;
+}
+
+/** The water scales a spec can name (see `MaterialSpec.waterKind`). */
+export type WaterKind = NonNullable<MaterialSpec['waterKind']>;
+
+/** Water parameters that reach the shader: the scale class and the current in m/s. */
+export interface ResolvedWater {
+  kind: WaterKind;
+  flow: [number, number];
 }
 
 /** One entry of the preset table. */
@@ -165,6 +176,7 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
   const splat = spec?.splat === true && vertexColors && opts.hasSplat !== false && opacity >= OPAQUE_THRESHOLD;
   // Foliage cards are cut out by an alpha test, so they are opaque; their quads carry authored 0..1 UVs.
   const foliage = typeof spec?.foliage === 'string' && opacity >= OPAQUE_THRESHOLD ? spec.foliage : null;
+  const surface = p.surface ?? opts.surface ?? null;
   return {
     color,
     roughness: unit(spec?.roughness, p.roughness),
@@ -176,11 +188,27 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
     flatShading: typeof spec?.flatShading === 'boolean' ? spec.flatShading : (p.flatShading ?? false),
     vertexColors,
     doubleSided: opts.doubleSided === true,
-    surface: p.surface ?? opts.surface ?? null,
+    surface,
     finish: !splat && !foliage && opacity >= OPAQUE_THRESHOLD && typeof spec?.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? (PRESET_DETAIL[spec.preset] ?? null) : null,
     splat,
     foliage,
+    water: surface === 'water' ? resolveWater(spec) : null,
   };
+}
+
+const WATER_KINDS: ReadonlySet<string> = new Set(['puddle', 'pond', 'stream', 'river', 'lake', 'sea']);
+
+/** Default current (m/s) of a water scale when the spec gives none. */
+const DEFAULT_FLOW: Readonly<Record<WaterKind, number>> = Object.freeze({ puddle: 0, pond: 0, stream: 1.1, river: 0.7, lake: 0, sea: 0 });
+
+function resolveWater(spec: MaterialSpec | undefined): ResolvedWater {
+  const kind: WaterKind = typeof spec?.waterKind === 'string' && WATER_KINDS.has(spec.waterKind) ? spec.waterKind : 'lake';
+  const f = spec?.waterFlow;
+  const fx = Array.isArray(f) && typeof f[0] === 'number' && Number.isFinite(f[0]) ? range(f[0], -12, 12, 0) : null;
+  const fz = Array.isArray(f) && typeof f[1] === 'number' && Number.isFinite(f[1]) ? range(f[1], -12, 12, 0) : null;
+  // Without a current the stream or river runs along +X (the scene decides by naming `waterFlow`).
+  const flow: [number, number] = fx !== null && fz !== null ? [fx, fz] : [DEFAULT_FLOW[kind], 0];
+  return { kind, flow: [Math.round(flow[0] * 100) / 100, Math.round(flow[1] * 100) / 100] };
 }
 
 /**
@@ -209,6 +237,7 @@ function resolveFinish(spec: MaterialSpec, id: MaterialFinish, opts: ResolveOpti
     finish: id,
     splat: false,
     foliage: null,
+    water: null,
   };
 }
 

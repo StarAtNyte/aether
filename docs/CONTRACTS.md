@@ -2785,3 +2785,48 @@ document served in place of the `apartment` template of the build output) and `-
   `hero-cherry-tree` to a blossoming `tree-broadleaf`); `Builder.nature(generator, params)` does the same for hand-built shapes.
 - With it, scatters of `meadow-grass`, `grass-tuft`, `shrub`, `bush`, `fern`, `flowers`, `boulder` and `rock` of 12 or more instances are laid out by
   `clusterPoints` (a Thomas cluster process plus 22 % lone plants, deterministic, as hand-placed scatter `points`), so ground cover grows in tussocks and drifts.
+
+## Water, creatures, ambient life and wind (`outdoorb`, additive, backward compatible)
+
+### `@aether/core`
+
+- `MaterialSpec.waterKind?: 'puddle' | 'pond' | 'stream' | 'river' | 'lake' | 'sea'`: the scale of a water surface (preset `water`). It sets wave length and steepness, clarity,
+  colour, foam and whether the waves follow a current. Without it the renderer infers the class from the entity's size and its id, name and tags (`inferWaterKind`).
+- `MaterialSpec.waterFlow?: [x, z]` (each -12..12 m/s): the current of a river or stream (default: along +X for the classes that flow).
+- `Environment.wind?: { speed: 0..30 m/s, direction: degrees (0 toward -Z, counter-clockwise from above, default 0) }`: bends grass and trees, roughens lakes and seas and sets their
+  wave heading. Absent: a light breeze (2.5 m/s).
+- `findWaterBodies(world)` / `waterAt(bodies, x, z, y)` / `edgeDistance(body, x, z)` / `isWaterEntity(entity)` (`water-bodies.ts`): the horizontal surfaces of water entities (planes, boxes,
+  cylinders; round bodies are ellipses), largest first.
+- `planLife(request, probe)` / `LIFE_SPECIES` / `isLifeSpecies` / `MAX_LIFE_COUNT` (`life.ts`): measured placement of animal groups (below). `CUBE_PET_ASSET_IDS` no longer lists
+  `cat`, `deer`, `fish`, `parrot` (modelled replacements exist); `findStandIns` also flags a ball, cone or box of at most 1.6 m called bird, duck, crow, gull, hawk, parrot, fish, koi,
+  trout, butterfly or bee (not a bird house, a fish tank or a statue).
+
+### `@aether/playtest`
+
+- `place_level_items` gains `role: 'life'`: `{id, role:"life", species, count (1-24), radius (1-150 m), x, z, below?, perch?}` places a group of animals the code measures:
+  ground animals (deer, doe, cat, sheep, cow, horse, pig, dog, fox) stand on ground under 25 to 40 degrees that is not under water and not inside something solid, as kinematic NPCs
+  (prey / predator / follower, wandering); flyers (bird, crow, seagull, hawk, parrot, butterfly) circle in air that is clear, at the species' altitude above the terrain or water
+  (hawk 25-65 m, bird 3-12 m, butterfly 0.5-1.7 m) with `orbit` + `bob`, or sit on the solid surface at x,z with `perch`; fish and koi need water at least 0.3 / 0.4 m deep under them
+  and a roaming circle that stays over water, swim at 45 % of the depth; ducks float on the surface. Members that do not fit are refused with the measured reason; the others are
+  placed (one undo step). Up to 60 animals per call. Result text names each group's measurements ("deer-1: 6 of 6 deer placed (slopes 2.1 to 14.6 deg, none in water)").
+
+### `@aether/render`
+
+- Water shader (`materials/water.ts`, TSL, WebGPU and WebGL2): four summed directional waves from the class and the wind, a scrolling detail normal map, ripple rings, per-channel
+  depth absorption from the scene depth, refraction through the wave normal, shoreline and crest foam, caustics on a shallow bed, Fresnel sky reflection and (tier `high`) a planar
+  reflection. Tiers (`waterTierFor`): `simple` (software rasterisers, low-memory: waves, ripples, sky), `standard` (adds depth, refraction, foam, caustics), `high` (discrete GPUs: adds the
+  planar mirror). `MaterialCache.waterTier` (null keeps the classic translucent water), `MaterialCache.retuneWater()`, `MaterialCache.mirror` (`PlanarReflection`), `MaterialCache.waterMaterials()`.
+  `ResolvedMaterial.water: { kind, flow } | null`. Debug: `globalThis.__WATER_TIER = 'simple' | 'standard' | 'high'` before the renderer starts.
+- `water-state.ts`: module-level uniforms (`waterClock`, `windSpeed`, `windHeading`, sky colours, reflection height/on), `RippleField.emit(x, z, strength)` (12 rings, 3.2 s), `advanceWater(dt)`, `setWind`, `resetWater`.
+  `WaterSystem` (`sync/water-system.ts`) watches moving bodies and the avatar and emits rings on entering, wading and leaving; `underwater(camera)` returns the fog look under a surface;
+  `EnvironmentRig.setUnderwater(look | null)` swaps fog and sky.
+- `PlanarMirror` (`materials/planar-mirror.ts`): the scene drawn from the camera mirrored about the dominant water height with an oblique near plane, once per frame before the main frame.
+- `materials/tsl-lite.ts`: a typed view of three's TSL used by the shaders. `materials/wind.ts` reads the wind uniforms (`windGain(speed)`).
+
+### Assets and scripts
+
+- Twelve library models are now code-authored, skinned and animated (pack `aether-creatures`, MIT): `deer` (stag, antlers), `doe`, `cat`, `bird` (robin), `crow`, `seagull`, `hawk`, `duck`,
+  `parrot`, `fish` (trout), `koi`, `butterfly`. Clips: quadrupeds `idle walk run graze`; birds `perch flap fly glide` (roles idle perch, walk flap, run fly; the duck walks in `perch`);
+  fish `idle swim dash`; butterfly `idle walk run`. They face -Z, stand on y = 0 and carry vertex colours. `scripts/assets/living.ts` (+ `sdf.ts`, `living-kit.ts`, `living-quad.ts`,
+  `living-bird.ts`, `living-fish.ts`, `living-parts.ts`) builds them; `assets/living.json` is merged by `build.ts`.
+- `tests/e2e/lookshots.e2e.ts`: `SHOT_WATER=simple|standard|high` forces a water tier.

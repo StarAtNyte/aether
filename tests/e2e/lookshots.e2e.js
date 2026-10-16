@@ -35,12 +35,19 @@ async function open(page, url, slug) {
     await page.waitForTimeout(1500);
 }
 async function shoot(page, file) {
+    // `SHOT_JS_AFTER`: a snippet run just before the capture, after the camera is set (it may move the camera itself).
+    if (process.env['SHOT_JS_AFTER']) {
+        await page.evaluate(process.env['SHOT_JS_AFTER']);
+        await page.waitForTimeout(2500);
+    }
     await page.waitForFunction(() => (window.__aether?.simulation?.renderer.refineProgress ?? 1) >= 0.98, null, { timeout: 40_000, polling: 500 }).catch(() => undefined);
     const data = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w, height: h, mime: 'image/png' })) ?? null, [W, H]);
     if (!data)
         throw new Error('capture failed');
     writeFileSync(file, Buffer.from(data.slice('data:image/png;base64,'.length), 'base64'));
     log(`  wrote ${file}`);
+    if (process.env['SHOT_DEBUG'])
+        log(`  water ${JSON.stringify(await page.evaluate(() => window.__aether?.simulation?.renderer.waterDebug()))}`);
 }
 function setCam(page, pos, target) {
     return page.evaluate(([p, t]) => {
@@ -57,6 +64,8 @@ async function main() {
     try {
         const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
         await ctx.addInitScript(SKIP_FIRST_RUN);
+        if (process.env['SHOT_WATER'])
+            await ctx.addInitScript(`globalThis.__WATER_TIER = '${process.env['SHOT_WATER']}';`);
         const page = await ctx.newPage();
         page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
         page.on('console', (m) => {
@@ -67,6 +76,8 @@ async function main() {
             const [slug = '', mode = 'cover'] = spec.split(':');
             log(`${spec}`);
             await open(page, server.url, slug);
+            if (process.env['SHOT_JS'])
+                await page.evaluate(process.env['SHOT_JS']);
             if (mode === 'play') {
                 await page.evaluate(() => void window.__aether?.studio.togglePlay());
                 await page.waitForFunction(() => window.__aether?.store.getState().mode === 'play', null, { timeout: 60_000 });

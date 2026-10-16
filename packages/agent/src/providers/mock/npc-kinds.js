@@ -241,6 +241,13 @@ export function placeNpc(b, kind, x, z, o = {}) {
         return { id, name };
     }
     if (kind.look === 'deer') {
+        // The modelled, skinned deer of the library (stag or doe); the box body below is only the fallback of a library without it.
+        const entry = ['deer', 'doe'].map((m) => libraryEntry(m)).find((e) => e !== null && e.category === 'animals') ?? null;
+        if (entry) {
+            const pick = b.chance(0.45) ? 'doe' : entry.id;
+            id = b.asset(kind.label, libraryEntry(pick) ? pick : entry.id, [x, 0, z], { ...common, physics: { body: 'kinematic', collider: 'box' }, fallback: { kind: 'primitive', primitive: 'box', size: [0.45, 1.3, 1.7] } });
+            return { id, name };
+        }
         id = b.prim(kind.label, 'box', [0.45, 0.7, 1.2], [x, 0.7, z], { ...common, material: { preset: 'fabric', color: kind.coat } });
         deerBody(b, id, kind.coat);
         return { id, name };

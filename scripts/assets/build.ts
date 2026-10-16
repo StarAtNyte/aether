@@ -410,7 +410,7 @@ async function main(): Promise<void> {
   writeFileSync(join(OUT, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`);
   const total = built.reduce((s, b) => s + b.files.reduce((t, f) => t + f.bytes, 0), 0);
   // First-party and vendored model sets built by their own scripts (animals, vehicles) survive a library rebuild.
-  for (const f of ['creatures.json', 'vehicles.json']) {
+  for (const f of ['creatures.json', 'vehicles.json', 'living.json']) {
     const file = join(OUT, f);
     if (existsSync(file)) mergeIntoCatalog(JSON.parse(readFileSync(file, 'utf8')) as Parameters<typeof mergeIntoCatalog>[0]);
   }

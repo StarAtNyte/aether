@@ -13,7 +13,8 @@
  */
 import { riverHalfWidth, riverMeander } from '@aether/core';
 import { r2 } from '../builder';
-import { faceToward, finish, flagshipBuilder, glowLantern, pickup } from './kit';
+import { faceToward, finish, flagshipBuilder, glowLantern, pickup, terrainHeight } from './kit';
+import { addLife } from './life';
 /** Valley size (metres). */
 const SIZE = 520;
 /** Water surface height above the riverbed. */
@@ -64,10 +65,14 @@ export function sakuraRiver() {
         weather: 'petals',
         bloom: 0.75,
         exposure: 1.05,
+        wind: { speed: 2.4, direction: 90 },
         ground: null,
     });
-    const terrain = b.gen('valley', 'terrain', { size: SIZE, height: 34, resolution: 220, roughness: 0.45, color: '#7aa457', variant: 4 }, [0, 0, 0], { physics: { body: 'static', friction: 0.12 }, name: 'River valley', tags: ['terrain'] });
-    b.prim('river', 'plane', [SIZE, 0.1, SIZE], [0, WATER_Y, 0], { name: 'River', material: { preset: 'water', color: '#6fa9b9', opacity: 0.84, roughness: 0.03 }, castShadow: false, tags: ['water'] });
+    const TERRAIN = { size: SIZE, height: 34, resolution: 220, roughness: 0.45, color: '#7aa457', variant: 4 };
+    const TERRAIN_SEED = b.subSeed() % 100_000;
+    const ground = terrainHeight(TERRAIN, TERRAIN_SEED, SIZE);
+    const terrain = b.add({ id: b.id('valley'), name: 'River valley', shape: { kind: 'procedural', generator: 'terrain', params: TERRAIN, seed: TERRAIN_SEED }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.12 }, tags: ['terrain'] });
+    b.prim('river', 'plane', [SIZE, 0.1, SIZE], [0, WATER_Y, 0], { name: 'River', material: { preset: 'water', waterKind: 'river', waterFlow: [0, -0.85], color: '#6fa9b9', opacity: 0.84, roughness: 0.03 }, castShadow: false, tags: ['water', 'river'] });
     // The canoe the player paddles (vehicle mode; it faces −Z, downstream).
     const sx = riverX(START_Z);
     const canoe = b.asset('canoe', 'canoe', [sx, 0.05, START_Z], {
@@ -93,6 +98,20 @@ export function sakuraRiver() {
     b.gen('ferry-hull', 'boat', { length: 5.5, variant: 0, color: '#6b3f2a', accentColor: '#c0392b' }, [0, 0, 0], { parent: ferry, yaw: 90 });
     b.prim('ferry-lamp', 'sphere', [0.5, 0.5, 0.5], [0, 1.4, 0], { parent: ferry, material: { preset: 'emissive', color: '#ffd59e', emissive: '#ffb35c', emissiveIntensity: 3 }, castShadow: false });
     b.light(ferry, [0, 1.6, 0], '#ffb35c', 2, 12);
+    // --- Life: measured groups along the river ----------------------------------------------------------------------
+    const riverBody = { id: 'river', y: WATER_Y, minX: -SIZE / 2, maxX: SIZE / 2, minZ: -SIZE / 2, maxZ: SIZE / 2, round: false, area: SIZE * SIZE };
+    addLife(b, { height: (x, z) => (Math.abs(x) < SIZE / 2 - 4 && Math.abs(z) < SIZE / 2 - 4 ? ground(x, z) : null), water: [riverBody] }, [
+        { id: 'ducks', species: 'duck', count: 4, x: riverX(150), z: 150, radius: 5 },
+        { id: 'ducks-far', species: 'duck', count: 3, x: riverX(20), z: 20, radius: 5 },
+        { id: 'trout', species: 'fish', count: 8, x: riverX(60), z: 60, radius: 8 },
+        { id: 'trout-late', species: 'fish', count: 6, x: riverX(-110), z: -110, radius: 8 },
+        { id: 'songbirds', species: 'bird', count: 9, x: riverX(150) + 26, z: 150, radius: 28 },
+        { id: 'blossom-birds', species: 'bird', count: 6, x: riverX(110) - 26, z: 110, radius: 22 },
+        { id: 'crows', species: 'crow', count: 4, x: riverX(-170) + 20, z: -170, radius: 22 },
+        { id: 'hawk', species: 'hawk', count: 1, x: 0, z: -40, radius: 90 },
+        { id: 'butterflies', species: 'butterfly', count: 8, x: riverX(130) + 14, z: 130, radius: 9 },
+        { id: 'deer', species: 'deer', count: 3, x: riverX(-70) - 40, z: -70, radius: 14 },
+    ]);
     // --- Spring: the blossom tunnel ------------------------------------------------
     grove(b, 'cherry-grove', 'hero-cherry-tree', { height: 6.2, spread: 7.5 }, bankPoints(b, START_Z + 30, 95, 13, 2.5, 9), terrain, [0.85, 1.2], 'Cherry blossom grove');
     grove(b, 'cherry-hill', 'hero-cherry-tree', { height: 7, spread: 8 }, bankPoints(b, START_Z + 20, 110, 24, 22, 30), terrain, [0.9, 1.3], 'Cherry trees on the hills');

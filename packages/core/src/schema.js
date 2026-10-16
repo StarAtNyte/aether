@@ -93,6 +93,14 @@ export const MaterialSpec = z.object({
      * sorting, real leaf shadows), tinted by the vertex colours.
      */
     foliage: z.enum(['broadleaf', 'shrub', 'needles', 'grass', 'fern', 'blossom', 'flower']).optional(),
+    /**
+     * Additive: the scale of a water surface (preset "water"): `puddle`, `pond`, `stream`, `river`, `lake` or `sea`. It sets
+     * the wave length and steepness, the clarity (how deep the eye sees), whether it flows and how much foam it shows.
+     * Without it the renderer reads the scale from the entity's size and tags.
+     */
+    waterKind: z.enum(['puddle', 'pond', 'stream', 'river', 'lake', 'sea']).optional(),
+    /** Additive: the current of flowing water as a world-space velocity `[x, z]` in metres per second (rivers, streams). */
+    waterFlow: z.tuple([z.number().min(-12).max(12), z.number().min(-12).max(12)]).optional(),
 });
 // ---------------------------------------------------------------------------
 // Shape — what an entity looks like
@@ -468,6 +476,12 @@ export const Environment = z.object({
     /** Infinite ground plane at y=0 with a collider. Set to null for no ground (space, sky islands). */
     ground: z.object({ material: MaterialSpec, size: z.number().positive().default(400) }).nullable().default({ material: { preset: 'grass' }, size: 400 }),
     gravity: Vec3.default([0, -9.81, 0]),
+    /**
+     * Additive: the wind. `speed` in metres per second (0 calm, 4 breeze, 10 strong, 20 storm) and `direction` in degrees
+     * (0 blows toward -Z, counter-clockwise from above). It bends grass and trees, roughens lakes and seas and sets the
+     * heading of their waves. Without it the air moves gently.
+     */
+    wind: z.object({ speed: z.number().min(0).max(30), direction: z.number().min(-720).max(720).default(0) }).optional(),
     /** Post effects. */
     bloom: z.number().min(0).max(3).default(0.4),
     exposure: z.number().min(0.1).max(4).default(1),

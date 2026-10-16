@@ -57,7 +57,7 @@ export function seasonsGarden(): MockPlan {
 
   // --- Paths, pond, bridge, tea house -------------------------------------------------------
   for (const [w, d] of [[64, 3.2], [3.2, 64]] as const) b.prim('gravel-path', 'box', [w, 0.06, d], [0, 0.03, 0], { material: { preset: 'sand', color: '#d6cdbb', roughness: 1 }, castShadow: false, tags: ['path'] });
-  const pond = b.prim('koi-pond', 'cylinder', [16, 0.08, 16], [0, 0.05, 0], { name: 'Koi pond', material: { preset: 'water', color: '#2f5a63', opacity: 0.92, roughness: 0.03 }, castShadow: false, tags: ['water'] });
+  const pond = b.prim('koi-pond', 'cylinder', [16, 0.08, 16], [0, 0.05, 0], { name: 'Koi pond', material: { preset: 'water', waterKind: 'pond', color: '#2f5a63', opacity: 0.92, roughness: 0.03 }, castShadow: false, tags: ['water'] });
   void pond;
   b.prim('pond-rim', 'cylinder', [17.4, 0.16, 17.4], [0, 0.04, 0], { material: { preset: 'stone', color: '#8a857c' }, castShadow: false });
   b.keepClear(0, 0, 9.5);

@@ -77,6 +77,7 @@ import { meshColliders } from '@aether/procgen';
 import { areaLightsReady, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
+import { withWaterKind } from './water-surfaces';
 import { setEntityPath } from './property-path';
 import { errorMessage, log } from '../log';
 
@@ -1546,7 +1547,7 @@ export class SceneSync {
         const g = this.opts.geometries.acquire(keyed.key, i, part);
         geometryKey = g.key;
         const hasColors = part.colors instanceof Float32Array && part.colors.length > 0;
-        const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length), { hasVertexColors: hasColors, doubleSided }, this.variant);
+        const handle = this.opts.materials.acquire(mergeMaterial(part.material, withWaterKind(node.entity.material, node.entity), parts.length), { hasVertexColors: hasColors, doubleSided }, this.variant);
         if (instances) {
           const im = new InstancedMesh(g.geometry, handle.material, 0);
           im.instanceMatrix = instances;

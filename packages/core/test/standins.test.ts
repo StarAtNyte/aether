@@ -21,7 +21,7 @@ describe('stand-in lint', () => {
   it('flags block mini-figures and cube pets, and bare boxes for vehicles', () => {
     const w = world([
       { id: 'fan-1', shape: { kind: 'asset', id: 'man-b' } },
-      { id: 'cat-1', tags: ['animal'], shape: { kind: 'asset', id: 'cat' } },
+      { id: 'cat-1', tags: ['animal'], shape: { kind: 'asset', id: 'bunny' } },
       { id: 'car-1', behaviors: [{ type: 'vehicle', params: {} }], shape: { kind: 'primitive', primitive: 'box', size: [2, 1, 4] } },
     ]);
     expect(findStandIns(w).map((s) => s.kind).sort()).toEqual(['animal', 'person', 'vehicle']);
@@ -37,6 +37,17 @@ describe('stand-in lint', () => {
     ]);
     expect(findStandIns(w)).toEqual([]);
     expect(findStandIns(world([capsule('villager-1')], true))).toEqual([]);
+  });
+
+  it('flags a ball called bird or fish, but not a bird house, a fish tank or a big sculpture', () => {
+    const ball = (id: string, size: number, extra: Partial<EntityInput> = {}): EntityInput => ({ id, shape: { kind: 'primitive', primitive: 'sphere', size: [size, size, size] }, ...extra });
+    const w = world([ball('bird-1', 0.4), ball('fish-3', 0.5, { tags: ['fish'] }), ball('butterfly-2', 0.2), ball('bird-house', 0.6), ball('fish-tank', 1.0), ball('seagull-statue', 1.2), ball('hawk-big', 3)]);
+    expect(findStandIns(w).map((s) => s.id).sort()).toEqual(['bird-1', 'butterfly-2', 'fish-3']);
+  });
+
+  it('lets the modelled replacements of the cube pets through', () => {
+    const w = world(['cat', 'deer', 'fish', 'parrot', 'bird', 'hawk', 'koi', 'butterfly'].map((id) => ({ id: `${id}-1`, tags: ['animal'], shape: { kind: 'asset' as const, id } })));
+    expect(findStandIns(w)).toEqual([]);
   });
 
   it('finds no stand-in in any bundled project', () => {

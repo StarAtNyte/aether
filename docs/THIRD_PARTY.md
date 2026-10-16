@@ -496,3 +496,9 @@ images are renders made by this project.
 No third-party asset or dependency was added. The atmosphere model is the published single-scattering integral (Nishita et al., 1993) written from scratch with
 published scattering coefficients (Rayleigh, Mie and ozone absorption of the Earth's atmosphere, which are physical constants, not a licensed work). The blossom
 and flower cards, the sun, moon and sunray sprites, the cirrus and cumulus textures and the clustered layouts are original, procedural work (MIT, with the project).
+
+### Outdoor water and animals (stage `outdoorb`)
+
+- Twelve animals (deer, doe, cat, bird, crow, seagull, hawk, duck, parrot, fish, koi, butterfly) are code-authored by `scripts/assets/living.ts` (MIT, first-party, no third-party source):
+  signed-distance sculpts skinned to a skeleton, with their own animation clips. Pack `aether-creatures`, licence MIT, recorded in `assets/living.json` and `assets/manifest.json`
+  (source `scripts/assets/living.ts`, `sha256` of each file in the manifest). No new dependency; `meshoptimizer` and `@gltf-transform/*` were already in use.

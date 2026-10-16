@@ -31,9 +31,12 @@ export const VOXEL_PERSON_ASSET_IDS: ReadonlySet<string> = new Set([
   'shopkeeper',
 ]);
 
-/** Library ids of the cube-shaped stylised pets (Kenney Cube Pets) that read as toys beside realistic content. */
+/**
+ * Library ids of the cube-shaped stylised pets (Kenney Cube Pets) that read as toys beside realistic content. The ones
+ * that now have modelled, skinned replacements (cat, deer, fish, parrot) left this list when the replacement shipped.
+ */
 export const CUBE_PET_ASSET_IDS: ReadonlySet<string> = new Set([
-  'beaver', 'bee', 'boar', 'bunny', 'cat', 'chick', 'crab', 'deer', 'elephant', 'fish', 'giraffe', 'koala', 'lion', 'monkey', 'panda', 'parrot', 'penguin', 'polar-bear', 'tiger',
+  'beaver', 'bee', 'boar', 'bunny', 'chick', 'crab', 'elephant', 'giraffe', 'koala', 'lion', 'monkey', 'panda', 'penguin', 'polar-bear', 'tiger',
 ]);
 
 const PERSON_WORDS: ReadonlySet<string> = new Set([
@@ -43,8 +46,18 @@ const PERSON_WORDS: ReadonlySet<string> = new Set([
 ]);
 const ANIMAL_WORDS: ReadonlySet<string> = new Set([
   'wolf', 'wolves', 'dog', 'dogs', 'deer', 'bird', 'birds', 'cat', 'cats', 'horse', 'horses', 'cow', 'cows', 'sheep', 'fox', 'bear', 'rabbit', 'pig', 'pigs', 'llama', 'zebra', 'animal', 'animals',
+  'stag', 'doe', 'fawn', 'duck', 'ducks', 'crow', 'crows', 'gull', 'gulls', 'seagull', 'seagulls', 'hawk', 'hawks', 'eagle', 'parrot', 'sparrow', 'robin', 'owl', 'fish', 'fishes', 'koi', 'trout', 'salmon', 'carp', 'butterfly', 'butterflies', 'bee', 'bees', 'dragonfly', 'insect',
 ]);
 const VEHICLE_WORDS: ReadonlySet<string> = new Set(['car', 'cars', 'kart', 'karts', 'truck', 'bus', 'van', 'taxi', 'vehicle', 'rival', 'jeep', 'tractor']);
+
+/** Species that fly or swim: shown as a ball, cone or box of at most {@link SMALL_BEING} metres they are toys, not animals. */
+const SMALL_SPECIES: ReadonlySet<string> = new Set([
+  'bird', 'birds', 'duck', 'ducks', 'crow', 'crows', 'gull', 'gulls', 'seagull', 'seagulls', 'hawk', 'hawks', 'eagle', 'parrot', 'sparrow', 'robin', 'owl', 'fish', 'fishes', 'koi', 'trout', 'salmon', 'carp', 'butterfly', 'butterflies', 'bee', 'bees', 'dragonfly',
+]);
+/** Words that make the name a thing about the animal rather than the animal (a bird house, a fish tank). */
+const NOT_A_BEING: ReadonlySet<string> = new Set(['house', 'houses', 'feeder', 'bath', 'tank', 'cage', 'nest', 'statue', 'sign', 'stall', 'market', 'pond', 'table', 'food', 'net', 'rod', 'bowl', 'box', 'shop', 'tower', 'fountain', 'mobile', 'lamp', 'light', 'mosaic', 'painting', 'mural', 'ring']);
+/** Largest extent (m) of a flying or swimming stand-in. */
+const SMALL_BEING = 1.6;
 
 /** Primitive shapes that are only ever a collider proxy for a being. */
 const PROXY_PRIMITIVES: ReadonlySet<string> = new Set(['capsule', 'box', 'sphere', 'cylinder', 'cone']);
@@ -73,10 +86,15 @@ function isBodyProxy(e: Entity, kind: StandInKind): boolean {
   if (e.shape.kind !== 'primitive') return false;
   if (!PROXY_PRIMITIVES.has(e.shape.primitive)) return false;
   const [w, h, d] = e.shape.size;
-  if (Math.max(w, h, d) < 0.3 || Math.max(w, h, d) > 8) return false;
+  const small = kind === 'animal' && words(e).some((x) => SMALL_SPECIES.has(x));
+  if (Math.max(w, h, d) < (small ? 0.1 : 0.3) || Math.max(w, h, d) > 8) return false;
   // A character-like entity (npc) is a stand-in in any proxy shape; by name alone only a capsule (a standing body) or,
   // for a vehicle, a box counts: a glowing sphere called "neon-cat" is a beacon, a box called "fan" a ceiling fan.
   if (e.npc || e.behaviors.some((b) => b.type === 'npc' || b.type === 'vehicle')) return true;
+  if (kind === 'animal' && Math.max(w, h, d) <= SMALL_BEING) {
+    const ws = words(e);
+    if (ws.some((x) => SMALL_SPECIES.has(x)) && !ws.some((x) => NOT_A_BEING.has(x))) return true;
+  }
   return kind === 'vehicle' ? e.shape.primitive === 'box' : e.shape.primitive === 'capsule';
 }
 
@@ -101,13 +119,13 @@ export function findStandIns(world: WorldDoc): StandIn[] {
     const s = e.shape;
     if (s.kind === 'asset') {
       if (kind === 'person' && VOXEL_PERSON_ASSET_IDS.has(s.id)) out.push({ id: e.id, kind, reason: `"${s.id}" is a block mini-figure; give the entity a "character" (a rigged person) instead` });
-      else if (kind === 'animal' && CUBE_PET_ASSET_IDS.has(s.id)) out.push({ id: e.id, kind, reason: `"${s.id}" is a cube toy; use a modelled animal (wolf, dog, fox, horse, cow, sheep, pig, llama, zebra)` });
+      else if (kind === 'animal' && CUBE_PET_ASSET_IDS.has(s.id)) out.push({ id: e.id, kind, reason: `"${s.id}" is a cube toy; use a modelled animal (deer, cat, dog, fox, wolf, horse, cow, sheep, pig, llama, zebra, bird, hawk, seagull, crow, duck, parrot, fish, koi, butterfly)` });
       continue;
     }
     if (s.kind !== 'primitive') continue;
     if (!isBodyProxy(e, kind)) continue;
     if (kind === 'person') out.push({ id: e.id, kind, reason: 'a bare primitive stands in for a person; give the entity a "character"' });
-    else if (kind === 'animal') out.push({ id: e.id, kind, reason: 'a bare primitive stands in for an animal; use a modelled, animated library creature' });
+    else if (kind === 'animal') out.push({ id: e.id, kind, reason: 'a bare primitive stands in for an animal; use a modelled, animated library creature (deer, cat, bird, hawk, seagull, crow, duck, parrot, fish, koi, butterfly, dog, fox, wolf, horse, cow, sheep, pig)' });
     else if (kind === 'vehicle') out.push({ id: e.id, kind, reason: 'a bare primitive stands in for a vehicle; use a modelled vehicle with wheels' });
   }
   return out;

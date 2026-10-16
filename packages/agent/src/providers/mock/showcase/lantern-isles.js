@@ -8,6 +8,7 @@
  */
 import { r2 } from '../builder';
 import { faceToward, finish, flagshipBuilder, glowLantern, onCircle, pickup } from './kit';
+import { addLife } from './life';
 /** The island chain: radius, link from the previous island, height gain, heading change (radians). */
 const CHAIN = [
     { r: 8, link: 'bridge', rise: 0, turn: -0.55 },
@@ -58,6 +59,7 @@ export function lanternIsles() {
         weather: 'dust',
         bloom: 0.9,
         exposure: 1.05,
+        wind: { speed: 4.5, direction: 250 },
         ground: null,
     });
     // --- The island chain ------------------------------------------------------------
@@ -97,6 +99,20 @@ export function lanternIsles() {
             b.prim(`${lift}-glow`, 'cylinder', [1.6, 0.04, 1.6], [0, 0.25, 0], { parent: lift, material: { preset: 'emissive', color: '#8fe8ff', emissive: '#6fdcff', emissiveIntensity: 2.4 }, castShadow: false });
         }
     }
+    // --- Life: birds in the golden sky, butterflies on the grass (measured against each island's top) -----------------
+    const isleAt = (x, z) => isles.find((s) => Math.hypot(x - s.x, z - s.z) <= s.r - 0.5);
+    const nearest = (x, z) => isles.reduce((best, s) => (Math.hypot(x - s.x, z - s.z) < Math.hypot(x - best.x, z - best.z) ? s : best), isles[0]);
+    const mid = isles[Math.min(3, isles.length - 1)];
+    const high = isles[Math.min(5, isles.length - 1)];
+    const top = isles[isles.length - 1];
+    addLife(b, { height: (x, z) => isleAt(x, z)?.top ?? null, floor: (x, z) => nearest(x, z).top }, [
+        { id: 'home-butterflies', species: 'butterfly', count: 5, x: home.x - 3, z: home.z + 6, radius: 5 },
+        { id: 'mid-butterflies', species: 'butterfly', count: 4, x: mid.x, z: mid.z, radius: 5 },
+        { id: 'isle-birds', species: 'bird', count: 6, x: mid.x, z: mid.z, radius: 18 },
+        { id: 'high-birds', species: 'bird', count: 5, x: high.x, z: high.z, radius: 16 },
+        { id: 'summit-parrots', species: 'parrot', count: 3, x: top.x, z: top.z, radius: 12 },
+        { id: 'sky-hawk', species: 'hawk', count: 1, x: mid.x, z: mid.z, radius: 55 },
+    ]);
     // --- Home island: the guide, a cottage and a campfire -----------------------------
     b.gen('cottage', 'house', { width: 6, depth: 5, color: '#efe2c4', roofColor: '#9a4a35', trimColor: '#5a3a22', lights: true, variant: 0 }, [-5, home.top, -3], { yaw: 35, physics: 'static', name: 'Keeper’s cottage', footprint: 4 });
     const fire = b.gen('campfire', 'campfire', { size: 1.1 }, [3.5, home.top, -1], { physics: 'static', name: 'Campfire', footprint: 1.6 });

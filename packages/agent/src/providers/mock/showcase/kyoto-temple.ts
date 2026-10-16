@@ -125,7 +125,7 @@ export function kyotoTemple(): MockPlan {
   const bell = b.prim('great-bell', 'cylinder', [2, 2.6, 2], [6, 3.5, -44], { name: 'The great bell', material: { preset: 'metal', color: '#6a5a3a', roughness: 0.4, metalness: 0.8 }, tags: ['bell', 'landmark'] });
   b.prim('bell-zone', 'box', [9, 3, 9], [6, 1.9, -44], { visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'pressurePlate', params: { who: 'player', stateKey: 'atBell', height: 3 } }] });
   // Koi pond with a little bridge beside the path.
-  b.prim('pond', 'cylinder', [12, 0.06, 9], [-18, 0.04, 22], { name: 'Koi pond', material: { preset: 'water', color: '#22424a', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
+  b.prim('pond', 'cylinder', [12, 0.06, 9], [-18, 0.04, 22], { name: 'Koi pond', material: { preset: 'water', waterKind: 'pond', color: '#22424a', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
   b.keepClear(-18, 22, 7);
   b.gen('pond-bridge', 'bridge', { length: 9, width: 1.6, height: 1.2, color: '#c0392b', variant: 0 }, [-18, 0, 22], { physics: 'static', name: 'Moon bridge' });
   for (let i = 0; i < 6; i++) {

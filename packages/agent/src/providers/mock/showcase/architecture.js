@@ -136,7 +136,7 @@ export function duskLakeHouse() {
     const lx = 7;
     const lz = 36;
     const lr = 17;
-    const lake = b.prim('lake', 'cylinder', [lr * 2, 0.08, lr * 2], [lx, 0.05, lz], { name: 'Lake', material: { preset: 'water', color: '#4f7f99', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
+    const lake = b.prim('lake', 'cylinder', [lr * 2, 0.08, lr * 2], [lx, 0.05, lz], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#4f7f99', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
     b.prim('lake-shore', 'cylinder', [lr * 2 + 3, 0.05, lr * 2 + 3], [lx, 0.03, lz], { material: { preset: 'sand', color: '#a8977a' }, castShadow: false });
     b.reserve(lx, lz, lr + 1);
     b.keepClear(lx, lz, lr + 1);

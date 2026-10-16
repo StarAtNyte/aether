@@ -29,7 +29,7 @@ describe('asset catalog', () => {
     });
     it('ships only CC0 / CC-BY third-party packs (first-party forge originals are MIT) and every pack is referenced', () => {
         for (const p of catalog.packs)
-            expect(p.id === 'aether-forge' || p.id === 'aether-vehicles' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
+            expect(p.id === 'aether-forge' || p.id === 'aether-vehicles' || p.id === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
         const packs = new Set(catalog.packs.map((p) => p.id));
         for (const e of catalog.entries)
             expect(packs.has(e.pack), `${e.id} pack ${e.pack}`).toBe(true);
@@ -92,11 +92,11 @@ describe('asset catalog', () => {
             }
             expect(m, e.id).toBeTruthy();
             // Code-authored vehicles are MIT; the fox is a CC0 model with a CC-BY rig and animation.
-            expect(e.pack === 'aether-vehicles' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0', 'CC0-1.0 AND CC-BY-4.0']).toContain(m.licence);
+            expect(e.pack === 'aether-vehicles' || e.pack === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0', 'CC0-1.0 AND CC-BY-4.0']).toContain(m.licence);
             expect(m.files.some((f) => f.path === e.file)).toBe(true);
         }
         for (const s of manifest.sources)
-            expect(s.id === 'aether-vehicles' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(s.licence);
+            expect(s.id === 'aether-vehicles' || s.id === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(s.licence);
     });
     it('keeps real-world sizes and the facing convention', () => {
         const get = (id) => catalog.entries.find((e) => e.id === id);

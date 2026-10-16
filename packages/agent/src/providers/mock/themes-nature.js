@@ -85,7 +85,7 @@ const beach = {
     build(c) {
         const { b } = c;
         const seaZ = c.z - 8;
-        b.prim('sea', 'box', [1600, 0.2, 700], [c.x, -0.04, r2(seaZ - 350)], { name: 'Sea', material: { preset: 'water', color: '#1f86b8', opacity: 0.85, roughness: 0.08 }, castShadow: false });
+        b.prim('sea', 'box', [1600, 0.2, 700], [c.x, -0.04, r2(seaZ - 350)], { name: 'Sea', material: { preset: 'water', waterKind: 'sea', color: '#1f86b8', opacity: 0.85, roughness: 0.08 }, castShadow: false });
         const dockX = r2(c.x + 10);
         b.gen('dock', 'dock', { length: 14, width: 2.6, height: 1 }, [dockX, 0, r2(seaZ - 2)], { yaw: 90, physics: 'static', name: 'Pier' });
         b.gen('boat', 'boat', { length: 5, variant: 1, color: '#f4f1ea', accentColor: '#c8553d' }, [r2(dockX + 3.5), 0, r2(seaZ - 11)], {
@@ -305,7 +305,7 @@ const park = {
         const pondX = r2(c.x + 14);
         const pondZ = r2(c.z + 10);
         if (b.claim(pondX, pondZ, 5)) {
-            b.prim('pond', 'cylinder', [9, 0.08, 9], [pondX, 0.04, pondZ], { name: 'Pond', material: { preset: 'water', color: '#3b8bb5', opacity: 0.85 }, castShadow: false });
+            b.prim('pond', 'cylinder', [9, 0.08, 9], [pondX, 0.04, pondZ], { name: 'Pond', material: { preset: 'water', waterKind: 'pond', color: '#3b8bb5', opacity: 0.85 }, castShadow: false });
             b.scatter('reeds', 'grass-tuft', { color: '#7a9a3a', size: 0.9 }, 18, [11, 11], [pondX, 0, pondZ], { minSpacing: 0.6 });
         }
         for (let i = 0; i < 4; i++) {
@@ -400,7 +400,7 @@ const meadow = {
         const lx = r2(c.x - 14);
         const lz = r2(c.z - 10);
         if (b.claim(lx, lz, 8)) {
-            b.prim('lake', 'cylinder', [16, 0.08, 16], [lx, 0.04, lz], { name: 'Lake', material: { preset: 'water', color: '#3a87b8', opacity: 0.85, roughness: 0.05 }, castShadow: false });
+            b.prim('lake', 'cylinder', [16, 0.08, 16], [lx, 0.04, lz], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#3a87b8', opacity: 0.85, roughness: 0.05 }, castShadow: false });
             b.gen('boat', 'boat', { length: 3.5, variant: 0 }, [lx, 0.05, lz], { behaviors: [{ type: 'bob', params: { amplitude: 0.08, period: 3 } }], name: 'Rowboat' });
         }
         if (b.claim(c.x + 10, c.z - 6, 5))

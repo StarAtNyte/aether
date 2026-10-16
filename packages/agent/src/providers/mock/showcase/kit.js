@@ -1,3 +1,4 @@
+import { generateBuiltinSync } from '@aether/procgen';
 import { Builder, r2 } from '../builder';
 /** A calm default mood (every flag off). */
 const CALM = Object.freeze({ night: false, dusk: false, dawn: false, rain: false, snow: false, fog: false, lowGravity: false, water: false });
@@ -96,4 +97,26 @@ export function segment(b, base, from, to, width, height, material, extra = {}) 
 /** Deep-frozen JSON params helper (keeps literal params typed as Json). */
 export function params(p) {
     return p;
+}
+/**
+ * Ground height under (x, z) of a built-in terrain entity (bilinear over the heightfield grid the renderer and physics
+ * share), for placing things on it offline.
+ */
+export function terrainHeight(params, seed, size) {
+    const out = generateBuiltinSync('terrain', params, seed);
+    const hf = out.colliders.find((c) => c.kind === 'heightfield');
+    if (!hf || hf.kind !== 'heightfield')
+        throw new Error('terrain has no heightfield');
+    const n = hf.rows + 1;
+    const sizeY = hf.size[1];
+    const at = (ix, iz) => hf.heights[Math.min(hf.cols, Math.max(0, ix)) * n + Math.min(hf.rows, Math.max(0, iz))] * sizeY;
+    return (x, z) => {
+        const fx = ((x + size / 2) / size) * hf.cols;
+        const fz = ((z + size / 2) / size) * hf.rows;
+        const ix = Math.floor(fx);
+        const iz = Math.floor(fz);
+        const tx = fx - ix;
+        const tz = fz - iz;
+        return at(ix, iz) * (1 - tx) * (1 - tz) + at(ix + 1, iz) * tx * (1 - tz) + at(ix, iz + 1) * (1 - tx) * tz + at(ix + 1, iz + 1) * tx * tz;
+    };
 }

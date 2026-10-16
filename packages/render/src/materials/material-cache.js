@@ -14,6 +14,8 @@ import { FinishTextures, finishHasMaps } from './finish-textures';
 import { applyAntiTile, FINISH_NODES_KEY, needsAntiTile } from './anti-tile';
 import { applySplat } from './terrain-splat';
 import { FoliageTextures } from './foliage-textures';
+import { applyWater, PlanarReflection, WATER_SHADER_KEY } from './water';
+import { SURFACE_TILE_METRES } from './surface-textures';
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#7fd8ff');
 const GHOST_OPACITY = 0.34;
@@ -27,6 +29,8 @@ export const OPAQUE_WATER_COLOR = 0.55;
 export const OPAQUE_WATER_GLOW = 0.45;
 /** Switch one water material between its see-through and its opaque reflective look (reversible, no new program unless blending changes). */
 export function setWaterLook(m, reflective) {
+    if (m.userData['aetherWaterNodes'] === true)
+        return;
     const base = m.userData['aetherWaterBase'];
     if (!base)
         return;
@@ -50,7 +54,7 @@ export function setWaterLook(m, reflective) {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
-export function createMaterial(r, variant, surfaces, finishes, antiTile = false, foliage, layered = true) {
+export function createMaterial(r, variant, surfaces, finishes, antiTile = false, foliage, layered = true, waterTier = null, mirror = null) {
     const m = new MeshStandardMaterial({
         color: r.color,
         roughness: r.roughness,
@@ -82,7 +86,7 @@ export function createMaterial(r, variant, surfaces, finishes, antiTile = false,
         m.map = maps.map;
         if (maps.emissiveMap && r.emissiveIntensity > 0)
             m.emissiveMap = maps.emissiveMap;
-        if (maps.normalMap) {
+        if (maps.normalMap && !(r.water && waterTier && mirror)) {
             m.normalMap = maps.normalMap;
             m.normalScale = new Vector2(WATER_NORMAL_SCALE, WATER_NORMAL_SCALE);
         }
@@ -102,7 +106,18 @@ export function createMaterial(r, variant, surfaces, finishes, antiTile = false,
     }
     if (variant === 'foliage')
         applyWind(m);
-    if (!ghostLike && r.surface === 'water') {
+    if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
+        // The water shader: waves, ripples, depth absorption, refraction, foam (see `water.ts`). It replaces the classic maps.
+        m.map = null;
+        m.emissiveMap = null;
+        m.transparent = true;
+        m.opacity = 1;
+        m.depthWrite = waterTier !== 'simple';
+        const shader = applyWater(m, r.water, waterTier, { normalMap: surfaces.get('water').normalMap }, SURFACE_TILE_METRES.water, mirror);
+        m.userData[WATER_SHADER_KEY] = shader;
+        m.userData['aetherWaterNodes'] = true;
+    }
+    else if (!ghostLike && r.surface === 'water') {
         m.userData[WATER_KEY] = true;
         m.userData['aetherWaterBase'] = { color: m.color.clone(), emissive: m.emissiveIntensity, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite };
     }
@@ -166,6 +181,28 @@ export class MaterialCache {
     layeredTerrain = true;
     reflectiveWater = false;
     /**
+     * Water shader tier (`null` keeps the classic translucent water: tests and exports). Applies to materials created
+     * afterwards; the renderer rebuilds its scene content when the tier changes.
+     */
+    waterTier = null;
+    /** The planar reflection of this cache's renderer (high water tier). */
+    mirror = new PlanarReflection();
+    /** The live water materials (hidden while the planar mirror is drawn). */
+    waterMaterials() {
+        const out = [];
+        this.cache.forEach((m) => {
+            if (m.userData[WATER_SHADER_KEY])
+                out.push(m);
+        });
+        return out;
+    }
+    /** Re-derive every water shader's waves from the current wind (call after `setWind`). */
+    retuneWater() {
+        this.cache.forEach((m) => {
+            m.userData[WATER_SHADER_KEY]?.retune();
+        });
+    }
+    /**
      * Draw water as an opaque, darker, reflective surface (true) instead of see-through (false). Opaque
      * water takes part in the depth pre-pass, so screen-space reflections mirror the shore and the sky in
      * it like a real lake. Applies to existing and later water materials.
@@ -186,9 +223,10 @@ export class MaterialCache {
     /** Acquire (and retain) the material for `spec`. Pair every call with {@link release}. */
     acquire(spec, opts = {}, variant = 'standard') {
         const resolved = resolveMaterial(spec, opts);
-        const key = materialKey(resolved, variant);
+        const tier = resolved.water ? this.waterTier : null;
+        const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '');
         const material = this.cache.acquire(key, () => {
-            const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain);
+            const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror);
             if (this.reflectiveWater && m.userData[WATER_KEY] === true)
                 setWaterLook(m, true);
             return m;
@@ -213,5 +251,6 @@ export class MaterialCache {
         this.surfaces.dispose();
         this.finishes.dispose();
         this.foliage.dispose();
+        this.mirror.dispose();
     }
 }

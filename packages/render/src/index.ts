@@ -97,3 +97,10 @@ export { FinishTextures, finishHasMaps, type FinishMaps, type FinishSynth } from
 export { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, isRenderTier, needsPrePass, presetFor, RENDER_TIERS, resolveEffects, stillEffects, whiteBalance, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier, type ToneCurve } from './gpu/finishing';
 export { gradeWithPreset } from './gpu/grade';
 export { qualityPlan, postQualityOf, stillPlan, STILL_DRAW_CAP, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
+export { WATER_CLASSES, waveSet, inferWaterKind, waterTierFor, underwaterDensity, RIPPLE, type WaterClass, type WaterTier, type Wave } from './materials/water-params';
+export { RippleField, rippleHeightAt, advanceWater, setWind, currentWind, resetWater } from './materials/water-state';
+export { PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './materials/water';
+export { PlanarMirror } from './materials/planar-mirror';
+export { WaterSystem, WADE_MIN_SPEED, type UnderwaterLook } from './sync/water-system';
+export { findWaterSurfaces, surfaceAt, waterKindOf, withWaterKind, type WaterSurface } from './sync/water-surfaces';
+export { windGain } from './materials/wind';

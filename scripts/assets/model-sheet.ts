@@ -15,6 +15,9 @@ import { CHROME_ARGS, findChrome, REPO_ROOT } from '../../tests/e2e/support/env'
 
 const args = process.argv.slice(2);
 const views = (args.find((a) => a.startsWith('--views='))?.slice(8) ?? '34,side').split(',');
+/** `--clip=name` poses every model in that clip at `--t=seconds` (default 0.25). */
+const clip = args.find((a) => a.startsWith('--clip='))?.slice(7) ?? '';
+const clipTime = Number(args.find((a) => a.startsWith('--t='))?.slice(4) ?? '0.25');
 const [out, ...files] = args.filter((a) => !a.startsWith('--')).map((a) => resolve(a));
 if (!out || files.length === 0) throw new Error('usage: model-sheet <out.png> <a.glb> ...');
 
@@ -27,7 +30,7 @@ import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 window.render = async (spec) => {
-  const {urls, views, tw, th} = spec;
+  const {urls, views, tw, th, clip, clipTime} = spec;
   const cols = views.length, rows = urls.length;
   const canvas = document.getElementById('c');
   const renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:true});
@@ -47,6 +50,8 @@ window.render = async (spec) => {
     const root = g.scene;
     root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(root);
+    if (clip) { const c = g.animations.find(a => a.name === clip); if (c) { const mixer = new THREE.AnimationMixer(root); const act = mixer.clipAction(c); act.play(); mixer.setTime(clipTime); } }
+    root.traverse(o => { if (o.isSkinnedMesh) o.frustumCulled = false; });
     root.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(root);
     const c = box.getCenter(new THREE.Vector3()); const s = box.getSize(new THREE.Vector3());
@@ -98,7 +103,7 @@ async function main(): Promise<void> {
     page.on('console', (m) => process.stdout.write(`[page] ${m.text()}\n`));
     page.on('pageerror', (e) => process.stdout.write(`[pageerror] ${e.message}\n`));
     await page.goto(`http://127.0.0.1:${port}/`);
-    const info = await page.evaluate((spec) => (window as unknown as { render(s: unknown): Promise<unknown> }).render(spec), { urls: [...served.keys()], views, tw: 720, th: 440 });
+    const info = await page.evaluate((spec) => (window as unknown as { render(s: unknown): Promise<unknown> }).render(spec), { urls: [...served.keys()], views, tw: 720, th: 440, clip, clipTime });
     const data = await page.evaluate(() => (document.getElementById('c') as HTMLCanvasElement).toDataURL('image/png'));
     writeFileSync(out as string, Buffer.from(data.split(',')[1] as string, 'base64'));
     console.log(JSON.stringify(info));

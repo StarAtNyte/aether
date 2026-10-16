@@ -105,6 +105,7 @@ export function resolveMaterial(spec, opts = {}) {
     const splat = spec?.splat === true && vertexColors && opts.hasSplat !== false && opacity >= OPAQUE_THRESHOLD;
     // Foliage cards are cut out by an alpha test, so they are opaque; their quads carry authored 0..1 UVs.
     const foliage = typeof spec?.foliage === 'string' && opacity >= OPAQUE_THRESHOLD ? spec.foliage : null;
+    const surface = p.surface ?? opts.surface ?? null;
     return {
         color,
         roughness: unit(spec?.roughness, p.roughness),
@@ -116,11 +117,24 @@ export function resolveMaterial(spec, opts = {}) {
         flatShading: typeof spec?.flatShading === 'boolean' ? spec.flatShading : (p.flatShading ?? false),
         vertexColors,
         doubleSided: opts.doubleSided === true,
-        surface: p.surface ?? opts.surface ?? null,
+        surface,
         finish: !splat && !foliage && opacity >= OPAQUE_THRESHOLD && typeof spec?.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? (PRESET_DETAIL[spec.preset] ?? null) : null,
         splat,
         foliage,
+        water: surface === 'water' ? resolveWater(spec) : null,
     };
+}
+const WATER_KINDS = new Set(['puddle', 'pond', 'stream', 'river', 'lake', 'sea']);
+/** Default current (m/s) of a water scale when the spec gives none. */
+const DEFAULT_FLOW = Object.freeze({ puddle: 0, pond: 0, stream: 1.1, river: 0.7, lake: 0, sea: 0 });
+function resolveWater(spec) {
+    const kind = typeof spec?.waterKind === 'string' && WATER_KINDS.has(spec.waterKind) ? spec.waterKind : 'lake';
+    const f = spec?.waterFlow;
+    const fx = Array.isArray(f) && typeof f[0] === 'number' && Number.isFinite(f[0]) ? range(f[0], -12, 12, 0) : null;
+    const fz = Array.isArray(f) && typeof f[1] === 'number' && Number.isFinite(f[1]) ? range(f[1], -12, 12, 0) : null;
+    // Without a current the stream or river runs along +X (the scene decides by naming `waterFlow`).
+    const flow = fx !== null && fz !== null ? [fx, fz] : [DEFAULT_FLOW[kind], 0];
+    return { kind, flow: [Math.round(flow[0] * 100) / 100, Math.round(flow[1] * 100) / 100] };
 }
 /**
  * Resolve a finish material: the finish's physically based defaults, then
@@ -148,6 +162,7 @@ function resolveFinish(spec, id, opts) {
         finish: id,
         splat: false,
         foliage: null,
+        water: null,
     };
 }
 /** Stable cache key of a resolved material + variant. Equivalent specs share one key. */
