@@ -8,6 +8,7 @@ import type { WorldDoc } from '@aether/core';
 import { reviveChat, type ChatEntry } from '../lib/chat';
 import { exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import type { ProjectBackend } from './backend';
+import { renameSession } from './session';
 import {
   MAX_PROJECT_CHARS,
   MAX_PROJECTS,
@@ -244,13 +245,14 @@ export class ProjectRepo {
     return ok(next);
   }
 
-  /** Rename a project (and its world). */
+  /** Rename a project (and its world), keeping its undo history and verdicts for the renamed world. */
   async rename(id: string, name: string): Promise<RepoResult<ProjectMeta>> {
     const clean = cleanProjectName(name);
     if (!clean) return fail('Enter a name.');
     const opened = await this.open(id);
     if (!opened.ok) return opened;
-    return this.save(id, { ...opened.value.world, name: clean }, opened.value.chat);
+    const session = opened.value.session != null ? renameSession(opened.value.session, opened.value.world, clean) : null;
+    return this.save(id, { ...opened.value.world, name: clean }, opened.value.chat, session ?? undefined);
   }
 
   /** Copy a project (world, chat and thumbnail) as "<name> copy". */

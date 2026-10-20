@@ -10,7 +10,7 @@
  * dropped.
  */
 import { z } from 'zod';
-import { deepEqual, History, type WorldDoc } from '@aether/core';
+import { deepEqual, History, isPlainObject, type WorldDoc } from '@aether/core';
 import { hashWorld, parseProof, type Proof } from '@aether/playtest/proof';
 import type { DiagnosticView, TestResultView } from '../lib/chat';
 
@@ -141,6 +141,40 @@ export function encodeSession(input: SessionInput, maxChars: number = MAX_SESSIO
   }
   return base;
 }
+
+/**
+ * The stored session of `world` after the project is renamed to `name`: the same undo steps and verdicts for the
+ * renamed world. The name is not part of what the steps undo (every snapshot and title change in the kept history
+ * takes the new name), and a verdict stays because the name changes nothing that was checked. Null when nothing
+ * is worth keeping; anything invalid is dropped as in {@link decodeSession}.
+ */
+export function renameSession(raw: unknown, world: WorldDoc, name: string): ProjectSession | null {
+  const restored = decodeSession(raw, world);
+  const renamed: WorldDoc = { ...world, name };
+  let history = new History(renamed);
+  if (restored.history) {
+    const json = restored.history.toCompactJSON(HISTORY_BACK, HISTORY_AHEAD);
+    const parsed = CompactHistory.safeParse(json);
+    if (parsed.success) {
+      const entries = parsed.data.entries.map((e) => ({
+        ...e,
+        ...(isPlainObject(e['world']) ? { world: { ...e['world'], name } } : {}),
+        patches: e.patches.map((p) => (isPlainObject(p) && p['op'] === 'setMeta' && typeof p['name'] === 'string' ? { ...p, name } : p)),
+      }));
+      try {
+        const h = History.fromJSON({ ...parsed.data, entries });
+        if (deepEqual(h.current, renamed)) history = h;
+      } catch {
+        /* the steps do not replay on the renamed world: the project keeps its verdicts only */
+      }
+    }
+  }
+  if (!restored.history && !restored.playtest && !restored.verify) return null;
+  return encodeSession({ history, playtest: restored.playtest, verify: restored.verify });
+}
+
+/** The parts of a compact history JSON that {@link renameSession} rewrites (the rest is passed through). */
+const CompactHistory = z.looseObject({ entries: z.array(z.looseObject({ patches: z.array(z.unknown()) })) });
 
 /** Read a stored session back for `world` (the saved world). Never throws; anything invalid or stale is dropped. */
 export function decodeSession(raw: unknown, world: WorldDoc): RestoredSession {

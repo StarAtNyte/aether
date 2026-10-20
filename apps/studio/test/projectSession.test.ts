@@ -123,6 +123,50 @@ describe('project session (undo history and verdicts kept with a project)', () =
     expect(again.ok && again.value.session).toBeNull();
     repo.dispose();
   });
+
+  it('survives a rename from the home page: the undo steps and both verdicts come back for the renamed world', async () => {
+    const repo = new ProjectRepo(new MemoryBackend());
+    const h = new History(createStarterWorld());
+    h.commit(add('crate'), 'add a crate');
+    // A title change inside the history must not undo the rename.
+    h.commit([{ op: 'setMeta', name: 'Old camp' }], 'retitle');
+    h.commit(add('barrel'), 'add a barrel');
+    const w = h.current;
+    const created = await repo.create({ world: w });
+    const id = created.ok ? created.value.id : '';
+    const session = encodeSession({ history: h, playtest: { proof: proofFor(w), sentence: 'Verified playable', repairs: [] }, verify: verdict });
+    expect((await repo.save(id, w, [], session)).ok).toBe(true);
+    expect((await repo.rename(id, 'Lantern night')).ok).toBe(true);
+    const opened = await repo.open(id);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.value.world.name).toBe('Lantern night');
+    const restored = decodeSession(opened.value.session, opened.value.world);
+    expect(restored.history).not.toBeNull();
+    expect(restored.history?.canUndo()).toBe(true);
+    expect(deepEqual(restored.history?.current, opened.value.world)).toBe(true);
+    expect(restored.verify?.status).toBe('passed');
+    expect(restored.playtest?.sentence).toBe('Verified playable');
+    // Every undo step keeps the new name; the steps themselves still undo.
+    restored.history?.undo();
+    expect(restored.history?.current.name).toBe('Lantern night');
+    expect(restored.history?.current.entities['barrel']).toBeUndefined();
+    restored.history?.undo();
+    restored.history?.undo();
+    expect(restored.history?.current.name).toBe('Lantern night');
+    expect(restored.history?.current.entities['crate']).toBeUndefined();
+    repo.dispose();
+  });
+
+  it('a rename of a project without a session saves none', async () => {
+    const repo = new ProjectRepo(new MemoryBackend());
+    const created = await repo.create({ world: createStarterWorld() });
+    const id = created.ok ? created.value.id : '';
+    expect((await repo.rename(id, 'Renamed')).ok).toBe(true);
+    const opened = await repo.open(id);
+    expect(opened.ok && opened.value.session).toBeNull();
+    repo.dispose();
+  });
 });
 
 describe('Studio keeps Undo and the verdicts across a reload', () => {
