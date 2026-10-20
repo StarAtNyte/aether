@@ -9,7 +9,8 @@
     "./types": "./src/types.ts",
     "./wire": "./src/wire.ts",
     "./proof": "./src/proof.ts",
-    "./level": "./src/level/index.ts"
+    "./level": "./src/level/index.ts",
+    "./route": "./src/route.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

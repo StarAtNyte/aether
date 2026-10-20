@@ -13,7 +13,8 @@
  * sealed replay; the real-time driver here covers the walking games.
  *
  * Run: `npm run build && npx tsx tests/e2e/gameplay.e2e.ts [--out=<dir>] [slug…]` (`AETHER_E2E_GPU=1` for the
- * machine's GPU). Real time: about the length of each game (2-3 minutes for Highland Trail).
+ * machine's GPU). Real time: about the length of each game (2-3 minutes for Highland Trail) on a GPU; the driver
+ * runs on the game clock, so software GL on a loaded machine is slower, not failing.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -21,6 +22,7 @@ import { chromium, type Page } from 'playwright';
 import { validateWorld } from '@aether/core';
 import { initPhysics } from '@aether/physics';
 import { playtest } from '@aether/playtest';
+import { createRouteFollower } from '@aether/playtest/route';
 import { CHROME_ARGS, REPO_ROOT, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
 
 const ARGS = process.argv.slice(2);
@@ -30,6 +32,12 @@ const SLUGS = ARGS.filter((a) => !a.startsWith('--'));
 /** The games the page-side driver can walk to the end. */
 const WALKING_GAMES = ['highland-trail', 'neon-rain-city', 'kyoto-temple'];
 const VIEWPORT = { width: 1280, height: 720 };
+/**
+ * Wall-clock limits of one drive, for a page that stops ticking rather than a slow one (software GL on a loaded machine runs
+ * Highland Trail at about a tenth of real time): the whole drive, and a game clock that has not moved at all.
+ */
+const WALL_CAP_MS = Number(process.env.AETHER_GAMEPLAY_WALL_CAP_MS ?? 30 * 60_000);
+const STALL_MS = 60_000;
 const BENIGN_CONSOLE: readonly RegExp[] = [/GL Driver Message/i, /GPU stall due to ReadPixels/i, /valid external Instance reference no longer exists/i, /^WebGL warning:/i];
 
 const started = performance.now();
@@ -75,100 +83,62 @@ async function routeOf(slug: string): Promise<Route> {
   return { points, visits, seconds: report.seconds, pressAtEnd: report.objectives.some((o) => o.kind === 'press') };
 }
 
-/** The page-side driver: steer at the route, jump where it climbs, press E at the end when asked. Resolves with the outcome. */
-async function drive(page: Page, route: Route, budgetMs: number): Promise<{ status: string; time: number; stuck: number; at: number[]; log: string[] }> {
+/**
+ * The page-side driver: a {@link createRouteFollower} rebuilt in the page, fed the player's position, control heading
+ * and the game clock, its commands applied through the on-screen controls. It acts once per game tick and counts game
+ * seconds, so a slow frame rate (software GL, a loaded machine) slows the run down instead of breaking the steering.
+ * Resolves with the outcome.
+ */
+async function drive(
+  page: Page,
+  route: Route,
+  budgetSeconds: number,
+  wallCapMs: number,
+): Promise<{ status: string; time: number; elapsed: number; wallMs: number; stuck: number; at: number[]; log: string[] }> {
   // tsx keeps function names with a helper the page does not have.
   await page.evaluate('window.__name = (f) => f');
+  // Evaluated through the debugging protocol, which the page's CSP (no 'unsafe-eval') does not cover.
+  await page.evaluate(`window.__aetherRouteFollower = (${createRouteFollower.toString()});`);
   return page.evaluate(
-    async ({ points, visits, pressAtEnd, budget }) => {
+    async ({ points, visits, pressAtEnd, budget, wallCap, stall }) => {
       const sim = window.__aether?.simulation;
       const store = window.__aether?.store;
       if (!sim || !store) throw new Error('no simulation');
+      const make = (window as unknown as { __aetherRouteFollower: typeof createRouteFollower }).__aetherRouteFollower;
+      const follower = make({ points, visits, pressAtEnd });
       const wrap = (d: number): number => ((((d + 180) % 360) + 360) % 360) - 180;
-      // Which way does turnBy turn? Calibrate once on the camera heading.
-      const h0 = sim.cameraHeading();
+      // Which way does turnBy turn the heading? The control heading answers at once.
+      const h0 = sim.playerHeading();
       sim.turnBy(8);
-      await new Promise((r) => setTimeout(r, 120));
-      const sign = wrap(sim.cameraHeading() - h0) > 0 ? 1 : -1;
-      sim.turnBy(-8 * sign);
-      let idx = 0;
-      let lastJump = 0;
-      let lastPress = 0;
-      let stuckCount = 0;
-      const trace: string[] = [];
-      let lastLog = 0;
-      let watchT = performance.now();
-      let watchP = sim.playerPosition ? [...sim.playerPosition] : [0, 0, 0];
-      const t0 = performance.now();
-      let lastVisitLog = 0;
-      const done = new Set<number>();
-      const stopSince = new Map<number, number>();
-      while (performance.now() - t0 < budget) {
-        const now0 = performance.now();
+      const sign = wrap(sim.playerHeading() - h0) > 0 ? 1 : -1;
+      sim.turnBy(-8);
+      const w0 = performance.now();
+      let lastTime = Number.NaN;
+      let lastTick = w0;
+      while (follower.elapsed < budget && performance.now() - w0 < wallCap && performance.now() - lastTick < stall) {
         const st = store.getState().game;
         if (st.status !== 'playing') break;
         const p = sim.playerPosition;
-        if (!p) {
-          await new Promise((r) => setTimeout(r, 50));
-          continue;
+        const time = sim.logic?.time;
+        if (time !== undefined && time !== lastTime) {
+          lastTime = time;
+          lastTick = performance.now();
         }
-        // Advance past points we are close to, then aim a little ahead.
-        // Stops on the route (pickups, the goal): walk right up to the thing itself, hopping, until it is taken or 4 s pass.
-        const stop = visits.find((v) => Math.abs(v.idx - idx) <= 1 && !done.has(v.idx));
-        if (stop) {
-          if (!stopSince.has(stop.idx)) stopSince.set(stop.idx, now0);
-          const near = Math.hypot(stop.at[0] - p[0], stop.at[2] - p[2]);
-          if (near < 0.45 || now0 - (stopSince.get(stop.idx) as number) > 4000) {
-            done.add(stop.idx);
-          }
+        if (p && time !== undefined) {
+          const cmd = follower.step({ pos: [p[0], p[1], p[2]], heading: sim.playerHeading(), time });
+          if (cmd.turn !== 0) sim.turnBy(sign * cmd.turn);
+          sim.setVirtualStick(cmd.stick, 0);
+          if (cmd.jump) sim.tapVirtual('Space');
+          if (cmd.press) sim.tapVirtual('KeyE');
         }
-        const visit = stop !== undefined && !done.has(stop.idx);
-        if (visit && now0 - lastVisitLog > 1500) {
-          lastVisitLog = now0;
-          trace.push(`  visit idx=${idx} at ${p.map((v) => v.toFixed(1)).join(',')} thing ${stop!.at.map((v) => v.toFixed(1)).join(',')} hud=${JSON.stringify(st.hud)}`);
-        }
-        const radius = 0.7;
-        while (!visit && idx < points.length - 1 && Math.hypot((points[idx] as number[])[0]! - p[0], (points[idx] as number[])[2]! - p[2]) < radius && Math.abs((points[idx] as number[])[1]! - p[1]) < 2.5) idx++;
-        const aim = visit ? (stop!.at as number[]) : (points[Math.min(points.length - 1, idx + 1)] as number[]);
-        const dx = aim[0]! - p[0];
-        const dz = aim[2]! - p[2];
-        const dist = Math.hypot(dx, dz);
-        // cameraHeading() is the mirror of the bearing the bot uses (0 = −Z, positive turns left).
-        const want = -(Math.atan2(-dx, -dz) * 180) / Math.PI;
-        const diff = wrap(want - sim.cameraHeading());
-        if (dist > 0.25) sim.turnBy(sign * Math.max(-30, Math.min(30, diff)));
-        sim.setVirtualStick(Math.abs(diff) > 70 ? 0.1 : dist < 0.8 && idx >= points.length - 1 ? 0 : 1, 0);
-        const now = performance.now();
-        if ((aim[1]! - p[1] > 0.55 || (visit && dist < 1.5)) && now - lastJump > 700) {
-          sim.tapVirtual('Space');
-          lastJump = now;
-        }
-        if (pressAtEnd && idx >= points.length - 3 && now - lastPress > 500) {
-          sim.tapVirtual('KeyE');
-          lastPress = now;
-        }
-        // Stuck: hardly moved in 2.5 s on a route that keeps going: jump and skip a point.
-        if (now - watchT > 2500) {
-          if (Math.hypot(p[0] - watchP[0]!, p[2] - watchP[2]!) < 0.4 && idx < points.length - 1) {
-            stuckCount++;
-            sim.tapVirtual('Space');
-            idx = Math.min(points.length - 1, idx + 2);
-          }
-          watchT = now;
-          watchP = [...p];
-        }
-        if (now - lastLog > 15_000) {
-          lastLog = now;
-          trace.push(`t=${Math.round((now - t0) / 1000)}s idx=${idx}/${points.length} pos=${p.map((v) => Math.round(v)).join(',')} hud=${JSON.stringify(st.hud)}`);
-        }
-        await new Promise((r) => setTimeout(r, 40));
+        await new Promise((r) => setTimeout(r, 20));
       }
       sim.setVirtualStick(0, 0);
       const end = store.getState().game;
       const q = sim.playerPosition;
-      return { status: end.status, time: end.time, stuck: stuckCount, at: q ? [q[0], q[1], q[2]] : [], log: trace };
+      return { status: end.status, time: end.time, elapsed: follower.elapsed, wallMs: performance.now() - w0, stuck: follower.stuck, at: q ? [q[0], q[1], q[2]] : [], log: [...follower.log] };
     },
-    { points: route.points, visits: route.visits, pressAtEnd: route.pressAtEnd, budget: budgetMs },
+    { points: route.points, visits: route.visits, pressAtEnd: route.pressAtEnd, budget: budgetSeconds, wallCap: wallCapMs, stall: STALL_MS },
   );
 }
 
@@ -201,19 +171,21 @@ async function playGame(page: Page, url: string, slug: string, route: Route): Pr
   const hud0 = await page.evaluate(() => window.__aether?.store.getState().game.hud ?? {});
   check(Object.keys(hud0).length > 0, `${slug}: no HUD while playing`);
 
-  const budget = Math.max(120_000, route.seconds * 1000 * 2.2);
+  // Game seconds: twice the bot's time (the driver walks up to each pickup and recovers from misses). The wall-clock cap
+  // only stops a frozen page; a slow renderer is allowed to take its time.
+  const budget = Math.max(120, route.seconds * 2.2);
   log(`  ${slug}: driving ${route.points.length} route points (the bot won in ${route.seconds.toFixed(0)} s)…`);
   const shotTimer = setInterval(() => void page.screenshot({ path: join(OUT, `${slug}-3-mid.png`) }).catch(() => undefined), Math.round((route.seconds * 1000) / 2));
   let end: Awaited<ReturnType<typeof drive>>;
   try {
-    end = await drive(page, route, budget);
+    end = await drive(page, route, budget, WALL_CAP_MS);
   } finally {
     clearInterval(shotTimer);
   }
   for (const line of end.log) log(`    ${line}`);
   await page.waitForTimeout(800);
   await page.screenshot({ path: join(OUT, `${slug}-4-end.png`) });
-  log(`  ${slug}: ${end.status} after ${end.time.toFixed(0)} s (${end.stuck} unstick nudges), at ${end.at.map((v) => v.toFixed(0)).join(', ')}`);
+  log(`  ${slug}: ${end.status} after ${end.elapsed.toFixed(0)} game s in ${(end.wallMs / 1000).toFixed(0)} s (${end.stuck} unstick nudges), at ${end.at.map((v) => v.toFixed(0)).join(', ')}`);
   check(end.status === 'won', `${slug}: the game was not won (status ${end.status}, at ${end.at.join(', ')})`);
   const over = await page.evaluate(() => window.__aether?.store.getState().game.text ?? '');
   check(over.length > 0, `${slug}: the win screen has no text`);
@@ -233,8 +205,8 @@ async function main(): Promise<void> {
   const failures: string[] = [];
   try {
     for (const slug of games) {
-      // The driver steers and jumps from a 40 ms timer, so a machine under heavy load (a render frame that takes hundreds of
-      // milliseconds) can miss a jump on a footbridge. The route is verified in the bot's own deterministic run; a miss is
+      // The driver acts once per game tick, but a long frame is still several physics steps of one stick input, so a machine
+      // under heavy load can miss a jump on a footbridge. The route is verified in the bot's own deterministic run; a miss is
       // retried once on a fresh page before it counts as a failure.
       let lastError = '';
       let passed = false;

@@ -33,7 +33,7 @@ import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
 import { buildNpcFrame, frameSignature, type NpcFrame } from './npcFrame';
 import { IdleClock } from './IdleClock';
-import { InputController } from './input';
+import { InputController, wrapDeg } from './input';
 import { GamepadPoller, STICK_TURN_SPEED } from './gamepad';
 import { SoundBoard } from './sound';
 import { PosePool } from './posePool';
@@ -563,6 +563,17 @@ export class Simulation {
   /** Where the camera looks, in the convention of the small-edit parser: 0 = toward −Z, 90 = toward +X. */
   cameraHeading(): number {
     const h = -cameraYawDeg(this.renderer);
+    return Number.isFinite(h) ? h : 0;
+  }
+
+  /**
+   * Where the player faces, in the convention of {@link cameraHeading}: the control yaw itself, current as soon as
+   * {@link turnBy} returns. The camera heading only changes when a frame renders and the follow camera eases after the
+   * player, so it is the wrong feedback for a controller that turns in small steps (a voxel session reports the camera).
+   */
+  playerHeading(): number {
+    if (this.session?.voxel) return this.cameraHeading();
+    const h = -wrapDeg(this.input.yawDeg);
     return Number.isFinite(h) ? h : 0;
   }
 
