@@ -126,7 +126,9 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
 const NavHint = memo(function NavHint(): ReactElement | null {
   const studio = useStudio();
   const show = useUI((s) => s.settings.showNavHint);
-  if (!show) return null;
+  // The replay bar sits in the same strip: the hint steps aside while the bot's run is shown.
+  const replaying = useUI((s) => s.replay !== null);
+  if (!show || replaying) return null;
   return (
     <div className="nav-hint" role="note">
       <span className="nav-hint__item">
