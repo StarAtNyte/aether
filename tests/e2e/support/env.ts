@@ -40,8 +40,12 @@ export const SKIP_TOUR = "try { if (!localStorage.getItem('aether.tour.v1')) loc
  * studio (correctly) falls back to WebGL2.
  */
 const SOFTWARE_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader'];
-/** `AETHER_E2E_GPU=1`: the machine's real GPU through ANGLE/Vulkan (WebGL2 backend; for frame-cost measurements). */
-const GPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--ignore-gpu-blocklist'];
+/**
+ * `AETHER_E2E_GPU=1`: the machine's real GPU through ANGLE/Vulkan (for frame-cost measurements and WebGPU). On this
+ * machine headless Chromium's WebGL2 over ANGLE/Vulkan loses the context a couple of seconds after load for every
+ * world (captures come back black); `AETHER_E2E_ANGLE=gl` runs WebGL2 over ANGLE/GL, which holds.
+ */
+const GPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', `--use-angle=${process.env['AETHER_E2E_ANGLE'] ?? 'vulkan'}`, '--ignore-gpu-blocklist'];
 export const CHROME_ARGS: readonly string[] = process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
 
 /**

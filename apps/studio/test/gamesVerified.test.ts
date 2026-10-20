@@ -30,7 +30,7 @@ const BOT_PLAYS = ['chain-reaction', 'highland-trail', 'lantern-isles', 'hollow-
 const OTHER_BOTS: Record<string, string> = {
   'kart-canyon': 'vehicle: showcasePlaytest.test.ts drives three laps',
   'sakura-river': 'vehicle: showcasePlaytest.test.ts paddles the river',
-  blockfall: 'block world: the voxel game tests',
+  blockfall: 'block world: blockfallPlaythrough.test.ts plays the shipped survival game through a day and night',
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
   'casa-patio': 'architecture: walked by the walkthrough bot',
