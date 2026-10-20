@@ -55,6 +55,17 @@ describe('the edit guard and what belongs to the target', () => {
     expect(stray.ok).toBe(false);
   });
 
+  it('what the request names is in scope even when the parser reads only part of it (irregular plurals included)', () => {
+    const scope = classifyScope(FOREST, 'make the wolves patrol back and forth along the river bank', CTX);
+    expect(scope.kind).toBe('small');
+    expect(scope.allowed.has('wolf-1')).toBe(true);
+    expect(scope.allowed.has('lantern-1')).toBe(false);
+    expect(auditPatches(FOREST, [{ op: 'update', id: 'wolf-1', set: { transform: { position: [-6, 0.4, -14] } } }], scope).ok).toBe(true);
+    // Function words name nothing: "the" does not bring in "Shrine of the Five Lights".
+    const w = world([...Object.values(FOREST.entities), { id: 'big-shrine', name: 'Shrine of the Five Lights', shape: { kind: 'primitive', primitive: 'box', size: [2, 2, 2] }, transform: { position: [30, 1, 30] } }]);
+    expect(classifyScope(w, 'make the wolves patrol along the bank', CTX).allowed.has('big-shrine')).toBe(false);
+  });
+
   it('a follow-up that names the shrine through "it" still reaches its parts', () => {
     const scope = classifyScope(FOREST, 'yes, build a hill at the north end and put the shrine on top of it', CTX);
     expect(scope.allowed.has('shrine')).toBe(true);

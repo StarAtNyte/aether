@@ -7,6 +7,7 @@
 import { applyPatches, dependencyIndex, type EntityId, type WorldDoc } from '@aether/core';
 import { changedEntityIds, worldChanges } from './changes';
 import type { Command } from './command';
+import { singular } from './lexicon';
 import { parseEdit } from './parse';
 import { resolveRef, type ResolveContext } from './resolve';
 import { sceneOf, type SceneIndex } from './scene';
@@ -33,9 +34,20 @@ function refsOf(c: Command): Array<NonNullable<Extract<Command, { ref: unknown }
   return out;
 }
 
-/** Words of the request that name things in the world (for requests the parser did not understand). */
-function namedItems(index: SceneIndex, text: string): Set<EntityId> {
-  const words = new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+/** Words that never name a thing ("the" would match "Shrine of the Five Lights"). */
+const FUNCTION_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'onto', 'along', 'back', 'forth', 'make', 'more', 'less', 'than', 'that', 'this', 'these', 'those',
+  'its', 'all', 'some', 'any', 'one', 'two', 'three', 'bit', 'very', 'just', 'also', 'then', 'them', 'they', 'their', 'there', 'here', 'over',
+  'under', 'near', 'next', 'left', 'right', 'top', 'side', 'end', 'little', 'big', 'small', 'like', 'keep', 'please', 'can', 'you', 'new', 'add',
+  'put', 'move', 'set', 'get', 'have', 'has', 'not', 'but', 'out', 'off', 'way', 'should', 'would', 'could', 'when', 'where', 'what', 'which',
+  'metre', 'metres', 'meter', 'meters', 'bigger', 'smaller', 'larger', 'taller', 'shorter', 'other', 'each', 'every', 'around', 'between',
+]);
+
+/** Words of the request that name things in the world (beyond the references the parser resolved). */
+function namedItems(index: SceneIndex, text: string, covered: ReadonlySet<string> = new Set()): Set<EntityId> {
+  const raw = text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !FUNCTION_WORDS.has(w) && !covered.has(w) && !covered.has(singular(w)));
+  // "wolves" names the wolf: plural words count by their singular too.
+  const words = new Set([...raw, ...raw.map(singular)]);
   const out = new Set<EntityId>();
   for (const it of index.items) {
     if (it.isPart || it.entity.tags.includes('backdrop')) continue;
@@ -56,6 +68,9 @@ export function classifyScope(world: WorldDoc, text: string, ctx: ResolveContext
   if (parsed.newWorld) return { kind: 'broad', allowed: new Set(), reason: 'asks for a new world' };
   if (BROAD.test(text.toLowerCase())) return { kind: 'broad', allowed: new Set(), reason: 'asks for a scene-wide change' };
   const allowed = new Set<EntityId>();
+  // Words of references that resolved ("the second tent"): their precise reading stands, the loose word match below
+  // must not widen it to every tent.
+  const covered = new Set<string>();
   for (const c of parsed.commands) {
     if (c.op === 'env' || c.op === 'game' || c.op === 'undo' || c.op === 'redo') {
       if (c.op === 'env' && c.set.season) return { kind: 'broad', allowed, reason: 'changes the season' };
@@ -63,13 +78,16 @@ export function classifyScope(world: WorldDoc, text: string, ctx: ResolveContext
     }
     for (const ref of refsOf(c)) {
       const r = resolveRef(index, ref, ctx);
+      if (r.items.length > 0 || (r.ambiguous?.length ?? 0) > 0) for (const w of ref.text.toLowerCase().split(/[^a-z0-9]+/)) if (w) covered.add(singular(w));
       for (const it of r.items) for (const id of index.subtree(it.id)) allowed.add(id);
       for (const it of r.ambiguous ?? []) for (const id of index.subtree(it.id)) allowed.add(id);
       if (r.faces) for (const f of r.faces) allowed.add(f.wallId);
     }
   }
   for (const id of ctx.selection) for (const s of index.subtree(id)) allowed.add(s);
-  if (allowed.size === 0) for (const id of namedItems(index, text)) for (const s of index.subtree(id)) allowed.add(s);
+  // What the request names is in scope even when the parser read only part of it ("make the wolves patrol along the
+  // river bank" names the wolves as well as the river).
+  for (const id of namedItems(index, text, covered)) for (const s of index.subtree(id)) allowed.add(s);
   // What belongs to a named thing is part of it: the shrine's light, goal zone and plinth move and change with it.
   if (allowed.size > 0) for (const id of dependencyIndex(world).closure([...allowed])) allowed.add(id);
   return { kind: 'small', allowed, reason: allowed.size > 0 ? `names ${allowed.size} object${allowed.size === 1 ? '' : 's'}` : 'names no object' };
