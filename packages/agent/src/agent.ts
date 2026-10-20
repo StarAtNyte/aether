@@ -106,6 +106,30 @@ function clampInt(v: number | undefined, fallback: number, min: number, max: num
 }
 
 /** Keep the conversation small: the images of earlier review rounds are replaced by a note. */
+/**
+ * Keep at most `max` images in a conversation (every backend accepts {@link CONTEXT_LIMITS.MAX_IMAGES} per request):
+ * the oldest images give way to a short note, the newest (this round's renders) stay. Mutates `messages`.
+ */
+export function capImages(messages: ChatMessage[], max: number = CONTEXT_LIMITS.MAX_IMAGES): void {
+  let total = 0;
+  for (const m of messages) if (typeof m.content !== 'string') for (const b of m.content) if (b.type === 'image') total++;
+  for (const m of messages) {
+    if (total <= max) return;
+    if (typeof m.content === 'string') continue;
+    const kept: ContentBlock[] = [];
+    let dropped = 0;
+    for (const b of m.content) {
+      if (b.type === 'image' && total > max) {
+        total--;
+        dropped++;
+        continue;
+      }
+      kept.push(b);
+    }
+    if (dropped > 0) m.content = [...kept, { type: 'text', text: `(${dropped} earlier image${dropped === 1 ? ' was' : 's were'} removed to stay within the image limit.)` }];
+  }
+}
+
 function dropOldReviewImages(messages: ChatMessage[]): void {
   for (const m of messages) {
     if (m.role !== 'user' || typeof m.content === 'string') continue;
@@ -325,6 +349,7 @@ export class WorldAgent {
     yield { type: 'status', text: 'Planning…' };
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
+      capImages(messages);
       const res: CompletionResponse = await raceAbort(
         this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
         signal,
@@ -500,7 +525,7 @@ export class WorldAgent {
           const got = await raceAbort(host.captureReview(snap.views, signal ? { signal } : {}), signal);
           for (const g of got) {
             const v = snap.views.find((x) => x.name === g.name);
-            if (v && isImageDataUrl(g.dataUrl) && images.length < MAX_REVIEW_VIEWS) images.push({ name: g.name, label: v.label, dataUrl: g.dataUrl });
+            if (v && isImageDataUrl(g.dataUrl) && images.length < Math.min(MAX_REVIEW_VIEWS, CONTEXT_LIMITS.MAX_IMAGES)) images.push({ name: g.name, label: v.label, dataUrl: g.dataUrl });
           }
         } catch (e) {
           if (signal?.aborted) throw e;
@@ -520,6 +545,7 @@ export class WorldAgent {
       yield { type: 'review', round, phase: 'fixing', text: snap.findings.length > 0 ? 'Fixing what the checks found…' : 'Looking at the renders…', score: snap.score, findings: snap.findings.length };
       for (let turn = 0; turn < REVIEW_TURNS_PER_ROUND && !declared; turn++) {
         if (signal?.aborted) throw new Error('aborted');
+        capImages(messages);
         const res: CompletionResponse = await raceAbort(
           this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
           signal,

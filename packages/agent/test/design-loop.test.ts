@@ -296,6 +296,22 @@ describe('vision review', () => {
   });
 });
 
+describe('image limit of a review', () => {
+  it('never sends more images than a backend accepts, even with six review views (the studio default)', async () => {
+    let w: WorldDoc = createWorld({});
+    w = applyPatches(w, runDesignTool(w, 'design_plan', { plan: PLAN }).patches).world;
+    w = applyPatches(w, runDesignTool(w, 'place_items', { items: FURNISH.items }).patches).world;
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const host = new MemoryHost(w) as MemoryHost & { captureReview?: unknown };
+    host.captureReview = async (views: ReadonlyArray<{ name: string }>): Promise<Array<{ name: string; dataUrl: string }>> => views.map((v) => ({ name: v.name, dataUrl: png }));
+    const provider = scripted([() => [call('edit_items', { edits: [{ op: 'move', ref: 'home-light', at: [1.4, 1.8] }] })], () => [finish('moved the light')], () => [finish('Looks right.')]]);
+    await collect(agent(provider, { vision: true, maxViews: 6 }).run('check everything', host as unknown as MemoryHost, { images: [png] }));
+    const counts = provider.requests.map((r) => r.messages.reduce((n, m) => n + (typeof m.content === 'string' ? 0 : m.content.filter((b) => b.type === 'image').length), 0));
+    expect(Math.max(...counts)).toBeGreaterThan(0);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(4);
+  });
+});
+
 describe('stall tracker', () => {
   const obs = (keys: string[], score: number, edited = false) => ({ keys: new Set(keys), score, edited });
 
