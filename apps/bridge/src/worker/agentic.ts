@@ -27,7 +27,7 @@ import { listCodexMcpServers } from '../backends/status';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess } from '../process';
 import { restrictedEnv } from '../sandbox';
-import { which } from '../which';
+import { findCliPath } from '../which';
 import { sdkExecutable } from '../spawn-plan';
 import { bundledCheckScript } from './workspace';
 import type { WorkerJob, WorkerResult } from './protocol';
@@ -234,7 +234,7 @@ interface CodexSession {
 
 async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: number; outputTokens: number }, deps: AgenticDeps, session: CodexSession): Promise<string> {
   if (!session.thread) {
-    const codexPath = which('codex');
+    const codexPath = findCliPath('codex', { env: deps.env ?? process.env });
     const servers = deps.mcpServers ? await deps.mcpServers() : await listCodexMcpServers({ codexCommand: codexPath, claudeCommand: null, env: deps.env });
     if (servers === null) throw new BridgeError('tool_violation', 'Refused: the MCP servers in your Codex config could not be listed to disable them.');
     const options: CodexOptions = {
@@ -285,7 +285,7 @@ async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: n
 }
 
 async function claudeTurn(job: AgenticJob, input: string, usage: { inputTokens: number; outputTokens: number }, deps: AgenticDeps): Promise<string> {
-  const command = deps.claudeCommand ?? which('claude');
+  const command = deps.claudeCommand ?? findCliPath('claude', { env: deps.env ?? process.env });
   if (!command) throw new BridgeError('cli_missing', 'The Claude Code CLI ("claude") is not installed or not on PATH.');
   const sysDir = await mkdtemp(join(tmpdir(), 'aether-agentic-'));
   try {

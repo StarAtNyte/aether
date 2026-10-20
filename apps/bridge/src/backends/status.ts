@@ -8,6 +8,7 @@ import type { BridgeBackendStatus, BridgeEffort, BridgeModel } from '@aether/age
 import { BRIDGE_EFFORTS, MODEL_ID_RE } from '@aether/agent';
 import { runProcess, type SpawnFn } from '../process';
 import { restrictedEnv } from '../sandbox';
+import { cliMissingDetail } from '../which';
 import { CLAUDE_DEFAULT_MODEL, CLAUDE_MODELS } from './claude';
 
 const PROBE_TIMEOUT_MS = 20_000;
@@ -61,9 +62,9 @@ export function parseCodexModels(text: string): BridgeModel[] {
 /** Status of the Codex CLI. */
 export async function probeCodex(deps: ProbeDeps): Promise<Omit<BridgeBackendStatus, 'busy'>> {
   const base = { id: 'codex' as const, label: 'Codex' };
-  if (!deps.codexCommand) return { ...base, installed: false, loggedIn: false, detail: 'Codex CLI not found (npm i -g @openai/codex)', models: [...CODEX_FALLBACK_MODELS] };
+  if (!deps.codexCommand) return { ...base, installed: false, loggedIn: false, detail: cliMissingDetail('codex', deps.env), models: [...CODEX_FALLBACK_MODELS] };
   const login = await run(deps.codexCommand, ['login', 'status'], deps);
-  if (login.missing) return { ...base, installed: false, loggedIn: false, detail: 'Codex CLI not found (npm i -g @openai/codex)', models: [...CODEX_FALLBACK_MODELS] };
+  if (login.missing) return { ...base, installed: false, loggedIn: false, detail: cliMissingDetail('codex', deps.env), models: [...CODEX_FALLBACK_MODELS] };
   const loggedIn = login.ok && /logged in/i.test(login.out) && !/not logged in/i.test(login.out);
   const line = login.out.split('\n').map((l) => l.trim()).find((l) => /logged in/i.test(l)) ?? (loggedIn ? 'Logged in' : 'Not logged in — run "codex login"');
   let models: BridgeModel[] = [];
@@ -80,9 +81,9 @@ export async function probeCodex(deps: ProbeDeps): Promise<Omit<BridgeBackendSta
 export async function probeClaude(deps: ProbeDeps): Promise<Omit<BridgeBackendStatus, 'busy'>> {
   const base = { id: 'claude-code' as const, label: 'Claude Code' };
   const models: BridgeModel[] = CLAUDE_MODELS.map((m) => ({ id: m.id, label: m.label, efforts: ['low', 'medium', 'high'], vision: m.vision }));
-  if (!deps.claudeCommand) return { ...base, installed: false, loggedIn: false, detail: 'Claude Code CLI not found', models };
+  if (!deps.claudeCommand) return { ...base, installed: false, loggedIn: false, detail: cliMissingDetail('claude', deps.env), models };
   const r = await run(deps.claudeCommand, ['auth', 'status', '--json'], deps);
-  if (r.missing) return { ...base, installed: false, loggedIn: false, detail: 'Claude Code CLI not found', models };
+  if (r.missing) return { ...base, installed: false, loggedIn: false, detail: cliMissingDetail('claude', deps.env), models };
   let loggedIn = false;
   let method = '';
   let account = '';

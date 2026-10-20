@@ -156,8 +156,12 @@ const CodexSignIn = memo(function CodexSignIn({ codex, target }: { codex: Bridge
   if (!codex?.installed) {
     return (
       <div className="first-run__detail" data-testid="first-run-codex-missing">
-        <p className="first-run__note">The Codex CLI is not installed on this computer. Install it, then press Check again:</p>
+        <p className="first-run__note">The Codex CLI was not found on this computer (Aether looked on PATH and in the usual npm, nvm and Volta folders). Install it, then press Check again:</p>
         <Command text="npm i -g @openai/codex" />
+        <p className="first-run__note" data-testid="first-run-codex-override">
+          Installed somewhere else, for example under another Node version? Start Aether with <code>AETHER_CODEX_BIN</code> set to the codex executable's full path.
+        </p>
+        {codex?.detail && !codex.detail.startsWith('Codex CLI not found') && <p className="first-run__note setup-error">{codex.detail}</p>}
         <button type="button" className="btn btn--sm" onClick={refresh}>
           <Icon name="refresh" /> Check again
         </button>

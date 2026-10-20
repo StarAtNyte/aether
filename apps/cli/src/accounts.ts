@@ -4,7 +4,7 @@
  * or copies the credentials: Codex keeps its login in `CODEX_HOME` (default
  * `~/.codex`), Claude Code in its own config folder.
  */
-import { loginArgs, logoutArgs, probeClaude, probeCodex, restrictedEnv, which } from '@aether/bridge';
+import { loginArgs, logoutArgs, probeClaude, probeCodex, restrictedEnv, findCliPath } from '@aether/bridge';
 import { spawnCommand } from './system';
 
 /** Variables a sign-in needs to open the user's browser (not secrets). */
@@ -31,9 +31,9 @@ export function signInArgs(backend: 'codex' | 'claude', deviceAuth: boolean): st
   return deviceAuth ? loginArgs('codex') : ['login'];
 }
 
-/** Resolve the CLI binary (null when not installed). */
+/** Resolve the CLI binary: AETHER_CODEX_BIN / AETHER_CLAUDE_BIN, PATH, then the usual global install folders (null when not installed). */
 export function findCli(backend: 'codex' | 'claude', env: NodeJS.ProcessEnv = process.env): string | null {
-  return which(backend === 'codex' ? 'codex' : 'claude', env);
+  return findCliPath(backend === 'codex' ? 'codex' : 'claude', { env });
 }
 
 /** Current sign-in status of one CLI. */

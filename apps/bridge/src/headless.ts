@@ -8,7 +8,7 @@ import { createClaudeCodeBackend } from './backends/claude';
 import { createCodexBackend } from './backends/codex';
 import { cached, listCodexMcpServers } from './backends/status';
 import type { SessionStore } from './sessions';
-import { which } from './which';
+import { findCliPath, which } from './which';
 
 /** Options of {@link createHeadlessBackends}. */
 export interface HeadlessOptions {
@@ -26,11 +26,11 @@ export interface ResolvedCommands {
   claude: string | null;
 }
 
-/** Find the CLIs: explicit paths win, then PATH. */
+/** Find the CLIs: explicit paths win, then AETHER_CODEX_BIN / AETHER_CLAUDE_BIN, PATH and the usual global install folders. */
 export function resolveCommands(opts: HeadlessOptions = {}): ResolvedCommands {
   return {
-    codex: opts.codexPath ? which(opts.codexPath) : which('codex'),
-    claude: opts.claudePath ? which(opts.claudePath) : which('claude'),
+    codex: opts.codexPath ? which(opts.codexPath) : findCliPath('codex', opts.env ? { env: opts.env } : {}),
+    claude: opts.claudePath ? which(opts.claudePath) : findCliPath('claude', opts.env ? { env: opts.env } : {}),
   };
 }
 

@@ -15,7 +15,7 @@ import { createCodexBackend } from '../backends/codex';
 import { listCodexMcpServers } from '../backends/status';
 import { BridgeError } from '../errors';
 import { SessionStore } from '../sessions';
-import { which } from '../which';
+import { findCliPath } from '../which';
 import { runAgentic } from './agentic';
 import { PROGRESS_PREFIX, WorkerJob, type WorkerResult } from './protocol';
 
@@ -49,16 +49,17 @@ async function runComplete(job: Extract<WorkerJob, { kind: 'complete' }>): Promi
   if (key && job.session) sessions.record(key, job.backend, job.request.model, job.session);
   const timeoutMs = job.timeoutMs ?? 240_000;
   progress('started', job.backend === 'codex' ? 'Codex is thinking…' : 'Claude Code is thinking…');
+  const command = findCliPath(job.backend === 'codex' ? 'codex' : 'claude', { env });
   const backend =
     job.backend === 'codex'
       ? createCodexBackend({
-          ...(which('codex') ? { codexPath: which('codex') as string } : {}),
+          ...(command ? { codexPath: command } : {}),
           env,
           timeoutMs,
           sessions,
-          mcpServers: () => listCodexMcpServers({ codexCommand: which('codex'), claudeCommand: null, env }),
+          mcpServers: () => listCodexMcpServers({ codexCommand: command, claudeCommand: null, env }),
         })
-      : createClaudeCodeBackend({ command: which('claude') ?? 'claude', env, timeoutMs, sessions });
+      : createClaudeCodeBackend({ command: command ?? 'claude', env, timeoutMs, sessions });
   const r = await backend.complete(job.request);
   const session = key ? sessions.peek(key, job.backend, job.request.model) : undefined;
   return {

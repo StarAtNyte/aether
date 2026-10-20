@@ -17,7 +17,7 @@ export { createClaudeCodeBackend, claudeArgs, claudeInput, observeClaudeLine, CL
 export { createCodexBackend, codexLockdownConfig, codexThreadOptions, mcpDisableOverrides, CODEX_DISABLED_FEATURES, FORBIDDEN_ITEM_TYPES, type CodexLike } from './backends/codex';
 export { probeCodex, probeClaude, parseCodexModels, listCodexMcpServers, cached, CODEX_FALLBACK_MODELS } from './backends/status';
 export { createHeadlessBackends, createHeadlessProvider, resolveCommands, type HeadlessOptions } from './headless';
-export { which } from './which';
+export { which, locateCli, findCliPath, fallbackDirs, cliMissingDetail, CLI_ENV_OVERRIDE, type CliName, type CliLocation, type LocateOptions } from './which';
 export { LocalAi, LOCAL_AI_VERSION, type LocalAiOptions } from './local';
 export { SessionStore, sha256, SESSION_KEY_RE, MAX_SESSIONS, SESSION_TTL_MS, type SessionEntry } from './sessions';
 export { LoginManager, parseLoginOutput, sanitizeOutput, loginArgs, logoutArgs, type LoginState, type LoginBackend } from './auth';

@@ -16,6 +16,8 @@ export const ENV_ALLOWLIST: readonly string[] = [
   'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR',
   // CLI homes (where the subscription login lives)
   'CODEX_HOME', 'CLAUDE_CONFIG_DIR',
+  // Where the CLIs are (explicit override; the worker repeats the search) and nvm's folders
+  'AETHER_CODEX_BIN', 'AETHER_CLAUDE_BIN', 'NVM_DIR', 'NVM_BIN',
   // Windows essentials
   'SystemRoot', 'SYSTEMROOT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH', 'PATHEXT', 'ComSpec',
 ];

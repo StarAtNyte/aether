@@ -86,7 +86,7 @@ async function signInHint(): Promise<void> {
   const codex = await cliStatus('codex');
   if (codex.loggedIn) out(`  AI: Codex signed in${codex.account ? ` (${codex.account})` : ''}.`);
   else if (codex.installed) out('  AI: Codex is not signed in. Sign in from the studio, or run: aether login');
-  else out('  AI: Codex CLI not found. Install it (npm i -g @openai/codex) and sign in, or use the studio offline.');
+  else out('  AI: Codex CLI not found. Install it (npm i -g @openai/codex) and sign in, set AETHER_CODEX_BIN to its path, or use the studio offline.');
 }
 
 async function cmdStart(o: CliOptions, paths: StatePaths, warnings: readonly string[]): Promise<number> {
