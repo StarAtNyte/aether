@@ -28,6 +28,8 @@ export interface OpenedProject {
   meta: ProjectMeta;
   world: WorldDoc;
   chat: ChatEntry[];
+  /** The stored session (undo history, verdicts), untrusted: read it with `decodeSession`. */
+  session: unknown;
 }
 
 /** Everything needed to undo a delete. */
@@ -145,13 +147,25 @@ export class ProjectRepo {
     }
   }
 
-  private serialize(id: string, world: WorldDoc, chat: readonly ChatEntry[]): RepoResult<ProjectData> {
+  private serialize(id: string, world: WorldDoc, chat: readonly ChatEntry[], session?: unknown): RepoResult<ProjectData> {
     const data: ProjectData = { id, world, chat: [...chat] };
     let size = 0;
     try {
       size = JSON.stringify(data).length;
     } catch {
       return fail('The project could not be serialized.');
+    }
+    if (session !== undefined && session !== null && size <= MAX_PROJECT_CHARS) {
+      // The session is a convenience: it is saved only while the whole record still fits.
+      try {
+        const extra = JSON.stringify(session).length;
+        if (size + extra + 12 <= MAX_PROJECT_CHARS) {
+          data.session = session;
+          size += extra + 12;
+        }
+      } catch {
+        /* an unserializable session is skipped */
+      }
     }
     if (size > MAX_PROJECT_CHARS) return fail(`The project is too large to save (${Math.round(size / 1024 / 1024)} MB, limit ${Math.round(MAX_PROJECT_CHARS / 1024 / 1024)} MB).`);
     return ok(data);
@@ -208,14 +222,17 @@ export class ProjectRepo {
     } catch {
       /* the opened-at bump is cosmetic */
     }
-    return ok({ meta: opened, world: r.world, chat });
+    return ok({ meta: opened, world: r.world, chat, session: body['session'] ?? null });
   }
 
-  /** Save the editor state (world + chat). The project name follows the world name. */
-  async save(id: string, world: WorldDoc, chat: readonly ChatEntry[]): Promise<RepoResult<ProjectMeta>> {
+  /**
+   * Save the editor state (world + chat, and the session: undo history and verdicts, kept only while the record
+   * fits). The project name follows the world name.
+   */
+  async save(id: string, world: WorldDoc, chat: readonly ChatEntry[], session?: unknown): Promise<RepoResult<ProjectMeta>> {
     const meta = await this.meta(id);
     if (!meta) return fail('This project no longer exists.');
-    const data = this.serialize(id, world, chat);
+    const data = this.serialize(id, world, chat, session);
     if (!data.ok) return data;
     const next: ProjectMeta = { ...meta, name: cleanProjectName(world.name) || meta.name, updatedAt: this.now(), entityCount: entityCount(world) };
     try {

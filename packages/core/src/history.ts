@@ -337,6 +337,32 @@ export class History {
   }
 
   /**
+   * A bounded {@link toJSON} for persisting next to a project: the active branch only, at most `back` entries
+   * before the current position and `ahead` after it (the redo tail), with the oldest kept entry as the snapshot
+   * root. {@link fromJSON} reads it like any other history; the restored head is the same world.
+   */
+  toCompactJSON(back: number, ahead = 0): unknown {
+    const b = this.branchState;
+    const lo = Math.max(0, b.cursor - Math.max(0, Math.floor(back)));
+    const hi = Math.min(b.ids.length - 1, b.cursor + Math.max(0, Math.floor(ahead)));
+    const ids = b.ids.slice(lo, hi + 1);
+    return {
+      format: 'aether-history',
+      version: 1,
+      maxEntries: this.maxEntries,
+      nextId: this.nextId,
+      currentBranch: 'main',
+      branches: [{ name: 'main', ids, cursor: b.cursor - lo }],
+      entries: ids.map((id, i) => {
+        const e = this.byId.get(id) as Entry;
+        return i === 0
+          ? { id: e.id, parent: null, message: e.message, source: e.source, patches: [], world: e.world }
+          : { id: e.id, parent: e.parent, message: e.message, source: e.source, patches: e.patches };
+      }),
+    };
+  }
+
+  /**
    * Rebuild a history from {@link toJSON} output. Untrusted input is fully
    * validated (structure, world snapshots, patch replay, branch chains).
    * Throws `Error` describing the first problem.

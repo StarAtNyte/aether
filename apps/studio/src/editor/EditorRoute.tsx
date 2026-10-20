@@ -105,9 +105,9 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
       }
       const s = new Studio({
         projectId: id,
-        project: { world: r.value.world, chat: r.value.chat },
-        onSave: async (world, chat) => {
-          const x = await repo.save(id, world, chat);
+        project: { world: r.value.world, chat: r.value.chat, session: r.value.session },
+        onSave: async (world, chat, session) => {
+          const x = await repo.save(id, world, chat, session ?? undefined);
           return x.ok ? null : x.error;
         },
         onSettings: (settings) => store.getState().mirrorSettings(settings),

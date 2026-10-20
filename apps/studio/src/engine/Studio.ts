@@ -55,6 +55,7 @@ import { playUiSound } from '../lib/uiSound';
 import { planMarks } from '../lib/planMarks';
 import { encodeWorldToken, viewerUrl } from '../lib/shareLink';
 import { PlaytestController } from './playtest/controller';
+import { decodeSession, encodeSession, type ProjectSession } from '../projects/session';
 import { LiveVerifyFeed } from './verify/live';
 import { VerifyPool } from './verify/pool';
 import { VerificationService } from './verify/service';
@@ -98,6 +99,8 @@ const OFFLINE_FIXES: ReadonlySet<QualityFix> = new Set(['ground', 'separate', 'l
 export interface StudioProject {
   world: WorldDoc;
   chat: readonly ChatEntry[];
+  /** The stored session (undo history, last verdicts), untrusted; see `projects/session.ts`. */
+  session?: unknown;
 }
 
 /** Construction options. */
@@ -113,7 +116,7 @@ export interface StudioOptions {
    */
   project?: StudioProject;
   /** Persist the project; resolves to an error message, or null on success. */
-  onSave?: (world: WorldDoc, chat: readonly ChatEntry[]) => Promise<string | null>;
+  onSave?: (world: WorldDoc, chat: readonly ChatEntry[], session: ProjectSession | null) => Promise<string | null>;
   /** Called whenever settings change (lets the app shell follow the theme). */
   onSettings?: (settings: StudioSettings) => void;
   /** Project id (AI preferences are remembered per project). */
@@ -241,7 +244,15 @@ export class Studio {
     const initial = saved ?? createStarterWorld();
     const settings = loadSettings(this.storage, systemPrefersDark());
     const memory = decideLowMemory(settings.lowMemory, readMemorySignals());
-    this.history = new History(initial, { maxEntries: memory.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal });
+    const historyCap = memory.on ? HISTORY_ENTRIES.low : HISTORY_ENTRIES.normal;
+    // The project's undo history and verdicts come back with it (never in safe mode, which opened something else).
+    const restored = opts.project && !this.skippedWorld && opts.project.session != null ? decodeSession(opts.project.session, initial) : null;
+    if (restored?.history) {
+      this.history = restored.history;
+      this.history.setMaxEntries(historyCap);
+    } else {
+      this.history = new History(initial, { maxEntries: historyCap });
+    }
     this.projectId = opts.projectId ?? null;
     this.ai = opts.ai ?? aiConnection();
     this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels(), aiPrefs: loadAiPrefs(this.storage, this.projectId) });
@@ -273,6 +284,8 @@ export class Studio {
     this.npcChat = new NpcChatController(this);
     this.publish = new PublishController(this);
     this.playtest = new PlaytestController(this);
+    if (restored?.playtest) this.playtest.restore(restored.playtest);
+    if (restored?.verify) this.store.getState().setVerify({ ...restored.verify, head: this.history.head, live: null });
 
     this.cleanups.push(
       this.history.subscribe((world) => {
@@ -282,6 +295,14 @@ export class Studio {
         if (v.status !== 'idle' && v.status !== 'running' && v.head !== this.history.head) this.sim?.setDiagnostics([]);
         // An edit makes a running replay stale.
         if (this.lastProof && this.lastProof.head !== this.history.head && !this.store.getState().agentBusy) this.dismissProof();
+      }),
+    );
+    // A new verdict (the bot's or the checks') is saved with the project, so it survives a reload.
+    this.cleanups.push(
+      this.store.subscribe((s, prev) => {
+        if (!this.onSave) return;
+        const settled = (now: string, before: string): boolean => now !== before && now !== 'running' && now !== 'idle';
+        if (settled(s.playtest.status, prev.playtest.status) || settled(s.verify.status, prev.verify.status) || (s.verify.head !== prev.verify.head && s.verify.status !== 'running')) this.schedulePersist();
       }),
     );
     let lastChat = this.store.getState().chat;
@@ -1317,9 +1338,10 @@ export class Studio {
     const save = this.onSave;
     const world = this.history.current;
     const chat = this.store.getState().chat;
+    const session = this.sessionSnapshot();
     this.store.getState().setSave('saving');
     this.saving = this.saving
-      .then(() => save(world, chat))
+      .then(() => save(world, chat, session))
       .then(
         (err) => {
           // A newer change may already be waiting: only report "saved" when nothing is pending.
@@ -1329,6 +1351,18 @@ export class Studio {
         (err: unknown) => this.store.getState().setSave('error', errorMessage(err)),
       );
     return this.saving;
+  }
+
+  /** The session saved with the project: bounded undo history and the verdicts that describe the head world. */
+  private sessionSnapshot(): ProjectSession | null {
+    try {
+      const v = this.store.getState().verify;
+      const verify = v.head === this.history.head && (v.status === 'passed' || v.status === 'failed' || v.status === 'error') ? { status: v.status, summary: v.summary, results: v.results, diagnostics: v.diagnostics, ms: v.ms } : null;
+      return encodeSession({ history: this.history, playtest: this.playtest.sessionVerdict(), verify });
+    } catch (err) {
+      log.warn('session snapshot failed', err);
+      return null;
+    }
   }
 
   /** Save pending project changes and wait for the write (before leaving the editor). */

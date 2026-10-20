@@ -206,6 +206,43 @@ describe('History: serialization', () => {
   });
 });
 
+describe('History: toCompactJSON (persisted next to a project)', () => {
+  it('keeps a window of the active branch around the head, restorable with the same world and undo steps', () => {
+    const h = new History(createWorld());
+    for (let i = 0; i < 12; i++) h.commit(add(`e${i}`), `add ${i}`, i % 2 ? 'agent' : 'user');
+    h.branch('alt');
+    h.commit(add('alt-only'), 'alt');
+    h.switchBranch('main');
+    h.undo();
+    h.undo();
+    const json = JSON.parse(JSON.stringify(h.toCompactJSON(4, 1)));
+    const h2 = History.fromJSON(json);
+    expect(h2.branches()).toEqual(['main']);
+    expect(deepEqual(h2.current, h.current)).toBe(true);
+    expect(h2.head).toBe(h.head);
+    // Four undo steps survive, and one redo step.
+    let undos = 0;
+    while (h2.undo()) undos++;
+    expect(undos).toBe(4);
+    expect(Object.keys(h2.current.entities)).toHaveLength(6);
+    while (h2.redo());
+    expect(Object.keys(h2.current.entities)).toHaveLength(11);
+    expect(h2.entries().slice(1).map((e) => e.message)).toEqual(['add 6', 'add 7', 'add 8', 'add 9', 'add 10']);
+    // Numbering continues after the restore.
+    h2.commit(add('next'), 'next');
+    expect(h2.head).toBeGreaterThan(Math.max(...h.entries().map((e) => e.id)));
+  });
+
+  it('is a single snapshot at the base, and survives a window wider than the history', () => {
+    const h = new History(createWorld());
+    expect(History.fromJSON(JSON.parse(JSON.stringify(h.toCompactJSON(10)))).canUndo()).toBe(false);
+    h.commit(add('a'), 'a');
+    const h2 = History.fromJSON(JSON.parse(JSON.stringify(h.toCompactJSON(50, 50))));
+    expect(h2.canUndo()).toBe(true);
+    expect(deepEqual(h2.current, h.current)).toBe(true);
+  });
+});
+
 describe('History: setMaxEntries (memory budget)', () => {
   it('prunes the oldest entries of every branch and keeps the newest', () => {
     const h = new History(createWorld(), { maxEntries: 50 });

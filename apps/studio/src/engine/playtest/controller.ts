@@ -16,7 +16,8 @@
  */
 import type { WorldDoc } from '@aether/core';
 import type { PlaytestKind, PlaytestReport, PlaytestTrace, Proof } from '@aether/playtest';
-import { playtestKindOf } from '@aether/playtest/proof';
+import { hashWorld as hashGameplay, playtestKindOf, proofTrace, toProof } from '@aether/playtest/proof';
+import type { RestoredPlaytest } from '../../projects/session';
 import type { Studio } from '../Studio';
 import { PlaytestClient, type PlaytestRunOptions } from './client';
 import type { PlaytestFindingView, PlaytestObjectiveView, VerifyState } from '../../state/store';
@@ -78,6 +79,8 @@ export class PlaytestController {
   private readonly client: PlaytestClient;
   private abort: AbortController | null = null;
   private report: PlaytestReport | null = null;
+  /** The proof saved with the project, while no run of this session replaced it (see {@link restore}). */
+  private restoredProof: Proof | null = null;
   private reportHead = -1;
   private gen = 0;
   private poll: ReturnType<typeof setInterval> | null = null;
@@ -148,6 +151,42 @@ export class PlaytestController {
     return st.status === 'passed' && st.proven && st.head === this.studio.history.head;
   }
 
+  /**
+   * Show the verdict saved with the project (the caller checked it was made for this world): the badge, the
+   * objectives and, when the proof carries its trace, the replay come back after a reload.
+   */
+  restore(saved: RestoredPlaytest): void {
+    const proof = saved.proof;
+    const head = this.studio.history.head;
+    this.restoredProof = proof;
+    this.reportHead = head;
+    const fresh = proof.worldHash === hashGameplay(this.studio.history.current);
+    this.studio.store.getState().setPlaytest({
+      status: proof.status,
+      kind: proof.kind,
+      head,
+      progress: null,
+      sentence: saved.sentence,
+      repairs: saved.repairs,
+      findings: proof.issues.slice(0, MAX_VIEW_FINDINGS).map((message): PlaytestFindingView => ({ severity: proof.status === 'passed' ? 'warning' : 'error', code: 'saved', message, entities: [] })),
+      objectives: proof.objectives.slice(0, MAX_VIEW_OBJECTIVES).map((o): PlaytestObjectiveView => ({ id: o.id, label: o.label, kind: o.kind, status: o.status, required: o.required, ...(o.at !== undefined ? { at: o.at } : {}) })),
+      seconds: proof.seconds,
+      ms: proof.ms,
+      replay: proof.trace !== undefined,
+      proven: proof.status === 'passed' && fresh,
+      worker: false,
+    });
+  }
+
+  /** The verdict to save with the project: the proof of the run that describes the world on screen, or null. */
+  sessionVerdict(): RestoredPlaytest | null {
+    const st = this.studio.store.getState().playtest;
+    if (this.reportHead !== this.studio.history.head || st.status === 'running' || st.status === 'idle') return null;
+    const proof = this.report ? toProof(this.report) : this.restoredProof;
+    if (!proof) return null;
+    return { proof, sentence: st.sentence, repairs: [...st.repairs] };
+  }
+
   /** The last report (with its trace), or null. */
   get lastReport(): PlaytestReport | null {
     return this.report;
@@ -177,10 +216,10 @@ export class PlaytestController {
     const until = performance.now() + 60_000;
     while (this.abort !== null && performance.now() < until && !this.disposed) await new Promise((r) => setTimeout(r, 150));
     const report = this.report;
+    const saved = this.restoredProof;
+    if (!report && saved && saved.status === 'passed' && !this.disposed) return saved.worldHash === hashGameplay(this.studio.history.current) ? saved : null;
     if (!report || report.status !== 'passed' || this.disposed) return null;
-    // The light proof module only (no physics) is needed here.
-    const { hashWorld, toProof } = await import('@aether/playtest/proof');
-    if (hashWorld(this.studio.history.current) !== report.worldHash) return null;
+    if (hashGameplay(this.studio.history.current) !== report.worldHash) return null;
     return toProof(report);
   }
 
@@ -245,6 +284,7 @@ export class PlaytestController {
       const report = result.report;
       const quiet = opts.auto === true && (report.status === 'unsupported' || (report.status === 'inconclusive' && /^Nothing to (play|walk)/.test(report.summary)));
       this.report = report;
+      this.restoredProof = null;
       this.reportHead = history.head;
       const currentHash = bot.hashWorld(history.current);
       const proven = report.status === 'passed' && report.worldHash === currentHash;
@@ -331,7 +371,7 @@ export class PlaytestController {
 
   /** Replay the bot's run over the world (from the last run). Resolves once the ghost is shown. */
   async startReplay(gen: number = this.gen): Promise<void> {
-    const trace = this.report?.trace;
+    const trace = this.report?.trace ?? (this.restoredProof ? (proofTrace(this.restoredProof) ?? undefined) : undefined);
     const sim = this.studio.simulation;
     if (!trace || !sim || this.disposed) return;
     // Let grow-in and camera flights finish first (bounded).

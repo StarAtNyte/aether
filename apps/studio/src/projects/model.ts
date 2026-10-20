@@ -42,6 +42,8 @@ export interface ProjectData {
   id: string;
   world: unknown;
   chat: unknown;
+  /** Undo history and last verdicts (`session.ts`); absent in older records. */
+  session?: unknown;
 }
 
 /** Normalize a user-entered project name ("" when nothing usable is left). */
