@@ -100,6 +100,13 @@
   }
 }
 
+/* Narrower buildings: the view bar drops under the camera presets, so the seal goes under the bar. */
+@container viewport (max-width: 1180px) {
+  .viewport:has(.arch-bar) .proof-seal {
+    top: calc(var(--s-3) + 2 * (var(--control-h) + var(--s-2)) + var(--s-1));
+  }
+}
+
 .proof-seal__mark {
   display: grid;
   flex: none;
