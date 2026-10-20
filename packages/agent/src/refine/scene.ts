@@ -88,6 +88,8 @@ export function estimateSize(e: Entity): V3 {
   }
 }
 
+const STRUCTURAL_ROLES: ReadonlySet<string> = new Set(['door', 'window', 'wall', 'opening', 'stair', 'roof', 'ceiling', 'railing']);
+
 function kindOf(e: Entity): string {
   // A door's kind is its style ("swing"), a wall's is exterior/interior: the thing is a door, a wall.
   if (e.arch && ['door', 'window', 'wall', 'opening', 'stair', 'roof', 'ceiling', 'railing'].includes(e.arch.role)) return e.arch.role;
@@ -114,8 +116,12 @@ function tokensOf(e: Entity, kind: string): Set<string> {
   if (e.arch?.role && e.arch.role !== 'furniture') add(e.arch.role);
   for (const tag of e.tags) add(tag);
   const sh = e.shape;
-  if (sh.kind === 'procedural') add(sh.generator.replace(/^(furn|arch)-/, ''));
-  else if (sh.kind === 'asset') add(sh.id);
+  // A door or window is named by its role: its generator ("arch-frame", "arch-sash") would make "the painting"
+  // (a picture frame) match every door frame in the house.
+  const structural = e.arch !== undefined && STRUCTURAL_ROLES.has(e.arch.role);
+  if (sh.kind === 'procedural') {
+    if (!structural) add(sh.generator.replace(/^(furn|arch)-/, ''));
+  } else if (sh.kind === 'asset') add(sh.id);
   else if (sh.kind === 'primitive') add(sh.primitive);
   else if (sh.kind === 'scatter') add(sh.of.kind === 'procedural' ? sh.of.generator : sh.of.primitive);
   for (const b of e.behaviors) {

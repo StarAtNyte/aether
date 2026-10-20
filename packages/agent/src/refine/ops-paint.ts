@@ -279,9 +279,21 @@ const ARCH_SLOT: Readonly<Record<string, string>> = { room: 'finish', ceiling: '
 function paintArchSlot(env: OpEnv, item: SceneItem, look: Look): boolean {
   const role = item.entity.arch?.role;
   if (!role) return false;
+  // "the front door" often resolves to the doorway (its frame): the colour belongs on the door leaf in it.
+  if (role === 'opening') {
+    const leaf = env.index.get(`${item.id}-leaf`);
+    if (leaf && leaf.entity.arch?.role === 'door') return paintArchSlot(env, leaf, look);
+    return paintSlot(env, item, 'finish', look);
+  }
   const key = ARCH_SLOT[role];
+  if (!key) return false;
+  return paintSlot(env, item, key, look);
+}
+
+/** Merge a look into one material slot of an architecture element's parameters. */
+function paintSlot(env: OpEnv, item: SceneItem, key: string, look: Look): boolean {
   const sh = item.entity.shape;
-  if (!key || sh.kind !== 'procedural') return false;
+  if (sh.kind !== 'procedural') return false;
   const ent = env.draft.entity(item.id);
   const params = (ent.shape as { params: Record<string, Json> }).params;
   const old = (params[key] ?? undefined) as MaterialSpec | undefined;
@@ -469,6 +481,8 @@ export function planPaint(env: OpEnv, cmd: Extract<Command, { op: 'paint' }>): O
       targets.push(item.id);
       // Painting a composite root paints its parts: they may change too.
       if (item.entity.shape.kind === 'none') also.push(...descendantsWithShape(env, item.id).map((x) => x.id));
+      // A doorway painted by name paints the door leaf in it.
+      if (item.entity.arch?.role === 'opening' && env.index.get(`${item.id}-leaf`)) also.push(`${item.id}-leaf`);
     }
   }
   if (cmd.look.tone && !cmd.look.color) {

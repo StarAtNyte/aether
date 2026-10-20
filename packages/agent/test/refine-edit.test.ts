@@ -311,3 +311,23 @@ describe('memory is plain data', () => {
     expect(EMPTY_MEMORY.targets).toEqual([]);
   });
 });
+
+describe('doors and pictures', () => {
+  it('"make the front door black" colours the door leaf in the entrance doorway', () => {
+    const w = loadFixture('apartment');
+    const r = edit(w, 'make the front door black');
+    expect(r.kind, `${r.reason ?? ''} ${r.detail ?? ''}`).toBe('edit');
+    const after = apply(w, r);
+    const leaf = Object.values(after.entities).find((e) => e.arch?.role === 'door' && e.tags.includes('entrance'));
+    expect(leaf && leaf.shape.kind === 'procedural' && (leaf.shape.params['finish'] as { color?: string }).color).toBe('#1c1c1e');
+  });
+
+  it('"the painting" never means a door frame: with no pictures left it says so instead of asking which door', () => {
+    const base = loadFixture('apartment');
+    const w = { ...base, entities: Object.fromEntries(Object.entries(base.entities).filter(([, e]) => !(e.shape.kind === 'procedural' && e.shape.generator === 'furn-frame'))) };
+    const r = edit(w, 'remove the painting');
+    expect(r.kind).not.toBe('question');
+    expect(r.kind).toBe('none');
+    expect(r.patches).toHaveLength(0);
+  });
+});
