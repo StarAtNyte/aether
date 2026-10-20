@@ -86,7 +86,7 @@ const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'comparing'
 function photoView(v: Record<string, unknown>): PhotoEventView {
   const phase = PHOTO_PHASES.find((p) => p === v['phase']) ?? 'analysing';
   const out: PhotoEventView = { type: 'photo', phase, text: str(v['text'], 900) };
-  if (typeof v['round'] === 'number' && Number.isFinite(v['round'])) out.round = Math.max(0, Math.min(50, Math.round(v['round'])));
+  if (typeof v['round'] === 'number' && Number.isFinite(v['round'])) out.round = Math.max(0, Math.min(500, Math.round(v['round'])));
   if (Array.isArray(v['assumptions'])) {
     out.assumptions = v['assumptions']
       .filter(isRecord)

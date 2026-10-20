@@ -8,3 +8,4 @@ export * from './calibrate';
 export * from './layout';
 export * from './colour';
 export * from './fidelity';
+export * from './consensus';

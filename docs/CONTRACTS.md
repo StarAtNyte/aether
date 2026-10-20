@@ -2564,13 +2564,20 @@ a structured description and derives tool calls from it.
 
 ### `@aether/agent` (`packages/agent/src/photo`)
 
-- `AgentOptions.photo?: {vision?, maxRounds?, stallRounds?, maxViews?, judges?}`; `RunOptions.photo?: 'auto' | 'recreate' | 'off'`.
+- `AgentOptions.photo?: {vision?, maxRounds?, stallRounds?, maxViews?, judges?, reads?, reconcile?}`; `RunOptions.photo?: 'auto' | 'recreate' | 'off'`.
   With `photo` options a picture plus a prompt about a room ('auto'), or the composer's "Recreate this image"
   ('recreate'), runs the photo flow instead of the planner. Without a vision model (`vision` false, the offline
   planner, or the chain falling back to it mid-run) NOTHING is built: the event says why, gives the palette and
   brightness read from the picture, and offers to build from words.
 - Flow: `describe_room` (one tool, zod-validated, refused descriptions are sent back up to three times) → build →
-  compare rounds. A round renders the room from the photo's camera at the photo's aspect (numbered marks) plus a
+  compare rounds. The photo is read `reads` times (default 3, `READS_MAX` 5; the studio uses 1 on a paid key, like
+  `judges`): independent, stateless calls in parallel, `temperature: 0` and `seed: READ_SEED + k` where the API takes
+  them. Two or more valid reads are merged by `clusterReads` + `consensusDescription` (`@aether/arch/photo`, below);
+  when something is contested and `reconcile` is not false, one `reconcile_room` call (`photo/reconcile.ts`) sees the
+  photo and the contested clusters only and may add a cluster some read saw or remove a kept, non-unanimous one, each
+  with a reason of at least 12 characters (anything else is ignored; no usable answer leaves the majority). One valid
+  read is used as it is. The checklist is `buildChecklist(consensus)`. A shell the builder refuses is sent back in the
+  read's own conversation (one read) or in a new one with the photo and the merged description. A round renders the room from the photo's camera at the photo's aspect (numbered marks) plus a
   clean render. Measured first, deterministically: `measureFidelity` (`@aether/arch/photo`, see below) against the
   description, with the render-side measures (`compareImages` pixel similarity, `regionColourScore` ΔE of the
   described boxes, the framing). Judged next by `judges` (default 3, `JUDGES_MAX` 7; the studio uses 1 on a paid
@@ -2589,18 +2596,32 @@ a structured description and derives tool calls from it.
   `report_verdicts` judge the round (edits before verdicts are refused) and a combined score (0.5 × pass rate +
   0.5 × sub-score) more than `max(0.03, 0.75 / items)` below the best is rolled back. Stalls (`ProgressTracker`):
   no accepted, measurable progress for `stallRounds` rounds. The loop ends when every item passes, the model stops
-  with nothing to change, progress stalls or `maxRounds` (default 6) is reached; edits made after the last judged
+  with nothing to change, progress stalls, or `maxRounds` is reached: unset (subscriptions) means no fixed cap, only a
+  runaway ceiling `PHOTO_ROUNDS_CEILING` (200); the studio sets 10 on a paid key; edits made after the last judged
   render get one final judgement (the panel's, relative) and are kept only when accepted.
 - `AgentEvent` gains `{type:'photo', phase: 'analysing'|'described'|'building'|'built'|'comparing'|'round'|'done'|
   'offline'|'unavailable', text, round?, assumptions?: [{id, text, confidence, adjust}], score?: {passed, total,
   rate, objective? (the fidelity sub-score), fidelity? (its measures), judge?, judges?, spread?, combined?,
-  preference?, accepted?, structuralFailed, failing}, palette?}`.
+  preference?, accepted?, structuralFailed, failing}, palette?, reads?}`; `reads` (on `described`) is `PhotoReadsView`
+  `{reads, asked, items: pieces per read, consensus, checklist, dropped, contested, reconciled: reasons}`.
 - `CompletionRequest.seed?` (advisory, like `temperature`).
 - `@aether/arch/photo`: `measureFidelity(world, description, {framing?, similarity?, regionColour?}) →
   {metrics, score, issues} | null`, deterministic; `FIDELITY_WEIGHTS` framing 0.25, openings 0.15, inventory 0.15,
   placement 0.1, similarity 0.1, regionColour 0.1, sizes 0.05, materials 0.05, clearance 0.05 (missing measures
   are left out and the rest renormalised; the per-measure formulas are in `fidelity.ts`); `deltaE2000`,
   `hexDeltaE`, `rgbToLab`. Regression snapshot: `tests/fixtures/photo/hotel.fidelity.json`.
+- `@aether/arch/photo` consensus (`consensus.ts`, pure and deterministic): `clusterReads(reads) → {reads, rotations,
+  openings, items}` sorts the reads canonically, picks the anchor read that agrees most with the others, turns every
+  read into its frame by quarter turns (`frameRotation`: walls of things matched by photo box vote, else the camera
+  heading; `rotateDescription`, `rotateWall`, `rotatePoint`), and matches openings and pieces within a kind class
+  (`kindClass`: nightstand ~ coffee table, armchair ~ chair, …) by photo box (centre within 0.14 or IoU 0.3) or plan
+  position (within 0.22 of the room, as fractions); greedy one-to-one by cost. `consensusDescription(clusters,
+  partKinds, {add?, remove?}) → {ok, description, fixes, report} | {ok:false, error, report}`: clusters seen by a strict
+  `majority(n)` are kept (plus `add`, minus non-unanimous `remove`); kind, placement mode, wall and references by
+  majority (`modeOf`, ties to the anchor); positions as the median FRACTION of the wall or room times the median room
+  size; numbers by `medianOf`; colours by `medoidColour` (CIEDE2000); canonical ids (`bed-1`, `art-2`, `window-1`, in
+  photo order, dependent pieces after their hosts); pieces whose host was not kept are dropped (`report.orphans`).
+  The result goes through `parseRoomDescription`. `contested(report) → {add, remove}`.
 - `AgentHost.decodeImage?(dataUrl, maxSide) → {width, height, data} | null` (the studio decodes with a canvas, the
   eval script with ffmpeg); without it the objective score is skipped and the aspect comes from the image header
   (`imageSize`, PNG / JPEG / WebP).

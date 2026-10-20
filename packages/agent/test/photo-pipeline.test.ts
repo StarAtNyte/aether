@@ -96,9 +96,9 @@ const verdicts = (fail: string[], note = 'differs'): Reply => () => [
 ];
 const finish: Reply = () => [call('finish', { message: 'done' })];
 
-/** These tests script the conversation turn by turn, so the model in it judges (no panel); the panel has its own tests below. */
+/** These tests script the conversation turn by turn, so the model in it judges (no panel) and the photo is read once; the panel and the merged reads have their own tests below. */
 function agent(provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent {
-  return new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 0, ...photo } });
+  return new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 0, reads: 1, ...photo } });
 }
 
 const photoEvents = (events: AgentEvent[]): Array<Extract<AgentEvent, { type: 'photo' }>> => events.filter((e): e is Extract<AgentEvent, { type: 'photo' }> => e.type === 'photo');
@@ -331,7 +331,7 @@ function judgeReply(prefer: 'current' | 'previous' | 'same', fail: readonly stri
 }
 
 describe('room from a photo, with a panel of independent judges', () => {
-  const panelAgent = (provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent => new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 3, ...photo } });
+  const panelAgent = (provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent => new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 3, reads: 1, ...photo } });
 
   it('the judges look first (stateless, temperature 0, a fixed seed per seat, the same clean view), the model fixes, and a fix they prefer is kept', async () => {
     const provider = scripted(

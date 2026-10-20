@@ -16,6 +16,10 @@ import {
   PHOTO_ROOM_ID,
   buildChecklist,
   calibrateCamera,
+  clusterReads,
+  consensusDescription,
+  contested,
+  type ConsensusReport,
   fidelityLine,
   fidelityText,
   framingTargets,
@@ -53,13 +57,14 @@ import { z } from 'zod';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from '../executor';
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
-import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
+import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
 import { imageSize } from './image-size';
 import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, matchGrade, nextEnvironmentGrade, nextExposure, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, combinedScore, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
+import { runReconcile } from './reconcile';
 
 /** Everything the photo flow needs from the agent. */
 export interface PhotoRun {
@@ -82,9 +87,17 @@ export interface PhotoRun {
 const ANALYSIS_ATTEMPTS = 3;
 /** Most model turns inside one compare round. */
 const TURNS_PER_ROUND = 8;
-/** Default and hard cap of compare rounds. */
-export const PHOTO_ROUNDS_DEFAULT = 6;
-export const PHOTO_ROUNDS_MAX = 12;
+/**
+ * Safety ceiling of compare rounds when no `maxRounds` is set (subscription backends): the loop is meant to end when the
+ * judges and the model are satisfied or progress stalls, never on a fixed round count; this only stops a runaway.
+ */
+export const PHOTO_ROUNDS_CEILING = 200;
+/** Default number of independent reads of the photo (merged into one description). */
+export const READS_DEFAULT = 3;
+/** Most reads of the photo. */
+export const READS_MAX = 5;
+/** Base of the advisory per-read seeds (read k uses READ_SEED + k). */
+export const READ_SEED = 4421;
 /**
  * Without a relative judgement (the single judge in the conversation), a round is rolled back when its combined score
  * is this much below the best: never less than 0.03, and at least one and a half checklist items (half the combined
@@ -132,9 +145,23 @@ async function complete(run: PhotoRun, req: CompletionRequest): Promise<Completi
   return res;
 }
 
-/** A turn of the analysis or of the compare conversation. */
-function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], useSession: boolean): Promise<CompletionResponse> {
-  return complete(run, { role: 'planner', system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system, messages, tools: [...tools], maxTokens: run.maxTokens, ...(useSession && run.session ? { session: run.session } : {}) });
+/** A turn of the analysis or of the compare conversation. `seed`: an independent read (temperature 0, its own seed). */
+function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], useSession: boolean, seed?: number): Promise<CompletionResponse> {
+  return complete(run, {
+    role: 'planner',
+    system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system,
+    messages,
+    tools: [...tools],
+    maxTokens: run.maxTokens,
+    ...(useSession && run.session ? { session: run.session } : {}),
+    ...(seed !== undefined ? { temperature: 0, seed } : {}),
+  });
+}
+
+/** Number of independent reads of the photo. */
+function readsOf(opts: PhotoOptions): number {
+  const n = opts.reads ?? READS_DEFAULT;
+  return Number.isFinite(n) ? Math.max(1, Math.min(READS_MAX, Math.floor(n))) : READS_DEFAULT;
 }
 
 /** Number of independent judges of a run (0: the model doing the fixes judges, as one call). */
@@ -153,11 +180,11 @@ type Analysis = { ok: true; description: RoomDescription; fixes: string[]; callI
  * Ask for the description. `messages` is the conversation so far (empty: the first turn is made here); a later call
  * continues it, which is how a shell the builder refused is sent back to the model to correct.
  */
-async function analyse(run: PhotoRun, messages: ChatMessage[] = []): Promise<Analysis> {
+async function analyse(run: PhotoRun, messages: ChatMessage[] = [], seed?: number): Promise<Analysis> {
   if (messages.length === 0) messages.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, { type: 'text', text: analysisUserText(run.request) }] });
   let lastError = 'the model did not describe the room';
   for (let attempt = 0; attempt < ANALYSIS_ATTEMPTS; attempt++) {
-    const res = await ask(run, messages, [DESCRIBE_TOOL], false);
+    const res = await ask(run, messages, [DESCRIBE_TOOL], false, seed);
     messages.push({ role: 'assistant', content: res.content });
     const call = res.content.find((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use' && b.name === DESCRIBE_TOOL_NAME);
     let raw: unknown;
@@ -180,6 +207,80 @@ async function analyse(run: PhotoRun, messages: ChatMessage[] = []): Promise<Ana
     else messages.push({ role: 'user', content: [{ type: 'text', text: refusalText(parsed.error) }] });
   }
   return { ok: false, error: lastError };
+}
+
+/** The photo read N times and merged: the description the room is built from, with how it came about. */
+type Reading =
+  | { ok: true; description: RoomDescription; fixes: string[]; talk: ChatMessage[]; callId?: string; view: PhotoReadsView; notes: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Read the photo `n` times, independently and in parallel (stateless calls, temperature 0 and a seed per read where the
+ * backend takes them), and merge the reads (`clusterReads` + `consensusDescription`: majority per piece, median
+ * positions and sizes, medoid colours, canonical ids). With more than one valid read and something contested, one
+ * reconciliation call settles the contested pieces against the photo. One valid read is used as it is.
+ */
+async function readPhoto(run: PhotoRun): Promise<Reading> {
+  const n = readsOf(run.options);
+  const talks: ChatMessage[][] = Array.from({ length: n }, () => []);
+  const settled = await Promise.allSettled(talks.map((t, k) => analyse(run, t, n > 1 ? READ_SEED + k : undefined)));
+  // An abort, or the assistant becoming unavailable, ends the flow as it did with one read.
+  for (const s of settled) if (s.status === 'rejected' && (run.ctx.signal?.aborted || s.reason instanceof Unavailable)) throw s.reason;
+  const ok: Array<{ a: Extract<Analysis, { ok: true }>; talk: ChatMessage[] }> = [];
+  const errors: string[] = [];
+  settled.forEach((s, k) => {
+    if (s.status === 'fulfilled' && s.value.ok) ok.push({ a: s.value, talk: talks[k] as ChatMessage[] });
+    else errors.push(s.status === 'fulfilled' ? (s.value.ok ? '' : s.value.error) : errorMessage(s.reason));
+  });
+  if (ok.length === 0) {
+    const thrown = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+    if (thrown && settled.every((s) => s.status === 'rejected')) throw thrown.reason;
+    return { ok: false, error: errors[0] ?? 'no description came back' };
+  }
+  const items = ok.map((o) => o.a.description.items.length);
+  const first = ok[0] as (typeof ok)[number];
+  if (ok.length === 1) {
+    const d = first.a.description;
+    return { ok: true, description: d, fixes: first.a.fixes, talk: first.talk, ...(first.a.callId ? { callId: first.a.callId } : {}), view: { reads: 1, asked: n, items, consensus: d.items.length, checklist: buildChecklist(d).length, dropped: 0, contested: 0, reconciled: [] }, notes: [] };
+  }
+  const clusters = clusterReads(ok.map((o) => o.a.description));
+  let merged = consensusDescription(clusters, partKinds());
+  if (!merged.ok) {
+    // The merge broke a rule a single read kept (rare): build from the read the others agreed with most.
+    const again = parseRoomDescription(clusters.reads[0], partKinds());
+    const desc = again.ok ? again.value : first.a.description;
+    return { ok: true, description: desc, fixes: first.a.fixes, talk: [], view: { reads: ok.length, asked: n, items, consensus: desc.items.length, checklist: buildChecklist(desc).length, dropped: 0, contested: 0, reconciled: [] }, notes: [`The ${ok.length} readings could not be merged (${merged.error.slice(0, 160)}); the room is built from one of them.`] };
+  }
+  const disputed = contested(merged.report);
+  let reconciled: string[] = [];
+  if (run.options.reconcile !== false && disputed.add.length + disputed.remove.length > 0) {
+    try {
+      const choice = await runReconcile((req) => complete(run, req), run.image, merged.report, merged.description, Math.min(run.maxTokens, 6000));
+      if (choice && ((choice.add?.length ?? 0) > 0 || (choice.remove?.length ?? 0) > 0)) {
+        const next = consensusDescription(clusters, partKinds(), choice);
+        if (next.ok) {
+          merged = next;
+          reconciled = choice.reasons;
+        }
+      }
+    } catch (e) {
+      if (run.ctx.signal?.aborted || e instanceof Unavailable) throw e;
+      // A failed reconciliation leaves the majority as it is.
+    }
+  }
+  const report: ConsensusReport = merged.report;
+  const d = merged.description;
+  const dropped = report.items.filter((c) => !c.kept).length;
+  const view: PhotoReadsView = { reads: ok.length, asked: n, items, consensus: d.items.length, checklist: buildChecklist(d).length, dropped, contested: disputed.add.length + disputed.remove.length, reconciled: reconciled.slice(0, 12) };
+  const notes: string[] = [];
+  if (report.orphans.length > 0) notes.push(`Left out because what they stand on or hang above was not agreed on: ${report.orphans.slice(0, 6).join(', ')}.`);
+  return { ok: true, description: d, fixes: [...new Set(ok.flatMap((o) => o.a.fixes))].slice(0, 8), talk: [], view, notes };
+}
+
+/** One line on how the photo was read ("Read the photo 3 times independently (11, 12, 11 pieces): …"). */
+function readsLine(v: PhotoReadsView): string {
+  if (v.reads <= 1) return v.asked > 1 ? `Only one of ${v.asked} readings of the photo was usable.` : '';
+  return `Read the photo ${v.reads} times independently (${v.items.join(', ')} pieces): ${v.consensus} pieces seen by most readings kept${v.dropped > 0 ? `, ${v.dropped} left out` : ''}${v.reconciled.length > 0 ? `; ${v.reconciled.length} disputed piece${v.reconciled.length === 1 ? '' : 's'} settled against the photo` : ''}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -427,10 +528,9 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   yield { type: 'status', text: 'Reading the photo…' };
   yield { type: 'photo', phase: 'analysing', text: 'Reading the photo: room size, walls, windows, furniture, colours and light.' };
   const photo = await decodePhoto(run);
-  let analysis: Analysis;
-  const talk: ChatMessage[] = [];
+  let analysis: Reading;
   try {
-    analysis = await analyse(run, talk);
+    analysis = await readPhoto(run);
   } catch (e) {
     if (ctx.signal?.aborted) throw e;
     if (e instanceof Unavailable) {
@@ -445,10 +545,13 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
     return;
   }
   let desc = analysis.description;
+  const talk = analysis.talk;
   let build = deriveBuild(desc);
+  build.notes.push(...analysis.notes);
   let checklist = buildChecklist(desc);
   let assumptions = chips(desc, build, analysis.fixes);
-  yield { type: 'photo', phase: 'described', text: desc.summary || `A ${desc.roomType} of about ${desc.footprint.width} × ${desc.footprint.depth} m.`, assumptions };
+  const readText = readsLine(analysis.view);
+  yield { type: 'photo', phase: 'described', text: `${desc.summary || `A ${desc.roomType} of about ${desc.footprint.width} × ${desc.footprint.depth} m.`}${readText ? ` ${readText}` : ''}`, assumptions, reads: analysis.view };
 
   // The room is the world: whatever was there (the starter scene, an earlier room) goes, as one undo step.
   if (run.replace !== false && Object.keys(host.getWorld().entities).length > 0) {
@@ -469,7 +572,10 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   if (!built.shellOk) {
     yield { type: 'photo', phase: 'building', text: 'The builder refused the shell; asking the assistant to correct the description.' };
     try {
-      talk.push({ role: 'user', content: [...(analysis.callId ? [{ type: 'tool_result' as const, toolUseId: analysis.callId, content: 'The description was valid, but the builder refused the shell (see below).', isError: true }] : []), { type: 'text', text: `The builder refused the shell built from your description:\n${built.shellText.slice(0, 1500)}\nCorrect the description (keep it faithful to the photo) and call describe_room again with the complete corrected description.` }] });
+      const reason = `The builder refused the shell built from ${talk.length > 0 ? 'your description' : 'this description'}:\n${built.shellText.slice(0, 1500)}\nCorrect the description (keep it faithful to the photo) and call describe_room again with the complete corrected description.`;
+      if (talk.length > 0) talk.push({ role: 'user', content: [...(analysis.callId ? [{ type: 'tool_result' as const, toolUseId: analysis.callId, content: 'The description was valid, but the builder refused the shell (see below).', isError: true }] : []), { type: 'text', text: reason }] });
+      // A merged description has no conversation of its own: the correction starts one with the photo and the description.
+      else talk.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, { type: 'text', text: `${analysisUserText(run.request)}\n\nA description of this photo (merged from independent readings):\n${JSON.stringify(desc).slice(0, 24000)}\n\n${reason}` }] });
       const again = await analyse(run, talk);
       if (again.ok) {
         desc = again.description;
@@ -561,7 +667,9 @@ async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, t
 async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[]): AsyncGenerator<AgentEvent, LoopResult> {
   const { ctx } = run;
   const host = ctx.host;
-  const maxRounds = Math.max(1, Math.min(PHOTO_ROUNDS_MAX, Math.floor(run.options.maxRounds ?? PHOTO_ROUNDS_DEFAULT)));
+  // No fixed ceiling unless the host sets one (paid keys): the loop ends on agreement, on nothing left to change, or on a stall.
+  const cap = run.options.maxRounds;
+  const maxRounds = cap === undefined || !Number.isFinite(cap) ? PHOTO_ROUNDS_CEILING : Math.max(1, Math.min(PHOTO_ROUNDS_CEILING, Math.floor(cap)));
   const maxViews = Math.max(1, Math.min(4, Math.floor(run.options.maxViews ?? 3)));
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);

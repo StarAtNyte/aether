@@ -77,7 +77,7 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
-  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[] }
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -102,6 +102,24 @@ export interface PhotoAssumptionView {
   confidence: number;
   /** A prompt the user can send to correct it; empty when there is none. */
   adjust: string;
+}
+
+/** How the photo was read: independent reads merged into one description (on the `described` event). */
+export interface PhotoReadsView {
+  /** Reads that gave a valid description. */
+  reads: number;
+  /** Reads asked for. */
+  asked: number;
+  /** Pieces in each read. */
+  items: number[];
+  /** Pieces and checklist entries of the description the room is built from. */
+  consensus: number;
+  checklist: number;
+  /** Pieces left out (seen by too few reads) and kept without every read. */
+  dropped: number;
+  contested: number;
+  /** What the reconciliation pass changed, with its reasons. */
+  reconciled: string[];
 }
 
 /** The judged state of a reconstruction against its photo. */
@@ -254,7 +272,8 @@ export interface AgentOptions {
   /**
    * Rooms from photographs. Without it a prompt with a picture goes through the normal planner. `vision` says
    * whether the active assistant can see images (a function is asked at every call: the active one can change);
-   * `maxRounds` caps the compare rounds (default 6 on subscription backends, set it for paid keys).
+   * `maxRounds` caps the compare rounds: leave it unset on subscription backends (the loop ends when the judges and
+   * the model are satisfied or progress stalls), set a high finite number for paid keys.
    */
   photo?: PhotoOptions;
 }
@@ -262,8 +281,19 @@ export interface AgentOptions {
 /** Options of the room-from-photo flow. */
 export interface PhotoOptions {
   vision?: boolean | (() => boolean);
-  /** Most compare-and-correct rounds (default 6). */
+  /**
+   * Most compare-and-correct rounds. Unset (or Infinity): no fixed ceiling, the loop ends when every item matches, the
+   * model has nothing left to change, or progress stalls (a safety ceiling of 200 rounds stops a
+   * runaway). Set a high finite number on paid API keys.
+   */
   maxRounds?: number;
+  /**
+   * Independent reads of the photo merged into one description (majority per piece, median positions and sizes).
+   * Default 3; 1 is a single read (the studio's setting on a paid key, like `judges`).
+   */
+  reads?: number;
+  /** After merging several reads, one call settles the contested pieces against the photo (default true). */
+  reconcile?: boolean;
   /** Rounds without progress before the loop stops (default 3). */
   stallRounds?: number;
   /** Most images per compare round (default 3). */

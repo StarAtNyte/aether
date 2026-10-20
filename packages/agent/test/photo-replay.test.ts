@@ -30,7 +30,7 @@ describe('recorded vision descriptions build', () => {
     const file = resolve(DIR, `${id}.transcript.json`);
     it.skipIf(!existsSync(file))(`${id}: the recorded description becomes a clean room`, async () => {
       const t = TranscriptSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
-      const agent = new WorldAgent({ provider: createReplayProvider({ ...t, responses: t.responses.slice(0, 1) }, { onExhausted: 'finish' }), catalogs: TEST_CATALOGS, maxTurns: 4, photo: {} });
+      const agent = new WorldAgent({ provider: createReplayProvider({ ...t, responses: t.responses.slice(0, 1) }, { onExhausted: 'finish' }), catalogs: TEST_CATALOGS, maxTurns: 4, photo: { reads: 1 } });
       const host = new MemoryHost();
       const events: AgentEvent[] = await collect(agent.run('make this bedroom in 3D', host, { images: [header()] }));
       expect(events.some((e) => e.type === 'error'), JSON.stringify(events.filter((e) => e.type === 'error'))).toBe(false);

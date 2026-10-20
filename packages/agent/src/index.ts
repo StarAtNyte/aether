@@ -82,4 +82,4 @@ export * from './quality/index';
 export { drawMarksRgba, MAX_RGBA_MARKS } from './review-draw';
 export { StallTracker, snapshotForReview, reviewTurnText, REVIEW_ASPECT, MAX_REVIEW_VIEWS, type ReviewSnapshot, type RoundObservation, type StallVerdict } from './review';
 export { createRecordingProvider, createReplayProvider, TranscriptSchema, TRANSCRIPT_LIMITS, type RecordingProvider, type Transcript } from './providers/replay';
-export type { PhotoPhase, PhotoAssumptionView, PhotoScoreView, PhotoOptions } from './types';
+export type { PhotoPhase, PhotoAssumptionView, PhotoScoreView, PhotoReadsView, PhotoOptions } from './types';

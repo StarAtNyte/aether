@@ -4,9 +4,12 @@
  *
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=replay            replay the recorded transcript (no model)
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=live              run the logged-in Codex and record the transcript
- *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --judges=N --out=DIR --force --record-fixture
+ *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --judges=N --reads=N --reconcile=0|1 --out=DIR --force --record-fixture
+ *            --rounds=N  a fixed cap of compare rounds (default: none, as on a subscription: the loop ends on agreement or a stall)
  *            --judges=N  independent judges per look (default 3; 0: the model in the conversation judges; replays always use 0,
  *            the recorded transcripts have no judge calls)
+ *            --reads=N   independent reads of the photo merged into one description (default 3; replays always use 1)
+ *            --reconcile=0  skip the call that settles contested pieces after merging the reads
  *            --render=software|gpu   software: the flat headless rasteriser (default). gpu: photoreal stills of the photo camera drawn by
  *            the studio on the GPU (AETHER_E2E_GPU=1 for the real card), for the judge, the measure and the montage
  *
@@ -29,6 +32,7 @@ import {
   TranscriptSchema,
   type AgentEvent,
   type PhotoScoreView,
+  type PhotoReadsView,
   type Provider,
   type ReviewViewRequest,
 } from '@aether/agent';
@@ -62,8 +66,10 @@ interface Args {
   mode: 'replay' | 'live';
   backend: 'codex' | 'claude-code';
   effort: 'low' | 'medium' | 'high';
-  rounds: number;
+  rounds: number | undefined;
   stall: number;
+  reads: number;
+  reconcile: boolean;
   out: string;
   force: boolean;
   render: 'software' | 'gpu';
@@ -79,7 +85,9 @@ function parseArgs(argv: readonly string[]): Args {
     mode,
     backend: get('backend') === 'claude-code' ? 'claude-code' : 'codex',
     effort: (['low', 'medium', 'high'] as const).find((e) => e === get('effort')) ?? 'medium',
-    rounds: Math.max(1, Math.min(12, Number(get('rounds') ?? 5))),
+    rounds: get('rounds') !== undefined ? Math.max(1, Math.min(200, Number(get('rounds')))) : undefined,
+    reads: mode === 'replay' ? 1 : Math.max(1, Math.min(5, Number(get('reads') ?? 3))),
+    reconcile: get('reconcile') !== '0',
     stall: Math.max(2, Math.min(8, Number(get('stall') ?? 3))),
     out: get('out') ?? DEFAULT_OUT,
     force: argv.includes('--force'),
@@ -202,6 +210,8 @@ interface Report {
   calls: number;
   ms: number;
   judges: number;
+  /** How the photo was read (the reads, the consensus and the checklist it gave). */
+  reads: PhotoReadsView | null;
   rounds: Array<{ round: number; passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; accepted: boolean | null; fidelity: PhotoScoreView['fidelity'] | null; failing: string[] }>;
   first: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null } | null;
   final: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; fidelity: PhotoScoreView['fidelity'] | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
@@ -235,15 +245,16 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const host = new PhotoNodeHost(sandbox);
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { maxRounds: args.rounds, stallRounds: args.stall, vision: true, judges: args.judges } });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
-  const report: Report = { photo: args.photo, source, judges: args.judges, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0 };
+  const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0 };
   for await (const e of agent.run(spec.prompt, host, { images: [dataUrl], photo: 'recreate' })) {
     events.push(e);
     if (e.type === 'photo') {
       console.log(`  [${args.photo}] ${e.phase}${e.round ? ` ${e.round}` : ''}: ${e.text.slice(0, 200)}`);
       if (e.assumptions) report.assumptions = e.assumptions.length;
+      if (e.phase === 'described' && e.reads) report.reads = e.reads;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
       if (e.phase === 'done' && e.score) {
         report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, judge: e.score.judge ?? null, combined: e.score.combined ?? null, fidelity: e.score.fidelity ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
@@ -299,7 +310,7 @@ async function main(): Promise<void> {
     console.log(`\n== ${id} (${args.mode})`);
     const r = await runPhoto({ ...args, photo: id }, live);
     const f = r.final;
-    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.judge !== null ? `, judge score ${Math.round(f.judge * 100)}%` : ''}${f.objective !== null ? `, measured fidelity ${Math.round(f.objective * 100)}%` : ''}${f.combined !== null ? `, combined ${Math.round(f.combined * 100)}%` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
+    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.judge !== null ? `, judge score ${Math.round(f.judge * 100)}%` : ''}${f.objective !== null ? `, measured fidelity ${Math.round(f.objective * 100)}%` : ''}${f.combined !== null ? `, combined ${Math.round(f.combined * 100)}%` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s${r.reads ? `; reads ${r.reads.items.join('/')} pieces -> ${r.reads.consensus} kept, checklist ${r.reads.checklist}` : ''}; ${r.rounds.length} rounds` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
   }
 }
 
