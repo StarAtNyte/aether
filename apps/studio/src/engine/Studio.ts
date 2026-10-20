@@ -1029,6 +1029,8 @@ export class Studio {
       const conn = this.ai.store.getState();
       const transient = conn.local.state === 'error' || conn.local.state === 'checking' || conn.server.state !== 'live' || conn.bridge.state === 'offline';
       if (!resolved.ready || (prefs.mode === 'auto' && resolved.kind !== 'local' && transient)) {
+        // The turn is under way while the connection is looked at again (no second prompt, no idle gap).
+        st.setAgentBusy(true);
         await this.ai.refresh().catch(() => undefined);
         resolved = this.ai.resolve(prefs);
       }
