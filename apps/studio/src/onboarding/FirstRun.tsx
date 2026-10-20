@@ -28,7 +28,7 @@ import { Icon } from '../components/Icon';
 import { Logomark } from '../components/Logo';
 import { Dialog } from '../components/ui/Dialog';
 import { browserStorage } from '../lib/storage';
-import { AI_PREFS_EVENT, finishFirstRun, firstRunStore, useFirstRun, type FirstRunChoice } from './firstRun';
+import { AI_PREFS_EVENT, finishFirstRun, firstRunStore, OFFLINE_CHOICE_PREFS, useFirstRun, type FirstRunChoice } from './firstRun';
 
 /** Public repository of the app (for the local install instructions). */
 export const REPO_URL = 'https://github.com/StarAtNyte/aether';
@@ -271,7 +271,7 @@ const LocalScreen = memo(function LocalScreen(): ReactElement {
       {claude?.installed && claude.loggedIn && (
         <Choice testId="first-run-claude" icon="code" title="Use Claude Code" hint={`Signed in${claude.account ? ` as ${claude.account}` : ''} on this computer.`} onClick={() => finish('claude-code', { mode: 'auto', backend: 'claude-code' })} />
       )}
-      <Choice testId="first-run-offline" icon="cube" title="Continue offline" hint="The built-in planner and generator library, in your browser. Sign in any time from the top bar." onClick={() => finish('offline')} />
+      <Choice testId="first-run-offline" icon="cube" title="Continue offline" hint="The built-in planner and generator library, in your browser. Sign in any time from the top bar." onClick={() => finish('offline', OFFLINE_CHOICE_PREFS)} />
     </div>
   );
 });
@@ -435,7 +435,7 @@ const HostedScreen = memo(function HostedScreen(): ReactElement {
       <Choice testId="first-run-byok" icon="lock" title="Use your API key" hint="Anthropic, OpenAI, OpenRouter or Google Gemini. Called straight from this browser; never sent to us." onClick={() => setOpen((v) => (v === 'key' ? null : 'key'))}>
         {open === 'key' && <KeyForm />}
       </Choice>
-      <Choice testId="first-run-offline" icon="cube" title="Explore offline" hint="Templates and the built-in planner, right here. Connect an AI any time from the top bar." onClick={() => finish('offline')} />
+      <Choice testId="first-run-offline" icon="cube" title="Explore offline" hint="Templates and the built-in planner, right here. Connect an AI any time from the top bar." onClick={() => finish('offline', OFFLINE_CHOICE_PREFS)} />
     </div>
   );
 });

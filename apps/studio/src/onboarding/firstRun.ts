@@ -27,6 +27,13 @@ export const FIRST_RUN_CHOICES = ['offline', 'codex', 'claude-code', 'byok', 'br
 /** A first-run choice. */
 export type FirstRunChoice = (typeof FIRST_RUN_CHOICES)[number];
 
+/**
+ * Preferences the "Continue offline" / "Explore offline" choice applies: it pins the offline planner, so a CLI that
+ * signs in later (or one already signed in) is never used behind the user's back. Connecting again from the
+ * "Sign in" chip or the composer's model menu sets a new mode.
+ */
+export const OFFLINE_CHOICE_PREFS = Object.freeze({ mode: 'offline' as const });
+
 /** Remembered choice. */
 export interface OnboardingMarker {
   choice: FirstRunChoice;

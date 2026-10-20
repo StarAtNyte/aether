@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AiConnection, projectSessionKey } from '../src/ai/connection';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../src/ai/prefs';
+import { OFFLINE_CHOICE_PREFS } from '../src/onboarding/firstRun';
 
 const TOKEN = 'T'.repeat(43);
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -53,6 +54,19 @@ describe('local AI connection', () => {
     expect(r.calls.some((c) => c.url.includes('/api/local'))).toBe(false);
     expect(ai.resolve(prefs({ mode: 'local' }))).toMatchObject({ kind: 'local', ready: false });
     expect(ai.resolve(prefs({ mode: 'auto' })).kind).toBe('offline');
+  });
+
+  it('the first-run offline choice stays offline even when Claude Code is signed in on this computer', async () => {
+    const r = router({
+      '/api/health': () => json({ ok: true, mode: 'mock', providers: [], byok: true, local: true }),
+      '/api/local/status': () => json(LOCAL(false, true)),
+    });
+    const ai = new AiConnection({ fetch: r.fetch, session: null });
+    await ai.refresh();
+    expect(ai.resolve(prefs({}))).toMatchObject({ kind: 'local', ready: true });
+    const chosen = parsePrefs({ ...DEFAULT_AI_PREFS, ...OFFLINE_CHOICE_PREFS });
+    expect(chosen.mode).toBe('offline');
+    expect(ai.resolve(chosen)).toMatchObject({ kind: 'offline', ready: true });
   });
 
   it('auto picks Codex on this computer first, then Claude Code, then the bridge', async () => {
