@@ -40,6 +40,8 @@ export const ArchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('remove_item'), building: Id, room: Id, kind: z.string().min(1).max(40) }),
   // One wall of a room ("the bedroom's back wall") or all of them: a finish (wallpaper, panelling, brick...) and / or a dado; `clear` resets.
   z.object({ op: z.literal('set_wall'), building: Id, room: Id, wall: z.union([Compass, z.literal('all')]).default('all'), material: MaterialSpec.optional(), dado: z.union([WallDado, z.null()]).optional(), clear: z.boolean().default(false) }),
+  // People in the building ("two guests in the living room"): 0 to 8 idle-animated residents placed clear of doors and walkways.
+  z.object({ op: z.literal('set_residents'), building: Id, count: z.number().int().min(0).max(8) }),
   z.object({ op: z.literal('set_material'), building: Id, target: z.enum(['exterior', 'roof', 'floor', 'walls']), room: Id.optional(), material: MaterialSpec }),
 ]);
 export type ArchOp = z.infer<typeof ArchOp>;
@@ -240,6 +242,13 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
           lines.push(`set_roof ${plan.roof.shape}`);
           break;
         }
+        case 'set_residents': {
+          const plan = load(op.building);
+          if (op.count === 0) delete plan.residents;
+          else plan.residents = op.count;
+          lines.push(`set_residents ${op.count}`);
+          break;
+        }
         case 'set_style': {
           const plan = load(op.building);
           plan.style = op.style;
@@ -334,6 +343,8 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
   let tests = world.tests;
   const dropSubtree = (id: EntityId): void => {
     for (const x of subtree(world, id)) if (!world.entities[x]?.locked) delete entities[x];
+    // Residents stand in the world frame (they walk), so they are not in the building's subtree: they go with it.
+    for (const e of Object.values(world.entities)) if (e.arch?.role === 'resident' && e.arch.room?.startsWith(`${id}-`) && !e.locked) delete entities[e.id];
   };
   for (const id of removed) {
     dropSubtree(id);

@@ -113,10 +113,46 @@ describe('architecture flagships start the walkthrough inside, facing the house'
     expect(world.environment.ground?.skirt).toBe(false);
   });
 
-  it('the Dusk House has its lake and mountains', () => {
+  it('the Dusk House has its lake in a basin of real terrain, wooded hills and people inside', () => {
     const { world } = build('dusk-lake-house');
     expect(world.entities['lake-1']).toBeDefined();
-    expect(Object.values(world.entities).filter((e) => e.tags.includes('backdrop')).length).toBeGreaterThanOrEqual(3);
+    // The ground is a terrain entity (estate variant with a lake basin), not the flat plane, and the horizon is hills.
+    expect(world.environment.ground).toBeNull();
+    const land = Object.values(world.entities).find((e) => e.tags.includes('terrain'));
+    expect(land?.shape.kind === 'procedural' && land.shape.params['variant']).toBe(5);
+    expect(land?.shape.kind === 'procedural' && Number(land.shape.params['lakeRadius'])).toBeGreaterThan(0);
+    const woods = Object.values(world.entities).filter((e) => e.tags.includes('grove') && e.shape.kind === 'scatter');
+    expect(woods.length).toBeGreaterThanOrEqual(4);
+    expect(Object.values(world.entities).filter((e) => e.arch?.role === 'resident').length).toBe(2);
+  });
+
+  it('the Dusk House meadow does not grow through the living-room floor', () => {
+    const { world } = build('dusk-lake-house');
+    const building = Object.values(world.entities).find((e) => e.arch?.role === 'building');
+    const [bx, , bz] = building?.transform.position ?? [0, 0, 0];
+    // Footprint (plan 0..14 by 0..7) of the ground floor: no ground-cover point inside it.
+    for (const e of Object.values(world.entities)) {
+      if (e.shape.kind !== 'scatter' || !e.shape.points || e.tags.includes('grove')) continue;
+      for (const [px, , pz] of e.shape.points) {
+        const x = e.transform.position[0] + px - bx;
+        const z = e.transform.position[2] + pz - bz;
+        expect(x > -1 && x < 15 && z > -1 && z < 8).toBe(false);
+      }
+    }
+  });
+});
+
+describe('landscapes of the architecture flagships', () => {
+  it('Casa del Patio stands on a level plot of a hillside with woods, not on a flat plane', () => {
+    const { world } = build('casa-patio');
+    expect(world.environment.ground).toBeNull();
+    const land = Object.values(world.entities).find((e) => e.tags.includes('terrain'));
+    expect(land).toBeDefined();
+    if (land?.shape.kind !== 'procedural') throw new Error('terrain is procedural');
+    expect(land.shape.params['variant']).toBe(5);
+    expect(Number(land.shape.params['padRadius'])).toBeGreaterThanOrEqual(20);
+    expect(Object.values(world.entities).filter((e) => e.tags.includes('grove')).length).toBeGreaterThanOrEqual(3);
+    expect(Object.values(world.entities).filter((e) => e.arch?.role === 'resident').length).toBe(3);
   });
 });
 

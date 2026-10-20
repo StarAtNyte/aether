@@ -3,7 +3,7 @@
  * street with drivable car, haunted graveyard, and outer space.
  */
 import { r2 } from './builder';
-import { backdropMountains, clouds, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
+import { backdropMountains, clouds, hillside, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 import { catalogEntry, getCatalog } from '@aether/assets';
 
@@ -78,8 +78,10 @@ const village: Theme = {
       const wx = r2(c.x - 26);
       const wz = r2(c.z - 22);
       if (b.claim(wx, wz, 4)) b.gen('windmill', 'windmill', { height: 11 }, [wx, 0, wz], { yaw: 30, physics: 'static' });
-      backdropMountains(c, 5, '#7d7a70', 0.7);
-      clouds(c, 4);
+      if (!hillside(c, { pad: 62 })) {
+        backdropMountains(c, 5, '#7d7a70', 0.7);
+        clouds(c, 4);
+      }
     }
   },
 };
@@ -133,8 +135,10 @@ const castle: Theme = {
     treeRing(ring, 16, half + 6, half + 26, [{ generator: 'tree-pine', params: { height: 9 } }, { generator: 'tree-oak', params: { height: 7 } }]);
     scatterBelt(ring, 'grass', 'grass-tuft', {}, 50, half + 3, half + 30);
     if (c.primary) {
-      backdropMountains(c, 6, '#6c6a66', 0.6, 120, 40);
-      clouds(c, 5);
+      if (!hillside(c, { pad: 66 })) {
+        backdropMountains(c, 6, '#6c6a66', 0.6, 120, 40);
+        clouds(c, 5);
+      }
     }
   },
 };

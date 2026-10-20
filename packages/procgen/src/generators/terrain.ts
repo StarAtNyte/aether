@@ -182,7 +182,17 @@ const terrain = defineGenerator({
     resolution: pInt(128, 16, 256, 'grid cells per side (detail)'),
     roughness: pNum(0.5, 0, 1, '0 smooth hills … 1 rugged'),
     color: pColor('#5a8f3c', 'grass color'),
-    variant: pVariant(4, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls), 4 river valley (meandering riverbed at y = 0 along Z between soft grassy banks)'),
+    variant: pVariant(5, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls), 4 river valley (meandering riverbed at y = 0 along Z between soft grassy banks), 5 estate (a level plot for a house, meadow swells and a ring of hills; optional lake basin)'),
+    padRadius: pNum(20, 0, 200, 'estate (variant 5): radius of the level plot in meters'),
+    padX: pNum(0, -500, 500, 'estate: plot centre x'),
+    padZ: pNum(0, -500, 500, 'estate: plot centre z'),
+    lakeRadius: pNum(0, 0, 300, 'estate: lake basin radius in meters (0 = no lake)'),
+    lakeX: pNum(0, -500, 500, 'estate: lake centre x'),
+    lakeZ: pNum(0, -500, 500, 'estate: lake centre z'),
+    lakeDepth: pNum(2.5, 0.2, 30, 'estate: lake depth below the shore in meters'),
+    laneX: pNum(0, -500, 500, 'estate: far end x of a level lane (a drive) running from the plot centre'),
+    laneZ: pNum(0, -500, 500, 'estate: far end z of the lane'),
+    laneRadius: pNum(0, 0, 60, 'estate: half width of the level lane in meters (0 = none)'),
   },
   run(p, api) {
     const size = p.num('size');
@@ -191,6 +201,13 @@ const terrain = defineGenerator({
     const variant = p.int('variant');
     if (variant === 3) return canyonTerrain(api, size, H, rough, p.int('resolution'), p.color('color'));
     if (variant === 4) return riverValley(api, size, H, rough, p.int('resolution'), p.color('color'));
+    if (variant === 5) {
+      return estateTerrain(api, size, H, rough, p.int('resolution'), p.color('color'), {
+        pad: [p.num('padX'), p.num('padZ'), p.num('padRadius')],
+        lake: [p.num('lakeX'), p.num('lakeZ'), p.num('lakeRadius'), p.num('lakeDepth')],
+        lane: [p.num('laneX'), p.num('laneZ'), p.num('laneRadius')],
+      });
+    }
     const freq = 2.2 / size;
     const oct = 3 + Math.round(rough * 3);
     const pal = palette(p.color('color'));
@@ -274,6 +291,74 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
       out[0] = grassTop;
       out[1] = wall;
       out[2] = floor;
+      out[3] = 0;
+    },
+  });
+}
+
+/**
+ * Estate: a level plot (exactly one height inside `pad`) for a house and its garden, gentle meadow swells around it
+ * and a bowl of hills that closes the horizon, with an optional lake basin. The plot's own height is `h(padX, padZ)`
+ * (the lowest point of the mesh is at y = 0, so a lake sits below the plot): place the entity at `y = -h(padX, padZ)`.
+ */
+function estateTerrain(
+  api: InternalApi,
+  size: number,
+  H: number,
+  rough: number,
+  resolution: number,
+  grass: string,
+  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number] },
+): GeneratorOutput {
+  const n = api.noise;
+  const freq = 2.2 / size;
+  const pal = palette(grass);
+  const oct = 3 + Math.round(rough * 3);
+  const [px, pz, pr] = o.pad;
+  const [lx, lz, lr, ld] = o.lake;
+  const lane = o.lane;
+  const blend = Math.max(14, pr * 0.9);
+  return buildTerrain(api, {
+    size,
+    resolution,
+    height(x, z) {
+      const dTrue = Math.hypot(x - px, z - pz);
+      let d = dTrue;
+      if (lane[2] > 0) {
+        // Distance to the lane's centre line (a segment from the plot centre), as if it were part of the plot.
+        const sx = lane[0] - px;
+        const sz = lane[1] - pz;
+        const t = Math.min(1, Math.max(0, ((x - px) * sx + (z - pz) * sz) / Math.max(1e-6, sx * sx + sz * sz)));
+        const dl = Math.hypot(x - (px + sx * t), z - (pz + sz * t));
+        d = Math.min(dTrue, pr + Math.max(0, dl - lane[2]));
+      }
+      const swell = 0.5 + 0.5 * n.fbm2(x * freq * 1.3 + 4.1, z * freq * 1.3 - 8.7, oct);
+      const ridge = n.ridged2(x * freq * 0.9 + 5, z * freq * 0.9 - 2, 4);
+      const near = smoothstep(pr, pr + blend, d);
+      const mid = smoothstep(pr + blend, size * 0.34, d);
+      const far = smoothstep(size * 0.16, size * 0.5, dTrue);
+      // Meadow swells (a metre or two) around the plot, rising hills towards the rim.
+      let h = near * 0.025 * H * swell + mid * 0.16 * H * swell + far * far * H * (0.35 + 0.65 * ridge);
+      if (lr > 0) {
+        const dl = Math.hypot(x - lx, z - lz);
+        const basin = 1 - smoothstep(lr * 0.55, lr * 1.2, dl);
+        h = h * (1 - basin) - ld * Math.pow(basin, 1.4) + 0.12 * ld * basin * n.noise2(x * 0.2, z * 0.2);
+      }
+      return h;
+    },
+    color(t, h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
+      mixLinear(pal.grassDark, pal.grass, smoothstep(0.02, 0.5, t + w), out);
+      mixLinear(out, pal.rock, smoothstep(0.3, 0.52, slope + w), out);
+      if (lr > 0) mixLinear(pal.sand, out, smoothstep(ld - 1.3, ld - 0.4, h + w * 3), out);
+    },
+    splat(_t, h, slope, x, z, out) {
+      const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
+      const rock = smoothstep(0.3, 0.52, slope + w);
+      const wet = lr > 0 ? 1 - smoothstep(ld - 1.3, ld - 0.4, h + w * 3) : 0;
+      out[1] = rock * (1 - wet);
+      out[2] = wet;
+      out[0] = Math.max(0, 1 - out[1] - out[2]);
       out[3] = 0;
     },
   });

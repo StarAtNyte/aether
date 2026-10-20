@@ -6,6 +6,7 @@
  */
 import type { Json } from '@aether/core';
 import { r2, type Builder, type ScatterOpts } from './builder';
+import { estateGround, grove, landPoints } from './showcase/kit';
 
 /** Theme placement context: origin of the theme and the radius it must keep clear. */
 export interface ThemeCtx {
@@ -126,6 +127,25 @@ export function backdropMountains(c: ThemeCtx, count: number, color: string, sno
     const d = radius * c.b.rand(0.9, 1.15);
     c.b.gen('mountain', 'mountain', { size: r2(c.b.rand(60, 90)), height: r2(height * c.b.rand(0.7, 1.3)), color, snowLine, ...(foot ? { groundColor: foot } : {}) }, [r2(c.x + Math.cos(a) * d), 0, r2(c.z + Math.sin(a) * d)], { yaw: r2(c.b.rand(0, 360)), tags: ['backdrop'] });
   }
+}
+
+/**
+ * A real landscape for a setting that stands on level ground (a village, a castle): the ground plane is replaced by
+ * a terrain with a level plot of `pad` metres round the theme's origin (everything the theme places stays on y = 0),
+ * meadow swells beyond it and wooded hills that close the horizon, in place of the ring of blob mountains and the
+ * flat green field. Primary settings only; returns whether it was built.
+ */
+export function hillside(c: ThemeCtx, o: { pad: number; relief?: number; color?: string; conifers?: number; broadleaf?: number }): boolean {
+  if (!c.primary) return false;
+  const b = c.b;
+  const color = o.color ?? groundColor(b) ?? '#6a9a45';
+  b.env({ ground: null });
+  const land = estateGround(b, (b.seed ^ 0x51ed) >>> 0, { size: 520, relief: o.relief ?? 64, pad: [c.x, c.z, o.pad], color, roughness: 0.5, name: 'Landscape' });
+  const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30;
+  grove(b, 'woods-pine', 'Pine woods', 'tree-spruce', { height: 14, detail: 0.5, color: '#2f4f32' }, landPoints(b, o.conifers ?? 150, 230, wooded(o.pad + 14), 6.5, land.h), [0.75, 1.35], land.id, 520);
+  grove(b, 'woods-oak', 'Oak woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: '#4f7a34', variant: 1 }, landPoints(b, o.broadleaf ?? 120, 230, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, 520);
+  grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#587a3c' }, landPoints(b, 260, 200, wooded(o.pad + 4), 2.8, land.h), [0.7, 1.5], land.id, 520);
+  return true;
 }
 
 /** Inner and outer radius (m) of the cloud ring: beyond the set, where the camera never flies. */

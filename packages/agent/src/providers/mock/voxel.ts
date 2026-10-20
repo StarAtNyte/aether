@@ -120,19 +120,27 @@ function quotedText(raw: string): string | null {
 interface BuildResult {
   edits: VoxelEditInput[];
   notes: string[];
+  /** A village: the well in its square, where the player can start with open ground around and the houses in view. */
+  plaza?: [number, number];
+  /** A village: a spot in the square clear of every house, lamppost and the well (x, z). */
+  start?: [number, number];
 }
 
 /** Structures and art named in the request, placed around (sx, sz). */
 function builds(t: string, raw: string, seed: number, sx: number, sz: number, startIndex: number, village: boolean): BuildResult {
   const edits: VoxelEditInput[] = [];
   const notes: string[] = [];
+  let plaza: [number, number] | undefined;
+  let start: [number, number] | undefined;
   let i = startIndex;
   const at = (ring = 20): [number, number] => spot(seed, i++, sx, sz, ring);
   if (village) {
     // A well in the square, houses around it, lampposts and a watch tower.
     const [cx, cz] = at(16);
+    plaza = [cx, cz];
     edits.push({ shape: 'structure', structure: 'well', at: [cx, 0, cz], anchor: 'surface' });
     const houses = 7;
+    const solids: Array<[number, number, number]> = [[cx, cz, 4]];
     for (let k = 0; k < houses; k++) {
       const a = (k / houses) * Math.PI * 2 + (seed % 7) * 0.1;
       const r = 15 + (k % 2) * 4;
@@ -140,9 +148,26 @@ function builds(t: string, raw: string, seed: number, sx: number, sz: number, st
       const hz = Math.round(cz + Math.sin(a) * r);
       // Front door faces the square.
       const facing = Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? (Math.cos(a) > 0 ? 'west' : 'east') : Math.sin(a) > 0 ? 'north' : 'south';
+      solids.push([hx, hz, k % 3 === 0 ? 6 : 4.5]);
       edits.push({ shape: 'structure', structure: 'house', at: [hx, 0, hz], size: k % 3 === 0 ? 'medium' : 'small', facing, palette: HOUSE_PALETTES[(k + seed) % HOUSE_PALETTES.length] as Record<string, string>, anchor: 'surface' });
       const la = a + Math.PI / houses;
-      edits.push({ shape: 'structure', structure: 'lamppost', at: [Math.round(cx + Math.cos(la) * 9), 0, Math.round(cz + Math.sin(la) * 9)], anchor: 'surface' });
+      const lx = Math.round(cx + Math.cos(la) * 9);
+      const lz = Math.round(cz + Math.sin(la) * 9);
+      solids.push([lx, lz, 1.5]);
+      edits.push({ shape: 'structure', structure: 'lamppost', at: [lx, 0, lz], anchor: 'surface' });
+    }
+    // Where to start: the open spot on the south side of the square (radius 10.5 round the well; a sign or text built by
+    // the request reads from the south, looking north) farthest from every solid.
+    let best = -Infinity;
+    for (let a = 0; a < 48; a++) {
+      const ang = (a / 48) * Math.PI;
+      const sx = Math.round(cx + Math.cos(ang) * 10.5);
+      const sz = Math.round(cz + Math.sin(ang) * 10.5);
+      const room = Math.min(...solids.map(([x, z, r]) => Math.hypot(sx - x, sz - z) - r));
+      if (room > best) {
+        best = room;
+        start = [sx, sz];
+      }
     }
     edits.push({ shape: 'structure', structure: 'tower', at: [cx + 26, 0, cz - 4], size: 'small', anchor: 'surface' });
     // Hay stacks by the well.
@@ -209,7 +234,20 @@ function builds(t: string, raw: string, seed: number, sx: number, sz: number, st
     edits.push({ shape: 'text', text: s, at: [Math.round(sx - s.length * 3), 6, Math.round(sz - 18)], block: 'gold_block', plane: 'xy', anchor: 'surface' });
     notes.push(`the word "${s}" in gold blocks`);
   }
-  return { edits, notes };
+  return { edits, notes, ...(plaza ? { plaza } : {}), ...(start ? { start } : {}) };
+}
+
+/**
+ * Where a village game starts: in the square, a few blocks from the well (never inside a house, whatever the spiral
+ * dropped near the origin), looking at the castle if there is one, else the well. Without a village the player starts at the origin as before.
+ */
+function villageStart(b: BuildResult): { spawn: [number, number, number]; yaw: number } | null {
+  if (!b.plaza) return null;
+  const [cx, cz] = b.plaza;
+  const [sx, sz] = b.start ?? [cx + 9, cz + 10];
+  const spawn: [number, number, number] = [sx, 0, sz];
+  // Face the well: the first frame is the square, its roofs and (north of the well) whatever the request wrote in blocks.
+  return { spawn, yaw: Math.round((Math.atan2(-(cx - spawn[0]), -(cz - spawn[2])) * 180) / Math.PI) };
 }
 
 function gameSettings(t: string): Record<string, Json> {
@@ -267,7 +305,7 @@ function newWorld(raw: string, t: string, wipe: boolean): VoxelPlan {
   patches.push(
     { op: 'setMeta', name, description: raw.slice(0, 200), seed },
     { op: 'setEnvironment', set: skyOf(t, game) },
-    { op: 'setPlayer', set: { mode: 'firstPerson', spawn: [0, 0, 0], moveSpeed: 4.3, jumpSpeed: 8.4 } },
+    { op: 'setPlayer', set: { mode: 'firstPerson', ...(villageStart(b) ?? { spawn: [0, 0, 0] }), moveSpeed: 4.3, jumpSpeed: 8.4 } },
     { op: 'setVoxel', set: { preset, seed, viewDistance: 8, game } },
   );
   for (let k = 0; k < b.edits.length; k += 200) patches.push({ op: 'voxelEdit', edits: b.edits.slice(k, k + 200) });
@@ -291,6 +329,11 @@ export function planBlockfall(): VoxelPlan {
   const t = raw.toLowerCase();
   const seed = 4242;
   const b = builds(t, raw, seed, 0, 0, 0, true);
+  // The name stands on the far side of the square (north of the village), higher and farther than a sign on the common:
+  // from the start it is a landmark on the skyline, not a wall of letters in the player's face.
+  const sign = b.edits.findIndex((e) => e.shape === 'text');
+  const signEdit = sign >= 0 ? b.edits[sign] : undefined;
+  if (signEdit && signEdit.shape === 'text') b.edits[sign] = { ...signEdit, at: [-50, 9, -40], scale: 2 };
   const game: Record<string, Json> = {
     mode: 'survival',
     startHour: 6.6,
@@ -309,7 +352,7 @@ export function planBlockfall(): VoxelPlan {
     { op: 'clear', keepEnvironment: false },
     { op: 'setMeta', name: 'Blockfall', description: 'Mine, craft and survive the night in an endless block world.', seed },
     { op: 'setEnvironment', set: { sky: 'dawn', ground: null, weather: 'clear', bloom: 0.45 } },
-    { op: 'setPlayer', set: { mode: 'firstPerson', spawn: [0, 0, 0], moveSpeed: 4.3, jumpSpeed: 8.4 } },
+    { op: 'setPlayer', set: { mode: 'firstPerson', ...(villageStart(b) ?? { spawn: [0, 0, 0] }), moveSpeed: 4.3, jumpSpeed: 8.4 } },
     { op: 'setVoxel', set: { preset: 'survival', seed, viewDistance: 8, game } },
   ];
   for (let k = 0; k < b.edits.length; k += 200) patches.push({ op: 'voxelEdit', edits: b.edits.slice(k, k + 200) });

@@ -32,10 +32,13 @@ async function main(): Promise<void> {
       if (ARGS.includes('--gpu')) await context.addInitScript({ content: 'delete Navigator.prototype.gpu;' });
       const page = await context.newPage();
       page.on('pageerror', (e) => process.stdout.write(`pageerror: ${e.message}\n`));
+      page.on('console', (m) => {
+        if ((m.type() === 'error' || m.type() === 'warning') && !/GPU stall|GL Driver/.test(m.text())) process.stdout.write(`console.${m.type()}: ${m.text().slice(0, 240)}\n`);
+      });
       await page.goto(`${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => {
         const a = window.__aether;
-        return !!a && a.simulation !== null && a.store.getState().loading === null && !a.store.getState().agentBusy && Object.keys(a.history.current.entities).length > 0;
+        return !!a && a.simulation !== null && a.store.getState().loading === null && !a.store.getState().agentBusy && (Object.keys(a.history.current.entities).length > 0 || a.history.current.voxel !== undefined);
       }, null, { timeout: 120_000, polling: 250 });
       await page.waitForTimeout(2500);
       await page.locator('button.play-btn').first().click();

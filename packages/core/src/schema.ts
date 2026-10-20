@@ -374,6 +374,8 @@ export const ArchRole = z.enum([
   'furniture', 'fixture', 'light', 'switch', 'site', 'pool',
   // Additive: a drawer, cabinet door or appliance door that is its own entity (child of its piece).
   'part',
+  // Additive: a person placed in a building by the compiler (`BuildingPlan.residents`); `arch.room` names the room.
+  'resident',
 ]);
 export type ArchRole = z.infer<typeof ArchRole>;
 

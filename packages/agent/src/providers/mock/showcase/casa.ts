@@ -12,9 +12,9 @@
  */
 import { r2 } from '../builder';
 import type { MockPlan } from '../planner';
-import { finish, flagshipBuilder, onCircle } from './kit';
+import { estateGround, finish, flagshipBuilder, grove, landPoints } from './kit';
 
-const CONTROLS = ['WASD — walk', 'Mouse — look', 'E — open · use · pick up', 'Click — throw', '1–4 — time of day', 'P — photo mode'];
+const CONTROLS = ['WASD — walk', 'Mouse — look', 'E — open · use · pick up · talk', 'Click — throw', '1–4 — time of day', 'P — photo mode'];
 
 /** Plan origin in the world: the house is centred on the world origin. */
 const ORIGIN: [number, number] = [-9.5, -7.5];
@@ -26,6 +26,7 @@ export function casaPlan(): Record<string, unknown> {
     name: 'Casa del Patio',
     style: 'mediterranean',
     origin: ORIGIN,
+    residents: 3,
     plinth: 0.22,
     exteriorWall: { thickness: 0.42, finish: { finish: 'plaster', color: '#f2ede3' } },
     interiorWall: { thickness: 0.14 },
@@ -51,7 +52,8 @@ export function casaPlan(): Record<string, unknown> {
           { between: ['bed1', 'outside'], side: 'west', kind: 'sliding', width: 2, style: 'glass' },
           { between: ['master', 'outside'], side: 'north', kind: 'sliding', width: 3.2, style: 'glass' },
           { between: ['living', 'kitchen'], kind: 'opening', width: 2.6 },
-          { between: ['living', 'study'], width: 0.95 },
+          { between: ['living', 'study'], kind: 'opening', width: 1.4, at: 0.3 },
+          { between: ['hall', 'study'], kind: 'opening', width: 1.7 },
           { between: ['hall', 'master'], width: 1 },
           { between: ['bed1', 'bath'], width: 0.85 },
           { between: ['master', 'bath'], width: 0.85 },
@@ -92,12 +94,17 @@ export function casaPatio(): MockPlan {
     bloom: 0.4,
     exposure: 1.1,
     weather: 'clear',
-    ground: { material: { finish: 'grass', color: '#9a9654' }, size: 320 },
+    ground: null,
   });
   const [ox, oz] = ORIGIN;
   const at = (x: number, z: number): [number, number] => [r2(ox + x), r2(oz + z)];
+  // The plot: a level terrace of the hill for the house, forecourt and drive (the drive runs on a level lane), meadow swells
+  // around it and the serra closing the horizon.
+  const land = estateGround(b, 0x5171, { size: 440, relief: 46, pad: [0, 0, 27], lane: [r2(ox + 3), 52, 8], color: '#9a9a58', roughness: 0.45, name: 'Hillside above Sintra' });
+  b.keepClearRect(ox - 1, oz - 1, ox + 20, oz + 16);
   // Gravel forecourt and drive down to the lane, edged with dry-stone walls.
   const [dx, dz0] = at(3, 15.2);
+  b.keepClearRect(dx - 6.5, dz0 - 1, dx + 6.5, dz0 + 36);
   b.prim('drive', 'box', [4.2, 0.08, 34], [dx, 0.04, r2(dz0 + 17)], { name: 'Gravel drive', material: { finish: 'gravel', color: '#b9ad94' }, physics: 'static', castShadow: false, tags: ['site'] });
   b.prim('forecourt', 'box', [11, 0.08, 6.5], [r2(dx + 0.5), 0.04, r2(dz0 + 3)], { name: 'Forecourt', material: { finish: 'stone', color: '#cdc2ad' }, physics: 'static', castShadow: false, tags: ['site'] });
   for (const side of [-1, 1] as const) {
@@ -116,32 +123,43 @@ export function casaPatio(): MockPlan {
   }
   // A big olive in the corner of the patio.
   const [tx, tz] = at(6.1, 10.0);
-  b.gen('patio-olive', 'furn-tree', { height: 4.4, species: 'olive', leaf: '#74845a' }, [tx, 0.22, tz], { physics: 'static', tags: ['tree'], name: 'Olive tree' });
+  b.gen('patio-olive', 'tree-broadleaf', { height: 4.8, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1.2 }, [tx, 0.22, tz], { physics: 'static', tags: ['tree'], name: 'Olive tree' });
   // The olive grove below the house and cypresses along the drive.
-  for (let i = 0; i < 20; i++) {
-    const p = b.spot(0, 30, 7, 60, 3.4);
-    if (!p || (Math.abs(p[0]) < 9 && p[1] < 24)) continue;
-    b.gen('olive', 'furn-tree', { height: r2(b.rand(3.4, 5.4)), species: 'olive', leaf: b.chance(0.5) ? '#6c7d4c' : '#77875a' }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+  for (let i = 0; i < 34; i++) {
+    // Terraces of olives on both sides of the drive, near enough to walk among, thinning out up the hill.
+    const p = i < 26 ? b.spot(-6, 26, 9, 32, 3.6) : b.spot(0, 30, 30, 70, 3.4);
+    if (!p || (Math.abs(p[0] + 6.5) < 6.5 && p[1] > 4) || (Math.abs(p[0]) < 12 && p[1] < 14) || Math.hypot(p[0] + 22, p[1] + 26) < 18) continue; // nothing grows in front of the cover camera
+    b.gen('olive', 'tree-broadleaf', { height: r2(b.rand(4, 6)), variant: 2, color: b.chance(0.5) ? '#76865a' : '#849270', trunkColor: '#7d6d5a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
   for (const side of [-1, 1] as const) {
     for (let k = 0; k < 4; k++) {
       const [cx] = at(3 + side * 4.4, 0);
-      b.gen('cypress', 'furn-tree', { height: r2(b.rand(8.5, 11.5)), species: 'cypress', leaf: '#2f3f2c' }, [cx, 0, r2(dz0 + 4 + k * 6)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+      b.gen('cypress', 'furn-tree', { height: r2(b.rand(8.5, 11.5)), species: 'cypress', leaf: '#2f3f2c' }, [cx, land.h(cx, r2(dz0 + 4 + k * 6)), r2(dz0 + 4 + k * 6)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
     }
   }
   for (let i = 0; i < 5; i++) {
     const p = b.spot(-30, -22, 4, 22, 4);
-    if (!p) continue;
-    b.gen('pine', 'furn-tree', { height: r2(b.rand(11, 15)), species: 'umbrella-pine', leaf: '#4d6a3c' }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+    if (!p || Math.hypot(p[0] + 22, p[1] + 26) < 14) continue; // not in front of the cover camera
+    b.gen('pine', 'tree-broadleaf', { height: r2(b.rand(11, 14)), variant: 2, color: '#4f6c3a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
-  b.scatter('dry-grass', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 700, [90, 56], [0, 0, 44], { minSpacing: 0.7, scaleRange: [0.7, 1.5] });
-  b.scatter('dry-grass-back', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 260, [90, 18], [0, 0, -22], { minSpacing: 0.7, scaleRange: [0.7, 1.5] });
-  b.scatter('agave', 'bush', { color: '#6f8b6a', size: 0.7 }, 24, [30, 12], [0, 0, 34], { minSpacing: 2.5, scaleRange: [0.7, 1.2] });
-  // The serra: soft ochre and green hills far behind.
-  for (let i = 0; i < 7; i++) {
-    const [x, , z] = onCircle(0, 4, b.rand(150, 190), Math.PI * (1.1 + (i / 7) * 0.9));
-    b.gen('hill', 'mountain', { size: r2(b.rand(110, 150)), height: r2(b.rand(28, 46)), color: '#78814f', snowLine: 2, groundColor: '#8f9156' }, [x, 0, z], { tags: ['backdrop'] });
-  }
+  // The serra: oak and umbrella-pine woods on the hills, scrub and boulders on the slopes between.
+  const nearLane = (x: number, z: number): boolean => z > -4 && Math.abs(x - (ox + 3)) < 11;
+  const woods = (x: number, z: number, minD: number): boolean => Math.hypot(x, z) > minD && !nearLane(x, z) && land.slope(x, z) < 30 && Math.hypot(x + 22, z + 26) > 20; // clear of the cover camera
+  grove(b, 'woods-oak', 'Cork oak woods', 'tree-broadleaf', { height: 9.5, detail: 0.5, color: '#5a6f3d', variant: 1 }, landPoints(b, 330, 210, (x, z) => woods(x, z, 58), 6.5, land.h), [0.8, 1.35], land.id);
+  grove(b, 'woods-pine', 'Stone pines', 'tree-spruce', { height: 15, detail: 0.5, color: '#3f5a36' }, landPoints(b, 150, 210, (x, z) => woods(x, z, 70), 7, land.h), [0.8, 1.3], land.id);
+  grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#6c7a46' }, landPoints(b, 420, 190, (x, z) => woods(x, z, 34), 2.6, land.h), [0.7, 1.5], land.id);
+  const grass = { heightAt: land.h, onSurface: land.id, minSpacing: 0.5, scaleRange: [0.7, 1.6] as [number, number] };
+  b.scatter('dry-grass', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 3200, [150, 110], [0, 0, 52], grass);
+  b.scatter('dry-grass-near', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 1900, [64, 40], [-6, 0, 31], { ...grass, minSpacing: 0.35 });
+  // The slope in front of the cover camera and the paths round the house: close, dense tussocks and flowers, so the lawn reads as meadow from above.
+  b.scatter('dry-grass-cover', 'grass-tuft', { color: '#b0a868', size: 0.8 }, 2400, [44, 36], [-13, 0, -17], { ...grass, minSpacing: 0.3, scaleRange: [0.8, 1.8] });
+  b.scatter('wildflowers-cover', 'flowers', { color: '#e8d9a0', size: 0.5 }, 160, [44, 36], [-13, 0, -17], { ...grass, minSpacing: 0.7 });
+  b.scatter('dry-grass-back', 'grass-tuft', { color: '#a39c62', size: 0.7 }, 1500, [150, 70], [0, 0, -52], grass);
+  b.scatter('dry-grass-side', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 1100, [60, 60], [-50, 0, 0], grass);
+  b.scatter('dry-grass-east', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 1100, [60, 60], [50, 0, 0], grass);
+  b.scatter('wildflowers', 'flowers', { color: '#e8d9a0', size: 0.5 }, 260, [120, 90], [0, 0, 50], { ...grass, minSpacing: 0.8 });
+  b.scatter('agave', 'bush', { color: '#6f8b6a', size: 0.7 }, 40, [60, 40], [-10, 0, 40], { ...grass, minSpacing: 2.5, scaleRange: [0.7, 1.2] });
+  b.scatter('rocks', 'rock', { size: 0.9 }, 36, [160, 120], [0, 0, 20], { ...grass, minSpacing: 3, scaleRange: [0.6, 1.8] });
   b.player({ mode: 'firstPerson', moveSpeed: 3.1 });
   return finish(b, {
     name: 'Casa del Patio',
@@ -149,7 +167,7 @@ export function casaPatio(): MockPlan {
     intro: {
       title: 'Casa del Patio',
       tagline: 'A courtyard house in the hills above Sintra.',
-      objective: 'Walk in, open the drawers and the shutters of the day, carry a coffee out to the patio.',
+      objective: 'Walk in, say hello to the family, open the drawers and the shutters of the day, carry a coffee out to the patio.',
       controls: CONTROLS,
       accent: '#d98a5f',
     },

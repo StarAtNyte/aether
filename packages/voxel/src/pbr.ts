@@ -121,7 +121,8 @@ const BY_PATTERN: Partial<Record<TilePattern, PbrBinding>> = {
   table_top: bind('planks', 1, { tint: 0.8 }),
   hay_top: bind('thatch', 1, { tint: 0.8 }),
   hay_side: bind('thatch', 1, { tint: 0.8 }),
-  metal: bind('metal', 8, { tint: 1, metallic: 0.92, rough: 0.55 }),
+  // Half metallic: blocks are lit by the sun and sky only (no reflections to catch), where a full metal reads dark and olive.
+  metal: bind('metal', 8, { tint: 1, metallic: 0.45, rough: 0.42 }),
   ice: bind('ice', 7, { tint: 0.75, rough: 0.35 }),
   obsidian: bind('rock-dark', 1, { tint: 1, rough: 0.28, metallic: 0.05 }),
   bedrock: bind('rock-dark', 1, { tint: 0.9, rough: 1 }),

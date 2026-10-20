@@ -109,3 +109,57 @@ export function raycastVoxels(
   }
   return false;
 }
+
+/**
+ * The way to face at a spawn: the heading closest to `preferred` (radians, forward is `(-sin yaw, -cos yaw)`) whose view is
+ * open. Each of `steps` evenly spaced headings is sampled at knee, chest and eye height up to `range` blocks; its open
+ * distance is the shortest of the three. The preferred heading is kept when it is open for at least `enough` blocks;
+ * otherwise the best heading wins (openness is the harmonic mean of nine rays spread over about 70 degrees (a thin post a metre away still lands between two of them)), a small penalty for turning away breaking near-ties. Pure and allocation-light.
+ */
+export function openestYaw(
+  get: (x: number, y: number, z: number) => number,
+  hits: (id: number) => boolean,
+  x: number,
+  y: number,
+  z: number,
+  preferred: number,
+  options: { steps?: number; range?: number; enough?: number; eye?: number } = {},
+): number {
+  const steps = Math.max(4, Math.min(72, options.steps ?? 24));
+  const range = options.range ?? 24;
+  const enough = options.enough ?? 10;
+  const eye = options.eye ?? 1.6;
+  const out = createHit();
+  const ray = (yaw: number): number => {
+    const dx = -Math.sin(yaw);
+    const dz = -Math.cos(yaw);
+    let d = range;
+    for (const h of [0.5, 1.0, eye]) if (raycastVoxels(get, x, y + h, z, dx, 0, dz, range, hits, out)) d = Math.min(d, out.distance);
+    return d;
+  };
+  // A heading is as open as the harmonic mean of a fan of nine rays around it (the centre counts double): a near wall on
+  // either side drags it down, so a lane that is clear dead ahead but brushes a wall a block away reads as a corridor.
+  const open = (yaw: number): number => {
+    let inv = 0;
+    let weight = 0;
+    for (let k = -4; k <= 4; k++) {
+      const w = k === 0 ? 2 : 1;
+      inv += w / Math.max(0.5, ray(yaw + k * 0.15));
+      weight += w;
+    }
+    return weight / inv;
+  };
+  if (open(preferred) >= enough) return preferred;
+  let best = preferred;
+  let bestScore = -Infinity;
+  for (let i = 0; i < steps; i++) {
+    const yaw = preferred + (i / steps) * Math.PI * 2;
+    const turn = Math.abs(((i / steps + 0.5) % 1) - 0.5) * 2; // 0 at the preferred heading, 1 straight behind
+    const score = open(yaw) - turn * 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = yaw;
+    }
+  }
+  return best;
+}

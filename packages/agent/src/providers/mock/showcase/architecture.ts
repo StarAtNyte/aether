@@ -13,10 +13,10 @@
 import type { V3 } from '../builder';
 import { r2 } from '../builder';
 import type { MockPlan } from '../planner';
-import { finish, flagshipBuilder, onCircle } from './kit';
+import { estateGround, finish, flagshipBuilder, grove, landPoints, onCircle } from './kit';
 import { cityStreets, skylineRing } from './skyline';
 
-const WALK_CONTROLS = ['WASD — walk', 'E — doors & lights', '1–4 — time of day', 'R — swap finishes', 'P — photo mode', 'V — view'];
+const WALK_CONTROLS = ['WASD — walk', 'E — doors, lights, talk', '1–4 — time of day', 'R — swap finishes', 'P — photo mode', 'V — view'];
 
 /** Skyline Penthouse: rooftop apartment over a sunset city. */
 export function skylinePenthouse(): MockPlan {
@@ -50,9 +50,29 @@ export function skylinePenthouse(): MockPlan {
   parapet([cx + half, 0, cz - half], [cx + half, 0, cz + half]);
   // Rooftop planting and loungers on the deck outside the glass.
   for (const [x, z] of [[-15.5, -13], [15.5, -13], [-15.5, 13], [15.5, 13], [-15.5, 0], [15.5, 0]] as const) {
-    b.asset('planter', 'planter', [x, 0, z], { physics: 'static', footprint: 1 });
-    b.gen('olive', 'furn-tree', { height: 3.4, species: 'olive', leaf: '#74845a' }, [x, 0.6, z], { physics: 'static' });
+    b.prim('planter', 'box', [1.5, 0.72, 1.5], [x, 0.36, z], { name: 'Planter', material: { finish: 'concrete', color: '#bdb6aa' }, physics: 'static', footprint: 1, tags: ['planter'] });
+    b.prim('planter-soil', 'box', [1.3, 0.04, 1.3], [x, 0.73, z], { material: { finish: 'soil', color: '#3f3328' }, castShadow: false });
+    b.gen('olive', 'tree-broadleaf', { height: 3.9, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1.1 }, [x, 0.72, z], { yaw: r2(b.rand(0, 360)), physics: 'static' });
   }
+  // A guest on the terrace with a drink, at the far edge of the pool looking out over the city (walkable deck, clear of the loungers).
+  b.add({
+    id: b.id('guest'),
+    name: 'Guest',
+    shape: { kind: 'primitive', primitive: 'capsule', size: [0.56, 1.7, 0.56] },
+    transform: { position: [4.4, 1.0, -10.1], rotation: [0, 180, 0] },
+    physics: { body: 'kinematic' },
+    character: { wardrobe: 'formal', gender: 'female', age: 'adult', top: '#2f4a5e', bottom: '#2a2d33', mood: 'calm', hold: 'cup' },
+    npc: {
+      role: 'guest',
+      archetype: 'villager',
+      faction: 'household',
+      wander: 0.3,
+      speed: 0.8,
+      talkRange: 2.8,
+      dialogue: { start: 'start', nodes: { start: { text: 'The city never looks better than at this hour. Stay a while.', next: null } } },
+    } as never,
+    tags: ['npc', 'resident'],
+  });
   // The city: towers standing on streets 40 m below the roof, their crowns rising around the
   // terrace, landmark spires beyond.
   // 64 setback high-rises with window-grid facades (lit windows at dusk) over a street grid 40 m below.
@@ -68,6 +88,9 @@ export function skylinePenthouse(): MockPlan {
     name: 'Skyline Penthouse',
     style: 'modern',
     origin: [-9.5, -3],
+    residents: 2,
+    // Start in the gallery hall facing the living room, so the first frame is the room and the city beyond its windows.
+    spawn: { at: [5, 8.3], yaw: 0 },
     plinth: 0.15,
     exteriorWall: { thickness: 0.3, finish: { finish: 'plaster', color: '#efebe4' } },
     levels: [{
@@ -91,7 +114,7 @@ export function skylinePenthouse(): MockPlan {
         { between: ['dining', 'kitchen'], kind: 'opening', width: 3.2 },
         { between: ['living', 'outside'], side: 'north', kind: 'sliding', width: 2.4, style: 'glass' },
         { between: ['hall', 'master'] },
-        { between: ['hall', 'bath'], width: 0.8 },
+        { between: ['hall', 'bath'], width: 0.9 },
         { between: ['hall', 'guest'] },
         { between: ['hall', 'study'] },
       ],
@@ -119,7 +142,7 @@ export function skylinePenthouse(): MockPlan {
     intro: {
       title: 'Skyline Penthouse',
       tagline: 'Three bedrooms, a terrace pool and the whole city at your feet.',
-      objective: 'Walk through, switch the lights, change the time of day and take a photo.',
+      objective: 'Walk through, meet your guests, switch the lights, change the time of day and take a photo.',
       controls: WALK_CONTROLS,
       accent: '#f2b880',
     },
@@ -141,42 +164,43 @@ export function duskLakeHouse(): MockPlan {
     bloom: 0.95,
     exposure: 1.1,
     weather: 'fireflies',
-    ground: { material: { finish: 'grass', color: '#6f8a52' }, size: 260 },
+    ground: null,
   });
-  // The lake south of the terrace, with a sandy rim, reeds and a jetty.
+  // The land: a level plot for the house and its terrace, meadow swells, wooded hills on the horizon and a lake basin
+  // south of the terrace (the water level is the shore's, a little below the plot).
   const lx = 7;
-  const lz = 36;
-  const lr = 17;
-  const lake = b.prim('lake', 'cylinder', [lr * 2, 0.08, lr * 2], [lx, 0.05, lz], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#4f7f99', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
-  b.prim('lake-shore', 'cylinder', [lr * 2 + 3, 0.05, lr * 2 + 3], [lx, 0.03, lz], { material: { preset: 'sand', color: '#a8977a' }, castShadow: false });
+  const lz = 39;
+  const lr = 15;
+  const waterY = -0.45;
+  const land = estateGround(b, 0xd05e, { size: 420, relief: 52, pad: [7, 4, 20], lake: [lx, lz, lr, 3.4], color: '#6f8a4e', roughness: 0.5, name: 'Lakeside land' });
+  b.keepClearRect(-3, -1, 17, 16);
+  const lake = b.prim('lake', 'cylinder', [lr * 2.5, 0.08, lr * 2.5], [lx, waterY, lz], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#4f7f99', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water'] });
   b.reserve(lx, lz, lr + 1);
   b.keepClear(lx, lz, lr + 1);
-  b.gen('jetty', 'dock', { length: 10, width: 2, height: 0.45, color: '#7a5a3c', variant: 1 }, [lx - 2, 0, lz - lr + 3], { yaw: 90, physics: 'static', name: 'Jetty' });
-  b.gen('rowboat', 'boat', { length: 3.6, variant: 0, color: '#e8e1d4', accentColor: '#2f5d7a' }, [lx + 2.2, 0.05, lz - lr + 8], { yaw: 70, behaviors: [{ type: 'bob', params: { amplitude: 0.05, period: 3.6 } }], name: 'Rowboat' });
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2 + 0.3;
-    const [x, , z] = onCircle(lx, lz, lr + 1.2, a);
-    b.scatter('reeds', 'meadow-grass', { color: '#6f8a3a', size: 1.2 }, 9, [2.6, 2.6], [x, 0, z], { minSpacing: 0.35, scaleRange: [0.9, 1.7] });
-  }
-  // Pines and birches framing the house, a path to the jetty, mountains beyond the lake.
-  for (let i = 0; i < 26; i++) {
-    const p = b.spot(7, 6, 18, 60, 2.2);
-    if (!p) continue;
-    if (Math.abs(p[0] - lx) < lr + 4 && p[1] > 14) continue;
-    const pine = b.chance(0.6);
-    // Leaf-card spruce and broadleaf trees (the realistic vegetation generators), not the stylised cones.
-    b.gen(pine ? 'pine' : 'birch', pine ? 'tree-spruce' : 'tree-broadleaf', pine ? { height: r2(b.rand(11, 18)), color: '#2f4f3a' } : { height: r2(b.rand(8, 12)), color: '#8fa558', trunkColor: '#d8d2c4', variant: 1 }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
-  }
-  b.scatter('meadow', 'meadow-grass', { color: '#7d9a52', size: 0.6 }, 900, [70, 50], [7, 0, 6], { minSpacing: 0.6, scaleRange: [0.7, 1.4] });
-  for (let i = 0; i < 6; i++) {
-    const [x, , z] = onCircle(lx, lz, b.rand(120, 150), Math.PI * 0.15 + (i / 6) * Math.PI * 0.7);
-    b.gen('mountain', 'mountain', { size: r2(b.rand(90, 130)), height: r2(b.rand(35, 60)), color: '#5d6676', snowLine: 0.7, groundColor: '#6f8a52' }, [x, 0, z], { tags: ['backdrop'] });
-  }
+  b.keepClearRect(lx - lr * 1.2, lz - lr * 1.2, lx + lr * 1.2, lz + lr * 1.2);
+  b.gen('jetty', 'dock', { length: 10, width: 2, height: 0.45, color: '#7a5a3c', variant: 1 }, [lx - 2, waterY - 0.15, lz - lr + 1.5], { yaw: 90, physics: 'static', name: 'Jetty' });
+  b.gen('rowboat', 'boat', { length: 3.6, variant: 0, color: '#e8e1d4', accentColor: '#2f5d7a' }, [lx + 2.2, waterY + 0.05, lz - lr + 8], { yaw: 70, behaviors: [{ type: 'bob', params: { amplitude: 0.05, period: 3.6 } }], name: 'Rowboat' });
+  const awayFromLake = (x: number, z: number, d: number): boolean => Math.hypot(x - lx, z - lz) > lr * 1.25 + d;
+  const onPlot = (x: number, z: number): boolean => x > -6 && x < 20 && z > -4 && z < 19;
+  // Reeds along the shore, spruce and birch round the plot and up the hills, meadow grass, shrubs and boulders.
+  const reeds = landPoints(b, 140, 60, (x, z) => { const d = Math.hypot(x - lx, z - lz); return d > lr * 1.0 && d < lr * 1.3; }, 0.7, (x, z) => land.h(x, z), 30);
+  grove(b, 'reeds', 'Reeds', 'meadow-grass', { color: '#6f8a3a', size: 1.3 }, reeds, [0.9, 1.7], land.id, 120);
+  const ok = (minD: number) => (x: number, z: number): boolean => !onPlot(x, z) && awayFromLake(x, z, 3) && Math.hypot(x - 30, z - 38) > 27 && Math.hypot(x - 7, z - 4) > minD && land.slope(x, z) < 28;
+  grove(b, 'spruce', 'Spruce wood', 'tree-spruce', { height: 14, detail: 0.55, color: '#2f4f3a' }, landPoints(b, 210, 200, ok(26), 5.5, land.h), [0.75, 1.35], land.id);
+  grove(b, 'birch', 'Birches', 'tree-broadleaf', { height: 10, detail: 0.55, color: '#8fa558', trunkColor: '#d8d2c4', variant: 1 }, landPoints(b, 150, 170, ok(22), 6, land.h), [0.8, 1.25], land.id);
+  grove(b, 'shrub', 'Shrubs', 'shrub', { size: 1.4, detail: 0.6, color: '#5f7a42' }, landPoints(b, 380, 160, ok(14), 2.4, land.h), [0.7, 1.5], land.id);
+  grove(b, 'boulder', 'Boulders', 'boulder', { size: 1.6, lichen: 0.3, variant: 0 }, landPoints(b, 40, 150, (x, z) => ok(10)(x, z) || !awayFromLake(x, z, 0.5) && Math.hypot(x - lx, z - lz) > lr * 1.15, 3.5, land.h), [0.5, 1.6], land.id);
+  const meadow = { heightAt: land.h, onSurface: land.id, minSpacing: 0.45, scaleRange: [0.7, 1.5] as [number, number] };
+  b.scatter('meadow', 'meadow-grass', { color: '#7d9a52', size: 0.6 }, 3600, [100, 90], [7, 0, 20], meadow);
+  b.scatter('meadow-cover', 'meadow-grass', { color: '#86a258', size: 0.7 }, 2200, [30, 26], [22, 0, 27], { ...meadow, minSpacing: 0.3, scaleRange: [0.8, 1.7] });
+  b.scatter('meadow-north', 'meadow-grass', { color: '#7d9a52', size: 0.6 }, 2000, [110, 50], [7, 0, -34], meadow);
+  b.scatter('wildflowers', 'flowers', { color: '#e9e1b0', size: 0.5 }, 260, [90, 80], [7, 0, 16], { ...meadow, minSpacing: 0.8 });
   b.light(lake, [0, 3, 0], '#ffb06a', 0.8, 30);
   const plan = {
     id: 'lakehouse',
     name: 'Dusk House by the Lake',
     style: 'japandi',
+    residents: 2,
     plinth: 0.3,
     exteriorWall: { thickness: 0.3, finish: { finish: 'plaster', color: '#e9e4da' } },
     levels: [
@@ -211,7 +235,7 @@ export function duskLakeHouse(): MockPlan {
           { id: 'bath', type: 'bathroom', name: 'Bathroom', rect: [6, 2.2, 9, 7] },
           { id: 'guest', type: 'bedroom', name: 'Guest bedroom', rect: [9, 2.2, 14, 7] },
         ],
-        doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'], width: 0.8 }, { between: ['landing', 'guest'] }],
+        doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'], width: 0.9 }, { between: ['landing', 'guest'] }],
         windows: [
           { room: 'master', side: 'south', count: 2, width: 2.2, height: 2.3, sill: 0.4, style: 'picture' },
           { room: 'master', side: 'west', count: 1, width: 1.8, height: 2.2, sill: 0.4, style: 'picture' },

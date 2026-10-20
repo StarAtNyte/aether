@@ -22,7 +22,7 @@ export { VoxelJobContext, terrainIdentity, identityKey, saveIdentity, outsideBor
 export { pbrBinding, buildTileTable, hexLinear, srgbToLinear, PBR_CLASS, TILE_TABLE_ROWS, type PbrBinding, type PbrClass, type SheetMaterial } from './pbr';
 export { buildAtlas, paintTile, tileAverage, ATLAS_SIZE, ATLAS_TILES, ATLAS_MAX_LOD, TILE_SIZE, type BlockAtlas } from './atlas';
 export { VoxelWorld, chunkOf, type ChunkSlot, type UnloadedPolicy } from './world';
-export { raycastVoxels, createHit, type VoxelHit } from './raycast';
+export { raycastVoxels, openestYaw, createHit, type VoxelHit } from './raycast';
 export { createBody, moveBody, sweepAxis, overlapsSolid, resolvePenetration, sampleLiquid, SKIN, STEP_HEIGHT, type SolidQuery, type VoxelBody } from './collide';
 export { ToWorker, FromWorker, checkMesh, MAX_PASS_QUADS } from './protocol';
 export { VoxelWorkerHandler, type WorkerReply } from './worker/handler';

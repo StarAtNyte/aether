@@ -53,7 +53,7 @@ export const ASSET_CATEGORIES = [
 /** Operations of build_architecture (mirrors @aether/arch `ArchOp`). */
 export const ARCH_OPS = [
   'create_building', 'remove_building', 'add_level', 'add_room', 'remove_room', 'add_door', 'add_window', 'add_stairs', 'set_roof', 'set_style',
-  'furnish_room', 'place_item', 'remove_item', 'set_wall', 'set_material',
+  'furnish_room', 'place_item', 'remove_item', 'set_wall', 'set_material', 'set_residents',
 ] as const;
 
 /** Upper bound of architecture ops per call (mirrors @aether/arch `MAX_ARCH_OPS`). */

@@ -16,7 +16,8 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   'highland-trail': { pos: [44, 11.9, 143], target: [18, 9.2, 80] },
   'lantern-isles': { pos: [30, 23, 30], target: [-10, 29, -42] },
   'chain-reaction': { pos: [-38, 4.2, 10], target: [-22, 1.3, -3] },
-  blockfall: { pos: [-38, 24, -62], target: [6, 3, -6], overGround: true },
+  // From the west over the village, the castle on the right and the name in gold blocks across the far side of the square.
+  blockfall: { pos: [-60, 26, 12], target: [4, 4, -22], overGround: true },
   'kart-canyon': { pos: [31, 3.6, 142], target: [17, 2.2, 62] },
   'neon-rain-city': { pos: [4, 3.2, 42], target: [-1, 9, -40] },
   'kyoto-temple': { pos: [0.6, 2.1, 53], target: [-1.5, 2.6, 24] },

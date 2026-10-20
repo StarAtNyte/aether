@@ -5,7 +5,7 @@
  *
  * `slug` or `slug:cover` uses the flagship cover camera, `slug:play` presses Play, runs forward for a
  * moment and captures the third-person view, `slug:px,py,pz>tx,ty,tz` is an explicit camera,
- * `slug:env-<sky>-<hour>` re-lights the flagship's cover view (for example `highland-trail:env-night-23`). Set
+ * `slug:editor` is the page as the editor opens it (own framing, no camera change), `slug:env-<sky>-<hour>` re-lights the flagship's cover view (for example `highland-trail:env-night-23`). Set
  * `AETHER_E2E_GPU=1` to use the real GPU. Everything started here is stopped in a `finally`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -77,17 +77,21 @@ async function main(): Promise<void> {
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     await ctx.addInitScript(SKIP_FIRST_RUN);
-    // `SHOT_BACKEND=webgpu|webgl2` pins the renderer backend (default: the studio's own choice).
-    if (process.env['SHOT_BACKEND']) await ctx.addInitScript(`try { localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ backend: '${process.env['SHOT_BACKEND']}' })); } catch {}`);
+    // `SHOT_WEBGL2=1`: hide WebGPU so the studio takes its WebGL2 backend (what Firefox and most laptops run).
+    if (process.env['SHOT_WEBGL2'] === '1') await ctx.addInitScript('delete Navigator.prototype.gpu;');
+    // `SHOT_BACKEND=webgpu|webgl2`: choose the renderer backend through the studio setting (default: the studio's own policy).
+    if (process.env['SHOT_BACKEND']) await ctx.addInitScript(`try { localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ backend: ${JSON.stringify(process.env['SHOT_BACKEND'])} })); } catch {}`);
     if (process.env['SHOT_WATER']) await ctx.addInitScript(`globalThis.__WATER_TIER = '${process.env['SHOT_WATER']}';`);
     const page = await ctx.newPage();
     page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
     page.on('console', (m) => {
-      if (m.type() === 'error' || m.type() === 'warning') log(`  console.${m.type()}: ${m.text().slice(0, 200)}`);
+      if (m.type() === 'error' || m.type() === 'warning' || process.env['SHOT_VERBOSE'] === '1') log(`  console.${m.type()}: ${m.text().slice(0, 200)}`);
     });
-    let camNo = 0;
     for (const spec of specs) {
-      const [slug = '', mode = 'cover'] = spec.split(':');
+      // `slug:px,py,pz@tx,ty,tz=name` (`@` works wherever `>` is awkward in a shell; `=name` names the file).
+      const [slug = '', modeRaw = 'cover'] = spec.split(':');
+      const [modeNamed = 'cover', label] = modeRaw.split('=');
+      const mode = modeNamed.replace('@', '>');
       log(`${spec}`);
       await open(page, server.url, slug);
       log(`  backend: ${(await page.evaluate(() => document.body.innerText.match(/WebGPU|WebGL2/)?.[0] ?? 'unknown'))}`);
@@ -103,6 +107,11 @@ async function main(): Promise<void> {
         await page.keyboard.up('w');
         await page.waitForTimeout(600);
         await shoot(page, join(outDir!, `${slug}-play.png`));
+      } else if (mode === 'editor') {
+        // The editor as a person first sees it: the studio's own framing, the whole page.
+        await page.waitForTimeout(2500);
+        await page.screenshot({ path: join(outDir!, `${slug}-editor.png`) });
+        log(`  wrote ${join(outDir!, `${slug}-editor.png`)}`);
       } else if (mode.startsWith('env-')) {
         const [, sky = 'day', hour = '12'] = mode.split('-');
         await page.evaluate(
@@ -124,20 +133,23 @@ async function main(): Promise<void> {
         await shoot(page, join(outDir!, `${slug}-${sky}-${hour}${custom ? '-up' : ''}.png`));
       } else if (mode.includes('>')) {
         // One or more explicit cameras on the same loaded world: `px,py,pz>tx,ty,tz[#label]` joined by `|`.
-        const cams = spec.slice(slug.length + 1).split('|');
+        const cams = spec.slice(slug.length + 1).split('=')[0]!.split('|');
         for (const [n, camSpec] of cams.entries()) {
-          const [pose = '', label = cams.length > 1 ? String(n + 1) : ''] = camSpec.split('#');
+          const [pose = '', tag = cams.length > 1 ? String(n + 1) : ''] = camSpec.split('#');
+          const name = label && cams.length === 1 ? label : tag ? `cam-${tag}` : 'cam';
           const [a = '', b = ''] = pose.split('>');
           await setCam(page, a.split(',').map(Number), b.split(',').map(Number));
           await page.waitForTimeout(Number(process.env['SHOT_SETTLE'] ?? 2500));
-          await shoot(page, join(outDir!, `${slug}-cam${label ? `-${label}` : ''}.png`));
+          await shoot(page, join(outDir!, `${slug}-${name}.png`));
         }
       } else {
         const cam = COVER_CAMERAS[slug];
         if (cam) {
           if (cam.arch) await page.evaluate((v) => window.__aether?.store.getState().setArch({ ...v, quality: 'studio' }), cam.arch);
-          await setCam(page, cam.pos, cam.target);
-          await page.waitForTimeout(2500);
+          // Block worlds: heights are relative to the terrain under the target.
+          const g = cam.overGround ? await page.evaluate(([x, z]) => window.__aether?.simulation?.voxel?.groundAt(x as number, z as number) ?? 0, [cam.target[0], cam.target[2]] as const) : 0;
+          await setCam(page, [cam.pos[0], cam.pos[1] + g, cam.pos[2]], [cam.target[0], cam.target[1] + g, cam.target[2]]);
+          await page.waitForTimeout(cam.overGround ? 10_000 : 2500);
         }
         await shoot(page, join(outDir!, `${slug}-cover.png`));
       }

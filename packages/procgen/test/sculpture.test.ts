@@ -85,3 +85,55 @@ describe('terrain river valley variant', () => {
     expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
   });
 });
+
+describe('terrain estate variant', () => {
+  const size = 300;
+  const base = { variant: 5, size, height: 40, resolution: 120, padX: 10, padZ: -5, padRadius: 22 } as const;
+
+  /** Heights (m above the lowest point) of the mesh vertices within `r` of (cx, cz). */
+  function heightsNear(out: ReturnType<typeof generateBuiltinSync>, cx: number, cz: number, r: number): number[] {
+    const p = out.parts[0]!.positions;
+    const hs: number[] = [];
+    for (let i = 0; i < p.length; i += 3) if (Math.hypot(p[i]! - cx, p[i + 2]! - cz) < r) hs.push(p[i + 1]!);
+    return hs;
+  }
+
+  it('keeps the plot exactly level, rolls gently beyond it and closes the horizon with hills', () => {
+    const out = generateBuiltinSync('terrain', base, 7);
+    const plot = heightsNear(out, 10, -5, 22 - 3);
+    expect(plot.length).toBeGreaterThan(40);
+    expect(Math.max(...plot) - Math.min(...plot)).toBeLessThan(1e-6);
+    // The rim is far higher than the plot; the meadow just outside the plot is within a couple of metres of it.
+    const rim = heightsNear(out, 0, 140, 12);
+    expect(Math.min(...rim) - plot[0]!).toBeGreaterThan(5);
+    const meadow = heightsNear(out, 10 + 30, -5, 5);
+    expect(Math.max(...meadow) - plot[0]!).toBeLessThan(4);
+    expect(out.colliders.some((c) => c.kind === 'heightfield')).toBe(true);
+  });
+
+  it('carves a lake basin below the plot and keeps a level lane for a drive', () => {
+    const out = generateBuiltinSync('terrain', { ...base, lakeX: 10, lakeZ: 60, lakeRadius: 14, lakeDepth: 3, laneX: 10, laneZ: 40, laneRadius: 4 }, 7);
+    const plot = heightsNear(out, 10, -5, 15)[0]!;
+    const lake = heightsNear(out, 10, 60, 4);
+    expect(Math.max(...lake)).toBeLessThan(plot - 2);
+    // The lowest point of the whole mesh is the lake bed (the terrain contract: lowest vertex at y = 0).
+    const all = out.parts[0]!.positions;
+    let lowest = Infinity;
+    for (let i = 1; i < all.length; i += 3) lowest = Math.min(lowest, all[i]!);
+    expect(lowest).toBeCloseTo(0, 5);
+    expect(Math.min(...lake)).toBeLessThan(0.6);
+    const lane = heightsNear(out, 10, 30, 3);
+    expect(lane.length).toBeGreaterThan(3);
+    expect(Math.max(...lane) - Math.min(...lane)).toBeLessThan(1e-6);
+    expect(lane[0]!).toBeCloseTo(plot, 5);
+  });
+
+  it('is deterministic and ignores estate params in the other variants', () => {
+    const a = generateBuiltinSync('terrain', base, 7).parts[0]!.positions;
+    const b = generateBuiltinSync('terrain', base, 7).parts[0]!.positions;
+    expect(Array.from(a)).toEqual(Array.from(b));
+    const plain = generateBuiltinSync('terrain', { variant: 0, size: 60, height: 6, resolution: 32 }, 3).parts[0]!.positions;
+    const plainWithEstate = generateBuiltinSync('terrain', { variant: 0, size: 60, height: 6, resolution: 32, padRadius: 30, lakeRadius: 10 }, 3).parts[0]!.positions;
+    expect(Array.from(plainWithEstate)).toEqual(Array.from(plain));
+  });
+});

@@ -9,6 +9,8 @@ import { askMock, collect, MemoryHost, mockApply, patchesOf, TEST_CATALOGS } fro
 const BUILTIN = new Set([
   'terrain', 'island', 'mountain', 'tree-pine', 'tree-oak', 'tree-palm', 'bush', 'rock', 'grass-tuft', 'flowers', 'mushroom', 'house', 'tower', 'wall', 'fence', 'bridge',
   'stairs', 'arch', 'ramp', 'lamp-post', 'bench', 'table', 'chair', 'crate', 'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal',
+  // The realistic vegetation set the hillside landscapes of village and castle settings plant on their hills.
+  'tree-spruce', 'tree-broadleaf', 'shrub',
 ]);
 
 const THEME_PROMPTS: Array<[string, string]> = [

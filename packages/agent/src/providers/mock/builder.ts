@@ -66,6 +66,8 @@ export interface ScatterOpts extends PlaceOpts {
   randomYaw?: boolean;
   /** Terrain entity id to place the instances on. */
   onSurface?: string;
+  /** World ground height at (x, z): clustered points are set on it (relative to the layer's own y). */
+  heightAt?: (x: number, z: number) => number;
 }
 
 /** A circle of reserved ground (x/z plane). */
@@ -94,6 +96,8 @@ export class Builder {
   private readonly circles: Circle[] = [];
   /** Areas decorative scatter must stay out of (water surfaces). */
   private readonly keepOut: Circle[] = [];
+  /** Rectangles (x0, z0, x1, z1) clustered ground cover must stay out of (a building's footprint). */
+  private readonly keepOutRects: Array<readonly [number, number, number, number]> = [];
   private readonly entities: PatchInput[] = [];
   private readonly envSet: Record<string, Json> = {};
   private readonly playerSet: Record<string, Json> = {};
@@ -232,6 +236,14 @@ export class Builder {
     if (r > 0) this.keepOut.push({ x, z, r });
   }
 
+  /**
+   * Keep clustered ground cover (grass, shrubs, flowers) out of a rectangle (world x/z, any corner order), for example
+   * under a house: the scatter's hand-placed points inside it are dropped when the layer is built.
+   */
+  keepClearRect(x0: number, z0: number, x1: number, z1: number): void {
+    this.keepOutRects.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]);
+  }
+
   /** True when a square patch of half-size `half` centered at (x, z) touches a keep-clear circle. */
   touchesKeepClear(x: number, z: number, half: number): boolean {
     for (const c of this.keepOut) {
@@ -344,7 +356,18 @@ export class Builder {
     }
     const scatterSeed = this.subSeed();
     // Natural ground cover grows in clumps: lay it out as a clustered point process (deterministic).
-    const clustered = this.realisticNature && CLUSTERED_GENERATORS.has(generator) && count >= 12 ? clusterPoints(count, area[0], area[1], scatterSeed, { ...(o.minSpacing ? { minSpacing: o.minSpacing } : {}) }) : null;
+    let clustered = this.realisticNature && CLUSTERED_GENERATORS.has(generator) && count >= 12 ? clusterPoints(count, area[0], area[1], scatterSeed, { ...(o.minSpacing ? { minSpacing: o.minSpacing } : {}) }) : null;
+    if (clustered && (this.keepOutRects.length > 0 || o.heightAt)) {
+      const [px, py, pz] = pos;
+      const kept: Array<[number, number, number]> = [];
+      for (const [x, , z] of clustered) {
+        const wx = px + x;
+        const wz = pz + z;
+        if (this.keepOutRects.some(([x0, z0, x1, z1]) => wx > x0 && wx < x1 && wz > z0 && wz < z1)) continue;
+        kept.push([x, o.heightAt ? r2(o.heightAt(wx, wz) - py) : 0, z]);
+      }
+      clustered = kept;
+    }
     const shape: EntityInput['shape'] = {
       kind: 'scatter',
       of: { kind: 'procedural', generator, params },

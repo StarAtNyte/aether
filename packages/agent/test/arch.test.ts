@@ -74,6 +74,24 @@ describe('offline architecture planner', () => {
     expect(res.reports.every((r) => r.passed)).toBe(true);
   });
 
+  it('adds and removes the people of a house by prompt, keeping the house walkable', () => {
+    const { world } = build('a modern two-bedroom apartment');
+    const people = (w: WorldDoc): number => Object.values(w.entities).filter((e) => e.arch?.role === 'resident').length;
+    expect(people(world)).toBe(0);
+    const add = planArch('add two people to the living room', summarizeWorld(world));
+    const ops = add!.arch!.ops as Array<{ op: string; count?: number }>;
+    expect(ops).toEqual([{ op: 'set_residents', building: expect.any(String), count: 2 }]);
+    const res = applyArchOps(world, ops as never);
+    expect(res.errors).toEqual([]);
+    expect(people(res.target)).toBe(2);
+    expect(res.reports.every((r) => r.passed)).toBe(true);
+    const few = planArch('invite a few guests', summarizeWorld(res.target));
+    expect((few!.arch!.ops as Array<{ count?: number }>)[0]?.count).toBe(3);
+    const gone = planArch('remove the people', summarizeWorld(res.target));
+    expect(gone!.arch!.ops).toEqual([{ op: 'set_residents', building: expect.any(String), count: 0 }]);
+    expect(people(applyArchOps(res.target, gone!.arch!.ops as never).target)).toBe(0);
+  });
+
   it('leaves games and block worlds to the other planners', () => {
     expect(planArch('a minecraft village of block houses', '')).toBeNull();
     expect(planArch('a coin collecting game in a haunted house', '')).toBeNull();

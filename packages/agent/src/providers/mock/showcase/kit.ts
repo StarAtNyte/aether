@@ -149,6 +149,99 @@ export function terrainHeight(params: Record<string, Json>, seed: number, size: 
   };
 }
 
+/**
+ * Hand-placed points on a landscape: up to `count` points in the square `[-half, half]` where `ok(x, z)` holds and
+ * nothing already reserved lies within `spacing` metres (the points are reserved), set on the ground height `h`.
+ */
+export function landPoints(b: Builder, count: number, half: number, ok: (x: number, z: number) => boolean, spacing: number, h: (x: number, z: number) => number, tries = 30): V3[] {
+  const out: V3[] = [];
+  for (let i = 0; i < count; i++) {
+    for (let t = 0; t < tries; t++) {
+      const x = r2(b.rand(-half, half));
+      const z = r2(b.rand(-half, half));
+      if (!ok(x, z) || !b.isFree(x, z, spacing)) continue;
+      b.reserve(x, z, spacing);
+      out.push([x, h(x, z), z]);
+      break;
+    }
+  }
+  return out;
+}
+
+/** A layer of instanced plants or trees at hand-placed `points` on the terrain entity `onSurface`. */
+export function grove(b: Builder, base: string, name: string, generator: string, params: Record<string, Json>, points: V3[], scale: [number, number], onSurface: string, area = 400): void {
+  if (points.length === 0) return;
+  b.add({
+    id: b.id(base),
+    name,
+    transform: { position: [0, 0, 0] },
+    shape: { kind: 'scatter', of: { kind: 'procedural', generator, params }, count: points.length, area: [area, area], seed: b.subSeed() % 100_000, scaleRange: scale, onSurface, points },
+    tags: ['grove'],
+  });
+}
+
+/** What {@link estateGround} reports. */
+export interface EstateGround {
+  /** World height of the ground at (x, z), the plot at y = 0. */
+  h(x: number, z: number): number;
+  /** Id of the terrain entity (for scatter `onSurface`). */
+  id: string;
+  /** Slope in degrees around (x, z). */
+  slope(x: number, z: number): number;
+}
+
+/** Options of {@link estateGround}. */
+export interface EstateOptions {
+  /** Terrain edge length in metres. */
+  size: number;
+  /** Relief of the surrounding hills in metres. */
+  relief: number;
+  /** Level plot: centre x, centre z, radius. */
+  pad: readonly [number, number, number];
+  /** Optional lake basin: centre x, centre z, radius, depth below the shore. */
+  lake?: readonly [number, number, number, number];
+  /** Optional level lane (a drive) from the plot centre: far end x, z and half width. */
+  lane?: readonly [number, number, number];
+  color: string;
+  roughness?: number;
+  resolution?: number;
+  name?: string;
+}
+
+/**
+ * A real landscape for a house: the `terrain` generator's estate variant (level plot, meadow swells, hills that close
+ * the horizon, optional lake basin) placed so the plot sits at y = 0 and the building needs no change. The world's
+ * flat ground plane should be switched off by the caller (`ground: null`).
+ */
+export function estateGround(b: Builder, seed: number, o: EstateOptions): EstateGround {
+  const params: Record<string, Json> = {
+    size: o.size,
+    height: o.relief,
+    resolution: o.resolution ?? 224,
+    roughness: o.roughness ?? 0.55,
+    color: o.color,
+    variant: 5,
+    padX: o.pad[0],
+    padZ: o.pad[1],
+    padRadius: o.pad[2],
+    ...(o.lake ? { lakeX: o.lake[0], lakeZ: o.lake[1], lakeRadius: o.lake[2], lakeDepth: o.lake[3] } : {}),
+    ...(o.lane ? { laneX: o.lane[0], laneZ: o.lane[1], laneRadius: o.lane[2] } : {}),
+  };
+  const raw = terrainHeight(params, seed, o.size);
+  const base = raw(o.pad[0], o.pad[1]);
+  const id = b.add({
+    id: b.id('landscape'),
+    name: o.name ?? 'Landscape',
+    shape: { kind: 'procedural', generator: 'terrain', params, seed },
+    transform: { position: [0, r2(-base), 0] },
+    physics: { body: 'static', friction: 0.9 },
+    tags: ['terrain'],
+  });
+  const h = (x: number, z: number): number => r2(raw(x, z) - base);
+  const slope = (x: number, z: number): number => (Math.atan(Math.hypot((h(x + 1.2, z) - h(x - 1.2, z)) / 2.4, (h(x, z + 1.2) - h(x, z - 1.2)) / 2.4)) * 180) / Math.PI;
+  return { h, id, slope };
+}
+
 /** Options of {@link groundRibbon}. */
 export interface GroundRibbonOptions {
   /** Entity id (also the mesh id slug base). */

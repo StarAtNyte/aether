@@ -23,6 +23,7 @@ import { StairParams } from './params';
 import { DOOR_CLEARANCE, LINING, sashHeight } from './openings';
 import { roofRise } from './roof';
 import { furnitureById, furnitureMovables } from './furniture/index';
+import { planResidents, residentEntity, type KeepOut, type ResidentRoom } from './residents';
 
 /** Light sources kept per building (each costs per-pixel work); further fittings only glow. */
 export const MAX_BUILDING_LIGHTS = 14;
@@ -127,6 +128,11 @@ export function entranceView(entry: { c: P2; n: P2; room: string }, walls: reado
     }
   }
   if (!at) return null;
+  return { at, yaw: bestYaw(at, inward, walls) };
+}
+
+/** The yaw (degrees, plan frame) within 110 degrees of `inward` whose sight line from `at` shows the most of the house. */
+export function bestYaw(at: P2, inward: P2, walls: readonly WallRec[]): number {
   let bestScore = -Infinity;
   let bestDir: P2 = inward;
   for (let deg = -110; deg <= 110; deg += 5) {
@@ -139,7 +145,46 @@ export function entranceView(entry: { c: P2; n: P2; room: string }, walls: reado
       bestDir = dir;
     }
   }
-  return { at, yaw: (Math.atan2(-bestDir[0], -bestDir[1]) * 180) / Math.PI };
+  return (Math.atan2(-bestDir[0], -bestDir[1]) * 180) / Math.PI;
+}
+
+/**
+ * A walkthrough start that is not inside a piece of furniture: `at` when it is clear (0.5 m from every floor piece, 1.3 m
+ * from the door so the leaf swings free), else the nearest spot that is, inside the entrance room. Null when there is none.
+ */
+export function clearStart(at: P2, room: Pick<ResidentRoom, 'polygon' | 'blockers'>, door: P2): P2 | null {
+  const inner = offsetPolygon(room.polygon, -0.4);
+  if (inner.length < 3) return null;
+  const clear = (p: P2): boolean => {
+    if (!pointInPolygon(p[0], p[1], inner) || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.3) return false;
+    for (const b of room.blockers) {
+      if (pointInPolygon(p[0], p[1], b)) return false;
+      for (let i = 0; i < b.length; i++) {
+        const a = b[i] as P2;
+        const c = b[(i + 1) % b.length] as P2;
+        const dx = c[0] - a[0];
+        const dz = c[1] - a[1];
+        const l2 = dx * dx + dz * dz;
+        const t = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / l2));
+        if (Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz) < 0.5) return false;
+      }
+    }
+    return true;
+  };
+  if (clear(at)) return at;
+  let best: P2 | null = null;
+  let bestD = Infinity;
+  for (let dx = -3; dx <= 3; dx += 0.1) {
+    for (let dz = -3; dz <= 3; dz += 0.1) {
+      const p: P2 = [Math.round((at[0] + dx) * 100) / 100, Math.round((at[1] + dz) * 100) / 100];
+      const d = Math.hypot(dx, dz);
+      if (d < bestD && clear(p)) {
+        best = p;
+        bestD = d;
+      }
+    }
+  }
+  return best;
 }
 
 /** Refusal with a machine-readable code and a concrete fix hint (agents act on the hint). */
@@ -204,6 +249,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   add({ id: bid, name: plan.name, transform: { position: [plan.origin[0], 0, plan.origin[1]], rotation: [0, plan.rotation, 0] }, arch: { role: 'building', name: plan.name, plan: plan as unknown as Json }, tags: ['building', 'focus'] });
 
   let elevation = plan.plinth;
+  /** Rooms with their floor blockers, for placing residents. */
+  const residentRooms: ResidentRoom[] = [];
   let spawnLocal: P2 | null = null;
   let spawnYaw = 0;
   /** The main entrance: door centre, outward normal (plan frame) and the room behind it; the ground floor's walls and rooms. */
@@ -606,6 +653,15 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const holeBlock = holes;
       const { placed, notes: fn } = furnishRoom(ctx, r.items, r.furnish);
       notes.push(...fn);
+      residentRooms.push({
+        id: rid,
+        type: r.type,
+        name,
+        polygon: positive(poly),
+        blockers: [...placed.filter((p) => p.def.mount === 'floor' && p.def.kind !== 'rug' && p.footprint.length >= 3).map((p) => p.footprint), ...stairBlock, ...holeBlock],
+        level: li,
+        elevation: round(elevation),
+      });
       let n = 0;
       for (const p of placed) {
         if (p.def.mount === 'floor' && [...stairBlock, ...holeBlock].some((b) => p.footprint.some((q) => pointInPolygon(q[0], q[1], b)) || pointInPolygon(p.x, p.z, b))) continue;
@@ -766,6 +822,30 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   if (inside) {
     sp = inside.at;
     spawnYaw = inside.yaw;
+    // The furniture is placed after the plan's geometry is known: never start inside a chair or a counter.
+    const door = entry as { c: P2; n: P2; room: string } | null;
+    const room = residentRooms.find((r) => r.level === 0 && r.id === `${bid}-l0-${door?.room ?? ''}`);
+    const free = room && door ? clearStart(sp, room, door.c) : null;
+    if (free && door && groundPlan && (free[0] !== sp[0] || free[1] !== sp[1])) {
+      sp = free;
+      spawnYaw = bestYaw(sp, [-door.n[0], -door.n[1]], groundPlan.walls);
+    }
+  }
+  if (plan.spawn) {
+    sp = [plan.spawn.at[0], plan.spawn.at[1]];
+    spawnYaw = plan.spawn.yaw;
+  }
+  if (plan.residents) {
+    // People: clear of every doorway (the leaf's swing and someone passing) and of the spawn.
+    const keep: KeepOut[] = [{ at: sp, r: 2.6, level: 0 }];
+    for (const e of entities) {
+      if (e.arch?.role !== 'opening' || !e.parent) continue;
+      const lv = /-l(\d+)$/.exec(e.parent);
+      const width = e.shape && 'params' in e.shape && typeof e.shape.params?.['width'] === 'number' ? e.shape.params['width'] : 1;
+      const pos = e.transform?.position;
+      if (pos) keep.push({ at: [pos[0], pos[2]], r: Math.max(1.55, width / 2 + 0.9), level: lv ? Number(lv[1]) : 'all' });
+    }
+    planResidents(residentRooms, keep, plan.residents, seed + hashId(bid)).forEach((spot, k) => add(residentEntity(spot, k, bid, plan.origin, plan.rotation, seed + hashId(bid))));
   }
   const sw = rotateYaw(sp[0], sp[1], plan.rotation);
   const spawn: [number, number, number] = [round(plan.origin[0] + sw[0]), 0.1, round(plan.origin[1] + sw[1])];

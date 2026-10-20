@@ -91,8 +91,12 @@ export function collectObstacles(world: WorldDoc, area: Area, margin: number, bo
       }
     } else {
       const b = bounds?.getBounds?.(id);
+      const size = e.shape.kind === 'procedural' && /^(?:terrain|island|mountain)$/.test(e.shape.generator) ? e.shape.params['size'] : undefined;
       if (b) {
         ob = boxFromBounds(b);
+      } else if (typeof size === 'number' && size > 0 && size <= 2000) {
+        // No host bounds (a static analysis): a terrain is the ground over its footprint, at its base level.
+        ob = box(pos[0], pos[2], size / 2, size / 2, 0, pos[1] - 0.1, pos[1]);
       } else {
         const z = zoneShapeOf(e);
         const r = rotatedAabb(pos, quat, z.half);
@@ -121,7 +125,10 @@ function floorish(e: Entity, id: string, ob: Obstacle): Obstacle {
   const footprint = ob.circle ? Math.PI * ob.hx * ob.hx : 4 * ob.hx * ob.hz;
   if (footprint > HUGE_AREA || TERRAINISH.test(e.shape.kind === 'procedural' ? e.shape.generator : '') || TERRAINISH.test(id)) {
     let o = { ...ob, bottom: Math.min(ob.bottom, ob.top - 0.1) };
-    if (o.top - o.bottom > 3) o = { ...o, top: Math.min(o.top, o.bottom + 3) };
+    // A tall terrain box (a heightfield with relief, whose bounds reach tens of metres) is the ground at its base level
+    // here, not a wall: the level plot of an estate, a village green. (Hills are not walkable by this grid, which has a
+    // flat floor per level; nothing on them is navigated.) Lower boxes keep their top as the floor.
+    if (o.top - o.bottom > 3) o = { ...o, top: o.bottom + 0.05 };
     return o;
   }
   return ob;

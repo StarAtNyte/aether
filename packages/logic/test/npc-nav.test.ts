@@ -114,6 +114,27 @@ describe('collectObstacles / buildNavFor', () => {
     expect(g.walkable(4, 0)).toBe(true);
   });
 
+  it('treats the bounds of a tall terrain as open ground at its base, not a 3 m wall across the map', () => {
+    const w = worldOf([
+      { id: 'hills', shape: { kind: 'procedural', generator: 'terrain', params: { variant: 5 } }, transform: { position: [0, 0, 0] }, physics: { body: 'static' } },
+      { id: 'hut', shape: { kind: 'primitive', primitive: 'box', size: [4, 3, 4] }, transform: { position: [10, 1.5, 0] }, physics: { body: 'static' } },
+    ]);
+    w.environment.ground = null;
+    const bounds = { getBounds: (id: string) => (id === 'hills' ? { min: [-250, 0, -250] as [number, number, number], max: [250, 60, 250] as [number, number, number] } : undefined) };
+    const g = buildNavFor(w, { refY: 0, radius: 0.4, height: 1.8, points: [[0, 0, 0]] }, bounds);
+    expect(g.walkable(0, 0)).toBe(true);
+    expect(g.walkable(-10, 12)).toBe(true);
+    expect(g.walkable(10, 0)).toBe(false);
+  });
+
+  it('without host bounds a terrain is still the ground over its footprint (static analyses of terrain worlds)', () => {
+    const w = worldOf([{ id: 'hills', shape: { kind: 'procedural', generator: 'terrain', params: { size: 400 } }, transform: { position: [0, 0, 0] }, physics: { body: 'static' } }]);
+    w.environment.ground = null;
+    const g = buildNavFor(w, { refY: 0, radius: 0.4, height: 1.8, points: [[5, 0, 5]] });
+    expect(g.walkable(5, 5)).toBe(true);
+    expect(g.walkable(-20, 30)).toBe(true);
+  });
+
   it('uses host bounds for generated shapes', () => {
     const w = worldOf([{ id: 'house', shape: { kind: 'procedural', generator: 'house', params: {} }, transform: { position: [0, 0, 0] }, physics: { body: 'static' } }]);
     const bounds = { getBounds: () => ({ min: [-3, 0, -3] as [number, number, number], max: [3, 6, 3] as [number, number, number] }) };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, summarizeWorld, validateWorld, type WorldDoc } from '@aether/core';
 import { planMock } from '../src/providers/mock/planner';
-import { parseVoxelSummary, planVoxel } from '../src/providers/mock/voxel';
+import { parseVoxelSummary, planBlockfall, planVoxel } from '../src/providers/mock/voxel';
 
 function apply(world: WorldDoc, request: string): { world: WorldDoc; message: string } {
   const plan = planMock(request, summarizeWorld(world));
@@ -28,6 +28,41 @@ describe('offline planner: block worlds', () => {
     expect(houses.length).toBe(7);
     expect(new Set(houses.map((h) => (h.shape === 'structure' ? h.palette.wall : '')))).not.toHaveProperty('size', 1);
     expect(world.voxel?.preset).toBe('plains');
+  });
+
+  it('starts a village game in the square, clear of every house and lamppost, looking at the well', () => {
+    const { world } = apply(createWorld(), 'a village of block houses');
+    const edits = world.voxel?.edits ?? [];
+    const well = edits.find((e) => e.shape === 'structure' && e.structure === 'well');
+    expect(well?.shape === 'structure').toBe(true);
+    if (well?.shape !== 'structure') return;
+    const [sx, , sz] = world.player.spawn;
+    expect(sx !== 0 || sz !== 0).toBe(true);
+    for (const e of edits) {
+      if (e.shape !== 'structure' || (e.structure !== 'house' && e.structure !== 'lamppost')) continue;
+      expect(Math.hypot(sx - e.at[0], sz - e.at[2])).toBeGreaterThan(e.structure === 'house' ? 5 : 2);
+    }
+    // The yaw (0 faces -Z) points from the start at the well.
+    const yaw = ((world.player.yaw ?? 0) * Math.PI) / 180;
+    const toWell = [well.at[0] - sx, well.at[2] - sz];
+    const len = Math.hypot(toWell[0] as number, toWell[1] as number);
+    const heading = [-Math.sin(yaw), -Math.cos(yaw)];
+    expect(((toWell[0] as number) * (heading[0] as number) + (toWell[1] as number) * (heading[1] as number)) / len).toBeGreaterThan(0.98);
+    // On the south side of the well, so the sign reads from the start.
+    expect(sz).toBeGreaterThan(well.at[2]);
+  });
+
+  it('Blockfall puts its name on the skyline, high and far, and starts in the village square', () => {
+    const plan = planBlockfall();
+    const r = applyPatches(createWorld(), plan.patches);
+    expect(r.errors).toEqual([]);
+    const text = r.world.voxel?.edits.find((e) => e.shape === 'text');
+    expect(text?.shape === 'text' && text.text).toBe('BLOCKFALL');
+    expect(text?.shape === 'text' && text.scale).toBe(2);
+    expect(text?.shape === 'text' && text.at[1]).toBeGreaterThanOrEqual(8);
+    expect(text?.shape === 'text' && Math.hypot(text.at[0] + 50, text.at[2] + 40)).toBeLessThan(1);
+    expect(r.world.player.spawn[0] !== 0 || r.world.player.spawn[2] !== 0).toBe(true);
+    expect(r.world.player.yaw).toBeDefined();
   });
 
   it('draws pixel art in the sky', () => {

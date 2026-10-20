@@ -1344,6 +1344,7 @@ applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ inde
   ArchOp = create_building {plan, walkthrough=true} | remove_building | add_level | add_room {level, room, doors?} | remove_room
          | add_door | add_window | add_stairs | set_roof | set_style | furnish_room {items?, omit?} | place_item | remove_item
          | set_material {target: exterior|roof|floor|walls, room?, material}
+         | set_residents {building, count 0..8}   // people living in / visiting the building (see BuildingPlan.residents)
   // ops apply in order to the stored plans; touched buildings are re-compiled, locked entities kept, a `navigable`
   // test added, the player set to first person in front of the main entrance; minimal patches via patchesBetween
 checkBuilding(world, id, clearance=0.8) / checkBuildings(world, '*') → BuildingReport { passed, rooms, reachable, doors, doorsClear, issues }
@@ -2845,6 +2846,14 @@ document served in place of the `apartment` template of the build output) and `-
 - Renderer: windows of `facade` materials glow by a shared uniform driven by the sun's elevation (`MaterialCache.setSkyElevation`, on from +4 to -5 degrees); a share of 42 % of the 3 m window cells lights, chosen by a hash of the cell so no tile-sized pattern repeats. Ground finishes (`concrete`, `asphalt`, `soil`, `dry-earth`, `grass`, `gravel`, `sand`, `snow`, `rock` and the paving `stone`, `cobble`, `limestone`) get macro tone and roughness variation, a close-up micro lookup (fades out between 1.5 and 7 m) and a distance macro lookup (fades in between 10 and 60 m); `MaterialCache.groundDetail` (off on software rasterisers and in low-memory mode) switches the two extra lookups. `MaterialCache.setWetness(0..1)` (rain = 1, from `environment.weather`) darkens and glosses all ground and fills puddles on asphalt, concrete, paving, gravel and soil (flat and mirror-like, so screen-space reflections show the sky).
 - `WorldRenderer.screenshot` renders through a temporarily resized drawing buffer when the requested aspect differs from the viewport's (the post chain draws at the buffer's size, which stretched such captures); it also waits for the first three frames so a capture right after load is never black.
 - Chase camera: the boom is probed with a ring of rays (`BOOM_RADIUS` 0.3 m) and is pulled in instantly in front of walls, never eased through them; first-person eye height eases small steps over about 55 ms.
+
+### Estates, residents and plan spawn (stage `flagarch`)
+
+- `terrain` variant 5, the estate: a level plot (`padX`, `padZ`, `padRadius`: exactly one height inside the radius), meadow swells around it, a bowl of hills that closes the horizon and, optionally, a lake basin (`lakeX`, `lakeZ`, `lakeRadius`, `lakeDepth`) and a level lane for a drive (`laneX`, `laneZ`, `laneRadius`, running from the plot centre). The lowest vertex is still at y = 0 (a lake bed), so place the entity at `y = -height(padX, padZ)`; `estateGround` in `packages/agent/src/providers/mock/showcase/kit.ts` does it. The new params default to values that leave variants 0 to 4 unchanged. `variant` now accepts 0 to 5.
+- `ArchRole` gains `resident`: a person the building compiler placed (`arch.room` is the room entity). Residents are world-frame entities (capsule + `character` + `npc`, `faction: household`, `wander` 0.35 m, a two-line dialogue), not children of the building, so the NPC runtime moves them like any NPC; a recompile or `remove_building` removes them.
+- `BuildingPlan.residents?: 0..8`: people living in or visiting the building. Spots are measured: inside the room with 0.62 m to every wall and floor piece, 1.55 m from every doorway, 1 m from the line between two doorways of the room, 2.6 m from the spawn; rooms are chosen by use (living and kitchen before halls, never bathrooms or storerooms). Deterministic. New `ArchOp` `set_residents {building, count}`.
+- `BuildingPlan.spawn?: { at: [x, z], yaw }` (plan frame, yaw 0 faces -Z): where a walkthrough starts; the default stays "inside the main entrance, looking along the longest sight line".
+- Mock planner `Builder.keepClearRect(x0, z0, x1, z1)` drops clustered ground-cover points inside a rectangle (a building footprint); `ScatterOpts.heightAt` sets clustered points on a ground height.
 
 ### Outdoor flagships (stage `flagnature`)
 

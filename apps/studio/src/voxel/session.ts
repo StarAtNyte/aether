@@ -20,7 +20,7 @@ import { loadBlockSheets, PRESET_HOURS, type BlockSheets, type VoxelLayer, type 
 import type { Environment, VoxelEdit, VoxelTerrain, WorldDoc } from '@aether/core';
 import { deepEqual } from '@aether/core';
 import {
-  BlockRegistry, buildAtlas, buildTileTable, ChunkStreamer, compileEdits, createHit, decodeChunk, decodeSave, encodeChunk, encodeSave, identityKey, raycastVoxels, saveIdentity,
+  BlockRegistry, buildAtlas, buildTileTable, ChunkStreamer, compileEdits, createHit, decodeChunk, decodeSave, encodeChunk, encodeSave, identityKey, openestYaw, raycastVoxels, saveIdentity,
   SavedPlayer, TerrainGenerator, terrainIdentity, VoxelJobPool, VoxelWorld, CHUNK, LIQUID_SURFACE, SEA_LEVEL, chunkKey, type BlockAtlas, type ChunkData, type ChunkMesh, type ChunkSlot, type TerrainIdentity, type VoxelSave,
 } from '@aether/voxel';
 import { createInput, daylightAt, EYE_HEIGHT, skyForHour, skyTintAt, VoxelGame, type GameEvent, type GameInput, type ItemDef } from '@aether/voxel/game';
@@ -742,9 +742,10 @@ export class VoxelPlay {
     this.saved = saved;
     this.game = new VoxelGame({ world, reg, settings: terrain.game, seed: doc.seed, spawn: [spawn[0], session.groundAt(spawn[0], spawn[2]), spawn[2]] });
     this.input.attach(canvas);
-    // Start looking the way the editor camera looked.
+    // Start looking the way the document says (a village game faces its square), else the way the editor camera looked.
     const e = renderer.camera.matrixWorld.elements;
-    this.input.setLook(Math.atan2(e[8] as number, e[10] as number), 0);
+    const authored = doc.player.yaw;
+    this.input.setLook(authored !== undefined && Number.isFinite(authored) ? (authored * Math.PI) / 180 : Math.atan2(e[8] as number, e[10] as number), 0);
     world.unloaded = 'solid';
   }
 
@@ -790,7 +791,10 @@ export class VoxelPlay {
       this.game.player.spawn = [b.x, b.y, b.z];
       this.game.player.fallFrom = b.y;
     }
-    this.input.setLook(this.saved ? this.saved.yaw : this.input.yawRad, this.saved ? this.saved.pitch : -0.15);
+    // A fresh start never opens on a wall, a roof edge or a trunk in the face: turn towards the open view when the
+    // authored or editor heading is blocked within ten blocks.
+    const yaw = this.saved ? this.saved.yaw : openestYaw((qx, qy, qz) => this.world.get(qx, qy, qz), (id) => id !== 0 && this.reg.opaque[id] === 1, b.x, b.y, b.z, this.input.yawRad);
+    this.input.setLook(yaw, this.saved ? this.saved.pitch : -0.15);
     this.ready = true;
   }
 
@@ -862,8 +866,10 @@ export class VoxelPlay {
     this.layer.setFogOrigin(fx, fz);
     if (this.ready) {
       g.eye(this.eye);
-      const yaw = this.gameInput.yaw;
-      const pitch = this.gameInput.pitch;
+      // The live look, not the last fixed-step sample: while a start card holds the game no step runs, and the first
+      // frames would show the sample's initial heading (north) instead of the one chosen at the spawn.
+      const yaw = this.input.yawRad;
+      const pitch = this.input.pitchRad;
       if (this.view === 'first') {
         this.renderer.setAvatarVisible(false);
         this.renderer.setCameraPose(this.eye[0], this.eye[1], this.eye[2], yaw, pitch);

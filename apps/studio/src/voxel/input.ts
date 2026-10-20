@@ -120,6 +120,11 @@ export class VoxelInput {
     return this.yaw;
   }
 
+  /** Current pitch (radians). */
+  get pitchRad(): number {
+    return this.pitch;
+  }
+
   /** The player is on a touch screen (touch hints and controls). */
   get touch(): boolean {
     return this.touchMode;

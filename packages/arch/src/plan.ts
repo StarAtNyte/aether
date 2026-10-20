@@ -195,6 +195,13 @@ export const BuildingPlan = z.object({
   /** Swing doors are physical: dynamic leaves on hinge joints (stops, no clipping through the player). */
   physicalDoors: z.boolean().default(true),
   site: PlanSite.optional(),
+  /**
+   * People living in or visiting the building (0 to 8): idle-animated characters standing where people do (near the
+   * sofa, at the counter), clear of doorways and walkways. Compiled with the building; omit for an empty house.
+   */
+  residents: z.number().int().min(0).max(8).optional(),
+  /** Where a walkthrough starts (plan frame: x, z in metres, and the yaw in degrees, 0 faces -Z); default: inside the main entrance. */
+  spawn: z.object({ at: PlanPoint, yaw: z.number().min(-360).max(360).default(0) }).optional(),
   /** What the designer intended (see `design-record.ts`); kept with the plan, never compiled. */
   design: DesignRecord.optional(),
 });

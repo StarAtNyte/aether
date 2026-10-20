@@ -342,6 +342,18 @@ function editOps(text: string, building: { id: string; rooms: Array<{ id: string
       break;
     }
   }
+  // "put two people in the living room", "add a few guests", "nobody lives here", "empty it of people".
+  const folk = /\b(?:(a couple of|a few|several|some|an?|one|two|three|four|five|six|\d+)\s+)?(?:people|persons?|guests?|residents?|visitors?|family|inhabitants|friends)\b/.exec(text);
+  if (folk && /\b(add|put|place|with|invite|bring|populate|fill|furnish|people)\b/.test(text) && !/\b(remove|no|without|empty)\b/.test(text)) {
+    const word = folk[1] ?? '';
+    const n: Record<string, number> = { 'a couple of': 2, 'a few': 3, several: 4, some: 3, a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+    const count = Math.max(1, Math.min(8, /^\d+$/.test(word) ? Number(word) : (n[word] ?? 2)));
+    ops.push({ op: 'set_residents', building: b, count });
+    done.push(`${count} ${count === 1 ? 'person' : 'people'} in the house`);
+  } else if (/\b(remove|no|without|empty)\b.*\b(people|persons?|guests?|residents?|visitors?)\b/.test(text)) {
+    ops.push({ op: 'set_residents', building: b, count: 0 });
+    done.push('the people are gone');
+  }
   const roof = /\b(gable|hip(ped)?|shed|flat|pitched)\b.*\broof\b|\broof\b.*\b(gable|hip(ped)?|shed|flat|pitched)\b/.exec(text);
   if (roof) {
     const shape = /gable|pitched/.test(roof[0]) ? 'gable' : /hip/.test(roof[0]) ? 'hip' : /shed/.test(roof[0]) ? 'shed' : 'flat';
