@@ -211,6 +211,8 @@ export class Studio {
   private abort: AbortController | null = null;
   /** The last prompt was a small edit applied locally (no quality loop, no proof replay for cosmetic ones). */
   private localEdit: { cosmetic: boolean; head: number } | null = null;
+  /** History head when the running turn started (a cosmetic edit keeps checks that described it). */
+  private turnHead = -1;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly cleanups: Array<() => void> = [];
   private readonly simListeners = new Set<(sim: Simulation | null) => void>();
@@ -1035,6 +1037,7 @@ export class Studio {
     const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
     const history = buildAgentHistory(st.chat);
     const before = this.history.current;
+    this.turnHead = this.history.head;
     this.dismissProof();
     playUiSound(st.settings, 'send');
     st.addUserMessage(opts.echo ?? text);
@@ -1229,6 +1232,9 @@ export class Studio {
       } else if (event.type === 'edit') {
         this.store.getState().setClarify(null);
         this.localEdit = { cosmetic: event.cosmetic, head: this.history.head };
+        // Colours, names and lights cannot change what the physics checks measured: their verdict still holds.
+        const v = this.store.getState().verify;
+        if (event.cosmetic && v.head !== null && v.head === this.turnHead && v.status !== 'running' && v.status !== 'idle') this.store.getState().setVerify({ head: this.history.head });
       }
       if (event.type === 'edit') this.lastReply = event.summary;
       else if (event.type === 'message' && this.lastReply === '') this.lastReply = event.text;
