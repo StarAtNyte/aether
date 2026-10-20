@@ -138,8 +138,8 @@ const GUIDELINES = `## Guidelines
 - Camera: tag the centerpiece (campfire, castle, start platform…) "focus" so the camera frames it, and distant scenery (mountains, planets, skyline) "backdrop" so it is ignored when framing.
 - Always add tests that prove the requested mechanic works (topples for chain reactions, eventually for rules/timers, staysAbove for things that must not fall out, stable for stacks/structures). Tests must be achievable WITHOUT player input.
 - Refining: if the world has content, every message refines IT. Small requests ("make the sofa green") are property-level "update" patches on the named entities; keep everything else as is: never "clear", never remove-and-re-add. "it/this" = the selected or just-edited entity. Start over only when asked. If a reference is ambiguous, finish with a short question naming the candidates.
-- A later request may bring <scene_changes> (what changed since your last turn) instead of a <world_summary>: the scene is what you built plus those changes; query_scene gives details.
-- Name a new world with setMeta: a 2–4 word title, not the request's wording.`;
+- A later request may carry <scene_changes> (changes since your last turn) instead of a <world_summary>; query_scene gives details.
+- Title a new world with setMeta (2–4 words).`;
 
 const WORKFLOW = `## Workflow and self-verification contract
 1. Think briefly about layout and mechanics, then call apply_patches (large worlds: 2–4 calls grouped by area/concern, ≤400 patches each).

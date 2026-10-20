@@ -52,7 +52,8 @@ describe('system prompt', () => {
     // 15.4k -> 15.5k for the estate terrain's stream options and the realistic cactus generator (~110 tokens).
     // 15.5k -> 15.6k for the room dressing (dress_room, the furn-accent styling piece) in the architecture tools.
     // 15.6k -> 15.7k once shape_land and the room dressing sit in the prompt together.
-    expect(prompt.length / 4).toBeLessThan(15_700);
+    // 15.7k -> 15.8k for the mound generator plus the continued-conversation (<scene_changes>) and world-title lines (~50 tokens).
+    expect(prompt.length / 4).toBeLessThan(15_800);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
