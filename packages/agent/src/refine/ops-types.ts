@@ -66,6 +66,8 @@ export interface OpOutcome {
   added: EntityId[];
   /** Rooms the edit was about ("the other bedroom" later means a different one). */
   rooms?: EntityId[];
+  /** Objects put "onto" terrain or a prop: the host settles them on the real surface under them (level tools). */
+  ground?: EntityId[];
 }
 
 /** An empty successful outcome to build on. */

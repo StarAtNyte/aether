@@ -216,6 +216,39 @@ describe('acceptance edits: missing targets, characters and "onto"', () => {
     expect(host.world).toBe(before);
   });
 
+  it('"move the shrine onto the hill" settles the shrine on the hill surface measured by the level tools', async () => {
+    const { createWorld } = await import('@aether/core');
+    const { runLevelTool } = await import('@aether/playtest/level');
+    const { initPhysics, PhysicsWorld } = await import('@aether/physics');
+    const { measureGrounding } = await import('@aether/playtest/level');
+    await initPhysics();
+    // The hill is a group (its box gives no height to stand on): the planned spot is a guess, the surface is measured.
+    const world = createWorld({
+      player: { mode: 'thirdPerson', spawn: [0, 0.5, 12] },
+      entities: {
+        hill: { id: 'hill', name: 'Hill', shape: { kind: 'none' }, transform: { position: [10, 0, 0] } },
+        'hill-mound': { id: 'hill-mound', parent: 'hill', name: 'Hill mound', shape: { kind: 'primitive', primitive: 'sphere', size: [8, 8, 8] }, physics: { body: 'static' } },
+        shrine: { id: 'shrine', name: 'Shrine', shape: { kind: 'primitive', primitive: 'box', size: [2, 3, 1] }, transform: { position: [0, 1.5, 6] }, physics: { body: 'static' } },
+      },
+    });
+    const host = new MemoryHost(world);
+    const levelTools = async (w: typeof world, name: 'query_level' | 'place_level_items', input: unknown) => runLevelTool(w, name, input);
+    const events = await collect(new WorldAgent({ provider: createMockProvider(), catalogs: TEST_CATALOGS, levelTools }).run('move the shrine onto the hill', host));
+    const text = events.map((e) => (e.type === 'message' ? e.text : '')).join(' ');
+    expect(text).toMatch(/moved the shrine above the hill/i);
+    expect(text).toMatch(/settled on the surface there \(y 5\.5\)/i);
+    expect(host.commits).toHaveLength(1);
+    const pos = host.world.entities['shrine']?.transform.position;
+    expect(pos?.[0]).toBeCloseTo(10, 1);
+    expect(pos?.[1]).toBeCloseTo(5.5, 1);
+    const pw = await PhysicsWorld.create(host.world, { fixedDt: 1 / 60 });
+    try {
+      expect(measureGrounding(host.world, pw).floating).toEqual([]);
+    } finally {
+      pw.dispose();
+    }
+  }, 60_000);
+
   it('slows characters by their walking and running speeds', async () => {
     const { provider, requests } = scripted([() => finishCall()]);
     const host = new MemoryHost(loadFixture('meadow'));

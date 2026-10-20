@@ -82,6 +82,8 @@ export interface FineEditResult {
   unparsed: string[];
   /** Milliseconds spent. */
   ms: number;
+  /** Objects to settle on the surface under them after the edit ("move the shrine onto the hill"). */
+  ground?: EntityId[];
 }
 
 function none(base: Partial<FineEditResult> & { reason: DeclineReason }, memory: RefineMemory, t0: number): FineEditResult {
@@ -336,6 +338,7 @@ function finish(world: WorldDoc, draft: Draft, outcomes: OpOutcome[], commands: 
   const summary = outcomes.map((o) => o.summary).filter(Boolean).join('; ');
   const last = commands[commands.length - 1];
   const rooms = [...new Set(outcomes.flatMap((o) => o.rooms ?? []))];
+  const ground = [...new Set(outcomes.flatMap((o) => o.ground ?? []))];
   const next: RefineMemory = {
     ...(last ? { last } : {}),
     targets: targets.length > 0 ? targets : added.length > 0 ? added : memory.targets,
@@ -358,6 +361,7 @@ function finish(world: WorldDoc, draft: Draft, outcomes: OpOutcome[], commands: 
     memory: next,
     unparsed: [],
     ms: performance.now() - t0,
+    ...(ground.length > 0 ? { ground } : {}),
   };
 }
 

@@ -57,6 +57,14 @@ function shift(env: OpEnv, item: SceneItem, d: [number, number, number]): void {
   ent.transform.position = [r2(p[0] + l[0]), r2(p[1] + l[1]), r2(p[2] + l[2])];
 }
 
+/** True for things that stand on what is under them (not pickups, floating, flying, moving or building pieces). */
+function restsOnGround(e: Entity): boolean {
+  if (e.arch || e.npc || e.light) return false;
+  if (e.tags.some((t) => /float|hover|fly|sky|cloud|bird|balloon|hanging|platform/.test(t))) return false;
+  if (e.behaviors.some((b) => ['bob', 'orbit', 'spin', 'collectible', 'magnet', 'goal', 'checkpoint', 'path', 'patrol'].includes(b.type))) return false;
+  return !(e.physics && (e.physics.sensor || e.physics.body === 'dynamic' || e.physics.body === 'kinematic'));
+}
+
 /** True when the entity origin sits at its centre (primitives, wall fixtures) rather than on the floor. */
 function centred(item: SceneItem): boolean {
   return item.entity.shape.kind === 'primitive' || item.entity.arch?.role === 'fixture' || item.entity.arch?.role === 'light';
@@ -115,7 +123,10 @@ export function planMove(env: OpEnv, cmd: Extract<Command, { op: 'move' }>): OpO
     const dest = destination(env, first, anchor, cmd.to.rel);
     const d: [number, number, number] = [dest[0] - first.pos[0], dest[1] - first.pos[1], dest[2] - first.pos[2]];
     for (const it of items) shift(env, it, d);
-    return outcome({ summary: `moved ${describeTargets(items)} ${cmd.to.rel} the ${anchor.label.toLowerCase()}`, targets: items.map((i) => i.id), cosmetic: false, also });
+    // "Onto the hill": the anchor's box top is only a guess at the surface there (a hill's crown, a rock's slope);
+    // outdoors the host settles the moved things on the real surface under them. Rooms place by their own rules.
+    const onto = (cmd.to.rel === 'above' || cmd.to.rel === 'on') && !anchor.entity.arch ? items.filter((i) => restsOnGround(i.entity)).map((i) => i.id) : [];
+    return outcome({ summary: `moved ${describeTargets(items)} ${cmd.to.rel} the ${anchor.label.toLowerCase()}`, targets: items.map((i) => i.id), cosmetic: false, also, ...(onto.length > 0 ? { ground: onto } : {}) });
   }
   if (cmd.toRoom) {
     const rr = resolveRef(env.index, cmd.toRoom, env.ctx);

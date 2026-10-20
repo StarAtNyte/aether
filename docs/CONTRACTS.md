@@ -2515,7 +2515,7 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
 
 | tool | input | result |
 | --- | --- | --- |
-| `query_level` | `{op: summary \| ground \| clearance \| sightline \| reach \| objectives \| review, …}` | facts: top surface height, what it is and the slope; free radius and headroom; what blocks a line; whether the player can walk, jump or ride there and the gap if not; every objective's reach; `review`: the level checked as a designer would (`LevelReview {applicable, findings, poses, score}`: no win, spawn, unreachable required or optional objectives, first reward too far) with the cameras of the review renders |
+| `query_level` | `{op: summary \| ground \| clearance \| sightline \| reach \| objectives \| review \| grounding, …}` | facts: top surface height, what it is and the slope; free radius and headroom; what blocks a line; whether the player can walk, jump or ride there and the gap if not; every objective's reach; `review`: the level checked as a designer would (`LevelReview {applicable, findings, poses, score}`: no win, spawn, unreachable required or optional objectives, first reward too far, `floating` objects: error from 0.5 m, warning below and over open air) with the cameras of the review renders; `grounding {ids?}`: every object that should rest on something measured against the colliders under it (`measureGrounding(world, pw, only?) → {floating[{id, gap, bottom, support, over, at, origin}], checked}`; tolerance 0.12 m; water surfaces support; tagged floating/flying/hanging/platform, bobbing/spinning/collectible/goal/patrolling, sensors, dynamic/kinematic, characters, lights, buildings and terrain excluded; touching a solid beside or above counts as held) |
 | `place_level_items` | `{items: [{id, role: pickup \| goal \| checkpoint \| hazard \| enemy \| prop \| decor, x, z, above?, below?, yaw?, key?, reach?, entity?}], message?}` | each item snapped to the ground, refused when nothing is under it, buried, on a cliff, or out of reach (with the gap and the nearest standable spot); accepted items are one undo step; `{id, x, z}` without `entity` moves an existing item |
 
 ### `@aether/agent`
@@ -2523,6 +2523,8 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
 - `AgentOptions.levelTools?: LevelToolRunner` (`(world, name, input) → Promise<{ok, text, patches, message}>`):
   when set, `query_level` and `place_level_items` (`LEVEL_TOOLS`) are appended to the tool list after `AGENT_TOOLS`
   and the system prompt gains the level-design section; absent, nothing changes. `ExecutorContext.levelTools`.
+- `place_level_items` moving an existing item ({id, x, z}) measures the surface without the item itself and sets its bottom (subtree bounds) on it.
+- Local "onto" moves (`FineEditResult.ground`): outdoors, the agent settles the moved objects with `place_level_items` before committing (one undo step) and says where they landed; the studio passes `levelTools` to the offline planner too.
 - The review loop covers levels: with `levelTools` and no building in the world, each round calls `query_level` op
   `review` (`LevelToolOutput.data`, validated by `LevelReviewData`), renders the overview and the player's first view
   through `AgentHost.captureReview` (no marks), shows the findings with their fixes, and ends on approval or the same

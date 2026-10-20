@@ -6,7 +6,8 @@
  * Everything is measured on the document: reach comes from the verified-playable bot's walking map,
  * heights from ray casts. Nothing here plays the game: that is the bot's job once the review is done.
  */
-import { entityBounds, type Aabb } from '@aether/physics';
+import { entityBounds, PhysicsWorld, type Aabb } from '@aether/physics';
+import { floatingText, measureGrounding } from './grounding';
 import type { Entity, Vec3, WorldDoc } from '@aether/core';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
@@ -14,7 +15,7 @@ import { withProbe } from './probe-cache';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'first_reward_far' | 'unmeasured';
+  code: 'spawn' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -51,6 +52,41 @@ export function scoreLevel(findings: readonly LevelFinding[]): number {
   let s = 100;
   for (const f of findings) s -= f.severity === 'error' ? 25 : f.severity === 'warning' ? 6 : 0;
   return Math.max(0, s);
+}
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Objects that should rest on something but hover: an error from half a metre (plainly in the air), a warning
+ * below. Measured with rays against the colliders (see grounding.ts); tagged "floating" things are left alone.
+ */
+async function groundingFindings(world: WorldDoc, out: LevelFinding[]): Promise<void> {
+  let pw: PhysicsWorld | null = null;
+  try {
+    pw = await PhysicsWorld.create(world, { fixedDt: 1 / 60 });
+    const report = measureGrounding(world, pw);
+    const label = (id: string | null): string => {
+      if (id === null) return 'the ground';
+      const e = world.entities[id];
+      return e?.name && e.name !== id ? `${e.name} (${id})` : id;
+    };
+    for (const f of report.floating.slice(0, 12)) {
+      const lower = Number.isFinite(f.gap) ? `lower it by ${r2(f.gap)} m (its position y to ${r2(f.origin[1] - f.gap)})` : 'move it over solid ground';
+      out.push({
+        code: 'floating',
+        // Over open air is often a sky level on purpose (a rock under a floating island): a warning for the eyes to judge.
+        severity: Number.isFinite(f.gap) && f.gap >= 0.5 ? 'error' : 'warning',
+        message: `${floatingText(f, label)}.`,
+        entities: [f.id],
+        at: f.at,
+        fix: `${lower}: place_level_items {"id":"${f.id}","x":${r2(f.origin[0])},"z":${r2(f.origin[2])}} snaps it onto the surface there; if it is meant to hover, tag it "floating"`,
+      });
+    }
+  } catch {
+    /* no physics here: grounding is not measured */
+  } finally {
+    pw?.dispose();
+  }
 }
 
 /** The box around everything solid that is not scenery far away (backdrop-tagged entities are left out). */
@@ -127,6 +163,9 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
       }
     });
   }
+
+  // Grounding: props, landmarks and buildings set in the air above the terrain they should stand on.
+  await groundingFindings(world, findings);
 
   // The renders: the whole level from above and behind, the player's first view, the worst problem up close.
   const poses: LevelPose[] = [];

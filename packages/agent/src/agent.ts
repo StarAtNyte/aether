@@ -10,7 +10,8 @@
  * always ends with exactly one `done` event carrying token usage.
  */
 import { summarizeWorldForModel } from './world-text';
-import type { Entity, EntityId, WorldDoc } from '@aether/core';
+import { z } from 'zod';
+import { Patch as PatchSchema, worldTransform, type Entity, type EntityId, type Patch, type WorldDoc } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
 import { loadCatalog } from '@aether/assets';
@@ -58,6 +59,9 @@ export interface RunOptions {
    */
   photo?: 'auto' | 'recreate' | 'off';
 }
+
+/** The transform an object settled with (from a level tool's update patch). */
+const Settled = z.object({ transform: z.object({ position: z.tuple([z.number(), z.number(), z.number()]) }) });
 
 /** Stand-in for a declined local plan when local edits are switched off. */
 const NO_LOCAL_EDIT: FineEditResult = Object.freeze({ kind: 'none', reason: 'not-understood', patches: [], summary: '', changes: [], diff: [], targets: [], scope: [], added: [], cosmetic: true, notes: [], memory: EMPTY_MEMORY, unparsed: [], ms: 0 }) as FineEditResult;
@@ -218,10 +222,14 @@ export class WorldAgent {
   }
 
   /** Apply a locally planned small edit: no model call, a compact diff, physics only when it matters. */
-  private async *applyLocal(fe: FineEditResult, ctx: ExecutorContext, host: AgentHost): AsyncGenerator<AgentEvent> {
+  private async *applyLocal(planned: FineEditResult, ctx: ExecutorContext, host: AgentHost): AsyncGenerator<AgentEvent> {
+    let fe = planned;
     const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(fe.patches, host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
+    // "Onto the hill": settle what was moved on the real surface under it (measured by the level tools), in the same step.
+    const settle = await this.settleOnGround(fe, ctx);
     // One edit is one undo step, library definitions included.
-    const result = host.applyPatches([...defs, ...fe.patches], fe.summary.slice(0, 200) || 'Edit');
+    const result = host.applyPatches([...defs, ...fe.patches, ...settle.patches], fe.summary.slice(0, 200) || 'Edit');
+    if (settle.note) fe = { ...fe, notes: [settle.note, ...fe.notes] };
     yield { type: 'patches', patches: result.applied, message: fe.summary, result: { applied: result.applied.length, errors: result.errors } };
     if (result.applied.length === 0) {
       yield { type: 'error', text: result.errors[0]?.message ? `Could not apply that: ${result.errors[0].message.slice(0, 200)}` : 'Could not apply that change.' };
@@ -237,6 +245,41 @@ export class WorldAgent {
       const v = await runVerification(ctx);
       yield v.event;
       if (!v.passed) yield { type: 'message', text: `Heads up: the checks flagged something after this change (${v.summary.split('\n')[0]?.slice(0, 160) ?? 'see the verification panel'}). Undo reverts it.` };
+    }
+  }
+
+  /**
+   * Patches that put the objects of a local "onto" move on the surface under them, and a note saying where they
+   * landed. Uses the host's level tools (ray casts against the real colliders); without them the move stands as
+   * planned. Never throws.
+   */
+  private async settleOnGround(fe: FineEditResult, ctx: ExecutorContext): Promise<{ patches: Patch[]; note?: string }> {
+    const run = ctx.levelTools;
+    const after = fe.world;
+    if (!run || !after || !fe.ground || fe.ground.length === 0) return { patches: [] };
+    const items = fe.ground.filter((id) => Object.hasOwn(after.entities, id)).slice(0, 20).map((id) => {
+      const p = worldTransform(after, id).position;
+      return { id, x: Math.round(p[0] * 100) / 100, z: Math.round(p[2] * 100) / 100, reach: false };
+    });
+    if (items.length === 0) return { patches: [] };
+    try {
+      const out = await raceAbort(run(after, 'place_level_items', { items, message: 'Settle on the ground' }), ctx.signal);
+      if (!out.ok || out.patches.length === 0) return { patches: [], note: `it may not rest on the surface there: ${out.text.split('\n').find((l) => l.startsWith('- '))?.slice(2, 200) ?? 'the ground could not be measured'}` };
+      // Untrusted: only transform updates of the moved objects are taken.
+      const patches: Patch[] = [];
+      let y: number | undefined;
+      for (const raw of out.patches) {
+        const p = PatchSchema.safeParse(raw);
+        if (!p.success || p.data.op !== 'update') continue;
+        const id = p.data.id;
+        if (!items.some((it) => it.id === id)) continue;
+        patches.push(p.data);
+        const pos = Settled.safeParse(p.data.set);
+        if (pos.success) y ??= pos.data.transform.position[1];
+      }
+      return { patches, ...(y !== undefined ? { note: `settled on the surface there (y ${Math.round(y * 100) / 100})` } : {}) };
+    } catch {
+      return { patches: [] };
     }
   }
 

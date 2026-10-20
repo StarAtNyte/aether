@@ -15,17 +15,19 @@
  *
  * Every input is validated with zod and bounded; nothing is evaluated.
  */
-import { Entity, findWaterBodies, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld, type Patch, type Vec3, type WorldDoc } from '@aether/core';
+import { Entity, findWaterBodies, worldTransform, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld, type Patch, type Vec3, type WorldDoc } from '@aether/core';
 import { PhysicsWorld, entityBounds, initPhysics, type Aabb } from '@aether/physics';
 import { z } from 'zod';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
 import { reviewLevel, type LevelReview } from './review';
+import { floatingText, measureGrounding, subtreeBounds, subtreeOf } from './grounding';
 
 export { clearProbeCache, probeCacheStats, PROBE_TTL_MS } from './probe-cache';
 export { LIFE_SPECIES, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, type LifePlan, type LifeProbe, type LifeRequest } from '@aether/core';
 export { reviewLevel, scoreLevel, type LevelFinding, type LevelPose, type LevelReview } from './review';
+export { measureGrounding, shouldRest, supportBelow, floatingText, FLOAT_TOLERANCE, type FloatingObject, type GroundingReport } from './grounding';
 
 /** Names of the level tools. */
 export const LEVEL_TOOL_NAMES = ['query_level', 'place_level_items'] as const;
@@ -54,6 +56,8 @@ export const QueryLevelInput = z.discriminatedUnion('op', [
   z.object({ op: z.literal('reach'), points: z.array(z.object({ x: Coord, y: Coord.optional(), z: Coord })).min(1).max(12) }),
   z.object({ op: z.literal('objectives') }),
   z.object({ op: z.literal('review') }),
+  // Objects that should rest on something but hover above it (ids: only those).
+  z.object({ op: z.literal('grounding'), ids: z.array(Slug).max(LEVEL_LIMITS.MAX_POINTS).optional() }),
 ]);
 export type QueryLevelInput = z.infer<typeof QueryLevelInput>;
 
@@ -157,11 +161,11 @@ class Ground {
     return new Ground(pw, world, Math.min(top, 2000));
   }
 
-  /** Highest solid surface at (x, z) at or below `below`, with its slope. */
-  surface(x: number, z: number, below?: number): { y: number; slopeDeg: number; id: string | null } | null {
+  /** Highest solid surface at (x, z) at or below `below`, with its slope; `own` (an object being moved) is not a surface. */
+  surface(x: number, z: number, below?: number, own?: ReadonlySet<string>): { y: number; slopeDeg: number; id: string | null } | null {
     if (this.rays++ > LEVEL_LIMITS.MAX_RAYS) return null;
     const y0 = below !== undefined ? below : this.top;
-    const hit = this.pw.raycast([x, y0, z], [0, -1, 0], y0 + 500);
+    const hit = own && own.size > 0 ? (this.pw.raycastAll([x, y0, z], [0, -1, 0], y0 + 500, 16).find((h) => h.id === null || !own.has(h.id)) ?? null) : this.pw.raycast([x, y0, z], [0, -1, 0], y0 + 500);
     if (!hit) return null;
     const ny = Math.max(-1, Math.min(1, hit.normal[1]));
     return { y: hit.point[1], slopeDeg: (Math.acos(ny) * 180) / Math.PI, id: hit.id };
@@ -195,10 +199,25 @@ function slopeWord(deg: number): string {
 
 async function runQuery(world: WorldDoc, rawInput: unknown): Promise<LevelToolResult> {
   const input = QueryLevelInput.safeParse(rawInput);
-  if (!input.success) return refuse(`Invalid query_level input: ${issues(input.error)}. Send {"op":"summary"|"ground"|"clearance"|"sightline"|"reach"|"objectives", …}.`);
+  if (!input.success) return refuse(`Invalid query_level input: ${issues(input.error)}. Send {"op":"summary"|"ground"|"clearance"|"sightline"|"reach"|"objectives"|"review"|"grounding", …}.`);
   const q = input.data;
   const lines: string[] = [];
   switch (q.op) {
+    case 'grounding': {
+      const g = await Ground.open(world);
+      try {
+        const only = q.ids ? new Set(q.ids) : undefined;
+        const r = measureGrounding(world, g.pw, only);
+        if (r.floating.length === 0) lines.push(`Grounding: all ${r.checked} object(s) that should rest on something touch it (within 0.12 m).`);
+        else {
+          lines.push(`Grounding: ${r.floating.length} of ${r.checked} object(s) hover above what is under them:`);
+          for (const f of r.floating.slice(0, 20)) lines.push(`- ${floatingText(f, (id) => g.label(id))}. Fix: lower it ${Number.isFinite(f.gap) ? `by ${r2(f.gap)} m ` : ''}(place_level_items {"id":"${f.id}","x":${r2(f.origin[0])},"z":${r2(f.origin[2])}} snaps it onto the surface), or tag it "floating" if it hovers on purpose.`);
+        }
+      } finally {
+        g.dispose();
+      }
+      break;
+    }
     case 'ground': {
       const g = await Ground.open(world);
       try {
@@ -459,7 +478,9 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
         refused.push(`${item.id}: nothing to place. Send "entity" with at least a "shape" (primitive, generator or asset).`);
         continue;
       }
-      const surface = ground.surface(item.x, item.z, item.below);
+      // A moved object is measured without itself (and its parts): it must not stand on its own old position.
+      const own = isMove ? subtreeOf(world, item.id) : undefined;
+      const surface = ground.surface(item.x, item.z, item.below, own);
       if (!surface) {
         refused.push(`${item.id}: nothing under (${item.x}, ${item.z}): it would hang in open air. Pick a spot over terrain or a platform, or measure first with query_level ground.`);
         continue;
@@ -477,7 +498,11 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
         for (const k of ['behaviors', 'physics']) if (given[k] === undefined && defaults[k] !== undefined) base[k] = defaults[k];
       }
       const above = item.above ?? (item.role === 'pickup' || item.role === 'goal' || item.role === 'checkpoint' ? 0.8 : 0);
-      const y = r2(surface.y + above + primitiveHalfHeight(base));
+      // How far the origin sits above the bottom: measured on the object itself when it exists (a group, a
+      // centred primitive, a model whose origin is not at its base), else half a primitive's height.
+      const ownBox = existing && own ? subtreeBounds(world, own) : null;
+      const lift = ownBox ? worldTransform(world, item.id).position[1] - ownBox.min[1] : primitiveHalfHeight(base);
+      const y = r2(surface.y + above + lift);
       const position: Vec3 = [r2(item.x), y, r2(item.z)];
       const tr = (base['transform'] as Record<string, unknown> | undefined) ?? {};
       const rot = Array.isArray(tr['rotation']) ? (tr['rotation'] as number[]) : [0, 0, 0];
