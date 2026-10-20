@@ -35,7 +35,7 @@ export type { NpcInfo } from './npc/brain';
 export type { DialogueView, DialogueHost } from './npc/dialogue';
 export { DialogueSession } from './npc/dialogue';
 export { NavGrid, NAV_MAX_PATH, type Obstacle } from './npc/nav';
-export { buildNavFor, collectObstacles, type BoundsProvider } from './npc/obstacles';
+export { buildNavFor, collectObstacles, isTerrainish, terrainSampler, type BoundsProvider } from './npc/obstacles';
 export { resolveNpc, defaultTransitions, evalCond, inHours, type NpcEff, type Senses } from './npc/graph';
 export { analyzeNpcs, type NpcAnalysis } from './npc/analyze';
 export { zoneShapeOf, insideZone, type ZoneShape } from './bounds';

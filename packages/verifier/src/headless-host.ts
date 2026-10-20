@@ -5,7 +5,7 @@
  * position queries stay consistent.
  */
 import { worldTransform, type Entity, type EntityId, type Json, type Vec3, type WorldDoc } from '@aether/core';
-import { EMPTY_INPUT, LogicRuntime, type LogicHost, type QuatTuple, type ScriptRunner } from '@aether/logic';
+import { EMPTY_INPUT, LogicRuntime, terrainSampler, type LogicHost, type QuatTuple, type ScriptRunner } from '@aether/logic';
 import type { LogicHook, PhysicsWorld } from '@aether/physics';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import { PosePool } from './pose-pool';
@@ -136,6 +136,13 @@ export class HeadlessLogicHost implements LogicHost {
   groundHeight(x: number, z: number, fromY: number, exclude?: EntityId): number | undefined {
     const hit = this.pw.raycast([x, fromY, z], [0, -1, 0], fromY + 8, exclude);
     return hit ? hit.point[1] : undefined;
+  }
+
+  private terrain: ((x: number, z: number) => number | undefined) | undefined | null = null;
+
+  terrainHeight(x: number, z: number): number | undefined {
+    if (this.terrain === null) this.terrain = terrainSampler(this.world, (px, py, pz, d) => this.pw.raycastAll([px, py, pz], [0, -1, 0], d, 6), { getBounds: (id) => this.getBounds(id) });
+    return this.terrain?.(x, z);
   }
 }
 

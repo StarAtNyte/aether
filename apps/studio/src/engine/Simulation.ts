@@ -22,7 +22,7 @@
  */
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
 import { Vector3 } from 'three';
-import { initScripting, LogicRuntime, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
+import { initScripting, LogicRuntime, terrainSampler, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
@@ -1211,6 +1211,7 @@ export class Simulation {
   private createHost(s: SessionCore): LogicHost {
     const sim = this;
     const isDoc = (id: EntityId): boolean => Object.prototype.hasOwnProperty.call(s.world.entities, id);
+    let terrain: ((x: number, z: number) => number | undefined) | undefined | null = null;
     // One reusable pose record per entity: getTransform runs many times per tick.
     const poses = new PosePool();
     return {
@@ -1321,6 +1322,12 @@ export class Simulation {
         if (s.ended) return undefined;
         const hit = s.pw.raycast([x, fromY, z], [0, -1, 0], fromY + 8, exclude);
         return hit ? hit.point[1] : undefined;
+      },
+      // NPC grids drape over hills (built once per level, so the sampler is made on first use).
+      terrainHeight(x, z) {
+        if (s.ended) return undefined;
+        if (terrain === null) terrain = terrainSampler(s.world, (px, py, pz, d) => s.pw.raycastAll([px, py, pz], [0, -1, 0], d, 6), { getBounds: (id) => (isDoc(id) ? (entityWorldBounds(s.world, id) ?? undefined) : undefined) });
+        return terrain?.(x, z);
       },
     };
   }

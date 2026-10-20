@@ -5,7 +5,7 @@
  * wall-clock budget runs out.
  */
 import { navigableVerdict } from '@aether/arch';
-import { analyzeNpcs } from '@aether/logic';
+import { analyzeNpcs, terrainSampler } from '@aether/logic';
 import type { EntityId, Vec3, WorldDoc, WorldTest } from '@aether/core';
 import { compare, readStateKey, resolveSelector } from '@aether/core';
 import { entityColliderBounds, entityWorldBounds } from './bounds';
@@ -300,7 +300,10 @@ function staysAboveTest(ctx: Ctx, test: Extract<WorldTest, { kind: 'staysAbove' 
 /** Characters work: static reachability at t = 0, then no falling and no sticking while they run. */
 function npcsTest(ctx: Ctx, test: Extract<WorldTest, { kind: 'npcs' }>): Evaluator {
   const world = ctx.world;
-  const analysis = analyzeNpcs(world, { target: test.target, bounds: { getBounds: (id) => entityWorldBounds(world, id) ?? undefined, getColliderBounds: (id) => entityColliderBounds(world, id) } });
+  const getBounds = (id: EntityId): { min: Vec3; max: Vec3 } | undefined => entityWorldBounds(world, id) ?? undefined;
+  // NPCs on hills are routed over the terrain (the grid drapes over it), as they walk at runtime.
+  const terrain = terrainSampler(world, (x, y, z, d) => ctx.pw.raycastAll([x, y, z], [0, -1, 0], d, 6), { getBounds });
+  const analysis = analyzeNpcs(world, { target: test.target, bounds: { getBounds, getColliderBounds: (id) => entityColliderBounds(world, id), ...(terrain ? { terrainHeight: terrain } : {}) } });
   if (analysis.npcs === 0) return noTargets(test, test.target);
   if (analysis.errors.length > 0) {
     const verdict: Verdict = { passed: false, message: analysis.errors.slice(0, 3).join('; ') + (analysis.errors.length > 3 ? ` (+${analysis.errors.length - 3} more)` : '') };

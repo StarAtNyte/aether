@@ -83,6 +83,11 @@ export interface LogicHost {
    * hills; without it they use the navigation grid's flat floor.
    */
   groundHeight?(x: number, z: number, fromY: number, exclude?: EntityId): number | undefined;
+  /**
+   * Optional (additive): height of the open terrain under (x, z) (see `terrainSampler`). NPC navigation grids drape
+   * over it, so NPCs on hills can be routed; without it a hill is a flat floor at its base.
+   */
+  terrainHeight?(x: number, z: number): number | undefined;
 }
 
 /** Player input sampled by the caller once per fixed tick. */

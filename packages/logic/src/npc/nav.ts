@@ -49,7 +49,16 @@ export interface NavBuildOptions {
   maxCells?: number;
   /** Preferred cell size (metres). */
   cell?: number;
+  /**
+   * Height of the open terrain under (x, z) (hills, a heightfield, a path), or undefined off it. With it the grid
+   * drapes over the terrain: each cell's floor is the terrain there, and solids block or carry an agent by their
+   * height above that floor, so NPCs walk over hills instead of only on one flat level.
+   */
+  surface?: (x: number, z: number) => number | undefined;
 }
+
+/** How far (m) terrain may rise or fall from the grid's level and still be its floor. */
+export const NAV_DRAPE_BAND = 25;
 
 /** Hard cap of cells per axis. */
 export const NAV_MAX_CELLS = 320;
@@ -140,6 +149,21 @@ export class NavGrid {
         }
       }
     }
+    // Terrain: the floor of each cell is the open ground there (draped over hills).
+    let base: Float32Array | null = null;
+    if (o.surface) {
+      base = new Float32Array(w * h).fill(NaN);
+      for (let iz = 0; iz < h; iz++) {
+        const z = minZ + (iz + 0.5) * cell;
+        for (let ix = 0; ix < w; ix++) {
+          const t = o.surface(minX + (ix + 0.5) * cell, z);
+          if (t === undefined || !Number.isFinite(t) || t < refY - NAV_DRAPE_BAND || t > stepTop + NAV_DRAPE_BAND) continue;
+          const i = iz * w + ix;
+          base[i] = t;
+          if (!((floor[i] as number) >= t)) floor[i] = t;
+        }
+      }
+    }
     const r = o.radius;
     for (const ob of obstacles) {
       const reach = (ob.circle ? ob.hx : hyp(ob.hx, ob.hz)) + r + cell;
@@ -147,10 +171,10 @@ export class NavGrid {
       const ix1 = Math.min(w - 1, Math.floor((ob.cx + reach - minX) / cell));
       const iz0 = Math.max(0, Math.floor((ob.cz - reach - minZ) / cell));
       const iz1 = Math.min(h - 1, Math.floor((ob.cz + reach - minZ) / cell));
-      const isFloor = ob.top <= stepTop && ob.top > refY - 0.5;
-      const blocks = ob.top > stepTop && ob.bottom < refY + o.height;
-      const sights = ob.top > refY + 1 && ob.bottom < refY + o.height * 0.9;
-      if (!isFloor && !blocks && !sights) continue;
+      const flatFloor = ob.top <= stepTop && ob.top > refY - 0.5;
+      const flatBlocks = ob.top > stepTop && ob.bottom < refY + o.height;
+      const flatSights = ob.top > refY + 1 && ob.bottom < refY + o.height * 0.9;
+      if (!base && !flatFloor && !flatBlocks && !flatSights) continue;
       for (let iz = iz0; iz <= iz1; iz++) {
         const z = minZ + (iz + 0.5) * cell - ob.cz;
         for (let ix = ix0; ix <= ix1; ix++) {
@@ -168,6 +192,11 @@ export class NavGrid {
             near = lx <= ob.hx + r && lz <= ob.hz + r;
           }
           const i = iz * w + ix;
+          // Over draped terrain an obstacle is judged by its height above the ground of that cell.
+          const g = base ? (base[i] as number) : NaN;
+          const isFloor = Number.isNaN(g) ? flatFloor : ob.top <= g + o.step && ob.top > g - 0.5;
+          const blocks = Number.isNaN(g) ? flatBlocks : ob.top > g + o.step && ob.bottom < g + o.height;
+          const sights = Number.isNaN(g) ? flatSights : ob.top > g + 1 && ob.bottom < g + o.height * 0.9;
           if (inside) {
             if (isFloor && !((floor[i] as number) >= ob.top)) floor[i] = ob.top;
             if (sights) this.sight[i] = 1;

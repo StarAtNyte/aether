@@ -15,6 +15,8 @@ import { NavGrid, type Obstacle } from './nav';
 export interface BoundsProvider {
   getBounds?(id: EntityId): { min: Vec3; max: Vec3 } | undefined;
   getColliderBounds?(id: EntityId): ReadonlyArray<{ min: Vec3; max: Vec3 }>;
+  /** Height of the open terrain under (x, z) (see {@link terrainSampler}); grids drape over it when given. */
+  terrainHeight?(x: number, z: number): number | undefined;
 }
 
 /** Axis-aligned area in world metres. */
@@ -44,12 +46,51 @@ function underNpc(world: WorldDoc, e: Entity): boolean {
   return false;
 }
 
+/**
+ * True for open ground: terrain-like generators or names (terrain, hill, path, river …), which are floor, never a wall.
+ * `area` (m², optional) also counts scenery-sized footprints.
+ */
+export function isTerrainish(e: Entity, id: string, area = 0): boolean {
+  return area > HUGE_AREA || TERRAINISH.test(e.shape.kind === 'procedural' ? e.shape.generator : '') || TERRAINISH.test(id);
+}
+
+/**
+ * A terrain height sampler for {@link BoundsProvider.terrainHeight} from a host's downward ray casts: the first
+ * terrain-like solid under (x, z), seen through trees, rocks and anything else above it. Undefined when the world
+ * has no terrain-like solids.
+ */
+export function terrainSampler(
+  world: WorldDoc,
+  castDown: (x: number, fromY: number, z: number, maxDist: number) => ReadonlyArray<{ id: EntityId | null; point: Vec3 }>,
+  bounds?: BoundsProvider,
+): ((x: number, z: number) => number | undefined) | undefined {
+  const ids = new Set<EntityId>();
+  let top = -Infinity;
+  for (const id of Object.keys(world.entities)) {
+    const e = world.entities[id] as Entity;
+    if (e.template || !e.physics || e.physics.sensor || e.physics.collider === 'none' || e.physics.body === 'dynamic' || e.shape.kind === 'none' || e.shape.kind === 'scatter') continue;
+    const b = bounds?.getBounds?.(id);
+    const area = b ? (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]) : 0;
+    if (!isTerrainish(e, id, area)) continue;
+    ids.add(id);
+    top = Math.max(top, b ? b.max[1] : 50);
+  }
+  if (ids.size === 0) return undefined;
+  const from = Math.min(2000, top + 1);
+  return (x, z) => {
+    for (const h of castDown(x, from, z, from + 200)) if (h.id !== null && ids.has(h.id)) return h.point[1];
+    return undefined;
+  };
+}
+
 /** Collect obstacles intersecting `area` (expanded by `margin`). Deterministic order (document order). */
-export function collectObstacles(world: WorldDoc, area: Area, margin: number, bounds?: BoundsProvider): Obstacle[] {
+export function collectObstacles(world: WorldDoc, area: Area, margin: number, bounds?: BoundsProvider, skipTerrain = false): Obstacle[] {
   const out: Obstacle[] = [];
   for (const id of Object.keys(world.entities)) {
     const e = world.entities[id] as Entity;
     if (e.template || !e.physics || e.shape.kind === 'none' || e.shape.kind === 'scatter') continue;
+    // Draped grids take open ground from the terrain sampler (it is the floor there, not a box).
+    if (skipTerrain && isTerrainish(e, id)) continue;
     const p = e.physics;
     if (p.sensor || p.collider === 'none' || p.body === 'dynamic') continue;
     if (p.body === 'kinematic' && !e.behaviors.some((b) => b.type === 'door')) continue;
@@ -123,7 +164,7 @@ function inArea(ob: Obstacle, area: Area, margin: number): boolean {
 /** Open ground (huge footprints, terrain-like names) is a floor at its top, not a wall. */
 function floorish(e: Entity, id: string, ob: Obstacle): Obstacle {
   const footprint = ob.circle ? Math.PI * ob.hx * ob.hx : 4 * ob.hx * ob.hz;
-  if (footprint > HUGE_AREA || TERRAINISH.test(e.shape.kind === 'procedural' ? e.shape.generator : '') || TERRAINISH.test(id)) {
+  if (isTerrainish(e, id, footprint)) {
     let o = { ...ob, bottom: Math.min(ob.bottom, ob.top - 0.1) };
     // A tall terrain box (a heightfield with relief, whose bounds reach tens of metres) is the ground at its base level
     // here, not a wall: the level plot of an estate, a village green. (Hills are not walkable by this grid, which has a
@@ -180,9 +221,11 @@ export function buildNavFor(world: WorldDoc, o: NavFor, bounds?: BoundsProvider)
     maxX = maxZ = 10;
   }
   const area: Area = { minX: minX - pad, minZ: minZ - pad, maxX: maxX + pad, maxZ: maxZ + pad };
-  const obstacles = collectObstacles(world, area, o.radius, bounds);
+  const surface = bounds?.terrainHeight ? (x: number, z: number): number | undefined => bounds.terrainHeight?.(x, z) : undefined;
+  const obstacles = collectObstacles(world, area, o.radius, bounds, surface !== undefined);
   const ground = world.environment.ground;
   return NavGrid.build(obstacles, {
+    ...(surface ? { surface } : {}),
     ...area,
     refY: o.refY,
     radius: o.radius,
