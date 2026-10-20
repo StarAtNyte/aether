@@ -219,7 +219,7 @@ const desert: Theme = {
     const realCanyon = c.primary && b.realisticNature && !b.ground;
     if (realCanyon) {
       const size = b.track ? b.track.canyonSize : 420;
-      const params = { size, height: b.track ? 58 : 46, resolution: 256, roughness: 0.55, color: '#9a8a4f', variant: 3 };
+      const params = { size, height: b.track ? 58 : 46, resolution: 384, roughness: 0.55, color: '#9a8a4f', variant: 3 };
       const seed = (b.seed ^ 0xca7) % 100_000;
       b.env({ ground: null });
       const id = b.add({ id: b.id('canyon'), name: 'Canyon', shape: { kind: 'procedural', generator: 'terrain', params, seed }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.9 }, tags: ['terrain', 'canyon'] });

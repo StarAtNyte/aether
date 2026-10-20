@@ -206,7 +206,7 @@ const terrain = defineGenerator({
   params: {
     size: pNum(60, 10, 1000, 'width and depth in meters'),
     height: pNum(6, 0, 200, 'max elevation difference in meters'),
-    resolution: pInt(128, 16, 256, 'grid cells per side (detail)'),
+    resolution: pInt(128, 16, 384, 'grid cells per side (detail)'),
     roughness: pNum(0.5, 0, 1, '0 smooth hills … 1 rugged'),
     color: pColor('#5a8f3c', 'grass color'),
     variant: pVariant(5, '0 hills, 1 plateaus (terraced), 2 valley, 3 canyon (flat floor at y = 0 along Z, stratified walls), 4 river valley (meandering riverbed at y = 0 along Z between soft grassy banks), 5 estate (a level plot for a house, meadow swells and a ring of hills; optional lake basin)'),
@@ -309,7 +309,7 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
       // Strata: terraces with slightly sloped treads.
       const steps = 7;
       const t = wall * steps;
-      const strata = (Math.floor(t) + smoothstep(0.55, 1, t - Math.floor(t))) / steps;
+      const strata = (Math.floor(t) + smoothstep(0.35, 1, t - Math.floor(t) + 0.08 * n.noise2(x * 0.06, z * 0.06))) / steps;
       const plateau = 0.78 + 0.22 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, 3 + Math.round(rough * 3)));
       // Weathering: vertical gullies running down the face and crags of a few metres, so a wall is rock and not a smooth ramp of terraces.
       const gully = n.ridged2(x * 0.045, z * 0.014, 3) - 0.5;

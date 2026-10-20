@@ -60,17 +60,27 @@ async function build(page: Page, url: string, prompt: string): Promise<void> {
     await box.press('Enter');
   }
   await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 90_000 });
-  await page.waitForFunction(
-    () => {
-      const a = window.__aether;
-      if (!a || a.simulation === null) return false;
-      const st = a.store.getState();
-      const last = st.chat[st.chat.length - 1];
-      return st.loading === null && !st.agentBusy && Object.keys(a.history.current.entities).length > 0 && (last === undefined || last.role === 'assistant');
-    },
-    null,
-    { timeout: 570_000, polling: 500 },
-  );
+  const done = (): Promise<unknown> =>
+    page.waitForFunction(
+      () => {
+        const a = window.__aether;
+        if (!a || a.simulation === null) return false;
+        const st = a.store.getState();
+        const last = st.chat[st.chat.length - 1];
+        return st.loading === null && !st.agentBusy && Object.keys(a.history.current.entities).length > 0 && (last === undefined || last.role === 'assistant');
+      },
+      null,
+      { timeout: 570_000, polling: 500 },
+    );
+  await done();
+  // A local AI reviews and repairs in further turns after its first finish: wait until it stays idle.
+  if (BACKEND !== 'offline') {
+    for (let k = 0; k < 40; k++) {
+      await page.waitForTimeout(8000);
+      if (await page.evaluate(() => window.__aether?.store.getState().agentBusy === false)) break;
+      await done();
+    }
+  }
   await page.evaluate(async () => {
     await window.__aether?.simulation?.whenSynced();
   });

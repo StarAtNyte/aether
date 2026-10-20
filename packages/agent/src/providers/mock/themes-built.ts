@@ -119,7 +119,7 @@ const village: Theme = {
     const old = oldVillage(c);
     if (c.primary) {
       // The land first, so everything stands on it (a level plot for the village, wooded hills round it).
-      hillside(c, { pad: 62 });
+      hillside(c, { pad: 62, ...(real ? { color: '#6c8a47' } : {}) });
     }
     if (c.clear < 4) {
       if (real) groundPatch(b, { id: b.id('plaza'), name: 'Plaza', center: [c.x, c.z], radius: 8.8, height: (x, z) => b.groundAt(x, z), ragged: 0.12, centre: '#a29b8c', edge: '#8d8676', tags: ['plaza'] });
@@ -171,6 +171,7 @@ const village: Theme = {
       // Cottage gardens: shrubs and flowers along the house fronts, a few villagers about their day.
       scatterBelt(c, 'garden-shrubs', 'shrub', { size: 1, detail: 0.6, color: '#5f7d3f' }, 12, 20, 30, { minSpacing: 1.6, scaleRange: [0.6, 1.2] });
       scatterBelt(c, 'meadow', 'meadow-grass', { color: '#7a9a4a', size: 0.5 }, 420, 22, 60, { minSpacing: 0.35, scaleRange: [0.6, 1.3] });
+      scatterBelt(c, 'lawn', 'meadow-grass', { color: '#748f4c', size: 0.32 }, 360, 9.5, 23, { minSpacing: 0.3, scaleRange: [0.5, 1.1] });
       for (const color of ['#e9e1b0', '#c85a8a', '#e0b040']) scatterBelt(c, 'wildflowers', 'wildflowers', { color, size: 0.5 }, 50, 20, 44, { minSpacing: 0.6 });
       const folk: Array<{ wardrobe: string; gender: 'male' | 'female'; age: 'young' | 'adult' | 'old'; hold?: string; top: string }> = [
         { wardrobe: 'merchant', gender: 'male', age: 'adult', top: '#7a3b2e' },

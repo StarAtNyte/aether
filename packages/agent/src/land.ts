@@ -106,7 +106,7 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
   const c: ThemeCtx = { b, x: input.plot.x, z: input.plot.z, clear: 0, primary: true };
   let terrain = '';
   if (input.kind === 'canyon') {
-    const params: Record<string, Json> = { size: input.size, height: Math.max(12, input.relief), resolution: 256, roughness: 0.55, color, variant: 3 };
+    const params: Record<string, Json> = { size: input.size, height: Math.max(12, input.relief), resolution: 384, roughness: 0.55, color, variant: 3 };
     const tseed = seed % 100_000;
     b.env({ ground: null });
     terrain = b.add({ id: b.id('canyon'), name: 'Canyon', shape: { kind: 'procedural', generator: 'terrain', params, seed: tseed }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.9 }, tags: ['terrain'] });
