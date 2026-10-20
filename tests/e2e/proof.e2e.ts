@@ -63,6 +63,9 @@ function watch(page: Page, errors: string[], label: string): void {
     if (!BENIGN_CONSOLE.some((re) => re.test(text))) errors.push(`[${label}] console.error: ${text.slice(0, 300)}`);
   });
   page.on('pageerror', (e) => errors.push(`[${label}] pageerror: ${e.message.slice(0, 300)}`));
+  page.on('response', (r) => {
+    if (r.status() === 404) errors.push(`[${label}] 404: ${r.url()}`);
+  });
 }
 
 function template(slug: string): WorldDoc {

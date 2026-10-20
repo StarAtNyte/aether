@@ -42,7 +42,8 @@ async function main(): Promise<void> {
     await ctx.addInitScript(SKIP_FIRST_RUN);
     const page = await ctx.newPage();
     const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
+    // Dawn rejects a pending popErrorScope when the page navigates away with the WebGPU instance still alive: teardown noise.
+    page.on('pageerror', (e) => { if (!/Instance dropped in popErrorScope/i.test(e.message)) errors.push(e.message); });
     const heaps: number[] = [];
     for (let round = 0; round < ROUNDS; round++) {
       for (const slug of SLUGS) {

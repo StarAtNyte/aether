@@ -195,23 +195,34 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
       await page.waitForTimeout(250);
     };
     // The studio pipeline releases its render targets a few frames after it is switched off, later
-    // on a loaded machine: read the counts once they have settled (two equal samples, ≤ 10 s).
+    // on a loaded machine: read the counts once they have settled (eight equal samples, ≤ 30 s: the textures drop in steps).
     const settled = async (): Promise<Awaited<ReturnType<typeof gpu>>> => {
       await page.evaluate(async () => window.__aether?.simulation?.whenSynced());
       let prev = await gpu();
-      for (let i = 0; i < 20; i++) {
+      let equal = 0;
+      for (let i = 0; i < 60; i++) {
         await page.waitForTimeout(500);
         const next = await gpu();
-        if (JSON.stringify(next) === JSON.stringify(prev)) return next;
+        equal = JSON.stringify(next) === JSON.stringify(prev) ? equal + 1 : 0;
+        if (equal >= 8) return next;
         prev = next;
       }
       return prev;
     };
+    // Warm up: lazily loaded finishes, the sky map and the studio pipeline's own targets arrive over the first cycles.
+    for (let i = 0; i < 3; i++) await cycle();
+    await settled();
     await cycle();
     const base = await settled();
     for (let i = 0; i < 20; i++) await cycle();
-    const after = await settled();
-    check(after.textures <= base.textures + 2 && after.geometries <= base.geometries + 8 && after.cached <= base.cached + 4 && after.materials <= base.materials + 4, `[${label}] GPU resources grew over 20 view cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)}`);
+    const within = (a: Awaited<ReturnType<typeof gpu>>): boolean => a.textures <= base.textures + 2 && a.geometries <= base.geometries + 8 && a.cached <= base.cached + 4 && a.materials <= base.materials + 4;
+    // Released textures are reclaimed lazily (a real leak never comes back down): give the count up to 40 s to fall.
+    let after = await settled();
+    for (let i = 0; i < 20 && !within(after); i++) {
+      await page.waitForTimeout(2000);
+      after = await gpu();
+    }
+    check(within(after), `[${label}] GPU resources grew over 20 view cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)}`);
     log(`[${label}] 20 view/quality cycles: geometries ${base.geometries}→${after.geometries}, textures ${base.textures}→${after.textures}, cached ${base.cached}→${after.cached}, materials ${base.materials}→${after.materials}`);
 
     // 3. Floor plan: chips, draw a room, add a door, undo both.
@@ -354,6 +365,7 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     const shot = join(tmpdir(), `aether-arch-e2e-${label}.png`);
     await page.screenshot({ path: shot }).catch(() => undefined);
     log(`[${label}] failure screenshot: ${shot}`);
+    if (errors.length > 0) log(`[${label}] page errors before the failure: ${errors.slice(0, 5).join(" | ").slice(0, 900)}`);
     throw e;
   } finally {
     await context.close();
