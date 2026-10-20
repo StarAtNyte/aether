@@ -1330,7 +1330,8 @@ BuildingPlan (zod) = { id, name, style: modern|scandinavian|industrial|japandi|c
 PlanLevel = { name?, height 2.4..8, rooms: PlanRoom[1..40], doors ≤ 80, windows ≤ 80, autoWindows, stairs ≤ 4, railings ≤ 16 }
 PlanRoom = { id (slug), name?, type: RoomType, rect [x0,z0,x1,z1] | polygon, floor?, wallColor?, furnish, items ≤ 60, omit ≤ 20 }
 PlanDoor = { between: [room, room|'outside'], at 0..1, width 0.6..4, height, kind swing|sliding|opening, style?, side?, main }
-compileBuilding(plan, { seed? }) → CompiledBuilding { id, entities, patches, stats, spawn, spawnYaw, bounds, rooms[{ id, level, name, type, area }], notes }
+compileBuilding(plan, { seed? }) → CompiledBuilding { id, entities, patches, stats, spawn, spawnYaw, bounds, rooms[{ id, level, name, type, area }], notes,
+  exterior[{ level, room, side, edge, edgeLength, t0, t1, ceiling, openings[{ kind, t0, t1, sill, height, style? }] }] }   // exterior stretches per room (edge metres)
   // mitred wall network (T-junctions butt), CSG-free openings, slabs / ceilings / stairwells, swing / sliding doors
   // (door behaviour, E), windows, stairs (straight / L / U), roofs (flat / gable / hip / shed), railings, site works,
   // furniture layouts per room type and style, ≤ MAX_BUILDING_LIGHTS (14) real light sources, switches; ≤ 1800 entities
@@ -1343,6 +1344,9 @@ PlanError { code, message, hint }        // every refusal carries a machine-read
 applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ index, op, code, message, hint }], compiled, reports, target }
   ArchOp = create_building {plan, walkthrough=true} | remove_building | add_level | add_room {level, room, doors?} | remove_room
          | add_door | add_window | add_stairs | set_roof | set_style | furnish_room {items?, omit?} | place_item | remove_item
+         // add_window {window: {room, side?, count?, width?…}}: the level is found from the room; without side each window goes
+         // to the centre of the widest clear exterior stretch (0.4 m from corners and openings, window-fit.ts), else an even
+         // row with room for one more is re-spread; the room's automatic windows become explicit specs first, so they stay
          | set_material {target: exterior|roof|floor|walls, room?, material}
          | set_residents {building, count 0..8}   // people living in / visiting the building (see BuildingPlan.residents)
   // ops apply in order to the stored plans; touched buildings are re-compiled, locked entities kept, a `navigable`

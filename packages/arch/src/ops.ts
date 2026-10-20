@@ -16,6 +16,10 @@ import { area } from './math2';
 import { WallDado } from './params';
 import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
+import { planWindowAddition } from './window-fit';
+
+/** A window to add: the plan window with the side optional (the room's widest free exterior wall when omitted). */
+const WindowRequest = PlanWindow.extend({ side: Compass.optional() });
 
 /** Upper bound of ops per call. */
 export const MAX_ARCH_OPS = 40;
@@ -226,17 +230,29 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
         }
         case 'add_window': {
           const plan = load(op.building);
-          const lvl = levelOf(plan, op.level);
-          const win = parseWith(PlanWindow, op.window, 'window', 'Windows: {room, side: north|south|east|west, count?, width?, height?, sill?}.');
-          // Another window on a wall that already has evenly spread ones joins them (a second spec would land on top of the first).
-          const same = win.centres ? undefined : lvl.windows.find((w) => w.room === win.room && w.side === win.side && !w.centres);
-          if (same) {
-            same.count = Math.min(8, same.count + win.count);
-            lines.push(`add_window on level ${op.level}: the ${win.side} wall of ${win.room} now has ${same.count} windows, spread evenly`);
-          } else {
-            lvl.windows.push(win);
-            lines.push(`add_window on level ${op.level}`);
+          const req = parseWith(WindowRequest, op.window, 'window', 'Windows: {room, side?: north|south|east|west (omit to use the room\'s widest free exterior wall), count?, width?, height?, sill?}.');
+          // The level the room is on: the given one when it has the room, else wherever the room is.
+          const found = roomOf(plan, req.room);
+          const levelIndex = plan.levels[op.level]?.rooms.some((r) => r.id === found.room.id) ? op.level : plan.levels.indexOf(found.level);
+          const lvl = levelOf(plan, levelIndex);
+          const roomId = found.room.id;
+          if (req.side !== undefined && req.centres) {
+            lvl.windows.push({ ...req, room: roomId, side: req.side });
+            lines.push(`add_window on level ${levelIndex}: ${req.centres.length} window(s) on the ${req.side} wall of ${roomId}`);
+            break;
           }
+          // Another window on a wall that already has evenly spread ones joins them (a second spec would land on top of the first).
+          const same = req.side === undefined ? undefined : lvl.windows.find((w) => w.room === roomId && w.side === req.side && !w.centres);
+          if (same) {
+            same.count = Math.min(8, same.count + req.count);
+            lines.push(`add_window on level ${levelIndex}: the ${same.side} wall of ${roomId} now has ${same.count} windows, spread evenly`);
+            break;
+          }
+          // Measure the walls as they are now (exterior stretches with their doors and windows) and fit the new ones.
+          const added = planWindowAddition(compileBuilding(plan).exterior, lvl.windows, levelIndex, roomId, req);
+          if (!added.ok) throw new PlanError('no_wall_space', added.message, added.hint);
+          lvl.windows = added.windows;
+          lines.push(`add_window on level ${levelIndex}: ${added.line}`);
           break;
         }
         case 'add_stairs': {

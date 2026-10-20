@@ -52,6 +52,34 @@ export interface CompiledBuilding {
   rooms: Array<{ id: string; level: number; name: string; type: RoomType; area: number }>;
   /** Non-fatal notes (pieces that did not fit, unknown kinds …). */
   notes: string[];
+  /** Exterior wall stretches of every indoor room with the doors and windows on them (wall-space tools, window edits). */
+  exterior: ExteriorWall[];
+}
+
+/** An opening on an exterior wall stretch, in metres along the room edge (`t0`..`t1`). */
+export interface ExteriorOpening {
+  kind: 'door' | 'window' | 'opening';
+  t0: number;
+  t1: number;
+  sill: number;
+  height: number;
+  /** Window style as compiled (windows only). */
+  style?: string;
+}
+
+/** One exterior stretch of a room's outline (edge coordinates, the frame of `PlanWindow.centres`). */
+export interface ExteriorWall {
+  level: number;
+  room: string;
+  side: Compass;
+  /** Index of the room edge (simplified outline) the stretch lies on, and its length. */
+  edge: number;
+  edgeLength: number;
+  t0: number;
+  t1: number;
+  /** Floor-to-ceiling height of the storey. */
+  ceiling: number;
+  openings: ExteriorOpening[];
 }
 
 export interface WallRec {
@@ -230,6 +258,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   const entities: EntityInput[] = [];
   const notes: string[] = [];
   const roomsOut: CompiledBuilding['rooms'] = [];
+  const exterior: ExteriorWall[] = [];
   let lights = 0;
   const add = (e: EntityInput): void => {
     if (entities.length >= MAX_BUILDING_ENTITIES) throw new PlanError('too_large', `building would exceed ${MAX_BUILDING_ENTITIES} entities`, 'Use fewer rooms or levels, or set furnish: false on some rooms.');
@@ -483,9 +512,11 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
 
     // --- windows ----------------------------------------------------------
     let winN = 0;
+    const windowStyles = new Map<string, string>();
     const placeWindow = (roomId: string, rec: WallRec, t: number, width: number, height: number, sill: number, style: string, daylight?: string): boolean => {
       if (!free(rec, t - width / 2, t + width / 2)) return false;
       rec.openings.push({ kind: 'window', offset: round(t), width: round(width), height: round(height), sill: round(sill) });
+      windowStyles.set(`${rec.id}@${round(t)}`, style);
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
       const c: P2 = [rec.w.a[0] + rec.dir[0] * t, rec.w.a[1] + rec.dir[1] * t];
       const interior = roomSide(rec, c, roomId) === 1 ? 'b' : 'a';
@@ -581,6 +612,30 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
             if (hit) placeWindow(r.id, hit.rec, hit.t, spec.w, Math.min(spec.h, ceiling - spec.sill - 0.12), spec.sill, spec.style);
           }
         }
+      }
+    }
+
+    // Exterior stretches of each indoor room with the openings on them (edge coordinates).
+    for (const r of indoor) {
+      const poly = polys.get(r.id) as P2[];
+      const others = indoor.filter((o) => o.id !== r.id).map((o) => polys.get(o.id) as P2[]);
+      const edges = roomEdges(poly);
+      for (const span of exteriorSpans(poly, others)) {
+        const ei = edges.findIndex((e) => e.a[0] === span.edge.a[0] && e.a[1] === span.edge.a[1] && e.b[0] === span.edge.b[0] && e.b[1] === span.edge.b[1]);
+        const e = span.edge;
+        const openings: ExteriorOpening[] = [];
+        for (const rec of walls) {
+          for (const o of rec.openings) {
+            const c: P2 = [rec.w.a[0] + rec.dir[0] * o.offset, rec.w.a[1] + rec.dir[1] * o.offset];
+            if (Math.abs((c[0] - e.a[0]) * e.out[0] + (c[1] - e.a[1]) * e.out[1]) > 0.03) continue;
+            const te = (c[0] - e.a[0]) * e.dir[0] + (c[1] - e.a[1]) * e.dir[1];
+            if (te < span.t0 - 0.01 || te > span.t1 + 0.01) continue;
+            const style = o.kind === 'window' ? windowStyles.get(`${rec.id}@${o.offset}`) : undefined;
+            openings.push({ kind: o.kind, t0: round(te - o.width / 2), t1: round(te + o.width / 2), sill: o.sill, height: o.height, ...(style ? { style } : {}) });
+          }
+        }
+        openings.sort((p, q) => p.t0 - q.t0);
+        exterior.push({ level: li, room: r.id, side: e.side, edge: ei, edgeLength: round(e.length), t0: round(span.t0), t1: round(span.t1), ceiling, openings });
       }
     }
 
@@ -883,6 +938,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     bounds: { min: [round(Math.min(...bx)), 0, round(Math.min(...bz))], max: [round(Math.max(...bx)), round(maxY), round(Math.max(...bz))] },
     rooms: roomsOut,
     notes,
+    exterior,
   };
 
 }

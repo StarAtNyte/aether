@@ -252,4 +252,24 @@ describe('offline building edits say what really happened', () => {
     expect(text).not.toMatch(/Done — removed/);
     expect(text).toMatch(/nothing changed/i);
   }, 60_000);
+
+  it('"add a window to the kitchen" adds one window to the kitchen and keeps the house walkable', async () => {
+    const { applyArchOps, checkBuildings } = await import('@aether/arch');
+    const { applyPatches, createWorld, summarizeWorld } = await import('@aether/core');
+    const { planArch } = await import('../src/providers/mock/arch');
+    const base = createWorld();
+    const plan = planArch('a two-storey modern house with a pool, open-plan living room, kitchen and two bedrooms, people living in it', summarizeWorld(base));
+    if (!plan?.arch) throw new Error('no plan');
+    const env = applyPatches(base, plan.patches);
+    const world = applyPatches(env.world, applyArchOps(env.world, plan.arch.ops).patches).world;
+    const kitchenWindows = (w: typeof world): number => Object.values(w.entities).filter((e) => e.arch?.role === 'window' && /-kitchen$/.test(e.arch.room ?? '')).length;
+    const before = kitchenWindows(world);
+    const host = new MemoryHost(world);
+    const events = await collect(new WorldAgent({ provider: createMockProvider(), catalogs: TEST_CATALOGS }).run('add a window to the kitchen', host));
+    const text = events.map((e) => (e.type === 'message' ? e.text : '')).join(' ');
+    expect(text).not.toMatch(/couldn't map/);
+    expect(text).toMatch(/window added to the kitchen/);
+    expect(kitchenWindows(host.world)).toBe(before + 1);
+    expect(checkBuildings(host.world, '*', 0.8).every((r) => r.passed)).toBe(true);
+  }, 60_000);
 });

@@ -413,6 +413,16 @@ function editOps(text: string, building: { id: string; rooms: Array<{ id: string
   }
   const remove = /\b(remove|delete|take out|get rid of|no)\b/.test(text);
   const add = /\b(add|put|place|give|want)\b/.test(text);
+  // "add a window to the kitchen": the side is left to the building tools (the room's widest clear exterior wall).
+  const windows = /\b(?:(a|an|one|another|two|three|\d)\s+)?(?:(?:more|new|extra|big|bigger|small|large)\s+)?windows?\b/.exec(text);
+  if (add && !remove && windows && !/\b(?:curtains?|blinds?|sills?|frames?)\b/.test(text)) {
+    const n: Record<string, number> = { a: 1, an: 1, one: 1, another: 1, two: 2, three: 3 };
+    const word = windows[1] ?? '';
+    const count = Math.max(1, Math.min(3, /^\d$/.test(word) ? Number(word) : (n[word] ?? 1)));
+    const rooms = targeted.length > 0 ? targeted : building.rooms.filter((r) => r.type === 'living').map((r) => r.id).slice(0, 1);
+    for (const room of rooms) ops.push({ op: 'add_window', building: b, window: { room, count } });
+    if (rooms.length > 0) done.push(`${count === 1 ? 'a window' : `${count} windows`} added to the ${rooms.map((r) => building.rooms.find((x) => x.id === r)?.type ?? r).join(' and ')}`);
+  }
   if (remove || add) {
     for (const [re, kind] of ITEM_WORDS) {
       if (!re.test(text)) continue;
