@@ -133,7 +133,17 @@ export function compileGrounds(g: GardenInput): GardenOutput {
     const D = 0.7;
     const hedge = (x0: number, z0: number, x1: number, z1: number): void => {
       if (x1 - x0 < 0.6 && z1 - z0 < 0.6) return;
-      out.push({ id: `${bid}-hedge${out.filter((e) => e.arch?.kind === 'hedge').length}`, parent: bid, name: 'Hedge', transform: { position: [r((x0 + x1) / 2), r(H / 2), r((z0 + z1) / 2)] }, shape: { kind: 'primitive', primitive: 'box', size: [r(x1 - x0), H, r(z1 - z0)] }, material: HEDGE, physics: { body: 'static' }, arch: { role: 'site', kind: 'hedge', name: 'Hedge' }, tags: ['arch', 'site', 'hedge'] });
+      const hid = `${bid}-hedge${out.filter((e) => e.arch?.kind === 'hedge').length}`;
+      out.push({ id: hid, parent: bid, name: 'Hedge', transform: { position: [r((x0 + x1) / 2), r(H / 2), r((z0 + z1) / 2)] }, shape: { kind: 'primitive', primitive: 'box', size: [r(x1 - x0), H, r(z1 - z0)] }, material: HEDGE, physics: { body: 'static' }, arch: { role: 'site', kind: 'hedge', name: 'Hedge' }, tags: ['arch', 'site', 'hedge'] });
+      // Leafy shrubs grown into the hedge break its box: an uneven top and sides, as a clipped hedge has.
+      const len = Math.max(x1 - x0, z1 - z0);
+      const alongX = x1 - x0 >= z1 - z0;
+      const pts: Array<[number, number, number]> = [];
+      for (let u = -len / 2 + 0.45; u <= len / 2 - 0.45; u += 0.8) {
+        const j = between(-0.12, 0.12);
+        pts.push(alongX ? [r(u + j), r(H * 0.32), r(between(-0.12, 0.12))] : [r(between(-0.12, 0.12)), r(H * 0.32), r(u + j)]);
+      }
+      if (pts.length > 0) out.push({ id: `${hid}-leaves`, parent: bid, name: 'Hedge leaves', transform: { position: [r((x0 + x1) / 2), 0, r((z0 + z1) / 2)] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'shrub', params: { size: 1.05, detail: 0.7, color: '#3d6a2f' } }, count: pts.length, area: [r(Math.max(1, x1 - x0)), r(Math.max(1, z1 - z0))], seed: pts.length * 7 + 3, points: pts, scaleRange: [0.85, 1.2] }, arch: { role: 'site', kind: 'hedge-leaves', name: 'Hedge leaves' }, tags: ['arch', 'site'] });
     };
     const sides: Array<{ dir: P2; seg: [number, number, number, number] }> = [
       { dir: [0, -1], seg: [px0, pz0, px1, pz0 + D] },

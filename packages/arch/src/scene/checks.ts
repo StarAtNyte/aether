@@ -46,6 +46,8 @@ const ESSENTIALS: Readonly<Record<string, readonly string[]>> = {
   meeting: ['dining-table'],
   cafe: ['cafe-counter', 'dining-table'],
 };
+/** Floor pieces a lived-in room of each type usually holds (rug, lamps, plants and side pieces included). */
+const DRESSED_DENSITY: Readonly<Record<string, number>> = { living: 7, bedroom: 5, kitchen: 4, dining: 4, office: 4, kids: 5, studio: 5 };
 /** Rooms that need no light fitting of their own. */
 const UNLIT_OK: ReadonlySet<string> = new Set(['terrace', 'garage', 'storage']);
 /** Kinds that sit with a person in front and need free floor there. */
@@ -363,6 +365,9 @@ export function programmeFindings(scene: Scene): Finding[] {
     if (need && !need.some((k) => kinds.has(k))) out.push({ code: 'missing_essential', severity: 'warning', message: `${room.key} (${room.type}) has no ${need.join(' or ')}`, entities: [], room: room.key, fix: `Place a ${need[0]} in ${room.key}.` });
     const floor = here.filter((i) => i.mount === 'floor' && i.kind !== 'rug');
     if (room.area >= 7 && floor.length < 2 && !['hall', 'entry', 'lobby'].includes(String(room.type))) out.push({ code: 'room_empty', severity: 'warning', message: `${room.key} (${cmr(room.area).toFixed(1)} m²) looks empty: ${floor.length} piece${floor.length === 1 ? '' : 's'} of furniture`, entities: floor.map((i) => i.id), room: room.key, fix: `Furnish ${room.key} to suit a ${room.type}.` });
+    // A furnished but bare room reads as a show flat: suggest the dressing pass (information only; never for a photo copy).
+    const want = DRESSED_DENSITY[String(room.type)];
+    if (want && room.area >= 8 && floor.length >= 2 && (floor.length < want || !here.some((i) => i.kind === 'rug' || i.kind === 'plant'))) out.push({ code: 'room_sparse', severity: 'info', message: `${room.key} (${room.type}, ${cmr(room.area).toFixed(1)} m²) holds ${floor.length} pieces${here.some((i) => i.kind === 'rug') ? '' : ', no rug'}${here.some((i) => i.kind === 'plant') ? '' : ', no plant'}: a lived-in ${room.type} this size holds about ${want}`, entities: [], room: room.key, fix: `build_architecture dress_room {building, room:"${room.key}"} adds a rug, lamps, plants, curtains and styling where they fit (not for a room copied from a photo).` });
     if (!UNLIT_OK.has(String(room.type)) && !here.some((i) => LIGHT_KINDS.has(i.kind))) out.push({ code: 'no_light', severity: 'warning', message: `${room.key} has no light fitting`, entities: [], room: room.key, fix: `Place a ceiling-light or pendant in the middle of ${room.key} (and lamps where they help).` });
   }
   return out;
@@ -393,6 +398,11 @@ export function reviewScene(world: WorldDoc, buildingId: EntityId, opts: ReviewO
     out.push({ code: i.code, severity: sev, message: i.message, entities: i.entities, ...(rk ? { room: rk.key } : {}), fix: i.hint });
   }
   out.push(...overlapFindings(scene), ...boundaryFindings(scene), ...windowFindings(scene), ...doorwayFindings(scene), ...clearanceFindings(scene), ...sanityFindings(scene), ...programmeFindings(scene));
+  // A house on the flat default plane with no grounds of its own: suggest the garden and the land round it.
+  const plan = world.entities[buildingId]?.arch?.plan as { site?: { garden?: unknown; surroundings?: unknown } } | undefined;
+  if (world.environment.ground !== null && !plan?.site?.garden && !plan?.site?.surroundings && scene.rooms.some((r) => r.type === 'living' || r.type === 'bedroom')) {
+    out.push({ code: 'no_grounds', severity: 'info', message: 'The house stands on the bare default plane: no garden, no land round it', entities: [buildingId], fix: 'build_architecture set_site {building, site:{garden:true, surroundings:"estate"}} adds a paved approach, hedges, planted beds and trees and rolling wooded land; then set environment ground null and a light fog (visibility 600 m).' });
+  }
   if (!opts.fast) out.push(...reachabilityFindings(scene));
   const rank = { error: 0, warning: 1, info: 2 } as const;
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || a.code.localeCompare(b.code));

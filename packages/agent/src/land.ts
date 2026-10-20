@@ -91,7 +91,7 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
       edge: input.color ?? SURFACE_COLOR[input.surface] ?? '#7d6c52',
       material: { finish: input.surface, roughness: input.surface === 'asphalt' ? 0.8 : 0.95 },
       tags: ['path'],
-      taper: true,
+      ...(input.surface === 'asphalt' || input.surface === 'cobble' || input.surface === 'decking' ? { even: true } : { taper: true }),
     });
     const len = input.points.reduce((s, p, i) => (i === 0 ? 0 : s + Math.hypot(p[0] - (input.points[i - 1] as [number, number])[0], p[1] - (input.points[i - 1] as [number, number])[1])), 0);
     return { patches: tagLand(b.build()), summary: `Laid "${id}": a ${input.surface} path ${len.toFixed(0)} m long and ${input.width} m wide, draped over the ground (no collider: the ground carries the walker).` };

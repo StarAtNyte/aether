@@ -12,7 +12,8 @@ describe('the scripted designer of the design e2e', () => {
     const placed = runDesignTool(w, 'place_items', { items: BEDROOM_ITEMS });
     expect(placed.refused, placed.text).toBe(0);
     w = applyPatches(w, placed.patches).world;
-    expect(reviewFindings(w, 'bedroom-home').map((f) => `${f.code}: ${f.message}`)).toEqual([]);
+    // Information notes (the dressing suggestion) are advice, not checker errors or warnings.
+    expect(reviewFindings(w, 'bedroom-home').filter((f) => f.severity !== 'info').map((f) => `${f.code}: ${f.message}`)).toEqual([]);
   });
 
   it('fixes a painting dragged over the window', () => {

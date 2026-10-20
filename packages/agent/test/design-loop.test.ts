@@ -74,7 +74,7 @@ function types(events: AgentEvent[]): string[] {
 }
 
 describe('plan-first generation with the review loop', () => {
-  it('designs, places by tool calls and passes the review without extra model calls', async () => {
+  it('designs, places by tool calls and passes the review after one look at the notes', async () => {
     const provider = scripted([() => [call('design_plan', { plan: PLAN })], () => [call('place_items', FURNISH)], () => [finish('A calm bedroom.')]]);
     const host = new MemoryHost();
     const events = await collect(agent(provider, {}).run('a calm bedroom with a bed under the window', host));
@@ -84,7 +84,9 @@ describe('plan-first generation with the review loop', () => {
     expect(bed.pos[0]).toBeCloseTo(2, 1);
     expect(reviewFindings(host.world, 'home').filter((f) => f.severity === 'error')).toEqual([]);
     expect(types(events)).toContain('review:approved');
-    expect(provider.requests).toHaveLength(3);
+    // Three planned turns and one review turn: the bare four-piece bedroom comes back with the dressing suggestion
+    // (room_sparse, information only), which the model may act on or leave.
+    expect(provider.requests).toHaveLength(4);
     // The design plan, the placement and the finish each committed one grouped step.
     expect(host.commits.map((c) => c.message)).toContain('Design Test home');
   });
