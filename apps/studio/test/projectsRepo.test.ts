@@ -214,7 +214,7 @@ describe('project creation flows', () => {
     const { repo } = repoWith();
     const r = await createFromPrompt(repo, 'Build a lighthouse on a stormy cliff with crashing waves');
     expect(r.ok && r.value.name).toBe('Lighthouse on a stormy cliff');
-    if (r.ok) expect(takeRun(r.value.id)).toEqual({ prompt: 'Build a lighthouse on a stormy cliff with crashing waves', offline: false });
+    if (r.ok) expect(takeRun(r.value.id)).toEqual({ prompt: 'Build a lighthouse on a stormy cliff with crashing waves', offline: false, fresh: true });
     expect((await createFromPrompt(repo, '   ')).ok).toBe(false);
     expect(projectNameFromPrompt('!!!')).toBe('Untitled world');
   });

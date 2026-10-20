@@ -63,8 +63,24 @@ export async function createFromPrompt(repo: ProjectRepo, prompt: string): Promi
   const text = prompt.trim();
   if (!text) return { ok: false, error: 'Describe the world first.' };
   const r = await repo.create({ world: createEmptyWorld(projectNameFromPrompt(text)) });
-  if (r.ok) queueRun(r.value.id, { prompt: text, offline: false });
+  if (r.ok) queueRun(r.value.id, { prompt: text, offline: false, fresh: true });
   return r;
+}
+
+/**
+ * The offline planner's answer when the first prompt of a project created for it built nothing (another language,
+ * a request it cannot map): the project is then empty and only named after the prompt, so the editor removes it
+ * and shows this answer on the home page. Null when anything was built or said beyond that one exchange.
+ */
+export function abandonedPromptReply(chat: readonly ChatEntry[], history: { canUndo(): boolean; canRedo(): boolean }): string | null {
+  if (history.canUndo() || history.canRedo()) return null;
+  if (chat.filter((e) => e.role === 'user').length !== 1) return null;
+  const last = chat[chat.length - 1];
+  if (!last || last.role !== 'assistant' || last.status !== 'done') return null;
+  if (!last.events.some((e) => e.type === 'notice' && e.offline !== undefined)) return null;
+  if (last.events.some((e) => e.type === 'patches' || e.type === 'edit' || e.type === 'generator')) return null;
+  const message = last.events.find((e) => e.type === 'message');
+  return message && message.type === 'message' && message.text.trim() ? message.text.trim() : 'Offline mode could not build this.';
 }
 
 /** A short project name from a prompt ("a cozy camp at sunset with…" → "Cozy camp at sunset"). */

@@ -12,6 +12,7 @@ import { Studio } from '../engine/Studio';
 import { settleWithin } from '../lib/deadline';
 import { createLogger } from '../lib/log';
 import { takeRun } from '../projects/pending';
+import { abandonedPromptReply } from '../projects/create';
 import type { ProjectRepo } from '../projects/repo';
 import { Icon } from '../components/Icon';
 import { EditorContext, type EditorServices } from './editorContext';
@@ -129,6 +130,18 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         }, ms);
       };
       let sentPending = pending === null;
+      let abandonChecked = false;
+      const abandon = async (reply: string): Promise<void> => {
+        await s.flush();
+        if (cancelled) return;
+        const removed = await repo.remove(id);
+        if (cancelled || !removed.ok) return;
+        // The planner's own reason (up to its "Nothing was built…" sentence), then what happened to the project.
+        const cut = reply.search(/\s+Nothing was built/);
+        const reason = (cut > 0 ? reply.slice(0, cut) : reply).slice(0, 170);
+        store.getState().toast(`${reason} Nothing was built, so no project was kept.`, 'info', 14);
+        navigate({ name: 'home' });
+      };
       let firstThumb = !r.value.meta.hasThumbnail;
       const unsub = s.store.subscribe((st, prev) => {
         const ready = st.loading === null && s.simulation !== null && st.fatal === null;
@@ -140,7 +153,17 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
           firstThumb = false;
           scheduleThumb(THUMB_FIRST_MS);
         }
-        if (prev.agentBusy && !st.agentBusy) scheduleThumb(THUMB_AFTER_TURN_MS);
+        if (prev.agentBusy && !st.agentBusy) {
+          // A project made only for a prompt the offline planner could not build would stay empty under the
+          // prompt's name: remove it and give the answer on the home page instead.
+          const reply = pending?.fresh && sentPending && !abandonChecked ? abandonedPromptReply(st.chat, s.history) : null;
+          abandonChecked = abandonChecked || (pending?.fresh === true && sentPending);
+          if (reply !== null) {
+            void abandon(reply);
+            return;
+          }
+          scheduleThumb(THUMB_AFTER_TURN_MS);
+        }
       });
       const onHidden = (): void => {
         if (document.visibilityState === 'hidden') {
@@ -162,7 +185,7 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
       setStudio(null);
       setError(null);
     };
-  }, [repo, id, store]);
+  }, [repo, id, store, navigate]);
 
   const services = useMemo<EditorServices | null>(() => {
     if (!studio || !repo) return null;
