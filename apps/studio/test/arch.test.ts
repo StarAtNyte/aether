@@ -241,8 +241,15 @@ describe('ArchController', () => {
     expect(err).toMatch(/overlaps/);
     expect(h.commits).toHaveLength(1);
     expect(h.store.getState().toasts.at(-1)?.text).toMatch(/overlaps/);
-    // Doors, windows and removal go through the same path.
-    expect(c.addWindow([3, -0.05])).toBeNull();
+    // Doors, windows and removal go through the same path. A window clicked onto a wall joins the windows the room
+    // has (the office's long south wall takes a third in its row); a wall its picture window already fills says so.
+    const windowsOf = (room: string): number => Object.values(h.history.current.entities).filter((e) => e.arch?.role === 'window' && e.arch.room?.endsWith(`-${room}`)).length;
+    const officeBefore = windowsOf('office');
+    const livingBefore = windowsOf('living');
+    expect(c.addWindow([3, 8.55])).toBeNull();
+    expect(windowsOf('office')).toBe(officeBefore + 1);
+    expect(c.addWindow([3, -0.05])).toMatch(/no exterior wall of living facing north has 1\.2 m of clear wall/);
+    expect(windowsOf('living')).toBe(livingBefore);
     expect(c.removeRoom('office')).toBeNull();
     expect(Object.values(h.history.current.entities).some((e) => e.arch?.kind === 'office')).toBe(false);
     c.dispose();
