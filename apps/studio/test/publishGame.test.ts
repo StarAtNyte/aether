@@ -98,7 +98,7 @@ describe('game build (zip)', () => {
   });
 
   it('includes the automatic sky file when the world has a sky preset but names no hdri', async () => {
-    const build = (env: object) => buildGame({ world: createWorld({ name: 'Sky', environment: env as never }), title: 'Sky', description: '', author: '', controls: '', music: '', fetchFile: fakeFetch([]), images: { crop: async () => new Uint8Array([1]) }, now: 1_700_000_000_000 });
+    const build = (env: object) => buildGame({ world: createWorld({ name: 'Sky', environment: env as never }), title: 'Sky', description: '', author: '', controls: '', music: null, fetchFile: fakeFetch([]), images: { crop: async () => new Uint8Array([1]) }, now: 1_700_000_000_000 });
     const names = async (env: object): Promise<string[]> => {
       const zip = await readZip((await build(env)).zip);
       return zip.ok ? zip.entries.map((e) => e.name) : [];
