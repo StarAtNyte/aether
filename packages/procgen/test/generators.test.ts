@@ -9,13 +9,13 @@ const REQUIRED_IDS = [
   'house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'lamp-post', 'bench', 'table', 'chair', 'crate',
   'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus',
   // Realistic vegetation (flora.ts).
-  'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'boulder', 'cactus',
+  'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'boulder', 'cactus', 'mound',
   // City skyline (skyline.ts).
   'skyline-tower',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus']);
-const TERRAIN = new Set(['terrain', 'island', 'mountain']);
+const TERRAIN = new Set(['terrain', 'island', 'mountain', 'mound']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 /** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
 const CARDS = new Set(['tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers']);

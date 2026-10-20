@@ -29,8 +29,21 @@ export const LandInput = z.discriminatedUnion('op', [
     color: Color.optional(),
     plot: z.object({ x: XZ.default(0), z: XZ.default(0), radius: z.number().min(4).max(200).default(20) }).default({ x: 0, z: 0, radius: 20 }),
     stream: z.object({ z: XZ, half: z.number().min(1).max(12).default(2.5), bend: z.number().min(0).max(30).default(5), depth: z.number().min(0.4).max(4).default(1.4) }).optional(),
+    lake: z.object({ x: XZ, z: XZ, radius: z.number().min(3).max(120), depth: z.number().min(0.5).max(10).default(2.5) }).optional(),
     woods: z.object({ conifers: z.number().int().min(0).max(400), broadleaf: z.number().int().min(0).max(400), birch: z.number().int().min(0).max(200), scrub: z.number().int().min(0).max(600), boulders: z.number().int().min(0).max(200) }).partial().optional(),
     cover: z.object({ grass: Color.optional(), flowers: z.array(Color).max(4).optional(), radius: z.number().min(5).max(150).default(40), density: z.number().min(0).max(2).default(1) }).optional(),
+  }),
+  z.object({
+    op: z.literal('mound'),
+    x: XZ,
+    z: XZ,
+    size: z.number().min(4).max(300).default(24),
+    height: z.number().min(0.5).max(60).default(5),
+    top: z.number().min(0).max(0.6).default(0.25),
+    roughness: z.number().min(0).max(1).default(0.35),
+    ridge: z.boolean().default(false),
+    color: Color.optional(),
+    name: z.string().max(60).optional(),
   }),
   z.object({
     op: z.literal('path'),
@@ -77,6 +90,18 @@ function tagLand(patches: PatchInput[]): PatchInput[] {
 export function landPatches(world: WorldDoc, input: LandInput): { patches: PatchInput[]; summary: string } {
   const seed = hashString(JSON.stringify(input)) >>> 0;
   const ids = Object.keys(world.entities);
+  if (input.op === 'mound') {
+    const b = new Builder(seed, ids, CALM);
+    const h = worldGround(world);
+    const y = r2(h(input.x, input.z) - 0.08);
+    const groundColor = (() => {
+      const g = world.environment.ground?.material.color;
+      return input.color ?? (typeof g === 'string' ? g : '#6a9a45');
+    })();
+    const id = b.gen('hill', 'mound', { size: input.size, height: input.height, top: input.top, roughness: input.roughness, color: groundColor, resolution: Math.min(160, Math.max(32, Math.round(input.size * 2))), variant: input.ridge ? 1 : 0 }, [input.x, y, input.z], { name: input.name ?? 'Hill', physics: { body: 'static', friction: 0.9 }, tags: ['terrain', 'hill'] });
+    const summit = r2(y + input.height);
+    return { patches: tagLand(b.build()), summary: `Raised "${id}": a ${input.ridge ? 'ridge' : 'hill'} ${input.size} m across at (${input.x}, ${input.z}), summit at y = ${summit}${input.top > 0 ? ` with level ground ${(input.top * input.size).toFixed(1)} m across on top` : ''}. Place what stands on it with place_level_items at that x,z (it snaps to the summit); paths up it with shape_land {op:"path"}.` };
+  }
   if (input.op === 'path') {
     const b = new Builder(seed, ids, CALM);
     const h = worldGround(world);
@@ -97,7 +122,7 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
     return { patches: tagLand(b.build()), summary: `Laid "${id}": a ${input.surface} path ${len.toFixed(0)} m long and ${input.width} m wide, draped over the ground (no collider: the ground carries the walker).` };
   }
   // A new land replaces the one built before (its terrain, water, woods and cover).
-  const removals: PatchInput[] = Object.values(world.entities).filter((e) => !e.parent && e.tags.includes('land') && !e.tags.includes('path')).map((e) => ({ op: 'remove', id: e.id, recursive: true }));
+  const removals: PatchInput[] = Object.values(world.entities).filter((e) => !e.parent && e.tags.includes('land') && !e.tags.includes('path') && !e.tags.includes('hill')).map((e) => ({ op: 'remove', id: e.id, recursive: true }));
   const removed = new Set(removals.map((p) => (p.op === 'remove' ? p.id : '')));
   const b = new Builder(seed, ids.filter((id) => !removed.has(id)), CALM);
   b.realisticNature = true;
@@ -130,6 +155,7 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
       size: input.size,
       color,
       ...(input.stream ? { stream: input.stream } : {}),
+      ...(input.lake ? { lake: input.lake } : {}),
       ...(input.woods ? { woods: input.woods } : input.kind === 'forest' ? { woods: { conifers: 220, broadleaf: 70, birch: 30, scrub: 260, boulders: 50 } } : {}),
       ...(input.kind === 'snow' ? { snow: true } : {}),
     });

@@ -241,11 +241,18 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'shape_land',
     description:
-      'Real ground for outdoor worlds instead of the flat plane. {op:"land", kind:"meadow"|"forest"|"snow"|"canyon", size?:420, relief?:48 (m), color?, plot?:{x,z,radius} (level ground at y=0 for buildings, camps, arenas), stream?:{z, half, bend?, depth?} (a stream carved across the land along X, with flowing water), woods?:{conifers, broadleaf, birch, scrub, boulders} (leaf-card trees on the slopes), cover?:{grass?, flowers?:[colors], radius?, density?}} builds the terrain, water, woods and ground cover in one step and replaces the land it built before | {op:"path", points:[[x,z],...], width?, surface?:"soil"|"gravel"|"cobble"|"sand"|"decking"|"asphalt"|"dry-earth", color?} drapes a trail, lane or road over the ground. Call land first, then place things (place_level_items snaps them to this ground), then paths. A canyon, gorge or desert race: kind "canyon" (sandstone walls, the floor along Z at y=0, about 0.06 x size wide each side of x=0) and the road as a path with surface asphalt along the floor; never walls of boxes.',
+      'Real ground for outdoor worlds instead of the flat plane. {op:"land", kind:"meadow"|"forest"|"snow"|"canyon", size?:420, relief?:48 (m), color?, plot?:{x,z,radius} (level ground at y=0 for buildings, camps, arenas), stream?:{z, half, bend?, depth?} (a stream carved across the land along X, with flowing water), woods?:{conifers, broadleaf, birch, scrub, boulders} (leaf-card trees on the slopes), cover?:{grass?, flowers?:[colors], radius?, density?}} builds the terrain, water, woods and ground cover in one step and replaces the land it built before | {op:"path", points:[[x,z],...], width?, surface?:"soil"|"gravel"|"cobble"|"sand"|"decking"|"asphalt"|"dry-earth", color?} drapes a trail, lane or road over the ground | {op:"mound", x, z, size?, height?, top? (level summit share), roughness?, ridge?} raises a natural hill to stand a shrine, lookout or castle on (never a cylinder or box for a hill). land also takes lake?:{x,z,radius,depth?} (a basin with water). Rivers, lakes and ponds come from land, never a flat box of water. Call land first, then place things (place_level_items snaps them to this ground), then paths. A canyon, gorge or desert race: kind "canyon" (sandstone walls, the floor along Z at y=0, about 0.06 x size wide each side of x=0) and the road as a path with surface asphalt along the floor; never walls of boxes.',
     inputSchema: {
       type: 'object',
       properties: {
-        op: { type: 'string', enum: ['land', 'path'] },
+        op: { type: 'string', enum: ['land', 'path', 'mound'] },
+        x: { type: 'number' },
+        z: { type: 'number' },
+        height: { type: 'number' },
+        top: { type: 'number' },
+        roughness: { type: 'number' },
+        ridge: { type: 'boolean' },
+        lake: { type: 'object' },
         kind: { type: 'string', enum: ['meadow', 'forest', 'snow', 'canyon'] },
         size: { type: 'number' },
         relief: { type: 'number' },

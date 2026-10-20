@@ -198,6 +198,10 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   if (carriedOk.length > 0) content += `\nMoved with their owner (they belong to it; set their position yourself to place them elsewhere): ${carriedOk.slice(0, 8).map((c) => `${c.id} with ${c.owner}`).join(', ')}${carriedOk.length > 8 ? ', …' : ''}.`;
   const people = attachPeople(ctx, events, result.applied);
   if (people) content += `\n${people}`;
+  const flatWater = flatWaterIds(input.patches);
+  if (flatWater.length > 0) content += `\nNote: ${flatWater.slice(0, 4).join(', ')} ${flatWater.length === 1 ? 'is' : 'are'} water as a flat box on the ground, which reads as a toy: for a river or stream use shape_land {op:"land", stream:{z, half}} (a carved bed with flowing water), for a lake or pond shape_land land with lake:{x, z, radius}, then remove the box.`;
+  const hills = boxHillIds(input.patches);
+  if (hills.length > 0) content += `\nNote: ${hills.slice(0, 4).join(', ')} look${hills.length === 1 ? 's' : ''} like a hill made of a primitive: shape_land {op:"mound", x, z, size, height, top} raises a natural hill with a level summit to stand things on.`;
   if (exchanged > 0) content += `\nNote: ${exchanged} low-poly nature part${exchanged === 1 ? ' was' : 's were'} built with the realistic generators (tree-broadleaf, tree-spruce, shrub, meadow-grass, boulder, wildflowers); use those ids directly, or ask for a stylised look to keep the low-poly set.`;
   if (result.notes && result.notes.length > 0) content += `\n${result.notes.slice(0, 4).map((n) => `Note: ${n.slice(0, 400)}`).join('\n')}`;
   return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
@@ -421,6 +425,32 @@ async function levelTool(ctx: ExecutorContext, name: 'query_level' | 'place_leve
     if (people) text += `\n${people}`;
   }
   return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
+}
+
+interface AddedEntity { id?: unknown; name?: unknown; tags?: unknown; shape?: { kind?: unknown; primitive?: unknown; size?: unknown }; material?: { preset?: unknown; finish?: unknown } }
+
+function addedEntities(patches: readonly unknown[]): AddedEntity[] {
+  const out: AddedEntity[] = [];
+  for (const p of patches) {
+    if (typeof p !== 'object' || p === null) continue;
+    const r = p as { op?: unknown; entity?: unknown };
+    if (r.op === 'add' && typeof r.entity === 'object' && r.entity !== null) out.push(r.entity as AddedEntity);
+  }
+  return out;
+}
+
+/** Ids of added water surfaces that are plain primitives (a box, disc or plane of water), not part of a shaped land. */
+function flatWaterIds(patches: readonly unknown[]): string[] {
+  return addedEntities(patches)
+    .filter((e) => (e.material?.preset === 'water' || e.material?.finish === 'water') && e.shape?.kind === 'primitive' && !(Array.isArray(e.tags) && e.tags.includes('land')))
+    .map((e) => String(e.id));
+}
+
+/** Ids of added primitives named or tagged as a hill, mound or knoll. */
+function boxHillIds(patches: readonly unknown[]): string[] {
+  return addedEntities(patches)
+    .filter((e) => e.shape?.kind === 'primitive' && /\b(hill|mound|knoll|hillock)\b/i.test(`${String(e.id ?? '')} ${String(e.name ?? '')} ${Array.isArray(e.tags) ? e.tags.join(' ') : ''}`.replace(/[-_]/g, ' ')))
+    .map((e) => String(e.id));
 }
 
 /** shape_land: the landscape kit (terrain, stream, woods, cover; draped paths), committed as one undo step. */

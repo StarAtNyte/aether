@@ -606,5 +606,57 @@ const mountain = defineGenerator({
   },
 });
 
+const mound = defineGenerator({
+  id: 'mound',
+  description: 'Natural hill or knoll to stand things on (a shrine, a lookout, a castle): grassy slopes easing into the ground, rock where it is steep, an optional level summit. Exact heightfield collider.',
+  category: 'terrain',
+  params: {
+    size: pNum(24, 4, 300, 'base diameter in meters'),
+    height: pNum(5, 0.5, 60, 'summit height in meters'),
+    top: pNum(0.25, 0, 0.6, 'level summit as a share of the base (0 = rounded top)'),
+    roughness: pNum(0.35, 0, 1, '0 smooth swell … 1 rocky knoll'),
+    color: pColor('#6a9a45', 'grass color (match the world ground)'),
+    resolution: pInt(64, 16, 160, 'grid cells per side'),
+    variant: pVariant(1, '0 round hill, 1 long ridge'),
+  },
+  run(p, api) {
+    const size = p.num('size');
+    const H = p.num('height');
+    const top = p.num('top');
+    const rough = p.num('roughness');
+    const variant = p.int('variant');
+    const R = size / 2;
+    const n = api.noise;
+    const pal = palette(p.color('color'));
+    return buildTerrain(api, {
+      size,
+      resolution: p.int('resolution'),
+      trimFlat: true,
+      height(x, z) {
+        let d = variant === 1 ? Math.hypot((x / R) * 0.6, z / R) : Math.hypot(x / R, z / R);
+        d += 0.08 * n.fbm2(x * 1.6 / size + 3.1, z * 1.6 / size - 1.7, 3);
+        if (d >= 1) return 0;
+        // Flat summit inside `top`, a smooth shoulder down to the foot, no lip where it meets the ground.
+        const u = top > 0 ? Math.max(0, (d - top) / Math.max(1e-3, 1 - top)) : d;
+        const shape = 0.5 + 0.5 * Math.cos(Math.PI * Math.min(1, u));
+        const crag = rough * 0.18 * n.ridged2(x * 4 / size, z * 4 / size, 4) * Math.sin(Math.PI * Math.min(1, u));
+        return Math.max(0, (shape * (1 + crag) - 0.004)) * H;
+      },
+      color(t, _h, slope, x, z, out) {
+        const w = 0.05 * n.noise2(x * 0.3, z * 0.3);
+        mixLinear(pal.grassDark, pal.grass, smoothstep(0.05, 0.7, t + w), out);
+        mixLinear(out, pal.rock, smoothstep(0.42, 0.65, slope + w), out);
+      },
+      splat(_t, _h, slope, x, z, out) {
+        const w = 0.05 * n.noise2(x * 0.3, z * 0.3);
+        out[1] = smoothstep(0.42, 0.65, slope + w);
+        out[2] = 0;
+        out[3] = 0;
+        out[0] = 1 - out[1];
+      },
+    });
+  },
+});
+
 /** Terrain generators in catalog order. */
-export const TERRAIN_GENERATORS = [terrain, island, mountain];
+export const TERRAIN_GENERATORS = [terrain, island, mountain, mound];

@@ -143,6 +143,8 @@ export interface NaturalGroundOptions {
   size?: number;
   /** A stream across the land along X: mean z, half width, bend amplitude, depth (metres). */
   stream?: { z: number; half: number; bend?: number; depth?: number };
+  /** A lake basin with water: centre, radius and depth (metres). */
+  lake?: { x: number; z: number; radius: number; depth?: number };
   /** Woods on the slopes beyond the plot (counts; 0 leaves a kind out). */
   woods?: { conifers?: number; broadleaf?: number; birch?: number; scrub?: number; boulders?: number };
   /** Snow on the boughs of the spruce woods. */
@@ -178,7 +180,15 @@ export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
     name: 'Landscape',
     ...(st ? { stream: [st.half, st.z, st.bend ?? 5, st.depth ?? 1.4] as const } : {}),
     ...(o.snow ? { snowCover: 0.95 } : {}),
+    ...(o.lake ? { lake: [o.lake.x, o.lake.z, o.lake.radius, o.lake.depth ?? 2.5] as const } : {}),
   });
+  if (o.lake) {
+    const lk = o.lake;
+    const waterY = r2(-Math.min(0.6, (lk.depth ?? 2.5) * 0.15));
+    b.prim('lake', 'cylinder', [r2(lk.radius * 2.5), 0.08, r2(lk.radius * 2.5)], [lk.x, waterY, lk.z], { name: 'Lake', absolute: true, material: { preset: 'water', waterKind: 'lake', color: '#4f7f99', opacity: 0.9, roughness: 0.03 }, castShadow: false, tags: ['water', 'lake'] });
+    b.reserve(lk.x, lk.z, lk.radius + 1);
+    b.keepClear(lk.x, lk.z, lk.radius + 0.8);
+  }
   b.ground = { h: land.h, surface: land.id };
   if (st) {
     const depth = st.depth ?? 1.4;
@@ -200,7 +210,7 @@ export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
     }
   }
   const woods = o.woods ?? {};
-  const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30 && (!b.stream || Math.abs(z - b.stream.z(x)) > b.stream.half + 3);
+  const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30 && (!b.stream || Math.abs(z - b.stream.z(x)) > b.stream.half + 3) && (!o.lake || Math.hypot(x - o.lake.x, z - o.lake.z) > o.lake.radius * 1.3 + 2);
   const half = size / 2 - 20;
   const spruce: Record<string, Json> = { height: o.conifer?.height ?? 14, detail: 0.5, color: o.conifer?.color ?? '#2f4f32', ...(o.snow ? { snow: 0.8 } : {}) };
   if ((woods.conifers ?? 150) > 0) grove(b, 'woods-spruce', 'Spruce woods', 'tree-spruce', spruce, landPoints(b, woods.conifers ?? 150, half, wooded(o.pad + 12), 6, land.h), [0.75, 1.35], land.id, size);

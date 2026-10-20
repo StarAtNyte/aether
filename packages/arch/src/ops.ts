@@ -13,6 +13,8 @@ import { MaterialSpec } from '@aether/core';
 import { compileBuilding, parsePlan, PlanError, type CompiledBuilding } from './compile';
 import { checkBuilding, summarizeBuildingReports, type BuildingReport } from './nav';
 import { area } from './math2';
+import { convexOverlap } from './layout';
+import { readScene } from './scene/read';
 import { WallDado } from './params';
 import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanSite, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
@@ -469,10 +471,17 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       if (old?.arch?.overrides && parsed.arch) parsed = withOverrides(parsed, old.arch.overrides);
       entities[parsed.id] = old && deepEqual(old, parsed) ? old : parsed;
     }
+    let keptAny = false;
     for (const e of kept) {
       const room = e.arch?.room;
-      if (room !== undefined && Object.hasOwn(entities, room) && e.parent !== null && Object.hasOwn(entities, e.parent) && !Object.hasOwn(entities, e.id)) entities[e.id] = e;
+      if (room !== undefined && Object.hasOwn(entities, room) && e.parent !== null && Object.hasOwn(entities, e.parent) && !Object.hasOwn(entities, e.id)) {
+        entities[e.id] = e;
+        keptAny = true;
+      }
     }
+    // The compiler furnished the room without knowing the pieces placed through the design tools: a compiled piece now
+    // standing in one of them (a plant in the shower placed earlier) gives way.
+    if (keptAny) for (const gone of piecesInPlacedOnes({ ...world, entities }, id)) for (const x of subtreeOf(entities, gone)) delete entities[x];
     if (!tests.some((t) => t.kind === 'navigable' && t.target === id)) tests = [...tests, WorldTest.parse({ id: `${id}-usable`.slice(0, 64), kind: 'navigable', target: id })];
     if (walkthrough.has(id) && result.spawn) player = PlayerSpec.parse({ ...player, mode: 'firstPerson', spawn: result.spawn, yaw: result.spawnYaw, moveSpeed: 3.2, jumpSpeed: 4 });
   }
@@ -486,6 +495,28 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
   }
   if (reports.length > 0) lines.push(summarizeBuildingReports(reports));
   return { patches, lines, errors, compiled, reports, target };
+}
+
+/** Ids of compiled floor pieces (no recorded edits) whose footprint overlaps a design-tool piece of the same room. */
+function piecesInPlacedOnes(world: WorldDoc, buildingId: EntityId): EntityId[] {
+  const scene = readScene(world, buildingId);
+  if (!scene) return [];
+  const floor = scene.items.filter((i) => i.mount === 'floor' && i.kind !== 'rug' && i.footprint.length > 0);
+  const placed = floor.filter((i) => i.placed);
+  const out: EntityId[] = [];
+  for (const it of floor) {
+    if (it.placed || world.entities[it.id]?.arch?.overrides) continue;
+    const wet = (k: string): boolean => k === 'shower' || k === 'bathtub';
+    if (placed.some((p) => p.room === it.room && (convexOverlap(it.footprint, p.footprint) || (wet(p.kind) && convexOverlap(it.footprint, p.footprint, -0.3))))) out.push(it.id);
+  }
+  return out;
+}
+
+/** `id` and its descendants in an entity map. */
+function subtreeOf(entities: Readonly<Record<string, Entity>>, id: EntityId): EntityId[] {
+  const out = [id];
+  for (let i = 0; i < out.length; i++) for (const e of Object.values(entities)) if (e.parent === out[i]) out.push(e.id);
+  return out;
 }
 
 /** Short building summary for the agent's context (from the stored plan). */

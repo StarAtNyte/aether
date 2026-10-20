@@ -135,6 +135,12 @@ export function convexOverlap(a: readonly P2[], b: readonly P2[], margin = 0.005
   return true;
 }
 
+/** Wet fittings: other pieces keep {@link WET_CLEARANCE} metres off them (the shower's step-in, the bath's edge). */
+const WET_KINDS: ReadonlySet<string> = new Set(['shower', 'bathtub']);
+const WET_CLEARANCE = 0.4;
+/** Loose pieces that must keep that distance (fixtures such as a toilet or vanity may stand beside a shower). */
+const DRY_DECOR: ReadonlySet<string> = new Set(['plant', 'floor-lamp', 'side-table', 'armchair', 'chair', 'stool', 'pouf', 'bench', 'basket', 'laundry-basket', 'plant-stand']);
+
 /** Pairs allowed to overlap (chairs tucked under tables, stools under islands). */
 export function tucksUnder(kindA: string, kindB: string): boolean {
   const tuck = new Set(['chair', 'office-chair', 'bar-stool']);
@@ -265,6 +271,8 @@ export class RoomLayout {
         if (ignore.has(p) || p.footprint.length === 0 || p.kind === 'rug') continue;
         if (tucksUnder(kind, p.kind)) continue;
         if (convexOverlap(fp, p.footprint)) return false;
+        // Decor keeps out of the wet zone: no plant in the shower, nothing at the bath's edge where one steps in.
+        if (WET_KINDS.has(p.kind) && DRY_DECOR.has(kind) && convexOverlap(fp, p.footprint, -WET_CLEARANCE)) return false;
       }
     }
     return true;
