@@ -73,11 +73,26 @@ export function failureExcerpt(text: string): string {
   return clean.length > 140 ? `${clean.slice(0, 137)}...` : clean;
 }
 
+/**
+ * When a usage limit lifts, as the CLI phrased it ("Try again at Oct 21st, 2026
+ * 12:14 AM", "try again in 3 hours"): letters, digits and time punctuation only,
+ * so nothing else from the CLI's output is echoed.
+ */
+export function limitResetText(text: string): string | null {
+  const m = /try again (at|in) ([A-Za-z0-9 ,:]{1,40}?(?:\s?[AP]M)?)(?=[.!\n]|$)/i.exec(text);
+  if (!m || !m[1] || !m[2]) return null;
+  const v = m[2].trim();
+  return /\d/.test(v) ? `${m[1].toLowerCase()} ${v}` : null;
+}
+
 /** Classify CLI failure text (stderr / error events) into a bridge error. */
 export function classifyCliFailure(backendLabel: string, text: string): BridgeError {
   const t = text.slice(0, 20_000);
   if (NOT_LOGGED_IN.test(t)) return new BridgeError('not_logged_in', `${backendLabel} is not signed in. Run the login command shown in Settings, then retry.`);
-  if (RATE_LIMITED.test(t)) return new BridgeError('rate_limited', `${backendLabel} reports that your subscription's usage limit is reached. Try again later or switch models.`, { retryAfterSec: 60 });
+  if (RATE_LIMITED.test(t)) {
+    const when = limitResetText(t);
+    return new BridgeError('rate_limited', `${backendLabel} reports that your subscription's usage limit is reached. ${when ? `It resets ${when}; try again then` : 'Try again later'} or switch models.`, { retryAfterSec: 60 });
+  }
   if (MODEL_UNAVAILABLE.test(t)) return new BridgeError('model_unavailable', `${backendLabel} does not offer the selected model on this account. Pick another model in Settings → AI connection.`);
   if (CONTEXT_TOO_LARGE.test(t)) return new BridgeError('context_too_large', `The request is too large for ${backendLabel}'s context window. Start from a smaller world or shorten the prompt.`);
   if (NETWORK.test(t)) return new BridgeError('network_error', `${backendLabel} could not reach its service (network error). Check your internet connection and try again.`, { retryAfterSec: 10 });

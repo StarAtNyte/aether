@@ -88,6 +88,14 @@ describe('classifyCliFailure', () => {
     expect(e.code).toBe(code);
   });
 
+  it('says when a usage limit lifts, as the CLI reported it', () => {
+    const e = classifyCliFailure('Codex', 'ERROR: You\u2019ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at Oct 21st, 2026 12:14 AM.');
+    expect(e.code).toBe('rate_limited');
+    expect(e.message).toContain('It resets at Oct 21st, 2026 12:14 AM');
+    expect(classifyCliFailure('Codex', "You've hit your usage limit. Try again in 3 hours.").message).toContain('It resets in 3 hours');
+    expect(classifyCliFailure('Codex', '429 Too Many Requests').message).toContain('Try again later');
+  });
+
   it('never echoes raw CLI output (it may contain paths, prompts or account details)', () => {
     const secret = 'user@example.com /home/someone/.codex/auth.json sk-live-abc';
     for (const text of [`Not logged in ${secret}`, `usage limit ${secret}`, `crash ${secret}`]) {
