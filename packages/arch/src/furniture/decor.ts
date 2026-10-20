@@ -604,4 +604,96 @@ export const BOOK: FurnitureDef = {
 };
 
 /** Decor definitions. */
-export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK];
+/**
+ * Small styling accessories that make a surface look lived in: a ceramic vase with a few leafy stems, a bowl of fruit,
+ * a stack of books, a pair of candles, folded towels. One piece, its look by `style`.
+ */
+export const ACCENT: FurnitureDef = {
+  id: 'furn-accent',
+  kind: 'accent',
+  description: 'Styling accessory for a table, sideboard, shelf or worktop: vase with stems, bowl of fruit, stack of books, candles or folded towels.',
+  params: {
+    style: choice(['vase', 'bowl', 'books', 'candles', 'towels'], 'vase', 'what it is'),
+    color: color('#d9d2c4', 'main colour (glaze, covers, towels)'),
+    accent: color('#6f7d5a', 'second colour (stems, fruit, the other books)'),
+  },
+  mount: 'surface',
+  againstWall: false,
+  frontClearance: 0,
+  size: (p) => {
+    switch (p.str('style')) {
+      case 'bowl':
+        return [0.3, 0.12, 0.3];
+      case 'books':
+        return [0.24, 0.12, 0.3];
+      case 'candles':
+        return [0.2, 0.26, 0.1];
+      case 'towels':
+        return [0.32, 0.14, 0.24];
+      default:
+        return [0.16, 0.5, 0.16];
+    }
+  },
+  build(p) {
+    const set = new PartSet();
+    const style = p.str('style');
+    const c = p.color('color');
+    const a = p.color('accent');
+    if (style === 'bowl') {
+      set.add(lathe([[0, 0], [0.06, 0], [0.13, 0.05], [0.15, 0.09], [0.142, 0.09], [0.122, 0.052], [0.055, 0.012], [0, 0.012]], 28), mat('ceramic', c));
+      const fruit = new Geom();
+      const spots: Array<[number, number, number, number]> = [[0, 0.055, 0, 0.042], [0.05, 0.05, 0.03, 0.038], [-0.045, 0.05, 0.035, 0.04], [0.01, 0.05, -0.055, 0.039], [-0.02, 0.095, 0.01, 0.036]];
+      for (const [x, y, z, r] of spots) fruit.merge(sphere(r, 12).translate(x, y, z));
+      set.add(fruit, mat('paint', a));
+      set.boxMinMax(-0.15, 0, -0.15, 0.15, 0.12, 0.15);
+    } else if (style === 'books') {
+      const covers = [c, a, '#2f3a4a'];
+      const sizes: Array<[number, number, number]> = [[0.24, 0.04, 0.3], [0.21, 0.035, 0.27], [0.19, 0.03, 0.25]];
+      let y = 0;
+      sizes.forEach(([w, h, d], k) => {
+        set.add(roundedBox(w, h, d, 0.004, 1).translate(k * 0.008, y + h / 2, -k * 0.01), mat('leather', covers[k] as string));
+        y += h;
+      });
+      set.boxMinMax(-0.12, 0, -0.15, 0.12, y, 0.15);
+    } else if (style === 'candles') {
+      const holder = new Geom();
+      const wax = new Geom();
+      for (const [x, h] of [[-0.05, 0.22], [0.05, 0.16]] as const) {
+        holder.merge(lathe([[0, 0], [0.04, 0], [0.042, 0.01], [0.012, 0.03], [0.02, 0.045], [0, 0.045]], 20).translate(x, 0, 0));
+        wax.merge(cylinder(0.011, 0.011, h - 0.045, 12).translate(x, 0.045, 0));
+      }
+      set.add(holder, mat('brass'));
+      set.add(wax, mat('paint', '#f3efe6'));
+      set.boxMinMax(-0.1, 0, -0.05, 0.1, 0.22, 0.05);
+    } else if (style === 'towels') {
+      let y = 0;
+      for (let k = 0; k < 3; k++) {
+        set.add(roundedBox(0.32, 0.045, 0.24, 0.02, 2).translate(0, y + 0.0225, 0), mat('fabric', k === 1 ? a : c));
+        y += 0.045;
+      }
+      set.boxMinMax(-0.16, 0, -0.12, 0.16, y, 0.12);
+    } else {
+      // Vase: a lathed bottle, three stems with a few leaves each.
+      set.add(lathe([[0, 0], [0.05, 0], [0.07, 0.06], [0.072, 0.15], [0.045, 0.24], [0.028, 0.27], [0.032, 0.29], [0.026, 0.29], [0, 0.28]], 28), mat('ceramic', c));
+      const stems = new Geom();
+      const leaves = new Geom();
+      const rnd = seeded(7);
+      for (let k = 0; k < 3; k++) {
+        const ang = (k / 3) * Math.PI * 2 + 0.4;
+        const lean = 0.05 + rnd() * 0.05;
+        const top: [number, number, number] = [Math.cos(ang) * lean, 0.48 + rnd() * 0.08, Math.sin(ang) * lean];
+        stems.merge(tube([[0, 0.26, 0], [top[0] * 0.5, 0.38, top[2] * 0.5], top], 0.003, 5));
+        for (let j = 0; j < 4; j++) {
+          const t = 0.45 + j * 0.15;
+          leaves.merge(sphere(0.018, 6).scale(1.6, 0.35, 0.9).translate(top[0] * t + (j % 2 ? 0.015 : -0.015), 0.26 + (top[1] - 0.26) * t, top[2] * t));
+        }
+      }
+      set.add(stems, mat('paint', '#5c5a3c'));
+      set.add(leaves, mat('paint', a));
+      set.boxMinMax(-0.08, 0, -0.08, 0.08, 0.5, 0.08);
+    }
+    return set.build();
+  },
+};
+
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK, ACCENT];

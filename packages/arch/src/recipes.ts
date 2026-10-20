@@ -640,7 +640,7 @@ function explicitItems(L: RoomLayout, items: readonly PlanItem[]): void {
 }
 
 /** Furnish one room. Returns the placements and notes. */
-export function furnishRoom(ctx: RoomContext, items: readonly PlanItem[], auto: boolean): { placed: Placed[]; notes: string[] } {
+export function furnishRoom(ctx: RoomContext, items: readonly PlanItem[], auto: boolean, dress = auto): { placed: Placed[]; notes: string[] } {
   const L = new RoomLayout(ctx);
   explicitItems(L, items);
   if (auto) {
@@ -699,6 +699,7 @@ export function furnishRoom(ctx: RoomContext, items: readonly PlanItem[], auto: 
     }
   }
   if (auto) props(L);
+  if (dress) dressRoom(L);
   return { placed: L.placed, notes: L.notes };
 }
 
@@ -720,4 +721,169 @@ function props(L: RoomLayout): void {
   if (desk) L.onTop('mug', { color: '#d9d2c3' }, desk, -desk.size[0] / 2 + 0.25, 0.05, 'Mug');
   const island = first('island');
   if (island) L.onTop('mug', { color: pal.linen }, island, island.size[0] * 0.3, -0.25, 'Mug');
+}
+
+// ---------------------------------------------------------------------------
+// Dressing: what makes a furnished room look lived in, added after everything else (so the ids of the pieces placed
+// before stay as they were) and only where the measured layout has room: a rug under the seating group or the bed,
+// the second armchair or bedside table, a floor lamp and a side table, plants, curtains, styling on the tables.
+
+/** Plants squared to the walls in free corners (a little further out when a corner is tight); returns how many. */
+function plantsSquare(L: RoomLayout, count: number, height: number): number {
+  const species = ['fig', 'olive', 'snake'];
+  let placed = 0;
+  for (const inset of [0.34, 0.5]) {
+    const cs = corners(L, inset);
+    for (let k = 0; k < cs.length && placed < count; k++) {
+      const c = cs[(k + L.ctx.seed + 1) % cs.length] as P2;
+      if (L.tryAt('plant', { height, species: species[(placed + L.ctx.seed + 1) % species.length] as string, potColor: L.ctx.palette.linen }, c[0], c[1], 0)) placed++;
+    }
+    if (placed >= count) break;
+  }
+  return placed;
+}
+
+/** A rug near `at` under a group: the largest of a few sizes that fits, slid toward the room's middle when needed. */
+function fitRug(L: RoomLayout, at: P2, yaw: number, width: number, depth: number, params: Record<string, Json>): Placed | null {
+  const t = (yaw * Math.PI) / 180;
+  const ax: P2 = [Math.cos(t), -Math.sin(t)];
+  const az: P2 = [Math.sin(t), Math.cos(t)];
+  for (const k of [1, 0.85, 0.7, 0.55]) {
+    const w = Math.max(0.8, width * k);
+    const d = Math.max(0.6, depth * (k < 0.7 ? 0.8 : 1));
+    for (const [sx, sz] of [[0, 0], [0.3, 0], [-0.3, 0], [0.6, 0], [-0.6, 0], [0, -0.25], [0.3, -0.25], [-0.3, -0.25]] as const) {
+      const p = L.tryAt('rug', { ...params, width: Math.round(w * 100) / 100, depth: Math.round(d * 100) / 100 }, at[0] + ax[0] * sx + az[0] * sz, at[1] + ax[1] * sx + az[1] * sz, yaw, 'Rug');
+      if (p) return p;
+    }
+  }
+  return null;
+}
+
+/** A styling accessory on top of `host`, `dx` along its width. */
+function accent(L: RoomLayout, host: Placed | undefined | null, style: 'vase' | 'bowl' | 'books' | 'candles' | 'towels', dx: number, dz = 0): void {
+  if (!host) return;
+  const pal = L.ctx.palette;
+  const colour = style === 'books' ? pal.accent : style === 'vase' ? pal.rug : pal.linen;
+  const second = style === 'bowl' ? '#c8743a' : style === 'vase' ? '#6f7d5a' : pal.throw;
+  L.onTop('accent', { style, color: colour, accent: second }, host, dx, dz, style === 'vase' ? 'Vase' : style === 'bowl' ? 'Fruit bowl' : style === 'books' ? 'Books' : style === 'candles' ? 'Candles' : 'Towels');
+}
+
+/**
+ * Dress a furnished room (see above). Recipes call it for every automatically furnished room; a plan room with
+ * `dress: true` gets it after its own pieces (what a model's `dress_room` op sets). Returns the kinds it added.
+ */
+export function dressRoom(L: RoomLayout): string[] {
+  const before = L.placed.length;
+  const pal = L.ctx.palette;
+  const ctx = L.ctx;
+  const all = (kind: string): Placed[] => L.placed.filter((p) => p.kind === kind);
+  const first = (kind: string): Placed | undefined => L.placed.find((p) => p.kind === kind);
+  const has = (kind: string): boolean => L.placed.some((p) => p.kind === kind);
+  const metal = pal.metal === 'chrome' ? 'chrome' : pal.metal === 'brass' ? 'brass' : 'black-metal';
+  const type = ctx.type;
+  const sofa = first('sofa');
+  if ((type === 'living' || type === 'studio') && sofa) {
+    const sw = sofa.size[0];
+    if (!has('rug')) fitRug(L, ahead(sofa, sofa.size[2] / 2 + 0.55), sofa.yaw, Math.min(3.4, sw + 0.8), 2.2, { color: pal.rug, border: pal.rugBorder });
+    const table = first('coffee-table');
+    const ctW = table ? table.size[0] : Math.min(1.3, Math.max(0.8, sw * 0.52));
+    const ctD = table ? table.size[2] : 0.6;
+    const chair = { upholstery: pal.upholstery === 'leather' ? 'leather' : 'fabric', color: pal.armchair, legs: pal.wood };
+    for (const s of [1, -1] as const) {
+      if (all('armchair').length >= 2) break;
+      for (const extra of [0, 0.25, 0.5]) {
+        const p = ahead(sofa, sofa.size[2] / 2 + 0.42 + 0.3, s * (ctW / 2 + 0.75 + extra));
+        if (L.tryAt('armchair', chair, p[0], p[1], sofa.yaw + s * 90)) break;
+      }
+    }
+    if (all('armchair').length < 2) {
+      const p = ahead(sofa, sofa.size[2] / 2 + 0.42 + ctD + 0.85);
+      L.tryAt('armchair', chair, p[0], p[1], sofa.yaw + 180);
+    }
+    let lampSide = 0;
+    if (!has('floor-lamp')) {
+      for (const s of ctx.seed % 2 === 0 ? [1, -1] : [-1, 1]) {
+        for (const off of [0.32, 0.5]) {
+          const lp = ahead(sofa, -sofa.size[2] / 2 + 0.28, (sw / 2 + off) * s);
+          if (L.tryAt('floor-lamp', { style: ctx.style === 'modern' ? 'arc' : 'tripod', finish: metal, shade: pal.linen }, lp[0], lp[1], sofa.yaw)) {
+            lampSide = s;
+            break;
+          }
+        }
+        if (lampSide !== 0) break;
+      }
+    }
+    for (const s of lampSide === 0 ? [1, -1] : [-lampSide]) {
+      const tp = ahead(sofa, -sofa.size[2] / 2 + 0.3, (sw / 2 + 0.3) * s);
+      const side = L.tryAt('nightstand', { style: 'round', height: 0.52, diameter: 0.44, body: pal.wood }, tp[0], tp[1], sofa.yaw, 'Side table');
+      if (side) {
+        accent(L, side, 'candles', 0);
+        break;
+      }
+    }
+    if (table) accent(L, table, ctx.seed % 2 === 0 ? 'bowl' : 'vase', 0, 0.02);
+    const console = L.placed.find((p) => p.kind === 'sideboard');
+    if (console) accent(L, console, 'vase', -console.size[0] / 2 + 0.22, 0);
+    if (!has('plant') && plantsSquare(L, 2, 1.5) === 0) {
+      for (const s of [1, -1] as const) {
+        const pp = ahead(sofa, -sofa.size[2] / 2 + 0.35, s * (sw / 2 + 0.75));
+        if (L.tryAt('plant', { height: 1.5, species: 'fig', potColor: pal.linen }, pp[0], pp[1], 0)) break;
+      }
+    }
+  }
+  const bed = first('bed');
+  if ((type === 'bedroom' || type === 'kids' || type === 'studio') && bed) {
+    if (!has('rug')) fitRug(L, ahead(bed, 0.35), bed.yaw, Math.min(3, bed.size[0] + 1.2), 1.8, { color: pal.rug, border: pal.rugBorder });
+    for (const s of [-1, 1] as const) {
+      if (all('nightstand').length >= 2) break;
+      for (const [params, off] of [[{ body: pal.wood }, 0.3], [{ body: pal.wood, style: 'round', height: 0.55, diameter: 0.36 }, 0.24]] as const) {
+        const p = ahead(bed, -bed.size[2] / 2 + 0.22, s * (bed.size[0] / 2 + off));
+        const ns = L.tryAt('nightstand', params, p[0], p[1], bed.yaw);
+        if (ns) {
+          L.onTop('table-lamp', { base: pal.linen, shade: pal.linen }, ns, 0.06, -0.05);
+          break;
+        }
+      }
+    }
+    const [x0, z0, x1, z1] = bounds(ctx.polygon);
+    if (Math.min(x1 - x0, z1 - z0) >= 3.4 && !has('armchair')) {
+      const spot = edgesByFree(L, 0.8).find((c) => c.t - c.s >= 1.5);
+      if (spot) {
+        const chair = L.againstWall('armchair', { upholstery: pal.upholstery === 'leather' ? 'leather' : 'fabric', color: pal.armchair, legs: pal.wood }, spot.edge, null, 'Reading chair');
+        if (chair && !has('floor-lamp')) {
+          for (const s of [1, -1] as const) if (L.tryAt('floor-lamp', { style: 'tripod', finish: metal, shade: pal.linen }, ...ahead(chair, -0.1, s * 0.65), chair.yaw)) break;
+        }
+      }
+    }
+    if (!has('plant')) plantsSquare(L, 1, 1.2);
+  }
+  if (type === 'kitchen' || type === 'dining') {
+    const island = first('island');
+    if (island && !L.placed.some((p) => p.kind === 'accent' && Math.hypot(p.x - island.x, p.z - island.z) < 2)) {
+      accent(L, island, 'bowl', -island.size[0] * 0.22, 0);
+      accent(L, island, 'vase', 0, 0.15);
+    }
+    const table = first('dining-table');
+    if (table) {
+      accent(L, table, 'vase', 0, 0);
+      if (type === 'dining' && !has('rug')) fitRug(L, [table.x, table.z], table.yaw, table.size[0] + 1.4, table.size[2] + 1.4, { color: pal.rug, border: pal.rugBorder });
+    }
+    if (!has('plant')) plantsSquare(L, 1, 1.0);
+  }
+  if (type === 'bathroom') {
+    const vanity = first('vanity');
+    if (vanity) {
+      if (vanity.size[0] >= 0.8) accent(L, vanity, 'towels', vanity.size[0] / 2 - 0.2, 0.02);
+      if (!has('rug')) fitRug(L, ahead(vanity, vanity.size[2] / 2 + 0.45), vanity.yaw, 0.9, 0.6, { color: pal.linen, border: pal.linen });
+    }
+    if (!has('plant')) plantsSquare(L, 1, 0.6);
+  }
+  if (type === 'hall' || type === 'entry' || type === 'office') {
+    if (!has('plant')) plantsSquare(L, 1, 1.2);
+    const desk = first('desk');
+    if (desk) accent(L, desk, 'books', desk.size[0] / 2 - 0.3, 0.05);
+  }
+  // Curtains at bare windows of the rooms people live in.
+  if ((type === 'living' || type === 'bedroom' || type === 'kids' || type === 'dining' || type === 'office' || type === 'studio') && !has('curtain')) curtains(L);
+  return L.placed.slice(before).map((p) => p.kind);
 }

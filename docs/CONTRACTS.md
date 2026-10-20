@@ -1354,6 +1354,19 @@ applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ inde
          // with the numbers and a fitted alternative; stair_does_not_fit lists each room and the size every shape needs
          | set_material {target: exterior|roof|floor|walls, room?, material}
          | set_residents {building, count 0..8}   // people living in / visiting the building (see BuildingPlan.residents)
+         | dress_room {building, room = 'all', dress = true}   // sets PlanRoom.dress: after the room's own pieces, recipes.ts
+         // `dressRoom` adds what makes it lived in where the measured layout has room (a rug under the seating group or
+         // bed, the second armchair / bedside table, a floor lamp and side table, plants, curtains at bare windows,
+         // `furn-accent` styling: vase, fruit bowl, books, candles, towels); appended after every other piece, so the
+         // ids of pieces placed before do not move. Auto-furnished rooms are dressed by default (dress ?? furnish)
+         | set_site {building, site: {garden?, surroundings?: none|estate, planting?, terrace?, pool?}}   // merged into
+         // BuildingPlan.site; site.ts compiles the grounds into the building's subtree (plan frame, re-compiled with it):
+         // garden = stepping-slab approach from the main door to the plot edge (round the terrace and the pool), foliage
+         // hedges on the back and the sides, soil beds with shrubs and flowers along the front, leaf-card trees in the
+         // corners, boulders; surroundings estate = a `terrain` variant 5 child (the level pad is the plot, 2 cm under
+         // y = 0, a sunk pool shows through `cutX0..cutZ1`), scatter groves on it (broadleaf, spruce, birch, shrubs,
+         // meadow grass, wildflowers, boulders; `onSurface` the land, points kept off the plot and the drive). Site
+         // entities carry `arch.role: "site"` (nav and grounding checks skip them)
   // ops apply in order to the stored plans; touched buildings are re-compiled, locked entities kept, a `navigable`
   // test added, the player set to first person in front of the main entrance; minimal patches via patchesBetween
 stair-fit.ts: stairShape(stair, rise) / checkStair(plan, level, stair, doors?, others?) → { problems[], room?, arrives?, shape }

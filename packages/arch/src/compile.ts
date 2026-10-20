@@ -534,7 +534,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       // Plain casement windows open: the casement is a child entity that swings inward on its left hinge.
       const openable = style === 'casement' && !frosted && width <= 1.8 && width >= 0.6 && height >= 0.7;
       const winId = `${lid}-win${winN++}`;
-      const surround = xp.surround && (xp.surround !== 'box' || width >= 1.5 || style === 'picture') ? { style: xp.surround, material: xp.surroundMaterial, depth: xp.surround === 'box' ? 0.18 : 0.04 } : undefined;
+      const surround = xp.surround && (xp.surround !== 'box' || width >= 1.2 || style === 'picture') ? { style: xp.surround, material: xp.surroundMaterial, depth: xp.surround === 'box' ? 0.18 : 0.04 } : undefined;
       add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}), ...(surround ? { surround } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
       if (openable) {
         const fw = 0.055;
@@ -734,7 +734,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const holeBlock = holes;
       // Furniture keeps a walkway round the stair and the stairwell, so the top and bottom steps lead somewhere.
       ctx.keepClear = [...stairBlock, ...holeBlock].map((f) => grownBox(f, STAIR_WALKWAY));
-      const { placed, notes: fn } = furnishRoom(ctx, r.items, r.furnish);
+      const { placed, notes: fn } = furnishRoom(ctx, r.items, r.furnish, r.dress ?? r.furnish);
       notes.push(...fn);
       residentRooms.push({
         id: rid,
@@ -902,8 +902,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         if (topLoops.some((loop) => pointInPolygon(p[0], p[1], offsetPolygon(loop, ext + 0.4))) || levelOutlines[0]?.some((loop) => pointInPolygon(p[0], p[1], offsetPolygon(loop, ext + 0.4)))) return;
         // A concrete planter box with a small olive (a leaf-card tree, not a potted stick).
         const py = round(plan.plinth + 0.02);
-        add({ id: `${bid}-planter${k}`, parent: bid, name: 'Planter', transform: { position: [round(p[0]), round(py + 0.3), round(p[1])] }, shape: { kind: 'primitive', primitive: 'box', size: [0.8, 0.6, 0.8] }, material: { finish: 'concrete', color: '#bdb7ad' }, physics: { body: 'static' }, arch: { role: 'site', kind: 'planter', name: 'Planter' }, tags: ['arch', 'site'] });
-        add({ id: `${bid}-planter${k}-tree`, parent: bid, name: 'Olive tree', transform: { position: [round(p[0]), round(py + 0.58), round(p[1])], rotation: [0, k * 47, 0] }, shape: { kind: 'procedural', generator: 'tree-broadleaf', params: { height: 2.8, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1 }, seed: 400 + k }, arch: { role: 'site', kind: 'plant', name: 'Olive tree' }, tags: ['arch', 'site'] });
+        add({ id: `${bid}-planter${k}`, parent: bid, name: 'Planter', transform: { position: [round(p[0]), round(py + 0.275), round(p[1])] }, shape: { kind: 'primitive', primitive: 'box', size: [0.7, 0.55, 0.7] }, material: { finish: 'concrete', color: '#77746f', roughness: 0.85 }, physics: { body: 'static' }, arch: { role: 'site', kind: 'planter', name: 'Planter' }, tags: ['arch', 'site'] });
+        add({ id: `${bid}-planter${k}-tree`, parent: bid, name: 'Olive tree', transform: { position: [round(p[0]), round(py + 0.53), round(p[1])], rotation: [0, k * 47, 0] }, shape: { kind: 'procedural', generator: 'tree-broadleaf', params: { height: 2.3, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1 }, seed: 400 + k }, arch: { role: 'site', kind: 'plant', name: 'Olive tree' }, tags: ['arch', 'site'] });
       });
     }
     const [tx0, tz0, tx1, tz1] = bounds(terrace);

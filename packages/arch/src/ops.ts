@@ -14,7 +14,7 @@ import { compileBuilding, parsePlan, PlanError, type CompiledBuilding } from './
 import { checkBuilding, summarizeBuildingReports, type BuildingReport } from './nav';
 import { area } from './math2';
 import { WallDado } from './params';
-import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanStair, PlanWindow, type BuildingPlan } from './plan';
+import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanSite, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
 import { planWindowAddition } from './window-fit';
 import { checkStair, fitStair, levelDoors } from './stair-fit';
@@ -42,6 +42,9 @@ function stairFieldsOf(raw: unknown): Record<string, unknown> | undefined {
 /** A window to add: the plan window with the side optional (the room's widest free exterior wall when omitted). */
 const WindowRequest = PlanWindow.extend({ side: Compass.optional() });
 
+/** Site fields a `set_site` op may change (merged into the plan's site). */
+const PlanSiteEdit = z.object({ garden: z.boolean().optional(), surroundings: z.enum(['none', 'estate']).optional(), planting: z.boolean().optional(), terrace: z.unknown().optional(), pool: z.unknown().optional() });
+
 /** Upper bound of ops per call. */
 export const MAX_ARCH_OPS = 40;
 
@@ -68,6 +71,8 @@ export const ArchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('set_wall'), building: Id, room: Id, wall: z.union([Compass, z.literal('all')]).default('all'), material: MaterialSpec.optional(), dado: z.union([WallDado, z.null()]).optional(), clear: z.boolean().default(false) }),
   // People in the building ("two guests in the living room"): 0 to 8 idle-animated residents placed clear of doors and walkways.
   z.object({ op: z.literal('set_residents'), building: Id, count: z.number().int().min(0).max(8) }),
+  z.object({ op: z.literal('dress_room'), building: Id, room: z.union([Id, z.literal('all')]).default('all'), dress: z.boolean().default(true) }),
+  z.object({ op: z.literal('set_site'), building: Id, site: PlanSiteEdit }),
   z.object({ op: z.literal('set_material'), building: Id, target: z.enum(['exterior', 'roof', 'floor', 'walls']), room: Id.optional(), material: MaterialSpec }),
 ]);
 export type ArchOp = z.infer<typeof ArchOp>;
@@ -329,6 +334,20 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
           if (op.items) room.items = op.items.map((i) => parseWith(PlanItem, i, 'item', 'Items: {kind, params?, at?:[x,z], yaw?, against?}.'));
           if (op.omit) room.omit = op.omit;
           lines.push(`furnish_room ${room.id}${op.furnish ? '' : ' (layout off)'}`);
+          break;
+        }
+        case 'dress_room': {
+          const plan = load(op.building);
+          const rooms = op.room === 'all' ? plan.levels.flatMap((l) => l.rooms) : [roomOf(plan, op.room).room];
+          for (const r of rooms) r.dress = op.dress;
+          lines.push(`dress_room ${op.room === 'all' ? `all ${rooms.length} rooms` : (rooms[0]?.id ?? op.room)}${op.dress ? '' : ' (off)'}`);
+          break;
+        }
+        case 'set_site': {
+          const plan = load(op.building);
+          const merged = parseWith(PlanSite, { ...(plan.site ?? {}), ...Object.fromEntries(Object.entries(op.site).filter(([, v]) => v !== undefined)) }, 'site', 'site: {garden?: boolean, surroundings?: "none"|"estate", planting?: boolean, terrace?: [[x,z],…], pool?: {at:[x,z], width, length}}.');
+          plan.site = merged;
+          lines.push(`set_site ${[merged.garden ? 'garden' : '', merged.surroundings !== 'none' ? merged.surroundings : '', merged.terrace ? 'terrace' : '', merged.pool ? 'pool' : ''].filter(Boolean).join(', ') || 'none'}`);
           break;
         }
         case 'place_item': {

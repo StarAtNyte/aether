@@ -76,6 +76,11 @@ export const PlanRoom = z
     dado: WallDado.optional(),
     /** Auto-furnish (layouts per room type). */
     furnish: z.boolean().default(true),
+    /**
+     * Dress the room after its pieces: rug, the missing armchair or bedside table, lamps, plants, curtains and styling
+     * where the measured layout has room (default: the same as `furnish`).
+     */
+    dress: z.boolean().optional(),
     /** Explicit pieces (in addition to, or instead of with `furnish: false`, the layout). */
     items: z.array(PlanItem).max(60).default([]),
     /** Furniture kinds the layout must leave out ("tv", "rug" …). */

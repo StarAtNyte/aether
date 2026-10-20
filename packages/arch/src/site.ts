@@ -141,11 +141,49 @@ export function compileGrounds(g: GardenInput): GardenOutput {
       { dir: [-1, 0], seg: [px0, pz0 + D, px0 + D, pz1 - D] },
       { dir: [1, 0], seg: [px1 - D, pz0 + D, px1, pz1 - D] },
     ];
+    let border = 0;
     for (const s of sides) {
       const isFront = Math.abs(s.dir[0] - n[0]) < 0.3 && Math.abs(s.dir[1] - n[1]) < 0.3;
       if (isFront) continue;
       const [x0, z0, x1, z1] = s.seg;
       hedge(x0, z0, x1, z1);
+      // A border bed in front of the hedge: soil, shrubs, flowers and ferns, broken where the house or the terrace come close.
+      const alongX = Math.abs(s.dir[1]) > 0.5;
+      const inward = alongX ? -s.dir[1] : -s.dir[0];
+      const line = alongX ? (s.dir[1] < 0 ? z1 : z0) : s.dir[0] < 0 ? x1 : x0;
+      const lo = (alongX ? px0 : pz0) + 3.6;
+      const hi = (alongX ? px1 : pz1) - 3.6;
+      const depth = 1.1;
+      const at = (u: number, d: number): P2 => (alongX ? [u, line + inward * d] : [line + inward * d, u]);
+      const blocked = (u: number): boolean => {
+        const p = at(u, depth / 2);
+        return inHouse(p[0], p[1], 1.2) || onTerrace(p[0], p[1], 0.8) || nearPath(p[0], p[1], 1.6);
+      };
+      let u = lo;
+      while (u < hi) {
+        while (u < hi && blocked(u)) u += 0.5;
+        const start = u;
+        while (u < hi && !blocked(u)) u += 0.5;
+        const end = Math.min(u, hi);
+        if (end - start < 2) continue;
+        const a = at(start, 0.05);
+        const b = at(end, depth);
+        out.push({ id: `${bid}-border${border}`, parent: bid, name: 'Border bed', transform: { position: [0, 0.035, 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: rect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])), thickness: 0.06, finish: SOIL, edge: EDGING } as unknown as Record<string, Json> }, arch: { role: 'site', kind: 'bed', name: 'Border bed' }, tags: ['arch', 'site'], castShadow: false });
+        let j = 0;
+        for (let v = start + 0.6; v <= end - 0.5; v += 1.05) {
+          const p = at(v + between(-0.12, 0.12), depth * between(0.35, 0.65));
+          const pick = j % 4;
+          const shape: EntityInput['shape'] =
+            pick === 0 || pick === 2
+              ? { kind: 'procedural', generator: 'shrub', params: { size: r(between(0.8, 1.15)), color: pick === 0 ? '#4b6c35' : '#647f43', variant: j % 2, detail: 0.8 }, seed: Math.floor(rand() * 100000) }
+              : pick === 1
+                ? { kind: 'procedural', generator: 'wildflowers', params: { size: 0.5, color: border % 2 === 0 ? '#a48ad0' : '#e8d9a8', variant: 0 }, seed: Math.floor(rand() * 100000) }
+                : { kind: 'procedural', generator: 'fern', params: { size: 0.6, color: '#557a3a' }, seed: Math.floor(rand() * 100000) };
+          out.push({ id: `${bid}-border${border}-p${j}`, parent: bid, name: 'Planting', transform: { position: [r(p[0]), 0.04, r(p[1])], rotation: [0, r(between(0, 360)), 0] }, shape, arch: { role: 'site', kind: 'planting', name: 'Planting' }, tags: ['arch', 'site'] });
+          j++;
+        }
+        border++;
+      }
     }
 
     // --- planted beds along the front facade, either side of the door -----------------------------------------------
@@ -190,7 +228,10 @@ export function compileGrounds(g: GardenInput): GardenOutput {
     }
 
     // --- trees in the plot corners, boulders by the beds -------------------------------------------------------------
-    const corners: P2[] = [[px0 + 2.2, pz0 + 2.2], [px1 - 2.2, pz0 + 2.2], [px1 - 2.2, pz1 - 2.2], [px0 + 2.2, pz1 - 2.2]];
+    // Trees frame the house from behind and the sides; the front corners stay open so the house is seen from the approach.
+    const cxm = (px0 + px1) / 2;
+    const czm = (pz0 + pz1) / 2;
+    const corners: P2[] = [[px0 + 2.2, pz0 + 2.2], [px1 - 2.2, pz0 + 2.2], [px1 - 2.2, pz1 - 2.2], [px0 + 2.2, pz1 - 2.2], [px0 + 2.4, czm], [px1 - 2.4, czm], [cxm, pz0 + 2.4], [cxm, pz1 - 2.4]].filter(([x, z]) => (x - cxm) * n[0] + (z - czm) * n[1] < 0.5) as P2[];
     let tree = 0;
     for (const [x, z] of corners) {
       if (inHouse(x, z, 2.6) || onTerrace(x, z, 1.2) || nearPath(x, z, 2.4)) continue;

@@ -50,7 +50,8 @@ describe('system prompt', () => {
     // 15.2k -> 15.3k once the outdoor and ground/city generators all sit in the catalog together.
     // 15.3k -> 15.4k for the house grounds (site garden / surroundings, set_site) and the estate terrain's pool cut.
     // 15.4k -> 15.5k for the estate terrain's stream options and the realistic cactus generator (~110 tokens).
-    expect(prompt.length / 4).toBeLessThan(15_500);
+    // 15.5k -> 15.6k for the room dressing (dress_room, the furn-accent styling piece) in the architecture tools.
+    expect(prompt.length / 4).toBeLessThan(15_600);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
