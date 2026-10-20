@@ -195,6 +195,8 @@ export class NavGraph {
   private readonly kindBuf: Uint8Array;
   private walker: CharacterController | null = null;
   private readonly spawnY: number;
+  /** Hurting volumes: a jump or drop whose arc passes through one is not a way (the river under a leap). */
+  private readonly hazards: readonly HazardZone[];
 
   private constructor(
     input: NavBuildInput,
@@ -209,6 +211,7 @@ export class NavGraph {
   ) {
     this.pw = input.pw;
     this.params = input.params;
+    this.hazards = input.hazards;
     this.cell = cell;
     this.nx = nx;
     this.nz = nz;
@@ -507,10 +510,30 @@ export class NavGraph {
       const top = Math.max(yi, by) + 1;
       return !this.pw.raycast([xi, top, zi], [dx / len, 0, dz / len], len);
     };
+    // The arc of the leap (or fall) must not pass through a hazard: the game would stop the player there.
+    const arcClear = (j: number, kind: EdgeKind.Jump | EdgeKind.Drop): boolean => {
+      if (this.hazards.length === 0) return true;
+      const bx = this.px[j] as number, by = this.py[j] as number, bz = this.pz[j] as number;
+      const g = Math.max(0.1, p.gravity);
+      const vy = kind === EdgeKind.Jump ? p.jumpSpeed : 0;
+      const disc = vy * vy - 2 * g * (by - yi);
+      if (disc < 0) return true;
+      const T = (vy + Math.sqrt(disc)) / g;
+      const q: Vec3 = [0, 0, 0];
+      for (let k = 1; k < 10; k++) {
+        const tau = (T * k) / 10;
+        const f = k / 10;
+        q[0] = xi + (bx - xi) * f;
+        q[1] = yi + vy * tau - (g * tau * tau) / 2;
+        q[2] = zi + (bz - zi) * f;
+        if (this.hazards.some((h) => touches(h.touch, q))) return false;
+      }
+      return true;
+    };
     const consider = (j: number, kind: EdgeKind.Jump | EdgeKind.Drop, cost: number): boolean => {
       if (seen.has(j)) return false;
       seen.add(j);
-      if (!clearLine(j)) return false;
+      if (!clearLine(j) || !arcClear(j, kind)) return false;
       {
         out.push({ to: j, kind, cost, state: this.bad.has(i * this.count + j) ? 2 : 0 });
       }
@@ -787,6 +810,11 @@ export class NavGraph {
       const near = Math.hypot(dx, dz);
       ch.move({ forward: near < 0.1 ? 0 : airThrust(near, speed, this.params.gravity, !ch.grounded), right: 0, jump: link.kind === EdgeKind.Jump && t === 0, yawDeg: yaw }, dt, speed, jumpSpeed);
       const q = ch.position;
+      // Through a hazard on the way (the water of the river it leaps): the game would stop it there.
+      if (this.hazards.some((h) => touches(h.touch, q))) {
+        ok = false;
+        break;
+      }
       if (!ch.grounded) airborne = true;
       const landed = ch.grounded && ch.verticalSpeed <= 0.01 && (airborne || t > 12);
       if (landed) {

@@ -1088,8 +1088,10 @@ class Bot {
     for (const dy of [0.2, 0.6, 1.0, 1.4]) for (const id of this.session.pw.overlapsSphere([p[0], p[1] + dy, p[2]], 0.45)) ids.add(id);
     let door: EntityId | null = null;
     let other: EntityId | null = null;
+    // What the player stands on is the floor, not a culprit (a terrain slope overlaps the low probes).
+    const floorId = this.session.pw.raycastAll([p[0], p[1] + 0.4, p[2]], [0, -1, 0], 1.2, 6).filter((h) => h.id !== 'player' && h.id !== 'nav-probe').sort((a, b) => a.distance - b.distance)[0]?.id ?? null;
     for (const id of ids) {
-      if (id === 'player') continue;
+      if (id === 'player' || id === floorId) continue;
       const e = this.world.entities[id];
       const role = e?.arch?.role;
       if (role === 'furniture' || role === 'fixture') return id;
