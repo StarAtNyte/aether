@@ -54,7 +54,8 @@ describe('activities own the camera', () => {
     expect(focus.every((e) => e.tags.includes('domino') || e.tags.includes('bell'))).toBe(true);
     // Dressed as a set-piece in a meadow, on a deck.
     expect(w.entities['domino-deck-1']).toBeDefined();
-    expect(all(w).some((e) => e.id.startsWith('mountain'))).toBe(true);
+    // The meadow closes the horizon with a landscape's hills (stylised worlds: backdrop mountains).
+    expect(all(w).some((e) => e.id.startsWith('mountain') || e.tags.includes('terrain'))).toBe(true);
   });
 
   it('"…a bell tower" puts a belfry behind the bell instead of a castle', async () => {
@@ -92,7 +93,8 @@ describe('composition helpers', () => {
   });
 
   it('forests leave the corridor free of trees and lay a trail through it', async () => {
-    const w = await build('a cozy forest camp with a campfire and tents');
+    // The stylised build lays the trail as a strip in the corridor; the realistic one drapes it over the land (below).
+    const w = await build('a cozy low-poly forest camp with a campfire and tents');
     for (const e of all(w)) {
       const [x, , z] = e.transform.position;
       const isTree = e.tags.includes('tree') || (e.shape.kind === 'scatter' && e.shape.of.kind === 'procedural' && e.shape.of.generator.startsWith('tree'));
@@ -115,7 +117,7 @@ describe('composition helpers', () => {
   });
 
   it('backdrop mountains rise out of the world ground color', async () => {
-    const w = await build('a sunny mountain meadow');
+    const w = await build('a sunny low-poly mountain meadow');
     const ground = w.environment.ground?.material.color;
     const mountains = all(w).filter((e) => e.id.startsWith('mountain'));
     expect(mountains.length).toBeGreaterThan(0);

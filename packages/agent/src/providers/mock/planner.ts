@@ -8,7 +8,7 @@
  * Existing worlds: edit commands (add/remove/modify) plus mood overrides; a
  * request that describes a whole themed scene replaces the world instead.
  */
-import { realisticPlan } from './realistic';
+import { realisticPlan, STYLISED_RE, wantsRealistic } from './realistic';
 import { hashString, type Json, type PatchInput } from '@aether/core';
 import { Builder } from './builder';
 import type { ThemeCtx } from './decor';
@@ -144,6 +144,8 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const seed = hashString(intent.text);
   const existing = wipe ? [] : view.entities.map((e) => e.id);
   const b = new Builder(seed, existing, intent.mood, wipe ? [] : view.testIds, wipe ? [] : view.ruleIds);
+  // Realistic by default: leaf-card vegetation and a landscape, unless the request asks for a stylised look.
+  b.realisticNature = wantsRealistic(intent.text);
   // An activity can absorb another one it renders itself (bowling at a crate pyramid).
   const activities = intent.activities.filter((a) => !intent.activities.some((o) => o !== a && o.absorbs?.includes(a.id)));
   const bare = intent.settings.length === 0 && (activities.length === 0 || activities.some((a) => a.wantsSetting));
@@ -182,6 +184,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const { count, seconds } = intent;
   const withIds = new Set(intent.activities.map((a) => a.id));
   const withCount = (ctx: ThemeCtx): ThemeCtx => ({ ...ctx, with: withIds, request: intent.text, ...(count !== undefined ? { count } : {}), ...(seconds !== undefined ? { seconds } : {}) });
+  activities[0]?.prepare?.(withCount({ b, x: 0, z: 0, clear, primary: !primary }));
   // A playable mechanic owns the camera: settings around it lose their focus tags.
   b.setPhase('setting', activities.length > 0 || hero !== undefined);
   if (primary) primary.build(withCount({ b, x: 0, z: 0, clear, primary: true }));
@@ -235,8 +238,26 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   };
 }
 
+/** Stylised nature generators: a world built from them stays stylised when things are added. */
+const STYLISED_NATURE = new Set(['tree-pine', 'tree-oak', 'bush', 'grass-tuft', 'rock', 'flowers']);
+/** Realistic nature generators. */
+const REALISTIC_NATURE = new Set(['tree-broadleaf', 'tree-spruce', 'tree-birch', 'shrub', 'meadow-grass', 'boulder', 'wildflowers', 'fern']);
+
+/** Whether parts added to an existing world should be realistic: what the request says, else what the world already uses. */
+function editsRealistic(text: string, view: WorldView): boolean {
+  if (STYLISED_RE.test(text)) return false;
+  let stylised = 0;
+  let realistic = 0;
+  for (const e of view.entities) {
+    if (e.generator && STYLISED_NATURE.has(e.generator)) stylised++;
+    if (e.generator && REALISTIC_NATURE.has(e.generator)) realistic++;
+  }
+  return realistic >= stylised;
+}
+
 function edit(intent: Intent, view: WorldView, library: readonly MockLibraryItem[]): MockPlan {
   const b = new Builder(hashString(`${intent.text}|${view.entityCount}`), view.entities.map((e) => e.id), intent.mood, view.testIds, view.ruleIds);
+  b.realisticNature = editsRealistic(intent.text, view);
   b.keepHud(view.hud);
   reserveExisting(b, view);
   const done = applyEdits(b, intent, view, library);
@@ -273,6 +294,7 @@ const NEW_WORLD = /\b(?:new (?:world|scene|level|map|game|project)|brand new|dif
  */
 function refineWithThemes(intent: Intent, view: WorldView, library: readonly MockLibraryItem[]): MockPlan {
   const b = new Builder(hashString(`${intent.text}|${view.entityCount}`), view.entities.map((e) => e.id), intent.mood, view.testIds, view.ruleIds);
+  b.realisticNature = editsRealistic(intent.text, view);
   b.keepHud(view.hud);
   reserveExisting(b, view);
   const done: string[] = [];

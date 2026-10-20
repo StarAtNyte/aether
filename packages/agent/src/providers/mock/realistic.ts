@@ -11,6 +11,17 @@ import type { MockPlan } from './planner';
 /** Wording that asks for a realistic look. */
 export const REALISTIC_RE = /\b(?:realistic(?:ally)?|photo-?realistic|photoreal|life-?like|true[- ]to[- ]life|naturalistic)\b/i;
 
+/**
+ * Wording that asks for a stylised look on purpose. Without it, worlds are built realistic by default (the leaf-card
+ * vegetation, a landscape instead of a flat plane); with it the low-poly stylised parts stay.
+ */
+export const STYLISED_RE = /\b(?:low[- ]?poly|cartoon(?:y|ish)?|stylis(?:ed|ized)|styliz(?:ed)?|toon|cel[- ]?shaded|painterly|cute|kawaii|chibi|toy(?:like|[- ]town)?|pixel(?:ated)?|voxel|blocky|minecraft|lego|flat[- ]shaded|simple shapes|claymation|paper ?craft|diorama)\b/i;
+
+/** True when a request should be built with the realistic parts (everything that does not ask for a stylised look). */
+export function wantsRealistic(request: string): boolean {
+  return REALISTIC_RE.test(request) || !STYLISED_RE.test(request);
+}
+
 type Params = Record<string, Json>;
 
 function num(v: Json | undefined, fallback: number): number {

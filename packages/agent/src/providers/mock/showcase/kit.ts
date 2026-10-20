@@ -202,6 +202,8 @@ export interface EstateOptions {
   lake?: readonly [number, number, number, number];
   /** Optional level lane (a drive) from the plot centre: far end x, z and half width. */
   lane?: readonly [number, number, number];
+  /** Optional stream carved across the land along X: half width, mean z, bend amplitude, depth (see `streamCourse`). */
+  stream?: readonly [number, number, number, number];
   color: string;
   roughness?: number;
   resolution?: number;
@@ -226,6 +228,7 @@ export function estateGround(b: Builder, seed: number, o: EstateOptions): Estate
     padRadius: o.pad[2],
     ...(o.lake ? { lakeX: o.lake[0], lakeZ: o.lake[1], lakeRadius: o.lake[2], lakeDepth: o.lake[3] } : {}),
     ...(o.lane ? { laneX: o.lane[0], laneZ: o.lane[1], laneRadius: o.lane[2] } : {}),
+    ...(o.stream ? { streamHalf: o.stream[0], streamZ: o.stream[1], streamBend: o.stream[2], streamDepth: o.stream[3] } : {}),
   };
   const raw = terrainHeight(params, seed, o.size);
   const base = raw(o.pad[0], o.pad[1]);

@@ -57,6 +57,8 @@ export interface PlaceOpts {
   template?: boolean;
   /** Footprint radius to reserve in the occupancy map (0 = none). */
   footprint?: number;
+  /** Keep `y` absolute even when the scene stands on a landscape ({@link Builder.ground}); default: y is above the ground. */
+  absolute?: boolean;
 }
 
 /** Extra options of scatter entities. */
@@ -68,6 +70,37 @@ export interface ScatterOpts extends PlaceOpts {
   onSurface?: string;
   /** World ground height at (x, z): clustered points are set on it (relative to the layer's own y). */
   heightAt?: (x: number, z: number) => number;
+}
+
+/**
+ * `count` points spread evenly (a jittered grid) in a `width`×`depth` box centred on the origin, deterministic; with
+ * `minSpacing` the grid is no finer than that.
+ */
+export function jitteredPoints(count: number, width: number, depth: number, seed: number, minSpacing = 0): Array<[number, number, number]> {
+  const n = Math.max(0, Math.min(20_000, Math.floor(count)));
+  if (n === 0 || !(width > 0) || !(depth > 0)) return [];
+  const random = rng((seed ^ 0x9e3779b9) >>> 0);
+  let cell = Math.sqrt((width * depth) / n);
+  if (minSpacing > cell) cell = minSpacing;
+  const cols = Math.max(1, Math.floor(width / cell));
+  const rows = Math.max(1, Math.floor(depth / cell));
+  const cw = width / cols;
+  const cd = depth / rows;
+  const cells: Array<[number, number]> = [];
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) cells.push([i, j]);
+  // Shuffle so a count below the cell count still covers the whole area.
+  for (let i = cells.length - 1; i > 0; i--) {
+    const k = Math.floor(random() * (i + 1));
+    const t = cells[i] as [number, number];
+    cells[i] = cells[k] as [number, number];
+    cells[k] = t;
+  }
+  const out: Array<[number, number, number]> = [];
+  for (let i = 0; i < Math.min(n, cells.length); i++) {
+    const [cx, cz] = cells[i] as [number, number];
+    out.push([r2(-width / 2 + (cx + 0.15 + 0.7 * random()) * cw), 0, r2(-depth / 2 + (cz + 0.15 + 0.7 * random()) * cd)]);
+  }
+  return out;
 }
 
 /** A circle of reserved ground (x/z plane). */
@@ -122,6 +155,20 @@ export class Builder {
    * painterly on purpose.
    */
   realisticNature = false;
+  /**
+   * The landscape under the scene when a theme replaces the flat ground plane with a terrain: root entities placed by the
+   * helpers stand on it (their y is taken relative to the ground under them, see {@link PlaceOpts.absolute}) and scatter
+   * layers drape over it (`onSurface`). Null on a flat world (y is absolute, ground at 0).
+   */
+  ground: { h(x: number, z: number): number; surface: string } | null = null;
+  /** A stream carved across the landscape (see `naturalGround` in decor.ts): its centre z at x, half width and water level. */
+  stream: { z(x: number): number; half: number; waterY: number } | null = null;
+  /**
+   * A circuit laid out by an activity before the settings build (see `Theme.prepare`): its racing line as (x, z)
+   * points, the half extent of level ground it needs round the origin, and the valley axis it follows (x at z), so a
+   * canyon or landscape can be shaped around it.
+   */
+  track: { loop: Array<[number, number]>; extent: number; axis(z: number): number; canyonSize: number } | null = null;
 
   constructor(seed: number, existingIds: Iterable<string>, mood: Mood, existingTests: Iterable<string> = [], existingRules: Iterable<string> = []) {
     this.seed = seed >>> 0;
@@ -269,8 +316,14 @@ export class Builder {
     return entity.id;
   }
 
+  /** World height of the ground under (x, z): the landscape when there is one, else 0. */
+  groundAt(x: number, z: number): number {
+    return this.ground ? this.ground.h(x, z) : 0;
+  }
+
   private compose(id: string, pos: V3, shape: EntityInput['shape'], o: PlaceOpts): EntityInput {
-    const e: EntityInput = { id, transform: { position: [r2(pos[0]), r2(pos[1]), r2(pos[2])] }, shape };
+    const lift = this.ground && !o.parent && o.absolute !== true && shape?.kind !== 'scatter' ? this.ground.h(pos[0], pos[2]) : 0;
+    const e: EntityInput = { id, transform: { position: [r2(pos[0]), r2(pos[1] + lift), r2(pos[2])] }, shape };
     const rot: V3 | undefined = o.rot ?? (o.yaw !== undefined ? [0, r2(o.yaw), 0] : undefined);
     if (rot && e.transform) e.transform.rotation = rot;
     if (o.scale !== undefined && e.transform) e.transform.scale = typeof o.scale === 'number' ? [r2(o.scale), r2(o.scale), r2(o.scale)] : o.scale;
@@ -354,16 +407,22 @@ export class Builder {
         params = stand.params;
       }
     }
+    if (this.ground && !o.onSurface && !o.parent) {
+      o = { ...o, onSurface: this.ground.surface };
+    }
     const scatterSeed = this.subSeed();
     // Natural ground cover grows in clumps: lay it out as a clustered point process (deterministic).
     let clustered = this.realisticNature && CLUSTERED_GENERATORS.has(generator) && count >= 12 ? clusterPoints(count, area[0], area[1], scatterSeed, { ...(o.minSpacing ? { minSpacing: o.minSpacing } : {}) }) : null;
-    if (clustered && (this.keepOutRects.length > 0 || o.heightAt)) {
+    // On a landscape every layer gets explicit points, so water and building plots can be kept clear of it.
+    if (!clustered && this.ground && count >= 1) clustered = jitteredPoints(count, area[0], area[1], scatterSeed, o.minSpacing ?? 0);
+    if (clustered && (this.keepOutRects.length > 0 || o.heightAt || (this.ground && this.keepOut.length > 0))) {
       const [px, py, pz] = pos;
       const kept: Array<[number, number, number]> = [];
       for (const [x, , z] of clustered) {
         const wx = px + x;
         const wz = pz + z;
         if (this.keepOutRects.some(([x0, z0, x1, z1]) => wx > x0 && wx < x1 && wz > z0 && wz < z1)) continue;
+        if (this.ground && this.keepOut.some((c) => (c.x - wx) ** 2 + (c.z - wz) ** 2 < c.r * c.r)) continue;
         kept.push([x, o.heightAt ? r2(o.heightAt(wx, wz) - py) : 0, z]);
       }
       clustered = kept;

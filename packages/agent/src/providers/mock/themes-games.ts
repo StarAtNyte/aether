@@ -5,6 +5,8 @@
  */
 import { r2, type Builder, type PhysicsOpt } from './builder';
 import { lamp, yawAlongX, type ThemeCtx } from './decor';
+import { groundRibbon } from './showcase/kit';
+import { race } from './race';
 import type { Theme } from './theme';
 
 const RAINBOW = ['#e63946', '#f4a261', '#e9c46a', '#2a9d8f', '#457b9d', '#9b5de5'];
@@ -189,6 +191,66 @@ function huntGoal(b: Builder, goal: string, at: [number, number], need: number, 
   return zone;
 }
 
+/** Where the goal of a hunt stands: beyond the pickups, on the far side of the stream when the land has one. */
+function goalSpot(b: Builder, c: ThemeCtx, n: number): [number, number] {
+  const stream = b.stream;
+  if (stream) {
+    for (let i = 0; i < 120; i++) {
+      const a = b.rand(0, Math.PI * 2);
+      const d = b.rand(16 + n * 1.5, 26 + n * 2);
+      const x = r2(c.x + Math.cos(a) * d);
+      const z = r2(c.z - 10 + Math.sin(a) * d);
+      if (z < stream.z(x) - stream.half - 5 && b.claim(x, z, 3.5)) return [x, z];
+    }
+  }
+  return b.spot(c.x, c.z - 10, 16 + n * 1.5, 26 + n * 2, 3.5) ?? [r2(c.x), r2(c.z - (24 + n * 2))];
+}
+
+/**
+ * A lantern to collect: the photographed wooden lantern with a candle flame that glows and a warm light that breathes,
+ * floating a little above the ground (a collectible, not scenery).
+ */
+function huntLantern(b: Builder, at: [number, number]): string {
+  const id = b.asset('lantern', 'lantern-wood', [at[0], 0.75, at[1]], {
+    name: 'Lantern',
+    fitSize: 0.55,
+    fallback: { kind: 'primitive', primitive: 'box', size: [0.35, 0.5, 0.35] },
+    behaviors: [{ type: 'bob', params: { amplitude: 0.12, period: 2.4, phase: r2(b.rand(0, 1)) } }, { type: 'spin', params: { axis: [0, 1, 0], speed: 25 } }, { type: 'collectible', params: { scoreKey: 'score', value: 1, margin: 1.2, message: 'Lantern found!' } }],
+    tags: ['lantern', 'coin', 'focus'],
+  });
+  b.prim(`${id}-flame`, 'sphere', [0.09, 0.14, 0.09], [0, 0.2, 0], { parent: id, material: { preset: 'emissive', color: '#ffcf7a', emissive: '#ffb347', emissiveIntensity: 6 }, castShadow: false });
+  b.light(id, [0, 0.28, 0], '#ffb35c', 1.4, 7, [{ type: 'pulseLight', params: { min: 1.1, max: 1.6, period: r2(b.rand(1.6, 2.6)), phase: r2(b.rand(0, 1)) } }]);
+  return id;
+}
+
+/**
+ * A worn trail from the spawn to the goal, draped over the land, with a footbridge where it crosses the stream (the
+ * bridge spans the channel from bank to bank, so the walk never steps into the water).
+ */
+function huntTrail(b: Builder, goal: [number, number]): void {
+  const spawn = b.playerValue('spawn');
+  const sx = Array.isArray(spawn) && typeof spawn[0] === 'number' ? spawn[0] : 0;
+  const sz = Array.isArray(spawn) && typeof spawn[2] === 'number' ? spawn[2] : 12;
+  const h = (x: number, z: number): number => b.groundAt(x, z);
+  const stream = b.stream;
+  const legs: Array<Array<[number, number]>> = [];
+  if (stream) {
+    // Cross where the stream lies between the two ends, square to the water.
+    const cx = r2((sx + goal[0]) / 2);
+    const cz = stream.z(cx);
+    const span = stream.half * 2 + 7;
+    const near: [number, number] = [cx, r2(cz + span / 2)];
+    const farEnd: [number, number] = [cx, r2(cz - span / 2)];
+    legs.push([[sx, sz - 1.5], [r2((sx + cx) / 2), r2((sz + near[1]) / 2)], near]);
+    legs.push([farEnd, [r2((farEnd[0] + goal[0]) / 2), r2((farEnd[1] + goal[1]) / 2)], [goal[0], r2(goal[1] + 3)]]);
+    const deckY = r2(Math.max(h(cx, near[1]), h(cx, farEnd[1])));
+    b.gen('footbridge', 'bridge', { length: r2(span + 1), width: 2.2, height: 0.9, color: '#7a5a3c', variant: 0 }, [cx, deckY, r2(cz)], { yaw: 90, physics: 'static', name: 'Footbridge', absolute: true, tags: ['bridge'] });
+  } else {
+    legs.push([[sx, sz - 1.5], [r2((sx + goal[0]) / 2 + 3), r2((sz + goal[1]) / 2)], [goal[0], r2(goal[1] + 3)]]);
+  }
+  groundRibbon(b, { id: b.id('trail'), name: 'Forest trail', paths: legs, height: h, width: 1.7, lift: 0.045, centre: '#7d6c52', edge: '#4f4636', material: { finish: 'soil', roughness: 0.97 }, tags: ['trail'] });
+}
+
 const coins: Theme = {
   id: 'coins',
   kind: 'activity',
@@ -230,6 +292,8 @@ const coins: Theme = {
           behaviors: [{ type: 'spin', params: { axis: [0, 0, 1], speed: 150 } }, { type: 'bob', params: { amplitude: 0.2, period: 1.6, phase: r2(b.rand(0, 1)) } }, { type: 'collectible', params: { scoreKey: 'score', value: 1 } }],
           tags: ['coin', 'focus'],
         });
+      } else if (hunt.item === 'lantern' && b.realisticNature) {
+        huntLantern(b, [p[0], p[1]]);
       } else {
         const s = hunt.look.size;
         b.prim(hunt.item, hunt.look.shape, [s, s, s], [p[0], 1.2, p[1]], {
@@ -253,9 +317,10 @@ const coins: Theme = {
       b.test({ id: 'timer-runs', kind: 'eventually', condition: { key: 'timeLeft', op: '<=', value: time - 2 }, within: 5 });
     }
     if (hunt.goal) {
-      // The goal stands well away from the start, beyond the pickups.
-      const far = b.spot(c.x, c.z - 10, 16 + n * 1.5, 26 + n * 2, 3.5) ?? [r2(c.x), r2(c.z - (24 + n * 2))];
+      // The goal stands well away from the start, beyond the pickups (and across the stream, when there is one).
+      const far = goalSpot(b, c, n);
       huntGoal(b, hunt.goal, far, placed, items);
+      if (b.realisticNature && b.ground) huntTrail(b, far);
       b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: `Collect all ${placed} ${items}, then reach the ${hunt.goal}${hunt.timed ? ` within ${time} seconds` : ''}!`, duration: 4 }] });
     } else {
       b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: `Collect all ${placed} ${items}${hunt.timed ? ` in ${time} seconds` : ''}!`, duration: 4 }] });
@@ -548,4 +613,4 @@ const vault: Theme = {
 };
 
 /** Activities (order = tie-break priority). */
-export const GAME_THEMES: readonly Theme[] = [domino, coins, parkour, bowling, tower, vault];
+export const GAME_THEMES: readonly Theme[] = [domino, coins, parkour, bowling, tower, vault, race];

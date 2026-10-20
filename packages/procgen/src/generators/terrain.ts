@@ -3,7 +3,7 @@
  * height- and slope-based vertex colors and exact heightfield colliders.
  * Output meshes are centered in x/z with their lowest point at y = 0.
  */
-import { canyonHalfWidth, canyonMeander, riverHalfWidth, riverMeander } from '@aether/core';
+import { canyonHalfWidth, canyonMeander, riverHalfWidth, riverMeander, streamCourse } from '@aether/core';
 import type { InternalApi } from '../api';
 import type { GeneratorOutput } from '../types';
 import { mixLinear, type RGB } from '../color';
@@ -49,6 +49,9 @@ interface TerrainShape {
 
 /** Layer weights: grass, rock, dry ground, snow. */
 type Splat = [number, number, number, number];
+
+/** Wet pebbles and silt of a stream bed (linear RGB). */
+const STREAM_BED: RGB = lin('#5e5646');
 
 /** Normalized height removed from the bottom of a mountain (its foothill plate). */
 const MOUNTAIN_BASE = 0.05;
@@ -221,6 +224,10 @@ const terrain = defineGenerator({
     cutZ0: pNum(0, -500, 500, 'estate: cut z0'),
     cutX1: pNum(0, -500, 500, 'estate: cut x1'),
     cutZ1: pNum(0, -500, 500, 'estate: cut z1'),
+    streamHalf: pNum(0, 0, 30, 'estate: half width of a stream carved across the land along X in meters (0 = none); its centre line is streamCourse(x, streamZ, streamBend) in @aether/core'),
+    streamZ: pNum(0, -500, 500, 'estate: mean z of the stream'),
+    streamBend: pNum(5, 0, 60, 'estate: amplitude of the stream bends in meters'),
+    streamDepth: pNum(1.4, 0.3, 8, 'estate: depth of the stream bed below the banks in meters'),
   },
   run(p, api) {
     const size = p.num('size');
@@ -235,6 +242,7 @@ const terrain = defineGenerator({
         lake: [p.num('lakeX'), p.num('lakeZ'), p.num('lakeRadius'), p.num('lakeDepth')],
         lane: [p.num('laneX'), p.num('laneZ'), p.num('laneRadius')],
         cut: [p.num('cutX0'), p.num('cutZ0'), p.num('cutX1'), p.num('cutZ1')],
+        stream: [p.num('streamHalf'), p.num('streamZ'), p.num('streamBend'), p.num('streamDepth')],
       });
     }
     const freq = 2.2 / size;
@@ -337,7 +345,7 @@ function estateTerrain(
   rough: number,
   resolution: number,
   grass: string,
-  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number]; cut?: readonly [number, number, number, number] },
+  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number]; cut?: readonly [number, number, number, number]; stream?: readonly [number, number, number, number] },
 ): GeneratorOutput {
   const n = api.noise;
   const freq = 2.2 / size;
@@ -346,7 +354,16 @@ function estateTerrain(
   const [px, pz, pr] = o.pad;
   const [lx, lz, lr, ld] = o.lake;
   const lane = o.lane;
+  const [sh, sz, sb, sd] = o.stream ?? [0, 0, 0, 0];
   const blend = Math.max(14, pr * 0.9);
+  /** Depth (metres, >= 0) the stream cuts at (x, z): a flat bed, banks that ease out over 2.5 m plus a little noise. */
+  const streamCut = (x: number, z: number): number => {
+    if (sh <= 0) return 0;
+    const d = Math.abs(z - streamCourse(x, sz, sb)) - sh * (1 + 0.12 * n.noise2(x * 0.05, 4.2));
+    if (d >= 3) return 0;
+    if (d <= 0) return sd;
+    return sd * (1 - smoothstep(0, 3, d));
+  };
   return buildTerrain(api, {
     size,
     resolution,
@@ -374,6 +391,8 @@ function estateTerrain(
         const basin = 1 - smoothstep(lr * 0.55, lr * 1.2, dl);
         h = h * (1 - basin) - ld * Math.pow(basin, 1.4) + 0.12 * ld * basin * n.noise2(x * 0.2, z * 0.2);
       }
+      const cut = streamCut(x, z);
+      if (cut > 0) h -= cut + 0.08 * cut * n.noise2(x * 0.4, z * 0.4);
       return h;
     },
     color(t, h, slope, x, z, out) {
@@ -381,11 +400,12 @@ function estateTerrain(
       mixLinear(pal.grassDark, pal.grass, smoothstep(0.02, 0.5, t + w), out);
       mixLinear(out, pal.rock, smoothstep(0.3, 0.52, slope + w), out);
       if (lr > 0) mixLinear(pal.sand, out, smoothstep(ld - 1.3, ld - 0.4, h + w * 3), out);
+      if (sh > 0) mixLinear(out, STREAM_BED, Math.min(1, streamCut(x, z) / Math.max(0.2, sd * 0.45)) * 0.9, out);
     },
     splat(_t, h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
       const rock = smoothstep(0.3, 0.52, slope + w);
-      const wet = lr > 0 ? 1 - smoothstep(ld - 1.3, ld - 0.4, h + w * 3) : 0;
+      const wet = Math.max(lr > 0 ? 1 - smoothstep(ld - 1.3, ld - 0.4, h + w * 3) : 0, sh > 0 ? Math.min(1, streamCut(x, z) / Math.max(0.2, sd * 0.45)) : 0);
       out[1] = rock * (1 - wet);
       out[2] = wet;
       out[0] = Math.max(0, 1 - out[1] - out[2]);

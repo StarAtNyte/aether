@@ -26,6 +26,11 @@ export interface Theme {
   absorbs?: readonly string[];
   /** Activities: player setup applied even when combined with a setting. */
   player?(b: Builder): void;
+  /**
+   * Activities: lay out what the settings must leave free before any setting builds (a race circuit reserves its
+   * corridor and tells the landscape how much level ground it needs). Only the first activity's hook runs.
+   */
+  prepare?(c: ThemeCtx): void;
   build(c: ThemeCtx): void;
   /** One sentence for the finish message. */
   blurb: string;

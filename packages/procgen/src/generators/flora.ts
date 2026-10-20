@@ -667,5 +667,119 @@ const boulder = defineGenerator({
   },
 });
 
+
+/** Fluted column of a cactus standing at (cx, y0, cz): a lathe with `ribs` vertical ribs, a rounded crown, painted grooves and spine areoles. */
+function cactusColumn(api: InternalApi, cx: number, y0: number, cz: number, r: number, h: number, ribs: number, base: RGB, groove: RGB, crest: RGB, areole: RGB): Mesh {
+  const prof: Array<[number, number]> = [[0, 0], [r * 0.92, 0], [r, h * 0.06], [r * 1.02, h * 0.5], [r * 0.97, h * 0.86], [r * 0.82, h * 0.94], [r * 0.5, h * 0.985], [0, h]];
+  const m = api.lathe(prof, Math.max(24, ribs * 3)).translate(cx, y0, cz);
+  const angle = (x: number, z: number): number => Math.atan2(z - cz, x - cx);
+  m.displace((x, y, z) => {
+    const t = (y - y0) / h;
+    const fade = t > 0.9 ? Math.max(0, (0.985 - t) / 0.085) : 1;
+    return r * 0.085 * Math.cos(ribs * angle(x, z)) * fade;
+  });
+  const n = api.noise;
+  m.paintFn((x, y, z, _nx, _ny, _nz, out) => {
+    const c = Math.cos(ribs * angle(x, z));
+    mixLinear(groove, base, 0.5 + 0.5 * c, out);
+    if (c > 0.82) mixLinear(out, crest, (c - 0.82) * 3.5, out);
+    // Areoles: pale spine clusters in a column on every rib crest, every few centimetres.
+    if (c > 0.9 && Math.abs(Math.sin((y - y0) * 26 + Math.floor(angle(x, z) * ribs) * 1.7)) > 0.93) mixLinear(out, areole, 0.75, out);
+    const k = 1 + 0.08 * n.noise3(x * 3, y * 1.2, z * 3) - 0.1 * Math.max(0, 0.25 - (y - y0)) * 4;
+    out[0] *= k;
+    out[1] *= k;
+    out[2] *= k;
+  });
+  return m;
+}
+
+const cactus = defineGenerator({
+  id: 'cactus',
+  description: 'Realistic desert cactus: a fluted saguaro with arms (variant 0), a squat barrel cactus with a crown of flowers (1) or an organ-pipe cluster (2); ribbed, muted sage with spine areoles. Solid.',
+  category: 'nature',
+  params: {
+    height: pNum(5, 0.4, 14, 'height in meters (saguaro and organ pipe; a barrel cactus is a fifth of it)'),
+    arms: pInt(2, 0, 5, 'saguaro arms'),
+    color: pColor('#5d7149', 'skin color'),
+    flowers: pColor('#e8c547', 'flower color (barrel cactus)'),
+    variant: pVariant(2, '0 saguaro, 1 barrel, 2 organ pipe'),
+  },
+  run(p, api) {
+    const variant = p.int('variant');
+    const H = p.num('height');
+    const skin = p.color('color');
+    const base = lin(skin);
+    const groove = lin(shade(skin, -0.32));
+    const crest = lin(shade(skin, 0.12));
+    const areole = lin('#d9d2bd');
+    const mat = { vertexColors: true, roughness: 0.72, metalness: 0 } as const;
+    if (variant === 1) {
+      const h = Math.max(0.3, H * 0.2);
+      const r = h * 0.62;
+      const prof: Array<[number, number]> = [[0, 0], [r * 0.8, 0], [r * 0.98, h * 0.25], [r, h * 0.55], [r * 0.85, h * 0.85], [r * 0.45, h * 0.99], [0, h * 0.97]];
+      const m = api.lathe(prof, 54);
+      m.displace((x, _y, z) => r * 0.09 * Math.cos(18 * Math.atan2(z, x)));
+      const spines = lin('#d8b75a');
+      m.paintFn((x, y, z, _nx, _ny, _nz, out) => {
+        const c = Math.cos(18 * Math.atan2(z, x));
+        mixLinear(groove, base, 0.5 + 0.5 * c, out);
+        if (c > 0.85 && Math.abs(Math.sin(y * 30 + Math.atan2(z, x) * 7)) > 0.8) mixLinear(out, spines, 0.85, out);
+      });
+      api.add(m, mat);
+      const fl = lin(p.color('flowers'));
+      const fm = api.sphere(r * 0.12, 1);
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2;
+        const piece = fm.clone().translate(Math.cos(a) * r * 0.32, h * 0.98, Math.sin(a) * r * 0.32);
+        piece.paintFn((_x, _y, _z, _nx, _ny, _nz, out) => mixLinear(fl, fl, 0, out));
+        api.add(piece, { vertexColors: true, roughness: 0.6, metalness: 0 });
+      }
+      api.collider(cylinderCollider(0, h / 2, 0, r, h));
+      return api.build();
+    }
+    if (variant === 2) {
+      const r = Math.max(0.06, H * 0.035);
+      const stems = 7;
+      for (let k = 0; k < stems; k++) {
+        const a = (k / stems) * Math.PI * 2 + api.rng() * 0.5;
+        const d = k === 0 ? 0 : r * (1.6 + api.rng() * 1.4);
+        const h = H * (0.55 + api.rng() * 0.45);
+        api.add(cactusColumn(api, Math.cos(a) * d, 0, Math.sin(a) * d, r * (0.85 + api.rng() * 0.3), h, 11, base, groove, crest, areole), mat);
+      }
+      api.collider(cylinderCollider(0, H / 2, 0, r * 3.5, H));
+      return api.build();
+    }
+    // Saguaro: a trunk about 1/14 as thick as it is tall, arms that leave it, bend and climb parallel to it.
+    const R = Math.max(0.12, H * 0.07);
+    api.add(cactusColumn(api, 0, 0, 0, R, H, 14, base, groove, crest, areole), mat);
+    const arms = p.int('arms');
+    const phase = api.rng() * Math.PI * 2;
+    for (let k = 0; k < arms; k++) {
+      const a = phase + (k / Math.max(1, arms)) * Math.PI * 2 + (api.rng() - 0.5) * 0.9;
+      const ar = R * (0.66 + api.rng() * 0.12);
+      const y0 = H * (0.32 + api.rng() * 0.25);
+      const out = R + ar * (1.6 + api.rng() * 0.8);
+      const dx = Math.cos(a);
+      const dz = Math.sin(a);
+      // The elbow: out of the trunk, then a quarter turn upward.
+      const bend = out - R * 0.6;
+      const path: Vec3[] = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = (i / 6) * (Math.PI / 2);
+        path.push([dx * (R * 0.6 + Math.sin(t) * bend), y0 + (1 - Math.cos(t)) * bend * 0.9, dz * (R * 0.6 + Math.sin(t) * bend)]);
+      }
+      const elbow = api.tube(path, ar, 18);
+      elbow.paintFn((x, y, z, _nx, _ny, _nz, o) => mixLinear(groove, base, 0.55 + 0.35 * api.noise.noise3(x * 9, y * 9, z * 9), o));
+      api.add(elbow, mat);
+      const top = path[path.length - 1] as Vec3;
+      const climb = Math.max(ar * 3, (H - top[1]) * (0.45 + api.rng() * 0.4));
+      api.add(cactusColumn(api, top[0], top[1] - ar * 0.4, top[2], ar, climb, 11, base, groove, crest, areole), mat);
+      api.collider(cylinderCollider(top[0], top[1] + climb / 2, top[2], ar, climb));
+    }
+    api.collider(cylinderCollider(0, H / 2, 0, R, H));
+    return api.build();
+  },
+});
+
 /** Realistic vegetation and rock, registered with the nature category. */
-export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder] as const;
+export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus] as const;

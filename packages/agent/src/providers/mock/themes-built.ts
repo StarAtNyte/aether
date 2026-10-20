@@ -2,7 +2,7 @@
  * Built / stylized settings for the mock planner: village, castle, city
  * street with drivable car, haunted graveyard, and outer space.
  */
-import { r2 } from './builder';
+import { r2, type Builder } from './builder';
 import { backdropMountains, clouds, hillside, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 import { catalogEntry, getCatalog } from '@aether/assets';
@@ -10,25 +10,92 @@ import { catalogEntry, getCatalog } from '@aether/assets';
 const ROOFS = ['#a0442c', '#5b6d8a', '#7a4b2a', '#4a6b45', '#8a3b2e'];
 const WALLS = ['#e8dcc4', '#f1e3c8', '#d9c9a8', '#efe6d6', '#cfd8dc'];
 
-/** Houses on a ring around a plaza, facing the center. */
-function housesAround(c: ThemeCtx, count: number, radius: number, variant: number | null): void {
+/** Earthy limewash and stone tones and clay, slate and thatch-brown roofs of an old village. */
+const OLD_WALLS = ['#e9e1cf', '#ddd0b4', '#d2c3a3', '#e4d7bd', '#c9bfae'];
+const OLD_ROOFS = ['#8a4a32', '#6e3b2a', '#4f4a48', '#7a5a3a', '#95553a'];
+
+/** The request asks for an old (medieval, historic) village rather than a modern one. */
+export function oldVillage(c: ThemeCtx): boolean {
+  return /\b(medieval|middle ages|feudal|historic|old town|olde?|fantasy|tudor|knights?|castle|peasants?)\b/.test(c.request ?? '');
+}
+
+/** Houses on a ring around a plaza, facing the center; returns their (x, z, yaw). */
+function housesAround(c: ThemeCtx, count: number, radius: number, variant: number | null): Array<[number, number, number]> {
   const { b } = c;
+  const old = oldVillage(c);
   const offset = b.rand(0, Math.PI * 2);
+  const out: Array<[number, number, number]> = [];
   for (let i = 0; i < count; i++) {
     const a = offset + (i / count) * Math.PI * 2 + b.rand(-0.12, 0.12);
     const hx = r2(c.x + Math.cos(a) * radius);
     const hz = r2(c.z + Math.sin(a) * radius);
     if (!b.claim(hx, hz, 4.6)) continue;
+    const yaw = yawFacingZ(hx, hz, c.x, c.z);
     b.gen('house', 'house', {
       width: r2(b.rand(5.5, 7.5)),
       depth: r2(b.rand(4.5, 6)),
       floors: b.int(1, 2),
-      color: b.pick(WALLS),
-      roofColor: b.pick(ROOFS),
+      color: b.pick(old ? OLD_WALLS : WALLS),
+      roofColor: b.pick(old ? OLD_ROOFS : ROOFS),
+      ...(old ? { trimColor: '#3b2a1e' } : {}),
       lights: lightsOn(b),
-      variant: variant ?? b.int(0, 2),
-    }, [hx, 0, hz], { yaw: yawFacingZ(hx, hz, c.x, c.z), physics: 'static', tags: ['house'] });
+      // An old village has cottages and half-timbered houses, never flat-roofed modern boxes.
+      variant: variant ?? (old ? b.pick([0, 2, 2]) : b.int(0, 2)),
+    }, [hx, 0, hz], { yaw, physics: 'static', tags: ['house'] });
+    out.push([hx, hz, yaw]);
   }
+  return out;
+}
+
+/**
+ * A market stall: four oak posts, a striped canvas awning pitched toward the customer and a counter with produce in
+ * crates, baskets and jars (photographed barrels and clay pots where the library has them). Faces +Z before `yaw`.
+ */
+function marketStall(b: Builder, x: number, z: number, yaw: number, cloth: string): void {
+  const root = b.empty('market-stall', [x, 0, z], { yaw, name: 'Market stall', physics: 'static', footprint: 1.9, tags: ['stall'] });
+  const oak = { finish: 'oak' as const, color: '#7a5a3c' };
+  for (const [px, pz, h] of [[-1.25, -0.75, 2.5], [1.25, -0.75, 2.5], [-1.25, 0.75, 2.1], [1.25, 0.75, 2.1]] as const) {
+    b.prim('stall-post', 'box', [0.1, h, 0.1], [px, r2(h / 2), pz], { parent: root, material: oak });
+  }
+  const stripes = 6;
+  for (let k = 0; k < stripes; k++) {
+    b.prim('stall-awning', 'box', [r2(2.9 / stripes), 0.03, 1.9], [r2(-1.45 + (k + 0.5) * (2.9 / stripes)), 2.33, 0.05], { parent: root, rot: [-12, 0, 0], material: { finish: 'fabric', color: k % 2 ? '#efe6d2' : cloth }, castShadow: true });
+  }
+  b.prim('stall-counter', 'box', [2.5, 0.08, 0.9], [0, 0.88, 0.35], { parent: root, material: oak, physics: 'static' });
+  b.prim('stall-front', 'box', [2.5, 0.84, 0.05], [0, 0.44, 0.78], { parent: root, material: { finish: 'wood-slats', color: '#8a6644' } });
+  const produce = ['#c0392b', '#e67e22', '#7fa34a', '#d9b44a', '#8e5a9b'];
+  for (let k = 0; k < 4; k++) {
+    const cx = r2(-0.9 + k * 0.6);
+    b.prim('produce-crate', 'box', [0.48, 0.16, 0.36], [cx, 1.0, 0.4], { parent: root, material: { finish: 'oak', color: '#a07a50' } });
+    for (let f = 0; f < 6; f++) b.prim('produce', 'sphere', [0.09, 0.09, 0.09], [r2(cx - 0.15 + (f % 3) * 0.15), 1.11, r2(0.32 + Math.floor(f / 3) * 0.14)], { parent: root, material: { preset: 'plastic', color: produce[k % produce.length] as string, roughness: 0.55 }, castShadow: false });
+  }
+  b.gen('stall-barrel', 'barrel', {}, [1.75, 0, 0.45], { parent: root, physics: 'static' });
+  if (hasAssets('clay-pot')) b.asset('stall-pot', 'clay-pot', [-1.7, 0, 0.6], { parent: root, fitSize: 0.55, physics: 'static' });
+}
+
+/** The village well: a ring of dressed stone with a coping, an oak frame with a shingled hood, a windlass and a bucket. */
+function villageWell(b: Builder, x: number, z: number): string {
+  const well = b.prim('well', 'cylinder', [1.9, 0.85, 1.9], [x, 0.425, z], { name: 'Village well', material: { finish: 'limestone', color: '#b7ad9c' }, physics: 'static', footprint: 1.9, tags: ['focus', 'well'] });
+  b.prim(`${well}-coping`, 'cylinder', [2.1, 0.12, 2.1], [0, 0.48, 0], { parent: well, material: { finish: 'stone', color: '#a39a8a' } });
+  b.prim(`${well}-water`, 'cylinder', [1.45, 0.02, 1.45], [0, 0.3, 0], { parent: well, material: { preset: 'water', waterKind: 'puddle', color: '#203038', roughness: 0.05 }, castShadow: false });
+  const oak = { finish: 'oak' as const, color: '#5e4430' };
+  for (const sx of [-1, 1]) b.prim(`${well}-post`, 'box', [0.14, 1.9, 0.14], [sx * 0.95, 1.3, 0], { parent: well, material: oak });
+  b.prim(`${well}-axle`, 'cylinder', [0.12, 1.9, 0.12], [0, 1.45, 0], { parent: well, rot: [0, 0, 90], material: oak });
+  b.prim(`${well}-rope`, 'cylinder', [0.025, 0.7, 0.025], [0, 1.08, 0], { parent: well, material: { finish: 'fabric', color: '#b59a6a' }, castShadow: false });
+  b.prim(`${well}-bucket`, 'cylinder', [0.3, 0.32, 0.3], [0, 0.72, 0], { parent: well, material: { finish: 'oak', color: '#7a5a3c' } });
+  for (const sz of [-1, 1]) b.prim(`${well}-hood`, 'box', [2.3, 0.05, 0.95], [0, 2.38, sz * 0.38], { parent: well, rot: [sz * 32, 0, 0], material: { finish: 'roof-tile', color: '#6b4a3a' } });
+  b.prim(`${well}-ridge`, 'box', [2.35, 0.1, 0.1], [0, 2.64, 0], { parent: well, material: oak });
+  return well;
+}
+
+/** A lantern hung from a short oak post (medieval street light), lit after dark. */
+function postLantern(b: Builder, x: number, z: number): void {
+  const post = b.prim('lantern-post', 'box', [0.14, 2.6, 0.14], [x, 1.3, z], { material: { finish: 'oak', color: '#4a3526' }, physics: 'static', footprint: 0.5, tags: ['lamp'] });
+  b.prim(`${post}-arm`, 'box', [0.08, 0.08, 0.6], [0, 1.2, 0.26], { parent: post, material: { finish: 'oak', color: '#4a3526' } });
+  if (hasAssets('lantern-wood')) b.asset(`${post}-lantern`, 'lantern-wood', [0, 0.72, 0.5], { parent: post, fitSize: 0.42 });
+  else b.prim(`${post}-lantern`, 'box', [0.24, 0.32, 0.24], [0, 0.95, 0.5], { parent: post, material: { finish: 'black-metal' } });
+  b.prim(`${post}-flame`, 'sphere', [0.08, 0.12, 0.08], [0, 0.93, 0.5], { parent: post, material: { preset: 'emissive', color: '#ffcf7a', emissive: '#ffb347', emissiveIntensity: lightsOn(b) ? 5 : 0.4 }, castShadow: false });
+  if (lightsOn(b)) b.light(post, [0, 0.95, 0.5], '#ffb35c', 1.6, 10);
 }
 
 const village: Theme = {
@@ -39,15 +106,34 @@ const village: Theme = {
   radius: 34,
   blurb: 'a cozy village of cottages around a plaza with a statue, market stalls, lamp posts and a friendly villager to talk to',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 16, fog: { color: '#e6dccb', density: 0.008 }, bloom: 0.6, ground: { material: { preset: 'grass', color: '#6a9a45' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 16, fog: b.realisticNature ? { color: '#dfe3e0', density: 0.0025, visibility: 650 } : { color: '#e6dccb', density: 0.008 }, bloom: 0.6, ground: { material: { preset: 'grass', color: '#6a9a45' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 6] });
+  },
+  titleFor(request) {
+    return /\b(medieval|middle ages|feudal|historic|old town|fantasy|tudor)\b/.test(request) ? 'Medieval Village' : 'Cozy Village';
   },
   build(c) {
     const { b } = c;
+    const real = b.realisticNature;
+    const old = oldVillage(c);
+    if (c.primary) {
+      // The land first, so everything stands on it (a level plot for the village, wooded hills round it).
+      hillside(c, { pad: 62 });
+    }
     if (c.clear < 4) {
-      b.prim('plaza', 'cylinder', [14, 0.06, 14], [c.x, 0.03, c.z], { material: { finish: 'cobble', color: '#a29b8c' }, castShadow: false, name: 'Plaza' });
-      b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue', tags: ['focus'] });
-      for (let i = 0; i < 2; i++) {
+      b.prim('plaza', 'cylinder', [real ? 17 : 14, 0.06, real ? 17 : 14], [c.x, 0.03, c.z], { material: { finish: 'cobble', color: '#a29b8c' }, castShadow: false, name: 'Plaza' });
+      if (old && real) villageWell(b, c.x, c.z);
+      else b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue', tags: ['focus'] });
+      const marketWord = /\bmarket\b/.test(c.request ?? '');
+      const stalls = real ? (marketWord ? 5 : 3) : 2;
+      for (let i = 0; i < stalls; i++) {
+        if (real) {
+          const a = -Math.PI / 2 + (i - (stalls - 1) / 2) * 0.62;
+          const tx = r2(c.x + Math.cos(a) * 5.4);
+          const tz = r2(c.z + Math.sin(a) * 5.4);
+          marketStall(b, tx, tz, yawFacingZ(tx, tz, c.x, c.z), b.pick(['#9c2f2a', '#2f5d7a', '#3f6b3a', '#b0762f', '#6a3a5e']));
+          continue;
+        }
         const tx = r2(c.x + (i === 0 ? -4.5 : 4.5));
         const tz = r2(c.z - 3);
         b.gen('market-stall', 'table', { width: 2, depth: 1, color: '#9a6a3c' }, [tx, 0, tz], { physics: 'static', footprint: 1.4 });
@@ -62,23 +148,54 @@ const village: Theme = {
         footprint: 0.8,
       });
     }
-    housesAround(c, 8, 16, null);
+    const houses = housesAround(c, real ? 10 : 8, real ? 17 : 16, null);
     for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.3;
-      lamp(b, r2(c.x + Math.cos(a) * 8.5), r2(c.z + Math.sin(a) * 8.5));
+      const a = (i / 6) * Math.PI * 2 + (real ? 0 : 0.3);
+      if (old && real) postLantern(b, r2(c.x + Math.cos(a) * 9.4), r2(c.z + Math.sin(a) * 9.4));
+      else lamp(b, r2(c.x + Math.cos(a) * 8.5), r2(c.z + Math.sin(a) * 8.5));
     }
     for (let i = 0; i < 6; i++) {
       const p = b.spot(c.x, c.z, Math.max(6, c.clear + 1), 13, 0.5);
-      if (p) b.gen('barrel', 'barrel', {}, [p[0], 0, p[1]], { physics: 'static' });
+      if (!p) continue;
+      b.gen('barrel', 'barrel', {}, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static' });
     }
-    path(b, c.x, c.z + 7, c.x, c.z + 30, 2.6, '#a68a64', 'dirt');
+    if (real) {
+      // Lanes from the plaza to every door, and the road out of the village, worn into the ground.
+      for (const [hx, hz] of houses) {
+        const d = Math.hypot(hx - c.x, hz - c.z) || 1;
+        path(b, r2(c.x + ((hx - c.x) / d) * 8), r2(c.z + ((hz - c.z) / d) * 8), r2(hx - ((hx - c.x) / d) * 3.4), r2(hz - ((hz - c.z) / d) * 3.4), 1.5, '#8f7a5c', 'dirt');
+      }
+      path(b, c.x, r2(c.z + 8.5), c.x, r2(c.z + 60), 3, '#8a7458', 'dirt');
+      // Cottage gardens: shrubs and flowers along the house fronts, a few villagers about their day.
+      scatterBelt(c, 'garden-shrubs', 'shrub', { size: 1, detail: 0.6, color: '#5f7d3f' }, 12, 20, 30, { minSpacing: 1.6, scaleRange: [0.6, 1.2] });
+      scatterBelt(c, 'meadow', 'meadow-grass', { color: '#7a9a4a', size: 0.5 }, 420, 22, 60, { minSpacing: 0.35, scaleRange: [0.6, 1.3] });
+      for (const color of ['#e9e1b0', '#c85a8a', '#e0b040']) scatterBelt(c, 'wildflowers', 'wildflowers', { color, size: 0.5 }, 50, 20, 44, { minSpacing: 0.6 });
+      const folk: Array<{ wardrobe: string; gender: 'male' | 'female'; age: 'young' | 'adult' | 'old'; hold?: string; top: string }> = [
+        { wardrobe: 'merchant', gender: 'male', age: 'adult', top: '#7a3b2e' },
+        { wardrobe: 'villager', gender: 'female', age: 'old', hold: 'bag', top: '#5d6b4a' },
+        { wardrobe: 'villager', gender: 'male', age: 'young', hold: 'crate', top: '#8a6a3c' },
+        { wardrobe: 'worker', gender: 'male', age: 'adult', top: '#4a5a6a' },
+      ];
+      for (const f of folk) {
+        const p = b.spot(c.x, c.z, 4.5, 12, 0.8);
+        if (!p) continue;
+        b.prim('villager', 'capsule', [0.56, 1.7, 0.56], [p[0], 0.85, p[1]], {
+          name: 'Villager',
+          yaw: r2(b.rand(0, 360)),
+          character: { wardrobe: f.wardrobe, gender: f.gender, age: f.age, top: f.top, mood: 'calm', ...(f.hold ? { hold: f.hold } : {}) } as never,
+          physics: { body: 'kinematic', sensor: true },
+          behaviors: [{ type: 'wander', params: { radius: 3, speed: 0.9, pause: 3 } }],
+          tags: ['npc', 'villager'],
+        });
+      }
+    } else path(b, c.x, c.z + 7, c.x, c.z + 30, 2.6, '#a68a64', 'dirt');
     treeRing(c, 14, 22, 34, [{ generator: 'tree-oak', params: { height: 6 } }, { generator: 'tree-pine', params: { height: 8 } }]);
-    scatterBelt(c, 'flowers', 'flowers', {}, 20, 9, 26, { minSpacing: 0.5 });
+    if (!real) scatterBelt(c, 'flowers', 'flowers', {}, 20, 9, 26, { minSpacing: 0.5 });
     if (c.primary) {
       const wx = r2(c.x - 26);
       const wz = r2(c.z - 22);
       if (b.claim(wx, wz, 4)) b.gen('windmill', 'windmill', { height: 11 }, [wx, 0, wz], { yaw: 30, physics: 'static' });
-      if (!hillside(c, { pad: 62 })) {
+      if (!b.ground) {
         backdropMountains(c, 5, '#7d7a70', 0.7);
         clouds(c, 4);
       }
@@ -90,7 +207,7 @@ const castle: Theme = {
   id: 'castle',
   kind: 'setting',
   title: 'Castle Keep',
-  match: /\b(castle|fortress|fort|citadel|keep|kingdom|knights?|king|queen|medieval|(?<!(?:bell|block|crate|domino|box|card|clock|water|jenga|stacked|stack of) )towers?(?! of (?:blocks?|crates?|boxes|cards|dominoe?s))|battlements)\b/,
+  match: /\b(castle|fortress|fort|citadel|keep|kingdom|knights?|king|queen|medieval(?! (?:village|town|hamlet|market|settlement))|(?<!(?:bell|block|crate|domino|box|card|clock|water|jenga|stacked|stack of) )towers?(?! of (?:blocks?|crates?|boxes|cards|dominoe?s))|battlements)\b/,
   radius: 36,
   blurb: 'a stone castle with four corner towers, crenellated walls, a gatehouse arch, a central keep and torches',
   env(b) {
@@ -226,7 +343,7 @@ const city: Theme = {
   id: 'city',
   kind: 'setting',
   title: 'City Street',
-  match: /\b(city|street|downtown|urban|cars?|traffic|road|drive|driving|race|racing|highway|neighbou?rhood|parking)\b/,
+  match: /\b(city|street|downtown|urban|cars?|traffic|road|drive|driving|highway|neighbou?rhood|parking)\b/,
   radius: 40,
   blurb: 'a city street lined with buildings, lamp posts, parked cars and traffic — hop in the red car and drive',
   env(b) {

@@ -24,3 +24,11 @@ export function canyonMeander(z: number, size: number): number {
 export function canyonHalfWidth(size: number): number {
   return size * 0.06;
 }
+
+/**
+ * Centre line of the stream an estate terrain carves across a plot (terrain variant 5, `streamHalf` > 0): it runs along
+ * X, and at `x` its centre is at this z. `z0` is the stream's mean z and `amp` the amplitude of its bends in metres.
+ */
+export function streamCourse(x: number, z0: number, amp: number): number {
+  return z0 + Math.sin(x * 0.045 + 0.7) * amp + Math.sin(x * 0.11 + 2.1) * amp * 0.35;
+}

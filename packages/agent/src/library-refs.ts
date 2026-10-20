@@ -8,7 +8,7 @@
 import { GeneratorDef, hasOwn, type WorldDoc } from '@aether/core';
 
 /** Bounds of the reference scan (patches are untrusted model output). */
-export const LIBRARY_REF_LIMITS = Object.freeze({ MAX_DEPTH: 8, MAX_NODES: 50_000, MAX_RESOLVED: 8 });
+export const LIBRARY_REF_LIMITS = Object.freeze({ MAX_DEPTH: 8, MAX_NODES: 50_000, MAX_RESOLVED: 8, MAX_LOOKUPS: 32 });
 
 const ID_RE = /^[a-z][a-z0-9-]{1,63}$/;
 
@@ -55,7 +55,8 @@ export async function libraryDefinitions(
   resolve: (id: string) => Promise<GeneratorDef | null>,
 ): Promise<Array<{ op: 'defineGenerator'; generator: GeneratorDef }>> {
   const batch = definedInBatch(patches);
-  const wanted = [...referencedGenerators(patches)].filter((id) => !builtin.has(id) && !hasOwn(world.generators, id) && !batch.has(id)).slice(0, LIBRARY_REF_LIMITS.MAX_RESOLVED);
+  // Look up more ids than are kept: an id the resolver does not know (a host's own generator) must not crowd out a library one.
+  const wanted = [...referencedGenerators(patches)].filter((id) => !builtin.has(id) && !hasOwn(world.generators, id) && !batch.has(id)).slice(0, LIBRARY_REF_LIMITS.MAX_LOOKUPS);
   const defs = await Promise.all(
     wanted.map(async (id) => {
       try {
@@ -67,5 +68,5 @@ export async function libraryDefinitions(
       }
     }),
   );
-  return defs.filter((d): d is GeneratorDef => d !== null).map((generator) => ({ op: 'defineGenerator' as const, generator }));
+  return defs.filter((d): d is GeneratorDef => d !== null).slice(0, LIBRARY_REF_LIMITS.MAX_RESOLVED).map((generator) => ({ op: 'defineGenerator' as const, generator }));
 }

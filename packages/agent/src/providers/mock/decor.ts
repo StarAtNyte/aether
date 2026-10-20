@@ -4,9 +4,9 @@
  * Built-in generators follow procgen conventions: base at y=0, centered,
  * long axis / facing along +X (cars, boats, walls, fences, docks, ramps).
  */
-import type { Json } from '@aether/core';
+import { streamCourse, type Json } from '@aether/core';
 import { r2, type Builder, type ScatterOpts } from './builder';
-import { estateGround, grove, landPoints } from './showcase/kit';
+import { estateGround, grove, groundRibbon, landPoints } from './showcase/kit';
 
 /** Theme placement context: origin of the theme and the radius it must keep clear. */
 export interface ThemeCtx {
@@ -120,6 +120,8 @@ export function groundColor(b: Builder): string | undefined {
 
 /** Ring of distant mountains framing the scene (no physics: unreachable). Foothills take the ground color. */
 export function backdropMountains(c: ThemeCtx, count: number, color: string, snowLine: number, radius = 110, height = 30): void {
+  // A landscape closes the horizon with its own hills.
+  if (c.b.ground) return;
   const offset = c.b.rand(0, Math.PI * 2);
   const foot = groundColor(c.b);
   for (let i = 0; i < count; i++) {
@@ -129,23 +131,96 @@ export function backdropMountains(c: ThemeCtx, count: number, color: string, sno
   }
 }
 
+/** Options of {@link naturalGround}. */
+export interface NaturalGroundOptions {
+  /** Radius of the level plot round the theme's origin (activities that need flat ground stand in it). */
+  pad: number;
+  /** Relief of the hills that close the horizon in metres (default 48). */
+  relief?: number;
+  /** Grass colour of the land (default: the theme's ground colour). */
+  color?: string;
+  /** Terrain edge length in metres (default 420). */
+  size?: number;
+  /** A stream across the land along X: mean z, half width, bend amplitude, depth (metres). */
+  stream?: { z: number; half: number; bend?: number; depth?: number };
+  /** Woods on the slopes beyond the plot (counts; 0 leaves a kind out). */
+  woods?: { conifers?: number; broadleaf?: number; birch?: number; scrub?: number; boulders?: number };
+  /** Snow on the boughs of the spruce woods. */
+  snow?: boolean;
+  /** Spruce colour and height, broadleaf colour (defaults: a temperate forest). */
+  conifer?: { color?: string; height?: number };
+  broadleafColor?: string;
+}
+
 /**
- * A real landscape for a setting that stands on level ground (a village, a castle): the ground plane is replaced by
- * a terrain with a level plot of `pad` metres round the theme's origin (everything the theme places stays on y = 0),
- * meadow swells beyond it and wooded hills that close the horizon, in place of the ring of blob mountains and the
- * flat green field. Primary settings only; returns whether it was built.
+ * A real landscape under a natural setting in place of the flat ground plane: the `terrain` generator's estate variant
+ * (a level plot of `pad` metres round the theme's origin, meadow swells beyond it and hills that close the horizon),
+ * an optional stream carved across it with flowing water, and woods of the leaf-card trees on the slopes. The builder's
+ * {@link Builder.ground} is set, so everything placed afterwards stands on the land and scatter layers drape over it.
+ * Primary settings with realistic nature only; returns whether it was built.
+ */
+export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
+  const b = c.b;
+  if (!c.primary || !b.realisticNature || b.ground) return false;
+  const color = o.color ?? groundColor(b) ?? '#6a9a45';
+  const size = o.size ?? 420;
+  b.env({ ground: null });
+  const st = o.stream;
+  const land = estateGround(b, (b.seed ^ 0x51ed) >>> 0, {
+    size,
+    relief: o.relief ?? 48,
+    resolution: 256,
+    pad: [c.x, c.z, o.pad],
+    color,
+    roughness: 0.5,
+    name: 'Landscape',
+    ...(st ? { stream: [st.half, st.z, st.bend ?? 5, st.depth ?? 1.4] as const } : {}),
+  });
+  b.ground = { h: land.h, surface: land.id };
+  if (st) {
+    const depth = st.depth ?? 1.4;
+    const waterY = r2(-depth * 0.5);
+    const course = (x: number): number => streamCourse(x, st.z, st.bend ?? 5);
+    b.stream = { z: course, half: st.half, waterY };
+    b.prim('stream', 'plane', [size, 0.1, size], [0, waterY, 0], {
+      name: 'Stream',
+      absolute: true,
+      material: { preset: 'water', waterKind: 'stream', waterFlow: [0.8, 0], color: '#4f7f8c', opacity: 0.85, roughness: 0.05 },
+      castShadow: false,
+      tags: ['water', 'river'],
+    });
+    // Nothing stands or grows in the water: reserve the channel and keep ground cover out of it.
+    for (let x = -size / 2; x <= size / 2; x += 2) {
+      const z = course(x);
+      b.reserve(x, z, st.half + 1.6);
+      b.keepClear(x, z, st.half + 0.6);
+    }
+  }
+  const woods = o.woods ?? {};
+  const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30 && (!b.stream || Math.abs(z - b.stream.z(x)) > b.stream.half + 3);
+  const half = size / 2 - 20;
+  const spruce: Record<string, Json> = { height: o.conifer?.height ?? 14, detail: 0.5, color: o.conifer?.color ?? '#2f4f32', ...(o.snow ? { snow: 0.8 } : {}) };
+  if ((woods.conifers ?? 150) > 0) grove(b, 'woods-spruce', 'Spruce woods', 'tree-spruce', spruce, landPoints(b, woods.conifers ?? 150, half, wooded(o.pad + 12), 6, land.h), [0.75, 1.35], land.id, size);
+  if ((woods.broadleaf ?? 110) > 0) grove(b, 'woods-oak', 'Broadleaf woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: o.broadleafColor ?? '#4f7a34', variant: 1 }, landPoints(b, woods.broadleaf ?? 110, half, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, size);
+  if ((woods.birch ?? 0) > 0) grove(b, 'woods-birch', 'Birches', 'tree-birch', { height: 8.5, detail: 0.6 }, landPoints(b, woods.birch ?? 0, half * 0.6, wooded(o.pad + 4), 5, land.h), [0.8, 1.2], land.id, size);
+  if ((woods.scrub ?? 240) > 0) grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#587a3c' }, landPoints(b, woods.scrub ?? 240, half * 0.8, wooded(o.pad + 3), 2.6, land.h), [0.7, 1.5], land.id, size);
+  if ((woods.boulders ?? 40) > 0) grove(b, 'boulders', 'Boulders', 'boulder', { size: 1.6, lichen: 0.35, variant: 0 }, landPoints(b, woods.boulders ?? 40, half * 0.7, wooded(o.pad + 2), 4, land.h), [0.5, 1.6], land.id, size);
+  return true;
+}
+
+/**
+ * A real landscape for a setting that stands on level ground (a village, a castle): {@link naturalGround} with a level
+ * plot of `pad` metres and wooded hills, in place of the ring of blob mountains and the flat green field (these two
+ * settings always build it, whatever the nature style). Returns whether it was built.
  */
 export function hillside(c: ThemeCtx, o: { pad: number; relief?: number; color?: string; conifers?: number; broadleaf?: number }): boolean {
   if (!c.primary) return false;
   const b = c.b;
-  const color = o.color ?? groundColor(b) ?? '#6a9a45';
-  b.env({ ground: null });
-  const land = estateGround(b, (b.seed ^ 0x51ed) >>> 0, { size: 520, relief: o.relief ?? 64, pad: [c.x, c.z, o.pad], color, roughness: 0.5, name: 'Landscape' });
-  const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30;
-  grove(b, 'woods-pine', 'Pine woods', 'tree-spruce', { height: 14, detail: 0.5, color: '#2f4f32' }, landPoints(b, o.conifers ?? 150, 230, wooded(o.pad + 14), 6.5, land.h), [0.75, 1.35], land.id, 520);
-  grove(b, 'woods-oak', 'Oak woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: '#4f7a34', variant: 1 }, landPoints(b, o.broadleaf ?? 120, 230, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, 520);
-  grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#587a3c' }, landPoints(b, 260, 200, wooded(o.pad + 4), 2.8, land.h), [0.7, 1.5], land.id, 520);
-  return true;
+  const was = b.realisticNature;
+  b.realisticNature = true;
+  const built = naturalGround(c, { pad: o.pad, relief: o.relief ?? 64, size: 520, ...(o.color ? { color: o.color } : {}), woods: { conifers: o.conifers ?? 150, broadleaf: o.broadleaf ?? 120, scrub: 260, boulders: 0 } });
+  b.realisticNature = was;
+  return built;
 }
 
 /** Inner and outer radius (m) of the cloud ring: beyond the set, where the camera never flies. */
@@ -179,6 +254,11 @@ export function lamp(b: Builder, x: number, z: number, color = '#ffd27a', height
 
 /** Flat path strip (decal-like thin box) from (x1, z1) to (x2, z2). */
 export function path(b: Builder, x1: number, z1: number, x2: number, z2: number, width: number, color: string, preset: 'dirt' | 'stone' | 'concrete' | 'sand' | 'wood' = 'dirt'): string {
+  if (b.realisticNature) {
+    // A worn strip draped over the ground with soft verges, not a box laid on the lawn.
+    const finish = preset === 'stone' || preset === 'concrete' ? 'cobble' : preset === 'sand' ? 'sand' : preset === 'wood' ? 'decking' : 'soil';
+    return groundRibbon(b, { id: b.id('path'), name: 'Path', paths: [[[x1, z1], [r2((x1 + x2) / 2 + (z2 - z1) * 0.06), r2((z1 + z2) / 2 - (x2 - x1) * 0.06)], [x2, z2]]], height: (x, z) => b.groundAt(x, z), width, lift: 0.04, centre: color, edge: shadeHex(color, -0.25), material: { finish, roughness: 0.95 }, tags: ['path'] });
+  }
   const dx = x2 - x1;
   const dz = z2 - z1;
   const len = Math.hypot(dx, dz);
@@ -187,6 +267,13 @@ export function path(b: Builder, x1: number, z1: number, x2: number, z2: number,
     material: { preset, color, roughness: 0.95 },
     castShadow: false,
   });
+}
+
+/** `hex` darker (amount < 0) or lighter (amount > 0) by a fraction, "#rrggbb". */
+export function shadeHex(hex: string, amount: number): string {
+  const n = Number.parseInt(hex.replace('#', ''), 16);
+  const f = (c: number): number => Math.max(0, Math.min(255, Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount)));
+  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => f(c).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** Small glowing lantern on a post (a warm point light when it is dark). */

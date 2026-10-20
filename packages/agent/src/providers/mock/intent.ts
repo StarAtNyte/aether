@@ -152,7 +152,7 @@ function moodEnv(mood: Mood, text: string): Record<string, Json> {
   if (MOODS.day.test(text)) Object.assign(env, { sky: 'day', timeOfDay: 12, sunIntensity: 2.5, ambientIntensity: 0.45 });
   if (mood.dawn) Object.assign(env, { sky: 'dawn', timeOfDay: 6.5 });
   if (mood.dusk) Object.assign(env, { sky: 'sunset', timeOfDay: 17.5, bloom: 0.9 });
-  if (mood.night) Object.assign(env, { sky: 'night', timeOfDay: 22, bloom: 1.2, ambientIntensity: 0.25, sunIntensity: 0.5 });
+  if (mood.night) Object.assign(env, { sky: 'night', timeOfDay: 22, bloom: 0.85, ambientIntensity: 0.25, sunIntensity: 0.5 });
   if (MOODS.petals.test(text)) env['weather'] = 'petals';
   else if (MOODS.leaves.test(text)) env['weather'] = 'leaves';
   if (mood.rain) Object.assign(env, { weather: 'rain', fog: { color: mood.night ? '#1d2430' : '#8a96a3', density: 0.02 }, ...(mood.night ? {} : { sky: 'overcast' }) });

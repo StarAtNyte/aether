@@ -51,8 +51,8 @@ describe('stand-ins', () => {
 describe('planMock with a realistic request', () => {
   const nature = 'a forest clearing with a campfire, rocks and bushes';
 
-  it('uses the realistic generators, the plain request keeps the stylised ones, and both apply cleanly', () => {
-    const plain = planMock(nature, '', [], 'new');
+  it('uses the realistic generators (the default), a stylised request keeps the stylised ones, and both apply cleanly', () => {
+    const plain = planMock(`a low-poly ${nature}`, '', [], 'new');
     const real = planMock(`a realistic ${nature}`, '', [], 'new');
     const g0 = generators(plain.patches);
     const g1 = generators(real.patches);
@@ -61,7 +61,8 @@ describe('planMock with a realistic request', () => {
     expect(g1.filter((g) => ['tree-pine', 'tree-oak', 'bush', 'rock', 'grass-tuft'].includes(g))).toEqual([]);
     // Same layout: the same number of generator shapes.
     expect(g1.length).toBeGreaterThan(10);
-    expect(real.plan).toContain('Realistic look');
+    // Built realistic from the start: nothing is left for the after-the-fact exchange to swap.
+    expect(generators(planMock(nature, '', [], 'new').patches).filter((g) => ['tree-pine', 'tree-oak', 'bush', 'rock', 'grass-tuft'].includes(g))).toEqual([]);
     const out = applyPatches(createWorld(), real.patches);
     expect(out.errors).toEqual([]);
   });

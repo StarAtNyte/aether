@@ -53,7 +53,7 @@ export function kartTrack(samples = 72): V3[] {
 }
 
 /** Yaw (degrees) that turns a gate's width (its local X) across the track at index `i`. */
-function acrossYaw(track: readonly V3[], i: number): number {
+export function acrossYaw(track: readonly V3[], i: number): number {
   const a = track[(i - 1 + track.length) % track.length] as V3;
   const c = track[(i + 1) % track.length] as V3;
   return r2((Math.atan2(-(c[0] - a[0]), -(c[2] - a[2])) * 180) / Math.PI);
@@ -88,7 +88,7 @@ function gantry(b: Builder, p: V3, heading: number, o: { width: number; height: 
 }
 
 /** A checkpoint gate across the track at `p` (invisible sensor + a painted gantry). */
-function gate(b: Builder, n: number, p: V3, heading: number, color: string, label: string): string {
+export function gate(b: Builder, n: number, p: V3, heading: number, color: string, label: string): string {
   const id = b.prim(`checkpoint-${n}`, 'box', [14, 5, 2], [p[0], 2.5, p[2]], { name: label, yaw: heading, visible: false, physics: { body: 'static', sensor: true }, tags: ['checkpoint-gate'] });
   gantry(b, p, heading, n === 0 ? { width: 16, height: 6.4, color, start: true } : { width: 14.5, height: 5, color });
   return id;
@@ -230,7 +230,7 @@ export function kartCanyon(): MockPlan {
     const z = r2(b.rand(-200, 200));
     const side = b.chance(0.5) ? -1 : 1;
     const x = r2(mx(z) + side * b.rand(26, 38));
-    if (b.chance(0.55)) b.gen('saguaro', 'saguaro-cactus', {}, [x, 0, z], { yaw: r2(b.rand(0, 360)), physics: 'static', castShadow: true });
+    if (b.chance(0.55)) b.gen('saguaro', 'cactus', { height: r2(b.rand(3.5, 7.5)), arms: b.int(0, 4) }, [x, 0, z], { yaw: r2(b.rand(0, 360)), physics: 'static', castShadow: true });
     else b.gen('boulder', 'rock', { size: r2(b.rand(2, 5)), color: '#b0603a', variant: b.int(0, 2) }, [x, 0, z], { yaw: r2(b.rand(0, 360)), physics: 'static' });
   }
   // Scrub and dry grass in strips that follow the canyon's meander (a fixed strip crossed the road wherever the canyon bends).

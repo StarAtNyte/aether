@@ -3,8 +3,25 @@
  * winter, desert canyon, volcano, park, farm and a default meadow.
  */
 import { r2 } from './builder';
-import { backdropMountains, campfire, clouds, lake, lamp, lantern, lightsOn, path, scatterBelt, treeRing, VIEW_BEARING, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
+import { terrainHeight } from './showcase/kit';
+import { backdropMountains, campfire, clouds, lake, lamp, lantern, lightsOn, naturalGround, path, scatterBelt, treeRing, VIEW_BEARING, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
+
+/** The request asks for running water (a river, stream or creek) rather than a lake. */
+export function wantsStream(c: ThemeCtx): boolean {
+  return /\b(?:rivers?|streams?|creeks?|brooks?|riverside|riverbank)\b/.test(c.request ?? '');
+}
+
+/** Ground cover of a realistic setting: dense clumped grass, ferns and flowers over the land round the scene. */
+function cover(c: ThemeCtx, o: { grass: string; ferns?: number; flowers?: readonly string[]; dry?: boolean; inner?: number; outer?: number }): void {
+  const { b } = c;
+  if (!b.realisticNature) return;
+  const inner = o.inner ?? 3;
+  const outer = o.outer ?? 40;
+  scatterBelt(c, 'meadow', 'meadow-grass', { color: o.grass, size: o.dry ? 0.45 : 0.55 }, 520, inner, outer, { scaleRange: [0.6, 1.4], minSpacing: 0.3 });
+  if ((o.ferns ?? 0) > 0) scatterBelt(c, 'ferns', 'fern', { size: 0.9 }, o.ferns ?? 0, inner + 4, outer, { scaleRange: [0.7, 1.4], minSpacing: 0.9 });
+  for (const color of o.flowers ?? []) scatterBelt(c, 'wildflowers', 'wildflowers', { color, size: 0.5 }, 60, inner + 2, outer, { minSpacing: 0.5 });
+}
 
 function rocks(c: ThemeCtx, count: number, inner: number, outer: number, color: string, mossy: boolean, size: [number, number] = [0.8, 2.2]): void {
   for (let i = 0; i < count; i++) {
@@ -23,11 +40,14 @@ const forest: Theme = {
   radius: 40,
   blurb: 'a pine-and-oak forest clearing with a crackling campfire and tents',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 17.5, fog: { color: '#b9c6a6', density: 0.012 }, bloom: 0.6, ground: { material: { preset: 'grass', color: '#4f7a35' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 17.5, fog: b.realisticNature ? { color: '#b9c6a6', density: 0.006, visibility: 320 } : { color: '#b9c6a6', density: 0.012 }, bloom: 0.6, ground: { material: { preset: 'grass', color: '#4f7a35' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 12] });
   },
   build(c) {
     const { b } = c;
+    // A real forest floor: a landscape with a clearing for the camp (and a stream across it when the request names one).
+    const stream = wantsStream(c);
+    naturalGround(c, { pad: Math.max(16, c.clear + 6), relief: 42, ...(stream ? { stream: { z: r2(c.z - 17), half: 2.4, bend: 4, depth: 1.5 } } : {}), woods: { conifers: 190, broadleaf: 50, birch: 24, scrub: 220, boulders: 46 }, conifer: { color: '#2c4a2e', height: 15 } });
     if (c.clear < 4) {
       const fire = campfire(b, c.x, c.z);
       for (let i = 0; i < 3; i++) {
@@ -51,7 +71,7 @@ const forest: Theme = {
       b.prim(`${pile}-log`, 'cylinder', [0.3, 1.5, 0.3], [0.28, 0, 0.165], { parent: pile, material: { preset: 'bark', color: '#5e402a' } });
       b.meta('Forest Camp', `Campfire clearing (${fire}) in a pine forest`);
     }
-    if (b.mood.water && c.primary) {
+    if (b.mood.water && c.primary && !b.stream) {
       // Lakeside: the lake opens up behind the camp, toward the mountains.
       lake(b, r2(c.x - 3), r2(c.z - 17), 8);
     }
@@ -61,9 +81,12 @@ const forest: Theme = {
       { generator: 'tree-oak', params: { height: 6, color: '#4f8a3b' } },
     ]);
     rocks(c, 6, 6, 24, '#8a8a85', true);
-    scatterBelt(c, 'bushes', 'bush', { size: 1.1, berries: true }, 6, 7, 26, { minSpacing: 1.5 });
-    scatterBelt(c, 'mushrooms', 'mushroom', { height: 0.5 }, 5, 6, 22);
-    scatterBelt(c, 'grass', 'grass-tuft', { color: '#6a9a45' }, 60, 3, 34, { scaleRange: [0.7, 1.4] });
+    scatterBelt(c, 'bushes', 'bush', { size: 1.1, berries: true }, b.realisticNature ? 14 : 6, 7, 26, { minSpacing: 1.5 });
+    if (b.realisticNature) cover(c, { grass: '#6f9a45', ferns: 70, flowers: ['#e9e1b0'], outer: 36 });
+    else {
+      scatterBelt(c, 'mushrooms', 'mushroom', { height: 0.5 }, 5, 6, 22);
+      scatterBelt(c, 'grass', 'grass-tuft', { color: '#6a9a45' }, 60, 3, 34, { scaleRange: [0.7, 1.4] });
+    }
     if (c.primary) {
       scatterBelt(c, 'pine-forest', 'tree-pine', { height: 9, snow: b.mood.snow }, 30, 32, 70, { scaleRange: [0.8, 1.5], minSpacing: 3 });
       backdropMountains(c, 5, '#6f6a62', b.mood.snow ? 0.4 : 0.75);
@@ -184,20 +207,37 @@ const desert: Theme = {
   radius: 40,
   blurb: 'a sun-baked canyon with red mesas, saguaro cacti, ancient ruins and dust in the air',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 16.5, sunIntensity: 3.2, weather: 'dust', fog: { color: '#e3b98a', density: 0.012 }, bloom: 0.5, ground: { material: { preset: 'sand', color: '#d9a066' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 16.5, sunIntensity: 3.2, weather: 'dust', fog: b.realisticNature ? { color: '#e8c39a', density: 0.003, visibility: 900 } : { color: '#e3b98a', density: 0.012 }, bloom: 0.5, ground: { material: { preset: 'sand', color: '#d9a066' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {
     const { b } = c;
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 4; i++) {
-        b.gen('mesa', 'mountain', { size: r2(b.rand(30, 42)), height: r2(b.rand(14, 22)), color: '#b5562f', snowLine: 1 }, [r2(c.x + side * b.rand(38, 46)), 0, r2(c.z - 50 + i * 28)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['canyon'] });
+    // A real canyon: the terrain's sandstone canyon (flat floor along Z, stratified walls) instead of cones on a sand plane;
+    // a race circuit laid out before the settings runs along its floor.
+    const realCanyon = c.primary && b.realisticNature && !b.ground;
+    if (realCanyon) {
+      const size = b.track ? b.track.canyonSize : 420;
+      const params = { size, height: b.track ? 58 : 46, resolution: 256, roughness: 0.55, color: '#9a8a4f', variant: 3 };
+      const seed = (b.seed ^ 0xca7) % 100_000;
+      b.env({ ground: null });
+      const id = b.add({ id: b.id('canyon'), name: 'Canyon', shape: { kind: 'procedural', generator: 'terrain', params, seed }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.9 }, tags: ['terrain', 'canyon'] });
+      b.ground = { h: terrainHeight(params, seed, size), surface: id };
+    } else {
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 4; i++) {
+          b.gen('mesa', 'mountain', { size: r2(b.rand(30, 42)), height: r2(b.rand(14, 22)), color: '#b5562f', snowLine: 1 }, [r2(c.x + side * b.rand(38, 46)), 0, r2(c.z - 50 + i * 28)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['canyon'] });
+        }
       }
     }
     let cacti = 0;
-    for (let i = 0; i < 30 && cacti < 9; i++) {
-      const p = b.spot(c.x, c.z, Math.max(5, c.clear + 1), 24, 1.2);
+    for (let i = 0; i < 30 && cacti < (b.realisticNature ? 16 : 9); i++) {
+      const p = b.spot(c.x, c.z, Math.max(5, c.clear + 1), b.realisticNature ? 40 : 24, 1.2);
       if (!p) continue;
+      if (b.realisticNature) {
+        b.gen('saguaro', 'cactus', { height: r2(b.rand(3.5, 7.5)), arms: b.int(0, 4) }, [p[0], 0, p[1]], { yaw: r2(b.rand(0, 360)), scale: r2(b.rand(0.7, 1.15)), physics: 'static', tags: ['cactus', 'hazard'] });
+        cacti++;
+        continue;
+      }
       const h = r2(b.rand(2.2, 3.6));
       const cactus = b.prim('cactus', 'capsule', [0.5, h, 0.5], [p[0], r2(h / 2), p[1]], { material: { preset: 'leaf', color: '#4a7c3a' }, physics: 'static', tags: ['cactus', 'hazard'] });
       const arm = r2(h * 0.15);
@@ -205,13 +245,31 @@ const desert: Theme = {
       if (b.chance(0.6)) b.prim(`${cactus}-arm`, 'capsule', [0.3, 0.9, 0.3], [-0.42, r2(arm - 0.3), 0], { parent: cactus, material: { preset: 'leaf', color: '#4a7c3a' } });
       cacti++;
     }
-    if (c.clear < 8) {
+    if (c.clear < 8 && !b.track) {
       b.gen('ruin-arch', 'arch', { width: 4, height: 5, color: '#c9a27a', accentColor: '#8a5a3c' }, [c.x, 0, r2(c.z - 6)], { physics: 'static', footprint: 3, name: 'Ancient arch', tags: ['focus'] });
       b.gen('ruin-wall', 'wall', { length: 6, height: 2, color: '#c9a27a', crenellated: false }, [r2(c.x - 6), 0, r2(c.z - 8)], { yaw: 25, physics: 'static', footprint: 3 });
       b.gen('ruin-statue', 'statue', { height: 3, color: '#d1b48c' }, [r2(c.x + 6), 0, r2(c.z - 7)], { yaw: -20, physics: 'static', footprint: 1.5 });
     }
-    rocks(c, 8, 6, 30, '#a0522d', false, [0.8, 2.6]);
-    scatterBelt(c, 'dry-grass', 'grass-tuft', { color: '#b59a5b', size: 0.4 }, 30, 4, 34);
+    rocks(c, b.realisticNature ? 18 : 8, 6, b.realisticNature ? 44 : 30, '#a0522d', false, [0.8, 2.6]);
+    const track = b.track;
+    if (b.realisticNature && track) {
+      // Along the canyon floor beside the circuit and up the foot of the walls: scrub, dry grass, boulders and cacti in strips
+      // that follow the canyon's meander.
+      const CHUNK = 24;
+      for (let zc = -200; zc <= 200; zc += CHUNK) {
+        for (const side of [-1, 1]) {
+          const cx = r2(track.axis(zc) + side * 31);
+          b.scatter('desert-scrub', 'shrub', { size: 0.9, detail: 0.5, color: '#8a8a5c' }, 14, [14, CHUNK], [cx, 0, zc], { minSpacing: 2.4, scaleRange: [0.45, 1.1] });
+          b.scatter('dry-grass', 'meadow-grass', { color: '#b8a066', size: 0.42 }, 120, [16, CHUNK], [cx, 0, zc], { minSpacing: 0.7, scaleRange: [0.6, 1.3] });
+          b.scatter('scree', 'boulder', { size: 1.4, lichen: 0, color: '#b0603a', variant: 1 }, 7, [12, CHUNK], [r2(cx + side * 5), 0, zc], { minSpacing: 3, scaleRange: [0.4, 1.8] });
+          if (Math.abs(zc) > 90 || b.chance(0.5)) b.gen('saguaro', 'cactus', { height: r2(b.rand(3.5, 7.5)), arms: b.int(0, 4) }, [r2(cx + b.rand(-4, 4)), 0, r2(zc + b.rand(-9, 9))], { yaw: r2(b.rand(0, 360)), scale: r2(b.rand(0.7, 1.15)), physics: 'static', tags: ['cactus'] });
+        }
+      }
+    } else if (b.realisticNature) {
+      scatterBelt(c, 'dry-grass', 'meadow-grass', { color: '#b8a066', size: 0.42 }, 260, 4, 46, { scaleRange: [0.6, 1.3], minSpacing: 0.6 });
+      scatterBelt(c, 'desert-scrub', 'shrub', { size: 0.9, detail: 0.5, color: '#8a8a5c' }, 26, 6, 48, { scaleRange: [0.5, 1.2], minSpacing: 2.2 });
+      scatterBelt(c, 'pebbles', 'boulder', { size: 0.5, lichen: 0, color: '#b0754a', variant: 1 }, 40, 3, 40, { scaleRange: [0.3, 1], minSpacing: 1.2 });
+    } else scatterBelt(c, 'dry-grass', 'grass-tuft', { color: '#b59a5b', size: 0.4 }, 30, 4, 34);
     if (c.primary) {
       b.gen('tumbleweed', 'bush', { size: 0.8, color: '#9c7a4f' }, [r2(c.x - 8), 0, r2(c.z + 6)], { behaviors: [{ type: 'wander', params: { radius: 10, speed: 2, pause: 0 } }], name: 'Tumbleweed' });
     }
@@ -384,23 +442,40 @@ const meadow: Theme = {
   radius: 36,
   blurb: 'a peaceful mountain meadow with wildflowers, oaks and pines under distant snowy peaks',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 10.5, fog: { color: '#cfdde8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#66924a' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 10.5, fog: b.realisticNature ? { color: '#cfdde8', density: 0.0025, visibility: 700 } : { color: '#cfdde8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#66924a' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {
     const { b } = c;
+    const real = b.realisticNature;
+    const stream = wantsStream(c);
+    // A real valley floor: rolling land, a stream when the request names one, woods on the hills.
+    naturalGround(c, { pad: Math.max(16, c.clear + 6), relief: 56, ...(stream ? { stream: { z: r2(c.z - 15), half: 2.6, bend: 5, depth: 1.4 } } : {}), woods: { conifers: 120, broadleaf: 110, birch: 30, scrub: 200, boulders: 40 } });
     const lx = r2(c.x - 14);
     const lz = r2(c.z - 10);
-    if (b.claim(lx, lz, 8)) {
+    if (!b.stream && b.claim(lx, lz, 8)) {
       b.prim('lake', 'cylinder', [16, 0.08, 16], [lx, 0.04, lz], { name: 'Lake', material: { preset: 'water', waterKind: 'lake', color: '#3a87b8', opacity: 0.85, roughness: 0.05 }, castShadow: false });
       b.gen('boat', 'boat', { length: 3.5, variant: 0 }, [lx, 0.05, lz], { behaviors: [{ type: 'bob', params: { amplitude: 0.08, period: 3 } }], name: 'Rowboat' });
+      if (real) {
+        b.keepClear(lx, lz, 8.5);
+        // Reeds at the water's edge.
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + b.rand(-0.2, 0.2);
+          b.scatter('reeds', 'meadow-grass', { color: '#6f8a3a', size: 1.2 }, 14, [2.6, 2.6], [r2(lx + Math.cos(a) * 8.6), 0, r2(lz + Math.sin(a) * 8.6)], { minSpacing: 0.3, scaleRange: [0.9, 1.6] });
+        }
+      }
     }
-    if (b.claim(c.x + 10, c.z - 6, 5)) b.gen('bridge', 'bridge', { length: 10, width: 3, height: 1.5, color: '#8a8580' }, [r2(c.x + 10), 0, r2(c.z - 6)], { yaw: 30, physics: 'static', name: 'Stone bridge' });
+    const bridgeAt = b.stream ? ([r2(c.x + 10), r2(b.stream.z(c.x + 10))] as const) : null;
+    if (bridgeAt && b.stream && c.primary && b.claim(bridgeAt[0], r2(bridgeAt[1] + b.stream.half + 2.8), 1)) b.gen('bridge', 'bridge', { length: r2(b.stream ? b.stream.half * 2 + 7 : 10), width: 3, height: 1.2, color: '#8a8580' }, [bridgeAt[0], 0, bridgeAt[1]], { yaw: 90, physics: 'static', name: 'Stone bridge' });
+    else if (!real && b.claim(c.x + 10, c.z - 6, 5)) b.gen('bridge', 'bridge', { length: 10, width: 3, height: 1.5, color: '#8a8580' }, [r2(c.x + 10), 0, r2(c.z - 6)], { yaw: 30, physics: 'static', name: 'Stone bridge' });
     treeRing(c, 16, 8, 30, [{ generator: 'tree-oak', params: { height: 6 } }, { generator: 'tree-pine', params: { height: 8 } }]);
     rocks(c, 6, 6, 26, '#8d8a84', true);
-    scatterBelt(c, 'wildflowers', 'flowers', { color: '#e84a8a' }, 25, 4, 30, { minSpacing: 0.4 });
-    scatterBelt(c, 'wildflowers-yellow', 'flowers', { color: '#ffd23f' }, 25, 6, 32, { minSpacing: 0.4 });
-    scatterBelt(c, 'grass', 'grass-tuft', {}, 60, 3, 34);
+    if (real) cover(c, { grass: '#7aa04a', flowers: ['#e84a8a', '#ffd23f', '#f1efe6'], outer: 40 });
+    else {
+      scatterBelt(c, 'wildflowers', 'flowers', { color: '#e84a8a' }, 25, 4, 30, { minSpacing: 0.4 });
+      scatterBelt(c, 'wildflowers-yellow', 'flowers', { color: '#ffd23f' }, 25, 6, 32, { minSpacing: 0.4 });
+      scatterBelt(c, 'grass', 'grass-tuft', {}, 60, 3, 34);
+    }
     if (c.primary) {
       backdropMountains(c, 6, '#76726a', 0.65, 105, 35);
       clouds(c, 5);
