@@ -73,7 +73,7 @@ function addWindow(api: InternalApi, f: FacePlace, w: number, h: number, st: Win
   if (st.bars >= 2) frame.merge(api.box(w - 2 * ft, bt, 0.05).translate(0, st.bars >= 3 ? h * 0.12 : 0, fz + 0.005));
   if (st.bars >= 3) frame.merge(api.box(w - 2 * ft, bt, 0.05).translate(0, -h * 0.2, fz + 0.005));
   addFinish(api, onFace(f, frame), st.frame, st.frameColor, { variation: 0.03 });
-  api.add(onFace(f, api.box(w - 0.04, h - 0.04, 0.02).translate(0, 0, 0.012)), glass);
+  api.add(onFace(f, glassPane(api, w - 0.04, h - 0.04, glass)), glass === WINDOW_GLASS ? GLASS_TINTED : glass);
   // A lit window shows a room, not a lit card: curtains drawn part-way at the sides and a pelmet along the head.
   if (curtain !== undefined) {
     const cw = w * 0.2;
@@ -89,6 +89,21 @@ function addWindow(api: InternalApi, f: FacePlace, w: number, h: number, st: Win
     }
     addFinish(api, onFace(f, sh), 'paint', st.shutters, { variation: 0.05 });
   }
+}
+
+/** Glass that reads its tint from the vertices (sky reflected at the top, the dark room below). */
+const GLASS_TINTED: MaterialSpec = { ...WINDOW_GLASS, color: '#ffffff', vertexColors: true };
+
+/**
+ * A pane facing +Z. Unlit panes carry a vertical gradient (pale sky reflected at the head, darker room below), which is
+ * what reads as glass in a still where an environment reflection is too faint; lit panes stay one warm colour.
+ */
+function glassPane(api: InternalApi, w: number, h: number, glass: MaterialSpec): Mesh {
+  const pane = api.box(w, h, 0.02).translate(0, 0, 0.012);
+  if (glass !== WINDOW_GLASS) return pane;
+  const hi = lin('#8fa2ae');
+  const lo = lin('#2a333a');
+  return pane.paintFn((_x, y, _z, _nx, _ny, _nz, out) => mixLinear(lo, hi, Math.min(1, Math.max(0, 0.5 + (y / h) * 0.9)), out));
 }
 
 /** Deterministic 0..1 hash of a window's position (no use of the generator's random stream, so nothing else shifts). */
@@ -230,9 +245,13 @@ const house = defineGenerator({
     const leaf = api.box(1.05, 2.1, 0.06).translate(doorX, base + 1.05, dz + 0.04);
     for (const [px, py] of [[-0.24, 0.5], [0.24, 0.5], [-0.24, -0.45], [0.24, -0.45]] as const) leaf.merge(api.box(0.38, modern ? 0.02 : 0.72, 0.03).translate(doorX + px, base + 1.05 + py, dz + 0.08));
     addFinish(api, leaf, modern ? 'oak' : 'paint', modern ? '#8a6a4c' : timber ? trim : '#46604f', { variation: 0.04 });
-    addFinish(api, api.sphere(0.035, 1).translate(doorX + 0.4, base + 1.0, dz + 0.12), 'brass', '#ffffff', { variation: 0 });
+    if (modern) {
+      // A long pull bar and a frosted sidelight beside the door.
+      addFinish(api, api.box(0.03, 1.1, 0.03).translate(doorX + 0.38, base + 1.1, dz + 0.12).merge(api.box(0.03, 0.03, 0.06).translate(doorX + 0.38, base + 1.55, dz + 0.09)).merge(api.box(0.03, 0.03, 0.06).translate(doorX + 0.38, base + 0.65, dz + 0.09)), 'brushed-metal', '#ffffff', { variation: 0 });
+      api.add(api.box(0.32, 2.1, 0.03).translate(doorX - 0.75, base + 1.05, dz + 0.02), { finish: 'frosted-glass' });
+    } else addFinish(api, api.sphere(0.035, 1).translate(doorX + 0.4, base + 1.0, dz + 0.12), 'brass', '#ffffff', { variation: 0 });
     addFinish(api, api.box(1.6, base, 0.7).translate(doorX, base / 2, dz + 0.45), modern ? 'concrete' : 'limestone', modern ? '#9a968f' : '#8f877a', { variation: 0.05 });
-    const lx = doorX + (modern ? -0.95 : 0.95);
+    const lx = doorX + (modern ? -1.2 : 0.95);
     const lamp = api.box(0.05, 0.05, 0.2).translate(lx, base + 1.95, dz + 0.1);
     lamp.merge(api.box(0.18, 0.04, 0.18).translate(lx, base + 2.12, dz + 0.22)).merge(api.box(0.2, 0.06, 0.2).translate(lx, base + 1.76, dz + 0.22));
     addFinish(api, lamp, 'black-metal', '#ffffff', { variation: 0 });
@@ -291,7 +310,17 @@ const house = defineGenerator({
         boards.merge(api.box(0.05, 0.22, len).translate(ex + sx * 0.02, ey - 0.02, 0));
         // Half-round gutter along the eave and a downpipe at each end.
         gutter.merge(api.cylinder(0.07, 0.07, len - 0.1, 10).rotate(90, 0, 0).translate(ex + sx * 0.09, ey - 0.14, 0));
-        for (const sz of [-1, 1]) gutter.merge(api.cylinder(0.04, 0.04, ey - 0.14 - base, 8).translate(ex + sx * 0.07, base + (ey - 0.14 - base) / 2, sz * (len / 2 - 0.25)));
+        // The downpipe drops from the gutter outlet, swan-necks back under the eave to the wall and runs down its corner.
+        const wx = sx * (W / 2 + 0.07);
+        const outY = ey - 0.2;
+        const bendY = outY - Math.max(0.3, eave * 0.8);
+        for (const sz of [-1, 1]) {
+          const z = sz * (D / 2 - 0.18);
+          gutter.merge(api.limb([ex + sx * 0.09, outY + 0.04, z], [ex + sx * 0.09, outY - 0.08, z], 0.04, 0.04, 8));
+          gutter.merge(api.limb([ex + sx * 0.09, outY - 0.08, z], [wx, bendY, z], 0.04, 0.04, 8));
+          gutter.merge(api.limb([wx, bendY, z], [wx, base + 0.15, z], 0.04, 0.04, 8));
+          gutter.merge(api.limb([wx, base + 0.15, z], [wx + sx * 0.12, base + 0.02, z], 0.04, 0.045, 8));
+        }
       }
       addFinish(api, tiles, 'roof-tile', roofC, { uv: 'keep', variation: 0.06, freq: 0.8 });
       addFinish(api, boards, 'paint', timber ? dark : '#e9e5dc', { variation: 0.03 });
@@ -370,14 +399,21 @@ const tower = defineGenerator({
       }
     }
     // Door: a planked, studded leaf with strap hinges inside a stone surround.
-    surrounds.merge(api.box(0.26, 2.5, 0.3).translate(-0.68, 1.25, R - 0.02)).merge(api.box(0.26, 2.5, 0.3).translate(0.68, 1.25, R - 0.02));
-    surrounds.merge(api.box(1.62, 0.32, 0.32).translate(0, 2.5, R - 0.02));
+    // The doorcase stands out from the battered base: jambs, a lintel and a step reaching from inside the wall to its face.
+    const df = R * 1.17 + 0.06;
+    const dd = df - (R - 0.3);
+    const dc = (R - 0.3 + df) / 2;
+    surrounds.merge(api.box(0.28, 2.6, dd).translate(-0.7, 1.3, dc)).merge(api.box(0.28, 2.6, dd).translate(0.7, 1.3, dc));
+    surrounds.merge(api.box(1.68, 0.34, dd + 0.02).translate(0, 2.6, dc));
+    surrounds.merge(api.box(1.7, 0.16, 0.6).translate(0, 0.08, df + 0.2));
     addFinish(api, surrounds, 'limestone', dressed, { variation: 0.08, freq: 2 });
     paintSolid(slits, '#121418');
     api.add(slits, { color: '#ffffff', vertexColors: true, roughness: 0.95 });
-    addFinish(api, api.box(1.12, 2.3, 0.14).translate(0, 1.15, R - 0.06), 'oak', '#5a3d27', { variation: 0.1, freq: 3 });
-    const iron = api.box(1.0, 0.07, 0.03).translate(0, 1.7, R + 0.02).merge(api.box(1.0, 0.07, 0.03).translate(0, 0.6, R + 0.02));
-    for (const x of [-0.35, 0, 0.35]) for (const y of [0.9, 1.4]) iron.merge(api.box(0.05, 0.05, 0.03).translate(x, y, R + 0.02));
+    addFinish(api, api.box(1.12, 2.4, 0.12).translate(0, 1.2, df - 0.14), 'oak', '#5a3d27', { variation: 0.1, freq: 3 });
+    const iz = df - 0.06;
+    const iron = api.box(1.0, 0.07, 0.03).translate(0, 1.8, iz).merge(api.box(1.0, 0.07, 0.03).translate(0, 0.6, iz));
+    for (const x of [-0.35, 0, 0.35]) for (const y of [0.95, 1.45]) iron.merge(api.box(0.05, 0.05, 0.03).translate(x, y, iz));
+    iron.merge(api.torus(0.07, 0.012, 6, 12).translate(0.32, 1.2, iz + 0.02));
     addFinish(api, iron, 'black-metal', '#ffffff', { variation: 0 });
 
     const roofC = p.color('roofColor');
