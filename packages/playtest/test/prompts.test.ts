@@ -28,6 +28,38 @@ describe('the offline planner builds games the bot can win', () => {
   }, 90_000);
 });
 
+describe('the offline planner honours what a collect-and-reach prompt names', () => {
+  it('"collect 5 lanterns, avoid the wolves, reach the shrine to win" builds lanterns, wolves and a shrine goal on a winnable route', async () => {
+    const { result, res } = await mockApply('a night forest adventure: collect 5 lanterns, avoid the wolves, reach the shrine to win');
+    const w = result.world;
+    const ents = Object.values(w.entities);
+    expect(JSON.stringify(res.content)).toMatch(/Lantern Hunt/);
+    expect(ents.filter((e) => e.tags.includes('lantern') && e.behaviors.some((b) => b.type === 'collectible'))).toHaveLength(5);
+    expect(ents.some((e) => e.tags.includes('shrine'))).toBe(true);
+    expect(ents.some((e) => e.behaviors.some((b) => b.type === 'goal'))).toBe(true);
+    expect(ents.filter((e) => e.npc?.archetype === 'predator').length).toBeGreaterThan(0);
+    // No clock was asked for.
+    expect(w.state['timeLeft']).toBeUndefined();
+    // The route itself (every lantern, then the shrine) can be won; the wolf pack is the challenge on top.
+    const calm = structuredClone(w);
+    const gone = new Set(Object.keys(calm.entities).filter((id) => calm.entities[id]?.npc?.archetype === 'predator'));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [id, e] of Object.entries(calm.entities)) if (!gone.has(id) && e.parent !== null && gone.has(e.parent)) (gone.add(id), (grew = true));
+    }
+    for (const id of gone) delete calm.entities[id];
+    const r = await playtest(calm, { trace: false });
+    expect(r.status, r.summary).toBe('passed');
+    expect(r.objectives.filter((o) => o.required).every((o) => o.status === 'done')).toBe(true);
+  }, 180_000);
+
+  it('a plain coin game keeps its timer and coins', async () => {
+    const { result, res } = await mockApply('make a coin collecting game');
+    expect(JSON.stringify(res.content)).toMatch(/Coin Hunt/);
+    expect(typeof result.world.state['timeLeft']).toBe('number');
+  }, 90_000);
+});
+
 describe('breaking a planner game by prompt is caught and repaired', () => {
   it('"remove a coin" leaves the win target above the coins that exist', async () => {
     const built = (await mockApply('make a coin collecting game')).result.world;

@@ -215,16 +215,17 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   if (intent.mood.night && (weather === undefined || weather === 'clear')) b.env({ weather: 'fireflies' });
   b.test({ id: 'no-overlap', kind: 'noOverlap' });
 
-  const titles = [...activities, ...settings].map((t) => t.title);
+  const titleOf = (t: Theme): string => t.titleFor?.(intent.text) ?? t.title;
+  const titles = [...activities, ...settings].map(titleOf);
   const heroTitle = hero ? hero.keyword.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : undefined;
-  const name = activities[0] && primary ? `${activities[0].title} — ${primary.title}` : heroTitle && primary ? `${heroTitle} — ${primary.title}` : (titles[0] ?? 'New World');
+  const name = activities[0] && primary ? `${titleOf(activities[0])} — ${primary.title}` : heroTitle && primary ? `${heroTitle} — ${primary.title}` : (titles[0] ?? 'New World');
   b.meta(name, intent.text.slice(0, 200));
 
   // Objects the user locked survive a rebuild: remove the others one by one instead of clearing.
   const locked = view.entities.filter((e) => e.locked);
   const wipePatches: PatchInput[] = !wipe || view.entityCount === 0 ? [] : locked.length === 0 ? [{ op: 'clear', keepEnvironment: false }] : view.entities.filter((e) => e.depth === 0 && !e.locked).map((e): PatchInput => ({ op: 'remove', id: e.id, recursive: true }));
   const patches: PatchInput[] = [...wipePatches, ...b.build()];
-  const blurbs = [...settings, ...activities].map((t) => t.blurb);
+  const blurbs = [...settings, ...activities].map((t) => t.blurbFor?.(intent.text) ?? t.blurb);
   const moodWords = Object.entries(intent.mood).filter(([, v]) => v).map(([k]) => k);
   return {
     plan: `Plan: ${[...settings.map((t) => `${t.id} setting`), ...activities.map((t) => `${t.id} activity`)].join(' + ')}${moodWords.length ? `; mood ${moodWords.join(', ')}` : ''}; ${b.entityCount} entities.`,

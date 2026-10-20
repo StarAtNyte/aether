@@ -29,4 +29,8 @@ export interface Theme {
   build(c: ThemeCtx): void;
   /** One sentence for the finish message. */
   blurb: string;
+  /** Title for this request, when the theme adapts to it ("Lantern Hunt"); defaults to {@link Theme.title}. */
+  titleFor?(request: string): string;
+  /** Finish-message sentence for this request; defaults to {@link Theme.blurb}. */
+  blurbFor?(request: string): string;
 }

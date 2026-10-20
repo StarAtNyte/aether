@@ -457,13 +457,14 @@ async function countdownRepair(world: WorldDoc, report: PlaytestReport, run: (w:
   };
 }
 
-/** Hostile NPCs (they attack the player) of a world. */
+/** Hostile NPCs (they go after the player: named enemies, or guard / predator / sentinel archetypes) of a world. */
 function hostileNpcs(world: WorldDoc): Array<[EntityId, NonNullable<Entity['npc']>]> {
   const out: Array<[EntityId, NonNullable<Entity['npc']>]> = [];
   for (const id in world.entities) {
     const e = world.entities[id] as Entity;
-    if (e.template || !e.npc || !e.npc.enemies.includes('player')) continue;
-    out.push([id, e.npc]);
+    const n = e.npc;
+    if (e.template || !n || !(n.enemies.includes('player') || n.archetype === 'predator' || n.archetype === 'guard' || n.archetype === 'sentinel')) continue;
+    out.push([id, n]);
   }
   return out;
 }

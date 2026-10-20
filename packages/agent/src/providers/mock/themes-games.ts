@@ -99,11 +99,110 @@ const domino: Theme = {
   },
 };
 
+/** What a collect-them-all request asks for: the item, an optional goal to reach, and whether it is timed. */
+export interface HuntSpec {
+  /** Singular item noun ("coin", "lantern"). */
+  item: string;
+  /** Look of the item. */
+  look: { shape: 'cylinder' | 'sphere' | 'box'; color: string; size: number };
+  /** "reach the shrine to win": the goal noun, or null when collecting everything wins. */
+  goal: string | null;
+  /** A countdown applies (the default without a goal, or when the request mentions time). */
+  timed: boolean;
+}
+
+const HUNT_ITEMS: Readonly<Record<string, HuntSpec['look']>> = {
+  coin: { shape: 'cylinder', color: '#ffb703', size: 1 },
+  lantern: { shape: 'box', color: '#ffb35c', size: 0.7 },
+  gem: { shape: 'sphere', color: '#4cc9f0', size: 0.7 },
+  crystal: { shape: 'sphere', color: '#9b5de5', size: 0.7 },
+  star: { shape: 'sphere', color: '#ffe066', size: 0.7 },
+  orb: { shape: 'sphere', color: '#7bdff2', size: 0.7 },
+  key: { shape: 'box', color: '#e9c46a', size: 0.5 },
+  shell: { shape: 'sphere', color: '#f8c8b8', size: 0.55 },
+  mushroom: { shape: 'sphere', color: '#e63946', size: 0.55 },
+  flower: { shape: 'sphere', color: '#ff70a6', size: 0.55 },
+  apple: { shape: 'sphere', color: '#d62828', size: 0.5 },
+  egg: { shape: 'sphere', color: '#f1e3c8', size: 0.55 },
+  feather: { shape: 'box', color: '#f1faee', size: 0.5 },
+  rune: { shape: 'box', color: '#80ffdb', size: 0.6 },
+  relic: { shape: 'box', color: '#d4a373', size: 0.6 },
+  firefly: { shape: 'sphere', color: '#d8f171', size: 0.4 },
+  candle: { shape: 'box', color: '#ffd166', size: 0.5 },
+  pumpkin: { shape: 'sphere', color: '#f77f00', size: 0.8 },
+  battery: { shape: 'box', color: '#06d6a0', size: 0.5 },
+};
+const ITEM_ALIASES: Readonly<Record<string, string>> = { gems: 'gem', jewel: 'gem', jewels: 'gem', diamonds: 'gem', diamond: 'gem', crystals: 'crystal', stars: 'star', orbs: 'orb', keys: 'key', shells: 'shell', seashells: 'shell', mushrooms: 'mushroom', flowers: 'flower', apples: 'apple', eggs: 'egg', feathers: 'feather', runes: 'rune', relics: 'relic', artifacts: 'relic', fireflies: 'firefly', candles: 'candle', pumpkins: 'pumpkin', batteries: 'battery', lanterns: 'lantern', lamps: 'lantern', coins: 'coin' };
+const GOAL_NOUNS = /\b(?:reach|get to|make it to|find|return to|escape (?:to|through)|enter|go to|run to)\s+(?:the\s+|a\s+)?((?:[a-z]+\s+)?(?:shrine|temple|portal|exit|gate|door|castle|tower|flag|cabin|hut|lighthouse|summit|peak|altar|beacon|boat|ship|cave|house|campfire|camp|well|statue|obelisk|throne|chest|finish(?: line)?|goal|home|village))\b/;
+const TIME_WORDS = /\b(?:time|timer|timed|clock|countdown|seconds?|minutes?|hurry|race against|before (?:the )?(?:time|clock|sun|night|dawn))\b/;
+
+/** Read a collect-them-all request ("collect 5 lanterns ... reach the shrine to win"). */
+export function huntSpec(request: string): HuntSpec {
+  const text = request.toLowerCase();
+  let item = 'coin';
+  const m = /\b(?:collect(?:ing)?|gather(?:ing)?|find(?:ing)?|grab(?:bing)?|pick up|light(?:ing)?)\s+(?:all\s+(?:of\s+)?)?(?:the\s+)?(?:\d+\s+|a few\s+|some\s+|every\s+|five\s+|ten\s+|three\s+|four\s+|six\s+|seven\s+|eight\s+|nine\s+|twelve\s+)?(?:[a-z]+\s+)?([a-z]+)\b/.exec(text);
+  for (const w of m ? [m[1] as string] : []) {
+    const k = ITEM_ALIASES[w] ?? w;
+    if (HUNT_ITEMS[k]) item = k;
+  }
+  if (item === 'coin') {
+    for (const w of text.split(/[^a-z]+/)) {
+      const k = ITEM_ALIASES[w];
+      if (k && k !== 'coin') {
+        item = k;
+        break;
+      }
+    }
+  }
+  const g = GOAL_NOUNS.exec(text);
+  const goal = g ? (g[1] as string).trim() : null;
+  return { item, look: HUNT_ITEMS[item] as HuntSpec['look'], goal, timed: goal === null || TIME_WORDS.test(text) };
+}
+
+const plural = (n: string): string => (n === 'firefly' ? 'fireflies' : n === 'battery' ? 'batteries' : /(?:ch|sh|x|s)$/.test(n) ? `${n}es` : `${n}s`);
+const cap = (t: string): string => t.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+/** The goal structure: a gate (torii for shrines and temples, a portal otherwise) with a goal zone that opens when everything is collected. */
+function huntGoal(b: Builder, goal: string, at: [number, number], need: number, items: string): string {
+  const [x, z] = at;
+  const yaw = r2((Math.atan2(-x, -z) * 180) / Math.PI);
+  const shrine = /shrine|temple|altar|gate/.test(goal);
+  b.prim('goal-plinth', 'cylinder', [6, 0.3, 6], [x, 0.15, z], { name: `${cap(goal)} platform`, material: { preset: 'stone', color: '#8d8a84' }, physics: 'static', tags: ['landmark'] });
+  if (shrine) b.gen('goal-gate', 'torii-gate', { height: 4.4, color: '#d9452b' }, [x, 0.3, z], { yaw, physics: 'static', name: cap(goal), tags: ['landmark', 'shrine'] });
+  else b.gen('goal-gate', 'portal', {}, [x, 0.3, z], { yaw, physics: 'static', name: cap(goal), tags: ['landmark'] });
+  const zone = b.prim('goal-zone', 'box', [3, 3, 3], [x, 1.8, z], {
+    name: `${cap(goal)} goal`,
+    visible: false,
+    physics: { body: 'static', sensor: true },
+    behaviors: [{ type: 'goal', enabled: false, params: { text: `You reached the ${goal} with every ${items.replace(/s$/, '')}. You win!`, margin: 0.8 } }],
+    tags: ['goal'],
+  });
+  const glow = b.light(zone, [0, 1.6, 0], '#ffd27a', 0.6, 18);
+  b.rule({
+    id: 'goal-opens',
+    description: `All ${need} ${items} collected: the ${goal} becomes the goal`,
+    when: { on: 'state', key: 'score', op: '>=', value: need },
+    then: [{ do: 'enableBehavior', target: zone, behavior: 'goal', enabled: true }, { do: 'setProperty', target: glow, path: 'light.intensity', value: 4 }, { do: 'message', text: `All ${items} found! Now reach the ${goal}.`, duration: 4 }, { do: 'sound', sound: 'bell' }],
+    once: true,
+  });
+  b.rule({ id: 'goal-early', when: { on: 'enter', zone, who: 'player' }, if: [{ key: 'score', op: '<', value: need }], then: [{ do: 'message', text: `Collect all ${need} ${items} first!`, duration: 3 }] });
+  return zone;
+}
+
 const coins: Theme = {
   id: 'coins',
   kind: 'activity',
   wantsSetting: true,
   title: 'Coin Hunt',
+  titleFor(request) {
+    const h = huntSpec(request);
+    return h.item === 'coin' && !h.goal ? 'Coin Hunt' : `${cap(h.item)} Hunt`;
+  },
+  blurbFor(request) {
+    const h = huntSpec(request);
+    if (h.item === 'coin' && !h.goal) return this.blurb;
+    return `collect every glowing ${h.item}${h.goal ? `, then reach the ${h.goal} to win` : ''}${h.timed ? ' before the clock runs out' : ''} (${h.timed ? 'count and timer' : 'count'} on the HUD)`;
+  },
   match: /\b(coins?|collect(?:ing|ables?)?|treasure hunt|gems?|pick ?ups?|scavenger)\b/,
   radius: 0,
   blurb: 'a timed coin hunt: grab every spinning coin before the clock runs out (score and timer on the HUD)',
@@ -115,32 +214,55 @@ const coins: Theme = {
   },
   build(c) {
     const { b } = c;
-    const n = Math.max(3, Math.min(40, c.count ?? 8));
+    const hunt = huntSpec(c.request ?? '');
+    const isCoin = hunt.item === 'coin';
+    const items = plural(hunt.item);
+    const n = Math.max(3, Math.min(40, c.count ?? (hunt.goal ? 5 : 8)));
     let placed = 0;
     for (let i = 0; i < n * 6 && placed < n; i++) {
       const p = b.spot(c.x, c.z, 4, 10 + n * 1.5, 0.8);
       if (!p) continue;
-      b.prim('coin', 'cylinder', [1, 0.14, 1], [p[0], 1.1, p[1]], {
-        name: 'Coin',
-        rot: [90, 0, 0],
-        material: { preset: 'gold', emissive: '#ffb703', emissiveIntensity: 1.1 },
-        behaviors: [{ type: 'spin', params: { axis: [0, 0, 1], speed: 150 } }, { type: 'bob', params: { amplitude: 0.2, period: 1.6, phase: r2(b.rand(0, 1)) } }, { type: 'collectible', params: { scoreKey: 'score', value: 1 } }],
-        tags: ['coin', 'focus'],
-      });
+      if (isCoin) {
+        b.prim('coin', 'cylinder', [1, 0.14, 1], [p[0], 1.1, p[1]], {
+          name: 'Coin',
+          rot: [90, 0, 0],
+          material: { preset: 'gold', emissive: '#ffb703', emissiveIntensity: 1.1 },
+          behaviors: [{ type: 'spin', params: { axis: [0, 0, 1], speed: 150 } }, { type: 'bob', params: { amplitude: 0.2, period: 1.6, phase: r2(b.rand(0, 1)) } }, { type: 'collectible', params: { scoreKey: 'score', value: 1 } }],
+          tags: ['coin', 'focus'],
+        });
+      } else {
+        const s = hunt.look.size;
+        b.prim(hunt.item, hunt.look.shape, [s, s, s], [p[0], 1.2, p[1]], {
+          name: cap(hunt.item),
+          material: { preset: 'emissive', color: hunt.look.color, emissive: hunt.look.color, emissiveIntensity: 1.6 },
+          behaviors: [{ type: 'spin', params: { axis: [0, 1, 0], speed: 90 } }, { type: 'bob', params: { amplitude: 0.2, period: 1.8, phase: r2(b.rand(0, 1)) } }, { type: 'collectible', params: { scoreKey: 'score', value: 1, margin: 1.1, message: `${cap(hunt.item)} found!` } }],
+          tags: [hunt.item, 'coin', 'focus'],
+          castShadow: false,
+        });
+      }
       placed++;
     }
-    const time = c.seconds ?? Math.max(30, placed * 8);
     b.state('score', 0);
-    b.state('timeLeft', time);
-    b.hud('score', `Coins / ${placed}`);
-    b.hud('timeLeft', 'Time left');
-    b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: `Collect all ${placed} coins in ${time} seconds!`, duration: 4 }] });
-    b.rule({ id: 'countdown', when: { on: 'tick', every: 1 }, if: [{ key: 'timeLeft', op: '>', value: 0 }], then: [{ do: 'add', key: 'timeLeft', amount: -1 }] });
-    b.rule({ id: 'all-coins', when: { on: 'state', key: 'score', op: '>=', value: placed }, then: [{ do: 'sound', sound: 'win' }, { do: 'win', text: 'All coins collected!' }], once: true });
-    b.rule({ id: 'times-up', when: { on: 'state', key: 'timeLeft', op: '<=', value: 0 }, if: [{ key: 'score', op: '<', value: placed }], then: [{ do: 'sound', sound: 'lose' }, { do: 'lose', text: "Time's up!" }], once: true });
-    b.test({ id: 'timer-runs', kind: 'eventually', condition: { key: 'timeLeft', op: '<=', value: time - 2 }, within: 5 });
+    b.hud('score', `${cap(items)} / ${placed}`);
+    const time = c.seconds ?? Math.max(30, placed * (hunt.goal ? 14 : 8));
+    if (hunt.timed) {
+      b.state('timeLeft', time);
+      b.hud('timeLeft', 'Time left');
+      b.rule({ id: 'countdown', when: { on: 'tick', every: 1 }, if: [{ key: 'timeLeft', op: '>', value: 0 }], then: [{ do: 'add', key: 'timeLeft', amount: -1 }] });
+      b.rule({ id: 'times-up', when: { on: 'state', key: 'timeLeft', op: '<=', value: 0 }, if: [{ key: 'score', op: '<', value: placed }], then: [{ do: 'sound', sound: 'lose' }, { do: 'lose', text: "Time's up!" }], once: true });
+      b.test({ id: 'timer-runs', kind: 'eventually', condition: { key: 'timeLeft', op: '<=', value: time - 2 }, within: 5 });
+    }
+    if (hunt.goal) {
+      // The goal stands well away from the start, beyond the pickups.
+      const far = b.spot(c.x, c.z - 10, 16 + n * 1.5, 26 + n * 2, 3.5) ?? [r2(c.x), r2(c.z - (24 + n * 2))];
+      huntGoal(b, hunt.goal, far, placed, items);
+      b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: `Collect all ${placed} ${items}, then reach the ${hunt.goal}${hunt.timed ? ` within ${time} seconds` : ''}!`, duration: 4 }] });
+    } else {
+      b.rule({ id: 'intro', when: { on: 'start' }, then: [{ do: 'message', text: `Collect all ${placed} ${items}${hunt.timed ? ` in ${time} seconds` : ''}!`, duration: 4 }] });
+      b.rule({ id: 'all-coins', when: { on: 'state', key: 'score', op: '>=', value: placed }, then: [{ do: 'sound', sound: 'win' }, { do: 'win', text: `All ${items} collected!` }], once: true });
+    }
     b.test({ id: 'coins-float', kind: 'staysAbove', target: '#coin', y: 0.4, within: 5 });
-    b.meta('Coin Hunt', `Collect ${placed} coins before time runs out`);
+    b.meta(isCoin && !hunt.goal ? 'Coin Hunt' : `${cap(hunt.item)} Hunt`, `Collect ${placed} ${items}${hunt.goal ? ` and reach the ${hunt.goal}` : ''}${hunt.timed ? ' before time runs out' : ''}`);
   },
 };
 
