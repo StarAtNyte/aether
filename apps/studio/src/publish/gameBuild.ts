@@ -21,6 +21,7 @@
  */
 import { z } from 'zod';
 import type { WorldDoc } from '@aether/core';
+import { AUTO_HDRI } from '@aether/render';
 import { catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, worldAssetIds } from '@aether/assets';
 import { safeEntryName, writeZip, type ZipEntry } from '@aether/assets/zip';
 import { exportFileName, exportWorld } from '../lib/worldIO';
@@ -321,6 +322,10 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     want(e.file);
     for (const l of e.lods) want(l.file);
   }
+  // The photographed sky the high and ultra tiers light the scene with when the world names none.
+  const autoSky = world.environment.hdri ? undefined : AUTO_HDRI[world.environment.sky];
+  const skyEntry = autoSky ? catalogEntry(autoSky) : undefined;
+  if (skyEntry) want(skyEntry.file);
   // Photographed surface finishes (architecture) the world's materials use.
   const finishes = new Set<string>();
   for (const e of Object.values(world.entities)) if (e.material?.finish) finishes.add(e.material.finish);

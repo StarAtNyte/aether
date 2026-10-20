@@ -97,6 +97,16 @@ describe('game build (zip)', () => {
     expect(log).toContain('assets/lib/m/beaver.088f13b3.glb');
   });
 
+  it('includes the automatic sky file when the world has a sky preset but names no hdri', async () => {
+    const build = (env: object) => buildGame({ world: createWorld({ name: 'Sky', environment: env as never }), title: 'Sky', description: '', author: '', controls: '', music: '', fetchFile: fakeFetch([]), images: { crop: async () => new Uint8Array([1]) }, now: 1_700_000_000_000 });
+    const names = async (env: object): Promise<string[]> => {
+      const zip = await readZip((await build(env)).zip);
+      return zip.ok ? zip.entries.map((e) => e.name) : [];
+    };
+    expect((await names({ sky: 'day' })).some((n) => /sky-partly-cloudy/.test(n))).toBe(true);
+    expect((await names({ sky: 'space' })).some((n) => /sky-/.test(n))).toBe(false);
+  });
+
   it("is accepted by the local app's build library, which trusts only its own player code", async () => {
     // Producer / consumer contract: the zip the studio builds passes the library's no-foreign-code check
     // when the library's player build is the one the studio packed (same files, same bytes).

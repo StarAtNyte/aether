@@ -46,7 +46,7 @@ export { HdriController, createHdriSource, type HdriSource } from './environment
 export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';
 export { resolveFog, fogAmount, hazeDensity, maxContentFogDensity, worldFogDensity, type FogParams } from './environment/fog';
 export { fitShadowCamera, type ShadowFit, type ShadowFitOptions } from './environment/shadow-fit';
-export { EnvironmentRig, groundTint, MAX_FOG_DENSITY } from './environment/environment-rig';
+export { EnvironmentRig, AUTO_HDRI, groundTint, MAX_FOG_DENSITY } from './environment/environment-rig';
 export { SkyDome, SKY_RADIUS } from './environment/sky-dome';
 export { WeatherSystem, WEATHER_CONFIGS, type WeatherConfig, type WeatherKind } from './environment/weather';
 
