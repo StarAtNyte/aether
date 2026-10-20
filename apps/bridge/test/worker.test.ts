@@ -136,7 +136,8 @@ describe('agentic loop (fake Codex SDK)', () => {
       mcpServers: async () => [],
       check: async () => (++checks === 1 ? { passed: false, report: 'RESULT: FAIL\n- issue: the tower is too thin' } : { passed: true, report: 'RESULT: PASS' }),
     });
-    expect(r).toMatchObject({ ok: true, kind: 'agentic', turns: 2, passed: true, usage: { inputTokens: 240, outputTokens: 60 }, message: 'Wrote the lighthouse.' });
+    // Per-turn counters (each turn re-reads less than the thread so far): counted as they are; the input already includes the cached part.
+    expect(r).toMatchObject({ ok: true, kind: 'agentic', turns: 2, passed: true, usage: { inputTokens: 200, outputTokens: 60 }, message: 'Wrote the lighthouse.' });
     expect(threads).toBe(1);
     expect(inputs[1]).toContain('the tower is too thin');
     const messages = progress.map((p) => p[1]);

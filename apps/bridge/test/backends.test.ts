@@ -70,7 +70,9 @@ describe('Claude Code backend', () => {
     expect(call?.options.env).toEqual({ HOME: '/home/u', PATH: '/usr/bin', LANG: 'en_US.UTF-8' });
     expect(String(call?.options.cwd)).toContain('aether-bridge-');
     const msg = JSON.parse(call?.stdin ?? '') as { message: { content: Array<{ type: string }> } };
-    expect(msg.message.content.map((c) => c.type)).toEqual(['text', 'image']);
+    // Each image is labelled with the key its placeholder in the prompt uses.
+    expect(msg.message.content.map((c) => c.type)).toEqual(['text', 'text', 'image']);
+    expect((msg.message.content[1] as { text?: string }).text).toBe('Image 1:');
     expect(existsSync(String(call?.options.cwd))).toBe(false);
     expect(await readdir(root)).toEqual([]);
   });
@@ -188,7 +190,8 @@ describe('Codex backend', () => {
     const f = fakeCodex([message('{"tool_calls":[]}'), done]);
     const b = createCodexBackend({ createCodex: f.create, env: SECRET_ENV, tmpRoot: root, mcpServers: async () => ['hoplite', 'stitch'], codexPath: '/usr/bin/codex' });
     const r = await b.complete({ ...REQ, model: 'gpt-6.1-sol' });
-    expect(r).toEqual({ text: '{"tool_calls":[]}', usage: { inputTokens: 120, outputTokens: 7 }, model: 'gpt-6.1-sol' });
+    // Codex's input count already includes the cached part.
+    expect(r).toEqual({ text: '{"tool_calls":[]}', usage: { inputTokens: 100, cachedInputTokens: 20, outputTokens: 7 }, model: 'gpt-6.1-sol' });
     expect(f.seen.thread).toMatchObject({ sandboxMode: 'read-only', approvalPolicy: 'never', networkAccessEnabled: false, webSearchMode: 'disabled', skipGitRepoCheck: true, modelReasoningEffort: 'low', model: 'gpt-6.1-sol' });
     expect(String(f.seen.thread?.workingDirectory)).toContain('aether-bridge-');
     expect(f.seen.options?.env).toEqual({ HOME: '/home/u', PATH: '/usr/bin', LANG: 'en_US.UTF-8' });
@@ -200,7 +203,8 @@ describe('Codex backend', () => {
     expect(f.seen.turn?.outputSchema).toEqual({ type: 'object' });
     const input = f.seen.input as UserInput[];
     expect(input[0]).toMatchObject({ type: 'text' });
-    expect(input[1]).toMatchObject({ type: 'local_image' });
+    expect(input[1]).toEqual({ type: 'text', text: 'Image 1:' });
+    expect(input[2]).toMatchObject({ type: 'local_image' });
     expect(b.strictSchema).toBe(true);
     expect(await readdir(root)).toEqual([]);
     expect(CODEX_DISABLED_FEATURES.length).toBeGreaterThan(20);

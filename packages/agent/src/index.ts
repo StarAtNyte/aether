@@ -37,7 +37,9 @@ export { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS, LEVEL_TOOL_NAMES, isLevelToolN
 export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';
 export { summarizeWorldForModel, type ModelSummaryOptions } from './world-text';
-export { CONTEXT_LIMITS, formatUserTurn, parseUserTurn, sanitizeHistory } from './context';
+export { CONVERSATION_BUDGET_CHARS, ConversationStore, conversationChars, sharedConversations, type ConversationState } from './conversation';
+export { sceneChangesText, type SceneDiffLimits } from './scene-diff';
+export { CONTEXT_LIMITS, formatFollowUpTurn, formatUserTurn, ghostImageKey, imageKey, limitImages, parseUserTurn, requestView, sanitizeHistory } from './context';
 export { SUBMIT_GENERATOR_TOOL, requestGenerator, type CoderDeps, type CoderResult } from './coder';
 export {
   forgeGenerator,
@@ -69,7 +71,7 @@ export type { RetryPolicy } from './providers/transport';
 // Zero-cost AI connections: tool-use emulation for text-only backends, the local bridge, on-device models, fallback.
 export { createEmulatedProvider, type EmulatedProviderOptions, type TextBackend, type TextCompletionRequest, type TextCompletionResult, type TextEffort } from './emulation/provider';
 export { EMULATION_LIMITS, EmulatedReplySchema, parseEmulatedReply, replyJsonSchema, type JsonSchemaObject, type ParsedReply } from './emulation/protocol';
-export { protocolInstructions, renderTranscript, type RenderedPrompt } from './emulation/transcript';
+export { IMAGE_PLACEHOLDER_RE, protocolInstructions, renderTranscript, resumeInput, type RenderedPrompt, type ResumeInput } from './emulation/transcript';
 export { extractJsonObject } from './emulation/json';
 export * from './bridge/protocol';
 export * from './bridge/local-protocol';

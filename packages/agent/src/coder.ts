@@ -43,6 +43,7 @@ function addUsage(usage: UsageTotals, res: CompletionResponse): void {
   usage.calls += 1;
   usage.inputTokens += res.usage?.inputTokens ?? 0;
   usage.outputTokens += res.usage?.outputTokens ?? 0;
+  if (res.usage?.cachedInputTokens) usage.cachedInputTokens = (usage.cachedInputTokens ?? 0) + res.usage.cachedInputTokens;
   if (res.model) {
     const list = (usage.models ??= []);
     if (!list.includes(res.model.slice(0, 64)) && list.length < 4) list.push(res.model.slice(0, 64));

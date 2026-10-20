@@ -5,6 +5,7 @@
  * the server proxy and the studio never depend on a vendor API.
  */
 import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, WorldDoc } from '@aether/core';
+import type { ConversationStore } from './conversation';
 import type { DiffLine } from './refine/describe';
 import type { RefineMemory } from './refine/memory';
 
@@ -56,7 +57,11 @@ export interface CompletionRequest {
 export interface CompletionResponse {
   content: ContentBlock[];
   stopReason: 'end' | 'tool_use' | 'max_tokens' | 'error';
-  usage?: { inputTokens: number; outputTokens: number };
+  /**
+   * Tokens of this one call. `inputTokens` counts everything the model read (cached or not);
+   * `cachedInputTokens` is the part served from the provider's prompt cache, when it says.
+   */
+  usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
   model?: string;
 }
 
@@ -87,7 +92,7 @@ export type AgentEvent =
   /** Conversation memory for the next prompt ("it", "the same", "the other one"). */
   | { type: 'memory'; memory: RefineMemory }
   | { type: 'error'; text: string }
-  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] } };
+  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] } };
 
 /** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
 export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit';
@@ -270,6 +275,12 @@ export interface AgentOptions {
    */
   levelTools?: LevelToolRunner;
   /**
+   * Where the conversation of a run with a `session` key is kept for the next run of that project (default: one
+   * store per page or process). The next run appends to it, with what changed in the scene instead of a full
+   * summary, so a backend that keeps threads resumes the same thread.
+   */
+  conversations?: ConversationStore;
+  /**
    * Rooms from photographs. Without it a prompt with a picture goes through the normal planner. `vision` says
    * whether the active assistant can see images (a function is asked at every call: the active one can change);
    * `maxRounds` caps the compare rounds: leave it unset on subscription backends (the loop ends when the judges and
@@ -342,6 +353,8 @@ export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   calls: number;
+  /** Part of `inputTokens` read from the provider's prompt cache (absent: none reported). */
+  cachedInputTokens?: number;
   /** Models that actually answered (as reported by the provider), in order of first use. */
   models?: string[];
 }

@@ -184,6 +184,12 @@ function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: re
   return `${'  '.repeat(depth)}${parts.join(' | ')}`;
 }
 
+/** One entity as the world summary lists it ("lamp-1 | Lamp | asset:floor-lamp | pos 1 0 2 | …"); '' for an unknown id. */
+export function summarizeEntity(world: WorldDoc, id: string): string {
+  const e = hasOwn(world.entities, id) ? world.entities[id] : undefined;
+  return e ? entityLine(world, e, 0, undefined) : '';
+}
+
 // -- rules ------------------------------------------------------------------
 
 /** Field values that are schema defaults and therefore omitted. */

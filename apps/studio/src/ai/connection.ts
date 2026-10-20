@@ -18,6 +18,7 @@ import {
   fetchBridgeStatus,
   pairBridge,
   ProviderError,
+  sharedConversations,
   type BridgeBackendStatus,
   type BridgeStatus,
   type LocalAiApi,
@@ -233,6 +234,8 @@ export class AiConnection {
   async forgetProject(projectId: string): Promise<void> {
     const key = projectSessionKey(projectId);
     if (!key) return;
+    // The planner conversation this page keeps for the project's next run.
+    sharedConversations.forget(key);
     const tasks: Array<Promise<unknown>> = [];
     if (this.store.getState().server.state === 'checking') await this.probeServer();
     if (this.store.getState().server.local) tasks.push(this.localApi.clearSessions(key));

@@ -59,7 +59,7 @@ export { eulerDegToQuat, quatToEulerDeg, quatMultiply, rotateVec3, type Quat } f
 export { slugify, uniqueId, isEntityId } from './ids';
 export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth, streamCourse } from './river';
 
-export { summarizeWorld, type SummaryOptions } from './summary';
+export { summarizeEntity, summarizeWorld, type SummaryOptions } from './summary';
 export { dependencyIndex, carryPatches, isSatellite, footprintRadius, type Dependency, type DependencyIndex, type DependencyWhy, type CarriedDependent } from './dependents';
 export { Emitter } from './emitter';
 

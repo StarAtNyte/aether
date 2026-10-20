@@ -61,7 +61,7 @@ export const CompletionRequestSchema = z
 export const CompletionResponseSchema = z.object({
   content: z.array(ContentBlockSchema).max(WIRE_LIMITS.MAX_BLOCKS_PER_MESSAGE),
   stopReason: z.enum(['end', 'tool_use', 'max_tokens', 'error']),
-  usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) }).optional(),
+  usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0), cachedInputTokens: z.number().min(0).optional() }).optional(),
   model: z.string().max(128).optional(),
 });
 

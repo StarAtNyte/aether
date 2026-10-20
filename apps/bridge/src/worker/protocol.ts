@@ -14,6 +14,8 @@ const Session = z.object({
   systemHash: z.string().regex(/^[0-9a-f]{64}$/),
   body: z.string().max(512 * 1024),
   dir: z.string().max(1024).optional(),
+  /** Codex: the thread's running token totals (see `codexTurnUsage`). */
+  totals: z.object({ input: z.number().min(0), cached: z.number().min(0), output: z.number().min(0), lastInput: z.number().min(0) }).optional(),
 });
 /** A conversation handed to / returned by the worker. */
 export type WorkerSession = z.infer<typeof Session>;
@@ -24,6 +26,7 @@ const TextRequest = z.object({
   prompt: z.string().max(8_000_000),
   schema: z.record(z.string(), z.unknown()),
   images: z.array(z.string().max(8 * 1024 * 1024)).max(4),
+  imageKeys: z.array(z.string().regex(/^[a-z0-9]{1,16}$/)).max(4).optional(),
   toolNames: z.array(z.string().max(64)).max(64).optional(),
   model: z.string().regex(MODEL_ID_RE).optional(),
   effort: z.enum(BRIDGE_EFFORTS).optional(),
@@ -61,7 +64,7 @@ export const WorkerJob = z.discriminatedUnion('kind', [
 /** A worker job. */
 export type WorkerJob = z.infer<typeof WorkerJob>;
 
-const Usage = z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) });
+const Usage = z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0), cachedInputTokens: z.number().min(0).optional() });
 
 /** The worker's result (stdout). */
 export const WorkerResult = z.union([

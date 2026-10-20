@@ -27,6 +27,11 @@ export interface TextCompletionRequest {
   /** Image data URLs (PNG/JPEG/WebP). */
   images: string[];
   /**
+   * The key of each image as the prompt's placeholders name it (`[image <key>]`); backends label each attached
+   * image with it. Absent: the 1-based position.
+   */
+  imageKeys?: readonly string[];
+  /**
    * Names of the emulated (protocol) tools. They are never native tools of the
    * backend; a backend may use the list to recognise a model that mistakenly
    * tries to call one of them directly.
@@ -50,7 +55,8 @@ export interface TextCompletionResult {
   text: string;
   /** Parsed structured output when the backend returns it separately. */
   structured?: unknown;
-  usage?: { inputTokens: number; outputTokens: number };
+  /** Tokens of this call: `inputTokens` counts everything read (cached or not), `cachedInputTokens` the cached part. */
+  usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
   model?: string;
   /** The backend continued an earlier conversation (sent only the new part). */
   resumed?: boolean;
@@ -95,7 +101,8 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
       const schema = replyJsonSchema(tools, backend.strictSchema);
       const salt = hashString(rendered.prompt).toString(36);
       let prompt = rendered.prompt;
-      const usage = { inputTokens: 0, outputTokens: 0 };
+      const usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+      let tail = rendered.tail;
       let model: string | undefined;
       let lastError = 'no reply';
       for (let attempt = 0; attempt <= maxReasks; attempt++) {
@@ -108,25 +115,29 @@ export function createEmulatedProvider(opts: EmulatedProviderOptions): Provider 
             prompt,
             schema,
             images: rendered.images,
+            imageKeys: rendered.imageKeys,
             ...(tools.length > 0 ? { toolNames: tools.map((t) => t.name) } : {}),
             ...(model0 ? { model: model0 } : {}),
             ...(opts.effort ? { effort: opts.effort } : {}),
             ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
-            ...(req.session ? { session: { key: req.session, body: rendered.body, tail: attempt === 0 ? rendered.tail : prompt.slice(rendered.body.length).trimStart() } } : {}),
+            ...(req.session ? { session: { key: req.session, body: rendered.body, tail } } : {}),
           },
           signal,
         );
         usage.inputTokens += result.usage?.inputTokens ?? 0;
         usage.outputTokens += result.usage?.outputTokens ?? 0;
+        usage.cachedInputTokens += result.usage?.cachedInputTokens ?? 0;
         model = result.model ?? model;
         const value = result.structured !== undefined ? result.structured : extractJsonObject(result.text);
         if (value === undefined) lastError = 'the reply is not a JSON object';
         else {
           const parsed = parseEmulatedReply(value, tools, `${salt}-${attempt}`);
-          if (parsed.ok) return { ...parsed.response, usage, ...(model ? { model } : {}) };
+          if (parsed.ok) return { ...parsed.response, usage: usage.cachedInputTokens > 0 ? usage : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }, ...(model ? { model } : {}) };
           lastError = parsed.error;
         }
-        prompt = `${rendered.prompt}\n\n${REASK_PREFIX}: ${lastError.slice(0, 400)}.\nReply again with ONLY the JSON object described in the system prompt.`;
+        const reask = `${REASK_PREFIX}: ${lastError.slice(0, 400)}.\nReply again with ONLY the JSON object described in the system prompt.`;
+        prompt = `${rendered.prompt}\n\n${reask}`;
+        tail = `${rendered.tail}\n\n${reask}`;
       }
       throw new ProviderError('invalid_response', `${backend.name} returned an unusable reply: ${lastError.slice(0, 300)}`);
     },

@@ -70,7 +70,7 @@ async function runComplete(job: Extract<WorkerJob, { kind: 'complete' }>): Promi
     ...(r.usage ? { usage: r.usage } : {}),
     ...(r.model ? { model: r.model } : {}),
     ...(r.resumed ? { resumed: true } : {}),
-    ...(session ? { session: { id: session.id, systemHash: session.systemHash, body: session.body, ...(session.dir ? { dir: session.dir } : {}) } } : {}),
+    ...(session ? { session: { id: session.id, systemHash: session.systemHash, body: session.body, ...(session.dir ? { dir: session.dir } : {}), ...(session.totals ? { totals: session.totals } : {}) } } : {}),
   };
 }
 

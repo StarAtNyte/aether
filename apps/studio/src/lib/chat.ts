@@ -38,7 +38,7 @@ export type ChatEventView =
   | { type: 'edit'; summary: string; lines: EditLineView[]; notes: string[]; ms: number; local: boolean; cosmetic: boolean; head?: number }
   | { type: 'clarify'; text: string; candidates: Array<{ id: string; label: string }> }
   | { type: 'error'; text: string }
-  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; ms?: number; via?: string; models?: string[] }
+  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string; /** Offline planner could not map the request: show the connect-AI action and these examples. */ offline?: { examples: string[] } }
   | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit'; text: string; score?: number; findings?: number }
   | PhotoEventView
@@ -246,7 +246,7 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
     case 'photo':
       return photoView(e as unknown as Record<string, unknown>);
     case 'done':
-      return { type: 'done', inputTokens: num(e.usage.inputTokens), outputTokens: num(e.usage.outputTokens), calls: num(e.usage.calls) };
+      return { type: 'done', inputTokens: num(e.usage.inputTokens), outputTokens: num(e.usage.outputTokens), calls: num(e.usage.calls), ...(e.usage.cachedInputTokens ? { cachedInputTokens: num(e.usage.cachedInputTokens) } : {}) };
   }
 }
 
@@ -263,12 +263,27 @@ export function trimChat(entries: readonly ChatEntry[]): ChatEntry[] {
   return entries.length > MAX_CHAT_ENTRIES ? entries.slice(entries.length - MAX_CHAT_ENTRIES) : entries.slice();
 }
 
-/** Final assistant text of a turn (its message events, else its plan). */
+/** Final assistant text of a turn (its message events, else what its edit cards say, else its plan). */
 export function assistantText(entry: Extract<ChatEntry, { role: 'assistant' }>): string {
   const messages = entry.events.filter((e): e is Extract<ChatEventView, { type: 'message' }> => e.type === 'message').map((e) => e.text);
   if (messages.length > 0) return messages.join('\n\n');
+  const edits = entry.events.filter((e): e is Extract<ChatEventView, { type: 'edit' }> => e.type === 'edit').map((e) => [`${e.summary.replace(/[.!]$/, '')}.`, ...e.notes].join(' '));
+  if (edits.length > 0) return edits.join('\n\n');
   const plan = entry.events.find((e): e is Extract<ChatEventView, { type: 'plan' }> => e.type === 'plan');
   return plan ? plan.text : '';
+}
+
+const sentenceKey = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * What a reply adds to the edit card right before it: the sentences the card already shows (its summary and its
+ * notes) are dropped. '' when the reply only repeats the card ("Made the sofa dark green velvet." under the card
+ * that says so).
+ */
+export function beyondEditCard(card: { summary: string; notes: readonly string[] }, text: string): string {
+  const shown = new Set([card.summary, ...card.notes].map(sentenceKey).filter((k) => k.length > 0));
+  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [];
+  return sentences.filter((s) => !shown.has(sentenceKey(s))).join('').trim();
 }
 
 /** Conversation context for the agent: the last N completed user/assistant pairs, text only. */
@@ -341,6 +356,7 @@ export function reviveEvent(v: unknown): ChatEventView | null {
       return { type: 'verify', passed: v['passed'] === true, summary: str(v['summary']), results: toTestResults(v), diagnostics: toDiagnostics(v) };
     case 'done': {
       const d: ChatEventView = { type: 'done', inputTokens: num(v['inputTokens']), outputTokens: num(v['outputTokens']), calls: num(v['calls']) };
+      if (typeof v['cachedInputTokens'] === 'number' && Number.isFinite(v['cachedInputTokens']) && v['cachedInputTokens'] > 0) d.cachedInputTokens = Math.min(num(v['cachedInputTokens']), d.inputTokens);
       if (typeof v['ms'] === 'number' && Number.isFinite(v['ms']) && v['ms'] >= 0) d.ms = Math.min(v['ms'], 3_600_000);
       if (typeof v['via'] === 'string') d.via = str(v['via'], 80);
       if (Array.isArray(v['models'])) {

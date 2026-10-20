@@ -54,6 +54,7 @@ import {
   type ReviewPose,
 } from '@aether/arch';
 import { z } from 'zod';
+import { requestView } from '../context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from '../executor';
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
@@ -139,6 +140,7 @@ async function complete(run: PhotoRun, req: CompletionRequest): Promise<Completi
   ctx.usage.calls += 1;
   ctx.usage.inputTokens += res.usage?.inputTokens ?? 0;
   ctx.usage.outputTokens += res.usage?.outputTokens ?? 0;
+  if (res.usage?.cachedInputTokens) ctx.usage.cachedInputTokens = (ctx.usage.cachedInputTokens ?? 0) + res.usage.cachedInputTokens;
   noteModel(ctx.usage, res.model);
   // The connection chain may have fallen back to the offline planner inside this very call: its reply is not an answer.
   if (ctx.provider.name === 'mock') throw new Unavailable();
@@ -150,7 +152,8 @@ function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], 
   return complete(run, {
     role: 'planner',
     system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system,
-    messages,
+    // The conversation stays append-only (a resumed thread keeps matching it); the request carries the newest images.
+    messages: requestView(messages),
     tools: [...tools],
     maxTokens: run.maxTokens,
     ...(useSession && run.session ? { session: run.session } : {}),
@@ -443,15 +446,6 @@ function scoreView(j: Judged, accepted?: boolean): PhotoScoreView {
 /** The numbers of a look in one line ("judges 11/17 pass (65%), score 72%; framing 75%, …; combined 77%"). */
 function lookLine(j: Judged): string {
   return `${j.panel ? `judges ${scoreLine(j.score)}, score ${Math.round(j.judge * 100)}%` : scoreLine(j.score)}${j.measure ? `; ${j.measure}` : ''}; combined ${Math.round(j.quality * 100)}%`;
-}
-
-function stripImages(messages: ChatMessage[]): void {
-  for (const m of messages) {
-    if (m.role !== 'user' || typeof m.content === 'string') continue;
-    if (!m.content.some((b) => b.type === 'image')) continue;
-    const kept = m.content.filter((b) => b.type !== 'image' && !(b.type === 'text' && /^Image \d+:/.test(b.text)));
-    m.content = [...kept, { type: 'text', text: '(The images of an earlier round were removed to save space.)' }];
-  }
 }
 
 function pushUser(messages: ChatMessage[], blocks: ContentBlock[]): void {
@@ -771,7 +765,6 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       return { judged: last };
     }
     const judgedWorld = host.getWorld();
-    stripImages(messages);
     yield { type: 'photo', phase: 'comparing', round, text: round === 1 ? 'Comparing the render with the photo, item by item.' : `Round ${round}: judging the render again.` };
 
     // The judges look first (when there are any): the model then works on a state they accepted.
@@ -959,7 +952,6 @@ function wallOf(desc: RoomDescription, item: ChecklistItem): string | null {
 
 /** A judge-only call of the model in the conversation on the room as it stands (no fixes), when there is no panel. */
 async function finalJudgement(run: PhotoRun, photo: Photo, shot: Shot, checklist: readonly ChecklistItem[], messages: ChatMessage[]): Promise<Scoreboard | null> {
-  stripImages(messages);
   const blocks: ContentBlock[] = [
     { type: 'text', text: `FINAL CHECK. No more changes: judge the room as it stands now. Call report_verdicts for every id.\nLegend:\n${shot.legend}` },
     { type: 'text', text: 'Image 1: the PHOTO' },

@@ -127,7 +127,8 @@ export function parseChatCompletion(body: unknown): CompletionResponse {
     content.push({ type: 'text', text: 'The model declined this request.' });
   }
   const usage = isRecord(body['usage']) ? body['usage'] : {};
-  const response: CompletionResponse = { content, stopReason, usage: { inputTokens: num(usage['prompt_tokens']), outputTokens: num(usage['completion_tokens']) } };
+  const cached = isRecord(usage['prompt_tokens_details']) ? num(usage['prompt_tokens_details']['cached_tokens']) : 0;
+  const response: CompletionResponse = { content, stopReason, usage: { inputTokens: num(usage['prompt_tokens']), outputTokens: num(usage['completion_tokens']), ...(cached > 0 ? { cachedInputTokens: cached } : {}) } };
   if (typeof body['model'] === 'string') response.model = body['model'].slice(0, 128);
   return response;
 }

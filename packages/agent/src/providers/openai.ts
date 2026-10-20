@@ -10,7 +10,10 @@
  *   blocks become `function_call_output` items.
  * - Reasoning items (encrypted, requested via `include`) are replayed verbatim
  *   on later turns through a per-provider LRU keyed by normalized content.
+ * - Prompt caching: `prompt_cache_key` is derived from the system prompt, so
+ *   calls that share the stable preamble are routed to the same cache.
  */
+import { hashString } from '@aether/core';
 import type { ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, ModelRole, Provider, ToolDef } from '../types';
 import { blocksOf, contentKey, LruMap, parseImageDataUrl, parseToolArguments } from './content';
 import { ProviderError } from './errors';
@@ -120,7 +123,8 @@ export function parseOpenAIResponse(body: unknown): { response: CompletionRespon
     content.push({ type: 'text', text: 'The model declined this request.' });
   }
   const usage = isRecord(body['usage']) ? body['usage'] : {};
-  const response: CompletionResponse = { content, stopReason, usage: { inputTokens: num(usage['input_tokens']), outputTokens: num(usage['output_tokens']) } };
+  const cached = isRecord(usage['input_tokens_details']) ? num(usage['input_tokens_details']['cached_tokens']) : 0;
+  const response: CompletionResponse = { content, stopReason, usage: { inputTokens: num(usage['input_tokens']), outputTokens: num(usage['output_tokens']), ...(cached > 0 ? { cachedInputTokens: cached } : {}) } };
   if (typeof body['model'] === 'string') response.model = body['model'];
   return { response, raw };
 }
@@ -151,6 +155,8 @@ export function createOpenAIProvider(opts: OpenAIProviderOptions): Provider {
         reasoning: { effort: effort[req.role] },
         include: ['reasoning.encrypted_content'],
         store: false,
+        // Requests with the same system prompt share a cache route, so the stable prefix is read from the prompt cache.
+        prompt_cache_key: `aether-${hashString(req.system).toString(36)}`,
       };
       if (req.tools && req.tools.length > 0) body['tools'] = toolsToWire(req.tools);
       const json = await postJson({

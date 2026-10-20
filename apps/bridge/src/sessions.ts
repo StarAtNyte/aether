@@ -22,6 +22,16 @@ export interface SessionEntry {
   used: number;
   /** Claude Code: the private working directory the session lives in. */
   dir?: string;
+  /** Codex: the thread's running token totals after its last turn (Codex reports totals, not per-turn counts). */
+  totals?: ThreadTotals;
+}
+
+/** Running token totals of a Codex thread, and the input of its latest turn alone. */
+export interface ThreadTotals {
+  input: number;
+  cached: number;
+  output: number;
+  lastInput: number;
 }
 
 /** Most conversations remembered. */

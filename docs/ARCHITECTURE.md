@@ -772,7 +772,19 @@ studio ──/api/local/complete──▶ server ──spawn──▶ worker pro
   Codex thread id or Claude session id for `p-<projectId>` (LRU, 6 h) and
   sends only the new part of the conversation; deleting the project forgets
   it. The chat's last line names the models that answered and the tokens
-  used.
+  used (with the cached part).
+- **Prefix-stable turns.** The planner conversation is append-only: a stable
+  system and tool preamble first, then turns that are only ever added to.
+  Older images are replaced in place by short placeholders that read the same
+  in the transcript, so every request extends the last one and a Codex thread
+  or Claude Code session is resumed with only the new turn (and only images it
+  has not seen). The next run of a project (a chat edit, a quality round)
+  continues the same conversation: its turn carries `<scene_changes>` — what
+  changed since the model's last turn, including the user's own edits — instead
+  of the full world summary, which is sent only when too much changed. On the
+  forest game and the house prompt this cut the uncached input by about half
+  to two thirds and the first call of an edit from ~38 k fresh tokens to under
+  2 k (REVIEW_LOG, "Turn layout").
 - **Deep builds.** With "Deep build" on (the default when local AI is
   connected), a new asset requested by the agent is built by a coding agent
   instead of one single-shot reply. The workspace is a private temp folder

@@ -12,7 +12,9 @@
 import { summarizeWorldForModel } from './world-text';
 import { z } from 'zod';
 import { Patch as PatchSchema, dependencyIndex, worldTransform, type Entity, type EntityId, type Patch, type WorldDoc } from '@aether/core';
-import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
+import { CONTEXT_LIMITS, formatFollowUpTurn, formatUserTurn, isImageDataUrl, requestView, sanitizeHistory } from './context';
+import { sharedConversations, type ConversationStore } from './conversation';
+import { sceneChangesText } from './scene-diff';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
 import { realisticWorld } from './providers/mock/realistic';
 import { loadCatalog } from '@aether/assets';
@@ -110,38 +112,18 @@ function clampInt(v: number | undefined, fallback: number, min: number, max: num
   return typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.floor(v))) : fallback;
 }
 
-/** Keep the conversation small: the images of earlier review rounds are replaced by a note. */
-/**
- * Keep at most `max` images in a conversation (every backend accepts {@link CONTEXT_LIMITS.MAX_IMAGES} per request):
- * the oldest images give way to a short note, the newest (this round's renders) stay. Mutates `messages`.
- */
-export function capImages(messages: ChatMessage[], max: number = CONTEXT_LIMITS.MAX_IMAGES): void {
-  let total = 0;
-  for (const m of messages) if (typeof m.content !== 'string') for (const b of m.content) if (b.type === 'image') total++;
-  for (const m of messages) {
-    if (total <= max) return;
-    if (typeof m.content === 'string') continue;
-    const kept: ContentBlock[] = [];
-    let dropped = 0;
-    for (const b of m.content) {
-      if (b.type === 'image' && total > max) {
-        total--;
-        dropped++;
-        continue;
-      }
-      kept.push(b);
-    }
-    if (dropped > 0) m.content = [...kept, { type: 'text', text: `(${dropped} earlier image${dropped === 1 ? ' was' : 's were'} removed to stay within the image limit.)` }];
-  }
+/** Add one call's tokens to a run's totals. */
+export function addUsage(usage: UsageTotals, res: Pick<CompletionResponse, 'usage' | 'model'>): void {
+  usage.calls += 1;
+  usage.inputTokens += res.usage?.inputTokens ?? 0;
+  usage.outputTokens += res.usage?.outputTokens ?? 0;
+  if (res.usage?.cachedInputTokens) usage.cachedInputTokens = (usage.cachedInputTokens ?? 0) + res.usage.cachedInputTokens;
+  noteModel(usage, res.model);
 }
 
-function dropOldReviewImages(messages: ChatMessage[]): void {
-  for (const m of messages) {
-    if (m.role !== 'user' || typeof m.content === 'string') continue;
-    if (!m.content.some((b) => b.type === 'image')) continue;
-    const text = m.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text' && !b.text.startsWith('Image ')).map((b) => b.text);
-    if (text.length > 0 && text.some((t) => t.startsWith('REVIEW round'))) m.content = [{ type: 'text', text: `${text.join('\n')}\n(The images of this round were removed to save space.)` }];
-  }
+/** A conversation to keep for the next run: images become their short placeholders (the thread already has them). */
+function withoutImages(messages: readonly ChatMessage[]): ChatMessage[] {
+  return requestView(messages, 0);
 }
 
 /** A reply that says the tools are missing: models sometimes claim this before ever trying them. */
@@ -187,6 +169,8 @@ export class WorldAgent {
   private readonly tools: ToolDef[];
   private systemPrompt: string | undefined;
   private coderPrompt: string | undefined;
+  /** The planner conversation of the current run (kept for the next run when it ends well). */
+  private conversation: ChatMessage[] | null = null;
 
   constructor(opts: AgentOptions) {
     this.opts = opts;
@@ -219,13 +203,32 @@ export class WorldAgent {
   /** Run one request against `host`, streaming progress events. */
   async *run(prompt: string, host: AgentHost, opts: RunOptions = {}): AsyncGenerator<AgentEvent> {
     const usage: UsageTotals = { inputTokens: 0, outputTokens: 0, calls: 0 };
+    const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
+    this.conversation = null;
+    let failed = false;
     try {
-      yield* this.loop(prompt, host, opts, usage);
+      for await (const ev of this.loop(prompt, host, opts, usage)) {
+        if (ev.type === 'error') failed = true;
+        yield ev;
+      }
     } catch (e) {
+      failed = true;
       const aborted = opts.signal?.aborted === true || isAbortError(e);
       yield { type: 'error', text: aborted ? 'Cancelled.' : `Agent failed: ${errorMessage(e).slice(0, 500)}` };
     }
+    // The planner conversation of this run is continued by the next one; a failed run starts the next one afresh.
+    if (session) {
+      const store = this.conversations;
+      if (failed) store.forget(session);
+      else if (this.conversation) store.save(session, this.system, withoutImages(this.conversation), host.getWorld());
+    }
+    this.conversation = null;
     yield { type: 'done', usage: { ...usage, ...(usage.models ? { models: [...usage.models] } : {}) } };
+  }
+
+  /** Where this agent keeps continued conversations. */
+  private get conversations(): ConversationStore {
+    return this.opts.conversations ?? sharedConversations;
   }
 
   /** Apply a locally planned small edit: no model call, a compact diff, physics only when it matters. */
@@ -328,6 +331,8 @@ export class WorldAgent {
       const { reconstructRoom } = photoPipeline;
       const sessionKey = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
       const options = this.compact ? { ...(this.opts.photo ?? {}), vision: false } : (this.opts.photo ?? {});
+      // The photo flow keeps its own conversation: the next planner run starts a new one.
+      if (sessionKey) this.conversations.forget(sessionKey);
       yield* reconstructRoom({ ctx, system: this.system, tools: this.tools, maxTokens: this.maxTokens, maxToolCalls: this.maxToolCalls, ...(sessionKey ? { session: sessionKey } : {}), request, image: images[0], options, replace: opts.intent !== 'refine' });
       return;
     }
@@ -381,25 +386,41 @@ export class WorldAgent {
       }
     }
     const slice = scope !== undefined && scope.kind === 'small' && scope.allowed.size > 0 && Object.keys(world0.entities).length > SLICE_THRESHOLD;
-    const userEdits = host.userEdits?.();
-    const summary = summarizeWorldForModel(world0, {
-      compact: this.compact,
-      maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : slice ? SLICE_THRESHOLD : CONTEXT_LIMITS.SUMMARY_ENTITIES,
-      ...(slice && scope ? { focus: [...scope.allowed].filter((id) => Object.hasOwn(world0.entities, id)).slice(0, 60) } : {}),
-      ...(userEdits && userEdits.size > 0 ? { userEdits } : {}),
-    });
+    const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
+    const fullSummary = (): string => {
+      const userEdits = host.userEdits?.();
+      return summarizeWorldForModel(world0, {
+        compact: this.compact,
+        maxEntities: this.compact ? COMPACT_LIMITS.summaryEntities : slice ? SLICE_THRESHOLD : CONTEXT_LIMITS.SUMMARY_ENTITIES,
+        ...(slice && scope ? { focus: [...scope.allowed].filter((id) => Object.hasOwn(world0.entities, id)).slice(0, 60) } : {}),
+        ...(userEdits && userEdits.size > 0 ? { userEdits } : {}),
+      });
+    };
     const inScope = slice && scope ? scopeBlock(world0, scope) : '';
     const mode = !hasWorld || !this.fineEdit ? undefined : intent === 'new' ? 'new world: replace the current world with the one described' : 'refine: change the current world as asked and keep everything the user did not mention exactly as it is; start a new world only if the user clearly asks for one';
-    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn([summary, inScope, ambiguity].filter(Boolean).join('\n'), request, mode) }];
-    const prior = sanitizeHistory(opts.history);
-    const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;
-    // History must start with a user turn.
-    const trimmed = this.compact ? kept.map((m): ChatMessage => ({ role: m.role, content: (m.content as string).slice(0, COMPACT_LIMITS.historyChars) })) : kept;
-    const history = trimmed.length > 0 && trimmed[0]?.role !== 'user' ? trimmed.slice(1) : trimmed;
-    const messages: ChatMessage[] = [...history, { role: 'user', content: first }];
+    // A project's next run continues the conversation of its last one (a thread-keeping backend then resumes the same
+    // thread and reads only this turn): it says what changed in the scene since then instead of the whole summary.
+    const earlier = session && !this.compact ? this.conversations.continuable(session, this.system) : null;
+    const changes = earlier ? sceneChangesText(earlier.world, world0) : null;
+    const turnText = changes !== null ? formatFollowUpTurn([changes, inScope, ambiguity].filter(Boolean).join('\n'), request, mode) : formatUserTurn([fullSummary(), inScope, ambiguity].filter(Boolean).join('\n'), request, mode);
+    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: turnText }];
+    let messages: ChatMessage[];
+    if (earlier) {
+      // The last run's closing tool results were never sent: the new turn joins them.
+      const last = earlier.messages[earlier.messages.length - 1];
+      messages = last && last.role === 'user' && Array.isArray(last.content) ? [...earlier.messages.slice(0, -1), { role: 'user', content: [...last.content, ...first] }] : [...earlier.messages, { role: 'user', content: first }];
+    }
+    else {
+      const prior = sanitizeHistory(opts.history);
+      const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;
+      // History must start with a user turn.
+      const trimmed = this.compact ? kept.map((m): ChatMessage => ({ role: m.role, content: (m.content as string).slice(0, COMPACT_LIMITS.historyChars) })) : kept;
+      const history = trimmed.length > 0 && trimmed[0]?.role !== 'user' ? trimmed.slice(1) : trimmed;
+      messages = [...history, { role: 'user', content: first }];
+    }
+    this.conversation = messages;
 
     const startWorld = host.getWorld();
-    const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
     let repairs = 0;
     let nudges = 0;
     let lastRefused = false;
@@ -414,15 +435,12 @@ export class WorldAgent {
     yield { type: 'status', text: 'Planning…' };
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
-      capImages(messages);
+      // The conversation stays append-only; a request carries at most the newest images.
       const res: CompletionResponse = await raceAbort(
-        this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
+        this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
         signal,
       );
-      usage.calls += 1;
-      usage.inputTokens += res.usage?.inputTokens ?? 0;
-      usage.outputTokens += res.usage?.outputTokens ?? 0;
-      noteModel(usage, res.model);
+      addUsage(usage, res);
       messages.push({ role: 'assistant', content: res.content });
 
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
@@ -596,7 +614,6 @@ export class WorldAgent {
           if (signal?.aborted) throw e;
         }
       }
-      dropOldReviewImages(messages);
       const content: ContentBlock[] = [];
       images.forEach((im, i) => {
         content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
@@ -610,15 +627,11 @@ export class WorldAgent {
       yield { type: 'review', round, phase: 'fixing', text: snap.findings.length > 0 ? 'Fixing what the checks found…' : 'Looking at the renders…', score: snap.score, findings: snap.findings.length };
       for (let turn = 0; turn < REVIEW_TURNS_PER_ROUND && !declared; turn++) {
         if (signal?.aborted) throw new Error('aborted');
-        capImages(messages);
         const res: CompletionResponse = await raceAbort(
-          this.opts.provider.complete({ role: 'planner', system: this.system, messages, tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
+          this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
           signal,
         );
-        ctx.usage.calls += 1;
-        ctx.usage.inputTokens += res.usage?.inputTokens ?? 0;
-        ctx.usage.outputTokens += res.usage?.outputTokens ?? 0;
-        noteModel(ctx.usage, res.model);
+        addUsage(ctx.usage, res);
         messages.push({ role: 'assistant', content: res.content });
         const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
         const text = textOf(res.content);

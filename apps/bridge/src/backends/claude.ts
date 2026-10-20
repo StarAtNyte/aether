@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
+import { MODEL_ID_RE, resumeInput, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess, type SpawnFn } from '../process';
 import { restrictedEnv, withTempDir } from '../sandbox';
@@ -79,12 +79,16 @@ export function claudeArgs(req: Pick<TextCompletionRequest, 'model' | 'effort' |
   ];
 }
 
-/** One stream-json user message with text and images. */
-export function claudeInput(req: Pick<TextCompletionRequest, 'prompt' | 'images'>): string {
+/**
+ * One stream-json user message with text and images. `only` limits the images to those indices (a resumed
+ * session gets only the images it has not seen); each image is labelled with the key its placeholder uses.
+ */
+export function claudeInput(req: Pick<TextCompletionRequest, 'prompt' | 'images' | 'imageKeys'>, only?: readonly number[]): string {
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: req.prompt }];
-  for (const url of req.images.slice(0, 4)) {
-    const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
-    if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+  const wanted = only ?? req.images.map((_, i) => i);
+  for (const i of wanted.slice(0, 4)) {
+    const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(req.images[i] ?? '');
+    if (m) content.push({ type: 'text', text: `Image ${req.imageKeys?.[i] ?? String(i + 1)}:` }, { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
   }
   return `${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`;
 }
@@ -202,10 +206,14 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
         let sessionArgs: ClaudeSessionArgs = { mode: 'none' };
         let cwd = dir;
         let prompt = req.prompt;
+        let only: number[] | undefined;
         if (session && plan.resume?.dir) {
           sessionArgs = { mode: 'resume', id: plan.resume.id };
           cwd = plan.resume.dir;
-          prompt = `${plan.delta.trim().length > 0 ? `${plan.delta.trim()}\n\n` : ''}${session.tail}`;
+          // Only the new part (without the echo of the model's last reply) and the images the session has not seen.
+          const resumed = resumeInput(plan.resume.body, session.body, session.tail, req.imageKeys ?? req.images.map((_, i) => String(i + 1)));
+          prompt = resumed.text;
+          only = resumed.images;
         } else if (session) {
           sessionArgs = { mode: 'new', id: randomUUID() };
           cwd = await mkdtemp(join(opts.tmpRoot ?? tmpdir(), 'aether-claude-session-'));
@@ -214,7 +222,7 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
           cwd,
           env: restrictedEnv(opts.env),
           timeoutMs,
-          stdin: claudeInput({ ...req, prompt }),
+          stdin: claudeInput({ ...req, prompt }, only),
           onLine: (line) => observeClaudeLine(line, observed, protocolTools),
           ...(signal ? { signal } : {}),
           ...(opts.spawn ? { spawn: opts.spawn } : {}),
@@ -241,7 +249,7 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
           return {
             text: typeof res['result'] === 'string' ? res['result'] : '',
             ...(res['structured_output'] !== undefined && res['structured_output'] !== null ? { structured: res['structured_output'] } : {}),
-            usage: { inputTokens: num(usage['input_tokens']) + num(usage['cache_creation_input_tokens']) + num(usage['cache_read_input_tokens']), outputTokens: num(usage['output_tokens']) },
+            usage: { inputTokens: num(usage['input_tokens']) + num(usage['cache_creation_input_tokens']) + num(usage['cache_read_input_tokens']), cachedInputTokens: num(usage['cache_read_input_tokens']), outputTokens: num(usage['output_tokens']) },
             ...(modelUsage[0] ? { model: modelUsage[0].slice(0, 64) } : {}),
             ...(sessionArgs.mode === 'resume' ? { resumed: true } : {}),
           };

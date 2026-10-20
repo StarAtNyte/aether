@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Patch } from '@aether/core';
 import type { AgentEvent } from '@aether/agent';
-import { appendEvent, assistantText, buildAgentHistory, reviveChat, toDiagnostics, toEventView, toTestResults, trimChat, type ChatEntry, type ChatEventView } from '../src/lib/chat';
+import { appendEvent, assistantText, beyondEditCard, buildAgentHistory, reviveChat, toDiagnostics, toEventView, toTestResults, trimChat, type ChatEntry, type ChatEventView } from '../src/lib/chat';
 import { MAX_CHAT_ENTRIES, MAX_EVENTS_PER_ENTRY } from '../src/config';
 
 describe('chat model', () => {
@@ -76,6 +76,28 @@ describe('chat model', () => {
 
   it('falls back to the plan for assistant text', () => {
     expect(assistantText({ id: 1, role: 'assistant', status: 'done', events: [{ type: 'plan', text: 'P' }] })).toBe('P');
+  });
+
+  it('a local edit is said once: the reply keeps only what its card does not say, and history still has it', () => {
+    const card = { summary: 'Made the sofa dark green velvet', notes: ['it now matches the rug'] };
+    expect(beyondEditCard(card, 'Made the sofa dark green velvet.')).toBe('');
+    expect(beyondEditCard(card, 'Made the sofa dark green velvet. It now matches the rug.')).toBe('');
+    expect(beyondEditCard(card, 'Made the sofa dark green velvet. 2 parts were refused (locked objects).')).toBe('2 parts were refused (locked objects).');
+    expect(beyondEditCard(card, 'Heads up: the checks flagged something.')).toBe('Heads up: the checks flagged something.');
+    const entry = { id: 3, role: 'assistant' as const, status: 'done' as const, events: [{ type: 'edit' as const, summary: 'Made the sofa dark green velvet', lines: [], notes: [], ms: 1, local: true, cosmetic: true }] };
+    expect(assistantText(entry)).toBe('Made the sofa dark green velvet.');
+    expect(buildAgentHistory([{ id: 2, role: 'user', text: 'make the sofa dark green velvet' }, entry])).toEqual([
+      { role: 'user', content: 'make the sofa dark green velvet' },
+      { role: 'assistant', content: 'Made the sofa dark green velvet.' },
+    ]);
+  });
+
+  it('parses cached tokens of a done event, never more than the input', () => {
+    const v = toEventView({ type: 'done', usage: { inputTokens: 1000, outputTokens: 5, calls: 2, cachedInputTokens: 900 } });
+    expect(v).toEqual({ type: 'done', inputTokens: 1000, outputTokens: 5, calls: 2, cachedInputTokens: 900 });
+    const revived = reviveChat([{ role: 'assistant', status: 'done', events: [{ type: 'done', inputTokens: 10, outputTokens: 1, calls: 1, cachedInputTokens: 99 }] }]);
+    const ev = revived[0]?.role === 'assistant' ? revived[0].events[0] : undefined;
+    expect(ev).toEqual({ type: 'done', inputTokens: 10, outputTokens: 1, calls: 1, cachedInputTokens: 10 });
   });
 
   it('revives stored transcripts defensively', () => {

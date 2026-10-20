@@ -58,6 +58,8 @@ describe('chat completions provider', () => {
       { type: 'tool_use', id: 'c2', name: 'finish', input: 'not json' },
     ]);
     expect(r.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+    // The cached part of the prompt, when the API reports it.
+    expect(parseChatCompletion({ choices: [{ finish_reason: 'stop', message: { content: 'x' } }], usage: { prompt_tokens: 900, prompt_tokens_details: { cached_tokens: 800 }, completion_tokens: 2 } }).usage).toEqual({ inputTokens: 900, outputTokens: 2, cachedInputTokens: 800 });
     expect(parseChatCompletion({ choices: [{ finish_reason: 'length', message: { content: 'x' } }] }).stopReason).toBe('max_tokens');
     expect(parseChatCompletion({ choices: [{ finish_reason: 'content_filter', message: { content: null } }] }).stopReason).toBe('error');
     expect(() => parseChatCompletion({ nope: 1 })).toThrow(ProviderError);

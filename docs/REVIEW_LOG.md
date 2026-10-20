@@ -3835,3 +3835,83 @@ The nine defects the acceptance pass left open are fixed, each with tests. The d
 - Plant in the shower after a window was added: loose pieces keep 0.4 m off showers and baths, and a re-compile drops a compiled floor piece standing in a piece the model placed (regression test `wet-clearance.test.ts`; before the fix the re-compiled vanity stood in the shower).
 - Sparse Codex interiors: with the `room_sparse` and `no_grounds` notes, a Codex house (`x2`) came back verified walkable with grounds, and with rugs, plants, lamps and curtains in the living room and both bedrooms.
 - Full vitest after these: 385 files, 4113 tests.
+
+
+## Turn layout: prefix-stable, resumable model calls
+
+**What the numbers were.** Codex reports a thread's *running totals* on every
+`turn.completed`, and its input count already includes the cached part. The
+backend added the cached count on top and summed the totals call after call,
+so a resumed thread looked quadratic: the forest build's "10.0 M input tokens"
+and the house's "6.5 M" were mostly this accounting error. Measured on the raw
+counters, a call read about 37–55 k tokens (the stable preamble alone is about
+33 k), 85–95 % of it from the prompt cache. The real waste was elsewhere:
+every chat edit, quality round or repair started a new thread (about 38 k
+uncached tokens and 6–8 s before the first answer), and any review round with
+renders rewrote earlier messages (images dropped in place), which broke the
+resumed prefix.
+
+**What changed.**
+- Per-call usage: `codexTurnUsage` turns running totals into one turn's tokens
+  (the session keeps the thread's totals; per-turn counters from another CLI
+  version are recognised and taken as they are). `cachedInputTokens` is
+  reported by Codex, Claude Code, Anthropic, OpenAI Responses and
+  chat-completions providers, summed per run and shown in the chat ("… in
+  (… cached)"). The agentic worker had the same double count.
+- Append-only conversation: the agent no longer rewrites messages. Each request
+  carries `requestView(messages)`: images that do not fit (earlier review /
+  photo rounds, more than four) become an in-place `[image <key> removed]`
+  text. The photo flow uses the same view.
+- Stable transcript: images are `[image <key>]` (content hash), a removed one
+  renders the same, so a body only ever grows; backends label each attached
+  image with its key. A resumed call sends `resumeInput(...)`: the new part
+  without the echo of the model's own last reply, and only images the thread
+  has not seen (Codex and Claude Code; Claude Code used to resend every image).
+  Re-asks keep the session body and send only the corrective instruction.
+- Continued conversations: with a session key the run's conversation is kept
+  (`ConversationStore`, LRU 16, 6 h, images as placeholders, 300 k character
+  budget) with the world at its end. The project's next run (chat edit, the
+  quality round, which now gets the same tools so the same system prompt)
+  appends one turn with `<scene_changes>` — added / removed / changed things
+  since the model's last turn, the user's own edits included — instead of the
+  text history and the full summary. More than 40 changed entities or 6 000
+  characters sends the full summary, still in the same thread. A failed run,
+  a photo run or another system prompt starts afresh; deleting the project
+  forgets it. The system prompt says what `<scene_changes>` means.
+- OpenAI Responses requests carry a `prompt_cache_key` derived from the system
+  prompt.
+- Naming: the prompt asks the model to title a new world with `setMeta`
+  (Codex now names them: "Lanterns of Moonfall", "Azure Court");
+  `projectNameFromPrompt` takes the first clause and stops before a
+  connective or a dangling word ("Two-storey modern house with a pool",
+  "Night forest adventure", never "… with a").
+- A local edit's reply is said once: the studio drops a reply that repeats its
+  edit card (summary and notes) and keeps anything beyond it ("2 parts were
+  refused"); the chat history falls back to the card's sentence.
+
+**Measured (Codex, gpt-6.1-sol, low effort; `scripts/token-probe.ts`, the
+studio's agent settings without renders; true per-call counts from the raw
+counters for both runs).**
+
+| Run | Calls | Input (true) | Cached | Uncached | Per call | Old report |
+|---|---|---|---|---|---|---|
+| Forest build + 2 edits, before | 11 | 436 k | 312 k | 124 k | 40 k | 1.90 M |
+| Forest build + 2 edits, after | 10 | 408 k | 363 k | 45 k | 41 k | = true |
+| House build + 2 edits, before | 15 | 681 k | 567 k | 114 k | 45 k | 6.59 M |
+| House build + 2 edits, after | 19 | 911 k | 857 k | 55 k | 48 k | = true |
+
+- Forest: uncached input −64 %; characters sent 313 k → 104 k; the shrine
+  edit 24 s → 12 s (its first call sent 718 characters instead of 101 745).
+- House: uncached −52 %; the window edit's first call 106 k characters → 4.8 k
+  (54.7 k read, 52.9 k cached). The build itself made more calls (the review
+  ran four rounds and approved instead of stalling after three).
+- Quality: forest verified playable before and after (bot won, 5 of 5);
+  physics checks pass in all runs; the house walkthrough bot failed in both
+  headless runs (a room not reachable on foot; the studio's playtest repair is
+  not part of the probe), so no change there. The studio run below is the
+  badge check.
+
+**Still open.** Every Codex call still re-reads the whole thread (cached): the
+33 k-token preamble is the floor per call; shrinking it (catalogs and API
+references on demand) is the next lever.
+

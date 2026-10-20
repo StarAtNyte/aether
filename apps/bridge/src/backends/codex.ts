@@ -17,10 +17,10 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions, type TurnOptions, type UserInput } from '@openai/codex-sdk';
-import { MODEL_ID_RE, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
+import { MODEL_ID_RE, resumeInput, type TextBackend, type TextCompletionRequest, type TextCompletionResult } from '@aether/agent';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { restrictedEnv, withTempDir } from '../sandbox';
-import { sha256, type SessionStore } from '../sessions';
+import { sha256, type SessionStore, type ThreadTotals } from '../sessions';
 import { sdkExecutable } from '../spawn-plan';
 
 /** Thread item types that mean the agent tried to act instead of answer. */
@@ -103,11 +103,21 @@ export interface CodexBackendOptions {
   sessions?: SessionStore;
 }
 
-/** Image placeholders `[image N attached]` in a text (1-based indices). */
-function imageRefs(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(/\[image (\d{1,2}) attached\]/g)) out.push(Number(m[1]));
-  return out;
+/**
+ * The tokens of one turn from the totals Codex reports. Codex (0.16x) puts the
+ * thread's running totals on every `turn.completed`, and its input count
+ * already includes the cached part; one turn is the difference to the totals
+ * after the previous turn. A turn of a resumed thread re-reads at least the
+ * previous turn's input, so a smaller step means the counters are per turn
+ * (another CLI version) and are taken as they are.
+ */
+export function codexTurnUsage(raw: { input: number; cached: number; output: number }, before: ThreadTotals | undefined): { usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number }; totals: ThreadTotals } {
+  const cumulative = before !== undefined && raw.input - before.input >= 0.9 * before.lastInput && raw.cached >= before.cached && raw.output >= before.output;
+  const turn = cumulative ? { input: raw.input - before.input, cached: raw.cached - before.cached, output: raw.output - before.output } : raw;
+  return {
+    usage: { inputTokens: turn.input, cachedInputTokens: Math.min(turn.cached, turn.input), outputTokens: turn.output },
+    totals: cumulative ? { ...raw, lastInput: turn.input } : { input: (before?.input ?? 0) + raw.input, cached: (before?.cached ?? 0) + raw.cached, output: (before?.output ?? 0) + raw.output, lastInput: raw.input },
+  };
 }
 
 function imageExt(mime: string): string {
@@ -142,17 +152,18 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
         // A known conversation is resumed with only what is new; otherwise a fresh thread gets everything.
         const session = req.session && opts.sessions ? req.session : undefined;
         const plan = session && opts.sessions ? opts.sessions.plan(session.key, 'codex', req.model, req.system, session.body) : { resume: null };
-        const text = plan.resume
-          ? `${plan.delta.trim().length > 0 ? `${plan.delta.trim()}\n\n` : ''}${session?.tail ?? ''}`
-          : `<system>\n${req.system}\n</system>\n\n${req.prompt}`;
+        // A resumed thread gets only the new part and the images it has not seen; a new one gets everything.
+        const resumed = plan.resume && session ? resumeInput(plan.resume.body, session.body, session.tail, req.imageKeys ?? req.images.map((_, i) => String(i + 1))) : null;
+        const text = resumed ? resumed.text : `<system>\n${req.system}\n</system>\n\n${req.prompt}`;
         const input: UserInput[] = [{ type: 'text', text }];
-        const wanted = plan.resume ? imageRefs(text).map((n) => n - 1) : req.images.map((_, i) => i);
+        const wanted = resumed ? resumed.images : req.images.map((_, i) => i);
         for (const i of wanted.slice(0, 4)) {
           const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(req.images[i] ?? '');
           if (!m?.[1] || !m[2]) continue;
           const path = join(dir, `view-${i}.${imageExt(m[1])}`);
           await writeFile(path, Buffer.from(m[2], 'base64'), { mode: 0o600 });
-          input.push({ type: 'local_image', path });
+          // Each image is labelled with the key its placeholder in the text uses.
+          input.push({ type: 'text', text: `Image ${req.imageKeys?.[i] ?? String(i + 1)}:` }, { type: 'local_image', path });
         }
         const ctrl = new AbortController();
         let timedOut = false;
@@ -164,7 +175,7 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
         if (signal?.aborted) ctrl.abort();
         else signal?.addEventListener('abort', onAbort, { once: true });
         let reply = '';
-        let usage: { inputTokens: number; outputTokens: number } | undefined;
+        let raw: { input: number; cached: number; output: number } | undefined;
         let failure: string | undefined;
         let violation: string | undefined;
         let threadId: string | null | undefined;
@@ -179,7 +190,7 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
             }
             if (ev.type === 'thread.started') threadId = ev.thread_id;
             else if (ev.type === 'item.completed' && ev.item.type === 'agent_message') reply = ev.item.text;
-            else if (ev.type === 'turn.completed') usage = { inputTokens: ev.usage.input_tokens + ev.usage.cached_input_tokens, outputTokens: ev.usage.output_tokens };
+            else if (ev.type === 'turn.completed') raw = { input: ev.usage.input_tokens, cached: ev.usage.cached_input_tokens, output: ev.usage.output_tokens };
             else if (ev.type === 'turn.failed') failure = ev.error.message;
             else if (ev.type === 'error') failure = ev.message;
           }
@@ -205,8 +216,9 @@ export function createCodexBackend(opts: CodexBackendOptions = {}): TextBackend 
           throw classifyCliFailure('Codex', failure);
         }
         if (!reply) throw new BridgeError('backend_error', 'Codex returned an empty reply.');
-        if (session && threadId) opts.sessions?.record(session.key, 'codex', req.model, { id: threadId, systemHash: sha256(req.system), body: session.body });
-        return { text: reply, ...(usage ? { usage } : {}), ...(req.model ? { model: req.model } : {}), ...(plan.resume ? { resumed: true } : {}) };
+        const counted = raw ? codexTurnUsage(raw, plan.resume?.totals) : undefined;
+        if (session && threadId) opts.sessions?.record(session.key, 'codex', req.model, { id: threadId, systemHash: sha256(req.system), body: session.body, ...(counted ? { totals: counted.totals } : {}) });
+        return { text: reply, ...(counted ? { usage: counted.usage } : {}), ...(req.model ? { model: req.model } : {}), ...(plan.resume ? { resumed: true } : {}) };
       }, opts.tmpRoot);
     },
   };

@@ -377,7 +377,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       if (named.length > 0) parts.push(`answered by ${named.join(', ')}`);
       if (event.ms !== undefined) parts.push(formatElapsed(event.ms));
       // The offline planner estimates tokens from text length: those are not real model usage, never shown.
-      if (event.calls > 0 && event.via !== 'Offline planner') parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in / ${compactCount(event.outputTokens)} out tokens`);
+      if (event.calls > 0 && event.via !== 'Offline planner') parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in${event.cachedInputTokens ? ` (${compactCount(event.cachedInputTokens)} cached)` : ''} / ${compactCount(event.outputTokens)} out tokens`);
       return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;
     }
     case 'notice':

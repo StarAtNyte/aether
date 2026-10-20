@@ -21,12 +21,13 @@ import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk';
-import { CODEX_DISABLED_FEATURES, mcpDisableOverrides } from '../backends/codex';
+import { CODEX_DISABLED_FEATURES, codexTurnUsage, mcpDisableOverrides } from '../backends/codex';
 import { CLAUDE_DEFAULT_MODEL } from '../backends/claude';
 import { listCodexMcpServers } from '../backends/status';
 import { BridgeError, classifyCliFailure } from '../errors';
 import { runProcess } from '../process';
 import { restrictedEnv } from '../sandbox';
+import type { ThreadTotals } from '../sessions';
 import { findCliPath } from '../which';
 import { sdkExecutable } from '../spawn-plan';
 import { bundledCheckScript } from './workspace';
@@ -230,6 +231,8 @@ export async function runAgentic(job: AgenticJob, deps: AgenticDeps): Promise<Wo
 type CodexThreadRun = ReturnType<NonNullable<AgenticDeps['createCodex']>>['startThread'] extends (...a: never[]) => infer T ? T : never;
 interface CodexSession {
   thread: CodexThreadRun | null;
+  /** The thread's running token totals (Codex reports totals on every turn). */
+  totals?: ThreadTotals;
 }
 
 async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: number; outputTokens: number }, deps: AgenticDeps, session: CodexSession): Promise<string> {
@@ -274,8 +277,10 @@ async function codexTurn(job: AgenticJob, input: string, usage: { inputTokens: n
         say('message', item.text.trim().slice(0, 200));
       }
     } else if (ev.type === 'turn.completed') {
-      usage.inputTokens += ev.usage.input_tokens + ev.usage.cached_input_tokens;
-      usage.outputTokens += ev.usage.output_tokens;
+      const turn = codexTurnUsage({ input: ev.usage.input_tokens, cached: ev.usage.cached_input_tokens, output: ev.usage.output_tokens }, session.totals);
+      session.totals = turn.totals;
+      usage.inputTokens += turn.usage.inputTokens;
+      usage.outputTokens += turn.usage.outputTokens;
     } else if (ev.type === 'turn.failed') failure = ev.error.message;
     else if (ev.type === 'error') failure = ev.message;
   }

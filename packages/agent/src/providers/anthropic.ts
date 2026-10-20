@@ -135,6 +135,7 @@ export function parseAnthropicResponse(body: unknown): { response: CompletionRes
     usage: {
       inputTokens: num(usage['input_tokens']) + num(usage['cache_creation_input_tokens']) + num(usage['cache_read_input_tokens']),
       outputTokens: num(usage['output_tokens']),
+      ...(num(usage['cache_read_input_tokens']) > 0 ? { cachedInputTokens: num(usage['cache_read_input_tokens']) } : {}),
     },
   };
   if (typeof body['model'] === 'string') response.model = body['model'];

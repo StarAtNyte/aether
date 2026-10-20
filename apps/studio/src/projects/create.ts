@@ -83,14 +83,36 @@ export function abandonedPromptReply(chat: readonly ChatEntry[], history: { canU
   return message && message.type === 'message' && message.text.trim() ? message.text.trim() : 'Offline mode could not build this.';
 }
 
-/** A short project name from a prompt ("a cozy camp at sunset with…" → "Cozy camp at sunset"). */
+/** Words a name never ends on ("… house with a" is cut back to "… house"). */
+const DANGLING = /^(a|an|the|with|and|or|of|in|on|at|to|for|by|from|into|near|where|that|which|featuring|plus|some|my|your|its|their)$/i;
+/** Words where a description goes on: a name may stop before them. */
+const CONNECTIVE = /^(with|and|where|that|which|featuring|plus|including|for|near|in|on|at|by)$/i;
+/** Most words in a name taken from a prompt. */
+const NAME_WORDS = 6;
+
+/**
+ * A short project name from a prompt, cut where the description goes on, never in the middle of a phrase:
+ * "a cozy camp at sunset with…" → "Cozy camp at sunset"; "two-storey modern house with a pool, open plan" →
+ * "Two-storey modern house"; "night forest adventure: 5 lanterns" → "Night forest adventure". The assistant
+ * usually names a new world itself (setMeta), which then replaces this.
+ */
 export function projectNameFromPrompt(prompt: string): string {
-  const words = prompt
+  // The first clause only: a list after a comma or colon is detail, not the name.
+  const clause = prompt.split(/[,;:.!?()[\]{}]|\s[–—-]\s/u).find((c) => /[\p{L}\p{N}]/u.test(c)) ?? '';
+  const words = clause
     .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
     .split(/\s+/)
-    .filter((w) => w !== '');
-  while (words.length > 1 && /^(a|an|the|build|make|create|me)$/i.test(words[0] ?? '')) words.shift();
-  const name = words.slice(0, 5).join(' ');
+    .filter((w) => w !== '' && w !== '-');
+  while (words.length > 1 && /^(a|an|the|build|make|create|generate|design|me|please|i|want|need)$/i.test(words[0] ?? '')) words.shift();
+  let kept = words;
+  if (kept.length > NAME_WORDS) {
+    // Stop before the last connective that still leaves at least two words.
+    let cut = -1;
+    for (let i = 2; i <= NAME_WORDS && i < kept.length; i++) if (CONNECTIVE.test(kept[i] ?? '')) cut = i;
+    kept = kept.slice(0, cut > 0 ? cut : NAME_WORDS - 1);
+  }
+  while (kept.length > 1 && DANGLING.test(kept[kept.length - 1] ?? '')) kept = kept.slice(0, -1);
+  const name = kept.join(' ');
   if (!name) return 'Untitled world';
   return name.charAt(0).toUpperCase() + name.slice(1);
 }

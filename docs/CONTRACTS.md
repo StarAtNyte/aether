@@ -484,7 +484,8 @@ export type ContentBlock = { type: 'text'; text: string } | { type: 'image'; dat
 export interface ToolDef { name: string; description: string; inputSchema: object; }
 export interface CompletionRequest { role: 'planner' | 'coder' | 'critic'; model?: string; system: string; messages: ChatMessage[]; tools?: ToolDef[]; maxTokens?: number; temperature?: number;
   session?: string;   // conversation key (/^[a-z0-9][a-z0-9-]{7,79}$/, the studio sends `p-<projectId>`): thread-keeping backends resume it }
-export interface CompletionResponse { content: ContentBlock[]; stopReason: 'end' | 'tool_use' | 'max_tokens' | 'error'; usage?: { inputTokens: number; outputTokens: number }; model?: string; }
+export interface CompletionResponse { content: ContentBlock[]; stopReason: 'end' | 'tool_use' | 'max_tokens' | 'error';
+  usage?: { inputTokens: number /* everything this one call read, cached or not */; outputTokens: number; cachedInputTokens?: number /* the part read from the prompt cache */ }; model?: string; }
 export interface Provider { readonly name: string; complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse>; }
 
 export function createAnthropicProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch; browser?: boolean }): Provider;  // raw fetch to Messages API, prompt caching on system/tools; `browser: true` (only with the user's own key) adds `anthropic-dangerous-direct-browser-access: true`
@@ -503,7 +504,7 @@ export type AgentEvent =
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
   | { type: 'error'; text: string }
-  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; models?: string[] /* models that answered, first use order */ } };
+  | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] /* models that answered, first use order */ } };
 
 export interface AgentHost {
   getWorld(): WorldDoc;
@@ -528,6 +529,42 @@ export class WorldAgent {
   constructor(opts: AgentOptions);
   run(prompt: string, host: AgentHost, opts?: { signal?: AbortSignal; images?: string[]; history?: ChatMessage[]; session?: string }): AsyncGenerator<AgentEvent>;
 }
+```
+
+**Turn layout (prefix-stable, resumable).** One run's planner conversation is
+append-only: nothing already sent is rewritten. Each request carries
+`requestView(messages)`: the images `limitImages` would drop (earlier
+look-and-fix rounds, then all but the newest `CONTEXT_LIMITS.MAX_IMAGES`) are
+replaced *in place* by a `[image <key> removed]` text (`key = imageKey(dataUrl)`),
+nothing else changes. With a `session`, the run's conversation is kept
+(`AgentOptions.conversations`, default `sharedConversations`: LRU 16, 6 h,
+images replaced by their placeholders) together with the world at the run's
+end, and the project's next run (a chat edit, a quality round) continues it:
+its user turn is `formatFollowUpTurn(sceneChangesText(world then, world now),
+request, mode)` — a `<scene_changes>` block of added / removed / changed things
+(≤ 40 entities, ≤ 6 000 characters; otherwise the full `<world_summary>` is
+sent, still in the same conversation) — instead of the text history and a full
+summary. A failed run, a photo run, another system prompt or a conversation
+past `CONVERSATION_BUDGET_CHARS` (300 000) starts afresh.
+
+```ts
+export function limitImages(messages, max?): ChatMessage[];      // view: earlier rounds' images → note, newest `max` kept (input untouched)
+export function requestView(messages, max?): ChatMessage[];      // view: dropped images → `[image <key> removed]` in place
+export function sceneChangesText(before: WorldDoc, after: WorldDoc, limits?: { maxChars?; maxEntities? }): string | null;
+export function formatFollowUpTurn(changes: string, prompt: string, mode?: string): string;  // <scene_changes>…</scene_changes><edit_mode>?<request>
+export class ConversationStore { continuable(key, system): ConversationState | null; save(key, system, messages, world); forget(key); clear(); }
+export function resumeInput(previous: string, body: string, tail: string, imageKeys: readonly string[]): { text: string; images: number[] };
+```
+
+Text backends (`renderTranscript(req, strict, { stable: true })` when the
+request has a session) render images as `[image <key>]` (a ghost renders the
+same), so the body only grows; `RenderedPrompt.imageKeys` names the attached
+images and a backend labels each attached image `Image <key>:`. A new thread
+gets `prompt` (old images marked "no longer attached"); a resumed one gets
+`resumeInput(...)`: the new part without the echo of the model's own last reply
+(the thread holds the real one) and only the images it has not seen.
+
+```ts
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, write_generator, write_script, inspect, run_verification, finish
 export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
@@ -794,7 +831,11 @@ DELETE /v1/sessions/:project → { cleared }                    forget a project
 `/v1/complete` accepts `request.session`: the bridge remembers per project
 (LRU 64, 6 h idle, in memory only) the Codex thread id or Claude Code session
 id and resumes it with only the new part of the conversation. Runs stay
-read-only and tool-less.
+read-only and tool-less. Usage is per call: Codex reports a thread's running
+totals on every `turn.completed` (its input count includes the cached part),
+so the session also keeps the thread's totals and `codexTurnUsage(raw, before)`
+reports the difference (`cachedInputTokens` separately); Claude Code reports
+`cache_read_input_tokens` as the cached part.
 
 ### Server: `/api/local/*` (only when `config.localAi`)
 
@@ -830,7 +871,7 @@ reconnect from the last `seq`), `createLocalProvider()`,
 
 ```ts
 type WorkerJob =
-  | { kind: 'complete'; backend; request: TextCompletionRequest; session?: { id; systemHash; body; dir? }; codexHome?: string | null; timeoutMs? }
+  | { kind: 'complete'; backend; request: TextCompletionRequest /* + imageKeys? */; session?: { id; systemHash; body; dir?; totals?: { input; cached; output; lastInput } }; codexHome?: string | null; timeoutMs? }
   | { kind: 'agentic'; backend; model?; effort?; workspace: string; task: string; artifact: `out/${string}.json`; maxTurns: 1–8; codexHome?: string | null };
 type WorkerResult = { ok: true; kind: 'complete'; text; structured?; usage?; model?; resumed?; session? }
                   | { ok: true; kind: 'agentic'; turns; passed; usage?; model?; message? }

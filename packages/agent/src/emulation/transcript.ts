@@ -8,6 +8,7 @@
  * once as minified JSON.
  */
 import { stableStringify } from '@aether/core';
+import { ghostImageKey, imageKey, limitImages } from '../context';
 import type { ChatMessage, CompletionRequest, ContentBlock, ToolDef } from '../types';
 
 /** Characters kept from an older (already executed) tool input. */
@@ -18,15 +19,24 @@ const RESULT_CHARS = 12_000;
 /** A request rendered for a text-only backend. */
 export interface RenderedPrompt {
   system: string;
-  /** The whole user prompt (`body` + the closing instruction). */
+  /** The whole user prompt for a backend that starts a new conversation (`body` + the closing instruction). */
   prompt: string;
   /** The conversation without the closing instruction (append-only in stable mode). */
   body: string;
   /** The closing instruction. */
   tail: string;
-  /** Image data URLs, in conversation order (at most 4 by the wire limits). */
+  /** Image data URLs to attach, in conversation order (at most {@link CONTEXT_LIMITS.MAX_IMAGES}). */
   images: string[];
+  /**
+   * The key of each attached image, as its placeholder names it: the position ("1" in `[image 1 attached]`)
+   * normally; in stable mode a content hash ("i3k9x2" in `[image i3k9x2]`), so a placeholder never changes
+   * when older images are no longer attached. Backends label each attached image with its key.
+   */
+  imageKeys: string[];
 }
+
+/** An image placeholder in a rendered transcript; group 1 is the key. */
+export const IMAGE_PLACEHOLDER_RE = /\[image ([a-z0-9]{1,16})(?: attached)?\]/g;
 
 /** The reply protocol appended to the system prompt. */
 export function protocolInstructions(tools: readonly ToolDef[], strict: boolean): string {
@@ -82,13 +92,16 @@ export interface TranscriptOptions {
   stable?: boolean;
 }
 
-function renderBlock(b: ContentBlock, latestAssistant: boolean, images: string[], resultChars: number): string | null {
+function renderBlock(b: ContentBlock, latestAssistant: boolean, images: (dataUrl: string) => string, resultChars: number, stable: boolean): string | null {
   switch (b.type) {
-    case 'text':
+    case 'text': {
+      // An image no longer carried by the request reads exactly as it did while it was attached.
+      const ghost = stable ? ghostImageKey(b.text) : null;
+      if (ghost) return `[image ${ghost}]`;
       return b.text.length > 0 ? b.text : null;
+    }
     case 'image':
-      images.push(b.dataUrl);
-      return `[image ${images.length} attached]`;
+      return stable ? `[image ${images(b.dataUrl)}]` : `[image ${images(b.dataUrl)} attached]`;
     case 'tool_use':
       return `<tool_call name="${b.name}" id="${b.id}">${latestAssistant ? stableStringify(b.input ?? {}) : summarizeInput(b.input)}</tool_call>`;
     case 'tool_result': {
@@ -110,18 +123,39 @@ export function renderTranscript(req: CompletionRequest, strict: boolean, opts: 
   const tools = req.tools ?? [];
   const resultChars = Math.max(200, Math.min(RESULT_CHARS, Math.floor(opts.resultChars ?? RESULT_CHARS)));
   const system = `${req.system}\n\n${protocolInstructions(tools, strict)}`;
+  // Stable mode renders the whole append-only conversation (every image, attached or not, as a placeholder keyed
+  // by its content) and attaches only the images a request would still carry; otherwise the request's view is
+  // rendered with positional placeholders.
+  const stable = opts.stable === true;
+  const messages = stable ? req.messages : limitImages(req.messages);
   const images: string[] = [];
+  const imageKeys: string[] = [];
+  const attach = new Set<string>();
+  if (stable) for (const m of limitImages(req.messages)) for (const b of blocksOf(m)) if (b.type === 'image') attach.add(b.dataUrl);
+  const keyOf = (dataUrl: string): string => {
+    if (!opts.stable) {
+      images.push(dataUrl);
+      imageKeys.push(String(images.length));
+      return String(images.length);
+    }
+    const key = imageKey(dataUrl);
+    if (attach.has(dataUrl) && !imageKeys.includes(key)) {
+      images.push(dataUrl);
+      imageKeys.push(key);
+    }
+    return key;
+  };
   let lastAssistant = -1;
-  for (let i = req.messages.length - 1; i >= 0; i--) {
-    if (req.messages[i]?.role === 'assistant') {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'assistant') {
       lastAssistant = i;
       break;
     }
   }
   const parts: string[] = [];
-  req.messages.forEach((m, i) => {
+  messages.forEach((m, i) => {
     const body = blocksOf(m)
-      .map((b) => renderBlock(b, !opts.stable && i === lastAssistant, images, resultChars))
+      .map((b) => renderBlock(b, !stable && i === lastAssistant, keyOf, resultChars, stable))
       .filter((s): s is string => s !== null)
       .join('\n');
     if (body.length === 0) return;
@@ -129,5 +163,38 @@ export function renderTranscript(req: CompletionRequest, strict: boolean, opts: 
   });
   const tail = tools.length > 0 ? 'Reply now with the JSON object (tool protocol).' : 'Reply now with the JSON object.';
   const body = parts.join('\n\n');
-  return { system, prompt: body.length > 0 ? `${body}\n\n${tail}` : tail, body, tail, images };
+  const full = body.length > 0 ? `${body}\n\n${tail}` : tail;
+  // A new conversation is told which earlier images are no longer attached (the body itself never changes).
+  const prompt = stable ? full.replace(IMAGE_PLACEHOLDER_RE, (all, key: string) => (imageKeys.includes(key) ? all : `[image ${key}, no longer attached]`)) : full;
+  return { system, prompt, body, tail, images, imageKeys };
+}
+
+/** Where a resumed conversation picks up: what to send and which attached images are new to it. */
+export interface ResumeInput {
+  /** The new part of the conversation (without the echo of the model's own last reply) and the closing instruction. */
+  text: string;
+  /** Indices into the request's images: those the new part refers to that the conversation has not seen yet. */
+  images: number[];
+}
+
+/**
+ * The input of a resumed conversation. `previous` is the body the conversation
+ * already holds and `body` the request's (which extends it); `tail` the closing
+ * instruction. The rendered assistant turn at the start of the new part is
+ * dropped: the conversation holds the model's real reply.
+ */
+export function resumeInput(previous: string, body: string, tail: string, imageKeys: readonly string[]): ResumeInput {
+  let delta = body.slice(previous.length).trim();
+  if (delta.startsWith('<assistant>\n')) {
+    const end = delta.indexOf('\n</assistant>');
+    if (end >= 0) delta = delta.slice(end + '\n</assistant>'.length).trim();
+  }
+  const seen = new Set<string>();
+  for (const m of previous.matchAll(IMAGE_PLACEHOLDER_RE)) if (m[1]) seen.add(m[1]);
+  const images: number[] = [];
+  for (const m of delta.matchAll(IMAGE_PLACEHOLDER_RE)) {
+    const i = m[1] && !seen.has(m[1]) ? imageKeys.indexOf(m[1]) : -1;
+    if (i >= 0 && !images.includes(i)) images.push(i);
+  }
+  return { text: delta.length > 0 ? `${delta}\n\n${tail}` : tail, images };
 }

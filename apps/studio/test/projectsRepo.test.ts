@@ -218,6 +218,16 @@ describe('project creation flows', () => {
     expect((await createFromPrompt(repo, '   ')).ok).toBe(false);
     expect(projectNameFromPrompt('!!!')).toBe('Untitled world');
   });
+  it('names a project at a phrase boundary, never mid-phrase', () => {
+    expect(projectNameFromPrompt('two-storey modern house with a pool, open plan, kitchen, two bedrooms, people')).toBe('Two-storey modern house with a pool');
+    expect(projectNameFromPrompt('night forest adventure: 5 lanterns, wolves, river, shrine on the hill')).toBe('Night forest adventure');
+    expect(projectNameFromPrompt('a cozy camp at sunset with a crackling fire and tents')).toBe('Cozy camp at sunset');
+    expect(projectNameFromPrompt('a big two-storey modern family house with a pool')).toBe('Big two-storey modern family house');
+    expect(projectNameFromPrompt('castle on a hill - with a moat')).toBe('Castle on a hill');
+    for (const p of ['a modern house with a garden and a pool and three bedrooms for a family', 'make me a racing game in the desert at noon with ramps']) {
+      expect(projectNameFromPrompt(p)).not.toMatch(/\b(a|an|the|with|and|of|in|on|at|for)$/i);
+    }
+  });
   it('hands queued runs over once and bounds the queue', () => {
     for (let i = 0; i < 20; i++) queueRun(`p${i}`, { prompt: 'x'.repeat(5000), offline: true });
     expect(takeRun('p0')).toBeNull();

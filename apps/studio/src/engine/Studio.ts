@@ -12,7 +12,7 @@ import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, imp
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
-import { buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
+import { beyondEditCard, buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
 import { createStarterWorld, isPristineStarter } from '../lib/starterWorld';
@@ -72,6 +72,8 @@ interface RunUsage {
   inputTokens: number;
   outputTokens: number;
   calls: number;
+  /** Part of `inputTokens` read from the provider's prompt cache. */
+  cachedInputTokens: number;
   /** Models that answered, in order of first use. */
   models: string[];
 }
@@ -1078,7 +1080,7 @@ export class Studio {
     this.abort = abort;
     let status: 'done' | 'error' | 'aborted' = 'done';
     let session: string | undefined;
-    const usage: RunUsage = { inputTokens: 0, outputTokens: 0, calls: 0, models: [] };
+    const usage: RunUsage = { inputTokens: 0, outputTokens: 0, calls: 0, cachedInputTokens: 0, models: [] };
     try {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
       // Small on-device models get the condensed prompt that fits their ~4k-token context.
@@ -1137,7 +1139,7 @@ export class Studio {
       if (this.abort === abort) this.abort = null;
       // Offline answers are not model usage: no fabricated call or token counts.
       const offlineOnly = usage.models.length > 0 && usage.models.every((m) => m === 'aether-mock');
-      push({ type: 'done', inputTokens: offlineOnly ? 0 : usage.inputTokens, outputTokens: offlineOnly ? 0 : usage.outputTokens, calls: offlineOnly ? 0 : usage.calls, ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
+      push({ type: 'done', inputTokens: offlineOnly ? 0 : usage.inputTokens, outputTokens: offlineOnly ? 0 : usage.outputTokens, calls: offlineOnly ? 0 : usage.calls, ...(!offlineOnly && usage.cachedInputTokens > 0 ? { cachedInputTokens: usage.cachedInputTokens } : {}), ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
@@ -1200,9 +1202,12 @@ export class Studio {
   private async streamRun(run: AsyncGenerator<AgentEvent>, entryId: number, abort: AbortController, usage: RunUsage): Promise<'done' | 'error' | 'aborted'> {
     let status: 'done' | 'error' | 'aborted' = 'done';
     let shown = this.history.current;
+    // A small edit's card says what changed: the reply after it keeps only what the card does not say.
+    let card: { summary: string; notes: readonly string[] } | null = null;
     for await (const event of run) {
       if (event.type === 'done') {
         usage.inputTokens += event.usage.inputTokens;
+        usage.cachedInputTokens += event.usage.cachedInputTokens ?? 0;
         usage.outputTokens += event.usage.outputTokens;
         usage.calls += event.usage.calls;
         for (const m of event.usage.models ?? []) if (!usage.models.includes(m) && usage.models.length < 6) usage.models.push(m.slice(0, 64));
@@ -1240,6 +1245,16 @@ export class Studio {
       }
       if (event.type === 'edit') this.lastReply = event.summary;
       else if (event.type === 'message' && this.lastReply === '') this.lastReply = event.text;
+      if (event.type === 'message' && card) {
+        const rest = beyondEditCard(card, event.text);
+        card = null;
+        if (rest === '') continue;
+        if (rest !== event.text) {
+          this.store.getState().pushEvent(entryId, { type: 'message', text: rest });
+          continue;
+        }
+      }
+      card = event.type === 'edit' ? { summary: event.summary, notes: event.notes } : event.type === 'status' ? card : null;
       const view = toEventView(event, { head: this.history.head });
       this.store.getState().pushEvent(entryId, view);
       if (event.type === 'patches') {
@@ -1301,7 +1316,8 @@ export class Studio {
       if (round >= ctx.budget || !needsRefinement(report)) return 'done';
       if (ctx.online) {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
-        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile });
+        // The same tools as the build (so the same system prompt): the refinement continues the build's conversation.
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile, ...(ctx.promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}) });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
         const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history, ...(ctx.session ? { session: ctx.session } : {}) }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';

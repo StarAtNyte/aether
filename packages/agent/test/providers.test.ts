@@ -97,7 +97,7 @@ describe('Anthropic provider', () => {
     const res = await p.complete(req());
     expect(res.stopReason).toBe('tool_use');
     expect(res.content).toEqual([{ type: 'text', text: 'Plan' }, { type: 'tool_use', id: 'toolu_2', name: 'finish', input: { message: 'ok' } }]);
-    expect(res.usage).toEqual({ inputTokens: 910, outputTokens: 42 });
+    expect(res.usage).toEqual({ inputTokens: 910, outputTokens: 42, cachedInputTokens: 900 });
     await p.complete(req({ messages: [...conversation, { role: 'assistant', content: res.content }, { role: 'user', content: [{ type: 'tool_result', toolUseId: 'toolu_2', content: 'ok' }] }] }));
     const msgs = f.calls[1]!.body['messages'] as Array<{ content: Array<Record<string, unknown>> }>;
     expect(msgs[3]!.content[0]).toEqual({ type: 'thinking', thinking: '', signature: 'sig-abc' });
@@ -230,6 +230,19 @@ describe('OpenAI provider', () => {
     const input = f.calls[1]!.body['input'] as Array<Record<string, unknown>>;
     expect(input[1]).toMatchObject({ type: 'reasoning', encrypted_content: 'enc' });
     expect(input.at(-1)).toEqual({ type: 'function_call_output', call_id: 'call_9', output: 'done' });
+  });
+
+  it('routes calls with the same system prompt to one prompt cache and reports the cached part', async () => {
+    const f = fakeFetch([{ status: 200, body: { ...openaiOk, usage: { input_tokens: 5000, input_tokens_details: { cached_tokens: 4800 }, output_tokens: 7 } } }, { status: 200, body: openaiOk }, { status: 200, body: openaiOk }]);
+    const p = createOpenAIProvider({ apiKey: 'k', models: OAI, fetch: f.fetch, retry: FAST });
+    const res = await p.complete(req());
+    expect(res.usage).toEqual({ inputTokens: 5000, outputTokens: 7, cachedInputTokens: 4800 });
+    await p.complete(req({ messages: [{ role: 'user', content: 'another turn' }] }));
+    await p.complete(req({ system: 'ANOTHER SYSTEM' }));
+    const keys = f.calls.map((c) => c.body['prompt_cache_key']);
+    expect(typeof keys[0]).toBe('string');
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
   });
 
   it('keeps malformed arguments as a string for the agent to report', async () => {
