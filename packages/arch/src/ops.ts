@@ -17,6 +17,27 @@ import { WallDado } from './params';
 import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
 import { planWindowAddition } from './window-fit';
+import { checkStair, fitStair, levelDoors } from './stair-fit';
+
+/** A stair to add: the plan stair with everything optional; without "at" one is fitted (in "room" when given). */
+const StairRequest = z.object({
+  at: PlanStair.shape.at.optional(),
+  heading: Compass.optional(),
+  shape: z.enum(['straight', 'l', 'u']).optional(),
+  width: z.number().min(0.7).max(2.5).optional(),
+  turn: z.enum(['left', 'right']).optional(),
+  room: z.string().min(1).max(64).optional(),
+});
+const STAIR_HINT = 'Stairs: {"stair":{"at":[x,z] (first riser, plan metres),"heading":"north|south|east|west" (direction of travel),"shape"?:"straight|l|u","width"?:1}} on the lower level, or {"stair":{"room":"hall"}} to have one fitted.';
+
+/** Stair fields sent on the op itself instead of inside "stair". */
+function stairFieldsOf(raw: unknown): Record<string, unknown> | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of ['at', 'heading', 'shape', 'width', 'turn', 'room']) if (r[k] !== undefined) out[k] = r[k];
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /** A window to add: the plan window with the side optional (the room's widest free exterior wall when omitted). */
 const WindowRequest = PlanWindow.extend({ side: Compass.optional() });
@@ -36,7 +57,8 @@ export const ArchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('remove_room'), building: Id, room: Id }),
   z.object({ op: z.literal('add_door'), building: Id, level: z.number().int().min(0).max(5).default(0), door: Unknown }),
   z.object({ op: z.literal('add_window'), building: Id, level: z.number().int().min(0).max(5).default(0), window: Unknown }),
-  z.object({ op: z.literal('add_stairs'), building: Id, level: z.number().int().min(0).max(5).default(0), stair: Unknown }),
+  // `stair` may be omitted when its fields sit on the op itself (a common slip), see add_stairs below.
+  z.object({ op: z.literal('add_stairs'), building: Id, level: z.number().int().min(0).max(5).default(0), stair: Unknown.optional() }),
   z.object({ op: z.literal('set_roof'), building: Id, roof: Unknown }),
   z.object({ op: z.literal('set_style'), building: Id, style: ArchStyle }),
   z.object({ op: z.literal('furnish_room'), building: Id, room: Id, furnish: z.boolean().default(true), items: z.array(Unknown).max(60).optional(), omit: z.array(z.string().max(40)).max(20).optional() }),
@@ -257,8 +279,28 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
         }
         case 'add_stairs': {
           const plan = load(op.building);
-          levelOf(plan, op.level).stairs.push(parseWith(PlanStair, op.stair, 'stair', 'Stairs: {at:[x,z] (first riser), heading: north|south|east|west, shape?: straight|l|u, width?}.'));
-          lines.push(`add_stairs on level ${op.level}`);
+          // The stair fields may come inside "stair" or (a common slip) on the op itself.
+          const rawStair = op.stair ?? stairFieldsOf(raw);
+          const req = parseWith(StairRequest, rawStair ?? {}, 'stair', STAIR_HINT);
+          const lvl = levelOf(plan, op.level);
+          if (!plan.levels[op.level + 1]) throw new PlanError('stair_leads_nowhere', `level ${op.level} is the top level of "${plan.id}", so a stair there leads nowhere`, 'Add a level above with add_level first, or put the stair on a lower level.');
+          if (req.at === undefined) {
+            // No position: fit one (against a wall, clear of doorways, arriving on open floor upstairs).
+            const fit = fitStair(plan, op.level, { room: req.room !== undefined ? roomOf(plan, req.room).room.id : undefined, shape: req.shape, heading: req.heading, width: req.width, others: lvl.stairs });
+            if (!fit.ok) throw new PlanError('stair_does_not_fit', `no stair fits${req.room ? ` in ${req.room}` : ''} on level ${op.level}: ${fit.reasons.join('; ')}`, 'Use a larger room (or the hall), an L or U shape, or a narrower stair; query_scene {"q":"stairs"} measures the options.');
+            lvl.stairs.push(fit.stair);
+            lines.push(`add_stairs on level ${op.level}: ${fit.line}`);
+            break;
+          }
+          const stair: PlanStair = { at: req.at, heading: req.heading ?? 'north', shape: req.shape ?? 'straight', width: req.width ?? 1, turn: req.turn ?? 'left' };
+          const check = checkStair(plan, op.level, stair, levelDoors(plan), lvl.stairs);
+          if (check.problems.length > 0) {
+            const fit = fitStair(plan, op.level, { room: check.room, width: stair.width, others: lvl.stairs });
+            const suggestion = fit.ok ? `A stair that fits: {"at":[${fit.stair.at.join(',')}],"heading":"${fit.stair.heading}","shape":"${fit.stair.shape}","width":${fit.stair.width}${fit.stair.shape === 'straight' ? '' : `,"turn":"${fit.stair.turn}"`}} (${fit.line}); or send {"room":"${fit.room}"} without "at" to have it fitted.` : `Nothing fits there: ${fit.reasons.join('; ')}.`;
+            throw new PlanError('stair_misplaced', `the stair at (${stair.at.join(', ')}) heading ${stair.heading} does not work: ${check.problems.join('; ')}`, suggestion);
+          }
+          lvl.stairs.push(stair);
+          lines.push(`add_stairs on level ${op.level}: ${check.shape.risers} risers of ${check.shape.riser.toFixed(3)} m in ${check.room ?? 'the room'}, arriving in ${check.arrives ?? 'the level above'}`);
           break;
         }
         case 'set_roof': {

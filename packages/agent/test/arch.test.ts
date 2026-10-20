@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, summarizeWorld, type WorldDoc } from '@aether/core';
-import { applyArchOps, checkBuildings } from '@aether/arch';
+import { applyArchOps, checkBuildings, checkStair, parsePlan } from '@aether/arch';
 import { planArch } from '../src/providers/mock/arch';
 
 /** Offline planner themes for real-life architecture (the studio's showcase prompts). */
@@ -90,6 +90,21 @@ describe('offline architecture planner', () => {
     const gone = planArch('remove the people', summarizeWorld(res.target));
     expect(gone!.arch!.ops).toEqual([{ op: 'set_residents', building: expect.any(String), count: 0 }]);
     expect(people(applyArchOps(res.target, gone!.arch!.ops as never).target)).toBe(0);
+  });
+
+  it('the stair measure agrees with the offline houses: every stair they build passes it', () => {
+    let stairs = 0;
+    for (const prompt of [...THEMES, 'a two-storey modern house with a pool, open-plan living room, kitchen and two bedrooms, people living in it']) {
+      const op = planArch(prompt, '')!.arch!.ops[0] as { plan: unknown };
+      const plan = parsePlan(op.plan);
+      plan.levels.forEach((l, li) => {
+        for (const s of l.stairs) {
+          stairs++;
+          expect(checkStair(plan, li, s, undefined, l.stairs.filter((o) => o !== s)).problems, `${prompt}: level ${li}`).toEqual([]);
+        }
+      });
+    }
+    expect(stairs).toBeGreaterThan(0);
   });
 
   it('leaves games and block worlds to the other planners', () => {

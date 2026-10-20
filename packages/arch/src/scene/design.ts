@@ -24,6 +24,8 @@ import { findOpening, findRoom, isLookupError } from './facts';
 import { cmr, polygonGap } from './geom';
 import type { Scene, SceneItem, SceneOpening, SceneRoom, SceneWall } from './types';
 import type { Finding } from './checks';
+import { parsePlan } from '../compile';
+import { checkStair, fitStair, levelDoors } from '../stair-fit';
 
 const Slug = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, 'ids are short lowercase slugs (letters, digits, dashes; at most 24 characters)');
 const RoomRef = z.union([Slug, z.literal('outside')]);
@@ -72,13 +74,28 @@ export const DesignOpening = z.object({
 });
 export type DesignOpening = z.infer<typeof DesignOpening>;
 
+/**
+ * A stair from this storey to the next: exact (`at` = first riser, `heading` = direction of travel) or just the
+ * room it should go in (`{"room":"hall"}`), and the building tools fit one there (against a wall, clear of the
+ * doorways, arriving on open floor upstairs).
+ */
+export const DesignStair = z.object({
+  at: PlanStair.shape.at.optional(),
+  heading: Compass.optional(),
+  shape: z.enum(['straight', 'l', 'u']).optional(),
+  width: z.number().min(0.7).max(2.5).optional(),
+  turn: z.enum(['left', 'right']).optional(),
+  room: Slug.optional(),
+});
+export type DesignStair = z.infer<typeof DesignStair>;
+
 /** One storey of the design. */
 export const DesignLevel = z.object({
   name: z.string().max(60).optional(),
   height: z.number().min(2.4).max(8).optional(),
   rooms: z.array(DesignRoom).min(1).max(40),
   openings: z.array(DesignOpening).max(120).default([]),
-  stairs: z.array(PlanStair).max(4).default([]),
+  stairs: z.array(DesignStair).max(4).default([]),
 });
 
 /** The whole design plan. */
@@ -322,7 +339,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), furnish: false, items: [] })),
       doors,
       windows,
-      stairs: lvl.stairs,
+      stairs: lvl.stairs.flatMap((st) => (st.at ? [{ at: st.at, heading: st.heading ?? 'north', shape: st.shape ?? 'straight', width: st.width ?? 1, turn: st.turn ?? 'left' }] : [])),
     };
   });
   // The first outside door is the entrance when none is marked.
@@ -336,6 +353,59 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
     }
   }
   return { id: plan.id, name: plan.name, style: plan.style, levels, ...(plan.roof ? { roof: plan.roof } : {}), ...(plan.site ? { site: plan.site } : {}), ...(plan.origin ? { origin: plan.origin } : {}), ...(plan.rotation !== undefined ? { rotation: plan.rotation } : {}), design: record };
+}
+
+/** Result of {@link resolveDesignStairs}. */
+export interface StairResolution {
+  /** The plan with every stair exact (fitted ones filled in). */
+  plan: DesignPlan;
+  /** Stairs that do not work, measured (the plan is refused). */
+  errors: string[];
+  /** What was fitted. */
+  lines: string[];
+}
+
+/**
+ * Make every stair of a design exact and check it: a stair given only by room is fitted there, an exact one is
+ * measured (footprint inside a room clear of the walls, floor in front of it, clear of doorways, the stairwell
+ * and the top step on open floor upstairs). Problems come back with numbers and a stair that does fit.
+ */
+export function resolveDesignStairs(plan: DesignPlan): StairResolution {
+  if (!plan.levels.some((l) => l.stairs.length > 0)) return { plan, errors: [], lines: [] };
+  const errors: string[] = [];
+  const lines: string[] = [];
+  const shell = parsePlan(designToBuildingPlan({ ...plan, levels: plan.levels.map((l) => ({ ...l, stairs: [] })) }));
+  const doors = levelDoors(shell);
+  const levels = plan.levels.map((lvl, li) => {
+    const done: PlanStair[] = [];
+    const stairs: DesignStair[] = [];
+    lvl.stairs.forEach((st, si) => {
+      const label = `level ${li} stair ${si + 1}`;
+      if (!st.at) {
+        const fit = fitStair(shell, li, { room: st.room, shape: st.shape, heading: st.heading, width: st.width, others: done });
+        if (!fit.ok) {
+          errors.push(`${label}: no stair fits${st.room ? ` in ${st.room}` : ''}: ${fit.reasons.join('; ')}`);
+          return;
+        }
+        done.push(fit.stair);
+        stairs.push({ ...fit.stair });
+        lines.push(`${label}: fitted ${fit.line}`);
+        return;
+      }
+      const exact: PlanStair = { at: st.at, heading: st.heading ?? 'north', shape: st.shape ?? 'straight', width: st.width ?? 1, turn: st.turn ?? 'left' };
+      const check = checkStair(shell, li, exact, doors, done);
+      if (check.problems.length > 0) {
+        const fit = fitStair(shell, li, { room: st.room ?? check.room, width: exact.width, others: done });
+        const better = fit.ok ? ` A stair that fits: {"at":[${fit.stair.at.join(',')}],"heading":"${fit.stair.heading}","shape":"${fit.stair.shape}","width":${fit.stair.width}${fit.stair.shape === 'straight' ? '' : `,"turn":"${fit.stair.turn}"`}} (${fit.line}), or give just {"room":"${fit.room}"} to have it fitted.` : ` Nothing fits there: ${fit.reasons.join('; ')}.`;
+        errors.push(`${label} at (${exact.at.join(', ')}) heading ${exact.heading}: ${check.problems.join('; ')}.${better}`);
+        return;
+      }
+      done.push(exact);
+      stairs.push({ ...exact });
+    });
+    return { ...lvl, stairs };
+  });
+  return { plan: { ...plan, levels }, errors, lines };
 }
 
 /** Text of what a built shell offers: rooms with dimensions, walls with openings, entrance. */

@@ -15,9 +15,10 @@
 import { z } from 'zod';
 import { applyPatches, hasOwn, type EntityId, type Json, type Patch, type WorldDoc } from '@aether/core';
 import { applyArchOps, planOf } from '../ops';
+import { fitStair, stairSizes } from '../stair-fit';
 import { RELATION_TYPES } from '../design-record';
 import { reviewScene, scoreFindings, findingsText, type Finding } from './checks';
-import { checkConformance, describeShell, DesignPlan, designToBuildingPlan, validateDesign } from './design';
+import { checkConformance, describeShell, DesignPlan, designToBuildingPlan, resolveDesignStairs, validateDesign } from './design';
 import { anchorToOpening, centerOver, moveItem, placeItem, removeItem, resizeItem, resolveBuilding, rotateItem, snapToWall, type EditResult } from './edit';
 import { findRoom, findWall, isLookupError, listEntities, measure, queryWall, wallQueryText } from './facts';
 import { describeParts } from './parts';
@@ -91,6 +92,8 @@ export const QueryInput = z.discriminatedUnion('q', [
   z.object({ q: z.literal('parts') }).strict(),
   z.object({ q: z.literal('shell') }).strict(),
   z.object({ q: z.literal('review'), fast: z.boolean().optional() }).strict(),
+  // Where a stair from `level` to the next fits (optionally in a room / of a shape / heading / width), with the riser maths.
+  z.object({ q: z.literal('stairs'), level: z.number().int().min(0).max(5).optional(), room: Ref.optional(), shape: z.enum(['straight', 'l', 'u']).optional(), heading: z.enum(['north', 'south', 'east', 'west']).optional(), width: z.number().min(0.7).max(2.5).optional() }).strict(),
 ]);
 
 /** Inputs of the four tools. */
@@ -163,8 +166,11 @@ function runDesignPlan(world: WorldDoc, rawInput: unknown): DesignToolResult {
   const cleaned = dropUnknownRelations(input.data.plan);
   const parsed = DesignPlan.safeParse(cleaned.plan);
   if (!parsed.success) return refuse(world, `The design plan does not match the schema: ${issues(parsed.error)}. Fix these fields and resend design_plan.`);
-  const plan = parsed.data;
-  const check = validateDesign(plan);
+  const check = validateDesign(parsed.data);
+  // Stairs given by room are fitted; exact ones are measured (refused with numbers and a stair that fits).
+  const stairs = check.errors.length > 0 ? { plan: parsed.data, errors: [], lines: [] } : resolveDesignStairs(parsed.data);
+  const plan = stairs.plan;
+  check.errors.push(...stairs.errors);
   if (check.errors.length > 0) {
     return refuse(world, `The design plan was refused, nothing was built:\n${check.errors.slice(0, 20).map((e) => `- ${e}`).join('\n')}${check.warnings.length > 0 ? `\nAdvice:\n${check.warnings.slice(0, 8).map((e) => `- ${e}`).join('\n')}` : ''}\nFix these and resend design_plan.`, `Design ${plan.name}`);
   }
@@ -203,6 +209,7 @@ function runDesignPlan(world: WorldDoc, rawInput: unknown): DesignToolResult {
   if (cleaned.dropped.length > 0) lines.push(`Ignored relations the checker cannot measure (use ${RELATION_TYPES.join(', ')}): ${cleaned.dropped.slice(0, 8).join('; ')}. The intent text still guides you; place those pieces where the intent says.`);
   if (scene) lines.push(describeShell(scene));
   if (alias.size > 0) lines.push(`Opening ids as built: ${[...alias].map(([k, v]) => `${k} = ${v}`).join(', ')}. Use the built ids in place_items / edit_items.`);
+  for (const l of stairs.lines) lines.push(`Stairs: ${l}.`);
   if (check.warnings.length > 0) lines.push(`Advice:\n${check.warnings.slice(0, 8).map((w) => `- ${w}`).join('\n')}`);
   for (const n of ops.compiled.flatMap((c) => c.notes).slice(0, 8)) lines.push(`Note: ${n}`);
   if (plan.furniture.length > 0) lines.push(`Planned pieces to place (${plan.furniture.length}): ${plan.furniture.map((f) => `${f.id} (${f.kind}, ${f.room})`).join(', ')}.`);
@@ -447,9 +454,37 @@ function runQueries(world: WorldDoc, rawInput: unknown): DesignToolResult {
         lines.push(`[${index + 1}] review of ${b.id}: score ${scoreFindings(f)}/100\n${findingsText(f)}`);
         return;
       }
+      case 'stairs': {
+        lines.push(`[${index + 1}] ${stairsAnswer(world, b.id, query)}`);
+        return;
+      }
     }
   });
   return { ok: answered > 0, text: clipText(lines.join('\n')), patches: [], message: 'Query', ids: [], accepted: answered, refused: input.data.queries.length - answered, world };
+}
+
+/** Answer of a `stairs` query: a fitted stair per storey (or the one asked about), with the riser maths. */
+function stairsAnswer(world: WorldDoc, building: EntityId, q: { level?: number | undefined; room?: string | undefined; shape?: 'straight' | 'l' | 'u' | undefined; heading?: 'north' | 'south' | 'east' | 'west' | undefined; width?: number | undefined }): string {
+  const plan = planOf(world, building);
+  const levels = q.level !== undefined ? [q.level] : plan.levels.map((_, i) => i).slice(0, -1);
+  if (levels.length === 0) return `${building} has one level: add a level above (build_architecture add_level) before a stair.`;
+  const out: string[] = [];
+  for (const li of levels) {
+    const lvl = plan.levels[li];
+    if (!lvl) {
+      out.push(`level ${li}: no such level (0..${plan.levels.length - 1})`);
+      continue;
+    }
+    const room = q.room !== undefined ? q.room.replace(new RegExp(`^${building}-l\\d+-`), '') : undefined;
+    const fit = fitStair(plan, li, { room, shape: q.shape, heading: q.heading, width: q.width, others: lvl.stairs });
+    const have = lvl.stairs.length > 0 ? ` (level ${li} already has ${lvl.stairs.length} stair(s))` : '';
+    out.push(
+      fit.ok
+        ? `level ${li} → ${li + 1}${have}: ${fit.line}. ${stairSizes(lvl.height, fit.stair.width)}. Use it as build_architecture {"op":"add_stairs","building":"${building}","level":${li},"stair":{"at":[${fit.stair.at.join(',')}],"heading":"${fit.stair.heading}","shape":"${fit.stair.shape}","width":${fit.stair.width}${fit.stair.shape === 'straight' ? '' : `,"turn":"${fit.stair.turn}"`}}} or in design_plan levels[${li}].stairs.`
+        : `level ${li} → ${li + 1}${have}: no stair fits: ${fit.reasons.join('; ')}.`,
+    );
+  }
+  return out.join('\n');
 }
 
 /** True when the document has a building (the design tools apply). */

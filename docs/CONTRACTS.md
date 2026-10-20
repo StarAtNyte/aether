@@ -1347,10 +1347,20 @@ applyArchOps(world, ops ≤ MAX_ARCH_OPS 40) → { patches, lines, errors[{ inde
          // add_window {window: {room, side?, count?, width?…}}: the level is found from the room; without side each window goes
          // to the centre of the widest clear exterior stretch (0.4 m from corners and openings, window-fit.ts), else an even
          // row with room for one more is re-spread; the room's automatic windows become explicit specs first, so they stay
+         // add_stairs {level, stair: {at?, heading?, shape?, width?, turn?, room?}} (fields also accepted on the op itself):
+         // without at, fitStair places one in `room` (or the hall / living…); with at, checkStair measures it and a stair that
+         // crosses a wall, has no floor to step on (0.6 m in front or beside the first treads), comes within half a door
+         // width + 0.5 m of a doorway, cuts an upstairs wall or arrives on < 0.6 m of floor is refused (stair_misplaced)
+         // with the numbers and a fitted alternative; stair_does_not_fit lists each room and the size every shape needs
          | set_material {target: exterior|roof|floor|walls, room?, material}
          | set_residents {building, count 0..8}   // people living in / visiting the building (see BuildingPlan.residents)
   // ops apply in order to the stored plans; touched buildings are re-compiled, locked entities kept, a `navigable`
   // test added, the player set to first person in front of the main entrance; minimal patches via patchesBetween
+stair-fit.ts: stairShape(stair, rise) / checkStair(plan, level, stair, doors?, others?) → { problems[], room?, arrives?, shape }
+  fitStair(plan, level, { room?, shape?, heading?, width?, others? }) → { ok, stair, room, arrives, line } | { ok: false, reasons[] }
+  // straight before L before U, 1 m before 0.9 m wide, against a wall in 10 cm steps; design_plan stairs may be {room}
+  // (fitted, reported as "Stairs: …") and query_scene {q:"stairs", level?, room?, shape?, heading?, width?} answers with
+  // the riser maths and a ready add_stairs op
 checkBuilding(world, id, clearance=0.8) / checkBuildings(world, '*') → BuildingReport { passed, rooms, reachable, doors, doorsClear, issues }
   // 5 cm nav grid per storey from the document (walls, door linings, floor furniture; walkway inflation); flood fill
   // from the entrance through doorways and up stairs; door swing discs free of furniture; furniture grounded, no overlaps
