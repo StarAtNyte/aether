@@ -104,6 +104,29 @@ describe('self-repair', () => {
     expect(Number(r.world.state['timeLeft'])).toBeGreaterThan(4);
   }, 120_000);
 
+  it('slows enemies that bring the player down, but only by a step the bot then wins', async () => {
+    const wolf = (id: string, at: [number, number, number]): EntityInput => ({
+      id,
+      tags: ['npc', 'wolf'],
+      shape: { kind: 'primitive', primitive: 'capsule', size: [0.6, 1, 0.6] },
+      transform: { position: at },
+      physics: { body: 'kinematic' },
+      npc: { role: 'wolf', faction: 'wolves', archetype: 'predator', enemies: ['player'], speed: 3, runSpeed: 7, perception: { sight: 30, fov: 360, hearing: 30, memory: 10, alert: 0 }, attack: { range: 1.5, damage: 34, cooldown: 1 }, leash: 60, waypoints: [at] },
+    });
+    const world = gameWorld([coin('c1', [0, 1, -14]), coin('c2', [10, 1, -20]), coin('c3', [-10, 1, -20]), wolf('wolf-1', [0, 0, -8]), wolf('wolf-2', [6, 0, -16])], { rules: [winAt(3)], state: { score: 0, health: 100 } });
+    const before = await playtest(world, { trace: false });
+    expect(before.findings.some((f) => f.code === 'lost'), before.summary).toBe(true);
+    const r = await selfRepair(world);
+    expect(r.passed, brief(r)).toBe(true);
+    const fix = r.applied.find((a) => a.code === 'lost');
+    expect(fix?.sentence).toMatch(/^Made the wolves slower/);
+    const npc = r.world.entities['wolf-1']?.npc;
+    expect(npc?.runSpeed).toBeLessThan(6);
+    expect(npc?.attack?.damage).toBeLessThan(34);
+    // Every other part of the wolf is kept.
+    expect(npc?.perception.sight).toBe(30);
+  }, 180_000);
+
   it('keeps every repair undoable', async () => {
     const world = gameWorld([coin('c1', [3, 1, 0]), coin('c2', [-3, 1, 0]), coin('c3', [0, 1, 4])], { rules: [winAt(5)], state: { score: 0 } });
     const r = await selfRepair(world);

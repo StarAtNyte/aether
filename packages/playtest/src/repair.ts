@@ -15,7 +15,10 @@
  * - a game nothing ever ends → a rule that wins when everything is collected;
  * - a player spawning inside geometry → the spawn moves onto open floor;
  * - a countdown that runs out before the bot (given all the time) can finish
- *   → the countdown gets the time that was measured, with a margin.
+ *   → the countdown gets the time that was measured, with a margin;
+ * - enemies that bring the player down before the game can be won → they
+ *   chase more slowly and hit softer, in a few gentler steps, each one played
+ *   by the bot first; only a step the bot then wins is applied.
  *
  * Findings without a safe automatic fix (soft-locks, "stuck", falls) are
  * reported, never "repaired" by guessing.
@@ -416,6 +419,7 @@ export async function selfRepair(world: WorldDoc, opts: SelfRepairOptions = {}):
     const proposals = proposeRepairs(current, report).filter((p) => !tried.has(p.id + JSON.stringify(p.patches)));
     let proposal: RepairProposal | null = proposals[0] ?? null;
     if (!proposal) proposal = await countdownRepair(current, report, run);
+    if (!proposal) proposal = await enemyRepair(current, report, run, tried);
     let next: WorldDoc | null = null;
     if (proposal) {
       tried.add(proposal.id + JSON.stringify(proposal.patches));
@@ -451,6 +455,69 @@ async function countdownRepair(world: WorldDoc, report: PlaytestReport, run: (w:
     sentence: `Raised the time limit from ${Math.round(cd.start)} s to ${start} s, because the bot needed ${Math.ceil(needed)} s to finish.`,
     patches: [{ op: 'setState', key: cd.key, value: start }],
   };
+}
+
+/** Hostile NPCs (they attack the player) of a world. */
+function hostileNpcs(world: WorldDoc): Array<[EntityId, NonNullable<Entity['npc']>]> {
+  const out: Array<[EntityId, NonNullable<Entity['npc']>]> = [];
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (e.template || !e.npc || !e.npc.enemies.includes('player')) continue;
+    out.push([id, e.npc]);
+  }
+  return out;
+}
+
+/** Gentler steps tried in order: chase speed as a share of the player's speed, and the share of the damage kept. */
+const ENEMY_STEPS: ReadonlyArray<{ chase: number; damage: number }> = [
+  { chase: 0.6, damage: 0.5 },
+  { chase: 0.5, damage: 0.5 },
+  { chase: 0.45, damage: 0.34 },
+];
+
+/** Patches that slow every hostile NPC to `chase` x the player's speed and keep `damage` of its attack. */
+function enemyPatches(world: WorldDoc, step: { chase: number; damage: number }): PatchInput[] {
+  const player = Math.max(1, world.player.moveSpeed);
+  const patches: PatchInput[] = [];
+  for (const [id, npc] of hostileNpcs(world)) {
+    const runSpeed = r2(Math.min(npc.runSpeed, player * step.chase));
+    const speed = r2(Math.min(npc.speed, runSpeed * 0.6));
+    const attack = npc.attack ? { ...npc.attack, damage: Math.max(1, Math.round(npc.attack.damage * step.damage)) } : undefined;
+    if (runSpeed === npc.runSpeed && speed === npc.speed && (!attack || attack.damage === npc.attack?.damage)) continue;
+    patches.push({ op: 'update', id, set: { npc: { ...npc, runSpeed, speed, ...(attack ? { attack } : {}) } as unknown as Json } });
+  }
+  return patches;
+}
+
+/**
+ * The game was lost and hostile NPCs exist: try gentler enemies (slower chase, softer hits) one step at a time and
+ * apply the first step the bot then wins. Nothing changes when no step helps (the loss stays reported).
+ */
+async function enemyRepair(world: WorldDoc, report: PlaytestReport, run: (w: WorldDoc, round: number) => Promise<PlaytestReport>, tried: ReadonlySet<string>): Promise<RepairProposal | null> {
+  if (!report.findings.some((f) => f.code === 'lost')) return null;
+  const hostile = hostileNpcs(world);
+  if (hostile.length === 0) return null;
+  for (const step of ENEMY_STEPS) {
+    const patches = enemyPatches(world, step);
+    if (patches.length === 0) continue;
+    const id = `enemies:${step.chase}:${step.damage}`;
+    if (tried.has(id + JSON.stringify(patches))) continue;
+    const trial = applyPatches(world, patches);
+    if (trial.errors.length > 0) return null;
+    const measured = await run(trial.world, -1);
+    if (measured.status !== 'passed') continue;
+    const [firstId, first] = hostile[0] as [EntityId, NonNullable<Entity['npc']>];
+    const group = /s$/.test(first.faction) ? first.faction.replace(/-/g, ' ') : hostile.every(([, n]) => n.role === first.role) && /^[a-z]+$/i.test(first.role) && !/s$/.test(first.role) ? `${first.role}s` : 'enemies';
+    const who = hostile.length === 1 ? label(world, firstId) : `the ${group}`;
+    const to = r2(Math.min(first.runSpeed, Math.max(1, world.player.moveSpeed) * step.chase));
+    return {
+      id,
+      code: 'lost',
+      sentence: `Made ${who} slower (chase ${r2(first.runSpeed)} → ${to} m/s) and softer-hitting, because they brought the player down before the game could be won.`,
+      patches,
+    };
+  }
+  return null;
 }
 
 const lowerFirst = (t: string): string => t.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase());
