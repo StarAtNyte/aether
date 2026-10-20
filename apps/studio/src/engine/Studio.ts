@@ -1020,7 +1020,17 @@ export class Studio {
     // Intent: the turn will verify the world, so load physics in a worker while the model plans.
     this.verifier.warm(Object.keys(this.history.current.scripts).length > 0);
     const prefs = st.aiPrefs;
-    const resolved: ResolvedConnection = opts.offline ? { kind: 'offline', label: 'Offline planner', ready: true, vision: false } : this.ai.resolve(prefs);
+    let resolved: ResolvedConnection = opts.offline ? { kind: 'offline', label: 'Offline planner', ready: true, vision: false } : this.ai.resolve(prefs);
+    // A status read while the local server restarted (or a probe that timed out) is stale: look again before
+    // settling for the offline planner, so a restarted `aether start` is used instead of silently falling back.
+    if (!opts.offline && prefs.mode !== 'offline') {
+      const conn = this.ai.store.getState();
+      const transient = conn.local.state === 'error' || conn.local.state === 'checking' || conn.server.state !== 'live' || conn.bridge.state === 'offline';
+      if (!resolved.ready || (prefs.mode === 'auto' && resolved.kind !== 'local' && transient)) {
+        await this.ai.refresh().catch(() => undefined);
+        resolved = this.ai.resolve(prefs);
+      }
+    }
     const primary = opts.offline ? null : this.ai.createProvider(prefs, resolved);
     const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
     const history = buildAgentHistory(st.chat);
