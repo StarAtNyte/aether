@@ -217,4 +217,40 @@ export const BAR_STOOL: FurnitureDef = {
 };
 
 /** Seating definitions. */
-export const SEATING: readonly FurnitureDef[] = [SOFA, ARMCHAIR, CHAIR, OFFICE_CHAIR, BAR_STOOL];
+/** Sun lounger for a pool deck: a slatted frame on four short legs, a padded mattress, the back raised. Head at -Z. */
+export const LOUNGER: FurnitureDef = {
+  id: 'furn-lounger',
+  kind: 'lounger',
+  description: 'Sun lounger: low slatted frame, padded mattress, adjustable back raised at the head end. Length along Z, head at -Z.',
+  params: {
+    frame: choice(['oak', 'walnut', 'black-metal', 'paint'], 'oak', 'frame finish'),
+    color: color('#ece6da', 'mattress colour'),
+    back: num(35, 0, 70, 'back rest angle (degrees)'),
+  },
+  mount: 'floor',
+  againstWall: false,
+  frontClearance: 0,
+  size: () => [0.7, 0.75, 2.0],
+  build(p) {
+    const set = new PartSet();
+    const w = 0.7;
+    const L = 2.0;
+    const legH = 0.22;
+    const frame = new Geom();
+    for (const sx of [-1, 1] as const) frame.merge(roundedBox(0.05, 0.06, L, 0.01, 1).translate(sx * (w / 2 - 0.025), legH + 0.03, 0));
+    for (const sz of [-1, 1] as const) frame.merge(roundedBox(w, 0.06, 0.05, 0.01, 1).translate(0, legH + 0.03, sz * (L / 2 - 0.025)));
+    for (const sx of [-1, 1] as const) for (const sz of [-1, 1] as const) frame.merge(roundedBox(0.05, legH, 0.05, 0.008, 1).translate(sx * (w / 2 - 0.03), legH / 2, sz * (L / 2 - 0.06)));
+    set.add(frame, mat(p.str('frame')));
+    const pad = new Geom();
+    const backLen = 0.7;
+    const flat = L - backLen;
+    pad.merge(cushion(w - 0.06, 0.08, flat - 0.04, legH + 0.06, 0.012).translate(0, 0, (L - flat) / 2));
+    const a = p.num('back');
+    pad.merge(roundedBox(w - 0.06, 0.08, backLen, 0.03, 2).translate(0, 0, -backLen / 2).rotateX(a).translate(0, legH + 0.1, -L / 2 + backLen));
+    set.add(pad, mat('fabric', p.color('color')));
+    set.boxMinMax(-w / 2, 0, -L / 2, w / 2, legH + 0.1, L / 2);
+    return set.build();
+  },
+};
+
+export const SEATING: readonly FurnitureDef[] = [SOFA, ARMCHAIR, CHAIR, OFFICE_CHAIR, BAR_STOOL, LOUNGER];

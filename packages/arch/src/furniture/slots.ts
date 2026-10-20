@@ -63,6 +63,7 @@ export const FURNITURE_SLOTS: Readonly<Record<string, Readonly<Record<string, Sl
   tree: { foliage: s(undefined, 'leaf', 'leaves', 'crown', 'canopy') },
   mug: { glaze: s(undefined, 'color', 'cup', 'body', 'ceramic') },
   book: { cover: s(undefined, 'color', 'jacket', 'binding') },
+  lounger: { frame: s('frame', undefined, 'legs', 'base'), mattress: s(undefined, 'color', 'cushion', 'pad', 'fabric') },
   accent: { body: s(undefined, 'color', 'vase', 'bowl', 'glaze', 'towel'), accent: s(undefined, 'accent', 'stems', 'fruit', 'leaves') },
   switch: { plate: s('finish', undefined, 'cover', 'finish') },
 });

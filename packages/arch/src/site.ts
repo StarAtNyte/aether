@@ -231,7 +231,8 @@ export function compileGrounds(g: GardenInput): GardenOutput {
     // Trees frame the house from behind and the sides; the front corners stay open so the house is seen from the approach.
     const cxm = (px0 + px1) / 2;
     const czm = (pz0 + pz1) / 2;
-    const corners: P2[] = [[px0 + 2.2, pz0 + 2.2], [px1 - 2.2, pz0 + 2.2], [px1 - 2.2, pz1 - 2.2], [px0 + 2.2, pz1 - 2.2], [px0 + 2.4, czm], [px1 - 2.4, czm], [cxm, pz0 + 2.4], [cxm, pz1 - 2.4]].filter(([x, z]) => (x - cxm) * n[0] + (z - czm) * n[1] < 0.5) as P2[];
+    const spots: P2[] = [[px0 + 2.2, pz0 + 2.2], [px1 - 2.2, pz0 + 2.2], [px1 - 2.2, pz1 - 2.2], [px0 + 2.2, pz1 - 2.2], [px0 + 2.4, czm - n[1] * (pz1 - pz0) * 0.25], [px1 - 2.4, czm - n[1] * (pz1 - pz0) * 0.25], [cxm - n[0] * (px1 - px0) * 0.25, pz0 + 2.4], [cxm - n[0] * (px1 - px0) * 0.25, pz1 - 2.4]];
+    const corners = spots.filter((q) => (q[0] - cxm) * n[0] + (q[1] - czm) * n[1] < 0.5);
     let tree = 0;
     for (const [x, z] of corners) {
       if (inHouse(x, z, 2.6) || onTerrace(x, z, 1.2) || nearPath(x, z, 2.4)) continue;

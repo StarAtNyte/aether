@@ -884,10 +884,12 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     if (site.pool) {
       add({ id: `${bid}-pool`, parent: bid, name: 'Pool', transform: { position: [round(site.pool.at[0]), round(plan.plinth - 0.03), round(site.pool.at[1])] }, shape: { kind: 'procedural', generator: 'arch-basin', params: { width: site.pool.width, length: site.pool.length, depth: 1.4, freeboard: poolFreeboard(plan.plinth) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'pool', name: 'Pool' }, tags: ['arch', 'pool'] });
       // Loungers along the long side.
-      for (let k = 0; k < 3; k++) {
-        const x = site.pool.at[0] - site.pool.width / 2 + 1 + k * 1.1;
-        const z = site.pool.at[1] + site.pool.length / 2 + 1.3;
-        add({ id: `${bid}-lounger${k}`, parent: bid, name: 'Lounger', transform: { position: [round(x), round(plan.plinth + 0.02), round(z)], rotation: [0, 0, 0] }, shape: { kind: 'procedural', generator: 'furn-armchair', params: { width: 0.7, upholstery: 'fabric', color: '#efebe4', legs: 'oak' } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'furniture', kind: 'armchair', name: 'Lounger' }, tags: ['arch', 'furniture'] });
+      // Sun loungers lying along the far long side, as many as fit the pool's width.
+      const loungers = Math.max(1, Math.min(3, Math.floor((site.pool.width - 0.2) / 2.3)));
+      for (let k = 0; k < loungers; k++) {
+        const x = site.pool.at[0] - site.pool.width / 2 + 1.15 + k * 2.35;
+        const z = site.pool.at[1] + site.pool.length / 2 + 0.95;
+        add({ id: `${bid}-lounger${k}`, parent: bid, name: 'Lounger', transform: { position: [round(x), round(plan.plinth + 0.02), round(z)], rotation: [0, 90, 0] }, shape: { kind: 'procedural', generator: 'furn-lounger', params: { frame: pal.wood === 'walnut' ? 'walnut' : 'oak', color: '#ece6da', back: 35 } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'furniture', kind: 'lounger', name: 'Lounger' }, tags: ['arch', 'furniture'] });
       }
     }
     if (site.planting) {
