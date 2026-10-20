@@ -233,3 +233,23 @@ describe('acceptance edits: missing targets, characters and "onto"', () => {
     expect(msg && msg.type === 'message' && msg.text).toMatch(/cows slower/i);
   });
 });
+
+describe('offline building edits say what really happened', () => {
+  it('"remove the painting in the hallway" when the landing has no painting says nothing changed', async () => {
+    const { applyArchOps } = await import('@aether/arch');
+    const { applyPatches, createWorld, summarizeWorld } = await import('@aether/core');
+    const { planArch } = await import('../src/providers/mock/arch');
+    const base = createWorld();
+    const plan = planArch('a two-storey modern house with a pool and two bedrooms', summarizeWorld(base));
+    if (!plan?.arch) throw new Error('no plan');
+    const env = applyPatches(base, plan.patches);
+    const world = applyPatches(env.world, applyArchOps(env.world, plan.arch.ops).patches).world;
+    const art = (w: typeof world) => Object.values(w.entities).filter((e) => e.shape.kind === 'procedural' && e.shape.generator === 'furn-frame').length;
+    const host = new MemoryHost(world);
+    const events = await collect(new WorldAgent({ provider: createMockProvider(), catalogs: TEST_CATALOGS }).run('remove the painting in the hallway', host));
+    const text = events.map((e) => (e.type === 'message' ? e.text : '')).join(' ');
+    expect(art(host.world)).toBe(art(world));
+    expect(text).not.toMatch(/Done — removed/);
+    expect(text).toMatch(/nothing changed/i);
+  }, 60_000);
+});

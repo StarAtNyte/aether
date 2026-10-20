@@ -374,7 +374,17 @@ export class WorldAgent {
           results.push({ type: 'text', text: 'A call in that reply was refused, so finish was ignored: read the reasons above, fix them and call the tools again, then finish.' });
         }
         messages.push({ role: 'user', content: results });
-        if (finished?.message) yield { type: 'message', text: guardVerificationClaim(finished.message, { ran: lastVerifyPassed !== undefined, pending: dirty }) };
+        if (finished?.message) {
+          let said = finished.message;
+          // The offline planner words its answer before it runs ("Done — removed art"): when nothing you can see
+          // changed (there was no art in that room), it must not claim it did.
+          if (this.opts.provider.name === 'mock' && /^Done\b/.test(said) && hasWorld) {
+            const { worldChanges } = await import('./refine/runtime');
+            // The building's stored plan (what to omit) is bookkeeping, not something you can see.
+            if (worldChanges(startWorld, host.getWorld()).every((c) => c.scope === 'entity' && c.path.startsWith('arch.plan'))) said = 'Nothing in the world matched that, so nothing changed. Name something that is in the scene (the Objects panel lists everything), or connect an AI model for open-ended edits.';
+          }
+          yield { type: 'message', text: guardVerificationClaim(said, { ran: lastVerifyPassed !== undefined, pending: dirty }) };
+        }
       } else if (res.stopReason === 'max_tokens') {
         pushUserText(messages, 'Your reply was cut off by the output limit. Continue with smaller apply_patches calls.');
         continue;
