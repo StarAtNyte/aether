@@ -651,6 +651,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       // Stairs on this level keep their footprint clear.
       const stairBlock = lvl.stairs.map((s) => stairWorldFootprint(s, lvl.height)).filter((f) => pointInPolygon(centroid(f)[0], centroid(f)[1], poly));
       const holeBlock = holes;
+      // Furniture keeps a walkway round the stair and the stairwell, so the top and bottom steps lead somewhere.
+      ctx.keepClear = [...stairBlock, ...holeBlock].map((f) => grownBox(f, STAIR_WALKWAY));
       const { placed, notes: fn } = furnishRoom(ctx, r.items, r.furnish);
       notes.push(...fn);
       residentRooms.push({
@@ -910,6 +912,18 @@ function stairWorldFootprint(s: { at: P2 | [number, number]; heading: 'north' | 
     const r = rotateYaw(p[0], p[1], yaw);
     return [s.at[0] + r[0], s.at[1] + r[1]] as P2;
   });
+}
+
+/** Walkway kept free of furniture round a stair and a stairwell (m). */
+const STAIR_WALKWAY = 0.8;
+
+/** Axis-aligned box round a footprint, grown by `by` on every side (stairs are axis-aligned in plan). */
+function grownBox(fp: readonly P2[], by: number): P2[] {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const [x, z] of fp) {
+    x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z);
+  }
+  return [[x0 - by, z0 - by], [x1 + by, z0 - by], [x1 + by, z1 + by], [x0 - by, z1 + by]];
 }
 
 function polyArea(poly: readonly P2[]): number {

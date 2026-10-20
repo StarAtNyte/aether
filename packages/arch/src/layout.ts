@@ -52,6 +52,11 @@ export interface RoomContext {
   palette: StylePalette;
   seed: number;
   omit: ReadonlySet<string>;
+  /**
+   * Floor areas no furniture may cover (convex polygons, level plan coordinates): a stairwell and the stair below,
+   * each grown by a walkway, so a landing keeps a way from the top step to its doors.
+   */
+  keepClear?: readonly P2[][];
 }
 
 /** A placed piece (level plan coordinates). */
@@ -169,7 +174,7 @@ export class RoomLayout {
   private readonly keepouts: P2[][];
 
   constructor(readonly ctx: RoomContext) {
-    this.keepouts = ctx.doors.map((d) => doorKeepout(ctx, d));
+    this.keepouts = [...ctx.doors.map((d) => doorKeepout(ctx, d)), ...(ctx.keepClear ?? []).map((k) => [...k])];
   }
 
   /** Definition of a kind, unless omitted for this room. */

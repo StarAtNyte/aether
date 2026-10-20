@@ -25,6 +25,14 @@ describe('walkthrough bot', () => {
     expect(r.summary).toMatch(/^Verified walkable/);
   }, 120_000);
 
+  it('walks the two-storey villa of the home page (stairs, landing, both upstairs doors)', async () => {
+    for (const prompt of ['a two-storey villa with a pool', 'a two-storey modern house with a pool, open-plan living room, kitchen and two bedrooms, people living in it']) {
+      const r = await walkthrough(house(prompt));
+      expect(r.status, `${prompt}: ${r.summary}`).toBe('passed');
+      expect(r.objectives.every((o) => o.status === 'done'), prompt).toBe(true);
+    }
+  }, 240_000);
+
   it('walks an office floor with meeting rooms', async () => {
     const r = await walkthrough(house('an office floor with meeting rooms'));
     expect(r.status, r.summary).toBe('passed');
