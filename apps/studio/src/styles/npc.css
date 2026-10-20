@@ -284,6 +284,13 @@
   }
 }
 
+/* Walking a building: its key legend can wrap to two rows, so the talk prompt sits above it instead of under it. */
+@media (pointer: fine) and (min-width: 561px) {
+  .viewport:has(.walk-hint) .npc-prompt {
+    bottom: 104px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .npc-bubble,
   .npc-prompt,
