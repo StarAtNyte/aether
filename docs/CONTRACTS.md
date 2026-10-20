@@ -1402,6 +1402,15 @@ variantsFor({ kind }) → param overrides of sofas, armchairs, rugs, beds (walkt
 buildWall(WallParams) … buildStructure(id, params) / buildFurniture(def, params, seed)   // the arch-* / furn-* generators
 WallParams.cut?: 0.05..30   // VIEW-ONLY section: the wall is drawn up to `cut` with a dark cap (SECTION_CAP); window holes
                             // below fill in, doorways stay open. Set by the renderer's view modes; never compiled into documents.
+WallParams.base?: { side a|b, height 0.05..3 = 0.45, depth 0.005..0.2 = 0.03, drop 0..1.5 = 0.15, material }   // plinth band on the
+                            // outdoor face, interrupted at openings reaching into it; geometry only (colliders unchanged)
+WindowParams.surround?: { style box|board|stone, material, depth 0.01..0.6 = 0.16 }   // exterior surround: projecting window box,
+                            // trim boards + sill board, or a stone surround with a projecting sill (replaces the drip sill)
+RoofParams.gutters = false, downpipe 0..60 = 0, rainwater: MaterialSpec   // pitched roofs: eave gutters, downpipes down the corners
+exteriorPalette(style) → { ground, upper, plinth, trim, rainwater, surround, surroundMaterial, canopy }   // used when the plan keeps
+                            // the schema's default facade: e.g. modern = render base + timber cladding upper storey + concrete plinth
+                            // + black-metal fascia, window boxes and an entrance canopy; scandinavian = falu-red cladding + white boards
+furn-accent { style vase|bowl|books|candles|towels, color, accent }   furn-lounger { frame, color, back 0..70 }   (surface / floor pieces)
 ```
 
 `@aether/procgen` wraps every structural element (`arch-wall`, `arch-slab`,
