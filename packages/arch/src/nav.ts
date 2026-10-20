@@ -222,6 +222,9 @@ export function flood(grid: Grid, walk: Uint8Array, seeds: readonly number[], re
 }
 
 /** Nearest walkable cell to a point within `maxDist` metres (or -1). */
+/** How far the top of a stair may be from walkable floor on the level above (m). */
+export const STAIR_ARRIVAL_SNAP = 0.3;
+
 export function nearestWalkable(grid: Grid, walk: Uint8Array, p: P2, maxDist: number, within?: readonly P2[]): number {
   const r = Math.ceil(maxDist / grid.cell);
   const ci = Math.floor((p[0] - grid.x0) / grid.cell);
@@ -330,9 +333,11 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
   const rel = rotateYaw(sp[0] - bp[0], sp[2] - bp[2], -building.transform.rotation[1]);
   const entrance: P2 = [rel[0], rel[1]];
   // Stair links between levels: [level index, bottom approach, top arrival].
-  const links: Array<{ from: number; bottom: P2; top: P2 }> = [];
-  const pending = new Map<number, P2[]>();
-  pending.set(levels[0]?.index ?? 0, [entrance]);
+  const links: Array<{ from: number; bottom: P2; top: P2; id: EntityId }> = [];
+  // Seeds per level with how far they may snap to walkable floor: the entrance is found loosely, but the top of a
+  // stair must arrive on floor right there (a flight that runs into a wall does not reach the room behind it).
+  const pending = new Map<number, Array<{ p: P2; snap: number; stair?: EntityId }>>();
+  pending.set(levels[0]?.index ?? 0, [{ p: entrance, snap: 1.5 }]);
 
   for (const L of levels) {
     const rooms = L.children.filter((e) => e.arch?.role === 'room');
@@ -395,18 +400,25 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
         const last = flights[flights.length - 1];
         if (last) {
           const run = last.treads * sp2.data.going;
-          links.push({ from: L.index, bottom: world2([-0.35, 0]), top: world2([last.x + last.dx * (run + 0.4), last.z + last.dz * (run + 0.4)]) });
+          links.push({ from: L.index, bottom: world2([-0.35, 0]), top: world2([last.x + last.dx * (run + 0.4), last.z + last.dz * (run + 0.4)]), id: e.id });
         }
       }
     }
     const walk = grid.walkable(radius);
     const reached = new Uint8Array(walk.length);
-    const seeds = (pending.get(L.index) ?? []).map((p) => nearestWalkable(grid, walk, p, 1.5));
-    if (seeds.every((s) => s < 0)) {
-      if (ground) issues.push({ code: 'no_entrance', message: `${buildingId}: the entrance (player spawn) is not on walkable floor`, entities: [buildingId], hint: 'Add a door to "outside" (main: true) and keep 1 m in front of it clear; the player starts just inside the main door facing the house.' });
+    const seeds = (pending.get(L.index) ?? []).map((s) => nearestWalkable(grid, walk, s.p, s.snap));
+    if (ground && seeds.every((s) => s < 0)) {
+      issues.push({ code: 'no_entrance', message: `${buildingId}: the entrance (player spawn) is not on walkable floor`, entities: [buildingId], hint: 'Add a door to "outside" (main: true) and keep 1 m in front of it clear; the player starts just inside the main door facing the house.' });
       // Fall back to the first room so the rest is still checked.
       const r0 = roomPolys[0];
       if (r0) seeds.push(nearestWalkable(grid, walk, r0.poly[0] ?? [0, 0], 50, r0.poly));
+    }
+    // An upper level is reached only where a stair arrives on its floor: no stair (or one that runs into a wall)
+    // leaves its rooms unreachable instead of being waved through.
+    if (!ground) {
+      (pending.get(L.index) ?? []).forEach((s, i) => {
+        if (s.stair && (seeds[i] ?? -1) < 0) issues.push({ code: 'unreachable_room', message: `${s.stair}: the top step arrives at (${s.p[0].toFixed(1)}, ${s.p[1].toFixed(1)}), which is not open floor on the level above (a wall, the stairwell or furniture is in the way)`, entities: [s.stair], hint: 'Turn or move the stair so about 1 m in front of its top step is clear floor of a room on the level above.' });
+      });
     }
     flood(grid, walk, seeds, reached);
     for (const r of roomPolys) {
@@ -432,7 +444,7 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     for (const link of links.filter((k) => k.from === L.index)) {
       const b = nearestWalkable(grid, walk, link.bottom, 0.8);
       const next = levels.find((x) => x.index > L.index);
-      if (b >= 0 && reached[b] && next) pending.set(next.index, [...(pending.get(next.index) ?? []), link.top]);
+      if (b >= 0 && reached[b] && next) pending.set(next.index, [...(pending.get(next.index) ?? []), { p: link.top, snap: STAIR_ARRIVAL_SNAP, stair: link.id }]);
     }
     // Door clearance.
     for (const e of L.children) {
