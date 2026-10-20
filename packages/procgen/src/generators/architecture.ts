@@ -10,7 +10,8 @@ import type { Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear } from '../color';
 import {
-  defineGenerator, glow, jitter, lin, MAT, paintNoise, paintSolid, pBool, pColor, pInt, pNum, pVariant, shade,
+  addFinish, defineGenerator, glow, jitter, lin, MAT, paintNoise, paintSolid, pBool, pColor, pInt, pNum, pVariant, roundUvs, shade, uvMap, WINDOW_GLASS,
+  type Finish,
 } from './kit';
 
 const DEG = 180 / Math.PI;
@@ -21,26 +22,72 @@ function piece(api: InternalApi, mesh: Mesh, color: string, material: MaterialSp
   api.add(mesh, material);
 }
 
-/** Window (frame + glass + sill) on a wall face; `axis` is the outward normal direction. */
-function addWindow(
-  api: InternalApi, x: number, y: number, z: number, axis: 'x+' | 'x-' | 'z+' | 'z-',
-  w: number, h: number, trim: string, glass: MaterialSpec, curtain?: string,
-): void {
-  const along = axis[0] === 'z';
-  const sign = axis[1] === '+' ? 1 : -1;
-  const place = (mesh: Mesh, out: number): Mesh =>
-    along ? mesh.translate(x, y, z + sign * out) : mesh.rotate(0, 90, 0).translate(x + sign * out, y, z);
-  piece(api, place(api.box(w + 0.16, h + 0.16, 0.08), 0.02), trim, MAT.wood, 0.08);
-  api.add(place(api.box(w, h, 0.06), 0.05), glass);
-  piece(api, place(api.box(w + 0.3, 0.08, 0.2), 0.08).translate(0, -h / 2 - 0.06, 0), trim, MAT.wood, 0.06);
-  // cross mullions
-  piece(api, place(api.box(0.05, h, 0.04), 0.09), trim, MAT.wood, 0.05);
-  piece(api, place(api.box(w, 0.05, 0.04), 0.09), trim, MAT.wood, 0.05);
+/** Where a facade part sits: x, y, z of the opening's centre on the wall face and its outward axis. */
+interface FacePlace {
+  x: number;
+  y: number;
+  z: number;
+  axis: 'x+' | 'x-' | 'z+' | 'z-';
+}
+
+/** Move a part built facing +Z (centred on the opening, z = distance out from the wall face) onto the wall. */
+function onFace(f: FacePlace, mesh: Mesh): Mesh {
+  const sign = f.axis[1] === '+' ? 1 : -1;
+  if (f.axis[0] === 'z') return (sign > 0 ? mesh : mesh.rotate(0, 180, 0)).translate(f.x, f.y, f.z);
+  return mesh.rotate(0, sign > 0 ? 90 : -90, 0).translate(f.x, f.y, f.z);
+}
+
+/** Look of a window: frame finish and colour, the stone or timber surround, glazing bars, shutters. */
+interface WindowStyle {
+  frame: Finish;
+  frameColor: string;
+  surround: Finish | null;
+  surroundColor: string;
+  /** Glazing bars: 0 none, 1 a mullion, 2 a cross, 3 a cross with a transom (six panes). */
+  bars: number;
+  shutters: string | null;
+}
+
+/**
+ * A window set into a solid wall: a proud surround (lintel, jambs and a weathered sill) makes the reveal, a frame and
+ * glazing bars sit inside it, the dark reflective pane behind (or a warm lit pane with curtains drawn part-way at night).
+ */
+function addWindow(api: InternalApi, f: FacePlace, w: number, h: number, st: WindowStyle, glass: MaterialSpec, curtain?: string): void {
+  const reveal = 0.12;
+  if (st.surround) {
+    const sur = api.box(w + 0.34, 0.2, reveal).translate(0, h / 2 + 0.1, reveal / 2);
+    for (const sx of [-1, 1]) sur.merge(api.box(0.16, h, reveal).translate(sx * (w / 2 + 0.08), 0, reveal / 2));
+    addFinish(api, onFace(f, sur), st.surround, st.surroundColor, { variation: 0.08, freq: 2 });
+  }
+  // The sill: projecting, always stone or the frame's timber.
+  addFinish(api, onFace(f, api.box(w + 0.4, 0.07, reveal + 0.1).translate(0, -h / 2 - 0.035, (reveal + 0.1) / 2)), st.surround ?? st.frame, st.surround ? st.surroundColor : st.frameColor, { variation: 0.06 });
+  // Frame (sash) and glazing bars.
+  const ft = 0.065;
+  const fz = 0.035;
+  const frame = api.box(w, ft, 0.07).translate(0, h / 2 - ft / 2, fz);
+  frame.merge(api.box(w, ft, 0.07).translate(0, -h / 2 + ft / 2, fz));
+  frame.merge(api.box(ft, h - 2 * ft, 0.07).translate(-w / 2 + ft / 2, 0, fz));
+  frame.merge(api.box(ft, h - 2 * ft, 0.07).translate(w / 2 - ft / 2, 0, fz));
+  const bt = 0.035;
+  if (st.bars >= 1) frame.merge(api.box(bt, h - 2 * ft, 0.05).translate(0, 0, fz + 0.005));
+  if (st.bars >= 2) frame.merge(api.box(w - 2 * ft, bt, 0.05).translate(0, st.bars >= 3 ? h * 0.12 : 0, fz + 0.005));
+  if (st.bars >= 3) frame.merge(api.box(w - 2 * ft, bt, 0.05).translate(0, -h * 0.2, fz + 0.005));
+  addFinish(api, onFace(f, frame), st.frame, st.frameColor, { variation: 0.03 });
+  api.add(onFace(f, api.box(w - 0.04, h - 0.04, 0.02).translate(0, 0, 0.012)), glass);
   // A lit window shows a room, not a lit card: curtains drawn part-way at the sides and a pelmet along the head.
   if (curtain !== undefined) {
     const cw = w * 0.2;
-    for (const sx of [-1, 1]) piece(api, place(api.box(cw, h * 0.92, 0.03).translate(sx * (w / 2 - cw / 2), 0, 0), 0.075), curtain, MAT.wood, 0.1);
-    piece(api, place(api.box(w, h * 0.16, 0.035), 0.078).translate(0, h * 0.42, 0), curtain, MAT.wood, 0.08);
+    const c = api.box(w - 2 * ft, h * 0.14, 0.022).translate(0, h * 0.4, 0.027);
+    for (const sx of [-1, 1]) c.merge(api.box(cw, h * 0.9, 0.02).translate(sx * (w / 2 - cw / 2 - ft), -0.02, 0.026));
+    addFinish(api, onFace(f, c), 'fabric', curtain, { variation: 0.08 });
+  }
+  if (st.shutters) {
+    const sh = api.box(w / 2, h, 0.04).translate(-(w * 0.75 + 0.12), 0, reveal + 0.03);
+    sh.merge(api.box(w / 2, h, 0.04).translate(w * 0.75 + 0.12, 0, reveal + 0.03));
+    for (const sx of [-1, 1]) {
+      for (const fy of [0.32, -0.32]) sh.merge(api.box(w / 2 - 0.06, 0.08, 0.025).translate(sx * (w * 0.75 + 0.12), h * fy, reveal + 0.06));
+    }
+    addFinish(api, onFace(f, sh), 'paint', st.shutters, { variation: 0.05 });
   }
 }
 
@@ -51,10 +98,24 @@ function windowHash(x: number, y: number, z: number, axis: string): number {
 }
 
 const CURTAINS: readonly string[] = ['#8a3b34', '#3c5a7c', '#c9b48a', '#6d7a4a'];
+const SHUTTERS: readonly string[] = ['#5f7563', '#4f6478', '#7a3a32', '#8a8f7a'];
+
+/** A sloping roof slab (run along X, length along Z) with u along the eave and v up the slope, in metres. */
+function roofSlab(api: InternalApi, run: number, thick: number, len: number): Mesh {
+  return uvMap(api.box(run, thick, len), (x, y, z, _nx, ny, _nz, out) => {
+    if (Math.abs(ny) > 0.5) {
+      out[0] = z;
+      out[1] = -x;
+    } else {
+      out[0] = z + x;
+      out[1] = y;
+    }
+  });
+}
 
 const house = defineGenerator({
   id: 'house',
-  description: 'Cozy cottage with walls, foundation, pitched shingle roof, door, framed windows and a chimney. Multi-floor capable.',
+  description: 'House with a stone plinth, rendered or half-timbered walls, deep window reveals with sills, frames and glazing bars, a panelled door, a tiled roof with overhang, fascia, gutters and a chimney (or a modern flat roof). Multi-floor capable.',
   category: 'architecture',
   params: {
     width: pNum(6, 3, 20, 'width (x) in meters'),
@@ -75,63 +136,111 @@ const house = defineGenerator({
     const roofC = p.color('roofColor');
     const trim = p.color('trimColor');
     const lights = p.bool('lights');
-    const lit: MaterialSpec = lights ? glow('#ffd98a', 0.95) : { ...MAT.glass };
-    const unlit: MaterialSpec = { ...MAT.glass };
-    // At night about one window in five is dark, and each lit one has its own curtains: a lived-in house, not a row of identical cards.
-    const win = (x: number, y: number, z: number, axis: 'x+' | 'x-' | 'z+' | 'z-', w: number, h: number): void => {
-      const hv = windowHash(x, y, z, axis);
-      const on = lights && hv > 0.2;
-      addWindow(api, x, y, z, axis, w, h, trim, on ? lit : unlit, on ? (CURTAINS[Math.floor(hv * 17) % CURTAINS.length] as string) : undefined);
-    };
+    const lit: MaterialSpec = lights ? glow('#ffd98a', 0.95) : WINDOW_GLASS;
+    const stone = '#a39b8c';
     const floorH = 2.8;
     const base = 0.3;
     const wallH = floors * floorH;
     const top = base + wallH;
+    const modern = variant === 1;
+    const timber = variant === 2;
+    const dark = shade(trim, -0.2);
+    const winStyle = (hv: number): WindowStyle => ({
+      frame: modern ? 'black-metal' : timber ? 'oak' : 'paint',
+      frameColor: modern ? '#ffffff' : timber ? dark : '#efece4',
+      surround: modern ? null : timber ? 'oak' : 'limestone',
+      surroundColor: timber ? dark : stone,
+      bars: modern ? 1 : 3,
+      shutters: !modern && !timber && hv > 0.45 ? (SHUTTERS[Math.floor(hv * 97) % SHUTTERS.length] as string) : null,
+    });
+    // At night about one window in five is dark, and each lit one has its own curtains: a lived-in house, not a row of identical cards.
+    const win = (x: number, y: number, z: number, axis: 'x+' | 'x-' | 'z+' | 'z-', w: number, h: number): void => {
+      const hv = windowHash(x, y, z, axis);
+      const on = lights && hv > 0.2;
+      addWindow(api, { x, y, z, axis }, w, h, winStyle(hv), on ? lit : WINDOW_GLASS, on ? (CURTAINS[Math.floor(hv * 17) % CURTAINS.length] as string) : undefined);
+    };
 
-    piece(api, api.box(W + 0.3, base, D + 0.3).translate(0, base / 2, 0), '#8f8a82', MAT.stone, 0.15, 3);
-    const walls = api.box(W, wallH, D).translate(0, base + wallH / 2, 0);
-    const wc0 = lin(shade(wallC, -0.12));
-    const wc1 = lin(shade(wallC, 0.06));
-    walls.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(wc0, wc1, 0.5 + 0.5 * api.noise.noise3(x * 1.5, y * 1.5, z * 1.5) + (y - base) * 0.05, out));
-    api.add(walls, { preset: 'concrete', vertexColors: true, roughness: 0.95, flatShading: true });
+    // Plinth: a course of dressed stone standing proud of the walls.
+    addFinish(api, api.box(W + 0.16, base + 0.22, D + 0.16).translate(0, (base + 0.22) / 2, 0), modern ? 'concrete' : 'limestone', modern ? '#8f8b84' : '#8f877a', { variation: 0.06 });
+    addFinish(api, api.box(W, wallH, D).translate(0, base + wallH / 2, 0), 'plaster', wallC, { variation: 0.035, freq: 0.5 });
     api.collider(boxCollider(0, top / 2, 0, W + 0.3, top, D + 0.3));
 
-    if (variant === 2) {
-      // timber frame: corner posts, floor beams and diagonal braces
+    if (variant === 0) {
+      // Dressed quoins at the corners, alternating long and short.
+      const n = Math.max(2, Math.round(wallH / 0.34));
+      const qh = wallH / n;
+      const quoins = api.box(0.01, 0.01, 0.01).translate(0, base, 0);
       for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) piece(api, api.box(0.2, wallH, 0.2).translate(sx * (W / 2 + 0.02), base + wallH / 2, sz * (D / 2 + 0.02)), trim, MAT.wood);
-      }
-      for (let f = 0; f <= floors; f++) {
-        const y = base + f * floorH - (f === floors ? 0.1 : 0);
-        piece(api, api.box(W + 0.08, 0.18, 0.12).translate(0, y, D / 2 + 0.04), trim, MAT.wood);
-        piece(api, api.box(W + 0.08, 0.18, 0.12).translate(0, y, -D / 2 - 0.04), trim, MAT.wood);
-        piece(api, api.box(0.12, 0.18, D + 0.08).translate(W / 2 + 0.04, y, 0), trim, MAT.wood);
-        piece(api, api.box(0.12, 0.18, D + 0.08).translate(-W / 2 - 0.04, y, 0), trim, MAT.wood);
-      }
-      for (let f = 0; f < floors; f++) {
-        const y = base + f * floorH + floorH / 2;
-        const len = Math.hypot(W * 0.22, floorH);
-        const ang = Math.atan2(floorH, W * 0.22) * DEG;
-        for (const sx of [-1, 1]) {
-          piece(api, api.box(0.12, len, 0.1).rotate(0, 0, sx * (90 - ang)).translate(sx * W * 0.36, y, D / 2 + 0.05), trim, MAT.wood);
+        for (const sz of [-1, 1]) {
+          for (let k = 0; k < n; k++) {
+            const long = k % 2 === 0;
+            const y = base + k * qh + qh / 2;
+            quoins.merge(api.box(long ? 0.5 : 0.3, qh - 0.03, 0.05).translate(sx * (W / 2 - (long ? 0.25 : 0.15) + 0.02), y, sz * (D / 2 + 0.025)));
+            quoins.merge(api.box(0.05, qh - 0.03, long ? 0.3 : 0.5).translate(sx * (W / 2 + 0.025), y, sz * (D / 2 - (long ? 0.15 : 0.25) + 0.02)));
+          }
         }
       }
+      addFinish(api, quoins, 'limestone', stone, { variation: 0.1, freq: 2 });
+    } else if (timber) {
+      // Half-timbering: sole and top plates per storey, corner posts, studs between the openings and braces at the corners.
+      const t = 0.16;
+      const out = 0.03;
+      const fr = api.box(t, wallH, t).translate(W / 2 + out - t / 2 + 0.02, base + wallH / 2, D / 2 + out - t / 2 + 0.02);
+      for (const [sx, sz] of [[1, -1], [-1, 1], [-1, -1]] as const) fr.merge(api.box(t, wallH, t).translate(sx * (W / 2 + out - t / 2 + 0.02), base + wallH / 2, sz * (D / 2 + out - t / 2 + 0.02)));
+      for (let f = 0; f <= floors; f++) {
+        const y = base + f * floorH + (f === 0 ? t / 2 : f === floors ? -t / 2 : 0);
+        fr.merge(api.box(W + 2 * out, t, t).translate(0, y, D / 2 + out - t / 2 + 0.02));
+        fr.merge(api.box(W + 2 * out, t, t).translate(0, y, -D / 2 - out + t / 2 - 0.02));
+        fr.merge(api.box(t, t, D + 2 * out).translate(W / 2 + out - t / 2 + 0.02, y, 0));
+        fr.merge(api.box(t, t, D + 2 * out).translate(-W / 2 - out + t / 2 - 0.02, y, 0));
+      }
+      for (let f = 0; f < floors; f++) {
+        const yc = base + f * floorH + floorH / 2;
+        for (const sz of [-1, 1]) {
+          const z = sz * (D / 2 + out - t / 2 + 0.02);
+          for (const fx of [-0.42, 0.42]) fr.merge(api.box(t * 0.8, floorH - t, t * 0.8).translate(W * fx, yc, z));
+          // Braces in the outer bays, rising towards the corners.
+          const bw = W * 0.06;
+          const len = Math.hypot(bw * 2, floorH - t);
+          const ang = Math.atan2(floorH - t, bw * 2) * DEG;
+          for (const sx of [-1, 1]) fr.merge(api.box(t * 0.7, len, t * 0.7).rotate(0, 0, sx * (90 - ang)).translate(sx * (W / 2 - bw - 0.14), yc, z + sz * 0.01));
+        }
+        for (const sx of [-1, 1]) {
+          const x = sx * (W / 2 + out - t / 2 + 0.02);
+          for (const fz of [-0.3, 0.3]) fr.merge(api.box(t * 0.8, floorH - t, t * 0.8).translate(x, yc, D * fz));
+        }
+      }
+      addFinish(api, fr, 'oak', dark, { variation: 0.08, freq: 3 });
+    } else {
+      // Modern: a band of timber cladding beside the door, a slab edge between floors.
+      addFinish(api, api.box(W * 0.3, wallH, 0.06).translate(W * 0.33, base + wallH / 2, D / 2 + 0.03), 'cladding', '#b08a5c', { variation: 0.04 });
+      for (let f = 1; f < floors; f++) addFinish(api, api.box(W + 0.1, 0.2, D + 0.1).translate(0, base + f * floorH, 0), 'concrete', '#a8a49d', { variation: 0.03 });
     }
 
-    // door + step + lamp-ish knob
+    // Door: stone (or timber) surround, a panelled leaf, a brass knob, a stone step and a wall lantern.
     const doorX = floors > 1 || W < 4.5 ? 0 : -W * 0.15;
-    piece(api, api.box(1.3, 2.3, 0.1).translate(doorX, base + 1.15, D / 2 + 0.03), shade(trim, -0.2), MAT.wood, 0.05);
-    const door = api.box(1.05, 2.1, 0.1).translate(doorX, base + 1.05, D / 2 + 0.07);
-    const dc0 = lin(shade(trim, -0.08));
-    const dc1 = lin(shade(trim, 0.14));
-    door.paintFn((x, _y, _z, _nx, _ny, _nz, out) => mixLinear(dc0, dc1, (Math.floor((x - doorX + 0.6) * 6) % 2) * 0.6 + 0.2, out));
-    api.add(door, MAT.wood);
-    piece(api, api.sphere(0.05, 0).translate(doorX + 0.38, base + 1.05, D / 2 + 0.14), '#d4af37', MAT.metal, 0.05);
-    piece(api, api.box(1.6, base, 0.7).translate(doorX, base / 2, D / 2 + 0.45), '#8f8a82', MAT.stone, 0.12, 3);
+    const dz = D / 2;
+    if (!modern) {
+      const sur = api.box(1.42, 0.24, 0.12).translate(doorX, base + 2.27, dz + 0.06);
+      for (const sx of [-1, 1]) sur.merge(api.box(0.17, 2.15, 0.12).translate(doorX + sx * 0.62, base + 1.075, dz + 0.06));
+      addFinish(api, sur, timber ? 'oak' : 'limestone', timber ? dark : stone, { variation: 0.08, freq: 2 });
+    } else {
+      addFinish(api, api.box(1.9, 0.12, 1.1).translate(doorX, base + 2.55, dz + 0.55), 'concrete', '#b9b5ae', { variation: 0.03 });
+    }
+    const leaf = api.box(1.05, 2.1, 0.06).translate(doorX, base + 1.05, dz + 0.04);
+    for (const [px, py] of [[-0.24, 0.5], [0.24, 0.5], [-0.24, -0.45], [0.24, -0.45]] as const) leaf.merge(api.box(0.38, modern ? 0.02 : 0.72, 0.03).translate(doorX + px, base + 1.05 + py, dz + 0.08));
+    addFinish(api, leaf, modern ? 'oak' : 'paint', modern ? '#8a6a4c' : timber ? trim : '#46604f', { variation: 0.04 });
+    addFinish(api, api.sphere(0.035, 1).translate(doorX + 0.4, base + 1.0, dz + 0.12), 'brass', '#ffffff', { variation: 0 });
+    addFinish(api, api.box(1.6, base, 0.7).translate(doorX, base / 2, dz + 0.45), modern ? 'concrete' : 'limestone', modern ? '#9a968f' : '#8f877a', { variation: 0.05 });
+    const lx = doorX + 0.95;
+    const lamp = api.box(0.05, 0.05, 0.2).translate(lx, base + 1.95, dz + 0.1);
+    lamp.merge(api.box(0.18, 0.04, 0.18).translate(lx, base + 2.12, dz + 0.22)).merge(api.box(0.2, 0.06, 0.2).translate(lx, base + 1.76, dz + 0.22));
+    addFinish(api, lamp, 'black-metal', '#ffffff', { variation: 0 });
+    api.add(api.box(0.14, 0.3, 0.14).translate(lx, base + 1.94, dz + 0.22), lights ? glow('#ffcf80', 2.4) : { finish: 'frosted-glass' });
 
-    // windows
-    const ww = variant === 1 ? 1.6 : 0.9;
-    const wh = variant === 1 ? 1.4 : 1.0;
+    // Windows (the same openings as before, so neighbours and tests see the same house).
+    const ww = modern ? 1.6 : 0.9;
+    const wh = modern ? 1.4 : 1.1;
     for (let f = 0; f < floors; f++) {
       const y = base + f * floorH + 1.5;
       const front = f === 0 ? (doorX === 0 ? [-W * 0.3, W * 0.3] : [W * 0.2]) : [-W * 0.3, 0, W * 0.3];
@@ -141,47 +250,68 @@ const house = defineGenerator({
       win(-W / 2, y, 0, 'x-', ww, wh);
     }
 
-    if (variant === 1) {
-      // flat roof with parapet
-      piece(api, api.box(W + 0.4, 0.3, D + 0.4).translate(0, top + 0.15, 0), shade(wallC, -0.25), MAT.stone, 0.06);
-      piece(api, api.box(W * 0.35, 0.9, D * 0.3).translate(W * 0.18, top + 0.75, -D * 0.15), '#9aa0a6', MAT.metal, 0.08);
+    if (modern) {
+      // Flat roof: a parapet with a coping, gravel inside, a plant box.
+      addFinish(api, api.box(W + 0.12, 0.55, D + 0.12).translate(0, top + 0.275, 0), 'plaster', wallC, { variation: 0.03 });
+      addFinish(api, api.box(W + 0.24, 0.06, D + 0.24).translate(0, top + 0.58, 0), 'concrete', '#bcb8b0', { variation: 0.03 });
+      addFinish(api, api.box(W - 0.3, 0.03, D - 0.3).translate(0, top + 0.565, 0), 'gravel', '#9c968c', { variation: 0.04 });
+      addFinish(api, api.box(W * 0.3, 0.8, D * 0.25).translate(W * 0.18, top + 0.95, -D * 0.15), 'brushed-metal', '#9aa0a6', { variation: 0.03 });
       api.collider(boxCollider(0, top + 0.15, 0, W + 0.4, 0.3, D + 0.4));
     } else {
-      const over = 0.45;
+      const eave = 0.45;
+      const gableOver = 0.32;
       const roofH = Math.min(W * 0.45, 3.2);
       const gable = api.extrude([[-W / 2, 0], [W / 2, 0], [0, roofH]], D).translate(0, top, 0);
-      paintNoise(gable, api, shade(wallC, -0.15), wallC, 1.5);
-      api.add(gable, { preset: 'concrete', vertexColors: true, roughness: 0.95, flatShading: true });
-      const run = W / 2 + over;
+      addFinish(api, gable, 'plaster', wallC, { variation: 0.035, freq: 0.5 });
+      if (timber) {
+        const g = api.box(0.14, roofH * 0.85, 0.14).translate(0, top + roofH * 0.42, D / 2 + 0.04);
+        g.merge(api.box(0.14, roofH * 0.85, 0.14).translate(0, top + roofH * 0.42, -D / 2 - 0.04));
+        addFinish(api, g, 'oak', dark, { variation: 0.08, freq: 3 });
+      }
+      const run = W / 2 + eave;
       const slope = Math.atan2(roofH, W / 2);
       const slabLen = run / Math.cos(slope);
-      const thick = 0.18;
-      const r0 = lin(shade(roofC, -0.22));
-      const r1 = lin(shade(roofC, 0.08));
+      const thick = 0.2;
+      const len = D + gableOver * 2;
+      const tiles = roofSlab(api, slabLen, thick, len);
+      const boards = api.box(0.01, 0.01, 0.01).translate(0, top, 0);
+      const gutter = api.box(0.01, 0.01, 0.01).translate(0, top, 0);
       for (const sx of [-1, 1]) {
-        const slab = api.box(slabLen, thick, D + over * 2);
-        slab.paintFn((x, _y, z, _nx, _ny, _nz, out) => {
-          const row = Math.floor((x + slabLen / 2) * 3.2);
-          mixLinear(r0, r1, (row % 2) * 0.55 + 0.25 * api.noise.noise2(x * 2 + row, z * 1.3), out);
-        });
-        // ridge at x=0, eave at x = sx*run; slab center halfway, lifted by half thickness along its normal
         const cx = (sx * run) / 2;
         const cy = top + roofH - (run / 2) * Math.tan(slope);
-        slab.rotate(0, 0, -sx * slope * DEG).translate(cx + sx * Math.sin(slope) * thick * 0.5, cy + Math.cos(slope) * thick * 0.5, 0);
-        api.add(slab, { preset: 'brick', vertexColors: true, roughness: 0.85, flatShading: true });
+        const place = (m: Mesh): Mesh => m.rotate(0, 0, -sx * slope * DEG).translate(cx + sx * Math.sin(slope) * thick * 0.5, cy + Math.cos(slope) * thick * 0.5, 0);
+        const slab = sx < 0 ? tiles : roofSlab(api, slabLen, thick, len);
+        place(slab);
+        if (sx > 0) tiles.merge(slab);
+        // Barge boards along both gable edges and a fascia board at the eave.
+        for (const z of [len / 2 + 0.025, -len / 2 - 0.025]) boards.merge(place(api.box(slabLen, 0.26, 0.05).translate(0, -0.05, z)));
+        const ex = sx * run;
+        const ey = top + roofH - run * Math.tan(slope);
+        boards.merge(api.box(0.05, 0.22, len).translate(ex + sx * 0.02, ey - 0.02, 0));
+        // Half-round gutter along the eave and a downpipe at each end.
+        gutter.merge(api.cylinder(0.07, 0.07, len - 0.1, 10).rotate(90, 0, 0).translate(ex + sx * 0.09, ey - 0.14, 0));
+        for (const sz of [-1, 1]) gutter.merge(api.cylinder(0.04, 0.04, ey - 0.14 - base, 8).translate(ex + sx * 0.07, base + (ey - 0.14 - base) / 2, sz * (len / 2 - 0.25)));
       }
-      piece(api, api.box(0.22, 0.22, D + over * 2 + 0.05).rotate(0, 0, 45).translate(0, top + roofH + 0.08, 0), shade(roofC, -0.35), MAT.wood, 0.05);
+      addFinish(api, tiles, 'roof-tile', roofC, { uv: 'keep', variation: 0.06, freq: 0.8 });
+      addFinish(api, boards, 'paint', timber ? dark : '#e9e5dc', { variation: 0.03 });
+      addFinish(api, gutter, 'brushed-metal', '#8c9196', { variation: 0 });
+      addFinish(api, api.cylinder(0.12, 0.12, len + 0.04, 10).rotate(90, 0, 0).translate(0, top + roofH + 0.1, 0), 'roof-tile', shade(roofC, -0.2), { variation: 0.05 });
+      // Chimney: brick stack, lead flashing, stone cap, two clay pots.
       const chimneyH = roofH * 0.5 + 1.2;
       const chx = W * 0.25;
+      const chz = -D * 0.2;
       const roofAtChimney = top + roofH * (1 - chx / (W / 2));
-      const chimney = api.box(0.65, chimneyH, 0.65).translate(chx, roofAtChimney - 0.3 + chimneyH / 2, -D * 0.2);
-      piece(api, chimney, '#8d4b3a', MAT.brick, 0.18, 4);
+      const chimney = api.box(0.65, chimneyH, 0.65).translate(chx, roofAtChimney - 0.3 + chimneyH / 2, chz);
       const chb = chimney.bounds();
-      piece(api, api.box(0.8, 0.12, 0.8).translate(chx, chb.max[1], -D * 0.2), '#6d6a66', MAT.stone, 0.05);
+      addFinish(api, chimney, 'brick', '#a86a52', { variation: 0.06 });
+      addFinish(api, api.box(0.82, 0.12, 0.82).translate(chx, chb.max[1], chz), 'limestone', stone, { variation: 0.05 });
+      addFinish(api, api.box(0.75, 0.08, 0.75).translate(chx, roofAtChimney + 0.02, chz), 'brushed-metal', '#6f7377', { variation: 0 });
+      const pots = api.cylinder(0.09, 0.11, 0.35, 10).translate(chx - 0.14, chb.max[1] + 0.23, chz).merge(api.cylinder(0.09, 0.11, 0.3, 10).translate(chx + 0.15, chb.max[1] + 0.2, chz));
+      addFinish(api, pots, 'brick', '#b5634a', { variation: 0.04 });
       const roofHull: number[] = [];
-      for (const z of [-D / 2 - over, D / 2 + over]) roofHull.push(-run, top - over * Math.tan(slope), z, run, top - over * Math.tan(slope), z, 0, top + roofH + 0.15, z);
+      for (const z of [-D / 2 - eave, D / 2 + eave]) roofHull.push(-run, top - eave * Math.tan(slope), z, run, top - eave * Math.tan(slope), z, 0, top + roofH + 0.15, z);
       api.collider({ kind: 'hull', points: new Float32Array(roofHull), offset: [0, 0, 0] });
-      api.collider(boxCollider(chx, (chb.min[1] + chb.max[1]) / 2, -D * 0.2, 0.65, chb.max[1] - chb.min[1], 0.65));
+      api.collider(boxCollider(chx, (chb.min[1] + chb.max[1]) / 2, chz, 0.65, chb.max[1] - chb.min[1], 0.65));
     }
     return api.build();
   },

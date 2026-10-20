@@ -153,3 +153,106 @@ export const MAT = {
 export function glow(color: string, intensity = 2): MaterialSpec {
   return { preset: 'emissive', color, emissive: color, emissiveIntensity: intensity, roughness: 0.4 };
 }
+
+// ---------------------------------------------------------------------------
+// Physically based finishes for built structures and props
+// ---------------------------------------------------------------------------
+
+/** A surface finish id of the PBR library (see `MaterialFinish` in @aether/core). */
+export type Finish = NonNullable<MaterialSpec['finish']>;
+
+/** Rewrite a mesh's UVs from its positions and normals (metres for finish parts). */
+export function uvMap(m: Mesh, fn: (x: number, y: number, z: number, nx: number, ny: number, nz: number, out: [number, number]) => void): Mesh {
+  const p = m.positions;
+  const n = m.normals;
+  const uv = m.uvs;
+  const out: [number, number] = [0, 0];
+  for (let i = 0, k = 0; i < p.length; i += 3, k += 2) {
+    fn(p[i] as number, p[i + 1] as number, p[i + 2] as number, n[i] as number, n[i + 1] as number, n[i + 2] as number, out);
+    uv[k] = out[0];
+    uv[k + 1] = out[1];
+  }
+  return m;
+}
+
+/**
+ * Box-projected metre UVs (like the renderer's fallback): faces looking up or down take (x, z), faces looking along Z take
+ * (x, y) and faces looking along X take (z, y), so courses of masonry stay horizontal and a finish keeps its real-world scale.
+ */
+export function boxUvs(m: Mesh): Mesh {
+  return uvMap(m, (x, y, z, nx, ny, nz, out) => {
+    const ax = Math.abs(nx);
+    const ay = Math.abs(ny);
+    const az = Math.abs(nz);
+    if (ay >= ax && ay >= az) {
+      out[0] = x;
+      out[1] = z;
+    } else if (az >= ax) {
+      out[0] = nz >= 0 ? x : -x;
+      out[1] = y;
+    } else {
+      out[0] = nx >= 0 ? -z : z;
+      out[1] = y;
+    }
+  });
+}
+
+/**
+ * Metre UVs for a lathe, cylinder or cone around the Y axis: the side runs round the circumference at `radius` (from the
+ * lathe's own 0..1 U, so the seam stays clean) and up by height, or by the distance along the slope when `slope` is the
+ * surface's angle from the horizontal in degrees; caps take (x, z). Call it before moving the mesh off the axis.
+ */
+export function roundUvs(m: Mesh, radius: number, slope = 90): Mesh {
+  const circ = Math.PI * 2 * radius;
+  const vs = 1 / Math.max(0.2, Math.sin((Math.min(90, Math.max(5, slope)) * Math.PI) / 180));
+  const p = m.positions;
+  const n = m.normals;
+  const uv = m.uvs;
+  for (let i = 0, k = 0; i < p.length; i += 3, k += 2) {
+    if (Math.abs(n[i + 1] as number) > 0.97) {
+      uv[k] = p[i] as number;
+      uv[k + 1] = p[i + 2] as number;
+    } else {
+      uv[k] = (uv[k] as number) * circ;
+      uv[k + 1] = (p[i + 1] as number) * vs;
+    }
+  }
+  return m;
+}
+
+/** Material of a finish part tinted per vertex: every part of one finish merges into one draw call, whatever its colour. */
+export function finishMat(finish: Finish, roughness?: number): MaterialSpec {
+  return roughness === undefined ? { finish, color: '#ffffff', vertexColors: true } : { finish, color: '#ffffff', vertexColors: true, roughness };
+}
+
+/** Options of {@link addFinish}. */
+export interface FinishOpts {
+  /** Colour variation (lighten/darken) painted by low-frequency noise (default 0.05). */
+  variation?: number;
+  /** Spatial frequency of that variation (default 1.2 per metre). */
+  freq?: number;
+  /** UV mapping: box projection (default), `keep` (already authored in metres) or `round` (lathes, around Y at `radius`). */
+  uv?: 'box' | 'keep' | 'round';
+  radius?: number;
+  /** For `round`: the slope of the surface in degrees (cones and roofs). */
+  slope?: number;
+  roughness?: number;
+}
+
+/**
+ * Add a part with a physically based finish, tinted `color` per vertex (with a gentle noise variation so a wall is never
+ * one flat colour) and metre UVs. Returns the mesh.
+ */
+export function addFinish(api: InternalApi, m: Mesh, finish: Finish, color: string, o: FinishOpts = {}): Mesh {
+  const uv = o.uv ?? 'box';
+  if (uv === 'box') boxUvs(m);
+  else if (uv === 'round') roundUvs(m, o.radius ?? 1, o.slope ?? 90);
+  const v = o.variation ?? 0.05;
+  if (v > 0) paintNoise(m, api, shade(color, -v), shade(color, v), o.freq ?? 1.2);
+  else paintSolid(m, color);
+  api.add(m, finishMat(finish, o.roughness));
+  return m;
+}
+
+/** Dark reflective window glass (opaque: a solid building has no room behind its panes). */
+export const WINDOW_GLASS: MaterialSpec = { color: '#1c2630', roughness: 0.06, metalness: 0.85 };
