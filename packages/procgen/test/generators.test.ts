@@ -19,6 +19,8 @@ const TERRAIN = new Set(['terrain', 'island', 'mountain']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 /** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
 const CARDS = new Set(['tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers']);
+/** Built structures carry articulation (reveals, frames, courses, corbels) in merged finish parts: a larger budget, still a handful of draws. */
+const STRUCTURES = new Set(['house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'windmill']);
 
 function randomParams(spec: Record<string, ParamSpec>, random: () => number): Record<string, Json> {
   const out: Record<string, Json> = {};
@@ -68,6 +70,8 @@ function checkOutput(id: string, out: GeneratorOutput): void {
   } else if (id === 'cloud') {
     // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.
     expect(tris).toBeLessThan(14_000);
+  } else if (STRUCTURES.has(id)) {
+    expect(tris).toBeLessThan(9000);
   } else if (TREES.has(id)) {
     expect(tris).toBeLessThan(2000);
   } else {

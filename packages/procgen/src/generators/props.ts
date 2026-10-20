@@ -1,22 +1,34 @@
 /**
  * Prop generators: lamp-post, bench, table, chair, crate, barrel, campfire,
- * tent, dock, statue. Small objects stay well under 3k triangles and get
- * compound primitive colliders.
+ * tent, dock, statue. Built from the physically based finishes (cast iron,
+ * oak, canvas, limestone, bronze), parts of one finish merged into one draw;
+ * small objects stay well under 3k triangles and get compound primitive
+ * colliders.
  */
-import type { MaterialSpec, Vec3 } from '@aether/core';
+import type { Vec3 } from '@aether/core';
 import type { InternalApi } from '../api';
 import type { Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear } from '../color';
 import {
-  defineGenerator, glow, hullOf, jitter, lin, MAT, paintGradientY, paintNoise, paintSolid, pBool, pColor, pNum, pVariant, shade,
+  addFinish, boxUvs, defineGenerator, finishMat, glow, hullOf, lin, paintGradientY, pBool, pColor, pNum, pVariant, roundUvs, shade,
 } from './kit';
 
-/** Add a noise-tinted piece. */
-function piece(api: InternalApi, mesh: Mesh, color: string, material: MaterialSpec, variation = 0.1, freq = 3): Mesh {
-  paintNoise(mesh, api, shade(color, -variation), shade(color, variation), freq);
-  api.add(mesh, material);
-  return mesh;
+/** An empty seed mesh to merge parts into (a 1 cm cube hidden inside the object at `y`). */
+function seed(api: InternalApi, y: number): Mesh {
+  return api.box(0.01, 0.01, 0.01).translate(0, y, 0);
+}
+
+/** Lathe or cylinder UVs with the boards running up the side (barrel staves), not round it. */
+function staveUvs(m: Mesh, radius: number): Mesh {
+  roundUvs(m, radius);
+  const uv = m.uvs;
+  for (let k = 0; k < uv.length; k += 2) {
+    const u = uv[k] as number;
+    uv[k] = uv[k + 1] as number;
+    uv[k + 1] = u;
+  }
+  return m;
 }
 
 const lampPost = defineGenerator({
@@ -35,37 +47,47 @@ const lampPost = defineGenerator({
     const light = p.color('lightColor');
     const variant = p.int('variant');
     const k = H / 3.5;
-    piece(api, api.lathe([[0, 0], [0.26 * k, 0], [0.26 * k, 0.1 * k], [0.16 * k, 0.22 * k], [0.09 * k, 0.45 * k], [0, 0.45 * k]], 8), c, MAT.metal, 0.08);
+    const iron = api.lathe([[0, 0], [0.24 * k, 0], [0.24 * k, 0.08 * k], [0.2 * k, 0.12 * k], [0.15 * k, 0.26 * k], [0.1 * k, 0.4 * k], [0.08 * k, 0.5 * k], [0, 0.5 * k]], 16);
     const poleTop = variant === 1 ? H : H * 0.86;
-    piece(api, api.cylinder(0.045 * k, 0.065 * k, poleTop - 0.4 * k, 8).translate(0, 0.4 * k + (poleTop - 0.4 * k) / 2, 0), c, MAT.metal, 0.06);
-    piece(api, api.torus(0.075 * k, 0.025 * k, 6, 12).rotate(90, 0, 0).translate(0, H * 0.45, 0), c, MAT.metal, 0.05);
+    iron.merge(api.cylinder(0.042 * k, 0.06 * k, poleTop - 0.45 * k, 12).translate(0, 0.45 * k + (poleTop - 0.45 * k) / 2, 0));
+    for (const f of [0.45, 0.8]) iron.merge(api.torus(0.065 * k, 0.02 * k, 6, 16).rotate(90, 0, 0).translate(0, H * f, 0));
+    const glass: Mesh[] = [];
     const lantern = (x: number, y: number): void => {
       const s = 0.2 * k;
-      api.add(api.box(s * 1.4, s * 1.8, s * 1.4).translate(x, y, 0), glow(light, 2.5));
-      for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-        piece(api, api.box(0.025 * k, s * 1.9, 0.025 * k).translate(x + dx * s * 0.72, y, dz * s * 0.72), c, MAT.metal, 0.04);
-      }
-      piece(api, api.cone(s * 1.25, s * 0.8, 4).rotate(0, 45, 0).translate(x, y + s * 1.3, 0), c, MAT.metal, 0.05);
-      piece(api, api.box(s * 1.6, 0.04 * k, s * 1.6).translate(x, y - s * 0.95, 0), c, MAT.metal, 0.05);
-      piece(api, api.sphere(0.04 * k, 0).translate(x, y + s * 1.8, 0), c, MAT.metal, 0.05);
+      glass.push(api.box(s * 1.3, s * 1.7, s * 1.3).translate(x, y, 0));
+      for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) iron.merge(api.box(0.022 * k, s * 1.85, 0.022 * k).translate(x + dx * s * 0.68, y, dz * s * 0.68));
+      iron.merge(api.box(s * 1.5, 0.03 * k, s * 1.5).translate(x, y + s * 0.9, 0));
+      iron.merge(api.cone(s * 1.15, s * 0.75, 4).rotate(0, 45, 0).translate(x, y + s * 1.3, 0));
+      iron.merge(api.box(s * 1.5, 0.04 * k, s * 1.5).translate(x, y - s * 0.92, 0));
+      iron.merge(api.cone(s * 0.5, s * 0.4, 8).rotate(180, 0, 0).translate(x, y - s * 1.12, 0));
+      iron.merge(api.sphere(0.035 * k, 1).translate(x, y + s * 1.75, 0));
     };
     if (variant === 0) lantern(0, H * 0.86 + 0.22 * k);
     else if (variant === 2) {
-      piece(api, api.box(1.1 * k, 0.05 * k, 0.05 * k).translate(0, H * 0.86, 0), c, MAT.metal, 0.05);
+      iron.merge(api.box(1.1 * k, 0.045 * k, 0.045 * k).translate(0, H * 0.86, 0));
+      for (const sx of [-1, 1]) {
+        const curl: Vec3[] = [];
+        for (let i = 0; i <= 8; i++) {
+          const t = i / 8;
+          curl.push([sx * (0.1 + t * 0.4) * k, H * 0.86 - Math.sin(t * Math.PI) * 0.18 * k, 0]);
+        }
+        iron.merge(api.tube(curl, 0.015 * k, 6));
+      }
       lantern(-0.5 * k, H * 0.86 - 0.25 * k);
       lantern(0.5 * k, H * 0.86 - 0.25 * k);
-      piece(api, api.sphere(0.06 * k, 0).translate(0, H * 0.86 + 0.08 * k, 0), c, MAT.metal, 0.05);
+      iron.merge(api.sphere(0.06 * k, 1).translate(0, H * 0.86 + 0.08 * k, 0));
     } else {
       const arm: Vec3[] = [];
-      for (let i = 0; i <= 6; i++) {
-        const t = i / 6;
+      for (let i = 0; i <= 10; i++) {
+        const t = i / 10;
         arm.push([Math.sin(t * Math.PI * 0.5) * 0.7 * k, H - 0.02 * k + Math.sin(t * Math.PI) * 0.18 * k - t * 0.1 * k, 0]);
       }
-      piece(api, api.tube(arm, 0.035 * k, 6), c, MAT.metal, 0.05);
-      const head = api.cylinder(0.09 * k, 0.2 * k, 0.12 * k, 10).translate(0.7 * k, H - 0.15 * k, 0);
-      piece(api, head, c, MAT.metal, 0.05);
-      api.add(api.cylinder(0.17 * k, 0.17 * k, 0.02 * k, 10).translate(0.7 * k, H - 0.22 * k, 0), glow(light, 3));
+      iron.merge(api.tube(arm, 0.032 * k, 8));
+      iron.merge(api.cylinder(0.09 * k, 0.2 * k, 0.12 * k, 16).translate(0.7 * k, H - 0.15 * k, 0));
+      glass.push(api.cylinder(0.17 * k, 0.17 * k, 0.02 * k, 16).translate(0.7 * k, H - 0.22 * k, 0));
     }
+    addFinish(api, iron, 'black-metal', c, { variation: 0.04 });
+    for (const g of glass) api.add(g, glow(light, variant === 1 ? 3 : 2.5));
     api.collider(cylinderCollider(0, 0.225 * k, 0, 0.26 * k, 0.45 * k));
     api.collider(cylinderCollider(0, H / 2, 0, 0.07 * k, H));
     return api.build();
@@ -87,31 +109,38 @@ const bench = defineGenerator({
     const wood = p.color('color');
     const frame = p.color('frameColor');
     if (p.int('variant') === 1) {
-      const seat = api.cylinder(0.22, 0.22, L, 9).rotate(0, 0, 90).scale(1, 0.55, 1).translate(0, 0.42, 0);
-      piece(api, seat, wood, MAT.bark, 0.15, 4);
-      for (const sx of [-1, 1]) {
-        const stump = api.cylinder(0.17, 0.2, 0.36, 8).translate(sx * L * 0.33, 0.18, 0);
-        piece(api, stump, shade(wood, -0.15), MAT.bark, 0.12, 5);
-      }
+      const seat = staveUvs(api.cylinder(0.22, 0.22, L, 14), 0.22).rotate(0, 0, 90).scale(1, 0.55, 1).translate(0, 0.42, 0);
+      addFinish(api, seat, 'bark', wood, { uv: 'keep', variation: 0.1, freq: 2 });
+      addFinish(api, api.box(L - 0.04, 0.02, 0.36).translate(0, 0.53, 0), 'oak', shade(wood, 0.2), { variation: 0.08 });
+      const stumps = seed(api, 0.2);
+      for (const sx of [-1, 1]) stumps.merge(roundUvs(api.cylinder(0.17, 0.2, 0.36, 12), 0.2).translate(sx * L * 0.33, 0.18, 0));
+      addFinish(api, stumps, 'bark', shade(wood, -0.15), { uv: 'keep', variation: 0.1, freq: 3 });
       api.collider(boxCollider(0, 0.27, 0, L, 0.54, 0.44));
       return api.build();
     }
     const seatY = 0.45;
-    for (let i = 0; i < 4; i++) {
-      piece(api, api.box(L, 0.04, 0.1).translate(0, seatY, -0.17 + i * 0.115), jitter(api, wood, 0.1), MAT.wood, 0.08, 4);
-    }
-    for (let i = 0; i < 3; i++) {
-      const slat = api.box(L, 0.1, 0.035).translate(0, 0.16 + i * 0.13, 0).rotate(-14, 0, 0).translate(0, seatY + 0.07, -0.25);
-      piece(api, slat, jitter(api, wood, 0.1), MAT.wood, 0.08, 4);
-    }
+    const slats = seed(api, seatY);
+    for (let i = 0; i < 4; i++) slats.merge(api.box(L, 0.035, 0.09).translate(0, seatY, -0.17 + i * 0.115));
+    for (let i = 0; i < 3; i++) slats.merge(api.box(L, 0.09, 0.03).translate(0, 0.16 + i * 0.13, 0).rotate(-14, 0, 0).translate(0, seatY + 0.07, -0.25));
+    addFinish(api, slats, 'oak', wood, { variation: 0.1, freq: 2 });
+    const iron = seed(api, seatY);
     const supports = L > 2.4 ? [-L / 2 + 0.12, 0, L / 2 - 0.12] : [-L / 2 + 0.12, L / 2 - 0.12];
     for (const x of supports) {
-      piece(api, api.box(0.05, seatY, 0.05).translate(x, seatY / 2, 0.17), frame, MAT.metal, 0.04);
-      piece(api, api.box(0.05, 0.9, 0.05).rotate(-12, 0, 0).translate(x, 0.45, -0.21), frame, MAT.metal, 0.04);
-      piece(api, api.box(0.05, 0.05, 0.48).translate(x, seatY - 0.04, -0.02), frame, MAT.metal, 0.04);
-      piece(api, api.box(0.05, 0.04, 0.42).translate(x, 0.66, 0.0), frame, MAT.metal, 0.04);
-      piece(api, api.box(0.05, 0.22, 0.04).translate(x, 0.56, 0.17), frame, MAT.metal, 0.04);
+      iron.merge(api.box(0.045, seatY, 0.045).translate(x, seatY / 2, 0.17));
+      iron.merge(api.box(0.045, 0.9, 0.045).rotate(-12, 0, 0).translate(x, 0.45, -0.21));
+      iron.merge(api.box(0.045, 0.045, 0.48).translate(x, seatY - 0.04, -0.02));
+      // A scrolled armrest.
+      const arm: Vec3[] = [];
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        arm.push([x, 0.66 + Math.sin(t * Math.PI) * 0.03, -0.2 + t * 0.4]);
+      }
+      arm.push([x, 0.6, 0.24]);
+      iron.merge(api.tube(arm, 0.022, 6));
+      iron.merge(api.box(0.045, 0.22, 0.04).translate(x, 0.56, 0.17));
+      iron.merge(api.box(0.12, 0.02, 0.1).translate(x, 0.01, 0.17)).merge(api.box(0.12, 0.02, 0.1).translate(x, 0.01, -0.28));
     }
+    addFinish(api, iron, 'black-metal', frame, { variation: 0.03 });
     api.collider(boxCollider(0, seatY / 2 + 0.01, 0, L, seatY + 0.02, 0.5));
     api.collider({ kind: 'box', halfExtents: [L / 2, 0.22, 0.03], offset: [0, seatY + 0.28, -0.3], rotation: [-14, 0, 0] });
     return api.build();
@@ -137,44 +166,47 @@ const table = defineGenerator({
     const variant = p.int('variant');
     const t = 0.05;
     if (variant === 1) {
-      piece(api, api.cylinder(W / 2, W / 2, t, 16).translate(0, H - t / 2, 0), c, MAT.wood, 0.1, 3);
-      piece(api, api.cylinder(0.05, 0.07, H - t, 8).translate(0, (H - t) / 2, 0), shade(c, -0.2), MAT.wood, 0.06);
-      piece(api, api.cylinder(W * 0.18, W * 0.22, 0.05, 8).translate(0, 0.025, 0), shade(c, -0.25), MAT.wood, 0.06);
+      addFinish(api, api.cylinder(W / 2, W / 2, t, 32).translate(0, H - t / 2, 0), 'oak', c, { variation: 0.06 });
+      const foot = Math.max(0.14, W * 0.22);
+      const leg = api.cylinder(foot * 0.9, foot, 0.05, 20).translate(0, 0.025, 0);
+      leg.merge(api.cylinder(0.05, 0.065, H - t - 0.11, 16).translate(0, 0.05 + (H - t - 0.11) / 2, 0));
+      leg.merge(api.cylinder(0.11, 0.07, 0.06, 16).translate(0, H - t - 0.03, 0));
+      addFinish(api, leg, 'oak', shade(c, -0.2), { uv: 'round', radius: 0.08, variation: 0.05 });
       api.collider(cylinderCollider(0, H - t / 2, 0, W / 2, t));
       api.collider(cylinderCollider(0, (H - t) / 2, 0, 0.08, H - t));
       return api.build();
     }
     if (variant === 2) {
+      const top = seed(api, H - t);
       const planks = 5;
-      for (let i = 0; i < planks; i++) {
-        piece(api, api.box(W, t, D / planks - 0.02).translate(0, H - t / 2, -D / 2 + (D / planks) * (i + 0.5)), jitter(api, c, 0.08), MAT.wood, 0.06, 4);
-      }
+      for (let i = 0; i < planks; i++) top.merge(api.box(W, t, D / planks - 0.015).translate(0, H - t / 2, -D / 2 + (D / planks) * (i + 0.5)));
       for (const sz of [-1, 1]) {
-        piece(api, api.box(W, t, 0.28).translate(0, H * 0.58, sz * (D / 2 + 0.3)), jitter(api, c, 0.08), MAT.wood, 0.06, 4);
+        top.merge(api.box(W, t, 0.13).translate(0, H * 0.58, sz * (D / 2 + 0.23))).merge(api.box(W, t, 0.13).translate(0, H * 0.58, sz * (D / 2 + 0.37)));
         api.collider(boxCollider(0, H * 0.58, sz * (D / 2 + 0.3), W, t, 0.28));
       }
+      addFinish(api, top, 'oak', c, { variation: 0.12, freq: 1.5 });
+      const legs = seed(api, H / 2);
       for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-          const a: Vec3 = [sx * (W / 2 - 0.15), 0, sz * (D / 2 + 0.45)];
-          const b: Vec3 = [sx * (W / 2 - 0.15), H - t, 0];
-          piece(api, api.limb(a, b, 0.05, 0.05, 4), shade(c, -0.15), MAT.wood, 0.05);
-        }
-        piece(api, api.box(0.08, 0.08, D + 1.0).translate(sx * (W / 2 - 0.15), H * 0.58 - t, 0), shade(c, -0.15), MAT.wood, 0.05);
+        for (const sz of [-1, 1]) legs.merge(api.limb([sx * (W / 2 - 0.15), 0, sz * (D / 2 + 0.45)], [sx * (W / 2 - 0.15), H - t, 0], 0.045, 0.045, 6));
+        legs.merge(api.box(0.08, 0.08, D + 1.0).translate(sx * (W / 2 - 0.15), H * 0.58 - t, 0));
       }
+      addFinish(api, legs, 'oak', shade(c, -0.15), { variation: 0.06 });
       api.collider(boxCollider(0, H - t / 2, 0, W, t, D));
       api.collider(boxCollider(0, (H - t) / 2, 0, W - 0.2, H - t, 0.1));
       return api.build();
     }
-    piece(api, api.box(W, t, D).translate(0, H - t / 2, 0), c, MAT.wood, 0.1, 3);
-    piece(api, api.box(W - 0.12, 0.09, D - 0.12).translate(0, H - t - 0.045, 0), shade(c, -0.15), MAT.wood, 0.05);
+    addFinish(api, api.box(W, t, D).translate(0, H - t / 2, 0), 'oak', c, { variation: 0.06 });
+    const frame = api.box(W - 0.12, 0.09, 0.025).translate(0, H - t - 0.045, D / 2 - 0.07).merge(api.box(W - 0.12, 0.09, 0.025).translate(0, H - t - 0.045, -D / 2 + 0.07));
+    frame.merge(api.box(0.025, 0.09, D - 0.12).translate(W / 2 - 0.07, H - t - 0.045, 0)).merge(api.box(0.025, 0.09, D - 0.12).translate(-W / 2 + 0.07, H - t - 0.045, 0));
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         const x = sx * (W / 2 - 0.08);
         const z = sz * (D / 2 - 0.08);
-        piece(api, api.cylinder(0.035, 0.028, H - t, 6).translate(x, (H - t) / 2, z), shade(c, -0.1), MAT.wood, 0.05);
+        frame.merge(api.cylinder(0.032, 0.022, H - t, 10).translate(x, (H - t) / 2, z));
         api.collider(boxCollider(x, (H - t) / 2, z, 0.07, H - t, 0.07));
       }
     }
+    addFinish(api, frame, 'oak', shade(c, -0.1), { variation: 0.05 });
     api.collider(boxCollider(0, H - t / 2, 0, W, t, D));
     return api.build();
   },
@@ -198,40 +230,40 @@ const chair = defineGenerator({
     const seatH = H * (variant === 2 ? 0.75 : 0.5);
     const S = variant === 1 ? 0.75 : 0.45;
     if (variant === 2) {
-      piece(api, api.cylinder(0.2, 0.2, 0.06, 12).translate(0, seatH, 0), fabric, MAT.fabric, 0.08);
+      addFinish(api, api.cylinder(0.2, 0.19, 0.06, 20).translate(0, seatH, 0), 'leather', fabric, { variation: 0.05 });
+      const steel = seed(api, seatH / 2);
       for (let k = 0; k < 4; k++) {
         const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-        piece(api, api.limb([Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22], [Math.cos(a) * 0.12, seatH - 0.03, Math.sin(a) * 0.12], 0.02, 0.018, 5), c, MAT.metal, 0.04);
+        steel.merge(api.limb([Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22], [Math.cos(a) * 0.12, seatH - 0.03, Math.sin(a) * 0.12], 0.016, 0.014, 6));
       }
-      piece(api, api.torus(0.17, 0.012, 4, 16).rotate(90, 0, 0).translate(0, seatH * 0.35, 0), c, MAT.metal, 0.04);
+      steel.merge(api.torus(0.17, 0.01, 6, 20).rotate(90, 0, 0).translate(0, seatH * 0.35, 0));
+      addFinish(api, steel, 'black-metal', c === '#8b5a2b' ? '#ffffff' : c, { variation: 0 });
       api.collider(cylinderCollider(0, seatH / 2, 0, 0.22, seatH + 0.03));
       return api.build();
     }
     if (variant === 1) {
-      piece(api, api.box(S, seatH * 0.6, S).translate(0, seatH * 0.3 + 0.08, 0), fabric, MAT.fabric, 0.08);
-      piece(api, api.box(S - 0.1, 0.12, S - 0.12).translate(0, seatH + 0.02, 0.04), shade(fabric, 0.08), MAT.fabric, 0.06);
-      piece(api, api.box(S, H - seatH * 0.6, 0.16).rotate(-8, 0, 0).translate(0, seatH * 0.6 + (H - seatH * 0.6) / 2, -S / 2 + 0.08), fabric, MAT.fabric, 0.08);
-      for (const sx of [-1, 1]) piece(api, api.box(0.12, seatH * 0.5, S).translate(sx * (S / 2 - 0.06), seatH * 0.85, 0), shade(fabric, -0.05), MAT.fabric, 0.06);
-      for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) piece(api, api.cylinder(0.025, 0.02, 0.08, 6).translate(sx * (S / 2 - 0.06), 0.04, sz * (S / 2 - 0.06)), c, MAT.wood, 0.04);
-      }
+      const up = api.box(S, seatH * 0.6, S).translate(0, seatH * 0.3 + 0.08, 0);
+      up.merge(api.box(S, H - seatH * 0.6, 0.16).rotate(-8, 0, 0).translate(0, seatH * 0.6 + (H - seatH * 0.6) / 2, -S / 2 + 0.08));
+      for (const sx of [-1, 1]) up.merge(api.box(0.12, seatH * 0.5, S).translate(sx * (S / 2 - 0.06), seatH * 0.85, 0));
+      addFinish(api, up, 'fabric', fabric, { variation: 0.05 });
+      addFinish(api, api.box(S - 0.1, 0.12, S - 0.12).translate(0, seatH + 0.02, 0.04), 'fabric', shade(fabric, 0.08), { variation: 0.04 });
+      const feet = seed(api, 0.04);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) feet.merge(api.cylinder(0.022, 0.016, 0.1, 8).translate(sx * (S / 2 - 0.06), 0.05, sz * (S / 2 - 0.06)));
+      addFinish(api, feet, 'walnut', '#ffffff', { variation: 0 });
       api.collider(boxCollider(0, seatH / 2 + 0.04, 0, S, seatH + 0.08, S));
       api.collider(boxCollider(0, (seatH + H) / 2, -S / 2 + 0.08, S, H - seatH, 0.16));
       return api.build();
     }
-    piece(api, api.box(S, 0.04, S).translate(0, seatH, 0), c, MAT.wood, 0.1, 4);
-    piece(api, api.box(S - 0.06, 0.03, S - 0.08).translate(0, seatH + 0.035, 0.01), fabric, MAT.fabric, 0.06);
+    const wood = api.box(S, 0.04, S).translate(0, seatH, 0);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        const x = sx * (S / 2 - 0.03);
-        const z = sz * (S / 2 - 0.03);
         const top = sz < 0 ? H : seatH;
-        piece(api, api.box(0.04, top, 0.04).translate(x, top / 2, z), shade(c, -0.1), MAT.wood, 0.05);
+        wood.merge(api.box(0.04, top, 0.04).translate(sx * (S / 2 - 0.03), top / 2, sz * (S / 2 - 0.03)));
       }
     }
-    for (let i = 0; i < 3; i++) {
-      piece(api, api.box(S - 0.06, 0.05, 0.025).translate(0, seatH + 0.15 + i * ((H - seatH - 0.2) / 2.2), -S / 2 + 0.03), jitter(api, c, 0.08), MAT.wood, 0.05);
-    }
+    for (let i = 0; i < 3; i++) wood.merge(api.box(S - 0.06, 0.05, 0.022).translate(0, seatH + 0.15 + i * ((H - seatH - 0.2) / 2.2), -S / 2 + 0.03));
+    addFinish(api, wood, 'oak', c, { variation: 0.06 });
+    addFinish(api, api.box(S - 0.06, 0.03, S - 0.08).translate(0, seatH + 0.035, 0.01), 'fabric', fabric, { variation: 0.04 });
     api.collider(boxCollider(0, seatH / 2, 0, S, seatH + 0.02, S));
     api.collider(boxCollider(0, (seatH + H) / 2, -S / 2 + 0.03, S, H - seatH, 0.05));
     return api.build();
@@ -253,52 +285,53 @@ const crate = defineGenerator({
     const variant = p.int('variant');
     const e = S * 0.09;
     if (variant === 2) {
-      const metal = c === '#b07d45' ? '#5c6670' : c;
-      piece(api, api.box(S * 0.96, S * 0.96, S * 0.96).translate(0, S / 2, 0), metal, MAT.metal, 0.08, 2);
-      for (const sy of [0.04, 0.96]) piece(api, api.box(S, S * 0.08, S).translate(0, S * sy, 0), shade(metal, -0.25), MAT.metal, 0.05);
-      for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
-        piece(api, api.box(S * 0.1, S, S * 0.1).translate((x * S) / 2 - x * S * 0.05, S / 2, (z * S) / 2 - z * S * 0.05), shade(metal, -0.3), MAT.metal, 0.05);
-      }
+      const metal = c === '#b07d45' ? '#7c858d' : c;
+      addFinish(api, api.box(S * 0.96, S * 0.96, S * 0.96).translate(0, S / 2, 0), 'brushed-metal', metal, { variation: 0.04 });
+      const ribs = seed(api, S / 2);
+      for (const sy of [0.04, 0.96]) ribs.merge(api.box(S, S * 0.08, S).translate(0, S * sy, 0));
+      for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) ribs.merge(api.box(S * 0.1, S, S * 0.1).translate((x * S) / 2 - x * S * 0.05, S / 2, (z * S) / 2 - z * S * 0.05));
+      addFinish(api, ribs, 'black-metal', '#ffffff', { variation: 0 });
       api.add(api.box(S * 0.6, S * 0.04, S * 0.02).translate(0, S * 0.5, S * 0.485), glow('#38e1ff', 3));
       api.add(api.box(S * 0.02, S * 0.04, S * 0.6).translate(S * 0.485, S * 0.5, 0), glow('#38e1ff', 3));
       api.collider(boxCollider(0, S / 2, 0, S, S, S));
       return api.build();
     }
-    const panel = api.box(S - e * 0.6, S - e * 0.6, S - e * 0.6).translate(0, S / 2, 0);
-    const p0 = lin(shade(c, -0.12));
-    const p1 = lin(shade(c, 0.1));
-    panel.paintFn((x, y, z, nx, ny, _nz, out) => {
-      const u = Math.abs(ny) > 0.5 ? x : Math.abs(nx) > 0.5 ? z : x;
-      const v = Math.abs(ny) > 0.5 ? z : y;
-      const board = Math.floor((v / S) * 4 + 8);
-      mixLinear(p0, p1, (board % 2) * 0.5 + 0.25 + 0.2 * api.noise.noise3(u * 3, v * 9, board), out);
-    });
-    api.add(panel, MAT.wood);
     if (variant === 1) {
-      // slats with gaps around a dark core
-      paintSolid(panel, shade(c, -0.55));
+      paintSolidDark(api, api.box(S - e * 0.6, S - e * 0.6, S - e * 0.6).translate(0, S / 2, 0), shade(c, -0.6));
+      const slats = seed(api, S / 2);
       for (let i = 0; i < 4; i++) {
         const y = S * (0.12 + i * 0.25);
-        for (const [w, d] of [[S, S * 0.98], [S * 0.98, S]] as const) piece(api, api.box(w, S * 0.17, d).translate(0, y, 0), jitter(api, c, 0.1), MAT.wood, 0.08, 4);
+        slats.merge(api.box(S, S * 0.17, S * 0.98).translate(0, y, 0)).merge(api.box(S * 0.98, S * 0.17, S).translate(0, y, 0));
       }
+      addFinish(api, slats, 'oak', c, { variation: 0.12, freq: 2 });
+    } else {
+      addFinish(api, api.box(S - e * 0.6, S - e * 0.6, S - e * 0.6).translate(0, S / 2, 0), 'cladding', c, { variation: 0.06 });
     }
-    const frameC = shade(c, -0.22);
+    const frame = seed(api, S / 2);
     for (const sy of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        piece(api, api.box(S, e, e).translate(0, S / 2 + (sy * (S - e)) / 2, (sz * (S - e)) / 2), frameC, MAT.wood, 0.08);
-        piece(api, api.box(e, e, S - 2 * e).translate((sy * (S - e)) / 2, S / 2 + (sz * (S - e)) / 2, 0), frameC, MAT.wood, 0.08);
-        piece(api, api.box(e, S - 2 * e, e).translate((sy * (S - e)) / 2, S / 2, (sz * (S - e)) / 2), frameC, MAT.wood, 0.08);
+        frame.merge(api.box(S, e, e).translate(0, S / 2 + (sy * (S - e)) / 2, (sz * (S - e)) / 2));
+        frame.merge(api.box(e, e, S - 2 * e).translate((sy * (S - e)) / 2, S / 2 + (sz * (S - e)) / 2, 0));
+        frame.merge(api.box(e, S - 2 * e, e).translate((sy * (S - e)) / 2, S / 2, (sz * (S - e)) / 2));
       }
     }
     if (variant === 0) {
       const diag = Math.SQRT2 * (S - 2 * e);
-      for (const sz of [-1, 1]) piece(api, api.box(e * 0.8, diag, e * 0.5).rotate(0, 0, 45 * sz).translate(0, S / 2, (sz * S) / 2), frameC, MAT.wood, 0.08);
-      for (const sx of [-1, 1]) piece(api, api.box(e * 0.5, diag, e * 0.8).rotate(45 * sx, 0, 0).translate((sx * S) / 2, S / 2, 0), frameC, MAT.wood, 0.08);
+      for (const sz of [-1, 1]) frame.merge(api.box(e * 0.8, diag, e * 0.5).rotate(0, 0, 45 * sz).translate(0, S / 2, (sz * S) / 2));
+      for (const sx of [-1, 1]) frame.merge(api.box(e * 0.5, diag, e * 0.8).rotate(45 * sx, 0, 0).translate((sx * S) / 2, S / 2, 0));
     }
+    addFinish(api, frame, 'oak', shade(c, -0.25), { variation: 0.08, freq: 2 });
     api.collider(boxCollider(0, S / 2, 0, S, S, S));
     return api.build();
   },
 });
+
+/** A plain dark part (the shadowed core between crate slats). */
+function paintSolidDark(api: InternalApi, m: Mesh, color: string): void {
+  boxUvs(m);
+  m.paint(lin(color));
+  api.add(m, { color: '#ffffff', vertexColors: true, roughness: 0.95 });
+}
 
 const barrel = defineGenerator({
   id: 'barrel',
@@ -316,43 +349,27 @@ const barrel = defineGenerator({
     const R = H * 0.34;
     const hoop = p.color('hoopColor');
     if (variant === 0) {
-      const body = api.lathe([[0, 0], [R * 0.84, 0], [R * 0.95, H * 0.2], [R, H * 0.5], [R * 0.95, H * 0.8], [R * 0.84, H], [0, H]], 14);
-      const c = p.color('color');
-      const s0 = lin(shade(c, -0.18));
-      const s1 = lin(shade(c, 0.1));
-      const top = lin(shade(c, -0.05));
-      body.paintFn((x, y, z, _nx, ny, _nz, out) => {
-        if (Math.abs(ny) > 0.9) {
-          mixLinear(top, s0, 0.3 + 0.3 * api.noise.noise2(x * 8, z * 8), out);
-          return;
-        }
-        const stave = Math.floor(((Math.atan2(x, z) + Math.PI) / (Math.PI * 2)) * 14);
-        mixLinear(s0, s1, (stave % 2) * 0.5 + 0.25 * api.noise.noise3(x * 2, y * 6, z * 2) + 0.2, out);
-      });
-      api.add(body, MAT.wood);
-      for (const [f, rr] of [[0.1, 0.9], [0.3, 0.985], [0.7, 0.985], [0.9, 0.9]] as const) {
-        piece(api, api.cylinder(R * rr + 0.012, R * rr + 0.012, H * 0.05, 14).translate(0, H * f, 0), hoop, MAT.metal, 0.06);
-      }
+      const body = staveUvs(api.lathe([[0, 0], [R * 0.84, 0], [R * 0.95, H * 0.2], [R, H * 0.5], [R * 0.95, H * 0.8], [R * 0.84, H], [0, H]], 24), R);
+      addFinish(api, body, 'oak', p.color('color'), { uv: 'keep', variation: 0.08, freq: 2 });
+      const hoops = seed(api, H / 2);
+      for (const [f, rr] of [[0.1, 0.9], [0.3, 0.985], [0.7, 0.985], [0.9, 0.9]] as const) hoops.merge(api.cylinder(R * rr + 0.012, R * rr + 0.012, H * 0.045, 24).translate(0, H * f, 0));
+      addFinish(api, hoops, 'black-metal', hoop, { variation: 0.03 });
     } else {
-      const c = variant === 2 ? '#c62f2f' : p.color('color') === '#8a5a2e' ? '#3d6e8f' : p.color('color');
-      const body = api.cylinder(R * 0.92, R * 0.92, H, 16).translate(0, H / 2, 0);
-      const c0 = lin(shade(c, -0.15));
-      const c1 = lin(shade(c, 0.08));
-      body.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(c0, c1, 0.5 + 0.4 * api.noise.noise3(x * 3, y * 3, z * 3), out));
-      api.add(body, MAT.paint);
+      const c = variant === 2 ? '#b42b2b' : p.color('color') === '#8a5a2e' ? '#3d6e8f' : p.color('color');
+      addFinish(api, api.cylinder(R * 0.92, R * 0.92, H, 24).translate(0, H / 2, 0), 'paint', c, { uv: 'round', radius: R, variation: 0.05, roughness: 0.45 });
       if (variant === 2) {
-        // hazard band: alternating yellow/black panels around the drum
-        const panels = 14;
+        const panels = 16;
         const pw = 2 * R * 0.93 * Math.sin(Math.PI / panels) * 1.02;
-        for (let k = 0; k < panels; k++) {
-          const ang = (k / panels) * 360;
-          const panel = api.box(pw, H * 0.16, 0.012).translate(0, H * 0.5, R * 0.925).rotate(0, ang, 0);
-          paintSolid(panel, k % 2 ? '#1f1f22' : '#f2c230');
-          api.add(panel, MAT.paint);
-        }
+        const yellow = seed(api, H / 2);
+        const black = seed(api, H / 2);
+        for (let k = 0; k < panels; k++) (k % 2 ? black : yellow).merge(api.box(pw, H * 0.16, 0.012).translate(0, H * 0.5, R * 0.925).rotate(0, (k / panels) * 360, 0));
+        addFinish(api, yellow, 'paint', '#e2b52c', { variation: 0.04 });
+        addFinish(api, black, 'paint', '#1f1f22', { variation: 0.02 });
       }
-      for (const f of [0.02, 0.33, 0.66, 0.98]) piece(api, api.torus(R * 0.93, H * 0.018, 4, 16).rotate(90, 0, 0).translate(0, H * f, 0), shade(c, -0.25), MAT.metal, 0.05);
-      piece(api, api.cylinder(R * 0.12, R * 0.12, H * 0.03, 8).translate(R * 0.45, H + H * 0.012, 0), '#9aa0a6', MAT.metal, 0.05);
+      const rims = seed(api, H / 2);
+      for (const f of [0.02, 0.33, 0.66, 0.98]) rims.merge(api.torus(R * 0.93, H * 0.016, 6, 24).rotate(90, 0, 0).translate(0, H * f, 0));
+      rims.merge(api.cylinder(R * 0.12, R * 0.12, H * 0.03, 10).translate(R * 0.45, H + H * 0.012, 0));
+      addFinish(api, rims, 'paint', shade(c, -0.25), { variation: 0.03, roughness: 0.5 });
     }
     api.collider(cylinderCollider(0, H / 2, 0, R * 0.95, H));
     return api.build();
@@ -372,53 +389,63 @@ const campfire = defineGenerator({
   run(p, api) {
     const S = p.num('size');
     const ringR = S * 0.42;
-    const stones = 10;
-    for (let k = 0; k < stones; k++) {
-      const a = (k / stones) * Math.PI * 2 + api.rng() * 0.2;
-      const r = api.icosphereRock(S * api.range(0.08, 0.11), 0.6, 1).scale(1, 0.7, 1).translate(Math.cos(a) * ringR, S * 0.04, Math.sin(a) * ringR);
-      const g = jitter(api, '#85827c', 0.15);
-      paintNoise(r, api, shade(g, -0.2), shade(g, 0.1), 6);
-      api.add(r, MAT.stone);
+    const stones = seed(api, S * 0.04);
+    const n = 12;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + api.rng() * 0.2;
+      stones.merge(api.icosphereRock(S * api.range(0.075, 0.105), 0.55, 1).scale(1, 0.65, 1).rotate(0, api.rng() * 360, 0).translate(Math.cos(a) * ringR, S * 0.03, Math.sin(a) * ringR));
     }
+    addFinish(api, stones, 'rock', '#8a857d', { variation: 0.14, freq: 4 });
+    // The ash bed and scorched earth.
+    const ash = api.cylinder(ringR * 0.95, ringR, S * 0.02, 20).translate(0, S * 0.01, 0);
+    boxUvs(ash);
+    const ashIn = lin('#3a3632');
+    const ashOut = lin('#5f564b');
+    ash.paintFn((x, _y, z, _nx, _ny, _nz, out) => mixLinear(ashIn, ashOut, Math.min(1, Math.hypot(x, z) / ringR) + 0.15 * api.noise.noise2(x * 9, z * 9), out));
+    api.add(ash, finishMat('soil'));
     const logR = S * 0.055;
     const logL = S * 0.62;
-    const char = lin('#1d1512');
+    const char = lin('#1b1411');
     const wood = lin('#6e4a2c');
-    const paintLog = (log: Mesh): Mesh => log.paintFn((x, y, z, _nx, _ny, _nz, out) => {
-      mixLinear(wood, char, Math.min(1, Math.max(0, (S * 0.35 - Math.hypot(x, z)) / (S * 0.3)) + 0.2 * api.noise.noise3(x * 9, y * 9, z * 9)), out);
-    });
+    const logs = seed(api, S * 0.1);
+    const addLog = (log: Mesh): void => {
+      logs.merge(log);
+    };
     if (p.int('variant') === 1) {
       for (let layer = 0; layer < 3; layer++) {
         for (const s of [-1, 1]) {
-          const log = api.cylinder(logR, logR, logL * 0.8, 6).rotate(0, 0, 90);
+          const log = roundUvs(api.cylinder(logR, logR, logL * 0.8, 10), logR).rotate(0, 0, 90);
           if (layer % 2) log.rotate(0, 90, 0);
           const off = s * S * 0.13;
-          log.translate(layer % 2 ? off : 0, logR + layer * logR * 1.8, layer % 2 ? 0 : off);
-          api.add(paintLog(log), MAT.bark);
+          addLog(log.translate(layer % 2 ? off : 0, logR + layer * logR * 1.8, layer % 2 ? 0 : off));
         }
       }
     } else {
-      for (let k = 0; k < 5; k++) {
-        const a = (k / 5) * 360 + api.rng() * 20;
-        const log = api.cylinder(logR, logR * 1.1, logL, 6).translate(0, logL / 2, 0).rotate(0, 0, 58).translate(S * 0.3, 0, 0).rotate(0, a, 0);
-        api.add(paintLog(log), MAT.bark);
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * 360 + api.rng() * 20;
+        addLog(roundUvs(api.cylinder(logR * 0.9, logR * 1.1, logL, 10), logR).translate(0, logL / 2, 0).rotate(0, 0, 56).translate(S * 0.3, 0, 0).rotate(0, a, 0));
       }
     }
+    // Charred towards the heart of the fire.
+    logs.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(wood, char, Math.min(1, Math.max(0, (S * 0.36 - Math.hypot(x, z)) / (S * 0.28)) + 0.25 * api.noise.noise3(x * 9, y * 9, z * 9)), out));
+    api.add(logs, finishMat('bark'));
     const flame = p.color('flameColor');
-    api.add(api.cylinder(S * 0.2, S * 0.24, S * 0.03, 8).translate(0, S * 0.015, 0), glow('#ff3b12', 2.2));
+    api.add(api.cylinder(S * 0.2, S * 0.24, S * 0.03, 12).translate(0, S * 0.02, 0), glow('#ff3b12', 2.2));
     if (p.bool('lit')) {
-      api.add(api.cone(S * 0.2, S * 0.62, 7).rotate(api.range(-6, 6), api.rng() * 360, api.range(-6, 6)).translate(0, S * 0.36, 0), glow(flame, 3));
-      for (let k = 0; k < 3; k++) {
-        const a = (k / 3) * Math.PI * 2 + 0.4;
-        const h = S * api.range(0.3, 0.45);
-        api.add(api.cone(S * 0.09, h, 6).rotate(Math.sin(a) * 12, 0, -Math.cos(a) * 12).translate(Math.cos(a) * S * 0.1, h / 2 + S * 0.06, Math.sin(a) * S * 0.1), glow(flame, 3));
+      // Licks of flame: tall thin cones leaning in, a hot core.
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2 + api.rng();
+        const h = S * api.range(0.32, 0.62);
+        const r = S * api.range(0.05, 0.09);
+        const d = S * api.range(0.02, 0.11);
+        api.add(api.cone(r, h, 8).rotate(Math.sin(a) * 10, api.rng() * 360, -Math.cos(a) * 10).translate(Math.cos(a) * d, h / 2 + S * 0.05, Math.sin(a) * d), glow(flame, 3));
       }
-      api.add(api.cone(S * 0.11, S * 0.42, 6).translate(0, S * 0.27, 0), glow('#ffd23f', 4));
+      api.add(api.cone(S * 0.1, S * 0.4, 8).translate(0, S * 0.25, 0), glow('#ffd23f', 4));
     }
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; k < 10; k++) {
       const a = api.rng() * Math.PI * 2;
-      const r = api.range(0.05, 0.25) * S;
-      api.add(api.box(S * 0.03, S * 0.02, S * 0.03).rotate(0, api.rng() * 90, 0).translate(Math.cos(a) * r, S * 0.03, Math.sin(a) * r), glow('#ff5a1f', 2.5));
+      const r = api.range(0.05, 0.28) * S;
+      api.add(api.box(S * 0.025, S * 0.015, S * 0.025).rotate(0, api.rng() * 90, 0).translate(Math.cos(a) * r, S * 0.03, Math.sin(a) * r), glow('#ff5a1f', 2.5));
     }
     api.collider(cylinderCollider(0, S * 0.07, 0, ringR + S * 0.1, S * 0.14));
     return api.build();
@@ -439,60 +466,80 @@ const tent = defineGenerator({
     const c = p.color('color');
     const variant = p.int('variant');
     const pole = '#6b4a2f';
-    const canvas = (mesh: Mesh): Mesh => paintGradientY(mesh, api, shade(c, -0.2), shade(c, 0.12), 0, S * 0.8, 0.12);
+    const canvas = (mesh: Mesh): void => {
+      boxUvs(mesh);
+      paintGradientY(mesh, api, shade(c, -0.18), shade(c, 0.08), 0, S * 0.8, 0.1);
+      api.add(mesh, finishMat('fabric'));
+    };
+    const dark = (mesh: Mesh): void => {
+      boxUvs(mesh);
+      mesh.paint(lin(shade(c, -0.65)));
+      api.add(mesh, finishMat('fabric'));
+    };
     let body: Mesh;
     if (variant === 1) {
       const R = S * 0.5;
       const prof: Array<[number, number]> = [];
-      for (let i = 0; i <= 6; i++) {
-        const a = (i / 6) * (Math.PI / 2);
-        prof.push([i === 6 ? 0 : R * Math.cos(a), R * 0.75 * Math.sin(a)]);
+      for (let i = 0; i <= 8; i++) {
+        const a = (i / 8) * (Math.PI / 2);
+        prof.push([i === 8 ? 0 : R * Math.cos(a), R * 0.75 * Math.sin(a)]);
       }
-      body = api.lathe([[0, 0], ...prof], 8);
+      body = api.lathe([[0, 0], ...prof], 16);
       canvas(body);
-      api.add(body, MAT.fabric);
+      const poles = seed(api, R * 0.3);
       for (const yaw of [45, 135]) {
         const arc: Vec3[] = [];
-        for (let i = 0; i <= 12; i++) {
-          const a = (i / 12) * Math.PI;
+        for (let i = 0; i <= 16; i++) {
+          const a = (i / 16) * Math.PI;
           arc.push([Math.cos(a) * R * 1.01, Math.sin(a) * R * 0.76, 0]);
         }
-        piece(api, api.tube(arc, S * 0.012, 5).rotate(0, yaw, 0), '#30343a', MAT.metal, 0.04);
+        poles.merge(api.tube(arc, S * 0.01, 6).rotate(0, yaw, 0));
       }
-      const door = api.extrude([[-R * 0.3, 0], [R * 0.3, 0], [0, R * 0.55]], 0.04).translate(0, 0.01, R * 0.9);
-      paintSolid(door, shade(c, -0.6));
-      api.add(door, MAT.fabric);
+      addFinish(api, poles, 'black-metal', '#ffffff', { variation: 0 });
+      dark(api.extrude([[-R * 0.3, 0], [R * 0.3, 0], [0, R * 0.55]], 0.03).translate(0, 0.01, R * 0.9));
     } else if (variant === 2) {
       const R = S * 0.45;
-      body = api.cone(R, S * 1.1, 9).translate(0, S * 0.55, 0);
+      body = api.cone(R, S * 1.1, 16).translate(0, S * 0.55, 0);
+      boxUvs(body);
       const stripe0 = lin(shade(c, -0.15));
-      const stripe1 = lin('#efe4cf');
-      body.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(stripe0, stripe1, (Math.floor(y * 3 / S * 2) % 3 === 1 ? 0.9 : 0.1) + 0.08 * api.noise.noise3(x * 3, y * 3, z * 3), out));
-      api.add(body, MAT.fabric);
-      for (let k = 0; k < 5; k++) {
-        const a = (k / 5) * Math.PI * 2;
-        piece(api, api.limb([Math.cos(a) * R * 0.25, S * 0.85, Math.sin(a) * R * 0.25], [-Math.cos(a) * R * 0.08, S * 1.3, -Math.sin(a) * R * 0.08], S * 0.015, S * 0.012, 4), pole, MAT.wood, 0.05);
+      const stripe1 = lin('#e6dcc6');
+      body.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(stripe0, stripe1, ((Math.floor((y * 3) / S * 2) % 3 === 1 ? 0.9 : 0.1) + 0.06 * api.noise.noise3(x * 3, y * 3, z * 3)), out));
+      api.add(body, finishMat('fabric'));
+      const poles = seed(api, S);
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        poles.merge(api.limb([Math.cos(a) * R * 0.25, S * 0.85, Math.sin(a) * R * 0.25], [-Math.cos(a) * R * 0.08, S * 1.3, -Math.sin(a) * R * 0.08], S * 0.014, S * 0.011, 6));
       }
-      const door = api.extrude([[-R * 0.25, 0], [R * 0.25, 0], [0, S * 0.45]], 0.04).translate(0, 0.01, R * 0.62).rotate(-21, 0, 0);
-      paintSolid(door, shade(c, -0.6));
-      api.add(door, MAT.fabric);
+      addFinish(api, poles, 'oak', pole, { variation: 0.05 });
+      dark(api.extrude([[-R * 0.25, 0], [R * 0.25, 0], [0, S * 0.45]], 0.03).translate(0, 0.01, R * 0.62).rotate(-21, 0, 0));
     } else {
       const W = S * 0.7;
       const H = S * 0.55;
-      body = api.extrude([[-W / 2, 0], [W / 2, 0], [0, H]], S);
+      // The canvas sags a little between the poles and flares at the hem.
+      body = api.extrude([[-W / 2 - 0.04, 0], [W / 2 + 0.04, 0], [W * 0.06, H * 0.98], [0, H], [-W * 0.06, H * 0.98]], S);
       canvas(body);
-      api.add(body, MAT.fabric);
-      const door = api.extrude([[-W * 0.28, 0], [W * 0.28, 0], [0, H * 0.82]], 0.03).translate(0, 0.005, S / 2 + 0.01);
-      paintSolid(door, shade(c, -0.6));
-      api.add(door, MAT.fabric);
-      for (const sz of [-1, 1]) piece(api, api.cylinder(0.025, 0.025, H + 0.15, 5).translate(0, (H + 0.15) / 2, sz * (S / 2 + 0.04)), pole, MAT.wood, 0.05);
+      // An open door flap folded back, the dark interior behind it, and a groundsheet.
+      dark(api.extrude([[-W * 0.26, 0], [W * 0.26, 0], [0, H * 0.8]], 0.02).translate(0, 0.005, S / 2 + 0.01));
+      const flap = api.extrude([[0, 0], [W * 0.26, 0], [0, H * 0.8]], 0.015).rotate(0, -60, 0).translate(W * 0.02, 0.005, S / 2 + 0.02);
+      canvas(flap);
+      addFinish(api, api.box(W + 0.3, 0.01, S + 0.3).translate(0, 0.005, 0), 'fabric', '#4a5340', { variation: 0.05 });
+      const wood = seed(api, H / 2);
+      for (const sz of [-1, 1]) wood.merge(api.cylinder(0.022, 0.022, H + 0.15, 8).translate(0, (H + 0.15) / 2, sz * (S / 2 + 0.04)));
+      wood.merge(api.cylinder(0.018, 0.018, S + 0.12, 8).rotate(90, 0, 0).translate(0, H + 0.02, 0));
+      addFinish(api, wood, 'oak', pole, { variation: 0.05 });
+      const ropes = seed(api, H / 2);
+      const pegs = seed(api, 0.05);
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
           const peg: Vec3 = [sx * (W / 2 + 0.45), 0.02, sz * (S / 2 + 0.3)];
-          piece(api, api.limb([0, H + 0.1, sz * (S / 2 + 0.04)], peg, 0.006, 0.006, 3), '#d8cfbd', MAT.fabric, 0.03);
-          piece(api, api.box(0.04, 0.12, 0.04).translate(peg[0], 0.06, peg[2]), pole, MAT.wood, 0.05);
+          ropes.merge(api.limb([0, H + 0.1, sz * (S / 2 + 0.04)], peg, 0.005, 0.005, 4));
+          pegs.merge(api.box(0.025, 0.12, 0.025).translate(peg[0], 0.05, peg[2]));
         }
+        // Hem pegs along the sides.
+        for (const fz of [-0.35, 0, 0.35]) pegs.merge(api.box(0.02, 0.08, 0.02).translate(sx * (W / 2 + 0.08), 0.03, S * fz));
       }
+      addFinish(api, ropes, 'fabric', '#d8cfbd', { variation: 0.02 });
+      addFinish(api, pegs, 'brushed-metal', '#9a9ea3', { variation: 0 });
     }
     api.collider(hullOf(body));
     return api.build();
@@ -517,35 +564,44 @@ const dock = defineGenerator({
     const c = p.color('color');
     const planks = Math.max(4, Math.min(100, Math.round(L / 0.3)));
     const pw = L / planks;
+    const deck = seed(api, H - 0.1);
     for (let i = 0; i < planks; i++) {
       const x = -L / 2 + pw * (i + 0.5);
-      piece(api, api.box(pw * 0.88, 0.07, W * api.range(0.97, 1.03)).translate(x, H - 0.035, api.range(-0.03, 0.03)), jitter(api, c, 0.12), MAT.wood, 0.08, 3);
+      deck.merge(api.box(pw * 0.88, 0.07, W * api.range(0.97, 1.03)).translate(x, H - 0.035, api.range(-0.03, 0.03)));
     }
-    for (const sz of [-1, 1]) piece(api, api.box(L, 0.18, 0.14).translate(0, H - 0.16, sz * (W / 2 - 0.2)), shade(c, -0.25), MAT.wood, 0.06);
+    addFinish(api, deck, 'oak', c, { variation: 0.14, freq: 1.4 });
+    const frame = seed(api, H - 0.2);
+    for (const sz of [-1, 1]) frame.merge(api.box(L, 0.18, 0.14).translate(0, H - 0.16, sz * (W / 2 - 0.2)));
     const posts = Math.max(2, Math.min(9, Math.round(L / 2.2) + 1));
+    const piles = seed(api, H / 2);
     for (let i = 0; i < posts; i++) {
       const x = -L / 2 + 0.15 + (i * (L - 0.3)) / (posts - 1);
       for (const sz of [-1, 1]) {
         const ph = H + (i === posts - 1 || i === 0 ? 0.4 : 0.05);
-        piece(api, api.cylinder(0.11, 0.13, ph, 7).translate(x, ph / 2, sz * (W / 2 - 0.05)), shade(c, -0.3), MAT.bark, 0.1, 4);
+        piles.merge(roundUvs(api.cylinder(0.11, 0.13, ph, 12), 0.12).translate(x, ph / 2, sz * (W / 2 - 0.05)));
         api.collider(cylinderCollider(x, ph / 2, sz * (W / 2 - 0.05), 0.12, ph));
       }
     }
-    piece(api, api.lathe([[0, 0], [0.13, 0], [0.12, 0.2], [0.17, 0.27], [0, 0.3]], 8).translate(L / 2 - 0.5, H, W / 2 - 0.35), '#2f3136', MAT.metal, 0.05);
+    addFinish(api, frame, 'oak', shade(c, -0.3), { variation: 0.06 });
+    addFinish(api, piles, 'oak', shade(c, -0.35), { uv: 'keep', variation: 0.12, freq: 2 });
+    addFinish(api, api.lathe([[0, 0], [0.13, 0], [0.12, 0.2], [0.17, 0.27], [0, 0.3]], 16).translate(L / 2 - 0.5, H, W / 2 - 0.35), 'black-metal', '#ffffff', { variation: 0 });
     if (p.int('variant') === 1) {
+      const rope = seed(api, H + 0.3);
       for (const sz of [-1, 1]) {
-        const rope: Vec3[] = [];
-        for (let i = 0; i <= 16; i++) {
-          const x = -L / 2 + 0.15 + (i / 16) * (L - 0.3);
-          const t = ((i / 16) * (posts - 1)) % 1;
-          rope.push([x, H + 0.35 - Math.sin(t * Math.PI) * 0.15, sz * (W / 2 - 0.05)]);
+        const pts: Vec3[] = [];
+        for (let i = 0; i <= 24; i++) {
+          const x = -L / 2 + 0.15 + (i / 24) * (L - 0.3);
+          const t = ((i / 24) * (posts - 1)) % 1;
+          pts.push([x, H + 0.35 - Math.sin(t * Math.PI) * 0.15, sz * (W / 2 - 0.05)]);
         }
-        piece(api, api.tube(rope, 0.02, 4), '#cdb891', MAT.fabric, 0.05);
+        rope.merge(api.tube(pts, 0.02, 6));
       }
+      addFinish(api, rope, 'fabric', '#cdb891', { variation: 0.04 });
       const lx = L / 2 - 0.15;
-      piece(api, api.box(0.1, 1.4, 0.1).translate(lx, H + 0.7, -W / 2 + 0.05), shade(c, -0.3), MAT.wood, 0.05);
-      piece(api, api.box(0.4, 0.06, 0.06).translate(lx - 0.15, H + 1.35, -W / 2 + 0.05), shade(c, -0.3), MAT.wood, 0.05);
-      api.add(api.box(0.16, 0.22, 0.16).translate(lx - 0.3, H + 1.18, -W / 2 + 0.05), glow('#ffcf70', 2.5));
+      const post = api.box(0.1, 1.4, 0.1).translate(lx, H + 0.7, -W / 2 + 0.05).merge(api.box(0.4, 0.06, 0.06).translate(lx - 0.15, H + 1.35, -W / 2 + 0.05));
+      addFinish(api, post, 'oak', shade(c, -0.3), { variation: 0.05 });
+      addFinish(api, api.box(0.2, 0.03, 0.2).translate(lx - 0.3, H + 1.31, -W / 2 + 0.05).merge(api.box(0.2, 0.03, 0.2).translate(lx - 0.3, H + 1.05, -W / 2 + 0.05)), 'black-metal', '#ffffff', { variation: 0 });
+      api.add(api.box(0.15, 0.22, 0.15).translate(lx - 0.3, H + 1.18, -W / 2 + 0.05), glow('#ffcf70', 2.5));
     }
     api.collider(boxCollider(0, H - 0.07, 0, L, 0.14, W));
     return api.build();
@@ -569,63 +625,67 @@ const statue = defineGenerator({
     const variant = p.int('variant');
     const pedH = H * (variant === 2 ? 0.55 : 0.3);
     const pw = H * 0.32;
-    const mat: MaterialSpec = c === '#b08d57' ? { ...MAT.metal } : { ...MAT.stone };
+    const bronze = c === '#b08d57';
+    const figFinish = bronze ? 'brass' : 'marble';
+    const figColor = bronze ? '#8a6a42' : c;
     if (variant === 2) {
-      piece(api, api.box(pw * 1.2, pedH * 0.08, pw * 1.2).translate(0, pedH * 0.04, 0), ped, MAT.stone, 0.08);
-      const col = api.cylinder(pw * 0.32, pw * 0.36, pedH * 0.84, 16).translate(0, pedH * 0.5, 0);
-      const f0 = lin(shade(ped, -0.15));
-      const f1 = lin(shade(ped, 0.1));
-      col.paintFn((x, _y, z, _nx, _ny, _nz, out) => mixLinear(f0, f1, Math.floor(((Math.atan2(x, z) + Math.PI) / (Math.PI * 2)) * 16) % 2 ? 0.2 : 0.85, out));
-      api.add(col, MAT.stone);
-      piece(api, api.box(pw, pedH * 0.08, pw).translate(0, pedH * 0.96, 0), ped, MAT.stone, 0.08);
+      const pedM = api.box(pw * 1.2, pedH * 0.08, pw * 1.2).translate(0, pedH * 0.04, 0).merge(api.box(pw, pedH * 0.08, pw).translate(0, pedH * 0.96, 0));
+      addFinish(api, pedM, 'limestone', ped, { variation: 0.06 });
+      // Fluted column: a lathe with alternating radii around.
+      const col = api.cylinder(pw * 0.32, pw * 0.36, pedH * 0.84, 32).translate(0, pedH * 0.5, 0);
+      col.displace((x, y, z) => {
+        void y;
+        return Math.cos(Math.atan2(x, z) * 16) > 0.6 ? -0.012 * pw : 0;
+      });
+      addFinish(api, col, 'limestone', shade(ped, 0.1), { uv: 'round', radius: pw * 0.34, variation: 0.04 });
       const bustH = H - pedH;
-      const shoulders = api.lathe([[0, 0], [bustH * 0.32, 0], [bustH * 0.34, bustH * 0.18], [bustH * 0.2, bustH * 0.36], [bustH * 0.08, bustH * 0.42], [0, bustH * 0.42]], 10).scale(1, 1, 0.6).translate(0, pedH, 0);
-      piece(api, shoulders, c, mat, 0.08);
-      piece(api, api.icosphere(bustH * 0.2, 2).scale(0.85, 1.05, 0.95).translate(0, pedH + bustH * 0.62, 0), c, mat, 0.06);
-      piece(api, api.box(bustH * 0.07, bustH * 0.09, bustH * 0.08).translate(0, pedH + bustH * 0.6, bustH * 0.2), c, mat, 0.05);
+      const bust = api.lathe([[0, 0], [bustH * 0.32, 0], [bustH * 0.34, bustH * 0.18], [bustH * 0.2, bustH * 0.36], [bustH * 0.08, bustH * 0.42], [0, bustH * 0.42]], 20).scale(1, 1, 0.6).translate(0, pedH, 0);
+      bust.merge(api.icosphere(bustH * 0.2, 3).scale(0.85, 1.05, 0.95).translate(0, pedH + bustH * 0.62, 0));
+      bust.merge(api.box(bustH * 0.07, bustH * 0.09, bustH * 0.08).translate(0, pedH + bustH * 0.6, bustH * 0.2));
+      addFinish(api, bust, figFinish, figColor, { variation: 0.04 });
       api.collider(cylinderCollider(0, pedH / 2, 0, pw * 0.6, pedH));
       api.collider(cylinderCollider(0, pedH + bustH * 0.45, 0, bustH * 0.3, bustH * 0.9));
       return api.build();
     }
-    piece(api, api.box(pw * 1.3, pedH * 0.25, pw * 1.3).translate(0, pedH * 0.125, 0), shade(ped, -0.1), MAT.stone, 0.08);
-    piece(api, api.box(pw, pedH * 0.6, pw).translate(0, pedH * 0.55, 0), ped, MAT.stone, 0.08);
-    piece(api, api.box(pw * 1.12, pedH * 0.15, pw * 1.12).translate(0, pedH * 0.925, 0), shade(ped, 0.08), MAT.stone, 0.08);
+    const pedM = api.box(pw * 1.3, pedH * 0.25, pw * 1.3).translate(0, pedH * 0.125, 0);
+    pedM.merge(api.box(pw, pedH * 0.6, pw).translate(0, pedH * 0.55, 0));
+    pedM.merge(api.box(pw * 1.12, pedH * 0.15, pw * 1.12).translate(0, pedH * 0.925, 0));
+    addFinish(api, pedM, 'limestone', ped, { variation: 0.06 });
     api.collider(boxCollider(0, pedH / 2, 0, pw * 1.3, pedH, pw * 1.3));
     const fh = H - pedH;
     if (variant === 1) {
       const path: Vec3[] = [];
-      for (let i = 0; i <= 40; i++) {
-        const t = i / 40;
+      for (let i = 0; i <= 60; i++) {
+        const t = i / 60;
         const a = t * Math.PI * 5;
         const r = fh * 0.22 * (1 - t * 0.7);
         path.push([Math.cos(a) * r, pedH + t * fh, Math.sin(a) * r]);
       }
-      piece(api, api.tube(path, fh * 0.05, 8, (t) => 1.2 - 0.7 * t), c, MAT.metal, 0.1);
-      piece(api, api.sphere(fh * 0.07, 1).translate(0, pedH + fh * 1.02, 0), '#e5b93c', MAT.metal, 0.05);
+      addFinish(api, api.tube(path, fh * 0.05, 12, (t) => 1.2 - 0.7 * t), 'brass', bronze ? '#8a6a42' : '#7a5c3a', { variation: 0.05 });
+      addFinish(api, api.sphere(fh * 0.07, 2).translate(0, pedH + fh * 1.02, 0), 'brass', '#ffffff', { variation: 0 });
       api.collider(cylinderCollider(0, pedH + fh / 2, 0, fh * 0.25, fh));
       return api.build();
     }
     const u = fh / 1.9;
     const y0 = pedH;
+    const fig = seed(api, y0 + fh / 2);
     const limb = (a: Vec3, b: Vec3, r0: number, r1: number): void => {
-      piece(api, api.limb([a[0] * u, y0 + a[1] * u, a[2] * u], [b[0] * u, y0 + b[1] * u, b[2] * u], r0 * u, r1 * u, 7), c, mat, 0.08);
+      fig.merge(api.limb([a[0] * u, y0 + a[1] * u, a[2] * u], [b[0] * u, y0 + b[1] * u, b[2] * u], r0 * u, r1 * u, 10));
     };
     limb([-0.12, 0, 0.05], [-0.11, 0.48, 0], 0.07, 0.08);
     limb([-0.11, 0.48, 0], [-0.1, 0.92, 0], 0.08, 0.1);
     limb([0.12, 0, -0.08], [0.11, 0.46, 0.02], 0.07, 0.08);
     limb([0.11, 0.46, 0.02], [0.1, 0.92, 0], 0.08, 0.1);
-    const torso = api.lathe([[0, 0], [0.17, 0.02], [0.2, 0.3], [0.24, 0.5], [0.12, 0.62], [0, 0.64]], 9).scale(u, u, u * 0.62).translate(0, y0 + 0.88 * u, 0);
-    piece(api, torso, c, mat, 0.08);
-    piece(api, api.icosphere(0.12 * u, 1).scale(0.9, 1.1, 1).translate(0, y0 + 1.66 * u, 0), c, mat, 0.06);
+    fig.merge(api.lathe([[0, 0], [0.17, 0.02], [0.2, 0.3], [0.24, 0.5], [0.12, 0.62], [0, 0.64]], 16).scale(u, u, u * 0.62).translate(0, y0 + 0.88 * u, 0));
+    fig.merge(api.icosphere(0.12 * u, 2).scale(0.9, 1.1, 1).translate(0, y0 + 1.66 * u, 0));
     limb([0.22, 1.42, 0], [0.38, 1.7, 0.05], 0.06, 0.05);
     limb([0.38, 1.7, 0.05], [0.42, 1.95, 0.05], 0.05, 0.045);
     limb([-0.22, 1.42, 0], [-0.3, 1.15, 0.1], 0.06, 0.05);
     limb([-0.3, 1.15, 0.1], [-0.28, 0.9, 0.18], 0.05, 0.045);
-    const sword = api.box(0.035 * u, 0.75 * u, 0.012 * u).translate(0.42 * u, y0 + 2.3 * u, 0.05 * u);
-    piece(api, sword, '#d9dde3', MAT.metal, 0.05);
-    piece(api, api.box(0.2 * u, 0.03 * u, 0.04 * u).translate(0.42 * u, y0 + 1.95 * u, 0.05 * u), '#e5b93c', MAT.metal, 0.05);
-    const cape = api.extrude([[-0.2, 1.5], [0.2, 1.5], [0.3, 0.55], [0, 0.45], [-0.3, 0.55]], 0.03).scale(u, u, u).translate(0, y0, -0.16 * u);
-    piece(api, cape, shade(c, -0.12), mat, 0.08);
+    fig.merge(api.extrude([[-0.2, 1.5], [0.2, 1.5], [0.3, 0.55], [0, 0.45], [-0.3, 0.55]], 0.03).scale(u, u, u).translate(0, y0, -0.16 * u));
+    addFinish(api, fig, figFinish, figColor, { variation: 0.05 });
+    addFinish(api, api.box(0.035 * u, 0.75 * u, 0.012 * u).translate(0.42 * u, y0 + 2.3 * u, 0.05 * u), 'brushed-metal', '#d9dde3', { variation: 0 });
+    addFinish(api, api.box(0.2 * u, 0.03 * u, 0.04 * u).translate(0.42 * u, y0 + 1.95 * u, 0.05 * u), 'brass', '#ffffff', { variation: 0 });
     api.collider(cylinderCollider(0, y0 + 0.9 * u, 0, 0.3 * u, 1.8 * u));
     return api.build();
   },

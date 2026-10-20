@@ -115,7 +115,7 @@ function roofSlab(api: InternalApi, run: number, thick: number, len: number): Me
 
 const house = defineGenerator({
   id: 'house',
-  description: 'House with a stone plinth, rendered or half-timbered walls, deep window reveals with sills, frames and glazing bars, a panelled door, a tiled roof with overhang, fascia, gutters and a chimney (or a modern flat roof). Multi-floor capable.',
+  description: 'Cozy cottage with walls, foundation, pitched shingle roof, door, framed windows and a chimney. Multi-floor capable.',
   category: 'architecture',
   params: {
     width: pNum(6, 3, 20, 'width (x) in meters'),
@@ -212,8 +212,8 @@ const house = defineGenerator({
       }
       addFinish(api, fr, 'oak', dark, { variation: 0.08, freq: 3 });
     } else {
-      // Modern: a band of timber cladding beside the door, a slab edge between floors.
-      addFinish(api, api.box(W * 0.3, wallH, 0.06).translate(W * 0.33, base + wallH / 2, D / 2 + 0.03), 'cladding', '#b08a5c', { variation: 0.04 });
+      // Modern: the east end clad in timber boards (the windows sit in it), a slab edge between floors.
+      addFinish(api, api.box(0.06, wallH, D).translate(W / 2 + 0.03, base + wallH / 2, 0), 'cladding', '#a88358', { variation: 0.04 });
       for (let f = 1; f < floors; f++) addFinish(api, api.box(W + 0.1, 0.2, D + 0.1).translate(0, base + f * floorH, 0), 'concrete', '#a8a49d', { variation: 0.03 });
     }
 
@@ -232,30 +232,31 @@ const house = defineGenerator({
     addFinish(api, leaf, modern ? 'oak' : 'paint', modern ? '#8a6a4c' : timber ? trim : '#46604f', { variation: 0.04 });
     addFinish(api, api.sphere(0.035, 1).translate(doorX + 0.4, base + 1.0, dz + 0.12), 'brass', '#ffffff', { variation: 0 });
     addFinish(api, api.box(1.6, base, 0.7).translate(doorX, base / 2, dz + 0.45), modern ? 'concrete' : 'limestone', modern ? '#9a968f' : '#8f877a', { variation: 0.05 });
-    const lx = doorX + 0.95;
+    const lx = doorX + (modern ? -0.95 : 0.95);
     const lamp = api.box(0.05, 0.05, 0.2).translate(lx, base + 1.95, dz + 0.1);
     lamp.merge(api.box(0.18, 0.04, 0.18).translate(lx, base + 2.12, dz + 0.22)).merge(api.box(0.2, 0.06, 0.2).translate(lx, base + 1.76, dz + 0.22));
     addFinish(api, lamp, 'black-metal', '#ffffff', { variation: 0 });
     api.add(api.box(0.14, 0.3, 0.14).translate(lx, base + 1.94, dz + 0.22), lights ? glow('#ffcf80', 2.4) : { finish: 'frosted-glass' });
 
     // Windows (the same openings as before, so neighbours and tests see the same house).
-    const ww = modern ? 1.6 : 0.9;
-    const wh = modern ? 1.4 : 1.1;
+    const ww = modern ? Math.min(1.7, W * 0.27) : 0.9;
+    const wh = modern ? 1.9 : 1.1;
     for (let f = 0; f < floors; f++) {
-      const y = base + f * floorH + 1.5;
+      const y = base + f * floorH + (modern ? 1.3 : 1.5);
       const front = f === 0 ? (doorX === 0 ? [-W * 0.3, W * 0.3] : [W * 0.2]) : [-W * 0.3, 0, W * 0.3];
       for (const x of front) win(x, y, D / 2, 'z+', ww, wh);
       for (const x of [-W * 0.25, W * 0.25]) win(x, y, -D / 2, 'z-', ww, wh);
-      win(W / 2, y, 0, 'x+', ww, wh);
+      win(W / 2 + (modern ? 0.06 : 0), y, 0, 'x+', ww, wh);
       win(-W / 2, y, 0, 'x-', ww, wh);
     }
 
     if (modern) {
-      // Flat roof: a parapet with a coping, gravel inside, a plant box.
-      addFinish(api, api.box(W + 0.12, 0.55, D + 0.12).translate(0, top + 0.275, 0), 'plaster', wallC, { variation: 0.03 });
-      addFinish(api, api.box(W + 0.24, 0.06, D + 0.24).translate(0, top + 0.58, 0), 'concrete', '#bcb8b0', { variation: 0.03 });
-      addFinish(api, api.box(W - 0.3, 0.03, D - 0.3).translate(0, top + 0.565, 0), 'gravel', '#9c968c', { variation: 0.04 });
-      addFinish(api, api.box(W * 0.3, 0.8, D * 0.25).translate(W * 0.18, top + 0.95, -D * 0.15), 'brushed-metal', '#9aa0a6', { variation: 0.03 });
+      // Flat roof: a thin cantilevered plate with a dark metal fascia, gravel on top.
+      addFinish(api, api.box(W + 1.1, 0.24, D + 1.1).translate(0, top + 0.12, 0), 'concrete', '#c9c5be', { variation: 0.02 });
+      const fasc = api.box(W + 1.14, 0.3, 0.04).translate(0, top + 0.12, (D + 1.1) / 2 + 0.02).merge(api.box(W + 1.14, 0.3, 0.04).translate(0, top + 0.12, -(D + 1.1) / 2 - 0.02));
+      fasc.merge(api.box(0.04, 0.3, D + 1.1).translate((W + 1.1) / 2 + 0.02, top + 0.12, 0)).merge(api.box(0.04, 0.3, D + 1.1).translate(-(W + 1.1) / 2 - 0.02, top + 0.12, 0));
+      addFinish(api, fasc, 'black-metal', '#ffffff', { variation: 0 });
+      addFinish(api, api.box(W + 0.9, 0.03, D + 0.9).translate(0, top + 0.255, 0), 'gravel', '#9c968c', { variation: 0.04 });
       api.collider(boxCollider(0, top + 0.15, 0, W + 0.4, 0.3, D + 0.4));
     } else {
       const eave = 0.45;
@@ -317,6 +318,11 @@ const house = defineGenerator({
   },
 });
 
+/** Round-tower facet count: enough that a 3 m tower's silhouette reads round, not as a polygon. */
+function roundSegs(r: number): number {
+  return Math.max(20, Math.min(48, Math.round(r * 10)));
+}
+
 const tower = defineGenerator({
   id: 'tower',
   description: 'Round stone tower with block courses, arrow-slit windows, a door and either a conical roof or battlements.',
@@ -333,59 +339,77 @@ const tower = defineGenerator({
     const R = p.num('radius');
     const variant = p.int('variant');
     const stone = p.color('color');
-    const segs = 12;
-    const body = api.cylinder(R * 0.93, R, H, segs).translate(0, H / 2, 0);
-    const s0 = lin(shade(stone, -0.18));
-    const s1 = lin(shade(stone, 0.1));
-    body.paintFn((x, y, z, _nx, _ny, _nz, out) => {
-      const course = Math.floor(y / 0.55);
-      const a = Math.atan2(x, z) * 4 + (course % 2) * 0.5;
-      const block = Math.floor(a) + course * 7;
-      mixLinear(s0, s1, ((block * 2654435761) >>> 0) % 997 / 997 * 0.7 + 0.15 * api.noise.noise3(x, y, z), out);
-    });
-    api.add(body, MAT.stone);
-    piece(api, api.cylinder(R * 1.1, R * 1.15, 0.8, segs).translate(0, 0.4, 0), shade(stone, -0.2), MAT.stone, 0.1, 3);
+    const segs = roundSegs(R);
+    addFinish(api, api.cylinder(R * 0.96, R, H, segs).translate(0, H / 2, 0), 'limestone', stone, { uv: 'round', radius: R, variation: 0.07, freq: 0.7 });
+    // Battered base and string courses in a lighter dressed stone.
+    const dressed = shade(stone, 0.08);
+    const base = api.lathe([[0, 0], [R * 1.16, 0], [R * 1.16, 0], [R * 1.13, 0.35], [R * 1.0, 1.4], [R * 1.0, 1.4], [0, 1.4]], segs);
+    addFinish(api, base, 'limestone', shade(stone, -0.12), { uv: 'round', radius: R * 1.08, variation: 0.08 });
+    const courses = api.cylinder(R * 0.995, R * 0.995, 0.01, segs);
+    for (let y = 4; y < H - 1.5; y += 4) {
+      const r = R + (R * 0.96 - R) * (y / H);
+      courses.merge(api.cylinder(r + 0.07, r + 0.07, 0.2, segs).translate(0, y, 0));
+    }
+    addFinish(api, courses, 'limestone', dressed, { uv: 'round', radius: R, variation: 0.05 });
     api.collider(cylinderCollider(0, H / 2, 0, R, H));
 
-    const dark = '#20232a';
+    // Arrow slits: a dark recess between proud jambs, a lintel and a sill.
+    const slits = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
+    const surrounds = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
     for (let level = 1; level * 3 < H - 1; level++) {
       const y = level * 3 + 0.5;
+      const r = R + (R * 0.96 - R) * (y / H);
       for (let k = 0; k < 3; k++) {
         const ang = (k / 3) * 360 + level * 47;
-        const slit = api.box(0.28, 1.0, 0.3).translate(0, y, R * 0.95 - 0.08).rotate(0, ang, 0);
-        paintSolid(slit, dark);
-        api.add(slit, MAT.stone);
+        slits.merge(api.box(0.16, 0.95, 0.08).translate(0, y, r + 0.02).rotate(0, ang, 0));
+        const s = api.box(0.14, 1.2, 0.16).translate(-0.15, y, r + 0.02);
+        s.merge(api.box(0.14, 1.2, 0.16).translate(0.15, y, r + 0.02));
+        s.merge(api.box(0.5, 0.14, 0.18).translate(0, y + 0.62, r + 0.02));
+        s.merge(api.box(0.5, 0.12, 0.2).translate(0, y - 0.6, r + 0.03));
+        surrounds.merge(s.rotate(0, ang, 0));
       }
     }
-    const door = api.box(1.2, 2.2, 0.4).translate(0, 1.1, R - 0.12);
-    paintNoise(door, api, '#4a2f1b', '#6b4529', 5);
-    api.add(door, MAT.wood);
-    piece(api, api.box(1.6, 0.3, 0.45).translate(0, 2.35, R - 0.1), shade(stone, -0.25), MAT.stone);
+    // Door: a planked, studded leaf with strap hinges inside a stone surround.
+    surrounds.merge(api.box(0.26, 2.5, 0.3).translate(-0.68, 1.25, R - 0.02)).merge(api.box(0.26, 2.5, 0.3).translate(0.68, 1.25, R - 0.02));
+    surrounds.merge(api.box(1.62, 0.32, 0.32).translate(0, 2.5, R - 0.02));
+    addFinish(api, surrounds, 'limestone', dressed, { variation: 0.08, freq: 2 });
+    paintSolid(slits, '#121418');
+    api.add(slits, { color: '#ffffff', vertexColors: true, roughness: 0.95 });
+    addFinish(api, api.box(1.12, 2.3, 0.14).translate(0, 1.15, R - 0.06), 'oak', '#5a3d27', { variation: 0.1, freq: 3 });
+    const iron = api.box(1.0, 0.07, 0.03).translate(0, 1.7, R + 0.02).merge(api.box(1.0, 0.07, 0.03).translate(0, 0.6, R + 0.02));
+    for (const x of [-0.35, 0, 0.35]) for (const y of [0.9, 1.4]) iron.merge(api.box(0.05, 0.05, 0.03).translate(x, y, R + 0.02));
+    addFinish(api, iron, 'black-metal', '#ffffff', { variation: 0 });
 
     const roofC = p.color('roofColor');
+    // Corbel table under the top: a ring of stepped corbels carrying the eave or the parapet.
+    const corbels = api.box(0.01, 0.01, 0.01).translate(0, H, 0);
+    const n = Math.max(12, Math.round(R * 6));
+    const rt = R * 0.96;
+    for (let k = 0; k < n; k++) {
+      const c = api.box(0.28, 0.32, 0.3).translate(0, H - 0.5, rt + 0.1).merge(api.box(0.28, 0.2, 0.42).translate(0, H - 0.24, rt + 0.16));
+      corbels.merge(c.rotate(0, (k / n) * 360, 0));
+    }
+    addFinish(api, corbels, 'limestone', dressed, { variation: 0.06, freq: 2 });
     if (variant === 1) {
-      piece(api, api.cylinder(R * 1.12, R * 0.95, 0.6, segs).translate(0, H + 0.3, 0), stone, MAT.stone, 0.1, 3);
-      const merlons = 12;
-      for (let k = 0; k < merlons; k += 1) {
-        if (k % 2) continue;
-        const m = api.box(0.9, 0.9, 0.5).translate(0, H + 0.6 + 0.45, R * 1.02).rotate(0, (k / merlons) * 360, 0);
-        piece(api, m, stone, MAT.stone, 0.15, 3);
-      }
+      const ring = api.lathe([[rt * 0.9, 0], [rt + 0.36, 0], [rt + 0.36, 0], [rt + 0.36, 0.95], [rt + 0.36, 0.95], [rt * 0.9, 0.95], [rt * 0.9, 0.95], [rt * 0.9, 0]], segs).translate(0, H - 0.14, 0);
+      const merlons = api.box(0.01, 0.01, 0.01).translate(0, H, 0);
+      const m = Math.max(8, Math.round(R * 3.2)) * 2;
+      for (let k = 0; k < m; k += 2) merlons.merge(api.box(Math.min(0.9, (Math.PI * 2 * rt) / m), 0.75, 0.42).translate(0, H + 0.81 + 0.375, rt + 0.15).rotate(0, (k / m) * 360, 0));
+      addFinish(api, ring.merge(merlons), 'limestone', stone, { variation: 0.07, freq: 1 });
+      addFinish(api, api.cylinder(rt * 0.95, rt * 0.95, 0.1, segs).translate(0, H + 0.02, 0), 'cobble', '#8d887e', { variation: 0.05 });
       api.collider(cylinderCollider(0, H + 0.75, 0, R * 1.12, 1.5));
     } else {
+      // A slab eave on the corbels and a tiled cone with a gentle bell-cast.
+      addFinish(api, api.cylinder(rt + 0.32, rt + 0.32, 0.22, segs).translate(0, H + 0.03, 0), 'limestone', dressed, { uv: 'round', radius: rt + 0.3, variation: 0.05 });
       const roofH = variant === 2 ? R * 3.4 : R * 1.6;
       const roofR = R * 1.3;
-      const roof = api.lathe([[0, 0], [roofR, 0], [roofR * 0.92, roofH * 0.1], [roofR * 0.35, roofH * 0.65], [0, roofH]], segs).translate(0, H, 0);
-      const r0 = lin(shade(roofC, -0.25));
-      const r1 = lin(shade(roofC, 0.12));
-      roof.paintFn((x, y, z, _nx, _ny, _nz, out) => mixLinear(r0, r1, (Math.floor((y - H) * 2.5) % 2) * 0.5 + 0.2 * api.noise.noise3(x, y, z) + 0.2, out));
-      api.add(roof, { preset: 'brick', vertexColors: true, roughness: 0.8, flatShading: true });
-      piece(api, api.sphere(R * 0.12, 1).translate(0, H + roofH + R * 0.08, 0), '#e5b93c', MAT.metal, 0.1);
+      const roof = api.lathe([[0, 0], [roofR, 0], [roofR, 0], [roofR * 0.93, roofH * 0.08], [roofR * 0.62, roofH * 0.36], [roofR * 0.28, roofH * 0.7], [0, roofH]], segs).translate(0, H + 0.12, 0);
+      addFinish(api, roof, 'roof-tile', roofC, { uv: 'round', radius: roofR, slope: (Math.atan2(roofH, roofR) * 180) / Math.PI, variation: 0.07, freq: 0.6 });
+      addFinish(api, api.sphere(R * 0.1, 1).translate(0, H + roofH + R * 0.12, 0), 'brass', '#ffffff', { variation: 0 });
+      addFinish(api, api.cylinder(0.025, 0.04, R * 0.6, 6).translate(0, H + roofH + R * 0.3, 0), 'black-metal', '#ffffff', { variation: 0 });
       if (variant === 2) {
-        const flag = api.box(R * 0.6, R * 0.35, 0.03).translate(R * 0.3, H + roofH + R * 0.55, 0);
-        paintSolid(flag, '#d1453b');
-        api.add(flag, MAT.fabric);
-        piece(api, api.cylinder(0.04, 0.04, R * 0.9, 5).translate(0, H + roofH + R * 0.45, 0), '#5a4a3a', MAT.wood);
+        addFinish(api, api.box(R * 0.6, R * 0.35, 0.02).translate(R * 0.3, H + roofH + R * 0.6, 0), 'fabric', '#a8322b', { variation: 0.06 });
+        addFinish(api, api.cylinder(0.03, 0.03, R * 0.9, 6).translate(0, H + roofH + R * 0.5, 0), 'oak', '#5a4a3a', { variation: 0 });
       }
       const hull: number[] = [];
       for (let k = 0; k < 8; k++) {
@@ -420,53 +444,58 @@ const wall = defineGenerator({
     if (variant === 2) {
       const count = Math.max(3, Math.min(60, Math.round(L / 0.35)));
       const r = L / count / 2;
+      const logs = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
+      const tips = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
       for (let i = 0; i < count; i++) {
         const x = -L / 2 + r + i * 2 * r;
         const h = H * api.range(0.9, 1.05);
-        const log = api.cylinder(r * 0.95, r, h, 7).translate(x, h / 2, 0);
-        const tip = api.cone(r * 0.95, r * 2.2, 7).translate(x, h + r * 1.1, 0);
-        const lc = jitter(api, c === '#9a948a' ? '#8b5a2b' : c, 0.12);
-        paintNoise(log.merge(tip), api, shade(lc, -0.15), shade(lc, 0.1), 3);
-        api.add(log, MAT.wood);
+        logs.merge(roundUvs(api.cylinder(r * 0.92, r, h, 9), r).translate(x, h / 2, api.range(-0.02, 0.02)));
+        tips.merge(api.cone(r * 0.92, r * 2.2, 9).translate(x, h + r * 1.1, 0));
       }
-      piece(api, api.box(L, 0.18, 0.1).translate(0, H * 0.75, -r - 0.05), '#5a3a22', MAT.wood);
-      piece(api, api.box(L, 0.18, 0.1).translate(0, H * 0.3, -r - 0.05), '#5a3a22', MAT.wood);
+      const wood = c === '#9a948a' ? '#7a5534' : c;
+      addFinish(api, logs, 'bark', wood, { uv: 'keep', variation: 0.12, freq: 2.5 });
+      addFinish(api, tips, 'oak', shade(wood, 0.25), { variation: 0.08, freq: 3 });
+      const rails = api.box(L, 0.16, 0.1).translate(0, H * 0.75, -r - 0.05).merge(api.box(L, 0.16, 0.1).translate(0, H * 0.3, -r - 0.05));
+      addFinish(api, rails, 'oak', shade(wood, -0.2), { variation: 0.06 });
       api.collider(boxCollider(0, H / 2, 0, L, H, r * 2));
       return api.build();
     }
     const brick = variant === 1;
-    const rows = Math.max(1, Math.min(brick ? 20 : 12, Math.round(H / (brick ? 0.25 : 0.5))));
-    const rowH = H / rows;
-    const cols = Math.max(1, Math.min(brick ? 24 : 20, Math.round(L / (brick ? 0.5 : 1))));
-    const blockL = L / cols;
-    const core = api.box(Math.max(0.05, L - 0.04), H, Math.max(0.05, T - 0.08)).translate(0, H / 2, 0);
-    paintSolid(core, shade(c, -0.45));
-    api.add(core, brick ? MAT.brick : MAT.stone);
-    for (let r = 0; r < rows; r++) {
-      const offset = r % 2 ? blockL / 2 : 0;
-      for (let k = -1; k < cols; k++) {
-        let x0 = -L / 2 + k * blockL + offset;
-        let x1 = x0 + blockL;
-        x0 = Math.max(-L / 2, x0);
-        x1 = Math.min(L / 2, x1);
-        if (x1 - x0 < 0.05) continue;
-        const gap = brick ? 0.02 : 0.035;
-        const blk = api.box(x1 - x0 - gap, rowH - gap, T + api.range(-0.02, 0.03));
-        blk.translate((x0 + x1) / 2, r * rowH + rowH / 2, api.range(-0.01, 0.01));
-        piece(api, blk, jitter(api, c, brick ? 0.1 : 0.14), brick ? MAT.brick : MAT.stone, 0.06, 3);
-      }
-    }
+    const body = brick && c === '#9a948a' ? '#9a5a44' : c;
+    const foot = Math.min(0.4, H * 0.15);
+    addFinish(api, api.box(L + 0.12, foot, T + 0.18).translate(0, foot / 2, 0), 'limestone', shade(c, -0.15), { variation: 0.07 });
+    addFinish(api, api.box(L, H, T).translate(0, H / 2, 0), brick ? 'brick' : 'limestone', body, { variation: 0.06, freq: 0.7 });
+    // Coping: a slightly wider capstone course that sheds the rain.
+    const crenel = p.bool('crenellated');
+    const coping = api.box(L + 0.08, 0.12, T + 0.14).translate(0, H + 0.06, 0);
     api.collider(boxCollider(0, H / 2, 0, L, H, T));
-    if (p.bool('crenellated')) {
+    if (crenel) {
       const mw = Math.min(0.7, L / 3);
       const mh = Math.min(0.7, H * 0.35);
       const count = Math.max(1, Math.floor(L / (mw * 2)));
       const spacing = L / count;
+      const merlons = api.box(0.01, 0.01, 0.01).translate(0, H, 0);
       for (let i = 0; i < count; i++) {
         const x = -L / 2 + spacing * (i + 0.5);
-        piece(api, api.box(mw, mh, T + 0.04).translate(x, H + mh / 2, 0), jitter(api, c, 0.1), brick ? MAT.brick : MAT.stone, 0.08, 3);
+        merlons.merge(api.box(mw, mh, T).translate(x, H + 0.12 + mh / 2, 0));
+        coping.merge(api.box(mw + 0.08, 0.08, T + 0.1).translate(x, H + 0.12 + mh + 0.04, 0));
         api.collider(boxCollider(x, H + mh / 2, 0, mw, mh, T));
       }
+      addFinish(api, merlons, brick ? 'brick' : 'limestone', body, { variation: 0.07, freq: 1.5 });
+    }
+    addFinish(api, coping, 'limestone', shade(c, 0.1), { variation: 0.05 });
+    // Buttresses on the back of a tall wall, one every few metres.
+    if (H >= 1.8 && L >= 4) {
+      const n = Math.max(1, Math.floor(L / 4.5));
+      const bd = Math.min(0.9, H * 0.22);
+      const butt = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
+      for (let i = 0; i < n; i++) {
+        const x = -L / 2 + (L / n) * (i + 0.5);
+        butt.merge(api.box(0.55, H * 0.85, bd * 0.6).translate(x, (H * 0.85) / 2, -T / 2 - bd * 0.3));
+        butt.merge(api.box(0.55, H * 0.4, bd).translate(x, (H * 0.4) / 2, -T / 2 - bd * 0.5));
+        api.collider(boxCollider(x, (H * 0.4) / 2, -T / 2 - bd * 0.5, 0.55, H * 0.4, bd));
+      }
+      addFinish(api, butt, brick ? 'brick' : 'limestone', body, { variation: 0.06, freq: 0.7 });
     }
     return api.build();
   },
@@ -487,38 +516,35 @@ const fence = defineGenerator({
     const H = p.num('height');
     const variant = p.int('variant');
     const c = variant === 2 && p.color('color') === '#8b5a2b' ? '#2b2d31' : p.color('color');
-    const mat = variant === 2 ? MAT.metal : MAT.wood;
+    const finish: Finish = variant === 2 ? 'black-metal' : variant === 1 ? 'oak' : 'paint';
+    const all = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
     const posts = Math.max(2, Math.round(L / 2) + 1);
     for (let i = 0; i < posts; i++) {
       const x = -L / 2 + (i * L) / (posts - 1);
-      if (variant === 2) piece(api, api.cylinder(0.05, 0.05, H * 1.05, 6).translate(x, H * 0.525, 0), c, mat, 0.05);
+      if (variant === 2) all.merge(api.cylinder(0.04, 0.04, H * 1.05, 8).translate(x, H * 0.525, 0)).merge(api.sphere(0.06, 1).translate(x, H * 1.08, 0));
       else {
-        piece(api, api.box(0.13, H * 1.05, 0.13).translate(x, H * 0.525, 0), jitter(api, c, 0.08), mat, 0.1, 4);
-        piece(api, api.box(0.17, 0.05, 0.17).translate(x, H * 1.05 + 0.025, 0), shade(c, -0.1), mat, 0.05);
+        all.merge(api.box(0.12, H * 1.05, 0.12).translate(x, H * 0.525, 0));
+        all.merge(api.box(0.16, 0.05, 0.16).translate(x, H * 1.05 + 0.025, 0));
       }
     }
     const rails = variant === 1 ? [0.3, 0.6, 0.9] : [0.25, 0.75];
-    for (const r of rails) {
-      const rail = variant === 2 ? api.box(L, 0.04, 0.04) : api.box(L, H * 0.09, 0.05);
-      piece(api, rail.translate(0, H * r, variant === 1 ? 0.09 : -0.06), c, mat, 0.1, 2);
-    }
+    for (const r of rails) all.merge((variant === 2 ? api.box(L, 0.035, 0.035) : api.box(L, H * 0.08, 0.05)).translate(0, H * r, variant === 1 ? 0.09 : -0.06));
     if (variant !== 1) {
-      const spacing = Math.max(variant === 2 ? 0.14 : 0.18, L / 80);
+      const spacing = Math.max(variant === 2 ? 0.13 : 0.16, L / 80);
       const count = Math.floor(L / spacing);
       for (let i = 0; i < count; i++) {
         const x = -L / 2 + spacing * (i + 0.5);
         if (variant === 2) {
-          const bar = api.cylinder(0.015, 0.015, H * 0.9, 5).translate(x, H * 0.45, 0);
-          bar.merge(api.cone(0.04, 0.12, 4).translate(x, H * 0.9 + 0.06, 0));
-          piece(api, bar, c, mat, 0.05);
+          all.merge(api.cylinder(0.012, 0.012, H * 0.9, 6).translate(x, H * 0.45, 0));
+          all.merge(api.cone(0.035, 0.11, 6).translate(x, H * 0.9 + 0.055, 0));
         } else {
           const h = H * 0.85;
-          const picket = api.box(0.09, h, 0.03).translate(x, h / 2 + 0.04, 0.03);
-          picket.merge(api.cone(0.064, 0.09, 4).rotate(0, 45, 0).scale(1, 1, 0.35).translate(x, h + 0.085, 0.03));
-          piece(api, picket, jitter(api, c, 0.06), mat, 0.06, 5);
+          all.merge(api.box(0.085, h, 0.022).translate(x, h / 2 + 0.04, 0.03));
+          all.merge(api.cone(0.06, 0.08, 4).rotate(0, 45, 0).scale(1, 1, 0.3).translate(x, h + 0.08, 0.03));
         }
       }
     }
+    addFinish(api, all, finish, c, { variation: variant === 1 ? 0.12 : 0.04, freq: 2 });
     api.collider(boxCollider(0, H / 2, 0, L, H, 0.16));
     return api.build();
   },
@@ -552,36 +578,50 @@ const bridge = defineGenerator({
     if (stone) {
       const thick = Math.max(0.6, rise * 0.4 + 0.5);
       const top: Array<[number, number]> = [];
-      for (let i = 0; i <= 16; i++) {
-        const x = -L / 2 + (i * L) / 16;
+      for (let i = 0; i <= 24; i++) {
+        const x = -L / 2 + (i * L) / 24;
         top.push([x, arcY(x, L, rise) + thick]);
       }
       const a = L * 0.36;
       const archH = Math.max(0.4, Math.min(rise + thick * 0.4, a * 0.9));
       const shape: Array<[number, number]> = [[-L / 2, 0], [-a, 0]];
-      for (let i = 1; i < 12; i++) {
-        const ang = Math.PI - (i / 12) * Math.PI;
+      for (let i = 1; i < 16; i++) {
+        const ang = Math.PI - (i / 16) * Math.PI;
         shape.push([Math.cos(ang) * a, Math.sin(ang) * archH]);
       }
       shape.push([a, 0], [L / 2, 0]);
       for (let i = top.length - 1; i >= 0; i--) shape.push(top[i] as [number, number]);
-      const body = api.extrude(shape, W);
-      const s0 = lin(shade(c, -0.2));
-      const s1 = lin(shade(c, 0.1));
-      body.paintFn((x, y, z, _nx, _ny, _nz, out) => {
-        const blk = Math.floor(x * 1.6 + (Math.floor(y * 2.2) % 2) * 0.5) * 31 + Math.floor(y * 2.2) * 17;
-        mixLinear(s0, s1, (((blk * 2654435761) >>> 0) % 101) / 101 * 0.6 + 0.15 * api.noise.noise3(x, y, z), out);
-      });
-      api.add(body, MAT.stone);
-      for (const sz of [-1, 1]) {
-        const par: Array<[number, number]> = [];
-        for (let i = 0; i <= 16; i++) par.push(top[i] as [number, number]);
-        for (let i = 16; i >= 0; i--) {
-          const q = top[i] as [number, number];
-          par.push([q[0], q[1] + 0.7]);
+      addFinish(api, api.extrude(shape, W), 'limestone', c, { variation: 0.07, freq: 0.8 });
+      // Voussoir ring proud of the spandrel on both faces.
+      const ring = api.box(0.01, 0.01, 0.01).translate(0, thick, 0);
+      for (let k = 0; k < 13; k++) {
+        const a0 = Math.PI - (k / 13) * Math.PI;
+        const a1 = Math.PI - ((k + 1) / 13) * Math.PI;
+        for (const sz of [-1, 1]) {
+          ring.merge(api.extrude([
+            [Math.cos(a0) * a, Math.sin(a0) * archH], [Math.cos(a0) * (a + 0.45), Math.sin(a0) * (archH + 0.45)],
+            [Math.cos(a1) * (a + 0.45), Math.sin(a1) * (archH + 0.45)], [Math.cos(a1) * a, Math.sin(a1) * archH],
+          ], 0.08).translate(0, 0, sz * (W / 2 + 0.03)));
         }
-        piece(api, api.extrude(par, 0.3).translate(0, 0, sz * (W / 2 - 0.15)), shade(c, 0.05), MAT.stone, 0.1, 3);
       }
+      addFinish(api, ring, 'limestone', shade(c, 0.08), { variation: 0.1, freq: 2.5 });
+      const cob: Array<[number, number]> = top.map((q) => [q[0], q[1] + 0.03]);
+      for (let i = top.length - 1; i >= 0; i--) cob.push([(top[i] as [number, number])[0], (top[i] as [number, number])[1] - 0.05]);
+      addFinish(api, api.extrude(cob, Math.max(0.4, W - 0.6)), 'cobble', '#8f897f', { variation: 0.05 });
+      const par = api.box(0.01, 0.01, 0.01).translate(0, thick, 0);
+      const cap = api.box(0.01, 0.01, 0.01).translate(0, thick, 0);
+      for (const sz of [-1, 1]) {
+        const pts: Array<[number, number]> = [];
+        for (let i = 0; i <= 24; i++) pts.push(top[i] as [number, number]);
+        for (let i = 24; i >= 0; i--) pts.push([(top[i] as [number, number])[0], (top[i] as [number, number])[1] + 0.62]);
+        par.merge(api.extrude(pts, 0.3).translate(0, 0, sz * (W / 2 - 0.15)));
+        const cp: Array<[number, number]> = [];
+        for (let i = 0; i <= 24; i++) cp.push([(top[i] as [number, number])[0], (top[i] as [number, number])[1] + 0.62]);
+        for (let i = 24; i >= 0; i--) cp.push([(top[i] as [number, number])[0], (top[i] as [number, number])[1] + 0.74]);
+        cap.merge(api.extrude(cp, 0.4).translate(0, 0, sz * (W / 2 - 0.15)));
+      }
+      addFinish(api, par, 'limestone', c, { variation: 0.07, freq: 1.2 });
+      addFinish(api, cap, 'limestone', shade(c, 0.12), { variation: 0.04 });
       for (let i = 0; i < segs; i++) {
         const x0 = -L / 2 + (i * L) / segs;
         const x1 = -L / 2 + ((i + 1) * L) / segs;
@@ -597,24 +637,22 @@ const bridge = defineGenerator({
     // wooden
     const planks = Math.max(6, Math.min(120, Math.round(L / 0.32)));
     const pw = L / planks;
+    const deckM = api.box(0.01, 0.01, 0.01).translate(0, deck, 0);
     for (let i = 0; i < planks; i++) {
       const x = -L / 2 + pw * (i + 0.5);
       const y = arcY(x, L, rise) + deck;
-      const slope = Math.atan2(-8 * rise * x / (L * L), 1) * DEG;
-      const plank = api.box(pw * 0.9, 0.08, W * api.range(0.96, 1.02)).rotate(0, 0, slope).translate(x, y, api.range(-0.03, 0.03));
-      piece(api, plank, jitter(api, c, 0.12), MAT.wood, 0.08, 3);
+      const slope = Math.atan2((-8 * rise * x) / (L * L), 1) * DEG;
+      deckM.merge(api.box(pw * 0.9, 0.07, W * api.range(0.96, 1.02)).rotate(0, 0, slope).translate(x, y, api.range(-0.03, 0.03)));
     }
-    const stringer = (z: number): void => {
+    addFinish(api, deckM, 'oak', c, { variation: 0.14, freq: 1.7 });
+    const frame = api.box(0.01, 0.01, 0.01).translate(0, deck, 0);
+    for (const z of [W / 2 - 0.2, -W / 2 + 0.2]) {
       for (let i = 0; i < segs; i++) {
         const x0 = -L / 2 + (i * L) / segs;
         const x1 = -L / 2 + ((i + 1) * L) / segs;
-        const a0: Vec3 = [x0, arcY(x0, L, rise) + deck - 0.16, z];
-        const a1: Vec3 = [x1, arcY(x1, L, rise) + deck - 0.16, z];
-        piece(api, api.limb(a0, a1, 0.12, 0.12, 4), shade(c, -0.25), MAT.wood, 0.08);
+        frame.merge(api.limb([x0, arcY(x0, L, rise) + deck - 0.16, z], [x1, arcY(x1, L, rise) + deck - 0.16, z], 0.12, 0.12, 6));
       }
-    };
-    stringer(W / 2 - 0.2);
-    stringer(-W / 2 + 0.2);
+    }
     const posts = Math.max(3, Math.round(L / 1.6) + 1);
     const rail = 1.0;
     for (const sz of [-1, 1]) {
@@ -623,13 +661,18 @@ const bridge = defineGenerator({
       for (let i = 0; i < posts; i++) {
         const x = -L / 2 + 0.1 + (i * (L - 0.2)) / (posts - 1);
         const y = arcY(x, L, rise) + deck;
-        piece(api, api.box(0.12, rail, 0.12).translate(x, y + rail / 2, z), shade(c, -0.15), MAT.wood, 0.08, 4);
+        frame.merge(api.box(0.11, rail, 0.11).translate(x, y + rail / 2, z));
         const topP: Vec3 = [x, y + rail, z];
-        if (prev) piece(api, api.limb(prev, topP, 0.05, 0.05, 4), shade(c, 0.05), MAT.wood, 0.06);
+        if (prev) {
+          frame.merge(api.limb(prev, topP, 0.05, 0.05, 6));
+          frame.merge(api.limb([prev[0], prev[1] - 0.5, z], [topP[0], topP[1] - 0.5, z], 0.03, 0.03, 5));
+        }
         prev = topP;
       }
     }
-    for (const sx of [-1, 1]) piece(api, api.box(1, deck + 0.1, W + 0.4).translate(sx * (L / 2 + 0.3), (deck + 0.1) / 2, 0), '#8f8a82', MAT.stone, 0.15, 3);
+    addFinish(api, frame, 'oak', shade(c, -0.25), { variation: 0.08, freq: 2 });
+    const abut = api.box(1, deck + 0.1, W + 0.4).translate(-(L / 2 + 0.3), (deck + 0.1) / 2, 0).merge(api.box(1, deck + 0.1, W + 0.4).translate(L / 2 + 0.3, (deck + 0.1) / 2, 0));
+    addFinish(api, abut, 'limestone', '#8f8a82', { variation: 0.08 });
     for (let i = 0; i < segs; i++) {
       const x0 = -L / 2 + (i * L) / segs;
       const x1 = -L / 2 + ((i + 1) * L) / segs;
@@ -678,38 +721,40 @@ const stairs = defineGenerator({
     const c = variant === 1 && p.color('color') === '#a39e93' ? '#9a6a3c' : p.color('color');
     const rise = H / n;
     const run = D / n;
+    const treads = api.box(0.01, 0.01, 0.01).translate(0, rise / 2, 0);
     for (let i = 0; i < n; i++) {
       const x = -D / 2 + run * (i + 0.5);
       const y = rise * (i + 1);
       if (variant === 0) {
-        piece(api, api.box(run, y, W).translate(x, y / 2, 0), jitter(api, c, 0.08), MAT.stone, 0.1, 2);
-        piece(api, api.box(run + 0.04, 0.05, W + 0.02).translate(x + 0.02, y - 0.02, 0), shade(c, 0.12), MAT.stone, 0.05, 3);
+        treads.merge(api.box(run, y, W).translate(x, y / 2, 0));
+        treads.merge(api.box(run + 0.04, 0.05, W + 0.02).translate(x + 0.02, y - 0.02, 0));
         api.collider(boxCollider(x, y / 2, 0, run, y, W));
       } else {
         const t = variant === 1 ? 0.07 : 0.16;
-        piece(api, api.box(run * 1.08, t, W).translate(x, y - t / 2, 0), jitter(api, c, 0.1), variant === 1 ? MAT.wood : MAT.stone, 0.08, 3);
+        treads.merge(api.box(run * 1.08, t, W).translate(x, y - t / 2, 0));
         api.collider(boxCollider(x, y - t / 2, 0, run, t, W));
       }
     }
+    addFinish(api, treads, variant === 0 ? 'limestone' : variant === 1 ? 'oak' : 'concrete', c, { variation: 0.06, freq: 1.5 });
     const start: Vec3 = [-D / 2, 0, 0];
     const end: Vec3 = [D / 2, H, 0];
     if (variant === 1) {
-      for (const sz of [-1, 1]) {
-        piece(api, api.limb([start[0], 0.1, sz * (W / 2 + 0.04)], [end[0], H - 0.05, sz * (W / 2 + 0.04)], 0.08, 0.08, 4), shade(c, -0.2), MAT.wood, 0.06);
-      }
+      const wood = api.box(0.01, 0.01, 0.01).translate(0, rise / 2, 0);
+      for (const sz of [-1, 1]) wood.merge(api.limb([start[0], 0.1, sz * (W / 2 + 0.04)], [end[0], H - 0.05, sz * (W / 2 + 0.04)], 0.08, 0.08, 6));
       const posts = Math.max(2, Math.round(n / 3) + 1);
       let prev: Vec3 | null = null;
       for (let i = 0; i < posts; i++) {
         const f = i / (posts - 1);
         const x = -D / 2 + run * 0.5 + f * (D - run);
         const y = rise * (1 + f * (n - 1));
-        piece(api, api.box(0.08, 0.95, 0.08).translate(x, y + 0.47, W / 2 - 0.05), shade(c, -0.1), MAT.wood, 0.05);
+        wood.merge(api.box(0.07, 0.95, 0.07).translate(x, y + 0.47, W / 2 - 0.05));
         const topP: Vec3 = [x, y + 0.95, W / 2 - 0.05];
-        if (prev) piece(api, api.limb(prev, topP, 0.045, 0.045, 5), shade(c, 0.1), MAT.wood, 0.05);
+        if (prev) wood.merge(api.limb(prev, topP, 0.04, 0.04, 8));
         prev = topP;
       }
+      addFinish(api, wood, 'oak', shade(c, -0.2), { variation: 0.05 });
     } else if (variant === 2) {
-      piece(api, api.limb([start[0] + run * 0.5, 0, 0], [end[0] - run * 0.5, H - rise * 0.6, 0], 0.18, 0.18, 6), '#3b3e44', MAT.metal, 0.05);
+      addFinish(api, api.limb([start[0] + run * 0.5, 0, 0], [end[0] - run * 0.5, H - rise * 0.6, 0], 0.16, 0.16, 8), 'black-metal', '#ffffff', { variation: 0 });
     }
     return api.build();
   },
@@ -749,28 +794,30 @@ const arch = defineGenerator({
     if (variant === 2) {
       const red = p.color('accentColor');
       const pr = Math.max(0.12, Wd * 0.05);
+      const lacquer = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
+      const black = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
       for (const sx of [-1, 1]) {
         const x = sx * (Wd / 2 + pr);
-        piece(api, api.cylinder(pr * 0.9, pr, H * 0.92, 10).translate(x, H * 0.46, 0), red, MAT.paint, 0.06);
-        piece(api, api.cylinder(pr * 1.25, pr * 1.25, H * 0.07, 10).translate(x, H * 0.035, 0), '#1f1f22', MAT.paint, 0.04);
+        lacquer.merge(api.cylinder(pr * 0.9, pr, H * 0.92, 16).translate(x, H * 0.46, 0));
+        black.merge(api.cylinder(pr * 1.25, pr * 1.25, H * 0.07, 16).translate(x, H * 0.035, 0));
         api.collider(cylinderCollider(x, H * 0.46, 0, pr, H * 0.92));
       }
       const span = Wd + pr * 6;
-      piece(api, api.box(span * 0.92, H * 0.06, pr * 1.4).translate(0, H * 0.72, 0), red, MAT.paint, 0.06);
+      lacquer.merge(api.box(span * 0.92, H * 0.06, pr * 1.4).translate(0, H * 0.72, 0));
       const beam: Array<[number, number]> = [];
-      for (let i = 0; i <= 10; i++) {
-        const x = -span / 2 + (i * span) / 10;
+      for (let i = 0; i <= 12; i++) {
+        const x = -span / 2 + (i * span) / 12;
         beam.push([x, H * 0.86 + Math.pow((2 * x) / span, 2) * H * 0.05]);
       }
-      for (let i = 10; i >= 0; i--) {
+      for (let i = 12; i >= 0; i--) {
         const q = beam[i] as [number, number];
         beam.push([q[0] * 1.04, q[1] + H * 0.07]);
       }
-      const kasagi = api.extrude(beam, pr * 2.2);
-      paintNoise(kasagi, api, '#1f1f22', '#34343a', 2);
-      api.add(kasagi, MAT.paint);
-      piece(api, api.box(span * 0.95, H * 0.05, pr * 2).translate(0, H * 0.86, 0), red, MAT.paint, 0.05);
-      piece(api, api.box(pr * 1.2, H * 0.13, pr * 0.9).translate(0, H * 0.79, 0), red, MAT.paint, 0.05);
+      black.merge(api.extrude(beam, pr * 2.2));
+      lacquer.merge(api.box(span * 0.95, H * 0.05, pr * 2).translate(0, H * 0.86, 0));
+      lacquer.merge(api.box(pr * 1.2, H * 0.13, pr * 0.9).translate(0, H * 0.79, 0));
+      addFinish(api, lacquer, 'paint', red, { variation: 0.04, roughness: 0.4 });
+      addFinish(api, black, 'paint', '#1f1f22', { variation: 0.03, roughness: 0.45 });
       api.collider(boxCollider(0, H * 0.9, 0, span, H * 0.16, pr * 2.2));
       return api.build();
     }
@@ -778,15 +825,17 @@ const arch = defineGenerator({
     const R = Wd / 2;
     const rise = variant === 1 ? Wd * 0.85 : R;
     const springY = Math.max(0.6, H - rise - pw);
+    const blocks = api.box(0.01, 0.01, 0.01).translate(0, springY / 2, 0);
+    const dressed = api.box(0.01, 0.01, 0.01).translate(0, springY / 2, 0);
     for (const sx of [-1, 1]) {
       const x = sx * (R + pw / 2);
-      piece(api, api.box(pw * 1.25, 0.35, T * 1.15).translate(x, 0.175, 0), shade(c, -0.12), MAT.stone, 0.08, 3);
+      dressed.merge(api.box(pw * 1.25, 0.35, T * 1.15).translate(x, 0.175, 0));
       const courses = Math.max(1, Math.round(springY / 0.6));
       for (let k = 0; k < courses; k++) {
         const h = springY / courses;
-        piece(api, api.box(pw, h - 0.03, T).translate(x, k * h + h / 2, 0), jitter(api, c, 0.1), MAT.stone, 0.06, 3);
+        blocks.merge(api.box(pw, h - 0.025, T).translate(x, k * h + h / 2, 0));
       }
-      piece(api, api.box(pw * 1.2, 0.22, T * 1.1).translate(x, springY + 0.11, 0), shade(c, 0.08), MAT.stone, 0.06, 3);
+      dressed.merge(api.box(pw * 1.2, 0.22, T * 1.1).translate(x, springY + 0.11, 0));
       api.collider(boxCollider(x, (springY + 0.22) / 2, 0, pw * 1.2, springY + 0.22, T * 1.1));
     }
     const base = springY + 0.22;
@@ -794,9 +843,8 @@ const arch = defineGenerator({
       for (let k = 0; k < count; k++) {
         const a0 = from + ((to - from) * k) / count;
         const a1 = from + ((to - from) * (k + 1)) / count;
-        const gap = 0.012;
-        const v = voussoir(api, cx, base, r, r + pw, a0 + gap, a1 - gap, T);
-        piece(api, v, jitter(api, c, 0.1), MAT.stone, 0.06, 3);
+        const gap = 0.01;
+        blocks.merge(voussoir(api, cx, base, r, r + pw, a0 + gap, a1 - gap, T));
         const am = (a0 + a1) / 2;
         const rm = r + pw / 2;
         api.collider({
@@ -814,12 +862,13 @@ const arch = defineGenerator({
       addRing(off, Rg, Math.PI, Math.PI - aTop, 5);
       addRing(-off, Rg, aTop, 0, 5);
       const apexY = base + Math.sin(aTop) * (Rg + pw * 0.5);
-      piece(api, api.box(pw * 0.75, pw * 0.75, T * 1.06).rotate(0, 0, 45).translate(0, apexY, 0), shade(c, 0.1), MAT.stone, 0.05, 3);
+      dressed.merge(api.box(pw * 0.75, pw * 0.75, T * 1.06).rotate(0, 0, 45).translate(0, apexY, 0));
     } else {
       addRing(0, R, Math.PI, 0, 9);
-      const key = voussoir(api, 0, base, R - 0.05, R + pw + 0.12, Math.PI / 2 - 0.09, Math.PI / 2 + 0.09, T * 1.08);
-      piece(api, key, shade(c, 0.1), MAT.stone, 0.05, 3);
+      dressed.merge(voussoir(api, 0, base, R - 0.05, R + pw + 0.12, Math.PI / 2 - 0.09, Math.PI / 2 + 0.09, T * 1.08));
     }
+    addFinish(api, blocks, 'limestone', c, { variation: 0.09, freq: 2.2 });
+    addFinish(api, dressed, 'limestone', shade(c, 0.1), { variation: 0.05, freq: 2 });
     return api.build();
   },
 });
@@ -840,40 +889,38 @@ const ramp = defineGenerator({
     const W = p.num('width');
     const H = p.num('height');
     const c = p.color('color');
+    const ang = Math.atan2(H, L) * DEG;
+    const len = Math.hypot(L, H);
     if (p.int('variant') === 1) {
       const wood = c === '#8a8580' ? '#9a6a3c' : c;
-      const ang = Math.atan2(H, L) * DEG;
-      const len = Math.hypot(L, H);
       const planks = Math.max(3, Math.min(60, Math.round(len / 0.3)));
+      const deckM = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
       for (let i = 0; i < planks; i++) {
         const f = (i + 0.5) / planks;
-        const plank = api.box(len / planks - 0.02, 0.06, W).rotate(0, 0, ang).translate(-L / 2 + f * L, f * H, 0);
-        piece(api, plank, jitter(api, wood, 0.12), MAT.wood, 0.08, 3);
+        deckM.merge(api.box(len / planks - 0.02, 0.06, W).rotate(0, 0, ang).translate(-L / 2 + f * L, f * H, 0));
       }
+      addFinish(api, deckM, 'oak', wood, { variation: 0.12, freq: 1.6 });
+      const posts = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
       for (const f of [0.35, 0.7, 1]) {
         for (const sz of [-1, 1]) {
           const h = f * H;
-          piece(api, api.box(0.12, h, 0.12).translate(-L / 2 + f * L - 0.08, h / 2, sz * (W / 2 - 0.08)), shade(wood, -0.2), MAT.wood, 0.05);
+          posts.merge(api.box(0.12, h, 0.12).translate(-L / 2 + f * L - 0.08, h / 2, sz * (W / 2 - 0.08)));
         }
       }
+      addFinish(api, posts, 'oak', shade(wood, -0.2), { variation: 0.05 });
     } else {
-      const wedge = api.extrude([[-L / 2, 0], [L / 2, 0], [L / 2, H]], W);
-      const c0 = lin(shade(c, -0.22));
-      const c1 = lin(shade(c, 0.12));
-      wedge.paintFn((x, y, z, _nx, ny, _nz, out) => mixLinear(c0, c1, (ny > 0.2 ? 0.6 : 0) + 0.25 * api.noise.noise3(x * 2, y * 2, z * 2), out));
-      // hazard stripes along both top edges: alternating yellow/black segments lying on the slope
-      const ang = Math.atan2(H, L) * DEG;
-      const len = Math.hypot(L, H);
+      addFinish(api, api.extrude([[-L / 2, 0], [L / 2, 0], [L / 2, H]], W), 'concrete', c, { variation: 0.06, freq: 0.8 });
       const segs = Math.max(4, Math.min(24, Math.round(len / 0.4)));
+      const yellow = api.box(0.01, 0.01, 0.01).translate(0, 0.01, 0);
+      const black = api.box(0.01, 0.01, 0.01).translate(0, 0.01, 0);
       for (const sz of [-1, 1]) {
         for (let i = 0; i < segs; i++) {
           const f = (i + 0.5) / segs;
-          const stripe = api.box(len / segs, 0.02, 0.14).rotate(0, 0, ang).translate(-L / 2 + f * L, f * H + 0.012, sz * (W / 2 - 0.09));
-          paintSolid(stripe, i % 2 ? '#1f1f22' : '#f2c230');
-          api.add(stripe, { preset: 'plastic', vertexColors: true, roughness: 0.6 });
+          (i % 2 ? black : yellow).merge(api.box(len / segs, 0.012, 0.14).rotate(0, 0, ang).translate(-L / 2 + f * L, f * H + 0.008, sz * (W / 2 - 0.09)));
         }
       }
-      api.add(wedge, { preset: 'concrete', vertexColors: true, roughness: 0.9, flatShading: true });
+      addFinish(api, yellow, 'paint', '#e2b52c', { variation: 0.05, roughness: 0.6 });
+      addFinish(api, black, 'paint', '#1f1f22', { variation: 0.03, roughness: 0.6 });
     }
     const pts: number[] = [];
     for (const z of [-W / 2, W / 2]) pts.push(-L / 2, 0, z, L / 2, 0, z, L / 2, H, z);
@@ -898,57 +945,61 @@ const windmill = defineGenerator({
     const variant = p.int('variant');
     const R = H * 0.17;
     const rt = R * 0.62;
-    const towerC = variant === 1 && p.color('color') === '#e8e0d0' ? '#6e4a2c' : p.color('color');
-    const tower = api.cylinder(rt, R, H, 8).translate(0, H / 2, 0);
-    const t0 = lin(shade(towerC, -0.15));
-    const t1 = lin(shade(towerC, 0.06));
-    tower.paintFn((x, y, z, _nx, _ny, _nz, out) => {
-      const band = variant === 1 ? (Math.floor(y * 3) % 2) * 0.5 : 0;
-      mixLinear(t0, t1, 0.4 + band + 0.25 * api.noise.noise3(x, y, z), out);
-    });
-    api.add(tower, variant === 1 ? MAT.wood : { preset: 'concrete', vertexColors: true, roughness: 0.9, flatShading: true });
-    piece(api, api.cylinder(R * 1.08, R * 1.12, 0.5, 8).translate(0, 0.25, 0), '#8f8a82', MAT.stone, 0.12, 3);
+    const smock = variant === 1;
+    const towerC = smock && p.color('color') === '#e8e0d0' ? '#6e4a2c' : p.color('color');
+    const segs = smock ? 8 : roundSegs(R);
+    const towerSlope = (Math.atan2(H, R - rt) * 180) / Math.PI;
+    addFinish(api, api.cylinder(rt, R, H, segs).translate(0, H / 2, 0), smock ? 'cladding' : 'plaster', towerC, { uv: 'round', radius: R, slope: towerSlope, variation: smock ? 0.1 : 0.04, freq: 0.7 });
+    addFinish(api, api.cylinder(R * 1.08, R * 1.12, 0.6, segs).translate(0, 0.3, 0), 'limestone', '#8f8a82', { uv: 'round', radius: R * 1.1, variation: 0.08 });
     api.collider(cylinderCollider(0, H / 2, 0, (R + rt) / 2 + 0.05, H));
-    const door = api.box(R * 0.45, Math.min(2.1, H * 0.22), 0.15).translate(0, Math.min(2.1, H * 0.22) / 2 + 0.5, R * 0.96);
-    piece(api, door, '#5a3a22', MAT.wood, 0.1, 5);
+    const dh = Math.min(2.1, H * 0.22);
+    addFinish(api, api.box(R * 0.45, dh, 0.15).translate(0, dh / 2 + 0.6, R * 0.95), 'oak', '#5a3a22', { variation: 0.1, freq: 3 });
+    const frames = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
     for (const f of [0.45, 0.72]) {
       const y = H * f;
       const rr = R + (rt - R) * f;
-      const win = api.box(R * 0.28, R * 0.32, 0.12).translate(0, y, rr * 0.94).rotate(0, 35, 0);
-      paintSolid(win, '#2d3a4a');
-      api.add(win, MAT.glass);
+      const ww = R * 0.28;
+      const wh = R * 0.34;
+      api.add(api.box(ww, wh, 0.06).translate(0, y, rr * 0.97).rotate(0, 35, 0), WINDOW_GLASS);
+      const fr = api.box(ww + 0.1, 0.06, 0.1).translate(0, y + wh / 2, rr * 0.97).merge(api.box(ww + 0.14, 0.06, 0.16).translate(0, y - wh / 2, rr * 0.98));
+      fr.merge(api.box(0.06, wh, 0.1).translate(-ww / 2 - 0.02, y, rr * 0.97)).merge(api.box(0.06, wh, 0.1).translate(ww / 2 + 0.02, y, rr * 0.97));
+      frames.merge(fr.rotate(0, 35, 0));
     }
-    // balcony / gallery for smock mills
-    if (variant === 1) {
-      piece(api, api.cylinder(R * 1.25, R * 1.25, 0.15, 8).translate(0, H * 0.35, 0), '#5a3a22', MAT.wood, 0.08);
+    addFinish(api, frames, 'paint', '#efece4', { variation: 0.03 });
+    if (smock) {
+      const gallery = api.cylinder(R * 1.3, R * 1.3, 0.14, 12).translate(0, H * 0.35, 0);
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        gallery.merge(api.box(0.06, 0.9, 0.06).translate(Math.cos(a) * R * 1.27, H * 0.35 + 0.45, Math.sin(a) * R * 1.27));
+      }
+      gallery.merge(api.torus(R * 1.27, 0.03, 4, 24).rotate(90, 0, 0).translate(0, H * 0.35 + 0.9, 0));
+      addFinish(api, gallery, 'oak', '#5a3a22', { variation: 0.08 });
     }
     const capH = R * 1.1;
-    const cap = api.lathe([[0, 0], [rt * 1.25, 0], [rt * 1.2, capH * 0.25], [rt * 0.7, capH * 0.8], [0, capH]], 8).translate(0, H, 0);
-    paintNoise(cap, api, shade(p.color('roofColor'), -0.2), shade(p.color('roofColor'), 0.1), 2);
-    api.add(cap, { preset: 'wood', vertexColors: true, roughness: 0.8, flatShading: true });
+    const cap = api.lathe([[0, 0], [rt * 1.25, 0], [rt * 1.2, capH * 0.25], [rt * 0.7, capH * 0.8], [0, capH]], 16).translate(0, H, 0);
+    addFinish(api, cap, 'roof-tile', p.color('roofColor'), { uv: 'round', radius: rt * 1.2, slope: 50, variation: 0.06 });
     api.collider(cylinderCollider(0, H + capH * 0.4, 0, rt * 1.2, capH * 0.8));
     const hubZ = rt * 1.25 + 0.25;
     const hubY = H + capH * 0.3;
-    piece(api, api.cylinder(0.18 * R, 0.24 * R, 0.6, 8).rotate(90, 0, 0).translate(0, hubY, hubZ - 0.2), '#3b3e44', MAT.metal, 0.05);
+    addFinish(api, api.cylinder(0.18 * R, 0.24 * R, 0.6, 12).rotate(90, 0, 0).translate(0, hubY, hubZ - 0.2), 'black-metal', '#ffffff', { variation: 0 });
     const bladeLen = H * 0.48;
     const bladeW = bladeLen * 0.22;
     const bladeC = p.color('bladeColor');
     const offset = api.rng() * 30;
+    const timber = api.box(0.01, 0.01, 0.01).translate(0, hubY, hubZ);
+    const canvas = api.box(0.01, 0.01, 0.01).translate(0, hubY, hubZ);
     for (let k = 0; k < 4; k++) {
       const ang = offset + k * 90;
-      const spar = api.box(0.1, bladeLen, 0.08).translate(0, bladeLen / 2, 0);
-      const frame = api.box(bladeW, bladeLen * 0.78, 0.05).translate(bladeW / 2 + 0.05, bladeLen * 0.58, 0.02);
-      const lattice = api.box(0.04, bladeLen * 0.78, 0.07).translate(bladeW + 0.05, bladeLen * 0.58, 0.02);
-      for (const m of [spar, lattice]) {
-        m.rotate(0, 0, ang).translate(0, hubY, hubZ + 0.1);
-        piece(api, m, '#6b4a2f', MAT.wood, 0.08);
-      }
-      frame.rotate(0, 0, ang).translate(0, hubY, hubZ + 0.1);
-      const fc0 = lin(shade(bladeC, -0.1));
-      const fc1 = lin(bladeC);
-      frame.paintFn((x, y, _z, _nx, _ny, _nz, out) => mixLinear(fc0, fc1, (Math.floor((x + y) * 3) % 2) * 0.6 + 0.2, out));
-      api.add(frame, { ...MAT.fabric, flatShading: false });
+      // Whip (spar), the lattice of sail bars and the canvas stretched over two thirds of it.
+      const t = api.box(0.12, bladeLen, 0.1).translate(0, bladeLen / 2, 0);
+      t.merge(api.box(0.04, bladeLen * 0.8, 0.05).translate(bladeW + 0.05, bladeLen * 0.58, 0.02));
+      t.merge(api.box(0.04, bladeLen * 0.8, 0.05).translate(-0.12, bladeLen * 0.58, 0.02));
+      for (let j = 0; j <= 9; j++) t.merge(api.box(bladeW + 0.2, 0.035, 0.04).translate(bladeW / 2 - 0.03, bladeLen * (0.18 + j * 0.088), 0.02));
+      timber.merge(t.rotate(0, 0, ang).translate(0, hubY, hubZ + 0.1));
+      canvas.merge(api.box(bladeW, bladeLen * 0.55, 0.015).translate(bladeW / 2 + 0.02, bladeLen * 0.55, 0.05).rotate(0, 0, ang).translate(0, hubY, hubZ + 0.1));
     }
+    addFinish(api, timber, 'oak', '#6b4a2f', { variation: 0.08 });
+    addFinish(api, canvas, 'fabric', bladeC, { variation: 0.06 });
     return api.build();
   },
 });

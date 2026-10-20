@@ -255,4 +255,4 @@ export function addFinish(api: InternalApi, m: Mesh, finish: Finish, color: stri
 }
 
 /** Dark reflective window glass (opaque: a solid building has no room behind its panes). */
-export const WINDOW_GLASS: MaterialSpec = { color: '#1c2630', roughness: 0.06, metalness: 0.85 };
+export const WINDOW_GLASS: MaterialSpec = { color: '#3a4852', roughness: 0.1, metalness: 0.4 };
