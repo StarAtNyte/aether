@@ -20,6 +20,7 @@ import { playtestKindOf } from '@aether/playtest/proof';
 import type { Studio } from '../Studio';
 import { PlaytestClient, type PlaytestRunOptions } from './client';
 import type { PlaytestFindingView, PlaytestObjectiveView } from '../../state/store';
+import type { ArchUiState } from '../../state/archUi';
 
 /** Options of {@link PlaytestController.run}. */
 export interface PlaytestStartOptions {
@@ -47,6 +48,16 @@ export function reportViews(report: PlaytestReport): { findings: PlaytestFinding
     .map((f): PlaytestFindingView => ({ severity: f.severity, code: f.code, message: f.message, entities: f.entities.slice(0, 4), ...(f.position ? { position: [f.position[0], f.position[1], f.position[2]] as [number, number, number] } : {}) }));
   const objectives = report.objectives.slice(0, MAX_VIEW_OBJECTIVES).map((o): PlaytestObjectiveView => ({ id: o.id, label: o.label, kind: o.kind, status: o.status, required: o.required, ...(o.at !== undefined ? { at: o.at } : {}), ...(o.reason ? { reason: o.reason } : {}) }));
   return { findings, objectives };
+}
+
+/**
+ * The building view a walkthrough replay needs: the bot walks inside, so a building shown with its walls and roof up
+ * would only show the roof. Open it as a doll's house (and spread the storeys apart when there are several); null when
+ * the view already shows the inside or the user picked a view of their own.
+ */
+export function interiorViewFor(arch: Pick<ArchUiState, 'building' | 'walls' | 'levelMode' | 'levels' | 'plan' | 'section'>, kind: PlaytestKind): Partial<ArchUiState> | null {
+  if (kind !== 'walkthrough' || !arch.building || arch.plan || arch.section !== null || arch.walls !== 'up') return null;
+  return { walls: 'cutaway', ...(arch.levels.length > 1 && arch.levelMode === 'stacked' ? { levelMode: 'exploded' as const } : {}) };
 }
 
 /** Runs the bot, applies repairs, shows the replay. One per studio. */
@@ -302,6 +313,9 @@ export class PlaytestController {
     const giveUpAt = performance.now() + 5000;
     while (sim.renderer.animating && performance.now() < giveUpAt && gen === this.gen && !this.disposed) await new Promise((r) => setTimeout(r, 120));
     if (gen !== this.gen || this.disposed || this.studio.simulation !== sim || this.studio.store.getState().mode === 'play') return;
+    const st = this.studio.store.getState();
+    const view = interiorViewFor(st.arch, playtestKindOf(this.studio.history.current));
+    if (view) st.setArch(view);
     this.frameTrace(trace);
     const ok = sim.renderer.startGhost(trace, { autoplay: true, speed: 1, onEnd: () => this.refreshReplay() });
     if (!ok) return;
