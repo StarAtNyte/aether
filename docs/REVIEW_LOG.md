@@ -3661,3 +3661,96 @@ The defect list with repro steps and screenshots is kept outside the repo (`~/.l
   - forest games use low-poly toy pines, a flat box as the river and a flat path;
   - houses are plain stucco boxes on a flat lawn with haze, and Claude's house interiors are sparse;
   - photo rooms miss vaulted ceilings, curtains and door styles the tools cannot build.
+
+## Acceptance follow-up: the open defects fixed
+
+The nine defects the acceptance pass left open are fixed, each with tests. The defect list with repro steps is kept outside the repo (`~/.local/share/aether/qa/acceptance-report.md`, O1 to O10).
+
+**Floating objects (O1).**
+- New grounding measure (`@aether/playtest/level`, `measureGrounding`):
+  - Each object that should rest on something is measured with rays against the real colliders under its footprint: terrain, hills, platforms, floors and the ground plane.
+  - The object's own parts are left out of those rays. Water surfaces count as support.
+  - The smallest gap over the footprint is how high it hovers, so something on a slope touches at one corner.
+- Left alone:
+  - things tagged floating, flying, hanging, cloud, sky or platform;
+  - bobbing, spinning, orbiting, collectible, goal and patrolling things;
+  - sensors, moving bodies, characters, lights, buildings and terrain;
+  - anything a solid touches from the side or above: a banner on a tower, a rock under a ledge, a bridge deck held by its ramps.
+- Where it is used:
+  - The level review reports a `floating` finding with the gap, what is below and the fix. It is an error from 0.5 m and a warning below that, or over open air.
+  - `query_level {op:"grounding"}` lists every hovering object.
+  - `place_level_items` moving an existing item now measures the surface without the item itself and sets its bottom on it. Before, a moved object could land on its own old position, and a group's origin was not its base.
+  - A local "move X onto Y" outdoors is settled on the measured surface in the same undo step. The studio gives the offline planner the level tools for this, and the reply says where the object landed.
+- Before tuning, a scan of the offline worlds found a castle banner, the Highland footbridge and the Sakura lantern posts. These were real contacts the first version missed: a wall, ramps, water. Now only the rocks under the Lantern Isles' floating islands remain, reported as warnings over open air.
+
+**Chase camera inside tree crowns (O2).**
+- Forest trees are scatter instances, which were never raycast one by one.
+- Tall scatter layers now get coarse trunk and crown boxes in a grid, which the camera tests its rays against. It pulls in instead of entering a crown.
+- The occlusion path now writes into typed arrays. It allocated on every blocked frame before, and an allocation probe guards it.
+
+**Playtest bot and enemies (O4).**
+- The bot plans around hostile characters' live positions. The ground near an enemy is expensive to cross, inside its attack reach far more so, and along its patrol slightly.
+- It steps aside when an enemy closes in and re-plans every half second while hunted.
+- By a guarded pickup it waits up to 10 s for a gap, and it runs for an objective it can reach before any enemy can cut it off.
+- Jumps and drops near a hunting enemy cost more.
+- Runs are deterministic (fixed simulation steps). The offline Lantern Hunt now verifies as built, after "make the wolves slower" and after a second "slower".
+
+**Verify badge and persistence (O3, O5, O9).**
+- After a playtest repair, the physics checks re-run on the repaired world, so "Checks outdated" no longer sits next to "Verified playable".
+- With the autosave, a project now keeps:
+  - up to 40 undo and 10 redo steps;
+  - the bot's compact proof with its replay;
+  - the physics verdict.
+- Size caps: the session stays under 1.5 MB (fewer steps first, then none), within a 6 MB project.
+- On open, the session is validated (zod). The history is kept only if it ends on the saved world, and each verdict only if it was made for that world.
+
+**Offline window edits (O6).**
+- `add_window` takes the side as optional and finds the room's storey itself. The compiler now records every room's exterior wall stretches with their openings (`CompiledBuilding.exterior`).
+- A new window goes to the centre of the widest clear stretch, at least 0.4 m from corners and openings. When none is clear, a matching even row with room for one more is re-spread.
+- The room's automatic windows become explicit specs first. Before, a room's first explicit window switched its automatic ones off, so "adding" a window could remove the others; the plan editor's click had the same bug.
+- A refusal lists the clear wall per side.
+- The offline planner maps "add a window to the kitchen" to this.
+
+**Failed non-English prompt (O7).**
+- A home-prompt project whose only exchange is the offline "could not build this" answer is deleted. The editor returns home with the reason.
+
+**Stairs (O8).**
+- `stair-fit.ts` measures a stair against the plan:
+  - the footprint inside one room clear of the walls;
+  - floor to step on, in front of the first riser or beside its first treads;
+  - clear of doorways;
+  - the stairwell inside one room upstairs;
+  - at least 0.6 m of floor beyond the top step.
+- `fitStair` searches the room's walls in 10 cm steps, every heading, straight before L before U, preferring full 0.9 m landings.
+- `add_stairs` and `design_plan` stairs may give just the room; the fitted stair is reported. A misplaced stair is refused with the numbers and a stair that fits.
+- `query_scene {q:"stairs"}` answers with the riser maths (for example 17 risers of 0.176 m for a 3 m storey) and a ready op.
+- Stair fields sent on the op itself (the malformed call the model kept retrying) are accepted.
+- Every stair the offline houses build passes the measure, so it agrees with the walkthrough.
+
+**Codex on this machine (O10).**
+- CLI discovery honours `AETHER_CODEX_BIN` / `AETHER_CLAUDE_BIN`. It then looks on PATH, in every nvm Node version, npm prefixes, Volta, pnpm, `~/.npm-global/bin`, `~/.local/bin` and the system folders, and accepts only executable files.
+- The first-run screen and the status say how to install Codex or point at it.
+- Codex is now installed under Node 24 too. A prompt through the bridge's local route answered "42 Aether".
+- The usage-limit message says when the limit resets.
+
+**Verification.**
+- `tsc --noEmit`: 0 errors.
+- Full vitest: 368 files, 4042 tests pass.
+- Studio build ok; `npm run smoke` 34/34.
+- `e2e:verified` and `e2e:refine` pass in Chromium and Firefox.
+- Re-run through the built studio:
+  - Offline house: "add a window to the kitchen" adds the window and stays verified walkable. After a reload, Undo works and both badges are back.
+  - Offline café: the walkthrough repair ends on "Verified walkable" and "Checks passed".
+  - Offline Lantern Hunt: verified as built with no repair, and again after "make the wolves slower".
+  - A Spanish prompt offline leaves no project behind.
+  - Claude Code: asked to put the shrine on a hill, it built a stepped mound and set the torii on the summit (grounding clean).
+- Observed in that run, not fixed:
+  - The chat edit guard refused Claude's changes to the shrine's own light and goal zone, so it added new ones.
+  - The playtest repair then moved the goal zone off the hill to a reachable spot.
+
+**Still open.**
+- The grounding measure sees colliders only. A visual-only support (a hill with no physics body) does not count, and a support with a collider smaller than its mesh can be misjudged.
+- Codex found in another Node's folder is a `#!/usr/bin/env node` script, so it needs a `node` on the bridge's PATH.
+- Renaming a project from the home page drops its saved undo history on the next open (the session is tied to the world).
+- The bot does not evade during jumps, drops or lift rides. Enemies faster than the player still need the slower-enemy repair. Wins can take longer, because it leads the pack away first.
+- The visual quality gaps (V1 to V3) are separate work.
