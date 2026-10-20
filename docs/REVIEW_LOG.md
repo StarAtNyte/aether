@@ -3600,3 +3600,64 @@ See `docs/WEBGPU.md` for the design, the audit and the frame costs.
 **Honest gaps.** The reading is now steady: the same pieces, the same checklist and close measured fidelity in every run. The final pass rate is not steadier on this sample. Three runs per arm are too few to tell 0.073 from 0.079, and the items that still fail differ from run to run (the window, the TV and cabinet, the two pictures), which points at judge noise near the pass boundary and at what the fixing model manages, not at the description. The uncapped single-read runs were already better than the capped runs of the last section, so lifting the round cap explains most of that 56 % run. Three reads add 3 calls plus at most 1 reconciliation call per run. Kind can still differ inside a class from run to run (`chair-1` in one merge, an armchair in another), which changes an id. Temperature and seed are not honoured by the CLI backends, so reads differ only by sampling. `apps/studio/test/editGuard.test.ts` ("make the tower I just moved taller") passes on current main, at e1985b5 and at 61e7b26, on Node 20, 22 and 24, alone, with the studio config and in the full suite (355 files, 3957 tests). I could not reproduce the reported failure, so nothing was changed there and no commit on main touched it.
 
 **Verification.** `tsc --noEmit` 0 errors; vitest `packages/agent`, `packages/arch`, `apps/studio` 156 files / 1650 tests pass; full suite before the change 355 / 3957 pass; studio build ok.
+
+## Acceptance: a first-time user through the studio UI
+
+**Method.** The built studio was served by the server with local AI on, and driven by Playwright in Chromium (real Intel GPU over ANGLE GL-EGL, WebGPU available), with a Firefox spot check. Every scenario ran from prompts only, offline and with Claude Code on this computer, and every screenshot was looked at:
+- a night-forest game (build, three chat edits, the verify badge and replay, keyboard play, share link and game zip opened in fresh contexts);
+- a two-storey house (walkthrough, play-mode doors, windows and residents, three targeted edits, undo);
+- a room from a bedroom photo;
+- a voxel survival world and Blockfall;
+- Highland Trail on an iPhone 13 viewport;
+- Spanish, Japanese and German prompts offline.
+
+The defect list with repro steps and screenshots is kept outside the repo (`~/.local/share/aether/qa/acceptance-report.md`).
+
+**Fixed (21 defects, each with a test).**
+- First-run "Continue offline" now pins the offline planner. Before, a signed-in Claude Code answered anyway.
+- Playtest self-repair handles losing to enemies. It tries slower, softer-hitting enemies one step at a time and applies only a step the bot then wins. It covers named enemies and guard, predator and sentinel archetypes.
+- The offline planner honours collect-and-reach prompts: lanterns, a torii shrine goal that opens when everything is collected, and no clock unless one is asked for. A game is named after what you play. The villa follows the bedroom count and "people living in it".
+- Chat edits:
+  - "onto" and "put the X on the Y" are moves.
+  - Characters' walking and running speeds are editable, and irregular plurals are understood ("wolves").
+  - "the front door" colours the door leaf.
+  - "the painting" no longer matches door frames.
+  - Offline, an edit that names something absent gets a plain answer instead of a random added scene, and the thing before the place is added ("a bridge over the river").
+  - Offline never says "Done — removed art" when nothing visible changed.
+- Architecture:
+  - Furniture keeps a 0.8 m walkway round stairs and stairwells. A landing sideboard had made the home page villa fail its walkthrough.
+  - The building check climbs a stair only where its top step lands on open floor, and no longer waves through upper floors that no stair reaches. It agrees with the walkthrough bot now.
+  - A second window on a wall joins the first instead of vanishing, and unplaceable windows are reported.
+- Agent review requests stay within the four-image limit. Six review views had made Claude Code reject the fix round and fall back to the offline planner.
+- A walkthrough replay is shown inside the building (a cutaway with the storeys apart) instead of a close-up of the roof.
+- A room rebuilt from a photo is named after the room and drops the starter's outdoor weather.
+- Overlaps fixed:
+  - the navigation hint over the replay clock;
+  - the "Talk to" prompt under the walk legend;
+  - the Tweak pill over the voxel hotbar;
+  - the check pills over the camera tabs on phones;
+  - the proof seal over the building bar.
+
+**Verification.**
+- `tsc --noEmit`: 0 errors.
+- Full vitest: 359 files, 3978 tests pass.
+- Studio build ok; `npm run smoke` 34/34.
+- `e2e:verified`, `e2e:arch` and `e2e:refine` pass in Chromium and Firefox.
+- Re-run through the UI after the fixes:
+  - Offline: the night-forest game is "Verified playable" after an enemy repair, and the house is "Verified walkable: all 6 rooms".
+  - Claude Code: the forest game is verified, and the house is verified walkable after the stair check.
+  - The published zip and the share link open and play.
+
+**Open (honest).**
+- Defects:
+  - Claude's "move the shrine onto the hill" left the torii hovering above the new hill, and its review called the level clean. There is no floating check for objects on procedural terrain.
+  - The chase camera goes inside tree crowns. These crowns do not stop the occlusion raycast; batched or instanced geometry is suspected.
+  - After an auto-repair, "Checks outdated" sits next to "Verified playable".
+  - The playtest bot does not evade enemies, so a wolf pack can pin it, and the verdict can flip after a user's own edit.
+  - Undo history and the verify verdict do not survive a reload.
+  - Offline cannot add a window (it does not know which walls are exterior).
+  - Codex was not exercised: its CLI is installed only under Node 22 on this machine.
+- Visual quality is still far from the Blender bar:
+  - forest games use low-poly toy pines, a flat box as the river and a flat path;
+  - houses are plain stucco boxes on a flat lawn with haze, and Claude's house interiors are sparse;
+  - photo rooms miss vaulted ceilings, curtains and door styles the tools cannot build.
