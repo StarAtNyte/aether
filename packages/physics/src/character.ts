@@ -25,6 +25,11 @@ export interface CharacterOptions {
   maxSlopeDeg?: number;
   /** Highest step climbed automatically in meters (default 0.35). */
   stepHeight?: number;
+  /**
+   * Stand the spawn point on the floor under it when it hangs up to 1.5 m above (the live game sets this so play does not open with a
+   * visible drop; headless runs keep the exact document spawn so recorded proofs replay unchanged). Default false.
+   */
+  settleSpawn?: boolean;
   /** Ground snapping distance in meters (default 0.3). */
   snapDistance?: number;
   /**
@@ -68,6 +73,9 @@ export interface CharacterInput {
 const SKIN = 0.02;
 const MAX_FALL_SPEED = 50;
 const MAX_DT = 0.1;
+/** Spawn settling: the probe starts this far above the spawn point, and a drop up to this far is snapped to the floor (m). */
+const SPAWN_PROBE_UP = 0.3;
+const SPAWN_SNAP_MAX = 1.5;
 
 function clampUnit(v: number): number {
   return Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
@@ -101,6 +109,10 @@ export class CharacterController {
     this.halfTotal = height / 2;
     this.feel = opts.feel ? { ...opts.feel } : null;
     const spawn: Vec3 = isFiniteVec(opts.spawn) ? [opts.spawn[0], opts.spawn[1], opts.spawn[2]] : [0, 1, 0];
+    // A spawn point a little above the floor would open the game with a visible drop, and the airborne pose throws the arms out
+    // sideways (a T-pose from the chase camera, long on a slow frame rate). Stand on the floor instead; a deliberate higher drop is kept.
+    const down = opts.settleSpawn !== true ? null : pw.raycast([spawn[0], spawn[1] + SPAWN_PROBE_UP, spawn[2]], [0, -1, 0], SPAWN_PROBE_UP + SPAWN_SNAP_MAX);
+    if (down && down.point[1] <= spawn[1] + SKIN && spawn[1] - down.point[1] <= SPAWN_SNAP_MAX) spawn[1] = down.point[1] + SKIN;
     this.pos = spawn;
     this.body = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn[0], spawn[1], spawn[2]));
     this.collider = this.world.createCollider(

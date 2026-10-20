@@ -44,7 +44,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
       const w = wood();
       add(new CylinderGeometry(0.022, 0.03, 0.56, 10), w, 0, 0.12, 0);
       add(new CylinderGeometry(0.045, 0.03, 0.08, 10), new MeshStandardMaterial({ color: '#2a2018', roughness: 0.9 }), 0, 0.42, 0);
-      const flame = new MeshStandardMaterial({ color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 3, roughness: 0.6 });
+      const flame = new MeshStandardMaterial({ color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 1.3, roughness: 0.6 });
       add(new SphereGeometry(0.06, 12, 10), flame, 0, 0.5, 0).scale.set(0.9, 1.5, 0.9);
       break;
     }
@@ -119,6 +119,16 @@ export function buildProp(kind: CharacterHold): Prop | null {
     }
     case 'book': {
       add(new BoxGeometry(0.2, 0.035, 0.28), new MeshStandardMaterial({ color: '#4a2a2a', roughness: 0.8 }), 0, 0, 0);
+      break;
+    }
+    case 'umbrella': {
+      // A pole with a crooked handle and a dome of dark cloth over the person's head (rain worlds).
+      add(new CylinderGeometry(0.011, 0.011, 1.05, 8), iron(), 0, 0.3, 0);
+      add(new SphereGeometry(0.024, 8, 6), wood(), 0, -0.24, 0);
+      const cloth = new MeshStandardMaterial({ color: '#23262e', roughness: 0.75, side: 2 });
+      const dome = add(new SphereGeometry(0.55, 20, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), cloth, 0, 0.8, 0);
+      dome.scale.set(1, 0.42, 1);
+      add(new SphereGeometry(0.018, 6, 6), iron(), 0, 0.99, 0);
       break;
     }
     case 'cup': {

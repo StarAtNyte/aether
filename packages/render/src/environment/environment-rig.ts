@@ -38,7 +38,7 @@ import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } fr
 
 export { MAX_FOG_DENSITY };
 
-const GROUND_SEGMENTS = 64;
+const GROUND_SEGMENTS = 128;
 /** Outer radius of the decorative horizon skirt around the physical ground (inside the camera far plane). */
 export const GROUND_SKIRT_RADIUS = SKY_RADIUS * 2;
 /** The skirt sits slightly below the ground so the two never z-fight where they overlap. */
@@ -67,7 +67,9 @@ const DEFAULT_CONTENT_RADIUS = 20;
 export function groundTint(x: number, z: number): number {
   const a = Math.sin(x * 0.043 + z * 0.021) * 0.5 + Math.sin(x * 0.011 - z * 0.037 + 1.7) * 0.5;
   const b = Math.sin(x * 0.17 + 2.3) * Math.sin(z * 0.13 + 0.7);
-  return 0.97 + a * 0.075 + b * 0.035;
+  // A third, finer octave (about 20 m wavelength) breaks a big lawn into believable patches rather than a few lazy swells.
+  const c = Math.sin(x * 0.29 + z * 0.17 + 4.1) * Math.sin(z * 0.23 - x * 0.11);
+  return 0.97 + a * 0.07 + b * 0.025 + c * 0.025;
 }
 
 /**
@@ -81,7 +83,7 @@ export function groundHue(x: number, z: number): number {
 }
 
 /** Per-channel multipliers of the hue drift at full strength (warm = +, cool = −). */
-const HUE_DRIFT: readonly [number, number, number] = [0.11, 0.04, -0.14];
+const HUE_DRIFT: readonly [number, number, number] = [0.2, 0.07, -0.22];
 
 /**
  * Per-vertex tint (macro variation) and metre UVs (u = x, v = −z) so the

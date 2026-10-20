@@ -252,7 +252,11 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
       const t = wall * steps;
       const strata = (Math.floor(t) + smoothstep(0.55, 1, t - Math.floor(t))) / steps;
       const plateau = 0.78 + 0.22 * (0.5 + 0.5 * n.fbm2(x * freq, z * freq, 3 + Math.round(rough * 3)));
-      return strata * plateau * H;
+      // Weathering: vertical gullies running down the face and crags of a few metres, so a wall is rock and not a smooth ramp of terraces.
+      const gully = n.ridged2(x * 0.045, z * 0.014, 3) - 0.5;
+      const crag = n.fbm2(x * 0.11, z * 0.11, 3);
+      const weather = (gully * 0.05 + crag * 0.025) * wall * smoothstep(0.02, 0.2, wall);
+      return Math.max(0, strata * plateau + weather) * H;
     },
     color(t, _h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.2, z * 0.2);

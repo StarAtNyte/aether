@@ -157,8 +157,8 @@ export const GENERATED_LIBRARY: CharacterLibrary = {
  "motions": [
   {
    "gender": "male",
-   "file": "c/motions-male.6abfab55.glb",
-   "bytes": 2314896,
+   "file": "c/motions-male.81d7d7b9.glb",
+   "bytes": 2315028,
    "hip": 0.895,
    "clips": [
     {
@@ -676,8 +676,8 @@ export const GENERATED_LIBRARY: CharacterLibrary = {
   },
   {
    "gender": "female",
-   "file": "c/motions-female.8e2e2850.glb",
-   "bytes": 2274076,
+   "file": "c/motions-female.7eae0659.glb",
+   "bytes": 2274208,
    "hip": 0.919,
    "clips": [
     {

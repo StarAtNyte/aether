@@ -24,7 +24,7 @@ function piece(api: InternalApi, mesh: Mesh, color: string, material: MaterialSp
 /** Window (frame + glass + sill) on a wall face; `axis` is the outward normal direction. */
 function addWindow(
   api: InternalApi, x: number, y: number, z: number, axis: 'x+' | 'x-' | 'z+' | 'z-',
-  w: number, h: number, trim: string, glass: MaterialSpec,
+  w: number, h: number, trim: string, glass: MaterialSpec, curtain?: string,
 ): void {
   const along = axis[0] === 'z';
   const sign = axis[1] === '+' ? 1 : -1;
@@ -36,7 +36,21 @@ function addWindow(
   // cross mullions
   piece(api, place(api.box(0.05, h, 0.04), 0.09), trim, MAT.wood, 0.05);
   piece(api, place(api.box(w, 0.05, 0.04), 0.09), trim, MAT.wood, 0.05);
+  // A lit window shows a room, not a lit card: curtains drawn part-way at the sides and a pelmet along the head.
+  if (curtain !== undefined) {
+    const cw = w * 0.2;
+    for (const sx of [-1, 1]) piece(api, place(api.box(cw, h * 0.92, 0.03).translate(sx * (w / 2 - cw / 2), 0, 0), 0.075), curtain, MAT.wood, 0.1);
+    piece(api, place(api.box(w, h * 0.16, 0.035), 0.078).translate(0, h * 0.42, 0), curtain, MAT.wood, 0.08);
+  }
 }
+
+/** Deterministic 0..1 hash of a window's position (no use of the generator's random stream, so nothing else shifts). */
+function windowHash(x: number, y: number, z: number, axis: string): number {
+  const t = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + axis.charCodeAt(0) * 4.1 + axis.charCodeAt(1) * 1.7) * 43758.5453;
+  return t - Math.floor(t);
+}
+
+const CURTAINS: readonly string[] = ['#8a3b34', '#3c5a7c', '#c9b48a', '#6d7a4a'];
 
 const house = defineGenerator({
   id: 'house',
@@ -60,7 +74,15 @@ const house = defineGenerator({
     const wallC = p.color('color');
     const roofC = p.color('roofColor');
     const trim = p.color('trimColor');
-    const glass: MaterialSpec = p.bool('lights') ? glow('#ffd98a', 1.2) : { ...MAT.glass };
+    const lights = p.bool('lights');
+    const lit: MaterialSpec = lights ? glow('#ffd98a', 0.95) : { ...MAT.glass };
+    const unlit: MaterialSpec = { ...MAT.glass };
+    // At night about one window in five is dark, and each lit one has its own curtains: a lived-in house, not a row of identical cards.
+    const win = (x: number, y: number, z: number, axis: 'x+' | 'x-' | 'z+' | 'z-', w: number, h: number): void => {
+      const hv = windowHash(x, y, z, axis);
+      const on = lights && hv > 0.2;
+      addWindow(api, x, y, z, axis, w, h, trim, on ? lit : unlit, on ? (CURTAINS[Math.floor(hv * 17) % CURTAINS.length] as string) : undefined);
+    };
     const floorH = 2.8;
     const base = 0.3;
     const wallH = floors * floorH;
@@ -113,10 +135,10 @@ const house = defineGenerator({
     for (let f = 0; f < floors; f++) {
       const y = base + f * floorH + 1.5;
       const front = f === 0 ? (doorX === 0 ? [-W * 0.3, W * 0.3] : [W * 0.2]) : [-W * 0.3, 0, W * 0.3];
-      for (const x of front) addWindow(api, x, y, D / 2, 'z+', ww, wh, trim, glass);
-      for (const x of [-W * 0.25, W * 0.25]) addWindow(api, x, y, -D / 2, 'z-', ww, wh, trim, glass);
-      addWindow(api, W / 2, y, 0, 'x+', ww, wh, trim, glass);
-      addWindow(api, -W / 2, y, 0, 'x-', ww, wh, trim, glass);
+      for (const x of front) win(x, y, D / 2, 'z+', ww, wh);
+      for (const x of [-W * 0.25, W * 0.25]) win(x, y, -D / 2, 'z-', ww, wh);
+      win(W / 2, y, 0, 'x+', ww, wh);
+      win(-W / 2, y, 0, 'x-', ww, wh);
     }
 
     if (variant === 1) {

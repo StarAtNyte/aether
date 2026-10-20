@@ -3482,6 +3482,30 @@ themes because they have no depth (the tool says so); the Kyoto and Seasons flag
 
 **Honest gaps.** The model's judgement is the weakest link: one run's verdicts disagree with the same room the next time, and it sometimes edits a good room into a worse one (a rollback margin limits this, not eliminates it). Rooms still have one rectangle and a gable at most (no hips, no sloping walls); the pd2 four-poster is a mid-room piece the model placed from a distant view and its depth is a guess; patterned throws and a leaf print on cushions are single colours or the floral print at a wall's scale; a palm frond that is described is built, one that is not described is not invented; the TV of the hotel stays a cabinet with a TV rather than the photo's wall bracket; sunlit views through windows are a flat glow, not the street. Firefox was not run for the GPU stills (they use the Chromium path); the photo e2e covers Chromium and Firefox.
 
+## Stage flagaction: action, city and story flagships, first-minute polish
+
+**Scope.** hollow-gate, kart-canyon, neon-rain-city, kyoto-temple, orbital-lab, chain-reaction. Eleven capture rounds (GPU Chromium on the RTX 4090 for rounds 1 to 3, then software-GPU Chromium WebGPU/WebGL2 and Firefox WebGL2, because an unrelated training job took the card's memory from round 4 on; the software path renders the same scene, so look decisions held). Captures are under `~/.local/share/aether/flagaction/r1` to `r10` (before: `r1`; after: `r5` to `r10` and the covers in `docs/screenshots/showcase`). The studio shots read `apps/studio/dist`, so every round rebuilt (`npm run build`) or copied the re-baked worlds into `dist/templates/worlds`.
+
+**Fixed (engine and generators).**
+- Live play stands the spawn point on the floor under it (`CharacterController` option `settleSpawn`, set only by the studio's `Simulation`; headless runs keep the exact document spawn so recorded proofs replay unchanged). The 1 m drop at the Hollow Gate spawn showed the airborne pose, arms thrown out sideways, for as long as the frame took (QA D9, a T-pose on a slow machine). Tests: settles on the floor, keeps a deliberate 4 m drop, settles onto a platform under the spawn, does nothing unless asked.
+- Round primitives scale their facets with their width (`circleSegments`): a 44 m station deck and its 45 m ring were 24-sided polygons.
+- House windows at night: a share of windows dark, curtains and a pelmet at the lit ones, no extra draws from the generator's random stream (so nothing else in a house moves).
+- A code-authored grey wolf (smooth skinned body, idle, walk and run clips, MIT, `scripts/assets/living.ts`) replaces the faceted fox for wolf packs; the other creatures' files were left alone (regenerating them changes their hashes, so only the new entry was merged into the catalog, living and manifest files).
+- `roadRibbon` in the showcase kit: one continuous asphalt mesh with the racing line blended in, and curbs in whole stripes that close around the loop. The row of boxes it replaces left wedges of sand open at every bend of Kart Canyon.
+- Held torches no longer put their point light at the chest (a torch bearer was a white silhouette); the stall lantern no longer lights its own awning.
+- The three racing karts' drivers wear coloured suits (they were near-black silhouettes under the white helmet); they are still a stylised figure, not a Rocketbox person.
+- Lit windows are individual panes with their own strength and tone (Chain Reaction's dusk gradient, Neon Rain City shopfronts with a dim transom, Hollow Gate houses); car lamps are pairs.
+
+**Fixed (worlds).** Kart Canyon scrub follows the canyon's meander (a fixed strip crossed the road), gantry and stands keep the earlier rebuild; Hollow Gate cover shows the stall, the fire, Mira and the guard; Chain Reaction gains a tinkerer and a spawn clear of the columns and is now bot-playable (verified, sealed); Kyoto shrines are gabled with lattice doors, a rope, streamers and an offering box and the halls have shoji lattice; Orbital Lab hull is satin composite, not chrome, and the moon is smooth; steel in Chain Reaction no longer carries the brown finish.
+
+**Verified.** The verified-playable bot wins and the sealed run checks out for hollow-gate, neon-rain-city, kyoto-temple, orbital-lab, chain-reaction (and highland-trail, lantern-isles, painterly-meadow, four-seasons-garden); Kart Canyon is covered by its three-lap drive in `showcasePlaytest.test.ts`. Firefox WebGL2 captures of all six covers render correctly (`SHOT_BROWSER=firefox npx tsx tests/e2e/lookshots.e2e.ts <dir> <slug>...`).
+
+**Security.** No new input paths; the spawn probe is one bounded ray (0.3 m up, 1.8 m total) against the world the player is already in; `circleSegments` is clamped (24 to 96) for any finite or non-finite size; generated meshes are built from constants and capped sample counts (road ribbon about 600 rows). No dependency added.
+
+**Performance.** Chain Reaction +55 small panes and Kart Canyon scrub in 44 strips (was 4) bake to 133 KB and 513 KB; the kart road is two meshes instead of about 300 boxes (fewer draws); wide discs go from 24 to at most 96 facets; the shop panes add about 100 unlit-cost entities to Neon Rain City.
+
+**Honest gaps.** The GPU captures after round 3 are software-GPU; no GPU re-shoot of the final worlds. Orbital Lab's deck is flat grey and the pods read as clean white eggs; Kyoto's lawn is a flat plane with tufts (there is no ground relief option and the temple is placed at y = 0); Hollow Gate's ground is flat; the Kart Canyon grandstand is one tier id (`grandstand-1`) with the rest of the stand not parented to it, so "move the grandstand" moves one terrace; coins are still disc-like at night; people in architecture interiors are another stage's.
+
 ## gpupath: the default Chrome WebGPU path as good as WebGL2
 
 See `docs/WEBGPU.md` for the design, the audit and the frame costs.

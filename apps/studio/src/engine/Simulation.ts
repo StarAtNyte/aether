@@ -980,7 +980,7 @@ export class Simulation {
       const avatarId = findAvatar(world);
       const voxelGame = world.voxel !== undefined && this.voxel !== null && this.voxel.active;
       if (!voxelGame && !avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
-        character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID, feel: CHARACTER_FEEL });
+        character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID, feel: CHARACTER_FEEL, settleSpawn: true });
       }
       const voxel = voxelGame && this.voxel ? await this.voxel.startPlay(world, this.renderer.domElement) : null;
       if (voxelGame) {

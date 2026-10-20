@@ -6,6 +6,7 @@
 export { probeLevel, type LevelProbe, type LevelObjectiveReach, type LevelReachAnswer } from './agent';
 export { playtest, walkthrough, unsupportedReason, withoutEntities, downsample, PlaytestAbortedError } from './agent';
 export { deriveGoals, touches, winThresholds, entityPosition, type GoalModel, type GoalObjective, type DoorInfo, type HazardZone, type TouchVolume } from './goals';
+export { driveRace, patrolLoops } from './drive';
 export { NavGraph, EdgeKind, jumpHeight, jumpReach, dropReach, type NavParams } from './nav';
 export { Session, STEP, KILL_Y } from './session';
 export { PLAYER_CAPSULE, PLAYER_ID } from './host';

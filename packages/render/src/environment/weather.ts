@@ -290,7 +290,12 @@ export class WeatherSystem {
       if (shape === 'flake') {
         writeTumble(m, k, t * tumble + p, p * 1.7 + t * tumble * 0.6);
       } else {
-        const s = cfg.flicker ? Math.max(0.05, 0.5 + 0.5 * Math.sin(t * 2.3 + p * 3.1)) : 1;
+        let s = cfg.flicker ? Math.max(0.05, 0.5 + 0.5 * Math.sin(t * 2.3 + p * 3.1)) : 1;
+        if (shape === 'streak') {
+          // A drop passing close to the lens would be a metre-long white bar across the frame: shrink the streaks inside ~4 m to nothing at the camera.
+          const dx = x - cx, dy = y - cy, dz = z - cz;
+          s = Math.min(1, Math.max(0, (Math.sqrt(dx * dx + dy * dy + dz * dz) - 0.8) / 3.2));
+        }
         const sx = sizeX * s;
         const sy = sizeY * s;
         m[k] = rx * sx;

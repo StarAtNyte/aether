@@ -6,7 +6,7 @@
  */
 import { r2, type Builder, type V3 } from '../builder';
 import type { MockPlan } from '../planner';
-import { faceToward, finish, flagshipBuilder, glowLantern, onCircle } from './kit';
+import { faceToward, finish, flagshipBuilder, onCircle } from './kit';
 
 /** The pilgrim path: from the gate (south) up the hill to the bell court (north). */
 const PATH: readonly V3[] = [
@@ -19,14 +19,50 @@ const PATH: readonly V3[] = [
   [6, 0, -38],
 ];
 
-/** A temple hall built from parts: stone podium, timber columns, a deep dark roof with flared eaves. */
+const ROOF = { preset: 'stone' as const, finish: 'roof-tile' as const, color: '#2f353c', roughness: 0.55 };
+const TIMBER = { preset: 'wood' as const, finish: 'walnut' as const, color: '#6a2f22' };
+
+/** A stone lantern (tōrō): stepped base, post, glowing firebox, hip cap and finial. Returns the firebox id. */
+function stoneLantern(b: Builder, pos: V3, o: { lit: boolean; scale?: number }): string {
+  const k = o.scale ?? 1;
+  const stone = { preset: 'stone' as const, finish: 'rock' as const, color: '#8b877e' };
+  const root = b.empty('stone-lantern', pos, { name: 'Stone lantern' });
+  b.prim('toro-foot', 'box', [0.62 * k, 0.16 * k, 0.62 * k], [0, 0.08 * k, 0], { parent: root, material: stone, physics: 'static' });
+  b.prim('toro-post', 'cylinder', [0.2 * k, 0.78 * k, 0.2 * k], [0, 0.55 * k, 0], { parent: root, material: stone, physics: 'static' });
+  b.prim('toro-deck', 'box', [0.56 * k, 0.1 * k, 0.56 * k], [0, 0.99 * k, 0], { parent: root, material: stone });
+  const fire = b.prim('toro-fire', 'box', [0.36 * k, 0.34 * k, 0.36 * k], [0, 1.21 * k, 0], { parent: root, material: { preset: 'emissive', color: '#e9d6aa', emissive: '#ffb15c', emissiveIntensity: o.lit ? 2.4 : 0.35 }, castShadow: false });
+  b.prim('toro-cap', 'cone', [0.95 * k, 0.4 * k, 0.95 * k], [0, 1.55 * k, 0], { parent: root, rot: [0, 45, 0], material: stone });
+  b.prim('toro-finial', 'sphere', [0.14 * k, 0.14 * k, 0.14 * k], [0, 1.8 * k, 0], { parent: root, material: stone });
+  if (o.lit) b.light(fire, [0, 0.05, 0], '#ffb15c', 1.8, 8, [{ type: 'pulseLight', params: { min: 1.4, max: 2.1, period: r2(b.rand(2.4, 3.6)), phase: r2(b.rand(0, 1)) } }]);
+  return fire;
+}
+
+/** A temple hall built from parts: stone podium, timber frame with paper screens, and a two-tier tiled hip roof with a ridge ornament. */
 function hall(b: Builder, x: number, z: number, w: number, d: number, yaw: number, name: string): string {
-  const base = b.prim('hall-podium', 'box', [r2(w + 2), 0.8, r2(d + 2)], [x, 0.4, z], { yaw, name, material: { preset: 'stone', color: '#8f8a82' }, physics: 'static', tags: ['hall'] });
-  b.prim('hall-body', 'box', [w, 3.6, d], [0, 2.2, 0], { parent: base, material: { preset: 'wood', color: '#5a2e22' } });
-  b.prim('hall-panels', 'box', [r2(w - 0.4), 2.6, r2(d + 0.06)], [0, 1.9, 0], { parent: base, material: { preset: 'fabric', color: '#f1e3c4', emissive: '#ffcf8a', emissiveIntensity: 0.55 } });
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.prim('hall-column', 'cylinder', [0.45, 3.8, 0.45], [r2(sx * (w / 2 + 0.3)), 2.3, r2(sz * (d / 2 + 0.3))], { parent: base, material: { preset: 'wood', color: '#c0392b' } });
-  b.prim('hall-roof', 'box', [r2(w + 3.4), 0.5, r2(d + 3.4)], [0, 4.35, 0], { parent: base, material: { preset: 'stone', color: '#2c3238', roughness: 0.6 } });
-  b.prim('hall-roof-top', 'cone', [r2(Math.max(w, d) + 2.2), 2.6, r2(Math.max(w, d) + 2.2)], [0, 5.8, 0], { parent: base, rot: [0, 45, 0], scale: [1, 1, r2(d / w)], material: { preset: 'stone', color: '#2c3238', roughness: 0.6, flatShading: true } });
+  const base = b.prim('hall-podium', 'box', [r2(w + 2), 0.9, r2(d + 2)], [x, 0.45, z], { yaw, name, material: { preset: 'stone', finish: 'rock', color: '#8f8a82' }, physics: 'static', tags: ['hall'] });
+  b.prim('hall-body', 'box', [w, 3.6, d], [0, 2.4, 0], { parent: base, material: { preset: 'concrete', finish: 'plaster', color: '#d9cdb4' } });
+  b.prim('hall-panels', 'box', [r2(w - 0.5), 2.5, r2(d + 0.06)], [0, 2.1, 0], { parent: base, material: { preset: 'fabric', color: '#f1e3c4', emissive: '#ffcf8a', emissiveIntensity: 0.65 } });
+  // Timber frame over the paper screens: a beam on top and bottom and a post every ~1.6 m along both long faces.
+  for (const dz of [-1, 1]) {
+    b.prim('hall-beam', 'box', [r2(w + 0.3), 0.3, 0.3], [0, 3.5, r2(dz * (d / 2 + 0.05))], { parent: base, material: TIMBER });
+    b.prim('hall-sill', 'box', [r2(w + 0.3), 0.25, 0.3], [0, 0.95, r2(dz * (d / 2 + 0.05))], { parent: base, material: TIMBER });
+    const n = Math.max(3, Math.round(w / 1.6));
+    for (let k = 0; k <= n; k++) b.prim('hall-post', 'box', [0.24, 2.7, 0.24], [r2(-w / 2 + (w * k) / n), 2.2, r2(dz * (d / 2 + 0.05))], { parent: base, material: TIMBER });
+  }
+  // Kumiko lattice over the paper screens (three rails and three slim muntins in every bay), so they read as shoji and not as lit cards.
+  const LATTICE = { preset: 'wood' as const, color: '#4a2418', roughness: 0.7 };
+  for (const dz of [-1, 1]) {
+    for (const y of [1.55, 2.1, 2.65]) b.prim('hall-rail', 'box', [r2(w - 0.4), 0.045, 0.05], [0, y, r2(dz * (d / 2 + 0.07))], { parent: base, material: LATTICE, castShadow: false });
+    const bays = Math.max(3, Math.round(w / 1.6));
+    for (let k = 0; k < bays; k++) {
+      for (const f of [1 / 3, 2 / 3]) b.prim('hall-muntin', 'box', [0.04, 1.6, 0.05], [r2(-w / 2 + (w * (k + f)) / bays), 2.1, r2(dz * (d / 2 + 0.07))], { parent: base, material: LATTICE, castShadow: false });
+    }
+  }
+  for (const dx of [-1, 1]) b.prim('hall-beam-end', 'box', [0.3, 0.3, r2(d + 0.3)], [r2(dx * (w / 2 + 0.05)), 3.5, 0], { parent: base, material: TIMBER });
+  // Lower eave and the main hip roof above it, with a ridge beam and a golden finial.
+  b.prim('hall-eave', 'box', [r2(w + 3.6), 0.35, r2(d + 3.6)], [0, 4.35, 0], { parent: base, material: ROOF });
+  b.prim('hall-roof-top', 'cone', [r2(Math.max(w, d) + 3.2), 2.8, r2(Math.max(w, d) + 3.2)], [0, 6.0, 0], { parent: base, rot: [0, 45, 0], scale: [1, 1, r2(d / w)], material: ROOF });
+  b.prim('hall-finial', 'sphere', [0.28, 0.4, 0.28], [0, 7.7, 0], { parent: base, material: { preset: 'gold', finish: 'brass', color: '#c8a24a' } });
   return base;
 }
 
@@ -42,7 +78,7 @@ export function kyotoTemple(): MockPlan {
     weather: 'rain',
     bloom: 1.2,
     exposure: 1.1,
-    ground: { material: { preset: 'grass', color: '#4d6a3c', roughness: 0.9 }, size: 260 },
+    ground: { material: { preset: 'grass', finish: 'grass', color: '#617f48', roughness: 0.9 }, size: 260 },
   });
 
   // --- The path, the torii tunnel and the lanterns --------------------------------------------
@@ -51,7 +87,7 @@ export function kyotoTemple(): MockPlan {
     const c = PATH[i + 1] as V3;
     const len = Math.hypot(c[0] - a[0], c[2] - a[2]);
     const yaw = faceToward(a[0], a[2], c[0], c[2]);
-    b.prim('stone-path', 'box', [3.4, 0.08, r2(len + 1.2)], [r2((a[0] + c[0]) / 2), 0.04, r2((a[2] + c[2]) / 2)], { yaw, material: { preset: 'stone', color: '#7d776d', roughness: 0.35 }, castShadow: false, tags: ['path'] });
+    b.prim('stone-path', 'box', [3.4, 0.08, r2(len + 1.2)], [r2((a[0] + c[0]) / 2), 0.04, r2((a[2] + c[2]) / 2)], { yaw, material: { preset: 'stone', finish: 'cobble', color: '#7a766f', roughness: 0.4 }, castShadow: false, tags: ['path'] });
     // Torii every ~2.4 m along the first three legs: the famous tunnel.
     if (i < 3) {
       const n = Math.floor(len / 2.4);
@@ -66,7 +102,7 @@ export function kyotoTemple(): MockPlan {
       const mz = (a[2] + c[2]) / 2;
       const nx = -(c[2] - a[2]) / len;
       const nz = (c[0] - a[0]) / len;
-      for (const side of [-1, 1]) glowLantern(b, [r2(mx + nx * 2.6 * side), 0, r2(mz + nz * 2.6 * side)], '#ffb15c', { height: 1.2, lit: side > 0, shade: '#f3e2c0' });
+      for (const side of [-1, 1]) stoneLantern(b, [r2(mx + nx * 2.6 * side), 0, r2(mz + nz * 2.6 * side)], { lit: side > 0 });
     }
   }
 
@@ -79,7 +115,18 @@ export function kyotoTemple(): MockPlan {
   ];
   chapters.forEach((ch, i) => {
     const shrine = b.prim('shrine', 'box', [1.6, 1.4, 1.2], [ch.at[0], 0.7, ch.at[2]], { name: `Shrine ${i + 1}`, material: { preset: 'wood', color: '#6b3a2a' }, physics: 'static', tags: ['shrine'] });
-    b.prim('shrine-roof', 'cone', [2.4, 0.9, 2], [0, 1.15, 0], { parent: shrine, rot: [0, 45, 0], material: { preset: 'stone', color: '#2c3238', flatShading: true } });
+    // A small gabled shrine (hokora): stone plinth, lattice doors between two posts, a tiled gable, a rope with paper streamers and an offering box.
+    const TILE = { preset: 'stone' as const, finish: 'roof-tile' as const, color: '#2c3238', roughness: 0.55 };
+    b.prim('shrine-plinth', 'box', [2.1, 0.22, 1.7], [0, -0.59, 0], { parent: shrine, material: { preset: 'stone', finish: 'rock', color: '#8f8a82' } });
+    for (const sx of [-1, 1]) b.prim('shrine-post', 'box', [0.12, 1.4, 0.12], [sx * 0.8, 0, 0.62], { parent: shrine, material: TIMBER });
+    b.prim('shrine-door', 'box', [1.3, 1.05, 0.04], [0, -0.08, 0.62], { parent: shrine, material: { preset: 'fabric', color: '#f1e3c4', emissive: '#ffcf8a', emissiveIntensity: 0.45 }, castShadow: false });
+    for (const bx of [-0.22, 0.22]) b.prim('shrine-muntin', 'box', [0.04, 1.05, 0.05], [bx, -0.08, 0.65], { parent: shrine, material: TIMBER, castShadow: false });
+    for (const by of [-0.28, 0.12]) b.prim('shrine-rail', 'box', [1.3, 0.04, 0.05], [0, by, 0.65], { parent: shrine, material: TIMBER, castShadow: false });
+    for (const sz of [-1, 1]) b.prim('shrine-roof', 'box', [2.5, 0.09, 1.05], [0, 1.12, sz * 0.46], { parent: shrine, rot: [sz * 27, 0, 0], material: TILE });
+    b.prim('shrine-ridge', 'box', [2.56, 0.12, 0.16], [0, 1.43, 0], { parent: shrine, material: TILE });
+    b.prim('shrine-rope', 'cylinder', [0.05, 1.5, 0.05], [0, 0.55, 0.72], { parent: shrine, rot: [0, 0, 90], material: { preset: 'fabric', color: '#d9cfae', roughness: 0.95 }, castShadow: false });
+    for (const px of [-0.45, 0, 0.45]) b.prim('shrine-shide', 'box', [0.1, 0.22, 0.012], [px, 0.42, 0.73], { parent: shrine, material: { preset: 'fabric', color: '#f5f1e6', roughness: 0.9 }, castShadow: false });
+    b.prim('shrine-offering-box', 'box', [0.8, 0.45, 0.4], [0, -0.48, 1.25], { parent: shrine, material: TIMBER, physics: 'static' });
     const lamp = b.prim('shrine-lantern', 'box', [0.5, 0.6, 0.5], [r2(ch.at[0] + 1.3), 1.1, ch.at[2]], {
       name: `Shrine lantern ${i + 1}`,
       material: { preset: 'emissive', color: '#5a4636', emissive: '#ffb15c', emissiveIntensity: 0.05 },
@@ -148,6 +195,8 @@ export function kyotoTemple(): MockPlan {
     else if (roll < 0.5) tree('tree-oak', { height: r2(b.rand(5, 7)), color: '#c2402a', density: 7, variant: 2 }, x, z);
     else tree('tree-pine', { height: r2(b.rand(9, 14)), color: '#2b4a35', tiers: 6, variant: 1 }, x, z);
   }
+  // Fallen blossom on the grass under the cherries.
+  b.scatter('fallen-blossom', 'flowers', { size: 0.35, color: '#f4b6c8' }, 220, [70, 90], [0, 0, -2], { minSpacing: 0.8, scaleRange: [0.6, 1.2] });
   b.scatter('moss', 'grass-tuft', { size: 0.45, color: '#5f7f3a', blades: 12 }, 1400, [80, 110], [0, 0, -2], { minSpacing: 0.9, scaleRange: [0.7, 1.4] });
   b.scatter('mossy-rocks', 'rock', { size: 1.2, color: '#7d7468', mossy: true, variant: 0 }, 60, [80, 110], [0, 0, -2], { minSpacing: 4, scaleRange: [0.5, 1.4] });
   for (let i = 0; i < 7; i++) {

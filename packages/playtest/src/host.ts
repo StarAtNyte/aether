@@ -49,6 +49,8 @@ export class PlaytestHost implements LogicHost {
   /** Called when a pickup toggles visibility (respawning collectibles). */
   onVisible: ((id: EntityId, visible: boolean) => void) | null = null;
   yawDeg = 0;
+  /** The entity the player drives (vehicle worlds); `undefined` when the player is the capsule. */
+  controlled: EntityId | undefined;
 
   constructor(
     private readonly pw: PhysicsWorld,
@@ -179,7 +181,7 @@ export class PlaytestHost implements LogicHost {
   }
 
   playerId(): EntityId | undefined {
-    return PLAYER_ID;
+    return this.controlled ?? PLAYER_ID;
   }
 
   getBounds(id: EntityId): { min: Vec3; max: Vec3 } | undefined {

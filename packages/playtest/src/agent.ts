@@ -26,6 +26,7 @@
 import { validateWorld, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
 import { PhysicsWorld, entityBounds, yieldToHost, type Aabb } from '@aether/physics';
 import { deriveGoals, inRegion, needsHold, touches, winThresholds, type DoorInfo, type GoalModel, type GoalObjective } from './goals';
+import { driveRace } from './drive';
 import { PLAYER_CAPSULE } from './host';
 import { EdgeKind, NavGraph, airThrust, type RideInfo, doorFitRadius, doorSlack, jumpHeight, type NavParams, type NavPortal } from './nav';
 import { hashWorld } from './proof';
@@ -209,6 +210,9 @@ export async function walkthrough(input: WorldDoc, opts: PlaytestOptions = {}): 
   const bot = new Bot(input, opts, 'walkthrough');
   return bot.run();
 }
+
+/** Longest stretch (simulated seconds) the bot lets a world with nothing left to do run on, to see whether it wins by itself. */
+const PASSIVE_RUN_SECONDS = 120;
 
 class Bot {
   private readonly t0 = nowMs();
@@ -397,6 +401,11 @@ class Bot {
   async run(): Promise<PlaytestReport> {
     const verdict = validateWorld(this.world);
     if (!verdict.ok) return this.base('inconclusive', 'The world is not valid, so it cannot be played yet.', { findings: [{ code: 'budget', severity: 'error', message: 'the world document is invalid', entities: [], hint: 'fix the validation errors first' }] });
+    if (this.kind === 'game' && this.world.player.mode === 'vehicle') {
+      // A circuit: drive the racing line the world draws for its pace cars, if it draws one.
+      const drove = await driveRace(this.world, this.opts, this.t0);
+      if (drove) return drove;
+    }
     const why = unsupportedReason(this.world);
     if (why) {
       return this.base('unsupported', `The bot cannot play this world: ${why}.`, { findings: [{ code: 'unsupported', severity: 'info', message: why, entities: [], hint: 'none' }] });
@@ -1253,6 +1262,12 @@ class Bot {
     if (!this.stopped && this.pending.size === 0 && !s.over && this.goals.winDefined) {
       this.note = 'waiting for the game to end';
       await this.idle(2);
+      // A machine that runs itself (a chain of physics machines, a countdown nobody can speed up) has nothing for the player to
+      // collect or reach: the player only starts it, so let the world run on, up to a bounded stretch of simulated time, and see whether it wins by itself.
+      if (this.totalObjectives === 0) {
+        const until = Math.min(this.maxSim, s.time + PASSIVE_RUN_SECONDS);
+        while (!this.stopped && !s.over && s.time < until) if (!(await this.idle(0.5))) break;
+      }
     }
   }
 

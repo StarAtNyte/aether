@@ -57,7 +57,7 @@ export function chainReaction(): MockPlan {
     bloom: 0.95,
     exposure: 1.05,
     weather: 'clear',
-    ground: { material: { finish: 'concrete', color: '#c9c4bd' }, size: 220 },
+    ground: { material: { preset: 'dirt', finish: 'gravel', color: '#8c8576', roughness: 0.95 }, size: 220 },
   });
   // The stage: a long timber deck with a neon edge.
   b.prim('stage', 'box', [80, 0.3, 16], [0, 0.15, -1], { name: 'Workshop stage', material: { finish: 'oak', color: '#c69c6d' }, physics: { body: 'static', friction: 0.6 }, tags: ['stage'] });
@@ -235,13 +235,59 @@ export function chainReaction(): MockPlan {
   b.rule({ id: 'finale', when: { on: 'state', key: 'machines', op: '>=', value: 5 }, then: [{ do: 'sound', sound: 'win' }, { do: 'win', text: 'Five machines, one chain reaction. Press R to watch it again.' }], once: true });
   b.rule({ id: 'reset-key', when: { on: 'key', key: 'r' }, then: [{ do: 'reset' }] });
 
-  // Workshop dressing: lights over every machine, crates and a tool bench behind.
+  // Workshop dressing: a brick back wall with factory windows, steel roof girders, pendant lamps over every machine and a bench with tools.
+  const STEEL = { preset: 'metal' as const, color: '#2b3340', roughness: 0.42, metalness: 0.7 };
+  b.prim('workshop-wall', 'box', [86, 9.5, 0.5], [0, r2(S + 4.75), -8.95], { name: 'Workshop wall', material: { preset: 'brick', finish: 'brick', color: '#a05f4a' }, physics: 'static' });
+  b.prim('wall-plinth', 'box', [86, 0.9, 0.7], [0, r2(S + 0.45), -8.8], { material: { preset: 'concrete', finish: 'concrete', color: '#8f8a80' }, physics: 'static' });
+  for (const sx of [-1, 1]) b.prim('workshop-end', 'box', [0.5, 9.5, 17], [sx * 43, r2(S + 4.75), -0.5], { material: { preset: 'brick', finish: 'brick', color: '#a05f4a' }, physics: 'static' });
   XS.forEach((x, i) => {
     b.light(b.empty('machine-light', [x, 7.5, 2]), [0, 0, 0], '#fff1dc', 2.2, 16);
-    b.prim('backdrop-panel', 'box', [13, 5, 0.2], [x, r2(S + 2.5), -8.6], { material: { preset: 'plastic', color: i % 2 ? '#2b2d42' : '#33364d', roughness: 0.8 }, physics: 'static' });
-    b.prim('backdrop-stripe', 'box', [13, 0.16, 0.06], [x, r2(S + 4.6), -8.45], { material: { preset: 'neon', color: COLORS[i] as string, emissive: COLORS[i] as string, emissiveIntensity: 1.6 }, castShadow: false });
+    // A tall factory window over each machine: warm evening light behind a steel grid.
+    // Twelve panes, each its own dusk tone (warm at the sill, rosy towards the head) and strength, so the glass reads as glass and not as one lit card.
+    for (let col = 0; col < 4; col++) {
+      for (let row = 0; row < 3; row++) {
+        const jit = ((i * 7 + col * 5 + row * 3) % 5) / 5;
+        const tone = [['#ffd9a0', '#ffb25c'], ['#ffcf9c', '#ff9d5c'], ['#f6c3b4', '#e98a78']][row] as [string, string];
+        b.prim('window-glow', 'box', [1.1, 1.1, 0.1], [r2(x - 1.875 + col * 1.25), r2(S + 3.4 + row * 1.2), -8.66], { material: { preset: 'emissive', color: tone[0], emissive: tone[1], emissiveIntensity: r2(0.28 + jit * 0.4 + row * 0.06) }, castShadow: false });
+      }
+    }
+    for (let k = 0; k <= 4; k++) b.prim('window-bar', 'box', [0.1, 3.8, 0.16], [r2(x - 2.5 + k * 1.25), r2(S + 4.6), -8.58], { material: STEEL, castShadow: false });
+    for (let k = 0; k <= 3; k++) b.prim('window-bar', 'box', [5.2, 0.1, 0.16], [x, r2(S + 2.8 + k * 1.2), -8.58], { material: STEEL, castShadow: false });
+    b.prim('window-sill', 'box', [5.6, 0.18, 0.5], [x, r2(S + 2.7), -8.55], { material: { preset: 'concrete', color: '#8f8a80' }, castShadow: false });
+    b.prim('backdrop-stripe', 'box', [13, 0.16, 0.06], [x, r2(S + 7.6), -8.64], { material: { preset: 'neon', color: COLORS[i] as string, emissive: COLORS[i] as string, emissiveIntensity: 1.6 }, castShadow: false });
+    // A roof girder over the machine with a pendant lamp.
+    b.prim('girder', 'box', [0.4, 0.6, 17], [x, 9.4, -0.5], { material: STEEL, castShadow: false });
+    b.prim('girder-flange', 'box', [1.1, 0.12, 17], [x, 9.7, -0.5], { material: STEEL, castShadow: false });
+    b.prim('lamp-cord', 'cylinder', [0.03, 1.4, 0.03], [x, 8.6, 2], { material: STEEL, castShadow: false });
+    b.prim('lamp-shade', 'cone', [1.3, 0.7, 1.3], [x, 7.6, 2], { material: { preset: 'metal', color: '#3b4a3d', roughness: 0.4 }, castShadow: false });
+    b.prim('lamp-bulb', 'sphere', [0.3, 0.3, 0.3], [x, 7.35, 2], { material: { preset: 'emissive', color: '#fff1dc', emissive: '#ffe2b5', emissiveIntensity: 3 }, castShadow: false });
   });
-  b.player({ mode: 'orbit', spawn: [0, 12, 24] });
+  // Steel columns along the open front carry the girders, and a polished-concrete apron runs out from the stage.
+  for (const x of [-40, -24, -8, 8, 24, 40]) {
+    b.prim('column', 'box', [0.5, 9.6, 0.5], [x, r2(S + 4.8), 7.9], { material: STEEL, physics: 'static' });
+    b.prim('column-foot', 'box', [1.1, 0.4, 1.1], [x, r2(S + 0.2), 7.9], { material: { preset: 'concrete', finish: 'concrete', color: '#8f8a80' }, physics: 'static' });
+  }
+  b.prim('front-beam', 'box', [86, 0.5, 0.4], [0, 9.55, 7.9], { material: STEEL, castShadow: false });
+  b.prim('apron', 'box', [90, 0.2, 14], [0, 0.1, 14.3], { name: 'Apron', material: { preset: 'concrete', finish: 'concrete', color: '#a09b90' }, physics: { body: 'static', friction: 0.7 }, castShadow: false });
+  for (let x = -40; x <= 40; x += 8) b.prim('purlin', 'box', [8.4, 0.2, 0.2], [r2(x), 9.9, -8.2], { material: STEEL, castShadow: false });
+  // A tool bench and shelf against the back wall between the machines.
+  for (const bx of [-22.5, 7.5]) {
+    b.prim('bench-top', 'box', [3.2, 0.1, 1], [bx, r2(S + 1), -7.6], { material: { preset: 'wood', finish: 'walnut', color: '#8a5a36' }, physics: 'static' });
+    for (const lx of [-1.4, 1.4]) b.prim('bench-leg', 'box', [0.12, 1, 0.8], [r2(bx + lx), r2(S + 0.5), -7.6], { material: STEEL, physics: 'static' });
+    b.asset('toolbox', 'crate', [r2(bx - 0.8), r2(S + 1.05), -7.6], { fitSize: 0.45, physics: 'static' });
+    b.asset('anvil', 'anvil', [r2(bx + 0.9), r2(S + 1.05), -7.6], { fitSize: 0.5, physics: 'static' });
+  }
+  // The tinkerer who built the machines stands beside the first one and tells you how to start the chain; she keeps clear of the route along the stage.
+  b.prim('tinkerer', 'capsule', [0.56, 1.7, 0.56], [-12.8, r2(S + 0.85), 3.4], {
+    name: 'Ines the tinkerer',
+    yaw: 134,
+    character: { wardrobe: 'worker', gender: 'female', top: '#c8873a', bottom: '#3b4350', mood: 'cheerful', hold: 'book', scale: 1 },
+    physics: 'kinematic',
+    behaviors: [{ type: 'npc', params: { name: 'Ines', persona: 'a cheerful inventor proud of her five machines', lines: ['Five machines, one push. Press Space and watch them go.', 'The dominoes wake the marble, the marble wakes the wrecking ball.', 'Press R and I will set it all up again.'], greetRadius: 4.5, talkInterval: 5, wander: false } }],
+    tags: ['npc'],
+  });
+  // Facing along the stage (+X), so the first thing a player sees is the row of machines, not the back wall.
+  b.player({ mode: 'thirdPerson', spawn: [-16, 0.5, 6.5], moveSpeed: 6, yaw: -90 });
 
   return finish(b, {
     name: 'Chain Reaction',

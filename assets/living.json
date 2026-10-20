@@ -1342,6 +1342,143 @@
      "run"
     ]
    }
+  },
+  {
+   "id": "grey-wolf",
+   "name": "Wolf (grey)",
+   "kind": "model",
+   "category": "animals",
+   "tags": [
+    "grey",
+    "wolf",
+    "wolves",
+    "pack",
+    "howl",
+    "predator",
+    "canine",
+    "hound",
+    "hunter",
+    "forest",
+    "night",
+    "beast",
+    "wildlife",
+    "animal",
+    "animated",
+    "realistic",
+    "modelled",
+    "skinned",
+    "dog",
+    "puppy",
+    "animals"
+   ],
+   "style": "realistic",
+   "pack": "aether-creatures",
+   "size": [
+    0.401,
+    0.997,
+    2.027
+   ],
+   "tris": 10344,
+   "bytes": 322672,
+   "file": "m/grey-wolf.e7b49b25.glb",
+   "lods": [],
+   "collider": {
+    "type": "hull",
+    "points": [
+     -11,
+     3,
+     -44,
+     -11,
+     1,
+     -39,
+     -3,
+     52,
+     99,
+     -4,
+     83,
+     -100,
+     -20,
+     64,
+     36,
+     -3,
+     54,
+     100,
+     -3,
+     84,
+     -100,
+     -8,
+     100,
+     -70,
+     -2,
+     57,
+     100,
+     -9,
+     2,
+     -44,
+     -9,
+     0,
+     -40,
+     0,
+     52,
+     101,
+     0,
+     83,
+     -101,
+     0,
+     54,
+     101,
+     0,
+     85,
+     -100,
+     7,
+     100,
+     -70,
+     1,
+     57,
+     100,
+     11,
+     3,
+     -44,
+     11,
+     1,
+     -40,
+     3,
+     52,
+     99,
+     4,
+     83,
+     -100,
+     20,
+     63,
+     34,
+     3,
+     54,
+     100,
+     3,
+     84,
+     -100,
+     8,
+     100,
+     -70,
+     2,
+     57,
+     100
+    ]
+   },
+   "placement": "floor",
+   "facing": "-z",
+   "source": "scripts/assets/living.ts",
+   "anims": {
+    "idle": "idle",
+    "walk": "walk",
+    "run": "run",
+    "clips": [
+     "idle",
+     "walk",
+     "run",
+     "graze"
+    ]
+   }
   }
  ],
  "assets": [
@@ -1546,6 +1683,23 @@
      "path": "m/butterfly.69ddbef4.glb",
      "sha256": "69ddbef44921f7608a85f402b6164ff023994f97c807447eeaa05405f73fac6f",
      "bytes": 42384
+    }
+   ]
+  },
+  {
+   "id": "grey-wolf",
+   "pack": "aether-creatures",
+   "licence": "MIT",
+   "authors": null,
+   "source": {
+    "archive": "Aether (code-authored)",
+    "path": "scripts/assets/living.ts"
+   },
+   "files": [
+    {
+     "path": "m/grey-wolf.e7b49b25.glb",
+     "sha256": "e7b49b2550318b6b89f6fd38e77476c2fe8dbad1020cda50755cc6d79036570c",
+     "bytes": 322672
     }
    ]
   }

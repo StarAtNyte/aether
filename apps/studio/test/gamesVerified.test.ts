@@ -24,11 +24,10 @@ function savedWorld(slug: string): WorldDoc {
 }
 
 /** Games the bot plays itself: it must win, and its run must seal. */
-const BOT_PLAYS = ['highland-trail', 'lantern-isles', 'hollow-gate', 'neon-rain-city', 'kyoto-temple', 'orbital-lab', 'painterly-meadow', 'four-seasons-garden'] as const;
+const BOT_PLAYS = ['chain-reaction', 'highland-trail', 'lantern-isles', 'hollow-gate', 'neon-rain-city', 'kyoto-temple', 'orbital-lab', 'painterly-meadow', 'four-seasons-garden'] as const;
 
 /** Why the bot cannot drive the rest, and what plays them to the end instead. */
 const OTHER_BOTS: Record<string, string> = {
-  'chain-reaction': 'orbit view: showcasePlaytest.test.ts presses Space and waits for the five machines',
   'kart-canyon': 'vehicle: showcasePlaytest.test.ts drives three laps',
   'sakura-river': 'vehicle: showcasePlaytest.test.ts paddles the river',
   blockfall: 'block world: the voxel game tests',
@@ -50,7 +49,7 @@ describe('every featured world has a player that finishes it', () => {
   });
 
   it('the games the table sends to other bots are really unsupported by the verified bot', () => {
-    for (const slug of ['chain-reaction', 'kart-canyon', 'sakura-river', 'blockfall']) expect(unsupportedReason(savedWorld(slug)), slug).not.toBeNull();
+    for (const slug of ['kart-canyon', 'sakura-river', 'blockfall']) expect(unsupportedReason(savedWorld(slug)), slug).not.toBeNull();
   });
 });
 

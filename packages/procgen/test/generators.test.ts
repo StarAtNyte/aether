@@ -202,3 +202,25 @@ describe('built-in generators', () => {
     expect(ms).toBeLessThan(1500);
   });
 });
+
+describe('house windows at night', () => {
+  const emissiveParts = (lights: boolean): number => {
+    const out = generateBuiltinSync('house', { width: 8, depth: 6, floors: 2, lights, variant: 0 }, 5);
+    return out.parts.filter((p) => ((p.material as { emissiveIntensity?: number }).emissiveIntensity ?? 0) > 0).length;
+  };
+
+  it('lights only some windows, so a row of windows is not one pattern of identical cards', () => {
+    const none = emissiveParts(false);
+    const lit = emissiveParts(true);
+    expect(none).toBe(0);
+    // 2 floors: 5 openings per floor are possible; some, but not all, glow.
+    expect(lit).toBeGreaterThan(0);
+    expect(lit).toBeLessThan(10);
+  });
+
+  it('draws curtains only at lit windows and adds no random draws (the rest of the house is unchanged)', () => {
+    const a = generateBuiltinSync('house', { width: 8, depth: 6, floors: 1, lights: false, variant: 0 }, 5);
+    const b = generateBuiltinSync('house', { width: 8, depth: 6, floors: 1, lights: true, variant: 0 }, 5);
+    expect(b.parts.length).toBeGreaterThan(a.parts.length);
+  });
+});

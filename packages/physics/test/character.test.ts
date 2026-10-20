@@ -96,8 +96,46 @@ describe('CharacterController', () => {
     cc.dispose();
     expect(pw.stats().colliders).toBe(before - 1);
     const cc2 = new CharacterController(pw, { radius: 0.3, height: 1.8, spawn: [0, 1, 0] });
+    const standing = cc2.position;
     pw.dispose();
     cc2.dispose();
-    expect(cc2.move(IDLE, DT, 5, 6)).toEqual([0, 1, 0]);
+    expect(cc2.move(IDLE, DT, 5, 6)).toEqual(standing);
+  });
+});
+
+describe('CharacterController spawn settling', () => {
+  const make = async (y: number, extra: Parameters<typeof world>[0] = []) => {
+    const pw = await PhysicsWorld.create(world(extra));
+    live.push(pw);
+    const cc = new CharacterController(pw, { radius: 0.3, height: 1.8, spawn: [0, y, 0], settleSpawn: true });
+    live.push(cc);
+    return { pw, cc };
+  };
+
+  it('does nothing unless asked: the headless spawn is exactly the document spawn', async () => {
+    const pw = await PhysicsWorld.create(world([]));
+    live.push(pw);
+    const cc = new CharacterController(pw, { radius: 0.3, height: 1.8, spawn: [0, 1, 0] });
+    live.push(cc);
+    expect(cc.position).toEqual([0, 1, 0]);
+  });
+
+  it('stands a spawn point that hangs a little above the floor on the floor, so the game does not open with a drop', async () => {
+    const { pw, cc } = await make(1);
+    expect(cc.position[1]).toBeLessThan(0.1);
+    frames(pw, cc, 2, IDLE);
+    expect(cc.grounded).toBe(true);
+    expect(cc.verticalSpeed).toBeGreaterThan(-1);
+  });
+
+  it('keeps a deliberately high drop', async () => {
+    const { cc } = await make(4);
+    expect(cc.position[1]).toBe(4);
+  });
+
+  it('settles onto a platform under the spawn, not through it to the floor', async () => {
+    const { cc } = await make(1.2, [box('plat', [0, 0.5, 0], [4, 1, 4])]);
+    expect(cc.position[1]).toBeGreaterThan(0.9);
+    expect(cc.position[1]).toBeLessThan(1.1);
   });
 });

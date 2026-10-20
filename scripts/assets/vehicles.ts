@@ -715,9 +715,9 @@ async function encode(nio: NodeIO, doc: Document): Promise<Uint8Array> {
 /** Every design this script ships. */
 export function designs(): Design[] {
   return [
-    kart('go-kart', 'Racing kart', '#d7263d', '#f2f2f2', '#1e2630'),
-    kart('go-kart-blue', 'Racing kart (blue)', '#1b6fd1', '#ffd23f', '#242a33'),
-    kart('go-kart-yellow', 'Racing kart (yellow)', '#f2b705', '#d7263d', '#2a2f38'),
+    kart('go-kart', 'Racing kart', '#d7263d', '#f2f2f2', '#2f5fb0'),
+    kart('go-kart-blue', 'Racing kart (blue)', '#1b6fd1', '#ffd23f', '#d9d3c4'),
+    kart('go-kart-yellow', 'Racing kart (yellow)', '#f2b705', '#d7263d', '#3b7d4f'),
     raceCar('race-car', 'Race car', '#1b98e0', '#f4f4f2', '#ffd23f', '#1b2330'),
     raceCar('race-car-yellow', 'Race car (yellow)', '#ffd23f', '#16181c', '#d7263d', '#1b2330'),
     ...CARS.map(roadCar),

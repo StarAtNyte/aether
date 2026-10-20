@@ -40,8 +40,8 @@ export function neonRainCity(): MockPlan {
   });
 
   // --- Streets ------------------------------------------------------------------------------
-  b.prim('avenue', 'box', [AVE * 2, 0.04, 220], [0, 0.02, 0], { name: 'Avenue', material: { finish: 'asphalt', color: '#23262e', roughness: 0.5 }, castShadow: false });
-  b.prim('cross-street', 'box', [200, 0.04, CROSS * 2], [0, 0.022, 0], { name: 'Cross street', material: { finish: 'asphalt', color: '#23262e', roughness: 0.5 }, castShadow: false });
+  b.prim('avenue', 'box', [AVE * 2, 0.04, 220], [0, 0.02, 0], { name: 'Avenue', material: { finish: 'asphalt', color: '#1d2028', roughness: 0.3 }, castShadow: false });
+  b.prim('cross-street', 'box', [200, 0.04, CROSS * 2], [0, 0.022, 0], { name: 'Cross street', material: { finish: 'asphalt', color: '#1d2028', roughness: 0.3 }, castShadow: false });
   for (let z = -104; z <= 104; z += 8) {
     if (Math.abs(z) < CROSS + 2) continue;
     b.prim('lane-mark', 'box', [0.18, 0.05, 3.2], [0, 0.03, z], { material: { preset: 'emissive', color: '#e8e0c8', emissive: '#c9c2aa', emissiveIntensity: 0.25 }, castShadow: false });
@@ -102,6 +102,28 @@ export function neonRainCity(): MockPlan {
     if (i < 6) b.light(sign, [facingAve ? -sx * 1.2 : 0, -2, facingAve ? 0 : -sz * 1.2], color, 3.2, 16);
     // A glowing strip under the sign's awning.
     b.prim('awning', 'box', facingAve ? [2, 0.12, 6] : [6, 0.12, 2], [r2(facingAve ? t.x - sx * (t.w / 2 + 1) : p[0]), 3.4, r2(facingAve ? p[2] : t.z - sz * (t.d / 2 + 1))], { material: { preset: 'neon', color: NEON[(i * 2 + 3) % NEON.length] as string, emissive: NEON[(i * 2 + 3) % NEON.length] as string, emissiveIntensity: 1.6 }, castShadow: false });
+    // A lit shopfront at street level: a dark frame, a glass pane with the shop's light behind it, a door.
+    const glow = ['#ffcf8a', '#ffb0d0', '#9fe8ff', '#ffe27a'][i % 4] as string;
+    const span = Math.min(9, (facingAve ? t.d : t.w) * 0.7);
+    const fx = facingAve ? r2(t.x - sx * (t.w / 2 + 0.08)) : t.x;
+    const fz = facingAve ? t.z : r2(t.z - sz * (t.d / 2 + 0.08));
+    const dims = (thick: number, h: number, w: number): V3 => (facingAve ? [thick, h, w] : [w, h, thick]);
+    b.prim('shop-frame', 'box', dims(0.2, 3.3, r2(span + 0.5)), [fx, 1.65, fz], { material: { preset: 'metal', color: '#181a1f', roughness: 0.5 }, castShadow: false });
+    // Four panes, each its own strength (a shop is never lit evenly), a warm lower pane and a dim transom band above, so the glass reads as a shop window and not as one lit card.
+    const SHOP_GLOW: ReadonlyArray<readonly [string, string]> = [['#ffb86b', '#ff9a3c'], ['#ff8fb8', '#ff5c98'], ['#7fd8ff', '#3cb8f0'], ['#ffd45c', '#ffb81c']];
+    const [gTone, gEmit] = SHOP_GLOW[i % 4] as readonly [string, string];
+    for (let m = 0; m < 4; m++) {
+      const along = r2(-span / 2 + (span * (m + 0.5)) / 4);
+      const k = ((i * 5 + m * 3) % 4) / 4;
+      b.prim('shop-glass', 'box', dims(0.24, 2.1, r2(span / 4 - 0.06)), [facingAve ? r2(fx - sx * 0.02) : r2(fx + along), 1.25, facingAve ? r2(fz + along) : r2(fz - sz * 0.02)], { material: { preset: 'emissive', color: gTone, emissive: gEmit, emissiveIntensity: r2(0.22 + k * 0.4) }, castShadow: false });
+      b.prim('shop-transom', 'box', dims(0.24, 0.55, r2(span / 4 - 0.06)), [facingAve ? r2(fx - sx * 0.02) : r2(fx + along), 2.72, facingAve ? r2(fz + along) : r2(fz - sz * 0.02)], { material: { preset: 'emissive', color: gTone, emissive: gEmit, emissiveIntensity: r2(0.06 + k * 0.08) }, castShadow: false });
+    }
+    // Light spilling over the pavement in front of the shop.
+    b.prim('shop-spill', 'box', dims(3.2, 0.02, r2(span + 1.5)), [facingAve ? r2(fx - sx * 1.7) : fx, 0.235, facingAve ? fz : r2(fz - sz * 1.7)], { material: { preset: 'emissive', color: glow, emissive: glow, emissiveIntensity: 0.22, opacity: 0.4 }, castShadow: false });
+    // Shelves and a counter silhouetted against the light inside, so the glass shows a shop rather than a lit rectangle.
+    for (const [sy, sh] of [[0.75, 0.06], [1.5, 0.05], [2.25, 0.05]] as const) b.prim('shop-shelf', 'box', dims(0.5, sh, r2(span * 0.8)), [facingAve ? r2(fx + sx * 0.3) : fx, sy, facingAve ? fz : r2(fz + sz * 0.3)], { material: { preset: 'wood', color: '#2b1d14' }, castShadow: false });
+    b.prim('shop-counter', 'box', dims(0.6, 1.0, r2(span * 0.5)), [facingAve ? r2(fx + sx * 0.9) : fx, 0.5, facingAve ? r2(fz + span * 0.1) : r2(fz + sz * 0.9)], { material: { preset: 'wood', color: '#1d140e' }, castShadow: false });
+    for (let m = 1; m < 4; m++) b.prim('shop-mullion', 'box', dims(0.3, 2.8, 0.1), [facingAve ? r2(fx - sx * 0.04) : r2(fx - span / 2 + (span * m) / 4), 1.65, facingAve ? r2(fz - span / 2 + (span * m) / 4) : r2(fz - sz * 0.04)], { material: { preset: 'metal', color: '#181a1f' }, castShadow: false });
   });
 
   // --- Street furniture: lamps, puddles, steam ---------------------------------------------------------
@@ -112,8 +134,17 @@ export function neonRainCity(): MockPlan {
     }
   }
   // Puddles are the asphalt's own: rain fills the low spots of the finish (flat and mirror-like), no extra discs on the road.
-  for (const [x, z] of [[3, 30], [-4, -42], [5, -70], [-2, 60]] as const) {
-    b.gen('steam', 'cloud', { size: 3, color: '#d9d4ff', variant: 1 }, [x, 0.6, z], { castShadow: false, material: { opacity: 0.45, emissive: '#5a4f8a', emissiveIntensity: 0.4 }, behaviors: [{ type: 'bob', params: { amplitude: 0.6, period: 3.2 } }] });
+  // Manholes with a vent grate (the steam is the fog's job; a solid cloud over the road read as a blob).
+  for (const [x, z] of [[3, 30], [-4, -42], [5, -70], [-2, 60]] as const) b.prim('manhole', 'cylinder', [0.9, 0.04, 0.9], [x, 0.05, z], { material: { preset: 'metal', finish: 'black-metal', color: '#2a2c31', roughness: 0.45 }, castShadow: false });
+
+  // Traffic lights at the crossing and a few parked cars at the kerb.
+  for (const [x, z, yaw] of [[AVE + 1.2, CROSS + 1.2, 180], [-AVE - 1.2, -CROSS - 1.2, 0], [AVE + 1.2, -CROSS - 1.2, 90], [-AVE - 1.2, CROSS + 1.2, -90]] as const) {
+    b.asset('traffic-light', 'traffic-light', [x, 0.22, z], { yaw, physics: 'static', footprint: 0.5 });
+  }
+  const parked: Array<[string, number, number, number]> = [['hatchback', AVE - 1.9, 40, 0], ['suv', -AVE + 1.9, 18, 180], ['car', AVE - 1.9, -58, 0], ['van', -AVE + 1.9, -28, 180], ['sports-car', AVE - 1.9, 72, 0]];
+  for (const [model, x, z, yaw] of parked) {
+    b.asset('parked-car', model, [r2(x), 0.04, z], { yaw, physics: 'static', footprint: 2.4, name: 'Parked car' });
+    for (const sx of [-0.6, 0.6]) b.prim('parked-tail', 'box', [0.28, 0.12, 0.08], [r2(x + sx), 0.8, r2(z + (yaw === 0 ? 2.1 : -2.1))], { material: { preset: 'emissive', color: '#c4101c', emissive: '#ff1626', emissiveIntensity: 0.7 }, castShadow: false });
   }
 
   // --- Traffic and people ----------------------------------------------------------------------------
@@ -133,14 +164,17 @@ export function neonRainCity(): MockPlan {
       fallback: { kind: 'procedural', generator: 'car', params: { length: 4.2, color: '#ffd23f' } },
     });
     // Headlights and tail lights.
-    b.prim('headlights', 'box', [1.6, 0.18, 0.1], [0, 0.75, -2.3], { parent: car, material: { preset: 'emissive', color: '#fff6e0', emissive: '#fff6e0', emissiveIntensity: 4 }, castShadow: false });
-    b.prim('taillights', 'box', [1.6, 0.16, 0.1], [0, 0.8, 2.3], { parent: car, material: { preset: 'emissive', color: '#ff2e3c', emissive: '#ff2e3c', emissiveIntensity: 3 }, castShadow: false });
+    // Lamps in pairs at the corners (a lit bar across the whole width reads as a strip of tape, not as lights).
+    for (const sx of [-0.62, 0.62]) {
+      b.prim('headlight', 'box', [0.3, 0.16, 0.1], [sx, 0.75, -2.3], { parent: car, material: { preset: 'emissive', color: '#fff6e0', emissive: '#fff6e0', emissiveIntensity: 4 }, castShadow: false });
+      b.prim('taillight', 'box', [0.3, 0.13, 0.1], [sx, 0.8, 2.3], { parent: car, material: { preset: 'emissive', color: '#a00d18', emissive: '#ff1220', emissiveIntensity: 0.75 }, castShadow: false });
+    }
   });
   const coats = ['#2b2f3a', '#8c2f39', '#2f5d8c', '#c9a227', '#3d6b4f', '#6b3f8c', '#1d1d24', '#b5651d'] as const;
   coats.forEach((coat, i) => {
     const side = i % 2 ? 1 : -1;
     // Real pedestrians from the cast in rain coats (the capsule is only the collider).
-    b.prim('pedestrian', 'capsule', [0.56, 1.7, 0.56], [r2(side * (AVE + 2.5)), 0.22 + 0.85, r2(-60 + i * 16)], { character: { wardrobe: i % 4 === 3 ? 'worker' : 'casual', gender: i % 2 ? 'female' : 'male', top: coat, mood: i % 3 === 0 ? 'tired' : 'neutral', hold: i % 4 === 1 ? 'bag' : 'none' }, behaviors: [{ type: 'patrol', params: { waypoints: [[0, 0, -12], [0, 0, 12]], relative: true, speed: r2(b.rand(1.1, 1.5)), mode: 'pingpong', wait: 1, face: true } }], physics: { body: 'kinematic', sensor: true }, tags: ['pedestrian'] });
+    b.prim('pedestrian', 'capsule', [0.56, 1.7, 0.56], [r2(side * (AVE + 2.5)), 0.22 + 0.85, r2(-60 + i * 16)], { character: { wardrobe: i % 4 === 3 ? 'worker' : 'casual', gender: i % 2 ? 'female' : 'male', top: coat, mood: i % 3 === 0 ? 'tired' : 'neutral', hold: i % 4 === 1 ? 'bag' : i % 2 === 0 ? 'umbrella' : 'none' }, behaviors: [{ type: 'patrol', params: { waypoints: [[0, 0, -12], [0, 0, 12]], relative: true, speed: r2(b.rand(1.1, 1.5)), mode: 'pingpong', wait: 1, face: true } }], physics: { body: 'kinematic', sensor: true }, tags: ['pedestrian'] });
   });
 
   // --- The game: five neon cats -------------------------------------------------------------------------

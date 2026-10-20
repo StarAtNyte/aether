@@ -462,8 +462,9 @@ export class Builder {
       out.push({ op: 'setMeta', ...(this.metaName !== undefined ? { name: this.metaName } : {}), ...(this.metaDescription !== undefined ? { description: this.metaDescription } : {}) });
     }
     if (Object.keys(this.envSet).length > 0) out.push({ op: 'setEnvironment', set: { ...this.envSet } });
-    if (Object.keys(this.playerSet).length > 0) out.push({ op: 'setPlayer', set: { ...this.playerSet } });
+    // The player settings come after the entities: `controls` names one, and a plan longer than one tool call is cut into chunks.
     out.push(...this.meshPatches, ...this.entities, ...this.extra);
+    if (Object.keys(this.playerSet).length > 0) out.push({ op: 'setPlayer', set: { ...this.playerSet } });
     for (const [key, value] of this.stateSet) out.push({ op: 'setState', key, value });
     if (this.hudList.length > this.keptHud) out.push({ op: 'setHud', hud: [...this.hudList] });
     out.push(...this.rules, ...this.tests);

@@ -166,6 +166,15 @@ export function fallbackOutput(reason: string): GeneratorOutput {
 }
 
 /**
+ * Facets around a round primitive: 24 for anything hand-sized, more for wide discs (a 44 m station deck or a 30 m pond
+ * with 24 sides reads as a polygon, not a circle), capped so a huge disc stays cheap.
+ */
+export function circleSegments(diameter: number): number {
+  if (!(diameter > 8)) return 24;
+  return Math.min(96, Math.max(24, Math.ceil((diameter * 2) / 4) * 4));
+}
+
+/**
  * Primitive shapes through the same output path. Size semantics follow the
  * World IR: box = (w, h, d); sphere diameter = size[0]; cylinder/cone/capsule
  * diameter = size[0], height = size[1]; torus outer diameter = size[0], tube
@@ -190,15 +199,16 @@ export function primitiveOutput(shape: PrimitiveShape, material?: MaterialSpec):
       api.collider(boxCollider(0, 0, 0, sx, sy, sz));
       break;
     case 'sphere':
-      api.add(api.sphere(sx / 2, 4), mat);
+      // Big spheres (moons, planets, domes) get more facets: 24 columns read as a golf ball past a few metres across.
+      api.add(api.sphere(sx / 2, sx > 12 ? 6 : sx > 3 ? 5 : 4), mat);
       api.collider({ kind: 'sphere', radius: sx / 2, offset: [0, 0, 0] });
       break;
     case 'cylinder':
-      api.add(api.cylinder(sx / 2, sx / 2, sy, 24), mat);
+      api.add(api.cylinder(sx / 2, sx / 2, sy, circleSegments(sx)), mat);
       api.collider({ kind: 'cylinder', radius: sx / 2, halfHeight: sy / 2, offset: [0, 0, 0] });
       break;
     case 'cone': {
-      api.add(api.cone(sx / 2, sy, 24), mat);
+      api.add(api.cone(sx / 2, sy, circleSegments(sx)), mat);
       const pts: number[] = [0, sy / 2, 0];
       for (let k = 0; k < 16; k++) {
         const a = (k / 16) * Math.PI * 2;
@@ -217,7 +227,7 @@ export function primitiveOutput(shape: PrimitiveShape, material?: MaterialSpec):
     case 'torus': {
       const tube = Math.min(sy / 2, sx / 4);
       const R = Math.max(tube * 0.25, sx / 2 - tube);
-      api.add(api.torus(R, tube, 16, 32), mat);
+      api.add(api.torus(R, tube, tube < 0.5 ? 12 : 16, circleSegments(sx + 8) + 8), mat);
       const n = 12;
       for (let k = 0; k < n; k++) {
         const a = ((k + 0.5) / n) * Math.PI * 2;

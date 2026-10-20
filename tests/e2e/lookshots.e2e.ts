@@ -10,8 +10,8 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium, type Page } from 'playwright';
-import { CHROME_ARGS, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
+import { chromium, firefox, type Browser, type Page } from 'playwright';
+import { CHROME_ARGS, FIREFOX_PREFS, SKIP_FIRST_RUN, findChrome, findFirefox, startServer } from './support/env';
 import { COVER_CAMERAS } from './support/showcase-cameras';
 
 const [outDir, ...specs] = process.argv.slice(2);
@@ -69,10 +69,16 @@ function setCam(page: Page, pos: readonly number[], target: readonly number[]): 
 async function main(): Promise<void> {
   mkdirSync(outDir!, { recursive: true });
   const server = await startServer(log);
-  const browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: process.env['SHOT_HEADED'] !== '1' });
+  // `SHOT_BROWSER=firefox` runs the shots in Firefox on WebGL2.
+  const browser: Browser =
+    process.env['SHOT_BROWSER'] === 'firefox'
+      ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } })
+      : await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: process.env['SHOT_HEADED'] !== '1' });
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     await ctx.addInitScript(SKIP_FIRST_RUN);
+    // `SHOT_BACKEND=webgpu|webgl2` pins the renderer backend (default: the studio's own choice).
+    if (process.env['SHOT_BACKEND']) await ctx.addInitScript(`try { localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ backend: '${process.env['SHOT_BACKEND']}' })); } catch {}`);
     if (process.env['SHOT_WATER']) await ctx.addInitScript(`globalThis.__WATER_TIER = '${process.env['SHOT_WATER']}';`);
     const page = await ctx.newPage();
     page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
@@ -84,6 +90,7 @@ async function main(): Promise<void> {
       const [slug = '', mode = 'cover'] = spec.split(':');
       log(`${spec}`);
       await open(page, server.url, slug);
+      log(`  backend: ${(await page.evaluate(() => document.body.innerText.match(/WebGPU|WebGL2/)?.[0] ?? 'unknown'))}`);
       if (process.env['SHOT_JS']) await page.evaluate(process.env['SHOT_JS']);
       if (mode === 'play') {
         await page.evaluate(() => void window.__aether?.studio.togglePlay());
@@ -116,10 +123,15 @@ async function main(): Promise<void> {
         await page.waitForTimeout(2500);
         await shoot(page, join(outDir!, `${slug}-${sky}-${hour}${custom ? '-up' : ''}.png`));
       } else if (mode.includes('>')) {
-        const [a = '', b = ''] = mode.split('>');
-        await setCam(page, a.split(',').map(Number), b.split(',').map(Number));
-        await page.waitForTimeout(Number(process.env['SHOT_SETTLE'] ?? 2500));
-        await shoot(page, join(outDir!, `${slug}-cam${++camNo}.png`));
+        // One or more explicit cameras on the same loaded world: `px,py,pz>tx,ty,tz[#label]` joined by `|`.
+        const cams = spec.slice(slug.length + 1).split('|');
+        for (const [n, camSpec] of cams.entries()) {
+          const [pose = '', label = cams.length > 1 ? String(n + 1) : ''] = camSpec.split('#');
+          const [a = '', b = ''] = pose.split('>');
+          await setCam(page, a.split(',').map(Number), b.split(',').map(Number));
+          await page.waitForTimeout(Number(process.env['SHOT_SETTLE'] ?? 2500));
+          await shoot(page, join(outDir!, `${slug}-cam${label ? `-${label}` : ''}.png`));
+        }
       } else {
         const cam = COVER_CAMERAS[slug];
         if (cam) {

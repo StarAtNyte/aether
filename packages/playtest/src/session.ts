@@ -43,6 +43,8 @@ export class Session {
   private recording: boolean;
   private yaw = 0;
   private readonly scripts: ScriptRunner | undefined;
+  /** The driven entity of a vehicle world (the trace follows it instead of the capsule). */
+  private driven: EntityId | undefined;
 
   private constructor(
     readonly world: WorldDoc,
@@ -120,6 +122,43 @@ export class Session {
     if (this.recording) this.sample();
   }
 
+  /**
+   * Hand the controls to a vehicle: the player is `id` from now on, the bot's capsule is parked far below the world (it never
+   * collides with anything) and the replay trace follows the vehicle.
+   */
+  drive(id: EntityId): void {
+    this.driven = id;
+    this.host.controlled = id;
+    this.character.teleport([0, -30, 0]);
+  }
+
+  /** The driven vehicle's position and heading (degrees, 0 faces −Z), or undefined when nothing is driven. */
+  get vehicle(): { position: Vec3; yawDeg: number; speed: number } | undefined {
+    if (!this.driven) return undefined;
+    const t = this.host.getTransform(this.driven);
+    if (!t) return undefined;
+    const q = t.quaternion;
+    const fx = -(2 * (q[0] * q[2] + q[3] * q[1]));
+    const fz = -(1 - 2 * (q[0] * q[0] + q[1] * q[1]));
+    const v = this.host.getVelocity(this.driven);
+    return { position: [t.position[0], t.position[1], t.position[2]], yawDeg: (Math.atan2(-fx, -fz) * 180) / Math.PI, speed: v ? v[0] * fx + v[2] * fz : 0 };
+  }
+
+  /** One fixed tick of a driven vehicle: `throttle` (−1 brake/reverse … 1) and `steer` (−1 left … 1 right). */
+  driveTick(throttle: number, steer: number): void {
+    if (this.over || !this.driven) return;
+    const events = this.pw.stepFixed();
+    const s = this.input;
+    s.forward = throttle;
+    s.right = steer;
+    s.jump = false;
+    s.keys = NO_KEYS;
+    this.runtime.tick(STEP, s, events);
+    this.time += STEP;
+    this.steps++;
+    if (this.recording) this.sample();
+  }
+
   /** Idle for `seconds` of simulated time. */
   idle(seconds: number): void {
     const n = Math.max(1, Math.round(seconds / STEP));
@@ -132,16 +171,18 @@ export class Session {
       this.recording = false;
       return;
     }
-    const p = this.character.position;
-    this.frames.push(p[0], p[1], p[2], this.yaw);
+    const v = this.vehicle;
+    const p = v ? v.position : this.character.position;
+    this.frames.push(p[0], p[1], p[2], v ? v.yawDeg : this.yaw);
     this.nextSample += this.traceDt;
   }
 
   /** Force a final sample (so the replay ends exactly where the run did). */
   finishTrace(): PlaytestTrace | undefined {
     if (this.frames.length < TRACE_STRIDE * 2 && !this.over && this.time === 0) return undefined;
-    const p = this.character.position;
-    if (this.frames.length / TRACE_STRIDE < PLAYTEST_LIMITS.MAX_TRACE_FRAMES) this.frames.push(p[0], p[1], p[2], this.yaw);
+    const v = this.vehicle;
+    const p = v ? v.position : this.character.position;
+    if (this.frames.length / TRACE_STRIDE < PLAYTEST_LIMITS.MAX_TRACE_FRAMES) this.frames.push(p[0], p[1], p[2], v ? v.yawDeg : this.yaw);
     const frames = this.frames.length / TRACE_STRIDE;
     if (frames < 2) return undefined;
     return { dt: this.traceDt, frames, poses: Float32Array.from(this.frames), events: this.events.slice() };

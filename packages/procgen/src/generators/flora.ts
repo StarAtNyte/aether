@@ -296,7 +296,7 @@ const treeBroadleaf = defineGenerator({
       return api.build();
     }
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * (blossoming ? 0.13 : 0.1), h: H * (blossoming ? 0.13 : 0.1) }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
+    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * (blossoming ? 0.1 : 0.1), h: H * (blossoming ? 0.1 : 0.1) }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage(blossoming ? 'blossom' : 'broadleaf'));

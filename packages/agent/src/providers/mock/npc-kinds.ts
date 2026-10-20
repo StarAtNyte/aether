@@ -38,7 +38,7 @@ export const NPC_KINDS: readonly NpcKind[] = [
   { id: 'bandit', label: 'bandit', re: /\b(?:bandits?|thieves?|thief|raiders?|outlaws?|brigands?|robbers?)\b/, archetype: 'guard', faction: 'bandits', look: 'human', coat: '#6b2d2d', models: ['bandit', 'thief', 'man'], packSize: 3, names: ['Rook', 'Vex', 'Snare', 'Grim'] },
   { id: 'guard', label: 'guard', re: /\b(?:guards?|sentr(?:y|ies)|watch ?(?:man|men)|soldiers?|knights?|gate ?keepers?|wardens?|patrol ?(?:man|men)|police ?(?:man|men|officers?|women|woman))\b/, archetype: 'guard', faction: 'watch', look: 'human', coat: '#3d5a80', models: ['guard', 'soldier', 'knight', 'police', 'man'], packSize: 2, names: ['Bram', 'Hugo', 'Marek', 'Tess', 'Orla', 'Dain'] },
   { id: 'merchant', label: 'shopkeeper', re: /\b(?:shop ?keepers?|merchants?|vendors?|traders?|sellers?|store ?keepers?|shop owners?|salesm[ae]n|innkeepers?|bar ?keeps?|blacksmiths?|bakers?|stall ?holders?|pedlars?|peddlers?)\b/, archetype: 'merchant', faction: 'village', look: 'human', coat: '#8c5a3c', models: ['shopkeeper', 'merchant', 'woman'], packSize: 1, names: ['Mira', 'Osric', 'Pell', 'Tamsin', 'Wick'] },
-  { id: 'wolf', label: 'wolf', re: /\b(?:wolf ?packs?|wolf|wolves|hyenas?|jackals?|coyotes?|predators?|lions?|bears?|tigers?|panthers?|foxes|fox|beasts?)\b/, archetype: 'predator', faction: 'wolves', look: 'wolf', coat: '#6b6f78', models: ['wolf', 'dog', 'fox'], packSize: 4, names: [] },
+  { id: 'wolf', label: 'wolf', re: /\b(?:wolf ?packs?|wolf|wolves|hyenas?|jackals?|coyotes?|predators?|lions?|bears?|tigers?|panthers?|foxes|fox|beasts?)\b/, archetype: 'predator', faction: 'wolves', look: 'wolf', coat: '#6b6f78', models: ['grey-wolf', 'wolf', 'dog', 'fox'], packSize: 4, names: [] },
   { id: 'deer', label: 'deer', re: /\b(?:deer|rabbits?|hares?|gazelles?|prey|stags?)\b/, archetype: 'prey', faction: 'deer', look: 'deer', coat: '#a8754a', models: ['deer', 'rabbit'], packSize: 3, names: [] },
   { id: 'monster', label: 'monster', re: /\b(?:monsters?|zombies?|ghouls?|skeletons?|goblins?|orcs?|undead|ogres?|trolls?|demons?)\b/, archetype: 'predator', faction: 'monsters', look: 'human', coat: '#4f7a45', models: ['zombie', 'monster', 'goblin'], packSize: 3, names: [] },
   { id: 'dog', label: 'dog', re: /\b(?:dogs?|puppy|puppies|hounds?|pups?)\b/, archetype: 'follower', faction: 'friends', look: 'wolf', coat: '#a67c52', models: ['dog'], packSize: 1, names: ['Pip', 'Rex', 'Biscuit', 'Scout', 'Moss'] },
@@ -306,7 +306,7 @@ export function placeNpc(b: Builder, kind: NpcKind, x: number, z: number, o: Bui
     const entry = kind.models.map((m) => libraryEntry(m)).find((e) => e !== null && e.category === 'animals') ?? null;
     const small = kind.id === 'dog';
     if (entry) {
-      id = b.asset(kind.label, entry.id, [x, 0, z], { ...common, physics: { body: 'kinematic', collider: 'box' }, fallback: { kind: 'primitive', primitive: 'box', size: [0.5, 0.7, 1.2] } });
+      id = b.asset(kind.label, entry.id, [x, 0, z], { ...common, physics: { body: 'kinematic', collider: 'box' }, fallback: { kind: 'primitive', primitive: 'box', size: [0.5, 0.7, 1.2] }, ...(entry.id === 'grey-wolf' ? { fitSize: small ? 1.1 : 1.7 } : {}) });
       return { id, name };
     }
     id = b.prim(kind.label, 'box', [0.5, 0.7, 1.2], [x, small ? 0.32 : 0.45, z], { ...common, ...(small ? { scale: 0.7 } : {}), material: { preset: 'fabric', color: kind.coat } });
@@ -338,7 +338,9 @@ export function addTorch(b: Builder, parent: string, tall = 1.7, held = false): 
     ? b.empty(`${parent}-torch`, [0.38, 0.5, -0.22], { parent, tags: ['torch'] })
     : b.prim(`${parent}-torch`, 'cylinder', [0.06, 0.55, 0.06], [-0.4, tall * 0.55, -0.15], { parent, material: { preset: 'wood', color: '#5a3d2b' }, tags: ['torch'] });
   const flame = b.prim(`${handle}-flame`, 'sphere', held ? [0.04, 0.04, 0.04] : [0.2, 0.28, 0.2], [0, held ? 0 : 0.34, 0], { parent: handle, material: { color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 3 }, tags: ['fire'], castShadow: false });
-  b.light(flame, [0, 0.1, 0], '#ffb066', 2.6, 11, [{ type: 'pulseLight', params: { min: 1.9, max: 3, period: 0.4 } }]);
+  // A held torch's light sits about a metre ahead of and above the hand: closer to the body (inverse-square) it blows the jacket out to a white silhouette.
+  if (held) b.light(flame, [0.3, 0.9, -0.7], '#ffb066', 1.4, 9, [{ type: 'pulseLight', params: { min: 1.0, max: 1.6, period: 0.4 } }]);
+  else b.light(flame, [0, 0.1, 0], '#ffb066', 1.7, 9, [{ type: 'pulseLight', params: { min: 1.3, max: 2, period: 0.4 } }]);
   return flame;
 }
 

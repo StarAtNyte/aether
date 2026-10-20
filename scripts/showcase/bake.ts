@@ -47,7 +47,7 @@ async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeS
   const problems: string[] = [];
   for await (const ev of agent.run(entry.prompt, host)) {
     if (ev.type === 'error') problems.push(`agent error: ${ev.text}`);
-    else if (ev.type === 'patches' && ev.result.errors.length > 0) problems.push(`${ev.result.errors.length} rejected patch(es): ${ev.result.errors[0]?.message ?? ''}`);
+    else if (ev.type === 'patches' && ev.result.errors.length > 0) problems.push(`${ev.result.errors.length} rejected patch(es): ${ev.result.errors.slice(0, 6).map((e) => e.message).join(" | ")}`);
   }
   const world = host.getWorld();
   const valid = validateWorld(world);

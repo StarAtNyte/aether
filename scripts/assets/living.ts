@@ -121,6 +121,53 @@ export const CAT: QuadSpec = {
 };
 
 
+/** A grey wolf: long legs, a deep narrow chest, a long muzzle and a low bushy tail, in a grizzled coat. */
+export const WOLF: QuadSpec = {
+  id: 'grey-wolf',
+  name: 'Wolf (grey)',
+  tags: 'wolf wolves pack howl predator canine hound hunter forest night beast wildlife animal',
+  torso: 0.7,
+  hipHeight: 0.62,
+  backRise: 0.05,
+  torsoWidth: 0.125,
+  rumpDepth: 0.185,
+  waistDepth: 0.165,
+  chestDepth: 0.27,
+  belly: 0.03,
+  neck: 0.3,
+  neckAngle: 0.42,
+  neckR: [0.145, 0.095],
+  head: { skull: [0.14, 0.092, 0.082], muzzle: 0.17, muzzleDrop: 0.14, muzzleW0: 0.78, muzzleW1: 0.58, pitch: -0.18, droop: 0.0 },
+  tail: 0.55,
+  tailRise: -0.22,
+  tailR: [0.06, 0.07, 0.064, 0.038],
+  earX: 0.42,
+  ear: { len: 0.1, width: 0.07, tilt: 0.16, pitch: 0.08 },
+  legSpread: 0.72,
+  foreLeg: [0.22, 0.21, 0.19],
+  hindLeg: [0.23, 0.21, 0.19],
+  hindKnee: 0.5,
+  hindHock: 0.6,
+  toe: 0.06,
+  foreR: [0.07, 0.042, 0.03, 0.026],
+  hindR: [0.082, 0.048, 0.032, 0.026],
+  paw: true,
+  eye: 0.017,
+  noseColor: '#161616',
+  coat: { base: '#77726a', back: '#3f3d3a', belly: '#c4bdae', mask: '#a29b8f', maskAmount: 0.55, legs: '#8a8377', throat: '#d6cfc0', inner: '#3a2f2c', mottle: 0.6, streak: 0.35 },
+  voxel: 0.011,
+  k: 0.09,
+  tris: 9000,
+  swing: 0.55,
+  flex: 0.85,
+  walkSpeed: 1.5,
+  runSpeed: 6,
+  bob: 0.012,
+  gait: 'trot',
+  tailSway: 0.1,
+  grazeDip: 0.6,
+};
+
 const BIRDS: BirdSpec[] = [
   { id: 'bird', name: 'Songbird (robin)', tags: 'robin sparrow finch songbird small bird garden perched flying', body: 0.14, bodyH: 0.04, bodyW: 0.036, head: 0.025, neck: 0.03, beak: 0.02, beakH: 0.008, tail: 0.09, tailW: 0.05, leg: 0.05, legR: 0.0025, span: 0.12, chord: 0.045, tipChord: 0.035, flapHz: 9,
     coat: { back: '#7a6a55', belly: '#e9d6bf', head: '#7a6a55', throat: '#d9672e', wing: '#6d5d49', wingTip: '#4a3e31', tail: '#5c4c3b' }, beakColor: '#2a2420', legColor: '#7a6a5a' },
@@ -147,7 +194,7 @@ const FISH: FishSpec[] = [
 /** Every creature this script ships. */
 export function creatures(): Creature[] {
   const doe: QuadSpec = { ...DEER, id: 'doe', name: 'Deer (doe)', antlers: false, tags: DEER.tags.replace('stag ', 'doe hind fawn '), torso: 0.8, hipHeight: 0.74, neck: 0.36 };
-  return [quadruped(DEER), quadruped(doe), quadruped(CAT), ...BIRDS.map(bird), ...FISH.map(fish), butterfly({ id: 'butterfly', name: 'Butterfly (monarch)', tags: 'monarch moth insect meadow garden flower flying', span: 0.05, base: '#e8761a', edge: '#1a120d', spot: '#f4f0e6', veins: '#1a120d', body: '#1a120d' })];
+  return [quadruped(DEER), quadruped(doe), quadruped(CAT), quadruped(WOLF), ...BIRDS.map(bird), ...FISH.map(fish), butterfly({ id: 'butterfly', name: 'Butterfly (monarch)', tags: 'monarch moth insect meadow garden flower flying', span: 0.05, base: '#e8761a', edge: '#1a120d', spot: '#f4f0e6', veins: '#1a120d', body: '#1a120d' })];
 }
 
 const sha = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex');

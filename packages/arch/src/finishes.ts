@@ -13,7 +13,7 @@ import type { MaterialFinish, MaterialSpec } from '@aether/core';
 
 /** Texture pattern the renderer synthesises for a finish. */
 export type FinishPattern =
-  | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'bricks'
+  | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'granite' | 'bricks'
   | 'weave' | 'velvet' | 'grain-leather' | 'pile' | 'brushed' | 'mirror' | 'glass' | 'frosted' | 'glaze' | 'roof-tiles'
   | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
   | 'leaves' | 'facade' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats';
@@ -72,7 +72,7 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   grass: { color: '#5e8a3c', accent: '#46702b', roughness: 0.95, metalness: 0, tintable: false, tile: 3, pattern: 'turf', bump: 0.3 },
   gravel: { color: '#a59d90', accent: '#7d756a', roughness: 0.95, metalness: 0, tintable: false, tile: 1.5, pattern: 'pebbles', bump: 0.6 },
   bark: { color: '#6a5442', accent: '#4a3a2c', roughness: 0.95, metalness: 0, tintable: false, tile: 1, pattern: 'weave', bump: 0.7 },
-  rock: { color: '#8a857d', accent: '#615d57', roughness: 0.9, metalness: 0, tintable: false, tile: 2.5, pattern: 'flagstone', bump: 0.8 },
+  rock: { color: '#8a857d', accent: '#615d57', roughness: 0.9, metalness: 0, tintable: false, tile: 2.5, pattern: 'granite', bump: 0.8 },
   soil: { color: '#6b5238', accent: '#4a3826', roughness: 1, metalness: 0, tintable: false, tile: 1.5, pattern: 'pebbles', bump: 0.5 },
   snow: { color: '#eef2f6', accent: '#d8e0e8', roughness: 0.8, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.3 },
   sand: { color: '#d3bb8a', accent: '#b89f6e', roughness: 0.97, metalness: 0, tintable: false, tile: 2, pattern: 'plaster', bump: 0.45 },

@@ -84,7 +84,7 @@ export function pickup(b: Builder, base: string, pos: V3, o: { scoreKey: string;
   const id = b.prim(base, o.shape ?? 'sphere', [s, o.shape === 'cylinder' ? s * 0.25 : s, s], pos, {
     name: o.name ?? 'Collectible',
     ...(o.shape === 'cylinder' ? { rot: [90, 0, 0] as V3 } : {}),
-    material: { preset: 'emissive', color: o.color, emissive: o.color, emissiveIntensity: 2.2 },
+    material: { preset: 'emissive', color: o.color, emissive: o.color, emissiveIntensity: 1.5 },
     behaviors: [
       { type: 'spin', params: { axis: o.shape === 'cylinder' ? [0, 0, 1] : [0, 1, 0], speed: 110 } },
       { type: 'bob', params: { amplitude: 0.18, period: 1.8, phase: r2(b.rand(0, 1)) } },
@@ -268,5 +268,309 @@ export function groundRibbon(b: Builder, o: GroundRibbonOptions): string {
   const meshId = `${o.id}-mesh`;
   b.mesh(encodeMesh(meshId, data, { materials: [mat] }));
   b.add({ id: o.id, name: o.name ?? 'Path', shape: { kind: 'mesh', mesh: meshId }, transform: { position: [0, 0, 0] }, castShadow: false, ...(o.tags ? { tags: o.tags } : {}) });
+  return o.id;
+}
+
+/** Options of {@link roadRibbon}. */
+export interface RoadRibbonOptions {
+  /** Entity id of the road (the curbs are `<id>-curbs`). */
+  id: string;
+  name?: string;
+  /** The closed centre line as (x, z) points (any spacing); it is smoothed, so a coarse polygon becomes round bends. */
+  loop: ReadonlyArray<readonly [number, number]>;
+  /** Asphalt width in metres. */
+  width: number;
+  /** Height above the ground (default 0.03). */
+  lift?: number;
+  /** Distance between cross-sections (default 1 m). */
+  step?: number;
+  /** Asphalt tint and the darker rubbered racing line (default `#4f4e4d` / `#34322f`). */
+  asphalt?: string;
+  line?: string;
+  /** Half width of the racing line (default 1.7). */
+  lineHalf?: number;
+  /** Curb width and its two alternating colours (default 0.7 m, red and white). */
+  curbWidth?: number;
+  curbColors?: readonly [string, string];
+  /** Length of one curb stripe (default 2.4 m, adjusted so the stripes close around the loop). */
+  curbRun?: number;
+  tags?: string[];
+}
+
+/** Closed Chaikin corner cutting. */
+function chaikinClosed(pts: ReadonlyArray<readonly [number, number]>, rounds: number): Array<[number, number]> {
+  let cur: Array<[number, number]> = pts.map((p) => [p[0], p[1]]);
+  for (let r = 0; r < rounds; r++) {
+    const next: Array<[number, number]> = [];
+    for (let i = 0; i < cur.length; i++) {
+      const a = cur[i] as [number, number];
+      const c = cur[(i + 1) % cur.length] as [number, number];
+      next.push([a[0] * 0.75 + c[0] * 0.25, a[1] * 0.75 + c[1] * 0.25], [a[0] * 0.25 + c[0] * 0.75, a[1] * 0.25 + c[1] * 0.75]);
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+/**
+ * A race circuit as two meshes instead of a row of boxes: one continuous asphalt strip (mitred through every bend, with the
+ * rubbered racing line blended into its middle) and one strip of red/white curbs whose stripes start and end exactly and close
+ * around the loop. A row of boxes leaves wedges of ground open at every bend and a seam at every joint. Visual only (the terrain
+ * carries the kart). Returns the road and curb entity ids.
+ */
+export function roadRibbon(b: Builder, o: RoadRibbonOptions): { road: string; curbs: string } {
+  const lift = o.lift ?? 0.03;
+  const step = o.step ?? 1;
+  const asphalt = srgb(o.asphalt ?? '#4f4e4d');
+  const line = srgb(o.line ?? '#34322f');
+  const lineHalf = o.lineHalf ?? 1.7;
+  const curbW = o.curbWidth ?? 0.7;
+  const curbCols = (o.curbColors ?? ['#d7263d', '#f5f3ee']).map(srgb);
+  const half = o.width / 2;
+  const pts = chaikinClosed(o.loop, 3);
+  const cum: number[] = [0];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i] as [number, number];
+    const c = pts[(i + 1) % pts.length] as [number, number];
+    cum.push((cum[i] as number) + Math.hypot(c[0] - a[0], c[1] - a[1]));
+  }
+  const total = cum[cum.length - 1] as number;
+  /** Point and unit tangent at distance d along the closed loop. */
+  const at = (d0: number): { x: number; z: number; tx: number; tz: number } => {
+    const d = ((d0 % total) + total) % total;
+    let lo = 0;
+    let hi = pts.length;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if ((cum[mid] as number) <= d) lo = mid;
+      else hi = mid;
+    }
+    const a = pts[lo] as [number, number];
+    const c = pts[(lo + 1) % pts.length] as [number, number];
+    const len = (cum[lo + 1] as number) - (cum[lo] as number) || 1;
+    const t = (d - (cum[lo] as number)) / len;
+    return { x: a[0] + (c[0] - a[0]) * t, z: a[1] + (c[1] - a[1]) * t, tx: (c[0] - a[0]) / len, tz: (c[1] - a[1]) / len };
+  };
+  // Road: even rows around the loop (the last row repeats the first so the strip closes).
+  const rows = Math.max(8, Math.round(total / step));
+  const offsets = [-half, -lineHalf, -lineHalf * 0.55, lineHalf * 0.55, lineHalf, half];
+  const tones = [asphalt, asphalt, line, line, asphalt, asphalt];
+  const pos: number[] = [];
+  const col: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let r = 0; r <= rows; r++) {
+    const d = (r / rows) * total;
+    const p = at(d);
+    // Look a little ahead and behind for the tangent so the mitre is smooth through the bend.
+    const f = at(d + 1.2);
+    const bk = at(d - 1.2);
+    let tx = f.x - bk.x;
+    let tz = f.z - bk.z;
+    const tl = Math.hypot(tx, tz) || 1;
+    tx /= tl;
+    tz /= tl;
+    const nx = -tz;
+    const nz = tx;
+    offsets.forEach((off, j) => {
+      pos.push(p.x + nx * off, lift, p.z + nz * off);
+      const tone = tones[j] as [number, number, number];
+      const grain = 0.9 + 0.1 * Math.sin(d * 1.3 + j * 2.1) * Math.sin(d * 0.37);
+      col.push(tone[0] * grain, tone[1] * grain, tone[2] * grain);
+      uv.push(off / 3, d / 3);
+    });
+  }
+  const W = offsets.length;
+  for (let r = 0; r < rows; r++) {
+    for (let j = 0; j + 1 < W; j++) {
+      const a = r * W + j;
+      const c = a + W;
+      // Seen from above: along the path, across its left normal.
+      idx.push(a, a + 1, c, a + 1, c + 1, c);
+    }
+  }
+  const roadMat: MaterialSpec = { finish: 'asphalt', roughness: 0.8 };
+  const roadMesh = `${o.id}-mesh`;
+  b.mesh(encodeMesh(roadMesh, { positions: new Float32Array(pos), indices: new Uint32Array(idx), colors: new Float32Array(col), uvs: new Float32Array(uv), faceMaterials: null }, { materials: [roadMat] }));
+  b.add({ id: o.id, name: o.name ?? 'Road', shape: { kind: 'mesh', mesh: roadMesh }, transform: { position: [0, 0, 0] }, castShadow: false, ...(o.tags ? { tags: o.tags } : {}) });
+
+  // Curbs: whole stripes, each its own little strip, so every stripe has a clean edge.
+  const stripes = 2 * Math.max(1, Math.round(total / (2 * (o.curbRun ?? 2.4))));
+  const stripeLen = total / stripes;
+  const cpos: number[] = [];
+  const ccol: number[] = [];
+  const cuv: number[] = [];
+  const cidx: number[] = [];
+  const cOff = [-half - curbW, -half, half, half + curbW];
+  const sub = Math.max(1, Math.ceil(stripeLen / 1.2));
+  for (let s = 0; s < stripes; s++) {
+    const tone = curbCols[s % 2] as [number, number, number];
+    const base = cpos.length / 3;
+    for (let m = 0; m <= sub; m++) {
+      const d = s * stripeLen + (m / sub) * stripeLen;
+      const p = at(d);
+      const f = at(d + 1.2);
+      const bk = at(d - 1.2);
+      let tx = f.x - bk.x;
+      let tz = f.z - bk.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      tx /= tl;
+      tz /= tl;
+      const nx = -tz;
+      const nz = tx;
+      cOff.forEach((off, j) => {
+        cpos.push(p.x + nx * off, lift + 0.035, p.z + nz * off);
+        ccol.push(tone[0], tone[1], tone[2]);
+        cuv.push(j, m);
+      });
+    }
+    for (let m = 0; m < sub; m++) {
+      for (const j of [0, 2]) {
+        const a = base + m * 4 + j;
+        const c = a + 4;
+        cidx.push(a, a + 1, c, a + 1, c + 1, c);
+      }
+    }
+  }
+  const curbMat: MaterialSpec = { preset: 'plastic', roughness: 0.6 };
+  const curbMesh = `${o.id}-curbs-mesh`;
+  b.mesh(encodeMesh(curbMesh, { positions: new Float32Array(cpos), indices: new Uint32Array(cidx), colors: new Float32Array(ccol), uvs: new Float32Array(cuv), faceMaterials: null }, { materials: [curbMat] }));
+  b.add({ id: `${o.id}-curbs`, name: 'Curbs', shape: { kind: 'mesh', mesh: curbMesh }, transform: { position: [0, 0, 0] }, castShadow: false, ...(o.tags ? { tags: o.tags } : {}) });
+  return { road: o.id, curbs: `${o.id}-curbs` };
+}
+
+/** Options of {@link planetMesh}. */
+export interface PlanetMeshOptions {
+  id: string;
+  name?: string;
+  /** Centre in world space and radius in metres. */
+  center: V3;
+  radius: number;
+  /** Seed of the continents and clouds. */
+  seed: number;
+  /** Icosphere subdivision (default 5: about 10 000 vertices). */
+  detail?: number;
+  tags?: string[];
+}
+
+/** Deterministic lattice hash in [0, 1). */
+function latticeHash(ix: number, iy: number, iz: number, seed: number): number {
+  let h = Math.imul(ix | 0, 374761393) ^ Math.imul(iy | 0, 668265263) ^ Math.imul(iz | 0, 2147483647) ^ Math.imul(seed | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Smooth 3D value noise in [0, 1). */
+function valueNoise3(x: number, y: number, z: number, seed: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fy = y - iy;
+  const fz = z - iz;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const sz = fz * fz * (3 - 2 * fz);
+  const h = (dx: number, dy: number, dz: number): number => latticeHash(ix + dx, iy + dy, iz + dz, seed);
+  const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+  return lerp(
+    lerp(lerp(h(0, 0, 0), h(1, 0, 0), sx), lerp(h(0, 1, 0), h(1, 1, 0), sx), sy),
+    lerp(lerp(h(0, 0, 1), h(1, 0, 1), sx), lerp(h(0, 1, 1), h(1, 1, 1), sx), sy),
+    sz,
+  );
+}
+
+function fbm3(x: number, y: number, z: number, seed: number, octaves: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let f = 1;
+  let norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * valueNoise3(x * f, y * f, z * f, seed + o * 31);
+    norm += amp;
+    amp *= 0.5;
+    f *= 2.02;
+  }
+  return sum / norm;
+}
+
+/**
+ * A planet as one painted mesh: an icosphere whose vertex colours carry ocean depth, continents, ice caps and a cloud layer
+ * (noise on the unit sphere, so there is no seam and no texture to stretch over a 500 m ball). Backdrop only: no collider.
+ */
+export function planetMesh(b: Builder, o: PlanetMeshOptions): string {
+  const level = Math.max(2, Math.min(5, o.detail ?? 5));
+  // Icosahedron, subdivided with a midpoint cache.
+  const t = (1 + Math.sqrt(5)) / 2;
+  const verts: V3[] = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map((v) => {
+    const l = Math.hypot(v[0] as number, v[1] as number, v[2] as number);
+    return [(v[0] as number) / l, (v[1] as number) / l, (v[2] as number) / l] as V3;
+  });
+  let faces: Array<[number, number, number]> = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+  for (let s = 0; s < level; s++) {
+    const cache = new Map<number, number>();
+    const mid = (a: number, c: number): number => {
+      const key = a < c ? a * 100003 + c : c * 100003 + a;
+      const hit = cache.get(key);
+      if (hit !== undefined) return hit;
+      const p = verts[a] as V3;
+      const q = verts[c] as V3;
+      const m: V3 = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
+      const l = Math.hypot(m[0], m[1], m[2]);
+      verts.push([m[0] / l, m[1] / l, m[2] / l]);
+      cache.set(key, verts.length - 1);
+      return verts.length - 1;
+    };
+    const next: Array<[number, number, number]> = [];
+    for (const [a, c, d] of faces) {
+      const ab = mid(a, c);
+      const cd = mid(c, d);
+      const da = mid(d, a);
+      next.push([a, ab, da], [c, cd, ab], [d, da, cd], [ab, cd, da]);
+    }
+    faces = next;
+  }
+  const lin = (hex: string): [number, number, number] => srgb(hex);
+  const deep = lin('#0d2f6b');
+  const shallow = lin('#2b72b8');
+  const grass = lin('#4a7a3a');
+  const dry = lin('#a28d58');
+  const rock = lin('#6f675e');
+  const ice = lin('#eef3f7');
+  const cloud = lin('#fbfcff');
+  const mixc = (a: [number, number, number], c: [number, number, number], k: number): [number, number, number] => [a[0] + (c[0] - a[0]) * k, a[1] + (c[1] - a[1]) * k, a[2] + (c[2] - a[2]) * k];
+  const positions = new Float32Array(verts.length * 3);
+  const colors = new Float32Array(verts.length * 3);
+  verts.forEach((v, i) => {
+    positions[i * 3] = v[0] * o.radius;
+    positions[i * 3 + 1] = v[1] * o.radius;
+    positions[i * 3 + 2] = v[2] * o.radius;
+    // Slightly more land than ocean-only noise would give, so a view of the planet shows coast and continent, not just sea.
+    const land = fbm3(v[0] * 2.1 + 5, v[1] * 2.1, v[2] * 2.1, o.seed, 6) + 0.06;
+    let c: [number, number, number];
+    if (land < 0.5) c = mixc(deep, shallow, Math.min(1, Math.max(0, (land - 0.3) / 0.2)));
+    else if (land < 0.53) c = mixc(shallow, dry, (land - 0.5) / 0.03);
+    else if (land < 0.62) c = mixc(grass, dry, Math.min(1, Math.max(0, (land - 0.53) / 0.09 + 0.25 * (fbm3(v[0] * 9, v[1] * 9, v[2] * 9, o.seed + 7, 3) - 0.5))));
+    else c = mixc(dry, rock, Math.min(1, (land - 0.62) / 0.1));
+    const lat = Math.abs(v[1]);
+    const iceK = Math.min(1, Math.max(0, (lat - 0.82) / 0.1 + 0.4 * (fbm3(v[0] * 6, v[1] * 6, v[2] * 6, o.seed + 3, 3) - 0.5)));
+    c = mixc(c, ice, iceK);
+    const cl = fbm3(v[0] * 3.2 + 11, v[1] * 3.6, v[2] * 3.2 - 4, o.seed + 19, 5);
+    const clK = Math.min(0.9, Math.max(0, (cl - 0.5) / 0.14));
+    c = mixc(c, cloud, clK);
+    colors[i * 3] = c[0];
+    colors[i * 3 + 1] = c[1];
+    colors[i * 3 + 2] = c[2];
+  });
+  const indices = new Uint32Array(faces.length * 3);
+  faces.forEach((f, i) => {
+    indices[i * 3] = f[0];
+    indices[i * 3 + 1] = f[1];
+    indices[i * 3 + 2] = f[2];
+  });
+  const meshId = `${o.id}-mesh`;
+  b.mesh(encodeMesh(meshId, { positions, indices, colors, uvs: null, faceMaterials: null }, { materials: [{ preset: 'plastic', roughness: 0.85 }] }));
+  b.add({ id: o.id, name: o.name ?? 'Planet', shape: { kind: 'mesh', mesh: meshId }, transform: { position: [o.center[0], o.center[1], o.center[2]] }, castShadow: false, tags: o.tags ?? ['backdrop'] });
   return o.id;
 }

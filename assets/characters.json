@@ -218,9 +218,9 @@
  "motions": [
   {
    "gender": "male",
-   "file": "c/motions-male.6abfab55.glb",
-   "sha256": "6abfab55c5726eeb901e106b0bbcd206ac34b83e43454db59d8c8001c24b73c5",
-   "bytes": 2314896,
+   "file": "c/motions-male.81d7d7b9.glb",
+   "sha256": "81d7d7b94381088609fa9490bd344232329c8a0d734eec2c9c5781a2b18c9f29",
+   "bytes": 2315028,
    "clips": [
     {
      "name": "idle",
@@ -738,9 +738,9 @@
   },
   {
    "gender": "female",
-   "file": "c/motions-female.8e2e2850.glb",
-   "sha256": "8e2e28504335c4cd95a3740f782b8491496d8f64b562e50948730e7d1a7c96aa",
-   "bytes": 2274076,
+   "file": "c/motions-female.7eae0659.glb",
+   "sha256": "7eae0659123846edcab05147b6899b1aa6d28457c8234a64e56fabdf271832c4",
+   "bytes": 2274208,
    "clips": [
     {
      "name": "idle",

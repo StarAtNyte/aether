@@ -397,6 +397,35 @@ const flagstone: Pattern = (f, random, seed) => {
   }
 };
 
+/**
+ * Natural rock face: soft large-scale tone patches, a mid-scale mottling, fine grain and a few thin irregular cracks. No regular
+ * joints (a paving pattern on a boulder reads as crazy paving), so it works on any mesh, boulders and cliffs alike.
+ */
+const granite: Pattern = (f, random, seed) => {
+  const n = f.n;
+  const w = { f1: 0, f2: 0, id: 0 };
+  const big = fbmField(random, n, 4, 4, 4);
+  const mid = fbmField(random, n, 16, 16, 3);
+  const grain = fbmField(random, n, 64, 64, 2);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      worley(seed, 3, x / n, y / n, w);
+      const edge = (w.f2 - w.f1) * (n / 3);
+      // A crack only where two cells almost meet and the mid-scale noise agrees: thin, broken, never a grid.
+      const crack = (1 - joint(edge, 0.7)) * clamp01(((mid[k] as number) - 0.42) * 6);
+      const b = big[k] as number;
+      const m = mid[k] as number;
+      const g = grain[k] as number;
+      f.accent[k] = clamp01(0.3 + (b - 0.5) * 0.8 + (m - 0.5) * 0.4 + (g - 0.5) * 0.3 + crack * 0.35);
+      f.shade[k] = 0.9 + m * 0.18 - crack * 0.2;
+      f.height[k] = clamp01(0.45 + (b - 0.5) * 0.5 + (m - 0.5) * 0.35 + (g - 0.5) * 0.25 - crack * 0.3);
+      f.rough[k] = 1 + (g - 0.5) * 0.25;
+      f.ao[k] = 0.8 + 0.2 * (1 - crack);
+    }
+  }
+};
+
 /** Bricks in running bond: `cols` bricks per row, `rows` courses per tile. */
 function bricks(cols: number, rows: number, mortarPx: number): Pattern {
   return (f, random, seed) => {
@@ -468,7 +497,19 @@ const facade: Pattern = (f, random, seed) => {
       f.rough[k] = pane > 0.5 ? (blind ? 1.4 : 0.22) : frame > 0.5 ? 0.8 : 1.5 + (g - 0.5) * 0.3;
       f.ao[k] = pane > 0.5 ? 0.65 + 0.35 * clamp01(dIn / (14 * px)) : frame > 0.5 ? 0.8 : 1;
       // Every pane may glow; which ones do is decided per window in the shader (world position hash), so the 4 × 4 tile's lit pattern never repeats.
-      lit[k] = pane > 0.5 ? (blind ? 0.5 : 1) : 0;
+      // What the glow shows: a lit room, not a flat pane. Ceiling wash (brightest under the ceiling), furniture dark at the sill,
+      // curtains at the sides, a mullion cross in some panes and drawn blinds as slats.
+      let room = 0;
+      if (pane > 0.5) {
+        const pu = (ix - left) / (right - left);
+        const pv = (iy - top) / (bottom - top);
+        room = 1 - 0.5 * pv;
+        if (cellHash(seed + 77, fx, fy) < 0.5 && pv > 0.7) room *= 0.4 + 0.3 * Math.abs(Math.sin(pu * 7));
+        if (cellHash(seed + 53, fx, fy) < 0.4 && (pu < 0.17 || pu > 0.83)) room *= 0.5;
+        if (Math.abs(pu - 0.5) < 0.018 || (cellHash(seed + 91, fx, fy) < 0.3 && Math.abs(pv - 0.5) < 0.018)) room *= 0.12;
+        if (blind) room = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(pv * Math.PI * 14));
+      }
+      lit[k] = pane * room;
     }
   }
 };
@@ -957,6 +998,7 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   'grid-tiles': gridTiles(4, 1.3),
   subway: gridTiles(4, 1.4, 2, true),
   flagstone,
+  granite,
   bricks: bricks(6, 16, 1.6),
   weave: weave(48, 0.8),
   velvet: pile(64, 0.35),
