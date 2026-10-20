@@ -117,7 +117,9 @@ const SHUTTERS: readonly string[] = ['#5f7563', '#4f6478', '#7a3a32', '#8a8f7a']
 
 /** A sloping roof slab (run along X, length along Z) with u along the eave and v up the slope, in metres. */
 function roofSlab(api: InternalApi, run: number, thick: number, len: number): Mesh {
-  return uvMap(api.box(run, thick, len), (x, y, z, _nx, ny, _nz, out) => {
+  // The top is a finely divided sheet a hair above the slab, so the tint can weather across it (a box face has four corners).
+  const sheet = api.plane(run, len, Math.max(2, Math.round(run * 1.5)), Math.max(2, Math.round(len * 1.5))).translate(0, thick / 2 + 0.004, 0);
+  return uvMap(api.box(run, thick, len).merge(sheet), (x, y, z, _nx, ny, _nz, out) => {
     if (Math.abs(ny) > 0.5) {
       out[0] = z;
       out[1] = -x;
@@ -215,14 +217,35 @@ const house = defineGenerator({
           const z = sz * (D / 2 + out - t / 2 + 0.02);
           for (const fx of [-0.42, 0.42]) fr.merge(api.box(t * 0.8, floorH - t, t * 0.8).translate(W * fx, yc, z));
           // Braces in the outer bays, rising towards the corners.
-          const bw = W * 0.06;
-          const len = Math.hypot(bw * 2, floorH - t);
-          const ang = Math.atan2(floorH - t, bw * 2) * DEG;
-          for (const sx of [-1, 1]) fr.merge(api.box(t * 0.7, len, t * 0.7).rotate(0, 0, sx * (90 - ang)).translate(sx * (W / 2 - bw - 0.14), yc, z + sz * 0.01));
+          // Each brace runs from the corner post to just short of the outermost window's surround.
+          const xa = W / 2 - 0.12;
+          const xb = Math.max(W * 0.3 + 0.7, W / 2 - 0.9);
+          const span = xa - xb;
+          if (span > 0.25) {
+            const len = Math.hypot(span, floorH - t);
+            const ang = Math.atan2(floorH - t, span) * DEG;
+            for (const sx of [-1, 1]) fr.merge(api.box(t * 0.7, len, t * 0.7).rotate(0, 0, sx * (90 - ang)).translate(sx * (xa + xb) / 2, yc, z + sz * 0.01));
+          }
         }
         for (const sx of [-1, 1]) {
           const x = sx * (W / 2 + out - t / 2 + 0.02);
           for (const fz of [-0.3, 0.3]) fr.merge(api.box(t * 0.8, floorH - t, t * 0.8).translate(x, yc, D * fz));
+        }
+        // Rails at sill and head height tie the studs into a grid (they run under and over the windows; the sill rail
+        // stops either side of the front door).
+        const y0 = base + f * floorH;
+        const dX = floors > 1 || W < 4.5 ? 0 : -W * 0.15;
+        for (const ry of [0.82, 2.18]) {
+          for (const sz of [-1, 1]) {
+            const z = sz * (D / 2 + out - t / 2 + 0.02);
+            if (f === 0 && sz > 0 && ry < 1) {
+              const l0 = dX - 0.75 + W / 2;
+              const l1 = W / 2 - (dX + 0.75);
+              if (l0 > 0.2) fr.merge(api.box(l0, t * 0.7, t * 0.7).translate(-W / 2 + l0 / 2, y0 + ry, z));
+              if (l1 > 0.2) fr.merge(api.box(l1, t * 0.7, t * 0.7).translate(W / 2 - l1 / 2, y0 + ry, z));
+            } else fr.merge(api.box(W, t * 0.7, t * 0.7).translate(0, y0 + ry, z));
+          }
+          for (const sx of [-1, 1]) fr.merge(api.box(t * 0.7, t * 0.7, D).translate(sx * (W / 2 + out - t / 2 + 0.02), y0 + ry, 0));
         }
       }
       addFinish(api, fr, 'oak', dark, { variation: 0.08, freq: 3 });
@@ -322,7 +345,7 @@ const house = defineGenerator({
           gutter.merge(api.limb([wx, base + 0.15, z], [wx + sx * 0.12, base + 0.02, z], 0.04, 0.045, 8));
         }
       }
-      addFinish(api, tiles, 'roof-tile', roofC, { uv: 'keep', variation: 0.06, freq: 0.8 });
+      addFinish(api, tiles, 'roof-tile', roofC, { uv: 'keep', variation: 0.11, freq: 0.45 });
       addFinish(api, boards, 'paint', timber ? dark : '#e9e5dc', { variation: 0.03 });
       addFinish(api, gutter, 'brushed-metal', '#8c9196', { variation: 0 });
       addFinish(api, api.cylinder(0.12, 0.12, len + 0.04, 10).rotate(90, 0, 0).translate(0, top + roofH + 0.1, 0), 'roof-tile', shade(roofC, -0.2), { variation: 0.05 });
