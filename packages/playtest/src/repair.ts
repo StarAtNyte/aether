@@ -270,11 +270,60 @@ function repairNarrowDoor(world: WorldDoc, f: Finding): RepairProposal | null {
   return { id: `narrow:${leafId}`, code: 'door_blocked', sentence: `Widened ${name} from ${r2(oldW)} m to ${newW} m so the player's body fits through.`, patches };
 }
 
+/**
+ * Open floor just outside the box `b` (around 0.5 m from a side), nearest the old start: nothing solid there at
+ * body height, and floor (a solid's top or the ground plane) under it. Null when no side has any.
+ */
+function besideSpot(world: WorldDoc, b: Aabb, spawn: Readonly<Vec3>, skip: EntityId): Vec3 | null {
+  const y = b.min[1];
+  const boxes: Aabb[] = [];
+  for (const id in world.entities) {
+    if (id === skip) continue;
+    const e = world.entities[id] as Entity;
+    if (!solid(e)) continue;
+    const eb = entityBounds(world, id);
+    if (eb) boxes.push(eb);
+  }
+  const cx = Math.min(b.max[0], Math.max(b.min[0], spawn[0]));
+  const cz = Math.min(b.max[2], Math.max(b.min[2], spawn[2]));
+  const gap = 0.55;
+  const cands: Vec3[] = [
+    [b.min[0] - gap, y, cz],
+    [b.max[0] + gap, y, cz],
+    [cx, y, b.min[2] - gap],
+    [cx, y, b.max[2] + gap],
+    [(b.min[0] + b.max[0]) / 2, y, b.min[2] - gap],
+    [(b.min[0] + b.max[0]) / 2, y, b.max[2] + gap],
+    [b.min[0] - gap, y, (b.min[2] + b.max[2]) / 2],
+    [b.max[0] + gap, y, (b.min[2] + b.max[2]) / 2],
+  ];
+  cands.sort((p, q) => Math.hypot(p[0] - spawn[0], p[2] - spawn[2]) - Math.hypot(q[0] - spawn[0], q[2] - spawn[2]));
+  const r = 0.4;
+  const ground = world.environment.ground;
+  for (const c of cands) {
+    const over = (o: Aabb): boolean => c[0] > o.min[0] - r && c[0] < o.max[0] + r && c[2] > o.min[2] - r && c[2] < o.max[2] + r;
+    // Something solid where the body would be (above the floor, below head height)?
+    if (boxes.some((o) => over(o) && o.max[1] > y + 0.3 && o.min[1] < y + 1.7)) continue;
+    const under = (o: Aabb): boolean => c[0] >= o.min[0] && c[0] <= o.max[0] && c[2] >= o.min[2] && c[2] <= o.max[2] && Math.abs(o.max[1] - y) < 0.35;
+    const floored = boxes.some(under) || (ground !== null && Math.abs(y) < 0.35 && Math.abs(c[0]) <= ground.size / 2 && Math.abs(c[2]) <= ground.size / 2);
+    if (floored) return [c[0], y + 0.3, c[2]];
+  }
+  return null;
+}
+
 function repairSpawn(world: WorldDoc, f: Finding): RepairProposal | null {
   const inside = f.entities[0];
   const spawn = world.player.spawn;
   if (inside) {
     const b = entityBounds(world, inside);
+    const e = world.entities[inside] as Entity | undefined;
+    // A start inside furniture or a prop goes beside it on the floor (on top of the bed is no place to begin a walk);
+    // only a platform large enough to stand around on keeps the start on top.
+    const sz = b ? size(b) : null;
+    if (b && sz && e && (e.arch?.role === 'furniture' || e.arch?.role === 'fixture' || sz[0] < 4 || sz[2] < 4)) {
+      const beside = besideSpot(world, b, spawn, inside);
+      if (beside) return { id: 'spawn', code: 'spawn_blocked', sentence: `Moved the player start beside ${label(world, inside)}, onto open floor.`, patches: [{ op: 'setPlayer', set: { spawn: [r2(beside[0]), r2(beside[1]), r2(beside[2])] } }] };
+    }
     if (b && !(world.entities[inside] as Entity).locked) {
       const to: Vec3 = [spawn[0], b.max[1] + 0.3, spawn[2]];
       return { id: 'spawn', code: 'spawn_blocked', sentence: `Moved the player start on top of ${label(world, inside)}, out of the solid.`, patches: [{ op: 'setPlayer', set: { spawn: [r2(to[0]), r2(to[1]), r2(to[2])] } }] };

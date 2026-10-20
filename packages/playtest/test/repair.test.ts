@@ -84,6 +84,17 @@ describe('self-repair', () => {
     expect(r.applied[0]?.code).toBe('spawn_blocked');
   }, 90_000);
 
+  it('moves a start that is inside a bed beside it on the floor, not on top of the bed', async () => {
+    const bed: EntityInput = { id: 'bed', name: 'Double bed', shape: { kind: 'primitive', primitive: 'box', size: [1.6, 1.2, 2.1] }, transform: { position: [0, 0.6, 0] }, physics: { body: 'static' } };
+    const world = gameWorld([bed, coin('c', [4, 1, 0])], { rules: [winAt(1)], state: { score: 0 } }, [0.2, 0.05, 0.3]);
+    const r = await selfRepair(world);
+    expect(r.passed, brief(r)).toBe(true);
+    expect(r.applied[0]?.sentence).toMatch(/beside Double bed \(bed\), onto open floor/);
+    const s = r.world.player.spawn;
+    expect(s[1]).toBeLessThan(0.5);
+    expect(Math.abs(s[0]) > 0.8 + 0.3 || Math.abs(s[2]) > 1.05 + 0.3).toBe(true);
+  }, 90_000);
+
   it('gives a countdown the time the bot measured it needs', async () => {
     const world = gameWorld(
       [coin('c1', [20, 1, 0]), coin('c2', [20, 1, 20])],
