@@ -6,8 +6,8 @@
  * Everything is measured on the document: reach comes from the verified-playable bot's walking map,
  * heights from ray casts. Nothing here plays the game: that is the bot's job once the review is done.
  */
-import { entityBounds, PhysicsWorld, type Aabb } from '@aether/physics';
-import { floatingText, measureGrounding } from './grounding';
+import { entityBounds, type Aabb } from '@aether/physics';
+import { floatingText, groundingOf } from './grounding';
 import type { Entity, Vec3, WorldDoc } from '@aether/core';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
@@ -58,13 +58,11 @@ const r2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
  * Objects that should rest on something but hover: an error from half a metre (plainly in the air), a warning
- * below. Measured with rays against the colliders (see grounding.ts); tagged "floating" things are left alone.
+ * below. Measured with rays against the drawn surfaces (see grounding.ts); tagged "floating" things are left alone.
  */
 async function groundingFindings(world: WorldDoc, out: LevelFinding[]): Promise<void> {
-  let pw: PhysicsWorld | null = null;
   try {
-    pw = await PhysicsWorld.create(world, { fixedDt: 1 / 60 });
-    const report = measureGrounding(world, pw);
+    const report = await groundingOf(world);
     const label = (id: string | null): string => {
       if (id === null) return 'the ground';
       const e = world.entities[id];
@@ -84,8 +82,6 @@ async function groundingFindings(world: WorldDoc, out: LevelFinding[]): Promise<
     }
   } catch {
     /* no physics here: grounding is not measured */
-  } finally {
-    pw?.dispose();
   }
 }
 

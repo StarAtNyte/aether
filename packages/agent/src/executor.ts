@@ -6,7 +6,7 @@
  */
 import { loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps, runDesignTool, type DesignToolName } from '@aether/arch';
-import { GeneratorDef, ScriptDef, characterPatches, hasOwn, type PatchError } from '@aether/core';
+import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
@@ -134,10 +134,36 @@ function attachPeople(ctx: ExecutorContext, events: AgentEvent[], editPatches: r
   return `Note: ${applied.applied.length} entit${applied.applied.length === 1 ? 'y' : 'ies'} (${ids}) stood for people without a character; a rigged character was attached. Set "character" yourself to choose the look.`;
 }
 
+/**
+ * The dependents of the objects a raw patch batch moves (see core `carryPatches`): what belongs to a moved
+ * object and is not placed by the batch itself. Raw input; nothing here trusts it beyond reading ids.
+ */
+export function carryDependents(world: WorldDoc, raw: readonly unknown[]): { patches: Patch[]; carried: CarriedDependent[] } {
+  const moved = new Set<string>();
+  const touched = new Set<string>();
+  for (const p of raw) {
+    if (!isPlainObject(p)) continue;
+    const id = typeof p['id'] === 'string' ? p['id'] : undefined;
+    const op = p['op'];
+    if (op === 'update' && id) {
+      touched.add(id);
+      const set = p['set'];
+      if (isPlainObject(set) && Object.keys(set).some((k) => k === 'transform' || k.startsWith('transform.'))) moved.add(id);
+    } else if ((op === 'remove' || op === 'rename') && id) touched.add(id);
+    else if (op === 'add' && isPlainObject(p['entity']) && typeof p['entity']['id'] === 'string') touched.add(p['entity']['id']);
+  }
+  if (moved.size === 0) return { patches: [], carried: [] };
+  const trial = applyPatches(world, raw);
+  return carryPatches(world, trial.world, moved, touched);
+}
+
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
+  // What belongs to a moved object (its light, goal zone, plinth) moves with it unless the batch places it itself.
+  const carry = carryDependents(ctx.host.getWorld(), input.patches);
+  const patches = carry.patches.length > 0 ? [...input.patches, ...carry.patches] : input.patches;
   if (ctx.audit) {
-    const audit = ctx.audit(input.patches);
+    const audit = ctx.audit(patches);
     if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
   }
   const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
@@ -149,9 +175,12 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
       events.push(err ? { type: 'generator', def: d.generator, ok: false, error: err.message } : { type: 'generator', def: d.generator, ok: true });
     }
   }
-  const result = ctx.host.applyPatches(input.patches, message);
+  const result = ctx.host.applyPatches(patches, message);
   events.push({ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } });
-  let content = formatPatchOutcome(result.applied.length, input.patches.length, result.errors, Object.keys(result.world.entities).length);
+  const own = result.errors.filter((e) => e.index < input.patches.length);
+  const carriedOk = carry.carried.filter((_, i) => !result.errors.some((e) => e.index === input.patches.length + i));
+  let content = formatPatchOutcome(result.applied.length - carriedOk.length, input.patches.length, own, Object.keys(result.world.entities).length);
+  if (carriedOk.length > 0) content += `\nMoved with their owner (they belong to it; set their position yourself to place them elsewhere): ${carriedOk.slice(0, 8).map((c) => `${c.id} with ${c.owner}`).join(', ')}${carriedOk.length > 8 ? ', …' : ''}.`;
   const people = attachPeople(ctx, events, result.applied);
   if (people) content += `\n${people}`;
   if (result.notes && result.notes.length > 0) content += `\n${result.notes.slice(0, 4).map((n) => `Note: ${n.slice(0, 400)}`).join('\n')}`;

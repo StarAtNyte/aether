@@ -4,7 +4,7 @@
  * stretched mesh); everything else changes its transform. Moves are relative
  * to the viewer ("left" means the viewer's left).
  */
-import type { Entity, EntityId, Json, ParamSpec, Vec3 } from '@aether/core';
+import { dependencyIndex, type Entity, type EntityId, type Json, type ParamSpec, type Vec3 } from '@aether/core';
 import type { Command, Relation } from './command';
 import { resolveRef } from './resolve';
 import type { SceneItem } from './scene';
@@ -55,6 +55,31 @@ function shift(env: OpEnv, item: SceneItem, d: [number, number, number]): void {
   const l = toLocal(env, ent, d[0], d[1], d[2]);
   const p = ent.transform.position;
   ent.transform.position = [r2(p[0] + l[0]), r2(p[1] + l[1]), r2(p[2] + l[2])];
+}
+
+/**
+ * Move what belongs to the moved items with them (a shrine's light, goal zone and plinth; see core
+ * `dependencyIndex`). Children follow their parent anyway. Returns the dependents moved.
+ */
+function carry(env: OpEnv, items: readonly SceneItem[], d: [number, number, number]): EntityId[] {
+  const deps = dependencyIndex(env.base);
+  const moving = new Set<EntityId>(items.map((i) => i.id));
+  const out: EntityId[] = [];
+  const stack = items.flatMap((i) => deps.dependentsOf(i.id).map((id) => ({ id, parent: i.entity.parent })));
+  while (stack.length > 0 && out.length < 200) {
+    const { id, parent } = stack.pop() as { id: EntityId; parent: EntityId | null };
+    if (moving.has(id)) continue;
+    const e = env.base.entities[id];
+    if (!e || e.parent !== parent || e.locked) continue;
+    moving.add(id);
+    const ent = env.draft.entity(id);
+    const l = toLocal(env, ent, d[0], d[1], d[2]);
+    const p = ent.transform.position;
+    ent.transform.position = [r2(p[0] + l[0]), r2(p[1] + l[1]), r2(p[2] + l[2])];
+    out.push(id);
+    for (const next of deps.dependentsOf(id)) stack.push({ id: next, parent });
+  }
+  return out;
 }
 
 /** True for things that stand on what is under them (not pickups, floating, flying, moving or building pieces). */
@@ -123,6 +148,7 @@ export function planMove(env: OpEnv, cmd: Extract<Command, { op: 'move' }>): OpO
     const dest = destination(env, first, anchor, cmd.to.rel);
     const d: [number, number, number] = [dest[0] - first.pos[0], dest[1] - first.pos[1], dest[2] - first.pos[2]];
     for (const it of items) shift(env, it, d);
+    also.push(...carry(env, items, d));
     // "Onto the hill": the anchor's box top is only a guess at the surface there (a hill's crown, a rock's slope);
     // outdoors the host settles the moved things on the real surface under them. Rooms place by their own rules.
     const onto = (cmd.to.rel === 'above' || cmd.to.rel === 'on') && !anchor.entity.arch ? items.filter((i) => restsOnGround(i.entity)).map((i) => i.id) : [];
@@ -141,14 +167,16 @@ export function planMove(env: OpEnv, cmd: Extract<Command, { op: 'move' }>): OpO
       cz = room.pos[2] + (poly as number[][]).reduce((s, p) => s + (p[1] as number), 0) / poly.length;
     }
     const first = items[0] as SceneItem;
-    for (const it of items) shift(env, it, [cx - first.pos[0], 0, cz - first.pos[2]]);
-    return outcome({ summary: `moved ${describeTargets(items)} to the ${room.label.toLowerCase()}`, targets: items.map((i) => i.id), cosmetic: false });
+    const d: [number, number, number] = [cx - first.pos[0], 0, cz - first.pos[2]];
+    for (const it of items) shift(env, it, d);
+    return outcome({ summary: `moved ${describeTargets(items)} to the ${room.label.toLowerCase()}`, targets: items.map((i) => i.id), cosmetic: false, also: carry(env, items, d) });
   }
   if (!cmd.direction) return failed('I did not catch which way to move it');
   const d = worldDelta(env, cmd.direction, cmd.metres);
   for (const it of items) shift(env, it, d);
+  also.push(...carry(env, items, d));
   const dist = cmd.metres < 1 ? `${Math.round(cmd.metres * 100)} cm` : `${r2(cmd.metres)} m`;
-  return outcome({ summary: `moved ${describeTargets(items)} ${dist} ${cmd.direction}`, targets: items.map((i) => i.id), cosmetic: false });
+  return outcome({ summary: `moved ${describeTargets(items)} ${dist} ${cmd.direction}`, targets: items.map((i) => i.id), cosmetic: false, also });
 }
 
 /** Rotate commands. */

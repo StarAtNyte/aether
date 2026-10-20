@@ -60,6 +60,7 @@ export { slugify, uniqueId, isEntityId } from './ids';
 export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth, streamCourse } from './river';
 
 export { summarizeWorld, type SummaryOptions } from './summary';
+export { dependencyIndex, carryPatches, isSatellite, footprintRadius, type Dependency, type DependencyIndex, type DependencyWhy, type CarriedDependent } from './dependents';
 export { Emitter } from './emitter';
 
 export { findStandIns, VOXEL_PERSON_ASSET_IDS, CUBE_PET_ASSET_IDS, type StandIn, type StandInKind } from './standins';

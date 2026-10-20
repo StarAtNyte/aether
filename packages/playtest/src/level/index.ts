@@ -15,19 +15,19 @@
  *
  * Every input is validated with zod and bounded; nothing is evaluated.
  */
-import { Entity, findWaterBodies, worldTransform, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld, type Patch, type Vec3, type WorldDoc } from '@aether/core';
+import { Entity, carryPatches, dependencyIndex, findWaterBodies, worldTransform, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld, type Patch, type Vec3, type WorldDoc } from '@aether/core';
 import { PhysicsWorld, entityBounds, initPhysics, type Aabb } from '@aether/physics';
 import { z } from 'zod';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
 import { reviewLevel, type LevelReview } from './review';
-import { floatingText, measureGrounding, subtreeBounds, subtreeOf } from './grounding';
+import { floatingText, measureGrounding, shouldRest, subtreeBounds, surfaceWorld } from './grounding';
 
 export { clearProbeCache, probeCacheStats, PROBE_TTL_MS } from './probe-cache';
 export { LIFE_SPECIES, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, type LifePlan, type LifeProbe, type LifeRequest } from '@aether/core';
 export { reviewLevel, scoreLevel, type LevelFinding, type LevelPose, type LevelReview } from './review';
-export { measureGrounding, shouldRest, supportBelow, floatingText, FLOAT_TOLERANCE, type FloatingObject, type GroundingReport } from './grounding';
+export { measureGrounding, groundingOf, surfaceWorld, shouldRest, supportBelow, floatingText, FLOAT_TOLERANCE, type FloatingObject, type GroundingReport } from './grounding';
 
 /** Names of the level tools. */
 export const LEVEL_TOOL_NAMES = ['query_level', 'place_level_items'] as const;
@@ -204,7 +204,8 @@ async function runQuery(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
   const lines: string[] = [];
   switch (q.op) {
     case 'grounding': {
-      const g = await Ground.open(world);
+      // Against the surfaces as drawn: a hill with no body still holds up what rests on it.
+      const g = await Ground.open(surfaceWorld(world));
       try {
         const only = q.ids ? new Set(q.ids) : undefined;
         const r = measureGrounding(world, g.pw, only);
@@ -405,6 +406,11 @@ function roleDefaults(item: LevelItem): Record<string, unknown> {
   }
 }
 
+/** True for something with a body to stand on its own bottom (not a light, an invisible zone or a sensor). */
+function bodyOf(e: Entity | undefined): boolean {
+  return !!e && e.visible && e.shape.kind !== 'none' && !e.physics?.sensor;
+}
+
 interface Candidate {
   item: LevelItem;
   entity: Entity;
@@ -422,7 +428,17 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
   const ground = await Ground.open(world);
+  // Props and decor rest on what is drawn (a hill with no body, a mesh larger than its collider); what the
+  // player must reach stands on the colliders.
+  const restsOnDrawn = (item: LevelItem, existing: Entity | null): boolean => (item.role === 'prop' || item.role === 'decor') && (!existing || shouldRest(existing));
+  let drawn: Ground | null = null;
+  try {
+    if (items.some((it) => restsOnDrawn(it, Object.hasOwn(world.entities, it.id) ? (world.entities[it.id] as Entity) : null))) drawn = await Ground.open(surfaceWorld(world));
+  } catch {
+    drawn = null;
+  }
   const water = findWaterBodies(world);
+  const deps = dependencyIndex(world);
   let lifeEntities = 0;
   try {
     for (const item of items) {
@@ -478,9 +494,10 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
         refused.push(`${item.id}: nothing to place. Send "entity" with at least a "shape" (primitive, generator or asset).`);
         continue;
       }
-      // A moved object is measured without itself (and its parts): it must not stand on its own old position.
-      const own = isMove ? subtreeOf(world, item.id) : undefined;
-      const surface = ground.surface(item.x, item.z, item.below, own);
+      // A moved object is measured without itself, its parts and what belongs to it (its plinth, light and
+      // zone move with it): it must not stand on its own old position.
+      const own = isMove ? deps.closure([item.id]) : undefined;
+      const surface = (drawn && restsOnDrawn(item, existing) ? drawn : ground).surface(item.x, item.z, item.below, own);
       if (!surface) {
         refused.push(`${item.id}: nothing under (${item.x}, ${item.z}): it would hang in open air. Pick a spot over terrain or a platform, or measure first with query_level ground.`);
         continue;
@@ -500,7 +517,7 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
       const above = item.above ?? (item.role === 'pickup' || item.role === 'goal' || item.role === 'checkpoint' ? 0.8 : 0);
       // How far the origin sits above the bottom: measured on the object itself when it exists (a group, a
       // centred primitive, a model whose origin is not at its base), else half a primitive's height.
-      const ownBox = existing && own ? subtreeBounds(world, own) : null;
+      const ownBox = existing && own ? subtreeBounds(world, [...own].filter((id) => bodyOf(world.entities[id]))) : null;
       const lift = ownBox ? worldTransform(world, item.id).position[1] - ownBox.min[1] : primitiveHalfHeight(base);
       const y = r2(surface.y + above + lift);
       const position: Vec3 = [r2(item.x), y, r2(item.z)];
@@ -531,6 +548,7 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
     }
   } finally {
     ground.dispose();
+    drawn?.dispose();
   }
 
   // Reach: measured once on the level with every accepted item in it.
@@ -564,8 +582,19 @@ async function runPlace(world: WorldDoc, rawInput: unknown): Promise<LevelToolRe
   }
 
   const patches: Patch[] = kept.map((c) => (c.isMove ? { op: 'update', id: c.entity.id, set: { transform: c.entity.transform } } : { op: 'add', entity: c.entity }));
+  // What belongs to a moved object (its light, goal zone, plinth) goes with it, unless this call places it too.
+  const moves = kept.filter((c) => c.isMove);
+  let carried: Array<{ id: string; owner: string }> = [];
+  if (moves.length > 0) {
+    const entities = { ...world.entities };
+    for (const c of moves) entities[c.entity.id] = c.entity;
+    const carry = carryPatches(world, { ...world, entities }, moves.map((c) => c.entity.id), new Set(kept.map((c) => c.entity.id)));
+    patches.push(...carry.patches);
+    carried = carry.carried;
+  }
   const lines: string[] = [];
   if (kept.length > 0) lines.push(`Placed ${kept.length} item(s): ${kept.slice(0, 20).map((c) => `${c.entity.id} at ${c.position.map(r1).join(', ')}`).join('; ')}.`);
+  if (carried.length > 0) lines.push(`Moved with their owner: ${carried.slice(0, 12).map((c) => `${c.id} (belongs to ${c.owner})`).join(', ')}.`);
   if (refused.length > 0) {
     lines.push(`${refused.length} item(s) were refused, nothing was placed for them. Fix and resend only these:`);
     for (const r of refused.slice(0, 20)) lines.push(`- ${r}`);

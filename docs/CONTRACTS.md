@@ -674,6 +674,13 @@ interface ByokState { provider: ByokProvider | null; providers: ByokProvider[]; 
 type MeshId = string;                                   // slug, like entity ids
 interface MeshShape { kind: 'mesh'; mesh: MeshId }       // in the ShapeSpec union
 interface Entity { locked?: boolean; /* … */ }           // user lock: editor tools and the agent leave it alone
+interface Entity { attachedTo?: EntityId; /* … */ }     // belongs to that object without being its child (a shrine's light, goal zone, plinth); a missing owner is ignored; `rename` rewrites it
+// What belongs to an object (pure, dependents.ts): attachedTo, then a name or id that is the owner's plus a part word
+// ("shrine-light", "Shrine goal", "Shrine platform"), then a shapeless light or invisible/sensor zone inside an object's footprint (nearest).
+function dependencyIndex(world): { ownerOf(id) → { owner, why: 'attached' | 'named' | 'nearby' } | null; dependentsOf(id) → EntityId[]; closure(ids) → Set<EntityId> /* + children */ };
+function carryPatches(before, after, moved: Iterable<EntityId>, touched?: Set<EntityId>) → { patches, carried[{ id, owner }] };   // same rigid move (a turn swings them round the owner); children follow anyway
+// Used by: the small-edit guard (a target's dependents are in scope), apply_patches (moves carry dependents the batch does not place),
+// place_level_items moves, local move/remove edits (a removed object's own lights and zones go with it), and self-repair (a goal that belongs to something is never moved off it).
 interface ScatterShape { points?: Vec3[] /* ≤ MAX_SCATTER_POINTS, painted placements (local, y included) */; /* … */ }
 interface MeshAsset {
   id: MeshId; vertexCount: number; triangleCount: number;
@@ -2201,7 +2208,11 @@ broken. A new workspace package; no new third-party dependency.
 - `selfRepair(world, opts?) → SelfRepairResult` — play → propose the smallest
   patch → apply → play again, at most `maxRounds` (default 4, max 8). `opts.run`
   and `opts.apply` let a host run the bot in a worker and commit repairs through
-  its history. `proposeRepairs(world, report)` is the pure part.
+  its history. `proposeRepairs(world, report)` is the pure part. An
+  unreachable objective first gets a flight of steps (risers 0.25 m) or blocks
+  to jump (0.6 m) up to what it stands on, kept only when the bot then reaches
+  it; an objective that belongs to something (`dependencyIndex`) is never moved
+  off it, and the sentence says so when nothing helped.
 - `deriveGoals(world)` / `deriveWalkGoals(world)` — objectives (pickups that
   count, goals, winning zones, rooms), doors with their openers, hazards,
   movers. A pickup is *required* when its state key is (transitively) read by a
@@ -2528,8 +2539,8 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
 
 | tool | input | result |
 | --- | --- | --- |
-| `query_level` | `{op: summary \| ground \| clearance \| sightline \| reach \| objectives \| review \| grounding, …}` | facts: top surface height, what it is and the slope; free radius and headroom; what blocks a line; whether the player can walk, jump or ride there and the gap if not; every objective's reach; `review`: the level checked as a designer would (`LevelReview {applicable, findings, poses, score}`: no win, spawn, unreachable required or optional objectives, first reward too far, `floating` objects: error from 0.5 m, warning below and over open air) with the cameras of the review renders; `grounding {ids?}`: every object that should rest on something measured against the colliders under it (`measureGrounding(world, pw, only?) → {floating[{id, gap, bottom, support, over, at, origin}], checked}`; tolerance 0.12 m; water surfaces support; tagged floating/flying/hanging/platform, bobbing/spinning/collectible/goal/patrolling, sensors, dynamic/kinematic, characters, lights, buildings and terrain excluded; touching a solid beside or above counts as held) |
-| `place_level_items` | `{items: [{id, role: pickup \| goal \| checkpoint \| hazard \| enemy \| prop \| decor, x, z, above?, below?, yaw?, key?, reach?, entity?}], message?}` | each item snapped to the ground, refused when nothing is under it, buried, on a cliff, or out of reach (with the gap and the nearest standable spot); accepted items are one undo step; `{id, x, z}` without `entity` moves an existing item |
+| `query_level` | `{op: summary \| ground \| clearance \| sightline \| reach \| objectives \| review \| grounding, …}` | facts: top surface height, what it is and the slope; free radius and headroom; what blocks a line; whether the player can walk, jump or ride there and the gap if not; every objective's reach; `review`: the level checked as a designer would (`LevelReview {applicable, findings, poses, score}`: no win, spawn, unreachable required or optional objectives, first reward too far, `floating` objects: error from 0.5 m, warning below and over open air) with the cameras of the review renders; `grounding {ids?}`: every object that should rest on something measured against the drawn surfaces under it (`surfaceWorld(world)`: every visible shape is a static body following its rendered geometry, a hill with no body included; `groundingOf(world, only?)`; `measureGrounding(world, pw, only?) → {floating[{id, gap, bottom, support, over, at, origin}], checked}`; tolerance 0.12 m; water surfaces support; tagged floating/flying/hanging/platform, bobbing/spinning/collectible/goal/patrolling, sensors, dynamic/kinematic, characters, lights, buildings and terrain excluded; touching a solid beside or above counts as held) |
+| `place_level_items` | `{items: [{id, role: pickup \| goal \| checkpoint \| hazard \| enemy \| prop \| decor, x, z, above?, below?, yaw?, key?, reach?, entity?}], message?}` | each item snapped to the ground, refused when nothing is under it, buried, on a cliff, or out of reach (with the gap and the nearest standable spot); accepted items are one undo step; `{id, x, z}` without `entity` moves an existing item with what belongs to it (measured without them; props and decor rest on the drawn surface) |
 
 ### `@aether/agent`
 

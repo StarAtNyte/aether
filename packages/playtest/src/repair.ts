@@ -6,9 +6,12 @@
  * explanation for the user.
  *
  * What gets repaired (and how):
- * - a pickup/goal that cannot be reached → the platform it sits on moves
- *   closer (with whatever stands on it) when that is a small structure,
- *   otherwise the pickup itself moves to the nearest standable spot;
+ * - a pickup/goal that cannot be reached → first a flight of steps (or blocks
+ *   to jump) up to what it stands on, kept only when the bot then gets there;
+ *   else the platform it sits on moves closer (with whatever stands on it)
+ *   when that is a small structure; else the pickup itself moves to the
+ *   nearest standable spot, but never one that belongs to something (a
+ *   shrine's goal zone stays at the shrine, and the result says why);
  * - a door that nothing can ever unlock → it opens by proximity;
  * - a door that does not react to the player → proximity with a usable radius;
  * - a win target that needs more pickups than exist → the target is lowered;
@@ -23,7 +26,7 @@
  * Findings without a safe automatic fix (soft-locks, "stuck", falls) are
  * reported, never "repaired" by guessing.
  */
-import { applyPatches, rotateVec3, worldTransform, type Entity, type EntityId, type Json, type PatchInput, type Rule, type Vec3, type WorldDoc } from '@aether/core';
+import { applyPatches, dependencyIndex, rotateVec3, worldTransform, type Entity, type EntityId, type Json, type PatchInput, type Rule, type Vec3, type WorldDoc } from '@aether/core';
 import { entityBounds, type Aabb } from '@aether/physics';
 import { playtest, walkthrough } from './agent';
 import { deriveGoals, winThresholds } from './goals';
@@ -120,10 +123,13 @@ function repairUnreachable(world: WorldDoc, f: Finding): RepairProposal | null {
       }
     }
   }
+  // A goal that belongs to something (the shrine's goal zone) stays with it: it is made reachable instead
+  // (steps up to it, see `stepsRepair`), never moved away from what it stands for.
+  if (dependencyIndex(world).ownerOf(id)) return null;
   // Otherwise bring the objective itself down to the nearest place the player can stand.
   const above = support ? Math.min(1.5, Math.max(0.4, pos[1] - support.bounds.max[1])) : Math.min(1.5, Math.max(0.4, pos[1]));
   const to: Vec3 = [node[0], node[1] + above, node[2]];
-  return { id: `unreachable:${id}`, code: 'unreachable_objective', sentence: `Moved ${label(world, id)} to ${r2(to[0])},${r2(to[2])}, where the player can reach it.`, patches: [patchPosition(id, to)] };
+  return { id: `unreachable:${id}:self`, code: 'unreachable_objective', sentence: `Moved ${label(world, id)} to ${r2(to[0])},${r2(to[2])}, where the player can reach it.`, patches: [patchPosition(id, to)] };
 }
 
 function repairDoorLocked(world: WorldDoc, f: Finding): RepairProposal | null {
@@ -418,6 +424,9 @@ export async function selfRepair(world: WorldDoc, opts: SelfRepairOptions = {}):
     }
     const proposals = proposeRepairs(current, report).filter((p) => !tried.has(p.id + JSON.stringify(p.patches)));
     let proposal: RepairProposal | null = proposals[0] ?? null;
+    // An objective out of reach keeps its place when steps can bring the player to it.
+    // (A platform brought closer keeps the objective on it; moving the objective itself is the last resort.)
+    if (!proposal || proposal.id.endsWith(':self')) proposal = (await stepsRepair(current, report, run, tried)) ?? proposal;
     if (!proposal) proposal = await countdownRepair(current, report, run);
     if (!proposal) proposal = await enemyRepair(current, report, run, tried);
     let next: WorldDoc | null = null;
@@ -434,7 +443,7 @@ export async function selfRepair(world: WorldDoc, opts: SelfRepairOptions = {}):
     report = await run(current, i + 1);
   }
   const passed = report.status === 'passed';
-  return { world: current, report, rounds, applied, passed, sentence: sentenceOf(passed, applied, report) };
+  return { world: current, report, rounds, applied, passed, sentence: sentenceOf(passed, applied, report, current) };
 }
 
 async function countdownRepair(world: WorldDoc, report: PlaytestReport, run: (w: WorldDoc, round: number) => Promise<PlaytestReport>): Promise<RepairProposal | null> {
@@ -521,11 +530,125 @@ async function enemyRepair(world: WorldDoc, report: PlaytestReport, run: (w: Wor
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Steps up to an objective
+// ---------------------------------------------------------------------------
+
+/** Step kinds tried in order: walkable stairs, then blocks to jump up (both within the bot's and the player's reach). */
+const STEP_KINDS: ReadonlyArray<{ riser: number; tread: number; width: number; word: string }> = [
+  { riser: 0.25, tread: 0.42, width: 1.6, word: 'steps' },
+  { riser: 0.6, tread: 0.9, width: 1.8, word: 'blocks to jump up' },
+];
+/** Most steps in one flight (a 6 m climb in stairs, 15 m in blocks). */
+const MAX_STEPS = 24;
+
+/** Where a ray from the support's centre toward `to` leaves its footprint (a cylinder by its radius, else its box). */
+function edgeToward(world: WorldDoc, support: { id: EntityId; bounds: Aabb }, to: Readonly<Vec3>): { edge: [number, number]; dir: [number, number] } | null {
+  const b = support.bounds;
+  const cx = (b.min[0] + b.max[0]) / 2;
+  const cz = (b.min[2] + b.max[2]) / 2;
+  const dx = to[0] - cx;
+  const dz = to[2] - cz;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uz = dz / len;
+  const hx = (b.max[0] - b.min[0]) / 2;
+  const hz = (b.max[2] - b.min[2]) / 2;
+  const e = world.entities[support.id] as Entity;
+  const round = e.shape.kind === 'primitive' && (e.shape.primitive === 'cylinder' || e.shape.primitive === 'sphere' || e.shape.primitive === 'cone');
+  const t = round ? Math.min(hx, hz) : Math.min(Math.abs(ux) > 1e-6 ? hx / Math.abs(ux) : Infinity, Math.abs(uz) > 1e-6 ? hz / Math.abs(uz) : Infinity);
+  return { edge: [cx + ux * t, cz + uz * t], dir: [ux, uz] };
+}
+
+/** One flight of steps from the floor at `node` up to the top of `support`, on the side facing the node. */
+function flightPatches(world: WorldDoc, objective: EntityId, support: { id: EntityId; bounds: Aabb }, node: Readonly<Vec3>, kind: (typeof STEP_KINDS)[number]): PatchInput[] | null {
+  const top = support.bounds.max[1];
+  const rise = top - node[1];
+  if (rise <= 0.4) return null;
+  const n = Math.max(1, Math.round(rise / kind.riser) - 1);
+  if (n > MAX_STEPS) return null;
+  const riser = rise / (n + 1);
+  const side = edgeToward(world, support, node);
+  if (!side) return null;
+  const [ux, uz] = side.dir;
+  const yaw = r2((Math.atan2(ux, uz) * 180) / Math.PI);
+  const base = node[1] - 1;
+  const patches: PatchInput[] = [];
+  for (let k = 0; k < n; k++) {
+    const stepTop = top - (k + 1) * riser;
+    const d = kind.tread * (k + 0.5) - 0.05;
+    const h = stepTop - base;
+    patches.push({
+      op: 'add',
+      entity: {
+        id: `${objective}-steps-${k + 1}`,
+        name: k === 0 ? `Steps to ${(world.entities[objective] as Entity).name || objective}` : '',
+        attachedTo: support.id,
+        tags: ['steps'],
+        transform: { position: [r2(side.edge[0] + ux * d), r2(base + h / 2), r2(side.edge[1] + uz * d)], rotation: [0, yaw, 0], scale: [1, 1, 1] },
+        shape: { kind: 'primitive', primitive: 'box', size: [kind.width, r2(h), kind.tread] },
+        material: { preset: 'stone', color: '#8d8a84' },
+        physics: { body: 'static' },
+      },
+    });
+  }
+  return patches;
+}
+
+/**
+ * An objective sits on something the player cannot climb (a summit 3 m above its last terrace): build a flight
+ * of steps (or blocks to jump) from the nearest place the player reaches up to it, keeping the objective where
+ * it is, and keep the flight only when the bot then reaches it. Null when no flight helps; the objective is then
+ * moved only when it belongs to nothing (see {@link repairUnreachable}).
+ */
+async function stepsRepair(world: WorldDoc, report: PlaytestReport, run: (w: WorldDoc, round: number) => Promise<PlaytestReport>, tried: ReadonlySet<string>): Promise<RepairProposal | null> {
+  for (const f of report.findings) {
+    if (f.code !== 'unreachable_objective' || f.severity !== 'error') continue;
+    const id = f.entities[0];
+    const pos = f.position;
+    const d = f.data;
+    if (!id || !pos || !d || typeof d['nodeX'] !== 'number' || typeof d['nodeY'] !== 'number' || typeof d['nodeZ'] !== 'number') continue;
+    if (!Object.hasOwn(world.entities, id) || Object.hasOwn(world.entities, `${id}-steps-1`)) continue;
+    const node: Vec3 = [d['nodeX'], d['nodeY'], d['nodeZ']];
+    const support = supportOf(world, pos, id);
+    if (!support) continue;
+    for (const kind of STEP_KINDS) {
+      const patches = flightPatches(world, id, support, node, kind);
+      if (!patches) continue;
+      const pid = `steps:${id}:${kind.riser}`;
+      if (tried.has(pid + JSON.stringify(patches))) continue;
+      const trial = applyPatches(world, patches);
+      if (trial.errors.length > 0) continue;
+      const measured = await run(trial.world, -1);
+      const still = measured.findings.some((g) => g.code === 'unreachable_objective' && g.entities[0] === id);
+      if (still) continue;
+      return { id: pid, code: 'unreachable_objective', sentence: `Built ${patches.length} ${kind.word} up ${label(world, support.id)} so ${label(world, id)} can be reached where it is.`, patches };
+    }
+  }
+  return null;
+}
+
 const lowerFirst = (t: string): string => t.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase());
 
-function sentenceOf(passed: boolean, applied: readonly RepairProposal[], report: PlaytestReport): string {
+/** Objectives left out of reach because they belong to something: say so instead of moving them. */
+function heldNote(world: WorldDoc, report: PlaytestReport): string {
+  const deps = dependencyIndex(world);
+  const out: string[] = [];
+  for (const f of report.findings) {
+    const id = f.entities[0];
+    if (f.code !== 'unreachable_objective' || f.severity !== 'error' || !id || !Object.hasOwn(world.entities, id)) continue;
+    const owner = deps.ownerOf(id);
+    if (!owner) continue;
+    out.push(`I left ${label(world, id)} at ${label(world, owner.owner)}, where it belongs, instead of moving it to where the bot can get; steps did not get the bot there either. Add a way up (a ramp, stairs or a lift) or lower what it stands on.`);
+    if (out.length >= 2) break;
+  }
+  return out.length > 0 ? ` ${out.join(' ')}` : '';
+}
+
+function sentenceOf(passed: boolean, applied: readonly RepairProposal[], report: PlaytestReport, world: WorldDoc): string {
   if (passed && applied.length === 0) return report.summary;
   if (passed) return `I fixed ${applied.length === 1 ? 'a problem' : `${applied.length} problems`} so ${report.kind === 'walkthrough' ? 'every room can be reached' : 'it can be won'}: ${applied.map((a) => lowerFirst(a.sentence)).join('; ')}.`;
   const tried = applied.length > 0 ? ` I tried: ${applied.map((a) => lowerFirst(a.sentence)).join('; ')}.` : '';
-  return `${report.summary}${tried}`;
+  return `${report.summary}${tried}${heldNote(world, report)}`;
 }

@@ -5,7 +5,7 @@
  * building ("tombstones") instead of coming back.
  */
 import { FURNITURE, applyArchOps, furnitureById, furnitureByKind, furnitureSize } from '@aether/arch';
-import { Entity, type EntityId, type Json, type PatchInput, type Vec3, type WorldDoc } from '@aether/core';
+import { Entity, dependencyIndex, isSatellite, type EntityId, type Json, type PatchInput, type Vec3, type WorldDoc } from '@aether/core';
 import type { Command, Placement, Relation } from './command';
 import { resolveRef, resolveRooms } from './resolve';
 import type { SceneItem } from './scene';
@@ -63,6 +63,19 @@ export function planRemove(env: OpEnv, cmd: Extract<Command, { op: 'remove' }>):
       if (b) tombs.set(b.id, [...(tombs.get(b.id) ?? []), it.id]);
     }
     for (const id of env.draft.remove(it.id, true)) removed.push(id);
+  }
+  // Its own light and zones go with it (an orphaned glow or goal is left otherwise); a plinth or sign stays.
+  const deps = dependencyIndex(env.base);
+  const extra = deps.closure(removed.filter((id) => !env.base.entities[id]?.arch));
+  for (const id of extra) {
+    const e = env.base.entities[id];
+    if (!e || removed.includes(id) || e.locked || !Object.hasOwn(env.draft.world.entities, id)) continue;
+    const why = deps.ownerOf(id)?.why;
+    if (why !== 'attached' && !isSatellite(e)) continue;
+    for (const r of env.draft.remove(id, true)) {
+      removed.push(r);
+      also.push(r);
+    }
   }
   for (const [bid, ids] of tombs) {
     const b = env.draft.entity(bid);

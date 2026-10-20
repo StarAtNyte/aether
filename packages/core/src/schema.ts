@@ -443,6 +443,13 @@ export const Entity = z.object({
   /** Short semantic description; used by the agent for reasoning and by the outliner. */
   description: z.string().optional(),
   parent: EntityId.nullable().default(null),
+  /**
+   * Additive: the object this one belongs to without being its child (a
+   * shrine's light or goal zone, a statue's plinth). It keeps its own world
+   * transform but moves with its owner, and an edit of the owner may change
+   * it. A missing owner is ignored. See `dependents.ts`.
+   */
+  attachedTo: EntityId.optional(),
   tags: z.array(z.string()).default([]),
   transform: Transform.default({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }),
   shape: ShapeSpec.default({ kind: 'none' }),

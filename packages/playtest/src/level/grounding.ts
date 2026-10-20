@@ -3,8 +3,10 @@
  *
  * A torii set at y = 9.6 next to a hill whose surface there is at 7.3 hovers 2.3 m in the air; a bounding-box
  * test ("something is below its box") calls that supported. Here the support is measured with rays against the
- * real colliders (terrain, hills, platforms, floors, the ground plane): under the object's footprint, every
- * hit that is not the object itself, and the highest one at or just below its bottom is what it stands on.
+ * surfaces as they are drawn (terrain heightfields, hills, platforms, floors, the ground plane; see
+ * {@link surfaceWorld}: a visible shape counts whether or not it has a body, by its rendered geometry rather
+ * than a smaller collider): under the object's footprint, every hit that is not the object itself, and the
+ * highest one at or just below its bottom is what it stands on.
  * The smallest gap over the footprint is the hover height (an object on a slope touches at one corner).
  *
  * Things meant to be in the air are left alone: anything tagged floating / flying / hovering / hanging /
@@ -14,8 +16,8 @@
  * tower, a rock clinging under a ledge, a bridge deck held by its ramps). Tag an object "floating" to say it
  * hovers on purpose.
  */
-import { findWaterBodies, isWaterEntity, waterAt, worldTransform, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
-import { entityBounds, type Aabb, type PhysicsWorld } from '@aether/physics';
+import { PhysicsSpec, findWaterBodies, isWaterEntity, waterAt, worldTransform, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
+import { PhysicsWorld, entityBounds, initPhysics, type Aabb } from '@aether/physics';
 
 /** Hover height (m) above which an object counts as floating; small gaps are mesh and collider slack. */
 export const FLOAT_TOLERANCE = 0.12;
@@ -60,6 +62,39 @@ export function shouldRest(e: Entity): boolean {
   if (e.npc || e.arch || e.light || isWaterEntity(e)) return false;
   if (e.shape.kind === 'procedural' && TERRAIN_GENERATORS.has(e.shape.generator)) return false;
   return true;
+}
+
+/** Behaviours of things that are not surfaces to rest on (they move, are picked up or are zones). */
+const NOT_A_SURFACE = new Set(['collectible', 'magnet', 'goal', 'checkpoint', 'bob', 'orbit', 'spin', 'patrol', 'follow', 'wander', 'flee', 'path']);
+
+/** True when what is drawn of `e` is a surface something can rest on (a hill, a rock, a plinth, a floor). */
+function drawnSurface(e: Entity): boolean {
+  if (e.template || !e.visible || e.npc || e.character) return false;
+  if (e.shape.kind !== 'primitive' && e.shape.kind !== 'procedural' && e.shape.kind !== 'asset' && e.shape.kind !== 'model' && e.shape.kind !== 'mesh') return false;
+  if (e.physics?.sensor || isWaterEntity(e)) return false;
+  return !e.behaviors.some((b) => b.enabled !== false && NOT_A_SURFACE.has(b.type));
+}
+
+/**
+ * The world as it is drawn, for resting checks: every visible solid-looking shape gets a static collider that
+ * follows its rendered geometry (exact primitives; triangles of generated and mesh shapes, falling back to the
+ * shape's own colliders when it has no triangles to give), whether or not it has a physics body of its own. A
+ * hill with no body still holds up the shrine on it, and a collider smaller than its mesh no longer makes what
+ * rests on the mesh look like it hovers. Invisible colliders keep their own body; water stays as it is.
+ */
+export function surfaceWorld(world: WorldDoc): WorldDoc {
+  const entities: Record<string, Entity> = {};
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (!drawnSurface(e)) {
+      entities[id] = e;
+      continue;
+    }
+    const triangles = e.shape.kind === 'mesh' || (e.shape.kind === 'procedural' && !TERRAIN_GENERATORS.has(e.shape.generator));
+    const { joint: _joint, ...rest } = e;
+    entities[id] = { ...rest, physics: PhysicsSpec.parse({ body: 'static', collider: triangles ? 'trimesh' : 'auto', friction: e.physics?.friction ?? 0.6 }) };
+  }
+  return { ...world, entities };
 }
 
 /** Ids of an entity and everything under it. */
@@ -152,7 +187,10 @@ export function supportBelow(pw: PhysicsWorld, own: ReadonlySet<EntityId>, x: nu
   return best;
 }
 
-/** Measure every object that should rest on something; report those that hover. */
+/**
+ * Measure every object that should rest on something; report those that hover. `pw` is the physics world of
+ * {@link surfaceWorld}(world) (see {@link groundingOf}); a plain collider world sees only bodies.
+ */
 export function measureGrounding(world: WorldDoc, pw: PhysicsWorld, only?: ReadonlySet<EntityId>): GroundingReport {
   const roots = restingRoots(world).filter((id) => (only ? only.has(id) : true) && shouldRest(world.entities[id] as Entity));
   // Water holds up what floats on it (boats, rafts, lanterns on a river): its surface counts as a support.
@@ -210,6 +248,17 @@ export function measureGrounding(world: WorldDoc, pw: PhysicsWorld, only?: Reado
   }
   floating.sort((p, q) => q.gap - p.gap);
   return { floating, checked: Math.min(measured.length, GROUNDING_LIMITS.MAX_OBJECTS) };
+}
+
+/** {@link measureGrounding} against the drawn surfaces of `world` (builds and frees the physics world itself). */
+export async function groundingOf(world: WorldDoc, only?: ReadonlySet<EntityId>): Promise<GroundingReport> {
+  await initPhysics();
+  const pw = await PhysicsWorld.create(surfaceWorld(world), { fixedDt: 1 / 60 });
+  try {
+    return measureGrounding(world, pw, only);
+  } finally {
+    pw.dispose();
+  }
 }
 
 /** Reach (m) past an object's box within which a solid beside or above it holds it. */

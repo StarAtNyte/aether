@@ -11,7 +11,7 @@
  */
 import { summarizeWorldForModel } from './world-text';
 import { z } from 'zod';
-import { Patch as PatchSchema, worldTransform, type Entity, type EntityId, type Patch, type WorldDoc } from '@aether/core';
+import { Patch as PatchSchema, dependencyIndex, worldTransform, type Entity, type EntityId, type Patch, type WorldDoc } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
 import { loadCatalog } from '@aether/assets';
@@ -265,14 +265,19 @@ export class WorldAgent {
     try {
       const out = await raceAbort(run(after, 'place_level_items', { items, message: 'Settle on the ground' }), ctx.signal);
       if (!out.ok || out.patches.length === 0) return { patches: [], note: `it may not rest on the surface there: ${out.text.split('\n').find((l) => l.startsWith('- '))?.slice(2, 200) ?? 'the ground could not be measured'}` };
-      // Untrusted: only transform updates of the moved objects are taken.
+      // Untrusted: only transform updates of the moved objects and of what belongs to them are taken.
+      const belongs = dependencyIndex(after).closure(items.map((it) => it.id));
       const patches: Patch[] = [];
       let y: number | undefined;
       for (const raw of out.patches) {
         const p = PatchSchema.safeParse(raw);
         if (!p.success || p.data.op !== 'update') continue;
         const id = p.data.id;
-        if (!items.some((it) => it.id === id)) continue;
+        if (!belongs.has(id)) continue;
+        if (!items.some((it) => it.id === id)) {
+          patches.push(p.data);
+          continue;
+        }
         patches.push(p.data);
         const pos = Settled.safeParse(p.data.set);
         if (pos.success) y ??= pos.data.transform.position[1];

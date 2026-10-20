@@ -4,7 +4,7 @@
  * a request is the entities it names; patches that change existing entities
  * outside that scope are refused with a message the model can act on.
  */
-import { applyPatches, type EntityId, type WorldDoc } from '@aether/core';
+import { applyPatches, dependencyIndex, type EntityId, type WorldDoc } from '@aether/core';
 import { changedEntityIds, worldChanges } from './changes';
 import type { Command } from './command';
 import { parseEdit } from './parse';
@@ -70,6 +70,8 @@ export function classifyScope(world: WorldDoc, text: string, ctx: ResolveContext
   }
   for (const id of ctx.selection) for (const s of index.subtree(id)) allowed.add(s);
   if (allowed.size === 0) for (const id of namedItems(index, text)) for (const s of index.subtree(id)) allowed.add(s);
+  // What belongs to a named thing is part of it: the shrine's light, goal zone and plinth move and change with it.
+  if (allowed.size > 0) for (const id of dependencyIndex(world).closure([...allowed])) allowed.add(id);
   return { kind: 'small', allowed, reason: allowed.size > 0 ? `names ${allowed.size} object${allowed.size === 1 ? '' : 's'}` : 'names no object' };
 }
 

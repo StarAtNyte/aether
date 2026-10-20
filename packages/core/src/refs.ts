@@ -100,6 +100,7 @@ export function forEachTestSelector(test: WorldTest, fn: (s: string) => void): v
 export function renameEntityRefs(e: Entity, from: string, to: string): Entity {
   let out = e;
   if (e.parent === from) out = { ...out, parent: to };
+  if (e.attachedTo === from) out = { ...out, attachedTo: to };
   if (e.joint && e.joint.target === from) out = { ...out, joint: { ...e.joint, target: to } };
   if (e.shape.kind === 'scatter' && e.shape.onSurface === from) out = { ...out, shape: { ...e.shape, onSurface: to } };
   if (e.arch && (e.arch.room === from || e.arch.wall === from)) {
