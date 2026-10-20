@@ -34,6 +34,8 @@ describe('the offline planner honours what a collect-and-reach prompt names', ()
     const w = result.world;
     const ents = Object.values(w.entities);
     expect(JSON.stringify(res.content)).toMatch(/Lantern Hunt/);
+    // The game is named after what you play.
+    expect(w.name).toMatch(/^Lantern Hunt/);
     expect(ents.filter((e) => e.tags.includes('lantern') && e.behaviors.some((b) => b.type === 'collectible'))).toHaveLength(5);
     expect(ents.some((e) => e.tags.includes('shrine'))).toBe(true);
     expect(ents.some((e) => e.behaviors.some((b) => b.type === 'goal'))).toBe(true);

@@ -220,6 +220,7 @@ function generate(intent: Intent, view: WorldView, wipe: boolean, library: reado
   const heroTitle = hero ? hero.keyword.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : undefined;
   const name = activities[0] && primary ? `${titleOf(activities[0])} — ${primary.title}` : heroTitle && primary ? `${heroTitle} — ${primary.title}` : (titles[0] ?? 'New World');
   b.meta(name, intent.text.slice(0, 200));
+  if (activities[0]) b.rename(name);
 
   // Objects the user locked survive a rebuild: remove the others one by one instead of clearing.
   const locked = view.entities.filter((e) => e.locked);

@@ -473,6 +473,11 @@ export class Builder {
     if (description) this.metaDescription ??= description;
   }
 
+  /** Name the world `name` even when a theme already named it (a game is named after what you play, not where). */
+  rename(name: string): void {
+    this.metaName = name;
+  }
+
   /** Number of entities added so far. */
   get entityCount(): number {
     return this.entities.length;
