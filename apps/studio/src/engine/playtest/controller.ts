@@ -19,7 +19,7 @@ import type { PlaytestKind, PlaytestReport, PlaytestTrace, Proof } from '@aether
 import { playtestKindOf } from '@aether/playtest/proof';
 import type { Studio } from '../Studio';
 import { PlaytestClient, type PlaytestRunOptions } from './client';
-import type { PlaytestFindingView, PlaytestObjectiveView } from '../../state/store';
+import type { PlaytestFindingView, PlaytestObjectiveView, VerifyState } from '../../state/store';
 import type { ArchUiState } from '../../state/archUi';
 
 /** Options of {@link PlaytestController.run}. */
@@ -48,6 +48,19 @@ export function reportViews(report: PlaytestReport): { findings: PlaytestFinding
     .map((f): PlaytestFindingView => ({ severity: f.severity, code: f.code, message: f.message, entities: f.entities.slice(0, 4), ...(f.position ? { position: [f.position[0], f.position[1], f.position[2]] as [number, number, number] } : {}) }));
   const objectives = report.objectives.slice(0, MAX_VIEW_OBJECTIVES).map((o): PlaytestObjectiveView => ({ id: o.id, label: o.label, kind: o.kind, status: o.status, required: o.required, ...(o.at !== undefined ? { at: o.at } : {}), ...(o.reason ? { reason: o.reason } : {}) }));
   return { findings, objectives };
+}
+
+/**
+ * Whether the physics checks must run again after the bot repaired the world: a repair is a new history entry, so
+ * checks that described the world before it would read "Checks outdated" next to "Verified playable". `now` when the
+ * checks had a verdict on the world the bot started from, `after-run` when they were still running on it, `no` when
+ * nothing was repaired or the checks belong to something else (never run, or already re-run since).
+ */
+export function recheckAfterRepair(verify: Pick<VerifyState, 'status' | 'head'>, startHead: number, head: number, repaired: boolean): 'now' | 'after-run' | 'no' {
+  if (!repaired || head === startHead) return 'no';
+  if (verify.status === 'running') return 'after-run';
+  if (verify.head === startHead && (verify.status === 'passed' || verify.status === 'failed' || verify.status === 'error')) return 'now';
+  return 'no';
 }
 
 /**
@@ -257,6 +270,7 @@ export class PlaytestController {
         this.seal(report, proven);
       }
       if (proven && report.trace) void this.startReplay(gen);
+      void this.recheck(recheckAfterRepair(store.getState().verify, startHead, history.head, result.applied.length > 0), history.head);
     } catch (err) {
       this.studio.simulation?.renderer.ghostLive(null);
       if (gen !== this.gen) return;
@@ -269,6 +283,17 @@ export class PlaytestController {
     } finally {
       if (this.abort === ctrl) this.abort = null;
     }
+  }
+
+  /** Re-run the physics checks on the repaired world (see {@link recheckAfterRepair}); waits for a run in flight first. */
+  private async recheck(when: 'now' | 'after-run' | 'no', head: number): Promise<void> {
+    if (when === 'no') return;
+    const until = performance.now() + 120_000;
+    while (this.studio.store.getState().verify.status === 'running' && performance.now() < until && !this.disposed) await new Promise((r) => setTimeout(r, POLL_MS * 2));
+    const st = this.studio.store.getState();
+    // Only while the repaired world is still on screen and the checks still describe an older one.
+    if (this.disposed || this.studio.history.head !== head || st.verify.status === 'running' || st.verify.head === head || st.mode === 'play') return;
+    await this.studio.runVerify({ quiet: true });
   }
 
   /** The seal over the viewport: the bot's verdict, with its replay. */

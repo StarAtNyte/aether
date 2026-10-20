@@ -894,8 +894,12 @@ export class Studio {
   // Verification
   // ---------------------------------------------------------------------------
 
-  /** Run the world's tests + diagnostics headless (in workers) and publish the result live. */
-  async runVerify(): Promise<void> {
+  /**
+   * Run the world's tests + diagnostics headless (in workers) and publish the result live. `quiet` keeps the seal and
+   * the motion replay of the result off the viewport (a background re-check after a playtest repair must not cover
+   * the bot's own verdict).
+   */
+  async runVerify(opts: { quiet?: boolean } = {}): Promise<void> {
     const st = this.store.getState();
     if (st.verify.status === 'running') return;
     const head = this.history.head;
@@ -908,7 +912,7 @@ export class Studio {
     }
     const v = this.store.getState().verify;
     if (this.history.head === head && v.status !== 'idle') this.sim?.setDiagnostics(v.diagnostics);
-    if (this.history.head === head) void this.presentProof();
+    if (this.history.head === head && opts.quiet !== true) void this.presentProof();
   }
 
   /** Remember a finished verification run for the seal and the replay. */
