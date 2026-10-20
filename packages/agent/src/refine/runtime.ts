@@ -5,3 +5,5 @@
  */
 export { planFineEdit } from './plan';
 export { classifyScope, auditPatches } from './guard';
+export { parseRef } from './parse-ref';
+export { singular } from './lexicon';

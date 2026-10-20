@@ -10,7 +10,7 @@
  * always ends with exactly one `done` event carrying token usage.
  */
 import { summarizeWorldForModel } from './world-text';
-import type { EntityId, WorldDoc } from '@aether/core';
+import type { Entity, EntityId, WorldDoc } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
 import { loadCatalog } from '@aether/assets';
@@ -281,7 +281,7 @@ export class WorldAgent {
       // Offline, an edit that names something the world does not have ("move the shrine onto the hill" with no shrine)
       // is answered plainly: the offline planner can only add whole scenes, which would be a wrong guess. A model is
       // asked instead, because it can build what is missing.
-      if (fe.kind === 'none' && fe.reason === 'failed' && fe.detail && this.opts.provider.name === 'mock' && /^I can't find\b/.test(fe.detail)) {
+      if (fe.kind === 'none' && fe.reason === 'failed' && fe.detail && this.opts.provider.name === 'mock' && nothingNamed(world0, fe.detail, refine)) {
         yield { type: 'message', text: `${fe.detail}, so I left the world as it is. Name something that is in the scene, or connect an AI model to build what is missing.` };
         return;
       }
@@ -582,3 +582,26 @@ export class WorldAgent {
     else yield { type: 'review', round: rounds, phase: 'limit', text: 'Stopped reviewing after the safety ceiling of rounds.' };
   }
 }
+
+/**
+ * True when a fine-edit failure ("I can't find "the shrine" ...") names a kind of thing nothing in the world is
+ * called, tagged or built as: offline, that is answered plainly instead of being handed to the planner.
+ */
+function nothingNamed(world: WorldDoc, detail: string, refine: { parseRef(text: string): { noun: string }; singular(word: string): string }): boolean {
+  const m = /^I can't find "([^"]+)"/.exec(detail);
+  if (!m?.[1]) return false;
+  // Every content word is tried ("the tower I just moved" still names a tower).
+  const words = new Set([refine.parseRef(m[1]).noun, ...m[1].split(/\s+/)].flatMap((w) => w.split(/\s+/)).map((w) => refine.singular(w.toLowerCase()).replace(/[^a-z0-9]/g, '')).filter((w) => w.length >= 3 && !STOP_WORDS.has(w)));
+  if (words.size === 0) return false;
+  for (const w of words) {
+    const re = new RegExp(`\\b${w}`, 'i');
+    for (const id in world.entities) {
+      const e = world.entities[id] as Entity;
+      const gen = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : '';
+      if (re.test(id) || re.test(e.name) || e.tags.some((t) => re.test(t)) || re.test(gen) || (e.npc !== undefined && re.test(e.npc.role))) return false;
+    }
+  }
+  return true;
+}
+
+const STOP_WORDS = new Set(['the', 'that', 'this', 'those', 'these', 'just', 'one', 'big', 'small', 'left', 'right', 'top', 'side', 'all', 'every', 'new', 'old', 'moved', 'added', 'made', 'last', 'first', 'second', 'other', 'into', 'onto', 'over', 'under', 'with', 'near', 'next']);
