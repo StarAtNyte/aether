@@ -395,9 +395,12 @@ describe('mock provider: protocol', () => {
     }
   });
 
-  it('is fast (< 50 ms per world on average)', async () => {
+  it('is fast (< 120 ms per world on average)', async () => {
+    // 50 -> 120 ms: natural settings stand on a generated landscape, and the planner samples its heightfield (a 256-cell
+    // terrain, 20 to 40 ms) so everything it places stands on the ground physics will use.
+
     const t0 = performance.now();
     for (const [, prompt] of THEME_PROMPTS) await askMock(prompt);
-    expect((performance.now() - t0) / THEME_PROMPTS.length).toBeLessThan(50);
+    expect((performance.now() - t0) / THEME_PROMPTS.length).toBeLessThan(120);
   });
 });

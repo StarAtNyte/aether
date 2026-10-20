@@ -3,7 +3,7 @@
  * street with drivable car, haunted graveyard, and outer space.
  */
 import { r2, type Builder } from './builder';
-import { backdropMountains, clouds, hillside, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
+import { backdropMountains, clouds, hillside, lamp, lightsOn, naturalGround, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 import { catalogEntry, getCatalog } from '@aether/assets';
 import { groundPatch } from './showcase/kit';
@@ -434,11 +434,14 @@ const haunted: Theme = {
   radius: 34,
   blurb: 'a fog-drenched haunted hollow with a dark mansion, crooked gravestones, glowing pumpkins, fireflies and a drifting ghost',
   env(b) {
-    b.env({ sky: 'night', timeOfDay: 23, fog: { color: '#1b1630', density: 0.04 }, weather: 'fireflies', bloom: 1.4, ambientIntensity: 0.25, sunIntensity: 0.4, ground: { material: { preset: 'dirt', color: '#2f3326' }, size: 400 } });
+    b.env({ sky: 'night', timeOfDay: 23, fog: b.realisticNature ? { color: '#1b1a2c', density: 0.02, visibility: 140 } : { color: '#1b1630', density: 0.04 }, weather: 'fireflies', bloom: b.realisticNature ? 0.9 : 1.4, ambientIntensity: 0.25, sunIntensity: 0.4, ground: { material: { preset: 'dirt', color: '#2f3326' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {
     const { b } = c;
+    const real = b.realisticNature;
+    // A hollow among dark hills: dead grass, bare trees and black spruce.
+    naturalGround(c, { pad: Math.max(18, c.clear + 6), relief: 40, color: '#3f4431', woods: { conifers: 160, broadleaf: 70, birch: 0, scrub: 160, boulders: 30 }, conifer: { color: '#1f3326', height: 14 }, broadleafColor: '#3b3a2a', bare: true });
     const mx = c.x;
     const mz = r2(c.z - Math.max(14, c.clear + 8));
     if (b.claim(mx, mz, 7)) {
@@ -450,7 +453,12 @@ const haunted: Theme = {
       const p = b.spot(c.x, c.z, Math.max(4, c.clear + 1), 16, 0.8);
       if (!p) continue;
       const h = r2(b.rand(0.9, 1.5));
-      b.prim('gravestone', 'box', [0.8, h, 0.22], [p[0], r2(h / 2), p[1]], { rot: [r2(b.rand(-8, 8)), r2(b.rand(-25, 25)), r2(b.rand(-6, 6))], material: { preset: 'stone', color: '#7d7f85' }, physics: 'static', tags: ['grave'] });
+      const stone = b.prim('gravestone', 'box', [0.8, h, 0.22], [p[0], r2(h / 2), p[1]], { rot: [r2(b.rand(-8, 8)), r2(b.rand(-25, 25)), r2(b.rand(-6, 6))], material: real ? { finish: 'limestone', color: '#8a8b86' } : { preset: 'stone', color: '#7d7f85' }, physics: 'static', tags: ['grave'] });
+      // A weathered headstone has a rounded head and a little plinth.
+      if (real) {
+        b.prim(`${stone}-head`, 'cylinder', [0.8, 0.22, 0.8], [0, r2(h / 2), 0], { parent: stone, rot: [90, 0, 0], scale: [1, 1, 0.5], material: { finish: 'limestone', color: '#8a8b86' } });
+        b.prim(`${stone}-plinth`, 'box', [1, 0.14, 0.42], [0, r2(-h / 2 + 0.05), 0], { parent: stone, material: { finish: 'stone', color: '#6f706c' } });
+      }
       graves++;
     }
     for (let i = 0; i < 6; i++) {
@@ -474,9 +482,9 @@ const haunted: Theme = {
       const fx = r2(c.x + side * Math.max(8, c.clear + 6));
       if (b.claim(fx, c.z + 8, 3)) b.gen('iron-fence', 'fence', { length: 12, height: 1.6, color: '#1c1c22', variant: 2 }, [fx, 0, r2(c.z + 8)], { physics: 'static' });
     }
-    treeRing(c, 14, 14, 30, [{ generator: 'tree-oak', params: { height: 7, color: '#3b3a2a', trunkColor: '#2a211a', density: 2 } }], 2);
-    scatterBelt(c, 'glow-mushrooms', 'mushroom', { color: '#7b2cbf', height: 0.5 }, 8, 6, 24);
-    scatterBelt(c, 'dead-grass', 'grass-tuft', { color: '#4a4a32' }, 40, 3, 30);
+    treeRing(c, 14, 14, 30, [{ generator: 'tree-oak', params: { height: 7, color: '#3b3a2a', trunkColor: '#2a211a', density: 2, leaf: 0 } }], 2);
+    if (!real) scatterBelt(c, 'glow-mushrooms', 'mushroom', { color: '#7b2cbf', height: 0.5 }, 8, 6, 24);
+    scatterBelt(c, 'dead-grass', 'grass-tuft', { color: '#4a4a32' }, real ? 260 : 40, 3, 30, real ? { minSpacing: 0.4, scaleRange: [0.5, 1.2] } : {});
     if (c.primary) backdropMountains(c, 4, '#2c2a33', 1, 100, 26);
   },
 };

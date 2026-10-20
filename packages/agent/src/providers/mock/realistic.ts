@@ -58,7 +58,7 @@ function copy(p: Params, keys: readonly string[]): Params {
 export function realisticStandIn(generator: string, params: Params): { generator: string; params: Params } | null {
   switch (generator) {
     case 'tree-oak':
-      return { generator: 'tree-broadleaf', params: { ...copy(params, ['color', 'trunkColor']), height: Math.max(6, num(params['height'], 6) * 1.5), variant: Math.min(2, Math.max(0, Math.round(num(params['variant'], 2)))) } };
+      return { generator: 'tree-broadleaf', params: { ...copy(params, ['color', 'trunkColor', 'leaf']), height: Math.max(6, num(params['height'], 6) * 1.5), variant: Math.min(2, Math.max(0, Math.round(num(params['variant'], 2)))) } };
     case 'hero-cherry-tree':
       // Cherry blossom: a wide broadleaf crown in blossom pink on a dark, twisting trunk.
       return { generator: 'tree-broadleaf', params: { color: typeof params['blossomColor'] === 'string' ? params['blossomColor'] : '#f1a9c0', trunkColor: typeof params['barkColor'] === 'string' ? params['barkColor'] : '#3b2a24', height: Math.max(5, num(params['height'], 5.5) * 1.35), variant: 2, blossom: 1 } };

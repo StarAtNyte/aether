@@ -150,6 +150,8 @@ export interface NaturalGroundOptions {
   /** Spruce colour and height, broadleaf colour (defaults: a temperate forest). */
   conifer?: { color?: string; height?: number };
   broadleafColor?: string;
+  /** Broadleaf woods stand bare (winter, a haunted hollow). */
+  bare?: boolean;
 }
 
 /**
@@ -202,7 +204,7 @@ export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
   const half = size / 2 - 20;
   const spruce: Record<string, Json> = { height: o.conifer?.height ?? 14, detail: 0.5, color: o.conifer?.color ?? '#2f4f32', ...(o.snow ? { snow: 0.8 } : {}) };
   if ((woods.conifers ?? 150) > 0) grove(b, 'woods-spruce', 'Spruce woods', 'tree-spruce', spruce, landPoints(b, woods.conifers ?? 150, half, wooded(o.pad + 12), 6, land.h), [0.75, 1.35], land.id, size);
-  if ((woods.broadleaf ?? 110) > 0) grove(b, 'woods-oak', 'Broadleaf woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: o.broadleafColor ?? '#4f7a34', variant: 1 }, landPoints(b, woods.broadleaf ?? 110, half, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, size);
+  if ((woods.broadleaf ?? 110) > 0) grove(b, 'woods-oak', 'Broadleaf woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: o.broadleafColor ?? '#4f7a34', variant: 1, ...(o.bare ? { leaf: 0 } : {}) }, landPoints(b, woods.broadleaf ?? 110, half, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, size);
   if ((woods.birch ?? 0) > 0) grove(b, 'woods-birch', 'Birches', 'tree-birch', { height: 8.5, detail: 0.6 }, landPoints(b, woods.birch ?? 0, half * 0.6, wooded(o.pad + 4), 5, land.h), [0.8, 1.2], land.id, size);
   if ((woods.scrub ?? 240) > 0) grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#587a3c' }, landPoints(b, woods.scrub ?? 240, half * 0.8, wooded(o.pad + 3), 2.6, land.h), [0.7, 1.5], land.id, size);
   if ((woods.boulders ?? 40) > 0) grove(b, 'boulders', 'Boulders', 'boulder', { size: 1.6, lichen: 0.35, variant: 0 }, landPoints(b, woods.boulders ?? 40, half * 0.7, wooded(o.pad + 2), 4, land.h), [0.5, 1.6], land.id, size);

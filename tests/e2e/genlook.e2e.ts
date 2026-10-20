@@ -41,16 +41,24 @@ type V3 = [number, number, number];
 interface Cam { name: string; pos: V3; target: V3 }
 
 async function build(page: Page, url: string, prompt: string): Promise<void> {
-  await page.goto(`${url}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
-  await page.locator('#hero-prompt').waitFor({ timeout: 60_000 });
-  if (BACKEND !== 'offline') {
-    // The local connection is resolved a moment after the page loads: a prompt sent before that goes to the offline planner.
-    const label = BACKEND === 'claude-code' ? 'Claude Code' : 'Codex';
-    await page.waitForFunction((l) => document.body.innerText.includes(l), label, { timeout: 45_000 }).catch(() => log(`  (no "${label}" on the page; the build may run offline)`));
-    await page.waitForTimeout(1500);
+  if (BACKEND === 'offline') {
+    await page.goto(`${url}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
+    await page.locator('#hero-prompt').waitFor({ timeout: 60_000 });
+    await page.locator('#hero-prompt').fill(prompt);
+    await page.keyboard.press('Enter');
+  } else {
+    // A local AI is reached from the editor's composer once the connection is resolved (the home prompt box builds with
+    // whatever is ready at that instant, which is the offline planner while the local status is still being checked).
+    await page.goto(`${url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__aether?.simulation != null && window.__aether.store.getState().loading === null, null, { timeout: 90_000 });
+    const label = BACKEND === 'claude-code' ? 'Claud' : 'Codex';
+    await page.waitForFunction((l) => document.body.innerText.includes(l), label, { timeout: 45_000 }).catch(() => log(`  (no "${label}" in the composer; the build may run offline)`));
+    await page.waitForTimeout(2000);
+    const box = page.getByLabel('Prompt', { exact: true });
+    await box.click();
+    await box.fill(prompt);
+    await box.press('Enter');
   }
-  await page.locator('#hero-prompt').fill(prompt);
-  await page.keyboard.press('Enter');
   await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 90_000 });
   await page.waitForFunction(
     () => {
@@ -133,6 +141,8 @@ function cameras(page: Page): Promise<{ arch: boolean; cams: Cam[] }> {
       const by = building.transform.position[1];
       const cams: Array<{ name: string; pos: [number, number, number]; target: [number, number, number] }> = [
         { name: 'exterior', pos: [cx + diag * 0.95, by + 1.7, cz + diag * 1.25], target: [cx, by + 2.6, cz] },
+        // The archviz view: from beyond the garden, a little above eye height, the whole house and its grounds in frame.
+        { name: 'archviz', pos: [cx + diag * 1.45, by + 3.2, cz + diag * 1.9], target: [cx, by + 2.4, cz] },
         { name: 'aerial', pos: [cx - diag * 1.1, by + diag * 0.9, cz + diag * 1.2], target: [cx, by + 1.5, cz] },
       ];
       for (const kind of ['living', 'bedroom', 'kitchen']) {
@@ -198,6 +208,7 @@ async function main(): Promise<void> {
         return { name: a.history.current.name, entities: Object.keys(a.history.current.entities).length, backend: document.body.innerText.match(/WebGPU|WebGL2/)?.[0] ?? '?', reply: (last?.events ?? []).map((e) => e.text ?? e.message ?? '').join(' ').slice(0, 400) };
       });
       log(`  built "${info.name}" (${info.entities} entities, ${((performance.now() - started) / 1000).toFixed(0)} s, ${info.backend}): ${info.reply}`);
+      if (BACKEND !== 'offline') await page.screenshot({ path: join(outDir!, `${name}-ui.png`) });
       writeFileSync(join(outDir!, `${name}.world.json`), await page.evaluate(() => JSON.stringify(window.__aether!.history.current)));
       await page.evaluate(() => {
         window.__aether?.studio.playtest.cancel();
