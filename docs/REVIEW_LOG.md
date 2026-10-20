@@ -3754,3 +3754,42 @@ The nine defects the acceptance pass left open are fixed, each with tests. The d
 - Renaming a project from the home page drops its saved undo history on the next open (the session is tied to the world).
 - The bot does not evade during jumps, drops or lift rides. Enemies faster than the player still need the slower-enemy repair. Wins can take longer, because it leads the pack away first.
 - The visual quality gaps (V1 to V3) are separate work.
+
+## What belongs to an object, and a studio run with Codex as the brain
+
+**The re-run's defects (fixed with tests).**
+- An object's dependents move and change with it (`@aether/core` `dependents.ts`):
+  - `Entity.attachedTo` (additive) names an owner without parenting; `rename` rewrites it, a missing owner is ignored.
+  - `dependencyIndex(world)` also finds owners by part names ("Shrine goal", "shrine-light", "Shrine platform") and by footprint: a shapeless light or an invisible, sensor or rule zone inside the smallest object around it (the shrine, not the hill under it).
+  - The small-edit guard puts a target's dependents in scope. `apply_patches`, `place_level_items` moves and local moves carry them (`carryPatches`, a rigid move that swings them round a turned owner); a local remove takes the object's own lights and zones. The prompt documents `attachedTo`.
+- Self-repair respects intent: an unreachable objective first gets steps (0.25 m risers) or jump blocks up to what it stands on, kept only when the bot then gets there. An objective that belongs to something is never moved off it; when nothing helps the sentence says so.
+- Grounding is measured on the drawn surfaces (`surfaceWorld`): every visible shape is a static body following its rendered geometry. A hill without a body holds up its shrine, and a collider that does not follow its mesh no longer decides. Props and decor are set on the drawn surface.
+- A home-page rename keeps the undo history and the verdicts (`renameSession`; every kept snapshot and title change takes the new name).
+
+**Codex through the studio (forest game, house, photo room).** The defect list with calls, timings and screenshots is kept outside the repo (`~/.local/share/aether/qa/acceptance-report.md`, "Codex run"). Fixed:
+- After the local server restarted, the open studio built offline: the stale status read is now re-read before falling back, with the turn marked busy meanwhile.
+- "make the wolves patrol along the river bank" was refused by the guard. Everything a request names is in scope, irregular plurals included; function words name nothing, and a precise reference ("the second tent") is not widened.
+- With a model connected, an edit that could mean several things goes to the model with the candidates instead of a local "Which shrine?". Offline still asks.
+- NPC grids drape over terrain (`NavBuildOptions.surface`, `terrainSampler`; analysis, verification and runtime). Wolves on gentle hills had failed "stands on ground it cannot walk on", so Codex built flat stone discs for them.
+- The playtest bot no longer leaps or drops through a hazard (the river under a jump respawned it in a loop), and a stuck report does not blame the floor.
+- A targeted edit is not followed by the scene-wide quality pass, which had reshaped forests, paths and lights after "move the shrine".
+- Front clearance ignores pieces above 2 m (ceiling lights in front of showers).
+- A start inside furniture moves beside it (a photo room's walk began on the bed); an authored walk start facing a facade turns to the entrance.
+- A cosmetic edit keeps the physics verdict (no "Checks outdated" after a colour change).
+
+**Verification.**
+- `tsc --noEmit`: 0 errors.
+- Full vitest: 383 files, 4106 tests pass.
+- Studio build ok; `npm run smoke` 34/34.
+- `e2e:verified` and `e2e:refine` pass in Chromium and Firefox.
+- Codex, through the built studio:
+  - Forest game: 19 calls, 296 s, verified playable. Three edits: the shrine moved with its crystal, altar and light; the wolves patrol both banks; the lanterns glow warmer. Each was verified playable. Keyboard play works, and the published zip plays.
+  - House: 17 calls, 230 s, verified walkable (7 rooms, 3 residents). A local sofa colour, a Codex kitchen window (9 calls) and a local reading lamp; Undo removed the lamp; the walk now starts at the front door.
+  - Photo room: 25 calls, 662 s, measured fidelity 83%.
+
+**Still open.**
+- A kitchen window recompile re-placed an automatic bathroom plant into the shower (auto-furnishing).
+- Input tokens per Codex call are high (about 0.5 M): the resumed thread is reused only when the new body extends the old one, and the world summary changes every turn.
+- The house project name was cut mid-phrase ("… with a"); local edits repeat their sentence three times in the reply.
+- Photo rooms miss cornices, sash windows and a full shell in the judges' renders.
+- Visual gaps: the forest river is a flat box and the shrine hill a cylinder.
