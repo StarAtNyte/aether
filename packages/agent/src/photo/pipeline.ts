@@ -555,7 +555,8 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
 
   // The room is the world: whatever was there (the starter scene, an earlier room) goes, as one undo step.
   if (run.replace !== false && Object.keys(host.getWorld().entities).length > 0) {
-    const cleared = host.applyPatches([{ op: 'clear' }], 'Clear the world for the room from the photo');
+    // The project is named after the room, and the starter's outdoor weather (fireflies, rain) does not follow it inside.
+    const cleared = host.applyPatches([{ op: 'clear' }, { op: 'setMeta', name: photoRoomName(desc.roomType) }, { op: 'setEnvironment', set: { weather: 'clear' } }], 'Clear the world for the room from the photo');
     if (cleared.applied.length > 0) yield { type: 'patches', patches: cleared.applied, message: 'Clear the world for the room from the photo', result: { applied: cleared.applied.length, errors: [] } };
   }
   // Build: shell first, then the pieces, each through the design tools (measured, accepted or refused with a reason).
@@ -979,4 +980,10 @@ async function finalJudgement(run: PhotoRun, photo: Photo, shot: Shot, checklist
     messages.push({ role: 'user', content: [{ type: 'tool_result', toolUseId: call.id, content: 'No valid verdicts. Send {"verdicts":[{"id","pass","note"}]}.', isError: true }] });
   }
   return null;
+}
+
+/** Project name of a room rebuilt from a photo ("Bedroom from a photo"). */
+export function photoRoomName(roomType: string): string {
+  const label = roomType === 'living' ? 'Living room' : roomType === 'kids' ? "Children's room" : roomType === 'office' ? 'Home office' : roomType.replace(/^./, (c) => c.toUpperCase());
+  return `${label} from a photo`;
 }

@@ -426,6 +426,9 @@ describe('the room replaces the world', () => {
     expect(replaced.world.entities['old-tree']).toBeUndefined();
     expect(replaced.commits.map((c) => c.message)).toContain('Clear the world for the room from the photo');
     expect(readScene(replaced.world, PHOTO_BUILDING_ID)?.items.length).toBeGreaterThan(8);
+    // Named after the room, without the starter's outdoor weather.
+    expect(replaced.world.name).toMatch(/from a photo$/);
+    expect(replaced.world.environment.weather).toBe('clear');
     const beside = await run('refine');
     expect(beside.world.entities['old-tree']).toBeDefined();
   });
