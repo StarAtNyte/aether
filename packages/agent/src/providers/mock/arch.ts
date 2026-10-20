@@ -333,7 +333,7 @@ function environment(text: string, grounds = false): PatchInput[] {
   const sunset = /\bsunset|golden hour\b/.test(text);
   const sky = night ? 'night' : sunset ? 'sunset' : 'day';
   // Late-afternoon sun: long, soft shadows and warm light through the windows.
-  const time = night ? 21.5 : sunset ? 17.6 : 16.2;
+  const time = night ? 21.5 : sunset ? 17.6 : grounds ? 15.8 : 16.2;
   return [
     { op: 'clear', keepEnvironment: false },
     { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#dfe6ec', density: grounds ? 0.0011 : 0.003 }, bloom: night ? 1 : 0.35, ground: grounds ? null : { material: { finish: 'grass', color: '#8b9f6c' }, size: 160 } } },

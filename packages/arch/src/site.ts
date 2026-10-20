@@ -227,6 +227,23 @@ export function compileGrounds(g: GardenInput): GardenOutput {
       }
     }
 
+    // --- the lawn: short, dense tufts over the open plot (a mown lawn reads as grass, not as a green plane) -------------
+    const lawn: Array<[number, number, number]> = [];
+    for (let i = 0; i < 9000 && lawn.length < 2600; i++) {
+      const x = between(px0 + 0.8, px1 - 0.8);
+      const z = between(pz0 + 0.8, pz1 - 0.8);
+      if (inHouse(x, z, 0.4) || onTerrace(x, z, 0.15) || nearPath(x, z, 0.9)) continue;
+      if (x < px0 + 2.3 || x > px1 - 2.3 || z < pz0 + 2.3 || z > pz1 - 2.3) {
+        // Beside the hedges: only where no border bed runs (beds sit 0.7 to 1.8 m in from a hedge).
+        const dEdge = Math.min(x - px0, px1 - x, z - pz0, pz1 - z);
+        if (dEdge < 2.1) continue;
+      }
+      lawn.push([r(x), 0, r(z)]);
+    }
+    if (lawn.length > 0) {
+      out.push({ id: `${bid}-lawn`, parent: bid, name: 'Lawn', transform: { position: [0, 0, 0] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'meadow-grass', params: { size: 0.17, color: '#6f9444', cards: 2 } }, count: lawn.length, area: [r(px1 - px0), r(pz1 - pz0)], seed: Math.floor(rand() * 100000), scaleRange: [0.7, 1.3], points: lawn }, arch: { role: 'site', kind: 'lawn', name: 'Lawn' }, tags: ['arch', 'site'] });
+    }
+
     // --- trees in the plot corners, boulders by the beds -------------------------------------------------------------
     // Trees frame the house from behind and the sides; the front corners stay open so the house is seen from the approach.
     const cxm = (px0 + px1) / 2;
