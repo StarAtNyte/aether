@@ -278,6 +278,13 @@ export class WorldAgent {
         yield { type: 'message', text: fe.detail };
         return;
       }
+      // Offline, an edit that names something the world does not have ("move the shrine onto the hill" with no shrine)
+      // is answered plainly: the offline planner can only add whole scenes, which would be a wrong guess. A model is
+      // asked instead, because it can build what is missing.
+      if (fe.kind === 'none' && fe.reason === 'failed' && fe.detail && this.opts.provider.name === 'mock' && /^I can't find\b/.test(fe.detail)) {
+        yield { type: 'message', text: `${fe.detail}, so I left the world as it is. Name something that is in the scene, or connect an AI model to build what is missing.` };
+        return;
+      }
       scope = refine.classifyScope(world0, request, { selection, focus: memory.targets, heading });
       if (scope.kind === 'small') {
         const small = scope;

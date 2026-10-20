@@ -142,3 +142,23 @@ describe('commands', () => {
     }
   });
 });
+
+describe('moving onto things', () => {
+  it('reads "onto" and "put the X on the Y" as a move on top of an anchor', () => {
+    for (const text of ['move the shrine onto the hill', 'put the shrine on the hill', 'move the vase on to the shelf']) {
+      const c = first(text);
+      expect(c.op, text).toBe('move');
+      if (c.op !== 'move') continue;
+      expect(c.to?.rel, text).toBe('above');
+      expect(c.ref.text.startsWith('the '), text).toBe(true);
+      expect(c.ref.text, text).not.toMatch(/on top of|onto|\bon\b/);
+    }
+  });
+  it('still adds when the object is new ("put a lamp on the table")', () => {
+    expect(first('put a lamp on the table').op).toBe('add');
+  });
+  it('reads irregular plurals', () => {
+    const c = first('make the wolves slower');
+    expect(c.op === 'speed' && c.ref.noun).toBe('wolf');
+  });
+});

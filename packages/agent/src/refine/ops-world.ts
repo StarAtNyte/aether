@@ -267,6 +267,16 @@ export function planSpeed(env: OpEnv, cmd: Extract<Command, { op: 'speed' }>): O
   const only = cmd.what;
   const changed: SceneItem[] = [];
   for (const it of res.items) {
+    // Characters (wolves, guards, villagers) walk and run by their NPC speeds.
+    if (it.entity.npc && !only) {
+      const ent = env.draft.entity(it.id);
+      const npc = ent.npc as NonNullable<typeof ent.npc>;
+      // A number names the running speed; walking keeps its share of it.
+      const f = cmd.value !== undefined ? Math.abs(cmd.value) / Math.max(0.01, npc.runSpeed) : (cmd.factor ?? 1);
+      ent.npc = { ...npc, speed: r2(clamp(npc.speed * f, 0.1, 30)), runSpeed: r2(clamp(npc.runSpeed * f, 0.1, 30)) };
+      changed.push(it);
+      continue;
+    }
     const probe = it.entity.behaviors.some((b) => SPEED_PARAM[b.type] && (!only || b.type === only));
     const kids = probe ? [] : env.index.subtree(it.id).slice(1).map((c) => env.index.get(c)).filter((c): c is SceneItem => !!c && c.entity.behaviors.some((b) => SPEED_PARAM[b.type] && (!only || b.type === only)));
     for (const target of probe ? [it] : kids) {

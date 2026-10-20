@@ -204,3 +204,32 @@ describe('refine by default', () => {
     expect(host.world.entities['tent-1']).toBeUndefined();
   });
 });
+
+describe('acceptance edits: missing targets, characters and "onto"', () => {
+  it('offline, an edit that names something the world lacks says so and changes nothing', async () => {
+    const host = new MemoryHost(loadFixture('camp'));
+    const before = host.world;
+    const events = await collect(new WorldAgent({ provider: createMockProvider(), catalogs: TEST_CATALOGS }).run('move the shrine onto the hill', host));
+    const text = events.map((e) => (e.type === 'message' ? e.text : '')).join(' ');
+    expect(text).toMatch(/can't find "the shrine"/);
+    expect(host.commits).toHaveLength(0);
+    expect(host.world).toBe(before);
+  });
+
+  it('slows characters by their walking and running speeds', async () => {
+    const { provider, requests } = scripted([() => finishCall()]);
+    const host = new MemoryHost(loadFixture('meadow'));
+    const cowsBefore = Object.values(host.world.entities).filter((e) => e.npc?.role === 'cow');
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('make the cows slower', host));
+    expect(requests).toHaveLength(0);
+    const cows = Object.values(host.world.entities).filter((e) => e.npc?.role === 'cow');
+    expect(cows.length).toBe(cowsBefore.length);
+    expect(cows.length).toBeGreaterThan(1);
+    for (const [i, c] of cows.entries()) {
+      expect(c.npc?.runSpeed).toBeLessThan(cowsBefore[i]?.npc?.runSpeed ?? 0);
+      expect(c.npc?.speed).toBeLessThan(cowsBefore[i]?.npc?.speed ?? 0);
+    }
+    const msg = events.find((e) => e.type === 'message');
+    expect(msg && msg.type === 'message' && msg.text).toMatch(/cows slower/i);
+  });
+});

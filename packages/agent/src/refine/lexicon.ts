@@ -301,7 +301,7 @@ export function sizeFactor(text: string, grow: boolean): number {
 /** Naive singularisation. */
 export function singular(word: string): string {
   const n = word.toLowerCase();
-  const irregular: Readonly<Record<string, string>> = { cacti: 'cactus', sheep: 'sheep', leaves: 'leaf', shelves: 'shelf', knives: 'knife', people: 'person', mice: 'mouse', boxes: 'box', benches: 'bench', bushes: 'bush', glasses: 'glass', dresses: 'dress', lights: 'light', tvs: 'tv' };
+  const irregular: Readonly<Record<string, string>> = { cacti: 'cactus', sheep: 'sheep', leaves: 'leaf', shelves: 'shelf', knives: 'knife', wolves: 'wolf', thieves: 'thief', halves: 'half', calves: 'calf', loaves: 'loaf', scarves: 'scarf', hooves: 'hoof', elves: 'elf', dwarves: 'dwarf', wives: 'wife', geese: 'goose', men: 'man', women: 'woman', children: 'child', dominoes: 'domino', heroes: 'hero', potatoes: 'potato', tomatoes: 'tomato', foxes: 'fox', people: 'person', mice: 'mouse', boxes: 'box', benches: 'bench', bushes: 'bush', glasses: 'glass', dresses: 'dress', lights: 'light', tvs: 'tv' };
   if (irregular[n]) return irregular[n] as string;
   if (n.endsWith('ies') && n.length > 4) return `${n.slice(0, -3)}y`;
   if (/(ches|shes|xes|sses)$/.test(n)) return n.slice(0, -2);

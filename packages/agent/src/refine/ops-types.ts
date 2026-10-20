@@ -112,6 +112,17 @@ export function labelOf(item: SceneItem): string {
 const ORDINAL_WORDS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
 
 /** "the sofa" / "the second chair" / "3 chairs". */
+/** English plural of a kind noun ("wolf" → "wolves", "bench" → "benches"). */
+export function plural(noun: string): string {
+  const irregular: Readonly<Record<string, string>> = { wolf: 'wolves', thief: 'thieves', shelf: 'shelves', leaf: 'leaves', knife: 'knives', half: 'halves', elf: 'elves', dwarf: 'dwarves', person: 'people', man: 'men', woman: 'women', child: 'children', mouse: 'mice', goose: 'geese', sheep: 'sheep', fish: 'fish', deer: 'deer' };
+  const last = /([a-z]+)$/i.exec(noun)?.[1]?.toLowerCase() ?? '';
+  if (irregular[last]) return noun.slice(0, noun.length - last.length) + irregular[last];
+  if (/s$/.test(noun)) return noun;
+  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
+  if (/(?:ch|sh|x|z)$/i.test(noun)) return `${noun}es`;
+  return `${noun}s`;
+}
+
 export function describeTargets(items: readonly SceneItem[], ref?: Pick<Ref, 'ordinal'>): string {
   if (items.length === 0) return 'nothing';
   const first = items[0] as SceneItem;
@@ -121,5 +132,5 @@ export function describeTargets(items: readonly SceneItem[], ref?: Pick<Ref, 'or
     return `the ${word ? `${word} ` : ''}${first.label.toLowerCase()}`;
   }
   const kinds = new Set(items.map((i) => i.kind));
-  return kinds.size === 1 ? `${items.length} ${first.kind}${first.kind.endsWith('s') ? '' : 's'}` : `${items.length} objects`;
+  return kinds.size === 1 ? `${items.length} ${plural(first.kind)}` : `${items.length} objects`;
 }

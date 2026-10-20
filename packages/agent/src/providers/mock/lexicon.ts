@@ -264,6 +264,16 @@ export const ASSETS: Readonly<Record<string, Asset>> = {
 
 /** Find an asset for a free-text noun phrase ("big red cars" → car, red). */
 export function lookupAsset(phrase: string): { asset: Asset; noun: string; color?: string } | null {
+  // "a bridge over the river", "a lamp next to the sofa": the thing to add comes before the place.
+  const head = /^(.+?)\s+(?:over|across|on|onto|on top of|above|under|beneath|below|beside|next to|near|by|behind|in front of|inside|in|at|along|around|between|through)\s+.+$/i.exec(phrase.trim());
+  if (head?.[1]) {
+    const found = lookupNoun(head[1]);
+    if (found) return found;
+  }
+  return lookupNoun(phrase);
+}
+
+function lookupNoun(phrase: string): { asset: Asset; noun: string; color?: string } | null {
   const words = phrase.toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/\s+/).filter(Boolean);
   let color: string | undefined;
   const rest: string[] = [];

@@ -54,3 +54,11 @@ describe('offline planner and other languages', () => {
     for (const text of ['a haunted castle at night', 'add a tent', 'make the car red', 'tropical island coin game']) expect(looksNonEnglish(text)).toBe(false);
   });
 });
+
+describe('offline additions name the thing before the place', () => {
+  it('"a bridge over the river" adds a bridge, not something the river word matches', async () => {
+    const { lookupAsset } = await import('../src/providers/mock/lexicon');
+    expect(lookupAsset('a bridge over the river')?.asset.label).toBe('bridge');
+    expect(lookupAsset('a tent next to the campfire')?.noun).toBe('tent');
+  });
+});

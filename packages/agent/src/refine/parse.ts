@@ -261,7 +261,9 @@ function parseMove(c: string): Command | null {
   const m = /^(?:move|shift|push|slide|nudge|drag|shove|bring|put|place|position|relocate|set|slip|pull|carry)\s+(.+)$/.exec(c) ?? /^(raise|lift|lower)\s+(.+)$/.exec(c);
   if (!m) return null;
   const verb = (c.match(/^[a-z]+/) as RegExpMatchArray)[0];
-  const rest = (m[2] ?? m[1]) as string;
+  // "onto the hill" / "on to the table" is "on top of"; so is "on" after a named object ("put the vase on the shelf").
+  let rest = ((m[2] ?? m[1]) as string).replace(/\b(?:onto|on to)\b/, 'on top of');
+  if (/^(?:the|that|this|my|those|these)\s/.test(rest) && !REL_RE.test(rest)) rest = rest.replace(/\s+on\s+(?=(?:the|that|this|my|a|an)\s)/, ' on top of ');
   if (verb === 'raise' || verb === 'lift' || verb === 'lower') {
     const { subject } = splitMoveSubjectRoom(rest);
     return { op: 'move', ref: parseRef(subject), direction: verb === 'lower' ? 'down' : 'up', metres: amountMetres(rest) === 1 && !/\d/.test(rest) ? 0.5 : amountMetres(rest) };
@@ -286,7 +288,7 @@ function parseMove(c: string): Command | null {
     const spec = parseRef(`${subj} ${right}`);
     if (spec.relation) {
       const { relation, ...base } = spec;
-      return { op: 'move', ref: base, metres: amountMetres(rest), to: relation };
+      return { op: 'move', ref: { ...base, text: subj.trim() || base.text }, metres: amountMetres(rest), to: relation };
     }
   }
   const to = /\b(?:to|into)\s+(?:the\s+)?(.+)$/.exec(rest);
