@@ -59,7 +59,7 @@ async function build(page: Page, url: string, prompt: string): Promise<void> {
     await box.fill(prompt);
     await box.press('Enter');
   }
-  await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 90_000 });
+  await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 240_000 });
   const done = (): Promise<unknown> =>
     page.waitForFunction(
       () => {

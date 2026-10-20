@@ -3793,3 +3793,38 @@ The nine defects the acceptance pass left open are fixed, each with tests. The d
 - The house project name was cut mid-phrase ("… with a"); local edits repeat their sentence three times in the reply.
 - Photo rooms miss cornices, sash windows and a full shell in the judges' renders.
 - Visual gaps: the forest river is a flat box and the shrine hill a cylinder.
+## Generated worlds look like the flagships (stage `genlook`)
+
+**Problem.** The flagships looked good, but worlds built from a prompt (what a person actually gets) were toys: cone pines, a blue box for a river, a pink box for a path, plain stucco boxes on a flat hazy lawn, sparse interiors (acceptance V1 to V3).
+
+**What changed.**
+- *Realistic by default.* The offline planner builds with the realistic parts unless the request asks for a stylised look (low-poly, cartoon, painterly, voxel …); edits follow the world, so a painterly world stays painterly. `apply_patches` exchanges low-poly nature generators for the realistic set for the AI too (`ExecutorContext.realistic`) and says so.
+- *Land, not a plane.* `naturalGround`: the estate terrain with a level plot round the scene, swells, wooded hills, leaf-card woods and clumped ground cover; everything placed afterwards stands on it (`Builder.ground`), scatter drapes over it and keeps out of water. Forest, meadow, winter (snow lying on the land), farm, park, haunted, village and castle use it; the desert carves a real sandstone canyon (stratified walls, desert varnish, 384 cells).
+- *Water and paths.* A stream carved across the land with flowing water and a footbridge where the trail crosses it (`terrain` `streamHalf/Z/Bend/Depth`, `streamCourse`); trails and lanes are draped ribbons with tapered ends (`groundRibbon`), a village square is a ragged paved patch (`groundPatch`).
+- *Games.* Lanterns to collect are the photographed lantern with a flame and a breathing light; a racing activity (circuit, curbs, gantries, ordered checkpoints, grandstand, tyre walls, karts and rivals, laps) that lays its circuit before the settings so the desert carves its canyon round it; a realistic `cactus` generator; real sheep; boulders take their rock texture per face (the streaked lattice is gone).
+- *Medieval village.* A village, not a castle: old houses, market stalls with awnings and produce, a stone well, lantern posts, lanes to every door, villagers, cottage gardens.
+- *Built structures* (second worker): houses, towers, walls, fences, bridges, lamp posts, barrels, campfire, tents and the other props in PBR finishes with plinths, reveals, frames, tiled roofs with fascia, gutters, corbels and coping.
+- *Houses* (first worker): articulated facades per style, a compiled garden and wooded land (`set_site`), rooms dressed to a sensible density (`dress_room`); here, hedges grow leafy shrubs over their box, and the building review suggests `dress_room` for a bare room and `set_site` for a house on the bare plane (`room_sparse`, `no_grounds`, information only).
+- *The AI's tools.* `shape_land` ({op:"land"}: terrain, stream, woods, cover in one call; {op:"path"}: a draped trail or an even road), documented in the prompt and CONTRACTS.md.
+
+**Rounds** (Intel iGPU WebGL2, `tests/e2e/genlook.e2e.ts`, captures in `~/.local/share/aether/genlook/`): r0 before; r1 landscape, stream and lanterns; r2 race and village; r3 canyon strata, winter and farm; r4 with both workers' structures and houses; r5 haunted, plaza patch, boulder UVs; r6 hedges, finer canyon, final. Firefox WebGL2 (`r6ff`) and WebGPU on SwiftShader (`r6gpu`) render the same scenes. Claude Code through the local server: `c4` forest, `c6` canyon, `c7`/`c8` house (before: the acceptance shots `s1c-*`, `s2c2-*`).
+
+**Before and after, per prompt.**
+- *Night forest adventure* (lanterns, wolves, river, shrine). Before: cone pines, glowing cubes, a lake disc, a flat path. After: a clearing in rolling spruce and broadleaf woods with ferns, grass and flowers, a carved stream with a footbridge on the trail to the torii, lit wooden lanterns; verified playable (5 of 5 in 18 s). Claude Code: called `shape_land` with a stream and built on it (was a blue box river).
+- *Two-storey modern house with pool.* Before: a white box on a flat lawn, four pieces in the living room. After: render and timber cladding, plinth, canopy, fascia, a garden with hedges, beds, trees, loungers and wooded land; dressed rooms; verified walkable. Claude Code: first run left the grounds and dressing out; with the review notes it called `set_site` (garden and estate land) and set the ground off.
+- *Medieval village with a market.* Before: a grey castle with blue cone roofs and modern flat-roofed cottages. After: half-timbered and stone cottages on a cobbled square with stalls, a well, lantern posts, lanes and villagers in wooded hills.
+- *Desert canyon racing game.* Before: a city street of white blocks beside green-skirted cones, no race. After: a three-lap circuit on the floor of a stratified sandstone canyon with a grandstand, gantries, rival karts and cacti; the bot drives it to the win in 45 s. Claude Code: carved the canyon with `shape_land` and laid an asphalt road (was walls of boxes).
+
+**Verification.** `tsc --noEmit` 0 errors; full vitest 383 files, 4106 tests; studio build; `npm run smoke` 34/34; `npm run bench:quick` passes; `showcase:bake --check` up to date (bundled prompt worlds rebaked: they are realistic now). Test expectations changed honestly: the stylised-only assertions use a low-poly prompt, the prompt cap carries the new options, the planner speed budget is 120 ms per world (it samples the landscape heightfield), terrain winding tolerance 1.5 % at random extremes, the design loop takes one review turn for the dressing note.
+
+**Security.** `shape_land` input is zod-bounded (sizes, counts, colours, at most 64 points) and produces only ordinary validated patches; library lookups are capped at 32 per call; no network, no new assets or dependencies.
+
+**Performance.** A landscape adds one terrain (256 cells, 384 for a canyon) and a few thousand clumped cover instances; scatter stays within the renderer's instance and triangle budgets; the planner spends 20 to 60 ms sampling the heightfield.
+
+**Honest gaps (still short of a Blender still).**
+- Realtime lighting stays flat in interiors (bleached walls, little bounce); exteriors have no contact shadows under small props.
+- Canyon walls still show 1.4 m facets from a distance; far hills are smooth.
+- Ground between scatter clumps is a plain tinted surface; hedges are boxes with leafy tops; the lawn outside a garden is bare.
+- Kart drivers, the torii gate and the farm animals are stylised library models; flames are glowing cones.
+- The AI does not always use the tools it is told about on its first pass (it needed the review notes for the grounds, and rooms it lays out stay sparser than the offline ones).
+- Stills are from the Intel iGPU (the RTX 4090 was busy); the genlook play still can show the playtest replay's selection outline.
