@@ -201,9 +201,13 @@ describe('walkthrough interactions', () => {
   it('keeps an authored start yaw unless it looks straight into a wall, then faces the entrance', () => {
     const w = flatWorld();
     const entrance = entranceYawDeg(w);
-    const authored = { ...w, player: { ...w.player, yaw: 45 } };
-    expect(startYawDeg(authored, () => false)).toBe(45);
+    const turned = Math.round((entrance ?? 0) + 90);
+    const authored = { ...w, player: { ...w.player, yaw: turned } };
+    expect(startYawDeg(authored, () => false)).toBe(turned);
     expect(startYawDeg(authored, () => true)).toBe(entrance);
+    // Looking roughly at the entrance already: the authored yaw stands even with the facade ahead.
+    const near = { ...w, player: { ...w.player, yaw: Math.round((entrance ?? 0) + 10) } };
+    expect(startYawDeg(near, () => true)).toBe(Math.round((entrance ?? 0) + 10));
     expect(startYawDeg(w, () => true)).toBe(entrance);
     const open = createWorld({ player: { yaw: 30 } });
     expect(startYawDeg(open, () => true)).toBe(30);
