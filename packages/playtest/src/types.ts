@@ -148,7 +148,7 @@ export interface PlaytestReport {
   /** Message text the game showed at the end, if any. */
   endText?: string;
   /** Cost figures of the run (informational). */
-  stats?: { searches: number; expanded: number; navNodes: number; navCell: number; navMs: number; planMs: number };
+  stats?: { searches: number; expanded: number; navNodes: number; navCell: number; navMs: number; planMs: number; /** Times the bot stepped out of an enemy's reach. */ evasions?: number };
 }
 
 /** Progress notification during a run. */

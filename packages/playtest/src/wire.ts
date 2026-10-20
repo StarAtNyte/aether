@@ -70,7 +70,7 @@ export const ReportWire = z.object({
   summary: text(600),
   worldHash: z.string().regex(/^[0-9a-f]{16}$/),
   endText: text(200).optional(),
-  stats: z.object({ searches: finite, expanded: finite, navNodes: finite, navCell: finite, navMs: finite, planMs: finite }).optional(),
+  stats: z.object({ searches: finite, expanded: finite, navNodes: finite, navCell: finite, navMs: finite, planMs: finite, evasions: finite.optional() }).optional(),
 });
 
 /** Validate a report received from a worker or storage; null when malformed. */

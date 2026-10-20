@@ -168,6 +168,13 @@ export class NavGraph {
   readonly cellFirst: Int32Array;
   /** Nodes blocked at planning time (doors that cannot open now, hazards). */
   readonly blocked: Uint8Array;
+  /**
+   * Extra cost per node, as a multiple of the step onto it (0 = none): the ground near a hostile
+   * character is dearer, so routes bend round it. All zero unless a caller paints it.
+   */
+  readonly danger: Float32Array;
+  /** Multiplier on jump, drop and ride costs (1 = none): raised while enemies hunt the player, when a jump means standing still to land. */
+  linkScale = 1;
   private readonly known: Uint8Array;
   private readonly okBits: Uint8Array;
   /** Cached walk targets per node and direction (`-2` = not computed). */
@@ -214,6 +221,7 @@ export class NavGraph {
     this.ny = Float32Array.from(ny);
     this.cellFirst = cellFirst;
     this.blocked = new Uint8Array(this.count);
+    this.danger = new Float32Array(this.count);
     this.known = new Uint8Array(this.count);
     this.okBits = new Uint8Array(this.count);
     this.targetCache = new Int32Array(this.count * 8).fill(-2);
@@ -675,7 +683,7 @@ export class NavGraph {
       const step = this.cell * (dir[0] !== 0 && dir[1] !== 0 ? Math.SQRT2 : 1);
       const v = this.walkTarget(u, d);
       if (v >= 0 && this.blocked[v] === 0 && (this.bad.size === 0 || !this.bad.has(u * this.count + v)) && this.walkOk(u, d, v)) {
-        cb(v, step + Math.abs((this.py[v] as number) - (this.py[u] as number)) * 0.3);
+        cb(v, (step + Math.abs((this.py[v] as number) - (this.py[u] as number)) * 0.3) * (1 + (this.danger[v] as number)));
       }
       const cx = ccx + dir[0];
       const cz = ccz + dir[1];
@@ -685,7 +693,7 @@ export class NavGraph {
       for (let w = this.cellFirst[nc] as number; w < (this.cellFirst[nc + 1] as number); w++) {
         if (w === v || this.blocked[w] === 1 || this.walkTarget(w, back) !== u) continue;
         if (this.bad.size > 0 && this.bad.has(u * this.count + w)) continue;
-        if (this.walkOk(w, back, u)) cb(w, step + Math.abs((this.py[w] as number) - (this.py[u] as number)) * 0.3);
+        if (this.walkOk(w, back, u)) cb(w, (step + Math.abs((this.py[w] as number) - (this.py[u] as number)) * 0.3) * (1 + (this.danger[w] as number)));
       }
     }
   }
@@ -703,7 +711,8 @@ export class NavGraph {
     });
     for (const l of this.linksOf(u)) {
       if (l.state === 2 || this.blocked[l.to] === 1) continue;
-      const nd = du + l.cost;
+      // A jump or a drop crosses the ground between its ends: it pays the dearer end, so it is no shortcut through an enemy's reach.
+      const nd = du + l.cost * this.linkScale * (1 + Math.max(this.danger[u] as number, this.danger[l.to] as number));
       if (nd < (dist[l.to] as number)) {
         dist[l.to] = nd;
         parent[l.to] = u;

@@ -34,6 +34,7 @@ import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
 import { checkBuildings } from '@aether/arch';
 import { Session, STEP } from './session';
+import { ThreatWatch, CORE_MARGIN, type ThreatSource } from './threats';
 import {
   PLAYTEST_LIMITS,
   type Finding,
@@ -52,7 +53,17 @@ export class PlaytestAbortedError extends Error {
   }
 }
 
-type TravelResult = 'arrived' | 'stuck' | 'fell' | 'ended' | 'stopped' | 'teleported';
+type TravelResult = 'arrived' | 'stuck' | 'fell' | 'ended' | 'stopped' | 'teleported' | 'threat';
+
+/** Step away from a hostile character when the player is this close to its reach (m). */
+const EVADE_CLEARANCE = 1.3;
+/** Re-route round hunting characters this often (simulated s) while one is within {@link THREAT_RANGE}. */
+const THREAT_REPLAN_S = 0.5;
+const THREAT_RANGE = 12;
+/** Longest wait (simulated s) per objective for a calm character to move off something it guards. */
+const GAP_WAIT_S = 10;
+/** Re-routes round enemies per objective before an enemy in the way counts as a plain blocker. */
+const MAX_THREAT_TURNS = 400;
 
 interface StuckInfo {
   position: Vec3;
@@ -132,7 +143,7 @@ export function unsupportedReason(world: WorldDoc): string | null {
  * geometry's extent (a 400 m ground does not make a 400 m grid). Heights
  * come from the geometry inside that box.
  */
-function navBounds(doc: WorldDoc, points: readonly Vec3[]): { minX: number; maxX: number; minZ: number; maxZ: number; topY: number; bottomY: number } {
+function navBounds(doc: WorldDoc, points: readonly Vec3[], roomToRun = 0): { minX: number; maxX: number; minZ: number; maxZ: number; topY: number; bottomY: number } {
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (const p of points) {
     minX = Math.min(minX, p[0]);
@@ -141,7 +152,8 @@ function navBounds(doc: WorldDoc, points: readonly Vec3[]): { minX: number; maxX
     maxZ = Math.max(maxZ, p[2]);
   }
   const span = Math.max(maxX - minX, maxZ - minZ);
-  const margin = Math.min(40, Math.max(7, span * 0.35));
+  // With enemies about, the player needs room to step round them, not just the box round the objectives.
+  const margin = Math.min(40, Math.max(7, span * 0.35) + roomToRun);
   minX -= margin;
   maxX += margin;
   minZ -= margin;
@@ -256,6 +268,16 @@ class Bot {
   private navMs = 0;
   private planMs = 0;
   private totalObjectives = 0;
+  /** Hostile characters (null when the world has none, or in a walkthrough). */
+  private threats: ThreatWatch | null = null;
+  private threatSource: ThreatSource | null = null;
+  private threatSensedAt = -1;
+  private readonly threatTurns = new Map<string, number>();
+  private readonly gapWaited = new Map<string, number>();
+  /** Objective the bot is walking to (threat bookkeeping). */
+  private current: GoalObjective | null = null;
+  /** Times the bot stepped out of an enemy's reach (informational). */
+  private evasions = 0;
 
   constructor(world: WorldDoc, private readonly opts: PlaytestOptions, private readonly kind: PlaytestKind) {
     this.world = world;
@@ -461,6 +483,13 @@ class Bot {
       jumpSpeed: w.player.jumpSpeed,
       gravity,
     };
+    if (this.kind === 'game') {
+      this.threats = ThreatWatch.of(w, this.params.radius);
+      if (this.threats) {
+        const s = this.session;
+        this.threatSource = { info: (id) => s.runtime.npcs.info(id), y: (id) => s.host.getTransform(id)?.position[1] };
+      }
+    }
     // Let the player land first: the spawn point is usually a little above the floor.
     this.phase = 'prepare';
     this.note = 'landing at the spawn point';
@@ -483,7 +512,8 @@ class Bot {
     const objectivePoints = this.goals.objectives.map((o) => o.position);
     const doorPoints = this.goals.doors.map((d) => d.center);
     this.note = 'mapping the level';
-    const b = navBounds(probeDoc, [...objectivePoints, ...doorPoints, landed, [spawn[0], spawn[1], spawn[2]]]);
+    const threatPoints: Vec3[] = this.threats ? this.threats.list.map((t) => [t.x, t.y, t.z] as Vec3) : [];
+    const b = navBounds(probeDoc, [...objectivePoints, ...doorPoints, ...threatPoints, landed, [spawn[0], spawn[1], spawn[2]]], this.threats ? 8 : 0);
     const navT0 = nowMs();
     const portals: Array<NavPortal & { door: DoorInfo }> = this.goals.doors
       .filter((d) => d.bounds !== null)
@@ -737,6 +767,13 @@ class Bot {
   private planInner(from: number): { objective: GoalObjective; path: number[]; jumpAt: boolean } | null {
     const g = this.graph;
     this.refreshDoors();
+    // Enemies where they are now: routes bend round their reach and their beat.
+    if (this.threats) {
+      this.senseThreats();
+      this.threats.paint(g);
+      const p = this.session.position;
+      g.linkScale = this.threats.huntedWithin(p[0], p[1], p[2], THREAT_RANGE) ? 6 : 1;
+    }
     for (const phase of [0, 1]) {
       const owner = new Map<number, { o: GoalObjective; jump: boolean }>();
       for (const o of this.pending.values()) {
@@ -787,7 +824,12 @@ class Bot {
     let nudgeUntil = 0;
     let strafeUntil = 0;
     let strafeDir = 1;
+    let threatCheckT = s.time;
+    let evading = false;
+    let commitT = -1;
+    let committed = false;
     const waypoint: Vec3 = [0, 0, 0];
+    const goal = g.pos(path[path.length - 1] as number);
     const resetWatch = (): void => {
       stalls = 0;
       watchT = s.time;
@@ -797,6 +839,32 @@ class Bot {
       if (this.stopped) return s.over ? 'ended' : 'stopped';
       if (s.host.seen.playerTeleports !== tele0) return 'teleported';
       let pos = s.position;
+      // Enemies: step out of a reach that is closing in, and re-route round the pack as it moves.
+      if (this.threats && g.edgeKind(path[idx - 1] as number, path[idx] as number) === EdgeKind.Walk) {
+        this.senseThreats();
+        // The rest of the way is shorter for the player than for any enemy to cut it off: run for it.
+        if (s.time - commitT >= 0.25) {
+          commitT = s.time;
+          committed = this.outruns(path, idx, pos);
+        }
+        const clear = committed ? Infinity : this.threats.clearance(pos[0], pos[1], pos[2]);
+        if (clear < EVADE_CLEARANCE && !this.guardsGoal(goal)) {
+          const yaw = this.threats.escape(g, pos, goal[0], goal[2], 1.1, this.openWay);
+          if (yaw !== null) {
+            if (!evading) this.evasions++;
+            evading = true;
+            if (!(await this.step(1, 0, false, yaw))) return s.over ? 'ended' : 'stopped';
+            resetWatch();
+            continue;
+          }
+        }
+        // Clear again after stepping aside: plan afresh from here.
+        if (evading) return 'threat';
+        if (!committed && s.time - threatCheckT >= THREAT_REPLAN_S) {
+          threatCheckT = s.time;
+          if (this.threats.huntedWithin(pos[0], pos[1], pos[2], THREAT_RANGE) && this.threatTurn()) return 'threat';
+        }
+      }
       // Skip the walk nodes we are already standing on.
       while (idx < path.length - 1 && g.edgeKind(path[idx - 1] as number, path[idx] as number) === EdgeKind.Walk) {
         const n = g.pos(path[idx] as number);
@@ -888,7 +956,10 @@ class Bot {
             strafeDir = stalls === 2 ? -1 : 1;
             strafeUntil = s.time + 0.45;
           } else {
-            this.recordStuck(here, this.blockerAhead(here, yaw));
+            const blocker = this.blockerAhead(here, yaw);
+            // An enemy standing in the way moves on: route round it rather than writing the way off.
+            if (blocker !== null && this.threats?.list.some((t) => t.id === blocker) && this.threatTurn()) return 'threat';
+            this.recordStuck(here, blocker);
             g.markBad(a, b);
             return 'stuck';
           }
@@ -898,6 +969,107 @@ class Bot {
       }
     }
     return 'arrived';
+  }
+
+  /** Read the enemies' positions once per simulated tick. */
+  private senseThreats(): void {
+    if (!this.threats || !this.threatSource || this.threatSensedAt === this.session.steps) return;
+    this.threatSensedAt = this.session.steps;
+    this.threats.update(this.threatSource);
+  }
+
+  /**
+   * Whether the player gets along the rest of the path (from `idx`) before any enemy can reach a point of it:
+   * for every few nodes, the time to run there beats every enemy's time to close to its reach, with a margin.
+   */
+  private outruns(path: readonly number[], idx: number, pos: Readonly<Vec3>): boolean {
+    const t = this.threats;
+    if (!t) return true;
+    const g = this.graph;
+    const speed = Math.max(0.5, this.params.speed);
+    let len = 0;
+    let px = pos[0];
+    let pz = pos[2];
+    for (let i = idx; i < path.length; i++) {
+      const n = path[i] as number;
+      const x = g.px[n] as number;
+      const y = g.py[n] as number;
+      const z = g.pz[n] as number;
+      len += Math.hypot(x - px, z - pz);
+      px = x;
+      pz = z;
+      if ((i - idx) % 3 !== 0 && i !== path.length - 1) continue;
+      const ours = len / speed + 0.4;
+      for (const th of t.list) {
+        if (!th.live || Math.abs(th.y - y) > 3) continue;
+        const gap = Math.hypot(th.x - x, th.z - z) - th.reach - 0.3;
+        if (gap <= 0) return false;
+        if (th.runSpeed > 0 && gap / th.runSpeed <= ours) return false;
+      }
+    }
+    return true;
+  }
+
+  /** Nothing solid within `dist` of the player's body in the direction (dx, dz): rays at knee and chest height, centre and both sides. */
+  private readonly openWay = (dx: number, dz: number, dist: number): boolean => {
+    const pos = this.session.position;
+    const r = this.params.radius;
+    const dir = this.rayDir;
+    dir[0] = dx;
+    dir[1] = 0;
+    dir[2] = dz;
+    const o = this.rayOrigin;
+    for (const h of [0.4, 1.1]) {
+      for (const side of [-0.8, 0, 0.8]) {
+        o[0] = pos[0] + dx * (r + 0.05) + dz * r * side;
+        o[1] = pos[1] + h;
+        o[2] = pos[2] + dz * (r + 0.05) - dx * r * side;
+        if (this.session.pw.raycast(o, dir, dist)) return false;
+      }
+    }
+    return true;
+  };
+  private readonly rayDir: Vec3 = [0, 0, 0];
+  private readonly rayOrigin: Vec3 = [0, 0, 0];
+
+  /** Count a re-route round enemies for the current objective; false once there were too many. */
+  private threatTurn(): boolean {
+    const id = this.current?.id ?? '';
+    const n = (this.threatTurns.get(id) ?? 0) + 1;
+    this.threatTurns.set(id, n);
+    return n <= MAX_THREAT_TURNS;
+  }
+
+  /** The bot waited its fill for a gap and the objective is right ahead: go for it rather than step away. */
+  private guardsGoal(goal: Readonly<Vec3>): boolean {
+    const o = this.current;
+    if (!o || (this.gapWaited.get(o.id) ?? 0) < GAP_WAIT_S) return false;
+    const p = this.session.position;
+    return Math.hypot(goal[0] - p[0], goal[2] - p[2]) < 3;
+  }
+
+  /**
+   * A calm enemy stands over the spot the bot is heading for: hang back out of its reach for a moment
+   * (stepping away if it comes closer) so it can wander off. True while the bot should keep waiting.
+   */
+  private async waitForGap(o: GoalObjective, end: Readonly<Vec3>): Promise<boolean> {
+    const t = this.threats;
+    if (!t) return false;
+    this.senseThreats();
+    const waited = this.gapWaited.get(o.id) ?? 0;
+    if (waited >= GAP_WAIT_S || !t.guarded(end[0], end[1], end[2], CORE_MARGIN + 0.6)) return false;
+    const s = this.session;
+    const t0 = s.time;
+    this.note = `waiting for a gap to reach ${o.label}`;
+    while (s.time - t0 < 0.5) {
+      this.senseThreats();
+      const pos = s.position;
+      const clear = t.clearance(pos[0], pos[1], pos[2]);
+      const yaw = clear < EVADE_CLEARANCE + 1 ? t.escape(this.graph, pos, end[0], end[2], 1.1, this.openWay) : null;
+      if (!(await this.step(yaw === null ? 0 : 1, 0, false, yaw ?? s.yawDeg))) break;
+    }
+    this.gapWaited.set(o.id, waited + (s.time - t0));
+    return true;
   }
 
   private blockerAhead(pos: Readonly<Vec3>, yawDeg: number): EntityId | null {
@@ -1225,10 +1397,14 @@ class Bot {
         break;
       }
       const o = plan.objective;
+      this.current = o;
+      if (this.threats && (await this.waitForGap(o, this.graph.pos(plan.path[plan.path.length - 1] as number)))) continue;
       this.note = `walking to ${o.label} (${this.doneCount + 1}/${this.totalObjectives})`;
       this.emit();
       const res = await this.travel(plan.path);
       if (res === 'ended' || res === 'stopped') break;
+      // Stepped out of an enemy's way or the pack moved: plan again from here (not a failed attempt).
+      if (res === 'threat') continue;
       if (res === 'arrived') {
         const ok = o.kind === 'talk' ? await this.converse(o) : o.kind === 'press' ? await this.pressKey(o, plan.path[plan.path.length - 1] as number) : await this.touch(o, plan.jumpAt, plan.path[plan.path.length - 1] as number);
         if (!ok && !this.stopped) {
@@ -1308,6 +1484,11 @@ class Bot {
 
     // Objectives that were not completed: why.
     const unresolved = [...this.pending.values()];
+    // The analysis below measures the level itself: no enemy costs on the map.
+    if (this.graph) {
+      this.graph.danger.fill(0);
+      this.graph.linkScale = 1;
+    }
     if (this.startNode >= 0) this.graph.clearBad();
     for (const o of unresolved) {
       const r = this.results.get(o.id);
@@ -1728,7 +1909,7 @@ class Bot {
       summary,
       worldHash: hashWorld(this.world),
       ...(s.host.seen.endText ? { endText: s.host.seen.endText } : {}),
-      stats: { searches: this.graph ? this.graph.searches : 0, expanded: this.graph ? this.graph.expandedTotal : 0, navNodes: this.graph ? this.graph.count : 0, navCell: this.graph ? this.graph.cell : 0, navMs: this.navMs, planMs: Math.round(this.planMs) },
+      stats: { searches: this.graph ? this.graph.searches : 0, expanded: this.graph ? this.graph.expandedTotal : 0, navNodes: this.graph ? this.graph.count : 0, navCell: this.graph ? this.graph.cell : 0, navMs: this.navMs, planMs: Math.round(this.planMs), ...(this.threats ? { evasions: this.evasions } : {}) },
     };
   }
 
