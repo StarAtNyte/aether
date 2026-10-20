@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Patch } from '@aether/core';
 import type { AgentEvent } from '@aether/agent';
 import { appendEvent, assistantText, beyondEditCard, buildAgentHistory, reviveChat, toDiagnostics, toEventView, toTestResults, trimChat, type ChatEntry, type ChatEventView } from '../src/lib/chat';
+import { summarizePatches } from '../src/lib/patchSummary';
 import { MAX_CHAT_ENTRIES, MAX_EVENTS_PER_ENTRY } from '../src/config';
 
 describe('chat model', () => {
@@ -86,6 +87,8 @@ describe('chat model', () => {
     expect(beyondEditCard(card, 'Heads up: the checks flagged something.')).toBe('Heads up: the checks flagged something.');
     const entry = { id: 3, role: 'assistant' as const, status: 'done' as const, events: [{ type: 'edit' as const, summary: 'Made the sofa dark green velvet', lines: [], notes: [], ms: 1, local: true, cosmetic: true }] };
     expect(assistantText(entry)).toBe('Made the sofa dark green velvet.');
+    // After a reload the card is gone; its patch line still answers.
+    expect(assistantText({ id: 4, role: 'assistant', status: 'done', events: [{ type: 'patches', message: 'Made the sofa dark green velvet', summary: summarizePatches([]), errors: [] }] })).toBe('Made the sofa dark green velvet.');
     expect(buildAgentHistory([{ id: 2, role: 'user', text: 'make the sofa dark green velvet' }, entry])).toEqual([
       { role: 'user', content: 'make the sofa dark green velvet' },
       { role: 'assistant', content: 'Made the sofa dark green velvet.' },

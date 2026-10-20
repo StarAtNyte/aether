@@ -263,14 +263,17 @@ export function trimChat(entries: readonly ChatEntry[]): ChatEntry[] {
   return entries.length > MAX_CHAT_ENTRIES ? entries.slice(entries.length - MAX_CHAT_ENTRIES) : entries.slice();
 }
 
-/** Final assistant text of a turn (its message events, else what its edit cards say, else its plan). */
+/** Final assistant text of a turn (its message events, else what its edit cards say, else its plan, else its patch lines). */
 export function assistantText(entry: Extract<ChatEntry, { role: 'assistant' }>): string {
   const messages = entry.events.filter((e): e is Extract<ChatEventView, { type: 'message' }> => e.type === 'message').map((e) => e.text);
   if (messages.length > 0) return messages.join('\n\n');
   const edits = entry.events.filter((e): e is Extract<ChatEventView, { type: 'edit' }> => e.type === 'edit').map((e) => [`${e.summary.replace(/[.!]$/, '')}.`, ...e.notes].join(' '));
   if (edits.length > 0) return edits.join('\n\n');
   const plan = entry.events.find((e): e is Extract<ChatEventView, { type: 'plan' }> => e.type === 'plan');
-  return plan ? plan.text : '';
+  if (plan) return plan.text;
+  // A stored local edit keeps its patch line (edit cards are not kept across reloads).
+  const patches = entry.events.filter((e): e is Extract<ChatEventView, { type: 'patches' }> => e.type === 'patches' && e.message.length > 0).map((e) => `${e.message.replace(/[.!]$/, '')}.`);
+  return patches.join(' ');
 }
 
 const sentenceKey = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

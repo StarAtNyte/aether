@@ -3911,7 +3911,34 @@ counters for both runs).**
   not part of the probe), so no change there. The studio run below is the
   badge check.
 
+**The studio with Codex (built studio, local AI, renders on; edits sent in the
+open page).** Earlier run's figures are as that build reported them
+(cumulative, cache counted twice).
+
+| Step | Calls | Input (cached) | Time | Result | Earlier run |
+|---|---|---|---|---|---|
+| Forest build | 14 | 619 k (569 k) | 222 s | verified playable (5 of 5), named "Lanterns of Moonwood" | 19 calls, "10.0 M", 296 s |
+| Move the shrine 6 m east | 4 | 217 k (213 k) | 43 s | verified playable | 7 calls, "0.98 M", 103 s |
+| Wolves patrol the river bank | 3 | 170 k (169 k) | 23 s | verified playable | 7 calls, "2.0 M", 62 s |
+| Lanterns warmer and brighter | 2 | 116 k (115 k) | 16 s | verified playable | 2 calls, "0.16 M", 18 s |
+| House build | 16 | 818 k (735 k) | 270 s | verified walkable (7 rooms, 3 doors), named "Poolside Modern House" | 17 calls, "6.5 M", 230 s |
+| Sofa dark green velvet (local) | 0 | – | 2 s | one sentence (the card) | 11 s, three sentences |
+| Large kitchen window | 2 | 154 k (151 k) | 12 s | verified walkable | 9 calls, "2.7 M", 102 s |
+
+Uncached input over the whole session: about 51 k for the forest build and
+under 5 k for each of its three edits; 83 k for the house and 2.4 k for its
+window.
+
+- Claude Code (sonnet, probe): forest build 5 calls, 326 k read (275 k
+  cached), the shrine edit resumed the same session (2 calls, 103 k, 102 k
+  cached); verified playable.
+- Gates: `tsc --noEmit` 0 errors; full vitest 386 files, 4129 tests; studio
+  build ok; smoke 34/34; `e2e:verified` passes; `e2e:refine` passes
+  (Chromium and Firefox; its first run hit the GPU-resource growth check,
+  91 → 98 geometries, the re-run was flat).
+
 **Still open.** Every Codex call still re-reads the whole thread (cached): the
 33 k-token preamble is the floor per call; shrinking it (catalogs and API
-references on demand) is the next lever.
+references on demand) is the next lever. Edit cards are not kept across a
+reload (the stored turn shows its patch line).
 
