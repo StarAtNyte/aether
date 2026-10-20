@@ -9,7 +9,8 @@
  *   "Shrine goal", "Shrine platform");
  * - `nearby`: a satellite (a light without a shape, an invisible or sensor
  *   zone with a goal, checkpoint or hazard, a zone a rule listens to) inside
- *   an object's footprint, which the nearest such object owns.
+ *   an object's footprint, which the smallest such object owns (the shrine,
+ *   not the hill it stands on).
  *
  * Each dependent has one owner. Pure; one O(n) pass per index.
  */
@@ -54,7 +55,8 @@ export function isSatellite(e: Entity, zoneIds?: ReadonlySet<EntityId>): boolean
   if (!unseen && !e.physics?.sensor) return false;
   if (e.behaviors.some((b) => ZONE_BEHAVIORS.has(b.type))) return true;
   if (e.physics?.sensor && unseen) return true;
-  return zoneIds?.has(e.id) === true && unseen;
+  // A zone a rule listens to, drawn or not (an altar the player steps on).
+  return zoneIds?.has(e.id) === true && !e.behaviors.some((b) => b.type === 'collectible');
 }
 
 /** Entity ids that rules use as zones (`enter` / `exit` triggers). */
@@ -203,7 +205,8 @@ export function dependencyIndex(world: WorldDoc): DependencyIndex {
       const d = Math.hypot(p[0] - q[0], p[2] - q[2]);
       const dy = p[1] - q[1];
       if (d > o.r + NEAR_MARGIN || dy < -2 || dy > 12 + o.r) continue;
-      const score = d / (o.r + NEAR_MARGIN);
+      // The most specific object wins: the shrine on the hill, not the hill under it (smallest footprint, then nearest).
+      const score = o.r + d * 0.01;
       if (!best || score < best.score) best = { id: o.id, score };
     }
     if (best) owners.set(id, { owner: best.id, why: 'nearby' });

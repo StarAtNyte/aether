@@ -35,6 +35,21 @@ describe('dependencyIndex', () => {
     expect(idx.ownerOf('glow-8')).toBeNull();
   });
 
+  it('a drawn altar the win rule listens to belongs to the shrine on the hill, not to the hill under both', () => {
+    const hill: EntityInput = { id: 'shrine-hill', shape: { kind: 'primitive', primitive: 'cylinder', size: [16, 3, 16] }, transform: { position: [0, 1.5, -25] }, physics: { body: 'static' } };
+    const shrine: EntityInput = { id: 'hill-shrine', name: 'Shrine of the Five Lights', shape: { kind: 'procedural', generator: 'arch', params: { width: 4, height: 5 } }, transform: { position: [0, 3, -26] } };
+    const altar: EntityInput = { id: 'shrine-zone', name: 'Shrine Altar', shape: { kind: 'primitive', primitive: 'cylinder', size: [3, 0.2, 3] }, transform: { position: [0, 3.1, -25] }, physics: { body: 'static', sensor: true } };
+    const lantern: EntityInput = { id: 'lantern-5', shape: { kind: 'primitive', primitive: 'sphere', size: [0.4, 0.4, 0.4] }, transform: { position: [0, 3.7, -25.5] }, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'collectible', params: {} }] };
+    const w = createWorld({
+      entities: { 'shrine-hill': hill, 'hill-shrine': shrine, 'shrine-zone': altar, 'lantern-5': lantern },
+      rules: [{ id: 'win', when: { on: 'enter', zone: 'shrine-zone', who: 'player' }, then: [{ do: 'win', text: 'won' }] }],
+    });
+    const idx = dependencyIndex(w);
+    expect(idx.ownerOf('shrine-zone')).toEqual({ owner: 'hill-shrine', why: 'nearby' });
+    expect(idx.ownerOf('lantern-5')).toBeNull();
+    expect(idx.ownerOf('hill-shrine')).toBeNull();
+  });
+
   it('honours attachedTo first, ignores a missing owner and never loops', () => {
     const plinth: EntityInput = { id: 'plinth', name: 'Plinth', shape: { kind: 'primitive', primitive: 'box', size: [5, 0.4, 3] }, transform: { position: [0, 6.2, -32] }, attachedTo: 'shrine' };
     const ghost: EntityInput = { ...LIGHT, id: 'lamp-2', attachedTo: 'nobody' };
