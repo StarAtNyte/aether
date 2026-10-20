@@ -209,8 +209,36 @@ function office(style: Style): Plan {
   };
 }
 
+/** Upper floor of the villa: one bedroom over the living room, or two (and the bathroom) along a longer landing. */
+function villaUpper(beds: number): Plan['levels'][number] {
+  if (beds <= 1) {
+    return {
+      name: 'Upper floor',
+      height: 2.9,
+      rooms: [
+        { id: 'landing', type: 'hall', name: 'Landing', rect: [0, 0, 6, 3] },
+        { id: 'master', type: 'bedroom', name: 'Main bedroom', rect: [0, 3, 6, 6] },
+        { id: 'bath', type: 'bathroom', rect: [6, 0, 9, 6] },
+      ],
+      doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'] }],
+    };
+  }
+  const rooms: Plan['levels'][number]['rooms'] = [
+    { id: 'landing', type: 'hall', name: 'Landing', rect: [0, 0, 9, 3] },
+    { id: 'master', type: 'bedroom', name: 'Main bedroom', rect: [0, 3, 5, 6] },
+    { id: 'bed2', type: beds >= 3 ? 'kids' : 'bedroom', name: 'Bedroom 2', rect: [5, 3, 9, 6] },
+    { id: 'bath', type: 'bathroom', rect: [9, 0, 12, beds >= 3 ? 3 : 6] },
+  ];
+  const doors: Plan['levels'][number]['doors'] = [{ between: ['landing', 'master'] }, { between: ['landing', 'bed2'] }, { between: ['landing', 'bath'] }];
+  if (beds >= 3) {
+    rooms.push({ id: 'bed3', type: 'bedroom', name: 'Bedroom 3', rect: [9, 3, 12, 6] });
+    doors.push({ between: ['bed2', 'bed3'] });
+  }
+  return { name: 'Upper floor', height: 2.9, rooms, doors };
+}
+
 /** Two-storey villa with a stair, terrace and pool. */
-function villa(style: Style, pool: boolean, roof: string): Plan {
+function villa(style: Style, pool: boolean, roof: string, beds = 1, residents = 0): Plan {
   return {
     id: 'villa',
     name: pool ? 'Villa with a pool' : 'Two-storey house',
@@ -229,20 +257,21 @@ function villa(style: Style, pool: boolean, roof: string): Plan {
         ],
         stairs: [{ at: [0.5, 1.2], heading: 'east', width: 1 }],
       },
-      {
-        name: 'Upper floor',
-        height: 2.9,
-        rooms: [
-          { id: 'landing', type: 'hall', name: 'Landing', rect: [0, 0, 6, 3] },
-          { id: 'master', type: 'bedroom', name: 'Main bedroom', rect: [0, 3, 6, 6] },
-          { id: 'bath', type: 'bathroom', rect: [6, 0, 9, 6] },
-        ],
-        doors: [{ between: ['landing', 'master'] }, { between: ['landing', 'bath'] }],
-      },
+      villaUpper(beds),
     ],
     roof: { shape: roof, pitch: 30 },
+    ...(residents > 0 ? { residents } : {}),
     ...(pool ? { site: { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 } } } : {}),
   };
+}
+
+/** People asked for in a new building ("people living in it", "a family of four", "with residents"); 0 when none. */
+function residentsAsked(text: string): number {
+  if (/\b(?:no|without|empty of)\s+(?:people|residents|one)\b|\bnobody\b/.test(text)) return 0;
+  const fam = /\bfamily of (two|three|four|five|six|\d)\b/.exec(text);
+  if (fam) return Math.min(6, Number(fam[1]) || ({ two: 2, three: 3, four: 4, five: 5, six: 6 } as Record<string, number>)[fam[1] as string] || 3);
+  if (/\b(?:people|persons|residents|inhabitants|family|guests|someone|lived[- ]in|living in it|live in it|lives in it)\b/.test(text)) return count(text, /(?:people|persons|residents|guests)/, 3, 1, 6);
+  return 0;
 }
 
 /**
@@ -274,7 +303,10 @@ function choosePlanBare(text: string): { plan: Plan; blurb: string } | null {
   if (/\bvilla|mansion|two[- ]stor(e)?y|duplex|(beach|lake|family|modern|contemporary|luxury|suburban) (house|home)\b|\bhouse with\b/.test(text)) {
     const pool = /\bpool\b/.test(text) || /\bvilla\b/.test(text);
     const roof = /\bgable|pitched|cottage\b/.test(text) ? 'gable' : /\bhip(ped)?\b/.test(text) ? 'hip' : /\bshed|mono-?pitch\b/.test(text) ? 'shed' : 'flat';
-    return { plan: villa(style('modern'), pool, roof), blurb: `a two-storey ${pool ? 'villa with a terrace and pool' : 'house'}: open living and kitchen downstairs, a stair up to the main bedroom and bathroom` };
+    const beds = count(text, /bed(room)?s?/, 1, 1, 3);
+    const people = residentsAsked(text);
+    const upstairs = beds === 1 ? 'the main bedroom and bathroom' : `${beds} bedrooms and a bathroom`;
+    return { plan: villa(style('modern'), pool, roof, beds, people), blurb: `a two-storey ${pool ? 'villa with a terrace and pool' : 'house'}: open living and kitchen downstairs, a stair up to ${upstairs}${people > 0 ? `, and ${people} ${people === 1 ? 'person' : 'people'} at home` : ''}` };
   }
   if (/\bloft|studio apartment|studio flat\b/.test(text)) return { plan: loft(style('industrial')), blurb: 'an open-plan loft with a kitchen and bathroom' };
   if (/\bapartments?|flats?|penthouse|condo|townhouse|bungalow|floor ?plans?|archviz|interiors?\b/.test(text) && !/\b(living|bed|bath)rooms?\b.*\bonly\b/.test(text)) {

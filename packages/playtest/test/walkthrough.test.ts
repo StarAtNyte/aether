@@ -31,6 +31,11 @@ describe('walkthrough bot', () => {
       expect(r.status, `${prompt}: ${r.summary}`).toBe('passed');
       expect(r.objectives.every((o) => o.status === 'done'), prompt).toBe(true);
     }
+    // "two bedrooms, people living in it": both bedrooms upstairs, and residents at home.
+    const full = house('a two-storey modern house with a pool, open-plan living room, kitchen and two bedrooms, people living in it');
+    const rooms = Object.values(full.entities).filter((e) => e.arch?.role === 'room').map((e) => e.name);
+    expect(rooms.filter((n) => /bedroom/i.test(n)).length, rooms.join(', ')).toBe(2);
+    expect(Object.values(full.entities).filter((e) => e.npc).length).toBeGreaterThanOrEqual(2);
   }, 240_000);
 
   it('walks an office floor with meeting rooms', async () => {
