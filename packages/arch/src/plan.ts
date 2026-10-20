@@ -176,6 +176,13 @@ export const PlanSite = z.object({
   pool: z.object({ at: PlanPoint, width: z.number().min(2).max(30).default(8), length: z.number().min(2).max(30).default(4) }).optional(),
   /** Low hedges / planters along the terrace edge. */
   planting: z.boolean().default(true),
+  /**
+   * A garden on the plot round the building: a paved approach from the front door, hedges along the back and the sides,
+   * planted beds along the front, trees in the corners (see `site.ts`).
+   */
+  garden: z.boolean().default(false),
+  /** The land round the plot: `estate` = rolling terrain with the plot level, groves, meadow and wildflowers; `none` = the world's own ground. */
+  surroundings: z.enum(['none', 'estate']).default('none'),
 });
 
 /** A whole building. */

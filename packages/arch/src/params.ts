@@ -80,6 +80,17 @@ export const WallParams = z.object({
   /** Optional lower covering (wainscot) of side A / B; the face above keeps `finishA` / `finishB`. */
   dadoA: WallDado.optional(),
   dadoB: WallDado.optional(),
+  /**
+   * Plinth / base course on one face (an exterior wall's outside): a band `depth` proud of the face from `drop` below the
+   * wall base up to `height`, interrupted at openings that reach into it. Omit for none.
+   */
+  base: z.object({
+    side: z.enum(['a', 'b']),
+    height: z.number().min(0.05).max(3).default(0.45),
+    depth: z.number().min(0.005).max(0.2).default(0.03),
+    drop: z.number().min(0).max(1.5).default(0.15),
+    material: MaterialSpec.default({ finish: 'stone', color: '#9a958c' }),
+  }).optional(),
   /** Skirting boards on interior faces. */
   skirting: z.enum(['none', 'a', 'b', 'both']).default('both'),
   skirtingMaterial: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }),
@@ -151,6 +162,12 @@ export const RoofParams = z.object({
   /** Fascia, soffit and gable end-walls. */
   trim: MaterialSpec.default({ finish: 'paint', color: '#ece9e3' }),
   gableWall: MaterialSpec.default({ finish: 'plaster', color: '#ece8e1' }),
+  /** Pitched roofs: gutters along the eaves (with downpipes when `downpipe` > 0). */
+  gutters: z.boolean().default(false),
+  /** Downpipe length from the eave line down to the ground (metres; 0 = none). */
+  downpipe: z.number().min(0).max(60).default(0),
+  /** Gutters and downpipes. */
+  rainwater: MaterialSpec.default({ finish: 'brushed-metal', color: '#5d6166' }),
 });
 export type RoofParams = z.infer<typeof RoofParams>;
 
@@ -218,6 +235,16 @@ export const WindowParams = z.object({
    * outer frame, transom and the glass above the transom only. Casement windows without mullions.
    */
   sash: z.boolean().default(false),
+  /**
+   * Exterior surround (on the outdoor face): `box` a deep projecting frame round the opening (modern window box),
+   * `board` flat trim boards with a sill board, `stone` a moulded stone surround with a projecting sill. Omit for none.
+   */
+  surround: z.object({
+    style: z.enum(['box', 'board', 'stone']),
+    material: MaterialSpec.default({ finish: 'black-metal' }),
+    /** Projection beyond the wall face (metres; box style). */
+    depth: z.number().min(0.01).max(0.6).default(0.16),
+  }).optional(),
   /**
    * Colour of the daylight seen through the glass: a bright emissive pane just outside it, so a window facing a sunlit
    * street or sky glows the way it does in a photograph instead of showing the dim scene outside. Omitted: none.

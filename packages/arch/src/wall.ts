@@ -244,6 +244,32 @@ export function buildWall(p: WallParams): ArchOutput {
     set.add(skirt, p.skirtingMaterial);
   }
 
+  // Plinth / base course: a band standing off one face from below the wall base up to its height, stopping at every
+  // opening that reaches down into it (doorways, low picture windows) so it never covers glass or a threshold.
+  if (p.base && cut === null) {
+    const b = p.base;
+    const side: -1 | 1 = b.side === 'a' ? -1 : 1;
+    const xs0 = (side < 0 ? aStart : bStart) - b.depth;
+    const xs1 = (side < 0 ? aEnd : bEnd) + b.depth;
+    const top = Math.min(b.height, H);
+    const gaps = spans.filter((s) => s.y0 < top - 1e-4).map((s) => [s.x0, s.x1] as [number, number]);
+    const band = new Geom();
+    let x = xs0;
+    const pieces: Array<[number, number]> = [];
+    for (const [g0, g1] of gaps) {
+      if (g0 > x) pieces.push([x, Math.min(g0, xs1)]);
+      x = Math.max(x, g1);
+    }
+    if (x < xs1) pieces.push([x, xs1]);
+    for (const [x0, x1] of pieces) {
+      if (x1 - x0 < 0.03) continue;
+      const z0 = side < 0 ? -t - b.depth : t - 0.002;
+      const z1 = side < 0 ? -t + 0.002 : t + b.depth;
+      band.merge(box(x0, -b.drop, z0, x1, top, z1, { bottom: false }));
+    }
+    set.add(band, b.material);
+  }
+
   // Colliders: solid parts along the centreline (window holes stay solid: glass blocks).
   const cx0 = Math.max(aStart, bStart, -t);
   const cx1 = Math.min(aEnd, bEnd, L + t);

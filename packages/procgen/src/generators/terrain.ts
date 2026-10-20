@@ -43,6 +43,8 @@ interface TerrainShape {
    * snow, written into `out` (they are normalised afterwards). Absent: plain vertex colours.
    */
   splat?(t: number, h: number, slope: number, x: number, z: number, out: Splat): void;
+  /** A rectangle (x0, z0, x1, z1) left out of the render mesh (a pool basin sunk into the plot shows through it); the collider keeps it. */
+  cut?: readonly [number, number, number, number];
 }
 
 /** Layer weights: grass, rock, dry ground, snow. */
@@ -74,6 +76,27 @@ export function trimFlatTriangles(mesh: Mesh, eps: number): void {
     out[n++] = c;
   }
   // Never trim everything (a degenerate, completely flat input keeps its plate).
+  if (n > 0 && n < idx.length) mesh.indices = out.slice(0, n);
+}
+
+/** Drop the triangles whose centre lies inside the rectangle (x0, z0, x1, z1). */
+function cutRect(mesh: Mesh, [x0, z0, x1, z1]: readonly [number, number, number, number]): void {
+  if (!(x1 > x0 && z1 > z0)) return;
+  const pos = mesh.positions;
+  const idx = mesh.indices;
+  const out = new Uint32Array(idx.length);
+  let n = 0;
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i] as number;
+    const b = idx[i + 1] as number;
+    const c = idx[i + 2] as number;
+    const x = ((pos[a * 3] as number) + (pos[b * 3] as number) + (pos[c * 3] as number)) / 3;
+    const z = ((pos[a * 3 + 2] as number) + (pos[b * 3 + 2] as number) + (pos[c * 3 + 2] as number)) / 3;
+    if (x > x0 && x < x1 && z > z0 && z < z1) continue;
+    out[n++] = a;
+    out[n++] = b;
+    out[n++] = c;
+  }
   if (n > 0 && n < idx.length) mesh.indices = out.slice(0, n);
 }
 
@@ -148,6 +171,7 @@ function buildTerrain(api: InternalApi, shape: TerrainShape): GeneratorOutput {
     mesh.splat = sp;
   }
   if (shape.trimFlat === true && mesh instanceof Mesh) trimFlatTriangles(mesh, range * FLAT_EPSILON);
+  if (shape.cut && mesh instanceof Mesh) cutRect(mesh, shape.cut);
   api.add(mesh, layer ? MAT.terrain : MAT.ground);
   const heights = new Float32Array(n * n);
   for (let ix = 0; ix < n; ix++) {
@@ -193,6 +217,10 @@ const terrain = defineGenerator({
     laneX: pNum(0, -500, 500, 'estate: far end x of a level lane (a drive) running from the plot centre'),
     laneZ: pNum(0, -500, 500, 'estate: far end z of the lane'),
     laneRadius: pNum(0, 0, 60, 'estate: half width of the level lane in meters (0 = none)'),
+    cutX0: pNum(0, -500, 500, 'estate: a rectangle left open in the ground (x0, z0 to x1, z1) for a sunk pool; 0 size = none'),
+    cutZ0: pNum(0, -500, 500, 'estate: cut z0'),
+    cutX1: pNum(0, -500, 500, 'estate: cut x1'),
+    cutZ1: pNum(0, -500, 500, 'estate: cut z1'),
   },
   run(p, api) {
     const size = p.num('size');
@@ -206,6 +234,7 @@ const terrain = defineGenerator({
         pad: [p.num('padX'), p.num('padZ'), p.num('padRadius')],
         lake: [p.num('lakeX'), p.num('lakeZ'), p.num('lakeRadius'), p.num('lakeDepth')],
         lane: [p.num('laneX'), p.num('laneZ'), p.num('laneRadius')],
+        cut: [p.num('cutX0'), p.num('cutZ0'), p.num('cutX1'), p.num('cutZ1')],
       });
     }
     const freq = 2.2 / size;
@@ -308,7 +337,7 @@ function estateTerrain(
   rough: number,
   resolution: number,
   grass: string,
-  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number] },
+  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number]; cut?: readonly [number, number, number, number] },
 ): GeneratorOutput {
   const n = api.noise;
   const freq = 2.2 / size;
@@ -321,6 +350,7 @@ function estateTerrain(
   return buildTerrain(api, {
     size,
     resolution,
+    ...(o.cut ? { cut: o.cut } : {}),
     height(x, z) {
       const dTrue = Math.hypot(x - px, z - pz);
       let d = dTrue;

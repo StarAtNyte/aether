@@ -201,10 +201,41 @@ export function buildWindow(p: WindowParams): ArchOutput {
     const sill = roundedBox(W + 0.08, 0.025, T + 0.035, 0.004, 1).translate(0, -0.0125 + 0.002, inside * ((T + 0.035) / 2));
     set.add(sill, p.sillMaterial);
   }
-  // Exterior drip sill (sloped metal strip).
-  const drip = box(-W / 2 - 0.03, -0.02, 0, W / 2 + 0.03, 0.0, T + 0.05).rotateX(inside * -6).translate(0, 0, 0);
-  drip.scale(1, 1, -inside);
-  set.add(drip, { finish: 'brushed-metal', color: '#9da2a7' });
+  // Exterior: the outdoor face is at z = -inside * T.
+  const out = -inside;
+  const zFace = out * T;
+  const between = (a: number, b: number): [number, number] => (a < b ? [a, b] : [b, a]);
+  const s = p.surround;
+  if (s?.style === 'box') {
+    // A deep projecting frame round the opening: jambs, head and a sloped-free bottom, lining the reveal back to the frame.
+    const g = new Geom();
+    const bw = 0.05;
+    const [z0, z1] = between(zFace + out * s.depth, out * (fd / 2));
+    g.merge(box(-W / 2 - bw, -bw, z0, -W / 2, H + bw, z1));
+    g.merge(box(W / 2, -bw, z0, W / 2 + bw, H + bw, z1));
+    g.merge(box(-W / 2, H, z0, W / 2, H + bw, z1));
+    g.merge(box(-W / 2, -bw, z0, W / 2, 0, z1));
+    set.add(g, s.material);
+  } else if (s?.style === 'board' || s?.style === 'stone') {
+    const g = new Geom();
+    const stone = s.style === 'stone';
+    const bw = stone ? 0.16 : 0.1;
+    const pr = stone ? 0.04 : 0.022;
+    const [z0, z1] = between(zFace - out * 0.004, zFace + out * pr);
+    g.merge(box(-W / 2 - bw, 0, z0, -W / 2, H + bw, z1));
+    g.merge(box(W / 2, 0, z0, W / 2 + bw, H + bw, z1));
+    g.merge(box(-W / 2 - bw, H, z0, W / 2 + bw, H + bw, z1));
+    // A projecting sill under the opening, a little wider than the surround.
+    const sh = stone ? 0.08 : 0.045;
+    const [s0, s1] = between(out * (fd / 2), zFace + out * (pr + (stone ? 0.07 : 0.045)));
+    g.merge(box(-W / 2 - bw - 0.04, -sh, s0, W / 2 + bw + 0.04, 0.004, s1));
+    set.add(g, s.material);
+  } else {
+    // Exterior drip sill (sloped metal strip).
+    const drip = box(-W / 2 - 0.03, -0.02, 0, W / 2 + 0.03, 0.0, T + 0.05).rotateX(inside * -6).translate(0, 0, 0);
+    drip.scale(1, 1, -inside);
+    set.add(drip, { finish: 'brushed-metal', color: '#9da2a7' });
+  }
   // Glass blocks movement (the wall collider already covers window holes, this is for free-standing use).
   set.boxMinMax(-W / 2, 0, -0.03, W / 2, H, 0.03);
   return set.build();

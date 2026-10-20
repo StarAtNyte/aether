@@ -213,6 +213,44 @@ export function palette(style: ArchStyle): StylePalette {
   return PALETTES[style];
 }
 
+/** How a style articulates a house's outside (used when the plan does not choose the facade itself). */
+export interface ExteriorPalette {
+  /** Ground-floor facade (null: the style's `facade`). */
+  ground: MaterialSpec | null;
+  /** Upper storeys (a clad storey over a rendered base), or null for the ground floor's facade. */
+  upper: MaterialSpec | null;
+  /** Plinth / base course along the foot of the ground-floor walls. */
+  plinth: MaterialSpec;
+  /** Fascia, roof edge, coping and entrance canopy. */
+  trim: MaterialSpec;
+  /** Gutters and downpipes. */
+  rainwater: MaterialSpec;
+  /** Window surround on the outdoor face (`box` only round large windows), or null. */
+  surround: 'box' | 'board' | 'stone' | null;
+  surroundMaterial: MaterialSpec;
+  /** A cantilevered canopy over the front door. */
+  canopy: boolean;
+}
+
+const EXTERIORS: Readonly<Record<ArchStyle, ExteriorPalette>> = Object.freeze({
+  // White render over a concrete plinth, a timber-clad upper storey, dark metal fascia and window boxes.
+  modern: { ground: { finish: 'plaster', color: '#eceae4' }, upper: { finish: 'cladding', color: '#9a7652' }, plinth: { finish: 'concrete', color: '#8f8b84' }, trim: { finish: 'black-metal', color: '#2c2e31' }, rainwater: { finish: 'black-metal', color: '#2c2e31' }, surround: 'box', surroundMaterial: { finish: 'black-metal', color: '#26282b' }, canopy: true },
+  // Falu-red board cladding, white trim boards round the windows, a dark stone plinth.
+  scandinavian: { ground: { finish: 'cladding', color: '#7c2f2a' }, upper: null, plinth: { finish: 'stone', color: '#6f6b66' }, trim: { finish: 'paint', color: '#f2f0eb' }, rainwater: { finish: 'black-metal', color: '#2f3134' }, surround: 'board', surroundMaterial: { finish: 'paint', color: '#f2f0eb' }, canopy: false },
+  industrial: { ground: { finish: 'brick' }, upper: null, plinth: { finish: 'concrete', color: '#85817a' }, trim: { finish: 'black-metal', color: '#2b2c2e' }, rainwater: { finish: 'black-metal', color: '#2b2c2e' }, surround: 'box', surroundMaterial: { finish: 'black-metal', color: '#2b2c2e' }, canopy: true },
+  // Warm lime plaster, a charred-timber upper storey, dark stone at the foot.
+  japandi: { ground: { finish: 'plaster', color: '#e3dccf' }, upper: { finish: 'cladding', color: '#4c3b2c' }, plinth: { finish: 'stone', color: '#5f5a54' }, trim: { finish: 'black-metal', color: '#2e2b28' }, rainwater: { finish: 'black-metal', color: '#2e2b28' }, surround: null, surroundMaterial: { finish: 'oak' }, canopy: true },
+  // Limewash with limestone surrounds and sills, a rough stone plinth, terracotta-toned rainwater goods.
+  mediterranean: { ground: null, upper: null, plinth: { finish: 'limestone', color: '#c9bba1' }, trim: { finish: 'plaster', color: '#efe8db' }, rainwater: { finish: 'brushed-metal', color: '#8a6a52' }, surround: 'stone', surroundMaterial: { finish: 'limestone', color: '#ddd2bd' }, canopy: false },
+  // Dressed stone, rusticated base, painted white trim and stone window surrounds.
+  classic: { ground: null, upper: null, plinth: { finish: 'limestone', color: '#b9ad98' }, trim: { finish: 'paint', color: '#f1ede4' }, rainwater: { finish: 'black-metal', color: '#2f3134' }, surround: 'stone', surroundMaterial: { finish: 'limestone', color: '#e6dccb' }, canopy: false },
+});
+
+/** Exterior articulation of a style. */
+export function exteriorPalette(style: ArchStyle): ExteriorPalette {
+  return EXTERIORS[style];
+}
+
 /** Default floor of a room type in a style. */
 export function floorFor(style: ArchStyle, type: RoomType): MaterialSpec {
   const f = palette(style).floors;

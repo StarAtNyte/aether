@@ -136,7 +136,7 @@ function cameras(page: Page): Promise<{ arch: boolean; cams: Cam[] }> {
         const poly = (r.shape.params?.['polygon'] as Array<[number, number]> | undefined) ?? [];
         // Stand in a corner (40 % of the way from the centre) looking across the room.
         const corner = poly.length > 0 ? toWorld(r.id, [poly[0]![0], 0, poly[0]![1]]) : c;
-        const pos: [number, number, number] = [c[0] + (corner[0] - c[0]) * 0.72, c[1] + 1.55, c[2] + (corner[2] - c[2]) * 0.72];
+        const pos: [number, number, number] = [c[0] + (corner[0] - c[0]) * 0.5, c[1] + 1.5, c[2] + (corner[2] - c[2]) * 0.5];
         cams.push({ name: kind, pos, target: [c[0] - (corner[0] - c[0]) * 0.5, c[1] + 1.0, c[2] - (corner[2] - c[2]) * 0.5] });
       }
       return { arch: true, cams };
@@ -200,6 +200,11 @@ async function main(): Promise<void> {
       await page.waitForTimeout(1000);
       await capture(page, join(outDir!, `${name}-editor.png`));
       const { arch, cams } = await cameras(page);
+      if (arch) {
+        // Storeys stacked, walls up, before the first building view (the doll's-house view after a build has them apart).
+        await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up', levelMode: 'stacked', xray: false, section: null, plan: false } as never));
+        await page.waitForTimeout(3500);
+      }
       for (const cam of cams) {
         if (arch) await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up', levelMode: 'stacked', xray: false, section: null, plan: false } as never));
         await setCam(page, cam);

@@ -261,7 +261,10 @@ function villa(style: Style, pool: boolean, roof: string, beds = 1, residents = 
     ],
     roof: { shape: roof, pitch: 30 },
     ...(residents > 0 ? { residents } : {}),
-    ...(pool ? { site: { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 } } } : {}),
+    // A house stands in its grounds: a garden on the plot (paved approach, hedges, beds, trees) and rolling land round it.
+    site: pool
+      ? { terrace: [[-2, 6], [14, 6], [14, 14], [-2, 14]], pool: { at: [6, 10.5], width: 7, length: 3 }, garden: true, surroundings: 'estate' }
+      : { terrace: [[-1.5, 6], [13.5, 6], [13.5, 9], [-1.5, 9]], terraceFinish: { finish: 'decking', color: '#8f6d4f' }, planting: false, garden: true, surroundings: 'estate' },
   };
 }
 
@@ -324,8 +327,8 @@ function choosePlanBare(text: string): { plan: Plan; blurb: string } | null {
   return null;
 }
 
-/** Environment of an architecture scene: warm afternoon light through the windows. */
-function environment(text: string): PatchInput[] {
+/** Environment of an architecture scene: warm afternoon light through the windows. `grounds`: the building brings its own land. */
+function environment(text: string, grounds = false): PatchInput[] {
   const night = /\bnight|evening|dusk\b/.test(text);
   const sunset = /\bsunset|golden hour\b/.test(text);
   const sky = night ? 'night' : sunset ? 'sunset' : 'day';
@@ -333,7 +336,7 @@ function environment(text: string): PatchInput[] {
   const time = night ? 21.5 : sunset ? 17.6 : 16.2;
   return [
     { op: 'clear', keepEnvironment: false },
-    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#e3e8ec', density: 0.003 }, bloom: night ? 1 : 0.35, ground: { material: { finish: 'grass', color: '#8b9f6c' }, size: 160 } } },
+    { op: 'setEnvironment', set: { sky, timeOfDay: time, weather: 'clear', fog: { color: night ? '#1b2333' : sunset ? '#ead8c6' : '#dfe6ec', density: grounds ? 0.0011 : 0.003 }, bloom: night ? 1 : 0.35, ground: grounds ? null : { material: { finish: 'grass', color: '#8b9f6c' }, size: 160 } } },
   ];
 }
 
@@ -463,7 +466,7 @@ export function planArch(request: string, summary: string, mode?: 'new' | 'refin
   const name = plan.name;
   return {
     plan: `Plan: ${plan.style} ${name.toLowerCase()} — ${plan.levels.length} level(s), ${plan.levels.reduce((n, l) => n + l.rooms.length, 0)} rooms, compiled with build_architecture and checked for walkability.`,
-    patches: [...environment(text), { op: 'setMeta', name, description: request.slice(0, 200) }],
+    patches: [...environment(text, plan.site?.['surroundings'] === 'estate'), { op: 'setMeta', name, description: request.slice(0, 200) }],
     arch: { ops: [{ op: 'create_building', plan }], message: name },
     message: `Built ${blurb} in a ${plan.style} style. Walk in with WASD, press E at doors and light switches, 1–4 for the time of day, R to swap materials; use the Architecture bar for floor plan, cutaway, exploded and section views.`,
   };

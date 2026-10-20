@@ -11,7 +11,8 @@
  */
 import type { EntityInput, Json, LightSpec, MaterialSpec, PatchInput } from '@aether/core';
 import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type Compass, type PlanDoor, type PlanLevel, type PlanRoom, type RoomType } from './plan';
-import { palette, floorFor, habitable, type StylePalette } from './style';
+import { palette, exteriorPalette, floorFor, habitable, type StylePalette } from './style';
+import { compileGrounds } from './site';
 import { wallNetwork, type NetworkWall } from './wall-network';
 import { solveWallJoins } from './wall-joins';
 import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
@@ -253,6 +254,13 @@ function round(n: number, d = 1000): number {
 export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: { seed?: number } = {}): CompiledBuilding {
   const plan = parsePlan(input);
   const pal = palette(plan.style);
+  const xp = exteriorPalette(plan.style);
+  // The schema's default facade stands for "not chosen": the style then articulates it (a clad upper storey over a
+  // rendered base, for example); a facade the plan names is used on every storey.
+  const fin = plan.exteriorWall.finish;
+  const facadeChosen = !(fin.finish === 'plaster' && fin.color === '#ece9e3' && Object.keys(fin).length === 2);
+  const facadeOf = (li: number): MaterialSpec => (facadeChosen ? fin : li > 0 && xp.upper ? xp.upper : (xp.ground ?? pal.facade));
+  const front: { door: { c: P2; n: P2; width: number; height: number } | null } = { door: null };
   const bid = plan.id;
   const seed = (opts.seed ?? 1) >>> 0;
   const entities: EntityInput[] = [];
@@ -442,6 +450,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       if (kind === 'opening') {
         for (const r of [ra, rb]) if (r !== 'outside') pushRoomDoor(r, c, width, false, c);
         if (d.main) setSpawn(c, rec, sa === 0 ? sb : sa, ra === 'outside' ? rb : ra);
+        if (d.main && li === 0 && entry) front.door = { c, n: (entry as { n: P2 }).n, width, height };
         return;
       }
       // Swing into the more private room (bedrooms, bathrooms, offices), or inward from outside.
@@ -498,6 +507,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const hingeP: P2 = [c[0] + rec.dir[0] * (hinge === 'left' ? -leafW / 2 : leafW / 2), c[1] + rec.dir[1] * (hinge === 'left' ? -leafW / 2 : leafW / 2)];
       for (const r of [ra, rb]) if (r !== 'outside') pushRoomDoor(r, c, width, d.kind !== 'sliding' && r === into, hingeP);
       if (d.main) setSpawn(c, rec, into === ra ? sb : sa, ra === 'outside' ? rb : ra);
+      if (d.main && li === 0 && entry) front.door = { c, n: (entry as { n: P2 }).n, width, height };
     }
 
     function setSpawn(c: P2, rec: WallRec, outsideSide: number, inner: string): void {
@@ -524,7 +534,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       // Plain casement windows open: the casement is a child entity that swings inward on its left hinge.
       const openable = style === 'casement' && !frosted && width <= 1.8 && width >= 0.6 && height >= 0.7;
       const winId = `${lid}-win${winN++}`;
-      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
+      const surround = xp.surround && (xp.surround !== 'box' || width >= 1.5 || style === 'picture') ? { style: xp.surround, material: xp.surroundMaterial, depth: xp.surround === 'box' ? 0.18 : 0.04 } : undefined;
+      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}), ...(surround ? { surround } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
       if (openable) {
         const fw = 0.055;
         const sashW = round(width - 2 * fw);
@@ -646,7 +657,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const roomB = rec.w.roomB ? lvl.rooms.find((r) => r.id === rec.w.roomB) : undefined;
       // Compass side of the wall seen from inside a room: the room lies on side B (+n) or side A (−n) of the wall.
       const sideFinish = (room: PlanRoom | undefined, side: 1 | -1): MaterialSpec => {
-        if (!room) return plan.exteriorWall.finish;
+        if (!room) return facadeOf(li);
         const compass = compassOf(-side * -rec.dir[1], -side * rec.dir[0]);
         return wallFinish(room, pal, compass);
       };
@@ -654,17 +665,31 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const dadoA = sideDado(roomA);
       const dadoB = sideDado(roomB);
       const skirting = roomA && roomB ? 'both' : roomA ? 'a' : roomB ? 'b' : 'none';
+      // Ground-floor exterior walls stand on a plinth band (on their outdoor face) down to the ground.
+      const base = li === 0 && rec.w.exterior && (!roomA || !roomB) ? { side: !roomA ? 'a' : 'b', height: 0.42, depth: 0.035, drop: round(plan.plinth + 0.03), material: xp.plinth } : undefined;
       const yaw = round(yawOf(rec.dir[0], rec.dir[1]), 100);
       add({
         id: rec.id,
         parent: lid,
         name: rec.w.exterior ? 'Exterior wall' : 'Wall',
         transform: { position: [round(rec.w.a[0]), 0, round(rec.w.a[1])], rotation: [0, yaw, 0] },
-        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA, -1), finishB: sideFinish(roomB, 1), ...(dadoA ? { dadoA } : {}), ...(dadoB ? { dadoB } : {}), skirting, skirtingMaterial: { finish: 'paint', color: plan.style === 'industrial' ? '#2f3033' : '#f2f0eb' } } as unknown as Record<string, Json> },
+        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA, -1), finishB: sideFinish(roomB, 1), ...(dadoA ? { dadoA } : {}), ...(dadoB ? { dadoB } : {}), skirting, skirtingMaterial: { finish: 'paint', color: plan.style === 'industrial' ? '#2f3033' : '#f2f0eb' }, ...(base ? { base } : {}) } as unknown as Record<string, Json> },
         physics: { body: 'static', collider: 'auto' },
         arch: { role: 'wall', ...(rec.w.exterior ? { kind: 'exterior' } : { kind: 'interior' }) },
         tags: rec.w.exterior ? ['arch', 'wall', 'exterior'] : ['arch', 'wall'],
       });
+    }
+
+    // A cantilevered canopy over the front door (styles that have one), clear of the windows of the storey.
+    const fd = front.door;
+    if (li === 0 && fd && xp.canopy && ceiling - fd.height > 0.35) {
+      const hw = fd.width / 2 + 0.75;
+      const t: P2 = [-fd.n[1], fd.n[0]];
+      const o = plan.exteriorWall.thickness / 2;
+      const depth = 1.15;
+      const corner = (u: number, d: number): [number, number] => [round(fd.c[0] + t[0] * u + fd.n[0] * d), round(fd.c[1] + t[1] * u + fd.n[1] * d)];
+      const y = round(Math.min(ceiling - 0.05, fd.height + 0.32));
+      add({ id: `${lid}-canopy`, parent: lid, name: 'Entrance canopy', transform: { position: [0, y, 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: positive([corner(-hw, o - 0.02), corner(hw, o - 0.02), corner(hw, o + depth), corner(-hw, o + depth)]), thickness: 0.14, finish: xp.trim, edge: xp.trim, bottom: true } as unknown as Record<string, Json> }, arch: { role: 'site', kind: 'canopy', name: 'Entrance canopy' }, tags: ['arch', 'site'] });
     }
 
     // --- floors, ceilings, furniture ---------------------------------------
@@ -808,7 +833,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     const [x0, z0, x1, z1] = bounds(topLoops[0] as P2[]);
     const width = x1 - x0 + 2 * ext;
     const depth = z1 - z0 + 2 * ext;
-    add({ id: `${bid}-roof`, parent: topLevelId, name: 'Roof', transform: { position: [round((x0 + x1) / 2), round(topHeight), round((z0 + z1) / 2)] }, shape: { kind: 'procedural', generator: 'arch-roof', params: { shape: plan.roof.shape, width: round(width), depth: round(depth), pitch: plan.roof.pitch, overhang: plan.roof.overhang, ridgeAlongX: width >= depth, finish: roofFinish, gableWall: plan.exteriorWall.finish } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof' }, tags: ['arch', 'roof'] });
+    add({ id: `${bid}-roof`, parent: topLevelId, name: 'Roof', transform: { position: [round((x0 + x1) / 2), round(topHeight), round((z0 + z1) / 2)] }, shape: { kind: 'procedural', generator: 'arch-roof', params: { shape: plan.roof.shape, width: round(width), depth: round(depth), pitch: plan.roof.pitch, overhang: plan.roof.overhang, ridgeAlongX: width >= depth, finish: roofFinish, gableWall: facadeOf(topIndex), trim: facadeChosen ? { finish: 'paint', color: '#ece9e3' } : xp.trim, gutters: true, downpipe: round(elevation), rainwater: xp.rainwater } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof' }, tags: ['arch', 'roof'] });
     maxY += roofRise({ shape: plan.roof.shape, width, depth, pitch: plan.roof.pitch, ridgeAlongX: width >= depth }) + 0.3;
   } else {
     if (plan.roof.shape !== 'flat') notes.push('pitched roofs need a rectangular top floor; used a flat roof');
@@ -819,13 +844,25 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     solid.forEach((loop, k) => {
       const outline = offsetPolygon(loop, ext + 0.12);
       const holes = voids.filter((v) => v.every((q) => pointInPolygon(q[0], q[1], loop) || pointOnBoundary(q, loop))).map((v) => offsetPolygon(v, -(ext + 0.12)).map((q) => [round(q[0]), round(q[1])]));
-      add({ id: `${bid}-roof${k === 0 ? '' : k}`, parent: topLevelId, name: 'Roof', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: outline.map((p) => [round(p[0]), round(p[1])]), holes, thickness: 0.28, finish: { finish: 'gravel', color: '#9d968b' }, edge: { finish: 'plaster', color: '#f0eee9' }, bottom: true } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'flat' }, tags: ['arch', 'roof'] });
+      add({ id: `${bid}-roof${k === 0 ? '' : k}`, parent: topLevelId, name: 'Roof', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: outline.map((p) => [round(p[0]), round(p[1])]), holes, thickness: 0.28, finish: { finish: 'gravel', color: '#9d968b' }, edge: facadeChosen ? { finish: 'plaster', color: '#f0eee9' } : xp.trim, bottom: true } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'flat' }, tags: ['arch', 'roof'] });
       // Parapet as a thin railing-like solid band (round the outside and round every courtyard).
       const rings: P2[][] = [outline, ...holes.map((h) => h as P2[])];
       rings.forEach((ring, ri) => {
-        add({ id: `${bid}-parapet${k === 0 && ri === 0 ? '' : `${k}-${ri}`}`, parent: topLevelId, name: 'Parapet', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-railing', params: { points: [...ring, ring[0] as P2].map((p) => [round(p[0]), round(p[1])]), height: 0.35, style: 'solid', finish: { finish: 'plaster', color: '#f0eee9' } } as unknown as Record<string, Json> }, arch: { role: 'roof', kind: 'parapet' }, tags: ['arch', 'roof'] });
+        add({ id: `${bid}-parapet${k === 0 && ri === 0 ? '' : `${k}-${ri}`}`, parent: topLevelId, name: 'Parapet', transform: { position: [0, round(topHeight + 0.25), 0] }, shape: { kind: 'procedural', generator: 'arch-railing', params: { points: [...ring, ring[0] as P2].map((p) => [round(p[0]), round(p[1])]), height: 0.35, style: 'solid', finish: facadeChosen ? { finish: 'plaster', color: '#f0eee9' } : xp.trim } as unknown as Record<string, Json> }, arch: { role: 'roof', kind: 'parapet' }, tags: ['arch', 'roof'] });
       });
     });
+    // Downpipes from the roof edge to the ground at the two back corners, where the walls run the full height.
+    const ground = levelOutlines[0] ?? [];
+    if (solid.length === 1 && ground.length === 1 && isAxisRectangle(solid[0] as P2[]) && isAxisRectangle(ground[0] as P2[])) {
+      const [tx0, tz0, tx1, tz1] = bounds(solid[0] as P2[]);
+      const [gx0, gz0, gx1, gz1] = bounds(ground[0] as P2[]);
+      if (Math.abs(tx0 - gx0) < 0.05 && Math.abs(tz0 - gz0) < 0.05 && Math.abs(tx1 - gx1) < 0.05 && Math.abs(tz1 - gz1) < 0.05) {
+        const back = front.door && front.door.n[1] < -0.5 ? tz1 + ext + 0.07 : tz0 - ext - 0.07;
+        [tx0 + 0.3, tx1 - 0.3].forEach((x, k) => {
+          add({ id: `${bid}-downpipe${k}`, parent: bid, name: 'Downpipe', transform: { position: [round(x), 0, round(back)] }, shape: { kind: 'procedural', generator: 'arch-column', params: { shape: 'round', size: 0.09, height: round(elevation + 0.3), finish: xp.rainwater } }, arch: { role: 'site', kind: 'downpipe', name: 'Downpipe' }, tags: ['arch', 'site'] });
+        });
+      }
+    }
     maxY += 0.7;
   }
 
@@ -863,7 +900,10 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       ];
       spots.forEach((p, k) => {
         if (topLoops.some((loop) => pointInPolygon(p[0], p[1], offsetPolygon(loop, ext + 0.4))) || levelOutlines[0]?.some((loop) => pointInPolygon(p[0], p[1], offsetPolygon(loop, ext + 0.4)))) return;
-        add({ id: `${bid}-planter${k}`, parent: bid, name: 'Olive tree', transform: { position: [round(p[0]), round(plan.plinth + 0.02), round(p[1])], rotation: [0, k * 47, 0] }, shape: { kind: 'procedural', generator: 'furn-plant', params: { height: 2.2, species: 'olive', pot: 'concrete' } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'furniture', kind: 'plant', name: 'Planter' }, tags: ['arch', 'furniture'] });
+        // A concrete planter box with a small olive (a leaf-card tree, not a potted stick).
+        const py = round(plan.plinth + 0.02);
+        add({ id: `${bid}-planter${k}`, parent: bid, name: 'Planter', transform: { position: [round(p[0]), round(py + 0.3), round(p[1])] }, shape: { kind: 'primitive', primitive: 'box', size: [0.8, 0.6, 0.8] }, material: { finish: 'concrete', color: '#bdb7ad' }, physics: { body: 'static' }, arch: { role: 'site', kind: 'planter', name: 'Planter' }, tags: ['arch', 'site'] });
+        add({ id: `${bid}-planter${k}-tree`, parent: bid, name: 'Olive tree', transform: { position: [round(p[0]), round(py + 0.58), round(p[1])], rotation: [0, k * 47, 0] }, shape: { kind: 'procedural', generator: 'tree-broadleaf', params: { height: 2.8, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1 }, seed: 400 + k }, arch: { role: 'site', kind: 'plant', name: 'Olive tree' }, tags: ['arch', 'site'] });
       });
     }
     const [tx0, tz0, tx1, tz1] = bounds(terrace);
@@ -871,6 +911,30 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     minZ = Math.min(minZ, tz0);
     maxX = Math.max(maxX, tx1);
     maxZ = Math.max(maxZ, tz1);
+  }
+
+  // --- site: garden and the land round it -------------------------------------
+  if (plan.site && (plan.site.garden || plan.site.surroundings !== 'none')) {
+    const pool = plan.site.pool;
+    const poolBox: [number, number, number, number] | undefined = pool ? [pool.at[0] - pool.width / 2 - 0.3, pool.at[1] - pool.length / 2 - 0.3, pool.at[0] + pool.width / 2 + 0.3, pool.at[1] + pool.length / 2 + 0.3] : undefined;
+    const grounds = compileGrounds({
+      bid,
+      outline: levelOutlines[0] ?? [],
+      ext,
+      ...(plan.site.terrace ? { terrace: positive(plan.site.terrace as P2[]) } : {}),
+      ...(poolBox ? { pool: poolBox } : {}),
+      ...(front.door ? { entry: { c: front.door.c, n: front.door.n, width: front.door.width } } : {}),
+      garden: plan.site.garden,
+      surroundings: plan.site.surroundings,
+      seed: seed + hashId(bid),
+    });
+    for (const e of grounds.entities) add(e);
+    if (plan.site.garden) {
+      minX = Math.min(minX, grounds.plot[0]);
+      minZ = Math.min(minZ, grounds.plot[1]);
+      maxX = Math.max(maxX, grounds.plot[2]);
+      maxZ = Math.max(maxZ, grounds.plot[3]);
+    }
   }
 
   // Spawn: just inside the main entrance facing into the house (the first frame of a walkthrough is the

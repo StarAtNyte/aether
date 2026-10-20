@@ -48,7 +48,8 @@ describe('system prompt', () => {
     // 15k -> 15.1k for the room finishes, wall dado and interactive furniture in the design tools (~40 tokens).
     // 15.1k -> 15.2k for the wildflowers generator, the broadleaf blossom option and the skyline-tower generator in the catalog (~100 tokens).
     // 15.2k -> 15.3k once the outdoor and ground/city generators all sit in the catalog together.
-    expect(prompt.length / 4).toBeLessThan(15_300);
+    // 15.3k -> 15.4k for the house grounds (site garden / surroundings, set_site) and the estate terrain's pool cut.
+    expect(prompt.length / 4).toBeLessThan(15_400);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

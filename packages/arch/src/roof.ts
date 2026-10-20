@@ -8,7 +8,7 @@
  * ridge cap finishes the top. Tile UVs run along the eaves (u) and up the
  * slope (v) so tile rows stay horizontal on every face.
  */
-import { Geom, box } from './mesh';
+import { Geom, box, cylinder } from './mesh';
 import { PartSet } from './parts';
 import type { RoofParams } from './params';
 import type { ArchOutput } from './types';
@@ -235,8 +235,41 @@ export function buildRoof(p: RoofParams): ArchOutput {
   }
   const edges = new Geom();
   fascia(edges, faces, dy, [0, 0, 0]);
-  if (swap) for (const g of [top, under, edges, walls, trim]) g.rotateY(90);
+  // Gutters along the eaves and downpipes down the wall faces (in the ridge-along-X frame, before the rotation).
+  const rain = new Geom();
+  if (p.gutters) {
+    const X = hx + o;
+    const eaves: Array<-1 | 1> = p.shape === 'shed' ? [1] : [-1, 1];
+    const gw = 0.12;
+    const gh = 0.11;
+    for (const sz of eaves) {
+      const z0 = sz * (hz + o);
+      const [a, b] = sz > 0 ? [z0 - 0.01, z0 + gw] : [z0 - gw, z0 + 0.01];
+      rain.merge(box(-X - 0.02, eaveY - gh, a, X + 0.02, eaveY + 0.015, b));
+      if (p.downpipe > 0.2) {
+        for (const sx of [-1, 1] as const) {
+          const x = sx * (hx - 0.22);
+          const zw = sz * (hz + 0.07);
+          const zg = sz * (hz + o + gw / 2);
+          const yNeck = Math.min(0, eaveY) - gh - 0.06;
+          rain.merge(cylinder(0.045, 0.045, p.downpipe + yNeck, 12).translate(x, -p.downpipe, zw));
+          const [n0, n1] = zw < zg ? [zw - 0.04, zg + 0.04] : [zg - 0.04, zw + 0.04];
+          rain.merge(box(x - 0.04, yNeck - 0.04, n0, x + 0.04, yNeck + 0.04, n1));
+          rain.merge(box(x - 0.04, yNeck, zg - 0.04, x + 0.04, eaveY - gh + 0.01, zg + 0.04));
+        }
+      }
+    }
+    if (p.shape === 'hip') {
+      for (const sx of [-1, 1] as const) {
+        const x0 = sx * (hx + o);
+        const [a, b] = sx > 0 ? [x0 - 0.01, x0 + gw] : [x0 - gw, x0 + 0.01];
+        rain.merge(box(a, eaveY - gh, -hz - o, b, eaveY + 0.015, hz + o));
+      }
+    }
+  }
+  if (swap) for (const g of [top, under, edges, walls, trim, rain]) g.rotateY(90);
   set.add(top, p.finish).add(under, p.trim).add(edges, p.trim).add(walls, p.gableWall).add(trim, p.trim);
+  if (rain.i.length > 0) set.add(rain, p.rainwater);
   // Colliders: one hull per face slab.
   for (const f of faces) {
     const pts: number[] = [];
