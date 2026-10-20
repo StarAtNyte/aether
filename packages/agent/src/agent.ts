@@ -170,6 +170,12 @@ function pushUserText(messages: ChatMessage[], text: string): void {
 /** Provider-agnostic agent that edits a world through an {@link AgentHost}. */
 export class WorldAgent {
   private readonly opts: AgentOptions;
+  /**
+   * What the last run was asked to touch: 'small' for a targeted edit of named things (the host then skips any
+   * scene-wide polishing afterwards, which would change what the user did not mention), 'broad' otherwise, null
+   * before a run or when it was not classified (a new world, a photo).
+   */
+  lastScope: 'small' | 'broad' | null = null;
   private readonly maxRepairs: number;
   private readonly maxTurns: number;
   private readonly maxToolCalls: number;
@@ -291,6 +297,7 @@ export class WorldAgent {
 
   private async *loop(prompt: string, host: AgentHost, opts: RunOptions, usage: UsageTotals): AsyncGenerator<AgentEvent> {
     const signal = opts.signal;
+    this.lastScope = null;
     const request = typeof prompt === 'string' ? prompt.trim() : '';
     if (request.length === 0) throw new Error('the prompt is empty');
     if (request.length > CONTEXT_LIMITS.MAX_PROMPT_CHARS) throw new Error(`the prompt is too long (max ${CONTEXT_LIMITS.MAX_PROMPT_CHARS} characters)`);
@@ -367,6 +374,7 @@ export class WorldAgent {
         return;
       }
       scope = refine.classifyScope(world0, request, { selection, focus: memory.targets, heading });
+      this.lastScope = scope.kind === 'small' && scope.allowed.size > 0 ? 'small' : 'broad';
       if (scope.kind === 'small') {
         const small = scope;
         ctx.audit = (patches) => refine.auditPatches(host.getWorld(), patches, small);

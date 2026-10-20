@@ -83,6 +83,16 @@ describe('local small edits through the agent', () => {
     expect(host.commits).toHaveLength(0);
   });
 
+  it('tells the host when a model-handled request was a targeted edit (so no scene-wide polishing follows)', async () => {
+    const { provider } = scripted([() => finishCall('Done.')]);
+    const agent = new WorldAgent({ provider, catalogs: TEST_CATALOGS });
+    expect(agent.lastScope).toBeNull();
+    await collect(agent.run('make the second tent wobble like jelly when the wind blows', new MemoryHost(loadFixture('camp'))));
+    expect(agent.lastScope).toBe('small');
+    await collect(agent.run('redesign the whole camp with a more dramatic mood', new MemoryHost(loadFixture('camp'))));
+    expect(agent.lastScope).toBe('broad');
+  });
+
   it('hands undo to the host', async () => {
     const { provider } = scripted([() => finishCall()]);
     const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('undo that', new MemoryHost(loadFixture('camp'))));

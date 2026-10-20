@@ -1097,7 +1097,9 @@ export class Studio {
       const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo ? { photo: opts.photo } : {}), ...(session ? { session } : {}) } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
-      if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null) {
+      // A targeted edit ("move the shrine", "make the sofa green") is not followed by scene-wide polishing: the quality
+      // loop would restyle forests and lights the user did not mention. The edit's own review already looked at it.
+      if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null && agent.lastScope !== 'small') {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
         const result = hasBuilding(this.history.current) && primary !== null && promptProfile === 'full' ? 'done' : await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
