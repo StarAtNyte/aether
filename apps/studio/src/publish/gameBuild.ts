@@ -22,7 +22,7 @@
 import { z } from 'zod';
 import type { WorldDoc } from '@aether/core';
 import { AUTO_HDRI } from '@aether/render';
-import { catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, worldAssetIds } from '@aether/assets';
+import { CAST, catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, motionSet, resolveLook, worldAssetIds, type CastMember } from '@aether/assets';
 import { safeEntryName, writeZip, type ZipEntry } from '@aether/assets/zip';
 import { exportFileName, exportWorld } from '../lib/worldIO';
 import { escapeXml } from './floorplan';
@@ -326,6 +326,21 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
   const autoSky = world.environment.hdri ? undefined : AUTO_HDRI[world.environment.sky];
   const skyEntry = autoSky ? catalogEntry(autoSky) : undefined;
   if (skyEntry) want(skyEntry.file);
+  // The people the player draws: the avatar's body is fixed by its spec; NPC bodies the spec names are exact, the rest can be
+  // any body of their gender (a crowd varies them), and block worlds dress their mobs from the whole cast.
+  const bodies = new Set<CastMember>([resolveLook(world.player.character ?? { wardrobe: 'traveller' }, 'player').body]);
+  for (const e of Object.values(world.entities)) {
+    if (!e.character) continue;
+    const g = e.character.gender;
+    const pool = e.character.body ? CAST.filter((c) => c.id === e.character?.body) : CAST.filter((c) => !g || c.gender === g);
+    for (const c of pool.length > 0 ? pool : CAST) bodies.add(c);
+  }
+  if (world.voxel) for (const c of CAST) bodies.add(c);
+  for (const c of bodies) {
+    want(c.file);
+    want(c.masks ?? undefined);
+    want(motionSet(c.gender)?.file);
+  }
   // Photographed surface finishes (architecture) the world's materials use.
   const finishes = new Set<string>();
   for (const e of Object.values(world.entities)) if (e.material?.finish) finishes.add(e.material.finish);

@@ -97,6 +97,15 @@ describe('game build (zip)', () => {
     expect(log).toContain('assets/lib/m/beaver.088f13b3.glb');
   });
 
+  it('ships the avatar body, its mask and the motion set so the published player can draw people', async () => {
+    const b = await buildGame({ world: createWorld({ name: 'People' }), title: 'People', description: '', author: '', controls: '', music: null, cover: null, fetchFile: fakeFetch([]), images: { crop: async () => new Uint8Array([1]) }, now: 1_700_000_000_000 });
+    const zip = await readZip(b.zip);
+    expect(zip.ok).toBe(true);
+    const names = zip.ok ? zip.entries.map((e) => e.name) : [];
+    expect(names.some((n) => /^assets\/lib\/c\/motions-(male|female)\.[0-9a-f]+\.glb$/.test(n))).toBe(true);
+    expect(names.some((n) => /^assets\/lib\/c\/(?!motions)[a-z]+\.[0-9a-f]+\.glb$/.test(n))).toBe(true);
+  });
+
   it('includes the automatic sky file when the world has a sky preset but names no hdri', async () => {
     const build = (env: object) => buildGame({ world: createWorld({ name: 'Sky', environment: env as never }), title: 'Sky', description: '', author: '', controls: '', music: null, cover: null, fetchFile: fakeFetch([]), images: { crop: async () => new Uint8Array([1]) }, now: 1_700_000_000_000 });
     const names = async (env: object): Promise<string[]> => {
