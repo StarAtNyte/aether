@@ -274,7 +274,7 @@ async function readPhoto(run: PhotoRun): Promise<Reading> {
   const view: PhotoReadsView = { reads: ok.length, asked: n, items, consensus: d.items.length, checklist: buildChecklist(d).length, dropped, contested: disputed.add.length + disputed.remove.length, reconciled: reconciled.slice(0, 12) };
   const notes: string[] = [];
   if (report.orphans.length > 0) notes.push(`Left out because what they stand on or hang above was not agreed on: ${report.orphans.slice(0, 6).join(', ')}.`);
-  return { ok: true, description: d, fixes: [...new Set(ok.flatMap((o) => o.a.fixes))].slice(0, 8), talk: [], view, notes };
+  return { ok: true, description: d, fixes: [...new Set([...merged.fixes, ...ok.flatMap((o) => o.a.fixes)])].slice(0, 8), talk: [], view, notes };
 }
 
 /** One line on how the photo was read ("Read the photo 3 times independently (11, 12, 11 pieces): …"). */

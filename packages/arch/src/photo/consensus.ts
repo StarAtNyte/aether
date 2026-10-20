@@ -688,10 +688,15 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
       confidence: r3(medianOf(members.map((m) => m.value.confidence)) as number),
       ...(d.v.box ? { box: d.v.box } : {}),
     };
-    const faces = modeOf(members.map((m) => m.value.faces).filter((f): f is string => typeof f === 'string').map((f) => ((WALLS as readonly string[]).includes(f) ? f : `#${ref(members.find((x) => x.value.faces === f)?.read ?? 0, f, itemOf) ?? ''}`)));
-    const facesV = faces === undefined || faces === '#' ? undefined : faces.startsWith('#') ? faces.slice(1) : faces;
-    const facesCount = members.filter((m) => m.value.faces !== undefined).length;
-    if (facesV && facesCount * 2 >= members.length) base.faces = facesV as PhotoItem['faces'];
+    // Facing: a compass side, or the piece faced (mapped to its consensus id), when at least half the reads say.
+    const facing = members.map((m) => {
+      const f = m.value.faces;
+      if (f === undefined) return undefined;
+      return (WALLS as readonly string[]).includes(f) ? f : ref(m.read, f, itemOf);
+    });
+    const faced = facing.filter((f): f is string => f !== undefined);
+    const faces = faced.length * 2 >= members.length ? modeOf(faced) : undefined;
+    if (faces) base.faces = faces as PhotoItem['faces'];
     const bottom = medianOpt(members.map((m) => m.value.bottom));
     if (placement === 'on') {
       const host = modeOf(inMode.map((m) => ref(m.read, m.value.on, itemOf) as string));
