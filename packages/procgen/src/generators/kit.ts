@@ -198,6 +198,71 @@ export function boxUvs(m: Mesh): Mesh {
 }
 
 /**
+ * Box-projected metre UVs for a smooth, curved mesh (a boulder, a mound): the projection plane is chosen per TRIANGLE from
+ * its face normal and a vertex shared by triangles that project differently is split, so no triangle mixes two planes
+ * (per-vertex choice smears the texture across those triangles into a lattice of streaks). Normals and colours are kept.
+ */
+export function triBoxUvs(m: Mesh): Mesh {
+  const p = m.positions;
+  const nr = m.normals;
+  const col = m.colors;
+  const idx = m.indices;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const cols: number[] = [];
+  const uvs: number[] = [];
+  const out = new Uint32Array(idx.length);
+  const remap = new Map<number, number>();
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] as number;
+    const b = idx[t + 1] as number;
+    const c = idx[t + 2] as number;
+    const ux = (p[b * 3] as number) - (p[a * 3] as number);
+    const uy = (p[b * 3 + 1] as number) - (p[a * 3 + 1] as number);
+    const uz = (p[b * 3 + 2] as number) - (p[a * 3 + 2] as number);
+    const vx = (p[c * 3] as number) - (p[a * 3] as number);
+    const vy = (p[c * 3 + 1] as number) - (p[a * 3 + 1] as number);
+    const vz = (p[c * 3 + 2] as number) - (p[a * 3 + 2] as number);
+    const fx = uy * vz - uz * vy;
+    const fy = uz * vx - ux * vz;
+    const fz = ux * vy - uy * vx;
+    const ax = Math.abs(fx);
+    const ay = Math.abs(fy);
+    const az = Math.abs(fz);
+    const axis = ay >= ax && ay >= az ? 0 : az >= ax ? (fz >= 0 ? 1 : 2) : fx >= 0 ? 3 : 4;
+    for (let k = 0; k < 3; k++) {
+      const v = idx[t + k] as number;
+      const key = v * 5 + axis;
+      let ni = remap.get(key);
+      if (ni === undefined) {
+        ni = pos.length / 3;
+        remap.set(key, ni);
+        const x = p[v * 3] as number;
+        const y = p[v * 3 + 1] as number;
+        const z = p[v * 3 + 2] as number;
+        pos.push(x, y, z);
+        nor.push(nr[v * 3] as number, nr[v * 3 + 1] as number, nr[v * 3 + 2] as number);
+        if (col) cols.push(col[v * 3] as number, col[v * 3 + 1] as number, col[v * 3 + 2] as number);
+        if (axis === 0) uvs.push(x, z);
+        else if (axis === 1) uvs.push(x, y);
+        else if (axis === 2) uvs.push(-x, y);
+        else if (axis === 3) uvs.push(-z, y);
+        else uvs.push(z, y);
+      }
+      out[t + k] = ni;
+    }
+  }
+  m.budget.charge(pos.length / 3 - p.length / 3);
+  m.positions = new Float32Array(pos);
+  m.normals = new Float32Array(nor);
+  m.colors = col ? new Float32Array(cols) : null;
+  m.uvs = new Float32Array(uvs);
+  m.indices = out;
+  m.splat = null;
+  return m;
+}
+
+/**
  * Metre UVs for a lathe, cylinder or cone around the Y axis: the side runs round the circumference at `radius` (from the
  * lathe's own 0..1 U, so the seam stays clean) and up by height, or by the distance along the slope when `slope` is the
  * surface's angle from the horizontal in degrees; caps take (x, z). Call it before moving the mesh off the axis.

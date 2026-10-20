@@ -167,19 +167,19 @@ export function carryDependents(world: WorldDoc, raw: readonly unknown[]): { pat
 
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
-  // What belongs to a moved object (its light, goal zone, plinth) moves with it unless the batch places it itself.
-  const carry = carryDependents(ctx.host.getWorld(), input.patches);
-  const patches = carry.patches.length > 0 ? [...input.patches, ...carry.patches] : input.patches;
-  if (ctx.audit) {
-    const audit = ctx.audit(patches);
-    if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
-  }
   let exchanged = 0;
   if (ctx.realistic) {
     // The stylised low-poly nature parts read as toys next to everything else: build the realistic stand-ins instead.
     const copy = structuredClone(input.patches);
     exchanged = makeRealistic(copy as never);
     if (exchanged > 0) input = { ...input, patches: copy };
+  }
+  // What belongs to a moved object (its light, goal zone, plinth) moves with it unless the batch places it itself.
+  const carry = carryDependents(ctx.host.getWorld(), input.patches);
+  const patches = carry.patches.length > 0 ? [...input.patches, ...carry.patches] : input.patches;
+  if (ctx.audit) {
+    const audit = ctx.audit(patches);
+    if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
   }
   const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
   const events: AgentEvent[] = [];

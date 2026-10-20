@@ -6,6 +6,7 @@ import { r2, type Builder } from './builder';
 import { backdropMountains, clouds, hillside, lamp, lightsOn, path, scatterBelt, treeRing, yawAlongX, yawFacingZ, type ThemeCtx } from './decor';
 import type { Theme } from './theme';
 import { catalogEntry, getCatalog } from '@aether/assets';
+import { groundPatch } from './showcase/kit';
 
 const ROOFS = ['#a0442c', '#5b6d8a', '#7a4b2a', '#4a6b45', '#8a3b2e'];
 const WALLS = ['#e8dcc4', '#f1e3c8', '#d9c9a8', '#efe6d6', '#cfd8dc'];
@@ -121,7 +122,8 @@ const village: Theme = {
       hillside(c, { pad: 62 });
     }
     if (c.clear < 4) {
-      b.prim('plaza', 'cylinder', [real ? 17 : 14, 0.06, real ? 17 : 14], [c.x, 0.03, c.z], { material: { finish: 'cobble', color: '#a29b8c' }, castShadow: false, name: 'Plaza' });
+      if (real) groundPatch(b, { id: b.id('plaza'), name: 'Plaza', center: [c.x, c.z], radius: 8.8, height: (x, z) => b.groundAt(x, z), ragged: 0.12, centre: '#a29b8c', edge: '#8d8676', tags: ['plaza'] });
+      else b.prim('plaza', 'cylinder', [14, 0.06, 14], [c.x, 0.03, c.z], { material: { finish: 'cobble', color: '#a29b8c' }, castShadow: false, name: 'Plaza' });
       if (old && real) villageWell(b, c.x, c.z);
       else b.gen('statue', 'statue', { height: 3 }, [c.x, 0, c.z], { physics: 'static', footprint: 1.8, name: 'Founder statue', tags: ['focus'] });
       const marketWord = /\bmarket\b/.test(c.request ?? '');

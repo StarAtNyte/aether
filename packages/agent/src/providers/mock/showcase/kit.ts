@@ -374,6 +374,75 @@ export function groundRibbon(b: Builder, o: GroundRibbonOptions): string {
   return o.id;
 }
 
+/** Options of {@link groundPatch}. */
+export interface GroundPatchOptions {
+  id: string;
+  name?: string;
+  /** Centre (x, z) and mean radius in metres. */
+  center: readonly [number, number];
+  radius: number;
+  /** Ground height under (x, z). */
+  height: (x: number, z: number) => number;
+  /** How ragged the edge is, 0 (a disc) .. 0.4 (default 0.14). */
+  ragged?: number;
+  lift?: number;
+  /** Tint at the centre and at the rim (the rim fades toward the ground tone). */
+  centre?: string;
+  edge?: string;
+  material?: MaterialSpec;
+  tags?: string[];
+}
+
+/**
+ * A paved or worn patch of ground (a village square, a camp clearing) as one mesh draped over the terrain, with a ragged,
+ * softened edge instead of a perfect disc: rings of vertices from the centre out, the rim wandering in and out with a
+ * couple of sine harmonics and sinking a little into the turf. No collider (the ground carries the walker).
+ */
+export function groundPatch(b: Builder, o: GroundPatchOptions): string {
+  const SEG = 64;
+  const RINGS = 6;
+  const ragged = o.ragged ?? 0.14;
+  const lift = o.lift ?? 0.04;
+  const c0 = srgb(o.centre ?? '#a29b8c');
+  const c1 = srgb(o.edge ?? o.centre ?? '#8a8478');
+  const ph = [b.rand(0, 6.28), b.rand(0, 6.28), b.rand(0, 6.28)];
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const [cx, cz] = o.center;
+  positions.push(cx, o.height(cx, cz) + lift, cz);
+  colors.push(c0[0], c0[1], c0[2]);
+  uvs.push(cx / 1.5, cz / 1.5);
+  for (let r = 1; r <= RINGS; r++) {
+    const f = r / RINGS;
+    for (let i = 0; i < SEG; i++) {
+      const a = (i / SEG) * Math.PI * 2;
+      const wob = 1 + ragged * (0.6 * Math.sin(a * 3 + (ph[0] as number)) + 0.3 * Math.sin(a * 7 + (ph[1] as number)) + 0.15 * Math.sin(a * 13 + (ph[2] as number)));
+      const rad = o.radius * f * (f > 0.6 ? wob : 1 + (wob - 1) * (f / 0.6));
+      const x = cx + Math.cos(a) * rad;
+      const z = cz + Math.sin(a) * rad;
+      positions.push(x, o.height(x, z) + lift - (r === RINGS ? 0.035 : 0), z);
+      const e = Math.max(0, (f - 0.55) / 0.45) ** 1.6;
+      colors.push(c0[0] + (c1[0] - c0[0]) * e, c0[1] + (c1[1] - c0[1]) * e, c0[2] + (c1[2] - c0[2]) * e);
+      uvs.push(x / 1.5, z / 1.5);
+    }
+  }
+  for (let i = 0; i < SEG; i++) indices.push(0, 1 + ((i + 1) % SEG), 1 + i);
+  for (let r = 1; r < RINGS; r++) {
+    const a0 = 1 + (r - 1) * SEG;
+    const a1 = 1 + r * SEG;
+    for (let i = 0; i < SEG; i++) {
+      const j = (i + 1) % SEG;
+      indices.push(a0 + i, a0 + j, a1 + i, a0 + j, a1 + j, a1 + i);
+    }
+  }
+  const meshId = `${o.id}-mesh`;
+  b.mesh(encodeMesh(meshId, { positions: new Float32Array(positions), indices: new Uint32Array(indices), colors: new Float32Array(colors), uvs: new Float32Array(uvs), faceMaterials: null }, { materials: [{ finish: 'cobble', roughness: 0.9, ...(o.material ?? {}) }] }));
+  b.add({ id: o.id, name: o.name ?? 'Square', shape: { kind: 'mesh', mesh: meshId }, transform: { position: [0, 0, 0] }, castShadow: false, ...(o.tags ? { tags: o.tags } : {}) });
+  return o.id;
+}
+
 /** Options of {@link roadRibbon}. */
 export interface RoadRibbonOptions {
   /** Entity id of the road (the curbs are `<id>-curbs`). */

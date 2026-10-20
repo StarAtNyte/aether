@@ -43,6 +43,12 @@ interface Cam { name: string; pos: V3; target: V3 }
 async function build(page: Page, url: string, prompt: string): Promise<void> {
   await page.goto(`${url}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
   await page.locator('#hero-prompt').waitFor({ timeout: 60_000 });
+  if (BACKEND !== 'offline') {
+    // The local connection is resolved a moment after the page loads: a prompt sent before that goes to the offline planner.
+    const label = BACKEND === 'claude-code' ? 'Claude Code' : 'Codex';
+    await page.waitForFunction((l) => document.body.innerText.includes(l), label, { timeout: 45_000 }).catch(() => log(`  (no "${label}" on the page; the build may run offline)`));
+    await page.waitForTimeout(1500);
+  }
   await page.locator('#hero-prompt').fill(prompt);
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => (window.__aether?.store.getState().chat.length ?? 0) > 0, null, { timeout: 90_000 });

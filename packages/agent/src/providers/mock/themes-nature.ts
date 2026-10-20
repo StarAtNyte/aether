@@ -64,7 +64,7 @@ const forest: Theme = {
         if (lightsOn(b)) lantern(b, r2(tx + Math.cos(a + 1.2) * 2), r2(tz + Math.sin(a + 1.2) * 2));
       }
       // A trail winds from the camp toward the default camera (through the view corridor).
-      path(b, r2(c.x + 1.2), r2(c.z + 3.2), r2(c.x + Math.sin((VIEW_BEARING * Math.PI) / 180) * 34), r2(c.z + Math.cos((VIEW_BEARING * Math.PI) / 180) * 34), 1.5, '#6b5a45', 'dirt');
+      path(b, r2(c.x + 1.2), r2(c.z + 3.2), r2(c.x + Math.sin((VIEW_BEARING * Math.PI) / 180) * 34), r2(c.z + Math.cos((VIEW_BEARING * Math.PI) / 180) * 34), 1.5, b.realisticNature ? '#6a6150' : '#6b5a45', 'dirt');
       // Woodpile: three stacked logs.
       const pile = b.prim('woodpile', 'cylinder', [0.32, 1.6, 0.32], [r2(c.x + 3.6), 0.16, r2(c.z + 1.4)], { rot: [0, 20, 90], material: { preset: 'bark', color: '#6b4a2f' }, physics: 'static', footprint: 0.9 });
       b.prim(`${pile}-log`, 'cylinder', [0.32, 1.6, 0.32], [0, 0, 0.33], { parent: pile, material: { preset: 'bark', color: '#7a5535' } });

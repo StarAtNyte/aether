@@ -18,7 +18,7 @@ import type { InternalApi } from '../api';
 import { MeshBuilder, type Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear, type RGB } from '../color';
-import { defineGenerator, hullOf, lin, pColor, pInt, pNum, pVariant, shade } from './kit';
+import { defineGenerator, hullOf, lin, pColor, pInt, pNum, pVariant, shade, triBoxUvs } from './kit';
 
 /** Bark: the photographed bark surface, tinted per vertex. */
 const BARK = { finish: 'bark', vertexColors: true } as const;
@@ -108,30 +108,6 @@ function barkUvs(mesh: Mesh, axisX: number, axisZ: number): void {
     const r = Math.max(0.05, Math.hypot(x, z));
     uv[i * 2] = Math.atan2(z, x) * Math.min(r, 0.6);
     uv[i * 2 + 1] = p[i * 3 + 1] as number;
-  }
-  mesh.uvs = uv;
-}
-
-/** Box-projected metre UVs (rock): the dominant axis of each vertex normal picks the plane. */
-function boxUvs(mesh: Mesh): void {
-  const p = mesh.positions;
-  const nr = mesh.normals;
-  const n = p.length / 3;
-  const uv = new Float32Array(n * 2);
-  for (let i = 0; i < n; i++) {
-    const ax = Math.abs(nr[i * 3] as number);
-    const ay = Math.abs(nr[i * 3 + 1] as number);
-    const az = Math.abs(nr[i * 3 + 2] as number);
-    if (ay >= ax && ay >= az) {
-      uv[i * 2] = p[i * 3] as number;
-      uv[i * 2 + 1] = p[i * 3 + 2] as number;
-    } else if (ax >= az) {
-      uv[i * 2] = p[i * 3 + 2] as number;
-      uv[i * 2 + 1] = p[i * 3 + 1] as number;
-    } else {
-      uv[i * 2] = p[i * 3] as number;
-      uv[i * 2 + 1] = p[i * 3 + 1] as number;
-    }
   }
   mesh.uvs = uv;
 }
@@ -660,7 +636,7 @@ const boulder = defineGenerator({
       mixLinear(out, warm, 0.18 * strata, out);
       if (lichen > 0 && ny > 0.45) mixLinear(out, moss, Math.min(1, (ny - 0.45) * 2.4 + 0.35 * n.noise3(x * 5, y * 5, z * 5)) * lichen, out);
     });
-    boxUvs(m);
+    triBoxUvs(m);
     api.add(m, ROCK);
     api.collider(hullOf(m));
     return api.build();
