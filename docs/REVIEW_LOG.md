@@ -3828,3 +3828,10 @@ The nine defects the acceptance pass left open are fixed, each with tests. The d
 - Kart drivers, the torii gate and the farm animals are stylised library models; flames are glowing cones.
 - The AI does not always use the tools it is told about on its first pass (it needed the review notes for the grounds, and rooms it lays out stay sparser than the offline ones).
 - Stills are from the Intel iGPU (the RTX 4090 was busy); the genlook play still can show the playtest replay's selection outline.
+
+**Follow-up from the Codex acceptance run.**
+- River as a flat box: `shape_land` land takes `lake` as well as `stream`, and `apply_patches` answers any water added as a plain primitive with the `shape_land` call to use instead. Codex (`genlook/x1`, Node 24 CLI) then built the forest game on a carved stream with a footbridge.
+- Shrine "hill" as a cylinder: a `mound` built-in generator (natural hill, level summit, heightfield collider) and `shape_land {op:"mound"}`; primitive hills get a note pointing there. In `x1` Codex raised a mound and stood the shrine on it. That game came back "not verified yet: ran too long", which is the playtest bot's, not the look's.
+- Plant in the shower after a window was added: loose pieces keep 0.4 m off showers and baths, and a re-compile drops a compiled floor piece standing in a piece the model placed (regression test `wet-clearance.test.ts`; before the fix the re-compiled vanity stood in the shower).
+- Sparse Codex interiors: with the `room_sparse` and `no_grounds` notes, a Codex house (`x2`) came back verified walkable with grounds, and with rugs, plants, lamps and curtains in the living room and both bedrooms.
+- Full vitest after these: 385 files, 4113 tests.
