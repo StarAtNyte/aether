@@ -330,6 +330,36 @@ function routeAround(place: Place, spawn: V3, count: number): { points: V3[]; mo
   return { points, mode: 'loop' };
 }
 
+/**
+ * Waypoints that do not stand in something already placed (a house, a stall): each point that falls in a reserved
+ * footprint slides along its circle round the place, a few degrees at a time, to the nearest free spot; a point with no
+ * free spot near it is dropped (at least two are kept).
+ */
+function clearRoute(b: Builder, points: V3[], place: Place): V3[] {
+  const out: V3[] = [];
+  for (const p of points) {
+    if (b.isFree(p[0], p[2], 0.45)) {
+      out.push(p);
+      continue;
+    }
+    const r = Math.hypot(p[0] - place.x, p[2] - place.z);
+    const a0 = Math.atan2(p[2] - place.z, p[0] - place.x);
+    let moved: V3 | null = null;
+    for (let k = 1; k <= 8 && !moved; k++) {
+      for (const sgn of [1, -1]) {
+        const a = a0 + sgn * k * 0.14;
+        const q: V3 = [r2(place.x + Math.cos(a) * r), 0, r2(place.z + Math.sin(a) * r)];
+        if (b.isFree(q[0], q[2], 0.45)) {
+          moved = q;
+          break;
+        }
+      }
+    }
+    if (moved) out.push(moved);
+  }
+  return out.length >= 2 ? out : points;
+}
+
 /** Yaw (degrees) that makes a −Z-facing character look from (fx, fz) toward (tx, tz). */
 function yawToward(fx: number, fz: number, tx: number, tz: number): number {
   return r2((Math.atan2(-(tx - fx), -(tz - fz)) * 180) / Math.PI);
@@ -392,7 +422,7 @@ function buildGroup(c: CreateCtx, g: Group, index: number): void {
     ax = route.points[0]?.[0] ?? place.x;
     az = route.points[0]?.[2] ?? place.z;
     if (t.patrol || kind.id === 'guard' || kind.id === 'bandit') {
-      opts.waypoints = route.points;
+      opts.waypoints = clearRoute(b, route.points, place);
       opts.patrol = route.mode;
     }
   } else if (hunter) {
@@ -412,7 +442,8 @@ function buildGroup(c: CreateCtx, g: Group, index: number): void {
   // A guard without a named place patrols a square near where it stands.
   if ((kind.id === 'guard' || kind.id === 'bandit') && !opts.waypoints && t.patrol && !t.stands) {
     const r = 4.5;
-    opts.waypoints = [[r2(ax + r), 0, r2(az)], [r2(ax + r), 0, r2(az + r)], [r2(ax), 0, r2(az + r)], [r2(ax), 0, r2(az)]];
+    const square: V3[] = [[r2(ax + r), 0, r2(az)], [r2(ax + r), 0, r2(az + r)], [r2(ax), 0, r2(az + r)], [r2(ax), 0, r2(az)]];
+    opts.waypoints = clearRoute(b, square, { id: 'patrol', kind: 'square', x: ax + r / 2, z: az + r / 2, r: r / 2 });
     opts.patrol = 'loop';
   }
   if (t.stands) {
