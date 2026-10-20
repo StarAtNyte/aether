@@ -328,6 +328,7 @@ export class WorldAgent {
     const hasWorld = Object.keys(world0.entities).length > 0 || world0.voxel !== undefined;
     const intent = opts.intent ?? 'auto';
     let scope: RequestScope | undefined;
+    let ambiguity = '';
     if (this.fineEdit && hasWorld && intent !== 'new' && images.length === 0) {
       const memory = sanitizeMemory(opts.memory);
       const selection = sanitizeSelection(opts.selection);
@@ -336,9 +337,15 @@ export class WorldAgent {
       const refine = await import('./refine/runtime');
       const fe = !this.localEdits ? NO_LOCAL_EDIT : refine.planFineEdit({ world: world0, text: request, selection, memory, heading, catalogs: { generators: [...this.opts.catalogs.generators, ...(this.opts.catalogs.libraryGenerators ?? [])] } });
       if (fe.kind === 'question' && fe.question) {
-        yield { type: 'clarify', text: fe.question.text, candidates: fe.question.candidates };
-        yield { type: 'memory', memory: fe.memory };
-        return;
+        // Offline the question goes to the user. A model is the brain: it sees the scene and decides which one is
+        // meant ("the shrine" is the landmark, not its altar), and asks only when it truly cannot tell.
+        if (this.opts.provider.name === 'mock') {
+          yield { type: 'clarify', text: fe.question.text, candidates: fe.question.candidates };
+          yield { type: 'memory', memory: fe.memory };
+          return;
+        }
+        const names = fe.question.candidates.slice(0, 8).map((c) => `${c.label.slice(0, 60)} (${c.id})`).join(', ');
+        ambiguity = `Several things could be meant: ${names}. Decide from the scene which one the user means (the whole object over its parts) and act on it; ask only if it is genuinely unclear.`;
       }
       if (fe.kind === 'undo' || fe.kind === 'redo') {
         yield { type: 'history', action: fe.kind };
@@ -375,7 +382,7 @@ export class WorldAgent {
     });
     const inScope = slice && scope ? scopeBlock(world0, scope) : '';
     const mode = !hasWorld || !this.fineEdit ? undefined : intent === 'new' ? 'new world: replace the current world with the one described' : 'refine: change the current world as asked and keep everything the user did not mention exactly as it is; start a new world only if the user clearly asks for one';
-    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn(inScope ? `${summary}\n${inScope}` : summary, request, mode) }];
+    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: formatUserTurn([summary, inScope, ambiguity].filter(Boolean).join('\n'), request, mode) }];
     const prior = sanitizeHistory(opts.history);
     const kept = this.compact ? prior.slice(prior.length > COMPACT_LIMITS.historyMessages ? prior.length - COMPACT_LIMITS.historyMessages : 0) : prior;
     // History must start with a user turn.

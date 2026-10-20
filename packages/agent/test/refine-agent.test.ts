@@ -64,14 +64,23 @@ describe('local small edits through the agent', () => {
     expect(types(events)).toContain('verify');
   });
 
-  it('asks which one when it cannot tell', async () => {
-    const { provider, requests } = scripted([() => finishCall()]);
+  it('offline, asks which one when it cannot tell', async () => {
     const host = new MemoryHost(loadFixture('apartment'));
-    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('make the rug red', host));
+    const events = await collect(new WorldAgent({ provider: createMockProvider(), catalogs: TEST_CATALOGS }).run('make the rug red', host));
     const q = events.find((e) => e.type === 'clarify');
     expect(q && q.type === 'clarify' && q.candidates.length).toBeGreaterThanOrEqual(3);
     expect(host.commits).toHaveLength(0);
-    expect(requests).toHaveLength(0);
+  });
+
+  it('with a model, the model decides which one is meant from the candidates (it is the brain), no question first', async () => {
+    const { provider, requests } = scripted([() => finishCall('Which rug do you mean: the living-room or the bedroom one?')]);
+    const host = new MemoryHost(loadFixture('apartment'));
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('make the rug red', host));
+    expect(events.some((e) => e.type === 'clarify')).toBe(false);
+    expect(requests.length).toBeGreaterThanOrEqual(1);
+    const first = JSON.stringify(requests[0]?.messages[0]);
+    expect(first).toMatch(/Several things could be meant: .*rug/i);
+    expect(host.commits).toHaveLength(0);
   });
 
   it('hands undo to the host', async () => {
