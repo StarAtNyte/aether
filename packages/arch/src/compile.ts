@@ -557,10 +557,11 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       }
       const len = span.t1 - span.t0;
       const n = Math.max(1, Math.min(w.count, Math.floor((len - 0.4) / (w.width + 0.4))));
+      if (n < w.count) notes.push(`windows: only ${n} of ${w.count} windows ${w.width} m wide fit on the ${w.side} wall of ${w.room}`);
       for (let k = 0; k < n; k++) {
         const t = span.t0 + (len * (k + 0.5)) / n;
         const hit = wallAt(edgePoint(span.edge, t));
-        if (hit) placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight);
+        if (hit && !placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight)) notes.push(`window of ${w.room} on the ${w.side} wall: overlaps another opening or the wall end`);
       }
     }
     if (lvl.autoWindows) {

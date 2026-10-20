@@ -226,8 +226,17 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
         }
         case 'add_window': {
           const plan = load(op.building);
-          levelOf(plan, op.level).windows.push(parseWith(PlanWindow, op.window, 'window', 'Windows: {room, side: north|south|east|west, count?, width?, height?, sill?}.'));
-          lines.push(`add_window on level ${op.level}`);
+          const lvl = levelOf(plan, op.level);
+          const win = parseWith(PlanWindow, op.window, 'window', 'Windows: {room, side: north|south|east|west, count?, width?, height?, sill?}.');
+          // Another window on a wall that already has evenly spread ones joins them (a second spec would land on top of the first).
+          const same = win.centres ? undefined : lvl.windows.find((w) => w.room === win.room && w.side === win.side && !w.centres);
+          if (same) {
+            same.count = Math.min(8, same.count + win.count);
+            lines.push(`add_window on level ${op.level}: the ${win.side} wall of ${win.room} now has ${same.count} windows, spread evenly`);
+          } else {
+            lvl.windows.push(win);
+            lines.push(`add_window on level ${op.level}`);
+          }
           break;
         }
         case 'add_stairs': {
