@@ -6,7 +6,7 @@ import { DEFAULT_ARCH_UI, hourLabel, mergeArchUi, SECTION_RANGE, sectionLevel, s
 import { areaLabel, clampZoom, closesPolygon, dragRect, fitPlan, lengthLabel, outlineArea, panBy, pathOf, PLAN_ZOOM, roomColors, viewBox, zoomAt } from '../src/lib/planView';
 import { nearestTarget, nextVariant, roomToggle, walkIndex, type WalkTarget } from '../src/engine/walkthrough';
 import { ArchController, initialViewFor, type ArchHost } from '../src/engine/arch';
-import { entranceYawDeg, quietReached, THUMBNAIL_QUIET_MS } from '../src/engine/Simulation';
+import { entranceYawDeg, quietReached, startYawDeg, THUMBNAIL_QUIET_MS } from '../src/engine/Simulation';
 import { roomLabels } from '../src/lib/labels';
 import { createStudioStore } from '../src/state/store';
 
@@ -196,6 +196,17 @@ describe('walkthrough interactions', () => {
     const yaw = entranceYawDeg(w);
     expect(yaw).not.toBeNull();
     expect(entranceYawDeg(createWorld())).toBeNull();
+  });
+
+  it('keeps an authored start yaw unless it looks straight into a wall, then faces the entrance', () => {
+    const w = flatWorld();
+    const entrance = entranceYawDeg(w);
+    const authored = { ...w, player: { ...w.player, yaw: 45 } };
+    expect(startYawDeg(authored, () => false)).toBe(45);
+    expect(startYawDeg(authored, () => true)).toBe(entrance);
+    expect(startYawDeg(w, () => true)).toBe(entrance);
+    const open = createWorld({ player: { yaw: 30 } });
+    expect(startYawDeg(open, () => true)).toBe(30);
   });
 });
 

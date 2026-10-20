@@ -1029,7 +1029,8 @@ export class Simulation {
     try {
       this.renderer.highlight([]);
       // Walkthroughs start facing the entrance; other games face where the editor camera looked.
-      this.input.setYaw(world.player.yaw ?? entranceYawDeg(world) ?? cameraYawDeg(this.renderer));
+      // An authored start that looks straight into a wall (a blank facade a metre away) turns to the entrance instead.
+      this.input.setYaw(startYawDeg(world, (o, d, max) => session.pw.raycast(o, d, max) !== null) ?? cameraYawDeg(this.renderer));
       this.input.setPitch(0);
       // The voxel game has its own input (mouse look, hotbar, break/place).
       if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
@@ -1837,6 +1838,21 @@ function cameraYawDeg(renderer: WorldRenderer): number {
  * Yaw in degrees (0 faces −Z) from the player spawn toward the building's
  * entrance (an entity tagged "entrance"), or null when there is none.
  */
+/**
+ * The yaw a play session starts with: the authored `player.yaw`, unless it faces a solid less than 1.5 m from the
+ * eyes and the world has an entrance to face instead; else the entrance. Null when neither is known.
+ */
+export function startYawDeg(world: WorldDoc, blocked: (origin: Vec3, dir: Vec3, max: number) => boolean): number | null {
+  const authored = world.player.yaw;
+  const entrance = entranceYawDeg(world);
+  if (authored === undefined) return entrance;
+  if (entrance === null) return authored;
+  const s = world.player.spawn;
+  const a = (authored * Math.PI) / 180;
+  const facesWall = blocked([s[0], s[1] + 1.6, s[2]], [-Math.sin(a), 0, -Math.cos(a)], 1.5);
+  return facesWall ? entrance : authored;
+}
+
 export function entranceYawDeg(world: WorldDoc): number | null {
   for (const id in world.entities) {
     const e = world.entities[id];
