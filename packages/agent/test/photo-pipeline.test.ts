@@ -7,6 +7,7 @@ import { WorldAgent } from '../src/agent';
 import { createMockProvider } from '../src/providers/mock/index';
 import type { Raster } from '../src/photo/score';
 import { isRoomPhotoRequest } from '../src/photo/pipeline';
+import { JUDGE_SEED } from '../src/photo/judge';
 import type { AgentEvent, CompletionRequest, CompletionResponse, ContentBlock, Provider, ReviewViewRequest } from '../src/types';
 import { collect, MemoryHost, TEST_CATALOGS } from './helpers';
 
@@ -63,13 +64,21 @@ class PhotoHost extends MemoryHost {
 
 type Reply = (req: CompletionRequest, n: number) => ContentBlock[];
 
-function scripted(replies: Reply[]): Provider & { requests: CompletionRequest[] } {
+/** The conversation is scripted turn by turn; the independent judges (role critic) are answered by `judge`. */
+function scripted(replies: Reply[], judge?: (req: CompletionRequest) => ContentBlock[]): Provider & { requests: CompletionRequest[]; judged: CompletionRequest[] } {
   const requests: CompletionRequest[] = [];
+  const judged: CompletionRequest[] = [];
   let i = 0;
   return {
     name: 'scripted',
     requests,
+    judged,
     async complete(req): Promise<CompletionResponse> {
+      if (req.role === 'critic' && judge) {
+        judged.push(JSON.parse(JSON.stringify(req)) as CompletionRequest);
+        const content = judge(req);
+        return { content, stopReason: 'tool_use', model: 'fake-judge' };
+      }
       requests.push(JSON.parse(JSON.stringify(req)) as CompletionRequest);
       const r = replies[Math.min(i, replies.length - 1)];
       const content = r ? r(req, i) : [{ type: 'text', text: 'done' } as ContentBlock];
@@ -87,8 +96,9 @@ const verdicts = (fail: string[], note = 'differs'): Reply => () => [
 ];
 const finish: Reply = () => [call('finish', { message: 'done' })];
 
+/** These tests script the conversation turn by turn, so the model in it judges (no panel); the panel has its own tests below. */
 function agent(provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent {
-  return new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo });
+  return new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 0, ...photo } });
 }
 
 const photoEvents = (events: AgentEvent[]): Array<Extract<AgentEvent, { type: 'photo' }>> => events.filter((e): e is Extract<AgentEvent, { type: 'photo' }> => e.type === 'photo');
@@ -138,7 +148,7 @@ describe('room from a photo, with a vision model', () => {
     expect(host.captures[0]?.aspect).toBeCloseTo(1.5, 2);
     expect(host.captures.some((c) => c.names.includes('photo-camera-clean'))).toBe(true);
     // Framing against the boxes the description gives is measured, fitted and reported to the model.
-    expect(photo.some((e) => e.phase === 'round' && /framing \d+%/.test(e.text))).toBe(true);
+    expect(photo.some((e) => e.phase === 'round' && /measured fidelity \d+% \(framing \d+/.test(e.text))).toBe(true);
     expect(JSON.stringify(provider.requests[1]?.messages)).toContain('Framing');
     // The first compare message carries the photo and the render; the second drops the first round's images.
     const first = provider.requests[1]?.messages.at(-1);
@@ -294,6 +304,112 @@ describe('room from a photo, with a vision model', () => {
     expect(photoEvents(events).some((e) => e.phase === 'unavailable')).toBe(true);
     expect(readScene(host.world, PHOTO_BUILDING_ID)?.items.length).toBeGreaterThan(8);
     expect(events.some((e) => e.type === 'message' && /not compared/.test(e.text))).toBe(true);
+  });
+});
+
+const imageCount = (req: CompletionRequest): number => req.messages.reduce((n, m) => n + (typeof m.content === 'string' ? 0 : m.content.filter((b) => b.type === 'image').length), 0);
+
+/**
+ * A judge that scores every item 4 (those in `fail` 1) and, shown two renders, prefers `prefer`. It reads the seat's
+ * A/B order from its seed, as the panel alternates it.
+ */
+function judgeReply(prefer: 'current' | 'previous' | 'same', fail: readonly string[] = []): (req: CompletionRequest) => ContentBlock[] {
+  return (req) => {
+    const pair = imageCount(req) === 3;
+    const currentFirst = ((req.seed ?? JUDGE_SEED) - JUDGE_SEED) % 2 === 0;
+    const cur = (id: string): number => (fail.includes(id) ? 1 : 4);
+    const prev = (id: string): number => (prefer === 'previous' ? 4 : prefer === 'current' ? Math.max(0, cur(id) - 1) : cur(id));
+    const verdicts = buildChecklist(description()).map((c) => ({
+      id: c.id,
+      a: pair && !currentFirst ? prev(c.id) : cur(c.id),
+      ...(pair ? { b: currentFirst ? prev(c.id) : cur(c.id) } : {}),
+      evidence: `photo: ${c.id}; render: ${fail.includes(c.id) ? 'differs' : 'same'}`,
+    }));
+    const closer = prefer === 'same' ? 'same' : (prefer === 'current') === currentFirst ? 'A' : 'B';
+    return [call('report_judgement', { verdicts, ...(pair ? { closer } : {}) })];
+  };
+}
+
+describe('room from a photo, with a panel of independent judges', () => {
+  const panelAgent = (provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent => new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 3, ...photo } });
+
+  it('the judges look first (stateless, temperature 0, a fixed seed per seat, the same clean view), the model fixes, and a fix they prefer is kept', async () => {
+    const provider = scripted(
+      [describeCall(), () => [call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: 2.3 }] })], finish],
+      judgeReply('current', []),
+    );
+    const host = new PhotoHost();
+    const events = await collect(panelAgent(provider, { maxRounds: 3 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    // Three judges per look: the first look scores one render, the second compares the new one with the accepted one.
+    expect(provider.judged.length).toBe(6);
+    for (const r of provider.judged) {
+      expect(r.role).toBe('critic');
+      expect(r.session).toBeUndefined();
+      expect(r.temperature).toBe(0);
+      expect(r.tools?.map((t) => t.name)).toEqual(['report_judgement']);
+    }
+    expect(provider.judged.slice(0, 3).map((r) => r.seed)).toEqual([JUDGE_SEED, JUDGE_SEED + 1, JUDGE_SEED + 2]);
+    expect(provider.judged.slice(0, 3).map(imageCount)).toEqual([2, 2, 2]);
+    expect(provider.judged.slice(3).map(imageCount)).toEqual([3, 3, 3]);
+    // The judges see the clean photo-camera render (no numbered marks), the same view every round.
+    expect(host.captures.every((c) => c.names.includes('photo-camera-clean'))).toBe(true);
+    // The model got their consensus and the measured differences; it never had to report verdicts itself.
+    const first = JSON.stringify(provider.requests[1]?.messages);
+    expect(first).toContain('Independent judges (3');
+    expect(first).toContain('measured fidelity');
+    // The fix was kept, and the score the UI shows carries both signals.
+    const pic = readScene(host.world, PHOTO_BUILDING_ID)?.items.find((i) => i.id.endsWith('picture-left'));
+    expect(pic?.wall?.t).toBeCloseTo(2.3, 1);
+    const done = photoEvents(events).find((e) => e.phase === 'done');
+    expect(done?.score?.judges).toBe(3);
+    expect(done?.score?.judge).toBe(1);
+    expect(done?.score?.fidelity?.inventory).toBeGreaterThan(0.9);
+    expect(done?.score?.objective).toBeGreaterThan(0.5);
+    expect(done?.score?.combined).toBeGreaterThan(0.5);
+    expect(photoEvents(events).some((e) => e.phase === 'round' && e.score?.preference === 'current')).toBe(true);
+  });
+
+  it('a change the judges do not prefer is rolled back before the model sees the round', async () => {
+    let looks = 0;
+    const judge = (req: CompletionRequest): ContentBlock[] => {
+      if (imageCount(req) === 2) return judgeReply('same', ['item-picture-left'])(req);
+      looks++;
+      return judgeReply('previous', ['item-picture-left'])(req);
+    };
+    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: 2.3 }] })], finish], judge);
+    const host = new PhotoHost();
+    const before = (await (async () => {
+      const h = new PhotoHost();
+      await collect(panelAgent(scripted([describeCall(), finish], judgeReply('same')), { maxRounds: 1 }).run('make this bedroom in 3d', h, { images: [fakePhoto(1920, 1280)] }));
+      return readScene(h.world, PHOTO_BUILDING_ID)?.items.find((i) => i.id.endsWith('picture-left'))?.pos;
+    })()) as [number, number, number];
+    const events = await collect(panelAgent(provider, { maxRounds: 2 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    expect(looks).toBeGreaterThan(0);
+    expect(photoEvents(events).some((e) => /was not kept \(the judges found the accepted state closer/.test(e.text))).toBe(true);
+    const moved = readScene(host.world, PHOTO_BUILDING_ID)?.items.find((i) => i.id.endsWith('picture-left'));
+    expect(moved?.pos[0]).toBeCloseTo(before[0], 3);
+    expect(moved?.pos[2]).toBeCloseTo(before[2], 3);
+    // The model was told, and shown the accepted state.
+    expect(JSON.stringify(provider.requests.at(-1)?.messages)).toContain('rolled back');
+  });
+
+  it('the measures veto a change that loses pieces, even when the judges like it', async () => {
+    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'remove', ref: 'tv' }, { op: 'remove', ref: 'picture-right' }] })], finish], judgeReply('current'));
+    const host = new PhotoHost();
+    const events = await collect(panelAgent(provider, { maxRounds: 2 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    expect(photoEvents(events).some((e) => /not kept \(the measured (inventory|fidelity)/.test(e.text))).toBe(true);
+    const scene = readScene(host.world, PHOTO_BUILDING_ID);
+    expect(scene?.items.some((i) => i.kind === 'tv-set')).toBe(true);
+    expect(scene?.items.filter((i) => i.kind === 'art')).toHaveLength(2);
+  });
+
+  it('falls back to the model in the conversation when no judge answers', async () => {
+    const provider = scripted([describeCall(), verdicts([]), finish], () => [{ type: 'text', text: 'I would rather not.' }]);
+    const host = new PhotoHost();
+    const events = await collect(panelAgent(provider).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    const done = photoEvents(events).find((e) => e.phase === 'done');
+    expect(done?.score?.passed).toBe(done?.score?.total);
+    expect(done?.score?.judges).toBeUndefined();
   });
 });
 

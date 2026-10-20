@@ -51,8 +51,33 @@ export interface PhotoEventView {
   text: string;
   round?: number;
   assumptions?: Array<{ id: string; text: string; confidence: number; adjust: string }>;
-  score?: { passed: number; total: number; objective?: number; structuralFailed: boolean; failing: Array<{ id: string; text: string; note: string }> };
+  score?: PhotoScoreEventView;
   palette?: string[];
+}
+
+/** Measures behind the measured fidelity of a photo round. */
+export const FIDELITY_KEYS = ['openings', 'inventory', 'placement', 'sizes', 'materials', 'clearance', 'framing', 'similarity', 'regionColour'] as const;
+export type FidelityKey = (typeof FIDELITY_KEYS)[number];
+
+/** The score of a photo round: the judges' item verdicts, their rubric score, the deterministic measures, the combined signal. */
+export interface PhotoScoreEventView {
+  passed: number;
+  total: number;
+  /** Measured fidelity 0..1. */
+  objective?: number;
+  fidelity?: Partial<Record<FidelityKey, number>>;
+  /** Judge score 0..1 (median rubric score of the panel, or the single judge's pass rate). */
+  judge?: number;
+  /** Independent judges behind `judge`. */
+  judges?: number;
+  spread?: number;
+  /** Half judge, half measured fidelity. */
+  combined?: number;
+  preference?: 'current' | 'previous' | 'tie';
+  /** False: the state was not kept. */
+  accepted?: boolean;
+  structuralFailed: boolean;
+  failing: Array<{ id: string; text: string; note: string }>;
 }
 
 const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
@@ -76,8 +101,22 @@ function photoView(v: Record<string, unknown>): PhotoEventView {
       total: Math.max(0, Math.min(500, Math.round(num(sc['total'])))),
       structuralFailed: sc['structuralFailed'] === true,
       failing,
-      ...(typeof sc['objective'] === 'number' && Number.isFinite(sc['objective']) ? { objective: Math.max(0, Math.min(1, sc['objective'])) } : {}),
+      ...(unit(sc['objective']) !== undefined ? { objective: unit(sc['objective']) as number } : {}),
+      ...(unit(sc['judge']) !== undefined ? { judge: unit(sc['judge']) as number } : {}),
+      ...(unit(sc['spread']) !== undefined ? { spread: unit(sc['spread']) as number } : {}),
+      ...(unit(sc['combined']) !== undefined ? { combined: unit(sc['combined']) as number } : {}),
+      ...(typeof sc['judges'] === 'number' && Number.isFinite(sc['judges']) ? { judges: Math.max(1, Math.min(9, Math.round(sc['judges']))) } : {}),
+      ...(sc['preference'] === 'current' || sc['preference'] === 'previous' || sc['preference'] === 'tie' ? { preference: sc['preference'] } : {}),
+      ...(typeof sc['accepted'] === 'boolean' ? { accepted: sc['accepted'] } : {}),
     };
+    if (isRecord(sc['fidelity'])) {
+      const f: Partial<Record<FidelityKey, number>> = {};
+      for (const k of FIDELITY_KEYS) {
+        const v = unit(sc['fidelity'][k]);
+        if (v !== undefined) f[k] = v;
+      }
+      if (Object.keys(f).length > 0) out.score.fidelity = f;
+    }
   }
   if (Array.isArray(v['palette'])) out.palette = v['palette'].filter((c): c is string => typeof c === 'string' && HEX.test(c)).slice(0, 8);
   return out;
@@ -121,6 +160,11 @@ function str(v: unknown, max: number = MAX_EVENT_TEXT): string {
 
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+/** A finite number clamped to 0..1, or undefined. */
+function unit(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : undefined;
 }
 
 const SEVERITIES = new Set(['error', 'warning', 'info']);

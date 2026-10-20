@@ -1,6 +1,6 @@
 import { memo, useState, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../../app/context';
-import type { ChatEventView } from '../../lib/chat';
+import { FIDELITY_KEYS, type ChatEventView, type FidelityKey } from '../../lib/chat';
 import { patchChips } from '../../lib/patchSummary';
 import { compactCount } from '../../lib/format';
 import { CodeBlock } from '../CodeBlock';
@@ -169,6 +169,8 @@ const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEv
   );
 });
 
+const FIDELITY_LABELS: Readonly<Record<FidelityKey, string>> = { openings: 'openings', inventory: 'pieces', placement: 'placement', sizes: 'sizes', materials: 'colours', clearance: 'clearance', framing: 'framing', similarity: 'pixels', regionColour: 'region colour' };
+
 /**
  * A room rebuilt from a photograph: what is happening, the assumptions as one-tap "adjust" chips (each sends a
  * plain-language edit to the same minimal-patch path as any other message), the swatches read from the picture
@@ -180,18 +182,31 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
   const [open, setOpen] = useState(false);
   const tone = event.phase === 'done' ? 'ok' : event.phase === 'offline' || event.phase === 'unavailable' ? 'warn' : 'info';
   const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
-  const pct = event.score && event.score.total > 0 ? Math.round((event.score.passed / event.score.total) * 100) : null;
+  const sc = event.score;
+  const pct = sc && sc.total > 0 ? Math.round((sc.passed / sc.total) * 100) : null;
+  const p = (v: number): string => `${Math.round(v * 100)}%`;
+  const measures = sc?.fidelity ? FIDELITY_KEYS.flatMap((k) => (sc.fidelity?.[k] !== undefined ? [`${FIDELITY_LABELS[k]} ${p(sc.fidelity[k] as number)}`] : [])) : [];
   return (
     <div className="ev ev--photo" data-testid={`photo-${event.phase}`}>
       <div className="ev__label">
         <Icon name="image" /> <span className={`status-chip is-${tone}`}>{label}</span>
-        {pct !== null && (
-          <span className="photo__score" aria-label={`${event.score?.passed} of ${event.score?.total} items match`}>
-            {event.score?.passed}/{event.score?.total} · {pct}%{event.score?.objective !== undefined ? ` · look ${Math.round(event.score.objective * 100)}%` : ''}
+        {pct !== null && sc && (
+          <span className="photo__score" aria-label={`${sc.passed} of ${sc.total} items match${sc.judges ? ` (median of ${sc.judges} judges)` : ''}${sc.objective !== undefined ? `, measured fidelity ${p(sc.objective)}` : ''}`} data-testid="photo-score">
+            {sc.passed}/{sc.total} · {pct}%{sc.judge !== undefined && sc.judges ? ` · judges ${p(sc.judge)}` : ''}
+            {sc.objective !== undefined ? ` · measured ${p(sc.objective)}` : ''}
+            {sc.combined !== undefined ? ` · overall ${p(sc.combined)}` : ''}
+            {sc.accepted === false ? ' · not kept' : ''}
           </span>
         )}
       </div>
       <p className="ev__desc">{event.text}</p>
+      {measures.length > 0 && (
+        <p className="photo__measures" data-testid="photo-measures" title="Deterministic measures of the room against the photo (the same room always gives the same numbers)">
+          {measures.join(' · ')}
+          {sc?.judges ? ` · ${sc.judges} judges${sc.spread !== undefined && sc.spread > 0.15 ? `, disagreeing ${p(sc.spread)}` : ''}` : ''}
+          {sc?.preference ? ` · vs accepted: ${sc.preference === 'current' ? 'closer' : sc.preference === 'previous' ? 'further' : 'no difference'}` : ''}
+        </p>
+      )}
       {event.palette && event.palette.length > 0 && (
         <div className="photo__swatches" aria-label="Colours read from the picture">
           {event.palette.map((c) => (

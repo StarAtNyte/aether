@@ -6,3 +6,5 @@ export * from './camera';
 export * from './run';
 export * from './calibrate';
 export * from './layout';
+export * from './colour';
+export * from './fidelity';

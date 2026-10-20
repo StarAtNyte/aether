@@ -42,6 +42,8 @@ export interface CompletionRequest {
   maxTokens?: number;
   /** Advisory only: current reasoning models reject sampling parameters, so providers may ignore it. */
   temperature?: number;
+  /** Advisory sampling seed (judges use a fixed one per seat); sent only by providers whose API takes it. */
+  seed?: number;
   /**
    * Conversation key (per project): backends that keep threads (Codex,
    * Claude Code) resume the same conversation and receive only what is new.
@@ -108,8 +110,22 @@ export interface PhotoScoreView {
   total: number;
   /** passed / total. */
   rate: number;
-  /** Objective similarity of the render to the photo (0..1), when images could be measured. */
+  /** Measured fidelity sub-score of the room (0..1): deterministic measures against the photo's description and the render. */
   objective?: number;
+  /** The measures behind `objective` (0..1 each; see `measureFidelity`). */
+  fidelity?: Partial<Record<'openings' | 'inventory' | 'placement' | 'sizes' | 'materials' | 'clearance' | 'framing' | 'similarity' | 'regionColour', number>>;
+  /** Judge score 0..1: the panel's median rubric score per item, averaged (or the single judge's pass rate). */
+  judge?: number;
+  /** Independent judges whose answers made `judge` (absent: the single judge in the conversation). */
+  judges?: number;
+  /** How much the judges disagreed, 0..1. */
+  spread?: number;
+  /** Half judge, half measured fidelity: the signal progress and stalls are decided on. */
+  combined?: number;
+  /** The judges' comparison of this state with the accepted one. */
+  preference?: 'current' | 'previous' | 'tie';
+  /** False when this state was rejected (the room went back to the accepted one). */
+  accepted?: boolean;
   structuralFailed: boolean;
   /** Items that still differ: id, what to look for, and what differs. */
   failing: Array<{ id: string; text: string; note: string }>;
@@ -252,6 +268,11 @@ export interface PhotoOptions {
   stallRounds?: number;
   /** Most images per compare round (default 3). */
   maxViews?: number;
+  /**
+   * Independent judges scoring each render with the fixed rubric (median per item, relative comparison with the
+   * accepted state). Default 3; 0 leaves the judging to the model doing the fixes (one call per round, noisier).
+   */
+  judges?: number;
 }
 
 /** Result of one level tool call (patches commit as one undo step). */

@@ -150,6 +150,7 @@ export function createChatCompletionsProvider(opts: ChatCompletionsProviderOptio
   if (!isAllowedBase(baseUrl)) throw new ProviderError('bad_request', 'the API base URL must use https');
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const headers: Record<string, string> = { ...(opts.headers ?? {}), 'content-type': 'application/json', authorization: `Bearer ${opts.apiKey}` };
+  let samplingRefused = false;
   return {
     name: opts.name,
     async complete(req: CompletionRequest, signal?: AbortSignal): Promise<CompletionResponse> {
@@ -159,15 +160,33 @@ export function createChatCompletionsProvider(opts: ChatCompletionsProviderOptio
         max_tokens: Math.max(16, Math.min(MAX_OUTPUT_TOKENS, Math.floor(req.maxTokens ?? opts.defaultMaxTokens ?? 16_000))),
       };
       if (req.tools && req.tools.length > 0) body['tools'] = toolsToWire(req.tools);
-      const json = await postJson({
-        url: `${baseUrl}/chat/completions`,
-        headers,
-        body,
-        fetch: doFetch,
-        describeError,
-        ...(signal ? { signal } : {}),
-        ...(opts.retry ? { policy: opts.retry } : {}),
-      });
+      // Sampling parameters (the judges ask for temperature 0 and a fixed seed): sent while the endpoint accepts them;
+      // a model that refuses them is asked again without, and they are not sent to this provider again.
+      const sampling = !samplingRefused && (req.temperature !== undefined || req.seed !== undefined);
+      if (sampling) {
+        if (req.temperature !== undefined) body['temperature'] = req.temperature;
+        if (req.seed !== undefined) body['seed'] = req.seed;
+      }
+      const send = (b: Record<string, unknown>): Promise<unknown> =>
+        postJson({
+          url: `${baseUrl}/chat/completions`,
+          headers,
+          body: b,
+          fetch: doFetch,
+          describeError,
+          ...(signal ? { signal } : {}),
+          ...(opts.retry ? { policy: opts.retry } : {}),
+        });
+      let json: unknown;
+      try {
+        json = await send(body);
+      } catch (e) {
+        if (!sampling || !(e instanceof ProviderError) || e.status !== 400 || !/temperature|seed|sampling|unsupported/i.test(e.message)) throw e;
+        samplingRefused = true;
+        delete body['temperature'];
+        delete body['seed'];
+        json = await send(body);
+      }
       return parseChatCompletion(json);
     },
   };

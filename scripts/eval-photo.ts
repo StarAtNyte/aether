@@ -4,7 +4,9 @@
  *
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=replay            replay the recorded transcript (no model)
  *   npx tsx scripts/eval-photo.ts --photo=hotel --mode=live              run the logged-in Codex and record the transcript
- *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --out=DIR --force --record-fixture
+ *   options: --backend=codex|claude-code --effort=low|medium|high --rounds=N --stall=N --judges=N --out=DIR --force --record-fixture
+ *            --judges=N  independent judges per look (default 3; 0: the model in the conversation judges; replays always use 0,
+ *            the recorded transcripts have no judge calls)
  *            --render=software|gpu   software: the flat headless rasteriser (default). gpu: photoreal stills of the photo camera drawn by
  *            the studio on the GPU (AETHER_E2E_GPU=1 for the real card), for the judge, the measure and the montage
  *
@@ -66,6 +68,7 @@ interface Args {
   force: boolean;
   render: 'software' | 'gpu';
   recordFixture: boolean;
+  judges: number;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -82,6 +85,7 @@ function parseArgs(argv: readonly string[]): Args {
     force: argv.includes('--force'),
     render: get('render') === 'gpu' ? 'gpu' : 'software',
     recordFixture: argv.includes('--record-fixture'),
+    judges: mode === 'replay' ? 0 : Math.max(0, Math.min(7, Number(get('judges') ?? 3))),
   };
 }
 
@@ -197,9 +201,10 @@ interface Report {
   source: string;
   calls: number;
   ms: number;
-  rounds: Array<{ round: number; passed: number; total: number; objective: number | null; failing: string[] }>;
-  first: { passed: number; total: number; objective: number | null } | null;
-  final: { passed: number; total: number; objective: number | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
+  judges: number;
+  rounds: Array<{ round: number; passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; accepted: boolean | null; fidelity: PhotoScoreView['fidelity'] | null; failing: string[] }>;
+  first: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null } | null;
+  final: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; fidelity: PhotoScoreView['fidelity'] | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
   errors: string[];
   assumptions: number;
 }
@@ -230,10 +235,10 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const host = new PhotoNodeHost(sandbox);
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { maxRounds: args.rounds, stallRounds: args.stall, vision: true } });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { maxRounds: args.rounds, stallRounds: args.stall, vision: true, judges: args.judges } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
-  const report: Report = { photo: args.photo, source, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0 };
+  const report: Report = { photo: args.photo, source, judges: args.judges, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0 };
   for await (const e of agent.run(spec.prompt, host, { images: [dataUrl], photo: 'recreate' })) {
     events.push(e);
     if (e.type === 'photo') {
@@ -241,7 +246,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
       if (e.assumptions) report.assumptions = e.assumptions.length;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
       if (e.phase === 'done' && e.score) {
-        report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
+        report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, judge: e.score.judge ?? null, combined: e.score.combined ?? null, fidelity: e.score.fidelity ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
       }
     } else if (e.type === 'error') {
       report.errors.push(e.text);
@@ -250,7 +255,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   }
   report.ms = Math.round(performance.now() - t0);
   const r0 = report.rounds[0];
-  if (r0) report.first = { passed: r0.passed, total: r0.total, objective: r0.objective };
+  if (r0) report.first = { passed: r0.passed, total: r0.total, objective: r0.objective, judge: r0.judge, combined: r0.combined };
   // Renders for the montage: the first attempt (the room as first built) and the final room, from the photo's camera.
   const files = [join(dir, 'photo.jpg')];
   if (host.firstView && host.firstWorld) {
@@ -283,7 +288,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
 }
 
 function roundRow(round: number, s: PhotoScoreView): Report['rounds'][number] {
-  return { round, passed: s.passed, total: s.total, objective: s.objective ?? null, failing: s.failing.map((f) => f.id) };
+  return { round, passed: s.passed, total: s.total, objective: s.objective ?? null, judge: s.judge ?? null, combined: s.combined ?? null, accepted: s.accepted ?? null, fidelity: s.fidelity ?? null, failing: s.failing.map((f) => f.id) };
 }
 
 async function main(): Promise<void> {
@@ -294,7 +299,7 @@ async function main(): Promise<void> {
     console.log(`\n== ${id} (${args.mode})`);
     const r = await runPhoto({ ...args, photo: id }, live);
     const f = r.final;
-    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.objective !== null ? `, measured agreement (framing + similarity) ${Math.round(f.objective * 100)}%` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
+    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.judge !== null ? `, judge score ${Math.round(f.judge * 100)}%` : ''}${f.objective !== null ? `, measured fidelity ${Math.round(f.objective * 100)}%` : ''}${f.combined !== null ? `, combined ${Math.round(f.combined * 100)}%` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
   }
 }
 

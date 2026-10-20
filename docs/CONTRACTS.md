@@ -2564,23 +2564,43 @@ a structured description and derives tool calls from it.
 
 ### `@aether/agent` (`packages/agent/src/photo`)
 
-- `AgentOptions.photo?: {vision?, maxRounds?, stallRounds?, maxViews?}`; `RunOptions.photo?: 'auto' | 'recreate' | 'off'`.
+- `AgentOptions.photo?: {vision?, maxRounds?, stallRounds?, maxViews?, judges?}`; `RunOptions.photo?: 'auto' | 'recreate' | 'off'`.
   With `photo` options a picture plus a prompt about a room ('auto'), or the composer's "Recreate this image"
   ('recreate'), runs the photo flow instead of the planner. Without a vision model (`vision` false, the offline
   planner, or the chain falling back to it mid-run) NOTHING is built: the event says why, gives the palette and
   brightness read from the picture, and offers to build from words.
 - Flow: `describe_room` (one tool, zod-validated, refused descriptions are sent back up to three times) → build →
   compare rounds. A round renders the room from the photo's camera at the photo's aspect (numbered marks) plus a
-  clean render to measure; the model answers with `report_verdicts` (a verdict for every checklist id) and fixes
-  failures in the same reply with the design tools; edits before verdicts are refused. `compareImages` (colour
-  histogram overlap, SSIM on standardised luminance, Sobel edge correlation) gives an objective similarity; a
-  round whose quality (0.7 × pass rate + 0.3 × similarity) falls more than 0.03 below the best is rolled back
-  (`restorePatches`) before anything else changes. The loop ends when every item passes, the model stops with
-  nothing to change, progress stalls (`StallTracker`) or `maxRounds` (default 6) is reached; edits made after the
-  last judged render get one judge-only final check and are kept only if not worse.
+  clean render. Measured first, deterministically: `measureFidelity` (`@aether/arch/photo`, see below) against the
+  description, with the render-side measures (`compareImages` pixel similarity, `regionColourScore` ΔE of the
+  described boxes, the framing). Judged next by `judges` (default 3, `JUDGES_MAX` 7; the studio uses 1 on a paid
+  key) independent, stateless `role: 'critic'` calls (`photo/judge.ts`): fixed `JUDGE_SYSTEM` and rubric (integer
+  0..4 per checklist id, evidence required, pass at 3), the clean photo-camera view only, `temperature: 0` and
+  `seed: JUDGE_SEED + seat` (sent where the API takes them: the Chat Completions provider, which drops them for good
+  after a 400 that names them; the CLI backends ignore them). From the second look each judge sees the accepted
+  render and the new one blind as A/B (order alternating by seat), scores both and says which is closer.
+  `aggregateJudgements`: median per item; preference by vote majority, a vote tie by the median paired score
+  difference (±1 grade), else 'tie'. `decideRound` accepts the new state only when the fidelity sub-score falls
+  by at most 0.015 and no structural measure (openings, inventory, clearance) by more than 0.04, and the judges
+  prefer it (on a tie: the sub-score rises 0.005 or the median judge score 0.03); otherwise the room goes back to
+  the accepted state (`restorePatches`) before the model sees the round, and the model is told why. The model in
+  the conversation then gets the consensus, the measured differences and the images, and fixes with the design
+  tools (`report_verdicts` is optional there). With `judges: 0`, or when no judge answers, the model's own
+  `report_verdicts` judge the round (edits before verdicts are refused) and a combined score (0.5 × pass rate +
+  0.5 × sub-score) more than `max(0.03, 0.75 / items)` below the best is rolled back. Stalls (`ProgressTracker`):
+  no accepted, measurable progress for `stallRounds` rounds. The loop ends when every item passes, the model stops
+  with nothing to change, progress stalls or `maxRounds` (default 6) is reached; edits made after the last judged
+  render get one final judgement (the panel's, relative) and are kept only when accepted.
 - `AgentEvent` gains `{type:'photo', phase: 'analysing'|'described'|'building'|'built'|'comparing'|'round'|'done'|
   'offline'|'unavailable', text, round?, assumptions?: [{id, text, confidence, adjust}], score?: {passed, total,
-  rate, objective?, structuralFailed, failing}, palette?}`.
+  rate, objective? (the fidelity sub-score), fidelity? (its measures), judge?, judges?, spread?, combined?,
+  preference?, accepted?, structuralFailed, failing}, palette?}`.
+- `CompletionRequest.seed?` (advisory, like `temperature`).
+- `@aether/arch/photo`: `measureFidelity(world, description, {framing?, similarity?, regionColour?}) →
+  {metrics, score, issues} | null`, deterministic; `FIDELITY_WEIGHTS` framing 0.25, openings 0.15, inventory 0.15,
+  placement 0.1, similarity 0.1, regionColour 0.1, sizes 0.05, materials 0.05, clearance 0.05 (missing measures
+  are left out and the rest renormalised; the per-measure formulas are in `fidelity.ts`); `deltaE2000`,
+  `hexDeltaE`, `rgbToLab`. Regression snapshot: `tests/fixtures/photo/hotel.fidelity.json`.
 - `AgentHost.decodeImage?(dataUrl, maxSide) → {width, height, data} | null` (the studio decodes with a canvas, the
   eval script with ffmpeg); without it the objective score is skipped and the aspect comes from the image header
   (`imageSize`, PNG / JPEG / WebP).

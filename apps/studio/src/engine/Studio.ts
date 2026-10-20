@@ -85,6 +85,8 @@ const MAX_REPAIRS = 2;
 const REVIEW_ROUNDS_METERED = 10;
 /** Compare rounds of a room from a photo on a paid key (each is a vision call). */
 const PHOTO_ROUNDS_METERED = 4;
+/** Independent judges per look on a paid key (subscriptions use the agent's default of three). */
+const PHOTO_JUDGES_METERED = 1;
 /** A house is dozens of tool calls (rooms, pieces, fixes): the AI-first run gets room to finish it. */
 const REVIEW_MAX_TURNS = 40;
 const REVIEW_MAX_TOOL_CALLS = 300;
@@ -1048,7 +1050,9 @@ export class Studio {
       const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6 } : undefined;
       // A photo of a room is rebuilt from the photo through the design tools; without an assistant that can see it,
       // nothing is guessed (the offline planner would build some other room) and the user is told so.
-      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED }) } : { vision: false };
+      // Each render is scored by a panel of independent judges (median per item, compared with the accepted state):
+      // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
+      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED }) } : { vision: false };
       const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(primary && promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.

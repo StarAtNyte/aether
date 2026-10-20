@@ -1,0 +1,18 @@
+{
+  "note": "measureFidelity of the hotel bedroom built from hotel.description.json",
+  "score": 0.9940436337182483,
+  "metrics": {
+    "openings": 0.9999999999999998,
+    "inventory": 1,
+    "placement": 0.9904921175366185,
+    "sizes": 1,
+    "materials": 0.9934957358274962,
+    "clearance": 0.96,
+    "framing": null,
+    "similarity": null,
+    "regionColour": null
+  },
+  "issues": [
+    "clearance: armchair room-photo-armchair (0.82 m high) stands in front of the window room-photo-l0-win0 on the west wall of room and hides 0.81 m of it (sill 0.55 m)"
+  ]
+}

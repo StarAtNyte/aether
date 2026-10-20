@@ -94,3 +94,25 @@ describe('chat model', () => {
     expect(reviveChat({})).toEqual([]);
   });
 });
+
+describe('photo round scores', () => {
+  it('keeps the judges, the measures and the combined signal, clamped, and drops what is not a number', () => {
+    const v = toEventView({
+      type: 'photo',
+      phase: 'round',
+      round: 2,
+      text: 'Round 2',
+      score: { passed: 11, total: 17, rate: 11 / 17, objective: 0.81, judge: 0.72, judges: 3, spread: 0.2, combined: 0.765, preference: 'current', accepted: true, fidelity: { openings: 1, inventory: 0.95, framing: 1.7 }, structuralFailed: false, failing: [] },
+    });
+    expect(v.type).toBe('photo');
+    if (v.type !== 'photo') return;
+    expect(v.score).toMatchObject({ passed: 11, total: 17, objective: 0.81, judge: 0.72, judges: 3, combined: 0.765, preference: 'current', accepted: true });
+    expect(v.score?.fidelity).toEqual({ openings: 1, inventory: 0.95, framing: 1 });
+    const revived = reviveChat([{ id: 1, role: 'assistant', status: 'done', events: [{ type: 'photo', phase: 'round', text: 'x', score: { passed: 1, total: 2, judge: 'high', judges: 99, preference: 'maybe', fidelity: { openings: 'all', bogus: 1 }, structuralFailed: false, failing: [] } }] }]);
+    const ev = (revived[0] as Extract<ChatEntry, { role: 'assistant' }>).events[0] as Extract<ChatEventView, { type: 'photo' }>;
+    expect(ev.score?.judge).toBeUndefined();
+    expect(ev.score?.judges).toBe(9);
+    expect(ev.score?.preference).toBeUndefined();
+    expect(ev.score?.fidelity).toBeUndefined();
+  });
+});

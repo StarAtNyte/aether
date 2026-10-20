@@ -10,6 +10,7 @@
  *
  * Pure functions on RGBA rasters: no DOM, no model.
  */
+import { deltaE2000, rgbToLab } from '@aether/arch/photo';
 
 /** An RGBA image (row-major, top row first). */
 export interface Raster {
@@ -333,4 +334,58 @@ export function extractPalette(r: Raster, n = 5): Palette | null {
       return `#${m.map((v) => Math.round(v / b.length).toString(16).padStart(2, '0')).join('')}`;
     });
   return { colours, brightness: bright / pts.length, warmth: warm / pts.length };
+}
+
+/** A described box and where the render shows the same piece (image fractions, origin top-left). */
+export interface RegionPair {
+  want: readonly [number, number, number, number];
+  got: readonly [number, number, number, number] | null;
+}
+
+/** Mean colour inside the middle 60 % of a box (the edges of a box are mostly the things around it). */
+function regionMean(r: Raster, box: readonly [number, number, number, number]): [number, number, number] | null {
+  const [x0, y0, x1, y1] = box;
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const hw = ((x1 - x0) * 0.6) / 2;
+  const hh = ((y1 - y0) * 0.6) / 2;
+  const px0 = Math.max(0, Math.floor((cx - hw) * r.width));
+  const px1 = Math.min(r.width, Math.ceil((cx + hw) * r.width));
+  const py0 = Math.max(0, Math.floor((cy - hh) * r.height));
+  const py1 = Math.min(r.height, Math.ceil((cy + hh) * r.height));
+  let sr = 0;
+  let sg = 0;
+  let sb = 0;
+  let n = 0;
+  for (let y = py0; y < py1; y++) {
+    for (let x = px0; x < px1; x++) {
+      const i = (y * r.width + x) * 4;
+      sr += r.data[i] as number;
+      sg += r.data[i + 1] as number;
+      sb += r.data[i + 2] as number;
+      n++;
+    }
+  }
+  return n === 0 ? null : [sr / n, sg / n, sb / n];
+}
+
+/**
+ * Colour agreement of the described regions: for each box, ΔE00 between the mean colour inside it in the photo and
+ * inside the same piece's box in the (graded) render; 1 − min(1, ΔE / 25), averaged. A piece the render does not show
+ * scores 0. Null when there are no boxes or the rasters are malformed. Deterministic.
+ */
+export function regionColourScore(photo: Raster, render: Raster, pairs: readonly RegionPair[]): number | null {
+  if (!isRaster(photo) || !isRaster(render) || pairs.length === 0) return null;
+  let sum = 0;
+  let n = 0;
+  for (const p of pairs) {
+    const a = regionMean(photo, p.want);
+    if (!a) continue;
+    n++;
+    const b = p.got ? regionMean(render, p.got) : null;
+    if (!b) continue;
+    const de = deltaE2000(rgbToLab(a[0], a[1], a[2]), rgbToLab(b[0], b[1], b[2]));
+    sum += Math.max(0, 1 - de / 25);
+  }
+  return n === 0 ? null : sum / n;
 }

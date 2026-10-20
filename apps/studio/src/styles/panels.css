@@ -2498,6 +2498,14 @@ button.chip:disabled {
   font-size: var(--fs-12);
 }
 
+.photo__measures {
+  margin: 0;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  line-height: 1.4;
+}
+
 .photo__swatches {
   display: flex;
   gap: var(--s-1);

@@ -16,8 +16,12 @@ import {
   PHOTO_ROOM_ID,
   buildChecklist,
   calibrateCamera,
+  fidelityLine,
+  fidelityText,
   framingTargets,
   framingText,
+  measureFidelity,
+  type FidelityReport,
   type FramingReport,
   type FramingTarget,
   deriveBuild,
@@ -49,13 +53,13 @@ import { z } from 'zod';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from '../executor';
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
-import { StallTracker } from '../review';
-import type { AgentEvent, ChatMessage, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
+import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
 import { imageSize } from './image-size';
 import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, matchGrade, nextEnvironmentGrade, nextExposure, type PhotoGrade } from './grade';
-import { compareImages, extractPalette, type Raster } from './score';
+import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, combinedScore, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
+import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 
 /** Everything the photo flow needs from the agent. */
 export interface PhotoRun {
@@ -81,15 +85,17 @@ const TURNS_PER_ROUND = 8;
 /** Default and hard cap of compare rounds. */
 export const PHOTO_ROUNDS_DEFAULT = 6;
 export const PHOTO_ROUNDS_MAX = 12;
-/** A round is rolled back when its quality is this much below the best: never less than 0.03, and at least one and a half checklist items (a judge's single wavering verdict is not a regression). */
+/**
+ * Without a relative judgement (the single judge in the conversation), a round is rolled back when its combined score
+ * is this much below the best: never less than 0.03, and at least one and a half checklist items (half the combined
+ * score is the judge's pass rate; a single wavering verdict is not a regression).
+ */
 const ROLLBACK_MARGIN_MIN = 0.03;
 function rollbackMargin(items: number): number {
-  return Math.max(ROLLBACK_MARGIN_MIN, (1.5 * RATE_WEIGHT) / Math.max(1, items));
+  return Math.max(ROLLBACK_MARGIN_MIN, (1.5 * 0.5) / Math.max(1, items));
 }
 /** Pass rate that, with no structural failure, lets the model call it done. */
 export const PHOTO_TARGET_RATE = 0.92;
-/** Weight of the checklist pass rate in the round quality (the rest is the measured agreement: framing and similarity). */
-const RATE_WEIGHT = 0.5;
 
 const VerdictInput = z.object({ verdicts: z.array(z.unknown()).min(1).max(160), summary: z.string().max(400).optional() });
 
@@ -112,11 +118,11 @@ function visionOn(opts: PhotoOptions): boolean {
 }
 
 /** One model call; refuses to talk to the offline planner and keeps the usage totals. */
-async function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], useSession: boolean): Promise<CompletionResponse> {
+async function complete(run: PhotoRun, req: CompletionRequest): Promise<CompletionResponse> {
   const { ctx } = run;
   if (ctx.signal?.aborted) throw new Error('aborted');
   if (ctx.provider.name === 'mock' || !visionOn(run.options)) throw new Unavailable();
-  const res = await raceAbort(ctx.provider.complete({ role: 'planner', system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system, messages, tools: [...tools], maxTokens: run.maxTokens, ...(useSession && run.session ? { session: run.session } : {}) }, ctx.signal), ctx.signal);
+  const res = await raceAbort(ctx.provider.complete(req, ctx.signal), ctx.signal);
   ctx.usage.calls += 1;
   ctx.usage.inputTokens += res.usage?.inputTokens ?? 0;
   ctx.usage.outputTokens += res.usage?.outputTokens ?? 0;
@@ -124,6 +130,17 @@ async function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolD
   // The connection chain may have fallen back to the offline planner inside this very call: its reply is not an answer.
   if (ctx.provider.name === 'mock') throw new Unavailable();
   return res;
+}
+
+/** A turn of the analysis or of the compare conversation. */
+function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], useSession: boolean): Promise<CompletionResponse> {
+  return complete(run, { role: 'planner', system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system, messages, tools: [...tools], maxTokens: run.maxTokens, ...(useSession && run.session ? { session: run.session } : {}) });
+}
+
+/** Number of independent judges of a run (0: the model doing the fixes judges, as one call). */
+function judgesOf(opts: PhotoOptions): number {
+  const n = opts.judges ?? JUDGES_DEFAULT;
+  return Number.isFinite(n) ? Math.max(0, Math.min(JUDGES_MAX, Math.floor(n))) : JUDGES_DEFAULT;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,12 +190,16 @@ interface Shot {
   /** Marked images for the judge, the photo camera first. */
   images: Array<{ name: string; label: string; dataUrl: string }>;
   legend: string;
-  /** Measured agreement with the photo, 0..1: framing of the described boxes and pixel similarity, whichever exist. */
+  /** Measured fidelity, 0..1: the deterministic measures of the room against the description and the photo (see `measureFidelity`). */
   objective: number | null;
-  /** The measures in words ("framing 89%, similarity 15%"), empty when none could be made. */
+  /** The measures in words ("measured fidelity 81% (framing 75, …)"), empty when none could be made. */
   measure: string;
   /** Framing of the room against the boxes the photo's description gives (null without boxes). */
   framing: FramingReport | null;
+  /** The fidelity report behind `objective`. */
+  fidelity: FidelityReport | null;
+  /** The photo-camera render without marks (what the judges look at; null when the host did not draw it). */
+  clean: string | null;
 }
 
 interface Photo {
@@ -197,7 +218,7 @@ function toRequest(p: ReviewPose, aspect: number, marks: ReviewViewRequest['mark
   return { name: p.name, label: p.label, kind: p.kind, pose: { position: p.position, target: p.target, up: p.up, fov: p.fov }, hideTops: p.hideTops, aspect, marks };
 }
 
-async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, targets: readonly FramingTarget[], extraWalls: readonly string[], maxViews: number): Promise<Shot | null> {
+async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, targets: readonly FramingTarget[], extraWalls: readonly string[], maxViews: number, wantClean = false): Promise<Shot | null> {
   const { host } = run.ctx;
   if (typeof host.captureReview !== 'function') return null;
   const world = host.getWorld();
@@ -225,7 +246,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   const clean = toRequest(cam, photo.aspect, []);
   clean.name = 'photo-camera-clean';
   // One capture call per image shape (a capture renders every view at the aspect of the first one).
-  const wanted = [...views, ...(photo.raster && typeof host.decodeImage === 'function' ? [clean] : [])];
+  const wanted = [...views, ...(wantClean || (photo.raster && typeof host.decodeImage === 'function') ? [clean] : [])];
   const got: Array<{ name: string; dataUrl: string }> = [];
   for (const aspect of [...new Set(wanted.map((v) => v.aspect))]) {
     got.push(...(await raceAbort(host.captureReview(wanted.filter((v) => v.aspect === aspect), run.ctx.signal ? { signal: run.ctx.signal } : {}), run.ctx.signal)));
@@ -237,6 +258,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   }
   if (images.length === 0) return null;
   let similarity: number | null = null;
+  let regionColour: number | null = null;
   const cleanShot = got.find((x) => x.name === clean.name);
   if (cleanShot && photo.raster && host.decodeImage) {
     const r = await host.decodeImage(cleanShot.dataUrl, 256).catch(() => null);
@@ -257,6 +279,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
         }
       }
       similarity = compareImages(photo.raster, graded)?.overall ?? null;
+      if (framing) regionColour = regionColourScore(photo.raster, graded, framing.rows);
       if (photo.grade && renderGrade && photo.exposureSteps < 3 && Math.abs(photo.grade.median - renderGrade.median) > 0.06) {
         const cur = run.ctx.host.getWorld().environment.exposure;
         const next = nextExposure(cur, photo.grade, renderGrade);
@@ -267,21 +290,58 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
       }
     }
   }
-  const parts: Array<[number, number]> = [];
-  if (framing) parts.push([framing.score, 0.6]);
-  if (similarity !== null) parts.push([similarity, 0.4]);
-  const wsum = parts.reduce((a, [, w]) => a + w, 0);
-  const objective = wsum > 0 ? parts.reduce((a, [v, w]) => a + v * w, 0) / wsum : null;
-  const measure = [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
-  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing };
+  // The deterministic measures of the room as it was rendered (the world before the grade patches above, which do not move anything).
+  const fidelity = measureFidelity(world, desc0, { framing, similarity, regionColour });
+  const objective = fidelity?.score ?? null;
+  const measure = fidelity ? fidelityLine(fidelity) : [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
+  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null };
 }
 
-function scoreView(sb: Scoreboard, objective: number | null): PhotoScoreView {
-  return { passed: sb.passed, total: sb.total, rate: sb.rate, ...(objective !== null ? { objective } : {}), structuralFailed: sb.structuralFailed, failing: sb.failing.slice(0, 24).map((f) => ({ id: f.id, text: f.text.slice(0, 160), note: f.note.slice(0, 200) })) };
+/** What one look at the room came to: the judgement (the panel's, or the single judge's) and the measures. */
+interface Judged {
+  score: Scoreboard;
+  objective: number | null;
+  fidelity: FidelityReport | null;
+  /** Judge score 0..1: the panel's median rubric score, or the single judge's pass rate. */
+  judge: number;
+  /** {@link combinedScore}: half judge, half measured fidelity. */
+  quality: number;
+  measure: string;
+  /** The panel's consensus (null: the model in the conversation judged). */
+  panel: Consensus | null;
 }
 
-function quality(sb: Scoreboard, objective: number | null): number {
-  return objective === null ? sb.rate : RATE_WEIGHT * sb.rate + (1 - RATE_WEIGHT) * objective;
+function judgedOf(sb: Scoreboard, shot: Pick<Shot, 'objective' | 'fidelity' | 'measure'>, panel: Consensus | null): Judged {
+  const judge = panel ? panel.judge : sb.rate;
+  return { score: sb, objective: shot.objective, fidelity: shot.fidelity, judge, quality: combinedScore({ objective: shot.objective, metrics: shot.fidelity?.metrics ?? null, judge }), measure: shot.measure, panel };
+}
+
+function stateOf(j: Judged): RoundState {
+  return { objective: j.objective, metrics: j.fidelity?.metrics ?? null, judge: j.judge };
+}
+
+function scoreView(j: Judged, accepted?: boolean): PhotoScoreView {
+  const sb = j.score;
+  const fidelity: NonNullable<PhotoScoreView['fidelity']> = {};
+  if (j.fidelity) for (const [k, v] of Object.entries(j.fidelity.metrics)) if (typeof v === 'number') fidelity[k as keyof typeof fidelity] = v;
+  return {
+    passed: sb.passed,
+    total: sb.total,
+    rate: sb.rate,
+    ...(j.objective !== null ? { objective: j.objective } : {}),
+    ...(Object.keys(fidelity).length > 0 ? { fidelity } : {}),
+    judge: j.judge,
+    ...(j.panel ? { judges: j.panel.samples, spread: j.panel.spread, ...(j.panel.preference ? { preference: j.panel.preference } : {}) } : {}),
+    combined: j.quality,
+    ...(accepted !== undefined ? { accepted } : {}),
+    structuralFailed: sb.structuralFailed,
+    failing: sb.failing.slice(0, 24).map((f) => ({ id: f.id, text: f.text.slice(0, 160), note: f.note.slice(0, 200) })),
+  };
+}
+
+/** The numbers of a look in one line ("judges 11/17 pass (65%), score 72%; framing 75%, …; combined 77%"). */
+function lookLine(j: Judged): string {
+  return `${j.panel ? `judges ${scoreLine(j.score)}, score ${Math.round(j.judge * 100)}%` : scoreLine(j.score)}${j.measure ? `; ${j.measure}` : ''}; combined ${Math.round(j.quality * 100)}%`;
 }
 
 function stripImages(messages: ChatMessage[]): void {
@@ -434,12 +494,9 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop` : ''}.` };
 
   // Compare and correct.
-  let finalScore: Scoreboard | null = null;
-  let finalObjective: number | null = null;
+  let final: Judged | null = null;
   try {
-    const res = yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals);
-    finalScore = res.score;
-    finalObjective = res.objective;
+    final = (yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals)).judged;
   } catch (e) {
     if (ctx.signal?.aborted) throw e;
     if (!(e instanceof Unavailable)) yield { type: 'error', text: `The compare loop stopped: ${errorMessage(e).slice(0, 300)}. The room as built so far is kept.` };
@@ -452,39 +509,30 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   yield v.event;
   const findings = reviewFindings(host.getWorld(), PHOTO_BUILDING_ID).filter((f) => f.severity === 'error');
   const lines: string[] = [];
-  if (finalScore) {
-    lines.push(`Rebuilt the room from your photo: ${finalScore.passed} of ${finalScore.total} checklist items match${finalObjective !== null ? ` (objective similarity ${Math.round(finalObjective * 100)}%)` : ''}.`);
-    if (finalScore.failing.length > 0) lines.push(`Still different: ${finalScore.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
+  if (final) {
+    const s = final.score;
+    lines.push(`Rebuilt the room from your photo: ${s.passed} of ${s.total} checklist items match${final.panel ? ` (median of ${final.panel.samples} independent judges)` : ''}${final.objective !== null ? `; measured fidelity ${Math.round(final.objective * 100)}%` : ''}.`);
+    if (s.failing.length > 0) lines.push(`Still different: ${s.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
   } else lines.push('Rebuilt the room from your photo (not compared with it: no renders were available).');
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
   lines.push(`I assumed ${assumptions.length} thing${assumptions.length === 1 ? '' : 's'} the photo cannot show; each one is listed with a one-tap way to change it.`);
-  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(finalScore ? { score: scoreView(finalScore, finalObjective) } : {}) };
+  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}) };
   yield { type: 'message', text: lines.join(' ') };
 }
 
 interface LoopResult {
-  score: Scoreboard | null;
-  objective: number | null;
+  /** The judgement of the room as it ends up (null: it was never judged). */
+  judged: Judged | null;
 }
 
-/** The best state seen so far. */
-interface Best {
-  quality: number;
+/** A state the loop accepted: the room, its render and its judgement. */
+interface Accepted {
   world: WorldDoc;
-  score: Scoreboard;
-  objective: number | null;
   round: number;
+  shot: Shot;
+  judged: Judged;
 }
 
-/** What one judged render came to. */
-interface Judged {
-  score: Scoreboard;
-  objective: number | null;
-  quality: number;
-  measure: string;
-}
-
-/** The compare-and-correct loop. Returns the scoreboard of the room as it ends up. */
 /** Fit the pieces to their boxes (see `fitLayout`); returns what was moved, in words. */
 async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[]): AsyncGenerator<AgentEvent, string[]> {
   const { ctx } = run;
@@ -504,45 +552,96 @@ async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, t
   return done;
 }
 
+/**
+ * The compare-and-correct loop. Each round: render from the photo's camera, measure (deterministic fidelity), judge
+ * (an independent panel with the fixed rubric, relative to the accepted state; or, with `judges: 0`, the model in the
+ * conversation), accept the new state or go back to the accepted one, then let the model fix what still differs.
+ * Returns the judgement of the room as it ends up.
+ */
 async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[]): AsyncGenerator<AgentEvent, LoopResult> {
   const { ctx } = run;
   const host = ctx.host;
   const maxRounds = Math.max(1, Math.min(PHOTO_ROUNDS_MAX, Math.floor(run.options.maxRounds ?? PHOTO_ROUNDS_DEFAULT)));
   const maxViews = Math.max(1, Math.min(4, Math.floor(run.options.maxViews ?? 3)));
-  const tracker = new StallTracker(run.options.stallRounds ?? 3);
+  const judges = judgesOf(run.options);
+  const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
   const tools: ToolDef[] = [VERDICT_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'finish')];
   const messages: ChatMessage[] = [];
-  let best: Best | null = null;
+  const margin = rollbackMargin(checklist.length);
+  /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
+  // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
+  let accepted = null as Accepted | null;
   let last: Judged | null = null;
-  let editedBefore = false;
+  /** The room changed since the accepted state (so the next look has to be judged). */
+  let changed = true;
   let refusals: string[] = [...firstRefusals];
   let extraWalls: string[] = [];
   let intro = true;
+  let round = 0;
 
   const revertTo = (target: WorldDoc, why: string): boolean => {
     const patches = restorePatches(host.getWorld(), target);
     if (patches.length === 0) return true;
     return host.applyPatches(patches, why.slice(0, 120)).errors.length === 0;
   };
-  const result = (j: Judged | null): LoopResult => ({ score: j?.score ?? null, objective: j?.objective ?? null });
 
-  /** End of the loop: edits made after the last judged render are looked at once more, and kept only when not worse. */
+  /** The panel's judgement of a render, relative to the accepted state (null: no panel, or no judge answered). */
+  const askPanel = async (shot: Shot): Promise<Consensus | null> => {
+    if (judges === 0) return null;
+    const current = shot.clean ?? shot.images[0]?.dataUrl;
+    if (!current) return null;
+    const ref = accepted;
+    const previous = ref ? (ref.shot.clean ?? ref.shot.images[0]?.dataUrl ?? null) : null;
+    try {
+      const res = await runPanel((req) => complete(run, req), { photo: photo.dataUrl, current, previous, checklist, judges, maxTokens: Math.min(run.maxTokens, 8000) });
+      return res.consensus;
+    } catch (e) {
+      if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+      return null;
+    }
+  };
+
+  /** Accept a judged state, or go back to the accepted one. Returns the decision and the judgement that now stands. */
+  const settle = (cand: Judged, world: WorldDoc, shot: Shot, at: number): { decision: Decision; standing: Judged; rejected: Accepted | null } => {
+    const ref = accepted;
+    const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? null, margin);
+    if (decision.accept) {
+      // Without a panel the reference stays the best state, so a slow slide of small losses is not accepted step by step.
+      if (cand.panel || !ref || cand.quality >= ref.judged.quality) accepted = { world, round: at, shot, judged: cand };
+      return { decision, standing: cand, rejected: null };
+    }
+    if (ref && revertTo(ref.world, `Back to round ${ref.round}`)) return { decision, standing: ref.judged, rejected: ref };
+    return { decision: { ...decision, accept: true }, standing: cand, rejected: null };
+  };
+
+  /** End of the loop: edits made after the last judged render are judged once more, and kept only when accepted. */
   async function* conclude(j: Judged, unjudgedEdits: boolean): AsyncGenerator<AgentEvent, LoopResult> {
-    if (!unjudgedEdits) return result(j);
-    const fin = await finalJudgement(run, photo, desc, targets, checklist, messages).catch((e) => {
+    if (!unjudgedEdits) return { judged: j };
+    const shot = await snapshot(run, photo, desc, targets, [], 1, judges > 0).catch((e) => {
       if (ctx.signal?.aborted) throw e;
       return null;
     });
-    if (!fin) return result(j);
-    const q = quality(fin.score, fin.objective);
-    yield { type: 'photo', phase: 'round', text: `Final check: ${scoreLine(fin.score)}${fin.measure ? `; ${fin.measure}` : ''}.`, score: scoreView(fin.score, fin.objective) };
-    if (best && q < best.quality - rollbackMargin(checklist.length)) {
-      revertTo(best.world, `Back to the best round (${best.round})`);
-      yield { type: 'photo', phase: 'round', text: `The last changes made the room worse; back to round ${best.round}.`, score: scoreView(best.score, best.objective) };
-      return { score: best.score, objective: best.objective };
+    if (!shot) return { judged: j };
+    const world = host.getWorld();
+    let fin: Judged | null = null;
+    const panel = await askPanel(shot);
+    if (panel) fin = judgedOf(panel.score, shot, panel);
+    else {
+      const sb = await finalJudgement(run, photo, shot, checklist, messages).catch((e) => {
+        if (ctx.signal?.aborted) throw e;
+        return null;
+      });
+      if (sb) fin = judgedOf(sb, shot, null);
     }
-    return { score: fin.score, objective: fin.objective };
+    if (!fin) return { judged: j };
+    yield { type: 'photo', phase: 'round', text: `Final check: ${lookLine(fin)}.`, score: scoreView(fin) };
+    const s = settle(fin, world, shot, round);
+    if (s.rejected) {
+      yield { type: 'photo', phase: 'round', text: `The last changes were not kept (${s.decision.reason}); back to round ${s.rejected.round}.`, score: scoreView(s.rejected.judged) };
+      return { judged: s.rejected.judged };
+    }
+    return { judged: fin };
   }
 
   // Before the first look: put each piece where its box in the photo says (a few tens of centimetres along the wall are
@@ -551,48 +650,76 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const fitted = yield* layoutStep(run, photo, desc, targets);
     if (fitted.length > 0) build.notes.push(`Before this first look the builder fitted ${fitted.length} piece${fitted.length === 1 ? '' : 's'} to where the photo shows them (${fitted.slice(0, 8).join('; ')}).`);
   }
-  for (let round = 1; round <= maxRounds; round++) {
+  for (round = 1; round <= maxRounds; round++) {
     if (ctx.signal?.aborted) throw new Error('aborted');
     yield { type: 'status', text: round === 1 ? 'Comparing the render with the photo…' : `Compare round ${round}…` };
-    const shot = await snapshot(run, photo, desc, targets, extraWalls, maxViews).catch((e) => {
+    const shot = await snapshot(run, photo, desc, targets, extraWalls, maxViews, judges > 0).catch((e) => {
       if (ctx.signal?.aborted) throw e;
       return null;
     });
     if (!shot) {
       yield { type: 'photo', phase: 'unavailable', text: 'No render of the room could be made here, so it was not compared with the photo.' };
-      return result(last);
+      return { judged: last };
     }
     const judgedWorld = host.getWorld();
     stripImages(messages);
+    yield { type: 'photo', phase: 'comparing', round, text: round === 1 ? 'Comparing the render with the photo, item by item.' : `Round ${round}: judging the render again.` };
+
+    // The judges look first (when there are any): the model then works on a state they accepted.
+    let view: Shot = shot;
+    let standing: Judged | null = null;
+    let decision: Decision | null = null;
+    let rejectNote = '';
+    const ref0 = accepted;
+    if (judges > 0 && ref0 && !changed) {
+      standing = ref0.judged;
+      decision = { accept: true, gain: false, reason: 'nothing changed since the accepted state' };
+    } else if (judges > 0) {
+      const panel = await askPanel(shot);
+      if (panel) {
+        const cand = judgedOf(panel.score, shot, panel);
+        const s = settle(cand, judgedWorld, shot, round);
+        decision = s.decision;
+        standing = s.standing;
+        if (s.rejected) {
+          view = s.rejected.shot;
+          rejectNote = `Your last changes were rolled back to the state of round ${s.rejected.round}: ${s.decision.reason}. The images below show that state. Try a different, smaller fix.`;
+          yield { type: 'photo', phase: 'round', round, text: `Round ${round} was not kept (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(cand, false) };
+        }
+        yield { type: 'photo', phase: 'round', round, text: `Round ${round}: ${lookLine(standing)}.`, score: scoreView(standing, s.rejected === null) };
+      }
+    }
+
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', view.fidelity ? fidelityText(view.fidelity) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
-      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: shot.objective !== null, plan: JSON.stringify(build.plan), ...(shot.framing ? { framing: framingText(shot.framing) } : {}) }) });
+      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: notes }) });
       intro = false;
-    } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, shot.objective, shot.legend, refusals, shot.framing ? framingText(shot.framing) : '') });
+    } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
-    shot.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
-    if (round === 1) blocks.push({ type: 'text', text: `Legend of the numbers:\n${shot.legend}${firstRefusals.length > 0 ? `\nRefused while building (place these again with the right numbers, or fix the cause):\n${firstRefusals.map((r) => `- ${r}`).join('\n')}` : ''}` });
+    view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+    if (round === 1) blocks.push({ type: 'text', text: `Legend of the numbers:\n${view.legend}${firstRefusals.length > 0 ? `\nRefused while building (place these again with the right numbers, or fix the cause):\n${firstRefusals.map((r) => `- ${r}`).join('\n')}` : ''}` });
     pushUser(messages, blocks);
     refusals = [];
     extraWalls = [];
-    yield { type: 'photo', phase: 'comparing', round, text: round === 1 ? 'Comparing the render with the photo, item by item.' : `Round ${round}: judging the render again.` };
 
-    let judged: Judged | null = null;
+    let workerJudged = false;
     let edited = false;
     let declared = false;
     let rolledBack = false;
     let toolCalls = 0;
-    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(judged && (edited || rolledBack)); turn++) {
+    const ready = (): boolean => standing !== null || workerJudged;
+    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack)); turn++) {
       const res = await ask(run, messages, tools, true);
       messages.push({ role: 'assistant', content: res.content });
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
       const text = textOf(res.content);
       if (res.stopReason === 'error' && calls.length === 0) {
         yield { type: 'error', text: text || 'The model could not complete the comparison.' };
-        return result(last);
+        return { judged: standing ?? last };
       }
       if (calls.length === 0) {
-        if (judged) {
+        if (ready()) {
           if (text) yield { type: 'message', text };
           declared = true;
           break;
@@ -612,22 +739,26 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'No valid verdicts: send {"verdicts":[{"id": a checklist id, "pass": true|false, "note": what differs}]}.', isError: true });
             continue;
           }
-          if (judged) {
+          if (workerJudged) {
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'Already recorded this round. Fix what fails, or call finish.' });
             continue;
           }
+          workerJudged = true;
           const sb = scoreVerdicts(checklist, ok);
-          const q = quality(sb, shot.objective);
-          judged = { score: sb, objective: shot.objective, quality: q, measure: shot.measure };
-          if (!best || q > best.quality) best = { quality: q, world: judgedWorld, score: sb, objective: shot.objective, round };
+          if (standing) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: `Recorded your notes (${scoreLine(sb)}). The independent judges' scores above are what decide progress: fix what they found, or call finish.` });
+            continue;
+          }
+          // No panel: the model's own verdicts are this round's judgement.
+          const cand = judgedOf(sb, shot, null);
+          const s = settle(cand, judgedWorld, shot, round);
+          standing = s.standing;
+          decision = s.decision;
           let note = verdictReply(sb);
-          // A render that is worse than an earlier one is rolled back before anything else is changed.
-          if (best.round !== round && round > 1 && q < best.quality - rollbackMargin(checklist.length)) {
-            rolledBack = revertTo(best.world, `Back to the best round (${best.round})`);
-            if (rolledBack) {
-              note += ` That is worse than round ${best.round} (${Math.round(q * 100)}% against ${Math.round(best.quality * 100)}%), so the room was rolled back to round ${best.round}; the changes in this reply are not applied. Look at the next render and try a different, smaller fix.`;
-              yield { type: 'photo', phase: 'round', round, text: `Round ${round} was worse (${Math.round(q * 100)}% against ${Math.round(best.quality * 100)}%): back to round ${best.round}.`, score: scoreView(best.score, best.objective) };
-            }
+          if (s.rejected) {
+            rolledBack = true;
+            note += ` That is worse than round ${s.rejected.round} (${s.decision.reason}), so the room was rolled back to round ${s.rejected.round}; the changes in this reply are not applied. Look at the next render and try a different, smaller fix.`;
+            yield { type: 'photo', phase: 'round', round, text: `Round ${round} was worse (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(s.rejected.judged) };
           }
           results.push({ type: 'tool_result', toolUseId: call.id, content: note });
           continue;
@@ -645,7 +776,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Not applied: the room was rolled back to its best state because the last round made it worse.', isError: true });
           continue;
         }
-        if (judged === null) {
+        if (!ready()) {
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Judge first: call report_verdicts for every id (in the same reply is fine), then change things.', isError: true });
           continue;
         }
@@ -663,32 +794,33 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       messages.push({ role: 'user', content: results });
     }
 
-    if (!judged) {
+    if (!standing) {
       yield { type: 'photo', phase: 'unavailable', text: 'The assistant did not judge the render; stopped comparing.' };
-      return result(last);
+      return { judged: last };
     }
-    const j: Judged = judged;
-    last = rolledBack && best ? { score: best.score, objective: best.objective, quality: best.quality, measure: '' } : j;
-    yield { type: 'photo', phase: 'round', round, text: `Round ${round}: ${scoreLine(j.score)}${j.measure ? `; ${j.measure}` : ''}.`, score: scoreView(j.score, j.objective) };
+    const j: Judged = standing;
+    last = j;
+    if (!j.panel) yield { type: 'photo', phase: 'round', round, text: `Round ${round}: ${lookLine(j)}.`, score: scoreView(j, !rolledBack) };
     extraWalls = [...new Set(j.score.failing.map((f) => wallOf(desc, f)).filter((w): w is string => w !== null))].slice(0, 2);
-    const verdict = tracker.observe({ keys: new Set(j.score.failing.map((f) => f.id)), score: Math.round(j.quality * 100), edited: editedBefore });
-    editedBefore = edited;
+    const verdict = tracker.observe({ gain: decision?.gain ?? false, keys: new Set(j.score.failing.map((f) => f.id)) });
+    changed = edited && !rolledBack;
     if (j.score.failing.length === 0) {
-      yield { type: 'photo', phase: 'round', round, text: 'Every checklist item matches the photo.', score: scoreView(j.score, j.objective) };
-      return yield* conclude(j, edited);
+      yield { type: 'photo', phase: 'round', round, text: 'Every checklist item matches the photo.', score: scoreView(j) };
+      return yield* conclude(j, changed);
     }
     if (declared && !edited) {
       const good = j.score.rate >= PHOTO_TARGET_RATE && !j.score.structuralFailed;
-      if (!good) yield { type: 'photo', phase: 'round', round, text: 'The assistant stopped with items still different (nothing more it could change with the tools).', score: scoreView(j.score, j.objective) };
-      return yield* conclude(last, false);
+      if (!good) yield { type: 'photo', phase: 'round', round, text: 'The assistant stopped with items still different (nothing more it could change with the tools).', score: scoreView(j) };
+      return yield* conclude(j, false);
     }
     if (verdict.stalled) {
-      yield { type: 'photo', phase: 'round', round, text: `Stopped comparing: ${verdict.reason}.`, score: scoreView(j.score, j.objective) };
-      return yield* conclude(last, edited);
+      yield { type: 'photo', phase: 'round', round, text: `Stopped comparing: ${verdict.reason}.`, score: scoreView(j) };
+      return yield* conclude(j, changed);
     }
   }
+  round = maxRounds;
   // Out of rounds: edits made in the last one have not been looked at.
-  return yield* conclude(last ?? { score: scoreVerdicts(checklist, []), objective: null, quality: 0, measure: '' }, editedBefore);
+  return yield* conclude(last ?? judgedOf(scoreVerdicts(checklist, []), { objective: null, fidelity: null, measure: '' }, null), changed);
 }
 
 function parseVerdicts(input: unknown): ItemVerdict[] {
@@ -716,10 +848,8 @@ function wallOf(desc: RoomDescription, item: ChecklistItem): string | null {
   return null;
 }
 
-/** A judge-only call on the room as it stands (no fixes), so the final numbers are measured. */
-async function finalJudgement(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], messages: ChatMessage[]): Promise<{ score: Scoreboard; objective: number | null; measure: string } | null> {
-  const shot = await snapshot(run, photo, desc, targets, [], 1);
-  if (!shot) return null;
+/** A judge-only call of the model in the conversation on the room as it stands (no fixes), when there is no panel. */
+async function finalJudgement(run: PhotoRun, photo: Photo, shot: Shot, checklist: readonly ChecklistItem[], messages: ChatMessage[]): Promise<Scoreboard | null> {
   stripImages(messages);
   const blocks: ContentBlock[] = [
     { type: 'text', text: `FINAL CHECK. No more changes: judge the room as it stands now. Call report_verdicts for every id.\nLegend:\n${shot.legend}` },
@@ -737,7 +867,7 @@ async function finalJudgement(run: PhotoRun, photo: Photo, desc: RoomDescription
       continue;
     }
     const ok = parseVerdicts(call.input);
-    if (ok.length > 0) return { score: scoreVerdicts(checklist, ok), objective: shot.objective, measure: shot.measure };
+    if (ok.length > 0) return scoreVerdicts(checklist, ok);
     messages.push({ role: 'user', content: [{ type: 'tool_result', toolUseId: call.id, content: 'No valid verdicts. Send {"verdicts":[{"id","pass","note"}]}.', isError: true }] });
   }
   return null;

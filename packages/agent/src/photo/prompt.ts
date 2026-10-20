@@ -98,15 +98,18 @@ export function refusalText(error: string): string {
 }
 
 /** The first compare message: what was built, the checklist, how to answer. */
-export function compareIntroText(opts: { summary: string; checklist: readonly ChecklistItem[]; notes: readonly string[]; hasObjective: boolean; plan?: string; framing?: string }): string {
+export function compareIntroText(opts: { summary: string; checklist: readonly ChecklistItem[]; notes: readonly string[]; hasObjective: boolean; plan?: string; framing?: string; judged?: boolean; measured?: string }): string {
   return [
     'COMPARE AND CORRECT. You described the photographed room; it has been built from your description with the design tools. You now see the PHOTO (first image) and a RENDER of the built room from the photo\'s own camera position (second image, with numbered boxes on every piece and opening; the legend follows).',
     `Room: ${opts.summary}`,
     opts.notes.length > 0 ? `Builder notes:\n${opts.notes.map((n) => `- ${n}`).join('\n')}` : '',
     `Checklist (answer every id):\n${opts.checklist.map((c) => `- ${c.id}${c.structural ? ' [structural]' : ''}: ${c.text}`).join('\n')}`,
     'How to judge: the render is a plain preview, not a photograph. Its light is flatter than the photo\'s (no bounce, no glare, the view through the window is a flat sky colour), so NEVER fail an item only because it looks flatter, a little darker or less glossy. Judge what the tools can change: shape, size, position, proportion, hue, and lightness RELATIVE to the things around it (a pale chair next to a dark wall in the photo must be pale next to a dark wall in the render). Do not repaint a surface to compensate for the preview\'s light.',
-    'Each round: (1) call report_verdicts with a verdict for EVERY id, judging the render against the photo as a strict reviewer: right place, right size, right colour, right material, right proportion. (2) For every failing item, fix it in the same reply with edit_items / place_items / query_scene (the numbers on the render are pieces; the legend names them; a wall query gives exact positions). Fix the shell and openings first, then furniture, then decor, then materials and lighting. Make the smallest change that works, never rebuild a room to move one piece. (3) The host renders again and you judge again. When every item passes, call finish.',
-    opts.hasObjective ? 'The host also measures an objective similarity of the render to the photo (colour, structure, edges); it rolls back a round that made things worse.' : '',
+    opts.judged
+      ? 'Each round: (1) independent judges have already scored the render against the photo item by item (their consensus and the measured differences follow); you may call report_verdicts with your own notes, but their scores decide. (2) Fix every item they found different with edit_items / place_items / query_scene (the numbers on the render are pieces; the legend names them; a wall query gives exact positions). Fix the shell and openings first, then furniture, then decor, then materials and lighting. Make the smallest change that works, never rebuild a room to move one piece. (3) The host renders again; the judges compare the new render with the accepted one, and a change they do not prefer, or one that makes the measures worse, is rolled back. When nothing more can be improved, call finish.'
+      : 'Each round: (1) call report_verdicts with a verdict for EVERY id, judging the render against the photo as a strict reviewer: right place, right size, right colour, right material, right proportion. (2) For every failing item, fix it in the same reply with edit_items / place_items / query_scene (the numbers on the render are pieces; the legend names them; a wall query gives exact positions). Fix the shell and openings first, then furniture, then decor, then materials and lighting. Make the smallest change that works, never rebuild a room to move one piece. (3) The host renders again and you judge again. When every item passes, call finish.',
+    opts.hasObjective ? 'The host also measures the room deterministically against your description and the photo (openings, inventory, placement, sizes, colours, clearance, framing, pixel similarity); a round that makes those measures worse is rolled back.' : '',
+    opts.measured ?? '',
     'Edits to the shell (room size, wall colour, floor, a window\'s size or place) are made by resending design_plan with the corrected plan (pieces you placed stay). Sizes, colours and finishes of pieces change with edit_items resize (params).',
     opts.framing ? `${opts.framing}` : '',
     opts.plan ? `The plan the shell was built from (resend it with changes):\n${opts.plan}` : '',
@@ -116,15 +119,18 @@ export function compareIntroText(opts: { summary: string; checklist: readonly Ch
 }
 
 /** The text of a later round. */
-export function compareRoundText(round: number, score: Scoreboard | null, objective: number | null, legend: string, refusals: readonly string[], framing = ''): string {
+export function compareRoundText(round: number, score: Scoreboard | null, objective: number | null, legend: string, refusals: readonly string[], framing = '', measured = '', judged = false): string {
   return [
     `COMPARE round ${round}. The render below shows the room after your last changes${refusals.length > 0 ? ' (some were refused, see below)' : ''}; the photo is shown again for reference.`,
     score ? `Last round: ${score.passed}/${score.total} items passed.` : '',
-    objective !== null ? `Measured agreement with the photo: ${Math.round(objective * 100)}%.` : '',
+    objective !== null ? `Measured fidelity to the photo: ${Math.round(objective * 100)}%.` : '',
     framing,
+    measured,
     refusals.length > 0 ? `Refused last time:\n${refusals.map((r) => `- ${r}`).join('\n')}` : '',
     `Legend:\n${legend}`,
-    'Call report_verdicts for EVERY id again (judge only what you see now), then fix what fails. Call finish when everything passes or when the remaining differences cannot be fixed with the tools (say why).',
+    judged
+      ? 'Fix what the judges and the measures found different (report_verdicts is optional: your own notes). Call finish when everything matches or when the remaining differences cannot be fixed with the tools (say why).'
+      : 'Call report_verdicts for EVERY id again (judge only what you see now), then fix what fails. Call finish when everything passes or when the remaining differences cannot be fixed with the tools (say why).',
   ]
     .filter((l) => l.length > 0)
     .join('\n');
