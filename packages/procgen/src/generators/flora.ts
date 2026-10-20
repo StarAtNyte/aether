@@ -669,7 +669,12 @@ const boulder = defineGenerator({
 
 
 /** Fluted column of a cactus standing at (cx, y0, cz): a lathe with `ribs` vertical ribs, a rounded crown, painted grooves and spine areoles. */
+const CACTUS_SCAR: RGB = lin('#9c8a6a');
+const CACTUS_BLOOM: RGB = lin('#a3a891');
+
 function cactusColumn(api: InternalApi, cx: number, y0: number, cz: number, r: number, h: number, ribs: number, base: RGB, groove: RGB, crest: RGB, areole: RGB): Mesh {
+  const scar = CACTUS_SCAR;
+  const bloom = CACTUS_BLOOM;
   const prof: Array<[number, number]> = [[0, 0], [r * 0.92, 0], [r, h * 0.06], [r * 1.02, h * 0.5], [r * 0.97, h * 0.86], [r * 0.82, h * 0.94], [r * 0.5, h * 0.985], [0, h]];
   const m = api.lathe(prof, Math.max(24, ribs * 3)).translate(cx, y0, cz);
   const angle = (x: number, z: number): number => Math.atan2(z - cz, x - cx);
@@ -685,10 +690,14 @@ function cactusColumn(api: InternalApi, cx: number, y0: number, cz: number, r: n
     if (c > 0.82) mixLinear(out, crest, (c - 0.82) * 3.5, out);
     // Areoles: pale spine clusters in a column on every rib crest, every few centimetres.
     if (c > 0.9 && Math.abs(Math.sin((y - y0) * 26 + Math.floor(angle(x, z) * ribs) * 1.7)) > 0.93) mixLinear(out, areole, 0.75, out);
-    const k = 1 + 0.08 * n.noise3(x * 3, y * 1.2, z * 3) - 0.1 * Math.max(0, 0.25 - (y - y0)) * 4;
+    const k = 1 + 0.08 * n.noise3(x * 3, y * 1.2, z * 3);
     out[0] *= k;
     out[1] *= k;
     out[2] *= k;
+    // Dust and woody scarring at the foot of the column, a waxy grey bloom over the green.
+    const foot = Math.max(0, 1 - (y - y0) / Math.min(0.9, h * 0.18));
+    if (foot > 0) mixLinear(out, scar, foot * (0.55 + 0.25 * n.noise3(x * 6, y * 6, z * 6)), out);
+    mixLinear(out, bloom, 0.16 + 0.1 * n.noise3(x * 0.8, y * 0.5, z * 0.8), out);
   });
   return m;
 }
@@ -700,7 +709,7 @@ const cactus = defineGenerator({
   params: {
     height: pNum(5, 0.4, 14, 'height in meters (saguaro and organ pipe; a barrel cactus is a fifth of it)'),
     arms: pInt(2, 0, 5, 'saguaro arms'),
-    color: pColor('#5d7149', 'skin color'),
+    color: pColor('#6c7a58', 'skin color'),
     flowers: pColor('#e8c547', 'flower color (barrel cactus)'),
     variant: pVariant(2, '0 saguaro, 1 barrel, 2 organ pipe'),
   },
@@ -712,7 +721,7 @@ const cactus = defineGenerator({
     const groove = lin(shade(skin, -0.32));
     const crest = lin(shade(skin, 0.12));
     const areole = lin('#d9d2bd');
-    const mat = { vertexColors: true, roughness: 0.72, metalness: 0 } as const;
+    const mat = { vertexColors: true, roughness: 0.82, metalness: 0 } as const;
     if (variant === 1) {
       const h = Math.max(0.3, H * 0.2);
       const r = h * 0.62;

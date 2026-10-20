@@ -175,6 +175,7 @@ export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
     roughness: 0.5,
     name: 'Landscape',
     ...(st ? { stream: [st.half, st.z, st.bend ?? 5, st.depth ?? 1.4] as const } : {}),
+    ...(o.snow ? { snowCover: 0.95 } : {}),
   });
   b.ground = { h: land.h, surface: land.id };
   if (st) {
@@ -257,7 +258,7 @@ export function path(b: Builder, x1: number, z1: number, x2: number, z2: number,
   if (b.realisticNature) {
     // A worn strip draped over the ground with soft verges, not a box laid on the lawn.
     const finish = preset === 'stone' || preset === 'concrete' ? 'cobble' : preset === 'sand' ? 'sand' : preset === 'wood' ? 'decking' : 'soil';
-    return groundRibbon(b, { id: b.id('path'), name: 'Path', paths: [[[x1, z1], [r2((x1 + x2) / 2 + (z2 - z1) * 0.06), r2((z1 + z2) / 2 - (x2 - x1) * 0.06)], [x2, z2]]], height: (x, z) => b.groundAt(x, z), width, lift: 0.04, centre: color, edge: shadeHex(color, -0.25), material: { finish, roughness: 0.95 }, tags: ['path'] });
+    return groundRibbon(b, { id: b.id('path'), name: 'Path', paths: [[[x1, z1], [r2((x1 + x2) / 2 + (z2 - z1) * 0.06), r2((z1 + z2) / 2 - (x2 - x1) * 0.06)], [x2, z2]]], height: (x, z) => b.groundAt(x, z), width, lift: 0.04, centre: color, edge: shadeHex(color, -0.25), material: { finish, roughness: 0.95 }, tags: ['path'], taper: true });
   }
   const dx = x2 - x1;
   const dz = z2 - z1;

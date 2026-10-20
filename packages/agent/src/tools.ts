@@ -8,6 +8,7 @@
  * fully validated by `applyPatches` anyway.
  */
 import { z } from 'zod';
+import { LandInput } from './land';
 import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
 import type { ToolDef } from './types';
 
@@ -42,7 +43,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -238,6 +239,31 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
+    name: 'shape_land',
+    description:
+      'Real ground for outdoor worlds instead of the flat plane. {op:"land", kind:"meadow"|"forest"|"snow"|"canyon", size?:420, relief?:48 (m), color?, plot?:{x,z,radius} (level ground at y=0 for buildings, camps, arenas), stream?:{z, half, bend?, depth?} (a stream carved across the land along X, with flowing water), woods?:{conifers, broadleaf, birch, scrub, boulders} (leaf-card trees on the slopes), cover?:{grass?, flowers?:[colors], radius?, density?}} builds the terrain, water, woods and ground cover in one step and replaces the land it built before | {op:"path", points:[[x,z],...], width?, surface?:"soil"|"gravel"|"cobble"|"sand"|"decking"|"asphalt"|"dry-earth", color?} drapes a trail, lane or road over the ground. Call land first, then place things (place_level_items snaps them to this ground), then paths.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        op: { type: 'string', enum: ['land', 'path'] },
+        kind: { type: 'string', enum: ['meadow', 'forest', 'snow', 'canyon'] },
+        size: { type: 'number' },
+        relief: { type: 'number' },
+        color: { type: 'string' },
+        plot: { type: 'object' },
+        stream: { type: 'object' },
+        woods: { type: 'object' },
+        cover: { type: 'object' },
+        points: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+        width: { type: 'number' },
+        surface: { type: 'string', enum: ['soil', 'gravel', 'cobble', 'sand', 'decking', 'asphalt', 'dry-earth'] },
+        name: { type: 'string' },
+      },
+      required: ['op'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
     inputSchema: {
@@ -341,6 +367,7 @@ export const ToolInputs = {
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional() }),
   run_verification: z.object({}),
+  shape_land: LandInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;
 

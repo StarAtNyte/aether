@@ -198,8 +198,11 @@ async function main(): Promise<void> {
         window.__aether?.studio.playtest.stopReplay();
       });
       await page.waitForTimeout(1000);
-      await capture(page, join(outDir!, `${name}-editor.png`));
+      if (process.env['GEN_EDITOR'] !== '0') await capture(page, join(outDir!, `${name}-editor.png`));
       const { arch, cams } = await cameras(page);
+      // `GEN_CAMS='[{"name":"close","pos":[x,y,z],"target":[x,y,z]}]'` adds explicit views (every prompt).
+      if (process.env['GEN_CAMS']) cams.push(...(JSON.parse(process.env['GEN_CAMS']) as Cam[]));
+      if (process.env['GEN_ONLY']) cams.splice(0, cams.length, ...cams.filter((c) => (process.env['GEN_ONLY'] ?? '').split(',').includes(c.name)));
       if (arch) {
         // Storeys stacked, walls up, before the first building view (the doll's-house view after a build has them apart).
         await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up', levelMode: 'stacked', xray: false, section: null, plan: false } as never));
@@ -210,7 +213,7 @@ async function main(): Promise<void> {
         await setCam(page, cam);
         await capture(page, join(outDir!, `${name}-${cam.name}.png`));
       }
-      if (!arch) {
+      if (!arch && process.env['GEN_PLAY'] !== '0') {
         await page.evaluate(() => void window.__aether?.studio.togglePlay());
         await page.waitForFunction(() => window.__aether?.store.getState().mode === 'play', null, { timeout: 60_000 }).catch(() => undefined);
         const card = page.locator('.title-card');

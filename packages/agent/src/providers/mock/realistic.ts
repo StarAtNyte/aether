@@ -22,6 +22,26 @@ export function wantsRealistic(request: string): boolean {
   return REALISTIC_RE.test(request) || !STYLISED_RE.test(request);
 }
 
+const STYLISED_NATURE: ReadonlySet<string> = new Set(['tree-pine', 'tree-oak', 'bush', 'grass-tuft', 'rock', 'flowers']);
+const REALISTIC_NATURE: ReadonlySet<string> = new Set(['tree-broadleaf', 'tree-spruce', 'tree-birch', 'shrub', 'meadow-grass', 'boulder', 'wildflowers', 'fern', 'cactus']);
+
+/**
+ * Whether parts added for `request` to `world` should be realistic: never when the request asks for a stylised look;
+ * otherwise unless the world is already built mostly from the stylised nature parts (a painterly world stays painterly).
+ */
+export function realisticWorld(request: string, world: { entities: Readonly<Record<string, { shape: { kind: string; generator?: string; of?: { kind: string; generator?: string } } }>> }): boolean {
+  if (!wantsRealistic(request)) return false;
+  let stylised = 0;
+  let realistic = 0;
+  for (const e of Object.values(world.entities)) {
+    const g = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'scatter' && e.shape.of?.kind === 'procedural' ? e.shape.of.generator : undefined;
+    if (!g) continue;
+    if (STYLISED_NATURE.has(g)) stylised++;
+    else if (REALISTIC_NATURE.has(g)) realistic++;
+  }
+  return realistic >= stylised;
+}
+
 type Params = Record<string, Json>;
 
 function num(v: Json | undefined, fallback: number): number {
@@ -43,7 +63,7 @@ export function realisticStandIn(generator: string, params: Params): { generator
       // Cherry blossom: a wide broadleaf crown in blossom pink on a dark, twisting trunk.
       return { generator: 'tree-broadleaf', params: { color: typeof params['blossomColor'] === 'string' ? params['blossomColor'] : '#f1a9c0', trunkColor: typeof params['barkColor'] === 'string' ? params['barkColor'] : '#3b2a24', height: Math.max(5, num(params['height'], 5.5) * 1.35), variant: 2, blossom: 1 } };
     case 'tree-pine':
-      return { generator: 'tree-spruce', params: { ...copy(params, ['color', 'trunkColor']), height: Math.max(8, num(params['height'], 7) * 1.6), snow: params['snow'] === true ? 0.8 : 0 } };
+      return { generator: 'tree-spruce', params: { ...copy(params, ['color', 'trunkColor']), height: Math.max(8, num(params['height'], 7) * 1.6), snow: params['snow'] === true ? 0.8 : typeof params['snow'] === 'number' ? params['snow'] : 0 } };
     case 'bush':
       return { generator: 'shrub', params: { ...copy(params, ['color']), size: num(params['size'], 1.2) } };
     case 'flowers':

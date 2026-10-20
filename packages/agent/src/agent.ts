@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { Patch as PatchSchema, dependencyIndex, worldTransform, type Entity, type EntityId, type Patch, type WorldDoc } from '@aether/core';
 import { CONTEXT_LIMITS, formatUserTurn, isImageDataUrl, sanitizeHistory } from './context';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from './executor';
+import { realisticWorld } from './providers/mock/realistic';
 import { loadCatalog } from '@aether/assets';
 import { libraryDefinitions } from './library-refs';
 import type { RequestScope } from './refine/guard';
@@ -307,6 +308,7 @@ export class WorldAgent {
       ...(this.opts.buildAsset ? { buildAsset: this.opts.buildAsset } : {}),
       ...(this.opts.levelTools ? { levelTools: this.opts.levelTools } : {}),
       ...(signal ? { signal } : {}),
+      realistic: realisticWorld(request, host.getWorld()),
     };
 
     // Library furniture and models are resolved by name: the catalog must be in before anything is planned.

@@ -248,7 +248,7 @@ function huntTrail(b: Builder, goal: [number, number]): void {
   } else {
     legs.push([[sx, sz - 1.5], [r2((sx + goal[0]) / 2 + 3), r2((sz + goal[1]) / 2)], [goal[0], r2(goal[1] + 3)]]);
   }
-  groundRibbon(b, { id: b.id('trail'), name: 'Forest trail', paths: legs, height: h, width: 1.7, lift: 0.045, centre: '#7d6c52', edge: '#4f4636', material: { finish: 'soil', roughness: 0.97 }, tags: ['trail'] });
+  groundRibbon(b, { id: b.id('trail'), name: 'Forest trail', paths: legs, height: h, width: 1.7, lift: 0.045, centre: '#7d6c52', edge: '#4f4636', material: { finish: 'soil', roughness: 0.97 }, tags: ['trail'], taper: true });
 }
 
 const coins: Theme = {

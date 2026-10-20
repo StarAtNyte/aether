@@ -11,6 +11,8 @@ import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
+import { landPatches, type LandInput } from './land';
+import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
 import type { AgentEvent, AgentHost, AgentOptions, Provider, UsageTotals } from './types';
@@ -44,6 +46,12 @@ export interface ExecutorContext {
   levelTools?: AgentOptions['levelTools'];
   /** Set for a small edit: checks a patch list against what the request named; `ok: false` patches are refused with the message. */
   audit?: (patches: readonly unknown[]) => { ok: boolean; message: string };
+  /**
+   * The world should look real (the request asks for no stylised look and the world is not built from the stylised
+   * nature parts): `apply_patches` exchanges the low-poly nature generators (tree-pine, tree-oak, bush, grass-tuft, rock,
+   * flowers) for the realistic set and says so in its result.
+   */
+  realistic?: boolean;
 }
 
 const MAX_RESULT_CHARS = 20_000;
@@ -166,6 +174,13 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
     const audit = ctx.audit(patches);
     if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
   }
+  let exchanged = 0;
+  if (ctx.realistic) {
+    // The stylised low-poly nature parts read as toys next to everything else: build the realistic stand-ins instead.
+    const copy = structuredClone(input.patches);
+    exchanged = makeRealistic(copy as never);
+    if (exchanged > 0) input = { ...input, patches: copy };
+  }
   const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
   const events: AgentEvent[] = [];
   if (defs.length > 0) {
@@ -183,6 +198,7 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   if (carriedOk.length > 0) content += `\nMoved with their owner (they belong to it; set their position yourself to place them elsewhere): ${carriedOk.slice(0, 8).map((c) => `${c.id} with ${c.owner}`).join(', ')}${carriedOk.length > 8 ? ', …' : ''}.`;
   const people = attachPeople(ctx, events, result.applied);
   if (people) content += `\n${people}`;
+  if (exchanged > 0) content += `\nNote: ${exchanged} low-poly nature part${exchanged === 1 ? ' was' : 's were'} built with the realistic generators (tree-broadleaf, tree-spruce, shrub, meadow-grass, boulder, wildflowers); use those ids directly, or ask for a stylised look to keep the low-poly set.`;
   if (result.notes && result.notes.length > 0) content += `\n${result.notes.slice(0, 4).map((n) => `Note: ${n.slice(0, 400)}`).join('\n')}`;
   return { content, isError: result.applied.length === 0 && result.errors.length > 0, events, edited: result.applied.length > 0 };
 }
@@ -407,6 +423,16 @@ async function levelTool(ctx: ExecutorContext, name: 'query_level' | 'place_leve
   return { content: clip(text), isError: !res.ok && res.patches.length === 0, events, edited };
 }
 
+/** shape_land: the landscape kit (terrain, stream, woods, cover; draped paths), committed as one undo step. */
+function shapeLandTool(ctx: ExecutorContext, input: LandInput): ToolOutcome {
+  const { patches, summary } = landPatches(ctx.host.getWorld(), input);
+  const message = input.op === 'land' ? 'Shape the land' : 'Lay a path';
+  const result = ctx.host.applyPatches(patches, message);
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
+  if (result.errors.length > 0) return { content: `shape_land could not apply ${result.errors.length} of ${patches.length} patches: ${result.errors.slice(0, 4).map((e) => e.message.slice(0, 160)).join('; ')}`, isError: result.applied.length === 0, events, edited: result.applied.length > 0 };
+  return { content: summary, isError: false, events, edited: true };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   if (isLevelToolName(name)) {
@@ -419,11 +445,15 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
     switch (name) {
+      case 'shape_land': {
+        const p = ToolInputs.shape_land.safeParse(rawInput);
+        return p.success ? shapeLandTool(ctx, p.data) : fail(`Invalid shape_land input: ${issuesText(p.error)}`);
+      }
       case 'apply_patches': {
         const p = ToolInputs.apply_patches.safeParse(rawInput);
         return p.success ? await applyPatchesTool(ctx, p.data) : fail(`Invalid apply_patches input: ${issuesText(p.error)}`);

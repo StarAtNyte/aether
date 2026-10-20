@@ -228,6 +228,7 @@ const terrain = defineGenerator({
     streamZ: pNum(0, -500, 500, 'estate: mean z of the stream'),
     streamBend: pNum(5, 0, 60, 'estate: amplitude of the stream bends in meters'),
     streamDepth: pNum(1.4, 0.3, 8, 'estate: depth of the stream bed below the banks in meters'),
+    snowCover: pNum(0, 0, 1, 'estate: snow lying on the land (0 none, 1 all but the steepest rock)'),
   },
   run(p, api) {
     const size = p.num('size');
@@ -243,6 +244,7 @@ const terrain = defineGenerator({
         lane: [p.num('laneX'), p.num('laneZ'), p.num('laneRadius')],
         cut: [p.num('cutX0'), p.num('cutZ0'), p.num('cutX1'), p.num('cutZ1')],
         stream: [p.num('streamHalf'), p.num('streamZ'), p.num('streamBend'), p.num('streamDepth')],
+        snow: p.num('snowCover'),
       });
     }
     const freq = 2.2 / size;
@@ -290,8 +292,11 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
   const freq = 2.2 / size;
   const floorHalf = canyonHalfWidth(size);
   const pal = palette(grass);
-  const sandstone = lin('#b0603a');
-  const pale = lin('#d7a370');
+  const sandstone = lin('#b56a42');
+  const pale = lin('#e0c49a');
+  const deepRed = lin('#8f4529');
+  const varnishTone = lin('#4a3328');
+  const floorSand = lin('#d8bc8c');
   return buildTerrain(api, {
     size,
     resolution,
@@ -314,11 +319,25 @@ function canyonTerrain(api: InternalApi, size: number, H: number, rough: number,
     },
     color(t, _h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.2, z * 0.2);
-      // Banded sandstone walls, grassy plateau, dusty floor.
-      const band = 0.5 + 0.5 * Math.sin((t + w) * 38);
-      mixLinear(sandstone, pale, band * 0.6, out);
+      // Banded sandstone walls: deep red, orange and cream strata of uneven thickness, desert varnish (dark streaks running
+      // down the steep faces), a grassy plateau and a dusty, pebbly floor.
+      const band = 0.5 + 0.5 * Math.sin((t + w) * 38 + 2.2 * Math.sin((t + w) * 9.7));
+      mixLinear(deepRed, sandstone, smoothstep(0.15, 0.55, band), out);
+      mixLinear(out, pale, smoothstep(0.72, 0.95, band) * 0.85, out);
+      const steep = smoothstep(0.35, 0.7, slope);
+      if (steep > 0) {
+        const streak = n.noise2((x + z) * 0.42, t * 3.1) * 0.6 + n.noise2((x - z) * 1.3, t * 9) * 0.4;
+        const varnish = steep * Math.max(0, streak) * 0.75;
+        mixLinear(out, varnishTone, varnish, out);
+      }
       mixLinear(out, pal.grass, smoothstep(0.82, 0.9, t + w) * (1 - smoothstep(0.3, 0.5, slope)), out);
-      if (t < 0.01) mixLinear(pal.sand, sandstone, 0.35 + w * 2, out);
+      if (t < 0.01) {
+        mixLinear(floorSand, sandstone, 0.18 + w * 2, out);
+        const grit = 0.92 + 0.16 * n.noise2(x * 0.9, z * 0.9);
+        out[0] *= grit;
+        out[1] *= grit;
+        out[2] *= grit;
+      }
     },
     splat(t, _h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.2, z * 0.2);
@@ -345,7 +364,7 @@ function estateTerrain(
   rough: number,
   resolution: number,
   grass: string,
-  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number]; cut?: readonly [number, number, number, number]; stream?: readonly [number, number, number, number] },
+  o: { pad: readonly [number, number, number]; lake: readonly [number, number, number, number]; lane: readonly [number, number, number]; cut?: readonly [number, number, number, number]; stream?: readonly [number, number, number, number]; snow?: number },
 ): GeneratorOutput {
   const n = api.noise;
   const freq = 2.2 / size;
@@ -355,14 +374,19 @@ function estateTerrain(
   const [lx, lz, lr, ld] = o.lake;
   const lane = o.lane;
   const [sh, sz, sb, sd] = o.stream ?? [0, 0, 0, 0];
+  const snowCover = o.snow ?? 0;
+  /** Snow lying at (x, z): everywhere but steep rock, thinning in drifts. */
+  const snowAt = (slope: number, x: number, z: number, w: number): number => snowCover * (1 - smoothstep(0.42, 0.62, slope + w)) * (0.82 + 0.18 * n.noise2(x * 0.07, z * 0.07));
   const blend = Math.max(14, pr * 0.9);
   /** Depth (metres, >= 0) the stream cuts at (x, z): a flat bed, banks that ease out over 2.5 m plus a little noise. */
   const streamCut = (x: number, z: number): number => {
     if (sh <= 0) return 0;
     const d = Math.abs(z - streamCourse(x, sz, sb)) - sh * (1 + 0.12 * n.noise2(x * 0.05, 4.2));
-    if (d >= 3) return 0;
+    // Banks ease out over at least 3 m and never steeper than a walkable slope, however deep the bed.
+    const bank = Math.max(3, sd * 2.4);
+    if (d >= bank) return 0;
     if (d <= 0) return sd;
-    return sd * (1 - smoothstep(0, 3, d));
+    return sd * (1 - smoothstep(0, bank, d));
   };
   return buildTerrain(api, {
     size,
@@ -401,15 +425,17 @@ function estateTerrain(
       mixLinear(out, pal.rock, smoothstep(0.3, 0.52, slope + w), out);
       if (lr > 0) mixLinear(pal.sand, out, smoothstep(ld - 1.3, ld - 0.4, h + w * 3), out);
       if (sh > 0) mixLinear(out, STREAM_BED, Math.min(1, streamCut(x, z) / Math.max(0.2, sd * 0.45)) * 0.9, out);
+      if (snowCover > 0) mixLinear(out, pal.snow, snowAt(slope, x, z, w), out);
     },
     splat(_t, h, slope, x, z, out) {
       const w = 0.05 * n.noise2(x * 0.25, z * 0.25);
       const rock = smoothstep(0.3, 0.52, slope + w);
       const wet = Math.max(lr > 0 ? 1 - smoothstep(ld - 1.3, ld - 0.4, h + w * 3) : 0, sh > 0 ? Math.min(1, streamCut(x, z) / Math.max(0.2, sd * 0.45)) : 0);
-      out[1] = rock * (1 - wet);
+      const snow = snowCover > 0 ? snowAt(slope, x, z, w) * (1 - wet) : 0;
+      out[1] = rock * (1 - wet) * (1 - snow);
       out[2] = wet;
-      out[0] = Math.max(0, 1 - out[1] - out[2]);
-      out[3] = 0;
+      out[3] = snow;
+      out[0] = Math.max(0, 1 - out[1] - out[2] - out[3]);
     },
   });
 }

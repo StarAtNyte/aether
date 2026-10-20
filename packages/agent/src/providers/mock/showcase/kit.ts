@@ -204,6 +204,8 @@ export interface EstateOptions {
   lane?: readonly [number, number, number];
   /** Optional stream carved across the land along X: half width, mean z, bend amplitude, depth (see `streamCourse`). */
   stream?: readonly [number, number, number, number];
+  /** Snow lying on the land, 0..1. */
+  snowCover?: number;
   color: string;
   roughness?: number;
   resolution?: number;
@@ -229,6 +231,7 @@ export function estateGround(b: Builder, seed: number, o: EstateOptions): Estate
     ...(o.lake ? { lakeX: o.lake[0], lakeZ: o.lake[1], lakeRadius: o.lake[2], lakeDepth: o.lake[3] } : {}),
     ...(o.lane ? { laneX: o.lane[0], laneZ: o.lane[1], laneRadius: o.lane[2] } : {}),
     ...(o.stream ? { streamHalf: o.stream[0], streamZ: o.stream[1], streamBend: o.stream[2], streamDepth: o.stream[3] } : {}),
+    ...(o.snowCover ? { snowCover: o.snowCover } : {}),
   };
   const raw = terrainHeight(params, seed, o.size);
   const base = raw(o.pad[0], o.pad[1]);
@@ -266,6 +269,8 @@ export interface GroundRibbonOptions {
   /** Surface finish and tint of the strip. */
   material?: MaterialSpec;
   tags?: string[];
+  /** Narrow the strip to a point over the first and last few metres, so a trail fades into the ground instead of ending square. */
+  taper?: boolean;
 }
 
 function chaikin(pts: ReadonlyArray<readonly [number, number]>, rounds: number): Array<[number, number]> {
@@ -329,10 +334,12 @@ export function groundRibbon(b: Builder, o: GroundRibbonOptions): string {
     if (prev) samples.push([last[0], last[1], prev[2], prev[3]]);
     if (samples.length < 2) continue;
     const base = positions.length / 3;
+    const total = (samples.length - 1) * step;
     samples.forEach((sm, k) => {
       const dist = run + k * step;
       const wob = 0.35 * Math.sin(dist * 0.21 + phase) + 0.2 * Math.sin(dist * 0.53 + phase * 1.7);
-      const half = (width / 2) * (1 + 0.22 * Math.sin(dist * 0.17 + phase * 0.6) + 0.1 * Math.sin(dist * 0.61));
+      const endFade = o.taper ? Math.max(0.15, Math.min(1, Math.min(k * step, total - k * step) / 3)) : 1;
+      const half = (width / 2) * endFade * (1 + 0.22 * Math.sin(dist * 0.17 + phase * 0.6) + 0.1 * Math.sin(dist * 0.61));
       const nx = -sm[3];
       const nz = sm[2];
       const cx = sm[0] + nx * wob;

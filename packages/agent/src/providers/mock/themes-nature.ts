@@ -163,11 +163,13 @@ const winter: Theme = {
   radius: 38,
   blurb: 'a snowy valley with a glowing log cabin, snow-capped pines, a frozen pond and a snowman',
   env(b) {
-    b.env({ sky: 'overcast', timeOfDay: 15, weather: 'snow', fog: { color: '#dfe7ef', density: 0.018 }, bloom: 0.8, ambientIntensity: 0.6, ground: { material: { preset: 'snow', color: '#f4f7fb' }, size: 400 } });
+    b.env({ sky: 'overcast', timeOfDay: 15, weather: 'snow', fog: b.realisticNature ? { color: '#dfe7ef', density: 0.006, visibility: 380 } : { color: '#dfe7ef', density: 0.018 }, bloom: 0.8, ambientIntensity: 0.6, ground: { material: { preset: 'snow', color: '#f4f7fb' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {
     const { b } = c;
+    // A snowy valley: snow lying on rolling land, snow-laden spruce woods on the hills.
+    naturalGround(c, { pad: Math.max(18, c.clear + 6), relief: 60, color: '#eef2f6', snow: true, woods: { conifers: 230, broadleaf: 0, birch: 24, scrub: 40, boulders: 30 }, conifer: { color: '#2a4433', height: 15 } });
     if (c.clear < 6) {
       const cabin = b.gen('cabin', 'house', { width: 7, depth: 6, color: '#7a5233', roofColor: '#f2f4f7', trimColor: '#3d2a1a', lights: true, variant: 2 }, [c.x, 0, r2(c.z - 4)], { physics: 'static', footprint: 5, name: 'Log cabin', tags: ['focus'] });
       b.light(cabin, [0, 2, 4], '#ffb86b', 2.5, 12);
@@ -250,7 +252,7 @@ const desert: Theme = {
       b.gen('ruin-wall', 'wall', { length: 6, height: 2, color: '#c9a27a', crenellated: false }, [r2(c.x - 6), 0, r2(c.z - 8)], { yaw: 25, physics: 'static', footprint: 3 });
       b.gen('ruin-statue', 'statue', { height: 3, color: '#d1b48c' }, [r2(c.x + 6), 0, r2(c.z - 7)], { yaw: -20, physics: 'static', footprint: 1.5 });
     }
-    rocks(c, b.realisticNature ? 18 : 8, 6, b.realisticNature ? 44 : 30, '#a0522d', false, [0.8, 2.6]);
+    rocks(c, b.realisticNature ? 18 : 8, 6, b.realisticNature ? 44 : 30, b.realisticNature ? '#c79d76' : '#a0522d', false, [0.8, 2.6]);
     const track = b.track;
     if (b.realisticNature && track) {
       // Along the canyon floor beside the circuit and up the foot of the walls: scrub, dry grass, boulders and cacti in strips
@@ -261,14 +263,14 @@ const desert: Theme = {
           const cx = r2(track.axis(zc) + side * 31);
           b.scatter('desert-scrub', 'shrub', { size: 0.9, detail: 0.5, color: '#8a8a5c' }, 14, [14, CHUNK], [cx, 0, zc], { minSpacing: 2.4, scaleRange: [0.45, 1.1] });
           b.scatter('dry-grass', 'meadow-grass', { color: '#b8a066', size: 0.42 }, 120, [16, CHUNK], [cx, 0, zc], { minSpacing: 0.7, scaleRange: [0.6, 1.3] });
-          b.scatter('scree', 'boulder', { size: 1.4, lichen: 0, color: '#b0603a', variant: 1 }, 7, [12, CHUNK], [r2(cx + side * 5), 0, zc], { minSpacing: 3, scaleRange: [0.4, 1.8] });
+          b.scatter('scree', 'boulder', { size: 1.4, lichen: 0, color: '#c49a72', variant: 1 }, 7, [12, CHUNK], [r2(cx + side * 5), 0, zc], { minSpacing: 3, scaleRange: [0.4, 1.8] });
           if (Math.abs(zc) > 90 || b.chance(0.5)) b.gen('saguaro', 'cactus', { height: r2(b.rand(3.5, 7.5)), arms: b.int(0, 4) }, [r2(cx + b.rand(-4, 4)), 0, r2(zc + b.rand(-9, 9))], { yaw: r2(b.rand(0, 360)), scale: r2(b.rand(0.7, 1.15)), physics: 'static', tags: ['cactus'] });
         }
       }
     } else if (b.realisticNature) {
       scatterBelt(c, 'dry-grass', 'meadow-grass', { color: '#b8a066', size: 0.42 }, 260, 4, 46, { scaleRange: [0.6, 1.3], minSpacing: 0.6 });
       scatterBelt(c, 'desert-scrub', 'shrub', { size: 0.9, detail: 0.5, color: '#8a8a5c' }, 26, 6, 48, { scaleRange: [0.5, 1.2], minSpacing: 2.2 });
-      scatterBelt(c, 'pebbles', 'boulder', { size: 0.5, lichen: 0, color: '#b0754a', variant: 1 }, 40, 3, 40, { scaleRange: [0.3, 1], minSpacing: 1.2 });
+      scatterBelt(c, 'pebbles', 'boulder', { size: 0.5, lichen: 0, color: '#c8a27c', variant: 1 }, 40, 3, 40, { scaleRange: [0.3, 1], minSpacing: 1.2 });
     } else scatterBelt(c, 'dry-grass', 'grass-tuft', { color: '#b59a5b', size: 0.4 }, 30, 4, 34);
     if (c.primary) {
       b.gen('tumbleweed', 'bush', { size: 0.8, color: '#9c7a4f' }, [r2(c.x - 8), 0, r2(c.z + 6)], { behaviors: [{ type: 'wander', params: { radius: 10, speed: 2, pause: 0 } }], name: 'Tumbleweed' });
@@ -326,11 +328,13 @@ const park: Theme = {
   radius: 32,
   blurb: 'a leafy park with a playground slide, a working see-saw, a pond, benches and flower beds',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 11, bloom: 0.5, ground: { material: { preset: 'grass', color: '#5f9a3e' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 11, bloom: 0.5, ...(b.realisticNature ? { fog: { color: '#d3dee8', density: 0.002, visibility: 700 } } : {}), ground: { material: { preset: 'grass', color: '#5f9a3e' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 14] });
   },
   build(c) {
     const { b } = c;
+    // Parkland: a lawn on gently rolling ground with woods round it.
+    naturalGround(c, { pad: Math.max(32, c.clear + 6), relief: 36, woods: { conifers: 40, broadleaf: 160, birch: 40, scrub: 160, boulders: 10 }, broadleafColor: '#5a8a3a' });
     path(b, c.x - 26, c.z + 2, c.x + 26, c.z + 2, 2.4, '#c9b38b');
     path(b, c.x, c.z + 2, c.x, c.z - 24, 2.4, '#c9b38b');
     b.reserve(c.x, c.z + 2, 1.5);
@@ -369,8 +373,9 @@ const park: Theme = {
       if (i % 2 === 0) lamp(b, r2(bx + 3), r2(c.z - 0.2));
     }
     treeRing(c, 14, 14, 30, [{ generator: 'tree-oak', params: { height: 6 } }, { generator: 'tree-oak', params: { height: 7, color: '#6a9f3a' } }]);
-    scatterBelt(c, 'flower-bed', 'flowers', { color: b.pick(['#e84a8a', '#ffd23f', '#9b5de5']) }, 25, 6, 22, { minSpacing: 0.5 });
-    scatterBelt(c, 'shrubs', 'bush', { size: 1 }, 5, 10, 28);
+    scatterBelt(c, 'flower-bed', 'flowers', { color: b.pick(['#e84a8a', '#ffd23f', '#9b5de5']) }, b.realisticNature ? 60 : 25, 6, 22, { minSpacing: 0.5 });
+    scatterBelt(c, 'shrubs', 'bush', { size: 1 }, b.realisticNature ? 10 : 5, 10, 28);
+    if (b.realisticNature) scatterBelt(c, 'lawn', 'meadow-grass', { color: '#7fae4c', size: 0.35 }, 300, 3, 34, { scaleRange: [0.5, 1], minSpacing: 0.4 });
   },
 };
 
@@ -383,11 +388,13 @@ const farm: Theme = {
   radius: 40,
   blurb: 'rolling farmland with windmills, a red barn, fenced crop fields, hay bales and wandering sheep',
   env(b) {
-    b.env({ sky: 'day', timeOfDay: 9.5, fog: { color: '#d8e4c8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#7aa648' }, size: 400 } });
+    b.env({ sky: 'day', timeOfDay: 9.5, fog: b.realisticNature ? { color: '#d8e4c8', density: 0.0025, visibility: 650 } : { color: '#d8e4c8', density: 0.008 }, bloom: 0.5, ground: { material: { preset: 'grass', color: '#7aa648' }, size: 400 } });
     b.player({ mode: 'thirdPerson', spawn: [0, 1, 16] });
   },
   build(c) {
     const { b } = c;
+    // Farmland on rolling ground with hedgerow woods on the hills.
+    naturalGround(c, { pad: Math.max(34, c.clear + 6), relief: 44, color: '#7aa648', woods: { conifers: 30, broadleaf: 150, birch: 20, scrub: 200, boulders: 12 }, broadleafColor: '#557d36' });
     const barnX = r2(c.x - 10);
     const barnZ = r2(c.z - 10);
     if (b.claim(barnX, barnZ, 6)) b.gen('barn', 'house', { width: 9, depth: 7, color: '#a63a2b', roofColor: '#4a3b35', trimColor: '#f1ece2', lights: b.mood.night, variant: 2 }, [barnX, 0, barnZ], { yaw: 10, physics: 'static', name: 'Barn', tags: ['focus'] });
@@ -414,6 +421,11 @@ const farm: Theme = {
     for (let i = 0; i < 5; i++) {
       const p = b.spot(c.x, c.z, Math.max(5, c.clear + 1), 20, 1);
       if (!p) continue;
+      if (b.realisticNature) {
+        // The library's animated sheep (it walks and grazes), not a ball with a head.
+        b.asset('sheep', 'sheep', [p[0], 0, p[1]], { name: 'Sheep', yaw: r2(b.rand(0, 360)), behaviors: [{ type: 'wander', params: { radius: 5, speed: 0.6, pause: 3 } }], tags: ['animal'], fallback: { kind: 'primitive', primitive: 'box', size: [0.6, 0.8, 1.2] } });
+        continue;
+      }
       const sheep = b.prim('sheep', 'sphere', [1.2, 1.2, 1.2], [p[0], 0.7, p[1]], {
         scale: [1.2, 0.85, 0.85],
         name: 'Sheep',
@@ -426,6 +438,7 @@ const farm: Theme = {
     if (b.claim(c.x - 2, c.z - 16, 2.5)) b.gen('tractor', 'car', { length: 3.6, color: '#2e7d32', variant: 1 }, [r2(c.x - 2), 0, r2(c.z - 16)], { yaw: 35, physics: 'static', name: 'Tractor' });
     treeRing(c, 10, 22, 36, [{ generator: 'tree-oak', params: { height: 7 } }]);
     scatterBelt(c, 'wildflowers', 'flowers', { color: '#ffd23f' }, 20, 8, 34);
+    if (b.realisticNature) scatterBelt(c, 'pasture', 'meadow-grass', { color: '#86ae4e', size: 0.5 }, 380, 6, 40, { scaleRange: [0.6, 1.3], minSpacing: 0.35 });
     if (c.primary) {
       backdropMountains(c, 4, '#7d8a6a', 0.85, 120, 22);
       clouds(c, 5);
@@ -468,9 +481,11 @@ const meadow: Theme = {
     const bridgeAt = b.stream ? ([r2(c.x + 10), r2(b.stream.z(c.x + 10))] as const) : null;
     if (bridgeAt && b.stream && c.primary && b.claim(bridgeAt[0], r2(bridgeAt[1] + b.stream.half + 2.8), 1)) b.gen('bridge', 'bridge', { length: r2(b.stream ? b.stream.half * 2 + 7 : 10), width: 3, height: 1.2, color: '#8a8580' }, [bridgeAt[0], 0, bridgeAt[1]], { yaw: 90, physics: 'static', name: 'Stone bridge' });
     else if (!real && b.claim(c.x + 10, c.z - 6, 5)) b.gen('bridge', 'bridge', { length: 10, width: 3, height: 1.5, color: '#8a8580' }, [r2(c.x + 10), 0, r2(c.z - 6)], { yaw: 30, physics: 'static', name: 'Stone bridge' });
-    treeRing(c, 16, 8, 30, [{ generator: 'tree-oak', params: { height: 6 } }, { generator: 'tree-pine', params: { height: 8 } }]);
-    rocks(c, 6, 6, 26, '#8d8a84', true);
-    if (real) cover(c, { grass: '#7aa04a', flowers: ['#e84a8a', '#ffd23f', '#f1efe6'], outer: 40 });
+    const wintry = b.mood.snow || b.envValue('weather') === 'snow';
+    treeRing(c, 16, 8, 30, wintry ? [{ generator: 'tree-pine', params: { height: 8, snow: true } }, { generator: 'tree-pine', params: { height: 6, snow: true } }] : [{ generator: 'tree-oak', params: { height: 6 } }, { generator: 'tree-pine', params: { height: 8 } }]);
+    rocks(c, 6, 6, 26, '#8d8a84', !wintry);
+    if (real && wintry) scatterBelt(c, 'dry-grass', 'meadow-grass', { color: '#a9a487', size: 0.4 }, 90, 4, 36, { scaleRange: [0.5, 1.1], minSpacing: 0.5 });
+    else if (real) cover(c, { grass: '#7aa04a', flowers: ['#e84a8a', '#ffd23f', '#f1efe6'], outer: 40 });
     else {
       scatterBelt(c, 'wildflowers', 'flowers', { color: '#e84a8a' }, 25, 4, 30, { minSpacing: 0.4 });
       scatterBelt(c, 'wildflowers-yellow', 'flowers', { color: '#ffd23f' }, 25, 6, 32, { minSpacing: 0.4 });
