@@ -77,6 +77,45 @@ describe('render loop allocation probe', () => {
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
   });
 
+  it('chase-camera occlusion against a scattered forest (boom rays through tree occluders) allocates nothing per frame', async () => {
+    const { createProcgenGeometrySource } = await import('../src/geometry/procgen-source');
+    const { sync } = makeSync({ source: createProcgenGeometrySource() });
+    await sync.setWorld(createWorld({ entities: { trees: { id: 'trees', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'tree-pine', params: { height: 8 } }, count: 120, area: [90, 90], seed: 3 } } } }));
+    await sync.whenIdle();
+    sync.root.updateMatrixWorld(true);
+    const query = (from: Vector3, to: Vector3): number => {
+      const t = sync.scatterOcclusion(from, to);
+      return t === Number.POSITIVE_INFINITY ? t : t * from.distanceTo(to);
+    };
+    // The forest is dense enough that some booms hit a tree.
+    let hits = 0;
+    for (let i = 0; i < 200; i++) if (query(new Vector3(i * 0.4 - 40, 2, 0), new Vector3(i * 0.4 - 40, 3, 6)) < Infinity) hits++;
+    expect(hits).toBeGreaterThan(0);
+    const rig = new CameraRig(new PerspectiveCamera(), null);
+    // The renderer's form: the answer goes to a typed array (see WorldRenderer.freeDistance).
+    const frac = new Float64Array(1);
+    rig.occlusionSink = (from, to, out) => {
+      sync.scatterOcclusionInto(from, to, frac);
+      out[0] = frac[0]! * from.distanceTo(to);
+    };
+    let t = 0;
+    const target = new Vector3();
+    rig.setMode('follow', (out) => {
+      out.copy(target);
+      return t;
+    });
+    const r = await probeAllocations(
+      () => {
+        t += 0.02;
+        target.set(Math.cos(t) * 30, 0, Math.sin(t) * 30);
+        rig.update(1 / 60);
+      },
+      // The default (long) warm-up: the follow update is large and tiers up late once the occluded branch runs.
+      { iterations: 300, match: RENDER_SRC },
+    );
+    expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
+  });
+
   it('scatter-field and virtual-geometry view planning (moving camera) allocate nothing per frame', async () => {
     const { createProcgenGeometrySource } = await import('../src/geometry/procgen-source');
     const { sync } = makeSync({ source: createProcgenGeometrySource(), fields: { maxInstances: 200_000, triangles: 400_000 }, virtual: { triangles: 300_000, dag: { createWorker: null } } });

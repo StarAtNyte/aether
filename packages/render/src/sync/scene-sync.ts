@@ -78,6 +78,7 @@ import { areaLightsReady, createEntityLight, disposeEntityLight, enforceShadowCa
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { withWaterKind } from './water-surfaces';
+import { OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
 import { setEntityPath } from './property-path';
 import { errorMessage, log } from '../log';
 
@@ -159,6 +160,7 @@ const _q = new Quaternion();
 const _v = new Vector3();
 const _box = new Box3();
 const _box2 = new Box3();
+const _occOut = new Float64Array(1);
 
 function usesGenerator(shape: ShapeSpec, ids: ReadonlySet<string>): boolean {
   if (shape.kind === 'procedural') return ids.has(shape.generator);
@@ -218,6 +220,11 @@ function noRaycast(): void {
   // intentionally empty: scatter entities are picked through their bounds (see SceneSync.pickScatter)
 }
 
+function visibleChain(object: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) if (!o.visible) return false;
+  return true;
+}
+
 function finite3(v: readonly number[], fallback: number): [number, number, number] {
   const f = (x: number | undefined): number => (typeof x === 'number' && Number.isFinite(x) ? x : fallback);
   return [f(v[0]), f(v[1]), f(v[2])];
@@ -234,6 +241,11 @@ export class SceneSync {
   private readonly inflight = new Set<Promise<void>>();
   private readonly warnings = new Map<EntityId, string>();
   private readonly surfaceGrids = new Map<EntityId, { stamp: string; grid: HeightGrid | null }>();
+  /** Coarse view occluders of tall scatter layers (forests), which are never raycast per instance (see `occluders.ts`). */
+  private readonly occluders = new Map<EntityNode, OccluderGrid>();
+  /** `occluders` as parallel arrays: iterating a Map allocates an entry per step, and this runs per boom ray. */
+  private occluderNodes: EntityNode[] = [];
+  private occluderGrids: OccluderGrid[] = [];
   /** Surface entity id → ids of scatters placed on it (O(1) dependent lookup). */
   private readonly dependents = new Map<EntityId, Set<EntityId>>();
   private readonly variant: MaterialVariant;
@@ -734,6 +746,42 @@ export class SceneSync {
    * Scatter entity whose world bounds the ray hits first (scatter instances
    * are excluded from mesh raycasts). Returns the hit distance and id, or null.
    */
+  /**
+   * Fraction t ∈ [0, 1] of the world segment `from`→`to` where it first enters a tall scatter instance (a scattered
+   * tree's trunk or crown), or Infinity, written to `out[0]`. Hidden layers are skipped. Allocation-free (no double
+   * is returned or passed across a call): the chase camera calls it for every boom ray, every frame.
+   */
+  scatterOcclusionInto(from: Vector3, to: Vector3, out: Float64Array): void {
+    out[0] = Number.POSITIVE_INFINITY;
+    const nodes = this.occluderNodes;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i] as EntityNode;
+      const grid = this.occluderGrids[i] as OccluderGrid;
+      if (!visibleChain(node.object)) continue;
+      node.content.updateWorldMatrix(true, false);
+      grid.segmentEntryWorld(node.content.matrixWorld.elements, from, to);
+      if (grid.entry[0]! < out[0]!) out[0] = grid.entry[0]!;
+    }
+  }
+
+  /** {@link scatterOcclusionInto} returning the fraction (tests, one-off queries). */
+  scatterOcclusion(from: Vector3, to: Vector3): number {
+    this.scatterOcclusionInto(from, to, _occOut);
+    return _occOut[0]!;
+  }
+
+  private setOccluders(node: EntityNode, poses: Float32Array, count: number, keyed: KeyedOutput): void {
+    const grid = OccluderGrid.fromScatter(poses, count, partBounds(keyed.output.parts));
+    if (grid) this.occluders.set(node, grid);
+    else this.occluders.delete(node);
+    this.indexOccluders();
+  }
+
+  private indexOccluders(): void {
+    this.occluderNodes = [...this.occluders.keys()];
+    this.occluderGrids = [...this.occluders.values()];
+  }
+
   pickScatter(ray: Ray): { id: EntityId; distance: number } | null {
     let best: { id: EntityId; distance: number } | null = null;
     for (const node of this.nodes.values()) {
@@ -1348,6 +1396,7 @@ export class SceneSync {
     const lift = shape.of.kind === 'primitive' ? primitiveLift(shape.of.primitive, shape.of.size) : 0;
     const sampler = shape.onSurface ? this.surfaceSampler(node, shape.onSurface) : undefined;
     const matrices = composeScatterMatrices(placements, lift, sampler);
+    this.setOccluders(node, posesFromMatrices(matrices, placements.count), placements.count, keyed);
     const attr = new InstancedBufferAttribute(matrices, 16);
     attr.setUsage(StaticDrawUsage);
     node.instanceMatrix = attr;
@@ -1376,7 +1425,9 @@ export class SceneSync {
     const lift = shape.of.kind === 'primitive' ? primitiveLift(shape.of.primitive, shape.of.size) : 0;
     const sampler = shape.onSurface ? this.surfaceSampler(node, shape.onSurface) : undefined;
     const radius = Math.max(1e-3, outputRadius(keyed.output));
-    const chunks = buildChunks(composeScatterPacked(placements, lift, sampler), placements.count, radius);
+    const packed = composeScatterPacked(placements, lift, sampler);
+    this.setOccluders(node, packed, placements.count, plain);
+    const chunks = buildChunks(packed, placements.count, radius);
     const chain = this.lodChains.get(keyed.key, keyed.output);
     const parts = keyed.output.parts;
     node.keyed = keyed;
@@ -1697,6 +1748,7 @@ export class SceneSync {
     this.totalScatterTriangles -= node.scatterTriangles;
     node.scatterTriangles = 0;
     node.instanceMatrix = null;
+    if (this.occluders.delete(node)) this.indexOccluders();
     this.surfaceGrids.delete(node.id);
     return retired;
   }

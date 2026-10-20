@@ -327,6 +327,8 @@ const _corner = new Vector3();
 const _one = new Box3();
 const _occDir = new Vector3();
 const _occHits: Intersection[] = [];
+/** Scatter occluder answer of {@link WorldRenderer.freeDistance}. */
+const _occT = new Float64Array(1);
 const _snapHits: Intersection[] = [];
 const _snapPoint = new Vector3();
 const _snapVertex = new Vector3();
@@ -601,7 +603,7 @@ export class WorldRenderer {
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
     this.orbit = controls;
-    this.rig.occlusion = (from, to) => this.freeDistance(from, to);
+    this.rig.occlusionSink = (from, to, out) => this.freeDistance(from, to, out);
     this.generatorCache = opts.geometrySource ? null : new GeneratorCache(256, this.budget.generatorCacheBytes);
     // Built-in generators run in the compute worker (heavy sculptures never block the page).
     this.compute = !opts.geometrySource && typeof Worker !== 'undefined' && opts.workerGeneration !== false ? new ComputeClient({ idleTimeoutMs: 30_000 }) : null;
@@ -1934,14 +1936,18 @@ export class WorldRenderer {
 
   /**
    * Free distance from `from` toward `to` before a visible, opaque document
-   * mesh (Infinity when clear). Scatter layers are not raycast (they are
-   * thin decoration) and see-through materials never block the view. Reuses
-   * one hit list; three allocates hit records only when something is hit.
+   * mesh, written to `out[0]` (Infinity when clear). Scatter instances are not raycast one by
+   * one; tall ones (a scattered forest) block through their coarse
+   * occluder boxes (`SceneSync.scatterOcclusion`), so the chase camera
+   * pulls in instead of entering a crown. See-through materials never block
+   * the view. Reuses one hit list; three allocates hit records only when
+   * something is hit.
    */
-  private freeDistance(from: Vector3, to: Vector3): number {
+  private freeDistance(from: Vector3, to: Vector3, out: Float64Array): void {
+    out[0] = Number.POSITIVE_INFINITY;
     _occDir.subVectors(to, from);
     const length = _occDir.length();
-    if (!(length > 1e-4)) return Number.POSITIVE_INFINITY;
+    if (!(length > 1e-4)) return;
     _occDir.multiplyScalar(1 / length);
     const ray = this.occlusionRay;
     ray.set(from, _occDir);
@@ -1957,7 +1963,10 @@ export class WorldRenderer {
       break;
     }
     _occHits.length = 0;
-    return free;
+    out[0] = free;
+    this.sync.scatterOcclusionInto(from, to, _occT);
+    const d = _occT[0]! * length;
+    if (d >= OCCLUSION_NEAR && d < out[0]!) out[0] = d;
   }
 
   /**
