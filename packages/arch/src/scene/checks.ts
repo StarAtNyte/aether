@@ -213,12 +213,16 @@ export function doorwayFindings(scene: Scene): Finding[] {
   return out;
 }
 
+/** Height (m) from which a hanging piece leaves the floor under it free to stand and walk on. */
+const HEAD_ROOM = 2.0;
+
 /** Free depth in front of a piece (up to `want`), measured against the room and the other pieces. */
 export function freeFrontDepth(scene: Scene, it: SceneItem, want: number): number {
   const room = roomOf(scene, it.room);
   if (!room) return want;
   const f = rotateYaw(0, 1, it.yaw);
-  const others = solids(scene).filter((o) => o !== it && o.room === it.room && !tucksUnder(it.kind, o.kind) && o.y1 > 0.15);
+  // A ceiling light (anything above head height) takes no floor: only what stands in the way counts.
+  const others = solids(scene).filter((o) => o !== it && o.room === it.room && !tucksUnder(it.kind, o.kind) && o.y1 > 0.15 && o.y0 < HEAD_ROOM);
   let free = 0;
   for (let s = 0.05; s <= want + 1e-9; s += 0.05) {
     const centre: P2 = [it.pos[0] + f[0] * (it.size[2] / 2 + s / 2), it.pos[2] + f[1] * (it.size[2] / 2 + s / 2)];
