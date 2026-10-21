@@ -4842,3 +4842,148 @@ once under machine load and passed alone and on a rerun); `showcase:bake --check
 side by side. The hedge core is black in shade up close. Close-up cards dissolve rather than shrink (no per-card centre
 in the vertex data). The interior warmth is one global constant, not derived from the rendered colour. The captures are
 iGPU WebGL2 and low-resolution studio refinement, so grain in the high tier is the iGPU's.
+
+## Load and runtime performance
+
+Why opening a world was slow, what was changed, and the numbers. Everything below was measured with
+`npm run e2e:load-perf` (new: `tests/e2e/load-perf.e2e.ts`) on the production build of `apps/studio`, headless Chromium
+(Playwright build 1248) on this machine's integrated GPU (Intel UHD 770, WebGL2 over ANGLE and Mesa; `GEN_GPU=intel`
+with `navigator.gpu` hidden, otherwise the studio picks a software WebGPU adapter), 1280 x 720, device pixel ratio 1,
+cold HTTP cache each run, CPU throttle through CDP `Emulation.setCPUThrottlingRate`. The 4090 was not used. The
+machine was shared (load average 5 to 9 during the runs that are compared, up to 40 during exploration), so single
+numbers carry about +-15 %; the changes below are larger than that where claimed. "Open" is the time from navigation
+until the load screen is gone and the scene is synced; "blocking" is the sum of main-thread long-task time beyond 50 ms
+over the same load (the page is frozen for that long); "frame" is the median interval of a slow camera orbit with the
+automatic tier and adaptive resolution untouched.
+
+**Dev server versus production.** The slowness over the tunnel is partly the Vite dev server: home page 369 requests and
+17.1 MB (16.7 MB of unbundled, unminified JS) against 53 requests and 2.55 MB raw (1.15 MB on the wire from Vercel, 0.66 MB
+of it JS) for the build; Highland Trail 757 requests and 54.6 MB against 148 requests and 19.4 MB raw. Judge load times
+from `npm run build` and `vite preview` (or the hosted site), not from `vite dev`.
+
+**The build itself** (before any change): `dist` is 164 MB, of which `assets/lib` 130 MB (`k/` KTX2 twins 68 MB, `m/` models
+31 MB, `c/` characters 13 MB, `h/` HDRIs 7.4 MB, `x/` PBR JPEGs 6.1 MB, `t/` 3.1 MB), `blocks` 7.3 MB, `templates` 7.1 MB.
+Entry chunks are small and the heavy ones are lazy: the three.js chunks (985 KB, 279 KB brotli) load when the editor
+opens, Rapier's 3.1 MB wasm only when Play starts, the 6.1 MB WebLLM runtime only when chosen, the KTX2 transcoder
+(0.5 MB) with the first model that has a twin. Nothing heavy blocks the home page. The module preload list is 26 chunks.
+Vercel serves `/assets/*` immutable and brotli-compressed (GLB, HDR and wasm included).
+
+**What was slow (found by CPU profile and a patched `linkProgram` / `getProgramParameter`).**
+1. *Shader links.* Highland Trail linked 174 programs, on the main thread, one at a time, on first draw: 5 to 12 s of the
+   page frozen inside `getProgramParameter(LINK_STATUS)` (half of the whole load). Causes: (a) three reads the matrices of a
+   small `InstancedMesh` and the bones of a `SkinnedMesh` from uniform blocks whose array length and node id are written into
+   the shader source, so every instanced mesh, every animal and every character was a program of its own (55 identical-
+   modulo-ids programs); (b) the environment map arrived after the first frames and re-keyed, so recompiled, every material;
+   (c) the first draws created static batches, scatter fields, virtual-geometry stand-ins and the post chain, each with a
+   program, one synchronous link at a time; (d) a lit program is 50 to 115 KB of straight-line GLSL (2118 lines of `main`
+   in the biggest), because the node graph is inlined, and the anti-tile, paint-mottle, ground-detail and layered-terrain
+   lookups are a large share of it.
+2. *Bytes.* Character bodies loaded their KTX2 twin (3 MB each) and then the original WebP file as well, because the tint
+   is baked from the original: 10 MB for three people in Highland Trail, 36 MB of GLB in Kart Canyon.
+3. *Per-frame CPU.* three's shadow pass copies each caster's `alphaTest` onto one override material, and every switch
+   between alpha-tested and plain casters bumps that material's version, which makes three recompute the program key of
+   every following object (`customProgramCacheKey` walks the node graph): 21 700 key computations per 20 frames on a house,
+   about 20 % of a frame. Three sun cascades also draw the casters three times (1100 draw calls on a house).
+4. *Headers.* `/basis`, `/blocks`, `/foliage`, `/palette`, `/templates` were `max-age=0, must-revalidate`.
+5. *Weak machines.* The automatic tier followed the GPU class only: a four-core laptop with an integrated GPU got the
+   medium tier like a desktop with the same chip.
+
+**What changed** (all on `main`, one commit each).
+- `gpu/backend.ts`: instance matrices and skeleton bones are read through attributes and a bone texture (the uniform
+  block limit seen by three's node builder is 0). 174 links down to 59 to 66 on Highland Trail; identical rendering.
+- `world-renderer.ts`: the first world (and any replacement adding 8 or more entities) is not drawn until its programs
+  are linked: the environment map first (`HdriController.settled`), then one representative per material, geometry layout
+  and object kind through `compileAsync` (it walks every render item and yields after each, so the whole list is too slow),
+  with the batches, fields, virtual stand-ins and the post chain built first. The links run on the driver's threads: the main thread no
+  longer blocks (about 55 ms in `getProgramParameter` over a house load, 5.2 s before). Later arrivals (models, people) link
+  in rounds of at most 2.5 s with the draws held, never inside a draw. The load screen says what it waits for
+  ("Building the world", "Loading the sky", "Preparing shaders"; names, not a made-up percentage) and only the first world
+  reports. Software rasterisers keep the old path. Frames are never held longer than 20 s.
+- `render-order.ts`: alpha-tested opaque items draw last, so the shadow pass switches once (version bumps 4653 to 66 per 20
+  frames).
+- Medium tier: one fitted sun shadow map, cascades for high, ultra and stills (a house: 1100 draw calls and 22.6 ms down
+  to 614 and 14.3 ms).
+- Characters load their WebP files, not the twin (10 MB down to 2.3 MB of character files in Highland Trail, 36 MB down to 12 MB of
+  GLB in Kart Canyon).
+- `vercel.json`: a day plus a week of stale-while-revalidate for `/basis`, `/blocks`, `/foliage`, `/palette`; five minutes plus a day for `/templates`.
+- `gpu/performance.ts`: the automatic tier and pixel ratio follow cores and memory as well as the GPU class (two cores or 2 GB:
+  low; four cores or 4 GB: low on anything but a discrete GPU, medium on one; pixel ratio 1), the anti-tile, ground-detail and
+  layered-terrain lookups are dropped when the automatic tier is low (shader source of a house 2.5 MB down to 0.75 MB,
+  links 51 to 32), and a governor steps down a ladder while the frame rate stays slow: after adaptive resolution has
+  fallen to 0.72 (or at once under 12 fps) it gives up, in order, the baked room light, cascades, the post chain one tier,
+  the post chain, and 3/4 of the particles (each step skipped when it would change nothing). It never goes back up (a step
+  recompiles shaders), it is off when the user picked a tier, an explicit tier restores everything, and the player gets a toast.
+  Thresholds: p90 frame time under 20 fps for 6 s, or under 12 fps for 1.5 s.
+
+**Results** (iGPU, WebGL2, 720p, cold cache; before = `582e239`, after = this branch; local static server without
+compression, so bytes are raw).
+
+| world, throttle | open before | open after | blocking before | blocking after | frame before | frame after |
+|---|---:|---:|---:|---:|---:|---:|
+| Highland Trail 1x | 12.7 s | 12.3 s | 14.6 s | 5.3 s | 20.4 ms | 20.7 ms |
+| Casa del Patio 1x | 10.3 s | 11.1 s | 10.9 s | 5.2 s | 18.3 ms | 10.6 ms |
+| Kart Canyon 1x | 21.0 s | 6.8 s | 20.5 s | 3.4 s | 13.2 ms | 10.8 ms |
+| Highland Trail 4x | 20.0 s | 13.0 s | 22.7 s | 5.7 s | 78 ms | 89 ms (steps to low) |
+| Casa del Patio 4x | 15.2 s | 14.0 s | 16.7 s | 5.4 s | 77 ms | 49 ms |
+| Kart Canyon 4x | 32.7 s | 10.3 s | 31.7 s | 12.5 s | 63 ms | 47 ms |
+| Highland Trail 6x | 25.4 s | 17.0 s | 28.8 s | 8.6 s | 114 ms | 127 ms (low) |
+| Casa del Patio 6x | 20.1 s | 17.9 s | 22.8 s | 8.8 s | 112 ms | 74 ms (low) |
+| Kart Canyon 6x | 41.1 s | 28.9 s | 40.5 s | 21.4 s | 110 ms | 80 ms (low) |
+
+Weak machine (the page told it has 4 cores and 4 GB, so the automatic tier is low from the start; before = the table above):
+
+| world, throttle | open | blocking | frame | links | bytes |
+|---|---:|---:|---:|---:|---:|
+| Highland Trail 1x | 8.0 s | 1.8 s | 17.9 ms | 37 | 18.8 MB |
+| Casa del Patio 1x | 6.8 s | 1.4 s | 8.9 ms | 32 | 16.5 MB |
+| Kart Canyon 1x | 6.5 s | 2.3 s | 10.2 ms | not logged | 21.1 MB |
+| Highland Trail 4x | 7.8 s | 2.6 s | 76 ms (steps to ladder 5) | | |
+| Casa del Patio 4x | 7.0 s | 3.3 s | 39 ms | | |
+| Kart Canyon 4x | 8.6 s | 8.1 s | 41 ms | | |
+| Highland Trail 6x | 10.9 s | 4.3 s | measured while a late round held the draws | | |
+| Casa del Patio 6x | 9.4 s | 3.9 s | 60 ms | | |
+| Kart Canyon 6x | 17.2 s | 16.0 s | 71 ms (ladder 5) | | |
+
+Bytes before to after, local (raw): Highland Trail 26.8 MB to 19.4 MB, Casa 24.9 to 17.4, Kart Canyon 44.5 to 22.0 (the weak
+path adds -0.6 to -1 MB of PBR JPEGs it no longer needs). Hosted (Vercel, brotli; measured from this machine, whose link to
+Vercel is slow, about 150 KB/s, so wall times there are mostly the network): home page first button 0.9 to 1.2 s, FCP 1.1 to 2.0 s,
+53 requests, 1.15 MB (JS 0.66 MB); Highland Trail 11.1 MB on the wire (images 3.7, GLB 4.4, JS 1.7, HDR 1.0, wasm 0.24), shader
+stalls 1.7 s against about 12 s of `getProgramParameter` before.
+
+Link and shader numbers (Highland Trail, 1x, same build): programs linked 174 to 59; time in `getProgramParameter` 10.6 to 12.7 s
+down to 1.7 s (house: 5.2 s down to 1.1 s); shader source handed to the driver 2.7 MB to 1.9 MB (house 2.5 to 2.5 MB at
+medium, 0.75 MB at low). What still links synchronously after the first frame: a campfire and the river's water shader
+(0.4 to 0.6 s each), skinned fins, the bloom high-pass, small shadow-depth programs.
+
+**Honest reading.** Time to open did not change on the medium tier of this machine for the two worlds with the most models
+(Highland Trail, Casa): the link time moved off the main thread (the page stays responsive, the load text animates, blocking
+fell 50 to 85 %) but the wall time of the parallel links on Mesa is about the same as the serial one, and the first frame now
+waits for the build. Kart Canyon opens three times faster (it lost 14 MB of character files and 20 s of serial links). Under
+CPU throttle the saving is large (25 to 70 % less open time, 55 to 80 % less blocking). The weak-machine path halves the open time
+and the frame time. At 6x the governor still steps down inside the measurement window, so a frame number there is partly a
+number taken while it steps.
+
+**Not done, and why.**
+- The `x/` PBR JPEGs (69 files, 6.1 MB; 3.2 to 3.7 MB per world, 512 px at about 100 to 150 KB) and the 1 to 1.4 MB sky HDR
+  are now the largest bytes after models. 256 px variants for the low tier, or WebP, would save about 2 MB a world, but they
+  change content hashes and the catalog, so they belong in an `assets:build` run with the sources.
+- The motion packs are 2.2 MB each (0.65 MB brotli) for every gender in the world.
+- Light-volume cache per world hash: the bake already runs in a worker and costs the main thread about 30 ms
+  (`collectTraceInput`), so a cache would only remove the pop-in of the room light on a revisit.
+- WebGPU on the Intel GPU was not measurable here (no Vulkan adapter for it in headless Chromium); the WebGL2 numbers are what a
+  browser without WebGPU gets. On WebGPU pipelines are created asynchronously by the browser, so the link stalls above do
+  not apply there, but the program count, the per-frame key cost and the draw calls do. Firefox and Safari's
+  `compileAsync` yields through `requestAnimationFrame` after each item (Chromium uses `scheduler.yield`), which the
+  representative list keeps short, but it was not timed there.
+- Governor steps are one-way; recovering after a slow patch would need shader compiles to be hidden.
+- `npm run e2e` (studio.e2e) fails on this machine before and after for unrelated reasons (before: verification ran on the
+  main thread; after: a 337 ms main-thread script during verification against a 200 ms limit). `apps/studio/test/starterWorld`
+  failed on an old checkout and passes now.
+- Not wired: the tier chosen by the player in Settings does not rebuild the material detail flags (they are set when the
+  renderer starts).
+
+**Verification.** `tsc --noEmit` 0 errors; vitest for `packages/render`, `apps/studio`, `apps/server`: 1626 tests (new:
+`performance`, `render-order`, `hdri-settled`, `model-loader-characters`, updated `sun-shadows`; `assets.test.ts` "allocates
+nothing" failed once under load and passes alone); `npm run smoke` 34/34; `showcase:bake --check` up to date; `bench:quick`
+checks passed. Reproduce: `npm run build`, then `GEN_GPU=intel npm run e2e:load-perf -- --throttle=1,4,6
+--worlds=highland-trail,casa-patio,kart-canyon [--hw=4,4] [--profile] [--url=https://…]`.
