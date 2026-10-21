@@ -209,6 +209,47 @@ describe('NPCs on two floors', () => {
     expect(after).toBeLessThan(before);
   }, 120_000);
 
+  it('a resident lets the player on the stair go first, then takes it', async () => {
+    const probe = house();
+    const link = stairLinks(probe)[0];
+    if (!link) throw new Error('no stair');
+    const foot = [link.line[0] as number, link.line[2] as number] as const;
+    const top = [link.line[(link.n - 1) * 3] as number, link.line[(link.n - 1) * 3 + 2] as number] as const;
+    const walker = {
+      id: 'walker',
+      shape: { kind: 'primitive', primitive: 'capsule', size: [0.56, 1.7, 0.56] },
+      transform: { position: [foot[0] + 1.5, 1.02, foot[1] - 1] },
+      physics: { body: 'kinematic' },
+      tags: ['npc'],
+      npc: { role: 'resident', faction: 'household', radius: 0.3, speed: 1, routine: [{ at: [top[0] + 3, UPPER + 0.15, top[1]], stay: 60 }] },
+    } as unknown as EntityInput;
+    const world = house(undefined, [walker]);
+    await ensureAssetCatalog(world);
+    const session = await Session.create(world, { trace: false });
+    const pt = new Float32Array(5);
+    pointAlong(link, link.length * 0.5, 1, pt);
+    // The player stands halfway up: the walker comes to the foot and waits there.
+    let onStairWhilePlayer = false;
+    for (let i = 0; i < 60 * 5; i++) {
+      session.character.teleport([pt[0] as number, (pt[1] as number) + 0.02, pt[2] as number]);
+      session.tick({ forward: 0, right: 0, jump: false, yawDeg: 0 });
+      if (session.runtime.npcs.info('walker')?.stair) onStairWhilePlayer = true;
+    }
+    expect(onStairWhilePlayer).toBe(false);
+    const waiting = session.runtime.npcs.info('walker');
+    expect(Math.hypot((waiting?.x ?? 0) - foot[0], (waiting?.z ?? 0) - foot[1])).toBeLessThan(1.2);
+    // The player goes on up and away: the walker follows its day upstairs.
+    let up = false;
+    for (let i = 0; i < 60 * 15 && !up; i++) {
+      session.character.teleport([12, UPPER + 0.15, 6]);
+      session.tick({ forward: 0, right: 0, jump: false, yawDeg: 0 });
+      const w = session.runtime.npcs.info('walker');
+      if (w && w.layer === 1 && !w.stair) up = true;
+    }
+    session.dispose();
+    expect(up).toBe(true);
+  }, 120_000);
+
   it('replays identically: the same world and seed give the same people in the same places', async () => {
     const run = async (): Promise<NpcInfo[]> => {
       const { infos, session } = await simulate(house(3), 90);

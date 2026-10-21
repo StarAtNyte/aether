@@ -99,6 +99,10 @@ export class NpcSystem implements DialogueHost {
   // --- noise / player tracking --------------------------------------------------------
   private px = Number.NaN;
   private pz = Number.NaN;
+  /** The player's feet this tick (NaN without a player): NPCs make way for them on stairs. */
+  playerX = Number.NaN;
+  playerY = Number.NaN;
+  playerZ = Number.NaN;
   private noise = 0;
   private hourTick = -1;
   private hourVal = 12;
@@ -558,8 +562,12 @@ export class NpcSystem implements DialogueHost {
     const pp = pid !== undefined ? env.positionOf(pid) : undefined;
     if (!pp) {
       this.noise = 0;
+      this.playerX = this.playerY = this.playerZ = Number.NaN;
       return;
     }
+    this.playerX = pp[0];
+    this.playerY = pp[1];
+    this.playerZ = pp[2];
     if (!Number.isNaN(this.px) && dt > 1e-6) {
       const speed = hyp(pp[0] - this.px, pp[2] - this.pz) / dt;
       // Relative to the player's top speed: full pace is loud, a sneak (half pace) is quiet, standing still is silent.

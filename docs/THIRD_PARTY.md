@@ -642,6 +642,18 @@ PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
   encoder; the encoder was written for Aether from ISO/IEC 18004.
 - `@sparkjsdev/spark` (MIT) was evaluated from its package metadata only
   (`experiments/gaussian-splats`) and is not installed.
+- [Yuka](https://github.com/Mugen87/yuka) (MIT, © Mugen87) was read for its
+  steering behaviours (arrive, wander, separation, cohesion, alignment); the
+  formulas are Reynolds' and Buckland's, rewritten in
+  `packages/logic/src/npc/steering.ts` on Aether's seeded random stream (Yuka's
+  wander draws from `Math.random`). Not installed; no code copied.
+- `navcat` 0.4.1 (MIT, © 2025 Isaac Mason; depends on `mathcat` 0.0.12, MIT)
+  was evaluated for multi-floor NPC navigation from its npm package: 2.2 MB
+  unpacked (534 kB main bundle), last release 2026-05-06, 0.x. It builds a
+  navigation mesh from triangle soup, which the logic runtime does not have (it
+  sees the document and collider bounds), and its queries return fresh objects
+  and arrays. Not installed: the existing grid was extended to floors linked by
+  stairs instead (ARCHITECTURE section 37).
 
 **Published algorithms and specifications followed.**
 
@@ -652,7 +664,7 @@ PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
 | Studio render | three.js `GTAONode` (after Jimenez et al., *Practical Real-Time Strategies for Accurate Indirect Occlusion*, 2016) and `TRAANode`, part of the `three` dependency; the outdoor atmosphere is the single-scattering integral of Nishita et al. (1993) with published Rayleigh, Mie and ozone coefficients (physical constants) |
 | Software renderer and PNG encoder of `aether mcp` | Edge-function rasterisation with perspective-correct barycentrics, shadow mapping with percentage-closer filtering, Blinn-Phong, the Narkowicz ACES filmic fit; PNG on `node:zlib` |
 | Publishing | ISO/IEC 18004 (QR Code Model 2); ISO/IEC 14496-12 (MP4) and "Opus in ISOBMFF"; the Matroska / WebM element specification; RFC 7845 (Opus identification header); the PDF 1.4 reference (base-14 Helvetica, WinAnsi) |
-| Characters and the playtest bot | A* search (Hart, Nilsson and Raphael, 1968) with an octile heuristic; Dijkstra on typed arrays with a binary heap; supercover grid walk of Amanatides and Woo (1987) for line of sight; separation steering after Reynolds (1999); string pulling of grid paths by greedy visibility. The bot drives Rapier's KinematicCharacterController through `@aether/physics` |
+| Characters and the playtest bot | A* search (Hart, Nilsson and Raphael, 1968) with an octile heuristic; Dijkstra on typed arrays with a binary heap; supercover grid walk of Amanatides and Woo (1987) for line of sight; separation steering after Reynolds (1999); string pulling of grid paths by greedy visibility; floors of a building linked by stairs, routes chosen by Dijkstra over the stairs' ends and the grids' connected regions; arrive, wander and flocking (cohesion, alignment) after Reynolds (1999). The bot drives Rapier's KinematicCharacterController through `@aether/physics` |
 | Retargeting (`packages/assets/src/characters/retarget.ts`) | World-space delta method on quaternions |
 | Room-from-photo comparison | Colour histogram overlap, SSIM, Sobel edge correlation, median-cut palette |
 | Replay proofs (`packages/verifier`) | SHA-256 per FIPS 180-4 (in-repo implementation, checked against `node:crypto` and the published vectors); Ed25519 signatures through Web Crypto |

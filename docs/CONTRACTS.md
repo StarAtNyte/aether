@@ -2167,10 +2167,16 @@ NpcSpec = {
   perception: { sight 14, fov 110°, hearing 7, memory 6 s, alert 0 }      // alert = radius in which allies learn of a foe
   attack?: { range 1.7, damage 12, cooldown 1.1 }, fleeAt? (0..1), leash (40 m)
   waypoints: Vec3[] ≤ 32, patrol: { mode: loop|pingpong|random, wait 1.5 }, wander (0 m)
+  routine?: NpcRoutineStop[] ≤ 12      // a day: idle NPCs walk it (across floors by the stairs) instead of wandering home
+  flock?: 0..1                         // cohesion + alignment with nearby NPCs of its faction on its floor (herds, packs)
+  roam?: boolean                       // idle wandering as a steering wander instead of spot to spot
   activeHours?: [from, to] (hours; rests outside, may wrap midnight), follow (false), carries: slug[] ≤ 8
   talkRange (2.8 m), dialogue?: Dialogue, chat?: NpcChat, barks?: { spot, lose, flee, hurt, alert, idle: string[] ≤ 6 }
   transitions: NpcTransition[] ≤ 24                                         // extra graph edges, win ties
 }
+NpcRoutineStop = { at: Vec3 (y = the floor it stands on), stay 0..3600 s (30), hours?: [from, to], wander 0..20 m (0.6), name? ≤ 40 }
+                 // a stop with hours is where it is in those hours; the others are visited in turn
+// In a world with stairs, the y of waypoints and routine stops picks the floor (the floor under (x, z) closest to y).
 NpcArchetype = villager | guard | merchant | predator | prey | follower | sentinel
 NpcMode      = idle | patrol | investigate | chase | flee | attack | trade | talk | follow
 NpcTransition = { from: NpcMode | '*' ('*'), to: NpcMode, when: NpcCond, priority -100..100 (50), say? ≤ 120 }
@@ -2207,7 +2213,16 @@ NpcSystem.startDialogue(id) / choose(i) / advance() / endDialogue()      // poin
 NpcSystem.damage(id, n) / info(id) / infos() / count / chatContext() / freeReply(text) / reset() / invalidate()
 analyzeNpcs(world, { target?, bounds? }) → { errors, warnings, npcs }    // static checks used by the `npcs` test
 NavGrid.build(obstacles, opts) / findPath / lineClear / lineOfSight      // A* over the walkable floor, preallocated, bounded
-buildNavFor(world, { refY, radius, height, points }, bounds?), collectObstacles(...)
+buildNavFor(world, { refY, radius, height, points, pad?, cell?, step? }, bounds?), collectObstacles(...)
+NavGrid.blockPolygon(poly, inflate) / components() / regionAt(x, z) / passable(x, z) / lineClearTight(...)   // tight = squeeze mask (≤ 0.15 m)
+NavLayers.build(world, { radius, height, points: {x,y,z}[], groundPad? }, bounds?) → NavLayers | null   // null: no buildings
+  .grids / .heights / .links / .lower / .upper; .levelAt(x, y, z); .stairAt(x, y, z); .aimFor(x, y, z, out[level, x, z])
+  .route(from, x, z, to, gx, gz, out: NavRoute) → boolean            // NavRoute.steps[0..n): +(i+1) up stair i, −(i+1) down
+stairLinks(world) → StairLink[] ≤ 16    // { id, line (x,y,z per point, feet on the treads), n, cum, length, y0, y1, footprint, halfWidth }
+pointAlong(link, u, dir ±1, out[x, y, z, hx, hz])
+arriveSpeed(dist, max, min?, gain?) · wanderDirection(state, random, dt, hx, hz, out) · separationPush · flockReset/flockAdd/flockSteer
+NpcInfo += { layer, y, stair: entity id | null }
+RuntimeEntity.npcHoldUntil              // a key-operated door held open by an NPC walking through (runtime only, never state)
 LogicHost (optional, additive): getBounds(id), getColliderBounds(id), groundHeight(x, z, fromY, exclude?)
 ```
 
@@ -2227,6 +2242,13 @@ LogicHost (optional, additive): getBounds(id), getColliderBounds(id), groundHeig
   for `memory` seconds at their last known position; allies within `alert` are
   told. Fear: any entity tagged with a `fears` tag within `fearRange` (a flame
   child of a torch carrier burns where its carrier stands).
+- **Floors and stairs.** In a world with buildings (`arch-wall` or `arch-stair`
+  entities) the grids are layered (ARCHITECTURE section 37): a 0.25 m grid per
+  floor level (bodies kept 0.3 m clear, steps ≤ 0.3 m), stairs as links along
+  their walking line, routes across floors, a floor between foes blocks sight
+  and reach; NPCs open key-operated doors (`trigger: "key"`) as they pass and
+  those doors are not walls on their grids. Worlds without buildings keep the
+  single-level grids below unchanged.
 - **Navigation.** One grid per (floor level, body radius, body height), cell
   0.5 m (larger for huge areas, ≤ 320 cells per axis), built lazily from the
   document: primitives exactly, generated shapes from per-collider bounds when the

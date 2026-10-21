@@ -191,10 +191,7 @@ export class NavLayers {
     return best;
   }
 
-  /**
-   * The stair a feet position stands on (inside its footprint, between its floors), or −1. `nearTop` (out) tells
-   * which end is closer by height.
-   */
+  /** The stair a feet position stands on (inside its footprint, between its floors), or −1. */
   stairAt(x: number, y: number, z: number): number {
     for (let i = 0; i < this.links.length; i++) {
       const l = this.links[i] as StairLink;

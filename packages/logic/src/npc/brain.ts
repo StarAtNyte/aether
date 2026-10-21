@@ -39,6 +39,10 @@ const STAIR_PACE = 0.75;
 const STAIR_KEEP_RIGHT = 0.2;
 /** Seconds after leaving a stair during which an NPC may walk out of blocked cells (the line's ends are close to the stairwell). */
 const STAIR_EXIT_GRACE = 1.5;
+/** An NPC waits this long at most for the player to clear a stair (s), then goes on (characters pass through each other). */
+const STAIR_YIELD_MAX = 6;
+/** How close ahead on a stair the player makes an NPC stop (m). */
+const STAIR_YIELD_AHEAD = 1.1;
 
 /** Animation hints published on `state.npcAnim`. */
 type Anim = 'idle' | 'walk' | 'run' | 'attack' | 'talk' | 'hurt' | 'dead';
@@ -106,6 +110,7 @@ export class NpcBrain implements BehaviorInstance {
   private travEY = 0;
   private travEZ = 0;
   private exitT = 0;
+  private yieldT = 0;
   private readonly pt = new Float32Array(5);
   private readonly aim = new Float64Array(3);
   // --- daily routine ----------------------------------------------------------------
@@ -819,6 +824,16 @@ export class NpcBrain implements BehaviorInstance {
     const ex = link.line[k] as number;
     const ez = link.line[k + 2] as number;
     if (hyp(ex - this.x, ez - this.z) < STAIR_ENTRY) {
+      // The player on that stair goes first (a person on a stair blocks it; characters are solid to the player). A
+      // hunter does not wait.
+      const sys = this.sys;
+      if (!Number.isNaN(sys.playerX) && !this.isHostileToPlayer() && layers.stairAt(sys.playerX, sys.playerY, sys.playerZ) === li && this.yieldT < STAIR_YIELD_MAX) {
+        this.yieldT += dt;
+        this.stop(env);
+        this.face(env, dt, sys.playerX, sys.playerZ);
+        return;
+      }
+      this.yieldT = 0;
       this.startTraverse(li, dir);
       this.traverse(env, dt, speed);
       return;
@@ -849,8 +864,19 @@ export class NpcBrain implements BehaviorInstance {
     const layers = this.layers as NavLayers;
     const link = layers.links[this.trav] as StairLink;
     const s = this.self;
-    const target = speed * STAIR_PACE;
-    this.wantMove = true;
+    let target = speed * STAIR_PACE;
+    // The player just ahead on the stair: wait for them to pass (for a few seconds at most).
+    const sys = this.sys;
+    if (!Number.isNaN(sys.playerX) && this.yieldT < STAIR_YIELD_MAX && !this.isHostileToPlayer()) {
+      const ox = sys.playerX - this.x;
+      const oz = sys.playerZ - this.z;
+      const od = hyp(ox, oz);
+      if (od < STAIR_YIELD_AHEAD && Math.abs(sys.playerY - this.feetY) < 1.2 && ox * this.lastDx + oz * this.lastDz > 0.3 * od) {
+        target = 0;
+        this.yieldT += dt;
+      } else this.yieldT = Math.max(0, this.yieldT - dt);
+    }
+    this.wantMove = target > 0;
     this.speedNow += clamp(target - this.speedNow, -18 * dt, 9 * dt);
     this.travU += this.speedNow * dt;
     const total = this.travLead + link.length;
@@ -1082,11 +1108,13 @@ export class NpcBrain implements BehaviorInstance {
     const grid = this.grid;
     const guess = s.anchor[1] - this.feetOffset;
     const floor = grid ? grid.floorAt(s.anchor[0], s.anchor[2], guess) : guess;
-    // Hills: a ray cast corrects the flat grid floor, a few times a second per NPC. (Not in a building: the floor
-    // grids are exact there, and the ray would stand a person on the sofa they walk past.)
-    if (this.layers === null && (this.sys.tickNo + this.index) % GROUND_EVERY === 0) {
+    // Hills: a ray cast corrects the flat grid floor, a few times a second per NPC. In a world with buildings only on
+    // the lowest floor and only by less than a step: the floor grids are exact indoors, and a larger correction stood
+    // people on the sofa they walked past.
+    if ((this.layers === null || this.layer === 0) && (this.sys.tickNo + this.index) % GROUND_EVERY === 0) {
       const ground = this.sys.groundHeight(s.anchor[0], s.anchor[2], floor + this.spec.height + 0.6, this.id);
-      this.groundOff = ground !== undefined && Math.abs(ground - floor) < 1.2 ? ground - floor : 0;
+      const reach = this.layers === null ? 1.2 : 0.3;
+      this.groundOff = ground !== undefined && Math.abs(ground - floor) < reach ? ground - floor : 0;
     }
     s.anchor[1] = floor + this.groundOff + this.feetOffset;
     void env;

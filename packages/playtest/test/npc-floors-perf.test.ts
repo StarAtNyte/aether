@@ -96,6 +96,7 @@ describe('NPC crowd on two floors', () => {
       if (i % 60 === 0) onStair += c.rt.npcs.infos().filter((x) => x.stair !== null).length;
     }
     const perTick = (performance.now() - t0) / N;
+    if (process.env['NPC_PERF']) process.stdout.write(`60 NPCs on two floors: ${perTick.toFixed(3)} ms per tick, ${onStair} on the stair in 15 samples\n`);
     expect(perTick).toBeLessThan(3);
     expect(onStair).toBeGreaterThan(0);
     const floors = new Set(c.rt.npcs.infos().map((x) => x.layer));

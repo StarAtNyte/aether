@@ -2187,3 +2187,65 @@ recompiles nothing. Cards of big plants are real-sized leaf clusters (more, smal
 cluster (`materials/foliage-shading.ts`) and a small flutter in the wind; sunlit tones brighten and yellow instead of
 mixing toward white. Grass keeps procedural blades (photographed tufts thin out in the mips), now finer and darker at
 the root.
+
+## 37. Stairs people use: balustrades, and NPCs on several floors
+
+**Balustrades** (`arch/src/stair.ts`). `stairGuardPieces(p)` lists the sides of a stair's flights and landings in a
+fixed order per shape (straight 2, L 6, U up to 7); `StairParams.guards` flags which are open. `compileBuilding`
+looks 0.2 m past each side: floor of the stair's room there means a drop (a guard), anything else a wall (a wall
+handrail on brackets). A guard stands 5 to 45 mm outside the edge, so the flights keep their full width for the walking
+line, 0.9 m above the pitch line or landing; a flight from a floor is guarded from 0.7 m up (the side landing beside
+the first treads stays open, `stair-fit`'s SIDE_ALONG), and beside the stairwell a guard stays under the floor above
+(`soffit`) and ends where its string would rise into the slab, whose edge guards from there. Colliders are upright
+boxes about a tread long (a sloped hull or pitched box along a whole flight held the character controller back at the
+step onto a landing); each flight's collider also gets a wedge over its last treads (under 40°) that closes the last
+riser. Styles by plan style: frameless glass in a steel shoe with a cap rail (modern), round bars (industrial,
+mediterranean), painted string and spindles with an oak handrail and newels (scandinavian, japandi, classic); the
+stairwell railing upstairs follows (`RailingParams.style` `timber`). The building check (`nav.ts`) treats the guards as
+obstacles.
+
+**Layered navigation** (`logic/src/npc/layers.ts`, `stairs.ts`). In a world with buildings (walls or stairs of
+`@aether/arch`) the NPC system builds, per body size, one `NavGrid` per floor level: the heights of every stair's
+foot and top plus the NPCs' own floors (merged within 0.6 m, at most 6), each covering the points on it (NPCs,
+waypoints, routine stops, stair ends; 24 m round the lowest floor, 12 m upstairs). Building grids use 0.25 m cells,
+keep bodies 0.3 m clear (a 0.9 m doorway stays open on the grid) and climb steps of 0.3 m at most (the outdoor 0.55 m
+stood people on beds and sofas); the lowest floor drapes over terrain as before, floors above do not. Each stair's
+footprint is blocked on both its floors (its flights below, its well above; the ends of its line stay outside).
+`stairLinks(world)` turns every `arch-stair` into a link: its walking line (`stairWalkLine`), densified every 0.2 m,
+with the feet at the mean height of the treads (half a riser above the line through the riser bottoms, blending onto
+the floor half a tread before the first riser and onto the landing or floor half a tread past the last), plus its
+footprint and plan length.
+
+`NavLayers.route(from, x, z, to, gx, gz, out)` is Dijkstra over the start, the goal and both ends of every stair:
+two nodes on one floor are joined at their straight-line distance when the grid connects them
+(`NavGrid.components()`, regions labelled once with the search's own moves), a stair joins its ends at its length
+plus 2 m. The result is the stairs to take, signed for up or down; everything is preallocated (no allocation per
+route). A brain's `goTo(…, level)` walks the grid to the next stair's end, steps on within 0.75 m and walks the line at
+three quarters of its pace, keeping up to 0.2 m right of it so two people pass, then picks up the other floor's grid
+(for 1.5 s it may walk out of blocked cells beside the stairwell). Kinematic NPCs are posed on the line; physics
+bodies are steered along it. `levelAt(x, y, z)` picks the floor under a point closest to its feet height (`y` of
+waypoints and routine stops is the floor they stand on); `aimFor` sends a chaser to the nearer end of a stair its foe
+stands on.
+
+Perception: a floor between an NPC and its foe blocks sight (not hearing) unless one of them is on a stair; a foe on
+another floor is out of reach (`foeDist` adds twice the height difference, attacks need the same floor). Guards chase
+and investigate across floors by the stairs; followers follow upstairs. In buildings a body squeezes past door frames
+(a second mask inflated by at most 0.15 m, `NavGrid.tight`), passes a path's corner only once the next point is in
+clear sight, and steps back to the corner when pushed off its line (separation, a neighbour in the doorway). Doors
+toggled by a key press (a building's doors) are opened by NPCs walking through: `NpcSystem.holdDoorsNear` sets the
+door's runtime `npcHoldUntil`, the `door` behaviour opens while it holds and closes again when it was closed; such
+doors are not walls on NPC grids. The floor-correcting ground ray only works on the lowest floor and by less than a
+step there (it stood people on the furniture they walked past). Non-hostile NPCs let the player go first on a stair:
+they wait at its end while the player is on it, and stop on it while the player is just ahead (6 s at most; a hunter
+never waits).
+
+**Routines and steering.** `npc.routine` is a list of stops (`at`, `stay` s, optional `hours`, `wander`): idle NPCs go
+to the stop of the hour or the next one in turn, across floors, and drift round it for its stay. Residents of a
+compiled house get three stops (`planRoutines`: their spot, a room on another floor first, another room on their
+own). `npc.flock` (0..1) adds cohesion and alignment with nearby NPCs of the same faction on the same floor;
+`npc.roam` replaces spot-to-spot idling by a steering wander. The formulas (`steering.ts`: arrive, wander,
+separation, flock sums) are Reynolds' (after Yuka's, MIT, rewritten) on the brain's seeded stream.
+
+**Why not navcat.** navcat (MIT, pure-JS recast) builds a navigation mesh from triangles, which the logic runtime does
+not have, and its queries allocate; the grid already met the runtime's rules (deterministic, allocation-free,
+headless, proofs), so it was extended to floors and stair links instead (THIRD_PARTY.md).
