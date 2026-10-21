@@ -15,6 +15,17 @@ export { searchAssets, bestAsset, tokenize, type AssetQuery, type AssetHit } fro
 export { selectLod, lodDistances, screenFraction, LOD_SCREEN_FRACTIONS } from './lod';
 export { loadCatalog, getCatalog, setCatalog, catalogEntry, libraryUrl } from './registry';
 export {
+  TextureVariants,
+  TextureVariant,
+  VariantTexture,
+  VariantPath,
+  loadTextureVariants,
+  getTextureVariants,
+  setTextureVariants,
+  textureVariantUrl,
+  textureVariantPath,
+} from './texture-variants';
+export {
   assetInfo,
   assetShapeSize,
   effectiveAssetId,

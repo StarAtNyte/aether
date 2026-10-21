@@ -62,6 +62,7 @@
     "assets:fetch": "tsx scripts/assets/fetch.ts",
     "assets:build": "tsx scripts/assets/build.ts",
     "assets:thumbs": "tsx scripts/assets/thumbs.ts",
+    "assets:ktx2": "tsx scripts/assets/ktx2.ts",
     "characters:build": "tsx scripts/characters/build.ts",
     "characters:preview": "tsx scripts/characters/preview.ts",
     "e2e:assets": "tsx tests/e2e/assets.e2e.ts",
@@ -79,6 +80,7 @@
     "e2e:photoreal": "tsx tests/e2e/photoreal.e2e.ts",
     "e2e:gameplay": "tsx tests/e2e/gameplay.e2e.ts",
     "e2e:render-bench": "tsx tests/e2e/render-bench.e2e.ts",
+    "e2e:ktx2": "tsx tests/e2e/ktx2.e2e.ts",
     "e2e:render": "tsx tests/e2e/render-quality.e2e.ts"
   },
   "engines": {

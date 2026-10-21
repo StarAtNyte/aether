@@ -453,6 +453,7 @@ export class Studio {
           lowMemory: st.memory.lowMemory,
           statsWhileEditing: st.settings.showPerf,
           scaleGeometry: !classicEngineRequested(),
+          compressedTextures: !uncompressedTexturesRequested(),
           saveBase: this.projectId ?? 'scratch',
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),
@@ -1530,6 +1531,12 @@ function safeModeRequested(): boolean {
 function classicEngineRequested(): boolean {
   if (typeof location === 'undefined') return false;
   return new URLSearchParams(location.search).get('engine') === 'classic';
+}
+
+/** `?textures=rgba`: load the library's original images instead of the KTX2 twins (comparisons, diagnostics). */
+function uncompressedTexturesRequested(): boolean {
+  if (typeof location === 'undefined') return false;
+  return new URLSearchParams(location.search).get('textures') === 'rgba';
 }
 
 /** Wait after the first frame before prefetching verification physics (ms). */

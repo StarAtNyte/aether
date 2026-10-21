@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -81,19 +81,24 @@ describe('generator sandbox worker policy', () => {
     const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
     const rules = config.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
     expect(rules.map((r) => r.source)).toEqual([
-      '/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-|play$|play\\.html$).*)',
+      '/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-|basis/ktx2-worker\\.js$|play$|play\\.html$).*)',
       '/play(\\.html)?',
       '/assets/sandbox.worker-(.*)',
+      '/basis/ktx2-worker.js',
       '/assets/verify.worker-(.*)',
       '/assets/dag.worker-(.*)',
     ]);
     expect(rules[1]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(PLAY_CSP);
     expect(rules[2]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(SANDBOX_WORKER_CSP);
-    expect(rules[3]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(VERIFY_WORKER_CSP);
-    // Both worker rules keep the other security headers of the page.
-    expect(rules[4]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(DAG_WORKER_CSP);
-    expect(rules[3]?.headers.map((x) => x.key).sort()).toEqual(rules[2]?.headers.map((x) => x.key).sort());
-    expect(rules[4]?.headers.map((x) => x.key).sort()).toEqual(rules[2]?.headers.map((x) => x.key).sort());
+    expect(rules[3]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(TRANSCODER_WORKER_CSP);
+    expect(rules[4]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(VERIFY_WORKER_CSP);
+    // Every worker rule keeps the other security headers of the page.
+    expect(rules[5]?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(DAG_WORKER_CSP);
+    for (const r of rules.slice(3)) expect(r.headers.map((x) => x.key).sort()).toEqual(rules[2]?.headers.map((x) => x.key).sort());
+    // The page rule does not also apply to the worker scripts (two CSP headers would combine).
+    const main = new RegExp(`^${rules[0]?.source}$`);
+    for (const path of ['/assets/sandbox.worker-BvSP-eys.js', '/basis/ktx2-worker.js', '/assets/verify.worker-DDbpC4GI.js', '/assets/dag.worker-DKylClzY.js']) expect(main.test(path), path).toBe(false);
+    expect(main.test('/basis/basis_transcoder.js')).toBe(true);
   });
 
   it('is sent by the Node server for the worker only', async () => {
@@ -102,6 +107,25 @@ describe('generator sandbox worker policy', () => {
     expect(worker.headers.get('content-security-policy')).toBe(SANDBOX_WORKER_CSP);
     const page = await app.request('/api/health');
     expect(page.headers.get('content-security-policy')).not.toMatch(/'unsafe-eval'/);
+    cleanupDirs();
+  });
+});
+
+describe('KTX2 transcoder worker policy', () => {
+  it('allows eval and wasm in the transcoder worker only, with no network and no nested workers', async () => {
+    const p = parsePolicy(TRANSCODER_WORKER_CSP);
+    expect(p.get('default-src')).toEqual(["'none'"]);
+    expect(p.get('script-src')).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"].sort());
+    expect([...p.keys()].sort()).toEqual(['default-src', 'script-src']);
+    expect(TRANSCODER_WORKER_PATH.test('/basis/ktx2-worker.js')).toBe(true);
+    expect(TRANSCODER_WORKER_PATH.test('/published/abcdefgh1234/basis/ktx2-worker.js')).toBe(true);
+    expect(TRANSCODER_WORKER_PATH.test('/basis/basis_transcoder.js')).toBe(false);
+    expect(TRANSCODER_WORKER_PATH.test('/basis/ktx2-worker.js/../../index.html')).toBe(false);
+    const app = makeApp(makeConfig());
+    const worker = await app.request('/basis/ktx2-worker.js');
+    expect(worker.headers.get('content-security-policy')).toBe(TRANSCODER_WORKER_CSP);
+    const glue = await app.request('/basis/basis_transcoder.js');
+    expect(glue.headers.get('content-security-policy')).not.toMatch(/'unsafe-eval'/);
     cleanupDirs();
   });
 });

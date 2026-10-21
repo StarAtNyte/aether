@@ -32,7 +32,8 @@
  * `ultra` the longest and softest shadows and sun shafts through the foliage (volumetric haze).
  * A tier is a different shader (not a uniform branch), so the cheap tiers pay for nothing they skip.
  */
-import { Color, DoubleSide, FrontSide, Vector2, Vector3, type DataArrayTexture, type DataTexture } from 'three';
+import { Color, DoubleSide, FrontSide, Vector2, Vector3, type DataTexture } from 'three';
+import type { BlockArrayTexture } from './block-sheets';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
   abs, attribute, cameraPosition, clamp, cross, dFdx, dFdy, dot, exp, float, floor, fract, length, max, min, mix, modelWorldMatrix, mod, mx_noise_float, normalize, positionLocal, positionWorld,
@@ -76,7 +77,7 @@ export interface TerrainTextures {
   /** The same pixels with bilinear filtering: sprites and fallback tiles read as soft shapes, not hard pixels. */
   atlasSmooth: DataTexture;
   /** Photographic sheets and the per-tile table; null keeps the pixel atlas only. */
-  pbr: { albedo: DataArrayTexture; normal: DataArrayTexture; orm: DataArrayTexture; table: DataTexture } | null;
+  pbr: { albedo: BlockArrayTexture; normal: BlockArrayTexture; orm: BlockArrayTexture; table: DataTexture } | null;
   /** Column heights of the loaded chunks (R solid top, G foliage top), nearest, repeating. */
   field: DataTexture;
 }
@@ -284,7 +285,7 @@ export function createTerrainMaterials(tex: TerrainTextures, tier: TerrainTier =
       st = st.add(vec2(v1.x, v1.y.negate()).div(v1.z).mul(hgt.sub(0.5)).mul(k).mul(vec2(1, 1)));
     }
 
-    const fetch = (map: DataArrayTexture, layer: Node<'float'>): Node<'vec4'> => texture(map, st).depth(layer.max(0)).grad(sgx, sgy) as unknown as Node<'vec4'>;
+    const fetch = (map: BlockArrayTexture, layer: Node<'float'>): Node<'vec4'> => texture(map, st).depth(layer.max(0)).grad(sgx, sgy) as unknown as Node<'vec4'>;
 
     let albedo: Node<'vec3'> = atlas.rgb;
     let alphaMask: Node<'float'> = atlas.a;

@@ -38,6 +38,7 @@ export const BUILD_TYPES: Readonly<Record<string, string>> = {
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.glb': 'model/gltf-binary',
+  '.ktx2': 'image/ktx2',
   '.hdr': 'application/octet-stream',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',

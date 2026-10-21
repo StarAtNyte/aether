@@ -202,6 +202,8 @@ export interface SimulationOptions {
    * layer and sculpture at full detail (`?engine=classic`, comparisons).
    */
   scaleGeometry?: boolean;
+  /** Keep library textures block-compressed on the GPU (KTX2 twins; default true). False loads the original images. */
+  compressedTextures?: boolean;
   /** Namespace of voxel game saves (the project id; default 'scratch'). */
   saveBase?: string;
 }
@@ -372,6 +374,7 @@ export class Simulation {
       lowMemory: opts.lowMemory === true,
       growIn: !prefersReducedMotion(),
       ...(opts.scaleGeometry === false ? { fields: false, virtualGeometry: false } : {}),
+      ...(opts.compressedTextures === false ? { transcoderPath: null } : {}),
       onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),

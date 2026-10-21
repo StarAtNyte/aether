@@ -33,11 +33,21 @@ import { parseChunkKey, voxelSaveStore, type VoxelSaveStore } from './saveStore'
 
 const log = createLogger('voxel');
 
-/** Photographic block materials, decoded once per page (null: unavailable, the pixel atlas stays). */
-let blockSheets: Promise<BlockSheets | null> | null = null;
-function photographicSheets(): Promise<BlockSheets | null> {
-  blockSheets ??= loadBlockSheets('/blocks/', 8);
-  return blockSheets;
+/**
+ * Photographic block materials, decoded once per page and texture format (null: unavailable, the pixel atlas
+ * stays). Block-compressed (KTX2) arrays when the renderer can transcode them, the WebP sheets otherwise; a new
+ * renderer that picks other GPU formats (WebGPU lost, WebGL2 now) gets its own copy.
+ */
+const blockSheets = new Map<string, Promise<BlockSheets | null>>();
+async function photographicSheets(renderer: WorldRenderer): Promise<BlockSheets | null> {
+  const ktx2 = await renderer.compressedTextureLoader();
+  const key = ktx2 ? JSON.stringify(ktx2.workerConfig) : 'rgba8';
+  let hit = blockSheets.get(key);
+  if (!hit) {
+    hit = loadBlockSheets('/blocks/', 8, undefined, ktx2);
+    blockSheets.set(key, hit);
+  }
+  return hit;
 }
 
 /** Seconds between autosaves while playing (only when something changed). */
@@ -263,7 +273,7 @@ export class VoxelSession {
       this.atlas = buildAtlas(this.reg);
       layer.setAtlas(this.atlas.pixels, this.atlas.size, this.reg.faceTiles);
       const reg = this.reg;
-      void photographicSheets().then((sheets) => {
+      void photographicSheets(this.renderer).then((sheets) => {
         if (sheets && !this.disposed && this.layer === layer && this.reg === reg) layer.setBlockMaterials(sheets, buildTileTable(reg.tiles, sheets.materials));
       });
       this.setAtlasUrl('');

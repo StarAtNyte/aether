@@ -22,7 +22,7 @@
 import { z } from 'zod';
 import type { WorldDoc } from '@aether/core';
 import { AUTO_HDRI } from '@aether/render';
-import { CAST, catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, motionSet, resolveLook, worldAssetIds, type CastMember } from '@aether/assets';
+import { CAST, catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, loadTextureVariants, motionSet, resolveLook, textureVariantPath, worldAssetIds, type CastMember } from '@aether/assets';
 import { safeEntryName, writeZip, type ZipEntry } from '@aether/assets/zip';
 import { exportFileName, exportWorld } from '../lib/worldIO';
 import { escapeXml } from './floorplan';
@@ -351,6 +351,11 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
       want(e.material.maps.normal);
     }
   }
+  // The GPU-compressed (KTX2) twins of those files and the transcoder that reads them; a player that cannot use
+  // them loads the originals, which are packed too.
+  const variants = await loadTextureVariants();
+  const twins = libraryFiles.map((p) => textureVariantPath(p, variants)).filter((p): p is string => p !== null);
+  for (const t of twins) want(t);
   const entries: ZipEntry[] = [];
   let bytes = 0;
   const add = (name: string, data: Uint8Array): void => {
@@ -379,6 +384,15 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     const data = await fetchFile(libraryUrl(path).replace(/^\/+/, ''));
     add(`assets/lib/${path}`, data);
     progress(++done, total, 'Packing models and textures…');
+  }
+  if (twins.length > 0) {
+    for (const f of ['basis/basis_transcoder.js', 'basis/basis_transcoder.wasm']) {
+      try {
+        add(f, await fetchFile(f));
+      } catch {
+        /* optional: without the transcoder the player uses the original textures */
+      }
+    }
   }
   const imports: Array<{ meta: unknown; file: string }> = [];
   for (const imp of input.imports ?? []) {

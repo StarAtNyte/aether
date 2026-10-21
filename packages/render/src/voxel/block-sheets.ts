@@ -8,8 +8,15 @@
  * `block-materials.json`) are produced by `scripts/voxel/block-textures.ts` from CC0 ambientCG
  * scans. Everything fetched is validated and size-capped; a failure returns null and the terrain
  * keeps its procedural atlas.
+ *
+ * With a KTX2 loader (the renderer's `compressedTextureLoader()`), the same layers load as
+ * block-compressed array textures (`block-{albedo,normal,orm}.ktx2`, listed with their checksums in
+ * `block-ktx2.json`, made by `scripts/assets/ktx2.ts`): about a quarter of the GPU memory. Any problem
+ * with them falls back to the WebP sheets.
  */
-import { DataArrayTexture, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace, UnsignedByteType } from 'three';
+import { DataArrayTexture, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace, UnsignedByteType, type CompressedArrayTexture } from 'three';
+import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { errorMessage, log } from '../log';
 /** One material of the sheets (structurally the voxel package's `SheetMaterial`). */
 export interface SheetMaterial {
   key: string;
@@ -25,11 +32,16 @@ const MAX_LAYERS = 64;
 /** Largest index file (bytes). */
 const MAX_INDEX_BYTES = 64 * 1024;
 
+/** One material array: decoded RGBA8 layers or block-compressed (KTX2) layers. */
+export type BlockArrayTexture = DataArrayTexture | CompressedArrayTexture;
+
 /** Loaded block material arrays. */
 export interface BlockSheets {
-  albedo: DataArrayTexture;
-  normal: DataArrayTexture;
-  orm: DataArrayTexture;
+  albedo: BlockArrayTexture;
+  normal: BlockArrayTexture;
+  orm: BlockArrayTexture;
+  /** True when the arrays are block-compressed (KTX2). */
+  compressed: boolean;
   /** Material keys, slots (= array layers) and mean linear colours. */
   materials: readonly SheetMaterial[];
   /** Tile edge in pixels. */
@@ -109,11 +121,65 @@ function arrayTexture(data: Uint8Array, size: number, layers: number, srgb: bool
   return t;
 }
 
+/** The KTX2 files of `block-ktx2.json` (validated), or null when malformed or not matching the sheet layout. Pure. */
+export function parseKtx2Index(raw: unknown, size: number, layers: number): Record<'albedo' | 'normal' | 'orm', string> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (r['version'] !== 1 || r['size'] !== size || r['layers'] !== layers) return null;
+  const files = r['files'];
+  if (!files || typeof files !== 'object') return null;
+  const out: Partial<Record<'albedo' | 'normal' | 'orm', string>> = {};
+  for (const k of ['albedo', 'normal', 'orm'] as const) {
+    const f = (files as Record<string, unknown>)[k];
+    const name = f && typeof f === 'object' ? (f as Record<string, unknown>)['file'] : undefined;
+    if (typeof name !== 'string' || !/^block-[a-z]+(\.[0-9a-f]{8,16})?\.ktx2$/.test(name)) return null;
+    out[k] = name;
+  }
+  return out as Record<'albedo' | 'normal' | 'orm', string>;
+}
+
+function compressedLayers(t: CompressedArrayTexture, srgb: boolean, size: number, layers: number, anisotropy: number): CompressedArrayTexture {
+  const img = t.image as { width?: number; height?: number; depth?: number };
+  if (img.width !== size || img.height !== size || img.depth !== layers) throw new Error(`KTX2 array is ${img.width}×${img.height}×${img.depth}, expected ${size}×${size}×${layers}`);
+  if ((t.colorSpace === SRGBColorSpace) !== srgb) throw new Error('KTX2 array has the wrong colour space');
+  t.wrapS = RepeatWrapping;
+  t.wrapT = RepeatWrapping;
+  t.magFilter = LinearFilter;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.anisotropy = anisotropy;
+  t.needsUpdate = true;
+  return t;
+}
+
+async function loadCompressed(base: string, size: number, layers: number, anisotropy: number, ktx2: KTX2Loader, signal?: AbortSignal): Promise<Pick<BlockSheets, 'albedo' | 'normal' | 'orm'> | null> {
+  const res = await fetch(`${base}block-ktx2.json`, signal ? { signal } : {});
+  if (!res.ok) return null;
+  const text = await res.text();
+  if (text.length > MAX_INDEX_BYTES) return null;
+  const files = parseKtx2Index(JSON.parse(text), size, layers);
+  if (!files) return null;
+  const loaded: CompressedArrayTexture[] = [];
+  try {
+    for (const k of ['albedo', 'normal', 'orm'] as const) {
+      const t = (await ktx2.loadAsync(`${base}${files[k]}`)) as unknown as CompressedArrayTexture;
+      loaded.push(t);
+      if (!(t as { isCompressedArrayTexture?: boolean }).isCompressedArrayTexture) throw new Error(`${files[k]} is not an array texture`);
+      compressedLayers(t, k === 'albedo', size, layers, anisotropy);
+    }
+    signal?.throwIfAborted();
+  } catch (e) {
+    for (const t of loaded) t.dispose();
+    throw e;
+  }
+  return { albedo: loaded[0] as CompressedArrayTexture, normal: loaded[1] as CompressedArrayTexture, orm: loaded[2] as CompressedArrayTexture };
+}
+
 /**
  * Fetch and decode the block material sheets from `baseUrl` (e.g. `/blocks/`). Resolves null on any
  * failure (offline, blocked canvas readback, malformed index): the terrain then keeps the pixel atlas.
+ * With `ktx2`, the block-compressed arrays are tried first (falling back to the WebP sheets).
  */
-export async function loadBlockSheets(baseUrl: string, anisotropy: number, signal?: AbortSignal): Promise<BlockSheets | null> {
+export async function loadBlockSheets(baseUrl: string, anisotropy: number, signal?: AbortSignal, ktx2?: KTX2Loader | null): Promise<BlockSheets | null> {
   try {
     const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
     const res = await fetch(`${base}block-materials.json`, signal ? { signal } : {});
@@ -127,6 +193,15 @@ export async function loadBlockSheets(baseUrl: string, anisotropy: number, signa
     const h = size * rows;
     if (w > MAX_SHEET_EDGE || h > MAX_SHEET_EDGE) return null;
     const layers = columns * rows;
+    if (ktx2) {
+      try {
+        const c = await loadCompressed(base, size, layers, anisotropy, ktx2, signal);
+        if (c) return { ...c, compressed: true, materials, size, layers, dispose: () => [c.albedo, c.normal, c.orm].forEach((t) => t.dispose()) };
+      } catch (e) {
+        if (signal?.aborted) return null;
+        log.warn(`compressed block sheets failed, using the WebP sheets: ${errorMessage(e)}`);
+      }
+    }
     const [a, n, o] = await Promise.all([
       decodeSheet(`${base}block-albedo.webp`, w, h, signal),
       decodeSheet(`${base}block-normal.webp`, w, h, signal),
@@ -139,6 +214,7 @@ export async function loadBlockSheets(baseUrl: string, anisotropy: number, signa
       albedo,
       normal,
       orm,
+      compressed: false,
       materials,
       size,
       layers,

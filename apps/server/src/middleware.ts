@@ -145,6 +145,16 @@ export const SANDBOX_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe
 export const SANDBOX_WORKER_PATH = /^\/assets\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
 /**
+ * The Basis Universal transcoder worker (KTX2 textures; `public/basis/ktx2-worker.js`): the transcoder's
+ * Emscripten embind glue builds its bindings with `new Function`, so the worker needs `'unsafe-eval'`. It
+ * gets the same sealed policy as the sandbox worker (no network, no nested workers: its WebAssembly binary
+ * arrives by message); the page itself keeps the strict policy.
+ */
+export const TRANSCODER_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
+/** Served path of the transcoder worker (studio, or a build in the local library of published games). */
+export const TRANSCODER_WORKER_PATH = /^(\/published\/[a-z0-9]{12})?\/basis\/ktx2-worker\.js$/;
+
+/**
  * The physics verification worker runs only our own code (Rapier and the
  * QuickJS interpreter as WebAssembly); it needs no eval and no network
  * beyond fetching its own same-origin wasm and chunks, so it gets a tighter
@@ -191,7 +201,8 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
   });
   return async (c, next) => {
     await base(c, next);
-    if (PLAY_PATH.test(c.req.path) || (PUBLISHED_PATH.test(c.req.path) && !/\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/.test(c.req.path))) {
+    if (TRANSCODER_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', TRANSCODER_WORKER_CSP);
+    else if (PLAY_PATH.test(c.req.path) || (PUBLISHED_PATH.test(c.req.path) && !/\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/.test(c.req.path))) {
       c.res.headers.set('Content-Security-Policy', PLAY_CSP);
       // Embeddable: the frame policy lives in frame-ancestors.
       c.res.headers.delete('X-Frame-Options');

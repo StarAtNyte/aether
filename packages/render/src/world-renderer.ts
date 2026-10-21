@@ -9,6 +9,7 @@
  */
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
 import { MaterialCache } from './materials/material-cache';
@@ -18,6 +19,14 @@ import { advanceWater, RippleField, reflectionOn, reflectionY, resetWater, setSk
 import { GeometryCache } from './geometry/buffer-geometry';
 import { createProcgenGeometrySource } from './geometry/procgen-source';
 import { createGltfModelLoader, ModelCache, type ModelLoader } from './geometry/model-loader';
+import { DEFAULT_TRANSCODER_PATH, supportLabel, TextureCompression } from './gpu/texture-compression';
+import { textureBreakdown, trackCompressedTextureBytes, type TextureBreakdown } from './gpu/texture-memory';
+
+function breakdownMB(b: TextureBreakdown | null): RenderMemoryStats['textureBreakdownMB'] {
+  if (!b) return null;
+  const mb = (x: { count: number; bytes: number }): { count: number; mb: number } => ({ count: x.count, mb: Math.round(x.bytes / 104857.6) / 10 });
+  return { target: mb(b.target), compressed: mb(b.compressed), image: mb(b.image), data: mb(b.data) };
+}
 import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
 import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
@@ -105,6 +114,12 @@ export interface RendererOptions {
    * the procedural leaf cards.
    */
   foliageUrl?: string | null;
+  /**
+   * Where the Basis Universal transcoder (`basis_transcoder.js` / `.wasm`) is served, relative to the page
+   * (default `basis/`). Library models with KTX2 twins then keep their textures block-compressed on the GPU;
+   * null, or a GPU or browser that cannot transcode, loads the original images.
+   */
+  transcoderPath?: string | null;
   /** Total scatter instance budget. */
   maxInstances?: number;
   /**
@@ -181,6 +196,12 @@ export interface RenderMemoryStats {
   generatorCacheMB: number;
   /** Estimated drawing-buffer + shadow memory on the GPU (MB). */
   estimatedGpuMB: number;
+  /** Bytes of the textures three.js has uploaded (compressed ones at their real block size), MB. */
+  texturesMB: number;
+  /** Live texture bytes by kind (render targets, block-compressed, decoded images, raw data), MB, or null when untracked. */
+  textureBreakdownMB: Record<'target' | 'compressed' | 'image' | 'data', { count: number; mb: number }> | null;
+  /** KTX2 compressed textures: on, off (with the reason) or not tried yet, and the GPU formats used. */
+  compression: { state: 'idle' | 'pending' | 'on' | 'off'; reason: string | null; formats: string | null; setupMs: number | null };
 }
 
 /** Ground classes that have their own footstep sound. */
@@ -499,6 +520,8 @@ export class WorldRenderer {
   private readonly water = new WaterSystem();
   private readonly geometries = new GeometryCache();
   private readonly models: ModelCache;
+  /** KTX2 transcoding for library models with compressed twins (self-tested on first use). */
+  private readonly compression: TextureCompression;
   private readonly textures: TextureCache;
   private readonly sync: SceneSync;
   private readonly ghost: SceneSync;
@@ -701,7 +724,9 @@ export class WorldRenderer {
       },
       size: this.budget.finishTextureSize,
     });
-    this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader());
+    this.compression = new TextureCompression(renderer, opts.transcoderPath === undefined ? DEFAULT_TRANSCODER_PATH : opts.transcoderPath);
+    trackCompressedTextureBytes(renderer);
+    this.models = new ModelCache(opts.modelLoader ?? createGltfModelLoader({ compression: this.compression }));
     this.textures = new TextureCache(opts.textureSource ?? createTextureSource());
     const common = { source, materials: this.materials, geometries: this.geometries, models: this.models, textures: this.textures };
     this.characters = new CharacterSystem({
@@ -1453,6 +1478,14 @@ export class WorldRenderer {
   /** Ask for a frame on the next on-demand {@link render} (e.g. after an external camera change). */
   requestRender(): void {
     this.needsDraw = true;
+  }
+
+  /**
+   * The renderer's KTX2 loader for block-compressed textures (self-tested), or null when this browser or GPU
+   * cannot transcode them; callers then load the original images.
+   */
+  compressedTextureLoader(): Promise<KTX2Loader | null> {
+    return this.compression.loader();
   }
 
   /**
@@ -3640,6 +3673,9 @@ export class WorldRenderer {
       materials: this.materials.size,
       generatorCacheMB: Math.round(((this.generatorCache?.bytes ?? 0) / (1024 * 1024)) * 10) / 10,
       estimatedGpuMB: Math.round(estimateFramebufferMB(w, h, this.post !== null || !this.lowMemory) + estimateShadowMB(shadow)),
+      texturesMB: Math.round(((info.memory as { texturesSize?: number }).texturesSize ?? 0) / 104857.6) / 10,
+      textureBreakdownMB: breakdownMB(textureBreakdown(this.renderer)),
+      compression: { state: this.compression.state, reason: this.compression.reason, formats: this.compression.support ? supportLabel(this.compression.support) : null, setupMs: this.compression.setupMs },
     };
   }
 
@@ -3707,6 +3743,7 @@ export class WorldRenderer {
     this.geometries.dispose();
     this.characters.dispose();
     this.models.dispose();
+    this.compression.dispose();
     this.textures.dispose();
     this.scene.clear();
     // The device's pending lost / error-scope promises keep the renderer alive; the callback must not keep this object alive too.

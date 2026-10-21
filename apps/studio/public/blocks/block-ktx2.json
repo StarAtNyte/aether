@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "size": 256,
+ "layers": 32,
+ "files": {
+  "albedo": {
+   "file": "block-albedo.ktx2",
+   "sha256": "60187d0cc83d23e2caccc85b0e7711fde961ab89c72a5b26ec007de4968334e8",
+   "bytes": 2071280,
+   "codec": "uastc",
+   "source": "block-albedo.webp",
+   "sourceSha256": "dce4c1d17adda269338442cf92131ef357dbcd8e2c59a1e91ee6e32e6ea3f180"
+  },
+  "normal": {
+   "file": "block-normal.ktx2",
+   "sha256": "f8f18b57a1fb60905f5be42139ca2cc2a3c47d1d1c2ff21145df70abdc13e0b6",
+   "bytes": 1834032,
+   "codec": "uastc",
+   "source": "block-normal.webp",
+   "sourceSha256": "6ae42e7110a67815327801e133a97e96865bf640301b5e234367949fbb646e54"
+  },
+  "orm": {
+   "file": "block-orm.ktx2",
+   "sha256": "f3e94f902b082068ed9326568ae4864a278d82d9e6476f8ed5a6fe67b971d9f7",
+   "bytes": 1936686,
+   "codec": "uastc",
+   "source": "block-orm.webp",
+   "sourceSha256": "5b046274bb51277d16520e12e66834c5438dc375bf4e070551a2722efa36fa62"
+  }
+ }
+}

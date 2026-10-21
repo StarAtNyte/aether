@@ -5,7 +5,11 @@
  * clone that reuses the source geometry and materials.
  */
 import { Box3, Group, Mesh, Vector3, type Material, type Object3D } from 'three';
+import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { isAllowedModelUrl, MAX_MODEL_URL_LENGTH } from '@aether/core';
+import { loadTextureVariants, textureVariantUrl } from '@aether/assets';
+import type { TextureCompression } from '../gpu/texture-compression';
+import { errorMessage, log } from '../log';
 import { RefCache } from '../refcache';
 
 /** Loads a model URL into a scene graph. Injected so tests can fake it. */
@@ -29,32 +33,82 @@ export function isSafeModelUrl(url: string): boolean {
 /** Skeleton-aware clone (three's `SkeletonUtils.clone`), installed when the glTF loader module loads. */
 let skeletonClone: ((source: Object3D) => Object3D) | null = null;
 
+/** Options of {@link createGltfModelLoader}. */
+export interface GltfLoaderOptions {
+  /**
+   * KTX2 support of the renderer: library files with a GPU-compressed twin (`textureVariantUrl`)
+   * load that twin when it resolves a loader; otherwise, and whenever the twin fails, the original
+   * file loads. Omitted: originals only.
+   */
+  compression?: TextureCompression | null;
+  /** Compressed twin of a model URL (default: the library index, loaded on first use). Injected by tests. */
+  variantOf?: (url: string) => Promise<string | null>;
+}
+
+const libraryVariant = async (url: string): Promise<string | null> => textureVariantUrl(url, await loadTextureVariants());
+
+interface GltfLike {
+  loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
+  setKTX2Loader(loader: KTX2Loader): unknown;
+}
+
 /**
  * Default glTF loader (lazy-imports `GLTFLoader`, the meshopt decoder and
  * `SkeletonUtils`, so Node tests and worlds without models never load them).
  * Library files are meshopt-compressed (`EXT_meshopt_compression`); the
  * decoder is a small WebAssembly module (allowed by the `wasm-unsafe-eval`
- * CSP). Animation clips are kept on `scene.animations`.
+ * CSP). Animation clips are kept on `scene.animations`. With
+ * `opts.compression`, library models load their KTX2 twins (see
+ * {@link GltfLoaderOptions}).
  */
-export function createGltfModelLoader(): ModelLoader {
-  let loader: Promise<{ loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }> }> | null = null;
+export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader {
+  let loader: Promise<GltfLike> | null = null;
+  let ktx2Ready: Promise<boolean> | null = null;
+  const variantOf = opts.variantOf ?? libraryVariant;
+  const base = (): Promise<GltfLike> =>
+    (loader ??= Promise.all([
+      import('three/addons/loaders/GLTFLoader.js'),
+      import('three/addons/libs/meshopt_decoder.module.js'),
+      import('three/addons/utils/SkeletonUtils.js'),
+    ]).then(([{ GLTFLoader }, { MeshoptDecoder }, { clone }]) => {
+      skeletonClone = clone;
+      return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder) as unknown as GltfLike;
+    }));
+  /** The glTF loader with the KTX2 loader attached, or null when compressed textures are off. */
+  const compressed = async (): Promise<GltfLike | null> => {
+    const c = opts.compression;
+    if (!c) return null;
+    const gltf = await base();
+    ktx2Ready ??= c.loader().then((k) => {
+      if (k) gltf.setKTX2Loader(k);
+      return k !== null;
+    });
+    return (await ktx2Ready) && c.state === 'on' ? gltf : null;
+  };
   return {
     async load(url: string): Promise<Object3D> {
       if (!isSafeModelUrl(url)) throw new Error('model url rejected (only same-origin paths, blob:/glTF data: URLs and allowlisted https hosts)');
-      loader ??= Promise.all([
-        import('three/addons/loaders/GLTFLoader.js'),
-        import('three/addons/libs/meshopt_decoder.module.js'),
-        import('three/addons/utils/SkeletonUtils.js'),
-      ]).then(([{ GLTFLoader }, { MeshoptDecoder }, { clone }]) => {
-        skeletonClone = clone;
-        return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-      });
-      const gltf = await (await loader).loadAsync(url);
+      const withKtx2 = await compressed();
+      const twin = withKtx2 ? await variantOf(url).catch(() => null) : null;
+      if (withKtx2 && twin && isSafeModelUrl(twin)) {
+        try {
+          const gltf = await withKtx2.loadAsync(twin);
+          gltf.scene.animations = gltf.animations;
+          gltf.scene.userData[COMPRESSED_SOURCE_KEY] = url;
+          return gltf.scene;
+        } catch (e) {
+          log.warn(`compressed twin of ${url} failed, loading the original: ${errorMessage(e)}`);
+        }
+      }
+      const gltf = await (await base()).loadAsync(url);
       gltf.scene.animations = gltf.animations;
       return gltf.scene;
     },
   };
 }
+
+/** `userData` key on a model loaded from its KTX2 twin: the original file's URL. */
+export const COMPRESSED_SOURCE_KEY = 'aetherCompressedSource';
 
 /** True when the tree contains skinned meshes (needs a skeleton-aware clone). */
 export function hasSkin(root: Object3D): boolean {
