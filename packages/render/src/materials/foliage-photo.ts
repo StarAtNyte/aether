@@ -18,7 +18,7 @@ import { rng } from '@aether/core';
 import type { FoliageKind } from '@aether/procgen';
 
 /** Sprite kinds of the sheet. */
-export type SpriteUse = 'leaf-broad' | 'leaf-narrow' | 'frond' | 'tuft';
+export type SpriteUse = 'leaf-broad' | 'leaf-narrow' | 'frond' | 'tuft' | 'needle' | 'blossom' | 'flower';
 
 /** One sprite of the sheet (pixels) and its mean linear colour. */
 export interface LeafSprite {
@@ -37,10 +37,22 @@ export interface LeafSheet {
   sprites: LeafSprite[];
 }
 
-/** Card kinds composed from photographed sprites (grass keeps its hair-fine procedural blades: photo tufts thin out). */
-export const PHOTO_KINDS: ReadonlySet<FoliageKind> = new Set<FoliageKind>(['broadleaf', 'shrub', 'fern']);
+/**
+ * Card kinds composed from photographed sprites (grass keeps its hair-fine procedural blades: photo tufts thin out).
+ * Needles, blossoms and flowers need their own sprites in the sheet; without them those kinds keep procedural cards.
+ */
+export const PHOTO_KINDS: ReadonlySet<FoliageKind> = new Set<FoliageKind>(['broadleaf', 'shrub', 'fern', 'needles', 'blossom', 'flower']);
 
-const USES: ReadonlySet<string> = new Set(['leaf-broad', 'leaf-narrow', 'frond', 'tuft']);
+/** The sprite kind a card kind cannot be composed without. */
+const NEEDS: Partial<Record<FoliageKind, SpriteUse>> = { broadleaf: 'leaf-broad', shrub: 'leaf-broad', fern: 'frond', needles: 'needle', blossom: 'blossom', flower: 'flower' };
+
+/**
+ * Card kinds whose sprites are drawn as grey values: the vertex colour alone sets their hue (a blossom tree is pink or
+ * white, a meadow's flowers any colour), so the photographed petals' own colour must not show through.
+ */
+const GREY_KINDS: ReadonlySet<FoliageKind> = new Set<FoliageKind>(['blossom', 'flower']);
+
+const USES: ReadonlySet<string> = new Set(['leaf-broad', 'leaf-narrow', 'frond', 'tuft', 'needle', 'blossom', 'flower']);
 const MAX_SHEET = 4096;
 const MAX_SPRITES = 256;
 
@@ -101,6 +113,62 @@ export function photoPlan(kind: FoliageKind, c: number, sheet: LeafSheet, varian
   const r = rng(0x1eaf + variant * 7919 + kind.length * 104729);
   const ops: DrawOp[] = [];
   const none = { x0: 0, y0: 0, width: 0 };
+  if (kind === 'needles') {
+    // A conifer spray lying along +x from the left edge's middle (the spruce's cards grow along their branch): the
+    // main twig and two shorter side twigs forking forward from it.
+    const main = pick(sheet, ['needle'], r);
+    ops.push({ sprite: main, x: c * 0.02, y: c * 0.5, angle: Math.PI / 2 + (r() - 0.5) * 0.08, length: c * 0.94, flip: r() < 0.5, tone: 0.9 + 0.15 * r(), twig: none });
+    for (const side of [-1, 1]) {
+      const sprite = pick(sheet, ['needle'], r);
+      const x = c * (0.28 + 0.2 * r());
+      ops.push({ sprite, x, y: c * (0.5 + side * 0.04), angle: Math.PI / 2 + side * (0.55 + 0.25 * r()), length: c * (0.42 + 0.12 * r()), flip: r() < 0.5, tone: 0.75 + 0.2 * r(), twig: none });
+    }
+    // The side twigs lie under the main one.
+    ops.push(ops.shift() as DrawOp);
+    return ops;
+  }
+  if (kind === 'blossom') {
+    // A flowering twig from the bottom centre: open flowers crowded along short dark side twigs, no leaves (the card
+    // takes one colour, the blossom's).
+    const base = { x: c * 0.5, y: c * 0.97 };
+    const items: DrawOp[] = [];
+    const count = 16 + Math.floor(r() * 6);
+    for (let i = 0; i < count; i++) {
+      const t = r();
+      const a = (r() - 0.5) * 2 * 0.95;
+      const reach = c * (0.2 + 0.55 * Math.sqrt(t));
+      const length = c * (0.15 + 0.08 * r());
+      const angle = (r() - 0.5) * 1.6;
+      // The whole flower stays inside its cell (its tip and its half-width around the base-tip line).
+      const mx = length * (Math.abs(Math.sin(angle)) + 0.4);
+      const x = Math.max(mx, Math.min(c - mx, base.x + Math.sin(a) * reach));
+      const y = Math.max(length * (Math.abs(Math.cos(angle)) + 0.4), Math.min(c * 0.99, base.y - Math.cos(a) * reach));
+      const twig = i % 3 === 0 ? { x0: base.x + (x - base.x) * 0.35, y0: base.y + (y - base.y) * 0.35, width: Math.max(1, c * 0.012) } : none;
+      items.push({ sprite: pick(sheet, ['blossom'], r), x, y, angle, length, flip: r() < 0.5, tone: 0.7 + 0.4 * r(), twig });
+    }
+    items.sort((p, q) => q.y - p.y);
+    ops.push(...items);
+    return ops;
+  }
+  if (kind === 'flower') {
+    // A clump of slim stems from the bottom edge, each with an open flower; a few narrow leaves at the foot. The card
+    // is grey: the generator's vertex colours run from leaf green at the bottom to the flower colour at the top.
+    const n = 3 + (variant % 2);
+    for (let i = 0; i < 2; i++) {
+      const sprite = pick(sheet, ['leaf-narrow'], r);
+      ops.push({ sprite, x: c * (0.35 + 0.3 * r()), y: c * 0.99, angle: (i === 0 ? -1 : 1) * (0.3 + 0.3 * r()), length: c * (0.3 + 0.1 * r()), flip: r() < 0.5, tone: 0.55 + 0.15 * r(), twig: none });
+    }
+    for (let i = 0; i < n; i++) {
+      const x0 = c * (0.3 + 0.4 * (i / Math.max(1, n - 1))) + (r() - 0.5) * c * 0.06;
+      const headY = c * (0.32 + 0.3 * r());
+      const x = x0 + (r() - 0.5) * c * 0.18;
+      const length = c * (0.24 + 0.1 * r());
+      const y = Math.max(length + c * 0.02, headY);
+      const sprite = pick(sheet, r() < 0.6 ? ['flower'] : ['blossom'], r);
+      ops.push({ sprite, x: Math.max(length * 0.55, Math.min(c - length * 0.55, x)), y, angle: (r() - 0.5) * 0.5, length, flip: r() < 0.5, tone: 0.85 + 0.2 * r(), twig: { x0, y0: c * 0.995, width: Math.max(1, c * 0.014) } });
+    }
+    return ops;
+  }
   if (kind === 'fern') {
     // One frond lying along +x, its base at the left edge's middle.
     const sprite = pick(sheet, ['frond'], () => (variant + 0.5) / 4);
@@ -210,6 +278,9 @@ function canvas2d(w: number, h: number): { ctx: Ctx2D; read: () => Uint8ClampedA
  */
 export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSheet, image: CanvasImageSource): Uint8Array | null {
   if (!PHOTO_KINDS.has(kind) || !(size >= 32) || size > 4096) return null;
+  const need = NEEDS[kind];
+  if (need && !sheet.sprites.some((sp) => sp.use === need)) return null;
+  const grey = GREY_KINDS.has(kind);
   const cv = canvas2d(size, size);
   if (!cv) return null;
   const { ctx } = cv;
@@ -229,7 +300,7 @@ export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSh
       if (!s) continue;
       if (op.twig.width > 0) {
         ctx.shadowColor = 'rgba(0,0,0,0)';
-        ctx.strokeStyle = 'rgb(92,74,52)';
+        ctx.strokeStyle = grey ? 'rgb(96,96,96)' : 'rgb(92,74,52)';
         ctx.lineWidth = op.twig.width;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -247,7 +318,7 @@ export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSh
       ctx.shadowBlur = Math.max(1, c * 0.012);
       ctx.shadowOffsetX = c * 0.006;
       ctx.shadowOffsetY = c * 0.01;
-      if (hasFilter) ctx.filter = `brightness(${op.tone.toFixed(3)})`;
+      if (hasFilter) ctx.filter = grey ? `grayscale(1) brightness(${op.tone.toFixed(3)})` : `brightness(${op.tone.toFixed(3)})`;
       ctx.drawImage(image, s.x, s.y, s.w, s.h, (-s.w * k) / 2, -s.h * k, s.w * k, s.h * k);
       ctx.restore();
     }

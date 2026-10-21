@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Color, MeshStandardMaterial } from 'three';
-import { neutralise, parseLeafSheet, photoPlan, PHOTO_KINDS, RATIO_MEAN, type LeafSheet } from '../src/materials/foliage-photo';
+import { composePhotoAtlas, neutralise, parseLeafSheet, photoPlan, PHOTO_KINDS, RATIO_MEAN, type LeafSheet } from '../src/materials/foliage-photo';
 import { FoliageTextures } from '../src/materials/foliage-textures';
 import { applyFoliageShading, foliageSun, setFoliageSun } from '../src/materials/foliage-shading';
 
@@ -19,6 +19,10 @@ describe('leaf sprite sheet', () => {
     const s = sheet();
     expect(s.sprites.filter((p) => p.use === 'leaf-broad').length).toBeGreaterThanOrEqual(6);
     expect(s.sprites.some((p) => p.use === 'frond')).toBe(true);
+    // Conifer sprays, open flowers and daisy heads for the needle, blossom and flower cards.
+    expect(s.sprites.filter((p) => p.use === 'needle').length).toBeGreaterThanOrEqual(3);
+    expect(s.sprites.filter((p) => p.use === 'blossom').length).toBeGreaterThanOrEqual(3);
+    expect(s.sprites.some((p) => p.use === 'flower')).toBe(true);
     for (const p of s.sprites) {
       expect(p.x + p.w).toBeLessThanOrEqual(s.width);
       expect(p.y + p.h).toBeLessThanOrEqual(s.height);
@@ -62,6 +66,11 @@ describe('photographed card plans', () => {
       }
     });
   }
+
+  it('a kind whose sprites the sheet lacks keeps its procedural cards', () => {
+    const noNeedles: LeafSheet = { ...s, sprites: s.sprites.filter((p) => p.use !== 'needle') };
+    expect(composePhotoAtlas('needles', 256, noNeedles, {} as CanvasImageSource)).toBeNull();
+  });
 
   it('tree and shrub cards grow from the bottom, back to front', () => {
     const ops = photoPlan('shrub', 256, s, 2);

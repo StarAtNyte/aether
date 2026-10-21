@@ -26,17 +26,37 @@
    "id": "grass_medium_01",
    "page": "https://polyhaven.com/a/grass_medium_01",
    "author": "Rob Tuytel, Rico Cilliers"
+  },
+  {
+   "id": "fir_tree_01",
+   "page": "https://polyhaven.com/a/fir_tree_01",
+   "author": "Rob Tuytel, Rico Cilliers"
+  },
+  {
+   "id": "periwinkle_plant",
+   "page": "https://polyhaven.com/a/periwinkle_plant",
+   "author": "Amal Kumar"
+  },
+  {
+   "id": "celandine_01",
+   "page": "https://polyhaven.com/a/celandine_01",
+   "author": "Rob Tuytel, Rico Cilliers"
+  },
+  {
+   "id": "flower_gazania",
+   "page": "https://polyhaven.com/a/flower_gazania",
+   "author": "James Ray Cock, Jenelle van Heerden"
   }
  ],
  "width": 1024,
- "height": 960,
- "file": "99cb6c9c44f1d54c",
+ "height": 1728,
+ "file": "357a1cd9756a8284",
  "sprites": [
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 693,
-   "y": 420,
+   "x": 873,
+   "y": 1068,
    "w": 111,
    "h": 160,
    "mean": [
@@ -48,21 +68,21 @@
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 808,
-   "y": 420,
+   "x": 0,
+   "y": 1264,
    "w": 107,
    "h": 160,
    "mean": [
     0.2757,
-    0.3964,
+    0.3963,
     0.0745
    ]
   },
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 0,
-   "y": 616,
+   "x": 111,
+   "y": 1264,
    "w": 111,
    "h": 160,
    "mean": [
@@ -74,8 +94,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 115,
-   "y": 616,
+   "x": 226,
+   "y": 1264,
    "w": 103,
    "h": 160,
    "mean": [
@@ -87,8 +107,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 222,
-   "y": 616,
+   "x": 333,
+   "y": 1264,
    "w": 103,
    "h": 160,
    "mean": [
@@ -100,8 +120,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_01",
-   "x": 329,
-   "y": 616,
+   "x": 440,
+   "y": 1264,
    "w": 88,
    "h": 160,
    "mean": [
@@ -113,8 +133,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 421,
-   "y": 616,
+   "x": 532,
+   "y": 1264,
    "w": 133,
    "h": 160,
    "mean": [
@@ -126,8 +146,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 558,
-   "y": 616,
+   "x": 669,
+   "y": 1264,
    "w": 133,
    "h": 160,
    "mean": [
@@ -139,8 +159,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 695,
-   "y": 616,
+   "x": 806,
+   "y": 1264,
    "w": 133,
    "h": 160,
    "mean": [
@@ -152,8 +172,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 832,
-   "y": 616,
+   "x": 0,
+   "y": 1428,
    "w": 138,
    "h": 160,
    "mean": [
@@ -165,8 +185,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 0,
-   "y": 780,
+   "x": 142,
+   "y": 1428,
    "w": 137,
    "h": 160,
    "mean": [
@@ -178,8 +198,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 141,
-   "y": 780,
+   "x": 283,
+   "y": 1428,
    "w": 128,
    "h": 160,
    "mean": [
@@ -191,8 +211,8 @@
   {
    "use": "leaf-broad",
    "source": "shrub_03",
-   "x": 273,
-   "y": 780,
+   "x": 415,
+   "y": 1428,
    "w": 118,
    "h": 160,
    "mean": [
@@ -204,8 +224,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 486,
-   "y": 0,
+   "x": 317,
+   "y": 744,
    "w": 66,
    "h": 192,
    "mean": [
@@ -217,8 +237,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 556,
-   "y": 0,
+   "x": 387,
+   "y": 744,
    "w": 88,
    "h": 192,
    "mean": [
@@ -230,8 +250,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 648,
-   "y": 0,
+   "x": 479,
+   "y": 744,
    "w": 89,
    "h": 192,
    "mean": [
@@ -243,8 +263,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 741,
-   "y": 0,
+   "x": 572,
+   "y": 744,
    "w": 52,
    "h": 192,
    "mean": [
@@ -256,8 +276,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 797,
-   "y": 0,
+   "x": 628,
+   "y": 744,
    "w": 83,
    "h": 192,
    "mean": [
@@ -269,8 +289,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 884,
-   "y": 0,
+   "x": 715,
+   "y": 744,
    "w": 82,
    "h": 192,
    "mean": [
@@ -282,8 +302,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 0,
-   "y": 420,
+   "x": 801,
+   "y": 744,
    "w": 84,
    "h": 192,
    "mean": [
@@ -295,8 +315,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 88,
-   "y": 420,
+   "x": 889,
+   "y": 744,
    "w": 85,
    "h": 192,
    "mean": [
@@ -308,8 +328,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 177,
-   "y": 420,
+   "x": 0,
+   "y": 1068,
    "w": 94,
    "h": 192,
    "mean": [
@@ -321,8 +341,8 @@
   {
    "use": "leaf-narrow",
    "source": "shrub_04",
-   "x": 275,
-   "y": 420,
+   "x": 98,
+   "y": 1068,
    "w": 74,
    "h": 192,
    "mean": [
@@ -399,8 +419,8 @@
   {
    "use": "tuft",
    "source": "grass_medium_01",
-   "x": 353,
-   "y": 420,
+   "x": 533,
+   "y": 1068,
    "w": 336,
    "h": 162,
    "mean": [
@@ -412,14 +432,170 @@
   {
    "use": "tuft",
    "source": "grass_medium_01",
-   "x": 395,
-   "y": 780,
+   "x": 537,
+   "y": 1428,
    "w": 336,
    "h": 113,
    "mean": [
     0.0924,
     0.0992,
     0.0262
+   ]
+  },
+  {
+   "use": "needle",
+   "source": "fir_tree_01",
+   "x": 486,
+   "y": 0,
+   "w": 289,
+   "h": 320,
+   "mean": [
+    0.0725,
+    0.103,
+    0.0262
+   ]
+  },
+  {
+   "use": "needle",
+   "source": "fir_tree_01",
+   "x": 0,
+   "y": 420,
+   "w": 273,
+   "h": 320,
+   "mean": [
+    0.0906,
+    0.1245,
+    0.0334
+   ]
+  },
+  {
+   "use": "needle",
+   "source": "fir_tree_01",
+   "x": 277,
+   "y": 420,
+   "w": 278,
+   "h": 320,
+   "mean": [
+    0.0777,
+    0.1088,
+    0.0282
+   ]
+  },
+  {
+   "use": "needle",
+   "source": "fir_tree_01",
+   "x": 559,
+   "y": 420,
+   "w": 290,
+   "h": 320,
+   "mean": [
+    0.055,
+    0.0802,
+    0.0187
+   ]
+  },
+  {
+   "use": "needle",
+   "source": "fir_tree_01",
+   "x": 0,
+   "y": 744,
+   "w": 313,
+   "h": 320,
+   "mean": [
+    0.092,
+    0.13,
+    0.0341
+   ]
+  },
+  {
+   "use": "blossom",
+   "source": "periwinkle_plant",
+   "x": 877,
+   "y": 1428,
+   "w": 110,
+   "h": 112,
+   "mean": [
+    0.4627,
+    0.1077,
+    0.3031
+   ]
+  },
+  {
+   "use": "blossom",
+   "source": "periwinkle_plant",
+   "x": 0,
+   "y": 1592,
+   "w": 110,
+   "h": 112,
+   "mean": [
+    0.4648,
+    0.0654,
+    0.2606
+   ]
+  },
+  {
+   "use": "blossom",
+   "source": "celandine_01",
+   "x": 114,
+   "y": 1592,
+   "w": 106,
+   "h": 112,
+   "mean": [
+    0.5375,
+    0.432,
+    0.0047
+   ]
+  },
+  {
+   "use": "blossom",
+   "source": "celandine_01",
+   "x": 224,
+   "y": 1592,
+   "w": 105,
+   "h": 112,
+   "mean": [
+    0.4996,
+    0.3822,
+    0.004
+   ]
+  },
+  {
+   "use": "blossom",
+   "source": "celandine_01",
+   "x": 333,
+   "y": 1592,
+   "w": 107,
+   "h": 112,
+   "mean": [
+    0.5212,
+    0.4171,
+    0.0047
+   ]
+  },
+  {
+   "use": "flower",
+   "source": "flower_gazania",
+   "x": 353,
+   "y": 1068,
+   "w": 176,
+   "h": 174,
+   "mean": [
+    0.5048,
+    0.147,
+    0.003
+   ]
+  },
+  {
+   "use": "flower",
+   "source": "flower_gazania",
+   "x": 176,
+   "y": 1068,
+   "w": 173,
+   "h": 176,
+   "mean": [
+    0.4354,
+    0.1196,
+    0.0042
    ]
   }
  ]

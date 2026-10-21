@@ -37,7 +37,10 @@ export interface GardenOutput {
   plot: [number, number, number, number];
 }
 
-const HEDGE: MaterialSpec = { finish: 'foliage', color: '#4b6a37' };
+/** Leaf colour of the garden hedges. */
+const HEDGE: MaterialSpec = { finish: 'foliage', color: '#3a6a2c' };
+/** Longest run of one hedge entity (metres). */
+const HEDGE_RUN = 6;
 const PAVING: MaterialSpec = { finish: 'stone', color: '#c4bcaf' };
 const SOIL: MaterialSpec = { finish: 'soil', color: '#4a3c2e' };
 const EDGING: MaterialSpec = { finish: 'black-metal' };
@@ -133,17 +136,35 @@ export function compileGrounds(g: GardenInput): GardenOutput {
     const D = 0.7;
     const hedge = (x0: number, z0: number, x1: number, z1: number): void => {
       if (x1 - x0 < 0.6 && z1 - z0 < 0.6) return;
-      const hid = `${bid}-hedge${out.filter((e) => e.arch?.kind === 'hedge').length}`;
-      out.push({ id: hid, parent: bid, name: 'Hedge', transform: { position: [r((x0 + x1) / 2), r(H / 2), r((z0 + z1) / 2)] }, shape: { kind: 'primitive', primitive: 'box', size: [r(x1 - x0), H, r(z1 - z0)] }, material: HEDGE, physics: { body: 'static' }, arch: { role: 'site', kind: 'hedge', name: 'Hedge' }, tags: ['arch', 'site', 'hedge'] });
-      // Leafy shrubs grown into the hedge break its box: an uneven top and sides, as a clipped hedge has.
+      // A clipped hedge of leaf masses (the `hedge` generator: leaf-cluster cards over a dark core), in runs of at
+      // most HEDGE_RUN metres so each one keeps its leaf density and is culled on its own.
       const len = Math.max(x1 - x0, z1 - z0);
       const alongX = x1 - x0 >= z1 - z0;
-      const pts: Array<[number, number, number]> = [];
+      const depth = Math.min(x1 - x0, z1 - z0);
+      // The garden's random sequence stays as it was when hedges were boxes with shrubs grown in (two draws per
+      // shrub), so every bed, tree and planting placed after them keeps its spot.
       for (let u = -len / 2 + 0.45; u <= len / 2 - 0.45; u += 0.8) {
-        const j = between(-0.12, 0.12);
-        pts.push(alongX ? [r(u + j), r(H * 0.32), r(between(-0.12, 0.12))] : [r(between(-0.12, 0.12)), r(H * 0.32), r(u + j)]);
+        between(-0.12, 0.12);
+        between(-0.12, 0.12);
       }
-      if (pts.length > 0) out.push({ id: `${hid}-leaves`, parent: bid, name: 'Hedge leaves', transform: { position: [r((x0 + x1) / 2), 0, r((z0 + z1) / 2)] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'shrub', params: { size: 1.05, detail: 0.7, color: '#3d6a2f' } }, count: pts.length, area: [r(Math.max(1, x1 - x0)), r(Math.max(1, z1 - z0))], seed: pts.length * 7 + 3, points: pts, scaleRange: [0.85, 1.2] }, arch: { role: 'site', kind: 'hedge-leaves', name: 'Hedge leaves' }, tags: ['arch', 'site'] });
+      const runs = Math.max(1, Math.ceil(len / HEDGE_RUN));
+      for (let k = 0; k < runs; k++) {
+        const a = -len / 2 + (len * k) / runs;
+        const b = -len / 2 + (len * (k + 1)) / runs;
+        const c = (a + b) / 2;
+        const hid = `${bid}-hedge${out.filter((e) => e.arch?.kind === 'hedge').length}`;
+        const pos: [number, number, number] = alongX ? [r((x0 + x1) / 2 + c), 0, r((z0 + z1) / 2)] : [r((x0 + x1) / 2), 0, r((z0 + z1) / 2 + c)];
+        out.push({
+          id: hid,
+          parent: bid,
+          name: 'Hedge',
+          transform: { position: pos, ...(alongX ? {} : { rotation: [0, 90, 0] as [number, number, number] }) },
+          shape: { kind: 'procedural', generator: 'hedge', params: { length: r(b - a), height: H, width: r(depth), color: HEDGE.color ?? '#3a6a2c' }, seed: 11 + k * 7 },
+          physics: { body: 'static' },
+          arch: { role: 'site', kind: 'hedge', name: 'Hedge' },
+          tags: ['arch', 'site', 'hedge'],
+        });
+      }
     };
     const sides: Array<{ dir: P2; seg: [number, number, number, number] }> = [
       { dir: [0, -1], seg: [px0, pz0, px1, pz0 + D] },

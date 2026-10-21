@@ -1,5 +1,5 @@
 {
-  "$comment": "Leaf, frond and grass photographs for the foliage cards (scripts/foliage/leaf-sprites.ts). Poly Haven models, CC0-1.0; every file is pinned by SHA-256.",
+  "$comment": "Leaf, frond, needle, blossom, flower and grass photographs for the foliage cards (scripts/foliage/leaf-sprites.ts). Poly Haven models, CC0-1.0; every file is pinned by SHA-256.",
   "licence": "CC0-1.0",
   "licenceUrl": "https://polyhaven.com/license",
   "retrieved": "2026-10-21",
@@ -48,6 +48,42 @@
       "max": 6,
       "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_diff_1k.jpg", "sha256": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050" },
       "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_alpha_1k.jpg", "sha256": "90ad8db2b471de6b61597c60bc218d1295c4bf68230be9083aa2001b9067b2e2" }
+    },
+    {
+      "id": "fir_tree_01",
+      "page": "https://polyhaven.com/a/fir_tree_01",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "use": "needle",
+      "max": 7,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_twig_diff_1k.jpg", "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_twig_alpha_1k.jpg", "sha256": "1f0607dd457c32406717daffe5049b1d2248c497589c83795c623c5e8b03e542" }
+    },
+    {
+      "id": "periwinkle_plant",
+      "page": "https://polyhaven.com/a/periwinkle_plant",
+      "author": "Amal Kumar",
+      "use": "blossom",
+      "max": 2,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/periwinkle_plant/periwinkle_plant_diff_1k.jpg", "sha256": "32d61084e6c07fa3ca8e03b35b347a12717f971efc90e8fe1185931ee2298c56" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/periwinkle_plant/periwinkle_plant_opacity_1k.jpg", "sha256": "b8da8db432705c834e35bb6334f21ef420f6b1fdbe02695718a4030f34a9b0ff" }
+    },
+    {
+      "id": "celandine_01",
+      "page": "https://polyhaven.com/a/celandine_01",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "use": "blossom",
+      "max": 4,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/celandine_01/celandine_01_diff_1k.jpg", "sha256": "d21558d8d101fd6601d620018f9efd2878b559666099aac3ab05df17da833b5f" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/celandine_01/celandine_01_alpha_1k.jpg", "sha256": "1237dcde0c998c7d39300174c6c0a284f06acc5ef861313ac5c606d2272ab32f" }
+    },
+    {
+      "id": "flower_gazania",
+      "page": "https://polyhaven.com/a/flower_gazania",
+      "author": "James Ray Cock, Jenelle van Heerden",
+      "use": "flower",
+      "max": 2,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/flower_gazania/flower_gazania_diff_1k.jpg", "sha256": "9d3022ebe7bfe0493a3e46aad87ea4746ea51df8c8b3e19294f1bb718a3147bb" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/flower_gazania/flower_gazania_alpha_1k.jpg", "sha256": "e850150fa4b76dade6dea9eca949250853fbb7b10ce1d583d24be71dd1256464" }
     }
   ]
 }

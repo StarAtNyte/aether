@@ -24,13 +24,13 @@ const uSunDirection = T.uniform(sunDirection);
 const uSunIrradiance = T.uniform(sunIrradiance);
 
 /** Share of the sunlight a leaf passes on, seen straight against the sun. */
-export const FOLIAGE_TRANSMISSION = 0.42;
+export const FOLIAGE_TRANSMISSION = 0.32;
 /** Sharpness of the forward-scattering lobe (higher: only near the sun). */
 export const FOLIAGE_LOBE = 3;
 /** Hue swing of the plant-scale colour variation (warm/cool, linear multipliers at full noise). */
-export const FOLIAGE_HUE: readonly [number, number, number] = [0.13, 0.05, -0.12];
+export const FOLIAGE_HUE: readonly [number, number, number] = [0.17, 0.06, -0.16];
 /** Value swing of the cluster-scale variation. */
-export const FOLIAGE_VALUE = 0.12;
+export const FOLIAGE_VALUE = 0.16;
 
 /** Point the translucency at the current sun (`direction` toward it). Non-finite input is ignored. */
 export function setFoliageSun(direction: readonly [number, number, number], color: Color, intensity: number, up = true): void {

@@ -178,10 +178,13 @@ function blossomTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB 
  */
 function leafTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
   const b = lin(base);
-  const deep: RGB = [b[0] * 0.3, b[1] * 0.34, b[2] * 0.4];
-  const sunny = lin(mixHex(base, '#a8b83c', 0.28));
-  const sun: RGB = [sunny[0] * 1.5, sunny[1] * 1.5, sunny[2] * 1.3];
-  return { deep, mid: [b[0] * 1.15, b[1] * 1.18, b[2] * 1.1], sun, warm: lin(shade('#a9b83a', 0.05)) };
+  // Photographed foliage is darker and more saturated than a painted green: the shade inside a crown is nearly
+  // black-green, the mid tone keeps the base's saturation (red and blue held back), sunlit leaves turn only a little
+  // yellower (a strong yellow mix read as pale lime paper up close).
+  const deep: RGB = [b[0] * 0.2, b[1] * 0.27, b[2] * 0.3];
+  const sunny = lin(mixHex(base, '#93b23a', 0.18));
+  const sun: RGB = [sunny[0] * 1.3, sunny[1] * 1.42, sunny[2] * 1.1];
+  return { deep, mid: [b[0] * 0.98, b[1] * 1.1, b[2] * 0.92], sun, warm: lin(shade('#9aae3a', -0.05)) };
 }
 
 const SUN: Vec3 = unit([0.35, 0.8, 0.3]);
@@ -545,7 +548,8 @@ const shrub = defineGenerator({
       barkUvs(stems, 0, 0);
       api.add(stems, BARK);
     }
-    const budget = cardBudget(130 * detail, S * 0.3, Math.min(0.42, Math.max(0.26, 0.22 + S * 0.07)), 420 * Math.max(0.3, detail));
+    // Leaf clusters about a hand across (a shrub seen from a garden path shows single leaves, not paper fans).
+    const budget = cardBudget(130 * detail, S * 0.3, Math.min(0.3, Math.max(0.23, 0.14 + S * 0.06)), 420 * Math.max(0.3, detail));
     const count = budget.count;
     const sheets = new Sheets(count + clusters.length);
     crownCards(api, sheets, clusters, { c: [0, R * 0.6, 0], r: [R, R * 0.8, R] }, count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.08, 0);
@@ -838,4 +842,121 @@ const cactus = defineGenerator({
 });
 
 /** Realistic vegetation and rock, registered with the nature category. */
-export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus] as const;
+// ---------------------------------------------------------------------------
+// Hedge
+// ---------------------------------------------------------------------------
+
+/**
+ * A clipped hedge (privet, box, beech) built from leaf masses: small leaf-cluster cards over the faces of a rounded
+ * block, standing out of it at their own angles and denser at the top, over a dark core that stands for the shade
+ * between the leaves. A box with a leaf texture reads as a painted crate from a few metres; this has a broken edge,
+ * depth and self-shadowing (deep tones low and inside, sunlit tones on the top and the sun-facing side).
+ */
+const hedge = defineGenerator({
+  id: 'hedge',
+  description: 'Clipped hedge of leaf clusters over a dark core; length along x; solid.',
+  category: 'nature',
+  params: {
+    length: pNum(4, 0.6, 30, 'meters along x'),
+    height: pNum(1.15, 0.3, 3, 'meters'),
+    width: pNum(0.7, 0.3, 2, 'meters'),
+    color: pColor('#3a6a2c', 'leaves'),
+    detail: pNum(1, 0.3, 2, 'density'),
+    variant: pVariant(1, '0 clipped, 1 informal'),
+  },
+  run(p, api) {
+    const L = p.num('length');
+    const H = p.num('height');
+    const W = p.num('width');
+    const detail = p.num('detail');
+    const informal = p.int('variant') === 1;
+    const tones = leafTones(p.color('color'));
+    // The core: the shade between the leaves, a little inside the leaf surface.
+    const inset = Math.min(0.09, W * 0.15);
+    const core = api.box(Math.max(0.1, L - inset * 2), Math.max(0.1, H - inset), Math.max(0.1, W - inset * 2)).translate(0, (H - inset) / 2, 0);
+    const shade: RGB = [tones.deep[0] * 0.6, tones.deep[1] * 0.6, tones.deep[2] * 0.6];
+    const coreTop: RGB = [tones.deep[0] * 0.9, tones.deep[1] * 0.9, tones.deep[2] * 0.9];
+    core.paintFn((_x, y, _z, _nx, _ny, _nz, out) => mixLinear(shade, coreTop, Math.max(0, Math.min(1, y / H)), out));
+    api.add(core, { vertexColors: true, roughness: 0.95, metalness: 0 });
+    // Faces of the block: top, the two long sides, the two ends (weighted by area), each card on one.
+    const faces: Array<{ n: Vec3; area: number }> = [
+      { n: [0, 1, 0], area: L * W * 1.25 },
+      { n: [0, 0, 1], area: L * H },
+      { n: [0, 0, -1], area: L * H },
+      { n: [1, 0, 0], area: W * H },
+      { n: [-1, 0, 0], area: W * H },
+    ];
+    const total = faces.reduce((s, f) => s + f.area, 0);
+    const size = Math.max(0.12, Math.min(0.24, 0.12 + H * 0.06));
+    // About 2.6 cards over every patch of the surface (leaf clusters overlap), within a triangle budget.
+    const count = Math.max(16, Math.min(2900, Math.round(((total * 2.6) / (size * size)) * Math.min(1.4, detail))));
+    const sheets = new Sheets(count);
+    const tmp: RGB = [0, 0, 0];
+    const top: RGB = [0, 0, 0];
+    const base: RGB = [0, 0, 0];
+    const n3 = api.noise;
+    for (let i = 0; i < count; i++) {
+      let pick = api.rng() * total;
+      let f = faces[0] as { n: Vec3; area: number };
+      for (const g of faces) {
+        pick -= g.area;
+        if (pick <= 0) {
+          f = g;
+          break;
+        }
+      }
+      const fn = f.n;
+      // A point on the face, the block's edges rounded off (a clipped hedge is never a sharp box).
+      let x = (api.rng() - 0.5) * L;
+      let y = api.rng() * H;
+      let z = (api.rng() - 0.5) * W;
+      if (fn[1] > 0) y = H;
+      else if (fn[2] !== 0) z = (fn[2] * W) / 2;
+      else x = (fn[0] * L) / 2;
+      // Lumps: the surface swells and dips over half a metre (a lot when informal).
+      const lump = n3.noise3(x * 1.7, y * 1.7, z * 1.7) * (informal ? 0.12 : 0.035) + (api.rng() - 0.3) * size * 0.35;
+      // Rounded edges: points near an edge are pulled in and their normal turns outward-diagonal.
+      const ex = Math.max(0, Math.abs(x) - (L / 2 - 0.12)) / 0.12;
+      const ez = Math.max(0, Math.abs(z) - (W / 2 - 0.12)) / 0.12;
+      const ey = Math.max(0, y - (H - 0.12)) / 0.12;
+      const n: Vec3 = unit([fn[0] + Math.sign(x) * ex * 0.7, fn[1] + ey * 0.7 + 0.08, fn[2] + Math.sign(z) * ez * 0.7]);
+      const round = (ex + ez + ey) * 0.05;
+      const pp: Vec3 = [x + n[0] * (lump - round), Math.max(0.02, y + n[1] * (lump - round)), z + n[2] * (lump - round)];
+      // The card stands out of the surface: tips outward and a little up, turned at random about the normal.
+      const v = unit([n[0] + (api.rng() - 0.5) * 1.1, n[1] + (api.rng() - 0.5) * 1.1 + 0.25, n[2] + (api.rng() - 0.5) * 1.1]);
+      const u = unit(cross(v, [api.rng() - 0.5, api.rng() - 0.5 + 0.2, api.rng() - 0.5]));
+      // Self-shadowing: low on the sides and under the rounded top edge is deep shade; the top and the sun side lit.
+      const height01 = Math.max(0, Math.min(1, pp[1] / H));
+      const facing = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
+      const light = Math.max(0, Math.min(1, 0.15 + height01 * 0.45 + facing * 0.45 + (fn[1] > 0 ? 0.15 : 0) + (api.rng() - 0.5) * 0.3));
+      mixLinear(tones.deep, tones.mid, Math.min(1, light * 1.3), tmp);
+      mixLinear(tmp, tones.sun, Math.max(0, light - 0.6) * 1.5, tmp);
+      if (api.rng() < 0.05) mixLinear(tmp, tones.warm, 0.25 + api.rng() * 0.25, tmp);
+      mixLinear(tones.deep, tmp, 0.6, base);
+      mixLinear(tmp, tones.sun, 0.08, top);
+      const s = size * (0.75 + api.rng() * 0.5);
+      // Sunk a little into the surface so the card's base hides in the hedge.
+      const o: Vec3 = [pp[0] - v[0] * s * 0.25, pp[1] - v[1] * s * 0.25, pp[2] - v[2] * s * 0.25];
+      // Every card stays inside the hedge's block (the ground below, the clipped faces round it): the hedge is exactly
+      // as large as asked, as its collider is, and the walking grids that measure it see the box they planned for.
+      const half = [L / 2, H / 2, W / 2];
+      const mid = [0, H / 2, 0];
+      for (let k = 0; k < 3; k++) {
+        const ext = Math.abs(u[k] as number) * s * 0.5;
+        const lo = (o[k] as number) + Math.min(0, (v[k] as number) * s) - ext;
+        const hi = (o[k] as number) + Math.max(0, (v[k] as number) * s) + ext;
+        const lim0 = (mid[k] as number) - (half[k] as number);
+        const lim1 = (mid[k] as number) + (half[k] as number);
+        if (lo < lim0) o[k] = (o[k] as number) + (lim0 - lo);
+        else if (hi > lim1) o[k] = (o[k] as number) - (hi - lim1);
+      }
+      sheets.add(o, u, v, s, s, 'bottom', n, base, top, cellOf(api));
+    }
+    const leaves = sheets.build(api);
+    if (leaves) api.add(leaves, foliage('shrub'));
+    api.collider(boxCollider(0, H / 2, 0, L, H, W));
+    return api.build(ROOTED);
+  },
+});
+
+export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus, hedge] as const;

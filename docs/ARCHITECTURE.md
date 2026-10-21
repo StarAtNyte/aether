@@ -2158,8 +2158,19 @@ building stops changing; the previous volume stays on screen until the next one 
 6 ms slices between frames. A house (11 000 probes, 13 000 triangles) takes about 3 s of worker time and 10 to 20 ms
 on the main thread.
 
+**Leaks.** Every probe also stores its free distance along the six axes (the first surface within a spacing, quantised
+to sevenths, rounded down; a probe buried in a wall or under the ground stores zero), packed as two half-exact codes in
+a fifth sub-volume. A read takes the eight probes around the point and drops each one that does not see it (a surface
+between them along an axis, `probeSees`), then samples the light at the point whose per-axis trilinear weights match
+the remaining ones; when none sees the point the plain weights apply. The GPU does it with eight unfiltered reads at
+texel centres before the four filtered ones, the bake's own bounce reads (`sampleField`) the same way, so the room side
+of a thin wall never mixes in the probes behind it (outside, the next room, under the slab): no glow along door frames
+and skirtings, no sunlit room bleeding into the dark one next door. After the bounce passes two passes of a small blur
+(each probe weight 2, each neighbour it sees along a fully free axis weight 1) take the 48-ray noise off large
+ceilings without crossing a wall.
+
 **Shading.** `LightVolume` is a three.js `Light`; its node (`gpu/light-volume-node.ts`, registered with
-`renderer.library.addLight`) reads one RGBA16F 3D atlas (four padded sub-volumes, allocated once, so a rebake never
+`renderer.library.addLight`) reads one RGBA16F 3D atlas (five padded sub-volumes, allocated once, so a rebake never
 reallocates or recompiles) half a spacing out along the normal and, for every lit material, multiplies the lighting
 context's ambient occlusion by `vis(n)` (sky hemisphere, image light and its reflections reach a room only through its
 windows) and adds `B(n) / vis(n)` to the irradiance and `B / π` to the reflected radiance (so a wall facing a sunlit
@@ -2168,25 +2179,40 @@ lights the building the analytic floor bounce and interior fill of section 30 ar
 so no material recompiles).
 
 **Eye and shadows.** The eye's exposure comes from the volume at the camera (mean visibility, bounce and the direct
-light of lamps within 12 m on the storey, in the eye's room when the lamp is confined to one) against the open site: 75 % of the difference, between −2 and +3 stops,
+light of lamps within 12 m on the storey, in the eye's room when the lamp is confined to one) against the open site: 75 % of the difference, between −2 and +4 stops,
 smoothed, snapped when the camera jumps. Inside, the sun's shadow map is fitted to the building's shell (crisp
 window-shaped sun patches instead of a 320 m frustum's blur). The eye's exposure now lives only in the renderer's
-tone mapping (post tiers applied it twice). Interiors grade slightly warm when adapted.
+tone mapping (post tiers applied it twice). The adapted eye also balances white (`interiorBalance`): the red-blue ratio
+of the room's light at the eye (sky through the windows and the bounce) beyond a lived-in 1.25 is 60 % taken out (a
+wood floor's bounce turned white walls and ceilings sepia), a blue cast warmed, then a slight warm grade on top.
 
-**Lamps.** Lamps (`sync/room-lamp.ts`) are point lights clipped to their room's floor box by their own light node
-(`gpu/room-lamp-node.ts`): shadowless lamps no longer light the rooms behind the walls. They stay on until the sun is
-16° up and fade to off by then; the light volume bakes their bounce. Furniture gets soft contact footprints on its floor
+**Lamps.** Lamps and spots (`sync/room-lamp.ts`: `RoomLamp`, `RoomSpot`, the latter an IES-aware spot) are clipped to
+their room by their own light nodes (`gpu/room-lamp-node.ts`): the box runs along the room's wall centrelines from just
+under its floor to 8 cm above its ceiling, with an 8 cm fade, so a shadowless lamp lights its own wall faces and its
+ceiling but not the next room's walls, the ceiling below or the floor above. They stay on until the sun is
+16° up and fade to off by then; the light volume bakes their bounce. Wall faces run 4 mm past a joined corner into
+the neighbour, so two faces never meet on a sub-pixel crack. Furniture gets soft contact footprints on its floor
 (`view/contact-shadows.ts`, one instanced draw).
 
-**Foliage.** Leaf atlases hold 2 × 2 card variants; generators pick a cell per card. Tree, shrub and fern cards are
-composed at load from CC0 Poly Haven leaves, fronds and tufts (`public/foliage/leaf-sprites.webp`, cut by
+**Foliage.** Leaf atlases hold 2 × 2 card variants; generators pick a cell per card. Tree, shrub, fern, needle, blossom
+and flower cards are composed at load from CC0 Poly Haven leaves, fronds, fir sprays, open flowers and daisy heads
+(blossom and flower sprites drawn as grey values, so the vertex colour alone sets the petal colour; a kind whose
+sprites the sheet lacks keeps procedural cards; `public/foliage/leaf-sprites.webp`, cut by
 `scripts/foliage/leaf-sprites.ts` from SHA-256-pinned sources) with overlap shadows and per-leaf tone, then turned into
 the neutral ratio images vertex colours tint (`materials/foliage-photo.ts`); the texture keeps its size, so the swap
 recompiles nothing. Cards of big plants are real-sized leaf clusters (more, smaller cards up to a budget,
 `cardBudget`). Leaves get forward-scattered sunlight as emission, world-space hue and value variation per plant and
 cluster (`materials/foliage-shading.ts`) and a small flutter in the wind; sunlit tones brighten and yellow instead of
 mixing toward white. Grass keeps procedural blades (photographed tufts thin out in the mips), now finer and darker at
-the root.
+the root. Leaf tones are photographic: near black-green shade inside a crown, a saturated mid tone, only a slight
+yellowing in the sun. Hedges are the `hedge` generator: small leaf-cluster cards over the faces of a rounded block,
+standing out at their own angles, lumpier when informal, shaded deep low and inside and lit on the top and the sun
+side, over a dark core; garden hedges come in runs of at most 6 m.
+
+**Plants stand on their root.** Plant generators (trees, shrubs, ferns, grass, flowers, cacti, hedges) build their root
+point at the origin and keep it there (`build({ anchor: 'root' })`, `ROOTED`): a plant centred on its bounding box
+moved its trunk whenever its crown changed (a photographed leaf card more on one side shifted trunks up to 0.6 m in
+every world). Trunk paths start at the origin, flared bases are flattened onto the ground and low cards stay above it.
 
 ## 37. Stairs people use: balustrades, and NPCs on several floors
 

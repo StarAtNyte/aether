@@ -114,12 +114,17 @@ export function seasonsGarden(): MockPlan {
       }
     });
   }
-  // A clipped hedge around the garden, with gates on the paths.
+  // A clipped hedge around the garden, with gates on the paths: leaf masses over a dark core (the `hedge` generator),
+  // in 5.4 m runs so each keeps its leaf density.
+  const HEDGE_RUNS = 5;
   for (const side of [-1, 1]) {
     for (const half of [-1, 1]) {
-      const hedge = { material: { finish: 'foliage' as const, preset: 'leaf' as const, color: '#355f31', roughness: 0.9 }, physics: 'static' as const, tags: ['hedge'] };
-      b.prim('hedge', 'box', [27, 1.5, 1.4], [r2(half * 17.8), 0.75, r2(side * 32)], hedge);
-      b.prim('hedge', 'box', [1.4, 1.5, 27], [r2(side * 32), 0.75, r2(half * 17.8)], hedge);
+      for (let k = 0; k < HEDGE_RUNS; k++) {
+        const along = r2(half * 17.8 - 13.5 + (27 / HEDGE_RUNS) * (k + 0.5));
+        const params = { length: r2(27 / HEDGE_RUNS), height: 1.5, width: 1.4, color: '#355f31', detail: 0.6 };
+        b.gen('hedge', 'hedge', params, [along, 0, r2(side * 32)], { physics: 'static', tags: ['hedge'] });
+        b.gen('hedge', 'hedge', params, [r2(side * 32), 0, along], { physics: 'static', tags: ['hedge'], yaw: 90 });
+      }
     }
   }
   // Rolling hills close in the garden, the far mountains stand blue behind them; meadow grass and wildflowers run up to the hedge.

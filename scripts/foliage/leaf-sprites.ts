@@ -1,9 +1,9 @@
 /**
- * Leaf sprite sheet for the foliage cards: downloads the pinned Poly Haven (CC0) leaf, frond and grass
- * photographs of `assets/foliage-sources.json` (host allow-listed, size capped, SHA-256 checked), cuts the
- * individual leaves, fronds and grass tufts out of each atlas by their alpha (connected regions that do not
- * touch the border, filtered by size and fill), scales them to a common size per kind and packs them into
- * one sheet:
+ * Leaf sprite sheet for the foliage cards: downloads the pinned Poly Haven (CC0) leaf, frond, conifer twig,
+ * flower and grass photographs of `assets/foliage-sources.json` (host allow-listed, size capped, SHA-256 checked),
+ * cuts the individual leaves, fronds, needle sprays, flower heads and grass tufts out of each atlas by their alpha
+ * (connected regions that do not touch the border, filtered by size, fill and, for flowers, colour), scales them
+ * to a common size per kind and packs them into one sheet:
  *
  * - `apps/studio/public/foliage/leaf-sprites.webp`  sRGB colour with the cut-out alpha,
  * - `apps/studio/public/foliage/leaf-sprites.json`  sprite rectangles, kinds, sources and licence.
@@ -35,7 +35,7 @@ const Config = z.object({
         id: z.string().regex(/^[a-z0-9_]{2,40}$/),
         page: z.string().url(),
         author: z.string().max(120),
-        use: z.enum(['leaf-broad', 'leaf-narrow', 'frond', 'tuft']),
+        use: z.enum(['leaf-broad', 'leaf-narrow', 'frond', 'tuft', 'needle', 'blossom', 'flower']),
         max: z.number().int().min(1).max(24),
         diffuse: File,
         alpha: File,
@@ -82,6 +82,11 @@ const RULES = {
   'leaf-narrow': { minArea: 600, minFill: 0.18, maxFill: 0.72, minAspect: 1.2, minH: 50, region: null },
   frond: { minArea: 3000, minFill: 0.12, maxFill: 1, minAspect: 2, minH: 200, region: null },
   tuft: { minArea: 2500, minFill: 0.08, maxFill: 1, minAspect: 0, minH: 60, region: 0.55 },
+  // A conifer spray: a twig with its needles, taller than wide.
+  needle: { minArea: 2500, minFill: 0.12, maxFill: 0.65, minAspect: 0.8, minH: 100, region: null },
+  // Open flowers: round heads (5 petals, a daisy), not leaves (colour, below) and not loose petals (size).
+  blossom: { minArea: 500, minFill: 0.35, maxFill: 0.95, minAspect: 0.6, minH: 20, region: null, flower: true },
+  flower: { minArea: 6000, minFill: 0.45, maxFill: 0.95, minAspect: 0.6, minH: 70, region: null, flower: true },
 };
 window.__extract = async (job) => {
   const diff = await decode(job.diffuse);
@@ -120,8 +125,20 @@ window.__extract = async (job) => {
     const fill = r.area / (w * h);
     if (fill < rule.minFill || fill > rule.maxFill || h / w < rule.minAspect) return false;
     if (rule.region !== null && r.y0 < H * rule.region) return false;
+    if (rule.flower && h / w > 1.6) return false;
     return true;
   }).filter((r) => {
+    // Flowers: keep the coloured heads, drop the green leaves and stems of the same sheet.
+    if (!rule.flower) return true;
+    let rs = 0, gs = 0, bs = 0, n = 0;
+    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
+      const s = y * W + x;
+      if (label[s] !== r.id) continue;
+      rs += diff.data[s * 4]; gs += diff.data[s * 4 + 1]; bs += diff.data[s * 4 + 2]; n++;
+    }
+    return n > 0 && gs < Math.max(rs, bs) * 0.98;
+  }).filter((r) => {
+    if (rule.flower) return true;
     // Not a leaf: pale, unsaturated patches (cut fruit, seed heads, petals) on more than a few percent of the region.
     let pale = 0;
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
@@ -153,7 +170,7 @@ window.__extract = async (job) => {
   }
   return picked.length;
 };
-const TARGET = { 'leaf-broad': ['max', 160], 'leaf-narrow': ['h', 192], frond: ['h', 416], tuft: ['w', 336] };
+const TARGET = { 'leaf-broad': ['max', 160], 'leaf-narrow': ['h', 192], frond: ['h', 416], tuft: ['w', 336], needle: ['h', 320], blossom: ['max', 112], flower: ['max', 176] };
 const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 window.__pack = async (sheetW) => {
   const items = window.__sprites.map((s, i) => {

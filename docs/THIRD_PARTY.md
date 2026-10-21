@@ -483,11 +483,14 @@ In total 47 distinct ambientCG materials ship.
 **Foliage leaf sprites** (Poly Haven model textures, 1k JPG diffuse and alpha,
 CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)), retrieved
 2026-10-21; pinned per file in `assets/foliage-sources.json` and verified by
-`scripts/foliage/leaf-sprites.ts`). 30 cut-out leaves, fronds and grass tufts
-are packed into `apps/studio/public/foliage/leaf-sprites.webp` (index
-`leaf-sprites.json`), and the renderer composes its leaf cards from them
+`scripts/foliage/leaf-sprites.ts`). 42 cut-out leaves, fronds, grass tufts,
+fir needle sprays, open flowers and daisy heads are packed into
+`apps/studio/public/foliage/leaf-sprites.webp` (index `leaf-sprites.json`), and
+the renderer composes its leaf, needle, blossom and flower cards from them
 (`packages/render/src/materials/foliage-photo.ts`). Authors: Rico Cilliers;
-Rob Tuytel and Rico Cilliers (Fern 02, Grass Medium 01).
+Rob Tuytel and Rico Cilliers (Fern 02, Grass Medium 01, Fir Tree 01,
+Celandine 01); Amal Kumar (Periwinkle Plant, whose opacity map serves as its
+alpha); James Ray Cock and Jenelle van Heerden (Flower Gazania).
 
 | Poly Haven asset | Diffuse SHA-256 | Alpha SHA-256 |
 | --- | --- | --- |
@@ -496,6 +499,10 @@ Rob Tuytel and Rico Cilliers (Fern 02, Grass Medium 01).
 | [Shrub 04](https://polyhaven.com/a/shrub_04) | `0b0fa0a474753d13f3093858cea79d0de05da1e6a0c5d6e181cd351080980b6c` | `79b42a2e9703f3080192e1d0c6be89d7d36a5543ee7cc411339f2741dd11a1ee` |
 | [Fern 02](https://polyhaven.com/a/fern_02) | `a828a6e7b4c01c826911e2eac4b3afc7457dab7b3b392a31c681ed88b7d50029` | `4d8c4d57373651e500f1a3b2071cd59d2d9cc031bc30ff73bc8a5d2b2c91571a` |
 | [Grass Medium 01](https://polyhaven.com/a/grass_medium_01) | `71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050` | `90ad8db2b471de6b61597c60bc218d1295c4bf68230be9083aa2001b9067b2e2` |
+| [Fir Tree 01](https://polyhaven.com/a/fir_tree_01) (twig) | `8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8` | `1f0607dd457c32406717daffe5049b1d2248c497589c83795c623c5e8b03e542` |
+| [Periwinkle Plant](https://polyhaven.com/a/periwinkle_plant) | `32d61084e6c07fa3ca8e03b35b347a12717f971efc90e8fe1185931ee2298c56` | `b8da8db432705c834e35bb6334f21ef420f6b1fdbe02695718a4030f34a9b0ff` |
+| [Celandine 01](https://polyhaven.com/a/celandine_01) | `d21558d8d101fd6601d620018f9efd2878b559666099aac3ab05df17da833b5f` | `1237dcde0c998c7d39300174c6c0a284f06acc5ef861313ac5c606d2272ab32f` |
+| [Flower Gazania](https://polyhaven.com/a/flower_gazania) | `9d3022ebe7bfe0493a3e46aad87ea4746ea51df8c8b3e19294f1bb718a3147bb` | `e850150fa4b76dade6dea9eca949250853fbb7b10ce1d583d24be71dd1256464` |
 
 Other textures:
 
