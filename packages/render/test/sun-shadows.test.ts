@@ -13,14 +13,16 @@ describe('sun shadow plan', () => {
     expect(planSunShadows({ ...big, tier: 'ultra', still: false, software: true }).cascades).toBe(1);
   });
 
-  it('gives every tier above low the same cascades (two focus boxes and the content fit)', () => {
-    for (const tier of ['medium', 'high', 'ultra'] as const) expect(planSunShadows({ ...big, tier, still: false }).cascades).toBe(CASCADES);
+  it('gives the high and ultra tiers and stills cascades (two focus boxes and the content fit), medium one fitted map', () => {
+    for (const tier of ['high', 'ultra'] as const) expect(planSunShadows({ ...big, tier, still: false }).cascades).toBe(CASCADES);
     expect(planSunShadows({ ...big, tier: 'medium', still: true }).cascades).toBe(CASCADES);
+    expect(planSunShadows({ ...big, tier: 'medium', still: false }).cascades).toBe(1);
+    expect(planSunShadows({ ...big, tier: 'ultra', still: false, cascades: false }).cascades).toBe(1);
     expect(CASCADES).toBe(3);
   });
 
-  it('compiles the same shaders on medium, high, ultra and stills (no material rebuild when the tier changes)', () => {
-    const keys = new Set([...(['medium', 'high', 'ultra'] as const).map((tier) => planSunShadows({ ...big, tier, still: false }).key), planSunShadows({ ...big, tier: 'high', still: true }).key]);
+  it('compiles the same shaders on high, ultra and stills (no material rebuild when the tier changes)', () => {
+    const keys = new Set([...(['high', 'ultra'] as const).map((tier) => planSunShadows({ ...big, tier, still: false }).key), planSunShadows({ ...big, tier: 'high', still: true }).key]);
     expect(keys.size).toBe(1);
     const small = new Set((['medium', 'high', 'ultra'] as const).map((tier) => planSunShadows({ ...big, contentRadius: 8, tier, still: false }).key));
     expect(small.size).toBe(1);
@@ -40,9 +42,9 @@ describe('sun shadow plan', () => {
     expect(still.blockerSamples).toBeLessThanOrEqual(MAX_BLOCKER_TAPS);
   });
 
-  it('keeps maps within the budget, with smaller near maps on the medium tier', () => {
+  it('keeps maps within the budget (medium has no near map: one fitted map)', () => {
     const medium = planSunShadows({ ...big, tier: 'medium', still: false });
-    expect(medium.nearMapSize).toBe(1024);
+    expect(medium.nearMapSize).toBe(0);
     expect(medium.outerMapSize).toBe(2048);
     const soft = planSunShadows({ ...big, tier: 'high', still: false, shadowMapCap: 1024 });
     expect(soft.nearMapSize).toBeLessThanOrEqual(1024);

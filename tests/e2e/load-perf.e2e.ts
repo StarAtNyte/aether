@@ -127,7 +127,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
     for (const mode of ['home', ...WORLDS]) {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
-      if (HW) await context.addInitScript(([c, m]) => { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => c }); Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => m }); }, [HW[0] ?? 4, HW[1] ?? 4] as const);
+      if (HW) await context.addInitScript({ content: `Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => ${HW[0] ?? 4}, configurable: true }); Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => ${HW[1] ?? 4}, configurable: true });` });
       // WebGL2 on the integrated GPU: without this the studio would pick a software WebGPU adapter.
       if (process.env['GEN_GPU'] === 'intel') await context.addInitScript(() => void delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu']);
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' + PERF_INIT });
@@ -199,6 +199,8 @@ async function runThrottle(rate: number, base: string): Promise<void> {
               requestRender(): void;
               setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void;
               renderTier: string;
+              autoRenderTier: string;
+              performanceLevel: number;
               gpu: { description: string; tier: string };
               stats(): { drawCalls: number; triangles: number };
               shaderWarmupMs: number;
@@ -226,7 +228,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
             });
             const s = times.slice(15).sort((a, b) => a - b);
             const s2 = r.stats();
-            return { med: s[Math.floor(s.length * 0.5)] ?? 0, p90: s[Math.floor(s.length * 0.9)] ?? 0, tier: r.renderTier, gpu: `${r.gpu.tier}: ${r.gpu.description.slice(0, 40)}`, dc: s2.drawCalls, tris: s2.triangles };
+            return { med: s[Math.floor(s.length * 0.5)] ?? 0, p90: s[Math.floor(s.length * 0.9)] ?? 0, tier: `${r.renderTier} (auto ${r.autoRenderTier}, ladder ${r.performanceLevel}, ${navigator.hardwareConcurrency} cores)`, gpu: `${r.gpu.tier}: ${r.gpu.description.slice(0, 40)}`, dc: s2.drawCalls, tris: s2.triangles };
           }, TIER);
           if (process.env['SHOT_DIR']) await page.screenshot({ path: `${process.env['SHOT_DIR']}/${mode}-${rate}x.png` });
           log(`| ${rate}x | ${mode} | open ${synced.toFixed(0)} ms | settled ${settled.toFixed(0)} ms | blocking ${lt.blocking.toFixed(0)} ms (${lt.n}) | ${n.count} req | ${mb(n.bytes)} (js ${mb(n.js)}) | tier ${fr.tier} (${fr.gpu}) | frame med ${fr.med.toFixed(1)} / p90 ${fr.p90.toFixed(1)} ms | ${fr.dc} dc, ${fr.tris} tris |`);

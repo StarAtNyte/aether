@@ -96,7 +96,10 @@ export function planSunShadows(input: SunShadowInput): SunShadowPlan {
   const tier: RenderTier = input.still ? 'ultra' : input.tier;
   const capable = (input.still || tier !== 'low') && input.software !== true;
   const filter: SunShadowFilter = capable ? 'soft' : 'pcf';
-  const cascades = capable && input.cascades !== false && !input.voxel && radius >= CASCADE_MIN_RADIUS ? CASCADES : 1;
+  // Cascades draw the casters three times (a third of a medium-tier frame on an integrated GPU, measured: 1100 draw calls
+  // against 614 on a house, 22.6 ms against 14.3 ms): they belong to the tiers that have the GPU for them.
+  const cascadeTier = input.still || tier === 'high' || tier === 'ultra';
+  const cascades = capable && cascadeTier && input.cascades !== false && !input.voxel && radius >= CASCADE_MIN_RADIUS ? CASCADES : 1;
   // Integrated GPUs (medium) get a cheaper near map; stills keep the doubled budget for the content fit only.
   const nearMapSize = cascades === 1 ? 0 : tier === 'medium' && !input.still ? Math.min(cap, 1024) : Math.min(cap, 2048);
   const outerMapSize = cap;
