@@ -4758,3 +4758,87 @@ half a metre off the ground. There were no contact shadows and no penumbra that 
   darker inside (leaf self-shadowing the old map was too coarse to resolve), so the forest reads darker overall.
 - *Generated house*: the old hard diagonal shadow edge across the hedge is gone; the facade carries the tree's shadow.
   Interiors are unchanged by design (the shell fit and the baked room light).
+
+## Look pass 4: leak-test slack, interior warmth, doorway lamps, leaf cards, Dusk Lake House cover (stage `look4`)
+
+**Problem.** Known gaps from the previous look stage: a pale band along wall-ceiling joins and inside corners, kitchens
+reading cool and grey, lamp light cut hard at a doorway between rooms, leaf cards at full size next to the lens, the
+Dusk Lake House cover opening with its storeys apart, a hazy high tier indoors and a dusk exterior to check.
+
+**What changed.**
+- *Light volume leak test* (`probeSees`, the shader and the CPU read). A free-distance code holds the low end of a 6.4 cm
+  step, so a probe 23 cm from a wall could read the wall 8 cm too close and reject every point in the last few
+  centimetres in front of it. The slack was zero; it is now 1.6 steps (`FREE_SLACK`; a 0.12 m wall is 1.9 steps, so a
+  probe behind it still sees nothing). When no probe sees a point, the fallback weight goes to probes that are not buried
+  in a wall (the fallback used to be plain trilinear, which mixed in the wall probes' bright both-sides fill). A probe
+  buried in a wall (all six distances zero) keeps none.
+- *Room lamps through doorways.* Open apertures of the building (arches without a leaf) become portals of the lamps of
+  their room, so a lamp's clip box no longer ends in a straight cut at the doorway (`roomApertures`, `setPortals`).
+- *Foliage.* Light that crosses a leaf is filtered twice, so the transmitted colour is the leaf's own squared (gain 2.4):
+  backlit leaves glow saturated green at sunset instead of olive-brown. Cards dissolve with screen-door dither between
+  0.3 and 1 m from the camera (`FOLIAGE_NEAR_FADE`; temporal AA softens it).
+- *Interior grade.* `INTERIOR_WARMTH` 0.18 to 0.45 (white-balance shift of a fully adapted interior view).
+- *Dusk Lake House cover.* The cover camera now stacks the storeys and uses the cutaway view (was exploded).
+- *Tooling.* `renderer.setLookTweak` (contrast, saturation, exposure, temperature multipliers on the grade, for look
+  rounds), `GEN_GPU=intel` in the e2e Chromium args, `AETHER_OUTDIR` for the studio build output, `STATIC_DIR` honoured by
+  the e2e server check and `archshots`.
+- Casa Patio rebaked: its world file was stale on main (wall dado params no longer carry the default style and panels,
+  from another stage's change).
+
+**Rounds** (Intel UHD 770 over WebGL2, software and discrete GPU not used; captures in `~/.local/share/aether/look4/`):
+r0 baseline (generated two-storey house, four views); r2 first build with the stage's uncommitted edits; dbg1 to dbg22
+isolation tests on the kitchen corner (lights, environment, volume, textures, hidden walls, per-fragment flags, a CPU
+replica of the shader read run in the page); r3 high tier, sunset exterior, leaf close-ups and the cover; r4 temperature
+sweep; r5 to r8 after each commit.
+
+**Findings from the isolation runs.**
+- The kitchen's light comes from the volume alone once the other lights are off, and the band persists with the sun,
+  the hemisphere, the lamps, the environment, every texture and the sky hidden: it is not geometry, material or sky seen
+  through a crack, it is the volume read. Rows of pixels across the corner: the band is 2 to 4 pixels wide and 80 to
+  110 levels above the wall.
+- Along ceiling joins it was the zero slack above (a CPU replica of the read gave a leak-test weight of 0 for points 4 to
+  9 cm below the ceiling; 0.4 to 0.5 with the 1.6 step slack).
+- The vertical band at the inside corner of the generated house is **not fixed**. The CPU replica of the read gives a dark,
+  smooth answer there (one unburied probe, bounce 0.047 against 0.093 on open wall), the GPU draws it bright, and the
+  fragments that are bright are 4 to 8 cm before the corner on the wall face, not at the corner line. Not found: a
+  wall-geometry change (dropping the mitre end caps) did not move it, so it was not kept.
+
+**Measurements** (generated house, 1600 x 900 low tier composite unless noted; luminance 0 to 255):
+
+| | before | after |
+|---|---|---|
+| ceiling join, kitchen, column x = 650 (peak above its neighbours) | +8 to +15 | 0 |
+| ceiling join, kitchen, column x = 950 | flat | flat |
+| vertical inside-corner band, kitchen (band minus wall) | 217 to 240 against 154 | 217 to 232 against 150 (unchanged) |
+| vertical inside-corner band, living room | 194 to 226 against 127 | 196 to 218 against 125 (unchanged) |
+| kitchen wall mean RGB, low tier | 154 156 152 (red/blue 1.013) | 153 153 145 (1.055) |
+| kitchen wall mean RGB, studio quality | 139 140 138 (1.007) | 137 136 131 (1.046) |
+| kitchen wall mean RGB, high tier | 127 128 125 (1.016) | 129 127 122 (1.057) |
+| living wall mean RGB | 115 111 104 (1.106) | 118 111 101 (1.168) |
+| high tier kitchen, luminance mean / stddev / 5th to 95th percentile | 107 / 27.8 / 62 to 135 (look3) | 101 / 28.4 / 57 to 130 |
+| low tier kitchen, 5th to 95th percentile | 71 to 148 (r0 baseline, blotchy dark ceiling) | 109 to 161 |
+
+The high tier indoors is not hazy in these captures (range 73, contrast unchanged from the previous stage); the low
+tier is flatter than the r0 baseline because the dark blotches along ceilings and corners are gone (the 5th percentile
+rose from 71 to 109), not because the highlights came down.
+
+**Before and after.**
+- *Kitchen*: cool grey walls with a white hairline along the ceiling joins → neutral to warm white walls, ceiling joins
+  clean, the inside-corner hairline remains (faint in studio quality, clear in the realtime tiers).
+- *Sunset exterior (generated house)*: leaves read saturated green and backlit, lit windows and a pink and violet sky;
+  the pool reads flat and pale (not touched).
+- *Leaf close-up (shrub at 1 m)*: readable leaves with a dither at the card edges; a hedge seen from 0.95 m in shade shows
+  its dark core as a flat black wall (the hedge generator's core is baked into Four Seasons Garden; not changed here).
+- *Dusk Lake House cover*: two storeys apart in the air → one house, cutaway, lit rooms visible.
+- *Doorway lamps*: portals added with unit tests; not captured in a still of its own (the genlook house has no
+  open archway between lit rooms).
+
+**Verification.** `tsc --noEmit` 0 errors; vitest for `packages/render` 750 tests, `packages/arch` 475 tests (new: slack
+and quantisation test for `probeSees`, aperture portals for room lamps; one allocation test in `assets.test.ts` failed
+once under machine load and passed alone and on a rerun); `showcase:bake --check` up to date after the Casa Patio rebake;
+`npm run smoke` 34/34.
+
+**Honest gaps.** The vertical inside-corner band (above). Doorway lamps and the dusk house interior were not captured
+side by side. The hedge core is black in shade up close. Close-up cards dissolve rather than shrink (no per-card centre
+in the vertex data). The interior warmth is one global constant, not derived from the rendered colour. The captures are
+iGPU WebGL2 and low-resolution studio refinement, so grain in the high tier is the iGPU's.
