@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { createTrellisProvider, isAllowedEndpoint, type ImageTo3DProvider } from '@aether/assets';
 import type { AppEnv } from '../src/app-env';
-import { registerImageTo3dRoutes } from '../src/routes/image-to-3d';
+import { IMAGE_TO_3D_LICENCE_NOTICE, registerImageTo3dRoutes } from '../src/routes/image-to-3d';
 import { triangleGlb, pngHeader } from '../../../packages/assets/test/fixtures';
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} } as never;
@@ -66,5 +66,14 @@ describe('POST /api/image-to-3d', () => {
     const res = await app(failing).request('/api/image-to-3d', { method: 'POST', headers: { 'content-type': 'image/png' }, body: pngHeader(8, 8) as Uint8Array<ArrayBuffer> });
     expect(res.status).toBe(502);
     expect(await res.text()).not.toContain('secret');
+  });
+
+  it('logs the licence notice once when the route is turned on', () => {
+    const warnings: string[] = [];
+    const spy = { debug() {}, info() {}, warn(msg: string) { warnings.push(msg); }, error() {} } as never;
+    registerImageTo3dRoutes(new Hono<AppEnv>(), { provider: ok, logger: spy });
+    expect(warnings).toEqual([IMAGE_TO_3D_LICENCE_NOTICE]);
+    expect(IMAGE_TO_3D_LICENCE_NOTICE).toMatch(/nvdiffrast/);
+    expect(IMAGE_TO_3D_LICENCE_NOTICE).toMatch(/research or evaluation only/);
   });
 });

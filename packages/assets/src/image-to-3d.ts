@@ -1,8 +1,11 @@
 /**
  * Optional image → 3D mesh providers (OFF by default). The reference
- * implementation targets TRELLIS.2 (MIT) running on the user's own machine
- * or their own Modal account behind a tiny HTTP wrapper — see
- * docs/IMAGE_TO_3D.md. Nothing is deployed or paid for by the project.
+ * implementation targets TRELLIS.2 (MIT; 24 GB VRAM) running on the user's
+ * own machine or their own Modal account behind a tiny HTTP wrapper — see
+ * docs/IMAGE_TO_3D.md. Nothing is deployed or paid for by the project, and
+ * no model code ships here: TRELLIS.2's GLB export imports nvdiffrast /
+ * nvdiffrec (NVIDIA licences, research or evaluation only), which is the
+ * wrapper's concern and the reason the route stays opt-in.
  *
  * Wire protocol (what the wrapper must implement):
  *   POST <endpoint>   Content-Type: application/json

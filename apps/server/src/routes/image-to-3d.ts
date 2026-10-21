@@ -17,8 +17,16 @@ import type { Logger } from '../logger';
 /** Largest accepted reference image. */
 export const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
+/**
+ * Logged once when the route is turned on. The wrapper behind the URL is the user's own, and the published
+ * wrappers depend on libraries that are not licensed for commercial use (docs/IMAGE_TO_3D.md, Licences).
+ */
+export const IMAGE_TO_3D_LICENCE_NOTICE =
+  'image-to-3D is on (AETHER_IMAGE_TO_3D_URL). Check the licences of the wrapper you run: TRELLIS.2 exports through nvdiffrast and nvdiffrec (NVIDIA, research or evaluation only), TripoSG reference scripts use diso (CC BY-NC 4.0) and RMBG-1.4 (non-commercial). See docs/IMAGE_TO_3D.md.';
+
 /** Register the route. */
 export function registerImageTo3dRoutes(app: Hono<AppEnv>, deps: { provider: ImageTo3DProvider; logger: Logger; shutdownSignal?: AbortSignal }): void {
+  deps.logger.warn(IMAGE_TO_3D_LICENCE_NOTICE, { provider: deps.provider.id });
   let busy = false;
   // Streams are cut at the cap even without a Content-Length header.
   app.use('/api/image-to-3d', jsonBodyLimit(MAX_IMAGE_BYTES));

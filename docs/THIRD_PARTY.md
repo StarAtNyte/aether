@@ -548,9 +548,13 @@ browser (IndexedDB), are listed as "Your imports" in the credits and are never
 uploaded by the app. `model` URLs are restricted to same-origin, `blob:` or
 `data:`.
 
-**Optional image → 3D (TRELLIS.2, Microsoft, MIT).** Off by default and not
-bundled; the user runs it on their own machine or cloud account. See
-[IMAGE_TO_3D.md](IMAGE_TO_3D.md).
+**Optional image → 3D (TRELLIS.2, Microsoft, MIT; or TripoSG, VAST, MIT).** Off by default and not
+bundled: Aether ships only an HTTP client and the GLB validator, and the user runs the model on their own
+machine or cloud account. TRELLIS.2's texture and GLB export imports nvdiffrast and nvdiffrec, whose NVIDIA
+Source Code Licences allow research or evaluation use only; TripoSG's reference scripts use `diso` (CC BY-NC
+4.0), BRIA RMBG-1.4 (non-commercial) and `pymeshlab` (GPL-3.0). The server logs a licence notice when the
+route is turned on. Hunyuan3D-2 (territory exclusions, MAU cap), SF3D / SPAR3D (revenue cap) and InstantMesh
+(non-commercial Zero123++ weights) are not recommended. See [IMAGE_TO_3D.md](IMAGE_TO_3D.md).
 
 ## External services
 
