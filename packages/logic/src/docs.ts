@@ -51,7 +51,7 @@ ACTIONS (then):
 - win — end the session victorious. {"do":"win","text":"All coins collected!"}
 - lose — end the session in defeat. {"do":"lose","text":"Out of time!"}
 - reset — restart the world from its initial state. {"do":"reset"}
-- effect — visual only: a particle burst (sparks dust sparkle fire smoke magic explosion splash confetti …) at a point/selector; feel adds that event's shake. {"do":"effect","vfx":"sparks","at":"anvil","feel":"hit"}
+- effect — visual burst {"do":"effect","vfx":"sparks"}
 
 TIPS: per-object pickups/hazards/goals are better as behaviors (collectible, hazard, goal) than rules — a rule's "#coin" target means EVERY coin.
 Example: {"id":"win-at-10","when":{"on":"state","key":"score","op":">=","value":10},"then":[{"do":"sound","sound":"win"},{"do":"win","text":"10 coins!"}]}`;

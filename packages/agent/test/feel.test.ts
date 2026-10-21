@@ -106,13 +106,15 @@ describe('feel by prompt (local edit engine)', () => {
 });
 
 describe('tune_feel tool', () => {
-  it('is offered to the model with a schema and documented in the system prompt', () => {
+  it('is offered to the model with a schema and its guidance in the description', () => {
     const tool = AGENT_TOOLS.find((t) => t.name === 'tune_feel');
     expect(tool).toBeDefined();
     expect(AGENT_TOOLS[AGENT_TOOLS.length - 1]?.name).toBe('finish');
     const prompt = buildSystemPrompt({ generators: [], behaviors: [], ruleDocs: '', generatorApiDts: '', generatorExamples: [], scriptApiDts: '' });
-    expect(prompt).toContain('## Game feel and effects');
-    expect(prompt).toContain('tune_feel');
+    // The tool's own description carries the tiers, cues, presets and pacing (the system prompt stays within its budget).
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(tool?.description).toContain('punchy');
+    expect(tool?.description).toContain('Pacing');
   });
 
   it('merges cues, attaches emitters by tag, refuses unknown targets and validates input', () => {

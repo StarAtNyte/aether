@@ -356,7 +356,7 @@ The loop stops when the score reaches `FORGE_GATE` (0.8) or the budget runs out.
   refused); `autoEmitters` (fire on torches, campfires and braziers, smoke on chimneys, embers on forges and lava, magic
   on portals); `reset`; `message`.
 - **Returns.** `Feel: <tier and cues>; fire on torch-1, torch-2.` plus any refused targets, or "Nothing to change".
-- **When to use it.** For every game (the system prompt asks for a tier by genre and emitters on what burns), and for
+- **When to use it.** For every game (its description asks for a tier by genre and emitters on what burns), and for
   requests such as "make hits feel punchy", "sparks when coins are collected", "dust when landing", "less shake".
   The same requests are also answered by the local edit engine without a model (`refine/ops-feel.ts`).
 

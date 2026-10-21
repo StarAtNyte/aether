@@ -53,8 +53,7 @@ type Intent =
   | { do: 'sound'; sound: 'pickup' | 'hit' | 'explosion' | 'win' | 'lose' | 'click' | 'whoosh' | 'bell' }
   | { do: 'win'; text?: string }
   | { do: 'lose'; text?: string }
-  | { do: 'reset' }
-  | { do: 'effect'; vfx?: string; at?: Vec3 | Selector; feel?: string; color?: string; scale?: number }; // visual only: a particle burst (+ that feel event's shake/flash)
+  | { do: 'reset' };
 
 // Return at most 32 intents per call; invalid intents are dropped and logged.
 // Example (circle around the start point, flash when the player is near):

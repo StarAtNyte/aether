@@ -3197,7 +3197,7 @@ before.
   (`explosion`, intensity = radius / 5), `gameOver` (`win` / `death`) and the `effect` action (kind = its `feel` or null).
   A throwing host is caught; a test proves the run is identical with no feel layer, a recording one and a throwing one.
 - `BehaviorEnv.feedback(kind, at, opts)`, `ActionEnv.effect(...)` and `ActionEnv.playerId()` (internal contracts).
-- `RULE_DOCS` and `SCRIPT_API_DTS` document the `effect` action.
+- `RULE_DOCS` documents the `effect` action (scripts may return it too: intents are validated as actions).
 
 ### `@aether/render`
 
@@ -3228,8 +3228,9 @@ before.
   refused), `autoEmitters?` (fire on torches, campfires, braziers; smoke on chimneys; embers on forges and lava; magic on
   portals; torches held by people are lit by the renderer instead), `reset?`, `message?`) → one undo step
   (`setMeta.feel` and entity `vfx` updates). `feelPatches`, `mergeFeel`, `feelTierFor(request)`,
-  `defaultEmitterPatches(world)`, `isGameWorld`, `patchesMakeGame` (`feel-edit.ts`). System prompt section "Game feel and
-  effects".
+  `defaultEmitterPatches(world)`, `isGameWorld`, `patchesMakeGame` (`feel-edit.ts`). The guidance (tiers by genre, the
+  moment-to-moment answers, pacing, presets) lives in the tool's description, not the system prompt, which stays within
+  its token budget; `RULE_DOCS` lists the `effect` action in one line.
 - Local edit engine: `Command {op: "feel", events, tier?, vfx?, tweak? {knob: shake | hitStop | flash | rumble | text |
   fovKick | vignette, mode: off | less | more | on}, footsteps?, attach? {ref, vfx}}` (`refine/ops-feel.ts`:
   `parseFeel`, `planFeel`), parsed before the environment so "dust when landing" is a landing cue. Cosmetic (no
