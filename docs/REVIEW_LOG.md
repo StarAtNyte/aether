@@ -4421,8 +4421,12 @@ and cap rail in the realtime look.
   send it downstairs in a building with stairs.
 - NPCs pass through each other on a stair when they meet (they keep right; there is no queueing), and in a crowd stress
   test 60 people use one stair at once. Dynamic (physics) NPCs are steered along a stair's line but not tested.
-- `agent/test/prompt.test.ts` was already over its token budget on main (15 977 against 15 800, from earlier prompt
-  growth); the routine and flock fields add 9 tokens.
+- The routine and flock fields add 9 tokens to the system prompt (`agent/test/prompt.test.ts`, under its budget on
+  the final main).
+
+**Gates.** `tsc --noEmit` 0 errors; vitest 417 files, 4 509 tests pass; studio build; `npm run smoke` 34/34;
+`npm run e2e:verified` passed (Chromium and Firefox); `showcase:bake --check` up to date.
+
 ## Game feel and gameplay effects
 
 **Problem.** Games were silent and static: no screen shake, hit-stop, squash or feedback presets anywhere, and no
