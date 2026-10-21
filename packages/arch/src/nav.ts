@@ -22,7 +22,7 @@ import { pointInPolygon, rotateYaw, type P2 } from './math2';
 import { DOOR_CLEARANCE, LINING } from './openings';
 import { openingSpans } from './wall';
 import { StairParams, WallParams } from './params';
-import { stairFootprint, stairLayout } from './stair';
+import { stairFootprint, stairGuardOutlines, stairLayout } from './stair';
 import { analyzeRoomPlacements } from './placement';
 import { placedPolygon } from './entity-geom';
 import { parsePlan } from './compile';
@@ -525,6 +525,8 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
           return [pos[0] + r[0], pos[2] + r[1]];
         };
         grid.fill(fp.map(world2));
+        // Its balustrades stand just outside the flights and landings.
+        for (const o of stairGuardOutlines(sp2.data)) grid.fill(o.map(world2));
         const { flights } = stairLayout(sp2.data);
         const last = flights[flights.length - 1];
         if (last) {

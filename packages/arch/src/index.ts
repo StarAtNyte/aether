@@ -21,7 +21,7 @@ export { solveWallJoins, JOIN_TOLERANCE, type JoinWall, type WallJoin } from './
 export { wallNetwork, type NetworkRoom, type NetworkWall } from './wall-network';
 export { buildSlab, buildCeiling, buildColumn, buildRailing, buildBasin, slabArea } from './elements';
 export { buildRoof, roofRise } from './roof';
-export { buildStair, stairFootprint, stairLayout, stairRisers, stairWalkLine, STAIR_WALK_LINE_RUN_OUT, DEFAULT_RISER } from './stair';
+export { buildStair, stairFootprint, stairGuardOutlines, stairGuardPieces, stairLayout, stairRisers, stairWalkLine, GUARD_HALF, GUARD_HEIGHT, GUARD_OFFSET, GUARD_START, STAIR_WALK_LINE_RUN_OUT, DEFAULT_RISER, type StairGuardPiece } from './stair';
 export { buildDoor, buildFrame, buildWindow, DOOR_CLEARANCE, LINING } from './openings';
 export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructureParams, buildStructure, ArchParamsError } from './structure';
 export { FURNITURE, furnitureById, furnitureByKind, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';

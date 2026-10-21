@@ -189,8 +189,9 @@ export function buildRailing(p: RailingParams): ArchOutput {
   const infill = new Geom();
   const h = p.height;
   const pts = p.points;
-  // Top rail.
-  metal.merge(tube(pts.map((q) => [q[0], h, q[1]] as const), 0.022, 10));
+  const timber = new Geom();
+  // Top rail (a moulded timber handrail on timber balustrades).
+  if (p.style !== 'timber') metal.merge(tube(pts.map((q) => [q[0], h, q[1]] as const), 0.022, 10));
   for (let k = 0; k + 1 < pts.length; k++) {
     const a = pts[k] as P2;
     const b = pts[k + 1] as P2;
@@ -199,6 +200,17 @@ export function buildRailing(p: RailingParams): ArchOutput {
     const ux = (b[0] - a[0]) / len;
     const uz = (b[1] - a[1]) / len;
     const yaw = (Math.atan2(-uz, ux) * 180) / Math.PI;
+    if (p.style === 'timber') {
+      // Newel posts at the corners, square spindles between a bottom rail and the handrail.
+      timber.merge(box(-0.02, h - 0.055, -0.033, len + 0.02, h, 0.033).rotateY(yaw).translate(a[0], 0, a[1]));
+      timber.merge(box(0, 0.04, -0.025, len, 0.1, 0.025).rotateY(yaw).translate(a[0], 0, a[1]));
+      const n = Math.max(1, Math.ceil(len / 0.12));
+      for (let i = 1; i < n; i++) timber.merge(box((len * i) / n - 0.016, 0.1, -0.016, (len * i) / n + 0.016, h - 0.055, 0.016).rotateY(yaw).translate(a[0], 0, a[1]));
+      if (k === 0) timber.merge(box(-0.045, 0, -0.045, 0.045, h + 0.06, 0.045).translate(a[0], 0, a[1]));
+      timber.merge(box(-0.045, 0, -0.045, 0.045, h + 0.06, 0.045).translate(b[0], 0, b[1]));
+      set.box([(a[0] + b[0]) / 2, h / 2, (a[1] + b[1]) / 2], [len / 2, h / 2, 0.04], [0, yaw, 0]);
+      continue;
+    }
     // Posts every ~1.2 m (glass) or 0.12 m bars.
     const spacing = p.style === 'bars' ? 0.12 : 1.2;
     const n = Math.max(1, Math.round(len / spacing));
@@ -220,6 +232,7 @@ export function buildRailing(p: RailingParams): ArchOutput {
     set.box([(a[0] + b[0]) / 2, h / 2, (a[1] + b[1]) / 2], [len / 2, h / 2, 0.04], [0, yaw, 0]);
   }
   set.add(metal, p.finish);
+  set.add(timber, { finish: 'oak' });
   if (p.style === 'glass') set.add(infill, { finish: 'glass' });
   else if (p.style === 'solid') set.add(infill, { finish: 'plaster' });
   return set.build();

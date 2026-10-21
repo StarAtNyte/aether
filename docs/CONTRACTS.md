@@ -1490,6 +1490,20 @@ exteriorPalette(style) → { ground, upper, plinth, trim, rainwater, surround, s
                             // the schema's default facade: e.g. modern = render base + timber cladding upper storey + concrete plinth
                             // + black-metal fascia, window boxes and an entrance canopy; scandinavian = falu-red cladding + white boards
 furn-accent { style vase|bowl|books|candles|towels, color, accent }   furn-lounger { frame, color, back 0..70 }   (surface / floor pieces)
+StairParams.guards?: boolean[≤12]          // a balustrade (guard + collider) per piece of stairGuardPieces(p), in its order; false =
+                                           // a side against a wall (wall handrail on brackets); omitted = no balustrades, handrail per `rail`
+StairParams.balustrade = glass|steel|timber   // frameless glass in a steel shoe with a cap rail | round top rail, lower rail and bars
+                                           // < 0.1 m apart | painted string and spindles, oak handrail and newels
+StairParams.soffit?: m                     // underside of the floor above (default rise − 0.22): guards beside the stairwell stay below it
+stairGuardPieces(p) → StairGuardPiece[]    // straight 2 (sides) · L 6 (f1 outer, landing side, landing end, f2 outer, f1 inner, f2 inner)
+                                           // · U ≤ 7 (f1 outer, landing ×3, f2 outer, both inner sides when gap ≥ 0.09 m)
+stairGuardOutlines(p) → P2[][]             // plan rectangles of the built guards (building check obstacles)
+GUARD_HEIGHT 0.9 (above the pitch line / landing) · GUARD_OFFSET 0.025 (centre plane outside the edge: flights keep their full
+  width) · GUARD_HALF 0.02 · GUARD_START 0.7 (a flight from a floor is guarded from 0.7 m: the side landing beside the first treads
+  stays open); colliders are upright boxes about a tread long; each flight's collider closes the last riser with a < 40° wedge
+compileBuilding: guards = sides whose floor 0.2 m out is in the stair's room; balustrade by style (modern glass, industrial and
+  mediterranean steel, scandinavian, japandi and classic timber); the stairwell railing upstairs follows (glass | bars | timber)
+RailingParams.style += 'timber'
 ```
 
 `@aether/procgen` wraps every structural element (`arch-wall`, `arch-slab`,

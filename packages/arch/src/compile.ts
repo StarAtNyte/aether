@@ -19,7 +19,7 @@ import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offse
 import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, pointSegmentDistance, positive, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
 import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
-import { stairFootprint, stairLayout } from './stair';
+import { stairFootprint, stairGuardPieces, stairLayout } from './stair';
 import { StairParams } from './params';
 import { DOOR_CLEARANCE, LINING, sashHeight } from './openings';
 import { roofRise } from './roof';
@@ -297,7 +297,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   const topLevelIndex = plan.levels.length - 1;
   let prevStairHoles: P2[][] = [];
   // Railings around stairwells, created on the level above the stair.
-  type Rail = { points: P2[]; style: 'glass' | 'bars' | 'cable' | 'solid' };
+  type Rail = { points: P2[]; style: 'glass' | 'bars' | 'cable' | 'solid' | 'timber' };
   let railingsHere: Rail[] = [];
   let railingsNext: Rail[] = [];
   let maxY = elevation;
@@ -767,8 +767,10 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         notes.push(`stair on the top level ${li} leads nowhere — add a level above or remove it`);
         return;
       }
-      const sp = StairParams.parse({ shape: s.shape, width: s.width, rise: height, turn: s.turn, finish: floorFor(plan.style, 'living'), rail: 'right', railMaterial: { finish: pal.metal === 'brass' ? 'brass' : 'black-metal' } });
       const yaw = headingYaw(s.heading);
+      const balustrade = BALUSTRADE[plan.style];
+      const base = StairParams.parse({ shape: s.shape, width: s.width, rise: height, turn: s.turn, finish: floorFor(plan.style, 'living'), rail: 'right', railMaterial: { finish: pal.metal === 'brass' ? 'brass' : 'black-metal' }, balustrade, soffit: round(height - FLOOR_THICKNESS) });
+      const sp = StairParams.parse({ ...base, guards: openSides(base, s.at, yaw, polys, indoor.map((r) => r.id)) });
       add({ id: `${lid}-stair${si}`, parent: lid, name: 'Stair', transform: { position: [round(s.at[0]), 0, round(s.at[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-stair', params: sp as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'stair' }, tags: ['arch', 'stair'] });
       const fp = stairWorldFootprint(s, height);
       nextHoles.push(fp);
@@ -809,7 +811,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
           const rail = offsetPolygon(ring, WELL_RAIL_SETBACK);
           const chain: P2[] = [];
           for (let k = 0; k <= ring.length - 1; k++) chain.push(rail[(start + k) % ring.length] as P2);
-          railingsNext.push({ points: chain, style: 'glass' });
+          railingsNext.push({ points: chain, style: WELL_RAILING[balustrade] });
         }
       }
     });
@@ -1062,6 +1064,37 @@ function stairWorldFootprint(s: { at: P2 | [number, number]; heading: 'north' | 
   return stairFootprint(sp).map((p) => {
     const r = rotateYaw(p[0], p[1], yaw);
     return [s.at[0] + r[0], s.at[1] + r[1]] as P2;
+  });
+}
+
+/** The balustrade a stair gets in each interior style, and the stairwell railing upstairs that continues it. */
+const BALUSTRADE: Readonly<Record<BuildingPlan['style'], 'glass' | 'steel' | 'timber'>> = { modern: 'glass', scandinavian: 'timber', industrial: 'steel', japandi: 'timber', classic: 'timber', mediterranean: 'steel' };
+const WELL_RAILING: Readonly<Record<'glass' | 'steel' | 'timber', 'glass' | 'bars' | 'timber'>> = { glass: 'glass', steel: 'bars', timber: 'timber' };
+
+/** How far past a stair's side the floor is looked for (m): beyond the inside face of a wall the stair stands against. */
+const OPEN_SIDE_PROBE = 0.2;
+
+/**
+ * Which sides of a stair are open (a drop beside a flight or landing, not a wall): one flag per piece of
+ * `stairGuardPieces`. A side is against a wall when the floor just past it (two of three points along it) is outside
+ * the room the stair stands in.
+ */
+function openSides(sp: StairParams, at: readonly [number, number], yaw: number, polys: ReadonlyMap<string, P2[]>, ids: readonly string[]): boolean[] {
+  const toPlan = (q: P2): P2 => {
+    const r = rotateYaw(q[0], q[1], yaw);
+    return [at[0] + r[0], at[1] + r[1]];
+  };
+  const fp = stairFootprint(sp).map(toPlan);
+  const c = centroid(fp);
+  const room = ids.map((id) => polys.get(id)).find((poly): poly is P2[] => poly !== undefined && pointInPolygon(c[0], c[1], poly));
+  return stairGuardPieces(sp).map((pc) => {
+    if (!room) return true;
+    let outside = 0;
+    for (const t of [0.15, 0.5, 0.85]) {
+      const q = toPlan([pc.a[0] + (pc.b[0] - pc.a[0]) * t + pc.out[0] * OPEN_SIDE_PROBE, pc.a[1] + (pc.b[1] - pc.a[1]) * t + pc.out[1] * OPEN_SIDE_PROBE]);
+      if (!pointInPolygon(q[0], q[1], room)) outside++;
+    }
+    return outside < 2;
   });
 }
 

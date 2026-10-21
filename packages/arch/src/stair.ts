@@ -144,6 +144,290 @@ export function stairFootprint(p: StairParams): P2[] {
   ];
 }
 
+/** Height of a balustrade's top rail above the pitch line of a flight and above a landing (m). */
+export const GUARD_HEIGHT = 0.9;
+/** How far outside the stair's edge the balustrade's centre plane stands (m): the flights keep their full width. */
+export const GUARD_OFFSET = 0.025;
+/** Half the thickness of a balustrade's collider (m): it fills 5 mm to 45 mm outside the edge. */
+export const GUARD_HALF = 0.02;
+/**
+ * Where the balustrade of a flight that starts from a floor begins, from the first riser (m): the first treads stay
+ * open at the sides, so a stair along a wall can still be stepped onto beside them (stair-fit's side landing reaches
+ * 0.6 m along the flight). The drop there is under half a metre.
+ */
+export const GUARD_START = 0.7;
+/** How far the balustrade reaches below the pitch line (the string it is fixed to, m). */
+const GUARD_BELOW = 0.12;
+
+/**
+ * One side of a flight or landing that may need a balustrade, in the stair's local frame: the edge from `a` to `b`
+ * with the pitch-line (walking surface) heights `ya`, `yb` at its ends and its outward unit normal. A flight's side
+ * also names its flight and which side it is (+1 toward the flight's local +Z, its right facing up the flight; −1 its left).
+ */
+export interface StairGuardPiece {
+  a: P2;
+  b: P2;
+  ya: number;
+  yb: number;
+  out: P2;
+  flight: number | null;
+  side: 1 | -1;
+  /** Under the floor above when built (outside the stairwell): kept below its soffit. False in a U stair's central gap. */
+  underSlab: boolean;
+  /**
+   * How each end meets the next piece: round an outside corner (the balustrade runs on round it), into an inside
+   * corner (it stops at the other one's plane), straight on along the same line, or not at all.
+   */
+  joinA: GuardJoin;
+  joinB: GuardJoin;
+}
+
+/** How a balustrade piece's end meets its neighbour (see {@link StairGuardPiece}). */
+export type GuardJoin = 'outside' | 'inside' | 'straight' | 'none';
+
+/**
+ * The sides of the flights and landings a balustrade may stand on, in a fixed order for each shape (the order of
+ * `StairParams.guards`). Straight: the flight's two sides. L: the first flight's outer side, the landing's outer side
+ * and end, the second flight's outer side, then the two inner sides of the turn. U: the first flight's outer side, the
+ * landing's three open edges, the return flight's outer side, then the inner sides of both flights along the gap
+ * (only when the gap leaves room for both balustrades).
+ */
+export function stairGuardPieces(p: StairParams): StairGuardPiece[] {
+  const { flights, landings, riser } = stairLayout(p);
+  const g = p.going;
+  const w = p.width;
+  const hw = w / 2;
+  const slope = riser / g;
+  const f1 = flights[0] as Flight;
+  // Pitch line of a flight at distance s along it: through the nosings, landing on the floor or landing above.
+  const pitch = (f: Flight, s: number): number => Math.min(f.y0 + (f.treads + 1) * riser, f.y0 + riser + s * slope);
+  const start = (f: Flight): number => (f.y0 > 0.01 ? 0 : Math.min(GUARD_START, f.treads * g * 0.5));
+  const sideOf = (f: Flight, out: P2): 1 | -1 => (out[0] * -f.dz + out[1] * f.dx >= 0 ? 1 : -1);
+  const flightSide = (fi: number, t: number, out: P2, joinB: GuardJoin, underSlab = true): StairGuardPiece => {
+    const f = flights[fi] as Flight;
+    const s0 = start(f);
+    const run = f.treads * g;
+    const px = -f.dz * t;
+    const pz = f.dx * t;
+    return {
+      a: [f.x + f.dx * s0 + px, f.z + f.dz * s0 + pz],
+      b: [f.x + f.dx * run + px, f.z + f.dz * run + pz],
+      ya: pitch(f, s0),
+      yb: pitch(f, run),
+      out,
+      flight: fi,
+      side: sideOf(f, out),
+      underSlab,
+      joinA: 'none',
+      joinB,
+    };
+  };
+  const flat = (a: P2, b: P2, y: number, out: P2, joinA: GuardJoin, joinB: GuardJoin): StairGuardPiece => ({ a, b, ya: y, yb: y, out, flight: null, side: 1, underSlab: true, joinA, joinB });
+  const l = landings[0];
+  const f2 = flights[1];
+  if (!l || !f2 || f1.treads <= 0) {
+    if (f1.treads <= 0) return [];
+    return [flightSide(0, hw, [0, 1], 'none'), flightSide(0, -hw, [0, -1], 'none')];
+  }
+  const s = p.turn === 'left' ? -1 : 1;
+  const run2 = f2.treads * g;
+  const lx0 = l.x0;
+  const lx1 = l.x1;
+  if (p.shape === 'l') {
+    const outer = flightSide(0, -s * hw, [0, -s], 'straight');
+    const inner = flightSide(0, s * hw, [0, s], f2.treads > 0 ? 'inside' : 'none');
+    // Flight 2 climbs along (0, s) from the landing's side; its outer side is x = lx1, its inner side x = lx0.
+    const f2Outer: StairGuardPiece = { a: [lx1, s * hw], b: [lx1, s * (hw + run2)], ya: l.y, yb: pitch(f2, run2), out: [1, 0], flight: 1, side: sideOf(f2, [1, 0]), underSlab: true, joinA: 'outside', joinB: 'none' };
+    const f2Inner: StairGuardPiece = { a: [lx0, s * hw], b: [lx0, s * (hw + run2)], ya: l.y, yb: pitch(f2, run2), out: [-1, 0], flight: 1, side: sideOf(f2, [-1, 0]), underSlab: true, joinA: 'inside', joinB: 'none' };
+    const side = flat([lx0, -s * hw], [lx1, -s * hw], l.y, [0, -s], 'straight', 'outside');
+    if (f2.treads <= 0) return [outer, side, flat([lx1, -s * hw], [lx1, s * hw], l.y, [1, 0], 'outside', 'none'), inner];
+    return [outer, side, flat([lx1, -s * hw], [lx1, s * hw], l.y, [1, 0], 'outside', 'outside'), f2Outer, inner, f2Inner];
+  }
+  // U: the return flight runs along −X at z = off, a gap away from the first.
+  const off = f2.z;
+  const x2 = lx0 - run2;
+  const pieces: StairGuardPiece[] = [
+    flightSide(0, -s * hw, [0, -s], 'straight'),
+    flat([lx0, -s * hw], [lx1, -s * hw], l.y, [0, -s], 'straight', 'outside'),
+    flat([lx1, -s * hw], [lx1, off + s * hw], l.y, [1, 0], 'outside', 'outside'),
+    flat([lx1, off + s * hw], [lx0, off + s * hw], l.y, [0, s], 'outside', f2.treads > 0 ? 'straight' : 'none'),
+  ];
+  if (f2.treads > 0) pieces.push({ a: [lx0, off + s * hw], b: [x2, off + s * hw], ya: l.y, yb: pitch(f2, run2), out: [0, s], flight: 1, side: sideOf(f2, [0, s]), underSlab: true, joinA: 'straight', joinB: 'none' });
+  // Along the gap both balustrades fit side by side only when it is wider than their two colliders.
+  if (p.gap >= 2 * (GUARD_OFFSET + GUARD_HALF)) {
+    pieces.push(flightSide(0, s * hw, [0, s], 'none', false));
+    if (f2.treads > 0) pieces.push({ a: [lx0, off - s * hw], b: [x2, off - s * hw], ya: l.y, yb: pitch(f2, run2), out: [0, -s], flight: 1, side: sideOf(f2, [0, -s]), underSlab: false, joinA: 'none', joinB: 'none' });
+  }
+  return pieces;
+}
+
+/** A balustrade piece laid out along its own frame: u along it, y up. */
+interface GuardFrame {
+  /** Start of the centre line (offset outward and extended round joined corners), unit direction, length. */
+  x: number;
+  z: number;
+  dx: number;
+  dz: number;
+  len: number;
+  /** Breakpoints along u (sorted) with the rail top and the bottom there. */
+  u: number[];
+  top: number[];
+  bottom: number[];
+}
+
+/** Lay out a piece as built (offset, extended at corners, kept under the soffit). */
+function guardFrame(pc: StairGuardPiece, soffit: number): GuardFrame | null {
+  const ex = pc.b[0] - pc.a[0];
+  const ez = pc.b[1] - pc.a[1];
+  const l = Math.hypot(ex, ez);
+  if (l < 0.05) return null;
+  const dx = ex / l;
+  const dz = ez / l;
+  const below = pc.flight === null ? 0.25 : GUARD_BELOW;
+  const cap = pc.underSlab ? soffit - 0.02 : Infinity;
+  // Where the flight's string would rise into the floor above, the balustrade ends: the slab's edge guards from there.
+  const tEnd = pc.underSlab && pc.yb > pc.ya ? (cap - 0.06 + below - pc.ya) / (pc.yb - pc.ya) : 1;
+  if (tEnd <= 0.05) return null;
+  const cut = tEnd < 1;
+  const l2 = cut ? l * tEnd : l;
+  const ext = (j: GuardJoin): number => (j === 'outside' ? GUARD_OFFSET + GUARD_HALF : j === 'inside' ? -(GUARD_OFFSET - GUARD_HALF) : 0);
+  const extA = ext(pc.joinA);
+  const extB = cut ? 0 : ext(pc.joinB);
+  const len = l2 + extA + extB;
+  const x = pc.a[0] + pc.out[0] * GUARD_OFFSET - dx * extA;
+  const z = pc.a[1] + pc.out[1] * GUARD_OFFSET - dz * extA;
+  const pitchAt = (u: number): number => pc.ya + (pc.yb - pc.ya) * Math.min(1, Math.max(0, (u - extA) / l));
+  const us = [0, Math.max(0, extA), Math.min(len, extA + l2), len];
+  // Where the rail meets the soffit (the pitch rises through cap − height), a kink.
+  if (pc.yb !== pc.ya) {
+    const t = (cap - GUARD_HEIGHT - pc.ya) / (pc.yb - pc.ya);
+    if (t > 0 && t < tEnd) us.push(extA + t * l);
+  }
+  const u = [...new Set(us.map((v) => Math.round(v * 1e4) / 1e4))].filter((v) => v >= 0 && v <= len).sort((a, b) => a - b);
+  const bottom = u.map((v) => pitchAt(v) - below);
+  const top = u.map((v, i) => Math.max((bottom[i] as number) + 0.04, Math.min(pitchAt(v) + GUARD_HEIGHT, cap)));
+  return { x, z, dx, dz, len, u, top, bottom };
+}
+
+/** Interpolate a breakpoint series at u. */
+function at(f: GuardFrame, ys: readonly number[], u: number): number {
+  const us = f.u;
+  if (u <= (us[0] as number)) return ys[0] as number;
+  for (let i = 0; i + 1 < us.length; i++) {
+    const u0 = us[i] as number;
+    const u1 = us[i + 1] as number;
+    if (u <= u1) return (ys[i] as number) + ((ys[i + 1] as number) - (ys[i] as number)) * ((u - u0) / Math.max(1e-9, u1 - u0));
+  }
+  return ys[ys.length - 1] as number;
+}
+
+/** Profile (u, y) between two breakpoint series offset by `lo`/`hi`, from u0 to u1. */
+function bandProfile(f: GuardFrame, u0: number, u1: number, lo: (u: number) => number, hi: (u: number) => number): P2[] {
+  const us = [u0, ...f.u.filter((v) => v > u0 + 1e-4 && v < u1 - 1e-4), u1];
+  const bottom = us.map((u) => [u, lo(u)] as P2);
+  const top = us.map((u) => [u, hi(u)] as P2).reverse();
+  return [...bottom, ...top];
+}
+
+/** Geometry of one balustrade in its frame (u along +X, symmetric about its centre plane z = 0), by style. */
+function guardGeometry(f: GuardFrame, p: StairParams, glass: Geom, metal: Geom, timber: Geom, painted: Geom): void {
+  const top = (u: number): number => at(f, f.top, u);
+  const bottom = (u: number): number => at(f, f.bottom, u);
+  const len = f.len;
+  const local = { glass: new Geom(), metal: new Geom(), timber: new Geom(), painted: new Geom() };
+  const railPath = (dy: number): Array<[number, number, number]> => f.u.map((u, i) => [u, (f.top[i] as number) + dy, 0]);
+  if (p.balustrade === 'glass') {
+    // Frameless toughened glass in panels up to 1.2 m with 10 mm joints, a slim steel cap rail on top.
+    const n = Math.max(1, Math.ceil(len / 1.2));
+    for (let k = 0; k < n; k++) {
+      const u0 = (len * k) / n + (k > 0 ? 0.005 : 0);
+      const u1 = (len * (k + 1)) / n - (k < n - 1 ? 0.005 : 0);
+      local.glass.merge(extrudeProfile(bandProfile(f, u0, u1, (u) => bottom(u) + 0.04, (u) => top(u) - 0.03), -0.006, 0.006));
+    }
+    local.metal.merge(tube(railPath(-0.012), 0.02, 10));
+    // The base shoe the panels stand in: a slim steel channel along the stair's edge.
+    local.metal.merge(extrudeProfile(bandProfile(f, 0, len, bottom, (u) => bottom(u) + 0.07), -0.02, 0.02));
+  } else if (p.balustrade === 'steel') {
+    // A round top rail, a lower rail and vertical bars less than 0.1 m apart, newel posts at the ends.
+    local.metal.merge(tube(railPath(-0.02), 0.022, 10));
+    const lowY = (u: number): number => bottom(u) + 0.1;
+    local.metal.merge(tube(f.u.map((u) => [u, lowY(u), 0] as [number, number, number]), 0.011, 8));
+    const bars = Math.max(1, Math.ceil(len / 0.105));
+    for (let k = 1; k < bars; k++) {
+      const u = (len * k) / bars;
+      const y0 = lowY(u);
+      const y1 = top(u) - 0.03;
+      if (y1 - y0 > 0.05) local.metal.merge(cylinder(0.008, 0.008, y1 - y0, 6, { bottom: false, top: false }).translate(u, y0, 0));
+    }
+    for (const u of [0.02, len - 0.02]) local.metal.merge(cylinder(0.022, 0.022, Math.max(0.1, top(u) - bottom(u)), 10, { bottom: false }).translate(u, bottom(u), 0));
+    // A flat steel string under the treads' edge.
+    local.metal.merge(extrudeProfile(bandProfile(f, 0, len, bottom, (u) => bottom(u) + 0.06), -0.006, 0.006));
+  } else {
+    // Timber: a closed string and square spindles painted like the stair, a waxed handrail and newel posts at the ends.
+    local.painted.merge(extrudeProfile(bandProfile(f, 0, len, bottom, (u) => bottom(u) + 0.18), -0.016, 0.016));
+    local.timber.merge(extrudeProfile(bandProfile(f, 0, len, (u) => top(u) - 0.055, top), -0.033, 0.033));
+    const spindles = Math.max(1, Math.ceil(len / 0.12));
+    for (let k = 1; k < spindles; k++) {
+      const u = (len * k) / spindles;
+      const y0 = bottom(u) + 0.18;
+      const y1 = top(u) - 0.055;
+      if (y1 - y0 > 0.05) local.painted.merge(box(u - 0.016, y0, -0.016, u + 0.016, y1, 0.016));
+    }
+    for (const u of [0.045, len - 0.045]) local.timber.merge(box(u - 0.045, bottom(u), -0.045, u + 0.045, top(u) + 0.06, 0.045));
+  }
+  const yaw = (Math.atan2(-f.dz, f.dx) * 180) / Math.PI;
+  // Built about the centre plane (z = 0), so no flip is needed for the outward side.
+  for (const [g, into] of [[local.glass, glass], [local.metal, metal], [local.timber, timber], [local.painted, painted]] as const) into.merge(g.rotateY(yaw).translate(f.x, 0, f.z));
+}
+
+/** Longest stretch one balustrade collider box covers along a slope (m): about a tread. */
+const GUARD_BOX_STEP = 0.3;
+
+/**
+ * Colliders of one balustrade, {@link GUARD_HALF} either side of its plane: upright boxes, each as long as about a
+ * tread and as tall as the balustrade over it (a stepped wall along a flight, one box along a landing). A thin sloped
+ * hull (or a pitched box) along the whole flight held the character controller back at the step onto the landing
+ * when the player pressed against it; upright faces slide like a wall.
+ */
+function guardCollider(f: GuardFrame, set: PartSet): void {
+  const yaw = (Math.atan2(-f.dz, f.dx) * 180) / Math.PI;
+  const len = f.len;
+  for (let i = 0; i + 1 < f.u.length; i++) {
+    const u0 = f.u[i] as number;
+    const u1 = f.u[i + 1] as number;
+    if (u1 - u0 < 1e-3) continue;
+    const flat = Math.abs((f.bottom[i + 1] as number) - (f.bottom[i] as number)) < 1e-4 && Math.abs((f.top[i + 1] as number) - (f.top[i] as number)) < 1e-4;
+    const n = flat ? 1 : Math.max(1, Math.ceil((u1 - u0) / GUARD_BOX_STEP));
+    for (let k = 0; k < n; k++) {
+      const a = u0 + ((u1 - u0) * k) / n;
+      const b = u0 + ((u1 - u0) * (k + 1)) / n;
+      const lo = Math.min(at(f, f.bottom, a), at(f, f.bottom, b));
+      const hi = Math.max(at(f, f.top, a), at(f, f.top, b));
+      const um = (a + b) / 2;
+      set.box([f.x + f.dx * um, (lo + hi) / 2, f.z + f.dz * um], [(b - a) / 2, (hi - lo) / 2, GUARD_HALF], [0, yaw, 0]);
+    }
+  }
+  void len;
+}
+
+/** Plan outline of each built balustrade (local frame, a thin rectangle round its collider), for navigation checks. */
+export function stairGuardOutlines(p: StairParams): P2[][] {
+  if (!p.guards) return [];
+  const soffit = p.soffit ?? p.rise - 0.22;
+  const out: P2[][] = [];
+  stairGuardPieces(p).forEach((pc, k) => {
+    if (p.guards?.[k] !== true) return;
+    const f = guardFrame(pc, soffit);
+    if (!f) return;
+    const nx = -f.dz * GUARD_HALF;
+    const nz = f.dx * GUARD_HALF;
+    const ex = f.x + f.dx * f.len;
+    const ez = f.z + f.dz * f.len;
+    out.push([[f.x - nx, f.z - nz], [ex - nx, ez - nz], [ex + nx, ez + nz], [f.x + nx, f.z + nz]]);
+  });
+  return out;
+}
+
 /** Build one flight's structure and treads into the geometry sets. */
 function buildFlight(f: Flight, p: StairParams, riser: number, structure: Geom, treads: Geom, set: PartSet): void {
   if (f.treads <= 0) return;
@@ -163,42 +447,8 @@ function buildFlight(f: Flight, p: StairParams, riser: number, structure: Geom, 
   profile.push([run, Math.max(f.y0, yTop - waist)]);
   if (f.y0 > 0.01) profile.push([0, Math.max(0, f.y0 - waist)]);
   // Extrude across the width: the profile lies in (s, y), the width runs along Z.
-  const local = new Geom();
   const hw = w / 2;
-  const face = (pts: readonly P2[], t: number, facing: 1 | -1): void => {
-    const tmp = new Geom().flatPolygon(pts, 0, facing > 0);
-    // flatPolygon lays (s, y) on (x, z) facing ±Y: swap y and z to stand it up at z = t.
-    for (let k = 0; k < tmp.p.length; k += 3) {
-      const sv = tmp.p[k] as number;
-      const yv = tmp.p[k + 2] as number;
-      tmp.p[k + 1] = yv;
-      tmp.p[k + 2] = t;
-      tmp.n[k] = 0;
-      tmp.n[k + 1] = 0;
-      tmp.n[k + 2] = facing;
-      tmp.uv[(k / 3) * 2] = sv;
-      tmp.uv[(k / 3) * 2 + 1] = yv;
-    }
-    // The y/z swap is a mirror: restore front-facing winding.
-    tmp.flip();
-    local.merge(tmp);
-  };
-  face(profile, hw, 1);
-  face(profile, -hw, -1);
-  // Bands across the width (risers, tread beds, soffit), facing out of the profile.
-  const ccw = profileArea(profile) > 0;
-  for (let k = 0; k < profile.length; k++) {
-    const a = profile[k] as P2;
-    const b = profile[(k + 1) % profile.length] as P2;
-    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-5) continue;
-    const q0 = [a[0], a[1], -hw];
-    const q1 = [b[0], b[1], -hw];
-    const q2 = [b[0], b[1], hw];
-    const q3 = [a[0], a[1], hw];
-    // (q0, q1, q2, q3) faces the right-hand normal of a→b, which is outward for a counter-clockwise profile.
-    if (ccw) local.quadAuto(q0, q1, q2, q3);
-    else local.quadAuto(q3, q2, q1, q0);
-  }
+  const local = extrudeProfile(profile, -hw, hw);
   // Treads with a small nosing.
   const tr = new Geom();
   for (let i = 0; i < n; i++) {
@@ -225,6 +475,68 @@ function buildFlight(f: Flight, p: StairParams, riser: number, structure: Geom, 
     pts.push(f.x + r[0], y, f.z + r[1]);
   }
   set.hull(pts);
+  // The last riser up onto the landing or floor above is a step the ramp leaves (it runs under the nosings). Over the
+  // last treads a steeper wedge closes it, kept under 40° so nobody slides down it: a character pressed against a
+  // balustrade or wall there otherwise failed to step up and stood still.
+  const k = Math.min(n, ARRIVAL_WEDGE_TREADS);
+  if (k >= 1) {
+    const s0 = run - k * g;
+    const yTop = f.y0 + (n + 1) * riser;
+    const w2: number[] = [];
+    for (const [sv, y] of [[s0, f.y0 + (n - k) * riser], [run, yTop], [run, yTop - 0.3]] as const) {
+      for (const t of [-hw, hw]) {
+        const r = rotate(sv, t, yaw);
+        w2.push(f.x + r[0], y, f.z + r[1]);
+      }
+    }
+    set.hull(w2);
+  }
+}
+
+/** Treads over which a flight's collider climbs onto the landing or floor at its top (see buildFlight). */
+const ARRIVAL_WEDGE_TREADS = 4;
+
+/**
+ * A side profile in (s, y) extruded along Z from `z0` to `z1`: both faces and the bands round its outline, facing
+ * out of it. Flights are built this way across their width, balustrade panels and strings across their thickness.
+ */
+function extrudeProfile(profile: readonly P2[], z0: number, z1: number): Geom {
+  const local = new Geom();
+  const face = (pts: readonly P2[], t: number, facing: 1 | -1): void => {
+    const tmp = new Geom().flatPolygon(pts, 0, facing > 0);
+    // flatPolygon lays (s, y) on (x, z) facing ±Y: swap y and z to stand it up at z = t.
+    for (let k = 0; k < tmp.p.length; k += 3) {
+      const sv = tmp.p[k] as number;
+      const yv = tmp.p[k + 2] as number;
+      tmp.p[k + 1] = yv;
+      tmp.p[k + 2] = t;
+      tmp.n[k] = 0;
+      tmp.n[k + 1] = 0;
+      tmp.n[k + 2] = facing;
+      tmp.uv[(k / 3) * 2] = sv;
+      tmp.uv[(k / 3) * 2 + 1] = yv;
+    }
+    // The y/z swap is a mirror: restore front-facing winding.
+    tmp.flip();
+    local.merge(tmp);
+  };
+  face(profile, z1, 1);
+  face(profile, z0, -1);
+  // Bands across the width (risers, tread beds, soffit), facing out of the profile.
+  const ccw = profileArea(profile) > 0;
+  for (let k = 0; k < profile.length; k++) {
+    const a = profile[k] as P2;
+    const b = profile[(k + 1) % profile.length] as P2;
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-5) continue;
+    const q0 = [a[0], a[1], z0];
+    const q1 = [b[0], b[1], z0];
+    const q2 = [b[0], b[1], z1];
+    const q3 = [a[0], a[1], z1];
+    // (q0, q1, q2, q3) faces the right-hand normal of a→b, which is outward for a counter-clockwise profile.
+    if (ccw) local.quadAuto(q0, q1, q2, q3);
+    else local.quadAuto(q3, q2, q1, q0);
+  }
+  return local;
 }
 
 function profileArea(profile: readonly P2[]): number {
@@ -255,18 +567,43 @@ export function buildStair(p: StairParams): ArchOutput {
     set.boxMinMax(l.x0, l.y - 0.2, l.z0, l.x1, l.y, l.z1);
   }
   set.add(structure, p.structure).add(treads, p.finish);
-  // Handrails: sloped tube at 0.9 m above the nosing line, with posts.
-  if (p.rail !== 'none') {
+  // Balustrades on the open sides (each with its collider); the sides against a wall get a wall handrail.
+  const wallRail: Array<Set<number>> = flights.map(() => new Set<number>());
+  if (p.guards) {
+    const soffit = p.soffit ?? p.rise - 0.22;
+    const glass = new Geom();
+    const metal = new Geom();
+    const timber = new Geom();
+    const painted = new Geom();
+    stairGuardPieces(p).forEach((pc, k) => {
+      if (p.guards?.[k] !== true) {
+        if (pc.flight !== null) wallRail[pc.flight]?.add(pc.side);
+        return;
+      }
+      const f = guardFrame(pc, soffit);
+      if (!f) return;
+      guardGeometry(f, p, glass, metal, timber, painted);
+      guardCollider(f, set);
+    });
+    set.add(glass, { finish: 'glass' }).add(metal, p.railMaterial).add(timber, { finish: p.finish.finish === 'walnut' ? 'walnut' : 'oak' }).add(painted, p.structure);
+  } else if (p.rail !== 'none') {
+    for (const set2 of wallRail) {
+      if (p.rail === 'left' || p.rail === 'both') set2.add(-1);
+      if (p.rail === 'right' || p.rail === 'both') set2.add(1);
+    }
+  }
+  // Wall handrails: sloped tube at 0.9 m above the nosing line, with posts.
+  if (wallRail.some((r) => r.size > 0)) {
     const rails = new Geom();
-    for (const f of flights) {
+    for (const [fi, f] of flights.entries()) {
       if (f.treads <= 0) continue;
       const run = f.treads * p.going;
       const yaw = (Math.atan2(-f.dz, f.dx) * 180) / Math.PI;
-      const sides: number[] = [];
-      if (p.rail === 'left' || p.rail === 'both') sides.push(-1);
-      if (p.rail === 'right' || p.rail === 'both') sides.push(1);
+      const sides = [...(wallRail[fi] ?? [])].sort((a, b) => a - b);
       for (const side of sides) {
-        const t = side * (p.width / 2 - 0.05);
+        // Beside a wall (balustraded stairs) the rail is held off the wall on brackets; otherwise it stands on posts.
+        const onWall = p.guards !== undefined;
+        const t = side * (p.width / 2 - (onWall ? 0.07 : 0.05));
         const h0 = f.y0 + riser + 0.9;
         const h1 = f.y0 + (f.treads + 1) * riser + 0.9;
         const r = new Geom().merge(tube([[0, h0, t], [run, h1, t]], 0.022, 10));
@@ -275,7 +612,12 @@ export function buildStair(p: StairParams): ArchOutput {
           const s = (run * k) / (posts - 1);
           const base = f.y0 + Math.min(f.treads, Math.floor(s / p.going) + 1) * riser;
           const top = h0 + ((h1 - h0) * s) / Math.max(1e-3, run);
-          r.merge(cylinder(0.012, 0.012, Math.max(0.1, top - base), 8, { bottom: false }).translate(Math.min(run - 0.03, Math.max(0.03, s)), base, t));
+          const u = Math.min(run - 0.03, Math.max(0.03, s));
+          if (onWall) {
+            const z0 = Math.min(t, side * p.width / 2);
+            const z1 = Math.max(t, side * p.width / 2);
+            r.merge(box(u - 0.01, top - 0.05, z0, u + 0.01, top - 0.03, z1));
+          } else r.merge(cylinder(0.012, 0.012, Math.max(0.1, top - base), 8, { bottom: false }).translate(u, base, t));
         }
         rails.merge(r.rotateY(yaw).translate(f.x, 0, f.z));
       }

@@ -189,6 +189,16 @@ export const StairParams = z.object({
   structure: MaterialSpec.default({ finish: 'paint', color: '#efede8' }),
   rail: z.enum(['none', 'left', 'right', 'both']).default('right'),
   railMaterial: MaterialSpec.default({ finish: 'black-metal' }),
+  /**
+   * A balustrade (guard with a collider) on each open side of the flights and landings, one flag per piece of
+   * `stairGuardPieces` in its order; sides against a wall get a wall handrail instead. Omitted: no balustrades, the
+   * handrail follows `rail`.
+   */
+  guards: z.array(z.boolean()).max(12).optional(),
+  /** Look of the balustrades. */
+  balustrade: z.enum(['glass', 'steel', 'timber']).default('steel'),
+  /** Height of the underside of the floor above over the stair's foot (m); balustrades beside the stairwell stay below it. Default: rise − 0.22. */
+  soffit: z.number().min(0).max(ARCH_LIMITS.MAX_HEIGHT).optional(),
 });
 export type StairParams = z.infer<typeof StairParams>;
 
@@ -266,7 +276,7 @@ export type SashParams = z.infer<typeof SashParams>;
 export const RailingParams = z.object({
   points: z.array(PlanPoint).min(2).max(ARCH_LIMITS.MAX_RAILING_POINTS),
   height: z.number().min(0.3).max(2).default(1.05),
-  style: z.enum(['glass', 'bars', 'cable', 'solid']).default('glass'),
+  style: z.enum(['glass', 'bars', 'cable', 'solid', 'timber']).default('glass'),
   finish: MaterialSpec.default({ finish: 'black-metal' }),
 });
 export type RailingParams = z.infer<typeof RailingParams>;
