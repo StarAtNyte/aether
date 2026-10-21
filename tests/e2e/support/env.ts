@@ -177,7 +177,7 @@ export async function startServer(log: (line: string) => void): Promise<TestServ
     log(`testing the running deployment at ${external}`);
     return { url: external, stop: async () => undefined };
   }
-  if (!existsSync(join(STUDIO_DIST, 'index.html'))) throw new Error('apps/studio/dist is missing — run `npm run build` first.');
+  if (!existsSync(join(process.env['STATIC_DIR'] ?? STUDIO_DIST, 'index.html'))) throw new Error('apps/studio/dist is missing — run `npm run build` first.');
 
   const port = await freePort();
   const url = `http://localhost:${port}`;
