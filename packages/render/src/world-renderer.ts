@@ -574,6 +574,8 @@ export class WorldRenderer {
   private studioFailed = false;
   /** Interactive render tier: a fixed choice, or 'auto' (follows the GPU budget). */
   private tierChoice: RenderTier | 'auto' = 'auto';
+  /** Load-screen text: what the load is waiting for now (stage names, never a made-up percentage). */
+  private readonly onProgress: ((msg: string) => void) | null;
   /** Time the last shader warm-up took (ms; diagnostics). */
   shaderWarmupMs = 0;
   /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
@@ -734,6 +736,7 @@ export class WorldRenderer {
     // standard and high tiers read the scene the renderer draws without the water (see scene-backdrop.ts).
     this.materials.backdropWater = backend === 'webgpu';
     this.materials.waterTier = forcedWater === 'off' ? null : forcedWater === 'simple' || forcedWater === 'standard' || forcedWater === 'high' ? forcedWater : autoWater;
+    this.onProgress = opts.onProgress ?? null;
     this.ratioCap = Number.isFinite(opts.pixelRatioCap) && (opts.pixelRatioCap as number) > 0 ? (opts.pixelRatioCap as number) : Number.POSITIVE_INFINITY;
     this.onContextLost = opts.onContextLost;
     this.rig = new CameraRig(camera, controls);
@@ -1244,6 +1247,7 @@ export class WorldRenderer {
     this.boundsDirty = true;
     this.debugDirty = true;
     this.needsDraw = true;
+    this.onProgress?.('Building the world…');
     await done;
     // Ceilings measured while their geometry was still streaming in are stale.
     this.invalidateCeilings();
@@ -1266,8 +1270,10 @@ export class WorldRenderer {
     if (this.disposed || this.lost) return;
     const started = performance.now();
     // The environment map first: a map that arrives later re-keys (and recompiles) every material.
+    this.onProgress?.('Loading the sky…');
     await this.env.hdri.settled(HDRI_WAIT_MS);
     if (this.disposed || this.lost) return;
+    this.onProgress?.('Preparing shaders…');
     performance.mark('aether:warm-start');
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
