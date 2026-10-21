@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { collectTraceInput, LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart, type VolumeWorkerLike } from '../src/view/light-volume-controller';
+import type { VolumeCache } from '../src/environment/light-volume-cache';
 import { FLOATS_PER_PROBE, LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
 import { parseVolumeReply, parseVolumeRequest } from '../src/environment/light-volume-protocol';
 import { volumeExposure, VOLUME_MAX_EV, VOLUME_MIN_EV } from '../src/view/eye-adapt';
@@ -154,6 +155,98 @@ describe('light volume controller: baking', () => {
     expect(uploads).toBe(1);
     expect(c.ready).toBe(true);
     expect(c.lastBake?.worker).toBe(true);
+    c.dispose();
+  });
+});
+
+describe('light volume controller: persistent cache', () => {
+  /** An in-memory cache that records its traffic. */
+  function memory(): VolumeCache & { rows: Map<string, Float32Array>; gets: string[] } {
+    const rows = new Map<string, Float32Array>();
+    const gets: string[] = [];
+    return {
+      rows,
+      gets,
+      get: async (key, n) => {
+        gets.push(key);
+        const d = rows.get(key);
+        return d && d.length === n ? d : null;
+      },
+      put: async (key, data) => void rows.set(key, data.slice()),
+    };
+  }
+  const gather = (lighting: VolumeLighting = LIGHTING) => () => ({ parts: roomParts(), lighting, groundY: 0 });
+
+  it('stores a finished bake, and a revisit takes it without baking', async () => {
+    vi.useFakeTimers();
+    const cache = memory();
+    const first = new LightVolumeController(gather(), { createWorker: null, cache, cacheMinMs: 0 });
+    first.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(first.finishNow()).toBe(true);
+    expect(cache.rows.size).toBe(1);
+    expect(first.lastBake?.cached).toBeUndefined();
+    first.dispose();
+
+    // A new session: same building and light, a fresh controller. No baker, no worker: the answer is the stored data.
+    let workers = 0;
+    const second = new LightVolumeController(gather(), { createWorker: () => (workers++, { postMessage: () => undefined, terminate: () => undefined, onmessage: null, onerror: null }), cache, cacheMinMs: 0 });
+    second.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(second.ready).toBe(true);
+    expect(second.lastBake?.cached).toBe(true);
+    expect(workers).toBe(0);
+    expect(second.baking).toBe(false);
+    expect(second.eyeSample(1, 1.6, 1)).not.toBeNull();
+    second.dispose();
+  });
+
+  it('misses when the light, the building or the lamps differ', async () => {
+    vi.useFakeTimers();
+    const cache = memory();
+    const keys = new Set<string>();
+    for (const lighting of [LIGHTING, { ...LIGHTING, sun: null }, { ...LIGHTING, lamps: [{ position: [0, 2.6, 0] as [number, number, number], color: [20, 18, 15] as [number, number, number], range: 8 }] }]) {
+      const c = new LightVolumeController(gather(lighting), { createWorker: null, cache, cacheMinMs: 0 });
+      c.setEnabled(true);
+      await vi.advanceTimersByTimeAsync(700);
+      c.finishNow();
+      c.dispose();
+      keys.add(cache.gets.at(-1)!);
+    }
+    expect(keys.size).toBe(3);
+    expect(cache.rows.size).toBe(3);
+  });
+
+  it('bakes quicker than the threshold are not stored, and an unreadable cache is a miss', async () => {
+    vi.useFakeTimers();
+    const cache = memory();
+    const quick = new LightVolumeController(gather(), { createWorker: null, cache, cacheMinMs: 1e9 });
+    quick.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    quick.finishNow();
+    expect(cache.rows.size).toBe(0);
+    quick.dispose();
+    const broken: VolumeCache = { get: async () => new Float32Array(3), put: async () => undefined };
+    const c = new LightVolumeController(gather(), { createWorker: null, cache: broken, cacheMinMs: 0 });
+    c.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(c.finishNow()).toBe(true);
+    expect(c.lastBake?.cached).toBeUndefined();
+    c.dispose();
+  });
+
+  it('a change while the cache is being read drops that lookup', async () => {
+    vi.useFakeTimers();
+    let release: (d: Float32Array | null) => void = () => undefined;
+    const slow: VolumeCache = { get: () => new Promise((r) => (release = r)), put: async () => undefined };
+    const c = new LightVolumeController(gather(), { createWorker: null, cache: slow, cacheMinMs: 0 });
+    c.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(c.baking).toBe(true);
+    c.invalidate();
+    release(new Float32Array(0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.ready).toBe(false);
     c.dispose();
   });
 });

@@ -10,6 +10,7 @@
  */
 import { Box3, Color, Matrix4, Vector3, type BufferGeometry, type Material, type Mesh, type Object3D } from 'three';
 import { FLOATS_PER_PROBE, LightVolumeBaker, MAX_TRACE_TRIANGLES, planVolumeGrid, sampleVolume, TraceScene, type TraceInput, type VolumeBakeInput, type VolumeGrid, type VolumeLamp, type V3 } from '../environment/light-volume';
+import { CACHE_MIN_BAKE_MS, createIdbVolumeCache, volumeKey, type VolumeCache } from '../environment/light-volume-cache';
 import { LightVolume } from '../environment/light-volume-light';
 import { parseVolumeReply, type VolumeRequest } from '../environment/light-volume-protocol';
 import { log } from '../log';
@@ -194,6 +195,10 @@ export interface LightVolumeOptions {
   settled?: () => boolean;
   /** Called after a new volume was uploaded to the light. */
   onUpload?: () => void;
+  /** Persistent store of finished bakes; null for none. Default: IndexedDB when available. */
+  cache?: VolumeCache | null;
+  /** Bakes quicker than this (ms) are not stored. Default {@link CACHE_MIN_BAKE_MS}. */
+  cacheMinMs?: number;
 }
 
 /** Bake state and the light that shows it (see the module comment). */
@@ -202,7 +207,11 @@ export class LightVolumeController {
   /** Main-thread bake (no worker). */
   private baker: LightVolumeBaker | null = null;
   /** Worker bake in flight. */
-  private job: { id: number; grid: VolumeGrid } | null = null;
+  private job: { id: number; grid: VolumeGrid; lookup?: boolean } | null = null;
+  private readonly cache: VolumeCache | null;
+  private readonly cacheMinMs: number;
+  /** Cache key of the bake in flight (stored when it finishes slowly enough to be worth it). */
+  private bakeKey: string | null = null;
   private bakingGrid: VolumeGrid | null = null;
   private grid: VolumeGrid | null = null;
   private data: Float32Array | null = null;
@@ -232,7 +241,7 @@ export class LightVolumeController {
   private ambientRB: [number, number] = [1, 1];
   private pendingAmbientRB: [number, number] = [1, 1];
   /** The last finished bake: probes, triangles, work time on the main thread (ms) and wall time (ms). */
-  lastBake: { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number; worker: boolean } | null = null;
+  lastBake: { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number; worker: boolean; cached?: boolean } | null = null;
 
   /** `gather` is called when a bake starts: the parts, the lighting and the building's ground height (null: nothing to bake). */
   constructor(private readonly gather: VolumeGather, opts: LightVolumeOptions = {}) {
@@ -240,6 +249,8 @@ export class LightVolumeController {
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
     this.settled = opts.settled ?? (() => true);
     this.onUpload = opts.onUpload ?? (() => undefined);
+    this.cache = opts.cache === undefined ? createIdbVolumeCache() : opts.cache;
+    this.cacheMinMs = opts.cacheMinMs ?? CACHE_MIN_BAKE_MS;
   }
 
   /** Turn the volume on (a world with buildings) or off. Off drops the bake. */
@@ -309,7 +320,8 @@ export class LightVolumeController {
     this.timer = null;
     this.baker = null;
     this.bakingGrid = null;
-    if (this.job && this.worker) {
+    this.bakeKey = null;
+    if (this.job && this.worker && !this.job.lookup) {
       // A stale multi-second bake would hold the worker: replace it.
       this.worker.terminate();
       this.worker = null;
@@ -358,8 +370,11 @@ export class LightVolumeController {
     return this.ready;
   }
 
-  private accept(grid: VolumeGrid, data: Float32Array, worker: boolean): void {
-    this.lastBake = { probes: this.probes, triangles: this.triangles, workMs: Math.round(this.bakeWork), wallMs: Math.round(performance.now() - this.bakeStarted), spacing: grid.spacing, worker };
+  private accept(grid: VolumeGrid, data: Float32Array, worker: boolean, cached = false): void {
+    const wallMs = Math.round(performance.now() - this.bakeStarted);
+    this.lastBake = { probes: this.probes, triangles: this.triangles, workMs: Math.round(this.bakeWork), wallMs, spacing: grid.spacing, worker, ...(cached ? { cached: true } : {}) };
+    if (this.cache && this.bakeKey && !cached && wallMs >= this.cacheMinMs) void this.cache.put(this.bakeKey, data);
+    this.bakeKey = null;
     this.grid = grid;
     this.data = data;
     this.bakingGrid = null;
@@ -391,10 +406,32 @@ export class LightVolumeController {
     this.pendingAmbientRB = [Math.max(0, amb.a[0] + amb.b[0] * 0.5), Math.max(0, amb.a[2] + amb.b[2] * 0.5)];
     this.pendingLamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range, ...(l.room ? { room: [...l.room] as [number, number, number, number, number, number] } : {}) }));
     this.bakeWork = performance.now() - t0;
+    if (this.cache && !inline) {
+      // A bake of exactly this building and light was done before (an earlier visit): take it, bake only on a miss.
+      this.bakeKey = volumeKey(grid, input, [g.lighting.sun, g.lighting.ambient, ground, lamps]);
+      const id = this.nextId++;
+      const grid0 = grid;
+      this.job = { id, grid, lookup: true };
+      void this.cache.get(this.bakeKey, this.probes * FLOATS_PER_PROBE).then((hit) => {
+        if (this.disposed || !this.enabled || this.job?.id !== id) return;
+        this.job = null;
+        if (hit && hit.length === this.probes * FLOATS_PER_PROBE) {
+          this.accept(grid0, hit, false, true);
+          return;
+        }
+        this.dispatch(input, grid0, g.lighting, ground, lamps);
+      });
+      return;
+    }
+    this.dispatch(input, grid, g.lighting, ground, lamps, inline);
+  }
+
+  /** Bake `input` in the worker, or on this thread in slices when there is none (or `inline`). */
+  private dispatch(input: Required<TraceInput>, grid: VolumeGrid, lighting: VolumeLighting, ground: { y: number; albedo: V3 }, lamps: VolumeLamp[], inline = false): void {
     const w = inline ? null : this.ensureWorker();
     if (w) {
       const id = this.nextId++;
-      const req: VolumeRequest = { type: 'bake', id, grid, positions: input.positions, albedo: input.albedo, twoSided: input.twoSided, sun: g.lighting.sun, ambient: g.lighting.ambient, ground, lamps };
+      const req: VolumeRequest = { type: 'bake', id, grid, positions: input.positions, albedo: input.albedo, twoSided: input.twoSided, sun: lighting.sun, ambient: lighting.ambient, ground, lamps };
       try {
         w.postMessage(req, [input.positions.buffer, input.albedo.buffer, input.twoSided.buffer]);
         this.job = { id, grid };
@@ -402,12 +439,13 @@ export class LightVolumeController {
       } catch (e) {
         this.dropWorker(`could not post a light-volume bake: ${e instanceof Error ? e.message : String(e)}`);
         // The buffers may have been detached by a failed transfer: gather again for the main-thread bake.
+        this.bakeKey = null;
         this.start(true);
         return;
       }
     }
     const scene = new TraceScene(input);
-    this.baker = new LightVolumeBaker({ grid, scene, sun: g.lighting.sun, ambient: g.lighting.ambient, ground, lamps });
+    this.baker = new LightVolumeBaker({ grid, scene, sun: lighting.sun, ambient: lighting.ambient, ground, lamps });
     if (!inline) this.schedule(0);
   }
 
