@@ -31,6 +31,8 @@ export interface RigOptions {
   castShadow: boolean;
   /** Called when a foot lands (speed in m/s of the body, for volume). */
   onFootstep?: (foot: Foot, speed: number, rig: CharacterRig) => void;
+  /** Called when the held prop changes (null: nothing held, or the rig was disposed); effects attach to `prop.flame`. */
+  onProp?: (prop: Prop | null, rig: CharacterRig) => void;
 }
 
 const _v = new Vector3();
@@ -214,6 +216,11 @@ export class CharacterRig {
   /** Hold (or put down) a prop. */
   setHold(kind: CharacterHold): void {
     if (kind === this.propHold && (kind === 'none') === (this.prop === null)) return;
+    this.mountHold(kind);
+    this.opts.onProp?.(this.prop, this);
+  }
+
+  private mountHold(kind: CharacterHold): void {
     this.prop?.group.removeFromParent();
     this.prop?.dispose();
     this.prop = null;
@@ -493,6 +500,7 @@ export class CharacterRig {
     this.disposed = true;
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.opts.scene);
+    if (this.prop) this.opts.onProp?.(null, this);
     this.prop?.group.removeFromParent();
     this.prop?.dispose();
     for (const m of this.shadowMaterials.values()) m.dispose();

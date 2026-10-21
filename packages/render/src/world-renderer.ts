@@ -744,6 +744,8 @@ export class WorldRenderer {
       models: this.models,
       shadows: opts.shadows !== false,
       onFootstep: (id, foot, speed, p) => this.footstepHandler?.(id, foot, speed, [p.x, p.y, p.z]),
+      // A torch in a hand burns: the fire follows the flame through every animation.
+      onProp: (id, prop) => this.fx?.propEmitter(id, prop?.flame ?? null),
     });
     this.avatar.setSystem(this.characters);
     this.ghostRun.setSystem(this.characters);

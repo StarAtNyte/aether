@@ -661,6 +661,15 @@ PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
   sees the document and collider bounds), and its queries return fresh objects
   and arrays. Not installed: the existing grid was extended to floors linked by
   stairs instead (ARCHITECTURE section 37).
+- The game-feel and level-pacing notes of `gamedev-skills/awesome-gamedev-agent-skills`
+  (Apache-2.0) informed the feel layer's design (several small responses within about
+  a tenth of a second, trauma-squared camera shake, hit-stop, importance tiers, the
+  picture moves and the body does not; teach, then test; a calm stretch before the
+  climax). The presets, wording and code are Aether's own; no text was copied.
+- three.quarks (MIT) and three.js's TSL particle examples (MIT, part of the `three`
+  dependency) were read as references for the effect presets (`packages/render/src/vfx/`).
+  three.quarks is not installed (it does not render on `WebGPURenderer` yet); the
+  particle system was written for Aether.
 
 **Published algorithms and specifications followed.**
 

@@ -95,9 +95,26 @@ export type Command =
   | { op: 'density'; ref: Ref; factor: number; fallbackAdd?: { noun: string; count: number } }
   | { op: 'physics'; ref: Ref; what: 'bouncy' | 'heavy' | 'light' | 'static' | 'dynamic' | 'slippery' | 'sticky' }
   | { op: 'voxel'; what: 'replace-block' | 'structure-style'; from?: string; to?: string; ref?: Ref }
+  | {
+      op: 'feel';
+      /** Events the clause is about ([] = the whole game). */
+      events: FeelEventName[];
+      tier?: 'off' | 'subtle' | 'normal' | 'punchy';
+      /** Burst at those events ('none' removes it). */
+      vfx?: VfxName | 'none';
+      /** One cue field up, down, off or on. */
+      tweak?: { knob: 'shake' | 'hitStop' | 'flash' | 'rumble' | 'text' | 'fovKick' | 'vignette'; mode: 'off' | 'less' | 'more' | 'on' };
+      footsteps?: boolean;
+      /** A continuous emitter on things ('none' removes it). */
+      attach?: { ref: Ref; vfx: VfxName | 'none' };
+    }
   | { op: 'repeat'; ref: Ref }
   | { op: 'undo' }
   | { op: 'redo' };
+
+/** Feel events and particle presets (mirrors `@aether/core` FeelEvent / VfxPreset). */
+export type FeelEventName = 'pickup' | 'hit' | 'damage' | 'death' | 'win' | 'checkpoint' | 'jump' | 'land' | 'explosion' | 'launch';
+export type VfxName = 'sparks' | 'dust' | 'sparkle' | 'fire' | 'smoke' | 'magic' | 'explosion' | 'splash' | 'footstep' | 'muzzle' | 'embers' | 'confetti' | 'shockwave';
 
 /** Environment changes in words. */
 export interface EnvIntent {

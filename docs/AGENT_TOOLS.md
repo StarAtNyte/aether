@@ -30,13 +30,13 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 
 | Tool set | Names | Source |
 | --- | --- | --- |
-| Planner tools (`AGENT_TOOLS`), 14 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `finish` | `packages/agent/src/tools.ts` |
+| Planner tools (`AGENT_TOOLS`), 15 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
 | Tools given to sub-calls, 5. The planner never sees these | `submit_generator` (coder), `describe_room`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts`, `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
 | MCP server tools, 13 | `create_world`, `edit`, `apply_patch`, `list_entities`, `get_entity`, `get_world_summary`, `verify`, `playtest`, `replay`, `render_still`, `export`, `undo`, `redo` | `apps/cli/src/mcp/tools.ts` |
 
-The table names 21 model-facing tool names inside the agent (14 + 2 + 5) and 13 MCP tools. `COMPACT_TOOLS` reuses
+The table names 22 model-facing tool names inside the agent (15 + 2 + 5) and 13 MCP tools. `COMPACT_TOOLS` reuses
 two of the planner names.
 
 The executor is `packages/agent/src/executor.ts`, and the loop is `packages/agent/src/agent.ts`. The system prompt
@@ -343,6 +343,23 @@ The loop stops when the score reaches `FORGE_GATE` (0.8) or the budget runs out.
 - **When to use it.** Before and after placing pieces, and during review. Measure first, then make the smallest
   change that works (`reviewTurnText` in `packages/agent/src/review.ts`).
 
+### `tune_feel`
+
+- **What it does.** Sets how the game answers what happens in it, as one undo step (`packages/agent/src/feel-edit.ts`,
+  `TuneFeelInput`, `feelPatches`): the tier of the whole game, per-event cues, and continuous particle emitters on
+  entities. Presentation only: it never changes physics, rules, the playtest bot or replay proofs.
+- **Input.** All optional: `preset` (`subtle`, `normal`, `punchy`, `off`); `events` per event (`pickup`, `hit`, `damage`,
+  `death`, `win`, `checkpoint`, `jump`, `land`, `explosion`, `launch`) a cue `{tier?, shake? 0..1, hitStop? 0..0.25,
+  fovKick? -20..20, flash? 0..1, flashColor?, vignette?, rumble?, squash?, text?, duck?, vfx?, vfxColor?, vfxScale?}`
+  merged into the current one, or `null` to drop it; `footsteps` (dust under walking people); `emitters`
+  `[{target: id or #tag, vfx: preset or "none", rate?, color?, scale?, offset?}]` (24 per call, 64 targets each, `*`
+  refused); `autoEmitters` (fire on torches, campfires and braziers, smoke on chimneys, embers on forges and lava, magic
+  on portals); `reset`; `message`.
+- **Returns.** `Feel: <tier and cues>; fire on torch-1, torch-2.` plus any refused targets, or "Nothing to change".
+- **When to use it.** For every game (the system prompt asks for a tier by genre and emitters on what burns), and for
+  requests such as "make hits feel punchy", "sparks when coins are collected", "dust when landing", "less shake".
+  The same requests are also answered by the local edit engine without a model (`refine/ops-feel.ts`).
+
 ### `query_level`
 
 - **What it does.** Measures a game or outdoor level using the host's physics (`runLevelTool`,
@@ -619,7 +636,7 @@ resources and the safety model.
 
 | MCP tool | Input (limits) | What it does | Maps to |
 | --- | --- | --- | --- |
-| `create_world` | `{prompt 1..4000}` | Builds a new world with the full agent loop: plan, tools, verify, repair, review | `WorldAgent.run` with all 14 planner tools and the 2 level tools. Checker-only review, `maxRounds: 6` |
+| `create_world` | `{prompt 1..4000}` | Builds a new world with the full agent loop: plan, tools, verify, repair, review | `WorldAgent.run` with all 15 planner tools and the 2 level tools. Checker-only review, `maxRounds: 6` |
 | `edit` | `{prompt 1..4000}` | Changes the current world; one `undo` reverts the whole request | Same agent loop, including the local edit engine and the minimal-edit guard |
 | `apply_patch` | `{patches[1..200], message? ≤200, atomic? (default true)}`, at most 512 KB of JSON | Exact World IR edits with no model; all or nothing by default | The same patch validation as `apply_patches`, without the model-side extras (guard, carry, notes) |
 | `list_entities` | `{selector?, tag?, behavior?, text?, parent?, offset, limit 1..200 (50)}` | Compact rows of entities, paged | A paged version of `inspect` without ids |

@@ -5,7 +5,7 @@
  * small procedural meshes (no files, no licences); two-handed carries
  * (`crate`) use the chest anchor instead of a hand.
  */
-import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry, TorusGeometry, type BufferGeometry, type Material } from 'three';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, Object3D, SphereGeometry, TorusGeometry, type BufferGeometry, type Material } from 'three';
 import type { CharacterHold } from '@aether/core';
 
 /** A built prop with the resources it owns. */
@@ -15,6 +15,8 @@ export interface Prop {
   twoHanded: boolean;
   /** True for a pack worn on the back (mounted on the spine, both hands stay free). */
   onBack?: boolean;
+  /** Where a live flame burns (a torch's head): the renderer attaches a fire emitter to it. */
+  flame?: Object3D;
   dispose(): void;
 }
 
@@ -39,6 +41,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
   };
   let twoHanded = false;
   let onBack = false;
+  let flameAnchor: Object3D | undefined;
   switch (kind) {
     case 'torch': {
       const w = wood();
@@ -46,6 +49,11 @@ export function buildProp(kind: CharacterHold): Prop | null {
       add(new CylinderGeometry(0.045, 0.03, 0.08, 10), new MeshStandardMaterial({ color: '#2a2018', roughness: 0.9 }), 0, 0.42, 0);
       const flame = new MeshStandardMaterial({ color: '#ffb347', emissive: '#ff8a1f', emissiveIntensity: 1.3, roughness: 0.6 });
       add(new SphereGeometry(0.06, 12, 10), flame, 0, 0.5, 0).scale.set(0.9, 1.5, 0.9);
+      const head = new Object3D();
+      head.name = 'prop-flame';
+      head.position.set(0, 0.52, 0);
+      g.add(head);
+      flameAnchor = head;
       break;
     }
     case 'lantern': {
@@ -140,6 +148,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
     group: g,
     twoHanded,
     ...(onBack ? { onBack } : {}),
+    ...(flameAnchor ? { flame: flameAnchor } : {}),
     dispose() {
       for (const x of geos) x.dispose();
       for (const x of mats) x.dispose();

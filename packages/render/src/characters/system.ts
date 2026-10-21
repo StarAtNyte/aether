@@ -15,6 +15,7 @@ import { castById, characterUrl, clipTable, getCatalog, loadCatalog, motionSet, 
 import { cloneModel, COMPRESSED_SOURCE_KEY, type ModelCache } from '../geometry/model-loader';
 import { CharacterRig, type Foot } from './rig';
 import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterial, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
+import type { Prop } from './props';
 
 /** Distances (m) at which detail steps down. */
 export const LOD_NEAR = 16;
@@ -32,6 +33,8 @@ export interface CharacterSystemOptions {
   onFootstep?: (id: string, foot: Foot, speed: number, position: Vector3) => void;
   /** Draw shadows (false for the ghost and proof variants). */
   shadows?: boolean;
+  /** The held prop of a body changed (body id; null when it holds nothing or is removed). */
+  onProp?: (id: string, prop: Prop | null) => void;
 }
 
 interface Entry {
@@ -162,6 +165,7 @@ export class CharacterSystem {
               this.opts.onFootstep?.(id, foot, speed, _foot);
             }
           : undefined,
+        ...(this.opts.onProp ? { onProp: (prop: Prop | null) => this.opts.onProp?.(id, prop) } : {}),
       });
       rig.root.position.y = opts.footOffset ?? 0;
       rig.autoMotion = opts.autoMotion ?? true;

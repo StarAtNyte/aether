@@ -63,7 +63,8 @@ Entity = { id, name?, description?, parent?: id|null, attachedTo?: id (belongs t
   physics?: {body:"static"|"dynamic"|"kinematic", collider?:"auto"|"box"|"sphere"|"capsule"|"cylinder"|"hull"|"trimesh"|"heightfield"|"none", mass?, density?, friction?(0.6), restitution?(0.1), sensor?, linearDamping?, angularDamping?, gravityScale?, lockRotation?, ccd?, initialVelocity?(m/s), initialAngularVelocity?(RADIANS/s)},
   joint?: {type:"fixed"|"revolute"|"prismatic"|"spherical", target: id|"world", anchor, targetAnchor, axis, limits?:[min,max], motor?:{targetVelocity, targetPosition?, stiffness, damping, maxForce}},
   light?: {type:"point"|"spot"|"directional"|"ambient"|"hemisphere", color, intensity, range, angle, castShadow},
-  behaviors?: [{type, params, enabled?}], state?: {k: json}, visible?, castShadow?, receiveShadow?, template?: bool (spawn source, not instantiated) }
+  behaviors?: [{type, params, enabled?}], state?: {k: json}, visible?, castShadow?, receiveShadow?, template?: bool (spawn source, not instantiated),
+  vfx?: {preset, rate?, color?, scale?, offset?} (particle emitter; see tune_feel) }
 Shape = {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone"|"capsule"|"torus"|"plane", size:[w,h,d]} (sphere diameter=size[0]; cylinder/cone/capsule diameter=size[0], height=size[1]); primitives are CENTERED on position, so a 1 m box resting on the ground has y=0.5
   | {kind:"procedural", generator:id, params:{...}, seed?:int} — generated objects have their BASE at y=0 and are centered in x/z: place them at y=0 to stand on the ground
   | {kind:"scatter", of: primitive|procedural shape, count, area:[w,d], seed?, scaleRange?:[0.8,1.2], randomYaw?:true, onSurface?: terrainId, minSpacing?} — GPU-instanced; use for >8 similar objects. Layers of 2000+ become culled level-of-detail fields: count may go up to 1,000,000 (a million trees stays interactive)
@@ -79,7 +80,7 @@ const PATCHES = `## Patch operations (apply_patches)
 {"op":"addRule","rule":Rule} | {"op":"updateRule","id","set"} | {"op":"removeRule","id"}
 {"op":"setEnvironment","set":{...}} | {"op":"setPlayer","set":{...}} (both deep-merge) | {"op":"setState","key","value"} (null deletes) | {"op":"setHud","hud":[{key,label}]}
 {"op":"defineGenerator","generator":{id,description,params,source}} | {"op":"defineScript","script":{id,description,source}} | {"op":"removeGenerator","id"} | {"op":"removeScript","id"}
-{"op":"addTest","test":Test} | {"op":"removeTest","id"} | {"op":"setMeta","name"?,"description"?,"seed"?} | {"op":"clear","keepEnvironment"?:true} (only for "start over" requests)
+{"op":"addTest","test":Test} | {"op":"removeTest","id"} | {"op":"setMeta","name"?,"description"?,"seed"?,"feel"?:Feel|null} | {"op":"clear","keepEnvironment"?:true} (only for "start over" requests)
 Patches apply in order; later patches may reference entities added earlier in the same call. Unknown fields are rejected — use only fields shown here.`;
 
 const VOXEL = `## Block worlds (voxel terrain; Minecraft-like survival/creative games)
@@ -105,6 +106,10 @@ A character is an ordinary entity (physics body "kinematic", capsule/box primiti
 Archetypes carry the behaviour graph (states idle patrol investigate chase flee attack talk trade follow): guard patrols, hears noise, chases and strikes foes (hostile to "player" unless allies has "player"); predator hunts and flees fear tags or low health; merchant/villager greet and flee foes; prey bolts; follower trails the player; sentinel only turns and strikes. Add transitions only to change that: Cond = {k:"seesFoe"|"hearsFoe"|"remembersFoe"|"fearNear"|"arrived"|"talkRequested"|"following"|"always"} | {k:"foeWithin"|"foeBeyond"|"playerWithin"|"playerBeyond", r} | {k:"healthBelow", frac} | {k:"timer", t} | {k:"time", from, to} | {k:"flag", key, op, value} | {k:"not", c} | {k:"all"|"any", cs:[..]}.
 dialogue = {start:"start", nodes:{id:{text, speaker?, variants?:[{if:[Cond],text}], choices?:[{text, if?:[{key,op,value}], effects?:[Effect], next: id|null, once?}], effects?, next?: id|null, mode?:"talk"|"trade"}}}; Effect = {do:"give"|"take", item, count} (items and coins are world-state counters: setState + setHud them) | {do:"set"|"add", key, value|amount} | {do:"openDoor", target} (sets "<target>-unlocked"; a door behavior {trigger:"state", stateKey:"<target>-unlocked"} opens) | {do:"emit"|"message"|"provoke"|"calm"|"follow"|"win"}. The player presses E near a character to talk, 1-6 to choose. Characters hurt the player through the world state "health" (setState health 100 + HUD); they die at 0 health and emit "<id>-died".
 Edit characters with minimal updates, e.g. {"op":"update","id":"guard-1","set":{"npc":{"speed":2.4}}} (objects merge, arrays replace); address them by role/name via the summary line \`npc "guard" arch=… fac=…\`. "Give him a torch" = a child entity (light + tag "fire") under it and carries:["torch"]. Always add {"kind":"npcs","target":"#npc"} to tests: it proves patrol points are reachable and nobody gets stuck or falls.`;
+
+const FEEL = `## Game feel and effects (tune_feel)
+Presentation only: never changes physics, rules, the playtest or proofs. A good moment is several small answers within a tenth of a second (a burst, a body pop, a flash, a short hit-stop, a decaying shake, a floating "+1"); the events fire by themselves. Give every game a feel with tune_feel: tier by genre ("punchy" action, combat, racing; "subtle" calm exploration, stories), cues for what the request stresses, fire on torches and campfires, smoke on chimneys. Rules can burst too: {"do":"effect","vfx":"explosion","at":"barrel-2","feel":"explosion"}.
+Pacing: teach a mechanic safely before testing it, a calm stretch before the last challenge, each reward louder than the last.`;
 
 const LEVELS = `## Levels: decide the layout, let the tools measure (query_level, place_level_items)
 For games, courses, outdoor and exploration worlds. You are the level designer: pace, landmarks, risk and reward. The tools are your tape measure and your guard against unwinnable levels.
@@ -164,6 +169,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs, opts: { level?: boole
     VOXEL,
     ARCHITECTURE,
     NPCS,
+    FEEL,
     ...(opts.level ? [LEVELS] : []),
     `## Worked examples\n${renderExamples()}`,
     `## Built-in generators (shape {"kind":"procedural","generator":id,"params":{...}}; unknown params are ignored; every param has a default)\n${renderGeneratorCatalog(catalogs.generators)}`,

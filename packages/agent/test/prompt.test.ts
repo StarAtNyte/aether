@@ -53,7 +53,8 @@ describe('system prompt', () => {
     // 15.5k -> 15.6k for the room dressing (dress_room, the furn-accent styling piece) in the architecture tools.
     // 15.6k -> 15.7k once shape_land and the room dressing sit in the prompt together.
     // 15.7k -> 15.8k for the mound generator plus the continued-conversation (<scene_changes>) and world-title lines (~50 tokens).
-    expect(prompt.length / 4).toBeLessThan(15_800);
+    // 15.8k -> 16.1k for the game-feel section (tune_feel, the effect action and its rule and script docs, entity vfx; ~280 tokens).
+    expect(prompt.length / 4).toBeLessThan(16_100);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
@@ -82,7 +83,7 @@ describe('system prompt', () => {
 
   it('tool schemas are strict objects with documented properties', () => {
     const names = AGENT_TOOLS.map((t) => t.name);
-    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'inspect', 'run_verification', 'shape_land', 'finish']);
+    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'inspect', 'run_verification', 'shape_land', 'tune_feel', 'finish']);
     for (const t of AGENT_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });

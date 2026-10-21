@@ -81,8 +81,8 @@ const def = (description: string, continuous: boolean, ...layers: VfxLayer[]): V
 const SPARKS = L({ blend: 'add', sprite: SPRITE.glow, burst: [22, 30], rate: 18, life: [0.3, 0.65], speed: [3.5, 8.5], shape: 'cone', spread: Math.PI * 0.55, gravity: 9.8, drag: 1.6, size: [0.05, 0.018], color0: '#ffe2a0', color1: '#ff5a1a', intensity: 7, stretch: 0.045, floor: true });
 const DUST = L({ blend: 'alpha', sprite: SPRITE.smoke, burst: [9, 13], rate: 6, life: [0.6, 1.15], speed: [0.9, 2.3], shape: 'ring', radius: 0.18, gravity: -0.35, drag: 3.2, turbulence: 0.06, size: [0.22, 0.85], color0: '#b9ab94', color1: '#a59c8e', alpha: 0.42, spin: 0.8, floor: true });
 const SMOKE = L({ blend: 'alpha', sprite: SPRITE.smoke, burst: [10, 14], rate: 7, life: [2, 3.6], speed: [0.35, 0.9], shape: 'cone', spread: 0.35, radius: 0.15, gravity: -0.55, drag: 0.7, turbulence: 0.28, size: [0.45, 1.9], color0: '#5f5d5b', color1: '#8c8a87', alpha: 0.45, spin: 0.5 });
-const FIRE = L({ blend: 'add', sprite: SPRITE.smoke, burst: [16, 22], rate: 46, life: [0.45, 0.85], speed: [0.5, 1.1], shape: 'cone', spread: 0.3, radius: 0.11, gravity: -2.6, drag: 1.2, turbulence: 0.07, size: [0.34, 0.07], color0: '#ffc46b', color1: '#ff3a0c', intensity: 3.6, alpha: 0.9, spin: 1.2 });
-const EMBERS = L({ blend: 'add', sprite: SPRITE.glow, burst: [8, 12], rate: 6, life: [1.4, 2.8], speed: [0.3, 0.9], shape: 'cone', spread: 0.6, radius: 0.12, gravity: -0.45, drag: 0.35, turbulence: 0.32, size: [0.045, 0.012], color0: '#ffb466', color1: '#ff4a12', intensity: 7 });
+const FIRE = L({ blend: 'add', sprite: SPRITE.smoke, burst: [12, 16], rate: 30, life: [0.4, 0.8], speed: [0.45, 1.0], shape: 'cone', spread: 0.28, radius: 0.1, gravity: -2.4, drag: 1.2, turbulence: 0.06, size: [0.3, 0.06], color0: '#ffb04a', color1: '#d93c0c', intensity: 1.5, alpha: 0.8, spin: 1.2 });
+const EMBERS = L({ blend: 'add', sprite: SPRITE.glow, burst: [8, 12], rate: 6, life: [1.4, 2.8], speed: [0.3, 0.9], shape: 'cone', spread: 0.6, radius: 0.12, gravity: -0.45, drag: 0.35, turbulence: 0.32, size: [0.035, 0.01], color0: '#ffb466', color1: '#ff4a12', intensity: 3.5 });
 
 /** Every preset by name. */
 export const VFX_PRESETS: Readonly<Record<VfxPreset, VfxDef>> = Object.freeze({
@@ -98,10 +98,10 @@ export const VFX_PRESETS: Readonly<Record<VfxPreset, VfxDef>> = Object.freeze({
     L({ blend: 'add', sprite: SPRITE.glow, burst: [26, 34], rate: 26, life: [0.6, 1.25], speed: [0.6, 1.7], shape: 'sphere', radius: 0.2, gravity: -1, drag: 2, turbulence: 0.16, size: [0.11, 0], color0: '#9edcff', color1: '#b36bff', intensity: 5 }),
     L({ blend: 'add', sprite: SPRITE.ring, burst: [1, 1], life: [0.5, 0.5], speed: [0, 0], shape: 'point', size: [0.3, 2.2], sizeJitter: 0, color0: '#a8e4ff', color1: '#9b6bff', intensity: 1.8, alpha: 0.6 })),
   explosion: def('a fireball, flying sparks, a shockwave and lingering smoke', false,
-    L({ blend: 'add', sprite: SPRITE.smoke, burst: [24, 30], life: [0.3, 0.7], speed: [3, 8.5], shape: 'sphere', radius: 0.3, gravity: -1.2, drag: 4.2, turbulence: 0.12, size: [0.5, 1.9], color0: '#ffc977', color1: '#b8300a', intensity: 1.9, alpha: 0.8, spin: 1.5 }),
+    L({ blend: 'add', sprite: SPRITE.smoke, burst: [24, 30], life: [0.25, 0.55], speed: [3, 8.5], shape: 'sphere', radius: 0.3, gravity: -1.2, drag: 4.2, turbulence: 0.12, size: [0.5, 1.7], color0: '#ffc977', color1: '#4a1406', intensity: 1.9, alpha: 0.8, spin: 1.5 }),
     L({ ...SPARKS, burst: [36, 48], speed: [6, 15], spread: Math.PI * 0.8, life: [0.45, 1.1] }),
     L({ ...SMOKE, burst: [14, 18], life: [2.2, 4], speed: [1, 2.6], shape: 'sphere', radius: 0.5, size: [1, 3.2], alpha: 0.5, color0: '#3e3a37', color1: '#7a7672' }),
-    L({ blend: 'add', sprite: SPRITE.ring, burst: [1, 1], life: [0.38, 0.38], speed: [0, 0], shape: 'point', size: [0.5, 7], sizeJitter: 0, color0: '#fff4dc', color1: '#ffb070', intensity: 2.5, alpha: 0.7 })),
+    L({ blend: 'add', sprite: SPRITE.ring, burst: [1, 1], life: [0.38, 0.38], speed: [0, 0], shape: 'point', size: [0.5, 5], sizeJitter: 0, color0: '#fff4dc', color1: '#ffb070', intensity: 1.2, alpha: 0.5 })),
   splash: def('water droplets thrown up and a ring of spray', false,
     L({ blend: 'alpha', sprite: SPRITE.glow, burst: [20, 26], life: [0.4, 0.8], speed: [2.2, 4.8], shape: 'cone', spread: 0.6, radius: 0.12, gravity: 9.8, drag: 0.6, size: [0.07, 0.035], color0: '#eef6ff', color1: '#cfe4f5', alpha: 0.85, stretch: 0.035, floor: true }),
     L({ blend: 'alpha', sprite: SPRITE.ring, burst: [1, 1], life: [0.7, 0.7], speed: [0, 0], shape: 'point', size: [0.3, 1.8], sizeJitter: 0, color0: '#f2f8ff', color1: '#d8e8f5', alpha: 0.5 })),

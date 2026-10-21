@@ -40,6 +40,7 @@ each package). This document explains the design behind them.
 - [33. Water, animals and ambient life](#33-water-animals-and-ambient-life-outdoorb)
 - [34. Generated worlds: land, water and hills by default](#34-generated-worlds-land-water-and-hills-by-default)
 - [35. What belongs to an object, and what rests on what](#35-what-belongs-to-an-object-and-what-rests-on-what)
+- [38. Game feel and gameplay effects](#38-game-feel-and-gameplay-effects)
 
 ---
 
@@ -2275,3 +2276,46 @@ separation, flock sums) are Reynolds' (after Yuka's, MIT, rewritten) on the brai
 **Why not navcat.** navcat (MIT, pure-JS recast) builds a navigation mesh from triangles, which the logic runtime does
 not have, and its queries allocate; the grid already met the runtime's rules (deterministic, allocation-free,
 headless, proofs), so it was extended to floors and stair links instead (THIRD_PARTY.md).
+## 38. Game feel and gameplay effects
+
+**One idea.** A satisfying moment is several small answers inside about a tenth of a second: a burst of particles where
+it happened, a pop of the player's body, a flash, a short freeze, a camera shake that grows with the impact and decays,
+a floating "+1", a buzz in the hands. All of it moves the picture, never the body. The World IR says how strongly a
+game answers (`world.feel`: a tier and per-event cues) and what burns or smokes (`entity.vfx`); the renderer and the
+studio play it; nothing in the simulation reads it back.
+
+**Events.** The logic runtime calls an optional `host.feedback` when a collectible is taken, a hazard or an NPC hurts,
+a checkpoint is reached, a launcher throws, something explodes, the game is won or lost, or an `effect` rule action
+runs. The record carries the place, the signed amount for floating text and the logic tick, which seeds the burst, so
+the same run draws the same particles. The studio adds what the logic cannot see: the walking player's jumps and
+landings (intensity from the fall speed) and footsteps (a puff of dust on soil, sand, snow and grass, a splash in water,
+nothing on wooden floors). A test plays one world with no feel layer, a recording one and one that throws, and requires
+the identical trace: proofs and the playtest bot are unaffected by construction.
+
+**Cues.** `resolveFeelCue` turns the world's feel into numbers: each event has a `normal` tier (a pickup is a sparkle, a
+small body pop and a "+value"; damage is a red flash and vignette, a short hit-stop and a shake; a win is confetti, a
+warm flash and the music ducked), and `subtle` / `punchy` / `off` scale it; fields written in the world win. The
+renderer's `FeelDirector` keeps the state: trauma (added per event, decaying linearly, shake = trauma² × seeded smooth
+noise on offset and yaw, pitch, roll), a FOV kick that springs back, flash and vignette pulses, the body squash, and
+hit-stop. The shake and the FOV kick are applied to the camera for the draw and removed straight after it, so picking,
+NPC bubbles and the simulation see the real camera. Hit-stop holds the fixed stepper for its few frames (the steps run
+later; what they compute is unchanged) and slows animation and particles to 4 %. Flash, vignette and floating text are
+a DOM layer over the canvas: the same on every backend and tier, and never in stills or thumbnails. Rumble goes to the
+pad in use (`dual-rumble`), ducking to the footstep bus and, in published games, the music.
+
+**Particles.** `VfxSystem` is two instanced draws, additive light (sparks, fire, sparkle, magic, explosion cores) and
+alpha-blended matter (dust, smoke, splashes, confetti), each a fixed ring of particle records in six vec4 instance
+attributes. A particle is written once, at birth; the TSL vertex stage evaluates its motion from the age (exponential
+drag, gravity or buoyancy, a seeded wander, resting on its floor), its size and colour over life, and turns it into a
+spinning billboard or a streak along its velocity. Per frame the CPU advances a clock, sets four uniforms and uploads the
+slots written that frame through one reused update range per attribute. Budgets follow the render tier (1.5 k to 12 k
+particles); a full ring overwrites its oldest particles. Soft edges come from the floor the emitter stands on and the
+camera distance, not the depth buffer (WebGPU cannot sample its multisampled depth). Emitters follow their scene object
+(a torch flame follows the hand through the walk cycle), stop beyond 90 m and when hidden.
+
+**Prompts.** `tune_feel` gives the model the whole surface; the local edit engine answers the common requests without a
+model ("make hits feel punchy", "add sparks when coins are collected", "dust when landing", "less screen shake", "no
+flashes", "add fire to the torches", "remove the smoke from the chimney"), as cosmetic edits that skip re-verification.
+The offline planner gives new games a tier by genre (punchy for action and racing, subtle for calm exploration and
+stories) and lights what obviously burns. Settings → Play → Reduce motion (and the system's reduce-motion preference)
+turns shake, FOV kicks and flashes off; published games have the same switch in their pause menu.

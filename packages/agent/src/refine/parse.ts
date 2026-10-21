@@ -6,6 +6,7 @@
 import type { Command, EnvIntent, Look, Placement, Ref } from './command';
 import { MATERIAL_WORDS, SHADE_WORDS, COLOR_FAMILIES, COLOR_WORDS, TONE_ONLY_COLORS, amountMetres, findColor, findMaterial, parseNumber, singular, sizeFactor } from './lexicon';
 import { cleanPhrase, flattenPart, isEmptyRef, parseRef, ROOM_WORDS } from './parse-ref';
+import { parseFeel } from './ops-feel';
 
 /** Result of {@link parseEdit}. */
 export interface ParsedEdit {
@@ -701,6 +702,9 @@ function parseClause(c: string): Command[] | null {
   // "the trees should be taller", "the walls need to be white": a wish is an edit.
   const wish = /^(?:the\s+)?(.+?)\s+(?:should|must|needs? to|has to|have to|ought to)\s+(?:be|become|look|get)\s+(.+)$/.exec(c);
   if (wish && !/^(?:make|let|have|get|set|turn|paint|change)\b/.test(c)) return parseClause(`make the ${wish[1] as string} ${wish[2] as string}`);
+  // Game feel before the environment: "dust when landing" is a landing cue, not the dust weather.
+  const feel = parseFeel(c);
+  if (feel) return [feel];
   // World-level environment first ("make it night", "turn the sky to sunset", "less fog").
   const env = parseEnv(c);
   if (env && !/\b(?:the|a|an)\s+(?:lamp|sofa|chair|table|wall|tree|car|door|roof|floor|window|house|bed|rug)\b/.test(c.replace(/\b(?:the sky|the ground)\b/, ''))) return [{ op: 'env', set: env }];

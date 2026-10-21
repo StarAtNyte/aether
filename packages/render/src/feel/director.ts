@@ -35,8 +35,8 @@ const SHAKE_FREQ = 17;
 /** Time scale while frozen by hit-stop. */
 export const HIT_STOP_SCALE = 0.04;
 /** Flash and vignette decay time constants (s). */
-const FLASH_TAU = 0.11;
-const VIGNETTE_TAU = 0.32;
+const FLASH_TAU = 0.14;
+const VIGNETTE_TAU = 0.45;
 /** FOV kick: the target decays over FOV_TAU, the lens follows it over FOV_ATTACK. */
 const FOV_TAU = 0.28;
 const FOV_ATTACK = 0.035;

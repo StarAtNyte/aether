@@ -13,6 +13,10 @@ import type { CompletionRequest, CompletionResponse, ContentBlock, Provider } fr
 import { ProviderError } from '../errors';
 import type { MockLibraryItem } from './library';
 import { planMock } from './planner';
+import { feelTierFor, patchesMakeGame } from '../../feel-edit';
+
+/** Names in a plan that may carry an emitter (cheap pre-check before asking tune_feel to look). */
+const EMITTER_HINT = /campfire|camp-fire|bonfire|brazier|fire-?pit|torch|chimney|forge|furnace|portal/i;
 
 /** Patches per apply_patches call (mirrors the tool limit). */
 const PATCH_CHUNK = 400;
@@ -132,6 +136,14 @@ export function createMockProvider(opts: MockProviderOptions = {}): Provider {
         });
       });
       if (plan.arch) content.push({ type: 'tool_use', id: `mock-${key}-arch`, name: 'build_architecture', input: { ops: plan.arch.ops, message: plan.arch.message } });
+      // A new world: a game gets a feel that fits its genre, and anything that burns or smokes gets its effect
+      // (presentation only; the build itself is unchanged).
+      const fresh = plan.patches.some((p) => (p as { op?: unknown }).op === 'clear') || /\bentities=0\b/.test(envelope?.summary ?? 'entities=0');
+      if (fresh) {
+        const game = patchesMakeGame(plan.patches);
+        const burns = EMITTER_HINT.test(JSON.stringify(plan.patches).slice(0, 2_000_000));
+        if (game || burns) content.push({ type: 'tool_use', id: `mock-${key}-feel`, name: 'tune_feel', input: { ...(game ? { preset: feelTierFor(envelope?.request ?? raw) } : {}), ...(burns ? { autoEmitters: true } : {}), message: game ? 'Game feel' : 'Effects' } });
+      }
       content.push({ type: 'tool_use', id: `mock-${key}-finish`, name: 'finish', input: { message: plan.message } });
       return respond(req, content, 'tool_use');
     },

@@ -56,7 +56,7 @@ export class FeelOverlay {
     this.root.append(this.vignette, this.flash);
     for (let i = 0; i < MAX_FLOATING_TEXT; i++) {
       const el = doc.createElement('div');
-      el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;font:700 20px/1 var(--font-sans, system-ui, sans-serif);letter-spacing:0.02em;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.55),0 0 10px rgba(0,0,0,0.25);will-change:transform,opacity;opacity:0;';
+      el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;font:800 24px/1 var(--font-sans, system-ui, sans-serif);letter-spacing:0.02em;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.55),0 0 10px rgba(0,0,0,0.25);will-change:transform,opacity;opacity:0;';
       this.root.append(el);
       this.texts.push({ el, age: 0, x: 0, y: 0, z: 0, live: false, text: '', shown: '' });
     }
@@ -105,7 +105,7 @@ export class FeelOverlay {
       this.lastVignette = vig;
       if (vig) {
         const [rgb, alpha] = vig.split('|') as [string, string];
-        this.vignette.style.background = `radial-gradient(ellipse at center, rgba(${rgb},0) 45%, rgba(${rgb},0.55) 78%, rgba(${rgb},0.9) 100%)`;
+        this.vignette.style.background = `radial-gradient(ellipse at center, rgba(${rgb},0) 38%, rgba(${rgb},0.6) 74%, rgba(${rgb},0.9) 100%)`;
         this.vignette.style.opacity = alpha;
       } else this.vignette.style.opacity = '0';
     }

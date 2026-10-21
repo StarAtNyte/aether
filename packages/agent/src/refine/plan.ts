@@ -25,6 +25,7 @@ import { planPaint } from './ops-paint';
 import { planMove, planResize, planRotate, planScale, planShape } from './ops-transform';
 import { ask, failed, outcome, type AddableSpec, type OpEnv, type OpOutcome, type ParamCatalog, type Question } from './ops-types';
 import { isVoxelWorld, voxelGame, voxelPaint, voxelStructureOp } from './ops-voxel';
+import { planFeel } from './ops-feel';
 import { resolveRef, type ResolveContext } from './resolve';
 import { sceneOf } from './scene';
 
@@ -207,6 +208,8 @@ function runOp(env: OpEnv, cmd: Command): OpOutcome {
       return planGame(env, cmd);
     case 'physics':
       return planPhysics(env, cmd);
+    case 'feel':
+      return planFeel(env, cmd);
     case 'voxel':
       return failed('That block edit is not supported yet');
     case 'repeat':

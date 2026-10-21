@@ -101,6 +101,7 @@ export function worldChanges(a: WorldDoc, b: WorldDoc): WorldChange[] {
   if (a.name !== b.name) out.push({ scope: 'meta', id: '', path: 'name', kind: 'set', from: a.name, to: b.name });
   if (a.description !== b.description) out.push({ scope: 'meta', id: '', path: 'description', kind: 'set', from: a.description, to: b.description });
   if (!deepEqual(a.intro, b.intro)) walk('meta', '', 'intro', a.intro, b.intro, out, 1);
+  if (!deepEqual(a.feel, b.feel)) walk('meta', '', 'feel', a.feel, b.feel, out, 1);
   if (!deepEqual(a.voxel, b.voxel)) walk('voxel', '', '', a.voxel, b.voxel, out, 0);
   return out;
 }

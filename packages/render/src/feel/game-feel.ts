@@ -38,8 +38,10 @@ export class GameFeel {
   private readonly keep = new Set<string>();
   /** True in play mode: camera shake and FOV kicks apply only then (entity emitters run in the editor too). */
   playing = false;
-  /** Freeze the effects clock (tests, posed captures); {@link VfxSystem.update} can still be driven by hand. */
+  /** Freeze the effects clock and the cues (tests, posed captures); {@link VfxSystem.update} can still be driven by hand. */
   paused = false;
+  /** A preview in the editor shakes the camera like play mode until its cue has played out. */
+  private previewing = false;
 
   constructor(parent: { add(o: Object3D): unknown }, tier: 'low' | 'medium' | 'high' | 'ultra', lowMemory: boolean, private readonly host: FeelHost) {
     this.vfx = new VfxSystem(parent, tier, lowMemory);
@@ -74,9 +76,26 @@ export class GameFeel {
       if (e && e.vfx && !e.template) visit(id, e.vfx);
     }
     if (extra) for (const e of extra) if (e.vfx) visit(e.id, e.vfx);
+    // Flames of held props are not world entities: they stay until their rig says otherwise.
+    for (const id of this.props) keep.add(id);
     if (key !== this.emitterKey || keep.size !== this.vfx.emitterCount) {
       this.emitterKey = key;
       this.vfx.retainEmitters(keep);
+    }
+  }
+
+  /** Emitter ids of held props (torches in hands). */
+  private readonly props = new Set<string>();
+
+  /** A character's held prop changed: a flame gets a small fire that follows it (`null` removes it). */
+  propEmitter(bodyId: string, flame: Object3D | null): void {
+    const id = `prop:${bodyId}`;
+    if (flame) {
+      this.props.add(id);
+      this.vfx.setEmitter(id, { preset: 'fire', scale: 0.42, rate: 34, enabled: true }, flame);
+    } else {
+      this.props.delete(id);
+      this.vfx.setEmitter(id, null, null);
     }
   }
 
@@ -94,7 +113,8 @@ export class GameFeel {
    * Play a feel event (and its burst) at a place. `vfx` overrides the cue's burst (the `effect` action); `seed`
    * makes the burst deterministic (the logic tick of the event).
    */
-  trigger(kind: FeelEvent | null, at: readonly [number, number, number] | null, opts: { seed: number; vfx?: VfxPreset | 'none'; color?: string; scale?: number; intensity?: number; amount?: number; floorY?: number; stretch?: boolean } = { seed: 0 }): PlayedCue | null {
+  trigger(kind: FeelEvent | null, at: readonly [number, number, number] | null, opts: { seed: number; vfx?: VfxPreset | 'none'; color?: string; scale?: number; intensity?: number; amount?: number; floorY?: number; stretch?: boolean; preview?: boolean } = { seed: 0 }): PlayedCue | null {
+    if (opts.preview) this.previewing = true;
     const cue = kind ? this.cueOf(kind, opts.intensity ?? 1) : null;
     const preset = opts.vfx ?? cue?.vfx ?? 'none';
     if (at && preset !== 'none') {
@@ -124,7 +144,8 @@ export class GameFeel {
 
   /** Advance one frame by `dt` real seconds; returns the scale of game time (hit-stop). */
   frame(dt: number, camera: Camera, avatar: Object3D | null): number {
-    this.director.update(dt);
+    this.director.update(this.paused ? 0 : dt);
+    if (this.previewing && !this.director.active) this.previewing = false;
     const scale = this.director.timeScale;
     this.vfx.update(this.paused ? 0 : dt * scale, camera);
     if (avatar) {
@@ -141,7 +162,7 @@ export class GameFeel {
 
   /** Shake and FOV kick for the draw. */
   beforeDraw(camera: PerspectiveCamera): void {
-    if (this.playing) this.director.apply(camera);
+    if (this.playing || this.previewing) this.director.apply(camera);
   }
 
   afterDraw(camera: PerspectiveCamera): void {

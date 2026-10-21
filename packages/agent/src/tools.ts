@@ -10,6 +10,8 @@
 import { z } from 'zod';
 import { LandInput } from './land';
 import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
+import { FeelEvent, FeelTier, VfxPreset } from '@aether/core';
+import { TuneFeelInput } from './feel-edit';
 import type { ToolDef } from './types';
 
 /** Upper bounds on tool arguments. */
@@ -43,7 +45,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -271,6 +273,25 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'tune_feel',
+    description:
+      'Game feel and visual effects (presentation only: they never change the simulation, the playtest or a replay proof). preset: the tier of the whole game, "subtle" (calm exploration, walkthroughs), "normal" (the default), "punchy" (action, combat, arcade), "off". events: per-event cues merged into the current ones, for pickup | hit | damage | death | win | checkpoint | jump | land | explosion | launch, each {tier?, shake? 0..1 (trauma), hitStop? 0..0.25 s, fovKick? -20..20 deg, flash? 0..1, flashColor?, vignette? 0..1, rumble? 0..1, squash? 0..1, text? (floating +score/-damage), duck? 0..1 (background audio), vfx? (burst at the event), vfxColor?, vfxScale? 0.2..4}; null drops an event back to the tier. emitters: continuous effects on entities, [{target: id or #tag, vfx: preset or "none" to remove, rate? per s, color?, scale?, offset? [x,y,z] from the entity origin (put a torch flame at its top)}]. VFX presets: ' +
+      VfxPreset.options.join(', ') +
+      '. "Make hits feel punchy" = {events:{hit:{tier:"punchy"},damage:{tier:"punchy"}}}; "sparks when coins are collected" = {events:{pickup:{vfx:"sparks"}}}; "dust when landing" = {events:{land:{vfx:"dust"}}}; "the torches should burn" = {emitters:[{target:"#torch",vfx:"fire",offset:[0,0.9,0]}]}. One undo step.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: { type: 'string', enum: [...FeelTier.options] },
+        events: { type: 'object', properties: Object.fromEntries(FeelEvent.options.map((e) => [e, { type: ['object', 'null'] }])), additionalProperties: false },
+        footsteps: { type: 'boolean' },
+        emitters: { type: 'array', maxItems: 24, items: { type: 'object', properties: { target: { type: 'string' }, vfx: { type: 'string', enum: [...VfxPreset.options, 'none'] }, rate: { type: 'number' }, color: { type: 'string' }, scale: { type: 'number' }, offset: { type: 'array', items: { type: 'number' } } }, required: ['target', 'vfx'] } },
+        reset: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
     inputSchema: {
@@ -375,6 +396,7 @@ export const ToolInputs = {
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional() }),
   run_verification: z.object({}),
   shape_land: LandInput,
+  tune_feel: TuneFeelInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;
 

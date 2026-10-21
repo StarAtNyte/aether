@@ -3166,3 +3166,89 @@ document served in place of the `apartment` template of the build output) and `-
 - `shape_land` also takes `{op:"mound", x, z, size 4..300, height 0.5..60, top 0..0.6, roughness, ridge?, color?}` (the new built-in `mound` generator: a natural hill with a level summit and a heightfield collider, set on the ground at x,z, tagged `hill`, kept when the land is rebuilt) and `land.lake: {x, z, radius 3..120, depth}` (an estate lake basin with water). `apply_patches` notes water added as a plain primitive and primitive "hills", pointing at those ops.
 - Furnishing keeps loose pieces (plants, lamps, side tables, chairs …) 0.4 m off showers and baths; a re-compile drops a compiled floor piece that would stand in a piece placed through the design tools (a plant or vanity in the model's shower after a window is added).
 - The building review adds information notes `room_sparse` (a furnished but bare room: `dress_room`) and `no_grounds` (a house on the bare plane: `set_site`).
+
+## Game feel and gameplay effects (additive, backward compatible)
+
+Presentation only: nothing in this section is read by physics, the logic state, the playtest bot or replay proofs. A
+world without `feel` plays at the `normal` tier; worlds without the new fields validate, hash and replay exactly as
+before.
+
+### `@aether/core`
+
+- `feel-schema.ts`: `FeelTier` (`off | subtle | normal | punchy`), `FeelEvent` (`pickup | hit | damage | death | win |
+  checkpoint | jump | land | explosion | launch`), `VfxPreset` (`sparks dust sparkle fire smoke magic explosion splash
+  footstep muzzle embers confetti shockwave`), `FeelCue` (every field optional: `tier`, `shake` 0..1 trauma, `hitStop`
+  0..0.25 s, `fovKick` -20..20 deg, `flash` 0..1, `flashColor`, `vignette` 0..1, `rumble` 0..1, `squash` 0..1, `text`,
+  `duck` 0..1, `vfx` (preset or `none`), `vfxColor`, `vfxScale` 0.2..4), `FeelSpec {preset = normal, events = {},
+  footsteps?}`, `EntityVfx {preset, rate? 0..400, color?, scale?, offset?, enabled = true}`.
+- `WorldDoc.feel?: FeelSpec`; `Entity.vfx?: EntityVfx`; `Action` gains `{do: "effect", vfx = "sparks", at?: Vec3 |
+  Selector, feel?: FeelEvent, color?, scale?}`; `setMeta.feel?: FeelSpec | null` replaces (or with `null` removes) the
+  feel. `clear` keeps the feel. `patchesBetween` / `invertPatches` carry it; `WorldDiff.feelChanged`.
+- `feel.ts`: `resolveFeelCue(feel, event, intensity = 1) → ResolvedCue` (the tier tables, written fields win, intensity
+  0..2 scales the tier values only), `FEEL_EVENTS`, `FEEL_EVENT_DOCS`, `FEEL_TIER_SCALE`, `describeFeel(feel)` (one
+  line; also in `summarizeWorld`, with `vfx <preset>` on entity lines).
+
+### `@aether/logic`
+
+- `LogicHost.feedback?(event: FeedbackEvent)` (optional): `{kind: FeelEvent | null, vfx?, at?, source?, target?,
+  amount?, intensity?, color?, scale?, tick, time}`. The record is reused (copy what you keep). Raised by collectibles
+  (`pickup`, amount = value), hazards (`damage` with -damage, else `hit`), NPC blows (`damage` on the player, `hit` on
+  another NPC), dialogue `give` (`pickup`), checkpoints, launchers (`launch`, intensity = speed / 12), explosions
+  (`explosion`, intensity = radius / 5), `gameOver` (`win` / `death`) and the `effect` action (kind = its `feel` or null).
+  A throwing host is caught; a test proves the run is identical with no feel layer, a recording one and a throwing one.
+- `BehaviorEnv.feedback(kind, at, opts)`, `ActionEnv.effect(...)` and `ActionEnv.playerId()` (internal contracts).
+- `RULE_DOCS` and `SCRIPT_API_DTS` document the `effect` action.
+
+### `@aether/render`
+
+- `WorldRenderer.fx: GameFeel` — `setWorld(world)`, `syncEmitters(world)`, `trigger(kind | null, at, {seed, vfx?,
+  color?, scale?, intensity?, amount?, floorY?, stretch?}) → PlayedCue | null`, `cueOf(event)`, `footsteps`,
+  `frame(dt, camera, avatar) → game time scale`, `beforeDraw` / `afterDraw` (the shake and FOV kick exist for the draw
+  only), `playing` (shake applies in play mode only), `paused` (freeze the effects clock), `propEmitter(bodyId, flame)`.
+- `FeelDirector` (`feel/director.ts`): trauma shake (offset ≤ 0.14 m, yaw/pitch/roll ≤ 0.045 rad at full trauma, trauma²,
+  decay 1.35/s, seeded smooth noise `shakeNoise`), hit-stop (`frozen`, `timeScale` = `HIT_STOP_SCALE` 0.04), FOV kick
+  (spring), `pulse` (flash colour and strength, vignette), body `squash`, `setReducedMotion` (no shake, FOV kick or
+  flash; hit-stop ≤ 0.04 s; vignette halved).
+- `VfxSystem` (`vfx/system.ts`): two instanced draws (additive light, alpha-blended matter), each a `ParticlePool` ring
+  (`vfx/pool.ts`: six vec4 instance attributes; seeded `SeededRandom`, `mixSeed`; dirty slot range uploaded with one
+  reused update range per attribute). `burst(preset, x, y, z, {seed, scale?, color?, direction?, floorY?})`,
+  `setEmitter(id, EntityVfx | null, object)`, `retainEmitters`, `update(dt, camera)`, `hidden`, `capacity`
+  (`vfxBudget(tier, lowMemory)`: 1536 / 4096 / 8192 / 12288, 1024 in low-memory mode), `MAX_EMITTERS` 256. No allocation
+  per frame (allocation-probe tests). Emitters further than 90 m from the camera, hidden, or detached do not emit.
+- `vfx/material.ts`: TSL node material (both backends): analytic motion (drag, gravity, seeded wander, floor rest), size
+  and colour over life, spinning billboards or velocity streaks, a five-cell sprite atlas (`vfx/atlas.ts`), soft edges
+  against the emitter's floor and near the camera (no depth-buffer read: WebGPU cannot sample its multisampled depth).
+- `VFX_PRESETS` (`vfx/presets.ts`), `CONTINUOUS_VFX`. Character props: `Prop.flame` (torch head);
+  `CharacterSystemOptions.onProp(id, prop | null)`, `RigOptions.onProp`.
+
+### `@aether/agent`
+
+- Planner tool `tune_feel` (`TuneFeelInput`: `preset?`, `events?` (cue or `null` per event, merged), `footsteps?`,
+  `emitters?` `[{target: id | #tag, vfx | "none", rate?, color?, scale?, offset?}]` (≤ 24, ≤ 64 targets each, `*`
+  refused), `autoEmitters?` (fire on torches, campfires, braziers; smoke on chimneys; embers on forges and lava; magic on
+  portals; torches held by people are lit by the renderer instead), `reset?`, `message?`) → one undo step
+  (`setMeta.feel` and entity `vfx` updates). `feelPatches`, `mergeFeel`, `feelTierFor(request)`,
+  `defaultEmitterPatches(world)`, `isGameWorld`, `patchesMakeGame` (`feel-edit.ts`). System prompt section "Game feel and
+  effects".
+- Local edit engine: `Command {op: "feel", events, tier?, vfx?, tweak? {knob: shake | hitStop | flash | rumble | text |
+  fovKick | vignette, mode: off | less | more | on}, footsteps?, attach? {ref, vfx}}` (`refine/ops-feel.ts`:
+  `parseFeel`, `planFeel`), parsed before the environment so "dust when landing" is a landing cue. Cosmetic (no
+  re-verification). `worldChanges` reports `meta feel.*` leaves.
+- Offline planner: a new world that is a game gets `tune_feel {preset: feelTierFor(request)}`, and any new world with
+  fires, torches, chimneys, forges or portals gets `autoEmitters`.
+
+### Studio
+
+- `Simulation`: `host.feedback` → `renderer.fx.trigger`, floating score text, rumble and ducking (`feelOverlay.ts`:
+  DOM flash, vignette and a pool of 12 floating texts); landings and jumps of the walking player (`landingIntensity`,
+  fall faster than 4.5 m/s); footstep puffs by surface (`footstepEffect`; water splashes); hit-stop postpones fixed steps
+  (`stepSession` holds the stepper; the steps' results are unchanged); `setReducedMotion`, `reduceMotion`,
+  `previewFeel(kind, at?, amount?)`, `feelStats`, `onDuck`.
+- `SoundBoard.duck(depth, seconds)` (footsteps play on a ducked bed bus) and `onDuck`; `MusicPlayer.duck?`;
+  `GamepadPoller.rumble(strength, ms)` (`vibrationActuator.playEffect('dual-rumble')`, 60 ms apart).
+- Settings: studio `reduceMotion` (Settings → Play → Reduce motion; the system's prefers-reduced-motion also applies);
+  published games `PlayerSettings.reduceMotion` (defaults to the system setting) in the pause menu.
+- Visual rule editor: the `effect` action (`ACTION_FIELDS.effect`, `formatAction` "EFFECT sparks (hit) at anvil").
+- Scripts and tests: `npm run e2e:vfx -- <outDir>` (`tests/e2e/vfx.e2e.ts`: Chromium WebGPU, Chromium WebGL2 and
+  Firefox WebGL2; every preset must change its neighbourhood, no shader or validation errors); `scripts/feel-shots.ts`
+  (editor and play stills of a game with its fires and every feel event).

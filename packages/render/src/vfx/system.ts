@@ -316,7 +316,7 @@ export class VfxSystem {
       const em = list[ei] as Emitter;
       const def = VFX_PRESETS[em.preset];
       const t = em.target;
-      if (!t.parent && t.type !== 'Scene') continue;
+      if (!inScene(t)) continue;
       _pos.copy(em.offset);
       t.localToWorld(_pos);
       const dx = _pos.x - cx;
@@ -385,6 +385,13 @@ export class VfxSystem {
     }
     this.atlas.dispose();
   }
+}
+
+/** True when `o` hangs in a scene (a removed rig or entity keeps its own parents, so walk to the root). Allocation-free. */
+function inScene(o: Object3D): boolean {
+  let n: Object3D = o;
+  for (let i = 0; i < 64 && n.parent; i++) n = n.parent;
+  return (n as Object3D & { isScene?: boolean }).isScene === true;
 }
 
 function clampScale(s: number | undefined): number {

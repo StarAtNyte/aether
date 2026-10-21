@@ -5,7 +5,7 @@
  * of label-left / value-right rows. Scene edits are undoable patches.
  */
 import { memo, type ReactElement } from 'react';
-import { MaterialPreset, type Environment, type Json, type WorldDoc } from '@aether/core';
+import { FeelTier, MaterialPreset, type Environment, type FeelEvent, type Json, type WorldDoc } from '@aether/core';
 import { useStudio, useUI, useWorld } from '../app/context';
 import { formatHour } from '../lib/worldChroma';
 import { formatValue } from '../lib/ruleFormat';
@@ -19,6 +19,9 @@ const WEATHER = ['clear', 'rain', 'snow', 'dust', 'fireflies', 'petals', 'leaves
 const PLAYER_MODES = ['thirdPerson', 'firstPerson', 'orbit', 'vehicle'] as const satisfies ReadonlyArray<WorldDoc['player']['mode']>;
 const GROUND_PRESETS = MaterialPreset.options;
 const DEFAULT_FOG = { color: '#c9d3df', density: 0.015 };
+const FEEL_TIERS = FeelTier.options;
+/** Feel events the inspector can preview (play them next to the player, or at the view's centre in the editor). */
+const FEEL_PREVIEWS: ReadonlyArray<[FeelEvent, string]> = [['pickup', 'Pickup'], ['hit', 'Hit'], ['land', 'Landing'], ['win', 'Win']];
 
 type EnvSet = (set: Record<string, Json>, message: string) => void;
 
@@ -110,6 +113,30 @@ const SceneInspector = memo(function SceneInspector({ playing }: { playing: bool
         <FieldRow label="Jump">
           <NumberField label="Jump speed" value={world.player.jumpSpeed} min={0} max={60} step={0.5} disabled={playing} onCommit={(n) => setPlayer({ jumpSpeed: n }, 'Jump speed')} />
         </FieldRow>
+      </Section>
+      <Section title="Game feel" defaultOpen={false}>
+        <FieldRow label="Strength">
+          <SelectField
+            label="Game feel strength"
+            value={world.feel?.preset ?? 'normal'}
+            options={FEEL_TIERS}
+            disabled={playing}
+            onChange={(v) => void studio.commitUser([{ op: 'setMeta', feel: { ...(world.feel ?? { events: {} }), preset: v } }], `Game feel: ${v}`)}
+          />
+        </FieldRow>
+        <Toggle
+          label="Footstep dust"
+          checked={world.feel?.footsteps !== false}
+          onChange={(v) => void studio.commitUser([{ op: 'setMeta', feel: { ...(world.feel ?? { preset: 'normal', events: {} }), footsteps: v } }], v ? 'Footstep dust on' : 'Footstep dust off')}
+        />
+        <div className="feel-previews" role="group" aria-label="Preview game feel">
+          {FEEL_PREVIEWS.map(([kind, label]) => (
+            <button key={kind} type="button" className="btn btn--sm" onClick={() => studio.simulation?.previewFeel(kind, undefined, kind === 'pickup' ? 1 : kind === 'hit' ? -1 : undefined)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="section__note">Shake, flashes and particles never change how the game plays. Ask for more: “make hits feel punchy”, “sparks when coins are collected”.</p>
       </Section>
       <Section title="Variables" defaultOpen={false} right={<span className="count-badge">{stateKeys.length}</span>}>
         {stateKeys.length === 0 ? (

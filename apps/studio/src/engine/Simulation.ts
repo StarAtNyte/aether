@@ -1388,7 +1388,7 @@ export class Simulation {
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
       const drew = this.renderer.render(dt, this.renderOpts);
       if (drew && this.viewListener) this.viewListener(this.renderer.camera);
-      if (s && this.overlay) {
+      if (this.overlay && (s || this.renderer.fx.director.active || this.overlay.liveTexts > 0)) {
         const c = this.renderer.domElement;
         this.overlay.frame(dt, this.renderer.fx.director.pulse, this.renderer.camera, c.clientWidth, c.clientHeight);
       }
@@ -1596,6 +1596,22 @@ export class Simulation {
     }
     if (cue.rumble > 0) this.pad.rumble(cue.rumble, 70 + cue.rumble * 230);
     if (cue.duck > 0) this.sound.duck(cue.duck, 0.35 + cue.duck * 0.6);
+  }
+
+  /**
+   * Play a feel event as if the game had raised it (feel previews, captures, e2e): at `at`, else at the player in play
+   * mode, else at the orbit target. Presentation only, like every feel event.
+   */
+  previewFeel(kind: FeelEvent, at?: readonly [number, number, number], amount?: number): boolean {
+    const s = this.session;
+    const feet = s?.character?.position;
+    const target = at ?? (feet ? [feet[0], feet[1] + 1, feet[2]] : this.renderer.orbitTarget());
+    const p: [number, number, number] = [target[0] as number, target[1] as number, target[2] as number];
+    const played = this.renderer.fx.trigger(kind, p, { seed: this.feelStep * 131 + 7, ...(amount !== undefined ? { amount } : {}), floorY: feet ? feet[1] : p[1] - 1, stretch: kind === 'jump', preview: true });
+    if (!played) return false;
+    this.answerCue(played.cue, p, amount, kind);
+    this.renderer.requestRender();
+    return true;
   }
 
   /** Accessibility: turn camera shake, FOV kicks and screen flashes off (defaults to the system's reduce-motion setting). */

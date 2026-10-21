@@ -7,6 +7,7 @@ import { Object3D, PerspectiveCamera, Scene } from 'three';
 import { createWorld, resolveFeelCue } from '@aether/core';
 import { FeelDirector, HIT_STOP_SCALE, shakeNoise } from '../src/feel/director';
 import { GameFeel } from '../src/feel/game-feel';
+import { buildProp } from '../src/characters/props';
 
 function camera(): PerspectiveCamera {
   const c = new PerspectiveCamera(55, 16 / 9, 0.1, 500);
@@ -110,7 +111,7 @@ describe('feel director', () => {
     expect(d.pulse.g).toBeLessThan(0.3);
     expect(d.pulse.vignette).toBeGreaterThan(0.4);
     expect(d.pulse.vr).toBeGreaterThan(d.pulse.vg);
-    for (let i = 0; i < 150; i++) d.update(1 / 60);
+    for (let i = 0; i < 200; i++) d.update(1 / 60);
     expect(d.pulse.flash).toBe(0);
     expect(d.pulse.vignette).toBe(0);
     expect(d.active).toBe(false);
@@ -214,6 +215,33 @@ describe('game feel layer', () => {
     for (let i = 0; i < 120; i++) fx.frame(1 / 60, camera(), avatar);
     expect(fx.frame(1 / 60, camera(), avatar)).toBe(1);
     expect(avatar.scale.y).toBe(1);
+    fx.dispose();
+  });
+
+  it('a torch held by a person burns: its flame anchor gets an emitter that survives world syncs', () => {
+    const scene = new Scene();
+    const fx = new GameFeel(scene, 'low', false, { object: () => undefined });
+    const torch = buildProp('torch');
+    expect(torch?.flame).toBeDefined();
+    expect(buildProp('sword')?.flame).toBeUndefined();
+    scene.add(torch!.group);
+    fx.propEmitter('guard-1', torch!.flame ?? null);
+    expect(fx.vfx.emitterCount).toBe(1);
+    fx.setWorld(createWorld({ seed: 3 }));
+    expect(fx.vfx.emitterCount).toBe(1);
+    const cam = camera();
+    cam.position.set(0, 1, 3);
+    cam.updateMatrixWorld();
+    for (let i = 0; i < 30; i++) fx.frame(1 / 60, cam, null);
+    expect(fx.vfx.spawned).toBeGreaterThan(5);
+    // Detached from the scene (the rig was removed): it stops emitting; null removes it.
+    torch!.group.removeFromParent();
+    const before = fx.vfx.spawned;
+    for (let i = 0; i < 30; i++) fx.frame(1 / 60, cam, null);
+    expect(fx.vfx.spawned).toBe(before);
+    fx.propEmitter('guard-1', null);
+    expect(fx.vfx.emitterCount).toBe(0);
+    torch!.dispose();
     fx.dispose();
   });
 });

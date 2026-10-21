@@ -936,6 +936,12 @@
   padding: 0 var(--s-4) var(--s-3);
 }
 
+.feel-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+
 .section__note {
   color: var(--text-3);
   font-size: var(--fs-12);
