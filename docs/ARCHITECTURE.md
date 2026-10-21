@@ -946,9 +946,10 @@ reallocates the canvas buffers, computes view statistics (coverage, edge density
 colourfulness) and scores the world against the rubric with deterministic
 heuristics (grounding, overlaps, emptiness / density, scale sanity, palette
 harmony, lighting for the mood, framing, prompt coherence). With a
-vision-capable connection the views also go to a critic call whose JSON
-verdict is blended in. Below the threshold (72) and within the per-project
-refine budget, targeted improvements are applied (re-grounding, separating
+vision-capable connection the views also go to a critic call whose scores
+and verdict (good enough or needs work) are the result; the measurements are
+advice next to it. Within the per-project refine budget and when the critic
+says it needs work (the threshold of 72 applies only when no assistant looked), targeted improvements are applied (re-grounding, separating
 overlaps, densifying sparse scenes, night lighting, golden-hour sky, palette
 correction) or the agent gets a focused refine instruction. `npm run eval`
 reports the same scores per prompt and model.
@@ -1920,13 +1921,11 @@ photo ─▶ N independent reads (default 3, in parallel, stateless): describe_r
   evidence (a verdict without evidence is dropped) on the clean photo-camera view, with a fixed system prompt and
   rubric, temperature 0 and a seed per seat where the API takes them; the median per item damps one wavering
   answer. From the second look each seat sees the accepted render and the new one blind as A/B (order
-  alternating by seat), scores both and votes. `decideRound` accepts the new state only when the sub-score falls
-  by at most 0.015, no structural measure (openings, inventory, clearance) by more than 0.04, and the judges
-  prefer it (on a tie: the sub-score rises 0.005 or the median judge score 0.03); a rejected state is reverted
+  alternating by seat), scores both and votes. `decideRound` is their call: a state they prefer is kept, one they do not is reverted; the measured sub-score and measures are advice passed to them and to the model, never the gate. A rejected state is reverted
   before the fixing model sees the round, and it is told why. Comparing two renders side by side is far less
-  noisy than comparing two absolute scores. `ProgressTracker` counts a stall on no accepted, measurable progress
-  for `stallRounds` rounds. With `judges: 0`, or when no judge answers, the model doing the fixes judges and the
-  gate compares 0.5 × pass rate + 0.5 × the sub-score with the best round.
+  noisy than comparing two absolute scores. `ProgressTracker` counts a stall on no round the judges found better
+  for `stallRounds` rounds. With `judges: 0`, or when no judge answers, the model doing the fixes judges, shown the best
+  render next to the new one, and its own `closer` call decides whether the room goes back.
 - **Photo estimates are rarely exact**, so `fitOpening` brings a window under the ceiling and inside its wall (and says
   so) rather than losing the run to a refused shell; a shell the builder still refuses goes back to the model once with
   the reason.

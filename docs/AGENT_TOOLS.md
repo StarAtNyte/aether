@@ -30,13 +30,13 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 
 | Tool set | Names | Source |
 | --- | --- | --- |
-| Planner tools (`AGENT_TOOLS`), 15 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `finish` | `packages/agent/src/tools.ts` |
+| Planner tools (`AGENT_TOOLS`), 16 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
 | Tools given to sub-calls, 5. The planner never sees these | `submit_generator` (coder), `describe_room`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts`, `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
 | MCP server tools, 13 | `create_world`, `edit`, `apply_patch`, `list_entities`, `get_entity`, `get_world_summary`, `verify`, `playtest`, `replay`, `render_still`, `export`, `undo`, `redo` | `apps/cli/src/mcp/tools.ts` |
 
-The table names 22 model-facing tool names inside the agent (15 + 2 + 5) and 13 MCP tools. `COMPACT_TOOLS` reuses
+The table names 23 model-facing tool names inside the agent (16 + 2 + 5) and 13 MCP tools. `COMPACT_TOOLS` reuses
 two of the planner names.
 
 The executor is `packages/agent/src/executor.ts`, and the loop is `packages/agent/src/agent.ts`. The system prompt
@@ -215,6 +215,28 @@ See [Eyes](#query_scene-1).
 - **When to use it.** First, for any outdoor world. Then place things, then lay paths (system prompt, "Levels").
   Rivers and lakes come from `land`, never from a flat box of water. A canyon is `kind:"canyon"` with an asphalt
   path along its floor.
+
+### `tune_look`
+
+- **What it does.** Look development: the assistant sets how light and colour are presented, after it has looked at
+  renders (`packages/agent/src/look-edit.ts`, `TuneLookInput`, `lookPatches`). The values are stored in the World IR
+  (`environment`, `environment.grade`, `environment.look`) by one `setEnvironment` patch, so it is one undo step with a
+  diff, survives saving and sharing, and every render (studio, stills, the review images) respects it. The renderer's
+  constants (`INTERIOR_WARMTH` 0.45, the grade presets, vignette 0.22 and so on) are only the defaults. Nothing in it
+  judges: the assistant decides, from the pictures, what to change and when it is good enough.
+- **Input.** All optional; omitted fields stay as they are. Exposure: `exposure` 0.1..4 (1), `exposureEv` -3..3,
+  `bloom` 0..3, `ambientIntensity`, `sunIntensity`, `hdriIntensity`. Colour: `temperature` and `tint` -1..1,
+  `saturation` 0.4..1.8, `contrast` 0.6..1.6, `sunTint`, `ambientTint`, `foliageTint` (`#rrggbb` multipliers; white
+  keeps the colour). Fog: `fogColor`, `fogDensity` (required when the world has no fog), `fogVisibility` (metres).
+  Interiors: `interiorWarmth` -1..1.5 (0.45), `interiorBalance` 0..1.5 (1), `lampStrength` 0..3 (1). `vignette`
+  0..1 (0.22). `reset` lists names to put back to the default (`fog` removes the fog). `message` is the history
+  line.
+- **Returns.** `Look changed: exposure 1 -> 1.4; grade.temperature default -> 0.2.` or "Nothing changed: those values
+  are already set", plus refused parts.
+- **When to use it.** In a review round or a photo compare round when the pictures show the whole image reading
+  cold, dark, flat or washed out; instead of repainting surfaces to compensate. The system prompt does not describe
+  it; the detail is in the tool description. The photo flow hands the assistant the measured brightness, white point,
+  saturation and tonal spread of photo and render as data (`lookEvidenceText`) and does not change the look itself.
 
 ### `query_level`
 
@@ -433,10 +455,10 @@ sub-call tools, and the design tools the planner already has.
 | --- | --- | --- | --- |
 | `describe_room` | the reader (planner role, `ANALYSIS_SYSTEM`) | `{description}` (validated by `parseRoomDescription`) | A structured description of the room. A refused description is sent back to the model, up to 3 attempts (`ANALYSIS_ATTEMPTS`) |
 | `reconcile_room` | one call after the reads | `{add[{key, reason}], remove[{key, reason}]}` | Settles entries that the reads disagree on, by checking the photo. Runs only when two or more valid reads disagree and `reconcile` is not false |
-| `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{scores[{id, a 0..4, b? 0..4, evidence}], closer?: A\|B\|same, why?}` | Scores each checklist item on a fixed rubric. An item passes at 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B |
-| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..120] {id, pass, note?}, summary?}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round, and edits sent before verdicts are refused |
+| `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{scores[{id, a 0..4, b? 0..4, evidence, ok?, okB?}], closer?: A\|B\|same, why?}` | Scores each checklist item on a rubric and says whether it would accept the item (`ok`). An item passes by the majority of those calls; without them, at a median of 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B, and its `closer` decides whether the new state is kept |
+| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..120] {id, pass, note?}, summary?, closer?: new\|best\|same}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round (edits sent before verdicts are refused), and `closer` is its side-by-side call between the new render and the best one, shown next to each other: `best` rolls the room back |
 | `design_plan`, `place_items` | the builder (`runBuild` in `@aether/arch/photo`) | as above | Shell first, then pieces at measured positions |
-| `edit_items`, `place_items`, `query_scene`, `design_plan`, `finish` | the model in each compare round | as above | Fix what still differs from the photo |
+| `edit_items`, `place_items`, `query_scene`, `design_plan`, `tune_look`, `finish` | the model in each compare round | as above | Fix what still differs from the photo; `tune_look` sets the world's light and colour when the whole picture reads differently |
 
 How a run proceeds:
 
@@ -449,11 +471,13 @@ How a run proceeds:
    - asks `judges` independent judges: default 3 (`JUDGES_DEFAULT`), maximum 7 (`JUDGES_MAX`), seed
      `JUDGE_SEED` (7331) + seat.
 
-   A round that makes the result worse is rolled back (`decideRound`, `restorePatches`). Each round allows up to
-   8 model turns (`TURNS_PER_ROUND`).
+   Who decides: the judges (or, judging alone, the fixing model comparing the best render with the new one). A round
+   they do not prefer is rolled back (`decideRound`, `restorePatches`). The measured fidelity is advisory data in the
+   message to the model and the judges; it never accepts or rejects a round. Each round allows up to 8 model turns
+   (`TURNS_PER_ROUND`).
 3. **End.** The loop ends when:
    - every item passes,
-   - the model stops with nothing left to change (the target pass rate is `PHOTO_TARGET_RATE` 0.92),
+   - the model stops because it judges the room good enough or has nothing left to change,
    - progress stalls (`ProgressTracker`, `stallRounds` default 3), or
    - `maxRounds` is reached. With no cap, a safety ceiling `PHOTO_ROUNDS_CEILING` (200) still applies.
 4. **Verification.** The room is verified at the end.

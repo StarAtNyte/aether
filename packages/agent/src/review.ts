@@ -132,13 +132,13 @@ export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasI
   const errors = snap.findings.filter((f) => f.severity === 'error').length;
   const lines = [
     `REVIEW round ${round}. ${opts.lastEdited ? 'You changed the building; this is how it looks now.' : 'Look at the building as a critical designer before it is shown to the user.'}`,
-    `The checker measured it: score ${snap.score}/100, ${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'}${errors > 0 ? ` (${errors} error${errors === 1 ? '' : 's'})` : ''}.`,
+    `The checker measured it (advisory data about geometry and rules, not a verdict on how it looks): ${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'}${errors > 0 ? ` (${errors} error${errors === 1 ? '' : 's'}: impossible geometry, which does need fixing)` : ''}. Whether it is good enough is your call, made from the images.`,
     findingsText(snap.findings, 30),
   ];
   if (opts.hasImages) lines.push(`Numbers drawn on the images are pieces of the building. Use them to say exactly what you mean:\n${snap.legend}`);
   lines.push(
-    'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting, whether a person could live here. If a finding is a false alarm, say why in your final message.',
-    'When the building is right, call finish with one sentence on what you checked and fixed. Do not call finish while a real error remains.',
+    'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting and mood, whether a person could live here. If the light or colour reads wrong (too cold, too dark, flat, washed out, green foliage that does not suit the season), set the look with tune_look rather than repainting surfaces. If a finding is a false alarm, say why in your final message.',
+    'When YOU judge the building right from the images, call finish with one sentence on what you checked and fixed. Do not call finish while a measured error (impossible geometry) remains.',
   );
   return lines.join('\n');
 }

@@ -20,7 +20,7 @@ export const QUALITY_WEIGHTS: Readonly<Record<QualityCriterion, number>> = Objec
   physical: 0.13,
 });
 
-/** Below this overall score a refinement round is worth spending. */
+/** Below this overall score a refinement round is worth spending, when NO assistant has looked (automatic checks only). */
 export const QUALITY_THRESHOLD = 72;
 
 /** Human-readable labels. */
@@ -72,8 +72,16 @@ export interface QualityReport {
   score: number;
   criteria: Record<QualityCriterion, CriterionScore>;
   issues: QualityIssue[];
-  /** Who scored it. */
+  /**
+   * Who scored it. 'heuristic': only the automatic checks looked (no assistant reviewed renders: offline, or no vision).
+   * 'critic': the assistant scored the renders; the automatic checks are `measured`, advisory, except physical validity.
+   * 'blend' is the legacy name of a reply that mixed both and is still accepted when reading old transcripts.
+   */
   source: 'heuristic' | 'critic' | 'blend';
+  /** The assistant's own call after looking: is another round of changes worth it? Absent for heuristic-only reports. */
+  verdict?: 'good_enough' | 'needs_work';
+  /** The automatic checks' score (0-100) next to the assistant's, as evidence. Present when the assistant scored. */
+  measuredScore?: number;
   /** One-sentence summary. */
   summary: string;
 }

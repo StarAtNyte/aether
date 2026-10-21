@@ -64,14 +64,14 @@ export function levelTurnText(round: number, snap: ReviewSnapshot, opts: { hasIm
   const errors = snap.findings.filter((f) => f.severity === 'error').length;
   const lines = [
     `LEVEL REVIEW round ${round}. ${opts.lastEdited ? 'You changed the level; this is how it measures now.' : 'Look at the level as a critical level designer before it is shown to the player.'}`,
-    `The level tools measured it: score ${snap.score}/100, ${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'}${errors > 0 ? ` (${errors} error${errors === 1 ? '' : 's'})` : ''}.`,
+    `The level tools measured it (advisory data, not a verdict on how it plays or looks): ${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'}${errors > 0 ? ` (${errors} error${errors === 1 ? '' : 's'}: unreachable or broken, which does need fixing)` : ''}. Whether it is good enough is your call.`,
     ...snap.findings.slice(0, 30).map((f) => `- [${f.severity}] ${f.message} Fix: ${f.fix}`),
   ];
   if (snap.findings.length === 0) lines.push('No measured problems.');
   if (opts.hasImages) lines.push('The images are the level from above, the first view the player gets and, when there is a problem, a close look at it.');
   lines.push(
     'Fix every real error and warning with place_level_items (move an item with {id,x,z}: it is snapped to the ground and re-measured) or apply_patches for terrain, platforms, ramps and lifts; check with query_level objectives. Assess what the measurements cannot from the images: pacing, a landmark the player can see from the spawn, long empty stretches, whether the terrain, vegetation, water and light look believable and consistent. Make the smallest change that works.',
-    'When the level is right, call finish with one sentence on what you checked and fixed. Do not call finish while a real error remains.',
+    'If the light, colour, fog or mood in the images reads wrong for the setting, set the look with tune_look (exposure, white balance, fog, light and foliage tints). When YOU judge the level right, call finish with one sentence on what you checked and fixed. Do not call finish while a measured error remains.',
   );
   return lines.join('\n');
 }

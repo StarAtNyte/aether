@@ -651,12 +651,13 @@ export function createWebLlmProvider(opts: { engine: WebLlmEngineLike; model: st
 //   Hosts should run WorldAgent with promptProfile 'compact' for it.
 
 // 3D quality loop: rubric (composition, materials, lighting, scale, detail, coherence, physical; weighted 0–100,
-// threshold 72), deterministic heuristics (+ rendered view stats), optional vision critic, targeted improvements.
+// threshold 72 only when no assistant looked), deterministic heuristics (+ rendered view stats; advisory), the vision critic
+// (its scores and its `verdict` good_enough|needs_work are the result), targeted improvements.
 export function assessWorld(input: QualityInput): QualityReport;
 export function improvementPatches(world, report, bounds?, only?): { patches; applied: QualityFix[] };
 export function buildCriticRequest(prompt, heuristic, views: string[]): CompletionRequest;   // role 'critic', ≤ 4 views
-export function blendCritique(heuristic: QualityReport, replyText: string): QualityReport;
-export function needsRefinement(report, threshold?): boolean; export function refineInstruction(report): string;
+export function blendCritique(heuristic: QualityReport, replyText: string): QualityReport;   // source 'critic', verdict?, measuredScore (the checks' score, advisory); physical stays measured
+export function needsRefinement(report, threshold?): boolean;   // the critic's verdict decides when there is one; the threshold only for heuristic-only reports export function refineInstruction(report): string;
 ```
 
 ## apps/bridge — Aether Bridge (local, `npm run bridge`)
@@ -1606,7 +1607,14 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   `hdriBackground?: boolean (default true)`.
 - `Environment` gains `grade?: { temperature?, tint?: -1..1, saturation?: 0.4..1.8, contrast?: 0.6..1.6, exposureEv?: -3..3 }`
   (additive, optional): fields replace those of the sky's colour-grade preset in the renderer (`exposureEv` adds to it). The
-  room-from-photo flow sets it from the photograph's measured white balance, saturation and contrast.
+  room-from-photo flow no longer sets it from pixels: the assistant decides it (`tune_look`) after comparing the pictures.
+- `Environment` gains `look?: { interiorWarmth? -1..1.5 (renderer default 0.45), interiorBalance? 0..1.5 (1), sunTint?,
+  ambientTint?, foliageTint? (#rrggbb multipliers), lampStrength? 0..3 (1), vignette? 0..1 (0.22) }` (additive, optional).
+  The assistant tunes it per world after viewing renders (`tune_look`); an omitted field keeps the renderer's constant,
+  which is therefore only a default. `interiorWarmth` also applies with a document `grade` when it is set explicitly.
+  `lampStrength` scales the room lamps in the baked light volume (it re-bakes). `vignette` reaches tiled stills
+  (`StillOptions.vignetteStrength`, `applyVignette(px, W, H, strength?)`, `vignetteFactor(d, strength?)`).
+  `setFoliageTint(hex | null)` (`materials/foliage-shading.ts`) multiplies leaf, needle and grass cards.
 - Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
   stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants
   gain the `palm` species. `applyReality` repairs implausible numbers of a description (and reports them as fixes).
@@ -2803,22 +2811,24 @@ a structured description and derives tool calls from it.
   after a 400 that names them; the CLI backends ignore them). From the second look each judge sees the accepted
   render and the new one blind as A/B (order alternating by seat), scores both and says which is closer.
   `aggregateJudgements`: median per item; preference by vote majority, a vote tie by the median paired score
-  difference (±1 grade), else 'tie'. `decideRound` accepts the new state only when the fidelity sub-score falls
-  by at most 0.015 and no structural measure (openings, inventory, clearance) by more than 0.04, and the judges
-  prefer it (on a tie: the sub-score rises 0.005 or the median judge score 0.03); otherwise the room goes back to
-  the accepted state (`restorePatches`) before the model sees the round, and the model is told why. The model in
-  the conversation then gets the consensus, the measured differences and the images, and fixes with the design
-  tools (`report_verdicts` is optional there). With `judges: 0`, or when no judge answers, the model's own
-  `report_verdicts` judge the round (edits before verdicts are refused) and a combined score (0.5 × pass rate +
-  0.5 × sub-score) more than `max(0.03, 0.75 / items)` below the best is rolled back. Stalls (`ProgressTracker`):
-  no accepted, measurable progress for `stallRounds` rounds. The loop ends when every item passes, the model stops
+  difference (±1 grade), else 'tie'. `decideRound(ref, cand, preference)` is the judges' call: 'current' accepts, 'previous'
+  rejects (the room goes back to the accepted state with `restorePatches` before the model sees the round, and the model
+  is told why), 'tie' keeps the new state (progress only if the median judge score rose 0.03). The fidelity measures never
+  accept or reject: where they moved against the judgement, `Decision.advisory` carries it in words to the model.
+  Each judge also gives its own accept call per item (`ok`, `okB` for the second render): an item passes by their
+  majority, and by a median of 3 only when no one gave a call. The model in the conversation then gets the consensus,
+  the measured differences, the look evidence (below) and the images, and fixes with the design tools and `tune_look`
+  (`report_verdicts` is optional there). With `judges: 0`, or when no judge answers, the model's own `report_verdicts`
+  judge the round (edits before verdicts are refused) and its `closer` (`new`/`best`/`same`) answers a side-by-side
+  with the best render, shown next to the new one; `best` rolls the room back, nothing else does. Stalls (`ProgressTracker`):
+  no round the judges found better for `stallRounds` rounds. The loop ends when every item passes, the model stops
   with nothing to change, progress stalls, or `maxRounds` is reached: unset (subscriptions) means no fixed cap, only a
   runaway ceiling `PHOTO_ROUNDS_CEILING` (200); the studio sets 10 on a paid key; edits made after the last judged
   render get one final judgement (the panel's, relative) and are kept only when accepted.
 - `AgentEvent` gains `{type:'photo', phase: 'analysing'|'described'|'building'|'built'|'comparing'|'round'|'done'|
   'offline'|'unavailable', text, round?, assumptions?: [{id, text, confidence, adjust}], score?: {passed, total,
-  rate, objective? (the fidelity sub-score), fidelity? (its measures), judge?, judges?, spread?, combined?,
-  preference?, accepted?, structuralFailed, failing}, palette?, reads?}`; `reads` (on `described`) is `PhotoReadsView`
+  rate, objective? (the fidelity sub-score, advisory), fidelity? (its measures, advisory), judge?, judges?, spread?,
+  judgedBy? ('panel' | 'assistant': who judged), preference?, accepted?, structuralFailed, failing}, palette?, reads?}`; `reads` (on `described`) is `PhotoReadsView`
   `{reads, asked, items: pieces per read, consensus, checklist, dropped, contested, reconciled: reasons}`.
 - `CompletionRequest.seed?` (advisory, like `temperature`).
 - `@aether/arch/photo`: `measureFidelity(world, description, {framing?, similarity?, regionColour?}) →
@@ -2860,8 +2870,8 @@ a structured description and derives tool calls from it.
   opening through any pose. `PlanRoom.wallColors` / `DesignRoom.wallColors` (per compass side) are additive.
 - `deriveBuild` fits openings first (`fitOpening`: under the ceiling, inside the wall, 0.3 m clear of corners).
 - The agent measures framing and pixel similarity each round; they are two of the `measureFidelity` measures (weights
-  above), and the combined score shown is 0.5 judge score + 0.5 fidelity sub-score (`combinedScore`). The earlier
-  "0.6 framing + 0.4 similarity" round quality is gone. `RunOptions.intent === 'refine'` builds the room beside the existing world,
+  above); they are advice for the judges and the model, labelled so in the studio, and no combined score is formed or
+  shown. The earlier "0.6 framing + 0.4 similarity" round quality is gone. `RunOptions.intent === 'refine'` builds the room beside the existing world,
   any other intent replaces it (one undo step).
 
 
@@ -3226,6 +3236,12 @@ before.
 
 ### `@aether/agent`
 
+- Planner tool `tune_look` (`TuneLookInput`, `look-edit.ts`; the 16th planner tool): `exposure?`, `exposureEv?`, `temperature?`,
+  `tint?`, `saturation?`, `contrast?`, `bloom?`, `ambientIntensity?`, `sunIntensity?`, `hdriIntensity?`, `fogColor?`,
+  `fogDensity?`, `fogVisibility?`, `interiorWarmth?`, `interiorBalance?`, `lampStrength?`, `vignette?`, `sunTint?`,
+  `ambientTint?`, `foliageTint?`, `reset?` (names back to default; `fog` removes it), `message?` → one `setEnvironment`
+  patch (one undo step). `lookPatches`, `lookText(world)`, `currentLook`. The guidance lives in the tool description,
+  not the system prompt.
 - Planner tool `tune_feel` (`TuneFeelInput`: `preset?`, `events?` (cue or `null` per event, merged), `footsteps?`,
   `emitters?` `[{target: id | #tag, vfx | "none", rate?, color?, scale?, offset?}]` (≤ 24, ≤ 64 targets each, `*`
   refused), `autoEmitters?` (fire on torches, campfires, braziers; smoke on chimneys; embers on forges and lava; magic on

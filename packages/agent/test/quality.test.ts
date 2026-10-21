@@ -129,16 +129,35 @@ describe('critic', () => {
     expect(Array.isArray(blocks) && blocks.filter((b) => b.type === 'image').length).toBe(2);
   });
 
-  it('blends critic scores (physical stays heuristic) and keeps the heuristic on garbage', () => {
+  it('takes the critic\'s scores and verdict as the result (physical stays with the checks) and keeps the heuristic on garbage', () => {
     const h = heuristic();
-    const reply = JSON.stringify({ scores: { composition: 2, materials: 2, lighting: 2, scale: 2, detail: 2, coherence: 2, physical: 0 }, issues: [{ criterion: 'detail', severity: 'major', message: 'Only one box.' }], summary: 'Bare.' });
+    const reply = JSON.stringify({ scores: { composition: 2, materials: 2, lighting: 2, scale: 2, detail: 2, coherence: 2, physical: 0 }, issues: [{ criterion: 'detail', severity: 'major', message: 'Only one box.' }], summary: 'Bare.', verdict: 'needs_work' });
     const b = blendCritique(h, reply);
-    expect(b.source).toBe('blend');
+    expect(b.source).toBe('critic');
     expect(b.criteria.physical).toEqual(h.criteria.physical);
-    expect(b.criteria.composition.score).toBeLessThan(h.criteria.composition.score);
+    expect(b.criteria.composition.score).toBe(2);
+    expect(b.criteria.detail.score).toBe(2);
+    expect(b.measuredScore).toBe(h.score);
+    expect(b.verdict).toBe('needs_work');
     expect(b.issues.some((i) => i.message === 'Only one box.')).toBe(true);
     expect(blendCritique(h, 'I cannot see')).toBe(h);
     expect(blendCritique(h, '{"scores": {"bogus": 3}}')).toBe(h);
+  });
+
+  it('the assistant decides whether another round is worth it: a low score it calls good enough stops, a high one it calls unfinished goes on', () => {
+    const h = heuristic();
+    const scores = (n: number) => ({ composition: n, materials: n, lighting: n, scale: n, detail: n, coherence: n });
+    const issue = [{ criterion: 'lighting', severity: 'minor', message: 'Slightly flat light.' }];
+    const lowButFine = blendCritique(h, JSON.stringify({ scores: scores(5), issues: issue, verdict: 'good_enough' }));
+    expect(lowButFine.score).toBeLessThan(72);
+    expect(needsRefinement(lowButFine)).toBe(false);
+    const highButUnfinished = blendCritique(h, JSON.stringify({ scores: scores(9), issues: issue, verdict: 'needs_work' }));
+    expect(highButUnfinished.score).toBeGreaterThan(72);
+    expect(needsRefinement(highButUnfinished)).toBe(true);
+    // Nothing to act on: no round, whatever the verdict says.
+    expect(needsRefinement({ ...highButUnfinished, issues: [] })).toBe(false);
+    // Only the automatic checks looked (no assistant): the threshold stays the rule, and the report says so.
+    expect(h.source).toBe('heuristic');
   });
 
   it('refine instructions name the weakest criteria and concrete issues', () => {

@@ -159,10 +159,13 @@ Aether reads the photo several times (three reads on a subscription, one on
 a paid key) and merges the readings. It shows its assumptions as chips you
 can tap to adjust. Then it builds the shell, windows and
 doors, the furniture and the decor. Each round renders the room from the
-photo's camera. The round is scored by deterministic measures (openings,
-inventory, placement, sizes, colour difference) and by a panel of critic
-calls. A change is kept only when it measurably helps, and a rejected change
-is shown as "not kept". On a subscription the loop runs until everything
+photo's camera. A panel of AI judges looks at the render next to the photo and
+decides, item by item, what still differs; the card says who judged. The
+assistant then fixes what they found, and sets the room's light and colour
+(exposure, white balance, fog, tints) from what it sees. A change is kept
+when the judges find the new render closer to the photo; otherwise it is shown
+as "not kept". Measured numbers (openings, inventory, placement, colour
+difference) are shown as advice and never decide. On a subscription the loop runs until everything
 matches or progress stalls. On a paid key it stops after 10 rounds.
 
 Expect a few minutes and 20 to 40 calls. Vaulted ceilings, cornices, sash

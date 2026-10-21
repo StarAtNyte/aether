@@ -597,7 +597,7 @@ export class WorldAgent {
       }
       // Nothing to look at and nothing to judge: the checks are clean and the model cannot see.
       if (snap.findings.length === 0 && !withViews) {
-        yield { type: 'review', round, phase: 'approved', text: lastEdited ? 'All checks pass after the fixes.' : 'All checks pass.', score: snap.score, findings: 0 };
+        yield { type: 'review', round, phase: 'approved', text: `${lastEdited ? 'The automatic checks pass after the fixes' : 'The automatic checks pass'}; no renders were shown to the assistant, so nobody has judged how it looks.`, score: snap.score, findings: 0 };
         return;
       }
       if (snap.findings.length > 0) yield { type: 'review', round, phase: 'found', text: `Found ${snap.findings.length}: ${snap.findings.slice(0, 3).map((f) => f.message).join('; ').slice(0, 280)}`, score: snap.score, findings: snap.findings.length };

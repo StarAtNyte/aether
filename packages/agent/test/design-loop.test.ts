@@ -298,6 +298,33 @@ describe('vision review', () => {
   });
 });
 
+describe('look development in the review', () => {
+  it('lets the model set the light and colour after looking at the renders; the checker\'s number neither stops nor ends the loop', async () => {
+    let w: WorldDoc = createWorld({});
+    w = applyPatches(w, runDesignTool(w, 'design_plan', { plan: PLAN }).patches).world;
+    w = applyPatches(w, runDesignTool(w, 'place_items', { items: FURNISH.items }).patches).world;
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const host = new MemoryHost(w) as MemoryHost & { captureReview?: unknown };
+    host.captureReview = async (views: ReadonlyArray<{ name: string }>): Promise<Array<{ name: string; dataUrl: string }>> => views.map((v) => ({ name: v.name, dataUrl: png }));
+    const provider = scripted([
+      () => [finish('built')],
+      // Round 1 (images shown): the model finds the light cold and flat and tunes the look instead of repainting.
+      () => [call('tune_look', { temperature: 0.2, interiorWarmth: 0.8, exposure: 1.25, message: 'warm, brighter evening light' })],
+      () => [finish('Warmed the light after looking at the renders.')],
+      () => [finish('Looks right.')],
+    ]);
+    const events = await collect(agent(provider, { vision: true, maxViews: 3 }).run('a bedroom', host as unknown as MemoryHost));
+    const reviewText = JSON.stringify(provider.requests.find((r) => JSON.stringify(r.messages.at(-1)).includes('REVIEW round'))!.messages.at(-1));
+    expect(reviewText).toContain('tune_look');
+    expect(reviewText).toContain('Whether it is good enough is your call');
+    expect(reviewText).not.toMatch(/score \d+\/100/);
+    expect(host.world.environment.look?.interiorWarmth).toBe(0.8);
+    expect(host.world.environment.grade?.temperature).toBe(0.2);
+    expect(host.world.environment.exposure).toBe(1.25);
+    expect(types(events)).toContain('review:approved');
+  });
+});
+
 describe('image limit of a review', () => {
   it('never sends more images than a backend accepts, even with six review views (the studio default)', async () => {
     let w: WorldDoc = createWorld({});
