@@ -4964,21 +4964,16 @@ and the frame time. At 6x the governor still steps down inside the measurement w
 number taken while it steps.
 
 **Not done, and why.**
-- The `x/` PBR JPEGs (69 files, 6.1 MB; 3.2 to 3.7 MB per world, 512 px at about 100 to 150 KB) and the 1 to 1.4 MB sky HDR
-  are now the largest bytes after models. 256 px variants for the low tier, or WebP, would save about 2 MB a world, but they
-  change content hashes and the catalog, so they belong in an `assets:build` run with the sources.
+- (Done afterwards, see "Bytes, room-light cache and the long task" below: PBR maps and skies.)
 - The motion packs are 2.2 MB each (0.65 MB brotli) for every gender in the world.
-- Light-volume cache per world hash: the bake already runs in a worker (the main thread only gathers the triangles),
-  so a cache would only remove the pop-in of the room light on a revisit; its main-thread cost was not measured separately.
+- (Done afterwards: the light-volume cache, see below.)
 - WebGPU on the Intel GPU was not measurable here (no Vulkan adapter for it in headless Chromium); the WebGL2 numbers are what a
   browser without WebGPU gets. On WebGPU pipelines are created asynchronously by the browser, so the link stalls above do
   not apply there, but the program count, the per-frame key cost and the draw calls do. Firefox and Safari's
   `compileAsync` yields through `requestAnimationFrame` after each item (Chromium uses `scheduler.yield`), which the
   representative list keeps short, but it was not timed there.
 - Governor steps are one-way; recovering after a slow patch would need shader compiles to be hidden.
-- `npm run e2e` (studio.e2e) fails on this machine before and after for unrelated reasons (before: verification ran on the
-  main thread; after: a 337 ms main-thread script during verification against a 200 ms limit). `apps/studio/test/starterWorld`
-  failed on an old checkout and passes now.
+- (Done afterwards: the `npm run e2e` failure was a real long main-thread task, found and fixed, see below.)
 - Not wired: the tier chosen by the player in Settings does not rebuild the material detail flags (they are set when the
   renderer starts).
 
@@ -4987,3 +4982,91 @@ number taken while it steps.
 nothing" failed once under load and passes alone); `npm run smoke` 34/34; `showcase:bake --check` up to date; `bench:quick`
 checks passed. Reproduce: `npm run build`, then `GEN_GPU=intel npm run e2e:load-perf -- --throttle=1,4,6
 --worlds=highland-trail,casa-patio,kart-canyon [--hw=4,4] [--profile] [--url=https://…]`.
+
+### Bytes, room-light cache and the long task
+
+Same machine, build and method as above (iGPU, WebGL2, 720p, cold cache, local server without compression; the machine was
+shared, load average 4 to 12). Commits: `a7f56c1a` (maps, skies), `fa60324a` (light-volume cache), `e4769cc1` and `111d4c9b` (texture
+work in tasks).
+
+**PBR maps.** Not KTX2. The finish maps are not uploaded as files: `FinishTextures` decodes each to RGBA pixels, resamples to the
+tier's texture size (256 px on low and medium, 512 px on high) and copies them into its own textures and the layered-terrain texture
+arrays (`SplatArrays`). A KTX2/UASTC or ETC1S container would have to be transcoded back to pixels on load, so it would save
+bytes at best, cost a transcoder round trip and lose the GPU-memory benefit it exists for; ETC1S is also poor for tiled normal
+maps. KTX-Software is therefore not used for these (it still makes the model twins and block sheets). What shipped instead, in
+`scripts/assets/materials.ts`, is WebP in two sizes, made from the ambientCG sources (`assets:build -- --photo-only`, 23 finishes): a
+512 px set (WebP quality 0.84 colour, 0.76 ORM, 0.88 normal) and a 256 px set (0.93, 0.90, 0.96) that the renderer picks whenever
+its finish textures are 256 px or less (`material.small` in the catalog; `finish-textures.ts` chooses). WebP decodes in every browser
+that runs the studio; a file that fails to decode keeps the procedural finish, as before. The 256 px set is the 2x reduction the
+renderer would have made after decoding, done once at build time.
+
+| | before (JPEG 512, all tiers) | after 512 px set | after 256 px set |
+|---|---:|---:|---:|
+| albedo, 23 files | 2.77 MB | 2.32 MB | 0.81 MB |
+| ORM | 1.53 MB | 0.64 MB | 0.35 MB |
+| normal | 1.87 MB | 1.44 MB | 0.54 MB |
+| all 23 finishes | 6.17 MB | 4.40 MB (-29 %) | 1.70 MB (-72 %) |
+
+`dist/assets/lib/x` stays 6.2 MB on disk (both sets ship); a visitor loads one. Highland Trail / Casa / Kart Canyon, images fetched
+(all images, not only finishes): 3.71 / 4.85 / 3.65 MB down to 1.44 / 1.76 / 1.47 MB; whole page 19.44 / 17.44 / 22.02 MB down to
+17.17 / 14.36 / 19.84 MB. Open time 15.3 / 10.2 / 6.9 s to 12.5 / 9.7 / 7.0 s and blocking 6.7 / 4.6 / 3.6 s to 5.5 / 4.6 / 3.3 s (single
+runs at load 4 to 8: inside the noise for Casa and Kart Canyon; only the bytes are a firm result).
+
+Parity. PSNR of the 256 px set against the old JPEG reduced to 256 px: albedo 37.1 dB mean (worst 27.6, grass), ORM 37.0 (29.2,
+gravel), normal 39.4 (26.3, gravel); the 512 px set against the old JPEG: ORM 37.4, normal 39.7, albedo about 33 to 34 dB (each is
+measured against a JPEG that was itself lossy). The worst files are the noisiest ground textures. Stills of Casa del Patio from
+three camera poses, before and after, medium tier (deterministic): PSNR 52 to 57 dB, nothing visible. High tier: 40 to 45 dB, but
+the same pose rendered twice with the old build also differs by 44 dB (TAA jitter, moving plants), so that is noise, not the
+change. One high-tier "after" still showed a black ellipse near the pool that did not come back in four repeats of either build;
+cause not found, probably an effect that had not settled when the still was taken. Highland Trail (foliage and water), two poses:
+43 and 41 dB, water animation only. Stills and logs: `~/.local/share/aether/look5/`.
+
+**Skies.** `h/<id>.512.<sha8>.hdr` is a 512 x 256 copy (2 x 2 average of linear radiance, so the energy is kept) of each of the five
+skies: 0.36 to 0.42 MB against 1.44 to 1.73 MB. `HdriController` fetches it when the sky only lights the scene (`lightOnly`, or a
+world HDRI with the background off: the automatic sky of the high and ultra tiers) and fetches the full file when the sky is the
+background or becomes it; checked in the browser (379 KB and 1.44 MB requests). The sun is read from the brightest texel of
+whichever file is loaded, so its direction is unchanged. Highland Trail draws its sky as the background, so its 1.4 MB
+(about 1.0 MB brotli) stays; a smaller background needs a different encoding of the photograph (RGBE does not compress), which was
+not attempted. The existing `.hdr` files and `assets:build --hdri-lite` (patches the catalog from the shipped files, no Poly Haven
+sources needed) are the inputs.
+
+**Room-light cache.** `environment/light-volume-cache.ts`, used by `LightVolumeController`. Key: a hash of the trace triangles,
+their albedo and sidedness, the probe grid, sun, ambient, ground, lamps and `VOLUME_BAKE_VERSION`; so an edit, a lamp switched, another
+time of day or a changed bake misses, and a hit is the data the bake would have made. (Not the "world hash": the world IR does not
+determine the gathered geometry, the ambient depends on the sky that arrived, and a content key cannot be stale.) IndexedDB
+`aether-light-volumes`, 12 entries or 48 MB, least recently used out, only bakes of 400 ms or more are stored, every failure is a
+miss. The lookup runs after the gather (the gather and its hash are the main-thread cost; the bake was already in a worker), a hit
+skips the worker, a change during the lookup drops it. Casa del Patio opened three times in one browser profile (iGPU):
+
+| visit | open | room light ready after open | bake |
+|---|---:|---:|---|
+| 1 | 6.0 s | 3.2 s | 5.5 s in the worker (23 846 triangles) |
+| 2 | 3.0 s | 5.2 s | 4.1 s in the worker (23 890 triangles: a different key, so a miss) |
+| 3 | 3.2 s | 1.2 s | 0.14 s, from the cache |
+
+The 1.2 s is the 0.6 s settle plus the gather; the room light no longer waits for a bake, so there is no multi-second period
+where the rooms are unlit on a revisit. Caveat: the first revisit missed because the second visit gathered 44 more triangles
+than the first (something is still arriving or differs on a cold start; not investigated), so the cache pays from the second
+revisit on in this measurement. Worlds without a building have no volume (Kart Canyon: nothing to cache).
+
+**The studio e2e failure was a real long task, now fixed.** `npm run e2e` failed again on a 426 ms script during verification
+(`resolve-promise: Promise.resolve`; 337 ms before). CPU profile of one agent turn (software WebGPU, as the e2e runs):
+(1) the read-backs of the photo finish maps (`getImageData`) all became ready in one microtask drain, 280 to 300 ms in one task;
+(2) the photographed leaf atlases of every foliage kind were composed in one drain too, 130 to 280 ms per atlas (the canvas
+rasterises its filters and shadows when the pixels are read); (3) `FoliageTextures.get` made the procedural atlas of each kind
+synchronously inside material creation (`mountScatter` to `foliagePixels`, 0.4 to 0.9 s together). Fix: `gpu/task-queue.ts` runs
+such jobs one at a time, several per task only while under 6 ms; read-backs go through it; a photographed atlas is composed a
+half card variant per step; an atlas starts empty and is filled in a task each (procedural cards only for kinds without photos or
+when photos fail, a card variant per step); the load screen on GPUs waits up to 3 s for the cards before the first frame. Longest
+non-render script during verification: 426 ms to 28 ms; on the profile the slowest queued job fell from 200 ms to 76 to 112 ms.
+`npm run e2e` (Chromium WebGPU, WebGL2, Firefox) PASSED, at load average 11 to 12: the machine was not quiet at any point, so this is
+the worse case, not the best. Foliage on a software rasteriser can now be bare for a few hundred milliseconds after a world
+opens (the cards fill in; captures wait through `foliagePending`). The long tasks that remain during a turn (up to 1.4 s) are
+first-render shader graph building in the animation-frame callback, which the check does not count.
+
+**Gates.** `tsc --noEmit`: 0 errors from this work; 4 errors in `packages/arch/test/wet-clearance-sweep.test.ts` (a test added to
+`main` by another change: `w` and `d` possibly undefined) are not mine and were left alone. vitest `packages/render`,
+`packages/assets`, `packages/procgen`, `apps/studio`: 217 files, 1999 tests pass. `npm run smoke` 34/34. `showcase:bake --check` up to
+date. `bench:quick` checks passed. New tests: task queue, light-volume cache and controller cache paths, HDRI lite selection, 256 px
+finish set, foliage fill order. Reproduce the numbers: `npm run build`, then `STATIC_DIR=<dist> GEN_GPU=intel npm run e2e:load-perf --
+--throttle=1 --worlds=highland-trail,casa-patio,kart-canyon` (`STATIC_DIR` also serves an older build for the before column).
