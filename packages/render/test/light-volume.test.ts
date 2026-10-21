@@ -230,6 +230,16 @@ describe('light volume: leaks', () => {
     expect(probeSees(-0.5, 0.3, 0, free)).toBe(1);
   });
 
+  it('a probe a few centimetres off a wall still sees the points between itself and the wall, a buried probe sees none', () => {
+    // Free distance toward the wall quantised down to 0 (the wall is 0.06 spacings away): the point 0.05 spacings that way is
+    // in front of the wall and was rejected, leaving a hard pale strip along every corner and ceiling join.
+    const nearWall = [2, 0, 2, 2, 2, 2];
+    expect(probeSees(0.05, 0, 0, nearWall)).toBeGreaterThan(0.3);
+    // ...but a point well beyond the wall (a thin wall's far side, 0.12 m / 0.45 m = 0.27 spacings away) is still hidden.
+    expect(probeSees(0.27, 0, 0, nearWall)).toBe(0);
+    expect(probeSees(0.02, 0, 0, [0, 0, 0, 0, 0, 0])).toBe(0);
+  });
+
   it('a thin wall keeps the sunlit room out of the dark room beside it', () => {
     const g = planVolumeGrid([-3.2, -0.2, -1.7], [3.2, 3.2, 1.7], 0.45)!;
     const baker = new LightVolumeBaker(input(twoRooms(), g, { rays: 48, passes: 3 }));

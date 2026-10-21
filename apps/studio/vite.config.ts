@@ -65,7 +65,7 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    outDir: 'dist',
+    outDir: process.env['AETHER_OUTDIR'] ?? 'dist',
     emptyOutDir: true,
     sourcemap: false,
     // three.js and the opt-in WebLLM runtime (6.1 MB, lazy) are legitimately large;

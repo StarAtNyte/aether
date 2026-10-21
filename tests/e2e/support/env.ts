@@ -46,7 +46,9 @@ const SOFTWARE_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle
  * world (captures come back black); `AETHER_E2E_ANGLE=gl` runs WebGL2 over ANGLE/GL, which holds.
  */
 const GPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', `--use-angle=${process.env['AETHER_E2E_ANGLE'] ?? 'vulkan'}`, '--ignore-gpu-blocklist'];
-export const CHROME_ARGS: readonly string[] = process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
+/** `GEN_GPU=intel`: WebGL2 over ANGLE/GL-EGL on the integrated GPU (holds its context headless while the discrete GPU is busy). */
+const INTEL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];
+export const CHROME_ARGS: readonly string[] = process.env['GEN_GPU'] === 'intel' ? INTEL_ARGS : process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
 
 /**
  * Resolve the Chromium executable: `AETHER_E2E_CHROME`, then Playwright's

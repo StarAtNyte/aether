@@ -68,6 +68,8 @@ export interface Tsl {
   getViewPosition(uv: Nd, depth: Nd, inverseProjection: Nd): Nd;
   perspectiveDepthToViewZ(depth: Nd, near: Nd, far: Nd): Nd;
   mx_noise_float(p: Nd): Nd;
+  interleavedGradientNoise(p: Nd): Nd;
+  distance(a: Nd, b: Nd): Nd;
   viewportDepthTexture(uv: Nd): Nd;
   viewportSharedTexture(uv: Nd): Nd;
   reflector(opts: { resolutionScale?: number; bounces?: boolean; target?: import('three').Object3D }): Nd;
@@ -87,6 +89,7 @@ export interface Tsl {
   materialColor: Nd;
   diffuseColor: Nd;
   screenUV: Nd;
+  screenCoordinate: Nd;
   faceDirection: Nd;
   time: Nd;
 }

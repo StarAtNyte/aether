@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   if (WORLD) {
     // `--world=<file>`: a bare world document (or an exported envelope) served as a template for this run.
     const raw = JSON.parse(readFileSync(resolve(WORLD), 'utf8')) as { world?: unknown };
-    const dir = resolve(import.meta.dirname, '../../apps/studio/dist/templates/worlds');
+    const dir = resolve(process.env['STATIC_DIR'] ?? resolve(import.meta.dirname, '../../apps/studio/dist'), 'templates/worlds');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'apartment.json'), JSON.stringify(raw.world ? raw : { format: 'aether-world', version: 1, world: raw }));
   }

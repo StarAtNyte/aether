@@ -17,7 +17,7 @@ import { Vector3, Vector4 } from 'three';
 import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { LightVolume } from '../environment/light-volume-light';
-import { ATLAS_SUBVOLUMES, FREE_STEPS } from '../environment/light-volume';
+import { ATLAS_SUBVOLUMES, FREE_SLACK, FREE_STEPS } from '../environment/light-volume';
 
 interface LightingContext {
   irradiance: Nd;
@@ -100,7 +100,9 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
       const zm = free(b8.sub(T.floor(b8.div(8)).mul(8)));
       const zp = free(T.floor(b.div(64)));
       const tri = (cx ? t.x : t.x.oneMinus()).mul(cy ? t.y : t.y.oneMinus()).mul(cz ? t.z : t.z.oneMinus());
-      const v = sees(t.x.sub(cx), xm, xp).mul(sees(t.y.sub(cy), ym, yp)).mul(sees(t.z.sub(cz), zm, zp));
+      // Half a step of slack (the middle of the quantisation step) except for a probe buried in a wall (all distances zero).
+      const slack = T.step(1e-4, xm.add(xp).add(ym).add(yp).add(zm).add(zp)).mul(FREE_SLACK);
+      const v = sees(t.x.sub(cx), xm.add(slack), xp.add(slack)).mul(sees(t.y.sub(cy), ym.add(slack), yp.add(slack))).mul(sees(t.z.sub(cz), zm.add(slack), zp.add(slack)));
       // A trace of the plain weight keeps the read defined where no probe sees the point.
       const w = tri.mul(v.add(1e-3));
       wsum = wsum.add(w);

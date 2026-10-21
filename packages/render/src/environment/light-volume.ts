@@ -64,6 +64,8 @@ export const ATLAS_SUBVOLUMES = 5;
  * k/FREE_STEPS and (k+1)/FREE_STEPS of a spacing from the probe; FREE_STEPS means nothing within a spacing.
  */
 export const FREE_STEPS = 7;
+/** Slack (in spacings) added to a free distance when testing what a probe sees: half a quantisation step. */
+export const FREE_SLACK = 0.5 / FREE_STEPS;
 /** Share of single-sided back-face hits above which a probe counts as buried in a wall. */
 export const BURIED_SHARE = 0.3;
 /** Largest triangle count a bake scene accepts. */
@@ -423,9 +425,16 @@ export function unpackFreeDistances(a: number, b: number, out: Float32Array | nu
  * of the interpolation, which is what keeps a room's light from leaking through its walls.
  */
 export function probeSees(dx: number, dy: number, dz: number, free: ArrayLike<number>): number {
+  // A code stands for a whole step, its low end is what `free` holds: a probe a few centimetres off a wall reads 0 toward it
+  // and would then reject every point between itself and the wall (the points a wall's own corner and ceiling edge hold),
+  // which left a pale hard-edged strip along every inside corner and ceiling join. Half a step of slack (the step's middle)
+  // keeps those points; a probe buried in a wall (all six distances zero) keeps none.
+  let sum = 0;
+  for (let k = 0; k < 6; k++) sum += free[k] ?? 2;
+  const slack = sum > 1e-6 ? FREE_SLACK : 0;
   const axis = (d: number, minus: number, plus: number): number => {
     const need = Math.abs(d);
-    const f = d >= 0 ? plus : minus;
+    const f = (d >= 0 ? plus : minus) + slack;
     return clamp01((f - need) * 20);
   };
   return axis(dx, free[0] ?? 2, free[1] ?? 2) * axis(dy, free[2] ?? 2, free[3] ?? 2) * axis(dz, free[4] ?? 2, free[5] ?? 2);

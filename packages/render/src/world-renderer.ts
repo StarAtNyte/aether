@@ -62,7 +62,7 @@ import type { VolumeLamp } from './environment/light-volume';
 import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
 import { RoomLampNode, RoomSpotNode } from './gpu/room-lamp-node';
-import { isConfinedLight, RoomLamp, RoomSpot } from './sync/room-lamp';
+import { isConfinedLight, roomApertures, RoomLamp, RoomSpot, type LampPortal } from './sync/room-lamp';
 import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
 import { isOpaqueVisible, sceneSightTest } from './view/sightline';
@@ -344,6 +344,8 @@ const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _dir = new Vector3();
+const _quat = new Quaternion();
+const _scl = new Vector3();
 /** Metres a room lamp's clip box reaches past the room's footprint (its wall centrelines). */
 const ROOM_LAMP_MARGIN = 0;
 /** Metres a room lamp's clip box reaches above the room's ceiling (lit through the fade, the storey above is not). */
@@ -994,6 +996,24 @@ export class WorldRenderer {
       for (const b of node.bindings) cb.expandByObject(b.mesh);
       if (!cb.isEmpty()) ceilingTop.set(a.room, Math.max(ceilingTop.get(a.room) ?? -Infinity, cb.max.y));
     });
+    // Open apertures of the building (archways without a leaf): lamps pass light through those of their room.
+    const apertures: LampPortal[] = [];
+    this.grow.withFullScale(() => {
+      this.scene.updateMatrixWorld();
+      this.sync.forEachNode((node) => {
+        const a = node.entity.arch;
+        if (a?.role !== 'opening' || a.kind !== 'opening' || node.entity.template) return;
+        const params = node.entity.shape.kind === 'procedural' ? node.entity.shape.params : undefined;
+        const width = Number(params?.['width']);
+        const height = Number(params?.['height']);
+        if (!(width > 0.2) || !(height > 0.5)) return;
+        node.object.matrixWorld.decompose(_pos, _quat, _scl);
+        _dir.set(1, 0, 0).applyQuaternion(_quat);
+        const len = Math.hypot(_dir.x, _dir.z);
+        if (len < 1e-3) return;
+        apertures.push({ cx: _pos.x, cy: _pos.y + height / 2, cz: _pos.z, tx: _dir.x / len, tz: _dir.z / len, halfWidth: width / 2, halfHeight: height / 2 });
+      });
+    });
     this.sync.forEachNode((node) => {
       const l = node.light?.light;
       if (!isConfinedLight(l)) return;
@@ -1003,6 +1023,7 @@ export class WorldRenderer {
       if (r) for (const b of r.bindings) room.expandByObject(b.mesh);
       if (room.isEmpty()) {
         l.setClip(null);
+        l.setPortals([]);
         return;
       }
       l.getWorldPosition(_pos);
@@ -1019,6 +1040,9 @@ export class WorldRenderer {
       const ceil = id ? ceilingTop.get(id) : undefined;
       room.max.y = Math.max(floorY + 0.5, ceil !== undefined ? ceil + ROOM_LAMP_CEILING : _pos.y + 0.6);
       l.setClip(room);
+      // The apertures in this room's walls (their centres on the footprint's edge, between its floor and ceiling), nearest first.
+      const mine = roomApertures(apertures, room, _pos);
+      l.setPortals(mine);
     });
   }
 
@@ -2769,6 +2793,16 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  private lookTweak = { contrast: 1, saturation: 1, exposureEv: 0, temperature: 0 };
+
+  /** Look development: scale the grade's contrast and saturation, add stops of exposure and white-balance warmth (all neutral by default). */
+  setLookTweak(t: { contrast?: number; saturation?: number; exposureEv?: number; temperature?: number }): void {
+    const fin = (v: number | undefined, d: number): number => (v !== undefined && Number.isFinite(v) ? v : d);
+    this.lookTweak = { contrast: fin(t.contrast, 1), saturation: fin(t.saturation, 1), exposureEv: fin(t.exposureEv, 0), temperature: fin(t.temperature, 0) };
+    this.applyLook();
+    this.needsDraw = true;
+  }
+
   /** The colour-grade preset in effect. */
   get gradePreset(): GradePresetId {
     return this.look.id;
@@ -2788,6 +2822,9 @@ export class WorldRenderer {
       ? { ...base, ...(g.temperature !== undefined ? { temperature: g.temperature } : {}), ...(g.tint !== undefined ? { tint: g.tint } : {}), ...(g.saturation !== undefined ? { saturation: g.saturation } : {}), ...(g.contrast !== undefined ? { contrast: g.contrast } : {}), ...(g.exposureEv !== undefined ? { exposureEv: base.exposureEv + g.exposureEv } : {}) }
       : base;
     this.look = preset;
+    const tw = this.lookTweak;
+    // Look development: multipliers on the preset (neutral by default).
+    const shown: GradePreset = tw.contrast === 1 && tw.saturation === 1 && tw.exposureEv === 0 && tw.temperature === 0 ? preset : { ...preset, contrast: preset.contrast * tw.contrast, saturation: preset.saturation * tw.saturation, exposureEv: preset.exposureEv + tw.exposureEv, temperature: preset.temperature + tw.temperature };
     const post = this.post;
     this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
     const eye = adaptedLook(this.eyeFactor);
@@ -2801,7 +2838,7 @@ export class WorldRenderer {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
       // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
       const warm = volume && !g ? INTERIOR_WARMTH * Math.max(0, Math.min(1, this.eyeEv / 1.5)) + this.eyeBalance : 0;
-      const grade = gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...preset, temperature: preset.temperature + warm } : preset);
+      const grade = gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...shown, temperature: shown.temperature + warm } : shown);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);
       post.setBloom(this.env.bloom * preset.bloom);

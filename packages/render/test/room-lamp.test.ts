@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Box3, PointLight, SpotLight, Vector3 } from 'three';
-import { isConfinedLight, RoomLamp, RoomSpot } from '../src/sync/room-lamp';
+import { isConfinedLight, roomApertures, RoomLamp, RoomSpot } from '../src/sync/room-lamp';
 import { createEntityLight } from '../src/sync/lights';
 
 describe('room lamps', () => {
@@ -37,5 +37,37 @@ describe('room lamps', () => {
     const c = new RoomSpot().copy(s);
     expect(c.clip.equals(s.clip)).toBe(true);
     expect(isConfinedLight(new PointLight())).toBe(false);
+  });
+});
+
+describe('room lamp apertures', () => {
+  const door = { cx: 4, cy: 1.05, cz: 3, tx: 0, tz: 1, halfWidth: 1, halfHeight: 1.05 };
+
+  it('keeps at most three finite apertures and drops degenerate ones', () => {
+    const l = new RoomLamp();
+    l.setPortals([door, { ...door, cx: Number.NaN }, { ...door, halfWidth: 0.01 }, { ...door, cz: 1 }, { ...door, cz: 2 }, { ...door, cz: 5 }]);
+    expect(l.portals).toHaveLength(3);
+    expect(l.portals.map((p) => p.cz)).toEqual([3, 1, 2]);
+    l.setPortals([]);
+    expect(l.portals).toHaveLength(0);
+  });
+
+  it('copies apertures with the light and does not alias them', () => {
+    const s = new RoomSpot();
+    s.setPortals([door]);
+    const c = new RoomSpot().copy(s);
+    expect(c.portals).toEqual(s.portals);
+    expect(c.portals[0]).not.toBe(s.portals[0]);
+  });
+
+  it('picks the openings on the room footprint, nearest to the lamp first', () => {
+    const room = new Box3(new Vector3(0, 0, 0), new Vector3(8, 3, 6));
+    const east = { ...door, cx: 8, cz: 3 };
+    const north = { ...door, cx: 4, cz: 0, tx: 1, tz: 0 };
+    const farOutside = { ...door, cx: 20, cz: 3 };
+    const upstairs = { ...door, cx: 8, cz: 1, cy: 4.2 };
+    const picked = roomApertures([farOutside, east, upstairs, north], room, { x: 7, z: 1 });
+    expect(picked).toEqual([east, north]);
+    expect(roomApertures([east, north], room, { x: 1, z: 5 })).toEqual([north, east]);
   });
 });

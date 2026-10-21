@@ -25,12 +25,20 @@ const uSunIrradiance = T.uniform(sunIrradiance);
 
 /** Share of the sunlight a leaf passes on, seen straight against the sun. */
 export const FOLIAGE_TRANSMISSION = 0.32;
+/** Gain of the leaf-filtered (squared) transmitted colour, so a mid green keeps about the strength it had. */
+export const FOLIAGE_FILTER_GAIN = 2.4;
 /** Sharpness of the forward-scattering lobe (higher: only near the sun). */
 export const FOLIAGE_LOBE = 3;
 /** Hue swing of the plant-scale colour variation (warm/cool, linear multipliers at full noise). */
 export const FOLIAGE_HUE: readonly [number, number, number] = [0.17, 0.06, -0.16];
 /** Value swing of the cluster-scale variation. */
 export const FOLIAGE_VALUE = 0.16;
+/**
+ * Camera distances (metres) between which leaf cards dissolve: gone inside the first, whole beyond the second. A card is
+ * a flat quad the size of a leaf cluster: a metre from the lens one fills the frame like a sheet of paper, so near the
+ * camera the cards thin out (screen-door dither, which temporal AA turns into a soft fade) instead.
+ */
+export const FOLIAGE_NEAR_FADE: readonly [number, number] = Object.freeze([0.45, 1.5] as const);
 
 /** Point the translucency at the current sun (`direction` toward it). Non-finite input is ignored. */
 export function setFoliageSun(direction: readonly [number, number, number], color: Color, intensity: number, up = true): void {
@@ -49,9 +57,10 @@ export function foliageSun(): { direction: [number, number, number]; irradiance:
 
 let colorNode: Nd | null = null;
 let emissiveNode: Nd | null = null;
+let maskNode: Nd | null = null;
 
-function nodes(): { color: Nd; emissive: Nd } {
-  if (colorNode && emissiveNode) return { color: colorNode, emissive: emissiveNode };
+function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
+  if (colorNode && emissiveNode && maskNode) return { color: colorNode, emissive: emissiveNode, mask: maskNode };
   const p = T.positionWorld;
   const plant = T.mx_noise_float(p.mul(0.23));
   const cluster = T.mx_noise_float(p.mul(1.9).add(T.vec3(13.1, 7.7, 3.3)));
@@ -60,14 +69,21 @@ function nodes(): { color: Nd; emissive: Nd } {
   colorNode = T.vec4(base.rgb.mul(tint), base.w);
   const view = T.normalize(p.sub(T.cameraPosition));
   const forward = T.pow(T.clamp(T.dot(view, uSunDirection), 0, 1), FOLIAGE_LOBE);
-  emissiveNode = T.diffuseColor.rgb.mul(uSunIrradiance).mul(forward.mul(FOLIAGE_TRANSMISSION / Math.PI));
-  return { color: colorNode, emissive: emissiveNode };
+  // Light that went through a leaf crossed it twice (chlorophyll filters it on the way in and out): its colour is the leaf's own
+  // squared, so a backlit leaf glows saturated green at sunset instead of the olive-brown a single filtering of the orange sun gave.
+  const filtered = T.diffuseColor.rgb.mul(T.diffuseColor.rgb).mul(FOLIAGE_FILTER_GAIN);
+  emissiveNode = filtered.mul(uSunIrradiance).mul(forward.mul(FOLIAGE_TRANSMISSION / Math.PI));
+  // Dissolve near the camera: a fragment stays when its screen noise is above the fade (1 at the near distance, 0 at the far one).
+  const fade = T.smoothstep(FOLIAGE_NEAR_FADE[0], FOLIAGE_NEAR_FADE[1], T.distance(p, T.cameraPosition)).oneMinus();
+  maskNode = T.step(fade, T.interleavedGradientNoise(T.screenCoordinate.xy));
+  return { color: colorNode, emissive: emissiveNode, mask: maskNode };
 }
 
 /** Give a foliage card material translucency and colour variation (see the module comment). */
 export function applyFoliageShading(m: MeshStandardMaterial): void {
   const n = nodes();
-  const nm = m as unknown as { colorNode: unknown; emissiveNode: unknown };
+  const nm = m as unknown as { colorNode: unknown; emissiveNode: unknown; maskNode: unknown };
   nm.colorNode = n.color;
   nm.emissiveNode = n.emissive;
+  nm.maskNode = n.mask;
 }
