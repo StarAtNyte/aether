@@ -59,7 +59,7 @@ export const browserPixelLoader: PixelLoader = async (url, size) => {
       if (!ctx) throw new Error('2D canvas unavailable');
       ctx.drawImage(bmp, 0, 0, size, size);
       return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
-    });
+    }, `finish map ${size}`);
   } finally {
     bmp.close();
   }

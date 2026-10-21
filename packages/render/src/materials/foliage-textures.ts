@@ -8,7 +8,7 @@
  * texture object and its size stay, so no material is rebuilt.
  */
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, ClampToEdgeWrapping, type Texture } from 'three';
-import { FOLIAGE_TEXTURE_SIZE, foliageAtlasSize, foliagePixels, type FoliageKind } from '@aether/procgen';
+import { FOLIAGE_TEXTURE_SIZE, foliageAtlasSize, foliagePixelsJob, type FoliageKind } from '@aether/procgen';
 import { textureWork } from '../gpu/task-queue';
 import { loadLeafPhotos, photoAtlasJob, PHOTO_KINDS, type LeafPhotos } from './foliage-photo';
 
@@ -78,16 +78,20 @@ export class FoliageTextures {
   /** Fill `tex` with the procedural card of `kind`, in its own task, unless a photographed atlas got there first. */
   private synthesise(kind: FoliageKind, tex: DataTexture): void {
     this.upgrading++;
-    textureWork
-      .run(() => {
-        if (this.disposed || this.textures.get(kind) !== tex || this.composed.has(tex)) return;
-        const img = tex.image as { data: Uint8Array; width: number };
-        const { rgba } = foliagePixels(kind, img.width);
-        if (rgba.length !== img.data.length) return;
-        img.data.set(rgba);
-        tex.needsUpdate = true;
-        this.onChange?.();
-      })
+    const img = tex.image as { data: Uint8Array; width: number };
+    const job = foliagePixelsJob(kind, img.width);
+    const stale = (): boolean => this.disposed || this.textures.get(kind) !== tex || this.composed.has(tex);
+    void (async () => {
+      // A card variant per task.
+      for (const step of job.steps) {
+        await textureWork.run(step, `leaf ${kind} procedural`);
+        if (stale()) return;
+      }
+      if (job.rgba.length !== img.data.length) return;
+      img.data.set(job.rgba);
+      tex.needsUpdate = true;
+      this.onChange?.();
+    })()
       .catch(() => undefined)
       .finally(() => {
         this.upgrading = Math.max(0, this.upgrading - 1);
@@ -109,10 +113,10 @@ export class FoliageTextures {
         if (!job) return false;
         // Every kind's atlas is ready at once and each is a few hundred milliseconds of drawing: a card variant per task.
         for (const step of job.steps) {
-          await textureWork.run(step);
+          await textureWork.run(step, `leaf ${kind} step`);
           if (stale()) return true;
         }
-        const px = await textureWork.run(() => job.finish());
+        const px = await textureWork.run(() => job.finish(), `leaf ${kind} finish`);
         if (stale()) return true;
         if (px.length !== img.data.length) return false;
         img.data.set(px);

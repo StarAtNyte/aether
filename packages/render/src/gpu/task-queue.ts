@@ -12,22 +12,34 @@
 export class TaskQueue {
   private readonly jobs: Array<() => void> = [];
   private scheduled = false;
+  /** The longest jobs seen (label and milliseconds, longest first, at most eight), for diagnosing a stall. */
+  readonly slowest: Array<{ label: string; ms: number }> = [];
 
   /** Milliseconds of work a task may start another job within. */
   constructor(readonly budgetMs = 6) {}
 
   /** Run `job` in a later task; resolves with its result. */
-  run<T>(job: () => T): Promise<T> {
+  run<T>(job: () => T, label = 'job'): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this.jobs.push(() => {
+        const t0 = performance.now();
         try {
           resolve(job());
         } catch (e) {
           reject(e instanceof Error ? e : new Error(String(e)));
+        } finally {
+          this.note(label, performance.now() - t0);
         }
       });
       this.schedule();
     });
+  }
+
+  private note(label: string, ms: number): void {
+    if (ms < 20) return;
+    this.slowest.push({ label, ms: Math.round(ms) });
+    this.slowest.sort((a, b) => b.ms - a.ms);
+    this.slowest.length = Math.min(this.slowest.length, 8);
   }
 
   /** Jobs waiting to run. */
@@ -64,3 +76,4 @@ function nextTask(fn: () => void): void {
 
 /** The queue the texture read-backs and photographed atlases of a page share. */
 export const textureWork = new TaskQueue();
+(globalThis as { __aetherTextureWork?: TaskQueue }).__aetherTextureWork = textureWork;

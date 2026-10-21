@@ -375,16 +375,29 @@ export function foliageAtlasSize(size: number): number {
  * to a power of two between 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}.
  */
 export function foliagePixels(kind: FoliageKind, size: number = FOLIAGE_TEXTURE_SIZE): { size: number; rgba: Uint8Array } {
+  const job = foliagePixelsJob(kind, size);
+  for (const step of job.steps) step();
+  return { size: job.size, rgba: job.rgba };
+}
+
+/**
+ * The same atlas as {@link foliagePixels} in pieces, one per card variant: a caller that must not hold the main thread
+ * runs one step per task; `rgba` is complete after the last step.
+ */
+export function foliagePixelsJob(kind: FoliageKind, size: number = FOLIAGE_TEXTURE_SIZE): { size: number; rgba: Uint8Array; steps: Array<() => void> } {
   const n = foliageAtlasSize(size);
   const c = n / FOLIAGE_CELLS;
   const out = new Uint8Array(n * n * 4);
+  const steps: Array<() => void> = [];
   for (let v = 0; v < FOLIAGE_CELLS * FOLIAGE_CELLS; v++) {
-    const px = card(kind, c, v);
-    const ox = (v % FOLIAGE_CELLS) * c;
-    const oy = Math.floor(v / FOLIAGE_CELLS) * c;
-    for (let y = 0; y < c; y++) out.set(px.subarray(y * c * 4, (y + 1) * c * 4), ((oy + y) * n + ox) * 4);
+    steps.push(() => {
+      const px = card(kind, c, v);
+      const ox = (v % FOLIAGE_CELLS) * c;
+      const oy = Math.floor(v / FOLIAGE_CELLS) * c;
+      for (let y = 0; y < c; y++) out.set(px.subarray(y * c * 4, (y + 1) * c * 4), ((oy + y) * n + ox) * 4);
+    });
   }
-  return { size: n, rgba: out };
+  return { size: n, rgba: out, steps };
 }
 
 /**
