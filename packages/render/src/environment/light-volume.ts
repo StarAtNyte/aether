@@ -64,8 +64,14 @@ export const ATLAS_SUBVOLUMES = 5;
  * k/FREE_STEPS and (k+1)/FREE_STEPS of a spacing from the probe; FREE_STEPS means nothing within a spacing.
  */
 export const FREE_STEPS = 7;
-/** Slack (in spacings) added to a free distance when testing what a probe sees: half a quantisation step. */
-export const FREE_SLACK = 0.5 / FREE_STEPS;
+/**
+ * Slack (in spacings) added to a free distance when testing what a probe sees: 1.6 quantisation steps. A code holds the low
+ * end of a step, so the true distance to a wall can exceed it by nearly a whole step, and the soft edge of the test
+ * (a twentieth of a spacing) takes a third of one more; less than that rejected the last few centimetres in front of every
+ * wall, corner and ceiling, a hairline of unfiltered light. More would let a probe behind a 0.12 m wall see through it
+ * (that wall is 1.9 steps thick).
+ */
+export const FREE_SLACK = 1.6 / FREE_STEPS;
 /** Share of single-sided back-face hits above which a probe counts as buried in a wall. */
 export const BURIED_SHARE = 0.3;
 /** Largest triangle count a bake scene accepts. */
@@ -427,8 +433,8 @@ export function unpackFreeDistances(a: number, b: number, out: Float32Array | nu
 export function probeSees(dx: number, dy: number, dz: number, free: ArrayLike<number>): number {
   // A code stands for a whole step, its low end is what `free` holds: a probe a few centimetres off a wall reads 0 toward it
   // and would then reject every point between itself and the wall (the points a wall's own corner and ceiling edge hold),
-  // which left a pale hard-edged strip along every inside corner and ceiling join. Half a step of slack (the step's middle)
-  // keeps those points; a probe buried in a wall (all six distances zero) keeps none.
+  // which left a hairline of unfiltered light along every inside corner and ceiling join. FREE_SLACK keeps those points; a
+  // probe buried in a wall (all six distances zero) keeps none.
   let sum = 0;
   for (let k = 0; k < 6; k++) sum += free[k] ?? 2;
   const slack = sum > 1e-6 ? FREE_SLACK : 0;

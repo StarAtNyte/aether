@@ -100,11 +100,13 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
       const zm = free(b8.sub(T.floor(b8.div(8)).mul(8)));
       const zp = free(T.floor(b.div(64)));
       const tri = (cx ? t.x : t.x.oneMinus()).mul(cy ? t.y : t.y.oneMinus()).mul(cz ? t.z : t.z.oneMinus());
-      // Half a step of slack (the middle of the quantisation step) except for a probe buried in a wall (all distances zero).
-      const slack = T.step(1e-4, xm.add(xp).add(ym).add(yp).add(zm).add(zp)).mul(FREE_SLACK);
+      // Slack for the quantisation (see FREE_SLACK) except for a probe buried in a wall (all distances zero).
+      const open = T.step(1e-4, xm.add(xp).add(ym).add(yp).add(zm).add(zp));
+      const slack = open.mul(FREE_SLACK);
       const v = sees(t.x.sub(cx), xm.add(slack), xp.add(slack)).mul(sees(t.y.sub(cy), ym.add(slack), yp.add(slack))).mul(sees(t.z.sub(cz), zm.add(slack), zp.add(slack)));
-      // A trace of the plain weight keeps the read defined where no probe sees the point.
-      const w = tri.mul(v.add(1e-3));
+      // A trace of the plain weight keeps the read defined where no probe sees the point; buried probes (their light is
+      // filled from both sides of the wall) get almost none of it.
+      const w = tri.mul(v.add(open.mul(1e-3)).add(1e-6));
       wsum = wsum.add(w);
       if (cx) wx = wx.add(w);
       if (cy) wy = wy.add(w);
