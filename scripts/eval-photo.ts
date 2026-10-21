@@ -61,6 +61,8 @@ const PHOTOS: Readonly<Record<string, { file: string; prompt: string }>> = {
 
 /** The software renderer has no bounced light: lift it to the exposure of a photograph so walls and fabrics read at their own tones. */
 const PHOTO_LIGHT = { ambientIntensity: 1.4, exposure: 2.0 } as const;
+/** The same lift, scaled by the exposure the assistant set with tune_look (a flat 2.0 hid every look change from its own renders). */
+const photoLight = (world: WorldDoc): { ambientIntensity: number; exposure: number } => ({ ambientIntensity: PHOTO_LIGHT.ambientIntensity, exposure: PHOTO_LIGHT.exposure * (world.environment.exposure ?? 1) });
 
 interface Args {
   photo: string;
@@ -171,10 +173,10 @@ class PhotoNodeHost extends NodeAgentHost {
       const out: Array<{ name: string; dataUrl: string }> = [];
       for (const v of gpuViews) out.push({ name: v.name, dataUrl: await this.gpuShot(world, v, opts.size ?? 960) });
       const rest = views.filter((v) => !gpuViews.includes(v));
-      if (rest.length > 0) out.push(...(await captureReviewHeadless(world, rest, { sandbox: this.sb, width: opts.size ?? 800, environment: PHOTO_LIGHT, ...(opts.signal ? { signal: opts.signal } : {}) })));
+      if (rest.length > 0) out.push(...(await captureReviewHeadless(world, rest, { sandbox: this.sb, width: opts.size ?? 800, environment: photoLight(world), ...(opts.signal ? { signal: opts.signal } : {}) })));
       return out;
     }
-    return captureReviewHeadless(this.getWorld(), views, { sandbox: this.sb, width: opts.size ?? 800, environment: PHOTO_LIGHT, ...(opts.signal ? { signal: opts.signal } : {}) });
+    return captureReviewHeadless(this.getWorld(), views, { sandbox: this.sb, width: opts.size ?? 800, environment: photoLight(this.getWorld()), ...(opts.signal ? { signal: opts.signal } : {}) });
   }
 
   async decodeImage(dataUrl: string, maxSide: number): Promise<{ width: number; height: number; data: Uint8ClampedArray } | null> {
@@ -183,7 +185,7 @@ class PhotoNodeHost extends NodeAgentHost {
 
   async renderClean(world: WorldDoc, view: ReviewViewRequest, width: number): Promise<Buffer> {
     if (this.gpu) return Buffer.from((await this.gpuShot(world, { ...view, marks: [] }, width)).split(',')[1] ?? '', 'base64');
-    const got = await captureReviewHeadless(world, [{ ...view, marks: [] }], { sandbox: this.sb, width, environment: PHOTO_LIGHT });
+    const got = await captureReviewHeadless(world, [{ ...view, marks: [] }], { sandbox: this.sb, width, environment: photoLight(world) });
     return Buffer.from((got[0]?.dataUrl ?? '').split(',')[1] ?? '', 'base64');
   }
 
