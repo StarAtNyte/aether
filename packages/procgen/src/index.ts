@@ -41,4 +41,4 @@ export { GENERATOR_LIBRARY, isLibraryGenerator, loadLibraryGenerator, matchLibra
 export * from './mesh-edit/index';
 export { ComputeClient, type ComputeClientOptions } from './compute/client';
 export { finishPixels, finishAlbedoScale, FINISH_TEXTURE_SIZE, MAX_FINISH_TEXTURE_SIZE, type FinishPixels } from './finish-pixels';
-export { foliagePixels, foliageCellUv, FOLIAGE_TEXTURE_SIZE, FOLIAGE_CELLS, MAX_FOLIAGE_TEXTURE_SIZE, FOLIAGE_ALPHA_CUT, type FoliageKind } from './foliage-pixels';
+export { foliagePixels, foliageAtlasSize, foliageCellUv, FOLIAGE_TEXTURE_SIZE, FOLIAGE_CELLS, MAX_FOLIAGE_TEXTURE_SIZE, FOLIAGE_ALPHA_CUT, type FoliageKind } from './foliage-pixels';

@@ -364,13 +364,18 @@ function card(kind: FoliageKind, n: number, v: number): Uint8Array {
   }
 }
 
+/** The edge of the atlas {@link foliagePixels} makes for a requested size: a power of two between 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}. */
+export function foliageAtlasSize(size: number): number {
+  return Math.max(32, Math.min(MAX_FOLIAGE_TEXTURE_SIZE, 2 ** Math.round(Math.log2(Math.max(32, size)))));
+}
+
 /**
  * RGBA8 pixels (`size × size`) of a foliage atlas: {@link FOLIAGE_CELLS} × {@link FOLIAGE_CELLS} card variants of
  * `kind` (cell `i` at column `i % 2`, row `i / 2`, row 0 at the top of the image). Deterministic; `size` is clamped
  * to a power of two between 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}.
  */
 export function foliagePixels(kind: FoliageKind, size: number = FOLIAGE_TEXTURE_SIZE): { size: number; rgba: Uint8Array } {
-  const n = Math.max(32, Math.min(MAX_FOLIAGE_TEXTURE_SIZE, 2 ** Math.round(Math.log2(Math.max(32, size)))));
+  const n = foliageAtlasSize(size);
   const c = n / FOLIAGE_CELLS;
   const out = new Uint8Array(n * n * 4);
   for (let v = 0; v < FOLIAGE_CELLS * FOLIAGE_CELLS; v++) {

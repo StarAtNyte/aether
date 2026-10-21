@@ -13,6 +13,7 @@ import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBA
 import { FINISHES } from '@aether/arch';
 import type { MaterialFinish } from '@aether/core';
 import { FINISH_TEXTURE_SIZE, finishAlbedoScale, finishPixels, type FinishPixels } from '@aether/procgen';
+import { textureWork } from '../gpu/task-queue';
 import { errorMessage, log } from '../log';
 import { SplatArrays } from './splat-arrays';
 
@@ -51,11 +52,14 @@ export const browserPixelLoader: PixelLoader = async (url, size) => {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   try {
-    const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size) : Object.assign(document.createElement('canvas'), { width: size, height: size });
-    const ctx = canvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
-    if (!ctx) throw new Error('2D canvas unavailable');
-    ctx.drawImage(bmp, 0, 0, size, size);
-    return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
+    // The read-backs of every map of every finish come ready together: one at a time, each in its own task.
+    return await textureWork.run(() => {
+      const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size) : Object.assign(document.createElement('canvas'), { width: size, height: size });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+      if (!ctx) throw new Error('2D canvas unavailable');
+      ctx.drawImage(bmp, 0, 0, size, size);
+      return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
+    });
   } finally {
     bmp.close();
   }

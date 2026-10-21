@@ -261,15 +261,22 @@ export function neutralise(rgba: Uint8Array | Uint8ClampedArray, cut = 128): [nu
 
 type Ctx2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
-function canvas2d(w: number, h: number): { ctx: Ctx2D; read: () => Uint8ClampedArray } | null {
+function canvas2d(w: number, h: number): { ctx: Ctx2D; read: () => Uint8ClampedArray; flush: () => void } | null {
   try {
     const c: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
     const ctx = c.getContext('2d', { willReadFrequently: true }) as Ctx2D | null;
     if (!ctx) return null;
-    return { ctx, read: () => ctx.getImageData(0, 0, w, h).data };
+    // A one-pixel read makes the canvas run the drawing queued so far (filters and shadows are rasterised then, not at drawImage).
+    return { ctx, read: () => ctx.getImageData(0, 0, w, h).data, flush: () => void ctx.getImageData(0, 0, 1, 1) };
   } catch {
     return null;
   }
+}
+
+/** An atlas in progress: one step per card variant (each is a few tens of milliseconds), then `finish`. */
+export interface PhotoAtlasJob {
+  steps: Array<() => void>;
+  finish(): Uint8Array;
 }
 
 /**
@@ -277,6 +284,17 @@ function canvas2d(w: number, h: number): { ctx: Ctx2D; read: () => Uint8ClampedA
  * photographed sprites or no 2D canvas is available.
  */
 export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSheet, image: CanvasImageSource): Uint8Array | null {
+  const job = photoAtlasJob(kind, size, sheet, image);
+  if (!job) return null;
+  for (const step of job.steps) step();
+  return job.finish();
+}
+
+/**
+ * The same atlas as {@link composePhotoAtlas}, in pieces: a caller that must not hold the main thread (the cards of a
+ * whole forest are made at once) runs one step per task. Null in the same cases.
+ */
+export function photoAtlasJob(kind: FoliageKind, size: number, sheet: LeafSheet, image: CanvasImageSource): PhotoAtlasJob | null {
   if (!PHOTO_KINDS.has(kind) || !(size >= 32) || size > 4096) return null;
   const need = NEEDS[kind];
   if (need && !sheet.sprites.some((sp) => sp.use === need)) return null;
@@ -288,14 +306,19 @@ export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSh
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   const hasFilter = 'filter' in ctx;
-  for (let v = 0; v < 4; v++) {
+  const steps: Array<() => void> = [];
+  // Two steps per variant (the first half of its leaves, then the rest): the pieces stay near 100 ms on a slow rasteriser.
+  for (let step = 0; step < 8; step++) steps.push(() => {
+    const v = step >> 1;
     const ox = (v % 2) * c;
     const oy = Math.floor(v / 2) * c;
     ctx.save();
     ctx.beginPath();
     ctx.rect(ox, oy, c, c);
     ctx.clip();
-    for (const op of photoPlan(kind, c, sheet, v)) {
+    const plan = photoPlan(kind, c, sheet, v);
+    const half = Math.ceil(plan.length / 2);
+    for (const op of step % 2 === 0 ? plan.slice(0, half) : plan.slice(half)) {
       const s = sheet.sprites[op.sprite];
       if (!s) continue;
       if (op.twig.width > 0) {
@@ -323,14 +346,18 @@ export function composePhotoAtlas(kind: FoliageKind, size: number, sheet: LeafSh
       ctx.restore();
     }
     ctx.restore();
-  }
-  const px = cv.read();
-  // Hard alpha for the alpha test (the canvas anti-aliases edges and the shadow adds faint alpha around leaves).
-  for (let i = 3; i < px.length; i += 4) px[i] = (px[i] as number) >= 170 ? 255 : 0;
-  // Shadow pixels outside every leaf were made transparent above; unpremultiplied colour of semi-solid edges is kept.
-  const out = new Uint8Array(px.buffer.slice(0));
-  neutralise(out);
-  return out;
+    cv.flush();
+  });
+  const finish = (): Uint8Array => {
+    const px = cv.read();
+    // Hard alpha for the alpha test (the canvas anti-aliases edges and the shadow adds faint alpha around leaves).
+    for (let i = 3; i < px.length; i += 4) px[i] = (px[i] as number) >= 170 ? 255 : 0;
+    // Shadow pixels outside every leaf were made transparent above; unpremultiplied colour of semi-solid edges is kept.
+    const out = new Uint8Array(px.buffer.slice(0));
+    neutralise(out);
+    return out;
+  };
+  return { steps, finish };
 }
 
 /** The sheet and its decoded image. */

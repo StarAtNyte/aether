@@ -518,6 +518,8 @@ const LATE_ROUNDS = 5;
 const LATE_COMPILE_MS = 2_500;
 /** Longest the load screen waits for the post chain to be built (ms). */
 const POST_WAIT_MS = 4_000;
+/** Longest the load screen waits for the leaf cards to be filled in (ms): they are made a task at a time while the programs link. */
+const FOLIAGE_WAIT_MS = 3_000;
 /** A replacement adding at least this many entities holds the first frame like a first world does. */
 const BULK_HOLD_ENTITIES = 8;
 /** Frames are held for the warm-up at most this long (ms), whatever the driver does. */
@@ -1000,7 +1002,7 @@ export class WorldRenderer {
   }
 
   /** Size and cost of the last light-volume bake (null before one finished). */
-  get lightVolumeStats(): Readonly<{ probes: number; triangles: number; workMs: number; wallMs: number; spacing: number }> | null {
+  get lightVolumeStats(): Readonly<NonNullable<LightVolumeController['lastBake']>> | null {
     return this.lightVolume.lastBake;
   }
 
@@ -1317,6 +1319,8 @@ export class WorldRenderer {
     performance.mark('aether:warm-start');
     say?.('Preparing shaders…');
     await this.prepareAndCompile();
+    // The leaf cards fill in a task each while the programs link; bare trees must not be the first thing shown.
+    await this.until(() => !this.materials.foliage.pending, FOLIAGE_WAIT_MS);
     this.shaderWarmupMs = performance.now() - started;
     performance.mark('aether:warm-end');
     // Models and people are still arriving: their programs link in rounds, not one by one inside a draw.

@@ -94,15 +94,49 @@ describe('ratio conversion', () => {
 });
 
 describe('foliage textures with photos', () => {
-  it('keeps the procedural atlas where no canvas or sheet is available, and reports nothing pending afterwards', async () => {
+  const settle = async (t: FoliageTextures): Promise<void> => {
+    for (let i = 0; i < 200 && t.pending; i++) await new Promise((ok) => setTimeout(ok, 5));
+  };
+  const alphaCount = (tex: { image: unknown }): number => {
+    const d = (tex.image as { data: Uint8Array }).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if ((d[i] as number) > 0) n++;
+    return n;
+  };
+
+  it('starts empty, is pending while it fills, and holds the procedural card where no canvas or sheet is available', async () => {
     const t = new FoliageTextures();
     t.usePhotos('/nowhere/');
     const tex = t.get('shrub');
-    const before = (tex.image as { data: Uint8Array }).data.slice();
-    await new Promise((ok) => setTimeout(ok, 20));
+    // Nothing is synthesised inside get(): the atlas is transparent until its task has run.
+    expect(alphaCount(tex)).toBe(0);
+    expect(t.pending).toBe(true);
+    await settle(t);
     expect(t.pending).toBe(false);
-    expect(Buffer.from((tex.image as { data: Uint8Array }).data).equals(Buffer.from(before))).toBe(true);
+    expect(alphaCount(tex)).toBeGreaterThan(1000);
     t.dispose();
+  });
+
+  it('fills kinds without photos procedurally, one task each, and tells the owner', async () => {
+    const t = new FoliageTextures();
+    let changes = 0;
+    t.onChange = () => changes++;
+    const a = t.get('needles');
+    const b = t.get('grass');
+    expect(alphaCount(a) + alphaCount(b)).toBe(0);
+    await settle(t);
+    expect(alphaCount(a)).toBeGreaterThan(1000);
+    expect(alphaCount(b)).toBeGreaterThan(1000);
+    expect(changes).toBe(2);
+    t.dispose();
+  });
+
+  it('a texture disposed before its task runs is left alone', async () => {
+    const t = new FoliageTextures();
+    const a = t.get('fern');
+    t.dispose();
+    await new Promise((ok) => setTimeout(ok, 30));
+    expect(alphaCount(a)).toBe(0);
   });
 });
 
