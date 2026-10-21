@@ -145,6 +145,7 @@ export const SettingsDialog = memo(function SettingsDialog({
             <h3 className="settings__heading">Play</h3>
             <Toggle label="Full-window play" hint="Side panels step aside while you play, so the world fills the window." checked={settings.immersivePlay} onChange={(v) => update({ immersivePlay: v })} />
             <Toggle label="Capture the mouse" hint="Click the viewport in play mode to lock the pointer for mouse-look." checked={settings.pointerLock} onChange={(v) => update({ pointerLock: v })} />
+            <Toggle label="Reduce motion" hint="No camera shake, field-of-view kicks or screen flashes when something happens in a game." checked={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} />
           </section>
           <section className="settings__group">
             <h3 className="settings__heading">Graphics</h3>

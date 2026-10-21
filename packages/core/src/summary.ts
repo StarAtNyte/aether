@@ -23,6 +23,7 @@
  */
 import type { Action, Entity, EntityId, Json, ShapeSpec, Trigger, Vec3, VoxelEdit, VoxelTerrain, WorldDoc, WorldTest } from './schema';
 import { hasOwn, isPlainObject, truncate } from './json';
+import { describeFeel } from './feel';
 
 /** Options for {@link summarizeWorld}. */
 export interface SummaryOptions {
@@ -176,6 +177,7 @@ function entityLine(world: WorldDoc, e: Entity, depth: number, mark: { paths: re
   }
   if (e.light) parts.push(`light ${e.light.type} ${e.light.color} i=${n1(e.light.intensity)}`);
   if (e.joint) parts.push(`joint ${e.joint.type}->${e.joint.target}`);
+  if (e.vfx) parts.push(`vfx ${e.vfx.preset}${e.vfx.rate !== undefined ? ` rate=${n1(e.vfx.rate)}` : ''}${e.vfx.color ? ` ${e.vfx.color}` : ''}${e.vfx.enabled ? '' : '[off]'}`);
   const stateKeys = Object.keys(e.state);
   if (stateKeys.length > 0) parts.push(`state ${stateKeys.sort().slice(0, 6).map((k) => `${k}=${json(e.state[k], 20)}`).join(' ')}`);
   const flags = [e.template ? 'template' : '', e.visible ? '' : 'hidden', e.locked ? 'locked(by user: do not change)' : ''].filter(Boolean);
@@ -339,6 +341,8 @@ export function summarizeWorld(world: WorldDoc, opts: SummaryOptions = {}): stri
   lines.push(`player ${pl.mode} spawn=${vec(pl.spawn)}${pl.controls ? ` controls=${pl.controls}` : ''} speed=${n1(pl.moveSpeed)} jump=${n1(pl.jumpSpeed)}`);
   const stateKeys = Object.keys(world.state).sort();
   if (stateKeys.length > 0) lines.push(`state ${stateKeys.map((k) => `${k}=${json(world.state[k], 30)}`).join(' ')}`);
+  const feel = describeFeel(world.feel);
+  if (feel) lines.push(feel);
   if (world.hud.length > 0) lines.push(`hud ${world.hud.map((h) => `${h.key}:${JSON.stringify(truncate(h.label, 30))}`).join(' ')}`);
   const gens = Object.keys(world.generators).sort();
   if (gens.length > 0) lines.push(`generators ${gens.join(', ')}`);

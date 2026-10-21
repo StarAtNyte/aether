@@ -7,6 +7,7 @@
  */
 export {
   EMPTY_INPUT,
+  type FeedbackEvent,
   type BehaviorCatalogEntry,
   type BehaviorParamSpec,
   type InputState,

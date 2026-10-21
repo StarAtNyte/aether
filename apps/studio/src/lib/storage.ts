@@ -143,6 +143,8 @@ export interface StudioSettings {
   uiSounds: boolean;
   /** Play mode hides the side panels so the world fills the window. */
   immersivePlay: boolean;
+  /** Accessibility: no camera shake, FOV kicks or screen flashes in play mode (the system's reduce-motion setting also turns them off). */
+  reduceMotion: boolean;
   /** Graphics quality tier (auto follows the GPU). */
   renderTier: RenderTierSetting;
   /** Individual effect switches on top of the tier. */
@@ -163,6 +165,7 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   repairs: 2,
   uiSounds: false,
   immersivePlay: true,
+  reduceMotion: false,
   renderTier: 'auto',
   effects: Object.freeze({}) as EffectSettings,
 });
@@ -170,7 +173,7 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
 /** Largest accepted value of the `repairs` setting. */
 export const MAX_REPAIRS_SETTING = 3;
 
-const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint', 'uiSounds', 'immersivePlay'] as const satisfies ReadonlyArray<keyof StudioSettings>;
+const BOOLEAN_SETTINGS = ['showPerf', 'pointerLock', 'shadows', 'showColliders', 'darkTheme', 'showLabels', 'showNavHint', 'uiSounds', 'immersivePlay', 'reduceMotion'] as const satisfies ReadonlyArray<keyof StudioSettings>;
 const BACKENDS: readonly BackendSetting[] = ['auto', 'webgpu', 'webgl2'];
 const LOW_MEMORY: readonly LowMemorySetting[] = ['auto', 'on', 'off'];
 /** Tier values accepted from storage. */

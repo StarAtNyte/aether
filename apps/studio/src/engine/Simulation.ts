@@ -20,9 +20,9 @@
  * `@aether/physics` (a multi-MB WASM chunk) is loaded lazily on the first
  * Play or verification.
  */
-import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type History, type Json, type Vec3, type WorldDoc } from '@aether/core';
+import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type FeelEvent, type History, type Json, type ResolvedCue, type Vec3, type WorldDoc } from '@aether/core';
 import { Vector3 } from 'three';
-import { initScripting, LogicRuntime, terrainSampler, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
+import { initScripting, LogicRuntime, terrainSampler, type FeedbackEvent, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
@@ -43,6 +43,8 @@ import type { VoxelSession, VoxelPlay } from '../voxel/session';
 import type { VoxelHudState } from '../voxel/hudState';
 import { nextFrame } from '../lib/frame';
 import { PlayInteraction, seatPose, type InteractPrompt, type SeatPose } from './interaction';
+import { FeelOverlay } from './feelOverlay';
+import { footstepEffect, landingIntensity } from './feel';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
@@ -315,6 +317,17 @@ export class Simulation {
   private hidden = false;
   /** True while the play session is held (title card showing): the scene renders, the game does not advance. */
   private held = false;
+  /** Screen layer of the game feel (flash, vignette, floating text); null without a DOM parent. */
+  private overlay: FeelOverlay | null = null;
+  /** Accessibility: no camera shake, FOV kicks or flashes. */
+  private reducedMotion = false;
+  /** Landing / jump detection of the walking player. */
+  private wasGrounded = true;
+  private fallSpeed = 0;
+  /** Fixed steps of this session (seeds the effects the studio itself triggers: landings, jumps, steps). */
+  private feelStep = 0;
+  /** Feel cues played this session (diagnostics, e2e). */
+  private feelPlayed = 0;
 
   private constructor(renderer: WorldRenderer, history: History, listener: SimulationListener, opts: SimulationOptions) {
     this.renderer = renderer;
@@ -337,6 +350,8 @@ export class Simulation {
     this.resizeObserver = typeof ResizeObserver !== 'undefined' && parent ? new ResizeObserver(() => this.resize()) : null;
     if (parent) this.resizeObserver?.observe(parent);
     this.resize();
+    if (parent && typeof document !== 'undefined') this.overlay = new FeelOverlay(parent);
+    this.setReducedMotion(prefersReducedMotion());
     this.requestSync(history.current);
     this.touch();
     if (typeof document !== 'undefined') {
@@ -1018,6 +1033,12 @@ export class Simulation {
       if (t) this.table.ensure(id, t.position, t.quaternion);
     }
     this.session = session;
+    this.wasGrounded = true;
+    this.fallSpeed = 0;
+    this.feelStep = 0;
+    this.feelPlayed = 0;
+    this.renderer.fx.reset();
+    this.renderer.fx.playing = true;
     this.startInteraction(session);
     if (session.voxel) session.voxel.input.sensitivity = this.lookSensitivity;
     this.applyGizmo();
@@ -1062,6 +1083,9 @@ export class Simulation {
     s.ended = true;
     this.stopInteraction();
     this.sitting = null;
+    this.renderer.fx.playing = false;
+    this.renderer.fx.reset();
+    this.overlay?.clear();
     this.renderer.setEyeHeight(1.6);
     if (this.npcSig !== '') {
       this.npcSig = '';
@@ -1309,6 +1333,10 @@ export class Simulation {
       gameOver(result, text) {
         if (!s.ended) sim.listener.onGameOver?.(result, String(text).slice(0, 200));
       },
+      // Presentation only: shake, flash, bursts, floating text. Nothing is read back by the game.
+      feedback(ev) {
+        if (!s.ended) sim.playFeedback(ev, s);
+      },
       reset() {
         if (!s.ended) queueMicrotask(() => void sim.restart());
       },
@@ -1357,6 +1385,10 @@ export class Simulation {
       this.renderOpts.animate = s !== null || !this.idle.idle(t);
       const drew = this.renderer.render(dt, this.renderOpts);
       if (drew && this.viewListener) this.viewListener(this.renderer.camera);
+      if (s && this.overlay) {
+        const c = this.renderer.domElement;
+        this.overlay.frame(dt, this.renderer.fx.director.pulse, this.renderer.camera, c.clientWidth, c.clientHeight);
+      }
       this.frameFailures = 0;
     } catch (err) {
       this.onFrameError(err, s);
@@ -1446,7 +1478,8 @@ export class Simulation {
   }
 
   private stepSession(s: PlaySession, dt: number): void {
-    if (this.held) {
+    // Hit-stop holds the game for a few frames: steps are postponed, not changed (the fixed-step results are the same).
+    if (this.held || this.renderer.fx.director.frozen) {
       this.stepper.reset();
       return;
     }
@@ -1467,7 +1500,9 @@ export class Simulation {
         this.sneaking = sneak;
         character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, sneak ? speed * 0.5 : speed, jump);
         if (character.position[1] < PLAYER_KILL_Y) character.teleport(s.world.player.spawn);
+        this.watchLanding(character, input.jump);
       }
+      this.feelStep++;
       const events = pw.stepFixed();
       logic.tick(FIXED_DT, input, events);
     }
@@ -1500,7 +1535,87 @@ export class Simulation {
     // The player's own steps stay audible in third person; others fade out by ~24 m.
     const level = own ? (this.sneaking ? 0.35 : 1) * Math.min(1.2, 0.5 + speed * 0.1) : Math.max(0, 1 - d / 24) * Math.min(1.1, 0.45 + speed * 0.1);
     if (level <= 0.02) return;
-    this.sound.play(`step-${this.renderer.surfaceAt(position[0], position[1], position[2])}`, level);
+    const surface = this.renderer.surfaceAt(position[0], position[1], position[2]);
+    this.sound.play(`step-${surface}`, level);
+    // A puff of dust (or a splash) under the foot, for steps near the camera.
+    const fx = this.renderer.fx;
+    if (!fx.footsteps || d > 28 || (this.sneaking && own)) return;
+    const puff = footstepEffect(surface, speed);
+    if (puff) fx.trigger(null, position, { seed: (this.feelStep * 31 + Math.round(position[0] * 7) * 131 + Math.round(position[2] * 7)) | 0, vfx: puff.vfx, scale: puff.scale, ...(puff.color ? { color: puff.color } : {}), floorY: position[1] });
+  }
+
+  /** Landings and jumps of the walking player become feel events (studio-side: the logic does not see the body's air time). */
+  private watchLanding(character: CharacterController, jumpPressed: boolean): void {
+    const g = character.grounded;
+    const vy = character.verticalSpeed;
+    if (!g) this.fallSpeed = Math.min(this.fallSpeed, vy);
+    const p = character.position;
+    if (g && !this.wasGrounded) {
+      const k = landingIntensity(this.fallSpeed);
+      if (k > 0) this.playStudioCue('land', [p[0], p[1], p[2]], k);
+      this.fallSpeed = 0;
+    } else if (!g && this.wasGrounded && jumpPressed && vy > 1.5) {
+      this.playStudioCue('jump', [p[0], p[1], p[2]], 1, true);
+    }
+    this.wasGrounded = g;
+  }
+
+  private playStudioCue(kind: 'land' | 'jump', at: [number, number, number], intensity: number, stretch = false): void {
+    const played = this.renderer.fx.trigger(kind, at, { seed: this.feelStep * 977 + (kind === 'land' ? 1 : 2), intensity, floorY: at[1], stretch });
+    if (played) this.answerCue(played.cue, at, undefined, kind);
+  }
+
+  /** A feel event from the logic runtime: the renderer plays the picture, the studio the text, the rumble and the duck. */
+  private playFeedback(ev: FeedbackEvent, s: SessionCore): void {
+    const fx = this.renderer.fx;
+    const feet = s.character?.position;
+    const at: [number, number, number] | null = ev.at ? [ev.at[0], ev.at[1], ev.at[2]] : feet ? [feet[0], feet[1] + 1, feet[2]] : null;
+    // Sparks and dust rest on the floor the player stands on (or a metre under the event).
+    const floorY = feet && at && Math.abs(feet[1] - at[1]) < 3 ? feet[1] : at ? at[1] - 1 : 0;
+    const played = fx.trigger(ev.kind, at, {
+      seed: Math.imul(ev.tick, 0x9e3779b1) ^ (ev.kind ? ev.kind.length : 0),
+      ...(ev.vfx !== undefined ? { vfx: ev.vfx } : {}),
+      ...(ev.color !== undefined ? { color: ev.color } : {}),
+      ...(ev.scale !== undefined ? { scale: ev.scale } : {}),
+      ...(ev.intensity !== undefined ? { intensity: ev.intensity } : {}),
+      ...(ev.amount !== undefined ? { amount: ev.amount } : {}),
+      floorY,
+    });
+    if (played) this.answerCue(played.cue, at, ev.amount, ev.kind);
+  }
+
+  /** The parts of a cue outside the renderer: floating text, rumble, ducking. */
+  private answerCue(cue: ResolvedCue, at: readonly [number, number, number] | null, amount: number | undefined, kind: FeelEvent | null): void {
+    this.feelPlayed++;
+    if (cue.text && at && amount !== undefined && amount !== 0 && Number.isFinite(amount)) {
+      const n = Math.round(amount * 100) / 100;
+      this.overlay?.text(n > 0 ? `+${n}` : `${n}`, at, kind === 'damage' || n < 0 ? '#ff5d4d' : '#ffd84a');
+    }
+    if (cue.rumble > 0) this.pad.rumble(cue.rumble, 70 + cue.rumble * 230);
+    if (cue.duck > 0) this.sound.duck(cue.duck, 0.35 + cue.duck * 0.6);
+  }
+
+  /** Accessibility: turn camera shake, FOV kicks and screen flashes off (defaults to the system's reduce-motion setting). */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    this.renderer.fx.director.setReducedMotion(on);
+    this.overlay?.setReducedMotion(on);
+  }
+
+  /** Whether reduce motion is on. */
+  get reduceMotion(): boolean {
+    return this.reducedMotion;
+  }
+
+  /** Game-feel diagnostics (e2e, perf HUD). */
+  get feelStats(): { cues: number; bursts: number; particles: number; emitters: number; capacity: number; trauma: number; frozen: boolean } {
+    const fx = this.renderer.fx;
+    return { cues: this.feelPlayed, bursts: fx.vfx.bursts, particles: fx.vfx.liveEstimate, emitters: fx.vfx.emitterCount, capacity: fx.vfx.capacity, trauma: fx.director.traumaLevel, frozen: fx.director.frozen };
+  }
+
+  /** Listen to sound ducking (published games duck their music); returns the unsubscribe. */
+  onDuck(fn: (depth: number, seconds: number) => void): () => void {
+    return this.sound.onDuck(fn);
   }
 
   /**
@@ -1778,6 +1893,8 @@ export class Simulation {
     }
     this.sound.dispose();
     this.pad.dispose();
+    this.overlay?.dispose();
+    this.overlay = null;
     this.renderer.dispose();
   }
 }

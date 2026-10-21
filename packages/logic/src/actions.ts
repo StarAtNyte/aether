@@ -3,7 +3,7 @@
  * {@link ActionEnv} (implemented by the runtime), and returns a short
  * human-readable description used in the "why" log.
  */
-import { isForbiddenKey, type Action, type EntityId, type Json, type Vec3 } from '@aether/core';
+import { isForbiddenKey, type Action, type EntityId, type FeelEvent, type Json, type Vec3, type VfxPreset } from '@aether/core';
 import { assertStorable } from './state';
 import { fmt, fmtVec, isFiniteVec } from './vec';
 
@@ -36,6 +36,10 @@ export interface ActionEnv {
   sound(name: string): void;
   gameOver(result: 'win' | 'lose', text: string, why: string): void;
   requestReset(): void;
+  /** Visual-only burst / feel cue (see `LogicHost.feedback`). */
+  effect(vfx: VfxPreset | 'none', at: Readonly<Vec3> | undefined, feel: FeelEvent | undefined, color: string | undefined, scale: number | undefined): void;
+  /** The player's id, for effects without a place. */
+  playerId(): EntityId | undefined;
 }
 
 /** Max entities a single action may affect (protects against "*" on huge worlds). */
@@ -158,5 +162,18 @@ export function executeAction(action: Action, env: ActionEnv, ctx: ActionContext
     case 'reset':
       env.requestReset();
       return 'reset requested';
+    case 'effect': {
+      let at: Vec3 | undefined;
+      if (action.at !== undefined) {
+        at = locate(env, action.at, ctx);
+        if (!at) return `effect skipped: '${String(action.at)}' not found`;
+      } else {
+        const who = ctx.selfId ?? env.playerId();
+        const p = who !== undefined ? env.positionOf(who) : undefined;
+        at = p ? [p[0], p[1], p[2]] : undefined;
+      }
+      env.effect(action.vfx, at, action.feel, action.color, action.scale);
+      return `effect ${action.vfx}${action.feel ? ` (${action.feel})` : ''}${at ? ` at ${fmtVec(at)}` : ''}`;
+    }
   }
 }

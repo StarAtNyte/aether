@@ -27,6 +27,8 @@ export interface WorldDiff {
   metaChanged: boolean;
   /** Voxel terrain added, removed or changed (settings or edits). */
   voxelChanged: boolean;
+  /** Additive: the game feel (`world.feel`) changed. */
+  feelChanged: boolean;
 }
 
 /** True when the diff contains no change at all. */
@@ -34,7 +36,7 @@ export function isEmptyDiff(d: WorldDiff): boolean {
   return (
     d.added.length === 0 && d.removed.length === 0 && d.changed.length === 0 && !d.environmentChanged && !d.playerChanged &&
     !d.rulesChanged && d.generatorsChanged.length === 0 && d.scriptsChanged.length === 0 && d.meshesChanged.length === 0 && !d.stateChanged && !d.hudChanged &&
-    !d.testsChanged && !d.metaChanged && !d.voxelChanged
+    !d.testsChanged && !d.metaChanged && !d.voxelChanged && !d.feelChanged
   );
 }
 
@@ -56,6 +58,7 @@ export function diffWorlds(a: WorldDoc, b: WorldDoc): WorldDiff {
     added: [], removed: [], changed: [], environmentChanged: false, playerChanged: false, rulesChanged: false,
     generatorsChanged: [], scriptsChanged: [], meshesChanged: [], stateChanged: false, hudChanged: false, testsChanged: false, metaChanged: false,
     voxelChanged: false,
+    feelChanged: false,
   };
   if (a === b) return diff;
   const ea = a.entities;
@@ -77,6 +80,7 @@ export function diffWorlds(a: WorldDoc, b: WorldDoc): WorldDiff {
   diff.hudChanged = changed(a.hud, b.hud);
   diff.testsChanged = changed(a.tests, b.tests);
   diff.metaChanged = a.name !== b.name || a.description !== b.description || a.seed !== b.seed || changed(a.intro, b.intro);
+  diff.feelChanged = changed(a.feel, b.feel);
   diff.voxelChanged = changed(a.voxel, b.voxel);
   return diff;
 }

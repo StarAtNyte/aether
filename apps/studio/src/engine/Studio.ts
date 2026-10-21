@@ -65,7 +65,7 @@ import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
 import { fallbackText } from '../ai/messages';
 import { createProviderChain, type ChainLink } from '../ai/chain';
-import { Simulation } from './Simulation';
+import { prefersReducedMotion, Simulation } from './Simulation';
 
 /** Token usage of one turn (all agent runs of a prompt). */
 interface RunUsage {
@@ -337,6 +337,7 @@ export class Studio {
           opts.onSettings?.(s.settings);
           if (prev.showColliders !== s.settings.showColliders) this.sim?.setShowColliders(s.settings.showColliders);
           if (prev.pointerLock !== s.settings.pointerLock) this.sim?.setPointerLock(s.settings.pointerLock);
+          if (prev.reduceMotion !== s.settings.reduceMotion) this.sim?.setReducedMotion(s.settings.reduceMotion || prefersReducedMotion());
           if (prev.lowMemory !== s.settings.lowMemory) this.applyMemory();
           if (prev.backend !== s.settings.backend) void this.restartRenderer('Switching renderer…');
           if (prev.showPerf !== s.settings.showPerf) this.sim?.setStatsWhileEditing(s.settings.showPerf);
@@ -467,6 +468,7 @@ export class Studio {
       // Settings may have changed while the renderer was starting: apply the current ones.
       const now = this.store.getState().settings;
       sim.setShowColliders(now.showColliders);
+      sim.setReducedMotion(now.reduceMotion || prefersReducedMotion());
       sim.setStatsWhileEditing(now.showPerf);
       sim.setPointerLock(now.pointerLock);
       sim.setSelection(this.store.getState().selection);

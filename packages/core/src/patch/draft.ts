@@ -256,6 +256,14 @@ export class Draft {
     else this.doc.intro = value;
   }
 
+  /** Set (or with `undefined`, remove) the game feel. */
+  setFeel(value: WorldDoc['feel']): void {
+    if (value === this.doc.feel) return;
+    this.dirty = true;
+    if (value === undefined) delete this.doc.feel;
+    else this.doc.feel = value;
+  }
+
   /** Assign a top-level value-like field. */
   set<K extends 'environment' | 'player' | 'hud' | 'name' | 'description' | 'seed' | 'rules' | 'tests' | 'state'>(key: K, value: WorldDoc[K]): void {
     this.dirty = true;

@@ -105,3 +105,10 @@ export { PlanarMirror } from './materials/planar-mirror';
 export { WaterSystem, WADE_MIN_SPEED, type UnderwaterLook } from './sync/water-system';
 export { findWaterSurfaces, surfaceAt, waterKindOf, withWaterKind, type WaterSurface } from './sync/water-surfaces';
 export { windGain } from './materials/wind';
+// Game feel and gameplay effects (presentation only; see feel/ and vfx/).
+export { GameFeel, type FeelHost, type PlayedCue } from './feel/game-feel';
+export { FeelDirector, shakeNoise, HIT_STOP_SCALE, type FeelPulse } from './feel/director';
+export { VfxSystem, MAX_EMITTERS, type BurstOptions } from './vfx/system';
+export { ParticlePool, SeededRandom, mixSeed, linearColor, STRIDE as PARTICLE_STRIDE, NO_FLOOR, SPIN_BIAS, type SpawnOptions } from './vfx/pool';
+export { VFX_PRESETS, CONTINUOUS_VFX, SPRITE, vfxBudget, type VfxDef, type VfxLayer, type EmitShape, type SpriteCell } from './vfx/presets';
+export { atlasPixels, ATLAS_CELLS } from './vfx/atlas';

@@ -42,7 +42,12 @@ export interface PadLike {
   readonly mapping: string;
   readonly axes: readonly number[];
   readonly buttons: ReadonlyArray<{ readonly pressed: boolean; readonly value: number }>;
+  /** Rumble motors, where the browser and the pad have them (Chromium: dual-rumble; Firefox: usually absent). */
+  readonly vibrationActuator?: { playEffect?(type: string, params: { startDelay?: number; duration: number; weakMagnitude: number; strongMagnitude: number }): Promise<unknown> } | null;
 }
+
+/** Shortest gap between two rumble effects (ms): a burst of events is one buzz, not a stutter. */
+const RUMBLE_GAP_MS = 60;
 
 const B_A = 0;
 const B_B = 1;
@@ -65,6 +70,9 @@ export class GamepadPoller {
   private prevAction = false;
   private prevPause = false;
   private seen = false;
+  /** The pad read by the last poll (rumble goes to it). */
+  private pad: PadLike | null = null;
+  private lastRumble = -Infinity;
   private readonly onConnect = (): void => {
     this.seen = true;
   };
@@ -97,6 +105,7 @@ export class GamepadPoller {
         break;
       }
     }
+    this.pad = pad;
     if (!pad) {
       s.active = false;
       s.forward = 0;
@@ -124,6 +133,23 @@ export class GamepadPoller {
     this.prevPause = pause;
     s.active = true;
     return s;
+  }
+
+  /**
+   * Buzz the pad in use: `strength` 0..1 for `ms` milliseconds (heavy motor follows the strength, the light one
+   * leads it). False when there is no pad or it cannot rumble.
+   */
+  rumble(strength: number, ms = 120, now = typeof performance !== 'undefined' ? performance.now() : 0): boolean {
+    const k = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 0;
+    const act = this.pad?.vibrationActuator;
+    if (k <= 0.01 || !act || typeof act.playEffect !== 'function' || now - this.lastRumble < RUMBLE_GAP_MS) return false;
+    this.lastRumble = now;
+    try {
+      void act.playEffect('dual-rumble', { startDelay: 0, duration: Math.max(20, Math.min(1000, ms)), strongMagnitude: k, weakMagnitude: Math.min(1, k * 0.6 + 0.2) }).catch(() => undefined);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   dispose(): void {

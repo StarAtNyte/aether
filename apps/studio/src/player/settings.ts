@@ -15,12 +15,14 @@ export const PlayerSettings = z.object({
   music: z.number().min(0).max(1).catch(0.5),
   sensitivity: z.number().min(0.25).max(3).catch(1),
   quality: z.enum(QUALITIES).catch('high'),
+  /** Accessibility: no camera shake, FOV kicks or screen flashes. */
+  reduceMotion: z.boolean().catch(false),
 });
 export type PlayerSettings = z.infer<typeof PlayerSettings>;
 
-/** Defaults (high quality unless the device is short on memory). */
-export function defaultSettings(deviceMemoryGB?: number): PlayerSettings {
-  return { volume: 0.8, music: 0.5, sensitivity: 1, quality: deviceMemoryGB !== undefined && deviceMemoryGB <= 4 ? 'medium' : 'high' };
+/** Defaults (high quality unless the device is short on memory; reduce motion follows the system setting). */
+export function defaultSettings(deviceMemoryGB?: number, reduceMotion = false): PlayerSettings {
+  return { volume: 0.8, music: 0.5, sensitivity: 1, quality: deviceMemoryGB !== undefined && deviceMemoryGB <= 4 ? 'medium' : 'high', reduceMotion };
 }
 
 const KEY = 'aether.player.settings.v1';

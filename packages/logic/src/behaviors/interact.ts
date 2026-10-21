@@ -54,6 +54,7 @@ export const collectible: BehaviorDef = {
       if (!env || hiddenFor > 0) return;
       const change = env.addState(key, value);
       env.log(`${self.id} collected by ${id} → ${change}`);
+      env.feedback('pickup', env.positionOf(self.id) ?? self.basePos, { source: self.id, target: id, amount: value });
       if (sound) env.host.sound(sound);
       if (message) env.host.message(message, 2);
       if (event) env.emit(event);
@@ -445,6 +446,7 @@ export const checkpoint: BehaviorDef = {
       env.setState('checkpoint', self.id);
       self.state['active'] = true;
       env.log(`checkpoint ${self.id} reached`);
+      env.feedback('checkpoint', pos, { source: self.id });
       if (message) env.host.message(message, 2);
       env.host.sound('bell');
     };
@@ -514,6 +516,7 @@ export const hazard: BehaviorDef = {
           if (last !== undefined && env.time - last < cooldown) continue;
           lastHit.set(id, env.time);
           env.host.sound('hit');
+          env.feedback(mode === 'damage' ? 'damage' : 'hit', env.positionOf(id), { source: self.id, target: id, ...(mode === 'damage' ? { amount: -damage } : {}) });
           if (mode === 'lose') {
             env.gameOver('lose', text, `${id} touched hazard ${self.id}`);
             return;
@@ -572,6 +575,7 @@ export const launcher: BehaviorDef = {
       launchVel[1] = dir[1] * speed;
       launchVel[2] = dir[2] * speed;
       env.setVelocity(id, launchVel);
+      env.feedback('launch', env.positionOf(id), { source: self.id, target: id, intensity: Math.min(2, speed / 12) });
       env.host.sound('whoosh');
       env.log(`${self.id} launched ${id}`);
     };

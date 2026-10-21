@@ -30,7 +30,9 @@
  *   terrain) are reset only with `keepEnvironment: false` (player.controls is
  *   always cleared). The title card (`intro`) is removed too.
  * - `setMeta` sets name / description / seed and, additively, the title card
- *   (`intro: null` removes it).
+ *   (`intro: null` removes it) and the game feel (`feel`, replaced whole;
+ *   `feel: null` removes it). `clear` keeps the feel (a setting of the game,
+ *   not content).
  * - `setVoxel` deep-merges voxel terrain settings (`set: null` removes the
  *   terrain); `voxelEdit` appends block edits. Block ids are checked against
  *   the registry and edit volumes against the voxel block limits.
@@ -496,6 +498,8 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
   if (p.seed !== undefined && p.seed !== d.world.seed) d.set('seed', p.seed);
   if (p.intro === null) d.setIntro(undefined);
   else if (p.intro !== undefined && !deepEqual(p.intro, d.world.intro)) d.setIntro(p.intro);
+  if (p.feel === null) d.setFeel(undefined);
+  else if (p.feel !== undefined && !deepEqual(p.feel, d.world.feel)) d.setFeel(p.feel);
   return OK;
 }
 

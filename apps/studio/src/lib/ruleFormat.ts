@@ -127,6 +127,8 @@ export function formatAction(a: Action): string {
       return `LOSE "${a.text}"`;
     case 'reset':
       return 'RESET';
+    case 'effect':
+      return `EFFECT ${a.vfx}${a.feel ? ` (${a.feel})` : ''}${a.at !== undefined ? ` at ${formatPlace(a.at)}` : ''}`;
   }
 }
 

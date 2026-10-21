@@ -1,7 +1,7 @@
 /**
  * Internal contract between the runtime and built-in behaviors.
  */
-import type { BuiltinBehavior, EntityId, Json, Vec3 } from '@aether/core';
+import type { BuiltinBehavior, EntityId, FeelEvent, Json, Vec3 } from '@aether/core';
 import type { RuntimeEntity } from '../entities';
 import type { ParamReader } from '../params';
 import type { BehaviorParamSpec, InputState, LogicHost } from '../types';
@@ -61,6 +61,11 @@ export interface BehaviorEnv {
   setVelocity(id: EntityId, v: Readonly<Vec3>): void;
   explode(center: Readonly<Vec3>, force: number, radius: number): void;
   log(text: string): void;
+  /**
+   * Tell the host's feel layer that `kind` happened at `at` (visual only, never read back; a no-op without
+   * `host.feedback`). `amount` is the signed number floating text shows.
+   */
+  feedback(kind: FeelEvent, at: Readonly<Vec3> | undefined, opts?: { source?: EntityId; target?: EntityId; amount?: number; intensity?: number }): void;
   /** Respawn point set by checkpoints (undefined → `playerSpawn`). */
   respawnPoint: Vec3 | undefined;
   /** `world.player.spawn`. */

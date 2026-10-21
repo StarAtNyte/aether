@@ -72,6 +72,10 @@ export class SoundBoard {
   /** Master volume 0–1 (player settings). */
   private volume = 1;
   private master: GainNode | null = null;
+  /** Background bus (footsteps): ducked under big moments. */
+  private bed: GainNode | null = null;
+  /** Ducking listeners (music players outside the board). */
+  private readonly duckListeners = new Set<(depth: number, seconds: number) => void>();
 
   /** Set the master volume (0 mutes). */
   setVolume(v: number): void {
@@ -87,6 +91,50 @@ export class SoundBoard {
       this.master.connect(ctx.destination);
     }
     return this.master;
+  }
+
+  /** The bus background sounds (footsteps, ambience) play through. */
+  private bedOutput(ctx: AudioContext): AudioNode {
+    const out = this.output(ctx);
+    if (!this.bed || this.bed.context !== ctx) {
+      this.bed = ctx.createGain();
+      this.bed.gain.value = 1;
+      this.bed.connect(out);
+    }
+    return this.bed;
+  }
+
+  /**
+   * Duck the background (footsteps, and whoever listens: the music of a published game) by `depth` (0..1) for about
+   * `seconds`, then let it swell back. The hook of the game-feel layer: a death or an explosion is heard over the bed.
+   */
+  duck(depth: number, seconds = 0.6): void {
+    const d = Number.isFinite(depth) ? Math.max(0, Math.min(1, depth)) : 0;
+    if (d <= 0) return;
+    const hold = Number.isFinite(seconds) ? Math.max(0.05, Math.min(4, seconds)) : 0.6;
+    for (const fn of this.duckListeners) {
+      try {
+        fn(d, hold);
+      } catch {
+        /* a listener never breaks the game */
+      }
+    }
+    const ctx = this.ctx;
+    const bed = this.bed;
+    if (!ctx || !bed) return;
+    const t = ctx.currentTime;
+    const g = bed.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(1 - d, t + 0.04);
+    g.setValueAtTime(1 - d, t + hold);
+    g.linearRampToValueAtTime(1, t + hold + 0.45);
+  }
+
+  /** Listen to {@link duck} (returns the unsubscribe). */
+  onDuck(fn: (depth: number, seconds: number) => void): () => void {
+    this.duckListeners.add(fn);
+    return () => this.duckListeners.delete(fn);
   }
 
   /** Play a named effect (ignored when unknown, muted or rate-limited). */
@@ -108,8 +156,9 @@ export class SoundBoard {
       // A little variation so repeated steps do not sound stamped.
       const k = 0.92 + Math.random() * 0.16;
       const g = tone.gain * Math.min(1.5, level);
-      this.noise(ctx, tone.from * k, tone.to * k, t, tone.duration, g);
-      if (tone.then) this.noise(ctx, tone.then.from * k, tone.then.to * k, t + tone.then.delay, tone.duration, g);
+      const bus = name.startsWith('step') ? this.bedOutput(ctx) : this.output(ctx);
+      this.noise(ctx, tone.from * k, tone.to * k, t, tone.duration, g, bus);
+      if (tone.then) this.noise(ctx, tone.then.from * k, tone.then.to * k, t + tone.then.delay, tone.duration, g, bus);
       return;
     }
     const g = tone.gain * Math.min(1.5, level);
@@ -127,7 +176,9 @@ export class SoundBoard {
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.master = null;
+    this.bed = null;
     this.noiseBuffer = null;
+    this.duckListeners.clear();
   }
 
   private context(): AudioContext | null {
@@ -147,7 +198,7 @@ export class SoundBoard {
   /** One second of white noise, made once per context. */
   private noiseBuffer: AudioBuffer | null = null;
 
-  private noise(ctx: AudioContext, from: number, to: number, start: number, duration: number, gain: number): void {
+  private noise(ctx: AudioContext, from: number, to: number, start: number, duration: number, gain: number, bus: AudioNode): void {
     if (!this.noiseBuffer) {
       const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const data = buf.getChannelData(0);
@@ -171,7 +222,7 @@ export class SoundBoard {
     amp.gain.setValueAtTime(0.0001, start);
     amp.gain.exponentialRampToValueAtTime(gain, start + 0.005);
     amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    src.connect(filter).connect(amp).connect(this.output(ctx));
+    src.connect(filter).connect(amp).connect(bus);
     src.start(start, Math.random() * 0.5);
     src.stop(start + duration + 0.02);
     src.onended = () => {

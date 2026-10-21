@@ -15,8 +15,10 @@ import { z } from 'zod';
 import { VoxelEdit, VoxelTerrain } from './voxel-schema';
 import { NpcSpec } from './npc-schema';
 import { CharacterSpec } from './character-schema';
+import { EntityVfx, FeelEvent, FeelSpec, VfxPreset } from './feel-schema';
 
 export * from './voxel-schema';
+export * from './feel-schema';
 export * from './npc-schema';
 export * from './character-schema';
 
@@ -485,6 +487,8 @@ export const Entity = z.object({
   character: CharacterSpec.optional(),
   /** Additive: usable by aiming at it in play mode (see {@link InteractSpec}). */
   interact: InteractSpec.optional(),
+  /** Additive: a continuous particle emitter that follows the entity (visual only; see `feel-schema.ts`). */
+  vfx: EntityVfx.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -533,6 +537,18 @@ export const Action = z.discriminatedUnion('do', [
   z.object({ do: z.literal('win'), text: z.string().default('You win!') }),
   z.object({ do: z.literal('lose'), text: z.string().default('Game over') }),
   z.object({ do: z.literal('reset') }),
+  /**
+   * Additive: a particle burst (and optionally the cue of a feel event: shake, flash, hit-stop …) at a place.
+   * Visual only: it never changes the simulation. `at` defaults to the entity running the script, else the player.
+   */
+  z.object({
+    do: z.literal('effect'),
+    vfx: z.union([VfxPreset, z.literal('none')]).default('sparks'),
+    at: z.union([Vec3, Selector]).optional(),
+    feel: FeelEvent.optional(),
+    color: Color.optional(),
+    scale: z.number().min(0.2).max(4).optional(),
+  }),
 ]);
 export type Action = z.infer<typeof Action>;
 
@@ -799,6 +815,8 @@ export const WorldDoc = z.object({
   voxel: VoxelTerrain.optional(),
   /** Additive: title card shown when play starts (see {@link WorldIntro}). */
   intro: WorldIntro.optional(),
+  /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
+  feel: FeelSpec.optional(),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;
@@ -833,6 +851,8 @@ export const Patch = z.discriminatedUnion('op', [
     seed: z.number().int().optional(),
     /** Additive: set the title card, or with `null` remove it. */
     intro: WorldIntro.nullable().optional(),
+    /** Additive: replace the game feel (`world.feel`), or with `null` remove it (back to the `normal` tier). */
+    feel: FeelSpec.nullable().optional(),
   }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
   /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */

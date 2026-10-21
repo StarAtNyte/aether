@@ -2,7 +2,7 @@
  * Public interfaces of @aether/logic. The runtime never touches physics,
  * rendering or the DOM directly: everything goes through {@link LogicHost}.
  */
-import type { Action, BuiltinBehavior, Entity, EntityId, Json, ParamSpec, ScriptDef, Vec3 } from '@aether/core';
+import type { Action, BuiltinBehavior, Entity, EntityId, FeelEvent, Json, ParamSpec, ScriptDef, Vec3, VfxPreset } from '@aether/core';
 
 /** Quaternion [x, y, z, w]. */
 export type QuatTuple = [number, number, number, number];
@@ -88,6 +88,36 @@ export interface LogicHost {
    * over it, so NPCs on hills can be routed; without it a hill is a flat floor at its base.
    */
   terrainHeight?(x: number, z: number): number | undefined;
+  /**
+   * Optional (additive): something worth answering on screen happened (a pickup, a hit, a checkpoint, an effect
+   * action). Presentation only: the runtime never reads anything back, so the simulation, the playtest bot and replay
+   * proofs are the same with or without it. The event object is reused: copy what you keep past the call.
+   */
+  feedback?(event: FeedbackEvent): void;
+}
+
+/** A moment the game feel layer answers (see {@link LogicHost.feedback}). */
+export interface FeedbackEvent {
+  /** The feel event, or null for a pure effect (an `effect` action without `feel`). */
+  kind: FeelEvent | null;
+  /** Particle burst asked for explicitly (an `effect` action); otherwise the event's cue decides. */
+  vfx?: VfxPreset | 'none';
+  /** Where it happened (copy it). */
+  at?: Vec3;
+  /** What caused it (the coin, the hazard, the NPC). */
+  source?: EntityId;
+  /** Who it happened to (usually the player). */
+  target?: EntityId;
+  /** Signed amount for floating text: points picked up (+), health lost (-). */
+  amount?: number;
+  /** Strength 0..2 (default 1), e.g. how hard a landing was. */
+  intensity?: number;
+  color?: string;
+  scale?: number;
+  /** Logic tick number: a deterministic seed for the effect (the same replay draws the same particles). */
+  tick: number;
+  /** Simulation time (s). */
+  time: number;
 }
 
 /** Player input sampled by the caller once per fixed tick. */

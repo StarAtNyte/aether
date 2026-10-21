@@ -324,6 +324,8 @@ export class NpcSystem implements DialogueHost {
       const next = Math.max(0, hp - damage);
       this.playerDamage += hp - next;
       env.setState('health', next);
+      const pid = env.playerId();
+      env.feedback('damage', pid !== undefined ? env.positionOf(pid) : undefined, { source: from.id, ...(pid !== undefined ? { target: pid } : {}), amount: -(hp - next) });
       env.host.sound('hit');
       env.log(`npc ${from.id} hits the player for ${damage} (health ${hp}→${next})`);
       if (next <= 0) env.gameOver('lose', `${this.nameOf(from)} brought you down`, `npc ${from.id} attack`);
@@ -332,6 +334,7 @@ export class NpcSystem implements DialogueHost {
       if (o && !o.dead) {
         const cur = o.self.state['health'];
         o.self.state['health'] = (typeof cur === 'number' ? cur : o.hp) - damage;
+        env.feedback('hit', env.positionOf(id), { source: from.id, target: id, amount: -damage });
         env.log(`npc ${from.id} hits ${id} for ${damage}`);
       }
     }
@@ -637,6 +640,10 @@ export class NpcSystem implements DialogueHost {
           break;
         case 'give':
           env.log(`dialogue: ${env.addState(fx.item, fx.count)}`);
+          {
+            const pid = env.playerId();
+            env.feedback('pickup', pid !== undefined ? env.positionOf(pid) : undefined, { source: npc, amount: fx.count });
+          }
           env.host.sound('pickup');
           env.host.message(fx.count > 1 ? `Received ${fx.count} × ${fx.item}` : `Received: ${fx.item}`, 2.5);
           break;

@@ -22,6 +22,7 @@ function fakeSim(thumb: string | null): Simulation {
     setShowColliders: () => undefined,
     setStatsWhileEditing: () => undefined,
     setPointerLock: () => undefined,
+    setReducedMotion: () => undefined,
     setSelection: () => undefined,
     setGizmo: () => undefined,
     setGizmoOptions: () => undefined,

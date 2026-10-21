@@ -200,7 +200,8 @@ export function patchesBetween(from: WorldDoc, to: WorldDoc): Patch[] {
   if (from.description !== to.description) meta.description = to.description;
   if (from.seed !== to.seed) meta.seed = to.seed;
   if (from.intro !== to.intro && !deepEqual(from.intro, to.intro)) meta.intro = to.intro ?? null;
-  if (meta.name !== undefined || meta.description !== undefined || meta.seed !== undefined || meta.intro !== undefined) out.push(meta);
+  if (from.feel !== to.feel && !deepEqual(from.feel, to.feel)) meta.feel = to.feel ?? null;
+  if (meta.name !== undefined || meta.description !== undefined || meta.seed !== undefined || meta.intro !== undefined || meta.feel !== undefined) out.push(meta);
   // Removing an entity drops its unused mesh automatically; remove the rest explicitly.
   if (from.meshes !== to.meshes) {
     const after = applyPatches(from, out).world;

@@ -5,7 +5,7 @@
  * Pure (unit-tested); every edited rule / test is validated with the World
  * IR schema before it is committed.
  */
-import { Action, Rule, Trigger, WorldTest, type Json } from '@aether/core';
+import { Action, FeelEvent, Rule, Trigger, VfxPreset, WorldTest, type Json } from '@aether/core';
 
 /** Input kinds of the editor. */
 export type FieldKind = 'number' | 'string' | 'selector' | 'entity' | 'vec3' | 'place' | 'value' | 'op' | 'bool' | 'enum';
@@ -125,6 +125,11 @@ export const ACTION_FIELDS: Readonly<Record<Action['do'], readonly FieldDef[]>> 
   win: [{ key: 'text', label: 'Text', kind: 'string' }],
   lose: [{ key: 'text', label: 'Text', kind: 'string' }],
   reset: [],
+  effect: [
+    { key: 'vfx', label: 'Effect', kind: 'enum', options: [...VfxPreset.options, 'none'] },
+    { key: 'at', label: 'At', kind: 'place', optional: true },
+    { key: 'feel', label: 'Feel as', kind: 'enum', options: FeelEvent.options, optional: true },
+  ],
 };
 
 /** Human labels of action kinds. */
@@ -146,6 +151,7 @@ export const ACTION_LABELS: Readonly<Record<Action['do'], string>> = {
   win: 'Win',
   lose: 'Lose',
   reset: 'Restart',
+  effect: 'Play effect',
 };
 
 /** Test kinds with their fields. */
@@ -277,6 +283,7 @@ export function defaultAction(kind: Action['do']): Action {
     win: { do: 'win' },
     lose: { do: 'lose' },
     reset: { do: 'reset' },
+    effect: { do: 'effect', vfx: 'sparks' },
   };
   return Action.parse(defaults[kind]);
 }

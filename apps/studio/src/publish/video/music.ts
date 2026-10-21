@@ -217,6 +217,8 @@ export interface MusicPlayer {
   /** Audio stream of the music (for MediaRecorder), when requested. */
   readonly stream: MediaStream | null;
   stop(): void;
+  /** Duck the music by `depth` (0..1) for about `seconds`, then swell back (game-feel hook). */
+  duck?(depth: number, seconds: number): void;
 }
 
 /** Play a score live; `record` also exposes it as a MediaStream. */
@@ -240,5 +242,26 @@ export function playMusic(mood: Mood, seconds: number, opts: { seed?: number; vo
     clearTimeout(timer);
     void ctx.close().catch(() => undefined);
   }
-  return { stream: dest ? dest.stream : null, stop };
+  // A ducking stage after the score's own master, so the score's volume automation is never overwritten.
+  const duckGain = ctx.createGain();
+  try {
+    master.disconnect();
+    master.connect(duckGain);
+    duckGain.connect(dest ?? ctx.destination);
+    if (dest) duckGain.connect(ctx.destination);
+  } catch {
+    /* keep the direct connection */
+  }
+  function duck(depth: number, seconds: number): void {
+    if (stopped) return;
+    const d = Math.max(0, Math.min(0.9, depth));
+    const t = ctx.currentTime;
+    const g = duckGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(1 - d, t + 0.06);
+    g.setValueAtTime(1 - d, t + Math.max(0.05, seconds));
+    g.linearRampToValueAtTime(1, t + Math.max(0.05, seconds) + 0.8);
+  }
+  return { stream: dest ? dest.stream : null, stop, duck };
 }

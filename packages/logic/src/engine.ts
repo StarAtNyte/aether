@@ -12,8 +12,10 @@ import {
   worldTransform,
   type Entity,
   type EntityId,
+  type FeelEvent,
   type Json,
   type Vec3,
+  type VfxPreset,
   type WorldDoc,
 } from '@aether/core';
 import { executeAction, locate, type ActionContext } from './actions';
@@ -28,7 +30,7 @@ import { ParamReader } from './params';
 import { errorText, RuleEngine, type RuleHost } from './rules';
 import { checkIntent } from './scripting/intents';
 import { cloneState, readState, showValue, writeState, type StateRecord, type StateScope } from './state';
-import type { InputState, LogEntry, LogicHost, PhysicsEventLike, QuatTuple, ScriptRunner, ScriptSnapshot } from './types';
+import type { FeedbackEvent, InputState, LogEntry, LogicHost, PhysicsEventLike, QuatTuple, ScriptRunner, ScriptSnapshot } from './types';
 import { copy3 } from './vec';
 
 /** Max log entries kept (ring buffer). */
@@ -995,6 +997,8 @@ export class Engine implements BehaviorEnv, RuleHost {
     if (this._status !== 'playing') return;
     this._status = result === 'win' ? 'won' : 'lost';
     this.log(`${result === 'win' ? 'WIN' : 'LOSE'}: "${text}" (${why})`);
+    const pid = this.playerId();
+    this.sendFeedback(result === 'win' ? 'win' : 'death', pid !== undefined ? this.positionOf(pid) : undefined, { target: pid });
     this.host.gameOver(result, text);
   }
 
@@ -1035,6 +1039,7 @@ export class Engine implements BehaviorEnv, RuleHost {
 
   explode(center: Readonly<Vec3>, force: number, radius: number): void {
     this.host.explode(center as Vec3, force, radius);
+    this.sendFeedback('explosion', center, { intensity: Math.min(2, Math.max(0.3, radius / 5)) });
   }
 
   setGravity(v: Readonly<Vec3>): void {
@@ -1047,6 +1052,54 @@ export class Engine implements BehaviorEnv, RuleHost {
 
   sound(name: string): void {
     this.host.sound(name);
+  }
+
+  /** Reused feedback record (the host copies what it keeps). */
+  private readonly fbEvent: FeedbackEvent = { kind: null, tick: 0, time: 0 };
+  private readonly fbAt: Vec3 = [0, 0, 0];
+
+  /**
+   * Hand a feel event to the host. Presentation only: nothing is read back and a throwing host cannot disturb the
+   * tick, so the simulation is identical with or without a feel layer (a test runs both).
+   */
+  private sendFeedback(kind: FeelEvent | null, at: Readonly<Vec3> | undefined, opts: { source?: EntityId | undefined; target?: EntityId | undefined; amount?: number | undefined; intensity?: number | undefined; vfx?: VfxPreset | 'none' | undefined; color?: string | undefined; scale?: number | undefined }): void {
+    const fn = this.host.feedback;
+    if (typeof fn !== 'function') return;
+    const ev = this.fbEvent;
+    ev.kind = kind;
+    ev.tick = this.tickNo;
+    ev.time = this._time;
+    if (at && Number.isFinite(at[0]) && Number.isFinite(at[1]) && Number.isFinite(at[2])) {
+      copy3(this.fbAt, at);
+      ev.at = this.fbAt;
+    } else delete ev.at;
+    if (opts.source !== undefined) ev.source = opts.source;
+    else delete ev.source;
+    if (opts.target !== undefined) ev.target = opts.target;
+    else delete ev.target;
+    if (opts.amount !== undefined && Number.isFinite(opts.amount)) ev.amount = opts.amount;
+    else delete ev.amount;
+    if (opts.intensity !== undefined && Number.isFinite(opts.intensity)) ev.intensity = opts.intensity;
+    else delete ev.intensity;
+    if (opts.vfx !== undefined) ev.vfx = opts.vfx;
+    else delete ev.vfx;
+    if (opts.color !== undefined) ev.color = opts.color;
+    else delete ev.color;
+    if (opts.scale !== undefined) ev.scale = opts.scale;
+    else delete ev.scale;
+    try {
+      fn.call(this.host, ev);
+    } catch {
+      // A failing presentation layer must never change the game.
+    }
+  }
+
+  feedback(kind: FeelEvent, at: Readonly<Vec3> | undefined, opts: { source?: EntityId; target?: EntityId; amount?: number; intensity?: number } = {}): void {
+    this.sendFeedback(kind, at, opts);
+  }
+
+  effect(vfx: VfxPreset | 'none', at: Readonly<Vec3> | undefined, feel: FeelEvent | undefined, color: string | undefined, scale: number | undefined): void {
+    this.sendFeedback(feel ?? null, at, { vfx, color, scale });
   }
 
   requestReset(): void {

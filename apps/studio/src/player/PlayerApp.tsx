@@ -11,7 +11,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import { History, type Json, type WorldDoc } from '@aether/core';
 import { creditsFor, loadCatalog, setCatalog, type Credit } from '@aether/assets';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
-import { Simulation } from '../engine/Simulation';
+import { prefersReducedMotion, Simulation } from '../engine/Simulation';
 import { formatStateValue } from '../lib/format';
 import type { VoxelHudState } from '../voxel/hudState';
 import { VoxelHudView } from '../components/viewport/VoxelHud';
@@ -106,6 +106,11 @@ const SettingsPanel = memo(function SettingsPanel({ settings, onChange, onBack, 
           ))}
         </div>
       </div>
+      <label className="pl-field pl-field--check">
+        <span className="pl-field__label">Reduce motion</span>
+        <input type="checkbox" checked={settings.reduceMotion} onChange={(e) => onChange({ ...settings, reduceMotion: e.target.checked })} data-testid="pl-reduce-motion" />
+        <span className="pl-field__value">{settings.reduceMotion ? 'No shake or flashes' : 'Off'}</span>
+      </label>
       <div className="pl-panel__actions">
         <Button onClick={onBack} autoFocus>
           Back
@@ -165,7 +170,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const storage = useMemo(() => browserSettingsStorage(), []);
   const [settings, setSettings] = useState<PlayerSettings>(() => {
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    return loadSettings(storage, defaultSettings(mem));
+    return loadSettings(storage, defaultSettings(mem, prefersReducedMotion()));
   });
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -208,6 +213,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     sim.renderer.setPixelRatioCap(q.pixelRatioCap);
     sim.setVolume(s.volume);
     sim.setLookSensitivity(s.sensitivity);
+    sim.setReducedMotion(s.reduceMotion);
   }, []);
 
   const updateSettings = useCallback(
@@ -361,6 +367,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         sim.renderer.setPixelRatioCap(q.pixelRatioCap);
         sim.setVolume(s0.volume);
         sim.setLookSensitivity(s0.sensitivity);
+        sim.setReducedMotion(s0.reduceMotion);
+        // Big moments (a defeat, an explosion) duck the music for a breath.
+        sim.onDuck((depth, seconds) => musicRef.current?.duck?.(depth, seconds));
         setLoading('Building the world…');
         await sim.whenSynced();
         // A bundled block-world save is imported once per browser.

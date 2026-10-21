@@ -67,6 +67,7 @@
     "e2e:assets": "tsx tests/e2e/assets.e2e.ts",
     "e2e:ux": "tsx tests/e2e/ux.e2e.ts",
     "e2e:verified": "tsx tests/e2e/verified.e2e.ts",
+    "e2e:vfx": "tsx tests/e2e/vfx.e2e.ts",
     "e2e:publish": "tsx tests/e2e/publish.e2e.ts",
     "e2e:proof": "tsx tests/e2e/proof.e2e.ts",
     "showcase:bake": "tsx scripts/showcase/bake.ts",

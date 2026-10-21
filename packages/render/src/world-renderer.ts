@@ -73,6 +73,7 @@ import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, typ
 import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
 import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } from './sync/lights';
 import { errorMessage, log } from './log';
+import { GameFeel } from './feel/game-feel';
 import type { VoxelLayer } from './voxel/voxel-layer';
 import type { Environment } from '@aether/core';
 
@@ -505,6 +506,8 @@ export class WorldRenderer {
   private readonly highlighter = new Highlighter();
   private readonly debug = new DebugOverlay();
   private readonly avatar = new Avatar();
+  /** Game feel: particle effects, camera shake, hit-stop, FOV kicks, pulses (presentation only; see `feel/`). */
+  readonly fx: GameFeel;
   /** The scene's people (NPCs and the player's body). */
   private readonly characters: CharacterSystem;
   private footstepHandler: ((id: string, foot: Foot, speed: number, position: Vec3) => void) | null = null;
@@ -752,6 +755,7 @@ export class WorldRenderer {
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
+    this.fx = new GameFeel(this.scene, this.qualityPlan.tier, this.lowMemory, { object: (id) => this.sync.object(id) });
     this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light, this.contact.mesh);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
@@ -1116,6 +1120,7 @@ export class WorldRenderer {
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
     this.avatar.setLook(world.player.character);
     const done = this.sync.setWorld(world);
+    this.fx.setWorld(world);
     this.trackWaterBodies(world);
     this.archView.invalidate();
     this.invalidateCeilings();
@@ -1138,6 +1143,8 @@ export class WorldRenderer {
     // Ceilings measured while their geometry was still streaming in are stale.
     this.invalidateCeilings();
     if (this.disposed) return;
+    // Emitters follow the scene objects, which exist only now.
+    if (this.sync.world === world) this.fx.syncEmitters(world);
     // The first world of a session just materialises; later builds show their plan marks first.
     if (added.length > 0) this.startGrow(added, prev !== null);
     if (!this.framed) this.framed = this.frameContent({ duration: 0 });
@@ -1309,6 +1316,7 @@ export class WorldRenderer {
     this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
+    this.fx.setLighting(this.env.sun, this.env.hemi);
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
     this.boundsDirty = true;
     this.needsDraw = true;
@@ -1524,11 +1532,15 @@ export class WorldRenderer {
     this.needsDraw = true;
     const p = this.sync.addTransient(valid);
     if (p === false) log.warn(`addTransient: id "${valid.id}" already exists`);
-    else p.catch((e: unknown) => log.warn(`transient ${valid.id}: ${errorMessage(e)}`));
+    else {
+      if (valid.vfx) void p.then(() => this.fx.vfx.setEmitter(valid.id, valid.vfx ?? null, this.sync.object(valid.id) ?? null), () => undefined);
+      p.catch((e: unknown) => log.warn(`transient ${valid.id}: ${errorMessage(e)}`));
+    }
   }
 
   /** Remove a runtime-spawned entity. */
   removeTransient(id: EntityId): void {
+    this.fx.vfx.setEmitter(id, null, null);
     if (this.sync.removeTransient(id)) this.needsDraw = true;
   }
 
@@ -2373,6 +2385,9 @@ export class WorldRenderer {
     const t0 = now();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
+    // An idle editor (`animate: false`) freezes the effects like the weather, so it stops drawing.
+    const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
     this.adaptEye(step);
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     if (this.sync.viewNeedsUpdate) this.needsDraw = true;
@@ -2393,7 +2408,8 @@ export class WorldRenderer {
     if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
     if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
-    if (opts.animate !== false && this.stepAnimations(step)) this.needsDraw = true;
+    if (opts.animate !== false && this.stepAnimations(gameStep)) this.needsDraw = true;
+    if (opts.animate !== false && this.fx.animating) this.needsDraw = true;
     this.stepWater(step, opts.animate !== false);
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
     // and merge building geometry only once nothing animates any more.
@@ -2438,7 +2454,12 @@ export class WorldRenderer {
     this.needsDraw = false;
     this.highlighter.update();
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
-    this.draw();
+    this.fx.beforeDraw(this.perspective);
+    try {
+      this.draw();
+    } finally {
+      this.fx.afterDraw(this.perspective);
+    }
     this.framesDrawn++;
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
@@ -3634,6 +3655,7 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    this.fx.dispose();
     this.capture?.end();
     this.capture = null;
     this.disposed = true;

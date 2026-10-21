@@ -34,6 +34,7 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
     setShowColliders: () => undefined,
     setStatsWhileEditing: () => undefined,
     setPointerLock: () => undefined,
+    setReducedMotion: () => undefined,
     setSelection: () => undefined,
     setGizmo: () => undefined,
     setGizmoOptions: () => undefined,
