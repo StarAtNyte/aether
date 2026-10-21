@@ -2180,11 +2180,11 @@ lights the building the analytic floor bounce and interior fill of section 30 ar
 so no material recompiles).
 
 **Eye and shadows.** The eye's exposure comes from the volume at the camera (mean visibility, bounce and the direct
-light of lamps within 12 m on the storey, in the eye's room when the lamp is confined to one) against the open site: 75 % of the difference, between −2 and +4 stops,
+light of lamps within 12 m on the storey, in the eye's room when the lamp is confined to one) against the open site: 88 % of the difference (an interior photographer exposes for the room), between −2 and +4 stops,
 smoothed, snapped when the camera jumps. Inside, the sun's shadow map is fitted to the building's shell (crisp
 window-shaped sun patches instead of a 320 m frustum's blur). The eye's exposure now lives only in the renderer's
 tone mapping (post tiers applied it twice). The adapted eye also balances white (`interiorBalance`): the red-blue ratio
-of the room's light at the eye (sky through the windows and the bounce) beyond a lived-in 1.25 is 60 % taken out (a
+of the room's light at the eye (sky through the windows and the bounce) beyond a lived-in 1.25 is 45 % taken out (a
 wood floor's bounce turned white walls and ceilings sepia), a blue cast warmed, then a slight warm grade on top.
 
 **Lamps.** Lamps and spots (`sync/room-lamp.ts`: `RoomLamp`, `RoomSpot`, the latter an IES-aware spot) are clipped to

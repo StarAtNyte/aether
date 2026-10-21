@@ -55,7 +55,7 @@ export function adaptedLook(f: number): { exposure: number; envScale: number } {
 }
 
 /** Share of the light drop between outdoors and the eye's spot that the exposure makes up (a render keeps rooms darker than the garden). */
-export const VOLUME_ADAPT_SHARE = 0.75;
+export const VOLUME_ADAPT_SHARE = 0.88;
 /** Largest exposure boost (stops) the light volume asks for. */
 export const VOLUME_MAX_EV = 4;
 /** Largest exposure cut (stops): a room full of lamps at dusk is brighter than the dim garden. */
@@ -78,7 +78,7 @@ export function volumeExposure(inside: { vis: number; bounce: number; lamps?: nu
 }
 
 /** Share of a room's colour cast the interior white balance takes out (a photographer balances most of it, not all). */
-export const INTERIOR_BALANCE_SHARE = 0.6;
+export const INTERIOR_BALANCE_SHARE = 0.45;
 /** Red-blue ratio of room light that is left as it is (a lived-in room reads a little warm). */
 export const INTERIOR_NEUTRAL_WARMTH = 1.25;
 

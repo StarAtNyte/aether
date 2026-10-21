@@ -53,8 +53,8 @@ describe('interior white balance', () => {
     const t = interiorBalance({ r: 1.8, b: 1 });
     expect(t).toBeLessThan(0);
     const [r, , b] = whiteBalance(t, 0);
-    // The balanced red-blue ratio keeps 40 % of the cast beyond the neutral warmth: 1.25 · 1.44 ** 0.4.
-    expect((1.8 * r) / b).toBeCloseTo(1.25 * 1.44 ** 0.4, 3);
+    // The balanced red-blue ratio keeps 55 % of the cast beyond the neutral warmth: 1.25 · 1.44 ** 0.55.
+    expect((1.8 * r) / b).toBeCloseTo(1.25 * 1.44 ** 0.55, 3);
     // A blue room is warmed.
     expect(interiorBalance({ r: 0.8, b: 1 })).toBeGreaterThan(0);
     expect(interiorBalance({ r: 50, b: 1 })).toBe(-0.7);

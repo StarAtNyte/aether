@@ -354,7 +354,7 @@ const SPOT_SHARE = 0.5;
  * White-balance shift toward warm of a fully adapted interior view (grade temperature units), on top of the balance
  * that takes most of the room light's own cast out (`interiorBalance`).
  */
-const INTERIOR_WARMTH = 0.12;
+const INTERIOR_WARMTH = 0.18;
 
 /** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
 function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
