@@ -8,7 +8,7 @@ import { lazyBoundary } from '../components/ErrorBoundary';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
-import { FEATURED_TEMPLATES, MORE_TEMPLATES, TEMPLATES } from '../lib/examples';
+import { FEATURED_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES } from '../lib/examples';
 import { shortcut } from '../lib/keys';
 import { formatRelative } from '../lib/relativeTime';
 import type { HomeSection } from '../lib/router';
@@ -351,6 +351,21 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
             <p className="home-section__lead">Saved worlds, each built from the prompt on its card.</p>
             <div className="template-grid">
               {MORE_TEMPLATES.map((t) => (
+                <TemplateCard key={t.slug} template={t} onPick={pickTemplate} />
+              ))}
+            </div>
+          </section>
+        )}
+        {PHOTO_TEMPLATES.length > 0 && (
+          <section className="home-section" aria-labelledby="h-photo">
+            <div className="section-head">
+              <h2 id="h-photo" className="section-head__title">
+                Rooms rebuilt from a photo
+              </h2>
+            </div>
+            <p className="home-section__lead">Example rooms the agent reconstructed from a photograph (credited on each card). To rebuild your own, attach a photo in the chat.</p>
+            <div className="template-grid">
+              {PHOTO_TEMPLATES.map((t) => (
                 <TemplateCard key={t.slug} template={t} onPick={pickTemplate} />
               ))}
             </div>

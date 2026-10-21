@@ -20,10 +20,13 @@ export const TEMPLATE_KIND_LABEL: Readonly<Record<TemplateKind, string>> = Objec
 export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'featured'));
 
 /** The other shown templates ("More worlds"), in manifest order. */
-export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate'));
+export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin !== 'photo'));
+
+/** Example rooms rebuilt from a photograph (credited), in manifest order. */
+export const PHOTO_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin === 'photo'));
 
 /** Every template that is shown somewhere: featured first, then the others. */
-export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES]);
+export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...PHOTO_TEMPLATES]);
 
 /** Template by slug, including hidden ones (old links keep working); undefined when unknown. */
 export function templateBySlug(slug: string): WorldTemplate | undefined {
@@ -47,8 +50,8 @@ export interface ExamplePrompt {
   kind: TemplateKind;
 }
 
-/** The shown templates' prompts as example prompts. */
-export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));
+/** The shown templates' prompts as example prompts (photo rooms are left out: their prompt names a photo, it does not rebuild the room). */
+export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.filter((t) => t.origin !== 'photo').map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));
 
 /** Short suggestions offered as chips in the agent's empty state. */
 export const SUGGESTION_CHIPS: readonly string[] = Object.freeze([

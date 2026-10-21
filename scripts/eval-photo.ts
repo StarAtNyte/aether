@@ -43,6 +43,7 @@ import { encodePng } from '../apps/cli/src/mcp/png';
 import { GpuRoom } from './lib/gpu-room';
 import { createHeadlessProvider } from '../apps/bridge/src/headless';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
+import { initPhysics } from '@aether/physics';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -303,6 +304,7 @@ function roundRow(round: number, s: PhotoScoreView): Report['rounds'][number] {
 }
 
 async function main(): Promise<void> {
+  await initPhysics();
   const args = parseArgs(process.argv.slice(2));
   const live = args.mode === 'live' ? createHeadlessProvider(args.backend, { effort: args.effort, timeoutMs: 900_000 }) : null;
   const ids = args.photo === 'all' ? ['hotel', 'modern', 'pd1', 'pd2'] : args.photo.split(',');

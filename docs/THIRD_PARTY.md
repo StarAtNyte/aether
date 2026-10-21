@@ -550,6 +550,13 @@ WebCodecs or MediaRecorder.
 | `tests/fixtures/photo/bedroom-pd-1.jpg` (`59888d02…7907`) | [USVI IMG 5175](https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg), Government of the United States Virgin Islands | Public domain |
 | `tests/fixtures/photo/bedroom-pd-2.jpg` (`61970ccc…5c73`) | [USVI IMG 5201](https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg), Government of the United States Virgin Islands | Public domain |
 
+The four photographs above are also the sources of the example rooms in the
+studio's gallery ("Rooms rebuilt from a photo", `apps/studio/public/templates/worlds/photo-*.json`
+and their `photo-*.webp` thumbnails). Each world is the output of the photo-to-room flow replayed from
+the recorded transcript in `tests/fixtures/photo/` (`npm run showcase:photo-rooms`); the photographs
+themselves are not shipped with the app, only the reconstructed 3D rooms and a render of each. The
+card names the photographer and licence. Only CC0 and public-domain photographs are used.
+
 A CC BY photograph is used locally by `scripts/eval-photo.ts`
 (`bedroom-ccby-modern.jpg`) but is not committed; only the model transcript of
 that run (`tests/fixtures/photo/modern.r2.transcript.json`, text) is.

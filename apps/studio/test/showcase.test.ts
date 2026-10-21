@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { validateWorld } from '@aether/core';
 import { describe, expect, it, vi } from 'vitest';
-import { FEATURED_TEMPLATES, MORE_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
+import { FEATURED_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
 import { SHOWCASE } from '../src/showcase/manifest';
 import { loadTemplateThumbnail, loadTemplateWorld, readCapped, type FetchLike } from '../src/showcase/load';
 import { FLAGSHIPS } from '../../../packages/agent/src/providers/mock/showcase/index';
@@ -34,6 +34,19 @@ describe('showcase manifest', () => {
     for (const e of gallery.filter((x) => x.shot)) expect(existsSync(fileURLToPath(new URL(`../../../docs/screenshots/gallery/${e.shot}`, import.meta.url))), e.shot).toBe(true);
   });
 
+  it('credits every photo room: permissive licence, a listed fixture photo, recorded in THIRD_PARTY', () => {
+    const rooms = SHOWCASE.filter((e) => e.origin === 'photo');
+    expect(rooms.length).toBe(4);
+    const thirdParty = readFileSync(fileURLToPath(new URL('../../../docs/THIRD_PARTY.md', import.meta.url)), 'utf8');
+    for (const e of rooms) {
+      expect(e.photo, e.slug).toBeDefined();
+      expect(['CC0 1.0', 'Public domain'], e.slug).toContain(e.photo?.licence);
+      expect(existsSync(fileURLToPath(new URL(`../../../tests/fixtures/photo/${e.photo?.file}`, import.meta.url))), e.slug).toBe(true);
+      expect(thirdParty, e.slug).toContain(`tests/fixtures/photo/${e.photo?.file}`);
+      expect(thirdParty, e.slug).toContain(e.photo?.url ?? '');
+    }
+  });
+
   it('ships a thumbnail (WebP ≤ 30 KB) and a valid saved world for every entry', () => {
     for (const e of SHOWCASE) {
       const thumb = pub(`templates/${e.slug}.webp`);
@@ -51,7 +64,7 @@ describe('showcase manifest', () => {
   it('derives the shown lists from curation (featured first, hidden nowhere)', () => {
     expect(FEATURED_TEMPLATES.every((t) => t.curation === 'featured')).toBe(true);
     expect(MORE_TEMPLATES.every((t) => t.curation === 'candidate')).toBe(true);
-    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...MORE_TEMPLATES]);
+    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...PHOTO_TEMPLATES]);
     expect(TEMPLATES.some((t) => t.curation === 'hidden')).toBe(false);
     expect(templateBySlug('lantern-isles')?.title).toBe('Lantern Isles');
   });

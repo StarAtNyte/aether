@@ -36,10 +36,22 @@ export interface ShowcaseEntry {
   prompt: string;
   kind: TemplateKind;
   curation: Curation;
-  /** 'flagship': an art-directed showcase world; 'gallery': a saved gallery render. */
-  origin: 'flagship' | 'gallery';
+  /** 'flagship': an art-directed showcase world; 'gallery': a saved gallery render; 'photo': an example room rebuilt from a photograph. */
+  origin: 'flagship' | 'gallery' | 'photo';
   /** Gallery screenshot (in docs/screenshots/gallery) the thumbnail was cut from. */
   shot?: string;
+  /** For `origin: 'photo'`: the photograph the room was rebuilt from (credit, licence, source page; see docs/THIRD_PARTY.md). */
+  photo?: PhotoCredit;
+}
+
+/** Credit of the photograph an example room was rebuilt from (permissive licences only). */
+export interface PhotoCredit {
+  /** Fixture id of the photo (tests/fixtures/photo/<file>). */
+  file: string;
+  author: string;
+  licence: string;
+  /** Page of the photograph. */
+  url: string;
 }
 
 /** Every bundled default project, in display order. */
@@ -84,4 +96,9 @@ export const SHOWCASE: readonly ShowcaseEntry[] = Object.freeze([
   { slug: 'coin-rush', title: 'Coin rush', kind: 'game', curation: 'hidden', origin: 'gallery', shot: 'a-coin-collecting-game-grab-8.png', description: 'Grab 8 coins before time runs out.', prompt: 'a coin collecting game: grab 8 coins before time runs out' },
   { slug: 'space-rocks', title: 'Asteroids in space', kind: 'scene', curation: 'hidden', origin: 'gallery', shot: 'an-asteroid-field-in-space.png', description: 'Drifting rocks against a nebula.', prompt: 'an asteroid field in space' },
   { slug: 'ten-pin-bowling', title: 'Ten-pin bowling', kind: 'physics', curation: 'hidden', origin: 'gallery', shot: 'a-bowling-alley-with-ten-pins.png', description: 'Neon lanes and a full rack of pins.', prompt: 'a bowling alley with ten pins' },
+  // --- Example rooms rebuilt from a photograph (saved runs of the photo-to-room flow; credit on each card) ---
+  { slug: 'photo-hotel-bedroom', title: 'Hotel bedroom (from a photo)', kind: 'architecture', curation: 'candidate', origin: 'photo', description: 'A hotel bedroom with a tall window wall, rebuilt from a photograph: walk it, open the doors and change it by chat.', prompt: 'Make this hotel bedroom in 3D', photo: { file: 'bedroom-cc0-hotel.jpg', author: 'Markus Spiske', licence: 'CC0 1.0', url: 'https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg' } },
+  { slug: 'photo-twin-room', title: 'Twin room (from a photo)', kind: 'architecture', curation: 'candidate', origin: 'photo', description: 'A twin room with two single beds and a wardrobe, rebuilt from a photograph.', prompt: 'Recreate this twin room from the photo', photo: { file: 'bedroom-cc0-twin.jpg', author: 'Profpcde', licence: 'CC0 1.0', url: 'https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg' } },
+  { slug: 'photo-four-poster', title: 'Four-poster bedroom (from a photo)', kind: 'architecture', curation: 'candidate', origin: 'photo', description: 'A white bedroom with a four-poster bed and beams, rebuilt from a photograph.', prompt: 'Make this four-poster bedroom in 3D', photo: { file: 'bedroom-pd-1.jpg', author: 'Government of the United States Virgin Islands', licence: 'Public domain', url: 'https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg' } },
+  { slug: 'photo-vaulted-bedroom', title: 'Vaulted bedroom (from a photo)', kind: 'architecture', curation: 'candidate', origin: 'photo', description: 'A bright bedroom under a white vaulted ceiling with a zigzag rug, rebuilt from a photograph.', prompt: 'Make this vaulted bedroom in 3D', photo: { file: 'bedroom-pd-2.jpg', author: 'Government of the United States Virgin Islands', licence: 'Public domain', url: 'https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg' } },
 ] satisfies ShowcaseEntry[]);

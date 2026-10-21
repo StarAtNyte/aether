@@ -36,6 +36,11 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
         <span className="card__desc" title={`${template.description}\nPrompt: “${template.prompt}”`}>
           {template.description}
         </span>
+        {template.photo && (
+          <span className="card__desc" title={`Photo: ${template.photo.author}, ${template.photo.licence}\n${template.photo.url}`}>
+            Rebuilt from a photo by {template.photo.author} ({template.photo.licence})
+          </span>
+        )}
       </span>
     </button>
   );
