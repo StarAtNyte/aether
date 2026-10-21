@@ -1,0 +1,426 @@
+{
+ "licence": "CC0-1.0",
+ "licenceUrl": "https://polyhaven.com/license",
+ "sources": [
+  {
+   "id": "shrub_01",
+   "page": "https://polyhaven.com/a/shrub_01",
+   "author": "Rico Cilliers"
+  },
+  {
+   "id": "shrub_03",
+   "page": "https://polyhaven.com/a/shrub_03",
+   "author": "Rico Cilliers"
+  },
+  {
+   "id": "shrub_04",
+   "page": "https://polyhaven.com/a/shrub_04",
+   "author": "Rico Cilliers"
+  },
+  {
+   "id": "fern_02",
+   "page": "https://polyhaven.com/a/fern_02",
+   "author": "Rob Tuytel, Rico Cilliers"
+  },
+  {
+   "id": "grass_medium_01",
+   "page": "https://polyhaven.com/a/grass_medium_01",
+   "author": "Rob Tuytel, Rico Cilliers"
+  }
+ ],
+ "width": 1024,
+ "height": 960,
+ "file": "99cb6c9c44f1d54c",
+ "sprites": [
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 693,
+   "y": 420,
+   "w": 111,
+   "h": 160,
+   "mean": [
+    0.168,
+    0.2535,
+    0.0491
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 808,
+   "y": 420,
+   "w": 107,
+   "h": 160,
+   "mean": [
+    0.2757,
+    0.3964,
+    0.0745
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 0,
+   "y": 616,
+   "w": 111,
+   "h": 160,
+   "mean": [
+    0.3337,
+    0.278,
+    0.0455
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 115,
+   "y": 616,
+   "w": 103,
+   "h": 160,
+   "mean": [
+    0.3354,
+    0.3028,
+    0.0443
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 222,
+   "y": 616,
+   "w": 103,
+   "h": 160,
+   "mean": [
+    0.1745,
+    0.2581,
+    0.0416
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_01",
+   "x": 329,
+   "y": 616,
+   "w": 88,
+   "h": 160,
+   "mean": [
+    0.3086,
+    0.4192,
+    0.1028
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 421,
+   "y": 616,
+   "w": 133,
+   "h": 160,
+   "mean": [
+    0.1797,
+    0.207,
+    0.02
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 558,
+   "y": 616,
+   "w": 133,
+   "h": 160,
+   "mean": [
+    0.2784,
+    0.2907,
+    0.0305
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 695,
+   "y": 616,
+   "w": 133,
+   "h": 160,
+   "mean": [
+    0.2681,
+    0.2171,
+    0.0179
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 832,
+   "y": 616,
+   "w": 138,
+   "h": 160,
+   "mean": [
+    0.2125,
+    0.2271,
+    0.0201
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 0,
+   "y": 780,
+   "w": 137,
+   "h": 160,
+   "mean": [
+    0.2356,
+    0.1899,
+    0.0172
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 141,
+   "y": 780,
+   "w": 128,
+   "h": 160,
+   "mean": [
+    0.2596,
+    0.2802,
+    0.0321
+   ]
+  },
+  {
+   "use": "leaf-broad",
+   "source": "shrub_03",
+   "x": 273,
+   "y": 780,
+   "w": 118,
+   "h": 160,
+   "mean": [
+    0.2743,
+    0.1999,
+    0.017
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 486,
+   "y": 0,
+   "w": 66,
+   "h": 192,
+   "mean": [
+    0.2492,
+    0.254,
+    0.1103
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 556,
+   "y": 0,
+   "w": 88,
+   "h": 192,
+   "mean": [
+    0.1677,
+    0.132,
+    0.0657
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 648,
+   "y": 0,
+   "w": 89,
+   "h": 192,
+   "mean": [
+    0.1649,
+    0.1925,
+    0.0893
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 741,
+   "y": 0,
+   "w": 52,
+   "h": 192,
+   "mean": [
+    0.2834,
+    0.2909,
+    0.1213
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 797,
+   "y": 0,
+   "w": 83,
+   "h": 192,
+   "mean": [
+    0.239,
+    0.2591,
+    0.1148
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 884,
+   "y": 0,
+   "w": 82,
+   "h": 192,
+   "mean": [
+    0.3166,
+    0.2263,
+    0.1135
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 0,
+   "y": 420,
+   "w": 84,
+   "h": 192,
+   "mean": [
+    0.2014,
+    0.1784,
+    0.0808
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 88,
+   "y": 420,
+   "w": 85,
+   "h": 192,
+   "mean": [
+    0.1746,
+    0.2058,
+    0.0887
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 177,
+   "y": 420,
+   "w": 94,
+   "h": 192,
+   "mean": [
+    0.1687,
+    0.1958,
+    0.0815
+   ]
+  },
+  {
+   "use": "leaf-narrow",
+   "source": "shrub_04",
+   "x": 275,
+   "y": 420,
+   "w": 74,
+   "h": 192,
+   "mean": [
+    0.5132,
+    0.2235,
+    0.1277
+   ]
+  },
+  {
+   "use": "frond",
+   "source": "fern_02",
+   "x": 0,
+   "y": 0,
+   "w": 74,
+   "h": 416,
+   "mean": [
+    0.0576,
+    0.084,
+    0.0144
+   ]
+  },
+  {
+   "use": "frond",
+   "source": "fern_02",
+   "x": 78,
+   "y": 0,
+   "w": 81,
+   "h": 416,
+   "mean": [
+    0.0664,
+    0.0986,
+    0.0194
+   ]
+  },
+  {
+   "use": "frond",
+   "source": "fern_02",
+   "x": 163,
+   "y": 0,
+   "w": 67,
+   "h": 416,
+   "mean": [
+    0.0725,
+    0.1083,
+    0.019
+   ]
+  },
+  {
+   "use": "frond",
+   "source": "fern_02",
+   "x": 234,
+   "y": 0,
+   "w": 135,
+   "h": 416,
+   "mean": [
+    0.0871,
+    0.1232,
+    0.0136
+   ]
+  },
+  {
+   "use": "frond",
+   "source": "fern_02",
+   "x": 373,
+   "y": 0,
+   "w": 109,
+   "h": 416,
+   "mean": [
+    0.0778,
+    0.1222,
+    0.0121
+   ]
+  },
+  {
+   "use": "tuft",
+   "source": "grass_medium_01",
+   "x": 353,
+   "y": 420,
+   "w": 336,
+   "h": 162,
+   "mean": [
+    0.0814,
+    0.0949,
+    0.0212
+   ]
+  },
+  {
+   "use": "tuft",
+   "source": "grass_medium_01",
+   "x": 395,
+   "y": 780,
+   "w": 336,
+   "h": 113,
+   "mean": [
+    0.0924,
+    0.0992,
+    0.0262
+   ]
+  }
+ ]
+}

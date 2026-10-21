@@ -16,6 +16,7 @@ import { applyAntiTile, FINISH_NODES_KEY, groundWeather, GROUND_PATTERN_FINISHES
 import { applySplat, SPLAT_LAYERS } from './terrain-splat';
 import { applyFacadeGlow, facadeGlow, nightGlow } from './facade-glow';
 import { FoliageTextures } from './foliage-textures';
+import { applyFoliageShading } from './foliage-shading';
 import { applyWater, PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './water';
 import { SURFACE_TILE_METRES } from './surface-textures';
 import type { WaterTier } from './water-params';
@@ -110,6 +111,7 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     m.alphaTest = 0.5;
     m.shadowSide = DoubleSide;
     m.userData['aetherFoliage'] = r.foliage;
+    applyFoliageShading(m);
   }
   if (!ghostLike && r.splat && finishes && layered) {
     m.roughness = 1;

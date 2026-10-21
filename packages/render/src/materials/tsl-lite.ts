@@ -85,6 +85,7 @@ export interface Tsl {
   cameraWorldMatrix: Nd;
   cameraProjectionMatrixInverse: Nd;
   materialColor: Nd;
+  diffuseColor: Nd;
   screenUV: Nd;
   faceDirection: Nd;
   time: Nd;

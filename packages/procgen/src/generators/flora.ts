@@ -17,8 +17,9 @@ import type { Vec3 } from '@aether/core';
 import type { InternalApi } from '../api';
 import { MeshBuilder, type Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
-import { mixLinear, type RGB } from '../color';
+import { mixHex, mixLinear, type RGB } from '../color';
 import { defineGenerator, hullOf, lin, pColor, pInt, pNum, pVariant, shade, triBoxUvs } from './kit';
+import { foliageCellUv, FOLIAGE_CELLS } from '../foliage-pixels';
 
 /** Bark: the photographed bark surface, tinted per vertex. */
 const BARK = { finish: 'bark', vertexColors: true } as const;
@@ -55,15 +56,17 @@ class Sheets {
    * leaf tips, blade tips). `anchor` 'bottom': `o` is the middle of the bottom edge; 'left': the middle of
    * the left edge (needle sprays and fronds grow along `u` from their base).
    */
-  add(o: Vec3, u: Vec3, v: Vec3, w: number, h: number, anchor: 'bottom' | 'left', n: Vec3, base: RGB, top: RGB): void {
+  add(o: Vec3, u: Vec3, v: Vec3, w: number, h: number, anchor: 'bottom' | 'left', n: Vec3, base: RGB, top: RGB, cell = 0): void {
     const ox = anchor === 'bottom' ? -w / 2 : 0;
     const oy = anchor === 'bottom' ? 0 : -h / 2;
     const corner = (cu: number, cv: number): Vec3 => [o[0] + u[0] * (ox + cu * w) + v[0] * (oy + cv * h), o[1] + u[1] * (ox + cu * w) + v[1] * (oy + cv * h), o[2] + u[2] * (ox + cu * w) + v[2] * (oy + cv * h)];
+    // The card shows one of the atlas's variants (see `foliageCellUv`): tips at the cell's top edge, base at its bottom.
+    const [u0, v0, u1, v1] = foliageCellUv(cell);
     const c: Array<[Vec3, number, number]> = [
-      [corner(0, 0), 0, 1],
-      [corner(1, 0), 1, 1],
-      [corner(1, 1), 1, 0],
-      [corner(0, 1), 0, 0],
+      [corner(0, 0), u0, v1],
+      [corner(1, 0), u1, v1],
+      [corner(1, 1), u1, v0],
+      [corner(0, 1), u0, v0],
     ];
     const ids = c.map(([p, tu, tv]) => this.b.vertex(p[0], p[1], p[2], n[0], n[1], n[2], tu, tv));
     this.b.tri(ids[0] as number, ids[1] as number, ids[2] as number);
@@ -81,6 +84,25 @@ class Sheets {
     m.colors = Float32Array.from(this.colors);
     return m;
   }
+}
+
+/**
+ * Card size and count for a crown: leaves have a real size, so a card (a cluster of leaves) has one too, whatever the
+ * plant's size. `scaled` is the old size-proportional card and `count` its count; the card shrinks toward `real`
+ * metres and the count grows to keep the same leaf cover, up to `maxCount` (past it, cards stay a little larger).
+ */
+export function cardBudget(count: number, scaled: number, real: number, maxCount: number): { count: number; size: number } {
+  if (!(count > 0) || !(scaled > 0)) return { count: Math.max(0, Math.round(count)), size: Math.max(0.01, scaled) };
+  const size = Math.min(scaled, Math.max(0.05, real));
+  const want = count * (scaled / size) ** 2;
+  if (want <= maxCount) return { count: Math.round(want), size };
+  const n = Math.max(count, maxCount);
+  return { count: Math.round(n), size: scaled * Math.sqrt(count / n) };
+}
+
+/** A seeded atlas cell for the next card (every card picks one of the atlas's variants). */
+function cellOf(api: InternalApi): number {
+  return Math.min(FOLIAGE_CELLS * FOLIAGE_CELLS - 1, Math.floor(api.rng() * FOLIAGE_CELLS * FOLIAGE_CELLS));
 }
 
 /** Seeded point in a unit ball with a bias toward the surface (leaves sit on the outside of a crown). */
@@ -129,9 +151,17 @@ function blossomTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB 
   return { deep: lin(shade('#d07f94', -0.08)), mid: lin(shade(base, 0.12)), sun: lin(shade(base, 0.3)), warm: lin('#fff6f8') };
 }
 
-/** Leaf tones of a crown from one base colour (linear): deep shade, mid, sunlit, and a yellowing accent. */
+/**
+ * Leaf tones of a crown from one base colour (linear): deep shade, mid, sunlit, and a yellowing accent. Sunlit
+ * leaves are the same green made brighter and a little yellower, never mixed toward white: a white mix reads as
+ * pale, papery foliage. The deep tone leans slightly blue, as shade under a crown does.
+ */
 function leafTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
-  return { deep: lin(shade(base, -0.5)), mid: lin(shade(base, 0.06)), sun: lin(shade(base, 0.32)), warm: lin(shade('#a9b83a', 0.05)) };
+  const b = lin(base);
+  const deep: RGB = [b[0] * 0.3, b[1] * 0.34, b[2] * 0.4];
+  const sunny = lin(mixHex(base, '#a8b83c', 0.28));
+  const sun: RGB = [sunny[0] * 1.3, sunny[1] * 1.3, sunny[2] * 1.15];
+  return { deep, mid: [b[0] * 1.02, b[1] * 1.04, b[2]], sun, warm: lin(shade('#a9b83a', 0.05)) };
 }
 
 const SUN: Vec3 = unit([0.35, 0.8, 0.3]);
@@ -173,7 +203,7 @@ function crownCards(
       mixLinear(tones.deep, tmp, 0.7, base);
       mixLinear(tmp, tones.sun, 0.1, top);
       const s = 0.8 + api.rng() * 0.5;
-      sheets.add(p, u, v, card.w * s, card.h * s, 'bottom', n, base, [tmp[0] + (top[0] - tmp[0]), tmp[1] + (top[1] - tmp[1]), tmp[2] + (top[2] - tmp[2])]);
+      sheets.add(p, u, v, card.w * s, card.h * s, 'bottom', n, base, [tmp[0] + (top[0] - tmp[0]), tmp[1] + (top[1] - tmp[1]), tmp[2] + (top[2] - tmp[2])], cellOf(api));
     }
   }
 }
@@ -266,13 +296,14 @@ const treeBroadleaf = defineGenerator({
     api.add(wood, BARK);
 
     const blossoming = p.num('blossom') > 0.5;
-    const count = Math.round((blossoming ? 440 : 520) * detail * leafShare);
+    const budget = cardBudget((blossoming ? 440 : 520) * detail * leafShare, H * 0.1, Math.min(0.85, Math.max(0.45, 0.4 + H * 0.04)), 1000 * Math.max(0.3, detail));
+    const count = budget.count;
     if (count < 8) {
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
       return api.build();
     }
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: H * (blossoming ? 0.1 : 0.1), h: H * (blossoming ? 0.1 : 0.1) }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
+    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: budget.size, h: budget.size }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage(blossoming ? 'blossom' : 'broadleaf'));
@@ -337,9 +368,10 @@ const treeBirch = defineGenerator({
     });
     barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
     api.add(wood, { ...BARK, color: '#ffffff' });
-    const count = Math.round(430 * detail);
+    const budget = cardBudget(430 * detail, H * 0.08, Math.min(0.6, Math.max(0.35, 0.3 + H * 0.03)), 950 * Math.max(0.3, detail));
+    const count = budget.count;
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownV, crownR] }, count, { w: H * 0.08, h: H * 0.08 }, leafTones(p.color('color')), 0.18);
+    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownV, crownR] }, count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.18);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage('shrub'));
@@ -422,14 +454,14 @@ const treeSpruce = defineGenerator({
             mixLinear(top, white, 0.7, top);
             mixLinear(baseC, white, 0.45, baseC);
           }
-          sheets.add([0, y - droop * 0.1 * layer, 0], along, across, len, wid, 'left', n, baseC, top);
+          sheets.add([0, y - droop * 0.1 * layer, 0], along, across, len, wid, 'left', n, baseC, top, cellOf(api));
         }
       }
     }
     // The leader: a tuft of upright needles.
     for (const turn of [0, Math.PI / 2]) {
       const u: Vec3 = [Math.cos(turn), 0, Math.sin(turn)];
-      sheets.add([0, H * 0.9, 0], [0, 1, 0], u, H * 0.13, H * 0.12, 'left', [0, 1, 0], tones.mid, tones.sun);
+      sheets.add([0, H * 0.9, 0], [0, 1, 0], u, H * 0.13, H * 0.12, 'left', [0, 1, 0], tones.mid, tones.sun, cellOf(api));
     }
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, 0, 0);
@@ -477,9 +509,10 @@ const shrub = defineGenerator({
       barkUvs(stems, 0, 0);
       api.add(stems, BARK);
     }
-    const count = Math.round(130 * detail);
+    const budget = cardBudget(130 * detail, S * 0.3, Math.min(0.42, Math.max(0.26, 0.22 + S * 0.07)), 420 * Math.max(0.3, detail));
+    const count = budget.count;
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: [0, R * 0.6, 0], r: [R, R * 0.8, R] }, count, { w: S * 0.3, h: S * 0.3 }, leafTones(p.color('color')), 0.08);
+    crownCards(api, sheets, clusters, { c: [0, R * 0.6, 0], r: [R, R * 0.8, R] }, count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.08);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage('shrub'));
@@ -523,8 +556,9 @@ const fern = defineGenerator({
       const first = unit([mid[0], mid[1], mid[2]]);
       const second = unit([end[0] - mid[0], end[1] - mid[1], end[2] - mid[2]]);
       const top: RGB = [tmp[0], tmp[1], tmp[2]];
-      sheets.add([0, 0.02, 0], first, side, Math.hypot(...mid), len * 0.62, 'left', n, baseC, top);
-      sheets.add(mid, second, side, Math.hypot(end[0] - mid[0], end[1] - mid[1], end[2] - mid[2]), len * 0.55, 'left', n, tmp.slice() as unknown as RGB, top);
+      const cell = cellOf(api);
+      sheets.add([0, 0.02, 0], first, side, Math.hypot(...mid), len * 0.62, 'left', n, baseC, top, cell);
+      sheets.add(mid, second, side, Math.hypot(end[0] - mid[0], end[1] - mid[1], end[2] - mid[2]), len * 0.55, 'left', n, tmp.slice() as unknown as RGB, top, cell);
     }
     const m = sheets.build(api);
     if (m) api.add(m, foliage('fern'));
@@ -555,7 +589,7 @@ const meadowGrass = defineGenerator({
       const lean = (api.rng() - 0.5) * 0.25;
       const v = unit([lean * Math.cos(a + 1.57), 1, lean * Math.sin(a + 1.57)]);
       const n = unit([(api.rng() - 0.5) * 0.3, 1, (api.rng() - 0.5) * 0.3]);
-      sheets.add([(api.rng() - 0.5) * S * 0.12, 0, (api.rng() - 0.5) * S * 0.12], u, v, S * api.range(0.9, 1.2), S * api.range(0.85, 1.15), 'bottom', n, root, tint);
+      sheets.add([(api.rng() - 0.5) * S * 0.12, 0, (api.rng() - 0.5) * S * 0.12], u, v, S * api.range(0.9, 1.2), S * api.range(0.85, 1.15), 'bottom', n, root, tint, cellOf(api));
     }
     const m = sheets.build(api);
     if (m) api.add(m, foliage('grass'));
@@ -588,7 +622,7 @@ const wildflowers = defineGenerator({
       const n = unit([(api.rng() - 0.5) * 0.3, 1, (api.rng() - 0.5) * 0.3]);
       const bloom = lin(shade(palette[Math.floor(api.rng() * palette.length)] as string, (api.rng() - 0.5) * 0.18));
       // The vertex colour ramps from leaf green to the flower colour at about two thirds of the card's height.
-      sheets.add([(api.rng() - 0.5) * S * 0.2, 0, (api.rng() - 0.5) * S * 0.2], u, v, S * api.range(0.9, 1.25), S * api.range(0.85, 1.15), 'bottom', n, stem, bloom);
+      sheets.add([(api.rng() - 0.5) * S * 0.2, 0, (api.rng() - 0.5) * S * 0.2], u, v, S * api.range(0.9, 1.25), S * api.range(0.85, 1.15), 'bottom', n, stem, bloom, cellOf(api));
     }
     const m = sheets.build(api);
     if (m) api.add(m, foliage('flower'));

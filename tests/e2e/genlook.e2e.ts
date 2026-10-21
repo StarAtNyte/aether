@@ -91,7 +91,7 @@ async function build(page: Page, url: string, prompt: string): Promise<void> {
 async function capture(page: Page, file: string): Promise<void> {
   await page.waitForTimeout(1800);
   // A building's light volume bakes once it has settled: stills wait for the finished light.
-  await page.waitForFunction(() => window.__aether?.simulation?.renderer.lightVolumeBaking !== true, null, { timeout: 60_000, polling: 250 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__aether?.simulation?.renderer.lightVolumeBaking !== true && window.__aether?.simulation?.renderer.foliagePending !== true, null, { timeout: 60_000, polling: 250 }).catch(() => undefined);
   await page.waitForFunction(() => (window.__aether?.simulation?.renderer.refineProgress ?? 1) >= 0.98, null, { timeout: 40_000, polling: 500 }).catch(() => undefined);
   const data = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w as number, height: h as number, mime: 'image/png' })) ?? null, [W, H]);
   if (!data) throw new Error('capture failed');

@@ -4,7 +4,7 @@
  * optional wall edit script, and renders each camera of a JSON file with the
  * final-render look.
  *
- * Run: `npm run build && npx tsx tests/e2e/archshots.e2e.ts --slug=skyline-penthouse --cams=cams.json --out=<dir> [--gpu] [--realtime] [--size=WxH] [--fov=deg] [--hour=17.5]`
+ * Run: `npm run build && npx tsx tests/e2e/archshots.e2e.ts --slug=skyline-penthouse --cams=cams.json --out=<dir> [--gpu|--intel] [--realtime] [--size=WxH] [--fov=deg] [--hour=17.5]`
  * `--hide=a,b` hides entities whose id starts with a prefix; `--set=id~path~value,…` overrides a property.
  * `cams.json`: `[{ "name": "living", "pos": [x, y, z], "target": [x, y, z], "walls": "up"|"cutaway"|"down" }]`
  */
@@ -33,6 +33,9 @@ const FX = (arg('fx') ?? '').split(',').filter(Boolean).map((p) => p.split(':') 
 /** `--sunshadow=0`: switch the sun's shadow map off (isolates shadow artefacts). */
 const SUNSHADOW = arg('sunshadow');
 const GPU_ARGS = ['--ignore-gpu-blocklist', '--use-angle=vulkan', '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan', '--disable-vulkan-surface'];
+/** `--intel`: WebGL2 over ANGLE/GL-EGL on the integrated GPU (holds its context headless while the discrete GPU is busy). */
+const INTEL = ARGS.includes('--intel');
+const INTEL_ARGS = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];
 
 const startedAt = performance.now();
 function log(line: string): void {
@@ -75,7 +78,7 @@ async function main(): Promise<void> {
   try {
     browser = FIREFOX
       ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } })
-      : await chromium.launch({ executablePath: findChrome(), args: GPU ? ['--enable-unsafe-webgpu', ...GPU_ARGS] : [...CHROME_ARGS] });
+      : await chromium.launch({ executablePath: findChrome(), args: INTEL ? INTEL_ARGS : GPU ? ['--enable-unsafe-webgpu', ...GPU_ARGS] : [...CHROME_ARGS] });
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
     await context.addInitScript({ content: SKIP_FIRST_RUN });
     await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
@@ -119,6 +122,8 @@ async function main(): Promise<void> {
         (sim?.renderer.camera as unknown as { updateProjectionMatrix(): void }).updateProjectionMatrix();
       }, [cam.pos, cam.target, cam.fov ?? Number(arg('fov') ?? 0)] as const);
       await page.waitForTimeout(1500);
+      // Building light and photographed leaves finish loading before a still.
+      await page.waitForFunction(() => window.__aether?.simulation?.renderer.lightVolumeBaking !== true && window.__aether?.simulation?.renderer.foliagePending !== true, null, { timeout: 60_000, polling: 250 }).catch(() => log('  (light or foliage still loading)'));
       if (!REALTIME) await page.waitForFunction(() => (window.__aether?.simulation?.renderer.refineProgress ?? 1) >= 0.98, null, { timeout: 120_000, polling: 400 }).catch(() => log('  (refinement unfinished)'));
       const dataUrl = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w, height: h, mime: 'image/png' })) ?? null, [W, H] as const);
       if (!dataUrl?.startsWith('data:image/png;base64,')) throw new Error(`${cam.name}: capture failed`);

@@ -35,6 +35,7 @@ import { INTERIOR_FILL, interiorBounce } from './bounce';
 import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
+import { setFoliageSun } from '../materials/foliage-shading';
 
 export { MAX_FOG_DENSITY };
 
@@ -313,6 +314,7 @@ export class EnvironmentRig {
     this.materials.setWetness(env.weather === 'rain' ? 1 : 0);
     this.sun.color.set(s.lightColor);
     this.sun.intensity = s.lightIntensity;
+    setFoliageSun(s.lightDirection, this.sun.color, s.lightIntensity);
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;

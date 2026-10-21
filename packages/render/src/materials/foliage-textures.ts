@@ -1,26 +1,53 @@
 /**
- * Cut-out textures of the foliage materials (`material.foliage`): one RGBA card per kind, synthesised
- * on first use by `@aether/procgen` (`foliagePixels`, a few milliseconds each) and shared by every
+ * Cut-out textures of the foliage materials (`material.foliage`): one RGBA atlas of 2 × 2 card variants per kind,
+ * synthesised on first use by `@aether/procgen` (`foliagePixels`, a few milliseconds each) and shared by every
  * material of the cache. Colour is stored linear (vertex colours multiply it), alpha is the cut-out.
+ *
+ * When photographed leaves are enabled ({@link usePhotos}), the atlases of the kinds that have them (trees, shrubs,
+ * ferns, grass) are recomposed from the leaf sprite sheet once it has loaded (`foliage-photo.ts`), in place: the
+ * texture object and its size stay, so no material is rebuilt.
  */
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, ClampToEdgeWrapping, type Texture } from 'three';
 import { FOLIAGE_TEXTURE_SIZE, foliagePixels, type FoliageKind } from '@aether/procgen';
+import { composePhotoAtlas, loadLeafPhotos, PHOTO_KINDS, type LeafPhotos } from './foliage-photo';
 
 /** Lazily created, shared foliage card textures. */
 export class FoliageTextures {
   private readonly textures = new Map<FoliageKind, DataTexture>();
   private size = FOLIAGE_TEXTURE_SIZE;
+  private photoBase: string | null = null;
+  private photos: Promise<LeafPhotos | null> | null = null;
+  private upgrading = 0;
+  private disposed = false;
+  /** Called when a texture's pixels were replaced (the owner redraws). */
+  onChange: (() => void) | null = null;
 
-  /** Card edge length for textures created from now on (power of two; existing ones keep theirs). */
+  /** Atlas edge length for textures created from now on (power of two; existing ones keep theirs). */
   configure(size: number): void {
     if (this.textures.size === 0) this.size = Math.max(64, Math.min(1024, 2 ** Math.round(Math.log2(size))));
+  }
+
+  /**
+   * Compose the cards of trees, shrubs, ferns and grass from photographed leaves served at `baseUrl` (null: keep the
+   * procedural cards). Textures already created are upgraded too.
+   */
+  usePhotos(baseUrl: string | null): void {
+    if (baseUrl === this.photoBase) return;
+    this.photoBase = baseUrl;
+    this.photos = null;
+    if (baseUrl) for (const [kind, tex] of this.textures) this.upgrade(kind, tex);
+  }
+
+  /** Photographed cards are still being composed. */
+  get pending(): boolean {
+    return this.upgrading > 0;
   }
 
   /** The texture of a card kind (created on first use). */
   get(kind: FoliageKind): Texture {
     const hit = this.textures.get(kind);
     if (hit) return hit;
-    // Grass blades are hair-fine: the card gets twice the resolution so they survive the mip chain.
+    // Grass blades are hair-fine: the atlas gets twice the resolution so they survive the mip chain.
     const { size, rgba } = foliagePixels(kind, kind === 'grass' ? this.size * 2 : this.size);
     const tex = new DataTexture(rgba, size, size, RGBAFormat);
     // Linear ratios and a hard alpha: no colour-space conversion, clamped edges, trilinear mips.
@@ -34,7 +61,30 @@ export class FoliageTextures {
     tex.flipY = false;
     tex.needsUpdate = true;
     this.textures.set(kind, tex);
+    this.upgrade(kind, tex);
     return tex;
+  }
+
+  private upgrade(kind: FoliageKind, tex: DataTexture): void {
+    const base = this.photoBase;
+    if (!base || !PHOTO_KINDS.has(kind)) return;
+    this.photos ??= loadLeafPhotos(base);
+    const photos = this.photos;
+    this.upgrading++;
+    void photos
+      .then((p) => {
+        if (!p || this.disposed || this.photoBase !== base || this.textures.get(kind) !== tex) return;
+        const img = tex.image as { data: Uint8Array; width: number; height: number };
+        const px = composePhotoAtlas(kind, img.width, p.sheet, p.image);
+        if (!px || px.length !== img.data.length) return;
+        img.data.set(px);
+        tex.needsUpdate = true;
+        this.onChange?.();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.upgrading = Math.max(0, this.upgrading - 1);
+      });
   }
 
   /** Number of textures created. */
@@ -44,7 +94,10 @@ export class FoliageTextures {
 
   /** Release every texture. */
   dispose(): void {
+    this.disposed = true;
     for (const t of this.textures.values()) t.dispose();
     this.textures.clear();
+    void this.photos?.then((p) => p?.image.close()).catch(() => undefined);
+    this.photos = null;
   }
 }

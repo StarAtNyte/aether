@@ -14,8 +14,10 @@ import { rng } from '@aether/core';
 /** The foliage card kinds (mirrors `MaterialSpec.foliage`). */
 export type FoliageKind = 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern' | 'blossom' | 'flower';
 
-/** Default card edge length in pixels. */
-export const FOLIAGE_TEXTURE_SIZE = 256;
+/** Default atlas edge length in pixels (2 × 2 card variants of 256 px). */
+export const FOLIAGE_TEXTURE_SIZE = 512;
+/** Card variants per atlas axis: an atlas holds `FOLIAGE_CELLS²` different cards; a card's UVs pick one cell. */
+export const FOLIAGE_CELLS = 2;
 /** Largest edge the synthesiser accepts. */
 export const MAX_FOLIAGE_TEXTURE_SIZE = 1024;
 /** Alpha at or above which a pixel is solid (the renderer's alpha test). */
@@ -155,8 +157,8 @@ function stroke(c: Canvas, ax: number, ay: number, bx: number, by: number, width
 
 const WOOD: RGB = [0.5, 0.4, 0.3];
 
-function broadleafCard(n: number, small: boolean): Uint8Array {
-  const r = rng(small ? 0x5b1e : 0x0a1f);
+function broadleafCard(n: number, small: boolean, variant: number): Uint8Array {
+  const r = rng((small ? 0x5b1e : 0x0a1f) + variant * 0x9e37);
   const c = new Canvas(n);
   // A short leafy twig from the bottom centre: leaves sit along it and at its end, fanning outward.
   const base: [number, number] = [n * 0.5, n * 0.96];
@@ -180,8 +182,8 @@ function broadleafCard(n: number, small: boolean): Uint8Array {
   return c.bake();
 }
 
-function needleCard(n: number): Uint8Array {
-  const r = rng(0x7e21);
+function needleCard(n: number, variant: number): Uint8Array {
+  const r = rng(0x7e21 + variant * 0x9e37);
   const c = new Canvas(n);
   // A spray along +x (the branch) with paired needles sweeping forward: twig at mid height, tip on the right.
   const mid = n * 0.5;
@@ -202,8 +204,8 @@ function needleCard(n: number): Uint8Array {
   return c.bake();
 }
 
-function grassCard(n: number): Uint8Array {
-  const r = rng(0x6a55);
+function grassCard(n: number, variant: number): Uint8Array {
+  const r = rng(0x6a55 + variant * 0x9e37);
   const c = new Canvas(n);
   // Many thin, curved blades of different heights (a real tuft is dozens of hair-fine blades, not a few fat ones).
   const blades = 44;
@@ -238,8 +240,8 @@ function grassCard(n: number): Uint8Array {
   return c.bake();
 }
 
-function fernCard(n: number): Uint8Array {
-  const r = rng(0x3f09);
+function fernCard(n: number, variant: number): Uint8Array {
+  const r = rng(0x3f09 + variant * 0x9e37);
   const c = new Canvas(n);
   // A frond along +x with a gentle droop; leaflets in pairs shrinking toward the tip.
   const rib = (t: number): [number, number] => [n * (0.03 + 0.94 * t), n * (0.5 + 0.12 * t * t)];
@@ -293,8 +295,8 @@ function blossom(c: Canvas, cx: number, cy: number, r: number, tone: number): vo
   );
 }
 
-function blossomCard(n: number): Uint8Array {
-  const r = rng(0xb105);
+function blossomCard(n: number, variant: number): Uint8Array {
+  const r = rng(0xb105 + variant * 0x9e37);
   const c = new Canvas(n);
   // A flowering twig from the bottom centre: sprays of blossoms along and at the end of dark side twigs.
   const base: [number, number] = [n * 0.5, n * 0.97];
@@ -312,8 +314,8 @@ function blossomCard(n: number): Uint8Array {
   return c.bake();
 }
 
-function flowerCard(n: number): Uint8Array {
-  const r = rng(0xf10e);
+function flowerCard(n: number, variant: number): Uint8Array {
+  const r = rng(0xf10e + variant * 0x9e37);
   const c = new Canvas(n);
   // A clump of slim stems topped with open flowers. The card is neutral: the generator's vertex colours run from
   // leaf green at the bottom to the flower colour at the top, so stems come out green and heads coloured.
@@ -334,26 +336,52 @@ function flowerCard(n: number): Uint8Array {
   return c.bake();
 }
 
+/** One card of `kind`, `n` pixels square, variant `v` (a different seed). */
+function card(kind: FoliageKind, n: number, v: number): Uint8Array {
+  switch (kind) {
+    case 'broadleaf':
+      return broadleafCard(n, false, v);
+    case 'shrub':
+      return broadleafCard(n, true, v);
+    case 'needles':
+      return needleCard(n, v);
+    case 'grass':
+      return grassCard(n, v);
+    case 'fern':
+      return fernCard(n, v);
+    case 'blossom':
+      return blossomCard(n, v);
+    case 'flower':
+      return flowerCard(n, v);
+  }
+}
+
 /**
- * RGBA8 pixels (`size × size`) of a foliage card. Deterministic; `size` is clamped to a power of two between
- * 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}.
+ * RGBA8 pixels (`size × size`) of a foliage atlas: {@link FOLIAGE_CELLS} × {@link FOLIAGE_CELLS} card variants of
+ * `kind` (cell `i` at column `i % 2`, row `i / 2`, row 0 at the top of the image). Deterministic; `size` is clamped
+ * to a power of two between 32 and {@link MAX_FOLIAGE_TEXTURE_SIZE}.
  */
 export function foliagePixels(kind: FoliageKind, size: number = FOLIAGE_TEXTURE_SIZE): { size: number; rgba: Uint8Array } {
   const n = Math.max(32, Math.min(MAX_FOLIAGE_TEXTURE_SIZE, 2 ** Math.round(Math.log2(Math.max(32, size)))));
-  switch (kind) {
-    case 'broadleaf':
-      return { size: n, rgba: broadleafCard(n, false) };
-    case 'shrub':
-      return { size: n, rgba: broadleafCard(n, true) };
-    case 'needles':
-      return { size: n, rgba: needleCard(n) };
-    case 'grass':
-      return { size: n, rgba: grassCard(n) };
-    case 'fern':
-      return { size: n, rgba: fernCard(n) };
-    case 'blossom':
-      return { size: n, rgba: blossomCard(n) };
-    case 'flower':
-      return { size: n, rgba: flowerCard(n) };
+  const c = n / FOLIAGE_CELLS;
+  const out = new Uint8Array(n * n * 4);
+  for (let v = 0; v < FOLIAGE_CELLS * FOLIAGE_CELLS; v++) {
+    const px = card(kind, c, v);
+    const ox = (v % FOLIAGE_CELLS) * c;
+    const oy = Math.floor(v / FOLIAGE_CELLS) * c;
+    for (let y = 0; y < c; y++) out.set(px.subarray(y * c * 4, (y + 1) * c * 4), ((oy + y) * n + ox) * 4);
   }
+  return { size: n, rgba: out };
+}
+
+/**
+ * UV rectangle (u0, v0, u1, v1) of atlas cell `cell` (0 … 3). The atlas is uploaded with flipY off, so v0 is the
+ * cell's top edge in the image (where a card's tips go) and v1 its bottom edge (a card's base).
+ */
+export function foliageCellUv(cell: number): [number, number, number, number] {
+  const i = Math.max(0, Math.min(FOLIAGE_CELLS * FOLIAGE_CELLS - 1, Math.floor(Number.isFinite(cell) ? cell : 0)));
+  const k = 1 / FOLIAGE_CELLS;
+  const col = i % FOLIAGE_CELLS;
+  const row = Math.floor(i / FOLIAGE_CELLS);
+  return [col * k, row * k, (col + 1) * k, (row + 1) * k];
 }

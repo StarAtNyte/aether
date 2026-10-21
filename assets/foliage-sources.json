@@ -1,0 +1,53 @@
+{
+  "$comment": "Leaf, frond and grass photographs for the foliage cards (scripts/foliage/leaf-sprites.ts). Poly Haven models, CC0-1.0; every file is pinned by SHA-256.",
+  "licence": "CC0-1.0",
+  "licenceUrl": "https://polyhaven.com/license",
+  "retrieved": "2026-10-21",
+  "sources": [
+    {
+      "id": "shrub_01",
+      "page": "https://polyhaven.com/a/shrub_01",
+      "author": "Rico Cilliers",
+      "use": "leaf-broad",
+      "max": 9,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_01/shrub_01_diff_1k.jpg", "sha256": "fe60e639d694e1807c0a3ae97dd1d5a7e7b3f84e5fc32d0610b868ce48f36331" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_01/shrub_01_alpha_1k.jpg", "sha256": "c6fffa5d39ee57c19ba894b7845e7631252ba85569ecaf7873a9414def60e9b3" }
+    },
+    {
+      "id": "shrub_03",
+      "page": "https://polyhaven.com/a/shrub_03",
+      "author": "Rico Cilliers",
+      "use": "leaf-broad",
+      "max": 8,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_03/shrub_03_diff_1k.jpg", "sha256": "3cadc7aba46d3aabbd7d6d2b1d04aa32e2a7da0bc87c2d38ef3cb1ee42cb03ec" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_03/shrub_03_alpha_1k.jpg", "sha256": "a696908aa8144a2697eb528815acf103ac6c5e3511aace8383f771b2f9c4ade8" }
+    },
+    {
+      "id": "shrub_04",
+      "page": "https://polyhaven.com/a/shrub_04",
+      "author": "Rico Cilliers",
+      "use": "leaf-narrow",
+      "max": 12,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_04/shrub_04_diff_1k.jpg", "sha256": "0b0fa0a474753d13f3093858cea79d0de05da1e6a0c5d6e181cd351080980b6c" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_04/shrub_04_alpha_1k.jpg", "sha256": "79b42a2e9703f3080192e1d0c6be89d7d36a5543ee7cc411339f2741dd11a1ee" }
+    },
+    {
+      "id": "fern_02",
+      "page": "https://polyhaven.com/a/fern_02",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "use": "frond",
+      "max": 6,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fern_02/fern_02_diff_1k.jpg", "sha256": "a828a6e7b4c01c826911e2eac4b3afc7457dab7b3b392a31c681ed88b7d50029" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fern_02/fern_02_alpha_1k.jpg", "sha256": "4d8c4d57373651e500f1a3b2071cd59d2d9cc031bc30ff73bc8a5d2b2c91571a" }
+    },
+    {
+      "id": "grass_medium_01",
+      "page": "https://polyhaven.com/a/grass_medium_01",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "use": "tuft",
+      "max": 6,
+      "diffuse": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_diff_1k.jpg", "sha256": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050" },
+      "alpha": { "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_alpha_1k.jpg", "sha256": "90ad8db2b471de6b61597c60bc218d1295c4bf68230be9083aa2001b9067b2e2" }
+    }
+  ]
+}

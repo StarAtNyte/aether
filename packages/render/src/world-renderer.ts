@@ -94,6 +94,11 @@ export interface RendererOptions {
   textureSource?: TextureSource;
   /** Override HDR environment loading (`environment.hdri`). */
   hdriSource?: HdriSource;
+  /**
+   * Where the photographed leaf sprites are served (`leaf-sprites.json` / `.webp`), default `/foliage/`; null keeps
+   * the procedural leaf cards.
+   */
+  foliageUrl?: string | null;
   /** Total scatter instance budget. */
   maxInstances?: number;
   /**
@@ -654,6 +659,12 @@ export class WorldRenderer {
     this.materials.groundDetail = this.gpu.tier !== 'software' && !this.lowMemory;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
     this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
+    // Leaf cards: 2 × 2 variants of 256 px per atlas (128 px in low-memory mode), composed from photographed leaves.
+    if (this.lowMemory) this.materials.foliage.configure(256);
+    this.materials.foliage.usePhotos(opts.foliageUrl === undefined ? '/foliage/' : opts.foliageUrl);
+    this.materials.foliage.onChange = () => {
+      this.needsDraw = true;
+    };
     // Water: waves and sky on software rasterisers, depth absorption, refraction and foam on GPUs (the planar mirror, tier high, is opt-in).
     const forcedWater = (globalThis as { __WATER_TIER?: string }).__WATER_TIER;
     const autoWater = waterTierFor(this.gpu.tier, this.lowMemory, false);
@@ -868,6 +879,11 @@ export class WorldRenderer {
   /** The buildings' light volume is waiting to bake or baking (captures that want the finished light wait for it). */
   get lightVolumeBaking(): boolean {
     return this.lightVolume.baking;
+  }
+
+  /** Photographed leaf cards are still being composed (captures that want the final foliage wait for them). */
+  get foliagePending(): boolean {
+    return this.materials.foliage.pending;
   }
 
   /** A baked light volume lights the buildings. */
