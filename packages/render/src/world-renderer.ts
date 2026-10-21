@@ -3008,7 +3008,8 @@ export class WorldRenderer {
       cam.zoom = 1;
       cam.clearViewOffset();
       cam.updateMatrixWorld(true);
-      exported = buildExportScene(this.sync.root, this.perspective, MAX_PATH_TRACE_TRIANGLES);
+      // The tracer's WebGL2 context samples compressed library textures as they are (when it supports their format).
+      exported = buildExportScene(this.sync.root, this.perspective, MAX_PATH_TRACE_TRIANGLES, 'keep');
       if (exported.meshes === 0) throw new Error('nothing to render');
       if (exported.skipped > 0) log.warn(`path trace: ${exported.skipped} meshes left out (triangle budget ${MAX_PATH_TRACE_TRIANGLES})`);
       const lights: Light[] = [this.env.sun];

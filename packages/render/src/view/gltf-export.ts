@@ -9,12 +9,41 @@
  * overlays, the sky and helpers are never part of it.
  *
  * Budgets keep exports bounded: a triangle cap (instanced meshes count
- * every instance) and only RGBA8 textures (procedural float or compressed
- * textures are skipped rather than failing the export). This one pipeline
+ * every instance) and only RGBA8 textures (procedural float textures are
+ * skipped rather than failing the export). Block-compressed (KTX2) library
+ * textures are decompressed by the exporter through a WebGL2 context when
+ * that context can sample their format, and skipped otherwise. This one pipeline
  * backs both the editor's quick "Export 3D model" action ({@link exportGlb})
  * and the Publish hub ({@link exportGltf}).
  */
-import { BufferGeometry, CanvasTexture, DoubleSide, Float32BufferAttribute, Group, InstancedMesh, Mesh, MeshStandardMaterial, RGBAFormat, Vector3, type Camera, type SkinnedMesh, type Material, type Object3D, type Texture } from 'three';
+import {
+  BufferGeometry,
+  CanvasTexture,
+  DoubleSide,
+  Float32BufferAttribute,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshStandardMaterial,
+  RGBAFormat,
+  RGBA_ASTC_4x4_Format,
+  RGBA_BPTC_Format,
+  RGBA_ETC2_EAC_Format,
+  RGBA_PVRTC_4BPPV1_Format,
+  RGBA_S3TC_DXT1_Format,
+  RGBA_S3TC_DXT5_Format,
+  RGB_ETC1_Format,
+  RGB_ETC2_Format,
+  RGB_PVRTC_4BPPV1_Format,
+  RGB_S3TC_DXT1_Format,
+  SRGBColorSpace,
+  Vector3,
+  type Camera,
+  type SkinnedMesh,
+  type Material,
+  type Object3D,
+  type Texture,
+} from 'three';
 import { ENTITY_ID_KEY } from '../sync/entity-node';
 import { FINISH_MAPS_KEY, type AntiTileMaps } from '../materials/anti-tile';
 
@@ -67,15 +96,74 @@ export function rgbaPixels(tex: Pick<Texture, 'image' | 'format'>): { data: Uint
 }
 
 /**
- * How a texture goes into the file: as is (a drawable image), converted to
- * a canvas (8-bit RGBA pixel data; the exporter redraws some maps through a
- * 2D canvas, which raw data cannot go through), or left out (float data,
- * render-target, video, cube or compressed textures, which would make the
- * exporter throw). `null` means "no texture". Pure.
+ * WebGL extensions a WebGL2 context needs to sample a block-compressed texture of `format` (`srgb`: an sRGB
+ * texture), or null for formats this export never meets. Pure.
  */
-export function textureExportMode(tex: Pick<Texture, 'image' | 'format'> | null | undefined): 'keep' | 'canvas' | 'drop' {
+export function compressedFormatExtensions(format: number, srgb: boolean): string[] | null {
+  switch (format) {
+    case RGBA_BPTC_Format:
+      return ['EXT_texture_compression_bptc'];
+    case RGB_S3TC_DXT1_Format:
+    case RGBA_S3TC_DXT1_Format:
+    case RGBA_S3TC_DXT5_Format:
+      return srgb ? ['WEBGL_compressed_texture_s3tc', 'WEBGL_compressed_texture_s3tc_srgb'] : ['WEBGL_compressed_texture_s3tc'];
+    case RGBA_ASTC_4x4_Format:
+      return ['WEBGL_compressed_texture_astc'];
+    case RGB_ETC1_Format:
+      return ['WEBGL_compressed_texture_etc1'];
+    case RGB_ETC2_Format:
+    case RGBA_ETC2_EAC_Format:
+      return ['WEBGL_compressed_texture_etc'];
+    case RGB_PVRTC_4BPPV1_Format:
+    case RGBA_PVRTC_4BPPV1_Format:
+      return ['WEBGL_compressed_texture_pvrtc'];
+    default:
+      return null;
+  }
+}
+
+let webglExtensionCache: ReadonlySet<string> | null = null;
+
+/** Extensions of a throwaway WebGL2 context (cached; empty without a DOM or WebGL2). */
+function webglExtensions(): ReadonlySet<string> {
+  if (webglExtensionCache) return webglExtensionCache;
+  let set = new Set<string>();
+  try {
+    if (typeof document !== 'undefined') {
+      const gl = document.createElement('canvas').getContext('webgl2');
+      if (gl) {
+        set = new Set(gl.getSupportedExtensions() ?? []);
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+      }
+    }
+  } catch {
+    /* no WebGL2: compressed textures are left out */
+  }
+  webglExtensionCache = set;
+  return set;
+}
+
+/** True when a WebGL2 context here can sample `tex` (a block-compressed texture), so it can be decompressed or path traced. */
+export function compressedTextureUsable(tex: Pick<Texture, 'format' | 'colorSpace'>, extensions: ReadonlySet<string> = webglExtensions()): boolean {
+  const need = compressedFormatExtensions(tex.format, tex.colorSpace === SRGBColorSpace);
+  return need !== null && need.every((e) => extensions.has(e));
+}
+
+/** What to do with block-compressed textures: leave them out (default) or keep the usable ones. */
+export type CompressedPolicy = 'drop' | 'keep';
+
+/**
+ * How a texture goes into the file: as is (a drawable image, or with
+ * `compressed: 'keep'` a block-compressed texture a WebGL2 context can
+ * sample), converted to a canvas (8-bit RGBA pixel data; the exporter
+ * redraws some maps through a 2D canvas, which raw data cannot go through),
+ * or left out (float data, render-target, video, cube or unusable
+ * compressed textures, which would make the exporter throw). `null` means
+ * "no texture".
+ */
+export function textureExportMode(tex: Pick<Texture, 'image' | 'format'> | null | undefined, compressed: CompressedPolicy = 'drop'): 'keep' | 'canvas' | 'drop' {
   if (!tex) return 'keep';
-  if ((tex as { isCompressedTexture?: boolean }).isCompressedTexture) return 'drop';
+  if ((tex as { isCompressedTexture?: boolean }).isCompressedTexture) return compressed === 'keep' && compressedTextureUsable(tex as Texture) ? 'keep' : 'drop';
   if (isDrawable(tex.image)) return 'keep';
   return rgbaPixels(tex) ? 'canvas' : 'drop';
 }
@@ -113,7 +201,7 @@ function canvasCopy(t: Texture, copies: Map<Texture, Texture>): Texture {
 }
 
 /** Plain PBR copy of a (node) material. */
-function standardCopy(src: Material, cache: Map<Material, MeshStandardMaterial>, copies: Map<Texture, Texture>): MeshStandardMaterial {
+function standardCopy(src: Material, cache: Map<Material, MeshStandardMaterial>, copies: Map<Texture, Texture>, compressed: CompressedPolicy): MeshStandardMaterial {
   const hit = cache.get(src);
   if (hit) return hit;
   const s = src as Material & {
@@ -154,7 +242,7 @@ function standardCopy(src: Material, cache: Map<Material, MeshStandardMaterial>,
   const out = m as unknown as Record<string, Texture | null>;
   for (const k of MAP_KEYS) {
     const t = slots[k];
-    const mode = textureExportMode(t);
+    const mode = textureExportMode(t, compressed);
     if (!t || mode === 'drop') continue;
     out[k] = mode === 'canvas' ? canvasCopy(t, copies) : t;
   }
@@ -219,7 +307,7 @@ export function countTriangles(root: Object3D): number {
  * the live scene (never disposed here); the material copies are released
  * by `dispose()`.
  */
-export function buildExportScene(content: Object3D, camera: Camera | null, maxTriangles = MAX_EXPORT_TRIANGLES): ExportScene {
+export function buildExportScene(content: Object3D, camera: Camera | null, maxTriangles = MAX_EXPORT_TRIANGLES, compressed: CompressedPolicy = 'drop'): ExportScene {
   content.updateMatrixWorld(true);
   const root = new Group();
   root.name = 'world';
@@ -242,7 +330,7 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
       skipped++;
       return;
     }
-    const mats = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => standardCopy(m, cache, copies));
+    const mats = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => standardCopy(m, cache, copies, compressed));
     const material = Array.isArray(o.material) ? mats : (mats[0] as MeshStandardMaterial);
     let node: Mesh;
     if (o instanceof InstancedMesh) {
@@ -312,12 +400,14 @@ export interface GltfExportResult {
  */
 export async function exportGltf(content: Object3D, camera: Camera | null, opts: GltfExportOptions = {}): Promise<GltfExportResult> {
   const max = opts.maxTriangles ?? MAX_EXPORT_TRIANGLES;
-  const scene = buildExportScene(content, camera, max);
+  // Compressed library textures are decompressed by the exporter (WebGL2 texture utilities, loaded with it).
+  const scene = buildExportScene(content, camera, max, 'keep');
   try {
     if (scene.meshes === 0 && scene.skipped > 0) throw new Error(`the scene is over the export limit of ${max.toLocaleString('en-US')} triangles`);
     if (scene.meshes === 0) throw new Error('there is nothing to export yet');
-    const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+    const [{ GLTFExporter }, textureUtils] = await Promise.all([import('three/addons/exporters/GLTFExporter.js'), import('three/addons/utils/WebGLTextureUtils.js')]);
     const exporter = new GLTFExporter();
+    exporter.setTextureUtils(textureUtils);
     const binary = opts.binary !== false;
     const out = (await exporter.parseAsync(scene.root, { binary, onlyVisible: true, maxTextureSize: MAX_EXPORT_TEXTURE, includeCustomExtensions: false })) as ArrayBuffer | Record<string, unknown>;
     const data = out instanceof ArrayBuffer ? new Uint8Array(out) : JSON.stringify(out);

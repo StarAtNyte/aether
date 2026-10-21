@@ -65,6 +65,8 @@ interface Scene {
   name: string;
   open(page: Page, url: string, query: string): Promise<void>;
   cameras: Readonly<Record<string, Camera>>;
+  /** Also export a GLB (texture count) and path-trace one camera (the export graph keeps compressed textures). */
+  extras?: { trace: Camera };
 }
 
 async function waitReady(page: Page): Promise<void> {
@@ -134,6 +136,7 @@ const closeup: Scene = {
     await page.evaluate((w) => window.__aether?.studio.replaceWorld(w as never, 'ktx2 close-up'), payload);
     await waitReady(page);
   },
+  extras: { trace: { pos: [0.55, 1.05, 1.35], target: [0, 0.55, 0] } },
   cameras: {
     group: { pos: [0.3, 1.5, 5.2], target: [0, 0.75, 0] },
     armchair: { pos: [0.55, 1.05, 1.35], target: [0, 0.55, 0] },
@@ -162,6 +165,8 @@ interface Run {
   compression: string;
   stills: string[];
   errors: string[];
+  /** Textures in the exported GLB (close-up only). */
+  exportTextures?: number;
 }
 
 async function settle(page: Page): Promise<void> {
@@ -255,6 +260,28 @@ async function runOne(browser: Browser, target: Target, url: string, scene: Scen
       writeFileSync(file, png);
       stills.push(file);
     }
+    let exportTextures: number | undefined;
+    if (scene.extras) {
+      exportTextures = await page.evaluate(async () => {
+        const r = window.__aether?.simulation?.renderer as unknown as { exportGltf(o: { binary: boolean }): Promise<{ data: Uint8Array | string }> };
+        const out = await r.exportGltf({ binary: true });
+        if (typeof out.data === 'string') return -1;
+        // GLB JSON chunk: count "images".
+        const view = new DataView(out.data.buffer, out.data.byteOffset, out.data.byteLength);
+        const len = view.getUint32(12, true);
+        const json = JSON.parse(new TextDecoder().decode(out.data.subarray(20, 20 + len))) as { images?: unknown[] };
+        return json.images?.length ?? 0;
+      });
+      const t = scene.extras.trace;
+      const img = await page.evaluate(async ([p, tg, w, h]) => {
+        const r = window.__aether?.simulation?.renderer as unknown as { pathTraceStill(o: { width: number; height: number; samples: number; pose: { pos: number[]; target: number[] } }): Promise<{ width: number; height: number; data: Uint8Array }> };
+        const s = await r.pathTraceStill({ width: w, height: h, samples: 48, pose: { pos: [...p], target: [...tg] } });
+        return { width: s.width, height: s.height, data: Array.from(s.data) };
+      }, [t.pos, t.target, 640, 360] as const);
+      const file = join(OUT, `${target.name}-${scene.name}-trace-${mode}.png`);
+      writeFileSync(file, encodePng({ width: img.width, height: img.height, data: Uint8Array.from(img.data) }));
+      stills.push(file);
+    }
     const mem = await page.evaluate(() => {
       (window as unknown as { gc?: () => void }).gc?.();
       const r = window.__aether?.studio.memoryReport().renderer as unknown as {
@@ -286,6 +313,7 @@ async function runOne(browser: Browser, target: Target, url: string, scene: Scen
       compression: mem?.compression ?? '?',
       stills,
       errors,
+      ...(exportTextures !== undefined ? { exportTextures } : {}),
     };
   } finally {
     await context.close();
@@ -311,7 +339,7 @@ async function main(): Promise<void> {
             try {
               const r = await runOne(browser, target, server.url, scene, mode);
               runs.push(r);
-              log(`  textures ${r.texturesMB} MB (${r.textures}; ${r.breakdown}), ready ${r.readyMs} ms, assets ${r.assetsMs} ms, ${r.files} files ${MB(r.wireBytes)} MB wire / ${MB(r.diskBytes)} MB disk, KTX2 ${r.compression}`);
+              log(`  textures ${r.texturesMB} MB (${r.textures}; ${r.breakdown}), ready ${r.readyMs} ms, assets ${r.assetsMs} ms, ${r.files} files ${MB(r.wireBytes)} MB wire / ${MB(r.diskBytes)} MB disk, KTX2 ${r.compression}${r.exportTextures !== undefined ? `, GLB export ${r.exportTextures} images` : ''}`);
               const bad = r.errors.filter((e) => /ktx|basis|transcod|texture|compressed/i.test(e));
               if (bad.length > 0) failures.push(`${target.name} ${scene.name} ${mode}: ${bad.join(' | ')}`);
               if (r.errors.length > 0) log(`  console errors: ${r.errors.slice(0, 4).join(' | ')}`);

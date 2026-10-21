@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DataTexture, LinearFilter, LinearMipmapLinearFilter, Texture } from 'three';
+import { CompressedTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBA_BPTC_Format, RGBA_S3TC_DXT5_Format, SRGBColorSpace, Texture } from 'three';
+import { compressedFormatExtensions, compressedTextureUsable, textureExportMode } from '../src/view/gltf-export';
 import { anyCompressedFormat, supportLabel, TextureCompression } from '../src/gpu/texture-compression';
 import { compressedBytes, generatesMips, textureBreakdown, textureKind, trackCompressedTextureBytes } from '../src/gpu/texture-memory';
 import { parseKtx2Index } from '../src/voxel/block-sheets';
@@ -92,5 +93,23 @@ describe('KTX2 block sheet index', () => {
     expect(parseKtx2Index(ok, 256, 16)).toBeNull();
     expect(parseKtx2Index({ ...ok, files: { ...ok.files, orm: { file: '../secret.ktx2' } } }, 256, 32)).toBeNull();
     expect(parseKtx2Index(null, 256, 32)).toBeNull();
+  });
+});
+
+describe('compressed textures in exports and path traces', () => {
+  it('needs the WebGL2 extension of the format (sRGB S3TC needs its sRGB extension too)', () => {
+    expect(compressedFormatExtensions(RGBA_BPTC_Format, true)).toEqual(['EXT_texture_compression_bptc']);
+    expect(compressedFormatExtensions(RGBA_S3TC_DXT5_Format, true)).toEqual(['WEBGL_compressed_texture_s3tc', 'WEBGL_compressed_texture_s3tc_srgb']);
+    expect(compressedFormatExtensions(0, false)).toBeNull();
+    const bc7 = { format: RGBA_BPTC_Format, colorSpace: SRGBColorSpace };
+    expect(compressedTextureUsable(bc7, new Set(['EXT_texture_compression_bptc']))).toBe(true);
+    expect(compressedTextureUsable(bc7, new Set())).toBe(false);
+    expect(compressedTextureUsable({ format: RGBA_S3TC_DXT5_Format, colorSpace: NoColorSpace }, new Set(['WEBGL_compressed_texture_s3tc']))).toBe(true);
+  });
+
+  it('drops compressed textures unless asked to keep them, and keeps only usable ones (no WebGL2 in Node)', () => {
+    const t = new CompressedTexture([{ data: new Uint8Array(16), width: 4, height: 4 }], 4, 4, RGBA_BPTC_Format);
+    expect(textureExportMode(t)).toBe('drop');
+    expect(textureExportMode(t, 'keep')).toBe('drop');
   });
 });
