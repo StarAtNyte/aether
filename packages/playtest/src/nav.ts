@@ -20,6 +20,7 @@
 import type { Vec3 } from '@aether/core';
 import { CharacterController, type PhysicsWorld } from '@aether/physics';
 import { touches, type HazardZone } from './goals';
+import type { RideInfo } from './lifts';
 import { PLAYER_CAPSULE } from './host';
 import { PLAYTEST_LIMITS } from './types';
 
@@ -44,17 +45,6 @@ export enum EdgeKind {
   Drop = 2,
   /** Standing on a vertical lift that carries the player up to a landing. */
   Ride = 3,
-}
-
-/** What the bot needs to ride a lift (see {@link NavGraph.addRide}). */
-export interface RideInfo {
-  entity: string;
-  /** Horizontal centre of the lift platform. */
-  centre: [number, number];
-  /** Height of the platform's centre when the graph was built (its lowest pose). */
-  startY: number;
-  /** How far the platform rises. */
-  dyUp: number;
 }
 
 /**
@@ -986,14 +976,15 @@ export class NavGraph {
 
   /**
    * Add a one-way edge `from → to` that rides a lift: `from` is a node beside
-   * the platform at its lowest pose, `to` a node level with the platform at its
-   * highest. The ride is performed by playing it (the bot waits for the lift),
-   * so it is never validated by the probe character.
+   * the platform at its lowest stop, `to` a node level with it at its highest.
+   * The ride is performed by playing it (the bot waits for the lift by its
+   * clock), so it is never validated by the probe character. `cost` is the
+   * span plus the expected wait.
    */
-  addRide(from: number, to: number, info: RideInfo): void {
+  addRide(from: number, to: number, info: RideInfo, cost: number): void {
     const list = this.linksOf(from);
     if (list.some((l) => l.to === to)) return;
-    list.push({ to, kind: EdgeKind.Ride, cost: 4 + info.dyUp * 0.5, state: 1, ride: info });
+    list.push({ to, kind: EdgeKind.Ride, cost, state: 1, ride: info });
   }
 
   /** Release the probe character. */

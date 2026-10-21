@@ -12,7 +12,7 @@ const text = (max: number): z.ZodType<string> => z.string().transform((s) => s.s
 
 const Finding = z.object({
   code: z.enum([
-    'unreachable_objective', 'door_locked', 'door_stuck', 'unwinnable', 'lost', 'spawn_blocked', 'stuck', 'soft_lock', 'fell', 'no_win_condition', 'budget', 'unsupported', 'room_unreachable', 'door_blocked', 'clipping', 'no_entrance', 'talk_failed',
+    'unreachable_objective', 'door_locked', 'door_stuck', 'unwinnable', 'lost', 'spawn_blocked', 'stuck', 'soft_lock', 'fell', 'no_win_condition', 'budget', 'unsupported', 'room_unreachable', 'door_blocked', 'clipping', 'no_entrance', 'talk_failed', 'lift_unusable',
   ]),
   severity: z.enum(['error', 'warning', 'info']),
   message: text(400),

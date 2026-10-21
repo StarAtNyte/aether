@@ -4564,3 +4564,88 @@ before. At dusk the darker leaf tones read olive-brown. The playtest bot's stair
 centimetre changes of its walking grid's origin (a hedge 1 cm longer broke the villa's walkthrough; hedge runs are
 now exact): reported for the bot's owners. Dusk House's cover opens with its storeys apart (the lookshots cover, not
 this stage's change).
+
+## Lifts ridden by their clock (playtest bot, `BOT_VERSION` 3)
+
+**Problem.** The bot's lift handling depended on geometry it did not model. A sweep of Lantern Isles' rune-lift decks
+showed 2.2, 2.8 and 3.4 m failing while 2.6, 3.0 m passed; the stage that anchored trunks to their roots had to
+widen the lifts to 3 m to get past a 1.3 m seam. A sweep of a plain floor, lift and ledge world (63 feasible
+configurations: decks 1.0-4.0 m, gaps 0.3-1.5 m, slow to quick, 1-12 m of travel) failed 28 of them on the old bot.
+
+**What it was (measured with per-frame traces).**
+- *The graph's lift edge picked its nodes badly.* The boarding node was the nearest one at least 0.2 m from the deck
+  (not necessarily at the edge, nor across the gap that was really there), the landing the one nearest the deck's
+  centre (a node far into the ledge for a wide deck), with no check that the gap could be crossed at all: the planner
+  found "no walkable route" or the bot walked off the edge.
+- *Riding ignored the lift's rhythm.* It waited until the deck was within 0.1 m of its start, then walked to the
+  centre and, at the top, walked to a node: with the deck level for 0.3 s the crossing was begun and abandoned.
+- *The lift's start pose was read from the live session.* The session has run on while the nav grid was built, so a
+  deck caught mid-travel gave a wrong "top of the deck" (the bot believed the deck 3 m below where it was).
+- *A resting kinematic deck stops the capsule.* Teleporting the capsule onto a resting kinematic box and pushing
+  forward moves it 0.3-0.6 m and then nothing (the controller reports 20 contacts at time of impact 0 and a zero
+  movement; the same box as a static body, or the deck while it moves, is walked normally). That is why the old bot
+  made it across some sizes and not others: it depended on how far from the deck's rim it needed to walk. Not fixed
+  here (physics is another stage's); worked round, and reported below.
+
+**What changed** (`packages/playtest`, no change to generators or physics).
+- `lifts.ts`: a patrol is read into a `LiftClock` (pause, travel, mode `pingpong`/`loop`/`once`, any number of
+  waypoints): deck top at any moment, spans within a band of heights, the longest stay, the mean wait for a window,
+  and a `sync` that lines the clock up with the live deck when it drifts (it follows the live deck to 0.03 m over many
+  cycles; test). `wireLift` joins ground level with the lowest stop (a drop of up to 0.7 m onto the deck, a step of up
+  to 0.4 m up to a resting one) to ground level with each stop above it (a short hop up or a drop). Gaps are measured
+  with rays along the line to the deck, a jump limit comes from the player's abilities, and the stay of the deck
+  within reach of the stop must cover the crossing. A lift that cannot be used is kept with the reason.
+- `liftride.ts`: wait at the boarding point until the clock says the deck is level for long enough; cross by a run
+  (gaps up to `runGap`, 1.27 m at the default speed and gravity, where the capsule has dropped less than about half
+  its radius when it reaches the far edge) or by a jump whose thrust is steered every tick to land on the deck's
+  centre (the deck must then stay level for the whole flight: 1.2 s plus 0.4 s); stand still; at the landing jump
+  off with the same steering, at once, when the deck is level with it. A resting deck is never walked over for more
+  than a few steps (hops instead). Falls, a deck that left early, and a ride that takes more than three cycles are
+  named in the finding.
+- Planner: the ride edge costs the larger of its span and the expected wait plus the ride; a lift that cannot be used
+  has no edge. New finding code `lift_unusable` (error when something required stays undone, otherwise a warning)
+  with the reason in words: the gap and the longest jump, the seconds the deck stays level against the seconds the
+  crossing needs (and the lift's speed and pause), or how far the nearest ground is from the stop it tops out at.
+- `BOT_VERSION` 3. Documented in ARCHITECTURE and CONTRACTS.
+
+**Measured.**
+
+| | Old bot | New bot |
+|---|---|---|
+| Feasible sweep (63 worlds: 35 widths x gaps, 24 speed/pause/travel, 4 odd ones) | 28 failed | 63 passed |
+| Lantern Isles with all three decks at 1.5, 2.2, 2.6, 2.8, 3.0, 3.4, 4.0 m | 2.2, 2.8, 3.4 failed | all pass |
+| Broader exploration (widths 1/2/4, gaps 0.3-5.5, four rhythms, 2 and 6 m): 168 runs | not run | 72 passed; the other 96 are reported lifts that cannot be used, each with its reason (no unexplained failure) |
+
+Flagships, simulated time, old to new: Chain Reaction 14.88 s (same), Highland Trail 78.65 s (same), Lantern Isles
+65.58 to 64.98 s, Hollow Gate 45.17 s (same), Neon Rain City 63.43 s (same), Kyoto Temple 32.65 s (same), Orbital
+Lab 39.17 s (same), Painterly Meadow 40.73 s (same), Four Seasons Garden 29.82 s (same); the generated platformer's
+lift (obstacle course) 9.47 s (same). Wall time unchanged within noise (Orbital Lab 11.1 to 11.7 s, the rest 1-7 s).
+All 15 flagships: the nine the bot plays pass in `gamesVerified` with sealed, re-checked runs; Kart Canyon, Sakura
+River, Blockfall have their own bots (`showcasePlaytest`, passing), and the three buildings their walkthrough.
+
+**Other moving platforms checked.** Orbital Lab's cargo lift (3 m deck, 9 m, 1.8 m/s, 2 s pause) and the generated
+platformer's lift (2.6 m, 1.4 m, 0.9 m/s) are read and ridden. Kart Canyon's, the train's and the city's movers are
+sensors or characters (not decks); Sakura River's ferry is a vehicle game with its own bot. Nothing shipped has a
+horizontal deck.
+
+**Tests.** `packages/playtest/test/lift-sweep.test.ts` (80): the clock against the live deck over 30 s and its
+band queries; 63 feasible lifts must be ridden to the top; four infeasible ones (a 6 m gap, a quick lift that never
+pauses, a lift that stops short of the landing, one that overshoots it) must fail inside 60 s of play with a
+`lift_unusable` finding naming the reason; Lantern Isles at seven deck sizes; Orbital Lab and the obstacle course
+with no lift left unusable; the same lift twice gives the same run; a lift with a pause at a middle stop lets the
+player off there. Gates: `tsc --noEmit` 0 errors; playtest and verifier vitest 36 files, 337 tests; agent 51 files,
+809 tests; studio 92 files, 671 tests (includes `gamesVerified` and `showcasePlaytest`); studio build; smoke 34/34;
+`e2e:verified` passed (Chromium and Firefox).
+
+**Honest gaps.**
+- A jump onto the deck needs the deck level for 1.6 s: a lift with a gap wider than 1.27 m that pauses for less is
+  reported as unusable although a person might time it. The limits (runGap, longest jump 0.8 of the physical reach
+  less 0.55 m) are conservative.
+- Only the waypoint heights are stops: a deck that passes a ledge between two waypoints is not a way off.
+- Horizontal and orbiting decks, and lifts that start at their top, are not modelled (planned on the start pose, as
+  before); a platform that rotates is not either.
+- The resting-kinematic stall is a defect of the character controller seen by the bot; a person on a lift that has
+  paused very likely feels it too (walking on the deck stops after a few steps while jumping works). It deserves
+  its own fix in `packages/physics`.
+- The Lantern Isles generator keeps its 3 m decks; the bot no longer needs them, so they can go back to a smaller
+  size when someone wants the look.

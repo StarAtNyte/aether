@@ -2363,8 +2363,11 @@ broken. A new workspace package; no new third-party dependency.
   downward rays, capsule fit test, walk / jump / drop edges, jumps validated by
   simulating the real controller, Dijkstra on typed arrays, or A* with
   `toward` target discs and an estimate scaled to stay a lower bound).
-- Bot behaviour, `BOT_VERSION` 2 (`proof.ts`; bumped when a change can change a
-  verdict, recorded as the proof's `bot`): the asset catalog is loaded before
+- Bot behaviour, `BOT_VERSION` 3 (`proof.ts`; bumped when a change can change a
+  verdict, recorded as the proof's `bot`). Version 3: lifts are read into a clock
+  (`lifts.ts`: patrol legs, pauses, spans in which the deck is level with a
+  stop) and ridden by it (`liftride.ts`); a lift that cannot be used becomes a
+  `lift_unusable` finding with the reason. Version 2: the asset catalog is loaded before
   goals are read (`ensureAssetCatalog`), so library pickups and enemies have
   their real size in the first run of a process too; the progress watchdog
   counts ground movement only; standing more than 1 m above the path's surface

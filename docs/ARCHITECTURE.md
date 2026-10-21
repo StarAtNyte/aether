@@ -1625,6 +1625,17 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
   workers. Runs are deterministic (fixed simulation steps); the asset catalog
   is loaded before goals are read, so the first run in a process measures
   library pickups and enemies at their real size like every later one.
+- **Lifts by their clock** (bot version 3). A patrol platform that rises (`lifts.ts`) is read into a `LiftClock`: the
+  legs of its patrol (pause, travel, mode), the height of the deck top at any moment, the spans in which the top is
+  within a band of a height, and the longest such stay. The map joins ground level with the lowest stop to ground
+  level with a stop above it (`wireLift`: gaps measured with rays along the line to the deck, a jump limit from the
+  player's abilities, a stay long enough for the crossing); a lift that cannot be used (gap wider than a jump, cycle
+  too fast for the crossing, no ground level with any stop) is kept with the reason and reported as `lift_unusable`
+  when something stays undone. `rideLift` (`liftride.ts`) waits at the boarding point until the clock says the deck is
+  level for long enough, runs across a gap up to `runGap` or jumps with the thrust steered to land on the deck's
+  centre, stands still, and jumps off at the landing when the deck is level with it. The character controller stops
+  within a few tens of centimetres on a resting kinematic deck (it keeps finding the deck in contact), so the ride
+  moves over a deck by steered hops and walks only while the deck moves.
 - **Finishing, not running out the clock** (bot version 2, `BOT_VERSION`).
   The progress watchdog counts movement along the ground only, so a hop on
   the spot is not progress. Standing more than 1 m above the path's surface

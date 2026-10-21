@@ -23,12 +23,14 @@
  * fixed 60 Hz step, far faster than real time, with a sim-time cap, a
  * wall-clock budget and cooperative yielding (so it can live in a worker).
  */
-import { validateWorld, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
+import { validateWorld, worldTransform, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
 import { PhysicsWorld, ensureAssetCatalog, entityBounds, yieldToHost, type Aabb } from '@aether/physics';
 import { deriveGoals, inRegion, needsHold, touches, winThresholds, type DoorInfo, type GoalModel, type GoalObjective } from './goals';
 import { driveRace } from './drive';
 import { PLAYER_CAPSULE } from './host';
-import { EdgeKind, NavGraph, airThrust, type RideInfo, doorFitRadius, doorSlack, jumpHeight, targetDiscs, type NavParams, type NavPortal } from './nav';
+import { readLift, wireLift, type LiftVerdict, type RideInfo } from './lifts';
+import { rideLift, type RideHost } from './liftride';
+import { EdgeKind, NavGraph, airThrust, doorFitRadius, doorSlack, jumpHeight, targetDiscs, type NavParams, type NavPortal } from './nav';
 import { hashWorld } from './proof';
 import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
@@ -276,6 +278,10 @@ class Bot {
   private readonly talkDone = new Set<string>();
   private readonly pressed = new Set<string>();
   private readonly lifts = new Map<string, RideInfo>();
+  /** Whether each lift can be used, and why not. */
+  private readonly liftVerdicts = new Map<string, LiftVerdict>();
+  /** Why a ride that was tried failed, per lift. */
+  private readonly liftWhy = new Map<string, string>();
   /** Why a conversation did not deliver (plain words), per objective. */
   private readonly talkWhy = new Map<string, string>();
   private startNode = -1;
@@ -1209,8 +1215,9 @@ class Bot {
   }
 
   /**
-   * Vertical lifts (a kinematic platform that patrols straight up and down) become one-way ride edges
-   * from a node beside the platform at its lowest pose to a node level with it at its highest.
+   * Vertical lifts (a kinematic platform that patrols straight up and down) become one-way ride edges from ground
+   * level with the lowest stop to ground level with the highest (see lifts.ts); a lift the player cannot use is
+   * kept with the reason.
    */
   private registerLifts(): void {
     const g = this.graph;
@@ -1218,87 +1225,45 @@ class Bot {
       const e = this.world.entities[id] as Entity;
       if (e.template || e.physics?.body !== 'kinematic') continue;
       const patrol = e.behaviors.find((b) => b.type === 'patrol' && b.enabled);
-      const wps = patrol?.params['waypoints'];
-      if (!Array.isArray(wps) || wps.length < 2 || wps.length > 16) continue;
-      const pts: Vec3[] = [];
-      for (const w of wps) {
-        if (!Array.isArray(w) || w.length !== 3 || !w.every((n) => typeof n === 'number' && Number.isFinite(n))) break;
-        pts.push([w[0] as number, w[1] as number, w[2] as number]);
-      }
-      if (pts.length !== wps.length) continue;
-      const first = pts[0] as Vec3;
-      const relative = patrol?.params['relative'] === true;
-      const offs = pts.map((p) => [p[0] - (relative ? 0 : first[0]), p[1] - (relative ? 0 : first[1]), p[2] - (relative ? 0 : first[2])] as Vec3);
-      const lateral = Math.max(...offs.map((o) => Math.hypot(o[0] - (offs[0] as Vec3)[0], o[2] - (offs[0] as Vec3)[2])));
-      const rise = Math.max(...offs.map((o) => o[1] - (offs[0] as Vec3)[1]));
-      if (lateral > 0.3 || rise < 1) continue;
+      if (!patrol) continue;
       const bounds = entityBounds(this.world, id);
       const st = this.session.pw.getState(id);
       if (!bounds || !st) continue;
-      const cx = (bounds.min[0] + bounds.max[0]) / 2;
-      const cz = (bounds.min[2] + bounds.max[2]) / 2;
-      const topY = bounds.max[1];
-      const dist = (x: number, z: number, b: Aabb): number => {
-        const dx = Math.max(b.min[0] - x, 0, x - b.max[0]);
-        const dz = Math.max(b.min[2] - z, 0, z - b.max[2]);
-        return Math.hypot(dx, dz);
-      };
-      let from = -1, to = -1, bestFrom = Infinity, bestTo = Infinity;
-      for (let n = 0; n < g.count; n++) {
-        const x = g.px[n] as number, y = g.py[n] as number, z = g.pz[n] as number;
-        const d = dist(x, z, bounds);
-        if (Math.abs(y - topY) < 0.6 && d >= 0.2 && d <= 2.8 && d < bestFrom) {
-          bestFrom = d;
-          from = n;
-        }
-        // Landings beside the platform at its highest pose.
-        if (Math.abs(y - (topY + rise)) < 0.6 && d >= 0.2 && d <= 3.2) {
-          const dd = Math.hypot(x - cx, z - cz);
-          if (dd < bestTo) {
-            bestTo = dd;
-            to = n;
-          }
-        }
+      // The deck's pose in the document: the session has run on since, and the platform with it.
+      const model = readLift(id, patrol.params, bounds, worldTransform(this.world, id).position[1]);
+      if (!model) continue;
+      const wired = wireLift(model, g, this.session.pw, this.params);
+      for (const r of wired.rides) {
+        g.addRide(r.from, r.to, r.info, r.cost);
+        this.lifts.set(id, r.info);
       }
-      if (from < 0 || to < 0 || from === to) continue;
-      const info: RideInfo = { entity: id, centre: [cx, cz], startY: st.position[1], dyUp: rise };
-      g.addRide(from, to, info);
-      this.lifts.set(id, info);
+      this.liftVerdicts.set(id, wired.verdict);
     }
   }
 
-  /** Board a lift when it is down, ride it up and step off at the landing. */
+  /** Board a lift by its clock, ride it and step off at the landing. */
   private async doRide(a: number, b: number): Promise<TravelResult> {
     const g = this.graph;
-    const s = this.session;
     const info = g.linkOf(a, b)?.ride;
     if (!info) return 'stuck';
-    const liftY = (): number => s.pw.getState(info.entity)?.position[1] ?? info.startY;
-    const target = g.pos(b);
-    // Wait at the edge until the platform is down.
-    for (let i = 0; i < 60 * 40 && liftY() - info.startY > 0.1; i++) if (!(await this.step(0, 0, false, s.yawDeg))) return s.over ? 'ended' : 'stopped';
-    // Step onto its middle.
-    const t0 = s.time;
-    while (s.time - t0 < 5) {
-      const pos = s.position;
-      const d = Math.hypot(info.centre[0] - pos[0], info.centre[1] - pos[2]);
-      if (d < 0.3) break;
-      if (!(await this.step(Math.min(1, d / 0.6 + 0.2), 0, false, this.yawTo(pos, info.centre[0], info.centre[1])))) return s.over ? 'ended' : 'stopped';
+    const host: RideHost = {
+      session: this.session,
+      params: this.params,
+      step: (f, r, j, y) => this.step(f, r, j, y),
+      yawTo: (from, x, z) => this.yawTo(from, x, z),
+    };
+    const res = await rideLift(host, info, g.pos(a), g.pos(b));
+    if (res.result === 'arrived') return 'arrived';
+    if (res.reason) {
+      this.liftWhy.set(info.entity, res.reason);
+      this.session.note('stuck', `lift ${info.entity}: ${res.reason}`, this.session.position);
     }
-    // Ride up.
-    const r0 = s.time;
-    while (s.time - r0 < 60 && s.position[1] < target[1] - 0.35) {
-      if (!(await this.step(0, 0, false, s.yawDeg))) return s.over ? 'ended' : 'stopped';
-    }
-    // Step off towards the landing.
-    const w0 = s.time;
-    while (s.time - w0 < 4) {
-      const pos = s.position;
-      const d = Math.hypot(target[0] - pos[0], target[2] - pos[2]);
-      if (d < 0.3 && Math.abs(target[1] - pos[1]) < 0.7 && s.character.grounded) return 'arrived';
-      if (!(await this.step(d < 0.08 ? 0 : Math.min(1, d / 0.5 + 0.3), 0, false, this.yawTo(pos, target[0], target[2])))) return s.over ? 'ended' : 'stopped';
-    }
+    if (res.result === 'ended' || res.result === 'stopped') return res.result;
     g.markBad(a, b);
+    if (res.result === 'fell') {
+      this.fellCount++;
+      return 'fell';
+    }
     return 'stuck';
   }
 
@@ -1698,6 +1663,25 @@ class Bot {
           position: o.position,
           hint: near ? `bring it within reach: nearest standable spot is ${fmtPos(g3(this.graph, near.node))}` : 'give it some floor',
           data: near ? { gapH: near.h, gapV: near.v, nodeX: this.graph.px[near.node] as number, nodeY: this.graph.py[near.node] as number, nodeZ: this.graph.pz[near.node] as number, required: o.required } : { required: o.required },
+        });
+      }
+    }
+    // Lifts the player cannot use (or could not ride): with something left undone, this is the likely cause.
+    if (this.kind === 'game' && unresolved.length > 0) {
+      const bad = new Map<string, string>();
+      for (const v of this.liftVerdicts.values()) if (!v.ok) bad.set(v.entity, v.reason);
+      for (const [id, why] of this.liftWhy) if (!bad.has(id)) bad.set(id, why);
+      const required = unresolved.some((o) => o.required);
+      for (const [id, why] of bad) {
+        const at = this.session.pw.getState(id)?.position;
+        this.findings.push({
+          code: 'lift_unusable',
+          severity: required ? 'error' : 'warning',
+          message: `the lift ${id} cannot be used: ${why}`,
+          entities: [id],
+          ...(at ? { position: [at[0], at[1], at[2]] as Vec3 } : {}),
+          hint: 'make the gap between the lift and the ground narrower, let the lift pause longer or move slower, or end its travel level with the landing',
+          data: { lift: id },
         });
       }
     }

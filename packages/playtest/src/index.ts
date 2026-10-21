@@ -31,3 +31,4 @@ export {
 export { selfRepair, proposeRepairs, countdownOf, type RepairProposal, type RepairRound, type SelfRepairOptions, type SelfRepairResult } from './repair';
 export { ReportWire, ProgressWire, parseReport, parseProgress } from './wire';
 export * from './level';
+export { LiftClock, readLift } from './lifts';

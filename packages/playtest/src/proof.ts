@@ -18,7 +18,7 @@ import { hashString, stableStringify, type Entity, type Vec3, type WorldDoc } fr
 import { PLAYTEST_LIMITS, TRACE_STRIDE, type PlaytestKind, type PlaytestReport, type PlaytestTrace, type TraceEvent } from './types';
 
 /** Bot version: bump when a change in the bot can change a verdict. */
-export const BOT_VERSION = 2;
+export const BOT_VERSION = 3;
 
 /** Which bot a world needs: a building is walked room by room, anything else is played. */
 export function playtestKindOf(world: WorldDoc): PlaytestKind {

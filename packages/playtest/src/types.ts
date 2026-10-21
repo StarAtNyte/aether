@@ -73,7 +73,8 @@ export type FindingCode =
   | 'door_blocked'
   | 'clipping'
   | 'no_entrance'
-  | 'talk_failed';
+  | 'talk_failed'
+  | 'lift_unusable';
 
 /** One defect or note. */
 export interface Finding {
