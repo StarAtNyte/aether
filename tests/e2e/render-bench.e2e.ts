@@ -22,7 +22,7 @@ const ONLY = arg('only');
 const WORLDS = (arg('worlds') ?? 'skyline-penthouse,four-seasons-garden').split(',').filter(Boolean);
 const FRAMES = Math.max(4, Math.min(120, Number(arg('frames') ?? 24)));
 const [W, H] = (arg('size') ?? '2560x1440').split('x').map(Number) as [number, number];
-const EFFECTS = ['ao', 'taa', 'ssr', 'shafts', 'halation', 'aberration', 'grain'] as const;
+const EFFECTS = ['ao', 'taa', 'contact', 'ssr', 'shafts', 'halation', 'aberration', 'grain'] as const;
 const TIMEOUT = 150_000;
 const startedAt = performance.now();
 

@@ -8,7 +8,9 @@
  *
  *   AETHER_E2E_GPU=1 npx tsx tests/e2e/gpu-parity.e2e.ts <outDir> [--worlds=a,b] [--configs=name,name] [--size=1280x720]
  *
- * Configs: base (auto tier), low, medium, high, ultra, ao, gi, ssr, shafts, taa, water-standard, water-high.
+ * Configs: base (auto tier), low, medium, high, ultra, ao, gi, ssr, shafts, taa, water-standard, water-high, and
+ * sun-medium, sun-high, sun-ultra (the sun's cascades, soft filter and contact shadows planned as on a hardware GPU, so
+ * their shaders run on SwiftShader too).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,6 +33,8 @@ interface Config {
   tier: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
   effects?: Record<string, boolean>;
   water?: 'standard' | 'high';
+  /** Plan the sun's shadows as on a hardware GPU (cascades and the soft filter, also on a software rasteriser). */
+  sun?: boolean;
 }
 const CONFIG: Readonly<Record<string, Config>> = {
   base: { tier: 'auto' },
@@ -38,6 +42,9 @@ const CONFIG: Readonly<Record<string, Config>> = {
   medium: { tier: 'medium' },
   high: { tier: 'high' },
   ultra: { tier: 'ultra' },
+  'sun-medium': { tier: 'medium', sun: true },
+  'sun-high': { tier: 'high', sun: true },
+  'sun-ultra': { tier: 'ultra', sun: true },
   ao: { tier: 'medium', effects: { ao: true } },
   gi: { tier: 'medium', effects: { gi: true } },
   ssr: { tier: 'medium', effects: { ssr: true } },
@@ -55,6 +62,8 @@ interface Run {
   water: unknown;
   gpu: string;
   frameMs: number;
+  /** The sun's shadow maps: planned, drawn, and the filter. */
+  sun: { cascades: number; maps: number; filter: string };
   png: Buffer;
 }
 
@@ -131,6 +140,7 @@ async function run(context: BrowserContext, url: string, slug: string, config: C
           water: r.waterDebug(),
           gpu: r.gpu.description,
           frameMs: sorted[Math.floor(sorted.length / 2)] ?? 0,
+          sun: { cascades: r.sunShadowInfo.cascades, filter: r.sunShadowInfo.filter, maps: r.sunShadowInfo.boxes.filter((b) => b.hasMap).length },
           shot,
         };
       },
@@ -138,7 +148,7 @@ async function run(context: BrowserContext, url: string, slug: string, config: C
     );
     if (!info) throw new Error('no simulation');
     if (info.backend !== wanted) throw new Error(`asked for ${wanted} but ${info.backend} ran (${info.reason})`);
-    return { backend: info.backend, reason: info.reason, failed: info.failed, errors, water: info.water, gpu: info.gpu, frameMs: info.frameMs, png: Buffer.from(info.shot.slice('data:image/png;base64,'.length), 'base64') };
+    return { backend: info.backend, reason: info.reason, failed: info.failed, errors, water: info.water, gpu: info.gpu, frameMs: info.frameMs, sun: info.sun, png: Buffer.from(info.shot.slice('data:image/png;base64,'.length), 'base64') };
   } finally {
     await page.close();
   }
@@ -163,6 +173,7 @@ async function main(): Promise<void> {
           await c.addInitScript({ content: 'globalThis.__name = (f) => f;' });
           await c.addInitScript(`try { localStorage.setItem('aether.studio.settings.v1', JSON.stringify({ backend: '${be}' })); } catch {}`);
           if (config.water) await c.addInitScript(`globalThis.__WATER_TIER = '${config.water}';`);
+          if (config.sun) await c.addInitScript('globalThis.__SUN_SHADOWS_ON_SOFTWARE = true;');
           contexts[be] = c;
         }
         let gpu: Run;
@@ -186,6 +197,11 @@ async function main(): Promise<void> {
         const w = gpu.water as { tier: string };
         const dropped = gpu.failed.filter((f) => !gl.failed.includes(f));
         if (dropped.length > 0 || gpu.errors.length > 0) bad++;
+        // The sun configs must really run the cascades (every map drawn) on both backends.
+        for (const [be, res] of [['webgpu', gpu], ['webgl2', gl]] as const) {
+          log(`  ${slug} ${name} ${be}: sun ${res.sun.cascades} maps (${res.sun.maps} drawn), ${res.sun.filter}`);
+          if (config.sun && (res.sun.cascades < 2 || res.sun.maps !== res.sun.cascades)) bad++;
+        }
         log(
           `| ${slug} | ${name} | ${w.tier} | ${gpu.frameMs.toFixed(1)} | ${gl.frameMs.toFixed(1)} | ${d.mean.toFixed(2)} | ${(d.share * 100).toFixed(1)}% | ${d.meanLumaA.toFixed(0)}/${d.meanLumaB.toFixed(0)} | ${gpu.failed.join(',') || '-'} / ${gl.failed.join(',') || '-'} | ${gpu.errors.length}${gpu.errors[0] ? ` ${gpu.errors[0]}` : ''} |`,
         );

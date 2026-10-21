@@ -22,6 +22,7 @@ import {
   type BufferGeometry,
   type Box3,
   type Camera,
+  type PerspectiveCamera,
   type Scene,
 } from 'three';
 import { stableStringify, type Environment, type MaterialSpec } from '@aether/core';
@@ -36,6 +37,8 @@ import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
 import { setFoliageSun } from '../materials/foliage-shading';
+import { planSunShadows, type SunShadowPlan } from './sun-shadow-plan';
+import { SunCascades, softShadowFilter, type NodeLightShadow } from '../gpu/sun-shadow-nodes';
 
 export { MAX_FOG_DENSITY };
 
@@ -143,7 +146,15 @@ const HDRI_HEMI_SCALE = 0.2;
 /** Owns every environment object; add {@link group} to the scene. */
 export class EnvironmentRig {
   readonly group = new Group();
-  readonly sun = new DirectionalLight('#ffffff', 2.5);
+  private sunLight = new DirectionalLight('#ffffff', 2.5);
+  /** The sun. The light object is replaced when its shadow technique changes (see {@link setSunShadows}). */
+  get sun(): DirectionalLight {
+    return this.sunLight;
+  }
+  /** The sun's cascades, when the plan has more than one map. */
+  private cascadeNode: SunCascades | null = null;
+  /** The plan the sun's shadows were built for. */
+  private sunPlan: SunShadowPlan = planSunShadows({ tier: 'low', still: false, shadowMapCap: 2048, contentRadius: 0, voxel: true });
   readonly hemi = new HemisphereLight('#bcd4f0', '#3b3326', 0.8);
   /** Floor-bounce fill of buildings (black sky half, warm ground half); off until {@link setInteriorBounce}. */
   readonly bounce = new HemisphereLight('#000000', '#b08a66', 0);
@@ -494,12 +505,96 @@ export class EnvironmentRig {
     }
   }
 
+  /** The shadow plan in effect. */
+  get sunShadowPlan(): SunShadowPlan {
+    return this.sunPlan;
+  }
+
+  /** The sun's focus cascades (null with a single map). */
+  get sunCascades(): SunCascades | null {
+    return this.cascadeNode;
+  }
+
+  /**
+   * Apply a sun shadow plan. Cascade count, map sizes and the filter are compiled into every lit material, and three's
+   * light node keeps the shadow it was first built with, so a plan that changes them replaces the sun with a fresh
+   * light (materials rebuild once, as for any change of the scene's lights); other changes apply in place. Returns
+   * true when the sun was replaced (anything holding the old light, such as the post chain, must be rebuilt).
+   */
+  setSunShadows(plan: SunShadowPlan, camera: PerspectiveCamera): boolean {
+    const same = plan.key === this.sunPlan.key && plan.outerMapSize === this.sunPlan.outerMapSize;
+    this.sunPlan = plan;
+    if (same) return false;
+    const old = this.sunLight;
+    const sun = new DirectionalLight(old.color, old.intensity);
+    sun.name = old.name;
+    sun.castShadow = old.castShadow;
+    sun.position.copy(old.position);
+    sun.target = old.target;
+    sun.shadow.bias = old.shadow.bias;
+    sun.shadow.normalBias = old.shadow.normalBias;
+    sun.shadow.radius = old.shadow.radius;
+    sun.shadow.mapSize.copy(old.shadow.mapSize);
+    const oc = old.shadow.camera;
+    const nc = sun.shadow.camera;
+    nc.left = oc.left;
+    nc.right = oc.right;
+    nc.top = oc.top;
+    nc.bottom = oc.bottom;
+    nc.near = oc.near;
+    nc.far = oc.far;
+    nc.updateProjectionMatrix();
+    const shadow = sun.shadow as NodeLightShadow;
+    if (plan.cascades > 1) {
+      this.cascadeNode = new SunCascades(sun, camera, plan);
+      shadow.shadowNode = this.cascadeNode;
+    } else {
+      this.cascadeNode = null;
+      if (plan.filter === 'pcss') shadow.filterNode = softShadowFilter(plan);
+    }
+    const oldCascades = (old.shadow as NodeLightShadow).shadowNode;
+    this.group.remove(old);
+    this.group.add(sun);
+    sun.updateMatrixWorld();
+    this.sunLight = sun;
+    oldCascades?.dispose();
+    old.shadow.dispose();
+    old.dispose();
+    return true;
+  }
+
+  /** The directional light whose shadow map the sun shafts march (null until a map exists). */
+  get shaftLight(): DirectionalLight | null {
+    if (!this.sunLight.castShadow) return null;
+    if (this.cascadeNode) {
+      const outer = this.cascadeNode.outerLight;
+      return outer && outer.shadow.map ? (outer as unknown as DirectionalLight) : null;
+    }
+    return this.sunLight.shadow.map ? this.sunLight : null;
+  }
+
+  /** Edge of the shadow map the sun shafts read (a change reallocates it). */
+  get shaftMapSize(): number {
+    return this.cascadeNode ? this.sunPlan.outerMapSize : this.sunLight.shadow.mapSize.x;
+  }
+
+  /** Edges of every sun shadow map (memory estimates). */
+  get shadowMapEdges(): number[] {
+    if (!this.sunLight.castShadow) return [];
+    if (!this.cascadeNode) return [this.sunLight.shadow.mapSize.x];
+    const out: number[] = [];
+    for (let i = 0; i < this.sunPlan.cascades - 1; i++) out.push(this.sunPlan.nearMapSize);
+    out.push(this.sunPlan.outerMapSize);
+    return out;
+  }
+
   /** Fit the sun's shadow frustum to world-space content bounds (call when the world changes). */
   fitShadows(bounds: Box3): void {
     const empty = bounds.isEmpty();
     const fit = fitShadowCamera(
       empty ? null : { min: [bounds.min.x, bounds.min.y, bounds.min.z], max: [bounds.max.x, bounds.max.y, bounds.max.z] },
       this.state.lightDirection,
+      { maxHalf: this.sunPlan.outerMaxHalf },
     );
     this.sun.target.position.set(fit.center[0], fit.center[1], fit.center[2]);
     this.sun.target.updateMatrixWorld();
@@ -580,6 +675,8 @@ export class EnvironmentRig {
     this.envMap = null;
     this.sky.dispose();
     this.weather.dispose();
+    (this.sun.shadow as NodeLightShadow).shadowNode?.dispose();
+    this.cascadeNode = null;
     this.sun.shadow.map?.dispose();
     this.sun.dispose();
     this.hemi.dispose();

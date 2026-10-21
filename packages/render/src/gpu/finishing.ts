@@ -7,8 +7,8 @@
  * - `low`    — no post pass: direct MSAA rendering with the sky-derived tone curve (software rasterisers,
  *              low-memory mode, the e2e suites).
  * - `medium` — one composite pass: bloom, colour grade, vignette, fine grain.
- * - `high`   — adds ground-truth ambient occlusion (applied to indirect light only) and temporal
- *              anti-aliasing from a normal/velocity pre-pass.
+ * - `high`   — adds ground-truth ambient occlusion (applied to indirect light only), temporal
+ *              anti-aliasing from a normal/velocity pre-pass and screen-space contact shadows of the sun.
  * - `ultra`  — adds screen-space reflections for glossy surfaces, sun shafts ray-marched through the
  *              sun's shadow map, a wide warm halation bloom and a trace of chromatic aberration.
  *
@@ -33,6 +33,8 @@ export interface PostEffects {
   gi: boolean;
   /** Temporal anti-aliasing (needs the velocity pre-pass). */
   taa: boolean;
+  /** Screen-space contact shadows of the sun: feet, chair legs and small props grounded where the shadow map is too coarse. */
+  contact: boolean;
   /** Screen-space reflections (glass, polished floors, water, metals). */
   ssr: boolean;
   /** Sun shafts ray-marched through the sun shadow map. */
@@ -48,14 +50,14 @@ export interface PostEffects {
 }
 
 /** The effect keys, in the order they degrade when one fails (first dropped first). */
-export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'gi', 'shafts', 'ssr', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
+export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'gi', 'shafts', 'ssr', 'contact', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
 
 /** Effects that need the normal / velocity pre-pass. */
 export function needsPrePass(e: PostEffects): boolean {
-  return e.ao || e.gi || e.taa || e.ssr || e.shafts || e.dof;
+  return e.ao || e.gi || e.taa || e.contact || e.ssr || e.shafts || e.dof;
 }
 
-const NONE: PostEffects = Object.freeze({ composite: false, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+const NONE: PostEffects = Object.freeze({ composite: false, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
 
 /** The effects of a tier. */
 export function effectsOf(tier: RenderTier): PostEffects {
@@ -65,9 +67,9 @@ export function effectsOf(tier: RenderTier): PostEffects {
     case 'medium':
       return { ...NONE, composite: true, grain: true };
     case 'high':
-      return { ...NONE, composite: true, ao: true, taa: true, grain: true };
+      return { ...NONE, composite: true, ao: true, taa: true, contact: true, grain: true };
     case 'ultra':
-      return { ...NONE, composite: true, ao: true, taa: true, ssr: true, shafts: true, halation: true, aberration: true, grain: true };
+      return { ...NONE, composite: true, ao: true, taa: true, contact: true, ssr: true, shafts: true, halation: true, aberration: true, grain: true };
   }
 }
 

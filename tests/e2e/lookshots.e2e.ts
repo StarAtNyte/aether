@@ -6,7 +6,8 @@
  * `slug` or `slug:cover` uses the flagship cover camera, `slug:play` presses Play, runs forward for a
  * moment and captures the third-person view, `slug:px,py,pz>tx,ty,tz` is an explicit camera,
  * `slug:editor` is the page as the editor opens it (own framing, no camera change), `slug:env-<sky>-<hour>` re-lights the flagship's cover view (for example `highland-trail:env-night-23`). Set
- * `AETHER_E2E_GPU=1` to use the real GPU. Everything started here is stopped in a `finally`.
+ * `AETHER_E2E_GPU=1` to use the real GPU, `GEN_GPU=intel` the integrated one (WebGL2 over ANGLE/GL-EGL). Everything
+ * started here is stopped in a `finally`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +21,8 @@ if (!outDir || specs.length === 0) throw new Error('usage: lookshots <outDir> <s
 const log = (l: string): void => void process.stdout.write(`${l}\n`);
 const W = Number(process.env['SHOT_W'] ?? 1600);
 const H = Number(process.env['SHOT_H'] ?? 900);
+/** `GEN_GPU=intel`: WebGL2 over ANGLE/GL-EGL on the integrated GPU (holds its context headless). */
+const INTEL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];
 
 async function open(page: Page, url: string, slug: string): Promise<void> {
   await page.goto(`${url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
@@ -75,7 +78,7 @@ async function main(): Promise<void> {
   const browser: Browser =
     process.env['SHOT_BROWSER'] === 'firefox'
       ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } })
-      : await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: process.env['SHOT_HEADED'] !== '1' });
+      : await chromium.launch({ executablePath: findChrome(), args: process.env['GEN_GPU'] === 'intel' ? [...INTEL_ARGS] : [...CHROME_ARGS], headless: process.env['SHOT_HEADED'] !== '1' });
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     await ctx.addInitScript(SKIP_FIRST_RUN);

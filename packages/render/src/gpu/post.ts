@@ -36,6 +36,8 @@ export const GI_TUNING = Object.freeze({ intensity: 3.2, radius: 4.5, slices: 1,
 /** Screen-space reflection tuning: reach in metres, thickness, intensity. */
 export const SSR_TUNING = Object.freeze({ maxDistance: 40, thickness: 0.35, intensity: 0.85, resolutionScale: 0.5, quality: 0.5 });
 
+/** Screen-space contact shadows: ray length (m), depth tolerance (m), darkness, march quality, resolution. */
+export const CONTACT_TUNING = Object.freeze({ maxDistance: 0.4, thickness: 0.06, intensity: 0.92, quality: 0.5, resolutionScale: 0.5 });
 /** Sun shaft tuning: ray-march steps, density, maximum opacity and the resolution scale of the pass. */
 export const SHAFT_TUNING = Object.freeze({ steps: 28, density: 0.1, maxDensity: 0.06, distanceAttenuation: 2, resolutionScale: 0.5, brightness: 1.2 });
 
@@ -125,11 +127,13 @@ function disposeTargetTextures(pass: unknown): void {
 export interface PostOptions {
   /** The effects to build (default: composite only). */
   effects?: PostEffects;
-  /** The shadow-casting sun (sun shafts march through its shadow map). */
+  /** The shadow-casting sun, or the light whose shadow map the sun shafts march (the outermost cascade). */
   sun?: DirectionalLight | null;
+  /** The sun itself: screen-space contact shadows are traced toward it and darken its direct light only. */
+  contactLight?: DirectionalLight | null;
 }
 
-const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
 
 /** Build the pipeline, or null when unsupported. */
 export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, strength: number, quality: PostQuality = 'standard', opts: PostOptions = {}): Promise<PostPipeline | null> {
@@ -137,7 +141,8 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
   try {
     const prepass = needsPrePass(effects);
     const sun = effects.shafts && opts.sun?.castShadow ? opts.sun : null;
-    const [three, tsl, bloomMod, gtao, ssgiMod, traaMod, ssrMod, godMod, blendMod, dofMod, caMod] = await Promise.all([
+    const contactLight = effects.contact && opts.contactLight?.castShadow ? opts.contactLight : null;
+    const [three, tsl, bloomMod, gtao, ssgiMod, traaMod, ssrMod, godMod, blendMod, dofMod, caMod, sssMod] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
@@ -149,14 +154,18 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       sun ? import('three/addons/tsl/display/depthAwareBlend.js') : Promise.resolve(null),
       effects.dof ? import('three/addons/tsl/display/DepthOfFieldNode.js') : Promise.resolve(null),
       effects.aberration ? import('three/addons/tsl/display/ChromaticAberrationNode.js') : Promise.resolve(null),
+      contactLight ? import('three/addons/tsl/display/SSSNode.js') : Promise.resolve(null),
     ]);
     const { RenderPipeline, Vector3, UnsignedByteType, Color } = three;
-    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, builtinAOContext, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
     const scenePass = effects.taa ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
     disposables.push(scenePass);
+    type Value = ReturnType<typeof float>;
+    let aoValue: Value | null = null;
+    let contactValue: Value | null = null;
     let setAo = (_t: { radius?: number; scale?: number; thickness?: number; resolutionScale?: number; samples?: number }): void => undefined;
     let prePass: ReturnType<typeof pass> | null = null;
     let prePassDepth: ReturnType<typeof scenePass.getTextureNode> | null = null;
@@ -195,8 +204,30 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         if (t.samples !== undefined && Number.isFinite(t.samples)) aoPass.samples.value = Math.max(4, Math.min(48, Math.round(t.samples)));
         if (t.thickness !== undefined && Number.isFinite(t.thickness)) aoPass.thickness.value = Math.max(0.05, Math.min(8, t.thickness));
       };
-      scenePass.contextNode = builtinAOContext(aoPass.getTextureNode().sample(screenUV).r);
+      aoValue = aoPass.getTextureNode().sample(screenUV).r as unknown as Value;
       disposables.push(aoPass);
+    }
+    // Screen-space contact shadows: a short march toward the sun through the pre-pass depth, multiplied into the
+    // sun's direct light (feet, chair legs and small props get the shadow the shadow map is too coarse to hold).
+    if (contactLight && sssMod && prePassDepth) {
+      const contactPass = sssMod.sss(prePassDepth, camera, contactLight);
+      contactPass.maxDistance.value = CONTACT_TUNING.maxDistance;
+      contactPass.thickness.value = CONTACT_TUNING.thickness;
+      contactPass.shadowIntensity.value = CONTACT_TUNING.intensity;
+      contactPass.quality.value = CONTACT_TUNING.quality;
+      contactPass.resolutionScale = CONTACT_TUNING.resolutionScale;
+      contactPass.useTemporalFiltering = effects.taa;
+      contactValue = contactPass.getTextureNode().sample(screenUV).r as unknown as Value;
+      disposables.push(contactPass);
+    }
+    if (aoValue || contactValue) {
+      // One context for both (three's built-in AO and shadow contexts, merged).
+      const ao = aoValue;
+      const contact = contactValue;
+      const value: Record<string, unknown> = {};
+      if (ao) value['getAO'] = (input: Value | null, { material }: { material: { transparent: boolean } }) => (material.transparent === true ? input : input !== null ? input.mul(ao) : ao);
+      if (contact && contactLight) value['getShadow'] = ({ light, shadowColorNode }: { light: unknown; shadowColorNode: Value }) => (light === contactLight ? shadowColorNode.mul(contact) : shadowColorNode);
+      scenePass.contextNode = (context as unknown as (v: Record<string, unknown>) => typeof scenePass.contextNode)(value);
     }
     const color = scenePass.getTextureNode('output');
     let hdr = color.rgb;

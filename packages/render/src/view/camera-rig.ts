@@ -129,6 +129,9 @@ export class CameraRig {
   mode: CameraMode = 'orbit';
   private follow: FollowSource | null = null;
   private readonly look = new Vector3(0, 1, 0);
+  /** Where the followed subject stood at the last update (follow and first person). */
+  private readonly subject = new Vector3();
+  private subjectValid = false;
   private readonly fromPos = new Vector3();
   private readonly fromTarget = new Vector3();
   private readonly toPos = new Vector3();
@@ -243,6 +246,16 @@ export class CameraRig {
     this.flyTo(_desired, center, duration);
   }
 
+  /**
+   * What the view is about, written into `out`: the followed subject's feet in follow and first-person modes, the orbit
+   * target otherwise; null in manual mode (a posed camera has no subject). Shadow detail is concentrated around it.
+   */
+  getSubject(out: Vector3): Vector3 | null {
+    if (this.mode === 'manual') return null;
+    if (this.mode === 'orbit') return this.getTarget(out);
+    return this.subjectValid ? out.copy(this.subject) : null;
+  }
+
   /** Current look-at point (orbit target) written into `out`. */
   getTarget(out: Vector3): Vector3 {
     return out.copy(this.controls ? this.controls.target : this.look);
@@ -304,7 +317,9 @@ export class CameraRig {
       return changed;
     }
     const yaw = this.follow ? this.follow(_target) : Number.NaN;
+    this.subjectValid = Number.isFinite(yaw);
     if (!Number.isFinite(yaw)) return false;
+    this.subject.copy(_target);
     if (this.mode === 'firstPerson') {
       // Small height changes (stairs, kerbs) ease the eye by about 55 ms instead of snapping it; big drops and teleports pass at once.
       let eyeY = _target.y + this.eyeHeight;

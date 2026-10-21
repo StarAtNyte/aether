@@ -73,6 +73,8 @@ import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
+import { planSunShadows } from './environment/sun-shadow-plan';
+import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
 import { normalizePixels } from './view/still';
 import type { PathTraceOptions } from './view/pathtrace';
@@ -318,6 +320,8 @@ const PROOF_MIN_SHARE = 0.22;
 
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
+/** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
+const SHAFT_WAIT_FRAMES = 4;
 const JPEG_QUALITY = 0.8;
 /** Capture render targets kept (critique views and thumbnails use two sizes). */
 const MAX_CAPTURE_TARGETS = 2;
@@ -417,6 +421,8 @@ export function isFlat(data: Uint8Array): boolean {
 }
 
 const _target = new Vector3();
+const _focusTarget = new Vector3();
+const _focusDir = new Vector3();
 const _frustum = new Frustum();
 const _viewProj = new Matrix4();
 const _corner = new Vector3();
@@ -853,8 +859,11 @@ export class WorldRenderer {
     if (wr.budget.post) {
       const want = wr.wantedEffects();
       if (want) {
-        wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.sun });
-        wr.applyLook();
+        // Shafts march a shadow map that exists only after the first draw: the pipeline is then built by the first frames.
+        if (!want.shafts || wr.env.shaftLight) {
+          wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.shaftLight ?? wr.env.sun, contactLight: wr.env.sun });
+          wr.applyLook();
+        }
       }
     }
     opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
@@ -2562,6 +2571,7 @@ export class WorldRenderer {
     if (this.boundsDirty) {
       this.boundsDirty = false;
       this.framing = contentFraming(collectFramingItems(this.sync));
+      this.syncSunShadows();
       const f = this.framing;
       if (f) {
         this.env.setContentRadius(f.radius);
@@ -2582,6 +2592,80 @@ export class WorldRenderer {
       this.debugDirty = false;
       if (this.debug.active) this.debug.rebuild(this.sync);
     }
+  }
+
+  /**
+   * Choose the sun's shadow technique for the tier and the world (cascades, map sizes, filter): see
+   * `environment/sun-shadow-plan.ts`. A change of technique replaces the sun light, so the post chain that holds it
+   * (shafts, contact shadows) is rebuilt.
+   */
+  private syncSunShadows(): void {
+    // `globalThis.__SUN_SHADOWS_ON_SOFTWARE = true` (tests): plan as on a hardware GPU, so the cascade and soft-filter
+    // shaders can be checked on SwiftShader's WebGPU and WebGL2.
+    if (!this.env.sun.castShadow) return;
+    const q = this.qualityPlan;
+    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
+    if (!this.env.setSunShadows(plan, this.perspective)) return;
+    this.env.sun.shadow.radius = q.shadowRadius;
+    if (this.post || this.postPending) {
+      this.post?.dispose();
+      this.post = null;
+      this.postPending = false;
+      this.postGen++;
+    }
+    this.shaftWait = 0;
+    this.needsDraw = true;
+  }
+
+  /** Point the sun's focus cascades at what the eye looks at, and turn the shadow filters' sampling pattern. */
+  private aimSunShadows(capture: boolean): void {
+    const cascades = this.env.sunCascades;
+    const temporal = this.post?.effects.taa === true;
+    if (temporal) {
+      const k = (this.shadowFrame = (this.shadowFrame + 1) % 64);
+      shadowNoiseValue.set((k * 37) % 64, (k * 23) % 64);
+    } else if (shadowNoiseValue.x !== 0 || shadowNoiseValue.y !== 0) shadowNoiseValue.set(0, 0);
+    if (!cascades) return;
+    const h = cascades.hints;
+    h.target = this.rig.getSubject(_focusTarget) ?? this.probeFocus(capture);
+    const f = this.framing;
+    h.groundY = f ? Math.min(f.center[1], 0) : 0;
+    h.maxDistance = f ? this.perspective.position.distanceTo(_center.set(f.center[0], f.center[1], f.center[2])) + f.radius * 1.5 : 200;
+  }
+
+  private shadowFrame = 0;
+  private readonly focusProbe = { point: new Vector3(), valid: false, at: -1e9, pos: new Vector3(Number.NaN, 0, 0), quat: new Quaternion() };
+
+  /**
+   * A posed camera has no subject: the surface seen a little below the centre of the view is the focus. Ray cast at most four times a
+   * second while the camera moves (and for every capture pose); the last hit is reused in between.
+   */
+  private probeFocus(capture: boolean): Vector3 | null {
+    const p = this.focusProbe;
+    const cam = this.perspective;
+    const moved = p.pos.distanceToSquared(cam.position) > 0.0025 || Math.abs(p.quat.dot(cam.quaternion)) < 0.99999;
+    const t = now();
+    if (moved && (capture || t - p.at > 250)) {
+      p.at = t;
+      p.pos.copy(cam.position);
+      p.quat.copy(cam.quaternion);
+      // Through the lower part of the frame: a view toward the horizon is about its foreground, not the far hills.
+      cam.updateMatrixWorld();
+      _focusDir.set(0, -0.4, 0.5).unproject(cam).sub(cam.position).normalize();
+      const f = this.framing;
+      const reach = f ? cam.position.distanceTo(_center.set(f.center[0], f.center[1], f.center[2])) + f.radius * 1.5 : 400;
+      const hit = this.raycastWorld([cam.position.x, cam.position.y, cam.position.z], [_focusDir.x, _focusDir.y, _focusDir.z], reach);
+      p.valid = hit !== null;
+      if (hit) p.point.set(hit.point[0], hit.point[1], hit.point[2]);
+    }
+    return p.valid ? p.point : null;
+  }
+
+  /** The sun's shadow technique in effect and where its cascades are (diagnostics and tests). */
+  get sunShadowInfo(): { cascades: number; filter: string; mapSizes: number[]; focus: [number, number, number] | null; boxes: Array<{ center: [number, number, number]; half: number; size: number; hasMap: boolean }> } {
+    const plan = this.env.sunShadowPlan;
+    const d = this.env.sunCascades?.describe() ?? null;
+    return { cascades: plan.cascades, filter: plan.filter, mapSizes: this.env.shadowMapEdges, focus: d?.focus ?? null, boxes: d?.boxes ?? [] };
   }
 
   /** Post pass wanted for the current world and budget. */
@@ -2666,7 +2750,7 @@ export class WorldRenderer {
 
   /** The effects currently running (all false when drawing directly). */
   get activeEffects(): Readonly<PostEffects> {
-    return this.post?.effects ?? resolveEffects({ composite: false, ao: false, gi: false, taa: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
+    return this.post?.effects ?? resolveEffects({ composite: false, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
   }
 
   /** Effects that failed on this device (and were dropped from the chain). */
@@ -2840,10 +2924,18 @@ export class WorldRenderer {
       this.applyLook();
     }
     if (want === null || this.post || this.postPending) return;
+    // The shafts march the sun's (outermost) shadow map, which three creates on the first draw that uses it: draw
+    // directly until it exists (a world whose content receives no shadows never gets one: no shafts there).
+    if (want.shafts && !this.env.shaftLight) {
+      if (++this.shaftWait > SHAFT_WAIT_FRAMES) this.shaftsUnavailable = true;
+      this.needsDraw = true;
+      return;
+    }
+    this.shaftWait = 0;
     this.postPending = true;
-    this.postShadowSize = this.env.sun.shadow.mapSize.x;
+    this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.sun })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -2886,6 +2978,8 @@ export class WorldRenderer {
   }
 
   private postFailed = false;
+  /** Draws waited for the sun's shadow map before building a pipeline with shafts. */
+  private shaftWait = 0;
   /** The sun has no shadow map to march through (nothing receives its shadows): the shafts stay off until the environment or quality changes. */
   private shaftsUnavailable = false;
 
@@ -2921,17 +3015,18 @@ export class WorldRenderer {
     }
     // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
     // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.
-    if ((this.post || this.postPending) && this.postShadowSize !== this.env.sun.shadow.mapSize.x && (this.post?.effects.shafts || this.postPending)) {
+    if ((this.post || this.postPending) && this.postShadowSize !== this.env.shaftMapSize && (this.post?.effects.shafts || this.postPending)) {
       this.post?.dispose();
       this.post = null;
       this.postGen++;
       this.postPending = false;
-      this.postShadowSize = this.env.sun.shadow.mapSize.x;
+      this.postShadowSize = this.env.shaftMapSize;
       this.renderer.render(this.scene, this.perspective);
       this.needsDraw = true;
       return;
     }
     this.syncPost();
+    this.aimSunShadows(capture);
     // Water joins the depth pre-pass (and so the screen-space reflections) while they run.
     const reflective = this.post?.effects.ssr === true;
     if (reflective !== this.materials.waterIsReflective) this.materials.setReflectiveWater(reflective);
@@ -2946,9 +3041,9 @@ export class WorldRenderer {
         }
         // The shafts node reads the sun shadow map's textures when its shader is built: the map must exist.
         // Content that never receives shadows (block terrain) has none: drop the shafts for this world.
-        if (this.post.effects.shafts && !this.env.sun.shadow.map) {
+        if (this.post.effects.shafts && !this.env.shaftLight) {
           this.renderer.render(this.scene, this.perspective);
-          if (!this.env.sun.shadow.map) {
+          if (!this.env.shaftLight) {
             this.shaftsUnavailable = true;
             this.post.dispose();
             this.post = null;
@@ -3693,7 +3788,8 @@ export class WorldRenderer {
     const ratio = this.renderer.getPixelRatio();
     const w = Math.round(this.cssWidth * ratio);
     const h = Math.round(this.cssHeight * ratio);
-    const shadow = this.env.sun.castShadow ? this.env.sun.shadow.mapSize.x : 0;
+    const edges = this.env.shadowMapEdges;
+    const shadow = edges.length > 0 ? Math.max(...edges) : 0;
     return {
       gpuTier: this.gpu.tier,
       gpu: this.gpu.description,
@@ -3707,7 +3803,7 @@ export class WorldRenderer {
       cachedGeometries: this.geometries.size,
       materials: this.materials.size,
       generatorCacheMB: Math.round(((this.generatorCache?.bytes ?? 0) / (1024 * 1024)) * 10) / 10,
-      estimatedGpuMB: Math.round(estimateFramebufferMB(w, h, this.post !== null || !this.lowMemory) + estimateShadowMB(shadow)),
+      estimatedGpuMB: Math.round(estimateFramebufferMB(w, h, this.post !== null || !this.lowMemory) + edges.reduce((sum, e) => sum + estimateShadowMB(e), 0)),
       texturesMB: Math.round(((info.memory as { texturesSize?: number }).texturesSize ?? 0) / 104857.6) / 10,
       textureBreakdownMB: breakdownMB(textureBreakdown(this.renderer)),
       compression: { state: this.compression.state, reason: this.compression.reason, formats: this.compression.support ? supportLabel(this.compression.support) : null, setupMs: this.compression.setupMs },
