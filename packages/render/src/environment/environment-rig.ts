@@ -38,7 +38,7 @@ import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
 import { setFoliageSun } from '../materials/foliage-shading';
 import { planSunShadows, type SunShadowPlan } from './sun-shadow-plan';
-import { SunCascades, softShadowFilter, type NodeLightShadow } from '../gpu/sun-shadow-nodes';
+import { SoftShadowFilter, SunCascades, type NodeLightShadow } from '../gpu/sun-shadow-nodes';
 
 export { MAX_FOG_DENSITY };
 
@@ -153,6 +153,8 @@ export class EnvironmentRig {
   }
   /** The sun's cascades, when the plan has more than one map. */
   private cascadeNode: SunCascades | null = null;
+  /** The soft filter of the sun's maps (tap counts and softness follow the plan in place). */
+  private softFilter: SoftShadowFilter | null = null;
   /** The plan the sun's shadows were built for. */
   private sunPlan: SunShadowPlan = planSunShadows({ tier: 'low', still: false, shadowMapCap: 2048, contentRadius: 0, voxel: true });
   readonly hemi = new HemisphereLight('#bcd4f0', '#3b3326', 0.8);
@@ -522,9 +524,13 @@ export class EnvironmentRig {
    * true when the sun was replaced (anything holding the old light, such as the post chain, must be rebuilt).
    */
   setSunShadows(plan: SunShadowPlan, camera: PerspectiveCamera): boolean {
-    const same = plan.key === this.sunPlan.key && plan.outerMapSize === this.sunPlan.outerMapSize;
+    const same = plan.key === this.sunPlan.key;
     this.sunPlan = plan;
-    if (same) return false;
+    if (same) {
+      this.softFilter?.set(plan);
+      this.cascadeNode?.setPlan(plan);
+      return false;
+    }
     const old = this.sunLight;
     const sun = new DirectionalLight(old.color, old.intensity);
     sun.name = old.name;
@@ -545,12 +551,13 @@ export class EnvironmentRig {
     nc.far = oc.far;
     nc.updateProjectionMatrix();
     const shadow = sun.shadow as NodeLightShadow;
+    this.softFilter = plan.filter === 'soft' ? new SoftShadowFilter(plan) : null;
     if (plan.cascades > 1) {
-      this.cascadeNode = new SunCascades(sun, camera, plan);
+      this.cascadeNode = new SunCascades(sun, camera, plan, this.softFilter);
       shadow.shadowNode = this.cascadeNode;
     } else {
       this.cascadeNode = null;
-      if (plan.filter === 'pcss') shadow.filterNode = softShadowFilter(plan);
+      if (this.softFilter) shadow.filterNode = this.softFilter.fn;
     }
     const oldCascades = (old.shadow as NodeLightShadow).shadowNode;
     this.group.remove(old);

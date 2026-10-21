@@ -138,7 +138,7 @@ async function main(): Promise<void> {
         await shoot(page, join(outDir!, `${slug}-${sky}-${hour}${custom ? '-up' : ''}.png`));
       } else if (mode.includes('>')) {
         // One or more explicit cameras on the same loaded world: `px,py,pz>tx,ty,tz[#label]` joined by `|`.
-        const cams = spec.slice(slug.length + 1).split('=')[0]!.split('|');
+        const cams = spec.slice(slug.length + 1).split('=')[0]!.replace(/@/g, '>').split('|');
         for (const [n, camSpec] of cams.entries()) {
           const [pose = '', tag = cams.length > 1 ? String(n + 1) : ''] = camSpec.split('#');
           const name = label && cams.length === 1 ? label : tag ? `cam-${tag}` : 'cam';

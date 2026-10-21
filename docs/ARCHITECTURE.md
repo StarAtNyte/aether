@@ -478,9 +478,10 @@ and Safari and WebGL2 on Firefox, where WebGPU is used only for a known-good
 discrete or Apple GPU outside Linux; a WebGPU start that never finished
 disables WebGPU for the origin. Settings: ACES tone
 mapping, sRGB output, environment-driven exposure, bloom plus a subtle
-vignette through `RenderPipeline` (disabled automatically if it fails), PCF
-shadows with a softened radius, and a sun shadow camera refitted to the
-meaningful content.
+vignette through `RenderPipeline` (disabled automatically if it fails), and
+sun shadows planned per tier (section 39: one map fitted to the meaningful
+content on the low tier, focus cascades with a contact-hardening filter and
+screen-space contact shadows above it).
 
 **Memory budgets.** On a laptop with an integrated GPU, GPU memory *is* system
 memory, and drawing-buffer pixels dominate it: a multisampled half-float
@@ -2319,3 +2320,49 @@ flashes", "add fire to the torches", "remove the smoke from the chimney"), as co
 The offline planner gives new games a tier by genre (punchy for action and racing, subtle for calm exploration and
 stories) and lights what obviously burns. Settings → Play → Reduce motion (and the system's reduce-motion preference)
 turns shake, FOV kicks and flashes off; published games have the same switch in their pause menu.
+
+## 39. Sun shadows: focus cascades, contact hardening and contact shadows
+
+**Why.** The sun had one shadow map fitted to the meaningful content (`environment/shadow-fit.ts`). On a 300 m level
+its texels were 15 to 30 cm wide and the PCF radius blurred them further, so people, tents, benches and grass tufts had
+no shadow of their own and nothing looked grounded. The policy is now per tier (`environment/sun-shadow-plan.ts`, pure
+and tested): the low tier, block worlds (they shade themselves, section 17), content under 16 m radius and software
+rasterisers keep the single fitted map with three's PCF; every other tier gets three maps (two focus boxes and the
+content fit; medium's near maps are 1024²) and Aether's soft filter.
+
+**Focus cascades.** `gpu/sun-shadow-nodes.ts` extends three's `CSMShadowNode` (its cascade lights, shadow maps and
+life cycle) but not its placement. CSM slices the view frustum along depth from the camera's near plane, which spends
+the finest map on the air in front of an orbit camera 60 m from its subject. Here the near cascades are boxes around
+the focus of the view: the followed player in play, the orbit target in the editor, and for a posed camera (captures,
+stills) the surface a ray through the lower part of the frame hits (ray cast at most four times a second while the
+camera moves, and for every capture pose). The first box's half size is half the eye-to-focus distance (5 to 40 m),
+each next one 3.5 times larger, the outermost map is the content fit (up to 320 m half size when cascades hold the near
+detail; inside a building it is fitted to the shell as before). Boxes sit a little ahead of the focus, are snapped to
+whole texels in light space and change size only in steps of √2 with hysteresis, so shadow edges stay still while the
+camera orbits or walks. Each fragment takes the finest box that holds it and blends into the next one over the outer
+18 % of the box. Depth and normal biases are in world terms per map (about half a texel plus a centimetre); a fixed
+fraction of the outer map's 1 km depth range had lifted shadows half a metre off the ground.
+
+**Contact hardening.** Every tier above low filters the sun's maps with `SoftShadowFilter`, a PCSS-style filter in TSL
+(the idea of drei's `PCSSShadowNode`, rewritten). It keeps the map's hardware depth comparison, so every tap is
+bilinear and three's sun shafts can still march the outermost map: each blocker-search tap compares at the receiver and
+0.35, 1.8 and 7 m in front of it, and the mean blocker distance follows from those exceedance fractions
+(E[D] = ∫ P(D > Δ) dΔ). The penumbra is that distance times the sun's apparent size (1.1°, the disc plus its aureole),
+at least 1.2 cm, filtered with rotated Vogel-disk taps whose rotation advances each frame so temporal AA converges it;
+the reference depth moves toward the light with the kernel so wide kernels do not self-shadow slopes. Tap counts are
+uniforms driving dynamic loops: medium takes 3 search and 6 filter taps, high 6 and 10, ultra 6 and 12, stills 8 and 16.
+
+**Contact shadows.** High, ultra and stills add three's screen-space shadows (`SSSNode`, a short march toward the sun
+through the pre-pass depth, half resolution, temporally filtered) to the sun's direct light only, through the scene
+pass's lighting context together with the AO; it is the `contact` effect with its own Settings switch. The instanced
+contact footprints under furniture (section 36) stay on every tier as the ambient grounding.
+
+**Rebuilds.** The cascade count and the filter are compiled into lit materials, and three's light node keeps the
+shadow node it was first built with, so a change of technique replaces the sun with a fresh `DirectionalLight` (one
+material rebuild, as for any change of the scene's lights) and rebuilds the post chain that held the old one. The
+shader shape is deliberately the same on medium, high, ultra and stills (tap counts, softness and map sizes change in
+place), so only low ↔ the others or small ↔ large content rebuild: a first version with 2/3/4 cascades per tier rebuilt
+every lit material on each tier change, and the transient JS heap of those rebuilds (250 to 700 MB on highland-trail)
+tripped the studio's low-memory switch after a few changes; now the heap stays between 235 and 430 MB over eight. Nothing per frame allocates (cascade placement uses scratch vectors).
+`renderer.sunShadowInfo` reports the plan and where the boxes are; `gpu-parity` has `sun-medium`, `sun-high` and
+`sun-ultra` configs that plan as on a hardware GPU (so the shaders also run on SwiftShader) and check every map is drawn.

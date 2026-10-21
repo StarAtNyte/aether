@@ -7,7 +7,8 @@
  * frame time of ultra minus the median without it. Prints a Markdown table.
  *
  * One browser at a time, closed in `finally`. `AETHER_E2E_GPU=1` uses the machine's GPU in Chromium
- * (default: a software rasteriser, where numbers are only relative). Firefox runs on its own GL.
+ * (default: a software rasteriser, where numbers are only relative), `GEN_GPU=intel` the integrated GPU over ANGLE/GL-EGL
+ * (WebGL2 only). Firefox runs on its own GL.
  *
  * Run: `npm run build && npm run e2e:render-bench -- [--only=chromium-webgpu|chromium-webgl2|firefox]
  * [--worlds=skyline-penthouse,four-seasons-garden] [--frames=24] [--size=2560x1440]`
@@ -22,6 +23,8 @@ const ONLY = arg('only');
 const WORLDS = (arg('worlds') ?? 'skyline-penthouse,four-seasons-garden').split(',').filter(Boolean);
 const FRAMES = Math.max(4, Math.min(120, Number(arg('frames') ?? 24)));
 const [W, H] = (arg('size') ?? '2560x1440').split('x').map(Number) as [number, number];
+/** `GEN_GPU=intel`: the integrated GPU over ANGLE/GL-EGL. */
+const BASE_ARGS: readonly string[] = process.env['GEN_GPU'] === 'intel' ? ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'] : CHROME_ARGS;
 const EFFECTS = ['ao', 'taa', 'contact', 'ssr', 'shafts', 'halation', 'aberration', 'grain'] as const;
 const TIMEOUT = 150_000;
 const startedAt = performance.now();
@@ -40,8 +43,8 @@ interface Target {
 const UNCAPPED = ['--disable-gpu-vsync', '--disable-frame-rate-limit'];
 
 const TARGETS: readonly Target[] = [
-  { name: 'chromium-webgpu', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS, ...UNCAPPED] }), hideWebGPU: false },
-  { name: 'chromium-webgl2', launch: () => chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS, ...UNCAPPED] }), hideWebGPU: true },
+  { name: 'chromium-webgpu', launch: () => chromium.launch({ executablePath: findChrome(), args: [...BASE_ARGS, ...UNCAPPED] }), hideWebGPU: false },
+  { name: 'chromium-webgl2', launch: () => chromium.launch({ executablePath: findChrome(), args: [...BASE_ARGS, ...UNCAPPED] }), hideWebGPU: true },
   { name: 'firefox', launch: () => firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }), hideWebGPU: false },
 ];
 

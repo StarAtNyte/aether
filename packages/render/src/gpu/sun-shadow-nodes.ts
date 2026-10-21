@@ -1,7 +1,7 @@
 /**
  * Shader side of the sun's shadows (policy in `environment/sun-shadow-plan.ts`):
  *
- * - {@link softShadowFilter}: a contact-hardening (PCSS-style) filter for any directional shadow map. The blocker
+ * - {@link SoftShadowFilter}: a contact-hardening (PCSS-style) filter for any directional shadow map. The blocker
  *   search keeps the map's hardware depth comparison (so three's sun shafts can still march through the same map, and
  *   every tap is bilinear-filtered): each search tap compares at four depths in front of the receiver and the mean
  *   distance to the blocker follows from those exceedance fractions (E[D] = ∫ P(D > Δ) dΔ). The penumbra is that
@@ -48,14 +48,15 @@ interface Tsl {
   vec4(...v: Array<number | N>): N;
   texture(tex: unknown, uv?: N): N;
   reference(name: string, type: string, object: object): N;
-  uniform(v: unknown): N;
+  uniform(v: unknown, type?: string): N;
+  Loop(count: N | number, body: (index: { i: N }) => void): void;
   clamp(x: N, lo: N | number, hi: N | number): N;
   max(a: N, b: N | number): N;
   min(a: N, b: N | number): N;
   abs(a: N): N;
   smoothstep(a: N | number, b: N | number, x: N): N;
   interleavedGradientNoise(p: N): N;
-  vogelDiskSample(i: number, n: number, phi: N): N;
+  vogelDiskSample(i: N | number, n: N | number, phi: N): N;
   lightShadowMatrix(light: object): N;
   shadow(light: object, shadow: LightShadow): Node;
   screenCoordinate: N;
@@ -102,8 +103,9 @@ export function meanBlockerDistance(p1: number, p2: number, p3: number): number 
   return (d1 * (1 + p1)) / 2 + ((d2 - d1) * (p1 + p2)) / 2 + ((d3 - d2) * (p2 + p3)) / 2 + p3 * d3 * 0.5;
 }
 
-/** Options of {@link softShadowFilter}. */
-export interface SoftFilterOptions {
+/** What the soft filter reads from a plan (tap counts, softness), updated in place. */
+export interface SoftFilterSettings {
+  /** Blocker-search taps (at least 1). */
   blockerSamples: number;
   filterSamples: number;
   /** Apparent sun diameter (radians). */
@@ -112,16 +114,38 @@ export interface SoftFilterOptions {
   minPenumbra: number;
 }
 
+/** Most taps the soft filter takes in each loop. */
+export const MAX_BLOCKER_TAPS = 16;
+export const MAX_FILTER_TAPS = 32;
+
 /**
- * A contact-hardening shadow filter for directional (orthographic) shadow maps. Works with the map's comparison
- * sampler on both backends (no raw depth reads), so it can replace three's PCF filter on any directional shadow.
+ * A contact-hardening shadow filter for directional (orthographic) shadow maps ({@link SoftShadowFilter.fn} goes into
+ * `LightShadow.filterNode`). Works with the map's comparison sampler on both backends (no raw depth reads), so it can
+ * replace three's PCF filter on any directional shadow. Tap counts and softness are uniforms: one shader serves every
+ * tier, and {@link set} changes them without a rebuild.
  */
-export function softShadowFilter(opts: SoftFilterOptions): ShadowFilterFn {
-  const nb = Math.max(3, Math.min(16, Math.round(opts.blockerSamples)));
-  const nf = Math.max(4, Math.min(32, Math.round(opts.filterSamples)));
-  const k = Math.max(1e-4, Math.tan(Math.max(1e-4, opts.sunAngle)));
-  const minPen = Math.max(0.001, opts.minPenumbra);
-  return T.Fn(({ depthTexture, shadowCoord, shadow, depthLayer }: FilterInputs, builder: NodeBuilder): N => {
+export class SoftShadowFilter {
+  private readonly blockerTaps = T.uniform(6, 'int');
+  private readonly filterTaps = T.uniform(8, 'int');
+  private readonly tanAngle = T.uniform(0.02);
+  private readonly minPen = T.uniform(0.012);
+  readonly fn: ShadowFilterFn;
+
+  constructor(settings: SoftFilterSettings) {
+    this.set(settings);
+    this.fn = T.Fn(({ depthTexture, shadowCoord, shadow, depthLayer }: FilterInputs, builder: NodeBuilder): N => this.build(depthTexture, shadowCoord, shadow, depthLayer, builder));
+  }
+
+  /** Apply tap counts and softness (allocation-free; takes effect on the next frame). */
+  set(settings: SoftFilterSettings): void {
+    const value = (u: N): { value: number } => u as unknown as { value: number };
+    value(this.blockerTaps).value = Math.max(1, Math.min(MAX_BLOCKER_TAPS, Math.round(settings.blockerSamples) || 1));
+    value(this.filterTaps).value = Math.max(1, Math.min(MAX_FILTER_TAPS, Math.round(settings.filterSamples) || 1));
+    value(this.tanAngle).value = Math.max(1e-4, Math.tan(Math.max(1e-4, settings.sunAngle)));
+    value(this.minPen).value = Math.max(0.001, settings.minPenumbra);
+  }
+
+  private build(depthTexture: FilterInputs['depthTexture'], shadowCoord: N, shadow: LightShadow, depthLayer: N | number, builder: NodeBuilder): N {
     const cam = shadow.camera as OrthographicCamera;
     const near = T.reference('near', 'float', cam).setGroup(T.renderGroup);
     const far = T.reference('far', 'float', cam).setGroup(T.renderGroup);
@@ -140,7 +164,7 @@ export function softShadowFilter(opts: SoftFilterOptions): ShadowFilterFn {
     };
     const zr = shadowCoord.z;
     const phi = T.interleavedGradientNoise(T.screenCoordinate.xy.add(shadowNoiseOffset)).mul(6.28318530718);
-    const search = T.clamp(T.float(BLOCKER_REACH * k).div(width), texel.mul(1.5), texel.mul(40));
+    const search = T.clamp(this.tanAngle.mul(BLOCKER_REACH).div(width), texel.mul(1.5), texel.mul(40));
     const dz1 = T.float(BLOCKER_LEVELS[0]).div(range).mul(toward);
     const dz2 = T.float(BLOCKER_LEVELS[1]).div(range).mul(toward);
     const dz3 = T.float(BLOCKER_LEVELS[2]).div(range).mul(toward);
@@ -148,14 +172,15 @@ export function softShadowFilter(opts: SoftFilterOptions): ShadowFilterFn {
     const b1 = T.float(0).toVar();
     const b2 = T.float(0).toVar();
     const b3 = T.float(0).toVar();
-    for (let i = 0; i < nb; i++) {
-      const uv = shadowCoord.xy.add(T.vogelDiskSample(i, nb, phi).mul(search));
+    T.Loop(this.blockerTaps, ({ i }) => {
+      const uv = shadowCoord.xy.add(T.vogelDiskSample(i, this.blockerTaps, phi).mul(search));
       b0.addAssign(lit(uv, zr).oneMinus());
       b1.addAssign(lit(uv, zr.add(dz1)).oneMinus());
       b2.addAssign(lit(uv, zr.add(dz2)).oneMinus());
       b3.addAssign(lit(uv, zr.add(dz3)).oneMinus());
-    }
+    });
     const result = T.float(1).toVar();
+    // A receiver no blocker reaches is lit; otherwise the penumbra follows the mean blocker distance.
     T.If(b0.greaterThan(0.001), () => {
       const inv = T.float(1).div(T.max(b0, 0.001));
       const p1 = T.min(b1.mul(inv), 1);
@@ -163,16 +188,17 @@ export function softShadowFilter(opts: SoftFilterOptions): ShadowFilterFn {
       const p3 = T.min(b3.mul(inv), p2);
       const [d1, d2, d3] = BLOCKER_LEVELS;
       const mean = p1.add(1).mul(d1 / 2).add(p1.add(p2).mul((d2 - d1) / 2)).add(p2.add(p3).mul((d3 - d2) / 2)).add(p3.mul(d3 * 0.5));
-      const penumbra = T.max(mean.mul(k), minPen);
-      const radius = T.clamp(penumbra.div(width), texel, search);
+      const radius = T.clamp(T.max(mean.mul(this.tanAngle), this.minPen).div(width), texel, search);
       // Wider kernels reach further across a sloped receiver: move the reference toward the light with the kernel.
       const zf = zr.add(radius.mul(width).mul(0.35).div(range).mul(toward));
       const sum = T.float(0).toVar();
-      for (let i = 0; i < nf; i++) sum.addAssign(lit(shadowCoord.xy.add(T.vogelDiskSample(i, nf, phi.add(1.9)).mul(radius)), zf));
-      result.assign(sum.mul(1 / nf));
+      T.Loop(this.filterTaps, ({ i }) => {
+        sum.addAssign(lit(shadowCoord.xy.add(T.vogelDiskSample(i, this.filterTaps, phi.add(1.9)).mul(radius)), zf));
+      });
+      result.assign(sum.div(T.float(this.filterTaps)));
     });
     return result;
-  });
+  }
 }
 
 interface CsmInternals {
@@ -213,16 +239,34 @@ export class SunCascades extends CSMShadowNode {
   readonly hints: FocusHints = { target: null, groundY: 0, maxDistance: 200 };
   private half0 = 0;
   private readonly filter: ShadowFilterFn | null;
-  /** World-space PCF penumbra (m) of the filter-less tiers. */
+  /** World-space PCF penumbra (m) without a soft filter. */
   private readonly pcfPenumbra = 0.06;
+  private plan: SunShadowPlan;
 
   constructor(
     private readonly sun: DirectionalLight,
     private readonly mainCamera: PerspectiveCamera,
-    private readonly plan: SunShadowPlan,
+    plan: SunShadowPlan,
+    filter: SoftShadowFilter | null,
   ) {
     super(sun, { cascades: Math.max(2, plan.cascades), maxFar: 1e5, lightMargin: 0 });
-    this.filter = plan.filter === 'pcss' ? softShadowFilter(plan) : null;
+    this.plan = plan;
+    this.filter = filter?.fn ?? null;
+  }
+
+  /** A plan with the same shader shape (cascade count, filter): map sizes and the focus policy change in place. */
+  setPlan(plan: SunShadowPlan): void {
+    this.plan = plan;
+    if (this.camera !== null) this.sizeMaps();
+  }
+
+  private sizeMaps(): void {
+    const lights = this.cascadeLights;
+    const last = lights.length - 1;
+    lights.forEach((l, i) => {
+      const size = i === last ? this.plan.outerMapSize : this.plan.nearMapSize;
+      if (l.shadow.mapSize.x !== size) l.shadow.mapSize.set(size, size);
+    });
   }
 
   /** The cascade lights (empty before the first shader build). */
@@ -261,9 +305,8 @@ export class SunCascades extends CSMShadowNode {
   private configure(): void {
     const lights = this.cascadeLights;
     const last = lights.length - 1;
+    this.sizeMaps();
     lights.forEach((l, i) => {
-      const size = i === last ? this.plan.outerMapSize : this.plan.nearMapSize;
-      l.shadow.mapSize.set(size, size);
       l.shadow.bias = this.sun.shadow.bias;
       l.shadow.normalBias = this.sun.shadow.normalBias;
       l.shadow.radius = this.sun.shadow.radius;

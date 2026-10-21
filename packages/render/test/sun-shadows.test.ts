@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CASCADE_MIN_RADIUS, focusHalf, pcfRadius, planSunShadows, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
-import { BLOCKER_LEVELS, meanBlockerDistance } from '../src/gpu/sun-shadow-nodes';
+import { CASCADES, CASCADE_MIN_RADIUS, focusHalf, pcfRadius, planSunShadows, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
+import { BLOCKER_LEVELS, MAX_BLOCKER_TAPS, MAX_FILTER_TAPS, meanBlockerDistance } from '../src/gpu/sun-shadow-nodes';
 import { effectsOf, needsPrePass } from '../src/gpu/finishing';
 
 const big = { shadowMapCap: 2048, contentRadius: 120, voxel: false };
@@ -13,11 +13,31 @@ describe('sun shadow plan', () => {
     expect(planSunShadows({ ...big, tier: 'ultra', still: false, software: true }).cascades).toBe(1);
   });
 
-  it('scales the cascade count with the tier (two on integrated GPUs, four for stills)', () => {
-    expect(planSunShadows({ ...big, tier: 'medium', still: false }).cascades).toBe(2);
-    expect(planSunShadows({ ...big, tier: 'high', still: false }).cascades).toBe(3);
-    expect(planSunShadows({ ...big, tier: 'ultra', still: false }).cascades).toBe(4);
-    expect(planSunShadows({ ...big, tier: 'medium', still: true }).cascades).toBe(4);
+  it('gives every tier above low the same cascades (two focus boxes and the content fit)', () => {
+    for (const tier of ['medium', 'high', 'ultra'] as const) expect(planSunShadows({ ...big, tier, still: false }).cascades).toBe(CASCADES);
+    expect(planSunShadows({ ...big, tier: 'medium', still: true }).cascades).toBe(CASCADES);
+    expect(CASCADES).toBe(3);
+  });
+
+  it('compiles the same shaders on medium, high, ultra and stills (no material rebuild when the tier changes)', () => {
+    const keys = new Set([...(['medium', 'high', 'ultra'] as const).map((tier) => planSunShadows({ ...big, tier, still: false }).key), planSunShadows({ ...big, tier: 'high', still: true }).key]);
+    expect(keys.size).toBe(1);
+    const small = new Set((['medium', 'high', 'ultra'] as const).map((tier) => planSunShadows({ ...big, contentRadius: 8, tier, still: false }).key));
+    expect(small.size).toBe(1);
+    // Only the low tier (and software) differ.
+    expect(planSunShadows({ ...big, tier: 'low', still: false }).key).not.toBe([...keys][0]);
+  });
+
+  it('scales the soft filter taps with the tier as uniforms: fewest on medium, most for stills', () => {
+    const medium = planSunShadows({ ...big, tier: 'medium', still: false });
+    expect(medium.blockerSamples).toBeGreaterThan(0);
+    expect(medium.blockerSamples).toBeLessThan(planSunShadows({ ...big, tier: 'high', still: false }).blockerSamples);
+    const high = planSunShadows({ ...big, tier: 'high', still: false });
+    const still = planSunShadows({ ...big, tier: 'high', still: true });
+    expect(high.blockerSamples).toBeGreaterThan(0);
+    expect(still.filterSamples).toBeGreaterThan(high.filterSamples);
+    expect(still.filterSamples).toBeLessThanOrEqual(MAX_FILTER_TAPS);
+    expect(still.blockerSamples).toBeLessThanOrEqual(MAX_BLOCKER_TAPS);
   });
 
   it('keeps maps within the budget, with smaller near maps on the medium tier', () => {
@@ -33,19 +53,20 @@ describe('sun shadow plan', () => {
     expect(planSunShadows({ ...big, tier: 'high', still: false, shadowMapCap: Number.NaN }).outerMapSize).toBe(1024);
   });
 
-  it('softens with blocker distance where temporal AA converges the taps (high, ultra, stills), PCF elsewhere', () => {
-    expect(planSunShadows({ ...big, tier: 'medium', still: false }).filter).toBe('pcf');
-    expect(planSunShadows({ ...big, tier: 'high', still: false }).filter).toBe('pcss');
-    expect(planSunShadows({ ...big, tier: 'low', still: true }).filter).toBe('pcss');
-    expect(planSunShadows({ ...big, tier: 'high', still: false, contentRadius: 5 }).filter).toBe('pcss');
+  it('uses the soft filter above the low tier, three\'s PCF on low and software rasterisers', () => {
+    expect(planSunShadows({ ...big, tier: 'low', still: false }).filter).toBe('pcf');
+    expect(planSunShadows({ ...big, tier: 'medium', still: false }).filter).toBe('soft');
+    expect(planSunShadows({ ...big, tier: 'high', still: false }).filter).toBe('soft');
+    expect(planSunShadows({ ...big, tier: 'low', still: true }).filter).toBe('soft');
+    expect(planSunShadows({ ...big, tier: 'high', still: false, contentRadius: 5 }).filter).toBe('soft');
     expect(planSunShadows({ ...big, tier: 'high', still: false, software: true }).filter).toBe('pcf');
   });
 
   it('changes its shader key only with what is compiled into materials', () => {
     const a = planSunShadows({ ...big, tier: 'high', still: false });
     expect(planSunShadows({ ...big, tier: 'high', still: false, contentRadius: 300 }).key).toBe(a.key);
-    expect(planSunShadows({ ...big, tier: 'ultra', still: false }).key).not.toBe(a.key);
-    expect(planSunShadows({ ...big, tier: 'medium', still: false }).key).not.toBe(a.key);
+    expect(planSunShadows({ ...big, tier: 'high', still: false, shadowMapCap: 1024 }).key).toBe(a.key);
+    expect(planSunShadows({ ...big, tier: 'high', still: false, contentRadius: 5 }).key).not.toBe(a.key);
   });
 
   it('lets the outermost map cover larger worlds when cascades hold the near detail', () => {

@@ -10,15 +10,20 @@
  * times larger than the last, and the outermost map stays the static content fit. A box only moves by whole texels
  * and only changes size in coarse steps with hysteresis, so shadow edges do not crawl while the camera orbits or walks.
  *
- * Filtering: `pcf` is three's rotated-disk PCF with a radius chosen per map so the penumbra has the same width in metres
- * in every cascade; `pcss` (high and ultra tiers and stills, which accumulate frames through temporal AA) estimates
- * the distance to the blocker and widens the penumbra with it, so a table leg's shadow is sharp where the leg meets the
- * floor and soft at the tip of a tree's shadow.
+ * Filtering: `pcf` (low tier) is three's rotated-disk PCF; `soft` (every other tier) is Aether's filter
+ * (`gpu/sun-shadow-nodes.ts`): high, ultra and stills (which accumulate frames through temporal AA) search for the
+ * blocker and widen the penumbra with its distance, so a table leg's shadow is sharp where the leg meets the floor and
+ * soft at the tip of a tree's shadow; medium (no temporal AA) takes fewer taps.
+ *
+ * Everything compiled into lit materials (the cascade count and the filter) is the same on medium, high, ultra and
+ * stills; tap counts, softness and map sizes are uniforms or resize in place. Switching between those tiers therefore
+ * rebuilds no material: a rebuild of every lit material allocates hundreds of megabytes of transient JS heap, enough to
+ * trip the studio's low-memory switch after a few tier changes.
  */
 import type { RenderTier } from '../gpu/finishing';
 
 /** Shadow filtering of the sun. */
-export type SunShadowFilter = 'pcf' | 'pcss';
+export type SunShadowFilter = 'pcf' | 'soft';
 
 /** What the sun's shadows are for the current tier and world. */
 export interface SunShadowPlan {
@@ -71,10 +76,10 @@ export const CASCADE_MIN_RADIUS = 16;
  * caster is softened by about 10 cm.
  */
 export const SUN_ANGLE = 0.019;
-/** Cascades per tier (including the content fit). */
-export const TIER_CASCADES: Readonly<Record<RenderTier, number>> = Object.freeze({ low: 1, medium: 2, high: 3, ultra: 4 });
-/** Cascades of a still. */
-export const STILL_CASCADES = 4;
+/** Sun shadow maps when cascades run (two focus boxes and the content fit), the same on every tier that has them. */
+export const CASCADES = 3;
+/** Soft-filter taps per tier: blocker search and filter. */
+export const SOFT_TAPS: Readonly<Record<Exclude<RenderTier, 'low'> | 'still', readonly [number, number]>> = Object.freeze({ medium: [3, 6], high: [6, 10], ultra: [6, 12], still: [8, 16] });
 /** Fraction of a near cascade (from its edge inwards) over which it blends into the next one. */
 export const CASCADE_BLEND = 0.18;
 
@@ -87,15 +92,13 @@ export function planSunShadows(input: SunShadowInput): SunShadowPlan {
   const cap = Math.max(256, Math.floor(finitePositive(input.shadowMapCap, 1024)));
   const radius = finitePositive(input.contentRadius, 0);
   const tier: RenderTier = input.still ? 'ultra' : input.tier;
-  const soft = input.still || tier === 'high' || tier === 'ultra';
-  const filter: SunShadowFilter = soft && input.software !== true ? 'pcss' : 'pcf';
-  let cascades = input.still ? STILL_CASCADES : TIER_CASCADES[tier];
-  if (input.voxel || radius < CASCADE_MIN_RADIUS || input.software === true) cascades = 1;
+  const capable = (input.still || tier !== 'low') && input.software !== true;
+  const filter: SunShadowFilter = capable ? 'soft' : 'pcf';
+  const cascades = capable && !input.voxel && radius >= CASCADE_MIN_RADIUS ? CASCADES : 1;
   // Integrated GPUs (medium) get a cheaper near map; stills keep the doubled budget for the content fit only.
-  const nearMapSize = cascades === 1 ? 0 : tier === 'medium' ? Math.min(cap, 1024) : Math.min(cap, 2048);
+  const nearMapSize = cascades === 1 ? 0 : tier === 'medium' && !input.still ? Math.min(cap, 1024) : Math.min(cap, 2048);
   const outerMapSize = cap;
-  const blockerSamples = input.still ? 8 : 6;
-  const filterSamples = input.still ? 16 : 10;
+  const [blockerSamples, filterSamples] = filter === 'pcf' ? [0, 0] : SOFT_TAPS[input.still ? 'still' : tier === 'low' ? 'medium' : tier];
   const plan = {
     cascades,
     nearMapSize,
@@ -110,7 +113,7 @@ export function planSunShadows(input: SunShadowInput): SunShadowPlan {
     ratio: 3.5,
     outerMaxHalf: cascades > 1 ? 320 : 160,
   };
-  return { ...plan, key: `${cascades}:${nearMapSize}:${filter}:${blockerSamples}:${filterSamples}` };
+  return { ...plan, key: `${cascades}:${filter}` };
 }
 
 /** Quantise a half size to steps of √2 (4, 5.66, 8, …) so a box changes size rarely. */
