@@ -231,10 +231,29 @@ async function run(browser: Browser, url: string, name: string): Promise<void> {
     log('  undid all six edits: the world is exactly the one the first prompt built');
 
     // 5. GPU resources stay flat over 20 add / recolour / undo cycles done by prompt.
+    // The counts are of buffers the GPU has been handed and not yet released, and a buffer is handed over only when its
+    // object is first drawn: right after an undo the replaced objects are released but their replacements wait for the
+    // next frame, and hidden helpers (the avatar, the ghost run, the camera path: 7 buffers between them) are counted
+    // only once drawn. So one reading lands anywhere between 90 and 108 while the scene's objects hold a steady 97
+    // buffers, with no trend over 45 cycles. A leak is a trend: the settled readings after the last
+    // five cycles must not exceed those after the first five (after a warm-up) by more than the bound.
     const gpu = (): Promise<{ geometries: number; textures: number }> =>
-      page.evaluate(() => {
-        const m = window.__aether!.simulation!.memoryStats();
-        return { geometries: m?.geometries ?? 0, textures: m?.textures ?? 0 };
+      page.evaluate(async () => {
+        const sim = window.__aether!.simulation!;
+        await sim.whenSynced();
+        // Frames drawn, then the same reading for 1.5 s in a row. (No named helper functions in here: the test
+        // bundler would wrap them in a helper the page does not have.)
+        let last = { geometries: sim.memoryStats().geometries, textures: sim.memoryStats().textures };
+        let steady = 0;
+        const deadline = performance.now() + 12_000;
+        while (steady < 6 && performance.now() < deadline) {
+          sim.touch();
+          await new Promise((r) => setTimeout(r, 250));
+          const m = sim.memoryStats();
+          steady = m.geometries === last.geometries && m.textures === last.textures ? steady + 1 : 0;
+          last = { geometries: m.geometries, textures: m.textures };
+        }
+        return last;
       });
     const cycle = async (): Promise<void> => {
       for (const text of ['add a bench next to the campfire', 'make the campfire red']) {
@@ -246,14 +265,21 @@ async function run(browser: Browser, url: string, name: string): Promise<void> {
         });
       }
     };
-    await cycle();
-    await page.waitForTimeout(600);
-    const base = await gpu();
-    for (let i = 0; i < 20; i++) await cycle();
-    await page.waitForTimeout(800);
-    const after = await gpu();
-    check(after.geometries <= base.geometries + 6 && after.textures <= base.textures + 4, `GPU resources grew over 20 edit/undo cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)}`);
-    log(`  20 edit/undo cycles by prompt: geometries ${base.geometries} → ${after.geometries}, textures ${base.textures} → ${after.textures}`);
+    const CYCLES = 20;
+    const WINDOW = 5;
+    for (let i = 0; i < 2; i++) await cycle();
+    const first: Array<{ geometries: number; textures: number }> = [];
+    const last: Array<{ geometries: number; textures: number }> = [];
+    for (let i = 0; i < CYCLES; i++) {
+      await cycle();
+      if (i < WINDOW) first.push(await gpu());
+      else if (i >= CYCLES - WINDOW) last.push(await gpu());
+    }
+    const peak = (xs: ReadonlyArray<{ geometries: number; textures: number }>): { geometries: number; textures: number } => ({ geometries: Math.max(...xs.map((x) => x.geometries)), textures: Math.max(...xs.map((x) => x.textures)) });
+    const base = peak(first);
+    const after = peak(last);
+    check(after.geometries <= base.geometries + 6 && after.textures <= base.textures + 4, `GPU resources grew over ${CYCLES} edit/undo cycles: ${JSON.stringify(base)} → ${JSON.stringify(after)} (first ${JSON.stringify(first)}, last ${JSON.stringify(last)})`);
+    log(`  ${CYCLES} edit/undo cycles by prompt: geometries ${base.geometries} → ${after.geometries}, textures ${base.textures} → ${after.textures}`);
 
     check(errors.length === 0, `console/page errors:\n  ${errors.join('\n  ')}`);
     log(`run "${name}" passed`);
