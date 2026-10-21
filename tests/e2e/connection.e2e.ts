@@ -189,7 +189,8 @@ async function openEditor(browser: Browser, url: string, prefs: Record<string, u
   return { page, close: () => ctx.close() };
 }
 
-async function sendPrompt(page: Page, prompt: string): Promise<TurnState> {
+/** `mayLeaveWorld`: the offline planner answers a build it cannot do with a notice and no change to the world. */
+async function sendPrompt(page: Page, prompt: string, mayLeaveWorld = false): Promise<TurnState> {
   const before = (await turnState(page)) as TurnState;
   const input = page.getByLabel('Prompt', { exact: true });
   await input.click();
@@ -197,7 +198,7 @@ async function sendPrompt(page: Page, prompt: string): Promise<TurnState> {
   await input.press('Enter');
   return waitFor(`the turn "${prompt}"`, TURN_TIMEOUT_MS, async () => {
     const s = await turnState(page);
-    return s && !s.busy && s.status !== null && s.status !== 'streaming' && s.head !== before.head ? s : null;
+    return s && !s.busy && s.status !== null && s.status !== 'streaming' && (s.head !== before.head || mayLeaveWorld) ? s : null;
   });
 }
 
@@ -299,7 +300,7 @@ async function failuresMidSession(browser: Browser, server: TestServer, bridge: 
 
     await bridge.close();
     // Still believed ready: the next send discovers the outage, falls back, and the badge follows.
-    const offline = await sendPrompt(page, 'a bowling alley with ten pins');
+    const offline = await sendPrompt(page, 'a bowling alley with ten pins', true);
     log(`    bridge stopped: ${offline.status} via ${offline.via ?? '?'}`);
     check(offline.status === 'done' && offline.via === 'Offline planner', `bridge stopped: expected the offline planner, got ${offline.via}`);
     check(offline.events.some((e) => e.startsWith('notice(') && /npx aether start/.test(e)), 'no "start the bridge" notice');
