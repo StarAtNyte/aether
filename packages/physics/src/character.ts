@@ -235,7 +235,9 @@ export class CharacterController {
     this.onGround = this.controller.computedGrounded();
     if (this.vy <= 0 && this.loopingOnKinematicFloor(desired, m)) {
       const retry = this.slideOnKinematic(desired);
-      if (retry.grounded || !this.onGround) {
+      // Only when it walks further than the first try: against a jamb or a door leaf the redo gains nothing and may lose the slide.
+      const progress = (v: Vec3Like): number => v.x * desired.x + v.z * desired.z;
+      if ((retry.grounded || !this.onGround) && progress(retry.m) > progress(m) + 1e-4) {
         m = retry.m;
         this.onGround = retry.grounded;
       }
