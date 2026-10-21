@@ -17,6 +17,7 @@ import { applySplat, SPLAT_LAYERS } from './terrain-splat';
 import { applyFacadeGlow, facadeGlow, nightGlow } from './facade-glow';
 import { FoliageTextures } from './foliage-textures';
 import { applyFoliageShading } from './foliage-shading';
+import { applyPaintMottle } from './paint-mottle';
 import { applyWater, PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './water';
 import { SURFACE_TILE_METRES } from './surface-textures';
 import type { WaterTier } from './water-params';
@@ -146,6 +147,9 @@ function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: Fin
   const id = r.finish;
   if (!id) return;
   const def = FINISHES[id];
+  // Paint is dead flat (a normal map banded under grazing lamp light, see ARCHITECTURE section 27), but a real
+  // painted wall is not one value: a faint, large roller mottle and a finer tone keep white walls from reading as CG.
+  if (id === 'paint' && antiTile) applyPaintMottle(m);
   if (!finishes || !finishHasMaps(id)) return;
   const maps = finishes.get(id);
   m.color.multiplyScalar(finishAlbedoScale(def));

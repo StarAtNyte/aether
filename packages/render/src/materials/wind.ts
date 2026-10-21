@@ -15,6 +15,8 @@ import { windHeading, windSpeed } from './water-state';
 /** Sway (metres) at 1 m height; quadratic term per m². */
 export const WIND_LINEAR = 0.006;
 export const WIND_QUADRATIC = 0.0026;
+/** Amplitude (metres) of the leaf flutter at unit gain. */
+export const WIND_FLUTTER = 0.006;
 /** Sway gain at 0 m/s (a still day is not a dead one) and per m/s of wind. */
 export const WIND_CALM_GAIN = 0.6;
 export const WIND_GAIN_PER_MS = 0.12;
@@ -45,7 +47,10 @@ function windNode(): unknown {
   const side = T.sin(T.time.mul(1.7).mul(quick).add(phase.mul(1.4))).mul(0.25).mul(bend);
   const dx = heading.x.mul(bend).add(heading.y.negate().mul(side));
   const dz = heading.y.mul(bend).add(heading.x.mul(side));
-  node = T.vec3(p.x.add(dx), p.y, p.z.add(dz));
+  // Leaf flutter: a quick, small shiver with a phase per position, so neighbouring cards do not move together.
+  const shiverPhase = p.x.mul(3.1).add(p.y.mul(2.3)).add(p.z.mul(2.9));
+  const shiver = T.sin(T.time.mul(6.3).mul(quick).add(shiverPhase)).mul(T.min(h, 1)).mul(gain).mul(WIND_FLUTTER);
+  node = T.vec3(p.x.add(dx).add(shiver.mul(0.6)), p.y.add(shiver), p.z.add(dz).sub(shiver.mul(0.4)));
   return node;
 }
 
