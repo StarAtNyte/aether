@@ -4477,3 +4477,86 @@ frame changed; each preset changes 29–100 % of its own neighbourhood); bundled
 - Rumble works where the browser exposes `vibrationActuator` (Chromium); Firefox on Linux usually does not.
 - Headless captures on this machine run WebGL2 over ANGLE/GL; WebGPU was checked by the e2e on SwiftShader, not on the
   real GPU.
+
+## Rooted plants, leak-free interior light and photographic foliage (stage `look3`)
+
+**Problem.** Generated trees were centred on their bounding box crown included, so any change to the leaf cards moved
+their trunks up to 0.6 m in every world (the Lantern Isles regression). Interiors showed a bright halo along door
+frames and the wall-floor junction: the 0.45 m light volume interpolated probes from behind thin walls, slabs and door
+frames (outside light, the sunlit room next door), and probes buried in a wall were filled from both sides. Ceilings
+read flat and dim brown: room lamps were clipped just above the lamp (under a tall ceiling) and a wood floor's bounce
+tinted every white surface. Spot lights lit through floors. Up close, hedges were boxes under yellow-green paper
+cards; needles, blossoms and flowers were procedural.
+
+**What changed.** (Design: ARCHITECTURE section 36, including "Leaks" and "Plants stand on their root".)
+- *Rooted plants.* `build({ anchor: 'root' })` (`ROOTED`) for trees, shrubs, ferns, grass, flowers, cacti and hedges:
+  the root point built at the origin stays at the entity position. Trunk paths start at the origin, flared bases are
+  flattened onto the ground, shrub cards and low spruce sprays stay above it, barrel cactus ribs fade at the root.
+  The bush (a lumpy mound with no trunk) and rocks keep bounds centring. Contract test rewritten for rooted plants,
+  plus a test that trunks stay at the origin across crown detail and bare winter crowns.
+- *Lantern Isles.* With trunks back on their roots the bot dropped through the 1.3 m seam between a rune lift and the
+  summit rim (it stalled at the platform edge). Lifts are now 3 m in the same 4.8 m gap (0.9 m seams; islands
+  unchanged). A sweep of lift sizes showed the bot's lift boarding is sensitive to geometry (2.2/2.6/3.0 m pass,
+  2.8/3.4 m fail): reported, the bot is another stage's.
+- *Leak-free light volume.* Each probe stores its free distance along six axes (quantised down, buried probes zero) in
+  a fifth atlas sub-volume; the shader reads the eight surrounding probes' distances, drops those that do not see the
+  point and samples the light at the point matching the remaining per-axis weights (8 unfiltered + 4 filtered reads).
+  The bake's bounce reads do the same, so a thin wall keeps a sunlit room out of a dark one (new test: a 0.12 m party
+  wall; the dark face reads 0 % of the lit face's bounce, 15 % without the test). A wall-aware two-pass blur takes
+  the 48-ray noise off ceilings.
+- *Lamps and spots.* `RoomSpot` (IES-aware) is clipped to its room like `RoomLamp`; clip boxes run on the wall
+  centrelines with an 8 cm fade (a 25 cm fade and 15 cm margin lit a stripe of the neighbour's walls along every
+  corner) from the slab top to 8 cm above the room's ceiling (the ceiling is lit, the floor above is not).
+- *Eye.* Interior white balance from the room light's red-blue ratio at the eye (45 % of the cast beyond a lived-in
+  1.25 taken out), slightly warm grade on top; the eye makes up 88 % of the drop from the open site (was 75 %), up to
+  4 stops (was 3: the two-window kitchen clipped at 3).
+- *Wall corners.* Faces run 4 mm past a joined corner, closing sub-pixel seams.
+- *Foliage.* `hedge` generator: small leaf-cluster cards over a rounded block (lumps, rounded edges, deep shade low
+  and inside, lit top and sun side, every card inside the block) over a dark core; garden hedges in runs up to 6 m,
+  Four Seasons Garden hedge rebuilt from it. Needle, blossom and flower cards composed from CC0 Poly Haven fir sprays
+  (Fir Tree 01), periwinkle and celandine flowers and gazania heads (SHA-256 pinned in `assets/foliage-sources.json`,
+  THIRD_PARTY.md), blossoms and flowers drawn grey so the vertex colour sets the petal colour. Darker, more saturated
+  leaf tones with less yellow in the sun, wider plant-to-plant variation, gentler translucency, hand-sized shrub
+  clusters (within the shrub's triangle test budget).
+
+**Rounds** (Intel iGPU WebGL2 low tier unless noted; the RTX 4090 was busy with training throughout;
+`~/.local/share/aether/look3/`): r1 leak test alone (door-bottom and skirting glow gone); r2 white balance, probe
+blur, lamp clips (found the lamp boxes lighting the neighbour's corners and the ceiling below, the 0.25 m fade being
+wider than interior walls); debug toggles (volume, sun, shadows, contact, lamps, textures, normal offset, hidden
+entities) on a kitchen corner; r3 hedge, sprites, tones, house and forest; `r4high` HIGH tier on the iGPU; r5 gentler
+balance; r6 fuller exposure; `flag/` Villa Pool, Four Seasons Garden, Lantern Isles, Dusk House and Skyline Penthouse
+covers. Before images: `~/.local/share/aether/look2/r6` and `flag-r8`.
+
+**Before and after.**
+- *House living room*: glow along the door frame, under the door and along the skirting, warm sepia walls and a brown
+  mottled ceiling → no glow, neutral white walls with a light ceiling and its downlights; flatter than before (part of
+  the old gradient was the leak).
+- *Kitchen*: right wall brighter toward the window through the wall leak, grey → leak gone; with the fuller exposure
+  the walls read light grey, still somewhat cool and flat (no sun enters it).
+- *House exterior*: foreground hedge a heap of large yellow-green cards → a clipped hedge of small dark-green leaf
+  clusters with depth, a shaded side and a dark interior.
+- *Covers*: Lantern Isles, Four Seasons Garden and Penthouse keep their composition; the garden's hedge reads as a
+  hedge from above.
+
+**Verification.** `tsc --noEmit` 0 errors; vitest 417 files, 4 509 tests (new: rooted trunk test, leak and free-distance
+packing tests, white balance, room spot, sprite sheet kinds and the missing-sprite fallback; updated: the generator
+contract for rooted plants, atlas size for five sub-volumes, the IES spot now a `RoomSpot`); studio build; `npm run
+smoke` 34/34; `npm run bench:quick` checks passed; `showcase:bake --check` up to date (Lantern Isles, Villa Pool and
+Four Seasons Garden rebaked); every showcase playtest, gamesVerified and walkthrough test passes.
+
+**Security.** The sprite script still only downloads from `dl.polyhaven.org`, size capped and SHA-256 checked; the
+free-distance codes go through the existing validated worker reply (length and finiteness). No new dependency.
+
+**Performance.** Per lit fragment in a building: eight more unfiltered 3D-texture reads and some ALU for the leak test;
+the atlas grows from 2.2 to 2.8 MB (allocated once). Bake: six axis rays and a blur per probe (a few percent). Hedges
+cost about 6 000 triangles per 6 m run (Four Seasons Garden: 40 runs at detail 0.6).
+
+**Honest gaps.** No RTX 4090 frame-time numbers (busy). HIGH tier on the iGPU looks hazy and low in contrast indoors
+(screen-space AO/GI noise there); not tuned. A thin light band remains along some wall-ceiling junctions and inside
+corners; it does not change with the volume's normal offset and shows with the volume off, so it is geometry or
+material, not the light: not found this stage. Box lamp clipping cuts lamp light hard at a doorway between rooms
+(no lamp shadows). Cards are not shrunk near the camera (no per-card centre in the vertex data); big tree cards are as
+before. At dusk the darker leaf tones read olive-brown. The playtest bot's stair and lift handling is sensitive to
+centimetre changes of its walking grid's origin (a hedge 1 cm longer broke the villa's walkthrough; hedge runs are
+now exact): reported for the bot's owners. Dusk House's cover opens with its storeys apart (the lookshots cover, not
+this stage's change).
