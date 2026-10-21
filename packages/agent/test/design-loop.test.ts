@@ -314,7 +314,7 @@ describe('look development in the review', () => {
       () => [finish('Warmed the light after looking at the renders.')],
       () => [finish('Looks right.')],
     ]);
-    const events = await collect(agent(provider, { vision: true, maxViews: 3 }).run('a bedroom', host as unknown as MemoryHost));
+    const events = await collect(agent(provider, { vision: true, maxViews: 3 }).run('check everything', host as unknown as MemoryHost));
     const reviewText = JSON.stringify(provider.requests.find((r) => JSON.stringify(r.messages.at(-1)).includes('REVIEW round'))!.messages.at(-1));
     expect(reviewText).toContain('tune_look');
     expect(reviewText).toContain('Whether it is good enough is your call');
