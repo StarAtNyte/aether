@@ -4423,3 +4423,57 @@ and cap rail in the realtime look.
   test 60 people use one stair at once. Dynamic (physics) NPCs are steered along a stair's line but not tested.
 - `agent/test/prompt.test.ts` was already over its token budget on main (15 977 against 15 800, from earlier prompt
   growth); the routine and flock fields add 9 tokens.
+## Game feel and gameplay effects
+
+**Problem.** Games were silent and static: no screen shake, hit-stop, squash or feedback presets anywhere, and no
+gameplay particles (the only particles were weather; a torch's flame was an emissive sphere). three.quarks, the obvious
+library, does not render on `WebGPURenderer` today.
+
+**What changed.**
+- World IR (additive): `world.feel` (tier and per-event cues for pickup, hit, damage, death, win, checkpoint, jump, land,
+  explosion, launch), `entity.vfx` (continuous emitters), the `effect` rule action, `setMeta.feel`. Worlds without them
+  are unchanged byte for byte; the presets live in `@aether/core` (`resolveFeelCue`).
+- Logic: an optional `host.feedback` reports those moments with place, signed amount and the tick (the burst's seed).
+  Nothing is read back: the same world produces the identical trace with no feel layer, a recording one and one that
+  throws (`packages/logic/test/feedback.test.ts`).
+- Render: `FeelDirector` (trauma-squared seeded shake applied for the draw only and restored, hit-stop, FOV kick,
+  flash and vignette pulses, body squash, reduce motion) and `VfxSystem`: own TSL particles, two instanced draws over
+  fixed rings, written once at birth and evaluated in the vertex stage, thirteen presets, tier budgets, floor-soft edges,
+  emitters that follow scene objects (including the torch in a character's hand).
+- Studio: floating score / damage text, flash and vignette overlay, rumble, audio ducking (footstep bus, published
+  games' music), landing and jump detection, footstep dust and splashes by surface, hit-stop that postpones fixed steps,
+  reduce-motion switches (studio settings, published games' pause menu, system preference), a Game feel inspector
+  section with previews, the `effect` action in the rule editor.
+- Agent: `tune_feel`; the local edit engine answers the common feel requests without a model; the offline planner gives
+  new games a tier by genre and lights what burns. The system prompt stays under its 15.8k-token budget: the guidance
+  lives in the tool description.
+
+**Rounds (looked at in captures, `scripts/feel-shots.ts --gpu`, Hollow Gate and Neon Rain City).**
+1. Explosion core: 34–42 additive puffs at intensity 4.5 blew out to a white disc with bloom over a third of the frame.
+   Now 24–30 at 1.9, shorter lived, darkening to ember red, the shockwave ring 5 m at half opacity.
+2. Campfire: the fire emitter at scale 1.4, rate 46 and intensity 3.6 stacked into a white blob on the generator's own
+   glowing logs (night, bloom 1.2, the eye adapted up). Now rate 30, intensity 1.5, scale 1.1: a readable flame with
+   embers.
+3. Damage read as nothing in stills: the flash (τ 0.11 s) and vignette (τ 0.32 s) were gone before the screenshot
+   landed. Lengthened to 0.14 / 0.45 s and the vignette starts nearer the centre; captures now freeze the effects
+   (`fx.paused`), and the frame shows the red flash, the red edges, red sparks round the player and "-10".
+4. The capture script's title-card click missed (an animated card); it now clicks the element directly.
+
+**Gates.** `tsc --noEmit` 0; full vitest 417 files / 4509 tests; studio build; smoke 34/34; `e2e:verified` passed
+(Chromium and Firefox); `bench:quick` checks passed; allocation probes:
+an effects frame with six emitters allocates under 16 B (a burst under 96 B); `npm run e2e:vfx`: Chromium WebGPU,
+Chromium WebGL2 and Firefox WebGL2 all render every preset with no shader or validation errors (16.8–16.9 % of the
+frame changed; each preset changes 29–100 % of its own neighbourhood); bundled worlds rebaked
+(feel and emitters only) and `showcase:bake --check` clean.
+
+**Gaps.**
+- Soft particles fade against the emitter's floor and near the camera, not against the depth buffer (WebGPU cannot
+  sample its multisampled depth without the extra scene pass the water uses); a puff that meets a wall shows a hard
+  edge.
+- Continuous emitters run on the render clock, so their exact particles differ between machines; bursts are seeded by
+  the logic tick and identical for the same run.
+- No hit reaction for the player's own blows (there is no player attack in the shipped games) or for physics impacts
+  between props; thrown props landing make no dust.
+- Rumble works where the browser exposes `vibrationActuator` (Chromium); Firefox on Linux usually does not.
+- Headless captures on this machine run WebGL2 over ANGLE/GL; WebGPU was checked by the e2e on SwiftShader, not on the
+  real GPU.
