@@ -51,6 +51,7 @@ export const FURNITURE_SLOTS: Readonly<Record<string, Readonly<Record<string, Sl
   bathtub: { ceramic: s(undefined, 'color', 'body', 'tub') },
   rug: { field: s(undefined, 'color', 'main', 'body'), border: s(undefined, 'border', 'edge', 'trim') },
   curtain: { fabric: s('sheer', 'color', 'drape', 'drapes', 'curtains') },
+  blind: { fabric: s(undefined, 'color', 'slats', 'shade', 'louvres', 'shutters', 'blinds') },
   plant: { pot: s('pot', 'potColor', 'planter', 'vase') },
   art: { frame: s('frame', undefined, 'border') },
   mirror: { frame: s('frame', undefined, 'border') },

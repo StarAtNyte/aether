@@ -111,14 +111,32 @@ export const BED: FurnitureDef = {
   },
 };
 
+/** Raised shaker moulding (a frame of four thin strips) on the front of a door leaf; the door as it was when `on` is false. */
+function shaker(door: Geom, on: boolean, x: number, y0: number, y1: number, dw: number, zFace: number): Geom {
+  if (!on) return door;
+  const m = 0.075;
+  const t = 0.008;
+  const z = zFace - 0.0;
+  const ya = y0 + 0.07;
+  const yb = y1 - 0.07;
+  const xa = x - dw / 2 + m;
+  const xb = x + dw / 2 - m;
+  door.merge(box(xa, ya, z, xb, ya + 0.025, z + t));
+  door.merge(box(xa, yb - 0.025, z, xb, yb, z + t));
+  door.merge(box(xa, ya, z, xa + 0.025, yb, z + t));
+  door.merge(box(xb - 0.025, ya, z, xb, yb, z + t));
+  return door;
+}
+
 export const WARDROBE: FurnitureDef = {
   id: 'furn-wardrobe',
   kind: 'wardrobe',
   description: 'Built-in style wardrobe with full-height doors and long pulls; back against a wall.',
   params: {
     width: num(1.8, 0.8, 4, 'width (m)'),
-    height: num(2.3, 1.8, 2.7, 'height (m)'),
+    height: num(2.3, 1.8, 3.2, 'height (m)'),
     finish: choice(['paint', 'oak', 'walnut', 'ash'], 'paint', 'door finish'),
+    builtin: flag(false, 'built-in: runs to the ceiling flush to the wall, with a face frame, panelled doors, crown strip and skirting-height toe-kick (set height to the ceiling height)'),
     color: color('#e8e4dd', 'paint colour'),
     interactive: flag(false, 'the doors are separate parts that open'),
   },
@@ -132,20 +150,35 @@ export const WARDROBE: FurnitureDef = {
     const w = p.num('width');
     const h = p.num('height');
     const d = 0.6;
+    const builtin = p.bool('builtin');
     const face = p.str('finish') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('finish'));
-    set.add(box(-w / 2, 0.08, -d / 2, w / 2, h, d / 2 - 0.02), face);
-    set.add(box(-w / 2 + 0.01, 0, -d / 2 + 0.05, w / 2 - 0.01, 0.08, d / 2 - 0.06), mat('paint', '#3a3a3a'));
+    const base = builtin ? 0.1 : 0.08;
+    set.add(box(-w / 2, base, -d / 2, w / 2, h, d / 2 - 0.02), face);
+    if (builtin) {
+      // Toe-kick recessed like a skirting board, a face frame round the doors and a crown strip along the top.
+      set.add(box(-w / 2, 0, -d / 2, w / 2, base, d / 2 - 0.035), mat('paint', '#f2f0eb'));
+      const frameG = new Geom();
+      frameG.merge(box(-w / 2, base, d / 2 - 0.022, -w / 2 + 0.045, h - 0.08, d / 2 + 0.004));
+      frameG.merge(box(w / 2 - 0.045, base, d / 2 - 0.022, w / 2, h - 0.08, d / 2 + 0.004));
+      frameG.merge(box(-w / 2, h - 0.15, d / 2 - 0.022, w / 2, h - 0.08, d / 2 + 0.004));
+      frameG.merge(box(-w / 2, base, d / 2 - 0.022, w / 2, base + 0.03, d / 2 + 0.004));
+      frameG.merge(box(-w / 2 - 0.01, h - 0.08, -d / 2, w / 2 + 0.01, h - 0.045, d / 2 + 0.03));
+      frameG.merge(box(-w / 2 - 0.02, h - 0.045, -d / 2, w / 2 + 0.02, h, d / 2 + 0.045));
+      set.add(frameG, face);
+    } else set.add(box(-w / 2 + 0.01, 0, -d / 2 + 0.05, w / 2 - 0.01, 0.08, d / 2 - 0.06), mat('paint', '#3a3a3a'));
     const doors = new Geom();
     const pulls = new Geom();
-    const n = Math.max(2, Math.round(w / 0.5));
-    const dw = w / n;
+    const bw = builtin ? w - 0.09 : w;
+    const bTop = builtin ? h - 0.15 : h;
+    const n = Math.max(2, Math.round(bw / 0.5));
+    const dw = bw / n;
     for (let k = 0; k < n; k++) {
-      const x = -w / 2 + dw * (k + 0.5);
+      const x = -bw / 2 + dw * (k + 0.5);
       const px = x + (k % 2 === 0 ? 1 : -1) * (dw / 2 - 0.045);
       const hinge = k < n / 2 ? 'left' : 'right';
       emitFront(sink, { front: doors, handle: pulls }, {
-        id: `door-${k}`, name: 'Wardrobe door', kind: 'door', center: [x, 0.08 + (h - 0.08) / 2, d / 2 - 0.01], size: [dw - 0.004, h - 0.085, 0.02], motion: { type: 'swing', hinge, angle: hinge === 'left' ? -105 : 105 },
-        front: roundedBox(dw - 0.004, h - 0.085, 0.02, 0.003, 1).translate(x, 0.08 + (h - 0.08) / 2, d / 2 - 0.01),
+        id: `door-${k}`, name: 'Wardrobe door', kind: 'door', center: [x, base + (bTop - base) / 2, d / 2 - 0.01], size: [dw - 0.004, bTop - base - 0.005, 0.02], motion: { type: 'swing', hinge, angle: hinge === 'left' ? -105 : 105 },
+        front: shaker(roundedBox(dw - 0.004, bTop - base - 0.005, 0.02, 0.003, 1).translate(x, base + (bTop - base) / 2, d / 2 - 0.01), builtin, x, base, bTop, dw, d / 2),
         handle: roundedBox(0.014, 0.42, 0.024, 0.006, 2).translate(px, 1.05, d / 2 + 0.014),
         frontMaterial: face, handleMaterial: mat('brass'),
       });
@@ -164,20 +197,22 @@ export const BOOKSHELF: FurnitureDef = {
   description: 'Open bookshelf with books (seeded colours and sizes), a few objects and plants-free styling; back against a wall.',
   params: {
     width: num(1.0, 0.5, 3, 'width (m)'),
-    height: num(2.0, 0.8, 2.6, 'height (m)'),
+    height: num(2.0, 0.8, 3.2, 'height (m)'),
     shelves: int(5, 2, 8, 'number of shelves'),
+    builtin: flag(false, 'built-in: runs to the ceiling flush to the wall, with a face frame, crown strip and skirting-height toe-kick (set height to the ceiling height, shelves to 6-8)'),
     finish: choice(['oak', 'walnut', 'ash', 'black-metal', 'paint'], 'oak', 'frame finish'),
     fill: num(0.7, 0, 1, 'how full the shelves are'),
   },
   mount: 'floor',
   againstWall: true,
   frontClearance: 0.6,
-  size: (p) => [p.num('width'), p.num('height'), 0.34],
+  size: (p) => [p.num('width'), p.num('height'), p.bool('builtin') ? 0.38 : 0.34],
   build(p, seed) {
     const set = new PartSet();
     const w = p.num('width');
     const h = p.num('height');
-    const d = 0.34;
+    const builtin = p.bool('builtin');
+    const d = builtin ? 0.38 : 0.34;
     const n = p.int('shelves');
     const t = 0.022;
     const frameMat = p.str('finish') === 'paint' ? mat('paint', '#ebe7e0') : mat(p.str('finish'));
@@ -185,15 +220,26 @@ export const BOOKSHELF: FurnitureDef = {
     frame.merge(box(-w / 2, 0, -d / 2, -w / 2 + t, h, d / 2));
     frame.merge(box(w / 2 - t, 0, -d / 2, w / 2, h, d / 2));
     frame.merge(box(-w / 2, 0, -d / 2, w / 2, h, -d / 2 + 0.008));
-    const pitch = (h - 0.06) / n;
-    for (let k = 0; k <= n; k++) frame.merge(box(-w / 2 + t, 0.04 + k * pitch - t / 2, -d / 2, w / 2 - t, 0.04 + k * pitch + t / 2, d / 2));
+    const kick = builtin ? 0.1 : 0.04;
+    const top = builtin ? h - 0.14 : h - 0.02;
+    const pitch = (top - kick) / n;
+    for (let k = 0; k <= n; k++) frame.merge(box(-w / 2 + t, kick + k * pitch - t / 2, -d / 2, w / 2 - t, kick + k * pitch + t / 2, d / 2));
+    if (builtin) {
+      // Face frame, a toe-kick set back like a skirting board, and a stepped crown strip.
+      frame.merge(box(-w / 2, 0.1, d / 2 - 0.022, -w / 2 + 0.05, h - 0.08, d / 2 + 0.004));
+      frame.merge(box(w / 2 - 0.05, 0.1, d / 2 - 0.022, w / 2, h - 0.08, d / 2 + 0.004));
+      frame.merge(box(-w / 2, h - 0.14, d / 2 - 0.022, w / 2, h - 0.08, d / 2 + 0.004));
+      frame.merge(box(-w / 2 - 0.01, h - 0.08, -d / 2, w / 2 + 0.01, h - 0.045, d / 2 + 0.03));
+      frame.merge(box(-w / 2 - 0.02, h - 0.045, -d / 2, w / 2 + 0.02, h, d / 2 + 0.045));
+      set.add(box(-w / 2, 0, -d / 2, w / 2, 0.1, d / 2 - 0.035), mat('paint', '#f2f0eb'));
+    }
     set.add(frame, frameMat);
     // Books: runs of upright books with occasional leaning / stacked ones.
     const rnd = seeded(seed * 2654435761 + 17);
     const byColor = new Map<string, Geom>();
     const fill = p.num('fill');
     for (let k = 0; k < n; k++) {
-      const y0 = 0.04 + k * pitch + t / 2;
+      const y0 = kick + k * pitch + t / 2;
       let x = -w / 2 + t + 0.02;
       const xEnd = w / 2 - t - 0.02;
       while (x < xEnd - 0.03) {

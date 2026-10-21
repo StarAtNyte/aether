@@ -6,8 +6,11 @@
  */
 import { Geom, box, cylinder, extrude, lathe, roundedBox, sphere, tube } from '../mesh';
 import { PartSet } from '../parts';
-import { choice, color, int, mat, num, roundedRect, seeded, type FurnitureDef } from './kit';
+import { choice, color, flag, int, mat, num, roundedRect, seeded, type FurnitureDef } from './kit';
 import type { P2 } from '../math2';
+import { BLIND, CURTAIN } from './soft';
+
+export { BLIND, CURTAIN };
 
 export const RUG: FurnitureDef = {
   id: 'furn-rug',
@@ -66,60 +69,6 @@ export const RUG: FurnitureDef = {
         if ((bands[i] as Geom).i.length > 0) set.add(bands[i] as Geom, mat('carpet', c));
       });
     }
-    return set.build();
-  },
-};
-
-export const CURTAIN: FurnitureDef = {
-  id: 'furn-curtain',
-  kind: 'curtain',
-  description: 'Pleated curtain panel on a slim rod, hung in front of a window (back at z = 0 on the wall).',
-  params: {
-    width: num(1.6, 0.4, 6, 'gathered width (m)'),
-    height: num(2.6, 1, 4, 'drop (m)'),
-    color: color('#e6dfd2', 'fabric colour'),
-    sheer: choice(['linen', 'sheer'], 'linen', 'fabric weight'),
-  },
-  mount: 'wall',
-  againstWall: true,
-  frontClearance: 0,
-  size: (p) => [p.num('width'), p.num('height'), 0.14],
-  build(p) {
-    const set = new PartSet();
-    const w = p.num('width');
-    const h = p.num('height');
-    const g = new Geom();
-    // Sinusoidal pleats (smooth normals), double-sided by a back copy.
-    const folds = Math.max(4, Math.round(w / 0.11));
-    const cols = folds * 4;
-    const rows = 6;
-    for (let j = 0; j <= rows; j++) {
-      const y = 0.02 + ((h - 0.06) * j) / rows;
-      for (let i = 0; i <= cols; i++) {
-        const t = i / cols;
-        const x = -w / 2 + w * t;
-        const ph = t * folds * Math.PI * 2;
-        const z = 0.07 + 0.035 * Math.sin(ph);
-        const dz = 0.035 * Math.cos(ph) * folds * Math.PI * 2 / w;
-        const len = Math.hypot(dz, 1);
-        g.vertex(x, y, z, -dz / len, 0, 1 / len, x, y);
-      }
-    }
-    for (let j = 0; j < rows; j++) {
-      for (let i = 0; i < cols; i++) {
-        const a = j * (cols + 1) + i;
-        const b = a + 1;
-        const c = a + cols + 2;
-        const e = a + cols + 1;
-        g.i.push(a, b, c, a, c, e);
-      }
-    }
-    const back = g.clone().flip();
-    for (let k = 0; k < back.n.length; k++) back.n[k] = -(back.n[k] as number);
-    g.merge(back);
-    const sheer = p.str('sheer') === 'sheer';
-    set.add(g, sheer ? { finish: 'fabric', color: p.color('color'), opacity: 0.55 } : mat('fabric', p.color('color')));
-    set.add(tube([[-w / 2 - 0.08, h - 0.02, 0.07], [w / 2 + 0.08, h - 0.02, 0.07]], 0.012, 8), mat('black-metal'));
     return set.build();
   },
 };
@@ -456,40 +405,90 @@ export const CORNICE: FurnitureDef = {
 export const FIREPLACE: FurnitureDef = {
   id: 'furn-fireplace',
   kind: 'fireplace',
-  description: 'Fireplace with a stone surround, raised hearth, chimney breast to the ceiling and a glowing firebox (emissive). Back against a wall.',
+  description: 'Fireplace: surround (classic, victorian cast-iron arch or modern slab), mantel, raised hearth, optional chimney breast to the ceiling and a glowing firebox. Back against a wall.',
   params: {
     width: num(1.6, 1, 3, 'surround width (m)'),
-    height: num(2.7, 2, 4, 'chimney breast height (m)'),
+    height: num(2.7, 2, 4, 'chimney breast height (m); without a breast the piece stops at the mantel'),
     stone: choice(['stone', 'marble', 'concrete', 'brick', 'plaster'], 'stone', 'surround finish'),
+    style: choice(['classic', 'victorian', 'modern'], 'classic', 'surround design: classic stone, victorian (cast-iron arched insert, tiled slips), modern (plain slab, wide linear opening)'),
+    mantel: choice(['none', 'shelf', 'classic'], 'shelf', 'mantel: none, a plain shelf, or a moulded classic mantel with corbels'),
+    breast: flag(true, 'chimney breast up to the ceiling'),
+    projection: num(0.45, 0.25, 0.6, 'depth of the chimney breast from the wall (m)'),
+    lit: flag(true, 'glowing firebox'),
+    hearth: flag(true, 'raised hearth slab in front'),
   },
   mount: 'floor',
   againstWall: true,
   frontClearance: 1.0,
-  size: (p) => [p.num('width') + 0.3, p.num('height'), 0.7],
+  size: (p) => [p.num('width') + 0.3, p.bool('breast') ? p.num('height') : Math.min(p.num('height'), 1.25), p.num('projection') + 0.25],
   build(p) {
     const set = new PartSet();
     const w = p.num('width');
-    const H = p.num('height');
-    const d = 0.45;
+    const H = p.bool('breast') ? p.num('height') : Math.min(p.num('height'), 1.25);
+    const d = p.num('projection');
+    const D = d + 0.25;
+    const z0 = -D / 2;
+    const z1 = z0 + d;
+    const style = p.str('style');
+    const mantel = style === 'modern' && p.str('mantel') === 'classic' ? 'shelf' : p.str('mantel');
+    const finishName = p.str('stone');
+    const open = style === 'victorian' ? 0.62 : style === 'modern' ? Math.min(1.2, w - 0.4) : 0.8;
+    const openTop = style === 'victorian' ? 0.72 : style === 'modern' ? 0.6 : 0.75;
+    const mantelY = mantel === 'classic' ? 1.05 : 0.95;
     const surround = new Geom();
-    surround.merge(box(-w / 2, 0, -d / 2, -0.4, 0.95, d / 2));
-    surround.merge(box(0.4, 0, -d / 2, w / 2, 0.95, d / 2));
-    surround.merge(box(-0.4, 0.75, -d / 2, 0.4, 0.95, d / 2));
-    surround.merge(box(-w / 2 - 0.05, 0.95, -d / 2, w / 2 + 0.05, 1.0, d / 2 + 0.04));
-    surround.merge(box(-w / 2 + 0.1, 1.0, -d / 2, w / 2 - 0.1, H, d / 2 - 0.08));
-    set.add(surround, mat(p.str('stone')));
-    set.add(box(-w / 2 - 0.15, 0, -d / 2, w / 2 + 0.15, 0.08, d / 2 + 0.25), mat('stone', '#5f5a54'));
-    set.add(box(-0.4, 0.08, -d / 2, 0.4, 0.75, d / 2 - 0.15), mat('black-metal', '#141414'));
-    // Firebox glow and logs.
-    const glow = new Geom().quadAuto([-0.32, 0.12, d / 2 - 0.2], [0.32, 0.12, d / 2 - 0.2], [0.32, 0.45, d / 2 - 0.2], [-0.32, 0.45, d / 2 - 0.2]);
-    set.add(glow, { preset: 'emissive', color: '#ff8a3c', emissive: '#ff7a2a', emissiveIntensity: 6 });
+    const jamb = (w - open) / 2;
+    surround.merge(box(-w / 2, 0, z0, -open / 2, mantelY, z1));
+    surround.merge(box(open / 2, 0, z0, w / 2, mantelY, z1));
+    surround.merge(box(-open / 2, openTop, z0, open / 2, mantelY, z1));
+    if (mantel === 'shelf') surround.merge(box(-w / 2 - 0.05, mantelY, z0, w / 2 + 0.05, mantelY + 0.05, z1 + 0.04));
+    if (mantel === 'classic') {
+      // A moulded shelf: a cove under a slab, a bead on top, corbels at the ends and plinth blocks at the foot of each jamb.
+      surround.merge(box(-w / 2 - 0.04, mantelY, z0, w / 2 + 0.04, mantelY + 0.035, z1 + 0.03));
+      surround.merge(box(-w / 2 - 0.08, mantelY + 0.035, z0, w / 2 + 0.08, mantelY + 0.075, z1 + 0.07));
+      surround.merge(box(-w / 2 - 0.1, mantelY + 0.075, z0, w / 2 + 0.1, mantelY + 0.1, z1 + 0.09));
+      for (const sgn of [-1, 1]) {
+        surround.merge(box(sgn * (w / 2 - 0.1) - 0.05, mantelY - 0.2, z1 - 0.01, sgn * (w / 2 - 0.1) + 0.05, mantelY, z1 + 0.05));
+        surround.merge(box(sgn * (w / 2 - jamb / 2) - jamb / 2 - 0.02, 0, z1 - 0.005, sgn * (w / 2 - jamb / 2) + jamb / 2 + 0.02, 0.14, z1 + 0.035));
+      }
+    }
+    if (H > mantelY + 0.12) {
+      const x = mantel === 'classic' ? 0.12 : 0.1;
+      surround.merge(box(-w / 2 + x, mantelY + (mantel === 'classic' ? 0.1 : 0.05), z0, w / 2 - x, H, z1 - 0.08));
+    }
+    set.add(surround, mat(finishName));
+    if (p.bool('hearth')) set.add(box(-w / 2 - 0.15, 0, z0, w / 2 + 0.15, 0.08, z1 + 0.25), mat('stone', '#5f5a54'));
+    // The firebox.
+    const zf = z1 - 0.15;
+    if (style === 'victorian') {
+      // A cast-iron insert with a round-headed opening and a row of glazed tile slips either side.
+      const arch: P2[] = [[-open / 2, 0.08]];
+      const r = open / 2;
+      const spring = openTop - r;
+      arch.push([-open / 2, spring]);
+      for (let k = 1; k < 12; k++) {
+        const a = Math.PI - (k / 12) * Math.PI;
+        arch.push([Math.cos(a) * r, spring + Math.sin(a) * r]);
+      }
+      arch.push([open / 2, spring], [open / 2, 0.08]);
+      set.add(extrude(arch, 0, zf + 0.05 - (z0 + 0.02)).rotateX(-90).translate(0, 0, zf + 0.05), mat('black-metal', '#141414'));
+      const slips = new Geom();
+      for (const sgn of [-1, 1]) slips.merge(box(sgn * (open / 2 + 0.005) + (sgn > 0 ? 0 : -0.1), 0.08, z1 - 0.012, sgn * (open / 2 + 0.005) + (sgn > 0 ? 0.1 : 0), openTop + 0.05, z1 + 0.012));
+      set.add(slips, mat('ceramic', '#3f6f5c'));
+      set.add(box(-open / 2 - 0.1, openTop + 0.05, z1 - 0.012, open / 2 + 0.1, openTop + 0.12, z1 + 0.014), mat('black-metal', '#1c1c1c'));
+    } else {
+      set.add(box(-open / 2, 0.08, z0, open / 2, openTop, zf), mat('black-metal', '#141414'));
+    }
+    const gw = open / 2 - (style === 'victorian' ? 0.12 : 0.08);
+    const zg = zf + (style === 'victorian' ? 0.06 : 0.01);
+    const gTop = style === 'victorian' ? openTop - 0.34 : openTop - 0.3 > 0.25 ? openTop - 0.3 : 0.4;
+    if (p.bool('lit')) set.add(new Geom().quadAuto([-gw, 0.12, zg], [gw, 0.12, zg], [gw, gTop, zg], [-gw, gTop, zg]), { preset: 'emissive', color: '#ff8a3c', emissive: '#ff7a2a', emissiveIntensity: 6 });
     const logs = new Geom();
     for (const [x, a] of [
       [-0.12, 10],
       [0.12, -12],
-    ] as const) logs.merge(cylinder(0.05, 0.05, 0.45, 12).rotateZ(90).rotateY(a).translate(x + 0.22, 0.14, 0.02));
+    ] as const) logs.merge(cylinder(0.05, 0.05, Math.min(0.45, open - 0.2), 12).rotateZ(90).rotateY(a).translate(x * (open / 0.8), 0.14, zf - 0.1));
     set.add(logs, mat('walnut', '#3d2a1d'));
-    set.boxMinMax(-w / 2, 0, -d / 2, w / 2, H, d / 2);
+    set.boxMinMax(-w / 2, 0, z0, w / 2, H, z1);
     return set.build();
   },
 };
@@ -696,4 +695,4 @@ export const ACCENT: FurnitureDef = {
   },
 };
 
-export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK, ACCENT];
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, BLIND, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK, ACCENT];
