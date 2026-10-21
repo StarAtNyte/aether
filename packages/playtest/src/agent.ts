@@ -24,11 +24,11 @@
  * wall-clock budget and cooperative yielding (so it can live in a worker).
  */
 import { validateWorld, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
-import { PhysicsWorld, entityBounds, yieldToHost, type Aabb } from '@aether/physics';
+import { PhysicsWorld, ensureAssetCatalog, entityBounds, yieldToHost, type Aabb } from '@aether/physics';
 import { deriveGoals, inRegion, needsHold, touches, winThresholds, type DoorInfo, type GoalModel, type GoalObjective } from './goals';
 import { driveRace } from './drive';
 import { PLAYER_CAPSULE } from './host';
-import { EdgeKind, NavGraph, airThrust, type RideInfo, doorFitRadius, doorSlack, jumpHeight, type NavParams, type NavPortal } from './nav';
+import { EdgeKind, NavGraph, airThrust, type RideInfo, doorFitRadius, doorSlack, jumpHeight, targetDiscs, type NavParams, type NavPortal } from './nav';
 import { hashWorld } from './proof';
 import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
@@ -53,7 +53,7 @@ export class PlaytestAbortedError extends Error {
   }
 }
 
-type TravelResult = 'arrived' | 'stuck' | 'fell' | 'ended' | 'stopped' | 'teleported' | 'threat';
+type TravelResult = 'arrived' | 'stuck' | 'fell' | 'lost' | 'ended' | 'stopped' | 'teleported' | 'threat';
 
 /** Step away from a hostile character when the player is this close to its reach (m). */
 const EVADE_CLEARANCE = 1.3;
@@ -64,6 +64,19 @@ const THREAT_RANGE = 12;
 const GAP_WAIT_S = 10;
 /** Re-routes round enemies per objective before an enemy in the way counts as a plain blocker. */
 const MAX_THREAT_TURNS = 400;
+/**
+ * Simulated seconds per objective the bot keeps stepping out of enemies' way. A pack that is after the player
+ * but cannot get at it (stuck below a bank, behind a fence) pins a bot that always steps aside; a person
+ * hesitates for a while and then runs for it, taking a bite if need be, and so does the bot.
+ */
+const EVADE_PATIENCE_S = 2 * GAP_WAIT_S;
+/** Feet this far above the surface of the path (m) while standing: the player walked onto another level (a bridge deck over a path that runs under it). */
+const OFF_LEVEL_M = 1;
+/** Walking a path may take this many times its length at full speed, plus {@link LEG_SLACK_S}, before it counts as stuck. */
+const LEG_SLOW_FACTOR = 4;
+const LEG_SLACK_S = 10;
+/** Simulated seconds an objective may take beyond its walk at full speed (times {@link LEG_SLOW_FACTOR}) before it is given up. */
+const OBJECTIVE_SLACK_S = 60;
 
 interface StuckInfo {
   position: Vec3;
@@ -274,6 +287,10 @@ class Bot {
   private threatSensedAt = -1;
   private readonly threatTurns = new Map<string, number>();
   private readonly gapWaited = new Map<string, number>();
+  /** When the bot first set out for each objective (simulated s) and the time it may take. */
+  private readonly objectiveStart = new Map<string, { t: number; limit: number }>();
+  /** Zones walked back to once everything else was done. */
+  private readonly revisited = new Set<string>();
   /** Objective the bot is walking to (threat bookkeeping). */
   private current: GoalObjective | null = null;
   /** Times the bot stepped out of an enemy's reach (informational). */
@@ -365,7 +382,8 @@ class Bot {
           done = this.pressed.has(o.id) || won;
           break;
         case 'zone':
-          done = (o.completes === 'game-over' && won) || touches(o.touch, feet);
+          // A zone walked back to for the win (see `revisitZones`) is what won it.
+          done = ((o.completes === 'game-over' || this.revisited.has(o.id)) && won) || touches(o.touch, feet);
           break;
         case 'room':
           done = o.region !== undefined && inRegion(o.region, feet, 0.12);
@@ -423,6 +441,10 @@ class Bot {
   async run(): Promise<PlaytestReport> {
     const verdict = validateWorld(this.world);
     if (!verdict.ok) return this.base('inconclusive', 'The world is not valid, so it cannot be played yet.', { findings: [{ code: 'budget', severity: 'error', message: 'the world document is invalid', entities: [], hint: 'fix the validation errors first' }] });
+    // Sizes of library models (pickups' touch volumes, enemies' bodies) come from the asset catalog: load it before the
+    // goals are read, so a run sees the same world whether or not anything loaded the catalog before it (a fresh worker,
+    // a proof check in another process). Without this the first run in a process measured a lantern as a unit cube.
+    await ensureAssetCatalog(this.world);
     if (this.kind === 'game' && this.world.player.mode === 'vehicle') {
       // A circuit: drive the racing line the world draws for its pace cars, if it draws one.
       const drove = await driveRace(this.world, this.opts, this.t0);
@@ -786,21 +808,27 @@ class Bot {
         }
       }
       if (owner.size === 0) continue;
+      // Head for the targets (A*): the frontier grows towards them instead of evenly over the whole map for every leg.
+      const groups = new Map<string, number[]>();
+      for (const [n, t] of owner) {
+        const list = groups.get(t.o.id);
+        if (list) list.push(n);
+        else groups.set(t.o.id, [n]);
+      }
+      const toward = targetDiscs(g, [...groups.values()]);
       for (let attempt = 0; attempt < (this.kind === 'walkthrough' ? 14 : PLAN_ATTEMPTS); attempt++) {
-        const res = g.search(from, (n) => owner.has(n));
+        const res = g.search(from, (n) => owner.has(n), Infinity, toward);
         if (res.hit < 0) break;
         const path = g.pathTo(res.parent, res.hit);
-        let bad = -1;
+        // Try every jump and drop of the route (each is simulated once and remembered): marking all the bad ones
+        // at once spares a search per bad link, and the next search avoids them all.
+        let bad = false;
         for (let i = 0; i + 1 < path.length; i++) {
           const a = path[i] as number;
           const b = path[i + 1] as number;
-          const kind = g.edgeKind(a, b);
-          if (kind !== EdgeKind.Walk && !g.validateLink(a, b, this.params.speed, this.params.jumpSpeed)) {
-            bad = i;
-            break;
-          }
+          if (g.edgeKind(a, b) !== EdgeKind.Walk && !g.validateLink(a, b, this.params.speed, this.params.jumpSpeed)) bad = true;
         }
-        if (bad >= 0) continue;
+        if (bad) continue;
         const t = owner.get(res.hit) as { o: GoalObjective; jump: boolean };
         return { objective: t.o, path, jumpAt: t.jump };
       }
@@ -828,8 +856,14 @@ class Bot {
     let evading = false;
     let commitT = -1;
     let committed = false;
+    let offLevelT = 0;
     const waypoint: Vec3 = [0, 0, 0];
     const goal = g.pos(path[path.length - 1] as number);
+    // Time on foot the path may take (lifts, jumps and doors are timed on their own): a loop the watchdog does not
+    // catch (a hop that looks like progress, a corner it keeps sliding along) ends as stuck instead of running out the clock.
+    const legLimit = (pathLength(g, path) / Math.max(0.5, this.params.speed)) * LEG_SLOW_FACTOR + LEG_SLACK_S;
+    let footT = 0;
+    const objective = this.current;
     const resetWatch = (): void => {
       stalls = 0;
       watchT = s.time;
@@ -854,6 +888,8 @@ class Bot {
             if (!evading) this.evasions++;
             evading = true;
             if (!(await this.step(1, 0, false, yaw))) return s.over ? 'ended' : 'stopped';
+            // Time spent stepping aside counts as waiting for a gap: past its patience the bot runs for it.
+            if (objective) this.gapWaited.set(objective.id, (this.gapWaited.get(objective.id) ?? 0) + STEP);
             resetWatch();
             continue;
           }
@@ -881,6 +917,7 @@ class Bot {
         if (dTake > 0.18 && Math.abs(takeoff[1] - pos[1]) < 1.2) {
           const yaw = this.yawTo(pos, takeoff[0], takeoff[2]);
           if (!(await this.step(Math.min(1, dTake / 0.4 + 0.25), 0, false, yaw))) return s.over ? 'ended' : 'stopped';
+          footT += STEP;
           if (s.time - watchT > 0.6) {
             if (Math.hypot(s.position[0] - watchPos[0], s.position[2] - watchPos[2]) < 0.12) {
               this.recordStuck(s.position, this.blockerAhead(s.position, yaw));
@@ -938,6 +975,7 @@ class Bot {
       const jumpNudge = s.time < nudgeUntil;
       const strafing = s.time < strafeUntil;
       if (!(await this.step(strafing ? Math.min(forward, 0.45) : forward, strafing ? strafeDir * 0.4 : 0, jumpNudge, yaw))) return s.over ? 'ended' : 'stopped';
+      footT += STEP;
       // Fell off the path?
       const here = s.position;
       if (here[1] < Math.min(g.py[a] as number, g.py[b] as number) - 2.2) {
@@ -945,9 +983,23 @@ class Bot {
         s.note('fall', 'fell off the path', here);
         return 'fell';
       }
-      // Progress watchdog: the player must actually move.
+      // Standing well above the path: the feet found another level on the way (stepped onto a ramp beside a path
+      // that runs under a bridge). Plan again from where the player really is.
+      if (s.character.grounded && here[1] > Math.max(g.py[a] as number, g.py[b] as number) + OFF_LEVEL_M) {
+        offLevelT += STEP;
+        if (offLevelT >= 0.25) {
+          g.markBad(a, b);
+          return 'lost';
+        }
+      } else offLevelT = 0;
+      if (footT > legLimit) {
+        this.recordStuck(here, this.blockerAhead(here, yaw));
+        g.markBad(a, b);
+        return 'stuck';
+      }
+      // Progress watchdog: the player must actually move along the ground (a hop on the spot is not progress).
       if (s.time - watchT >= 0.5) {
-        const moved = Math.hypot(here[0] - watchPos[0], here[1] - watchPos[1], here[2] - watchPos[2]);
+        const moved = Math.hypot(here[0] - watchPos[0], here[2] - watchPos[2]);
         if (moved < 0.15) {
           stalls++;
           // First a hop (steps, thresholds), then a sidestep each way (a snug doorway, a corner).
@@ -1043,7 +1095,9 @@ class Bot {
   /** The bot waited its fill for a gap and the objective is right ahead: go for it rather than step away. */
   private guardsGoal(goal: Readonly<Vec3>): boolean {
     const o = this.current;
-    if (!o || (this.gapWaited.get(o.id) ?? 0) < GAP_WAIT_S) return false;
+    const waited = o ? (this.gapWaited.get(o.id) ?? 0) : 0;
+    if (!o || waited < GAP_WAIT_S) return false;
+    if (waited >= EVADE_PATIENCE_S) return true;
     const p = this.session.position;
     return Math.hypot(goal[0] - p[0], goal[2] - p[2]) < 3;
   }
@@ -1377,6 +1431,32 @@ class Bot {
     if (this.startNode < 0) return;
     const s = this.session;
     this.phase = 'play';
+    await this.pursue();
+    // Everything done and the game still on: a zone that only counts while the player stands in it (its key is
+    // reset on the way out) may have been crossed on the way to something else. Go back and stand in it, once.
+    if (!this.stopped && this.pending.size === 0 && !s.over && this.goals.winDefined && this.revisitZones() > 0) await this.pursue();
+    // Survive-style wins: nothing left to do, the game ends by itself.
+    if (!this.stopped && this.goals.timerSeconds > 0 && !s.over) {
+      this.note = 'waiting for the timer';
+      const until = Math.min(this.maxSim, this.goals.timerSeconds + 3);
+      while (!this.stopped && s.time < until) if (!(await this.idle(0.5))) break;
+    }
+    // A game that only needs time to pass (a countdown to a win) is also given a chance.
+    if (!this.stopped && this.pending.size === 0 && !s.over && this.goals.winDefined) {
+      this.note = 'waiting for the game to end';
+      await this.idle(2);
+      // A machine that runs itself (a chain of physics machines, a countdown nobody can speed up) has nothing for the player to
+      // collect or reach: the player only starts it, so let the world run on, up to a bounded stretch of simulated time, and see whether it wins by itself.
+      if (this.totalObjectives === 0) {
+        const until = Math.min(this.maxSim, s.time + PASSIVE_RUN_SECONDS);
+        while (!this.stopped && !s.over && s.time < until) if (!(await this.idle(0.5))) break;
+      }
+    }
+  }
+
+  /** Plan and walk to the pending objectives, nearest first, until none is left or none can be reached. */
+  private async pursue(): Promise<void> {
+    const s = this.session;
     let stalls = 0;
     while (!this.stopped && this.pending.size > 0) {
       const here = s.position;
@@ -1400,6 +1480,17 @@ class Bot {
       }
       const o = plan.objective;
       this.current = o;
+      // Each objective gets simulated time in proportion to its walk: one that eats far more (re-routes, enemies,
+      // a corner it keeps sliding along) is written off with the reason, so the rest are still tried and the
+      // verdict says what went wrong instead of "ran too long".
+      const started = this.objectiveStart.get(o.id);
+      if (started === undefined) this.objectiveStart.set(o.id, { t: s.time, limit: (pathLength(this.graph, plan.path) / Math.max(0.5, this.params.speed)) * LEG_SLOW_FACTOR + OBJECTIVE_SLACK_S });
+      else if (s.time - started.t > started.limit) {
+        this.markFailed(o, (this.gapWaited.get(o.id) ?? 0) >= GAP_WAIT_S ? 'enemies kept the player from getting to it' : 'the player kept getting stuck on the way');
+        const r = this.results.get(o.id);
+        if (r) r.status = 'untouched';
+        continue;
+      }
       if (this.threats && (await this.waitForGap(o, this.graph.pos(plan.path[plan.path.length - 1] as number)))) continue;
       this.note = `walking to ${o.label} (${this.doneCount + 1}/${this.totalObjectives})`;
       this.emit();
@@ -1424,29 +1515,32 @@ class Bot {
         // Wait to land.
         await this.idle(0.3);
       }
+      // 'lost' (walked onto another level) is re-planned from where the player stands, counted like a stuck.
       if (n > PLAYTEST_LIMITS.MAX_REPLANS) {
         this.markFailed(o, 'the player kept getting stuck on the way');
         const r = this.results.get(o.id);
         if (r) r.status = 'untouched';
       }
     }
-    // Survive-style wins: nothing left to do, the game ends by itself.
-    if (!this.stopped && this.goals.timerSeconds > 0 && !s.over) {
-      this.note = 'waiting for the timer';
-      const until = Math.min(this.maxSim, this.goals.timerSeconds + 3);
-      while (!this.stopped && s.time < until) if (!(await this.idle(0.5))) break;
+  }
+
+  /** Put the zones that set state back on the list (see {@link play}); returns how many. */
+  private revisitZones(): number {
+    let n = 0;
+    for (const o of this.goals.objectives) {
+      if (o.kind !== 'zone' || o.completes !== 'state' || !o.required || this.failedReason.has(o.id) || this.revisited.has(o.id)) continue;
+      const r = this.results.get(o.id);
+      if (r?.status !== 'done') continue;
+      this.revisited.add(o.id);
+      this.pending.set(o.id, o);
+      this.objectiveStart.delete(o.id);
+      this.replans.delete(o.id);
+      r.status = 'pending';
+      delete r.at;
+      this.doneCount--;
+      n++;
     }
-    // A game that only needs time to pass (a countdown to a win) is also given a chance.
-    if (!this.stopped && this.pending.size === 0 && !s.over && this.goals.winDefined) {
-      this.note = 'waiting for the game to end';
-      await this.idle(2);
-      // A machine that runs itself (a chain of physics machines, a countdown nobody can speed up) has nothing for the player to
-      // collect or reach: the player only starts it, so let the world run on, up to a bounded stretch of simulated time, and see whether it wins by itself.
-      if (this.totalObjectives === 0) {
-        const until = Math.min(this.maxSim, s.time + PASSIVE_RUN_SECONDS);
-        while (!this.stopped && !s.over && s.time < until) if (!(await this.idle(0.5))) break;
-      }
-    }
+    return n;
   }
 
   // -------------------------------------------------------------------
@@ -1925,6 +2019,7 @@ class Bot {
     if (!verdict.ok) return none('the world document is invalid');
     const why = unsupportedReason(this.world);
     if (why) return none(`reach cannot be measured here: ${why}`);
+    await ensureAssetCatalog(this.world);
     this.goals = deriveGoals(this.world);
     const session = await Session.create(this.world, { trace: false });
     this.session = session;
@@ -2000,6 +2095,17 @@ export interface LevelProbe {
 /** Build the walking map of a game for reach questions. The caller disposes it. */
 export async function probeLevel(input: WorldDoc): Promise<LevelProbe> {
   return new Bot(input, {}, 'game').openProbe();
+}
+
+/** Length of a node path on the ground (m). */
+function pathLength(g: NavGraph, path: readonly number[]): number {
+  let len = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1] as number;
+    const b = path[i] as number;
+    len += Math.hypot((g.px[b] as number) - (g.px[a] as number), (g.pz[b] as number) - (g.pz[a] as number));
+  }
+  return len;
 }
 
 function g3(g: NavGraph, node: number): Vec3 {

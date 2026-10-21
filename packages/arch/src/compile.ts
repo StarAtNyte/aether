@@ -16,7 +16,7 @@ import { compileGrounds } from './site';
 import { wallNetwork, type NetworkWall } from './wall-network';
 import { solveWallJoins } from './wall-joins';
 import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
-import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, positive, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
+import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, pointSegmentDistance, positive, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
 import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
 import { stairFootprint, stairLayout } from './stair';
@@ -772,15 +772,38 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const last = flights[flights.length - 1];
       if (last) {
         const arrive = rotateYaw(last.dx, last.dz, yaw);
-        const pts = fp.slice();
-        // Find the edge whose outward normal matches the arrival direction and leave it open.
-        const edges = roomEdges(positive(pts));
-        const open = edges.findIndex((e) => e.out[0] * arrive[0] + e.out[1] * arrive[1] > 0.9);
+        // Where the last flight comes out (the top step's front edge, centre).
+        const runLen = last.treads * sp.going;
+        const top = rotateYaw(last.x + last.dx * runLen, last.z + last.dz * runLen, yaw);
+        const arrival: P2 = [s.at[0] + top[0], s.at[1] + top[1]];
+        // Leave open the edge the stair arrives through: outward normal along the arrival direction, and the
+        // nearest such edge to where the top step comes out. An L stair has two edges facing that way (the
+        // inner corner of the L and the real exit); railing the exit walls the upper floor off.
+        const ring = positive(fp.slice());
+        let open = -1;
+        let openD = Infinity;
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i] as P2;
+          const b = ring[(i + 1) % ring.length] as P2;
+          const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (len < 1e-6) continue;
+          const ox = (b[1] - a[1]) / len;
+          const oz = -(b[0] - a[0]) / len;
+          if (ox * arrive[0] + oz * arrive[1] <= 0.9) continue;
+          const d = pointSegmentDistance(arrival[0], arrival[1], a[0], a[1], b[0], b[1]);
+          if (d < openD) {
+            openD = d;
+            open = i;
+          }
+        }
         if (open >= 0) {
-          const ring = positive(pts);
           const start = (open + 1) % ring.length;
+          // The balustrade stands on the floor round the opening, not over the flight: set back by its own
+          // half-thickness, the stair keeps its full width up to the top (centred on the edge, the panels
+          // narrowed a 0.9 m stair to 0.82 m where the head passes them, too tight to climb).
+          const rail = offsetPolygon(ring, WELL_RAIL_SETBACK);
           const chain: P2[] = [];
-          for (let k = 0; k <= ring.length - 1; k++) chain.push(ring[(start + k) % ring.length] as P2);
+          for (let k = 0; k <= ring.length - 1; k++) chain.push(rail[(start + k) % ring.length] as P2);
           railingsNext.push({ points: chain, style: 'glass' });
         }
       }
@@ -1036,6 +1059,9 @@ function stairWorldFootprint(s: { at: P2 | [number, number]; heading: 'north' | 
     return [s.at[0] + r[0], s.at[1] + r[1]] as P2;
   });
 }
+
+/** How far a stairwell balustrade stands back from the edge of the opening (m): the half-thickness of its collider and a hair. */
+const WELL_RAIL_SETBACK = 0.05;
 
 /** Walkway kept free of furniture round a stair and a stairwell (m). */
 const STAIR_WALKWAY = 0.8;

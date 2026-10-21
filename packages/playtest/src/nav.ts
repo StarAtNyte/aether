@@ -112,6 +112,9 @@ export function dropReach(p: NavParams, dy: number): number {
   return p.speed * Math.sqrt((2 * -dy) / p.gravity);
 }
 
+/** Cells per side of the blocks the far landing scan prunes by (see {@link NavGraph.linksOf}). */
+const BLOCK = 8;
+
 const DIRS: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
   [-1, 0],
@@ -140,6 +143,50 @@ export interface LinkEdge {
 }
 
 /** Result of a Dijkstra run. */
+/**
+ * Where a search is headed: discs (centre x / z and radius, m) that hold every target node.
+ * The distance to the nearest disc bounds the cost of getting to a target from below.
+ */
+export interface TargetDiscs {
+  count: number;
+  x: Float64Array;
+  z: Float64Array;
+  r: Float64Array;
+}
+
+/** Discs round groups of target nodes (one disc per group). */
+export function targetDiscs(g: NavGraph, groups: ReadonlyArray<readonly number[]>): TargetDiscs {
+  const n = groups.filter((nodes) => nodes.length > 0).length;
+  const out: TargetDiscs = { count: n, x: new Float64Array(n), z: new Float64Array(n), r: new Float64Array(n) };
+  let k = 0;
+  for (const nodes of groups) {
+    if (nodes.length === 0) continue;
+    let cx = 0;
+    let cz = 0;
+    for (const v of nodes) {
+      cx += g.px[v] as number;
+      cz += g.pz[v] as number;
+    }
+    cx /= nodes.length;
+    cz /= nodes.length;
+    let r = 0;
+    for (const v of nodes) r = Math.max(r, Math.hypot((g.px[v] as number) - cx, (g.pz[v] as number) - cz));
+    out.x[k] = cx;
+    out.z[k] = cz;
+    out.r[k] = r + 1e-3;
+    k++;
+  }
+  return out;
+}
+
+/**
+ * Weight on the A* estimate. A walk edge costs at least its grid step, but a doorway node
+ * may sit anywhere in its cell, so an edge between neighbouring cells can span up to √5
+ * steps of ground (corner to far corner): a straight-line estimate scaled by 0.44 never
+ * exceeds the true cost (jumps and drops cost at least their span), so the search stays exact.
+ */
+const ESTIMATE_SCALE = 0.44;
+
 export interface SearchResult {
   /** Node reached first among the targets, or -1. */
   hit: number;
@@ -193,10 +240,17 @@ export class NavGraph {
   private readonly distBuf: Float64Array;
   private readonly parentBuf: Int32Array;
   private readonly kindBuf: Uint8Array;
+  /** A* estimates of the running search (-1: not computed yet) and its targets. */
+  private readonly estBuf: Float64Array;
+  private estimate: TargetDiscs | null = null;
   private walker: CharacterController | null = null;
   private readonly spawnY: number;
   /** Hurting volumes: a jump or drop whose arc passes through one is not a way (the river under a leap). */
   private readonly hazards: readonly HazardZone[];
+  /** Blocks of {@link BLOCK}×{@link BLOCK} cells: columns and rows, and the lowest node height in each (Infinity when empty). */
+  private readonly nbx: number;
+  private readonly nbz: number;
+  private readonly blockMinY: Float32Array;
 
   private constructor(
     input: NavBuildInput,
@@ -233,7 +287,20 @@ export class NavGraph {
     this.distBuf = new Float64Array(this.count);
     this.parentBuf = new Int32Array(this.count);
     this.kindBuf = new Uint8Array(this.count);
+    this.estBuf = new Float64Array(this.count);
     this.spawnY = input.topY;
+    // The lowest surface per block of cells: a far landing scan skips a block no jump or drop can reach (on open
+    // land with relief, most of the 14 m around a ledge), which made the scan the bulk of a search.
+    this.nbx = Math.ceil(nx / BLOCK);
+    this.nbz = Math.ceil(nz / BLOCK);
+    this.blockMinY = new Float32Array(this.nbx * this.nbz).fill(Infinity);
+    for (let cz = 0; cz < nz; cz++) {
+      for (let cx = 0; cx < nx; cx++) {
+        const c = cz * nx + cx;
+        const b = Math.floor(cz / BLOCK) * this.nbx + Math.floor(cx / BLOCK);
+        for (let i = cellFirst[c] as number; i < (cellFirst[c + 1] as number); i++) if ((this.py[i] as number) < (this.blockMinY[b] as number)) this.blockMinY[b] = this.py[i] as number;
+      }
+    }
   }
 
   /** Sample the graph. Never throws for odd geometry; returns an empty graph when nothing is standable. */
@@ -486,6 +553,41 @@ export class NavGraph {
   // Jump / drop edges
   // ---------------------------------------------------------------------
 
+  /**
+   * The far landing scan's offsets (the same for every node): for each cell offset in the square of radius `rc`,
+   * the directions it may be reached from (a bit per DIRS index: the cell's own direction and its two angular
+   * neighbours; 0 outside the ring), its angle and its 16-way bin. Computed once instead of per node and cell.
+   */
+  private farTable(): { rc: number; stride: number; span: number; accept: Uint8Array; ang: Float64Array; bin: Uint8Array } {
+    if (this.far) return this.far;
+    const p = this.params;
+    const R = Math.min(Math.max(jumpReach(p, 0), dropReach(p, -30)) * 0.95 + this.cell, 14);
+    const rc = Math.ceil(R / this.cell);
+    // Far landings are sampled every ~0.25 m, however fine the grid is.
+    const stride = Math.max(1, Math.round(0.25 / this.cell));
+    const span = 2 * rc + 1;
+    const accept = new Uint8Array(span * span);
+    const ang = new Float64Array(span * span);
+    const bin = new Uint8Array(span * span);
+    for (let dz = -rc; dz <= rc; dz++) {
+      for (let dx = -rc; dx <= rc; dx++) {
+        const k = (dz + rc) * span + (dx + rc);
+        const a = Math.atan2(dz, dx);
+        ang[k] = a;
+        bin[k] = ((Math.round(((a + Math.PI) / (Math.PI * 2)) * 16) % 16) + 16) % 16;
+        const dist2 = dx * dx + dz * dz;
+        if (dist2 < 2 || dist2 > rc * rc) continue;
+        const sector = ((Math.round((a / (Math.PI * 2)) * 8) % 8) + 8) % 8;
+        // Map the sector to the DIRS index (E, W, S(z+), N(z-), diagonals).
+        const dirIdx = sectorToDir(sector);
+        accept[k] = (1 << dirIdx) | (1 << neighbourDir(dirIdx, 1)) | (1 << neighbourDir(dirIdx, -1));
+      }
+    }
+    this.far = { rc, stride, span, accept, ang, bin };
+    return this.far;
+  }
+  private far: { rc: number; stride: number; span: number; accept: Uint8Array; ang: Float64Array; bin: Uint8Array } | null = null;
+
   /** Jump and drop candidates leaving node `i` (cached). */
   linksOf(i: number): LinkEdge[] {
     const cached = this.links.get(i);
@@ -571,22 +673,48 @@ export class NavGraph {
       }
     }
     if (anyOpen) {
-      const R = Math.min(Math.max(jumpReach(p, 0), dropReach(p, -30)) * 0.95 + this.cell, 14);
-      const rc = Math.ceil(R / this.cell);
-      // Far landings are sampled every ~0.25 m, however fine the grid is.
-      const stride = Math.max(1, Math.round(0.25 / this.cell));
+      const table = this.farTable();
+      const { rc, stride, span } = table;
+      let openBits = 0;
+      for (let d = 0; d < 8; d++) if (open[d]) openBits |= 1 << d;
       type Cand = { j: number; kind: EdgeKind.Jump | EdgeKind.Drop; cost: number; ang: number };
       const bins: Cand[][] = Array.from({ length: 16 }, () => []);
+      // Blocks whose every node is out of reach (too high, or too far for the deepest drop into them) are skipped
+      // whole: the candidates are exactly those of a cell-by-cell scan, in the same order.
+      const skip = new Map<number, boolean>();
+      const blockOut = (cx: number, cz: number): boolean => {
+        const bx = Math.floor(cx / BLOCK);
+        const bz = Math.floor(cz / BLOCK);
+        const b = bz * this.nbx + bx;
+        const known = skip.get(b);
+        if (known !== undefined) return known;
+        const low = (this.blockMinY[b] as number) - yi;
+        let out = !Number.isFinite(low) || low > maxUp;
+        if (!out) {
+          const x0 = this.x0 + bx * BLOCK * this.cell;
+          const z0 = this.z0 + bz * BLOCK * this.cell;
+          const hx = Math.max(0, x0 - xi, xi - (x0 + BLOCK * this.cell));
+          const hz = Math.max(0, z0 - zi, zi - (z0 + BLOCK * this.cell));
+          const hMin = Math.hypot(hx, hz);
+          const reach = Math.max(jumpReach(p, low) * 0.9 - 0.25, low < 0 ? dropReach(p, low) * 0.9 - 0.25 : 0);
+          out = hMin > reach + 1e-6;
+        }
+        skip.set(b, out);
+        return out;
+      };
       for (let dz = -rc; dz <= rc; dz += stride) {
         for (let dx = -rc; dx <= rc; dx += stride) {
-          const dist2 = dx * dx + dz * dz;
-          if (dist2 < 2 || dist2 > rc * rc) continue;
-          // The direction of this cell must be an open one.
-          const ang = Math.atan2(dz, dx);
-          const sector = ((Math.round((ang / (Math.PI * 2)) * 8) % 8) + 8) % 8;
-          // Map the sector to the DIRS index (E, W, S(z+), N(z-), diagonals).
-          const dirIdx = sectorToDir(sector);
-          if (!open[dirIdx] && !open[neighbourDir(dirIdx, 1)] && !open[neighbourDir(dirIdx, -1)]) continue;
+          const bcx = cx0 + dx, bcz = cz0 + dz;
+          if (bcx >= 0 && bcz >= 0 && bcx < this.nx && bcz < this.nz && blockOut(bcx, bcz)) {
+            // On to the first column of the next block on this row (keeping the stride's alignment).
+            const next = (Math.floor(bcx / BLOCK) + 1) * BLOCK - cx0;
+            dx = -rc + Math.ceil((next + rc) / stride) * stride - stride;
+            continue;
+          }
+          const k = (dz + rc) * span + (dx + rc);
+          // Inside the ring, in an open direction (or next to one).
+          if (((table.accept[k] as number) & openBits) === 0) continue;
+          const ang = table.ang[k] as number;
           const cx = cx0 + dx, cz = cz0 + dz;
           if (cx < 0 || cz < 0 || cx >= this.nx || cz >= this.nz) continue;
           const c = cz * this.nx + cx;
@@ -600,8 +728,7 @@ export class NavGraph {
             if (h > Math.max(reachJ, reachD)) continue;
             const kind = h <= reachD ? EdgeKind.Drop : EdgeKind.Jump;
             const cost = h + (kind === EdgeKind.Jump ? 1.5 : 0.3) + (dy < 0 ? -dy * 0.35 : dy * 1.0);
-            const bin = ((Math.round(((ang + Math.PI) / (Math.PI * 2)) * 16) % 16) + 16) % 16;
-            (bins[bin] as Cand[]).push({ j, kind, cost, ang });
+            (bins[table.bin[k] as number] as Cand[]).push({ j, kind, cost, ang });
           }
         }
       }
@@ -669,8 +796,13 @@ export class NavGraph {
    * Dijkstra from `from`. Stops at the first popped node for which
    * `isTarget` is true (or runs to exhaustion when it is omitted). The
    * returned arrays are reused by the next call.
+   *
+   * With `toward` (the discs round the targets, see {@link TargetDiscs}) it is A*: the
+   * frontier grows towards the targets instead of evenly in every direction, and the
+   * first target popped is still the cheapest one (the estimate never exceeds the
+   * true cost). `dist` is then exact only for the nodes on the way.
    */
-  search(from: number, isTarget?: (node: number) => boolean, maxCost = Infinity): SearchResult {
+  search(from: number, isTarget?: (node: number) => boolean, maxCost = Infinity, toward?: TargetDiscs): SearchResult {
     const dist = this.distBuf;
     const parent = this.parentBuf;
     dist.fill(Infinity);
@@ -678,19 +810,42 @@ export class NavGraph {
     this.heapSize = 0;
     this.searches++;
     dist[from] = 0;
-    this.push(0, from);
+    const est = toward && toward.count > 0 && maxCost === Infinity ? toward : null;
+    this.estimate = est;
+    if (est) this.estBuf.fill(-1);
+    this.push(est ? this.estimateOf(from, est) : 0, from);
     let expanded = 0;
     while (this.heapSize > 0) {
       const key = this.heapKey[0] as number;
       const u = this.pop();
-      if (key > (dist[u] as number)) continue;
+      if (key > (dist[u] as number) + (est ? (this.estBuf[u] as number) : 0)) continue;
       if (key > maxCost) break;
       expanded++;
       this.expandedTotal++;
-      if (isTarget && isTarget(u)) return { hit: u, dist, parent, expanded };
+      if (isTarget && isTarget(u)) {
+        this.estimate = null;
+        return { hit: u, dist, parent, expanded };
+      }
       this.expand(u, dist, parent);
     }
+    this.estimate = null;
     return { hit: -1, dist, parent, expanded };
+  }
+
+  /** The A* estimate of node `u` (cached for the search): a lower bound of the cost from it to the nearest target. */
+  private estimateOf(u: number, t: TargetDiscs): number {
+    const cached = this.estBuf[u] as number;
+    if (cached >= 0) return cached;
+    const x = this.px[u] as number;
+    const z = this.pz[u] as number;
+    let best = Infinity;
+    for (let k = 0; k < t.count; k++) {
+      const d = Math.hypot(x - (t.x[k] as number), z - (t.z[k] as number)) - (t.r[k] as number);
+      if (d < best) best = d;
+    }
+    const h = Math.max(0, best) * ESTIMATE_SCALE;
+    this.estBuf[u] = h;
+    return h;
   }
 
   /**
@@ -729,7 +884,7 @@ export class NavGraph {
         dist[v] = nd;
         parent[v] = u;
         this.kindBuf[v] = EdgeKind.Walk;
-        this.push(nd, v);
+        this.push(this.estimate ? nd + this.estimateOf(v, this.estimate) : nd, v);
       }
     });
     for (const l of this.linksOf(u)) {
@@ -740,7 +895,7 @@ export class NavGraph {
         dist[l.to] = nd;
         parent[l.to] = u;
         this.kindBuf[l.to] = l.kind;
-        this.push(nd, l.to);
+        this.push(this.estimate ? nd + this.estimateOf(l.to, this.estimate) : nd, l.to);
       }
     }
   }

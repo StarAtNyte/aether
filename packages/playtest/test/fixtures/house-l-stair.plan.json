@@ -1,0 +1,459 @@
+{
+ "id": "pool-house",
+ "name": "Modern Pool House",
+ "style": "modern",
+ "origin": [
+  0,
+  0
+ ],
+ "rotation": 0,
+ "plinth": 0.15,
+ "exteriorWall": {
+  "thickness": 0.28,
+  "finish": {
+   "finish": "plaster",
+   "color": "#ece9e3"
+  }
+ },
+ "interiorWall": {
+  "thickness": 0.12
+ },
+ "levels": [
+  {
+   "height": 3.1,
+   "rooms": [
+    {
+     "id": "living",
+     "type": "living",
+     "rect": [
+      0,
+      0,
+      9,
+      6
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    },
+    {
+     "id": "hall",
+     "type": "hall",
+     "rect": [
+      0,
+      6,
+      6,
+      10.5
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    },
+    {
+     "id": "bath",
+     "type": "bathroom",
+     "rect": [
+      6,
+      6,
+      9,
+      10.5
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    }
+   ],
+   "doors": [
+    {
+     "between": [
+      "hall",
+      "outside"
+     ],
+     "at": 0.5,
+     "width": 1,
+     "height": 2.1,
+     "kind": "swing",
+     "side": "south",
+     "main": true,
+     "along": 1.3
+    },
+    {
+     "between": [
+      "hall",
+      "living"
+     ],
+     "at": 0.5,
+     "width": 1.6,
+     "height": 2.1,
+     "kind": "opening",
+     "main": false,
+     "along": 4.6
+    },
+    {
+     "between": [
+      "hall",
+      "bath"
+     ],
+     "at": 0.5,
+     "width": 0.9,
+     "height": 2.1,
+     "kind": "swing",
+     "main": false,
+     "along": 2
+    },
+    {
+     "between": [
+      "living",
+      "outside"
+     ],
+     "at": 0.5,
+     "width": 4,
+     "height": 2.4,
+     "kind": "sliding",
+     "side": "north",
+     "main": false,
+     "along": 4.5
+    }
+   ],
+   "windows": [
+    {
+     "room": "living",
+     "side": "west",
+     "count": 1,
+     "width": 2.4,
+     "height": 1.6,
+     "sill": 0.7,
+     "centres": [
+      3
+     ]
+    },
+    {
+     "room": "bath",
+     "side": "east",
+     "count": 1,
+     "width": 1,
+     "height": 0.8,
+     "sill": 1.4,
+     "centres": [
+      2.2
+     ]
+    }
+   ],
+   "autoWindows": false,
+   "stairs": [
+    {
+     "at": [
+      0.66,
+      6.96
+     ],
+     "heading": "south",
+     "shape": "l",
+     "width": 1,
+     "turn": "left"
+    }
+   ],
+   "railings": []
+  },
+  {
+   "height": 3.1,
+   "rooms": [
+    {
+     "id": "bed-1",
+     "type": "bedroom",
+     "rect": [
+      0,
+      0,
+      4.5,
+      6
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    },
+    {
+     "id": "bed-2",
+     "type": "bedroom",
+     "rect": [
+      4.5,
+      0,
+      9,
+      6
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    },
+    {
+     "id": "upper-hall",
+     "type": "hall",
+     "rect": [
+      0,
+      6,
+      6,
+      10.5
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    },
+    {
+     "id": "upper-bath",
+     "type": "bathroom",
+     "rect": [
+      6,
+      6,
+      9,
+      10.5
+     ],
+     "furnish": false,
+     "dress": true,
+     "items": [],
+     "omit": []
+    }
+   ],
+   "doors": [
+    {
+     "between": [
+      "upper-hall",
+      "bed-1"
+     ],
+     "at": 0.5,
+     "width": 0.9,
+     "height": 2.1,
+     "kind": "swing",
+     "main": false,
+     "along": 3.3
+    },
+    {
+     "between": [
+      "upper-hall",
+      "bed-2"
+     ],
+     "at": 0.5,
+     "width": 0.9,
+     "height": 2.1,
+     "kind": "swing",
+     "main": false,
+     "along": 5.2
+    },
+    {
+     "between": [
+      "upper-hall",
+      "upper-bath"
+     ],
+     "at": 0.5,
+     "width": 0.9,
+     "height": 2.1,
+     "kind": "swing",
+     "main": false,
+     "along": 2
+    }
+   ],
+   "windows": [
+    {
+     "room": "bed-1",
+     "side": "north",
+     "count": 1,
+     "width": 2.8,
+     "height": 1.6,
+     "sill": 0.7,
+     "centres": [
+      2.25
+     ]
+    },
+    {
+     "room": "bed-2",
+     "side": "north",
+     "count": 1,
+     "width": 2.8,
+     "height": 1.6,
+     "sill": 0.7,
+     "centres": [
+      2.25
+     ]
+    },
+    {
+     "room": "upper-bath",
+     "side": "east",
+     "count": 1,
+     "width": 1.2,
+     "height": 0.8,
+     "sill": 1.4,
+     "centres": [
+      2.2
+     ]
+    }
+   ],
+   "autoWindows": false,
+   "stairs": [],
+   "railings": []
+  }
+ ],
+ "roof": {
+  "shape": "flat",
+  "pitch": 30,
+  "overhang": 0.4
+ },
+ "physicalDoors": true,
+ "design": {
+  "brief": "Two-storey modern home with an open living and kitchen space facing a pool terrace, and two upstairs bedrooms.",
+  "programme": [
+   {
+    "room": "living",
+    "purpose": "Open lounge, kitchen and dining",
+    "targetArea": 54
+   },
+   {
+    "room": "hall",
+    "purpose": "Entrance and comfortable stair",
+    "targetArea": 27
+   },
+   {
+    "room": "bath",
+    "purpose": "Bathroom",
+    "targetArea": 13.5
+   },
+   {
+    "room": "upper-hall",
+    "purpose": "Landing serving bedrooms",
+    "targetArea": 27
+   },
+   {
+    "room": "bed-1",
+    "purpose": "Main bedroom",
+    "targetArea": 27
+   },
+   {
+    "room": "bed-2",
+    "purpose": "Second bedroom",
+    "targetArea": 27
+   },
+   {
+    "room": "upper-bath",
+    "purpose": "Shared bathroom",
+    "targetArea": 13.5
+   }
+  ],
+  "circulation": {
+   "entrance": "hall",
+   "notes": "Deep hall accommodates a U stair and clear entry route; matching upper landing connects both bedrooms and bathroom.",
+   "routes": []
+  },
+  "furniture": [
+   {
+    "id": "sofa",
+    "kind": "sofa",
+    "room": "living",
+    "intent": "East wall lounge",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "east"
+     }
+    ]
+   },
+   {
+    "id": "coffee-table",
+    "kind": "coffee-table",
+    "room": "living",
+    "intent": "In front of sofa",
+    "relations": [
+     {
+      "type": "beside",
+      "target": "sofa"
+     }
+    ]
+   },
+   {
+    "id": "kitchen",
+    "kind": "kitchen",
+    "room": "living",
+    "intent": "South wall kitchen west of hall opening",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "south"
+     }
+    ]
+   },
+   {
+    "id": "dining",
+    "kind": "dining-table",
+    "room": "living",
+    "intent": "Dining near west window",
+    "relations": []
+   },
+   {
+    "id": "bed-main",
+    "kind": "bed",
+    "room": "bed-1",
+    "intent": "Double bed on west wall",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "west"
+     },
+     {
+      "type": "centred_on_wall",
+      "wall": "west"
+     }
+    ]
+   },
+   {
+    "id": "wardrobe-main",
+    "kind": "wardrobe",
+    "room": "bed-1",
+    "intent": "East wall storage",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "east"
+     }
+    ]
+   },
+   {
+    "id": "bed-second",
+    "kind": "bed",
+    "room": "bed-2",
+    "intent": "Double bed on east wall",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "east"
+     },
+     {
+      "type": "centred_on_wall",
+      "wall": "east"
+     }
+    ]
+   },
+   {
+    "id": "wardrobe-second",
+    "kind": "wardrobe",
+    "room": "bed-2",
+    "intent": "West wall storage",
+    "relations": [
+     {
+      "type": "against_wall",
+      "wall": "west"
+     }
+    ]
+   }
+  ],
+  "openingAliases": {}
+ },
+ "site": {
+  "terraceFinish": {
+   "finish": "stone",
+   "color": "#d9d2c4"
+  },
+  "planting": true,
+  "garden": true,
+  "surroundings": "estate"
+ }
+}
