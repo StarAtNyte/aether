@@ -3,9 +3,8 @@
  * stays so long enough to cross, get on (a walk over a narrow gap, a steered jump over a wide one), stand at the
  * centre, and step off at the destination while the deck is level with it. See lifts.ts for the model.
  *
- * The capsule cannot walk far over a resting kinematic deck (the character controller keeps finding the deck in
- * contact and slides to a stop after a few tens of centimetres), but crosses it freely while it moves and in the
- * air. So the ride moves over a deck by hops steered to land on a point, and walks only short distances.
+ * The capsule walks over a deck at rest or in motion like any floor (the physics package's character controller
+ * handles kinematic floors); jumps are used only to cross a gap that cannot be run, and to leave the deck.
  */
 import type { Vec3 } from '@aether/core';
 import { boardBand, EXIT_ABOVE, EXIT_BELOW, runGap, type RideInfo } from './lifts';
@@ -83,7 +82,7 @@ export async function rideLift(h: RideHost, info: RideInfo, from: Readonly<Vec3>
     }
     return 'timeout';
   };
-  /** Walk to a point on the deck for a moment; true when it is reached. A deck at rest stops the walk: the caller hops then. */
+  /** Walk to a point on the deck for a moment; true when it is reached, false when it stalls or time runs out. */
   const walkTo = async (target: readonly [number, number], within: number, seconds: number): Promise<boolean | 'halt'> => {
     const t0 = s.time;
     let mark = s.position;
@@ -167,12 +166,10 @@ export async function rideLift(h: RideHost, info: RideInfo, from: Readonly<Vec3>
   for (let i = 0; i < 3; i++) {
     const pos = s.position;
     if (Math.hypot(centre[0] - pos[0], centre[1] - pos[2]) < 0.3) break;
-    const w = await walkTo(centre, 0.25, 0.8);
+    const w = await walkTo(centre, 0.25, 1.5);
     if (w === 'halt') return halt();
     if (w) break;
-    const r = await hop(centre, top());
-    if (r === 'halt') return halt();
-    if (r === 'fell') return { result: 'fell', reason: 'fell off the lift while stepping to its centre' };
+    if (s.position[1] < fallY) return { result: 'fell', reason: 'fell off the lift while stepping to its centre' };
   }
 
   // 4. Stand still while it rises; 5. step off when the deck is level with the landing.

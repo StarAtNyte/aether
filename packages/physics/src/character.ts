@@ -73,9 +73,26 @@ export interface CharacterInput {
 const SKIN = 0.02;
 const MAX_FALL_SPEED = 50;
 const MAX_DT = 0.1;
+interface Vec3Like {
+  x: number;
+  y: number;
+  z: number;
+}
 /** Spawn settling: the probe starts this far above the spawn point, and a drop up to this far is snapped to the floor (m). */
 const SPAWN_PROBE_UP = 0.3;
 const SPAWN_SNAP_MAX = 1.5;
+/**
+ * Rapier's character controller reports a contact with a kinematic body (a resting deck or lift floor) again and again at time of
+ * impact 0 when the capsule slides along it, until its iteration cap: a walk across it stalls after a few centimetres and the
+ * platform's own motion is not applied either; the same box as a fixed body slides normally. Such a move is redone in two phases:
+ * sideways with this small upward bias (which keeps the cast out of the contact), then the remaining vertical motion alone. Fixed
+ * ground never takes this path.
+ */
+const KINEMATIC_SLIDE_LIFT = 0.001;
+/** Ground steeper than this (normal's up component) is not a floor. */
+const MIN_GROUND_NORMAL_Y = 0.5;
+/** Collisions in one controller move from which it is judged to be looping on a contact. */
+const LOOPING_COLLISIONS = 8;
 
 function clampUnit(v: number): number {
   return Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
@@ -127,8 +144,8 @@ export class CharacterController {
     this.controller.setSlideEnabled(true);
     this.controller.setMaxSlopeClimbAngle(((opts.maxSlopeDeg ?? 50) * Math.PI) / 180);
     this.controller.setMinSlopeSlideAngle(((Math.min(opts.maxSlopeDeg ?? 50, 45) - 5) * Math.PI) / 180);
-    this.controller.enableAutostep(opts.stepHeight ?? 0.35, Math.max(0.05, radius * 0.5), false);
-    this.controller.enableSnapToGround(opts.snapDistance ?? 0.3);
+    if (process.env.NOSTEP !== '1') this.controller.enableAutostep(opts.stepHeight ?? 0.35, Math.max(0.05, radius * 0.5), false);
+    if (process.env.NOSNAP !== '1') this.controller.enableSnapToGround(opts.snapDistance ?? 0.3);
     this.controller.setApplyImpulsesToDynamicBodies(true);
     pw._registerExternal(this.collider, opts.id ?? 'player');
   }
@@ -214,8 +231,15 @@ export class CharacterController {
     // Keep the collider where we believe the character is (several moves may happen between world steps).
     this.collider.setTranslation({ x: this.pos[0], y: this.pos[1] + this.halfTotal, z: this.pos[2] });
     this.controller.computeColliderMovement(this.collider, desired, R.QueryFilterFlags.EXCLUDE_SENSORS);
-    const m = this.controller.computedMovement();
+    let m: Vec3Like = this.controller.computedMovement();
     this.onGround = this.controller.computedGrounded();
+    if (this.vy <= 0 && this.loopingOnKinematicFloor(desired, m)) {
+      const retry = this.slideOnKinematic(desired);
+      if (retry.grounded || !this.onGround) {
+        m = retry.m;
+        this.onGround = retry.grounded;
+      }
+    }
     if (this.onGround && this.vy < 0) this.vy = 0;
     if (this.vy > 0 && m.y < desired.y - 1e-4) this.vy = 0; // bumped a ceiling
     // A wall that stopped the character takes its speed along that axis too.
@@ -228,6 +252,37 @@ export class CharacterController {
     this.pos[2] += m.z;
     this.body.setNextKinematicTranslation({ x: this.pos[0], y: this.pos[1], z: this.pos[2] });
     return this.position;
+  }
+
+  /** True when the controller looped on a contact with the upward face of a kinematic body and lost the walk (see {@link KINEMATIC_SLIDE_LIFT}). */
+  private loopingOnKinematicFloor(desired: Vec3Like, m: Vec3Like): boolean {
+    const n = this.controller.numComputedCollisions();
+    if (n === 0) return false;
+    let kinematicFloor = false;
+    for (let i = 0; i < n && !kinematicFloor; i++) {
+      const c = this.controller.computedCollision(i);
+      kinematicFloor = c !== null && c.collider !== null && c.normal1.y > MIN_GROUND_NORMAL_Y && c.collider.parent()?.isKinematic() === true;
+    }
+    if (!kinematicFloor) return false;
+    if (n >= LOOPING_COLLISIONS) return true;
+    const want = Math.hypot(desired.x, desired.z);
+    return want > 1e-5 && (m.x * desired.x + m.z * desired.z) / want < want * 0.5;
+  }
+
+  /** The two-phase move used over kinematic floors. */
+  private slideOnKinematic(desired: Vec3Like): { m: Vec3Like; grounded: boolean } {
+    const flags = rapier().QueryFilterFlags.EXCLUDE_SENSORS;
+    this.controller.computeColliderMovement(this.collider, { x: desired.x, y: KINEMATIC_SLIDE_LIFT, z: desired.z }, flags);
+    const side = this.controller.computedMovement();
+    const sx = side.x;
+    const sy = side.y;
+    const sz = side.z;
+    this.collider.setTranslation({ x: this.pos[0] + sx, y: this.pos[1] + sy + this.halfTotal, z: this.pos[2] + sz });
+    this.controller.computeColliderMovement(this.collider, { x: 0, y: desired.y - sy, z: 0 }, flags);
+    const down = this.controller.computedMovement();
+    const grounded = this.controller.computedGrounded();
+    this.collider.setTranslation({ x: this.pos[0], y: this.pos[1] + this.halfTotal, z: this.pos[2] });
+    return { m: { x: sx + down.x, y: sy + down.y, z: sz + down.z }, grounded };
   }
 
   /** Move instantly and reset vertical speed. */

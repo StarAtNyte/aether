@@ -1633,9 +1633,10 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
   too fast for the crossing, no ground level with any stop) is kept with the reason and reported as `lift_unusable`
   when something stays undone. `rideLift` (`liftride.ts`) waits at the boarding point until the clock says the deck is
   level for long enough, runs across a gap up to `runGap` or jumps with the thrust steered to land on the deck's
-  centre, stands still, and jumps off at the landing when the deck is level with it. The character controller stops
-  within a few tens of centimetres on a resting kinematic deck (it keeps finding the deck in contact), so the ride
-  moves over a deck by steered hops and walks only while the deck moves.
+  centre, walks to the middle of the deck, stands still, and jumps off at the landing when the deck is level with it.
+  A resting kinematic deck is walked like any floor (the character controller redoes a move that Rapier's
+  controller loops on, see `CharacterController` in `packages/physics/src/character.ts`); jumps are for gaps and
+  for leaving the deck.
 - **Finishing, not running out the clock** (bot version 2, `BOT_VERSION`).
   The progress watchdog counts movement along the ground only, so a hop on
   the spot is not progress. Standing more than 1 m above the path's surface

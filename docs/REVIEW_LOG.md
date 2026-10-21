@@ -4649,3 +4649,51 @@ player off there. Gates: `tsc --noEmit` 0 errors; playtest and verifier vitest 3
   its own fix in `packages/physics`.
 - The Lantern Isles generator keeps its 3 m decks; the bot no longer needs them, so they can go back to a smaller
   size when someone wants the look.
+
+## Walking on kinematic decks (character controller)
+
+**Problem.** A player capsule walking on a resting kinematic floor (a lift deck that has paused, a moving platform at
+rest, any `body: 'kinematic'` box) stopped after 0.3-0.6 m; jumping worked, and a floor that moved was walked
+normally. The playtest bot had worked round it with hops (previous section).
+
+**Cause (measured, headless).** Reproduced with a bare Rapier world (no Aether code): a kinematic box under the
+capsule, a controller with a 0.02 m offset, the usual downward gravity step plus a sideways step. The controller
+reports 20 contacts, all at time of impact 0 with the floor's upward normal, and applies zero movement (the cap on its
+iterations). The same box as a fixed or as a dynamic body slides normally. The stall is tied to the small downward part
+of the step against a kinematic obstacle: with a vertical part of zero or above, or a larger offset, it mostly goes
+away (the outcome changes with the offset by millimetres, i.e. a tolerance effect in the engine's shape cast, not
+something the settings control). Not the cause: autostep, snap to ground, the capsule's collision types, friction, the
+kinematic body's velocity mode, normal nudge. Rapier carries a character with a kinematic floor by itself (full floor
+displacement per frame, rotation included) but only on frames in which it does not loop, so a rider on a floor moving
+sideways slipped back by 0.5 m over a second.
+
+**Fix** (`packages/physics/src/character.ts`, `CharacterController.move`). When a move touched the upward face of a
+kinematic body and the controller looped (8 or more contacts in one move) or lost more than half of the sideways step,
+the move is redone in two phases: sideways with a 1 mm upward bias, then the remaining vertical motion alone, with
+ground detection from the second. The redo is used when it is grounded or the first was not. Fixed ground never takes
+this path, so every recorded run on static worlds is bit-identical (full suite, `gamesVerified`, `showcasePlaytest`,
+`showcase:bake -- --check` unchanged). Platform carry stays Rapier's own: with the loop gone it works every frame
+(an own carry on top of it doubled the movement; setting the body's velocity to zero does not reach the controller).
+
+**Tests** (`packages/physics/test/character-platform.test.ts`, 12): a resting deck walked 5 m (not behind the same
+box as a static body), human feel, other directions and diagonals, a wall on the deck, the deck's edge (walks off and
+falls), stairs beside the deck, carried by a deck moving sideways (within 0.08 m of the deck over 2 s), a lift going up
+and down (feet within 0.08 m of the deck top), walking across a rising deck, a rotating deck, a jump from a resting
+deck (not carried in the air), and the same inputs twice giving identical positions. Eight of them fail without the fix.
+
+**Bot.** `liftride.ts` walks to the middle of the deck (1.5 s, three tries) instead of hopping there; hops remain for
+gaps wider than a run and for leaving the deck. `lift-sweep` 80/80 as before. `BOT_VERSION` stays 3: no verdict of a
+shipped world changed, and a bump would only re-stamp proofs. Lantern Isles keeps its 3 m decks: a smaller deck means a
+rebake of a bundled world for a cosmetic gain, which was not worth the churn (the sweep over deck sizes passes at 1.5 to
+4.0 m, so it can be done when someone wants the look).
+
+**Gates.** `tsc --noEmit` 0 errors; full vitest 419 files, 4603 tests; studio build; smoke 34/34; `e2e:verified`
+passed (Chromium and Firefox); `showcase:bake -- --check` up to date.
+
+**Honest gaps.**
+- The cause is in the engine; the fix is a workaround keyed on its symptom (looping on a kinematic floor), not a
+  change of the engine. A different engine version may make it unnecessary (the tests would then still pass).
+- A rider is carried with the platform's motion of the last step, so on a platform that changes direction abruptly the
+  rider lags by up to one frame (2 cm at 1.5 m/s); jumping off a fast platform does not inherit its velocity.
+- The first frame on a new kinematic floor uses the engine's own carry, which is not always applied.
+- A fixed deck slows a walk by about 3 % over 5 m (a one-frame contact per step); kinematic decks do not.
