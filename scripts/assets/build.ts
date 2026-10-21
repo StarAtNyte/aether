@@ -24,6 +24,7 @@ import { readSources, SOURCE_DIR, type PolyhavenRecord } from './fetch';
 import { colliderFor, kebab, prettyName, tagsFor } from './describe';
 import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
+import { liteHdr } from './hdri';
 import { reencodedTextures } from './textures';
 import { buildPhotoFinishes, type PhotoFinish } from './materials';
 
@@ -148,9 +149,12 @@ function writeLib(dir: string, id: string, suffix: string, ext: string, data: Ui
 /** Write one photo finish's maps into the library and describe it as a catalog entry. */
 function photoFinishEntry(pf: PhotoFinish): Built {
   const id = `finish-${pf.finish}`;
-  const albedo = writeLib('x', pf.finish, '.albedo', 'jpg', pf.albedo);
-  const orm = writeLib('x', pf.finish, '.orm', 'jpg', pf.orm);
-  const normal = writeLib('x', pf.finish, '.normal', 'jpg', pf.normal);
+  const albedo = writeLib('x', pf.finish, '.albedo', 'webp', pf.albedo);
+  const orm = writeLib('x', pf.finish, '.orm', 'webp', pf.orm);
+  const normal = writeLib('x', pf.finish, '.normal', 'webp', pf.normal);
+  const albedoLow = writeLib('x', pf.finish, '.albedo.256', 'webp', pf.albedoLow);
+  const ormLow = writeLib('x', pf.finish, '.orm.256', 'webp', pf.ormLow);
+  const normalLow = writeLib('x', pf.finish, '.normal.256', 'webp', pf.normalLow);
   const thumb = writeLib('t', id, '', 'webp', pf.thumb);
   const label = pf.finish.replace(/-/g, ' ');
   return {
@@ -170,10 +174,10 @@ function photoFinishEntry(pf: PhotoFinish): Built {
       collider: { type: 'box' },
       placement: 'floor',
       facing: '+z',
-      material: { finish: pf.finish, tile: pf.tile, maps: { albedo: albedo.path, orm: orm.path, normal: normal.path } },
+      material: { finish: pf.finish, tile: pf.tile, maps: { albedo: albedo.path, orm: orm.path, normal: normal.path }, small: { albedo: albedoLow.path, orm: ormLow.path, normal: normalLow.path } },
       source: pf.source,
     },
-    files: [albedo, orm, normal, thumb],
+    files: [albedo, orm, normal, albedoLow, ormLow, normalLow, thumb],
     source: { archive: pf.source, path: pf.source },
   };
 }
@@ -203,6 +207,29 @@ async function buildPhotoOnly(): Promise<void> {
   writeFileSync(catalogPath, `${JSON.stringify(catalog)}\n`);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 1)}\n`);
   console.log(`${photos.length} photo finishes merged into the catalog`);
+}
+
+/**
+ * `--hdri-lite`: add the half-resolution copy to every sky in the existing library (the Poly Haven sources are not
+ * needed: the shipped full-size files are the input). Catalog and manifest are patched in place.
+ */
+function buildHdriLite(): void {
+  const catalogPath = join(OUT, 'catalog.json');
+  const manifestPath = join(OUT, 'manifest.json');
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as { entries: CatalogEntryInput[] };
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { assets: Array<{ id: string; files: Array<{ path: string; sha256: string; bytes: number }> }> };
+  for (const e of catalog.entries) {
+    if (e.kind !== 'hdri' || !e.file) continue;
+    const lite = writeLib('h', e.id, '.512', 'hdr', liteHdr(readFileSync(join(LIB, e.file))));
+    if (e.lite && e.lite !== lite.path) rmSync(join(LIB, e.lite), { force: true });
+    e.lite = lite.path;
+    const a = manifest.assets.find((x) => x.id === e.id);
+    if (a) a.files = [...a.files.filter((f) => !/\.512\./.test(f.path)), lite];
+    console.log(`${e.id}: lite ${(lite.bytes / 1024) | 0} KB`);
+  }
+  Catalog.parse(catalog);
+  writeFileSync(catalogPath, `${JSON.stringify(catalog)}\n`);
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 1)}\n`);
 }
 
 async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: string, archive: string, phAuthors: string[] | undefined): Promise<Built> {
@@ -331,6 +358,7 @@ async function main(): Promise<void> {
     const data = readFileSync(src);
     const assetId = HDRI_IDS[id] ?? `sky-${kebab(id)}`.slice(0, 64);
     const f = writeLib('h', assetId, '', 'hdr', data);
+    const lite = writeLib('h', assetId, '.512', 'hdr', liteHdr(data));
     built.push({
       entry: {
         id: assetId,
@@ -346,12 +374,13 @@ async function main(): Promise<void> {
         tris: 0,
         bytes: f.bytes,
         file: f.path,
+        lite: lite.path,
         lods: [],
         collider: { type: 'box' },
         placement: 'floor',
         source: relative(SOURCE_DIR, src),
       },
-      files: [f],
+      files: [f, lite],
       source: { archive: `polyhaven:${id}`, path: relative(SOURCE_DIR, src) },
     });
   }
@@ -417,7 +446,7 @@ async function main(): Promise<void> {
   console.log(`${entries.length} assets, ${(total / 1024 / 1024).toFixed(1)} MB → ${relative(ROOT, LIB)}`);
 }
 
-(process.argv.includes("--photo-only") ? buildPhotoOnly() : main()).catch((err: unknown) => {
+(process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
   process.exit(1);
 });

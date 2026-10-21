@@ -11,7 +11,8 @@
  *   mean is the finish roughness, B = 0;
  * - normal: the OpenGL tangent-space normal map as is.
  *
- * Maps are 512 px JPEG (the renderer resamples to its texture budget).
+ * Maps are 512 px WebP, plus a 256 px set for the tiers whose finish textures are 256 px (the renderer resamples to its texture budget, so the
+ * reduced set is what it would have made after decoding).
  * Conversion runs in the headless browser (image decode + canvas).
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -23,6 +24,12 @@ import { withBrowserPage } from './browser';
 import { SOURCE_DIR, type Sources } from './fetch';
 
 const SIZE = 512;
+/** Edge of the reduced set the low and medium tiers (256 px finish textures) load. */
+export const LOW_SIZE = 256;
+/** WebP quality per map: normals keep the most (a block artefact is a visible facet), the smooth ORM the least. */
+const QUALITY = { albedo: 0.84, orm: 0.76, normal: 0.88 };
+/** The reduced set is what most visitors load and is small either way: it keeps more of the detail (noisy ground textures first). */
+const QUALITY_LOW = { albedo: 0.93, orm: 0.9, normal: 0.96 };
 
 /** One converted finish. */
 export interface PhotoFinish {
@@ -32,11 +39,17 @@ export interface PhotoFinish {
   albedo: Buffer;
   orm: Buffer;
   normal: Buffer;
+  albedoLow: Buffer;
+  ormLow: Buffer;
+  normalLow: Buffer;
   thumb: Buffer;
 }
 
 const PAGE = `
 const S = ${SIZE};
+const LOW = ${LOW_SIZE};
+const Q = ${JSON.stringify(QUALITY)};
+const QL = ${JSON.stringify(QUALITY_LOW)};
 async function pixels(b64) {
   if (!b64) return null;
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -48,14 +61,27 @@ async function pixels(b64) {
 }
 const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const srgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+function toB64(buf) {
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 async function encode(data, type, q) {
   const c = new OffscreenCanvas(S, S);
   c.getContext('2d').putImageData(new ImageData(data, S, S), 0, 0);
   const blob = await c.convertToBlob({ type, quality: q });
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  let s = '';
-  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  return btoa(s);
+  return toB64(new Uint8Array(await blob.arrayBuffer()));
+}
+// The low tiers sample these at LOW px: the same 2x box reduction the renderer would do after decoding, done once here.
+async function encodeLow(data, q) {
+  const full = new OffscreenCanvas(S, S);
+  full.getContext('2d').putImageData(new ImageData(data, S, S), 0, 0);
+  const c = new OffscreenCanvas(LOW, LOW);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(full, 0, 0, LOW, LOW);
+  const blob = await c.convertToBlob({ type: 'image/webp', quality: q });
+  return toB64(new Uint8Array(await blob.arrayBuffer()));
 }
 window.__convert = async (job) => {
   const color = await pixels(job.color);
@@ -82,7 +108,14 @@ window.__convert = async (job) => {
     orm[o + 2] = 0; orm[o + 3] = 255;
     nor[o] = normal[o]; nor[o + 1] = normal[o + 1]; nor[o + 2] = normal[o + 2]; nor[o + 3] = 255;
   }
-  return { albedo: await encode(albedo, 'image/jpeg', 0.88), orm: await encode(orm, 'image/jpeg', 0.9), normal: await encode(nor, 'image/jpeg', 0.92), thumb: await encode(thumb, 'image/webp', 0.86) };
+  return {
+    albedo: await encode(albedo, 'image/webp', Q.albedo),
+    orm: await encode(orm, 'image/webp', Q.orm),
+    normal: await encode(nor, 'image/webp', Q.normal),
+    albedoLow: await encodeLow(albedo, QL.albedo),
+    ormLow: await encodeLow(orm, QL.orm),
+    normalLow: await encodeLow(nor, QL.normal),
+    thumb: await encode(thumb, 'image/webp', 0.86) };
 };
 window.__ready = true;
 `;
@@ -134,6 +167,9 @@ export async function buildPhotoFinishes(src: Sources['ambientcg']): Promise<Pho
         albedo: Buffer.from(res['albedo'] ?? '', 'base64'),
         orm: Buffer.from(res['orm'] ?? '', 'base64'),
         normal: Buffer.from(res['normal'] ?? '', 'base64'),
+        albedoLow: Buffer.from(res['albedoLow'] ?? '', 'base64'),
+        ormLow: Buffer.from(res['ormLow'] ?? '', 'base64'),
+        normalLow: Buffer.from(res['normalLow'] ?? '', 'base64'),
         thumb: Buffer.from(res['thumb'] ?? '', 'base64'),
       });
       console.log(`photo finish ${finish} ← ${m.id} (${(m.tile ?? def.tile).toFixed(2)} m tile)`);

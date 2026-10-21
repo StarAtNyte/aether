@@ -34,6 +34,8 @@ export interface PhotoFinishSource {
   albedo: string;
   orm: string;
   normal: string;
+  /** The same maps at 256 px; used when the finish textures are 256 px or smaller. */
+  small?: { albedo: string; orm: string; normal: string };
 }
 
 /** Resolves the photo maps of a finish (null: keep the procedural ones). */
@@ -168,7 +170,8 @@ export class FinishTextures {
     const src = this.photos?.(id);
     if (!src || !finishHasMaps(id)) return false;
     const size = this.size;
-    Promise.all([this.pixelLoader(src.albedo, size), this.pixelLoader(src.orm, size), this.pixelLoader(src.normal, size)]).then(
+    const urls = size <= 256 && src.small ? src.small : src;
+    Promise.all([this.pixelLoader(urls.albedo, size), this.pixelLoader(urls.orm, size), this.pixelLoader(urls.normal, size)]).then(
       ([albedo, orm, normal]) => {
         if (this.disposed || this.maps.get(id) !== maps) return;
         const n = size * size * 4;

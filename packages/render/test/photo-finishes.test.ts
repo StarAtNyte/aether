@@ -21,6 +21,21 @@ function loader(calls: string[], fail = false): PixelLoader {
 const photo = (finish: string) => ({ tile: 1.8, albedo: `/x/${finish}.albedo.jpg`, orm: `/x/${finish}.orm.jpg`, normal: `/x/${finish}.normal.jpg` });
 
 describe('photo finishes', () => {
+  it('loads the 256 px set when the textures are 256 px or smaller, the full set above', async () => {
+    const src = (f: string) => ({ ...photo(f), small: { albedo: `/x/${f}.albedo.256.webp`, orm: `/x/${f}.orm.256.webp`, normal: `/x/${f}.normal.256.webp` } });
+    for (const [size, want] of [[16, '.256.webp'], [512, '.jpg']] as const) {
+      const ft = new FinishTextures();
+      ft.configure({ size });
+      const calls: string[] = [];
+      ft.usePhotos((f) => (f === 'oak' ? src(f) : null), loader(calls));
+      ft.get('oak');
+      await tick(10);
+      expect(calls.length).toBe(3);
+      for (const c of calls) expect(c.endsWith(want), c).toBe(true);
+      ft.dispose();
+    }
+  });
+
   it('upgrades a live finish in place and retiles it', async () => {
     const ft = new FinishTextures();
     ft.configure({ size: 16 });

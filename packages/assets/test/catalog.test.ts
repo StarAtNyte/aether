@@ -40,7 +40,7 @@ describe('asset catalog', () => {
     const lib = join(ROOT, 'assets', 'lib');
     let total = 0;
     for (const e of catalog.entries) {
-      for (const f of [e.file, e.thumb, ...e.lods.map((l) => l.file), ...(e.material ? [e.material.maps.albedo, e.material.maps.orm, e.material.maps.normal] : [])]) {
+      for (const f of [e.file, e.thumb, e.lite, ...e.lods.map((l) => l.file), ...(e.material ? [e.material.maps.albedo, e.material.maps.orm, e.material.maps.normal, ...(e.material.small ? [e.material.small.albedo, e.material.small.orm, e.material.small.normal] : [])] : [])]) {
         if (!f) continue;
         const path = join(lib, f);
         expect(existsSync(path), f).toBe(true);

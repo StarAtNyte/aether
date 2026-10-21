@@ -64,7 +64,7 @@ describe('game build (zip)', () => {
     expect(zip.ok).toBe(true);
     if (!zip.ok) return;
     const names = zip.entries.map((e) => e.name).sort();
-    for (const f of ['index.html', 'game.json', 'assets/play-abc.js', 'assets/three-x.js', 'assets/rapier_wasm3d_bg-y.wasm', 'assets/lib/m/beaver.088f13b3.glb', 'assets/lib/x/brick.albedo.63cd990b.jpg', 'assets/user/user-0123456789ab.glb', 'saves/world.aethersave', 'manifest.webmanifest', 'sw.js', 'cover.png', 'screenshot.png', 'icon-192.png', 'icon-512.png', 'CREDITS.txt', 'README.md', 'project/beaver-pond.aether.json', 'favicon.svg', '.nojekyll'])
+    for (const f of ['index.html', 'game.json', 'assets/play-abc.js', 'assets/three-x.js', 'assets/rapier_wasm3d_bg-y.wasm', 'assets/lib/m/beaver.088f13b3.glb', 'assets/lib/x/brick.albedo.f2219b7d.webp', 'assets/lib/x/brick.albedo.256.b95c137d.webp', 'assets/user/user-0123456789ab.glb', 'saves/world.aethersave', 'manifest.webmanifest', 'sw.js', 'cover.png', 'screenshot.png', 'icon-192.png', 'icon-512.png', 'CREDITS.txt', 'README.md', 'project/beaver-pond.aether.json', 'favicon.svg', '.nojekyll'])
       expect(names, f).toContain(f);
     expect(names).not.toContain('play.html');
     expect(crops).toEqual(['630x500', '1280x720', '192x192', '512x512']);

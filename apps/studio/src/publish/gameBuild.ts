@@ -325,7 +325,10 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
   // The photographed sky the high and ultra tiers light the scene with when the world names none.
   const autoSky = world.environment.hdri ? undefined : AUTO_HDRI[world.environment.sky];
   const skyEntry = autoSky ? catalogEntry(autoSky) : undefined;
-  if (skyEntry) want(skyEntry.file);
+  if (skyEntry) {
+    want(skyEntry.file);
+    want(skyEntry.lite);
+  }
   // The people the player draws: the avatar's body is fixed by its spec; NPC bodies the spec names are exact, the rest can be
   // any body of their gender (a crowd varies them), and block worlds dress their mobs from the whole cast.
   const bodies = new Set<CastMember>([resolveLook(world.player.character ?? { wardrobe: 'traveller' }, 'player').body]);
@@ -349,6 +352,9 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
       want(e.material.maps.albedo);
       want(e.material.maps.orm);
       want(e.material.maps.normal);
+      want(e.material.small?.albedo);
+      want(e.material.small?.orm);
+      want(e.material.small?.normal);
     }
   }
   // The GPU-compressed (KTX2) twins of those files and the transcoder that reads them; a player that cannot use

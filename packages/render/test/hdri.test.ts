@@ -11,6 +11,7 @@ const CATALOG: CatalogInput = {
   entries: [
     { id: 'sky-a', name: 'A', kind: 'hdri', category: 'sky', tags: [], style: 'realistic', pack: 'p', size: [0, 0, 0], tris: 0, bytes: 1, file: 'h/sky-a.00000000.hdr', lods: [], collider: { type: 'box' }, placement: 'floor', facing: '+z', source: 'x' },
     { id: 'sky-b', name: 'B', kind: 'hdri', category: 'sky', tags: [], style: 'realistic', pack: 'p', size: [0, 0, 0], tris: 0, bytes: 1, file: 'h/sky-b.00000000.hdr', lods: [], collider: { type: 'box' }, placement: 'floor', facing: '+z', source: 'x' },
+    { id: 'sky-c', name: 'C', kind: 'hdri', category: 'sky', tags: [], style: 'realistic', pack: 'p', size: [0, 0, 0], tris: 0, bytes: 1, file: 'h/sky-c.00000000.hdr', lite: 'h/sky-c.512.00000000.hdr', lods: [], collider: { type: 'box' }, placement: 'floor', facing: '+z', source: 'x' },
     { id: 'chair', name: 'Chair', kind: 'model', category: 'furniture', tags: [], style: 'low-poly', pack: 'p', size: [1, 1, 1], tris: 1, bytes: 1, file: 'm/chair.00000000.glb', lods: [], collider: { type: 'box' }, placement: 'floor', facing: '+z', source: 'x' },
   ],
 };
@@ -28,6 +29,27 @@ class FakeHdr implements HdriSource {
 
 describe('HDRI environment', () => {
   beforeEach(() => setCatalog(CATALOG));
+
+  it('fetches the half-resolution copy for light alone and the full file for a background', async () => {
+    const src = new FakeHdr();
+    const c = new HdriController(src, () => undefined);
+    c.set('sky-c', { background: false });
+    await tick(10);
+    expect(src.urls).toEqual(['/assets/lib/h/sky-c.512.00000000.hdr']);
+    // The same sky now drawn as the background: loaded again, whole.
+    c.set('sky-c', { background: true });
+    await tick(10);
+    expect(src.urls).toEqual(['/assets/lib/h/sky-c.512.00000000.hdr', '/assets/lib/h/sky-c.00000000.hdr']);
+    // Back to light alone: the full map already serves it, no third load.
+    c.set('sky-c', { background: false });
+    await tick(10);
+    expect(src.urls.length).toBe(2);
+    const auto = new FakeHdr();
+    const d = new HdriController(auto, () => undefined);
+    d.set('sky-c', { lightOnly: true, background: false });
+    await tick(10);
+    expect(auto.urls).toEqual(['/assets/lib/h/sky-c.512.00000000.hdr']);
+  });
 
   it('loads a library HDRI and binds lighting + background', async () => {
     const src = new FakeHdr();

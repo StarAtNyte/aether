@@ -153,6 +153,8 @@ export class HdriController {
   private sunInfo: HdriSun | null = null;
   /** The loaded map was requested light-only (its sun is clamped away). */
   private texAuto = false;
+  /** The current request is for light alone, so it may be served by the library's half-resolution copy. */
+  private reqLite = false;
   /**
    * The last automatic (light-only) map, kept after it is unbound. Switching quality tiers turns automatic
    * HDRIs off and on again; re-creating a map means loading it again and prefiltering it again (a burst
@@ -233,7 +235,10 @@ export class HdriController {
     const lightOnly = opts.lightOnly === true;
     this.clampSun = lightOnly;
     const next = id ?? null;
-    if (next === this.id) return;
+    // A sky used for light alone is fetched at half resolution; if the same sky becomes the background, fetch it whole.
+    const lite = !this.background || lightOnly;
+    if (next === this.id && !(this.reqLite && !lite)) return;
+    this.reqLite = lite;
     const previous = this.id;
     this.id = next;
     const token = ++this.token;
@@ -260,7 +265,7 @@ export class HdriController {
       .then(() => {
         const info = assetInfo(next);
         if (!info || info.kind !== 'hdri' || !info.url) throw new Error(`"${next}" is not an HDR environment`);
-        return this.source.load(info.url);
+        return this.source.load(lite && info.liteUrl ? info.liteUrl : info.url);
       })
       .then(
         (tex) => {

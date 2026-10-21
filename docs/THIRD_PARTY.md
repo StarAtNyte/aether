@@ -405,6 +405,10 @@ the connected model.
 
 **GPU-compressed twins.** `assets/lib/k/<name>.<hash>.glb` are the library models of `assets/lib/m/` and `assets/lib/c/` with their images re-encoded as KTX2 (Basis Universal) by KTX-Software; `apps/studio/public/blocks/block-{albedo,normal,orm}.ktx2` are the block sheets as array textures. They are derivatives of the same sources and carry the same licences and credits as the files they were made from (`assets/ktx2.json` and `block-ktx2.json` record each source's SHA-256).
 
+**Photo finish maps.** `assets/lib/x/` holds the ambientCG maps of the photo finishes converted by `scripts/assets/materials.ts` (colour pattern ratio, packed ORM, normal) as 512 px WebP, plus a 256 px WebP set of each; they are derivatives of the CC0 sources below and carry their licence and credit. They are encoded by the build's headless Chromium (libwebp); no further third-party code is involved. They are not KTX2 twins: the renderer decodes finish maps to pixels and packs them into its own texture arrays, so a GPU-compressed container would be transcoded back to pixels on load.
+
+**Reduced skies.** `assets/lib/h/<id>.512.<sha8>.hdr` is each Poly Haven HDRI below at half width and height (2 x 2 average of linear radiance, `scripts/assets/hdri.ts`, this project's code), used when a sky only lights the scene. CC0-1.0, same credit as the full file.
+
 All ambientCG materials are CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)),
 author ambientCG (Lennart Demes), 1K-JPG archives from
 `https://ambientcg.com/get?file=<id>_1K-JPG.zip`. Credit line (library

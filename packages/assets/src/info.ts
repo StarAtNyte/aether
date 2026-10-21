@@ -65,6 +65,8 @@ export interface AssetInfo {
   url: string | null;
   /** Lower-detail file URLs (library models only). */
   lodUrls: string[];
+  /** HDRIs: the half-resolution copy for image-based light alone, when the library has one. */
+  liteUrl?: string | null;
   anims: CatalogAnims | null;
   entry: CatalogEntry | null;
   user: UserAssetMeta | null;
@@ -93,6 +95,7 @@ export function assetInfo(id: string): AssetInfo | null {
     collider: e.collider,
     url: e.file ? libraryUrl(e.file) : null,
     lodUrls: e.lods.map((l) => libraryUrl(l.file)),
+    liteUrl: e.lite ? libraryUrl(e.lite) : null,
     anims: e.anims ?? null,
     entry: e,
     user: null,

@@ -38,7 +38,7 @@ export const AssetLicence = z.enum(['CC0-1.0', 'CC-BY-4.0', 'MIT']);
 export type AssetLicence = z.infer<typeof AssetLicence>;
 
 /** Library file path relative to the catalog base: `m/sofa.0123abcd.glb`. */
-export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12]|\.albedo|\.orm|\.normal)?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
+export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12]|\.(?:albedo|orm|normal)(?:\.256)?|\.512)?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
 
 /**
  * Physics collider recorded by the build script, in the asset's normalised
@@ -89,6 +89,8 @@ export const CatalogEntry = z.object({
   /** Main file (LOD 0). Absent for generators. */
   file: LibraryPath.optional(),
   lods: z.array(CatalogLod).max(2).default([]),
+  /** HDRIs: a half-resolution copy (512 x 256) for lighting alone; the full file is for the background and sharp reflections. */
+  lite: LibraryPath.optional(),
   thumb: LibraryPath.optional(),
   collider: CatalogCollider,
   placement: AssetPlacement,
@@ -114,6 +116,8 @@ export const CatalogEntry = z.object({
       finish: z.string().regex(/^[a-z-]{2,32}$/),
       tile: z.number().positive().max(20),
       maps: z.object({ albedo: LibraryPath, orm: LibraryPath, normal: LibraryPath }),
+      /** The same maps reduced to 256 px, for the tiers whose finish textures are 256 px (absent: use `maps`). */
+      small: z.object({ albedo: LibraryPath, orm: LibraryPath, normal: LibraryPath }).optional(),
     })
     .optional(),
   /** Provenance: file path inside the source pack. */
