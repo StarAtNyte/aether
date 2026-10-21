@@ -158,6 +158,20 @@ describe('light volume controller: baking', () => {
   });
 });
 
+describe('light volume controller: lamps and the eye', () => {
+  it('counts a room lamp toward the exposure only for an eye in its room', () => {
+    vi.useFakeTimers();
+    const lamp = { position: [0, 2.6, 0] as [number, number, number], color: [20, 18, 15] as [number, number, number], range: 8, room: [-3, 0, -3, 3, 3.2, 3] as const };
+    const c = new LightVolumeController(() => ({ parts: roomParts(), lighting: { ...LIGHTING, lamps: [lamp] }, groundY: 0 }), { createWorker: null });
+    c.setEnabled(true);
+    expect(c.finishNow()).toBe(true);
+    expect(c.eyeSample(1, 1.6, 1)!.lamps).toBeGreaterThan(0.5);
+    // Just outside the room's box (but inside the volume): the lamp is behind a wall.
+    expect(c.eyeSample(3.15, 1.6, 0)!.lamps).toBe(0);
+    c.dispose();
+  });
+});
+
 describe('light volume protocol', () => {
   const grid = { min: [0, 0, 0] as [number, number, number], spacing: 0.5, nx: 2, ny: 2, nz: 2 };
   const ok = { type: 'bake', id: 1, grid, positions: new Float32Array(9), albedo: new Float32Array(3), twoSided: new Uint8Array(1), sun: null, ambient: { a: [1, 1, 1], b: [0, 0, 0] }, ground: { y: 0, albedo: [0.2, 0.2, 0.2] }, lamps: [] };

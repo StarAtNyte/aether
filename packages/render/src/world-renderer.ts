@@ -49,6 +49,7 @@ import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { adaptStep, adaptedLook, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
+import type { VolumeLamp } from './environment/light-volume';
 import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
 import { RoomLampNode } from './gpu/room-lamp-node';
@@ -978,7 +979,8 @@ export class WorldRenderer {
   private gatherLightVolume(): { parts: VolumePart[]; lighting: VolumeLighting; groundY: number } | null {
     if (!this.archView.active) return null;
     const parts: VolumePart[] = [];
-    const lamps: Array<{ position: [number, number, number]; color: [number, number, number]; range: number }> = [];
+    const lamps: VolumeLamp[] = [];
+    this.clipLampsToRooms();
     let groundY = Number.POSITIVE_INFINITY;
     this.grow.withFullScale(() => {
       this.scene.updateMatrixWorld();
@@ -992,7 +994,8 @@ export class WorldRenderer {
           // A spot (downlight) lights about half of what the same point light would, all of it below.
           const k = kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity;
           const range = kind.distance;
-          lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20 });
+          const c = l instanceof RoomLamp && !l.clip.isEmpty() ? l.clip : null;
+          lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20, ...(c ? { room: [c.min.x, c.min.y, c.min.z, c.max.x, c.max.y, c.max.z] as const } : {}) });
         }
         const a = e.arch;
         if (!a) return;
@@ -1004,7 +1007,6 @@ export class WorldRenderer {
         parts.push({ role: a.role, object: node.object, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
       });
     });
-    this.clipLampsToRooms();
     this.placeContactShadows(parts);
     if (parts.length === 0) return null;
     const sun = this.env.sun;
@@ -3157,6 +3159,9 @@ export class WorldRenderer {
     // A capture asked for before the viewport has shown a few frames would draw into targets whose pipelines are still
     // compiling and come back black: let the normal loop run first (bounded; a hidden tab simply captures what it has).
     await this.waitForFrames(3, 2500);
+    // The eye adapts to where the camera is now (a pose set just before the capture may not have had a frame yet).
+    this.eyeClock = 1;
+    this.adaptEye(0);
     await this.compileForCapture();
     const mime = captureMime(opts.mime);
     let last = '';

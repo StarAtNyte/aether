@@ -23,7 +23,7 @@ const MIN_PROXY = 0.3;
 /** Most lamps a bake lights the rooms with. */
 const MAX_LAMPS = 32;
 /** Metres within which a lamp counts toward the eye's exposure, and the height difference that puts it on another storey. */
-const EYE_LAMP_REACH = 7;
+const EYE_LAMP_REACH = 12;
 const EYE_LAMP_STOREY = 2.4;
 
 /** Arch roles whose real geometry the rays hit. */
@@ -383,7 +383,7 @@ export class LightVolumeController {
     this.probes = grid.nx * grid.ny * grid.nz;
     const lamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
     const ground = { y: g.groundY, albedo: g.lighting.groundAlbedo };
-    this.pendingLamps = lamps.map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
+    this.pendingLamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range, ...(l.room ? { room: [...l.room] as [number, number, number, number, number, number] } : {}) }));
     this.bakeWork = performance.now() - t0;
     const w = inline ? null : this.ensureWorker();
     if (w) {
@@ -477,6 +477,9 @@ export class LightVolumeController {
     // Lamps within a few metres on this storey (no occlusion test: a coarse but cheap stand-in for the room's lamps).
     let lamps = 0;
     for (const l of this.lamps) {
+      // A lamp confined to a room lights the eye only in that room.
+      const rm = l.room;
+      if (rm && (x < rm[0] || y < rm[1] || z < rm[2] || x > rm[3] || y > rm[4] || z > rm[5])) continue;
       const dx = l.position[0] - x;
       const dy = l.position[1] - y;
       const dz = l.position[2] - z;

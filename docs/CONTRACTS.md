@@ -347,6 +347,7 @@ export interface RendererOptions {
   adaptiveResolution?: boolean;                           // default true: scale the drawing buffer down while continuous frames stay < 40 fps
   staticBatching?: boolean;                               // default true: ≥ 6 identical static primitives draw as one InstancedMesh
   fields?: boolean; virtualGeometry?: boolean; workerGeneration?: boolean;   // default true (see "Scale geometry" below)
+  foliageUrl?: string | null;                             // default '/foliage/': photographed leaf sprites; null keeps procedural leaf cards
 }
 export class WorldRenderer {
   static async create(canvas: HTMLCanvasElement, opts?: RendererOptions): Promise<WorldRenderer>;
@@ -354,6 +355,10 @@ export class WorldRenderer {
   readonly gpu: Readonly<{ description: string; tier: GpuTier }>;
   readonly domElement: HTMLCanvasElement;
   get contextLost(): boolean; get frameCount(): number; get lowMemoryMode(): boolean;
+  get lightVolumeBaking(): boolean; get lightVolumeReady(): boolean; get foliagePending(): boolean;   // captures wait while true / for the baked building light
+  get lightVolumeStats(): { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number } | null;
+  finishLightVolume(): boolean;                           // bake a pending building light volume now (stills); true when one is on screen
+  lightVolumeAt(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number; ev: number } | null;   // diagnostics
   get camera(): THREE.PerspectiveCamera;
   get contentSphere(): Readonly<{ center: Vec3; radius: number }> | null;   // meaningful content (fog, shadows, framing)
   get cameraFlying(): boolean;                            // an automatic camera flight is in progress

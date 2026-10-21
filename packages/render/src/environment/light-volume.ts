@@ -335,6 +335,8 @@ export interface VolumeLamp {
   /** Linear RGB times intensity (candela). */
   color: V3;
   range: number;
+  /** The room box the lamp is confined to (min xyz, max xyz), when it is. */
+  room?: readonly [number, number, number, number, number, number];
 }
 
 /** Everything a bake needs. */

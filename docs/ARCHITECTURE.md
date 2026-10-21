@@ -2134,3 +2134,45 @@ and terrain; and anything a solid touches from the side or from above (a banner 
 bridge deck held by its ramps). The level review turns the result into `floating` findings (§27), and
 `place_level_items` and local "move X onto Y" edits set the moved object's bottom on the measured surface (measured
 without the object itself) in the same undo step.
+
+## 36. Baked interior light and photographed foliage (`look2`)
+
+**Light volume.** A building gets a probe grid every 0.45 m over its shell (coarser past 22 000 probes or 48 × 28 × 48;
+`environment/light-volume.ts`). A module worker traces 48 rays per probe against the shell's real triangles (glass left
+out) and box proxies of furniture and fixtures, then runs six bounce passes over the stored hits: sun at the hit
+(shadow ray), lamps (shadow rays, three.js point-light falloff), the ambient the previous pass left there and the open
+ground outside. Each probe keeps first-order spherical harmonics of the sky visibility `vis(n)` and of the bounce `B(n)`.
+The bake is deterministic (fixed ray sets, fixed order, same bytes however it is sliced) and runs 0.6 s after the
+building stops changing; the previous volume stays on screen until the next one is done. Without workers it runs in
+6 ms slices between frames. A house (11 000 probes, 13 000 triangles) takes about 3 s of worker time and 10 to 20 ms
+on the main thread.
+
+**Shading.** `LightVolume` is a three.js `Light`; its node (`gpu/light-volume-node.ts`, registered with
+`renderer.library.addLight`) reads one RGBA16F 3D atlas (four padded sub-volumes, allocated once, so a rebake never
+reallocates or recompiles) half a spacing out along the normal and, for every lit material, multiplies the lighting
+context's ambient occlusion by `vis(n)` (sky hemisphere, image light and its reflections reach a room only through its
+windows) and adds `B(n) / vis(n)` to the irradiance and `B / π` to the reflected radiance (so a wall facing a sunlit
+floor warms up and metal indoors reflects the room, not black). It fades out over 1.2 m beyond its box. While a volume
+lights the building the analytic floor bounce and interior fill of section 30 are held at zero (they stay in the scene,
+so no material recompiles).
+
+**Eye and shadows.** The eye's exposure comes from the volume at the camera (mean visibility, bounce and the direct
+light of lamps within 12 m on the storey, in the eye's room when the lamp is confined to one) against the open site: 75 % of the difference, between −2 and +3 stops,
+smoothed, snapped when the camera jumps. Inside, the sun's shadow map is fitted to the building's shell (crisp
+window-shaped sun patches instead of a 320 m frustum's blur). The eye's exposure now lives only in the renderer's
+tone mapping (post tiers applied it twice). Interiors grade slightly warm when adapted.
+
+**Lamps.** Lamps (`sync/room-lamp.ts`) are point lights clipped to their room's floor box by their own light node
+(`gpu/room-lamp-node.ts`): shadowless lamps no longer light the rooms behind the walls. They stay on until the sun is
+16° up and fade to off by then; the light volume bakes their bounce. Furniture gets soft contact footprints on its floor
+(`view/contact-shadows.ts`, one instanced draw).
+
+**Foliage.** Leaf atlases hold 2 × 2 card variants; generators pick a cell per card. Tree, shrub and fern cards are
+composed at load from CC0 Poly Haven leaves, fronds and tufts (`public/foliage/leaf-sprites.webp`, cut by
+`scripts/foliage/leaf-sprites.ts` from SHA-256-pinned sources) with overlap shadows and per-leaf tone, then turned into
+the neutral ratio images vertex colours tint (`materials/foliage-photo.ts`); the texture keeps its size, so the swap
+recompiles nothing. Cards of big plants are real-sized leaf clusters (more, smaller cards up to a budget,
+`cardBudget`). Leaves get forward-scattered sunlight as emission, world-space hue and value variation per plant and
+cluster (`materials/foliage-shading.ts`) and a small flutter in the wind; sunlit tones brighten and yellow instead of
+mixing toward white. Grass keeps procedural blades (photographed tufts thin out in the mips), now finer and darker at
+the root.
