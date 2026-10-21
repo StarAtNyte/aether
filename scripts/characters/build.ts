@@ -5,7 +5,8 @@
  *   npm run characters:build
  *
  * Reads `$AETHER_CHARACTER_SRC` (default `~/.local/share/aether/characters-src`,
- * a checkout of the Rocketbox `Assets/` folder subset the fetch step pulls),
+ * a checkout of the Rocketbox repository at the pinned commit, at least its
+ * `Assets/Avatars/Adults`, `Assets/Animations` and `LICENSE.md`),
  * converts every cast body and the two motion sets, writes content-hashed
  * files to `assets/lib/c/`, records checksums in `assets/characters.json` and
  * regenerates `packages/assets/src/characters/generated.ts`.
