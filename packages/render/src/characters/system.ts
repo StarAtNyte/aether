@@ -12,9 +12,9 @@
  */
 import { Box3, Mesh, Sphere, Vector3, type Camera, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 import { castById, characterUrl, clipTable, getCatalog, loadCatalog, motionSet, type CastMember, type ResolvedLook } from '@aether/assets';
-import { cloneModel, type ModelCache } from '../geometry/model-loader';
+import { cloneModel, COMPRESSED_SOURCE_KEY, type ModelCache } from '../geometry/model-loader';
 import { CharacterRig, type Foot } from './rig';
-import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, partOf, tintedMaterial, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
+import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterial, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
 
 /** Distances (m) at which detail steps down. */
 export const LOD_NEAR = 16;
@@ -228,13 +228,22 @@ export class CharacterSystem {
     }
     const refs: TintRefs = { top: body.tintTop ?? DEFAULT_REFS.top, bottom: body.tintBottom ?? DEFAULT_REFS.bottom, hair: body.tintHair ?? DEFAULT_REFS.hair };
     const set: TintSet = { materials: new Map(), textures: [], users: 1, ready: Promise.resolve() };
-    set.ready = this.masksOf(body, base).then((masks) => {
-      for (const m of materialsOf(source)) {
-        const { material, texture } = tintedMaterial(m as MeshStandardMaterial, partOf(m), tint, refs, masks);
-        set.materials.set(m, material);
-        if (texture) set.textures.push(texture);
-      }
-    }).catch(() => undefined);
+    // A body loaded from its KTX2 twin has compressed base colour maps: the tint is baked from the original file's images.
+    const original = source.userData[COMPRESSED_SOURCE_KEY] as unknown;
+    const compressed = typeof original === 'string' && materialsOf(source).some((m) => ((m as MeshStandardMaterial).map as { isCompressedTexture?: boolean } | null)?.isCompressedTexture === true);
+    set.ready = Promise.all([this.masksOf(body, base), compressed ? originalBaseColours(original) : Promise.resolve(null)])
+      .then(([masks, images]) => {
+        try {
+          for (const m of materialsOf(source)) {
+            const { material, texture } = tintedMaterial(m as MeshStandardMaterial, partOf(m), tint, refs, masks, images?.get(m.name) ?? null);
+            set.materials.set(m, material);
+            if (texture) set.textures.push(texture);
+          }
+        } finally {
+          if (images) for (const b of images.values()) b.close();
+        }
+      })
+      .catch(() => undefined);
     this.tinted.set(key, set);
     return set;
   }

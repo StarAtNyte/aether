@@ -18,9 +18,9 @@
  },
  "entries": {
   "c/dario.26754f25.glb": {
-   "file": "k/dario.942ec503.glb",
-   "sha256": "942ec50339e82a7bf39ac9233293656859e5d80ccb5ca95defce44d3b0e096aa",
-   "bytes": 2164676,
+   "file": "k/dario.bce16e16.glb",
+   "sha256": "bce16e163ef14b89da736420a4e790543f233e31a331625d320631a606e977f7",
+   "bytes": 2804356,
    "source": {
     "sha256": "26754f251218f3b344bfb1bd5120ea97ff1cdcc0101c1d03fc5359dfb13a7748",
     "bytes": 840032
@@ -30,10 +30,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9746
     },
     {
      "slots": [
@@ -57,10 +57,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9699
     },
     {
      "slots": [
@@ -84,21 +84,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9783
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/edith.492fe791.glb": {
-   "file": "k/edith.e619ea06.glb",
-   "sha256": "e619ea06cc0ee640b9f25442352e658eba6e520df6ac23a9273466205d44dd11",
-   "bytes": 2217432,
+   "file": "k/edith.10d4954e.glb",
+   "sha256": "10d4954efe8a12b92225d3e8eaa014e52d2d4680e1f919a7a7a63d5929d6083d",
+   "bytes": 2917608,
    "source": {
     "sha256": "492fe7916e1ad0ec54553caec53d529b24a0507c061e33fa986056fc3b817070",
     "bytes": 829524
@@ -108,10 +108,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9749
     },
     {
      "slots": [
@@ -135,10 +135,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9714
     },
     {
      "slots": [
@@ -162,21 +162,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9874
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/felix.367a5261.glb": {
-   "file": "k/felix.35566a44.glb",
-   "sha256": "35566a4427c0becb9de7f92024c674750206f603d3e012c9ae40d06d4bfa5658",
-   "bytes": 2223740,
+   "file": "k/felix.165f0310.glb",
+   "sha256": "165f03103d363425cff6b8301f1be65677cf35447d770b0d9717eda29317e5e7",
+   "bytes": 2912584,
    "source": {
     "sha256": "367a5261e4d184c3d627adf45d44f0476c5c29a22b55a931e2c216f8dd82bd57",
     "bytes": 930296
@@ -186,10 +186,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9718
     },
     {
      "slots": [
@@ -213,10 +213,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9768
     },
     {
      "slots": [
@@ -240,21 +240,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9733
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/juno.34d73378.glb": {
-   "file": "k/juno.fe731ee6.glb",
-   "sha256": "fe731ee63dc1a755a51c4b6502f18f7f98a311036324ab68ee69bdf4042ceb56",
-   "bytes": 2043080,
+   "file": "k/juno.71020ba7.glb",
+   "sha256": "71020ba7a17ceecef49de34d061ae36571c1f3f2d25105265dc04a99f02660ee",
+   "bytes": 2639124,
    "source": {
     "sha256": "34d733785f5ca125bd0ccd3519f543597a6afb537089e457f0c6322b47f06992",
     "bytes": 764232
@@ -264,10 +264,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9759
     },
     {
      "slots": [
@@ -291,10 +291,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9742
     },
     {
      "slots": [
@@ -318,21 +318,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9791
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/kofi.2c7bc66b.glb": {
-   "file": "k/kofi.c743930a.glb",
-   "sha256": "c743930adbd2d39398be4f4c15d0f432fcab574fd537e2b5d776677523a22f69",
-   "bytes": 1876256,
+   "file": "k/kofi.46427b7f.glb",
+   "sha256": "46427b7f02756b3fab3766af936283fe5671eabbea6ec53660849dc68b790e97",
+   "bytes": 2053580,
    "source": {
     "sha256": "2c7bc66b5d1428881998dadc475e987576eed8bd526862e4b46d0bb9683681fe",
     "bytes": 525464
@@ -342,10 +342,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9504
     },
     {
      "slots": [
@@ -369,10 +369,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.974
     },
     {
      "slots": [
@@ -395,13 +395,13 @@
    ],
    "gpu": {
     "before": 33554424,
-    "after": 16777320
+    "after": 8388768
    }
   },
   "c/marcus.487e0040.glb": {
-   "file": "k/marcus.52bb92ee.glb",
-   "sha256": "52bb92ee307911cc426f5cb994b745924791e74100672ee72dacee3b0b31b5c7",
-   "bytes": 2535228,
+   "file": "k/marcus.fe719a4f.glb",
+   "sha256": "fe719a4f02a0fdf252b2bea578005a26dae8554f3dcd2a246925a70605b8067f",
+   "bytes": 3100620,
    "source": {
     "sha256": "487e00400a678a2648b3a6eedda74af979e4dfb6491bf5403bdc41e9994619c9",
     "bytes": 1168480
@@ -411,10 +411,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9644
     },
     {
      "slots": [
@@ -438,10 +438,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9666
     },
     {
      "slots": [
@@ -465,21 +465,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9451
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/rosa.07c2fb46.glb": {
-   "file": "k/rosa.b8ab38ef.glb",
-   "sha256": "b8ab38efab7f9593617eb1cb5ccb703f329d47d21d7edc950d1c6c3144c0cf79",
-   "bytes": 2252876,
+   "file": "k/rosa.f2cedef3.glb",
+   "sha256": "f2cedef357bae12f4a5ae2941ba698ba9e6d5639d34c65dc8a749f7b832311bb",
+   "bytes": 2851104,
    "source": {
     "sha256": "07c2fb46b748b92bf5cb33347d2ffa4c38a314649e4110cf060b85b8d6cbbd15",
     "bytes": 768628
@@ -489,10 +489,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9703
     },
     {
      "slots": [
@@ -516,10 +516,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9716
     },
     {
      "slots": [
@@ -543,21 +543,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9817
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/sophie.cba6c5f3.glb": {
-   "file": "k/sophie.daa46677.glb",
-   "sha256": "daa46677cb0c1f874828161b75a2c1d44ad8d4e4907efc0e0b8e5c88d6d665cc",
-   "bytes": 2202976,
+   "file": "k/sophie.89c52994.glb",
+   "sha256": "89c5299479a6ddb44f3117194f42ab6eef69c8b04e4aef136a9a5ae0427abb7d",
+   "bytes": 2852396,
    "source": {
     "sha256": "cba6c5f3e8d716f3a9459caf8ef7379767db342de4517bda6b23437ee010d46b",
     "bytes": 782148
@@ -567,10 +567,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9625
     },
     {
      "slots": [
@@ -594,10 +594,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9663
     },
     {
      "slots": [
@@ -621,21 +621,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9909
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/tomas.bab0c4aa.glb": {
-   "file": "k/tomas.e2d12965.glb",
-   "sha256": "e2d129651bb64444f7faaec6b7e4128ca3d5f9e463f11a27d478bbbebbb7fa65",
-   "bytes": 2264228,
+   "file": "k/tomas.031dccc1.glb",
+   "sha256": "031dccc12430d7343b50702f98519bcb8318a0c6d36afd0c3eeecde9ab847673",
+   "bytes": 3047540,
    "source": {
     "sha256": "bab0c4aa099b1d013e81eeef39870c769dba2337b02b3c83d219573424ec8df1",
     "bytes": 812908
@@ -645,10 +645,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9761
     },
     {
      "slots": [
@@ -672,10 +672,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9684
     },
     {
      "slots": [
@@ -699,21 +699,21 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "uastc",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9812
     }
    ],
    "gpu": {
     "before": 39146828,
-    "after": 22369724
+    "after": 9786896
    }
   },
   "c/walter.f1bb6e49.glb": {
-   "file": "k/walter.0d0fe6f1.glb",
-   "sha256": "0d0fe6f1345d6020671ec805bb98f9f265bdf5ad1b4867e32745131685228315",
-   "bytes": 1818820,
+   "file": "k/walter.421745cf.glb",
+   "sha256": "421745cfb3355e120c79de5eaa4bccbfff44aeb5cb77d894cb00396e3167459a",
+   "bytes": 2046208,
    "source": {
     "sha256": "f1bb6e4945cfe5eab1ab68ae00f6fe59db316e85f0c5cfa9d59712b3580f26b5",
     "bytes": 448428
@@ -723,10 +723,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.975
     },
     {
      "slots": [
@@ -750,10 +750,10 @@
      "slots": [
       "baseColorTexture"
      ],
-     "codec": "kept",
+     "codec": "etc1s",
      "width": 1024,
      "height": 1024,
-     "reason": "tinted on the CPU (outfit and hair colours)"
+     "ssim": 0.9708
     },
     {
      "slots": [
@@ -776,7 +776,7 @@
    ],
    "gpu": {
     "before": 33554424,
-    "after": 16777320
+    "after": 8388768
    }
   },
   "m/ambulance.fd664f05.glb": {

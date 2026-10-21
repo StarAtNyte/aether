@@ -155,8 +155,10 @@ export async function decodeMasks(blob: Blob): Promise<TintMasks> {
  * sampling settings. Browser only. Returns null when the source has no
  * drawable image.
  */
-export function bakeTexture(source: Texture, apply: (rgba: Uint8ClampedArray, width: number, height: number) => void): CanvasTexture | null {
-  const image = source.image as { width?: number; height?: number } | null;
+export function bakeTexture(source: Texture, apply: (rgba: Uint8ClampedArray, width: number, height: number) => void, pixels?: CanvasImageSource & { width: number; height: number }): CanvasTexture | null {
+  // A block-compressed (KTX2) map has no drawable image: the caller passes the original image instead.
+  if ((source as { isCompressedTexture?: boolean }).isCompressedTexture && !pixels) return null;
+  const image = (pixels ?? source.image) as { width?: number; height?: number } | null;
   if (!image || !image.width || !image.height) return null;
   const canvas = new OffscreenCanvas(image.width, image.height);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -188,7 +190,7 @@ export function partOf(material: Material): Part {
  * Clone `source` with a recoloured base colour map for its part. The baked
  * texture is returned too so the owner can dispose it. The source is untouched.
  */
-export function tintedMaterial(source: MeshStandardMaterial, part: Part, tint: Tint, refs: TintRefs, masks: TintMasks | null): { material: MeshStandardMaterial; texture: CanvasTexture | null } {
+export function tintedMaterial(source: MeshStandardMaterial, part: Part, tint: Tint, refs: TintRefs, masks: TintMasks | null, original?: ImageBitmap | null): { material: MeshStandardMaterial; texture: CanvasTexture | null } {
   const m = source.clone();
   m.name = `${source.name}-tint`;
   if (!source.map) return { material: m, texture: null };
@@ -197,7 +199,7 @@ export function tintedMaterial(source: MeshStandardMaterial, part: Part, tint: T
   else if (part === 'head' && tint.hair && masks) apply = (px, w, h) => recolorHead(px, w, h, masks, tint, refs);
   else if (part === 'body' && (tint.top || tint.bottom) && masks) apply = (px, w, h) => recolorBody(px, w, h, masks, tint, refs);
   if (!apply) return { material: m, texture: null };
-  const texture = bakeTexture(source.map, apply);
+  const texture = bakeTexture(source.map, apply, original ?? undefined);
   if (texture) m.map = texture;
   return { material: m, texture };
 }
@@ -212,4 +214,71 @@ export function materialsOf(root: Object3D): Material[] {
     else set.add(mesh.material);
   });
   return [...set];
+}
+
+interface GlbJson {
+  materials?: Array<{ name?: string; pbrMetallicRoughness?: { baseColorTexture?: { index?: number } } }>;
+  textures?: Array<{ source?: number; extensions?: Record<string, { source?: number } | undefined> }>;
+  images?: Array<{ bufferView?: number; mimeType?: string }>;
+  bufferViews?: Array<{ byteOffset?: number; byteLength: number }>;
+}
+
+/** Largest original body file fetched for its pixels (bytes). */
+const MAX_ORIGINAL_BYTES = 32 * 1024 * 1024;
+const GLB_MAGIC = 0x46546c67;
+const JSON_CHUNK = 0x4e4f534a;
+
+/**
+ * The embedded base colour images of a GLB by material name (pure: no decoding). Null when the bytes are not
+ * a GLB with a JSON chunk. Images inside `EXT_texture_webp` count as the texture's source.
+ */
+export function glbBaseColourImages(buf: Uint8Array): Map<string, { bytes: Uint8Array; mime: string }> | null {
+  if (buf.byteLength < 28) return null;
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (view.getUint32(0, true) !== GLB_MAGIC) return null;
+  const jsonLen = view.getUint32(12, true);
+  if (view.getUint32(16, true) !== JSON_CHUNK || 20 + jsonLen + 8 > buf.byteLength) return null;
+  let json: GlbJson;
+  try {
+    json = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jsonLen))) as GlbJson;
+  } catch {
+    return null;
+  }
+  const binStart = 20 + jsonLen + 8;
+  const out = new Map<string, { bytes: Uint8Array; mime: string }>();
+  for (const mat of json.materials ?? []) {
+    const ti = mat.pbrMetallicRoughness?.baseColorTexture?.index;
+    if (ti === undefined || !mat.name || out.has(mat.name)) continue;
+    const tex = json.textures?.[ti];
+    const src = tex?.extensions?.['EXT_texture_webp']?.source ?? tex?.source;
+    const img = src === undefined ? undefined : json.images?.[src];
+    const bv = img?.bufferView === undefined ? undefined : json.bufferViews?.[img.bufferView];
+    if (!img || !bv) continue;
+    const start = binStart + (bv.byteOffset ?? 0);
+    if (start + bv.byteLength > buf.byteLength) continue;
+    out.set(mat.name, { bytes: buf.subarray(start, start + bv.byteLength), mime: img.mimeType ?? 'image/png' });
+  }
+  return out;
+}
+
+/**
+ * Base colour images of the GLB at `url` by material name, decoded from its embedded images (no mesh decoding).
+ * A body loaded from its KTX2 twin has block-compressed maps the CPU cannot read; outfit and hair tints are
+ * baked from these original images instead. Browser only; null when the file cannot be read. The caller
+ * closes the bitmaps.
+ */
+export async function originalBaseColours(url: string): Promise<Map<string, ImageBitmap> | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.byteLength > MAX_ORIGINAL_BYTES) return null;
+    const images = glbBaseColourImages(buf);
+    if (!images) return null;
+    const out = new Map<string, ImageBitmap>();
+    for (const [name, img] of images) out.set(name, await createImageBitmap(new Blob([img.bytes.slice()], { type: img.mime }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }));
+    return out;
+  } catch {
+    return null;
+  }
 }

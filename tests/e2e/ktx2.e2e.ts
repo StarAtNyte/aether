@@ -142,6 +142,8 @@ const closeup: Scene = {
     armchair: { pos: [0.55, 1.05, 1.35], target: [0, 0.55, 0] },
     // The cast faces -Z: from in front of them.
     people: { pos: [0.35, 1.45, -0.7], target: [0.3, 1.05, 1.45] },
+    // Hair cards (alpha cut-outs, UASTC) close up.
+    hair: { pos: [-0.8, 1.3, 0.75], target: [-0.9, 1.15, 1.5] },
   },
 };
 
@@ -252,6 +254,7 @@ async function runOne(browser: Browser, target: Target, url: string, scene: Scen
     // Library files stream in after the first frame: wait until none has arrived for 2.5 s.
     for (let i = 0; i < 120 && performance.now() - lastLib < 2500; i++) await page.waitForTimeout(500);
     await Promise.all(pending);
+    const assetsMs = Math.round(lastLib - t0);
     const stills: string[] = [];
     const cams = Object.entries(scene.cameras);
     for (const [name, cam] of cams.length > 0 ? cams : [['default', null] as const]) {
@@ -302,7 +305,7 @@ async function runOne(browser: Browser, target: Target, url: string, scene: Scen
       scene: scene.name,
       mode,
       readyMs: Math.round(readyMs),
-      assetsMs: Math.round(lastLib - t0),
+      assetsMs,
       wireBytes: wire,
       diskBytes: disk,
       files,

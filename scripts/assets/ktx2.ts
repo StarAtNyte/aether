@@ -11,8 +11,8 @@
  * - `assets/lib/k/<stem>.<hash>.glb`: each textured model with its images re-encoded as KTX2
  *   (`KHR_texture_basisu`, required): albedo as ETC1S when it holds up (luma-weighted SSIM ≥ 0.95),
  *   UASTC otherwise; normal and ORM / metal-rough / occlusion maps as UASTC (RDO + Zstandard); cut-out
- *   colour as UASTC with its alpha bled outwards; full mip chains; sRGB colour, linear data. Base
- *   colour maps of the cast (`c/`) stay WebP: outfit tints are baked from their pixels on the CPU.
+ *   colour as UASTC with its alpha bled outwards; full mip chains; sRGB colour, linear data. Outfit
+ *   and hair tints of the cast are baked from the original file's images (render characters/tint.ts).
  * - `assets/ktx2.json`: the index (variant and source SHA-256, bytes, per-texture codec and SSIM,
  *   estimated GPU bytes before and after) the renderer reads (see @aether/assets `TextureVariants`).
  * - `apps/studio/public/blocks/block-{albedo,normal,orm}.ktx2` (+ `block-ktx2.json`): the block
@@ -222,10 +222,8 @@ function wraps(doc: Document, tex: Texture): boolean {
 }
 
 /** Why a texture stays in its source format (null: encode it). */
-function keepReason(path: string, doc: Document, tex: Texture, role: TextureRole | null): string | null {
+function keepReason(doc: Document, tex: Texture, role: TextureRole | null): string | null {
   if (role === null) return 'used as colour and as data';
-  // The cast's outfit and hair tints are baked from the base colour pixels (packages/render characters/tint.ts).
-  if (path.startsWith('c/') && role === 'color') return 'tinted on the CPU (outfit and hair colours)';
   const mime = tex.getMimeType();
   if (mime !== 'image/png' && mime !== 'image/jpeg' && mime !== 'image/webp') return `unsupported source ${mime}`;
   const size = tex.getSize();
@@ -254,7 +252,7 @@ async function variantOf(k: Ktx, io: NodeIO, page: Page, path: string, work: str
     if (slots.length === 0) continue;
     const role = roleOf(slots);
     const size = tex.getSize() ?? [0, 0];
-    const reason = keepReason(path, doc, tex, role);
+    const reason = keepReason(doc, tex, role);
     before += gpuBytes(size[0], size[1], false);
     if (reason || role === null) {
       after += gpuBytes(size[0], size[1], false);

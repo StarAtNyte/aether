@@ -59,7 +59,7 @@ describe('KTX2 twins of the library', () => {
     expect(bytes).toBeLessThan(110 * 1024 * 1024);
   });
 
-  it('use UASTC for normal and data maps, and keep the base colours the cast tints on the CPU', () => {
+  it('use UASTC for normal and data maps, and encode every texture of the cast (hair cards with alpha as UASTC)', () => {
     for (const [path, v] of Object.entries(index.entries)) {
       for (const t of v.textures) {
         const role = roleOf(t.slots);
@@ -68,9 +68,13 @@ describe('KTX2 twins of the library', () => {
           continue;
         }
         if (role === 'normal' || role === 'data') expect(t.codec, `${path} ${t.slots.join('+')}`).toBe('uastc');
-        if (path.startsWith('c/')) expect(role, path).not.toBe('color');
       }
-      if (path.startsWith('c/')) expect(v.textures.some((t) => t.codec === 'kept' && t.slots.includes('baseColorTexture'))).toBe(true);
+      if (path.startsWith('c/')) {
+        expect(v.textures.every((t) => t.codec !== 'kept'), path).toBe(true);
+        // Body, head and (when the body has hair cards) hair base colours: the hair cards, alpha cut-outs, are UASTC.
+        const bases = v.textures.filter((t) => t.slots.includes('baseColorTexture'));
+        if (bases.length >= 3) expect(bases.filter((t) => t.codec === 'uastc').length, path).toBeGreaterThanOrEqual(1);
+      }
     }
   });
 

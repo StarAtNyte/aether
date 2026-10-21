@@ -113,3 +113,25 @@ describe('compressed textures in exports and path traces', () => {
     expect(textureExportMode(t, 'keep')).toBe('drop');
   });
 });
+
+describe('original base colours of a cast body (tints of KTX2 twins)', () => {
+  it('reads the embedded body, head and hair images by material name', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const { join, resolve } = await import('node:path');
+    const { glbBaseColourImages } = await import('../src/characters/tint');
+    const dir = resolve(import.meta.dirname, '../../../assets/lib/c');
+    const file = readdirSync(dir).find((f) => /^dario\.[0-9a-f]{8}\.glb$/.test(f));
+    expect(file).toBeTruthy();
+    const images = glbBaseColourImages(new Uint8Array(readFileSync(join(dir, file as string))));
+    expect(images).not.toBeNull();
+    const names = [...(images?.keys() ?? [])];
+    expect(names.some((n) => /hair/i.test(n))).toBe(true);
+    expect(names.some((n) => /head/i.test(n))).toBe(true);
+    for (const img of images?.values() ?? []) {
+      expect(img.mime).toMatch(/^image\/(webp|png|jpeg)$/);
+      // RIFF (WebP), PNG or JPEG signature.
+      expect([0x52, 0x89, 0xff]).toContain(img.bytes[0]);
+    }
+    expect(glbBaseColourImages(new Uint8Array(40))).toBeNull();
+  });
+});
