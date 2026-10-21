@@ -7,11 +7,11 @@
  * description puts them, and each piece is placed where its own wall-relative numbers say. The steps are
  * fed to `design_plan` / `place_items`, so every one is measured and may be refused with a reason.
  */
-import { isForbiddenKey, type Json, type MaterialFinish } from '@aether/core';
+import { isForbiddenKey, MaterialFinish as MaterialFinishSchema, type Json, type MaterialFinish, type MaterialSpec } from '@aether/core';
 import type { Compass } from '../plan';
 import type { DesignPlan } from '../scene/design';
 import { furnitureByKind, furnitureSize } from '../furniture/index';
-import type { PhotoItem, PhotoOpening, RoomDescription } from './description';
+import type { PhotoItem, PhotoOpening, PhotoWallFinish, RoomDescription } from './description';
 
 /** Half the thickness of the (exterior) wall of the shell: interior face coordinates are shifted by this to wall `t`. */
 export const PHOTO_WALL_INSET = 0.14;
@@ -72,11 +72,121 @@ export function floorFinish(text: string): MaterialFinish {
   return 'oak';
 }
 
+const WALL_FINISH_WORDS: ReadonlyArray<[RegExp, MaterialFinish]> = [
+  [/stripe/, 'wallpaper-stripe'],
+  [/floral|flower|botanical|blossom/, 'wallpaper-floral'],
+  [/damask|brocade|baroque/, 'wallpaper-damask'],
+  [/geometric|trellis|chevron paper|graphic/, 'wallpaper-geometric'],
+  [/wallpaper|wall paper|textured paper|flock/, 'wallpaper'],
+  [/panel|wainscot|wainscoting|shaker|mdf|boiserie/, 'panelling'],
+  [/slat|batten|fluted wood/, 'wood-slats'],
+  [/subway/, 'subway-tile'],
+  [/tile|ceramic|zellige/, 'tile'],
+  [/brick/, 'brick'],
+  [/marble/, 'marble'],
+  [/limestone|sandstone/, 'limestone'],
+  [/stone|slate|granite/, 'stone'],
+  [/concrete|cement|screed|micro-?cement/, 'concrete'],
+  [/velvet/, 'velvet'],
+  [/fabric|upholster|linen|silk|textile|leather/, 'fabric'],
+  [/cladding|timber|shiplap|wood|oak|pine/, 'cladding'],
+  [/plaster|render|stucco|lime ?wash/, 'plaster'],
+  [/paint|emulsion|matt|satin|smooth/, 'paint'],
+];
+
+/**
+ * The finish a wall's description names: an exact library id in `finish`, else the nearest by the words of `finish` and `material`
+ * (default: paint). The photo's colour is the tint (see {@link wallSpec}).
+ */
+export function wallFinishOf(f: Pick<PhotoWallFinish, 'finish' | 'material'> | undefined): MaterialFinish {
+  if (!f) return 'paint';
+  const exact = MaterialFinishSchema.safeParse((f.finish ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-'));
+  if (exact.success) return exact.data;
+  const text = `${f.finish ?? ''} ${f.material ?? ''}`.toLowerCase();
+  for (const [re, fin] of WALL_FINISH_WORDS) if (re.test(text)) return fin;
+  return 'paint';
+}
+
+/** The material spec of a wall: its finish and the colour read off the photo. */
+export function wallSpec(f: PhotoWallFinish | undefined, fallbackColour?: string): MaterialSpec {
+  const color = f?.color ?? fallbackColour;
+  return { finish: wallFinishOf(f), ...(color ? { color } : {}) };
+}
+
+/** The floor finish a `floor.finish` names (an exact library id or words), else `fallback`. */
+function floorFinishOf(text: string, fallback: MaterialFinish): MaterialFinish {
+  const exact = MaterialFinishSchema.safeParse(text.trim().toLowerCase().replace(/[\s_]+/g, '-'));
+  if (exact.success) return exact.data;
+  const t = text.toLowerCase();
+  for (const [re, f] of FINISH_WORDS) if (re.test(t)) return f;
+  return fallback;
+}
+
+/**
+ * Wall coverings and panelling of the description as room fields: per-wall finishes (only when some wall is not plain paint; a
+ * painted room keeps the colour-only path) and per-wall dados from the panelling the photo shows.
+ */
+function wallVocabulary(d: RoomDescription, wallColor: string | undefined): { finish?: MaterialSpec; walls?: Partial<Record<Compass, MaterialSpec>>; dados?: Partial<Record<Compass, Record<string, Json>>> } {
+  const out: { finish?: MaterialSpec; walls?: Partial<Record<Compass, MaterialSpec>>; dados?: Partial<Record<Compass, Record<string, Json>>> } = {};
+  const sides = ['north', 'east', 'south', 'west'] as const;
+  const seen = sides.filter((w) => d.walls[w] && d.walls[w]?.visible !== false);
+  if (seen.some((w) => wallFinishOf(d.walls[w]) !== 'paint')) {
+    const specs = seen.map((w) => wallSpec(d.walls[w], wallColor));
+    const common = mostCommon(specs.map((sp) => JSON.stringify(sp)));
+    const commonSpec = (common ? JSON.parse(common) : { finish: 'paint', ...(wallColor ? { color: wallColor } : {}) }) as MaterialSpec;
+    out.finish = commonSpec;
+    const walls: Partial<Record<Compass, MaterialSpec>> = {};
+    for (const w of sides) {
+      const f = d.walls[w];
+      if (f && f.visible !== false) walls[w] = wallSpec(f, wallColor);
+    }
+    out.walls = walls;
+  }
+  const dados: Partial<Record<Compass, Record<string, Json>>> = {};
+  for (const w of sides) {
+    const p = d.walls[w]?.panelling;
+    if (!p) continue;
+    const colour = p.color ?? d.walls[w]?.color ?? wallColor;
+    dados[w] = { height: p.height, material: { finish: 'panelling', ...(colour ? { color: colour } : {}) }, rail: p.rail, style: p.style, panels: 3 };
+  }
+  if (Object.keys(dados).length > 0) out.dados = dados;
+  return out;
+}
+
 const FACING_YAW: Readonly<Record<Compass, number>> = { south: 0, east: 90, north: 180, west: -90 };
 
 /** Plan-frame wall length of the shell (centreline) for a description wall. */
 function wallRun(d: RoomDescription, wall: Compass): number {
   return wall === 'north' || wall === 'south' ? d.footprint.width : d.footprint.depth;
+}
+
+/** How far the ceiling stands above the described wall height: a gable vault's or a barrel vault's rise (coved, coffered, beamed and tray ceilings keep the height). */
+export function ceilingRise(d: RoomDescription): number {
+  if (d.ceiling.vault) return d.ceiling.vault.rise;
+  if (d.ceiling.style === 'barrel') return d.ceiling.rise ?? 0.8;
+  return 0;
+}
+
+/** The ceiling vocabulary of a description as the room's `ceiling` (flat adds only the colour). */
+function ceilingDetail(d: RoomDescription): NonNullable<DesignPlan['levels'][number]['rooms'][number]['ceiling']> | undefined {
+  const c = d.ceiling;
+  const out: Record<string, Json> = {};
+  if (c.color) out['color'] = c.color;
+  const style = c.vault ? undefined : c.style; // a gable vault is `room.vault`
+  if (style) out['style'] = style;
+  if (style && style !== 'flat') {
+    const W = d.footprint.width;
+    const D = d.footprint.depth;
+    if (c.rise !== undefined) out['rise'] = c.rise;
+    if (c.ridge) out['ridge'] = c.ridge;
+    else if (style === 'barrel') out['ridge'] = W >= D ? 'x' : 'z';
+    if (c.trusses !== undefined) out['trusses'] = c.trusses;
+    if (c.beam) out['beam'] = c.beam;
+    if (c.coffers) out['coffers'] = c.coffers;
+    if (c.beams) out['beams'] = c.beams;
+    if (c.tray) out['tray'] = c.tray;
+  }
+  return Object.keys(out).length > 0 ? (out as never) : undefined;
 }
 
 /** Wall `t` of an interior distance along a wall. */
@@ -143,7 +253,7 @@ function toPlanOpening(o: PhotoOpening, main: boolean): DesignPlan['levels'][num
     along: alongToT(o.along),
     width: o.width,
     ...(o.height !== undefined ? { height: o.height } : {}),
-    ...(isWindow ? { ...(o.sill !== undefined ? { sill: o.sill } : { sill: 0.9 }), style: 'picture', ...(o.glow || o.daylight ? { daylight: o.daylight ?? '#fff4e2' } : {}) } : { to: 'outside' as const }),
+    ...(isWindow ? { ...(o.sill !== undefined ? { sill: o.sill } : { sill: 0.9 }), style: o.style ?? 'picture', ...(o.glow || o.daylight ? { daylight: o.daylight ?? '#fff4e2' } : {}), ...(o.muntins ? { muntins: o.muntins } : {}), ...(o.frame ? { frame: o.frame } : {}), ...(o.casing !== undefined ? { casing: o.casing } : {}), ...(o.bay ? { bay: o.bay } : {}) } : { to: 'outside' as const, ...(o.style ? { style: o.style } : {}), ...(o.frame ? { color: o.frame } : {}) }),
     ...(main ? { main: true } : {}),
   };
 }
@@ -235,15 +345,21 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
     levels: [
       {
         name: 'Ground floor',
-        height: Math.round((d.footprint.ceiling + (d.ceiling.vault?.rise ?? 0) + 0.22) * 100) / 100,
+        height: Math.round((d.footprint.ceiling + ceilingRise(d) + 0.22) * 100) / 100,
         rooms: [
           {
             id: PHOTO_ROOM_ID,
             type: d.roomType,
             name: d.roomType.charAt(0).toUpperCase() + d.roomType.slice(1),
             rect: [-i, -i, Math.round((W + i) * 1000) / 1000, Math.round((D + i) * 1000) / 1000],
-            floor: { finish, ...(d.floor.color ? { color: d.floor.color } : {}) },
+            floor: { finish: d.floor.finish ? floorFinishOf(d.floor.finish, finish) : finish, ...(d.floor.color ? { color: d.floor.color } : {}) },
             ...(wallColor ? { wallColor } : {}),
+            ...wallVocabulary(d, wallColor),
+            ...(ceilingDetail(d) ? { ceiling: ceilingDetail(d) } : {}),
+            ...(d.ceiling.cornice && !d.ceiling.vault ? { cornice: { height: d.ceiling.cornice.height, depth: d.ceiling.cornice.depth ?? Math.min(0.2, Math.max(0.06, d.ceiling.cornice.height * 0.9)), profile: d.ceiling.cornice.profile ?? 'classic', ...(d.ceiling.cornice.color ? { color: d.ceiling.cornice.color } : {}) } } : {}),
+            ...(d.ceiling.pictureRail ? { pictureRail: d.ceiling.pictureRail } : {}),
+            ...(d.skirting ? { skirting: { height: d.skirting.height, depth: Math.round(Math.min(0.05, Math.max(0.012, d.skirting.height * 0.2)) * 1000) / 1000, profile: d.skirting.profile, ...(d.skirting.color ? { color: d.skirting.color } : {}) } } : {}),
+            ...(d.niches.length > 0 ? { niches: d.niches.filter((n) => n.visible).map((n) => ({ wall: n.wall, along: alongToT(n.along), width: n.width, height: n.height, sill: n.sill, depth: n.depth, shelves: n.shelves, arched: n.arched, ...(n.color ? { color: n.color } : {}) })) } : {}),
             ...(d.ceiling.vault ? { vault: { rise: d.ceiling.vault.rise, ridge: d.ceiling.vault.ridge ?? (W >= D ? 'x' : 'z'), trusses: Math.round(d.ceiling.vault.trusses ?? 0), ...(d.ceiling.vault.color ? { beam: d.ceiling.vault.color } : {}) } } : {}),
             ...(Object.keys(perWall).length > 0 ? { wallColors: perWall } : {}),
           },
@@ -317,20 +433,6 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
       continue;
     }
     steps.push({ id: it.id, phase: it.kind === 'rug' ? 'rug' : 'floor', input });
-  }
-  // Crown moulding: one run per wall, mitred in plan by shortening the side walls by the projection.
-  const co = d.ceiling.vault ? undefined : d.ceiling.cornice; // a vaulted ceiling has no crown moulding at the wall top
-  if (co) {
-    const depth = co.depth ?? Math.min(0.2, Math.max(0.06, co.height * 0.9));
-    for (const wall of ['north', 'south', 'east', 'west'] as const) {
-      const run = wallRun(d, wall);
-      const width = Math.min(14, wall === 'north' || wall === 'south' ? run : Math.max(0.5, run - 2 * depth));
-      steps.push({
-        id: `cornice-${wall}`,
-        phase: 'trim',
-        input: { kind: 'cornice', room: PHOTO_ROOM_ID, id: `cornice-${wall}`, name: `Cornice (${wall} wall)`, wall, t: alongToT(run / 2), params: { width, height: co.height, depth, ...(co.color ? { color: co.color } : {}) } },
-      });
-    }
   }
   const order: Record<PlaceStep['phase'], number> = { rug: 0, floor: 1, surface: 2, wall: 3, curtain: 4, ceiling: 5, trim: 6 };
   const area = (s: PlaceStep): number => {

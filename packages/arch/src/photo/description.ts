@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { Color } from '@aether/core';
 import { ArchStyle, Compass, RoomType } from '../plan';
+import { CeilingStyle, CorniceProfile, DOOR_STYLES, PanelStyle, SkirtingProfile, WINDOW_STYLES } from '../shell';
 import { applyReality } from './reality';
 
 /** Largest room the photo flow reconstructs (metres per side). */
@@ -93,6 +94,20 @@ export const PhotoOpening = z.object({
   box: Box,
   /** What it looks like: frame colour, panes, view. */
   note: Text(160).default(''),
+  /**
+   * Window or door style (windows: casement, fixed, sliding, grid, picture, sash, arched, bay; doors: panel, flush, glass, slab,
+   * glazed, double, french, arched). Words models use ("sash window", "double-hung", "panelled") are mapped; one that fits the kind of
+   * opening in no way is dropped with a note.
+   */
+  style: Text(24).optional(),
+  /** Glazing bars per sash or light (a sash window with six panes over six: cols 3, rows 2). */
+  muntins: z.object({ cols: Num(1, 8), rows: Num(1, 8) }).optional(),
+  /** Frame (windows) or leaf (doors) colour as seen. */
+  frame: Color.optional(),
+  /** Interior architrave and apron round the opening. */
+  casing: z.boolean().optional(),
+  /** Bay windows: projection outside the wall (m) and the angle of the side lights (degrees). */
+  bay: z.object({ depth: Num(0.15, 1.5).default(0.5), angle: Num(20, 70).default(35) }).optional(),
   /** Windows: the daylight beyond the glass is bright and glowing in the photo (sunlit street, overexposed sky). */
   glow: z.boolean().optional(),
   /** Windows: colour of that glow (#rrggbb); default a warm white. */
@@ -161,9 +176,43 @@ export const PhotoWallFinish = z.object({
   color: Color.optional(),
   /** Material of the wall surface (plaster, paint, wallpaper, brick, panelling). */
   material: Text(30).optional(),
+  /**
+   * The nearest finish of the library (wallpaper-stripe, wallpaper-floral, wallpaper-damask, panelling, brick, tile, stone, concrete,
+   * plaster, paint …): when given it decides, else the words of `material` do.
+   */
+  finish: Text(30).optional(),
+  /** Panelling or wainscot on this wall: moulded frames, battens or bead-board, from the floor up to `height`. */
+  panelling: z.object({ style: PanelStyle.default('shaker'), height: Num(0.2, 4).default(1.0), color: Color.optional(), rail: z.boolean().default(true) }).optional(),
+  /** Where this wall appears in the photo (a region of it that shows its colour), used to sample the colour. */
+  box: Box,
   /** Seen in the photo. */
   visible: z.boolean().default(true),
 });
+
+export type PhotoWallFinish = z.infer<typeof PhotoWallFinish>;
+
+/** Most niches a description may list. */
+export const MAX_PHOTO_NICHES = 6;
+
+/** A recess in a wall: where it is, how big, what is inside. */
+export const PhotoNiche = z.object({
+  id: Slug,
+  wall: Compass,
+  /** Centre, metres from the left corner of that wall seen from inside (like openings). */
+  along: Num(0, ALONG_MAX),
+  width: Num(0.2, 4),
+  height: Num(0.2, 3.2),
+  /** Bottom above the floor. */
+  sill: Num(0, 2.5).default(0.6),
+  depth: Num(0.04, 0.6).default(0.15),
+  shelves: Num(0, 6).default(0),
+  arched: z.boolean().default(false),
+  color: Color.optional(),
+  visible: z.boolean().default(true),
+  box: Box,
+  note: Text(120).default(''),
+});
+export type PhotoNiche = z.infer<typeof PhotoNiche>;
 
 /** Light as the photo shows it. */
 export const PhotoLight = z.object({
@@ -195,12 +244,33 @@ export const RoomDescription = z.object({
   footprint: z.object({ width: Num(1.6, PHOTO_MAX_SIDE), depth: Num(1.6, PHOTO_MAX_SIDE), ceiling: Num(2.2, 6) }),
   camera: PhotoCamera,
   walls: z.partialRecord(Compass, PhotoWallFinish).default({}),
-  floor: z.object({ material: Text(30).default('oak'), color: Color.optional(), note: Text(120).default('') }).default({ material: 'oak', note: '' }),
+  floor: z.object({ material: Text(30).default('oak'), color: Color.optional(), note: Text(120).default(''), finish: Text(30).optional(), box: Box }).default({ material: 'oak', note: '' }),
+  /** Skirting boards: height, profile, colour (omit when none is visible). */
+  skirting: z.object({ height: Num(0.03, 0.5).default(0.1), profile: SkirtingProfile.default('bevel'), color: Color.optional() }).optional(),
+  /** Recesses in the walls (alcoves beside a chimney breast, display niches). */
+  niches: z.array(PhotoNiche).max(MAX_PHOTO_NICHES).default([]),
   ceiling: z
     .object({
       color: Color.optional(),
-      /** Crown moulding along the top of the walls: drop, projection and colour. */
-      cornice: z.object({ height: Num(0.04, 0.4), depth: Num(0.03, 0.3).optional(), color: Color.optional() }).optional(),
+      /** Crown moulding along the top of the walls: drop, projection, profile and colour. */
+      cornice: z.object({ height: Num(0.04, 0.4), depth: Num(0.03, 0.3).optional(), profile: CorniceProfile.optional(), color: Color.optional() }).optional(),
+      /** Picture rail: drop below the ceiling (m) and colour. */
+      pictureRail: z.object({ drop: Num(0.05, 1.2).default(0.3), color: Color.optional() }).optional(),
+      /**
+       * The ceiling shape: flat, coved, vaulted (gable), barrel, coffered, beamed or tray. Vaulted is also given by `vault` below;
+       * `rise` is the ridge height above the eaves (vaulted, barrel) or the radius of the cove (coved).
+       */
+      style: CeilingStyle.optional(),
+      rise: Num(0.1, 3.5).optional(),
+      ridge: z.enum(['x', 'z']).optional(),
+      trusses: Num(0, 14).optional(),
+      /** Colour of beams, coffer ribs and trusses. */
+      beam: Color.optional(),
+      coffers: z.object({ nx: Num(1, 10).default(3), nz: Num(1, 10).default(3), rib: Num(0.03, 0.5).default(0.12), depth: Num(0.03, 0.5).default(0.12) }).optional(),
+      beams: z.object({ count: Num(1, 16).default(4), dir: z.enum(['x', 'z']).optional(), width: Num(0.04, 0.6).default(0.15), depth: Num(0.04, 0.6).default(0.2) }).optional(),
+      tray: z.object({ inset: Num(0.15, 2).default(0.5), drop: Num(0.04, 0.5).default(0.12) }).optional(),
+      /** Where the ceiling appears in the photo (a region of it), used to sample its colour. */
+      box: Box,
       /**
        * A vaulted (gable) ceiling: `footprint.ceiling` is then the height of the walls at the eaves, `rise` the extra height of
        * the ridge, `ridge` the direction the ridge runs (default: along the longer side), `trusses` exposed timber trusses.
@@ -232,6 +302,30 @@ export const KIND_SYNONYMS: Readonly<Record<string, string>> = Object.freeze({
   curtains: 'curtain',
   drapes: 'curtain',
   drape: 'curtain',
+  blinds: 'blind',
+  'roller-blind': 'blind',
+  'roman-blind': 'blind',
+  'venetian-blind': 'blind',
+  'vertical-blind': 'blind',
+  'window-blind': 'blind',
+  shutters: 'blind',
+  shutter: 'blind',
+  'plantation-shutters': 'blind',
+  'plantation-shutter': 'blind',
+  pelmet: 'curtain',
+  valance: 'curtain',
+  'curtain-pelmet': 'curtain',
+  sheers: 'curtain',
+  voile: 'curtain',
+  fireplace: 'fireplace',
+  hearth: 'fireplace',
+  'fire-place': 'fireplace',
+  'chimney-breast': 'fireplace',
+  mantelpiece: 'fireplace',
+  'built-in-wardrobe': 'wardrobe',
+  'fitted-wardrobe': 'wardrobe',
+  'built-in-shelves': 'bookshelf',
+  'built-in-bookcase': 'bookshelf',
   molding: 'cornice',
   moulding: 'cornice',
   crown: 'cornice',

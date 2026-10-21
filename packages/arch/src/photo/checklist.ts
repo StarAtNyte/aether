@@ -6,7 +6,8 @@
  */
 import { z } from 'zod';
 import { furnitureByKind } from '../furniture/index';
-import { MAX_PHOTO_ITEMS, MAX_PHOTO_OPENINGS, type RoomDescription } from './description';
+import { MAX_PHOTO_ITEMS, MAX_PHOTO_NICHES, MAX_PHOTO_OPENINGS, type RoomDescription } from './description';
+import { wallFinishOf } from './derive';
 
 /** Group of a checklist entry. */
 export type ChecklistCategory = 'shell' | 'opening' | 'furniture' | 'decor' | 'lighting' | 'material';
@@ -53,12 +54,32 @@ export function buildChecklist(d: RoomDescription): ChecklistItem[] {
     const f = d.walls[k];
     return f?.color && f.visible !== false ? [`${k} ${f.color}`] : [];
   });
-  out.push({ id: 'wall-colour', category: 'material', structural: false, text: `Wall colour and finish${wallColors.length > 0 ? ` (${wallColors.join(', ')})` : ''}` });
+  const covered = (['north', 'east', 'south', 'west'] as const).flatMap((k) => {
+    const f = d.walls[k];
+    return f && f.visible !== false && wallFinishOf(f) !== 'paint' ? [`${k} ${wallFinishOf(f)}`] : [];
+  });
+  out.push({ id: 'wall-colour', category: 'material', structural: false, text: `Wall colour and finish${wallColors.length > 0 ? ` (${wallColors.join(', ')})` : ''}${covered.length > 0 ? `; covering: ${covered.join(', ')}` : ''}` });
+  for (const k of ['north', 'east', 'south', 'west'] as const) {
+    const p = d.walls[k]?.panelling;
+    if (p && d.walls[k]?.visible !== false) out.push({ id: `panelling-${k}`, category: 'decor', structural: false, text: `${p.style} wall panelling on the ${k} wall up to ${Math.round(p.height * 100) / 100} m${p.rail ? ' with a chair rail' : ''}${p.color ? `, ${p.color}` : ''}` });
+  }
   out.push({ id: 'floor', category: 'material', structural: false, text: `Floor: ${d.floor.material}${d.floor.color ? ` ${d.floor.color}` : ''}${d.floor.note ? `, ${d.floor.note}` : ''}` });
   const v = d.ceiling.vault;
   if (v) out.push({ id: 'vault', category: 'shell', structural: false, text: `Vaulted ceiling rising to a ridge about ${Math.round((d.footprint.ceiling + v.rise) * 10) / 10} m (walls ${d.footprint.ceiling} m at the eaves)${v.trusses ? `, ${Math.round(v.trusses)} exposed timber trusses` : ''}` });
+  const st = d.ceiling.style;
+  if (st && st !== 'flat' && st !== 'vaulted') {
+    const c = d.ceiling;
+    const detail = st === 'coffered' && c.coffers ? `, ${c.coffers.nx} x ${c.coffers.nz} panels` : st === 'beamed' && c.beams ? `, ${c.beams.count} beams` : st === 'tray' && c.tray ? `, a step of ${Math.round(c.tray.drop * 100)} cm` : st === 'barrel' ? `, rising ${Math.round((c.rise ?? 0.8) * 100) / 100} m` : '';
+    out.push({ id: 'ceiling-style', category: 'shell', structural: false, text: `${st} ceiling${detail}` });
+  }
   if (d.ceiling.cornice && !v) {
-    out.push({ id: 'cornice', category: 'decor', structural: false, text: `Ceiling cornice / crown moulding along the walls, about ${Math.round(d.ceiling.cornice.height * 100)} cm deep${d.ceiling.cornice.color ? `, ${d.ceiling.cornice.color}` : ''}`, target: 'cornice-north' });
+    out.push({ id: 'cornice', category: 'decor', structural: false, text: `Ceiling cornice / crown moulding along the walls, about ${Math.round(d.ceiling.cornice.height * 100)} cm deep${d.ceiling.cornice.profile ? `, ${d.ceiling.cornice.profile} profile` : ''}${d.ceiling.cornice.color ? `, ${d.ceiling.cornice.color}` : ''}`, target: 'cornice' });
+  }
+  if (d.ceiling.pictureRail) out.push({ id: 'picture-rail', category: 'decor', structural: false, text: `Picture rail ${Math.round(d.ceiling.pictureRail.drop * 100)} cm below the ceiling` });
+  if (d.skirting) out.push({ id: 'skirting', category: 'decor', structural: false, text: `${d.skirting.profile} skirting boards about ${Math.round(d.skirting.height * 100)} cm tall${d.skirting.color ? `, ${d.skirting.color}` : ''}` });
+  for (const n of d.niches) {
+    if (!n.visible) continue;
+    out.push({ id: `niche-${n.id}`, category: 'shell', structural: false, target: n.id, text: `${n.arched ? 'arched ' : ''}niche / alcove ${n.id} in the ${n.wall} wall, centre ${Math.round(n.along * 100) / 100} m from its left corner, ${n.width} m wide, ${n.height} m tall, bottom at ${n.sill} m${n.shelves > 0 ? `, ${n.shelves} shelves` : ''}${n.note ? `; ${n.note}` : ''}` });
   }
   for (const o of d.openings) {
     if (!o.visible) continue;
@@ -67,7 +88,7 @@ export function buildChecklist(d: RoomDescription): ChecklistItem[] {
       category: 'opening',
       structural: o.kind === 'window',
       target: o.id,
-      text: `${o.kind} ${o.id} on the ${o.wall} wall, centre ${Math.round(o.along * 100) / 100} m from its left corner, ${o.width} m wide${o.height ? `, ${o.height} m tall` : ''}${o.sill !== undefined ? `, bottom at ${o.sill} m` : ''}${o.note ? `; ${o.note}` : ''}`,
+      text: `${o.style ? `${o.style}${o.muntins ? ` (${o.muntins.cols} x ${o.muntins.rows} panes)` : ''} ` : ''}${o.kind} ${o.id} on the ${o.wall} wall, centre ${Math.round(o.along * 100) / 100} m from its left corner, ${o.width} m wide${o.height ? `, ${o.height} m tall` : ''}${o.sill !== undefined ? `, bottom at ${o.sill} m` : ''}${o.note ? `; ${o.note}` : ''}`,
     });
   }
   const floorItems = d.items.filter((i) => i.visible && furnitureByKind(i.kind)?.mount === 'floor' && i.kind !== 'rug');
@@ -92,13 +113,13 @@ export function buildChecklist(d: RoomDescription): ChecklistItem[] {
  * Longest checklist {@link buildChecklist} can produce: shell size, wall colour, floor, vault or cornice, the
  * light, and one entry per opening and item a description may hold.
  */
-export const MAX_CHECKLIST_ITEMS = 5 + MAX_PHOTO_OPENINGS + MAX_PHOTO_ITEMS;
+export const MAX_CHECKLIST_ITEMS = 5 + 4 + 3 + MAX_PHOTO_NICHES + MAX_PHOTO_OPENINGS + MAX_PHOTO_ITEMS;
 
 /**
  * Most verdicts one judging call may report: the whole checklist plus room for a few repeated ids (the last
  * verdict of an id wins). The tool schemas advertise it and the parsers enforce it, so the two always agree.
  */
-export const MAX_VERDICTS = 120;
+export const MAX_VERDICTS = 140;
 
 /** The judge's answer for one checklist entry. */
 export const ItemVerdict = z.object({

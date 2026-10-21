@@ -35,6 +35,10 @@ import {
   parseRoomDescription,
   photoCameraSpec,
   runBuild,
+  sampleRegion,
+  sampleSurfaces,
+  surfaceColourText,
+  surfaceRegions,
   scoreLine,
   scoreVerdicts,
   type ChecklistItem,
@@ -48,6 +52,7 @@ import {
   isDesignTool,
   legendText,
   markIndex,
+  nearestFinishes,
   partKinds,
   projectMarks,
   reviewFindings,
@@ -61,7 +66,7 @@ import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
 import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
 import { imageSize } from './image-size';
-import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
+import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, matchGrade, nextEnvironmentGrade, nextExposure, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, combinedScore, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
@@ -384,7 +389,10 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
         }
       }
       similarity = compareImages(photo.raster, graded)?.overall ?? null;
-      if (framing) regionColour = regionColourScore(photo.raster, graded, framing.rows);
+      // The surfaces the description boxes (walls, floor, ceiling) are compared at the same place in both pictures (the render is
+      // taken from the photo's camera), next to the pieces the framing matched.
+      const surfacePairs = surfaceRegions(desc0).map((s) => ({ want: s.box, got: s.box }));
+      regionColour = regionColourScore(photo.raster, graded, [...(framing?.rows ?? []), ...surfacePairs]);
       if (photo.grade && renderGrade && photo.exposureSteps < 3 && Math.abs(photo.grade.median - renderGrade.median) > 0.06) {
         const cur = run.ctx.host.getWorld().environment.exposure;
         const next = nextExposure(cur, photo.grade, renderGrade);
@@ -670,7 +678,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), ...designTools, ...run.tools.filter((t) => t.name === 'finish')];
   const messages: ChatMessage[] = [];
   const margin = rollbackMargin(checklist.length);
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
@@ -796,7 +804,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', view.fidelity ? fidelityText(view.fidelity) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
-      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: notes }) });
+      const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
+      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: [notes, sampled].filter((l) => l.length > 0).join('\n') }) });
       intro = false;
     } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
@@ -833,7 +842,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
         if (call.name === VERDICT_TOOL_NAME) {
@@ -864,6 +873,10 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             yield { type: 'photo', phase: 'round', round, text: `Round ${round} was worse (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(s.rejected.judged) };
           }
           results.push({ type: 'tool_result', toolUseId: call.id, content: note });
+          continue;
+        }
+        if (call.name === SAMPLE_TOOL_NAME) {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: samplePhotoText(photo.raster, desc, call.input) });
           continue;
         }
         if (call.name === 'finish') {
@@ -924,6 +937,48 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   round = maxRounds;
   // Out of rounds: edits made in the last one have not been looked at.
   return yield* conclude(last ?? judgedOf(scoreVerdicts(checklist, []), { objective: null, fidelity: null, measure: '' }, null), changed);
+}
+
+const SampleInput = z.object({
+  regions: z
+    .array(
+      z.object({
+        surface: z.string().max(60).optional(),
+        box: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+        kind: z.enum(['wall', 'floor', 'ceiling', 'any']).optional(),
+        hint: z.string().max(60).optional(),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+/** The answer of the `sample_photo` tool: for each region the pixels' colours and the nearest finishes. */
+function samplePhotoText(raster: Raster | null, d: RoomDescription, input: unknown): string {
+  if (!raster) return 'The photo has no pixels here (the host could not decode it), so no colours can be sampled.';
+  const p = SampleInput.safeParse(input);
+  if (!p.success) return 'sample_photo needs {"regions":[{"surface":"wall-north"} or {"box":[x0,y0,x1,y1]}, …]}.';
+  const known = new Map(surfaceRegions(d).map((r) => [r.id, r] as const));
+  const lines: string[] = [];
+  for (const r of p.data.regions) {
+    const named = r.surface ? known.get(r.surface) : undefined;
+    const piece = r.surface ? (d.items.find((i) => i.id === r.surface)?.box ?? d.openings.find((o) => o.id === r.surface)?.box) : undefined;
+    const box = r.box ?? named?.box ?? piece;
+    const label = r.surface ?? `box ${JSON.stringify(r.box)}`;
+    if (!box) {
+      lines.push(`- ${label}: no region (the description gives no box for it; send an explicit box).`);
+      continue;
+    }
+    const c = sampleRegion(raster, box);
+    if (!c) {
+      lines.push(`- ${label}: the region is empty.`);
+      continue;
+    }
+    const surface = r.kind ?? named?.surface ?? (r.surface?.startsWith('wall') ? 'wall' : r.surface === 'floor' ? 'floor' : r.surface === 'ceiling' ? 'ceiling' : 'any');
+    const fins = nearestFinishes(c.lit, { surface, hint: `${r.hint ?? ''} ${named?.hint ?? ''}`, limit: 3 });
+    lines.push(`- ${label}: lit ${c.lit}, mean ${c.mean}, shadow ${c.shadow}${named?.described ? `; described ${named.described}` : ''}; nearest finishes: ${fins.map((f) => (f.tint ? `${f.finish} tinted ${f.tint}` : f.finish)).join(' | ')}`);
+  }
+  return lines.join('\n');
 }
 
 function parseVerdicts(input: unknown): ItemVerdict[] {

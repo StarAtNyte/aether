@@ -139,7 +139,11 @@ describe('derivation', () => {
     const rank = { rug: 0, floor: 1, surface: 2, wall: 3, curtain: 4, ceiling: 5, trim: 6 } as const;
     expect([...phases].sort((a, c) => rank[a] - rank[c])).toEqual(phases);
     expect(b.steps[0]?.id).toBe('bed');
-    expect(b.steps.filter((s) => s.id.startsWith('cornice')).length).toBe(4);
+    // The crown moulding is the room's own (one mitred ring in the ceiling), not four pieces.
+    expect(b.steps.filter((s) => s.id.startsWith('cornice')).length).toBe(0);
+    const ch = description().value.ceiling.cornice?.height;
+    expect(ch).toBeGreaterThan(0);
+    expect(b.plan.levels[0]?.rooms[0]?.cornice?.height).toBe(ch);
     expect(b.steps.find((s) => s.id === 'picture-left')?.aboveOf).toEqual({ target: 'bed', gap: 0.45 });
   });
 
@@ -228,8 +232,10 @@ describe('the hotel room end to end through the design tools', () => {
     const lamp = scene.items.find((i) => i.id.endsWith('bedside-lamp'));
     const stand = scene.items.find((i) => i.id.endsWith('-nightstand'));
     expect(lamp?.y0).toBeCloseTo(stand?.y1 ?? -1, 2);
-    // Cornices on every wall.
-    expect(scene.items.filter((i) => i.kind === 'cornice').length).toBe(4);
+    // A mitred cornice ring runs round every wall, built into the ceiling.
+    const ceilParams = (run.world.entities[`${scene.rooms[0]?.id}-ceil`]?.shape as { params?: Record<string, unknown> } | undefined)?.params;
+    expect(ceilParams?.['cornice']).toMatchObject({ height: expect.any(Number) });
+    expect(ceilParams?.['faces']).toHaveLength(4);
     // The checker reports no error.
     expect(reviewFindings(run.world, PHOTO_BUILDING_ID).filter((f) => f.severity === 'error')).toEqual([]);
   });

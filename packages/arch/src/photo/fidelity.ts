@@ -22,6 +22,10 @@
  *                1 − min(1, relative error / 0.6)
  *   materials    per described colour (each visible wall, floor, ceiling, each colour param of a piece):
  *                1 − min(1, ΔE00 / 20)
+ *   shell        per described shell feature the room-shell vocabulary builds (ceiling style, cornice, picture rail, skirting,
+ *                panelling per wall, niches, window and door styles with their glazing bars, wall coverings): 1 when the built
+ *                entity carries it (style and size agreeing), 0.5 to 0.8 when it is there but differs, 0 when missing; null
+ *                when the description names none
  *   clearance    1 − Σ penalties of the geometric checker findings (overlap, through a wall, blocked window or door,
  *                floating, outside, taller than the room): 0.12 per error, 0.04 per warning, floored at 0
  *   framing      1 − mean box error of the described boxes against the built pieces seen through the fitted camera
@@ -39,7 +43,7 @@ import type { Scene, SceneItem, SceneRoom } from '../scene/types';
 import type { FramingReport } from './calibrate';
 import { hexDeltaE } from './colour';
 import type { PhotoItem, PhotoOpening, RoomDescription } from './description';
-import { PHOTO_BUILDING_ID, PHOTO_ROOM_ID, PHOTO_WALL_INSET, deriveBuild } from './derive';
+import { PHOTO_BUILDING_ID, PHOTO_ROOM_ID, PHOTO_WALL_INSET, deriveBuild, wallFinishOf } from './derive';
 
 /** The measures. */
 export interface FidelityMetrics {
@@ -48,6 +52,7 @@ export interface FidelityMetrics {
   placement: number | null;
   sizes: number | null;
   materials: number | null;
+  shell: number | null;
   clearance: number | null;
   framing: number | null;
   similarity: number | null;
@@ -57,15 +62,16 @@ export type FidelityMetric = keyof FidelityMetrics;
 
 /** Weights of the measures in the sub-score (they sum to 1; missing measures are left out and the rest renormalised). */
 export const FIDELITY_WEIGHTS: Readonly<Record<FidelityMetric, number>> = Object.freeze({
-  framing: 0.25,
-  openings: 0.15,
-  inventory: 0.15,
+  framing: 0.22,
+  openings: 0.14,
+  inventory: 0.14,
   placement: 0.1,
   similarity: 0.1,
   regionColour: 0.1,
-  sizes: 0.05,
-  materials: 0.05,
-  clearance: 0.05,
+  shell: 0.08,
+  sizes: 0.04,
+  materials: 0.04,
+  clearance: 0.04,
 });
 
 /** Measures that describe the structure of the room: a round may not lower any of these by more than a sliver. */
@@ -367,6 +373,12 @@ function colourOf(spec: unknown): string | null {
 
 /** The colour of the face of the wall entity that looks into the room along a scene wall. */
 function wallFaceColour(world: WorldDoc, room: SceneRoom, compass: Compass): string | null {
+  const f = wallFace(world, room, compass);
+  return f ? colourOf(f.p[`finish${f.side}`]) : null;
+}
+
+/** The params of the wall entity that looks into the room along a scene wall, and which of its faces (`A` or `B`) is the room's. */
+function wallFace(world: WorldDoc, room: SceneRoom, compass: Compass): { p: Record<string, Json>; side: 'A' | 'B' } | null {
   const w = room.walls.find((x) => x.compass === compass);
   if (!w) return null;
   const m: P2 = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2];
@@ -381,7 +393,7 @@ function wallFaceColour(world: WorldDoc, room: SceneRoom, compass: Compass): str
     const off = -(m[0] - a[0]) * dir[1] + (m[1] - a[1]) * dir[0];
     if (t < -0.02 || t > len + 0.02 || Math.abs(off) > 0.05) continue;
     const side = -(inside[0] - a[0]) * dir[1] + (inside[1] - a[1]) * dir[0];
-    return colourOf(side < 0 ? p['finishA'] : p['finishB']);
+    return { p, side: side < 0 ? 'A' : 'B' };
   }
   return null;
 }
@@ -417,6 +429,113 @@ function measureMaterials(world: WorldDoc, d: RoomDescription, room: SceneRoom, 
       const g = got[k];
       push(m.item.id, `${m.item.id} ${k}`, v, typeof g === 'string' ? g : null);
     }
+  }
+  return mean(scores);
+}
+
+// ---------------------------------------------------------------------------
+// Shell vocabulary
+// ---------------------------------------------------------------------------
+
+const asRecord = (v: unknown): Record<string, Json> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, Json>) : {});
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+function paramsOf(world: WorldDoc, id: EntityId | undefined): Record<string, Json> {
+  const e = id ? world.entities[id] : undefined;
+  return e && e.shape.kind === 'procedural' ? (e.shape.params as Record<string, Json>) : {};
+}
+
+function measureShell(world: WorldDoc, d: RoomDescription, room: SceneRoom, issues: FidelityIssue[]): number | null {
+  const scores: number[] = [];
+  const add = (id: string, s: number, text: string): void => {
+    scores.push(s);
+    if (s < 0.9) issues.push({ metric: 'shell', id, severity: 1 - s, text });
+  };
+  const sides = ['north', 'east', 'south', 'west'] as const;
+  const faces = new Map(sides.map((c) => [c, wallFace(world, room, c)] as const));
+  const ceil = paramsOf(world, `${room.id}-ceil`);
+  const c = d.ceiling;
+  const wantStyle = c.vault ? 'vaulted' : c.style && c.style !== 'flat' ? c.style : null;
+  if (wantStyle) {
+    const got = ceil['vault'] && !ceil['style'] ? 'vaulted' : typeof ceil['style'] === 'string' ? ceil['style'] : ceil['vault'] ? 'vaulted' : 'flat';
+    add('ceiling-style', got === wantStyle ? 1 : 0, `the ceiling is ${got}, the photo shows a ${wantStyle} ceiling`);
+  }
+  if (c.cornice && !c.vault) {
+    const got = asRecord(ceil['cornice']);
+    if (Object.keys(got).length === 0) add('cornice', 0, 'there is no cornice, the photo shows crown moulding along the walls');
+    else {
+      const h = num(got['height']);
+      const hOk = h === null ? 1 : Math.abs(h - c.cornice.height) / Math.max(0.04, c.cornice.height) < 0.5 ? 1 : 0.7;
+      add('cornice', hOk * (c.cornice.profile && got['profile'] !== c.cornice.profile ? 0.85 : 1), `the cornice is ${h === null ? '?' : r2(h)} m deep${typeof got['profile'] === 'string' ? ` (${got['profile']})` : ''}, the photo shows ${r2(c.cornice.height)} m${c.cornice.profile ? ` (${c.cornice.profile})` : ''}`);
+    }
+  }
+  if (c.pictureRail) {
+    const has = sides.some((k) => {
+      const f = faces.get(k);
+      return f ? Boolean(f.p[`rail${f.side}`]) : false;
+    });
+    add('picture-rail', has ? 1 : 0, 'there is no picture rail on the walls');
+  }
+  if (d.skirting) {
+    const hs = sides.flatMap((k) => {
+      const f = faces.get(k);
+      const st = f ? asRecord(f.p['skirtingStyle']) : {};
+      const h = num(st['height']);
+      return h === null ? [] : [[h, st['profile']] as const];
+    });
+    const first = hs[0];
+    if (!first) add('skirting', 0, 'the skirting boards are the plain default, the photo shows a distinct skirting');
+    else add('skirting', (Math.abs(first[0] - d.skirting.height) / Math.max(0.03, d.skirting.height) < 0.4 ? 1 : 0.6) * (first[1] === d.skirting.profile ? 1 : 0.85), `skirting is ${r2(first[0])} m (${String(first[1])}), the photo shows ${r2(d.skirting.height)} m (${d.skirting.profile})`);
+  }
+  for (const k of sides) {
+    const want = d.walls[k]?.panelling;
+    if (want && d.walls[k]?.visible !== false) {
+      const f = faces.get(k);
+      const got = f ? asRecord(f.p[`dado${f.side}`]) : {};
+      if (Object.keys(got).length === 0) add(`panelling-${k}`, 0, `the ${k} wall has no panelling, the photo shows ${want.style} panelling`);
+      else add(`panelling-${k}`, (got['style'] === want.style ? 1 : 0.7) * (Math.abs((num(got['height']) ?? want.height) - want.height) < 0.35 ? 1 : 0.7), `the ${k} wall panelling is ${String(got['style'])} ${r2(num(got['height']) ?? 0)} m, the photo shows ${want.style} ${r2(want.height)} m`);
+    }
+    const wf = d.walls[k];
+    if (wf && wf.visible !== false && wallFinishOf(wf) !== 'paint') {
+      const f = faces.get(k);
+      const got = f ? asRecord(f.p[`finish${f.side}`]) : {};
+      const want = wallFinishOf(wf);
+      const gotF = typeof got['finish'] === 'string' ? got['finish'] : 'paint';
+      add(`wall-${k}-finish`, gotF === want ? 1 : gotF.split('-')[0] === want.split('-')[0] ? 0.7 : 0, `the ${k} wall is ${gotF}, the photo shows ${want}`);
+    }
+  }
+  for (const n of d.niches) {
+    if (!n.visible) continue;
+    const f = faces.get(n.wall);
+    const list = f && Array.isArray(f.p[`niches${f.side}`]) ? (f.p[`niches${f.side}`] as Json[]).map(asRecord) : [];
+    const near = list.some((g) => Math.abs((num(g['offset']) ?? -9) - (n.along + PHOTO_WALL_INSET)) < Math.max(0.5, n.width / 2));
+    add(`niche-${n.id}`, near ? 1 : 0, `no niche on the ${n.wall} wall near ${r2(n.along)} m, the photo shows one`);
+  }
+  const shaped = (o: PhotoOpening, built: Record<string, Json>): void => {
+    if (o.style) {
+      const gs = typeof built['style'] === 'string' ? built['style'] : '';
+      const want = o.style === 'double' || o.style === 'arched' ? (o.style === 'double' ? 'panel' : 'panel') : o.style;
+      add(`opening-${o.id}-style`, gs === want ? 1 : 0, `${o.kind} ${o.id} is ${gs || 'plain'}, the photo shows ${o.style}`);
+    }
+    if (o.muntins && o.kind === 'window') {
+      const m = asRecord(built['muntins']);
+      const cols = num(m['cols']);
+      const rows = num(m['rows']);
+      const ok = cols === null || rows === null ? 0 : Math.abs(cols - o.muntins.cols) <= 1 && Math.abs(rows - o.muntins.rows) <= 1 ? 1 : 0.5;
+      add(`opening-${o.id}-bars`, ok, `window ${o.id} glazing bars ${cols ?? '?'} x ${rows ?? '?'}, the photo shows ${o.muntins.cols} x ${o.muntins.rows}`);
+    }
+  };
+  const used = new Set<EntityId>();
+  for (const o of d.openings) {
+    if (!o.style && !o.muntins) continue;
+    const cands = room.walls
+      .filter((w) => w.compass === o.wall)
+      .flatMap((w) => w.openings)
+      .filter((x) => !used.has(x.id) && (x.kind === 'window') === (o.kind === 'window'));
+    const best = cands.sort((a, b) => Math.abs(a.centre - PHOTO_WALL_INSET - o.along) - Math.abs(b.centre - PHOTO_WALL_INSET - o.along))[0];
+    if (!best) continue;
+    used.add(best.id);
+    shaped(o, paramsOf(world, o.kind === 'window' ? best.id : (best.leaf ?? best.id)));
   }
   return mean(scores);
 }
@@ -462,6 +581,7 @@ export function measureFidelity(world: WorldDoc, d: RoomDescription, render: Ren
     placement: measurePlacement(f, d, inv.matches, built, issues),
     sizes: measureSizes(d, room, inv.matches, issues),
     materials: measureMaterials(world, d, room, inv.matches, issues),
+    shell: measureShell(world, d, room, issues),
     clearance: measureClearance(world, issues),
     framing: render.framing ? clamp01(render.framing.score) : null,
     similarity: render.similarity !== undefined && render.similarity !== null && Number.isFinite(render.similarity) ? clamp01(render.similarity) : null,
@@ -474,7 +594,7 @@ export function measureFidelity(world: WorldDoc, d: RoomDescription, render: Ren
   return { metrics, score: fidelityScore(metrics), issues };
 }
 
-const LABELS: Readonly<Record<FidelityMetric, string>> = { openings: 'openings', inventory: 'inventory', placement: 'placement', sizes: 'sizes', materials: 'colours', clearance: 'clearance', framing: 'framing', similarity: 'similarity', regionColour: 'region colour' };
+const LABELS: Readonly<Record<FidelityMetric, string>> = { openings: 'openings', inventory: 'inventory', placement: 'placement', sizes: 'sizes', materials: 'colours', shell: 'shell', clearance: 'clearance', framing: 'framing', similarity: 'similarity', regionColour: 'region colour' };
 
 /** One line of the measures ("fidelity 81%: openings 100, inventory 95, …"). */
 export function fidelityLine(r: FidelityReport): string {

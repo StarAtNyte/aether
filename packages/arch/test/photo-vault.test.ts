@@ -71,13 +71,13 @@ describe('vaulted ceiling', () => {
     const lvl = b.plan.levels[0]!;
     expect(lvl.height).toBeCloseTo(2.5 + 1.4 + 0.22, 2);
     expect(lvl.rooms[0]).toMatchObject({ vault: { rise: 1.4, ridge: 'x', trusses: 3 } });
-    expect(b.steps.some((s) => s.id.startsWith('cornice'))).toBe(false);
+    expect(b.plan.levels[0]!.rooms[0]?.cornice).toBeUndefined();
     expect(buildChecklist(desc).some((c) => c.id === 'vault')).toBe(true);
     expect(buildChecklist(desc).some((c) => c.id === 'cornice')).toBe(false);
     // Without a vault the ceiling stays as it was.
     const flat = deriveBuild({ ...desc, ceiling: { cornice: { height: 0.1 } } });
     expect(flat.plan.levels[0]!.height).toBeCloseTo(2.72, 2);
-    expect(flat.steps.some((s) => s.id.startsWith('cornice'))).toBe(true);
+    expect(flat.plan.levels[0]!.rooms[0]?.cornice).toMatchObject({ height: 0.1 });
   });
 
   it('builds the room with the vault, curtains to the eaves (the described drop) and no checker error', async () => {

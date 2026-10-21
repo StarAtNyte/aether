@@ -1,12 +1,13 @@
 {
   "note": "measureFidelity of the hotel bedroom built from hotel.description.json",
-  "score": 0.9940436337182483,
+  "score": 0.9956020892304515,
   "metrics": {
     "openings": 0.9999999999999998,
     "inventory": 1,
     "placement": 0.9904921175366185,
     "sizes": 1,
-    "materials": 0.9934957358274962,
+    "materials": 1,
+    "shell": 1,
     "clearance": 0.96,
     "framing": null,
     "similarity": null,

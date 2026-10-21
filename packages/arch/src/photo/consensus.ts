@@ -30,7 +30,7 @@
  */
 import type { Compass } from '../plan';
 import { hexDeltaE } from './colour';
-import { parseRoomDescription, type ParsedDescription, type PhotoItem, type PhotoOpening, type RoomDescription } from './description';
+import { parseRoomDescription, type ParsedDescription, type PhotoItem, type PhotoNiche, type PhotoOpening, type RoomDescription } from './description';
 
 const WALLS: readonly Compass[] = ['north', 'east', 'south', 'west'];
 type Box = [number, number, number, number];
@@ -184,12 +184,20 @@ export function rotateDescription(d: RoomDescription, r: number): RoomDescriptio
   }
   const cam = pt([d.camera.x, d.camera.z]);
   const vault = d.ceiling.vault;
+  const flip = (r: 'x' | 'z' | undefined): 'x' | 'z' | undefined => (r === undefined || !odd ? r : r === 'x' ? 'z' : 'x');
+  const ceiling: RoomDescription['ceiling'] = {
+    ...d.ceiling,
+    ...(vault?.ridge && odd ? { vault: { ...vault, ridge: vault.ridge === 'x' ? 'z' : 'x' } } : {}),
+    ...(d.ceiling.ridge && odd ? { ridge: flip(d.ceiling.ridge) as 'x' | 'z' } : {}),
+    ...(d.ceiling.beams?.dir && odd ? { beams: { ...d.ceiling.beams, dir: flip(d.ceiling.beams.dir) as 'x' | 'z' } } : {}),
+  };
   return {
     ...d,
+    niches: d.niches.map((n) => ({ ...n, wall: rw(n.wall) })),
     footprint: odd ? { ...d.footprint, width: D, depth: W } : d.footprint,
     camera: { ...d.camera, x: cam[0], z: cam[1], heading: d.camera.heading + 90 * q },
     walls,
-    ceiling: vault?.ridge && odd ? { ...d.ceiling, vault: { ...vault, ridge: vault.ridge === 'x' ? 'z' : 'x' } } : d.ceiling,
+    ceiling,
     openings: d.openings.map((o) => ({ ...o, wall: rw(o.wall) })),
     items: d.items.map((it) => ({
       ...it,
@@ -601,6 +609,14 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
     const height = medianOpt(same.map((o) => o.height));
     const sill = medianOpt(same.map((o) => o.sill));
     const box = medianBox(same.map((o) => o.box as Box | undefined));
+    const style = modeOf(same.map((o) => o.style).filter((x): x is string => x !== undefined));
+    const mun = same.map((o) => o.muntins).filter((m): m is NonNullable<PhotoOpening['muntins']> => m !== undefined);
+    const muntins = mun.length * 2 > same.length ? { cols: Math.round(medianOf(mun.map((m) => m.cols)) as number), rows: Math.round(medianOf(mun.map((m) => m.rows)) as number) } : undefined;
+    const frame = medoidColour(same.map((o) => o.frame).filter(isHex));
+    const casingVotes = same.map((o) => o.casing).filter((x): x is boolean => x !== undefined);
+    const casing = casingVotes.length > 0 ? modeOf(casingVotes) : undefined;
+    const bays = same.map((o) => o.bay).filter((b): b is NonNullable<PhotoOpening['bay']> => b !== undefined);
+    const bay = bays.length * 2 > same.length ? { depth: r3(medianOf(bays.map((b) => b.depth)) as number), angle: r3(medianOf(bays.map((b) => b.angle)) as number) } : undefined;
     const v: PhotoOpening = {
       id: rep.id,
       kind,
@@ -612,6 +628,11 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
       visible: modeOf(same.map((o) => o.visible)) ?? true,
       ...(box ? { box } : {}),
       note: rep.note,
+      ...(style ? { style } : {}),
+      ...(muntins ? { muntins } : {}),
+      ...(frame ? { frame } : {}),
+      ...(casing !== undefined ? { casing } : {}),
+      ...(bay ? { bay } : {}),
       ...(glow ? { glow: true } : {}),
       ...(glow && daylight ? { daylight } : {}),
     };
@@ -762,7 +783,11 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
     if (fs.length * 2 < n) continue;
     const color = medoidColour(fs.map((f) => f.color).filter(isHex));
     const material = modeOf(fs.map((f) => f.material).filter((m): m is string => typeof m === 'string'));
-    walls[w] = { ...(color ? { color } : {}), ...(material ? { material } : {}), visible: modeOf(fs.map((f) => f.visible)) ?? true };
+    const finish = modeOf(fs.map((f) => f.finish).filter((m): m is string => typeof m === 'string'));
+    const pans = fs.map((f) => f.panelling).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    const panelling = pans.length * 2 > fs.length ? { style: modeOf(pans.map((x) => x.style)) ?? 'shaker', height: r3(medianOf(pans.map((x) => x.height)) as number), rail: modeOf(pans.map((x) => x.rail)) ?? true, ...(medoidColour(pans.map((x) => x.color).filter(isHex)) ? { color: medoidColour(pans.map((x) => x.color).filter(isHex)) as string } : {}) } : undefined;
+    const wbox = medianBox(fs.map((f) => f.box as Box | undefined));
+    walls[w] = { ...(color ? { color } : {}), ...(material ? { material } : {}), ...(finish ? { finish } : {}), ...(panelling ? { panelling } : {}), ...(wbox ? { box: wbox } : {}), visible: modeOf(fs.map((f) => f.visible)) ?? true };
   }
   const floorColour = medoidColour(c.reads.map((d) => d.floor.color).filter(isHex));
   const cornices = c.reads.map((d) => d.ceiling.cornice).filter((x): x is NonNullable<RoomDescription['ceiling']['cornice']> => x !== undefined);
@@ -772,8 +797,61 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
   if (cornices.length >= need) {
     const depth = medianOpt(cornices.map((x) => x.depth));
     const color = medoidColour(cornices.map((x) => x.color).filter(isHex));
-    ceiling.cornice = { height: r3(medianOf(cornices.map((x) => x.height)) as number), ...(depth !== undefined ? { depth } : {}), ...(color ? { color } : {}) };
+    const profile = modeOf(cornices.map((x) => x.profile).filter((x): x is NonNullable<typeof x> => x !== undefined));
+    ceiling.cornice = { height: r3(medianOf(cornices.map((x) => x.height)) as number), ...(depth !== undefined ? { depth } : {}), ...(profile ? { profile } : {}), ...(color ? { color } : {}) };
   }
+  // The rest of the ceiling vocabulary: a style, its numbers and the picture rail are kept when most reads gave them.
+  const styles = c.reads.map((d) => d.ceiling.style).filter((x): x is NonNullable<RoomDescription['ceiling']['style']> => x !== undefined);
+  const style = styles.length >= need ? modeOf(styles) : undefined;
+  if (style) {
+    ceiling.style = style;
+    const rise = medianOpt(c.reads.map((d) => d.ceiling.rise));
+    if (rise !== undefined) ceiling.rise = rise;
+    const rdg = modeOf(c.reads.map((d) => d.ceiling.ridge).filter((r): r is 'x' | 'z' => r !== undefined));
+    if (rdg) ceiling.ridge = rdg;
+    const tr = medianOpt(c.reads.map((d) => d.ceiling.trusses));
+    if (tr !== undefined) ceiling.trusses = Math.round(tr);
+    const bc = medoidColour(c.reads.map((d) => d.ceiling.beam).filter(isHex));
+    if (bc) ceiling.beam = bc;
+    const cf = c.reads.map((d) => d.ceiling.coffers).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    if (cf.length > 0) ceiling.coffers = { nx: Math.round(medianOf(cf.map((x) => x.nx)) as number), nz: Math.round(medianOf(cf.map((x) => x.nz)) as number), rib: r3(medianOf(cf.map((x) => x.rib)) as number), depth: r3(medianOf(cf.map((x) => x.depth)) as number) };
+    const bm = c.reads.map((d) => d.ceiling.beams).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    if (bm.length > 0) {
+      const dir = modeOf(bm.map((x) => x.dir).filter((r): r is 'x' | 'z' => r !== undefined));
+      ceiling.beams = { count: Math.round(medianOf(bm.map((x) => x.count)) as number), ...(dir ? { dir } : {}), width: r3(medianOf(bm.map((x) => x.width)) as number), depth: r3(medianOf(bm.map((x) => x.depth)) as number) };
+    }
+    const ty = c.reads.map((d) => d.ceiling.tray).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    if (ty.length > 0) ceiling.tray = { inset: r3(medianOf(ty.map((x) => x.inset)) as number), drop: r3(medianOf(ty.map((x) => x.drop)) as number) };
+  }
+  const rails = c.reads.map((d) => d.ceiling.pictureRail).filter((x): x is NonNullable<typeof x> => x !== undefined);
+  if (rails.length >= need) {
+    const rc = medoidColour(rails.map((x) => x.color).filter(isHex));
+    ceiling.pictureRail = { drop: r3(medianOf(rails.map((x) => x.drop)) as number), ...(rc ? { color: rc } : {}) };
+  }
+  const cbox = medianBox(c.reads.map((d) => d.ceiling.box as Box | undefined));
+  if (cbox) ceiling.box = cbox;
+  const skirts = c.reads.map((d) => d.skirting).filter((x): x is NonNullable<RoomDescription['skirting']> => x !== undefined);
+  const skirting: RoomDescription['skirting'] = skirts.length >= need ? { height: r3(medianOf(skirts.map((x) => x.height)) as number), profile: modeOf(skirts.map((x) => x.profile)) ?? 'bevel', ...(medoidColour(skirts.map((x) => x.color).filter(isHex)) ? { color: medoidColour(skirts.map((x) => x.color).filter(isHex)) as string } : {}) } : undefined;
+  // Niches: the same wall and about the same place along it are one niche; kept when most reads saw it.
+  const nicheClusters: Array<{ wall: Compass; frac: number; members: PhotoNiche[] }> = [];
+  for (const d of c.reads) {
+    for (const nn of d.niches) {
+      const frac = nn.along / wallLength(d, nn.wall);
+      const hit = nicheClusters.find((k) => k.wall === nn.wall && Math.abs(k.frac - frac) < 0.12 && !k.members.some((m) => d.niches.includes(m)));
+      if (hit) {
+        hit.members.push(nn);
+        hit.frac = (hit.frac * (hit.members.length - 1) + frac) / hit.members.length;
+      } else nicheClusters.push({ wall: nn.wall, frac, members: [nn] });
+    }
+  }
+  const niches: PhotoNiche[] = nicheClusters
+    .filter((k) => k.members.length >= need)
+    .slice(0, 6)
+    .map((k, i) => {
+      const rep = k.members[0] as PhotoNiche;
+      const shelves = Math.round(medianOf(k.members.map((m) => m.shelves)) as number);
+      return { ...rep, id: `niche-${i + 1}`, along: r3(k.frac * lengthOf(k.wall)), width: r3(medianOf(k.members.map((m) => m.width)) as number), height: r3(medianOf(k.members.map((m) => m.height)) as number), sill: r3(medianOf(k.members.map((m) => m.sill)) as number), depth: r3(medianOf(k.members.map((m) => m.depth)) as number), shelves, arched: modeOf(k.members.map((m) => m.arched)) ?? false };
+    });
   if (vaults.length >= need) {
     const ridge = modeOf(vaults.map((x) => x.ridge).filter((r): r is 'x' | 'z' => r !== undefined));
     const trusses = medianOpt(vaults.map((x) => x.trusses));
@@ -797,8 +875,10 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
     footprint: { width: r3(W), depth: r3(D), ceiling: r3(ceilingH) },
     camera,
     walls,
-    floor: { material: modeOf(c.reads.map((d) => d.floor.material)) ?? A.floor.material, ...(floorColour ? { color: floorColour } : {}), note: A.floor.note },
+    floor: { material: modeOf(c.reads.map((d) => d.floor.material)) ?? A.floor.material, ...(floorColour ? { color: floorColour } : {}), note: A.floor.note, ...(modeOf(c.reads.map((d) => d.floor.finish).filter((x): x is string => x !== undefined)) ? { finish: modeOf(c.reads.map((d) => d.floor.finish).filter((x): x is string => x !== undefined)) as string } : {}), ...(medianBox(c.reads.map((d) => d.floor.box as Box | undefined)) ? { box: medianBox(c.reads.map((d) => d.floor.box as Box | undefined)) as Box } : {}) },
     ceiling,
+    ...(skirting ? { skirting } : {}),
+    niches,
     openings: openingDraft.map((o) => o.v),
     items,
     light,

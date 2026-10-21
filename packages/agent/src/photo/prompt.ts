@@ -27,6 +27,37 @@ export const DESCRIBE_TOOL: ToolDef = {
   },
 };
 
+/** Name of the tool that reads the colour of a region of the photograph. */
+export const SAMPLE_TOOL_NAME = 'sample_photo';
+
+/** The tool that samples the photograph's pixels: the colour of a surface and the nearest finishes of the library. */
+export const SAMPLE_TOOL: ToolDef = {
+  name: SAMPLE_TOOL_NAME,
+  description:
+    'Read the colour of regions of the PHOTO from its pixels instead of guessing: the well-lit colour (what to paint with), the mean and the shadow colour of each region, and the nearest finishes of the material library with the tint to give each (tintable finishes take the colour exactly; natural ones keep their own). A region is a named surface of your description ("wall-north", "floor", "ceiling", a piece or opening id) or an explicit box [x0,y0,x1,y1] in 0..1 of the image. Up to 8 regions per call; apply the result with design_plan (walls, floor, finish colours) or edit_items resize (colour params).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      regions: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: 'object',
+          properties: {
+            surface: { type: 'string', description: 'wall-north | wall-east | wall-south | wall-west | floor | ceiling | a piece or opening id of the description' },
+            box: { type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4, description: 'explicit region [x0,y0,x1,y1] in 0..1, origin top-left' },
+            kind: { type: 'string', enum: ['wall', 'floor', 'ceiling', 'any'], description: 'what the surface is, to rank finishes (default: from the name)' },
+            hint: { type: 'string', description: 'what it looks like in words (striped wallpaper, dark walnut) to prefer that finish' },
+          },
+        },
+      },
+    },
+    required: ['regions'],
+    additionalProperties: false,
+  },
+};
+
 /** The tool a compare round reports its verdicts through. */
 export const VERDICT_TOOL: ToolDef = {
   name: VERDICT_TOOL_NAME,
@@ -62,10 +93,12 @@ Frame: metres, measured on the INSIDE faces of the walls. The room is the rectan
  "style": "modern|scandinavian|industrial|japandi|classic",
  "footprint": {"width": m west-east, "depth": m north-south, "ceiling": m},
  "camera": {"x": m, "z": m, "height": m (eye height), "heading": degrees clockwise from north (0 north, 90 east, -45 north-west), "pitch": degrees up (+) or down (-), "fov": HORIZONTAL field of view in degrees (phone 65-75, wide interior lens 85-100)},
- "walls": {"north": {"color": "#rrggbb", "material": "painted plaster|wallpaper|brick|panelling", "visible": true}, "east": {...}, "south": {...}, "west": {...}},
- "floor": {"material": "oak|carpet|tile|concrete|…", "color": "#rrggbb", "note": ""},
- "ceiling": {"color": "#rrggbb", "cornice": {"height": m, "depth": m, "color": "#rrggbb"}  (omit when there is no crown moulding), "vault": {"rise": m the ridge stands above the eaves, "ridge": "x" or "z" direction the ridge runs, "trusses": number of exposed timber trusses, "color": "#rrggbb"} (only for a vaulted or gable ceiling; then footprint.ceiling is the wall height at the eaves)},
- "openings": [{"id": "win-1", "kind": "window|door|opening", "wall": "west", "along": m (centre), "width": m, "height": m, "sill": m (window bottom above the floor), "visible": true, "glow": true when the daylight beyond the glass is bright and glowing in the photo, "daylight": "#rrggbb" colour of that light, "box": [x0,y0,x1,y1], "note": "frame colour, panes, view"}],
+ "walls": {"north": {"color": "#rrggbb", "material": "painted plaster|wallpaper|brick|panelling", "finish": nearest library finish (paint|plaster|wallpaper|wallpaper-stripe|wallpaper-floral|wallpaper-damask|panelling|brick|tile|stone|concrete|fabric|velvet|cladding), "panelling": {"style": "shaker|raised|batten|beadboard|flat", "height": m from the floor, "rail": true} (only when the wall shows panelling or a wainscot), "box": [x0,y0,x1,y1] a patch of that wall in the photo, "visible": true}, "east": {...}, "south": {...}, "west": {...}},
+ "floor": {"material": "oak|carpet|tile|concrete|…", "finish": library finish, "color": "#rrggbb", "box": [x0,y0,x1,y1] a patch of floor, "note": ""},
+ "ceiling": {"style": "flat|coved|vaulted|barrel|coffered|beamed|tray", "color": "#rrggbb", "box": [x0,y0,x1,y1] a patch of ceiling, "rise": m (vaulted/barrel: ridge above the eaves; coved: radius of the curve), "ridge": "x" or "z", "trusses": number, "beam": "#rrggbb", "coffers": {"nx": panels across, "nz": panels along, "rib": m, "depth": m}, "beams": {"count": n, "dir": "x" or "z", "width": m, "depth": m}, "tray": {"inset": m, "drop": m}, "cornice": {"height": m, "depth": m, "profile": "plain|cove|classic|stepped", "color": "#rrggbb"}  (omit when there is no crown moulding), "pictureRail": {"drop": m below the ceiling, "color": "#rrggbb"}, "vault": {"rise": m, "ridge": "x" or "z", "trusses": number, "color": "#rrggbb"} (a gable ceiling; footprint.ceiling is then the wall height at the eaves; for coffered, beamed and tray ceilings it is the lowest visible ceiling plane)},
+ "skirting": {"height": m, "profile": "square|bevel|ogee|stepped", "color": "#rrggbb"} (omit when none is visible),
+ "niches": [{"id": "alcove-1", "wall": "north", "along": m (centre), "width": m, "height": m, "sill": m, "depth": m, "shelves": n, "arched": false, "box": [..], "note": ""}] (recesses or alcoves in a wall, e.g. either side of a chimney breast),
+ "openings": [{"id": "win-1", "kind": "window|door|opening", "style": windows: "sash|casement|picture|grid|arched|bay|sliding|fixed", doors: "panel|flush|glazed|glass|double|french|arched|slab", "muntins": {"cols": panes across one sash, "rows": panes up one sash} (glazing bars), "frame": "#rrggbb" frame or leaf colour, "casing": true when there is an architrave round it, "bay": {"depth": m, "angle": 35}, "wall": "west", "along": m (centre), "width": m, "height": m, "sill": m (window bottom above the floor), "visible": true, "glow": true when the daylight beyond the glass is bright and glowing in the photo, "daylight": "#rrggbb" colour of that light, "box": [x0,y0,x1,y1], "note": "frame colour, panes, view"}],
  "items": [{"id": "bed", "kind": <a part kind below>, "label": "the piece in plain words", "wall": "north", "along": m (centre along that wall), "gap": m from the wall face to the back of the piece, "at": [x, z] (floor pieces away from walls), "faces": "north|east|south|west" or the id of a piece it faces, "on": id of the piece it stands on, "offset": [across, depth] from the host's centre, "opening": window id (curtains), "bottom": m above the floor (wall pieces), "above": id of the piece a wall piece hangs above, "aboveGap": m above that piece's top, "params": {the part's own parameters: sizes in metres, colours as #rrggbb, finishes}, "visible": true, "box": [x0,y0,x1,y1], "confidence": 0..1}],
  "light": {"timeOfDay": 0..24, "sky": "day|dawn|sunset|night|overcast", "from": "west" (the wall whose window the daylight comes through) or "none", "warmth": "cool|neutral|warm", "brightness": 0..1, "note": ""},
  "palette": ["#rrggbb", ...up to 6 dominant colours],
@@ -76,11 +109,12 @@ Frame: metres, measured on the INSIDE faces of the walls. The room is the rectan
 - Reconstruct THIS room. No generic or "typical" room: every wall, opening and piece you list must be what the photo shows, at the position it shows. Never invent furniture the photo does not show; a piece you can only infer (behind the camera, hidden) gets "visible": false and a low confidence.
 - Estimate sizes from reference objects: doors are 0.8-0.9 × 2.0-2.1 m, standard ceilings 2.4-2.8 m (taller in old buildings: check the window and door proportions), a double bed is 1.4-1.6 m wide and 1.9-2.1 m long, nightstands about 0.5 m, a sofa seat 0.45 m high, switches 1.1 m. Say your uncertainty in "assumptions" (the room size and the camera are always assumptions).
 - List EVERYTHING visible: every window and door, curtains (one curtain item per window; it makes both panels), crown moulding, each picture or mirror separately with its own position, every lamp (floor lamps, table lamps on their table, pendants), TV, rugs, plants, cushions on the bed (bed params), books and small objects only when large enough to matter.
-- Curtains: kind "curtain", "opening" is the id of the window, params width = gathered width of ONE panel (0.6-1.2 m), height = floor-length drop or window length, color. Pictures: kind "art", params width/height (frame outer size), frame finish, subject ("round" for a round photograph on a mat, "abstract", "blank"), matColor, ink; "wall" + "along" + "bottom" (or "above" + "aboveGap"). Lamps on tables: kind "table-lamp" with "on": the table's id.
+- Build the ROOM SHELL as the photo shows it, with the words of the vocabulary: the ceiling shape (a coved, coffered, beamed, barrel or tray ceiling is not a flat one), the crown moulding and its profile, a picture rail, skirting, wall panelling or wainscot, wallpaper (stripe, floral, damask) instead of paint, alcoves, a fireplace or chimney breast (kind "fireplace"), built-in shelves and wardrobes (kind "bookshelf" or "wardrobe" with params builtin true), and for every window and door its style (a tall window with a meeting rail and small panes is a "sash" with muntins; a door with raised panels is "panel"; two leaves are "double" or "french").
+- Curtains: kind "curtain", "opening" is the id of the window, params width = gathered width of ONE panel (0.6-1.2 m), height = floor-length drop or window length, color, style (pleated|pinch|eyelet|ripple|sheer), pelmet (none|box|valance|swag), rod (rod|track|none), tieback, closed (0 open .. 1 drawn). Blinds (roller, roman, venetian, shutter): kind "blind" with the same "opening", style and drawn (0..1 lowered). Pictures: kind "art", params width/height (frame outer size), frame finish, subject ("round" for a round photograph on a mat, "abstract", "blank"), matColor, ink; "wall" + "along" + "bottom" (or "above" + "aboveGap"). Lamps on tables: kind "table-lamp" with "on": the table's id.
 - Positions: put each piece where the photo puts it relative to the walls, openings and other pieces (the bed against which wall and where along it, the picture over the bed's left third, the lamp beside the headboard). Floor pieces against a wall use "wall"+"along"+"gap"; only free-standing pieces use "at".
 - Use the part options that make a piece look like the photo: bed headboardStyle (slab, panel, tufted for quilted/diamond, slats), pattern (floral, stripe, damask) for a printed duvet, canopy for a four-poster, accents for cushions; rug pattern (zigzag, stripes) with accent1-3 colours; nightstand style (cabinet, round, wire) with height and diameter for a side table; plant species palm for fronds (a single small frond: a small height); pictures with their real frame colour and finish. A glowing or sunlit window: say so in its note.
 - Heights come from the photo, checked against reference objects: window sill and head against the door, sockets 0.3 m and switches 1.1 m above the floor, pictures hung 0.1-0.5 m above the furniture beneath them, a TV set standing on its cabinet. The builder moves values that cannot be true (a socket at eye height, a picture in the ceiling, two pieces in each other) and says so, so state what you SEE rather than what is typical.
-- Colours are the colours the surfaces show in the photo's brighter, well-lit areas as #rrggbb (not the shadow tone). The palette must match the picture.
+- Colours are the colours the surfaces show in the photo's brighter, well-lit areas as #rrggbb (not the shadow tone). The palette must match the picture. Give a "box" for each wall, the floor and the ceiling (a patch that shows the surface's own colour, away from lamps, windows and furniture): the host samples the real pixels there and shows you the nearest library finish and tint when you compare, so choose the finish (wallpaper vs paint vs panelling, oak vs carpet) by what the surface looks like, and the colour by what you see.
 - If no door is visible, do not add one: the builder assumes one behind the camera and tells the user.
 - Use ONLY the part kinds listed below and their parameters (unknown parameters are ignored). A piece with no matching part: choose the closest part and say so in "label"/"assumptions".
 ## Parts (kind [mount] size, then parameters: name=default (range) or {options})
@@ -111,6 +145,7 @@ export function compareIntroText(opts: { summary: string; checklist: readonly Ch
     opts.hasObjective ? 'The host also measures the room deterministically against your description and the photo (openings, inventory, placement, sizes, colours, clearance, framing, pixel similarity); a round that makes those measures worse is rolled back.' : '',
     opts.measured ?? '',
     'Edits to the shell (room size, wall colour, floor, a window\'s size or place) are made by resending design_plan with the corrected plan (pieces you placed stay). Sizes, colours and finishes of pieces change with edit_items resize (params).',
+    'The shell has a vocabulary beyond size and colour (query_scene {q:"vocabulary"} lists it): ceiling style (coved, barrel, coffered, beamed, tray), cornice profile, picture rail, skirting, panelled dados, wall coverings (wallpaper, panelling, brick), niches, and window/door styles with glazing bars (sash, arched, bay, panel, french, double), all set on the room and its openings in design_plan. If the render misses one of these that the photo shows (a plain flat ceiling where the photo has coffers, a plain pane where it has a sash with bars, paint where it has wallpaper), add it. sample_photo reads the real colour of a region of the photo and the nearest finish and tint; query_scene {q:"finishes", near:"#rrggbb"} does the same for any colour.',
     opts.framing ? `${opts.framing}` : '',
     opts.plan ? `The plan the shell was built from (resend it with changes):\n${opts.plan}` : '',
   ]

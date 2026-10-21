@@ -39,7 +39,7 @@ function rng(seed: number): () => number {
   };
 }
 
-const metrics = (o: Partial<FidelityMetrics> = {}): FidelityMetrics => ({ openings: 1, inventory: 1, placement: 0.9, sizes: 0.9, materials: 0.9, clearance: 1, framing: 0.8, similarity: 0.3, regionColour: 0.6, ...o });
+const metrics = (o: Partial<FidelityMetrics> = {}): FidelityMetrics => ({ openings: 1, inventory: 1, placement: 0.9, sizes: 0.9, materials: 0.9, shell: null, clearance: 1, framing: 0.8, similarity: 0.3, regionColour: 0.6, ...o });
 
 describe('parsing a judge answer', () => {
   const list = items(3);
