@@ -22,6 +22,9 @@ export const BAKE_SLICE_MS = 6;
 const MIN_PROXY = 0.3;
 /** Most lamps a bake lights the rooms with. */
 const MAX_LAMPS = 32;
+/** Metres within which a lamp counts toward the eye's exposure, and the height difference that puts it on another storey. */
+const EYE_LAMP_REACH = 7;
+const EYE_LAMP_STOREY = 2.4;
 
 /** Arch roles whose real geometry the rays hit. */
 export const SHELL_ROLES: ReadonlySet<string> = new Set(['wall', 'room', 'ceiling', 'roof', 'stair', 'door', 'window', 'opening', 'column']);
@@ -222,6 +225,9 @@ export class LightVolumeController {
   private readonly onUpload: () => void;
   private nextId = 1;
   private disposed = false;
+  /** Lamps of the volume on screen (the eye's exposure counts their direct light). */
+  private lamps: VolumeLamp[] = [];
+  private pendingLamps: VolumeLamp[] = [];
   /** The last finished bake: probes, triangles, work time on the main thread (ms) and wall time (ms). */
   lastBake: { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number; worker: boolean } | null = null;
 
@@ -355,6 +361,7 @@ export class LightVolumeController {
     this.data = data;
     this.bakingGrid = null;
     this.shellBounds.copy(this.pendingBounds);
+    this.lamps = this.pendingLamps;
     this.light.setBake(grid, data);
     this.onUpload();
   }
@@ -376,6 +383,7 @@ export class LightVolumeController {
     this.probes = grid.nx * grid.ny * grid.nz;
     const lamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
     const ground = { y: g.groundY, albedo: g.lighting.groundAlbedo };
+    this.pendingLamps = lamps.map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
     this.bakeWork = performance.now() - t0;
     const w = inline ? null : this.ensureWorker();
     if (w) {
@@ -448,10 +456,10 @@ export class LightVolumeController {
   }
 
   /**
-   * What the volume gives an eye at `x, y, z`: mean sky visibility over six directions and the mean bounce
-   * luminance (null without a bake or outside the volume's box).
+   * What the volume gives an eye at `x, y, z`: mean sky visibility over six directions, the mean bounce luminance
+   * and the mean direct light of nearby lamps on the same storey (null without a bake or outside the volume's box).
    */
-  eyeSample(x: number, y: number, z: number): { vis: number; bounce: number } | null {
+  eyeSample(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number } | null {
     const g = this.grid;
     const d = this.data;
     if (!g || !d || !Number.isFinite(x + y + z)) return null;
@@ -466,7 +474,23 @@ export class LightVolumeController {
       vis += s.vis;
       bounce += 0.2126 * s.bounce[0] + 0.7152 * s.bounce[1] + 0.0722 * s.bounce[2];
     }
-    return { vis: vis / 6, bounce: bounce / 6 };
+    // Lamps within a few metres on this storey (no occlusion test: a coarse but cheap stand-in for the room's lamps).
+    let lamps = 0;
+    for (const l of this.lamps) {
+      const dx = l.position[0] - x;
+      const dy = l.position[1] - y;
+      const dz = l.position[2] - z;
+      if (Math.abs(dy) > EYE_LAMP_STOREY) continue;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      const d = Math.sqrt(d2);
+      if (d > Math.min(EYE_LAMP_REACH, l.range) || d < 1e-3) continue;
+      const f = 1 - (d / l.range) ** 4;
+      // Mean over the six axis directions of the cosine term: (|lx| + |ly| + |lz|) / 6 of a unit light vector.
+      const cos = (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) / (6 * d);
+      const lum = 0.2126 * l.color[0] + 0.7152 * l.color[1] + 0.0722 * l.color[2];
+      lamps += (lum * f * f * cos) / Math.max(0.25, d2);
+    }
+    return { vis: vis / 6, bounce: bounce / 6, lamps };
   }
 
   dispose(): void {

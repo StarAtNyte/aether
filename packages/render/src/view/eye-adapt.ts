@@ -58,18 +58,21 @@ export function adaptedLook(f: number): { exposure: number; envScale: number } {
 export const VOLUME_ADAPT_SHARE = 0.68;
 /** Largest exposure boost (stops) the light volume asks for. */
 export const VOLUME_MAX_EV = 2.6;
+/** Largest exposure cut (stops): a room full of lamps at dusk is brighter than the dim garden. */
+export const VOLUME_MIN_EV = -2;
 
 /**
- * Exposure boost (stops) for an eye inside a baked light volume: `inside` is what the volume gives the eye
- * (mean sky visibility, mean bounce luminance), `outdoor` the luminance of the sky ambient and the sun on an
- * open site. The darker the spot relative to outdoors, the more the eye opens, by {@link VOLUME_ADAPT_SHARE}
- * of the difference, at most {@link VOLUME_MAX_EV}. Non-finite input asks for no change.
+ * Exposure change (stops) for an eye inside a baked light volume: `inside` is what the volume gives the eye
+ * (mean sky visibility, mean bounce luminance, the lamps' direct light), `outdoor` the luminance of the sky ambient
+ * and the sun on an open site. The darker the spot relative to outdoors, the more the eye opens, by
+ * {@link VOLUME_ADAPT_SHARE} of the difference, at most {@link VOLUME_MAX_EV}; a spot brighter than outdoors (lamps
+ * at dusk) closes it, at most {@link VOLUME_MIN_EV}. Non-finite input asks for no change.
  */
-export function volumeExposure(inside: { vis: number; bounce: number }, outdoor: { ambient: number; sun: number }): number {
+export function volumeExposure(inside: { vis: number; bounce: number; lamps?: number }, outdoor: { ambient: number; sun: number }): number {
   const amb = Math.max(0, outdoor.ambient);
   const out = amb + 0.4 * Math.max(0, outdoor.sun);
-  const lit = Math.max(0, inside.vis) * amb + Math.max(0, inside.bounce);
+  const lit = Math.max(0, inside.vis) * amb + Math.max(0, inside.bounce) + Math.max(0, inside.lamps ?? 0);
   if (!Number.isFinite(out) || !Number.isFinite(lit) || out <= 1e-6) return 0;
   const ratio = Math.max(1e-4, lit / out);
-  return Math.max(0, Math.min(VOLUME_MAX_EV, -Math.log2(ratio) * VOLUME_ADAPT_SHARE));
+  return Math.max(VOLUME_MIN_EV, Math.min(VOLUME_MAX_EV, -Math.log2(ratio) * VOLUME_ADAPT_SHARE));
 }

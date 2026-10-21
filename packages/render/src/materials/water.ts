@@ -44,6 +44,8 @@ export interface WaterShader {
 /** `userData` key of a material's {@link WaterShader}. */
 export const WATER_SHADER_KEY = 'aetherWaterShader';
 
+/** Strength of the analytic sky mirror of the simple tier (added to the faint image-light reflection). */
+const SIMPLE_SKY_MIRROR = 1;
 /** Absorption of the three colour channels relative to green (red goes first, blue lasts). */
 const ABSORB = Object.freeze([3.1, 1, 0.62]) as readonly [number, number, number];
 /** Strength of the sun's caustic net on the bed (relative to the bed's brightness). */
@@ -179,7 +181,7 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
 
   if (tier === 'simple') {
     // No scene reads: the body is mostly the deep colour with a little of the shallow, the sky does the rest.
-    transmitted = mix(bodyShallow, bodyDeep, 0.7);
+    transmitted = mix(bodyShallow, bodyDeep, 0.82);
     scatter = float(0.9);
     edge = float(0.8);
     const crestH = height.mul(1 / Math.max(0.005, cls.wavelength * 0.018)).mul(0.5).add(0.5);
@@ -259,6 +261,15 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
     const weight = (reflectionOn as unknown as Nd).mul(onPlane);
     // Gentle: the mirror is half size and unfiltered, so it adds what the sky reflection lacks (banks, trees) without taking over.
     reflectionTerm = T.min(refl.rgb, 2.5).sub(sky).mul(fresnel).mul(weight).mul(0.5);
+  }
+
+  if (tier === 'simple') {
+    // Software rasterisers and low-memory mode: the image light there is a tiny, flat sky map, so a calm surface came out
+    // grey. An analytic sky gradient (the same horizon and zenith colours the dome uses) is mirrored by the Fresnel term,
+    // with a lighter streak of horizon toward grazing views: water reads as water at the cost of a few ALU.
+    const up = saturate(worldNormal.y.mul(0.9).add(viewDir.y.negate().mul(0.1)));
+    const sky = mix(vec3(skyHorizon as unknown as Nd), vec3(skyZenith as unknown as Nd), pow(up, 0.6));
+    reflectionTerm = sky.mul(fresnel).mul(SIMPLE_SKY_MIRROR);
   }
 
   // ---- Output -------------------------------------------------------------------------------------------------------

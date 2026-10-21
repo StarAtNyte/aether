@@ -313,6 +313,8 @@ const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _dir = new Vector3();
+/** Share of a spot light's intensity the light volume and the eye count (it lights a cone, not every direction). */
+const SPOT_SHARE = 0.5;
 /** White-balance shift toward warm of a fully adapted interior view (grade temperature units). */
 const INTERIOR_WARMTH = 0.18;
 
@@ -892,7 +894,7 @@ export class WorldRenderer {
   }
 
   /** Diagnostics: what the light volume gives an eye at a point, the exposure it asks for and the outdoor reference. */
-  lightVolumeAt(x: number, y: number, z: number): { vis: number; bounce: number; ev: number; outdoor: { ambient: number; sun: number }; eyeEv: number; shadowHalf: number; inside: boolean } | null {
+  lightVolumeAt(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number; ev: number; outdoor: { ambient: number; sun: number }; eyeEv: number; shadowHalf: number; inside: boolean } | null {
     const s = this.lightVolume.eyeSample(x, y, z);
     return s ? { ...s, ev: volumeExposure(s, this.volumeOutdoor), outdoor: { ...this.volumeOutdoor }, eyeEv: this.eyeEv, shadowHalf: this.env.sun.shadow.camera.right, inside: this.shadowInside } : null;
   }
@@ -938,10 +940,13 @@ export class WorldRenderer {
         const e = node.entity;
         if (e.template || e.visible === false) return;
         const l = node.light?.light;
-        if (l && l.visible && l.intensity > 0 && (l as Light & { isPointLight?: boolean }).isPointLight) {
+        const kind = l as (Light & { isPointLight?: boolean; isSpotLight?: boolean; distance?: number }) | undefined;
+        if (l && kind && l.visible && l.intensity > 0 && (kind.isPointLight || kind.isSpotLight)) {
           l.getWorldPosition(_pos);
-          const range = (l as Light & { distance?: number }).distance;
-          lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * l.intensity, l.color.g * l.intensity, l.color.b * l.intensity], range: range && range > 0 ? range : 20 });
+          // A spot (downlight) lights about half of what the same point light would, all of it below.
+          const k = kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity;
+          const range = kind.distance;
+          lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20 });
         }
         const a = e.arch;
         if (!a) return;
@@ -2553,7 +2558,7 @@ export class WorldRenderer {
     this.renderer.toneMappingExposure = this.env.exposure * eyeExposure;
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
-      const warm = volume && !g ? INTERIOR_WARMTH * Math.min(1, this.eyeEv / 1.5) : 0;
+      const warm = volume && !g ? INTERIOR_WARMTH * Math.max(0, Math.min(1, this.eyeEv / 1.5)) : 0;
       const grade = gradeWithPreset(gradeFor(sky), warm > 0 ? { ...preset, temperature: preset.temperature + warm } : preset);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);

@@ -3,7 +3,7 @@ import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { collectTraceInput, LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart, type VolumeWorkerLike } from '../src/view/light-volume-controller';
 import { LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
 import { parseVolumeReply, parseVolumeRequest } from '../src/environment/light-volume-protocol';
-import { volumeExposure, VOLUME_MAX_EV } from '../src/view/eye-adapt';
+import { volumeExposure, VOLUME_MAX_EV, VOLUME_MIN_EV } from '../src/view/eye-adapt';
 
 const LIGHTING: VolumeLighting = {
   sun: { direction: [0.5, 0.7, 0.3].map((v, _i, a) => v / Math.hypot(...a)) as unknown as [number, number, number], irradiance: [2.5, 2.4, 2.2] },
@@ -97,6 +97,7 @@ describe('light volume controller: baking', () => {
     // Deep in the room the eye sees little sky; outside the volume there is no answer.
     const inside = c.eyeSample(-2, 1.5, 0)!;
     expect(inside.vis).toBeLessThan(0.2);
+    expect(inside.lamps).toBe(0);
     expect(c.eyeSample(100, 1.5, 0)).toBeNull();
     expect(c.eyeSample(Number.NaN, 0, 0)).toBeNull();
     c.setEnabled(false);
@@ -191,5 +192,12 @@ describe('volume exposure', () => {
     expect(volumeExposure({ vis: 0, bounce: 0 }, outdoor)).toBe(VOLUME_MAX_EV);
     expect(volumeExposure({ vis: Number.NaN, bounce: 0 }, outdoor)).toBe(0);
     expect(volumeExposure({ vis: 0.1, bounce: 0.1 }, { ambient: 0, sun: 0 })).toBe(0);
+  });
+  it('closes the eye in a lamp-lit room brighter than the dusk outside, within bounds', () => {
+    const dusk = { ambient: 0.5, sun: 0.8 };
+    const lit = volumeExposure({ vis: 0, bounce: 0.3, lamps: 6 }, dusk);
+    expect(lit).toBeLessThan(-1);
+    expect(lit).toBeGreaterThanOrEqual(VOLUME_MIN_EV);
+    expect(volumeExposure({ vis: 0, bounce: 0, lamps: 1e6 }, dusk)).toBe(VOLUME_MIN_EV);
   });
 });

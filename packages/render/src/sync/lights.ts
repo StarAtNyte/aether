@@ -150,7 +150,7 @@ export const DAYLIGHT_LAMP_FACTOR = 0.05;
 /** Below this daylight factor architectural lamps are switched off entirely (no per-pixel cost). */
 export const LAMP_CUTOFF = 0.2;
 /** Sun elevations (degrees) between which lamps fade from full (night) to the daylight factor. */
-export const DAYLIGHT_FADE: readonly [number, number] = Object.freeze([-4, 10]) as readonly [number, number];
+export const DAYLIGHT_FADE: readonly [number, number] = Object.freeze([2, 16]) as readonly [number, number];
 
 /**
  * Intensity factor of architectural lamps (`arch.role` "light") for a sun

@@ -12,7 +12,7 @@
  *   sky, a few percent at the back of a room). The renderer multiplies its sky ambient and image light
  *   by it, which is what makes a room dark away from its windows and keeps sky reflections out of a
  *   corridor.
- * - `B(n)`: the irradiance arriving after one to three bounces: sun patches on the floor, the sunlit
+ * - `B(n)`: the irradiance arriving after up to six bounces ({@link VOLUME_PASSES}): sun patches on the floor, the sunlit
  *   ground outside the window, sky light on the window reveals, lamps on the walls, all reflected by
  *   the surfaces' own colours. Warm floors make warm ceilings; a white room is brighter than a dark one.
  *
