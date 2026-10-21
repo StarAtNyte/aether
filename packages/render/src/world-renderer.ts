@@ -2574,6 +2574,7 @@ export class WorldRenderer {
       this.boundsDirty = false;
       this.framing = contentFraming(collectFramingItems(this.sync));
       this.syncSunShadows();
+      this.env.sunCascades?.invalidateCasters();
       const f = this.framing;
       if (f) {
         this.env.setContentRadius(f.radius);

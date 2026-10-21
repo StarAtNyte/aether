@@ -2351,7 +2351,10 @@ each next one 3.5 times larger, the outermost map is the content fit (up to 320 
 detail; inside a building it is fitted to the shell as before). Boxes sit a little ahead of the focus, are snapped to
 whole texels in light space and change size only in steps of √2 with hysteresis, so shadow edges stay still while the
 camera orbits or walks. Each fragment takes the finest box that holds it and blends into the next one over the outer
-18 % of the box. Depth and normal biases are in world terms per map (about half a texel plus a centimetre); a fixed
+18 % of the box. Casters that cull themselves (`frustumCulled` off: scatter chunks, virtual geometry) are drawn by three
+in every shadow pass whatever its box; a near box skips those whose light-space footprint misses it (exact for a
+directional light, with 1.5 m for wind), which cut a forest's near-map cost on the integrated GPU from about 24 ms to
+about 4 ms. Depth and normal biases are in world terms per map (about half a texel plus a centimetre); a fixed
 fraction of the outer map's 1 km depth range had lifted shadows half a metre off the ground.
 
 **Contact hardening.** Every tier above low filters the sun's maps with `SoftShadowFilter`, a PCSS-style filter in TSL

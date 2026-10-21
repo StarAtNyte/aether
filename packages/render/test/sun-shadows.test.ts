@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CASCADES, CASCADE_MIN_RADIUS, focusHalf, pcfRadius, planSunShadows, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
+import { CASCADES, CASCADE_MIN_RADIUS, focusHalf, footprintMisses, pcfRadius, planSunShadows, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
 import { BLOCKER_LEVELS, MAX_BLOCKER_TAPS, MAX_FILTER_TAPS, meanBlockerDistance } from '../src/gpu/sun-shadow-nodes';
 import { effectsOf, needsPrePass } from '../src/gpu/finishing';
 
@@ -128,6 +128,21 @@ describe('focus cascades', () => {
     expect(out).toEqual([0, 2, -20]);
     // Far ground hits are clamped to the content's reach.
     expect(viewFocus([0, 5, 0], [0, -0.01 - 0.03, -1], null, 0, 0.5, 60, 20, out)).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('near cascade casters', () => {
+  it('skips a caster only when its light-space footprint misses the box (depth along the light does not matter)', () => {
+    // Box centred at (10, 0), half size 5.
+    expect(footprintMisses(10, 0, 5, 10, 0, 1, 0)).toBe(false);
+    expect(footprintMisses(10, 0, 5, 16.5, 0, 1, 0)).toBe(true);
+    // The sphere's radius and the wind margin reach into the box.
+    expect(footprintMisses(10, 0, 5, 16.5, 0, 1, 1)).toBe(false);
+    expect(footprintMisses(10, 0, 5, 10, -7, 2.5, 0)).toBe(false);
+    expect(footprintMisses(10, 0, 5, 10, -7, 1, 0)).toBe(true);
+    // Corners use the box (Chebyshev), never a smaller disc.
+    expect(footprintMisses(0, 0, 5, 5.5, 5.5, 1, 0)).toBe(false);
+    expect(footprintMisses(0, 0, 5, 5, 5, -3, -1)).toBe(false);
   });
 });
 

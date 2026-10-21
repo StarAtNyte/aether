@@ -11,11 +11,11 @@
  *   placement: focus boxes snapped to whole texels plus the content fit as the outermost map, chosen per fragment by
  *   containment with a blended band at each box's edge, instead of slices along the view depth.
  */
-import { Matrix4, Vector2, Vector3, type Camera, type DirectionalLight, type LightShadow, type Object3D, type OrthographicCamera, type PerspectiveCamera } from 'three';
+import { Matrix4, Sphere, Vector2, Vector3, type Camera, type DirectionalLight, type InstancedMesh, type LightShadow, type Mesh, type Object3D, type OrthographicCamera, type PerspectiveCamera } from 'three';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import * as TSL from 'three/tsl';
 import type { Node, NodeBuilder, Renderer } from 'three/webgpu';
-import { CASCADE_BLEND, focusHalf, pcfRadius, snapToTexel, viewFocus, type SunShadowPlan } from '../environment/sun-shadow-plan';
+import { CASCADE_BLEND, focusHalf, footprintMisses, pcfRadius, snapToTexel, viewFocus, type SunShadowPlan } from '../environment/sun-shadow-plan';
 
 /** A TSL node, typed loosely: TSL is dynamically typed and its generated types reject ordinary node arithmetic. */
 interface N {
@@ -215,6 +215,11 @@ const _p = new Vector3();
 const _q = new Vector3();
 const _up = new Vector3(0, 1, 0);
 const _fwd = new Vector3();
+const _sphere = new Sphere();
+/** Frames between re-collections of the self-culling casters. */
+const CASTER_REFRESH = 120;
+/** Metres added to a caster's bounding sphere for vertex animation (wind) before the box test. */
+const CASTER_MARGIN = 1.5;
 const _eye: [number, number, number] = [0, 0, 0];
 const _forward: [number, number, number] = [0, 0, 0];
 const _target: [number, number, number] = [0, 0, 0];
@@ -315,7 +320,76 @@ export class SunCascades extends CSMShadowNode {
     });
     const outer = lights[last];
     if (outer) outer.isDirectionalLight = true;
+    // Near cascades skip the self-culling casters (frustumCulled off: scatter chunks, virtual geometry) whose light-space
+    // footprint misses their box: three draws those in every shadow pass whatever the box, which tripled the shadow
+    // draw calls of a forest. A directional light projects along its axis, so the test is exact.
+    const nodes = (this as unknown as { _shadowNodes: Array<{ renderShadow(frame: unknown): void }> })._shadowNodes;
+    for (let i = 0; i < last; i++) {
+      const node = nodes[i];
+      if (!node) continue;
+      const render = node.renderShadow.bind(node);
+      node.renderShadow = (frame: unknown): void => {
+        this.hideOutside(i);
+        try {
+          render(frame);
+        } finally {
+          this.restoreHidden();
+        }
+      };
+    }
     this.place();
+  }
+
+  /** Casters that cull themselves (cached; refreshed on {@link invalidateCasters} and every {@link CASTER_REFRESH} frames). */
+  private readonly selfCulled: Array<Mesh | InstancedMesh> = [];
+  private casterAge = Number.POSITIVE_INFINITY;
+  private readonly hidden: Object3D[] = [];
+  /** Light-space centre (x, y) and half size of each near box, written by {@link place}. */
+  private readonly boxes = new Float64Array(3 * 8);
+
+  /** The scene's casters changed (content added or removed): re-collect the self-culling ones before the next pass. */
+  invalidateCasters(): void {
+    this.casterAge = Number.POSITIVE_INFINITY;
+  }
+
+  private collectCasters(): void {
+    this.selfCulled.length = 0;
+    let root: Object3D = this.sun;
+    while (root.parent) root = root.parent;
+    root.traverseVisible((o) => {
+      const m = o as Mesh & { isInstancedMesh?: boolean };
+      if ((m as { isMesh?: boolean }).isMesh === true && m.castShadow && !m.frustumCulled) this.selfCulled.push(m);
+    });
+    this.casterAge = 0;
+  }
+
+  private hideOutside(cascade: number): void {
+    if (++this.casterAge > CASTER_REFRESH) this.collectCasters();
+    const cx = this.boxes[cascade * 3] as number;
+    const cy = this.boxes[cascade * 3 + 1] as number;
+    const half = this.boxes[cascade * 3 + 2] as number;
+    for (const m of this.selfCulled) {
+      if (!m.visible) continue;
+      const inst = (m as InstancedMesh).isInstancedMesh === true ? (m as InstancedMesh) : null;
+      let sphere = inst ? inst.boundingSphere : m.geometry.boundingSphere;
+      if (!sphere) {
+        if (inst) inst.computeBoundingSphere();
+        else m.geometry.computeBoundingSphere();
+        sphere = inst ? inst.boundingSphere : m.geometry.boundingSphere;
+        if (!sphere) continue;
+      }
+      _sphere.copy(sphere).applyMatrix4(m.matrixWorld);
+      _q.copy(_sphere.center).applyMatrix4(_inverse);
+      if (footprintMisses(cx, cy, half, _q.x, _q.y, _sphere.radius, CASTER_MARGIN)) {
+        m.visible = false;
+        this.hidden.push(m);
+      }
+    }
+  }
+
+  private restoreHidden(): void {
+    for (const o of this.hidden) o.visible = true;
+    this.hidden.length = 0;
   }
 
   /** Per fragment: the finest box that holds the point, blended into the next one over the box's outer band. */
@@ -422,7 +496,14 @@ export class SunCascades extends CSMShadowNode {
       const ahead = 0.35 * half;
       _p.set(_focus[0] + (_forward[0] / fh) * ahead, _focus[1], _focus[2] + (_forward[2] / fh) * ahead).applyMatrix4(_inverse);
       const texel = (2 * half) / l.shadow.mapSize.x;
-      _p.set(snapToTexel(_p.x, texel), snapToTexel(_p.y, texel), lightZ).applyMatrix4(_orient);
+      const sx = snapToTexel(_p.x, texel);
+      const sy = snapToTexel(_p.y, texel);
+      if (i < 8) {
+        this.boxes[i * 3] = sx;
+        this.boxes[i * 3 + 1] = sy;
+        this.boxes[i * 3 + 2] = half;
+      }
+      _p.set(sx, sy, lightZ).applyMatrix4(_orient);
       l.position.copy(_p);
       l.target.position.copy(_p).sub(_dir);
       l.updateMatrixWorld();

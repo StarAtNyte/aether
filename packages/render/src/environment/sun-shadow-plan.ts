@@ -139,6 +139,16 @@ export function snapToTexel(v: number, texel: number): number {
   return Math.round(v / texel) * texel;
 }
 
+/**
+ * A caster cannot shadow a cascade box when its light-space footprint misses it: a directional light projects along its
+ * own axis, so only the light-space x and y matter. The caster is a sphere at light-space (`x`, `y`) of radius `r`,
+ * grown by `margin` (vertex animation); the box is centred on (`cx`, `cy`) with half size `half`. Pure.
+ */
+export function footprintMisses(cx: number, cy: number, half: number, x: number, y: number, r: number, margin: number): boolean {
+  const reach = half + Math.max(0, r) + Math.max(0, margin);
+  return Math.abs(x - cx) > reach || Math.abs(y - cy) > reach;
+}
+
 /** PCF radius (texels) that gives a penumbra of `metres` in a map whose texels are `texel` m wide. */
 export function pcfRadius(metres: number, texel: number): number {
   if (!Number.isFinite(texel) || texel <= 0) return 1;
