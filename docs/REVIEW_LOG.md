@@ -4248,3 +4248,107 @@ ceiling 0.06 m above the feet). Rebaked `dusk-lake-house` and `villa-pool` (livi
 **Still open.** The capsule can still wedge under the slab for a person playing who walks the inner edge of a first
 flight on purpose; a balustrade collider on a flight's open sides (or a narrower head) would stop it. The nav
 graph's capsule test does not lift the capsule on slopes.
+
+## GPU-compressed textures (KTX2) and the image-to-3D licence notes
+
+**Why.** Every library texture was a WebP / JPEG / PNG that the browser decodes to RGBA8: a 1k map holds 5.6 MB of GPU
+memory with its mips, whatever its file size. A cast body alone held 37 MB, Kart Canyon's library images 490 MB.
+(The often-quoted "565 textures" counts the 404 library thumbnails and the template and palette previews too; those
+are UI images and never reach the GPU. What does: 289 images inside 195 library GLBs, 132 of them unique, the 69
+photographed finish maps, the block sheets and the leaf sprite sheet.)
+
+**What changed.**
+- `scripts/assets/ktx2.ts` (`npm run assets:ktx2`): KTX-Software `ktx` 4.4.2 (Apache-2.0; pinned, SHA-256-checked
+  download into `~/.cache/aether-tools`, or `AETHER_KTX` / `PATH`) writes a twin of each of the 195 textured models
+  to `assets/lib/k/` (`KHR_texture_basisu`, required) and the block sheets as KTX2 array textures. Images are
+  decoded to exact bytes in one headless Chromium (WebGL2 read-back). Albedo is ETC1S when its luma-weighted SSIM
+  is at least 0.95 (203 of 215 albedos; the 12 UASTC ones include the 8 hair-card sets), UASTC otherwise; normal and ORM maps are UASTC with RDO and
+  Zstandard; cut-out colour (hair cards, lantern and lamp glass) is UASTC without RDO with its colour bled under
+  transparent texels; full mips; sRGB colour, linear data; RGB normals (no two-channel mode). `assets/ktx2.json`
+  records variant and source SHA-256, sizes, per-texture codec and SSIM, and estimated GPU bytes.
+- Runtime: `TextureCompression` per renderer sets up a `KTX2Loader` once the catalog is in, self-tests it (a
+  377-byte embedded KTX2), and on GPUs with BC formats targets only BC (desktop drivers that also advertise ASTC
+  or ETC decompress them; KTX2Loader would pick ASTC first). `createGltfModelLoader({ compression })` loads a twin
+  and falls back to the original on any failure; block sheets likewise. `?textures=rgba` forces originals.
+- The transcoder (three's `basis_transcoder.{js,wasm}`) is served from `apps/studio/public/basis/`. First browser
+  run: the KTX2 path silently fell back because the transcoder's embind glue calls `new Function`, which the
+  page's CSP forbids inside KTX2Loader's `blob:` worker. Fixed with `ktx2-worker.js`, KTX2Loader's own worker body
+  as a static file (`scripts/assets/basis-worker.ts`, checked by a test), served with
+  `default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'` by the server and `vercel.json`, whose
+  page rule now excludes that path (two CSP headers would combine). The page policy is unchanged.
+- The cast: base colours are compressed too (37 → 9.3 MB per body); outfit and hair tints, baked on the CPU, read
+  the original file's embedded images (`glbBaseColourImages`, no mesh decoding) when the body came from its twin.
+- glTF export decompresses compressed textures through three's WebGL2 texture utilities; the path tracer samples
+  them on its own context; both only when that context supports the format (they were dropped before).
+- `gpu/texture-memory.ts`: three counts a compressed texture as 1 byte and leaves out generated mips; corrected,
+  and live texture bytes are broken down by kind (render targets, compressed, decoded images, data) in
+  `memoryStats()`.
+- Published games pack the twins and the transcoder.
+
+**Measured** (`tests/e2e/ktx2.e2e.ts`, RTX 4090; WebGPU and WebGL2 in Chromium on the GPU, Firefox headed under Xvfb
+on llvmpipe; each scene opened twice in fresh contexts, KTX2 and `?textures=rgba`). "Image textures" = compressed +
+decoded-image textures (the library's; render targets and procedural data textures are unchanged by this work and
+listed apart). Downloads are the library, transcoder and block files of the visit, on disk.
+
+| Target | Scene | Image textures KTX2 / original (MB) | Ratio | All textures (MB) | Library download KTX2 / original (MB) |
+|---|---|---|---|---|---|
+| WebGPU | Lantern Isles | 15.1 / 49.8 | 3.3× | 188.7 / 245.5 | 11.0 / 7.8 |
+| WebGPU | Kart Canyon | 184.4 / 490.5 | 2.7× | 330.8 / 663.9 | 45.7 / 16.4 |
+| WebGPU | Skyline Penthouse | 48.0 / 163.5 | 3.4× | 275.2 / 412.8 | 21.7 / 12.2 |
+| WebGPU | generated house (offline planner) | 56.0 / 206.2 | 3.7× | 349.7 / 501.7 | 30.1 / 16.0 |
+| WebGPU | close-up (photographed models, two of the cast) | 61.6 / 236.4 | 3.8× | 250.2 / 425.0 | 32.1 / 15.9 |
+| WebGL2 | Lantern Isles | 15.1 / 49.8 | 3.3× | 85.0 / 119.7 | 9.6 / 6.4 |
+| WebGL2 | Kart Canyon | 80.5 / 490.5 | 6.1× | 141.0 / 551.1 | 40.7 / 14.1 |
+| WebGL2 | Skyline Penthouse | 48.0 / 163.5 | 3.4× | 125.3 / 240.8 | 20.3 / 10.8 |
+| WebGL2 | generated house | 56.0 / 206.2 | 3.7× | 149.9 / 300.0 | 24.3 / 12.4 |
+| WebGL2 | close-up | 61.6 / 236.4 | 3.8× | 113.0 / 287.7 | 29.2 / 13.0 |
+| Firefox | Lantern Isles | 15.1 / 49.8 | 3.3× | 85.0 / 119.7 | 9.6 / 6.4 |
+| Firefox | Skyline Penthouse | 48.0 / 163.5 | 3.4× | 125.3 / 223.0 | 20.3 / 10.8 |
+| Firefox | close-up | 61.6 / 236.4 | 3.8× | 104.4 / 269.9 | 29.2 / 13.0 |
+
+What is left in "image" with KTX2 on is the cast's tinted copies (RGBA8 canvases baked on the CPU): Kart Canyon's
+drivers and crowd are 113.7 MB of them on WebGPU and 49.8 MB on WebGL2 (more tint variants were live in the WebGPU
+run). Compressed textures are BC7 everywhere here (`bptc s3tc` reported by all three targets).
+
+Load time (navigation to the last library file) is within noise on WebGPU for the close-up and the penthouse (5.0 /
+4.9 s, 6.8 / 8.1 s) but up to 50 % longer for some scenes (Lantern Isles 11.2 / 7.4 s), and on WebGL2 under ANGLE/GL
+the KTX2 runs took longer throughout (Kart Canyon 66 / 44 s) on a machine shared with other build and test jobs: the
+transcoder's set-up and self-test, normally 0.1 to 0.5 s, took 6 to 41 s there and every model waits for it. Moving
+the set-up to catalog load helped on WebGPU; on a loaded machine it remains the cost of the feature.
+
+**Visual checks.** Still pairs at fixed cameras for every scene and target, plus a path-traced pair and the GLB
+export (37 images with KTX2, 34 without: compressed textures are exported) for the close-up. Mean absolute
+difference 0.01 to 3.2 per channel; luma equal within 0.4 everywhere. Looked at: armchair fabric relief under a low
+sun (normal maps read the same way round in all three targets), sRGB albedo (no washed-out or darkened colours,
+red tinted top and blonde hair on the tinted body identical), hair-card cut-outs close up (no fringes or holes),
+lantern and lamp glass (BLEND), Lantern Isles and Skyline Penthouse foliage. The leaf cards are composed from the
+Poly Haven leaf sprites on a canvas at run time and stay RGBA8, so they are unchanged by design (identical in every
+pair). Two harness problems were found and fixed on the way: the close-up's ground box z-fought with the default
+ground, and the generated house had no fixed camera (its first pair compared two different framings).
+
+**Trade-offs, honestly.** Downloads grow: UASTC normal and ORM maps are 3 to 5 times the 1k JPEGs they replace, so
+the twins add 67 MB to the build (24.6 MB of sources; build about 160 MB in 1,400 files, largest file 6 MB, within
+Vercel's limits for Git deployments) and a first visit downloads 1.2 to 2.8 times the library bytes (tinted bodies
+also fetch their original file once). Library files are cached immutably afterwards.
+
+**Not done.** The photographed surface finishes (`x/`, filled into shared RGBA8 texture arrays at run time) and the
+leaf cards stay uncompressed; the tinted copies of the cast stay RGBA8 (a shader-side tint would remove them);
+ETC1S could replace UASTC for ORM maps (about a third of the bytes at SSIM 0.89 to 0.93) if downloads matter more
+than the brief's UASTC rule.
+
+**Image to 3D.** `docs/IMAGE_TO_3D.md` corrected: TRELLIS.2 needs 24 GB VRAM (upstream README), and its GLB export
+imports nvdiffrast and nvdiffrec, both NVIDIA Source Code Licences limited to research or evaluation use. TripoSG
+(MIT, 8 GB, shape only) documented as the lower-VRAM option, with its own caveats found in its code: `diso`
+(CC BY-NC 4.0) imported at module level, BRIA RMBG-1.4 (non-commercial) for background removal, `pymeshlab` (GPL-3.0).
+Hunyuan3D-2 (no rights in the EU, UK and South Korea; over 1 M MAU needs a Tencent licence), SF3D / SPAR3D (free under
+US$1 M revenue) and InstantMesh (CC BY-NC Zero123++ weights) listed as not recommended. None of that code ships: the
+app has an HTTP client and the GLB validator only, the route exists only with `AETHER_IMAGE_TO_3D_URL`, and the server
+now logs a licence notice when it is turned on (tested).
+
+**Gates.** `tsc --noEmit` 0; new suites `packages/assets/test/ktx2.test.ts` (index, checksums against sources,
+codec rules, block twins, transcoder and worker identical to three's, encoder planning helpers),
+`packages/render/test/texture-compression.test.ts` (support detection, BC preference, byte accounting, block index,
+export policy, cast images); `apps/server/test/csp.test.ts` and `image-to-3d.test.ts` extended. Full vitest (Node 24):
+4459 of 4460 pass; the one failure is `packages/agent/test/prompt.test.ts` (system prompt 15,986 chars/4 against a
+15,800 cap), which fails the same way on main without this work (the prompt grew with the gameplay-effects stage).
+Studio build ok; `npm run smoke` 34/34; `npm run bench:quick` checks passed.
