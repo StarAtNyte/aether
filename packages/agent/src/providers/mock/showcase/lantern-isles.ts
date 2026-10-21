@@ -172,6 +172,14 @@ export function lanternIsles(): MockPlan {
     { leaf: '#a5c25a', flower: '#ff9f8a' },
     { leaf: '#e3b04b', flower: '#f6a6c1' },
   ];
+  // The ruins (placed below) claim their ground before the islands are dressed, so no tree grows into them: a trunk
+  // beside the statue's pedestal or the arch's legs would leave a gap narrower than a person on the way to a lift.
+  const ruin = isles[3] as Isle;
+  const arch = { x: r2(ruin.x + ruin.r * 0.2), z: r2(ruin.z - ruin.r * 0.3) };
+  const watch = isles[5] as Isle;
+  const statue = { x: r2(watch.x - watch.r * 0.3), z: r2(watch.z + watch.r * 0.2) };
+  b.reserve(arch.x, arch.z, 2.4);
+  b.reserve(statue.x, statue.z, 1.4);
   isles.slice(1).forEach((isle, i) => {
     dress(b, isle, i === isles.length - 2 ? 2 : 3, palettes[i % palettes.length] as { leaf: string; flower: string });
     b.prim('checkpoint', 'cylinder', [2.2, 0.06, 2.2], [isle.x, r2(isle.top + 0.03), isle.z], {
@@ -188,10 +196,8 @@ export function lanternIsles(): MockPlan {
     }
   });
   // Ruins on the way up.
-  const ruin = isles[3] as Isle;
-  b.gen('ruin-arch', 'arch', { width: 3.4, height: 4.6, thickness: 0.9, color: '#cbbfa6', variant: 0 }, [r2(ruin.x + ruin.r * 0.2), ruin.top, r2(ruin.z - ruin.r * 0.3)], { yaw: faceToward(ruin.x, ruin.z, home.x, home.z), physics: 'static', name: 'Old arch' });
-  const watch = isles[5] as Isle;
-  b.gen('ruin-statue', 'statue', { height: 3.4, color: '#d7cfbf', pedestalColor: '#9a917f', variant: 0 }, [r2(watch.x - watch.r * 0.3), watch.top, r2(watch.z + watch.r * 0.2)], { yaw: faceToward(watch.x, watch.z, home.x, home.z), physics: 'static', name: 'Watcher statue' });
+  b.gen('ruin-arch', 'arch', { width: 3.4, height: 4.6, thickness: 0.9, color: '#cbbfa6', variant: 0 }, [arch.x, ruin.top, arch.z], { yaw: faceToward(ruin.x, ruin.z, home.x, home.z), physics: 'static', name: 'Old arch' });
+  b.gen('ruin-statue', 'statue', { height: 3.4, color: '#d7cfbf', pedestalColor: '#9a917f', variant: 0 }, [statue.x, watch.top, statue.z], { yaw: faceToward(watch.x, watch.z, home.x, home.z), physics: 'static', name: 'Watcher statue' });
 
   // --- The summit: the Great Lantern ------------------------------------------------
   const summit = isles[isles.length - 1] as Isle;
