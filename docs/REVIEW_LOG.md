@@ -4872,8 +4872,8 @@ Vercel serves `/assets/*` immutable and brotli-compressed (GLB, HDR and wasm inc
 1. *Shader links.* Highland Trail linked 174 programs, on the main thread, one at a time, on first draw: 5 to 12 s of the
    page frozen inside `getProgramParameter(LINK_STATUS)` (half of the whole load). Causes: (a) three reads the matrices of a
    small `InstancedMesh` and the bones of a `SkinnedMesh` from uniform blocks whose array length and node id are written into
-   the shader source, so every instanced mesh, every animal and every character was a program of its own (55 identical-
-   modulo-ids programs); (b) the environment map arrived after the first frames and re-keyed, so recompiled, every material;
+   the shader source, so every instanced mesh, every animal and every character was a program of its own (Highland Trail's 187 sources
+   were 58 distinct programs once node ids are ignored); (b) the environment map arrived after the first frames and re-keyed, so recompiled, every material;
    (c) the first draws created static batches, scatter fields, virtual-geometry stand-ins and the post chain, each with a
    program, one synchronous link at a time; (d) a lit program is 50 to 115 KB of straight-line GLSL (2118 lines of `main`
    in the biggest), because the node graph is inlined, and the anti-tile, paint-mottle, ground-detail and layered-terrain
@@ -4945,14 +4945,14 @@ Weak machine (the page told it has 4 cores and 4 GB, so the automatic tier is lo
 | Kart Canyon 6x | 17.2 s | 16.0 s | 71 ms (ladder 5) | | |
 
 Bytes before to after, local (raw): Highland Trail 26.8 MB to 19.4 MB, Casa 24.9 to 17.4, Kart Canyon 44.5 to 22.0 (the weak
-path adds -0.6 to -1 MB of PBR JPEGs it no longer needs). Hosted (Vercel, brotli; measured from this machine, whose link to
+path fetches 0.6 to 1 MB fewer PBR JPEGs, which it no longer needs). Hosted (Vercel, brotli; measured from this machine, whose link to
 Vercel is slow, about 150 KB/s, so wall times there are mostly the network): home page first button 0.9 to 1.2 s, FCP 1.1 to 2.0 s,
 53 requests, 1.15 MB (JS 0.66 MB); Highland Trail 11.1 MB on the wire (images 3.7, GLB 4.4, JS 1.7, HDR 1.0, wasm 0.24), shader
 stalls 1.7 s against about 12 s of `getProgramParameter` before.
 
 Link and shader numbers (Highland Trail, 1x, same build): programs linked 174 to 59; time in `getProgramParameter` 10.6 to 12.7 s
-down to 1.7 s (house: 5.2 s down to 1.1 s); shader source handed to the driver 2.7 MB to 1.9 MB (house 2.5 to 2.5 MB at
-medium, 0.75 MB at low). What still links synchronously after the first frame: a campfire and the river's water shader
+down to 1.7 s (house: 5.2 s down to 1.1 s); shader source handed to the driver 2.7 MB to 1.9 MB (a house: 2.5 MB at medium after, 0.75 MB at low; not
+measured before). What still links synchronously after the first frame: a campfire and the river's water shader
 (0.4 to 0.6 s each), skinned fins, the bloom high-pass, small shadow-depth programs.
 
 **Honest reading.** Time to open did not change on the medium tier of this machine for the two worlds with the most models
@@ -4968,8 +4968,8 @@ number taken while it steps.
   are now the largest bytes after models. 256 px variants for the low tier, or WebP, would save about 2 MB a world, but they
   change content hashes and the catalog, so they belong in an `assets:build` run with the sources.
 - The motion packs are 2.2 MB each (0.65 MB brotli) for every gender in the world.
-- Light-volume cache per world hash: the bake already runs in a worker and costs the main thread about 30 ms
-  (`collectTraceInput`), so a cache would only remove the pop-in of the room light on a revisit.
+- Light-volume cache per world hash: the bake already runs in a worker (the main thread only gathers the triangles),
+  so a cache would only remove the pop-in of the room light on a revisit; its main-thread cost was not measured separately.
 - WebGPU on the Intel GPU was not measurable here (no Vulkan adapter for it in headless Chromium); the WebGL2 numbers are what a
   browser without WebGPU gets. On WebGPU pipelines are created asynchronously by the browser, so the link stalls above do
   not apply there, but the program count, the per-frame key cost and the draw calls do. Firefox and Safari's
