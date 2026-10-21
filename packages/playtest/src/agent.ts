@@ -34,6 +34,7 @@ import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
 import { checkBuildings } from '@aether/arch';
 import { Session, STEP } from './session';
+import { BODY_SLACK, LineFollower, onStair, stairGuides, stairStretches, type StairGuide } from './stairs';
 import { ThreatWatch, CORE_MARGIN, type ThreatSource } from './threats';
 import {
   PLAYTEST_LIMITS,
@@ -248,6 +249,8 @@ class Bot {
   private session!: Session;
   private probe: PhysicsWorld | null = null;
   private graph!: NavGraph;
+  /** The world's stairs with their walking lines (walked along the line, not the grid's shortest route). */
+  private readonly stairs: StairGuide[];
   private params!: NavParams;
   private stopReason: 'budget' | 'time' | null = null;
   private lastYield = nowMs();
@@ -298,6 +301,7 @@ class Bot {
 
   constructor(world: WorldDoc, private readonly opts: PlaytestOptions, private readonly kind: PlaytestKind) {
     this.world = world;
+    this.stairs = stairGuides(world);
     this.budgetMs = clamp(opts.budgetMs, PLAYTEST_LIMITS.DEFAULT_BUDGET_MS, 500, PLAYTEST_LIMITS.MAX_BUDGET_MS);
     this.maxSim = clamp(opts.maxSimSeconds, PLAYTEST_LIMITS.DEFAULT_MAX_SIM_SECONDS, 5, PLAYTEST_LIMITS.MAX_SIM_SECONDS);
   }
@@ -858,6 +862,11 @@ class Bot {
     let committed = false;
     let offLevelT = 0;
     const waypoint: Vec3 = [0, 0, 0];
+    // Stretches of the route that climb or descend a stair are walked along the stair's walking line: up the middle
+    // of the flight to the landing's centre, then the next flight (the grid's route cuts the turn, under the slab).
+    const stretches = stairStretches(this.stairs, path.map((n) => g.pos(n))).filter((st) => path.slice(Math.max(1, st.from), st.to + 2).every((n, k, arr) => k === 0 || g.edgeKind(arr[k - 1] as number, n) === EdgeKind.Walk));
+    let guide: LineFollower | null = null;
+    let guideEnd = 0;
     const goal = g.pos(path[path.length - 1] as number);
     // Time on foot the path may take (lifts, jumps and doors are timed on their own): a loop the watchdog does not
     // catch (a hop that looks like progress, a corner it keeps sliding along) ends as stuck instead of running out the clock.
@@ -902,7 +911,7 @@ class Bot {
         }
       }
       // Skip the walk nodes we are already standing on.
-      while (idx < path.length - 1 && g.edgeKind(path[idx - 1] as number, path[idx] as number) === EdgeKind.Walk) {
+      while (idx < path.length - 1 && (!guide || idx < guideEnd) && g.edgeKind(path[idx - 1] as number, path[idx] as number) === EdgeKind.Walk) {
         const n = g.pos(path[idx] as number);
         if (Math.hypot(n[0] - pos[0], n[2] - pos[2]) < 0.3 && Math.abs(n[1] - pos[1]) < 0.8) idx++;
         else break;
@@ -934,16 +943,41 @@ class Bot {
         resetWatch();
         continue;
       }
+      // On a stair the route is the stair's walking line, picked up once the player stands on the stair (the route
+      // may step onto a flight from its side, where its first treads are low enough: the grid's way gets it there).
+      if (!guide) {
+        const k = stretches.findIndex((st) => idx >= st.from && idx <= st.to + 1 && onStair(st.stair, pos, BODY_SLACK));
+        const st = stretches[k];
+        if (st) {
+          stretches.splice(k, 1);
+          guide = new LineFollower(st.line, pos);
+          guideEnd = st.to;
+        }
+      }
+      const along = guide?.target(pos) ?? null;
+      if (guide && along === null) {
+        // Off the stair at its other end: back on the route after the stair.
+        guide = null;
+        idx = guideEnd + 1;
+        resetWatch();
+        continue;
+      }
       // Look ahead along walk edges for a smoother line.
       // Doorways are narrow: follow their nodes one by one, slowly, so the capsule does not clip a jamb.
-      const strict = this.doorNear(pos, 1.1) !== null || this.doorNear(g.pos(b), 1.1) !== null;
+      const strict = !along && (this.doorNear(pos, 1.1) !== null || this.doorNear(g.pos(b), 1.1) !== null);
       let t = idx;
-      while (!strict && t + 1 < path.length && g.edgeKind(path[t] as number, path[t + 1] as number) === EdgeKind.Walk) {
+      // Never look further onto a stair the route climbs than its first point: the walking line takes over there.
+      const stairAt = stretches.reduce((m, st) => (st.from >= idx ? Math.min(m, st.from) : m), Infinity);
+      while (!along && !strict && t + 1 < path.length && t + 1 <= stairAt && g.edgeKind(path[t] as number, path[t + 1] as number) === EdgeKind.Walk) {
         const nxt = g.pos(path[t + 1] as number);
         if (Math.hypot(nxt[0] - pos[0], nxt[2] - pos[2]) > 0.9 || Math.abs(nxt[1] - pos[1]) > 0.5) break;
         t++;
       }
-      g.pos(path[t] as number, waypoint);
+      if (along) {
+        waypoint[0] = along[0];
+        waypoint[1] = along[1];
+        waypoint[2] = along[2];
+      } else g.pos(path[t] as number, waypoint);
       // A door in the next steps: make sure it is open before walking into it.
       const door = this.doorNear(waypoint) ?? this.doorNear(g.pos(b));
       // Press a door's key from just inside its reach, so the leaf can swing without sweeping the player.
@@ -962,13 +996,13 @@ class Bot {
       const dx = waypoint[0] - pos[0];
       const dz = waypoint[2] - pos[2];
       const dist = Math.hypot(dx, dz);
-      if (dist < (strict ? 0.07 : t === path.length - 1 ? 0.12 : 0.3) && Math.abs(waypoint[1] - pos[1]) < 0.8) {
+      if (!along && dist < (strict ? 0.07 : t === path.length - 1 ? 0.12 : 0.3) && Math.abs(waypoint[1] - pos[1]) < 0.8) {
         idx = t + 1;
         resetWatch();
         continue;
       }
       const yaw = this.yawTo(pos, waypoint[0], waypoint[2]);
-      const lastLeg = t === path.length - 1;
+      const lastLeg = !along && t === path.length - 1;
       // A doorway with a hair of slack is crossed at a crawl; steering at walking speed overshoots a 2 cm window.
       const tight = strict && [...this.doorSlack].some(([id, sl]) => sl < 0.04 && this.doorNear(pos, 1.1)?.id === id);
       const forward = strict ? (tight ? Math.min(0.14, dist / 0.25 + 0.05) : Math.min(0.6, dist / 0.25 + 0.12)) : lastLeg ? Math.min(1, dist / 0.5 + 0.2) : 1;
@@ -978,14 +1012,15 @@ class Bot {
       footT += STEP;
       // Fell off the path?
       const here = s.position;
-      if (here[1] < Math.min(g.py[a] as number, g.py[b] as number) - 2.2) {
+      // (On a stair's walking line the route's nodes are where the line was picked up: heights are the line's.)
+      if (here[1] < (along ? along[1] : Math.min(g.py[a] as number, g.py[b] as number)) - 2.2) {
         this.fellCount++;
         s.note('fall', 'fell off the path', here);
         return 'fell';
       }
       // Standing well above the path: the feet found another level on the way (stepped onto a ramp beside a path
       // that runs under a bridge). Plan again from where the player really is.
-      if (s.character.grounded && here[1] > Math.max(g.py[a] as number, g.py[b] as number) + OFF_LEVEL_M) {
+      if (s.character.grounded && here[1] > (along ? along[1] : Math.max(g.py[a] as number, g.py[b] as number)) + OFF_LEVEL_M) {
         offLevelT += STEP;
         if (offLevelT >= 0.25) {
           g.markBad(a, b);

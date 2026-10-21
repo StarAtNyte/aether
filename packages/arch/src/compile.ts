@@ -694,6 +694,9 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
 
     // --- floors, ceilings, furniture ---------------------------------------
     const holesHere = prevStairHoles;
+    // The stairs of this level rise through its ceilings: each ceiling is open over the stairwell as the slab above is
+    // (a closed ceiling hid the well and the upper flight from below, and the head passed through it on the way up).
+    const wellsHere = li === plan.levels.length - 1 ? [] : lvl.stairs.map((s) => stairWorldFootprint(s, height));
     for (const r of lvl.rooms) {
       const poly = polys.get(r.id) as P2[];
       const rid = `${lid}-${r.id}`;
@@ -712,7 +715,9 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       });
       const areaM2 = Math.abs(polyArea(poly)) - holes.reduce((s, h) => s + Math.abs(polyArea(h)), 0);
       roomsOut.push({ id: rid, level: li, name, type: r.type, area: Math.round(areaM2 * 10) / 10 });
-      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: [], finish: { finish: 'paint', color: '#f4f2ee' }, ...(r.vault && isAxisRectangle(poly) ? { vault: r.vault } : {}), cove: r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
+      // A cove's raised field has no openings of its own: a ceiling with a stairwell is flat.
+      const wells = wellsHere.filter((h) => pointInPolygon(centroid(h)[0], centroid(h)[1], poly));
+      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: wells.map((h) => h.map((p) => [round(p[0]), round(p[1])])), finish: { finish: 'paint', color: '#f4f2ee' }, ...(r.vault && isAxisRectangle(poly) ? { vault: r.vault } : {}), cove: wells.length === 0 && r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).filter((q) => !wells.some((h) => pointInPolygon(q[0], q[1], grownBox(h, 0.15)))).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
       // Furniture.
       const ctx: RoomContext = {
         id: rid,

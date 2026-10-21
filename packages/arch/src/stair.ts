@@ -67,6 +67,41 @@ export function stairLayout(p: StairParams): { flights: Flight[]; landings: Arra
   return { flights: [{ x: 0, z: 0, dx: 1, dz: 0, y0: 0, treads: t1 }, f2], landings: [landing], riser };
 }
 
+/** How far the walking line runs onto the floor before the first riser and beyond the top step (m). */
+export const STAIR_WALK_LINE_RUN_OUT = 0.4;
+
+/**
+ * The stair's walking line in its local frame: feet positions `[x, y, z]` from the floor before the first riser,
+ * up the middle of each flight, through the centre of the landing (where an L or U stair turns) to the floor beyond
+ * the top step. A person keeps to it; cutting the turn walks the inner edge of the flight, under the slab that
+ * borders the stairwell there.
+ */
+export function stairWalkLine(p: StairParams): Array<[number, number, number]> {
+  const { flights, landings } = stairLayout(p);
+  const g = p.going;
+  const w = p.width;
+  const out = STAIR_WALK_LINE_RUN_OUT;
+  const f1 = flights[0] as Flight;
+  const line: Array<[number, number, number]> = [[-out, 0, 0]];
+  const l = landings[0];
+  const f2 = flights[1];
+  if (!l || !f2) {
+    const run = f1.treads * g;
+    line.push([run, p.rise, 0], [run + out, p.rise, 0]);
+    return line;
+  }
+  const cx = l.x0 + w / 2;
+  // Up the first flight to the landing, to its centre (the turn), across to the second flight's centre line.
+  line.push([l.x0, l.y, 0], [cx, l.y, 0]);
+  if (p.shape === 'u') {
+    line.push([cx, l.y, f2.z], [f2.x, l.y, f2.z]);
+  } else line.push([f2.x, l.y, f2.z]);
+  const run2 = f2.treads * g;
+  const end: [number, number] = [f2.x + f2.dx * run2, f2.z + f2.dz * run2];
+  line.push([end[0], p.rise, end[1]], [end[0] + f2.dx * out, p.rise, end[1] + f2.dz * out]);
+  return line;
+}
+
 /** Plan footprint of the stair (the hole to cut in the floor above). */
 export function stairFootprint(p: StairParams): P2[] {
   const { flights, landings } = stairLayout(p);

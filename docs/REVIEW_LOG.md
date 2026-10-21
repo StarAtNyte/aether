@@ -4185,3 +4185,66 @@ exposure by room box, not by a traced line of sight. Spot lights are not clipped
 composed on the main thread once per kind (tens of milliseconds); grass stays procedural, needles, blossoms and flowers
 keep procedural cards; hedges are still boxes with leafy tops. Kitchens without sun stay somewhat cool. Firefox and
 WebGPU parity was checked on one interior view; a Firefox prompt build timed out on this loaded machine.
+
+## Stairs walked along their walking line; ceilings open over the stairwell
+
+**Problem.** The landing work left three of the twenty fitted 1 m stairs (heading × straight / L left / L right /
+U left / U right) stuck on the last treads of an L's first flight, plus one 1.2 m L, with the failing positions moving
+when the stair moved 10 cm. Three causes were suspected: the bot's path at the turn, a stairwell opening too tight
+for head room, or the capsule against the slab edge.
+
+**What it was (measured).** A matrix of every heading × shape × turn × width (0.9, 1.0, 1.2 m) at the fitted
+position and six offsets (±0.1 m across, ±0.1 and +0.2 m along, +0.2 m across), 336 stairs in the 8 × 8 m test
+hall, walked by the bot: **48 failed**, every one an L stair (25 left, 23 right), and 31 more passed only after being
+stuck. The trace of the first one: the grid route came from the hall beside the first flight, stepped onto its low
+treads from the side and climbed with the capsule's axis 0.12 m inside the flight's inner edge (the shortest way to
+the second flight hugs the inside of the turn). The slab of the floor above starts at that edge, inside the L, at
+head height on the last treads. The capsule (0.35 m radius at the head as at the shoulders) rode 9 cm above the
+ramp (round foot on a 33° slope, skin), its top touched the slab's underside at 2.93 m with the feet at 1.23 m, and
+it could neither climb nor slide out: 16 s against it.
+- (a) the bot's path: **the cause**. Following the stair's walking line alone, all 336 pass, none stuck.
+- (b) the opening: **not the cause**. The well is the stair's footprint (both flights and the landing), so the
+  walking line is open to the floor above all the way; measured on the compiled building with a body disc
+  (0.35 m round the line) the least head room along the line, landing included, is over 2.0 m for every case. The
+  **ceiling** of the stair's room, though, was emitted with no holes: a plane 4 mm under the slab closed over the
+  well (no collider, so the bot never saw it). From below it hid the well and the upper flight, and on the way up
+  the head passed through it.
+- (c) the capsule: contributes, not fixed. The nav graph tests the capsule from the ramp's surface, while on a slope
+  it stands r·(1/cos θ − 1) higher (7 cm here), so nodes along the inner edge under the slab passed. Correcting that
+  test alone left 44 of the 48 failures, so it is not in this change. A person playing who hugs the inner edge of
+  the first flight can still wedge the same capsule under the slab.
+
+**What changed.**
+- `arch`: `stairWalkLine(params)`: the walking line in the stair's frame, from 0.4 m before the first riser up the
+  middle of the first flight, to the landing's centre (the turn), along the middle of the second flight (a U crosses
+  the landing to the return flight's centre line first) to 0.4 m beyond the top step. Ceilings are open over the
+  stairs that rise through them (the same footprints as the slab above); a ceiling with a stairwell is flat (a
+  cove's raised field has no openings) and drops downlights over the well.
+- `playtest` (`stairs.ts`): every `arch-stair` entity's footprint and walking line in world space. A stretch of a
+  route that climbs or descends a stair (route points on the stair's treads, within half its width of the line and
+  at its height, changing height by at least half the rise) is walked along the line once the player stands on the
+  stair: the grid's route gets it there, also when it steps onto low treads from the side. The bot goes to each
+  vertex of the line (the landing's centre among them) before turning, aims 0.5 m ahead on the segment, and when
+  more than 0.2 m off the line steers back onto it nearly square before going on. The floor under a U's upper flight
+  is inside the footprint but far below the treads: not on the stair.
+
+**Measured** (headless bot, Node 24, the 336-stair matrix; `scripts/stair-probe.ts` and `scripts/bot-probe.ts`
+for the shipped houses).
+
+| | Before | After |
+|---|---|---|
+| Matrix: failed | 48 (all L) | 0 |
+| Matrix: passed after being stuck | 31 | 0 |
+| 1 m L right heading north (the first failure) | stuck 16 s, then 8 stuck reports | 16.8 s sim to every room, never stuck |
+| `dusk-lake-house` / `villa-pool` / planner three-bedroom house | 47.8 / 27.9 / 68.0 s sim | 45.9 / 26.9 / 70.4 s |
+
+**Tests.** `packages/playtest/test/stair-walking-line.test.ts`: L stairs at 0.9, 1.0 and 1.2 m turning each way,
+the 1 m L shifted 10 cm, straight and both U, each in all four headings (44 walks): every room, no stuck report, and
+from the first flight's upper part to the top the feet within 0.25 m of the walking line (the old bot fails the 1 m
+L cases). `packages/arch/test/stair-headroom.test.ts`: every width × heading × shape × turn has 2.0 m above the
+walking line across a body's width, against the slab's underside and the ceilings (fails on the old compiler: the
+ceiling 0.06 m above the feet). Rebaked `dusk-lake-house` and `villa-pool` (living room ceilings only).
+
+**Still open.** The capsule can still wedge under the slab for a person playing who walks the inner edge of a first
+flight on purpose; a balustrade collider on a flight's open sides (or a narrower head) would stop it. The nav
+graph's capsule test does not lift the capsule on slopes.
