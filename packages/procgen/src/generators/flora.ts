@@ -18,7 +18,7 @@ import type { InternalApi } from '../api';
 import { MeshBuilder, type Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixHex, mixLinear, type RGB } from '../color';
-import { defineGenerator, hullOf, lin, pColor, pInt, pNum, pVariant, shade, triBoxUvs } from './kit';
+import { defineGenerator, hullOf, lin, pColor, pInt, pNum, pVariant, ROOTED, shade, triBoxUvs } from './kit';
 import { foliageCellUv, FOLIAGE_CELLS } from '../foliage-pixels';
 
 /** Bark: the photographed bark surface, tinted per vertex. */
@@ -119,6 +119,26 @@ function inBall(api: InternalApi, surfaceBias: number): Vec3 {
   return [0, 1, 0];
 }
 
+/**
+ * Plants are anchored at their root point (see `ROOTED`): move a trunk's path so it starts at the origin, whatever
+ * sway the generator gave its base.
+ */
+function rootPath(path: Vec3[]): Vec3[] {
+  const [x0, , z0] = path[0] ?? [0, 0, 0];
+  for (const q of path) {
+    q[0] -= x0;
+    q[2] -= z0;
+  }
+  return path;
+}
+
+/** Flatten whatever of a trunk's flared base reaches below the ground onto it (a tilted first ring dips a little). */
+function flatBase(mesh: Mesh): Mesh {
+  const pos = mesh.positions;
+  for (let i = 1; i < pos.length; i += 3) if ((pos[i] as number) < 0) pos[i] = 0;
+  return mesh;
+}
+
 /** Cylindrical metre UVs for bark (the bark photograph repeats every metre). */
 function barkUvs(mesh: Mesh, axisX: number, axisZ: number): void {
   const p = mesh.positions;
@@ -180,6 +200,8 @@ function crownCards(
   card: { w: number; h: number },
   tones: { deep: RGB; mid: RGB; sun: RGB; warm: RGB },
   warmShare: number,
+  /** When set, no card reaches below this height (a shrub sits on the ground at its root; its low cards stay above it). */
+  floor?: number,
 ): void {
   const per = Math.max(1, Math.round(count / clusters.length));
   const tmp: RGB = [0, 0, 0];
@@ -203,6 +225,10 @@ function crownCards(
       mixLinear(tones.deep, tmp, 0.7, base);
       mixLinear(tmp, tones.sun, 0.1, top);
       const s = 0.8 + api.rng() * 0.5;
+      if (floor !== undefined) {
+        const low = p[1] + Math.min(0, v[1] * card.h * s) - Math.abs(u[1]) * card.w * s * 0.5;
+        if (low < floor) p[1] += floor - low;
+      }
       sheets.add(p, u, v, card.w * s, card.h * s, 'bottom', n, base, [tmp[0] + (top[0] - tmp[0]), tmp[1] + (top[1] - tmp[1]), tmp[2] + (top[2] - tmp[2])], cellOf(api));
     }
   }
@@ -245,6 +271,7 @@ const treeBroadleaf = defineGenerator({
       const t = i / 6;
       path.push([lean * t * t + Math.sin(t * 2.4 + api.rng() * 0.2) * H * 0.012, trunkH * t, lean * 0.4 * t + Math.cos(t * 2) * H * 0.008]);
     }
+    rootPath(path);
     const top = path[path.length - 1] as Vec3;
     let wood: Mesh = api.tube(path, trunkR, 9, (t) => (t < 0.1 ? 1.5 - t * 5 : 1) * (1 - 0.6 * t));
     // The crown's vertical radius fills the space from the trunk top to the tree's height.
@@ -291,6 +318,7 @@ const treeBroadleaf = defineGenerator({
         }
       }
     }
+    flatBase(wood);
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
     api.add(wood, BARK);
@@ -300,7 +328,7 @@ const treeBroadleaf = defineGenerator({
     const count = budget.count;
     if (count < 8) {
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
-      return api.build();
+      return api.build(ROOTED);
     }
     const sheets = new Sheets(count + clusters.length);
     crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: budget.size, h: budget.size }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
@@ -309,7 +337,7 @@ const treeBroadleaf = defineGenerator({
       api.add(leaves, foliage(blossoming ? 'blossom' : 'broadleaf'));
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -339,6 +367,7 @@ const treeBirch = defineGenerator({
       const t = i / 7;
       path.push([lean * t * t + Math.sin(t * 3.1) * H * 0.02, trunkH * t, Math.cos(t * 2.3) * H * 0.012]);
     }
+    rootPath(path);
     const top = path[path.length - 1] as Vec3;
     let wood: Mesh = api.tube(path, trunkR, 8, (t) => (t < 0.08 ? 1.35 - t * 4 : 1) * (1 - 0.7 * t));
     const crownV = (H - trunkH) / 1.2 + H * 0.06;
@@ -360,6 +389,7 @@ const treeBirch = defineGenerator({
     const grey = lin('#a9a39a');
     const black = lin('#25221f');
     const n = api.noise;
+    flatBase(wood);
     wood.paintFn((x, y, z, _nx, _ny, _nz, out) => {
       const band = n.noise3(x * 2.5, y * 16, z * 2.5);
       mixLinear(white, grey, 0.5 + 0.5 * n.noise3(x * 5, y * 3, z * 5), out);
@@ -377,7 +407,7 @@ const treeBirch = defineGenerator({
       api.add(leaves, foliage('shrub'));
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.2, trunkH));
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -454,7 +484,11 @@ const treeSpruce = defineGenerator({
             mixLinear(top, white, 0.7, top);
             mixLinear(baseC, white, 0.45, baseC);
           }
-          sheets.add([0, y - droop * 0.1 * layer, 0], along, across, len, wid, 'left', n, baseC, top, cellOf(api));
+          // A low spray of a tall tree would reach into the ground (the tree stands on its root): shorten it to end above it.
+          const oy = y - droop * 0.1 * layer;
+          const drop = -Math.min(0, along[1] * len) + Math.abs(across[1]) * wid * 0.5;
+          const fit = drop > oy - 0.05 ? Math.max(0.2, (oy - 0.05) / drop) : 1;
+          sheets.add([0, oy, 0], along, across, len * fit, wid * fit, 'left', n, baseC, top, cellOf(api));
         }
       }
     }
@@ -463,6 +497,7 @@ const treeSpruce = defineGenerator({
       const u: Vec3 = [Math.cos(turn), 0, Math.sin(turn)];
       sheets.add([0, H * 0.9, 0], [0, 1, 0], u, H * 0.13, H * 0.12, 'left', [0, 1, 0], tones.mid, tones.sun, cellOf(api));
     }
+    flatBase(wood);
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, 0, 0);
     api.add(wood, BARK);
@@ -471,7 +506,7 @@ const treeSpruce = defineGenerator({
       api.add(leaves, foliage('needles'));
       api.collider(cylinderCollider(0, H * 0.25, 0, trunkR * 1.2, H * 0.5));
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -505,6 +540,7 @@ const shrub = defineGenerator({
     }
     clusters.push({ c: [0, R * 0.55, 0], r: R * 0.6 });
     if (stems) {
+      flatBase(stems);
       paintBark(api, stems, '#6a5442');
       barkUvs(stems, 0, 0);
       api.add(stems, BARK);
@@ -512,13 +548,13 @@ const shrub = defineGenerator({
     const budget = cardBudget(130 * detail, S * 0.3, Math.min(0.42, Math.max(0.26, 0.22 + S * 0.07)), 420 * Math.max(0.3, detail));
     const count = budget.count;
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: [0, R * 0.6, 0], r: [R, R * 0.8, R] }, count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.08);
+    crownCards(api, sheets, clusters, { c: [0, R * 0.6, 0], r: [R, R * 0.8, R] }, count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.08, 0);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage('shrub'));
       api.collider(cylinderCollider(0, R * 0.4, 0, R * 0.5, R * 0.8));
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -563,7 +599,7 @@ const fern = defineGenerator({
     const m = sheets.build(api);
     if (m) api.add(m, foliage('fern'));
     api.collider(boxCollider(0, 0.05, 0, S, 0.1, S));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -594,7 +630,7 @@ const meadowGrass = defineGenerator({
     const m = sheets.build(api);
     if (m) api.add(m, foliage('grass'));
     api.collider(boxCollider(0, 0.01, 0, S * 0.8, 0.02, S * 0.8));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -627,7 +663,7 @@ const wildflowers = defineGenerator({
     const m = sheets.build(api);
     if (m) api.add(m, foliage('flower'));
     api.collider(boxCollider(0, 0.01, 0, S * 0.8, 0.02, S * 0.8));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -737,7 +773,8 @@ const cactus = defineGenerator({
       const r = h * 0.62;
       const prof: Array<[number, number]> = [[0, 0], [r * 0.8, 0], [r * 0.98, h * 0.25], [r, h * 0.55], [r * 0.85, h * 0.85], [r * 0.45, h * 0.99], [0, h * 0.97]];
       const m = api.lathe(prof, 54);
-      m.displace((x, _y, z) => r * 0.09 * Math.cos(18 * Math.atan2(z, x)));
+      // Ribs fade out at the root, so the base stays flat on the ground (the cactus is anchored at its root).
+      m.displace((x, y, z) => r * 0.09 * Math.cos(18 * Math.atan2(z, x)) * Math.min(1, Math.max(0, y) / (h * 0.06)));
       const spines = lin('#d8b75a');
       m.paintFn((x, y, z, _nx, _ny, _nz, out) => {
         const c = Math.cos(18 * Math.atan2(z, x));
@@ -754,7 +791,7 @@ const cactus = defineGenerator({
         api.add(piece, { vertexColors: true, roughness: 0.6, metalness: 0 });
       }
       api.collider(cylinderCollider(0, h / 2, 0, r, h));
-      return api.build();
+      return api.build(ROOTED);
     }
     if (variant === 2) {
       const r = Math.max(0.06, H * 0.035);
@@ -766,7 +803,7 @@ const cactus = defineGenerator({
         api.add(cactusColumn(api, Math.cos(a) * d, 0, Math.sin(a) * d, r * (0.85 + api.rng() * 0.3), h, 11, base, groove, crest, areole), mat);
       }
       api.collider(cylinderCollider(0, H / 2, 0, r * 3.5, H));
-      return api.build();
+      return api.build(ROOTED);
     }
     // Saguaro: a trunk about 1/14 as thick as it is tall, arms that leave it, bend and climb parallel to it.
     const R = Math.max(0.12, H * 0.07);
@@ -796,7 +833,7 @@ const cactus = defineGenerator({
       api.collider(cylinderCollider(top[0], top[1] + climb / 2, top[2], ar, climb));
     }
     api.collider(cylinderCollider(0, H / 2, 0, R, H));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 

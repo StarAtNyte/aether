@@ -65,7 +65,7 @@ Entity = { id, name?, description?, parent?: id|null, attachedTo?: id (belongs t
   light?: {type:"point"|"spot"|"directional"|"ambient"|"hemisphere", color, intensity, range, angle, castShadow},
   behaviors?: [{type, params, enabled?}], state?: {k: json}, visible?, castShadow?, receiveShadow?, template?: bool (spawn source, not instantiated) }
 Shape = {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone"|"capsule"|"torus"|"plane", size:[w,h,d]} (sphere diameter=size[0]; cylinder/cone/capsule diameter=size[0], height=size[1]); primitives are CENTERED on position, so a 1 m box resting on the ground has y=0.5
-  | {kind:"procedural", generator:id, params:{...}, seed?:int} — generated objects have their BASE at y=0 and are centered in x/z: place them at y=0 to stand on the ground
+  | {kind:"procedural", generator:id, params:{...}, seed?:int} — generated objects have their BASE at y=0 and are centered in x/z (plants: trees, shrubs, ferns, grass, flowers, cacti stand on their trunk base / root at the entity position): place them at y=0 to stand on the ground
   | {kind:"scatter", of: primitive|procedural shape, count, area:[w,d], seed?, scaleRange?:[0.8,1.2], randomYaw?:true, onSurface?: terrainId, minSpacing?} — GPU-instanced; use for >8 similar objects. Layers of 2000+ become culled level-of-detail fields: count may go up to 1,000,000 (a million trees stays interactive)
   | {kind:"asset", id, variant?, fitSize?, animation?, fallback?: primitive|procedural shape} — real-size library model (base y=0, centered x/z; ids via search_assets); characters/animals animate (idle/walk/run) from their movement
   | {kind:"none"} (groups, lights, invisible zones)

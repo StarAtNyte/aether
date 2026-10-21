@@ -5,7 +5,8 @@
  * - add() appends geometry into one accumulator per distinct material
  *   (stableStringify key), so equal materials become one draw call.
  * - build() normalizes the object so its base sits on y = 0 and it is
- *   centered in x/z (skipped for heightfield-based terrain or on request).
+ *   centered in x/z (skipped for heightfield-based terrain or on request);
+ *   plants keep their root point (trunk base) at the origin instead.
  * - All allocations are charged to a vertex budget; all inputs are validated.
  */
 import { rng as seededRng, stableStringify, type MaterialSpec, type Vec3 } from '@aether/core';
@@ -23,6 +24,13 @@ import * as prim from './kernel/primitives';
 export interface BuildOptions {
   /** Move the base to y = 0 and center x/z (default true; false for heightfield terrain). */
   recenter?: boolean;
+  /**
+   * 'root': the generator built its root point (a trunk's base, the middle of a tuft) at the origin, and that point
+   * stays at the entity's position: nothing is moved. A plant centred on its bounding box would shift its trunk
+   * whenever its crown changes shape (a leaf card more on one side moves the trunk in every world that places it),
+   * so plants anchor at the root. Default 'bounds' (the recentring above).
+   */
+  anchor?: 'bounds' | 'root';
 }
 
 /**
@@ -283,7 +291,7 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
         }
       }
       const finalBounds: Bounds = bounds ?? { min: [0, 0, 0], max: [0, 0, 0] };
-      const recenter = opts.recenter ?? !all.some((c) => c.kind === 'heightfield');
+      const recenter = opts.anchor !== 'root' && (opts.recenter ?? !all.some((c) => c.kind === 'heightfield'));
       const dx = recenter ? -(finalBounds.min[0] + finalBounds.max[0]) / 2 : 0;
       const dy = recenter ? -finalBounds.min[1] : 0;
       const dz = recenter ? -(finalBounds.min[2] + finalBounds.max[2]) / 2 : 0;

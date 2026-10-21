@@ -54,6 +54,24 @@ describe('realistic trees', () => {
     });
   }
 
+  it('trees are anchored at the trunk base: a different crown never moves the trunk', () => {
+    const trunk = (id: string, params: Record<string, number>): number[] => {
+      const out = generateBuiltinSync(id, params, 4);
+      const c = out.colliders.find((k) => k.kind === 'cylinder');
+      if (!c || c.kind !== 'cylinder') throw new Error(`${id}: no trunk collider`);
+      return [...c.offset];
+    };
+    for (const id of ['tree-broadleaf', 'tree-birch', 'tree-spruce', 'tree-pine']) {
+      const full = trunk(id, { height: 9, detail: 1.6 });
+      const lean = trunk(id, { height: 9, detail: 0.4 });
+      const bare = trunk(id, { height: 9, leaf: 0 });
+      for (const t of [full, lean, bare]) {
+        expect(Math.abs(t[0]!), id).toBeLessThan(1e-9);
+        expect(Math.abs(t[2]!), id).toBeLessThan(1e-9);
+      }
+    }
+  });
+
   it('the spruce takes snow and the broadleaf an autumn colour', () => {
     const snowy = generateBuiltinSync('tree-spruce', { height: 10, snow: 1 }, 3);
     const plain = generateBuiltinSync('tree-spruce', { height: 10, snow: 0 }, 3);

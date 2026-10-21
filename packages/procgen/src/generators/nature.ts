@@ -8,7 +8,7 @@ import { MeshBuilder, type Mesh } from '../kernel/mesh';
 import { cylinderCollider, boxCollider } from '../colliders';
 import { mixHex, mixLinear } from '../color';
 import {
-  defineGenerator, doubleSided, hullOf, jitter, lin, MAT, paintGradientY, paintNoise, pBool, pColor, pInt, pNum, pVariant, segmentBox, shade,
+  defineGenerator, doubleSided, hullOf, jitter, lin, MAT, paintGradientY, paintNoise, pBool, pColor, pInt, pNum, pVariant, ROOTED, segmentBox, shade,
 } from './kit';
 
 /** A curved, tapered, V-folded leaf/blade strip (single-sided; caller may double it). */
@@ -94,7 +94,7 @@ const treePine = defineGenerator({
     api.add(crown, MAT.leaf);
     api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR, trunkH));
     api.collider(hullOf(crown));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -154,7 +154,7 @@ const treeOak = defineGenerator({
     api.add(canopy, MAT.leaf);
     api.collider(segmentBox(path[0] as Vec3, top, trunkR));
     api.collider(hullOf(canopy));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -238,7 +238,7 @@ const treePalm = defineGenerator({
       }
       if (nuts) api.add(nuts, MAT.wood);
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -373,7 +373,7 @@ const grassTuft = defineGenerator({
     }
     if (all) api.add(all, { ...MAT.leaf, flatShading: false });
     api.collider(boxCollider(0, 0.01, 0, S * 0.4, 0.02, S * 0.4));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -436,7 +436,7 @@ const flowers = defineGenerator({
     if (heads) api.add(heads, { preset: 'fabric', vertexColors: true, roughness: 0.7 });
     if (centers) api.add(centers, { preset: 'plastic', vertexColors: true, roughness: 0.8 });
     api.collider(boxCollider(0, 0.01, 0, S * 0.6, 0.02, S * 0.6));
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 
@@ -505,7 +505,7 @@ const mushroom = defineGenerator({
       paintNoise(dots, api, '#f4efe6', '#ffffff', 10);
       api.add(dots, { preset: 'plastic', vertexColors: true, roughness: 0.6 });
     }
-    return api.build();
+    return api.build(ROOTED);
   },
 });
 

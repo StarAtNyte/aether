@@ -4,7 +4,7 @@
  */
 import type { Json, MaterialSpec, ParamSpec, Vec3 } from '@aether/core';
 import type { BuiltinGenerator, ColliderDesc, GeneratorCategory, GeneratorOutput } from '../types';
-import { createGeneratorApi, isInternalApi, type InternalApi } from '../api';
+import { createGeneratorApi, isInternalApi, type BuildOptions, type InternalApi } from '../api';
 import { hexToLinear, mixHex, mixLinear, type RGB } from '../color';
 import { paramReader, resolveParams, type ParamReader } from '../params';
 import { Mesh } from '../kernel/mesh';
@@ -40,6 +40,12 @@ export function pEnum(options: string[], def: string, description: string): Para
 export function pVariant(max: number, description = 'style variant'): ParamSpec {
   return pInt(0, 0, max, description);
 }
+
+/**
+ * Build options of a plant: its root point (trunk base, middle of a tuft) is built at the origin and stays at the
+ * entity's position, so a change to the crown never moves the trunk (see `BuildOptions.anchor`).
+ */
+export const ROOTED: BuildOptions = Object.freeze({ anchor: 'root' });
 
 /** Definition of a built-in generator. */
 export interface GeneratorDefinition {

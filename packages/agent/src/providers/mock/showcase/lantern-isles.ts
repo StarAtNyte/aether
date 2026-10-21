@@ -34,8 +34,10 @@ const CHAIN: ReadonlyArray<{ r: number; link: Link; rise: number; turn: number }
 ];
 
 const BRIDGE_GAP = 7;
-const LIFT_GAP = 2.6;
-const LIFT_SIZE = 2.2;
+// A 3 m lift in the 4.8 m gap leaves a 0.9 m seam at each rim (it was 1.3 m: a rider that paused at the top edge of
+// the 2.2 m platform, waiting to cross, could ride it back down and drop through the seam).
+const LIFT_GAP = 1.8;
+const LIFT_SIZE = 3.0;
 
 /** Grass cap, soil band and a rock cone hanging below: a floating island with a flat top at `top`. */
 function island(b: Builder, name: string, x: number, z: number, r: number, top: number): Isle {

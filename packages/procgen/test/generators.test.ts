@@ -20,6 +20,12 @@ const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 /** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
 const CARDS = new Set(['tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers']);
 /** Built structures carry articulation (reveals, frames, courses, corbels) in merged finish parts: a larger budget, still a handful of draws. */
+/**
+ * Plants are anchored at their root point (trunk base, the middle of a tuft), not centred on their bounds: the root
+ * stays at the entity position whatever the crown does, and the base sits on the ground (a few centimetres of
+ * buttress or root flare may reach into it).
+ */
+const ROOTED = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'grass-tuft', 'flowers', 'mushroom', 'tree-broadleaf', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'cactus']);
 const STRUCTURES = new Set(['house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'windmill']);
 
 function randomParams(spec: Record<string, ParamSpec>, random: () => number): Record<string, Json> {
@@ -54,9 +60,19 @@ function checkOutput(id: string, out: GeneratorOutput): void {
   if (!v.ok) throw new Error(`${id}: ${v.error}`);
   expect(out.parts.length).toBeGreaterThan(0);
   for (const p of out.parts) expectValidPart(p);
-  expect(out.bounds.min[1]).toBeCloseTo(0, 4);
-  expect((out.bounds.min[0] + out.bounds.max[0]) / 2).toBeCloseTo(0, 3);
-  expect((out.bounds.min[2] + out.bounds.max[2]) / 2).toBeCloseTo(0, 3);
+  if (ROOTED.has(id)) {
+    expect(out.bounds.min[1]).toBeGreaterThan(-0.1);
+    expect(out.bounds.min[1]).toBeLessThan(0.05);
+    // The root is inside the plant's footprint.
+    expect(out.bounds.min[0]).toBeLessThan(0);
+    expect(out.bounds.max[0]).toBeGreaterThan(0);
+    expect(out.bounds.min[2]).toBeLessThan(0);
+    expect(out.bounds.max[2]).toBeGreaterThan(0);
+  } else {
+    expect(out.bounds.min[1]).toBeCloseTo(0, 4);
+    expect((out.bounds.min[0] + out.bounds.max[0]) / 2).toBeCloseTo(0, 3);
+    expect((out.bounds.min[2] + out.bounds.max[2]) / 2).toBeCloseTo(0, 3);
+  }
   expect(out.colliders.length).toBeGreaterThan(0);
   expect(out.colliders.some((c) => c.kind === 'trimesh')).toBe(false);
   const tris = out.parts.reduce((s, p) => s + p.indices.length / 3, 0);
@@ -124,7 +140,7 @@ describe('built-in generators', () => {
 
   for (const id of REQUIRED_IDS) {
     describe(id, () => {
-      it('runs with default params (params: {}) and produces valid, grounded, centered output', () => {
+      it(ROOTED.has(id) ? 'runs with default params (params: {}) and produces valid, grounded output anchored at its root' : 'runs with default params (params: {}) and produces valid, grounded, centered output', () => {
         checkOutput(id, generateBuiltinSync(id, {}, 1));
       });
 
