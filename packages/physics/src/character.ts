@@ -144,8 +144,8 @@ export class CharacterController {
     this.controller.setSlideEnabled(true);
     this.controller.setMaxSlopeClimbAngle(((opts.maxSlopeDeg ?? 50) * Math.PI) / 180);
     this.controller.setMinSlopeSlideAngle(((Math.min(opts.maxSlopeDeg ?? 50, 45) - 5) * Math.PI) / 180);
-    if (process.env.NOSTEP !== '1') this.controller.enableAutostep(opts.stepHeight ?? 0.35, Math.max(0.05, radius * 0.5), false);
-    if (process.env.NOSNAP !== '1') this.controller.enableSnapToGround(opts.snapDistance ?? 0.3);
+    this.controller.enableAutostep(opts.stepHeight ?? 0.35, Math.max(0.05, radius * 0.5), false);
+    this.controller.enableSnapToGround(opts.snapDistance ?? 0.3);
     this.controller.setApplyImpulsesToDynamicBodies(true);
     pw._registerExternal(this.collider, opts.id ?? 'player');
   }
