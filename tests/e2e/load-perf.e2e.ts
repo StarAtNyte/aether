@@ -27,6 +27,7 @@ const URL_ARG = arg('url');
 const TIER = arg('tier') ?? 'auto';
 const TIMEOUT = 300_000;
 const PROFILE = ARGS.includes('--profile');
+const FPROFILE = ARGS.includes('--profile-frames');
 /** `--hw=4,4`: report that many cores and GB of memory (a weak laptop) to the page. */
 const HW = arg('hw')?.split(',').map(Number);
 
@@ -193,6 +194,50 @@ async function runThrottle(rate: number, base: string): Promise<void> {
           if (process.env['DUMP_KEYS']) (await import('node:fs')).writeFileSync(process.env['DUMP_KEYS'], (await page.evaluate(() => (window as unknown as { __keyLog: string[] }).__keyLog)).join('\n'));
           const n = net.read();
           // Frame time of a slow orbit: adaptive resolution and automatic tier untouched unless --tier.
+          if (FPROFILE) {
+            await cdp.send('Profiler.enable');
+            await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
+            await cdp.send('Profiler.start');
+          }
+          if (ARGS.includes('--ro-diag')) {
+            const diag = await page.evaluate(async () => {
+              const r = (window.__aether?.simulation?.renderer as unknown as { renderer: any }).renderer;
+              let proto: any = null;
+              const og = r._objects.get.bind(r._objects);
+              r._objects.get = function (...a: any[]) { (window as any).__lm = a[1]; { const w = ((window as any).__vw ??= new WeakMap()); const last = w.get(a[1]); if (last !== undefined && last !== a[1].version) { const st = ((window as any).__vch ??= new Map()); const kk = `${a[1].type}/${a[1].name}/${a[1].constructor?.name} +${a[1].version - last}`; st.set(kk, (st.get(kk) ?? 0) + 1); } w.set(a[1], a[1].version); } const pre = (window as any).__pre ?? ((window as any).__pre = { n: 0, lagAfter: 0, ids: new Set() }); const ro = og(...a); pre.n++; if (ro.version !== a[1].version) pre.lagAfter++; pre.ids.add(ro.id ?? ro); if (!proto) proto = Object.getPrototypeOf(ro); return ro; };
+              await new Promise((res) => setTimeout(res, 300));
+              if (!proto) return 'no render object seen';
+              const c = { keyCalls: 0, versionMismatch: 0, needsUpdate: 0, objects: 0, dynChanged: 0 };
+              const gk = proto.getCacheKey;
+              proto.getCacheKey = function () { c.keyCalls++; { const d1 = this.initialNodesCacheKey !== this.getDynamicCacheKey(); const d2 = this.clippingNeedsUpdate; const d3 = this.version !== (window as any).__lm?.version; const k = `dyn${d1 ? 1 : 0}clip${d2 ? 1 : 0}ver${d3 ? 1 : 0}`; (c as any)[k] = ((c as any)[k] ?? 0) + 1; } { const kk = gk.call(this); if (kk === this.initialCacheKey) (c as any).eq = ((c as any).eq ?? 0) + 1; else (c as any).neq = ((c as any).neq ?? 0) + 1; } if (c.keyCalls % 4000 === 1) (c as any)['stack' + c.keyCalls] = (new Error().stack ?? '').split('\n').slice(2, 7).map((x) => x.trim().replace(/https?:\/\/[^/]+/, '')).join(' < ') + ` | v ${this.version} argv ${(window as any).__lm?.version} argtype ${(window as any).__lm?.type} same ${(window as any).__lm === this.material} mv ${this.material.version}`; return gk.call(this); };
+              const nuDesc = Object.getOwnPropertyDescriptor(proto, 'needsUpdate');
+              if (nuDesc?.get) Object.defineProperty(proto, 'needsUpdate', { get() { const v = nuDesc.get!.call(this); if (v) { c.needsUpdate++; if (c.dynChanged < 3) (c as any)['dyn' + c.dynChanged++] = `${this.initialNodesCacheKey} vs ${this.getDynamicCacheKey()} clip:${this.clippingNeedsUpdate} mat:${this.material.type}/${this.material.name}`; } return v; } });
+              const frames = 20;
+              {
+                const m0 = (window as any).__lm;
+                let ver = m0.version;
+                const log2: string[] = ((window as any).__vlog = []);
+                Object.defineProperty(m0, 'version', { get: () => ver, set: (v: number) => { if (log2.length < 6) log2.push(`${ver}->${v} ${(new Error().stack ?? '').split('\n').slice(2, 8).map((x) => x.trim().replace(/https?:\/\/[^/]+/, '').replace(/^at /, '')).join(' < ')}`); ver = v; }, configurable: true });
+              }
+              {
+                const sc = (window.__aether?.simulation?.renderer as unknown as { scene: any }).scene;
+                let mat: any = null;
+                sc.traverse((o: any) => { if (!mat && o.isMesh && o.material && !Array.isArray(o.material)) mat = o.material; });
+                let mp = Object.getPrototypeOf(mat);
+                while (mp && !Object.getOwnPropertyDescriptor(mp, 'needsUpdate')) mp = Object.getPrototypeOf(mp);
+                const d = Object.getOwnPropertyDescriptor(mp, 'needsUpdate');
+                const seen = new Map<string, number>();
+                (window as any).__nuSeen = seen;
+                if (d?.set) Object.defineProperty(mp, 'needsUpdate', { set(v: boolean) { if (v) { const st = (new Error().stack ?? '').split('\n').slice(2, 5).map((x) => x.trim().replace(/https?:\/\/[^/]+/, '')).join(' < '); const k = `${this.type}/${this.name || '-'} ${st}`; seen.set(k, (seen.get(k) ?? 0) + 1); } d.set!.call(this, v); }, get: d.get, configurable: true });
+              }
+              await new Promise<void>((done) => { let i = 0; const step = (): void => { r.__x = 0; (window.__aether?.simulation?.renderer as any).requestRender(); if (++i < frames) requestAnimationFrame(step); else done(); }; requestAnimationFrame(step); });
+              proto.getCacheKey = gk;
+              if (nuDesc) Object.defineProperty(proto, 'needsUpdate', nuDesc);
+              const nu = [...((window as any).__nuSeen as Map<string, number>)].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${n}x ${k}`);
+              const pre = (window as any).__pre; return JSON.stringify({ vch: [...(((window as any).__vch ?? new Map()) as Map<string, number>)].slice(0, 8), vlog: (window as any).__vlog, frames, ...c, nu, get: pre?.n, lagAfter: pre?.lagAfter, distinct: pre?.ids.size });
+            });
+            log(`    ro-diag: ${diag}`);
+          }
           const fr = await page.evaluate(async (tier) => {
             const r = window.__aether?.simulation?.renderer as unknown as {
               setRenderTier(t: string): void;
@@ -231,6 +276,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
             return { med: s[Math.floor(s.length * 0.5)] ?? 0, p90: s[Math.floor(s.length * 0.9)] ?? 0, tier: `${r.renderTier} (auto ${r.autoRenderTier}, ladder ${r.performanceLevel}, ${navigator.hardwareConcurrency} cores)`, gpu: `${r.gpu.tier}: ${r.gpu.description.slice(0, 40)}`, dc: s2.drawCalls, tris: s2.triangles };
           }, TIER);
           if (process.env['SHOT_DIR']) await page.screenshot({ path: `${process.env['SHOT_DIR']}/${mode}-${rate}x.png` });
+          if (FPROFILE) await dumpProfile(cdp, `${mode} frames`);
           log(`| ${rate}x | ${mode} | open ${synced.toFixed(0)} ms | settled ${settled.toFixed(0)} ms | blocking ${lt.blocking.toFixed(0)} ms (${lt.n}) | ${n.count} req | ${mb(n.bytes)} (js ${mb(n.js)}) | tier ${fr.tier} (${fr.gpu}) | frame med ${fr.med.toFixed(1)} / p90 ${fr.p90.toFixed(1)} ms | ${fr.dc} dc, ${fr.tris} tris |`);
           if (process.env['DUMP_NET']) (await import('node:fs')).writeFileSync(process.env['DUMP_NET'], n.all.map((b) => `${b.bytes}\t${b.url}`).join('\n'));
           const cat = new Map<string, [number, number]>();

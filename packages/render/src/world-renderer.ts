@@ -71,6 +71,7 @@ import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
+import { opaqueSort, type SortItem } from './gpu/render-order';
 import { capTier, cutsAt, hardwareTierCap, PerformanceGovernor, PERFORMANCE_STEPS, readHardware, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
@@ -878,6 +879,7 @@ export class WorldRenderer {
     } catch (e) {
       log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
+    (renderer as unknown as { setOpaqueSort(f: (a: SortItem, b: SortItem) => number): void }).setOpaqueSort(opaqueSort);
     const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts, gpu);
     // A lost device/context stops drawing and tells the host (three's default only logs an error).
     renderer.onDeviceLost = (info: { message?: unknown }) => wr.handleContextLost(typeof info?.message === 'string' ? info.message : 'unknown reason');

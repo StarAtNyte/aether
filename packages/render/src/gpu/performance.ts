@@ -88,13 +88,13 @@ export function cutsAt(level: number): PerformanceCuts {
 /** Tunables of {@link PerformanceGovernor}. */
 export const GOVERNOR_DEFAULTS = Object.freeze({
   /** Frame rate (of the 90th-percentile frame time) under which a step is taken. */
-  lowFps: 26,
+  lowFps: 20,
   /** Under this the wait is the short one. */
   badFps: 12,
   /** Seconds below `lowFps` before a step. */
-  after: 3,
+  after: 6,
   /** Seconds below `badFps` before a step. */
-  afterBad: 1,
+  afterBad: 1.5,
   /** Adaptive resolution must have fallen to this scale first. */
   afterScale: 0.72,
   /** Frames in the percentile window. */
