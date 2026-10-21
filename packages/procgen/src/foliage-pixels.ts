@@ -207,17 +207,19 @@ function needleCard(n: number, variant: number): Uint8Array {
 function grassCard(n: number, variant: number): Uint8Array {
   const r = rng(0x6a55 + variant * 0x9e37);
   const c = new Canvas(n);
-  // Many thin, curved blades of different heights (a real tuft is dozens of hair-fine blades, not a few fat ones).
-  const blades = 44;
+  // Many thin, curved blades of different heights (a real tuft is dozens of hair-fine blades, not a few fat ones). Each
+  // blade is lighter along its fold than at its edges, and every blade darkens toward the root, where the tuft shades
+  // itself: the card reads as a clump with depth, and its straight bottom edge disappears into the ground.
+  const blades = 64;
   for (let i = 0; i < blades; i++) {
     const x0 = n * (0.08 + 0.84 * r());
     const tall = r() < 0.3;
-    const h = n * ((tall ? 0.72 : 0.38) + (tall ? 0.26 : 0.3) * r());
-    const lean = (r() - 0.5) * n * 0.42;
-    const bend = (r() - 0.5) * n * 0.16;
-    const w0 = n * (0.009 + 0.011 * r());
-    const tone = 0.62 + r() * 0.38;
-    const dry = r() < 0.14;
+    const h = n * ((tall ? 0.72 : 0.36) + (tall ? 0.26 : 0.32) * r());
+    const lean = (r() - 0.5) * n * 0.46;
+    const bend = (r() - 0.5) * n * 0.18;
+    const w0 = n * (0.006 + 0.007 * r());
+    const tone = 0.66 + r() * 0.34;
+    const dry = r() < 0.1;
     const top = n - h;
     c.stamp(
       Math.min(x0, x0 + lean + bend) - w0 - 3,
@@ -231,9 +233,15 @@ function grassCard(n: number, variant: number): Uint8Array {
         const w = w0 * Math.pow(Math.max(0, 1 - t), 0.6) + 0.3;
         return Math.abs(px - xc) - w;
       },
-      (_px, py) => {
+      (px, py) => {
         const t = Math.min(1, Math.max(0, (n - py) / h));
-        return dry ? [0.95 * tone, 0.88 * tone, 0.55 * tone] : [(0.5 + 0.45 * t) * tone, (0.74 + 0.24 * t) * tone, (0.34 + 0.2 * t) * tone];
+        const xc = x0 + lean * t * t + bend * Math.sin(t * Math.PI);
+        const w = w0 * Math.pow(Math.max(0, 1 - t), 0.6) + 0.3;
+        const fold = 1 - 0.28 * Math.min(1, Math.abs(px - xc) / w) ** 2;
+        const rootT = Math.min(1, t / 0.35);
+        const root = 0.42 + 0.58 * rootT * rootT * (3 - 2 * rootT);
+        const k = tone * fold * root;
+        return dry ? [0.95 * k, 0.86 * k, 0.6 * k] : [(0.7 + 0.3 * t) * k, (0.8 + 0.2 * t) * k, (0.62 + 0.2 * t) * k];
       },
     );
   }
