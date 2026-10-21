@@ -307,7 +307,8 @@ describe('look development in the review', () => {
     const host = new MemoryHost(w) as MemoryHost & { captureReview?: unknown };
     host.captureReview = async (views: ReadonlyArray<{ name: string }>): Promise<Array<{ name: string; dataUrl: string }>> => views.map((v) => ({ name: v.name, dataUrl: png }));
     const provider = scripted([
-      () => [finish('built')],
+      () => [call('edit_items', { edits: [{ op: 'move', ref: 'home-light', at: [1.4, 1.8] }] })],
+      () => [finish('moved the light')],
       // Round 1 (images shown): the model finds the light cold and flat and tunes the look instead of repainting.
       () => [call('tune_look', { temperature: 0.2, interiorWarmth: 0.8, exposure: 1.25, message: 'warm, brighter evening light' })],
       () => [finish('Warmed the light after looking at the renders.')],
