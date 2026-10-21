@@ -312,7 +312,7 @@ async function main(): Promise<void> {
     console.log(`\n== ${id} (${args.mode})`);
     const r = await runPhoto({ ...args, photo: id }, live);
     const f = r.final;
-    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.judge !== null ? `, judge score ${Math.round(f.judge * 100)}%` : ''}${f.objective !== null ? `, measured fidelity ${Math.round(f.objective * 100)}%` : ''}${f.combined !== null ? `, combined ${Math.round(f.combined * 100)}%` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s${r.reads ? `; reads ${r.reads.items.join('/')} pieces -> ${r.reads.consensus} kept, checklist ${r.reads.checklist}` : ''}; ${r.rounds.length} rounds` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
+    console.log(f ? `${id}: ${f.passed}/${f.total} items (${Math.round((f.passed / Math.max(1, f.total)) * 100)}%)${f.judge !== null ? `, judge score ${Math.round(f.judge * 100)}%` : ''}${f.objective !== null ? `, measured fidelity (advisory) ${Math.round(f.objective * 100)}%` : ''}${f.judgedBy !== null ? `, judged by ${f.judgedBy}` : ''}${r.first ? ` (first attempt ${r.first.passed}/${r.first.total}${r.first.objective !== null ? `, ${Math.round(r.first.objective * 100)}%` : ''})` : ''}; ${r.calls} model calls, ${Math.round(r.ms / 1000)} s${r.reads ? `; reads ${r.reads.items.join('/')} pieces -> ${r.reads.consensus} kept, checklist ${r.reads.checklist}` : ''}; ${r.rounds.length} rounds` : `${id}: no final score; errors: ${r.errors.join(' | ').slice(0, 300)}`);
   }
 }
 
