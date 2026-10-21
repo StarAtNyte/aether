@@ -3942,3 +3942,106 @@ window.
 references on demand) is the next lever. Edit cards are not kept across a
 reload (the stored turn shows its patch line).
 
+
+## Playtest bot on generated worlds: finishing instead of running out the clock
+
+**Problem.** After the generated-world upgrade (relief, carved streams,
+footbridges, woods, draped trails), the Codex night forest (`genlook/x1`)
+ended "not verified yet: ran too long", and the house walkthrough failed in
+`scripts/token-probe.ts`. Reproduced headless with a new probe
+(`scripts/bot-probe.ts`: world files, `prompt:` for the offline planner,
+`plan:` for a building plan; prints wall time, simulated time, nav grid,
+searches, evasions).
+
+**What it was (profiled).** Not compute: every "ran too long" run used 5–6 s
+of its 20 s budget and hit the 240 s *simulated* cap in a loop.
+- *Hop loop under a footbridge* (`x1`). The route ran under the bridge deck
+  (there is head room in the stream bed); the capsule stepped onto the low end
+  of the ramp, walked the deck above its path and stood over a waypoint 2.6 m
+  below. The stall watchdog measured movement in 3-D, so its own "hop" read as
+  progress and reset it: 220 s of hopping in place.
+- *Pinned by a pack* (offline-planner forest, `r6`/`c1`/`c3`). Four wolves
+  hunting the player stood in the stream below the bank where a lantern lies;
+  they could not climb out, the bot stepped aside, re-planned, stepped aside
+  (3 405 evasions). Waiting for a gap only applies to calm enemies.
+- *Non-deterministic first run.* Goals were read before the asset catalog was
+  loaded: the first run in a process measured library pickups (lanterns,
+  wolves) as unit boxes and could pass, every later run (the studio's worker,
+  a second check) measured them right and failed. Same world, two verdicts.
+- *Presence zone crossed early* (`x1`, once unblocked). The shrine zone sets
+  `atShrine` and resets it on exit; the bot crossed it on the way to the last
+  lantern, then waited elsewhere: "everything was done but the win never
+  triggered".
+- *The house was a real defect.* The stairwell balustrade picked the first
+  edge facing the arrival direction: for an L stair that is the inner corner
+  of the L, so it railed the real exit and left the inner corner open (the
+  studio's repair has nothing to propose for it either). Centred on the
+  opening's edge, the panels also narrowed a 0.9 m flight to 0.82 m where the
+  head passes them.
+
+**What changed.**
+- `playtest`: the catalog is loaded before goals are read (also for the level
+  probe); the watchdog counts ground movement only; standing more than 1 m
+  above the path's surface re-plans from where the player is (`lost`, counted
+  like a stuck); each walk may take 4× its length at full speed + 10 s and each
+  objective 4× + 60 s, past which it is written off with the reason, so a run
+  fails with a cause instead of "ran too long"; time spent stepping aside
+  counts as waiting, and after 20 s per objective the bot runs for it (a
+  person hesitates, then goes, taking a bite if need be); a presence zone is
+  walked back to once when everything else is done. `BOT_VERSION` 2.
+- Search: A* towards discs round the targets (the estimate is scaled to stay a
+  lower bound, so routes stay the cheapest); every jump of a candidate route is
+  simulated at once and the bad ones marked together; the far landing scan
+  skips 8×8-cell blocks no jump or drop can reach (exact: same candidates,
+  same order) and reads angles and bins from a per-graph table.
+- `arch`: the balustrade leaves open the edge nearest to where the top step
+  comes out and stands 5 cm back from the opening. Two bundled houses rebaked
+  (`dusk-lake-house`, `villa-pool`: railing points only).
+
+**Measured** (Node 24, this machine, headless; studio budget 240 s simulated /
+20 s compute; wall = whole run including the nav grid).
+
+| World | Before | After |
+|---|---|---|
+| Codex forest `x1` (stream, footbridge, mound, wolves) | ran too long, 240 s sim, 4.7 s wall | passed, 26.5 s sim, 3.6 s wall |
+| Offline forest `r6` (= Claude `c1`, `c3`) | ran too long, 240 s sim, 5.9 s wall | passed, 42.9 s sim, 2.6–3.1 s wall |
+| Claude forest `c4` | passed 22.0 s, 1.9 s wall | passed 22.0 s, 1.6 s wall |
+| Planner forest (current) | passed 42.7 s, 2.9 s wall | passed 42.7 s, 2.2 s wall |
+| Planner / `r6` canyon race | passed 45.5 s, 0.45 s | same |
+| Planner / `r6` village | nothing to play (no game) | same |
+| Planner house | passed 42.5 s, 2.8 s wall | passed 42.6 s, 2.5 s wall |
+| Codex house `x2` | passed 47.1 s, 3.4 s wall | passed 47.4 s, 3.2 s wall |
+| Codex house, token probe (saved) | failed: upstairs unreachable | same world still fails (railing baked in); its plan recompiled: passed 42.0 s, 1.8 s wall |
+| Claude house `c7` | failed: upstairs unreachable | still fails: the stair now climbs, but its top lands 0.78 m from the exterior wall, narrower than the body (a plan defect, reported) |
+
+Flagships (shipped files): every verdict unchanged. Highland Trail 78.7 s
+(3.4 → 3.3 s wall), Lantern Isles 64.0 s (1.2 → 1.0), Chain Reaction 14.9 s
+(3.3 → 2.6), Neon Rain City 61.4 → 63.4 s (2.4 → 2.3), Kyoto Temple 34.0 →
+31.8 s (2.1 → 1.7), Painterly Meadow 41.4 → 41.5 s (1.9 → 1.8), Four-Seasons
+Garden 29.7 s (2.7 → 2.1), Orbital Lab 49.0 → 39.2 s (10.7 → 9.8 s wall),
+Hollow Gate 53.6 → 48.7 s (2.9 → 2.8), Skyline Penthouse 67.5 → 68.0 s,
+Casa del Patio 30.5 → 30.9 s, Dusk House 46.4 → 47.2 s; Kart Canyon driven to
+the win (76.3 s); Blockfall and Sakura River unsupported as before (own bots).
+Search effort on the forest `x1`: 990 k → 499 k nodes expanded; jump/drop
+discovery 2.7 → 1.5 s in a CPU profile.
+
+**Tests.** `packages/playtest/test/run-length.test.ts`: the pinned-pack
+forest (fixture without ground cover) and the Codex forest must pass well
+inside the caps, the first and second run in a process must agree, an
+unreachable coin fails long before the clock, and the Codex L-stair house
+must be walked to every room within 20 s; both forest tests fail on the old
+bot. `packages/arch/test/stair-well-rail.test.ts`: every heading × shape ×
+turn leaves the arrival open and the flight its width (fails on the old
+compiler). Gates: `tsc --noEmit` 0 errors; vitest 390 files, 4 167 tests;
+studio build; `showcase:bake --check` up to date; smoke 34/34;
+`e2e:verified` passed (Chromium and Firefox); `e2e:gameplay` kyoto-temple
+won in the browser (software GL, the GPU was busy with training jobs);
+Highland Trail and Neon Rain City were not run in the browser here (about
+10 minutes each on software GL), their bot runs pass headless.
+
+**Still open.** Orbital Lab (low gravity: 14 m jump reach everywhere) still
+costs about 10 s of compute, mostly jump-link line tests; a coarser link
+search for low gravity is the next lever. The 240 s simulated cap is not
+scaled by world size: no generated world here comes near it once the loops
+are gone. A saved world keeps a railing compiled before this fix until its
+building is recompiled.
