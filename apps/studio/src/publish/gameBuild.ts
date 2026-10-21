@@ -386,7 +386,7 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     progress(++done, total, 'Packing models and textures…');
   }
   if (twins.length > 0) {
-    for (const f of ['basis/basis_transcoder.js', 'basis/basis_transcoder.wasm']) {
+    for (const f of ['basis/basis_transcoder.js', 'basis/basis_transcoder.wasm', 'basis/ktx2-worker.js']) {
       try {
         add(f, await fetchFile(f));
       } catch {
