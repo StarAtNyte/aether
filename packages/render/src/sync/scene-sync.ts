@@ -515,6 +515,11 @@ export class SceneSync {
     return null;
   }
 
+  /** No build or model load is in flight. */
+  get idle(): boolean {
+    return this.inflight.size === 0;
+  }
+
   /** Resolves when every in-flight build (including model loads) settled. */
   async whenIdle(): Promise<void> {
     while (this.inflight.size > 0) await Promise.allSettled([...this.inflight]);
@@ -1652,7 +1657,9 @@ export class SceneSync {
     // Never draw the full-detail mesh: it stays raycast-only and the cluster cut streams in
     // once the hierarchy is built (a cached hierarchy appears on the next frame).
     source.layers.set(BATCHED_LAYER);
-    dags.build(key, positions, indices).then(
+    // Tracked: the load waits for the hierarchy, because the stand-in is drawn with a program of its own (see whenIdle).
+    void this.track(
+      dags.build(key, positions, indices).then(
       (dag) => {
         if (this.disposed || node.token !== token || source.parent !== node.content || !node.bindings.some((b) => b.mesh === source)) return;
         let entry = this.virtualGroups.get(key);
@@ -1675,6 +1682,7 @@ export class SceneSync {
         log.debug(`virtual geometry unavailable for ${node.id}: ${errorMessage(e)}`);
         this.opts.onContentChanged?.(node.id);
       },
+      ),
     );
   }
 

@@ -7,7 +7,7 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Mesh, type Object3D, type Texture } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
@@ -510,6 +510,14 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 const SHADER_WARMUP_MS = 15_000;
 /** Longest the load screen waits for the world's environment map (ms). */
 const HDRI_WAIT_MS = 8_000;
+/** How long late warming collects arrivals before it links them (ms). */
+const LATE_ROUND_MS = 1_200;
+/** Rounds of late warming (about eight seconds of arrivals). */
+const LATE_ROUNDS = 6;
+/** Longest the load screen waits for the post chain to be built (ms). */
+const POST_WAIT_MS = 4_000;
+/** A replacement adding at least this many entities holds the first frame like a first world does. */
+const BULK_HOLD_ENTITIES = 8;
 const MAX_BLANK_RETRIES = 3;
 
 /** Whether a drawn canvas is blank (see {@link pixelsAreBlank}): sampled through a 32 x 32 copy. */
@@ -577,6 +585,8 @@ export class WorldRenderer {
   private tierChoice: RenderTier | 'auto' = 'auto';
   /** Load-screen text: what the load is waiting for now (stage names, never a made-up percentage). */
   private readonly onProgress: ((msg: string) => void) | null;
+  /** The shader warm-up is running: frames are not drawn. */
+  private warming = false;
   /** Time the last shader warm-up took (ms; diagnostics). */
   shaderWarmupMs = 0;
   /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
@@ -720,10 +730,13 @@ export class WorldRenderer {
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
-    this.materials.antiTile = this.gpu.tier !== 'software' && !this.lowMemory;
-    this.materials.groundDetail = this.gpu.tier !== 'software' && !this.lowMemory;
+    // Nor where the automatic tier is `low` (weak hardware): each of these lookups is hundreds of lines of the lit shader,
+    // and a lit program is what a weak machine spends its load time linking.
+    const richMaterials = this.gpu.tier !== 'software' && !this.lowMemory && this.autoTierNow() !== 'low';
+    this.materials.antiTile = richMaterials;
+    this.materials.groundDetail = richMaterials;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
-    this.materials.layeredTerrain = this.gpu.tier !== 'software' && !this.lowMemory;
+    this.materials.layeredTerrain = richMaterials;
     // Leaf cards: 2 × 2 variants of 256 px per atlas (128 px in low-memory mode), composed from photographed leaves.
     if (this.lowMemory) this.materials.foliage.configure(256);
     this.materials.foliage.usePhotos(opts.foliageUrl === undefined ? '/foliage/' : opts.foliageUrl);
@@ -1229,6 +1242,10 @@ export class WorldRenderer {
     const prev = this.sync.world;
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
     this.avatar.setLook(world.player.character);
+    // A first world, or a big replacement: nothing is drawn until its models are in and its programs linked
+    // (see warmShaders), so the page never freezes on one program at a time while the world appears.
+    const hold = this.gpu.tier !== 'software' && (prev === null || this.addedContent(prev, world).length >= BULK_HOLD_ENTITIES);
+    if (hold) this.warming = true;
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
     this.trackWaterBodies(world);
@@ -1250,16 +1267,23 @@ export class WorldRenderer {
     this.debugDirty = true;
     this.needsDraw = true;
     this.onProgress?.('Building the world…');
-    await done;
-    // Ceilings measured while their geometry was still streaming in are stale.
-    this.invalidateCeilings();
-    if (this.disposed) return;
-    // Emitters follow the scene objects, which exist only now.
-    if (this.sync.world === world) this.fx.syncEmitters(world);
-    // The first world of a session just materialises; later builds show their plan marks first.
-    if (added.length > 0) this.startGrow(added, prev !== null);
-    if (!this.framed) this.framed = this.frameContent({ duration: 0 });
-    await this.warmShaders();
+    try {
+      await done;
+      // Ceilings measured while their geometry was still streaming in are stale.
+      this.invalidateCeilings();
+      if (this.disposed) return;
+      // Emitters follow the scene objects, which exist only now.
+      if (this.sync.world === world) this.fx.syncEmitters(world);
+      // The first world of a session just materialises; later builds show their plan marks first.
+      if (added.length > 0) this.startGrow(added, prev !== null);
+      if (!this.framed) this.framed = this.frameContent({ duration: 0 });
+      if (hold) await this.warmShaders();
+    } finally {
+      if (hold) {
+        this.warming = false;
+        this.needsDraw = true;
+      }
+    }
   }
 
   /**
@@ -1273,25 +1297,125 @@ export class WorldRenderer {
     const started = performance.now();
     // The environment map first: a map that arrives later re-keys (and recompiles) every material.
     this.onProgress?.('Loading the sky…');
+    performance.mark('aether:sky-start');
     await this.env.hdri.settled(HDRI_WAIT_MS);
     if (this.disposed || this.lost) return;
-    this.onProgress?.('Preparing shaders…');
     performance.mark('aether:warm-start');
+    this.onProgress?.('Preparing shaders…');
+    await this.prepareAndCompile();
+    this.shaderWarmupMs = performance.now() - started;
+    performance.mark('aether:warm-end');
+    // Models and people are still arriving: their programs link in rounds, not one by one inside a draw.
+    void this.lateWarm();
+  }
+
+  /**
+   * What the first draws would create (static batches, scatter fields, virtual-geometry stand-ins, the post chain)
+   * exists before the programs are linked, so they are linked too.
+   */
+  private async prepareAndCompile(): Promise<void> {
+    this.prepareBatches();
+    this.sync.updateView(this.perspective, Math.max(1, Math.round(this.cssHeight * this.renderer.getPixelRatio())), 0);
+    this.syncPost();
+    performance.mark('aether:post-wait-start');
+    await this.until(() => !this.postPending, POST_WAIT_MS);
+    performance.mark('aether:compile-start');
+    if (this.disposed || this.lost) return;
+    await this.compileScene();
+    performance.mark('aether:compile-end');
+  }
+
+  /**
+   * After the first frame: every {@link LATE_ROUND_MS} (or when the last model is in) hold the draws for one parallel link
+   * of whatever arrived since. The page stays responsive; a synchronous link inside a draw freezes it for 0.1 to 0.8 s.
+   */
+  private async lateWarm(): Promise<void> {
+    for (let round = 0; round < LATE_ROUNDS && !this.disposed && !this.lost; round++) {
+      await this.bounded(this.sync.whenIdle(), LATE_ROUND_MS);
+      if (this.disposed || this.lost || this.warming) return;
+      this.warming = true;
+      try {
+        await this.prepareAndCompile();
+      } finally {
+        this.warming = false;
+        this.needsDraw = true;
+      }
+      if (this.sync.idle) return;
+    }
+  }
+
+  /**
+   * Link every program the scene needs, bounded by {@link SHADER_WARMUP_MS}. Never throws.
+   *
+   * three's `compileAsync` walks every render item and yields to the browser after each one, so a world of a thousand
+   * meshes spends seconds on bookkeeping while only a few dozen distinct programs exist. One representative per
+   * (material, geometry layout, object kind) is compiled; the others are hidden for the instant the list is gathered
+   * (it is gathered synchronously, before the first await). Objects out of view count as well: the camera moves on.
+   */
+  private async compileScene(): Promise<void> {
+    const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
+    const seen = new Set<string>();
+    this.scene.traverseVisible((o) => {
+      const m = o as Mesh;
+      if (m.isMesh !== true && (o as { isPoints?: boolean }).isPoints !== true && (o as { isLine?: boolean }).isLine !== true) return;
+      const mat = m.material as Material | Material[];
+      const mats = Array.isArray(mat) ? mat : [mat];
+      const geo = m.geometry;
+      const attrs = geo ? Object.keys(geo.attributes).join(',') + (geo.index ? '|i' : '') : '';
+      const kind = `${(o as { isInstancedMesh?: boolean }).isInstancedMesh ? 'I' : ''}${(o as { isSkinnedMesh?: boolean }).isSkinnedMesh ? `S${(o as { skeleton?: { bones: unknown[] } }).skeleton?.bones.length ?? 0}` : ''}${o.receiveShadow ? 'r' : ''}${o.castShadow ? 'c' : ''}${o.layers.mask}`;
+      const key = `${mats.map((x) => x.uuid).join('+')}|${attrs}|${kind}`;
+      if (seen.has(key)) {
+        changed.push({ o, visible: true, culled: false });
+        o.visible = false;
+        return;
+      }
+      seen.add(key);
+      if (o.frustumCulled) {
+        o.frustumCulled = false;
+        changed.push({ o, visible: false, culled: true });
+      }
+    });
+    // The footprints of a building are hidden until there are some, and their program is one of the heaviest small ones.
+    const prints = this.contact.mesh;
+    const showPrints = !prints.visible && this.archView.active;
+    if (showPrints) prints.visible = true;
+    const restore = (): void => {
+      for (const c of changed) {
+        if (c.culled) c.o.frustumCulled = true;
+        else c.o.visible = c.visible;
+      }
+      if (showPrints) prints.visible = false;
+    };
+    try {
+      const done = this.renderer.compileAsync(this.scene, this.perspective, this.scene);
+      restore();
+      await this.bounded(done, SHADER_WARMUP_MS);
+    } catch (e) {
+      restore();
+      log.warn(`shader warm-up failed: ${errorMessage(e)}`);
+    }
+  }
+
+  /** Resolves when `done()` holds (polled), or after `ms`. */
+  private until(done: () => boolean, ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const end = performance.now() + ms;
+      const poll = (): void => {
+        if (done() || performance.now() >= end || this.disposed) resolve();
+        else setTimeout(poll, 25);
+      };
+      poll();
+    });
+  }
+
+  /** `p`, or give up waiting for it after `ms`. */
+  private async bounded(p: Promise<unknown>, ms: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([
-        this.renderer.compileAsync(this.scene, this.perspective, this.scene),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, SHADER_WARMUP_MS);
-        }),
-      ]);
-    } catch (e) {
-      log.warn(`shader warm-up failed: ${errorMessage(e)}`);
+      await Promise.race([p, new Promise<void>((resolve) => (timer = setTimeout(resolve, ms)))]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
-    this.shaderWarmupMs = performance.now() - started;
-    performance.mark('aether:warm-end');
   }
 
   /** Content groups of renderable entities that `world` adds to `prev` (all of them for a first world). */
@@ -2605,6 +2729,11 @@ export class WorldRenderer {
     const changed = cameraMoved || this.needsDraw || (animate && this.env.animating);
     if (changed) this.refinement.restart();
     const refine = !changed && this.refinement.next();
+    // The first frame's programs are linking (see warmShaders): a draw now would link the missing ones one by one on this thread.
+    if (this.warming) {
+      this.drewLastFrame = false;
+      return false;
+    }
     if (opts.onDemand === true && !changed && !refine) {
       this.drewLastFrame = false;
       return false;

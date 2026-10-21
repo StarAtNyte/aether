@@ -85,6 +85,8 @@ async function netWatch(cdp: CDPSession): Promise<{ reset(): void; read(): Net }
 const PERF_INIT = `
   window.__keyLog = [];
   { const iv = setInterval(() => { try { const nm = window.__aether?.simulation?.renderer?.renderer?._nodes; if (!nm || nm.__wrapped) return; nm.__wrapped = true; clearInterval(iv);
+    { const pl = window.__aether.simulation.renderer.renderer._pipelines; const ogf = pl.getForRender.bind(pl); window.__pipes = [];
+      pl.getForRender = function (ro, promises) { const before = pl.nodes ? 0 : 0; const had = pl.has ? pl.has(ro) : undefined; const t = performance.now(); const r = ogf(ro, promises); try { const d = performance.now() - t; if (d > 40) window.__pipes.push(Math.round(t) + ' +' + Math.round(d) + 'ms ' + (promises ? 'async' : 'SYNC') + ' obj=' + (ro.object.name || ro.object.parent?.name || ro.object.type) + ' mat=' + ro.material.type + '/' + (ro.material.name || '-') + ' ctx=' + ro.context.id + ' rt=' + (ro.context.renderTarget ? 'rt' : 'canvas') + ' skinned=' + !!ro.object.isSkinnedMesh + ' inst=' + !!ro.object.isInstancedMesh); } catch {} return r; }; }
     const orig = nm.getCacheKey.bind(nm); let last = '';
     nm.getCacheKey = function (scene, lightsNode) { const k = orig(scene, lightsNode); try { const r = this.renderer; const env = this.getEnvironmentNode(scene); const fog = this.getFogNode(scene);
       const comp = [lightsNode.getCacheKey(true), r.shadowMap.enabled ? 1 : 0, r.shadowMap.type, env ? env.getCacheKey() : 'noenv', fog ? fog.getCacheKey() : 'nofog'].join('/'); if (comp !== last) { window.__keyLog.push(Math.round(performance.now()) + ' ' + comp + ' lights=' + (lightsNode.getLights ? lightsNode.getLights().map((l) => l.type + (l.visible ? '' : '(h)') + (l.castShadow ? 'S' : '')).join(',') : '?')); last = comp; } } catch (e) { window.__keyLog.push('err ' + e); } return k; };
@@ -94,8 +96,8 @@ const PERF_INIT = `
   window.__gl = { links: 0, linkMs: 0, statusMs: 0, statusCalls: 0, srcKB: 0, vlen: 0 };
   for (const C of [WebGL2RenderingContext]) {
     const P = C.prototype, link = P.linkProgram, gp = P.getProgramParameter, ss = P.shaderSource;
-    P.linkProgram = function (p) { try { const k = this.getAttachedShaders(p).map((x) => window.__src.get(x) || '').join('|'); window.__keys.add(k); { const nk = k.replace(/\d+/g, '#'); let h = 0; for (let i = 0; i < nk.length; i += 7) h = (h * 31 + nk.charCodeAt(i)) | 0; (window.__links = window.__links || []).push([Math.round(performance.now()), h, k.length]); } window.__big.push(k.length); } catch {} const t = performance.now(); const r = link.call(this, p); window.__gl.links++; window.__gl.linkMs += performance.now() - t; return r; };
-    P.getProgramParameter = function (p, k) { const t = performance.now(); const r = gp.call(this, p, k); const d = performance.now() - t; if (k === this.LINK_STATUS) { window.__tl.push([Math.round(t), Math.round(d)]); window.__gl.statusMs += d; window.__gl.statusCalls++; } return r; };
+    P.linkProgram = function (p) { try { const k = this.getAttachedShaders(p).map((x) => window.__src.get(x) || '').join('|'); window.__keys.add(k); (window.__pk = window.__pk || new WeakMap()).set(p, { len: k.length, skin: /boneTexture|skinIndex|bindMatrix/.test(k), inst: /instanceMatrix|gl_InstanceID/.test(k), post: /bloom|grain|vignette|aberration/i.test(k) }); { const nk = k.replace(/\d+/g, '#'); let h = 0; for (let i = 0; i < nk.length; i += 7) h = (h * 31 + nk.charCodeAt(i)) | 0; (window.__links = window.__links || []).push([Math.round(performance.now()), h, k.length]); } window.__big.push(k.length); } catch {} const t = performance.now(); const r = link.call(this, p); window.__gl.links++; window.__gl.linkMs += performance.now() - t; return r; };
+    P.getProgramParameter = function (p, k) { const t = performance.now(); const r = gp.call(this, p, k); const d = performance.now() - t; if (k === this.LINK_STATUS) { { const pi = (window.__pk && window.__pk.get(p)) || {}; window.__tl.push([Math.round(t), Math.round(d), Math.round((pi.len || 0) / 1024) + 'K' + (pi.skin ? 's' : '') + (pi.inst ? 'i' : '') + (pi.post ? 'P' : '')]); } window.__gl.statusMs += d; window.__gl.statusCalls++; } return r; };
     P.shaderSource = function (s, src) { window.__src.set(s, src); window.__gl.srcKB += src.length / 1024; return ss.call(this, s, src); };
   }
 
@@ -192,6 +194,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
             (await import('node:fs')).writeFileSync(process.env['DUMP_LINKS'], JSON.stringify(rows));
           }
           if (process.env['DUMP_KEYS']) (await import('node:fs')).writeFileSync(process.env['DUMP_KEYS'], (await page.evaluate(() => (window as unknown as { __keyLog: string[] }).__keyLog)).join('\n'));
+          if (process.env['DUMP_PIPES']) (await import('node:fs')).writeFileSync(process.env['DUMP_PIPES'], (await page.evaluate(() => (window as unknown as { __pipes: string[] }).__pipes)).join('\n'));
           const n = net.read();
           // Frame time of a slow orbit: adaptive resolution and automatic tier untouched unless --tier.
           if (FPROFILE) {
@@ -252,7 +255,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
               domElement: HTMLCanvasElement;
             };
             const ext = (() => { try { const c = document.createElement('canvas').getContext('webgl2'); return c?.getSupportedExtensions()?.includes('KHR_parallel_shader_compile') ?? false; } catch { return false; } })();
-            console.log(`timeline ${JSON.stringify({ warm: performance.getEntriesByType('mark').filter((m) => m.name.startsWith('aether:warm')).map((m) => Math.round(m.startTime)), status: (window as unknown as { __tl: number[][] }).__tl.filter((x) => (x[1] as number) > 20).map((x) => x.join(':')).slice(0, 400).join(' ') })}`);
+            console.log(`timeline ${JSON.stringify({ warm: performance.getEntriesByType('mark').filter((m) => m.name.startsWith('aether:')).map((m) => m.name.slice(7) + '@' + Math.round(m.startTime)), status: (window as unknown as { __tl: (number | string)[][] }).__tl.filter((x) => (x[1] as number) > 100).map((x) => x.join(':')).slice(0, 400).join(' ') })}`);
             console.log(`gl ${JSON.stringify((window as unknown as { __gl: object }).__gl)} unique ${(window as unknown as { __keys: Set<string> }).__keys.size} sizes(KB) max ${Math.round(Math.max(...(window as unknown as { __big: number[] }).__big) / 1024)} avg ${Math.round((window as unknown as { __big: number[] }).__big.reduce((a, b) => a + b, 0) / (window as unknown as { __big: number[] }).__big.length / 1024)}; warmup ${Math.round(r.shaderWarmupMs)} ms, parallel-compile ext on a fresh context: ${ext}`);
             if (tier !== 'auto') r.setRenderTier(tier);
             const times: number[] = [];
