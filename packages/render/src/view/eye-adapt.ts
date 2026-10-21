@@ -57,7 +57,7 @@ export function adaptedLook(f: number): { exposure: number; envScale: number } {
 /** Share of the light drop between outdoors and the eye's spot that the exposure makes up (a render keeps rooms darker than the garden). */
 export const VOLUME_ADAPT_SHARE = 0.75;
 /** Largest exposure boost (stops) the light volume asks for. */
-export const VOLUME_MAX_EV = 3;
+export const VOLUME_MAX_EV = 4;
 /** Largest exposure cut (stops): a room full of lamps at dusk is brighter than the dim garden. */
 export const VOLUME_MIN_EV = -2;
 
@@ -75,4 +75,29 @@ export function volumeExposure(inside: { vis: number; bounce: number; lamps?: nu
   if (!Number.isFinite(out) || !Number.isFinite(lit) || out <= 1e-6) return 0;
   const ratio = Math.max(1e-4, lit / out);
   return Math.max(VOLUME_MIN_EV, Math.min(VOLUME_MAX_EV, -Math.log2(ratio) * VOLUME_ADAPT_SHARE));
+}
+
+/** Share of a room's colour cast the interior white balance takes out (a photographer balances most of it, not all). */
+export const INTERIOR_BALANCE_SHARE = 0.6;
+/** Red-blue ratio of room light that is left as it is (a lived-in room reads a little warm). */
+export const INTERIOR_NEUTRAL_WARMTH = 1.25;
+
+/**
+ * Grade temperature shift (the units of `whiteBalance` in `gpu/finishing.ts`) that balances the colour of the light
+ * at the eye: `light` is its linear red and blue (sky through the windows, bounce off a wood floor, warm lamps). A
+ * room lit by its warm floor and lamps reads sepia without it (white walls and ceilings came out brown); the shift
+ * takes {@link INTERIOR_BALANCE_SHARE} of the red-blue cast beyond {@link INTERIOR_NEUTRAL_WARMTH} out (and of a blue
+ * cast below neutral), within −0.7..0.3. Non-finite or dark input: no shift.
+ */
+export function interiorBalance(light: { r: number; b: number }): number {
+  const r = light.r;
+  const b = light.b;
+  if (!Number.isFinite(r) || !Number.isFinite(b) || r <= 1e-5 || b <= 1e-5) return 0;
+  // Light up to a little warmer than neutral is how a lived-in room should look: only the cast beyond it is balanced.
+  const k = r / b;
+  const cast = k > INTERIOR_NEUTRAL_WARMTH ? k / INTERIOR_NEUTRAL_WARMTH : k < 1 ? k : 1;
+  const m = cast ** -INTERIOR_BALANCE_SHARE;
+  // whiteBalance(t) scales red by 1 + 0.16 t and blue by 1 − 0.2 t: solve (1 + 0.16 t) / (1 − 0.2 t) = m.
+  const t = (m - 1) / (0.16 + 0.2 * m);
+  return Math.max(-0.7, Math.min(0.3, t));
 }

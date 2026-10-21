@@ -20,7 +20,7 @@ import {
   type Light,
 } from 'three';
 import type { LightProfile, LightSpec } from '@aether/core';
-import { RoomLamp } from './room-lamp';
+import { RoomLamp, RoomSpot } from './room-lamp';
 
 /**
  * three.js uses physical units (candela) for point/spot lights; World IR
@@ -183,12 +183,9 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
     }
     case 'spot': {
       const args = [color, spec.intensity * LOCAL_LIGHT_SCALE * scale, spec.range, (spec.angle * Math.PI) / 180, 0.35, 2] as const;
-      let l: SpotLight;
-      if (spec.profile && support.ies) {
-        const ies = new support.ies(...args);
-        ies.iesMap = profileTexture(spec.profile, spec.angle);
-        l = ies;
-      } else l = new SpotLight(...args);
+      // A spot the renderer can confine to its room; the IES profile needs the node renderer's IES spot shading.
+      const l = new RoomSpot(...args);
+      if (spec.profile && support.ies) l.iesMap = profileTexture(spec.profile, spec.angle);
       l.shadow.mapSize.set(1024, 1024);
       l.shadow.bias = -0.0008;
       target = new Object3D();

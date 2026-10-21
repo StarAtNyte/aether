@@ -8,13 +8,16 @@
  * - add the bounce irradiance, divided by that same visibility so the occlusion does not darken it twice
  *   (screen-space AO still applies to it, as it should), and its mean radiance to the reflections.
  *
- * Outside the volume's box the effect fades out over {@link LightVolume.fade}. Four filtered reads of one 3D
- * texture and a handful of ALU per fragment; the same code runs on WebGPU and WebGL2.
+ * Probes that do not see the shaded point (a wall between them, from their baked free distances) are left out of the
+ * interpolation, so light does not leak through thin walls, slabs and door frames. Outside the volume's box the effect
+ * fades out over {@link LightVolume.fade}. Eight unfiltered and four filtered reads of one 3D texture and some ALU per
+ * fragment; the same code runs on WebGPU and WebGL2.
  */
 import { Vector3, Vector4 } from 'three';
 import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { LightVolume } from '../environment/light-volume-light';
+import { ATLAS_SUBVOLUMES, FREE_STEPS } from '../environment/light-volume';
 
 interface LightingContext {
   irradiance: Nd;
@@ -65,12 +68,51 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     // Probe coordinates (texel centres of the allocated atlas; the grid uses its low corner).
     const f = T.clamp(p.sub(uMin).div(uExtent), 0, 1).mul(uRes.sub(1));
     const slab = uAlloc.z.add(2);
-    const depth = slab.mul(4);
-    const u = f.x.add(0.5).div(uAlloc.x);
-    const v = f.y.add(0.5).div(uAlloc.y);
-    const zb = f.z.add(1.5);
+    const depth = slab.mul(ATLAS_SUBVOLUMES);
     const tex = T.texture3D(light.texture);
-    const read = (t: number): Nd => tex.sample(T.vec3(u, v, zb.add(slab.mul(t)).div(depth)));
+    // Leak test: of the eight probes around the point, only those that see it (no wall between them along an axis,
+    // from each probe's baked free distances) count; the filtered reads then go to the point whose trilinear weights
+    // match those (per axis), so a wall's room side never mixes in the probes behind it (outside, the next room,
+    // under the slab). Eight unfiltered reads at texel centres plus the four filtered ones.
+    const base = T.min(T.floor(f), uRes.sub(2));
+    const t = f.sub(base);
+    const geomZ = slab.mul(4).add(1.5);
+    const free = (code: Nd): Nd => T.mix(code.div(FREE_STEPS), T.float(2), T.step(FREE_STEPS - 0.5, code));
+    const sees = (d: Nd, minus: Nd, plus: Nd): Nd => T.clamp(T.mix(minus, plus, T.step(0, d)).sub(T.abs(d)).mul(20), 0, 1);
+    let wsum: Nd = T.float(0);
+    let wx: Nd = T.float(0);
+    let wy: Nd = T.float(0);
+    let wz: Nd = T.float(0);
+    for (let c = 0; c < 8; c++) {
+      const cx = c & 1;
+      const cy = (c >> 1) & 1;
+      const cz = (c >> 2) & 1;
+      const corner = base.add(T.vec3(cx, cy, cz));
+      const g = tex.sample(T.vec3(corner.x.add(0.5).div(uAlloc.x), corner.y.add(0.5).div(uAlloc.y), corner.z.add(geomZ).div(depth)));
+      const a = T.floor(g.x.add(0.5));
+      const b = T.floor(g.y.add(0.5));
+      const a8 = T.floor(a.div(8));
+      const b8 = T.floor(b.div(8));
+      const xm = free(a.sub(a8.mul(8)));
+      const xp = free(a8.sub(T.floor(a8.div(8)).mul(8)));
+      const ym = free(T.floor(a.div(64)));
+      const yp = free(b.sub(b8.mul(8)));
+      const zm = free(b8.sub(T.floor(b8.div(8)).mul(8)));
+      const zp = free(T.floor(b.div(64)));
+      const tri = (cx ? t.x : t.x.oneMinus()).mul(cy ? t.y : t.y.oneMinus()).mul(cz ? t.z : t.z.oneMinus());
+      const v = sees(t.x.sub(cx), xm, xp).mul(sees(t.y.sub(cy), ym, yp)).mul(sees(t.z.sub(cz), zm, zp));
+      // A trace of the plain weight keeps the read defined where no probe sees the point.
+      const w = tri.mul(v.add(1e-3));
+      wsum = wsum.add(w);
+      if (cx) wx = wx.add(w);
+      if (cy) wy = wy.add(w);
+      if (cz) wz = wz.add(w);
+    }
+    const fa = base.add(T.vec3(wx, wy, wz).div(T.max(wsum, 1e-6)));
+    const u = fa.x.add(0.5).div(uAlloc.x);
+    const v = fa.y.add(0.5).div(uAlloc.y);
+    const zb = fa.z.add(1.5);
+    const read = (k: number): Nd => tex.sample(T.vec3(u, v, zb.add(slab.mul(k)).div(depth)));
     const evalAt = (s: Nd): Nd => s.x.add(T.dot(T.vec3(s.y, s.z, s.w), n));
     const s0 = read(0);
     const s1 = read(1);

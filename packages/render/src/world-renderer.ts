@@ -56,13 +56,13 @@ import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGra
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
-import { adaptStep, adaptedLook, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
+import { adaptStep, adaptedLook, interiorBalance, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
 import type { VolumeLamp } from './environment/light-volume';
 import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
-import { RoomLampNode } from './gpu/room-lamp-node';
-import { RoomLamp } from './sync/room-lamp';
+import { RoomLampNode, RoomSpotNode } from './gpu/room-lamp-node';
+import { isConfinedLight, RoomLamp, RoomSpot } from './sync/room-lamp';
 import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
 import { isOpaqueVisible, sceneSightTest } from './view/sightline';
@@ -340,12 +340,17 @@ const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _dir = new Vector3();
-/** Metres a room lamp's clip box reaches past the room's floor edge (to light its own walls). */
-const ROOM_LAMP_MARGIN = 0.15;
+/** Metres a room lamp's clip box reaches past the room's footprint (its wall centrelines). */
+const ROOM_LAMP_MARGIN = 0;
+/** Metres a room lamp's clip box reaches above the room's ceiling (lit through the fade, the storey above is not). */
+const ROOM_LAMP_CEILING = 0.08;
 /** Share of a spot light's intensity the light volume and the eye count (it lights a cone, not every direction). */
 const SPOT_SHARE = 0.5;
-/** White-balance shift toward warm of a fully adapted interior view (grade temperature units). */
-const INTERIOR_WARMTH = 0.3;
+/**
+ * White-balance shift toward warm of a fully adapted interior view (grade temperature units), on top of the balance
+ * that takes most of the room light's own cast out (`interiorBalance`).
+ */
+const INTERIOR_WARMTH = 0.12;
 
 /** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
 function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
@@ -835,6 +840,7 @@ export class WorldRenderer {
     try {
       renderer.library.addLight(LightVolumeNode, LightVolume);
       renderer.library.addLight(RoomLampNode, RoomLamp);
+      renderer.library.addLight(RoomSpotNode, RoomSpot);
     } catch (e) {
       log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
@@ -960,14 +966,26 @@ export class WorldRenderer {
   }
 
   /**
-   * Confine every room lamp to its room: the room's floor footprint (a little wider, for its own walls) from the floor
-   * to just above the lamp. Lamps have no shadow maps, so this is what keeps a bedroom pendant out of the corridor.
+   * Confine every room lamp and spot to its room: the room's floor footprint (a little wider, for its own walls) from
+   * the floor to just above the lamp. Lamps have no shadow maps, so this is what keeps a bedroom pendant out of the
+   * corridor and a downlight's cone out of the room below.
    */
   private clipLampsToRooms(): void {
     const room = new Box3();
+    // The ceiling over each room: a lamp lights up to it (a pendant's own height plus a margin fell short of a tall
+    // ceiling, which then stayed dark brown with the lamp right under it).
+    const ceilingTop = new Map<string, number>();
+    const cb = new Box3();
+    this.sync.forEachNode((node) => {
+      const a = node.entity.arch;
+      if (a?.role !== 'ceiling' || !a.room) return;
+      cb.makeEmpty();
+      for (const b of node.bindings) cb.expandByObject(b.mesh);
+      if (!cb.isEmpty()) ceilingTop.set(a.room, Math.max(ceilingTop.get(a.room) ?? -Infinity, cb.max.y));
+    });
     this.sync.forEachNode((node) => {
       const l = node.light?.light;
-      if (!(l instanceof RoomLamp)) return;
+      if (!isConfinedLight(l)) return;
       const id = node.entity.arch?.room;
       const r = id ? this.sync.node(id) : undefined;
       room.makeEmpty();
@@ -977,12 +995,18 @@ export class WorldRenderer {
         return;
       }
       l.getWorldPosition(_pos);
+      // The room's footprint runs along the wall centrelines: the clip's short fade there ends inside each wall, so a
+      // lamp lights its own wall faces and none of the next room's (a wider box lit a stripe of the neighbour's walls
+      // along every corner). From just under its floor (the slab's top) to just above its ceiling: the ceiling below
+      // and the floor above (0.22 m beyond) stay dark, where the old box lit a bright line along the ceiling below.
+      const floorY = room.max.y;
       room.min.x -= ROOM_LAMP_MARGIN;
       room.min.z -= ROOM_LAMP_MARGIN;
       room.max.x += ROOM_LAMP_MARGIN;
       room.max.z += ROOM_LAMP_MARGIN;
-      room.min.y -= 0.1;
-      room.max.y = Math.max(room.max.y, _pos.y + 0.6);
+      room.min.y = floorY - 0.05;
+      const ceil = id ? ceilingTop.get(id) : undefined;
+      room.max.y = Math.max(floorY + 0.5, ceil !== undefined ? ceil + ROOM_LAMP_CEILING : _pos.y + 0.6);
       l.setClip(room);
     });
   }
@@ -1023,7 +1047,7 @@ export class WorldRenderer {
           // A spot (downlight) lights about half of what the same point light would, all of it below.
           const k = kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity;
           const range = kind.distance;
-          const c = l instanceof RoomLamp && !l.clip.isEmpty() ? l.clip : null;
+          const c = isConfinedLight(l) && !l.clip.isEmpty() ? l.clip : null;
           lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20, ...(c ? { room: [c.min.x, c.min.y, c.min.z, c.max.x, c.max.y, c.max.z] as const } : {}) });
         }
         const a = e.arch;
@@ -2688,8 +2712,9 @@ export class WorldRenderer {
     this.renderer.toneMappingExposure = this.env.exposure * eyeExposure;
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
-      const warm = volume && !g ? INTERIOR_WARMTH * Math.max(0, Math.min(1, this.eyeEv / 1.5)) : 0;
-      const grade = gradeWithPreset(gradeFor(sky), warm > 0 ? { ...preset, temperature: preset.temperature + warm } : preset);
+      // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
+      const warm = volume && !g ? INTERIOR_WARMTH * Math.max(0, Math.min(1, this.eyeEv / 1.5)) + this.eyeBalance : 0;
+      const grade = gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...preset, temperature: preset.temperature + warm } : preset);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);
       post.setBloom(this.env.bloom * preset.bloom);
@@ -2700,6 +2725,8 @@ export class WorldRenderer {
   private eyeFactor = 0;
   /** Smoothed exposure boost (stops) asked for by the light volume at the eye. */
   private eyeEv = 0;
+  /** Smoothed white-balance shift (grade temperature) for the colour of the light at the eye. */
+  private eyeBalance = 0;
   /** The sun's shadow map is fitted to the building the eye stands in. */
   private shadowInside = false;
   /** Eye position at the last adaptation tick. */
@@ -2737,6 +2764,8 @@ export class WorldRenderer {
     const target = this.ceilings.length === 0 ? 0 : interiorFactor(p.x, p.y, p.z, this.ceilings);
     const sample = this.lightVolume.ready ? this.lightVolume.eyeSample(p.x, p.y, p.z) : null;
     const targetEv = sample ? volumeExposure(sample, this.volumeOutdoor) : 0;
+    // Balance only as far as the eye has adapted to the room (outdoors the sky sets the white).
+    const targetBalance = sample ? interiorBalance(sample) * Math.max(0, Math.min(1, targetEv / 1.5)) : 0;
     // Under a roof by the ceilings, or by the volume itself (little sky seen from the eye).
     const inside = this.lightVolume.ready && (target > 0.5 || (sample !== null && sample.vis < 0.3));
     if (inside !== this.shadowInside) {
@@ -2747,9 +2776,10 @@ export class WorldRenderer {
     // A camera that jumped (a cut, a teleport, a capture pose) sees with adapted eyes at once.
     const jumped = this.lastEye.distanceToSquared(p) > 2.25;
     this.lastEye.copy(p);
-    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01) return;
+    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01 && Math.abs(targetBalance - this.eyeBalance) < 0.005) return;
     this.eyeFactor = jumped ? target : adaptStep(this.eyeFactor, target, step);
     this.eyeEv = jumped ? targetEv : adaptStep(this.eyeEv, targetEv, step);
+    this.eyeBalance = jumped ? targetBalance : adaptStep(this.eyeBalance, targetBalance, step);
     this.applyLook();
     this.needsDraw = true;
   }

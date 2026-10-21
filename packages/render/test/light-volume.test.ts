@@ -10,6 +10,11 @@ import {
   sampleVolume,
   toHalf,
   VOLUME_ALLOC,
+  packFreeDistances,
+  probeSees,
+  unpackFreeDistances,
+  FREE_STEPS,
+  GEOMETRY_OFFSET,
   type VolumeBakeInput,
   type VolumeGrid,
 } from '../src/environment/light-volume';
@@ -190,15 +195,75 @@ describe('light volume: bake', () => {
   });
 });
 
+/**
+ * Two 3 × 3 × 3 m rooms side by side along x, split by a 0.12 m wall at x = 0 (thinner than a probe spacing): the
+ * east room has a full-height opening to the sky in its +x wall, the west room is sealed.
+ */
+function twoRooms(): TraceScene {
+  const t: number[] = [];
+  box(t, [-3.2, -0.2, -1.7], [3.2, 0, 1.7]); // floor slab
+  box(t, [-3.2, 3, -1.7], [3.2, 3.2, 1.7]); // ceiling slab
+  box(t, [-3.2, 0, -1.7], [3.2, 3, -1.5]); // -z wall
+  box(t, [-3.2, 0, 1.5], [3.2, 3, 1.7]); // +z wall
+  box(t, [-3.2, 0, -1.5], [-3, 3, 1.5]); // west wall
+  box(t, [-0.06, 0, -1.5], [0.06, 3, 1.5]); // thin party wall
+  box(t, [3, 0, -1.5], [3.2, 0.3, 1.5]); // east: a low sill, open above
+  const positions = Float32Array.from(t);
+  return new TraceScene({ positions, albedo: new Float32Array((positions.length / 9) * 3).fill(0.7) });
+}
+
+describe('light volume: leaks', () => {
+  it('packs and unpacks free distances exactly in half precision', () => {
+    const codes = [0, 7, 3, 5, 1, 6];
+    const [a, b] = packFreeDistances(codes);
+    expect(a).toBeLessThan(512);
+    expect(b).toBeLessThan(512);
+    const out = new Float32Array(6);
+    unpackFreeDistances(a, b, out);
+    expect(out[1]).toBe(2);
+    expect(out[0]).toBe(0);
+    expect(out[2]).toBeCloseTo(3 / FREE_STEPS, 6);
+    expect(out[5]).toBeCloseTo(6 / FREE_STEPS, 6);
+    // A probe with a wall 0.2 spacings to its +x does not see a point 0.5 spacings that way; it sees one to its -x.
+    const free = [2, 0.2, 2, 2, 2, 2];
+    expect(probeSees(0.5, 0, 0, free)).toBe(0);
+    expect(probeSees(-0.5, 0.3, 0, free)).toBe(1);
+  });
+
+  it('a thin wall keeps the sunlit room out of the dark room beside it', () => {
+    const g = planVolumeGrid([-3.2, -0.2, -1.7], [3.2, 3.2, 1.7], 0.45)!;
+    const baker = new LightVolumeBaker(input(twoRooms(), g, { rays: 48, passes: 3 }));
+    const data = baker.run();
+    // Probes carry their free distances: one just west of the party wall sees no further east than the wall.
+    const sp = g.spacing;
+    const ix = Math.round((-0.2 - g.min[0]) / sp);
+    const iy = Math.round((1.5 - g.min[1]) / sp);
+    const iz = Math.round((0 - g.min[2]) / sp);
+    const j = ix + g.nx * (iy + g.ny * iz);
+    const free = new Float32Array(6);
+    unpackFreeDistances(data[j * FLOATS_PER_PROBE + GEOMETRY_OFFSET]!, data[j * FLOATS_PER_PROBE + GEOMETRY_OFFSET + 1]!, free);
+    const px = g.min[0] + ix * sp;
+    if (px < -0.06) expect(free[1]! * sp).toBeLessThan(-0.06 - px + sp / FREE_STEPS + 1e-6);
+    // The dark room's face of the party wall reads its own darkness, not the lit room 0.12 m away.
+    const darkFace = sampleVolume(g, data, -0.06 - 0.1, 1.5, 0, [-1, 0, 0]);
+    const litFace = sampleVolume(g, data, 0.06 + 0.1, 1.5, 0, [1, 0, 0]);
+    expect(litFace.vis).toBeGreaterThan(0.04);
+    expect(darkFace.vis).toBeLessThan(litFace.vis * 0.25);
+    expect(darkFace.vis).toBeLessThan(0.03);
+    const lum = (s: { bounce: [number, number, number] }): number => s.bounce[0] + s.bounce[1] + s.bounce[2];
+    expect(lum(darkFace)).toBeLessThan(lum(litFace) * 0.03);
+  });
+});
+
 describe('light volume: atlas and sampling', () => {
-  it('packs four padded sub-volumes of half floats into the fixed allocation', () => {
+  it('packs five padded sub-volumes of half floats into the fixed allocation', () => {
     const g: VolumeGrid = { min: [0, 0, 0], spacing: 1, nx: 2, ny: 2, nz: 3 };
     const alloc = { nx: 4, ny: 3, nz: 5 };
     const data = new Float32Array(12 * FLOATS_PER_PROBE);
     for (let i = 0; i < 12; i++) for (let k = 0; k < FLOATS_PER_PROBE; k++) data[i * FLOATS_PER_PROBE + k] = i + k / 16;
     const atlas = packVolumeAtlas(g, data, alloc);
     expect(atlasDepth(alloc)).toBe(ATLAS_SUBVOLUMES * 7);
-    expect(atlas.length).toBe(4 * 3 * 28 * 4);
+    expect(atlas.length).toBe(4 * 3 * ATLAS_SUBVOLUMES * 7 * 4);
     const at = (x: number, y: number, z: number): number => atlas[(x + alloc.nx * (y + alloc.ny * z)) * 4]!;
     // Sub-volume 1 (red), probe (1, 0, 2): slice 1·7 + 1 + 2.
     expect(at(1, 0, 7 + 1 + 2)).toBe(toHalf(1 + 2 * (0 + 2 * 2) + 4 / 16));

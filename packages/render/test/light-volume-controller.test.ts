@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { collectTraceInput, LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart, type VolumeWorkerLike } from '../src/view/light-volume-controller';
-import { LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
+import { FLOATS_PER_PROBE, LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
 import { parseVolumeReply, parseVolumeRequest } from '../src/environment/light-volume-protocol';
 import { volumeExposure, VOLUME_MAX_EV, VOLUME_MIN_EV } from '../src/view/eye-adapt';
 
@@ -186,7 +186,7 @@ describe('light volume protocol', () => {
     expect(parseVolumeRequest(null)).toBeNull();
   });
   it('accepts only finite replies of the right size', () => {
-    const n = 8 * 16;
+    const n = 8 * FLOATS_PER_PROBE;
     expect(parseVolumeReply({ type: 'volume', id: 1, ok: true, data: new Float32Array(n) }, grid)?.ok).toBe(true);
     expect(parseVolumeReply({ type: 'volume', id: 1, ok: true, data: new Float32Array(n - 1) }, grid)).toBeNull();
     const bad = new Float32Array(n);

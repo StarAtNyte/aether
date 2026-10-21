@@ -47,10 +47,23 @@ export const VOLUME_ALLOC: Readonly<{ nx: number; ny: number; nz: number }> = Ob
 export const VOLUME_RAYS = 48;
 /** Bounce passes (each adds one more bounce of the light already in the volume). */
 export const VOLUME_PASSES = 6;
-/** Floats per probe: vis (a, bx, by, bz), then R, G, B irradiance (a, bx, by, bz) each. */
-export const FLOATS_PER_PROBE = 16;
-/** Sub-volumes in the atlas (vis, R, G, B). */
-export const ATLAS_SUBVOLUMES = 4;
+/**
+ * Floats per probe: vis (a, bx, by, bz), then R, G, B irradiance (a, bx, by, bz) each, then the probe's free
+ * distances along the six axes ({@link GEOMETRY_OFFSET}: two packed codes, see {@link packFreeDistances}, and two
+ * spare floats).
+ */
+export const FLOATS_PER_PROBE = 20;
+/** Floats per probe that carry light (the rest is geometry). */
+export const LIGHT_FLOATS = 16;
+/** Offset of the packed free-distance codes in a probe's floats. */
+export const GEOMETRY_OFFSET = 16;
+/** Sub-volumes in the atlas (vis, R, G, B, free distances). */
+export const ATLAS_SUBVOLUMES = 5;
+/**
+ * Steps a free distance is quantised to: code k < FREE_STEPS means the first surface along that axis lies between
+ * k/FREE_STEPS and (k+1)/FREE_STEPS of a spacing from the probe; FREE_STEPS means nothing within a spacing.
+ */
+export const FREE_STEPS = 7;
 /** Share of single-sided back-face hits above which a probe counts as buried in a wall. */
 export const BURIED_SHARE = 0.3;
 /** Largest triangle count a bake scene accepts. */
@@ -373,6 +386,56 @@ export function sphereDirections(count: number): Float32Array {
   return out;
 }
 
+/**
+ * Pack six free-distance codes (0..{@link FREE_STEPS}, order −x, +x, −y, +y, −z, +z) into two floats that are exact
+ * in half precision (each below 512).
+ */
+export function packFreeDistances(codes: ArrayLike<number>): [number, number] {
+  const c = (k: number): number => Math.max(0, Math.min(FREE_STEPS, Math.round(codes[k] ?? 0)));
+  return [c(0) + 8 * c(1) + 64 * c(2), c(3) + 8 * c(4) + 64 * c(5)];
+}
+
+/**
+ * Free distance (in spacings) a code stands for: the low end of its step (a probe never counts as seeing further than
+ * it does: rounding up let probes a centimetre inside a wall light a band along the room's corners), or 2 when
+ * nothing lies within a spacing.
+ */
+export function freeOfCode(code: number): number {
+  return code >= FREE_STEPS ? 2 : code / FREE_STEPS;
+}
+
+/** Decode the six free distances (in spacings; order −x, +x, −y, +y, −z, +z) of two packed floats into `out`. */
+export function unpackFreeDistances(a: number, b: number, out: Float32Array | number[]): void {
+  const ai = Math.max(0, Math.round(a));
+  const bi = Math.max(0, Math.round(b));
+  out[0] = freeOfCode(ai % 8);
+  out[1] = freeOfCode(Math.floor(ai / 8) % 8);
+  out[2] = freeOfCode(Math.floor(ai / 64) % 8);
+  out[3] = freeOfCode(bi % 8);
+  out[4] = freeOfCode(Math.floor(bi / 8) % 8);
+  out[5] = freeOfCode(Math.floor(bi / 64) % 8);
+}
+
+/**
+ * How much a probe at grid offset `d` (point minus probe, in spacings, each within −1..1) sees the point, from the
+ * probe's free distances: a wall between them along an axis (closer to the probe than the point is) hides it. Soft
+ * over a twentieth of a spacing (on the far side of the wall) so weights do not pop. Probes behind a thin wall, under a slab or buried in one drop out
+ * of the interpolation, which is what keeps a room's light from leaking through its walls.
+ */
+export function probeSees(dx: number, dy: number, dz: number, free: ArrayLike<number>): number {
+  const axis = (d: number, minus: number, plus: number): number => {
+    const need = Math.abs(d);
+    const f = d >= 0 ? plus : minus;
+    return clamp01((f - need) * 20);
+  };
+  return axis(dx, free[0] ?? 2, free[1] ?? 2) * axis(dy, free[2] ?? 2, free[3] ?? 2) * axis(dz, free[4] ?? 2, free[5] ?? 2);
+}
+
+/** Axis directions in the order of the free distances. */
+const AXES: ReadonlyArray<readonly [number, number, number]> = [
+  [-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1],
+];
+
 /** A deterministic hash in [0, 1). */
 function hash01(n: number): number {
   let x = (n | 0) ^ 0x9e3779b9;
@@ -411,7 +474,7 @@ export class LightVolumeBaker {
   private readonly nrm: [number, number, number] = [0, 0, 0];
   private readonly sampleOut = new Float32Array(FLOATS_PER_PROBE);
   /** Per-probe accumulator (reused: the bake allocates nothing per probe). */
-  private readonly acc = new Float64Array(12);
+  private readonly acc = new Float64Array(LIGHT_FLOATS);
 
   constructor(private readonly input: VolumeBakeInput) {
     const g = input.grid;
@@ -521,6 +584,7 @@ export class LightVolumeBaker {
   }
 
   private readonly pos: [number, number, number] = [0, 0, 0];
+  private readonly codes = new Int32Array(6);
 
   /** Trace a probe's rays once: hits, direct light at each hit, sky visibility and the ground's bounce. */
   private traceProbe(i: number): void {
@@ -606,6 +670,21 @@ export class LightVolumeBaker {
     // Buried in a wall, or under the open ground (nothing the bake knows lies there): filled from neighbours.
     this.valid[i] = back / R > BURIED_SHARE || p[1] < ground.y - 0.05 ? 0 : 1;
     const o = i * FLOATS_PER_PROBE;
+    // Free distance along each axis (up to a spacing): which interpolation neighbours this probe can see.
+    const sp = this.input.grid.spacing;
+    const codes = this.codes;
+    for (let k = 0; k < 6; k++) {
+      const a = AXES[k]!;
+      let free = scene.intersect(p[0], p[1], p[2], a[0], a[1], a[2], sp) >= 0 ? scene.hitT : sp;
+      // The open ground under the building is a surface too.
+      if (a[1] < 0 && p[1] - ground.y >= 0 && p[1] - ground.y < free) free = p[1] - ground.y;
+      codes[k] = free >= sp ? FREE_STEPS : Math.min(FREE_STEPS - 1, Math.floor((free / sp) * FREE_STEPS));
+    }
+    // A probe buried in a wall (or under the ground) sees nothing: it never takes part in a read.
+    if (!this.valid[i]) codes.fill(0);
+    const packed = packFreeDistances(codes);
+    this.data[o + GEOMETRY_OFFSET] = packed[0];
+    this.data[o + GEOMETRY_OFFSET + 1] = packed[1];
     // vis(n) = (1/π) E(n) for unit sky radiance: a = Y0 c0, b = (2/3) Y1 c1.
     this.data[o] = Y0 * v0 * w;
     this.data[o + 1] = (2 / 3) * Y1 * v1 * w;
@@ -669,13 +748,15 @@ export class LightVolumeBaker {
   private finish(): void {
     const g = this.input.grid;
     const F = FLOATS_PER_PROBE;
+    // Only the light is filled in; a buried probe keeps its own (short) free distances, so it stays out of the reads.
+    const L = LIGHT_FLOATS;
     const ok = this.valid.slice();
-    const mean = new Float64Array(F);
+    const mean = new Float64Array(L);
     let free = 0;
     for (let i = 0; i < this.probes; i++) {
       if (!ok[i]) continue;
       free++;
-      for (let k = 0; k < F; k++) mean[k] = mean[k]! + this.data[i * F + k]!;
+      for (let k = 0; k < L; k++) mean[k] = mean[k]! + this.data[i * F + k]!;
     }
     for (let round = 0; round < 4; round++) {
       const filled: number[] = [];
@@ -684,7 +765,7 @@ export class LightVolumeBaker {
         const ix = i % g.nx;
         const iy = Math.floor(i / g.nx) % g.ny;
         const iz = Math.floor(i / (g.nx * g.ny));
-        const sum = new Float64Array(F);
+        const sum = new Float64Array(L);
         let cnt = 0;
         for (const [ox, oy, oz] of NEIGHBOURS) {
           const jx = ix + ox, jy = iy + oy, jz = iz + oz;
@@ -692,10 +773,10 @@ export class LightVolumeBaker {
           const j = jx + g.nx * (jy + g.ny * jz);
           if (!ok[j]) continue;
           cnt++;
-          for (let k = 0; k < F; k++) sum[k] = sum[k]! + this.data[j * F + k]!;
+          for (let k = 0; k < L; k++) sum[k] = sum[k]! + this.data[j * F + k]!;
         }
         if (cnt === 0) continue;
-        for (let k = 0; k < F; k++) this.data[i * F + k] = sum[k]! / cnt;
+        for (let k = 0; k < L; k++) this.data[i * F + k] = sum[k]! / cnt;
         filled.push(i);
       }
       for (const i of filled) ok[i] = 1;
@@ -703,11 +784,64 @@ export class LightVolumeBaker {
     }
     for (let i = 0; i < this.probes; i++) {
       if (ok[i]) continue;
-      for (let k = 0; k < F; k++) this.data[i * F + k] = free > 0 ? mean[k]! / free : k === 0 ? 1 : 0;
+      for (let k = 0; k < L; k++) this.data[i * F + k] = free > 0 ? mean[k]! / free : k === 0 ? 1 : 0;
     }
+    this.denoise();
     for (let k = 0; k < this.data.length; k++) if (!Number.isFinite(this.data[k]!)) this.data[k] = 0;
   }
+
+  /**
+   * {@link DENOISE_PASSES} passes of a small blur over the light (each probe with weight 2, every neighbour it sees
+   * with weight 1): 48 rays a probe leave a cloudy pattern on a large flat ceiling. A neighbour counts only along an
+   * axis that is free for a whole spacing from both probes, so the blur never crosses a wall or a slab.
+   */
+  private denoise(): void {
+    const g = this.input.grid;
+    const F = FLOATS_PER_PROBE;
+    const L = LIGHT_FLOATS;
+    const n = this.probes;
+    // Per probe, a bit per axis direction (order of AXES) that is free for a whole spacing.
+    const open = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = Math.round(this.data[i * F + GEOMETRY_OFFSET]!);
+      const b = Math.round(this.data[i * F + GEOMETRY_OFFSET + 1]!);
+      const codes = [a % 8, Math.floor(a / 8) % 8, Math.floor(a / 64) % 8, b % 8, Math.floor(b / 8) % 8, Math.floor(b / 64) % 8];
+      let bits = 0;
+      for (let k = 0; k < 6; k++) if (codes[k] === FREE_STEPS) bits |= 1 << k;
+      open[i] = this.valid[i] ? bits : 0;
+    }
+    const steps = [-1, 1, -g.nx, g.nx, -g.nx * g.ny, g.nx * g.ny];
+    const src = new Float32Array(n * L);
+    for (let pass = 0; pass < DENOISE_PASSES; pass++) {
+      for (let i = 0; i < n; i++) for (let k = 0; k < L; k++) src[i * L + k] = this.data[i * F + k]!;
+      for (let i = 0; i < n; i++) {
+        const bits = open[i]!;
+        if (bits === 0) continue;
+        const ix = i % g.nx;
+        const iy = Math.floor(i / g.nx) % g.ny;
+        const iz = Math.floor(i / (g.nx * g.ny));
+        const acc = this.acc;
+        acc.fill(0);
+        let wsum = 2;
+        for (let k = 0; k < L; k++) acc[k] = src[i * L + k]! * 2;
+        for (let d = 0; d < 6; d++) {
+          if (!(bits & (1 << d))) continue;
+          const edge = d === 0 ? ix === 0 : d === 1 ? ix === g.nx - 1 : d === 2 ? iy === 0 : d === 3 ? iy === g.ny - 1 : d === 4 ? iz === 0 : iz === g.nz - 1;
+          if (edge) continue;
+          const j = i + steps[d]!;
+          // The neighbour must see back along the same axis (the opposite direction's bit).
+          if (!(open[j]! & (1 << (d ^ 1)))) continue;
+          wsum++;
+          for (let k = 0; k < L; k++) acc[k] = acc[k]! + src[j * L + k]!;
+        }
+        for (let k = 0; k < L; k++) this.data[i * F + k] = acc[k]! / wsum;
+      }
+    }
+  }
 }
+
+/** Blur passes over the baked light (see {@link LightVolumeBaker.denoise}). */
+export const DENOISE_PASSES = 2;
 
 const NEIGHBOURS: ReadonlyArray<readonly [number, number, number]> = [
   [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
@@ -717,12 +851,17 @@ function clamp01(v: number): number {
   return v > 0 ? (v < 1 ? v : 1) : 0;
 }
 
+const FREE_SCRATCH = new Float32Array(6);
+
 /**
- * Trilinear read of a probe field at a world point (clamped to the grid), skipping probes flagged invalid
- * in `valid` (null: all valid). Writes {@link FLOATS_PER_PROBE} values into `out`.
+ * Trilinear read of a probe field's light at a world point (clamped to the grid), skipping probes flagged invalid
+ * in `valid` (null: all valid) and weighting each probe by whether it sees the point ({@link probeSees}, from its
+ * free distances), as the shader does. When no probe sees the point the plain trilinear weights apply. Writes the
+ * {@link LIGHT_FLOATS} light values into `out` (the rest is left at zero).
  */
 export function sampleField(g: VolumeGrid, data: Float32Array, valid: Uint8Array | null, x: number, y: number, z: number, out: Float32Array): void {
   const F = FLOATS_PER_PROBE;
+  const L = LIGHT_FLOATS;
   const fx = clampIdx((x - g.min[0]) / g.spacing, g.nx);
   const fy = clampIdx((y - g.min[1]) / g.spacing, g.ny);
   const fz = clampIdx((z - g.min[2]) / g.spacing, g.nz);
@@ -730,16 +869,25 @@ export function sampleField(g: VolumeGrid, data: Float32Array, valid: Uint8Array
   const tx = fx - x0, ty = fy - y0, tz = fz - z0;
   out.fill(0);
   let wsum = 0;
-  for (let c = 0; c < 8; c++) {
-    const ix = x0 + (c & 1), iy = y0 + ((c >> 1) & 1), iz = z0 + ((c >> 2) & 1);
-    const j = ix + g.nx * (iy + g.ny * iz);
-    if (valid && !valid[j]) continue;
-    const wgt = (c & 1 ? tx : 1 - tx) * ((c >> 1) & 1 ? ty : 1 - ty) * ((c >> 2) & 1 ? tz : 1 - tz);
-    if (wgt <= 0) continue;
-    wsum += wgt;
-    for (let k = 0; k < F; k++) out[k] = out[k]! + data[j * F + k]! * wgt;
+  const free = FREE_SCRATCH;
+  for (let pass = 0; pass < 2 && wsum <= 1e-6; pass++) {
+    for (let c = 0; c < 8; c++) {
+      const cx = c & 1, cy = (c >> 1) & 1, cz = (c >> 2) & 1;
+      const ix = x0 + cx, iy = y0 + cy, iz = z0 + cz;
+      const j = ix + g.nx * (iy + g.ny * iz);
+      if (valid && !valid[j]) continue;
+      let wgt = (cx ? tx : 1 - tx) * (cy ? ty : 1 - ty) * (cz ? tz : 1 - tz);
+      if (wgt <= 0) continue;
+      if (pass === 0) {
+        unpackFreeDistances(data[j * F + GEOMETRY_OFFSET]!, data[j * F + GEOMETRY_OFFSET + 1]!, free);
+        wgt *= probeSees(tx - cx, ty - cy, tz - cz, free);
+        if (wgt <= 1e-6) continue;
+      }
+      wsum += wgt;
+      for (let k = 0; k < L; k++) out[k] = out[k]! + data[j * F + k]! * wgt;
+    }
   }
-  if (wsum > 1e-6) for (let k = 0; k < F; k++) out[k] = out[k]! / wsum;
+  if (wsum > 1e-6) for (let k = 0; k < L; k++) out[k] = out[k]! / wsum;
 }
 
 function clampIdx(f: number, n: number): number {

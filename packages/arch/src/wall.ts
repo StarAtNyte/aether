@@ -19,6 +19,8 @@ import type { ArchOutput } from './types';
 /** Skirting board height and projection (metres). */
 export const SKIRTING_HEIGHT = 0.08;
 export const SKIRTING_DEPTH = 0.012;
+/** How far a wall face runs past a joined corner into its neighbour (metres), so the two faces overlap instead of meeting on a crack. */
+export const CORNER_SEAM = 0.004;
 
 /** An opening clipped to the wall: x range and y range. */
 export interface OpeningSpan {
@@ -160,8 +162,12 @@ export function buildWall(p: WallParams): ArchOutput {
       }
     }
   };
-  face(geomA, aStart, aEnd, -1, p.dadoA ? { height: p.dadoA.height, rail: p.dadoA.rail, geom: dadoGeomA } : null);
-  face(geomB, bStart, bEnd, 1, p.dadoB ? { height: p.dadoB.height, rail: p.dadoB.rail, geom: dadoGeomB } : null);
+  // At a joined (mitred) end the faces run a few millimetres past the corner, into the neighbour: two faces that only
+  // meet on a line leave sub-pixel cracks there, and with a dim room exposed up the bright sky sparkled through them.
+  const joinedStart = p.startA !== 0 || p.startB !== 0 ? CORNER_SEAM : 0;
+  const joinedEnd = p.endA !== 0 || p.endB !== 0 ? CORNER_SEAM : 0;
+  face(geomA, aStart - joinedStart, aEnd + joinedEnd, -1, p.dadoA ? { height: p.dadoA.height, rail: p.dadoA.rail, geom: dadoGeomA } : null);
+  face(geomB, bStart - joinedStart, bEnd + joinedEnd, 1, p.dadoB ? { height: p.dadoB.height, rail: p.dadoB.rail, geom: dadoGeomB } : null);
 
   // Reveals: jambs, head, sill (edge material = side A's).
   for (const s of spans) {

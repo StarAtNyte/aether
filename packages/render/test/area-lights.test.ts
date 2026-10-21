@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { RectAreaLight, SpotLight, Vector3 } from 'three';
 import { LightSpec } from '@aether/core';
+import { RoomSpot } from '../src/sync/room-lamp';
 import {
   areaLightsReady,
   createEntityLight,
@@ -108,20 +109,21 @@ describe('area lights', () => {
 });
 
 describe('spot light profiles', () => {
-  it('use the registered IES spot light with a baked profile, else the plain cone', () => {
-    const plain = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing' })).light;
-    expect(plain.constructor).toBe(SpotLight);
+  it('carry a baked IES profile once the renderer can shade one, else the plain cone; always a room spot', () => {
+    const plain = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing' })).light as RoomSpot;
+    expect(plain).toBeInstanceOf(RoomSpot);
+    expect(plain.iesMap).toBeNull();
     class FakeIes extends SpotLight {
       iesMap: unknown = null;
     }
     registerLightSupport({ ies: FakeIes as unknown as IesSpotLightCtor });
-    const profiled = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing', angle: 35 })).light as FakeIes;
-    expect(profiled).toBeInstanceOf(FakeIes);
+    const profiled = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing', angle: 35 })).light as RoomSpot;
+    expect(profiled).toBeInstanceOf(RoomSpot);
     expect(profiled.iesMap).not.toBeNull();
-    const again = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing', angle: 35 })).light as FakeIes;
+    const again = createEntityLight(LightSpec.parse({ type: 'spot', profile: 'batwing', angle: 35 })).light as RoomSpot;
     expect(again.iesMap).toBe(profiled.iesMap);
-    const unprofiled = createEntityLight(LightSpec.parse({ type: 'spot' })).light;
-    expect(unprofiled).not.toBeInstanceOf(FakeIes);
+    const unprofiled = createEntityLight(LightSpec.parse({ type: 'spot' })).light as RoomSpot;
+    expect(unprofiled.iesMap).toBeNull();
     expect(() => LightSpec.parse({ type: 'spot', profile: 'laser' })).toThrow();
   });
 });

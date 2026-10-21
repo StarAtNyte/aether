@@ -228,6 +228,9 @@ export class LightVolumeController {
   /** Lamps of the volume on screen (the eye's exposure counts their direct light). */
   private lamps: VolumeLamp[] = [];
   private pendingLamps: VolumeLamp[] = [];
+  /** Linear sky ambient (red, blue) of a surface facing up, of the volume on screen and of the one baking. */
+  private ambientRB: [number, number] = [1, 1];
+  private pendingAmbientRB: [number, number] = [1, 1];
   /** The last finished bake: probes, triangles, work time on the main thread (ms) and wall time (ms). */
   lastBake: { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number; worker: boolean } | null = null;
 
@@ -362,6 +365,7 @@ export class LightVolumeController {
     this.bakingGrid = null;
     this.shellBounds.copy(this.pendingBounds);
     this.lamps = this.pendingLamps;
+    this.ambientRB = this.pendingAmbientRB;
     this.light.setBake(grid, data);
     this.onUpload();
   }
@@ -383,6 +387,8 @@ export class LightVolumeController {
     this.probes = grid.nx * grid.ny * grid.nz;
     const lamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
     const ground = { y: g.groundY, albedo: g.lighting.groundAlbedo };
+    const amb = g.lighting.ambient;
+    this.pendingAmbientRB = [Math.max(0, amb.a[0] + amb.b[0] * 0.5), Math.max(0, amb.a[2] + amb.b[2] * 0.5)];
     this.pendingLamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range, ...(l.room ? { room: [...l.room] as [number, number, number, number, number, number] } : {}) }));
     this.bakeWork = performance.now() - t0;
     const w = inline ? null : this.ensureWorker();
@@ -457,9 +463,11 @@ export class LightVolumeController {
 
   /**
    * What the volume gives an eye at `x, y, z`: mean sky visibility over six directions, the mean bounce luminance
-   * and the mean direct light of nearby lamps on the same storey (null without a bake or outside the volume's box).
+   * and the mean direct light of nearby lamps on the same storey, and the red and blue of the room's light (sky through
+   * the windows and the bounce, which carries the lamps' light off the walls: the white balance; null without a bake or
+   * outside the volume's box).
    */
-  eyeSample(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number } | null {
+  eyeSample(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number; r: number; b: number } | null {
     const g = this.grid;
     const d = this.data;
     if (!g || !d || !Number.isFinite(x + y + z)) return null;
@@ -469,10 +477,14 @@ export class LightVolumeController {
     if (x < g.min[0] || y < g.min[1] || z < g.min[2] || x > g.min[0] + ex || y > g.min[1] + ey || z > g.min[2] + ez) return null;
     let vis = 0;
     let bounce = 0;
+    let red = 0;
+    let blue = 0;
     for (const n of SIX) {
       const s = sampleVolume(g, d, x, y, z, n, this.scratch);
       vis += s.vis;
       bounce += 0.2126 * s.bounce[0] + 0.7152 * s.bounce[1] + 0.0722 * s.bounce[2];
+      red += s.bounce[0] + s.vis * this.ambientRB[0];
+      blue += s.bounce[2] + s.vis * this.ambientRB[1];
     }
     // Lamps within a few metres on this storey (no occlusion test: a coarse but cheap stand-in for the room's lamps).
     let lamps = 0;
@@ -493,7 +505,7 @@ export class LightVolumeController {
       const lum = 0.2126 * l.color[0] + 0.7152 * l.color[1] + 0.0722 * l.color[2];
       lamps += (lum * f * f * cos) / Math.max(0.25, d2);
     }
-    return { vis: vis / 6, bounce: bounce / 6, lamps };
+    return { vis: vis / 6, bounce: bounce / 6, lamps, r: red / 6, b: blue / 6 };
   }
 
   dispose(): void {
