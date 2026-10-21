@@ -145,9 +145,9 @@ npm run e2e:ktx2                 # memory, load time, download and stills, with 
 The trade-off is download size: UASTC normal and ORM maps are 3 to 5 times
 larger than the 1k JPEGs they replace (they are close to lossless), so the
 twins add 67 MB to the deployment (24.6 MB of sources) and a world downloads
-1.4 to 2.8 times the library bytes on a first visit (library files are cached
-immutably afterwards). In return a world holds 2.7 to 3.8 times less texture
-memory, which is what decides whether integrated GPUs and memory-tight
+1.2 to 2.8 times the library bytes on a first visit (library files are cached
+immutably afterwards). In return a world's image textures take 2.7 to 6 times
+less GPU memory, which is what decides whether integrated GPUs and memory-tight
 browsers keep up. Measured results are in [REVIEW_LOG.md](REVIEW_LOG.md).
 
 ## Using assets
