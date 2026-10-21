@@ -518,6 +518,8 @@ const LATE_ROUNDS = 6;
 const POST_WAIT_MS = 4_000;
 /** A replacement adding at least this many entities holds the first frame like a first world does. */
 const BULK_HOLD_ENTITIES = 8;
+/** Frames are held for the warm-up at most this long (ms), whatever the driver does. */
+const WARMING_MAX_MS = 20_000;
 const MAX_BLANK_RETRIES = 3;
 
 /** Whether a drawn canvas is blank (see {@link pixelsAreBlank}): sampled through a 32 x 32 copy. */
@@ -585,8 +587,16 @@ export class WorldRenderer {
   private tierChoice: RenderTier | 'auto' = 'auto';
   /** Load-screen text: what the load is waiting for now (stage names, never a made-up percentage). */
   private readonly onProgress: ((msg: string) => void) | null;
-  /** The shader warm-up is running: frames are not drawn. */
-  private warming = false;
+  /** The shader warm-up is running: frames are not drawn (never for longer than {@link WARMING_MAX_MS}). */
+  private warming_ = false;
+  private warmingSince = 0;
+  private get warming(): boolean {
+    return this.warming_;
+  }
+  private set warming(on: boolean) {
+    if (on && !this.warming_) this.warmingSince = now();
+    this.warming_ = on;
+  }
   /** Time the last shader warm-up took (ms; diagnostics). */
   shaderWarmupMs = 0;
   /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
@@ -1266,7 +1276,9 @@ export class WorldRenderer {
     this.boundsDirty = true;
     this.debugDirty = true;
     this.needsDraw = true;
-    this.onProgress?.('Building the world…');
+    // Only the first world reports: the host clears the load text when it has framed that world, and nothing clears it after a later one.
+    const say = prev === null ? this.onProgress : null;
+    say?.('Building the world…');
     try {
       await done;
       // Ceilings measured while their geometry was still streaming in are stale.
@@ -1277,7 +1289,7 @@ export class WorldRenderer {
       // The first world of a session just materialises; later builds show their plan marks first.
       if (added.length > 0) this.startGrow(added, prev !== null);
       if (!this.framed) this.framed = this.frameContent({ duration: 0 });
-      if (hold) await this.warmShaders();
+      if (hold) await this.warmShaders(say);
     } finally {
       if (hold) {
         this.warming = false;
@@ -1292,16 +1304,16 @@ export class WorldRenderer {
    * it synchronously on the main thread, one program at a time, with the page frozen. Bounded: a slow driver
    * does not hold the load screen longer than {@link SHADER_WARMUP_MS}.
    */
-  private async warmShaders(): Promise<void> {
+  private async warmShaders(say: ((msg: string) => void) | null): Promise<void> {
     if (this.disposed || this.lost) return;
     const started = performance.now();
     // The environment map first: a map that arrives later re-keys (and recompiles) every material.
-    this.onProgress?.('Loading the sky…');
+    say?.('Loading the sky…');
     performance.mark('aether:sky-start');
     await this.env.hdri.settled(HDRI_WAIT_MS);
     if (this.disposed || this.lost) return;
     performance.mark('aether:warm-start');
-    this.onProgress?.('Preparing shaders…');
+    say?.('Preparing shaders…');
     await this.prepareAndCompile();
     this.shaderWarmupMs = performance.now() - started;
     performance.mark('aether:warm-end');
@@ -2731,8 +2743,11 @@ export class WorldRenderer {
     const refine = !changed && this.refinement.next();
     // The first frame's programs are linking (see warmShaders): a draw now would link the missing ones one by one on this thread.
     if (this.warming) {
-      this.drewLastFrame = false;
-      return false;
+      if (now() - this.warmingSince < WARMING_MAX_MS) {
+        this.drewLastFrame = false;
+        return false;
+      }
+      this.warming = false;
     }
     if (opts.onDemand === true && !changed && !refine) {
       this.drewLastFrame = false;
