@@ -5142,7 +5142,7 @@ Checks on the model-led design:
 
 **Defect found and fixed: the shell refused on a crowded wall.** The Codex twin run stopped at "shell refused": the reading
 put window, door and second window 0.1 m or less apart on a 2.85 m wall (one gap printed as 0.10 m yet refused, one -0.07 m),
-and the one correction round (already inside the same limit) did not resolve it. `deriveBuild` now runs `separateOpenings`:
+and the single correction round either failed or could not run (Codex was at its limit at the time), so the run ended there. `deriveBuild` now runs `separateOpenings`:
 openings of one wall are pushed apart inside the corner margins, windows narrowed (not below 0.5 m), the last window dropped
 when even that does not fit, doors keep their width, and every change is a note in the room's assumptions. The 0.1 m wall
 rule in the design tool ignores a micro-metre of rounding (`gap < 0.1 - 1e-6`). Test: `photo-openings.test.ts`. The next
