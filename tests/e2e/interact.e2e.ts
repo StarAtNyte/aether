@@ -317,9 +317,13 @@ async function run(browser: Browser, url: string, label: string, forceWebGL2: bo
     for (const yaw of [137, 227, 317, 47]) {
       await page.evaluate(([x, y, z, yw]) => window.__aether?.simulation?.placePlayer([x as number, y as number, z as number], yw as number, -10), [feet[0], feet[1], feet[2], yaw] as const);
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
-      await page.waitForTimeout(900);
-      carried = await bodyPos(page, ID.mug);
       hold = [feet[0] - Math.sin((yaw * Math.PI) / 180) * 1.1, feet[1] + 1.4, feet[2] - Math.cos((yaw * Math.PI) / 180) * 1.1];
+      // A software rasterizer steps the simulation slowly: give the mug a few seconds to swing round.
+      for (let waited = 0; waited < 6000; waited += 300) {
+        await page.waitForTimeout(300);
+        carried = await bodyPos(page, ID.mug);
+        if (carried && dist(carried, hold) < 0.6) break;
+      }
       if (carried && dist(carried, hold) < 0.6) {
         followed = true;
         break;
