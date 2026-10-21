@@ -10,7 +10,7 @@
  *   aether logout   [--claude]
  *   aether pair
  *   aether doctor   [--json]
- *   aether mcp      [--project-dir DIR] [--provider auto|offline|local]
+ *   aether mcp      [--project-dir DIR] [--provider auto|offline|local] [--player-dir DIR]
  *   aether help | --help | version | --version
  *
  * Global: `--state-dir <dir>` (or AETHER_STATE_DIR) for the pid, port, log and
@@ -269,19 +269,19 @@ Usage: aether [command] [options]
 
 Commands:
   start            Build the studio if needed, start Aether in the background and print its link (default)
-  stop             Stop the background server
-  status           Show whether Aether is running, and its link
-  logs [-f]        Show the server log (-f follows it, -n N lines)
-  login            Sign in to Codex with your own ChatGPT account (--device-auth for a code; --claude for Claude Code)
+  stop             Stop the background server (--force ends one that is not answering)
+  status           Show whether Aether is running, and its link (--json for machine output)
+  logs [-f]        Show the server log (-f/--follow follows it, -n/--lines N lines)
+  login            Sign in to Codex with your own ChatGPT account (--device-auth for a code; --claude for Claude Code, --codex for Codex)
   logout           Sign out of Codex (--claude for Claude Code)
   pair             Print a pairing code and link for a hosted copy of the studio (needs start --origin)
-  doctor           Check Node, the Codex / Claude Code CLIs, the port and disk space
+  doctor           Check Node, the Codex / Claude Code CLIs, the port and disk space (--json for machine output)
   mcp              Run Aether as an MCP server on stdio, so Claude Code, Codex and editors can drive it (see docs/MCP.md)
-  help, version
+  help, version    Show this text (also --help, -h) or the version (also --version, -v)
 
 Start options:
   --port N         Port (default ${DEFAULT_PORT}, or the next free one)
-  --open           Open the link in your browser
+  --open           Open the link in your browser (--no-open never does)
   --no-build       Never build the studio (fail if it is missing); --rebuild always builds
   --origin URL     Also act as the bridge for a hosted studio at URL (https), so it can use this computer's Codex login
   --bridge-port N  Bridge port (default ${DEFAULT_BRIDGE_PORT})
@@ -290,5 +290,6 @@ Start options:
   --foreground     Run in this terminal instead of the background
   --project-dir D  (mcp) The only folder the MCP server reads and writes (default ./aether-project)
   --provider P     (mcp) auto (default), offline, or local (this computer's Aether server and AI login)
+  --player-dir D   (mcp) The studio's production build used by export build (default: apps/studio/dist in this checkout)
   --state-dir DIR  Where the pid, port, log and secret files live (default: your user state folder)
 `;

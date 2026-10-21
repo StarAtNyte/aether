@@ -10,7 +10,7 @@ import { inflateSync } from 'node:zlib';
 import { NodeIO } from '@gltf-transform/core';
 import { createWorld, applyPatches, type WorldDoc } from '@aether/core';
 import { afterAll, describe, expect, it } from 'vitest';
-import { parseArgs } from '../src/args';
+import { USAGE, parseArgs } from '../src/args';
 import { ToolError, safeMessage, scrub } from '../src/mcp/errors';
 import { ProjectDir, safeFileName } from '../src/mcp/fsguard';
 import { sceneToGlb } from '../src/mcp/gltf';
@@ -224,5 +224,12 @@ describe('aether mcp arguments', () => {
     expect(parseArgs(['mcp', '--provider', 'cloud']).ok).toBe(false);
     expect(parseArgs(['mcp', '--project-dir']).ok).toBe(false);
     expect(parseArgs(['mcp']).ok && (parseArgs(['mcp']) as { options: { provider: string } }).options.provider).toBe('auto');
+  });
+
+  it('documents every option the parser accepts in the help text', () => {
+    const source = readFileSync(join(import.meta.dirname, '../src/args.ts'), 'utf8');
+    const flags = [...source.matchAll(/case '(--[a-z-]+)'/g)].map((m) => m[1] ?? '');
+    expect(flags).toContain('--player-dir');
+    for (const f of flags) expect(USAGE, f).toMatch(new RegExp(`(^|[\\s(/])${f}(?![a-z-])`));
   });
 });
