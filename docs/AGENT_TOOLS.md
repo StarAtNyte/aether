@@ -434,7 +434,7 @@ sub-call tools, and the design tools the planner already has.
 | `describe_room` | the reader (planner role, `ANALYSIS_SYSTEM`) | `{description}` (validated by `parseRoomDescription`) | A structured description of the room. A refused description is sent back to the model, up to 3 attempts (`ANALYSIS_ATTEMPTS`) |
 | `reconcile_room` | one call after the reads | `{add[{key, reason}], remove[{key, reason}]}` | Settles entries that the reads disagree on, by checking the photo. Runs only when two or more valid reads disagree and `reconcile` is not false |
 | `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{scores[{id, a 0..4, b? 0..4, evidence}], closer?: A\|B\|same, why?}` | Scores each checklist item on a fixed rubric. An item passes at 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B |
-| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..120 in schema, 160 accepted] {id, pass, note?}, summary?}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round, and edits sent before verdicts are refused |
+| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..120] {id, pass, note?}, summary?}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round, and edits sent before verdicts are refused |
 | `design_plan`, `place_items` | the builder (`runBuild` in `@aether/arch/photo`) | as above | Shell first, then pieces at measured positions |
 | `edit_items`, `place_items`, `query_scene`, `design_plan`, `finish` | the model in each compare round | as above | Fix what still differs from the photo |
 
