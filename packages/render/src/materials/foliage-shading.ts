@@ -38,7 +38,7 @@ export const FOLIAGE_VALUE = 0.16;
  * a flat quad the size of a leaf cluster: a metre from the lens one fills the frame like a sheet of paper, so near the
  * camera the cards thin out (screen-door dither, which temporal AA turns into a soft fade) instead.
  */
-export const FOLIAGE_NEAR_FADE: readonly [number, number] = Object.freeze([0.45, 1.5] as const);
+export const FOLIAGE_NEAR_FADE: readonly [number, number] = Object.freeze([0.3, 1] as const);
 
 /** Point the translucency at the current sun (`direction` toward it). Non-finite input is ignored. */
 export function setFoliageSun(direction: readonly [number, number, number], color: Color, intensity: number, up = true): void {
