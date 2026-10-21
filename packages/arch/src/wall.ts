@@ -15,6 +15,7 @@ import { PartSet } from './parts';
 import type { WallOpening, WallParams } from './params';
 import type { P2 } from './math2';
 import type { ArchOutput } from './types';
+import { buildNiche, extrudeProfile, freeStretches, nicheSpan, panelDetail, pictureRailSection, skirtingSection, usableNiches, type NicheSpec } from './wall-trim';
 
 /** Skirting board height and projection (metres). */
 export const SKIRTING_HEIGHT = 0.08;
@@ -131,19 +132,26 @@ export function buildWall(p: WallParams): ArchOutput {
   const geomEdge = new Geom();
   const dadoGeomA = new Geom();
   const dadoGeomB = new Geom();
+  // Details (panel moulding, picture rails, niches) are left out of exploded section cuts.
+  const detail = cut === null;
+  const nichesA = detail ? usableNiches((p.nichesA ?? []) as NicheSpec[], spans, L, H) : [];
+  const nichesB = detail ? usableNiches((p.nichesB ?? []) as NicheSpec[], spans, L, H) : [];
+  const skirtH = p.skirtingStyle ? Math.min(p.skirtingStyle.height, H) : SKIRTING_HEIGHT;
 
-  // Side faces, tiled around openings; a dado splits each face at its height.
-  const face = (g: Geom, xs0: number, xs1: number, side: -1 | 1, dado: { height: number; rail: boolean; geom: Geom } | null): void => {
-    const xs = breakpoints(spans, xs0, xs1);
+  // Side faces, tiled around openings (and the niches of that face); a dado splits each face at its height.
+  const face = (g: Geom, xs0: number, xs1: number, side: -1 | 1, dado: { height: number; rail: boolean; geom: Geom; style: string; panels: number } | null, niches: readonly NicheSpec[]): void => {
+    const fs = niches.length > 0 ? [...spans, ...niches.map(nicheSpan)] : spans;
+    const xs = breakpoints(fs, xs0, xs1);
     const quad = (target: Geom, a: number, b: number, y0: number, y1: number): void => {
       if (side < 0) target.quadAuto([b, y0, -t], [a, y0, -t], [a, y1, -t], [b, y1, -t], -b, y0);
       else target.quadAuto([a, y0, t], [b, y0, t], [b, y1, t], [a, y1, t], a, y0);
     };
-    const dh = dado ? Math.min(dado.height, H - 0.05) : 0;
+    const fullHeight = dado !== null && dado.height >= H - 0.01;
+    const dh = dado ? (fullHeight ? H : Math.min(dado.height, H - 0.05)) : 0;
     for (let k = 0; k + 1 < xs.length; k++) {
       const a = xs[k] as number;
       const b = xs[k + 1] as number;
-      for (const [y0, y1] of solidIntervals(spans, a, b, H)) {
+      for (const [y0, y1] of solidIntervals(fs, a, b, H)) {
         if (!dado || y0 >= dh) quad(g, a, b, y0, y1);
         else if (y1 <= dh) quad(dado.geom, a, b, y0, y1);
         else {
@@ -153,21 +161,39 @@ export function buildWall(p: WallParams): ArchOutput {
       }
       // Chair rail: a small moulding standing off the face along the top of the dado.
       if (dado?.rail && b - a > 0.02) {
-        const solidAtRail = solidIntervals(spans, a, b, H).some(([y0, y1]) => y0 <= dh && y1 >= dh);
+        const solidAtRail = solidIntervals(fs, a, b, H).some(([y0, y1]) => y0 <= dh && y1 >= dh - (fullHeight ? 0.05 : 0));
         if (solidAtRail) {
           const z0 = side < 0 ? -t - 0.018 : t;
           const z1 = side < 0 ? -t : t + 0.018;
-          dado.geom.merge(box(a, dh - 0.012, z0, b, dh + 0.028, z1, { bottom: true }));
+          if (fullHeight) dado.geom.merge(box(a, dh - 0.05, z0, b, dh, z1, { bottom: true }));
+          else dado.geom.merge(box(a, dh - 0.012, z0, b, dh + 0.028, z1, { bottom: true }));
         }
       }
+    }
+    if (dado && detail && dado.style !== 'flat') {
+      dado.geom.merge(panelDetail({ style: dado.style as 'shaker', panels: dado.panels, side, t, x0: xs0, x1: xs1, top: dh, skirt: skirtH, rail: dado.rail, spans: fs }));
     }
   };
   // At a joined (mitred) end the faces run a few millimetres past the corner, into the neighbour: two faces that only
   // meet on a line leave sub-pixel cracks there, and with a dim room exposed up the bright sky sparkled through them.
   const joinedStart = p.startA !== 0 || p.startB !== 0 ? CORNER_SEAM : 0;
   const joinedEnd = p.endA !== 0 || p.endB !== 0 ? CORNER_SEAM : 0;
-  face(geomA, aStart - joinedStart, aEnd + joinedEnd, -1, p.dadoA ? { height: p.dadoA.height, rail: p.dadoA.rail, geom: dadoGeomA } : null);
-  face(geomB, bStart - joinedStart, bEnd + joinedEnd, 1, p.dadoB ? { height: p.dadoB.height, rail: p.dadoB.rail, geom: dadoGeomB } : null);
+  face(geomA, aStart - joinedStart, aEnd + joinedEnd, -1, p.dadoA ? { height: p.dadoA.height, rail: p.dadoA.rail, geom: dadoGeomA, style: p.dadoA.style, panels: p.dadoA.panels } : null, nichesA);
+  face(geomB, bStart - joinedStart, bEnd + joinedEnd, 1, p.dadoB ? { height: p.dadoB.height, rail: p.dadoB.rail, geom: dadoGeomB, style: p.dadoB.style, panels: p.dadoB.panels } : null, nichesB);
+  // Niches: the recess itself (back, returns, shelves) in the niche colour, or in the wall's own finish.
+  const nicheGeoms: Array<{ geom: Geom; color: string }> = [];
+  const dadoTop = (d: { height: number } | undefined): number => (d ? (d.height >= H - 0.01 ? H : Math.min(d.height, H - 0.05)) : 0);
+  for (const [list, side, faceGeom, dadoGeom, dado] of [[nichesA, -1, geomA, dadoGeomA, p.dadoA], [nichesB, 1, geomB, dadoGeomB, p.dadoB]] as const) {
+    for (const n of list) {
+      // A niche set inside the dado has its spandrels (arched head) in the dado's material.
+      const wallGeom = n.sill + n.height <= dadoTop(dado) ? dadoGeom : faceGeom;
+      if (n.color) {
+        const slot = nicheGeoms.find((q) => q.color === n.color) ?? { geom: new Geom(), color: n.color };
+        if (!nicheGeoms.includes(slot)) nicheGeoms.push(slot);
+        buildNiche(wallGeom, slot.geom, n, side, t);
+      } else buildNiche(wallGeom, wallGeom, n, side, t);
+    }
+  }
 
   // Reveals: jambs, head, sill (edge material = side A's).
   for (const s of spans) {
@@ -222,6 +248,7 @@ export function buildWall(p: WallParams): ArchOutput {
   set.add(geomB, p.finishB);
   if (p.dadoA) set.add(dadoGeomA, p.dadoA.material);
   if (p.dadoB) set.add(dadoGeomB, p.dadoB.material);
+  for (const q of nicheGeoms) set.add(q.geom, { finish: 'paint', color: q.color });
   set.add(geomEdge, p.finishA);
   if (geomTop !== geomEdge) set.add(geomTop, { ...SECTION_CAP });
 
@@ -239,6 +266,10 @@ export function buildWall(p: WallParams): ArchOutput {
       if (x < xs1) pieces.push([x, xs1]);
       for (const [x0, x1] of pieces) {
         if (x1 - x0 < 0.03) continue;
+        if (p.skirtingStyle) {
+          extrudeProfile(skirt, x0, x1, side, t, skirtingSection(p.skirtingStyle.profile, skirtH, p.skirtingStyle.depth));
+          continue;
+        }
         const z0 = side < 0 ? -t - SKIRTING_DEPTH : t;
         const z1 = side < 0 ? -t : t + SKIRTING_DEPTH;
         skirt.merge(box(x0, 0, z0, x1, Math.min(SKIRTING_HEIGHT, H), z1, { bottom: false }));
@@ -248,6 +279,17 @@ export function buildWall(p: WallParams): ArchOutput {
     if (p.skirting === 'a' || p.skirting === 'both') run(aStart, aEnd, -1);
     if (p.skirting === 'b' || p.skirting === 'both') run(bStart, bEnd, 1);
     set.add(skirt, p.skirtingMaterial);
+  }
+
+  // Picture rails: a slim moulding along a face, broken where an opening reaches its height.
+  if (detail) {
+    for (const [rail, side, a0, a1] of [[p.railA, -1, aStart, aEnd], [p.railB, 1, bStart, bEnd]] as const) {
+      if (!rail || rail.y > H - 0.03) continue;
+      const g = new Geom();
+      const y = rail.y - 0.0225;
+      for (const [x0, x1] of freeStretches(spans, a0, a1, y, y + 0.045, 0)) extrudeProfile(g, x0, x1, side, t, pictureRailSection(), y);
+      set.add(g, rail.material);
+    }
   }
 
   // Plinth / base course: a band standing off one face from below the wall base up to its height, stopping at every

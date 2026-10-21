@@ -16,6 +16,7 @@
  */
 import { z } from 'zod';
 import { Color, MaterialSpec } from '@aether/core';
+import { CeilingStyle, Cornice, DoorStyle, Muntins, PanelStyle, SkirtingProfile, WindowStyle } from './shell';
 
 /** Hard caps of the parametric model. */
 export const ARCH_LIMITS = Object.freeze({
@@ -47,15 +48,32 @@ export const WallOpening = z.object({
 });
 export type WallOpening = z.infer<typeof WallOpening>;
 
+/** A recess in one face of a wall (see `shell.ts` `Niche`): centre along the wall, size, sill, depth, shelves. */
+export const WallNiche = z.object({
+  offset: z.number().min(0).max(ARCH_LIMITS.MAX_WALL_LENGTH),
+  width: z.number().min(0.2).max(4),
+  height: z.number().min(0.2).max(3.2),
+  sill: z.number().min(0).max(2.5).default(0.6),
+  depth: z.number().min(0.04).max(0.6).default(0.15),
+  shelves: z.number().int().min(0).max(6).default(0),
+  color: Color.optional(),
+  arched: z.boolean().default(false),
+});
+export type WallNiche = z.infer<typeof WallNiche>;
+
 const ext = z.number().min(-3).max(3).default(0);
 
 /** Lower wall covering (dado / wainscot) with an optional chair rail at its top edge. */
 export const WallDado = z.object({
   /** Height of the covering above the floor (metres). */
-  height: z.number().min(0.2).max(2.4).default(1.0),
+  height: z.number().min(0.2).max(4).default(1.0),
   material: MaterialSpec.default({ finish: 'panelling', color: '#e4e0d8' }),
   /** Moulded rail along the top edge. */
   rail: z.boolean().default(true),
+  /** Additive: how the covering is dressed (real moulded frames, battens or grooves on top of the finish). Default: flat. */
+  style: PanelStyle.default('flat'),
+  /** Additive: panel bays across 3 m of wall (shaker, raised, batten, beadboard). */
+  panels: z.number().min(1).max(8).default(3),
 });
 export type WallDado = z.infer<typeof WallDado>;
 
@@ -94,6 +112,14 @@ export const WallParams = z.object({
   /** Skirting boards on interior faces. */
   skirting: z.enum(['none', 'a', 'b', 'both']).default('both'),
   skirtingMaterial: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }),
+  /** Additive: height, projection and profile of the skirting (default: the plain 8 cm board). */
+  skirtingStyle: z.object({ height: z.number().min(0.03).max(0.5).default(0.08), depth: z.number().min(0.008).max(0.06).default(0.012), profile: SkirtingProfile.default('square') }).optional(),
+  /** Additive: a picture rail on side A / B: centre height above the base and its material. */
+  railA: z.object({ y: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT), material: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }) }).optional(),
+  railB: z.object({ y: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT), material: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }) }).optional(),
+  /** Additive: recesses in the face of side A / B (they do not cut through; depth is clamped to leave 4 cm of wall). */
+  nichesA: z.array(WallNiche).max(8).optional(),
+  nichesB: z.array(WallNiche).max(8).optional(),
   /**
    * View-only section cut (metres above the base): the wall is drawn only up
    * to this height with a dark cap on the cut face, like a plan section.
@@ -142,6 +168,23 @@ export const CeilingParams = z.object({
       beam: Color.default('#f4f2ee'),
     })
     .optional(),
+  /**
+   * Additive: the ceiling style of the room (see `shell.ts`). Without it the ceiling is flat (or vaulted when `vault` is given).
+   * `faces` is the rectangle `[x0, z0, x1, z1]` of the INSIDE faces of the walls (the polygon runs to the wall centrelines):
+   * the cornice, coves, coffers and beams are laid out inside it. Only axis-aligned rectangles take a style.
+   */
+  style: CeilingStyle.optional(),
+  faces: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+  /** Additive: ridge height of a vaulted / barrel ceiling, or radius of a coved one. */
+  rise: z.number().min(0.1).max(4).optional(),
+  ridge: z.enum(['x', 'z']).optional(),
+  trusses: z.number().int().min(0).max(14).optional(),
+  /** Additive: colour of beams, coffer ribs and trusses. */
+  beamColor: Color.optional(),
+  cornice: Cornice.optional(),
+  coffers: z.object({ nx: z.number().int().min(1).max(10).default(3), nz: z.number().int().min(1).max(10).default(3), rib: z.number().min(0.03).max(0.5).default(0.12), depth: z.number().min(0.03).max(0.5).default(0.12) }).optional(),
+  beams: z.object({ count: z.number().int().min(1).max(16).default(4), dir: z.enum(['x', 'z']).optional(), width: z.number().min(0.04).max(0.6).default(0.15), depth: z.number().min(0.04).max(0.6).default(0.2) }).optional(),
+  tray: z.object({ inset: z.number().min(0.15).max(2).default(0.5), drop: z.number().min(0.04).max(0.5).default(0.12) }).optional(),
 });
 export type CeilingParams = z.infer<typeof CeilingParams>;
 
@@ -207,7 +250,7 @@ export const DoorParams = z.object({
   width: z.number().min(0.4).max(4).default(0.9),
   height: z.number().min(1.5).max(4).default(2.1),
   thickness: z.number().min(0.02).max(0.12).default(0.045),
-  style: z.enum(['panel', 'flush', 'glass', 'slab']).default('panel'),
+  style: DoorStyle.default('panel'),
   finish: MaterialSpec.default({ finish: 'paint', color: '#f2f0eb' }),
   hardware: MaterialSpec.default({ finish: 'brushed-metal' }),
   /** Handle side relative to the leaf (opposite the hinge). */
@@ -222,6 +265,10 @@ export const FrameParams = z.object({
   wallThickness: z.number().min(0.02).max(1.5).default(0.15),
   casing: z.number().min(0).max(0.2).default(0.07),
   finish: MaterialSpec.default({ finish: 'paint', color: '#f2f0eb' }),
+  /** Additive: `arched` fills the head above `springing` with a rounded fanlight opening (the wall hole stays rectangular). */
+  head: z.enum(['flat', 'arched']).default('flat'),
+  /** Additive: height of the leaf's top edge for an arched head (the fanlight fills the rest); default: 0.78 of the height. */
+  springing: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT).optional(),
 });
 export type FrameParams = z.infer<typeof FrameParams>;
 
@@ -230,7 +277,13 @@ export const WindowParams = z.object({
   width: z.number().min(0.3).max(12).default(1.2),
   height: z.number().min(0.3).max(10).default(1.4),
   wallThickness: z.number().min(0.02).max(1.5).default(0.25),
-  style: z.enum(['casement', 'fixed', 'sliding', 'grid', 'picture']).default('casement'),
+  style: WindowStyle.default('casement'),
+  /** Additive: glazing bars (`cols` x `rows` panes per sash or light); omitted: the style's own default. */
+  muntins: Muntins.optional(),
+  /** Additive: interior architrave and apron round the opening (default: on for sash, arched and bay windows). */
+  casing: z.boolean().optional(),
+  /** Additive: bay windows: how far the bay projects outside the wall and the angle of its side lights (degrees). */
+  bay: z.object({ depth: z.number().min(0.15).max(1.5).default(0.5), angle: z.number().min(20).max(70).default(35) }).optional(),
   /** Vertical mullions (0 = automatic from the width). */
   mullions: z.number().int().min(0).max(12).default(0),
   frame: MaterialSpec.default({ finish: 'black-metal' }),

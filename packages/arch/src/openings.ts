@@ -13,6 +13,7 @@ import { Geom, box, cylinder, roundedBox } from './mesh';
 import { PartSet } from './parts';
 import type { DoorParams, FrameParams, SashParams, WindowParams } from './params';
 import type { ArchOutput } from './types';
+import { addMuntinBars, archedCasing, archedFrameHead, archedWindow, bayWindow, fanlightRise, glazedLeaf, panelLayout, panelMoulding, panelRects, sashWindow, windowCasing, type WindowShapeParts } from './opening-styles';
 
 /** Gap between the leaf and the jamb lining on each side (metres). */
 export const DOOR_CLEARANCE = 0.006;
@@ -42,32 +43,23 @@ export function buildDoor(p: DoorParams): ArchOutput {
   const glass = new Geom();
   const stile = Math.min(0.13, w * 0.16);
   const rail = 0.13;
-  if (p.style === 'glass') {
+  // `double` and `arched` doors hang panelled leaves (the pair / the fanlight come from the compiler and the frame).
+  const style = p.style === 'double' || p.style === 'arched' ? 'panel' : p.style;
+  if (style === 'glass') {
     // Frame of stiles and rails around a glass panel.
     leaf.merge(roundedBox(stile, h, t, 0.003, 1).translate(-w / 2 + stile / 2, h / 2, 0));
     leaf.merge(roundedBox(stile, h, t, 0.003, 1).translate(w / 2 - stile / 2, h / 2, 0));
     leaf.merge(roundedBox(w - 2 * stile, rail, t, 0.003, 1).translate(0, h - rail / 2, 0));
     leaf.merge(roundedBox(w - 2 * stile, rail * 1.6, t, 0.003, 1).translate(0, rail * 0.8, 0));
     glass.merge(box(-w / 2 + stile, rail * 1.6, -0.004, w / 2 - stile, h - rail, 0.004));
+  } else if (style === 'glazed' || style === 'french') {
+    glass.merge(glazedLeaf(leaf, w, h, t, style));
   } else {
-    leaf.merge(roundedBox(w, h, t, p.style === 'slab' ? 0.002 : 0.004, 1).translate(0, h / 2, 0));
-    if (p.style === 'panel') {
-      // Raised mouldings: two tall panels over one short one, on both faces.
-      const mw = 0.012;
-      const panels: Array<[number, number, number, number]> = [];
-      const inner = w - 2 * stile;
-      panels.push([-inner / 2, h * 0.47, inner / 2, h - rail]);
-      panels.push([-inner / 2, rail, inner / 2, h * 0.47 - rail * 0.6]);
-      for (const side of [-1, 1] as const) {
-        for (const [x0, y0, x1, y1] of panels) {
-          const z0 = side > 0 ? t / 2 : -t / 2 - 0.006;
-          const z1 = side > 0 ? t / 2 + 0.006 : -t / 2;
-          leaf.merge(box(x0, y0, z0, x1, y0 + mw, z1));
-          leaf.merge(box(x0, y1 - mw, z0, x1, y1, z1));
-          leaf.merge(box(x0, y0 + mw, z0, x0 + mw, y1 - mw, z1));
-          leaf.merge(box(x1 - mw, y0 + mw, z0, x1, y1 - mw, z1));
-        }
-      }
+    leaf.merge(roundedBox(w, h, t, style === 'slab' ? 0.002 : 0.004, 1).translate(0, h / 2, 0));
+    if (style === 'panel') {
+      // Raised mouldings: four panels (two columns, two rows), six on a tall leaf, one column on a narrow one.
+      const { cols, rows } = panelLayout(w, h);
+      for (const r of panelRects(w, rail * 1.1, h - rail, cols, rows, stile, 0.1)) panelMoulding(leaf, r, t);
     }
   }
   set.add(leaf, p.finish);
@@ -90,12 +82,23 @@ export function buildFrame(p: FrameParams): ArchOutput {
   const H = p.height;
   const T = p.wallThickness / 2;
   const L = LINING;
+  const arched = p.head === 'arched' && W >= 0.5;
+  const rh = arched ? fanlightRise(p) : 0;
+  const jambTop = arched ? H - rh + 0.045 : H;
   // Linings.
-  g.merge(box(-W / 2, 0, -T, -W / 2 + L, H, T));
-  g.merge(box(W / 2 - L, 0, -T, W / 2, H, T));
-  g.merge(box(-W / 2, H - L, -T, W / 2, H, T));
+  g.merge(box(-W / 2, 0, -T, -W / 2 + L, jambTop, T));
+  g.merge(box(W / 2 - L, 0, -T, W / 2, jambTop, T));
+  if (!arched) g.merge(box(-W / 2, H - L, -T, W / 2, H, T));
   // Architraves (slightly rounded), both faces.
   const c = p.casing;
+  if (arched) {
+    const head = archedFrameHead(p, L);
+    g.merge(head.frame);
+    if (c > 0.005) g.merge(archedCasing(p));
+    set.add(g, p.finish);
+    set.add(head.glass, { finish: 'glass' });
+    return set.build();
+  }
   if (c > 0.005) {
     for (const side of [-1, 1] as const) {
       const z = side * (T + 0.009);
@@ -151,50 +154,64 @@ export function buildWindow(p: WindowParams): ArchOutput {
   const glass = new Geom();
   const fw = 0.055;
   const fd = Math.min(0.09, p.wallThickness * 0.8);
-  // Outer frame.
-  frame.merge(box(-W / 2, 0, -fd / 2, W / 2, fw, fd / 2));
-  frame.merge(box(-W / 2, H - fw, -fd / 2, W / 2, H, fd / 2));
-  frame.merge(box(-W / 2, fw, -fd / 2, -W / 2 + fw, H - fw, fd / 2));
-  frame.merge(box(W / 2 - fw, fw, -fd / 2, W / 2, H - fw, fd / 2));
-  // Mullions: automatic count keeps panes under ~0.9 m wide (picture windows stay open).
-  const auto = p.style === 'picture' || p.style === 'fixed' ? Math.max(0, Math.ceil(W / 2.2) - 1) : Math.max(0, Math.ceil(W / 0.9) - 1);
-  // An openable casement is one pane across the opening (a casement of up to ~1.8 m): no mullions in the frame.
-  const openable = p.sash && p.style === 'casement';
-  const mullions = openable ? 0 : p.mullions > 0 ? p.mullions : auto;
-  const mw = 0.045;
-  const xs: number[] = [];
-  for (let k = 1; k <= mullions; k++) xs.push(-W / 2 + (W * k) / (mullions + 1));
-  for (const x of xs) frame.merge(box(x - mw / 2, fw, -fd / 2 + 0.005, x + mw / 2, H - fw, fd / 2 - 0.005));
-  // Transoms for grid windows (and a top light on tall casements).
-  const ys: number[] = [];
-  if (p.style === 'grid') for (let k = 1; k < Math.max(2, Math.round(H / 0.45)); k++) ys.push((H * k) / Math.max(2, Math.round(H / 0.45)));
-  else if (p.style === 'casement' && H > 1.7) ys.push(H * 0.78);
-  for (const y of ys) frame.merge(box(-W / 2 + fw, y - mw / 2, -fd / 2 + 0.005, W / 2 - fw, y + mw / 2, fd / 2 - 0.005));
-  // An openable window draws its casement as a separate entity (`arch-sash`), so no sash rails here.
-  // Casement / sliding sashes: an inner frame per pane, slightly proud.
-  if ((p.style === 'casement' || p.style === 'sliding') && !openable) {
-    const edges = [-W / 2 + fw, ...xs.map((x) => x), W / 2 - fw];
-    const top = ys.length > 0 ? (ys[0] as number) - mw / 2 : H - fw;
-    for (let k = 0; k + 1 < edges.length; k++) {
-      const x0 = (edges[k] as number) + (k > 0 ? mw / 2 : 0);
-      const x1 = (edges[k + 1] as number) - (k + 2 < edges.length ? mw / 2 : 0);
-      const s = 0.035;
-      const z0 = p.style === 'sliding' && k % 2 === 1 ? 0.012 : -0.012;
-      frame.merge(box(x0, fw, z0 - 0.02, x1, fw + s, z0 + 0.02));
-      frame.merge(box(x0, top - s, z0 - 0.02, x1, top, z0 + 0.02));
-      frame.merge(box(x0, fw + s, z0 - 0.02, x0 + s, top - s, z0 + 0.02));
-      frame.merge(box(x1 - s, fw + s, z0 - 0.02, x1, top - s, z0 + 0.02));
+  const special: WindowShapeParts | null = p.style === 'sash' ? sashWindow(p) : p.style === 'arched' ? archedWindow(p) : p.style === 'bay' ? bayWindow(p) : null;
+  if (special) {
+    frame.merge(special.frame);
+    glass.merge(special.glass);
+    if (p.casing ?? true) frame.merge(windowCasing(p, p.style === 'arched'));
+  } else {
+    // Outer frame.
+    frame.merge(box(-W / 2, 0, -fd / 2, W / 2, fw, fd / 2));
+    frame.merge(box(-W / 2, H - fw, -fd / 2, W / 2, H, fd / 2));
+    frame.merge(box(-W / 2, fw, -fd / 2, -W / 2 + fw, H - fw, fd / 2));
+    frame.merge(box(W / 2 - fw, fw, -fd / 2, W / 2, H - fw, fd / 2));
+    // Mullions: automatic count keeps panes under ~0.9 m wide (picture windows stay open).
+    const auto = p.style === 'picture' || p.style === 'fixed' ? Math.max(0, Math.ceil(W / 2.2) - 1) : Math.max(0, Math.ceil(W / 0.9) - 1);
+    // An openable casement is one pane across the opening (a casement of up to ~1.8 m): no mullions in the frame.
+    const openable = p.sash && p.style === 'casement';
+    const mullions = openable ? 0 : p.mullions > 0 ? p.mullions : auto;
+    const mw = 0.045;
+    const xs: number[] = [];
+    for (let k = 1; k <= mullions; k++) xs.push(-W / 2 + (W * k) / (mullions + 1));
+    for (const x of xs) frame.merge(box(x - mw / 2, fw, -fd / 2 + 0.005, x + mw / 2, H - fw, fd / 2 - 0.005));
+    // Transoms for grid windows (and a top light on tall casements).
+    const ys: number[] = [];
+    if (p.style === 'grid') for (let k = 1; k < Math.max(2, Math.round(H / 0.45)); k++) ys.push((H * k) / Math.max(2, Math.round(H / 0.45)));
+    else if (p.style === 'casement' && H > 1.7) ys.push(H * 0.78);
+    for (const y of ys) frame.merge(box(-W / 2 + fw, y - mw / 2, -fd / 2 + 0.005, W / 2 - fw, y + mw / 2, fd / 2 - 0.005));
+    // An openable window draws its casement as a separate entity (`arch-sash`), so no sash rails here.
+    // Casement / sliding sashes: an inner frame per pane, slightly proud.
+    if ((p.style === 'casement' || p.style === 'sliding') && !openable) {
+      const edges = [-W / 2 + fw, ...xs.map((x) => x), W / 2 - fw];
+      const top = ys.length > 0 ? (ys[0] as number) - mw / 2 : H - fw;
+      for (let k = 0; k + 1 < edges.length; k++) {
+        const x0 = (edges[k] as number) + (k > 0 ? mw / 2 : 0);
+        const x1 = (edges[k + 1] as number) - (k + 2 < edges.length ? mw / 2 : 0);
+        const s = 0.035;
+        const z0 = p.style === 'sliding' && k % 2 === 1 ? 0.012 : -0.012;
+        frame.merge(box(x0, fw, z0 - 0.02, x1, fw + s, z0 + 0.02));
+        frame.merge(box(x0, top - s, z0 - 0.02, x1, top, z0 + 0.02));
+        frame.merge(box(x0, fw + s, z0 - 0.02, x0 + s, top - s, z0 + 0.02));
+        frame.merge(box(x1 - s, fw + s, z0 - 0.02, x1, top - s, z0 + 0.02));
+      }
     }
+    // Glazing bars when the description asks for them (the openable casement is its own entity and keeps its single pane).
+    if (p.muntins && p.style !== 'sliding') {
+      const edges = [-W / 2 + fw, ...xs, W / 2 - fw];
+      const top = ys.length > 0 && p.style !== 'grid' ? (ys[0] as number) - mw / 2 : H - fw;
+      for (let k = 0; k + 1 < edges.length; k++) addMuntinBars(frame, (edges[k] as number) + (k > 0 ? mw / 2 : 0), fw, (edges[k + 1] as number) - (k + 2 < edges.length ? mw / 2 : 0), top, p.muntins.cols, p.muntins.rows, 0, 0.02);
+    }
+    // Glass: one pane across the opening (thin slab, both faces); an openable window keeps only the pane above its transom.
+    if (!openable) glass.merge(box(-W / 2 + fw, fw, -0.004, W / 2 - fw, H - fw, 0.004));
+    else if (ys.length > 0) glass.merge(box(-W / 2 + fw, (ys[0] as number) + mw / 2, -0.004, W / 2 - fw, H - fw, 0.004));
+    if (p.casing === true) frame.merge(windowCasing(p, false));
   }
-  // Glass: one pane across the opening (thin slab, both faces); an openable window keeps only the pane above its transom.
-  if (!openable) glass.merge(box(-W / 2 + fw, fw, -0.004, W / 2 - fw, H - fw, 0.004));
-  else if (ys.length > 0) glass.merge(box(-W / 2 + fw, (ys[0] as number) + mw / 2, -0.004, W / 2 - fw, H - fw, 0.004));
   set.add(frame, p.frame);
   set.add(glass, p.glass);
   if (p.daylight) {
     // Daylight beyond the glass: a thin emissive pane inside the wall reveal, behind the frame (seen only through the window).
     const z = (p.interior === 'b' ? -1 : 1) * (fd / 2 + 0.02);
-    set.add(box(-W / 2 + fw, fw, z - 0.003, W / 2 - fw, H - fw, z + 0.003), { color: p.daylight, emissive: p.daylight, emissiveIntensity: 1.8, roughness: 1 });
+    set.add(special?.daylight ?? box(-W / 2 + fw, fw, z - 0.003, W / 2 - fw, H - fw, z + 0.003), { color: p.daylight, emissive: p.daylight, emissiveIntensity: 1.8, roughness: 1 });
   }
   const inside = p.interior === 'b' ? 1 : -1;
   if (p.sill) {
@@ -205,8 +222,10 @@ export function buildWindow(p: WindowParams): ArchOutput {
   const out = -inside;
   const zFace = out * T;
   const between = (a: number, b: number): [number, number] => (a < b ? [a, b] : [b, a]);
-  const s = p.surround;
-  if (s?.style === 'box') {
+  const s = p.style === 'bay' ? undefined : p.surround;
+  if (p.style === 'bay') {
+    // The bay's own sill ledge and roof are the exterior trim.
+  } else if (s?.style === 'box') {
     // A deep projecting frame round the opening: jambs, head and a sloped-free bottom, lining the reveal back to the frame.
     const g = new Geom();
     const bw = 0.05;

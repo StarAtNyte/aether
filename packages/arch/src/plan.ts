@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { Color, MaterialSpec } from '@aether/core';
 import { PlanPoint, PlanPolygon, WallDado } from './params';
 import { DesignRecord } from './design-record';
+import { CeilingDetail, Cornice, DoorStyle, Muntins, Niche, PictureRail, Skirting, WindowStyle } from './shell';
 
 /** Room types (drive furniture layouts, floor finishes, lighting and windows). */
 export const RoomType = z.enum([
@@ -74,6 +75,17 @@ export const PlanRoom = z
     walls: z.partialRecord(Compass, MaterialSpec).optional(),
     /** Lower covering of every wall face of the room (wainscot / dado with a chair rail). */
     dado: WallDado.optional(),
+    /**
+     * Additive room-shell vocabulary (see `shell.ts`, `query_scene {q:"vocabulary"}`): the ceiling style (coved, barrel, coffered,
+     * beamed, tray; `vault` above is the gable form), crown moulding, picture rail, skirting profile, per-wall dados or
+     * panelling (override `dado` on that wall) and wall niches. Rectangular rooms only; every field is optional.
+     */
+    ceiling: CeilingDetail.optional(),
+    cornice: Cornice.optional(),
+    pictureRail: PictureRail.optional(),
+    skirting: Skirting.optional(),
+    dados: z.partialRecord(Compass, WallDado).optional(),
+    niches: z.array(Niche).max(8).optional(),
     /** Auto-furnish (layouts per room type). */
     furnish: z.boolean().default(true),
     /**
@@ -97,7 +109,9 @@ export const PlanDoor = z.object({
   width: z.number().min(0.6).max(4).default(0.9),
   height: z.number().min(1.8).max(4).default(2.1),
   kind: z.enum(['swing', 'sliding', 'opening']).default('swing'),
-  style: z.enum(['panel', 'flush', 'glass', 'slab']).optional(),
+  style: DoorStyle.optional(),
+  /** Additive: leaf colour (`#rrggbb`); default from the interior style. */
+  color: Color.optional(),
   /** For doors to "outside": which wall of the room (default: the longest exterior wall). */
   side: Compass.optional(),
   /** The main entrance (player starts in front of it; at most one). */
@@ -120,7 +134,15 @@ export const PlanWindow = z.object({
   width: z.number().min(0.4).max(8).default(1.2),
   height: z.number().min(0.4).max(4).default(1.4),
   sill: z.number().min(0).max(2.5).default(0.9),
-  style: z.enum(['casement', 'fixed', 'sliding', 'grid', 'picture']).optional(),
+  style: WindowStyle.optional(),
+  /** Additive: glazing bars per sash or light (see `shell.ts`). */
+  muntins: Muntins.optional(),
+  /** Additive: frame and sash colour (`#rrggbb`); default from the interior style. */
+  frame: Color.optional(),
+  /** Additive: interior architrave and apron round the opening. */
+  casing: z.boolean().optional(),
+  /** Additive: bay windows: projection outside the wall and the angle of the side lights. */
+  bay: z.object({ depth: z.number().min(0.15).max(1.5).default(0.5), angle: z.number().min(20).max(70).default(35) }).optional(),
   /** Colour of the daylight that glows through the glass (an emissive pane outside it); omitted: the scene outside shows. */
   daylight: Color.optional(),
   /**

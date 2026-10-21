@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { MaterialSpec, Color, type EntityId } from '@aether/core';
 import { ArchStyle, Compass, PlanDoor, PlanRoof, PlanSite, PlanStair, RoomType, type BuildingPlanInput } from '../plan';
 import { PlanPoint, PlanPolygon, WallDado } from '../params';
+import { CeilingDetail, Cornice, DOOR_STYLES, Muntins, Niche, PictureRail, Skirting, WINDOW_STYLES } from '../shell';
 import { DesignItem, DesignRecord, DesignProgramme, DesignCirculation } from '../design-record';
 import { area, isSimplePolygon, positive, type P2 } from '../math2';
 import { roomPolygon, roomEdges, sharedSpans, exteriorSpans } from '../rooms';
@@ -49,6 +50,13 @@ export const DesignRoom = z
     finish: MaterialSpec.optional(),
     walls: z.partialRecord(Compass, MaterialSpec).optional(),
     dado: WallDado.optional(),
+    /** Additive room-shell vocabulary (see `query_scene {q:"vocabulary"}`): ceiling style, crown moulding, picture rail, skirting, per-wall dados and niches. */
+    ceiling: CeilingDetail.optional(),
+    cornice: Cornice.optional(),
+    pictureRail: PictureRail.optional(),
+    skirting: Skirting.optional(),
+    dados: z.partialRecord(Compass, WallDado).optional(),
+    niches: z.array(Niche).max(8).optional(),
   })
   .refine((r) => r.rect !== undefined || r.polygon !== undefined, { message: 'a room needs rect [x0,z0,x1,z1] or polygon' });
 
@@ -71,6 +79,12 @@ export const DesignOpening = z.object({
   style: z.string().max(20).optional(),
   /** Windows: colour of the daylight glowing through the glass (#rrggbb). */
   daylight: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  /** Additive: glazing bars, frame / leaf colour, interior casing and bay projection (windows); `color` is the leaf colour of a door. */
+  muntins: Muntins.optional(),
+  frame: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  casing: z.boolean().optional(),
+  bay: z.object({ depth: z.number().min(0.15).max(1.5).default(0.5), angle: z.number().min(20).max(70).default(35) }).optional(),
 });
 export type DesignOpening = z.infer<typeof DesignOpening>;
 
@@ -315,7 +329,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
     const windows: NonNullable<BuildingPlanInput['levels'][number]['windows']> = [];
     for (const o of lvl.openings) {
       if (o.kind === 'window') {
-        windows.push({ room: o.room, side: o.wall, count: 1, width: o.width, ...(o.height !== undefined ? { height: o.height } : {}), ...(o.sill !== undefined ? { sill: o.sill } : {}), centres: [o.along], ...(o.daylight ? { daylight: o.daylight } : {}), ...(o.style && ['casement', 'fixed', 'sliding', 'grid', 'picture'].includes(o.style) ? { style: o.style as 'casement' } : {}) });
+        windows.push({ room: o.room, side: o.wall, count: 1, width: o.width, ...(o.height !== undefined ? { height: o.height } : {}), ...(o.sill !== undefined ? { sill: o.sill } : {}), centres: [o.along], ...(o.daylight ? { daylight: o.daylight } : {}), ...(o.style && (WINDOW_STYLES as readonly string[]).includes(o.style) ? { style: o.style as 'casement' } : {}), ...(o.muntins ? { muntins: o.muntins } : {}), ...(o.frame ? { frame: o.frame } : {}), ...(o.casing !== undefined ? { casing: o.casing } : {}), ...(o.bay ? { bay: o.bay } : {}) });
         continue;
       }
       const to = o.to ?? 'outside';
@@ -329,14 +343,15 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
         ...(to === 'outside' ? { side: o.wall } : {}),
         along: o.along,
         ...(main ? { main: true } : {}),
-        ...(o.style && ['panel', 'flush', 'glass', 'slab'].includes(o.style) ? { style: o.style as 'panel' } : {}),
+        ...(o.style && (DOOR_STYLES as readonly string[]).includes(o.style) ? { style: o.style as 'panel' } : {}),
+        ...(o.color ? { color: o.color } : {}),
       });
     }
     return {
       ...(lvl.name ? { name: lvl.name } : {}),
       ...(lvl.height !== undefined ? { height: lvl.height } : {}),
       autoWindows: false,
-      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), furnish: false, items: [] })),
+      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), ...(r.ceiling ? { ceiling: r.ceiling } : {}), ...(r.cornice ? { cornice: r.cornice } : {}), ...(r.pictureRail ? { pictureRail: r.pictureRail } : {}), ...(r.skirting ? { skirting: r.skirting } : {}), ...(r.dados ? { dados: r.dados } : {}), ...(r.niches ? { niches: r.niches } : {}), furnish: false, items: [] })),
       doors,
       windows,
       stairs: lvl.stairs.flatMap((st) => (st.at ? [{ at: st.at, heading: st.heading ?? 'north', shape: st.shape ?? 'straight', width: st.width ?? 1, turn: st.turn ?? 'left' }] : [])),

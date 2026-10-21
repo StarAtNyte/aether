@@ -9,6 +9,7 @@ import { isAxisRectangle, bounds, positive, signedArea, type P2 } from './math2'
 import type { BasinParams, CeilingParams, ColumnParams, RailingParams, SlabParams } from './params';
 import type { ArchOutput } from './types';
 import { triangulate } from './triangulate';
+import { addCeilingCornice, buildStyledCeilingParts } from './ceiling-styles';
 
 /** Side band of a polygon from y0 to y1 (outward faces). */
 function band(g: Geom, poly: readonly P2[], y0: number, y1: number, inward = false): void {
@@ -51,6 +52,12 @@ export function buildSlab(p: SlabParams): ArchOutput {
 export function buildCeiling(p: CeilingParams): ArchOutput {
   if (p.vault && p.holes.length === 0 && isAxisRectangle(p.polygon)) return buildVault(p, p.vault);
   const set = new PartSet();
+  const styled = p.style !== undefined && p.style !== 'flat' && p.style !== 'vaulted' && p.holes.length === 0 && isAxisRectangle(p.polygon);
+  if (styled) {
+    buildStyledCeilingParts(p, set);
+    addCeilingCornice(set, p);
+    return set.build();
+  }
   const g = new Geom();
   if (p.cove > 0.005) {
     // Inset field raised by the cove depth, with a vertical return.
@@ -79,6 +86,7 @@ export function buildCeiling(p: CeilingParams): ArchOutput {
     set.add(trim, { finish: 'paint', color: '#f6f4f0', roughness: 0.4 });
     set.add(lens, { preset: 'emissive', color: '#ffe6c2', emissive: '#ffe0b0', emissiveIntensity: p.lit ? 1.5 : 0, roughness: 0.3 });
   }
+  if (p.holes.length === 0 && isAxisRectangle(p.polygon)) addCeilingCornice(set, p);
   return set.build();
 }
 

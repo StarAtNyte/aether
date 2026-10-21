@@ -10,7 +10,7 @@
  * the single source of truth and can be re-compiled after edits.
  */
 import type { EntityInput, Json, LightSpec, MaterialSpec, PatchInput } from '@aether/core';
-import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type Compass, type PlanDoor, type PlanLevel, type PlanRoom, type RoomType } from './plan';
+import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type Compass, type PlanDoor, type PlanLevel, type PlanRoom, type PlanWindow, type RoomType } from './plan';
 import { palette, exteriorPalette, floorFor, habitable, type StylePalette } from './style';
 import { compileGrounds } from './site';
 import { wallNetwork, type NetworkWall } from './wall-network';
@@ -20,7 +20,7 @@ import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, point
 import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
 import { stairFootprint, stairGuardPieces, stairLayout } from './stair';
-import { StairParams } from './params';
+import { StairParams, WallNiche } from './params';
 import { DOOR_CLEARANCE, LINING, sashHeight } from './openings';
 import { roofRise } from './roof';
 import { furnitureById, furnitureMovables } from './furniture/index';
@@ -317,7 +317,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     const polys = new Map<string, P2[]>();
     for (const r of lvl.rooms) polys.set(r.id, simplifyPolygon(roomPolygon(r)));
     // --- walls ------------------------------------------------------------
-    const network = wallNetwork(indoor.map((r) => ({ id: r.id, polygon: polys.get(r.id) as P2[], split: r.finish !== undefined || r.walls !== undefined || r.dado !== undefined })));
+    const network = wallNetwork(indoor.map((r) => ({ id: r.id, polygon: polys.get(r.id) as P2[], split: r.finish !== undefined || r.walls !== undefined || r.dado !== undefined || r.dados !== undefined || r.skirting !== undefined || r.pictureRail !== undefined || r.niches !== undefined || r.cornice !== undefined })));
     const thick = (w: NetworkWall): number => (w.exterior ? plan.exteriorWall.thickness : plan.interiorWall.thickness);
     const joins = solveWallJoins(network.map((w, k) => ({ id: `w${k}`, a: w.a, b: w.b, thickness: thick(w) })));
     const walls: WallRec[] = network.map((w, k) => {
@@ -440,7 +440,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const c: P2 = [rec.w.a[0] + rec.dir[0] * t, rec.w.a[1] + rec.dir[1] * t];
       const fid = `${lid}-d${n}`;
       const name = d.main ? 'Front door' : `Door ${NAMES[roomType(ra) as RoomType] ?? 'outside'} / ${roomType(rb) === 'outside' ? 'outside' : (NAMES[roomType(rb) as RoomType] ?? rb)}`;
-      add({ id: fid, parent: lid, name, transform: { position: [round(c[0]), 0, round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-frame', params: { width: round(width), height: round(height), wallThickness: rec.thickness, finish: { finish: 'paint', color: pal.doorColor } } }, arch: { role: 'opening', wall: rec.id, kind }, tags: d.main ? ['arch', 'entrance'] : ['arch'] });
+      add({ id: fid, parent: lid, name, transform: { position: [round(c[0]), 0, round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-frame', params: { width: round(width), height: round(height), wallThickness: rec.thickness, finish: { finish: 'paint', color: d.color ?? pal.doorColor }, ...(d.style === 'arched' ? { head: 'arched', springing: round(Math.max(1.6, Math.min(height - 0.35, height * 0.82))) } : {}) } }, arch: { role: 'opening', wall: rec.id, kind }, tags: d.main ? ['arch', 'entrance'] : ['arch'] });
       // Which side does each room lie on? Side B is the left of a→b (+Z local).
       const sideOf = (roomId: string): 1 | -1 | 0 => (roomId === 'outside' ? 0 : roomSide(rec, c, roomId));
       let sa = sideOf(ra);
@@ -461,50 +461,64 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       };
       const into = privacy(ra) >= privacy(rb) ? ra : rb;
       const side: 1 | -1 = (into === ra ? sa : sb) === 1 ? 1 : -1;
-      const leafW = round(width - 2 * LINING - 2 * DOOR_CLEARANCE);
-      const leafH = round(height - LINING - 0.006);
-      const hinge: 'left' | 'right' = n % 2 === 0 ? 'left' : 'right';
-      // Leaf sits on the swing-side face of the lining (stops flush with the wall face).
-      const zOff = side * (rec.thickness / 2 - 0.03);
-      const lc = rotateYaw(0, zOff, yaw);
-      const style = d.style ?? (d.main ? (plan.style === 'industrial' ? 'slab' : 'panel') : d.kind === 'sliding' ? 'glass' : pal.door);
-      const leafId = `${fid}-leaf`;
-      const door: EntityInput = {
-        id: leafId,
-        parent: lid,
-        name: d.main ? 'Front door leaf' : 'Door leaf',
-        transform: { position: [round(c[0] + lc[0]), 0.003, round(c[1] + lc[1])], rotation: [0, yaw, 0] },
-        shape: { kind: 'procedural', generator: 'arch-door', params: { width: leafW, height: leafH, style, finish: d.main ? { finish: plan.style === 'scandinavian' ? 'ash' : 'walnut' } : { finish: 'paint', color: pal.doorColor }, hardware: { finish: pal.metal === 'brass' ? 'brass' : pal.metal === 'chrome' ? 'chrome' : 'brushed-metal' }, handle: hinge === 'left' ? 'right' : 'left' } },
-        physics: { body: 'kinematic', collider: 'auto' },
-        arch: { role: 'door', wall: rec.id, kind: d.kind, room: into === 'outside' ? undefined : `${lid}-${into}` },
-        tags: d.main ? ['arch', 'door', 'entrance'] : ['arch', 'door'],
-        interact: { kind: 'door', label: d.main ? 'front door' : d.kind === 'sliding' ? 'sliding door' : 'door', reach: 2.6 },
-        state: { open: false },
-      };
-      if (d.kind === 'sliding') {
-        const slide = rotateYaw(-leafW * 0.95, 0, yaw + plan.rotation);
-        door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'slide', slide: [round(slide[0]), 0, round(slide[1])], duration: 0.9 } }];
-      } else {
-        // Positive swing turns local +X toward −Z: a left-hinged leaf swings into side B with a negative angle.
-        const angle = (hinge === 'left' ? -1 : 1) * 92 * side;
-        if (d.physical ?? plan.physicalDoors) {
-          // A real hinge: the leaf is a dynamic body on a revolute joint to the world (axis up, at the hinge edge, limited
-          // to its swing), held shut by a spring motor; the door behavior servos it open and shut, the solver does the rest.
-          door.physics = { body: 'dynamic', collider: 'auto', mass: 18, friction: 0.5, restitution: 0, angularDamping: 2, linearDamping: 1 };
-          door.joint = {
-            type: 'revolute',
-            target: 'world',
-            anchor: [round((hinge === 'left' ? -1 : 1) * (leafW / 2)), 0, 0],
-            targetAnchor: [0, 0, 0],
-            axis: [0, 1, 0],
-            limits: [Math.min(0, angle), Math.max(0, angle)],
-            motor: { targetVelocity: 0, targetPosition: 0, stiffness: 60, damping: 12, maxForce: 400 },
-          };
-          door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'joint', jointOpen: angle, swingAngle: angle, hinge, duration: 0.85 } }];
-        } else door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'swing', swingAngle: angle, hinge, duration: 0.85 } }];
+      const doubleLeaf = (d.style === 'double' || d.style === 'french') && d.kind === 'swing' && width >= 1.2;
+      const arched = d.style === 'arched';
+      const springing = arched ? round(Math.max(1.6, Math.min(height - 0.35, height * 0.82))) : undefined;
+      const fullLeafW = round(width - 2 * LINING - 2 * DOOR_CLEARANCE);
+      const leafH = round((springing ?? height) - LINING - 0.006);
+      const leafStyle = d.style === 'double' || d.style === 'arched' ? 'panel' : d.style;
+      const style = leafStyle ?? (d.main ? (plan.style === 'industrial' ? 'slab' : 'panel') : d.kind === 'sliding' ? 'glass' : pal.door);
+      const leafFinish: MaterialSpec = d.color ? { finish: 'paint', color: d.color } : d.main ? { finish: plan.style === 'scandinavian' ? 'ash' : 'walnut' } : { finish: 'paint', color: pal.doorColor };
+      const leaves: Array<{ suffix: string; w: number; xoff: number; hinge: 'left' | 'right' }> = doubleLeaf
+        ? [
+            { suffix: '', w: round((fullLeafW - 0.004) / 2), xoff: round(-(fullLeafW + 0.004) / 4), hinge: 'left' },
+            { suffix: '-b', w: round((fullLeafW - 0.004) / 2), xoff: round((fullLeafW + 0.004) / 4), hinge: 'right' },
+          ]
+        : [{ suffix: '', w: fullLeafW, xoff: 0, hinge: n % 2 === 0 ? 'left' : 'right' }];
+      const leafW = leaves[0]?.w ?? fullLeafW;
+      const hinge = leaves[0]?.hinge ?? 'left';
+      for (const lf of leaves) {
+        // Leaf sits on the swing-side face of the lining (stops flush with the wall face).
+        const zOff = side * (rec.thickness / 2 - 0.03);
+        const lc = rotateYaw(lf.xoff, zOff, yaw);
+        const leafId = `${fid}-leaf${lf.suffix}`;
+        const door: EntityInput = {
+          id: leafId,
+          parent: lid,
+          name: d.main ? 'Front door leaf' : 'Door leaf',
+          transform: { position: [round(c[0] + lc[0]), 0.003, round(c[1] + lc[1])], rotation: [0, yaw, 0] },
+          shape: { kind: 'procedural', generator: 'arch-door', params: { width: lf.w, height: leafH, style, finish: leafFinish, hardware: { finish: pal.metal === 'brass' ? 'brass' : pal.metal === 'chrome' ? 'chrome' : 'brushed-metal' }, handle: lf.hinge === 'left' ? 'right' : 'left' } },
+          physics: { body: 'kinematic', collider: 'auto' },
+          arch: { role: 'door', wall: rec.id, kind: d.kind, room: into === 'outside' ? undefined : `${lid}-${into}` },
+          tags: d.main ? ['arch', 'door', 'entrance'] : ['arch', 'door'],
+          interact: { kind: 'door', label: d.main ? 'front door' : d.kind === 'sliding' ? 'sliding door' : 'door', reach: 2.6 },
+          state: { open: false },
+        };
+        if (d.kind === 'sliding') {
+          const slide = rotateYaw(-lf.w * 0.95, 0, yaw + plan.rotation);
+          door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'slide', slide: [round(slide[0]), 0, round(slide[1])], duration: 0.9 } }];
+        } else {
+          // Positive swing turns local +X toward −Z: a left-hinged leaf swings into side B with a negative angle.
+          const angle = (lf.hinge === 'left' ? -1 : 1) * 92 * side;
+          if (d.physical ?? plan.physicalDoors) {
+            // A real hinge: the leaf is a dynamic body on a revolute joint to the world (axis up, at the hinge edge, limited
+            // to its swing), held shut by a spring motor; the door behavior servos it open and shut, the solver does the rest.
+            door.physics = { body: 'dynamic', collider: 'auto', mass: 18, friction: 0.5, restitution: 0, angularDamping: 2, linearDamping: 1 };
+            door.joint = {
+              type: 'revolute',
+              target: 'world',
+              anchor: [round((lf.hinge === 'left' ? -1 : 1) * (lf.w / 2)), 0, 0],
+              targetAnchor: [0, 0, 0],
+              axis: [0, 1, 0],
+              limits: [Math.min(0, angle), Math.max(0, angle)],
+              motor: { targetVelocity: 0, targetPosition: 0, stiffness: 60, damping: 12, maxForce: 400 },
+            };
+            door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'joint', jointOpen: angle, swingAngle: angle, hinge: lf.hinge, duration: 0.85 } }];
+          } else door.behaviors = [{ type: 'door', params: { trigger: 'key', key: 'e', radius: 1.8, motion: 'swing', swingAngle: angle, hinge: lf.hinge, duration: 0.85 } }];
+        }
+        add(door);
       }
-      add(door);
-      const hingeP: P2 = [c[0] + rec.dir[0] * (hinge === 'left' ? -leafW / 2 : leafW / 2), c[1] + rec.dir[1] * (hinge === 'left' ? -leafW / 2 : leafW / 2)];
+      const hingeP: P2 = [c[0] + rec.dir[0] * (hinge === 'left' ? -fullLeafW / 2 : fullLeafW / 2), c[1] + rec.dir[1] * (hinge === 'left' ? -fullLeafW / 2 : fullLeafW / 2)];
       for (const r of [ra, rb]) if (r !== 'outside') pushRoomDoor(r, c, width, d.kind !== 'sliding' && r === into, hingeP);
       if (d.main) setSpawn(c, rec, into === ra ? sb : sa, ra === 'outside' ? rb : ra);
       if (d.main && li === 0 && entry) front.door = { c, n: (entry as { n: P2 }).n, width, height };
@@ -523,7 +537,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     // --- windows ----------------------------------------------------------
     let winN = 0;
     const windowStyles = new Map<string, string>();
-    const placeWindow = (roomId: string, rec: WallRec, t: number, width: number, height: number, sill: number, style: string, daylight?: string): boolean => {
+    const placeWindow = (roomId: string, rec: WallRec, t: number, width: number, height: number, sill: number, style: string, daylight?: string, wopts?: WindowExtras): boolean => {
       if (!free(rec, t - width / 2, t + width / 2)) return false;
       rec.openings.push({ kind: 'window', offset: round(t), width: round(width), height: round(height), sill: round(sill) });
       windowStyles.set(`${rec.id}@${round(t)}`, style);
@@ -532,10 +546,10 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const interior = roomSide(rec, c, roomId) === 1 ? 'b' : 'a';
       const frosted = roomType(roomId) === 'bathroom';
       // Plain casement windows open: the casement is a child entity that swings inward on its left hinge.
-      const openable = style === 'casement' && !frosted && width <= 1.8 && width >= 0.6 && height >= 0.7;
+      const openable = style === 'casement' && !frosted && !wopts?.muntins && width <= 1.8 && width >= 0.6 && height >= 0.7;
       const winId = `${lid}-win${winN++}`;
       const surround = xp.surround && (xp.surround !== 'box' || width >= 1.2 || style === 'picture') ? { style: xp.surround, material: xp.surroundMaterial, depth: xp.surround === 'box' ? 0.18 : 0.04 } : undefined;
-      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: pal.windowFrame, glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}), ...(surround ? { surround } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
+      add({ id: winId, parent: lid, name: 'Window', transform: { position: [round(c[0]), round(sill), round(c[1])], rotation: [0, yaw, 0] }, shape: { kind: 'procedural', generator: 'arch-window', params: { width: round(width), height: round(height), wallThickness: rec.thickness, style, interior, frame: wopts?.frame ? { finish: 'paint', color: wopts.frame } : pal.windowFrame, ...(wopts?.muntins ? { muntins: wopts.muntins } : {}), ...(wopts?.casing !== undefined ? { casing: wopts.casing } : {}), ...(wopts?.bay ? { bay: wopts.bay } : {}), glass: { finish: frosted ? 'frosted-glass' : 'glass' }, sillMaterial: { finish: plan.style === 'classic' || plan.style === 'modern' ? 'marble' : 'oak' }, ...(openable ? { sash: true } : {}), ...(daylight ? { daylight } : {}), ...(surround ? { surround } : {}) } }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'window', wall: rec.id, room: `${lid}-${roomId}` }, tags: ['arch', 'window'] });
       if (openable) {
         const fw = 0.055;
         const sashW = round(width - 2 * fw);
@@ -593,7 +607,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
             notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: no exterior wall there`);
             continue;
           }
-          if (!placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight)) notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: overlaps another opening or the wall end`);
+          if (!placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight, w)) notes.push(`window of ${w.room} at ${c} m on the ${w.side} wall: overlaps another opening or the wall end`);
         }
         continue;
       }
@@ -603,7 +617,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       for (let k = 0; k < n; k++) {
         const t = span.t0 + (len * (k + 0.5)) / n;
         const hit = wallAt(edgePoint(span.edge, t));
-        if (hit && !placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight)) notes.push(`window of ${w.room} on the ${w.side} wall: overlaps another opening or the wall end`);
+        if (hit && !placeWindow(w.room, hit.rec, hit.t, w.width, height, w.sill, w.style ?? defaultWindowStyle(plan.style), w.daylight, w)) notes.push(`window of ${w.room} on the ${w.side} wall: overlaps another opening or the wall end`);
       }
     }
     if (lvl.autoWindows) {
@@ -650,6 +664,39 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       }
     }
 
+    // Niches: recesses in the face of the wall of a rectangular room (edge coordinates like openings).
+    const nichesOf = new Map<string, { a: WallNiche[]; b: WallNiche[] }>();
+    for (const r of indoor) {
+      if (!r.niches || r.niches.length === 0) continue;
+      const poly = polys.get(r.id) as P2[];
+      const edges = roomEdges(poly);
+      for (const n of r.niches) {
+        const e = edges.find((q) => q.side === n.wall);
+        if (!e) {
+          notes.push(`niche in ${r.id}: the room has no ${n.wall} wall`);
+          continue;
+        }
+        const along = Math.max(n.width / 2 + 0.2, Math.min(e.length - n.width / 2 - 0.2, n.along));
+        const hit = wallAt(edgePoint(e, along));
+        if (!hit) {
+          notes.push(`niche in ${r.id}: no wall on the ${n.wall} side`);
+          continue;
+        }
+        const c = edgePoint(e, along);
+        const face = roomSide(hit.rec, c, r.id) === 1 ? 'b' : 'a';
+        const depth = Math.max(0.04, Math.min(n.depth, hit.rec.thickness - 0.04));
+        const height = Math.min(n.height, ceiling - n.sill - 0.15);
+        if (height < 0.2) {
+          notes.push(`niche in ${r.id} on the ${n.wall} wall does not fit under the ceiling`);
+          continue;
+        }
+        const wn = WallNiche.parse({ offset: round(hit.t), width: n.width, height: round(height), sill: n.sill, depth: round(depth), shelves: n.shelves, ...(n.color ? { color: n.color } : {}), arched: n.arched });
+        const slot = nichesOf.get(hit.rec.id) ?? { a: [], b: [] };
+        slot[face].push(wn);
+        nichesOf.set(hit.rec.id, slot);
+      }
+    }
+
     // Emit walls (openings known now).
     for (const rec of walls) {
       const j = joins.get(`w${walls.indexOf(rec)}`) ?? { startA: 0, startB: 0, endA: 0, endB: 0 };
@@ -661,9 +708,19 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         const compass = compassOf(-side * -rec.dir[1], -side * rec.dir[0]);
         return wallFinish(room, pal, compass);
       };
-      const sideDado = (room: PlanRoom | undefined): Record<string, Json> | undefined => (room?.dado ? (room.dado as unknown as Record<string, Json>) : undefined);
-      const dadoA = sideDado(roomA);
-      const dadoB = sideDado(roomB);
+      // The room's side of this wall as a compass name, for per-wall dados.
+      const compassOfSide = (side: 1 | -1): Compass => compassOf(-side * -rec.dir[1], -side * rec.dir[0]);
+      const sideDado = (room: PlanRoom | undefined, side: 1 | -1): Record<string, Json> | undefined => {
+        const d = room?.dados?.[compassOfSide(side)] ?? room?.dado;
+        return d ? (d as unknown as Record<string, Json>) : undefined;
+      };
+      const dadoA = sideDado(roomA, -1);
+      const dadoB = sideDado(roomB, 1);
+      const skirtOf = roomA?.skirting ?? roomB?.skirting;
+      const railOf = (room: PlanRoom | undefined): Record<string, Json> | undefined => (room?.pictureRail ? { y: round(Math.max(0.6, height - 0.004 - room.pictureRail.drop)), material: { finish: 'paint', color: room.pictureRail.color ?? room.ceiling?.color ?? '#f4f2ee' } } : undefined);
+      const railA = railOf(roomA);
+      const railB = railOf(roomB);
+      const niches = nichesOf.get(rec.id);
       const skirting = roomA && roomB ? 'both' : roomA ? 'a' : roomB ? 'b' : 'none';
       // Ground-floor exterior walls stand on a plinth band (on their outdoor face) down to the ground.
       const base = li === 0 && rec.w.exterior && (!roomA || !roomB) ? { side: !roomA ? 'a' : 'b', height: 0.42, depth: 0.035, drop: round(plan.plinth + 0.03), material: xp.plinth } : undefined;
@@ -673,7 +730,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         parent: lid,
         name: rec.w.exterior ? 'Exterior wall' : 'Wall',
         transform: { position: [round(rec.w.a[0]), 0, round(rec.w.a[1])], rotation: [0, yaw, 0] },
-        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA, -1), finishB: sideFinish(roomB, 1), ...(dadoA ? { dadoA } : {}), ...(dadoB ? { dadoB } : {}), skirting, skirtingMaterial: { finish: 'paint', color: plan.style === 'industrial' ? '#2f3033' : '#f2f0eb' }, ...(base ? { base } : {}) } as unknown as Record<string, Json> },
+        shape: { kind: 'procedural', generator: 'arch-wall', params: { length: round(rec.len), height: round(top ? height - 0.004 : height - 0.004), thickness: rec.thickness, startA: j.startA, startB: j.startB, endA: j.endA, endB: j.endB, openings: rec.openings.sort((p, q) => p.offset - q.offset), finishA: sideFinish(roomA, -1), finishB: sideFinish(roomB, 1), ...(dadoA ? { dadoA } : {}), ...(dadoB ? { dadoB } : {}), skirting, skirtingMaterial: { finish: 'paint', color: skirtOf?.color ?? (plan.style === 'industrial' ? '#2f3033' : '#f2f0eb') }, ...(skirtOf ? { skirtingStyle: { height: skirtOf.height, depth: skirtOf.depth, profile: skirtOf.profile } } : {}), ...(railA ? { railA } : {}), ...(railB ? { railB } : {}), ...(niches && niches.a.length > 0 ? { nichesA: niches.a } : {}), ...(niches && niches.b.length > 0 ? { nichesB: niches.b } : {}), ...(base ? { base } : {}) } as unknown as Record<string, Json> },
         physics: { body: 'static', collider: 'auto' },
         arch: { role: 'wall', ...(rec.w.exterior ? { kind: 'exterior' } : { kind: 'interior' }) },
         tags: rec.w.exterior ? ['arch', 'wall', 'exterior'] : ['arch', 'wall'],
@@ -717,7 +774,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       roomsOut.push({ id: rid, level: li, name, type: r.type, area: Math.round(areaM2 * 10) / 10 });
       // A cove's raised field has no openings of its own: a ceiling with a stairwell is flat.
       const wells = wellsHere.filter((h) => pointInPolygon(centroid(h)[0], centroid(h)[1], poly));
-      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: wells.map((h) => h.map((p) => [round(p[0]), round(p[1])])), finish: { finish: 'paint', color: '#f4f2ee' }, ...(r.vault && isAxisRectangle(poly) ? { vault: r.vault } : {}), cove: wells.length === 0 && r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).filter((q) => !wells.some((h) => pointInPolygon(q[0], q[1], grownBox(h, 0.15)))).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
+      if (!terrace) add({ id: `${rid}-ceil`, parent: lid, name: `${name} ceiling`, transform: { position: [0, ceiling, 0] }, shape: { kind: 'procedural', generator: 'arch-ceiling', params: { polygon: poly.map((p) => [round(p[0]), round(p[1])]), holes: wells.map((h) => h.map((p) => [round(p[0]), round(p[1])])), finish: { finish: 'paint', color: r.ceiling?.color ?? '#f4f2ee' }, ...(r.vault && isAxisRectangle(poly) ? { vault: r.vault } : {}), ...ceilingStyleParams(r, poly, walls), cove: wells.length === 0 && r.type === 'living' && plan.style !== 'industrial' && isAxisRectangle(poly) ? 0.08 : 0, downlights: downlightGrid(poly, r.type, plan.style).filter((q) => !wells.some((h) => pointInPolygon(q[0], q[1], grownBox(h, 0.15)))).map((q) => [round(q[0]), round(q[1])]) } as unknown as Record<string, Json> }, arch: { role: 'ceiling', room: rid }, tags: ['arch', 'ceiling'], castShadow: false });
       // Furniture.
       const ctx: RoomContext = {
         id: rid,
@@ -1050,6 +1107,42 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
 export function poolFreeboard(plinth: number): number {
   return round(Math.max(0.005, Math.min(0.12, plinth - 0.03 - 0.015)));
 }
+
+/**
+ * The ceiling-vocabulary params of a room (`arch-ceiling`): style, the rectangle of the inside wall faces, cornice and the
+ * style's own fields. Only axis-aligned rectangles take them; a legacy `vault` stays what it was.
+ */
+function ceilingStyleParams(room: PlanRoom, poly: readonly P2[], walls: readonly WallRec[]): Record<string, Json> {
+  const c = room.ceiling;
+  const cornice = room.cornice ?? c?.cornice;
+  if (!isAxisRectangle(poly) || (!c && !cornice)) return {};
+  const [x0, z0, x1, z1] = bounds(poly as P2[]);
+  const edges = roomEdges(positive(poly as P2[]));
+  const inset = (side: Compass): number => {
+    const e = edges.find((q) => q.side === side);
+    return e ? insetFor(e, walls) : 0.06;
+  };
+  const out: Record<string, Json> = { faces: [round(x0 + inset('west')), round(z0 + inset('north')), round(x1 - inset('east')), round(z1 - inset('south'))] };
+  if (cornice) out['cornice'] = cornice as unknown as Json;
+  if (!c) return out;
+  const style = room.vault && c.style === undefined ? 'vaulted' : c.style;
+  if (style && style !== 'flat') out['style'] = style;
+  if (style === 'vaulted' && !room.vault) {
+    const wide = x1 - x0 >= z1 - z0;
+    out['vault'] = { rise: c.rise ?? 0.9, ridge: c.ridge ?? (wide ? 'x' : 'z'), trusses: c.trusses ?? 0, beam: c.beam ?? '#f4f2ee' };
+  }
+  if (c.rise !== undefined) out['rise'] = c.rise;
+  if (c.ridge) out['ridge'] = c.ridge;
+  if (c.trusses !== undefined) out['trusses'] = c.trusses;
+  if (c.beam) out['beamColor'] = c.beam;
+  if (c.coffers) out['coffers'] = c.coffers as unknown as Json;
+  if (c.beams) out['beams'] = c.beams as unknown as Json;
+  if (c.tray) out['tray'] = c.tray as unknown as Json;
+  return out;
+}
+
+/** The additive window options of a plan window (glazing bars, frame colour, casing, bay). */
+type WindowExtras = Pick<PlanWindow, 'muntins' | 'frame' | 'casing' | 'bay'>;
 
 function defaultWindowStyle(style: BuildingPlan['style']): string {
   return style === 'classic' ? 'grid' : style === 'industrial' ? 'grid' : 'casement';

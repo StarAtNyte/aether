@@ -22,6 +22,8 @@ import { checkConformance, describeShell, DesignPlan, designToBuildingPlan, reso
 import { anchorToOpening, centerOver, moveItem, placeItem, removeItem, resizeItem, resolveBuilding, rotateItem, snapToWall, type EditResult } from './edit';
 import { findRoom, findWall, isLookupError, listEntities, measure, queryWall, wallQueryText } from './facts';
 import { describeParts } from './parts';
+import { describeShellVocabulary } from '../shell';
+import { finishMatchText, nearestFinishes } from '../finish-match';
 import { readScene } from './read';
 import type { Scene } from './types';
 
@@ -90,6 +92,10 @@ export const QueryInput = z.discriminatedUnion('q', [
   z.object({ q: z.literal('measure'), a: z.union([Ref, z.object({ point: z.array(Num).min(2).max(3) })]), b: z.union([Ref, z.object({ point: z.array(Num).min(2).max(3) })]) }).strict(),
   z.object({ q: z.literal('list'), room: Ref.optional(), wall: WallName.optional(), kind: z.string().max(40).optional(), level: z.number().int().min(0).max(20).optional() }).strict(),
   z.object({ q: z.literal('parts') }).strict(),
+  // The room-shell vocabulary (ceilings, cornice, panelling, niches, window and door styles, curtains), optionally one topic.
+  z.object({ q: z.literal('vocabulary'), topic: z.string().max(40).optional() }).strict(),
+  // The nearest finishes of the material library for a colour (a sampled wall colour), each with the tint to give it.
+  z.object({ q: z.literal('finishes'), near: z.string().regex(/^#[0-9a-fA-F]{6}$/), surface: z.enum(['wall', 'floor', 'ceiling', 'any']).optional(), hint: z.string().max(60).optional(), limit: z.number().int().min(1).max(10).optional() }).strict(),
   z.object({ q: z.literal('shell') }).strict(),
   z.object({ q: z.literal('review'), fast: z.boolean().optional() }).strict(),
   // Where a stair from `level` to the next fits (optionally in a room / of a shape / heading / width), with the riser maths.
@@ -412,6 +418,16 @@ function runQueries(world: WorldDoc, rawInput: unknown): DesignToolResult {
     const query = q.data.q === 'measure' ? { ...q.data, a: unalias(aliases, q.data.a) as typeof q.data.a, b: unalias(aliases, q.data.b) as typeof q.data.b } : q.data;
     if (query.q === 'parts') {
       lines.push(`[${index + 1}] parts library:\n${describeParts()}`);
+      answered++;
+      return;
+    }
+    if (query.q === 'vocabulary') {
+      lines.push(`[${index + 1}] ${describeShellVocabulary(query.topic)}`);
+      answered++;
+      return;
+    }
+    if (query.q === 'finishes') {
+      lines.push(`[${index + 1}] ${finishMatchText(query.near, nearestFinishes(query.near, stripUndefined({ surface: query.surface, hint: query.hint, limit: query.limit })))}`);
       answered++;
       return;
     }
