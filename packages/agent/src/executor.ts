@@ -13,6 +13,7 @@ import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
 import { landPatches, type LandInput } from './land';
 import { feelPatches, type TuneFeelInput } from './feel-edit';
+import { lookPatches, type TuneLookInput } from './look-edit';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
@@ -476,6 +477,18 @@ function tuneFeelTool(ctx: ExecutorContext, input: TuneFeelInput): ToolOutcome {
   return { content: `${summary}${notes}`, isError: false, events, edited: true };
 }
 
+/** tune_look: how light and colour are presented (exposure, grade, fog, tints), committed as one undo step. */
+function tuneLookTool(ctx: ExecutorContext, input: TuneLookInput): ToolOutcome {
+  const { patches, summary, refused } = lookPatches(ctx.host.getWorld(), input);
+  const notes = refused.length > 0 ? `\nRefused: ${refused.slice(0, 8).join('; ')}` : '';
+  if (patches.length === 0) return { content: `${summary}${notes}`, isError: refused.length > 0, events: [], edited: false };
+  const message = (input.message ?? 'Tune the look').slice(0, 200);
+  const result = ctx.host.applyPatches(patches, message);
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
+  if (result.errors.length > 0) return { content: `tune_look could not apply: ${result.errors.slice(0, 4).map((e) => e.message.slice(0, 160)).join('; ')}${notes}`, isError: result.applied.length === 0, events, edited: result.applied.length > 0 };
+  return { content: `${summary}${notes}`, isError: false, events, edited: true };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   if (isLevelToolName(name)) {
@@ -488,7 +501,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -500,6 +513,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'tune_feel': {
         const p = ToolInputs.tune_feel.safeParse(rawInput ?? {});
         return p.success ? tuneFeelTool(ctx, p.data) : fail(`Invalid tune_feel input: ${issuesText(p.error)}`);
+      }
+      case 'tune_look': {
+        const p = ToolInputs.tune_look.safeParse(rawInput ?? {});
+        return p.success ? tuneLookTool(ctx, p.data) : fail(`Invalid tune_look input: ${issuesText(p.error)}`);
       }
       case 'apply_patches': {
         const p = ToolInputs.apply_patches.safeParse(rawInput);

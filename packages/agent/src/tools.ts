@@ -12,6 +12,7 @@ import { LandInput } from './land';
 import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
 import { FeelEvent, FeelTier, VfxPreset } from '@aether/core';
 import { TuneFeelInput } from './feel-edit';
+import { LOOK_RESET_KEYS, TuneLookInput } from './look-edit';
 import type { ToolDef } from './types';
 
 /** Upper bounds on tool arguments. */
@@ -45,7 +46,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -292,6 +293,24 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'tune_look',
+    description:
+      'Look development, the way a photographer grades a shot: set how light and colour are PRESENTED after you have looked at renders (never to make a number match; you judge with your eyes). Stored in the world (environment, environment.grade, environment.look) as one undo step and respected by every render, review image and still; the renderer\'s constants are only the defaults. Omitted fields stay as they are; `reset` puts named ones back to the default. Exposure: exposure (multiplier, 1 neutral), exposureEv (stops, grade), bloom, ambientIntensity (default 0.4), sunIntensity (2.5), hdriIntensity. Colour: temperature (warm +, cool -), tint (green +, magenta -), saturation 0.4..1.8, contrast 0.6..1.6, sunTint / ambientTint / foliageTint (#rrggbb multipliers; #ffffff keeps the colour: a warm lamp-lit evening ambientTint #ffe2c2, autumn foliageTint #ffd9a0, cool overcast sunTint #dfe9ff). Fog: fogColor, fogDensity (needed when the world has no fog), fogVisibility (metres to 63% haze). Interiors: interiorWarmth (warm white-balance shift in a lit room, default 0.45), interiorBalance (how much of the lamps\' own cast is removed, 0..1.5, default 1), lampStrength (room lamps in the baked light, default 1, 0..3). vignette 0..1 (default 0.22). Call it in a review round after viewing the numbered renders: say in `message` what you saw ("kitchen reads cold and flat, warming the white balance and lifting the exposure"), change a little, look again. Reply lists each value before and after.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        exposure: { type: 'number' }, exposureEv: { type: 'number' }, temperature: { type: 'number' }, tint: { type: 'number' }, saturation: { type: 'number' }, contrast: { type: 'number' }, bloom: { type: 'number' },
+        ambientIntensity: { type: 'number' }, sunIntensity: { type: 'number' }, hdriIntensity: { type: 'number' },
+        fogColor: { type: 'string' }, fogDensity: { type: 'number' }, fogVisibility: { type: 'number' },
+        interiorWarmth: { type: 'number' }, interiorBalance: { type: 'number' }, lampStrength: { type: 'number' }, vignette: { type: 'number' },
+        sunTint: { type: 'string' }, ambientTint: { type: 'string' }, foliageTint: { type: 'string' },
+        reset: { type: 'array', items: { type: 'string', enum: [...LOOK_RESET_KEYS] } },
+        message: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
     inputSchema: {
@@ -397,6 +416,7 @@ export const ToolInputs = {
   run_verification: z.object({}),
   shape_land: LandInput,
   tune_feel: TuneFeelInput,
+  tune_look: TuneLookInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;
 
