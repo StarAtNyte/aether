@@ -173,7 +173,7 @@ describe('stair landings: every heading and shape', () => {
 });
 
 describe('stair landings: what counts as clear', () => {
-  const stair: PlanStair = { at: [2, 7.85], heading: 'north', shape: 'straight', width: 1, turn: 'left' };
+  const stair: PlanStair = { at: [2, 6.9], heading: 'north', shape: 'straight', width: 1, turn: 'left' };
 
   it('the landing depth is the stair width, never less than a body with clearance', () => {
     expect(STAIR_MIN_LANDING).toBeCloseTo(0.9, 5);

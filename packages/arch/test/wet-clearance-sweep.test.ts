@@ -5,7 +5,7 @@ import { convexOverlap } from '../src/layout';
 // Bathrooms of several sizes, door walls, with and without a placed shower and an added window: nothing dry stands in or at a wet fitting.
 it('a sweep of bathrooms keeps plants and loose furniture out of the shower and bath', () => {
   const bad: string[] = []; let n = 0;
-  for (const [w, d] of [[1.8,2.2],[2.0,2.4],[2.4,2.6],[2.6,3.2],[3.0,3.0],[1.6,3.4],[3.4,2.0]]) for (const doorWall of ['south','east','west','north']) for (const sh of [false,true]) for (const win of [false,true]) {
+  for (const [w, d] of [[1.8,2.2],[2.0,2.4],[2.4,2.6],[2.6,3.2],[3.0,3.0],[1.6,3.4],[3.4,2.0]] as Array<[number, number]>) for (const doorWall of ['south','east','west','north']) for (const sh of [false,true]) for (const win of [false,true]) {
     const along = doorWall==='south'||doorWall==='north' ? w*0.6 : d*0.6;
     const plan = { id:'b', name:'B', style:'modern', brief:'bath', programme:[{room:'bath',purpose:'wash',targetArea:w*d}], circulation:{entrance:'bath',notes:'door'},
       levels:[{height:2.8,rooms:[{id:'bath',type:'bathroom',rect:[0,0,w,d]}],openings:[{id:'dr',kind:'door',room:'bath',wall:doorWall,to:'outside',along,width:0.8,main:true}]}],

@@ -5070,3 +5070,32 @@ first-render shader graph building in the animation-frame callback, which the ch
 date. `bench:quick` checks passed. New tests: task queue, light-volume cache and controller cache paths, HDRI lite selection, 256 px
 finish set, foliage fill order. Reproduce the numbers: `npm run build`, then `STATIC_DIR=<dist> GEN_GPU=intel npm run e2e:load-perf --
 --throttle=1 --worlds=highland-trail,casa-patio,kart-canyon` (`STATIC_DIR` also serves an older build for the before column).
+
+## Stairs tucked against the wall at the foot: plan check and building check vs. the bot
+
+**Problem.** A model-built two-storey house (L stair, first riser 2 cm from the hall's south wall, east edge 2 cm from
+the east wall) failed the walkthrough bot ("no walkable route to Bedroom", "stuck on house-l0-stair0", "stuck on
+house-l0-w4") while `checkStair` said the stair works and the building check reached 7/7 rooms.
+
+**Root cause.** With the first riser at a wall the foot cannot be entered from the front, so both checks relied on
+"floor beside the first treads" (a 0.6 x 0.9 m strip) as the way on. The side of a flight is a wedge: a body pressed
+against the wall behind the foot has its centre 0.37 m from the wall, which puts it 0.35 m along the flight, over treads
+taller than the hop clears (measured with the character controller: hops from the side work to about 0.32 m along on a
+0.27 m going and 0.175 m riser, fail from 0.34 m). The bot hopped onto the flight's side and wedged; no route existed
+past the foot. The stair itself, its landing and the door leaves upstairs were fine (the same house with the stair moved
+is walked in full). The error was in the check, not in the bot.
+
+**Change.** `stairSideReach` / `stairSideBehind` (stair-fit): a side entry needs floor behind the first riser
+(about 5.5 cm for the usual stair), and the side strips of `stairShape` start there, so `checkStair` refuses the stair
+with the measured depth and `settleStairs` / `create_building` move it. The building check asks the plan for the same
+(`stairSideEntry`) before it counts the besides-points of the grid (whose cells are too coarse for centimetres).
+Also fixed a test stair in `stair-landing.test.ts` that stood on the wall, and a strict-index type error in
+`wet-clearance-sweep.test.ts`.
+
+**Tests.** `packages/arch/test/stair-side-entry.test.ts` (reach/behind numbers, the refusal text, building check as
+drawn vs. settled), `packages/playtest/test/stair-side-entry.test.ts` (bot fails as drawn, passes through
+create_building). arch 481, playtest 281, agent 820 tests pass, typecheck 0 errors, smoke 34/34.
+
+**Open.** The offline planner's two-storey house, once its own stair (0.06 m behind the foot, marginal) is moved, lands
+on a straight stair hugging the north wall that the bot cannot route up (no stuck point, nav finds no route); the
+planner house is unchanged by this fix because 0.06 m is still enough. That second case is not investigated.

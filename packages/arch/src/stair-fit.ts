@@ -41,6 +41,32 @@ export const STAIR_DOOR_CLEARANCE = 0.5;
 /** Floor beside the first treads that a stair against a wall is stepped onto from, along the flight (m). */
 const SIDE_ALONG = 0.6;
 /**
+ * Height of the wedge under the middle of a walker's body that the walkthrough bot's hop still gets onto from the side
+ * (m): the first treads up to about 0.32 m along a 0.27 m going and 0.175 m riser flight; further along the body's far
+ * edge is over treads too tall (measured with the character controller).
+ */
+const SIDE_HOP_HEIGHT = 0.207;
+/** The walker's body radius with the controller's skin (m): how close its centre comes to a wall (measured: 0.37 m). */
+const SIDE_BODY_R = 0.375;
+
+/**
+ * Where, along the first flight from the first riser, the centre of a walker stepping onto the side of the treads can
+ * stand at most (m): about 0.32 m for the usual 0.175 m riser and 0.27 m going.
+ */
+export function stairSideReach(going: number, riser: number): number {
+  return (SIDE_HOP_HEIGHT * going) / Math.max(1e-3, riser);
+}
+
+/**
+ * How much floor a stair needs behind its first riser, beside the flight, for a walker to step onto it from the side
+ * (m): the body's centre keeps a radius from the wall behind it and may stand at most {@link stairSideReach} along.
+ * A stair tucked against the wall at its foot has none, and its sides are not a way on however long they are.
+ */
+export function stairSideBehind(going: number, riser: number): number {
+  return Math.max(0, SIDE_BODY_R - stairSideReach(going, riser));
+}
+
+/**
  * How far the stairwell balustrade reaches past the edge of the opening (m): it stands 5 cm back (compile.ts,
  * WELL_RAIL_SETBACK) and its collider is 4 cm thick each side of that line.
  */
@@ -63,7 +89,7 @@ export interface StairShape {
   /** Floor in front of the first riser: a roomy landing and the least that works. */
   approach: P2[];
   approachMin: P2[];
-  /** Floor beside the first treads (left, right): a stair against a wall can be stepped onto from the side. */
+  /** Floor beside the first treads (left, right), and behind the first riser as far as {@link stairSideBehind}: a stair against a wall can be stepped onto from the side. */
   sides: [P2[], P2[]];
   /** Floor beyond the top step on the level above: a roomy landing and the least that works. */
   arrival: P2[];
@@ -110,6 +136,7 @@ export function stairShape(stair: Pick<PlanStair, 'at' | 'heading' | 'shape' | '
   const last = flights[flights.length - 1];
   const w = sp.width;
   const m = stairLandingDepth(w);
+  const behind = stairSideBehind(sp.going, riser);
   const box = (x0: number, z0: number, x1: number, z1: number): P2[] => [toPlan([x0, z0]), toPlan([x1, z0]), toPlan([x1, z1]), toPlan([x0, z1])];
   let top: P2 = toPlan([0, 0]);
   let topEdge: P2 = toPlan([0, 0]);
@@ -154,7 +181,7 @@ export function stairShape(stair: Pick<PlanStair, 'at' | 'heading' | 'shape' | '
     footprint: fp,
     approach: box(-(m + ROOMY), -w / 2, 0, w / 2),
     approachMin: box(-m, -w / 2, 0, w / 2),
-    sides: [box(0, -w / 2 - m, SIDE_ALONG, -w / 2), box(0, w / 2, SIDE_ALONG, w / 2 + m)],
+    sides: [box(-behind, -w / 2 - m, SIDE_ALONG, -w / 2), box(-behind, w / 2, SIDE_ALONG, w / 2 + m)],
     arrival,
     arrivalMin,
     exits,
@@ -397,6 +424,26 @@ export interface StairCheck {
   shape: StairShape;
 }
 
+/** Whether the floor beside the first treads (and behind the first riser) is clear: the stair can be stepped onto from a side. */
+function sideEntryOk(shape: StairShape, here: readonly RoomRing[], obstacles: readonly Obstacle[]): boolean {
+  return shape.sides.some((q) => {
+    const r = bestRing(q, here);
+    return r.ring !== null && r.out <= 0.02 && blockedBy(q, obstacles) === null;
+  });
+}
+
+/**
+ * Whether stair `si` of level `li` of `plan` can be stepped onto from the side of its first treads (what a stair with
+ * a wall at its foot depends on), measured on the plan: the building check's grid is too coarse for centimetres.
+ */
+export function stairSideEntry(plan: BuildingPlan, li: number, si: number): boolean {
+  const level = plan.levels[li];
+  const stair = level?.stairs[si];
+  if (!level || !stair) return false;
+  const others = level.stairs.filter((_, k) => k !== si);
+  return sideEntryOk(stairShape(stair, level.height), rings(plan, level), floorObstacles(plan, li, plan.levels[li - 1]?.stairs ?? [], others));
+}
+
 /** Measure `stair` on level `li` of `plan` (`doors` from {@link levelDoors}, computed when omitted). */
 export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doors: StairDoor[][] = levelDoors(plan), others: readonly PlanStair[] = []): StairCheck {
   const level = plan.levels[li];
@@ -421,10 +468,7 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
   const lowObstacles = floorObstacles(plan, li, plan.levels[li - 1]?.stairs ?? [], others);
   const ap = bestRing(shape.approachMin, here);
   const apHit = ap.out <= 0.02 ? blockedBy(shape.approachMin, lowObstacles) : null;
-  const sideOk = shape.sides.some((q) => {
-    const r = bestRing(q, here);
-    return r.ring !== null && r.out <= 0.02 && blockedBy(q, lowObstacles) === null;
-  });
+  const sideOk = sideEntryOk(shape, here, lowObstacles);
   if ((ap.out > 0.02 || apHit) && !sideOk) {
     const run = clearRun(shape.foot, [-shape.footDir[0], -shape.footDir[1]], fp.ring ?? ap.ring, lowObstacles);
     const sideRuns = ([1, -1] as const).map((s) => clearRun([shape.foot[0] + shape.footDir[0] * 0.3 - shape.footDir[1] * s * (stair.width / 2), shape.foot[1] + shape.footDir[1] * 0.3 + shape.footDir[0] * s * (stair.width / 2)], [-shape.footDir[1] * s, shape.footDir[0] * s], fp.ring ?? ap.ring, lowObstacles));

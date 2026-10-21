@@ -27,7 +27,7 @@ import { analyzeRoomPlacements } from './placement';
 import { placedPolygon } from './entity-geom';
 import { parsePlan } from './compile';
 import { roomPolygon } from './rooms';
-import { fitStair, stairJson, stairLandingDepth, STAIR_BODY, STAIR_BODY_CLEARANCE } from './stair-fit';
+import { fitStair, stairJson, stairSideEntry, stairLandingDepth, STAIR_BODY, STAIR_BODY_CLEARANCE } from './stair-fit';
 import type { PlanStair } from './plan';
 
 export { placedPolygon };
@@ -432,6 +432,18 @@ function stairFix(world: WorldDoc, buildingId: EntityId, stairId: EntityId): str
   }
 }
 
+/** Whether a stair can be stepped onto from the side of its first treads, by the building's plan (true when the plan is not at hand). */
+function sideEntryAt(world: WorldDoc, buildingId: EntityId, stairId: EntityId): boolean {
+  const m = /-l(\d+)-stair(\d+)$/.exec(stairId);
+  const raw = world.entities[buildingId]?.arch?.plan;
+  if (!m || raw === undefined) return true;
+  try {
+    return stairSideEntry(parsePlan(raw), Number(m[1]), Number(m[2]));
+  } catch {
+    return true;
+  }
+}
+
 /** The room whose outline holds the first riser of a stair. */
 function roomOfStair(plan: ReturnType<typeof parsePlan>, li: number, s: PlanStair): string | undefined {
   return (plan.levels[li]?.rooms ?? []).find((r) => r.type !== 'terrace' && pointInPolygon(s.at[0], s.at[1], roomPolygon(r)))?.id;
@@ -613,7 +625,10 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
       if (!(b >= 0 && reached[b] && next)) continue;
       // The foot needs a landing too: in front of the first riser or beside the first treads, that the body gets onto.
       const strict = landing();
-      const feet = [link.bottom, ...link.besides].map((p) => nearestWalkable(grid, strict, p, 0.3));
+      // A stair against the wall at its foot is stepped onto from the side only where the floor behind the first riser
+      // is deep enough for the body to reach the low treads (stair-fit measures it on the plan, in centimetres).
+      const sides = sideEntryAt(world, buildingId, link.id) ? link.besides : [];
+      const feet = [link.bottom, ...sides].map((p) => nearestWalkable(grid, strict, p, 0.3));
       if (!feet.some((f) => f >= 0 && escapes(grid, strict, f, link.foot, doorways))) {
         const depth = clearAhead(grid, [link.foot[0] - link.footDir[0] * 0.03, link.foot[1] - link.footDir[1] * 0.03], [-link.footDir[0], -link.footDir[1]]) + 0.03;
         issues.push({
