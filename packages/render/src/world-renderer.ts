@@ -512,8 +512,10 @@ const SHADER_WARMUP_MS = 15_000;
 const HDRI_WAIT_MS = 8_000;
 /** How long late warming collects arrivals before it links them (ms). */
 const LATE_ROUND_MS = 1_200;
-/** Rounds of late warming (about eight seconds of arrivals). */
-const LATE_ROUNDS = 6;
+/** Rounds of late warming. */
+const LATE_ROUNDS = 5;
+/** Longest one late round holds the draws (ms): the first frame is already on screen. */
+const LATE_COMPILE_MS = 2_500;
 /** Longest the load screen waits for the post chain to be built (ms). */
 const POST_WAIT_MS = 4_000;
 /** A replacement adding at least this many entities holds the first frame like a first world does. */
@@ -1325,7 +1327,7 @@ export class WorldRenderer {
    * What the first draws would create (static batches, scatter fields, virtual-geometry stand-ins, the post chain)
    * exists before the programs are linked, so they are linked too.
    */
-  private async prepareAndCompile(): Promise<void> {
+  private async prepareAndCompile(boundMs = SHADER_WARMUP_MS): Promise<void> {
     this.prepareBatches();
     this.sync.updateView(this.perspective, Math.max(1, Math.round(this.cssHeight * this.renderer.getPixelRatio())), 0);
     this.syncPost();
@@ -1333,7 +1335,7 @@ export class WorldRenderer {
     await this.until(() => !this.postPending, POST_WAIT_MS);
     performance.mark('aether:compile-start');
     if (this.disposed || this.lost) return;
-    await this.compileScene();
+    await this.compileScene(boundMs);
     performance.mark('aether:compile-end');
   }
 
@@ -1347,7 +1349,7 @@ export class WorldRenderer {
       if (this.disposed || this.lost || this.warming) return;
       this.warming = true;
       try {
-        await this.prepareAndCompile();
+        await this.prepareAndCompile(LATE_COMPILE_MS);
       } finally {
         this.warming = false;
         this.needsDraw = true;
@@ -1364,7 +1366,7 @@ export class WorldRenderer {
    * (material, geometry layout, object kind) is compiled; the others are hidden for the instant the list is gathered
    * (it is gathered synchronously, before the first await). Objects out of view count as well: the camera moves on.
    */
-  private async compileScene(): Promise<void> {
+  private async compileScene(boundMs = SHADER_WARMUP_MS): Promise<void> {
     const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
     const seen = new Set<string>();
     this.scene.traverseVisible((o) => {
@@ -1401,7 +1403,7 @@ export class WorldRenderer {
     try {
       const done = this.renderer.compileAsync(this.scene, this.perspective, this.scene);
       restore();
-      await this.bounded(done, SHADER_WARMUP_MS);
+      await this.bounded(done, boundMs);
     } catch (e) {
       restore();
       log.warn(`shader warm-up failed: ${errorMessage(e)}`);
