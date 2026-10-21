@@ -251,6 +251,20 @@ describe('post vignette and bloom', () => {
     expect(bloomStrength(Number.NaN)).toBe(0);
   });
 
+  it('takes the strength from the world\'s look: none leaves the picture alone, more darkens the corners further', async () => {
+    const { vignetteFactor } = await import('../src/gpu/post');
+    const { applyVignette } = await import('../src/view/still');
+    expect(vignetteFactor(Math.SQRT1_2, 0)).toBe(1);
+    expect(vignetteFactor(Math.SQRT1_2, 0.6)).toBeLessThan(vignetteFactor(Math.SQRT1_2));
+    const px = (strength?: number): number => {
+      const a = new Uint8Array(8 * 8 * 4).fill(200);
+      applyVignette(a, 8, 8, strength);
+      return a[0] as number;
+    };
+    expect(px(0)).toBe(200);
+    expect(px(0.8)).toBeLessThan(px());
+  });
+
   it('`visibility` gives aerial perspective on large worlds that the content policy would keep clear', () => {
     const sky = computeSkyState(env({ sky: 'day' }));
     const plain = resolveFog(env({ sky: 'day', fog: { color: '#cfdde8', density: 0.004 } }), sky, 400);

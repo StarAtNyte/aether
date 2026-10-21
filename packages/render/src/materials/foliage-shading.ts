@@ -22,6 +22,20 @@ const sunDirection = new Vector3(0.35, 0.8, 0.3).normalize();
 const sunIrradiance = new Color(2.5, 2.4, 2.2);
 const uSunDirection = T.uniform(sunDirection);
 const uSunIrradiance = T.uniform(sunIrradiance);
+/** Multiplier on the colour of every foliage card (white: none); the world's `look.foliageTint` sets it. */
+const foliageTint = new Color(1, 1, 1);
+const uFoliageTint = T.uniform(foliageTint);
+
+/** Tint the foliage cards (a #rrggbb multiplier, null: none). Invalid input is ignored. */
+export function setFoliageTint(hex: string | null): void {
+  if (hex === null) foliageTint.setRGB(1, 1, 1);
+  else if (/^#[0-9a-fA-F]{6}$/.test(hex)) foliageTint.set(hex);
+}
+
+/** The foliage tint in effect (tests and diagnostics). */
+export function foliageTintColor(): [number, number, number] {
+  return [foliageTint.r, foliageTint.g, foliageTint.b];
+}
 
 /** Share of the sunlight a leaf passes on, seen straight against the sun. */
 export const FOLIAGE_TRANSMISSION = 0.32;
@@ -66,7 +80,7 @@ function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
   const cluster = T.mx_noise_float(p.mul(1.9).add(T.vec3(13.1, 7.7, 3.3)));
   const tint = T.vec3(T.float(1).add(plant.mul(FOLIAGE_HUE[0])), T.float(1).add(plant.mul(FOLIAGE_HUE[1])), T.float(1).add(plant.mul(FOLIAGE_HUE[2]))).mul(T.float(1).add(cluster.mul(FOLIAGE_VALUE)));
   const base = T.materialColor;
-  colorNode = T.vec4(base.rgb.mul(tint), base.w);
+  colorNode = T.vec4(base.rgb.mul(tint).mul(uFoliageTint), base.w);
   const view = T.normalize(p.sub(T.cameraPosition));
   const forward = T.pow(T.clamp(T.dot(view, uSunDirection), 0, 1), FOLIAGE_LOBE);
   // Light that went through a leaf crossed it twice (chlorophyll filters it on the way in and out): its colour is the leaf's own

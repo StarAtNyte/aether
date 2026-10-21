@@ -637,6 +637,29 @@ export const Environment = z.object({
       exposureEv: z.number().min(-3).max(3).optional(),
     })
     .optional(),
+  /**
+   * Additive: look parameters a reviewer (the assistant, after viewing renders) tunes per world. Each field is optional;
+   * omitted fields keep the renderer's default (the defaults are named in docs/CONTRACTS.md). They change how light and
+   * colour are presented, never the simulation.
+   */
+  look: z
+    .object({
+      /** Warm (+) shift of the white balance in a fully adapted, lit interior, in grade temperature units (default 0.45). */
+      interiorWarmth: z.number().min(-1).max(1.5).optional(),
+      /** How much of a room light's own colour cast (wood bounce, warm lamps) the interior white balance takes out, 0 none .. 1.5 more than all (default 1). */
+      interiorBalance: z.number().min(0).max(1.5).optional(),
+      /** Multiplies the sun's colour (a hex tint; white keeps it). */
+      sunTint: Color.optional(),
+      /** Multiplies the sky/hemisphere ambient colour. */
+      ambientTint: Color.optional(),
+      /** Multiplies the colour of leaf, needle and grass cards (a hex tint; white keeps it). */
+      foliageTint: Color.optional(),
+      /** Strength of the room lamps in the baked interior light, 0 none .. 3 triple (default 1). */
+      lampStrength: z.number().min(0).max(3).optional(),
+      /** Edge darkening of the picture, 0 none .. 1 strong (default: the grade preset's). */
+      vignette: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
 });
 export type Environment = z.infer<typeof Environment>;
 

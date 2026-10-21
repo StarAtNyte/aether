@@ -138,13 +138,13 @@ export function blitTile(src: Uint8Array, tw: number, tile: StillTile, dst: Uint
 }
 
 /** Darken the corners of a top-down RGBA image like the screen-space vignette does. */
-export function applyVignette(px: Uint8Array, W: number, H: number): void {
+export function applyVignette(px: Uint8Array, W: number, H: number, strength?: number): void {
   // UV distance from the centre uses the same (non-square) UV space as the shader.
   for (let y = 0; y < H; y++) {
     const v = (y + 0.5) / H - 0.5;
     for (let x = 0; x < W; x++) {
       const u = (x + 0.5) / W - 0.5;
-      const f = vignetteFactor(Math.sqrt(u * u + v * v));
+      const f = vignetteFactor(Math.sqrt(u * u + v * v), strength);
       if (f >= 0.9999) continue;
       const i = (y * W + x) * 4;
       px[i] = Math.round((px[i] as number) * f);

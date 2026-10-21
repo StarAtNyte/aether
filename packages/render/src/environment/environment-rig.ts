@@ -25,6 +25,8 @@ import {
   type PerspectiveCamera,
   type Scene,
 } from 'three';
+/** Scratch colour for the world's look tints. */
+const _tint = new Color();
 import { stableStringify, type Environment, type MaterialSpec } from '@aether/core';
 import type { MaterialCache } from '../materials/material-cache';
 import { resolveMaterial } from '../materials/presets';
@@ -325,11 +327,18 @@ export class EnvironmentRig {
     this.state = s;
     this.materials.setSkyElevation(s.elevation);
     this.materials.setWetness(env.weather === 'rain' ? 1 : 0);
+    // The world's look tints the light colour (a reviewer's per-world adjustment); white or absent keeps the sky's own.
     this.sun.color.set(s.lightColor);
+    if (env.look?.sunTint) this.sun.color.multiply(_tint.set(env.look.sunTint));
     this.sun.intensity = s.lightIntensity;
     setFoliageSun(s.lightDirection, this.sun.color, s.lightIntensity);
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
+    if (env.look?.ambientTint) {
+      const t = _tint.set(env.look.ambientTint);
+      this.hemi.color.multiply(t);
+      this.hemi.groundColor.multiply(t);
+    }
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
     this.applyBounce();
     this.syncGround(s.showGround ? env.ground : null);

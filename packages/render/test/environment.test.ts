@@ -274,3 +274,24 @@ describe('EnvironmentRig shadow map budget', () => {
     rig.dispose();
   });
 });
+
+describe('the world\'s look (tuned per world by the reviewer)', () => {
+  it('tints the sun and the ambient light, and white or absent keeps the sky\'s own colours', () => {
+    const rig = new EnvironmentRig(new MaterialCache(), true);
+    const scene = new Scene();
+    rig.apply(env({ sky: 'day' }), scene);
+    const sun = rig.sun.color.clone();
+    const hemi = rig.hemi.color.clone();
+    rig.apply(env({ sky: 'day', look: { sunTint: '#ffffff', ambientTint: '#ffffff' } }), scene);
+    expect(rig.sun.color.r).toBeCloseTo(sun.r, 6);
+    expect(rig.hemi.color.b).toBeCloseTo(hemi.b, 6);
+    rig.apply(env({ sky: 'day', look: { sunTint: '#ffb060', ambientTint: '#ffd0a0' } }), scene);
+    expect(rig.sun.color.b).toBeLessThan(sun.b * 0.5);
+    expect(rig.sun.color.r).toBeCloseTo(sun.r, 1);
+    expect(rig.hemi.color.b).toBeLessThan(hemi.b);
+    expect(rig.hemi.groundColor.b).toBeLessThan(rig.hemi.groundColor.r);
+    // Taking the look away restores the defaults.
+    rig.apply(env({ sky: 'day' }), scene);
+    expect(rig.sun.color.b).toBeCloseTo(sun.b, 6);
+  });
+});

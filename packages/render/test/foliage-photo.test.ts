@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Color, MeshStandardMaterial } from 'three';
 import { composePhotoAtlas, neutralise, parseLeafSheet, photoPlan, PHOTO_KINDS, RATIO_MEAN, type LeafSheet } from '../src/materials/foliage-photo';
 import { FoliageTextures } from '../src/materials/foliage-textures';
-import { applyFoliageShading, foliageSun, setFoliageSun } from '../src/materials/foliage-shading';
+import { applyFoliageShading, foliageSun, foliageTintColor, setFoliageSun, setFoliageTint } from '../src/materials/foliage-shading';
 
 const SHEET_JSON = join(import.meta.dirname, '../../../apps/studio/public/foliage/leaf-sprites.json');
 
@@ -124,5 +124,21 @@ describe('foliage shading', () => {
     expect(foliageSun().direction).toEqual([0, 1, 0]);
     setFoliageSun([0, 1, 0], new Color(1, 1, 1), 2, false);
     expect(foliageSun().irradiance).toEqual([0, 0, 0]);
+  });
+});
+
+describe('foliage tint from the world\'s look', () => {
+  it('multiplies the card colour, ignores bad input and goes back to white', () => {
+    setFoliageTint(null);
+    expect(foliageTintColor()).toEqual([1, 1, 1]);
+    setFoliageTint('#ffd9a0');
+    const [r, g, b] = foliageTintColor();
+    expect(r).toBeCloseTo(1, 5);
+    expect(g).toBeLessThan(1);
+    expect(b).toBeLessThan(g);
+    setFoliageTint('green');
+    expect(foliageTintColor()).toEqual([r, g, b]);
+    setFoliageTint(null);
+    expect(foliageTintColor()).toEqual([1, 1, 1]);
   });
 });

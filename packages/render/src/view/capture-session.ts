@@ -173,6 +173,8 @@ export function openCaptureSession(host: CaptureHost, width: number, height: num
 
 /** Options of {@link captureStill}. */
 export interface StillOptions {
+  /** Strength of the vignette applied once to an assembled (tiled) image; default the renderer's own. */
+  vignetteStrength?: number;
   width: number;
   height: number;
   pose: CameraPose;
@@ -238,7 +240,7 @@ export async function captureStill(open: (w: number, h: number, vignette: boolea
   /** Filter the oversampled image down and, for an assembled image, apply the vignette once. */
   function finish(px: Uint8Array): StillImage {
     const data = ss > 1 ? downsample(px, W, H, ss) : px;
-    if (!single) applyVignette(data, OW, OH);
+    if (!single) applyVignette(data, OW, OH, opts.vignetteStrength);
     return { width: OW, height: OH, data };
   }
 }

@@ -86,10 +86,10 @@ export const VIGNETTE_STRENGTH = 0.22;
 export const VIGNETTE_RANGE: readonly [number, number] = Object.freeze([0.42, 0.85]) as readonly [number, number];
 
 /** Vignette multiplier at a distance `d` (UV units) from the screen center — the CPU twin of the shader. */
-export function vignetteFactor(d: number): number {
+export function vignetteFactor(d: number, strength: number = VIGNETTE_STRENGTH): number {
   const [lo, hi] = VIGNETTE_RANGE;
   const t = Math.max(0, Math.min(1, (d - lo) / (hi - lo)));
-  return 1 - VIGNETTE_STRENGTH * t * t * (3 - 2 * t);
+  return 1 - strength * t * t * (3 - 2 * t);
 }
 
 /** Bloom node strength for an `environment.bloom` value. */

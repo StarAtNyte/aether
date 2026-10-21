@@ -75,6 +75,7 @@ import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadow
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { planSunShadows } from './environment/sun-shadow-plan';
 import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
+import { setFoliageTint } from './materials/foliage-shading';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
 import { normalizePixels } from './view/still';
 import type { PathTraceOptions } from './view/pathtrace';
@@ -357,6 +358,8 @@ const SPOT_SHARE = 0.5;
  * that takes most of the room light's own cast out (`interiorBalance`).
  */
 const INTERIOR_WARMTH = 0.45;
+/** Share of the room light's own cast the interior white balance takes out (the world's `look.interiorBalance` replaces it). */
+const INTERIOR_BALANCE = 1;
 
 /** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
 function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
@@ -572,6 +575,8 @@ export class WorldRenderer {
   private gradeId: GradePresetId | null = null;
   /** The colour grade of the document's environment (null: the sky's preset). */
   private docGrade: Environment['grade'] | null = null;
+  /** The look the document carries (tuned by the reviewer per world); every field, when omitted, keeps the constant of this module. */
+  private docLook: Environment['look'] | null = null;
   /** The grade preset currently applied. */
   private look: GradePreset = GRADE_PRESETS['archviz-daylight'];
   /** Called when the effective render quality changes (e.g. studio fell back to realtime). */
@@ -1080,7 +1085,7 @@ export class WorldRenderer {
         if (l && kind && l.visible && l.intensity > 0 && (kind.isPointLight || kind.isSpotLight)) {
           l.getWorldPosition(_pos);
           // A spot (downlight) lights about half of what the same point light would, all of it below.
-          const k = kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity;
+          const k = (kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity) * (this.docLook?.lampStrength ?? 1);
           const range = kind.distance;
           const c = isConfinedLight(l) && !l.clip.isEmpty() ? l.clip : null;
           lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20, ...(c ? { room: [c.min.x, c.min.y, c.min.z, c.max.x, c.max.y, c.max.z] as const } : {}) });
@@ -1396,6 +1401,8 @@ export class WorldRenderer {
     this.env.apply(env, this.scene);
     this.applyWind(env.wind);
     this.docGrade = env.grade ?? null;
+    this.docLook = env.look ?? null;
+    setFoliageTint(env.look?.foliageTint ?? null);
     this.lightVolume.invalidate();
     this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
@@ -2837,12 +2844,21 @@ export class WorldRenderer {
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
       // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
-      const warm = volume && !g ? INTERIOR_WARMTH * Math.max(0, Math.min(1, this.eyeEv / 1.5)) + this.eyeBalance : 0;
+      // A world whose look sets its own interior warmth keeps it even with a document grade (the reviewer chose both).
+      const look = this.docLook;
+      const adapted = Math.max(0, Math.min(1, this.eyeEv / 1.5));
+      const warm = volume && (!g || look?.interiorWarmth !== undefined) ? (look?.interiorWarmth ?? INTERIOR_WARMTH) * adapted + this.eyeBalance * (look?.interiorBalance ?? INTERIOR_BALANCE) : 0;
       const grade = gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...shown, temperature: shown.temperature + warm } : shown);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);
       post.setBloom(this.env.bloom * preset.bloom);
+      if (!this.vignetteOff) post.setVignette(this.vignetteStrength());
     }
+  }
+
+  /** Edge darkening of the picture: the world's `look.vignette`, else the renderer's default. */
+  private vignetteStrength(): number {
+    return this.docLook?.vignette ?? VIGNETTE_STRENGTH;
   }
 
   /** Smoothed interior factor of the eye (0 outdoors, 1 under a ceiling), see `view/eye-adapt.ts`. */
@@ -3226,6 +3242,7 @@ export class WorldRenderer {
   async renderStill(opts: StillOptions): Promise<StillImage> {
     await this.preparePost();
     const open = (w: number, h: number, vignette: boolean): CaptureSession => this.beginCapture(w, h, { vignette });
+    opts = { ...opts, vignetteStrength: this.vignetteStrength() };
     const image = await captureStill(open, opts);
     // The first capture after a post pipeline is (re)built can come out as one flat colour on some software GPUs
     // (temporal AA history primed at the viewport size); an identical second render is right. Render once more.
@@ -3296,7 +3313,7 @@ export class WorldRenderer {
         this.renderer.setPixelRatio(1);
         this.renderer.setSize(w, h, false);
         this.vignetteOff = !vignette;
-        this.post?.setVignette(vignette ? VIGNETTE_STRENGTH : 0);
+        this.post?.setVignette(vignette ? this.vignetteStrength() : 0);
         if (this.boundsDirty) this.refresh();
       },
       advance: (dt) => {
@@ -3335,7 +3352,7 @@ export class WorldRenderer {
       finish: () => {
         hidden.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
         this.vignetteOff = false;
-        this.post?.setVignette(VIGNETTE_STRENGTH);
+        this.post?.setVignette(this.vignetteStrength());
         this.adaptive.enabled = adaptive;
         this.captureActive = false;
         this.capture = null;
