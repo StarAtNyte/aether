@@ -56,6 +56,8 @@ interface Msg {
 interface Fake {
   requests: Array<{ step: string; images: number; tools: string[] }>;
   compareRound: number;
+  /** The picture the fake model finds too low (named in the checklist: the readings are merged, so ids are not the description's). */
+  picture: string;
 }
 
 const backend = {
@@ -73,6 +75,11 @@ const otherBackend = { ...backend, id: 'claude-code', label: 'Claude Code', logg
 
 function blocks(m: Msg | undefined): Block[] {
   return !m ? [] : typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
+}
+
+function checklistText(messages: Msg[]): string {
+  const text = messages.flatMap((m) => blocks(m)).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
+  return text.split('Checklist (answer every id):\n')[1] ?? '';
 }
 
 /** The checklist ids named in the first compare message ("- item-bed [structural]: …"). */
@@ -101,10 +108,11 @@ function script(req: { messages: Msg[]; tools?: Array<{ name: string }> }, fake:
   if (lastText.includes('COMPARE') || lastText.includes('FINAL CHECK') || !sawResult) {
     fake.compareRound++;
     fake.requests.push({ step: `compare-${fake.compareRound}`, images, tools: names });
-    const failing = fake.compareRound === 1 ? ['item-picture-left'] : [];
+    if (!fake.picture) fake.picture = /^- item-([a-z0-9-]+)(?: \[structural\])?: [^\n]*\(art \1\)/m.exec(checklistText(req.messages))?.[1] ?? '';
+    const failing = fake.compareRound === 1 && fake.picture ? [`item-${fake.picture}`] : [];
     const verdicts = ids.map((i) => ({ id: i, pass: !failing.includes(i), ...(failing.includes(i) ? { note: 'hangs a little too low' } : {}) }));
     const content: Block[] = [{ type: 'tool_use', id, name: 'report_verdicts', input: { verdicts } }];
-    if (failing.length > 0) content.push({ type: 'tool_use', id: `${id}b`, name: 'edit_items', input: { edits: [{ op: 'move', ref: 'picture-left', y: 1.6 }] } });
+    if (failing.length > 0) content.push({ type: 'tool_use', id: `${id}b`, name: 'edit_items', input: { edits: [{ op: 'move', ref: fake.picture, y: 1.6 }] } });
     else content.push({ type: 'tool_use', id: `${id}c`, name: 'finish', input: { message: 'Everything matches.' } });
     return { content, stopReason: 'tool_use' };
   }
@@ -157,7 +165,7 @@ function turnState(page: Page): Promise<TurnState | null> {
 const world = (page: Page): Promise<WorldDoc> => page.evaluate(() => JSON.parse(JSON.stringify(window.__aether?.history.current)) as WorldDoc);
 
 async function photoTurn(browser: Browser, server: TestServer, label: string): Promise<void> {
-  const fake: Fake = { requests: [], compareRound: 0 };
+  const fake: Fake = { requests: [], compareRound: 0, picture: '' };
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   const page = await ctx.newPage();
@@ -200,7 +208,7 @@ async function photoTurn(browser: Browser, server: TestServer, label: string): P
     check(scene, `[${label}] no room was built`);
     check(scene.items.filter((i) => i.kind === 'curtain').length === 2, `[${label}] curtains: ${scene.items.filter((i) => i.kind === 'curtain').length}`);
     check(scene.items.some((i) => i.kind === 'bed' && i.against?.some((a) => a.compass === 'north')), `[${label}] the bed is not against the north wall`);
-    const picture = scene.items.find((i) => i.id.endsWith('picture-left'));
+    const picture = scene.items.find((i) => i.id.endsWith(fake.picture));
     check(picture && Math.abs(picture.y0 - 1.6) < 0.02, `[${label}] the fix was not applied to the picture: ${picture?.y0}`);
     check(reviewFindings(w, PHOTO_BUILDING_ID).every((f) => f.severity !== 'error'), `[${label}] the checker found errors`);
     check(t.events.some((e) => e.startsWith('photo:described')) && t.events.some((e) => e.startsWith('photo:done')), `[${label}] the chat does not show the photo flow: ${t.events.join(' | ')}`);
