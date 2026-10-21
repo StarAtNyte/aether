@@ -31,16 +31,21 @@ import { createNodeSandbox } from '@aether/procgen/node';   // node:vm; NOT a se
   and mirroring, displacement is seam-aware, and every call has a vertex
   budget.
 - **Noise:** seeded simplex `noise2`, `noise3`, `fbm2` and `ridged2`.
-- **35 built-in generators** (`src/generators`):
+- **47 built-in generators** in the agent catalog (`src/generators`):
   - nature: tree-pine, tree-oak, tree-palm, bush, rock, grass-tuft, flowers,
-    mushroom
+    mushroom, tree-broadleaf, tree-birch, tree-spruce, shrub, fern,
+    meadow-grass, wildflowers, boulder, cactus
   - architecture: house, tower, wall, fence, bridge, stairs, arch, ramp,
-    windmill
+    windmill, skyline-tower
   - props: lamp-post, bench, table, chair, crate, barrel, campfire, tent,
-    dock, statue
+    dock, statue, colossus
   - vehicles: car, boat
-  - terrain: terrain, island, mountain
+  - terrain: terrain, island, mountain, mound
   - fx: crystal, cloud, portal
+
+  A further 55 parametric architecture generators (`arch-*` structure,
+  `furn-*` furniture, in `src/generators/arch.ts`) are registered for lookup
+  but kept out of the catalog; buildings reach them through `@aether/arch`.
 
   Each has typed params, 2 to 4 variants, several materials and colliders.
 - **`GeneratorApi`:** the small typed surface given to both built-in and LLM

@@ -53,13 +53,13 @@ logic.npcs.damage('guard-1', 30);
 
 ## Behaviours
 
-`BEHAVIOR_CATALOG` documents all 26 behaviours with params and requirements,
+`BEHAVIOR_CATALOG` documents all 28 behaviours with params and requirements,
 and the agent's prompt is generated from it:
 
 spin, bob, orbit, patrol, follow, lookAt, wander, flee, collectible, door,
 pressurePlate, spawner, lifetime, explosive, playerController, vehicle, npc,
-pulseLight, conveyor, buoyancy, windZone, checkpoint, goal, hazard, launcher
-and magnet.
+pulseLight, conveyor, buoyancy, windZone, checkpoint, goal, hazard, launcher,
+magnet, operable and toggle.
 
 Moving behaviours on kinematic entities compose into one pose per tick.
 Dynamic bodies are steered with velocities.

@@ -70,7 +70,7 @@ The image (`Dockerfile`, multi-stage on `node:24-bookworm-slim`):
 
 - **build** stage: `npm ci`, studio build, then `scripts/precompress.ts`
   writes Brotli (`.br`) and gzip (`.gz`) siblings so the server sends
-  compressed files without spending CPU per request (about 49 MB → 25 MB
+  compressed files without spending CPU per request (about 74 MB → 39 MB
   Brotli for the full build, including the asset library);
 - **deps** stage: production dependencies only (`npm ci --omit=dev`), minus
   the Codex CLI binaries (local AI is off in the image);

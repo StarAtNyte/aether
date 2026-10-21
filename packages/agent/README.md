@@ -19,9 +19,12 @@ for await (const ev of agent.run('Build a domino run that knocks over a bell tow
 
 - An async generator that **never throws**. Failures become `error` events,
   and the stream always ends with exactly one `done` event carrying usage.
-- Tools: `apply_patches`, `write_generator`, `write_script`, `inspect`,
-  `run_verification`, `finish` and `request_asset` (which hands the job to
-  the coder model). Each has a hand-written JSON Schema plus a zod validator.
+- Tools (`AGENT_TOOLS`): `apply_patches`, `build_architecture`,
+  `design_plan`, `place_items`, `edit_items`, `query_scene`,
+  `write_generator`, `write_script`, `request_asset` (which hands the job to
+  the coder model), `search_assets`, `inspect`, `run_verification`,
+  `shape_land` and `finish`; level passes use `LEVEL_TOOLS` and small edits
+  `COMPACT_TOOLS`. Each has a hand-written JSON Schema plus a zod validator.
   Results list each rejected patch by index and reason.
 - When the model finishes after making edits, verification runs
   automatically. Failures produce a repair turn, bounded by `maxRepairs`,
@@ -40,7 +43,7 @@ for await (const ev of agent.run('Build a domino run that knocks over a bell tow
 | `createAnthropicProvider` | Server only. Raw `fetch` to the Messages API, cache breakpoints, per-role effort, thinking blocks carried across turns. |
 | `createOpenAIProvider` | Server only. Raw `fetch` to the Responses API, `store: false`, reasoning items carried across turns. |
 | `createHttpProvider` | Browser to `/api/llm`. Never sends a model id, and validates replies with zod. |
-| `createMockProvider` | Deterministic offline planner: 18 themes, mood combinations and edit commands. It is the offline fallback and is used in tests. |
+| `createMockProvider` | Deterministic offline planner: 21 themes, mood combinations and edit commands. It is the offline fallback and is used in tests. |
 
 The networked providers retry 429, 5xx, 529 and network errors up to 3 times
 with backoff and jitter, honour `retry-after`, use a timeout per attempt and

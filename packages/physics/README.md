@@ -43,7 +43,7 @@ const branch = await pw.fork();          // exact copy of the running simulation
 - **`diagnose`:** overlaps, floating bodies, out of bounds, too many bodies
   and joint problems, each with a concrete fix.
 - **`settle`:** drop and freeze, writing rest poses back as `update` patches.
-- **`verify`:** runs all 7 `WorldTest` kinds on a fresh headless world with
+- **`verify`:** runs all 9 `WorldTest` kinds on a fresh headless world with
   logic attached, within a compute budget. It yields every 8 ms so a UI
   thread stays responsive. Error-level diagnostics fail verification.
 

@@ -14,11 +14,11 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 
 | | |
 | --- | --- |
-| Entries | 374+: models (animated: people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 10 photographed surfaces, 8 forge originals; 13 code-authored vehicles (kart, race car, road cars) and 9 skinned, animated animals (Quaternius Farm Animals CC0, Khronos Fox) replace the block-style ones |
-| Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 26, people 19, animals 23, food 24, tools 5, props 31, skies 5, surfaces 10 |
-| Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 10 ambientCG PBR materials (CC0), 8 first-party forge originals (MIT) |
-| Disk | 37 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR) |
-| Catalog | `assets/catalog.json`, 224 KB (38 KB gzip), loaded lazily after the editor starts |
+| Entries | 404: 368 models (animated: people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 23 photographed surfaces, 8 forge originals; among the models, 13 code-authored vehicles (kart, race car, road cars) and 22 skinned, animated animals (7 Quaternius Farm Animals CC0, fox and wolf from the Khronos Fox, 13 code-authored) |
+| Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 29, people 19, animals 37, food 24, tools 5, props 31, skies 5, surfaces 23 |
+| Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
+| Disk | 58 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR) |
+| Catalog | `assets/catalog.json`, 244 KB (43 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
 
 Every asset is real-world sized in metres, its base on y = 0 and centred in
@@ -59,7 +59,8 @@ npx tsx scripts/assets/sheet.ts 0 120 sheet.png   # contact sheet for review
   bytes) with the browser's encoder.
 - `scripts/assets/materials.ts` turns ambientCG PBR sets (CC0) into photo
   finishes for `material.finish` (oak, walnut, brick, tile, marble,
-  concrete, stone, fabric, plaster, terrazzo): 512 px albedo divided by its
+  concrete, stone, fabric, plaster, terrazzo, ground and wall finishes such
+  as asphalt, cobble, gravel, grass, sand and snow; 23 in all): 512 px albedo divided by its
   mean (so the finish colour and `material.color` tints still apply), an
   ORM map whose roughness is rescaled to the finish's calibrated value, and
   the OpenGL normal map. Catalog entries have kind `material`, id
@@ -73,9 +74,10 @@ Only CC0-1.0 and CC-BY-4.0 third-party assets are accepted (attribution is
 generated automatically for CC-BY: credits panel, end-of-game screen,
 `CREDITS.txt` in packages, and [THIRD_PARTY.md](THIRD_PARTY.md)). NC, ND,
 editorial-only, personal-use-only and unclear licences are never shipped.
-Quaternius packs were evaluated and **not** included: the pack pages say
+Quaternius packs from quaternius.com were evaluated and **not** included: the pack pages say
 CC0 but the site's licence page forbids redistributing the assets as
-assets, which a public repository would do.
+assets, which a public repository would do. (The Farm Animals pack ships
+from its OpenGameArt release, whose own `License.txt` states CC0.)
 
 ## Using assets
 

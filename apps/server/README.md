@@ -26,6 +26,8 @@ local deterministic mock provider.
 | `src/routes/llm.ts` | `POST /api/llm` proxy |
 | `src/routes/generators.ts` | content-addressed generator cache |
 | `src/routes/worlds.ts` | world share links |
+| `src/routes/local.ts` | local app only: `/api/local/*` (this computer's Codex / Claude Code login: accounts, login, jobs with event streams, bridge pairing) |
+| `src/routes/image-to-3d.ts` | optional `POST /api/image-to-3d` (off unless `AETHER_IMAGE_TO_3D_URL` is set) |
 | `src/static.ts` | studio hosting, `/play` (standalone player) plus SPA fallback |
 | `src/routes/publish.ts` | local app only: build library, deploys, LAN share, `/published/:id/…` |
 | `src/publish/*` | build store, hosting CLIs (`hosts.ts`), deploy jobs, LAN share, shared services |
@@ -41,6 +43,8 @@ local deterministic mock provider.
 | `PUT` or `POST /api/worlds` | Validates with `validateWorld` (≤ 2 MB) and stores the world under a random 12-char base62 id. Returns `201 { id, editToken }`. |
 | `GET /api/worlds/:id` | The stored `WorldDoc`. |
 | `PUT /api/worlds/:id` | Replaces the world. Requires `X-Edit-Token` from creation; only its SHA-256 is stored. |
+| `POST /api/image-to-3d` | Optional, off by default: forwards an image to your own TRELLIS.2 endpoint and returns the validated GLB ([`docs/IMAGE_TO_3D.md`](../../docs/IMAGE_TO_3D.md)). |
+| `/api/local/*` | Local app only (registered when local AI is on; loopback socket and Host, no proxy headers): accounts, login / logout, `complete`, jobs and their event streams, bridge pairing, and the publish routes. Errors use the bridge format `{ error: { code, message } }`. |
 
 Errors always look like `{ error: <code>, message?, issues? }`. Stack traces are never returned.
 
@@ -66,7 +70,10 @@ the player's own CSP (`PLAY_CSP`: no third-party hosts, embeddable).
 | `PORT` / `HOST` | `8787` / `127.0.0.1` (the Docker image sets `HOST=0.0.0.0`) |
 | `NODE_ENV` | `development` (`production` turns on static serving and HSTS) |
 | `AETHER_PROVIDER` | `mock` (offline planner). `anthropic` / `openai` use that provider's key; `codex` / `claude-code` (local only) the signed-in CLI. |
+| `AETHER_LOCAL_AI` | `auto` (on in development when no hosting platform is detected). `on` / `off`; `on` is refused on a hosted platform. |
+| `AETHER_HEADLESS_MODEL` / `AETHER_HEADLESS_EFFORT` | CLI default / `low`. Model and effort for the `codex` / `claude-code` providers. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | none |
+| `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` | none (the public APIs). https only. |
 | `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic models per role (critic defaults to planner) |
 | `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI models per role |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` (comma list) |
@@ -77,6 +84,8 @@ the player's own CSP (`PLAY_CSP`: no third-party hosts, embeddable).
 | `RATE_LIMIT_API_PER_MIN` / `RATE_LIMIT_API_BURST` | `120` / `60` |
 | `AETHER_DAILY_TOKEN_BUDGET` | `2000000` (`0` = unlimited) |
 | `AETHER_LLM_TIMEOUT_MS` / `AETHER_MAX_OUTPUT_TOKENS` | `90000` / `16000` |
+| `AETHER_LLM_MAX_BODY_BYTES` | `1048576` (1 MB `/api/llm` body cap) |
+| `AETHER_IMAGE_TO_3D_URL` / `AETHER_IMAGE_TO_3D_TOKEN` | none (off). Optional image → GLB endpoint (loopback http or https) and its bearer token; see [`docs/IMAGE_TO_3D.md`](../../docs/IMAGE_TO_3D.md). |
 | `AETHER_MAX_WORLDS` / `AETHER_MAX_GENERATORS` | `10000` / `5000` |
 | `RATE_LIMIT_GENERATOR_PUT_PER_MIN` / `RATE_LIMIT_GENERATOR_PUT_BURST` | `10` / `5` |
 | `AETHER_VALIDATE_GENERATORS` / `AETHER_GENERATOR_TIMEOUT_MS` / `AETHER_GENERATOR_MAX_QUEUE` | `false` / `1000` / `8` |
