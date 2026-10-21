@@ -4112,3 +4112,76 @@ build; smoke 34/34; `showcase:bake --check` up to date after the two rebakes.
   building check after compiling (the 0.8 m stair walkway keeps it off most landings).
 - A saved world keeps its stair until its building is recompiled through create_building; the building check now
   reports it with the fix op.
+
+## Interior light and close-up foliage (stage `look2`)
+
+**Problem.** Generated interiors looked like a game: every surface lit by the same room-agnostic fills, white walls
+clipping, no falloff from the windows, no contact shadows, lamps lighting the rooms behind the walls; up close, shrubs
+and tree crowns read as large paper cut-outs (one card image repeated, pastel tones mixed toward white, no backlight).
+
+**What changed.** (Design: ARCHITECTURE section 36.)
+- *Baked light volume per building.* Probes every 0.45 m trace the shell and furniture proxies in a module worker
+  (48 rays, six bounce passes, sun, lamps, open ground); first-order harmonics of sky visibility and bounce in one
+  RGBA16F 3D atlas; a light node multiplies each material's ambient and image light by the visibility and adds the
+  bounce (irradiance and reflections). Deterministic, cached until the building or the light changes; about 3 s of
+  worker time and 10 to 20 ms of main-thread time for the benchmark house (11 000 probes, 13 000 triangles); falls back
+  to 6 ms slices between frames without workers.
+- *Eye, tone and shadows.* Exposure from the volume at the eye (opens in dim rooms, closes in lamp-lit rooms at dusk),
+  snapped on camera jumps and before stills; the eye's exposure was applied twice on post tiers (fixed: renderer tone
+  mapping only); warmer adapted interior grade; inside a building the sun's shadow map is fitted to the shell, so sun
+  patches are crisp (it was a 320 m frustum).
+- *Lamps.* Point lights are clipped to their room's box by their own light node; on until the sun is 16° up (an
+  earlier tweak in this stage switched them off at 7° golden hour, which darkened the Penthouse; fixed).
+- *Contact shadows* under furniture (one instanced draw); *painted surfaces* with a faint world-space mottle.
+- *Foliage.* 2 × 2 card variants per atlas; tree, shrub and fern cards composed from CC0 Poly Haven leaves, fronds and
+  tufts (SHA-256 pinned, `scripts/foliage/leaf-sprites.ts`, THIRD_PARTY.md) with overlap shadows and per-leaf tone;
+  real-sized leaf clusters on big plants within triangle budgets; forward-scattered sun as emission, plant- and
+  cluster-scale hue variation, leaf flutter; saturated sunlit tones; finer, root-darkened grass.
+- *Water on software rasterisers* (coordinator request) mirrors an analytic sky gradient instead of reading grey.
+
+**Rounds** (Intel iGPU WebGL2; the RTX 4090 was busy training throughout; captures in `~/.local/share/aether/look2/`):
+r0 baseline; r1a–r1e and r1 light volume (found the double exposure, lamps lighting through walls, the 320 m shadow
+frustum and a stale ceiling list that kept the old interior fill off after a fresh build); f0–f1c and r2 photographed
+leaves on a foliage test world; r3 room lamps, metal reflections, warmer grade; flag-r2/r3a flagship regressions
+(Penthouse corridor first too dark, then bleached: lamps off at golden hour, exposure not counting lamps); r4 contact
+shadows (first invisible: three reads an alpha map from green); f5 grass; r6 full house and forest; flag-r6 to r8 final
+flagships; `ff/` Firefox WebGL2 and Chromium WebGPU (SwiftShader) parity on the Dusk House interior (the same image).
+Before images of the flagships and of water come from a build of `9798e88` (`flag-before`, `water-before`).
+
+**Before and after.**
+- *House living room* (r0 → r6): flat, evenly lit white room, ceiling as bright as the walls → light falls off from
+  the window, darker ceiling and corners, warm white balance, soft footprints under the sofa and armchair.
+- *Kitchen*: bleached grey-white everywhere → readable falloff between the two windows, warmer walls, marble keeps its
+  tone (still a little cool: the sun never enters this kitchen).
+- *Bedroom*: flat → crisp sun patch on the bed with the window's shadow, warm lamp, depth toward the corners.
+- *House exterior and forest*: foreground shrubs as pale mint paper fans → clusters of photographed leaves with
+  variation and shading; crowns from below show leaf shapes and veins; backlit leaves glow toward the sun.
+- *Skyline Penthouse corridor*: bleached and flat (mean 169) → modelled walls and ceiling with lamp pools (final mean
+  173: about as bright, now with gradients); cover view unchanged (119 → 111).
+- *Dusk House*: interior spawn view gains contrast and warm lamplight (mean 178 → 133); garden and cover views keep
+  their level (70 → 74, 91 → 86).
+- *Water on SwiftShader* (Sakura River): grey-brown → blue sky reflection on the ripples.
+
+**Verification.** `tsc --noEmit` 0 errors; vitest 400 files, 4 252 tests (new: `light-volume`, `light-volume-controller`
+(worker protocol, settle, cancel, lamps and the eye), `foliage-photo`, `foliage-cells` (procgen), `room-lamp`,
+`contact-shadows`, `paint-mottle`; the tree triangle budget test was kept and the card budget fitted under it); studio
+build; `npm run smoke` 34/34; `npm run bench:quick` passed; `showcase:bake --check` up to date.
+
+**Security.** Worker requests and replies are validated (grid within the allocation, triangle cap, finite numbers,
+reply length) and stale replies are dropped by job id; the leaf sheet index is validated (bounds, kinds, finite means)
+and its fetches are size-capped; the sprite script only downloads from `dl.polyhaven.org`, verifies SHA-256 and writes
+committed artefacts. No new dependency.
+
+**Performance.** Per lit fragment: four filtered 3D-texture reads and a few ALU for the volume, six smoothsteps per room
+lamp, two noise lookups for foliage variation and for paint (paint only where anti-tiling runs). Nothing per frame on
+the CPU (bake in a worker on change; eye sample every 80 ms). The atlas is 2.2 MB, allocated once; leaf atlases grow
+from 256² to 512² per kind (2 × 2 variants at the old resolution; 256² in low-memory mode). Card counts of large trees
+rise by about 1.6× (a 10 m tree stays under its 5 000-triangle test budget).
+
+**Honest gaps.** No frame-time comparison on the RTX 4090 this stage (busy); stills are from the Intel iGPU on the low
+tier (screen-space AO only on high and ultra, noisy on the iGPU). The volume is single-resolution (0.45 m): thin walls
+between a sunlit and a dark room leak a little, door leaves are baked as they stand, and lamps count toward the eye's
+exposure by room box, not by a traced line of sight. Spot lights are not clipped to rooms. Photographed leaves are
+composed on the main thread once per kind (tens of milliseconds); grass stays procedural, needles, blossoms and flowers
+keep procedural cards; hedges are still boxes with leafy tops. Kitchens without sun stay somewhat cool. Firefox and
+WebGPU parity was checked on one interior view; a Firefox prompt build timed out on this loaded machine.
