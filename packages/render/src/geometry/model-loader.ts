@@ -45,7 +45,13 @@ export interface GltfLoaderOptions {
   variantOf?: (url: string) => Promise<string | null>;
 }
 
-const libraryVariant = async (url: string): Promise<string | null> => textureVariantUrl(url, await loadTextureVariants());
+/**
+ * Character bodies and motion sets (`/c/`) load as they are. Their WebP textures are 0.7 MB, the KTX2 twin 2.8 MB, and a
+ * recoloured body has to download the original's images anyway (see `COMPRESSED_SOURCE_KEY`): the twin only added bytes.
+ */
+export const CHARACTER_FILE = /\/c\/[^/]+\.glb$/;
+
+const libraryVariant = async (url: string): Promise<string | null> => (CHARACTER_FILE.test(url) ? null : textureVariantUrl(url, await loadTextureVariants()));
 
 interface GltfLike {
   loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
