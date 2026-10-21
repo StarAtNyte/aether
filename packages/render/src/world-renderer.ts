@@ -71,6 +71,7 @@ import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
+import { capTier, cutsAt, hardwareTierCap, PerformanceGovernor, PERFORMANCE_STEPS, readHardware, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { planSunShadows } from './environment/sun-shadow-plan';
@@ -266,6 +267,8 @@ export interface RenderStats {
   instances: number;
   /** Adaptive resolution scale (1 = the GPU budget's full pixel ratio). */
   resolutionScale?: number;
+  /** Steps of the performance ladder taken (0: nothing given up; see gpu/performance.ts). */
+  performanceLevel?: number;
   /** Draw calls per pass saved by instancing identical static props. */
   batchedDrawsSaved?: number;
   /** Triangles the scene represents at full detail (every instance, every mesh). */
@@ -573,6 +576,13 @@ export class WorldRenderer {
   private tierChoice: RenderTier | 'auto' = 'auto';
   /** Time the last shader warm-up took (ms; diagnostics). */
   shaderWarmupMs = 0;
+  /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
+  private readonly hardware: HardwareHints = readHardware();
+  /** Steps down the performance ladder while frames stay slow (automatic tier only). */
+  private readonly governor = new PerformanceGovernor();
+  private cuts: PerformanceCuts = cutsAt(0);
+  /** Told when the governor gave something up: the step and what it was. */
+  onPerformanceStep: ((level: number, step: string) => void) | null = null;
   /** User toggles of single effects (undefined keeps the tier's choice). */
   private effectOverrides: EffectOverrides = {};
   /** Effects that failed to build or draw on this device (never retried). */
@@ -703,7 +713,7 @@ export class WorldRenderer {
     this.perspective = camera;
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
-    this.budget = renderBudget(this.gpu.tier, this.lowMemory);
+    this.budget = this.budgetFor(this.lowMemory);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
@@ -802,7 +812,7 @@ export class WorldRenderer {
     this.env.onAsyncChange = () => {
       this.needsDraw = true;
     };
-    this.qualityPlan = qualityPlan('realtime', this.budget, this.gpu.tier === 'software', autoTier(this.gpu.tier, this.budget));
+    this.qualityPlan = qualityPlan('realtime', this.budget, this.gpu.tier === 'software', this.autoTierNow());
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
@@ -982,7 +992,7 @@ export class WorldRenderer {
 
   /** Interior light follows the world: the analytic fills, and the baked volume for buildings. */
   private syncInteriorLight(): void {
-    const on = this.archView.active && !this.lowMemory;
+    const on = this.archView.active && !this.lowMemory && this.cuts.lightVolume;
     this.env.setInteriorBounce(this.archView.active);
     this.lightVolume.setEnabled(on);
     this.env.setVolumeLit(on && this.lightVolume.ready);
@@ -1549,7 +1559,7 @@ export class WorldRenderer {
    */
   setLowMemory(on: boolean): void {
     this.lowMemory = on;
-    this.budget = renderBudget(this.gpu.tier, on);
+    this.budget = this.budgetFor(on);
     this.applyQuality(this.qualityPlan.quality);
     this.generatorCache?.setByteLimit(this.budget.generatorCacheBytes);
     this.resize(this.cssWidth, this.cssHeight);
@@ -2606,6 +2616,7 @@ export class WorldRenderer {
     this.lastTriangles = info.triangles ?? 0;
     this.frameStats.record(dt, now() - t0);
     if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
+    if (this.governor.record(dt, this.drewLastFrame, this.adaptive.enabled ? this.adaptive.scale : 0)) this.applyPerformance();
     this.drewLastFrame = true;
     return true;
   }
@@ -2675,7 +2686,7 @@ export class WorldRenderer {
     // shaders can be checked on SwiftShader's WebGPU and WebGL2.
     if (!this.env.sun.castShadow) return;
     const q = this.qualityPlan;
-    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
+    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, cascades: this.cuts.cascades, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
     if (!this.env.setSunShadows(plan, this.perspective)) return;
     this.env.sun.shadow.radius = q.shadowRadius;
     if (this.post || this.postPending) {
@@ -2784,6 +2795,15 @@ export class WorldRenderer {
    */
   setRenderTier(tier: RenderTier | 'auto'): RenderTier {
     this.tierChoice = tier;
+    this.governor.enabled = tier === 'auto';
+    if (tier !== 'auto' && this.governor.level > 0) {
+      // An explicit choice is honoured in full: whatever the ladder gave up comes back.
+      this.governor.level = 0;
+      this.cuts = cutsAt(0);
+      this.fx.vfx.emissionScale = 1;
+      this.syncInteriorLight();
+    }
+    this.governor.reset();
     this.applyQuality(this.qualityPlan.quality);
     return this.qualityPlan.tier;
   }
@@ -2795,7 +2815,51 @@ export class WorldRenderer {
 
   /** The tier the GPU budget picks by itself. */
   get autoRenderTier(): RenderTier {
-    return autoTier(this.gpu.tier, this.budget);
+    return this.autoTierNow();
+  }
+
+  /** The GPU budget's tier, lowered for weak hardware and for what the performance ladder has given up. */
+  private autoTierNow(): RenderTier {
+    return capTier(capTier(autoTier(this.gpu.tier, this.budget), hardwareTierCap(this.hardware, this.gpu.tier)), this.cuts.tierCap);
+  }
+
+  /** The render budget of the GPU class, with a pixel ratio of 1 on weak hardware. */
+  private budgetFor(lowMemory: boolean): RenderBudget {
+    const b = renderBudget(this.gpu.tier, lowMemory);
+    return weakHardware(this.hardware) && b.pixelRatioCap > WEAK_PIXEL_RATIO ? { ...b, pixelRatioCap: WEAK_PIXEL_RATIO } : b;
+  }
+
+  /** Steps the performance ladder has taken so far (0: nothing given up). */
+  get performanceLevel(): number {
+    return this.governor.level;
+  }
+
+  /** Whether giving up `step` now would change anything (a step that would not is skipped, not waited for). */
+  private stepUseful(step: (typeof PERFORMANCE_STEPS)[number]): boolean {
+    switch (step) {
+      case 'light-volume':
+        return this.lightVolume.active;
+      case 'cascades':
+        return this.env.sunCascades !== null;
+      case 'post-medium':
+        return this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra';
+      case 'post-off':
+        return this.qualityPlan.tier !== 'low';
+      case 'effects':
+        return true;
+    }
+  }
+
+  /** Apply the cuts of the ladder's current level. */
+  private applyPerformance(): void {
+    while (this.governor.level < PERFORMANCE_STEPS.length && !this.stepUseful(PERFORMANCE_STEPS[this.governor.level - 1] as (typeof PERFORMANCE_STEPS)[number])) this.governor.level++;
+    const level = this.governor.level;
+    this.cuts = cutsAt(level);
+    this.fx.vfx.emissionScale = this.cuts.effects;
+    this.syncInteriorLight();
+    this.applyQuality(this.qualityPlan.quality);
+    log.info(`performance: gave up ${PERFORMANCE_STEPS[level - 1] ?? 'nothing'} (level ${level})`);
+    this.onPerformanceStep?.(level, PERFORMANCE_STEPS[level - 1] ?? '');
   }
 
   /**
@@ -2982,7 +3046,7 @@ export class WorldRenderer {
   private applyQuality(quality: RenderQuality): RenderQuality {
     const before = this.qualityPlan.quality;
     this.shaftsUnavailable = false;
-    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? autoTier(this.gpu.tier, this.budget) : this.tierChoice);
+    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice);
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
     this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
@@ -3866,6 +3930,7 @@ export class WorldRenderer {
       entities: this.sync.entityCount,
       instances: this.sync.instanceCount,
       resolutionScale: this.adaptive.scale,
+      performanceLevel: this.governor.level,
       batchedDrawsSaved: this.sync.batchStats().drawCallsSaved,
       sceneTriangles: this.sync.sceneTriangles() + (this.voxelLayer?.stats().triangles ?? 0),
       fieldInstances: fields.instances,

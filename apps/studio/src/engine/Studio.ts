@@ -146,6 +146,15 @@ export interface SendOptions {
   echo?: string;
 }
 
+/** What the player is told when the renderer gives something up to keep frames smooth (automatic quality only). */
+const PERFORMANCE_NOTICE: Readonly<Record<string, string>> = {
+  'light-volume': 'Frames were slow: turned off the baked room lighting.',
+  cascades: 'Frames were slow: sun shadows are simpler now.',
+  'post-medium': 'Frames were slow: lowered the graphics quality a step.',
+  'post-off': 'Frames were slow: switched to the fastest graphics mode.',
+  effects: 'Frames were slow: fewer particles.',
+};
+
 /** Memory picture of the whole studio (debug handle, memory e2e). */
 export interface StudioMemoryReport {
   renderer: RenderMemoryStats | null;
@@ -439,6 +448,7 @@ export class Studio {
             s.setCameraView(mode === 'play' ? (this.history.current.player.mode === 'firstPerson' ? 'firstPerson' : 'follow') : 'orbit');
           },
           onError: (message) => this.store.getState().toast(message, 'error', 6),
+          onPerformance: (_level, step) => this.store.getState().toast(PERFORMANCE_NOTICE[step] ?? 'Lowered the graphics to keep the frame rate up.', 'info', 6),
           onFatal: (message) => this.store.getState().setFatal(message),
           onContextLost: (info) => {
             if (gen === this.attachGen) this.handleContextLost(info);

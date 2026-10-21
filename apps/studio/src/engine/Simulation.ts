@@ -171,6 +171,8 @@ export interface SimulationListener {
   onSynced?(): void;
   onModeChange?(mode: 'edit' | 'play'): void;
   onError?(message: string): void;
+  /** Frames stayed slow and the renderer gave something up (`step` names it, see the render package's performance ladder). */
+  onPerformance?(level: number, step: string): void;
   /** The render loop stopped after repeated failures; the page must be reloaded. */
   onFatal?(message: string): void;
   /** The GPU device / WebGL context was lost; the simulation must be replaced. */
@@ -379,6 +381,7 @@ export class Simulation {
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
+    renderer.onPerformanceStep = (level, step) => listener.onPerformance?.(level, step);
     return new Simulation(renderer, history, listener, opts);
   }
 

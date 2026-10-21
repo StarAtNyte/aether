@@ -66,6 +66,8 @@ export interface SunShadowInput {
   voxel: boolean;
   /** Software rasteriser. */
   software?: boolean;
+  /** False: one fitted map, whatever the tier (the performance ladder gave cascades up). */
+  cascades?: boolean;
 }
 
 /** Content smaller than this (radius, m) is sharp enough with one fitted map: no cascades. */
@@ -94,7 +96,7 @@ export function planSunShadows(input: SunShadowInput): SunShadowPlan {
   const tier: RenderTier = input.still ? 'ultra' : input.tier;
   const capable = (input.still || tier !== 'low') && input.software !== true;
   const filter: SunShadowFilter = capable ? 'soft' : 'pcf';
-  const cascades = capable && !input.voxel && radius >= CASCADE_MIN_RADIUS ? CASCADES : 1;
+  const cascades = capable && input.cascades !== false && !input.voxel && radius >= CASCADE_MIN_RADIUS ? CASCADES : 1;
   // Integrated GPUs (medium) get a cheaper near map; stills keep the doubled budget for the content fit only.
   const nearMapSize = cascades === 1 ? 0 : tier === 'medium' && !input.still ? Math.min(cap, 1024) : Math.min(cap, 2048);
   const outerMapSize = cap;

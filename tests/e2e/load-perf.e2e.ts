@@ -27,6 +27,8 @@ const URL_ARG = arg('url');
 const TIER = arg('tier') ?? 'auto';
 const TIMEOUT = 300_000;
 const PROFILE = ARGS.includes('--profile');
+/** `--hw=4,4`: report that many cores and GB of memory (a weak laptop) to the page. */
+const HW = arg('hw')?.split(',').map(Number);
 
 /** Top self-time functions of the CPU profile (flat), then by script file. */
 async function dumpProfile(cdp: CDPSession, label: string): Promise<void> {
@@ -125,6 +127,7 @@ async function runThrottle(rate: number, base: string): Promise<void> {
     for (const mode of ['home', ...WORLDS]) {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
+      if (HW) await context.addInitScript(([c, m]) => { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => c }); Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => m }); }, [HW[0] ?? 4, HW[1] ?? 4] as const);
       // WebGL2 on the integrated GPU: without this the studio would pick a software WebGPU adapter.
       if (process.env['GEN_GPU'] === 'intel') await context.addInitScript(() => void delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu']);
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' + PERF_INIT });

@@ -302,6 +302,9 @@ export class VfxSystem {
     this.upload(this.layers.alpha);
   }
 
+  /** Multiplier on every emitter's rate (the performance ladder lowers it; 1 = as authored). */
+  emissionScale = 1;
+
   /** Step of the current frame (a typed array: a fractional argument to `emit` would be boxed every frame). */
   private readonly frameStep = new Float64Array(1);
 
@@ -326,7 +329,7 @@ export class VfxSystem {
         em.accum = 0;
         continue;
       }
-      em.accum += em.rate * step * Math.sqrt(em.scale);
+      em.accum += em.rate * step * Math.sqrt(em.scale) * this.emissionScale;
       const n = Math.min(Math.floor(em.accum), budget);
       if (n <= 0) continue;
       em.accum -= n;
