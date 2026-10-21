@@ -92,8 +92,14 @@ function script(messages: Msg[], fake: Fake): { content: Block[]; stopReason: st
   const last = blocks(messages[messages.length - 1]);
   const lastText = last.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
   const reviewing = lastText.includes('REVIEW round');
-  const first = JSON.stringify(messages.find((m) => m.role === 'user' && typeof m.content !== 'string') ?? '');
-  const toolCalls = messages.filter((m) => m.role === 'assistant' && blocks(m).some((b) => b.type === 'tool_use')).length;
+  // A conversation carries every earlier turn (append-only), so the turn being answered starts at the last user message
+  // that has text and is not a review round.
+  let turnStart = 0;
+  messages.forEach((m, i) => {
+    if (m.role === 'user' && typeof m.content !== 'string' && blocks(m).some((b) => b.type === 'text' && !(b.text ?? '').includes('REVIEW round'))) turnStart = i;
+  });
+  const first = JSON.stringify(messages[turnStart] ?? '');
+  const toolCalls = messages.slice(turnStart).filter((m) => m.role === 'assistant' && blocks(m).some((b) => b.type === 'tool_use')).length;
   const id = `t${fake.requests.length + 1}`;
   const use = (name: string, input: unknown): { content: Block[]; stopReason: string } => ({ content: [{ type: 'text', text: `Using ${name}.` }, { type: 'tool_use', id, name, input } as Block & { id: string }], stopReason: 'tool_use' });
   const step = reviewing ? 'review' : first.includes('why is the painting') ? ['look', 'fix', 'finish'][Math.min(toolCalls, 2)] : ['plan', 'place', 'finish'][Math.min(toolCalls, 2)];
