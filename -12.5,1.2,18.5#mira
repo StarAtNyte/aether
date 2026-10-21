@@ -1,8 +1,0 @@
-hollow-gate:-9.5,1.5,22
-  console.warning: A valid external Instance reference no longer exists.
-  console.warning: THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.
-  console.warning: [.WebGL-0x3a3400804c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
-  console.warning: [.WebGL-0x3a3400804c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
-  console.warning: [.WebGL-0x3a3400804c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
-  console.warning: [.WebGL-0x3a3400804c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
-  wrote /tmp/claude-1000/r2/hollow-gate-cover.png

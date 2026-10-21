@@ -1,506 +1,670 @@
 # Third-party components, licences and AI disclosure
 
-This file covers every library, tool, service, asset and AI component used
-by Aether, with its exact installed version, licence and provenance.
+This file lists every library, tool, service and asset that Aether uses or
+ships, with its exact version, licence, source and credit line, and discloses
+where AI was used.
 
-Versions and licences were read from each package's installed
-`node_modules/<pkg>/package.json` and cross-checked against `package-lock.json`
-on 2026-10-13. Aether's own code is [MIT](../LICENSE) (© 2026 Aether
-contributors). All eight workspace packages (`@aether/*`) are private and
-MIT-licensed.
+Package versions and licences were read on 2026-10-21 from `package-lock.json`
+and cross-checked against each installed `node_modules/<pkg>/package.json`
+and its LICENCE file (all versions and licence fields match). Asset licences
+and checksums were read from `assets/sources.json`, `assets/manifest.json`,
+`assets/characters.json`, `assets/creatures.json`, `assets/voxel-textures.json`
+and `apps/studio/public/blocks/block-materials.json`, and re-checked against the
+source archives kept in the local asset cache where they are present (see each
+section).
 
-**Summary:** all code that ships to users (the browser bundle and the
-server runtime) is under **MIT or Apache-2.0**; the two self-hosted web
-fonts are under the **SIL Open Font License 1.1**. All are permissive,
-allow commercial use and redistribution, and are compatible with a public
-source repository. Nothing is non-commercial, personal-use-only,
-evaluation-only or strong copyleft. Items
-that need a note are listed in [Flags](#flags-and-notes).
+Aether's own code is [MIT](../LICENSE) (© 2026 Aether contributors). All 15
+workspace packages (`apps/bridge`, `apps/cli`, `apps/server`, `apps/studio` and
+`packages/agent`, `arch`, `assets`, `core`, `logic`, `physics`, `playtest`,
+`procgen`, `render`, `verifier`, `voxel`) are private and MIT-licensed.
+
+**Summary.**
+
+- Code that ships to users (the browser bundle, the server, the CLI and the
+  local bridge) is under **MIT, Apache-2.0, ISC, BSD-2-Clause or
+  BSD-3-Clause**.
+- The only licence outside that set is **MPL-2.0** (lightningcss), a build
+  tool that is never shipped. See [Flags](#flags-and-notes).
+- Fonts: **SIL Open Font License 1.1**.
+- Third-party media: **CC0-1.0** (Kenney, Poly Haven, ambientCG, Quaternius
+  Farm Animals, the Fox model), **CC-BY-4.0** (the Fox rig, animation and glTF
+  conversion, credited) and **MIT** (Microsoft Rocketbox characters and
+  motions).
+- Nothing is GPL, LGPL, AGPL, non-commercial, no-derivatives, share-alike,
+  personal-use-only, evaluation-only or source-available.
 
 ---
 
-## 1. Direct runtime dependencies
+## Code dependencies: direct runtime
 
-These are bundled into the studio or executed by the server.
+Bundled into the studio, or executed by the server, the CLI or the local
+bridge.
 
-| Package | Installed version | Licence | Used by | Copyright / source |
-| --- | --- | --- | --- | --- |
-| [three](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | `@aether/render`, studio (its `examples/jsm/exporters/GLTFExporter.js` powers Export → 3D model, loaded on demand as its own chunk; no new package) | © 2010–2026 three.js authors |
-| [@dimforge/rapier3d-compat](https://github.com/dimforge/rapier.js) | 0.21.0 | Apache-2.0 | `@aether/physics` (installed at `packages/physics/node_modules`) | Dimforge / rapier.js authors |
-| [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `@aether/logic` script sandbox (loaded lazily) | © 2019–2024 Jake Teton-Landis |
-| [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `@aether/logic`: the single QuickJS build the sandbox loads | © 2019–2024 Jake Teton-Landis |
-| [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | `@aether/core`, `@aether/agent`, studio (project records), validation everywhere | © 2025 Colin McDonnell |
-| [react](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
-| [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | studio | © Meta Platforms, Inc. and affiliates |
-| [zustand](https://github.com/pmndrs/zustand) | 5.0.15 | MIT | studio state | © 2019 Paul Henschel |
-| [hono](https://github.com/honojs/hono) | 4.13.13 | MIT | server | © 2021–present Yusuke Wada and Hono contributors |
-| [@hono/node-server](https://github.com/honojs/node-server) | 2.1.4 | MIT | server | © 2022–present Yusuke Wada and Hono contributors |
-| [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | server runtime (TypeScript loader), `smoke` and `e2e` scripts | © Hiroki Osame |
-| [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 (exact) | Apache-2.0 | `apps/bridge` only (local Aether Bridge; never in the browser bundle or the hosted server) | © OpenAI |
-| [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86 (exact) | Apache-2.0 | studio, **lazy chunk** loaded only after the user opts in to on-device AI | © MLC contributors |
-| [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) | 0.0.27 (exact) | MIT (its `DenoiseMaterial` embeds **glslSmartDeNoise**, © 2018–2019 Michele Morrone, BSD-2-Clause) | `@aether/render`: the opt-in "Path traced" still (global illumination, area lights, glass, depth of field). **Lazy chunk**, downloaded only when such a still is requested; runs on its own WebGL2 context, so it works in Firefox. Upstream marks the `WebGLPathTracer` class deprecated in favour of a WebGPU variant, which is not used | © 2021 Garrett Johnson |
-| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | 0.9.16 (exact) | MIT | `@aether/render`: BVH for the path tracer (same lazy chunk) | © 2018 Garrett Johnson |
-| [xatlas-web](https://github.com/mozillareality/xatlas-web) | 0.1.0 (exact) | MIT (wraps **xatlas**, © 2018–2020 Jonathan Young, MIT) | `@aether/render`: light-map UV unwrapping for meshes without UVs inside the path tracer (same lazy chunk) | © 2018–2020 Jonathan Young; wrapper by Robert Long |
-| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.1 (exact) | MIT | `@aether/cli` only (`aether mcp`, the stdio MCP server; never in the studio bundle or the hosted server) | © Anthropic, PBC and contributors |
-| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT | `@aether/cli` (`aether mcp` writes glTF without a browser; already a dev dependency of the repository) | © Don McCurdy |
+| Package | Version | Licence | Declared in | Use | Copyright |
+| --- | --- | --- | --- | --- | --- |
+| [three](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | `apps/studio`, `packages/render` | Renderer. Its `examples/jsm` add-ons (GLTFLoader, GLTFExporter, MeshoptDecoder, TransformControls, GTAONode, TRAANode, FBXLoader in build scripts) are part of the same package | © 2010–2026 three.js authors |
+| [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) | 0.0.27 | MIT. Its `DenoiseMaterial` embeds **glslSmartDeNoise** (© 2018–2019 Michele Morrone, BSD-2-Clause) | `packages/render` | Opt-in path-traced stills, lazy chunk | © 2021 Garrett Johnson |
+| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | 0.9.16 | MIT | `packages/render` | BVH for the path tracer (same lazy chunk) | © 2018 Garrett Johnson |
+| [xatlas-web](https://github.com/mozillareality/xatlas-web) | 0.1.0 | MIT (wraps **xatlas**, © 2018–2020 Jonathan Young, MIT) | `packages/render` | Light-map UV unwrapping inside the path tracer (same lazy chunk) | Jonathan Young; wrapper by Robert Long |
+| [@dimforge/rapier3d-compat](https://github.com/dimforge/rapier.js) | 0.21.0 | Apache-2.0 | `packages/physics` (installed at `packages/physics/node_modules`) | Physics | Dimforge and rapier.js authors |
+| [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `packages/logic` | Script sandbox, lazy | © 2019–2024 Jake Teton-Landis |
+| [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `packages/logic` | The QuickJS WebAssembly build the sandbox loads | © 2019–2024 Jake Teton-Landis |
+| [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | studio, server-side packages, CLI, bridge, verifier | Validation | © 2025 Colin McDonnell |
+| [react](https://github.com/facebook/react) | 19.3.0 | MIT | `apps/studio` | UI | © Meta Platforms, Inc. and affiliates |
+| [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | `apps/studio` | UI | © Meta Platforms, Inc. and affiliates |
+| [zustand](https://github.com/pmndrs/zustand) | 5.0.15 | MIT | `apps/studio` | State | © 2019 Paul Henschel |
+| [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86 | Apache-2.0 | `apps/studio` | Opt-in on-device model, lazy chunk loaded only after the user opts in | © MLC contributors |
+| [hono](https://github.com/honojs/hono) | 4.13.13 | MIT | `apps/server` | HTTP server | © 2021–present Yusuke Wada and Hono contributors |
+| [@hono/node-server](https://github.com/honojs/node-server) | 2.1.4 | MIT | `apps/server` | Node adapter | © 2022–present Yusuke Wada and Hono contributors |
+| [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | `apps/server`, `apps/cli`, `apps/bridge`, `packages/verifier` | TypeScript loader at run time; `smoke` and `e2e` scripts | © Hiroki Osame |
+| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.1 | MIT | `apps/cli` | `aether mcp` stdio MCP server; never in the studio bundle or the hosted server | © Anthropic, PBC and contributors |
+| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 | MIT | `apps/cli` (runtime); root (dev, asset build scripts) | Headless glTF writing in `aether mcp`; asset and character build scripts | © 2024 Don McCurdy |
+| [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 | Apache-2.0 | `apps/bridge` | Local Aether Bridge only; never in the browser bundle or the hosted server | © OpenAI |
+| [esbuild](https://github.com/evanw/esbuild) | 0.28.2 | MIT | `apps/bridge` (also pulled in by tsx and vite) | Bundles the asset checker (`check.mjs`) handed to the local coding agent; TypeScript transform inside tsx | © 2020 Evan Wallace |
 
-## 2. Transitive runtime dependencies
+## Code dependencies: transitive runtime
 
-| Package | Installed version | Licence | Pulled in by |
+All versions from the lockfile. Only one platform binary of each native
+package is installed; each carries the licence of its parent package.
+
+| Package | Version | Licence | Pulled in by |
 | --- | --- | --- | --- |
 | @jitl/quickjs-ffi-types | 0.32.0 | MIT | quickjs-emscripten-core, @jitl/quickjs-wasmfile-release-sync |
 | scheduler | 0.28.0 | MIT | react-dom |
-| @types/react | 19.3.0 | MIT | Type-only peer of zustand. Not present at runtime. |
-| csstype | 3.2.3 | MIT | Type-only dependency of @types/react |
-| esbuild | 0.28.2 | MIT (© 2020 Evan Wallace) | tsx (TypeScript transform on the server); the proof e2e (`tests/e2e/proof.e2e.ts`) bundles the verifier for browsers with it; also a direct, exactly pinned dependency of `@aether/bridge`, which bundles the asset checker (`check.mjs`) handed to the local coding agent. Its platform binary package `@esbuild/<platform>` 0.28.2 is MIT as well. |
-| fsevents | 2.3.3 | MIT | Optional, macOS only (file watching) |
-| @openai/codex | 0.162.1 | Apache-2.0 | @openai/codex-sdk (the Codex CLI; its platform package `@openai/codex-<platform>` ships a native binary, Apache-2.0). Runs only on the user's machine inside the bridge. |
+| @types/react | 19.3.0 | MIT | Type-only peer of zustand; also a root dev dependency. Not present at run time |
+| csstype | 3.2.3 | MIT | @types/react (types only) |
 | loglevel | 1.9.2 | MIT (© Tim Perry) | @mlc-ai/web-llm |
+| property-graph | 4.1.0 | MIT (© 2021 Don McCurdy) | @gltf-transform/core |
+| @esbuild/&lt;platform&gt; (for example `@esbuild/linux-x64`) | 0.28.2 | MIT | esbuild |
+| @openai/codex | 0.162.1 | Apache-2.0 (package.json; the npm package ships no LICENCE file) | @openai/codex-sdk. The Codex CLI; runs only on the user's machine inside the bridge |
+| @openai/codex-&lt;platform&gt; (for example `@openai/codex-linux-x64`) | 0.162.1 | Apache-2.0 (no LICENCE file in the package) | @openai/codex; native binary |
+| fsevents | 2.3.3 | MIT | tsx, vite; optional, macOS only, not installed on Linux |
 
-## 3. Development and build dependencies
-
-These are not shipped to users. They are used to build, type-check and
-test.
-
-| Package | Installed version | Licence | Purpose |
-| --- | --- | --- | --- |
-| [typescript](https://github.com/microsoft/TypeScript) | 7.0.2 | Apache-2.0 | Type checking |
-| [vite](https://github.com/vitejs/vite) | 8.3.4 | MIT | Studio dev server and bundler |
-| [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react) | 6.1.2 | MIT | React support for Vite |
-| [vitest](https://github.com/vitest-dev/vitest) | 5.0.4 | MIT | Unit and integration tests |
-| [playwright](https://github.com/microsoft/playwright) | 1.64.0 | Apache-2.0 | Browser end-to-end test (`npm run e2e`) |
-| playwright-core | 1.64.0 | Apache-2.0 | Dependency of playwright |
-| @types/node | 26.6.5 | MIT | Node type definitions |
-| @types/react | 19.3.0 | MIT | React type definitions |
-| @types/react-dom | 19.3.0 | MIT | React DOM type definitions |
-| @types/three | 0.186.0 | MIT | three.js type definitions |
-| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT, © 2024 Don McCurdy | Asset library build script only (`scripts/assets/build.ts`): read, normalise, merge, write glTF. Never in the app bundle. |
-| [@gltf-transform/extensions](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 (exact) | MIT, © 2024 Don McCurdy | Same script: `EXT_meshopt_compression` writing and the material / texture extensions of the sources. |
-| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1.1 (exact; was already installed as a dependency of @types/three) | MIT, © 2016–2026 Arseny Kapoulkine | Same script: meshopt encoder and the simplifier for LOD files. The browser decodes with the copy of the decoder that ships inside `three` (examples/jsm/libs/meshopt_decoder.module.js, MIT). |
-| property-graph | 4.1.0 | MIT, © 2021 Don McCurdy | Dependency of @gltf-transform/core (dev only) |
-| ktx-parse | 1.1.0 | MIT, © 2020 Don McCurdy | Dependency of @gltf-transform/extensions (dev only) |
-
-Transitive development packages (versions from the lockfile):
+Pulled in by `@modelcontextprotocol/sdk` (used by `apps/cli` only; the stdio
+server never starts the HTTP transports, so Express is loaded but not served):
 
 | Package | Version | Licence |
 | --- | --- | --- |
-| rolldown | 1.2.13 | MIT |
-| @rolldown/pluginutils | 1.0.1 | MIT |
-| @oxc-project/types | 0.153.0 | MIT |
-| lightningcss (and its per-platform binaries) | 1.33.0 | **MPL-2.0**, see [Flags](#flags-and-notes) |
-| detect-libc | 2.1.2 | Apache-2.0 |
-| postcss | 8.5.29 | MIT |
-| nanoid | 3.3.20 | MIT |
-| picocolors | 1.1.1 | ISC |
-| source-map-js | 1.2.2 | BSD-3-Clause |
-| picomatch | 4.0.7 | MIT |
-| fdir | 6.5.0 | MIT |
-| tinyglobby | 0.2.17 | MIT |
-| tinybench | 6.2.2 | MIT |
-| tinyexec | 1.3.1 | MIT |
-| @vitest/mocker | 5.0.4 | MIT |
-| @vitest/spy | 5.0.4 | MIT |
-| chai | 6.3.0 | MIT |
-| @types/chai | 5.2.3 | MIT |
-| @types/deep-eql | 4.0.2 | MIT |
-| assertion-error | 2.0.1 | MIT |
-| expect-type | 1.4.0 | Apache-2.0 |
-| es-module-lexer | 2.3.2 | MIT |
-| estree-walker | 3.0.3 | MIT |
-| @types/estree | 1.0.9 | MIT |
-| magic-string | 1.4.3 | MIT |
-| @jridgewell/resolve-uri | 3.1.2 | MIT |
-| @jridgewell/sourcemap-codec | 1.6.0 | MIT |
-| @jridgewell/trace-mapping | 0.3.31 | MIT |
-| obug | 3.0.0 | MIT |
-| std-env | 4.3.0 | MIT |
-| why-is-node-running | 3.2.1 | MIT |
-| undici-types | 8.9.0 | MIT |
-| @dimforge/rapier3d-compat | 0.12.0 | Apache-2.0. Type-only dependency of @types/three; never imported or bundled. |
-| @tweenjs/tween.js | 23.1.3 | MIT (via @types/three) |
-| @types/stats.js | 0.17.4 | MIT (via @types/three) |
-| @types/webxr | 0.5.24 | MIT (via @types/three) |
-| fflate | 0.8.3 | MIT (via @types/three) |
-| meshoptimizer | 1.1.1 | MIT (via @types/three) |
+| express | 5.3.0 | MIT |
+| express-rate-limit | 8.7.1 | MIT |
+| body-parser | 2.3.0 | MIT |
+| router | 2.2.0 | MIT |
+| send | 1.2.1 | MIT |
+| serve-static | 2.2.1 | MIT |
+| finalhandler | 2.1.1 | MIT |
+| accepts | 2.0.0 | MIT |
+| negotiator | 1.1.0 | MIT |
+| content-disposition | 2.0.1 | MIT |
+| content-type | 1.0.5 and 2.1.0 | MIT |
+| cookie | 0.7.2 | MIT |
+| cookie-signature | 1.2.2 | MIT |
+| cors | 2.8.6 | MIT |
+| object-assign | 4.1.1 | MIT |
+| vary | 1.1.2 | MIT |
+| cross-spawn | 7.0.6 | MIT |
+| path-key | 3.1.1 | MIT |
+| shebang-command | 2.0.0 | MIT |
+| shebang-regex | 3.0.0 | MIT |
+| which | 2.0.2 | ISC |
+| isexe | 2.0.0 | ISC |
+| debug | 4.4.3 | MIT |
+| ms | 2.1.3 | MIT |
+| depd | 2.0.0 | MIT |
+| ee-first | 1.1.1 | MIT |
+| on-finished | 2.4.1 | MIT |
+| encodeurl | 2.0.0 | MIT |
+| escape-html | 1.0.3 | MIT |
+| etag | 1.8.1 | MIT |
+| fresh | 2.0.0 | MIT |
+| range-parser | 1.3.0 | MIT |
+| parseurl | 1.3.3 | MIT |
+| path-to-regexp | 8.4.2 | MIT |
+| is-promise | 4.0.0 | MIT |
+| merge-descriptors | 2.0.0 | MIT |
+| proxy-addr | 2.0.8 | MIT |
+| forwarded | 0.2.0 | MIT |
+| ipaddr.js | 1.9.1 | MIT |
+| ip-address | 10.7.4 | MIT |
+| http-errors | 2.0.1 | MIT |
+| statuses | 2.0.2 | MIT |
+| toidentifier | 1.0.1 | MIT |
+| setprototypeof | 1.2.0 | ISC |
+| inherits | 2.0.4 | ISC |
+| raw-body | 3.0.2 | MIT |
+| bytes | 3.1.2 | MIT |
+| unpipe | 1.0.0 | MIT |
+| iconv-lite | 0.7.3 | MIT |
+| safer-buffer | 2.1.2 | MIT |
+| type-is | 2.1.0 | MIT |
+| media-typer | 1.1.1 | MIT |
+| mime-types | 3.0.2 | MIT |
+| mime-db | 1.54.0 | MIT |
+| once | 1.4.0 | ISC |
+| wrappy | 1.0.2 | ISC |
+| qs | 6.16.1 | BSD-3-Clause |
+| side-channel, side-channel-list, side-channel-map, side-channel-weakmap | 1.1.1, 1.0.1, 1.0.1, 1.0.2 | MIT |
+| object-inspect | 1.13.4 | MIT |
+| call-bind-apply-helpers, call-bound | 1.0.2, 1.0.4 | MIT |
+| get-intrinsic, get-proto, dunder-proto | 1.3.0, 1.0.1, 1.0.1 | MIT |
+| es-define-property, es-errors, es-object-atoms | 1.0.1, 1.3.0, 1.1.2 | MIT |
+| function-bind, gopd, has-symbols, hasown, math-intrinsics | 1.1.2, 1.2.0, 1.1.0, 2.0.4, 1.1.0 | MIT |
+| ajv | 8.20.0 | MIT |
+| ajv-formats | 3.0.1 | MIT |
+| fast-deep-equal | 3.1.3 | MIT |
+| fast-uri | 3.1.8 | BSD-3-Clause |
+| json-schema-traverse | 1.0.0 | MIT |
+| require-from-string | 2.0.2 | MIT |
+| json-schema-typed | 8.0.2 | BSD-2-Clause |
+| zod-to-json-schema | 3.25.2 | ISC |
+| eventsource | 3.0.7 | MIT |
+| eventsource-parser | 3.1.1 | MIT |
+| jose | 6.2.12 | MIT |
+| pkce-challenge | 5.0.1 | MIT |
 
-The lockfile also lists optional per-platform binaries for rolldown,
-lightningcss and esbuild. Only the one matching the build machine is
-installed, and each carries the same licence as its parent package.
+## Code dependencies: development and build
 
-Licence count across all 148 lockfile entries: 99 MIT, 27 Apache-2.0,
-12 MPL-2.0 (all lightningcss, dev-only), 1 ISC, 1 BSD-3-Clause, and the
-8 private `@aether/*` workspace packages (MIT).
+Used to build, type-check and test. Not shipped to users.
 
-## 4. External services
+| Package | Version | Licence | Declared in | Purpose |
+| --- | --- | --- | --- | --- |
+| [typescript](https://github.com/microsoft/TypeScript) | 7.0.2 | Apache-2.0 | root | Type checking (native compiler; platform package `@typescript/typescript-<platform>` 7.0.2, Apache-2.0) |
+| [vite](https://github.com/vitejs/vite) | 8.3.4 | MIT | `apps/studio` | Dev server and bundler |
+| [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react) | 6.1.2 | MIT | `apps/studio` | React support for Vite |
+| [vitest](https://github.com/vitest-dev/vitest) | 5.0.4 | MIT | root | Unit and integration tests |
+| [playwright](https://github.com/microsoft/playwright) | 1.64.0 | Apache-2.0 | root | Browser end-to-end tests, thumbnail and screenshot scripts |
+| [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 | MIT | root | Asset, vehicle, animal and character build scripts (also a runtime dependency of `apps/cli`) |
+| [@gltf-transform/extensions](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 | MIT (© 2024 Don McCurdy) | root | `EXT_meshopt_compression`, `EXT_texture_webp` and material extensions in the build scripts |
+| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1.1 | MIT (© 2016–2026 Arseny Kapoulkine) | root | Meshopt encoder and simplifier in the build scripts. The browser decodes with the copy of the decoder inside `three` (`examples/jsm/libs/meshopt_decoder.module.js`, MIT) |
+| @types/node | 26.6.5 | MIT | root | Type definitions |
+| @types/react | 19.3.0 | MIT | root | Type definitions |
+| @types/react-dom | 19.3.0 | MIT | root | Type definitions |
+| @types/three | 0.186.0 | MIT | root | Type definitions |
+
+Transitive development packages:
+
+| Package | Version | Licence | Pulled in by |
+| --- | --- | --- | --- |
+| playwright-core | 1.64.0 | Apache-2.0 | playwright |
+| rolldown (and `@rolldown/binding-<platform>`) | 1.2.13 | MIT | vite |
+| @rolldown/pluginutils | 1.0.1 | MIT | vite, @vitejs/plugin-react |
+| @oxc-project/types | 0.153.0 | MIT | rolldown |
+| lightningcss (and `lightningcss-<platform>`) | 1.33.0 | **MPL-2.0**, see [Flags](#flags-and-notes) | vite |
+| detect-libc | 2.1.2 | Apache-2.0 | lightningcss |
+| postcss | 8.5.29 | MIT | vite |
+| nanoid | 3.3.20 | MIT | postcss |
+| picocolors | 1.1.1 | ISC | postcss |
+| source-map-js | 1.2.2 | BSD-3-Clause | postcss |
+| picomatch | 4.0.7 | MIT | vite, vitest, tinyglobby |
+| fdir | 6.5.0 | MIT | tinyglobby |
+| tinyglobby | 0.2.17 | MIT | vite, vitest |
+| tinybench | 6.2.2 | MIT | vitest |
+| tinyexec | 1.3.1 | MIT | vitest |
+| @vitest/mocker | 5.0.4 | MIT | vitest |
+| @vitest/spy | 5.0.4 | MIT | @vitest/mocker |
+| chai | 6.3.0 | MIT | vitest |
+| @types/chai | 5.2.3 | MIT | vitest |
+| @types/deep-eql | 4.0.2 | MIT | @types/chai |
+| assertion-error | 2.0.1 | MIT | @types/chai |
+| expect-type | 1.4.0 | Apache-2.0 | vitest |
+| es-module-lexer | 2.3.2 | MIT | vitest |
+| estree-walker | 3.0.3 | MIT | @vitest/mocker |
+| @types/estree | 1.0.9 | MIT | estree-walker |
+| magic-string | 1.4.3 | MIT | vitest, @vitest/mocker |
+| @jridgewell/resolve-uri | 3.1.2 | MIT | @jridgewell/trace-mapping |
+| @jridgewell/sourcemap-codec | 1.6.0 | MIT | magic-string |
+| @jridgewell/trace-mapping | 0.3.31 | MIT | @vitest/mocker |
+| obug | 3.0.0 | MIT | vitest |
+| std-env | 4.3.0 | MIT | vitest |
+| why-is-node-running | 3.2.1 | MIT | vitest |
+| undici-types | 8.9.0 | MIT | @types/node |
+| ktx-parse | 1.1.0 | MIT (© 2020 Don McCurdy) | @gltf-transform/extensions |
+| @dimforge/rapier3d-compat | 0.12.0 | Apache-2.0 | @types/three (type-level only; never imported or bundled) |
+| @tweenjs/tween.js | 23.1.3 | MIT | @types/three |
+| @types/stats.js | 0.17.4 | MIT | @types/three |
+| @types/webxr | 0.5.24 | MIT | @types/three |
+| fflate | 0.8.3 | MIT | @types/three |
+
+**Licence count of the lockfile.** 275 entries: 15 workspace links plus the 15
+workspace packages themselves (MIT), and 245 third-party entries (including the
+optional per-platform binaries that are listed but not installed): 185 MIT,
+36 Apache-2.0, 12 MPL-2.0 (all lightningcss, development only), 8 ISC,
+3 BSD-3-Clause, 1 BSD-2-Clause.
+
+### Build-time tools outside `package.json`
+
+Run on the developer's machine by build or evaluation scripts. None of them is
+committed, bundled or shipped.
+
+| Tool | Licence | Used by |
+| --- | --- | --- |
+| Python 3 with NumPy, Pillow, SciPy, scikit-image | PSF-2.0; BSD-3-Clause; MIT-CMU (HPND); BSD-3-Clause; BSD-3-Clause | `scripts/characters/textures.py` (character texture conversion), `scripts/showcase/to-webp.py` (Pillow) |
+| fontTools (`pyftsubset`) 4.66.1 | MIT | Latin subsets of the two fonts (see Fonts) |
+| `unzip` (Info-ZIP) | Info-ZIP licence (BSD-style) | `scripts/assets/fetch.ts`, `scripts/voxel/block-textures.ts` |
+| FFmpeg | LGPL-2.1+ / GPL (depending on build) | `scripts/eval-photo.ts`, `scripts/photo-gpu-shots.ts` (developer evaluation videos only). Called as an external program; not linked or distributed |
+| Chromium downloaded by Playwright | BSD-3-Clause and others | e2e tests, thumbnails; downloaded on demand by `npx playwright install` |
+| Docker base image `node:24-bookworm-slim` | Node.js MIT; Debian packages under their own licences | Deployment (`Dockerfile`), see Flags |
+| GitHub Actions: `actions/checkout@v4`, `actions/setup-node@v4`, `actions/cache@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `docker/setup-buildx-action@v3`, `docker/build-push-action@v6` | MIT (actions), Apache-2.0 (Docker actions) | CI only (`.github/workflows/ci.yml`) |
+
+## Fonts
+
+Two variable web fonts are self-hosted from `apps/studio/public/fonts/` (never
+loaded from a CDN). Each is a Latin subset (`pyftsubset`, fontTools 4.66.1,
+all OpenType layout features kept) of the official release file; the full
+licence text ships next to each font and is copied into every build.
+
+| Font | Upstream release (SHA-256) | Licence | Shipped file (SHA-256) |
+| --- | --- | --- | --- |
+| [Inter](https://github.com/rsms/inter) 4.1, UI and display type | `Inter-4.1.zip` (`9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`), file `web/InterVariable.woff2` | SIL OFL 1.1, © 2016 The Inter Project Authors (`Inter-OFL.txt`, `262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a`) | `inter-var-latin.woff2`, 108 KB (`61bfb1520d2e7d081e984f35dada957961b56e36734837aa6ce5bebcbe1e243b`) |
+| [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 2.304, code and labels | `JetBrainsMono-2.304.zip` (`6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`), file `fonts/variable/JetBrainsMono[wght].ttf` | SIL OFL 1.1, © 2020 The JetBrains Mono Project Authors (`JetBrainsMono-OFL.txt`, `30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad`) | `jetbrains-mono-var-latin.woff2`, 43 KB (`f4256d9ed255e928da20ca7a44a8d6a8b7f8e4128f63229c4de028c842868367`) |
+
+Neither upstream declares a Reserved Font Name; the subsets are still
+registered under the private family names *Aether Sans* and *Aether Mono* so
+they are never confused with the original releases. The shipped-file hashes
+above were recomputed on 2026-10-21.
+
+PDF export uses the PDF base-14 Helvetica by name; no font file is embedded.
+
+## 3D models and animations
+
+### Curated asset library (`assets/lib/`)
+
+Described in [ASSETS.md](ASSETS.md). Every shipped file is listed with its
+source archive, the file inside it, its licence, authors and SHA-256 in the
+machine-readable `assets/manifest.json` (396 assets; all 499 file hashes in
+`manifest.json` and `characters.json` were recomputed on 2026-10-21 and match,
+and every file under `assets/lib/` is accounted for). Downloads and their
+checksums are pinned in `assets/sources.json` and `assets/creatures.json`.
+The fetch script accepts only CC0-1.0 and CC-BY-4.0 sources and refuses a
+Kenney archive whose `License.txt` does not state CC0.
+
+The app credits every source, including the CC0 ones, in the credits panel,
+on the end-of-game screen and in the `CREDITS.txt` of exported packages
+(`packages/assets/src/credits.ts`). Each credit is generated from the catalog
+pack and the asset's authors as *"<pack title> by <author>"*, followed by the
+licence with its URL, the source URL and the assets used. The credit lines
+quoted below are those generated lines.
+
+**Kenney** (all CC0-1.0; author "Kenney (www.kenney.nl)"; evidence:
+`License.txt` inside each archive, "License: (Creative Commons Zero, CC0)";
+retrieved 2026-10-14). Credit line: *"Kenney <kit title> by Kenney
+(www.kenney.nl)"*, licence CC0-1.0, source the kit page.
+
+| Kit | Version | Shipped | Archive SHA-256 (`assets/sources.json`) |
+| --- | --- | --- | --- |
+| [Furniture Kit](https://kenney.nl/assets/furniture-kit) | 2.0 | 94 models | `e67652d0932cee41683f74711c03d3e192a2af9979ef8e6b237711f5482d46b0` |
+| [Nature Kit](https://kenney.nl/assets/nature-kit) | 2.1 | 56 models | `fa7974a0d342bfe63c38664ba9f8ec1a4aab8ea25f099bdc56870e33588c4d9d` |
+| [Food Kit](https://kenney.nl/assets/food-kit) | 2.0 | 27 models | `cdad90853682499b94c9fda2f87678b24bfd8f3264e0ed323f6b6a27fd7c6f6f` |
+| [Graveyard Kit](https://kenney.nl/assets/graveyard-kit) | 5.0 | 18 models (5 animated characters) | `1a93613f2e5675f3310acf49ec9ef13ae7adeb756ac3b205bfb6cc9311a81062` |
+| [Cube Pets](https://kenney.nl/assets/cube-pets) | 2.0 | 15 animated animals | `b3bdc99a2ec92c687b875718c5d01e9231d2711ed0e2845f295b474bb42a1283` |
+| [Pirate Kit](https://kenney.nl/assets/pirate-kit) | 2.1 | 15 models | `667ed2caf92954ddb98f7b7cede831fe99ab75063c26b25e23d32715bee9c943` |
+| [Survival Kit](https://kenney.nl/assets/survival-kit) | 2.0 | 15 models | `c3586341b5932c87eb43d75d915434f47daed168b17ed36a03e8ca9977c7443e` |
+| [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads) | 2.2 | 15 models | `374a4552115cbd11b4ec5c930ee31a533562dc78a09af249a655d03f7ea3b959` |
+| [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) | 2.1 | 13 models | `f8b09b081c2bb88bcc126e2dec1cb40fd0dad7e7e591b6c26aaefe96fb35276b` |
+| [Fantasy Town Kit](https://kenney.nl/assets/fantasy-town-kit) | 2.0 | 12 models | `1a7530c09f4d2fa2cdee259876f089334f8b1f27fa86a0c4f54ef86cdd8676ef` |
+| [Mini Characters](https://kenney.nl/assets/mini-characters) | 1.0 | 12 animated block figures (used in block worlds only) | `9e1d48e6d7b8479ebbe84df71eb5bd8e1b3f0da546dea641890dccc8a02d0999` |
+| [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) | 2.0 | 11 models | `5869c35cf30b1c87bdb2d197b6d325eebadd2ef08ea27f04797e8e08d77a9a39` |
+| [Car Kit](https://kenney.nl/assets/car-kit) | 3.1 | 8 models (ambulance, fire truck, garbage truck, truck, tractor, luxury SUV, futuristic race car, traffic cone) | `fac7dacac5c7874348cf19729af3ef205f3d366493edaf0a827d93f4fdf3d0c4` |
+| [Mini Market](https://kenney.nl/assets/mini-market) | 1.0 | 6 models (1 animated character) | `6f2e69090e359204ace43e4c98dc3fb8639b75e423109672b5c890d194c45203` |
+
+For the four kits present in the local source cache (Car Kit, City Kit
+Commercial, Roads and Suburban) the archive SHA-256 was recomputed and matches,
+and each `License.txt` was read (SHA-256 `c33b7f64…0b00`, `c38cee40…de69`,
+`d23f5136…c353`, `d778fa76…0d0a` respectively, all stating "Creative Commons
+Zero, CC0"). The other ten archives were verified by the fetch script when they
+were downloaded; see Flags.
+
+**Poly Haven models** (CC0-1.0, [polyhaven.com/license](https://polyhaven.com/license);
+downloaded through the Poly Haven API at 1k texture resolution, each file
+checked against the API's MD5, retrieved 2026-10-14). Credit line: *"Poly Haven by <author>"*, licence
+CC0-1.0, source polyhaven.com. 16 models; SHA-256 of every shipped file in
+`assets/manifest.json`.
+
+| Library id | Poly Haven asset | Author |
+| --- | --- | --- |
+| armchair-classic | ArmChair_01 | Kirill Sannikov |
+| sofa-classic | Sofa_01 | Kirill Sannikov |
+| nightstand-classic | ClassicNightstand_01 | Kirill Sannikov |
+| bench-painted | painted_wooden_bench | Kirill Sannikov |
+| coffee-table-round | coffee_table_round_01 | Ulan Cabanilla |
+| side-table-wood | WoodenTable_02 | Fran Calvente |
+| succulent | potted_plant_04 | James Ray Cock |
+| vase | ceramic_vase_01 | James Ray Cock |
+| pendant-lamp | modern_ceiling_lamp_01 | James Ray Cock |
+| lantern-wood | wooden_lantern_01 | James Ray Cock |
+| clay-pot | planter_pot_clay | Amal Kumar |
+| barrel-realistic | Barrel_01 | Jorge Camacho |
+| cat-statue | concrete_cat_statue | Rico Cilliers, Riley Queen |
+| horse-statue | horse_statue_01 | Rico Cilliers |
+| street-lamp-realistic | street_lamp_02 | Josh Dean |
+| tv-retro | Television_01 | Gabriel Radić |
+
+### Human characters and their motions (`assets/lib/c/`)
+
+| Item | Source | Licence | Evidence |
+| --- | --- | --- | --- |
+| 10 adult bodies: marcus (Male_Adult_03), dario (Male_Adult_04), tomas (Male_Adult_05), felix (Male_Adult_06), kofi (Male_Adult_12), walter (Male_Adult_14), sophie (Female_Adult_02), edith (Female_Adult_04), rosa (Female_Adult_11), juno (Female_Adult_17) | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9`, `Assets/Avatars/Adults/<name>/Export/<name>.fbx` | MIT, © 2020 Microsoft | Repository `LICENSE.md` (SHA-256 `17474e386e0b9e1a700cc3d06b2b0882a2c376d9c6b49c7f8274409b8f8d2352`), shipped unchanged as `assets/characters-LICENSE.md` (same SHA-256) |
+| 57 motion clips per gender (idles, walks, jog, run, sprint, crouch, talk and gesture, sit, turn, door, phone and similar), baked into `motions-male.81d7d7b9.glb` and `motions-female.7eae0659.glb` | Same repository, `Assets/Animations/all_animations_max_motextr_{static,xy,xyz}/` | MIT, © 2020 Microsoft | Same |
+| 10 clips per gender: jump_start, jump_air, fall, land, hit, attack, throw, pickup, death, crouch_walk | Keyframed for Aether on the Biped skeleton (`scripts/characters/authored.ts`) | MIT (this project) | Rocketbox has no such clips |
+
+Credit line (in-app, `packages/assets/src/characters/credits.ts`, added to
+every world that has a person in it): *"Microsoft Rocketbox avatars and
+animations by Microsoft (Rocketbox Libraries), © 2020 Microsoft"*, licence MIT
+(link to the repository's `LICENSE.md`), with the cast members used; the full
+MIT notice ships in the same file (`ROCKETBOX_NOTICE`). SHA-256 of every body, mask and
+motion file is in `assets/characters.json` (all match). The local source
+checkout (`~/.local/share/aether/characters-src`) holds the repository's
+`LICENSE.md` with the hash above. Processing (`scripts/characters/`): FBX read
+with three's FBXLoader, textures downscaled to 1024 px and re-encoded as WebP
+with outfit masks for recolouring, meshes meshopt-compressed.
+
+**No Mixamo, Ready Player Me, MetaHuman or other restricted-licence character
+or animation is shipped or used.** The only mention of Mixamo in the code is a
+bone-name table in `packages/assets/src/characters/retarget.ts` that can map
+"mixamorig*" bone names (alongside Unreal and Rigify names) onto the Biped
+skeleton. It contains no Mixamo data, and the build uses only the Rocketbox
+and authored clips above.
+
+### Animals from third parties
+
+| Pack | Shipped | Licence | Source and SHA-256 | Credit line |
+| --- | --- | --- | --- | --- |
+| Farm Animals by Quaternius, 2018-06 | 7 skinned, animated animals: cow, horse, zebra, sheep, pig, llama, dog (from `Pug.fbx`) | CC0-1.0 | [OpenGameArt page](https://opengameart.org/content/lowpoly-animated-farm-animal-pack); archive `https://opengameart.org/sites/default/files/Farm%20Animals%20by%20%40Quaternius.zip`, SHA-256 `9ff42b7e2445eaf259e4734c08172637db92e4b59a6145909ac56d946152c39b` (recomputed, matches) | *"Farm Animals (Quaternius) by Quaternius"*, licence CC0-1.0 (the archive asks for no credit and suggests "Farm Animals Pack was created by Quaternius") |
+| [Fox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox), Khronos glTF Sample Assets | 2 animated models: `fox`, and `wolf` (a grey recolour of the same model) | CC0-1.0 AND CC-BY-4.0 | `https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb`, SHA-256 `d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7` (recomputed, matches) | *"Fox (glTF sample assets) by PixelMannen (model, CC0), tomkranis (rig and animation, CC-BY 4.0), @AsoboStudio and @scurest (glTF conversion, CC-BY 4.0)"*, licence CC-BY-4.0 with its URL, source the Khronos model page; generated into the credits panel, the end-of-game screen and `CREDITS.txt` |
+
+**Quaternius licence check.** The Farm Animals archive's own `License.txt`
+(SHA-256 `551ec32f604f57be7eca26fc6e6331b3c6d765804726ac259bc7891276634353`)
+reads: "Farm Animals Pack by Quaternius … License: CC0 1.0 Universal (CC0 1.0)
+Public Domain Dedication https://creativecommons.org/publicdomain/zero/1.0/ …
+Credit not necessary". `scripts/assets/creatures.ts` refuses to build if that
+file does not state "CC0 1.0 Universal". No other Quaternius pack is used:
+packs fetched from quaternius.com were evaluated and excluded, because
+quaternius.com/license.html forbids redistributing the assets as assets, which
+a public repository would do; the "Animals Pack" and "Animal Pack Vol.2"
+archives ship no licence file and are not used.
+
+The Fox is the only CC-BY content in the repository. Its rig and animation by
+tomkranis were first published on Sketchfab under CC BY 4.0 and reached the
+Khronos repository with that licence; no other Sketchfab asset is used.
+
+### First-party models generated by code
+
+| Pack | Items | Licence | Made by |
+| --- | --- | --- | --- |
+| `aether-vehicles` | 13: go-kart (three colours), race-car (two colours), car, taxi, police-car, sports-car, hatchback, suv, van, delivery-truck | MIT (this project) | `scripts/assets/vehicles.ts`, `vehicle-geo.ts`: lofted bodies, lathe wheels, tube frames, a helmeted driver. No third-party mesh, texture or reference image. Recorded in `assets/vehicles.json` |
+| `aether-creatures` | 13: deer, doe, cat, bird, crow, seagull, hawk, duck, parrot, fish, koi, butterfly, grey-wolf | MIT (this project) | `scripts/assets/living.ts` and its helpers: signed-distance sculpts skinned to a skeleton, with their own animation clips. No third-party source. Recorded in `assets/living.json` |
+| `aether-forge` | 8 generators: hero-fountain, hero-statue, hero-lantern, hero-ship, hero-car, hero-explorer, hero-cherry-tree, hero-gazebo | MIT (this project) | Procedural generators written by Claude Code, see [AI disclosure](#ai-disclosure) |
+
+Everything else in a world (terrain, buildings, furniture made by the
+architecture kernel, vegetation, block-world mobs and items) is generated at
+run time by Aether's own procedural code or by sandboxed generators written by
+the connected model.
+
+## Textures and materials
+
+All ambientCG materials are CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)),
+author ambientCG (Lennart Demes), 1K-JPG archives from
+`https://ambientcg.com/get?file=<id>_1K-JPG.zip`. Credit line (library
+finishes): *"ambientCG by ambientCG (Lennart Demes)"*, licence CC0-1.0, source
+ambientcg.com. The block-world sheets are credited in this file and in
+`block-materials.json` (CC0 needs no attribution). Every archive SHA-256 listed below was recomputed
+from the local source cache on 2026-10-21 and matches.
+
+**Library surface finishes** (23 catalog entries `finish-<name>`, 512 px maps
+in `assets/lib/x/`, made by `scripts/assets/materials.ts`; pinned in
+`assets/sources.json`):
+
+| ambientCG id | Finish | Archive SHA-256 |
+| --- | --- | --- |
+| WoodFloor051 | oak | `3f493484eab1ec5e1c466b90e515003b286fc6d7f84ff8ff6485900bfc26cef5` |
+| WoodFloor041 | walnut | `e7364ef32a8db269b2475e76a7e1832eca82bdf6574191cd96b1cdb2b362cdc6` |
+| Bricks090 | brick | `4386aadc14eb48fc60e6ab6a4c43e658bd6f424dbc7a4cdcaea3a44c5911581c` |
+| Tiles107 | tile | `ec41de6439d087cbd4b88ecd373cf240206715a3b3e022c0d556f9eb677940d0` |
+| Marble016 | marble | `3740ddfd7d355b8bd5d89a36a854070b9fdf5780e11a7c2c35b5d13c56ff64ee` |
+| Concrete042A | concrete | `07f5a1d1389bd1ecef41a528c5a0b2acee571627b27b6de0b111fef0d28610e4` |
+| PavingStones070 | stone | `84be05ad935c2a8ea0dd3b82dd18c9e1faf7eeae222b85d96beb14ed16276132` |
+| Fabric026 | fabric | `b47a2965c035772400524000926be3afe2dd9afc2fff052346e1c264476afd1b` |
+| Plaster001 | plaster | `944b4831016e42ace4a89422e4e7190912ca2f7fed6f561354c48ec7bb54d3a4` |
+| Terrazzo009 | terrazzo | `667b610ce2548056359bb5f928a048db561bc30976547cffa88bf4ad83e78ffd` |
+| Bark001 | bark | `a1dbd08cb545b27f42e7208caca06488460de42e27fe34860619d32556e10f60` |
+| Rock030 | rock | `2fd0bc2d214e2487c19062ed0798a85dd135b41cfc12bbaed42d5acae238f989` |
+| Ground078 | soil | `ab21b8c558be116bfc462124bc0e93919901882dae48ea57e5bffac0aedd8e4f` |
+| Snow006 | snow | `442ff74e547014523aaa7a4579ba6bf3e61992644e44a8cb539dd430cda1a321` |
+| Ground054 | sand | `b325ec2f167dce95a0fabc61a2104641288cf20915419578c3efdb46200c563e` |
+| Asphalt031 | asphalt | `f98114b8fb083fc65925c3b4568b131e37c9a23357d432a16e59676dbc69f964` |
+| Grass004 | grass | `4b63495f459db8481f4d5144e4e9069345c81cf898cc71f2216f5dd3bb344469` |
+| Gravel023 | gravel | `a00e7fd6246db4ae228473aac14f1bc427bd93f228ebe347a5d6390dd838b0a8` |
+| Leather026 | leather | `6af2f446f9855c641da2a072f128d30965431ffae3306d22d75dbfff99c04646` |
+| PavingStones138 | cobble | `5e2aee8fde52a9f2799ff2f5036522d2d25673d235e1c42f86144bc5a8d83fdd` |
+| Bricks083 | limestone | `baa5d5b82b607567c2604243f8dbe98208aba80be90d46d472d9ef8a042c0b5c` |
+| Ground102 | dry-earth | `7390f5b0508053ee661a90419d9afb655a5eb31eaf71f81c8d2bde49e15cfc3a` |
+| Planks021 | cladding | `9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a` |
+
+**Block-world textures** (32 materials scaled to 256 px into three sheets,
+`apps/studio/public/blocks/block-albedo.webp`, `block-normal.webp`,
+`block-orm.webp`, made by `scripts/voxel/block-textures.ts`; pinned in
+`assets/voxel-textures.json`, slot map and licence in `block-materials.json`).
+Eight of them are the same archives as library finishes above (Grass004,
+Rock030, Planks021, Bricks090, Snow006, Fabric026, Plaster001, Concrete042A,
+same SHA-256). The other 24:
+
+| ambientCG id | Block | Archive SHA-256 |
+| --- | --- | --- |
+| Moss002 | moss | `727d4e3134f604837c2e11aa3bf12417a022d3c668a6d7339efa572fdbb056bb` |
+| Ground103 | dirt | `735471be048f8c41120c3777a22b1f417bf511897c06f6f473edf0a05254362d` |
+| Ground106 | dirt-coarse | `0402076d64f7e8802ef9a84b88aa87a8cdc0633adcaa0911f6c9568e4bfeff12` |
+| Ground080 | sand | `2a615944f0fe8ca943da459c362fff57f7065526f931d610b19026e49f0a7589` |
+| Rocks022 | gravel | `598d2c25479535d9538cef726eff641a99a3449ff58c82d94a4c84bb018ebc53` |
+| Gravel041 | gravel-grey | `89943da9f2aa8555235f16b0bc8eee22bf8eae471bfc5431bedc95eaec468f58` |
+| Rock035 | rock-dark | `c5e4dbd7d5555734498834c1e09b799ef3d1f00c61fe08c0d953b93a8fb1bb95` |
+| Rock029 | rock-warm | `cd6e8a6820136cde7414671f64d328717fa12fd74927378094bc110f41f87568` |
+| Rock064 | rock-mossy | `560f23fdd24f4abe27f5c272b86e69fd026c3d111e22f60d7fb647306830367b` |
+| PavingStones046 | cobble | `a479a3e8db7eea8f3e931850ccd41c0f31b1b6fceee9cbd4ac519c8fef4c0024` |
+| Planks037A | planks-dark | `df255df16475bad251f194eb173017c46d5354d572348d435808717c478cf144` |
+| Wood096 | wood | `3aa0d5cddd866f5993c03a1a9bb036c1f7e82695cdf40f765cbea9faf91684ef` |
+| Wood051 | wood-dark | `debf3d60f69a09c30613dc95a94da49c8116160ab8a29f77ac8e32cc33f1a1c3` |
+| Bark014 | bark | `c73728c32d6f0f3610f9db204448eff7e3acc74da0f8c1878920419772397670` |
+| Bricks066 | stonebricks | `88d35b7a9cd0e2085918e68a31e79a0a71420749bf1bde07a7ede001f6572cdb` |
+| Ground093C | sandstone | `5f1a1ec87a6d51e7a0391928a6ee9bb862b7e41524c36e0964eaa15c83630dd2` |
+| Ice001 | ice | `721e7fc523524a7f09a90518be17205a2f4f8f99a48e481821e1b6c482ecdf25` |
+| Ice002 | ice-green | `acd7a8716588600efac0eff1380a9302975adc112fd25b464974a5880fdfce85` |
+| Clay005 | clay | `ad7dd46445c99281367a015fe33179310c97ddc7ab3df6fdc59286e20f04457e` |
+| Lava004 | lava | `fee9256befd26b59a7ff452ab6379dab4cdace5d7bee7f78cd9ad8176dd67c28` |
+| Metal032 | metal | `9e4f363905a647958c273154fa125d2a6440892d0e583f9b3af24bb08b5afc3c` |
+| Tiles144 | rooftile | `08d56e04f36bd70c1f018014378a93e9c82cb46b2bc7d8d067831e95a45865ba` |
+| ThatchedRoof001A | thatch | `b5a4f98009ee7df8c180cb0d969f1243704354ab43b72452bd36b1756121d2c3` |
+| Ground088 | dirt-dry | `8f77a7e4fe6bd81e84fd5322ba49ce4f718e00d75568a24929d7a7458196c7af` |
+
+In total 47 distinct ambientCG materials ship.
+
+**Foliage leaf sprites** (Poly Haven model textures, 1k JPG diffuse and alpha,
+CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)), retrieved
+2026-10-21; pinned per file in `assets/foliage-sources.json` and verified by
+`scripts/foliage/leaf-sprites.ts`). 30 cut-out leaves, fronds and grass tufts
+are packed into `apps/studio/public/foliage/leaf-sprites.webp` (index
+`leaf-sprites.json`), and the renderer composes its leaf cards from them
+(`packages/render/src/materials/foliage-photo.ts`). Authors: Rico Cilliers;
+Rob Tuytel and Rico Cilliers (Fern 02, Grass Medium 01).
+
+| Poly Haven asset | Diffuse SHA-256 | Alpha SHA-256 |
+| --- | --- | --- |
+| [Shrub 01](https://polyhaven.com/a/shrub_01) | `fe60e639d694e1807c0a3ae97dd1d5a7e7b3f84e5fc32d0610b868ce48f36331` | `c6fffa5d39ee57c19ba894b7845e7631252ba85569ecaf7873a9414def60e9b3` |
+| [Shrub 03](https://polyhaven.com/a/shrub_03) | `3cadc7aba46d3aabbd7d6d2b1d04aa32e2a7da0bc87c2d38ef3cb1ee42cb03ec` | `a696908aa8144a2697eb528815acf103ac6c5e3511aace8383f771b2f9c4ade8` |
+| [Shrub 04](https://polyhaven.com/a/shrub_04) | `0b0fa0a474753d13f3093858cea79d0de05da1e6a0c5d6e181cd351080980b6c` | `79b42a2e9703f3080192e1d0c6be89d7d36a5543ee7cc411339f2741dd11a1ee` |
+| [Fern 02](https://polyhaven.com/a/fern_02) | `a828a6e7b4c01c826911e2eac4b3afc7457dab7b3b392a31c681ed88b7d50029` | `4d8c4d57373651e500f1a3b2071cd59d2d9cc031bc30ff73bc8a5d2b2c91571a` |
+| [Grass Medium 01](https://polyhaven.com/a/grass_medium_01) | `71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050` | `90ad8db2b471de6b61597c60bc218d1295c4bf68230be9083aa2001b9067b2e2` |
+
+Other textures:
+
+- The Poly Haven and Kenney models carry their own textures inside their GLB
+  files (same licence as the model). The character textures come from
+  Rocketbox (MIT).
+- All other textures (wallpapers, panelling, timber slats, blossom
+  cards, clouds, sun and moon sprites, the procedural fallbacks of every
+  finish, block-world item icons) are generated by Aether's own code at run
+  time.
+
+## HDRIs
+
+Five Poly Haven HDRIs, 1k `.hdr`, CC0-1.0, downloaded through the Poly Haven
+API (MD5 checked), retrieved 2026-10-14. Credit line: *"Poly Haven by <author>"*, licence
+CC0-1.0.
+
+| Library id | Poly Haven HDRI | Author | Shipped file SHA-256 |
+| --- | --- | --- | --- |
+| sky-partly-cloudy | kloofendal_48d_partly_cloudy_puresky | Greg Zaal, Jarod Guest | `fd94c84997b8a3c353b62c2125a9b44e19509956986a126e472684432a02d798` |
+| sky-venice-sunset | venice_sunset | Greg Zaal | `92fe2b29b1957828fb8925a57633540bbba5bf380d9285ed553443e834249352` |
+| sky-sunny-interior | lebombo | Greg Zaal | `a02c9615adeba91a753c3e4737c3ce7a719273df822eeaa85d24982bd43c9ecb` |
+| sky-moonlit | moonlit_golf | Greg Zaal | `cff71a58efa0c06e06b54046ee877c933d74e7292be1d71511aca1a36749d60c` |
+| sky-photo-studio | brown_photostudio_02 | Sergej Majboroda | `469abc5e6035b6c450bae8adbb448f8d1fa7c51d9e384e501516c28352c91b58` |
+
+All other skies come from Aether's own atmosphere model and shaders.
+
+## Audio
+
+No audio file is committed or shipped. Sound effects and the generated score
+are synthesised at run time with Web Audio (`apps/studio/src/engine/sound.ts`
+and the publishing soundtrack); videos are encoded by the browser's own
+WebCodecs or MediaRecorder.
+
+## Images, icons and test fixtures
+
+| Item | Origin | Licence |
+| --- | --- | --- |
+| `apps/studio/public/favicon.svg`, in-app logomark (`src/components/Logo.tsx`), stroke icon set (`src/components/Icon.tsx`) | Original to this project | MIT |
+| `og.jpg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | Rendered by `scripts/brand/render.ts` from the project's logomark and its own showcase renders, system fonts only | MIT |
+| `apps/studio/public/templates/*.webp`, `apps/studio/public/palette/*.webp`, `assets/lib/t/*.webp` thumbnails | Renders of Aether's own worlds and of the library assets, made with this application's renderer | MIT (the depicted third-party assets keep their own licences above) |
+| `docs/screenshots/**` | Captures of this application | MIT |
+| `tests/fixtures/photo/bedroom-cc0-hotel.jpg` (SHA-256 `5bb4bc51…a696`) | [Hotel bedroom windows (Unsplash)](https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg), Markus Spiske | CC0 1.0 |
+| `tests/fixtures/photo/bedroom-cc0-twin.jpg` (`be7f0446…6fce`) | [Twin room in a German youth hostel with single beds and wardrobe A](https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg), Profpcde | CC0 1.0 |
+| `tests/fixtures/photo/bedroom-pd-1.jpg` (`59888d02…7907`) | [USVI IMG 5175](https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg), Government of the United States Virgin Islands | Public domain |
+| `tests/fixtures/photo/bedroom-pd-2.jpg` (`61970ccc…5c73`) | [USVI IMG 5201](https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg), Government of the United States Virgin Islands | Public domain |
+
+A CC BY photograph is used locally by `scripts/eval-photo.ts`
+(`bedroom-ccby-modern.jpg`) but is not committed; only the model transcript of
+that run (`tests/fixtures/photo/modern.r2.transcript.json`, text) is.
+
+**User imports.** Models, images and HDRIs that users import stay in their
+browser (IndexedDB), are listed as "Your imports" in the credits and are never
+uploaded by the app. `model` URLs are restricted to same-origin, `blob:` or
+`data:`.
+
+**Optional image → 3D (TRELLIS.2, Microsoft, MIT).** Off by default and not
+bundled; the user runs it on their own machine or cloud account. See
+[IMAGE_TO_3D.md](IMAGE_TO_3D.md).
+
+## External services
 
 | Service | Use | Notes |
 | --- | --- | --- |
-| [Anthropic Claude API](https://www.anthropic.com/legal/commercial-terms) (Messages API) | Planner, coder and critic models when `ANTHROPIC_API_KEY` is set | Called only from the server, using the deployer's own key under their API terms |
-| [OpenAI API](https://openai.com/policies/business-terms/) (Responses API) | Alternative provider when `OPENAI_API_KEY` is set | Called only from the server, using the deployer's own key under their API terms |
+| [Anthropic API](https://www.anthropic.com/legal/commercial-terms) (Messages API) | Planner, coder and critic models | Through the server proxy with the deployer's key (`ANTHROPIC_API_KEY`), or directly from the browser with the user's own key (bring your own key; the key never reaches Aether's server) |
+| [OpenAI API](https://openai.com/policies/business-terms/) (Responses API) | Same | Same two modes (`OPENAI_API_KEY`, or the user's own key) |
+| [OpenRouter](https://openrouter.ai) and [Google Gemini API](https://ai.google.dev/gemini-api/terms) (OpenAI-compatible Chat Completions) | Same | Browser only, with the user's own key, under the user's own account and terms |
+| Codex CLI with the user's own ChatGPT sign-in (through the local bridge) | Optional AI connection | Runs on the user's computer under the user's own OpenAI account and terms; nothing is proxied through the hosted server |
+| Claude Code CLI with the user's own sign-in (through the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
+| Netlify CLI, Vercel CLI, GitHub CLI (`gh`), itch.io `butler`, the user's own installs and logins | Optional "publish to your own hosting" from the local app | Spawned on the user's computer with the user's accounts and under each service's terms; Aether ships none of them, passes them no credentials and never deploys to an account of its own |
+| Hugging Face and MLC model hosts (`huggingface.co` and its CDN hosts, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered: Qwen2.5 1.5B Instruct (Apache-2.0), Phi-3.5 mini Instruct (MIT), SmolLM2 1.7B Instruct (Apache-2.0). The visitor's browser downloads them directly from the host; Aether does not redistribute them |
 
-| Codex CLI with the user's own ChatGPT sign-in (via the local bridge) | Optional AI connection | Runs on the user's computer under the user's own OpenAI account and terms; nothing is proxied through the hosted server |
-| Claude Code CLI with the user's own sign-in (via the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
-| Netlify CLI, Vercel CLI, GitHub CLI (`gh`), itch.io `butler` — the user's own installs and logins | Optional "publish to your own hosting" from the local app | Spawned on the user's computer with the user's own accounts and under each service's terms; Aether ships none of them, passes them no credentials, and never deploys to an account of its own |
-| Hugging Face / MLC model hosts (`huggingface.co`, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered (Qwen2.5 1.5B Instruct, Apache-2.0; Phi-3.5 mini Instruct, MIT; SmolLM2 1.7B Instruct, Apache-2.0); they are downloaded by the visitor's browser directly from the model host and cached there; Aether does not redistribute them |
-
-Model ids are configuration (`.env`, Settings), not code. No model weights are
-bundled or redistributed. With no keys and no connection, Aether uses its own
-deterministic offline planner and calls no external service at all. Paid
-API keys are only an optional bring-your-own setting: the hosted server never
-uses an owner-paid key by default.
-
-## 5. Assets
-
-### 5.1 Curated asset library (`assets/`)
-
-The library is described in [ASSETS.md](ASSETS.md). Every shipped file is
-listed with its source archive, the file inside it, its licence, authors
-and SHA-256 in the machine-readable **`assets/manifest.json`**; downloads
-and their checksums are pinned in `assets/sources.json`. Only CC0-1.0 and
-CC-BY-4.0 third-party assets are accepted; there are currently **no CC-BY
-assets**, so no attribution is legally required — the app still credits
-every source (credits panel, end-of-game screen, `CREDITS.txt` in exported
-packages).
-
-| Source | Version / date | Author | Licence (evidence) | Shipped |
-| --- | --- | --- | --- | --- |
-| [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) | 2.0 | Kenney (www.kenney.nl) | CC0-1.0 (`License.txt` in the archive) | 94 models |
-| [Kenney Nature Kit](https://kenney.nl/assets/nature-kit) | 2.1 | Kenney | CC0-1.0 | 56 models |
-| [Kenney Food Kit](https://kenney.nl/assets/food-kit) | 2.0 | Kenney | CC0-1.0 | 27 models |
-| [Kenney Cube Pets](https://kenney.nl/assets/cube-pets) | 2.0 | Kenney | CC0-1.0 | 23 animated animals |
-| [Kenney Car Kit](https://kenney.nl/assets/car-kit) | 3.1 | Kenney | CC0-1.0 | 18 models |
-| [Kenney Graveyard Kit](https://kenney.nl/assets/graveyard-kit) | 5.0 | Kenney | CC0-1.0 | 18 models (5 animated characters) |
-| [Kenney Pirate Kit](https://kenney.nl/assets/pirate-kit) | 2.1 | Kenney | CC0-1.0 | 15 models |
-| [Kenney Survival Kit](https://kenney.nl/assets/survival-kit) | 2.0 | Kenney | CC0-1.0 | 15 models |
-| [Kenney City Kit (Roads)](https://kenney.nl/assets/city-kit-roads) | 2.2 | Kenney | CC0-1.0 | 15 models |
-| [Kenney City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) | 2.1 | Kenney | CC0-1.0 | 13 models |
-| [Kenney Fantasy Town Kit](https://kenney.nl/assets/fantasy-town-kit) | 2.0 | Kenney | CC0-1.0 | 12 models |
-| [Kenney Mini Characters](https://kenney.nl/assets/mini-characters) | 1.0 | Kenney | CC0-1.0 | 12 animated characters |
-| [Kenney City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) | 2.0 | Kenney | CC0-1.0 | 11 models |
-| [Kenney Mini Market](https://kenney.nl/assets/mini-market) | 1.0 | Kenney | CC0-1.0 | 6 models (1 animated character) |
-| [Farm Animals by Quaternius](https://opengameart.org/content/lowpoly-animated-farm-animal-pack) (OpenGameArt), 2018-06, SHA-256 `9ff42b7e…c39b` | 2018-06 | Quaternius | CC0-1.0, evidenced by the archive's own `License.txt` ("CC0 1.0 Universal"); the build refuses the archive otherwise | 7 skinned, animated animals (cow, horse, zebra, sheep, pig, llama, dog) converted by `scripts/assets/creatures.ts` |
-| [Fox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox) (glTF sample assets) | main | PixelMannen (model, CC0), tomkranis (rig and animation, CC-BY 4.0), @AsoboStudio and @scurest (glTF conversion, CC-BY 4.0) | CC0-1.0 and CC-BY-4.0 (credit is generated into the credits panel and `CREDITS.txt`) | fox, and a grey recolour as wolf |
-| [Poly Haven](https://polyhaven.com) models (API, 1k textures), retrieved 2026-10-14 | per asset (`assets/manifest.json`) | Kirill Sannikov, Ulan Cabanilla, Fran Calvente, James Ray Cock, Amal Kumar, Jorge Camacho, Rico Cilliers, Riley Queen, Josh Dean, Gabriel Radić (per asset in the manifest) | CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)) | 16 models: armchair, sofa, round coffee table, nightstand, wooden side table, painted bench, succulent, clay pot, ceramic vase, pendant lamp, wooden lantern, barrel, cat and horse statues, street lamp, retro TV |
-| [Poly Haven](https://polyhaven.com) HDRIs (1k `.hdr`) | per asset | Greg Zaal, Jarod Guest, Sergej Majboroda | CC0-1.0 | 5 skies: Kloofendal 48d Partly Cloudy (Pure Sky), Venice Sunset, Lebombo, Moonlit Golf, Brown Photostudio 02 |
-| [ambientCG](https://ambientcg.com) PBR materials (1K-JPG), retrieved 2026-10-14 | per material (`assets/sources.json`, SHA-256 pinned) | Lennart Demes (ambientCG) | CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)) | 19 surface finishes: WoodFloor051 (oak), WoodFloor041 (walnut), Bricks090 (brick), Tiles107 (tile), Marble016 (marble), Concrete042A (concrete), PavingStones070 (stone), Fabric026 (fabric), Plaster001 (plaster), Terrazzo009 (terrazzo); photographed detail for nature and ground (renderer stage): Bark001 (bark), Rock030 (rock), Ground078 (soil), Snow006 (snow), Ground054 (sand), Asphalt031 (asphalt), Grass004 (grass), Gravel023 (gravel), Leather026 (leather) |
-| [ambientCG](https://ambientcg.com) PBR materials (1K-JPG), retrieved 2026-10-16, block-world textures (stage `lookvoxel`) | per material (`assets/voxel-textures.json`, SHA-256 of every archive pinned; `scripts/voxel/block-textures.ts` verifies them) | Lennart Demes (ambientCG) | CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)) | 32 materials scaled to 256 px into three sheets (`apps/studio/public/blocks/`: albedo, normal, occlusion/roughness/height): Grass004, Moss002, Ground103, Ground106, Ground080, Rocks022, Gravel041, Rock030, Rock035, Rock029, Rock064, PavingStones046, Planks021, Planks037A, Wood096, Wood051, Bark014, Bricks090, Bricks066, Ground093C, Ice001, Ice002, Clay005, Lava004, Metal032, Snow006, Tiles144, ThatchedRoof001A, Fabric026, Plaster001, Concrete042A, Ground088 |
-| [ambientCG](https://ambientcg.com) PBR materials (1K-JPG), retrieved 2026-10-16, ground and wall finishes (stage `groundcity`) | per material (`assets/sources.json`, SHA-256 of every archive pinned; `scripts/assets/fetch.ts` verifies them) | Lennart Demes (ambientCG) | CC0-1.0 ([docs.ambientcg.com/license](https://docs.ambientcg.com/license/)) | 4 surface finishes: PavingStones138 (cobble, SHA-256 `5e2aee8fde52a9f2799ff2f5036522d2d25673d235e1c42f86144bc5a8d83fdd`), Bricks083 (limestone, `baa5d5b82b607567c2604243f8dbe98208aba80be90d46d472d9ef8a042c0b5c`), Ground102 (dry-earth, `7390f5b0508053ee661a90419d9afb655a5eb31eaf71f81c8d2bde49e15cfc3a`), Planks021 (cladding, `9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a`). The facade finish (window grid) is generated in code and uses no third-party asset. |
-| [Poly Haven](https://polyhaven.com) model textures (1k JPG diffuse and alpha), retrieved 2026-10-21, leaf sprites for the foliage cards | per file (`assets/foliage-sources.json`, SHA-256 of every file pinned; `scripts/foliage/leaf-sprites.ts` verifies them) | Rico Cilliers; Rob Tuytel and Rico Cilliers (Fern 02, Grass Medium 01) | CC0-1.0 ([polyhaven.com/license](https://polyhaven.com/license)) | 30 cut-out leaves, fronds and grass tufts packed into `apps/studio/public/foliage/leaf-sprites.webp` (index `leaf-sprites.json`): [Shrub 01](https://polyhaven.com/a/shrub_01) (diffuse `fe60e639d694e1807c0a3ae97dd1d5a7e7b3f84e5fc32d0610b868ce48f36331`, alpha `c6fffa5d39ee57c19ba894b7845e7631252ba85569ecaf7873a9414def60e9b3`), [Shrub 03](https://polyhaven.com/a/shrub_03) (`3cadc7aba46d3aabbd7d6d2b1d04aa32e2a7da0bc87c2d38ef3cb1ee42cb03ec`, `a696908aa8144a2697eb528815acf103ac6c5e3511aace8383f771b2f9c4ade8`), [Shrub 04](https://polyhaven.com/a/shrub_04) (`0b0fa0a474753d13f3093858cea79d0de05da1e6a0c5d6e181cd351080980b6c`, `79b42a2e9703f3080192e1d0c6be89d7d36a5543ee7cc411339f2741dd11a1ee`), [Fern 02](https://polyhaven.com/a/fern_02) (`a828a6e7b4c01c826911e2eac4b3afc7457dab7b3b392a31c681ed88b7d50029`, `4d8c4d57373651e500f1a3b2071cd59d2d9cc031bc30ff73bc8a5d2b2c91571a`), [Grass Medium 01](https://polyhaven.com/a/grass_medium_01) (`71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050`, `90ad8db2b471de6b61597c60bc218d1295c4bf68230be9083aa2001b9067b2e2`). The renderer composes its leaf cards from them (`render/src/materials/foliage-photo.ts`). |
-
-Processing (`scripts/assets/build.ts`) changes the files: scale to metres,
-pivot, merged meshes, LODs, linearised colours of two older Kenney kits,
-re-encoded realistic textures, meshopt compression; ambientCG maps are
-resampled to 512 px and converted to the renderer's finish format
-(`scripts/assets/materials.ts`). Thumbnails in
-`assets/lib/t/` are renders of these assets by this project.
-
-**Evaluated and excluded:** Quaternius packs fetched from quaternius.com — the
-pack pages say CC0, but quaternius.com/license.html forbids redistributing the
-assets as assets, which a public repository would do (unclear licence → not
-shipped). The single exception is the Farm Animals archive above: it carries
-its own `License.txt` stating CC0 1.0 and was taken from OpenGameArt, so the
-archive's own grant applies (the "Animals Pack" and "Animal Pack Vol.2"
-archives ship no licence file and are not used). No
-Pascal Editor, Sketchfab or other assets are included.
-
-### 5.2 Forge originals (first-party, AI-written code)
-
-`hero-fountain`, `hero-statue`, `hero-lantern`, `hero-ship`, `hero-car`,
-`hero-explorer`, `hero-cherry-tree`, `hero-gazebo` in
-`packages/procgen/library/` (catalog pack `aether-forge`, MIT like the rest of
-the project) are procedural generators written by **Anthropic Claude Code**
-through the asset forge (`scripts/assets/forge-heroes.ts`) from text briefs
-in that script — no reference images were used. See the AI disclosure below.
-
-**Vehicles** (`go-kart` in three colours, `race-car` in two, `car`, `taxi`,
-`police-car`, `sports-car`, `hatchback`, `suv`, `van`, `delivery-truck`; catalog
-pack `aether-vehicles`, MIT) are modelled in code by `scripts/assets/vehicles.ts`
-and `vehicle-geo.ts` (lofted bodies, lathe wheels, tube frames, a helmeted
-driver); no third-party mesh, texture or reference image is used. They replace
-the earlier Kenney Car Kit entries with the same ids.
-
-### 5.3 Other media
-
-- **Geometry:** everything else is generated at runtime by Aether's own
-  procedural kernel and its built-in generators, or by sandboxed generators
-  written by the coder model at runtime.
-- **Materials and skies:** procedural, built from colour and parameter
-  presets plus shaders that ship with three.js, except the library models'
-  own textures and the five HDR skies above.
-- **Audio:** synthesised at runtime with WebAudio oscillators
-  (`apps/studio/src/engine/sound.ts`). No audio files.
-- **Fonts:** two variable web fonts are self-hosted from
-  `apps/studio/public/fonts/` (never loaded from a CDN). Each is a Latin
-  subset (`pyftsubset`, fontTools 4.66.1, all OpenType layout features kept)
-  of the official release file; the full licence text ships next to each font.
-
-  | Font | Upstream release | Licence | Shipped file (SHA-256) |
-  | --- | --- | --- | --- |
-  | [Inter](https://github.com/rsms/inter) 4.1 — UI and display type | `Inter-4.1.zip` (SHA-256 `9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`), file `web/InterVariable.woff2` | SIL OFL 1.1, © 2016 The Inter Project Authors (`Inter-OFL.txt`) | `inter-var-latin.woff2`, 108 KB (`61bfb1520d2e7d081e984f35dada957961b56e36734837aa6ce5bebcbe1e243b`) |
-  | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 2.304 — code and labels | `JetBrainsMono-2.304.zip` (SHA-256 `6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`), file `fonts/variable/JetBrainsMono[wght].ttf` | SIL OFL 1.1, © 2020 The JetBrains Mono Project Authors (`JetBrainsMono-OFL.txt`) | `jetbrains-mono-var-latin.woff2`, 43 KB (`f4256d9ed255e928da20ca7a44a8d6a8b7f8e4128f63229c4de028c842868367`) |
-
-  Neither upstream declares a Reserved Font Name; the subsets are still
-  registered under the private family names *Aether Sans* and *Aether Mono*
-  so they are never confused with the original releases.
-- **Icon and logomark:** `apps/studio/public/favicon.svg` and the in-app
-  logomark (`src/components/Logo.tsx`) and the stroke icon set
-  (`src/components/Icon.tsx`) are original to this project.
-- **Template and asset previews:** `apps/studio/public/templates/*.webp` and
-  `apps/studio/public/palette/*.webp` are renders of Aether's own procedural
-  worlds and objects, produced by `npm run thumbnails` with this
-  application's renderer.
-- **Transform gizmo:** three.js's `TransformControls` (examples/jsm, part of
-  the MIT-licensed `three` package above), loaded lazily by the editor.
-- **Screenshots:** `docs/screenshots/*.png` are captures of this application
-  made by the e2e test.
-- **User imports and `model` shapes:** models, images and HDRIs users import
-  stay in their browser (IndexedDB) and are listed as "Your imports" in
-  credits; they are never uploaded by the app. `model` URLs are restricted
-  to same-origin, `blob:` or `data:` (the https allowlist is empty).
-- **Optional image → 3D (TRELLIS.2, MIT):** off by default and not bundled;
-  see [IMAGE_TO_3D.md](IMAGE_TO_3D.md).
-
-## 6. Research references
-
-The research papers cited in the [README](../README.md#research-inspirations)
-(PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
-3DCodeBench) were used **only as conceptual inspiration**. No code, models,
-weights, datasets, prompts or assets were copied from them or from their
-repositories.
-
-The scale-geometry code in `packages/render/src/virtual/` (quadric-error
-simplification, meshlet clustering, the cluster LOD DAG, scatter-field
-culling) is an original TypeScript implementation of published techniques:
-Garland & Heckbert, *Surface Simplification Using Quadric Error Metrics*
-(SIGGRAPH 1997); Karis et al., *Nanite: A Deep Dive* (SIGGRAPH 2021
-course); and the public design notes of meshoptimizer (MIT, Arseny
-Kapoulkine). No source code was copied from meshoptimizer, Unreal Engine or
-any other implementation, and no new dependency was added. The voxel
-experiment (`experiments/voxel-meshing`) implements classic greedy meshing
-(Lysenko, *Meshing in a Minecraft Game*, 2012) and the publicly described
-binary greedy technique from scratch. `@sparkjsdev/spark` (MIT) was only
-evaluated from its package metadata (`experiments/gaussian-splats`) and is
-not installed.
+Model ids are configuration, not code. No model weights are bundled. With no
+key and no connection, Aether uses its own deterministic offline planner and
+calls no external service. The hosted server has no owner-paid key by default.
 
 ## AI disclosure
 
-- **AI coding assistants.** This codebase, including its tests and
-  documentation, was written with AI coding assistants (**Anthropic Claude
-  Code** and **OpenAI Codex**) under the direction and review of the human
-  author. The author directed the design (World IR, package contracts,
+- **AI coding assistants.** This codebase, including its tests, build scripts
+  and documentation, was written with AI coding assistants (**Anthropic
+  Claude Code** and **OpenAI Codex**) under the direction and review of the
+  human author. The author directed the design (World IR, package contracts,
   security and verification approach) and accepted every change. All code was
-  written for this project from scratch: the first commit is dated
-  2026-10-12, and the full commit history is public.
-- **AI at runtime.** Depending on the connection the user picks, the app
-  sends user prompts, a text summary of the world and optional images (user
-  references, rendered views for the quality critique) to: the user's own
-  Codex or Claude Code CLI through the local bridge, an on-device model in the
-  browser, or Anthropic Claude / OpenAI models through the server proxy (the
-  deployer's or the user's own key). The models return structured tool calls (World IR
-  patches, procedural generator source, behaviour scripts), which are
-  validated before use.
-- **AI-generated assets.** 3D content created by AI at runtime is produced
-  *as code*: procedural generators and behaviour scripts that run in
-  sandboxes (see [ARCHITECTURE.md §9](ARCHITECTURE.md#9-sandbox-design)),
-  including the asset forge's image / text → generator results. No AI-made
-  meshes, images or audio are committed to the repository (the curated
-  library models are human-made CC0 assets, see §5.1).
-- **Offline generator library (AI-generated code).** The procedural
-  generators in `packages/procgen/library/*.json` whose `provenance.source`
-  is `"codex"` were **written by OpenAI Codex** (through the author's own
-  ChatGPT sign-in, `scripts/build-generator-library.ts`, low reasoning
-  effort) from short object descriptions in
-  `packages/procgen/src/library-specs.ts`, and accepted only after automatic
-  checks (static source check, sandboxed runs with three seeds, output
-  validation, size/grounding/silhouette checks). The four entries with
-  `"source": "example"` are the hand-reviewed few-shot examples. They are
-  code, not meshes, and always execute in the generator sandbox.
-- **Forge originals (AI-written code).** The eight `hero-*` generators in
-  `packages/procgen/library/` (`provenance.source: "claude-code"`) were
-  **written by Anthropic Claude Code** through the author's own sign-in,
-  using the asset forge loop (`scripts/assets/forge-heroes.ts`: text brief →
-  generator → sandbox acceptance checks → four rendered views → critique by
-  the same model → patched code; two passes each, 33 model calls in total).
-  They are code, not meshes; their thumbnails are renders by this project.
-- **Offline mock.** The built-in mock provider is ordinary deterministic
-  code (keyword matching plus world templates). It is not a model.
+  written for this project; the first commit is dated 2026-10-12 and the full
+  history is public. This includes the code that generates first-party
+  models (`scripts/assets/vehicles.ts`, `scripts/assets/living.ts` and their
+  helpers) and the authored character clips (`scripts/characters/authored.ts`).
+- **AI at run time.** Depending on the connection the user picks, the app sends
+  user prompts, a text summary of the world and optional images (user
+  references, rendered views for the quality critique) to the user's own
+  Codex or Claude Code CLI through the local bridge, to an on-device model in
+  the browser, or to Anthropic, OpenAI, OpenRouter or Google models (through
+  the server proxy or with the user's own key). The models return structured
+  tool calls (World IR patches, procedural generator source, behaviour
+  scripts), which are validated before use.
+- **AI-generated content runs as sandboxed code.** 3D content created by AI at
+  run time is produced *as code*: procedural generators run in a locked-down
+  worker pool and behaviour scripts in QuickJS compiled to WebAssembly (see
+  [ARCHITECTURE.md §9](ARCHITECTURE.md#9-sandbox-design)). This includes the
+  asset forge's image or text → generator results. No AI-generated mesh,
+  texture, image or audio file is committed to the repository.
+- **AI-written library assets** (code, not meshes; they always execute in the
+  generator sandbox):
+
+  | Asset | Written by | Count | How |
+  | --- | --- | --- | --- |
+  | Forge originals in `packages/procgen/library/` (`provenance.source: "claude-code"`), catalog pack `aether-forge`: hero-car, hero-cherry-tree, hero-explorer, hero-fountain, hero-gazebo, hero-lantern, hero-ship, hero-statue | Anthropic Claude Code, through the author's own sign-in | 8 | Asset forge loop (`scripts/assets/forge-heroes.ts`): text brief → generator → sandbox acceptance checks → four rendered views → critique by the same model → patched code; two passes each, 33 model calls in total. No reference images. Records in `assets/heroes.json`; thumbnails are renders by this project |
+  | Offline generator library in `packages/procgen/library/` (`provenance.source: "codex"`): airplane, beach-umbrella, bus, cart, castle-gate, cave-entrance, coral, dragon-statue, ferris-wheel, helicopter, hot-air-balloon, igloo, jellyfish, mailbox, mushroom-house, pagoda, palm-hut, piano, picnic-table, playground-slide, robot, saguaro-cactus, sailing-ship, satellite-dish, scarecrow, seaweed, skyscraper, snowman-deluxe, surfboard, swing-set, torii-gate, totem-pole, toy-tank, traffic-cone, train-engine, volcano, waterfall, wind-turbine, wishing-well, wizard-tower | OpenAI Codex, through the author's own ChatGPT sign-in, low reasoning effort | 40 | `scripts/build-generator-library.ts` from short object descriptions in `packages/procgen/src/library-specs.ts`; accepted only after automatic checks (static source check, sandboxed runs with three seeds, output validation, size, grounding and silhouette checks) |
+  | Few-shot examples (`provenance.source: "example"`): bookshelf, fountain, lighthouse, rocket | Hand-reviewed generators (part of the AI-assisted codebase) | 4 | Used as examples in the generator prompt |
+
+- **Model outputs in test fixtures.** `tests/fixtures/photo/*.transcript.json`,
+  `hotel.description.json` and `hotel.fidelity.json` are recorded model
+  responses of the room-from-photo pipeline, kept as text for regression tests.
+- **Offline mock.** The built-in mock provider is ordinary deterministic code
+  (keyword matching plus world templates). It is not a model.
+
+## Reference and inspiration only (no code copied)
+
+The following works informed ideas or algorithms. No source code, models,
+weights, datasets, prompts, shaders or assets were copied from any of them;
+everything listed was implemented from scratch in TypeScript for Aether.
+
+**Research papers** cited in the [README](../README.md#research-inspirations):
+PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
+3DCodeBench. Used only as conceptual inspiration.
+
+**Software studied as a reference.**
+
+- [Pascal Editor](https://github.com/pascalorg/editor) (MIT, © Pascal Group
+  Inc.) was studied for an architectural editor's user experience and data
+  model: the site / building / level / wall / slab / opening / roof / zone /
+  item vocabulary, wall drafting with mitred joins, room labels with a
+  coloured dot and the area, level selectors, cutaway / exploded /
+  single-level / x-ray views, and agent tools that edit a building. Aether
+  shares no code, assets or materials with Pascal.
+- A courtyard-house walkthrough with no published licence was studied for
+  ideas only (plan-to-3D reveal, ink-on-paper drawing, golden-hour staging).
+  None of its code, shaders or files were used.
+- Project Nayuki's QR Code generator (MIT) informed the structure of the QR
+  encoder; the encoder was written for Aether from ISO/IEC 18004.
+- `@sparkjsdev/spark` (MIT) was evaluated from its package metadata only
+  (`experiments/gaussian-splats`) and is not installed.
+
+**Published algorithms and specifications followed.**
+
+| Area | Sources |
+| --- | --- |
+| Scale geometry (`packages/render/src/virtual/`) | Garland and Heckbert, *Surface Simplification Using Quadric Error Metrics* (SIGGRAPH 1997); Karis et al., *Nanite: A Deep Dive* (SIGGRAPH 2021 course); the public design notes of meshoptimizer (MIT, Arseny Kapoulkine). No code from meshoptimizer, Unreal Engine or any other implementation |
+| Block worlds (`packages/voxel`, `experiments/voxel-meshing`) | Simplex noise after Stefan Gustavson's public-domain description; Amanatides and Woo, *A Fast Voxel Traversal Algorithm for Ray Tracing* (1987); per-vertex ambient occlusion and greedy meshing after Mikola Lysenko (0fps.net, 2012 and 2013); the publicly described binary greedy meshing technique. Saves use the platform's `CompressionStream('deflate-raw')` |
+| Studio render | three.js `GTAONode` (after Jimenez et al., *Practical Real-Time Strategies for Accurate Indirect Occlusion*, 2016) and `TRAANode`, part of the `three` dependency; the outdoor atmosphere is the single-scattering integral of Nishita et al. (1993) with published Rayleigh, Mie and ozone coefficients (physical constants) |
+| Software renderer and PNG encoder of `aether mcp` | Edge-function rasterisation with perspective-correct barycentrics, shadow mapping with percentage-closer filtering, Blinn-Phong, the Narkowicz ACES filmic fit; PNG on `node:zlib` |
+| Publishing | ISO/IEC 18004 (QR Code Model 2); ISO/IEC 14496-12 (MP4) and "Opus in ISOBMFF"; the Matroska / WebM element specification; RFC 7845 (Opus identification header); the PDF 1.4 reference (base-14 Helvetica, WinAnsi) |
+| Characters and the playtest bot | A* search (Hart, Nilsson and Raphael, 1968) with an octile heuristic; Dijkstra on typed arrays with a binary heap; supercover grid walk of Amanatides and Woo (1987) for line of sight; separation steering after Reynolds (1999); string pulling of grid paths by greedy visibility. The bot drives Rapier's KinematicCharacterController through `@aether/physics` |
+| Retargeting (`packages/assets/src/characters/retarget.ts`) | World-space delta method on quaternions |
+| Room-from-photo comparison | Colour histogram overlap, SSIM, Sobel edge correlation, median-cut palette |
+| Replay proofs (`packages/verifier`) | SHA-256 per FIPS 180-4 (in-repo implementation, checked against `node:crypto` and the published vectors); Ed25519 signatures through Web Crypto |
 
 ## Flags and notes
 
 | Item | Status | Assessment |
 | --- | --- | --- |
-| **lightningcss 1.33.0, MPL-2.0** | Dev and build only | A CSS tool used internally by Vite. It runs on the build machine and none of its code ends up in the studio bundle or the server runtime. MPL-2.0 is a weak, file-level copyleft that applies only to modifications of its own files, which we do not modify or distribute. **No conflict** with commercial use or redistribution of Aether. It is flagged because it is the only licence outside MIT, Apache-2.0, ISC and BSD. |
-| **Apache-2.0 components** (Rapier, TypeScript, Playwright, detect-libc, expect-type) | Rapier ships in the bundle and the Docker image; the others are dev only | Apache-2.0 is permissive and compatible. When redistributing Rapier, keep its licence text: it is preserved in `node_modules` inside the Docker image, and the licence is credited here. The package ships no NOTICE file. |
-| **QuickJS (inside @jitl/quickjs-wasmfile-release-sync)** | Ships as WASM | MIT, © Fabrice Bellard and Charlie Gordon. Credited here. |
-| **Docker base image `node:24-bookworm-slim`** | Deployment only (root `Dockerfile`) | Node.js (MIT) on Debian. The OS packages carry their own licences (some GPL), which is ordinary aggregation in a container image. Aether code is not linked into them. They are not part of the repository source. The runtime image holds production dependencies only (the Codex CLI binaries are removed). |
-| **GitHub Actions** (`actions/checkout`, `actions/setup-node`, `actions/cache`, `actions/upload-artifact`, `actions/download-artifact`, `docker/setup-buildx-action`, `docker/build-push-action`) | CI only (`.github/workflows/ci.yml`) | MIT (actions) / Apache-2.0 (Docker actions); run on GitHub's runners, never shipped. |
-| **Share card and app icons** (`apps/studio/public/og.jpg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`) | Shipped (link previews, home-screen icons) | Original: rendered by `scripts/brand/render.ts` from the project's own logomark and its own showcase renders (`docs/screenshots/showcase/`), system fonts only. No third-party imagery. |
-| **Chromium downloaded by Playwright** | Dev only (e2e) | Downloaded on demand by `npx playwright install` and never committed or shipped |
-| **Inter and JetBrains Mono, SIL OFL 1.1** | Ship as static font files | OFL 1.1 permits use, embedding, modification and redistribution, including commercially, provided the copyright notice and licence travel with the fonts (they do: `apps/studio/public/fonts/*-OFL.txt`, copied into the build). Neither font declares a Reserved Font Name; the subsets are served as *Aether Sans* / *Aether Mono* anyway. The fonts may not be sold on their own, which Aether does not do. |
-| **Two Rapier versions in `node_modules`** | Informational | 0.21.0 is the one actually used (`packages/physics`). 0.12.0 is only a type-level dependency of `@types/three` and is never imported. |
+| **lightningcss 1.33.0, MPL-2.0** | Development and build only | A CSS tool used internally by Vite. It runs on the build machine and none of its code ends up in the studio bundle, the server or the CLI. MPL-2.0 is a weak, file-level copyleft that applies only to modifications of its own files, which we neither modify nor distribute. No conflict with commercial use or redistribution of Aether. It is the only licence outside MIT, Apache-2.0, ISC and BSD. |
+| **Fox (Khronos sample), CC-BY-4.0 parts** | Shipped (`fox`, `wolf`) | The only attribution-required asset. The credit line under "Animals from third parties" is generated into the credits panel, the end-of-game screen and `CREDITS.txt`; it must stay there in every distribution. |
+| **Microsoft Rocketbox, MIT** | Shipped (10 bodies, 2 motion files) | MIT requires the copyright and permission notice to travel with the assets: it ships as `assets/characters-LICENSE.md` and in the in-app credits. |
+| **Apache-2.0 components** (Rapier, web-llm, Codex SDK and CLI, TypeScript, Playwright, detect-libc, expect-type) | Rapier and web-llm ship in the bundle and the Docker image; the Codex packages ship only with the bridge; the rest are development only | Permissive and compatible. When redistributing, keep the licence texts (they are preserved inside `node_modules` in the Docker image). None of these packages ships a NOTICE file. The `@openai/codex` npm packages declare Apache-2.0 in `package.json` but include no LICENCE file; the licence text is in the upstream repository. |
+| **QuickJS** (inside `@jitl/quickjs-wasmfile-release-sync`) | Ships as WebAssembly | MIT, © Fabrice Bellard and Charlie Gordon. Credited here. |
+| **Two Rapier versions** | Informational | 0.21.0 is the one used (`packages/physics`). 0.12.0 is only a type-level dependency of `@types/three` and is never imported. |
+| **Kenney archives not in the local cache** | Informational | Cube Pets, Fantasy Town, Food, Furniture, Graveyard, Mini Characters, Mini Market, Nature, Pirate and Survival kits: their archive SHA-256 and the CC0 `License.txt` check were enforced by `scripts/assets/fetch.ts` when downloaded, but the archives are no longer in the cache, so those two checks were not repeated on 2026-10-21. The shipped files' SHA-256 values match the manifest. Kenney publishes all of its kits as CC0. |
+| **Poly Haven sources not in the local cache** | Informational | Downloads were checked against the Poly Haven API's MD5 at fetch time; the shipped files' SHA-256 values match the manifest. |
+| **FFmpeg** | Developer evaluation scripts only | Called as an external program to assemble review videos; never linked, bundled or distributed. |
+| **Docker base image `node:24-bookworm-slim`** | Deployment only | Node.js (MIT) on Debian. The OS packages carry their own licences (some GPL), which is ordinary aggregation in a container image; Aether code is not linked into them. The runtime image holds production dependencies only (the Codex CLI binaries are removed). |
+| **Inter and JetBrains Mono, SIL OFL 1.1** | Ship as static font files | OFL 1.1 permits use, embedding, modification and redistribution, including commercially, provided the copyright notice and licence travel with the fonts (they do). The fonts may not be sold on their own, which Aether does not do. |
 
-**Conclusion:** every code component Aether ships is MIT or Apache-2.0, plus
-QuickJS under MIT; the two web fonts are SIL OFL 1.1. There are no non-commercial, personal-only,
-educational-only, evaluation-only, share-alike or source-available
-components, and the only third-party media are the two OFL fonts above.
-Before each release,
-regenerate this list if dependencies change, for example with
-`npm ls --all` and a licence scan of `package-lock.json`.
-
-### Block worlds (`@aether/voxel`)
-
-No new dependency. Everything is original code; the published algorithms it
-follows are credited here: 2D/3D simplex noise after Stefan Gustavson's
-public-domain description; voxel ray traversal after Amanatides & Woo, "A
-Fast Voxel Traversal Algorithm for Ray Tracing" (1987); per-vertex ambient
-occlusion after the well-known "side1/side2/corner" rule described by Mikola
-Lysenko (0fps.net, 2013); greedy meshing after the same author's write-up.
-Block textures, item icons, mob models and sounds are generated procedurally
-at run time (no image, model or audio assets). Saves use the platform's
-`CompressionStream('deflate-raw')`.
-
-### Real-life architecture (`@aether/arch`) and the studio render
-
-No new dependency. The building model, wall network and mitre solver,
-CSG-free openings, roofs, stairs, procedural furniture, navigation checks,
-floor-plan drawing and editing tools, architectural view modes and the
-walkthrough are original TypeScript written for Aether. Finish textures
-(wood, stone, tiles, fabric, metals …) are synthesised procedurally at run
-time; no texture, HDRI, model or audio asset was downloaded or added.
-
-**Inspiration, credited:** [Pascal Editor](https://github.com/pascalorg/editor)
-(MIT, © Pascal Group Inc.) was studied as a reference for an architectural
-editor's user experience and data model: the site / building / level / wall /
-slab / opening / roof / zone / item vocabulary, wall drafting with mitred
-joins, room labels showing a coloured dot and the area, level selectors,
-cutaway / exploded / single-level / x-ray views, and agent tools that edit a
-building. Aether's implementation shares no code, assets or materials with
-Pascal; the ideas listed above were re-implemented from scratch on Aether's
-World IR, patch system and renderer. Walkthrough interactions (time-of-day
-presets, light switches, a finish swap, photo mode) follow common
-architectural-visualisation viewer conventions.
-
-The studio render uses three.js's own post-processing nodes, part of the
-`three` dependency (MIT, © three.js authors): `GTAONode` (ground-truth
-ambient occlusion after Jimenez et al., *Practical Real-Time Strategies for
-Accurate Indirect Occlusion*, 2016) and `TRAANode` (temporal reprojection
-anti-aliasing), wired by Aether's `packages/render/src/gpu/post.ts`.
-
-### Publishing (games, videos, renders, models, floor plans, share links)
-
-No new dependency. The zip writer, share-link codec, QR code encoder, MP4
-and WebM muxers, PDF writer, floor-plan drawing, camera paths and director,
-title cards, the generated score and the standalone player are original
-TypeScript written for Aether. Algorithms followed, credited: QR Code Model 2
-(ISO/IEC 18004) — the encoder's structure follows Project Nayuki's QR Code
-generator (MIT); ISO/IEC 14496-12 (MP4) and the "Opus in ISOBMFF"
-specification; the Matroska / WebM element specification; RFC 7845 (Opus
-identification header); the PDF 1.4 reference (base-14 Helvetica, WinAnsi).
-Video and audio are encoded by the browser's own WebCodecs encoders (or
-MediaRecorder); glTF export and its parse-back check use `GLTFExporter` and
-`GLTFLoader` from the `three` dependency (MIT). No codec library, font,
-music or image asset is bundled; the soundtrack is synthesised with Web
-Audio at run time.
-
-Replay proofs (`packages/verifier`, docs/PROOFS.md) add no dependency: the
-SHA-256 is a small in-repo implementation (checked against `node:crypto` and
-the published vectors), signatures use Web Crypto Ed25519, and the package
-reuses `@aether/core`, `@aether/physics`, `@aether/logic`, `@aether/procgen`,
-`zod` and `tsx` (the `aether-verify` bin runs the TypeScript sources like the
-`aether` CLI).
-
-
-### Aether as an MCP server (`aether mcp`)
-
-One new runtime dependency, `@modelcontextprotocol/sdk` 1.32.1 (MIT), pinned
-exactly and used only by `apps/cli`. Its transitive packages are all
-permissively licensed: MIT (`express` 5.3.0, `cors`, `cross-spawn`, `jose`,
-`ajv`, `ajv-formats`, `eventsource`, `eventsource-parser`, `express-rate-limit`,
-`ip-address`, `pkce-challenge`, `raw-body`, `body-parser`, `content-type`,
-`debug`, `iconv-lite`, `mime-types` and the small Express helpers),
-BSD-3-Clause (`qs`, `fast-uri`), BSD-2-Clause (`json-schema-typed`) and ISC
-(`zod-to-json-schema`, `which`, `isexe`, `once`, `wrappy`, `inherits`,
-`setprototypeof`). The stdio server uses only the SDK's server, client (tests)
-and stdio and in-memory transports; the HTTP transports (and so Express) are
-never started. `@gltf-transform/core` 4.5.1 (MIT, already a repository dev
-dependency) writes the headless glTF. The software renderer (`render_still`),
-the PNG encoder (on `node:zlib`), the scene builder and the playtest bot are
-original TypeScript; the renderer follows textbook techniques (edge-function
-rasterisation with perspective-correct barycentrics, shadow mapping with
-percentage-closer filtering, Blinn-Phong, the Narkowicz ACES filmic fit).
-No model, image or font is bundled.
-
-## Intelligent characters
-
-The NPC system (navigation grid, A*, line of sight, perception, behaviour
-graph, dialogue, speech overlay, free-conversation controller and the offline
-character planner) is original TypeScript written for Aether. It adds no
-dependency and bundles no asset. Algorithms followed: A* search (Hart, Nilsson
-and Raphael, 1968) with an octile heuristic; the supercover grid walk of
-Amanatides and Woo (1987) for line of sight; separation steering after
-Reynolds (1999); string pulling of grid paths by greedy visibility.
-
-
-### Verified playable (autonomous playtest agent)
-
-No new dependency. The goal derivation, navigation graph (Dijkstra on typed
-arrays with a binary heap, ballistic reach analysis), bot, self-repair, proof
-format and ghost replay are original TypeScript written for Aether. The bot
-drives the existing Rapier (`@dimforge/rapier3d-compat`, Apache-2.0)
-KinematicCharacterController through `@aether/physics` and the existing logic
-runtime. `zod` (MIT) validates reports and proofs, as elsewhere.
-
-### People (stage `characters`)
-
-| Asset | Author | Licence | Source |
-|---|---|---|---|
-| Microsoft Rocketbox avatars (10 adult bodies, converted) and motion clips (walk, run, idle, talk, sit, gestures; retargeted onto the shared Biped, baked into two shared motion files) | Microsoft (Rocketbox Libraries), (c) 2020 Microsoft | MIT | https://github.com/microsoft/Microsoft-Rocketbox |
-
-The MIT notice ships as `assets/characters-LICENSE.md` and in the in-app
-credits (`characterCredit`). Rocketbox has no jump, death, hit-react or attack
-clips; those were authored for Aether (keyframed on the Biped, `scripts/characters/authored.ts`)
-and no third-party animation pack is vendored. Textures were downscaled and
-re-encoded (WebP masks plus tint maps), meshes meshopt-compressed
-(`scripts/characters/`, using `@gltf-transform/*`, MIT, already a dev dependency).
-
-### Reference photographs of the room-from-photo tests (stage `imageroom`)
-
-Committed in `tests/fixtures/photo/` (redistributable only); the CC BY photograph used locally is not committed.
-
-| File | Title and source | Author | Licence |
-|---|---|---|---|
-| `bedroom-cc0-hotel.jpg` | Hotel bedroom windows (Unsplash), https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg | Markus Spiske | CC0 1.0 |
-| `bedroom-cc0-twin.jpg` | Twin room in a German youth hostel with single beds and wardrobe A, https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg | Profpcde | CC0 1.0 |
-| `bedroom-pd-1.jpg` | USVI IMG 5175, white-walled bedroom with a four-poster bed, https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg | Government of the United States Virgin Islands | Public domain |
-| `bedroom-pd-2.jpg` | USVI IMG 5201, bright modern bedroom with a vaulted ceiling, https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg | Government of the United States Virgin Islands | Public domain |
-
-No dependency was added: the similarity measures (colour histogram overlap, SSIM, Sobel edge correlation, median-cut
-palette) are original TypeScript.
-
-### Architecture realism (stage `archreal`)
-
-No third-party asset or dependency was added. The wallpapers, panelling, timber slats and foliage textures, the wall
-dado, downlights, window casements, drawers, trees (olive, cypress, umbrella pine) and the Casa del Patio flagship are
-original, procedural work (MIT, with the project). The studied reference (a courtyard-house walkthrough) has no
-licence: only its ideas (plan-to-3D reveal, ink-on-paper drawing, golden-hour staging) informed the design; none of its
-code, shaders or files were used.
-
-
-### Realistic games (stage `gamereal`)
-
-No third-party asset or dependency was added. The layered terrain blends the four ambientCG finishes (CC0, listed
-above) that the material library already ships: no new texture files. The leaf cards, trees, shrubs, grass and the
-Highland Trail world are original, procedural work (MIT, with the project); the Highland Trail and vegetation preview
-images are renders made by this project.
-
-### Outdoor look, part A (stage `outdoora`)
-
-No third-party asset or dependency was added. The atmosphere model is the published single-scattering integral (Nishita et al., 1993) written from scratch with
-published scattering coefficients (Rayleigh, Mie and ozone absorption of the Earth's atmosphere, which are physical constants, not a licensed work). The blossom
-and flower cards, the sun, moon and sunray sprites, the cirrus and cumulus textures and the clustered layouts are original, procedural work (MIT, with the project).
-
-### Outdoor water and animals (stage `outdoorb`)
-
-- Twelve animals (deer, doe, cat, bird, crow, seagull, hawk, duck, parrot, fish, koi, butterfly) are code-authored by `scripts/assets/living.ts` (MIT, first-party, no third-party source):
-  signed-distance sculpts skinned to a skeleton, with their own animation clips. Pack `aether-creatures`, licence MIT, recorded in `assets/living.json` and `assets/manifest.json`
-  (source `scripts/assets/living.ts`, `sha256` of each file in the manifest). No new dependency; `meshoptimizer` and `@gltf-transform/*` were already in use.
+Before each release, regenerate this list if dependencies or assets change,
+for example with `npm ls --all`, a licence scan of `package-lock.json`, and the
+checksums in `assets/manifest.json` and `assets/characters.json`.

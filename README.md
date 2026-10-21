@@ -367,8 +367,8 @@ were copied from them.
 - **Licence:** [MIT](LICENSE), © 2026 Aether contributors.
 - **Third parties:** every dependency and every bundled asset (Kenney, Poly
   Haven and ambientCG CC0 models, textures and HDRIs; Microsoft Rocketbox
-  characters under MIT; Quaternius and Khronos sample models; fonts under OFL
-  1.1) is listed with its licence, source and credit line in
+  characters under MIT; Quaternius farm animals under CC0; the Khronos glTF
+  sample Fox, partly CC-BY 4.0 with its credit kept; fonts under OFL 1.1) is listed with its licence, source and credit line in
   [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). Only permissive licences are
   used. In-app credits appear in the credits panel, on end-of-game screens and
   in exported `CREDITS.txt` files.
