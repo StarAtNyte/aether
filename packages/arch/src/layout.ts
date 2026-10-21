@@ -520,6 +520,22 @@ export class RoomLayout {
     return out;
   }
 
+  /** Hang a blind over one window (index into `ctx.windows`), centred on it. */
+  hangBlind(windowIndex: number, params: Record<string, Json>): Placed[] {
+    const def = this.def('blind');
+    const w = this.ctx.windows[windowIndex];
+    if (!def || !w) return [];
+    const e = this.ctx.edges[w.edge] as RoomEdge;
+    const y0 = Math.max(0, w.sill - 0.05);
+    const width = Math.min(4, w.t1 - w.t0 + 0.1);
+    const height = Math.min(3.2, Math.max(0.5, Math.min(this.ctx.ceiling - 0.04, w.sill + w.height + 0.05) - y0));
+    const t = (w.t0 + w.t1) / 2;
+    const p = this.facePoint(w.edge, t, 0.001);
+    const placed = this.push(this.make(def, { ...params, width: Math.round(width * 100) / 100, height: Math.round(height * 100) / 100 }, p[0], p[1], yawFacingIn(e), y0, 'Blind'));
+    placed.wall = { edge: w.edge, t };
+    return [placed];
+  }
+
   /** Surface piece (table lamp …) standing on another placement's top. */
   onTop(kind: string, params: Record<string, Json>, host: Placed, dx = 0, dz = 0, name?: string): Placed | null {
     const def = this.def(kind);

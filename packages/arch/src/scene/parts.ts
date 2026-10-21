@@ -129,7 +129,10 @@ export function defaultWallBottom(kind: string, h: number, ceiling: number): num
     case 'whiteboard':
       return 0.9;
     case 'curtain':
+    case 'blind':
       return 0;
+    case 'pelmet':
+      return Math.max(0, ceiling - h);
     case 'cornice':
       return Math.max(0, ceiling - h);
     default:
@@ -153,7 +156,10 @@ export function wallBottomRange(kind: string, h: number, ceiling: number): [numb
     case 'whiteboard':
       return [0.4, 1.5];
     case 'curtain':
-      return [0, 1.2];
+    case 'blind':
+      return [0, 2.2];
+    case 'pelmet':
+      return [Math.max(0, ceiling - h - 1.2), Math.max(0, ceiling - h + 0.05)];
     case 'cornice':
       return [Math.max(0, ceiling - h - 0.05), Math.max(0, ceiling - h + 0.02)];
     default:

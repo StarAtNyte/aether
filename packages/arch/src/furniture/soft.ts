@@ -143,6 +143,31 @@ function curtainFabric(p: ParamReader, panel: PanelSpec, h: number, styleName: s
   return { fabric, rings };
 }
 
+/** A pelmet (boxed), valance (gathered) or swags across `span`, its top edge at height `h` above the piece's origin. */
+function addPelmet(set: PartSet, pelmet: string, span: number, h: number, col: string): void {
+  if (pelmet === 'box') {
+    set.add(box(-span / 2 - 0.05, h - 0.18, 0.004, span / 2 + 0.05, h, 0.18), mat('fabric', col));
+  } else if (pelmet === 'valance') {
+    const vw = span + 0.1;
+    const folds = Math.max(4, Math.round(vw / 0.12));
+    set.add(
+      sheet(folds * 4, 4, (t, a) => [(t - 0.5) * vw, h - 0.02 - a * (0.26 + 0.03 * Math.sin(t * folds * Math.PI * 2 + 1)), 0.13 + 0.025 * Math.sin(t * folds * Math.PI * 2)]),
+      mat('fabric', col),
+    );
+  } else if (pelmet === 'swag') {
+    const n = Math.max(1, Math.round(span / 0.55));
+    const vw = span + 0.1;
+    set.add(
+      sheet(n * 16, 4, (t, a) => {
+        const u = (t * n) % 1 || (t >= 1 ? 1 : 0);
+        const sag = 0.17 * Math.sin(Math.PI * u);
+        return [(t - 0.5) * vw, h - 0.02 - a * (0.07 + sag), 0.12 + 0.04 * Math.sin(Math.PI * u) * (0.4 + a * 0.6)];
+      }),
+      mat('fabric', col),
+    );
+  }
+}
+
 export const CURTAIN: FurnitureDef = {
   id: 'furn-curtain',
   kind: 'curtain',
@@ -198,27 +223,7 @@ export const CURTAIN: FurnitureDef = {
     } else if (rod === 'track' && pelmet !== 'box') {
       set.add(box(-span / 2 - 0.02, h - 0.03, 0.02, span / 2 + 0.02, h, 0.055), mat('paint', '#f1eee8'));
     }
-    if (pelmet === 'box') {
-      set.add(box(-span / 2 - 0.05, h - 0.18, 0.004, span / 2 + 0.05, h, 0.18), mat('fabric', col));
-    } else if (pelmet === 'valance') {
-      const vw = span + 0.1;
-      const folds = Math.max(4, Math.round(vw / 0.12));
-      set.add(
-        sheet(folds * 4, 4, (t, a) => [(t - 0.5) * vw, h - 0.02 - a * (0.26 + 0.03 * Math.sin(t * folds * Math.PI * 2 + 1)), 0.13 + 0.025 * Math.sin(t * folds * Math.PI * 2)]),
-        mat('fabric', col),
-      );
-    } else if (pelmet === 'swag') {
-      const n = Math.max(1, Math.round(span / 0.55));
-      const vw = span + 0.1;
-      set.add(
-        sheet(n * 16, 4, (t, a) => {
-          const u = (t * n) % 1 || (t >= 1 ? 1 : 0);
-          const sag = 0.17 * Math.sin(Math.PI * u);
-          return [(t - 0.5) * vw, h - 0.02 - a * (0.07 + sag), 0.12 + 0.04 * Math.sin(Math.PI * u) * (0.4 + a * 0.6)];
-        }),
-        mat('fabric', col),
-      );
-    }
+    if (pelmet !== 'none') addPelmet(set, pelmet, span, h, col);
     return set.build();
   },
 };
@@ -307,5 +312,27 @@ export const BLIND: FurnitureDef = {
   },
 };
 
+
+export const PELMET: FurnitureDef = {
+  id: 'furn-pelmet',
+  kind: 'pelmet',
+  description: 'Pelmet, valance or swags spanning a whole window dressing (both curtain panels), top edge at `height`. place_items curtain with a pelmet param adds it for you.',
+  params: {
+    width: num(2.4, 0.4, 8, 'width across both panels (m)'),
+    height: num(0.3, 0.15, 0.6, 'height of the piece (m)'),
+    color: color('#e6dfd2', 'fabric colour'),
+    style: choice(['box', 'valance', 'swag'], 'box', 'boxed pelmet, gathered valance or draped swags'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0,
+  size: (p) => [p.num('width'), p.num('height'), 0.2],
+  build(p) {
+    const set = new PartSet();
+    addPelmet(set, p.str('style'), p.num('width') - 0.1, p.num('height'), p.color('color'));
+    return set.build();
+  },
+};
+
 /** Soft furnishings of the catalogue. */
-export const SOFT: readonly FurnitureDef[] = [CURTAIN, BLIND];
+export const SOFT: readonly FurnitureDef[] = [CURTAIN, BLIND, PELMET];

@@ -8,9 +8,9 @@ import { Geom, box, cylinder, extrude, lathe, roundedBox, sphere, tube } from '.
 import { PartSet } from '../parts';
 import { choice, color, flag, int, mat, num, roundedRect, seeded, type FurnitureDef } from './kit';
 import type { P2 } from '../math2';
-import { BLIND, CURTAIN } from './soft';
+import { BLIND, CURTAIN, PELMET } from './soft';
 
-export { BLIND, CURTAIN };
+export { BLIND, CURTAIN, PELMET };
 
 export const RUG: FurnitureDef = {
   id: 'furn-rug',
@@ -695,4 +695,4 @@ export const ACCENT: FurnitureDef = {
   },
 };
 
-export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, BLIND, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK, ACCENT];
+export const DECOR: readonly FurnitureDef[] = [RUG, CURTAIN, BLIND, PELMET, PLANT, FRAME, MIRROR, TV, TV_SET, CORNICE, FIREPLACE, CAFE_COUNTER, WHITEBOARD, MUG, BOOK, ACCENT];

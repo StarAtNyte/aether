@@ -10,7 +10,7 @@
  */
 
 /** Kinds of things that sit on a wall face. */
-export const WALL_MOUNT_KINDS: ReadonlySet<string> = new Set(['art', 'mirror', 'tv', 'whiteboard', 'sconce', 'switch', 'curtain']);
+export const WALL_MOUNT_KINDS: ReadonlySet<string> = new Set(['art', 'mirror', 'tv', 'whiteboard', 'sconce', 'switch', 'curtain', 'blind', 'pelmet']);
 
 export type BlockerKind = 'door' | 'window' | 'item' | 'furniture' | 'corner';
 
@@ -48,6 +48,8 @@ export function mountRule(kind: string): MountRule {
   switch (kind) {
     case 'switch':
       return { ...DEFAULT_RULE, door: 0.03, window: 0.05, item: 0.05 };
+    case 'blind':
+      return { door: 0.06, window: 0.03, item: 0.03, furniture: 0, reach: 0, furnitureMinTop: 1.0 };
     case 'curtain':
       return { door: 0.06, window: 0.03, item: 0.03, furniture: 0, reach: 0.08, furnitureMinTop: 1.0 };
     case 'sconce':
@@ -82,12 +84,14 @@ export function mountExtent(spec: MountSpec): [number, number] {
 /** The wall stretch (min, max) forbidden to `spec` by one blocker, or null when it does not block. */
 export function forbiddenBy(spec: MountSpec, b: WallBlocker, anchor?: string): [number, number] | null {
   // A cornice runs along the whole top of a wall, over windows, curtains and corners alike.
-  if (spec.kind === 'cornice') return null;
+  if (spec.kind === 'cornice' || spec.kind === 'pelmet') return null;
   const rule = mountRule(spec.kind);
   if (b.kind === 'furniture' && b.y1 <= rule.furnitureMinTop) return null;
   // Furniture may reach 10 cm into a piece's height (a lamp or cistern top behind a frame); openings need a clear margin.
   const vm = b.kind === 'door' || b.kind === 'window' ? V_MARGIN : b.kind === 'furniture' ? -0.1 : 0.02;
   if (spec.y1 <= b.y0 - vm || spec.y0 >= b.y1 + vm) return null;
+  // A blind hangs over its own window: that window never blocks it.
+  if (b.kind === 'window' && anchor !== undefined && b.ref === anchor && spec.kind === 'blind') return null;
   if (b.kind === 'window' && anchor !== undefined && b.ref === anchor && spec.kind === 'curtain') {
     // Its own window: only the glass area stays clear.
     const lo = b.t0 + CURTAIN_WINDOW_OVERLAP;

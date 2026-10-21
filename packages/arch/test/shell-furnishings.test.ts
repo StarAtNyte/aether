@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFurniture, furnitureByKind, furnitureSize, partKinds, placeItem, readScene, findRoom, isLookupError, type ArchOutput } from '../src/index';
+import { buildFurniture, furnitureByKind, furnitureSize, partKinds, placeItem, removeItem, reviewScene, readScene, findRoom, isLookupError, type ArchOutput } from '../src/index';
 import { applyEdit, shellWorld } from './scene-helpers';
 
 type Params = Record<string, string | number | boolean>;
@@ -140,16 +140,46 @@ describe('blinds', () => {
     }
   });
 
-  it('can be hung on a free stretch of wall and appears in the room', () => {
+  it('hangs over a window, centred on it, and the placement review accepts it', () => {
     const w0 = shellWorld();
     const scene = readScene(w0, 'home')!;
     const room = findRoom(scene, 'bedroom');
     if (isLookupError(room)) throw new Error('no room');
-    const r = placeItem(w0, undefined, { kind: 'blind', room: 'bedroom', id: 'shade', wall: 'east', t: 1.8, y: 0.9, params: { width: 0.9, height: 1.2, style: 'roman' } });
+    const win = room.walls.flatMap((w) => w.openings).find((o) => o.kind === 'window')!;
+    const door = room.walls.flatMap((w) => w.openings).find((o) => o.kind === 'door')!;
+    const bad = placeItem(w0, undefined, { kind: 'blind', room: 'bedroom', opening: door.id });
+    expect(bad.ok).toBe(false);
+    const r = placeItem(w0, undefined, { kind: 'blind', room: 'bedroom', id: 'shade', opening: win.id, params: { style: 'roman' } });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const w1 = applyEdit(w0, r);
-    expect(Object.keys(w1.entities).some((id) => id.endsWith('shade'))).toBe(true);
+    const ent = Object.values(w1.entities).find((e) => e.id.endsWith('shade'))!;
+    expect(ent).toBeDefined();
+    expect(reviewScene(w1, 'home').filter((f) => f.code.startsWith('wall_item') || f.code === 'curtain_off_window')).toEqual([]);
+  });
+
+  it('a pelmet on a curtain is one piece spanning both panels', () => {
+    const w0 = shellWorld();
+    const scene = readScene(w0, 'home')!;
+    const room = findRoom(scene, 'bedroom');
+    if (isLookupError(room)) throw new Error('no room');
+    const win = room.walls.flatMap((w) => w.openings).find((o) => o.kind === 'window')!;
+    const r = placeItem(w0, undefined, { kind: 'curtain', room: 'bedroom', id: 'drape', opening: win.id, params: { pelmet: 'box' } });
+    if (!r.ok) throw new Error(r.error);
+    if (!r.ok) return;
+    expect(r.ids.length).toBe(3);
+    const w1 = applyEdit(w0, r);
+    const pel = Object.values(w1.entities).find((e) => e.id.endsWith('drape-p'))!;
+    expect(pel).toBeDefined();
+    const items = readScene(w1, 'home')!.items;
+    const panels = items.filter((i) => /drape-[lr]$/.test(i.id));
+    expect(panels.length).toBe(2);
+    const pelItem = items.find((i) => i.id.endsWith('drape-p'))!;
+    expect(pelItem.kind).toBe('pelmet');
+    expect(pelItem.size[0]).toBeGreaterThan(win.t1 - win.t0);
+    expect(reviewScene(w1, 'home').filter((f) => f.code.startsWith('wall_item'))).toEqual([]);
+    const rm = removeItem(w1, undefined, 'drape');
+    expect(rm.ok && rm.ids.length).toBe(3);
   });
 });
 

@@ -575,6 +575,13 @@ function hangExplicit(L: RoomLayout, kind: string, params: Record<string, Json>,
     if (hung === 0) L.notes.push(`no clear wall beside the windows of ${L.ctx.id} for the curtain`);
     return;
   }
+  if (kind === 'blind') {
+    const own = L.ctx.windows.map((w, i) => (w.edge === edge ? i : -1)).filter((i) => i >= 0);
+    const idx = own.length > 0 ? own : L.ctx.windows.map((_, i) => i);
+    if (idx.length === 0) L.notes.push(`no window in ${L.ctx.id} for the blind`);
+    for (const i of idx) L.hangBlind(i, params);
+    return;
+  }
   const y = kind === 'tv' ? 1.05 : kind === 'sconce' ? 1.7 : kind === 'switch' ? 1.1 : kind === 'whiteboard' ? 0.9 : 1.3;
   const p = L.onAnyWall(kind, params, edge, at ?? e.length / 2, y);
   if (!p) L.notes.push(`no clear wall in ${L.ctx.id} for the ${kind} (doors and windows take the rest)`);

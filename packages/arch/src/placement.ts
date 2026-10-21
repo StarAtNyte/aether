@@ -188,7 +188,7 @@ function blockersOf(s: Scan, frame: WallFrame, side: 'A' | 'B', self: EntityId |
     out.push({ kind: o.kind === 'window' ? 'window' : 'door', t0: o.offset - o.width / 2, t1: o.offset + o.width / 2, y0: o.sill, y1: o.sill + o.height, ref: `${o.kind}:${i}` });
   });
   for (const m of s.mounts) {
-    if (m.wall !== frame.entity.id || m.side !== side || m.id === self) continue;
+    if (m.wall !== frame.entity.id || m.side !== side || m.id === self || m.kind === 'pelmet') continue;
     out.push({ kind: 'item', t0: m.t - m.width / 2, t1: m.t + m.width / 2, y0: m.y0, y1: m.y1, ref: m.id });
   }
   const sign = side === 'A' ? -1 : 1;
@@ -234,7 +234,9 @@ function fixFor(s: Scan, m: Scan['mounts'][number], anchor: string | undefined, 
   const blockers = blockersOf(s, frame, m.side, m.id);
   let target: number | null = null;
   const spec: MountSpec = { kind: m.kind, t: m.t, width: m.width, y0: m.y0, y1: m.y1 };
-  if (m.kind === 'curtain') {
+  if (m.kind === 'blind') {
+    if (windowPref) target = (windowPref.t0 + windowPref.t1) / 2;
+  } else if (m.kind === 'curtain') {
     // Beside the window: the side panels sit with the inner edge over the frame.
     if (windowPref) {
       const cands = [windowPref.t0 + 0.08 - m.width / 2, windowPref.t1 - 0.08 + m.width / 2].sort((a, b) => Math.abs(a - m.t) - Math.abs(b - m.t));
@@ -279,7 +281,7 @@ export function analyzeRoomPlacements(world: WorldDoc, scope = '*'): PlacementIs
   const reportedPairs = new Set<string>();
   for (const m of s.mounts) {
     const blockers = blockersOf(s, m.frame, m.side, m.id);
-    const win = m.kind === 'curtain' ? anchorWindow(m.frame, m) : null;
+    const win = m.kind === 'curtain' || m.kind === 'blind' ? anchorWindow(m.frame, m) : null;
     const anchor = win && win.ref ? win.ref : undefined;
     const spec: MountSpec = { kind: m.kind, t: m.t, width: m.width, y0: m.y0, y1: m.y1 };
     const hits = collisions(spec, blockers, anchor, 0.01);
@@ -326,7 +328,7 @@ export function analyzeRoomPlacements(world: WorldDoc, scope = '*'): PlacementIs
       });
       continue;
     }
-    if (m.kind === 'curtain') {
+    if (m.kind === 'curtain' || m.kind === 'blind') {
       const near = win && m.frame.params.openings.some((o, i) => o.kind === 'window' && `window:${i}` === win.ref) ? win : null;
       const gap = near ? Math.max(0, near.t0 - (m.t + m.width / 2), m.t - m.width / 2 - near.t1) : Infinity;
       if (!near || gap > NEAR_WINDOW) {

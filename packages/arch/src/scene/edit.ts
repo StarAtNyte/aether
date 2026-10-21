@@ -299,6 +299,7 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
   const entityId = itemEntityId(b.id, handle);
   if (scene.items.some((i) => i.id === entityId) || hasOwn(world.entities, entityId)) return fail(`"${entityId}" already exists: choose another id, or use move / resize on it`);
   if (def.kind === 'curtain') return placeCurtain(world, b.id, scene, room, spec, handle, params, notes);
+  if (def.kind === 'blind') return placeBlind(world, b.id, scene, room, spec, handle, params, notes);
 
   let pos: [number, number, number];
   let yaw = 0;
@@ -424,6 +425,11 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
   const askedHeight = spec.params && typeof spec.params['height'] === 'number' && Number.isFinite(spec.params['height']) ? Math.min(6, Math.max(0.8, spec.params['height'])) : null;
   const height = Math.max(0.8, askedHeight !== null ? Math.min(top - y0, askedHeight) : top - y0);
   const color = typeof params['color'] === 'string' ? (params['color'] as string) : '#d8d2c6';
+  // A pelmet spans both panels (and the glass between them), so it is its own piece; the panels carry none.
+  const pelmetStyle = typeof params['pelmet'] === 'string' && ['box', 'valance', 'swag'].includes(params['pelmet'] as string) ? (params['pelmet'] as string) : null;
+  const panelParams: Record<string, Json> = pelmetStyle ? { ...params, pelmet: 'none' } : params;
+  let spanLo = Infinity;
+  let spanHi = -Infinity;
   const blockers = wallBlockers(scene, room, wall);
   const patches: Patch[] = [];
   const ids: EntityId[] = [];
@@ -456,17 +462,58 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
       if (collisions(mspec, blockers, opening.id, 0.005).length > 0) continue;
       const pose = hungPose(wall, t);
       const id = itemEntityId(building, `${handle}-${side < 0 ? 'l' : 'r'}`);
-      const ent = itemEntity({ id, def, params: { ...params, width: Math.round(panel * 100) / 100, height: Math.round(height * 100) / 100, color }, pos: [mm(pose.x), mm(y0), mm(pose.z)], yaw: pose.yaw, name: 'Curtain', room: room.id, levelId: room.levelId, level: room.level });
+      const ent = itemEntity({ id, def, params: { ...panelParams, width: Math.round(panel * 100) / 100, height: Math.round(height * 100) / 100, color }, pos: [mm(pose.x), mm(y0), mm(pose.z)], yaw: pose.yaw, name: 'Curtain', room: room.id, levelId: room.levelId, level: room.level });
       patches.push({ op: 'add', entity: ent } as Patch);
       ids.push(id);
+      spanLo = Math.min(spanLo, t - panel / 2 - 0.08);
+      spanHi = Math.max(spanHi, t + panel / 2 + 0.08);
       hung.push(`${side < 0 ? 'left' : 'right'} panel ${id} (${cmr(panel).toFixed(2)} m wide at t ${cmr(t).toFixed(2)})`);
       break;
     }
   }
   if (patches.length === 0) return fail(`no room for curtain panels beside window ${opening.id} on the ${wall.compass} wall of ${room.key}: a door, a corner or furniture is too close on both sides`);
+  if (pelmetStyle && Number.isFinite(spanLo)) {
+    const pdef = furnitureByKind('pelmet');
+    if (pdef) {
+      const pw = Math.min(8, spanHi - spanLo + 0.1);
+      const ph = 0.26;
+      const pose = hungPose(wall, (spanLo + spanHi) / 2);
+      const pid = itemEntityId(building, `${handle}-p`);
+      const top = y0 + height;
+      const pent = itemEntity({ id: pid, def: pdef, params: { width: Math.round(pw * 100) / 100, height: ph, color, style: pelmetStyle }, pos: [mm(pose.x), mm(top + 0.02 - ph), mm(pose.z)], yaw: pose.yaw, name: 'Pelmet', room: room.id, levelId: room.levelId, level: room.level });
+      patches.push({ op: 'add', entity: pent } as Patch);
+      ids.push(pid);
+      hung.push(`${pelmetStyle} pelmet ${pid} across both panels (${cmr(pw).toFixed(2)} m)`);
+    }
+  }
   const res = commit(`Hang curtains at window ${opening.id}`, patches, world, building, ids, notes);
   if (res.ok) res.text = `${res.text}\ncurtain: ${hung.join(' and ')}${hung.length === 1 ? '; the other side had no room' : ''}`;
   return res;
+}
+
+/** Blinds: one piece hung over its window, centred on it, a little wider and taller than the glass. */
+function placeBlind(world: WorldDoc, building: EntityId, scene: Scene, room: SceneRoom, spec: PlaceSpec, handle: string, params: Record<string, Json>, notes: string[]): EditResult {
+  const def = furnitureByKind('blind');
+  if (!def) return fail('blinds are not available');
+  if (!spec.opening) return fail('a blind hangs over a window: give opening (the window id from query_wall), never a door or a bare wall');
+  const found = findOpening(scene, spec.opening, room);
+  if (isLookupError(found)) return fail(found.error);
+  const { opening, wall, room: openRoom } = found;
+  if (openRoom.id !== room.id) return fail(`window ${opening.id} belongs to ${openRoom.key}, not ${room.key}`);
+  if (opening.kind !== 'window') return fail(`${opening.id} is a ${opening.kind}, not a window: a blind belongs over a window`);
+  const given = spec.params && typeof spec.params === 'object' ? spec.params : {};
+  const num = (k: string, lo: number, hi: number): number | null => (typeof given[k] === 'number' && Number.isFinite(given[k]) ? Math.min(hi, Math.max(lo, given[k] as number)) : null);
+  const width = num('width', 0.3, 4) ?? Math.min(4, opening.t1 - opening.t0 + 0.1);
+  const y0 = Math.max(0, opening.sill - 0.05);
+  const height = num('height', 0.5, 3.2) ?? Math.min(3.2, Math.max(0.5, Math.min(room.ceiling - 0.04, opening.top + 0.05) - y0));
+  const color = typeof params['color'] === 'string' ? (params['color'] as string) : '#e9e4d8';
+  const mspec: MountSpec = { kind: 'blind', t: opening.centre, width, y0, y1: y0 + height };
+  const hits = collisions(mspec, wallBlockers(scene, room, wall), opening.id, 0.005);
+  if (hits.length > 0) return fail(`no room for a blind over window ${opening.id} on the ${wall.compass} wall of ${room.key}: it would run into ${hits.map((h) => h.kind).join(', ')}`);
+  const pose = hungPose(wall, opening.centre);
+  const id = itemEntityId(building, handle);
+  const ent = itemEntity({ id, def, params: { ...params, width: Math.round(width * 100) / 100, height: Math.round(height * 100) / 100, color }, pos: [mm(pose.x), mm(y0), mm(pose.z)], yaw: pose.yaw, name: 'Blind', room: room.id, levelId: room.levelId, level: room.level });
+  return commit(`Hang blind at window ${opening.id}`, [{ op: 'add', entity: ent } as Patch], world, building, [id], notes);
 }
 
 /** The piece the tools operate on (a curtain handle also names its two panels). */
@@ -475,7 +522,7 @@ function resolveItems(scene: Scene, ref: unknown, building: EntityId): SceneItem
   if (!isLookupError(direct)) return [direct];
   if (typeof ref === 'string') {
     const base = itemEntityId(building, ref.replace(new RegExp(`^${building}-`), ''));
-    const panels = scene.items.filter((i) => i.id === `${base}-l` || i.id === `${base}-r`);
+    const panels = scene.items.filter((i) => i.id === `${base}-l` || i.id === `${base}-r` || i.id === `${base}-p`);
     if (panels.length > 0) return panels;
   }
   return direct;
