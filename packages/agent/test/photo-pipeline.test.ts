@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, type RoomDescription } from '@aether/arch/photo';
+import { MAX_CHECKLIST_ITEMS, MAX_PHOTO_ITEMS, MAX_PHOTO_OPENINGS, MAX_VERDICTS, PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, type RoomDescription } from '@aether/arch/photo';
 import { partKinds, readScene } from '@aether/arch';
 import { WorldAgent } from '../src/agent';
 import { createMockProvider } from '../src/providers/mock/index';
 import type { Raster } from '../src/photo/score';
 import { isRoomPhotoRequest } from '../src/photo/pipeline';
-import { JUDGE_SEED } from '../src/photo/judge';
-import type { AgentEvent, CompletionRequest, CompletionResponse, ContentBlock, Provider, ReviewViewRequest } from '../src/types';
+import { JUDGE_SEED, JUDGE_TOOL, parseJudgement } from '../src/photo/judge';
+import { VERDICT_TOOL } from '../src/photo/prompt';
+import type { AgentEvent, CompletionRequest, CompletionResponse, ContentBlock, Provider, ReviewViewRequest, ToolDef } from '../src/types';
 import { collect, MemoryHost, TEST_CATALOGS } from './helpers';
 
 const FIXTURE = resolve(__dirname, '../../../tests/fixtures/photo/hotel.description.json');
@@ -102,6 +103,41 @@ function agent(provider: Provider, photo: ConstructorParameters<typeof WorldAgen
 }
 
 const photoEvents = (events: AgentEvent[]): Array<Extract<AgentEvent, { type: 'photo' }>> => events.filter((e): e is Extract<AgentEvent, { type: 'photo' }> => e.type === 'photo');
+
+describe('verdict limits', () => {
+  it('advertise the same maximum the parsers enforce, and it covers the longest checklist', () => {
+    const raw = rawDescription();
+    const opening = (raw['openings'] as Array<Record<string, unknown>>)[0] ?? {};
+    const item = (raw['items'] as Array<Record<string, unknown>>)[0] ?? {};
+    const walls = ['north', 'east', 'south', 'west'] as const;
+    raw['openings'] = Array.from({ length: MAX_PHOTO_OPENINGS }, (_, i) => ({ ...opening, id: `win-${i}`, wall: walls[i % 4], along: 0.6 + Math.floor(i / 4) * 0.5, width: 0.4 }));
+    raw['items'] = Array.from({ length: MAX_PHOTO_ITEMS }, (_, i) => ({ ...item, id: `piece-${i}`, kind: 'stool', at: [0.5 + (i % 9) * 0.4, 0.5 + Math.floor(i / 9) * 0.4], wall: undefined, along: undefined }));
+    const parsed = parseRoomDescription(raw, partKinds());
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.value.openings.length).toBe(MAX_PHOTO_OPENINGS);
+    expect(parsed.value.items.length).toBe(MAX_PHOTO_ITEMS);
+    const list = buildChecklist(parsed.value);
+    expect(list.length).toBeGreaterThan(MAX_PHOTO_OPENINGS + MAX_PHOTO_ITEMS);
+    expect(list.length).toBeLessThanOrEqual(MAX_CHECKLIST_ITEMS);
+    expect(MAX_CHECKLIST_ITEMS).toBeLessThanOrEqual(MAX_VERDICTS);
+    const maxOf = (t: ToolDef): unknown => (t.inputSchema as { properties: { verdicts: { maxItems: unknown } } }).properties.verdicts.maxItems;
+    expect(maxOf(VERDICT_TOOL)).toBe(MAX_VERDICTS);
+    expect(maxOf(JUDGE_TOOL)).toBe(MAX_VERDICTS);
+    const verdict = { id: 'item-x', a: 3, evidence: 'the photo and the render agree' };
+    const known = new Set(['item-x']);
+    expect(parseJudgement({ verdicts: Array.from({ length: MAX_VERDICTS }, () => verdict) }, known, 'single')).not.toBeNull();
+    expect(parseJudgement({ verdicts: Array.from({ length: MAX_VERDICTS + 1 }, () => verdict) }, known, 'single')).toBeNull();
+  });
+
+  it('rejects a report_verdicts call longer than the advertised maximum', async () => {
+    const host = new PhotoHost();
+    const tooMany = (): ContentBlock[] => [call('report_verdicts', { verdicts: Array.from({ length: MAX_VERDICTS + 1 }, (_, i) => ({ id: `item-${i}`, pass: true })) })];
+    const provider = scripted([describeCall(), tooMany, verdicts([]), finish]);
+    await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    const results = provider.requests.flatMap((r) => r.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : []))).filter((b): b is Extract<ContentBlock, { type: 'tool_result' }> => b.type === 'tool_result');
+    expect(results.some((r) => r.isError === true && r.content.includes(`at most ${MAX_VERDICTS}`))).toBe(true);
+  });
+});
 
 describe('what counts as a request for the room in a picture', () => {
   it('needs a picture and a prompt about a room', () => {

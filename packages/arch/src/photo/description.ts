@@ -179,6 +179,11 @@ export const PhotoLight = z.object({
 });
 export type PhotoLight = z.infer<typeof PhotoLight>;
 
+/** Most openings a description may list. */
+export const MAX_PHOTO_OPENINGS = 24;
+/** Most furniture and decor items a description may list. */
+export const MAX_PHOTO_ITEMS = 80;
+
 /** The full description of a room photograph. */
 export const RoomDescription = z.object({
   /** One or two sentences: what the picture shows. */
@@ -203,8 +208,8 @@ export const RoomDescription = z.object({
       vault: z.object({ rise: Num(0.3, 3.5), ridge: z.enum(['x', 'z']).optional(), trusses: Num(0, 14).optional(), color: Color.optional() }).optional(),
     })
     .default({}),
-  openings: z.array(PhotoOpening).max(24).default([]),
-  items: z.array(PhotoItem).max(80).default([]),
+  openings: z.array(PhotoOpening).max(MAX_PHOTO_OPENINGS).default([]),
+  items: z.array(PhotoItem).max(MAX_PHOTO_ITEMS).default([]),
   light: PhotoLight.default({ timeOfDay: 14, sky: 'day', from: 'none', warmth: 'neutral', brightness: 0.6, note: '' }),
   /** Dominant colours of the picture, #rrggbb. */
   palette: z.array(Color).max(8).default([]),

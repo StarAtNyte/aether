@@ -31,6 +31,7 @@ import {
   deriveBuild,
   fitLayout,
   ItemVerdict,
+  MAX_VERDICTS,
   parseRoomDescription,
   photoCameraSpec,
   runBuild,
@@ -111,7 +112,7 @@ function rollbackMargin(items: number): number {
 /** Pass rate that, with no structural failure, lets the model call it done. */
 export const PHOTO_TARGET_RATE = 0.92;
 
-const VerdictInput = z.object({ verdicts: z.array(z.unknown()).min(1).max(160), summary: z.string().max(400).optional() });
+const VerdictInput = z.object({ verdicts: z.array(z.unknown()).min(1).max(MAX_VERDICTS), summary: z.string().max(400).optional() });
 
 function noteModel(usage: ExecutorContext['usage'], model: string | undefined): void {
   if (!model) return;
@@ -838,7 +839,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         if (call.name === VERDICT_TOOL_NAME) {
           const ok = parseVerdicts(call.input);
           if (ok.length === 0) {
-            results.push({ type: 'tool_result', toolUseId: call.id, content: 'No valid verdicts: send {"verdicts":[{"id": a checklist id, "pass": true|false, "note": what differs}]}.', isError: true });
+            results.push({ type: 'tool_result', toolUseId: call.id, content: `No valid verdicts: send {"verdicts":[{"id": a checklist id, "pass": true|false, "note": what differs}]}, one per checklist id, at most ${MAX_VERDICTS}.`, isError: true });
             continue;
           }
           if (workerJudged) {

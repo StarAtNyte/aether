@@ -15,7 +15,7 @@
  * - a gate that combines it with the deterministic fidelity measures ({@link decideRound}): a round is accepted only
  *   when the measures do not regress and the judges prefer it.
  */
-import { STRUCTURAL_METRICS, type ChecklistItem, type FidelityMetrics, type Scoreboard } from '@aether/arch/photo';
+import { MAX_VERDICTS, STRUCTURAL_METRICS, type ChecklistItem, type FidelityMetrics, type Scoreboard } from '@aether/arch/photo';
 import { z } from 'zod';
 import type { StallVerdict } from '../review';
 import type { CompletionRequest, CompletionResponse, ContentBlock, ToolDef } from '../types';
@@ -54,7 +54,7 @@ export const JUDGE_TOOL: ToolDef = {
       verdicts: {
         type: 'array',
         minItems: 1,
-        maxItems: 160,
+        maxItems: MAX_VERDICTS,
         items: {
           type: 'object',
           properties: {
@@ -82,7 +82,7 @@ const JudgeVerdict = z.object({
   evidence: z.string().trim().min(3).max(400),
 });
 const JudgeInput = z.object({
-  verdicts: z.array(z.unknown()).min(1).max(160),
+  verdicts: z.array(z.unknown()).min(1).max(MAX_VERDICTS),
   closer: z.preprocess((v) => (typeof v === 'string' ? v.trim().toLowerCase() : v), z.enum(['a', 'b', 'same'])).optional(),
   why: z.string().max(400).optional(),
 });

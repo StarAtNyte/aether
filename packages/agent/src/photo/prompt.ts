@@ -3,7 +3,7 @@
  * description (with stated assumptions), then judges renders of the built room against the photo item by item.
  */
 import { describeParts } from '@aether/arch';
-import type { ChecklistItem, Scoreboard } from '@aether/arch/photo';
+import { MAX_VERDICTS, type ChecklistItem, type Scoreboard } from '@aether/arch/photo';
 import type { ToolDef } from '../types';
 
 /** Name of the tool the analysis call answers through. */
@@ -38,7 +38,7 @@ export const VERDICT_TOOL: ToolDef = {
       verdicts: {
         type: 'array',
         minItems: 1,
-        maxItems: 120,
+        maxItems: MAX_VERDICTS,
         items: {
           type: 'object',
           properties: { id: { type: 'string' }, pass: { type: 'boolean' }, note: { type: 'string' } },

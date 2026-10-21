@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { furnitureByKind } from '../furniture/index';
-import type { RoomDescription } from './description';
+import { MAX_PHOTO_ITEMS, MAX_PHOTO_OPENINGS, type RoomDescription } from './description';
 
 /** Group of a checklist entry. */
 export type ChecklistCategory = 'shell' | 'opening' | 'furniture' | 'decor' | 'lighting' | 'material';
@@ -87,6 +87,18 @@ export function buildChecklist(d: RoomDescription): ChecklistItem[] {
   });
   return out;
 }
+
+/**
+ * Longest checklist {@link buildChecklist} can produce: shell size, wall colour, floor, vault or cornice, the
+ * light, and one entry per opening and item a description may hold.
+ */
+export const MAX_CHECKLIST_ITEMS = 5 + MAX_PHOTO_OPENINGS + MAX_PHOTO_ITEMS;
+
+/**
+ * Most verdicts one judging call may report: the whole checklist plus room for a few repeated ids (the last
+ * verdict of an id wins). The tool schemas advertise it and the parsers enforce it, so the two always agree.
+ */
+export const MAX_VERDICTS = 120;
 
 /** The judge's answer for one checklist entry. */
 export const ItemVerdict = z.object({
