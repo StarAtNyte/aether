@@ -17,7 +17,7 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 | Entries | 404: 368 models (animated: people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 23 photographed surfaces, 8 forge originals; among the models, 13 code-authored vehicles (kart, race car, road cars) and 22 skinned, animated animals (7 Quaternius Farm Animals CC0, fox and wolf from the Khronos Fox, 13 code-authored) |
 | Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 29, people 19, animals 37, food 24, tools 5, props 31, skies 5, surfaces 23 |
 | Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
-| Disk | 58 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR) |
+| Disk | 58 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR), plus 67 MB of KTX2 twins under `assets/lib/k/` ([GPU-compressed textures](#gpu-compressed-textures-ktx2)) |
 | Catalog | `assets/catalog.json`, 244 KB (43 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
 
@@ -78,6 +78,77 @@ Quaternius packs from quaternius.com were evaluated and **not** included: the pa
 CC0 but the site's licence page forbids redistributing the assets as
 assets, which a public repository would do. (The Farm Animals pack ships
 from its OpenGameArt release, whose own `License.txt` states CC0.)
+
+## GPU-compressed textures (KTX2)
+
+A JPEG or WebP texture is decoded to RGBA8 before it reaches the GPU: a 1k
+map takes 5.6 MB with its mip chain, whatever its file size. Every textured
+library model therefore has a twin under `assets/lib/k/` whose images are
+KTX2 / Basis Universal (`KHR_texture_basisu`), which the browser transcodes
+to a block format the GPU samples directly (BC7 on desktop, ETC or ASTC on
+mobile): a quarter of the memory.
+
+```sh
+npm run assets:ktx2              # after assets:build / characters:build / the block-texture script
+npm run assets:ktx2 -- --check   # verify assets/ktx2.json against the files
+npm run e2e:ktx2                 # memory, load time, download and stills, with and without (needs a build)
+```
+
+- **Encoder**: KTX-Software's `ktx` CLI 4.4.2 (Apache-2.0), pinned:
+  `AETHER_KTX`, else `ktx` on `PATH` (version checked), else the official
+  Linux x86_64 release, downloaded once into `~/.cache/aether-tools` and
+  checked against its SHA-256. Images are decoded to exact bytes in one
+  headless Chromium (WebGL2 read-back, unpremultiplied); encodings are cached
+  by input hash and settings, so a rerun only encodes what changed.
+- **Codecs**: colour (base colour, emissive) is sRGB, everything else linear.
+  Albedo is ETC1S (Basis LZ, `--clevel 4 --qlevel 255`) when the luma-weighted
+  SSIM of its first level is at least 0.95, UASTC otherwise (fine detail,
+  hard palette edges). Normal maps and ORM / metal-rough / occlusion maps
+  are UASTC with rate-distortion optimisation and Zstandard (normals
+  λ 0.5, data λ 1.25), kept as RGB (no two-channel normal mode: three
+  samples `.xyz`). Cut-out colour (`MASK` / `BLEND`: the cast's hair cards,
+  lantern glass) is UASTC without RDO, its colour bled outwards under
+  transparent texels so mip levels have no dark fringe. Full mip chains
+  (lanczos4; wrapping for repeating samplers).
+- **Index**: `assets/ktx2.json` maps each original library path to its twin
+  with both SHA-256s, sizes, each texture's codec and SSIM and the estimated
+  GPU bytes before and after. A test fails when a library file changes and
+  its twin was not remade. The block sheets have KTX2 array twins too
+  (`public/blocks/block-*.ktx2`, `block-ktx2.json`).
+- **Run time**: the renderer sets up one `KTX2Loader` per renderer once the
+  catalog is in and self-tests it (transcoder fetched, a tiny embedded KTX2
+  transcoded). Library model URLs with a twin then load the twin. Anything
+  that cannot work, such as no workers or WebAssembly, no compressed format
+  on the GPU (transcoding to RGBA8 would save nothing), missing transcoder
+  files or a failed self-test or twin, loads the original file instead.
+  `?textures=rgba` forces the originals (comparisons).
+- **Transcoder**: three's `basis_transcoder.{js,wasm}` (Apache-2.0) are served
+  from `apps/studio/public/basis/` with `ktx2-worker.js`, KTX2Loader's own
+  worker body as a static file, because the transcoder glue needs
+  `new Function` and a `blob:` worker would inherit the page's strict CSP. The
+  worker gets its own sealed policy (see [SECURITY.md](SECURITY.md)).
+  `scripts/assets/basis-worker.ts` regenerates the three files after a three
+  upgrade; a test compares them.
+- **The cast**: outfit and hair tints are baked on the CPU. For a body loaded
+  from its twin the tint is baked from the original file's embedded images,
+  read without decoding the mesh (one extra download of the original body
+  per tinted body). The tinted copies stay RGBA8.
+- **Exports and path traces**: the glTF export decompresses compressed
+  textures through three's WebGL2 texture utilities, and the path tracer
+  samples them on its own WebGL2 context, when that context supports the
+  format (otherwise they are left out, as before).
+- **Not compressed**: the photographed surface finishes (`x/`, 512 px maps
+  filled into shared texture arrays at run time), the leaf cards (composed
+  from the Poly Haven leaf sprites on a canvas at run time), the outfit masks
+  (read on the CPU only) and the thumbnails (UI images, never on the GPU).
+
+The trade-off is download size: UASTC normal and ORM maps are 3 to 5 times
+larger than the 1k JPEGs they replace (they are close to lossless), so the
+twins add 67 MB to the deployment (24.6 MB of sources) and a world downloads
+1.4 to 2.8 times the library bytes on a first visit (library files are cached
+immutably afterwards). In return a world holds 2.7 to 3.8 times less texture
+memory, which is what decides whether integrated GPUs and memory-tight
+browsers keep up. Measured results are in [REVIEW_LOG.md](REVIEW_LOG.md).
 
 ## Using assets
 

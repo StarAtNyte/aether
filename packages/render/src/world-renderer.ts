@@ -1495,7 +1495,11 @@ export class WorldRenderer {
   refreshAssets(assetIds?: ReadonlySet<string>): void {
     if (this.sync.refreshAssets(assetIds) > 0) this.needsDraw = true;
     // Photographed finish maps from the library (once the catalog is in).
-    if (!assetIds && getCatalog()) this.materials.finishes.usePhotos(photoFinishResolver());
+    if (!assetIds && getCatalog()) {
+      this.materials.finishes.usePhotos(photoFinishResolver());
+      // The library is in: set up the KTX2 transcoder now, while the world builds, rather than when the first model asks.
+      void this.compression.loader();
+    }
     const env = this.sync.world?.environment;
     if (env?.hdri && (!assetIds || assetIds.has(env.hdri))) this.env.hdri.reload();
   }

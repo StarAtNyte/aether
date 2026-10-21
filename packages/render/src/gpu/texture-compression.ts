@@ -41,6 +41,20 @@ export function anyCompressedFormat(s: CompressionSupport): boolean {
   return s.astc || s.bptc || s.s3tc || s.etc2 || s.etc1 || s.pvrtc;
 }
 
+/**
+ * Where the GPU has BC formats (every desktop GPU), use only those: desktop drivers that also advertise ASTC
+ * or ETC (NVIDIA's OpenGL driver under WebGL2, for one) decompress them to RGBA8 in the driver, which would
+ * keep the download cost and lose the memory saving; KTX2Loader would pick ASTC first for UASTC and ETC first
+ * for ETC1S. Mobile GPUs have no BC and keep ASTC / ETC. Mutates `config`.
+ */
+export function preferNativeBlockFormats(config: { astcSupported: boolean; etc1Supported: boolean; etc2Supported: boolean; pvrtcSupported: boolean; bptcSupported: boolean; dxtSupported: boolean }): void {
+  if (!config.bptcSupported && !config.dxtSupported) return;
+  config.astcSupported = false;
+  config.etc1Supported = false;
+  config.etc2Supported = false;
+  config.pvrtcSupported = false;
+}
+
 /** Short label of the formats (diagnostics). Pure. */
 export function supportLabel(s: CompressionSupport): string {
   const names = (Object.keys(s) as Array<keyof CompressionSupport>).filter((k) => s[k]);
@@ -118,6 +132,7 @@ export class TextureCompression {
     loader.detectSupport(r);
     await useStaticWorker(loader, this.transcoderPath);
     const c = loader.workerConfig;
+    preferNativeBlockFormats(c);
     const support: CompressionSupport = { astc: c.astcSupported, bptc: c.bptcSupported, s3tc: c.dxtSupported, etc2: c.etc2Supported, etc1: c.etc1Supported, pvrtc: c.pvrtcSupported };
     this.support = support;
     if (!anyCompressedFormat(support)) {

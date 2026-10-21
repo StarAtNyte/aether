@@ -1641,8 +1641,20 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 - `AssetAnimator` (lazy chunk): idle / walk / run cross-fades from tracked
   world-space speed (`GAIT`: walk ≥ 0.25 m/s, run ≥ 3.2 m/s), gait scaled
   to speed, zero allocations per frame.
-- `createGltfModelLoader()` now decodes `EXT_meshopt_compression`
+- `createGltfModelLoader(opts?)` decodes `EXT_meshopt_compression`
   (three's `MeshoptDecoder`, lazy) and keeps clips on `scene.animations`;
+  with `opts.compression` (a `TextureCompression`) it loads the KTX2 twin of
+  a library URL (`textureVariantUrl` over `assets/ktx2.json`, @aether/assets
+  `TextureVariants`) and falls back to the original file; a model loaded
+  from a twin records the original URL in `userData.aetherCompressedSource`.
+  `RendererOptions.transcoderPath` (default `basis/`, null = originals only);
+  `WorldRenderer.compressedTextureLoader()`; `memoryStats()` adds
+  `texturesMB`, `textureBreakdownMB` (target / compressed / image / data) and
+  `compression` (state, reason, formats, set-up time);
+  `loadBlockSheets(base, anisotropy, signal?, ktx2?)` loads KTX2 array
+  textures when given a loader; `buildExportScene(…, compressed)` keeps
+  usable compressed textures (`'keep'`) for the path tracer and the glTF
+  export;
   `cloneModel` / `instantiateAsset` clone skinned models with
   `SkeletonUtils`.
 - `HdriController` (`environment.hdri`): lazy `HDRLoader`, binds

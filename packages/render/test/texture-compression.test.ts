@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CompressedTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBA_BPTC_Format, RGBA_S3TC_DXT5_Format, SRGBColorSpace, Texture } from 'three';
 import { compressedFormatExtensions, compressedTextureUsable, textureExportMode } from '../src/view/gltf-export';
-import { anyCompressedFormat, supportLabel, TextureCompression } from '../src/gpu/texture-compression';
+import { anyCompressedFormat, preferNativeBlockFormats, supportLabel, TextureCompression } from '../src/gpu/texture-compression';
 import { compressedBytes, generatesMips, textureBreakdown, textureKind, trackCompressedTextureBytes } from '../src/gpu/texture-memory';
 import { parseKtx2Index } from '../src/voxel/block-sheets';
 import { createGltfModelLoader } from '../src/geometry/model-loader';
@@ -14,6 +14,15 @@ describe('texture compression support', () => {
     expect(anyCompressedFormat({ ...none, bptc: true })).toBe(true);
     expect(supportLabel({ ...none, bptc: true, s3tc: true })).toBe('bptc s3tc');
     expect(supportLabel(none)).toBe('none');
+  });
+
+  it('prefers native BC formats over ASTC / ETC that desktop drivers decompress', () => {
+    const desktop = { astcSupported: true, etc1Supported: true, etc2Supported: true, pvrtcSupported: false, bptcSupported: true, dxtSupported: true };
+    preferNativeBlockFormats(desktop);
+    expect(desktop).toEqual({ astcSupported: false, etc1Supported: false, etc2Supported: false, pvrtcSupported: false, bptcSupported: true, dxtSupported: true });
+    const mobile = { astcSupported: true, etc1Supported: true, etc2Supported: true, pvrtcSupported: false, bptcSupported: false, dxtSupported: false };
+    preferNativeBlockFormats(mobile);
+    expect(mobile.astcSupported && mobile.etc2Supported).toBe(true);
   });
 
   it('is off without a renderer or a transcoder path, and never rejects', async () => {

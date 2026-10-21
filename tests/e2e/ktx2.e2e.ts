@@ -108,7 +108,7 @@ const generatedHouse: Scene = {
     });
     await waitReady(page);
   },
-  cameras: {},
+  cameras: { aerial: { pos: [-15, 13, -17], target: [0, 1, 0], walls: 'cutaway' }, inside: { pos: [-3, 1.6, -3], target: [3, 1, 3], walls: 'cutaway' } },
 };
 
 /** Photographed library models and two of the cast close up, under a low sun (normal maps read in relief). */

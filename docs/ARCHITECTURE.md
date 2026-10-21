@@ -1327,6 +1327,17 @@ parses source formats at run time.
   panel, the forge and credits dialogs and the ZIP code load on first use.
   Models are refcounted per URL; LOD files carry geometry only and share LOD
   0's materials, so textures download once.
+- **Textures stay compressed on the GPU.** Textured library files have KTX2 /
+  Basis Universal twins (`assets/lib/k/`, indexed by `assets/ktx2.json` with
+  source and output SHA-256, made offline by `scripts/assets/ktx2.ts` with
+  KTX-Software). `TextureCompression` (one per renderer, `gpu/
+  texture-compression.ts`) sets up a self-tested `KTX2Loader` whose
+  transcoder runs in the static `basis/ktx2-worker.js` under its own CSP;
+  `createGltfModelLoader({ compression })` loads a twin when the loader is
+  ready and the original otherwise or on any failure, so the index is a pure
+  optimisation. `gpu/texture-memory.ts` corrects three's texture byte
+  accounting (compressed textures at their block size, generated mips) and
+  breaks the live bytes down by kind for `memoryStats()`.
 - **Animation from simulation.** Characters do not run behaviours of their
   own: the animator reads each animated entity's world-space speed (physics
   or the logic runtime moved it) and cross-fades idle / walk / run, scaling

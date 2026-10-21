@@ -230,7 +230,21 @@ local app adds an `eval` path.
 4. freezes the shared intrinsics so one run cannot tamper with the next.
 
 The worker also gets its own CSP (`default-src 'none'`) where the host sends
-headers. `npm run e2e:security` runs the escape attempts in the real bundled
+headers.
+
+**KTX2 transcoder worker.** The Basis Universal transcoder that turns the
+library's KTX2 textures into GPU formats is Emscripten output whose embind glue
+builds its bindings with `new Function`. three's `KTX2Loader` would start it as
+a `blob:` worker, which inherits the page's policy (no `'unsafe-eval'`) and
+fails. Instead it runs from the static, same-origin `basis/ktx2-worker.js`
+(KTX2Loader's own worker body around three's transcoder, regenerated and
+checked by a test), served with `TRANSCODER_WORKER_CSP`: `default-src 'none';
+script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'` (no network, no nested
+workers; the WebAssembly binary arrives by message). The page rule of
+`vercel.json` excludes that path so the two policies never combine, and the
+studio and player keep their strict policies. It only ever processes the
+library's own files, and anything it fails on falls back to the original
+images. `npm run e2e:security` runs the escape attempts in the real bundled
 worker in Chromium and Firefox; they must all fail while a normal generator
 still builds.
 

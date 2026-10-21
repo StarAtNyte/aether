@@ -25,8 +25,12 @@ public internet**: every visitor would spend that account.
   test compares them), with `connect-src` limited to `'self'`, the
   visitor's loopback bridge (`http://127.0.0.1:*`, `http://localhost:*`), the
   four bring-your-own-key model APIs and the WebLLM download hosts;
-- gives the generator sandbox, verification and geometry workers their own
+- gives the generator sandbox, verification and geometry workers and the KTX2
+  transcoder worker (`/basis/ktx2-worker.js`) their own
   tighter policies, and the `/play` player an embeddable one;
+- serves the Basis Universal transcoder from `/basis/` (three's files, copied
+  into `apps/studio/public/basis/`) and the KTX2 twins of the library from
+  `/assets/lib/k/` (see [ASSETS.md](ASSETS.md#gpu-compressed-textures-ktx2));
 - caches `/assets/*` (content-hashed, including the asset library) and
   `/fonts/*` for a year, everything else is revalidated;
 - serves `404.html` for unknown paths (the studio routes with the URL hash,
@@ -42,6 +46,13 @@ Build-time variables (Vercel → Settings → Environment Variables):
 
 Never put a model key in a `VITE_*` variable: everything `VITE_*` ends up in
 the public bundle. The hosted copy needs no secret at all.
+
+Size: the build is about 160 MB in some 1,400 files (the asset library with its
+KTX2 twins is most of it), the largest single file under 7 MB. Vercel sets no
+limit on build output size for Git deployments and flags only files over
+100 MB; the 100 MB limit applies to source uploads with the `vercel` CLI on the
+Hobby plan, which this repository (docs screenshots included) exceeds anyway,
+so deploy through the Git integration.
 
 Reproduce the Vercel setup locally (same files, same headers and rewrites,
 no `/api`) with `npm run build && npm run e2e:hosted` (Chromium and Firefox).
@@ -71,7 +82,9 @@ The image (`Dockerfile`, multi-stage on `node:24-bookworm-slim`):
 - **build** stage: `npm ci`, studio build, then `scripts/precompress.ts`
   writes Brotli (`.br`) and gzip (`.gz`) siblings so the server sends
   compressed files without spending CPU per request (about 74 MB → 39 MB
-  Brotli for the full build, including the asset library);
+  Brotli for the full build before the KTX2 twins; the build is about 160 MB
+  with them, of which 67 MB are the twins and 7 MB the KTX2 block sheets,
+  already Zstandard / Basis-compressed);
 - **deps** stage: production dependencies only (`npm ci --omit=dev`), minus
   the Codex CLI binaries (local AI is off in the image);
 - **runtime**: runs as the unprivileged `node` user, `HEALTHCHECK` on
