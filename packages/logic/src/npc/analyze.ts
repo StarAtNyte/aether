@@ -9,6 +9,7 @@ import { resolveSelector, worldTransform, type Dialogue, type DialogueEffect, ty
 import { zoneShapeOf } from '../bounds';
 import { DialogueSession } from './dialogue';
 import { NavGrid, NAV_MAX_PATH } from './nav';
+import { hasBuildings, NavLayers, NavRoute, type LayerPoint } from './layers';
 import { buildNavFor, type BoundsProvider } from './obstacles';
 
 /** Result of {@link analyzeNpcs}. */
@@ -70,6 +71,32 @@ function checkDialogue(id: string, tree: Dialogue, keys: ReadonlySet<string>, ou
   if (missing.size > 0) out.warnings.push(`${id}: dialogue reads state the world never sets: ${[...missing].slice(0, MAX_LISTED).join(', ')}`);
 }
 
+/** Where an NPC stands and where it walks (waypoints, routine stops), on the floors and stairs of a building. */
+function checkLayered(id: string, spec: NpcSpec, pos: Readonly<Vec3>, feet: number, layers: NavLayers, route: NavRoute, out: NpcAnalysis): void {
+  const level = layers.levelAt(pos[0], feet, pos[2]);
+  const grid = layers.grids[level] as NavGrid;
+  const rings = Math.max(3, Math.ceil(1.5 / grid.cell));
+  if (grid.nearest(pos[0], pos[2], rings) < 0) {
+    out.errors.push(`${id}: stands on ground it cannot walk on (no clear floor within 1.5 m of [${pos[0].toFixed(1)}, ${pos[2].toFixed(1)}]); move it onto open floor`);
+    return;
+  }
+  if (!grid.walkable(pos[0], pos[2])) out.warnings.push(`${id}: starts inside a solid or too close to a wall; it will be nudged out`);
+  const bad: string[] = [];
+  const cut: string[] = [];
+  const places: Array<[string, Readonly<Vec3>]> = [...spec.waypoints.map((w, i) => [`waypoint #${i}`, w] as [string, Readonly<Vec3>]), ...(spec.routine ?? []).map((r, i) => [`routine stop #${i}${r.name ? ` (${r.name})` : ''}`, r.at] as [string, Readonly<Vec3>])];
+  for (const [label, w] of places) {
+    const wl = layers.levelAt(w[0], w[1], w[2]);
+    const g = layers.grids[wl] as NavGrid;
+    if (g.nearest(w[0], w[2], Math.max(3, Math.ceil(1.5 / g.cell))) < 0) {
+      bad.push(`${label} [${w[0].toFixed(1)}, ${w[1].toFixed(1)}, ${w[2].toFixed(1)}]`);
+      continue;
+    }
+    if (!layers.route(level, pos[0], pos[2], wl, w[0], w[2], route)) cut.push(`${label} [${w[0].toFixed(1)}, ${w[1].toFixed(1)}, ${w[2].toFixed(1)}]`);
+  }
+  if (bad.length > 0) out.errors.push(`${id}: ${bad.slice(0, MAX_LISTED).join(', ')} is not on walkable floor`);
+  if (cut.length > 0) out.errors.push(`${id}: ${cut.slice(0, MAX_LISTED).join(', ')} cannot be reached from where it stands (walled off, across a gap, or on a floor no stair reaches)`);
+}
+
 /**
  * Examine the NPCs matched by `target` ("*" = all). Entities without an `npc`
  * spec are ignored.
@@ -92,6 +119,10 @@ export function analyzeNpcs(world: WorldDoc, opts: { target?: string; bounds?: B
   const tags = new Set<string>();
   for (const e of Object.values(world.entities)) for (const t of e.tags) tags.add(t);
   const scratch = new Float32Array(NAV_MAX_PATH * 2);
+  // In a world with buildings the floors and stairs are checked as the runtime walks them (layered grids).
+  const buildings = hasBuildings(world);
+  const layerSets = new Map<string, NavLayers | null>();
+  const route = new NavRoute();
   for (const id of npcs) {
     const e = world.entities[id] as Entity;
     const spec = e.npc as NpcSpec;
@@ -102,6 +133,33 @@ export function analyzeNpcs(world: WorldDoc, opts: { target?: string; bounds?: B
       continue;
     }
     const feet = feetOf(e, pos[1]);
+    if (buildings) {
+      const sizeKey = `${Math.round(spec.radius * 4)}|${Math.round(spec.height * 2)}`;
+      let layers = layerSets.get(sizeKey);
+      if (layers === undefined) {
+        const points: LayerPoint[] = [];
+        for (const other of npcs) {
+          const oe = world.entities[other] as Entity;
+          const os = oe.npc as NpcSpec;
+          if (`${Math.round(os.radius * 4)}|${Math.round(os.height * 2)}` !== sizeKey) continue;
+          const op = worldTransform(world, other).position;
+          points.push({ x: op[0], y: feetOf(oe, op[1]), z: op[2] });
+          for (const w of os.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
+          for (const r of os.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
+        }
+        layers = NavLayers.build(world, { radius: spec.radius, height: spec.height, points }, opts.bounds);
+        layerSets.set(sizeKey, layers);
+      }
+      if (layers) {
+        checkLayered(id, spec, pos, feet, layers, route, out);
+        if (spec.archetype === 'guard' && spec.waypoints.length === 0 && spec.wander <= 0 && !spec.routine?.length) out.warnings.push(`${id}: a guard without waypoints stands at its post`);
+        if (spec.waypoints.length === 1) out.warnings.push(`${id}: a single waypoint gives nothing to patrol between`);
+        if ((spec.archetype === 'guard' || spec.archetype === 'predator' || spec.archetype === 'sentinel') && !spec.attack) out.warnings.push(`${id}: ${spec.archetype} has no attack, so catching the player does nothing`);
+        for (const t of spec.fears) if (!tags.has(t)) out.warnings.push(`${id}: fears '${t}' but nothing in the world has that tag`);
+        if (spec.dialogue) checkDialogue(id, spec.dialogue, keys, out);
+        continue;
+      }
+    }
     const level = Math.round(feet / 1.5);
     const key = `${level}|${Math.round(spec.radius * 4)}|${Math.round(spec.height * 2)}`;
     let grid = grids.get(key);

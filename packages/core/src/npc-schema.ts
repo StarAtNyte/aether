@@ -254,6 +254,20 @@ export const NpcBarks = z.object({
 });
 export type NpcBarks = z.infer<typeof NpcBarks>;
 
+/**
+ * One stop of a daily routine: where the character goes (`at`, world coordinates; `y` is the floor it stands on,
+ * which picks the storey in a building with stairs), how long it stays, and how far it drifts there. A stop with
+ * `hours` is where it is during those hours; stops without hours are visited in turn, `stay` seconds each.
+ */
+export const NpcRoutineStop = z.object({
+  at: Vec3Tuple,
+  stay: z.number().min(0).max(3600).default(30),
+  hours: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).optional(),
+  wander: z.number().min(0).max(20).default(0.6),
+  name: z.string().max(40).optional(),
+});
+export type NpcRoutineStop = z.infer<typeof NpcRoutineStop>;
+
 // ---------------------------------------------------------------------------
 // The NPC itself
 // ---------------------------------------------------------------------------
@@ -291,6 +305,12 @@ export const NpcSpec = z.object({
   patrol: z.object({ mode: z.enum(['loop', 'pingpong', 'random']).default('loop'), wait: z.number().min(0).max(120).default(1.5) }).default({ mode: 'loop', wait: 1.5 }),
   /** Idle roaming radius around home (m); 0 stands still. */
   wander: z.number().min(0).max(100).default(0),
+  /** Roam: idle wandering meanders continuously (a steering wander) instead of walking from spot to spot. */
+  roam: z.boolean().optional(),
+  /** Keep with the pack (0..1): cohesion and alignment with nearby characters of the same faction (herds, wolf packs, flocks). */
+  flock: z.number().min(0).max(1).optional(),
+  /** A daily routine of places (idle characters walk it, across floors by the stairs); replaces wandering around home. */
+  routine: z.array(NpcRoutineStop).max(12).optional(),
   /** Only active (hunting / patrolling) during this hour range, e.g. [19, 6]; otherwise it rests. */
   activeHours: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).optional(),
   /** Starts out following the player (a companion); a dialogue can also recruit it. */

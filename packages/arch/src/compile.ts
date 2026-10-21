@@ -24,7 +24,7 @@ import { StairParams } from './params';
 import { DOOR_CLEARANCE, LINING, sashHeight } from './openings';
 import { roofRise } from './roof';
 import { furnitureById, furnitureMovables } from './furniture/index';
-import { planResidents, residentEntity, type KeepOut, type ResidentRoom } from './residents';
+import { planResidents, planRoutines, residentEntity, type KeepOut, type ResidentRoom } from './residents';
 
 /** Light sources kept per building (each costs per-pixel work); further fittings only glow. */
 export const MAX_BUILDING_LIGHTS = 14;
@@ -999,7 +999,10 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const pos = e.transform?.position;
       if (pos) keep.push({ at: [pos[0], pos[2]], r: Math.max(1.55, width / 2 + 0.9), level: lv ? Number(lv[1]) : 'all' });
     }
-    planResidents(residentRooms, keep, plan.residents, seed + hashId(bid)).forEach((spot, k) => add(residentEntity(spot, k, bid, plan.origin, plan.rotation, seed + hashId(bid))));
+    const spots = planResidents(residentRooms, keep, plan.residents, seed + hashId(bid));
+    // A day each: their spot, a room on another floor when there is one (by the stairs), a third room on their own.
+    const routines = planRoutines(residentRooms, keep, spots, seed + hashId(bid));
+    spots.forEach((spot, k) => add(residentEntity(spot, k, bid, plan.origin, plan.rotation, seed + hashId(bid), routines[k] ?? [])));
   }
   const sw = rotateYaw(sp[0], sp[1], plan.rotation);
   const spawn: [number, number, number] = [round(plan.origin[0] + sw[0]), 0.1, round(plan.origin[1] + sw[1])];

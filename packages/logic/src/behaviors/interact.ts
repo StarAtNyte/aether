@@ -124,6 +124,7 @@ export const door: BehaviorDef = {
     let lastProgress = progress;
     let announced: boolean | undefined;
     let lastDriven: boolean | undefined = open ? undefined : false;
+    let heldForNpc = false;
     const hingeX = hinge === 'center' ? 0 : (hinge === 'right' ? 1 : -1) * self.zone.half[0];
     const jointMode = p.str('motion') === 'joint';
     const jointOpen = p.num('jointOpen');
@@ -147,8 +148,20 @@ export const door: BehaviorDef = {
         } else if (trigger === 'state') open = stateKey !== '' && truthy(env.readState(stateKey));
         else if (trigger === 'key') {
           // Aimed use (the host's crosshair) always works; the bare key opens whatever is within reach.
-          if (env.used.has(self.id) || (env.pressed.has(key) && (radius <= 0 || someoneNear(env, 'player')))) open = !open;
+          if (env.used.has(self.id) || (env.pressed.has(key) && (radius <= 0 || someoneNear(env, 'player')))) {
+            // The player's own press decides from here (pressing at a door held open for an NPC closes it).
+            open = heldForNpc ? false : !open;
+            heldForNpc = false;
+          }
         } else open = someoneNear(env, who);
+        // An NPC walking through a key-operated door opens it while it passes (NpcSystem), then it returns as it was.
+        if (trigger === 'key' && self.npcHoldUntil > env.time && !open) {
+          open = true;
+          heldForNpc = true;
+        } else if (heldForNpc && self.npcHoldUntil <= env.time) {
+          open = false;
+          heldForNpc = false;
+        }
         if (announced !== open) {
           if (announced !== undefined) {
             env.log(`${self.id} ${open ? 'opens' : 'closes'} (${trigger})`);

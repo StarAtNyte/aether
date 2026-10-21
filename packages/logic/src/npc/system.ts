@@ -3,14 +3,16 @@
  * grids, noise, speech bubbles, the single active conversation and the
  * player-facing talk prompt. One instance per logic engine.
  */
-import type { DialogueEffect, EntityId, Json, NpcMode, NpcSpec, Vec3, WorldDoc } from '@aether/core';
+import { worldTransform, type DialogueEffect, type EntityId, type Json, type NpcMode, type NpcSpec, type Vec3, type WorldDoc } from '@aether/core';
 import type { BehaviorEnv, BehaviorInstance } from '../behaviors/types';
 import type { RuntimeEntity } from '../entities';
 import { NpcBrain, type NpcInfo } from './brain';
 import { DialogueSession, type DialogueHost, type DialogueView } from './dialogue';
 import { resolveNpc, type NpcEff } from './graph';
 import type { NavGrid } from './nav';
-import { buildNavFor, type BoundsProvider } from './obstacles';
+import { hasBuildings, NavLayers, type LayerPoint } from './layers';
+import { buildNavFor, npcOpensDoor, type BoundsProvider } from './obstacles';
+import { flockAdd, flockReset, flockSteer, type FlockSums } from './steering';
 import { hyp } from './math';
 
 /** Speech bubbles shown at once. */
@@ -54,6 +56,15 @@ export interface TalkPrompt {
 
 const SKY_HOURS: Readonly<Record<string, number>> = { day: 12, dawn: 6.5, sunset: 17.5, night: 22, overcast: 12, space: 12, studio: 12 };
 const sepOut: [number, number] = [0, 0];
+const flockOut = new Float64Array(2);
+const flockSums: FlockSums = { n: 0, px: 0, pz: 0, hx: 0, hz: 0 };
+/** Neighbours a flocking character keeps with (m). */
+const FLOCK_RADIUS = 5;
+/** An NPC within this of a door (plan, m) holds it open; for this long after (s). */
+const DOOR_REACH = 1.4;
+const DOOR_HOLD = 0.8;
+/** Most doors NPCs open (the rest stay as they are). */
+const MAX_NPC_DOORS = 128;
 
 /** Keys that choose dialogue options, in order. */
 const CHOICE_KEYS = ['1', '2', '3', '4', '5', '6'];
@@ -67,6 +78,12 @@ export class NpcSystem implements DialogueHost {
   navVersion = 0;
   private readonly byId = new Map<EntityId, NpcBrain>();
   private readonly grids = new Map<string, NavGrid>();
+  /** Layered navigation per body size (null: the world has no stairs, single-floor grids do). */
+  private readonly layerSets = new Map<string, NavLayers | null>();
+  private stairsKnown: boolean | null = null;
+  /** Doors NPCs open as they pass (key-operated `door` behaviours), with their positions; null until first needed. */
+  private doorIds: EntityId[] | null = null;
+  private readonly doorPos = new Float64Array(MAX_NPC_DOORS * 3);
   private readonly effCache = new WeakMap<NpcSpec, NpcEff>();
   private nextIndex = 0;
   // --- dialogue ---------------------------------------------------------------------
@@ -144,6 +161,9 @@ export class NpcSystem implements DialogueHost {
   /** Static geometry changed (hot reload): grids are rebuilt on demand. */
   invalidate(): void {
     this.grids.clear();
+    this.layerSets.clear();
+    this.stairsKnown = null;
+    this.doorIds = null;
     this.navVersion++;
   }
 
@@ -196,6 +216,77 @@ export class NpcSystem implements DialogueHost {
     }
   }
 
+  /**
+   * The floors and stairs for a brain's body size, when the world has buildings (built on first use, shared by every
+   * NPC of that size); null otherwise (each floor level gets its own grid from {@link gridFor}, as before).
+   */
+  layersFor(b: NpcBrain): NavLayers | null {
+    const world = this.ctx.world();
+    if (this.stairsKnown === null) {
+      this.stairsKnown = hasBuildings(world);
+    }
+    if (!this.stairsKnown) return null;
+    const spec = b.spec;
+    const key = `${Math.round(spec.radius * 4)}|${Math.round(spec.height * 2)}`;
+    if (this.layerSets.has(key)) return this.layerSets.get(key) ?? null;
+    const points: LayerPoint[] = [];
+    for (const o of this.brains) {
+      if (`${Math.round(o.spec.radius * 4)}|${Math.round(o.spec.height * 2)}` !== key) continue;
+      points.push({ x: o.self.anchor[0], y: o.feetY, z: o.self.anchor[2] });
+      for (const w of o.spec.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
+      for (const r of o.spec.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
+    }
+    let layers: NavLayers | null = null;
+    try {
+      layers = NavLayers.build(world, { radius: spec.radius, height: spec.height, points }, this.ctx.bounds);
+    } catch (err) {
+      this.ctx.env.log(`navigation layers failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.layerSets.set(key, layers);
+    return layers;
+  }
+
+  /** A walking NPC opens the doors it passes (holds them open a moment; see the `door` behaviour). */
+  holdDoorsNear(b: NpcBrain): void {
+    let ids = this.doorIds;
+    if (ids === null) {
+      ids = [];
+      const world = this.ctx.world();
+      for (const id of Object.keys(world.entities)) {
+        if (ids.length >= MAX_NPC_DOORS) break;
+        const e = world.entities[id];
+        if (!e || e.template || !npcOpensDoor(e)) continue;
+        try {
+          const p = worldTransform(world, id).position;
+          const k = ids.length * 3;
+          this.doorPos[k] = p[0];
+          this.doorPos[k + 1] = p[1];
+          this.doorPos[k + 2] = p[2];
+          ids.push(id);
+        } catch {
+          // An entity without a transform chain is skipped.
+        }
+      }
+      this.doorIds = ids;
+    }
+    if (ids.length === 0) return;
+    const env = this.ctx.env;
+    const x = b.x;
+    const z = b.z;
+    const feet = b.feetY;
+    for (let i = 0; i < ids.length; i++) {
+      const k = i * 3;
+      const dx = (this.doorPos[k] as number) - x;
+      const dz = (this.doorPos[k + 2] as number) - z;
+      if (dx * dx + dz * dz > DOOR_REACH * DOOR_REACH) continue;
+      // The leaf's pivot is at its foot or its middle: within a storey of the feet.
+      const dy = (this.doorPos[k + 1] as number) - feet;
+      if (dy < -0.5 || dy > 2.2) continue;
+      const door = env.entity(ids[i] as EntityId);
+      if (door) door.npcHoldUntil = env.time + DOOR_HOLD;
+    }
+  }
+
   /** Ground height under (x, z) from the host (a ray cast), or undefined. */
   groundHeight(x: number, z: number, fromY: number, exclude?: EntityId): number | undefined {
     const host = this.ctx.env.host;
@@ -216,7 +307,7 @@ export class NpcSystem implements DialogueHost {
         if (!bucket) continue;
         for (let i = 0; i < bucket.n; i++) {
           const o = bucket.items[i] as NpcBrain;
-          if (o === b) continue;
+          if (o === b || o.layer !== b.layer) continue;
           const ox = x - o.x;
           const oz = z - o.z;
           const d = hyp(ox, oz);
@@ -228,6 +319,33 @@ export class NpcSystem implements DialogueHost {
       }
     }
     return sepOut;
+  }
+
+  /**
+   * Cohesion and alignment with nearby characters of the same faction on the same floor (a herd, a pack); the
+   * returned pair is reused. Zero without neighbours.
+   */
+  flock(b: NpcBrain): Float64Array {
+    flockReset(flockSums);
+    const cx = Math.floor(b.x / HASH_CELL);
+    const cz = Math.floor(b.z / HASH_CELL);
+    const r2 = FLOCK_RADIUS * FLOCK_RADIUS;
+    for (let dz = -2; dz <= 2; dz++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const bucket = this.hash.get(hashKey(cx + dx, cz + dz));
+        if (!bucket) continue;
+        for (let i = 0; i < bucket.n; i++) {
+          const o = bucket.items[i] as NpcBrain;
+          if (o === b || o.layer !== b.layer || o.spec.faction !== b.spec.faction) continue;
+          const ox = o.x - b.x;
+          const oz = o.z - b.z;
+          if (ox * ox + oz * oz > r2) continue;
+          flockAdd(flockSums, o.x, o.z, o.headingX, o.headingZ);
+        }
+      }
+    }
+    flockSteer(flockSums, b.x, b.z, flockOut);
+    return flockOut;
   }
 
   private rebuildHash(): void {
@@ -289,13 +407,13 @@ export class NpcSystem implements DialogueHost {
   }
 
   /** Make a noise at (x, z): hostile-capable NPCs within `radius` hear it. */
-  makeNoise(x: number, z: number, radius: number, source: NpcBrain | null): void {
+  makeNoise(x: number, z: number, radius: number, source: NpcBrain | null, y = Number.NaN): void {
     const r2 = radius * radius;
     for (const o of this.brains) {
       if (o === source || o.dead) continue;
       const dx = o.x - x;
       const dz = o.z - z;
-      if (dx * dx + dz * dz <= r2 && (source === null || o.isHostileTo(source))) o.hear(x, z);
+      if (dx * dx + dz * dz <= r2 && (source === null || o.isHostileTo(source))) o.hear(x, z, y);
     }
   }
 
@@ -311,7 +429,7 @@ export class NpcSystem implements DialogueHost {
       if (o.spec.faction !== from.spec.faction && !from.eff.allies.has(o.spec.faction)) continue;
       const dx = o.x - from.x;
       const dz = o.z - from.z;
-      if (dx * dx + dz * dz <= r2) o.warn(x, z, kind, id);
+      if (dx * dx + dz * dz <= r2) o.warn(x, z, kind, id, from.targetY);
     }
   }
 
@@ -338,7 +456,7 @@ export class NpcSystem implements DialogueHost {
         env.log(`npc ${from.id} hits ${id} for ${damage}`);
       }
     }
-    this.makeNoise(from.x, from.z, 10, from);
+    this.makeNoise(from.x, from.z, 10, from, from.feetY);
   }
 
   /** An NPC died. */

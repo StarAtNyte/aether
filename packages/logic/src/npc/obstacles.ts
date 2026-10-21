@@ -94,6 +94,8 @@ export function collectObstacles(world: WorldDoc, area: Area, margin: number, bo
     const p = e.physics;
     if (p.sensor || p.collider === 'none' || p.body === 'dynamic') continue;
     if (p.body === 'kinematic' && !e.behaviors.some((b) => b.type === 'door')) continue;
+    // A house door opened by a key press is opened by NPCs walking through too (NpcSystem holds it): not a wall.
+    if (npcOpensDoor(e)) continue;
     if (underNpc(world, e)) continue;
     let pos: Vec3;
     let quat: [number, number, number, number];
@@ -152,6 +154,11 @@ export function collectObstacles(world: WorldDoc, area: Area, margin: number, bo
   return out;
 }
 
+/** True for a door leaf NPCs open as they pass (a `door` behaviour toggled by a key press, like a building's doors). */
+export function npcOpensDoor(e: Entity): boolean {
+  return e.behaviors.some((b) => b.type === 'door' && b.enabled !== false && b.params['trigger'] === 'key');
+}
+
 function boxFromBounds(b: { min: Vec3; max: Vec3 }): Obstacle {
   return box((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2, (b.max[0] - b.min[0]) / 2, (b.max[2] - b.min[2]) / 2, 0, b.min[1], b.max[1]);
 }
@@ -201,6 +208,10 @@ export interface NavFor {
   points: ReadonlyArray<Readonly<Vec3>>;
   /** Extra room around the points (m). */
   pad?: number;
+  /** Preferred cell size (m, default 0.5; grows to fit the cell cap). */
+  cell?: number;
+  /** Highest step an agent climbs (m, default {@link DEFAULT_STEP}). */
+  step?: number;
 }
 
 /**
@@ -227,10 +238,11 @@ export function buildNavFor(world: WorldDoc, o: NavFor, bounds?: BoundsProvider)
   return NavGrid.build(obstacles, {
     ...(surface ? { surface } : {}),
     ...area,
+    ...(o.cell !== undefined ? { cell: o.cell } : {}),
     refY: o.refY,
     radius: o.radius,
     height: o.height,
-    step: DEFAULT_STEP,
+    step: o.step ?? DEFAULT_STEP,
     ground: ground ? 0 : NaN,
     groundHalf: ground ? ground.size / 2 : 0,
   });

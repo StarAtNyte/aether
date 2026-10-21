@@ -10,6 +10,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@aether/arch": "*",
     "@aether/assets": "*",
     "@aether/core": "*",
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",

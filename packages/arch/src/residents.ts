@@ -217,6 +217,77 @@ export function planResidents(rooms: readonly ResidentRoom[], keep: readonly Kee
   return picked;
 }
 
+/** How much people go to a room of this type in the course of a day (0 = not a place to spend time). */
+const ROUTINE_WEIGHT: Readonly<Record<RoomType, number>> = {
+  living: 3,
+  kitchen: 2.6,
+  dining: 2,
+  bedroom: 1.8,
+  bathroom: 0,
+  office: 1.6,
+  hall: 0.2,
+  entry: 0.1,
+  cafe: 2.5,
+  meeting: 1.8,
+  'open-office': 2,
+  lobby: 1.2,
+  storage: 0,
+  laundry: 0.3,
+  terrace: 0.8,
+  garage: 0,
+  studio: 1.4,
+  kids: 1.2,
+};
+
+/** One stop of a resident's day: a spot in a room and how long they stay (s). */
+export interface RoutineStopPlan {
+  room: string;
+  level: number;
+  elevation: number;
+  at: P2;
+  stay: number;
+}
+
+/**
+ * A day for each resident: where they stand, then another room — upstairs or downstairs first when the building has
+ * more than one floor (a bedroom, a study, the kitchen) — and a third room on their own floor, each a measured clear
+ * spot like the first. Deterministic for a plan and seed; residents never share a spot.
+ */
+export function planRoutines(rooms: readonly ResidentRoom[], keep: readonly KeepOut[], spots: readonly ResidentSpot[], seed: number): RoutineStopPlan[][] {
+  const pool = new Map<string, Scored[]>();
+  const used: Array<{ at: P2; level: number }> = spots.map((sp) => ({ at: sp.at, level: sp.level }));
+  const levels = new Set(rooms.map((r) => r.level));
+  const spotIn = (room: ResidentRoom): P2 | null => {
+    let list = pool.get(room.id);
+    if (!list) {
+      list = candidates(room, keep, seed + 7);
+      pool.set(room.id, list);
+    }
+    for (const c of list) if (!used.some((u) => u.level === room.level && dist(u.at, c.at) < 1.6)) return c.at;
+    return null;
+  };
+  return spots.map((sp, k) => {
+    const stops: RoutineStopPlan[] = [{ room: sp.room, level: sp.level, elevation: sp.elevation, at: sp.at, stay: 40 }];
+    const ranked = rooms
+      .filter((r) => ROUTINE_WEIGHT[r.type] > 0 && r.id !== sp.room)
+      .map((r) => ({ r, w: ROUTINE_WEIGHT[r.type] * (0.8 + ((hash(`${r.id}:${k}:${seed}`) % 100) / 100) * 0.4) }))
+      .sort((a, b) => b.w - a.w);
+    // Another floor first (people go up to the bedroom, down to the kitchen), then the best room on their own.
+    const order = levels.size > 1 ? [...ranked.filter((x) => x.r.level !== sp.level), ...ranked.filter((x) => x.r.level === sp.level)] : ranked;
+    for (const { r } of order) {
+      if (stops.length >= 3) break;
+      if (stops.some((s) => s.room === r.id)) continue;
+      // The third stop stays on the resident's own floor (a day is not all stairs).
+      if (stops.length === 2 && r.level !== sp.level && levels.size > 1) continue;
+      const at = spotIn(r);
+      if (!at) continue;
+      used.push({ at, level: r.level });
+      stops.push({ room: r.id, level: r.level, elevation: r.elevation, at, stay: 30 + (hash(`${r.id}:stay:${k}:${seed}`) % 20) });
+    }
+    return stops;
+  });
+}
+
 function polygonArea(poly: readonly P2[]): number {
   let s = 0;
   for (let i = 0, k = poly.length; i < k; i++) {
@@ -258,7 +329,7 @@ function talkFor(type: RoomType, name: string): Talk {
 }
 
 /** The entity of one resident, in the world frame (`origin` and `rotation` are the building's). */
-export function residentEntity(spot: ResidentSpot, index: number, buildingId: string, origin: P2, rotation: number, seed: number): EntityInput {
+export function residentEntity(spot: ResidentSpot, index: number, buildingId: string, origin: P2, rotation: number, seed: number, routine: readonly RoutineStopPlan[] = []): EntityInput {
   const female = (index + (seed % 2)) % 2 === 0;
   const names = female ? NAMES_F : NAMES_M;
   const name = names[(hash(`${buildingId}:${index}:${seed}`) >>> 3) % names.length] as string;
@@ -272,6 +343,13 @@ export function residentEntity(spot: ResidentSpot, index: number, buildingId: st
   const top = TOPS[(hash(`${name}:top:${seed}`) >>> 2) % TOPS.length] as string;
   const bottom = BOTTOMS[(hash(`${name}:bot:${seed}`) >>> 2) % BOTTOMS.length] as string;
   const role = spot.type === 'lobby' || spot.type === 'meeting' || spot.type === 'open-office' ? 'visitor' : 'resident';
+  // Their day, in world coordinates (`y` is the floor of the storey, which picks the level across the stairs).
+  const stops = routine.length > 1
+    ? routine.map((r) => {
+        const q = rotateYaw(r.at[0], r.at[1], rotation);
+        return { at: [Math.round((origin[0] + q[0]) * 100) / 100, Math.round(r.elevation * 100) / 100, Math.round((origin[1] + q[1]) * 100) / 100], stay: r.stay, wander: 0.5 };
+      })
+    : undefined;
   return {
     id: `${buildingId}-resident${index}`,
     name,
@@ -284,7 +362,9 @@ export function residentEntity(spot: ResidentSpot, index: number, buildingId: st
       archetype: 'villager',
       faction: 'household',
       speed: 0.9,
+      radius: 0.3,
       wander: 0.35,
+      ...(stops ? { routine: stops } : {}),
       talkRange: 2.8,
       perception: { sight: 8, fov: 120, hearing: 5, memory: 3, alert: 0 },
       dialogue: {

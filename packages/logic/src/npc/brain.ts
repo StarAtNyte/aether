@@ -8,13 +8,16 @@
  * all randomness comes from the instance's seeded stream, so the same world,
  * seed and input always replay identically.
  */
-import type { EntityId, NpcMode, NpcSpec, Vec3 } from '@aether/core';
+import type { EntityId, NpcMode, NpcRoutineStop, NpcSpec, Vec3 } from '@aether/core';
 import type { BehaviorEnv, BehaviorInstance } from '../behaviors/types';
 import type { RuntimeEntity } from '../entities';
 import { faceDirection } from '../behaviors/move';
 import { angleDelta, clamp, yawFromDirection, yawOfQuat } from '../vec';
 import { evalCond, inHours, newSenses, type NpcEff, type Senses } from './graph';
 import { NAV_MAX_PATH, type NavGrid } from './nav';
+import { NavRoute, type NavLayers } from './layers';
+import { pointAlong, type StairLink } from './stairs';
+import { arriveSpeed, wanderDirection, type WanderState } from './steering';
 import type { NpcSystem } from './system';
 import { hyp } from './math';
 
@@ -28,6 +31,14 @@ const HEARD_LATCH = 0.6;
 const STUCK_WINDOW = 0.5;
 /** Ground ray casts run on every Nth tick per NPC. */
 const GROUND_EVERY = 6;
+/** Within this of a stair's end an NPC steps onto it (m). */
+const STAIR_ENTRY = 0.75;
+/** Pace on a stair relative to the walking speed. */
+const STAIR_PACE = 0.75;
+/** How far right of the walking line an NPC keeps on a stair, at most (m): people pass each other. */
+const STAIR_KEEP_RIGHT = 0.2;
+/** Seconds after leaving a stair during which an NPC may walk out of blocked cells (the line's ends are close to the stairwell). */
+const STAIR_EXIT_GRACE = 1.5;
 
 /** Animation hints published on `state.npcAnim`. */
 type Anim = 'idle' | 'walk' | 'run' | 'attack' | 'talk' | 'hurt' | 'dead';
@@ -50,6 +61,10 @@ export interface NpcInfo {
   stuck: number;
   legs: number;
   waypoint: number;
+  /** Floor level (0 without stairs), feet height, and the stair being walked (entity id) if any. */
+  layer: number;
+  y: number;
+  stair: string | null;
 }
 
 /** A single NPC's behaviour runtime. */
@@ -67,16 +82,45 @@ export class NpcBrain implements BehaviorInstance {
   angry = false;
   following: boolean;
   // --- position bookkeeping ------------------------------------------------------
-  private readonly homeX: number;
-  private readonly homeZ: number;
+  private homeX: number;
+  private homeZ: number;
   private feetOffset = Number.NaN;
   private grid: NavGrid | null = null;
   private gridTick = -1;
+  // --- floors and stairs (worlds with stairs) ------------------------------------
+  private layers: NavLayers | null = null;
+  /** Floor level the NPC stands on (index into the layers; 0 without stairs). */
+  layer = 0;
+  private readonly route = new NavRoute();
+  private routeIdx = 0;
+  private routeGoalX = Number.NaN;
+  private routeGoalZ = Number.NaN;
+  private routeGoalL = -1;
+  private routeT = 0;
+  /** Stair being walked (index into the layers' links), or −1. */
+  private trav = -1;
+  private travDir: 1 | -1 = 1;
+  private travU = 0;
+  private travLead = 0;
+  private travEX = 0;
+  private travEY = 0;
+  private travEZ = 0;
+  private exitT = 0;
+  private readonly pt = new Float32Array(5);
+  private readonly aim = new Float64Array(3);
+  // --- daily routine ----------------------------------------------------------------
+  private stopIdx = -1;
+  private atStop = false;
+  private stayT = 0;
+  private readonly wanderState: WanderState = { theta: 0 };
+  private readonly dirOut = new Float64Array(2);
   // --- targeting -----------------------------------------------------------------
   private targetKind = T_NONE;
   private targetId: EntityId | null = null;
   private lastX = 0;
   private lastZ = 0;
+  /** Feet height of the foe where last known (NaN when unknown: assume this floor). */
+  private lastY = Number.NaN;
   private hasLast = false;
   private lostT = 1e9;
   private heardT = 1e9;
@@ -221,7 +265,29 @@ export class NpcBrain implements BehaviorInstance {
       stuck: this.stuckT,
       legs: this.legs,
       waypoint: this.wp,
+      layer: this.layer,
+      y: this.feetY,
+      stair: this.trav >= 0 ? (this.layers?.links[this.trav]?.id ?? null) : null,
     };
+  }
+
+  /** Direction the NPC is walking in (unit), or zero while it stands: what a flock aligns with. */
+  get headingX(): number {
+    return this.speedNow > 0.2 ? this.lastDx : 0;
+  }
+
+  get headingZ(): number {
+    return this.speedNow > 0.2 ? this.lastDz : 0;
+  }
+
+  /** Feet height of the current foe where last known (NaN when unknown). */
+  get targetY(): number {
+    return this.lastY;
+  }
+
+  /** True while walking a stair between floors. */
+  get onStair(): boolean {
+    return this.trav >= 0;
   }
 
   /** World yaw (degrees) of the forward axis. */
@@ -243,6 +309,7 @@ export class NpcBrain implements BehaviorInstance {
     this.hurtT = Math.max(0, this.hurtT - dt);
     this.lostT += dt;
     this.heardT += dt;
+    this.exitT = Math.max(0, this.exitT - dt);
     this.syncPos();
     if (this.firstTick) this.initGround(env);
     this.syncHealth();
@@ -295,8 +362,8 @@ export class NpcBrain implements BehaviorInstance {
 
   private initGround(env: BehaviorEnv): void {
     const s = this.self;
-    const grid = this.sys.gridFor(this);
-    this.grid = grid;
+    this.refreshGrid();
+    const grid = this.grid;
     const y = s.dynamic ? (env.positionOf(s.id)?.[1] ?? s.anchor[1]) : s.anchor[1];
     const guess = this.sys.feetGuess(s, y);
     const floor = grid ? grid.floorAt(s.anchor[0], s.anchor[2], guess) : guess;
@@ -329,6 +396,7 @@ export class NpcBrain implements BehaviorInstance {
     this.targetId = pid ?? null;
     this.lastX = pp[0];
     this.lastZ = pp[2];
+    this.lastY = pp[1];
     this.hasLast = true;
     this.lostT = 0;
     this.angry = true;
@@ -338,6 +406,7 @@ export class NpcBrain implements BehaviorInstance {
   calm(): void {
     this.angry = false;
     this.hasLast = false;
+    this.lastY = Number.NaN;
     this.lostT = 1e9;
     this.heardT = 1e9;
     this.targetKind = T_NONE;
@@ -417,6 +486,7 @@ export class NpcBrain implements BehaviorInstance {
     let bestKind = T_NONE;
     let bestId: EntityId | null = null;
     let bx = 0;
+    let by = Number.NaN;
     let bz = 0;
     const sightMul = sys.sightFactor(this);
     const sight = per.sight * sightMul;
@@ -433,14 +503,16 @@ export class NpcBrain implements BehaviorInstance {
       const dz = pp[2] - z;
       const d2 = dx * dx + dz * dz;
       if (Math.abs(pp[1] - feet) < 3 + this.spec.height) {
-        if (d2 <= sight2 && this.cone(dx, dz, d2, fx, fz, cosHalf) && this.clear(grid, x, z, pp[0], pp[2])) {
+        // A floor between them blocks sight (not hearing); on a stair the stairwell is open.
+        if (d2 <= sight2 && this.sameFloor(pp[0], pp[1], pp[2]) && this.cone(dx, dz, d2, fx, fz, cosHalf) && this.clear(grid, x, z, pp[0], pp[2])) {
           bestD2 = d2;
           bestKind = T_PLAYER;
           bestId = pid ?? null;
           bx = pp[0];
+          by = pp[1];
           bz = pp[2];
         } else if (d2 <= sys.hearingRadius(this) * sys.hearingRadius(this)) {
-          if (this.heardT > HEARD_LATCH * 0.5) this.onHeard(pp[0], pp[2]);
+          if (this.heardT > HEARD_LATCH * 0.5) this.onHeard(pp[0], pp[2], pp[1]);
         }
       }
     }
@@ -453,11 +525,13 @@ export class NpcBrain implements BehaviorInstance {
       const d2 = dx * dx + dz * dz;
       if (d2 > sight2 || d2 >= bestD2) continue;
       if (Math.abs(o.feetY - feet) > 3 + this.spec.height) continue;
+      if (this.layers !== null && o.layer !== this.layer && !o.onStair && this.trav < 0) continue;
       if (!this.cone(dx, dz, d2, fx, fz, cosHalf) || !this.clear(grid, x, z, o.x, o.z)) continue;
       bestD2 = d2;
       bestKind = T_NPC;
       bestId = o.id;
       bx = o.x;
+      by = o.feetY;
       bz = o.z;
     }
     if (bestKind !== T_NONE) {
@@ -467,6 +541,7 @@ export class NpcBrain implements BehaviorInstance {
       this.targetId = bestId;
       this.lastX = bx;
       this.lastZ = bz;
+      this.lastY = by;
       this.hasLast = true;
       this.lostT = 0;
       if (first) {
@@ -491,29 +566,39 @@ export class NpcBrain implements BehaviorInstance {
     return grid === null || grid.lineOfSight(x0, z0, x1, z1);
   }
 
-  private onHeard(x: number, z: number): void {
+  /** Whether a feet position is on this NPC's floor (always without stairs; a stair joins the floors it links). */
+  private sameFloor(x: number, y: number, z: number): boolean {
+    const l = this.layers;
+    if (l === null || this.trav >= 0) return true;
+    if (l.stairAt(x, y, z) >= 0) return true;
+    return l.levelAt(x, y, z) === this.layer;
+  }
+
+  private onHeard(x: number, z: number, y = Number.NaN): void {
     this.heardT = 0;
     if (!this.sawFoeNow) {
       this.lastX = x;
       this.lastZ = z;
+      this.lastY = y;
       this.hasLast = true;
     }
     this.bark('alert', this.spec.barks?.alert);
   }
 
-  /** A noise (or an ally's alarm) at (x, z) that this NPC can hear. */
-  hear(x: number, z: number): void {
+  /** A noise (or an ally's alarm) at (x, z) that this NPC can hear (`y`: the feet height there, when known). */
+  hear(x: number, z: number, y = Number.NaN): void {
     if (this.dead || this.isResting()) return;
-    this.onHeard(x, z);
+    this.onHeard(x, z, y);
   }
 
-  /** An ally saw a foe at (x, z): remember it. */
-  warn(x: number, z: number, kind: number, id: EntityId | null): void {
+  /** An ally saw a foe at (x, z) (feet height `y` when known): remember it. */
+  warn(x: number, z: number, kind: number, id: EntityId | null, y = Number.NaN): void {
     if (this.dead || this.isResting()) return;
     if (this.lostT < 1) return;
     this.hasLast = true;
     this.lastX = x;
     this.lastZ = z;
+    this.lastY = y;
     this.lostT = Math.min(this.lostT, this.spec.perception.memory * 0.5);
     if (this.targetKind === T_NONE) {
       this.targetKind = kind;
@@ -554,6 +639,11 @@ export class NpcBrain implements BehaviorInstance {
     const z = this.z;
     s.homeDist = hyp(x - this.homeX, z - this.homeZ);
     s.foeDist = this.hasLast && s.remembersFoe ? this.distToTarget(env, x, z) : Infinity;
+    // A foe on another floor is not within reach, however close in plan: it counts the climb.
+    if (this.layers !== null && s.foeDist !== Infinity && !Number.isNaN(this.lastY)) {
+      const dy = Math.abs(this.lastY - this.feetY);
+      if (dy > 1.4) s.foeDist += dy * 2;
+    }
     const pid = env.playerId();
     const pp = pid !== undefined ? env.positionOf(pid) : undefined;
     s.playerDist = pp ? hyp(pp[0] - x, pp[2] - z) : Infinity;
@@ -567,12 +657,14 @@ export class NpcBrain implements BehaviorInstance {
         if (p) {
           this.lastX = p[0];
           this.lastZ = p[2];
+          this.lastY = p[1];
         }
       } else if (this.targetKind === T_NPC && this.targetId !== null) {
         const o = this.sys.brainOf(this.targetId);
         if (o && !o.dead) {
           this.lastX = o.x;
           this.lastZ = o.z;
+          this.lastY = o.feetY;
         }
       }
     }
@@ -659,17 +751,170 @@ export class NpcBrain implements BehaviorInstance {
   private refreshGrid(): void {
     if (this.gridTick !== this.sys.navVersion) {
       this.gridTick = this.sys.navVersion;
-      this.grid = this.sys.gridFor(this);
+      this.layers = this.sys.layersFor(this);
+      this.trav = -1;
+      this.route.n = 0;
+      this.routeGoalL = -1;
+      if (this.layers !== null) {
+        this.layer = this.layers.levelAt(this.x, this.feetY, this.z);
+        this.grid = this.layers.grids[this.layer] ?? null;
+      } else {
+        this.layer = 0;
+        this.grid = this.sys.gridFor(this);
+      }
     }
   }
 
+  /** Floor level of a point the NPC is sent to (`y` is the floor it stands on); its own level without stairs. */
+  private levelOf(p: Readonly<Vec3>): number {
+    return this.layers === null ? this.layer : this.layers.levelAt(p[0], p[1], p[2]);
+  }
+
   /**
-   * Walk toward (gx, gz). Returns true once within `arriveR`. Plans a path on
-   * the nav grid when needed (cheap A* with a bounded budget) and steers
-   * along it with separation from neighbours.
+   * Walk toward (gx, gz) on floor level `gl` (−1: this floor). Returns true once within `arriveR` on that floor.
+   * On another floor it takes the stairs of a route between the floors, walking each along its line; on this floor
+   * it plans a path on the nav grid when needed (cheap A* with a bounded budget) and steers along it with
+   * separation from neighbours.
    */
-  private goTo(env: BehaviorEnv, dt: number, gx: number, gz: number, speed: number, arriveR: number): boolean {
+  private goTo(env: BehaviorEnv, dt: number, gx: number, gz: number, speed: number, arriveR: number, gl = -1): boolean {
     this.refreshGrid();
+    if (this.trav >= 0) {
+      this.arrived = false;
+      this.traverse(env, dt, speed);
+      return false;
+    }
+    if (this.layers !== null && gl >= 0 && gl !== this.layer) {
+      this.arrived = false;
+      this.goVia(env, dt, gx, gz, speed, gl);
+      return false;
+    }
+    return this.walkTo(env, dt, gx, gz, speed, arriveR);
+  }
+
+  /** Head for the next stair of the route to floor `gl` and step onto it at its end. */
+  private goVia(env: BehaviorEnv, dt: number, gx: number, gz: number, speed: number, gl: number): void {
+    const layers = this.layers as NavLayers;
+    this.routeT -= dt;
+    const moved = !(Math.abs(gx - this.routeGoalX) < 0.9 && Math.abs(gz - this.routeGoalZ) < 0.9) || gl !== this.routeGoalL;
+    if (moved || this.routeT <= 0 || this.routeIdx >= this.route.n) {
+      this.routeGoalX = gx;
+      this.routeGoalZ = gz;
+      this.routeGoalL = gl;
+      this.routeT = 2;
+      this.routeIdx = 0;
+      if (!layers.route(this.layer, this.x, this.z, gl, gx, gz, this.route) || this.route.n === 0) {
+        // No way up or down (or the goal is walled off): wait a moment, then the caller tries again.
+        this.route.n = 0;
+        this.pathLen = 0;
+        this.pathFailT = 1.5;
+        this.stop(env);
+        return;
+      }
+    }
+    const step = this.route.steps[this.routeIdx] as number;
+    const li = Math.abs(step) - 1;
+    const dir: 1 | -1 = step > 0 ? 1 : -1;
+    const link = layers.links[li] as StairLink;
+    const k = dir > 0 ? 0 : (link.n - 1) * 3;
+    const ex = link.line[k] as number;
+    const ez = link.line[k + 2] as number;
+    if (hyp(ex - this.x, ez - this.z) < STAIR_ENTRY) {
+      this.startTraverse(li, dir);
+      this.traverse(env, dt, speed);
+      return;
+    }
+    this.walkTo(env, dt, ex, ez, speed, STAIR_ENTRY * 0.6);
+  }
+
+  private startTraverse(li: number, dir: 1 | -1): void {
+    const link = (this.layers as NavLayers).links[li] as StairLink;
+    const k = dir > 0 ? 0 : (link.n - 1) * 3;
+    this.trav = li;
+    this.travDir = dir;
+    this.travU = 0;
+    this.travEX = this.x;
+    this.travEZ = this.z;
+    this.travEY = this.feetY;
+    this.travLead = hyp((link.line[k] as number) - this.x, (link.line[k + 2] as number) - this.z);
+    this.pathLen = 0;
+    this.sys.env.log(`npc ${this.id}: takes the stair ${link.id} ${dir > 0 ? 'up' : 'down'}`);
+  }
+
+  /**
+   * One tick on a stair: along its walking line (from where the NPC stepped on to the line's start, then the line),
+   * feet at the height of the treads, keeping a little to the right so two people pass; off at the other end onto
+   * that floor's grid.
+   */
+  private traverse(env: BehaviorEnv, dt: number, speed: number): void {
+    const layers = this.layers as NavLayers;
+    const link = layers.links[this.trav] as StairLink;
+    const s = this.self;
+    const target = speed * STAIR_PACE;
+    this.wantMove = true;
+    this.speedNow += clamp(target - this.speedNow, -18 * dt, 9 * dt);
+    this.travU += this.speedNow * dt;
+    const total = this.travLead + link.length;
+    const pt = this.pt;
+    if (this.travU < this.travLead) {
+      // From where it stepped on to the start of the line (a few decimetres on the floor).
+      pointAlong(link, 0, this.travDir, pt);
+      const t = this.travU / Math.max(1e-6, this.travLead);
+      const dx = (pt[0] as number) - this.travEX;
+      const dz = (pt[2] as number) - this.travEZ;
+      const l = Math.max(1e-6, hyp(dx, dz));
+      pt[3] = dx / l;
+      pt[4] = dz / l;
+      pt[0] = this.travEX + dx * t;
+      pt[1] = this.travEY + ((pt[1] as number) - this.travEY) * t;
+      pt[2] = this.travEZ + dz * t;
+    } else pointAlong(link, this.travU - this.travLead, this.travDir, pt);
+    const hx = pt[3] as number;
+    const hz = pt[4] as number;
+    // Keep right (of the way it is walking), easing in and out at the ends of the line.
+    const room = Math.max(0, Math.min(STAIR_KEEP_RIGHT, link.halfWidth - this.spec.radius - 0.05));
+    const ease = Math.max(0, Math.min(1, this.travU / 0.6, (total - this.travU) / 0.6));
+    const px = (pt[0] as number) - hz * room * ease;
+    const pz = (pt[2] as number) + hx * room * ease;
+    this.lastDx = hx;
+    this.lastDz = hz;
+    if (s.dynamic) {
+      // A physics body is steered along the line; the solver climbs the stair's ramps.
+      const v = env.velocityOf(s.id);
+      const ax = px + hx * 0.5 - this.x;
+      const az = pz + hz * 0.5 - this.z;
+      const al = Math.max(1e-6, hyp(ax, az));
+      tmpVel[0] = (ax / al) * this.speedNow;
+      tmpVel[1] = v ? v[1] : 0;
+      tmpVel[2] = (az / al) * this.speedNow;
+      env.setVelocity(s.id, tmpVel);
+      faceDirection(s, hx, hz, this.spec.turnRate, dt);
+    } else {
+      env.pose(s);
+      s.anchor[0] = px;
+      s.anchor[2] = pz;
+      s.anchor[1] = (pt[1] as number) + this.feetOffset;
+      this.x = px;
+      this.z = pz;
+      faceDirection(s, hx, hz, this.spec.turnRate, dt);
+      this.phase += this.speedNow * dt * 2.2;
+    }
+    if (this.travU >= total) {
+      const li = this.trav;
+      this.trav = -1;
+      this.layer = this.travDir > 0 ? (layers.upper[li] as number) : (layers.lower[li] as number);
+      this.grid = layers.grids[this.layer] ?? null;
+      this.routeIdx++;
+      this.exitT = STAIR_EXIT_GRACE;
+      this.pathLen = 0;
+      this.repathT = 0;
+      this.groundOff = 0;
+      this.stuckT = 0;
+      this.sys.env.log(`npc ${this.id}: off the stair ${link.id} on level ${this.layer}`);
+    }
+  }
+
+  /** Walk on this floor's grid toward (gx, gz); true once within `arriveR`. */
+  private walkTo(env: BehaviorEnv, dt: number, gx: number, gz: number, speed: number, arriveR: number): boolean {
     const x = this.x;
     const z = this.z;
     const dGoal = hyp(gx - x, gz - z);
@@ -687,16 +932,28 @@ export class NpcBrain implements BehaviorInstance {
     }
     if (this.pathLen === 0) return false;
     // Advance along the path.
+    const grid = this.grid;
     while (this.pathIdx < this.pathLen) {
       const px = this.path[this.pathIdx * 2] as number;
       const pz = this.path[this.pathIdx * 2 + 1] as number;
       const last = this.pathIdx === this.pathLen - 1;
-      if (hyp(px - x, pz - z) < (last ? Math.max(0.2, arriveR * 0.6) : 0.4)) this.pathIdx++;
-      else break;
+      const dp = hyp(px - x, pz - z);
+      if (!(dp < (last ? Math.max(0.2, arriveR * 0.6) : 0.4))) break;
+      // In a building a corner point is passed only once the next one is in clear sight on the floor grid (or right at
+      // it): cutting a doorway's corner from a little off the path walks into the jamb.
+      if (!last && this.layers !== null && grid !== null && dp > 0.12 && !grid.lineClear(x, z, this.path[this.pathIdx * 2 + 2] as number, this.path[this.pathIdx * 2 + 3] as number)) break;
+      this.pathIdx++;
     }
     if (this.pathIdx >= this.pathLen) {
       this.arrived = dGoal <= arriveR + 0.8;
       return this.arrived;
+    }
+    // In a building, pushed off the path's line beside a door frame (the next point no longer in clear sight): back
+    // to the corner point first, from where the stretch is clear.
+    if (this.layers !== null && grid !== null && this.pathIdx > 0) {
+      const px = this.path[this.pathIdx * 2 - 2] as number;
+      const pz = this.path[this.pathIdx * 2 - 1] as number;
+      if (hyp(px - x, pz - z) < 1.5 && !grid.lineClear(x, z, this.path[this.pathIdx * 2] as number, this.path[this.pathIdx * 2 + 1] as number) && grid.lineClear(x, z, px, pz)) this.pathIdx--;
     }
     const tx = this.path[this.pathIdx * 2] as number;
     const tz = this.path[this.pathIdx * 2 + 1] as number;
@@ -740,6 +997,13 @@ export class NpcBrain implements BehaviorInstance {
     const sep = this.sys.separation(this);
     let vx = dx + sep[0] * 1.4;
     let vz = dz + sep[1] * 1.4;
+    // A pack keeps together: cohesion and alignment with its own kind nearby.
+    const flock = this.spec.flock ?? 0;
+    if (flock > 0) {
+      const f = this.sys.flock(this);
+      vx += (f[0] as number) * flock;
+      vz += (f[1] as number) * flock;
+    }
     const vl = hyp(vx, vz);
     if (vl > 1e-6) {
       vx /= vl;
@@ -747,7 +1011,7 @@ export class NpcBrain implements BehaviorInstance {
     }
     // Ramp speed; slow into the final point.
     let target = speed;
-    if (remaining < 1.2) target = Math.min(target, 0.5 + remaining * 1.6);
+    if (remaining < 1.2) target = arriveSpeed(remaining, target);
     this.wantMove = true;
     this.speedNow += clamp(target - this.speedNow, -18 * dt, 9 * dt);
     const step = this.speedNow * dt;
@@ -760,13 +1024,40 @@ export class NpcBrain implements BehaviorInstance {
       tmpVel[2] = vz * this.speedNow;
       env.setVelocity(s.id, tmpVel);
       faceDirection(s, vx, vz, this.spec.turnRate, dt);
+      this.sys.holdDoorsNear(this);
       return;
     }
     env.pose(s);
+    this.sys.holdDoorsNear(this);
     let nx = s.anchor[0] + vx * step;
     let nz = s.anchor[2] + vz * step;
     const grid = this.grid;
-    if (grid !== null && !grid.walkable(nx, nz)) {
+    // Just off a stair the NPC may stand in a blocked cell beside the stairwell: let it walk out.
+    const escaping = this.exitT > 0 && grid !== null && !grid.walkable(s.anchor[0], s.anchor[2]);
+    if (grid !== null && this.layers !== null) {
+      // In a building the NPC follows its path (each stretch is clear on the floor grid): neighbours push it aside
+      // only where there is room, and its body may brush a door frame (the squeeze mask), never cross a wall.
+      if (!escaping && !free(grid, nx, nz, true)) {
+        nx = s.anchor[0] + dx * step;
+        nz = s.anchor[2] + dz * step;
+        if (!free(grid, nx, nz, true) && free(grid, s.anchor[0], s.anchor[2], true)) {
+          // Off the path's line at a corner: back toward the middle of the nearest open cell.
+          const c = grid.nearest(s.anchor[0], s.anchor[2], 2);
+          nx = s.anchor[0];
+          nz = s.anchor[2];
+          if (c >= 0) {
+            const cx = grid.cellX(c) - nx;
+            const cz = grid.cellZ(c) - nz;
+            const cd = hyp(cx, cz);
+            if (cd > 1e-4) {
+              const k = Math.min(1, step / cd);
+              nx += cx * k;
+              nz += cz * k;
+            }
+          }
+        }
+      }
+    } else if (grid !== null && !escaping && !grid.walkable(nx, nz)) {
       // Slide along the obstacle, else stay.
       if (grid.walkable(nx, s.anchor[2])) nz = s.anchor[2];
       else if (grid.walkable(s.anchor[0], nz)) nx = s.anchor[0];
@@ -791,8 +1082,9 @@ export class NpcBrain implements BehaviorInstance {
     const grid = this.grid;
     const guess = s.anchor[1] - this.feetOffset;
     const floor = grid ? grid.floorAt(s.anchor[0], s.anchor[2], guess) : guess;
-    // Hills: a ray cast corrects the flat grid floor, a few times a second per NPC.
-    if ((this.sys.tickNo + this.index) % GROUND_EVERY === 0) {
+    // Hills: a ray cast corrects the flat grid floor, a few times a second per NPC. (Not in a building: the floor
+    // grids are exact there, and the ray would stand a person on the sofa they walk past.)
+    if (this.layers === null && (this.sys.tickNo + this.index) % GROUND_EVERY === 0) {
       const ground = this.sys.groundHeight(s.anchor[0], s.anchor[2], floor + this.spec.height + 0.6, this.id);
       this.groundOff = ground !== undefined && Math.abs(ground - floor) < 1.2 ? ground - floor : 0;
     }
@@ -871,6 +1163,15 @@ export class NpcBrain implements BehaviorInstance {
 
   private doIdle(env: BehaviorEnv, dt: number): void {
     const spec = this.spec;
+    const routine = spec.routine;
+    if (routine !== undefined && routine.length > 0 && !this.eff.stationary) {
+      this.doRoutine(env, dt, routine);
+      return;
+    }
+    if (spec.roam === true && !this.eff.stationary && spec.wander > 0) {
+      this.roam(env, dt, this.homeX, this.homeZ, spec.wander, spec.speed * 0.6);
+      return;
+    }
     if (this.eff.stationary || spec.wander <= 0) {
       this.stop(env);
       if (this.eff.spec.archetype === 'sentinel') this.scan(env, dt, 50);
@@ -882,7 +1183,7 @@ export class NpcBrain implements BehaviorInstance {
       this.stop(env);
       return;
     }
-    if (Number.isNaN(this.wanderX)) this.pickWander();
+    if (Number.isNaN(this.wanderX)) this.pickWander(spec.wander);
     if (this.goTo(env, dt, this.wanderX, this.wanderZ, spec.speed * 0.6, 0.5)) {
       this.wanderX = Number.NaN;
       this.waitT = 1 + this.random() * 3.5;
@@ -893,8 +1194,118 @@ export class NpcBrain implements BehaviorInstance {
     }
   }
 
-  private pickWander(): void {
-    const r = this.spec.wander;
+  /**
+   * A day's routine: go to the stop of the hour (or the next one in turn), across floors by the stairs, then linger
+   * there, drifting within its wander radius, for its stay.
+   */
+  private doRoutine(env: BehaviorEnv, dt: number, routine: readonly NpcRoutineStop[]): void {
+    const hour = this.sys.hour();
+    let want = -1;
+    for (let i = 0; i < routine.length; i++) {
+      const h = (routine[i] as NpcRoutineStop).hours;
+      if (h !== undefined && inHours(hour, h[0], h[1])) {
+        want = i;
+        break;
+      }
+    }
+    if (want < 0) {
+      const cur = routine[this.stopIdx];
+      want = this.stopIdx >= 0 && cur !== undefined && cur.hours === undefined ? this.stopIdx : this.nextStop(routine, this.stopIdx);
+    }
+    if (want !== this.stopIdx) {
+      this.stopIdx = want;
+      this.atStop = false;
+      this.wanderX = Number.NaN;
+      this.waitT = 0;
+    }
+    const st = routine[this.stopIdx] as NpcRoutineStop;
+    if (!this.atStop) {
+      if (this.goTo(env, dt, st.at[0], st.at[2], this.spec.speed, 0.6, this.levelOf(st.at))) {
+        this.atStop = true;
+        this.stayT = st.stay * (0.8 + this.random() * 0.4);
+        this.homeX = st.at[0];
+        this.homeZ = st.at[2];
+        this.wanderX = Number.NaN;
+        this.waitT = 1 + this.random() * 2;
+        this.stop(env);
+      } else if (this.trav < 0 && this.pathLen === 0 && this.pathFailT > 0) {
+        // Out of reach (walled off, no stair to it): try the next stop after a moment.
+        this.stayT -= dt;
+        if (this.stayT < -3) {
+          this.stopIdx = this.nextStop(routine, this.stopIdx);
+          this.stayT = 0;
+        }
+      }
+      return;
+    }
+    this.stayT -= dt;
+    if (this.stayT <= 0 && st.hours === undefined && this.trav < 0) {
+      const next = this.nextStop(routine, this.stopIdx);
+      if (next !== this.stopIdx) {
+        this.stopIdx = next;
+        this.atStop = false;
+        this.wanderX = Number.NaN;
+        return;
+      }
+      this.stayT = st.stay;
+    }
+    if (st.wander <= 0) {
+      this.stop(env);
+      return;
+    }
+    if (this.waitT > 0) {
+      this.waitT -= dt;
+      this.stop(env);
+      return;
+    }
+    if (Number.isNaN(this.wanderX)) this.pickWander(st.wander);
+    if (this.goTo(env, dt, this.wanderX, this.wanderZ, this.spec.speed * 0.6, 0.4)) {
+      this.wanderX = Number.NaN;
+      this.waitT = 1.5 + this.random() * 4;
+      this.stop(env);
+    } else if (this.pathLen === 0 && this.pathFailT > 0) {
+      this.wanderX = Number.NaN;
+      this.waitT = 0.5;
+    }
+  }
+
+  /** The next stop without hours after `i` (cyclic), or `i` itself when there is none. */
+  private nextStop(routine: readonly NpcRoutineStop[], i: number): number {
+    for (let k = 1; k <= routine.length; k++) {
+      const j = (((i + k) % routine.length) + routine.length) % routine.length;
+      if ((routine[j] as NpcRoutineStop).hours === undefined) return j;
+    }
+    return Math.max(0, i);
+  }
+
+  /**
+   * Roam: meander within `radius` of (cx, cz) with a steering wander (a target jittering on a circle ahead), turning
+   * back toward the centre near the edge or at a wall. Draws from the seeded stream only.
+   */
+  private roam(env: BehaviorEnv, dt: number, cx: number, cz: number, radius: number, speed: number): void {
+    this.refreshGrid();
+    const out = this.dirOut;
+    wanderDirection(this.wanderState, this.random, dt, this.lastDx, this.lastDz, out);
+    let dx = out[0] as number;
+    let dz = out[1] as number;
+    const fx = this.x - cx;
+    const fz = this.z - cz;
+    const far = hyp(fx, fz);
+    // Past three quarters of the radius the pull home grows; ahead blocked turns it home too.
+    const grid = this.grid;
+    const blocked = grid !== null && !grid.walkable(this.x + dx * 1.2, this.z + dz * 1.2);
+    if (far > radius * 0.75 || blocked) {
+      const k = blocked ? 1 : Math.min(1, (far - radius * 0.75) / Math.max(0.1, radius * 0.25));
+      dx = dx * (1 - k) - (fx / Math.max(1e-6, far)) * k;
+      dz = dz * (1 - k) - (fz / Math.max(1e-6, far)) * k;
+      if (blocked) this.wanderState.theta += Math.PI * 0.5;
+    }
+    const l = hyp(dx, dz);
+    if (l < 1e-6) return;
+    this.steer(env, dt, this.x + (dx / l) * 2, this.z + (dz / l) * 2, speed, Infinity);
+  }
+
+  private pickWander(r: number): void {
     this.refreshGrid();
     for (let k = 0; k < 8; k++) {
       const a = this.random() * Math.PI * 2;
@@ -940,14 +1351,14 @@ export class NpcBrain implements BehaviorInstance {
       return;
     }
     const p = w[this.wp % w.length] as Vec3;
-    if (this.goTo(env, dt, p[0], p[2], this.spec.speed, 0.6)) {
+    if (this.goTo(env, dt, p[0], p[2], this.spec.speed, 0.6, this.levelOf(p))) {
       this.legs++;
       this.self.state['npcLegs'] = this.legs;
       this.waitT = this.spec.patrol.wait;
       this.stop(env);
       this.advanceWaypoint(w.length);
       this.pathLen = 0;
-    } else if (this.pathLen === 0 && this.pathFailT > 0) {
+    } else if (this.trav < 0 && this.pathLen === 0 && this.pathFailT > 0) {
       // Unreachable waypoint: skip it after a moment instead of freezing.
       this.stuckT = Math.max(this.stuckT, 1.5);
       this.advanceWaypoint(w.length);
@@ -982,7 +1393,8 @@ export class NpcBrain implements BehaviorInstance {
       return;
     }
     if (!this.arrived) {
-      this.goTo(env, dt, this.lastX, this.lastZ, this.spec.speed * 1.35, 1.1);
+      this.aimAtFoe();
+      this.goTo(env, dt, this.aim[1] as number, this.aim[2] as number, this.spec.speed * 1.35, 1.1, this.aim[0] as number);
     } else {
       this.stop(env);
       this.scan(env, dt, 70);
@@ -995,7 +1407,24 @@ export class NpcBrain implements BehaviorInstance {
       return;
     }
     const range = this.eff.attackRange;
-    this.goTo(env, dt, this.lastX, this.lastZ, this.spec.runSpeed, Math.max(0.5, range * 0.7));
+    this.aimAtFoe();
+    this.goTo(env, dt, this.aim[1] as number, this.aim[2] as number, this.spec.runSpeed, Math.max(0.5, range * 0.7), this.aim[0] as number);
+  }
+
+  /**
+   * Where to go for the foe: its last known position and floor, or — when it was last seen on a stair — the end of
+   * that stair it was nearer (into `aim` as level, x, z). Without stairs, simply the last known position.
+   */
+  private aimAtFoe(): void {
+    const a = this.aim;
+    const l = this.layers;
+    if (l === null || Number.isNaN(this.lastY)) {
+      a[0] = -1;
+      a[1] = this.lastX;
+      a[2] = this.lastZ;
+      return;
+    }
+    l.aimFor(this.lastX, this.lastY, this.lastZ, a);
   }
 
   private doAttack(env: BehaviorEnv, dt: number): void {
@@ -1008,10 +1437,13 @@ export class NpcBrain implements BehaviorInstance {
     const z = this.z;
     const d = hyp(this.lastX - x, this.lastZ - z);
     const range = this.eff.attackRange;
-    if (d > range * 0.85 && !this.eff.stationary) this.goTo(env, dt, this.lastX, this.lastZ, this.spec.runSpeed * 0.7, range * 0.7);
+    this.aimAtFoe();
+    // On another floor (not on a stair between them) the foe is out of reach whatever the plan distance.
+    const elsewhere = (this.aim[0] as number) >= 0 && (this.aim[0] as number) !== this.layer && this.trav < 0 && Math.abs(this.lastY - this.feetY) > 1.4;
+    if ((d > range * 0.85 || elsewhere) && !this.eff.stationary) this.goTo(env, dt, elsewhere ? (this.aim[1] as number) : this.lastX, elsewhere ? (this.aim[2] as number) : this.lastZ, this.spec.runSpeed * 0.7, range * 0.7, this.aim[0] as number);
     else this.stop(env);
     this.face(env, dt, this.lastX, this.lastZ);
-    if (!atk || this.attackCd > 0 || d > range * 1.05 || this.lostT > 0.5) return;
+    if (!atk || this.attackCd > 0 || d > range * 1.05 || this.lostT > 0.5 || elsewhere) return;
     this.attackCd = atk.cooldown;
     this.attackAnimT = 0.35;
     this.sys.hit(this, this.targetKind, this.targetId, atk.damage);
@@ -1092,7 +1524,11 @@ export class NpcBrain implements BehaviorInstance {
     const d = hyp(pp[0] - x, pp[2] - z);
     if (d > 2.6) {
       const speed = d > 7 ? this.spec.runSpeed : this.spec.speed * 1.2;
-      this.goTo(env, dt, pp[0], pp[2], speed, 2.2);
+      const l = this.layers;
+      if (l !== null) {
+        l.aimFor(pp[0], pp[1], pp[2], this.aim);
+        this.goTo(env, dt, this.aim[1] as number, this.aim[2] as number, speed, 2.2, this.aim[0] as number);
+      } else this.goTo(env, dt, pp[0], pp[2], speed, 2.2);
     } else {
       this.stop(env);
       this.face(env, dt, pp[0], pp[2]);
@@ -1159,6 +1595,11 @@ function carrierOf(env: BehaviorEnv, id: EntityId): EntityId {
     cur = parent;
   }
   return cur;
+}
+
+/** Whether a body's centre may step to (x, z) on `grid` (squeezing past corners when `squeeze`). */
+function free(grid: NavGrid, x: number, z: number, squeeze: boolean): boolean {
+  return grid.walkable(x, z) || (squeeze && grid.passable(x, z));
 }
 
 const tmpVel: Vec3 = [0, 0, 0];

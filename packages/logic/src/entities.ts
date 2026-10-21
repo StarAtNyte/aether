@@ -44,6 +44,8 @@ export class RuntimeEntity {
   hasPose = false;
   /** Tick number at which offset/extraRot were last reset. */
   poseTick = -1;
+  /** A door: simulation time until which an NPC walking through holds it open (runtime only, never state). */
+  npcHoldUntil = -1;
   behaviors: BehaviorSlot[] = [];
 
   constructor(spec: Entity, worldPos: Readonly<Vec3>, worldRot: Readonly<QuatTuple>, spawned: boolean) {

@@ -60,6 +60,8 @@ export interface NavBuildOptions {
 /** How far (m) terrain may rise or fall from the grid's level and still be its floor. */
 export const NAV_DRAPE_BAND = 25;
 
+/** Largest clearance of the squeeze mask ({@link NavGrid.tight}, m). */
+export const NAV_TIGHT = 0.15;
 /** Hard cap of cells per axis. */
 export const NAV_MAX_CELLS = 320;
 /** Most node expansions of one search (bounds the worst case). */
@@ -84,6 +86,11 @@ export class NavGrid {
   readonly blocked: Uint8Array;
   /** 1 = blocks sight (tall solid, not inflated). */
   readonly sight: Uint8Array;
+  /**
+   * 1 = a body's centre cannot be here even squeezing past (solid or void, inflated by at most {@link NAV_TIGHT}):
+   * where a character may step while following a path through a tight doorway (see {@link passable}).
+   */
+  readonly tight: Uint8Array;
   // --- search scratch --------------------------------------------------------------
   private readonly g: Float32Array;
   private readonly f: Float32Array;
@@ -110,6 +117,7 @@ export class NavGrid {
     this.floor = new Float32Array(n).fill(NaN);
     this.blocked = new Uint8Array(n);
     this.sight = new Uint8Array(n);
+    this.tight = new Uint8Array(n);
     this.g = new Float32Array(n);
     this.f = new Float32Array(n);
     this.parent = new Int32Array(n);
@@ -165,6 +173,7 @@ export class NavGrid {
       }
     }
     const r = o.radius;
+    const rt = Math.min(r, NAV_TIGHT);
     for (const ob of obstacles) {
       const reach = (ob.circle ? ob.hx : hyp(ob.hx, ob.hz)) + r + cell;
       const ix0 = Math.max(0, Math.floor((ob.cx - reach - minX) / cell));
@@ -181,15 +190,18 @@ export class NavGrid {
           const x = minX + (ix + 0.5) * cell - ob.cx;
           let inside: boolean;
           let near: boolean;
+          let nearTight: boolean;
           if (ob.circle) {
             const d2 = x * x + z * z;
             inside = d2 <= ob.hx * ob.hx;
             near = d2 <= (ob.hx + r) * (ob.hx + r);
+            nearTight = d2 <= (ob.hx + rt) * (ob.hx + rt);
           } else {
             const lx = Math.abs(x * ob.cos + z * ob.sin);
             const lz = Math.abs(-x * ob.sin + z * ob.cos);
             inside = lx <= ob.hx && lz <= ob.hz;
             near = lx <= ob.hx + r && lz <= ob.hz + r;
+            nearTight = lx <= ob.hx + rt && lz <= ob.hz + rt;
           }
           const i = iz * w + ix;
           // Over draped terrain an obstacle is judged by its height above the ground of that cell.
@@ -202,11 +214,17 @@ export class NavGrid {
             if (sights) this.sight[i] = 1;
           }
           if (blocks && near) this.blocked[i] = 1;
+          if (blocks && nearTight) this.tight[i] = 1;
         }
       }
     }
     // Void cells (no floor) are not walkable.
-    for (let i = 0; i < floor.length; i++) if (Number.isNaN(floor[i])) this.blocked[i] = 1;
+    for (let i = 0; i < floor.length; i++) {
+      if (Number.isNaN(floor[i])) {
+        this.blocked[i] = 1;
+        this.tight[i] = 1;
+      }
+    }
   }
 
   /** Cell index of a world point, or -1 outside the grid. */
@@ -231,6 +249,12 @@ export class NavGrid {
   walkable(x: number, z: number): boolean {
     const i = this.index(x, z);
     return i >= 0 && this.blocked[i] === 0;
+  }
+
+  /** True when a body's centre may pass (x, z) squeezing by (solids inflated by at most {@link NAV_TIGHT} only). */
+  passable(x: number, z: number): boolean {
+    const i = this.index(x, z);
+    return i >= 0 && this.tight[i] === 0;
   }
 
   /** Floor height under (x, z); `fallback` outside the grid or over a void. */
@@ -275,6 +299,11 @@ export class NavGrid {
   /** True when the straight segment crosses no blocked cell (supercover walk). */
   lineClear(x0: number, z0: number, x1: number, z1: number): boolean {
     return this.walk(x0, z0, x1, z1, this.blocked);
+  }
+
+  /** True when the straight segment crosses no cell a body cannot squeeze through ({@link tight}). */
+  lineClearTight(x0: number, z0: number, x1: number, z1: number): boolean {
+    return this.walk(x0, z0, x1, z1, this.tight);
   }
 
   /** True when nothing tall stands between the two points (sight mask). */
@@ -532,6 +561,87 @@ export class NavGrid {
     return dx + dz + (SQRT2 - 2) * Math.min(dx, dz);
   }
 
+  /**
+   * Block every cell whose centre is inside the plan polygon or within `inflate` of it (a stairwell upstairs, a stair
+   * downstairs). Call before {@link components}.
+   */
+  blockPolygon(poly: ReadonlyArray<readonly [number, number]>, inflate: number): void {
+    let x0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let z1 = -Infinity;
+    for (const p of poly) {
+      x0 = Math.min(x0, p[0]);
+      z0 = Math.min(z0, p[1]);
+      x1 = Math.max(x1, p[0]);
+      z1 = Math.max(z1, p[1]);
+    }
+    const ix0 = Math.max(0, Math.floor((x0 - inflate - this.minX) / this.cell));
+    const ix1 = Math.min(this.w - 1, Math.floor((x1 + inflate - this.minX) / this.cell));
+    const iz0 = Math.max(0, Math.floor((z0 - inflate - this.minZ) / this.cell));
+    const iz1 = Math.min(this.h - 1, Math.floor((z1 + inflate - this.minZ) / this.cell));
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const z = this.minZ + (iz + 0.5) * this.cell;
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const x = this.minX + (ix + 0.5) * this.cell;
+        if (polyContains(poly, x, z) || (inflate > 0 && polyDistance(poly, x, z) < inflate)) {
+          this.blocked[iz * this.w + ix] = 1;
+          this.tight[iz * this.w + ix] = 1;
+        }
+      }
+    }
+    this.comp = null;
+  }
+
+  private comp: Int32Array | null = null;
+
+  /**
+   * Connected regions of walkable cells (the same moves as the search: eight neighbours, no corner cutting, within a
+   * step of height), labelled 1, 2, … in row-major order of their first cell; 0 for blocked cells. Built once.
+   */
+  components(): Int32Array {
+    if (this.comp) return this.comp;
+    const n = this.w * this.h;
+    const comp = new Int32Array(n);
+    const stack = new Int32Array(n);
+    let label = 0;
+    const w = this.w;
+    for (let s = 0; s < n; s++) {
+      if (comp[s] !== 0 || this.blocked[s] !== 0) continue;
+      label++;
+      let top = 0;
+      stack[top++] = s;
+      comp[s] = label;
+      while (top > 0) {
+        const cur = stack[--top] as number;
+        const cx = cur % w;
+        const cz = (cur - cx) / w;
+        const cf = this.floor[cur] as number;
+        for (let k = 0; k < 8; k++) {
+          const dx = NB_X[k] as number;
+          const dz = NB_Z[k] as number;
+          const nx = cx + dx;
+          const nz = cz + dz;
+          if (nx < 0 || nz < 0 || nx >= w || nz >= this.h) continue;
+          const ni = nz * w + nx;
+          if (comp[ni] !== 0 || this.blocked[ni] !== 0) continue;
+          if (Math.abs((this.floor[ni] as number) - cf) > this.step) continue;
+          if (dx !== 0 && dz !== 0 && (this.blocked[cz * w + nx] !== 0 || this.blocked[nz * w + cx] !== 0)) continue;
+          comp[ni] = label;
+          stack[top++] = ni;
+        }
+      }
+    }
+    this.comp = comp;
+    return comp;
+  }
+
+  /** Region label of the walkable cell nearest (x, z) within `rings` rings, or 0 (see {@link components}). */
+  regionAt(x: number, z: number, rings = 6): number {
+    const i = this.nearest(x, z, rings);
+    return i < 0 ? 0 : (this.components()[i] as number);
+  }
+
   /** Number of walkable cells (diagnostics). */
   walkableCount(): number {
     let n = 0;
@@ -542,3 +652,27 @@ export class NavGrid {
 
 const NB_X = [1, -1, 0, 0, 1, 1, -1, -1];
 const NB_Z = [0, 0, 1, -1, 1, -1, 1, -1];
+
+function polyContains(poly: ReadonlyArray<readonly [number, number]>, x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i] as readonly [number, number];
+    const b = poly[j] as readonly [number, number];
+    if (a[1] > z !== b[1] > z && x < ((b[0] - a[0]) * (z - a[1])) / (b[1] - a[1] || 1e-12) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+function polyDistance(poly: ReadonlyArray<readonly [number, number]>, x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j] as readonly [number, number];
+    const b = poly[i] as readonly [number, number];
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const l2 = dx * dx + dz * dz;
+    const t = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+    best = Math.min(best, hyp(a[0] + dx * t - x, a[1] + dz * t - z));
+  }
+  return best;
+}
