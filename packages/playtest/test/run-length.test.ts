@@ -56,6 +56,19 @@ describe('the playtest bot finishes generated worlds instead of running out the 
     expect(r.seconds).toBeLessThan(80);
   }, 120_000);
 
+  it('names a lantern buried in the shrine hill instead of walking up the slope for it', async () => {
+    // The lantern sits 1.8 m inside the mound. The ground plane under the heightfield used to count as a walkable cave, so the bot
+    // "found a route" into the slope and reported only that it was stuck.
+    const world = fixture('forest-buried-lantern.world.json');
+    await ensureAssetCatalog(world);
+    const r = await playtest(world, { trace: false });
+    expect(r.status, r.summary).toBe('failed');
+    const f = r.findings.find((x) => x.code === 'unreachable_objective' && x.entities.includes('lantern-5'));
+    expect(f?.message).toMatch(/buried 1\.8 m under the ground/);
+    expect(f?.hint).toMatch(/raise it onto the ground/);
+    expect(r.wallMs).toBeLessThan(20_000);
+  }, 120_000);
+
   it('wins the Codex night forest (stream, footbridge, mound, woods, wolves) within the studio budget', async () => {
     const world = codexForest();
     const r = await playtest(world, { trace: true });

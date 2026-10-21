@@ -1656,9 +1656,13 @@ class Bot {
         const gapH = near ? r1(near.h) : 0;
         const gapV = near ? r1(near.v) : 0;
         const tooHigh = gapV > jumpH * 0.9;
-        const why = near
-          ? `${gapH} m from the nearest place the player can stand${tooHigh ? ` and ${r1(gapV)} m too high` : gapV < -2 ? ` and ${r1(-gapV)} m below it` : ''}`
-          : 'there is no floor near it';
+        // Close above walkable ground that is higher than the objective: it sits inside a slope.
+        const buried = near !== null && gapV < -0.9 && gapH < 2;
+        const why = buried
+          ? `buried ${r1(-gapV)} m under the ground`
+          : near
+            ? `${gapH} m from the nearest place the player can stand${tooHigh ? ` and ${r1(gapV)} m too high` : gapV < -2 ? ` and ${r1(-gapV)} m below it` : ''}`
+            : 'there is no floor near it';
         r.reason = why;
         this.findings.push({
           code: 'unreachable_objective',
@@ -1666,7 +1670,7 @@ class Bot {
           message: `${maybeLift ? 'could not check: ' : ''}${o.kind === 'collect' ? 'the pickup' : o.label} ${o.kind === 'collect' ? `${o.label} ` : ''}at ${fmtPos(o.position)} cannot be reached: ${why}`.replace(/\s+/g, ' '),
           entities: o.entity ? [o.entity] : [],
           position: o.position,
-          hint: near ? `bring it within reach: nearest standable spot is ${fmtPos(g3(this.graph, near.node))}` : 'give it some floor',
+          hint: buried ? `raise it onto the ground at ${fmtPos(g3(this.graph, near.node))} (place_level_items snaps pickups to the ground)` : near ? `bring it within reach: nearest standable spot is ${fmtPos(g3(this.graph, near.node))}` : 'give it some floor',
           data: near ? { gapH: near.h, gapV: near.v, nodeX: this.graph.px[near.node] as number, nodeY: this.graph.py[near.node] as number, nodeZ: this.graph.pz[near.node] as number, required: o.required } : { required: o.required },
         });
       }

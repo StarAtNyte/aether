@@ -618,6 +618,17 @@ export class PhysicsWorld {
     return hits.slice(0, Math.max(1, Math.min(limit, 64)));
   }
 
+  /**
+   * True when the entity's collider is a heightfield. A heightfield is a surface, not a volume: a ray or a capsule below it finds
+   * nothing above, so the space under a hill looks like a cave. Nothing can be walkable under it.
+   */
+  isHeightfield(id: EntityId): boolean {
+    const rec = this.records.get(id);
+    if (!rec) return false;
+    const type = rapier().ShapeType.HeightField;
+    return rec.colliders.some((c) => c.shapeType() === type);
+  }
+
   /** Entities (sensors included, ground excluded) overlapping a sphere. */
   overlapsSphere(center: Vec3, radius: number): EntityId[] {
     if (this.disposed || !safeVec(center) || !Number.isFinite(radius) || radius <= 0) return [];

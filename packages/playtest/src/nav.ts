@@ -355,7 +355,8 @@ export class NavGraph {
             ny.push(hit.normal[1]);
             layers++;
           }
-          if (isGround) break;
+          // Nothing walkable lies under a hill: a heightfield is a surface, so the space beneath it only looks open.
+          if (isGround || (hit.id !== null && pw.isHeightfield(hit.id))) break;
         }
         const ex = extras.get(cz * nx + cx);
         if (ex) {
