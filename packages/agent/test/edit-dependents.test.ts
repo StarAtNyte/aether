@@ -129,3 +129,24 @@ describe('local edits move and remove what belongs to the target', () => {
     expect(after.entities['hill']).toBeDefined();
   });
 });
+
+describe('the edit guard and the assistant\'s own work in the same turn', () => {
+  const START = world([
+    { id: 'shrine', name: 'Moonlit shrine', tags: ['focus'], shape: { kind: 'none' }, transform: { position: [0, 0, -34] } },
+    { id: 'shrine-torii', name: 'Shrine torii', shape: { kind: 'none' }, transform: { position: [0, 0, -22] } },
+    { id: 'lantern-1', name: 'Golden lantern', shape: { kind: 'none' }, transform: { position: [6, 1, -10] } },
+  ]);
+  const hill = (id: string, name: string): EntityInput => ({ id, name, tags: ['hill'], shape: { kind: 'none' }, transform: { position: [0, 0, -34] } });
+
+  it('a failed first hill added this turn may be removed; one that was already there may not', () => {
+    const scope = classifyScope(START, 'move the shrine onto the hill', CTX);
+    expect(scope.kind).toBe('small');
+    expect(scope.allowed.has('shrine-torii')).toBe(true);
+    const mid = applyPatches(START, [{ op: 'add', entity: hill('hill-1', 'Shrine Hill') }]).world;
+    const drop = [{ op: 'remove', id: 'hill-1' }];
+    expect(auditPatches(mid, drop, scope).ok).toBe(false);
+    expect(auditPatches(mid, drop, scope, START).ok).toBe(true);
+    // Not a loophole: what was there at the start of the turn stays guarded.
+    expect(auditPatches(mid, [{ op: 'remove', id: 'lantern-1' }], scope, START).ok).toBe(false);
+  });
+});

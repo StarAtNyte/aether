@@ -90,6 +90,8 @@ export function classifyScope(world: WorldDoc, text: string, ctx: ResolveContext
   for (const id of namedItems(index, text, covered)) for (const s of index.subtree(id)) allowed.add(s);
   // What belongs to a named thing is part of it: the shrine's light, goal zone and plinth move and change with it.
   if (allowed.size > 0) for (const id of dependencyIndex(world).closure([...allowed])) allowed.add(id);
+  // So are the pieces its id names as its own ("shrine" owns "shrine-torii" and "shrine-beacon"; "wolf-2" is a sibling, not a piece).
+  for (const id of [...allowed]) for (const other of Object.keys(world.entities)) if (other.startsWith(`${id}-`) && !/^\d+$/.test(other.slice(id.length + 1))) allowed.add(other);
   return { kind: 'small', allowed, reason: allowed.size > 0 ? `names ${allowed.size} object${allowed.size === 1 ? '' : 's'}` : 'names no object' };
 }
 
@@ -106,15 +108,17 @@ export interface PatchAudit {
 
 /**
  * Check `patches` against the request scope. New entities are always fine;
- * what matters is how many *existing* entities change or disappear.
+ * what matters is how many *existing* entities change or disappear. What the
+ * assistant itself added earlier in the same turn (`turnStart` lacks it) is its own
+ * work in progress: a failed first attempt may be replaced or removed.
  */
-export function auditPatches(world: WorldDoc, patches: readonly unknown[], scope: RequestScope): PatchAudit {
+export function auditPatches(world: WorldDoc, patches: readonly unknown[], scope: RequestScope, turnStart?: WorldDoc): PatchAudit {
   if (scope.kind === 'broad') return { ok: true, offending: [], touched: 0, message: '' };
   const result = applyPatches(world, patches);
   const changes = worldChanges(world, result.world).filter((c) => c.scope === 'entity' && Object.hasOwn(world.entities, c.id));
   const touched = changedEntityIds(changes).filter((id) => Object.hasOwn(world.entities, id));
   // Children of a removed/changed parent that were reparented are not offenders; bookkeeping on the building (tombstones) is expected.
-  const offending = touched.filter((id) => !scope.allowed.has(id) && !(world.entities[id]?.arch?.role === 'building'));
+  const offending = touched.filter((id) => !scope.allowed.has(id) && !(world.entities[id]?.arch?.role === 'building') && !(turnStart && !Object.hasOwn(turnStart.entities, id)));
   const limit = scope.allowed.size === 0 ? UNTARGETED_LIMIT : 0;
   if (offending.length <= limit) return { ok: true, offending: [], touched: touched.length, message: '' };
   const names = offending.slice(0, 6).map((id) => `${world.entities[id]?.name || id} (${id})`).join(', ');

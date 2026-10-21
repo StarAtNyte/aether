@@ -382,7 +382,7 @@ export class WorldAgent {
       this.lastScope = scope.kind === 'small' && scope.allowed.size > 0 ? 'small' : 'broad';
       if (scope.kind === 'small') {
         const small = scope;
-        ctx.audit = (patches) => refine.auditPatches(host.getWorld(), patches, small);
+        ctx.audit = (patches) => refine.auditPatches(host.getWorld(), patches, small, world0);
       }
     }
     const slice = scope !== undefined && scope.kind === 'small' && scope.allowed.size > 0 && Object.keys(world0.entities).length > SLICE_THRESHOLD;
