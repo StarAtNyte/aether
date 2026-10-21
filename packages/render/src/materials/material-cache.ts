@@ -77,6 +77,8 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     vertexColors: r.vertexColors,
     side: r.doubleSided ? DoubleSide : FrontSide,
   });
+  // The resolved colour as linear albedo, before finish maps rescale `color` (the light volume bakes with it).
+  m.userData['aetherAlbedo'] = [m.color.r, m.color.g, m.color.b];
   const ghostLike = variant === 'ghost' || variant === 'proof';
   if (ghostLike) {
     const tint = variant === 'proof' ? PROOF_COLOR : GHOST_COLOR;

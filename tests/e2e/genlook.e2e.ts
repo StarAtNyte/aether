@@ -90,6 +90,8 @@ async function build(page: Page, url: string, prompt: string): Promise<void> {
 
 async function capture(page: Page, file: string): Promise<void> {
   await page.waitForTimeout(1800);
+  // A building's light volume bakes once it has settled: stills wait for the finished light.
+  await page.waitForFunction(() => window.__aether?.simulation?.renderer.lightVolumeBaking !== true, null, { timeout: 60_000, polling: 250 }).catch(() => undefined);
   await page.waitForFunction(() => (window.__aether?.simulation?.renderer.refineProgress ?? 1) >= 0.98, null, { timeout: 40_000, polling: 500 }).catch(() => undefined);
   const data = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w as number, height: h as number, mime: 'image/png' })) ?? null, [W, H]);
   if (!data) throw new Error('capture failed');
@@ -211,13 +213,17 @@ async function main(): Promise<void> {
       log(`${name}: "${prompt}"`);
       const started = performance.now();
       await build(page, server.url, prompt);
+      // `GEN_TIER=low|medium|high|ultra` pins the render tier for the stills.
+      if (process.env['GEN_TIER']) await page.evaluate((t) => window.__aether?.simulation?.renderer.setRenderTier(t as never), process.env['GEN_TIER']);
       const info = await page.evaluate(() => {
         const a = window.__aether!;
         const st = a.store.getState();
         const last = st.chat[st.chat.length - 1] as unknown as { events?: Array<{ text?: string; message?: string }> } | undefined;
-        return { name: a.history.current.name, entities: Object.keys(a.history.current.entities).length, backend: document.body.innerText.match(/WebGPU|WebGL2/)?.[0] ?? '?', reply: (last?.events ?? []).map((e) => e.text ?? e.message ?? '').join(' ').slice(0, 400) };
+        const r = a.simulation?.renderer;
+        const fx = r ? Object.entries(r.activeEffects).filter(([, on]) => on).map(([k]) => k).join('+') : '';
+        return { name: a.history.current.name, entities: Object.keys(a.history.current.entities).length, backend: document.body.innerText.match(/WebGPU|WebGL2/)?.[0] ?? '?', tier: `${r?.renderTier ?? '?'} ${fx}`, reply: (last?.events ?? []).map((e) => e.text ?? e.message ?? '').join(' ').slice(0, 400) };
       });
-      log(`  built "${info.name}" (${info.entities} entities, ${((performance.now() - started) / 1000).toFixed(0)} s, ${info.backend}): ${info.reply}`);
+      log(`  built "${info.name}" (${info.entities} entities, ${((performance.now() - started) / 1000).toFixed(0)} s, ${info.backend}, tier ${info.tier}): ${info.reply}`);
       if (BACKEND !== 'offline') await page.screenshot({ path: join(outDir!, `${name}-ui.png`) });
       writeFileSync(join(outDir!, `${name}.world.json`), await page.evaluate(() => JSON.stringify(window.__aether!.history.current)));
       await page.evaluate(() => {
@@ -226,6 +232,8 @@ async function main(): Promise<void> {
       });
       await page.waitForTimeout(1000);
       if (process.env['GEN_EDITOR'] !== '0') await capture(page, join(outDir!, `${name}-editor.png`));
+      const bake = await page.evaluate(() => window.__aether?.simulation?.renderer.lightVolumeStats ?? null);
+      if (bake) log(`  light volume: ${JSON.stringify(bake)}`);
       const { arch, cams } = await cameras(page);
       // `GEN_CAMS='[{"name":"close","pos":[x,y,z],"target":[x,y,z]}]'` adds explicit views (every prompt).
       if (process.env['GEN_CAMS']) cams.push(...(JSON.parse(process.env['GEN_CAMS']) as Cam[]));
@@ -239,6 +247,7 @@ async function main(): Promise<void> {
         if (arch) await page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up', levelMode: 'stacked', xray: false, section: null, plan: false } as never));
         await setCam(page, cam);
         await capture(page, join(outDir!, `${name}-${cam.name}.png`));
+        if (process.env['GEN_DEBUG']) log(`  ${cam.name} light: ${JSON.stringify(await page.evaluate((p) => window.__aether?.simulation?.renderer.lightVolumeAt(p[0], p[1], p[2]) ?? null, cam.pos))}`);
       }
       if (!arch && process.env['GEN_PLAY'] !== '0') {
         await page.evaluate(() => void window.__aether?.studio.togglePlay());

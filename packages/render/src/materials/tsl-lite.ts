@@ -20,6 +20,8 @@ export interface Nd {
   element(i: number): Nd;
   sample(uv: Nd): Nd;
   clone(): Nd;
+  addAssign(o: Nd): Nd;
+  mulAssign(o: Nd | number): Nd;
   x: Nd;
   y: Nd;
   z: Nd;
@@ -61,6 +63,7 @@ export interface Tsl {
   floor(a: Nd): Nd;
   select(cond: Nd, a: NodeArg, b: NodeArg): Nd;
   texture(tex: import('three').Texture, uv?: Nd): Nd;
+  texture3D(tex: import('three').Texture, uvw?: Nd): Nd;
   transformDirection(dir: Nd, matrix: Nd): Nd;
   getViewPosition(uv: Nd, depth: Nd, inverseProjection: Nd): Nd;
   perspectiveDepthToViewZ(depth: Nd, near: Nd, far: Nd): Nd;
@@ -71,6 +74,7 @@ export interface Tsl {
   uniform(v: unknown): Nd;
   uniformArray(v: unknown[], type: string): Nd;
   positionWorld: Nd;
+  normalWorld: Nd;
   positionView: Nd;
   positionLocal: Nd;
   positionGeometry: Nd;

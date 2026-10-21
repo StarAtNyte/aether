@@ -47,7 +47,10 @@ import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGra
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
 import { BATCHED_LAYER } from './sync/static-batches';
-import { adaptStep, adaptedLook, interiorFactor, type CeilingBox } from './view/eye-adapt';
+import { adaptStep, adaptedLook, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
+import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
+import { LightVolume } from './environment/light-volume-light';
+import { LightVolumeNode } from './gpu/light-volume-node';
 import { contentFraming, framingPose, frontAzimuthDeg, pickClearAzimuth, type Framing } from './view/framing';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
@@ -304,6 +307,58 @@ const _down = new Vector3(0, -1, 0);
 const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
+const _dir = new Vector3();
+/** White-balance shift toward warm of a fully adapted interior view (grade temperature units). */
+const INTERIOR_WARMTH = 0.18;
+
+/** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
+function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
+  if (prev.entities === next.entities) return false;
+  for (const id in next.entities) {
+    const e = next.entities[id];
+    const before = prev.entities[id];
+    if (e === before) continue;
+    if (e?.arch || e?.light || before?.arch || before?.light) return true;
+  }
+  for (const id in prev.entities) {
+    const before = prev.entities[id];
+    if (!(id in next.entities) && (before?.arch || before?.light)) return true;
+  }
+  return false;
+}
+
+/** Mean linear radiance of the upper and lower halves of an sRGB equirectangular sky map (grey without one). */
+function skyHalves(map: { image: { data: unknown; width: number; height: number } } | null): { up: [number, number, number]; down: [number, number, number] } {
+  const data = map?.image.data;
+  const w = map?.image.width ?? 0;
+  const h = map?.image.height ?? 0;
+  if (!(data instanceof Uint8Array) || w < 2 || h < 2 || data.length < w * h * 4) return { up: [0.35, 0.42, 0.52], down: [0.2, 0.2, 0.18] };
+  const up: [number, number, number] = [0, 0, 0];
+  const down: [number, number, number] = [0, 0, 0];
+  const lin = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  for (let y = 0; y < h; y++) {
+    // Equirectangular rows: weight by the row's solid angle (cos of the latitude).
+    const lat = ((y + 0.5) / h - 0.5) * Math.PI;
+    const wgt = Math.cos(lat);
+    // Row 0 looks straight down (three's equirect mapping with flipY off).
+    const into = y < h / 2 ? down : up;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      into[0] += lin(data[i] as number) * wgt;
+      into[1] += lin(data[i + 1] as number) * wgt;
+      into[2] += lin(data[i + 2] as number) * wgt;
+    }
+  }
+  const norm = (w * h) / Math.PI;
+  for (let c = 0; c < 3; c++) {
+    up[c] = (up[c] as number) / norm;
+    down[c] = (down[c] as number) / norm;
+  }
+  return { up, down };
+}
 /** True when an RGBA8 image is one colour (within noise): sampled sparsely, so it costs nothing. */
 export function isFlat(data: Uint8Array): boolean {
   const step = Math.max(4, (Math.floor(data.length / 4 / 4096) | 0) * 4);
@@ -485,6 +540,13 @@ export class WorldRenderer {
   /** Section plane: keeps y ≤ constant. */
   private readonly sectionPlane = new Plane(new Vector3(0, -1, 0), 0);
   private wasGrowing = false;
+  /** Baked sky visibility and bounce light of the world's buildings (see `view/light-volume-controller.ts`). */
+  private readonly lightVolume = new LightVolumeController(() => this.gatherLightVolume(), {
+    settled: () => this.syncing === 0 && !this.grow.active && !this.disposed,
+    onUpload: () => this.onLightVolume(),
+  });
+  /** Scene syncs still generating geometry (the light volume waits for them). */
+  private syncing = 0;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
   private viewCanvas: HTMLCanvasElement | null = null;
   /** CPU-backed canvas that encodes asynchronous captures. */
@@ -677,7 +739,7 @@ export class WorldRenderer {
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -726,6 +788,12 @@ export class WorldRenderer {
       });
     } catch (e) {
       log.warn(`IES and area lights unavailable: ${errorMessage(e)}`);
+    }
+    // The baked light volume of buildings is a light type of its own: tell the node renderer how to shade it.
+    try {
+      renderer.library.addLight(LightVolumeNode, LightVolume);
+    } catch (e) {
+      log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
     const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts, gpu);
     // A lost device/context stops drawing and tells the host (three's default only logs an error).
@@ -795,6 +863,113 @@ export class WorldRenderer {
   /** The world shows at least one parametric building. */
   get hasBuildings(): boolean {
     return this.archView.active;
+  }
+
+  /** The buildings' light volume is waiting to bake or baking (captures that want the finished light wait for it). */
+  get lightVolumeBaking(): boolean {
+    return this.lightVolume.baking;
+  }
+
+  /** A baked light volume lights the buildings. */
+  get lightVolumeReady(): boolean {
+    return this.lightVolume.ready;
+  }
+
+  /** Diagnostics: what the light volume gives an eye at a point, the exposure it asks for and the outdoor reference. */
+  lightVolumeAt(x: number, y: number, z: number): { vis: number; bounce: number; ev: number; outdoor: { ambient: number; sun: number }; eyeEv: number; shadowHalf: number; inside: boolean } | null {
+    const s = this.lightVolume.eyeSample(x, y, z);
+    return s ? { ...s, ev: volumeExposure(s, this.volumeOutdoor), outdoor: { ...this.volumeOutdoor }, eyeEv: this.eyeEv, shadowHalf: this.env.sun.shadow.camera.right, inside: this.shadowInside } : null;
+  }
+
+  /** Size and cost of the last light-volume bake (null before one finished). */
+  get lightVolumeStats(): Readonly<{ probes: number; triangles: number; workMs: number; wallMs: number; spacing: number }> | null {
+    return this.lightVolume.lastBake;
+  }
+
+  /** Finish a pending light-volume bake right away (stills); true when a volume is on screen. */
+  finishLightVolume(): boolean {
+    return this.lightVolume.finishNow();
+  }
+
+  /** A new light volume is on the GPU: the analytic fills step aside, the eye re-adapts, the view redraws. */
+  private onLightVolume(): void {
+    if (this.disposed) return;
+    this.env.setVolumeLit(true);
+    this.eyeClock = 1;
+    this.applyLook();
+    // The interior shadow fit may now apply.
+    this.boundsDirty = true;
+    this.needsDraw = true;
+  }
+
+  /** Interior light follows the world: the analytic fills, and the baked volume for buildings. */
+  private syncInteriorLight(): void {
+    const on = this.archView.active && !this.lowMemory;
+    this.env.setInteriorBounce(this.archView.active);
+    this.lightVolume.setEnabled(on);
+    this.env.setVolumeLit(on && this.lightVolume.ready);
+  }
+
+  /** What a light-volume bake needs: the building parts, the light of the environment and the ground height. */
+  private gatherLightVolume(): { parts: VolumePart[]; lighting: VolumeLighting; groundY: number } | null {
+    if (!this.archView.active) return null;
+    const parts: VolumePart[] = [];
+    const lamps: Array<{ position: [number, number, number]; color: [number, number, number]; range: number }> = [];
+    let groundY = Number.POSITIVE_INFINITY;
+    this.grow.withFullScale(() => {
+      this.scene.updateMatrixWorld();
+      this.sync.forEachNode((node) => {
+        const e = node.entity;
+        if (e.template || e.visible === false) return;
+        const l = node.light?.light;
+        if (l && l.visible && l.intensity > 0 && (l as Light & { isPointLight?: boolean }).isPointLight) {
+          l.getWorldPosition(_pos);
+          const range = (l as Light & { distance?: number }).distance;
+          lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * l.intensity, l.color.g * l.intensity, l.color.b * l.intensity], range: range && range > 0 ? range : 20 });
+        }
+        const a = e.arch;
+        if (!a) return;
+        if (a.role === 'building') {
+          node.object.getWorldPosition(_pos);
+          groundY = Math.min(groundY, _pos.y);
+          return;
+        }
+        parts.push({ role: a.role, object: node.object, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
+      });
+    });
+    if (parts.length === 0) return null;
+    const sun = this.env.sun;
+    _dir.copy(sun.position).sub(sun.target.position);
+    const sunOn = sun.visible && sun.intensity > 0 && _dir.lengthSq() > 1e-8 && _dir.normalize().y > 0.02;
+    const hemi = this.env.hemi;
+    const hs = hemi.color;
+    const hg = hemi.groundColor;
+    const hi = hemi.intensity;
+    // The image light as a two-tone hemisphere: mean radiance of the sky map's upper and lower halves.
+    const sky = skyHalves(this.env.environmentMap);
+    const envI = this.env.skyState.envIntensity * Math.PI;
+    const a: [number, number, number] = [0, 0, 0];
+    const b: [number, number, number] = [0, 0, 0];
+    const sc = [hs.r, hs.g, hs.b];
+    const gc = [hg.r, hg.g, hg.b];
+    for (let c = 0; c < 3; c++) {
+      const up = (sc[c] as number) * hi + (sky.up[c] as number) * envI;
+      const down = (gc[c] as number) * hi + (sky.down[c] as number) * envI;
+      a[c] = (up + down) / 2;
+      b[c] = (up - down) / 2;
+    }
+    const sunIrr: [number, number, number] = [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity];
+    this.volumeOutdoor = { ambient: 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2], sun: sunOn ? 0.2126 * sunIrr[0] + 0.7152 * sunIrr[1] + 0.0722 * sunIrr[2] : 0 };
+    return {
+      parts,
+      groundY: Number.isFinite(groundY) ? groundY : 0,
+      lighting: {
+        sun: sunOn ? { direction: [_dir.x, _dir.y, _dir.z], irradiance: sunIrr } : null,
+        ambient: { a, b },
+        groundAlbedo: [0.2, 0.23, 0.16],
+        lamps,
+      },
+    };
   }
 
   /** Wrap the scene content in a clipping group (section cuts). Loaded lazily: it lives in the node renderer module. */
@@ -873,7 +1048,15 @@ export class WorldRenderer {
     this.trackWaterBodies(world);
     this.archView.invalidate();
     this.invalidateCeilings();
-    this.env.setInteriorBounce(this.archView.active);
+    this.syncInteriorLight();
+    if (!prev || archChanged(prev, world)) {
+      this.lightVolume.invalidate();
+      this.syncing++;
+      void done.finally(() => {
+        this.syncing = Math.max(0, this.syncing - 1);
+        this.lightVolume.invalidate();
+      });
+    }
     // New entities stay hidden while their geometry streams in, then grow in together.
     const added = this.growEnabled ? this.addedContent(prev, world) : [];
     for (const target of added) this.grow.hide(target);
@@ -881,6 +1064,8 @@ export class WorldRenderer {
     this.debugDirty = true;
     this.needsDraw = true;
     await done;
+    // Ceilings measured while their geometry was still streaming in are stale.
+    this.invalidateCeilings();
     if (this.disposed) return;
     // The first world of a session just materialises; later builds show their plan marks first.
     if (added.length > 0) this.startGrow(added, prev !== null);
@@ -1049,7 +1234,8 @@ export class WorldRenderer {
     this.env.apply(env, this.scene);
     this.applyWind(env.wind);
     this.docGrade = env.grade ?? null;
-    this.env.setInteriorBounce(this.archView.active);
+    this.lightVolume.invalidate();
+    this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
@@ -1453,7 +1639,8 @@ export class WorldRenderer {
   setEnvironmentOverride(env: Environment): void {
     if (this.disposed) return;
     this.env.apply(env, this.scene);
-    this.env.setInteriorBounce(this.archView.active);
+    this.lightVolume.invalidate();
+    this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
     this.needsDraw = true;
@@ -2207,6 +2394,10 @@ export class WorldRenderer {
         const r = f.radius * 1.2;
         _bounds.min.set(f.center[0] - r, Math.min(0, f.center[1] - r), f.center[2] - r);
         _bounds.max.set(f.center[0] + r, f.center[1] + r, f.center[2] + r);
+        // Inside a building the sun only matters through its windows: spend the whole map on the building, so
+        // sun patches on the floor have crisp window-shaped edges instead of a metre of blur.
+        const shell = this.lightVolume.shellBounds;
+        if (this.shadowInside && !shell.isEmpty()) _bounds.copy(shell).expandByScalar(1);
         this.env.fitShadows(_bounds);
       } else {
         this.env.fitShadows(this.sync.computeBounds(_bounds));
@@ -2338,18 +2529,32 @@ export class WorldRenderer {
     const post = this.post;
     this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
     const eye = adaptedLook(this.eyeFactor);
-    this.env.setEnvScale(eye.envScale);
+    // A baked light volume occludes the image light itself and tells the exposure how dark the spot is.
+    const volume = this.lightVolume.ready;
+    this.env.setEnvScale(volume ? 1 : eye.envScale);
     this.env.setInteriorFill(this.eyeFactor);
-    this.renderer.toneMappingExposure = this.env.exposure * eye.exposure;
+    const eyeExposure = volume ? 2 ** this.eyeEv : eye.exposure;
+    this.renderer.toneMappingExposure = this.env.exposure * eyeExposure;
     if (post) {
-      const grade = gradeWithPreset(gradeFor(sky), preset);
-      post.setGrade({ ...grade, exposure: (grade.exposure ?? 1) * eye.exposure });
+      // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
+      const warm = volume && !g ? INTERIOR_WARMTH * Math.min(1, this.eyeEv / 1.5) : 0;
+      const grade = gradeWithPreset(gradeFor(sky), warm > 0 ? { ...preset, temperature: preset.temperature + warm } : preset);
+      // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
+      post.setGrade(grade);
       post.setBloom(this.env.bloom * preset.bloom);
     }
   }
 
   /** Smoothed interior factor of the eye (0 outdoors, 1 under a ceiling), see `view/eye-adapt.ts`. */
   private eyeFactor = 0;
+  /** Smoothed exposure boost (stops) asked for by the light volume at the eye. */
+  private eyeEv = 0;
+  /** The sun's shadow map is fitted to the building the eye stands in. */
+  private shadowInside = false;
+  /** Eye position at the last adaptation tick. */
+  private readonly lastEye = new Vector3();
+  /** Luminance of the open-site ambient and sun the last bake used (the volume's exposure reference). */
+  private volumeOutdoor = { ambient: 1, sun: 3 };
   private ceilings: CeilingBox[] | null = null;
   private eyeClock = 0;
 
@@ -2379,8 +2584,21 @@ export class WorldRenderer {
     }
     const p = this.perspective.position;
     const target = this.ceilings.length === 0 ? 0 : interiorFactor(p.x, p.y, p.z, this.ceilings);
-    if (Math.abs(target - this.eyeFactor) < 0.002) return;
-    this.eyeFactor = adaptStep(this.eyeFactor, target, step);
+    const sample = this.lightVolume.ready ? this.lightVolume.eyeSample(p.x, p.y, p.z) : null;
+    const targetEv = sample ? volumeExposure(sample, this.volumeOutdoor) : 0;
+    // Under a roof by the ceilings, or by the volume itself (little sky seen from the eye).
+    const inside = this.lightVolume.ready && (target > 0.5 || (sample !== null && sample.vis < 0.3));
+    if (inside !== this.shadowInside) {
+      this.shadowInside = inside;
+      this.boundsDirty = true;
+      this.sinceRefit = REFIT_INTERVAL;
+    }
+    // A camera that jumped (a cut, a teleport, a capture pose) sees with adapted eyes at once.
+    const jumped = this.lastEye.distanceToSquared(p) > 2.25;
+    this.lastEye.copy(p);
+    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01) return;
+    this.eyeFactor = jumped ? target : adaptStep(this.eyeFactor, target, step);
+    this.eyeEv = jumped ? targetEv : adaptStep(this.eyeEv, targetEv, step);
     this.applyLook();
     this.needsDraw = true;
   }
@@ -3330,6 +3548,7 @@ export class WorldRenderer {
     this.gizmo?.dispose();
     this.gizmo = null;
     this.archView.dispose();
+    this.lightVolume.dispose();
     this.editOverlay.dispose();
     this.proof.dispose();
     this.ghostRun.dispose();

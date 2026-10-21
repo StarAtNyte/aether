@@ -150,6 +150,8 @@ export class EnvironmentRig {
   readonly fill = new HemisphereLight('#fff0e0', '#fff0e0', 0);
   private fillLevel = 0;
   private bounceOn = false;
+  /** A baked light volume lights the buildings: the analytic bounce and fill step aside (they stay in the scene at 0, so no material recompiles). */
+  private volumeLit = false;
   /** Image-light intensity before the eye-adaptation scale, and that scale (1 outdoors). */
   private envBase = 1;
   private envScale = 1;
@@ -244,10 +246,17 @@ export class EnvironmentRig {
     this.applyBounce();
   }
 
+  /** A baked light volume now lights the buildings (true) or not: the analytic bounce and fill switch off and on. */
+  setVolumeLit(on: boolean): void {
+    if (on === this.volumeLit) return;
+    this.volumeLit = on;
+    this.applyBounce();
+  }
+
   private applyBounce(): void {
     const b = interiorBounce(this.state);
     this.bounce.groundColor.set(b.color);
-    this.bounce.intensity = this.bounceOn ? b.intensity : 0;
+    this.bounce.intensity = this.bounceOn && !this.volumeLit ? b.intensity : 0;
     this.bounce.visible = this.bounceOn;
     this.applyFill();
   }
@@ -265,7 +274,7 @@ export class EnvironmentRig {
 
   private applyFill(): void {
     const b = interiorBounce(this.state);
-    this.fill.intensity = this.bounceOn ? Math.min(1.1, b.intensity) * INTERIOR_FILL * (0.35 + 0.65 * this.fillLevel) : 0;
+    this.fill.intensity = this.bounceOn && !this.volumeLit ? Math.min(1.1, b.intensity) * INTERIOR_FILL * (0.35 + 0.65 * this.fillLevel) : 0;
     this.fill.visible = this.bounceOn;
   }
 
