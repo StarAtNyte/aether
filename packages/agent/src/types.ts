@@ -133,7 +133,7 @@ export interface PhotoScoreView {
   total: number;
   /** passed / total. */
   rate: number;
-  /** Measured fidelity sub-score of the room (0..1): deterministic measures against the photo's description and the render. */
+  /** Measured fidelity sub-score of the room (0..1): deterministic measures against the photo's description and the render. Advisory evidence given to the judges, never the verdict. */
   objective?: number;
   /** The measures behind `objective` (0..1 each; see `measureFidelity`). */
   fidelity?: Partial<Record<'openings' | 'inventory' | 'placement' | 'sizes' | 'materials' | 'clearance' | 'framing' | 'similarity' | 'regionColour', number>>;
@@ -143,8 +143,8 @@ export interface PhotoScoreView {
   judges?: number;
   /** How much the judges disagreed, 0..1. */
   spread?: number;
-  /** Half judge, half measured fidelity: the signal progress and stalls are decided on. */
-  combined?: number;
+  /** Who judged: "panel" (independent AI judges, median per item) or "assistant" (the model that fixes the room). Measured fidelity is advisory evidence only. */
+  judgedBy?: 'panel' | 'assistant';
   /** The judges' comparison of this state with the accepted one. */
   preference?: 'current' | 'previous' | 'tie';
   /** False when this state was rejected (the room went back to the accepted one). */

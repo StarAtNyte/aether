@@ -1,6 +1,6 @@
 /**
  * Cheap objective similarity between a photo and a render, used next to the vision model's item-by-item
- * judgement so a round that makes things worse can be rolled back.
+ * judgement, as advisory evidence for the model (never a gate).
  *
  * Both images are reduced to the same small grid. Three measures, each in 0..1 (1 = alike):
  * - colour: overlap of the hue / saturation histograms and of the brightness histogram;

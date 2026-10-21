@@ -12,8 +12,8 @@
  * - relative comparison: from the second look on, each judge sees the accepted render and the new one side by side,
  *   blind (A and B, in alternating order), scores both and says which is closer to the photo. Progress decisions use
  *   that preference, not the difference of two noisy absolutes;
- * - a gate that combines it with the deterministic fidelity measures ({@link decideRound}): a round is accepted only
- *   when the measures do not regress and the judges prefer it.
+ * - a decision made by the judges' preference ({@link decideRound}); the deterministic fidelity measures are passed to
+ *   the model as advisory evidence and never accept or reject a round.
  */
 import { MAX_VERDICTS, STRUCTURAL_METRICS, type ChecklistItem, type FidelityMetrics, type Scoreboard } from '@aether/arch/photo';
 import { z } from 'zod';
@@ -28,7 +28,7 @@ export const JUDGES_DEFAULT = 3;
 export const JUDGES_MAX = 7;
 /** Base of the fixed per-seat seeds (seat k uses JUDGE_SEED + k). */
 export const JUDGE_SEED = 7331;
-/** Rubric score at which an item passes. */
+/** Rubric score at which an item passes when the judges gave no call of their own (`ok`). */
 export const PASS_SCORE = 3;
 
 /** The rubric, one line per integer. */
@@ -62,6 +62,8 @@ export const JUDGE_TOOL: ToolDef = {
             a: { type: 'integer', minimum: 0, maximum: 4, description: 'rubric score of render A' },
             b: { type: 'integer', minimum: 0, maximum: 4, description: 'rubric score of render B (only when two renders are shown)' },
             evidence: { type: 'string', description: 'one sentence: what the photo shows and what the render shows' },
+            ok: { type: 'boolean', description: 'your own call: would you accept this item as it stands in render A (true), or does it still need fixing (false)? Your strictness, not a fixed cut-off.' },
+            okB: { type: 'boolean', description: 'the same call for render B (only when two renders are shown)' },
           },
           required: ['id', 'a', 'evidence'],
         },
@@ -80,6 +82,8 @@ const JudgeVerdict = z.object({
   a: Score,
   b: Score.optional(),
   evidence: z.string().trim().min(3).max(400),
+  ok: z.boolean().optional(),
+  okB: z.boolean().optional(),
 });
 const JudgeInput = z.object({
   verdicts: z.array(z.unknown()).min(1).max(MAX_VERDICTS),
@@ -93,7 +97,7 @@ export type SeatOrder = 'single' | 'current-first' | 'previous-first';
 /** One judge's answer, mapped back from A/B to current/previous. */
 export interface JudgeSample {
   /** Rubric score and evidence of the current render, per checklist id. */
-  current: Map<string, { score: number; evidence: string }>;
+  current: Map<string, { score: number; evidence: string; ok?: boolean }>;
   /** Scores of the previous (accepted) render, when it was shown. */
   previous: Map<string, number>;
   /** Which render this judge found closer to the photo (null: one render only, or no answer). */
@@ -104,7 +108,7 @@ export interface JudgeSample {
 export function parseJudgement(input: unknown, ids: ReadonlySet<string>, order: SeatOrder): JudgeSample | null {
   const p = JudgeInput.safeParse(input);
   if (!p.success) return null;
-  const current = new Map<string, { score: number; evidence: string }>();
+  const current = new Map<string, { score: number; evidence: string; ok?: boolean }>();
   const previous = new Map<string, number>();
   for (const raw of p.data.verdicts) {
     const v = JudgeVerdict.safeParse(raw);
@@ -112,7 +116,8 @@ export function parseJudgement(input: unknown, ids: ReadonlySet<string>, order: 
     const cur = order === 'previous-first' ? v.data.b : v.data.a;
     const prev = order === 'previous-first' ? v.data.a : v.data.b;
     if (cur === undefined) continue;
-    current.set(v.data.id, { score: cur, evidence: v.data.evidence });
+    const okCur = order === 'previous-first' ? v.data.okB : v.data.ok;
+    current.set(v.data.id, { score: cur, evidence: v.data.evidence, ...(okCur !== undefined ? { ok: okCur } : {}) });
     if (order !== 'single' && prev !== undefined) previous.set(v.data.id, prev);
   }
   if (current.size === 0) return null;
@@ -133,7 +138,7 @@ export function median(xs: readonly number[]): number {
 
 /** The panel's aggregated judgement of one render. */
 export interface Consensus {
-  /** Pass/fail per checklist item (pass: median score ≥ {@link PASS_SCORE}). */
+  /** Pass/fail per checklist item (pass: a majority of the judges' own `ok` calls; without them, median score ≥ {@link PASS_SCORE}). */
   score: Scoreboard;
   /** Mean over the checklist of the median rubric score, divided by 4 (0..1). Items nobody scored count 0. */
   judge: number;
@@ -161,7 +166,7 @@ export function aggregateJudgements(checklist: readonly ChecklistItem[], samples
   const medians: Record<string, number> = {};
   const failing: Scoreboard['failing'] = [];
   for (const item of checklist) {
-    const got = samples.map((s) => s.current.get(item.id)).filter((x): x is { score: number; evidence: string } => x !== undefined);
+    const got = samples.map((s) => s.current.get(item.id)).filter((x): x is { score: number; evidence: string; ok?: boolean } => x !== undefined);
     if (got.length === 0) {
       medians[item.id] = 0;
       failing.push({ ...item, note: 'not judged' });
@@ -173,7 +178,10 @@ export function aggregateJudgements(checklist: readonly ChecklistItem[], samples
     medians[item.id] = m;
     total += m;
     spread += (Math.max(...scores) - Math.min(...scores)) / 4;
-    if (m >= PASS_SCORE) passed++;
+    // The judges' own call decides when they gave one (a majority of those who did); the rubric cut-off is the fallback.
+    const calls = got.filter((g) => g.ok !== undefined);
+    const accepted = calls.length > 0 ? calls.filter((g) => g.ok).length * 2 > calls.length : m >= PASS_SCORE;
+    if (accepted) passed++;
     else {
       // The evidence of the judge whose score is nearest the median says what differs.
       const near = [...got].sort((a, b) => Math.abs(a.score - m) - Math.abs(b.score - m))[0];
@@ -218,8 +226,8 @@ export function judgeText(checklist: readonly ChecklistItem[], pairwise: boolean
     'The renders are plain previews: flatter light than a photograph, no glare, a flat sky in the windows. Never lower a score for lighting quality or gloss alone; judge shape, size, position, proportion, hue and lightness relative to the things around it.',
     'Evidence is required for every score: one sentence naming what the photo shows and what the render shows ("photo: bed centred under two round prints; render: bed half a metre to the right"). A score without evidence is discarded.',
     pairwise
-      ? 'Give "a" (the score of render A) and "b" (the score of render B) for every item, then "closer": "A" or "B" for the render that is closer to the photo overall, or "same" when you cannot tell them apart.'
-      : 'Give "a" (the score of the render) for every item.',
+      ? 'Give "a" (the score of render A) and "b" (the score of render B) for every item, with "ok" and "okB": your own call whether you would accept that item as it stands in that render, then "closer": "A" or "B" for the render that is closer to the photo overall, or "same" when you cannot tell them apart.'
+      : 'Give "a" (the score of the render) for every item, with "ok": your own call whether you would accept the item as it stands (your strictness decides, not a fixed cut-off).',
     `Checklist:\n${checklist.map((c) => `- ${c.id}: ${c.text}`).join('\n')}`,
     'Call report_judgement once with every id.',
   ].join('\n');
@@ -326,21 +334,15 @@ export function consensusText(c: Consensus, limit = 16): string {
 }
 
 // ---------------------------------------------------------------------------
-// The gate and the stall detector
+// The decision and the stall detector
 // ---------------------------------------------------------------------------
 
-/** A measured fidelity drop larger than this rejects a round. */
-export const OBJECTIVE_TOLERANCE = 0.015;
-/** A drop of a structural measure (openings, inventory, clearance) larger than this rejects a round. */
-export const STRUCTURAL_TOLERANCE = 0.04;
-/** A rise of the measured fidelity at least this large counts as progress on its own. */
-export const OBJECTIVE_GAIN = 0.005;
 /** A rise of the judges' median score at least this large counts as progress when their votes tie. */
 export const JUDGE_GAIN = 0.03;
 
 /** What a round is decided on. */
 export interface RoundState {
-  /** Measured fidelity sub-score (null when nothing could be measured). */
+  /** Measured fidelity sub-score (null when nothing could be measured). Advisory: it is reported, never a gate. */
   objective: number | null;
   metrics: FidelityMetrics | null;
   /** Judge score 0..1: the panel's median rubric score, or the single judge's pass rate. */
@@ -350,56 +352,57 @@ export interface RoundState {
 /** The decision of {@link decideRound}. */
 export interface Decision {
   accept: boolean;
-  /** The round is measurable progress (for the stall detector). */
+  /** The round is progress by the judges' own word (for the stall detector). */
   gain: boolean;
   reason: string;
-}
-
-/** The combined signal shown and used for the legacy comparison: half judge, half measured fidelity. */
-export function combinedScore(s: RoundState): number {
-  return s.objective === null ? s.judge : 0.5 * s.judge + 0.5 * s.objective;
+  /** Where the deterministic measures disagree with the judges, in words (evidence for the model, never the reason). */
+  advisory?: string;
 }
 
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
 /**
- * Accept or reject a new state against the accepted one.
- * - The measures may not regress: the sub-score may not fall by more than {@link OBJECTIVE_TOLERANCE}, and no
- *   structural measure by more than {@link STRUCTURAL_TOLERANCE}.
- * - With a relative judgement (`preference`), the judges must prefer the new state; on a tie it is accepted only when
- *   the measures rise by {@link OBJECTIVE_GAIN} or the judges' median score by {@link JUDGE_GAIN}.
- * - Without one (a single judge in the conversation, or the panel gave nothing), the combined score may not fall by
- *   more than `margin`.
+ * Where the measures moved against the judgement, as data for the model. Informational only: nothing here accepts or
+ * rejects a round.
  */
-export function decideRound(ref: RoundState | null, cand: RoundState, preference: Consensus['preference'], margin: number): Decision {
-  if (!ref) return { accept: true, gain: true, reason: 'the first look' };
-  if (ref.objective !== null && cand.objective !== null && cand.objective < ref.objective - OBJECTIVE_TOLERANCE) {
-    return { accept: false, gain: false, reason: `the measured fidelity fell from ${pct(ref.objective)} to ${pct(cand.objective)}` };
+export function measureAdvisory(ref: RoundState | null, cand: RoundState): string | undefined {
+  if (!ref) return undefined;
+  const notes: string[] = [];
+  if (ref.objective !== null && cand.objective !== null && Math.abs(cand.objective - ref.objective) >= 0.02) {
+    notes.push(`measured fidelity ${cand.objective > ref.objective ? 'rose' : 'fell'} from ${pct(ref.objective)} to ${pct(cand.objective)}`);
   }
   if (ref.metrics && cand.metrics) {
     for (const k of STRUCTURAL_METRICS) {
       const a = ref.metrics[k];
       const b = cand.metrics[k];
-      if (a !== null && b !== null && b < a - STRUCTURAL_TOLERANCE) return { accept: false, gain: false, reason: `the measured ${k} fell from ${pct(a)} to ${pct(b)}` };
+      if (a !== null && b !== null && Math.abs(b - a) >= 0.04) notes.push(`measured ${k} ${b > a ? 'rose' : 'fell'} from ${pct(a)} to ${pct(b)}`);
     }
   }
-  const objGain = ref.objective !== null && cand.objective !== null ? cand.objective - ref.objective : 0;
-  if (preference === 'previous') return { accept: false, gain: false, reason: 'the judges found the accepted state closer to the photo' };
-  if (preference === 'current') return { accept: true, gain: true, reason: 'the judges found the new state closer to the photo' };
-  if (preference === 'tie') {
-    if (objGain >= OBJECTIVE_GAIN) return { accept: true, gain: true, reason: `the judges could not tell them apart and the measured fidelity rose ${pct(objGain)}` };
-    if (cand.judge - ref.judge >= JUDGE_GAIN) return { accept: true, gain: true, reason: `the judges' scores rose from ${pct(ref.judge)} to ${pct(cand.judge)}` };
-    return { accept: false, gain: false, reason: 'neither the judges nor the measures found it closer to the photo' };
-  }
-  const a = combinedScore(ref);
-  const b = combinedScore(cand);
-  if (b < a - margin) return { accept: false, gain: false, reason: `the combined score fell from ${pct(a)} to ${pct(b)}` };
-  return { accept: true, gain: b > a + OBJECTIVE_GAIN, reason: b > a ? 'the combined score rose' : 'the combined score held' };
+  return notes.length > 0 ? notes.join('; ') : undefined;
 }
 
 /**
- * Stall detection on the combined signal: the loop is going nowhere when no round has been measurable progress
- * (an accepted, preferred or measurably better state) for `limit` rounds in a row.
+ * Accept or reject a new state against the accepted one. The LLM decides: `preference` is the judges' (or the fixing
+ * model's) side-by-side verdict of the two renders. The measured fidelity never accepts or rejects a round; where it
+ * disagrees with the judges it is returned as `advisory` for the model to weigh.
+ * - 'current': accepted, progress. 'previous': rejected. 'tie': accepted (nothing got worse in the judges' eyes);
+ *   progress only when their median score rose by {@link JUDGE_GAIN}.
+ * - null (nobody compared the two renders): accepted; it counts as progress only when the judge score rose.
+ */
+export function decideRound(ref: RoundState | null, cand: RoundState, preference: Consensus['preference']): Decision {
+  if (!ref) return { accept: true, gain: true, reason: 'the first look' };
+  const advisory = measureAdvisory(ref, cand);
+  const out = (d: Omit<Decision, 'advisory'>): Decision => (advisory ? { ...d, advisory } : d);
+  if (preference === 'previous') return out({ accept: false, gain: false, reason: 'the judges found the accepted state closer to the photo' });
+  if (preference === 'current') return out({ accept: true, gain: true, reason: 'the judges found the new state closer to the photo' });
+  const rose = cand.judge - ref.judge >= JUDGE_GAIN;
+  if (preference === 'tie') return out({ accept: true, gain: rose, reason: rose ? `the judges' scores rose from ${pct(ref.judge)} to ${pct(cand.judge)}` : 'the judges could not tell the two renders apart' });
+  return out({ accept: true, gain: rose, reason: rose ? `the judge score rose from ${pct(ref.judge)} to ${pct(cand.judge)}` : 'no side-by-side judgement was made; the new state is kept' });
+}
+
+/**
+ * Stall detection: the loop is going nowhere when no round has been progress by the judges' word
+ * (a preferred state or a clearly higher judge score) for `limit` rounds in a row.
  */
 export class ProgressTracker {
   private readonly limit: number;

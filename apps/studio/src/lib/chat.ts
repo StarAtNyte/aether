@@ -59,7 +59,7 @@ export interface PhotoEventView {
 export const FIDELITY_KEYS = ['openings', 'inventory', 'placement', 'sizes', 'materials', 'clearance', 'framing', 'similarity', 'regionColour'] as const;
 export type FidelityKey = (typeof FIDELITY_KEYS)[number];
 
-/** The score of a photo round: the judges' item verdicts, their rubric score, the deterministic measures, the combined signal. */
+/** The score of a photo round: the judges' item verdicts, their rubric score, the deterministic measures (advisory), who judged. */
 export interface PhotoScoreEventView {
   passed: number;
   total: number;
@@ -71,8 +71,8 @@ export interface PhotoScoreEventView {
   /** Independent judges behind `judge`. */
   judges?: number;
   spread?: number;
-  /** Half judge, half measured fidelity. */
-  combined?: number;
+  /** Who judged: independent AI judges, or the assistant that fixes the room. */
+  judgedBy?: 'panel' | 'assistant';
   preference?: 'current' | 'previous' | 'tie';
   /** False: the state was not kept. */
   accepted?: boolean;
@@ -104,7 +104,7 @@ function photoView(v: Record<string, unknown>): PhotoEventView {
       ...(unit(sc['objective']) !== undefined ? { objective: unit(sc['objective']) as number } : {}),
       ...(unit(sc['judge']) !== undefined ? { judge: unit(sc['judge']) as number } : {}),
       ...(unit(sc['spread']) !== undefined ? { spread: unit(sc['spread']) as number } : {}),
-      ...(unit(sc['combined']) !== undefined ? { combined: unit(sc['combined']) as number } : {}),
+      ...(sc['judgedBy'] === 'panel' || sc['judgedBy'] === 'assistant' ? { judgedBy: sc['judgedBy'] } : {}),
       ...(typeof sc['judges'] === 'number' && Number.isFinite(sc['judges']) ? { judges: Math.max(1, Math.min(9, Math.round(sc['judges']))) } : {}),
       ...(sc['preference'] === 'current' || sc['preference'] === 'previous' || sc['preference'] === 'tie' ? { preference: sc['preference'] } : {}),
       ...(typeof sc['accepted'] === 'boolean' ? { accepted: sc['accepted'] } : {}),

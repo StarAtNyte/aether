@@ -96,6 +96,11 @@ const verdicts = (fail: string[], note = 'differs'): Reply => () => [
   call('report_verdicts', { verdicts: buildChecklist(description()).map((c) => ({ id: c.id, pass: !fail.includes(c.id), ...(fail.includes(c.id) ? { note } : {}) })), summary: 'ok' }),
 ];
 const finish: Reply = () => [call('finish', { message: 'done' })];
+/** Verdicts plus the model's side-by-side answer (it sees the best render next to the new one when it judges alone). */
+const verdictsCloser = (fail: string[], closer: 'new' | 'best' | 'same'): Reply => (req, n) => {
+  const v = verdicts(fail)(req, n)[0] as Extract<ContentBlock, { type: 'tool_use' }>;
+  return [{ ...v, input: { ...(v.input as object), closer } }];
+};
 
 /** These tests script the conversation turn by turn, so the model in it judges (no panel) and the photo is read once; the panel and the merged reads have their own tests below. */
 function agent(provider: Provider, photo: ConstructorParameters<typeof WorldAgent>[0]['photo'] = {}): WorldAgent {
@@ -196,7 +201,7 @@ describe('room from a photo, with a vision model', () => {
     expect(spec).toContain('bed [floor');
   });
 
-  it('moves the exposure and the colour grade of the world towards the photo (warm and bright) when the render is dim and neutral', async () => {
+  it('hands the measured look difference to the model as data and changes nothing itself; the model sets the look with tune_look', async () => {
     const picture = (light: [number, number, number], e: number): Raster => {
       const w = 60;
       const h = 40;
@@ -215,21 +220,36 @@ describe('room from a photo, with a vision model', () => {
       }
     }
     const host = new Dim();
-    const before = host.world.environment.exposure;
-    const provider = scripted([describeCall(), verdicts([]), finish]);
+    const before = host.world.environment;
+    const provider = scripted([
+      describeCall(),
+      // Round 1: the model sees the evidence with the two pictures, judges, and decides the room reads cold and dark.
+      (req, n) => [...verdicts(['floor'])(req, n), call('tune_look', { exposure: 1.5, temperature: 0.18, interiorWarmth: 0.7, message: 'warmer and brighter like the photo' })],
+      verdicts([]),
+      finish,
+    ]);
     await collect(agent(provider).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    const first = JSON.stringify(provider.requests[1]?.messages);
+    expect(first).toContain('Look evidence (measured from pixels, advisory');
+    expect(first).toContain('nothing was changed automatically');
+    expect(first).toContain('A mechanical match would try');
+    // Only the model's own call moved the look, and it is stored in the document.
     const env = host.world.environment;
-    expect(env.exposure).toBeGreaterThan(before);
-    expect(env.grade?.temperature ?? 0).toBeGreaterThan(0.05);
-    expect(env.grade?.temperature ?? 0).toBeLessThanOrEqual(1);
+    expect(env.exposure).toBe(1.5);
+    expect(env.grade?.temperature).toBe(0.18);
+    expect(env.look?.interiorWarmth).toBe(0.7);
+    expect(before.grade).toBeUndefined();
+    expect(host.commits.some((c) => c.message === 'warmer and brighter like the photo')).toBe(true);
+    expect(host.commits.some((c) => /Match the (exposure|colour grade)/.test(c.message))).toBe(false);
   });
 
-  it('leaves the exposure and the grade alone when the render already matches the photo', async () => {
+  it('leaves the exposure and the grade alone when the model does not ask for a change', async () => {
     const host = new PhotoHost();
     const before = host.world.environment;
     await collect(agent(scripted([describeCall(), verdicts([]), finish])).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
     expect(host.world.environment.exposure).toBe(before.exposure);
     expect(host.world.environment.grade).toBeUndefined();
+    expect(host.world.environment.look).toBeUndefined();
   });
 
   it('refuses to edit before judging, and applies a fix in the same reply as the verdicts', async () => {
@@ -252,15 +272,15 @@ describe('room from a photo, with a vision model', () => {
     expect(pic?.wall?.t).toBeCloseTo(2.3, 1);
   });
 
-  it('rolls the room back when a round makes it worse', async () => {
+  it('rolls the room back when the model, shown the best render beside the new one, finds the best closer', async () => {
     const all = buildChecklist(description()).map((c) => c.id);
     const mostlyFail = all.filter((id) => id !== 'shell-size').slice(0, 14);
     const provider = scripted([
       describeCall(),
       verdicts(['item-picture-left']),
       () => [call('edit_items', { edits: [{ op: 'remove', ref: 'tv' }, { op: 'remove', ref: 'picture-right' }] })],
-      // Round 2: much worse; the host rolls back before applying anything else.
-      verdicts(mostlyFail),
+      // Round 2: the model looks at the best render next to the new one, finds the best closer, and the host rolls back.
+      verdictsCloser(mostlyFail, 'best'),
       () => [call('edit_items', { edits: [{ op: 'remove', ref: 'bed' }] })],
       verdicts([]),
       finish,
@@ -270,6 +290,9 @@ describe('room from a photo, with a vision model', () => {
     const events = await collect(agent(provider, { maxRounds: 3 }).run('recreate this room', host, { images: [fakePhoto(1920, 1280)] }));
     const msgs = photoEvents(events).map((e) => e.text).join('\n');
     expect(msgs).toContain('back to round 1');
+    // The model was shown the best state beside the new render and asked which is closer (its eyes decide, no number).
+    expect(JSON.stringify(provider.requests[3]?.messages)).toContain('BEST SO FAR (round 1)');
+    expect(photoEvents(events).some((e) => e.score?.judgedBy === 'assistant')).toBe(true);
     const scene = readScene(host.world, PHOTO_BUILDING_ID);
     // The room is the round-1 room: tv and the right picture are back, and the bed was never removed.
     expect(scene?.items.some((i) => i.kind === 'tv-set')).toBe(true);
@@ -401,7 +424,7 @@ describe('room from a photo, with a panel of independent judges', () => {
     expect(done?.score?.judge).toBe(1);
     expect(done?.score?.fidelity?.inventory).toBeGreaterThan(0.9);
     expect(done?.score?.objective).toBeGreaterThan(0.5);
-    expect(done?.score?.combined).toBeGreaterThan(0.5);
+    expect(done?.score?.judgedBy).toBe('panel');
     expect(photoEvents(events).some((e) => e.phase === 'round' && e.score?.preference === 'current')).toBe(true);
   });
 
@@ -429,14 +452,16 @@ describe('room from a photo, with a panel of independent judges', () => {
     expect(JSON.stringify(provider.requests.at(-1)?.messages)).toContain('rolled back');
   });
 
-  it('the measures veto a change that loses pieces, even when the judges like it', async () => {
-    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'remove', ref: 'tv' }, { op: 'remove', ref: 'picture-right' }] })], finish], judgeReply('current'));
+  it('the measures never overrule the judges: a change they prefer is kept, and the model is told what the checks saw as advice', async () => {
+    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'remove', ref: 'tv' }, { op: 'remove', ref: 'picture-right' }] })], finish], judgeReply('current', ['item-picture-left']));
     const host = new PhotoHost();
     const events = await collect(panelAgent(provider, { maxRounds: 2 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
-    expect(photoEvents(events).some((e) => /not kept \(the measured (inventory|fidelity)/.test(e.text))).toBe(true);
+    expect(photoEvents(events).some((e) => /not kept/.test(e.text))).toBe(false);
     const scene = readScene(host.world, PHOTO_BUILDING_ID);
-    expect(scene?.items.some((i) => i.kind === 'tv-set')).toBe(true);
-    expect(scene?.items.filter((i) => i.kind === 'art')).toHaveLength(2);
+    expect(scene?.items.some((i) => i.kind === 'tv-set')).toBe(false);
+    const later = JSON.stringify(provider.requests.at(-1)?.messages);
+    expect(later).toMatch(/Advisory, from the deterministic checks/);
+    expect(later).toMatch(/measured inventory fell/);
   });
 
   it('falls back to the model in the conversation when no judge answers', async () => {

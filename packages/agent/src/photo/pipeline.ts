@@ -68,8 +68,8 @@ import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, Co
 import { imageSize } from './image-size';
 import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
-import { applyGrade, estimatePhotoGrade, matchGrade, nextEnvironmentGrade, nextExposure, type PhotoGrade } from './grade';
-import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, combinedScore, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
+import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
+import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
 
@@ -105,18 +105,6 @@ export const READS_DEFAULT = 3;
 export const READS_MAX = 5;
 /** Base of the advisory per-read seeds (read k uses READ_SEED + k). */
 export const READ_SEED = 4421;
-/**
- * Without a relative judgement (the single judge in the conversation), a round is rolled back when its combined score
- * is this much below the best: never less than 0.03, and at least one and a half checklist items (half the combined
- * score is the judge's pass rate; a single wavering verdict is not a regression).
- */
-const ROLLBACK_MARGIN_MIN = 0.03;
-function rollbackMargin(items: number): number {
-  return Math.max(ROLLBACK_MARGIN_MIN, (1.5 * 0.5) / Math.max(1, items));
-}
-/** Pass rate that, with no structural failure, lets the model call it done. */
-export const PHOTO_TARGET_RATE = 0.92;
-
 const VerdictInput = z.object({ verdicts: z.array(z.unknown()).min(1).max(MAX_VERDICTS), summary: z.string().max(400).optional() });
 
 function noteModel(usage: ExecutorContext['usage'], model: string | undefined): void {
@@ -310,6 +298,8 @@ interface Shot {
   fidelity: FidelityReport | null;
   /** The photo-camera render without marks (what the judges look at; null when the host did not draw it). */
   clean: string | null;
+  /** How the picture's brightness, white point and tone differ from the photo's, as advisory data for `tune_look` ('' when unmeasured). */
+  lookEvidence: string;
 }
 
 interface Photo {
@@ -318,10 +308,6 @@ interface Photo {
   raster: Raster | null;
   /** Exposure, white balance and tone read off the photo (null without pixels). */
   grade: PhotoGrade | null;
-  /** How many times the environment exposure was moved towards the photo's (bounded). */
-  exposureSteps: number;
-  /** How many times the environment's colour grade was moved towards the photo's (bounded). */
-  gradeSteps: number;
 }
 
 function toRequest(p: ReviewPose, aspect: number, marks: ReviewViewRequest['marks']): ReviewViewRequest {
@@ -369,45 +355,30 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   if (images.length === 0) return null;
   let similarity: number | null = null;
   let regionColour: number | null = null;
+  let lookEvidence = '';
   const cleanShot = got.find((x) => x.name === clean.name);
   if (cleanShot && photo.raster && host.decodeImage) {
     const r = await host.decodeImage(cleanShot.dataUrl, 256).catch(() => null);
     if (r) {
-      // The render is graded like the photo (white point, tone) before it is compared, so a correct room with another
-      // exposure or light colour is not punished; the exposure of the environment then moves towards the photo's.
+      // The render is graded like the photo (white point, tone) before the pixel similarity is measured, so a correct room with
+      // another exposure or light colour is not punished for it. Nothing is changed in the world here: how the look should move
+      // is the assistant's decision (tune_look), made from the two pictures; the measured difference is handed over as data.
       const renderGrade = photo.grade ? estimatePhotoGrade(r) : null;
       const match = photo.grade && renderGrade ? matchGrade(photo.grade, renderGrade) : null;
       const graded = match ? applyGrade({ ...r, data: r.data.slice() }, match) : r;
-      if (match && photo.gradeSteps < 2) {
-        // The white balance, saturation and contrast of the photo go into the world's own colour grade, so the room shows
-        // them in the studio and in every later render (a delta below a few percent is not worth a patch).
-        const cur = run.ctx.host.getWorld().environment.grade;
-        const g = nextEnvironmentGrade(cur, match);
-        if (Math.abs(g.temperature - (cur?.temperature ?? 0)) > 0.03 || Math.abs(g.saturation - (cur?.saturation ?? 1)) > 0.04 || Math.abs(g.contrast - (cur?.contrast ?? 1)) > 0.04) {
-          photo.gradeSteps++;
-          run.ctx.host.applyPatches([{ op: 'setEnvironment', set: { grade: g } }], 'Match the colour grade of the photo');
-        }
-      }
       similarity = compareImages(photo.raster, graded)?.overall ?? null;
       // The surfaces the description boxes (walls, floor, ceiling) are compared at the same place in both pictures (the render is
       // taken from the photo's camera), next to the pieces the framing matched.
       const surfacePairs = surfaceRegions(desc0).map((s) => ({ want: s.box, got: s.box }));
       regionColour = regionColourScore(photo.raster, graded, [...(framing?.rows ?? []), ...surfacePairs]);
-      if (photo.grade && renderGrade && photo.exposureSteps < 3 && Math.abs(photo.grade.median - renderGrade.median) > 0.06) {
-        const cur = run.ctx.host.getWorld().environment.exposure;
-        const next = nextExposure(cur, photo.grade, renderGrade);
-        if (Math.abs(next - cur) >= 0.05) {
-          photo.exposureSteps++;
-          run.ctx.host.applyPatches([{ op: 'setEnvironment', set: { exposure: next } }], 'Match the exposure of the photo');
-        }
-      }
+      if (photo.grade && renderGrade && match) lookEvidence = lookEvidenceText(world, photo.grade, renderGrade, match);
     }
   }
   // The deterministic measures of the room as it was rendered (the world before the grade patches above, which do not move anything).
   const fidelity = measureFidelity(world, desc0, { framing, similarity, regionColour });
   const objective = fidelity?.score ?? null;
   const measure = fidelity ? fidelityLine(fidelity) : [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
-  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null };
+  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, lookEvidence };
 }
 
 /** What one look at the room came to: the judgement (the panel's, or the single judge's) and the measures. */
@@ -417,8 +388,6 @@ interface Judged {
   fidelity: FidelityReport | null;
   /** Judge score 0..1: the panel's median rubric score, or the single judge's pass rate. */
   judge: number;
-  /** {@link combinedScore}: half judge, half measured fidelity. */
-  quality: number;
   measure: string;
   /** The panel's consensus (null: the model in the conversation judged). */
   panel: Consensus | null;
@@ -426,7 +395,7 @@ interface Judged {
 
 function judgedOf(sb: Scoreboard, shot: Pick<Shot, 'objective' | 'fidelity' | 'measure'>, panel: Consensus | null): Judged {
   const judge = panel ? panel.judge : sb.rate;
-  return { score: sb, objective: shot.objective, fidelity: shot.fidelity, judge, quality: combinedScore({ objective: shot.objective, metrics: shot.fidelity?.metrics ?? null, judge }), measure: shot.measure, panel };
+  return { score: sb, objective: shot.objective, fidelity: shot.fidelity, judge, measure: shot.measure, panel };
 }
 
 function stateOf(j: Judged): RoundState {
@@ -445,16 +414,16 @@ function scoreView(j: Judged, accepted?: boolean): PhotoScoreView {
     ...(Object.keys(fidelity).length > 0 ? { fidelity } : {}),
     judge: j.judge,
     ...(j.panel ? { judges: j.panel.samples, spread: j.panel.spread, ...(j.panel.preference ? { preference: j.panel.preference } : {}) } : {}),
-    combined: j.quality,
+    judgedBy: j.panel ? 'panel' : 'assistant',
     ...(accepted !== undefined ? { accepted } : {}),
     structuralFailed: sb.structuralFailed,
     failing: sb.failing.slice(0, 24).map((f) => ({ id: f.id, text: f.text.slice(0, 160), note: f.note.slice(0, 200) })),
   };
 }
 
-/** The numbers of a look in one line ("judges 11/17 pass (65%), score 72%; framing 75%, …; combined 77%"). */
+/** The numbers of a look in one line, saying who judged ("3 AI judges 11/17 pass (65%), score 72%; measured (advisory) framing 75%, …"). */
 function lookLine(j: Judged): string {
-  return `${j.panel ? `judges ${scoreLine(j.score)}, score ${Math.round(j.judge * 100)}%` : scoreLine(j.score)}${j.measure ? `; ${j.measure}` : ''}; combined ${Math.round(j.quality * 100)}%`;
+  return `${j.panel ? `${j.panel.samples} AI judges ${scoreLine(j.score)}, score ${Math.round(j.judge * 100)}%` : `the assistant judged ${scoreLine(j.score)}`}${j.measure ? `; measured (advisory) ${j.measure}` : ''}`;
 }
 
 function pushUser(messages: ChatMessage[], blocks: ContentBlock[]): void {
@@ -500,7 +469,7 @@ async function decodePhoto(run: PhotoRun): Promise<Photo> {
   const size = imageSize(run.image);
   const raster = typeof run.ctx.host.decodeImage === 'function' ? await run.ctx.host.decodeImage(run.image, 256).catch(() => null) : null;
   const aspect = raster ? raster.width / raster.height : size ? size.width / size.height : 1.5;
-  return { dataUrl: run.image, aspect: Math.max(0.5, Math.min(3, aspect)), raster, grade: raster ? estimatePhotoGrade(raster) : null, exposureSteps: 0, gradeSteps: 0 };
+  return { dataUrl: run.image, aspect: Math.max(0.5, Math.min(3, aspect)), raster, grade: raster ? estimatePhotoGrade(raster) : null };
 }
 
 /** Offline notice: what can be said without a vision model. */
@@ -621,7 +590,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   const lines: string[] = [];
   if (final) {
     const s = final.score;
-    lines.push(`Rebuilt the room from your photo: ${s.passed} of ${s.total} checklist items match${final.panel ? ` (median of ${final.panel.samples} independent judges)` : ''}${final.objective !== null ? `; measured fidelity ${Math.round(final.objective * 100)}%` : ''}.`);
+    lines.push(`Rebuilt the room from your photo: ${s.passed} of ${s.total} checklist items match${final.panel ? ` (judged by ${final.panel.samples} independent AI judges, median per item)` : ' (judged by the assistant that built it)'}${final.objective !== null ? `; the deterministic checks measure ${Math.round(final.objective * 100)}% (advisory, not the verdict)` : ''}.`);
     if (s.failing.length > 0) lines.push(`Still different: ${s.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
   } else lines.push('Rebuilt the room from your photo (not compared with it: no renders were available).');
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
@@ -678,9 +647,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), ...designTools, ...run.tools.filter((t) => t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
   const messages: ChatMessage[] = [];
-  const margin = rollbackMargin(checklist.length);
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
   let accepted = null as Accepted | null;
@@ -715,12 +683,12 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   };
 
   /** Accept a judged state, or go back to the accepted one. Returns the decision and the judgement that now stands. */
-  const settle = (cand: Judged, world: WorldDoc, shot: Shot, at: number): { decision: Decision; standing: Judged; rejected: Accepted | null } => {
+  const settle = (cand: Judged, world: WorldDoc, shot: Shot, at: number, said: Consensus['preference'] = null): { decision: Decision; standing: Judged; rejected: Accepted | null } => {
     const ref = accepted;
-    const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? null, margin);
+    // The side-by-side verdict is the LLM's: the panel's, or the fixing model's own `closer` when it judged alone.
+    const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? said);
     if (decision.accept) {
-      // Without a panel the reference stays the best state, so a slow slide of small losses is not accepted step by step.
-      if (cand.panel || !ref || cand.quality >= ref.judged.quality) accepted = { world, round: at, shot, judged: cand };
+      accepted = { world, round: at, shot, judged: cand };
       return { decision, standing: cand, rejected: null };
     }
     if (ref && revertTo(ref.world, `Back to round ${ref.round}`)) return { decision, standing: ref.judged, rejected: ref };
@@ -801,7 +769,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       }
     }
 
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', view.fidelity ? fidelityText(view.fidelity) : ''].filter((l) => l.length > 0).join('\n');
+    const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
@@ -810,6 +779,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
     view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+    // Judging alone, the model decides whether its last changes helped by looking at the best state next to the new one.
+    const bestImage = ref0 ? (ref0.shot.clean ?? ref0.shot.images[0]?.dataUrl ?? null) : null;
+    if (judges === 0 && ref0 && bestImage && changed && round > 1) {
+      blocks.push({ type: 'text', text: `Image ${view.images.length + 2}: BEST SO FAR (round ${ref0.round}), the state your last changes started from. In report_verdicts set "closer" to "new" when the new render is closer to the photo, "best" when this one is (the room then goes back to it), or "same".` }, { type: 'image', dataUrl: bestImage });
+    }
     if (round === 1) blocks.push({ type: 'text', text: `Legend of the numbers:\n${view.legend}${firstRefusals.length > 0 ? `\nRefused while building (place these again with the right numbers, or fix the cause):\n${firstRefusals.map((r) => `- ${r}`).join('\n')}` : ''}` });
     pushUser(messages, blocks);
     refusals = [];
@@ -863,13 +837,13 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           }
           // No panel: the model's own verdicts are this round's judgement.
           const cand = judgedOf(sb, shot, null);
-          const s = settle(cand, judgedWorld, shot, round);
+          const s = settle(cand, judgedWorld, shot, round, parseCloser(call.input));
           standing = s.standing;
           decision = s.decision;
           let note = verdictReply(sb);
           if (s.rejected) {
             rolledBack = true;
-            note += ` That is worse than round ${s.rejected.round} (${s.decision.reason}), so the room was rolled back to round ${s.rejected.round}; the changes in this reply are not applied. Look at the next render and try a different, smaller fix.`;
+            note += ` You found the best state (round ${s.rejected.round}) closer to the photo (${s.decision.reason}), so the room was rolled back to round ${s.rejected.round}; the changes in this reply are not applied. Look at the next render and try a different, smaller fix.`;
             yield { type: 'photo', phase: 'round', round, text: `Round ${round} was worse (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(s.rejected.judged) };
           }
           results.push({ type: 'tool_result', toolUseId: call.id, content: note });
@@ -884,8 +858,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Done.' });
           continue;
         }
-        if (!isDesignTool(call.name)) {
-          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan or finish.`, isError: true });
+        if (!isDesignTool(call.name) && call.name !== 'tune_look') {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan, tune_look or finish.`, isError: true });
           continue;
         }
         if (rolledBack) {
@@ -925,8 +899,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       return yield* conclude(j, changed);
     }
     if (declared && !edited) {
-      const good = j.score.rate >= PHOTO_TARGET_RATE && !j.score.structuralFailed;
-      if (!good) yield { type: 'photo', phase: 'round', round, text: 'The assistant stopped with items still different (nothing more it could change with the tools).', score: scoreView(j) };
+      yield { type: 'photo', phase: 'round', round, text: `The assistant decided it is good enough as it stands, with ${j.score.failing.length} item${j.score.failing.length === 1 ? '' : 's'} it judged still different.`, score: scoreView(j) };
       return yield* conclude(j, false);
     }
     if (verdict.stalled) {
@@ -979,6 +952,13 @@ function samplePhotoText(raster: Raster | null, d: RoomDescription, input: unkno
     lines.push(`- ${label}: lit ${c.lit}, mean ${c.mean}, shadow ${c.shadow}${named?.described ? `; described ${named.described}` : ''}; nearest finishes: ${fins.map((f) => (f.tint ? `${f.finish} tinted ${f.tint}` : f.finish)).join(' | ')}`);
   }
   return lines.join('\n');
+}
+
+/** The fixing model's side-by-side answer when it judges alone: is the new render closer to the photo than the best one so far? */
+function parseCloser(input: unknown): Consensus['preference'] {
+  const c = input && typeof input === 'object' ? (input as { closer?: unknown }).closer : undefined;
+  const v = typeof c === 'string' ? c.trim().toLowerCase() : '';
+  return v === 'new' ? 'current' : v === 'best' ? 'previous' : v === 'same' ? 'tie' : null;
 }
 
 function parseVerdicts(input: unknown): ItemVerdict[] {

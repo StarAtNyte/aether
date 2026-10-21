@@ -605,5 +605,5 @@ export function fidelityLine(r: FidelityReport): string {
 /** The measures and the worst differences, for the model. */
 export function fidelityText(r: FidelityReport, limit = 10): string {
   const worst = r.issues.slice(0, limit);
-  return [`Measured (deterministic, against your description and the photo): ${fidelityLine(r)}.`, ...(worst.length > 0 ? ['Largest measured differences:', ...worst.map((i) => `- [${LABELS[i.metric]}] ${i.text}`)] : [])].join('\n');
+  return [`Measured (deterministic, advisory evidence against your description and the photo; you judge from the renders, a number does not overrule your eyes): ${fidelityLine(r)}.`, ...(worst.length > 0 ? ['Largest measured differences:', ...worst.map((i) => `- [${LABELS[i.metric]}] ${i.text}`)] : [])].join('\n');
 }

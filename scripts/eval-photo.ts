@@ -213,9 +213,9 @@ interface Report {
   judges: number;
   /** How the photo was read (the reads, the consensus and the checklist it gave). */
   reads: PhotoReadsView | null;
-  rounds: Array<{ round: number; passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; accepted: boolean | null; fidelity: PhotoScoreView['fidelity'] | null; failing: string[] }>;
-  first: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null } | null;
-  final: { passed: number; total: number; objective: number | null; judge: number | null; combined: number | null; fidelity: PhotoScoreView['fidelity'] | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
+  rounds: Array<{ round: number; passed: number; total: number; objective: number | null; judge: number | null; judgedBy: string | null; accepted: boolean | null; fidelity: PhotoScoreView['fidelity'] | null; failing: string[] }>;
+  first: { passed: number; total: number; objective: number | null; judge: number | null; judgedBy: string | null } | null;
+  final: { passed: number; total: number; objective: number | null; judge: number | null; judgedBy: string | null; fidelity: PhotoScoreView['fidelity'] | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
   errors: string[];
   assumptions: number;
 }
@@ -258,7 +258,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
       if (e.phase === 'described' && e.reads) report.reads = e.reads;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
       if (e.phase === 'done' && e.score) {
-        report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, judge: e.score.judge ?? null, combined: e.score.combined ?? null, fidelity: e.score.fidelity ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
+        report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, judge: e.score.judge ?? null, judgedBy: e.score.judgedBy ?? null, fidelity: e.score.fidelity ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
       }
     } else if (e.type === 'error') {
       report.errors.push(e.text);
@@ -267,7 +267,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   }
   report.ms = Math.round(performance.now() - t0);
   const r0 = report.rounds[0];
-  if (r0) report.first = { passed: r0.passed, total: r0.total, objective: r0.objective, judge: r0.judge, combined: r0.combined };
+  if (r0) report.first = { passed: r0.passed, total: r0.total, objective: r0.objective, judge: r0.judge, judgedBy: r0.judgedBy };
   // Renders for the montage: the first attempt (the room as first built) and the final room, from the photo's camera.
   const files = [join(dir, 'photo.jpg')];
   if (host.firstView && host.firstWorld) {
@@ -300,7 +300,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
 }
 
 function roundRow(round: number, s: PhotoScoreView): Report['rounds'][number] {
-  return { round, passed: s.passed, total: s.total, objective: s.objective ?? null, judge: s.judge ?? null, combined: s.combined ?? null, accepted: s.accepted ?? null, fidelity: s.fidelity ?? null, failing: s.failing.map((f) => f.id) };
+  return { round, passed: s.passed, total: s.total, objective: s.objective ?? null, judge: s.judge ?? null, judgedBy: s.judgedBy ?? null, accepted: s.accepted ?? null, fidelity: s.fidelity ?? null, failing: s.failing.map((f) => f.id) };
 }
 
 async function main(): Promise<void> {

@@ -3,10 +3,9 @@ import type { ChecklistItem, FidelityMetrics } from '@aether/arch/photo';
 import {
   JUDGE_SEED,
   JUDGE_SYSTEM,
-  OBJECTIVE_TOLERANCE,
+  JUDGE_GAIN,
   ProgressTracker,
   aggregateJudgements,
-  combinedScore,
   decideRound,
   judgeRequest,
   median,
@@ -89,6 +88,31 @@ describe('aggregating a panel', () => {
     expect(median([1, 4])).toBe(2.5);
   });
 
+  it('lets the judges\' own accept call decide an item, with the rubric cut-off only as the fallback', () => {
+    const list = items(2);
+    const withOk = (score: number, ok: boolean | undefined): JudgeSample => ({
+      current: new Map([['item-0', { score, evidence: 'e', ...(ok !== undefined ? { ok } : {}) }], ['item-1', { score: 4, evidence: 'e' }]]),
+      previous: new Map(),
+      closer: null,
+    });
+    // Scores of 4 that two of three judges would not accept fail; a 2 that two of three accept passes.
+    const strict = aggregateJudgements(list, [withOk(4, false), withOk(4, false), withOk(4, true)]) as Consensus;
+    expect(strict.score.failing.map((f) => f.id)).toEqual(['item-0']);
+    const lenient = aggregateJudgements(list, [withOk(2, true), withOk(2, true), withOk(2, false)]) as Consensus;
+    expect(lenient.score.passed).toBe(2);
+    // No calls given: the median against the cut-off.
+    const plain = aggregateJudgements(list, [withOk(2, undefined), withOk(2, undefined)]) as Consensus;
+    expect(plain.score.failing.map((f) => f.id)).toEqual(['item-0']);
+  });
+
+  it('maps a judge\'s okB back to the current render when it was shown second', () => {
+    const input = { verdicts: [{ id: 'item-0', a: 1, b: 4, evidence: 'photo vs render', ok: false, okB: true }], closer: 'B' };
+    const s = parseJudgement(input, new Set(['item-0']), 'previous-first');
+    expect(s?.current.get('item-0')).toMatchObject({ score: 4, ok: true });
+    const t = parseJudgement(input, new Set(['item-0']), 'current-first');
+    expect(t?.current.get('item-0')).toMatchObject({ score: 1, ok: false });
+  });
+
   it('counts an item nobody answered as failing, and needs at least one sample', () => {
     const c = aggregateJudgements(list, [sample([4, 4])]) as Consensus;
     expect(c.score.failing.map((f) => f.id)).toEqual(['item-2', 'item-3']);
@@ -97,29 +121,31 @@ describe('aggregating a panel', () => {
   });
 });
 
-describe('the round gate', () => {
+describe('the round decision', () => {
   const ref: RoundState = { objective: 0.8, metrics: metrics(), judge: 0.7 };
-  it('rejects a state whose measures regress, whatever the judges say', () => {
-    expect(decideRound(ref, { ...ref, objective: 0.8 - OBJECTIVE_TOLERANCE - 0.001 }, 'current', 0.03).accept).toBe(false);
-    const d = decideRound(ref, { ...ref, metrics: metrics({ inventory: 0.9 }) }, 'current', 0.03);
-    expect(d.accept).toBe(false);
-    expect(d.reason).toContain('inventory');
+  it('never lets a measured number accept or reject a round: it only travels as advisory evidence', () => {
+    const worse = { ...ref, objective: 0.5, metrics: metrics({ inventory: 0.6 }) };
+    const d = decideRound(ref, worse, 'current');
+    expect(d.accept).toBe(true);
+    expect(d.advisory).toContain('inventory');
+    expect(d.advisory).toContain('fell');
+    expect(d.reason).not.toMatch(/measured/);
+    const better = { ...ref, objective: 0.95 };
+    expect(decideRound(ref, better, 'previous')).toMatchObject({ accept: false, gain: false });
+    expect(decideRound(ref, ref, 'current').advisory).toBeUndefined();
   });
 
-  it('accepts what the judges prefer, rejects what they do not, and needs a measured gain on a tie', () => {
-    expect(decideRound(ref, ref, 'current', 0.03)).toMatchObject({ accept: true, gain: true });
-    expect(decideRound(ref, ref, 'previous', 0.03)).toMatchObject({ accept: false, gain: false });
-    expect(decideRound(ref, ref, 'tie', 0.03)).toMatchObject({ accept: false, gain: false });
-    expect(decideRound(ref, { ...ref, objective: 0.81 }, 'tie', 0.03)).toMatchObject({ accept: true, gain: true });
-    expect(decideRound(ref, { ...ref, judge: 0.75 }, 'tie', 0.03)).toMatchObject({ accept: true, gain: true });
-    expect(decideRound(null, ref, null, 0.03)).toMatchObject({ accept: true, gain: true });
+  it('accepts what the judges prefer, rejects what they do not, and keeps what they cannot tell apart', () => {
+    expect(decideRound(ref, ref, 'current')).toMatchObject({ accept: true, gain: true });
+    expect(decideRound(ref, ref, 'previous')).toMatchObject({ accept: false, gain: false });
+    expect(decideRound(ref, ref, 'tie')).toMatchObject({ accept: true, gain: false });
+    expect(decideRound(ref, { ...ref, judge: 0.7 + JUDGE_GAIN + 0.01 }, 'tie')).toMatchObject({ accept: true, gain: true });
+    expect(decideRound(null, ref, null)).toMatchObject({ accept: true, gain: true });
   });
 
-  it('without a relative judgement compares the combined score with a margin', () => {
-    expect(decideRound(ref, { ...ref, judge: 0.68 }, null, 0.03).accept).toBe(true);
-    expect(decideRound(ref, { ...ref, judge: 0.6 }, null, 0.03).accept).toBe(false);
-    expect(combinedScore(ref)).toBeCloseTo(0.75, 9);
-    expect(combinedScore({ objective: null, metrics: null, judge: 0.4 })).toBe(0.4);
+  it('without anybody comparing the two renders the new state is kept and progress is the judges\' own score', () => {
+    expect(decideRound(ref, { ...ref, judge: 0.6 }, null)).toMatchObject({ accept: true, gain: false });
+    expect(decideRound(ref, { ...ref, judge: 0.8 }, null)).toMatchObject({ accept: true, gain: true });
   });
 
   it('stalls only after several rounds without progress', () => {
@@ -265,7 +291,7 @@ describe('a noisy judge, alone and as a panel', () => {
    * The loop, simulated: each round the fixer makes a real improvement (65 %), a cosmetic change (20 %) or a mistake
    * (15 %, one item two grades worse, sometimes a structural one the measures see). The old loop judged each round
    * once and compared absolute scores with the best; the new one asks three judges to compare with the accepted state
-   * and gates on the measures. Counted over many seeded runs: improvements thrown away, mistakes kept, runs stopped as
+   * and decides by their preference alone (the measures are advice). Counted over many seeded runs: improvements thrown away, mistakes kept, runs stopped as
    * "stalled" while the fixer was still making real improvements, and the true quality the room ends at.
    */
   it('makes the loop stop oscillating: fewer good rounds rolled back, fewer mistakes kept, fewer false stalls', () => {
@@ -303,11 +329,12 @@ describe('a noisy judge, alone and as a panel', () => {
         }
         const c = look(next, mode === 'panel' ? accepted : null);
         const cand = stateOf(next, c);
-        const d = decideRound(ref, cand, mode === 'panel' ? c.preference : null, 0.047);
+        // The single judge compares two absolute scores with a margin (the old rule); the panel is asked which render is closer.
+        const d = mode === 'panel' ? decideRound(ref, cand, c.preference) : { accept: cand.judge >= ref.judge - 0.047, gain: cand.judge > ref.judge + 0.005 };
         t.rounds++;
         if (kind === 'good' && !d.accept) t.goodRejected++;
         if (kind === 'bad' && d.accept) t.badKept++;
-        if (d.accept && (mode === 'panel' || combinedScore(cand) >= combinedScore(ref))) {
+        if (d.accept && (mode === 'panel' || cand.judge >= ref.judge)) {
           ref = cand;
           accepted = next;
         } else if (d.accept) accepted = next;
@@ -334,9 +361,10 @@ describe('a noisy judge, alone and as a panel', () => {
     const old = sum('single');
     const neu = sum('panel');
     // The numbers, for the log of a failing run.
-    const line = `single judge: ${JSON.stringify(old)}; panel + gate: ${JSON.stringify(neu)}`;
+    const line = `single judge: ${JSON.stringify(old)}; panel: ${JSON.stringify(neu)}`;
     expect(neu.goodRejected / neu.rounds, line).toBeLessThan((old.goodRejected / old.rounds) * 0.5);
-    expect(neu.badKept / neu.rounds, line).toBeLessThan((old.badKept / old.rounds) * 0.5);
+    // The measures no longer veto a round (they are advice), so the panel alone keeps fewer mistakes than the single judge, not half as many.
+    expect(neu.badKept / neu.rounds, line).toBeLessThan((old.badKept / old.rounds) * 0.85);
     expect(neu.falseStalls, line).toBeLessThan(old.falseStalls * 0.5);
     expect(neu.finalTruth / 200, line).toBeGreaterThan(old.finalTruth / 200 + 0.03);
   });

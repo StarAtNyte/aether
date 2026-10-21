@@ -191,18 +191,17 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
       <div className="ev__label">
         <Icon name="image" /> <span className={`status-chip is-${tone}`}>{label}</span>
         {pct !== null && sc && (
-          <span className="photo__score" aria-label={`${sc.passed} of ${sc.total} items match${sc.judges ? ` (median of ${sc.judges} judges)` : ''}${sc.objective !== undefined ? `, measured fidelity ${p(sc.objective)}` : ''}`} data-testid="photo-score">
+          <span className="photo__score" aria-label={`${sc.passed} of ${sc.total} items match${sc.judges ? ` (median of ${sc.judges} AI judges)` : sc.judgedBy === 'assistant' ? ' (judged by the assistant)' : ''}`} data-testid="photo-score">
             {sc.passed}/{sc.total} · {pct}%{sc.judge !== undefined && sc.judges ? ` · judges ${p(sc.judge)}` : ''}
-            {sc.objective !== undefined ? ` · measured ${p(sc.objective)}` : ''}
-            {sc.combined !== undefined ? ` · overall ${p(sc.combined)}` : ''}
+            {sc.judgedBy === 'panel' ? ` · judged by ${sc.judges ?? 'several'} AI judges` : sc.judgedBy === 'assistant' ? ' · judged by the assistant' : ''}
             {sc.accepted === false ? ' · not kept' : ''}
           </span>
         )}
       </div>
       <p className="ev__desc">{event.text}</p>
       {measures.length > 0 && (
-        <p className="photo__measures" data-testid="photo-measures" title="Deterministic measures of the room against the photo (the same room always gives the same numbers)">
-          {measures.join(' · ')}
+        <p className="photo__measures" data-testid="photo-measures" title="Deterministic measures of the room against the photo. They are evidence the AI judges were given; they are not the verdict and never decide whether a change is kept.">
+          Measured, advisory: {measures.join(' · ')}
           {sc?.judges ? ` · ${sc.judges} judges${sc.spread !== undefined && sc.spread > 0.15 ? `, disagreeing ${p(sc.spread)}` : ''}` : ''}
           {sc?.preference ? ` · vs accepted: ${sc.preference === 'current' ? 'closer' : sc.preference === 'previous' ? 'further' : 'no difference'}` : ''}
         </p>
@@ -396,7 +395,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
           </span>
           <span className="ev__text">
             {event.text}
-            {event.score !== undefined ? ` (${event.score}/100)` : ''}
+            {event.score !== undefined ? ` (automatic checks ${event.score}/100, advice for the assistant)` : ''}
           </span>
         </div>
       );
@@ -425,7 +424,7 @@ const QualityView = memo(function QualityView({ event }: { event: Extract<ChatEv
         <span className="quality__text">
           <span className="quality__title">{title}</span>
           <span className="quality__summary">{event.applied.length > 0 ? `Improved: ${event.applied.join(', ')}.` : event.summary}</span>
-          <span className="quality__source">{event.source === 'heuristic' ? 'Measured' : 'Measured + model review'}</span>
+          <span className="quality__source">{event.source === 'heuristic' ? 'Automatic checks only (no assistant reviewed the renders)' : 'Judged by the assistant from renders; automatic checks are advice'}</span>
         </span>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} className="quality__chev" />
       </button>

@@ -1,5 +1,7 @@
 /**
- * Photo-matched exposure, white balance and tone, measured from pixels.
+ * Photo-matched exposure, white balance and tone, measured from pixels. These are measurements and a starting
+ * estimate handed to the assistant as data ({@link lookEvidenceText}); the assistant decides what the world's look
+ * should be (`tune_look`), nothing here changes the world.
  *
  * A photograph carries a camera's exposure, a colour cast (tungsten lamps, a window of cold sky, an Instagram-style
  * filter) and a tone curve. A render of the same room never matches those by accident, which makes a correct room
@@ -10,6 +12,8 @@
  *
  * Pure functions on RGBA rasters, bounded work (a fixed analysis grid), no model.
  */
+import type { WorldDoc } from '@aether/core';
+import { lookText } from '../look-edit';
 import { isRaster, resampleRgb, type Raster } from './score';
 
 /** What a picture's grade is, in sRGB display space. */
@@ -200,4 +204,29 @@ export function nextEnvironmentGrade(current: Partial<EnvironmentGrade> | undefi
     saturation: Math.round(clamp((current?.saturation ?? 1) * (1 + (m.saturation - 1) * damp), GRADE_RANGE.saturation[0], GRADE_RANGE.saturation[1]) * 1000) / 1000,
     contrast: Math.round(clamp((current?.contrast ?? 1) * (1 + (m.contrast - 1) * damp), GRADE_RANGE.contrast[0], GRADE_RANGE.contrast[1]) * 1000) / 1000,
   };
+}
+
+const pct = (v: number): string => `${Math.round(v * 100)}%`;
+const signed = (v: number): string => `${v >= 0 ? '+' : ''}${(Math.round(v * 100) / 100).toFixed(2)}`;
+const warmWord = (w: number): string => (w > 0.18 ? 'warm' : w < -0.18 ? 'cool' : 'neutral');
+
+/**
+ * The difference between the photo's and the render's brightness, white point, saturation and tone as advisory data for
+ * the model that decides the world's look, with the estimate an automatic match would make. It does not change anything
+ * and says so: the model looks at the two pictures and calls `tune_look` (or not).
+ */
+export function lookEvidenceText(world: WorldDoc, photo: PhotoGrade, render: PhotoGrade, match: GradeMatch): string {
+  const env = world.environment;
+  const exposure = nextExposure(env.exposure, photo, render);
+  const grade = nextEnvironmentGrade(env.grade, match);
+  const suggestion: string[] = [];
+  if (Math.abs(exposure - env.exposure) >= 0.05) suggestion.push(`exposure ${env.exposure} -> ${exposure}`);
+  if (Math.abs(grade.temperature - (env.grade?.temperature ?? 0)) > 0.03) suggestion.push(`temperature ${env.grade?.temperature ?? 0} -> ${grade.temperature}`);
+  if (Math.abs(grade.saturation - (env.grade?.saturation ?? 1)) > 0.04) suggestion.push(`saturation ${env.grade?.saturation ?? 1} -> ${grade.saturation}`);
+  if (Math.abs(grade.contrast - (env.grade?.contrast ?? 1)) > 0.04) suggestion.push(`contrast ${env.grade?.contrast ?? 1} -> ${grade.contrast}`);
+  return [
+    `Look evidence (measured from pixels, advisory: you decide the look by comparing the two pictures; nothing was changed automatically): median brightness photo ${pct(photo.median)} vs render ${pct(render.median)}; white point photo ${warmWord(photo.warmth)} (${signed(photo.warmth)}) vs render ${warmWord(render.warmth)} (${signed(render.warmth)}); saturation photo ${pct(photo.saturation)} vs render ${pct(render.saturation)}; tonal spread photo ${pct(photo.p95 - photo.p5)} vs render ${pct(render.p95 - render.p5)}.`,
+    suggestion.length > 0 ? `A mechanical match would try: ${suggestion.join(', ')}. Use it, adjust it or ignore it according to what you see; mood and the light of the room are yours to judge. Set the look with tune_look (it also covers interior warmth, fog, light and foliage tints).` : 'A mechanical match would leave the look as it is. If the pictures still differ in mood or light, set the look with tune_look.',
+    `Current look:\n${lookText(world)}`,
+  ].join('\n');
 }
