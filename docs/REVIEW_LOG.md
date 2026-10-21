@@ -4697,3 +4697,64 @@ passed (Chromium and Firefox); `showcase:bake -- --check` up to date.
   rider lags by up to one frame (2 cm at 1.5 m/s); jumping off a fast platform does not inherit its velocity.
 - The first frame on a new kinematic floor uses the engine's own carry, which is not always applied.
 - A fixed deck slows a walk by about 3 % over 5 m (a one-frame contact per step); kinematic decks do not.
+
+## Sun shadows: focus cascades, contact hardening and contact shadows
+
+**Problem.** The sun had one shadow map fitted to the content, 15 to 30 cm per texel on a 300 m level and blurred
+further by PCF. People, tents, benches, grass tufts and boulders had no shadow of their own, tree shadows at the cover
+distance were faint smudges, and the depth bias (a fixed fraction of a range up to a kilometre) could lift a shadow
+half a metre off the ground. There were no contact shadows and no penumbra that widens with distance from the caster.
+
+**What changed.** (Design: ARCHITECTURE section 39.)
+- *Focus cascades* on three's `CSMShadowNode` (its cascade lights, maps and life cycle) with Aether's placement: two
+  boxes around the focus of the view (the followed player, the orbit target, or the surface below the centre of a
+  posed view, ray cast at most 4 times a second and for each capture pose), each 3.5 times the last, texel-snapped
+  and resized in √2 steps with hysteresis, plus the content fit as the outermost map (up to 320 m half size), chosen
+  per fragment by containment with an 18 % blend band. Three's frustum-split placement was not used: it spends the
+  finest map on the air in front of an orbit camera. World-space biases per map.
+- *Contact-hardening filter* (`SoftShadowFilter`, TSL, the idea of drei's PCSS rewritten): the blocker search keeps
+  the hardware depth comparison (bilinear taps; the sun shafts still march the outer map) and estimates the blocker
+  distance from comparisons at four depths (E[D] = ∫ P(D > Δ) dΔ); penumbra = distance × the sun's apparent size
+  (1.1°), at least 1.2 cm; taps rotate per frame for temporal AA. Tap counts are uniforms.
+- *Screen-space contact shadows* (three's `SSSNode`) on the sun's direct light on high, ultra and stills, a `contact`
+  effect with its own Settings switch; the instanced furniture footprints stay on every tier.
+- *Tiers.* Low, block worlds, content under 16 m and software rasterisers keep the single fitted map with PCF. Medium,
+  high, ultra and stills share one shader shape (three maps, the soft filter; taps 3/6, 6/10, 6/12, 8/16; 1024² near
+  maps on medium), so a tier change rebuilds no material.
+- *Tooling.* `renderer.sunShadowInfo`; `gpu-parity` configs `sun-medium`, `sun-high`, `sun-ultra` (plan as on a
+  hardware GPU, assert every map is drawn); lookshots and render-bench run on the integrated GPU (`GEN_GPU=intel`);
+  lookshots parses the `@` camera form in explicit cameras.
+
+**Rounds** (Intel UHD 770 over WebGL2; the RTX 4090 was at 100 % with the user's training throughout; captures in
+`~/.local/share/aether/shadows/`):
+- r0/r1: baseline and first cascades. First captures fell back to SwiftShader WebGPU (the software plan keeps the
+  single map by design); redone on the iGPU over WebGL2. The hiker's shadow came out detached and blurred: the play
+  camera's focus was the stale orbit target 108 m away (fixed: the rig reports its followed subject) and the outer map
+  had inherited about 0.5 m of depth bias (fixed: world-scaled biases).
+- r2: generated sunny forest and house before/after; screen-space contact shadow A/B (subtle, at the bases of grass
+  tufts and feet; the first A/B was invalid because adaptive resolution dropped one run to a lower resolution, so every
+  later capture pins it off). A horizon cover view focused 250 m away; the focus ray now goes through the lower part of
+  the frame.
+- r2 bench: ultra and stills ran with no post at all. Each tier change rebuilt every lit material (2/3/4 cascades per
+  tier), and the transient heap (250 to 700 MB) tripped the studio's 600 MB low-memory switch. One shader shape for
+  every tier above low fixed it: 235 to 430 MB over eight tier changes, every tier keeps its effects.
+- r3/r4: medium rendered every caster black (a no-search variant of the filter on WebGL2); dropped, medium takes a
+  3-tap search. Draw-call probe: 368 casters cull themselves (`frustumCulled` off) and three drew all of them in
+  every near pass; near passes now skip those whose light-space footprint misses their box (exact for a directional
+  light): the two near maps went from about 24 ms to about 4 ms a frame on the iGPU.
+- r5: Firefox (WebGL2 on Mesa's software GL under xvfb, plan forced to hardware) draws the three maps and matches
+  Chromium on Casa Patio; WebGPU (SwiftShader, plan forced) compiles and draws every map at medium and high with no
+  validation errors.
+- final: before (main without these commits) and after on highland-trail (cover, play, camp), casa-patio (cover,
+  mid), a generated sunny forest and a generated house, all at high.
+
+**Before and after.**
+- *Highland Trail play*: the hiker stood on the grass with no shadow → a shadow that meets his boots, sharp at the
+  feet and softer toward the head; grass tufts, the tent, the bench and the NPC are grounded.
+- *Highland Trail cover*: faint tree smudges → readable tree and pine shadows on the meadow.
+- *Casa Patio*: shrub rows cast proper shadows across the ground at golden hour; wall and vine shadows on the house
+  are softer at their far ends.
+- *Generated forest*: the boulder and tufts get shadows, the clearing shows light pools between the pines; crowns are
+  darker inside (leaf self-shadowing the old map was too coarse to resolve), so the forest reads darker overall.
+- *Generated house*: the old hard diagonal shadow edge across the hedge is gone; the facade carries the tree's shadow.
+  Interiors are unchanged by design (the shell fit and the baked room light).
