@@ -1,924 +1,381 @@
 # Aether
 
-> **Speak a world into being — then watch the AI prove it works.**
+> **Describe a world. Aether builds it, checks that it works, and lets you play it.**
 
-Aether is an AI-native WebGPU/WebGL2 framework and browser studio. You describe
-a world in plain language. Aether turns it into interactive 3D with physics,
-gameplay rules and behaviours, then **proves the mechanics work** before you
-press Play. It does this by fast-forwarding a headless copy of the physics
-simulation and running the world's own tests ("the domino chain topples", "the
-player can reach the flag", "the coin counter reaches 10").
+Aether is a browser studio that turns plain-language prompts into interactive
+3D: outdoor worlds, games you can win, physics machines, and architecture you
+can walk through. The worlds have working logic. Doors swing on physics joints,
+dominoes topple, coins count up and win screens trigger. Before a world reaches
+you, Aether runs its checks headless and a bot plays the game to the end. If
+something is broken, the agent repairs it.
 
-**Run it on your computer with one command** (Node.js 24, see .nvmrc):
+- **Hosted studio:** <https://aether-studio-lyart.vercel.app>. It runs offline
+  or with your own API key. To use Codex or Claude Code there, see
+  [Connect an AI](#connect-an-ai).
+- **On your computer:** one command, and your own Codex or Claude Code login
+  (below).
 
-```bash
-git clone https://github.com/StarAtNyte/aether && cd aether && npm ci && npx aether start --open
-```
-
-It builds the studio, starts Aether in the background and prints a local link
-(`http://127.0.0.1:4280`). On first open, sign in with your **own** ChatGPT
-account (Codex), use Claude Code if it is signed in, or continue offline.
-`npx aether stop` stops it. The hosted copy of the studio works in any browser
-with your own API key, with your own Codex login through that same command
-(`npx aether start --origin <hosted address>`), or offline.
-
-![Aether editor: agent panel, live viewport with tool dock, scene inspector](docs/screenshots/studio-overview.png)
-
-| Domino run | Coin island | Bowling alley | Lakeside camp |
-| --- | --- | --- | --- |
-| ![Domino run](docs/screenshots/world-domino-run.png) | ![Coin island](docs/screenshots/world-coin-island.png) | ![Bowling alley](docs/screenshots/world-bowling-alley.png) | ![Lakeside camp](docs/screenshots/world-lakeside-camp.png) |
-
-| Apartment, studio render (cutaway) | Living room close-up | Villa, exploded storeys | Floor plan with room areas |
-| --- | --- | --- | --- |
-| ![Two-bedroom apartment in the studio render: a doll's-house cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-overview.png) | ![The apartment's living room through the cutaway](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-room.png) | ![Two-storey villa with the storeys lifted apart](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-exploded.png) | ![Floor plan: poche walls, door swings, room chips with areas, dimensions](docs/screenshots/gallery/arch-a-modern-two-bedroom-apartment-plan.png) |
-
-| Villa living room (one storey shown) | Café | Living room with a fireplace, at night | Villa, section cut |
-| --- | --- | --- | --- |
-| ![The villa's open living room, kitchen and stair](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-room.png) | ![Café with counter, tables and washroom](docs/screenshots/gallery/arch-a-small-caf-interior-room.png) | ![Scandinavian living room at night, lamps on](docs/screenshots/gallery/arch-scandinavian-living-room-with-a-fireplace-night.png) | ![Section through the villa's upper floor](docs/screenshots/gallery/arch-a-two-storey-villa-with-a-section.png) |
-
-| The proof: ghost replay + seal | Shared link, read-only viewer | First-visit tour |
-| --- | --- | --- |
-| ![After a build, ghosts re-enact the verification run and the "Proved" seal lands](docs/screenshots/proof-replay.png) | ![A shared world opened from its link: Play, Export, Remix](docs/screenshots/shared-viewer.png) | ![Three-step tour: describe, proved, play](docs/screenshots/tour.png) |
-
-### Default projects
-
-Twelve finished worlds ship with the studio and open instantly from the projects home — each one built by the offline planner from the prompt on its card, verified by the physics checker, and (for games) played to the end by a headless bot in the test suite.
-
-| | | | |
-| --- | --- | --- | --- |
-| ![Lantern Isles](docs/screenshots/showcase/lantern-isles.webp) **Lantern Isles** — find twelve lanterns across floating islands | ![Chain Reaction](docs/screenshots/showcase/chain-reaction.webp) **Chain Reaction** — five verified Rube-Goldberg machines | ![Kart Canyon](docs/screenshots/showcase/kart-canyon.webp) **Kart Canyon** — three laps, checkpoints, boost pads | ![Blockfall](docs/screenshots/showcase/blockfall.webp) **Blockfall** — voxel survival with crafting and mobs |
-| ![Neon Rain City](docs/screenshots/showcase/neon-rain-city.webp) **Neon Rain City** — wet streets, traffic, five neon cats | ![Kyoto Temple Lanterns](docs/screenshots/showcase/kyoto-temple.webp) **Kyoto Temple Lanterns** — a story in four chapters | ![Painterly Meadow](docs/screenshots/showcase/painterly-meadow.webp) **Painterly Meadow** — a steam train in a wildflower valley | ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp) **Four-Seasons Garden** — switch seasons with 1–5 |
-| ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp) **Orbital Lab** — low gravity, motor-driven machines | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp) **Sakura River Journey** — paddle through four seasons | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp) **Skyline Penthouse** — walkthrough, light switches, photo mode | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp) **Dusk House by the Lake** — explode it, cut it, walk it |
-
-| Projects home | Starter scene in the editor | Play mode | Phone |
-| --- | --- | --- | --- |
-| ![Projects home with templates and recent projects](docs/screenshots/projects-home.png) | ![Default world](docs/screenshots/studio-default-world.png) | ![Play mode](docs/screenshots/play-mode.png) | ![The editor on a phone](docs/screenshots/mobile-editor.png) |
-
----
-
-## Contents
-
-- [Why Aether](#why-aether)
-- [Features](#features)
-- [Quick start](#quick-start)
-- [Scripts](#scripts)
-- [How a prompt becomes a playable world](#how-a-prompt-becomes-a-playable-world)
-- [Architecture](#architecture)
-- [Security model](#security-model)
-- [Performance](#performance)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Research inspirations](#research-inspirations)
-- [Licence, third parties and AI disclosure](#licence-third-parties-and-ai-disclosure)
-
----
-
-## Why Aether
-
-Most prompt-to-3D tools stop at a pretty scene. The hard part of a *world* is
-that things have to **work**: doors swing, dominoes fall, timers count down
-and goals can be reached. Aether treats every world as a program with
-explicit state, so the AI can be held to account:
-
-1. The LLM **never edits the scene directly**. It emits small, typed
-   **patches** against a validated World IR (intermediate representation),
-   which keeps every change inspectable, undoable and diffable.
-2. Every world can carry **tests**. Aether runs them in a headless
-   [Rapier](https://rapier.rs) simulation with the world's rules attached. It
-   fast-forwards seconds of gameplay in milliseconds and sends failures
-   straight back to the model as a repair turn.
-3. Everything the AI writes as code (custom geometry generators, behaviour
-   scripts) runs in a **sandbox** with time, memory and size limits.
-
-## Features
-
-- **World IR plus patch-based editing.** One zod-validated JSON document
-  ([`packages/core/src/schema.ts`](packages/core/src/schema.ts)) holds
-  entities, shapes, materials, physics, joints, lights, behaviours, rules,
-  state, HUD, custom generators, scripts and tests. There are 19 patch
-  operations (`add`, `update`, `remove`, `rename`, `addRule`,
-  `setEnvironment`, `defineGenerator`, `addTest` and so on). Each is
-  validated, reference-checked, protected against prototype pollution and
-  limit-checked, and errors are written for the LLM to read.
-- **Characters from a sentence.** "A guard who patrols the gate and chases me
-  when he sees me", "a shopkeeper who greets me and sells a key", "a wolf pack
-  that hunts at night": the offline planner (and any connected model) turns it
-  into plain World IR (`entity.npc`): a behaviour graph over idle, patrol,
-  investigate, chase, flee, attack, talk, trade and follow; sight cones with
-  line of sight, hearing, memory and fear; waypoints, factions and night hours;
-  dialogue trees with conditions and effects (give an item, open a door, set a
-  flag). Characters walk a navigation grid with obstacle avoidance, strike, flee,
-  call their allies and die; 400 of them cost about 1 ms per tick. Edits are
-  one-line patches ("make the guard faster", "give him a torch", "make the
-  wolves afraid of fire"). In play, speech bubbles and a dialogue card (E, 1–6,
-  touch) carry the conversation; with a connected model a character can also talk
-  freely (off offline, capped, the authored tree is the fallback). The
-  verification proves patrols are reachable and nobody gets stuck or falls
-  (`npcs` test); the flagship **The Hollow Gate** shows a guard, a shopkeeper and a
-  wolf pack off, and a bot wins it with every character active.
-- **Keep refining by prompt: small, precise edits.** After the first prompt
-  builds a world, every message in the same chat refines it. "Make the sofa
-  dark green velvet", "wallpaper on the main bedroom's back wall", "move the
-  lamp a bit left", "make the coins spin faster", "collect 15 coins to win",
-  "make it night" are understood locally in about a millisecond (no model
-  call), resolved by name, type, room, position ("left of the window", "the
-  second chair"), selection ("make this red") or conversation ("do the same
-  for the other bedroom"), and applied as the smallest possible patch:
-  only the named property of the named thing changes. The chat shows a
-  compact diff ("Sofa · upholstery: fabric → velvet") with one-click Undo and
-  Redo; ambiguous requests ask which one and outline the candidates in the
-  viewport. A model-written patch that also touches unrelated objects is
-  refused and retried. In play mode a "Tweak" prompt edits the game and
-  restarts it. Parametric furniture is edited through its own parameters
-  (upholstery, legs, width), walls by the face that looks into the room, and
-  edits survive a rebuild of the building. See
-  [docs/CONTRACTS.md](docs/CONTRACTS.md#fine-edits-small-precise-changes-by-prompt-additions-to-core-arch-agent-studio)
-  and `npm run eval:edits`.
-
-  | Five chained edits, each with its compact diff, Undo and "no model call" | An ambiguous request asks which one (numbered in the viewport) |
-  | --- | --- |
-  | ![Chat after five small edits: the diff card of "make it night" with Undo](docs/screenshots/refine-chat-edits.png) | !["Which tent?" with numbered candidates](docs/screenshots/refine-chat-clarify.png) |
-- **A real asset library, an AI forge and your own files.** 364 curated
-  assets ([docs/ASSETS.md](docs/ASSETS.md)): CC0 models from Kenney and
-  Poly Haven (furniture, kitchens, bathrooms, plants, trees, rocks, city
-  buildings, road tiles, street props, vehicles, food, tools), 41 animated
-  people and animals that walk, run and idle from their actual movement,
-  five photographic HDR skies, and eight AI-forged originals. Everything is
-  real-world sized, meshopt-compressed with LODs and physics colliders, and
-  searchable with synonyms ("couch" finds the sofa). Drag a tile into the
-  viewport and it lands on the floor under the cursor, against a wall or
-  under a ceiling, with a live preview. The agent searches the library
-  (`search_assets`), the offline planner dresses streets and rooms with it,
-  and furnished buildings get photographed furniture that suits their style.
-  **Create from an image or text**: a connected model rebuilds the object as
-  an editable parametric generator, renders it from four sides, critiques it
-  against your photo and patches its own code until it matches — every pass
-  is shown live. Import your own GLB / glTF models, images (framed posters)
-  and HDR skies (validated, stored in the browser), export a world as a
-  `.zip` package with every file it uses, and every source is credited in
-  the credits panel, on the end-of-game screen and in `CREDITS.txt`.
-- **Real-life architecture, verified.** Ask for "a modern two-bedroom
-  apartment", "a small café interior", "a two-storey villa with a pool" or
-  "an office floor with meeting rooms" and the agent writes a building plan
-  (`@aether/arch`): rooms on storeys, doors, windows, stairs, a roof, a site.
-  It compiles into mitred walls with real openings (no CSG), floors,
-  ceilings, swinging and sliding doors, framed windows, stairs, roofs and a
-  procedural furniture kit with realistic proportions in five styles, lit by
-  real lamps. Then it is **checked like a building inspector would**: every
-  room reachable on foot through a 5 cm navigation grid, every door swing
-  free, all furniture standing on the floor without overlaps. The building
-  bar gives a doll's-house cutaway, walls down, exploded and single storeys,
-  x-ray, a section cut, a daylight study and a **studio render** (ambient
-  occlusion, soft shadows, temporal anti-aliasing that refines while the view
-  rests). The 2D floor plan shows rooms with their areas and dimensions, and
-  you can draw rooms, doors and windows on it. Press Walk for a first-person
-  walkthrough: E opens doors and flips light switches, 1–4 change the time of
-  day, L switches every light, R swaps finishes, P is photo mode.
-  **Rooms you can touch and dress by prompt.** Walls take wallpaper (stripe,
-  floral, damask, geometric), panelling or slats per room or per wall
-  ("floral wallpaper on the bedroom's back wall"), with wainscot and chair
-  rail; every furniture kind has named material slots ("dark green velvet
-  upholstery"). In play, aim and press E: drawers slide, cabinet and fridge
-  doors and window casements swing, taps run, hinged doors are real physics
-  joints (the solver stops them against you), a mug can be picked up,
-  carried and thrown, and a sofa can be sat on. The Architecture bar's
-  **Reveal** draws the floor plan in ink on paper and raises the walls out
-  of it. *Casa del Patio*, a courtyard house in the hills above Sintra, is
-  the flagship (`docs/screenshots/archreal/`).
-- **Block worlds with a full game kit.** Ask for "a minecraft-like
-  survival world" or "a village of block houses" and the world gets endless,
-  seeded voxel terrain (`@aether/voxel`): biomes, caves, ores, trees, water
-  and lava, palette-compressed 16 × 16 × 128 chunks, greedy meshing with
-  ambient occlusion and smooth sky/torch light, generated and meshed in up to
-  two Web Workers and streamed around the player. The agent builds with
-  block edits (boxes, spheres, stairs, castles, houses, towers, bridges,
-  pixel art, block letters) anchored to the generated ground. Press Play for
-  a first-person survival game: break and place blocks, a hotbar and
-  inventory, crafting, tools, health and hunger, fall/lava/drowning damage,
-  a day/night cycle, animals by day and zombies and spiders at night,
-  synthesized sounds, and saves that persist in the browser (export and
-  import as files). On phones and tablets: a stick to move, drag to look,
-  tap to place, touch and hold to break. The camera frames what was built
-  from the side where no hill hides it. Same look and parity on WebGPU and
-  WebGL2.
-- **Self-verifying physics.** `verify` builds an isolated headless physics
-  world from the document, fast-forwards it with gameplay logic attached and
-  checks 7 test kinds: `stable`, `noOverlap`, `reaches`, `eventually`,
-  `moves`, `topples` and `staysAbove`. Static `diagnose` finds
-  interpenetrations, floating objects and broken joints, with concrete fixes
-  ("move crate-3 up to y=1.25"). `settle` drops objects and writes their rest
-  poses back as patches. `fork()` and `snapshot()`/`restore()` clone a running
-  simulation. Verification runs in background workers, and worlds with
-  several tests are verified as parallel forks: the checks panel fills in
-  test by test ("12 s of physics in 340 ms · 2 parallel workers") while the
-  viewport stays fully interactive.
-- **You watch the proof.** The verification worker records how the bodies
-  that moved actually moved. After a build, translucent ghosts re-enact that
-  run over the edited world (dominoes topple, the ball rolls into the pins)
-  and leave fading trails. A seal then lands: "Proved · 4 of 4 checks ·
-  7.3 s simulated", with Replay. Before that, the agent's plan is drawn on
-  the world: corner brackets where each new object will stand, and labels
-  that name what it is placing ("Palm ×12"). The objects then grow into their
-  brackets. The sent prompt flies from the composer into the world. Every
-  moment respects reduced motion ([docs/DESIGN.md](docs/DESIGN.md)).
-- **A bot plays it, and proves it works.** After a build, an autonomous
-  playtest bot plays the game (or walks the house) in a background worker: it
-  plans routes over a navigation graph sampled from the physics world, jumps
-  gaps (validated against the real character controller), fetches the key
-  before the locked door, opens doors, and presses on until the win — then the
-  badge reads "Verified playable" and a ghost player replays the winning run
-  over the real world, with speed and scrub controls. If it finds a defect —
-  an unreachable pickup, a door nothing can unlock, a win target above the
-  number of coins, a doorway too narrow for the player's body — it applies the
-  smallest fix as one undoable step, plays again and tells you in one sentence
-  what it fixed. The badge is never green without a real passed run on exactly
-  the world on screen. It also talks: a shopkeeper who sells the key to the
-  gate is a goal like any other (walk up, press E, pick the option). The bot's
-  winning run is sealed inside the same replay proof as the physics checks
-  (one badge, one file; `aether-verify` re-plays both), so share links and
-  published games carry it and a viewer can replay the run and check it on
-  their own device ([docs/ARCHITECTURE.md §23](docs/ARCHITECTURE.md),
-  [docs/PROOFS.md](docs/PROOFS.md)).
-- **Share by link, no server needed.** Share copies a link that carries the
-  world itself (deflate-compressed in the URL fragment, validated like a file
-  import on the way in), so it works from any static host and nothing is
-  uploaded. It opens a read-only viewer with Play, Export and **Remix**,
-  which copies the world into your own projects. Export also writes the
-  static scene as a binary glTF (`.glb`).
-- **Procedural generator library.** 36 deterministic built-in generators
-  (trees, rocks, houses, towers, bridges, windmills, vehicles, terrain and canyons,
-  islands, mountains, crystals, portals, high-detail colossal sculptures and more), built on a typed-array
-  geometry kernel and seeded simplex noise. Each has variants, parameters,
-  several materials and auto-derived colliders. All geometry is procedural,
-  so the project ships no third-party 3D assets.
-- **AI-written generators, sandboxed.** The coder model can write new
-  generators against a small, typed `GeneratorApi`. Their source is checked
-  statically, run in a locked-down Web Worker pool with a watchdog, and its
-  output is re-validated (NaN checks, vertex caps) on the main thread.
-- **Logic: rules, behaviours and scripts.** WHEN/IF/THEN rules (11 triggers,
-  17 actions), 26 built-in behaviours (`patrol`, `door`, `collectible`,
-  `vehicle`, `npc`, `launcher` and others) and custom per-entity scripts that
-  run in **QuickJS compiled to WebAssembly**. Scripts get no host functions,
-  exchange JSON only, run on a per-call time budget and have memory and stack
-  caps. The whole runtime is deterministic: same seed and inputs give the same
-  run.
-- **Hundreds of millions of triangles, drawn by the screen, not the scene.**
-  Two engines inside the renderer, both pure CPU planning plus ordinary
-  draws, so WebGPU, WebGL2 and Firefox behave identically:
-  *virtual geometry* (Nanite-style) splits every part with 20k+ triangles
-  into 128-triangle clusters, builds a cluster LOD hierarchy with our own
-  quadric-error simplifier in a worker, and draws a crack-free,
-  view-dependent cut per instance (frustum and normal-cone culled);
-  *scatter fields* turn any layer of 2 000+ instances (up to a million per
-  layer) into spatial chunks with automatic LOD meshes, culled per chunk and
-  spent against a per-GPU triangle budget, far chunks first. The built-in
-  showcase — "a canyon with a million trees and ancient statues", also a
-  template — holds 236 M triangles and draws about 1.5 M (≈ 157× fewer),
-  at the same median frame time (33 ms in Firefox on an integrated GPU) as
-  the full-detail renderer needs for a tenth of that forest; the viewport shows both
-  numbers, and the camera button flies through any world. Vegetation fields sway in a procedural wind, and the post
-  pass applies a colour grade derived from the sky (split tone, saturation,
-  contrast). Research notes and numbers: [`docs/RESEARCH_LOG.md`](docs/RESEARCH_LOG.md),
-  [`experiments/`](experiments).
-- **WebGPU with WebGL2 fallback.** three.js r186 `WebGPURenderer`, ACES tone
-  mapping, bloom and a soft vignette, weather particles, soft shadows fitted
-  to the content, and orbit, follow (it steps in front of obstacles) and
-  first-person cameras. Firefox uses WebGL2 by default (WebGPU only on
-  known-good GPUs) and gets the same look. The renderer can be forced to
-  either backend in Settings.
-- **Art-directed by policy, whatever the model writes.** Seven distinct sky
-  presets (day, dawn, sunset, night, overcast, space, studio). Each one aims
-  the sun to rake across the default view, and nights get a moon rim light, a
-  starfield and a galactic band. Fog scales with the size of the world:
-  content stays crisp and distant mountains stay atmospheric. Auto-framing
-  composes an elevated three-quarter shot of the meaningful content with sky
-  in frame. Lava and water get procedural glowing cracks and ripples, and new
-  worlds *materialize*, growing out of the ground in a ripple from the centre.
-- **Codex or Claude Code on this computer.** Run Aether locally and it uses
-  the Codex or Claude Code login you already have, with no bridge to pair:
-  sign in from Settings ("Sign in with ChatGPT" / "Sign in to Claude"), add
-  and switch between several Codex accounts, and pick model and effort.
-  **Deep build** (on by default) hands each new asset to a coding agent that
-  writes the generator in a private scratch folder, renders and checks it,
-  and fixes what the checker finds, with live progress in the chat; Aether
-  validates the final result again before using it. Conversations continue
-  per project, and each turn shows the models that answered and its token
-  usage. Hosted copies never use this.
-- **AI connections that cost nothing per prompt.** Settings → AI connection
-  (and the model picker under the prompt) offers: the **offline planner**
-  (always available); the **local Aether Bridge**, which runs the
-  Codex or Claude Code CLI you are already signed in to (ChatGPT or Claude
-  subscription, no API key) with every tool disabled; **on-device AI** with
-  WebLLM (experimental, opt-in download, WebGPU); and an optional
-  **bring-your-own API key** (Anthropic, OpenAI, OpenRouter or Google
-  Gemini) that the browser sends straight to that provider, never to
-  Aether's server; it stays in the tab unless you tick "remember on this
-  device", and a per-session call cap with a token estimate guards it. Pick
-  the model, reasoning effort and the number of quality refinement rounds per
-  project; a status badge shows connected / not signed in / bridge offline,
-  and any failure falls back to the offline planner with a visible notice.
-- **3D quality loop.** After every build the world is scored against a
-  written rubric (composition, materials, lighting, scale, detail, coherence
-  with the prompt, physical validity) from four rendered views plus scene
-  heuristics, critiqued by a vision model when one is connected, and improved
-  in targeted rounds while it is below the threshold. The score and its
-  breakdown appear quietly in the chat.
-- **Offline planner and generator library.** With no AI connection (or when
-  it is unreachable) a deterministic planner builds worlds for 18 themes
-  (dominoes, coins, parkour, bowling, castle, city, haunted forest, space,
-  volcano and more), supports edit commands ("add 5 trees", "make the ball
-  bouncy", "remove the tent") and places any of 40+ library objects by name
-  (lighthouse, pagoda, piano, ferris wheel, steam locomotive, hot air
-  balloon…): procedural generators written ahead of time by a coding model,
-  validated, and loaded on demand. Its worlds pass the same physics
-  verification.
-- **Undo, branches and time travel.** Every agent or user edit is a history
-  commit. You can undo and redo, check out any past state without losing
-  later ones, create named branches, export and import JSON, and share links.
-- **Publish from within: games, films, renders, models, plans, links.** One
-  **Publish** hub in the editor, every target with presets, a preview,
-  progress and Cancel, and a history you can download from again:
-  - **Game.** A standalone web build made in your browser — the player only
-    (renderer, physics, logic; no editor, no agent), your world with its
-    generator and script code, the library models and your own imports it
-    uses, a cover and icons, a title screen over a slow fly-through of your
-    world, a pause menu, settings (volume, music, look sensitivity, graphics
-    quality), credits generated from the assets, touch controls and
-    controller support. Download it as a `.zip` ready for itch.io, GitHub
-    Pages, Netlify or any static host (it plays offline and installs as an
-    app), or — in the local app — publish it to **your own** Netlify,
-    Vercel, GitHub Pages or itch.io account through the command-line tools
-    you are signed in to, or share it on your local network behind a random
-    token.
-  - **Share link.** The whole world travels **inside the link**, after the
-    `#` (compressed, typically tens of kilobytes), so nothing is uploaded or
-    stored anywhere: `…/play#w=…` plays it in any browser. With a QR code and
-    an `<iframe>` embed snippet; worlds too large for a link say so.
-  - **Video.** A cinematic camera tool: a keyframe timeline under the
-    viewport (add a key from the current view, easing, cuts, field of view,
-    drag keys in time, play the shot in the viewport, the path drawn in 3D),
-    presets (orbit, turntable, fly-through, dolly, crane, top-down, reveal)
-    and a **director** that turns words into shots — "slow dolly through the
-    living room then rise above the roof" — offline or with your AI. Every
-    frame is rendered offline at full quality and encoded in the browser
-    (WebCodecs into our own MP4 / WebM writers, MediaRecorder elsewhere),
-    with title cards, cinematic bars, fades and a generated score.
-  - **Render.** Stills up to 4K in PNG, JPEG or WebP, rendered in tiles so
-    they never need a 4K screen; **photoreal** accumulates 24 samples per
-    pixel with ambient occlusion and soft shadows for architecture.
-  - **3D model** as GLB or glTF with PBR materials, parsed back with the
-    glTF loader before it is offered. **Floor plans** of buildings as SVG or
-    PDF at 1:50 / 1:100 with rooms, areas, doors, windows, stairs,
-    dimensions, a scale bar and a north arrow.
-  - **Versions.** Save named versions of a project and restore any of them
-    as one undoable change; every publish saves one automatically. The home
-    page lists everything published from this browser.
-- **Projects home.** Every world is a project saved in the browser
-  (IndexedDB, validated on load, quota-aware), with rendered thumbnails,
-  "Recently opened" (grid or list), search, sort, rename, duplicate, delete
-  with Undo, `.aether.json` export and drag-and-drop import. New projects
-  start from a prompt, an empty or starter scene, or a bundled default
-  project: the featured flagship worlds (fourteen, including the realistic Highland Trail) plus every saved gallery world,
-  all listed in one curation manifest (`apps/studio/src/showcase/manifest.ts`:
-  featured / candidate / hidden, array order is display order). Cards and
-  thumbnails load with the page; a world's JSON is fetched (size-capped,
-  validated) only when it is opened, and the new project keeps the card's
-  original prompt and thumbnail. Games open with a title card (title,
-  tagline, objective, controls) that holds the simulation until Start.
-- **Editor.** A quiet, professional layout: icon rail (Agent, Objects,
-  Assets, Logic, Checks, History) and panel on the left, the viewport in the
-  middle, a sectioned inspector on the right (scene settings when nothing is
-  selected: sky, time of day, light, fog, ground, gravity, play camera,
-  variables). The agent streams plans, diff chips and check results; the
-  composer takes reference images. Assets places ready-made objects (rendered
-  preview tiles) and materials by click or drag. The viewport has camera
-  presets, a tool dock, an axis gizmo, optional object labels and a
-  performance overlay (off by default).
-- **Full editing, not just a viewer.** Click, shift-click and marquee
-  selection in sync with the outliner; move / rotate / scale gizmos (W/E/R)
-  in local or world space with pivot choice, numeric input and grid, angle,
-  surface and vertex snapping; align and distribute; duplicate, copy/paste
-  across projects, group, reparent by drag, hide and lock. Procedural objects
-  expose their parameters as live sliders (regenerated in a worker), seed
-  re-roll and scatter density, and can be baked to an editable mesh.
-  Mesh edit mode (Tab) works on vertices, edges and faces with soft
-  selection, extrude, inset, subdivide, smooth, merge by distance, normal
-  fixes and UV unwrap, and colliders follow the mesh. Sculpt and paint
-  brushes (raise, lower, smooth, flatten, noise, vertex colour, scatter paint
-  with erase) have size, strength, falloff and pen pressure, with one undo
-  step per stroke. A material editor with eyedropper, visual WHEN/IF/THEN
-  rule cards, behaviour and physics forms (joints are drawn in the
-  viewport) and editable checks with "Run checks" complete the set. The
-  agent sees your hand edits and never touches locked objects. A command palette (Ctrl/⌘+K)
-  searches actions, objects, assets, templates and projects; every control
-  has a tooltip with its shortcut, and free text in the palette becomes "Ask
-  the agent: …". `?` shows every shortcut, and a three-step tour (describe →
-  proved → play) greets a first visit. The home page leads with the prompt
-  ("Speak a world into being.") over a stage of example worlds. Play goes
-  full-window with an iris transition. Interface sounds are opt-in. Light
-  theme by default (follows the system on first visit), dark theme one click
-  away.
-- **Responsive.** Three columns on wide screens with resizable, balanced
-  side panels; one panel at a time on laptops; slide-over drawers on
-  tablets; on phones the viewport sits above a bottom sheet (drag handle,
-  tabs, prompt always visible) and play mode shows a touch stick with jump
-  and act buttons. An automated layout test checks 8 sizes in Chromium and
-  Firefox for overflow, clipped controls, unellipsized text and overlapping
-  overlays.
+![The Aether editor: agent panel, viewport, scene inspector](docs/screenshots/studio-overview.png)
 
 ## Quick start
 
-Requirements: **Node.js 24** (22 still runs the CLI; development and the test suite need 24) and npm 10 or newer. A GPU browser
-(Chrome or Edge for WebGPU; any WebGL2 browser works).
+You need **Node.js 24** (see `.nvmrc`), npm 10 or newer, and a WebGL2 browser.
+Chrome or Edge use WebGPU; Firefox and Safari use the WebGL2 path.
 
 ```bash
 git clone https://github.com/StarAtNyte/aether && cd aether
 npm ci
-npx aether start --open      # or: npm run aether -- start --open
+npx aether start --open        # builds the studio once, starts it in the background, opens http://127.0.0.1:4280
 ```
 
-No API key is needed: everything works with the offline planner, and signing
-in uses your own Codex / Claude Code login.
+On first open you choose **Sign in with ChatGPT (Codex)**, **Claude Code** (if
+its CLI is signed in on this computer) or **Continue offline**. No API key is
+needed. `npx aether stop` stops the server, and `npx aether doctor` checks
+Node, the build, the port and both CLIs.
 
-### The `aether` command
-
-| Command | What it does |
-| --- | --- |
-| `aether start` (default) | Builds the studio if it is missing or older than its sources, starts the server **detached** (it survives closing the terminal), waits until it answers and prints `http://127.0.0.1:<port>` (4280, or the next free port). Running it again just prints the link. `--open` opens the browser, `--port N`, `--no-build`, `--rebuild`, `--foreground` |
-| `aether stop` | Graceful shutdown (then the process group is ended if needed) |
-| `aether status [--json]` | Running or not, link, pid, uptime |
-| `aether logs [-f] [-n N]` | The server log (rotated at 5 MiB); `-f` follows it |
-| `aether login [--device-auth]` | Runs `codex login` for **your own** ChatGPT account; says so if you are already signed in. `--claude` signs in to Claude Code |
-| `aether logout [--claude]` | Signs out |
-| `aether doctor` | Checks Node, dependencies, the build, the state folder, disk space, the port, and whether Codex / Claude Code are installed and signed in |
-| `aether mcp [--project-dir DIR] [--provider auto\|offline\|local]` | Runs Aether as an **MCP server** on stdio so Claude Code, Codex and editors can drive it: `create_world`, `edit`, `apply_patch`, `verify`, `playtest`, `replay`, `render_still`, `export`, `undo`. Works offline; confined to one project folder. See [docs/MCP.md](docs/MCP.md) |
-| `aether start --origin https://<hosted studio>` / `aether pair` | Also acts as the bridge for a hosted copy of the studio and prints a pairing code + one-click link |
-
-State (pid, port, per-install secret, logs, local data) lives in
-`$XDG_STATE_HOME/aether` or `~/.local/state/aether` (`%LOCALAPPDATA%\Aether`
-on Windows); `--state-dir` or `AETHER_STATE_DIR` override it. The server binds
-127.0.0.1 only; `--host 0.0.0.0` is refused unless `--allow-lan` is added,
-which prints a warning and requires an access token (in the printed link). It
-works the same on Linux, macOS and Windows. See
-[docs/SECURITY.md](docs/SECURITY.md) for the local hardening (Host and Origin
-allowlists against DNS rebinding, HttpOnly session cookie, process-group
-cancellation).
-
-**Developing Aether itself** (hot reload):
+To work on Aether itself with hot reload:
 
 ```bash
 npm run dev:server   # API server on http://localhost:8787 (terminal 1)
-npm run dev          # Studio on http://localhost:5173, proxies /api (terminal 2)
+npm run dev          # studio on http://localhost:5173, proxies /api (terminal 2)
 ```
 
-### Use your Codex or Claude Code subscription (no API key)
+Then type a prompt, for example *"a night forest adventure: collect 5 lanterns,
+avoid the wolves, reach the shrine to win"* or *"a two-storey modern house with
+a pool, open-plan living room, kitchen and two bedrooms"*. Keep chatting to
+refine it, then press **Play**. [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+covers prompting, chat edits, play mode, the badges, photo-to-room and
+publishing.
+
+## Featured worlds
+
+Fifteen finished projects ship with the studio and open from the home page.
+Each was built from the prompt on its card. Each passes its physics checks,
+and the bot plays the games to their win screens in the test suite. Blockfall
+and Sakura River are the exceptions: they use their own game loops, which the
+general bot does not drive.
+
+| | | |
+| --- | --- | --- |
+| ![Highland Trail](docs/screenshots/showcase/highland-trail.webp)<br>**Highland Trail**: log six survey stakes, cross the footbridge, reach the summit | ![Lantern Isles](docs/screenshots/showcase/lantern-isles.webp)<br>**Lantern Isles**: find twelve lanterns across floating islands | ![The Hollow Gate](docs/screenshots/showcase/hollow-gate.webp)<br>**The Hollow Gate**: buy the key, slip past the guard, outwit the wolves |
+| ![Chain Reaction](docs/screenshots/showcase/chain-reaction.webp)<br>**Chain Reaction**: five Rube Goldberg machines, every bounce checked | ![Kart Canyon](docs/screenshots/showcase/kart-canyon.webp)<br>**Kart Canyon**: three laps, checkpoints, boost pads, two rivals | ![Blockfall](docs/screenshots/showcase/blockfall.webp)<br>**Blockfall**: mine, craft and survive the night in a block world |
+| ![Neon Rain City](docs/screenshots/showcase/neon-rain-city.webp)<br>**Neon Rain City**: a wet downtown at night, find five neon cats | ![Kyoto Temple Lanterns](docs/screenshots/showcase/kyoto-temple.webp)<br>**Kyoto Temple Lanterns**: a story in four chapters | ![Painterly Meadow](docs/screenshots/showcase/painterly-meadow.webp)<br>**Painterly Meadow**: a steam train in a wildflower valley |
+| ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp)<br>**Four-Seasons Garden**: switch seasons with the 1 to 5 keys | ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp)<br>**Orbital Lab**: low gravity, five power cells, restart the reactor | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp)<br>**Sakura River Journey**: paddle a canoe through four seasons |
+| ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: the plan drawn in ink, the walls rising, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
+
+The list and its order live in
+[`apps/studio/src/showcase/manifest.ts`](apps/studio/src/showcase/manifest.ts).
+`npm run showcase:bake -- --check` confirms that every saved world still
+matches what its prompt builds.
+
+## What is different
+
+**1. The world is data, and the AI edits it with patches.** Every world is
+one validated JSON document, the World IR
+([`packages/core/src/schema.ts`](packages/core/src/schema.ts)). It holds
+entities, shapes, materials, physics, joints, lights, behaviours, rules, NPCs,
+buildings, tests and generator code. The model never touches the renderer. It
+sends typed patches. Each patch is checked against the schema, cross-references,
+size limits and prototype pollution, then stored as one undoable history step.
+In the public benchmark, a small edit is a median 230-token patch, against
+7,716 tokens to re-emit the whole world, and 8 of 130 edits changed anything
+unrequested ([docs/BENCHMARK.md](docs/BENCHMARK.md)).
+
+**2. The AI is the decision-maker. Code gives it tools and checks.** With
+Codex or Claude Code connected, the model plans the layout first, then places
+things through measuring tools. Some tools refuse nonsense: a bed through a
+wall, a painting over a window, a stair that lands in a wall. The model then
+looks at rendered views of its own result and fixes what it sees, round after
+round. On a subscription login there is no fixed round cap: the loop ends when
+the model approves its result or progress stalls. Paid API keys keep a finite
+cap. Without a model, a deterministic offline planner builds from the same
+parts, and the studio tells you it is offline. See
+[docs/AGENT_TOOLS.md](docs/AGENT_TOOLS.md).
+
+**3. Physics as unit tests.** `verify` builds a headless copy of the
+[Rapier](https://rapier.rs) physics world with the game rules attached. It
+fast-forwards the copy and checks the world's tests: `stable`, `noOverlap`,
+`reaches`, `eventually`, `moves`, `topples`, `staysAbove`, `navigable` (every
+room reachable on foot) and `npcs` (patrols reachable, nobody stuck). In the
+benchmark it runs at a median 561 times real time (the slowest case was 136
+times), and forking a running simulation costs 0.79 ms. Failures go back to
+the model as a repair turn ("1/30 dominoes toppled; not: domino-1…").
+
+**4. A bot plays it, and repairs what blocks it.** After every build and
+edit, a playtest bot plays the game in a worker. It drives the real character
+controller: it plans routes and jumps over a navigation graph sampled from the
+physics world, fetches keys, talks to shopkeepers and steers round enemies. In
+a building it walks to every room. When it finds a defect (an unreachable
+pickup, a win target higher than the number of coins, a doorway narrower than
+the player, enemies the player cannot survive), it applies the smallest fix as
+one undoable step and plays again. The badge says **Verified playable** or
+**Verified walkable** only after a passed run on exactly the world on screen.
+
+**5. Sealed replay checks anyone can re-run.** The physics verdict and the
+bot's winning run are sealed into one content-hashed proof file, signed with
+Ed25519 if you choose to sign it. Share links and published games carry the
+proof, and `aether-verify` re-simulates it in Node or in the browser. This is a
+**deterministic replay check, not a formal proof**. It shows that the
+author's checks pass on this exact world and engine version. It does not show
+that the game is fun or bug-free ([docs/PROOFS.md](docs/PROOFS.md)).
 
 ```bash
-npx aether start --origin https://your-hosted-studio   # app + bridge, one command, background
-npx aether pair                                        # a fresh pairing code / link later
-# or, standalone in a terminal:
-npm run bridge       # Aether Bridge on http://127.0.0.1:8790
+npx aether-verify seal apps/studio/public/templates/worlds/chain-reaction.json --out proof.json
+npx aether-verify proof.json --world apps/studio/public/templates/worlds/chain-reaction.json
+#  ok   replay  10/10 checks passed over 15.167s of simulation, 16 moving bodies matched to 1 mm
+#  ok   bot     a bot played it to the win again on this device (15 s of play)
 ```
 
-The bridge prints a pairing code and a one-click link. On a first visit the
-hosted studio leads with **Use your own Codex / ChatGPT login**: enter the
-code there (or open the link), sign in with a device code if Codex is not
-signed in yet, and pick the model. Later, **Settings → AI connection → Local
-bridge** has the same controls, and the composer picks **Codex** or
-**Claude Code**, a model and the reasoning effort. Requirements: the `codex` CLI signed in with
-`codex login` (ChatGPT), and/or the `claude` CLI signed in. The bridge listens
-on 127.0.0.1 only, accepts only paired, allowlisted studio origins (`--origin
-https://your-host` adds a hosted studio), and runs each request in an empty
-temporary folder with all tools, shell, file and network access disabled.
+**6. Small edits by chat.** After the first build, every message refines the
+current world. "Make the sofa dark green velvet", "floral wallpaper on the
+bedroom's back wall", "move the lamp a bit left", "make the wolves slower" and
+"collect 15 coins to win" are resolved by name, type, room, position,
+selection or conversation. Each becomes the smallest patch, shown as a
+one-line diff with Undo. Common edits run locally in about a millisecond with
+no model call (199 of 199 cases in `npm run eval:edits`). When a model writes
+a patch, a guard refuses any change to objects the request did not name, and
+the model tries again. Lights, zones and decor attached to an object move with
+it (`attachedTo`).
 
-From a hosted (https) copy of the studio, Chrome, Edge and Firefox can reach
-the bridge (Chrome may first ask to allow access to your local network).
-Safari and iOS browsers block https pages from calling local services, so
-there open the local link that `aether start` prints instead.
+## What you can make
 
-**Running Aether locally?** You do not need the bridge: with `aether start`
-(or `npm run dev:server`) on your own computer the studio finds Codex and Claude Code
-automatically (Settings → AI connection → *Codex or Claude Code on this
-computer*, or the **Connect Codex** card in the agent panel), runs them in
-worker processes and offers deep builds. `AETHER_LOCAL_AI=off` disables it;
-it is always off in production builds on hosting platforms and in the Docker
-image.
+- **Outdoor worlds and games.** Carved terrain with streams, lakes and
+  footbridges, woods and ground cover, draped trails, physical sky and water.
+  Collect-and-reach games, races with laps and checkpoints, story chapters,
+  physics machines, a HUD, title, win and lose screens.
+- **Characters from a sentence.** "A guard who patrols the gate and chases me
+  when he sees me", "a shopkeeper who sells a key". NPCs have behaviour graphs,
+  sight and hearing, factions and dialogue trees. The player and NPCs are
+  rigged, animated human models (Microsoft Rocketbox, MIT) on one shared
+  skeleton.
+- **Architecture.** A building plan with storeys, rooms, doors, windows,
+  fitted stairs, a roof and a site compiles into mitred walls with real
+  openings, furnished rooms and gardens. A building check confirms every room
+  is reachable on foot and every door swing is clear. Views: cutaway, exploded
+  storeys, section cut, x-ray, a floor plan with areas, and an ink-on-paper
+  reveal. In walk mode doors, drawers, taps and light switches work, and a mug
+  can be picked up and thrown.
+- **A room from a photo.** With a vision model connected, Aether reads the
+  photo several times and merges the readings into one description. It builds
+  the shell, the furniture and the decor, renders the result from the photo's
+  camera, and scores it with deterministic fidelity measures and a panel of
+  critic calls. It keeps a change only when it measurably helps. Offline it
+  says plainly that it cannot do this.
+- **Block worlds.** Endless seeded voxel terrain with biomes, caves, ores and
+  water, meshed in workers. A survival mode adds mining, crafting, health,
+  hunger, day and night, and mobs.
+- **Publishing.** A standalone web build of the game (a zip for any static
+  host, or, from the local app, a deploy to your own Netlify, Vercel, GitHub
+  Pages or itch.io account through their CLIs), share
+  links that carry the whole world in the URL fragment, directed videos, 4K
+  stills (including a path-traced still), GLB and glTF models, and floor plans
+  as SVG or PDF.
 
-To let the **server** answer `/api/llm` with a signed-in CLI instead, start
-it with `AETHER_PROVIDER=codex` or `AETHER_PROVIDER=claude-code`.
+## Connect an AI
 
-Open <http://localhost:5173>, pick an example card or type a prompt such as
-*"Build a domino run that knocks over a bell tower"* and watch the agent plan,
-patch, verify and repair. Press **Play** (WASD to move, Space to jump, Esc to
-stop).
+| Option | Where | Cost per prompt |
+| --- | --- | --- |
+| **Codex on this computer** (ChatGPT login) | `aether start`: found automatically, or **Settings → AI connection → Sign in with ChatGPT** | your subscription |
+| **Claude Code on this computer** | `aether start` with a signed-in `claude` CLI, or `npx aether login --claude` | your subscription |
+| **Codex / Claude Code for the hosted studio** | `npx aether start --origin https://aether-studio-lyart.vercel.app`, then enter the pairing code in the hosted studio | your subscription |
+| **Your own API key** (Anthropic, OpenAI, OpenRouter, Google Gemini) | **Settings → AI connection**. The browser calls the provider directly, and the key stays in the tab unless you choose to remember it | the provider's prices |
+| **On-device model** (WebLLM, experimental) | Settings, WebGPU only, opt-in download | none |
+| **Offline planner** | always available | none |
 
-**Production build, one process, same origin:**
+When you use Codex or Claude Code locally, Aether runs your own login in a
+worker process. Plain model calls run with every tool, shell, file and network
+permission disabled. Deep build mode lets a coding agent write a new asset
+generator inside a throwaway folder with the network off, and Aether
+validates the result again before using it. The hosted studio never uses the
+operator's account.
+
+**Drive Aether from your agent (MCP).** `aether mcp` is an MCP server on stdio
+with tools such as `create_world`, `edit`, `apply_patch`, `verify`,
+`playtest`, `replay`, `render_still` and `export`:
 
 ```bash
-npm run build        # builds apps/studio/dist
-npm run start        # serves studio + API on http://localhost:8787
+claude mcp add aether -- node /abs/path/to/aether/apps/cli/bin/aether.mjs mcp --project-dir /abs/path/to/my-world
+codex  mcp add aether -- node /abs/path/to/aether/apps/cli/bin/aether.mjs mcp --project-dir /abs/path/to/my-world
 ```
 
-### Environment
+It works offline with the built-in planner. [docs/MCP.md](docs/MCP.md) has the
+details.
 
-Configuration lives in `.env` at the repo root (copy `.env.example`), or real
-environment variables, which take precedence. Paid API keys are optional;
-the hosted server never needs or uses one by default. The main settings:
-
-| Variable | Purpose |
-| --- | --- |
-| `AETHER_PROVIDER` | `mock` (default: offline planner), `codex` / `claude-code` (signed-in CLI on this machine), `anthropic` or `openai` (needs a key) |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Optional upstream keys (server only), used only when `AETHER_PROVIDER` names that provider |
-| `AETHER_LOCAL_AI` | `auto` (default): Codex / Claude Code of this computer under `/api/local/*` for a non-production server without hosting markers; `on` forces it (refused on hosting platforms), `off` disables it |
-| `AETHER_PLANNER_MODEL`, `AETHER_CODER_MODEL`, `AETHER_CRITIC_MODEL` | Anthropic model per role |
-| `AETHER_OPENAI_PLANNER_MODEL`, `AETHER_OPENAI_CODER_MODEL`, `AETHER_OPENAI_CRITIC_MODEL` | OpenAI model per role |
-| `PORT`, `HOST`, `NODE_ENV` | Listener; `production` turns on static hosting and HSTS |
-| `ALLOWED_ORIGINS` | CORS allowlist (default `http://localhost:5173`) |
-| `AETHER_DAILY_TOKEN_BUDGET` | Daily LLM token cap (default 2,000,000) |
-| `TRUST_PROXY_HOPS` | Set to `1` behind Fly.io, Render or Railway |
-
-The complete list (rate limits, storage, timeouts, generator validation) is in
-[`apps/server/README.md`](apps/server/README.md#configuration).
-
-### Studio URL flags
-
-| Flag | Effect |
-| --- | --- |
-| `?safe=1` | Boot into the starter world. The last saved world stays one Undo away. This also happens automatically after a crash during start-up. |
-| `?reset=1` | Same recovery path as `?safe=1` |
-| `?debug=1` | Verbose logging and exposes `window.__aether` (also on in dev builds) |
-| `?engine=classic` | Turn scatter fields and virtual geometry off (every layer and sculpture drawn at full detail; for comparisons) |
-
-Routes are hash based (they work on any static host): `#/` home, `#/templates`,
-`#/projects`, `#/docs`, `#/p/<id>` the editor for a project, `#/new` a new
-project from the starter scene, `#/new/<template>` a new project from a
-template (for example `#/new/coin-island`) and `#/view/<token>` the read-only
-viewer of a shared world (the token is the world itself, compressed).
-
-## Scripts
-
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Vite dev server for the studio (port 5173, `/api` proxied to 8787) |
-| `npm run dev:server` | API server with `tsx watch` (port 8787) |
-| `npm run build` | Production build of the studio into `apps/studio/dist` |
-| `npx aether start` / `npm run aether -- <command>` | The local app: see [The `aether` command](#the-aether-command) |
-| `npm run start` | Production server in the foreground: API plus the built studio on one origin |
-| `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
-| `npm test` | All Vitest unit and integration tests (capped at 2 workers) |
-| `npm run smoke` | Runs the real agent with the offline planner against 25 prompts and re-verifies every world headless (block worlds: their edits compile and the spawn area meshes) |
-| `npm run e2e:cli` | `aether start` on a temp state folder with fake Codex / Claude CLIs, first-run screen + offline world in Chromium and Firefox, a device sign-in that completes (account + model picker), `aether login` / `doctor` / `logout`, `aether stop` |
-| `npm run eval:edits` | Small-edit evaluation: 199 prompts over the default projects (apartment, penthouse, living room, games, camp, meadow, block world), scored on target accuracy, over-edit rate and latency for the unassisted planner, the local fast path and a careless recorded model with the minimal-patch guard off and on (`-- --set holdout`, `-- --engine fast`, `-- --only a-sofa`) |
-| `npx tsx scripts/fine-probe.ts <world> "<prompt>"` | Shows what the small-edit engine understood for a prompt on a default project (`apartment`, `lakeside-camp`, …): parsed command, compact diff, patches, time (`@selected-id` to select, several prompts with `--chain` to test "do the same for the other one") |
-| `npm run e2e:refine` | Refining by prompt in Chromium then Firefox: build a camp, five chained small edits that each change only their target (world compared before and after, no model call, diff card shown), an ambiguous request that asks and is answered, undo of everything back to the exact built world, GPU objects flat over 20 edit/undo cycles |
-| `npm run e2e` | Playwright browser test of the built studio: Chromium on WebGPU and WebGL2, then Firefox on WebGL2 (run `npm run build` first) |
-| `npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles and long tasks while the camera orbits (`-- --classic` for the full-detail engine, `--only=chromium-gpu` for the hardware GPU, `--profile=<file>` for a CPU profile) |
-| `npm run e2e:arch` | Real-life architecture in Chromium (WebGPU, WebGL2) and Firefox: apartment prompt → cutaway, walls down, x-ray, section, daylight, studio render, GPU objects flat over 20 view cycles → floor plan (draw a room, add a door, undo) → walkthrough through the front door, night, lights, photo mode |
-| `npm run e2e:voxel` | Block worlds in Chromium (WebGPU, WebGL2) and Firefox: prompt → streamed terrain without long tasks, edit → remesh latency, walk, break, place, craft, bounded memory while travelling, save and reload |
-| `npm run e2e:memory` | Memory regression run in Chromium and Firefox: budgets on the starter world, no growth over 20 agent runs and 20 play/stop cycles, automatic low memory mode, context-loss recovery (`AETHER_MEM_IDLE_S=120` for a 2-minute idle soak) |
-| `npm run e2e:security` | Exploit attempts in real Chromium and Firefox: generator-sandbox escapes through the worker's prototype chain and interface objects must all be blocked while a normal generator still builds |
-| `npm run e2e:soak` | Heavy-session soak, one browser at a time: a 5-minute block-world walk, a held studio render and a million-instance scatter; reports frame-time percentiles and long tasks and fails on unbounded chunks, GPU objects or memory growth (`-- --walk-s=60`, `-- --only=firefox`) |
-| `npm run e2e:layout` | Layout test at 8 sizes (desktop to landscape phone) in Chromium then Firefox: fails on overflow, clipped controls, text overflow without ellipsis or overlapping viewport overlays |
-| `npm run e2e:verified` | Verified playable in Chromium then Firefox: prompt a small game and watch the bot win it (badge green only after the pass, ghost replay with pause / scrub / speed), break it by prompt ("remove the first coin", "remove the key") and see it caught and repaired in one undoable step, a café walked room by room with a too-narrow door widened, and a share link whose player page shows the one sealed proof, replays the bot's run and re-verifies both the replay and the bot on this device |
-| `npm run e2e:ux` | UX end to end in Chromium then Firefox: keyboard (Tab to the hero prompt with a visible focus ring, `?` overlay, Enter builds), the proof seal and ghost replay, full-window play, command palette (search, free text → agent), share link → read-only viewer → Remix, the 3-step tour (Next / Back / Esc, remembered), phone layout (hero, prompt, touch stick, viewer) |
-| `npm run e2e:projects` | Projects home end to end in Chromium then Firefox: templates, autosave and thumbnails, rename / duplicate / delete + undo, export / import, search and sort, persistence, command palette, legacy migration, phone layout |
-| `npm run thumbnails` | Renders the asset previews (`public/palette/*.webp`) with the real renderer (`-- --templates` re-renders template cards from the editor's framing) |
-| `npm run showcase:bake` | Rebuilds every default project's saved world (`public/templates/worlds/<slug>.json`) from its manifest prompt with the offline planner and re-verifies it (`-- --check` fails on stale files, `--report` prints each verification) |
-| `npm run showcase:thumbs` | Renders each flagship from its saved world and art-directed cover camera: the cover (`docs/screenshots/showcase/<slug>.webp`) and the card thumbnail (≤ 30 KB); `tsx tests/e2e/showcase.e2e.ts --gallery` cuts gallery entries' thumbnails from their screenshots |
-| `npm run e2e:gameplay` | Plays Highland Trail, Neon Rain City and Kyoto Temple to their win screens in Chromium with the real character controller, through the on-screen controls, following the route the verified-playable bot recorded for each (about 1-2 minutes of real time per game; `AETHER_E2E_GPU=1` for the machine's GPU) |
-| `npm run e2e:showcase` | Default projects in Chromium then Firefox: home row and Templates page, every featured world opens from its saved file with its prompt and thumbnail, title card → Start → a scripted run → Stop |
-| `npm run bridge` | Starts the local Aether Bridge (Codex / Claude Code through your own sign-in); `-- --origin https://host` allows a hosted studio |
-| `npm run eval` | Agent evaluation: patch error rate, verification pass rate, latency and quality score per prompt (`-- --provider=codex --effort=low --limit=3`, `--provider=claude-code --model=haiku`) |
-| `npm run bench` / `npm run bench:quick` | Public benchmark ([docs/BENCHMARK.md](docs/BENCHMARK.md)): 81 prompts (can a bot win the generated games, self-repair on broken worlds, offline planner coverage), 130 small edits against regenerating the world (tokens, patch size, unrequested changes, regressions), proof speed and fork cost. Offline, no keys; `-- --write` refreshes `docs/benchmark/results.json`; `bench:quick` is the CI subset that fails when a documented claim stops holding |
-| `npm run library` | Rebuilds the offline generator library with Codex (sequential, call budget, resumable; `-- --only=piano`) |
-| `npm run e2e:bridge` | Real end-to-end check through the bridge: one prompt via Codex and one via Claude Code from the built studio (uses your subscription) |
-| `npm run e2e:connection` | AI connection check at no cost: the real bridge HTTP layer with scripted backends, in Chromium and Firefox (pairing, badges, a bridged turn with the vision critic, CORS preflight, and fallback when not signed in, rate limited or the bridge stops) |
-| `npm run assets:fetch` | Downloads and verifies the curated CC0 sources listed in `assets/sources.json` into `~/.cache/aether-asset-src` (sequential, checksums, licence checks) |
-| `npm run assets:build` | Builds the asset library into `assets/lib/` + `assets/catalog.json` + `assets/manifest.json` (normalise, merge, LOD, meshopt, colliders) |
-| `npm run assets:thumbs` | Renders library thumbnails in one headless Chromium (`-- --force`, `-- --only id1,id2`) |
-| `npm run e2e:publish` | Publishing in Chromium then Firefox: a 1920×1080 still, a directed video (MP4 or WebM, plays with the right length), a verified GLB, a share link opened in a fresh browser (same world; malformed, hostile and oversized links rejected), the game zip unpacked and served by a plain static server (title screen, plays), history and versions, and an apartment's floor plan as SVG |
-| `npm run e2e:assets` | Asset pipeline in Chromium (WebGPU, WebGL2) and Firefox: library search with thumbnails, drag a sofa onto the floor (model + collider), HDR sky, GLB / PNG imports (junk refused), package export with models and CREDITS.txt, GPU objects flat over 20 place / undo cycles |
-| `npm run gallery` | Renders every smoke prompt in headless Chromium to `docs/screenshots/gallery/` for visual review (`-- --skies`: the starter world under each sky preset; `-- --arch`: each building as an archviz set — studio overview, room close-up, night, exploded, section, floor plan) |
-
-**Firefox on a machine without a GPU or a display.** Playwright's headless Firefox
-cannot create a WebGL context there, so the Firefox runs of every e2e suite use a
-headed Firefox on a virtual display: `tests/e2e/support/firefox-gl.sh` (what
-`findFirefox()` returns on Linux when `xvfb-run` is installed) drops the
-`-headless` flag and runs Firefox under `xvfb-run` with `LIBGL_ALWAYS_SOFTWARE=1`;
-Mesa's llvmpipe then provides WebGL 2 ("llvmpipe, or similar") and the studio's
-WebGL2 path runs for real. Install `xvfb` (`apt install xvfb`), nothing else.
-`AETHER_E2E_FIREFOX_GL=0` goes back to plain headless Firefox.
-
-## How a prompt becomes a playable world
+## How it works
 
 ```mermaid
 flowchart LR
-    P["Prompt<br/>+ optional images"] --> PL["Plan<br/>(planner model)"]
-    PL --> T{"Tool calls"}
-    T -->|apply_patches| A["applyPatches<br/>validate + commit to History"]
-    T -->|write_generator / request_asset| G["Coder model writes generator<br/>static check + sandbox dry-run"]
-    T -->|write_script| S["QuickJS compile check"]
-    G --> A
-    S --> A
-    A --> R["Studio renders the new world<br/>(incremental sync)"]
-    T -->|finish| V["Verify<br/>headless Rapier + logic,<br/>fast-forward world.tests"]
-    V -->|failed| RP["Repair turn<br/>compact report back to model"]
-    RP --> PL
-    V -->|passed| PLAY["Play<br/>physics + rules + behaviours, 60 Hz"]
+    P["Prompt, optional photo"] --> M{"Model connected?"}
+    M -->|"Codex / Claude Code / API key"| AI["Agent: plan first,<br/>then tools"]
+    M -->|no| OFF["Offline planner"]
+    AI -->|"apply_patches, design_plan,<br/>shape_land, dress_room, add_stairs…"| IR["World IR<br/>validated patches, undo history"]
+    OFF --> IR
+    IR --> R["Renderer<br/>three.js WebGPU / WebGL2"]
+    IR --> V["verify<br/>headless Rapier fork,<br/>world tests"]
+    IR --> B["Playtest bot<br/>plays to the win / walks every room"]
+    R -->|"rendered views"| REV["Review round:<br/>model looks, measures, fixes"]
+    V -->|failure report| AI
+    B -->|"defect → smallest fix"| IR
+    REV --> AI
+    V & B --> S["Sealed replay proof<br/>badge · share link · aether-verify"]
 ```
-
-1. **Prompt.** Your text, plus optional reference images, goes to the planner
-   together with a compact, deterministic text summary of the current world.
-   The two are wrapped in explicit tags so the model can tell data from
-   instructions.
-2. **Plan.** The planner model gets a byte-stable system prompt (about 11k
-   tokens, cached by the provider). It covers the World IR, every patch
-   operation, the generator and behaviour catalogs, the rule docs, the test
-   kinds and worked examples. It replies with a short plan and tool calls.
-3. **Patches.** `apply_patches` sends typed operations through
-   `applyPatches`, which never throws: each rejected patch comes back with its
-   index and an LLM-readable reason. Accepted batches become one undoable
-   History commit marked `agent`.
-4. **Code where needed.** When no built-in generator fits, the coder model
-   writes one. It is checked statically, dry-run in the Worker sandbox and
-   retried once with the error. Behaviour scripts are test-compiled in QuickJS.
-5. **Verify.** When the model calls `finish` after making edits, Aether runs
-   `verify`. It builds an isolated headless physics world, attaches the
-   world's rules and behaviours, and steps at a fixed 60 Hz until every test is
-   decided, the time horizon is reached or the compute budget runs out.
-   Static diagnostics run as well, and any error-level diagnostic (such as
-   an interpenetration) fails verification.
-6. **Repair.** On failure, a compact report goes back as a new turn ("1/30
-   toppled within 10s; not: domino-1…", "crate-3 overlaps table by 0.12m").
-   The loop is bounded by `maxRepairs`, `maxTurns` and a tool-call budget.
-7. **Play.** Press Play: physics, logic and the player controller run on a
-   fixed timestep. Stop restores the document exactly, because nothing that
-   happens during play is written back to it.
-
-## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Browser["Browser: apps/studio (React 19 + Vite)"]
-        HOME["Projects home<br/>IndexedDB projects, templates"]
-        UI["Editor UI: agent, objects, assets,<br/>inspector, logic, checks, history"]
-        ST["Studio controller<br/>History, autosave, share"]
-        HOME --> UI
-        SIM["Simulation<br/>fixed-step loop"]
-        AB["AgentBridge<br/>(AgentHost)"]
-        UI --> ST --> SIM
-        ST --> AB
+    subgraph Browser["apps/studio (React 19, Vite)"]
+        UI["Editor, play mode, publish"]
+        W["Workers: verification, playtest,<br/>voxel meshing, generator sandbox"]
     end
-
-    subgraph Packages["Framework packages (TypeScript, ESM)"]
-        CORE["@aether/core<br/>World IR, patches, history, diff, rng"]
-        PROC["@aether/procgen<br/>geometry kernel, 35 generators, sandbox"]
-        PHYS["@aether/physics<br/>Rapier: verify, diagnose, settle, fork"]
-        LOGIC["@aether/logic<br/>rules, 26 behaviours, QuickJS scripts"]
-        REND["@aether/render<br/>three.js WebGPU / WebGL2"]
-        AGENT["@aether/agent<br/>WorldAgent loop, providers, mock"]
+    subgraph Local["Your computer (optional)"]
+        CLI["apps/cli: aether start / mcp"]
+        SRV["apps/server (Hono): local AI routes,<br/>publishing, static hosting"]
+        BR["apps/bridge: pairing for the hosted studio"]
+        CX["codex / claude CLIs<br/>(your login)"]
     end
-
-    subgraph Server["apps/server (Hono on Node 24)"]
-        API["/api/llm proxy · /api/worlds · /api/generators · /api/health"]
+    subgraph Packages["packages/* (TypeScript, ESM; physics, logic, agent and arch run headless)"]
+        CORE["core: World IR, patches, history"]
+        AG["agent: loop, tools, providers, offline planner"]
+        AR["arch: buildings, interiors, photo-to-room"]
+        PH["physics: Rapier verify / fork / settle"]
+        LO["logic: rules, behaviours, NPCs, QuickJS scripts"]
+        PT["playtest: bot, level review, repairs"]
+        VF["verifier: proofs, aether-verify"]
+        RE["render: WebGPU / WebGL2, photoreal tiers"]
+        PG["procgen: generators, sandbox"]
+        AS["assets: CC0 catalog, characters"]
+        VX["voxel: block worlds"]
     end
-
-    SIM --> REND & PHYS & LOGIC
-    AB --> AGENT
-    AGENT -->|HTTP provider| API
-    API -->|server-side keys| LLM["Anthropic / OpenAI APIs"]
-    REND --> PROC
-    PHYS --> PROC
-    PROC --> CORE
-    REND --> CORE
-    PHYS --> CORE
-    LOGIC --> CORE
-    AGENT --> CORE
-    API --> AGENT
+    UI --> AG & RE & PH & LO
+    W --> PH & PT & PG & VX
+    AG --> CORE & AR & PT
+    CLI --> SRV --> CX
+    BR --> CX
+    UI -.->|"local AI / bridge"| SRV & BR
 ```
 
-| Package | Responsibility |
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the design: patch
+semantics, the verification algorithm, sandboxes, the agent's turn layout and
+prompt caching, photo-to-room, the bot, and rendering.
+[docs/CONTRACTS.md](docs/CONTRACTS.md) pins the public API of each package.
+
+## Limits, stated plainly
+
+- **Looks.** The renderer is real time. Flagships and generated worlds use PBR
+  materials, HDR skies, baked light for interiors, AO and grading, but they
+  are not a Blender Cycles still. Distant canyon walls show facets, some
+  library models are stylised (kart drivers, farm animals), and flames are
+  glowing cones. Software-GPU machines get the lower quality tiers.
+- **The offline planner** reads English only and knows a fixed vocabulary
+  (about 18 themes and 40+ library objects). In the benchmark it got 53 of 57
+  in-vocabulary prompts fully right, but only 3 of 19 prompts outside its
+  vocabulary. Anything ambitious needs a connected model.
+- **Model runs take minutes.** With Codex, a forest game took 14 calls and
+  222 s, and a house 16 calls and 270 s. A chat edit takes seconds to under a
+  minute. Each call re-reads a cached prompt preamble of about 33k tokens.
+- **The bot proves wins, not losses.** A won run shows that a game can be won.
+  A lost run is not proof that it cannot be: the bot can still lose to enemies
+  faster than the player, and it does not dodge during jumps. Blockfall's and
+  Sakura River's own game loops are outside the general bot.
+- **Replay checks** are deterministic re-simulation. They are not formal
+  proofs, and a world with no tests passes trivially. A proof is tied to the
+  engine version.
+- **Photo-to-room** needs a vision model and minutes of calls. Measured
+  fidelity in recorded runs was 0.78 to 0.84. Vaulted ceilings, cornices,
+  sash windows and some door styles cannot be built yet. The final item pass
+  rate still varies from run to run (83 to 100% in the latest three runs).
+- **Hosted studio:** a browser tab cannot run Codex. Use the bridge, your own
+  key, or the offline planner.
+
+## Documentation
+
+| Document | What it covers |
 | --- | --- |
-| [`@aether/core`](packages/core) | World IR (zod), `applyPatches`, `invertPatches`, `diffWorlds`, `History` with branches, selectors, deterministic rng and hashes, world summaries for LLM context |
-| [`@aether/procgen`](packages/procgen) | Typed-array geometry kernel (no three.js), noise, 36 built-in generators, `GeneratorApi`, LRU cache, Worker sandbox (browser) and `node:vm` sandbox (`@aether/procgen/node`, tests and server) |
-| [`@aether/physics`](packages/physics) | Rapier 0.21 wrapper: incremental sync, joints, character controller, events, snapshots and forks, `verify`, `diagnose`, `settle` |
-| [`@aether/logic`](packages/logic) | Deterministic gameplay runtime: rules engine, 26 behaviours, QuickJS script sandbox, host-agnostic through `LogicHost` |
-| [`@aether/render`](packages/render) | `WorldRenderer`: WebGPU/WebGL2, incremental `SceneSync`, instanced scatter, environment, cameras, picking, ghost preview, debug overlays, screenshots |
-| [`@aether/verifier`](packages/verifier) | Independent replay verifier and signed proofs: re-simulates a sealed world headless and checks content hash, signature, engine version and outcome (`aether-verify`, also in the browser); see [docs/PROOFS.md](docs/PROOFS.md) |
-| [`@aether/agent`](packages/agent) | `WorldAgent` plan → patch → verify → repair loop, tools, system prompt, Anthropic, OpenAI, HTTP and mock providers |
-| [`apps/server`](apps/server) | LLM proxy with server-held keys, world share links, generator cache, static hosting, hardening |
-| [`apps/studio`](apps/studio) | The editor and player |
+| [USER_GUIDE.md](docs/USER_GUIDE.md) | Prompting, chat edits, play mode, badges, photo-to-room, publishing |
+| [AGENT_TOOLS.md](docs/AGENT_TOOLS.md) | The tools the AI uses to build, look, measure and fix |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works, package by package |
+| [CONTRACTS.md](docs/CONTRACTS.md) | Public APIs, schemas, events |
+| [PROOFS.md](docs/PROOFS.md) | Replay proof format, verifier, threat model |
+| [BENCHMARK.md](docs/BENCHMARK.md) | Reproducible benchmark: winnability, edits vs regeneration, proof speed |
+| [MCP.md](docs/MCP.md) | Aether as an MCP server |
+| [WRITEUP.md](docs/WRITEUP.md) | Product write-up: problem, approach, evidence, limits |
+| [SECURITY.md](docs/SECURITY.md) | Threat model, sandboxes, local hardening |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Vercel, local app, Docker, Fly.io, Render |
+| [ASSETS.md](docs/ASSETS.md) · [THIRD_PARTY.md](docs/THIRD_PARTY.md) | Asset library, licences, credits, AI disclosure |
+| [REVIEW_LOG.md](docs/REVIEW_LOG.md) | Engineering log: every stage with measurements and open issues |
+| [DESIGN.md](docs/DESIGN.md) · [WEBGPU.md](docs/WEBGPU.md) · [RESEARCH_LOG.md](docs/RESEARCH_LOG.md) | UI design, renderer notes, engine experiments |
 
-The dependency graph has no cycles. `physics`, `logic`, `procgen` and `agent`
-never import three.js or the DOM, so they run headless in Node (tests,
-server, smoke) as well as in the browser. The full design, covering patch
-semantics, history, the verification algorithm, sandbox layers, render sync,
-the agent loop and providers, is in
-**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. The public API of each
-package is pinned in [docs/CONTRACTS.md](docs/CONTRACTS.md).
+## The `aether` command
 
-## Security model
+| Command | What it does |
+| --- | --- |
+| `aether start` (default) | Builds the studio if missing or stale, starts the server **detached**, prints `http://127.0.0.1:<port>` (4280 or the next free port). `--open`, `--port N`, `--no-build`, `--rebuild`, `--foreground`, `--origin URL` (also act as the bridge for a hosted studio) |
+| `aether stop` / `status [--json]` / `logs [-f] [-n N]` | Stop, show status, read the log |
+| `aether login [--device-auth] [--claude]` / `logout [--claude]` | Sign in to Codex with your own ChatGPT account, or to Claude Code |
+| `aether pair` | A fresh pairing code and link for a hosted studio (needs `start --origin`) |
+| `aether doctor` | Checks Node, dependencies, the build, the port, disk space, and both CLIs |
+| `aether mcp [--project-dir DIR] [--provider auto\|offline\|local]` | MCP server on stdio, confined to one project folder |
 
-All LLM output and all user input are treated as untrusted.
+The server binds 127.0.0.1 only. `--host 0.0.0.0` is refused without
+`--allow-lan`, which adds an access token. State lives in
+`$XDG_STATE_HOME/aether` or `~/.local/state/aether` (`%LOCALAPPDATA%\Aether`
+on Windows). See [docs/SECURITY.md](docs/SECURITY.md).
 
-- **Keys stay on the server.** The browser talks only to `/api/llm`. The
-  server picks the model from an allowlisted role, so clients cannot choose
-  arbitrary models. Upstream errors map to fixed codes and secrets are
-  scrubbed from logs.
-- **Validation at every boundary.** Patches, worlds, tool inputs, imports,
-  share links, generator output and script intents are size-, depth- and
-  node-capped, screened for `__proto__`, `constructor` and `prototype` keys,
-  and then zod-validated.
-- **Layered sandboxes for AI-written code:**
-  - *Generators* go through a static token screen first. They then run in a
-    Web Worker pool with shadowed globals, neutralised constructors, frozen
-    intrinsics, no network and a watchdog that terminates runaway workers.
-    Output is re-validated on the main thread (shape, NaN, vertex and size
-    caps).
-  - *Scripts* run in QuickJS/WASM with no host functions. `Date`, `Promise`,
-    `Proxy` and `RegExp` are removed, `eval` and `Function` are stubbed, and
-    `Math.random` is seeded. Each script gets a 2 ms call budget (disabled
-    after repeated overruns), per-script memory and stack limits, and a shared
-    heap budget. At most 32 validated intents are accepted per call.
-  - *Server-side generator dry-runs* (`node:vm`, which is not a security
-    boundary) are **off by default**. When enabled they run in a
-    heap-capped `worker_threads` Worker with a terminate watchdog and a
-    bounded queue.
-- **Server hardening.** CORS allowlist and foreign-origin guard, per-IP token
-  buckets, a daily token budget, per-route body limits, an upstream timeout
-  with abort on client disconnect, a strict CSP (the physics verification
-  worker gets a tighter one: WebAssembly and same-origin fetches only), `nosniff`, COOP,
-  `X-Frame-Options: DENY`, HSTS in production, JSON-only errors with no stack
-  traces, atomic and capped file storage, and share links with a hashed edit
-  token.
-- **Model URLs.** These must be same-origin, `blob:`, glTF `data:` or `https`
-  on an explicit allowlist, which is empty by default.
-- **The UI never renders AI text as HTML.**
+## Development
 
-## Performance
+| Command | What it does |
+| --- | --- |
+| `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
+| `npm test` | All Vitest unit and integration tests (about 4,170 tests in 390 files; no network) |
+| `npm run smoke` | The real agent loop with the offline planner on every featured prompt plus block-world, architecture and asset prompts; every world is re-verified headless |
+| `npm run bench` / `bench:quick` | The public benchmark ([docs/BENCHMARK.md](docs/BENCHMARK.md)); `bench:quick` fails when a documented claim stops holding |
+| `npm run eval:edits` | Small-edit evaluation: 199 prompts over the default projects |
+| `npm run build` then `npm run start` | Production build, then studio + API on one origin (port 8787) |
+| `npm run e2e` | Playwright against the built studio: Chromium WebGPU, Chromium WebGL2, Firefox WebGL2 |
+| `npm run e2e:verified` · `e2e:refine` · `e2e:arch` · `e2e:gameplay` · `e2e:publish` · `e2e:voxel` · `e2e:ux` | Focused browser suites (bot verification and repair, chat edits, architecture, playing flagships to the win, publishing, block worlds, UX) |
+| `npm run showcase:bake` / `showcase:thumbs` | Rebuild the featured worlds from their prompts; render their covers |
+| `npx tsx scripts/bot-probe.ts <world.json \| prompt:… \| plan:…>` | Run the playtest bot headless on one world and print timings |
 
-- **Buildings.** The static parts of a building (walls, floors, windows,
-  furniture) merge per storey and material into a few dozen meshes, while
-  every entity stays pickable and editable: a furnished two-bedroom
-  apartment drops from 488 to 202 draw calls per pass. Lamps switch off in
-  full daylight (no per-pixel cost for a dozen point lights), the studio
-  render only refines while the view rests and then idles, and its
-  pipeline releases every GPU texture it made (20 toggles: flat).
-- **Instancing and scatter fields.** Small `scatter` layers are one
-  instanced mesh; layers of 2 000+ instances become fields (packed 20-byte
-  instances in ~128-instance chunks, QEM LOD levels, CPU chunk culling
-  against a triangle budget, re-planned at most every 120 ms while the camera
-  moves and re-uploaded only from the first changed chunk). A million pines:
-  19 MB of instance data, 0.0–3.4 ms per re-plan, ≈ 70× fewer triangles than
-  full detail under a 3 M budget.
-- **Virtual geometry.** Parts with 20k+ triangles build a cluster LOD DAG in
-  a worker (328k triangles: 1.5 s) and draw a 1 px-error cut: all instances
-  of a mesh share one vertex buffer and one dynamic index buffer (≈ 2× the
-  source indices); a cut costs 0.01–0.5 ms on the CPU and is watertight by
-  construction (tested).
-- **Zero-allocation hot loops.** Physics writes packed
-  `[p, q]` transforms into a reused `Float32Array`, which the renderer
-  consumes without allocating. Logic reuses per-tick scratch state, and script
-  calls are round-robin capped per tick.
-- **Incremental sync.** `diffWorlds` has a reference-equality fast path
-  (patches share structure, so unchanged entities keep their identity).
-  Render and physics rebuild only what changed. A pure move teleports a
-  body, and colour-only edits never touch physics.
-- **Caching.** Geometry and materials are reference-counted caches keyed by
-  stable JSON. Generator output sits in an LRU cache keyed by id, params,
-  seed and source hash, with in-flight dedupe.
-- **Memory budgets.** Each GPU class gets a pixel-ratio cap (1.25 on
-  integrated GPUs), an absolute drawing-buffer cap and a 2048² shadow map;
-  bloom's render targets exist only while a world uses bloom. Low memory
-  mode (automatic for devices with 4 GB or less, under heap pressure or
-  after a lost GPU context) drops to ratio 1, about 1 MP, no MSAA or bloom,
-  1024² shadows and a 40-entry undo history. Caches are bounded by bytes as
-  well as entries. A lost GPU context is recovered with a fresh renderer.
-- **Verification in workers.** Headless verification runs in up to two
-  module workers (a protocol validated on both ends, cancellation, timeouts,
-  a main-thread fallback). Independent tests are split across both workers
-  and simulated in parallel; results stream into the UI as they are decided.
-  While checks run on a rendered world, the longest main-thread task
-  measured in the e2e run is 0 ms.
-- **Responsive UI.** Rendering in edit mode happens on demand, and an idle
-  editor (30 s without input) stops redrawing animated weather; the loop
-  stops while the tab is hidden. Captures (critique views, thumbnails) read
-  pixels back asynchronously, so a slow GPU never freezes the page. Rapier
-  loads lazily (in the worker for verification, on the main thread only for
-  Play) as a cached `.wasm` file compiled while streaming (the Rapier chunk
-  went from 4.3 MB to 0.22 MB), and QuickJS only for worlds with scripts.
-  Stats and HUD updates go to React at 4 Hz, never every frame.
-- **Frame loop.** An allocation probe asserts the per-frame render path
-  allocates nothing; large meshes raycast through a BVH (a 131k-triangle
-  terrain: 0.03–0.05 ms per ray instead of 11–21 ms), identical static props
-  are drawn instanced, and the resolution adapts while continuous rendering
-  stays under 40 fps.
-- **Measured.** 1000 dynamic boxes step in about 2.3 ms on average (8 ms
-  budget). 1000 patches apply in about 40 ms. The 35 classic built-in generators run
-  in about 0.4 s in total. A 1000-entity logic tick takes under 2 ms. The
-  offline smoke run takes under a second per prompt.
+Every script is in [`package.json`](package.json). For browsers, run
+`npx playwright install chromium firefox` once. On a Linux machine without a
+display, the Firefox suites run headed under `xvfb-run`
+(`tests/e2e/support/firefox-gl.sh`).
 
-## Testing
-
-| Layer | Command | Coverage |
-| --- | --- | --- |
-| Unit and integration | `npm test` | About 1,640 Vitest tests across 118 files: patch semantics and inverses (including seeded random sequences), sandbox escapes, prototype-pollution payloads, physics benchmarks (domino chains topple and fail as expected), logic determinism, provider wire formats against a fake `fetch`, and server hardening, plus the art-direction policies (sky presets, fog, framing, materials) and the scale-geometry algorithms (watertight LOD cuts, simplifier invariants, budgeted field culling, allocation-free view planning). No test makes a network call. |
-| Smoke | `npm run smoke` | The real `WorldAgent` with the mock provider runs on every shown template's prompt (the twelve flagships and the saved gallery worlds) plus the block-world, architecture and asset prompts. Every resulting world is re-validated and re-verified independently. |
-| Playtests | `npm test` (`apps/studio/test/showcasePlaytest.test.ts`) | A bot plays the shipped world files through real physics and logic with keyboard-like input: Lantern Isles end to end (guide, every bridge and lift, all twelve lanterns, the win) and the fall-respawn; Kart Canyon three laps through ordered checkpoints to the chequered flag, and a skipped checkpoint not counting. Chain Reaction's five machines are proven by its own verification tests. |
-| End to end | `npm run build && npm run e2e` | Real browsers against the production server in mock mode. It boots, checks the canvas is not blank, runs four prompts (each verified in workers, with no other long main-thread script while a verification is in flight), runs the checks on a rendered world with no long task, plays with keyboard input, stops and checks exact restore, then undo/redo, inspector edit and export. Runs on Chromium (WebGPU and forced WebGL2) and then Firefox (WebGL2), one browser at a time, and any console error fails the run. |
-| Layout | `npm run build && npm run e2e:layout` | Home, projects, docs and the editor (agent, assets + selection, play, phone sheet) at 1440×900, 1366×650, 1280×720, 1024×700, 900×700, 768×1024, 390×844 and 844×390, in Chromium and Firefox. Any element past the viewport outside a scroll container, a clipped control, text overflowing without an ellipsis, overlapping top-bar zones or overlapping viewport overlays fails the run. |
-| UX | `npm run build && npm run e2e:ux` | Chromium and Firefox: keyboard navigation and focus visibility, the shortcuts overlay, prompt from the home hero, the proof seal and ghost replay (cleared by full-window Play), command palette actions and free-text prompts, the share link round trip (viewer, play / stop, Remix into an editable project), the onboarding tour and the phone layout. |
-| Projects | `npm run build && npm run e2e:projects` | The projects home in Chromium and Firefox: template → editor → autosave → live thumbnail, rename, duplicate, delete with Undo, export/import round trip, search, sort, list view, reload persistence, command palette, legacy migration and the phone layout. |
-| Architecture | `npm run build && npm run e2e:arch` | Chromium (WebGPU, WebGL2) and Firefox: the apartment prompt, every building view and the studio render (non-blank, refining), GPU objects flat over 20 view/quality cycles, floor-plan drawing as undoable checked edits, and a walkthrough that opens the front door with E and walks in, then night, lights and photo mode. |
-| Memory | `npm run build && npm run e2e:memory` | Chromium (WebGPU) then Firefox (WebGL2): idle soak on the starter world (an idle editor must stop drawing), JS heap < 250 MB and tab process < 800 MB, then 20 agent runs + 20 play/stop cycles with no growth in heap, tab memory or reference-counted GPU resources; automatic low memory mode on a stubbed 2 GB device; recovery from a lost WebGL context. |
-| Benchmark | `npm run build && npm run e2e:benchmark` | The showcase world in Chromium (WebGPU, WebGL2) and Firefox: scene vs drawn triangles, frame-time percentiles, CPU in the renderer and the view planner while the camera orbits; `--classic` for the full-detail engine, `--cycles=N` checks GPU objects stay flat across rebuilds. |
-| Publish | `npm run build && npm run e2e:publish` | See the scripts table. Hosting publishers (Netlify, Vercel, GitHub Pages, itch.io) are tested in `apps/server/test/publish.test.ts` against fake command-line tools on PATH — never real deploys. |
-| Deployment | `npm test` (`apps/server/test/deploy.test.ts`); `docker build -t aether . && docker run -d -p 127.0.0.1:8787:8787 aether && BASE_URL=http://127.0.0.1:8787 npm run e2e` | Precompressed static files (Brotli / gzip, identity for ranges), cache policy, 404 / 500 pages, socket timeouts, and the invariants of `Dockerfile`, `fly.toml`, `render.yaml`, `docker-compose.yml`, `vercel.json` and CI. Any e2e suite runs against a live deployment with `BASE_URL`. |
-| Types | `npm run typecheck` | Strict TypeScript, zero errors (including `experiments/`) |
-
-Install the browsers for e2e once with `npx playwright install chromium firefox`.
-
-## Deployment
-
-**Hosted copy (static).** The public copy of the studio is a static site:
-`vercel.json` builds `apps/studio` (`npm run build -w @aether/studio`), serves
-`apps/studio/dist` with a strict CSP and security headers, and has **no
-`/api`**. Visitors bring their own AI: their own Codex / ChatGPT or Claude
-Code login through the local bridge (`npx aether start --origin <hosted
-address>`), their own API key (called straight from the browser), or the
-offline planner. The site carries no key and never uses the operator's
-account. `npm run build && npm run e2e:hosted` checks exactly this setup in
-Chromium and Firefox.
-
-- Point an uptime monitor at the hosted page, and tag every release so a
-  deployment can be reproduced exactly.
-- Every visitor path keeps working without any server: when a key or the
-  bridge fails, the studio falls back to the offline planner.
-- `/play` is the standalone player of share links: the world is in the URL
-  fragment, so the static site stores nothing and serves every link the
-  same way. Set `VITE_AETHER_PLAYER_URL` at build time when share links
-  should open on another deployment (the local app asks for one, because
-  its own links only open on the computer that made them).
-
-**Self-hosted server (optional).** For your own team you can run the API and
-the studio from one container:
-
-```bash
-docker build -t aether .
-docker run --rm -p 127.0.0.1:8787:8787 -v aether-data:/data aether
-# or: docker compose up -d --build
-```
-
-The image is multi-stage on `node:24-bookworm-slim`: production dependencies
-only, a precompressed (Brotli + gzip) studio, the unprivileged `node` user, a
-`HEALTHCHECK` on `/api/health`, a capped heap and a graceful drain on
-SIGTERM. It never runs anyone's Codex / Claude Code login and uses the
-offline planner unless you configure a server model (`AETHER_PROVIDER` plus
-a key); a server key is spent by everyone who can reach the server, so keep
-it off for public deployments. `fly.toml` (always-on machine) and
-`render.yaml` are ready to use.
-
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) has the step-by-step for Vercel,
-the local app, Docker, Fly.io and Render, the environment variable
-reference and the uptime checklist. CI (`.github/workflows/ci.yml`) runs the
-typecheck, unit tests, build, smoke, both e2e browsers and a container build
-on every push. Any e2e suite can test a running deployment with
-`BASE_URL=http://127.0.0.1:8787 npm run e2e`.
+Environment variables (`.env`, see `.env.example`) are documented in
+[`apps/server/README.md`](apps/server/README.md#configuration) and
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). No key is required. The hosted
+build has no server key at all.
 
 ## Research inspirations
 
-These papers shaped the *ideas* behind Aether. No code, models, weights,
-datasets or assets were copied from any of them. Everything here is an
-original TypeScript implementation.
+These papers shaped the ideas. No code, models, weights, datasets or assets
+were copied from them.
 
-| Work | What inspired us |
+| Work | What it inspired |
 | --- | --- |
-| PWM, [arXiv:2609.10540](https://arxiv.org/abs/2609.10540) | Explicit, code-defined world state and rules as the source of truth, separate from rendering. We render it in real time in the browser instead of with a video model. |
-| CoDeR, [arXiv:2609.26458](https://arxiv.org/abs/2609.26458) | Agents write executable Three.js code for world rules and dynamics, with diffusion only rendering it. Aether keeps the code-defined world and renders it live instead. This inspired the patch IR and the generators written by the coder model. |
-| SceneMosaic, [arXiv:2609.05594](https://arxiv.org/abs/2609.05594) | Generate, then validate and repair with physics stabilisation and a critic/actor loop. We use deterministic code for geometry and support checks and the LLM for semantics. |
-| PAT3D, [arXiv:2511.21978](https://arxiv.org/abs/2511.21978) | A simulation-in-the-loop step settles a generated scene under gravity and removes intersections. This became `settle`. |
-| SceneSmith, [arXiv:2602.09153](https://arxiv.org/abs/2602.09153) | Designer, critic and orchestrator agents build scenes in stages and estimate physical properties, keeping collisions low. This shaped the agent's plan, verify and repair loop. |
-| Articraft, [arXiv:2605.15187](https://arxiv.org/abs/2605.15187) | An LLM writes code against a parts-and-joints SDK, and a test harness feeds results back in an edit-execute-repair loop. This shaped the joint spec (doors, wheels, drawbridges) and the generator repair loop. |
-| ESG, [arXiv:2609.15392](https://arxiv.org/abs/2609.15392) | An LLM writes a machine-checkable scene graph with physical properties and a timeline of events, which simulation then makes happen on schedule. This inspired world tests such as `eventually` and `topples`. |
-| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Grades LLM-written Three.js worlds by running them, and finds that evaluators who only read the code miss absent features. This led to "physics as unit tests": Aether runs every world headless before calling it done. |
-| 3DCodeBench, [arXiv:2606.01057](https://arxiv.org/abs/2606.01057) | Finds that most failures in LLM-written 3D code are API mismatches and floating parts. This informed the small, typed `GeneratorApi` and the base-at-ground convention. |
+| PWM, [arXiv:2609.10540](https://arxiv.org/abs/2609.10540) | Explicit, code-defined world state as the source of truth, rendered live instead of by a video model |
+| CoDeR, [arXiv:2609.26458](https://arxiv.org/abs/2609.26458) | Agents writing executable world code; the patch IR and generators written by a coding model |
+| SceneMosaic, [arXiv:2609.05594](https://arxiv.org/abs/2609.05594) | Generate, validate, repair with physics stabilisation |
+| PAT3D, [arXiv:2511.21978](https://arxiv.org/abs/2511.21978) | Simulation-in-the-loop settling (`settle`) |
+| SceneSmith, [arXiv:2602.09153](https://arxiv.org/abs/2602.09153) | Designer, critic and orchestrator stages |
+| Articraft, [arXiv:2605.15187](https://arxiv.org/abs/2605.15187) | Parts-and-joints SDK with an edit-execute-repair loop |
+| ESG, [arXiv:2609.15392](https://arxiv.org/abs/2609.15392) | Machine-checkable scene timelines (`eventually`, `topples`) |
+| WorldBench, [arXiv:2610.10622](https://arxiv.org/abs/2610.10622) | Grading worlds by running them: "physics as unit tests" |
+| 3DCodeBench, [arXiv:2606.01057](https://arxiv.org/abs/2606.01057) | A small typed `GeneratorApi` and the base-at-ground convention |
 
 ## Licence, third parties and AI disclosure
 
 - **Licence:** [MIT](LICENSE), © 2026 Aether contributors.
-- **Third-party components:** every runtime and development dependency, with
-  its exact version and licence, is listed in
-  **[docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)**. Everything shipped to users
-  is permissively licensed (code under MIT or Apache-2.0, fonts under the SIL
-  Open Font License 1.1).
-- **Assets:** there are no third-party 3D models, textures, images or audio.
-  Geometry is generated procedurally and sounds are synthesised with WebAudio
-  oscillators. The UI is set in self-hosted Latin subsets of Inter and
-  JetBrains Mono (OFL 1.1, licence files ship alongside). The screenshots
-  in `docs/screenshots` were captured from this app.
+- **Third parties:** every dependency and every bundled asset (Kenney, Poly
+  Haven and ambientCG CC0 models, textures and HDRIs; Microsoft Rocketbox
+  characters under MIT; Quaternius and Khronos sample models; fonts under OFL
+  1.1) is listed with its licence, source and credit line in
+  [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). Only permissive licences are
+  used. In-app credits appear in the credits panel, on end-of-game screens and
+  in exported `CREDITS.txt` files.
 - **AI disclosure:** this codebase was written with AI coding assistants
-  (Claude Code and Codex) under human direction and review. At runtime the app
-  calls Anthropic Claude and/or OpenAI models through the server proxy.
-  AI-generated 3D content is produced at runtime *as code* (procedural
-  generators and scripts) and runs sandboxed. Details are in
-  [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md#ai-disclosure).
+  (Claude Code and Codex) under human direction and review. At runtime, the
+  model you connect writes patches, generator code and scripts. All of it is
+  validated, and code runs sandboxed (a locked-down worker pool for
+  generators, QuickJS in WebAssembly for scripts). A few library assets were
+  generated with AI; they are marked in
+  [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
