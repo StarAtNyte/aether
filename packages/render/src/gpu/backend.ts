@@ -243,6 +243,24 @@ export function policyReason(preference: BackendPreference, env: BackendEnvironm
   return 'firefox-policy';
 }
 
+/**
+ * Make three.js read instance matrices and skeleton bones from vertex attributes and a bone texture instead of
+ * uniform blocks. A uniform block carries its array length and its node id in the shader source, so every
+ * instanced mesh and every skeleton (every animal, every character) became a program of its own: a world of a
+ * few hundred meshes linked well over a hundred large programs, one by one on the main thread. Through
+ * attributes and a texture the source no longer names the mesh, and all meshes of a material share one program
+ * (Highland Trail: 174 links down to about 110). three consults this limit in four places only (instancing,
+ * skinning, `range()`), always to choose between those two paths.
+ */
+function shareInstancedPrograms(r: WebGPURenderer): void {
+  try {
+    const caps = (r as unknown as { backend?: { capabilities?: { getUniformBufferLimit?: () => number } } }).backend?.capabilities;
+    if (caps && typeof caps.getUniformBufferLimit === 'function') caps.getUniformBufferLimit = () => 0;
+  } catch {
+    // The default paths still work, only with more programs.
+  }
+}
+
 /** Create and initialize the renderer with the project-wide color/shadow settings. */
 export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: BackendOptions): Promise<{ renderer: WebGPURenderer; backend: BackendKind; gpu: GpuInfo }> {
   const { WebGPURenderer } = await import('three/webgpu');
@@ -266,6 +284,7 @@ export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: Backend
     // No dispose() on failure: nothing was allocated, and three's dispose() would re-run the
     // failed init through an un-awaited setAnimationLoop(), causing an unhandled rejection.
     await r.init();
+    shareInstancedPrograms(r);
     return r;
   };
   const env = detectEnvironment();

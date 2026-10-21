@@ -172,6 +172,35 @@ export class HdriController {
     private readonly onChange: () => void,
   ) {}
 
+  /** Loads in flight (the map requested last has neither arrived nor failed). */
+  private pending = 0;
+  private waiters: Array<() => void> = [];
+
+  /**
+   * Resolves when no map is being fetched (the requested one arrived, failed, or none was asked for), or after
+   * `timeoutMs`. The load screen waits for it: every material is compiled against the scene's environment, and a
+   * map that arrives after the first frames changes the environment, which compiles every material again.
+   */
+  settled(timeoutMs: number): Promise<void> {
+    if (this.pending === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      this.waiters.push(finish);
+    });
+  }
+
+  private settle(): void {
+    if (this.pending > 0) this.pending--;
+    if (this.pending === 0) for (const w of this.waiters.splice(0)) w();
+  }
+
   /** The loaded map, or null (none requested, still loading, or failed). */
   get texture(): Texture | null {
     return this.tex;
@@ -226,6 +255,7 @@ export class HdriController {
       }
       this.releaseParked();
     }
+    this.pending++;
     void loadCatalog()
       .then(() => {
         const info = assetInfo(next);
@@ -234,6 +264,7 @@ export class HdriController {
       })
       .then(
         (tex) => {
+          this.settle();
           if (token !== this.token) {
             tex.dispose();
             return;
@@ -246,6 +277,7 @@ export class HdriController {
           this.onChange();
         },
         (e: unknown) => {
+          this.settle();
           if (token !== this.token) return;
           this.error = e instanceof Error ? e.message.slice(0, 160) : 'HDRI failed to load';
           this.onChange();
@@ -294,6 +326,8 @@ export class HdriController {
 
   dispose(): void {
     this.token++;
+    this.pending = 0;
+    for (const w of this.waiters.splice(0)) w();
     this.drop(null);
     this.releaseParked();
   }

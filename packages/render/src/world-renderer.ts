@@ -502,6 +502,10 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 }
 
 /** Attempts of a capture that comes back blank. */
+/** Longest the load screen waits for the first frame's shader programs to link (ms). */
+const SHADER_WARMUP_MS = 15_000;
+/** Longest the load screen waits for the world's environment map (ms). */
+const HDRI_WAIT_MS = 8_000;
 const MAX_BLANK_RETRIES = 3;
 
 /** Whether a drawn canvas is blank (see {@link pixelsAreBlank}): sampled through a 32 x 32 copy. */
@@ -567,6 +571,8 @@ export class WorldRenderer {
   private studioFailed = false;
   /** Interactive render tier: a fixed choice, or 'auto' (follows the GPU budget). */
   private tierChoice: RenderTier | 'auto' = 'auto';
+  /** Time the last shader warm-up took (ms; diagnostics). */
+  shaderWarmupMs = 0;
   /** User toggles of single effects (undefined keeps the tier's choice). */
   private effectOverrides: EffectOverrides = {};
   /** Effects that failed to build or draw on this device (never retried). */
@@ -1237,6 +1243,37 @@ export class WorldRenderer {
     // The first world of a session just materialises; later builds show their plan marks first.
     if (added.length > 0) this.startGrow(added, prev !== null);
     if (!this.framed) this.framed = this.frameContent({ duration: 0 });
+    await this.warmShaders();
+  }
+
+  /**
+   * Link the shader programs of what the first frame shows before it is drawn. Linking is asynchronous (and runs
+   * on the driver's own threads) here, whereas the first draw of every new material variant would otherwise link
+   * it synchronously on the main thread, one program at a time, with the page frozen. Bounded: a slow driver
+   * does not hold the load screen longer than {@link SHADER_WARMUP_MS}.
+   */
+  private async warmShaders(): Promise<void> {
+    if (this.disposed || this.lost) return;
+    const started = performance.now();
+    // The environment map first: a map that arrives later re-keys (and recompiles) every material.
+    await this.env.hdri.settled(HDRI_WAIT_MS);
+    if (this.disposed || this.lost) return;
+    performance.mark('aether:warm-start');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.renderer.compileAsync(this.scene, this.perspective, this.scene),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, SHADER_WARMUP_MS);
+        }),
+      ]);
+    } catch (e) {
+      log.warn(`shader warm-up failed: ${errorMessage(e)}`);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+    this.shaderWarmupMs = performance.now() - started;
+    performance.mark('aether:warm-end');
   }
 
   /** Content groups of renderable entities that `world` adds to `prev` (all of them for a first world). */
