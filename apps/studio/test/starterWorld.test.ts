@@ -29,8 +29,8 @@ describe('starter world', () => {
 });
 
 describe('example prompts', () => {
-  it('ships one prompt per shown template, each with a unique title and prompt', () => {
-    expect(EXAMPLE_PROMPTS.length).toBe(TEMPLATES.length);
+  it('ships one prompt per shown template that is not a photo room, each with a unique title and prompt', () => {
+    expect(EXAMPLE_PROMPTS.length).toBe(TEMPLATES.filter((t) => t.origin !== 'photo').length);
     expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(EXAMPLE_PROMPTS.length);
     expect(new Set(EXAMPLE_PROMPTS.map((p) => p.prompt)).size).toBe(EXAMPLE_PROMPTS.length);
   });
