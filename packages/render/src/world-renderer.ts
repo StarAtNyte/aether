@@ -53,6 +53,7 @@ import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
 import { RoomLampNode } from './gpu/room-lamp-node';
 import { RoomLamp } from './sync/room-lamp';
+import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, framingPose, frontAzimuthDeg, pickClearAzimuth, type Framing } from './view/framing';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
@@ -556,6 +557,8 @@ export class WorldRenderer {
     settled: () => this.syncing === 0 && !this.grow.active && !this.disposed,
     onUpload: () => this.onLightVolume(),
   });
+  /** Soft footprints under the furniture of buildings (see `view/contact-shadows.ts`). */
+  private readonly contact = new ContactShadows();
   /** Scene syncs still generating geometry (the light volume waits for them). */
   private syncing = 0;
   /** Reused 2D canvas for critique-view crops (released on dispose). */
@@ -756,7 +759,7 @@ export class WorldRenderer {
     this.env.sun.shadow.radius = this.qualityPlan.shadowRadius;
     this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light, this.contact.mesh);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -931,6 +934,7 @@ export class WorldRenderer {
     this.env.setInteriorBounce(this.archView.active);
     this.lightVolume.setEnabled(on);
     this.env.setVolumeLit(on && this.lightVolume.ready);
+    if (!this.archView.active) this.contact.set([]);
   }
 
   /**
@@ -959,6 +963,23 @@ export class WorldRenderer {
       room.max.y = Math.max(room.max.y, _pos.y + 0.6);
       l.setClip(room);
     });
+  }
+
+  /** Footprints under the building's furniture and fixtures, on its floors (room slab tops). */
+  private placeContactShadows(parts: readonly VolumePart[]): void {
+    const floors: number[] = [];
+    const boxes: Box3[] = [];
+    for (const p of parts) {
+      if (p.role === 'room') {
+        const b = new Box3();
+        for (const m of p.meshes) b.expandByObject(m.mesh);
+        if (!b.isEmpty()) floors.push(b.max.y);
+      } else if (p.role === 'furniture' || p.role === 'fixture') {
+        boxes.push(new Box3().setFromObject(p.object));
+      }
+    }
+    // Screen-space AO already darkens contacts on the high tiers: the footprints stay lighter there.
+    this.contact.set(planContactShadows(boxes, floors), this.activeEffects.ao ? 0.6 : 1);
   }
 
   /** What a light-volume bake needs: the building parts, the light of the environment and the ground height. */
@@ -992,6 +1013,7 @@ export class WorldRenderer {
       });
     });
     this.clipLampsToRooms();
+    this.placeContactShadows(parts);
     if (parts.length === 0) return null;
     const sun = this.env.sun;
     _dir.copy(sun.position).sub(sun.target.position);
@@ -2373,6 +2395,13 @@ export class WorldRenderer {
       this.needsDraw = true;
       this.boundsDirty = true;
     }
+    // Footprints lie on the floors as built: the exploded, solo and x-ray views move or hide the floors.
+    const av = this.archView.value;
+    const showContact = this.contact.mesh.count > 0 && av.levels === 'stacked' && !av.xray;
+    if (this.contact.mesh.visible !== showContact) {
+      this.contact.mesh.visible = showContact;
+      this.needsDraw = true;
+    }
     const sectionY = this.archView.sectionY;
     if (this.clipGroup) {
       const on = sectionY !== null;
@@ -3604,6 +3633,7 @@ export class WorldRenderer {
     this.gizmo = null;
     this.archView.dispose();
     this.lightVolume.dispose();
+    this.contact.dispose();
     this.editOverlay.dispose();
     this.proof.dispose();
     this.ghostRun.dispose();
