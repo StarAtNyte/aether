@@ -3,8 +3,9 @@
  * on what the offline planner builds for a prompt, and prints the verdict with its cost figures (wall time, steps,
  * simulated seconds, navigation grid size and search effort). For profiling the bot on generated worlds.
  *
- * Run: `npx tsx scripts/bot-probe.ts <file.json | "prompt:a night forest ..." | plan:building.json> ... [--list=inputs.txt] [--budget=20000] [--findings] [--progress]`
+ * Run: `npx tsx scripts/bot-probe.ts <file.json | "prompt:a night forest ..." | plan:building.json> ... [--list=inputs.txt] [--budget=20000] [--findings] [--progress] [--exact-stairs]`
  * A file is a bare world or `{ world }`, a plan file a `create_building` plan; the default budget is the studio's (20 s of compute).
+ * `--exact-stairs` builds a plan's stairs exactly as drawn (create_building otherwise moves one that does not work).
  */
 import { readFileSync } from 'node:fs';
 import { applyPatches, createWorld, validateWorld, type PatchInput, type WorldDoc } from '@aether/core';
@@ -36,7 +37,8 @@ function load(input: string): WorldDoc {
   if (input.startsWith('prompt:')) return applyPlanned(planMock(input.slice(7), ''));
   if (input.startsWith('plan:')) {
     // A building plan (`create_building`), compiled on an empty world.
-    const built = applyArchOps(createWorld(), [{ op: 'create_building', plan: JSON.parse(readFileSync(input.slice(5), 'utf8')) as unknown }]);
+    const built = applyArchOps(createWorld(), [{ op: 'create_building', plan: JSON.parse(readFileSync(input.slice(5), 'utf8')) as unknown, exactStairs: args.includes('--exact-stairs') }]);
+    for (const line of built.lines) if (line.startsWith('stair ')) process.stdout.write(`  ${line}\n`);
     if (built.errors.length > 0) throw new Error(built.errors.map((e) => e.message).join('; '));
     return built.target;
   }

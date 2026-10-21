@@ -2,26 +2,56 @@
  * Stair fitting: measure a stair against the plan, and find one that fits.
  *
  * A stair on level `li` climbs the storey height of that level (floor to floor) to level `li + 1`. It works only
- * when its whole footprint stands inside one room clear of the walls, there is floor to step on in front of the
- * first riser, it keeps out of the doorways, the stairwell it cuts upstairs lies inside one room there, and its
- * top step arrives on open floor of the level above (what the building check and the walkthrough bot need).
- * `checkStair` returns those problems with numbers; `fitStair` searches the rooms (along their walls, every
- * heading, straight then L then U) for a stair that has none, so a model or the offline planner can ask for
- * "a stair in the hall" and get exact `at` / `heading` values, or a measured reason why no stair fits.
+ * when its whole footprint stands inside one room clear of the walls, there is a clear landing to step on at the
+ * foot (in front of the first riser, or beside its first treads), it keeps out of the doorways, the stairwell it
+ * cuts upstairs lies inside one room there, and its top step comes out on a clear landing of the level above that
+ * leads on (what the building check and the walkthrough bot need).
+ *
+ * A landing is a strip as wide as the flight and at least {@link stairLandingDepth} deep: the stair's width, and
+ * never less than a walker's body with room to spare each side ({@link STAIR_MIN_LANDING}). It is measured to the
+ * inside faces of the walls and kept clear of railings, other stairs and stairwells, and furniture placed at a
+ * point. A top landing that only leads sideways keeps that depth past the corner of the stairwell balustrade.
+ *
+ * `checkStair` returns the problems with numbers; `fitStair` searches the rooms (along their walls, every heading,
+ * straight then L then U, or nearest to a given stair) for a stair that has none, so a model or the offline planner
+ * can ask for "a stair in the hall" and get exact `at` / `heading` values, or a measured reason why no stair fits;
+ * `settleStairs` moves the stairs of a plan that do not work to the nearest ones that do.
  */
 import { compileBuilding } from './compile';
+import { furnitureByKind, furnitureSize } from './furniture/index';
+import { obb } from './layout';
 import { bounds, pointInPolygon, pointSegmentDistance, positive, rotateYaw, yawOf, type P2 } from './math2';
 import { StairParams } from './params';
-import { compassNormal, roomPolygon } from './rooms';
+import { compassNormal, offsetPolygon, roomPolygon } from './rooms';
 import { stairFootprint, stairLayout, stairRisers } from './stair';
 import type { BuildingPlan, Compass, PlanLevel, PlanStair } from './plan';
 
-/** Depth of clear floor a good stair has in front of the first riser and beyond the top step (m); fitting aims for it. */
-export const STAIR_LANDING = 0.9;
-/** The least clear floor that still works: in front of the first riser (or beside its first treads) and beyond the top step (m). */
-export const STAIR_MIN_LANDING = 0.6;
+/** A walker's body across (m): the walkthrough bot's capsule is 0.35 m in radius, and its controller adds a skin. */
+export const STAIR_BODY = 0.7;
+/** Room a walker keeps to each side of the body on a landing (m). */
+export const STAIR_BODY_CLEARANCE = 0.1;
+/** The least clear landing at either end of a stair of any width: a body and its clearance on both sides (m). */
+export const STAIR_MIN_LANDING = STAIR_BODY + 2 * STAIR_BODY_CLEARANCE;
+/** How much deeper than the least a roomy landing is (fitting prefers roomy ones). */
+const ROOMY = 0.3;
+/** Depth of a roomy landing for a stair up to 0.9 m wide (m). */
+export const STAIR_LANDING = STAIR_MIN_LANDING + ROOMY;
 /** Clearance a stair keeps from a doorway centre beyond half the door width (m). */
 export const STAIR_DOOR_CLEARANCE = 0.5;
+/** Floor beside the first treads that a stair against a wall is stepped onto from, along the flight (m). */
+const SIDE_ALONG = 0.6;
+/**
+ * How far the stairwell balustrade reaches past the edge of the opening (m): it stands 5 cm back (compile.ts,
+ * WELL_RAIL_SETBACK) and its collider is 4 cm thick each side of that line.
+ */
+export const WELL_RAIL_REACH = 0.09;
+/** Half-thickness of a railing's collider (m). */
+const RAIL_HALF = 0.04;
+
+/** Depth of clear floor a stair needs at its foot and beyond its top step: its width, never less than {@link STAIR_MIN_LANDING}. */
+export function stairLandingDepth(width: number): number {
+  return Math.round(Math.max(STAIR_MIN_LANDING, width) * 100) / 100;
+}
 
 const HEADINGS: readonly Compass[] = ['north', 'east', 'south', 'west'];
 const r2 = (n: number): number => Math.round(n * 100) / 100;
@@ -30,16 +60,29 @@ const f2 = (n: number): string => r2(n).toFixed(2);
 /** Plan-frame geometry of a stair: footprint (the hole upstairs), the floor around its ends. */
 export interface StairShape {
   footprint: P2[];
-  /** Floor in front of the first riser: the full landing and the least that works. */
+  /** Floor in front of the first riser: a roomy landing and the least that works. */
   approach: P2[];
   approachMin: P2[];
   /** Floor beside the first treads (left, right): a stair against a wall can be stepped onto from the side. */
   sides: [P2[], P2[]];
-  /** Floor beyond the top step on the level above: the full landing and the least that works. */
+  /** Floor beyond the top step on the level above: a roomy landing and the least that works. */
   arrival: P2[];
   arrivalMin: P2[];
+  /**
+   * Ways on from the top landing on the level above: straight ahead past it, or to either side of it past the
+   * corner of the stairwell balustrade. At least one must be clear floor.
+   */
+  exits: { ahead: P2[]; left: P2[]; right: P2[] };
   /** The point the top step leads to (the building check seeds the upper floor here). */
   top: P2;
+  /** Centre of the top step's front edge, and the direction the last flight climbs (plan frame, unit). */
+  topEdge: P2;
+  topDir: P2;
+  /** Centre of the first riser, and the direction the first flight climbs (plan frame, unit). */
+  foot: P2;
+  footDir: P2;
+  /** Depth of the landing this stair needs at each end (m). */
+  landing: number;
   risers: number;
   riser: number;
   going: number;
@@ -57,44 +100,70 @@ export function stairShape(stair: Pick<PlanStair, 'at' | 'heading' | 'shape' | '
     const r = rotateYaw(q[0], q[1], yaw);
     return [stair.at[0] + r[0], stair.at[1] + r[1]];
   };
+  const dirPlan = (dx: number, dz: number): P2 => {
+    const r = rotateYaw(dx, dz, yaw);
+    return [r2(r[0]), r2(r[1])];
+  };
   const local = stairFootprint(sp);
   const { flights } = stairLayout(sp);
   const { count, riser } = stairRisers(sp);
   const last = flights[flights.length - 1];
   const w = sp.width;
-  const m = STAIR_MIN_LANDING;
+  const m = stairLandingDepth(w);
   const box = (x0: number, z0: number, x1: number, z1: number): P2[] => [toPlan([x0, z0]), toPlan([x1, z0]), toPlan([x1, z1]), toPlan([x0, z1])];
   let top: P2 = toPlan([0, 0]);
+  let topEdge: P2 = toPlan([0, 0]);
+  let topDir: P2 = dirPlan(1, 0);
   let arrival: P2[] = [];
   let arrivalMin: P2[] = [];
+  let exits: StairShape['exits'] = { ahead: [], left: [], right: [] };
   if (last) {
     const run = last.treads * sp.going;
     const ex = last.x + last.dx * run;
     const ez = last.z + last.dz * run;
-    // The strip beyond the top step, as wide as the flight (perpendicular to its direction).
+    // Across the last flight (perpendicular to its direction).
     const px = -last.dz;
     const pz = last.dx;
-    const strip = (depth: number): P2[] =>
-      [
-        [ex + px * (w / 2), ez + pz * (w / 2)],
-        [ex + last.dx * depth + px * (w / 2), ez + last.dz * depth + pz * (w / 2)],
-        [ex + last.dx * depth - px * (w / 2), ez + last.dz * depth - pz * (w / 2)],
-        [ex - px * (w / 2), ez - pz * (w / 2)],
-      ].map((q) => toPlan(q as [number, number]));
-    arrival = strip(STAIR_LANDING);
-    arrivalMin = strip(m);
+    // A quad in the last flight's frame: `a0..a1` along it from the top edge, `c0..c1` across it from its centre line.
+    const quad = (a0: number, a1: number, c0: number, c1: number): P2[] =>
+      (
+        [
+          [ex + last.dx * a0 + px * c0, ez + last.dz * a0 + pz * c0],
+          [ex + last.dx * a1 + px * c0, ez + last.dz * a1 + pz * c0],
+          [ex + last.dx * a1 + px * c1, ez + last.dz * a1 + pz * c1],
+          [ex + last.dx * a0 + px * c1, ez + last.dz * a0 + pz * c1],
+        ] as Array<[number, number]>
+      ).map(toPlan);
+    // The strip beyond the top step, as wide as the flight.
+    arrival = quad(0, m + ROOMY, -w / 2, w / 2);
+    arrivalMin = quad(0, m, -w / 2, w / 2);
+    const wide = Math.max(w, STAIR_MIN_LANDING) / 2;
+    exits = {
+      ahead: quad(m, m + 0.5, -wide, wide),
+      // Sideways the way on starts past the balustrade's corner and keeps the landing's depth.
+      left: quad(WELL_RAIL_REACH + 0.01, m, w / 2, w / 2 + STAIR_MIN_LANDING),
+      right: quad(WELL_RAIL_REACH + 0.01, m, -w / 2 - STAIR_MIN_LANDING, -w / 2),
+    };
     top = toPlan([ex + last.dx * 0.4, ez + last.dz * 0.4]);
+    topEdge = toPlan([ex, ez]);
+    topDir = dirPlan(last.dx, last.dz);
   }
   const fp = local.map(toPlan);
   const [x0, z0, x1, z1] = bounds(local);
   return {
     footprint: fp,
-    approach: box(-STAIR_LANDING, -w / 2, 0, w / 2),
+    approach: box(-(m + ROOMY), -w / 2, 0, w / 2),
     approachMin: box(-m, -w / 2, 0, w / 2),
-    sides: [box(0, -w / 2 - m, m, -w / 2), box(0, w / 2, m, w / 2 + m)],
+    sides: [box(0, -w / 2 - m, SIDE_ALONG, -w / 2), box(0, w / 2, SIDE_ALONG, w / 2 + m)],
     arrival,
     arrivalMin,
+    exits,
     top,
+    topEdge,
+    topDir,
+    foot: toPlan([0, 0]),
+    footDir: dirPlan(1, 0),
+    landing: m,
     risers: count,
     riser,
     going: sp.going,
@@ -185,6 +254,113 @@ function distanceToPolygon(p: P2, poly: readonly P2[]): number {
   return d;
 }
 
+/** Something standing on a floor that a landing must keep clear of: an area, or a railing (a polyline with a thickness). */
+interface Obstacle {
+  label: string;
+  poly?: P2[];
+  line?: P2[];
+}
+
+/** Stairwell of `s` (from the level below) with its balustrade round it. */
+function wellOf(s: PlanStair, rise: number): P2[] {
+  return offsetPolygon(positive(stairShape(s, rise).footprint), WELL_RAIL_REACH);
+}
+
+const at2 = (p: P2): string => `(${f2(p[0])}, ${f2(p[1])})`;
+
+/**
+ * What stands on the floor of level `li` besides the walls: the stairwells (and their balustrades) of the stairs
+ * `below` climbing from the level under it, the stairs `here` that start on this level, declared railings and
+ * furniture placed at a point.
+ */
+function floorObstacles(plan: BuildingPlan, li: number, below: readonly PlanStair[], here: readonly PlanStair[]): Obstacle[] {
+  const level = plan.levels[li];
+  if (!level) return [];
+  const out: Obstacle[] = [];
+  const rise = plan.levels[li - 1]?.height ?? 3;
+  for (const s of below) out.push({ label: `the stairwell of the stair from level ${li - 1} at ${at2(s.at)}`, poly: wellOf(s, rise) });
+  for (const s of here) out.push({ label: `the stair at ${at2(s.at)}`, poly: stairShape(s, level.height).footprint });
+  level.railings.forEach((r, i) => out.push({ label: `railing ${i + 1} of level ${li}`, line: r.points.map((p) => [p[0], p[1]] as P2) }));
+  for (const room of level.rooms) {
+    for (const it of room.items) {
+      if (!it.at) continue;
+      const def = furnitureByKind(it.kind);
+      if (!def || def.mount !== 'floor' || def.kind === 'rug') continue;
+      const [w, , d] = furnitureSize(def, it.params);
+      out.push({ label: `the ${it.kind} at ${at2([it.at[0], it.at[1]])} in ${room.id}`, poly: obb(it.at[0], it.at[1], it.yaw ?? 0, w, d) });
+    }
+  }
+  return out;
+}
+
+/** Whether a point is inside an obstacle (a railing counts within its collider's half-thickness). */
+function inObstacle(p: P2, o: Obstacle): boolean {
+  if (o.poly) return pointInPolygon(p[0], p[1], o.poly);
+  const l = o.line ?? [];
+  for (let k = 0; k + 1 < l.length; k++) {
+    const a = l[k] as P2;
+    const b = l[k + 1] as P2;
+    if (pointSegmentDistance(p[0], p[1], a[0], a[1], b[0], b[1]) < RAIL_HALF) return true;
+  }
+  return false;
+}
+
+/** Points over a quad (corners, edges and inside, about 10 cm apart). */
+function quadPoints(q: readonly P2[]): P2[] {
+  const [a, b, c, d] = q as [P2, P2, P2, P2];
+  const nu = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.1));
+  const nv = Math.max(1, Math.ceil(Math.hypot(d[0] - a[0], d[1] - a[1]) / 0.1));
+  const out: P2[] = [];
+  for (let i = 0; i <= nu; i++) {
+    const u = i / nu;
+    for (let k = 0; k <= nv; k++) {
+      const v = k / nv;
+      out.push([a[0] * (1 - u) * (1 - v) + b[0] * u * (1 - v) + c[0] * u * v + d[0] * (1 - u) * v, a[1] * (1 - u) * (1 - v) + b[1] * u * (1 - v) + c[1] * u * v + d[1] * (1 - u) * v]);
+    }
+  }
+  return out;
+}
+
+/** The first obstacle a quad runs into, if any. */
+function blockedBy(q: readonly P2[], obstacles: readonly Obstacle[]): Obstacle | null {
+  if (q.length !== 4 || obstacles.length === 0) return null;
+  const pts = quadPoints(q);
+  for (const o of obstacles) if (pts.some((p) => inObstacle(p, o))) return o;
+  return null;
+}
+
+/** Whether a quad is clear floor of a ring, off the footprint and every obstacle. */
+function clearFloor(q: readonly P2[], ring: RoomRing, footprint: readonly P2[], obstacles: readonly Obstacle[]): boolean {
+  if (q.length !== 4) return false;
+  if (samples(q).some((p) => shortfall(p, ring) > 0.02)) return false;
+  const pts = quadPoints(q);
+  if (pts.some((p) => pointInPolygon(p[0], p[1], footprint) && !onOutline(p, footprint))) return false;
+  return blockedBy(q, obstacles) === null;
+}
+
+function onOutline(p: P2, poly: readonly P2[]): boolean {
+  for (let k = 0; k < poly.length; k++) {
+    const a = poly[k] as P2;
+    const b = poly[(k + 1) % poly.length] as P2;
+    if (pointSegmentDistance(p[0], p[1], a[0], a[1], b[0], b[1]) < 0.02) return true;
+  }
+  return false;
+}
+
+/**
+ * Clear floor straight out from `from` along `dir` (m, up to `cap`): to the inside face of the walls of `ring`, the
+ * edge of its floor, or the first obstacle, with what stops it.
+ */
+function clearRun(from: P2, dir: P2, ring: RoomRing | null, obstacles: readonly Obstacle[], cap = 3): { depth: number; by: string } {
+  for (let t = 0.01; t <= cap; t += 0.01) {
+    const p: P2 = [from[0] + dir[0] * t, from[1] + dir[1] * t];
+    if (!ring || shortfall(p, ring) > 0) return { depth: r2(t - 0.01), by: ring ? `the wall of ${ring.id}` : 'the edge of the floor' };
+    const o = obstacles.find((x) => inObstacle(p, x));
+    if (o) return { depth: r2(t - 0.01), by: o.label };
+  }
+  return { depth: cap, by: '' };
+}
+
 /** A doorway on a level: centre (plan frame) and width. */
 export interface StairDoor {
   id: string;
@@ -239,10 +415,22 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
     problems.push(`its footprint (${box}, ${f2(shape.size[0])} × ${f2(shape.size[1])} m for ${shape.risers} risers of ${f2(shape.riser)} m) ${where}`);
   }
   const room = fp.ring?.id;
-  // Somewhere to step on: in front of the first riser, or beside the first treads (a stair along a wall).
+  const need = shape.landing;
+  const needText = `${f2(need)} m (${need > STAIR_MIN_LANDING + 1e-9 ? 'the stair\'s width' : `a ${f2(STAIR_BODY)} m body with ${f2(STAIR_BODY_CLEARANCE)} m each side`})`;
+  // A clear landing to step on: in front of the first riser, or beside the first treads (a stair along a wall).
+  const lowObstacles = floorObstacles(plan, li, plan.levels[li - 1]?.stairs ?? [], others);
   const ap = bestRing(shape.approachMin, here);
-  const side = Math.min(bestRing(shape.sides[0], here).out, bestRing(shape.sides[1], here).out);
-  if (ap.out > 0.02 && side > 0.02) problems.push(`there is no floor to step on: in front of the first riser ${f2(Math.max(0, STAIR_MIN_LANDING - ap.out))} of the ${STAIR_MIN_LANDING} m it needs${ap.ring ? ` (against the walls of ${ap.ring.id})` : ''}, and none beside its first treads either`);
+  const apHit = ap.out <= 0.02 ? blockedBy(shape.approachMin, lowObstacles) : null;
+  const sideOk = shape.sides.some((q) => {
+    const r = bestRing(q, here);
+    return r.ring !== null && r.out <= 0.02 && blockedBy(q, lowObstacles) === null;
+  });
+  if ((ap.out > 0.02 || apHit) && !sideOk) {
+    const run = clearRun(shape.foot, [-shape.footDir[0], -shape.footDir[1]], fp.ring ?? ap.ring, lowObstacles);
+    const sideRuns = ([1, -1] as const).map((s) => clearRun([shape.foot[0] + shape.footDir[0] * 0.3 - shape.footDir[1] * s * (stair.width / 2), shape.foot[1] + shape.footDir[1] * 0.3 + shape.footDir[0] * s * (stair.width / 2)], [-shape.footDir[1] * s, shape.footDir[0] * s], fp.ring ?? ap.ring, lowObstacles));
+    const side = Math.max(...sideRuns.map((r) => r.depth));
+    problems.push(`there is no clear landing to step on at its foot: ${f2(run.depth)} m of floor in front of the first riser at ${at2(shape.foot)}${run.by ? ` before ${run.by}` : ''} and ${f2(side)} m beside its first treads, where a walker needs ${needText} as wide as the stair`);
+  }
   for (const d of doors[li] ?? []) {
     const gap = Math.min(distanceToPolygon(d.at, shape.footprint), distanceToPolygon(d.at, shape.approachMin) + STAIR_DOOR_CLEARANCE);
     const need = d.width / 2 + STAIR_DOOR_CLEARANCE;
@@ -258,9 +446,33 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
     const up = rings(plan, above);
     const hole = bestRing(shape.footprint, up);
     if (!hole.ring || hole.out > 0.02) problems.push(`upstairs the stairwell (${box}) ${hole.ring ? `cuts ${f2(hole.out)} m into the walls of ${hole.ring.id} on level ${li + 1}` : `is outside every room of level ${li + 1}`}`);
+    // The stairwell and its balustrade keep out of the doorways upstairs as the flight does downstairs.
+    for (const d of doors[li + 1] ?? []) {
+      const gap = distanceToPolygon(d.at, shape.footprint) - WELL_RAIL_REACH;
+      const need = d.width / 2 + STAIR_DOOR_CLEARANCE;
+      if (gap < need - 0.01) problems.push(`upstairs the stairwell comes within ${f2(Math.max(0, gap))} m of the doorway ${d.id} at (${f2(d.at[0])}, ${f2(d.at[1])}) on level ${li + 1} (keep ${f2(need)} m clear)`);
+    }
     const arr = bestRing(shape.arrivalMin, up);
     arrives = arr.ring?.id;
-    if (!arr.ring || arr.out > 0.02) problems.push(`the top step arrives at (${f2(shape.top[0])}, ${f2(shape.top[1])}), which ${arr.ring ? `has only ${f2(Math.max(0, STAIR_MIN_LANDING - arr.out))} of the ${STAIR_MIN_LANDING} m of floor it needs in ${arr.ring.id} on level ${li + 1}` : `is not floor of any room on level ${li + 1}`}`);
+    const highObstacles = floorObstacles(plan, li + 1, others, above.stairs);
+    const where = `on level ${li + 1}`;
+    if (!arr.ring || arr.out > 0.02) {
+      const ring = arr.ring && pointInPolygon(shape.topEdge[0], shape.topEdge[1], arr.ring.poly) ? arr.ring : (up.find((r) => pointInPolygon(shape.topEdge[0], shape.topEdge[1], r.poly)) ?? null);
+      const run = clearRun(shape.topEdge, shape.topDir, ring, highObstacles);
+      if (!ring) problems.push(`its top step comes out at ${at2(shape.topEdge)}, which is not floor of any room ${where}`);
+      else if (run.depth < need - 0.005) problems.push(`its top step comes out at ${at2(shape.topEdge)} with ${f2(run.depth)} m of clear floor before ${run.by || `the wall of ${ring.id}`} ${where}, where a walker needs a landing ${needText} deep as wide as the stair`);
+      else problems.push(`its top step comes out at ${at2(shape.topEdge)} onto a landing that runs ${f2(arr.out)} m into the walls of ${ring.id} beside it ${where} (a walker needs a landing ${needText} deep as wide as the stair)`);
+    } else {
+      const hit = blockedBy(shape.arrivalMin, highObstacles);
+      if (hit) {
+        const run = clearRun(shape.topEdge, shape.topDir, arr.ring, highObstacles);
+        problems.push(`its top step comes out at ${at2(shape.topEdge)} onto a landing that runs into ${hit.label} ${where} (${f2(run.depth)} m clear straight ahead; a walker needs ${needText} as wide as the stair)`);
+      } else {
+        // The landing must lead on: straight ahead, or sideways past the corner of the stairwell balustrade.
+        const ways = [shape.exits.ahead, shape.exits.left, shape.exits.right];
+        if (!ways.some((q) => clearFloor(q, arr.ring as RoomRing, shape.footprint, highObstacles))) problems.push(`the landing beyond its top step at ${at2(shape.topEdge)} leads nowhere ${where}: walls, the stairwell or furniture close it ahead and on both sides (a walker needs a way on ${f2(STAIR_MIN_LANDING)} m wide)`);
+      }
+    }
   }
   return { problems, ...(room ? { room } : {}), ...(arrives ? { arrives } : {}), shape };
 }
@@ -273,9 +485,16 @@ export interface StairFitOptions {
   room?: string | undefined;
   shape?: PlanStair['shape'] | undefined;
   heading?: Compass | undefined;
+  /** Which way an L or U stair turns (both are tried when left out). */
+  turn?: PlanStair['turn'] | undefined;
   width?: number | undefined;
   /** Stairs already on the level (kept clear). */
   others?: readonly PlanStair[];
+  /**
+   * A stair to stay close to (one that does not work): its width, shape and heading are kept when they can be,
+   * and the nearest position wins over the roomiest.
+   */
+  near?: PlanStair | undefined;
 }
 
 /** Outcome of {@link fitStair}. */
@@ -287,10 +506,10 @@ export type StairFit =
 export function stairSizes(rise: number, width = 1): string {
   const parts = (['straight', 'l', 'u'] as const).map((shape) => {
     const s = stairShape({ at: [0, 0], heading: 'east', shape, width, turn: 'left' }, rise);
-    return `${shape === 'straight' ? 'straight' : shape === 'l' ? 'L' : 'U'} ${f2(s.size[0] + STAIR_LANDING)} × ${f2(s.size[1])} m`;
+    return `${shape === 'straight' ? 'straight' : shape === 'l' ? 'L' : 'U'} ${f2(s.size[0] + s.landing)} × ${f2(s.size[1])} m`;
   });
   const s = stairShape({ at: [0, 0], heading: 'east', shape: 'straight', width, turn: 'left' }, rise);
-  return `a ${f2(rise)} m storey takes ${s.risers} risers of ${f2(s.riser)} m (${s.risers - 1} treads of ${f2(s.going)} m); with ${STAIR_LANDING} m to step on, a ${width} m wide stair needs about ${parts.join(', ')}`;
+  return `a ${f2(rise)} m storey takes ${s.risers} risers of ${f2(s.riser)} m (${s.risers - 1} treads of ${f2(s.going)} m); with a clear landing of ${f2(s.landing)} m at the top (and one in front of or beside the first riser), a ${width} m wide stair needs about ${parts.join(', ')}`;
 }
 
 /**
@@ -305,24 +524,29 @@ export function fitStair(plan: BuildingPlan, li: number, opts: StairFitOptions =
   const here = rings(plan, level);
   const rooms = opts.room !== undefined ? here.filter((r) => r.id === opts.room) : [...here].filter((r) => r.type !== 'bathroom').sort((a, b) => rank(a.type) - rank(b.type));
   if (rooms.length === 0) return { ok: false, reasons: [opts.room !== undefined ? `level ${li} has no room "${opts.room}" (rooms: ${here.map((r) => r.id).join(', ')})` : `level ${li} has no room for a stair`] };
+  const near = opts.near;
   const shapes: Array<PlanStair['shape']> = opts.shape ? [opts.shape] : ['straight', 'l', 'u'];
-  const widths = opts.width !== undefined ? [opts.width] : [1, 0.9];
+  const widths = opts.width !== undefined ? [opts.width] : near ? [near.width, ...[1, 0.9].filter((w) => w < near.width)] : [1, 0.9];
   const headings = opts.heading ? [opts.heading] : HEADINGS;
   const reasons: string[] = [];
+  const upRings = plan.levels[li + 1] ? rings(plan, plan.levels[li + 1] as PlanLevel) : [];
   for (const ring of rooms) {
     let best = null as { stair: PlanStair; score: number; check: StairCheck } | null;
     for (const width of widths) {
       for (const shape of shapes) {
-        for (const turn of shape === 'straight' ? (['left'] as const) : (['left', 'right'] as const)) {
+        for (const turn of shape === 'straight' ? (['left'] as const) : opts.turn ? [opts.turn] : (['left', 'right'] as const)) {
           for (const heading of headings) {
             for (const at of candidates(ring, { shape, width, turn, heading }, level.height)) {
               const stair: PlanStair = { at, heading, shape, width, turn };
               const check = checkStair(plan, li, stair, doors, opts.others ?? []);
               if (check.problems.length > 0) continue;
-              // Simple shapes first, then the widest stair, then the most floor around the arrival.
-              // Full landings at both ends are preferred over the least that works.
-              const roomy = (bestRing(check.shape.approach, here).out > 0.02 ? 3 : 0) + (plan.levels[li + 1] && bestRing(check.shape.arrival, rings(plan, plan.levels[li + 1] as PlanLevel)).out > 0.02 ? 3 : 0);
-              const score = (shape === 'straight' ? 0 : shape === 'l' ? 10 : 20) + (1 - width) * 5 + roomy - arrivalRoom(check, plan, li);
+              // Roomy landings at both ends are preferred over the least that works.
+              const roomy = (bestRing(check.shape.approach, here).out > 0.02 ? 3 : 0) + (bestRing(check.shape.arrival, upRings).out > 0.02 ? 3 : 0);
+              // Near a given stair: the same shape, then the same heading and turn, then the least move. Otherwise
+              // simple shapes first, then the widest stair, then the most floor around the arrival.
+              const score = near
+                ? (shape === near.shape ? 0 : 20) + (heading === near.heading ? 0 : 4) + (shape === 'straight' || turn === near.turn ? 0 : 3) + Math.hypot(at[0] - near.at[0], at[1] - near.at[1]) + roomy / 3
+                : (shape === 'straight' ? 0 : shape === 'l' ? 10 : 20) + (1 - width) * 5 + roomy - arrivalRoom(check, plan, li);
               if (!best || score < best.score - 1e-9) best = { stair, score, check };
             }
           }
@@ -335,10 +559,60 @@ export function fitStair(plan: BuildingPlan, li: number, opts: StairFitOptions =
       return { ok: true, stair: s, room: ring.id, arrives: best.check.arrives, shape: best.check.shape, line: `a ${s.shape === 'straight' ? 'straight' : s.shape === 'l' ? 'L' : 'U'} stair ${s.width} m wide in ${ring.id}, first riser at (${f2(s.at[0])}, ${f2(s.at[1])}) heading ${s.heading}${s.shape === 'straight' ? '' : `, turning ${s.turn}`}: ${best.check.shape.risers} risers of ${f2(best.check.shape.riser)} m, arriving in ${best.check.arrives} on level ${li + 1}` };
     }
     const [x0, z0, x1, z1] = bounds(ring.poly);
-    reasons.push(`${ring.id} (${f2(x1 - x0)} × ${f2(z1 - z0)} m between wall centres): no position along its walls clears the walls, the doorways and the floor upstairs`);
+    reasons.push(`${ring.id} (${f2(x1 - x0)} × ${f2(z1 - z0)} m between wall centres): no position along its walls clears the walls and the doorways with a clear landing at the foot and at the top upstairs`);
   }
   reasons.push(stairSizes(level.height, widths[0]));
   return { ok: false, reasons };
+}
+
+/** A stair as the JSON an op or a plan takes. */
+export function stairJson(s: PlanStair): string {
+  return `{"at":[${r2(s.at[0])},${r2(s.at[1])}],"heading":"${s.heading}","shape":"${s.shape}","width":${s.width}${s.shape === 'straight' ? '' : `,"turn":"${s.turn}"`}}`;
+}
+
+/** Outcome of {@link settleStairs}. */
+export interface StairSettlement {
+  /** The plan with every stair that could be fixed moved (the input when nothing changed). */
+  plan: BuildingPlan;
+  /** One line per moved stair: what was wrong, measured, and where it went. */
+  moved: string[];
+  /** Stairs that do not work and for which nothing fits, measured. */
+  failing: string[];
+}
+
+/**
+ * Measure every stair of a plan and move each one that does not work (a top step landing against a wall, no
+ * landing at the foot, a footprint across a wall …) to the nearest stair that does: the same room, shape, width and
+ * heading when they can be kept. Deterministic; stairs that work are left exactly as they are.
+ */
+export function settleStairs(plan: BuildingPlan): StairSettlement {
+  if (!plan.levels.some((l) => l.stairs.length > 0)) return { plan, moved: [], failing: [] };
+  const doors = levelDoors(plan);
+  const levels = plan.levels.map((l) => ({ ...l, stairs: [...l.stairs] }));
+  const out: BuildingPlan = { ...plan, levels };
+  const moved: string[] = [];
+  const failing: string[] = [];
+  levels.forEach((lvl, li) => {
+    lvl.stairs.forEach((s, si) => {
+      const others = lvl.stairs.filter((_, k) => k !== si);
+      const check = checkStair(out, li, s, doors, others);
+      if (check.problems.length === 0) return;
+      const label = `level ${li} stair ${si + 1} at (${f2(s.at[0])}, ${f2(s.at[1])}) heading ${s.heading}`;
+      if (!plan.levels[li + 1]) {
+        failing.push(`${label}: ${check.problems.join('; ')}`);
+        return;
+      }
+      let fit = fitStair(out, li, { room: check.room, near: s, others });
+      if (!fit.ok && check.room !== undefined) fit = fitStair(out, li, { near: s, others });
+      if (!fit.ok) {
+        failing.push(`${label}: ${check.problems.join('; ')}; nothing fits instead: ${fit.reasons.join('; ')}`);
+        return;
+      }
+      lvl.stairs[si] = fit.stair;
+      moved.push(`${label}: ${check.problems.join('; ')}; moved to ${fit.line} (${stairJson(fit.stair)})`);
+    });
+  });
+  return { plan: moved.length > 0 ? out : plan, moved, failing };
 }
 
 function rank(type: string): number {
@@ -366,9 +640,9 @@ function arrivalRoom(check: StairCheck, plan: BuildingPlan, li: number): number 
  * (its flank against the inside face), slid along the room in 10 cm steps.
  */
 function candidates(ring: RoomRing, s: Pick<PlanStair, 'shape' | 'width' | 'turn' | 'heading'>, rise: number): P2[] {
+  // The footprint alone in the room: the landing at the foot may be in front of the first riser or beside it.
   const probe = stairShape({ ...s, at: [0, 0] }, rise);
-  const all = [...probe.footprint, ...probe.approachMin];
-  const [fx0, fz0, fx1, fz1] = bounds(all);
+  const [fx0, fz0, fx1, fz1] = bounds(probe.footprint);
   const [rx0, rz0, rx1, rz1] = bounds(ring.poly);
   const m = Math.max(...ring.clear) + 0.01;
   const xs = { lo: rx0 + m - fx0, hi: rx1 - m - fx1 };

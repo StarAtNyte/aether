@@ -76,7 +76,17 @@ export function stairFootprint(p: StairParams): P2[] {
   if (flights.length === 1) return rect(0, -w / 2, Math.max(g, f1.treads * g), w / 2);
   const l = landings[0] as { x0: number; z0: number; x1: number; z1: number };
   const f2 = flights[1] as Flight;
-  if (p.shape === 'u') return rect(0, l.z0, l.x1, l.z1);
+  if (p.shape === 'u') {
+    // The return flight can be a tread longer than the first (an odd riser count): its top step then comes out
+    // past the first riser, and the opening runs that far over it (the slab would otherwise sit on its last tread).
+    const x2 = Math.min(0, f2.x + f2.dx * f2.treads * g);
+    if (x2 > -1e-6) return rect(0, l.z0, l.x1, l.z1);
+    const lo = f2.z - w / 2;
+    const hi = f2.z + w / 2;
+    return f2.z > 0
+      ? [[0, l.z0], [l.x1, l.z0], [l.x1, l.z1], [x2, hi], [x2, lo], [0, lo]]
+      : [[x2, lo], [l.x1, lo], [l.x1, l.z1], [0, l.z1], [0, hi], [x2, hi]];
+  }
   // L: flight 1 + landing, plus flight 2 going sideways.
   const len2 = f2.treads * g;
   if (f2.dz < 0) {

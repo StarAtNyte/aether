@@ -255,7 +255,9 @@ function villa(style: Style, pool: boolean, roof: string, beds = 1, residents = 
           { between: ['living', 'outside'], side: 'south', main: true, width: 1.1 },
           { between: ['living', 'kitchen'], kind: 'opening', width: 2 },
         ],
-        stairs: [{ at: [0.5, 1.2], heading: 'east', width: 1 }],
+        // Against the west wall, stepped onto from the living room beside its first treads: the top step then comes out
+        // 1.15 m short of the bathroom wall upstairs, a full landing (from x 0.5 it was 0.85 m, too tight to turn off).
+        stairs: [{ at: [0.2, 1.2], heading: 'east', width: 1 }],
       },
       villaUpper(beds),
     ],

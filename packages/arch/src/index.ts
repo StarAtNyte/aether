@@ -33,7 +33,7 @@ export { analyzeRoomPlacements, wallViews, summarizePlacementIssues, describeWal
 export { WALL_MOUNT_KINDS, freeWallSpans, nearestMountCentre, mountRule, collisions as wallCollisions, type WallBlocker, type MountSpec } from './wall-space';
 export { BuildingPlan, type BuildingPlanInput } from './plan';
 export { compileBuilding, parsePlan, PlanError, variantsFor, MAX_BUILDING_LIGHTS, FLOOR_THICKNESS, type CompiledBuilding, type ExteriorWall, type ExteriorOpening } from './compile';
-export { checkStair, fitStair, levelDoors, stairShape, stairSizes, STAIR_LANDING, type StairCheck, type StairFit, type StairShape } from './stair-fit';
+export { checkStair, fitStair, levelDoors, settleStairs, stairJson, stairLandingDepth, stairShape, stairSizes, STAIR_LANDING, STAIR_MIN_LANDING, type StairCheck, type StairFit, type StairSettlement, type StairShape } from './stair-fit';
 export { fitWindow, planWindowAddition, clearStretches as windowClearStretches, type WindowSpot, type WindowAddition } from './window-fit';
 export { applyArchOps, describeBuilding, planOf, ArchOp, MAX_ARCH_OPS, type ArchOpError, type ArchOpsResult } from './ops';
 export { checkBuilding, checkBuildings, summarizeBuildingReports, placedPolygon, NAV_CELL, type ArchIssue, type BuildingReport } from './nav';

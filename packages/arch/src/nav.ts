@@ -25,6 +25,10 @@ import { StairParams, WallParams } from './params';
 import { stairFootprint, stairLayout } from './stair';
 import { analyzeRoomPlacements } from './placement';
 import { placedPolygon } from './entity-geom';
+import { parsePlan } from './compile';
+import { roomPolygon } from './rooms';
+import { fitStair, stairJson, stairLandingDepth, STAIR_BODY, STAIR_BODY_CLEARANCE } from './stair-fit';
+import type { PlanStair } from './plan';
 
 export { placedPolygon };
 
@@ -50,6 +54,18 @@ export interface BuildingReport {
 
 /** Navigation grid cell size (metres). */
 export const NAV_CELL = 0.05;
+/**
+ * Radius a walker needs on a stair landing (m): half its body (the walkthrough bot's capsule and skin) and a
+ * margin for the grid, which measures from cell centres. The rest of the building is checked with the walkway
+ * clearance, which lets doorways pass.
+ */
+const LANDING_RADIUS = STAIR_BODY / 2 + 0.05;
+/** How far from the end of a stair a walker must get on clear floor for its landing to lead somewhere (m). */
+const LANDING_ESCAPE = 1.5;
+/** A landing that reaches this close to a doorway leads on through it (m). */
+const LANDING_DOORWAY = 0.6;
+/** Half-thickness of a railing's collider (m). */
+const RAIL_HALF = 0.04;
 /** Grid margin around a level's rooms (the outside approach). */
 const MARGIN = 3;
 /** Upper bound of cells per level grid (keeps hostile documents cheap). */
@@ -309,6 +325,118 @@ export function doorSweep(e: Entity): P2[] | null {
   });
 }
 
+/** A railing's collider as one thin rectangle per segment (in its parent's frame). */
+function railingObstacles(e: Entity): P2[][] {
+  const pts = params(e)['points'];
+  if (!Array.isArray(pts)) return [];
+  const pos = e.transform.position;
+  const yaw = e.transform.rotation[1];
+  const at = (q: P2): P2 => {
+    const r = rotateYaw(q[0], q[1], yaw);
+    return [pos[0] + r[0], pos[2] + r[1]];
+  };
+  const line = pts.slice(0, 64).filter((p): p is [number, number] => Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number').map((p) => at([p[0], p[1]]));
+  const out: P2[][] = [];
+  for (let k = 0; k + 1 < line.length; k++) {
+    const a = line[k] as P2;
+    const b = line[k + 1] as P2;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1e-6) continue;
+    const ux = (b[0] - a[0]) / len;
+    const uz = (b[1] - a[1]) / len;
+    // Across by the collider's half-thickness, and as far past each end (the posts).
+    const nx = -uz * RAIL_HALF;
+    const nz = ux * RAIL_HALF;
+    const ex = ux * RAIL_HALF;
+    const ez = uz * RAIL_HALF;
+    out.push([
+      [a[0] - ex + nx, a[1] - ez + nz],
+      [b[0] + ex + nx, b[1] + ez + nz],
+      [b[0] + ex - nx, b[1] + ez - nz],
+      [a[0] - ex - nx, a[1] - ez - nz],
+    ]);
+  }
+  return out;
+}
+
+/**
+ * Whether a walker standing at `seed` on a landing gets away from it: a flood over the landing mask that reaches
+ * `LANDING_ESCAPE` from `origin`, or a doorway.
+ */
+function escapes(grid: Grid, walk: Uint8Array, seed: number, origin: P2, doorways: readonly P2[]): boolean {
+  if (seed < 0 || !walk[seed]) return false;
+  const seen = new Uint8Array(walk.length);
+  const queue = [seed];
+  seen[seed] = 1;
+  const nx = grid.nx;
+  const far = LANDING_ESCAPE * LANDING_ESCAPE;
+  const near = LANDING_DOORWAY * LANDING_DOORWAY;
+  while (queue.length > 0) {
+    const c = queue.pop() as number;
+    const p = grid.centre(c);
+    if ((p[0] - origin[0]) ** 2 + (p[1] - origin[1]) ** 2 >= far) return true;
+    if (doorways.some((d) => (p[0] - d[0]) ** 2 + (p[1] - d[1]) ** 2 <= near)) return true;
+    const i = c % nx;
+    for (const nb of [i > 0 ? c - 1 : -1, i < nx - 1 ? c + 1 : -1, c - nx, c + nx]) {
+      if (nb < 0 || nb >= walk.length || !walk[nb] || seen[nb]) continue;
+      seen[nb] = 1;
+      queue.push(nb);
+    }
+  }
+  return false;
+}
+
+/** Clear floor straight out from `from` along `dir` before the first blocked cell (m, up to 3). */
+function clearAhead(grid: Grid, from: P2, dir: P2): number {
+  for (let t = 0.02; t <= 3; t += 0.01) {
+    const idx = grid.index(from[0] + dir[0] * t, from[1] + dir[1] * t);
+    if (idx < 0 || grid.blocked[idx]) return Math.max(0, t - 0.01);
+  }
+  return 3;
+}
+
+/** A stair between two levels, in its level's frame. */
+interface StairLink {
+  from: number;
+  id: EntityId;
+  /** In front of the first riser, and beside the first treads (either side). */
+  bottom: P2;
+  besides: [P2, P2];
+  foot: P2;
+  footDir: P2;
+  /** Where the top step leads, its front edge and the direction the last flight climbs. */
+  top: P2;
+  topEdge: P2;
+  topDir: P2;
+  width: number;
+}
+
+/** A stair that fixes `stairId` (an entity `<building>-l<level>-stair<i>`), as a ready op, or '' when none is found. */
+function stairFix(world: WorldDoc, buildingId: EntityId, stairId: EntityId): string {
+  const m = /-l(\d+)-stair(\d+)$/.exec(stairId);
+  const raw = world.entities[buildingId]?.arch?.plan;
+  if (!m || raw === undefined) return '';
+  try {
+    const plan = parsePlan(raw);
+    const li = Number(m[1]);
+    const si = Number(m[2]);
+    const stair: PlanStair | undefined = plan.levels[li]?.stairs[si];
+    if (!stair) return '';
+    const others = (plan.levels[li]?.stairs ?? []).filter((_, k) => k !== si);
+    let fit = fitStair(plan, li, { near: stair, others, room: roomOfStair(plan, li, stair) });
+    if (!fit.ok) fit = fitStair(plan, li, { near: stair, others });
+    if (!fit.ok) return ` No stair fits instead: ${fit.reasons.join('; ')}.`;
+    return ` A stair that works: build_architecture {"op":"add_stairs","building":"${plan.id}","level":${li},"replace":${si},"stair":${stairJson(fit.stair)}} (${fit.line}).`;
+  } catch {
+    return '';
+  }
+}
+
+/** The room whose outline holds the first riser of a stair. */
+function roomOfStair(plan: ReturnType<typeof parsePlan>, li: number, s: PlanStair): string | undefined {
+  return (plan.levels[li]?.rooms ?? []).find((r) => r.type !== 'terrace' && pointInPolygon(s.at[0], s.at[1], roomPolygon(r)))?.id;
+}
+
 /** Check one building (see the module docs). */
 export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance = 0.8): BuildingReport {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -332,11 +460,11 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
   const sp = world.player.spawn;
   const rel = rotateYaw(sp[0] - bp[0], sp[2] - bp[2], -building.transform.rotation[1]);
   const entrance: P2 = [rel[0], rel[1]];
-  // Stair links between levels: [level index, bottom approach, top arrival].
-  const links: Array<{ from: number; bottom: P2; top: P2; id: EntityId }> = [];
+  // Stair links between levels.
+  const links: StairLink[] = [];
   // Seeds per level with how far they may snap to walkable floor: the entrance is found loosely, but the top of a
   // stair must arrive on floor right there (a flight that runs into a wall does not reach the room behind it).
-  const pending = new Map<number, Array<{ p: P2; snap: number; stair?: EntityId }>>();
+  const pending = new Map<number, Array<{ p: P2; snap: number; stair?: EntityId; link?: StairLink }>>();
   pending.set(levels[0]?.index ?? 0, [{ p: entrance, snap: 1.5 }]);
 
   for (const L of levels) {
@@ -379,6 +507,7 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
           }
         }
       } else if (role === 'wall') for (const o of wallObstacles(e)) grid.fill(o);
+      else if (role === 'railing' && generatorOf(e) === 'arch-railing') for (const o of railingObstacles(e)) grid.fill(o);
       else if (role === 'furniture' || role === 'light' || role === 'switch') {
         const f = furnitureFootprint(e);
         if (f) {
@@ -400,7 +529,20 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
         const last = flights[flights.length - 1];
         if (last) {
           const run = last.treads * sp2.data.going;
-          links.push({ from: L.index, bottom: world2([-0.35, 0]), top: world2([last.x + last.dx * (run + 0.4), last.z + last.dz * (run + 0.4)]), id: e.id });
+          const w = sp2.data.width;
+          const dir = (dx: number, dz: number): P2 => rotateYaw(dx, dz, yaw);
+          links.push({
+            from: L.index,
+            id: e.id,
+            bottom: world2([-0.35, 0]),
+            besides: [world2([0.3, -(w / 2 + 0.45)]), world2([0.3, w / 2 + 0.45])],
+            foot: world2([0, 0]),
+            footDir: dir(1, 0),
+            top: world2([last.x + last.dx * (run + 0.4), last.z + last.dz * (run + 0.4)]),
+            topEdge: world2([last.x + last.dx * run, last.z + last.dz * run]),
+            topDir: dir(last.dx, last.dz),
+            width: w,
+          });
         }
       }
     }
@@ -415,9 +557,31 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     }
     // An upper level is reached only where a stair arrives on its floor: no stair (or one that runs into a wall)
     // leaves its rooms unreachable instead of being waved through.
+    // Landings are measured for the walker's body (walls, railings, the stairwell and furniture block): only then
+    // does the stair lead anywhere.
+    let landingWalk: Uint8Array | null = null;
+    const landing = (): Uint8Array => (landingWalk ??= grid.walkable(LANDING_RADIUS));
+    const doorways = L.children.filter((e) => e.arch?.role === 'opening').map((e) => [e.transform.position[0], e.transform.position[2]] as P2);
+    const need = (w: number): string => `${stairLandingDepth(w).toFixed(2)} m (${stairLandingDepth(w) > STAIR_BODY + 2 * STAIR_BODY_CLEARANCE + 1e-9 ? "the stair's width" : `a ${STAIR_BODY.toFixed(2)} m body with ${STAIR_BODY_CLEARANCE.toFixed(2)} m each side`})`;
     if (!ground) {
       (pending.get(L.index) ?? []).forEach((s, i) => {
-        if (s.stair && (seeds[i] ?? -1) < 0) issues.push({ code: 'unreachable_room', message: `${s.stair}: the top step arrives at (${s.p[0].toFixed(1)}, ${s.p[1].toFixed(1)}), which is not open floor on the level above (a wall, the stairwell or furniture is in the way)`, entities: [s.stair], hint: 'Turn or move the stair so about 1 m in front of its top step is clear floor of a room on the level above.' });
+        if (s.stair && (seeds[i] ?? -1) < 0) {
+          issues.push({ code: 'unreachable_room', message: `${s.stair}: the top step arrives at (${s.p[0].toFixed(1)}, ${s.p[1].toFixed(1)}), which is not open floor on the level above (a wall, the stairwell or furniture is in the way)`, entities: [s.stair], hint: `Turn or move the stair so a landing of ${need(s.link?.width ?? 1)} beyond its top step is clear floor of a room on the level above.${stairFix(world, buildingId, s.stair)}` });
+          return;
+        }
+        const link = s.link;
+        if (!s.stair || !link) return;
+        const strict = landing();
+        const seed = nearestWalkable(grid, strict, s.p, STAIR_ARRIVAL_SNAP);
+        if (escapes(grid, strict, seed, link.topEdge, doorways)) return;
+        const depth = clearAhead(grid, [link.topEdge[0] + link.topDir[0] * 0.03, link.topEdge[1] + link.topDir[1] * 0.03], link.topDir) + 0.03;
+        issues.push({
+          code: 'unreachable_room',
+          message: `${s.stair}: the top step comes out at (${link.topEdge[0].toFixed(2)}, ${link.topEdge[1].toFixed(2)}) onto a landing a walker cannot get off: ${depth.toFixed(2)} m of clear floor beyond it before a wall, railing or piece of furniture, and no way off it ${(2 * LANDING_RADIUS).toFixed(2)} m wide for the body, where it needs a landing ${need(link.width)} deep`,
+          entities: [s.stair],
+          hint: `Move or turn the stair so its top step comes out onto ${need(link.width)} of clear floor that leads on into the room.${stairFix(world, buildingId, s.stair)}`,
+        });
+        seeds[i] = -1;
       });
     }
     flood(grid, walk, seeds, reached);
@@ -444,7 +608,21 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     for (const link of links.filter((k) => k.from === L.index)) {
       const b = nearestWalkable(grid, walk, link.bottom, 0.8);
       const next = levels.find((x) => x.index > L.index);
-      if (b >= 0 && reached[b] && next) pending.set(next.index, [...(pending.get(next.index) ?? []), { p: link.top, snap: STAIR_ARRIVAL_SNAP, stair: link.id }]);
+      if (!(b >= 0 && reached[b] && next)) continue;
+      // The foot needs a landing too: in front of the first riser or beside the first treads, that the body gets onto.
+      const strict = landing();
+      const feet = [link.bottom, ...link.besides].map((p) => nearestWalkable(grid, strict, p, 0.3));
+      if (!feet.some((f) => f >= 0 && escapes(grid, strict, f, link.foot, doorways))) {
+        const depth = clearAhead(grid, [link.foot[0] - link.footDir[0] * 0.03, link.foot[1] - link.footDir[1] * 0.03], [-link.footDir[0], -link.footDir[1]]) + 0.03;
+        issues.push({
+          code: 'unreachable_room',
+          message: `${link.id}: the foot of the stair at (${link.foot[0].toFixed(2)}, ${link.foot[1].toFixed(2)}) has no landing a walker can step onto it from: ${depth.toFixed(2)} m of clear floor in front of the first riser and none beside its first treads, where it needs ${need(link.width)}`,
+          entities: [link.id],
+          hint: `Move or turn the stair so ${need(link.width)} of clear floor lies in front of its first riser (or beside its first treads).${stairFix(world, buildingId, link.id)}`,
+        });
+        continue;
+      }
+      pending.set(next.index, [...(pending.get(next.index) ?? []), { p: link.top, snap: STAIR_ARRIVAL_SNAP, stair: link.id, link }]);
     }
     // Door clearance.
     for (const e of L.children) {

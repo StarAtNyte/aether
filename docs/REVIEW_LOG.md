@@ -4045,3 +4045,70 @@ search for low gravity is the next lever. The 240 s simulated cap is not
 scaled by world size: no generated world here comes near it once the loops
 are gone. A saved world keeps a railing compiled before this fix until its
 building is recompiled.
+
+## Stair landings: a clear landing at both ends, measured for the body
+
+**Problem.** Claude's house (`genlook/c7`, and the same plan in `c8`) failed its walkthrough: the straight stair
+along the hall's east wall climbed, but its top step came out 0.78 m short of the south wall, with the stairwell
+balustrade beside it. Between the balustrade's corner and the wall that left 0.69 m, narrower than the bot's body
+(0.35 m capsule plus skin: 0.75 m), so the upper floor was unreachable. The stair measure accepted it (0.6 m of floor
+beyond the top step, measured to the wall only), create_building never measured stairs at all, and the building
+check walked the landing with the 0.8 m walkway radius and ignored railings, so it passed too.
+
+**What changed.**
+- `stair-fit.ts`: a landing is a strip as wide as the flight and `stairLandingDepth(width)` deep: the stair's width,
+  never less than 0.9 m (a 0.70 m body with 0.10 m each side). It is required in front of the first riser or beside
+  the first treads, and beyond the top step, measured to the walls' inside faces and kept clear of declared railings,
+  other stairs, stairwells from below (with their balustrades) and furniture placed at a point. The top landing must
+  also lead on: straight ahead, or sideways past the balustrade's corner, 0.9 m wide. The stairwell keeps clear of
+  doorways upstairs as the flight does downstairs. Refusals give the measured depth and what stops it ("0.76 m of
+  clear floor before the wall of landing on level 1, where a walker needs a landing 0.90 m").
+- `fitStair` takes `near` (keep shape, heading, turn and width, then the least move) and `turn`; candidates need only
+  the footprint in the room (a stair from an end wall is stepped onto beside its first treads).
+  `settleStairs(plan)` moves each stair that does not work to the nearest that does.
+- `create_building` settles the plan's stairs and says so ("stair moved: … moved to a straight stair 0.9 m wide in
+  hall, first riser at (12.39, 0.26) …"); `exactStairs: true` builds them as drawn. `add_stairs` takes `replace`
+  (swap the level's stair at that index); its refusal and design_plan's offer the nearest stair that works.
+- Building check (`nav.ts`, so the review, the navigable test and every arch op report): railings block; each
+  stair's foot and top landing are flooded with the body's radius (0.4 m on the 5 cm grid) and must get 1.5 m away or
+  reach a doorway. A landing nobody can get off is an `unreachable_room` error on the stair with the clear depth and
+  a ready op: `build_architecture {"op":"add_stairs","building":"house","level":0,"replace":0,"stair":{…}}`.
+  The upper floor is not seeded through it.
+- U stairs: with an odd riser count the return flight is a tread longer than the first, so its top step came out
+  past the first riser under the slab. The opening now runs over it.
+- The offline villa's stair moved from x 0.5 to 0.2 (its top landed 0.85 m short of the bathroom wall for the
+  one-bedroom plan), the lake house's from z 0.6 to 0.66 (it ran 6 cm into the north wall). `villa-pool` and
+  `dusk-lake-house` rebaked.
+- `scripts/stair-probe.ts` measures every stair of a plan or world and prints the settled result and both building
+  checks; `scripts/bot-probe.ts --exact-stairs`.
+
+**Measured** (headless bot, Node 24).
+
+| World | Before | After |
+|---|---|---|
+| `c7` plan through create_building | failed: 4/6 rooms, the landing pocket | stair slid to z 0.26 along the same wall, passed 6/6 in 38.0 s sim, 1.2 s wall |
+| `c7` plan, `exactStairs` | building check passed | check: 3/6 rooms, "landing a walker cannot get off: 0.76 m"; bot fails as before |
+| Fitted stair, every heading × straight / L left / L right / U left / U right (20) | | 17 pass the bot; see below |
+| Each of those slid until the top is 0.8 m from the wall, then settled (20) | | 17 pass (the same three L) |
+| `dusk-lake-house` / `villa-pool` / planner three-bedroom house | passed | passed 47.8 s / 27.9 s / 68.0 s sim |
+
+**Tests.** `packages/arch/test/stair-landing.test.ts`: the c7 plan measured (0.7x m against 0.90), the check's
+landing error with a ready op that fixes it (6/6 rooms, one stair), the review's error, create_building moving it,
+add_stairs refusing it; every heading × shape × turn: a fitted stair passes the measure and the building check, the
+same stair slid to land 0.8 m short is refused with the depth, caught by the building check, settled and then passes;
+a railing and a sofa on the top landing, a landing boxed in on three sides. `packages/playtest/test/stair-landing.test.ts`:
+the bot fails the c7 plan as drawn and walks every room once create_building has moved the stair. Changed: the
+stair-arrival tests build with `exactStairs` (they test the check), the size refusal says 5.32 m for a straight
+1 m stair (a 1 m landing at the top). Gates: `tsc --noEmit` 0 errors; vitest 390 files, 4 171 tests; studio
+build; smoke 34/34; `showcase:bake --check` up to date after the two rebakes.
+
+**Still open.**
+- Three of the eight fitted 1 m L stairs (heading north turning right, south turning left, west turning right in
+  the 8 × 8 m test hall) get the bot stuck on the last treads of the first flight: the capsule cuts the corner toward
+  the second flight and its top meets the slab edge inside the L. This has nothing to do with the landings (same
+  geometry before this change); which positions fail moves with 10 cm shifts and even 1.2 m L stairs fail in one
+  heading, so it is the bot's path near the turn (or the well too tight for a 0.7 m vertical capsule), not fixed here.
+- The landing measure uses the plan's furniture placed at a point; furniture the layout places is checked by the
+  building check after compiling (the 0.8 m stair walkway keeps it off most landings).
+- A saved world keeps its stair until its building is recompiled through create_building; the building check now
+  reports it with the fix op.

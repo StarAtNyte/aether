@@ -98,7 +98,7 @@ describe('stair fitting', () => {
     const res = applyArchOps(world, [{ op: 'add_stairs', building: 'duplex', stair: { room: 'hall' } }]);
     expect(res.errors[0]?.code).toBe('stair_does_not_fit');
     expect(res.errors[0]?.message).toMatch(/hall \(2\.00 × 2\.50 m between wall centres\)/);
-    expect(res.errors[0]?.message).toMatch(/a 3\.00 m storey takes 17 risers of 0\.18 m \(16 treads of 0\.27 m\); .*straight 5\.22 × 1\.00 m, L/);
+    expect(res.errors[0]?.message).toMatch(/a 3\.00 m storey takes 17 risers of 0\.18 m \(16 treads of 0\.27 m\); .*straight 5\.32 × 1\.00 m, L/);
   });
 
   it('refuses a stair on the top level', () => {

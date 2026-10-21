@@ -223,7 +223,8 @@ export function duskLakeHouse(): MockPlan {
           { room: 'kitchen', side: 'south', count: 1, width: 3, height: 2.6, sill: 0.25, style: 'picture' },
           { room: 'kitchen', side: 'north', count: 1, width: 2.2, height: 1.2, sill: 1.1, style: 'fixed' },
         ],
-        stairs: [{ at: [0.6, 0.6], heading: 'east', width: 1 }],
+        // Clear of the 0.3 m north wall (its inside face is at z 0.15; from z 0.6 the flight ran 6 cm into it).
+        stairs: [{ at: [0.6, 0.66], heading: 'east', width: 1 }],
       },
       {
         name: 'Upper floor',

@@ -35,7 +35,8 @@ function house(stairs: Array<{ at: [number, number]; heading: 'north' | 'south' 
     ],
   };
   const base = createWorld();
-  const res = applyArchOps(base, [{ op: 'create_building', plan }]);
+  // Built exactly as drawn: the check is what is measured here (create_building would move a stair that does not work).
+  const res = applyArchOps(base, [{ op: 'create_building', plan, exactStairs: true }]);
   return applyPatches(base, res.patches).world;
 }
 

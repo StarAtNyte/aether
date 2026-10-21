@@ -25,7 +25,7 @@ import { cmr, polygonGap } from './geom';
 import type { Scene, SceneItem, SceneOpening, SceneRoom, SceneWall } from './types';
 import type { Finding } from './checks';
 import { parsePlan } from '../compile';
-import { checkStair, fitStair, levelDoors } from '../stair-fit';
+import { checkStair, fitStair, levelDoors, stairJson } from '../stair-fit';
 
 const Slug = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, 'ids are short lowercase slugs (letters, digits, dashes; at most 24 characters)');
 const RoomRef = z.union([Slug, z.literal('outside')]);
@@ -395,8 +395,9 @@ export function resolveDesignStairs(plan: DesignPlan): StairResolution {
       const exact: PlanStair = { at: st.at, heading: st.heading ?? 'north', shape: st.shape ?? 'straight', width: st.width ?? 1, turn: st.turn ?? 'left' };
       const check = checkStair(shell, li, exact, doors, done);
       if (check.problems.length > 0) {
-        const fit = fitStair(shell, li, { room: st.room ?? check.room, width: exact.width, others: done });
-        const better = fit.ok ? ` A stair that fits: {"at":[${fit.stair.at.join(',')}],"heading":"${fit.stair.heading}","shape":"${fit.stair.shape}","width":${fit.stair.width}${fit.stair.shape === 'straight' ? '' : `,"turn":"${fit.stair.turn}"`}} (${fit.line}), or give just {"room":"${fit.room}"} to have it fitted.` : ` Nothing fits there: ${fit.reasons.join('; ')}.`;
+        let fit = fitStair(shell, li, { room: st.room ?? check.room, near: exact, others: done });
+        if (!fit.ok && st.room === undefined && check.room !== undefined) fit = fitStair(shell, li, { near: exact, others: done });
+        const better = fit.ok ? ` A stair that fits: ${stairJson(fit.stair)} (${fit.line}), or give just {"room":"${fit.room}"} to have it fitted.` : ` Nothing fits there: ${fit.reasons.join('; ')}.`;
         errors.push(`${label} at (${exact.at.join(', ')}) heading ${exact.heading}: ${check.problems.join('; ')}.${better}`);
         return;
       }
