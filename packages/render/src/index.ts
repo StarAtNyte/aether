@@ -52,7 +52,8 @@ export { WeatherSystem, WEATHER_CONFIGS, type WeatherConfig, type WeatherKind } 
 
 export { CameraRig, easeInOutCubic, damp, type FollowSource, type OrbitControlsLike } from './view/camera-rig';
 export { TransformGizmo, readTransform, type GizmoChange, type GizmoMode, type TransformControlsLike } from './view/transform-gizmo';
-export { contentFraming, framingPose, DEFAULT_FRAMING_AZIMUTH, DEFAULT_SKY_TILT, type Framing, type FramingItem, type FramingPose, type FramingPoseOptions } from './view/framing';
+export { contentFraming, framingPose, DEFAULT_FRAMING_AZIMUTH, DEFAULT_SKY_TILT, boxSightTest, foregroundBlockage, pickClearView, viewCandidates, type ClearView, type Framing, type FramingItem, type FramingPose, type FramingPoseOptions, type SightTest, type ViewCandidate } from './view/framing';
+export { sceneSightTest } from './view/sightline';
 export { collectFramingItems, FRAMING_EXCLUDED_TAGS, FOCUS_TAG, SCENERY_GENERATORS } from './view/content-items';
 export { GrowIn, growDelay, growScale, GROW_DURATION, GROW_MAX_DELAY } from './view/grow-in';
 export { viewPose, captureSize, captureMime, MAX_CAPTURE_SIZE, MAX_VIEWS, type CaptureView, type ViewPose } from './view/capture';

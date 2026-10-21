@@ -514,7 +514,14 @@ whatever the model wrote, so the look is policy rather than per-world tuning:
   meaningful content (scenery, sky and huge terrain excluded, `focus`
   entities weighted) from an elevated three-quarter view, tilted up so a
   band of sky shows, never below the ground; edits only re-frame when the
-  changed entities are off screen.
+  changed entities are off screen. The view is the clearest of a few
+  candidates (swung either side of the preferred azimuth, and raised to look
+  over trees): sight lines from each camera to five points of the content
+  are tested against the scene's meshes and the scattered trees' occluder
+  boxes, ending half a framing radius short of the content so its own pieces
+  do not count, and a hit near the camera weighs most (`pickClearView`,
+  `view/sightline.ts`). In generated woods this keeps the first view from
+  landing behind a trunk or inside a crown.
 - *Materials.* Lava and water carry procedural, tileable detail (glowing
   Worley cracks, a ripple normal map) on box-projected metre UVs, so detail
   has the same scale on a pond and a sea. Mountains sink and trim their
@@ -1998,7 +2005,7 @@ night toward 5 % as the sun rises from −4 to 10 degrees and switch off once th
 soon after sunrise. The volume is off in low-memory mode.
 
 **Hero shots.** The default framing of a building is a 21 degree three-quarter view from the garden side (toward the terrace or pool, else the entrance), swung
-aside by the candidate azimuth with the clearest sight line to the house (no tree in the foreground; `pickClearAzimuth`). Backdrop scenery is excluded from
+aside by the candidate azimuth with the clearest sight line to the house (no tree in the foreground; `pickClearView`, the house itself never counts). Backdrop scenery is excluded from
 framing as before, so the lake, the mountains and the skyline are in the picture.
 
 **First-person start.** `compileBuilding` places the player 1.4 to 2.2 m inside the main entrance and `PlayerSpec.yaw` turns them toward the most inviting

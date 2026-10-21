@@ -54,10 +54,11 @@ import { LightVolumeNode } from './gpu/light-volume-node';
 import { RoomLampNode } from './gpu/room-lamp-node';
 import { RoomLamp } from './sync/room-lamp';
 import { ContactShadows, planContactShadows } from './view/contact-shadows';
-import { contentFraming, framingPose, frontAzimuthDeg, pickClearAzimuth, type Framing } from './view/framing';
+import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
+import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
-import { collectFramingItems } from './view/content-items';
+import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
@@ -413,15 +414,6 @@ function isDescendant(object: Object3D, ancestor: Object3D): boolean {
 /** Axis-aligned rectangle overlap (inclusive). */
 export function rectsOverlap(ax0: number, ay0: number, ax1: number, ay1: number, bx0: number, by0: number, bx1: number, by1: number): boolean {
   return ax0 <= bx1 && ax1 >= bx0 && ay0 <= by1 && ay1 >= by0;
-}
-
-/** A mesh that blocks the view: visible all the way up and not see-through. */
-function isOpaqueVisible(object: Object3D): boolean {
-  for (let o: Object3D | null = object; o; o = o.parent) if (!o.visible) return false;
-  const material = (object as Partial<Mesh>).material;
-  if (!material) return false;
-  const first = Array.isArray(material) ? material[0] : material;
-  return !first || !first.transparent || first.opacity > 0.9;
 }
 
 function now(): number {
@@ -1814,21 +1806,23 @@ export class WorldRenderer {
     // Buildings read best from higher up and closer (their bounding sphere is loose around a flat box).
     const arch = this.archView.active ? ARCH_FRAMING : null;
     const front = arch ? this.archFrontAzimuth() : null;
-    const base = { fovDeg: cam.fov, aspect: cam.aspect, groundY, ...(arch ?? {}) };
-    let azimuthDeg: number | undefined;
-    if (front !== null) {
-      // The garden side, swung aside for a three-quarter view: of a few nearby directions, the one with the
-      // clearest line of sight to the house (no tree in the foreground).
-      const swings = [0, 28, -28, 55, -55, 80, -80].map((s) => front + s - 28);
-      const obstacles = items.filter((it) => !it.focus && it.max[1] - it.min[1] > 2.2 && Math.max(it.max[0] - it.min[0], it.max[2] - it.min[2]) < 30);
-      azimuthDeg = pickClearAzimuth(swings, (az) => framingPose(framing, { ...base, azimuthDeg: az }).position, framing.center, obstacles);
-    }
-    const pose = framingPose(framing, { ...base, ...(azimuthDeg !== undefined ? { azimuthDeg } : {}) });
+    const base: FramingPoseOptions = { fovDeg: cam.fov, aspect: cam.aspect, groundY, ...(arch ?? {}) };
+    // Of a few nearby directions and heights, the one with the clearest line of sight to the content: a tree
+    // trunk or crown in the foreground (generated woods) makes a poor first picture. A building is seen from its
+    // garden side, swung aside for a three-quarter view.
+    const elevation = arch ? { elevationDeg: arch.elevationDeg } : {};
+    const candidates = front !== null ? viewCandidates(front - 28, { swings: [0, 28, -28, 55, -55, 80, -80], ...elevation }) : viewCandidates(DEFAULT_FRAMING_AZIMUTH, elevation);
+    const view = this.grow.withFullScale(() => {
+      this.sync.root.updateMatrixWorld(true);
+      return pickClearView(framing, base, candidates, sceneSightTest(this.sync, this.framingSubjects(opts.focus ?? [])));
+    });
+    const pose = view?.pose ?? framingPose(framing, base);
+    const azimuthDeg = view?.candidate.azimuthDeg ?? DEFAULT_FRAMING_AZIMUTH;
     _pos.set(pose.position[0], pose.position[1], pose.position[2]);
     _target.set(pose.target[0], pose.target[1], pose.target[2]);
     const duration = opts.duration ?? FRAME_DURATION;
     if (opts.flyIn) {
-      const wide = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, margin: 1.7, elevationDeg: 46 });
+      const wide = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, margin: 1.7, elevationDeg: 46, azimuthDeg });
       _center.set(wide.position[0], wide.position[1], wide.position[2]);
       this.rig.flyTo(_center, _target, 0);
       this.rig.flyTo(_pos, _target, Math.max(duration, FLY_IN_DURATION));
@@ -1837,6 +1831,19 @@ export class WorldRenderer {
     }
     this.needsDraw = true;
     return true;
+  }
+
+  /** Objects a framing shot is of (buildings and focused entities): they never hide themselves from its camera. */
+  private framingSubjects(focus: readonly EntityId[]): Set<Object3D> {
+    const out = new Set<Object3D>();
+    this.sync.forEachNode((node) => {
+      if (!node.entity.template && (node.entity.arch?.role === 'building' || node.entity.tags.includes(FOCUS_TAG))) out.add(node.object);
+    });
+    for (const id of focus.slice(0, 256)) {
+      const o = this.sync.object(id);
+      if (o) out.add(o);
+    }
+    return out;
   }
 
   /**

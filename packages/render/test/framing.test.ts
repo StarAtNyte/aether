@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Group, Mesh, Object3D } from 'three';
-import { contentFraming, DEFAULT_SKY_TILT, framingPose, frontAzimuthDeg, pickClearAzimuth, segmentHitsBox, MIN_CAMERA_CLEARANCE, type FramingItem } from '../src/view/framing';
+import { boxSightTest, contentFraming, DEFAULT_SKY_TILT, foregroundBlockage, framingPose, frontAzimuthDeg, pickClearView, segmentHitsBox, viewCandidates, MIN_CAMERA_CLEARANCE, type FramingItem } from '../src/view/framing';
 import { collectFramingItems, HUGE_EXTENT } from '../src/view/content-items';
 import { easeOutBack, easeOutCubic, GROW_DURATION, GROW_MAX_DELAY, GrowIn, growDelay, growScale } from '../src/view/grow-in';
 import { box, makeSync, tick, world } from './helpers';
@@ -206,16 +206,75 @@ describe('frontAzimuthDeg', () => {
   });
 });
 
-describe('pickClearAzimuth', () => {
-  const tree: FramingItem = { min: [-1, 0, 9], max: [1, 8, 11] };
-  const eye = (az: number): [number, number, number] => [Math.sin((az * Math.PI) / 180) * 20, 5, Math.cos((az * Math.PI) / 180) * 20];
-  it('keeps the first candidate when nothing is in the way', () => {
-    expect(pickClearAzimuth([28, -28, 55], eye, [0, 2, 0], [])).toBe(28);
+describe('pickClearView', () => {
+  const framing = { center: [0, 2, 0] as [number, number, number], radius: 6 };
+  const base = { fovDeg: 50, aspect: 16 / 9, groundY: 0 };
+  /** A tree (trunk and crown as one box) on the line from the camera of azimuth `az` to the center, `at` metres out. */
+  const treeOnLine = (az: number, at: number): FramingItem => {
+    const a = (az * Math.PI) / 180;
+    const x = Math.sin(a) * at;
+    const z = Math.cos(a) * at;
+    return { min: [x - 1.5, 0, z - 1.5], max: [x + 1.5, 12, z + 1.5] };
+  };
+  const eyeOf = (az: number, elevationDeg?: number): [number, number, number] => framingPose(framing, { ...base, azimuthDeg: az, ...(elevationDeg !== undefined ? { elevationDeg } : {}) }).position;
+
+  it('keeps the preferred view when nothing is in the way', () => {
+    const view = pickClearView(framing, base, viewCandidates(28), boxSightTest([]))!;
+    expect(view.index).toBe(0);
+    expect(view.blockage).toBe(0);
+    expect(view.candidate.azimuthDeg).toBe(28);
+    expect(view.pose).toEqual(framingPose(framing, { ...base, azimuthDeg: 28 }));
   });
-  it('moves aside when a tree stands between the camera and the house', () => {
-    // From azimuth 0 the camera is at z=20 and the tree at z=10 is on the line to the origin.
-    expect(pickClearAzimuth([0, 60], eye, [0, 2, 0], [tree])).toBe(60);
+
+  it('ignores the subject itself and what stands right next to it', () => {
+    // A tent at the center, a tree just behind it and a bush at the near edge of the subject: part of the shot.
+    const bush: FramingItem = { min: [-0.6, 0, -0.6], max: [0.6, 1.2, 0.6] };
+    const a = (28 * Math.PI) / 180;
+    const nearEdge: FramingItem = { min: [Math.sin(a) * 2.5 + bush.min[0], 0, Math.cos(a) * 2.5 + bush.min[2]], max: [Math.sin(a) * 2.5 + bush.max[0], 1.2, Math.cos(a) * 2.5 + bush.max[2]] };
+    const view = pickClearView(framing, base, viewCandidates(28), boxSightTest([{ min: [-1, 0, -1], max: [1, 2, 1] }, treeOnLine(28 + 180, 2), nearEdge]))!;
+    expect(view.index).toBe(0);
   });
+
+  it('moves aside when a tree stands between the camera and the subject', () => {
+    const eye = eyeOf(28);
+    const tree = treeOnLine(28, Math.hypot(eye[0], eye[2]) * 0.6);
+    const sight = boxSightTest([tree]);
+    expect(foregroundBlockage(eye, framing, sight)).toBeGreaterThan(0.5);
+    const view = pickClearView(framing, base, viewCandidates(28), sight)!;
+    expect(view.index).toBeGreaterThan(0);
+    expect(view.blockage).toBe(0);
+    // The nearest clear swing wins over wider ones.
+    expect(Math.abs(view.candidate.azimuthDeg - 28)).toBe(35);
+  });
+
+  it('scores a tree near the camera worse than one near the subject, and the camera inside a crown worst', () => {
+    const eye = eyeOf(28);
+    const reach = Math.hypot(eye[0], eye[2]);
+    const near = foregroundBlockage(eye, framing, boxSightTest([treeOnLine(28, reach * 0.85)]));
+    const far = foregroundBlockage(eye, framing, boxSightTest([treeOnLine(28, framing.radius * 0.9)]));
+    expect(near).toBeGreaterThan(far);
+    const crown: FramingItem = { min: [eye[0] - 2, eye[1] - 2, eye[2] - 2], max: [eye[0] + 2, eye[1] + 2, eye[2] + 2] };
+    // A box holding the camera hides everything: the forward test misses it (the segment starts inside), the backward one does not.
+    const inside = foregroundBlockage(eye, framing, (from, to) => {
+      const d = boxSightTest([crown])(from, to);
+      return d === 0 ? Number.POSITIVE_INFINITY : d;
+    });
+    expect(inside).toBe(1);
+  });
+
+  it('looks over a wall of trees across every direction', () => {
+    // A ring of tall trees between the subject and every low camera, too low to hide a raised one.
+    const ring: FramingItem[] = [];
+    for (let a = 0; a < 360; a += 10) {
+      const r = (a * Math.PI) / 180;
+      ring.push({ min: [Math.sin(r) * 11 - 1.6, 0, Math.cos(r) * 11 - 1.6], max: [Math.sin(r) * 11 + 1.6, 9, Math.cos(r) * 11 + 1.6] });
+    }
+    const sight = boxSightTest(ring);
+    const view = pickClearView(framing, base, viewCandidates(28), sight)!;
+    expect(view.candidate.elevationDeg).toBeGreaterThan(28);
+    expect(view.blockage).toBeLessThan(foregroundBlockage(eyeOf(28), framing, sight));
+  });
+
   it('segmentHitsBox is exact for crossing and missing segments', () => {
     expect(segmentHitsBox([0, 1, 20], [0, 1, 0], [-1, 0, 9], [1, 8, 11])).toBe(true);
     expect(segmentHitsBox([10, 1, 20], [10, 1, 0], [-1, 0, 9], [1, 8, 11])).toBe(false);

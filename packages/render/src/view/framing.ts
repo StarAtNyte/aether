@@ -162,12 +162,37 @@ export function frontAzimuthDeg(dx: number, dz: number, swingDeg = 28): number |
 
 /** True when the segment from `a` to `b` passes through the axis-aligned box (slab test). */
 export function segmentHitsBox(a: Vec3, b: Vec3, min: Vec3, max: Vec3): boolean {
+  return segmentEntry(a, b, min, max) !== null;
+}
+
+/**
+ * Line-of-sight query: distance (m) from `from` toward `to` before the first solid thing (a mesh, a scattered
+ * tree's trunk or crown), or Infinity when the segment is clear.
+ */
+export type SightTest = (from: Vec3, to: Vec3) => number;
+
+/** {@link SightTest} over boxes (unit tests, the software renderer): the entry distance into the nearest box. */
+export function boxSightTest(boxes: readonly FramingItem[]): SightTest {
+  return (from, to) => {
+    const len = dist(from, to);
+    let best = Number.POSITIVE_INFINITY;
+    for (const b of boxes) {
+      if (!finiteBox(b)) continue;
+      const t = segmentEntry(from, to, b.min, b.max);
+      if (t !== null && t * len < best) best = t * len;
+    }
+    return best;
+  };
+}
+
+/** Fraction along `a`→`b` where the segment enters the box (0 when `a` is inside), or null when it misses. */
+function segmentEntry(a: Vec3, b: Vec3, min: Vec3, max: Vec3): number | null {
   let t0 = 0;
   let t1 = 1;
   for (let i = 0; i < 3; i++) {
     const d = (b[i] as number) - (a[i] as number);
     if (Math.abs(d) < 1e-9) {
-      if ((a[i] as number) < (min[i] as number) || (a[i] as number) > (max[i] as number)) return false;
+      if ((a[i] as number) < (min[i] as number) || (a[i] as number) > (max[i] as number)) return null;
       continue;
     }
     let ta = ((min[i] as number) - (a[i] as number)) / d;
@@ -175,27 +200,115 @@ export function segmentHitsBox(a: Vec3, b: Vec3, min: Vec3, max: Vec3): boolean 
     if (ta > tb) [ta, tb] = [tb, ta];
     t0 = Math.max(t0, ta);
     t1 = Math.min(t1, tb);
-    if (t0 > t1) return false;
+    if (t0 > t1) return null;
   }
-  return true;
+  return t0;
+}
+
+/** One camera direction {@link pickClearView} may choose. */
+export interface ViewCandidate {
+  azimuthDeg: number;
+  /** Elevation above the horizon (degrees); omitted = the default of {@link framingPose}. */
+  elevationDeg?: number;
+  /** Cost of leaving the preferred view for this one, added to its blockage (0 for the preferred view). */
+  preference: number;
+}
+
+/** Share of the framing radius around the subject that counts as the subject itself, not as foreground. */
+export const SUBJECT_DEPTH = 0.5;
+/** Extra elevation (degrees) of the "look over the trees" candidates. */
+export const LOOK_OVER_DEG = 14;
+
+/**
+ * Candidate views around a preferred azimuth, cheapest first: the preferred view itself, swung views either
+ * side of it (wider swings cost more), and each of them raised by {@link LOOK_OVER_DEG} to look over a
+ * foreground tree. `swings` are degree offsets from `azimuthDeg`.
+ */
+export function viewCandidates(azimuthDeg: number, opts: { swings?: readonly number[]; elevationDeg?: number; lookOver?: boolean } = {}): ViewCandidate[] {
+  const swings = opts.swings ?? [0, 35, -35, 70, -70, 110, -110, 150, -150, 180];
+  const out: ViewCandidate[] = [];
+  const base = opts.elevationDeg;
+  for (const s of swings) out.push({ azimuthDeg: azimuthDeg + s, ...(base !== undefined ? { elevationDeg: base } : {}), preference: Math.abs(s) / 2000 });
+  if (opts.lookOver !== false) {
+    for (const s of swings) out.push({ azimuthDeg: azimuthDeg + s, elevationDeg: (base ?? ELEVATION_RANGE[1]) + LOOK_OVER_DEG, preference: 0.03 + Math.abs(s) / 2000 });
+  }
+  return out;
 }
 
 /**
- * Of the candidate azimuths (degrees, in order of preference) the one whose camera sees `target` with the
- * fewest tall things in the way (a tree trunk or crown in the foreground makes a poor first picture). Ties go
- * to the earlier candidate. `eye` gives the camera position for an azimuth.
+ * Points of the subject a camera at `eye` should see: the framing center and four points half a radius
+ * around it (left, right, above, below as seen from the camera).
  */
-export function pickClearAzimuth(candidates: readonly number[], eye: (azimuthDeg: number) => Vec3, target: Vec3, obstacles: readonly FramingItem[]): number {
-  let best = candidates[0] ?? DEFAULT_FRAMING_AZIMUTH;
-  let bestBlocked = Number.POSITIVE_INFINITY;
-  for (const az of candidates) {
-    const from = eye(az);
-    let blocked = 0;
-    for (const o of obstacles) if (finiteBox(o) && segmentHitsBox(from, target, o.min, o.max)) blocked++;
-    if (blocked < bestBlocked) {
-      bestBlocked = blocked;
-      best = az;
+export function sightPoints(eye: Vec3, framing: Framing): Vec3[] {
+  const c = framing.center;
+  const r = framing.radius * 0.5;
+  const fx = c[0] - eye[0];
+  const fz = c[2] - eye[2];
+  const fl = Math.hypot(fx, fz) || 1;
+  // Camera right (horizontal) and up (world up is close enough for a view tilted < 45°).
+  const rx = -fz / fl;
+  const rz = fx / fl;
+  return [
+    [c[0], c[1], c[2]],
+    [c[0] + rx * r, c[1], c[2] + rz * r],
+    [c[0] - rx * r, c[1], c[2] - rz * r],
+    [c[0], c[1] + r * 0.6, c[2]],
+    [c[0], c[1] - r * 0.4, c[2]],
+  ];
+}
+
+/**
+ * How much of the view from `eye` onto the subject is hidden by something in the foreground, 0 (clear) to 1
+ * (the camera stands in a crown or right behind a trunk). Each sight line ends {@link SUBJECT_DEPTH} radii short
+ * of its subject point, so the subject's own pieces do not count; a hit close to the camera weighs more than one
+ * near the subject. A segment that is clear forward but blocked backward means the camera is inside something.
+ */
+export function foregroundBlockage(eye: Vec3, framing: Framing, sight: SightTest): number {
+  const pts = sightPoints(eye, framing);
+  let sum = 0;
+  for (const p of pts) {
+    const len = dist(eye, p);
+    const fg = len - framing.radius * SUBJECT_DEPTH;
+    if (!(fg > 0.5)) continue;
+    const k = fg / len;
+    const end: Vec3 = [eye[0] + (p[0] - eye[0]) * k, eye[1] + (p[1] - eye[1]) * k, eye[2] + (p[2] - eye[2]) * k];
+    const d = sight(eye, end);
+    if (d < fg) sum += 1 - 0.5 * (Math.max(0, d) / fg);
+    else if (sight(end, eye) < fg - 1e-3) sum += 1;
+  }
+  return sum / pts.length;
+}
+
+/** What {@link pickClearView} chose. */
+export interface ClearView {
+  pose: FramingPose;
+  candidate: ViewCandidate;
+  /** Index of the candidate in the list. */
+  index: number;
+  /** Its {@link foregroundBlockage}. */
+  blockage: number;
+}
+
+/**
+ * Of the candidate views (see {@link viewCandidates}) the one whose camera sees the subject with the least in
+ * the foreground: a scattered tree trunk or crown between the camera and the content makes a poor first
+ * picture. Each candidate scores its blockage plus its preference cost; the lowest wins, ties to the earlier
+ * one, so an unobstructed preferred view is always kept. Null for an empty candidate list.
+ */
+export function pickClearView(framing: Framing, base: FramingPoseOptions, candidates: readonly ViewCandidate[], sight: SightTest): ClearView | null {
+  let best: ClearView | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i] as ViewCandidate;
+    const pose = framingPose(framing, { ...base, azimuthDeg: c.azimuthDeg, ...(c.elevationDeg !== undefined ? { elevationDeg: c.elevationDeg } : {}) });
+    const blockage = foregroundBlockage(pose.position, framing, sight);
+    const score = blockage + c.preference;
+    if (score < bestScore - 1e-9) {
+      bestScore = score;
+      best = { pose, candidate: c, index: i, blockage };
     }
+    // Nothing can beat a clear view that costs nothing.
+    if (blockage === 0 && c.preference <= 0) break;
   }
   return best;
 }

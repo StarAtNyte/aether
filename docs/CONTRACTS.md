@@ -2938,7 +2938,11 @@ PostEffects.gi: boolean                     // SSGI bounce; off in every tier, o
 PostPipeline.setAo({ radius?, scale?, thickness?, resolutionScale?, samples? })   // live AO retune (clamped); STUDIO_AO defaults
 EnvironmentRig.setInteriorBounce(on) / .setInteriorFill(level 0..1) / .setEnvScale(scale)  // building worlds only; bounce.ts: interiorBounce(sky)
 view/eye-adapt.ts: interiorFactor(x, y, z, ceilings) -> 0..1, adaptStep(current, target, dt), adaptedLook(f) -> { exposure, envScale }
-view/framing.ts: frontAzimuthDeg(dx, dz, swing?) -> degrees | null, pickClearAzimuth(candidates, eye, target, obstacles), segmentHitsBox(a, b, min, max)
+view/framing.ts: frontAzimuthDeg(dx, dz, swing?) -> degrees | null, segmentHitsBox(a, b, min, max),
+  viewCandidates(azimuthDeg, { swings?, elevationDeg?, lookOver? }) -> ViewCandidate[],
+  foregroundBlockage(eye, framing, sight) -> 0..1, pickClearView(framing, poseOptions, candidates, sight) -> ClearView | null,
+  boxSightTest(boxes) -> SightTest       // SightTest = (from, to) -> metres before the first solid, or Infinity
+view/sightline.ts: sceneSightTest(sync, skip?) -> SightTest   // meshes (raycast) + scatter occluder boxes
 ```
 
 `WorldRenderer.frameContent` frames buildings at 21 degrees elevation from the garden side with a clear sight line (was 38 degrees from +Z). Exposure and image
