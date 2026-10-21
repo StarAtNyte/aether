@@ -45,6 +45,17 @@ describe('the playtest bot finishes generated worlds instead of running out the 
     expect(r.wallMs).toBeLessThan(20_000);
   }, 120_000);
 
+  it('climbs to the shrine on the hill with a wolf trailing it round the hill, instead of dodging in circles until the clock runs out', async () => {
+    // Codex's moonlit forest: after the last lantern a wolf that hunts the player follows it a few metres behind (the player
+    // runs faster), and every re-route round the wolf led the bot round the foot of the hill, never up it.
+    const world = fixture('forest-hill-chase.world.json');
+    await ensureAssetCatalog(world);
+    const r = await playtest(world, { trace: false });
+    expect(r.status, r.summary).toBe('passed');
+    expect(r.objectives.filter((o) => o.required).every((o) => o.status === 'done')).toBe(true);
+    expect(r.seconds).toBeLessThan(80);
+  }, 120_000);
+
   it('wins the Codex night forest (stream, footbridge, mound, woods, wolves) within the studio budget', async () => {
     const world = codexForest();
     const r = await playtest(world, { trace: true });

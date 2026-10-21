@@ -894,7 +894,8 @@ class Bot {
         // The rest of the way is shorter for the player than for any enemy to cut it off: run for it.
         if (s.time - commitT >= 0.25) {
           commitT = s.time;
-          committed = this.outruns(path, idx, pos);
+          // Past its patience (stepping aside and re-routing round a pack that keeps following), the bot stops dodging and runs for it.
+          committed = this.outruns(path, idx, pos) || (objective !== null && (this.gapWaited.get(objective.id) ?? 0) >= EVADE_PATIENCE_S);
         }
         const clear = committed ? Infinity : this.threats.clearance(pos[0], pos[1], pos[2]);
         if (clear < EVADE_CLEARANCE && !this.guardsGoal(goal)) {
@@ -913,7 +914,11 @@ class Bot {
         if (evading) return 'threat';
         if (!committed && s.time - threatCheckT >= THREAT_REPLAN_S) {
           threatCheckT = s.time;
-          if (this.threats.huntedWithin(pos[0], pos[1], pos[2], THREAT_RANGE) && this.threatTurn()) return 'threat';
+          if (this.threats.huntedWithin(pos[0], pos[1], pos[2], THREAT_RANGE) && this.threatTurn()) {
+            // Re-routing round hunters that trail the player round a hill is time spent dodging too: it runs the patience down.
+            if (objective) this.gapWaited.set(objective.id, (this.gapWaited.get(objective.id) ?? 0) + THREAT_REPLAN_S);
+            return 'threat';
+          }
         }
       }
       // Skip the walk nodes we are already standing on.
