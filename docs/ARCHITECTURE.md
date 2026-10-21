@@ -21,8 +21,25 @@ each package). This document explains the design behind them.
 - [14. Studio runtime](#14-studio-runtime)
 - [15. Determinism](#15-determinism)
 - [16. Known limitations](#16-known-limitations)
+- [17. Block worlds (voxel terrain and the game kit)](#17-block-worlds-voxel-terrain-and-the-game-kit)
+- [18. Real-life architecture and the studio render](#18-real-life-architecture-and-the-studio-render)
+- [19. Asset pipeline](#19-asset-pipeline)
 - [20. Publishing](#20-publishing)
-- [21. The verified-playable flow](#21-the-verified-playable-flow)
+- [21. Default projects and flagship worlds](#21-default-projects-and-flagship-worlds)
+- [22. Photoreal finishing](#22-photoreal-finishing)
+- [23. Aether as an MCP server](#23-aether-as-an-mcp-server-appsclisrcmcp)
+- [24. Intelligent characters](#24-intelligent-characters)
+- [25. The verified-playable flow](#25-the-verified-playable-flow)
+- [26. The AI is the brain: plan first, place by tools, review with eyes](#26-the-ai-is-the-brain-plan-first-place-by-tools-review-with-eyes)
+- [27. Realistic, genuinely playable games](#27-realistic-genuinely-playable-games)
+- [28. A room from a photograph: reconstruct, never template](#28-a-room-from-a-photograph-reconstruct-never-template)
+- [29. Architecture realism and interactive rooms](#29-architecture-realism-and-interactive-rooms)
+- [30. Interior and architecture look](#30-interior-and-architecture-look)
+- [31. Honest offline mode, failure states and people with bodies](#31-honest-offline-mode-failure-states-and-people-with-bodies-qafix)
+- [32. Outdoor look, part A: a physical sky, vegetation variety and natural cover](#32-outdoor-look-part-a-a-physical-sky-vegetation-variety-and-natural-cover-outdoora)
+- [33. Water, animals and ambient life](#33-water-animals-and-ambient-life-outdoorb)
+- [34. Generated worlds: land, water and hills by default](#34-generated-worlds-land-water-and-hills-by-default)
+- [35. What belongs to an object, and what rests on what](#35-what-belongs-to-an-object-and-what-rests-on-what)
 
 ---
 
@@ -39,8 +56,9 @@ each package). This document explains the design behind them.
    the LLM handles semantics and repair.
 4. **Untrusted by default.** All model output and user input crosses a
    validation boundary. Code written by a model only runs in a sandbox.
-5. **Headless first.** `core`, `procgen`, `physics`, `logic` and `agent` have
-   no three.js or DOM dependency, so the same code runs in the browser, in
+5. **Headless first.** `core`, `procgen`, `physics`, `logic`, `agent`,
+   `arch`, `playtest`, `verifier` and `voxel` have no three.js or DOM
+   dependency, so the same code runs in the browser, in
    Workers, in Node tests, in the smoke script and on the server.
 6. **Deterministic.** All randomness is seeded (`rng`, `hashString` from
    core). Same document, seed and inputs give the same world and the same
@@ -56,38 +74,64 @@ packages/
   logic     rules, behaviours, QuickJS script runner
   render    three.js WebGPU/WebGL2 renderer, scene sync, cameras, tools
   agent     WorldAgent loop, tools, system prompt, providers, offline mock
-  arch      parametric buildings: plans, walls, openings, roofs, stairs, furniture, nav checks
+  arch      parametric buildings: plans, walls, openings, roofs, stairs, furniture, nav checks,
+            scene and design tools, the photo-to-room reading and fidelity measures
   voxel     block terrain, meshing, streaming, the block game kit
   assets    asset catalog (search, LOD, credits), import validation, image→3D provider
+  playtest  the verified-playable bot, self-repair, its compact proof, the level tools
+  verifier  replay proofs: seal, re-simulate, check (bin `aether-verify`)
 apps/
-  server    Hono API: LLM proxy, share links, generator cache, static hosting
+  server    Hono API: LLM proxy, share links, generator cache, local AI routes, static hosting
   studio    React 19 + Vite editor and player
+  bridge    local Aether Bridge: the user's Codex / Claude Code login for a hosted studio
+  cli       `aether` local app (server + studio + local AI) and `aether mcp`
 scripts/smoke.ts        headless end-to-end agent run (mock provider)
 tests/e2e/              Playwright browser run of the built studio
 ```
 
 ```mermaid
 flowchart LR
-    core --> procgen --> render --> studio
-    core --> arch --> procgen
-    arch --> render
-    arch --> physics
-    arch --> agent
-    arch --> studio
-    core --> physics --> studio
-    procgen --> physics
-    core --> logic --> studio
-    core --> agent --> server
-    agent --> studio
-    core --> assets
+    core --> assets --> arch --> procgen --> render --> studio
+    core --> arch
+    core --> procgen
+    core --> render
     assets --> render
-    assets --> physics
+    arch --> render
+    core --> logic --> physics --> playtest --> studio
     assets --> logic
-    assets --> arch
+    core --> physics
+    procgen --> physics
+    assets --> physics
+    arch --> physics
+    core --> playtest
+    arch --> playtest
+    logic --> playtest
+    playtest --> verifier --> studio
+    core --> verifier
+    logic --> verifier
+    physics --> verifier
+    procgen --> verifier
+    core --> agent --> studio
     assets --> agent
+    arch --> agent
+    procgen --> agent
+    core --> voxel --> studio
+    agent --> bridge --> server
+    core --> bridge
+    procgen --> bridge
+    agent --> server
     assets --> server
-    assets --> studio
+    core --> server
+    server --> cli
+    bridge --> cli
+    agent --> cli
 ```
+
+The graph is read from the packages' `dependencies`; the studio also depends
+directly on every package except `bridge` and `server`, and the CLI on
+`arch`, `assets`, `core`, `logic`, `physics` and `procgen` (edges left out
+above for legibility). `@aether/agent` does not import `@aether/playtest`:
+the level tools reach it as an injected `AgentOptions.levelTools` runner.
 
 Arrows point from a dependency to its consumer. There are no cycles. The
 packages use **source-level exports** (`"exports": {".": "./src/index.ts"}`),
@@ -104,13 +148,19 @@ colours as `#rrggbb`; ids as lowercase slugs.
 
 | Field | Contents |
 | --- | --- |
-| `entities` | Record by id. Each entity has `transform`, `shape` (`primitive`, `procedural`, `model`, `scatter` or `none`), `material` (22 presets plus overrides), `physics` (body type, collider, mass or density, friction, restitution, sensor, damping, CCD), `joint` (fixed, revolute, prismatic or spherical with limits and motor), `light`, `behaviors`, `state`, `parent`, `tags` and `template` |
+| `entities` | Record by id. Each entity has `transform`, `shape` (`primitive`, `procedural`, `model`, `scatter`, `mesh`, `asset` or `none`), `material` (22 presets plus overrides and finishes), `physics` (body type, collider, mass or density, friction, restitution, sensor, damping, CCD), `joint` (fixed, revolute, prismatic or spherical with limits and motor), `light`, `behaviors`, `state`, `parent`, `attachedTo` (an owner without parenting, see §35), `tags`, `template` and `locked`, plus the optional domain blocks `arch` (§18), `npc` (§24), `character` (people) and `interact` (§29) |
 | `rules` | WHEN (11 triggers: start, tick, timer, collision, enter, exit, key, click, state, event, fallBelow) / IF (state conditions) / THEN (17 actions: set, add, spawn, destroy, impulse, setVelocity, teleport, setProperty, enableBehavior, explode, setGravity, emit, message, sound, win, lose, reset) |
 | `environment` | Sky preset, time of day, fog, weather, ambient and sun intensity, ground, gravity, bloom, exposure |
 | `player` | Mode (orbit, firstPerson, thirdPerson or vehicle), spawn, controlled entity, speeds |
 | `state`, `hud` | Global variables and the HUD bindings that display them |
 | `generators`, `scripts` | Code written by the coder model (see §9) |
-| `tests` | `stable`, `noOverlap`, `reaches`, `eventually`, `moves`, `topples`, `staysAbove` |
+| `meshes` | Editable mesh assets referenced by `mesh` shapes |
+| `tests` | `stable`, `noOverlap`, `reaches`, `eventually`, `moves`, `topples`, `staysAbove`, `navigable` (buildings, §18) and `npcs` (characters, §24) |
+| `voxel`, `intro` | Optional block terrain (§17) and the title card shown before play starts (§21) |
+
+Edits are one of 23 patch ops (`Patch` in `schema.ts`: entity add / update /
+remove / rename, rules, environment, player, state, HUD, generators, scripts,
+tests, meta, meshes, voxel terrain and edits, `clear`).
 
 **Selectors** let rules, tests and behaviours refer to entities: `some-id`,
 `#tag`, `player` and `*`. Templates are excluded from selector matches and
@@ -200,9 +250,10 @@ descriptions. It contains no three.js.
   materials, which reduces draw calls. `autoColliders('box' | 'hull')` and
   `build()` place the base on y = 0 and centre x and z (heightfield terrain
   keeps its frame).
-- **36 built-in generators** in six categories (nature, architecture, props,
-  vehicles, terrain, fx), each with 2 to 4 variants and typed params.
-  `resolveParams` applies defaults, clamping and type coercion.
+- **102 built-in generators** in seven categories (terrain 4, nature 17,
+  architecture 22, props 11, vehicles 2, fx 3, interior 43), each with typed
+  params; 55 of them are the `arch-*` and `furn-*` parts the building
+  compiler uses. `resolveParams` applies defaults, clamping and type coercion.
 - **Heightfield colliders** use Rapier's native layout: heights normalised to
   [0, 1], X-major (`heights[ix*(rows+1)+iz]`), rows along Z and
   `size = [width, maxHeight, depth]`.
@@ -303,6 +354,8 @@ How each test kind is decided:
 | `moves` | The target travels at least `distance` |
 | `topples` | The target's tilt from upright exceeds `degrees` |
 | `staysAbove` | The target never drops below `y` |
+| `navigable` | Every room of the building is reached on foot and its furniture and doors pass the usability checks (§18) |
+| `npcs` | Characters' patrol points are reachable at t = 0, and while they run for `seconds` none falls or sticks (§24) |
 
 ### Verification off the main thread
 
@@ -361,7 +414,7 @@ implement with a recording fake.
   when a condition goes from false to true. `emit` supports delays through a
   bounded queue. `spawn` clones templates into `template-N` ids with seeded
   spread.
-- **Behaviours.** 26 built-in behaviours are documented in
+- **Behaviours.** 28 built-in behaviours are documented in
   `BEHAVIOR_CATALOG`; the agent prompt is generated from that catalog. Moving
   behaviours on kinematic entities compose into one pose per tick (bob,
   spin and patrol stack instead of fighting each other). Dynamic bodies are
@@ -472,6 +525,10 @@ whatever the model wrote, so the look is policy rather than per-world tuning:
 
 `npm run gallery` renders every smoke prompt (and `-- --skies`, the starter
 world under each preset) to `docs/screenshots/gallery/` for visual review.
+
+**Interior light.** Worlds with a building also get a baked light volume
+(probes traced against the building in a worker, applied by a light node to
+every lit material); see §30, "Baked light volume".
 
 **`SceneSync`** applies `diffWorlds` output:
 
@@ -595,7 +652,8 @@ of a proposed world that shows only what it adds or changes; debug overlays
 
 `WorldAgent.run(prompt, host, opts)` is an async generator of `AgentEvent`s
 (`status`, `plan`, `patches`, `generator`, `verify`, `repair`, `message`,
-`error`, `done`). It **never throws**. It always ends with exactly one `done`
+`review`, `photo`, `edit`, `clarify`, `history`, `memory`, `error`, `done`).
+It **never throws**. It always ends with exactly one `done`
 event that carries token usage.
 
 ```mermaid
@@ -631,18 +689,53 @@ sequenceDiagram
     A-->>U: done (usage)
 ```
 
-- **Tools.** `apply_patches`, `write_generator`, `write_script`, `inspect`,
-  `run_verification`, `finish` and `request_asset`. Each has a hand-written
-  JSON Schema for the model and a matching zod validator in the executor.
-  Tool results are short and list each rejected patch by index and reason.
+- **Tools.** `apply_patches`, `build_architecture`, the design tools
+  (`design_plan`, `place_items`, `edit_items`, `query_scene`, §26),
+  `write_generator`, `write_script`, `request_asset`, `search_assets`,
+  `inspect`, `run_verification`, `shape_land` (§34) and `finish`; with a
+  level-tool runner also `query_level` and `place_level_items` (§27). The
+  photo flow has its own (`describe_room`, `reconcile_room`,
+  `report_verdicts`, §28) and the compact profile only `apply_patches` and
+  `finish`. Each has a hand-written JSON Schema for the model and a matching
+  zod validator in the executor. Tool results are short and list each
+  rejected patch by index and reason.
 - **Context.** The world travels as `summarizeWorld` text: deterministic
   ordering, focus entities and truncation. The summary and the user request
   sit in explicit tags, and any copy of those tags inside untrusted text is
-  neutralised. Prior chat history is reduced to text, and images are capped
-  at 4.
+  neutralised. Images in one request are capped at 4.
+- **Turn layout (prefix-stable).** The conversation is append-only: nothing
+  already sent is rewritten. Each request is a view of it (`requestView`):
+  images that no longer fit (earlier look-and-fix rounds, then all but the
+  newest four) are replaced *in place* by a `[image <key> removed]` text,
+  where the key is a content hash, so every request extends the previous
+  one. Text backends render an image as `[image <key>]` whether or not it is
+  still attached, so the transcript body only ever grows; a resumed Codex
+  thread or Claude Code session is sent `resumeInput(...)`: the new part
+  without the echo of the model's own last reply, and only images the thread
+  has not seen. A re-ask after an invalid answer keeps the body and sends only
+  the correction.
+- **Continued conversations.** With a session key (the studio sends
+  `p-<projectId>`), the run's conversation is kept in a `ConversationStore`
+  (LRU of 16, 6 h idle, images as placeholders, a 300 000-character budget)
+  with the world at its end. The project's next run (a chat edit, a quality
+  round or a repair, which use the same tools and so the same system prompt)
+  appends one turn whose `<scene_changes>` block lists what was added,
+  removed and changed since the model's last turn, the user's own edits
+  included, instead of the text history and a full summary. More than 40
+  changed entities or 6 000 characters sends the full summary, still in the
+  same conversation. A failed run, a photo run, another system prompt or a
+  conversation over budget starts afresh; deleting the project forgets it.
+- **Naming.** The system prompt asks the model to title a new world with
+  `setMeta` (two to four words). Until it does, the studio names the project
+  from the prompt's first clause (`projectNameFromPrompt`), stopping before
+  a connective or a dangling word.
 - **System prompt.** Built from the live catalogs (generators, behaviours,
   rule docs, generator API d.ts, script API d.ts, examples) and byte-for-byte
   identical across builds, so provider prompt caching works.
+- **Usage.** `done` carries input, output and cached input tokens
+  (`cachedInputTokens`, reported by Codex, Claude Code, Anthropic, OpenAI
+  Responses and Chat Completions providers), summed per run and shown in the
+  chat as "… in (… cached)".
 - **Budgets.** `maxTurns`, `maxRepairs`, a total tool-call budget, input size
   limits and prompt abort (even mid-call) through `AbortSignal`.
 
@@ -664,13 +757,13 @@ model. That lets the server map roles to allowlisted models.
 | Provider | Where | Notes |
 | --- | --- | --- |
 | `createAnthropicProvider` | Server, or browser with the user's own key | Raw `fetch` to the Messages API. Cache breakpoints on the system prompt and the last tool, a per-role `effort` level, and thinking blocks passed back unchanged. Refusals and truncation map to stop reasons. |
-| `createOpenAIProvider` | Server, or browser with the user's own key | Raw `fetch` to the Responses API with `store: false`. Function calls map to `tool_use`. Encrypted reasoning items are carried across turns. |
+| `createOpenAIProvider` | Server, or browser with the user's own key | Raw `fetch` to the Responses API with `store: false`. Function calls map to `tool_use`. Encrypted reasoning items are carried across turns. Each request carries a `prompt_cache_key` derived from the system prompt, so requests with the same preamble share the prompt cache. |
 | `createChatCompletionsProvider` | Browser (user's own key) / Node | OpenAI-compatible Chat Completions with function tools, for OpenRouter and Google Gemini. Tool results become `tool` messages, images become `image_url` parts |
 | `createHttpProvider` | Browser | Posts to `/api/llm`, never sends a model id, and validates the reply with zod |
-| `createMockProvider` | Anywhere | Deterministic offline planner: 18 themes, mood combinations (night, rain, fog, low gravity and more), edit commands and the generator library by name. It emits plan, `apply_patches` and `finish` calls just like a real model. |
+| `createMockProvider` | Anywhere | Deterministic offline planner: 21 themes and activities, buildings, the flagship plans, mood combinations (night, rain, fog, low gravity and more), edit commands and the generator library by name. It emits plan, `apply_patches` and `finish` calls just like a real model. |
 | `createBridgeProvider` | Browser / Node | Posts to the local Aether Bridge (`/v1/complete`, bearer token from pairing); the bridge drives Codex or Claude Code headless |
 | `createEmulatedProvider` | Anywhere | Tool use for text-only backends: asks for one JSON object `{thoughts, tool_calls, final_message}`, validates it with zod, re-asks once on invalid JSON, maps it to `tool_use` blocks |
-| `createWebLlmProvider` | Browser | On-device model (WebLLM, lazy chunk, WebGPU) through the same emulation, with JSON-schema constrained output. These models hold 4,096 tokens (input and output), while the full planner prompt is about 15k, so the studio runs `WorldAgent` with the **compact prompt profile** (condensed IR, catalog ids only, one example, `apply_patches` + `finish`, short summary and history): measured against a 135-entity world with prior chat history, the first call is about 2.6k tokens (estimated at 3 characters per token) with the full 1,200-token answer budget, and the follow-up call about 3.0k with 1,026 left. Requests that still do not fit are refused before generating and fall back with an explanation |
+| `createWebLlmProvider` | Browser | On-device model (WebLLM, lazy chunk, WebGPU) through the same emulation, with JSON-schema constrained output. These models hold 4,096 tokens (input and output), while the full planner preamble is over 30k (about 33k tokens measured on Codex), so the studio runs `WorldAgent` with the **compact prompt profile** (condensed IR, catalog ids only, one example, `apply_patches` + `finish`, short summary and history): measured against a 135-entity world with prior chat history, the first call is about 2.6k tokens (estimated at 3 characters per token) with the full 1,200-token answer budget, and the follow-up call about 3.0k with 1,026 left. Requests that still do not fit are refused before generating and fall back with an explanation |
 | `createFallbackProvider` | Anywhere | Wraps any primary: on failure (offline, not signed in, rate limited, timeout) it reports once and continues with the offline planner |
 
 All three networked providers retry up to 3 times with exponential backoff and
@@ -741,7 +834,7 @@ bridge answers the Private Network Access preflight). WebKit (Safari and all
 iOS browsers) blocks it as mixed content, so the setup pane says so and
 points to running the studio locally.
 
-### 12.4 Local AI on this computer and the coding-agent worker
+### 12.2 Local AI on this computer and the coding-agent worker
 
 When the Aether server runs on the user's own machine (development, or
 `npm run start` without hosting markers), it offers local AI under
@@ -781,10 +874,16 @@ studio ──/api/local/complete──▶ server ──spawn──▶ worker pro
   has not seen). The next run of a project (a chat edit, a quality round)
   continues the same conversation: its turn carries `<scene_changes>` — what
   changed since the model's last turn, including the user's own edits — instead
-  of the full world summary, which is sent only when too much changed. On the
-  forest game and the house prompt this cut the uncached input by about half
-  to two thirds and the first call of an edit from ~38 k fresh tokens to under
-  2 k (REVIEW_LOG, "Turn layout").
+  of the full world summary, which is sent only when too much changed (§11,
+  "Turn layout" and "Continued conversations"). Usage is counted per call:
+  Codex reports a thread's running totals on every `turn.completed`, its
+  input count already including the cached part, so the bridge keeps the
+  thread's totals and `codexTurnUsage` reports the difference. On the forest
+  game and the house prompt (Codex, `scripts/token-probe.ts`) this cut the
+  uncached input by 64 % and 52 %, and an edit that used to open a new thread
+  (about 38 k uncached tokens) now costs under 5 k uncached tokens
+  (REVIEW_LOG, "Turn layout"). Every call still re-reads the whole thread from
+  the cache; the stable preamble (about 33 k tokens) is the floor per call.
 - **Deep builds.** With "Deep build" on (the default when local AI is
   connected), a new asset requested by the agent is built by a coding agent
   instead of one single-shot reply. The workspace is a private temp folder
@@ -816,7 +915,7 @@ studio ──/api/local/complete──▶ server ──spawn──▶ worker pro
   (0600); switching is manual and waits for running jobs. The paired bridge
   offers the same sign-in buttons through `/v1/auth/*`.
 
-### 12.2 Generator library
+### 12.3 Generator library
 
 `packages/procgen/library/*.json` holds 40+ generators for common objects the
 built-ins do not cover. `npm run library` asks Codex for each object (one call
@@ -829,7 +928,7 @@ chunk. The offline planner and the model prompt both see the catalog, and
 patch that uses it, so it then behaves like any custom generator (sandboxed,
 saved with the world, shareable).
 
-### 12.3 Quality loop
+### 12.4 Quality loop
 
 After the agent finishes, the studio renders four views (top, front, side,
 iso) into a corner of the existing drawing buffer (viewport + scissor, one
@@ -929,6 +1028,17 @@ Full details are in [`apps/server/README.md`](../apps/server/README.md).
   `validateWorld` for worlds, `reviveChat` for transcripts); writes are
   size-capped and quota errors become actionable messages. Without IndexedDB
   (some private modes) an in-memory backend keeps the session working.
+- **Session persistence** (`src/projects/session.ts`). The autosave keeps,
+  next to the world, a window of the active branch's history (up to 40 undo
+  and 10 redo steps), the bot's compact proof with its replay and the
+  physics verdict, under 1.5 M characters (a smaller undo window first, then
+  no history). On open everything is untrusted: zod for the structure,
+  `History.fromJSON` (which re-validates and replays) for the history,
+  `parseProof` for the proof. The history is kept only when it ends on the
+  saved world, and each verdict only when it was made for that world's
+  content, so Undo and the "Verified" badges survive a reload. Renaming a
+  project from the home page rewrites the stored session for the new name
+  (`renameSession`) instead of dropping it.
 - **Shell.** Hash routes switch between the projects home and the editor;
   the editor and the engine (three.js, physics glue, agent) are a lazy chunk
   prefetched on intent (hover / focus of a card), so the home page loads
@@ -1101,6 +1211,34 @@ doorways and up the stairs, and checks that every room is reached, every
 swing leaf's quarter disc is free and every piece of furniture stands on
 the floor without overlaps. The `navigable` world test runs it in the
 verification worker; the agent gets the issues back with concrete fixes.
+`checkBuilding` climbs a stair only where its top step lands on open floor,
+so it agrees with the walkthrough bot.
+
+**Stairs that fit.** A stair is measured against the plan before it is built
+(`stair-fit.ts`): its footprint must lie in one room clear of the walls, with
+floor to step on in front of the first riser or beside the first treads,
+clear of doorways, with the stairwell inside one room upstairs and at least
+0.6 m of floor beyond the top step. `fitStair` searches the room's walls in
+10 cm steps at every heading, straight before L before U, preferring full
+0.9 m landings. So `add_stairs` and `design_plan` may name just the room and
+get a fitted stair back (reported), a misplaced stair is refused with the
+numbers and a stair that does fit, and `query_scene {q:"stairs"}` answers
+with the riser maths (17 risers of 0.176 m for a 3 m storey) and a ready op.
+Furniture keeps a 0.8 m walkway round stairs and stairwells. The stairwell
+balustrade leaves open the edge nearest to where the top step comes out
+(for an L stair that is not the edge facing the arrival direction) and stands
+5 cm back from the opening, so it never narrows the flight.
+
+**Lived-in rooms and grounds.** A furnished room is dressed after its own
+pieces where the measured layout has room (`recipes.ts` `dressRoom`: a rug
+under the seating group or bed, the missing armchair or bedside table, lamps,
+plants, curtains at bare windows, accent pieces such as vases, books and
+towels); loose pieces keep 0.4 m off showers and baths. `set_site` compiles a
+house's garden (approach path, hedges, beds, trees) and, optionally, estate
+land round it into the building's subtree. The AI asks for these with the
+`dress_room` and `set_site` ops; the building review adds information notes
+`room_sparse` (a furnished but bare room) and `no_grounds` (a house on the
+bare plane) that point at them.
 
 **Wall space.** Everything hung on a wall (art, mirror, TV, whiteboard, sconce,
 switch, curtain) goes through one rule set (`wall-space.ts`): a wall is a line
@@ -1308,7 +1446,7 @@ npm run showcase:thumbs flagship covers from art-directed cameras (docs/screensh
   logic) to the win screen; `npm run e2e:showcase` opens and plays every
   featured world in Chromium and Firefox.
 
-## 24. Photoreal finishing
+## 22. Photoreal finishing
 
 ![Final render](screenshots/photoreal/final-render-garden.jpg)
 
@@ -1368,7 +1506,7 @@ to use the machine's GPU in Chromium instead of SwiftShader; Firefox needs a dis
 
 ![Path traced still](screenshots/photoreal/path-traced-penthouse.jpg)
 
-## Aether as an MCP server (`apps/cli/src/mcp`)
+## 23. Aether as an MCP server (`apps/cli/src/mcp`)
 
 `aether mcp` puts the same loop behind the Model Context Protocol so other
 agents can drive it. It adds no new engine: a session wraps a core `History`
@@ -1382,7 +1520,7 @@ client configuration and safety model.
 
 
 
-## 22. Intelligent characters
+## 24. Intelligent characters
 
 Characters are data (`entity.npc`) executed by one deterministic system in the
 logic loop, proven by the same headless verification as everything else, and
@@ -1428,12 +1566,15 @@ is connected, applies the caps and sanitises the reply (see `docs/CONTRACTS.md`)
 
 ---
 
-## 23. The verified-playable flow
+## 25. The verified-playable flow
 
 Aether's claim is that the AI *proves* what it built works. The physics tests
-of section 7 prove the world is stable; the playtest agent
-(`packages/playtest`) proves it is **playable**: a bot plays the game, or
-walks the house, in front of the user, and a sealed proof shows the result.
+of section 7 check that the world is stable; the playtest agent
+(`packages/playtest`) checks that it is **playable**: a bot plays the game,
+or walks the house, in front of the user, and a sealed replay shows the
+result. "Verified" here means the bot reached the win (or every room) in a
+deterministic simulation of the document; it is evidence that can be
+replayed and re-checked, not a formal proof.
 
 ```
 World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
@@ -1445,11 +1586,13 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
    │
    └─ live physics world + logic runtime + bot capsule (the studio's own
       CharacterController, fixed 1/60 s step, keys pressed like a person):
-        loop: Dijkstra to the nearest reachable pending objective
-              (win objectives last) → walk the path (look-ahead, door opening
-              by proximity or key press, crawl through tight doorways,
-              hop / sidestep / replan when stuck) → touch it (stand, then
-              jump) → the logic reacts → repeat
+        loop: A* towards the nearest reachable pending objective
+              (win objectives last; enemies' live positions priced in)
+              → walk the path (look-ahead, door opening by proximity or
+              key press, crawl through tight doorways, hop / sidestep /
+              replan when stuck or off the path's level, step aside from
+              a closing enemy) → touch it (stand, then jump) → the logic
+              reacts → repeat
         report: won, time, path, trace, unreachable / blocked objectives,
                 locked doors, unwinnable conditions, soft-locks, falls
 ```
@@ -1459,7 +1602,31 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
   (`engine/playtest/playtest.worker.ts`) with a simulated-time cap (240 s), a
   wall-clock budget (20 s), cooperative yielding (so cancel works) and a
   progress stream; a main-thread fallback exists for browsers without module
-  workers.
+  workers. Runs are deterministic (fixed simulation steps); the asset catalog
+  is loaded before goals are read, so the first run in a process measures
+  library pickups and enemies at their real size like every later one.
+- **Finishing, not running out the clock** (bot version 2, `BOT_VERSION`).
+  The progress watchdog counts movement along the ground only, so a hop on
+  the spot is not progress. Standing more than 1 m above the path's surface
+  (on a footbridge deck over a path that runs beneath it) re-plans from where
+  the player is (`lost`, counted like a stuck). A walk that takes more than
+  four times its length at full speed plus 10 s of simulated time counts as
+  stuck, and an objective that takes more than four times its walk plus 60 s
+  is given up with the reason, so a failing run names a cause instead of
+  "ran too long". A
+  presence zone crossed early (a rule that resets on exit) is walked back to
+  once everything else is done. The search is A* towards discs round the
+  targets with an estimate scaled to stay a lower bound, every jump of a
+  candidate route is simulated at once and the bad ones marked together, and
+  the far landing scan skips 8 × 8-cell blocks no jump or drop can reach.
+- **Enemies.** The bot plans around hostile characters' live positions: the
+  ground near an enemy costs more to cross, inside its attack reach far more,
+  along its patrol slightly. It steps aside when an enemy closes in and
+  re-plans every half second while hunted; by a guarded pickup it waits up to
+  10 s for a gap. Time spent stepping aside counts as waiting, and after 20 s
+  on one objective it runs for it (taking a hit if need be), so a pack that
+  cannot reach the player does not pin it. It never leaps or drops through a
+  hazard.
 - **Honest verdicts.** `passed` requires the win (or every room) to have
   *happened* in the run. A failure names the cause in one sentence ("the key at
   12,3 is unreachable: 4.2 m from the nearest place the player can stand and
@@ -1467,17 +1634,27 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
   moving lift may bridge is a caution, not a verdict. The badge is green only
   for a passed run that was *proven* for the history entry on screen
   (`lib/playtestView.ts`).
-- **Self-repair.** Findings map to the smallest patch that removes them: move
-  the small platform a pickup sits on (with what stands on it) or the pickup
-  itself within reach; open an unlockable door by proximity; lower a win target
-  that needs more pickups than exist; add a "win when everything is collected"
-  rule; move the spawn out of a wall; widen a building door the player's body
-  cannot pass (door, frame, wall opening and the building plan stay in step);
-  give a countdown the time the bot measured plus a margin. Each repair is one
-  ordinary, undoable history entry (`Playtest fix: …`), then the bot plays
-  again (3 rounds at most) and the user gets one sentence in the chat.
-  Findings without a safe fix (soft-locks, stuck points) are reported, never
-  guessed at.
+- **Self-repair.** Findings map to the smallest patch that removes them, and
+  repairs keep the author's intent. An unreachable objective first gets a
+  flight of steps (0.25 m risers) or blocks to jump up to what it stands on,
+  kept only when the bot then gets there; else the small platform it sits on
+  moves within reach (with what stands on it); else the pickup itself moves
+  to the nearest standable spot, but an objective that belongs to something
+  (§35: a shrine's goal zone) is never moved off it, and the sentence says so
+  when nothing helped. Enemies that bring the player down before the game can
+  be won chase more slowly and hit softer, in a few gentler steps, each
+  played by the bot first; only a step the bot then wins is applied (named
+  enemies and guard, predator and sentinel archetypes). Further: open an
+  unlockable door by proximity; lower a win target that needs more pickups
+  than exist; add a "win when everything is collected" rule; move the spawn
+  out of a wall; widen a building door the player's body cannot pass (door,
+  frame, wall opening and the building plan stay in step); give a countdown
+  the time the bot measured plus a margin. Each repair is one ordinary,
+  undoable history entry (`Playtest fix: …`), then the bot plays again (3
+  rounds at most in the studio; `selfRepair` defaults to 4, at most 8), the
+  physics checks re-run on the repaired world, and the user gets one sentence
+  in the chat. Findings without a safe fix (soft-locks, stuck points) are
+  reported, never guessed at.
 - **Characters.** A conversation the game depends on is an objective too
   (`talk`): when a character's dialogue tree can write a state key the game
   needs (a key sold, a door unlocked with `openDoor`, a win), the bot walks to
@@ -1505,14 +1682,20 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
 Measured on the offline planner's worlds (software GL, one core): the coin
 hunt (8 coins) verifies in about 2 s of wall time (22 s of play), the key-and-
 door vault in 4 s, a 6-room apartment walkthrough in 3 s (20 s of walking).
+On generated forests with a carved stream, a footbridge and a wolf pack, which
+version 1 of the bot ran to the 240 s simulated cap, version 2 wins in 26.5 to
+42.9 s of play and 2.6 to 3.6 s of wall time (Node 24, headless;
+`scripts/bot-probe.ts`, REVIEW_LOG "Playtest bot on generated worlds").
 
-Known limits: moving platforms and lifts are planned on their starting pose;
+Known limits: vertical lifts are ridden (§27), other moving platforms are planned on their starting pose; the bot does
+not evade during jumps, drops or lift rides, and enemies faster than the player still need the slower-enemy repair;
+the 240 s simulated cap is not scaled by world size;
 pressure plates that must stay pressed are visited, not held; custom scripts
 run but their goals are not derived; vehicles, block worlds and avatar
 entities are `unsupported`; narrow snug doorways (clear width within a
 centimetre of the player's body) are crossed at a crawl and can still fail.
 
-## 24. The AI is the brain: plan first, place by tools, review with eyes
+## 26. The AI is the brain: plan first, place by tools, review with eyes
 
 For buildings (and, through the same interfaces, worlds) the connected assistant (the user's Codex or
 Claude Code login first, any LLM provider otherwise) is the decision-maker at every step. Deterministic code
@@ -1579,7 +1762,7 @@ prompt ─▶ design_plan  ─▶ shell built at the planned positions, read bac
 Security: every model output (plans, tool inputs, review replies) is zod-validated with size caps, ids are
 slugs, numbers are finite and bounded, objects are checked for prototype keys, and nothing is evaluated.
 
-## 25. Realistic, genuinely playable games
+## 27. Realistic, genuinely playable games
 
 The game side of the framework follows the same rule as the architecture side: the assistant decides, the code
 measures. Four pieces make a game that looks like a game and plays to the end.
@@ -1598,10 +1781,13 @@ prompt ─▶ plan (assistant) ─▶ place_level_items / query_level ─▶ wor
   gap in metres and the nearest standable spot. The studio and the CLI hand the tool runner to `WorldAgent`
   (`AgentOptions.levelTools`); the measuring code loads on first use. `scripts` and the tests exercise it with the
   scripted-model loop (`packages/playtest/test/level-agent.test.ts`).
-- **Review for levels.** The review loop of section 24 runs on a game too: `query_level review` measures the win
+- **Review for levels.** The review loop of section 26 runs on a game too: `query_level review` measures the win
   condition, the spawn, every objective's reach and the pacing, names the cameras (the whole level from above, the
   player's first view, the worst problem up close), the studio renders them, and the assistant fixes with the same
-  tools until it approves or progress stalls. Scenery with no gameplay is left alone.
+  tools until it approves or progress stalls. Scenery with no gameplay is left alone. The review includes a
+  `floating` finding for objects that should rest on something but hover (§35): an error from 0.5 m, a warning
+  below that or over open air, with the gap, what is below and the fix; `query_level {op:"grounding"}` lists every
+  hovering object.
 - **The bot plays what people play.** It rides lifts, presses a key where a rule chain needs it (the Kyoto bell), plays
   goals a rule switches on later (the Lantern Isles summit), crosses low-gravity gaps and maps levels of 300 m. Every
   shipped game that the bot can drive is played to its win and sealed in `apps/studio/test/gamesVerified.test.ts`,
@@ -1615,8 +1801,8 @@ prompt ─▶ plan (assistant) ─▶ place_level_items / query_level ─▶ wor
   cluster, needle spray, blade tuft or fern frond (procedural, alpha-tested, so it needs no sorting and casts leaf
   shadows), with soft crown normals and vertex colours that darken toward the inside of a crown. A broadleaf tree is
   about 3 k triangles instead of 11 k of loose leaves. `tree-broadleaf`, `tree-birch`, `tree-spruce`, `shrub`,
-  `fern`, `meadow-grass` and `boulder` are in the generator catalog; a request that says realistic gets them in
-  place of the stylised parts.
+  `fern`, `meadow-grass` and `boulder` are in the generator catalog; generated worlds use them in place of the
+  stylised parts unless the request asks for a stylised look (§34).
 - **Game feel.** The player's controller accelerates and stops firmly, forgives a ledge for 0.11 s, buffers a jump
   for 0.12 s and hops lower when jump is released early; the bot and the replay verifier keep the instant controller,
   so proofs stay comparable.
@@ -1638,15 +1824,19 @@ terrain makes about 28 texture reads per pixel, so software rasterisers and low-
 are walked by the headless bots and the sealed replay, not by the real-time driver; Blockfall, Kart Canyon and
 Sakura River are driven by their own hand-written bots.
 
-## 25. A room from a photograph: reconstruct, never template
+## 28. A room from a photograph: reconstruct, never template
 
 A picture of a room with a prompt about it ("make this bedroom in 3D", or the composer's "Recreate this image")
 rebuilds that room. There is no preset theme in this path and no generic room with decor laid on top: the photo
-is the only source of layout, and everything the model decides goes through the section 24 tools.
+is the only source of layout, and everything the model decides goes through the section 26 tools.
 
 ```
-photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, openings, pieces with wall-relative
-                          positions, light, palette, ASSUMPTIONS with confidence and an "adjust" sentence)
+photo ─▶ N independent reads (default 3, in parallel, stateless): describe_room (zod: footprint, camera, walls,
+                          openings, pieces with wall-relative positions, light, palette, ASSUMPTIONS with
+                          confidence and an "adjust" sentence)
+      ─▶ clusterReads + consensusDescription: one frame, matched pieces, majority, medians, colour medoid
+      ─▶ reconcile_room (only when something is contested): the photo + the contested clusters, add / drop with reasons
+      ─▶ buildChecklist(consensus)
       ─▶ deriveBuild ─▶ design_plan (shell only: exactly the described rectangle and openings, assumed door
                           behind the camera when none is visible)
                        ─▶ place_items in phases: floor pieces large to small, surface pieces, wall pieces
@@ -1661,6 +1851,25 @@ photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, o
       ─▶ verification, final message with the measured score and the assumptions as one-tap chips
 ```
 
+- **A steady reading of the photo.** One reading of the photo is the description, the checklist and the yardstick
+  of a run, and the loop cannot repair the description it is measured against; two reads of the same photo can put
+  the window on different walls. So the photo is read `reads` times (default 3; the studio uses 1 on a paid key),
+  each read an independent, stateless call at temperature 0 with its own seed where the API takes them, and the
+  reads are merged deterministically (`@aether/arch/photo` `consensus.ts`, independent of the order they arrive
+  in). `clusterReads` sorts the reads canonically and picks as anchor the read that agrees most with the others,
+  turns every read into the anchor's frame by quarter turns (things matched by their photo box vote with their
+  walls; the camera heading breaks ties), then matches openings and pieces within a kind class (a nightstand and a
+  "side table" read as a coffee table are one piece) by photo box or by plan position as a fraction of the room.
+  `consensusDescription` keeps the clusters a strict majority saw; kind, placement mode, wall and references are
+  decided by majority, positions are the median fraction of the wall or room, sizes the median, colours the
+  CIEDE2000 medoid (a colour some read actually gave); ids are canonical (`bed-1`, `art-2`, `window-1`, in photo
+  order), and a piece whose host was dropped is dropped too. The result is validated and repaired by
+  `parseRoomDescription`. When some cluster is contested (below the majority, or kept without every read), one
+  `reconcile_room` call sees the photo and only those clusters and may add one some read saw or drop a kept,
+  non-unanimous one, each with a reason; anything else is ignored and the majority stands. The same consensus
+  always gives the same checklist. On the hotel bedroom this made the reading steady (the same 13 pieces and 18
+  checklist items in every run, measured fidelity spread 0.048 → 0.008); the final pass rate was not steadier on
+  that sample (REVIEW_LOG, "a steady reading of the photo").
 - **Checklist before building.** `buildChecklist` lists what the photo shows (room proportions, wall colour, floor,
   cornice, each opening, each piece, light) with the structural items (shell, windows, the main piece of furniture)
   marked. The judge answers pass or fail per id against the PHOTO; unjudged ids fail; a structural failure is
@@ -1668,22 +1877,37 @@ photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, o
 - **Honest numbers.** The final score is always the verdict of a render that was actually judged: when the last
   round changed the room, it is judged once more before it is kept.
 - **Steady numbers.** A single vision call is a noisy judge (the same room passes an item in one call and fails it
-  in the next), so progress is not decided on its absolute score. The deterministic `measureFidelity` is a floor (a
-  round may not lower it, nor any of openings, inventory, clearance); the panel's median damps one wavering answer;
-  and from the second look the judges compare the new render with the accepted one side by side, which is far less
-  noisy than comparing two absolute scores. Stalls are counted on that combined signal (no accepted, measurable
-  progress for `stallRounds` rounds). With `judges: 0` the model doing the fixes judges, as before, and the gate
-  compares 0.5 × pass rate + 0.5 × the sub-score with the best round.
+  in the next), so progress is not decided on its absolute score. Each round is first measured: `measureFidelity`
+  (`packages/arch/src/photo/fidelity.ts`) compares the built room with the description, deterministically, on
+  framing (weight 0.25), openings (0.15: per wall, kind, centre, width, sill and head), inventory (0.15: F1, a
+  re-placed piece of the same kind counts 0.8), placement (0.1: plan and height error, zero at 1.2 m), pixel
+  similarity (0.1), region colour (0.1: ΔE inside each described box, photo against graded render), sizes (0.05),
+  materials (0.05: CIEDE2000 per visible wall, floor, ceiling and colour param) and clearance (0.05); measures
+  that cannot be taken are left out and the rest renormalised. Then a judge panel (`photo/judge.ts`) of `judges`
+  stateless critic calls (default 3; the studio uses 1 on a paid key) scores each checklist item 0..4 with
+  evidence (a verdict without evidence is dropped) on the clean photo-camera view, with a fixed system prompt and
+  rubric, temperature 0 and a seed per seat where the API takes them; the median per item damps one wavering
+  answer. From the second look each seat sees the accepted render and the new one blind as A/B (order
+  alternating by seat), scores both and votes. `decideRound` accepts the new state only when the sub-score falls
+  by at most 0.015, no structural measure (openings, inventory, clearance) by more than 0.04, and the judges
+  prefer it (on a tie: the sub-score rises 0.005 or the median judge score 0.03); a rejected state is reverted
+  before the fixing model sees the round, and it is told why. Comparing two renders side by side is far less
+  noisy than comparing two absolute scores. `ProgressTracker` counts a stall on no accepted, measurable progress
+  for `stallRounds` rounds. With `judges: 0`, or when no judge answers, the model doing the fixes judges and the
+  gate compares 0.5 × pass rate + 0.5 × the sub-score with the best round.
 - **Photo estimates are rarely exact**, so `fitOpening` brings a window under the ceiling and inside its wall (and says
   so) rather than losing the run to a refused shell; a shell the builder still refuses goes back to the model once with
   the reason.
 - **No vision model, no guess.** The offline planner, a connection without image input, or a chain that falls back
   to the offline planner mid-run builds nothing: the user gets the palette and brightness read from the picture,
   a plain statement that the layout needs a connected assistant, and an offer to build from words.
-- **Cost.** One analysis call (about 2 more when a description is refused), then per compare round one call of the
-  model that fixes plus N parallel judge calls (3 on subscriptions, 1 on paid keys), and one final judgement when needed. Rounds are
-  capped (6 on subscription backends, 4 on paid keys) and stop early on approval or stall. Provider failures are
-  shown with the provider's own reason; the studio's connection chain moves to the user's other assistant first.
+- **Cost and rounds.** `reads` parallel analysis calls (3 on subscriptions, 1 on paid keys; about 2 more when a
+  description is refused) and at most one reconciliation call, then per compare round one call of the model that
+  fixes plus `judges` parallel judge calls (3 on subscriptions, 1 on paid keys), and one final judgement when
+  needed. On a subscription backend there is no round cap: the loop ends when every item matches, the model stops
+  with nothing to change, or progress stalls; `PHOTO_ROUNDS_CEILING` (200) only stops a runaway. Paid keys are
+  capped at 10 rounds. Provider failures are shown with the provider's own reason; the studio's connection chain
+  moves to the user's other assistant first.
 - **Editing afterwards.** The assumptions are listed as chips ("make the room 4.2 m wide"); a tap sends the sentence
   through the ordinary minimal-patch edit path.
 - **Second pass (engine gaps that repeated).** Real-world priors repair an implausible description before it is built
@@ -1701,7 +1925,7 @@ photo ─▶ vision model ─▶ describe_room (zod: footprint, camera, walls, o
   get worse are rolled back.
 
 
-## 25. Architecture realism and interactive rooms
+## 29. Architecture realism and interactive rooms
 
 What a generated building is made of, and what you can do in it. (Contracts: `docs/CONTRACTS.md`, "Architecture realism and interactive rooms".)
 
@@ -1730,11 +1954,11 @@ walls rise out of it as an animated section cut while the camera descends from o
 from every room, a papered library with a panelled dado, a panelled living room, a damask-papered master bedroom, golden hour, an olive grove, cypress
 drive and the serra behind. Flat roofs stop at the courtyard.
 
-**Known limits.** (The blotchy ceiling patches this section used to list were a material bug, fixed: see section 27.) Terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
+**Known limits.** (The blotchy ceiling patches this section used to list were a material bug, fixed: see section 30.) Terrain and far hills are the plain heightfield generators; vegetation uses procedural foliage masses, not alpha-textured
 cards; seats are sit-and-stand only (no pose animation for the body in third person); physical doors are not pushed by thrown objects hard enough
 to open them (the motor wins over a book).
 
-## 27. Interior and architecture look
+## 30. Interior and architecture look
 
 **The blotchy ceilings: root cause.** Not the sun, the shadow map, AO, TAA, reflection probes or the HDRI (each was switched off in isolation: the blotches stayed).
 They appeared only when point lights stood near the ceiling and vanished when the ceiling's material lost its normal map. The `paint` finish carried a
@@ -1752,6 +1976,27 @@ read-back. All three cost a few uniforms and work on every tier including the so
 1.2): half resolution speckled walls. (5) Screen-space GI (`gi`, three's SSGI) is wired as an opt-in effect, off in every tier: its single bounce is noisy
 (visible grain on ceilings even after temporal AA), and the analytic terms above give most of the benefit.
 
+**Baked light volume.** The terms above light a room the same everywhere: a corridor without windows is as bright as a
+sunlit bay. Worlds with a building therefore also bake a light volume (`environment/light-volume.ts`, driven by
+`view/light-volume-controller.ts`), the probe-grid technique game engines use. Probes every 0.45 m (coarser when the
+building would need more than 22 000, at most 48 × 28 × 48) trace 48 rays each against the building's shell (walls,
+slabs, ceilings, roof, stairs, doors, windows) and box proxies of the furniture, through a small BVH over world-space
+triangles, and store two first-order spherical-harmonic fields: the cosine-weighted share of open sky a surface with a
+given normal would see, and the irradiance that reaches it after bouncing (sun patches on the floor, the sunlit ground
+outside, sky light on window reveals, lamps on the walls, reflected by the surfaces' own colours; six bounce passes).
+The bake is pure and deterministic (fixed ray sets and order, so slicing does not change the bytes); it runs in a
+module worker once the building has been still for 0.6 s, or in 6 ms slices between frames without one, and the
+previous volume stays on screen until the new one is complete. The result is one half-float RGBA 3D texture
+allocated once, so a rebake neither reallocates it nor recompiles a material. A light node (`gpu/light-volume-node.ts`,
+same code on WebGPU and WebGL2) reads it half a probe out along each lit surface's normal, multiplies the ambient
+occlusion of the sky hemisphere and image light by the visibility (floored at 5 %) and adds the bounce; outside the
+volume's box the effect fades out over 1.2 m. With a volume the eye exposure comes from the volume sampled at the
+camera on the CPU (no pixel read-back) and replaces the ceiling-based exposure boost and image-light scaling; the sun's shadow map is fitted to the
+building while the eye is inside, so window patches have crisp edges; the post tiers apply one exposure (in the tone
+mapping, not again in the grade); the grade warms slightly inside a lit building; architectural lamps fade from full at
+night toward 5 % as the sun rises from −4 to 10 degrees and switch off once their factor drops below 0.2, that is,
+soon after sunrise. The volume is off in low-memory mode.
+
 **Hero shots.** The default framing of a building is a 21 degree three-quarter view from the garden side (toward the terrace or pool, else the entrance), swung
 aside by the candidate azimuth with the clearest sight line to the house (no tree in the foreground; `pickClearAzimuth`). Backdrop scenery is excluded from
 framing as before, so the lake, the mountains and the skyline are in the picture.
@@ -1762,7 +2007,7 @@ sight line within 110 degrees of straight ahead: long, through an archway, endin
 **Flagships.** Dusk House by the Lake uses the leaf-card spruce and broadleaf generators and meadow grass, lighter fog so the mountains read; Skyline Penthouse
 has 64 towers 105 to 230 m away, 60 to 115 m high, rising above the deck.
 
-## 26. Honest offline mode, failure states and people with bodies (`qafix`)
+## 31. Honest offline mode, failure states and people with bodies (`qafix`)
 
 - **Offline honesty.** The offline planner answers a prompt it does not map with a plain "I did not understand" message, the limits of offline mode, examples and the connect-AI action, and builds nothing (`notUnderstood` in `providers/mock/planner.ts`). It reports quantities it cannot honour ("1000 trees") instead of silently ignoring them. Offline turns show no model calls or token counts, and a check or quality claim with no run behind it gets a note (`packages/agent/src/honesty.ts`).
 - **Failure states.** `components/ErrorBoundary.tsx` wraps the app, the editor panels and every lazy chunk: a failed chunk load (offline) shows a friendly state with Retry instead of a white page. Every malformed share link ends on the same "this world link can't be opened" page.
@@ -1773,7 +2018,7 @@ has 64 towers 105 to 230 m away, 60 to 115 m high, rising above the deck.
 - **Imports.** An imported JSON file must carry at least one world field; `{"hello":"world"}` is refused instead of becoming an empty world.
 - **Memory.** `npm run e2e:switch` opens seven worlds in one tab for several rounds, plays and stops each and compares the JS heap after a forced collection at the home page.
 
-## 28. Outdoor look, part A: a physical sky, vegetation variety and natural cover (`outdoora`)
+## 32. Outdoor look, part A: a physical sky, vegetation variety and natural cover (`outdoora`)
 
 **Sky.** `environment/atmosphere.ts` integrates single scattering (Rayleigh, Mie, and a thin ozone layer, which is what turns a dusk zenith deep blue instead of
 green) along each view ray through a spherical atmosphere, with the sunlight attenuated on its way in. It runs on the CPU, per dome vertex (96 x 48), only when the
@@ -1800,7 +2045,7 @@ Wind sway, bark, leaf shadows and the soft crown normals were already there.
 the dome, the cumulus deck, sun, moon and stars stay, so the sky keeps its physical colours everywhere. The layered terrain was already off on that tier.
 God rays through the shadow map remain the ultra tier's (`effects.shafts`).
 
-## 29. Water, animals and ambient life (`outdoorb`)
+## 33. Water, animals and ambient life (`outdoorb`)
 
 Water is a shader, not a blue plane. `materials/water.ts` (TSL, so one description runs on WebGPU and WebGL2) turns the `water` preset into: four crossing waves whose heading and steepness
 come from the scale class (`waterKind`: puddle, pond, stream, river, lake, sea) and from `environment.wind`; a scrolling ripple normal map; expanding rings where something enters (the
@@ -1819,3 +2064,66 @@ ears, antlers, wings, fins and tails are rigid plates on bones; clips are bone r
 Life is placed with the level tools: the assistant names a species, a count and an area (`place_level_items` role `life`), `planLife` (core) scatters candidates and the host measures
 each (ground slope, water above, clear air, water depth and distance to the bank) before accepting it. Bundled worlds use the same planner through a terrain sampler
 (`showcase/life.ts`) with colliders off, so animals never block the verified route.
+
+## 34. Generated worlds: land, water and hills by default
+
+The flagships are hand-composed plans; a world built from a prompt goes through the same parts, so the defaults are what
+decide how it looks. (Contracts: `docs/CONTRACTS.md`, "Generated worlds look real by default".)
+
+- **Realistic unless asked otherwise.** The offline planner builds with the realistic parts (leaf-card trees, shrubs,
+  meadow grass, boulders) unless the request asks for a stylised look (low-poly, cartoon, painterly, voxel …;
+  `STYLISED_RE` in `providers/mock/realistic.ts`), and edits follow the world, so a stylised world stays stylised. For a
+  connected model the same exchange happens in the executor: with `ExecutorContext.realistic` (set from the request and
+  the world), `apply_patches` builds the realistic stand-ins for low-poly nature generators and says so in its result.
+- **Land, not a plane.** Natural settings stand on a landscape (`naturalGround` in `providers/mock/decor.ts`): the estate
+  terrain (variant 5) with a level plot round the scene, swells, wooded hills, leaf-card woods and clumped ground cover.
+  `Builder.ground` lifts everything placed afterwards onto it, and scatter drapes over it and keeps out of water. A desert
+  carves a stratified sandstone canyon instead.
+- **Water and paths.** The estate terrain can carve a stream across the land (`streamHalf`, `streamZ`, `streamBend`,
+  `streamDepth`; its centre line is `streamCourse` in `@aether/core`) with flowing water and a footbridge where a trail
+  crosses it, or a lake basin. Trails and lanes are ribbons draped over the ground with tapered ends (`groundRibbon`), a
+  village square a ragged paved patch.
+- **The model's tool: `shape_land`** (zod `LandInput` in `packages/agent/src/land.ts`, every number bounded, at most 64
+  path points). `{op:"land"}` builds terrain with relief, an optional stream or lake, woods and ground cover in one undo
+  step, and replaces the land it built before (everything it adds is tagged `land`); `{op:"path"}` drapes a trail or an
+  even road over the world's terrain; `{op:"mound"}` raises a natural hill with an optional level summit (the built-in
+  `mound` generator: grassy slopes easing into the ground, rock where it is steep, an exact heightfield collider), set on
+  the ground and kept when the land is rebuilt. The tool result names the plot height, the stream's water level and how
+  to bridge it. When `apply_patches` sees water added as a plain primitive box, disc or plane, or a primitive named as a
+  hill, its result notes the `shape_land` call to use instead.
+- **Houses.** The building review suggests `dress_room` for a furnished but bare room and `set_site` for a house on the
+  bare plane (`room_sparse`, `no_grounds`; information only, §18).
+
+Known limits: canyon walls still show 1.4 m facets from a distance and far hills are smooth; the ground between scatter
+clumps is a tinted surface; the model does not always use the tools it is told about on its first pass (the review
+notes bring it back to them).
+
+## 35. What belongs to an object, and what rests on what
+
+Two questions every edit and every check needs answered, both computed from the document.
+
+**What belongs to an object** (`@aether/core` `dependents.ts`). A shrine's light, its goal zone and its plinth are not
+always its children, yet "move the shrine" must move them and a repair must not take the goal away from it.
+`Entity.attachedTo` (optional) names an owner without parenting: the entity keeps its own world transform but moves
+with its owner, `rename` rewrites the reference and a missing owner is ignored. `dependencyIndex(world)` finds owners
+in that order of evidence: `attachedTo`; then a name or id that is the owner's plus a part word ("Shrine goal",
+"shrine-light", "Shrine platform"); then, for a shapeless light or an invisible, sensor or rule zone, the smallest
+object whose footprint contains it (the shrine, not the hill under it). `carryPatches(before, after, moved)` gives the
+same rigid move to the dependents of what moved (a turn swings them round the owner). Users of it: the small-edit guard
+puts a target's dependents in scope; `apply_patches`, `place_level_items` moves and local moves carry dependents the
+batch does not place itself; a local remove takes the object's own lights and zones with it; playtest self-repair
+never moves an objective off its owner. The system prompt documents `attachedTo`.
+
+**What rests on what** (`@aether/playtest/level` `grounding.ts`). A bounding-box test calls a torii supported when its
+box is above a hill whose surface there is 2 m lower. `measureGrounding` instead casts rays (up to 5 per object, the
+largest 400 objects) under each object's footprint against the surfaces as they are drawn: `surfaceWorld(world)` gives
+every visible solid-looking shape a static collider that follows its rendered geometry, whether or not it has a body,
+so a hill without physics still holds up its shrine and a collider smaller than its mesh does not make what rests on
+the mesh look like it hovers. The object's own parts are left out and water surfaces count as support. The smallest gap
+over the footprint is the hover height (an object on a slope touches at one corner); gaps up to 0.12 m are slack.
+Things meant to be in the air are left alone: tagged floating, flying, hanging, cloud, sky or platform; bobbing,
+spinning, orbiting, collectible, goal and patrolling things; sensors, moving bodies, characters, lights, building parts
+and terrain; and anything a solid touches from the side or from above (a banner on a tower, a rock under a ledge, a
+bridge deck held by its ramps). The level review turns the result into `floating` findings (§27), and
+`place_level_items` and local "move X onto Y" edits set the moved object's bottom on the measured surface (measured
+without the object itself) in the same undo step.

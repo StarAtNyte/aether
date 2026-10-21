@@ -16,7 +16,7 @@ what is answering:
 - **Your own API key** (Anthropic, OpenAI, OpenRouter, Google Gemini). The
   browser calls the provider directly. A per-session call cap protects your
   bill.
-- **Offline planner.** Always available, instant and free. It builds about 18
+- **Offline planner.** Always available, instant and free. It builds 21
   themes and places 40+ library objects by name, in English only. When it
   cannot do something, it says so instead of guessing.
 

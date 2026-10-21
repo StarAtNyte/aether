@@ -9,20 +9,33 @@ Monorepo: npm workspaces, TypeScript (strict), ESM, source-level exports
 the studio and `tsx` runs the server). Tests: Vitest, `packages/<pkg>/test/*.test.ts`,
 run from the repo root with `npx vitest run packages/<pkg>`.
 
-Dependency graph (no cycles allowed):
+Dependency graph (no cycles allowed; each package's `@aether/*` dependencies as
+declared in its `package.json`):
 
 ```
-core  <- procgen <- render <- studio
-core  <- physics <-------------- studio
-core  <- logic   <-------------- studio
-core  <- agent   <- server
-                 <-------------- studio
+core      ← (none)
+assets    ← core
+voxel     ← core
+logic     ← core, assets
+arch      ← core, assets
+procgen   ← core, arch
+render    ← core, assets, arch, procgen
+physics   ← core, assets, arch, logic, procgen
+playtest  ← core, arch, logic, physics
+verifier  ← core, logic, physics, playtest, procgen
+agent     ← core, assets, arch, procgen
+bridge    ← core, agent, procgen                     (apps/bridge)
+server    ← core, assets, agent, bridge              (apps/server)
+cli       ← core, assets, arch, agent, logic, physics, procgen, bridge, server   (apps/cli)
+studio    ← every package above except bridge and server                         (apps/studio)
 ```
 
-`physics`, `logic`, `procgen` and `agent` MUST NOT import `three` or the DOM
-(except `procgen/sandbox` and `agent/providers/http` which may use Worker/fetch),
-so they run headless in Node for tests and in Web Workers.
+`core`, `procgen`, `physics`, `logic`, `arch`, `playtest`, `verifier`, `voxel`
+and `agent` MUST NOT import `three` or the DOM (except `procgen/sandbox` and
+`agent/providers/http` which may use Worker/fetch), so they run headless in
+Node for tests and in Web Workers.
 `physics` may import `procgen` (builtin generators) to derive default procedural colliders headlessly.
+`agent` does not import `playtest`: the level tools reach it as `AgentOptions.levelTools`.
 
 ---
 
@@ -113,11 +126,12 @@ export type ColliderDesc =
 export interface GeneratorOutput { parts: MeshPart[]; colliders: ColliderDesc[]; bounds: { min: Vec3; max: Vec3 }; stats: { triangles: number; ms: number }; }
 
 export interface BuiltinGenerator {
-  id: string; description: string; category: 'nature' | 'architecture' | 'props' | 'vehicles' | 'terrain' | 'fx';
+  id: string; description: string; category: 'nature' | 'architecture' | 'props' | 'vehicles' | 'terrain' | 'fx' | 'interior';
   params: Record<string, ParamSpec>;
   generate(params: Record<string, Json>, api: GeneratorApi): GeneratorOutput;
 }
-export const BUILTIN_GENERATORS: Record<string, BuiltinGenerator>;     // ≥ 20 high-quality generators
+export const BUILTIN_GENERATORS: Record<string, BuiltinGenerator>;     // 102 today (terrain 4, nature 17, architecture 22, props 11, vehicles 2, fx 3, interior 43)
+export const ARCH_GENERATOR_IDS: ReadonlySet<string>;                  // the 55 arch-* / furn-* parts the building compiler uses
 export function catalog(): Array<{ id: string; description: string; category: string; params: Record<string, ParamSpec> }>; // for agent prompt
 
 // The API surface handed to BOTH built-in and LLM-written generators (keep it small, typed, LLM-friendly)
@@ -492,7 +506,7 @@ export function createAnthropicProvider(opts: { apiKey: string; models: { planne
 export function createOpenAIProvider(opts: { apiKey: string; models: { planner: string; coder: string; critic: string }; baseUrl?: string; fetch?: typeof fetch }): Provider;     // raw fetch to Responses API (server, or browser with the user's own key)
 export function createChatCompletionsProvider(opts: { name: string; apiKey: string; baseUrl: string /* https, or loopback http */; models: { planner: string; coder: string; critic: string }; fetch?: typeof fetch; headers?: Record<string, string> }): Provider;  // OpenAI-compatible `POST {baseUrl}/chat/completions` with function tools (OpenRouter, Gemini's OpenAI endpoint); tool calls without ids are numbered `call_<index>`
 export function createHttpProvider(opts: { endpoint: string; fetch?: typeof fetch }): Provider;                      // browser -> our server proxy
-export function createMockProvider(opts?: { library?: MockLibraryItem[] }): Provider;   // deterministic offline planner: keyword → world templates (MUST produce good worlds for ~15 themes; used as fallback + in tests); `library` lets it place generator-library objects by name
+export function createMockProvider(opts?: { library?: MockLibraryItem[] }): Provider;   // deterministic offline planner: keyword → world plans (21 themes and activities in `ALL_THEMES`, buildings, the flagship plans; used as fallback + in tests); `library` lets it place generator-library objects by name
 export interface MockLibraryItem { id: string; keywords: readonly string[]; size: readonly [number, number, number] }
 
 export type AgentEvent =
@@ -503,6 +517,8 @@ export type AgentEvent =
   | { type: 'verify'; passed: boolean; summary: string; report: unknown }
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
+  // additive, documented in their sections below: 'review' (the review loop), 'photo' (room from a photograph),
+  // 'edit' | 'clarify' | 'history' | 'memory' (fine edits)
   | { type: 'error'; text: string }
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] /* models that answered, first use order */ } };
 
@@ -564,8 +580,22 @@ gets `prompt` (old images marked "no longer attached"); a resumed one gets
 `resumeInput(...)`: the new part without the echo of the model's own last reply
 (the thread holds the real one) and only the images it has not seen.
 
+Usage: `CompletionResponse.usage.inputTokens` is everything one call read and
+`cachedInputTokens` the part served from the prompt cache; the Anthropic
+(`cache_read_input_tokens`), OpenAI Responses, Chat Completions, Codex and
+Claude Code backends report it, and `done` sums it per run. OpenAI Responses
+requests carry `prompt_cache_key: "aether-<hash of the system prompt>"`.
+
+Naming: the system prompt asks the model to title a new world with
+`{"op":"setMeta","name"}` (two to four words). Until it does, the studio names
+a home-prompt project with `projectNameFromPrompt(prompt)`
+(`apps/studio/src/projects/create.ts`: the first clause, at most six words,
+cut before a connective or a dangling word).
+
 ```ts
-export const AGENT_TOOLS: ToolDef[];        // apply_patches, write_generator, write_script, inspect, run_verification, finish
+export const AGENT_TOOLS: ToolDef[];        // apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene,
+                                            // write_generator, write_script, request_asset, search_assets, inspect, run_verification,
+                                            // shape_land, finish (LEVEL_TOOLS query_level / place_level_items are appended with levelTools)
 export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
 export function buildCompactSystemPrompt(catalogs: AgentCatalogs): string;   // ≈ 1.2k tokens; catalog ids only, one example
@@ -1422,6 +1452,9 @@ stair-fit.ts: stairShape(stair, rise) / checkStair(plan, level, stair, doors?, o
   // straight before L before U, 1 m before 0.9 m wide, against a wall in 10 cm steps; design_plan stairs may be {room}
   // (fitted, reported as "Stairs: …") and query_scene {q:"stairs", level?, room?, shape?, heading?, width?} answers with
   // the riser maths and a ready add_stairs op
+  // stairwell balustrade (compile.ts): the edge nearest to where the top step comes out stays open (for an L stair
+  // that is not the edge facing the arrival direction), panels stand 5 cm back from the opening so the flight keeps
+  // its width; a saved world keeps a railing compiled before this until its building is re-compiled
 checkBuilding(world, id, clearance=0.8) / checkBuildings(world, '*') → BuildingReport { passed, rooms, reachable, doors, doorsClear, issues }
   // 5 cm nav grid per storey from the document (walls, door linings, floor furniture; walkway inflation); flood fill
   // from the entrance through doorways and up stairs; door swing discs free of furniture; furniture grounded, no overlaps
@@ -1483,7 +1516,7 @@ WorldRenderer.onQualityChange: ((q) => void) | null   // fired when the effectiv
 createPostPipeline(renderer, scene, camera, bloom, quality = 'standard')   // PostPipeline.quality
 SceneSync.restoreNode(id)            // drop one node's runtime overrides (view modes undo their own)
 SceneSync.setArchLampScale(scale)    // architectural lamps (arch.role 'light') dimmed in daylight; off below LAMP_CUTOFF (0.2)
-daylightLampFactor(sunElevationDeg)  // 1 at night → DAYLIGHT_LAMP_FACTOR (0.14) in full daylight (smoothstep, −3°..22°)
+daylightLampFactor(sunElevationDeg)  // 1 at night → DAYLIGHT_LAMP_FACTOR (0.05) in full daylight (smoothstep over DAYLIGHT_FADE −4°..10°)
 StaticMerges                         // building parts (static `arch` entities without behaviours) merged per storey and
                                      // material (≥ MIN_MERGE 3 meshes, ≤ 400 k vertices per buffer) under the storey object;
                                      // members stay on BATCHED_LAYER (pickable) and are evicted when they move, change
@@ -1922,7 +1955,7 @@ Everything here is additive; the World IR is unchanged.
   (`/templates/<slug>.webp`) and `templateWorldUrl(slug)`
   (`/templates/worlds/<slug>.json`). `TemplateKind` adds `'architecture'`.
 - `src/showcase/load.ts` — `loadTemplateWorld(slug, fetch?, timeoutMs?)`
-  (slug pattern ≤ 64 chars, 20 s deadline over request and body, streamed
+  (slug pattern ≤ 64 chars, 20 s time limit over request and body, streamed
   body cap = the import limit, then `parseWorldImport`) and
   `loadTemplateThumbnail(slug, …)` (WebP magic + thumbnail budget); both
   never throw.
@@ -2262,14 +2295,38 @@ broken. A new workspace package; no new third-party dependency.
   unreachable objective first gets a flight of steps (risers 0.25 m) or blocks
   to jump (0.6 m) up to what it stands on, kept only when the bot then reaches
   it; an objective that belongs to something (`dependencyIndex`) is never moved
-  off it, and the sentence says so when nothing helped.
+  off it, and the sentence says so when nothing helped. Enemies that bring the
+  player down before the game can be won chase more slowly and hit softer, in a
+  few gentler steps, each played by the bot first; only a step the bot then
+  wins is applied (named enemies; guard, predator and sentinel archetypes).
+  The studio runs at most 3 rounds (`MAX_REPAIR_ROUNDS` in
+  `engine/playtest/controller.ts`) and re-runs the physics checks on the
+  repaired world.
 - `deriveGoals(world)` / `deriveWalkGoals(world)` — objectives (pickups that
   count, goals, winning zones, rooms), doors with their openers, hazards,
   movers. A pickup is *required* when its state key is (transitively) read by a
   winning rule or a door.
 - `NavGraph` — navigation graph sampled from the physics world (grid of
   downward rays, capsule fit test, walk / jump / drop edges, jumps validated by
-  simulating the real controller, Dijkstra on typed arrays).
+  simulating the real controller, Dijkstra on typed arrays, or A* with
+  `toward` target discs and an estimate scaled to stay a lower bound).
+- Bot behaviour, `BOT_VERSION` 2 (`proof.ts`; bumped when a change can change a
+  verdict, recorded as the proof's `bot`): the asset catalog is loaded before
+  goals are read (`ensureAssetCatalog`), so library pickups and enemies have
+  their real size in the first run of a process too; the progress watchdog
+  counts ground movement only; standing more than 1 m above the path's surface
+  re-plans from there (travel result `lost`, counted like a stuck); a walk
+  over 4 × its length at full speed + 10 s of simulated time counts as stuck
+  and an objective over 4 × its walk + 60 s is given up with the reason;
+  hostile characters are priced into the route (near an enemy, inside its
+  reach, along its patrol), the bot steps aside when one closes in, re-plans
+  every 0.5 s while hunted, waits up to 10 s for a gap by a guarded pickup,
+  and after 20 s of waiting or stepping aside on one objective runs for it;
+  jumps and drops never cross a hazard; a presence zone crossed early is
+  walked back to once everything else is done. `report.stats.evasions` counts
+  the side steps. `scripts/bot-probe.ts` runs the bot headless on world files,
+  `prompt:` (offline planner) or `plan:` (a building plan) and prints wall and
+  simulated time, the nav grid, searches and evasions.
 - `toProof(report)`, `parseProof(raw)`, `proofTrace(proof)`, `hashWorld(world)`,
   `proofFreshness`, `proofIsGreen`, `playtestKindOf(world)` — the bot's own
   compact proof (subpath `@aether/playtest/proof`, dependency-light).
@@ -2369,6 +2426,19 @@ room with a state-locked door (`keys`), a golden key and a treasure goal.
   (re-plays the bot, `--no-bot` skips).
 - Commit label of a repair: `Playtest fix: <sentence>`, source `agent`; every repair
   is one undo step.
+- Session persistence (`apps/studio/src/projects/session.ts`, saved with the
+  autosave): `ProjectSession` (zod `SessionWire`, `v: 1`) = `{ history?, playtest?:
+  { proof, sentence, repairs ≤ 6 }, verify?: { key, status, summary, results ≤ 200,
+  diagnostics ≤ 60, ms } }`. `encodeSession(input, maxChars = MAX_SESSION_CHARS
+  1 500 000)` keeps up to `HISTORY_BACK` 40 undo and `HISTORY_AHEAD` 10 redo steps of
+  the active branch (a proof is kept only while it describes the head world),
+  halving the undo window until the session fits and then leaving the history
+  out; null only when even the verdicts do not fit. `decodeSession(raw, world) → RestoredSession` re-validates
+  (`History.fromJSON` replays every patch, `parseProof` checks the proof) and keeps
+  the history only when its head is the saved world and each verdict only when it
+  was made for that world's content (`contentKey(world)`, `hashWorld`).
+  `renameSession(raw, world, name)` rewrites the snapshot and title changes for a
+  project renamed from the home page.
 ## Fine edits: small, precise changes by prompt (+ additions to core, arch, agent, studio)
 
 After a world exists, every message in the same chat REFINES it. A small
@@ -2603,8 +2673,8 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
   `review` (`LevelToolOutput.data`, validated by `LevelReviewData`), renders the overview and the player's first view
   through `AgentHost.captureReview` (no marks), shows the findings with their fixes, and ends on approval or the same
   stall detector; a world with no gameplay (scenery) is not reviewed. `levelSnapshot`, `levelTurnText`.
-- The offline planner exchanges stylised nature for the realistic generators when the request says realistic,
-  photoreal or lifelike (`providers/mock/realistic.ts`).
+- The offline planner exchanges stylised nature for the realistic generators (`providers/mock/realistic.ts`); since
+  stage `genlook` it does so unless the request asks for a stylised look (see "Generated worlds look real by default").
 - New flagship `highland-trail` (`providers/mock/showcase/highland-trail.ts`); the agent package now depends on
   `@aether/procgen` (it samples the generated heightfield to place the route).
 
@@ -2733,8 +2803,9 @@ a structured description and derives tool calls from it.
   deterministic), `framingText(report)`; `entityGeometry` / `projectGeometry` in the scene views project every piece and
   opening through any pose. `PlanRoom.wallColors` / `DesignRoom.wallColors` (per compass side) are additive.
 - `deriveBuild` fits openings first (`fitOpening`: under the ceiling, inside the wall, 0.3 m clear of corners).
-- The agent measures framing and pixel similarity each round; the round quality is 0.5 pass rate + 0.5 measured agreement
-  (0.6 framing, 0.4 similarity, whichever exist). `RunOptions.intent === 'refine'` builds the room beside the existing world,
+- The agent measures framing and pixel similarity each round; they are two of the `measureFidelity` measures (weights
+  above), and the combined score shown is 0.5 judge score + 0.5 fidelity sub-score (`combinedScore`). The earlier
+  "0.6 framing + 0.4 similarity" round quality is gone. `RunOptions.intent === 'refine'` builds the room beside the existing world,
   any other intent replaces it (one undo step).
 
 
@@ -2871,7 +2942,37 @@ view/framing.ts: frontAzimuthDeg(dx, dz, swing?) -> degrees | null, pickClearAzi
 ```
 
 `WorldRenderer.frameContent` frames buildings at 21 degrees elevation from the garden side with a clear sight line (was 38 degrees from +Z). Exposure and image
-light follow the camera: under a ceiling the exposure rises 0.45 stop and the image light is scaled to 60 %.
+light follow the camera: under a ceiling the exposure rises 0.45 stop and the image light is scaled to 60 % (until a baked light volume is ready, below).
+
+**Baked light volume (worlds with a building; not in low-memory mode).** Internal to the renderer, nothing in the World IR:
+
+```
+environment/light-volume.ts (pure, no three.js, deterministic)
+  planVolumeGrid(min, max, spacing = VOLUME_SPACING 0.45, maxProbes = MAX_VOLUME_PROBES 22 000) → VolumeGrid { min, spacing, nx, ny, nz } | null
+                                    // ≤ VOLUME_ALLOC 48 × 28 × 48 probes per axis; the spacing grows to fit
+  TraceScene(input: TraceInput)     // BVH over world-space triangles (≤ MAX_TRACE_TRIANGLES 400 000) + box proxies
+  LightVolumeBaker(input: VolumeBakeInput { grid, scene, sun | null, ambient, ground, lamps, rays?, passes? })
+                                    // time-sliced: VOLUME_RAYS 48 per probe, VOLUME_PASSES 6 bounce passes; the controller passes
+                                    // ≤ 32 lamps; FLOATS_PER_PROBE 16 = sky visibility + R, G, B irradiance as first-order spherical
+                                    // harmonics; probes buried in a wall (BURIED_SHARE 0.3) are filled from their neighbours
+  sampleVolume(grid, data, x, y, z, normal) → VolumeSample   // CPU read (eye adaptation)
+  packVolumeAtlas(grid, data, alloc?, out?) → Uint16Array     // half-float RGBA atlas, ATLAS_SUBVOLUMES 4 (vis, R, G, B)
+environment/light-volume-protocol.ts   VolumeRequest / VolumeReply, parseVolumeRequest, parseVolumeReply (validated both ways)
+environment/light-volume.worker.ts     module worker that runs a bake
+environment/light-volume-light.ts      LightVolume extends three's Light (one Data3DTexture allocated once; a rebake rewrites it);
+                                       VOLUME_FADE 1.2 m, VOLUME_VIS_FLOOR 0.05
+gpu/light-volume-node.ts               LightVolumeNode (registered with renderer.library.addLight): ambient occlusion × visibility,
+                                       + bounce / visibility; WebGPU and WebGL2
+view/light-volume-controller.ts        LightVolumeController(gather, { createWorker?, settled?, onUpload? }): SHELL_ROLES (wall, room,
+                                       ceiling, roof, stair, door, window, opening, column) traced as geometry, PROXY_ROLES (furniture,
+                                       fixture ≥ 0.3 m) as boxes; bakes SETTLE_SECONDS 0.6 after the last change, BAKE_SLICE_MS 6 per
+                                       frame without a worker; the previous volume stays until the new one is complete
+WorldRenderer.lightVolumeReady / .lightVolumeBaking / .lightVolumeStats / lightVolumeAt(x, y, z) / finishLightVolume()
+```
+
+With a volume ready the eye exposure comes from `lightVolumeAt` the camera (no pixel read-back), the image light is no longer
+scaled by the ceiling factor, the sun's shadow map is fitted to the building's shell while the eye is inside, the post tiers
+apply the exposure once (in the tone mapping), and the grade warms a little inside (not with a document `grade`).
 
 ### Scripts
 

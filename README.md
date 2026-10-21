@@ -266,7 +266,7 @@ prompt caching, photo-to-room, the bot, and rendering.
   library models are stylised (kart drivers, farm animals), and flames are
   glowing cones. Software-GPU machines get the lower quality tiers.
 - **The offline planner** reads English only and knows a fixed vocabulary
-  (about 18 themes and 40+ library objects). In the benchmark it got 53 of 57
+  (21 themes and 40+ library objects). In the benchmark it got 53 of 57
   in-vocabulary prompts fully right, but only 3 of 19 prompts outside its
   vocabulary. Anything ambitious needs a connected model.
 - **Model runs take minutes.** With Codex, a forest game took 14 calls and
