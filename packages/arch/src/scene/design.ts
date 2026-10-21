@@ -281,7 +281,7 @@ export function validateDesign(plan: DesignPlan): DesignValidation {
       const b = claims[j] as (typeof claims)[number];
       if (a.level !== b.level || a.room !== b.room || a.wall !== b.wall || a.wall === '*') continue;
       const gap = Math.max(a.t0 - b.t1, b.t0 - a.t1);
-      if (gap < 0.1) errors.push(`${a.label} and ${b.label} overlap or leave less than 0.1 m of wall between them (gap ${cmr(gap).toFixed(2)} m)`);
+      if (gap < 0.1 - 1e-6) errors.push(`${a.label} and ${b.label} overlap or leave less than 0.1 m of wall between them (gap ${cmr(gap).toFixed(2)} m)`);
     }
   }
   if (outside === 0 && plan.levels[0]?.rooms.length) errors.push('no door leads outside: add a door with to: "outside" (main: true) on an exterior wall');

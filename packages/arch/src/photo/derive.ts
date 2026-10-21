@@ -300,13 +300,74 @@ export function fitOpening(d: RoomDescription, o: PhotoOpening, notes: string[])
   return { ...o, width, along, ...(height !== undefined ? { height } : {}), ...(sill !== undefined ? { sill } : {}) };
 }
 
+/** Wall left between two openings on one wall (the builder wants 0.1 m; a little more keeps rounding out of it). */
+const OPENING_GAP = 0.12;
+/** Narrowest a window is squeezed to before it is dropped. */
+const MIN_SQUEEZED_WINDOW = 0.5;
+
+/**
+ * Openings of one wall that crowd or overlap each other (a reading puts two windows and a door on a 2.9 m wall): pushed
+ * apart along the wall inside its corner margins, windows narrowed when the wall is too short for all of them, and the
+ * last window dropped when even that does not fit. Doors keep their width. Every change is noted.
+ */
+export function separateOpenings(d: RoomDescription, openings: PhotoOpening[], notes: string[]): PhotoOpening[] {
+  const out: PhotoOpening[] = [];
+  for (const wall of ['north', 'east', 'south', 'west'] as const) {
+    let row = openings.filter((o) => o.wall === wall).sort((a, b) => a.along - b.along);
+    const run = wallRun(d, wall);
+    const span = Math.max(0.1, run - 0.6);
+    const crowded = (r: readonly PhotoOpening[]): boolean => r.some((o, k) => k > 0 && o.along - o.width / 2 - ((r[k - 1] as PhotoOpening).along + (r[k - 1] as PhotoOpening).width / 2) < OPENING_GAP - 1e-6);
+    if (row.length < 2 || !crowded(row)) {
+      out.push(...row);
+      continue;
+    }
+    const label = (o: PhotoOpening): string => `${o.kind} ${o.id}`;
+    const need = (r: readonly PhotoOpening[]): number => r.reduce((t, o) => t + o.width, 0) + OPENING_GAP * (r.length - 1);
+    // Make room: squeeze windows, then drop the last one.
+    for (let guard = 0; guard < 20 && need(row) > span + 1e-6; guard++) {
+      const windows = row.filter((o) => o.kind === 'window' && o.width > MIN_SQUEEZED_WINDOW + 1e-6);
+      if (windows.length > 0) {
+        const excess = need(row) - span;
+        const cut = Math.min(excess / windows.length, ...windows.map((o) => o.width - MIN_SQUEEZED_WINDOW));
+        row = row.map((o) => (windows.includes(o) ? { ...o, width: Math.round((o.width - cut) * 1000) / 1000 } : o));
+        continue;
+      }
+      const drop = [...row].reverse().find((o) => o.kind === 'window');
+      if (!drop) break;
+      notes.push(`The ${label(drop)} cannot fit on the ${wall} wall beside the other openings (${Math.round(run * 100) / 100} m): left out.`);
+      row = row.filter((o) => o !== drop);
+    }
+    // Pack left to right, then pull back from the far corner.
+    const lo = (o: PhotoOpening): number => o.width / 2 + 0.3;
+    const hi = (o: PhotoOpening): number => run - o.width / 2 - 0.3;
+    const placed = row.map((o) => ({ ...o }));
+    for (let k = 0; k < placed.length; k++) {
+      const o = placed[k] as PhotoOpening;
+      const prev = placed[k - 1];
+      o.along = Math.max(o.along, lo(o), prev ? prev.along + prev.width / 2 + OPENING_GAP + o.width / 2 : 0);
+    }
+    for (let k = placed.length - 1; k >= 0; k--) {
+      const o = placed[k] as PhotoOpening;
+      const next = placed[k + 1];
+      o.along = Math.min(o.along, hi(o), next ? next.along - next.width / 2 - OPENING_GAP - o.width / 2 : Infinity);
+    }
+    for (const o of placed) {
+      const orig = openings.find((x) => x.id === o.id) as PhotoOpening;
+      if (Math.abs(o.along - orig.along) > 0.005 || Math.abs(o.width - orig.width) > 0.005) notes.push(`The ${label(o)} crowded another opening on the ${wall} wall: now ${Math.round(o.width * 100) / 100} m wide, ${Math.round(o.along * 100) / 100} m along the wall.`);
+    }
+    out.push(...placed);
+  }
+  // Keep the described order.
+  return openings.flatMap((o) => out.filter((x) => x.id === o.id));
+}
+
 /** Derive the plan, the steps and the environment from a description. */
 export function deriveBuild(d: RoomDescription): PhotoBuild {
   const notes: string[] = [];
   const W = d.footprint.width;
   const D = d.footprint.depth;
   const i = PHOTO_WALL_INSET;
-  const openings = d.openings.map((o) => fitOpening(d, { ...o }, notes));
+  const openings = separateOpenings(d, d.openings.map((o) => fitOpening(d, { ...o }, notes)), notes);
   let assumedDoor: PhotoOpening | undefined;
   if (!openings.some((o) => o.kind !== 'window')) {
     const wall = wallBehind(d.camera.heading);
