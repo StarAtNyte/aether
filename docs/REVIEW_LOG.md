@@ -4352,3 +4352,74 @@ export policy, cast images); `apps/server/test/csp.test.ts` and `image-to-3d.tes
 4459 of 4460 pass; the one failure is `packages/agent/test/prompt.test.ts` (system prompt 15,986 chars/4 against a
 15,800 cap), which fails the same way on main without this work (the prompt grew with the gameplay-effects stage).
 Studio build ok; `npm run smoke` 34/34; `npm run bench:quick` checks passed.
+
+## Balustrades on stairs; NPCs on several floors
+
+**Problem.** (1) A person playing who pressed toward the inner edge of an L stair's first flight still wedged the
+capsule's top under the slab beside the last treads (the walking-line fix covered only the bot), and nothing stopped
+anyone stepping off a flight or landing into the room below. (2) The NPC grid was one floor per level with nothing
+between levels: residents stood where they were placed, a guard could not follow the player up a stair, packs had
+only separation.
+
+**What changed.** (Design: ARCHITECTURE section 37.)
+- *Balustrades.* Every open side of a flight or landing gets a guard with upright box colliders 5 to 45 mm outside the
+  edge (the flights keep their full width), 0.9 m above the pitch line, from 0.7 m up a flight that starts at a floor
+  (the side landing beside the first treads stays open), under the floor above beside the stairwell and ending where
+  its string would rise into the slab. Sides against a wall (the floor 0.2 m out is not the stair's room) get a wall
+  handrail on brackets. Glass in a steel shoe (modern), round bars (industrial, mediterranean), painted spindles with
+  an oak handrail and newels (scandinavian, japandi, classic); the stairwell railing upstairs follows (new `timber`
+  railing). The building check counts them.
+- *The step onto a landing.* Pressed against a guard, the character controller failed to autostep the last riser onto
+  the landing and stood still (measured: a sloped hull, a pitched box, and with some inputs a wall did the same; a
+  plain wall usually passed). Each flight's collider now closes its last riser with a wedge over the last four treads
+  (under 40°, no sliding), and the guards are upright boxes about a tread long.
+- *Layered NPC navigation.* In a world with buildings: a 0.25 m grid per floor level (bodies 0.3 m clear, steps 0.3 m),
+  each stair a link along its walking line with the feet at the treads' height, routes across floors by Dijkstra over
+  stair ends and grid regions, preallocated. NPCs walk a stair keeping right, a floor between foes blocks sight and
+  reach, guards chase and investigate upstairs, followers follow. Residents have days (`npc.routine`: their spot, a
+  room on another floor, a room on their own) and let the player go first on a stair. NPCs open key-operated doors as
+  they pass. In doorways they squeeze past frames and step back to the corner when pushed off the path (found on the
+  way: residents stood 15 s in a 1.4 m opening, cutting its corner from 0.2 m off the path; and the ground ray stood
+  them on sofas and beds, as did the outdoor step of 0.55 m).
+- *Steering.* `npc.flock` (cohesion and alignment with the pack), `npc.roam` (Reynolds wander) and an explicit arrive,
+  on the seeded stream (Yuka read for the formulas; navcat evaluated and not installed, THIRD_PARTY.md).
+
+**Measured** (Node 24, headless).
+
+| | Result |
+|---|---|
+| Player pressing into an L's inner edge (1 m, heading north, both turns), 5 s | before: wedged at 1.23 m under the slab, 0.29 m of the capsule past the edge; after: climbs to the upper floor, the capsule stays 0.37 m inside the edge, head clear of the slab |
+| Walkthrough bot, 420 stairs (3 widths × straight / L / U both turns × 4 headings × 7 offsets) | 404 pass, never stuck; 15 fail with and without balustrades and without the wedge (stairs shifted 0.2 m into a wall with `exactStairs`; the building check passes them, the bot does not, a gap noted below); 1 fails only with balustrades (a 0.9 m U pushed 0.09 m into a wall: 0.82 m left between the wall and the U's central guard) |
+| Three residents, 240 s, two-storey house | 2 or 3 change floors, longest stuck report under 2.5 s (before the doorway fixes: 7 s), feet within 0.12 m of the treads' height on the stair |
+| Guard sees the player downstairs, the player runs up and into the bedroom | the guard takes the stair, attacks from 1.35 m in the bedroom |
+| 60 NPCs on two floors (routines and patrols across floors) | 0.14 ms per tick, steady state under the allocation budget; 60 NPCs on one floor unchanged (`npc-perf`) |
+
+**Tests.** `arch/test/stair-balustrade.test.ts` (every heading × shape × turn: guards outside the flights, the walking
+line keeps the full width, the side landing open, box colliders; the L's inner guard full height under the slab;
+fitted stairs get a wall rail on the wall side and pass the building check; style per building; old stairs unchanged).
+`playtest/test/stair-balustrade.test.ts` (pressing into the inner edge, guarded and bare; the bot on a balustraded
+house). `playtest/test/npc-layers.test.ts` (links, three floors, routes up two stairs and down, unreachable, determinism,
+no allocation per route, the NPC check on routines across floors). `playtest/test/npc-floors.test.ts` (residents'
+day, feet on the treads, guard chase, a resident yielding to the player on the stair, replay identity).
+`playtest/test/npc-floors-perf.test.ts`. `logic/test/npc-steering.test.ts` (arrive, wander, separation, flock; a herd
+with flock keeps 15 % closer; roaming; an NPC opening a door that closes behind it). Rebaked casa-patio,
+skyline-penthouse, dusk-lake-house (resident routines) and earlier dusk-lake-house, villa-pool (balustrades).
+`tests/e2e/npcstairs.e2e.ts` photographs a resident on the stair (rigged cast body, walk clip).
+
+**Looked at** (Intel iGPU WebGL2, realtime; `~/.local/share/aether/stairs-npc/`). The resident climbs the first flight
+behind the painted spindles with the walk clip, crosses the landing mid-stride and comes up the second flight toward
+the upper floor, feet on the treads; glass (modern), steel bars (industrial) and timber (classic, scandinavian)
+balustrades on the same L stair from the hall. Fixed on the way: the timber stairwell railing upstairs had oak
+spindles beside the stair's painted ones (now painted too); a U's central balustrade stood up 0.9 m beside the top
+step (it now ends where the flight reaches the floor above, as the outer ones do). Glass reads mostly by its steel shoe
+and cap rail in the realtime look.
+
+**Still open.**
+- Stairs pushed into a wall with `exactStairs` (15 configurations above): the building check says every room is
+  reachable while the bot fails; the check does not measure the flight's own clear width against walls.
+- Waypoints and routine stops take their floor from `y`; older worlds that wrote `y = 0` for an upstairs patrol would
+  send it downstairs in a building with stairs.
+- NPCs pass through each other on a stair when they meet (they keep right; there is no queueing), and in a crowd stress
+  test 60 people use one stair at once. Dynamic (physics) NPCs are steered along a stair's line but not tested.
+- `agent/test/prompt.test.ts` was already over its token budget on main (15 977 against 15 800, from earlier prompt
+  growth); the routine and flock fields add 9 tokens.

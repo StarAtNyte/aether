@@ -102,16 +102,33 @@ async function main(): Promise<void> {
     await page.evaluate(() => window.__aether?.simulation?.play());
     await page.waitForFunction(() => window.__aether?.simulation?.mode === 'play', null, { timeout: 60_000 });
     // From the hall, looking at the stair; the camera follows the walker.
-    const eye: [number, number, number] = [foot[0] + 4.2, link.y0 + 1.55, foot[1] + 1.8];
-    const shots: Array<{ name: string; when: string }> = [
+    // The first flight from the hall, the landing and the upper flight from the landing upstairs looking down; both
+    // cameras stand inside the house on the far side of its middle from the stair, and follow the walker.
+    const away = (y: number, d: number): [number, number, number] => {
+      const dx0 = 4 - (foot[0] + top[0]) / 2;
+      const dz0 = 4 - (foot[1] + top[1]) / 2;
+      const dl = Math.hypot(dx0, dz0) || 1;
+      const clampHall = (v: number): number => Math.min(7.3, Math.max(0.7, v));
+      return [clampHall(4 + (dx0 / dl) * d), y, clampHall(4 + (dz0 / dl) * d)];
+    };
+    // Upstairs: just beyond the top step, looking back down the flight.
+    const k = (link.n - 1) * 3;
+    const ux = (link.line[k] as number) - (link.line[k - 3] as number);
+    const uz = (link.line[k + 2] as number) - (link.line[k - 1] as number);
+    const ul = Math.hypot(ux, uz) || 1;
+    const upstairs: [number, number, number] = [top[0] + (ux / ul) * 1.4, link.y1 + 1.7, top[1] + (uz / ul) * 1.4];
+    const eyes: Record<string, [number, number, number]> = { low: away(link.y0 + 1.25, 2.2), mid: upstairs, high: upstairs };
+    log(`  stair foot (${foot[0].toFixed(2)}, ${foot[1].toFixed(2)}), top (${top[0].toFixed(2)}, ${top[1].toFixed(2)})`);
+    const shots: Array<{ name: string; when: 'low' | 'mid' | 'high' }> = [
       { name: 'first-flight', when: 'low' },
       { name: 'landing', when: 'mid' },
       { name: 'second-flight', when: 'high' },
     ];
     for (const shot of shots) {
-      const deadline = Date.now() + 45_000;
+      const deadline = Date.now() + 150_000;
       let ok = false;
       while (Date.now() < deadline) {
+        const eye = eyes[shot.when] as [number, number, number];
         const s = await page.evaluate(([e]) => {
           const sim = window.__aether?.simulation;
           const info = sim?.logic?.npcs.info('walker');
@@ -120,11 +137,12 @@ async function main(): Promise<void> {
           const dy = info.y + 1.0 - e[1];
           const dz = info.z - e[2];
           sim.renderer.setCameraPose(e[0], e[1], e[2], Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
-          return { stair: info.stair, y: info.y, anim: info.anim };
+          return { stair: info.stair, y: info.y, anim: info.anim, x: info.x, z: info.z, mode: info.mode };
         }, [eye] as const);
+        if (ARGS.includes('--trace')) log(`    walker ${s ? `(${s.x.toFixed(2)}, ${s.y.toFixed(2)}, ${s.z.toFixed(2)}) ${s.mode} ${s.anim}${s.stair ? ' on the stair' : ''}` : 'unknown'}`);
         if (s?.stair) {
           const f = (s.y - link.y0) / (link.y1 - link.y0);
-          if ((shot.when === 'low' && f > 0.15 && f < 0.4) || (shot.when === 'mid' && f >= 0.45 && f < 0.55) || (shot.when === 'high' && f > 0.65 && f < 0.9)) {
+          if ((shot.when === 'low' && f > 0.08 && f < 0.42) || (shot.when === 'mid' && f >= 0.44 && f < 0.6) || (shot.when === 'high' && f > 0.65 && f < 0.9)) {
             ok = true;
             log(`  ${shot.name}: on the stair at ${(f * 100).toFixed(0)} % of the rise, anim ${s.anim}`);
             break;

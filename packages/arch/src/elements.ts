@@ -190,6 +190,7 @@ export function buildRailing(p: RailingParams): ArchOutput {
   const h = p.height;
   const pts = p.points;
   const timber = new Geom();
+  const painted = new Geom();
   // Top rail (a moulded timber handrail on timber balustrades).
   if (p.style !== 'timber') metal.merge(tube(pts.map((q) => [q[0], h, q[1]] as const), 0.022, 10));
   for (let k = 0; k + 1 < pts.length; k++) {
@@ -203,9 +204,9 @@ export function buildRailing(p: RailingParams): ArchOutput {
     if (p.style === 'timber') {
       // Newel posts at the corners, square spindles between a bottom rail and the handrail.
       timber.merge(box(-0.02, h - 0.055, -0.033, len + 0.02, h, 0.033).rotateY(yaw).translate(a[0], 0, a[1]));
-      timber.merge(box(0, 0.04, -0.025, len, 0.1, 0.025).rotateY(yaw).translate(a[0], 0, a[1]));
+      painted.merge(box(0, 0.04, -0.025, len, 0.1, 0.025).rotateY(yaw).translate(a[0], 0, a[1]));
       const n = Math.max(1, Math.ceil(len / 0.12));
-      for (let i = 1; i < n; i++) timber.merge(box((len * i) / n - 0.016, 0.1, -0.016, (len * i) / n + 0.016, h - 0.055, 0.016).rotateY(yaw).translate(a[0], 0, a[1]));
+      for (let i = 1; i < n; i++) painted.merge(box((len * i) / n - 0.016, 0.1, -0.016, (len * i) / n + 0.016, h - 0.055, 0.016).rotateY(yaw).translate(a[0], 0, a[1]));
       if (k === 0) timber.merge(box(-0.045, 0, -0.045, 0.045, h + 0.06, 0.045).translate(a[0], 0, a[1]));
       timber.merge(box(-0.045, 0, -0.045, 0.045, h + 0.06, 0.045).translate(b[0], 0, b[1]));
       set.box([(a[0] + b[0]) / 2, h / 2, (a[1] + b[1]) / 2], [len / 2, h / 2, 0.04], [0, yaw, 0]);
@@ -233,6 +234,8 @@ export function buildRailing(p: RailingParams): ArchOutput {
   }
   set.add(metal, p.finish);
   set.add(timber, { finish: 'oak' });
+  // Spindles and the bottom rail painted like the stair's (the stair's own timber balustrade).
+  set.add(painted, { finish: 'paint', color: '#efede8' });
   if (p.style === 'glass') set.add(infill, { finish: 'glass' });
   else if (p.style === 'solid') set.add(infill, { finish: 'plaster' });
   return set.build();

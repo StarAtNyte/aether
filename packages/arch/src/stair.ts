@@ -286,7 +286,9 @@ function guardFrame(pc: StairGuardPiece, soffit: number): GuardFrame | null {
   const below = pc.flight === null ? 0.25 : GUARD_BELOW;
   const cap = pc.underSlab ? soffit - 0.02 : Infinity;
   // Where the flight's string would rise into the floor above, the balustrade ends: the slab's edge guards from there.
-  const tEnd = pc.underSlab && pc.yb > pc.ya ? (cap - 0.06 + below - pc.ya) / (pc.yb - pc.ya) : 1;
+  // In a U's central gap it ends at the same height (the stairwell railing upstairs takes over), so it never stands
+  // up beside the top step where people step off.
+  const tEnd = pc.yb > pc.ya ? (soffit - 0.08 + below - pc.ya) / (pc.yb - pc.ya) : 1;
   if (tEnd <= 0.05) return null;
   const cut = tEnd < 1;
   const l2 = cut ? l * tEnd : l;
