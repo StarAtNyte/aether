@@ -5099,3 +5099,97 @@ create_building). arch 481, playtest 281, agent 820 tests pass, typecheck 0 erro
 **Open.** The offline planner's two-storey house, once its own stair (0.06 m behind the foot, marginal) is moved, lands
 on a straight stair hugging the north wall that the bot cannot route up (no stuck point, nav finds no route); the
 planner house is unchanged by this fix because 0.06 m is still enough. That second case is not investigated.
+
+## Live check of the model-led judging, tune_look and the photo vocabulary (Codex, then Claude Code)
+
+Everything below the judge, `tune_look`, the performance governor and the photo-room vocabulary had been tested only with
+scripted models. This pass ran them against a live Codex (gpt-6.1-sol, medium effort, ChatGPT login) through the built
+studio and `scripts/eval-photo.ts` (software renders, 3 judges, 3 reads, no round cap). Codex hit its subscription limit
+twice during the pass (the first time while three runs were in flight, the second during the last photo); every result
+says which backend produced it. Logs and montages: `~/.local/share/aether/qa/live/`.
+
+**Photo to room, the four fixtures.** "Judged" is the panel of three AI judges (median per checklist item); "measured"
+is the deterministic fidelity, which is advice only.
+
+| Photo | Backend | Judged by AI | Measured (advisory) | Rounds | Calls | tune_look |
+| --- | --- | --- | --- | --- | --- | --- |
+| hotel | Codex, before the harness fix | 7/20 (35 %) | 83 % | 8 | 36 | 3 (exposure 0.92, 0.85, 0.77) |
+| hotel | Codex, after | 8/20 (40 %) | 76 % | 7 | 34 | 2 (exposure 0.9 then 0.82, warmer) |
+| hotel | Claude Code, after | 14/19 (74 %) | 80 % | 6 | 28 | 4 |
+| twin | Codex | 9/29 (31 %) | 64 % | 6 | 29 | 2 |
+| twin | Claude Code | 14/16 (88 %) | 68 % | 5 | 25 | 1 |
+| pd1 | Codex | 6/22 (27 %) | 78 % | 7 | 33 | 2 |
+| pd1 | Claude Code | 6/20 (30 %) | 71 % | 8 | 36 | 2 |
+| pd2 | Claude Code (Codex hit its limit; not completed) | 9/20 (45 %) | 76 % | 8 | 37 | 4 |
+
+The earlier 100 / 83 / 83 for the hotel were the model's own verdict and the measured numbers of earlier runs. They do not
+compare with the panel: the panel is stricter by design (it fails items that the flat software render cannot show, such as
+the content of the framed photographs, curtain pleats, a cropped cabinet). The measured fidelity of the hotel is unchanged
+at 76 to 83 %, and the montage is as good as before: the cornice, picture-rail free plum walls, skirting and the sash window
+(two sashes and a rail at the right height) from the new vocabulary are all built from the photo. Judged scores differ
+more between backends (35 to 40 % Codex, 74 % Claude Code on the same photo) than between rounds.
+
+Checks on the model-led design:
+- `tune_look` was called 2 to 4 times a run, always after a render, always in the direction the photo showed (darker,
+  warmer, more contrast for the plum hotel; neutral for the white pd1 room). One defect in the harness, not the tool: the
+  software renders of `eval-photo.ts` forced `exposure: 2.0` whatever the world said, so a look change never showed in the
+  model's own renders, and pd2 took 9 look calls hunting for it (exposure 0.75, 0.85, 0.75, 0.8, 0.7, 0.62, 0.58). The renders now
+  scale by the stored exposure; the same photo took 4 calls (Claude Code) and the Codex runs 2.
+- The loop ended by the assistant's own "good enough", by the stall rule, or at 6 to 11 rounds; none by a round cap.
+- Judge noise is still large: pd2 on Claude Code (before the harness fix) went 11/21 at round 8 to 4/21 at round 11 although
+  every step was preferred or tied against the accepted state, so the reported final is not the best seen. "Tie is
+  accepted" lets small drift through; left as designed, and listed below.
+
+**Defect found and fixed: the shell refused on a crowded wall.** The Codex twin run stopped at "shell refused": the reading
+put window, door and second window 0.1 m or less apart on a 2.85 m wall (one gap printed as 0.10 m yet refused, one -0.07 m),
+and the one correction round (already inside the same limit) did not resolve it. `deriveBuild` now runs `separateOpenings`:
+openings of one wall are pushed apart inside the corner margins, windows narrowed (not below 0.5 m), the last window dropped
+when even that does not fit, doors keep their width, and every change is a note in the room's assumptions. The 0.1 m wall
+rule in the design tool ignores a micro-metre of rounding (`gap < 0.1 - 1e-6`). Test: `photo-openings.test.ts`. The next
+Codex twin run built and compared the room (no refusal).
+
+**Prompt-built forest game with chat edits (Codex).** "A night forest adventure: collect 5 lanterns, avoid the wolves, reach
+the shrine to win" built in 178 to 209 s and was "Verified playable" (the bot won in 23 to 27 s). Edits, each followed by a
+fresh proof (the bot's time changed every time, and the replay bar appeared):
+- "make the wolves slower": local edit, 17 to 28 s, proof re-run, passes.
+- "warmer lanterns": five lantern lights to amber (#ffac48), proof re-run, passes.
+- "move the shrine onto the hill": with a hill in the prompt, a local edit moved the shrine, plinth, heart and zone onto the
+  summit (y 6.24 on a mound at z -27) in 13 s. Without a hill in the prompt the model found the hill its own build had made
+  by measuring ground heights and moved the whole assembly onto the crest; proof passes.
+
+**Defects found and fixed in the edit guard.** In the first run (Codex out of quota, Claude Code took over mid-turn, which the
+studio announced) the same edit left the world half done: the model raised a hill, found it too steep, added a second one, and
+the guard refused to remove the first ("unrelated existing object") and to move the torii gate named "Shrine torii"; the
+shrine stood inside the old hill and the model said so honestly and stopped. Two changes (`refine/guard.ts`):
+1. What the assistant added earlier in the same turn is not "existing" for the audit (the turn-start world is passed to
+   `auditPatches`), so a failed first attempt can be replaced or removed; what was there at the start stays guarded.
+2. Entities whose id extends a target's id with a name (`shrine-torii`, `shrine-beacon`) belong to the target; numbered
+   siblings (`wolf-2`) do not.
+Tests in `edit-dependents.test.ts`.
+
+**Two-storey house with a bathroom (Codex).** "A two-storey modern house with a bathroom that has a walk-in shower, an
+open-plan living room, a kitchen and two bedrooms": 323 s, "Verified walkable: all 7 rooms, 3 doors opened". "Add a large
+window to the kitchen" enlarged the existing window to 2.4 x 1.8 m (45 s, still walkable) and "add a big plant in the
+bathroom" placed one 1.8 m from the shower. C9 (an automatic bathroom plant overlapping the shower after a recompile) did not
+reproduce, on Codex or on two Claude Code houses (one with a shower and an automatic bath plant, 2.6 m clear). The placement
+rule is the wet clearance of `RoomLayout.fits` (dry decor keeps 0.4 m off a shower or bath) plus the removal of compiled
+pieces inside a design-tool piece on re-compile (both from the hills commit). A sweep test (`wet-clearance-sweep.test.ts`: 7
+bathroom sizes x 4 door walls x with and without a placed shower x with and without an added window, 112 rooms) now guards
+it; no overlap in any.
+
+The Claude Code houses found a different, real defect: one failed the walkthrough bot although the static checks passed (a
+stair whose first riser is 2 cm from the wall). That is the entry above ("Stairs tucked against the wall at the foot").
+
+**C15, photo shell detail.** The hotel render now carries the cornice with coving, skirting and a two-sash window whose
+rail is where the photo has it; the judge still fails shell-size (the photo shows a tall room, the render more floor: a
+camera and framing difference), the curtains (the plum curtains are missing in the Codex hotel's final render although the
+description has them; refused and not retried) and the sideboard crop. Open.
+
+**Performance governor.** Not exercised here: the headless runs had no frame budget to adapt to (one studio capture read
+0.3 fps while three other jobs held the machine, the governor's case, but no tier change was logged).
+
+**Open after this pass.** Codex pd2 not completed (limit); the curtains lost in the Codex hotel run; accepted ties let a
+judged score drift down (final lower than best, pd2); the planner house's north-wall stair (above); the first Codex run's
+half-finished hill edit was a Claude Code take-over after the limit, not repeated with Codex.
+
+Gates: typecheck 0, vitest agent + arch + playtest 123 files / 1582 tests, smoke 34/34.
