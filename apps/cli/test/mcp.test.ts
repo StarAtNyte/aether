@@ -7,11 +7,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CompletionRequest, CompletionResponse, Provider } from '@aether/agent';
-import { startMcpServer } from '../src/mcp/server';
+import { serveUntilClosed, startMcpServer } from '../src/mcp/server';
 import type { ResolvedProvider } from '../src/mcp/provider';
 
 const dirs: string[] = [];
@@ -389,6 +391,30 @@ describe('MCP server: exports', () => {
       }
     } finally {
       await rig.close();
+    }
+  }, 60_000);
+});
+
+describe('MCP server: stdio shutdown', () => {
+  it('answers over stdio and shuts down exactly once when the input closes', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const transport = new StdioServerTransport(input, output);
+    const closeSpy = vi.spyOn(transport, 'close');
+    const logged: unknown[] = [];
+    const errSpy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void logged.push(a));
+    try {
+      const exit = serveUntilClosed({ projectDir: join(tmp(), 'project'), provider: 'offline', stateDir: tmp(), playerDir: join(tmp(), 'no-player') }, transport, { input });
+      const reply = new Promise<string>((res) => output.once('data', (c: Buffer) => res(c.toString('utf8'))));
+      input.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } })}\n`);
+      expect(JSON.parse(await reply)).toMatchObject({ id: 1, result: { serverInfo: { name: 'aether' } } });
+      input.end();
+      expect(await exit).toBe(0);
+      // Closing the server closes the transport, whose onclose must not close it again.
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(logged)).not.toMatch(/call stack/i);
+    } finally {
+      errSpy.mockRestore();
     }
   }, 60_000);
 });

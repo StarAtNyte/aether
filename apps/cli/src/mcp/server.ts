@@ -44,24 +44,55 @@ export async function startMcpServer(opts: SessionOptions, transport: Transport,
   };
 }
 
+/** What `serveUntilClosed` listens to besides the transport (the process, in production). */
+export interface CloseSignals {
+  /** The client's input stream; its end means the client went away. */
+  input: NodeJS.ReadableStream;
+  /** Where SIGINT/SIGTERM arrive; omitted in tests. */
+  signals?: Pick<NodeJS.Process, 'once' | 'off'>;
+}
+
+/**
+ * Serve over `transport` until the client disconnects, the input ends or a
+ * signal arrives; resolves to the exit code. Shutdown runs exactly once:
+ * closing the server closes the transport, which fires `onclose` again, and
+ * a handler that re-closes on every `onclose` recurses until the stack
+ * overflows.
+ */
+export async function serveUntilClosed(opts: SessionOptions, transport: Transport, on: CloseSignals, version?: string): Promise<number> {
+  const running = await startMcpServer(opts, transport, version);
+  return new Promise<number>((resolve) => {
+    let closing = false;
+    const done = (): void => {
+      if (closing) return;
+      closing = true;
+      on.input.off('end', done);
+      on.signals?.off('SIGINT', done);
+      on.signals?.off('SIGTERM', done);
+      void running.close().then(
+        () => resolve(0),
+        () => resolve(0),
+      );
+    };
+    // Keep the protocol's own close handler (it fails pending requests) and add ours.
+    let protocolOnClose = transport.onclose;
+    transport.onclose = (): void => {
+      const once = protocolOnClose;
+      protocolOnClose = undefined;
+      once?.();
+      done();
+    };
+    on.signals?.once('SIGINT', done);
+    on.signals?.once('SIGTERM', done);
+    on.input.once('end', done);
+  });
+}
+
 /** Run over stdio until the client disconnects. Resolves to the exit code. */
 export async function runStdioServer(opts: SessionOptions, version?: string): Promise<number> {
   // The protocol owns stdout: anything a library prints there would corrupt it.
   console.log = (...a: unknown[]): void => console.error(...a);
   console.info = console.log;
   console.debug = console.log;
-  const transport = new StdioServerTransport();
-  const running = await startMcpServer(opts, transport, version);
-  return new Promise<number>((resolve) => {
-    const done = (): void => {
-      void running.close().then(
-        () => resolve(0),
-        () => resolve(0),
-      );
-    };
-    transport.onclose = done;
-    process.once('SIGINT', done);
-    process.once('SIGTERM', done);
-    process.stdin.once('end', done);
-  });
+  return serveUntilClosed(opts, new StdioServerTransport(), { input: process.stdin, signals: process }, version);
 }
