@@ -51,6 +51,8 @@ import { adaptStep, adaptedLook, interiorFactor, volumeExposure, type CeilingBox
 import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
 import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
+import { RoomLampNode } from './gpu/room-lamp-node';
+import { RoomLamp } from './sync/room-lamp';
 import { contentFraming, framingPose, frontAzimuthDeg, pickClearAzimuth, type Framing } from './view/framing';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
@@ -313,10 +315,12 @@ const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _dir = new Vector3();
+/** Metres a room lamp's clip box reaches past the room's floor edge (to light its own walls). */
+const ROOM_LAMP_MARGIN = 0.15;
 /** Share of a spot light's intensity the light volume and the eye count (it lights a cone, not every direction). */
 const SPOT_SHARE = 0.5;
 /** White-balance shift toward warm of a fully adapted interior view (grade temperature units). */
-const INTERIOR_WARMTH = 0.18;
+const INTERIOR_WARMTH = 0.3;
 
 /** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
 function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
@@ -805,6 +809,7 @@ export class WorldRenderer {
     // The baked light volume of buildings is a light type of its own: tell the node renderer how to shade it.
     try {
       renderer.library.addLight(LightVolumeNode, LightVolume);
+      renderer.library.addLight(RoomLampNode, RoomLamp);
     } catch (e) {
       log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
@@ -928,6 +933,34 @@ export class WorldRenderer {
     this.env.setVolumeLit(on && this.lightVolume.ready);
   }
 
+  /**
+   * Confine every room lamp to its room: the room's floor footprint (a little wider, for its own walls) from the floor
+   * to just above the lamp. Lamps have no shadow maps, so this is what keeps a bedroom pendant out of the corridor.
+   */
+  private clipLampsToRooms(): void {
+    const room = new Box3();
+    this.sync.forEachNode((node) => {
+      const l = node.light?.light;
+      if (!(l instanceof RoomLamp)) return;
+      const id = node.entity.arch?.room;
+      const r = id ? this.sync.node(id) : undefined;
+      room.makeEmpty();
+      if (r) for (const b of r.bindings) room.expandByObject(b.mesh);
+      if (room.isEmpty()) {
+        l.setClip(null);
+        return;
+      }
+      l.getWorldPosition(_pos);
+      room.min.x -= ROOM_LAMP_MARGIN;
+      room.min.z -= ROOM_LAMP_MARGIN;
+      room.max.x += ROOM_LAMP_MARGIN;
+      room.max.z += ROOM_LAMP_MARGIN;
+      room.min.y -= 0.1;
+      room.max.y = Math.max(room.max.y, _pos.y + 0.6);
+      l.setClip(room);
+    });
+  }
+
   /** What a light-volume bake needs: the building parts, the light of the environment and the ground height. */
   private gatherLightVolume(): { parts: VolumePart[]; lighting: VolumeLighting; groundY: number } | null {
     if (!this.archView.active) return null;
@@ -958,6 +991,7 @@ export class WorldRenderer {
         parts.push({ role: a.role, object: node.object, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
       });
     });
+    this.clipLampsToRooms();
     if (parts.length === 0) return null;
     const sun = this.env.sun;
     _dir.copy(sun.position).sub(sun.target.position);

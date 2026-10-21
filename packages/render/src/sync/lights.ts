@@ -20,6 +20,7 @@ import {
   type Light,
 } from 'three';
 import type { LightProfile, LightSpec } from '@aether/core';
+import { RoomLamp } from './room-lamp';
 
 /**
  * three.js uses physical units (candela) for point/spot lights; World IR
@@ -174,7 +175,7 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
   let target: Object3D | null = null;
   switch (spec.type) {
     case 'point': {
-      const l = new PointLight(color, spec.intensity * LOCAL_LIGHT_SCALE * scale, spec.range, 2);
+      const l = new RoomLamp(color, spec.intensity * LOCAL_LIGHT_SCALE * scale, spec.range, 2);
       l.shadow.mapSize.set(512, 512);
       l.shadow.bias = -0.002;
       light = l;

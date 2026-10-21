@@ -6,7 +6,7 @@
  * - multiply the lighting context's ambient occlusion by the visibility (the sky hemisphere, the image light
  *   and its reflections reach a room only through its windows),
  * - add the bounce irradiance, divided by that same visibility so the occlusion does not darken it twice
- *   (screen-space AO still applies to it, as it should).
+ *   (screen-space AO still applies to it, as it should), and its mean radiance to the reflections.
  *
  * Outside the volume's box the effect fades out over {@link LightVolume.fade}. Four filtered reads of one 3D
  * texture and a handful of ALU per fragment; the same code runs on WebGPU and WebGL2.
@@ -18,6 +18,7 @@ import { LightVolume } from '../environment/light-volume-light';
 
 interface LightingContext {
   irradiance: Nd;
+  radiance: Nd;
   ambientOcclusion: Nd;
 }
 
@@ -83,6 +84,9 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     const bounce = T.max(T.vec3(evalAt(s1), evalAt(s2), evalAt(s3)), 0).mul(w);
     ctx.ambientOcclusion.mulAssign(visC);
     ctx.irradiance.addAssign(bounce.div(visC));
+    // Glossy and metal surfaces reflect the lit room, not only the sky the visibility shuts out: the bounce's mean
+    // radiance stands in for it (a fridge door indoors was black).
+    ctx.radiance.addAssign(bounce.div(visC).mul(1 / Math.PI));
     return undefined;
   }
 }

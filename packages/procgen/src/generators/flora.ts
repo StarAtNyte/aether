@@ -160,8 +160,8 @@ function leafTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
   const b = lin(base);
   const deep: RGB = [b[0] * 0.3, b[1] * 0.34, b[2] * 0.4];
   const sunny = lin(mixHex(base, '#a8b83c', 0.28));
-  const sun: RGB = [sunny[0] * 1.3, sunny[1] * 1.3, sunny[2] * 1.15];
-  return { deep, mid: [b[0] * 1.02, b[1] * 1.04, b[2]], sun, warm: lin(shade('#a9b83a', 0.05)) };
+  const sun: RGB = [sunny[0] * 1.5, sunny[1] * 1.5, sunny[2] * 1.3];
+  return { deep, mid: [b[0] * 1.15, b[1] * 1.18, b[2] * 1.1], sun, warm: lin(shade('#a9b83a', 0.05)) };
 }
 
 const SUN: Vec3 = unit([0.35, 0.8, 0.3]);

@@ -55,7 +55,7 @@ export function adaptedLook(f: number): { exposure: number; envScale: number } {
 }
 
 /** Share of the light drop between outdoors and the eye's spot that the exposure makes up (a render keeps rooms darker than the garden). */
-export const VOLUME_ADAPT_SHARE = 0.68;
+export const VOLUME_ADAPT_SHARE = 0.75;
 /** Largest exposure boost (stops) the light volume asks for. */
 export const VOLUME_MAX_EV = 2.6;
 /** Largest exposure cut (stops): a room full of lamps at dusk is brighter than the dim garden. */
