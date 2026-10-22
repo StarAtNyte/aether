@@ -716,10 +716,10 @@ sequenceDiagram
 - **Tools.** `apply_patches`, `build_architecture`, the design tools
   (`design_plan`, `place_items`, `edit_items`, `query_scene`, §26),
   `write_generator`, `write_script`, `request_asset`, `search_assets`,
-  `inspect`, `run_verification`, `shape_land` (§34) and `finish`; with a
+  `inspect`, `run_verification`, `shape_land` (§34), `tune_feel` (§38), `tune_look` (§30) and `finish`; with a
   level-tool runner also `query_level` and `place_level_items` (§27). The
   photo flow has its own (`describe_room`, `reconcile_room`,
-  `report_verdicts`, §28) and the compact profile only `apply_patches` and
+  `report_verdicts`, `sample_photo`, §28; its fixing rounds also get the design tools and `tune_look`) and the compact profile only `apply_patches` and
   `finish`. Each has a hand-written JSON Schema for the model and a matching
   zod validator in the executor. Tool results are short and list each
   rejected patch by index and reason.

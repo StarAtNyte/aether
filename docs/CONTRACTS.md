@@ -601,7 +601,7 @@ cut before a connective or a dangling word).
 ```ts
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene,
                                             // write_generator, write_script, request_asset, search_assets, inspect, run_verification,
-                                            // shape_land, finish (LEVEL_TOOLS query_level / place_level_items are appended with levelTools)
+                                            // shape_land, tune_feel, tune_look, finish (LEVEL_TOOLS query_level / place_level_items are appended with levelTools)
 export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
 export function buildCompactSystemPrompt(catalogs: AgentCatalogs): string;   // ≈ 1.2k tokens; catalog ids only, one example
@@ -2857,6 +2857,9 @@ a structured description and derives tool calls from it.
   rate, objective? (the fidelity sub-score, advisory), fidelity? (its measures, advisory), judge?, judges?, spread?,
   judgedBy? ('panel' | 'assistant': who judged), preference?, accepted?, structuralFailed, failing}, palette?, reads?}`; `reads` (on `described`) is `PhotoReadsView`
   `{reads, asked, items: pieces per read, consensus, checklist, dropped, contested, reconciled: reasons}`.
+- `sample_photo` (`SAMPLE_TOOL`, offered to the fixing model only when the picture decodes to pixels): up to 8 regions per call
+  (a named surface or piece/opening id, or a box `[x0,y0,x1,y1]` in 0..1), answered with the well-lit, mean and shadow colour of
+  each and the nearest finishes of the material library with the tint to give each.
 - `CompletionRequest.seed?` (advisory, like `temperature`).
 - `@aether/arch/photo`: `measureFidelity(world, description, {framing?, similarity?, regionColour?}) →
   {metrics, score, issues} | null`, deterministic; `FIDELITY_WEIGHTS` framing 0.22, openings 0.14, inventory 0.14,
