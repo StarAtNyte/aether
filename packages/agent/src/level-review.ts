@@ -56,7 +56,7 @@ export async function levelSnapshot(run: LevelToolRunner, world: WorldDoc, opts:
   const views: ReviewViewRequest[] = opts.withViews
     ? data.poses.slice(0, opts.maxViews).map((p) => ({ name: p.name, label: p.label, kind: 'corner' as const, pose: { position: p.position, target: p.target, up: [0, 1, 0] as [number, number, number], fov: p.fov }, hideTops: false, aspect: REVIEW_ASPECT, marks: [] }))
     : [];
-  return { buildings: [LEVEL_SUBJECT], findings, score: findings.length === 0 ? 100 : scoreFindings(findings), keys: new Set(findings.map(findingKey)), views, legend: '' };
+  return { buildings: [LEVEL_SUBJECT], findings, score: findings.length === 0 ? 100 : scoreFindings(findings), keys: new Set(findings.map(findingKey)), views, legend: '', advice: '' };
 }
 
 /** The text of a level review turn (the images are attached by the caller, each labelled). */

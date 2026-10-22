@@ -3,7 +3,7 @@
  * detection, choosing which rooms to look at, and the text of a review turn.
  */
 import { bodilessPeople, hasOwn, type EntityId, type WorldDoc } from '@aether/core';
-import { findingKey, findingsText, legendText, markIndex, projectMarks, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
+import { findingKey, findingsText, legendText, markIndex, projectMarks, projectOverlays, roomAdvice, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
 import type { ReviewViewRequest } from './types';
 
 /** Image aspect the review views are projected for. */
@@ -86,6 +86,8 @@ export interface ReviewSnapshot {
   views: ReviewViewRequest[];
   /** Number → fact lines for the marks that appear in the views. */
   legend: string;
+  /** Advisory circulation evidence (door swings, approach zones, walking paths, clutter) of the rooms in focus, as text. */
+  advice: string;
 }
 
 /** Check the buildings of `world` and plan the views of a round. */
@@ -106,17 +108,44 @@ export function snapshotForReview(world: WorldDoc, before: WorldDoc | null, opts
   const worst = buildings.slice(0, 4).sort((a, b) => countFor(findings, world, b) - countFor(findings, world, a))[0];
   const views: ReviewViewRequest[] = [];
   let legend = '';
+  let advice = '';
   if (opts.withViews && worst) {
     const poses = reviewPoses(world, worst, { rooms: focusRooms(world, worst, findings, before), maxViews: Math.min(MAX_REVIEW_VIEWS, opts.maxViews), aspect: REVIEW_ASPECT });
     const shown = new Set<number>();
     for (const p of poses) {
       const marks = projectMarks(world, worst, p, REVIEW_ASPECT);
       for (const m of marks) shown.add(m.n);
-      views.push(toRequest(p, marks));
+      const req = toRequest(p, marks);
+      if (p.kind === 'plan') {
+        const ov = planOverlays(world, worst, p);
+        if (ov.length > 0) req.overlays = ov;
+      }
+      views.push(req);
     }
+    advice = adviceText(world, worst, focusRooms(world, worst, findings, before));
     legend = legendText(markIndex(world, worst), shown);
   }
-  return { buildings, findings, score: scoreFindings(findings), keys: new Set(findings.map(findingKey)), views, legend };
+  return { buildings, findings, score: scoreFindings(findings), keys: new Set(findings.map(findingKey)), views, legend, advice };
+}
+
+/** Door swings, approach zones and walking paths of every room of the plan's level, projected onto the plan image (advisory). */
+function planOverlays(world: WorldDoc, building: EntityId, pose: ReviewPose): NonNullable<ReviewViewRequest['overlays']> {
+  const scene = readScene(world, building);
+  if (!scene) return [];
+  const out: NonNullable<ReviewViewRequest['overlays']> = [];
+  for (const room of scene.rooms) out.push(...projectOverlays(world, building, pose, roomAdvice(scene, room).overlays, room.levelId, REVIEW_ASPECT));
+  return out;
+}
+
+function adviceText(world: WorldDoc, building: EntityId, rooms: readonly string[]): string {
+  const scene = readScene(world, building);
+  if (!scene) return '';
+  const out: string[] = [];
+  for (const r of scene.rooms.filter((x) => rooms.includes(x.key))) {
+    const a = roomAdvice(scene, r).lines;
+    if (a.length > 0) out.push(`${r.key}: ${a.join(' ')}`);
+  }
+  return out.length > 0 ? `Circulation and size evidence (advisory; on the plan image green arcs are door swings, amber boxes the 0.9 m approach, dashed blue lines walking paths, red boxes pieces nobody can walk up to). Compare with standard sizes (bedroom at least 3.5 x 4 m, double door 0.9 m, 0.9 m round a door, 0.7 m between beds), decide what to move, remove or enlarge, and render again to check:\n${out.join('\n')}` : '';
 }
 
 function countFor(findings: readonly Finding[], _world: WorldDoc, building: EntityId): number {
@@ -135,6 +164,7 @@ export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasI
     `The checker measured it (advisory data about geometry and rules, not a verdict on how it looks): ${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'}${errors > 0 ? ` (${errors} error${errors === 1 ? '' : 's'}: impossible geometry, which does need fixing)` : ''}. Whether it is good enough is your call, made from the images.`,
     findingsText(snap.findings, 30),
   ];
+  if (snap.advice) lines.push(snap.advice);
   if (opts.hasImages) lines.push(`Numbers drawn on the images are pieces of the building. Use them to say exactly what you mean:\n${snap.legend}`);
   lines.push(
     'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting and mood, whether a person could live here. If the light or colour reads wrong (too cold, too dark, flat, washed out, green foliage that does not suit the season), set the look with tune_look rather than repainting surfaces. If a finding is a false alarm, say why in your final message.',
