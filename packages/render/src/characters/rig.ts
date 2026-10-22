@@ -83,6 +83,12 @@ export class CharacterRig {
     rLower: Bone | null;
     rHand: Bone | null;
   };
+  /** Every bone with the pose the mixer last left it in (before any correction): see {@link restoreClean}. */
+  private readonly allBones: Bone[] = [];
+  private cleanQ: Float32Array = new Float32Array(0);
+  private cleanP: Float32Array = new Float32Array(0);
+  private cleanS: Float32Array = new Float32Array(0);
+  private cleanReady = false;
   private prop: Prop | null = null;
   private propHold: CharacterHold = 'none';
   private readonly hipScale: number;
@@ -131,6 +137,12 @@ export class CharacterRig {
       rHand: boneOf(s, 'Bip01_R_Hand'),
     };
     this.rootRestY = this.bones.root?.position.y ?? 0;
+    s.traverse((o) => {
+      if ((o as Bone).isBone) this.allBones.push(o as Bone);
+    });
+    this.cleanQ = new Float32Array(this.allBones.length * 4);
+    this.cleanP = new Float32Array(this.allBones.length * 3);
+    this.cleanS = new Float32Array(this.allBones.length * 3);
     this.input.mood = opts.look.mood;
     this.start();
     this.setHold(opts.look.hold);
@@ -329,7 +341,9 @@ export class CharacterRig {
       this.timeScale += (plan.timeScale - this.timeScale) * Math.min(1, step * 10);
       this.current.timeScale = plan.loop && plan.state === 'loco' ? this.timeScale : plan.timeScale;
     }
+    this.restoreClean();
     this.mixer.update(step);
+    this.saveClean();
     if (this.bones.root && this.hipScale !== 1) this.bones.root.position.y = this.bones.root.position.y * this.hipScale;
     this.checkFootsteps();
     this.dampHeldArm(plan.state);
@@ -339,6 +353,34 @@ export class CharacterRig {
       this.updateLook(step, detail);
       if (detail >= 2) this.updateCarry();
     }
+  }
+
+  /**
+   * The mixer only writes a bone when the animated value changed since its last write (a static pose such as the
+   * jump or fall pose is written once). Corrections made after the mixer (look-at, arm relax, hip scale) would then
+   * pile up on the bone every frame: the head turns on and on and the body scales away. So the bones are put back
+   * to the clean animated pose before the mixer runs, and the clean pose is saved right after it.
+   */
+  private restoreClean(): void {
+    if (!this.cleanReady) return;
+    const b = this.allBones;
+    for (let i = 0; i < b.length; i++) {
+      const bone = b[i] as Bone;
+      bone.quaternion.set(this.cleanQ[i * 4] as number, this.cleanQ[i * 4 + 1] as number, this.cleanQ[i * 4 + 2] as number, this.cleanQ[i * 4 + 3] as number);
+      bone.position.set(this.cleanP[i * 3] as number, this.cleanP[i * 3 + 1] as number, this.cleanP[i * 3 + 2] as number);
+      bone.scale.set(this.cleanS[i * 3] as number, this.cleanS[i * 3 + 1] as number, this.cleanS[i * 3 + 2] as number);
+    }
+  }
+
+  private saveClean(): void {
+    const b = this.allBones;
+    for (let i = 0; i < b.length; i++) {
+      const bone = b[i] as Bone;
+      bone.quaternion.toArray(this.cleanQ, i * 4);
+      bone.position.toArray(this.cleanP, i * 3);
+      bone.scale.toArray(this.cleanS, i * 3);
+    }
+    this.cleanReady = true;
   }
 
   /**
