@@ -33,10 +33,10 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 | Planner tools (`AGENT_TOOLS`), 16 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
-| Tools given to sub-calls, 5. The planner never sees these | `submit_generator` (coder), `describe_room`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts`, `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
+| Tools given to sub-calls, 6. The planner never sees these | `submit_generator` (coder), `describe_room`, `sample_photo`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts` (`describe_room`, `sample_photo`, `report_verdicts`), `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
 | MCP server tools, 13 | `create_world`, `edit`, `apply_patch`, `list_entities`, `get_entity`, `get_world_summary`, `verify`, `playtest`, `replay`, `render_still`, `export`, `undo`, `redo` | `apps/cli/src/mcp/tools.ts` |
 
-The table names 23 model-facing tool names inside the agent (16 + 2 + 5) and 13 MCP tools. `COMPACT_TOOLS` reuses
+The table names 24 model-facing tool names inside the agent (16 + 2 + 6) and 13 MCP tools. `COMPACT_TOOLS` reuses
 two of the planner names.
 
 The executor is `packages/agent/src/executor.ts`, and the loop is `packages/agent/src/agent.ts`. The system prompt
@@ -82,7 +82,7 @@ These rules come from `executor.ts`, `tools.ts` and `@aether/arch` `scene/dispat
   3. **Minimal-edit guard.** If the request was classified as a small edit, the whole batch goes through
      `auditPatches` (`packages/agent/src/refine/guard.ts`). The batch is refused, with nothing applied, when it
      changes existing entities outside the request's scope. With no identified target, up to 8 unrelated existing
-     entities may change (`UNTARGETED_LIMIT`). With a target, none may. New entities are always allowed. The
+     entities may change (`UNTARGETED_LIMIT`). With a target, none may. New entities are always allowed, and so are entities the assistant itself added earlier in the same turn (a failed first attempt may be replaced or removed). What a target owns counts as the target: dependents, and pieces whose id starts with the target's id and a name (`shrine` owns `shrine-torii`, but `wolf-2` is a sibling, not a piece of `wolf`). The
      refusal tells the model to resend property-level `update` patches. The guard applies only to
      `apply_patches`.
   4. **Library generators.** Library generators that the patches reference are defined first, as their own undo
@@ -122,9 +122,16 @@ refusals as text with a fix.
   reason and a fix, when it would overlap, cross a wall, cover a door or window, block a doorway or a door swing,
   or wall a room in.
 - **Input.** `{items[1..40], building?, message?}`. Each item (`PlaceItemInput`, strict) has:
-  - `kind` or `asset`, `room`, `level?`, `id?`, `name?`, `params?` and `opening?` (the window, for curtains).
+  - `kind` or `asset`, `room`, `level?`, `id?`, `name?`, `params?` and `opening?` (the window, for curtains and
+    blinds).
   - A target: `wall` with `t` or `align`, or `at [x,z]`, or `on` (a host piece) with `offset`. Optional `edge`,
     `gap`, `y`, `yaw` and `faces`.
+- **Curtains and blinds.** A `curtain` item with `opening` hangs one panel on each side of that window (two
+  entities), whatever `params` say: `params.panels` is forced to 1 and any `gap` is dropped (`placeCurtain`,
+  `packages/arch/src/scene/edit.ts`). `params.width` is the gathered width of one panel. A drawn curtain
+  (`params.closed` above 0) gets a reach of 0.2 m. When `params.pelmet` is `box`, `valance` or `swag`, one pelmet is
+  made across both panels and the panels carry none. A `blind` hangs centred over the window. A description or a
+  call that asks for `panels: 2` with a `gap` therefore no longer makes pairs that cover the glass and are refused.
 - **Returns.** Accepted and refused items, with measurements.
 - **When to use it.** After `design_plan`, for every planned piece.
 
@@ -225,11 +232,11 @@ See [Eyes](#query_scene-1).
   constants (`INTERIOR_WARMTH` 0.45, the grade presets, vignette 0.22 and so on) are only the defaults. Nothing in it
   judges: the assistant decides, from the pictures, what to change and when it is good enough.
 - **Input.** All optional; omitted fields stay as they are. Exposure: `exposure` 0.1..4 (1), `exposureEv` -3..3,
-  `bloom` 0..3, `ambientIntensity`, `sunIntensity`, `hdriIntensity`. Colour: `temperature` and `tint` -1..1,
+  `bloom` 0..3, `ambientIntensity` 0..8 (0.4), `sunIntensity` 0..16 (2.5), `hdriIntensity` 0..8. Colour: `temperature` and `tint` -1..1,
   `saturation` 0.4..1.8, `contrast` 0.6..1.6, `sunTint`, `ambientTint`, `foliageTint` (`#rrggbb` multipliers; white
-  keeps the colour). Fog: `fogColor`, `fogDensity` (required when the world has no fog), `fogVisibility` (metres).
+  keeps the colour). Fog: `fogColor`, `fogDensity` 0..1 (required when the world has no fog), `fogVisibility` 30..20000 (metres).
   Interiors: `interiorWarmth` -1..1.5 (0.45), `interiorBalance` 0..1.5 (1), `lampStrength` 0..3 (1). `vignette`
-  0..1 (0.22). `reset` lists names to put back to the default (`fog` removes the fog). `message` is the history
+  0..1 (0.22). `reset` lists names to put back to the default (`fog` removes the fog). `message` (≤200) is the history
   line.
 - **Returns.** `Look changed: exposure 1 -> 1.4; grade.temperature default -> 0.2.` or "Nothing changed: those values
   are already set", plus refused parts.
@@ -358,6 +365,12 @@ The loop stops when the score reaches `FORGE_GATE` (0.8) or the budget runs out.
   - `list {room?, wall?, kind?, level?}`
   - `parts`: the parts library with sizes and parameters.
   - `shell`: rooms, walls and openings with exact positions.
+  - `vocabulary {topic?}`: the room-shell vocabulary that `design_plan` accepts: ceiling styles (coved, vaulted,
+    barrel, coffered, beamed, tray), cornice, picture rail, skirting, panelled dados, niches, window styles with
+    glazing bars (sash, arched, bay, casement), door styles (panelled, glazed, double, french, arched), curtains,
+    blinds and pelmets, fireplaces and built-ins.
+  - `finishes {near: "#rrggbb", surface?: wall|floor|ceiling|any, hint? ≤60, limit? 1..10}`: the nearest PBR
+    finishes of the material library for a sampled colour, each with the tint to give it.
   - `review {fast?}`: every check (overlaps, blocked doors and swings, floating or intersecting pieces, scale,
     clearance, reachability, lighting, emptiness), plus whether the building still matches the plan.
   - `stairs {level? 0..5, room?, shape?, heading?, width? 0.7..2.5}`: a ready `add_stairs` op from `fitStair`, or
@@ -454,9 +467,10 @@ sub-call tools, and the design tools the planner already has.
 | Tool | Who calls it | Input | Purpose |
 | --- | --- | --- | --- |
 | `describe_room` | the reader (planner role, `ANALYSIS_SYSTEM`) | `{description}` (validated by `parseRoomDescription`) | A structured description of the room. A refused description is sent back to the model, up to 3 attempts (`ANALYSIS_ATTEMPTS`) |
-| `reconcile_room` | one call after the reads | `{add[{key, reason}], remove[{key, reason}]}` | Settles entries that the reads disagree on, by checking the photo. Runs only when two or more valid reads disagree and `reconcile` is not false |
-| `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{scores[{id, a 0..4, b? 0..4, evidence, ok?, okB?}], closer?: A\|B\|same, why?}` | Scores each checklist item on a rubric and says whether it would accept the item (`ok`). An item passes by the majority of those calls; without them, at a median of 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B, and its `closer` decides whether the new state is kept |
-| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..120] {id, pass, note?}, summary?, closer?: new\|best\|same}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round (edits sent before verdicts are refused), and `closer` is its side-by-side call between the new render and the best one, shown next to each other: `best` rolls the room back |
+| `reconcile_room` | one call after the reads | `{add[≤80]{key, reason 12..300}, remove[≤80]{key, reason}, summary?}` | Settles entries that the reads disagree on, by checking the photo. Runs only when two or more valid reads disagree and `reconcile` is not false |
+| `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{verdicts[1..140]{id, a 0..4, b? 0..4, evidence, ok?, okB?}, closer?: A\|B\|same, why?}` | Scores each checklist item on a rubric and says whether it would accept the item (`ok`). An item passes by the majority of those calls; without them, at a median of 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B, and its `closer` decides whether the new state is kept |
+| `sample_photo` | the model doing the fixes, in each compare round. Offered only when the photo raster could be read | `{regions[1..8] {surface?, box?, kind?: wall\|floor\|ceiling\|any, hint?}}` | Reads colour from the photo's pixels instead of guessing: the well-lit colour, the mean and shadow colour of each region, and the nearest library finishes with the tint to give each. `surface` is `wall-north`, `wall-east`, `wall-south`, `wall-west`, `floor`, `ceiling` or a piece or opening id; `box` is `[x0,y0,x1,y1]` in 0..1, origin top-left. It is ranked with verdicts, before edits |
+| `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..140] {id, pass, note?}, summary?, closer?: new\|best\|same}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round (edits sent before verdicts are refused), and `closer` is its side-by-side call between the new render and the best one, shown next to each other: `best` rolls the room back |
 | `design_plan`, `place_items` | the builder (`runBuild` in `@aether/arch/photo`) | as above | Shell first, then pieces at measured positions |
 | `edit_items`, `place_items`, `query_scene`, `design_plan`, `tune_look`, `finish` | the model in each compare round | as above | Fix what still differs from the photo; `tune_look` sets the world's light and colour when the whole picture reads differently |
 
@@ -471,6 +485,13 @@ How a run proceeds:
    - asks `judges` independent judges: default 3 (`JUDGES_DEFAULT`), maximum 7 (`JUDGES_MAX`), seed
      `JUDGE_SEED` (7331) + seat.
 
+   Before the shell is built, openings that crowd one wall are separated (`separateOpenings`,
+   `packages/arch/src/photo/derive.ts`): pushed apart along the wall inside 0.3 m corner margins with 0.12 m of wall
+   between them, windows narrowed (not below 0.5 m) when the wall is too short, and the last window left out when
+   even that does not fit. Doors keep their width. Each change is added to the build notes, and the shell is no longer
+   refused for it. The photo prompt also tells the reader to describe one curtain per window and not to set `panels`
+   or `gap` (the builder hangs one panel each side).
+
    Who decides: the judges (or, judging alone, the fixing model comparing the best render with the new one). A round
    they do not prefer is rolled back (`decideRound`, `restorePatches`). The measured fidelity is advisory data in the
    message to the model and the judges; it never accepts or rejects a round. Each round allows up to 8 model turns
@@ -480,6 +501,11 @@ How a run proceeds:
    - the model stops because it judges the room good enough or has nothing left to change,
    - progress stalls (`ProgressTracker`, `stallRounds` default 3), or
    - `maxRounds` is reached. With no cap, a safety ceiling `PHOTO_ROUNDS_CEILING` (200) still applies.
+   A tie is accepted, so a run of ties can leave the room below the best state seen. When the state the loop ends
+   on is not the best one (and there is a judge panel), the judges look at the last render and the best render side
+   by side (`pickBest`). If they find the best closer, the room goes back to it (`Back to the best state, round N`).
+   If they find the last closer or cannot tell, the last state stays. Either way the result carries a sentence
+   saying what they decided. No score is compared here.
 4. **Verification.** The room is verified at the end.
 
 The studio sets these values for paid keys: `maxRounds: 10`, `judges: 1`, `reads: 1` (`PHOTO_ROUNDS_METERED`,
@@ -660,7 +686,7 @@ resources and the safety model.
 
 | MCP tool | Input (limits) | What it does | Maps to |
 | --- | --- | --- | --- |
-| `create_world` | `{prompt 1..4000}` | Builds a new world with the full agent loop: plan, tools, verify, repair, review | `WorldAgent.run` with all 15 planner tools and the 2 level tools. Checker-only review, `maxRounds: 6` |
+| `create_world` | `{prompt 1..4000}` | Builds a new world with the full agent loop: plan, tools, verify, repair, review | `WorldAgent.run` with all 16 planner tools and the 2 level tools. Checker-only review, `maxRounds: 6` |
 | `edit` | `{prompt 1..4000}` | Changes the current world; one `undo` reverts the whole request | Same agent loop, including the local edit engine and the minimal-edit guard |
 | `apply_patch` | `{patches[1..200], message? ≤200, atomic? (default true)}`, at most 512 KB of JSON | Exact World IR edits with no model; all or nothing by default | The same patch validation as `apply_patches`, without the model-side extras (guard, carry, notes) |
 | `list_entities` | `{selector?, tag?, behavior?, text?, parent?, offset, limit 1..200 (50)}` | Compact rows of entities, paged | A paged version of `inspect` without ids |
@@ -669,7 +695,7 @@ resources and the safety model.
 | `verify` | `{}` | Runs the tests and diagnostics without a display | `run_verification` |
 | `playtest` | `{seconds 1..120 (60), goal? ≤200}` | The bot plays the world and reports win, lose or incomplete, with the objectives, state and path | The playtest bot (not a planner tool) |
 | `replay` | `{}` | Fast-forwards the physics and summarises each moving body; writes `replays/replay.json` | No planner equivalent |
-| `render_still` | `{width, height 64..1920 (960×540), yawDeg?, pitchDeg?, fovDeg?, from?, lookAt?, at? 0..60, name?}` | A PNG from the software renderer, returned inline up to 1.5 MB | Same renderer family as `captureReviewHeadless` |
+| `render_still` | `{width, height 64..1920 (960×540), yawDeg? -360..360, pitchDeg? -10..89, fovDeg? 15..110, from?, lookAt?, at? 0..60, name?}` | A PNG from the software renderer, returned inline up to 1.5 MB | Same renderer family as `captureReviewHeadless` |
 | `export` | `{format: gltf\|build\|plan\|project, name?}` | Writes the world under `exports/` | No planner equivalent |
 | `undo`, `redo` | `{}` | One tool action per step, up to 200 undo steps | The history |
 
