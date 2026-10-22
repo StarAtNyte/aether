@@ -2551,3 +2551,10 @@ button.chip:disabled {
   line-height: var(--lh-12);
   color: var(--text-2);
 }
+
+.differences { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-1); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-2); }
+.differences__row { display: grid; grid-template-columns: auto auto 1fr; gap: var(--s-2); align-items: baseline; }
+.differences__row.is-fixed { opacity: 0.55; text-decoration: line-through; }
+.differences__size { letter-spacing: -2px; font-size: 9px; min-width: 38px; }
+.differences__kind { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.differences__text i { font-style: normal; opacity: 0.75; }

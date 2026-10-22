@@ -40,9 +40,29 @@ export type ChatEventView =
   | { type: 'error'; text: string }
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string; /** Offline planner could not map the request: show the connect-AI action and these examples. */ offline?: { examples: string[] } }
-  | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit'; text: string; score?: number; findings?: number }
+  | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit' | 'crosscheck'; text: string; score?: number; findings?: number; differences?: DifferenceEventView[] }
   | PhotoEventView
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
+
+/** One difference between the reference (a photo, or the request) and the render, as the model wrote it. */
+export interface DifferenceEventView {
+  id: string;
+  kind: string;
+  where: string;
+  what: string;
+  /** 1..5 (5: obvious at first glance); 0 once fixed. */
+  size: number;
+  status: string;
+  rounds: number;
+  source: 'model' | 'independent';
+}
+
+/** Bounded, validated list of differences (live or stored). */
+export function toDifferences(v: unknown): DifferenceEventView[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter(isRecord).slice(0, 20).map((d): DifferenceEventView => ({ id: str(d['id'], 40), kind: str(d['kind'], 20), where: str(d['where'], 80), what: str(d['what'], 200), size: Math.max(0, Math.min(5, Math.round(num(d['size'])))), status: str(d['status'], 12), rounds: Math.max(1, Math.min(99, Math.round(num(d['rounds'])))), source: d['source'] === 'independent' ? 'independent' : 'model' }));
+  return out.length > 0 ? out : undefined;
+}
 
 /** Progress of a room rebuilt from a photograph (reading it, the assumptions as chips, each compare round, the final score). */
 export interface PhotoEventView {
@@ -53,6 +73,7 @@ export interface PhotoEventView {
   assumptions?: Array<{ id: string; text: string; confidence: number; adjust: string }>;
   score?: PhotoScoreEventView;
   palette?: string[];
+  differences?: DifferenceEventView[];
 }
 
 /** Measures behind the measured fidelity of a photo round. */
@@ -118,6 +139,8 @@ function photoView(v: Record<string, unknown>): PhotoEventView {
       if (Object.keys(f).length > 0) out.score.fidelity = f;
     }
   }
+  const diffs = toDifferences(v['differences']);
+  if (diffs) out.differences = diffs;
   if (Array.isArray(v['palette'])) out.palette = v['palette'].filter((c): c is string => typeof c === 'string' && HEX.test(c)).slice(0, 8);
   return out;
 }
@@ -243,6 +266,8 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
       const v: ChatEventView = { type: 'review', round: Math.max(0, Math.min(500, Math.round(num(e.round)))), phase: e.phase, text: str(e.text, 400) };
       if (typeof e.score === 'number' && Number.isFinite(e.score)) v.score = Math.max(0, Math.min(100, Math.round(e.score)));
       if (typeof e.findings === 'number' && Number.isFinite(e.findings)) v.findings = Math.max(0, Math.min(999, Math.round(e.findings)));
+      const diffs = toDifferences(e.differences);
+      if (diffs && v.type === 'review') v.differences = diffs;
       return v;
     }
     case 'photo':

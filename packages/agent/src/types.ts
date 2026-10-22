@@ -80,7 +80,7 @@ export type AgentEvent =
   | { type: 'verify'; passed: boolean; summary: string; report: unknown }
   | { type: 'repair'; text: string; attempt: number }
   | { type: 'message'; text: string }
-  | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number }
+  | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number; differences?: PhotoDifferenceView[] }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
   | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[] }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
@@ -97,7 +97,7 @@ export type AgentEvent =
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] } };
 
 /** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
-export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit';
+export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit' | 'crosscheck';
 
 /** One difference between the reference and the render, as the model that looked at both wrote it. */
 export interface PhotoDifferenceView {
@@ -379,6 +379,14 @@ export interface ReviewOptions {
   vision?: boolean | (() => boolean);
   /** Images per round (default 6, at most 8). */
   maxViews?: number;
+  /**
+   * The differences ledger (default false; the studio turns it on): each round the model compares the renders with the
+   * request (and any reference pictures) point by point, writes a ranked list of the gaps (`report_differences`), fixes
+   * the largest first and confirms on the next render that the exact gap shrank; what is open at the end is named.
+   */
+  differences?: boolean;
+  /** After the loop, one independent seat with fresh eyes compares the final renders with the request and lists the gaps (default false; the studio turns it on). */
+  crossCheck?: boolean;
 }
 
 /** Size of the planner prompt: everything, or a condensed form for small models. */

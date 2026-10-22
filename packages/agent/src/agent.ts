@@ -25,9 +25,11 @@ import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
-import { findingKey } from '@aether/arch';
+import { findingKey, findingsText } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
+import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
+import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
 import { CallLedger, budgetNote, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -180,6 +182,8 @@ export class WorldAgent {
   private conversation: ChatMessage[] | null = null;
   /** The world as of the last complete model turn of the current run (what a cancelled run's conversation knows). */
   private seen: WorldDoc | null = null;
+  /** What the user asked for and the pictures they attached (the review compares the renders with them). */
+  private reviewAsk: { request: string; images: string[] } = { request: '', images: [] };
 
   constructor(opts: AgentOptions) {
     this.opts = opts;
@@ -437,6 +441,7 @@ export class WorldAgent {
     }
     this.conversation = messages;
 
+    this.reviewAsk = { request, images };
     const startWorld = host.getWorld();
     let repairs = 0;
     let nudges = 0;
@@ -590,7 +595,14 @@ export class WorldAgent {
    */
   private async *review(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer?: () => readonly string[] | Promise<readonly string[]>): AsyncGenerator<AgentEvent> {
     const entered = host.getWorld();
-    yield* this.reviewLoop(ctx, messages, host, startWorld, session, signal, steer);
+    const held: { diffs: DifferenceLedger | null } = { diffs: null };
+    yield* this.reviewLoop(ctx, messages, host, startWorld, session, signal, steer, held);
+    if (held.diffs) {
+      if (this.opts.review?.crossCheck === true && this.opts.provider.name !== 'mock') yield* this.reviewCrossCheck(ctx, host, held.diffs, signal);
+      // What is still open is said plainly, whether the loop approved, stalled or ran out of rounds.
+      const open = held.diffs.unresolvedText();
+      if (open) yield { type: 'message', text: open };
+    }
     // The review fixed things after the physics run: the world that is sealed and shown as verified must be the one
     // that was checked, so verify again when the review changed anything.
     if (host.getWorld() !== entered) {
@@ -600,7 +612,71 @@ export class WorldAgent {
     }
   }
 
-  private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer?: () => readonly string[] | Promise<readonly string[]>): AsyncGenerator<AgentEvent> {
+  /**
+   * One independent seat with fresh eyes (no conversation, a fixed seed): it sees what the user asked for, the final renders
+   * and the checker's findings, and lists the gaps. It records; it never edits. Its findings join the ledger.
+   */
+  private async *reviewCrossCheck(ctx: ExecutorContext, host: AgentHost, diffs: DifferenceLedger, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+    const cfg = this.opts.review;
+    const withViews = cfg && (typeof cfg.vision === 'function' ? cfg.vision() : cfg.vision === true) && typeof host.captureReview === 'function';
+    if (!withViews) return;
+    const world = host.getWorld();
+    let snap: ReviewSnapshot = snapshotForReview(world, null, { maxViews: 4, withViews: true });
+    if (snap.buildings.length === 0) {
+      const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews: 4, withViews: true }), signal).catch(() => null) : null;
+      if (!lvl) return;
+      snap = lvl;
+    }
+    if (snap.views.length === 0 || !host.captureReview) return;
+    yield { type: 'status', text: 'Independent check of the final renders against the request…' };
+    const blocks: ContentBlock[] = [];
+    const refs = this.reviewAsk.images.slice(0, 2);
+    refs.forEach((r, i) => blocks.push({ type: 'text', text: `Reference ${i + 1} from the user` }, { type: 'image', dataUrl: r }));
+    try {
+      const got = await raceAbort(host.captureReview(snap.views, signal ? { signal } : {}), signal);
+      let n = 0;
+      for (const g of got) {
+        const v = snap.views.find((x) => x.name === g.name);
+        if (v && isImageDataUrl(g.dataUrl) && n < 4) {
+          blocks.push({ type: 'text', text: `Render: ${v.name}, ${v.label}` }, { type: 'image', dataUrl: g.dataUrl });
+          n++;
+        }
+      }
+      if (n === 0) return;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      return;
+    }
+    blocks.unshift({ type: 'text', text: reviewCrossCheckText(this.reviewAsk.request, findingsText(snap.findings, 12), snap.legend, refs.length > 0) });
+    const fresh = new DifferenceLedger();
+    const messages: ChatMessage[] = [{ role: 'user', content: blocks }];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res: CompletionResponse;
+      try {
+        res = await raceAbort(this.opts.provider.complete({ role: 'critic', system: REVIEW_CROSSCHECK_SYSTEM, messages: requestView(messages, 10), tools: [DIFFERENCES_TOOL], maxTokens: Math.min(this.maxTokens, 8000), temperature: 0, seed: REVIEW_CROSSCHECK_SEED }, signal), signal);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        return;
+      }
+      addUsage(ctx.usage, res);
+      messages.push({ role: 'assistant', content: res.content });
+      const c = res.content.find((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use' && b.name === DIFFERENCES_TOOL_NAME);
+      if (!c) {
+        pushUserText(messages, 'Call report_differences now (an empty list when nothing differs).');
+        continue;
+      }
+      const rec = fresh.record(c.input, 'independent');
+      if (!rec.ok) {
+        messages.push({ role: 'user', content: [{ type: 'tool_result', toolUseId: c.id, content: rec.error, isError: true }] });
+        continue;
+      }
+      for (const d of rec.ranked) diffs.record({ differences: [{ id: `check-${d.id}`.slice(0, 40), kind: d.kind, where: d.where, what: d.what, size: d.size }] }, 'independent');
+      yield { type: 'review', round: 0, phase: 'crosscheck', text: rec.open === 0 ? 'Independent check, fresh eyes: the renders match the request; no gap found.' : `Independent check, fresh eyes: ${rec.open} gap${rec.open === 1 ? '' : 's'} from the request; largest: ${rec.ranked[0]?.id} (${rec.ranked[0]?.what.slice(0, 100)}).`, differences: differenceViews(rec.ranked.map((d) => ({ ...d, source: 'independent' as const }))) };
+      return;
+    }
+  }
+
+  private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer: (() => readonly string[] | Promise<readonly string[]>) | undefined, held: { diffs: DifferenceLedger | null }): AsyncGenerator<AgentEvent> {
     const cfg: ReviewOptions | undefined = this.opts.review;
     if (!cfg) return;
     const world0 = host.getWorld();
@@ -611,6 +687,10 @@ export class WorldAgent {
     const tracker = new StallTracker(cfg.stallRounds ?? 3);
     let lastEdited = false;
     const ledger = new CallLedger();
+    const diffs = cfg.differences === true ? new DifferenceLedger() : null;
+    held.diffs = diffs;
+    const roundTools = diffs ? [...this.tools, DIFFERENCES_TOOL] : this.tools;
+    const imageCap = diffs ? 10 : undefined;
     const pushedBack = new Set<string>();
     let before: WorldDoc | null = startWorld;
     for (let round = 1; round <= rounds; round++) {
@@ -657,10 +737,26 @@ export class WorldAgent {
         content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
       });
       content.push({ type: 'text', text: (isLevel ? levelTurnText : reviewTurnText)(round, snap, { hasImages: images.length > 0, lastEdited }) });
+      if (diffs) {
+        // The request, point by point, against the renders (and the user's reference pictures beside them).
+        const refs = this.reviewAsk.images.slice(0, 2);
+        let shown = 0;
+        for (const [i, ref] of refs.entries()) {
+          const against = images[Math.min(i, images.length - 1)];
+          const pair = against && host.composeImages ? await raceAbort(host.composeImages([{ dataUrl: ref }, { dataUrl: against.dataUrl }], { maxSide: 1400 }), signal).catch(() => null) : null;
+          if (pair) content.push({ type: 'text', text: `Image ${images.length + shown + 1}: REFERENCE ${i + 1} from the user (left) beside the RENDER ${against?.name ?? ''} (right)` }, { type: 'image', dataUrl: pair });
+          else content.push({ type: 'text', text: `Image ${images.length + shown + 1}: REFERENCE ${i + 1} from the user` }, { type: 'image', dataUrl: ref });
+          shown++;
+        }
+        const list = diffs.roundText();
+        if (list) content.push({ type: 'text', text: list });
+        content.push({ type: 'text', text: requirementText(this.reviewAsk.request, refs.length > 0, round, list.length > 0) });
+      }
       pushUserBlocks(messages, content);
       // One round: the model works with the tools until it calls finish (or answers without a tool call).
       let editedThisRound = false;
       let declared = false;
+      let listed = diffs === null;
       let toolCalls = 0;
       yield { type: 'review', round, phase: 'fixing', text: snap.findings.length > 0 ? 'Fixing what the checks found…' : 'Looking at the renders…', score: snap.score, findings: snap.findings.length };
       for (let turn = 0; turn < REVIEW_TURNS_PER_ROUND && !declared; turn++) {
@@ -673,7 +769,7 @@ export class WorldAgent {
           editedThisRound = true;
         }
         const res: CompletionResponse = await raceAbort(
-          this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
+          this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages, ...(imageCap ? [imageCap] : [])), tools: roundTools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
           signal,
         );
         addUsage(ctx.usage, res);
@@ -695,16 +791,38 @@ export class WorldAgent {
         }
         if (text) yield { type: 'plan', text };
         const results: ContentBlock[] = [];
-        for (const call of calls) {
+        for (const call of diffs ? [...calls].sort((a, b) => Number(b.name === DIFFERENCES_TOOL_NAME) - Number(a.name === DIFFERENCES_TOOL_NAME)) : calls) {
           if (signal?.aborted) throw new Error('aborted');
-          if (toolCalls >= this.maxToolCalls) {
+          if (toolCalls >= this.maxToolCalls && call.name !== DIFFERENCES_TOOL_NAME) {
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'Tool-call budget of this review round used up. Call finish.', isError: true });
+            continue;
+          }
+          if (diffs && call.name === DIFFERENCES_TOOL_NAME) {
+            if (listed) {
+              results.push({ type: 'tool_result', toolUseId: call.id, content: 'Already recorded this round. Fix the largest open difference, or call finish.' });
+              continue;
+            }
+            const rec = diffs.record(call.input);
+            if (!rec.ok) {
+              results.push({ type: 'tool_result', toolUseId: call.id, content: rec.error, isError: true });
+              continue;
+            }
+            listed = true;
+            results.push({ type: 'tool_result', toolUseId: call.id, content: rec.text });
+            yield { type: 'review', round, phase: 'found', text: rec.open === 0 ? 'No gaps from the request.' : `${rec.open} gap${rec.open === 1 ? '' : 's'} from the request; largest: ${rec.ranked[0]?.id} (${rec.ranked[0]?.what.slice(0, 100)}).`, differences: differenceViews(rec.ranked) };
+            continue;
+          }
+          if (diffs && !listed && !READ_ONLY_TOOLS.has(call.name)) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'List the differences first: call report_differences (in the same reply is fine), ranked by size, then fix the largest.', isError: true });
             continue;
           }
           toolCalls++;
           const out = await guardedTool(ledger, ctx, call.name, call.input);
           for (const ev of out.events) yield ev;
-          if (out.edited) editedThisRound = true;
+          if (out.edited) {
+            editedThisRound = true;
+            diffs?.markEdited();
+          }
           if (out.finished) {
             declared = true;
             if (out.finished.message) yield { type: 'message', text: out.finished.message };
@@ -724,6 +842,14 @@ export class WorldAgent {
         const signature = open.map(findingKey).sort().join('|');
         if (errors.length === 0 && open.length > 0 && !pushedBack.has(signature)) {
           pushedBack.add(signature);
+          continue;
+        }
+        // Approved while large gaps from the request are still open: ask once, naming them.
+        const big = diffs ? diffs.ranked().filter((d) => d.size >= 4) : [];
+        const bigKey = `diff:${big.map((d) => d.id).sort().join('|')}`;
+        if (errors.length === 0 && big.length > 0 && !pushedBack.has(bigKey)) {
+          pushedBack.add(bigKey);
+          pushUserText(messages, `You approved, but these large gaps from the request are still open: ${big.slice(0, 5).map((d) => `${d.id} (${d.what.slice(0, 80)})`).join('; ')}. Fix them, or say plainly why they cannot be fixed with the tools.`);
           continue;
         }
         if (errors.length === 0) {

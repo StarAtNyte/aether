@@ -1,6 +1,6 @@
 import { memo, useState, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../../app/context';
-import { FIDELITY_KEYS, type ChatEventView, type FidelityKey } from '../../lib/chat';
+import { FIDELITY_KEYS, type ChatEventView, type DifferenceEventView, type FidelityKey } from '../../lib/chat';
 import { patchChips } from '../../lib/patchSummary';
 import { compactCount } from '../../lib/format';
 import { CodeBlock } from '../CodeBlock';
@@ -169,6 +169,39 @@ const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEv
   );
 });
 
+/**
+ * The ranked differences between the reference (the photo, or what was asked for) and the render, as the AI listed them:
+ * largest first, each with its kind, where, the amount and whether the next render showed it smaller.
+ */
+function DifferencesList({ items, label }: { items: readonly DifferenceEventView[]; label: string }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const ranked = [...items].sort((a, b) => b.size - a.size);
+  return (
+    <>
+      <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="differences-toggle">
+        <span className="diff-chips__msg">{ranked.length} {label}{ranked.length === 1 ? '' : 's'}, largest first</span>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} className="diff-chips__chev" />
+      </button>
+      {open && (
+        <ol className="differences" data-testid="differences-list">
+          {ranked.map((d) => (
+            <li key={`${d.source}-${d.id}`} className={`differences__row${d.status === 'fixed' ? ' is-fixed' : ''}`}>
+              <span className="differences__size" title={`Size ${d.size} of 5`} aria-label={`size ${d.size} of 5`}>{'●'.repeat(Math.max(1, d.size))}</span>
+              <span className="differences__kind">{d.kind}</span>
+              <span className="differences__text">
+                {d.where ? <b>{d.where} </b> : null}
+                {d.what}
+                {d.status !== 'open' ? <i> · {d.status}</i> : d.rounds > 1 ? <i> · open {d.rounds} rounds</i> : null}
+                {d.source === 'independent' ? <i> · independent check</i> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
+  );
+}
+
 const FIDELITY_LABELS: Readonly<Record<FidelityKey, string>> = { openings: 'openings', inventory: 'pieces', placement: 'placement', sizes: 'sizes', materials: 'colours', clearance: 'clearance', framing: 'framing', similarity: 'pixels', regionColour: 'region colour' };
 
 /**
@@ -228,6 +261,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
           ))}
         </div>
       )}
+      {event.differences && event.differences.length > 0 && <DifferencesList items={event.differences} label="difference" />}
       {event.score && event.score.failing.length > 0 && (
         <>
           <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -387,7 +421,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       return <PhotoView event={event} />;
     case 'review': {
       const tone = event.phase === 'approved' ? 'ok' : event.phase === 'stalled' || event.phase === 'limit' ? 'warn' : 'info';
-      const label = event.phase === 'checking' ? 'Checking' : event.phase === 'found' ? 'Found' : event.phase === 'fixing' ? 'Fixing' : event.phase === 'approved' ? 'Checked' : 'Stopped';
+      const label = event.phase === 'checking' ? 'Checking' : event.phase === 'found' ? 'Found' : event.phase === 'fixing' ? 'Fixing' : event.phase === 'approved' ? 'Checked' : event.phase === 'crosscheck' ? 'Independent check' : 'Stopped';
       return (
         <div className="ev ev--repair" role="status">
           <span className={`status-chip is-${tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'info'}`}>
@@ -397,6 +431,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
             {event.text}
             {event.score !== undefined ? ` (automatic checks ${event.score}/100, advice for the assistant)` : ''}
           </span>
+          {event.differences && event.differences.length > 0 && <DifferencesList items={event.differences} label="gap" />}
         </div>
       );
     }
