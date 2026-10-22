@@ -131,10 +131,15 @@ export function unpackAsset(bytes: Uint8Array): UnpackedAsset | null {
   }
 }
 
-/** The content key of a bake: everything it reads, as a file-safe string (`lm<version>-<32 hex digits>`). */
-export function lightmapKey(arrays: ReadonlyArray<ArrayBufferView>, scalars: unknown): string {
-  const small = hashWords(new TextEncoder().encode(JSON.stringify([LIGHTMAP_VERSION, scalars])));
-  let a = small;
+/** A hash of the geometry and volume arrays a bake reads (the part of the key that does not depend on the quality). */
+export function contentHash(arrays: ReadonlyArray<ArrayBufferView>): string {
+  let a = hashWords(new TextEncoder().encode(`lightmap-content-${LIGHTMAP_VERSION}`));
   for (const [i, v] of arrays.entries()) a = hashWords(v, parseInt(a.slice(0, 7), 16) + i);
-  return `lm${LIGHTMAP_VERSION}-${small}${a}`;
+  return a;
+}
+
+/** The content key of a bake: the content hash plus everything small it reads (the plan, the light), file-safe (`lm<version>-<32 hex digits>`). */
+export function lightmapKey(content: string, scalars: unknown): string {
+  const small = hashWords(new TextEncoder().encode(JSON.stringify([LIGHTMAP_VERSION, content, scalars])));
+  return `lm${LIGHTMAP_VERSION}-${content}${small}`;
 }

@@ -27,7 +27,7 @@ import {
   type LightmapPlan,
   type LightmapQuality,
 } from '../environment/lightmap';
-import { LIGHTMAP_MAX_ASSET_BYTES, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
+import { LIGHTMAP_MAX_ASSET_BYTES, contentHash, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
 import { LIGHTMAP_CACHE_MIN_BAKE_MS, createIdbLightmapCache, type LightmapCache } from '../environment/lightmap-cache';
 import { decodeImage, encodeImage } from '../environment/lightmap-codec';
 import { parseLightmapReply, type LightmapRequest } from '../environment/lightmap-protocol';
@@ -125,6 +125,8 @@ interface Prepared {
   volume: Float32Array;
   lighting: VolumeLighting;
   groundY: number;
+  /** Hash of the arrays (filled on first use). */
+  content?: string;
 }
 
 export class LightmapController implements LightmapSource {
@@ -383,15 +385,17 @@ export class LightmapController implements LightmapSource {
     }
     const prepared = await this.prepare(scene, vol, gen);
     if (!prepared || gen !== this.gen || !this.enabled) return;
-    const key = this.keyOf(prepared);
+    const key = this.keyOf(prepared, this.plan);
     this.lastKey = key;
     if (this.suppressed === '*' || this.suppressed === key) return;
     if (this.appliedKey === key) {
       this.stale = false;
       return;
     }
-    // Bundled file, then cache, then the bake.
-    const hit = await this.lookup(key);
+    // Bundled file, then cache, then the bake. Without a request any quality that is bundled will do (the best first).
+    const candidates = auto ? (['high', 'medium', 'low'] as const).map((q) => this.keyOf(prepared, planLightmap(q))) : [key];
+    if (auto && !candidates.includes(key)) candidates.push(key);
+    const hit = await this.lookup(candidates);
     if (gen !== this.gen || !this.enabled) return;
     if (hit) {
       if (await this.applyAsset(hit.bytes, prepared, hit.source, gen)) return;
@@ -437,22 +441,32 @@ export class LightmapController implements LightmapSource {
     return { meshes, data, input, proxies, grid: vol.grid, volume: vol.data, lighting: scene.lighting, groundY: scene.groundY };
   }
 
-  private keyOf(p: Prepared): string {
-    const arrays: ArrayBufferView[] = [p.input.positions, p.input.albedo, p.input.twoSided, p.volume];
-    for (const d of p.data) arrays.push(d.positions, d.normals);
+  /** The key of this building and light for `plan` (the geometry is hashed once per bake attempt). */
+  private keyOf(p: Prepared, plan: LightmapPlan): string {
+    if (!p.content) {
+      const arrays: ArrayBufferView[] = [p.input.positions, p.input.albedo, p.input.twoSided, p.volume];
+      for (const d of p.data) arrays.push(d.positions, d.normals);
+      p.content = contentHash(arrays);
+    }
     const lamps = p.lighting.lamps.map((l) => [l.position, l.color, l.range, l.room ?? null]);
-    return lightmapKey(arrays, [this.plan.size, this.plan.samples, this.plan.density, p.data.map((d) => meshTriangleCount(d)), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps]);
+    return lightmapKey(p.content, [plan.size, plan.samples, plan.density, p.data.map((d) => meshTriangleCount(d)), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps]);
   }
 
-  private async lookup(key: string): Promise<{ bytes: Uint8Array; source: 'static' | 'cache' } | null> {
+  private async lookup(keys: readonly string[]): Promise<{ bytes: Uint8Array; source: 'static' | 'cache' } | null> {
     const base = this.opts.staticBase;
-    if (base && (await this.staticKeys()).has(key)) {
-      const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${base}${key}.lmap`);
-      if (bytes) return { bytes, source: 'static' };
+    if (base) {
+      const have = await this.staticKeys();
+      for (const key of keys) {
+        if (!have.has(key)) continue;
+        const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${base}${key}.lmap`);
+        if (bytes) return { bytes, source: 'static' };
+      }
     }
     if (this.cache) {
-      const bytes = await this.cache.get(key);
-      if (bytes) return { bytes, source: 'cache' };
+      for (const key of keys) {
+        const bytes = await this.cache.get(key);
+        if (bytes) return { bytes, source: 'cache' };
+      }
     }
     return null;
   }
@@ -630,6 +644,7 @@ export class LightmapController implements LightmapSource {
     }
     if (!rgba || gen !== this.gen || !this.enabled) return false;
     const uv = asset.uv.map((u) => (u ? Float32Array.from(u, (v) => v / 65535) : null));
+    if (!this.requested && (asset.meta.quality === 'low' || asset.meta.quality === 'medium' || asset.meta.quality === 'high')) this.plan = planLightmap(asset.meta.quality, asset.meta.samples);
     this.applyDecoded(asset.meta, rgba, uv, p, source, bytes, 0, gen);
     return true;
   }

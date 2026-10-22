@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIGHTMAP_VERSION } from '../src/environment/lightmap';
-import { lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../src/environment/lightmap-asset';
+import { contentHash, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../src/environment/lightmap-asset';
 import { parseLightmapReply, parseLightmapRequest } from '../src/environment/lightmap-protocol';
 
 function meta(over: Partial<LightmapAssetMeta> = {}): LightmapAssetMeta {
@@ -38,11 +38,12 @@ describe('lightmap asset', () => {
 
   it('keys depend on every input and are file-safe', () => {
     const a = new Float32Array([1, 2, 3, 4]);
-    const k = lightmapKey([a], { q: 'medium' });
+    const c = contentHash([a]);
+    const k = lightmapKey(c, { q: 'medium' });
     expect(k).toMatch(/^lm\d+-[0-9a-f]{32}$/);
-    expect(lightmapKey([a], { q: 'medium' })).toBe(k);
-    expect(lightmapKey([new Float32Array([1, 2, 3, 5])], { q: 'medium' })).not.toBe(k);
-    expect(lightmapKey([a], { q: 'high' })).not.toBe(k);
+    expect(lightmapKey(contentHash([a]), { q: 'medium' })).toBe(k);
+    expect(lightmapKey(contentHash([new Float32Array([1, 2, 3, 5])]), { q: 'medium' })).not.toBe(k);
+    expect(lightmapKey(c, { q: 'high' })).not.toBe(k);
   });
 });
 
