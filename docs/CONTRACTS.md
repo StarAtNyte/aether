@@ -600,7 +600,7 @@ cut before a connective or a dangling word).
 
 ```ts
 export const AGENT_TOOLS: ToolDef[];        // apply_patches, build_architecture, design_plan, place_items, edit_items, query_scene,
-                                            // write_generator, write_script, request_asset, search_assets, inspect, run_verification,
+                                            // write_generator, write_script, request_asset, search_assets, find_model, inspect, run_verification,
                                             // shape_land, tune_feel, tune_look, finish (LEVEL_TOOLS query_level / place_level_items are appended with levelTools)
 export const COMPACT_TOOLS: ToolDef[];      // apply_patches, finish (short descriptions, minimal schemas; same validators)
 export function buildSystemPrompt(catalogs: AgentCatalogs): string;
@@ -1627,7 +1627,7 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 
 | Export | Contract |
 | --- | --- |
-| `Catalog`, `CatalogEntry`, `CatalogPack`, `CatalogCollider`, `CatalogAnims`, `AssetCategory`, `AssetLicence` | zod schemas of `assets/catalog.json` (version 1). Paths are content-hashed (`m/<id>[.lod1|.lod2].<sha8>.glb`, `h/…hdr`, `t/…webp`) relative to `base` (`/assets/lib/`). Licences: `CC0-1.0`, `CC-BY-4.0` (third party), `MIT` (first-party forge originals). Kinds: `model`, `hdri`, `generator` (a library procedural generator + params) and `material` (category `materials`: `material: { finish, tile, maps: { albedo, orm, normal }, small? }`, photographed maps of a `MaterialFinish` as 512 px WebP, `x/<finish>.<map>.<sha8>.webp`, and `small`, the same maps at 256 px, `x/<finish>.<map>.256.<sha8>.webp`, which the tiers with 256 px finish textures load). An `hdri` entry may carry `lite`, a 512 x 256 copy (`h/<id>.512.<sha8>.hdr`) that the renderer fetches when the sky only lights the scene. Older catalogs without the new kind / category stay valid. |
+| `Catalog`, `CatalogEntry`, `CatalogPack`, `CatalogCollider`, `CatalogAnims`, `AssetCategory`, `AssetLicence` | zod schemas of `assets/catalog.json` (version 1). Paths are content-hashed (`m/<id>[.lod1|.lod2].<sha8>.glb`, `h/…hdr`, `t/…webp`) relative to `base` (`/assets/lib/`). Licences: `CC0-1.0`, `CC-BY-4.0` (third party), `MIT` (first-party forge originals). Kinds: `model`, `hdri`, `generator` (a library procedural generator + params) and `material` (category `materials`: `material: { finish, tile, maps: { albedo, orm, normal }, small? }`, photographed maps of a `MaterialFinish` as 512 px WebP, `x/<finish>.<map>.<sha8>.webp`, and `small`, the same maps at 256 px, `x/<finish>.<map>.256.<sha8>.webp`, which the tiers with 256 px finish textures load). An `hdri` entry may carry `lite`, a 512 x 256 copy (`h/<id>.512.<sha8>.hdr`) that the renderer fetches when the sky only lights the scene. A `model` entry may carry `lite` too (`i/<id>.lite.<sha8>.glb`: 256 px textures, a quarter of the triangle budget; the low render tiers load it instead of the main file and skip the distance level) and `interior` (`{type, styles[], colors[], rgb, paint?}`: what the object is, the design styles it suits, colour names and the dominant colour measured from its own base-colour texture, and whether its main material is named `paint` so `material.color` recolours it). The interior models live in `i/` with the library path forms `i/<id>.<sha8>.glb`, `i/<id>.lod1.<sha8>.glb`, `i/<id>.lite.<sha8>.glb`; `@aether/assets` exports `findModels`, `pickModel`, `resolveType`, `interiorTypes`, `describeModel`, `KIND_MODELS` and `AUTO_MODEL_KINDS` for them. Older catalogs without the new kind / category stay valid. |
 | `loadCatalog()` / `getCatalog()` / `setCatalog(c)` / `catalogEntry(id)` / `libraryUrl(path)` | Lazy registry. `loadCatalog` imports the JSON once (own bundle chunk), validates it and never rejects (empty catalog when missing). |
 | `searchAssets(catalog, query)` / `bestAsset(catalog, text, filter)` | Tokenised, plural-folded, synonym-expanded (`SYNONYM_GROUPS`), typo-tolerant (one edit or swap) AND search with category / kind / style / placement / animated filters; ties prefer lighter models; ≤ 200 results. |
 | `selectLod(entry, distance, fovY, scale?, bias?)`, `lodDistances(…)`, `screenFraction(…)` | LOD choice by projected height (`LOD_SCREEN_FRACTIONS` = 0.25 / 0.08 of the viewport). |
@@ -1703,6 +1703,10 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 - Tool `search_assets({ query ≤ 120, category?, limit 1..20 })` (between
   `request_asset` and `inspect`). `AgentCatalogs.assetSummary?` adds an
   "Asset library" prompt section.
+- Tool `find_model({ what ≤ 120, style?, color?, size? [w,h,d], limit 1..8 })` (read-only, after
+  `search_assets`): ranks the interior models by type (from `what`), style, colour and size and answers one
+  line per model (`id — name: size; styles; colours; mount; why`). The model places its pick with
+  `place_items {kind: "model:<id>", fit?}`.
 - `forgeGenerator(deps, req)` — the asset forge: OBSERVE → SPEC → BUILD →
   PARAMETRISE (`FORGE_METHOD`), sandbox check, four-view contact sheet,
   critic scores (`FORGE_CRITERIA` silhouette .35, proportions .25, parts .25,
@@ -2657,7 +2661,7 @@ simulation state, so physics, NPC navigation, the playtest bot and proofs are un
 | tool | input | result |
 | --- | --- | --- |
 | `design_plan` | `{plan: DesignPlan}` | the shell described (rooms, walls, openings with built ids), or the refusals |
-| `place_items` | `{items: [{kind, room, id?, wall+t \| wall+align \| at \| on+offset, y?, yaw?, faces?, params?, opening?}], building?, message?}` | per item: facts (position, wall span, clearance, nearest pieces) or the refusal with a fix |
+| `place_items` | `{items: [{kind \| "model:<id>", model? (id \| "auto"), fit? [w,h,d], room, id?, wall+t \| wall+align \| at \| on+offset, y?, yaw?, faces?, params?, opening?}], building?, message?}` | per item: facts (position, wall span, clearance, nearest pieces) or the refusal with a fix |
 | `edit_items` | `{edits: [{op: move \| rotate \| resize \| remove \| snap_to_wall \| anchor_to_opening \| center_over, ref, …}], building?, message?}` | as above |
 | `query_scene` | `{queries: [{q: wall \| measure \| list \| parts \| shell \| review, …}], building?}` | facts |
 

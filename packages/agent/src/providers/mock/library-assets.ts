@@ -6,7 +6,7 @@
  * scatter fields, foliage wind and game mechanics the planner relies on.
  */
 import type { EntityInput, Json } from '@aether/core';
-import { getCatalog, searchAssets, type CatalogEntry } from '@aether/assets';
+import { findModels, getCatalog, resolveType, searchAssets, type CatalogEntry } from '@aether/assets';
 import { r2, type Builder, type PlaceOpts, type V3 } from './builder';
 import type { Asset } from './lexicon';
 
@@ -18,6 +18,8 @@ export const PROCEDURAL_NOUNS: ReadonlySet<string> = new Set([
   'ball', 'beach ball', 'crate', 'box', 'cube', 'snowman', 'sheep', 'cactus', 'lamp', 'lamp post', 'lamppost', 'light', 'campfire', 'fire', 'bonfire',
 ]);
 
+const INTERIOR_CATEGORIES: ReadonlySet<string> = new Set(['furniture', 'lighting', 'plants', 'decor', 'kitchen', 'bathroom']);
+
 /** Minimum search score for the planner to trust a match (a direct name / tag / synonym hit). */
 const MIN_SCORE = 18;
 
@@ -25,6 +27,11 @@ const MIN_SCORE = 18;
 export function libraryEntry(noun: string): CatalogEntry | null {
   const catalog = getCatalog();
   if (!catalog || catalog.entries.length === 0) return null;
+  // Furniture, lamps, plants and decor: the photographed model (a modern one when no style is asked for) before the low-poly
+  // kit piece of the same name.
+  const type = resolveType(catalog, noun);
+  const real = type ? findModels(catalog, { type, style: 'modern', limit: 1 })[0] : undefined;
+  if (real && INTERIOR_CATEGORIES.has(real.entry.category)) return real.entry;
   const hit = searchAssets(catalog, { text: noun, kind: 'model', limit: 1 })[0];
   return hit && hit.score >= MIN_SCORE ? hit.entry : null;
 }

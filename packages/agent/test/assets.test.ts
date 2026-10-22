@@ -71,7 +71,7 @@ describe('offline planner with the asset library', () => {
     const w = await meadow();
     const { result } = await mockApply('add 2 sofas', w);
     expect(result.errors).toEqual([]);
-    expect(added(w, result.world)).toEqual(['sofa', 'sofa']);
+    expect(added(w, result.world)).toEqual(['sofa-02', 'sofa-02']);
     const car = await mockApply('add a police car', w);
     expect(added(w, car.result.world)).toEqual(['police-car']);
     const chair = Object.values((await mockApply('add a chair', w)).result.world.entities).find((e) => !w.entities[e.id] && e.shape.kind === 'asset');
