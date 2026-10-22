@@ -14,6 +14,7 @@ import { cameraModel, roomPlanes, type CameraModel } from './project';
 import { rectify, type Box } from './rectify';
 import { bestSquare, crop, fillHoles, rejectOutliers } from './fill';
 import { delight, limitSpread } from './delight';
+import { clampRatio, denoisePatch } from './denoise';
 import { quilt, seamless } from './tile';
 import { buildMaps, surfaceClassOf, type PbrMaps, type SurfaceClass } from './maps';
 import { fromRgba8, linearToHex, resize, type FImage, type Rgba8 } from './raster';
@@ -115,8 +116,10 @@ function tileFrom(
   opts: { keepShading: number; quiltBelow: number; maxSpread: number; sigmaDiv?: number },
 ): { tile: FImage; tileMetres: number; mean: [number, number, number]; contrast: number } {
   const { image, valid: v } = crop(img, valid, sq.x, sq.y, sq.size, sq.size);
-  const filled = fillHoles(image, v);
+  // Sensor noise and JPEG blocking would repeat across the whole surface: regularise the patch before it becomes a tile.
+  const filled = denoisePatch(fillHoles(image, v)).image;
   const lit = delight(filled, { sigma: Math.max(4, sq.size / (opts.sigmaDiv ?? 3)), keepShading: opts.keepShading });
+  lit.ratio = clampRatio(lit.ratio, 3);
   const damped = limitSpread(lit.ratio, lit.contrast, opts.maxSpread);
   let tile = lit.ratio;
   let metres = sourceMetres;
@@ -145,7 +148,8 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
         let tile: ReturnType<typeof tileFrom>;
         let coverage: number;
         let sourceMetres: number;
-        const cls = surfaceClassOf(target.word);
+        let cls = surfaceClassOf(target.word);
+        let softCover = false;
         if (target.kind === 'piece') {
           const item = target.item;
           const spec = PIECES[item?.kind ?? ''] ?? GENERIC_PIECE;
@@ -168,9 +172,12 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           if (!sq) return skip('no clean square of its cover is visible (folds, shadows and other objects cover it)');
           sourceMetres = (sq.size * spec.width(item) * (region[2] - region[0])) / w;
           coverage = sq.fill;
-          // Folds and creases are the fabric's character: keep a share of the shading in soft covers.
-          tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.05, quiltBelow: 0.9, maxSpread: 0.18, sigmaDiv: 6 });
-          notes.push('cover of a piece: photographed straight on (not flattened by the camera), tile size estimated from its width');
+          // Creases and folds of the photographed cover are the geometry's job (the piece models its own drape): a tile that kept them
+          // repeated one crumple several times and drew it as relief. Only what is finer than a fold (weave, print, speckle) is kept.
+          tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.02, quiltBelow: 0.9, maxSpread: 0.18, sigmaDiv: 16 });
+          // And the relief taken from the photograph's luminance is mostly those creases: a third of it stays.
+          softCover = true;
+          notes.push('cover of a piece: photographed straight on (not flattened by the camera), tile size estimated from its width, creases taken out');
         } else {
           const plane = planes[target.id];
           if (!plane) return skip('it is not a surface of the room');
@@ -193,6 +200,7 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           }
           notes.push(`${(rr.coverage * 100).toFixed(0)} % of the ${target.kind} is visible; rectified through the solved camera`);
         }
+        if (softCover) cls = { ...cls, relief: cls.relief * 0.3 };
         if (target.kind === 'wall' && cls === surfaceClassOf('paint') && tile.contrast < 0.03) return skip('plain paint: the pixels hold only a colour, so the procedural paint (with its roller mottle) is kept');
         // Soft covers are read at a small scale (weave, wrinkles, print): a clean palm-sized patch is a fair sample of them.
         const soft = target.kind === 'piece';

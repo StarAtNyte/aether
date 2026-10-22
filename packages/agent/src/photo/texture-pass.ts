@@ -52,5 +52,8 @@ export function texturePassLine(r: TexturePassResult): string {
   if (r.applied.length === 0 && r.skipped.length === 0) return '';
   const why = (x: { id: string; reason: string }): string => `${x.id} (${x.reason.replace(/\.$/, '').slice(0, 90)})`;
   const kept = r.skipped.length > 0 ? ` Procedural finish kept for ${r.skipped.slice(0, 5).map(why).join('; ')}${r.skipped.length > 5 ? `; and ${r.skipped.length - 5} more` : ''}.` : '';
-  return r.applied.length > 0 ? `Textures photographed from your photo: ${r.applied.join(', ')}.${kept}` : `No surface was clear enough in the photo to texture.${kept}`;
+  // A surface the camera barely sees stays procedural; the assistant (not a rule) picks what suits the slice that shows.
+  const bare = r.skipped.filter((x) => (x.id === 'floor' || x.id.startsWith('wall-')) && /visible|clear square|obliq/.test(x.reason)).map((x) => x.id);
+  const next = bare.length > 0 ? ` Not sampled because the camera barely sees ${bare.join(', ')}: look at the slice that shows and choose the library finish and colour that match it, or make_texture {target, prompt} for an image-model surface, then compare.` : '';
+  return r.applied.length > 0 ? `Textures photographed from your photo: ${r.applied.join(', ')}.${kept}${next}` : `No surface was clear enough in the photo to texture.${kept}${next}`;
 }

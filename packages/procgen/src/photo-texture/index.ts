@@ -7,6 +7,7 @@ export * from './project';
 export * from './rectify';
 export * from './fill';
 export * from './delight';
+export * from './denoise';
 export * from './tile';
 export * from './maps';
 export * from './derive';
