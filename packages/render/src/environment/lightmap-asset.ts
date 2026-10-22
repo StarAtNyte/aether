@@ -1,0 +1,140 @@
+/**
+ * The lightmap as a project asset: one self-describing binary file (`.lmap`) that holds the atlas image (WebP when the
+ * browser can encode it, else raw RGBA), the 16-bit chart coordinates of every baked mesh and the numbers that made it.
+ * The same bytes live in the browser cache (IndexedDB, keyed by {@link lightmapKey}) and, for bundled worlds, as a static
+ * file named after that key, so a world opened again (or on another machine) shows its baked light without a bake.
+ *
+ * Image layout: the atlas is `size` × `size`. The file stacks it into `size` × `2·size` RGB: the top half is the bounce
+ * (sqrt-coded), the bottom half the sky visibility as grey. Nothing needs an alpha channel, so a lossy image codec and the
+ * 2D canvas (which premultiplies alpha) cannot damage the colours.
+ *
+ * Caps: {@link LIGHTMAP_MAX_ASSET_BYTES} per file; a larger one is re-encoded at lower quality, and dropped if it still
+ * does not fit.
+ */
+import { hashWords } from './light-volume-cache';
+import { LIGHTMAP_VERSION } from './lightmap';
+
+/** Most bytes of one lightmap file. */
+export const LIGHTMAP_MAX_ASSET_BYTES = 2 * 1024 * 1024;
+const MAGIC = 0x4d4c4541; // 'AELM' little-endian
+
+export interface LightmapAssetMeta {
+  version: number;
+  key: string;
+  size: number;
+  /** Irradiance a code of 255 stands for. */
+  scale: number;
+  quality: string;
+  samples: number;
+  density: number;
+  charts: number;
+  texels: number;
+  rays: number;
+  /** Wall time of the bake that made it (ms). */
+  bakeMs: number;
+  /** Triangles per offered mesh, in order; -1 for a mesh that is not baked. */
+  tris: number[];
+  image: 'webp' | 'raw';
+}
+
+export interface UnpackedAsset {
+  meta: LightmapAssetMeta;
+  /** Per mesh: six 16-bit coordinates per triangle, or null. */
+  uv: Array<Uint16Array | null>;
+  /** The stacked image bytes (WebP or raw RGBA of `size` × `2·size`). */
+  image: Uint8Array;
+}
+
+/** Stack an atlas (RGBA, sqrt bounce in rgb, visibility in alpha) into `size` × `2·size` RGBA with opaque alpha. */
+export function stackAtlas(rgba: Uint8Array, size: number): Uint8Array {
+  const out = new Uint8Array(size * size * 2 * 4);
+  const half = size * size * 4;
+  for (let o = 0; o < size * size; o++) {
+    out[o * 4] = rgba[o * 4] as number;
+    out[o * 4 + 1] = rgba[o * 4 + 1] as number;
+    out[o * 4 + 2] = rgba[o * 4 + 2] as number;
+    out[o * 4 + 3] = 255;
+    const v = rgba[o * 4 + 3] as number;
+    out[half + o * 4] = v;
+    out[half + o * 4 + 1] = v;
+    out[half + o * 4 + 2] = v;
+    out[half + o * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/** The atlas RGBA back out of a stacked image (the inverse of {@link stackAtlas}). */
+export function unstackAtlas(stacked: Uint8Array, size: number): Uint8Array {
+  const out = new Uint8Array(size * size * 4);
+  const half = size * size * 4;
+  for (let o = 0; o < size * size; o++) {
+    out[o * 4] = stacked[o * 4] as number;
+    out[o * 4 + 1] = stacked[o * 4 + 1] as number;
+    out[o * 4 + 2] = stacked[o * 4 + 2] as number;
+    out[o * 4 + 3] = stacked[half + o * 4] as number;
+  }
+  return out;
+}
+
+/** Serialise an asset: magic, header length, header JSON, image length, image, then the coordinates. */
+export function packAsset(meta: LightmapAssetMeta, uv: ReadonlyArray<Uint16Array | null>, image: Uint8Array): Uint8Array {
+  const head = new TextEncoder().encode(JSON.stringify(meta));
+  const uvBytes = uv.reduce((n, u) => n + (u ? u.byteLength : 0), 0);
+  const pad = (4 - ((12 + head.length + image.length) % 4)) % 4;
+  const out = new Uint8Array(12 + head.length + image.length + pad + uvBytes);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, MAGIC, true);
+  dv.setUint32(4, head.length, true);
+  dv.setUint32(8, image.length, true);
+  out.set(head, 12);
+  out.set(image, 12 + head.length);
+  let o = 12 + head.length + image.length + pad;
+  for (const u of uv) {
+    if (!u) continue;
+    out.set(new Uint8Array(u.buffer, u.byteOffset, u.byteLength), o);
+    o += u.byteLength;
+  }
+  return out;
+}
+
+/** Parse and validate an asset file; null when it is malformed, from another version or over the caps. */
+export function unpackAsset(bytes: Uint8Array): UnpackedAsset | null {
+  try {
+    if (bytes.length < 16 || bytes.length > LIGHTMAP_MAX_ASSET_BYTES * 4) return null;
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (dv.getUint32(0, true) !== MAGIC) return null;
+    const headLen = dv.getUint32(4, true);
+    const imageLen = dv.getUint32(8, true);
+    if (headLen > 1 << 20 || 12 + headLen + imageLen > bytes.length) return null;
+    const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headLen))) as LightmapAssetMeta;
+    if (meta.version !== LIGHTMAP_VERSION || ![256, 512, 1024].includes(meta.size) || !(meta.scale > 0) || !Array.isArray(meta.tris) || meta.tris.length > 4096) return null;
+    if (meta.image !== 'webp' && meta.image !== 'raw') return null;
+    const image = bytes.subarray(12 + headLen, 12 + headLen + imageLen);
+    if (meta.image === 'raw' && image.length !== meta.size * meta.size * 2 * 4) return null;
+    const pad = (4 - ((12 + headLen + imageLen) % 4)) % 4;
+    let o = bytes.byteOffset + 12 + headLen + imageLen + pad;
+    const uv: Array<Uint16Array | null> = [];
+    for (const t of meta.tris) {
+      if (!Number.isInteger(t) || t < -1) return null;
+      if (t < 0) {
+        uv.push(null);
+        continue;
+      }
+      const len = t * 6;
+      if (o - bytes.byteOffset + len * 2 > bytes.length) return null;
+      uv.push(new Uint16Array(bytes.buffer.slice(o, o + len * 2)));
+      o += len * 2;
+    }
+    return { meta, uv, image: image.slice() };
+  } catch {
+    return null;
+  }
+}
+
+/** The content key of a bake: everything it reads, as a file-safe string (`lm<version>-<32 hex digits>`). */
+export function lightmapKey(arrays: ReadonlyArray<ArrayBufferView>, scalars: unknown): string {
+  const small = hashWords(new TextEncoder().encode(JSON.stringify([LIGHTMAP_VERSION, scalars])));
+  let a = small;
+  for (const [i, v] of arrays.entries()) a = hashWords(v, parseInt(a.slice(0, 7), 16) + i);
+  return `lm${LIGHTMAP_VERSION}-${small}${a}`;
+}
