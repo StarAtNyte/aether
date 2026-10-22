@@ -10,6 +10,7 @@ import { materialKey, resolveMaterial, type MaterialVariant, type ResolveOptions
 import { SurfaceTextures, WATER_NORMAL_SCALE } from './surface-textures';
 import { applyWind } from './wind';
 import { FINISHES } from '@aether/arch';
+import { TEXTURE_ALBEDO_SCALE } from '@aether/assets';
 import { finishAlbedoScale } from '@aether/procgen';
 import { FinishTextures, finishHasMaps } from './finish-textures';
 import { applyAntiTile, FINISH_NODES_KEY, groundWeather, GROUND_PATTERN_FINISHES, needsAntiTile, NORMAL_STRENGTH } from './anti-tile';
@@ -151,6 +152,20 @@ function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: Fin
   const def = FINISHES[id];
   // Paint is dead flat (a normal map banded under grazing lamp light, see ARCHITECTURE section 27), but a real
   // painted wall is not one value: a faint, large roller mottle and a finer tone keep white walls from reading as CG.
+  if (r.texture && finishes) {
+    // A project texture set: its albedo holds ratios around 1 (divided by the fixed scale), roughness is absolute in the ORM map.
+    const set = finishes.getSet(r.texture.id, r.texture.tile);
+    m.color.multiplyScalar(TEXTURE_ALBEDO_SCALE);
+    m.roughness = 1;
+    m.map = set.map;
+    m.roughnessMap = set.orm;
+    m.aoMap = set.orm;
+    m.aoMapIntensity = 1;
+    m.normalMap = set.normal;
+    m.normalScale = new Vector2(1, 1);
+    m.userData['aetherTexture'] = r.texture.id;
+    return;
+  }
   if (id === 'paint' && antiTile) applyPaintMottle(m);
   if (!finishes || !finishHasMaps(id)) return;
   const maps = finishes.get(id);

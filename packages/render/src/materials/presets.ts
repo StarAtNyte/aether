@@ -5,7 +5,7 @@
  * the material cache key.
  */
 import { FINISHES } from '@aether/arch';
-import { stableStringify, type MaterialFinish, type MaterialPreset, type MaterialSpec } from '@aether/core';
+import { stableStringify, TEXTURE_ID, type MaterialFinish, type MaterialPreset, type MaterialSpec, type TextureRef } from '@aether/core';
 import type { SurfaceKind } from './surface-textures';
 
 /** Concrete parameters of one material (all fields resolved). */
@@ -33,6 +33,8 @@ export interface ResolvedMaterial {
   surface: SurfaceKind | null;
   /** Physically based finish with procedural texture maps (architecture), null otherwise. */
   finish: MaterialFinish | null;
+  /** A texture set of the project drawn instead of the finish's procedural maps (absent for every other material). */
+  texture?: { id: string; tile?: number };
   /** Layered terrain: the geometry carries `splat` weights and the photographed layers are blended by them. */
   splat: boolean;
   /** Alpha-tested foliage card kind, null for ordinary materials. */
@@ -166,7 +168,10 @@ export interface ResolveOptions {
  * colors and the spec does not explicitly disable them.
  */
 export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOptions = {}): ResolvedMaterial {
-  const r = resolveBase(spec, opts);
+  let r = resolveBase(spec, opts);
+  // A project texture set replaces the finish's maps (opaque finishes only).
+  const tex = spec?.texture;
+  if (tex && r.finish !== null && !r.transparent && TEXTURE_ID.test(tex.id)) r = { ...r, texture: tex.tile !== undefined ? { id: tex.id, tile: tex.tile } : { id: tex.id } };
   return opts.solid === true && !r.transparent && r.foliage === null ? { ...r, solid: true } : r;
 }
 
@@ -284,8 +289,20 @@ export const SOFT_SHADED_PRESETS: ReadonlySet<string> = new Set(['grass', 'dirt'
  *   unset. `opacity` and `flatShading` from the entity always apply (they
  *   are whole-object intents like "make it see-through").
  */
-export function mergeMaterial(part: MaterialSpec | undefined, entity: MaterialSpec | undefined, partCount: number): MaterialSpec {
-  return softShaded(mergeRaw(part, entity, partCount), entity);
+export function mergeMaterial(part: MaterialSpec | undefined, entity: MaterialSpec | undefined, partCount: number, skins?: Readonly<Record<string, TextureRef>>): MaterialSpec {
+  const merged = softShaded(mergeRaw(part, entity, partCount), entity);
+  return skins ? skinned(merged, skins) : merged;
+}
+
+/**
+ * The texture set a piece's skins give a part: the key `finish#colour` (colour as six lowercase hex digits) wins over the key
+ * `finish`. A part that already names a texture keeps it.
+ */
+export function skinned(spec: MaterialSpec, skins: Readonly<Record<string, TextureRef>>): MaterialSpec {
+  if (spec.texture || typeof spec.finish !== 'string') return spec;
+  const colour = typeof spec.color === 'string' && HEX.test(spec.color) ? spec.color.slice(1).toLowerCase() : null;
+  const ref = (colour ? skins[`${spec.finish}#${colour}`] : undefined) ?? skins[spec.finish];
+  return ref ? { ...spec, texture: ref } : spec;
 }
 
 function mergeRaw(part: MaterialSpec | undefined, entity: MaterialSpec | undefined, partCount: number): MaterialSpec {

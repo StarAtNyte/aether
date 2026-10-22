@@ -42,6 +42,7 @@ export {
   type UserAssetEntry,
 } from './info';
 export {
+  TEXTURE_ALBEDO_SCALE,
   TEXTURE_LIMITS,
   TEXTURE_MAPS,
   TEXTURE_PROVENANCE_LABEL,

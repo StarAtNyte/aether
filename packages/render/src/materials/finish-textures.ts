@@ -11,6 +11,7 @@
  */
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, RepeatWrapping, type Texture } from 'three';
 import { FINISHES } from '@aether/arch';
+import { onTextureSetsChanged, textureSet, TEXTURE_ALBEDO_SCALE } from '@aether/assets';
 import type { MaterialFinish } from '@aether/core';
 import { FINISH_TEXTURE_SIZE, finishAlbedoScale, finishPixels, type FinishPixels } from '@aether/procgen';
 import { textureWork } from '../gpu/task-queue';
@@ -74,6 +75,36 @@ const PLAIN: ReadonlySet<MaterialFinish> = new Set<MaterialFinish>(['mirror', 'g
 /** True when finish `id` is drawn with texture maps. */
 export function finishHasMaps(id: MaterialFinish): boolean {
   return !PLAIN.has(id);
+}
+
+/** A texture set's maps and the clones made for tile overrides. */
+interface SetMaps {
+  maps: FinishMaps;
+  requested: boolean;
+  variants: Map<string, FinishMaps>;
+}
+
+/** Flat pixels shown until a set's maps arrive: albedo ratio 1, no occlusion, mid roughness, flat normal. */
+function neutralSet(size: number): FinishPixels {
+  const n = size * size * 4;
+  const albedo = new Uint8Array(n);
+  const orm = new Uint8Array(n);
+  const normal = new Uint8Array(n);
+  const a = Math.round(255 / TEXTURE_ALBEDO_SCALE);
+  for (let i = 0; i < n; i += 4) {
+    albedo[i] = a;
+    albedo[i + 1] = a;
+    albedo[i + 2] = a;
+    albedo[i + 3] = 255;
+    orm[i] = 255;
+    orm[i + 1] = 200;
+    orm[i + 3] = 255;
+    normal[i] = 128;
+    normal[i + 1] = 128;
+    normal[i + 2] = 255;
+    normal[i + 3] = 255;
+  }
+  return { size, albedo, orm, normal };
 }
 
 function texture(data: Uint8Array, size: number, tile: number): DataTexture {
@@ -222,6 +253,77 @@ export class FinishTextures {
     return maps;
   }
 
+  private readonly sets = new Map<string, SetMaps>();
+  private setWatch: (() => void) | null = null;
+
+  /**
+   * Maps of a project texture set (photographed, AI-generated), created on first use like a finish's: neutral pixels until the
+   * registry has the set's files and they are decoded. `tile` (m) overrides the set's own tile size through texture clones that share
+   * the pixels. Without a registered set the maps stay neutral (the surface then shows its base colour only).
+   */
+  getSet(id: string, tile?: number): FinishMaps {
+    let base = this.sets.get(id);
+    if (!base) {
+      const ph = neutralSet(this.size);
+      base = { maps: { map: texture(ph.albedo, this.size, 1), orm: texture(ph.orm, this.size, 1), normal: texture(ph.normal, this.size, 1), ready: false, photo: false }, requested: false, variants: new Map() };
+      this.sets.set(id, base);
+      this.setWatch ??= onTextureSetsChanged(() => {
+        for (const [sid, sm] of this.sets) if (!sm.requested) this.loadSet(sid, sm);
+      });
+    }
+    if (!base.requested) this.loadSet(id, base);
+    if (tile === undefined) return base.maps;
+    const key = tile.toFixed(3);
+    let v = base.variants.get(key);
+    if (!v) {
+      const cl = (t: Texture): Texture => {
+        const c = t.clone();
+        c.repeat.set(1 / tile, 1 / tile);
+        c.needsUpdate = true;
+        return c;
+      };
+      v = { map: cl(base.maps.map), orm: cl(base.maps.orm), normal: cl(base.maps.normal), ready: base.maps.ready, photo: base.maps.photo };
+      base.variants.set(key, v);
+    }
+    return v;
+  }
+
+  private loadSet(id: string, sm: SetMaps): void {
+    const entry = textureSet(id);
+    if (!entry) return;
+    // The smallest stored tier that is at least as sharp as the textures, else the sharpest stored.
+    const tiers = [...entry.def.tiers].sort((a, b) => a - b);
+    const tier = tiers.find((t) => t >= this.size) ?? tiers[tiers.length - 1];
+    const files = tier !== undefined ? entry.tiers[tier] : undefined;
+    if (!files) return;
+    sm.requested = true;
+    const size = this.size;
+    Promise.all([this.pixelLoader(files.albedo, size), this.pixelLoader(files.orm, size), this.pixelLoader(files.normal, size)]).then(
+      ([albedo, orm, normal]) => {
+        if (this.disposed || this.sets.get(id) !== sm) return;
+        const n = size * size * 4;
+        if (albedo.length !== n || orm.length !== n || normal.length !== n) return;
+        const k = 1 / Math.max(0.05, entry.def.tile);
+        for (const [tex, px] of [[sm.maps.map, albedo], [sm.maps.orm, orm], [sm.maps.normal, normal]] as const) {
+          fill(tex, px);
+          tex.repeat.set(k, k);
+        }
+        sm.maps.ready = true;
+        sm.maps.photo = true;
+        for (const v of sm.variants.values()) {
+          v.ready = true;
+          v.photo = true;
+          for (const t of [v.map, v.orm, v.normal]) t.needsUpdate = true;
+        }
+        this.onUpdate?.();
+      },
+      (e: unknown) => {
+        sm.requested = false;
+        log.warn(`texture set "${id}" failed to load (neutral maps kept): ${errorMessage(e)}`);
+      },
+    );
+  }
+
   private readonly stacks = new Map<string, SplatArrays>();
 
   /**
@@ -250,6 +352,16 @@ export class FinishTextures {
     this.disposed = true;
     for (const s of this.stacks.values()) s.dispose();
     this.stacks.clear();
+    this.setWatch?.();
+    this.setWatch = null;
+    for (const sm of this.sets.values()) {
+      for (const m of [sm.maps, ...sm.variants.values()]) {
+        m.map.dispose();
+        m.orm.dispose();
+        m.normal.dispose();
+      }
+    }
+    this.sets.clear();
     for (const m of this.maps.values()) {
       m.map.dispose();
       m.orm.dispose();

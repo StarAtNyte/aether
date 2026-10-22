@@ -9,6 +9,9 @@
 import { TEXTURE_ID, TEXTURE_TIERS, type TextureSetDef, type TextureTier } from '@aether/core';
 import { validateImage } from './import/image';
 
+/** The albedo map holds linear ratios around 1 divided by this; the renderer multiplies the material colour by it (fixed, so a set that arrives late needs no recompile). */
+export const TEXTURE_ALBEDO_SCALE = 2.5;
+
 /** The three maps of a set. `orm`: R = ambient occlusion, G = roughness, B = unused (0). */
 export type TextureMapName = 'albedo' | 'orm' | 'normal';
 export const TEXTURE_MAPS: readonly TextureMapName[] = ['albedo', 'orm', 'normal'];
