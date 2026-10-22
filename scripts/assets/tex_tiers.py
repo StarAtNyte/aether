@@ -3,7 +3,7 @@
 jobs.json: {"jobs": [{"src": path, "dst": path, "side": int, "quality": int}], "colors": [src,...]}
 Writes every `dst` (JPEG, or PNG when the source carries real transparency) resized so the longest
 side is at most `side`, and prints {"colors": {src: {"rgb": [r,g,b], "names": [..]}}} on stdout for
-the base-colour images listed in `colors`.
+the base-colour images listed in `colors` and for plain colours in `factors` ({key: [r,g,b]}).
 """
 import json, os, sys
 from PIL import Image
@@ -74,6 +74,8 @@ def main():
     res = {}
     for c in spec.get("colors", []):
         res[c] = colours(c)
+    for k, rgb in spec.get("factors", {}).items():
+        res[k] = {"rgb": rgb, "names": [name_of(rgb)]}
     print(json.dumps({"colors": res}))
 
 

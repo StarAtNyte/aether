@@ -20,7 +20,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'assets', 'manifest.json'), 
 describe('asset catalog', () => {
   it('validates and is a curated, sizeable library', () => {
     expect(catalog.entries.length).toBeGreaterThanOrEqual(150);
-    expect(catalog.entries.length).toBeLessThanOrEqual(420);
+    expect(catalog.entries.length).toBeLessThanOrEqual(560);
     const ids = catalog.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -135,7 +135,7 @@ describe('asset catalog', () => {
   it('LOD files are only made for dense models and are lighter', () => {
     for (const e of catalog.entries) {
       if (e.lods.length === 0) continue;
-      expect(e.tris).toBeGreaterThan(3000);
+      expect(e.tris).toBeGreaterThan(1500);
       expect(e.lods[0]!.tris).toBeLessThan(e.tris);
       if (e.lods[1]) expect(e.lods[1].tris).toBeLessThan(e.lods[0]!.tris);
     }

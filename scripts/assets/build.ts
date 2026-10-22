@@ -13,9 +13,9 @@
  */
 import { mergeIntoCatalog } from './creatures';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
-import { NodeIO, type Document } from '@gltf-transform/core';
+import { NodeIO, type Document, type Material } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { Catalog, type CatalogEntryInput, type CatalogPack } from '../../packages/assets/src/schema';
@@ -24,6 +24,8 @@ import { readSources, SOURCE_DIR, type PolyhavenRecord } from './fetch';
 import { colliderFor, kebab, prettyName, tagsFor } from './describe';
 import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
+import { EXISTING_FACTS, INTERIOR } from './selection-interior';
+import { spawnSync } from 'node:child_process';
 import { liteHdr } from './hdri';
 import { reencodedTextures } from './textures';
 import { buildPhotoFinishes, type PhotoFinish } from './materials';
@@ -71,14 +73,35 @@ async function io(): Promise<NodeIO> {
 }
 
 /** Read, normalise and (optionally) simplify one source model. */
-async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullable<ItemSel[2]>, lodRatio: number | null): Promise<{ doc: Document; tris: number; size: [number, number, number]; animated: boolean }> {
+async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullable<ItemSel[2]>, lodRatio: number | null, keepTextures = false): Promise<{ doc: Document; tris: number; size: [number, number, number]; animated: boolean }> {
   const doc = await nio.read(path);
   for (const tex of doc.getRoot().listTextures()) {
     const name = basename(tex.getURI());
     const re = TEXTURES.get(name);
-    if (re) tex.setImage(re).setMimeType('image/jpeg').setURI(name.replace(/\.png$/i, '.jpg'));
+    if (re) {
+      const png = re[0] === 0x89;
+      tex.setImage(re).setMimeType(png ? 'image/png' : 'image/jpeg').setURI(name.replace(/\.(png|jpe?g)$/i, png ? '.png' : '.jpg'));
+    }
+  }
+  if (opts.rot) {
+    // Turn the model so its front faces +Z: a wrapper node carries the rotation into the baked transforms.
+    const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]!;
+    const half = (opts.rot * Math.PI) / 360;
+    const wrap = doc.createNode('turn').setRotation([0, Math.sin(half), 0, Math.cos(half)]);
+    for (const child of scene.listChildren()) {
+      scene.removeChild(child);
+      wrap.addChild(child);
+    }
+    scene.addChild(wrap);
   }
   if (pack.legacyColors) fixLegacyMaterials(doc);
+  if (opts.paint) {
+    // The material with the most triangles is the upholstery or paint: name it so entities can recolour it.
+    const used = new Map<unknown, number>();
+    for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) used.set(p.getMaterial(), (used.get(p.getMaterial()) ?? 0) + (p.getIndices()?.getCount() ?? 0));
+    const lead = [...used.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] as Material | null | undefined;
+    lead?.setName('paint');
+  }
   const b = sceneBounds(doc);
   const sx = b.max[0] - b.min[0];
   const sy = b.max[1] - b.min[1];
@@ -93,8 +116,10 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   if (lodRatio !== null && !animated) {
     tris = await simplifyDocument(doc, lodRatio);
     // LOD files are geometry only: the renderer reuses LOD 0's materials (same primitive order), so textures ship once.
-    for (const m of doc.getRoot().listMaterials()) m.setBaseColorTexture(null).setNormalTexture(null).setMetallicRoughnessTexture(null).setOcclusionTexture(null).setEmissiveTexture(null);
-    for (const t of doc.getRoot().listTextures()) t.dispose();
+    if (!keepTextures) {
+      for (const m of doc.getRoot().listMaterials()) m.setBaseColorTexture(null).setNormalTexture(null).setMetallicRoughnessTexture(null).setOcclusionTexture(null).setEmissiveTexture(null);
+      for (const t of doc.getRoot().listTextures()) t.dispose();
+    }
   }
   const r = (v: number): number => Math.round(v * scale * 1000) / 1000;
   return { doc, tris, size: [r(sx), r(sy), r(sz)], animated };
@@ -232,20 +257,30 @@ function buildHdriLite(): void {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 1)}\n`);
 }
 
-async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: string, archive: string, phAuthors: string[] | undefined): Promise<Built> {
+/** Interior models: a triangle budget for the main file and the share of it the one distance level keeps. */
+interface Tune {
+  budget: number;
+  lod: number;
+}
+
+async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: string, archive: string, phAuthors: string[] | undefined, tune?: Tune): Promise<Built> {
   const [file, idOpt, o = {}] = item;
   const id = idOpt ?? kebab(file);
-  const main = await prepare(nio, srcPath, pack, o, null);
+  let main = await prepare(nio, srcPath, pack, o, null);
+  const sourceTris = main.tris;
+  // Over budget: simplify the main file too (textures kept), so a 170k-triangle plant ships as a plant, not a mesh.
+  if (tune && main.tris > tune.budget) main = await prepare(nio, srcPath, pack, o, tune.budget / main.tris, true);
+  const lodRatios = tune ? [Math.min(1, (main.tris * tune.lod) / sourceTris)] : LOD_RATIOS;
   const positions = scenePositions(main.doc);
   const clips = main.doc.getRoot().listAnimations().map((a, i) => a.getName() || `clip-${i + 1}`);
   const glb = await encode(nio, main.doc);
   if (glb.byteLength > MAX_MODEL_BYTES) throw new Error(`${id}: ${glb.byteLength} bytes exceeds the per-model cap`);
   const files = [writeLib('m', id, '', 'glb', glb)];
   const lods: Array<{ file: string; tris: number }> = [];
-  if (!main.animated && main.tris > LOD_MIN_TRIS) {
+  if (!main.animated && main.tris > (tune ? 1500 : LOD_MIN_TRIS)) {
     let previous = main.tris;
-    for (let i = 0; i < LOD_RATIOS.length; i++) {
-      const lod = await prepare(nio, srcPath, pack, o, LOD_RATIOS[i]!);
+    for (let i = 0; i < lodRatios.length; i++) {
+      const lod = await prepare(nio, srcPath, pack, o, lodRatios[i]!);
       // A level that barely simplifies is not worth a download.
       if (lod.tris > previous * 0.8) break;
       const f = writeLib('m', id, `.lod${i + 1}`, 'glb', await encode(nio, lod.doc));
@@ -388,6 +423,10 @@ async function main(): Promise<void> {
   for (const pf of await buildPhotoFinishes(sources.ambientcg)) built.push(photoFinishEntry(pf));
   const entries = built.map((b) => b.entry);
   assignVariants(entries);
+  for (const [id, type, styles] of EXISTING_FACTS) {
+    const e = entries.find((x) => x.id === id);
+    if (e) e.interior = { type, styles: styles.split(' '), colors: [], rgb: [128, 128, 128] };
+  }
   // Hero generators made with the asset forge (scripts/assets/forge-heroes.ts).
   for (const h of readHeroes()) {
     if (ids.has(h.id)) throw new Error(`duplicate asset id ${h.id}`);
@@ -439,14 +478,155 @@ async function main(): Promise<void> {
   writeFileSync(join(OUT, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`);
   const total = built.reduce((s, b) => s + b.files.reduce((t, f) => t + f.bytes, 0), 0);
   // First-party and vendored model sets built by their own scripts (animals, vehicles) survive a library rebuild.
-  for (const f of ['creatures.json', 'vehicles.json', 'living.json']) {
+  for (const f of ['creatures.json', 'vehicles.json', 'living.json', 'interior.json']) {
     const file = join(OUT, f);
     if (existsSync(file)) mergeIntoCatalog(JSON.parse(readFileSync(file, 'utf8')) as Parameters<typeof mergeIntoCatalog>[0]);
   }
   console.log(`${entries.length} assets, ${(total / 1024 / 1024).toFixed(1)} MB → ${relative(ROOT, LIB)}`);
 }
 
-(process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
+/** Texture tiers for the interior models are resized by `tex_tiers.py` (Pillow) and cached next to the sources. */
+const TIER_CACHE = join(SOURCE_DIR, 'polyhaven', 'tiers');
+const TIER_SCRIPT = join(ROOT, 'scripts', 'assets', 'tex_tiers.py');
+
+/** Run the Python tier script on a job file; returns its colour report. */
+function runTiers(spec: { jobs: Array<{ src: string; dst: string; side: number; quality: number }>; colors: string[]; factors: Record<string, number[]> }): Record<string, { rgb: [number, number, number]; names: string[] }> {
+  const jobFile = join(TIER_CACHE, 'job.json');
+  mkdirSync(TIER_CACHE, { recursive: true });
+  writeFileSync(jobFile, JSON.stringify(spec));
+  const r = spawnSync('python3', ['-I', TIER_SCRIPT, jobFile], { encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`tex_tiers.py failed: ${r.stderr}`);
+  return (JSON.parse(r.stdout) as { colors: Record<string, { rgb: [number, number, number]; names: string[] }> }).colors;
+}
+
+/** Types whose main surface can be recoloured (upholstery, cushions): the build names that material "paint". */
+/** Triangles an interior model's main file may have. */
+const INTERIOR_TRIS = 20_000;
+/** Large visible pieces keep 1024 px textures; everything else ships 512. */
+const BIG_TEXTURE_TYPES: ReadonlySet<string> = new Set(['sofa', 'bed', 'table', 'desk', 'wardrobe', 'armchair', 'sideboard', 'bookshelf', 'dresser']);
+const RECOLOUR_TYPES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'ottoman', 'pillow']);
+
+const linToSrgb = (c: number): number => Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055));
+
+/**
+ * `--interior`: build the Poly Haven interior set (selection-interior.ts) into `assets/interior.json` and merge it into the
+ * catalog. Each model ships a main file (512 or 1024 px textures by size, meshopt, LODs) and a `lite` file (256 px
+ * textures, simplified) for the low quality tiers. Colour names come from the model's dominant base-colour texture.
+ */
+async function buildInterior(): Promise<void> {
+  const nio = await io();
+  const phRecords: PolyhavenRecord[] = JSON.parse(readFileSync(join(SOURCE_DIR, 'polyhaven', 'provenance.json'), 'utf8')) as PolyhavenRecord[];
+  const phById = new Map(phRecords.map((r) => [r.id, r]));
+  const entries: CatalogEntryInput[] = [];
+  const assets: Array<{ id: string; pack: string; licence: string; authors: string[] | null; source: { archive: string; path: string }; files: Built['files'] }> = [];
+  const existing = (JSON.parse(readFileSync(join(OUT, 'catalog.json'), 'utf8')) as { entries: CatalogEntryInput[] }).entries;
+  const taken = new Set(existing.filter((e) => !e.interior).map((e) => e.id));
+  for (const row of INTERIOR) if (taken.has(row[1])) throw new Error(`interior id ${row[1]} clashes with an existing asset`);
+  const only = process.argv.find((a) => a.startsWith('--ids='))?.slice(6).split(',');
+  if (!only) rmSync(join(LIB, 'i'), { recursive: true, force: true });
+  if (only) console.log('partial run: interior.json is not rewritten');
+  for (const [phId, id, type, category, styles, name, o = {}] of INTERIOR) {
+    if (only && !only.includes(id)) continue;
+    const rec = phById.get(phId);
+    const src = join(SOURCE_DIR, 'polyhaven', 'models', phId, `${phId}.gltf`);
+    if (!rec || !existsSync(src)) throw new Error(`${phId}: not downloaded (npm run assets:fetch -- --only=polyhaven)`);
+    const doc = await nio.read(src);
+    const b = sceneBounds(doc);
+    const big = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) > 1.2;
+    const side = o.tex ?? (big && BIG_TEXTURE_TYPES.has(type) ? 1024 : 512);
+    // Dominant material: the one with the most triangles; its base-colour texture (or factor) gives the colour names.
+    const area = new Map<unknown, number>();
+    for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) area.set(p.getMaterial(), (area.get(p.getMaterial()) ?? 0) + (p.getIndices()?.getCount() ?? 0));
+    const lead = [...area.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] as Material | null | undefined;
+    const texDir = join(SOURCE_DIR, 'polyhaven', 'models', phId);
+    const jobs: Parameters<typeof runTiers>[0]['jobs'] = [];
+    const files = new Map<string, string>();
+    for (const t of doc.getRoot().listTextures()) {
+      const uri = decodeURIComponent(t.getURI());
+      const from = join(texDir, uri);
+      files.set(basename(uri), from);
+      for (const [tier, px] of [[`main${side}`, side], ['lite', 256]] as const) jobs.push({ src: from, dst: join(TIER_CACHE, tier, phId, basename(uri).replace(/\.\w+$/, '.img')), side: px, quality: px === 256 ? 70 : 78 });
+    }
+    const leadTex = lead?.getBaseColorTexture();
+    const colorKey = leadTex ? files.get(basename(decodeURIComponent(leadTex.getURI()))) : undefined;
+    const f = lead?.getBaseColorFactor() ?? [0.5, 0.5, 0.5, 1];
+    const report = runTiers({ jobs, colors: colorKey ? [colorKey] : [], factors: colorKey ? {} : { lead: [linToSrgb(f[0]!), linToSrgb(f[1]!), linToSrgb(f[2]!)] } });
+    const look = report[colorKey ?? 'lead'] ?? { rgb: [128, 128, 128] as [number, number, number], names: ['grey'] };
+    // The Python script writes `.jpg` or `.png` after checking transparency; find what it wrote.
+    const tierTextures = (tier: string): Map<string, Uint8Array> => {
+      const m = new Map<string, Uint8Array>();
+      for (const base of files.keys()) {
+        const stem = join(TIER_CACHE, tier, phId, base.replace(/\.\w+$/, '.img'));
+        m.set(base, readFileSync(stem));
+      }
+      return m;
+    };
+    const paint = RECOLOUR_TYPES.has(type) && !!lead;
+    const pack: PackSel = { pack: 'polyhaven', scale: 1, style: 'realistic', category, collider: o.collider ?? 'box', items: [] };
+    TEXTURES = tierTextures(`main${side}`);
+    const built = await buildModel(nio, pack, [phId, id, { name, cat: category, tags: `${type} ${o.tags ?? ''} ${styles}`, ...(o.place ? { place: o.place } : {}), ...(o.collider ? { collider: o.collider } : {}), ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }], src, `polyhaven:${phId}`, rec.authors, { budget: INTERIOR_TRIS, lod: 0.4 });
+    TEXTURES = tierTextures('lite');
+    // The light copy: a quarter of the main budget at most, 256 px textures.
+    const probe = await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }, null);
+    const lite = probe.tris > INTERIOR_TRIS / 4 ? await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }, INTERIOR_TRIS / 4 / probe.tris, true) : probe;
+    const liteFile = writeLib('i', id, '.lite', 'glb', await encode(nio, lite.doc));
+    // buildModel writes under `m/`, which a full rebuild clears: move the interior files to `i/`.
+    const moved = built.files.map((x) => relocate(x));
+    const e = built.entry;
+    e.file = moved[0]!.path;
+    e.lods = (e.lods ?? []).map((l, k) => ({ ...l, file: moved[k + 1]!.path }));
+    e.lite = liteFile.path;
+    e.interior = { type, styles: styles.split(' ').slice(0, 6), colors: look.names.slice(0, 4), rgb: look.rgb, ...(paint ? { paint: true } : {}) };
+    e.bytes = moved.reduce((s, x) => s + x.bytes, 0);
+    entries.push(e);
+    assets.push({ id, pack: 'polyhaven', licence: 'CC0-1.0', authors: rec.authors, source: built.source, files: [...moved, liteFile] });
+    console.log(`${id}: ${e.tris} tris, ${(e.bytes / 1024) | 0} KB main, ${(liteFile.bytes / 1024) | 0} KB lite, ${look.names.join('/')}`);
+  }
+  // Variants: the other models of the same interior type (up to 12).
+  for (const e of entries) e.variants = entries.filter((x) => x !== e && x.interior!.type === e.interior!.type).map((x) => x.id).slice(0, 12);
+  if (entries.length === 0) throw new Error('no interior entries built');
+  const file = {
+    packs: [] as Array<Record<string, unknown>>,
+    sources: [] as Array<{ id: string }>,
+    entries,
+    assets,
+  };
+  // Models dropped from the selection since the last run leave the catalog and the manifest too.
+  if (!only && existsSync(join(OUT, 'interior.json'))) {
+    const now = new Set(entries.map((e) => e.id));
+    const stale = new Set((JSON.parse(readFileSync(join(OUT, 'interior.json'), 'utf8')) as { entries: Array<{ id: string }> }).entries.map((e) => e.id).filter((id) => !now.has(id)));
+    if (stale.size > 0) {
+      const cp = join(OUT, 'catalog.json');
+      const mp = join(OUT, 'manifest.json');
+      const cat = JSON.parse(readFileSync(cp, 'utf8')) as { entries: Array<{ id: string }> };
+      const man = JSON.parse(readFileSync(mp, 'utf8')) as { assets: Array<{ id: string }> };
+      cat.entries = cat.entries.filter((e) => !stale.has(e.id));
+      man.assets = man.assets.filter((a) => !stale.has(a.id));
+      writeFileSync(cp, `${JSON.stringify(cat)}\n`);
+      writeFileSync(mp, `${JSON.stringify(man, null, 1)}\n`);
+    }
+  }
+  if (!only) writeFileSync(join(OUT, 'interior.json'), `${JSON.stringify(file)}\n`);
+  mergeIntoCatalog(file);
+  // Earlier realistic models get the same facts, so the finder ranks them with the new ones.
+  const cat = JSON.parse(readFileSync(join(OUT, 'catalog.json'), 'utf8')) as { entries: CatalogEntryInput[] };
+  for (const [id, type, styles] of EXISTING_FACTS) {
+    const e = cat.entries.find((x) => x.id === id);
+    if (e) e.interior = { type, styles: styles.split(' '), colors: [], rgb: [128, 128, 128] };
+  }
+  Catalog.parse(cat);
+  writeFileSync(join(OUT, 'catalog.json'), `${JSON.stringify(cat)}\n`);
+}
+
+/** Move a file written to `m/` into `i/` (same name and hash). */
+function relocate(f: { path: string; sha256: string; bytes: number }): { path: string; sha256: string; bytes: number } {
+  const to = `i/${f.path.slice(2)}`;
+  mkdirSync(join(LIB, 'i'), { recursive: true });
+  renameSync(join(LIB, f.path), join(LIB, to));
+  return { ...f, path: to };
+}
+
+(process.argv.includes('--interior') ? buildInterior() : process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
   process.exit(1);
 });

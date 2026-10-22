@@ -23,6 +23,10 @@ export interface ItemOpts {
   w?: number;
   place?: AssetPlacement;
   collider?: 'box' | 'hull' | 'capsule';
+  /** Name the main material "paint" so an entity's `material.color` recolours it (interior upholstery). */
+  paint?: boolean;
+  /** Turn the model about the vertical axis (degrees) so its front faces +Z. */
+  rot?: number;
 }
 
 /** `[source file name without extension, id (default: kebab of the file), options]`. */

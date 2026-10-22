@@ -38,7 +38,7 @@ export const AssetLicence = z.enum(['CC0-1.0', 'CC-BY-4.0', 'MIT']);
 export type AssetLicence = z.infer<typeof AssetLicence>;
 
 /** Library file path relative to the catalog base: `m/sofa.0123abcd.glb`. */
-export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12]|\.(?:albedo|orm|normal)(?:\.256)?|\.512)?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
+export const LibraryPath = z.string().regex(/^[a-z]\/[a-z0-9_-]{1,64}(\.lod[12]|\.(?:albedo|orm|normal)(?:\.256)?|\.512|\.lite)?\.[0-9a-f]{8}\.(glb|hdr|webp|jpg)$/, 'library paths are content-hashed');
 
 /**
  * Physics collider recorded by the build script, in the asset's normalised
@@ -75,6 +75,8 @@ export const CatalogInterior = z.object({
   styles: z.array(z.string().regex(/^[a-z][a-z-]{1,23}$/)).max(6),
   colors: z.array(z.string().regex(/^[a-z][a-z-]{1,15}$/)).max(4),
   rgb: z.tuple([z.number().int().min(0).max(255), z.number().int().min(0).max(255), z.number().int().min(0).max(255)]),
+  /** The main surface is a material named "paint": the entity's `material.color` recolours it (upholstery, painted wood). */
+  paint: z.boolean().optional(),
 });
 export type CatalogInterior = z.infer<typeof CatalogInterior>;
 

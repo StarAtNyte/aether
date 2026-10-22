@@ -220,9 +220,25 @@ export async function simplifyDocument(doc: Document, ratio: number): Promise<nu
       // UV / normal seams split vertices, so locking borders would freeze most edges; LOD files are
       // only drawn when small on screen, where a hairline seam is invisible.
       const [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, 0.05, []);
-      const arr = pos.getCount() > 65535 ? new Uint32Array(out) : new Uint16Array(out);
-      idx.setArray(arr);
       tris += out.length / 3;
+      // Drop the vertices no triangle uses any more (and renumber), or the file keeps the source's full vertex buffers.
+      const used = new Int32Array(pos.getCount()).fill(-1);
+      let kept = 0;
+      for (let i = 0; i < out.length; i++) if (used[out[i]!] === -1) used[out[i]!] = kept++;
+      const remapped = new Uint32Array(out.length);
+      for (let i = 0; i < out.length; i++) remapped[i] = used[out[i]!]!;
+      for (const semantic of prim.listSemantics()) {
+        const acc = prim.getAttribute(semantic)!;
+        const size = acc.getElementSize();
+        const old = acc.getArray()!;
+        const next = new (old.constructor as new (n: number) => typeof old)(kept * size);
+        for (let v = 0; v < used.length; v++) {
+          const to = used[v]!;
+          if (to !== -1) for (let k = 0; k < size; k++) next[to * size + k] = old[v * size + k]!;
+        }
+        acc.setArray(next);
+      }
+      idx.setArray(kept > 65535 ? remapped : new Uint16Array(remapped));
     }
   }
   return tris;

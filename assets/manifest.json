@@ -8175,6 +8175,2785 @@
      "bytes": 43442
     }
    ]
+  },
+  {
+   "id": "sofa-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:sofa_02",
+    "path": "polyhaven/models/sofa_02/sofa_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sofa-02.8b68a4a5.glb",
+     "sha256": "8b68a4a5adc576abc368a386a02e11ef5a467dbf982f098f746c4ac15ace6150",
+     "bytes": 354920
+    },
+    {
+     "path": "i/sofa-02.lod1.5862d21d.glb",
+     "sha256": "5862d21dff184d3b376ca0910234ac1c00cde4d32bf0b9f29a7e7555a9f91891",
+     "bytes": 26320
+    },
+    {
+     "path": "i/sofa-02.lite.47af3b82.glb",
+     "sha256": "47af3b82cabb033844f24e031301e2e1a10f74f2dbcfcffbf9515c43407f5f83",
+     "bytes": 84960
+    }
+   ]
+  },
+  {
+   "id": "sofa-03",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Fran Calvente"
+   ],
+   "source": {
+    "archive": "polyhaven:sofa_03",
+    "path": "polyhaven/models/sofa_03/sofa_03.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sofa-03.cc956f61.glb",
+     "sha256": "cc956f6130e07766459b54a87ebf5d14daa1565c50d43618ecb83bc80a843fbc",
+     "bytes": 690448
+    },
+    {
+     "path": "i/sofa-03.lod1.530e8385.glb",
+     "sha256": "530e8385be90c3cb8bab1b78524fb8d198feab54bf34dc16a2f566724822e43a",
+     "bytes": 82724
+    },
+    {
+     "path": "i/sofa-03.lite.654621a0.glb",
+     "sha256": "654621a0ea9a7642c00e5fc792779fd1182a4531022044bb778d5276941e6f5e",
+     "bytes": 150980
+    }
+   ]
+  },
+  {
+   "id": "sofa-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_sofa",
+    "path": "polyhaven/models/chinese_sofa/chinese_sofa.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sofa-chinese.23ebb993.glb",
+     "sha256": "23ebb99370801a54577f03ac3c98c83653f2defc02ead7a2918358f18884aab1",
+     "bytes": 335720
+    },
+    {
+     "path": "i/sofa-chinese.lite.5b8de58f.glb",
+     "sha256": "5b8de58fa837f6ffc00519717661abafaf51b00cda96229f032a53e6ee737a63",
+     "bytes": 50684
+    }
+   ]
+  },
+  {
+   "id": "sofa-painted-wood",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_sofa",
+    "path": "polyhaven/models/painted_wooden_sofa/painted_wooden_sofa.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sofa-painted-wood.4cf35c4f.glb",
+     "sha256": "4cf35c4fdb3b9c62b4ddf7af1da590eea146a66f2784e987e0150b4da7d25f19",
+     "bytes": 525696
+    },
+    {
+     "path": "i/sofa-painted-wood.lod1.cc4513e8.glb",
+     "sha256": "cc4513e8d5047dfa76a9f1f0e31c6d0ebafeeae75dcec2dccf68b6094c37ed40",
+     "bytes": 63448
+    },
+    {
+     "path": "i/sofa-painted-wood.lite.96f978ad.glb",
+     "sha256": "96f978adbab0db341965909bc1c3f51df294753871855a790116d9a363e3b4ce",
+     "bytes": 143936
+    }
+   ]
+  },
+  {
+   "id": "armchair-modern-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Vibrant Nordic"
+   ],
+   "source": {
+    "archive": "polyhaven:modern_arm_chair_01",
+    "path": "polyhaven/models/modern_arm_chair_01/modern_arm_chair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/armchair-modern-01.ed399b6a.glb",
+     "sha256": "ed399b6addbe98391193e6b79ddc811969f72321c7b5db48c71896b5e838a6d0",
+     "bytes": 305764
+    },
+    {
+     "path": "i/armchair-modern-01.lod1.c01f698e.glb",
+     "sha256": "c01f698ed14c68f15f75c2e5da47264efebc1f3fb88e5ededaf16456c963c2c5",
+     "bytes": 79864
+    },
+    {
+     "path": "i/armchair-modern-01.lite.232fd03e.glb",
+     "sha256": "232fd03e1ace18e08b6f1b442296aa4bf0845ce70e8684758ae97b9b4cdf630c",
+     "bytes": 141080
+    }
+   ]
+  },
+  {
+   "id": "armchair-mid-century",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:mid_century_lounge_chair",
+    "path": "polyhaven/models/mid_century_lounge_chair/mid_century_lounge_chair.gltf"
+   },
+   "files": [
+    {
+     "path": "i/armchair-mid-century.f6a10aec.glb",
+     "sha256": "f6a10aec671ff990e1eed687be678ed021987617c28480c91436a2f3f0ff9af5",
+     "bytes": 237068
+    },
+    {
+     "path": "i/armchair-mid-century.lod1.f5f74d50.glb",
+     "sha256": "f5f74d5041179cb2b56ea1c1b47129ae7926f460c84bffae180d4375c2aa8438",
+     "bytes": 59496
+    },
+    {
+     "path": "i/armchair-mid-century.lite.f77bcec2.glb",
+     "sha256": "f77bcec2882e5dae8367da0570f067aae9a00ceb59ad2dcd9f4c9fff16ba4839",
+     "bytes": 134540
+    }
+   ]
+  },
+  {
+   "id": "armchair-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_armchair",
+    "path": "polyhaven/models/chinese_armchair/chinese_armchair.gltf"
+   },
+   "files": [
+    {
+     "path": "i/armchair-chinese.e2a73633.glb",
+     "sha256": "e2a73633376aa8d6af89c8bfc6d40e108c58183f23e35e69dd3c654609d5a877",
+     "bytes": 400936
+    },
+    {
+     "path": "i/armchair-chinese.lod1.7fc3370e.glb",
+     "sha256": "7fc3370e8d86d94c684d96c3a88a4ec1fb04b06bf8ea57d66f94bc5e70d6d7f0",
+     "bytes": 29988
+    },
+    {
+     "path": "i/armchair-chinese.lite.eda28c78.glb",
+     "sha256": "eda28c786e096127fb7413317e2e5886f6f5a4c83be00cb51808da02e7d00d15",
+     "bytes": 92704
+    }
+   ]
+  },
+  {
+   "id": "rocking-chair",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "source": {
+    "archive": "polyhaven:Rockingchair_01",
+    "path": "polyhaven/models/Rockingchair_01/Rockingchair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rocking-chair.21eacbd9.glb",
+     "sha256": "21eacbd957daa1ebe8e5fddb90b3b20a98987bcaf0562e008637d543a65750e4",
+     "bytes": 367856
+    },
+    {
+     "path": "i/rocking-chair.lod1.9665ca1f.glb",
+     "sha256": "9665ca1f9cf8c331a57980bb5528605c253aed4c3580e20b801090acc4e197f9",
+     "bytes": 137480
+    },
+    {
+     "path": "i/rocking-chair.lite.6aeb081d.glb",
+     "sha256": "6aeb081db8a7044e1034aa2d86f22c9fcb459ff74c018e9287f0b15ddea24e68",
+     "bytes": 168024
+    }
+   ]
+  },
+  {
+   "id": "armchair-green",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:GreenChair_01",
+    "path": "polyhaven/models/GreenChair_01/GreenChair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/armchair-green.b273d491.glb",
+     "sha256": "b273d491d23e512049ea59153d44b3c86cb42b7028655ca3ba195e506eb473d9",
+     "bytes": 210508
+    },
+    {
+     "path": "i/armchair-green.lod1.dbfc73bc.glb",
+     "sha256": "dbfc73bcdb034f68487fd338ceb7f9c73a571e7e507b3830d6ecd23491c4f85b",
+     "bytes": 44340
+    },
+    {
+     "path": "i/armchair-green.lite.ec008744.glb",
+     "sha256": "ec0087443461fc959711da3f442ce048baca5e8cd8c4d235575af0beb45d2944",
+     "bytes": 128176
+    }
+   ]
+  },
+  {
+   "id": "barber-chair",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Fernando Quinn"
+   ],
+   "source": {
+    "archive": "polyhaven:BarberShopChair_01",
+    "path": "polyhaven/models/BarberShopChair_01/BarberShopChair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/barber-chair.1b8e03c4.glb",
+     "sha256": "1b8e03c40fc369d433058ba5fad6f294a158d8c9573164791e584e56b542fd2e",
+     "bytes": 321340
+    },
+    {
+     "path": "i/barber-chair.lod1.a42b3e96.glb",
+     "sha256": "a42b3e9638b3848aac39b9b984f106280ff3b685b4c75c986731888f0b0b8452",
+     "bytes": 181040
+    },
+    {
+     "path": "i/barber-chair.lite.79eb7e59.glb",
+     "sha256": "79eb7e59430703505bd4d33d8c45e2932163886084b864eeb5fe0eb7141cfc1b",
+     "bytes": 214676
+    }
+   ]
+  },
+  {
+   "id": "chair-dining-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:dining_chair_02",
+    "path": "polyhaven/models/dining_chair_02/dining_chair_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-dining-02.3c4db640.glb",
+     "sha256": "3c4db640571e640889b137ac01aaf2c500aefc536e0b09eae02b976920ebfbbd",
+     "bytes": 478560
+    },
+    {
+     "path": "i/chair-dining-02.lod1.594d1138.glb",
+     "sha256": "594d11383dc2fdebad878127408bf65f918e45b1425729ab555c4d192a7055d0",
+     "bytes": 165120
+    },
+    {
+     "path": "i/chair-dining-02.lite.006d2586.glb",
+     "sha256": "006d25862f919d8576e4bd4284ec052faed2903f7394288ca8402bf70a36b041",
+     "bytes": 134868
+    }
+   ]
+  },
+  {
+   "id": "chair-wooden-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jake Mobley"
+   ],
+   "source": {
+    "archive": "polyhaven:WoodenChair_01",
+    "path": "polyhaven/models/WoodenChair_01/WoodenChair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-wooden-01.2fc2651a.glb",
+     "sha256": "2fc2651ac9975031c1011a2514dc2b7b681f1a6ffa488906118d4fa5716ffd67",
+     "bytes": 529836
+    },
+    {
+     "path": "i/chair-wooden-01.lod1.6289938e.glb",
+     "sha256": "6289938ee5462a02e3319359731c45d170c64332c83e12003c67d6fb5d611848",
+     "bytes": 182148
+    },
+    {
+     "path": "i/chair-wooden-01.lite.80f03bb8.glb",
+     "sha256": "80f03bb847c3f1930bc5f72a57cbd5eb5c975b448541b5a48e2abbada12e0a09",
+     "bytes": 156468
+    }
+   ]
+  },
+  {
+   "id": "chair-painted-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_chair_01",
+    "path": "polyhaven/models/painted_wooden_chair_01/painted_wooden_chair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-painted-01.cdbf3e40.glb",
+     "sha256": "cdbf3e408d1ac4c8d9b74ab22c2c8b43a9934e772684b3958d1decb1bb4db558",
+     "bytes": 138428
+    },
+    {
+     "path": "i/chair-painted-01.lite.271010e6.glb",
+     "sha256": "271010e6f77bebdcea1030fe255231e6cccce77f49d22830858496975cb0be6a",
+     "bytes": 60572
+    }
+   ]
+  },
+  {
+   "id": "chair-painted-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_chair_02",
+    "path": "polyhaven/models/painted_wooden_chair_02/painted_wooden_chair_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-painted-02.1ab2ceaf.glb",
+     "sha256": "1ab2ceaf054abc04e825cdc9ef1f1c195d0dd70fccd2fb3e3add5a3a12a4014b",
+     "bytes": 154304
+    },
+    {
+     "path": "i/chair-painted-02.lite.734c7d99.glb",
+     "sha256": "734c7d99f62b7a90f4ae3d0e3cf11117c88b85909d1ef91a0a0ace52c072c53b",
+     "bytes": 60536
+    }
+   ]
+  },
+  {
+   "id": "chair-gallinera",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:gallinera_chair",
+    "path": "polyhaven/models/gallinera_chair/gallinera_chair.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-gallinera.6155c125.glb",
+     "sha256": "6155c1256408e434fb77e19769641badbacf1e3c0c2ec7a5e60fb3edecb5015a",
+     "bytes": 362984
+    },
+    {
+     "path": "i/chair-gallinera.lod1.19edb6b5.glb",
+     "sha256": "19edb6b5c69761b9d58a5b8cafe6738bd407a20aba2624d637c55171d0beeea6",
+     "bytes": 126876
+    },
+    {
+     "path": "i/chair-gallinera.lite.edb02fc5.glb",
+     "sha256": "edb02fc52364decf47958c61f76988a079373ac9267d43422f32ad84356e529a",
+     "bytes": 167364
+    }
+   ]
+  },
+  {
+   "id": "chair-monobloc",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:plastic_monobloc_chair_01",
+    "path": "polyhaven/models/plastic_monobloc_chair_01/plastic_monobloc_chair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-monobloc.6e959e7f.glb",
+     "sha256": "6e959e7f65af1ce16c852a0f1fd5a73cbabd40bfed1b506a5e44f11f3b0feb32",
+     "bytes": 231820
+    },
+    {
+     "path": "i/chair-monobloc.lod1.25c26a68.glb",
+     "sha256": "25c26a685d8566a6e7e1bd92aab02b74a5974c30c508690fe9c42d8c177a7531",
+     "bytes": 49540
+    },
+    {
+     "path": "i/chair-monobloc.lite.27c32767.glb",
+     "sha256": "27c3276743849e5d0fe50020d76749e93f8f34f3ff999a5ef52d47b999265a32",
+     "bytes": 137600
+    }
+   ]
+  },
+  {
+   "id": "chair-school",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ethan Place"
+   ],
+   "source": {
+    "archive": "polyhaven:SchoolChair_01",
+    "path": "polyhaven/models/SchoolChair_01/SchoolChair_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chair-school.8e6f67db.glb",
+     "sha256": "8e6f67db1ac03d05d2578ed511afc05461416d0b9acb1e835b602d00c835f8e2",
+     "bytes": 172592
+    },
+    {
+     "path": "i/chair-school.lod1.a78fea88.glb",
+     "sha256": "a78fea88b93482b600e47e105c051c8be9e9f1753115cb7aefa991f1edc5760b",
+     "bytes": 44828
+    },
+    {
+     "path": "i/chair-school.lite.d449b699.glb",
+     "sha256": "d449b6994bbebf245059a2c88a85eaa66f612293fce9fef5b94f15de5d58e734",
+     "bytes": 112876
+    }
+   ]
+  },
+  {
+   "id": "bar-chair-round",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Dairon Sanchez"
+   ],
+   "source": {
+    "archive": "polyhaven:bar_chair_round_01",
+    "path": "polyhaven/models/bar_chair_round_01/bar_chair_round_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bar-chair-round.b229aaa4.glb",
+     "sha256": "b229aaa41c9b3f2d2d84ff00c1adfbfe08516e71230bd7ad00ded6f07e378e0c",
+     "bytes": 667580
+    },
+    {
+     "path": "i/bar-chair-round.lite.91f04404.glb",
+     "sha256": "91f044043191bcbc1e2978e2edc53aef2e11dcb0a6a84d95ef14ced2b12d0ad5",
+     "bytes": 753424
+    }
+   ]
+  },
+  {
+   "id": "stool-wooden-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_stool_01",
+    "path": "polyhaven/models/wooden_stool_01/wooden_stool_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stool-wooden-01.0b1e8a5a.glb",
+     "sha256": "0b1e8a5a436a570ff900df2225ea7f48b870d3ae11501bf7931bcd9ce7589524",
+     "bytes": 323380
+    },
+    {
+     "path": "i/stool-wooden-01.lod1.bea26437.glb",
+     "sha256": "bea26437241e51543c110e719644536d75964d5e96a3ddd8e366c64856cd210d",
+     "bytes": 94752
+    },
+    {
+     "path": "i/stool-wooden-01.lite.1ce37a13.glb",
+     "sha256": "1ce37a130312d7d212789719db012cd63d4c2886ef3b2b6baf9503d911610d68",
+     "bytes": 134772
+    }
+   ]
+  },
+  {
+   "id": "stool-wooden-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_stool_02",
+    "path": "polyhaven/models/wooden_stool_02/wooden_stool_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stool-wooden-02.e127cde3.glb",
+     "sha256": "e127cde3089b8e0d61b55ceede292708c9d0a1bfe1f422d135c38de15ee8ba80",
+     "bytes": 317204
+    },
+    {
+     "path": "i/stool-wooden-02.lod1.47752556.glb",
+     "sha256": "477525563ee274a0e28c855a8ce7dd14ad499ec882490f319787f4117d0edff3",
+     "bytes": 83904
+    },
+    {
+     "path": "i/stool-wooden-02.lite.a09a2c96.glb",
+     "sha256": "a09a2c96df103dad0e08f8432bcf6a60ec798ec0f53dec7f25444c6ad47efa78",
+     "bytes": 125548
+    }
+   ]
+  },
+  {
+   "id": "stool-painted",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_stool",
+    "path": "polyhaven/models/painted_wooden_stool/painted_wooden_stool.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stool-painted.83472eca.glb",
+     "sha256": "83472eca3bea551878268f91c068095cc9405f16fb97a4ba45ae96cffcd78efa",
+     "bytes": 139628
+    },
+    {
+     "path": "i/stool-painted.lite.4e144892.glb",
+     "sha256": "4e144892406a8708dddb9a5d4965d2a934e2f68920a81adccf736ca97aff71f2",
+     "bytes": 52916
+    }
+   ]
+  },
+  {
+   "id": "stool-metal-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:metal_stool_01",
+    "path": "polyhaven/models/metal_stool_01/metal_stool_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stool-metal-01.4e8378e3.glb",
+     "sha256": "4e8378e34c93848d7d53002ee4c5073aba18592a30faa4e5577b3ea76590c54f",
+     "bytes": 267084
+    },
+    {
+     "path": "i/stool-metal-01.lod1.23290337.glb",
+     "sha256": "23290337a34603090b510058cc6138a01e25ac0c3b5d23d48fa991002d2c30d1",
+     "bytes": 68868
+    },
+    {
+     "path": "i/stool-metal-01.lite.9c6e9cee.glb",
+     "sha256": "9c6e9ceeabd98b2b5b66d8252f1babfd908ebbb25acdcd932ffe90d26a159c86",
+     "bytes": 125760
+    }
+   ]
+  },
+  {
+   "id": "stool-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_stool",
+    "path": "polyhaven/models/chinese_stool/chinese_stool.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stool-chinese.0d6febcb.glb",
+     "sha256": "0d6febcb33d565ae94aea32d8adb7f95ee405be9b21a16006ea9b174783a0746",
+     "bytes": 120456
+    },
+    {
+     "path": "i/stool-chinese.lite.c7923ffa.glb",
+     "sha256": "c7923ffad5ff6c3eb01a35ad6d2cc93be087ff3a3cdc0e0dafc90b44ceac65ad",
+     "bytes": 56088
+    }
+   ]
+  },
+  {
+   "id": "ottoman-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Caspian Fortune"
+   ],
+   "source": {
+    "archive": "polyhaven:Ottoman_01",
+    "path": "polyhaven/models/Ottoman_01/Ottoman_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/ottoman-01.e50aa7e7.glb",
+     "sha256": "e50aa7e7a74df26e930ec7ef89f6ad820bf0c21ae007f1259c03801ea52f7c97",
+     "bytes": 171512
+    },
+    {
+     "path": "i/ottoman-01.lod1.d1ab75a4.glb",
+     "sha256": "d1ab75a40815173fcab63a7fa8ee386a484f872fd2d97f450c6943c9bde3b124",
+     "bytes": 38536
+    },
+    {
+     "path": "i/ottoman-01.lite.59983d77.glb",
+     "sha256": "59983d775e7258e5e12a7c52890a9bcbeb872ad1de246b71c4a0256b39a0cc03",
+     "bytes": 105016
+    }
+   ]
+  },
+  {
+   "id": "bed-gothic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:GothicBed_01",
+    "path": "polyhaven/models/GothicBed_01/GothicBed_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bed-gothic.f0164101.glb",
+     "sha256": "f0164101ffd38ca7bea046232c54e0e07985ce8ec64db97f88923a77733052f8",
+     "bytes": 904796
+    },
+    {
+     "path": "i/bed-gothic.lod1.f396054b.glb",
+     "sha256": "f396054bf686f3464e052ee0b3413f6d231d03d12aa40de08a3642e57de48d26",
+     "bytes": 214220
+    },
+    {
+     "path": "i/bed-gothic.lite.bd455355.glb",
+     "sha256": "bd45535506240d0e7369a7d7a6ddbc93e8a886895f03b2d3b3e7b57f64a304b7",
+     "bytes": 190812
+    }
+   ]
+  },
+  {
+   "id": "bed-old-frame",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Luca B"
+   ],
+   "source": {
+    "archive": "polyhaven:old_bed_frame",
+    "path": "polyhaven/models/old_bed_frame/old_bed_frame.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bed-old-frame.d8fbaed2.glb",
+     "sha256": "d8fbaed229a4e6aa7110b25f7f4605cdfd2c6a7f8f29850835ef53e4b12a30d5",
+     "bytes": 824776
+    },
+    {
+     "path": "i/bed-old-frame.lod1.f37f9da2.glb",
+     "sha256": "f37f9da2fd72b05e1c59677f852d74f105ef1902b54390b641e663b7d2189af4",
+     "bytes": 206656
+    },
+    {
+     "path": "i/bed-old-frame.lite.7cffaf83.glb",
+     "sha256": "7cffaf837da93252521261cca8beab16ee4f6d066149a05244e03df466ea82df",
+     "bytes": 184852
+    }
+   ]
+  },
+  {
+   "id": "bed-day-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Aron Łyczek"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_day_bed",
+    "path": "polyhaven/models/vintage_day_bed/vintage_day_bed.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bed-day-vintage.9a2e2e6d.glb",
+     "sha256": "9a2e2e6dcb7306c8d6f19435281b7dd3366d38328946e6364f65f7ccb843ea5a",
+     "bytes": 583684
+    },
+    {
+     "path": "i/bed-day-vintage.lod1.366a6b08.glb",
+     "sha256": "366a6b08cf8722e6aa76123f619c98f6b6dcba32b773ef8c7f4cf34ac690b02d",
+     "bytes": 33736
+    },
+    {
+     "path": "i/bed-day-vintage.lite.938de0ee.glb",
+     "sha256": "938de0eeeb79e60cf460cc5aeb2a3ecda078067058904b65c023d7976be02c9c",
+     "bytes": 101600
+    }
+   ]
+  },
+  {
+   "id": "table-dining-modern",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Aron Łyczek"
+   ],
+   "source": {
+    "archive": "polyhaven:dining_table",
+    "path": "polyhaven/models/dining_table/dining_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-dining-modern.6ab0d7c5.glb",
+     "sha256": "6ab0d7c519b6e0064bc90882d30a2ffe4f22cc30325c15bf07be7d004ec7bd53",
+     "bytes": 497096
+    },
+    {
+     "path": "i/table-dining-modern.lite.9e7fc882.glb",
+     "sha256": "9e7fc882e41f8a2583c09dab687e5dffc7858c1f1984580c33c38b36a82fe5f1",
+     "bytes": 59524
+    }
+   ]
+  },
+  {
+   "id": "table-wooden-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ethan Place"
+   ],
+   "source": {
+    "archive": "polyhaven:WoodenTable_01",
+    "path": "polyhaven/models/WoodenTable_01/WoodenTable_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-wooden-01.475b875c.glb",
+     "sha256": "475b875c15861259d3d5f7dee4d141b84076bd46d98a7509b2c037cbb706fe7b",
+     "bytes": 457960
+    },
+    {
+     "path": "i/table-wooden-01.lite.caf7a5d6.glb",
+     "sha256": "caf7a5d663828a2294b1aecf3348fe73eb670ba60f9917506a539874504eba77",
+     "bytes": 63376
+    }
+   ]
+  },
+  {
+   "id": "table-painted",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_table",
+    "path": "polyhaven/models/painted_wooden_table/painted_wooden_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-painted.2b2b26f8.glb",
+     "sha256": "2b2b26f8922f5d830a87b152a131a818106b2d88de6dfff7a372c48f146080d2",
+     "bytes": 301120
+    },
+    {
+     "path": "i/table-painted.lite.d472b3cd.glb",
+     "sha256": "d472b3cd05c909461c610a04463bd40836c218d8325e1332ce82f2dff7004e9f",
+     "bytes": 43452
+    }
+   ]
+  },
+  {
+   "id": "table-round-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:round_wooden_table_01",
+    "path": "polyhaven/models/round_wooden_table_01/round_wooden_table_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-round-01.43653d33.glb",
+     "sha256": "43653d3379eb87f6ef265f546df759c89179866855c08ebbdd0f1d3da6ab9cb2",
+     "bytes": 421216
+    },
+    {
+     "path": "i/table-round-01.lod1.e108c57d.glb",
+     "sha256": "e108c57d5bcb979be688a65595b94477de1f839f3a0d2064d969bc0236beed8a",
+     "bytes": 78556
+    },
+    {
+     "path": "i/table-round-01.lite.781dc297.glb",
+     "sha256": "781dc297eaac6cda3f1c3af53a4d51c81f5111a49d05c131062256ef3c06ec4b",
+     "bytes": 124496
+    }
+   ]
+  },
+  {
+   "id": "table-round-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:round_wooden_table_02",
+    "path": "polyhaven/models/round_wooden_table_02/round_wooden_table_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-round-02.ee9ddb61.glb",
+     "sha256": "ee9ddb6145e6d2840c4165bcc2c89387b226fba59327784651f7fc9facc46350",
+     "bytes": 199988
+    },
+    {
+     "path": "i/table-round-02.lod1.1f550129.glb",
+     "sha256": "1f550129a06a51d0319ca4f453e3c2f0b03083da69e1a133cbc18219cd36d60e",
+     "bytes": 51008
+    },
+    {
+     "path": "i/table-round-02.lite.a9b69f7c.glb",
+     "sha256": "a9b69f7cdd989922b35309f6183f0a71f8f381b0ac26a0a15db86a75307316d5",
+     "bytes": 119436
+    }
+   ]
+  },
+  {
+   "id": "table-wooden-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Serhii Khromov"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_table_02",
+    "path": "polyhaven/models/wooden_table_02/wooden_table_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-wooden-02.3f6ea931.glb",
+     "sha256": "3f6ea9311cbe300f294109aaa26e948b642c415e9fc5536653927ad1dbcec371",
+     "bytes": 104164
+    },
+    {
+     "path": "i/table-wooden-02.lite.b21f613f.glb",
+     "sha256": "b21f613fdca2925a23e117cd45a5014f874df7b482a2bb327498d60bc52f4a92",
+     "bytes": 31988
+    }
+   ]
+  },
+  {
+   "id": "table-gallinera",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:gallinera_table",
+    "path": "polyhaven/models/gallinera_table/gallinera_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-gallinera.29a33d21.glb",
+     "sha256": "29a33d21bb461901f9e90ca6f2f3ca3113385eef0f41882884e6b3b2cc65ab0c",
+     "bytes": 235668
+    },
+    {
+     "path": "i/table-gallinera.lod1.6be803ea.glb",
+     "sha256": "6be803ea1f8db91507c7fd6856e5259e2cfd8056fbff62bbee64a75bd521df86",
+     "bytes": 63008
+    },
+    {
+     "path": "i/table-gallinera.lite.05dfd7f4.glb",
+     "sha256": "05dfd7f467bb2a0e89b393f8415525dad89d8eb624f48877e9c26f07ce159a58",
+     "bytes": 142732
+    }
+   ]
+  },
+  {
+   "id": "table-small-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:small_wooden_table_01",
+    "path": "polyhaven/models/small_wooden_table_01/small_wooden_table_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/table-small-01.b459bf0b.glb",
+     "sha256": "b459bf0bcfd33ec45c4047b6d609725b1abbe5bdc3ce197bdbf820c912bd8d8b",
+     "bytes": 125408
+    },
+    {
+     "path": "i/table-small-01.lod1.faecf6f9.glb",
+     "sha256": "faecf6f9984879540b7238c0b61bbb6deee6f19ad7312598dcbbbe827951eb25",
+     "bytes": 32244
+    },
+    {
+     "path": "i/table-small-01.lite.e52c43c0.glb",
+     "sha256": "e52c43c0b909ab8c403c73d12742026a4824deba2b03b3b63eff21050234eaf6",
+     "bytes": 79628
+    }
+   ]
+  },
+  {
+   "id": "desk-metal-office",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:metal_office_desk",
+    "path": "polyhaven/models/metal_office_desk/metal_office_desk.gltf"
+   },
+   "files": [
+    {
+     "path": "i/desk-metal-office.e37da4cd.glb",
+     "sha256": "e37da4cd5feb8c3befef86beec50ea6405f4511b0b4382f8f2f4d9dde12d87b3",
+     "bytes": 434044
+    },
+    {
+     "path": "i/desk-metal-office.lod1.391f67f6.glb",
+     "sha256": "391f67f6954e472dd3506b13a6212307b147bc33a2b34d7f2946639d856b6289",
+     "bytes": 76076
+    },
+    {
+     "path": "i/desk-metal-office.lite.5c46d86c.glb",
+     "sha256": "5c46d86c92b4e3f970658897d543d41dadcbcb2e23540119e9c33ff3ff9e3ed8",
+     "bytes": 142164
+    }
+   ]
+  },
+  {
+   "id": "desk-school",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ethan Place"
+   ],
+   "source": {
+    "archive": "polyhaven:SchoolDesk_01",
+    "path": "polyhaven/models/SchoolDesk_01/SchoolDesk_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/desk-school.4b5cb9c1.glb",
+     "sha256": "4b5cb9c14856185c03c29d8ae2db5be5ec3096db4b174269f804e056e903ac1d",
+     "bytes": 156656
+    },
+    {
+     "path": "i/desk-school.lod1.1f4a4e41.glb",
+     "sha256": "1f4a4e41620be5bde522dfbace19fca639b06a82cc4e3bbf071916f5940f7576",
+     "bytes": 43712
+    },
+    {
+     "path": "i/desk-school.lite.40c8b5b8.glb",
+     "sha256": "40c8b5b8138ba0f22a9c913a91c85e6b28ba02afea1ddde0cf461457acb12799",
+     "bytes": 106344
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Fernando Quinn"
+   ],
+   "source": {
+    "archive": "polyhaven:CoffeeTable_01",
+    "path": "polyhaven/models/CoffeeTable_01/CoffeeTable_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-01.62972f98.glb",
+     "sha256": "62972f9825764c09e78ae9e38b60f8efc08214615358db47f3c570b9f938b454",
+     "bytes": 344192
+    },
+    {
+     "path": "i/coffee-table-01.lod1.03b4054a.glb",
+     "sha256": "03b4054a174e6fe078046e993ec0db06188ae7f72c85d445632fa04f16f12f47",
+     "bytes": 91204
+    },
+    {
+     "path": "i/coffee-table-01.lite.60b37f91.glb",
+     "sha256": "60b37f913be8afbd46d0a82c32b89512e928dd385224f946abdd5a93f6ebacd6",
+     "bytes": 141508
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-modern-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Amin"
+   ],
+   "source": {
+    "archive": "polyhaven:modern_coffee_table_01",
+    "path": "polyhaven/models/modern_coffee_table_01/modern_coffee_table_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-modern-01.3ebcbf3d.glb",
+     "sha256": "3ebcbf3d5094f98e946a03b4344f7e430ba9141d6b2d755a644a8c4de70ba572",
+     "bytes": 162132
+    },
+    {
+     "path": "i/coffee-table-modern-01.lod1.b5f9cb18.glb",
+     "sha256": "b5f9cb18399626cc7173ba4e41d4d19af3dde56c943e490ce066e379a0effe86",
+     "bytes": 56488
+    },
+    {
+     "path": "i/coffee-table-modern-01.lite.5ba02a2d.glb",
+     "sha256": "5ba02a2dbb36148510005764de4ff72e5cc6c9f67cea90935eabf13901ee7ad4",
+     "bytes": 118616
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-modern-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Amin"
+   ],
+   "source": {
+    "archive": "polyhaven:modern_coffee_table_02",
+    "path": "polyhaven/models/modern_coffee_table_02/modern_coffee_table_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-modern-02.b4f5a614.glb",
+     "sha256": "b4f5a61424f2fe2bb184c134a1831cefb3e4fd96900960d225fb62b54a6175f7",
+     "bytes": 576348
+    },
+    {
+     "path": "i/coffee-table-modern-02.lite.4c05f67f.glb",
+     "sha256": "4c05f67fe6fcc376e2c42f4de348b0293e0cc1bd63b56ef243f29370debb71ee",
+     "bytes": 547056
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-industrial",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:industrial_coffee_table",
+    "path": "polyhaven/models/industrial_coffee_table/industrial_coffee_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-industrial.1f1c5a14.glb",
+     "sha256": "1f1c5a1448ddea1ad06f8120f7c4ba18770577e397e2c4c3e8dfeddb76d7d585",
+     "bytes": 543824
+    },
+    {
+     "path": "i/coffee-table-industrial.lod1.20339fea.glb",
+     "sha256": "20339feaa298632eb7bdbffe6ccd476b1de6a88486dd2bc8b4dc77a7977f1069",
+     "bytes": 182736
+    },
+    {
+     "path": "i/coffee-table-industrial.lite.44f8c7d9.glb",
+     "sha256": "44f8c7d9b1ddbad8982bc78ee7d957c45d23a0def80407d47cb1903f1bb179e9",
+     "bytes": 188752
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-gothic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:gothic_coffee_table",
+    "path": "polyhaven/models/gothic_coffee_table/gothic_coffee_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-gothic.92c3874f.glb",
+     "sha256": "92c3874fbac72aa117dd98d06cae1d8c2fda62c5deea7522633e223b7ded62df",
+     "bytes": 606268
+    },
+    {
+     "path": "i/coffee-table-gothic.lod1.a22789f9.glb",
+     "sha256": "a22789f959c9d6fa368093bbd4d3ef62ca12cbb252370cc5614b2f0b68f00aff",
+     "bytes": 216336
+    },
+    {
+     "path": "i/coffee-table-gothic.lite.7b5d5558.glb",
+     "sha256": "7b5d55589743f33912a923457f0bc3b4b7594f5babcb72acf56e7f08f7d41843",
+     "bytes": 194640
+    }
+   ]
+  },
+  {
+   "id": "coffee-table-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_tea_table",
+    "path": "polyhaven/models/chinese_tea_table/chinese_tea_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/coffee-table-chinese.7c3c26d9.glb",
+     "sha256": "7c3c26d95c46197a66441cfa8dbb2595c5f758582e158423e7a081f3001c89d0",
+     "bytes": 141348
+    },
+    {
+     "path": "i/coffee-table-chinese.lod1.8b099760.glb",
+     "sha256": "8b0997601df04990093436cfd88f3ff00fcbc09519f7838860c076a7d3ccc62a",
+     "bytes": 28136
+    },
+    {
+     "path": "i/coffee-table-chinese.lite.77c1b32d.glb",
+     "sha256": "77c1b32d6207143da5e6c5bc254afae70247f11c3e604c08b778b53268d82dc3",
+     "bytes": 82580
+    }
+   ]
+  },
+  {
+   "id": "side-table-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:side_table_01",
+    "path": "polyhaven/models/side_table_01/side_table_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/side-table-01.4a53ad99.glb",
+     "sha256": "4a53ad99aab81619f2487a67720f9293d2d6765d4b42630e4038d9e46b8ce18d",
+     "bytes": 163872
+    },
+    {
+     "path": "i/side-table-01.lod1.f4b93419.glb",
+     "sha256": "f4b93419c1a5b443d8055538476426708f607f9467379ce29ba5c9a410aeba02",
+     "bytes": 37648
+    },
+    {
+     "path": "i/side-table-01.lite.fb28d38c.glb",
+     "sha256": "fb28d38cbecf9bfc131806885b4dfb50e289e23a230a3186baee6df9cb7e9105",
+     "bytes": 101876
+    }
+   ]
+  },
+  {
+   "id": "side-table-tall",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:side_table_tall_01",
+    "path": "polyhaven/models/side_table_tall_01/side_table_tall_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/side-table-tall.20c3b38e.glb",
+     "sha256": "20c3b38e8041a2cae9ee5d4eb3e97ed72575c0e0c28d9cee3e9f7744bcd36db3",
+     "bytes": 230316
+    },
+    {
+     "path": "i/side-table-tall.lod1.6566f74a.glb",
+     "sha256": "6566f74a1c169abe5084538dcc40fd701993f3146b819e5657c8813130eb532a",
+     "bytes": 74492
+    },
+    {
+     "path": "i/side-table-tall.lite.56f555b3.glb",
+     "sha256": "56f555b3960e6e1a750e8b3ac033179ad8ff59958f5da07e929d43e756bef601",
+     "bytes": 146180
+    }
+   ]
+  },
+  {
+   "id": "nightstand-painted",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_nightstand",
+    "path": "polyhaven/models/painted_wooden_nightstand/painted_wooden_nightstand.gltf"
+   },
+   "files": [
+    {
+     "path": "i/nightstand-painted.d00406f0.glb",
+     "sha256": "d00406f0d3cf726f57bd707b6c661a34b8e02bb54079cdb49d2fd841de6064a4",
+     "bytes": 130468
+    },
+    {
+     "path": "i/nightstand-painted.lite.cb36439e.glb",
+     "sha256": "cb36439ed821ba7b87ec971b6afd3d6a0084dc8d3ff31431f84ecb60ec2e0baf",
+     "bytes": 45828
+    }
+   ]
+  },
+  {
+   "id": "console-classic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:ClassicConsole_01",
+    "path": "polyhaven/models/ClassicConsole_01/ClassicConsole_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/console-classic.e16b7ed7.glb",
+     "sha256": "e16b7ed7200c0c8272b078671c59e8daa22fd9ad68fb29af6a6e1de83daff791",
+     "bytes": 294452
+    },
+    {
+     "path": "i/console-classic.lod1.d9d51a58.glb",
+     "sha256": "d9d51a58624859b9db0b7fee2db87b4cd57fba5dea514c1728e896eb697d5d4b",
+     "bytes": 81120
+    },
+    {
+     "path": "i/console-classic.lite.ba0a4110.glb",
+     "sha256": "ba0a4110e0be083dcb5f7de003c136e88d12edb76f32c6b4548faabd1fed766e",
+     "bytes": 156372
+    }
+   ]
+  },
+  {
+   "id": "console-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_console_table",
+    "path": "polyhaven/models/chinese_console_table/chinese_console_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/console-chinese.712d4844.glb",
+     "sha256": "712d48448f2726f243f70454e2bd6615954c504f33087c169863c0e856f05888",
+     "bytes": 543320
+    },
+    {
+     "path": "i/console-chinese.lod1.577ba9de.glb",
+     "sha256": "577ba9ded7667b0f574122ab0d60384676f9b94583669b7ecacbfc0ca35ff797",
+     "bytes": 171796
+    },
+    {
+     "path": "i/console-chinese.lite.dfb90e42.glb",
+     "sha256": "dfb90e4231acfef4e838ca34a784d555b78996754a34561f70f6ae6a5e82217b",
+     "bytes": 204844
+    }
+   ]
+  },
+  {
+   "id": "wardrobe-gothic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:GothicCabinet_01",
+    "path": "polyhaven/models/GothicCabinet_01/GothicCabinet_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/wardrobe-gothic.2c08d478.glb",
+     "sha256": "2c08d478d71abd14bb6f99345871490770cc14ac88ad4e3020b9a157c5a002ed",
+     "bytes": 796936
+    },
+    {
+     "path": "i/wardrobe-gothic.lod1.e80e6d7b.glb",
+     "sha256": "e80e6d7bd980204fd0c93c6507337f0811f3e4e0b67a2a35d2fb8584b4e549c0",
+     "bytes": 169404
+    },
+    {
+     "path": "i/wardrobe-gothic.lite.8a662e75.glb",
+     "sha256": "8a662e75441304c73a48d1be03c0059215bad620872c74a076be19ea7588257d",
+     "bytes": 207476
+    }
+   ]
+  },
+  {
+   "id": "wardrobe-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_cabinet",
+    "path": "polyhaven/models/chinese_cabinet/chinese_cabinet.gltf"
+   },
+   "files": [
+    {
+     "path": "i/wardrobe-chinese.96409567.glb",
+     "sha256": "964095672f7d7013e194164efef85146a2ea7aadfd09af8b53cca7e293d6d8c2",
+     "bytes": 721616
+    },
+    {
+     "path": "i/wardrobe-chinese.lod1.2b04b6f0.glb",
+     "sha256": "2b04b6f06dfd52ee8d83949de5d713123340cf7331db2416b5457b7904013d19",
+     "bytes": 151132
+    },
+    {
+     "path": "i/wardrobe-chinese.lite.d72f1409.glb",
+     "sha256": "d72f1409db9d4790eb419092b7497716c62bde8fa060da0eebaa61aa5961c767",
+     "bytes": 161164
+    }
+   ]
+  },
+  {
+   "id": "wardrobe-painted-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_cabinet",
+    "path": "polyhaven/models/painted_wooden_cabinet/painted_wooden_cabinet.gltf"
+   },
+   "files": [
+    {
+     "path": "i/wardrobe-painted-01.3deefa2c.glb",
+     "sha256": "3deefa2ca719968cd033ab6785c790f094e406447de71ba95719c9ef709b9e66",
+     "bytes": 169536
+    },
+    {
+     "path": "i/wardrobe-painted-01.lod1.5edb951e.glb",
+     "sha256": "5edb951e9f5d8b903ab59ce4f176ce61e1db551517ec47ba9e26e3e71c6d696a",
+     "bytes": 26864
+    },
+    {
+     "path": "i/wardrobe-painted-01.lite.3e79e193.glb",
+     "sha256": "3e79e193fa0561db055ccf169c8f8d8bee6b41f0bb9be258809f9e5e8f35e00c",
+     "bytes": 87376
+    }
+   ]
+  },
+  {
+   "id": "wardrobe-painted-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_cabinet_02",
+    "path": "polyhaven/models/painted_wooden_cabinet_02/painted_wooden_cabinet_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/wardrobe-painted-02.2b29497b.glb",
+     "sha256": "2b29497bfbc72ba830d6708d9523d072ae1a059edb2ed186d8e50c9e080c3c8f",
+     "bytes": 311816
+    },
+    {
+     "path": "i/wardrobe-painted-02.lite.bb7440a6.glb",
+     "sha256": "bb7440a629b5c5bde7f2ce7f40f895db3255fa9eb40ee7e44cd3305c1a7e6c10",
+     "bytes": 55804
+    }
+   ]
+  },
+  {
+   "id": "wardrobe-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_cabinet_01",
+    "path": "polyhaven/models/vintage_cabinet_01/vintage_cabinet_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/wardrobe-vintage.b455ba06.glb",
+     "sha256": "b455ba06b7401eb01aaea730e2c61b7eb4720b82224613bb615465c7803da031",
+     "bytes": 1187072
+    },
+    {
+     "path": "i/wardrobe-vintage.lod1.5201c068.glb",
+     "sha256": "5201c0682eb4cb4084cefaef31b0aff5dd307b68bb9a995a0de66409f4b8466b",
+     "bytes": 227928
+    },
+    {
+     "path": "i/wardrobe-vintage.lite.d0d0b626.glb",
+     "sha256": "d0d0b626493415014f361f413561d760937efc035839f0834e7286a0bb4da77f",
+     "bytes": 215108
+    }
+   ]
+  },
+  {
+   "id": "sideboard-modern",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Patrik Pangerl"
+   ],
+   "source": {
+    "archive": "polyhaven:modern_wooden_cabinet",
+    "path": "polyhaven/models/modern_wooden_cabinet/modern_wooden_cabinet.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sideboard-modern.e85897f5.glb",
+     "sha256": "e85897f5656d6f61181bdf60935652b1973e062bbbb81688298209019ff65afc",
+     "bytes": 1074244
+    },
+    {
+     "path": "i/sideboard-modern.lite.25fc5bc8.glb",
+     "sha256": "25fc5bc8947e6252083c64bfb3f459d8d2b7613730e05d3c11aedad97961ca85",
+     "bytes": 798032
+    }
+   ]
+  },
+  {
+   "id": "dresser-drawer",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:drawer_cabinet",
+    "path": "polyhaven/models/drawer_cabinet/drawer_cabinet.gltf"
+   },
+   "files": [
+    {
+     "path": "i/dresser-drawer.bfbe03b0.glb",
+     "sha256": "bfbe03b0263c2746cdb5190f2a7060723e4fc63c32232b2817ee7a869921ed9d",
+     "bytes": 668260
+    },
+    {
+     "path": "i/dresser-drawer.lod1.8e9c49b2.glb",
+     "sha256": "8e9c49b2d07b8c73b0a4ea42519782c15a1f900ade0bbbdd3c95ba4f2438840b",
+     "bytes": 195476
+    },
+    {
+     "path": "i/dresser-drawer.lite.75bb02d1.glb",
+     "sha256": "75bb02d16d02431d58521688da316e3a24a5c27ccbae8aa7e87e33b7956ead62",
+     "bytes": 159940
+    }
+   ]
+  },
+  {
+   "id": "dresser-gothic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:GothicCommode_01",
+    "path": "polyhaven/models/GothicCommode_01/GothicCommode_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/dresser-gothic.0959e8cc.glb",
+     "sha256": "0959e8cc95c69b53ba6ee79140843ed0c2b997508358a50290299a8ddf4950ab",
+     "bytes": 483300
+    },
+    {
+     "path": "i/dresser-gothic.lod1.ec6202d9.glb",
+     "sha256": "ec6202d9dd6f00a1645cc44c930b4dbabfb8793c938e6b7f2b6f68d086afe737",
+     "bytes": 55024
+    },
+    {
+     "path": "i/dresser-gothic.lite.93d0a9e3.glb",
+     "sha256": "93d0a9e3b4b7d46fc78044834ea8b62ab23cb6f3cf87025963daec66c4aa05ab",
+     "bytes": 130636
+    }
+   ]
+  },
+  {
+   "id": "dresser-chinese",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:chinese_commode",
+    "path": "polyhaven/models/chinese_commode/chinese_commode.gltf"
+   },
+   "files": [
+    {
+     "path": "i/dresser-chinese.d8e15299.glb",
+     "sha256": "d8e152992d46dcbe12e4e05e11f3df44bbd09af43cc272ae33ef6c002efbe785",
+     "bytes": 503652
+    },
+    {
+     "path": "i/dresser-chinese.lod1.bc7d336a.glb",
+     "sha256": "bc7d336a344f9a781c878f863c3f92d6d76ee4063a7d4411eb5d8988090ee123",
+     "bytes": 65980
+    },
+    {
+     "path": "i/dresser-chinese.lite.c45b5d9f.glb",
+     "sha256": "c45b5d9f730726eff16235ebf855a20e26fec1bdb29c0a3d73fc81a9b6201fce",
+     "bytes": 141176
+    }
+   ]
+  },
+  {
+   "id": "dresser-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_wooden_drawer_01",
+    "path": "polyhaven/models/vintage_wooden_drawer_01/vintage_wooden_drawer_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/dresser-vintage.43cfd803.glb",
+     "sha256": "43cfd8036e3273b5e6b5cc66f8ecbb8845087a28ee70c2b74785488e668c4138",
+     "bytes": 554152
+    },
+    {
+     "path": "i/dresser-vintage.lod1.7f861c64.glb",
+     "sha256": "7f861c642ea96b8e615c5e62219bc25e9a757430e7e482e15e96eaa46fd500a2",
+     "bytes": 67440
+    },
+    {
+     "path": "i/dresser-vintage.lite.2a488c8c.glb",
+     "sha256": "2a488c8c45842ff1de49099d1de8efee10afd360cb8ba80883c7dec59da685cf",
+     "bytes": 164944
+    }
+   ]
+  },
+  {
+   "id": "shelf-wall-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Gabriel Radić"
+   ],
+   "source": {
+    "archive": "polyhaven:Shelf_01",
+    "path": "polyhaven/models/Shelf_01/Shelf_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/shelf-wall-01.92cf9e58.glb",
+     "sha256": "92cf9e582bf2b6a99ff1fc80a35fe549b4854a698afa97018f52d0bf860d5376",
+     "bytes": 117372
+    },
+    {
+     "path": "i/shelf-wall-01.lite.ad413cee.glb",
+     "sha256": "ad413cee38e34ab4135c9b387771c9b7435b0f588c3f351e1612e7e09cc743af",
+     "bytes": 35976
+    }
+   ]
+  },
+  {
+   "id": "bookshelf-painted",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:painted_wooden_shelves",
+    "path": "polyhaven/models/painted_wooden_shelves/painted_wooden_shelves.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bookshelf-painted.e0b6e4b0.glb",
+     "sha256": "e0b6e4b0d2f353b8c5fa740774ee496f4e575b145f252cd643023cc07b8a5ed2",
+     "bytes": 119740
+    },
+    {
+     "path": "i/bookshelf-painted.lite.c835a685.glb",
+     "sha256": "c835a68545a7d7cd1e1acdc12e40d1ebdb630bc5ad232a31d0bc6362be5d8ce5",
+     "bytes": 44132
+    }
+   ]
+  },
+  {
+   "id": "bookshelf-worn",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_bookshelf_worn",
+    "path": "polyhaven/models/wooden_bookshelf_worn/wooden_bookshelf_worn.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bookshelf-worn.bc0fcf4c.glb",
+     "sha256": "bc0fcf4cbcf99bb7144d0732f99f7e41676b31b03b0e9ce3c8745e33e321c056",
+     "bytes": 763820
+    },
+    {
+     "path": "i/bookshelf-worn.lod1.527c8138.glb",
+     "sha256": "527c8138dd0b5a25aa4ce1d1346a9db6efb6776a1e2f86063f8f1313cc6eeaf4",
+     "bytes": 81808
+    },
+    {
+     "path": "i/bookshelf-worn.lite.8f4ce1c7.glb",
+     "sha256": "8f4ce1c7f7bf03ddffa0b7b4101fdbdd55e6d3e63ce9c8dd5ae57640fc0bff09",
+     "bytes": 130072
+    }
+   ]
+  },
+  {
+   "id": "bookshelf-display",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_display_shelves_01",
+    "path": "polyhaven/models/wooden_display_shelves_01/wooden_display_shelves_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bookshelf-display.dcdc8aa5.glb",
+     "sha256": "dcdc8aa5b49605130f90f9a11404c13120dfea1d4912f51923e67c4b780d80ff",
+     "bytes": 373996
+    },
+    {
+     "path": "i/bookshelf-display.lod1.aad538d2.glb",
+     "sha256": "aad538d2a5e138f78b697f5783eb7d1cff73f6ac82d6620fa775c8d9c655ff77",
+     "bytes": 39160
+    },
+    {
+     "path": "i/bookshelf-display.lite.a85b71ed.glb",
+     "sha256": "a85b71ed2d4ecf7d349c3bcce5768d11733982a84d546e052500bb813c5dcf36",
+     "bytes": 96652
+    }
+   ]
+  },
+  {
+   "id": "bookshelf-steel",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:steel_frame_shelves_03",
+    "path": "polyhaven/models/steel_frame_shelves_03/steel_frame_shelves_03.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bookshelf-steel.93b9a7cd.glb",
+     "sha256": "93b9a7cd8050bf3af61f218b8133dd6c433190849a9cacd2b02c5da9b6599f9d",
+     "bytes": 765740
+    },
+    {
+     "path": "i/bookshelf-steel.lod1.a33f3f2d.glb",
+     "sha256": "a33f3f2d9349c111e21311a94acec95378eb8b4483b8fabfd4c2e4586aba078f",
+     "bytes": 90092
+    },
+    {
+     "path": "i/bookshelf-steel.lite.5257eba3.glb",
+     "sha256": "5257eba3395eaf971e22b6c5a9b288941a826315036bad12c299a394bd1b34e9",
+     "bytes": 164256
+    }
+   ]
+  },
+  {
+   "id": "lamp-desk-arm",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Yann Kervran",
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:desk_lamp_arm_01",
+    "path": "polyhaven/models/desk_lamp_arm_01/desk_lamp_arm_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-desk-arm.fb8561c2.glb",
+     "sha256": "fb8561c2be32535d146980f9ec082086fef00cc2292832f4760e1eb440f3c39d",
+     "bytes": 556480
+    },
+    {
+     "path": "i/lamp-desk-arm.lod1.58dd3997.glb",
+     "sha256": "58dd3997444c74f383cf406c96628d4c1ab5af6a7b1e04d0e7e3e65ca3e7fe2d",
+     "bytes": 205224
+    },
+    {
+     "path": "i/lamp-desk-arm.lite.0fc5541c.glb",
+     "sha256": "0fc5541cb96aa4c8bf038d57602863e88c27bbe682dac2712cdeffafcdace9af",
+     "bytes": 176552
+    }
+   ]
+  },
+  {
+   "id": "chandelier-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:Chandelier_01",
+    "path": "polyhaven/models/Chandelier_01/Chandelier_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chandelier-01.8dc53a60.glb",
+     "sha256": "8dc53a6029c3483fdd5048f9615dd5f05b1b30471574a2b0ba85d85cb575783c",
+     "bytes": 626352
+    },
+    {
+     "path": "i/chandelier-01.lod1.caee8283.glb",
+     "sha256": "caee8283cdcbfe24c242952c3e997555bd96e7d5d1e39e1d3b5895a363456432",
+     "bytes": 275920
+    },
+    {
+     "path": "i/chandelier-01.lite.3c17a2b3.glb",
+     "sha256": "3c17a2b34822640392823cd749877069080956c47593a66038540aa4e7149902",
+     "bytes": 234964
+    }
+   ]
+  },
+  {
+   "id": "chandelier-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:Chandelier_02",
+    "path": "polyhaven/models/Chandelier_02/Chandelier_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chandelier-02.5b94403a.glb",
+     "sha256": "5b94403a3012d85eaf525fa5c9c6b1100effd4396c194325c41bc8d99a31dc07",
+     "bytes": 517504
+    },
+    {
+     "path": "i/chandelier-02.lod1.5172f9ce.glb",
+     "sha256": "5172f9ce48bcbe393a2ccae0879ed06981695919fc260cb5f53f9ee0e897583c",
+     "bytes": 184360
+    },
+    {
+     "path": "i/chandelier-02.lite.8735c785.glb",
+     "sha256": "8735c7858d67a7af75a29e1e2cc62d333afc46d8446ebacb4a5e6d1bf01828eb",
+     "bytes": 163788
+    }
+   ]
+  },
+  {
+   "id": "lamp-pendant-industrial",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:hanging_industrial_lamp",
+    "path": "polyhaven/models/hanging_industrial_lamp/hanging_industrial_lamp.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-pendant-industrial.df3b52b5.glb",
+     "sha256": "df3b52b5afb07bd13b38f385de5731286a2803ca43fe37c7c6b92b97b37f5d19",
+     "bytes": 400628
+    },
+    {
+     "path": "i/lamp-pendant-industrial.lod1.6dbe65b5.glb",
+     "sha256": "6dbe65b505d1d10d1ae8f0fda8e36ff093b5ae169e173b8400599838879145fd",
+     "bytes": 117356
+    },
+    {
+     "path": "i/lamp-pendant-industrial.lite.e0d80a7e.glb",
+     "sha256": "e0d80a7ef2b991d68d060ca23091b5d2df5799342f4d5fd599c4261ee005051d",
+     "bytes": 182312
+    }
+   ]
+  },
+  {
+   "id": "lamp-lantern-chandelier",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "source": {
+    "archive": "polyhaven:lantern_chandelier_01",
+    "path": "polyhaven/models/lantern_chandelier_01/lantern_chandelier_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-lantern-chandelier.6f2a9549.glb",
+     "sha256": "6f2a95495cd6d34db26fbe5c734b535c41f11a644e6ed7b53b56b6c5e2aea261",
+     "bytes": 426012
+    },
+    {
+     "path": "i/lamp-lantern-chandelier.lod1.b5b76133.glb",
+     "sha256": "b5b7613376d74a8115a50473adfe5d891e4730828ef79ba5f37f63d188b1c232",
+     "bytes": 79032
+    },
+    {
+     "path": "i/lamp-lantern-chandelier.lite.3cd41df4.glb",
+     "sha256": "3cd41df4e3eaac7dce29d942373daf5eb3cee62290e58ef3edca34c3cd39c46c",
+     "bytes": 216108
+    }
+   ]
+  },
+  {
+   "id": "lamp-wall-sconce",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:industrial_wall_sconce",
+    "path": "polyhaven/models/industrial_wall_sconce/industrial_wall_sconce.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-wall-sconce.a8d0dbf4.glb",
+     "sha256": "a8d0dbf46701bfe33af7a2dd910e1c446c53591e0da5b8a75cbedc9e94a9a6e8",
+     "bytes": 322240
+    },
+    {
+     "path": "i/lamp-wall-sconce.lod1.fe81985d.glb",
+     "sha256": "fe81985d84f52287f9bd2034983913835742f795552a42e4a6432d716d488325",
+     "bytes": 98896
+    },
+    {
+     "path": "i/lamp-wall-sconce.lite.314e51ca.glb",
+     "sha256": "314e51ca4eff6861ec9c9386286f7de1cc870232ab18a8c93f307162c1f13675",
+     "bytes": 155776
+    }
+   ]
+  },
+  {
+   "id": "lamp-oil-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Monsta3D"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_oil_lamp",
+    "path": "polyhaven/models/vintage_oil_lamp/vintage_oil_lamp.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-oil-vintage.1e4a07b6.glb",
+     "sha256": "1e4a07b6df7fda78927cc461fb5da2dd7a33640e0fe73f8b671d36af19741872",
+     "bytes": 288464
+    },
+    {
+     "path": "i/lamp-oil-vintage.lod1.216e277b.glb",
+     "sha256": "216e277b6a090c4f011ab6ded25874709328561ddf1aa3f096cd252842b90010",
+     "bytes": 67428
+    },
+    {
+     "path": "i/lamp-oil-vintage.lite.9bb2cdd0.glb",
+     "sha256": "9bb2cdd0ea095514dd111e50e102283c831cae1d4c7369474484e62516e692b1",
+     "bytes": 155868
+    }
+   ]
+  },
+  {
+   "id": "plant-potted-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:potted_plant_01",
+    "path": "polyhaven/models/potted_plant_01/potted_plant_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/plant-potted-01.bc624800.glb",
+     "sha256": "bc624800198b7ceecd396f87890b85f807a1a0d6fe9749772a3b32400f2f61c2",
+     "bytes": 741056
+    },
+    {
+     "path": "i/plant-potted-01.lod1.0e7fe6d3.glb",
+     "sha256": "0e7fe6d37c62f7e8e1dd722469cd1f3b9d4093d3f2b83bad289cc71e8a88ad01",
+     "bytes": 274636
+    },
+    {
+     "path": "i/plant-potted-01.lite.c3cbf672.glb",
+     "sha256": "c3cbf67284ffe25c00f16ad719e66e2577335a5535bf2f1bf1770e7f5b017f0f",
+     "bytes": 295524
+    }
+   ]
+  },
+  {
+   "id": "plant-potted-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:potted_plant_02",
+    "path": "polyhaven/models/potted_plant_02/potted_plant_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/plant-potted-02.cdda23c5.glb",
+     "sha256": "cdda23c56017199d0a2fc6af6f7490941a2b11778d539214e4c5d85ea4442de4",
+     "bytes": 607376
+    },
+    {
+     "path": "i/plant-potted-02.lod1.ba422ac4.glb",
+     "sha256": "ba422ac481c5639af1749f73326bfd53b1c4cf4a9db154b7e962d3f7adad34b5",
+     "bytes": 223284
+    },
+    {
+     "path": "i/plant-potted-02.lite.842f19df.glb",
+     "sha256": "842f19df40d19cd8fb3e89ba300cb10e540fd9a0e980b1d44de511133f8909d5",
+     "bytes": 206916
+    }
+   ]
+  },
+  {
+   "id": "planter-box-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:planter_box_01",
+    "path": "polyhaven/models/planter_box_01/planter_box_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/planter-box-01.a2e4c23a.glb",
+     "sha256": "a2e4c23a4fc82b1176c4fe40e53fc368e51e488848c4c4500623f729e46948dd",
+     "bytes": 301040
+    },
+    {
+     "path": "i/planter-box-01.lod1.590dddcb.glb",
+     "sha256": "590dddcbcfb5c7d13b0f19c400fbc50832a16da580efc8c60eb5e854e7759a59",
+     "bytes": 87556
+    },
+    {
+     "path": "i/planter-box-01.lite.ebd508a8.glb",
+     "sha256": "ebd508a8eb1f056c3b973185c71e7fd589e00dc31a9f2c3261fec99d6bd0e808",
+     "bytes": 153464
+    }
+   ]
+  },
+  {
+   "id": "tv-crt-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Benny Weimer"
+   ],
+   "source": {
+    "archive": "polyhaven:television_02",
+    "path": "polyhaven/models/television_02/television_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tv-crt-02.5a227e8c.glb",
+     "sha256": "5a227e8c16d18b61cf1f2dd627d6792dc483f9b0d9c2c896b4decd8ba60b15af",
+     "bytes": 146756
+    },
+    {
+     "path": "i/tv-crt-02.lod1.f032f04a.glb",
+     "sha256": "f032f04a214da46e61eb938606c30208acfd51a1c64abb9540bd9dbd6fe5f6a1",
+     "bytes": 27596
+    },
+    {
+     "path": "i/tv-crt-02.lite.678a9af4.glb",
+     "sha256": "678a9af460284c53b5380df6f6d36c68e9958144493cb3904f0b42729113f8b0",
+     "bytes": 82644
+    }
+   ]
+  },
+  {
+   "id": "laptop-classic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Arrangemonk"
+   ],
+   "source": {
+    "archive": "polyhaven:classic_laptop",
+    "path": "polyhaven/models/classic_laptop/classic_laptop.gltf"
+   },
+   "files": [
+    {
+     "path": "i/laptop-classic.0af27397.glb",
+     "sha256": "0af27397078b129b9724eca85f1451a414444b34045ccd62913dd691708bfd51",
+     "bytes": 505332
+    },
+    {
+     "path": "i/laptop-classic.lod1.b2de100f.glb",
+     "sha256": "b2de100f33a69bbd6db0aa153d6b72142d96d8fca1691809440562b088598711",
+     "bytes": 177440
+    },
+    {
+     "path": "i/laptop-classic.lite.f0cf2bda.glb",
+     "sha256": "f0cf2bdaf71b07afeda1981530486f123403c01aba4770677a136ed245ccb1c0",
+     "bytes": 204960
+    }
+   ]
+  },
+  {
+   "id": "boombox",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Thomas Paul Mouilleron"
+   ],
+   "source": {
+    "archive": "polyhaven:boombox",
+    "path": "polyhaven/models/boombox/boombox.gltf"
+   },
+   "files": [
+    {
+     "path": "i/boombox.cfa76b5e.glb",
+     "sha256": "cfa76b5e004d2c28d5ca45c9ddf168f03d4ba0d7400a193bc87f730b659b89f7",
+     "bytes": 432724
+    },
+    {
+     "path": "i/boombox.lod1.ba51ea7f.glb",
+     "sha256": "ba51ea7f76b1044de5e92ec8f82251aba769f6fb20135a12641017f151d4edb3",
+     "bytes": 104360
+    },
+    {
+     "path": "i/boombox.lite.66fc6813.glb",
+     "sha256": "66fc681304ce07839a10a70a6d74998843a0af1772dcd1d546896a05cb495adc",
+     "bytes": 174916
+    }
+   ]
+  },
+  {
+   "id": "radio-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Mateusz Sadek"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_radio_transceiver",
+    "path": "polyhaven/models/vintage_radio_transceiver/vintage_radio_transceiver.gltf"
+   },
+   "files": [
+    {
+     "path": "i/radio-vintage.caebd57e.glb",
+     "sha256": "caebd57e8e57ce0cbe85028513f85cb45b45ebb7c7f2b2acfdc790fa66357a4d",
+     "bytes": 903804
+    },
+    {
+     "path": "i/radio-vintage.lod1.894493e6.glb",
+     "sha256": "894493e6c8d9655c302adfafee3fd4f92ab3c2f3c78119f4b730b441cdaf60df",
+     "bytes": 295908
+    },
+    {
+     "path": "i/radio-vintage.lite.8c90b233.glb",
+     "sha256": "8c90b233e0875a01327231e9f555240e354264a84a292c4baf370f968737004c",
+     "bytes": 369716
+    }
+   ]
+  },
+  {
+   "id": "gaming-console",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Sean Buckley"
+   ],
+   "source": {
+    "archive": "polyhaven:gaming_console",
+    "path": "polyhaven/models/gaming_console/gaming_console.gltf"
+   },
+   "files": [
+    {
+     "path": "i/gaming-console.bb065ad0.glb",
+     "sha256": "bb065ad05ffb2f0f089575b8082f29d452e638ae17e60bc3637062eea1088c75",
+     "bytes": 607160
+    },
+    {
+     "path": "i/gaming-console.lite.cfaad62b.glb",
+     "sha256": "cfaad62b8377c3cc2d24f12bfccda3b9e2ae29e5477cc55ec0457f53382b0b74",
+     "bytes": 527632
+    }
+   ]
+  },
+  {
+   "id": "books-encyclopedia",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "John Malcolm"
+   ],
+   "source": {
+    "archive": "polyhaven:book_encyclopedia_set_01",
+    "path": "polyhaven/models/book_encyclopedia_set_01/book_encyclopedia_set_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/books-encyclopedia.e9809416.glb",
+     "sha256": "e98094166404796e7df8abdbe7b01ad304fc2a36c567b81f968411e5f6d8c10d",
+     "bytes": 975348
+    },
+    {
+     "path": "i/books-encyclopedia.lite.6aa8796f.glb",
+     "sha256": "6aa8796f135721302448da9a93ecc26c967dc1a09c55aaef8d411a27cb33847d",
+     "bytes": 723116
+    }
+   ]
+  },
+  {
+   "id": "vase-ceramic-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:ceramic_vase_02",
+    "path": "polyhaven/models/ceramic_vase_02/ceramic_vase_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/vase-ceramic-02.235895a3.glb",
+     "sha256": "235895a31500f82f48929327366564b467e44ec830a9db8786f9e7b96b2a0c5d",
+     "bytes": 275232
+    },
+    {
+     "path": "i/vase-ceramic-02.lod1.c51fd4f3.glb",
+     "sha256": "c51fd4f39585cb62bc6f5b6e9072ca22f845cdb755d1d50aa23e40cf29cd72ca",
+     "bytes": 93392
+    },
+    {
+     "path": "i/vase-ceramic-02.lite.202d7a73.glb",
+     "sha256": "202d7a731b7d7dc667daef0798c10c5571962c7081fd9f9062f532524d4bc5ef",
+     "bytes": 122060
+    }
+   ]
+  },
+  {
+   "id": "vase-ceramic-03",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:ceramic_vase_03",
+    "path": "polyhaven/models/ceramic_vase_03/ceramic_vase_03.gltf"
+   },
+   "files": [
+    {
+     "path": "i/vase-ceramic-03.0b019631.glb",
+     "sha256": "0b0196315417676c5e4efcdcd6ebce6c937be3f52aa3976c90c5d674644f79fb",
+     "bytes": 299120
+    },
+    {
+     "path": "i/vase-ceramic-03.lod1.adfc78e8.glb",
+     "sha256": "adfc78e8b06860eb761c532647a83efb1cbd53673b3221fbfc148394e8052ee0",
+     "bytes": 92948
+    },
+    {
+     "path": "i/vase-ceramic-03.lite.710bd0b3.glb",
+     "sha256": "710bd0b330ad9a27274f7121a06d992a063726d5572b1422b97f5b2e570b1ef7",
+     "bytes": 121608
+    }
+   ]
+  },
+  {
+   "id": "vase-ceramic-04",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:ceramic_vase_04",
+    "path": "polyhaven/models/ceramic_vase_04/ceramic_vase_04.gltf"
+   },
+   "files": [
+    {
+     "path": "i/vase-ceramic-04.db42fe95.glb",
+     "sha256": "db42fe95ef2a2999da05a1b5741bad9fdb9b5f1c5ab31255d8cf2a1c38cd3405",
+     "bytes": 225136
+    },
+    {
+     "path": "i/vase-ceramic-04.lod1.f43d9607.glb",
+     "sha256": "f43d9607ac256adf3ca9c4863a8cbacaefc6d95c084daecd3ab5340f68eccb6a",
+     "bytes": 72168
+    },
+    {
+     "path": "i/vase-ceramic-04.lite.5aa3c112.glb",
+     "sha256": "5aa3c1121244f8a597b12282e8dc419e5829ee60d530b26e3380c072c2f8930d",
+     "bytes": 109960
+    }
+   ]
+  },
+  {
+   "id": "vase-brass-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:brass_vase_01",
+    "path": "polyhaven/models/brass_vase_01/brass_vase_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/vase-brass-01.552852be.glb",
+     "sha256": "552852be720fc6b03c6a93781aa262fbe2bc89a73e1dcda5618dace777d3e26e",
+     "bytes": 372452
+    },
+    {
+     "path": "i/vase-brass-01.lod1.7c69c97c.glb",
+     "sha256": "7c69c97cded2c47ab5f722836cc80734c9455515621f72d87bda503c5eca4e94",
+     "bytes": 135244
+    },
+    {
+     "path": "i/vase-brass-01.lite.3ffe520e.glb",
+     "sha256": "3ffe520eba39dd2e934b3cd27d279f26d64a767bc1fd3c3fad426a85dec08f30",
+     "bytes": 106160
+    }
+   ]
+  },
+  {
+   "id": "vase-antique",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:antique_ceramic_vase_01",
+    "path": "polyhaven/models/antique_ceramic_vase_01/antique_ceramic_vase_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/vase-antique.7b15256c.glb",
+     "sha256": "7b15256c8f4982a1ec99a815206ffe3fc3308c299a920bd8d8da849dff28770e",
+     "bytes": 223056
+    },
+    {
+     "path": "i/vase-antique.lod1.e47f0fab.glb",
+     "sha256": "e47f0fab3be7863134cac9382acd1e7c4cbfd1c098d917a288497a78c350208a",
+     "bytes": 59928
+    },
+    {
+     "path": "i/vase-antique.lite.039aa0a0.glb",
+     "sha256": "039aa0a0c116a0cf43b90e8c061b9020f7e3d50a2421386a1cb91b55a00ddfa6",
+     "bytes": 98520
+    }
+   ]
+  },
+  {
+   "id": "pillows-throw",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Serhii Khromov"
+   ],
+   "source": {
+    "archive": "polyhaven:throw_pillows_01",
+    "path": "polyhaven/models/throw_pillows_01/throw_pillows_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/pillows-throw.ad51f920.glb",
+     "sha256": "ad51f920bfe968c51cd9829f24fe70505be34ede160a3e5f52c40ff82b23e407",
+     "bytes": 302184
+    },
+    {
+     "path": "i/pillows-throw.lod1.6754b0d2.glb",
+     "sha256": "6754b0d2b27dbcd207ce9aa0728eb97d444f71fbcc1a0339f0861322fc7364c1",
+     "bytes": 49944
+    },
+    {
+     "path": "i/pillows-throw.lite.81bb8f06.glb",
+     "sha256": "81bb8f06717e3501e9bc2263a1f12f78ee2ed14aca4b5ccbe51c09552a9582d0",
+     "bytes": 132876
+    }
+   ]
+  },
+  {
+   "id": "mirror-ornate",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:ornate_mirror_01",
+    "path": "polyhaven/models/ornate_mirror_01/ornate_mirror_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/mirror-ornate.85bc8d05.glb",
+     "sha256": "85bc8d05d5b6d02ade7ba3b4b9d44605332602084b21b2a217344d6dac42195d",
+     "bytes": 340060
+    },
+    {
+     "path": "i/mirror-ornate.lod1.a4fbcfc2.glb",
+     "sha256": "a4fbcfc2892f19d7dfa1fb28f78fc442adff85c33d4d3262708bd74c2e83d794",
+     "bytes": 120064
+    },
+    {
+     "path": "i/mirror-ornate.lite.884c0d1c.glb",
+     "sha256": "884c0d1c3a6364dda93482bc6e2b994664dfd1fd0a855ea83d2a6de40a34be60",
+     "bytes": 128756
+    }
+   ]
+  },
+  {
+   "id": "frame-fancy-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rob Tuytel",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:fancy_picture_frame_01",
+    "path": "polyhaven/models/fancy_picture_frame_01/fancy_picture_frame_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/frame-fancy-01.1baefa9a.glb",
+     "sha256": "1baefa9a5bfc51bc4c5f46a21be3b17cae2ef74cb6a1708d0aa7b6d3729344b3",
+     "bytes": 167748
+    },
+    {
+     "path": "i/frame-fancy-01.lite.b7ac9ceb.glb",
+     "sha256": "b7ac9cebcc6d6ed8fdce80bc59ea9a34411a61e3326dc41484cd2246e8b6d215",
+     "bytes": 62116
+    }
+   ]
+  },
+  {
+   "id": "clock-wall",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "PierreB3D"
+   ],
+   "source": {
+    "archive": "polyhaven:wall_clock",
+    "path": "polyhaven/models/wall_clock/wall_clock.gltf"
+   },
+   "files": [
+    {
+     "path": "i/clock-wall.c85dc256.glb",
+     "sha256": "c85dc25675afdbac3b8503e16e170d7ea25ebdf8591ff3f3ea31335048914210",
+     "bytes": 197560
+    },
+    {
+     "path": "i/clock-wall.lod1.d3d63bdf.glb",
+     "sha256": "d3d63bdfd8e31478bebdb4d1d88ba7b22b0fa2c01f44dd3475818dfef6093837",
+     "bytes": 43568
+    },
+    {
+     "path": "i/clock-wall.lite.11c0f4de.glb",
+     "sha256": "11c0f4def45982283fa6d1471aec2b711a20912171ab3dfaebf35989c17dabfe",
+     "bytes": 125720
+    }
+   ]
+  },
+  {
+   "id": "clock-mantel",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Yann Kervran",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:mantel_clock_01",
+    "path": "polyhaven/models/mantel_clock_01/mantel_clock_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/clock-mantel.d1dcb11c.glb",
+     "sha256": "d1dcb11c8cbb46d2636e1eba79f9be18d5306654d270a94196cf76216843dbf1",
+     "bytes": 510704
+    },
+    {
+     "path": "i/clock-mantel.lod1.9ab8da9d.glb",
+     "sha256": "9ab8da9d872cc05b0c6fdf8e23c6d48a7f2e7d088b5cbaf8e0ff507b258686f3",
+     "bytes": 156296
+    },
+    {
+     "path": "i/clock-mantel.lite.8ca63702.glb",
+     "sha256": "8ca63702bd491abf05c5dec2c9b2407bd4752d52bacbe7f58554922311286f61",
+     "bytes": 152704
+    }
+   ]
+  },
+  {
+   "id": "basket-wicker",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:wicker_basket_02",
+    "path": "polyhaven/models/wicker_basket_02/wicker_basket_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/basket-wicker.8c21e00e.glb",
+     "sha256": "8c21e00e5c4ecf44090f48a533232d3507609902b9241bb3f738d0dfec56d85e",
+     "bytes": 457504
+    },
+    {
+     "path": "i/basket-wicker.lod1.e7d0f2cc.glb",
+     "sha256": "e7d0f2ccce2b38a601856282b2d6a482da1e52384f94ac222968dbd5ebf37f6d",
+     "bytes": 131736
+    },
+    {
+     "path": "i/basket-wicker.lite.ccaafe26.glb",
+     "sha256": "ccaafe26ba3138e68f371df305889165114b98f851a1b7c11f51a6d546aecd12",
+     "bytes": 135532
+    }
+   ]
+  },
+  {
+   "id": "bowl-wooden-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Oliver Harries"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_bowl_01",
+    "path": "polyhaven/models/wooden_bowl_01/wooden_bowl_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bowl-wooden-01.63753aa0.glb",
+     "sha256": "63753aa0f2919d81a7bdc8f57dce106e6f009881f8156b909efb5a8eea8e8604",
+     "bytes": 377700
+    },
+    {
+     "path": "i/bowl-wooden-01.lod1.1e3d8e23.glb",
+     "sha256": "1e3d8e239bac9fb475c6ad10c8936beea2941b31d0557fdcfd8ca000887313e9",
+     "bytes": 115580
+    },
+    {
+     "path": "i/bowl-wooden-01.lite.6f3f9f1f.glb",
+     "sha256": "6f3f9f1fb3c9caa0caf1e22d8b351f6b76868f4986cd730991b233823b23a95c",
+     "bytes": 124424
+    }
+   ]
+  },
+  {
+   "id": "bust-marble",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:marble_bust_01",
+    "path": "polyhaven/models/marble_bust_01/marble_bust_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bust-marble.0fa3a5fd.glb",
+     "sha256": "0fa3a5fd84aaee1c34c5e4eeede933acbcf86c0f98045ea55cc6c14c2b47c58b",
+     "bytes": 423328
+    },
+    {
+     "path": "i/bust-marble.lod1.cb2bf3e6.glb",
+     "sha256": "cb2bf3e6013c81206b2a3a9c191fb8921d8fedbb4f2142738cd33d8c6fcad494",
+     "bytes": 122144
+    },
+    {
+     "path": "i/bust-marble.lite.cc5c44dc.glb",
+     "sha256": "cc5c44dcf350eae5d989af4582190640a1c6f008084405db1fb28c0d6f3b2f58",
+     "bytes": 120504
+    }
+   ]
+  },
+  {
+   "id": "candleholders-brass",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Tina"
+   ],
+   "source": {
+    "archive": "polyhaven:brass_candleholders",
+    "path": "polyhaven/models/brass_candleholders/brass_candleholders.gltf"
+   },
+   "files": [
+    {
+     "path": "i/candleholders-brass.a4628fcc.glb",
+     "sha256": "a4628fcce2a5cf429edde76120a4725063db2e6d644696341f053f1837980cc6",
+     "bytes": 1018084
+    },
+    {
+     "path": "i/candleholders-brass.lod1.1cf1a7e5.glb",
+     "sha256": "1cf1a7e53ea8712aff158d93ccbf2fcfcec8da4c642aebcbc8c11cae473db11c",
+     "bytes": 209956
+    },
+    {
+     "path": "i/candleholders-brass.lite.7e1b42c1.glb",
+     "sha256": "7e1b42c15e5740f28b4324b5d8f46f09aa47cabcc6ce49ad76fa5b98531525cc",
+     "bytes": 298656
+    }
+   ]
+  },
+  {
+   "id": "chess-set",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Riley Queen"
+   ],
+   "source": {
+    "archive": "polyhaven:chess_set",
+    "path": "polyhaven/models/chess_set/chess_set.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chess-set.c4c8b1f6.glb",
+     "sha256": "c4c8b1f6226b10579f4ec145e5ef0993a5e26db6df962297e661995da5bf1919",
+     "bytes": 798076
+    },
+    {
+     "path": "i/chess-set.lod1.a032e1a7.glb",
+     "sha256": "a032e1a7f86db4a111fd713f168baa5909381eab00b86cb176a1251d77c8e515",
+     "bytes": 223872
+    },
+    {
+     "path": "i/chess-set.lite.be188fbb.glb",
+     "sha256": "be188fbb6706357eacc5fb7d87cea386fe187950c6473f0ac8ec8f80954d617f",
+     "bytes": 262520
+    }
+   ]
+  },
+  {
+   "id": "cooker-electric",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:electric_stove",
+    "path": "polyhaven/models/electric_stove/electric_stove.gltf"
+   },
+   "files": [
+    {
+     "path": "i/cooker-electric.5f74fc82.glb",
+     "sha256": "5f74fc8239328d85baf89e87356e75aade26d78ce62e95033fb464c69a2c6456",
+     "bytes": 454404
+    },
+    {
+     "path": "i/cooker-electric.lod1.3b87af98.glb",
+     "sha256": "3b87af989325018c470d825179b6965e88453d4d657de326575b6c903666e07f",
+     "bytes": 142972
+    },
+    {
+     "path": "i/cooker-electric.lite.45eb5523.glb",
+     "sha256": "45eb5523a293558b65e167a6efc3eaeb093208b05c2802a05ef3dc16d9b1ba0f",
+     "bytes": 173552
+    }
+   ]
+  },
+  {
+   "id": "microwave-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Adam Nekola"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_microwave",
+    "path": "polyhaven/models/vintage_microwave/vintage_microwave.gltf"
+   },
+   "files": [
+    {
+     "path": "i/microwave-vintage.8820d4fa.glb",
+     "sha256": "8820d4facb3c6640fa2e4a5ae9c2ccaaa63b893e7256f20beee7d776d419d459",
+     "bytes": 283096
+    },
+    {
+     "path": "i/microwave-vintage.lod1.edc2c5c4.glb",
+     "sha256": "edc2c5c4d256249bf684951f34895ab1f76d728d88783dd1546566835a5334a4",
+     "bytes": 74292
+    },
+    {
+     "path": "i/microwave-vintage.lite.1dceb9d9.glb",
+     "sha256": "1dceb9d9de8a290da52c71f96351b256605b5aff050b06b28383010955f64d39",
+     "bytes": 139712
+    }
+   ]
+  },
+  {
+   "id": "kettle-vintage",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "SV Garip"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_electric_kettle",
+    "path": "polyhaven/models/vintage_electric_kettle/vintage_electric_kettle.gltf"
+   },
+   "files": [
+    {
+     "path": "i/kettle-vintage.d58a9e3d.glb",
+     "sha256": "d58a9e3d533658d2677eb7e2972fa85cdcac60c59ecf535b98538b682d78a7a8",
+     "bytes": 474544
+    },
+    {
+     "path": "i/kettle-vintage.lod1.03a34168.glb",
+     "sha256": "03a3416876d9d42c5850ccebef82e83e005e40c45783cb4cb3dd60db38cf8258",
+     "bytes": 130112
+    },
+    {
+     "path": "i/kettle-vintage.lite.531b0f85.glb",
+     "sha256": "531b0f85f3a81f6461f754bba586034cf90fc593ecbb37e975f23ad13e59db27",
+     "bytes": 163816
+    }
+   ]
+  },
+  {
+   "id": "ceiling-fan-realistic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:ceiling_fan",
+    "path": "polyhaven/models/ceiling_fan/ceiling_fan.gltf"
+   },
+   "files": [
+    {
+     "path": "i/ceiling-fan-realistic.d0c89717.glb",
+     "sha256": "d0c8971734f47fd4851f586574f9edbe3d8c42621156e2bf026a6218dbc11fe7",
+     "bytes": 430484
+    },
+    {
+     "path": "i/ceiling-fan-realistic.lod1.8f146190.glb",
+     "sha256": "8f1461905e315d8b6ce467bcb554b88b1a06a1982baa285d7185568639190015",
+     "bytes": 150644
+    },
+    {
+     "path": "i/ceiling-fan-realistic.lite.17967fe7.glb",
+     "sha256": "17967fe7ee76d88f0d23e4c8d3881aaabfe3acbd37c496762e29de2391e56f8b",
+     "bytes": 153008
+    }
+   ]
+  },
+  {
+   "id": "stove-masonry",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "source": {
+    "archive": "polyhaven:scandinavian_masonry_heater",
+    "path": "polyhaven/models/scandinavian_masonry_heater/scandinavian_masonry_heater.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stove-masonry.ba598c65.glb",
+     "sha256": "ba598c65255a68c029e1e1f869fa7802d4726d79aedaa5da28c8a7b046e31c10",
+     "bytes": 338208
+    },
+    {
+     "path": "i/stove-masonry.lod1.0d714334.glb",
+     "sha256": "0d714334fe3bebe154c39bc4ecf984190fd2d1f16ba16975020641c07c8b46bf",
+     "bytes": 108952
+    },
+    {
+     "path": "i/stove-masonry.lite.9ccd77d9.glb",
+     "sha256": "9ccd77d903e596a181113c3f11a42bb7351b16163acc76bb25ec11abb98cf352",
+     "bytes": 164696
+    }
+   ]
   }
  ]
 }

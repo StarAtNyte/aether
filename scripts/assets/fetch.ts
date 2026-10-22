@@ -194,7 +194,12 @@ async function fetchPolyhaven(src: Sources['polyhaven']): Promise<void> {
   const records: PolyhavenRecord[] = [];
   for (const id of src.models) {
     const info = PhInfo.parse(await json(`${src.api}/info/${id}`));
-    const files = PhGltf.parse(await json(`${src.api}/files/${id}`));
+    const raw = await json(`${src.api}/files/${id}`);
+    if (typeof raw !== 'object' || raw === null || !('gltf' in raw)) {
+      console.warn(`skip polyhaven model ${id}: no glTF files published`);
+      continue;
+    }
+    const files = PhGltf.parse(raw);
     const res = files.gltf[src.resolution];
     if (!res) throw new Error(`${id}: no ${src.resolution} glTF`);
     const dir = join(SOURCE_DIR, 'polyhaven', 'models', id);
