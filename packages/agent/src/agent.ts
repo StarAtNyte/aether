@@ -65,6 +65,10 @@ export interface RunOptions {
    * agent was given `photo` options; 'off' never does.
    */
   photo?: 'auto' | 'recreate' | 'off';
+  /** The staged photo flow: what the user said about the right to use the photo (goes into the provenance record). */
+  photoPermission?: string;
+  /** The staged photo flow: continue an earlier run on the same photo at the repair stage (the state of its last `photo` event). */
+  photoResume?: import('./types').PhotoResumeState;
   /**
    * Messages the user typed while this run worked. Read between model turns (and before the run would end): what
    * it returns is handed to the model as a queued message that adds to or changes the request, and a `steer`
@@ -354,7 +358,8 @@ export class WorldAgent {
     if (photoPipeline && photoPipeline.isRoomPhotoRequest(request, images.length, photoMode === 'recreate') && images[0] !== undefined) {
       const { reconstructRoom } = photoPipeline;
       const sessionKey = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
-      const options = this.compact ? { ...(this.opts.photo ?? {}), vision: false } : (this.opts.photo ?? {});
+      const base = this.compact ? { ...(this.opts.photo ?? {}), vision: false } : (this.opts.photo ?? {});
+      const options = { ...base, ...(opts.photoPermission ? { permission: opts.photoPermission } : {}), ...(opts.photoResume ? { resume: opts.photoResume } : {}) };
       // The photo flow keeps its own conversation: the next planner run starts a new one.
       if (sessionKey) this.conversations.forget(sessionKey);
       yield* reconstructRoom({ ctx, system: this.system, tools: this.tools, maxTokens: this.maxTokens, maxToolCalls: this.maxToolCalls, ...(sessionKey ? { session: sessionKey } : {}), request, image: images[0], options, replace: opts.intent !== 'refine' });

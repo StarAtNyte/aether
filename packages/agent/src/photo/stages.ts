@@ -248,30 +248,34 @@ export function applyCameraChange(cam: PhotoCamera, raw: unknown): { ok: true; c
   return { ok: true, camera, text: `Camera: ${said.join(', ')}. The next render is taken from it (after the usual fit to the pieces).` };
 }
 
-/** The cause class an edit tool call works on. */
-export function causeOfTool(name: string, input: unknown): Cause | null {
+/**
+ * The cause classes an edit tool call can serve (null: not an edit). A shell plan resend (design_plan) carries geometry and
+ * the wall and floor finishes; an edit that only changes colours or finishes of a piece is a materials edit.
+ */
+export function causesOfTool(name: string, input: unknown): Cause[] | null {
   switch (name) {
     case CAMERA_TOOL_NAME:
-      return 'camera';
+      return ['camera'];
     case 'make_texture':
-      return 'materials';
+      return ['materials'];
     case 'tune_look':
-      return 'lighting';
+      return ['lighting'];
     case 'place_items':
+      return ['geometry'];
     case 'design_plan':
-      return 'geometry';
+      return ['geometry', 'materials'];
     case 'edit_items': {
-      // An edit is materials when every edit in it only changes colour / finish / material; anything else is geometry.
       const edits = (input as { edits?: unknown } | null)?.edits;
-      if (!Array.isArray(edits) || edits.length === 0) return 'geometry';
-      const mat = (e: unknown): boolean => {
+      if (!Array.isArray(edits) || edits.length === 0) return ['geometry'];
+      const look = /finish|colou?r|material|texture|tint|gloss|rough|paint/i;
+      const onlyLook = (e: unknown): boolean => {
         const o = (e ?? {}) as Record<string, unknown>;
-        const op = String(o['op'] ?? o['action'] ?? '');
-        if (/finish|colou?r|material|texture|paint|tint/i.test(op)) return true;
-        const keys = Object.keys(o).filter((k) => !['id', 'op', 'action', 'target', 'ids', 'note'].includes(k));
-        return keys.length > 0 && keys.every((k) => /finish|colou?r|material|texture|tint|gloss|rough/i.test(k));
+        if (o['op'] !== 'resize') return false;
+        const p = o['params'];
+        const keys = p && typeof p === 'object' ? Object.keys(p as object) : [];
+        return keys.length > 0 && keys.every((k) => look.test(k));
       };
-      return edits.every(mat) ? 'materials' : 'geometry';
+      return edits.every(onlyLook) ? ['materials'] : ['geometry'];
     }
     default:
       return null;
@@ -322,10 +326,10 @@ export class RepairGuard {
 
   /** Refusal text if an edit tool may not run now, else null. */
   allow(tool: string, input: unknown): string | null {
-    const cause = causeOfTool(tool, input);
-    if (cause === null) return null;
-    if (!this.declared) return `Say what you repair first: call declare_repair {difference, cause, why} (a ${cause} repair), then edit. Causes go in order camera, geometry, materials, lighting.`;
-    if (cause !== this.declared.cause) return `You declared a ${this.declared.cause} repair for "${this.declared.id}" but ${tool} is a ${cause} tool. Declare the ${cause} repair first (declare_repair), or use a ${this.declared.cause} tool.`;
+    const causes = causesOfTool(tool, input);
+    if (causes === null) return null;
+    if (!this.declared) return `Say what you repair first: call declare_repair {difference, cause, why} (a ${causes[0]} repair), then edit. Causes go in order camera, geometry, materials, lighting.`;
+    if (!causes.includes(this.declared.cause)) return `You declared a ${this.declared.cause} repair for "${this.declared.id}" but ${tool} is a ${causes.join('/')} tool. Declare the ${causes[0]} repair first (declare_repair), or use a ${this.declared.cause} tool.`;
     return null;
   }
 
