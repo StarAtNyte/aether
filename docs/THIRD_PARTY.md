@@ -556,6 +556,13 @@ WebCodecs or MediaRecorder.
 | `tests/fixtures/photo/bedroom-pd-1.jpg` (`59888d02c1d0985c8226387526c283238295b4d1da45cc74ee589907c3197907`) | [USVI IMG 5175](https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg), Government of the United States Virgin Islands | Public domain |
 | `tests/fixtures/photo/bedroom-pd-2.jpg` (`61970ccce764c5f06f23c4bce3bfd437e66a67e114722a1210e3deb2139c5d73`) | [USVI IMG 5201](https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg), Government of the United States Virgin Islands | Public domain |
 
+**Texture sets of the example rooms (added 2026-10-22).** `apps/studio/public/templates/textures/` holds PBR maps derived from the
+four photographs above (rectified crops, de-lit, tiled, with fine grain from the app's own procedural finishes). They are
+derivative works of those CC0 and public-domain photographs and carry no additional licence or third-party code. The sky in the example
+rooms' windows is the existing CC0 `sky-partly-cloudy` HDRI of the asset library (Poly Haven, listed below). Textures a user makes
+from their own photographs or with an image model belong to their project and are not shipped with Aether; no image model, model
+weights or generated image is bundled. The Codex image tool and the OpenAI Images API are optional user-side services (`docs/IMAGE_GENERATION.md`).
+
 The four photographs above are also the sources of the example rooms in the
 studio's gallery ("Rooms rebuilt from a photo", `apps/studio/public/templates/worlds/photo-*.json`
 and their `photo-*.webp` thumbnails). Each world is the output of the photo-to-room flow replayed from

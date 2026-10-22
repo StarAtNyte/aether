@@ -11,10 +11,13 @@ import type { WorldDoc } from '@aether/core';
 import { GpuRoom } from './lib/gpu-room';
 
 const [dirArg, outArg, ...flags] = process.argv.slice(2);
-if (!dirArg || !outArg) throw new Error("usage: photo-still <runFolder> <out.png> [--env='{...}'] [--quality=studio|final] [--width=N] [--view=first|last] [--world=file]");
+if (!dirArg || !outArg) throw new Error("usage: photo-still <runFolder> <out.png> [--env='{...}'] [--quality=studio|final] [--width=N] [--view=first|last] [--world=file] [--textures=dir]");
 const dir = resolve(dirArg);
 const flag = (k: string): string | undefined => flags.find((f) => f.startsWith(`--${k}=`))?.slice(k.length + 3);
-const world = JSON.parse(readFileSync(join(dir, flag('world') ?? 'world.json'), 'utf8')) as WorldDoc;
+const worldPath = resolve(dir, flag('world') ?? 'world.json');
+const raw = JSON.parse(readFileSync(worldPath, 'utf8')) as WorldDoc | { world: WorldDoc };
+// A showcase world file wraps the world in its envelope.
+const world = ('world' in raw && (raw as { format?: string }).format === 'aether-world' ? (raw as { world: WorldDoc }).world : raw) as WorldDoc;
 const env = flag('env') ? (JSON.parse(flag('env') as string) as Record<string, unknown>) : {};
 const withEnv = { ...world, environment: { ...world.environment, ...env } } as WorldDoc;
 const views = JSON.parse(readFileSync(join(dir, 'views.json'), 'utf8')) as { first: { aspect: number; pose: { position: [number, number, number]; target: [number, number, number]; fov: number } } | null; last: { aspect: number; pose: { position: [number, number, number]; target: [number, number, number]; fov: number } } | null };
@@ -23,7 +26,7 @@ if (!view) throw new Error('no view');
 const width = Math.max(480, Math.min(1920, Number(flag('width') ?? 960)));
 const gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
 try {
-  const tdir = join(dir, 'textures');
+  const tdir = flag('textures') ? resolve(flag('textures') as string) : join(dir, 'textures');
   const sets: Array<{ id: string; def: unknown; files: Array<{ tier: number; map: string; bytes: Uint8Array }> }> = [];
   if (existsSync(tdir) && world.textures) {
     for (const [id, def] of Object.entries(world.textures)) {

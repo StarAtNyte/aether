@@ -5677,3 +5677,65 @@ What was added: a stage machine (capability, evidence, camera, shell, furniture,
 What was checked: scripted-model tests for every stage and gate, the guard and the resume (`packages/agent/test/photo-stages.test.ts`), the chat view model (`apps/studio/test/chat.test.ts`), typecheck, the agent and studio suites, smoke, `showcase:bake --check`.
 
 What was not checked: a run against a live model (the Codex subscription is limited, so only scripted models were used); the new panel in a real browser (no photo run was driven through the UI); whether models call `stage_gate` and `declare_repair` reliably, which only real runs can show. Known gaps: the record is not inside the `.aether.json` project file (the world document has no field for it); a resumed run needs the photo still held in memory by the studio; the playable verification is the existing host verification, not a new walkthrough bot.
+
+## Photo rooms that read as real: textures from the photograph, an optional image model, light and look
+
+Report of 2026-10-22. The complaint: the room built from a photo looks cartoonish. What was found, what was built, what is still wrong.
+
+**What read as cartoonish.** Two things. (1) The gallery cards of the four photo rooms were flat software previews (the headless
+rasteriser: no bounced light, no textures, one flat colour per surface). (2) The studio render of the same worlds was physically lit
+but dark and untextured: every surface a plain procedural finish, the exposure at 1 (nobody had called `tune_look`, the recorded
+replays contain none), the view through the window a flat green plane under an analytic sky.
+
+**What was built** (each step is its own commit on `main`; contract in `docs/CONTRACTS.md` "Texture sets", tool in
+`docs/AGENT_TOOLS.md` `make_texture`, image findings in `docs/IMAGE_GENERATION.md`).
+
+1. *Texture sets in the World IR*: `MaterialSpec.texture`, `arch.skins` for pieces, `WorldDoc.textures` (records with provenance),
+   `setMeta textures`, an asset-store registry with tiers 256 / 512 / 1024 px (WebP) and byte caps, a studio IndexedDB store, packages
+   that carry the files, credits that state photographed / AI-generated / procedural. The renderer binds a set like a finish.
+2. *Photo-derived textures* (`@aether/procgen/photo-texture`): every texel of a floor or wall is projected through the solved camera
+   (rectified, metric), what stands in front is masked (description boxes, outliers), the largest clean square is found and its
+   holes filled, the large-scale light is divided out (plane fit and blur, per channel), the tile is made seamless (and quilted
+   larger when the clean patch is small), and occlusion / roughness / normal maps are derived. Soft pieces (bed, chair, sofa,
+   curtain) are cropped from their boxes. Before the first comparison the photo flow applies what reads clearly and tells the user,
+   with the reason, which surfaces keep their procedural finish.
+3. *`make_texture`*: image model (when connected and the model gave a prompt) then the photo then the library, naming the source and
+   why the others were not used. Images: Codex's built-in image tool through the bridge or the local app, or an OpenAI Images key.
+4. *Light*: the sun is put outside the window wall the photo shows (hour from the sky model's own bearing; a test keeps arch and
+   render in step), warm and cool light lean the sun tint and white balance. Look (exposure, ambient, lamps, sky) is the reviewing
+   assistant's call: `tests/fixtures/photo/<room>.look.json` records what was chosen from GPU stills next to the photos.
+
+**Before and after** (`~/.local/share/aether/look7/`: `before/<room>.png` the old build on the GPU still renderer, `after/<room>.png`
+the rebaked world, `before-after.png` photo | before | after, `thumbs-after.png` the new gallery cards; machine: `GEN_GPU=intel`,
+Chromium WebGL2 over ANGLE GL; the stills are GPU renders at 1280 px, `final` quality). Honest reading of the sheet:
+
+- Before: near black rooms with a flat green or grey window and bare surfaces. After: lit rooms with a photographic sky in the windows,
+  fabric folds on the curtains (hotel), woven bedding, a printed armchair cover (four-poster), seamless photographed wall and floor
+  tiles where the photo shows them. The gallery cards are now these GPU stills instead of the flat previews.
+- Still wrong: the twin room's near bed texture is a coarse crumpled pattern (a small clean patch, enlarged by quilting; the repeat
+  shows); the hotel is darker and less saturated than its photo (the photo is a filtered high-key picture; the look was set by eye,
+  not fitted); the window view is still a cloud sky over a flat green plane, not the photographed lawn and trees; floors were
+  textured only where the camera sees them (pd1 and pd2; the hotel floor is hidden by the bed, the twin floor too, so those keep their
+  carpet finish); relief and roughness are heuristics from luminance plus the fine grain of the library finish of the same class, not
+  measured; the textured surface keeps the description's colour (the pixels' mean is not albedo under that room's light).
+- The recorded replays judge the same: checklist scores unchanged (hotel 8/17, pd1 5/17, pd2 14/22); the measured fidelity moved by
+  at most 3 points. Nothing here changes what the judges see, because the replay returns recorded verdicts: whether the judges, live,
+  rate textured renders higher was not measured.
+- The hotel's right curtain panel is dropped by the usability check on rebake (it overlaps the north-wall furniture; the committed
+  world predates later layout changes and the old pipeline no longer reproduces it either: `showcase:photo-rooms` fails the same way
+  on `ea6c3d71`). `scripts/showcase/photo-rooms.ts` now removes a curtain the checker names with "Move … to".
+
+**Not verified live.** Codex image generation (the usage limit resets on 27 October): the backend, the bridge route and the tool are
+tested with a stand-in `codex` that writes the picture where the real CLI does and with fake generators; the first real run is the
+check in `docs/IMAGE_GENERATION.md`. No OpenAI key was available, so the Images API client was only tested against fakes. A live model
+calling `make_texture` in the compare turn was not run either (replays only).
+
+**Gates** (worktree `aether-realism`, Node 24, under `heavy2.lock`): `tsc` 0 errors; `vitest run` 458 files, 4915 tests pass;
+`npm run smoke` 34 / 34; `showcase:bake --check` ok for all worlds including the four rebaked rooms; `bench:quick` checks passed;
+`npm run e2e:weak` "WEAK GPU OK". The bundled worlds fetch their texture files on open (checked in Chromium: three 256 px maps per
+set, HTTP 200).
+
+**What to do next.** Run the Codex image check after the 27th and let a live compare turn use `make_texture {prompt}` on a wallpaper
+or a floor; fit the look by the measured evidence plus a look at the pictures instead of by eye alone; photograph-based window views
+(an HDRI of the real outlook, or a sampled backdrop from the window region of the photo); texture the ceiling only where the photo
+shows a pattern; anti-tile the large sets so the repeat of a small patch hides.
