@@ -11,7 +11,7 @@
  * one when the system prompt changes or it grows past the budget.
  */
 import { hashString, type WorldDoc } from '@aether/core';
-import type { ChatMessage } from './types';
+import type { ChatMessage, ContentBlock } from './types';
 
 /** One remembered conversation. */
 export interface ConversationState {
@@ -53,6 +53,38 @@ export function conversationChars(messages: readonly ChatMessage[]): number {
   return n;
 }
 
+/** Largest conversation (characters) kept whole before old tool results are shrunk. */
+export const COMPACT_AT_CHARS = 240_000;
+/** Messages at the end that are never shrunk. */
+export const COMPACT_KEEP_MESSAGES = 12;
+const STUB_KEEP_CHARS = 280;
+
+/**
+ * Shrink the bulk of old tool results in `messages`, in place, once the conversation passes `maxChars`. The newest
+ * `keep` messages stay whole; older results over 600 characters keep their first lines and say how much was dropped.
+ * Done in one sweep (not one message per turn), so what is sent changes once and then stays stable for the cache.
+ * Returns how many results were shrunk.
+ */
+export function compactConversation(messages: ChatMessage[], maxChars = COMPACT_AT_CHARS, keep = COMPACT_KEEP_MESSAGES): number {
+  if (conversationChars(messages) <= maxChars) return 0;
+  let shrunk = 0;
+  for (let i = 0; i < messages.length - keep; i++) {
+    const m = messages[i];
+    if (!m || typeof m.content === 'string') continue;
+    let changed = false;
+    const blocks = m.content.map((b): ContentBlock => {
+      if (b.type === 'tool_result' && b.content.length > 600 && !b.content.includes('were dropped to save space')) {
+        changed = true;
+        shrunk++;
+        return { ...b, content: `${b.content.slice(0, STUB_KEEP_CHARS)}\n… [${b.content.length - STUB_KEEP_CHARS} characters of this old result were dropped to save space]` };
+      }
+      return b;
+    });
+    if (changed) messages[i] = { role: m.role, content: blocks };
+  }
+  return shrunk;
+}
+
 /** Hash of a system prompt (a changed prompt starts a new conversation). */
 export function systemHash(system: string): string {
   return `${hashString(system).toString(36)}-${system.length}`;
@@ -78,8 +110,11 @@ export class ConversationStore {
   continuable(key: string, system: string): ConversationState | null {
     this.sweep();
     const c = this.map.get(key);
-    if (!c || c.systemHash !== systemHash(system) || conversationChars(c.messages) > CONVERSATION_BUDGET_CHARS) return null;
-    return c;
+    if (!c || c.systemHash !== systemHash(system)) return null;
+    // Over the budget: old tool results shrink (a backend that resumes threads then starts a new one, as it would have
+    // anyway) instead of the whole conversation being thrown away; only a conversation that stays too big is dropped.
+    if (conversationChars(c.messages) > CONVERSATION_BUDGET_CHARS) compactConversation(c.messages, CONVERSATION_BUDGET_CHARS * 0.6);
+    return conversationChars(c.messages) > CONVERSATION_BUDGET_CHARS ? null : c;
   }
 
   /** Remember the conversation of a finished run. */

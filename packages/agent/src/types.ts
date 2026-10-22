@@ -91,6 +91,8 @@ export type AgentEvent =
   | { type: 'history'; action: 'undo' | 'redo' }
   /** Conversation memory for the next prompt ("it", "the same", "the other one"). */
   | { type: 'memory'; memory: RefineMemory }
+  /** A message the user queued while the run worked was handed to the model. */
+  | { type: 'steer'; text: string }
   | { type: 'error'; text: string }
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] } };
 

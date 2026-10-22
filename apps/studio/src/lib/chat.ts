@@ -221,6 +221,8 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
     case 'message':
     case 'error':
       return { type: e.type, text: str(e.text) };
+    case 'steer':
+      return { type: 'status', text: `Picked up your queued message: ${str(e.text, 160)}` };
     case 'repair':
       return { type: 'repair', text: str(e.text), attempt: num(e.attempt) };
     case 'patches':

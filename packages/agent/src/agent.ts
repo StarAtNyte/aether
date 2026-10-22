@@ -28,6 +28,7 @@ import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { findingKey } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
+import { CallLedger, budgetNote, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
@@ -61,6 +62,12 @@ export interface RunOptions {
    * agent was given `photo` options; 'off' never does.
    */
   photo?: 'auto' | 'recreate' | 'off';
+  /**
+   * Messages the user typed while this run worked. Read between model turns (and before the run would end): what
+   * it returns is handed to the model as a queued message that adds to or changes the request, and a `steer`
+   * event reports it. Return the new messages only (the host empties its queue as it hands them over).
+   */
+  steer?: () => readonly string[] | Promise<readonly string[]>;
 }
 
 /** The transform an object settled with (from a level tool's update patch). */
@@ -171,6 +178,8 @@ export class WorldAgent {
   private coderPrompt: string | undefined;
   /** The planner conversation of the current run (kept for the next run when it ends well). */
   private conversation: ChatMessage[] | null = null;
+  /** The world as of the last complete model turn of the current run (what a cancelled run's conversation knows). */
+  private seen: WorldDoc | null = null;
 
   constructor(opts: AgentOptions) {
     this.opts = opts;
@@ -206,6 +215,8 @@ export class WorldAgent {
     const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
     this.conversation = null;
     let failed = false;
+    let cancelled = false;
+    this.seen = null;
     try {
       for await (const ev of this.loop(prompt, host, opts, usage)) {
         if (ev.type === 'error') failed = true;
@@ -214,12 +225,18 @@ export class WorldAgent {
     } catch (e) {
       failed = true;
       const aborted = opts.signal?.aborted === true || isAbortError(e);
+      cancelled = aborted;
       yield { type: 'error', text: aborted ? 'Cancelled.' : `Agent failed: ${errorMessage(e).slice(0, 500)}` };
     }
     // The planner conversation of this run is continued by the next one; a failed run starts the next one afresh.
     if (session) {
       const store = this.conversations;
-      if (failed) store.forget(session);
+      if (cancelled && this.conversation && !this.compact) {
+        // A cancelled run can be continued ("no, instead do …"): keep what the model saw, up to its last answered turn.
+        const kept = trimToAnswered(withoutImages(this.conversation));
+        if (kept) store.save(session, this.system, kept, this.seen ?? host.getWorld());
+        else store.forget(session);
+      } else if (failed) store.forget(session);
       else if (this.conversation) store.save(session, this.system, withoutImages(this.conversation), host.getWorld());
     }
     this.conversation = null;
@@ -425,6 +442,9 @@ export class WorldAgent {
     let nudges = 0;
     let lastRefused = false;
     let toolCalls = 0;
+    const ledger = new CallLedger();
+    const said = new Set<string>();
+    let askedUnresolved = false;
     let dirty = false; // edits since the last verification
     let lastVerifyPassed: boolean | undefined;
     // A small edit that names objects (move the lamp, make the door red) is not reviewed like a whole building: only a run that
@@ -435,6 +455,9 @@ export class WorldAgent {
     yield { type: 'status', text: 'Planning…' };
     for (let turn = 0; turn < this.maxTurns; turn++) {
       if (signal?.aborted) throw new Error('aborted');
+      compactConversation(messages);
+      const warn = budgetNote(this.maxTurns - turn, this.maxToolCalls - toolCalls, this.maxToolCalls, said);
+      if (warn && turn > 0) pushUserText(messages, warn);
       // The conversation stays append-only; a request carries at most the newest images.
       const res: CompletionResponse = await raceAbort(
         this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
@@ -463,7 +486,7 @@ export class WorldAgent {
             continue;
           }
           toolCalls++;
-          const out = await executeTool(ctx, call.name, call.input);
+          const out = await guardedTool(ledger, ctx, call.name, call.input);
           for (const ev of out.events) yield ev;
           if (out.edited) dirty = true;
           if (out.edited && (call.name === 'design_plan' || call.name === 'build_architecture')) structural = true;
@@ -482,6 +505,7 @@ export class WorldAgent {
           results.push({ type: 'text', text: 'A call in that reply was refused, so finish was ignored: read the reasons above, fix them and call the tools again, then finish.' });
         }
         messages.push({ role: 'user', content: results });
+        this.seen = host.getWorld();
         if (finished?.message) {
           let said = finished.message;
           // The offline planner words its answer before it runs ("Done — removed art"): when nothing you can see
@@ -507,12 +531,25 @@ export class WorldAgent {
         pushUserText(messages, refusal ? 'Your last tool call was refused, so nothing has changed yet. All the tools are still available: read the reasons in that result, fix exactly those problems and call the tool again. Only call finish if the request truly cannot be done.' : 'The tools in the tool list ARE available in this session: call them through tool_calls (design_plan, place_items, edit_items, query_scene, apply_patches, build_architecture, finish). Do the work now; do not reply that you cannot.');
         continue;
       }
+      const queued = await drainSteer(opts.steer);
+      if (queued.length > 0 && turn + 1 < this.maxTurns) {
+        for (const t of queued) yield { type: 'steer', text: t };
+        pushUserText(messages, steerText(queued));
+        continue;
+      }
       const turnEnded = finished !== undefined || calls.length === 0;
       if (!turnEnded) continue;
+      // Finishing with refused calls nobody redid: the closing message must account for them (once).
+      const open = ledger.unresolved();
+      if (!askedUnresolved && open.length > 0 && toolCalls > 0 && turn + 1 < this.maxTurns) {
+        askedUnresolved = true;
+        pushUserText(messages, `Before you finish: these calls were refused and never succeeded afterwards:\n${open.map((o) => `- ${o}`).join('\n')}\nRedo what still matters (fixed), or call finish and say plainly what was not done.`);
+        continue;
+      }
 
       if (!dirty) {
         if (lastVerifyPassed === false) yield { type: 'status', text: 'Finished with verification issues remaining.' };
-        else if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal);
+        else if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal, opts.steer);
         return;
       }
       yield { type: 'status', text: 'Verifying physics and tests…' };
@@ -521,7 +558,7 @@ export class WorldAgent {
       dirty = false;
       lastVerifyPassed = v.passed;
       if (v.passed) {
-        if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal);
+        if (reviewable()) yield* this.review(ctx, messages, host, startWorld, session, signal, opts.steer);
         return;
       }
       if (repairs >= this.maxRepairs) {
@@ -551,9 +588,9 @@ export class WorldAgent {
    * findings (and numbered renders when it can see), fixes with the design tools, and the loop repeats until
    * the model declares the result right or progress stalls. Events report each step.
    */
-  private async *review(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+  private async *review(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer?: () => readonly string[] | Promise<readonly string[]>): AsyncGenerator<AgentEvent> {
     const entered = host.getWorld();
-    yield* this.reviewLoop(ctx, messages, host, startWorld, session, signal);
+    yield* this.reviewLoop(ctx, messages, host, startWorld, session, signal, steer);
     // The review fixed things after the physics run: the world that is sealed and shown as verified must be the one
     // that was checked, so verify again when the review changed anything.
     if (host.getWorld() !== entered) {
@@ -563,7 +600,7 @@ export class WorldAgent {
     }
   }
 
-  private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+  private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer?: () => readonly string[] | Promise<readonly string[]>): AsyncGenerator<AgentEvent> {
     const cfg: ReviewOptions | undefined = this.opts.review;
     if (!cfg) return;
     const world0 = host.getWorld();
@@ -573,6 +610,7 @@ export class WorldAgent {
     const maxViews = Math.max(1, Math.min(MAX_REVIEW_VIEWS, Math.floor(cfg.maxViews ?? 6)));
     const tracker = new StallTracker(cfg.stallRounds ?? 3);
     let lastEdited = false;
+    const ledger = new CallLedger();
     const pushedBack = new Set<string>();
     let before: WorldDoc | null = startWorld;
     for (let round = 1; round <= rounds; round++) {
@@ -627,6 +665,13 @@ export class WorldAgent {
       yield { type: 'review', round, phase: 'fixing', text: snap.findings.length > 0 ? 'Fixing what the checks found…' : 'Looking at the renders…', score: snap.score, findings: snap.findings.length };
       for (let turn = 0; turn < REVIEW_TURNS_PER_ROUND && !declared; turn++) {
         if (signal?.aborted) throw new Error('aborted');
+        compactConversation(messages);
+        const queued = await drainSteer(steer);
+        if (queued.length > 0) {
+          for (const t of queued) yield { type: 'steer', text: t };
+          pushUserText(messages, steerText(queued));
+          editedThisRound = true;
+        }
         const res: CompletionResponse = await raceAbort(
           this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
           signal,
@@ -657,7 +702,7 @@ export class WorldAgent {
             continue;
           }
           toolCalls++;
-          const out = await executeTool(ctx, call.name, call.input);
+          const out = await guardedTool(ledger, ctx, call.name, call.input);
           for (const ev of out.events) yield ev;
           if (out.edited) editedThisRound = true;
           if (out.finished) {
@@ -667,6 +712,7 @@ export class WorldAgent {
           results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
         }
         messages.push({ role: 'user', content: results });
+        this.seen = host.getWorld();
       }
       lastEdited = editedThisRound;
       before = world;
