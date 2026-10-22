@@ -5792,3 +5792,25 @@ at least 4x anisotropy. Not verified on the machine that showed it.
 **Licences.** No new clips: everything procedural or IK on the existing captured set (credits unchanged in `docs/THIRD_PARTY.md`).
 
 **Gates**: see the final report of the turn.
+
+## 2026-10-22 Twin room: crowded, grainy, over-exposed, door stuck on the bed
+
+User report (Walk mode, Ultra, Firefox WebGL2): flicker and aliasing, grainy photographed textures (crumpled bed), exposure 2.8 / ambient 1.4, a very small room, and the door jamming against a bed when it opens.
+
+Principle applied: the model judges, the tools give it evidence. Hard rules are advice plus a safety net that reports.
+
+What changed
+- Review turns (photo compare, generation review, architecture review) now carry advisory room evidence: door swing arcs and the 0.9 m approach zone, walking paths from the doors to beds, desks and wardrobes on a 0.6 m body grid, pieces nobody can walk up to, clutter share, and standard sizes (bedroom 3.5 x 4 m, double door 0.9 m, 0.7 m between beds). Drawn on the plan image (green swing, amber approach, dashed blue path, red blocked) and listed as text; the text tells the model to decide what to move, remove or enlarge and to render again. `packages/arch/src/scene/advice.ts`, `photo/scale.ts`, `agent/src/review.ts`, studio `ai/marks.ts`. Placement refusals that already existed still report; nothing is silently rewritten. A tool `rescaleDescription` resizes a room keeping pieces against their walls. Hinged leaves on joints now sweep, wide swing doors hang as a pair.
+- Photo analysis prompt sizes rooms from known furniture (a two-bed room is about 4 m across); tune_look guidance keeps exposure near 1.
+- Textures: noise measured and regularised (bilateral filter on the measured noise, coring under the noise floor, ratio clamp); creases taken out of photographed covers so a bed does not repeat one crumple.
+- Rendering: anisotropy 16 on every PBR and model map, alpha-to-coverage on foliage cut-outs, thicker skirting (16 mm) and panel beads (6 mm). TAA with jittered shadow noise, texel-snapped cascades, MSAA fallback and shadow bias already existed and were left alone.
+- Walk camera: 70 degree lens (was 55) and 1.65 m eye (was 1.6 m).
+- Look: the stored look of the four photo rooms was exposure 2.6 to 4 with ambient 1.2 to 2. Live walk-camera frames (Intel iGPU, ANGLE GL) showed why it looked washed out: the renderer's own eye adaptation already raises exposure indoors, so the stored value stacked on it. Exposure 1 with the default ambient reads correctly in all four rooms; the old values were a crutch from the software preview.
+- Twin room: the recorded transcript was stale (an older tool vocabulary, so the replay never judged and shipped a half-furnished room). Re-recorded from a live run (claude-code, 9 model calls, 16 of 16 items judged matching), then widened by hand to 4.2 x 5.88 m (the model chose 3.6 m itself and did not enlarge further). All four rooms rebaked with the new texture path.
+
+Measured, honestly
+- Camera-orbit flicker score (`scripts/flicker-score.ts`, second temporal difference of live frames, Intel iGPU, ultra, twin room, textures not loaded in the harness): before orbit 1.392, still 0.598; after orbit 1.408, still 0.559. No measurable change on this scene. The anisotropy and thin-geometry changes help at grazing angles and distance, which this short orbit barely exercises; I do not claim a flicker fix beyond what these numbers show. The Firefox report was not reproduced here (Chromium only).
+- Live frames at exposure 2.8 / ambient 1.4 against exposure 1 / default: the first is washed out, the second is correct.
+- Gates: vitest arch, agent, procgen, render and scripts/bench pass; smoke 34/34; showcase:bake --check ok; e2e:weak ok. `tsc` has one error that is not from this work: `packages/agent/src/refine/ops-paint.ts(342)` reads `Look.preset`, which another commit on main introduced.
+
+Not salvaged: the earlier uncommitted worktree changes that silently enlarged rooms and slid furniture clear of doors during the build (against the principle above; the evidence now goes to the model instead), and the PBR finish and fabric-geometry experiments in `aether-realism4-a/b/c` (unreviewed, touch the schema). The lightmap files were not touched.
