@@ -361,6 +361,35 @@ export function separateOpenings(d: RoomDescription, openings: PhotoOpening[], n
   return openings.flatMap((o) => out.filter((x) => x.id === o.id));
 }
 
+/**
+ * The sun's compass bearing (degrees clockwise from north, as seen from above) the renderer gives an hour of the day: the sky
+ * model turns the sun from east-north-east at 6 h through south-south-west at noon to west at 18 h, relative to a fixed
+ * three-quarter view at 28° (see `computeSkyState`; `sky-light.test.ts` in @aether/render keeps the two in step).
+ */
+export function sunBearingDegrees(hour: number): number {
+  const h = Math.min(18, Math.max(6, hour));
+  const bearing = h <= 12 ? -60 + ((12 - h) / 6) * (92 + 60) : -60 + ((h - 12) / 6) * (-108 + 60);
+  const phi = 28 + bearing;
+  // phi is measured from +Z (south) towards +X (east): compass = 180 - phi.
+  return (((180 - phi) % 360) + 360) % 360;
+}
+
+const WALL_BEARING: Readonly<Record<'north' | 'east' | 'south' | 'west', number>> = { north: 0, east: 90, south: 180, west: 270 };
+
+/**
+ * The hour whose sun stands outside `wall` (its window lets the sun in), within 55° of it; null when no daytime sun gets there
+ * (a north window: the light is diffuse sky light and stays as described).
+ */
+export function hourForWall(wall: 'north' | 'east' | 'south' | 'west'): { hour: number; off: number } | null {
+  const want = WALL_BEARING[wall];
+  let best: { hour: number; off: number } | null = null;
+  for (let h = 7; h <= 17.01; h += 0.25) {
+    const diff = Math.abs((((sunBearingDegrees(h) - want) % 360) + 540) % 360 - 180);
+    if (!best || diff < best.off) best = { hour: Math.round(h * 4) / 4, off: diff };
+  }
+  return best && best.off <= 55 ? best : null;
+}
+
 /** Derive the plan, the steps and the environment from a description. */
 export function deriveBuild(d: RoomDescription): PhotoBuild {
   const notes: string[] = [];
@@ -505,7 +534,17 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
   steps.sort((a, b) => order[a.phase] - order[b.phase] || (a.phase === 'floor' ? area(b) - area(a) : 0));
 
   const light = d.light;
-  const environment: Record<string, Json> = { sky: light.sky, timeOfDay: light.timeOfDay };
+  // Sunlight comes in through the window wall the photograph shows it on: the hour of the day whose sun stands outside that wall.
+  const sunHour = light.sky === 'day' && light.from !== 'none' ? hourForWall(light.from) : null;
+  if (sunHour) notes.push(`The photo's light comes through the ${light.from} window: the sun is set to ${sunHour.hour.toFixed(1)} h, ${Math.round(sunHour.off)}° off that wall's outward direction.`);
+  const environment: Record<string, Json> = { sky: light.sky, timeOfDay: sunHour ? sunHour.hour : light.timeOfDay };
+  // The colour of the light as described: a warm photo gets a warm sun and white balance, a cool one a cool pair (the assistant refines both with tune_look).
+  if (light.warmth !== 'neutral') {
+    const warm = light.warmth === 'warm';
+    environment['grade'] = { temperature: warm ? 0.1 : -0.1 };
+    environment['look'] = { sunTint: warm ? '#ffe4bf' : '#dfeaff' };
+    notes.push(`The photo's light is ${light.warmth}: the sun and the white balance lean ${warm ? 'warm' : 'cool'} a little (tune_look refines it).`);
+  }
   return { plan, steps, environment, notes, ...(assumedDoor ? { assumedDoor } : {}), openingIds: openings.map((o) => o.id) };
 }
 

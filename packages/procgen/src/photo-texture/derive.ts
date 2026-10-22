@@ -177,9 +177,9 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           const rr = rectify(img, cam, plane, { ppm: opts.ppm ?? 160, occluders, pad: 0.03, ...(region ? { region: [Math.max(0, region[0] - 0.02), Math.max(0, region[1] - 0.02), Math.min(1, region[2] + 0.02), Math.min(1, region[3] + 0.02)] as Box } : {}) });
           if (rr.coverage < 0.02) return skip(`only ${(rr.coverage * 100).toFixed(1)} % of it is visible and unobstructed in the photo`);
           const valid = rejectOutliers(rr.image, rr.valid);
-          const minSize = Math.max(40, Math.round(rr.ppm * 0.28));
-          const sq = bestSquare(valid, rr.image.width, rr.image.height, minSize, 0.9);
-          if (!sq) return skip('no clear square of at least 0.3 m of it is visible (furniture, windows and oblique angles cover the rest)');
+          const minSize = Math.max(32, Math.round(rr.ppm * 0.2));
+          const sq = bestSquare(valid, rr.image.width, rr.image.height, minSize, 0.88);
+          if (!sq) return skip('no clear square of at least 0.2 m of it is visible (furniture, windows and oblique angles cover the rest)');
           sourceMetres = sq.size / rr.ppm;
           coverage = sq.fill;
           tile = tileFrom(rr.image, valid, sq, sourceMetres, { keepShading: 0, quiltBelow: 1.1 });
@@ -193,8 +193,10 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           notes.push(`${(rr.coverage * 100).toFixed(0)} % of the ${target.kind} is visible; rectified through the solved camera`);
         }
         if (target.kind === 'wall' && cls === surfaceClassOf('paint') && tile.contrast < 0.03) return skip('plain paint: the pixels hold only a colour, so the procedural paint (with its roller mottle) is kept');
-        const quality: DerivedTexture['quality'] = coverage >= 0.97 && sourceMetres >= 0.6 ? 'good' : coverage >= 0.9 && sourceMetres >= 0.3 ? 'fair' : 'weak';
-        if (sourceMetres < 0.6) notes.push(`the clean part is only ${Math.round(sourceMetres * 100)} cm wide, so the tile repeats a small sample`);
+        // Soft covers are read at a small scale (weave, wrinkles, print): a clean palm-sized patch is a fair sample of them.
+        const soft = target.kind === 'piece';
+        const quality: DerivedTexture['quality'] = coverage >= 0.97 && sourceMetres >= (soft ? 0.25 : 0.6) ? 'good' : coverage >= (soft ? 0.8 : 0.88) && sourceMetres >= (soft ? 0.12 : 0.2) ? 'fair' : 'weak';
+        if (sourceMetres < (soft ? 0.25 : 0.6)) notes.push(`the clean part is only ${Math.round(sourceMetres * 100)} cm wide, so the tile repeats a small sample`);
         return { target, tile: tile.tile, tileMetres: tile.tileMetres, mean: hexOfMean(tile.mean), cls, coverage, sourceMetres, contrast: tile.contrast, quality, notes };
       } catch (e) {
         return skip(`could not be read (${e instanceof Error ? e.message : 'error'})`);

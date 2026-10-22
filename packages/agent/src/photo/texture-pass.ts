@@ -50,6 +50,7 @@ export async function* texturePass(ctx: ExecutorContext, source: PhotoSource): A
 /** One sentence for the user about what the pass did (the sources are named, never blurred). */
 export function texturePassLine(r: TexturePassResult): string {
   if (r.applied.length === 0 && r.skipped.length === 0) return '';
-  const kept = r.skipped.length > 0 ? ` ${r.skipped.slice(0, 4).map((s) => s.id).join(', ')} keep${r.skipped.length === 1 ? 's' : ''} the procedural finish (the photo does not show ${r.skipped.length === 1 ? 'it' : 'them'} clearly enough).` : '';
+  const why = (x: { id: string; reason: string }): string => `${x.id} (${x.reason.replace(/\.$/, '').slice(0, 90)})`;
+  const kept = r.skipped.length > 0 ? ` Procedural finish kept for ${r.skipped.slice(0, 5).map(why).join('; ')}${r.skipped.length > 5 ? `; and ${r.skipped.length - 5} more` : ''}.` : '';
   return r.applied.length > 0 ? `Textures photographed from your photo: ${r.applied.join(', ')}.${kept}` : `No surface was clear enough in the photo to texture.${kept}`;
 }

@@ -132,6 +132,22 @@ class PhotoNodeHost extends NodeAgentHost {
   firstView: ReviewViewRequest | null = null;
   renders = 0;
 
+  /** Texture sets the photo flow kept (id -> record and encoded files), written next to the run and registered with the GPU page. */
+  readonly textures = new Map<string, { id: string; def: unknown; files: Array<{ tier: number; map: string; bytes: Uint8Array }> }>();
+
+  /** Maps are encoded as WebP by Pillow (the browser encodes them with a canvas). */
+  encodeTextureMap(rgba: Uint8Array, size: number, _map: string, quality: number): Uint8Array {
+    const code = 'import sys,io\nfrom PIL import Image\nn=int(sys.argv[1]);q=int(sys.argv[2])\nim=Image.frombytes("RGBA",(n,n),sys.stdin.buffer.read()).convert("RGB")\nb=io.BytesIO();im.save(b,"WEBP",quality=q,method=4);sys.stdout.buffer.write(b.getvalue())';
+    const r = spawnSync('python3', ['-I', '-c', code, String(size), String(Math.round(quality * 100))], { input: Buffer.from(rgba), maxBuffer: 64 * 1024 * 1024 });
+    if (r.status !== 0) throw new Error(`webp encode failed: ${r.stderr.toString().slice(0, 200)}`);
+    return new Uint8Array(r.stdout);
+  }
+
+  async storeTexture(set: { id: string; def: unknown; files: ReadonlyArray<{ tier: number; map: string; bytes: Uint8Array }> }): Promise<{ ok: true }> {
+    this.textures.set(set.id, { id: set.id, def: set.def, files: [...set.files] });
+    return { ok: true };
+  }
+
   /** Photoreal renderer for the photo camera (null: the software rasteriser draws everything). */
   gpu: GpuRoom | null = null;
   private gpuWorld: WorldDoc | null = null;
@@ -144,6 +160,7 @@ class PhotoNodeHost extends NodeAgentHost {
   private async gpuShot(world: WorldDoc, v: ReviewViewRequest, width: number): Promise<string> {
     const gpu = this.gpu as GpuRoom;
     if (this.gpuWorld !== world) {
+      await gpu.registerTextures([...this.textures.values()]);
       await gpu.load(world);
       this.gpuWorld = world;
     }
@@ -247,6 +264,8 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   }
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const host = new PhotoNodeHost(sandbox);
+  // AETHER_NO_TEXTURES=1 runs the same room without the photo-texture pass (the "before" of a comparison).
+  if (process.env['AETHER_NO_TEXTURES'] === '1') (host as unknown as { storeTexture?: unknown }).storeTexture = undefined;
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
   const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile } });
   const t0 = performance.now();
@@ -255,7 +274,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   for await (const e of agent.run(spec.prompt, host, { images: [dataUrl], photo: 'recreate' })) {
     events.push(e);
     if (e.type === 'photo') {
-      console.log(`  [${args.photo}] ${e.phase}${e.round ? ` ${e.round}` : ''}: ${e.text.slice(0, 200)}`);
+      console.log(`  [${args.photo}] ${e.phase}${e.round ? ` ${e.round}` : ''}: ${e.text.slice(0, e.phase === 'textures' ? 1200 : 200)}`);
       if (e.assumptions) report.assumptions = e.assumptions.length;
       if (e.phase === 'described' && e.reads) report.reads = e.reads;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
@@ -282,6 +301,12 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   }
   if (files.length > 1) montage(files, join(dir, 'montage.png'));
   await writeFile(join(dir, 'run.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (host.textures.size > 0) {
+    const tdir = join(dir, 'textures');
+    await mkdir(tdir, { recursive: true });
+    for (const t of host.textures.values()) for (const f of t.files) await writeFile(join(tdir, `${t.id}.${f.map}.${f.tier}.webp`), f.bytes);
+    console.log(`  ${host.textures.size} texture sets written to ${tdir}`);
+  }
   await writeFile(join(dir, 'world.json'), `${JSON.stringify(host.getWorld())}\n`);
   // What the GPU still renderer (scripts/photo-gpu-shots.ts) needs to draw the same two rooms from the same camera.
   if (host.firstWorld) await writeFile(join(dir, 'first.world.json'), `${JSON.stringify(host.firstWorld)}\n`);

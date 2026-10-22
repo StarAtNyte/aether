@@ -67,6 +67,26 @@ export class GpuRoom {
     }
   }
 
+  /** Texture sets the page already knows (ids), so each is registered once. */
+  private readonly known = new Set<string>();
+
+  /** Register texture sets (encoded maps) with the studio's project store, as the photo flow would in the browser. */
+  async registerTextures(sets: ReadonlyArray<{ id: string; def: unknown; files: ReadonlyArray<{ tier: number; map: string; bytes: Uint8Array }> }>): Promise<void> {
+    for (const s of sets) {
+      if (this.known.has(s.id)) continue;
+      this.known.add(s.id);
+      const files = s.files.map((f) => ({ tier: f.tier, map: f.map, b64: Buffer.from(f.bytes).toString('base64') }));
+      const res = await this.page.evaluate(async ([id, def, fl]) => {
+        const t = (window.__aether?.studio as unknown as { textures?: { add(s: unknown): Promise<{ ok: boolean; error?: string }> } } | undefined)?.textures;
+        if (!t) return 'no texture store';
+        const bytes = (fl as Array<{ tier: number; map: string; b64: string }>).map((f) => ({ tier: f.tier, map: f.map, bytes: Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0)) }));
+        const r = await t.add({ id, def, files: bytes });
+        return r.ok ? '' : (r.error ?? 'refused');
+      }, [s.id, s.def, files] as const);
+      if (res) this.log(`  texture ${s.id} not registered: ${res}`);
+    }
+  }
+
   /** Replace the world of the studio with `world` and wait until it is built and the lighting has settled. */
   async load(world: WorldDoc): Promise<void> {
     const err = await this.page.evaluate((w) => {
@@ -100,6 +120,8 @@ export class GpuRoom {
         r.setRenderQuality(q as 'studio' | 'final');
         // A photograph of a room is sharp end to end: the depth-of-field blur of the cinematic look would only hide differences.
         (r as unknown as { setEffects?: (o: Record<string, boolean>) => void }).setEffects?.({ dof: false });
+        // The building's bounced-light volume bakes a moment after the last change: finish it so the still has its interior light.
+        (r as unknown as { finishLightVolume?: () => boolean }).finishLightVolume?.();
         await r.preparePost();
         // The pose is explicit: the orbit rig would keep the eye outside the room.
         const pose = { pos: pos as [number, number, number], target: target as [number, number, number], fov: fov as number };
