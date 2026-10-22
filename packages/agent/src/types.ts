@@ -4,6 +4,7 @@
  * Every provider normalizes its wire format to these shapes so the agent loop,
  * the server proxy and the studio never depend on a vendor API.
  */
+import type { Provenance } from './photo/stages';
 import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, TextureSetDef, TextureTier, WorldDoc } from '@aether/core';
 import type { TextureContext } from './textures';
 import type { ConversationStore } from './conversation';
@@ -83,7 +84,7 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number; differences?: PhotoDifferenceView[] }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
-  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[] }
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[]; stages?: PhotoStageView[]; provenance?: Provenance; resume?: PhotoResumeState }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -120,8 +121,35 @@ export interface PhotoDifferenceView {
   source: 'model' | 'independent';
 }
 
+/** One stage of the staged photo flow, as the chat shows it (a checklist with ticks). */
+export interface PhotoStageView {
+  id: string;
+  title: string;
+  status: 'pending' | 'active' | 'passed' | 'failed' | 'blocked' | 'skipped';
+  /** The model's evidence for the verdict, or the reason of a skip or block. */
+  note?: string;
+}
+
+/**
+ * What a later turn needs to continue a run (the repair stage) where it stopped: carried on the last `photo` event, kept by
+ * the host with the project, sent back as `PhotoOptions.resume`.
+ */
+export interface PhotoResumeState {
+  version: 1;
+  /** The photo's SHA-256: a resume applies only to the same photo. */
+  sha256: string | null;
+  /** The room description the world was built from, and the built ids of its openings. */
+  description: unknown;
+  openings: Record<string, string>;
+  stages: unknown;
+  assumptions: unknown;
+  differences: unknown;
+  repairs: Array<{ round: number; difference: string; cause: string; why: string }>;
+  rounds: number;
+}
+
 /** Where the photo flow is. */
-export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'stage' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
 
 /** One assumption of a reconstruction, with the sentence that changes it (the UI shows it as a chip). */
 export interface PhotoAssumptionView {
@@ -369,6 +397,16 @@ export interface PhotoOptions {
    * render and lists what still differs (default false; the studio turns it on). It records, it does not fix.
    */
   crossCheck?: boolean;
+  /**
+   * The staged harness (default false; the studio turns it on): stage verdicts the model gives (`stage_gate`), repairs in the
+   * order camera, geometry, materials, lighting (`declare_repair`, `set_photo_camera`), an assumptions ledger and a provenance
+   * record. Switches the differences ledger on.
+   */
+  harness?: boolean;
+  /** What the user said about the right to use the photo (goes into the provenance record). */
+  permission?: string;
+  /** A run to continue (see {@link PhotoResumeState}). */
+  resume?: PhotoResumeState;
 }
 
 /** Result of one level tool call (patches commit as one undo step). */

@@ -33,6 +33,7 @@ import {
   ItemVerdict,
   MAX_VERDICTS,
   parseRoomDescription,
+  RoomDescription as RoomDescriptionSchema,
   photoCameraSpec,
   runBuild,
   sampleRegion,
@@ -65,11 +66,11 @@ import { stepLabel } from '../harness';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from '../executor';
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
-import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
-import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './differences';
+import type { AgentEvent, PhotoPhase, PhotoResumeState, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
+import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews, type Cause, type Difference } from './differences';
 import { cropRegions, regionReadout, type CropRegion } from './kit';
 import { imageSize } from './image-size';
-import { ANALYSIS_SYSTEM, CROSSCHECK_SEED, CROSSCHECK_SYSTEM, crossCheckText, differencesProcedure, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
+import { harnessProcedure, ANALYSIS_SYSTEM, CROSSCHECK_SEED, CROSSCHECK_SYSTEM, crossCheckText, differencesProcedure, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
@@ -78,6 +79,7 @@ import { compareImages, extractPalette, regionColourScore, type Raster } from '.
 import { runReconcile } from './reconcile';
 import { texturePass, texturePassLine, textureSource } from './texture-pass';
 import { MAKE_TEXTURE_TOOL } from '../textures';
+import { AssumptionsLedger, CAMERA_TOOL, CAMERA_TOOL_NAME, GATE_TOOL, GATE_TOOL_NAME, REPAIR_TOOL, REPAIR_TOOL_NAME, RepairGuard, StageMachine, applyCameraChange, blockerText, buildProvenance, hashDataUrl, BLOCKING_SIZE, type StageSnapshot } from './stages';
 
 /** Everything the photo flow needs from the agent. */
 export interface PhotoRun {
@@ -96,6 +98,18 @@ export interface PhotoRun {
   replace?: boolean;
   /** Images one request may carry (the compare kit shows more than the default); set by the compare loop. */
   imageCap?: number;
+  /** The staged harness state of this run (set by the flow when `options.harness` is on). */
+  harness?: HarnessState;
+}
+
+/** The books of the staged harness (see stages.ts): stage states, the repair order guard, the assumptions, the round count. */
+export interface HarnessState {
+  stages: StageMachine;
+  guard: RepairGuard;
+  assume: AssumptionsLedger;
+  rounds: number;
+  /** The run continues an earlier one: the world was edited since the plan it was built from. */
+  resumed: boolean;
 }
 
 /** Model turns allowed inside one analysis (a refused description is sent back to be fixed). */
@@ -516,12 +530,32 @@ async function* offline(run: PhotoRun, why: string): AsyncGenerator<AgentEvent> 
 export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent> {
   const { ctx } = run;
   const host = ctx.host;
-  if (ctx.provider.name === 'mock') {
-    yield* offline(run, 'The offline planner is active.');
+  const hs: HarnessState | null = run.options.harness === true ? { stages: new StageMachine(), guard: new RepairGuard(), assume: new AssumptionsLedger(), rounds: 0, resumed: false } : null;
+  if (hs) run.harness = hs;
+  const stageEv = (text: string, phase: PhotoPhase = 'stage'): AgentEvent => ({ type: 'photo', phase, text, ...(hs ? { stages: hs.stages.views() } : {}) });
+  // Stage 1: what this run can do. A missing connected assistant or vision is a blocker named exactly; nothing is built behind it.
+  if (hs) hs.stages.begin('capability');
+  const noAssistant = ctx.provider.name === 'mock' ? 'a connected assistant (the offline planner is active; it cannot look at images)' : !visionOn(run.options) ? 'a connected assistant that can look at images' : '';
+  if (noAssistant) {
+    if (hs) {
+      const b = { kind: 'capability' as const, stage: 'capability' as const, text: `this run needs ${noAssistant}.`, unblock: 'connect an assistant that supports images in Settings, or describe the room in words.' };
+      hs.assume.block(b);
+      hs.stages.block('capability', blockerText(b));
+      yield stageEv(blockerText(b));
+    }
+    yield* offline(run, ctx.provider.name === 'mock' ? 'The offline planner is active.' : 'The connected assistant cannot look at images.');
     return;
   }
-  if (!visionOn(run.options)) {
-    yield* offline(run, 'The connected assistant cannot look at images.');
+  if (hs) {
+    const lacks = [typeof host.captureReview !== 'function' ? 'no renderer for the photo camera (the room is built but not compared)' : '', typeof host.composeImages !== 'function' ? 'no side-by-side or crops' : '', typeof host.decodeImage !== 'function' ? 'no pixel readout' : ''].filter(Boolean);
+    hs.stages.pass('capability', `A connected assistant that sees images is available${lacks.length > 0 ? `; limits: ${lacks.join(', ')}` : '; render, crops and pixel readout are available'}.`);
+    hs.stages.begin('evidence');
+    yield stageEv(`Capability check passed.${lacks.length > 0 ? ` Limits: ${lacks.join('; ')}.` : ''}`);
+  }
+  const hash = hs ? await hashDataUrl(run.image) : null;
+  const resume = hs ? validResume(run, hash) : null;
+  if (hs && resume) {
+    yield* resumeRun(run, hs, resume, hash);
     return;
   }
   yield { type: 'status', text: 'Reading the photo…' };
@@ -536,10 +570,15 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
       yield* offline(run, ctx.provider.name === 'mock' ? 'The connected assistant is not available (the offline planner took over).' : 'The connected assistant cannot look at images.');
       return;
     }
+    if (hs) hs.stages.block('evidence', `Could not read the photo: ${errorMessage(e).slice(0, 200)}`);
     yield { type: 'error', text: `Could not read the photo: ${errorMessage(e).slice(0, 400)}` };
     return;
   }
   if (!analysis.ok) {
+    if (hs) {
+      hs.stages.block('evidence', `The assistant could not describe the photo as a valid room (${analysis.error.slice(0, 160)}).`);
+      yield stageEv('Evidence stage blocked: the photo was not described as a valid room. Nothing was built.');
+    }
     yield { type: 'error', text: `The assistant could not describe the photo as a valid room (${analysis.error.slice(0, 300)}). Nothing was built. Try again, or describe the room in words.` };
     return;
   }
@@ -550,7 +589,9 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   let checklist = buildChecklist(desc);
   let assumptions = chips(desc, build, analysis.fixes);
   const readText = readsLine(analysis.view);
-  yield { type: 'photo', phase: 'described', text: `${desc.summary || `A ${desc.roomType} of about ${desc.footprint.width} × ${desc.footprint.depth} m.`}${readText ? ` ${readText}` : ''}`, assumptions, reads: analysis.view };
+  if (hs) fillAssumptions(hs, assumptions, 'evidence');
+  yield { type: 'photo', phase: 'described', text: `${desc.summary || `A ${desc.roomType} of about ${desc.footprint.width} × ${desc.footprint.depth} m.`}${readText ? ` ${readText}` : ''}`, assumptions, reads: analysis.view, ...(hs ? { stages: hs.stages.views() } : {}) };
+  if (hs) for (const id of ['camera', 'shell', 'furniture'] as const) hs.stages.begin(id);
 
   // The room is the world: whatever was there (the starter scene, an earlier room) goes, as one undo step.
   if (run.replace !== false && Object.keys(host.getWorld().entities).length > 0) {
@@ -582,6 +623,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
         build = deriveBuild(desc);
         checklist = buildChecklist(desc);
         assumptions = chips(desc, build, [...analysis.fixes, ...again.fixes]);
+        if (hs) fillAssumptions(hs, assumptions, 'shell');
         built = await runBuild(host.getWorld(), build, caller);
       }
     } catch (e) {
@@ -591,14 +633,20 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   }
   for (const ev of events) yield ev;
   if (!built.shellOk) {
+    if (hs) {
+      hs.stages.fail('shell', `The builder refused the shell: ${built.shellText.slice(0, 200)}`);
+      yield stageEv('Shell stage failed: the builder refused it.');
+    }
     yield { type: 'error', text: `The shell was refused: ${built.shellText.slice(0, 600)}` };
     return;
   }
+  if (hs) hs.stages.begin('lighting');
   const env = host.applyPatches([{ op: 'setEnvironment', set: build.environment }], 'Light of the photo');
   if (env.errors.length === 0 && env.applied.length > 0) yield { type: 'patches', patches: env.applied, message: 'Light of the photo', result: { applied: env.applied.length, errors: [] } };
   const refusals = built.outcomes.filter((o) => !o.ok).map((o) => `${o.id} (${o.kind}): ${o.text}`.slice(0, 360));
   yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop` : ''}.` };
 
+  if (hs) hs.stages.begin('materials');
   // Textures: the surfaces the photograph shows clearly are sampled from it before the first comparison.
   let textureLine = '';
   try {
@@ -614,27 +662,105 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
     yield { type: 'photo', phase: 'textures', text: `Textures from the photo were skipped (${errorMessage(e).slice(0, 160)}); the room keeps its procedural finishes.` };
   }
 
-  // Compare and correct.
-  const ledger = run.options.differences === true ? new DifferenceLedger() : null;
+  yield* repairAndDeliver(run, photo, desc, built.openings, checklist, build, refusals, assumptions, textureLine, hash);
+}
+
+/** Record the assumption chips of the description in the harness' assumptions ledger. */
+function fillAssumptions(hs: HarnessState, chipsList: readonly PhotoAssumptionView[], stage: 'evidence' | 'shell'): void {
+  for (const a of chipsList) hs.assume.add({ id: a.id, text: a.text, confidence: a.confidence, stage, adjust: a.adjust, kind: AssumptionsLedger.kindOf(a.text) });
+}
+
+/** A resume state that applies to this photo and this world, or null. */
+function validResume(run: PhotoRun, hash: string | null): { state: PhotoResumeState; desc: RoomDescription } | null {
+  const r = run.options.resume;
+  if (!r || r.version !== 1 || !hash || r.sha256 !== hash) return null;
+  const parsed = RoomDescriptionSchema.safeParse(r.description);
+  if (!parsed.success) return null;
+  if (!Object.keys(run.ctx.host.getWorld().entities).some((id) => id.startsWith(PHOTO_BUILDING_ID))) return null;
+  return { state: r, desc: parsed.data };
+}
+
+/** Continue an earlier run at the repair stage: the room is in the world, the books come back from the saved state. */
+async function* resumeRun(run: PhotoRun, hs: HarnessState, resume: { state: PhotoResumeState; desc: RoomDescription }, hash: string | null): AsyncGenerator<AgentEvent> {
+  const { state, desc } = resume;
+  hs.stages = StageMachine.restore(state.stages as StageSnapshot);
+  hs.assume = AssumptionsLedger.restore(state.assumptions as ReturnType<AssumptionsLedger['snapshot']>);
+  hs.rounds = state.rounds;
+  hs.resumed = true;
+  hs.guard.log.push(...state.repairs.map((r) => ({ round: r.round, difference: r.difference, cause: r.cause as Cause, why: r.why })));
+  for (const id of ['repair', 'crosscheck', 'delivery'] as const) hs.stages.reset(id);
+  const ledger = new DifferenceLedger();
+  ledger.restore(state.differences as ReturnType<DifferenceLedger['snapshot']>);
+  const build = deriveBuild(desc);
+  build.notes.push('This is a continued run: the room in the world may have been edited since it was first built, so judge the renders, not the plan.');
+  const photo = await decodePhoto(run);
+  const assumptions = chips(desc, build, []);
+  yield { type: 'photo', phase: 'stage', text: `Continuing the repair of this room at round ${state.rounds + 1}: ${ledger.ranked().length} open difference${ledger.ranked().length === 1 ? '' : 's'}, ${hs.assume.list().length} assumptions kept.`, stages: hs.stages.views() };
+  yield* repairAndDeliver(run, photo, desc, state.openings, buildChecklist(desc), build, [], assumptions, '', hash, ledger);
+}
+
+/** The text of the repair order for the model: open differences by cause class, then size. */
+function repairOrderText(open: readonly Difference[]): string {
+  if (open.length === 0) return '';
+  const first = RepairGuard.earliestBlocking(open);
+  return `Repair order (camera, then geometry, then materials, then lighting; declare_repair before each edit):\n${RepairGuard.repairOrder(open).slice(0, 10).map((d, i) => `${i + 1}. ${d.id} [${d.cause}, size ${d.size}]`).join('\n')}${first ? `\nWork on ${first} first: a difference of size ${BLOCKING_SIZE} or more is open there.` : ''}`;
+}
+
+/** Compare, repair, cross-check, verify and close. The stages after the build; also where a continued run starts. */
+async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescription, openings: Readonly<Record<string, string>>, checklist: readonly ChecklistItem[], build: PhotoBuild, refusals: readonly string[], assumptions: PhotoAssumptionView[], textureLine: string, hash: string | null, ledger0: DifferenceLedger | null = null): AsyncGenerator<AgentEvent> {
+  const { ctx } = run;
+  const host = ctx.host;
+  const hs = run.harness ?? null;
+  const stageEv = (text: string): AgentEvent => ({ type: 'photo', phase: 'stage', text, ...(hs ? { stages: hs.stages.views() } : {}) });
+  const ledger = ledger0 ?? (run.options.differences === true || hs ? new DifferenceLedger() : null);
+  const targets = framingTargets(desc, openings);
   let final: Judged | null = null;
   let finalNote = '';
+  if (hs) {
+    hs.stages.begin('repair');
+    yield stageEv('Compare and repair: camera first, then geometry, materials and lighting.');
+  }
   try {
-    const loop = yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals, ledger);
+    const loop = yield* compareLoop(run, photo, desc, targets, checklist, build, refusals, ledger);
     final = loop.judged;
     finalNote = loop.note ?? '';
-    if (ledger && run.options.crossCheck === true) yield* crossCheck(run, photo, desc, framingTargets(desc, built.openings), ledger);
+    if (hs && !hs.stages.blocker()) {
+      const big = ledger?.ranked().filter((d) => d.size >= BLOCKING_SIZE) ?? [];
+      if (!final) hs.stages.skip('repair', 'No render of the room could be made, so it was not compared.');
+      else if (final.score.failing.length === 0) hs.stages.pass('repair', 'Every checklist item matches the photo.');
+      else if (big.length === 0) hs.stages.pass('repair', `No open difference of size ${BLOCKING_SIZE} or more; ${final.score.failing.length} smaller item${final.score.failing.length === 1 ? '' : 's'} left.`);
+      else hs.stages.fail('repair', `${big.length} difference${big.length === 1 ? '' : 's'} of size ${BLOCKING_SIZE} or more still open: ${big.slice(0, 3).map((d) => d.id).join(', ')}.`);
+      yield stageEv(`Repair stage: ${hs.stages.status('repair')}.`);
+    }
+    if (ledger && run.options.crossCheck === true) {
+      hs?.stages.begin('crosscheck');
+      const before = ledger.ranked().filter((d) => d.source === 'independent').length;
+      yield* crossCheck(run, photo, desc, targets, ledger);
+      const found = ledger.ranked().filter((d) => d.source === 'independent').length - before;
+      if (hs) {
+        hs.stages.pass('crosscheck', found > 0 ? `A fresh seat listed ${found} difference${found === 1 ? '' : 's'} that the fixing conversation did not.` : 'A fresh seat found nothing new beyond the ledger.');
+        yield stageEv('Cross-check done.');
+      }
+    } else hs?.stages.skip('crosscheck', 'Not switched on for this run.');
   } catch (e) {
     if (ctx.signal?.aborted) throw e;
     if (!(e instanceof Unavailable)) yield { type: 'error', text: `The compare loop stopped: ${errorMessage(e).slice(0, 300)}. The room as built so far is kept.` };
     else yield { type: 'photo', phase: 'unavailable', text: 'The assistant became unavailable during the comparison; the room as built so far is kept.' };
+    if (hs) {
+      if (hs.stages.status('repair') === 'active') hs.stages.fail('repair', 'The assistant stopped during the comparison; continue the run to repair further.');
+      if (hs.stages.status('crosscheck') === 'active') hs.stages.fail('crosscheck', 'The assistant stopped before the cross-check finished.');
+    }
   }
 
   // Verification of the room as it stands (the walkthrough test the shell carries).
   yield { type: 'status', text: 'Verifying the room…' };
+  hs?.stages.begin('delivery');
   const v = await runVerification(ctx);
   yield v.event;
   const findings = reviewFindings(host.getWorld(), PHOTO_BUILDING_ID).filter((f) => f.severity === 'error');
   const lines: string[] = [];
+  const stop = hs?.stages.blocker() ?? null;
+  if (stop) lines.push(`Stopped: the ${stop.stage} stage is blocked. ${stop.text}`);
   if (final) {
     const s = final.score;
     lines.push(`Rebuilt the room from your photo: ${s.passed} of ${s.total} checklist items match${final.panel ? ` (judged by ${final.panel.samples} independent AI judges, median per item)` : ' (judged by the assistant that built it)'}${final.objective !== null ? `; the deterministic checks measure ${Math.round(final.objective * 100)}% (advisory, not the verdict)` : ''}.`);
@@ -646,7 +772,32 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
   if (textureLine) lines.push(textureLine);
   lines.push(`I assumed ${assumptions.length} thing${assumptions.length === 1 ? '' : 's'} the photo cannot show; each one is listed with a one-tap way to change it.`);
-  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}) };
+  let extra: Record<string, unknown> = {};
+  if (hs) {
+    if (v.passed) hs.stages.pass('delivery', `Walkthrough verification passed. ${v.summary.slice(0, 160)}`);
+    else hs.stages.fail('delivery', `Verification did not pass: ${v.summary.slice(0, 200)}`);
+    const unfinished = hs.stages.unfinishedText();
+    if (unfinished) lines.push(unfinished);
+    const size = imageSize(run.image);
+    const scale = hs.assume.list().find((a) => a.kind === 'scale');
+    const provenance = buildProvenance({
+      hash,
+      size: size ? { width: size.width, height: size.height } : null,
+      ...(run.options.permission ? { permission: run.options.permission } : {}),
+      footprint: desc.footprint,
+      scaleBasis: scale?.text ?? 'Estimated from the photo (door, window and furniture proportions).',
+      assumptions: hs.assume.list(),
+      stages: hs.stages.views(),
+      repairs: hs.guard.log,
+      open: ledger?.ranked() ?? [],
+      rounds: hs.rounds,
+      models: ctx.usage.models ?? [],
+      exports: ['playable project', 'GLB (portable)', 'provenance (JSON)'],
+    });
+    const resume: PhotoResumeState = { version: 1, sha256: hash, description: desc, openings: { ...openings }, stages: hs.stages.snapshot(), assumptions: hs.assume.snapshot(), differences: ledger?.snapshot() ?? null, repairs: hs.guard.log.map((r) => ({ ...r })), rounds: hs.rounds };
+    extra = { stages: hs.stages.views(), provenance, resume };
+  }
+  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}), ...extra };
   yield { type: 'message', text: lines.join(' ') };
 }
 
@@ -660,6 +811,8 @@ interface LoopResult {
 /** A state the loop accepted: the room, its render and its judgement. */
 interface Accepted {
   world: WorldDoc;
+  /** The photo camera at that state (the harness lets the model move it). */
+  camera: RoomDescription['camera'];
   round: number;
   shot: Shot;
   judged: Judged;
@@ -701,7 +854,9 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
+  const hs = run.harness ?? null;
+  const baseRounds = hs?.rounds ?? 0;
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -719,7 +874,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   let intro = true;
   let round = 0;
 
-  const revertTo = (target: WorldDoc, why: string): boolean => {
+  const revertTo = (target: WorldDoc, why: string, camera?: RoomDescription['camera']): boolean => {
+    if (camera) Object.assign(desc.camera, camera);
     const patches = restorePatches(host.getWorld(), target);
     if (patches.length === 0) return true;
     return host.applyPatches(patches, why.slice(0, 120)).errors.length === 0;
@@ -747,11 +903,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     // The side-by-side verdict is the LLM's: the panel's, or the fixing model's own `closer` when it judged alone.
     const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? said);
     if (decision.accept) {
-      accepted = { world, round: at, shot, judged: cand };
+      accepted = { world, round: at, shot, judged: cand, camera: { ...desc.camera } };
       if (decision.gain || !best) best = accepted;
       return { decision, standing: cand, rejected: null };
     }
-    if (ref && revertTo(ref.world, `Back to round ${ref.round}`)) return { decision, standing: ref.judged, rejected: ref };
+    if (ref && revertTo(ref.world, `Back to round ${ref.round}`, ref.camera)) return { decision, standing: ref.judged, rejected: ref };
     return { decision: { ...decision, accept: true }, standing: cand, rejected: null };
   };
 
@@ -784,7 +940,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     }
     if (pref === null) return res;
     const who = `${n} AI judge${n === 1 ? '' : 's'}`;
-    if (pref === 'previous' && revertTo(top.world, `Back to the best state, round ${top.round}`)) {
+    if (pref === 'previous' && revertTo(top.world, `Back to the best state, round ${top.round}`, top.camera)) {
       accepted = top;
       const note = `At the end the ${who} compared the last state (round ${cur.round}) with the best one seen (round ${top.round}) side by side and found the best closer to the photo; the room is the best one.`;
       yield { type: 'photo', phase: 'round', text: note, score: scoreView(top.judged, true) };
@@ -831,6 +987,10 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   }
   for (round = 1; round <= maxRounds; round++) {
     if (ctx.signal?.aborted) throw new Error('aborted');
+    if (hs) {
+      hs.guard.newRound(baseRounds + round);
+      hs.rounds = baseRounds + round;
+    }
     yield { type: 'status', text: round === 1 ? 'Comparing the render with the photo…' : `Compare round ${round}…` };
     const shot = await snapshot(run, photo, desc, targets, extraWalls, maxViews, judges > 0 || kitOn).catch((e) => {
       if (ctx.signal?.aborted) throw e;
@@ -883,17 +1043,18 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     }) : null;
     if (kit && kit.images.length > 0) run.imageCap = Math.max(run.imageCap ?? 0, 6 + kit.images.length + 2);
     const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, kit?.readout ?? '', ledger ? ledger.roundText() : ''].filter((l) => l.length > 0).join('\n');
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
-      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: [notes, sampled].filter((l) => l.length > 0).join('\n'), ledger: ledger !== null }) });
+      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: hs?.resumed ? '' : JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: [notes, sampled].filter((l) => l.length > 0).join('\n'), ledger: ledger !== null }) });
       intro = false;
     } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null, ledger !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
     view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
     if (kit) kit.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
     if (ledger) blocks.push({ type: 'text', text: differencesProcedure(round, kit !== null && kit.images.length > 0) });
+    if (hs) blocks.push({ type: 'text', text: harnessProcedure(round, baseRounds + round) });
     // Judging alone, the model decides whether its last changes helped by looking at the best state next to the new one.
     const bestImage = ref0 ? (ref0.shot.clean ?? ref0.shot.images[0]?.dataUrl ?? null) : null;
     if (judges === 0 && ref0 && bestImage && changed && round > 1) {
@@ -934,7 +1095,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME || n === GATE_TOOL_NAME ? 0 : n === 'finish' ? 3 : n === REPAIR_TOOL_NAME ? 1 : 2);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
         if (call.name === DIFFERENCES_TOOL_NAME) {
@@ -998,13 +1159,34 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           lookBlocks.push(...look.blocks);
           continue;
         }
+        if (call.name === GATE_TOOL_NAME && hs) {
+          const g = hs.stages.gate(call.input);
+          yield { type: 'step', tool: GATE_TOOL_NAME, label: g.ok ? `Stage verdicts: ${g.changed.join(', ')}` : 'Stage verdict not recorded', ok: g.ok };
+          if (g.changed.length > 0) yield { type: 'photo', phase: 'stage', round, text: g.text.split('\n').join(' '), stages: hs.stages.views() };
+          const stopped = hs.stages.blocker();
+          if (stopped) {
+            declared = true;
+            results.push({ type: 'tool_result', toolUseId: call.id, content: `${g.text}\nThe ${stopped.stage} stage is blocked, so the run stops here and tells the user: ${stopped.text}` });
+          } else results.push({ type: 'tool_result', toolUseId: call.id, content: g.text, ...(g.ok ? {} : { isError: true }) });
+          continue;
+        }
+        if (call.name === REPAIR_TOOL_NAME && hs && ledger) {
+          if (!listed) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'List the differences first (report_differences), each with its cause, then declare what you repair.', isError: true });
+            continue;
+          }
+          const d = hs.guard.declare(call.input, ledger.ranked());
+          yield { type: 'step', tool: REPAIR_TOOL_NAME, label: d.ok ? `Repair: ${hs.guard.current?.cause} (${hs.guard.current?.id})` : 'Repair refused: wrong order or unknown difference', ok: d.ok };
+          results.push({ type: 'tool_result', toolUseId: call.id, content: d.text, ...(d.ok ? {} : { isError: true }) });
+          continue;
+        }
         if (call.name === 'finish') {
           declared = true;
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Done.' });
           continue;
         }
-        if (!isDesignTool(call.name) && call.name !== 'tune_look' && call.name !== 'make_texture') {
-          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan, tune_look, make_texture or finish.`, isError: true });
+        if (!isDesignTool(call.name) && call.name !== 'tune_look' && call.name !== 'make_texture' && !(hs && call.name === CAMERA_TOOL_NAME)) {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan, tune_look, make_texture${hs ? ', set_photo_camera, declare_repair, stage_gate' : ''} or finish.`, isError: true });
           continue;
         }
         if (rolledBack) {
@@ -1023,7 +1205,23 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Tool-call budget of this round used up. Call finish or wait for the next round.', isError: true });
           continue;
         }
+        const order = hs ? hs.guard.allow(call.name, call.input) : null;
+        if (order) {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: order, isError: true });
+          continue;
+        }
         toolCalls++;
+        if (call.name === CAMERA_TOOL_NAME) {
+          const cam = applyCameraChange(desc.camera, call.input);
+          yield { type: 'step', tool: CAMERA_TOOL_NAME, label: cam.ok ? 'Moved the photo camera' : 'Camera change refused', ok: cam.ok };
+          if (cam.ok) {
+            Object.assign(desc.camera, cam.camera);
+            edited = true;
+            ledger?.markEdited();
+          }
+          results.push({ type: 'tool_result', toolUseId: call.id, content: cam.text, ...(cam.ok ? {} : { isError: true }) });
+          continue;
+        }
         const out = await executeTool(ctx, call.name, call.input);
         yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
         for (const ev of out.events) yield ev;

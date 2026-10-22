@@ -16,6 +16,15 @@ export const DIFFERENCES_TOOL_NAME = 'report_differences';
 /** The kinds of difference the model sorts what it sees into. */
 export const DIFF_KINDS = ['proportion', 'position', 'colour', 'material', 'lighting', 'missing', 'extra', 'scale', 'other'] as const;
 export type DiffKind = (typeof DIFF_KINDS)[number];
+/** The cause class of a difference: repairs go camera, then geometry, then materials, then lighting. */
+export const CAUSES = ['camera', 'geometry', 'materials', 'lighting'] as const;
+export type Cause = (typeof CAUSES)[number];
+
+/** The cause a kind of difference most often has (the model's own `cause` wins when it gives one). */
+export function defaultCause(kind: DiffKind): Cause {
+  return kind === 'colour' || kind === 'material' ? 'materials' : kind === 'lighting' ? 'lighting' : 'geometry';
+}
+
 /** What a difference came to since it was last reported. */
 export const DIFF_STATUSES = ['fixed', 'smaller', 'same', 'worse'] as const;
 export type DiffStatus = 'open' | (typeof DIFF_STATUSES)[number];
@@ -26,6 +35,7 @@ export const MAX_DIFFERENCES = 30;
 const Entry = z.object({
   id: z.string().min(1).max(40),
   kind: z.enum(DIFF_KINDS).optional(),
+  cause: z.enum(CAUSES).optional(),
   where: z.string().max(80).default(''),
   what: z.string().min(1).max(300),
   size: z.number().min(0).max(5).default(3),
@@ -49,6 +59,7 @@ export const DIFFERENCES_TOOL: ToolDef = {
           properties: {
             id: { type: 'string', description: 'Short stable slug, reused in later rounds ("bed-width").' },
             kind: { type: 'string', enum: [...DIFF_KINDS] },
+            cause: { type: 'string', enum: [...CAUSES], description: 'What has to be repaired: camera (framing, field of view, eye height), geometry (sizes, positions, missing or extra pieces), materials (colour, finish, texture), lighting (sun, lamps, exposure). Camera first, lighting last.' },
             where: { type: 'string' },
             what: { type: 'string' },
             size: { type: 'number', minimum: 0, maximum: 5 },
@@ -68,6 +79,8 @@ export const DIFFERENCES_TOOL: ToolDef = {
 export interface Difference {
   id: string;
   kind: DiffKind;
+  /** Which class of cause repairs this (camera, geometry, materials, lighting). */
+  cause: Cause;
   where: string;
   what: string;
   /** 1..5 as last reported (0 once fixed). */
@@ -121,15 +134,15 @@ export class DifferenceLedger {
       const prev = this.entries.get(d.id);
       if (prev && d.status) {
         const done = d.status === 'fixed';
-        this.entries.set(d.id, { ...prev, kind: d.kind ?? prev.kind, where: d.where || prev.where, what: d.what, size: done ? 0 : Math.round(d.size), status: d.status, rounds: done ? prev.rounds : prev.rounds + 1 });
+        this.entries.set(d.id, { ...prev, kind: d.kind ?? prev.kind, cause: d.cause ?? prev.cause, where: d.where || prev.where, what: d.what, size: done ? 0 : Math.round(d.size), status: d.status, rounds: done ? prev.rounds : prev.rounds + 1 });
         if (this.edited && d.status === 'same' && prev.id === this.topId) notes.push(`"${prev.id}" (the largest last round) did not shrink although you changed the room: that fix did not work. Look at it again and try a different change, or say it cannot be done with the tools.`);
         if (d.status === 'worse') notes.push(`"${d.id}" got worse: undo what you changed for it (the previous values are in the last edit results) before trying something else.`);
       } else if (prev && !d.status) {
         // Reported again without a status: treated as unchanged, and the model is told how to confirm.
-        this.entries.set(d.id, { ...prev, kind: d.kind ?? prev.kind, where: d.where || prev.where, what: d.what, size: Math.round(d.size), status: prev.status === 'fixed' ? 'open' : prev.status, rounds: prev.rounds + 1 });
+        this.entries.set(d.id, { ...prev, kind: d.kind ?? prev.kind, cause: d.cause ?? prev.cause, where: d.where || prev.where, what: d.what, size: Math.round(d.size), status: prev.status === 'fixed' ? 'open' : prev.status, rounds: prev.rounds + 1 });
         if (this.round > 1) notes.push(`"${d.id}" was reported again without a status: say whether it is fixed, smaller, same or worse on this render.`);
       } else {
-        this.entries.set(d.id, { id: d.id, kind: d.kind ?? 'other', where: d.where, what: d.what, size: Math.round(d.size), status: 'open', rounds: 1, since: this.round, source });
+        this.entries.set(d.id, { id: d.id, kind: d.kind ?? 'other', cause: d.cause ?? defaultCause(d.kind ?? 'other'), where: d.where, what: d.what, size: Math.round(d.size), status: 'open', rounds: 1, since: this.round, source });
       }
     }
     const missing = [...this.entries.values()].filter((d) => !seen.has(d.id) && d.status !== 'fixed' && d.source === source);
@@ -163,6 +176,14 @@ export class DifferenceLedger {
     return `Your differences list from the last round (largest first). Look at the new render and crops, then call report_differences with every id again and its status on THIS render:\n${r.slice(0, 15).map((d, i) => `${i + 1}. ${d.id} [${d.kind}, size ${d.size}] ${d.where ? `${d.where}: ` : ''}${d.what}`).join('\n')}`;
   }
 
+  /** Mark a fixed or smaller difference as re-opened by an independent check (it is judged on a render by someone else). */
+  reopen(id: string, size: number): boolean {
+    const d = this.entries.get(id);
+    if (!d) return false;
+    this.entries.set(id, { ...d, status: 'open', size: Math.max(1, Math.round(size)), rounds: d.rounds + 1 });
+    return true;
+  }
+
   snapshot(): { entries: Difference[]; round: number; topId: string | null } {
     return { entries: [...this.entries.values()].map((d) => ({ ...d })), round: this.round, topId: this.topId };
   }
@@ -179,6 +200,7 @@ export class DifferenceLedger {
 export interface DifferenceView {
   id: string;
   kind: string;
+  cause?: string;
   where: string;
   what: string;
   size: number;
@@ -188,5 +210,5 @@ export interface DifferenceView {
 }
 
 export function differenceViews(ds: readonly Difference[], limit = 20): DifferenceView[] {
-  return ds.slice(0, limit).map((d) => ({ id: d.id, kind: d.kind, where: d.where.slice(0, 80), what: d.what.slice(0, 200), size: d.size, status: d.status, rounds: d.rounds, source: d.source }));
+  return ds.slice(0, limit).map((d) => ({ id: d.id, kind: d.kind, cause: d.cause, where: d.where.slice(0, 80), what: d.what.slice(0, 200), size: d.size, status: d.status, rounds: d.rounds, source: d.source }));
 }

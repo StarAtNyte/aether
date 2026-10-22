@@ -225,3 +225,18 @@ export function differencesProcedure(round: number, hasKit: boolean): string {
     .filter((l) => l.length > 0)
     .join('\n');
 }
+
+/**
+ * The staged procedure of a harness run, in the user turn (the system prompt stays small): the stage verdicts and the repair
+ * order. Detail of each tool lives in its description.
+ */
+export function harnessProcedure(round: number, overall: number): string {
+  return [
+    'STAGES AND REPAIR ORDER. This rebuild runs in stages and every claim needs evidence.',
+    round === 1 && overall === 1
+      ? 'First look: call stage_gate once with a verdict for evidence, camera, shell, furniture, materials and lighting, each with one sentence naming what you looked at and found. Pass only what you see matching. A stage you cannot judge from these pictures is "fail" with what is missing; "blocked" only when you cannot go on without something from the user.'
+      : 'Call stage_gate again for any stage whose verdict changed on this render.',
+    'When you list differences give each a cause: camera (framing, field of view, eye height, heading, pitch: use set_photo_camera), geometry (sizes, positions, missing or extra pieces: design_plan, place_items, edit_items), materials (colour, finish, texture), lighting (sun, lamps, exposure, white balance: tune_look). Repair them in that order: while a difference of size 3 or more is open in an earlier class, do not repair a later one. Before each edit call declare_repair {difference, cause, why}; the edit tools must fit the cause.',
+    'Make a conservative guess for anything the photo cannot show and say so; do not stop to ask the user unless a stage is truly blocked.',
+  ].join('\n');
+}
