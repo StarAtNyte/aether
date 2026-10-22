@@ -22,6 +22,13 @@ export interface ResolvedMaterial {
   flatShading: boolean;
   vertexColors: boolean;
   doubleSided: boolean;
+  /**
+   * A closed solid of real thickness (an architectural wall): its shadow map is drawn from its front faces, the faces
+   * toward the sun, not from the faces behind it. Back faces (three's default for a single-sided material) put the occluder's
+   * surface at the far side of the wall, so a face meeting it at an inside corner sat within the depth bias of it and the
+   * sun leaked along the corner, a lit hairline in the shadow of the next wall.
+   */
+  solid?: boolean;
   /** Procedural surface detail (lava cracks, water ripples), null for plain materials. */
   surface: SurfaceKind | null;
   /** Physically based finish with procedural texture maps (architecture), null otherwise. */
@@ -140,6 +147,8 @@ export interface ResolveOptions {
   hasVertexColors?: boolean;
   /** Render both faces (planes, cards). */
   doubleSided?: boolean;
+  /** The geometry is a thick solid that casts its shadow from its front faces (see {@link ResolvedMaterial.solid}). */
+  solid?: boolean;
   /** False when the geometry has no `splat` weights (the layered look is then off). Default: assumed present. */
   hasSplat?: boolean;
   /**
@@ -157,6 +166,11 @@ export interface ResolveOptions {
  * colors and the spec does not explicitly disable them.
  */
 export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOptions = {}): ResolvedMaterial {
+  const r = resolveBase(spec, opts);
+  return opts.solid === true && !r.transparent && r.foliage === null ? { ...r, solid: true } : r;
+}
+
+function resolveBase(spec: MaterialSpec | undefined, opts: ResolveOptions): ResolvedMaterial {
   const fin = spec?.finish;
   if (typeof fin === 'string' && Object.hasOwn(FINISHES, fin)) return resolveFinish(spec as MaterialSpec, fin, opts);
   const p = presetOf(spec);

@@ -133,6 +133,8 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     m.userData[WATER_KEY] = true;
     m.userData['aetherWaterBase'] = { color: m.color.clone(), emissive: m.emissiveIntensity, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite };
   }
+  // A solid's shadow is drawn from the faces toward the light (three draws the faces behind a single-sided material).
+  if (r.solid === true && !ghostLike) m.shadowSide = FrontSide;
   m.name = `aether:${variant}`;
   return m;
 }

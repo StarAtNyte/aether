@@ -24,7 +24,7 @@ const FROM = Number(process.env['SWEEP_FROM'] ?? 1);
 const N = Number(process.env['SWEEP_N'] ?? 12);
 
 /** Seeds whose first draft broke each rule, so they are always in the sweep. */
-const PINNED = [5, 13, 15, 23, 36, 37, 38, 60];
+const PINNED = [5, 13, 15, 23, 32, 36, 37, 38, 60, 104, 117, 121, 133, 141, 146, 155, 173, 178, 196, 290];
 
 describe('generated houses: every storey reachable', () => {
   const seeds = [...new Set([...PINNED, ...Array.from({ length: N }, (_, k) => FROM + k)])];
@@ -53,7 +53,7 @@ describe('generated houses: every storey reachable', () => {
         if (r.status !== 'passed') bad.push(`${h.label}: bot: ${r.summary}`);
       }
       expect(bad, bad.join('\n')).toEqual([]);
-      // Refusals stay the exception.
+      // Refusals stay the exception (32 and 155 are two: three storeys in 5 m, no room for the second stair).
       expect(refused).toBeLessThanOrEqual(Math.ceil(seeds.length * 0.1));
     }, 900_000);
   }
