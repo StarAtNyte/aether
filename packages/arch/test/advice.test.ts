@@ -74,3 +74,19 @@ describe('room advice (advisory evidence, never a gate)', () => {
     expect(bad).toEqual([]);
   });
 });
+
+describe('rescaleDescription', () => {
+  it('keeps floor pieces against their wall and wall pieces centred', async () => {
+    const { rescaleDescription, anchored, centred } = await import('../src/photo/scale');
+    expect(anchored(0.5, 3, 4)).toBe(0.5);
+    expect(anchored(2.4, 3, 4)).toBe(3.4);
+    expect(centred(1.5, 3, 4)).toBe(2);
+    const d = { footprint: { width: 3, depth: 5 }, items: [{ wall: 'north', along: 1.5 }, { at: [0.5, 4.5] }], openings: [{ wall: 'north', along: 1.5 }], camera: { x: 1.5, z: 4.6 } };
+    const r = rescaleDescription(d, 4, 5);
+    expect(r.footprint).toEqual({ width: 4, depth: 5 });
+    expect(r.items[0]).toEqual({ wall: 'north', along: 2 });
+    expect(r.items[1]).toEqual({ at: [0.5, 4.5] });
+    expect(r.openings[0]).toEqual({ wall: 'north', along: 2 });
+    expect(d.footprint.width).toBe(3);
+  });
+});

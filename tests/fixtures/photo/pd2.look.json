@@ -1,15 +1,11 @@
 {
- "note": "Look chosen by the reviewing assistant from GPU stills (docs/REVIEW_LOG.md, 2026-10-22).",
+ "note": "Look set by the reviewing assistant from live walk-camera frames (docs/REVIEW_LOG.md, 2026-10-22): exposure 1 and the default ambient. The renderer's own eye adaptation already opens up inside a room, so the earlier exposure 2.6-4 stacked on it and washed the rooms out.",
  "environment": {
-  "exposure": 4,
-  "ambientIntensity": 2.0,
-  "look": {
-   "lampStrength": 0.6
-  },
+  "exposure": 1,
   "hdri": "sky-partly-cloudy",
   "hdriBackground": true,
-  "grade": {
-   "exposureEv": 0.6
+  "look": {
+   "lampStrength": 0.6
   }
  }
 }

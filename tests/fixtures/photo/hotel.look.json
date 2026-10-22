@@ -1,12 +1,11 @@
 {
- "note": "Look chosen by the reviewing assistant from GPU stills of the room next to the photo (docs/REVIEW_LOG.md, 2026-10-22): the replayed run records no tune_look, so the exposure and light of the example room are set here.",
+ "note": "Look set by the reviewing assistant from live walk-camera frames (docs/REVIEW_LOG.md, 2026-10-22): exposure 1 and the default ambient. The renderer's own eye adaptation already opens up inside a room, so the earlier exposure 2.6-4 stacked on it and washed the rooms out.",
  "environment": {
-  "exposure": 3.8,
-  "ambientIntensity": 1.6,
+  "exposure": 1,
+  "hdri": "sky-partly-cloudy",
+  "hdriBackground": true,
   "look": {
    "lampStrength": 0.6
-  },
-  "hdri": "sky-partly-cloudy",
-  "hdriBackground": true
+  }
  }
 }

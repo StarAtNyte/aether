@@ -54,3 +54,46 @@ export function scaleAdvisory(world: WorldDoc): string {
   if (advice.length > 0) lines.push('Circulation (advisory; drawn on the plan view: green swing arcs, amber approach zones, blue walking paths, red blocked pieces):', ...advice.map((a) => `- ${a}`));
   return lines.join('\n');
 }
+/** The parts of a room description that move when the room is resized (a description as read, parsed or not). */
+interface Resizable {
+  footprint: { width: number; depth: number; [k: string]: unknown };
+  items?: Array<{ wall?: string; along?: number; at?: readonly [number, number] | number[] }>;
+  openings?: Array<{ wall?: string; along?: number }>;
+  niches?: Array<{ wall?: string; along?: number }>;
+  camera?: { x: number; z: number; [k: string]: unknown };
+  [k: string]: unknown;
+}
+
+const r2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** A position along a wall or on the floor that keeps its distance from the nearer end: pieces stay against the wall they stand on. */
+export function anchored(v: number, from: number, to: number): number {
+  return r2(v <= from / 2 ? v : v + (to - from));
+}
+
+/** A position that keeps its distance from the middle: openings and what hangs beside them stay centred on the wall. */
+export function centred(v: number, from: number, to: number): number {
+  return r2(v + (to - from) / 2);
+}
+
+/**
+ * The same room at another floor size. Furniture and openings keep their real sizes: floor pieces stay against the wall they
+ * stand on (the new floor opens up in the middle, where people walk), pieces along a wall and openings stay centred on it. A
+ * decision tool (the assistant, or a fixture that records its decision), never a silent step of the build. The input is not changed.
+ */
+export function rescaleDescription<T extends Resizable>(d: T, width: number, depth: number): T {
+  const W = d.footprint.width;
+  const D = d.footprint.depth;
+  const out = structuredClone(d) as T;
+  out.footprint.width = r2(width);
+  out.footprint.depth = r2(depth);
+  const along = (wall: string | undefined, v: number): number => (wall === 'north' || wall === 'south' ? centred(v, W, width) : centred(v, D, depth));
+  for (const it of out.items ?? []) {
+    if (it.along !== undefined) it.along = along(it.wall, it.along);
+    if (it.at) it.at = [anchored(it.at[0] as number, W, width), anchored(it.at[1] as number, D, depth)];
+  }
+  for (const o of out.openings ?? []) if (o.along !== undefined) o.along = along(o.wall, o.along);
+  for (const n of out.niches ?? []) if (n.along !== undefined) n.along = along(n.wall, n.along);
+  if (out.camera) out.camera = { ...out.camera, x: centred(out.camera.x, W, width), z: anchored(out.camera.z, D, depth) };
+  return out;
+}
