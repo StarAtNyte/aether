@@ -4,7 +4,8 @@
  * Every provider normalizes its wire format to these shapes so the agent loop,
  * the server proxy and the studio never depend on a vendor API.
  */
-import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, WorldDoc } from '@aether/core';
+import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, TextureSetDef, TextureTier, WorldDoc } from '@aether/core';
+import type { TextureContext } from './textures';
 import type { ConversationStore } from './conversation';
 import type { DiffLine } from './refine/describe';
 import type { RefineMemory } from './refine/memory';
@@ -225,6 +226,13 @@ export interface AgentHost {
    * measures the aspect of a photo and compares it with renders). Null when it cannot be decoded.
    */
   decodeImage?(dataUrl: string, maxSide: number): Promise<{ width: number; height: number; data: Uint8ClampedArray | Uint8Array } | null>;
+  /**
+   * Keep a texture set (record and encoded maps) in the project's asset store and make it drawable. Resolves with the reason
+   * when it cannot (caps, no store).
+   */
+  storeTexture?(set: { id: string; def: TextureSetDef; files: ReadonlyArray<{ tier: TextureTier; map: 'albedo' | 'orm' | 'normal'; bytes: Uint8Array }> }): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Encode `size x size` RGBA8 pixels as WebP (or PNG) for the store; `quality` 0..1. */
+  encodeTextureMap?(rgba: Uint8Array, size: number, map: 'albedo' | 'orm' | 'normal', quality: number): Promise<Uint8Array> | Uint8Array;
 }
 
 /** Catalog data injected into prompts (procgen + logic export these). */
@@ -302,6 +310,12 @@ export interface AgentOptions {
    * can run physics (`runLevelTool` of @aether/playtest). Absent: the two tools are not offered.
    */
   levelTools?: LevelToolRunner;
+  /**
+   * Textures (`make_texture`): the image model to draw with (null: none connected, the photo and library paths still work) and,
+   * when the room was read from a photograph, that photograph. Supplied by hosts that can store pictures (`AgentHost.storeTexture`).
+   * Absent: the tool is not offered.
+   */
+  textures?: TextureContext;
   /**
    * Where the conversation of a run with a `session` key is kept for the next run of that project (default: one
    * store per page or process). The next run appends to it, with what changed in the scene instead of a full

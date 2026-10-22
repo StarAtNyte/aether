@@ -25,6 +25,8 @@ export class MemoryHost implements AgentHost {
   verifyResults: boolean[] = [];
   validateGenerator?: AgentHost['validateGenerator'];
   validateScript?: AgentHost['validateScript'];
+  declare storeTexture?: AgentHost['storeTexture'];
+  declare encodeTextureMap?: AgentHost['encodeTextureMap'];
 
   constructor(world: WorldDoc = createWorld()) {
     this.world = world;

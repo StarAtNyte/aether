@@ -25,6 +25,7 @@ import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
+import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
@@ -194,7 +195,8 @@ export class WorldAgent {
     this.fineEdit = opts.fineEdit !== false;
     this.localEdits = opts.localEdits ?? this.fineEdit;
     this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
-    this.tools = this.compact ? COMPACT_TOOLS : opts.levelTools ? [...AGENT_TOOLS, ...LEVEL_TOOLS] : AGENT_TOOLS;
+    const extra = [...(opts.levelTools ? LEVEL_TOOLS : []), ...(opts.textures ? [MAKE_TEXTURE_TOOL] : [])];
+    this.tools = this.compact ? COMPACT_TOOLS : extra.length > 0 ? [...AGENT_TOOLS, ...extra] : AGENT_TOOLS;
     const ids = new Set<string>();
     for (const g of opts.catalogs.generators) {
       if (typeof g === 'object' && g !== null && 'id' in g && typeof (g as { id: unknown }).id === 'string') ids.add((g as { id: string }).id);
@@ -338,6 +340,7 @@ export class WorldAgent {
       ...(this.opts.resolveGenerator ? { resolveGenerator: this.opts.resolveGenerator } : {}),
       ...(this.opts.buildAsset ? { buildAsset: this.opts.buildAsset } : {}),
       ...(this.opts.levelTools ? { levelTools: this.opts.levelTools } : {}),
+      ...(this.opts.textures ? { textures: this.opts.textures } : {}),
       ...(signal ? { signal } : {}),
       realistic: realisticWorld(request, host.getWorld()),
     };

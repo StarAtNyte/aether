@@ -127,90 +127,122 @@ function tileFrom(
   return { tile: resize(tile, MASTER_SIZE, MASTER_SIZE, true), tileMetres: Math.round(metres * 100) / 100, mean: lit.mean, contrast: lit.contrast };
 }
 
-/** Derive the textures of a room from the photograph. Never throws on a bad region: it is skipped with a reason. */
-export function deriveTextures(photo: Rgba8, d: RoomDescription, opts: { ppm?: number } = {}): TextureDerivation {
-  const out: TextureDerivation = { textures: [], skipped: [] };
+/** Reads one surface or piece after another from one photograph (decoded and projected once). */
+export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: number } = {}): {
+  /** Derive one target; `box` overrides where the surface appears in the photograph. */
+  read(target: TextureTarget, box?: Box): DerivedTexture | SkippedTexture;
+} {
   const img = fromRgba8(photo);
   const cam: CameraModel = cameraModel(d.camera, photo.width / photo.height);
   const planes = roomPlanes(d.footprint);
   const occluders = occluderBoxes(d);
+  return {
+    read(target, box): DerivedTexture | SkippedTexture {
+      const skip = (reason: string): SkippedTexture => ({ target, reason });
+      try {
+        const notes: string[] = [];
+        let tile: ReturnType<typeof tileFrom>;
+        let coverage: number;
+        let sourceMetres: number;
+        const cls = surfaceClassOf(target.word);
+        if (target.kind === 'piece') {
+          const item = target.item;
+          const spec = PIECES[item?.kind ?? ''] ?? GENERIC_PIECE;
+          const pbox = box ?? item?.box;
+          if (!item || !pbox) return skip('it has no box in the photo');
+          const bw = pbox[2] - pbox[0];
+          const bh = pbox[3] - pbox[1];
+          const region = box ? ([0, 0, 1, 1] as const) : spec.region;
+          const x0 = Math.floor((pbox[0] + bw * region[0]) * photo.width);
+          const y0 = Math.floor((pbox[1] + bh * region[1]) * photo.height);
+          const w = Math.floor(bw * (region[2] - region[0]) * photo.width);
+          const h = Math.floor(bh * (region[3] - region[1]) * photo.height);
+          if (w < 40 || h < 40) return skip('its box is too small in the photo to read a cover from');
+          const all = new Uint8Array(img.width * img.height).fill(1);
+          // Daylight beyond a window is not the cover: the openings' boxes (grown) are out.
+          for (const b of d.openings.flatMap((o) => (o.box ? [o.box] : []))) for (let yy = Math.max(0, Math.floor((b[1] - 0.02) * img.height)); yy < Math.min(img.height, Math.ceil((b[3] + 0.02) * img.height)); yy++) for (let xx = Math.max(0, Math.floor((b[0] - 0.02) * img.width)); xx < Math.min(img.width, Math.ceil((b[2] + 0.02) * img.width)); xx++) all[yy * img.width + xx] = 0;
+          const c = crop(img, all, x0, y0, w, h);
+          const valid = rejectOutliers(c.image, c.valid, 3);
+          const sq = bestSquare(valid, w, h, 40, 0.8);
+          if (!sq) return skip('no clean square of its cover is visible (folds, shadows and other objects cover it)');
+          sourceMetres = (sq.size * spec.width(item) * (region[2] - region[0])) / w;
+          coverage = sq.fill;
+          // Folds and creases are the fabric's character: keep a share of the shading in soft covers.
+          tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.35, quiltBelow: 0.9 });
+          notes.push('cover of a piece: photographed straight on (not flattened by the camera), tile size estimated from its width');
+        } else {
+          const plane = planes[target.id];
+          if (!plane) return skip('it is not a surface of the room');
+          const region = box ?? textureTargetsBox(d, target.id);
+          const rr = rectify(img, cam, plane, { ppm: opts.ppm ?? 160, occluders, pad: 0.03, ...(region ? { region: [Math.max(0, region[0] - 0.02), Math.max(0, region[1] - 0.02), Math.min(1, region[2] + 0.02), Math.min(1, region[3] + 0.02)] as Box } : {}) });
+          if (rr.coverage < 0.02) return skip(`only ${(rr.coverage * 100).toFixed(1)} % of it is visible and unobstructed in the photo`);
+          const valid = rejectOutliers(rr.image, rr.valid);
+          const minSize = Math.max(40, Math.round(rr.ppm * 0.28));
+          const sq = bestSquare(valid, rr.image.width, rr.image.height, minSize, 0.9);
+          if (!sq) return skip('no clear square of at least 0.3 m of it is visible (furniture, windows and oblique angles cover the rest)');
+          sourceMetres = sq.size / rr.ppm;
+          coverage = sq.fill;
+          tile = tileFrom(rr.image, valid, sq, sourceMetres, { keepShading: 0, quiltBelow: 1.1 });
+          if (target.kind === 'wall') {
+            // A wall tile's rows run from the top down; the shader's v runs up.
+            const flipped = new Float32Array(tile.tile.data.length);
+            const s = MASTER_SIZE * 3;
+            for (let y = 0; y < MASTER_SIZE; y++) flipped.set(tile.tile.data.subarray(y * s, (y + 1) * s), (MASTER_SIZE - 1 - y) * s);
+            tile.tile.data.set(flipped);
+          }
+          notes.push(`${(rr.coverage * 100).toFixed(0)} % of the ${target.kind} is visible; rectified through the solved camera`);
+        }
+        if (target.kind === 'wall' && cls === surfaceClassOf('paint') && tile.contrast < 0.03) return skip('plain paint: the pixels hold only a colour, so the procedural paint (with its roller mottle) is kept');
+        const quality: DerivedTexture['quality'] = coverage >= 0.97 && sourceMetres >= 0.6 ? 'good' : coverage >= 0.9 && sourceMetres >= 0.3 ? 'fair' : 'weak';
+        if (sourceMetres < 0.6) notes.push(`the clean part is only ${Math.round(sourceMetres * 100)} cm wide, so the tile repeats a small sample`);
+        return { target, tile: tile.tile, tileMetres: tile.tileMetres, mean: hexOfMean(tile.mean), cls, coverage, sourceMetres, contrast: tile.contrast, quality, notes };
+      } catch (e) {
+        return skip(`could not be read (${e instanceof Error ? e.message : 'error'})`);
+      }
+    },
+  };
+}
+
+const GENERIC_PIECE = { region: [0.15, 0.2, 0.85, 0.85] as Box, word: 'fabric', width: (): number => 1 };
+
+function textureTargetsBox(d: RoomDescription, id: string): Box | undefined {
+  return textureTargets(d).find((t) => t.id === id)?.box;
+}
+
+/** Derive the textures of a room from the photograph. Never throws on a bad region: it is skipped with a reason. */
+export function deriveTextures(photo: Rgba8, d: RoomDescription, opts: { ppm?: number } = {}): TextureDerivation {
+  const out: TextureDerivation = { textures: [], skipped: [] };
+  const reader = textureReader(photo, d, opts);
   for (const t of textureTargets(d)) {
-    const { box, ...target } = t;
-    try {
-      const notes: string[] = [];
-      let tile: ReturnType<typeof tileFrom>;
-      let coverage: number;
-      let sourceMetres: number;
-      let cls = surfaceClassOf(target.word);
-      if (target.kind === 'piece') {
-        const spec = PIECES[target.item?.kind ?? ''];
-        if (!spec || !box || !target.item) continue;
-        const bw = box[2] - box[0];
-        const bh = box[3] - box[1];
-        const x0 = Math.floor((box[0] + bw * spec.region[0]) * photo.width);
-        const y0 = Math.floor((box[1] + bh * spec.region[1]) * photo.height);
-        const w = Math.floor(bw * (spec.region[2] - spec.region[0]) * photo.width);
-        const h = Math.floor(bh * (spec.region[3] - spec.region[1]) * photo.height);
-        if (w < 40 || h < 40) {
-          out.skipped.push({ target, reason: 'its box is too small in the photo to read a cover from' });
-          continue;
-        }
-        const open = d.openings.flatMap((o) => (o.box ? [o.box] : []));
-        const all = new Uint8Array(img.width * img.height).fill(1);
-        // Daylight beyond a window is not the cover: the openings' boxes (grown) are out.
-        for (const b of open) for (let yy = Math.max(0, Math.floor((b[1] - 0.02) * img.height)); yy < Math.min(img.height, Math.ceil((b[3] + 0.02) * img.height)); yy++) for (let xx = Math.max(0, Math.floor((b[0] - 0.02) * img.width)); xx < Math.min(img.width, Math.ceil((b[2] + 0.02) * img.width)); xx++) all[yy * img.width + xx] = 0;
-        const c = crop(img, all, x0, y0, w, h);
-        const valid = rejectOutliers(c.image, c.valid, 3);
-        const sq = bestSquare(valid, w, h, 40, 0.8);
-        if (!sq) {
-          out.skipped.push({ target, reason: 'no clean square of its cover is visible (folds, shadows and other objects cover it)' });
-          continue;
-        }
-        const metresPerPx = (spec.width(target.item) * (spec.region[2] - spec.region[0])) / w;
-        sourceMetres = sq.size * metresPerPx;
-        coverage = sq.fill;
-        // Folds and creases are the fabric's character: keep a share of the shading in soft covers.
-        tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.35, quiltBelow: 0.9 });
-        notes.push('cover of a piece: photographed straight on (not flattened by the camera), tile size estimated from its width');
-      } else {
-        const plane = planes[target.id];
-        if (!plane) continue;
-        const rr = rectify(img, cam, plane, { ppm: opts.ppm ?? 160, occluders, pad: 0.03, ...(box ? { region: [Math.max(0, box[0] - 0.02), Math.max(0, box[1] - 0.02), Math.min(1, box[2] + 0.02), Math.min(1, box[3] + 0.02)] as Box } : {}) });
-        if (rr.coverage < 0.02) {
-          out.skipped.push({ target, reason: `only ${(rr.coverage * 100).toFixed(1)} % of it is visible and unobstructed in the photo` });
-          continue;
-        }
-        const valid = rejectOutliers(rr.image, rr.valid);
-        const minSize = Math.max(40, Math.round(rr.ppm * 0.28));
-        const sq = bestSquare(valid, rr.image.width, rr.image.height, minSize, 0.9);
-        if (!sq) {
-          out.skipped.push({ target, reason: 'no clear square of at least 0.3 m of it is visible (furniture, windows and oblique angles cover the rest)' });
-          continue;
-        }
-        sourceMetres = sq.size / rr.ppm;
-        coverage = sq.fill;
-        tile = tileFrom(rr.image, valid, sq, sourceMetres, { keepShading: 0, quiltBelow: 1.1 });
-        if (target.kind === 'wall') {
-          // A wall tile's rows run from the top down; the shader's v runs up.
-          const flipped = new Float32Array(tile.tile.data.length);
-          const s = MASTER_SIZE * 3;
-          for (let y = 0; y < MASTER_SIZE; y++) flipped.set(tile.tile.data.subarray(y * s, (y + 1) * s), (MASTER_SIZE - 1 - y) * s);
-          tile.tile.data.set(flipped);
-        }
-        notes.push(`${(rr.coverage * 100).toFixed(0)} % of the ${target.kind} is visible; rectified through the solved camera`);
-      }
-      if (target.kind === 'wall' && cls === surfaceClassOf('paint') && tile.contrast < 0.03) {
-        out.skipped.push({ target, reason: 'plain paint: the pixels hold only a colour, so the procedural paint (with its roller mottle) is kept' });
-        continue;
-      }
-      const quality: DerivedTexture['quality'] = coverage >= 0.97 && sourceMetres >= 0.6 ? 'good' : coverage >= 0.9 && sourceMetres >= 0.3 ? 'fair' : 'weak';
-      if (sourceMetres < 0.6) notes.push(`the clean part is only ${Math.round(sourceMetres * 100)} cm wide, so the tile repeats a small sample`);
-      out.textures.push({ target, tile: tile.tile, tileMetres: tile.tileMetres, mean: hexOfMean(tile.mean), cls, coverage, sourceMetres, contrast: tile.contrast, quality, notes });
-    } catch (e) {
-      out.skipped.push({ target, reason: `could not be read (${e instanceof Error ? e.message : 'error'})` });
-    }
+    const { box: _box, ...target } = t;
+    const r = reader.read(target);
+    if ('tile' in r) out.textures.push(r);
+    else out.skipped.push(r);
   }
   return out;
+}
+
+/**
+ * A texture from a flat swatch picture (an AI-generated image, a scan): not a photograph of a room, so nothing is rectified. The
+ * large-scale light is taken out, the tile is made seamless when asked and the maps are derived like any other.
+ */
+export function deriveFromSwatch(img: Rgba8, opts: { word: string; tileMetres: number; tileable: boolean; keepShading?: number }): { tile: FImage; mean: string; contrast: number; cls: SurfaceClass; seam: number } {
+  const lin = fromRgba8(img);
+  // Crop to the central square (generated pictures are square already; a scan may not be).
+  const side = Math.min(lin.width, lin.height);
+  const sq = crop(lin, new Uint8Array(lin.width * lin.height).fill(1), Math.floor((lin.width - side) / 2), Math.floor((lin.height - side) / 2), side, side);
+  const lit = delight(sq.image, { sigma: Math.max(4, side / 3), keepShading: opts.keepShading ?? 0 });
+  // How far the opposite edges differ, against how much neighbouring columns differ: ~1 is already seamless.
+  const n = side;
+  let edge = 0;
+  let inner = 0;
+  for (let y = 0; y < n; y++) {
+    edge += Math.abs((lit.ratio.data[(y * n) * 3 + 1] as number) - (lit.ratio.data[(y * n + n - 1) * 3 + 1] as number));
+    inner += Math.abs((lit.ratio.data[(y * n + (n >> 1)) * 3 + 1] as number) - (lit.ratio.data[(y * n + (n >> 1) + 1) * 3 + 1] as number));
+  }
+  const seam = edge / Math.max(1e-6, inner);
+  const tile = opts.tileable && seam > 1.6 ? seamless(lit.ratio) : lit.ratio;
+  return { tile: resize(tile, MASTER_SIZE, MASTER_SIZE, true), mean: hexOfMean(lit.mean), contrast: lit.contrast, cls: surfaceClassOf(opts.word), seam };
 }
 
 /** The maps of a derived texture at each tier (edge lengths). */

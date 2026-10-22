@@ -486,6 +486,8 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
       // Edits made to a piece (by hand or by prompt) and pieces the user removed survive a re-compile.
       if (parsed.arch?.role === 'building' && removedPieces.size > 0 && parsed.arch) parsed = { ...parsed, arch: { ...parsed.arch, removed: [...removedPieces].slice(-400) } };
       if (old?.arch?.overrides && parsed.arch) parsed = withOverrides(parsed, old.arch.overrides);
+      // Textures a piece wears (photographed covers) survive the re-compile like its edits.
+      if (old?.arch?.skins && parsed.arch && parsed.arch.skins === undefined) parsed = { ...parsed, arch: { ...parsed.arch, skins: old.arch.skins } };
       entities[parsed.id] = old && deepEqual(old, parsed) ? old : parsed;
     }
     let keptAny = false;

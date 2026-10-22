@@ -14,6 +14,7 @@ import { FeelEvent, FeelTier, VfxPreset } from '@aether/core';
 import { TuneFeelInput } from './feel-edit';
 import { LOOK_RESET_KEYS, TuneLookInput } from './look-edit';
 import type { ToolDef } from './types';
+import { MakeTextureInput } from './textures';
 
 /** Upper bounds on tool arguments. */
 export const TOOL_LIMITS = Object.freeze({
@@ -46,7 +47,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -424,6 +425,7 @@ export const ToolInputs = {
   shape_land: LandInput,
   tune_feel: TuneFeelInput,
   tune_look: TuneLookInput,
+  make_texture: MakeTextureInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;
 

@@ -18,6 +18,7 @@ import { lookPatches, type TuneLookInput } from './look-edit';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
+import { makeTextureTool } from './textures';
 import type { AgentEvent, AgentHost, AgentOptions, Provider, UsageTotals } from './types';
 
 /** Result of one tool execution. */
@@ -47,6 +48,8 @@ export interface ExecutorContext {
   buildAsset?: AgentOptions['buildAsset'];
   /** Level tools (`query_level`, `place_level_items`); see `AgentOptions.levelTools`. */
   levelTools?: AgentOptions['levelTools'];
+  /** Texture sources for `make_texture` (see `AgentOptions.textures`). */
+  textures?: AgentOptions['textures'];
   /** Set for a small edit: checks a patch list against what the request named; `ok: false` patches are refused with the message. */
   audit?: (patches: readonly unknown[]) => { ok: boolean; message: string };
   /**
@@ -521,6 +524,8 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
         const p = ToolInputs.tune_look.safeParse(rawInput ?? {});
         return p.success ? tuneLookTool(ctx, p.data) : fail(`Invalid tune_look input: ${issuesText(p.error)}`);
       }
+      case 'make_texture':
+        return makeTextureTool(ctx, rawInput);
       case 'apply_patches': {
         const p = ToolInputs.apply_patches.safeParse(rawInput);
         return p.success ? await applyPatchesTool(ctx, p.data) : fail(`Invalid apply_patches input: ${issuesText(p.error)}`);

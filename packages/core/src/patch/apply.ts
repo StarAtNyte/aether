@@ -519,8 +519,9 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
   if (Object.keys(d.world.state).length > 0) d.set('state', {});
   if (d.world.hud.length > 0) d.set('hud', []);
   for (const m of Object.keys(d.world.meshes)) delete d.meshes()[m];
-  // The title card describes the cleared content (its game), so it goes too.
+  // The title card describes the cleared content (its game), so it goes too; so do the texture sets made for it.
   d.setIntro(undefined);
+  if (d.world.textures !== undefined) d.setTextures(undefined);
   if (!p.keepEnvironment) {
     const env = EnvironmentSchema.parse({});
     const player = PlayerSchema.parse({});
