@@ -88,6 +88,14 @@ export function materialAlbedo(m: Material | Material[] | null | undefined, out:
   out[0] = out[1] = out[2] = 0.5;
 }
 
+/** An emissive pane of a window: the picture of the sky beyond the glass, not a surface light stops at. */
+export function isDaylightPane(m: Material | Material[] | null | undefined): boolean {
+  const mat = (Array.isArray(m) ? m[0] : m) as (Material & { emissive?: Color; emissiveIntensity?: number }) | undefined;
+  const e = mat?.emissive;
+  if (!e || !e.isColor || !((mat?.emissiveIntensity ?? 0) > 0.5)) return false;
+  return 0.2126 * e.r + 0.7152 * e.g + 0.0722 * e.b > 0.4;
+}
+
 /** A furniture box proxy in the trace input: its corners and its 12 triangles `[tri, tri + 12)`. */
 export interface TraceProxy {
   lo: V3;
@@ -114,6 +122,8 @@ export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3, pr
       for (const vm of part.meshes) {
         if (vm.seeThrough || full()) continue;
         const mesh = vm.mesh;
+        // The daylight pane of a window (an emissive card behind the frame that stands for the sky outside) lets the light pass.
+        if (part.role === 'window' && isDaylightPane(mesh.material)) continue;
         if ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh) continue;
         const g = mesh.geometry as BufferGeometry;
         const p = g.getAttribute('position');

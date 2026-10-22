@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
-import { collectTraceInput, LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart, type VolumeWorkerLike } from '../src/view/light-volume-controller';
+import { collectTraceInput, isDaylightPane, LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart, type VolumeWorkerLike } from '../src/view/light-volume-controller';
 import type { VolumeCache } from '../src/environment/light-volume-cache';
 import { FLOATS_PER_PROBE, LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
 import { parseVolumeReply, parseVolumeRequest } from '../src/environment/light-volume-protocol';
@@ -56,6 +56,22 @@ describe('light volume controller: trace input', () => {
     expect(bounds.min.x).toBeCloseTo(-3.2, 5);
     expect(bounds.max.y).toBeCloseTo(3.2, 5);
     expect(collectTraceInput([], bounds)).toBeNull();
+  });
+
+  it('lets light through the daylight pane of a window, not through a frame or an emissive piece of anything else', () => {
+    const bounds = new Box3();
+    const pane = slab(3.1, 1.5, 0, 0.02, 3, 2, 'window');
+    (pane.meshes[0]!.mesh.material as MeshStandardMaterial).emissive.set('#f5f0e6');
+    (pane.meshes[0]!.mesh.material as MeshStandardMaterial).emissiveIntensity = 1.8;
+    const frame = slab(3.1, 1.5, 0, 0.05, 3, 0.1, 'window');
+    const lampShade = slab(0, 1, 0, 0.5, 0.5, 0.5, 'wall');
+    (lampShade.meshes[0]!.mesh.material as MeshStandardMaterial).emissive.set('#f5f0e6');
+    (lampShade.meshes[0]!.mesh.material as MeshStandardMaterial).emissiveIntensity = 1.8;
+    expect(isDaylightPane(pane.meshes[0]!.mesh.material)).toBe(true);
+    expect(isDaylightPane(frame.meshes[0]!.mesh.material)).toBe(false);
+    const input = collectTraceInput([pane, frame, lampShade], bounds)!;
+    // The pane is left out; the frame and the (non-window) emissive shell piece stay.
+    expect(input.albedo.length / 3).toBe(2 * 12);
   });
 
   it('reads the resolved albedo a material carries, else its colour', () => {

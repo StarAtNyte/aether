@@ -31,8 +31,8 @@ export const WINDOW_TRIM = 0.3;
 /** Share of the darkest points (behind furniture, in alcoves) left out of the average. */
 export const SHADOW_TRIM = 0.1;
 /** A room counts fully from this far inside its edge and not at all this far outside it (metres): a doorway ramps over their sum. */
-export const ROOM_FULL_INSIDE = 0.2;
-export const ROOM_NONE_OUTSIDE = 0.25;
+export const ROOM_FULL_INSIDE = 0.1;
+export const ROOM_NONE_OUTSIDE = 0.35;
 /** Metres the room the eye is already in keeps counting beyond its edge (hysteresis against a rival at a doorway). */
 export const ROOM_HOLD = 0.25;
 /** Metres a camera outside may be from the room it looks at before the room no longer sets the exposure, and the span it fades over. */
@@ -182,7 +182,7 @@ export class RoomSelector {
     }
     if (shares.length > 0) {
       if (total > 1) for (const s of shares) s.weight /= total;
-      shares.sort((p, q) => q.weight - p.weight);
+      shares.sort((p, q) => q.weight - p.weight || (q.room.id === this.currentId ? 1 : 0) - (p.room.id === this.currentId ? 1 : 0));
       this.currentId = (shares[0] as RoomShare).room.id;
       return { shares, subject: false };
     }

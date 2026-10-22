@@ -3077,7 +3077,7 @@ view/light-volume-controller.ts        LightVolumeController(gather, { createWor
 WorldRenderer.lightVolumeReady / .lightVolumeBaking / .lightVolumeStats / lightVolumeAt(x, y, z) / finishLightVolume()
 ```
 
-With a volume ready the eye exposure comes from `lightVolumeAt` the camera (no pixel read-back), the image light is no longer
+With a volume ready the eye exposure comes from the light of the room the camera is in or looks at (`view/room-exposure.ts`: one number per room, measured once over the floor plan at 1.5 m from the volume, the brightest 30 % of the points (windows) and the darkest 10 % left out, the rest averaged as stops, held to -1.5..+3 EV; rooms share an eye at a doorway, the room the eye was in keeps its weight 0.25 m past its wall; a camera outside looking into a room through a cutaway or lowered walls reads that room up to 10 m, fading to nothing at 22 m; outside every room the spot's own reading, in the same range), no pixel read-back. The volume and the lightmap are traced with walls as built (a wall the view has sectioned, `shape.params.cut`, is traced without the cut), so none of this depends on the camera or on the view mode. `environment.exposure` and the grade's `exposureEv` (the model's `tune_look`) are biases on top of the adapted exposure. The image light is no longer
 scaled by the ceiling factor, the sun's shadow map is fitted to the building's shell while the eye is inside, the post tiers
 apply the exposure once (in the tone mapping), and the grade warms a little inside (not with a document `grade`).
 

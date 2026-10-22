@@ -2,7 +2,7 @@
   "keys": [
     "lm1-0701035c900f6695bacda8d2747fcffd",
     "lm1-538b69dc1eed0097420634922954d49b",
-    "lm1-5e18048721c38f36d2e19cae4c99f035",
+    "lm1-87dacba65d05926bc42ca0cedfa425de",
     "lm1-a7a04685234d35e3890f95be9acc1410",
     "lm1-c9e54c0b42e2bd201e5b04f31abaf09f",
     "lm1-cd0aece699e5856a1fbe4aba3419a5b0"
@@ -33,10 +33,10 @@
       "bytes": 203964
     },
     "photo-vaulted-bedroom": {
-      "key": "lm1-5e18048721c38f36d2e19cae4c99f035",
+      "key": "lm1-87dacba65d05926bc42ca0cedfa425de",
       "quality": "medium",
       "samples": 48,
-      "bytes": 231396
+      "bytes": 234712
     },
     "skyline-penthouse": {
       "key": "lm1-0701035c900f6695bacda8d2747fcffd",

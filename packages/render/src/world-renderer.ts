@@ -1107,6 +1107,8 @@ export class WorldRenderer {
     this.env.setVolumeLit(true);
     this.lightmap.volumeChanged();
     this.roomLights = null;
+    this.roomScanAt = -1e9;
+    this.roomRetries = 0;
     this.eyeClock = 1;
     this.applyLook();
     // The interior shadow fit may now apply.
@@ -3705,12 +3707,17 @@ export class WorldRenderer {
   /** The rooms of the buildings and the light measured for each, once per volume (null until asked for, dropped with the volume). */
   private roomLights: { boxes: RoomBox[]; lights: Map<string, RoomLight> } | null = null;
   private readonly roomSelect = new RoomSelector();
+  /** When the rooms were last looked for and not found (a rescan waits a second). */
+  private roomScanAt = -1e9;
+  private roomRetries = 0;
   private roomPick: { id: string; weight: number; subject: boolean } | null = null;
 
   /** Drop the cached ceilings (the building changed). */
   private invalidateCeilings(): void {
     this.ceilings = null;
     this.roomLights = null;
+    this.roomScanAt = -1e9;
+    this.roomRetries = 0;
   }
 
   /**
@@ -3719,6 +3726,9 @@ export class WorldRenderer {
    */
   private ensureRoomLights(): { boxes: RoomBox[]; lights: Map<string, RoomLight> } {
     if (this.roomLights) return this.roomLights;
+    const now = performance.now();
+    if (now - this.roomScanAt < 1000) return { boxes: [], lights: new Map() };
+    this.roomScanAt = now;
     const boxes: RoomBox[] = [];
     const lights = new Map<string, RoomLight>();
     if (this.archView.active) {
@@ -3753,14 +3763,27 @@ export class WorldRenderer {
       const light = roomLight(pts, this.volumeOutdoor);
       if (light) lights.set(r.id, light);
     }
-    this.roomLights = { boxes, lights };
-    return this.roomLights;
+    // A building that is not indexed yet (no ceilings seen) is asked again at the next tick instead of being remembered empty.
+    const found = { boxes, lights };
+    if (boxes.length > 0) this.roomLights = found;
+    else if (this.archView.active) {
+      this.ceilings = null;
+      // Nothing draws while the scene is still, so the next look for the rooms is asked for (a few times, then it is left).
+      if (this.roomRetries++ < 4) {
+        setTimeout(() => {
+          if (this.disposed) return;
+          this.eyeClock = 1;
+          this.needsDraw = true;
+        }, 1100);
+      }
+    }
+    return found;
   }
 
   /** Diagnostics: the exposure the eye has settled on and the rooms it comes from. */
-  get eyeExposure(): { ev: number; room: string | null; weight: number; subject: boolean; rooms: Array<{ id: string; name: string | null; ev: number; raw: number; used: number; trimmed: number; box: RoomBox }> } {
+  get eyeExposure(): { ev: number; ceilings: number; retries: number; room: string | null; weight: number; subject: boolean; rooms: Array<{ id: string; name: string | null; ev: number; raw: number; used: number; trimmed: number; box: RoomBox }> } {
     const rooms = this.roomLights ? [...this.roomLights.lights].map(([id, l]) => ({ id, name: this.sync.node(id)?.entity.arch?.name ?? null, ev: l.ev, raw: l.raw, used: l.used, trimmed: l.trimmed, box: this.roomLights?.boxes.find((b) => b.id === id) as RoomBox })) : [];
-    return { ev: this.eyeEv, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
+    return { ev: this.eyeEv, ceilings: this.ceilings?.length ?? -1, retries: this.roomRetries, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
   }
 
   private adaptEye(dt: number): void {

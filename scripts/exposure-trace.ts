@@ -113,6 +113,8 @@ async function main(): Promise<void> {
         await open(page, server.url, slug);
         await waitVolume(page);
         const cams = await cameras(page, slug);
+        // The first reading of a page is taken once the eye has had a look around (the rooms are measured on the first tick).
+        await page.waitForTimeout(1500);
         const pre = process.env['EXP_PRE'];
         if (pre) {
           const [w, camName] = pre.split(':');
