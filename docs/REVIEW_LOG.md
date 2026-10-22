@@ -5515,6 +5515,50 @@ do not hot-reload. Production builds are unaffected. Judge load times from the b
 4x per world with people) is still on the main thread. The low tier's shadow map still draws every building and large prop
 each frame; a map that redraws only when something moves would halve the rest.
 
+## Firefox on WebGL2: nearest shadow comparison, flag-free uploads, cleared targets, a light start that climbs
+
+The same Firefox on a real GPU (WebGL2 only) that showed a black viewport also printed three driver hints: a depth texture
+compared with LINEAR filtering ("behavior is implementation-defined"), pixel-store flags on uploads that are not DOM
+elements ("deprecated") and a texture "incurring lazy initialization" on repeated draws. None could be reproduced headless
+(no real GPU under Firefox here), so these are defensive changes on a path chosen by `geckoSafePath` (`gpu/gecko-safe.ts`:
+Gecko user agent, WebGL2, and a GPU that is not a software rasteriser; software GL keeps everything as it was).
+
+- **Shadow comparison.** three's PCF map samples its depth texture with LINEAR filtering plus a comparison. On the safe
+  path the renderer uses `BasicShadowMap` (NEAREST plus comparison, well defined) and the sun's soft filter (Aether's
+  blocker-search filter, taps from the medium tier) runs on every tier, including low, so the edge is still soft, filtered in
+  the shader (`planSunShadows {nearestCompare}`).
+- **Uploads.** The only typed-array textures with `flipY` on were the sky dome's sun, rays and moon sprites and the HDRI the
+  loader returns. `bakeFlipY` flips the rows in the data once and turns the flag off (the HDRI sun is read before the flip).
+  Every other `DataTexture` is created with the flag off; no texture sets premultiply. Image-bitmap loads already ask for
+  `premultiplyAlpha: 'none'`.
+- **Lazy initialization.** The water's scene copy and planar reflection targets are sampled by materials and used to be
+  allocated untouched until the first water draw. They are cleared once at renderer start on the safe path
+  (`gpu/prime-target.ts`, keyed by size, so a resize is cleared again). I did not find which texture the failing console
+  meant; the post chain's own history targets (temporal AA) belong to three and are not cleared by us, but the safe path starts
+  with no post chain, so they do not exist there until the governor climbs to a tier that has them.
+- **Light start, then up.** The safe path starts at ladder level 4 (no baked room light, one shadow map, lowest tier, so no
+  bloom chain; particles stay). `PerformanceGovernor` now also climbs: one level back after 10 s of p90 above 48 fps at full
+  resolution, never sooner than 20 s after any move, and a step down within 45 s of a climb pins that level as a floor for the
+  session (`lastMove`, `floor`, `start()`). `upFps` sits well above `lowFps` (20), so frames between them move nothing. The
+  studio toasts a climb, and the View menu shows "Graphics: Low (automatic, saving frames; climbs when smooth)". The climb
+  also applies on other browsers after a slow patch; before it never went back up.
+- **Checked.** Unit tests (`gecko-safe.test.ts`, climbing tests in `performance.test.ts`, `graphicsSummary.test.ts`). `npm run
+  e2e:weak` passes (Chromium). Firefox on llvmpipe with the GPU spoofed to an integrated Intel (`--browser=firefox
+  --spoof-gpu`) takes the safe path (ladder level 4 at the first sample) and draws the world (146 colours at 30 s). Not
+  checked: a real Firefox GPU, so whether the black view is gone is unknown; the watchdog remains the backstop.
+
+**Photo compare turn: one ranking instruction.** With the differences ledger on, a round carried the written "BIGGEST
+DIFFERENCE FIRST" line, the ledger's "DIFFERENCES: ... fix the largest first" and (later rounds) "Rank the differences
+again": three statements of one step. `rankDifferencesText(round)` replaces them when a ledger runs: round 1 asks for
+`report_differences` across the same kinds (amount, size 1..5), largest first, one change per difference, with the
+`look_closer` hint; later rounds ask to judge every earlier id on the new render, add what is new, change approach for a
+difference that did not shrink, then fix the largest open one. Without a ledger the written ranking is unchanged. Both forms
+share one list of kinds and one `look_closer` sentence in `photo/prompt.ts`. The agent's system prompt is untouched (this is
+user-turn text), so its token cap is unaffected; `prompt.test.ts` passes.
+
+**tsc.** `npx tsc --noEmit` was already 0 on `origin/main` (5d05db1e) in a clean worktree; the two `land.test.ts` errors were
+not present there, and are 0 after these changes too.
+
 ## Atlas Chisel comparison
 
 Observation only, from ten screenshots of a public beta session of an image-to-room tool (Chisel). No code, assets or
