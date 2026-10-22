@@ -5247,8 +5247,8 @@ Run on 2026-10-22 with `scripts/eval-photo.ts --mode=live` (3 judges, 3 reads, s
 
 - Best-state keeping worked live: rounds 7 and 8 of the Claude Code hotel run were not kept by the judges and the room
   went back to round 6 (16/19), which is the final state.
-- Curtains: the hotel's curtain item passed in the Claude Code run (no placement refusals); the Codex run was cut off
-  before a verdict on it.
+- Curtains: the Claude Code run's checklist has no curtain item and no placement refusal appears in its log; the Codex run
+  was cut off before a verdict on its curtain item. Not shown live either way.
 - Scale and framing lines: the Claude Code run failed shell-size in rounds 1 and 2 and passed from round 3 on; the
   transcript does not store the host's text blocks, so whether the scale line itself was shown is not known (it only
   appears when the pieces are 25 % taller in the photo relative to their width). In the Codex run the model changed
