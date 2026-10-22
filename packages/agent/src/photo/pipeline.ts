@@ -869,9 +869,9 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
-      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: [notes, sampled].filter((l) => l.length > 0).join('\n') }) });
+      blocks.push({ type: 'text', text: compareIntroText({ summary: desc.summary || desc.roomType, checklist, notes: build.notes, hasObjective: view.objective !== null, plan: JSON.stringify(build.plan), ...(view.framing ? { framing: framingText(view.framing) } : {}), judged: standing !== null, measured: [notes, sampled].filter((l) => l.length > 0).join('\n'), ledger: ledger !== null }) });
       intro = false;
-    } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null) });
+    } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null, ledger !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
     view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
     if (kit) kit.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));

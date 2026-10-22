@@ -170,6 +170,11 @@ describe('room from a photo with the differences ledger and the compare kit', ()
     const r1 = provider.requests[1]!;
     expect(lastText(r1)).toContain('the PHOTO beside the RENDER from the same camera');
     expect(lastText(r1)).toContain('COMPARE KIT');
+    // One ranking instruction, not two: the intro's written ranking and the ledger's list are the same step.
+    expect(lastText(r1).split('BIGGEST DIFFERENCE FIRST').length - 1).toBe(1);
+    expect(lastText(r1)).toContain('call report_differences with every difference you can see');
+    expect(lastText(r1)).toContain('The single largest goes first');
+    expect(lastText(r1)).not.toContain('write one line that ranks');
     expect(lastText(r1)).toContain('Colour readout');
     expect(host.composed.length).toBeGreaterThanOrEqual(3);
     expect(host.cropped.length).toBeGreaterThanOrEqual(4);
@@ -181,6 +186,10 @@ describe('room from a photo with the differences ledger and the compare kit', ()
     const r2 = lastText(provider.requests[3]!);
     expect(r2).toContain('Your differences list from the last round');
     expect(r2).toContain('picture-height');
+    expect(r2.split('BIGGEST DIFFERENCE FIRST').length - 1).toBe(1);
+    expect(r2).toContain('BIGGEST DIFFERENCE FIRST, AGAIN');
+    expect(r2).toContain('status: fixed, smaller, same, worse');
+    expect(r2).not.toContain('Rank the differences again');
     // The fix was applied after the list.
     // The list is reported to the UI, and the closing message names what is still open, from both seats.
     const diffs = events.filter((e) => e.type === 'photo' && e.differences);
@@ -205,5 +214,26 @@ describe('room from a photo with the differences ledger and the compare kit', ()
     expect(provider.requests[1]?.tools?.map((t) => t.name)).not.toContain('report_differences');
     expect(host.composed).toHaveLength(0);
     expect(provider.critics).toHaveLength(0);
+  });
+});
+
+describe('ranking instruction text', () => {
+  it('is one text per form and carries every behaviour of the two it replaced', async () => {
+    const { rankDifferencesText, BIGGEST_DIFFERENCE_TEXT } = await import('../src/photo/prompt');
+    const first = rankDifferencesText(1);
+    const later = rankDifferencesText(2);
+    for (const t of [first, later, BIGGEST_DIFFERENCE_TEXT]) {
+      for (const kind of ['proportion', 'position', 'colour', 'material and finish', 'lighting', 'missing or extra items']) expect(t).toContain(kind);
+      expect(t).toContain('look_closer');
+      expect(t).toContain('BIGGEST DIFFERENCE FIRST');
+    }
+    expect(first).toContain('report_differences');
+    expect(first).toContain('size 1..5');
+    expect(first).toContain('one change per difference');
+    expect(later).toContain('did not shrink, change the approach');
+    expect(BIGGEST_DIFFERENCE_TEXT).not.toContain('report_differences');
+    // Short enough to cost little on every round.
+    expect(first.length).toBeLessThan(1100);
+    expect(later.length).toBeLessThan(1100);
   });
 });

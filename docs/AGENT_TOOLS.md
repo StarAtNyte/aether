@@ -492,7 +492,7 @@ How a run proceeds:
    one description.
 2. **Compare rounds.** Each round renders the room from the photo's calibrated camera, plus straight-on views of
    walls with failing items. `maxViews` defaults to 3, with a maximum of 4. Then it:
-   - gives the model `look_closer` (crops of photo and render at the same camera, both side by side, the plan from above), and an opening step that ranks the differences (proportion, position, colour, material, lighting, missing or extra items) and fixes the largest first,
+   - gives the model `look_closer` (crops of photo and render at the same camera, both side by side, the plan from above), and an opening step that ranks the differences (proportion, position, colour, material, lighting, missing or extra items) and fixes the largest first (one instruction per round: the written ranking without a differences ledger, the same step as the first `report_differences` call, or its judge-and-add form on later rounds, with a ledger; `rankDifferencesText` in `photo/prompt.ts`),
    - measures fidelity, and
    - asks `judges` independent judges: default 3 (`JUDGES_DEFAULT`), maximum 7 (`JUDGES_MAX`), seed
      `JUDGE_SEED` (7331) + seat.
