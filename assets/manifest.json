@@ -8491,35 +8491,6 @@
    ]
   },
   {
-   "id": "chair-wooden-01",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Jake Mobley"
-   ],
-   "source": {
-    "archive": "polyhaven:WoodenChair_01",
-    "path": "polyhaven/models/WoodenChair_01/WoodenChair_01.gltf"
-   },
-   "files": [
-    {
-     "path": "i/chair-wooden-01.2fc2651a.glb",
-     "sha256": "2fc2651ac9975031c1011a2514dc2b7b681f1a6ffa488906118d4fa5716ffd67",
-     "bytes": 529836
-    },
-    {
-     "path": "i/chair-wooden-01.lod1.6289938e.glb",
-     "sha256": "6289938ee5462a02e3319359731c45d170c64332c83e12003c67d6fb5d611848",
-     "bytes": 182148
-    },
-    {
-     "path": "i/chair-wooden-01.lite.80f03bb8.glb",
-     "sha256": "80f03bb847c3f1930bc5f72a57cbd5eb5c975b448541b5a48e2abbada12e0a09",
-     "bytes": 156468
-    }
-   ]
-  },
-  {
    "id": "chair-painted-01",
    "pack": "polyhaven",
    "licence": "CC0-1.0",

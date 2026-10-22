@@ -41,11 +41,10 @@ export const INTERIOR: readonly InteriorRow[] = [
   ['BarberShopChair_01', 'barber-chair', 'armchair', 'furniture', 'vintage industrial', 'Barber chair', { tex: 512 }],
   // dining and desk chairs, stools
   ['dining_chair_02', 'chair-dining-02', 'chair', 'furniture', 'modern scandinavian', 'Dining chair', { tex: 512 }],
-  ['WoodenChair_01', 'chair-wooden-01', 'chair', 'furniture', 'rustic traditional', 'Wooden chair', { tex: 512 }],
   ['painted_wooden_chair_01', 'chair-painted-01', 'chair', 'furniture', 'rustic farmhouse', 'Painted chair', { tex: 512 }],
   ['painted_wooden_chair_02', 'chair-painted-02', 'chair', 'furniture', 'rustic farmhouse', 'Painted ladder chair', { tex: 512 }],
   ['gallinera_chair', 'chair-gallinera', 'chair', 'furniture', 'rustic garden', 'Slatted chair', { tex: 512 }],
-  ['plastic_monobloc_chair_01', 'chair-monobloc', 'chair', 'furniture', 'modern minimal', 'Plastic chair', { tex: 512 }],
+  ['plastic_monobloc_chair_01', 'chair-monobloc', 'chair', 'furniture', 'casual outdoor', 'Plastic chair', { tex: 512 }],
   ['SchoolChair_01', 'chair-school', 'chair', 'furniture', 'vintage industrial', 'School chair', { tex: 512 }],
   ['bar_chair_round_01', 'bar-chair-round', 'stool', 'furniture', 'modern industrial', 'Round bar chair', { tex: 512, tags: 'bar stool kitchen counter' }],
   ['wooden_stool_01', 'stool-wooden-01', 'stool', 'furniture', 'rustic traditional', 'Wooden stool', { tex: 512 }],

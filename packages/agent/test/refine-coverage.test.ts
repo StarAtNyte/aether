@@ -28,7 +28,8 @@ const ROWS: Row[] = [
   { property: 'transform.scale', world: 'camp', prompt: 'make the lake bigger', changed: 'entity:lake-1\\.transform\\.scale' },
   { property: 'shape.params.size', world: 'camp', prompt: 'make the campfire bigger', changed: 'entity:campfire-1\\.shape\\.params\\.size' },
   { property: 'shape.params.height', world: 'coins', prompt: 'make the palm trees taller', changed: 'entity:palm-1\\.shape\\.params\\.height' },
-  { property: 'shape.params.width', world: 'apartment', prompt: 'make the sofa 3 meters wide', changed: 'entity:apartment-l0-living-f0\\.shape\\.params\\.width' },
+  { property: 'shape.params.width', world: 'apartment', prompt: 'make the sofa 3 meters wide', // A library model (the sofa in a modern flat) is stretched with its scale; a parametric one takes its width parameter.
+    changed: 'entity:apartment-l0-living-f0\\.(shape\\.params\\.width|transform\\.scale)' },
   { property: 'shape (variant)', world: 'penthouse', prompt: 'make the dining table in the dining room round', changed: 'entity:penthouse-l0-dining-f0\\.shape\\.params' },
   // materials
   { property: 'material.color (primitive)', world: 'coins', prompt: 'make the beach ball blue', changed: 'entity:beach-ball-1\\.(material\\.color|shape)' },

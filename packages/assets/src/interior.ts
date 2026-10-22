@@ -39,10 +39,11 @@ export const KIND_MODELS: Readonly<Record<string, { types: readonly string[]; mo
 
 /**
  * Kinds a layout may swap for a library model on its own. The rest (wardrobes, cabinets, kitchens,
- * fridges, nightstands) have doors and drawers that open in play mode, which a static model cannot do,
- * so they take a model only when the model asks for one by id (`model:<id>`).
+ * fridges, nightstands) have doors and drawers that open in play mode, which a static model cannot do; mirrors and
+ * pictures keep their parametric art, which follows the palette and varies. All of them take a model when the model
+ * asks for one by id (`model:<id>`).
  */
-export const AUTO_MODEL_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'dining-table', 'coffee-table', 'desk', 'bed', 'bookshelf', 'pendant', 'table-lamp', 'plant', 'mirror', 'art']);
+export const AUTO_MODEL_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'dining-table', 'coffee-table', 'desk', 'bed', 'bookshelf', 'pendant', 'table-lamp', 'plant']);
 
 /** Types whose style hardly matters (a plant or a vase suits any room), so a style miss does not disqualify them. */
 const LOOSE_TYPES: ReadonlySet<string> = new Set(['plant', 'vase', 'books', 'basket', 'bowl', 'picture', 'mirror', 'clock', 'pillow', 'candle', 'statue', 'game']);

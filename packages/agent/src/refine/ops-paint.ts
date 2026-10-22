@@ -339,7 +339,7 @@ function paintItem(env: OpEnv, picked: SceneItem, cmd: Extract<Command, { op: 'p
   // else (a finish, a part, a cover material) goes back to the parametric part, which has the options to change.
   const model = item.entity.shape;
   if (model.kind === 'asset' && model.fallback?.kind === 'procedural') {
-    const tint = catalogEntry(model.id)?.interior?.paint === true && cmd.look.color !== undefined && !cmd.look.finish && !cmd.look.preset && !cmd.ref.part;
+    const tint = catalogEntry(model.id)?.interior?.paint === true && cmd.look.color !== undefined && !cmd.look.finish && !cmd.look.material && !cmd.look.pattern && !cmd.ref.part;
     if (!tint) {
       env.draft.entity(item.id).shape = model.fallback;
       item = { ...item, entity: { ...item.entity, shape: model.fallback } };

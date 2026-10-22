@@ -38,8 +38,12 @@ describe('minimal patches', () => {
     const updates = r.patches.filter((p) => p.op === 'update');
     expect(updates).toHaveLength(1);
     expect(r.patches).toHaveLength(1);
-    const set = (updates[0] as unknown as { set: { shape: { params: Record<string, unknown> } } }).set;
-    expect(Object.keys(set.shape.params).sort()).toEqual(['color', 'upholstery']);
+    const set = (updates[0] as unknown as { set: { shape: { kind?: string; params: Record<string, unknown> } } }).set;
+    // A cover material is a part option: a library sofa goes back to its parametric part (the update then carries the
+    // part's whole parameter set), a parametric one changes just the two parameters.
+    if (set.shape.kind === 'procedural') expect(Object.keys(set.shape.params)).toEqual(expect.arrayContaining(['color', 'upholstery']));
+    else expect(Object.keys(set.shape.params).sort()).toEqual(['color', 'upholstery']);
+    expect(set.shape.params['upholstery']).toBe('velvet');
     expect(r.cosmetic).toBe(true);
     expect(r.summary).toMatch(/sofa/i);
     // nothing else in the world changed
