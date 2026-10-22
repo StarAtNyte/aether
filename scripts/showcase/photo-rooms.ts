@@ -7,7 +7,7 @@
  * Needs ffmpeg; also writes the card thumbnail from the final render when `--thumbs` is given.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stableStringify, validateWorld, type WorldDoc } from '@aether/core';
@@ -18,6 +18,9 @@ import { SHOWCASE } from '../../apps/studio/src/showcase/manifest';
 const ROOT = join(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'apps/studio/public/templates');
 const THUMBS = process.argv.includes('--thumbs');
+/** Bundled texture maps are served from here (see `TextureSetDef.base`). */
+const TEXTURE_DIR = join(OUT, 'textures');
+const TEXTURE_BASE = 'templates/textures';
 const FILTERS = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 
 /** Fixture id of eval-photo for each photo file. */
@@ -48,6 +51,8 @@ async function repair(world: WorldDoc): Promise<{ world: WorldDoc; removed: stri
 }
 
 await initPhysics();
+// A full rebuild replaces every room's texture files (a filtered one keeps the others').
+if (FILTERS.length === 0) rmSync(TEXTURE_DIR, { recursive: true, force: true });
 const tmp = mkdtempSync(join(tmpdir(), 'photo-rooms-'));
 let failed = 0;
 try {
@@ -55,7 +60,7 @@ try {
     if (FILTERS.length > 0 && !FILTERS.some((f) => e.slug.includes(f) || RUN_ID[e.photo?.file ?? ''] === f)) continue;
     const id = RUN_ID[e.photo?.file ?? ''];
     if (!id) throw new Error(`${e.slug}: unknown photo file`);
-    const r = spawnSync('npx', ['tsx', join(ROOT, 'scripts/eval-photo.ts'), `--photo=${id}`, '--mode=replay', `--out=${tmp}`], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'], encoding: 'utf8' });
+    const r = spawnSync('npx', ['tsx', join(ROOT, 'scripts/eval-photo.ts'), `--photo=${id}`, '--mode=replay', ...(THUMBS ? ['--render=gpu'] : []), `--out=${tmp}`], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'], encoding: 'utf8' });
     if (r.status !== 0) {
       console.error(`FAIL  ${e.slug}: replay exited ${r.status}`);
       failed++;
@@ -68,7 +73,22 @@ try {
       failed++;
       continue;
     }
-    const fixed = await repair(v.world);
+    // The look the reviewing assistant chose for this room from its renders (exposure, grade, lights), recorded next to the transcript.
+    const lookFile = join(ROOT, 'tests/fixtures/photo', `${id}.look.json`);
+    let world0: WorldDoc = v.world;
+    if (existsSync(lookFile)) {
+      const look = JSON.parse(readFileSync(lookFile, 'utf8')) as { environment?: Record<string, unknown> };
+      if (look.environment) world0 = { ...world0, environment: { ...world0.environment, ...look.environment } } as WorldDoc;
+    }
+    // Texture sets of the room are static files next to the worlds; the records point at them.
+    if (world0.textures) {
+      const textures = Object.fromEntries(Object.entries(world0.textures).map(([k, d]) => [k, { ...d, base: TEXTURE_BASE }]));
+      world0 = { ...world0, textures } as WorldDoc;
+      mkdirSync(TEXTURE_DIR, { recursive: true });
+      const from = join(tmp, id, 'textures');
+      if (existsSync(from)) for (const f of readdirSync(from)) copyFileSync(join(from, f), join(TEXTURE_DIR, f));
+    }
+    const fixed = await repair(world0);
     if (!fixed.passed) {
       console.error(`FAIL  ${e.slug}: still fails verification after removing ${fixed.removed.join(', ') || 'nothing'}`);
       failed++;
