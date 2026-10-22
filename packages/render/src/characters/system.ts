@@ -272,6 +272,15 @@ export class CharacterSystem {
     this.tinted.delete(key);
   }
 
+  private shadowBudget = Number.POSITIVE_INFINITY;
+  private shadowRange = LOD_FAR;
+
+  /** Limit which characters cast into the sun's shadow map: at most `budget` of them, none farther than `range` metres. */
+  setShadowLimits(budget: number, range: number = LOD_FAR): void {
+    this.shadowBudget = budget;
+    this.shadowRange = range;
+  }
+
   /**
    * Advance every character by `dt`. Returns true when anything animated
    * (the caller needs a redraw).
@@ -293,16 +302,26 @@ export class CharacterSystem {
         const dz = (m[14] as number) - _pos.z;
         e.dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       }
-      if (list.length > MAX_FULL_DETAIL) sorted.sort((a, b) => a.dist - b.dist);
+      if (list.length > MAX_FULL_DETAIL || this.shadowBudget < list.length) sorted.sort((a, b) => a.dist - b.dist);
     } else {
       for (const e of list) e.dist = 0;
     }
     let full = 0;
+    let casting = 0;
     for (const e of sorted) {
       const d = e.dist;
       let detail: 0 | 1 | 2 = d < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : d < LOD_MID ? 1 : 0;
       if (detail === 2) full++;
       if (d >= LOD_MID && list.length > MAX_FULL_DETAIL) detail = 0;
+      // Only the nearest few cast into the sun's shadow map: every part of every character is a draw call there.
+      const shadows = d < this.shadowRange && casting < this.shadowBudget && this.opts.shadows !== false;
+      if (shadows) casting++;
+      if (shadows !== e.shadowsOn && !e.rig.shadowOnlyBody) {
+        e.shadowsOn = shadows;
+        e.rig.root.traverse((o) => {
+          if (o instanceof Mesh) o.castShadow = shadows;
+        });
+      }
       // Far characters step their mixer less often (accumulated time keeps their clips in step).
       const every = d < LOD_MID ? 1 : d < LOD_FAR ? 2 : 4;
       e.accumulated += dt;
@@ -310,13 +329,6 @@ export class CharacterSystem {
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;
       e.rig.update(e.accumulated, detail);
       e.accumulated = 0;
-      const shadows = d < LOD_FAR && this.opts.shadows !== false;
-      if (shadows !== e.shadowsOn && !e.rig.shadowOnlyBody) {
-        e.shadowsOn = shadows;
-        e.rig.root.traverse((o) => {
-          if (o instanceof Mesh) o.castShadow = shadows;
-        });
-      }
     }
     return true;
   }

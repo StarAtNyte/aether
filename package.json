@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @aether/studio",
+    "dev:fast": "AETHER_DEV_PREBUNDLE=1 npm run dev -w @aether/studio",
     "dev:server": "npm run dev -w @aether/server",
     "aether": "node apps/cli/bin/aether.mjs",
     "aether:start": "node apps/cli/bin/aether.mjs start",

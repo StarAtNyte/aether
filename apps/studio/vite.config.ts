@@ -62,10 +62,11 @@ export default defineConfig({
   optimizeDeps: {
     // Rapier ships an inlined WASM blob; pre-bundling it only slows dev startup.
     exclude: ['@dimforge/rapier3d-compat'],
-    // The workspace packages are linked sources: left alone, the dev server serves each of their ~700 files as its own
-    // request, which is minutes on a tunnel or a weak machine. Pre-bundled they are a handful of files, cached by the
-    // browser. `AETHER_DEV_PREBUNDLE=0` serves them as sources again (editing a package then hot-reloads per file).
-    include: process.env['AETHER_DEV_PREBUNDLE'] === '0' ? [] : ['@aether/core', '@aether/arch', '@aether/assets', '@aether/physics', '@aether/playtest', '@aether/render', '@aether/procgen', '@aether/logic', '@aether/verifier', '@aether/agent', '@aether/voxel'],
+    // The workspace packages are linked sources: the dev server serves each of their ~700 files as its own request,
+    // which is minutes on a tunnel or a weak machine. `AETHER_DEV_PREBUNDLE=1` (npm run dev:fast) pre-bundles them
+    // into a handful of cached files (home page 373 requests down to 120, a world open 758 to 346). Off by default:
+    // pre-bundled packages do not hot-reload, so editing one needs a restart (or `--force`).
+    include: process.env['AETHER_DEV_PREBUNDLE'] === '1' ? ['@aether/core', '@aether/arch', '@aether/assets', '@aether/physics', '@aether/playtest', '@aether/render', '@aether/procgen', '@aether/logic', '@aether/verifier', '@aether/agent', '@aether/voxel'] : [],
   },
   build: {
     target: 'es2022',

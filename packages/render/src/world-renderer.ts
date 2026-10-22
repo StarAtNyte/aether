@@ -528,6 +528,10 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 /** Attempts of a capture that comes back blank. */
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
+/** Assets smaller than this in every direction cast no sun shadow on the low tier (metres). */
+const SMALL_CASTER_METRES = 0.9;
+/** Skinned assets farther than this from the eye are not drawn on the low tier (metres). */
+const FAR_ANIMAL_METRES = 55;
 /** Longest the load screen waits for the world's environment map (ms). */
 const HDRI_WAIT_MS = 8_000;
 /** How long late warming collects arrivals before it links them (ms). */
@@ -1333,6 +1337,7 @@ export class WorldRenderer {
       // The first world of a session just materialises; later builds show their plan marks first.
       if (added.length > 0) this.startGrow(added, prev !== null);
       if (!this.framed) this.framed = this.frameContent({ duration: 0 });
+      this.syncSmallCasters();
       if (hold) await this.warmShaders(say);
     } finally {
       if (hold) {
@@ -1398,8 +1403,107 @@ export class WorldRenderer {
         this.warming = false;
         this.needsDraw = true;
       }
+      this.syncSmallCasters();
       if (this.sync.idle) return;
     }
+  }
+
+  /** Meshes that stopped casting into the sun's shadow map because they are small (mesh and its own flag before). */
+  private readonly smallCasters = new Map<Mesh, boolean>();
+
+  /**
+   * On the low tier the sun's shadow pass draws what is big enough to leave a shadow worth seeing: a bird, a fish or a
+   * butterfly is a dozen draw calls there for a few pixels of shadow, a flock is hundreds, and scattered fields are
+   * thousands of triangles. Buildings, terrain and large props keep theirs. Restores the flags when the tier rises again.
+   */
+  private syncSmallCasters(): void {
+    const on = this.qualityPlan.tier === 'low' && this.qualityPlan.quality === 'realtime';
+    if (!on) {
+      for (const [m, was] of this.smallCasters) m.castShadow = was;
+      this.smallCasters.clear();
+      return;
+    }
+    const world = this.sync.world;
+    if (!world) return;
+    for (const [id, e] of Object.entries(world.entities)) {
+      if (e.template || e.castShadow === false) continue;
+      const node = this.sync.node(id);
+      if (!node) continue;
+      let small = false;
+      if (e.shape.kind === 'asset') {
+        _bounds.setFromObject(node.content);
+        small = !_bounds.isEmpty() && Math.max(_bounds.max.x - _bounds.min.x, _bounds.max.y - _bounds.min.y, _bounds.max.z - _bounds.min.z) < SMALL_CASTER_METRES;
+      }
+      node.content.traverse((o) => {
+        const m = o as Mesh;
+        if (m.isMesh !== true) return;
+        // Scattered fields (trees, shrubs, grass) are thousands of triangles each in the shadow pass.
+        const drop = small || (m as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+        if (drop && m.castShadow) {
+          this.smallCasters.set(m, true);
+          m.castShadow = false;
+        } else if (!drop && this.smallCasters.has(m)) {
+          m.castShadow = this.smallCasters.get(m) as boolean;
+          this.smallCasters.delete(m);
+        }
+      });
+    }
+  }
+
+  /** Skinned assets (animals) this renderer hid for being far away on the low tier. */
+  private readonly hiddenFar = new Set<Object3D>();
+  private readonly skinnedAsset = new Map<string, boolean>();
+  private farCullFrame = 0;
+
+  /**
+   * On the low tier a skinned asset (a bird, a fish, a deer) farther than {@link FAR_ANIMAL_METRES} from the eye is not
+   * drawn: each of its parts is a draw call and a skinning pass on a CPU that has none to spare, for a speck in the
+   * fog. Every few frames; they come back when the eye comes near or the tier rises.
+   */
+  private cullFarAnimals(): void {
+    const on = this.qualityPlan.tier === 'low' && this.qualityPlan.quality === 'realtime';
+    if (!on) {
+      if (this.hiddenFar.size > 0) {
+        for (const o of this.hiddenFar) o.visible = true;
+        this.hiddenFar.clear();
+      }
+      return;
+    }
+    if (++this.farCullFrame % 12 !== 1) return;
+    const world = this.sync.world;
+    if (!world) return;
+    const eye = this.perspective.position;
+    let changed = false;
+    for (const [id, e] of Object.entries(world.entities)) {
+      if (e.template || e.shape.kind !== 'asset') continue;
+      const node = this.sync.node(id);
+      if (!node) continue;
+      let skinned = this.skinnedAsset.get(id);
+      if (skinned === undefined) {
+        let any = false;
+        node.content.traverse((o) => {
+          if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh === true) any = true;
+        });
+        // Only once the model has arrived (a placeholder has no skin yet).
+        if (node.content.children.length > 0 && any) this.skinnedAsset.set(id, (skinned = true));
+        else continue;
+      }
+      if (!skinned) continue;
+      const m = node.object.matrixWorld.elements;
+      const dx = (m[12] as number) - eye.x;
+      const dz = (m[14] as number) - eye.z;
+      const far = dx * dx + dz * dz > FAR_ANIMAL_METRES * FAR_ANIMAL_METRES;
+      if (far && node.content.visible) {
+        node.content.visible = false;
+        this.hiddenFar.add(node.content);
+        changed = true;
+      } else if (!far && this.hiddenFar.has(node.content)) {
+        node.content.visible = true;
+        this.hiddenFar.delete(node.content);
+        changed = true;
+      }
+    }
+    if (changed) this.needsDraw = true;
   }
 
   /**
@@ -2724,6 +2828,7 @@ export class WorldRenderer {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
     if (this.watchdogOn) this.watch(false);
+    this.cullFarAnimals();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
@@ -3452,6 +3557,11 @@ export class WorldRenderer {
     this.env.shadowMapCap = plan.shadowMapCap;
     this.env.sun.shadow.radius = plan.shadowRadius;
     this.voxelLayer?.setQuality(plan.tier);
+    this.syncSmallCasters();
+    // Each part of a character is a draw call in the shadow pass: fewer cast on the cheaper tiers.
+    if (plan.tier === 'low') this.characters.setShadowLimits(3, 30);
+    else if (plan.tier === 'medium') this.characters.setShadowLimits(10, 60);
+    else this.characters.setShadowLimits(Number.POSITIVE_INFINITY);
     this.refinement.setFrames(plan.accumulateFrames);
     this.refinement.restart();
     this.adaptive.enabled = plan.adaptiveResolution && this.adaptiveWanted;
