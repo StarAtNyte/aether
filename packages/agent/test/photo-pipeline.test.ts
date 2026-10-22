@@ -8,7 +8,7 @@ import { createMockProvider } from '../src/providers/mock/index';
 import type { Raster } from '../src/photo/score';
 import { isRoomPhotoRequest } from '../src/photo/pipeline';
 import { JUDGE_SEED, JUDGE_TOOL, parseJudgement } from '../src/photo/judge';
-import { VERDICT_TOOL } from '../src/photo/prompt';
+import { VERDICT_TOOL, compareIntroText } from '../src/photo/prompt';
 import type { AgentEvent, CompletionRequest, CompletionResponse, ContentBlock, Provider, ReviewViewRequest, ToolDef } from '../src/types';
 import { collect, MemoryHost, TEST_CATALOGS } from './helpers';
 
@@ -559,5 +559,17 @@ describe('room from a photo, without a vision model', () => {
     expect(provider.requests[0]?.tools?.map((t) => t.name)).not.toEqual(['describe_room']);
     const off = await collect(agent(provider).run('make this bedroom in 3d', new PhotoHost(), { images: [fakePhoto(1920, 1280)], photo: 'off' }));
     expect(photoEvents(off)).toHaveLength(0);
+  });
+});
+
+describe('the compare prompt asks the model to re-check scale against the photo', () => {
+  const base = { summary: 'room', checklist: [], notes: [], hasObjective: true };
+  it('in the judged and the self-judged mode', () => {
+    for (const judged of [true, false]) {
+      const text = compareIntroText({ ...base, judged });
+      expect(text).toMatch(/Check the SCALE against the photo/);
+      expect(text).toMatch(/ceiling height/);
+      expect(text).toMatch(/shell-size item fails, change a room dimension/);
+    }
   });
 });

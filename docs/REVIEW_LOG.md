@@ -5233,3 +5233,28 @@ shell-size. Tests: `photo.test.ts` (synthetic and the recorded live description,
 
 **Environment note.** A worktree whose `node_modules` was symlinked from another checkout resolved `@aether/*` to that
 checkout and gave 10 false failures; use `npm ci --ignore-scripts` in a worktree.
+
+## Photo to room: live check of best-state keeping, curtains and the scale lines
+
+Run on 2026-10-22 with `scripts/eval-photo.ts --mode=live` (3 judges, 3 reads, software renders); logs and montages in
+`~/.local/share/aether/qa/live2/`.
+
+| Photo | Backend | Judged by AI | Measured (advisory) | Rounds | Calls | Before (same backend) |
+| --- | --- | --- | --- | --- | --- | --- |
+| hotel | Claude Code | 16/19 (84 %) | 81 % | 8 | 37 | 14/19 (74 %) |
+| hotel | Codex | not completed: subscription limit (resets 27 Oct), 6/20 at round 6, first attempt 4/20 | 76 % at round 1 | 6 | 29 | 8/20 |
+| twin, pd1, pd2 | Codex | not run: the limit was reached during the hotel run | | | | 9/29, 6/22, not completed |
+
+- Best-state keeping worked live: rounds 7 and 8 of the Claude Code hotel run were not kept by the judges and the room
+  went back to round 6 (16/19), which is the final state.
+- Curtains: the hotel's curtain item passed in the Claude Code run (no placement refusals); the Codex run was cut off
+  before a verdict on it.
+- Scale and framing lines: the Claude Code run failed shell-size in rounds 1 and 2 and passed from round 3 on; the
+  transcript does not store the host's text blocks, so whether the scale line itself was shown is not known (it only
+  appears when the pieces are 25 % taller in the photo relative to their width). In the Codex run the model changed
+  the room depth (4.2 to 4.7 m) after the shell-size verdicts, but kept the ceiling height, and shell-size kept failing.
+- Prompt change: the compare prompt (judged and self-judged) now tells the model to check the room's width, depth and
+  ceiling height against the photo (how much wall the door, windows and bed take, how much floor shows, the ceiling
+  above the window head) before fixing single pieces, to say which number it changed, and not to leave a failing
+  shell-size item while moving furniture. Metrics stay advice; the model and the judges decide. Test in
+  `photo-pipeline.test.ts`. Not yet verified live (Codex limit).
