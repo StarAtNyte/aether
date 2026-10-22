@@ -29,7 +29,7 @@ import {
 } from '../environment/lightmap';
 import { LIGHTMAP_MAX_ASSET_BYTES, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
 import { LIGHTMAP_CACHE_MIN_BAKE_MS, createIdbLightmapCache, type LightmapCache } from '../environment/lightmap-cache';
-import { decodeWebp, encodeWebp } from '../environment/lightmap-codec';
+import { decodeImage, encodeImage } from '../environment/lightmap-codec';
 import { parseLightmapReply, type LightmapRequest } from '../environment/lightmap-protocol';
 import { collectTraceInput, type TraceProxy, type VolumeLighting, type VolumePart } from './light-volume-controller';
 import type { LightmapSource } from '../sync/lightmap-uv';
@@ -88,9 +88,12 @@ export interface LightmapOptions {
   autoQuality?: () => LightmapQuality;
   createWorker?: (() => LightmapWorkerLike) | null;
   cache?: LightmapCache | null;
-  /** Folder of the bundled lightmap files (`<base><key>.lmap`), or null. */
+  /**
+   * Folder of the bundled lightmap files (`<base><key>.lmap`, listed in `<base>index.json` as `{ "keys": [...] }`), or null.
+   * The index is fetched once: a world without bundled light costs one request, never one per bake.
+   */
   staticBase?: string | null;
-  fetchBytes?: (url: string) => Promise<Uint8Array | null>;
+  fetchBytes?: (url: string, json?: boolean) => Promise<Uint8Array | null>;
 }
 
 const _box = new Box3();
@@ -99,11 +102,13 @@ function defaultWorker(): LightmapWorkerLike {
   return new Worker(new URL('../environment/lightmap.worker.ts', import.meta.url), { type: 'module' }) as unknown as LightmapWorkerLike;
 }
 
-async function defaultFetch(url: string): Promise<Uint8Array | null> {
+async function defaultFetch(url: string, json = false): Promise<Uint8Array | null> {
   try {
     const res = await fetch(url);
-    // A dev server answers a missing file with its index page: only a binary answer can be a lightmap.
-    if (!res.ok || /html|json|text/i.test(res.headers.get('content-type') ?? '')) return null;
+    // A dev server answers a missing file with its index page: only a binary answer can be a lightmap, only JSON an index.
+    if (!res.ok) return null;
+    const type = res.headers.get('content-type') ?? '';
+    if (json ? !/json/i.test(type) : /html|json|text/i.test(type)) return null;
     const buf = new Uint8Array(await res.arrayBuffer());
     return buf.byteLength >= 16 && buf.byteLength <= LIGHTMAP_MAX_ASSET_BYTES * 4 ? buf : null;
   } catch {
@@ -441,7 +446,7 @@ export class LightmapController implements LightmapSource {
 
   private async lookup(key: string): Promise<{ bytes: Uint8Array; source: 'static' | 'cache' } | null> {
     const base = this.opts.staticBase;
-    if (base) {
+    if (base && (await this.staticKeys()).has(key)) {
       const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${base}${key}.lmap`);
       if (bytes) return { bytes, source: 'static' };
     }
@@ -450,6 +455,22 @@ export class LightmapController implements LightmapSource {
       if (bytes) return { bytes, source: 'cache' };
     }
     return null;
+  }
+
+  private index: Promise<Set<string>> | null = null;
+
+  /** The keys of the bundled lightmaps (empty when there is no index). */
+  private staticKeys(): Promise<Set<string>> {
+    this.index ??= (async () => {
+      const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${this.opts.staticBase}index.json`, true);
+      try {
+        const raw = bytes ? (JSON.parse(new TextDecoder().decode(bytes)) as { keys?: unknown }) : null;
+        return new Set(Array.isArray(raw?.keys) ? raw.keys.filter((k): k is string => typeof k === 'string' && /^lm\d+-[0-9a-f]{32}$/.test(k)) : []);
+      } catch {
+        return new Set<string>();
+      }
+    })();
+    return this.index;
   }
 
   // --- the bake --------------------------------------------------------------------------------------------------------
@@ -567,14 +588,21 @@ export class LightmapController implements LightmapSource {
       image: 'raw',
     };
     const stacked = stackAtlas(r.rgba, r.size);
-    // WebP when the browser can encode it (a fraction of the raw size); the raw atlas otherwise, within the cap.
+    // WebP when the browser can encode it (a fraction of the raw size), else PNG, else the raw atlas.
     let image: Uint8Array = stacked;
     for (const q of [0.92, 0.8, 0.65]) {
-      const webp = await encodeWebp(stacked, r.size, q);
+      const webp = await encodeImage(stacked, r.size, 'webp', q);
       if (!webp) break;
       image = webp;
       meta.image = 'webp';
       if (webp.byteLength < LIGHTMAP_MAX_ASSET_BYTES * 0.75) break;
+    }
+    if (meta.image === 'raw') {
+      const png = await encodeImage(stacked, r.size, 'png', 1);
+      if (png) {
+        image = png;
+        meta.image = 'png';
+      }
     }
     if (job.gen !== this.gen || !this.enabled) return;
     const uvQ = r.uv.map((u) => (u ? Uint16Array.from(u, (v) => Math.max(0, Math.min(65535, Math.round(v * 65535)))) : null));
@@ -597,7 +625,7 @@ export class LightmapController implements LightmapSource {
     let rgba: Uint8Array | null;
     if (asset.meta.image === 'raw') rgba = unstackAtlas(asset.image, asset.meta.size);
     else {
-      const stacked = await decodeWebp(asset.image, asset.meta.size);
+      const stacked = await decodeImage(asset.image, asset.meta.size, asset.meta.image);
       rgba = stacked ? unstackAtlas(stacked, asset.meta.size) : null;
     }
     if (!rgba || gen !== this.gen || !this.enabled) return false;

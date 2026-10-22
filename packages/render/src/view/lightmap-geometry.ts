@@ -21,7 +21,7 @@ export function lightmapEligible(mesh: Mesh): boolean {
   if (!(m as { isMeshStandardMaterial?: boolean }).isMeshStandardMaterial && !(m as { isNodeMaterial?: boolean }).isNodeMaterial) return false;
   const p = g.getAttribute('position');
   const n = g.getAttribute('normal');
-  if (!p || !n || p.itemSize !== 3 || n.itemSize !== 3 || p.count < 3 || g.groups.length > 0) return false;
+  if (!p || !n || p.itemSize !== 3 || n.itemSize !== 3 || p.count < 3) return false;
   if (g.drawRange.start !== 0 || g.drawRange.count !== Infinity) return false;
   if (g.getAttribute(LIGHTMAP_ATTRIBUTE) !== undefined) return false;
   const tris = g.index ? g.index.count / 3 : p.count / 3;

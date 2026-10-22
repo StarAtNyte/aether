@@ -1,6 +1,6 @@
 /**
  * The lightmap as a project asset: one self-describing binary file (`.lmap`) that holds the atlas image (WebP when the
- * browser can encode it, else raw RGBA), the 16-bit chart coordinates of every baked mesh and the numbers that made it.
+ * browser can encode it, else PNG, else raw RGBA), the 16-bit chart coordinates of every baked mesh and the numbers that made it.
  * The same bytes live in the browser cache (IndexedDB, keyed by {@link lightmapKey}) and, for bundled worlds, as a static
  * file named after that key, so a world opened again (or on another machine) shows its baked light without a bake.
  *
@@ -34,14 +34,14 @@ export interface LightmapAssetMeta {
   bakeMs: number;
   /** Triangles per offered mesh, in order; -1 for a mesh that is not baked. */
   tris: number[];
-  image: 'webp' | 'raw';
+  image: 'webp' | 'png' | 'raw';
 }
 
 export interface UnpackedAsset {
   meta: LightmapAssetMeta;
   /** Per mesh: six 16-bit coordinates per triangle, or null. */
   uv: Array<Uint16Array | null>;
-  /** The stacked image bytes (WebP or raw RGBA of `size` × `2·size`). */
+  /** The stacked image bytes (WebP, PNG or raw RGBA of `size` × `2·size`). */
   image: Uint8Array;
 }
 
@@ -108,7 +108,7 @@ export function unpackAsset(bytes: Uint8Array): UnpackedAsset | null {
     if (headLen > 1 << 20 || 12 + headLen + imageLen > bytes.length) return null;
     const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headLen))) as LightmapAssetMeta;
     if (meta.version !== LIGHTMAP_VERSION || ![256, 512, 1024].includes(meta.size) || !(meta.scale > 0) || !Array.isArray(meta.tris) || meta.tris.length > 4096) return null;
-    if (meta.image !== 'webp' && meta.image !== 'raw') return null;
+    if (meta.image !== 'webp' && meta.image !== 'png' && meta.image !== 'raw') return null;
     const image = bytes.subarray(12 + headLen, 12 + headLen + imageLen);
     if (meta.image === 'raw' && image.length !== meta.size * meta.size * 2 * 4) return null;
     const pad = (4 - ((12 + headLen + imageLen) % 4)) % 4;
