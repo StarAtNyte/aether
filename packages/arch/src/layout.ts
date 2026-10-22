@@ -165,7 +165,8 @@ export function yawFacingIn(e: RoomEdge): number {
 /** Keep-out rectangle of a door on the room side (the swing square or the approach zone). */
 export function doorKeepout(ctx: RoomContext, d: RoomDoor): P2[] {
   const e = ctx.edges[d.edge] as RoomEdge;
-  const depth = d.swingsIn ? Math.max(d.width, 0.9) + 0.05 : 0.9;
+  // Measured from the wall's centreline: the wall's own half thickness comes first, then the clear zone from its room face.
+  const depth = (d.swingsIn ? Math.max(d.width, 0.9) + 0.05 : 0.9) + (ctx.inset[d.edge] ?? 0.06);
   const c = edgePoint(e, d.t);
   const inX = -e.out[0];
   const inZ = -e.out[1];

@@ -220,6 +220,8 @@ export interface ReviewViewRequest {
   aspect: number;
   /** Numbered boxes in normalised image coordinates (centre and half size, origin top-left). */
   marks: Array<{ n: number; x: number; y: number; w: number; h: number }>;
+  /** Advisory shapes (door swing arcs, approach zones, walking paths) in normalised image coordinates; drawn under the marks. */
+  overlays?: Array<{ kind: 'swing' | 'approach' | 'path' | 'blocked'; closed: boolean; label: string; pts: Array<[number, number]> }>;
 }
 
 /** The environment the agent edits (studio: history + physics; tests: fakes). */

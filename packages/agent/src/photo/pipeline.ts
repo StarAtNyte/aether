@@ -25,6 +25,7 @@ import {
   framingTargets,
   framingText,
   measureFidelity,
+  scaleAdvisory,
   type FidelityReport,
   type FramingReport,
   type FramingTarget,
@@ -56,6 +57,9 @@ import {
   nearestFinishes,
   partKinds,
   projectMarks,
+  projectOverlays,
+  readScene,
+  roomAdvice,
   reviewFindings,
   reviewPoses,
   type ReviewPose,
@@ -324,6 +328,8 @@ interface Shot {
   renderRaster: Raster | null;
   /** How the picture's brightness, white point and tone differ from the photo's, as advisory data for `tune_look` ('' when unmeasured). */
   lookEvidence: string;
+  /** Standard-size sanity of the built room as advisory text ('' when unmeasured). */
+  scale: string;
 }
 
 interface Photo {
@@ -336,6 +342,14 @@ interface Photo {
 
 function toRequest(p: ReviewPose, aspect: number, marks: ReviewViewRequest['marks']): ReviewViewRequest {
   return { name: p.name, label: p.label, kind: p.kind, pose: { position: p.position, target: p.target, up: p.up, fov: p.fov }, hideTops: p.hideTops, aspect, marks };
+}
+
+/** Door arcs, approach zones and walking paths of the photo room, projected onto a plan image (advisory evidence). */
+function planOverlays(world: WorldDoc, pose: ReviewPose, aspect: number): NonNullable<ReviewViewRequest['overlays']> {
+  const scene = readScene(world, PHOTO_BUILDING_ID);
+  const room = scene?.rooms.find((r) => r.key === PHOTO_ROOM_ID);
+  if (!scene || !room) return [];
+  return projectOverlays(world, PHOTO_BUILDING_ID, pose, roomAdvice(scene, room).overlays, room.levelId, aspect);
 }
 
 async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, targets: readonly FramingTarget[], extraWalls: readonly string[], maxViews: number, wantClean = false): Promise<Shot | null> {
@@ -361,6 +375,18 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
       const m = projectMarks(world, PHOTO_BUILDING_ID, p, 1.5);
       for (const k of m) shown.add(k.n);
       views.push(toRequest(p, 1.5, m));
+    }
+  }
+  // The room from above with the door arcs, approach zones and walking paths drawn on it: evidence for what to move or enlarge.
+  if (views.length < maxViews) {
+    const plan = reviewPoses(world, PHOTO_BUILDING_ID, { rooms: [PHOTO_ROOM_ID], maxViews: 12, aspect: 1.5 }).find((p) => p.kind === 'plan');
+    if (plan) {
+      const m = projectMarks(world, PHOTO_BUILDING_ID, plan, 1.5);
+      for (const k of m) shown.add(k.n);
+      const req = toRequest(plan, 1.5, m);
+      const ov = planOverlays(world, plan, 1.5);
+      if (ov.length > 0) req.overlays = ov;
+      views.push(req);
     }
   }
   const clean = toRequest(cam, photo.aspect, []);
@@ -404,7 +430,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   const fidelity = measureFidelity(world, desc0, { framing, similarity, regionColour });
   const objective = fidelity?.score ?? null;
   const measure = fidelity ? fidelityLine(fidelity) : [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
-  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, renderRaster, lookEvidence };
+  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, renderRaster, lookEvidence, scale: scaleAdvisory(world) };
 }
 
 /** The room from above for `look_closer`: the level plan with its numbered pieces, and the legend of the numbers. */
@@ -417,7 +443,10 @@ async function planShot(run: PhotoRun, aspect: number): Promise<{ dataUrl: strin
   const asp = Math.max(1, Math.min(1.5, aspect));
   const marks = projectMarks(world, PHOTO_BUILDING_ID, pose, asp);
   const shown = new Set(marks.map((m) => m.n));
-  const got = await raceAbort(host.captureReview([toRequest(pose, asp, marks)], run.ctx.signal ? { signal: run.ctx.signal } : {}), run.ctx.signal);
+  const req = toRequest(pose, asp, marks);
+  const overlays = planOverlays(world, pose, asp);
+  if (overlays.length > 0) req.overlays = overlays;
+  const got = await raceAbort(host.captureReview([req], run.ctx.signal ? { signal: run.ctx.signal } : {}), run.ctx.signal);
   const img = got[0];
   return img ? { dataUrl: img.dataUrl, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown) } : null;
 }
@@ -1043,7 +1072,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     }) : null;
     if (kit && kit.images.length > 0) run.imageCap = Math.max(run.imageCap ?? 0, 6 + kit.images.length + 2);
     const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';

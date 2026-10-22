@@ -304,7 +304,8 @@ function wallObstacles(e: Entity): P2[][] {
 /** Quarter disc swept by a swing door leaf (in its parent's frame), or null. */
 export function doorSweep(e: Entity): P2[] | null {
   const behavior = e.behaviors.find((b) => b.type === 'door');
-  if (!behavior || behavior.params['motion'] !== 'swing') return null;
+  // A hinged leaf swings by animation ('swing') or on a physical hinge ('joint'); a sliding leaf sweeps nothing.
+  if (!behavior || (behavior.params['motion'] !== 'swing' && behavior.params['motion'] !== 'joint')) return null;
   const w = typeof params(e)['width'] === 'number' ? (params(e)['width'] as number) : 0.9;
   const hinge = behavior.params['hinge'] === 'right' ? 1 : -1;
   const angle = typeof behavior.params['swingAngle'] === 'number' ? (behavior.params['swingAngle'] as number) : 90;
@@ -643,7 +644,7 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
     }
     // Door clearance.
     for (const e of L.children) {
-      if (e.arch?.role !== 'door' || e.arch.kind !== 'leaf') continue;
+      if (e.arch?.role !== 'door' || e.arch.kind === 'sliding') continue;
       report.doors++;
       const sweep = doorSweep(e);
       if (!sweep) {

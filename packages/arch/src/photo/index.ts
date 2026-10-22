@@ -10,3 +10,4 @@ export * from './colour';
 export * from './fidelity';
 export * from './consensus';
 export * from './surface';
+export * from './scale';

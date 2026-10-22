@@ -168,6 +168,36 @@ export function readScene(world: WorldDoc, buildingId: EntityId): Scene | null {
   return { building: buildingId, levels, rooms, items, obstacles };
 }
 
+/** Opening angle the sweep is measured to (a little over the leaf's 92 degrees). */
+const SWEEP_STEPS = 9;
+
+/**
+ * The floor a swinging door leaf sweeps into `room` while it opens: a quarter disc about its hinge, from the closed leaf to the
+ * open one. Empty for sliding leaves and for leaves that open into the room on the other side of the wall.
+ */
+function leafSweep(leaf: Entity, e: RoomEdge, room: EntityId): P2[][] {
+  const beh = leaf.behaviors?.find((b) => b.type === 'door');
+  const prm = (beh?.params ?? {}) as Record<string, unknown>;
+  if (!beh || prm['motion'] === 'slide' || leaf.arch?.room !== room) return [];
+  const width = (leaf.shape as { params?: Record<string, unknown> }).params?.['width'];
+  if (typeof width !== 'number' || !(width > 0.2)) return [];
+  const yaw = leaf.transform.rotation[1];
+  const sgn = prm['hinge'] === 'right' ? 1 : -1;
+  const along = rotateYaw(1, 0, yaw);
+  const c: P2 = [leaf.transform.position[0], leaf.transform.position[2]];
+  const h: P2 = [c[0] + along[0] * sgn * (width / 2), c[1] + along[1] * sgn * (width / 2)];
+  // From the hinge towards the leaf's far edge, then round into the room.
+  const u: P2 = [-along[0] * sgn, -along[1] * sgn];
+  const n: P2 = [-e.out[0], -e.out[1]];
+  const poly: P2[] = [h];
+  for (let i = 0; i <= SWEEP_STEPS; i++) {
+    const a = (Math.PI / 2) * (92 / 90) * (i / SWEEP_STEPS);
+    const r = width + 0.02;
+    poly.push([h[0] + (u[0] * Math.cos(a) + n[0] * Math.sin(a)) * r, h[1] + (u[1] * Math.cos(a) + n[1] * Math.sin(a)) * r]);
+  }
+  return [poly];
+}
+
 /** The wall face of one room edge: the wall that lies on it and the openings that fall on it. */
 function wallFace(room: EntityId, index: number, e: RoomEdge, walls: readonly WallEnt[], byWall: ReadonlyMap<EntityId, Entity[]>, polys: ReadonlyArray<{ e: Entity; poly: P2[] }>, self: EntityId): SceneWall {
   const mid: P2 = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
@@ -197,13 +227,19 @@ function wallFace(room: EntityId, index: number, e: RoomEdge, walls: readonly Wa
       const wantWindow = o.kind === 'window';
       let frame: Entity | undefined;
       let leaf: Entity | undefined;
+      const leaves: Entity[] = [];
       for (const k of kids) {
         const kt = (k.transform.position[0] - w.a[0]) * w.dir[0] + (k.transform.position[2] - w.a[1]) * w.dir[1];
-        if (Math.abs(kt - o.offset) > 0.08) continue;
+        // A double door's leaves stand a quarter of the opening off its centre.
+        if (Math.abs(kt - o.offset) > (!wantWindow && k.arch?.role === 'door' ? Math.max(0.08, o.width / 2) : 0.08)) continue;
         if (wantWindow && k.arch?.role === 'window') frame = k;
         else if (!wantWindow && k.arch?.role === 'opening') frame = k;
-        else if (!wantWindow && k.arch?.role === 'door') leaf = k;
+        else if (!wantWindow && k.arch?.role === 'door') {
+          leaf = leaf ?? k;
+          leaves.push(k);
+        }
       }
+      const swing = leaves.flatMap((l) => leafSweep(l, e, room));
       // The room on the other side of the wall.
       const beyond: P2 = [c[0] + e.out[0] * (thickness / 2 + 0.35), c[1] + e.out[1] * (thickness / 2 + 0.35)];
       const other = polys.find((p) => p.e.id !== self && pointInPolygon(beyond[0], beyond[1], p.poly));
@@ -219,6 +255,7 @@ function wallFace(room: EntityId, index: number, e: RoomEdge, walls: readonly Wa
         leadsTo: other ? other.e.id : o.kind === 'window' ? 'outside' : exterior ? 'outside' : null,
         ...(leaf ? { leaf: leaf.id } : {}),
         wall: w.id,
+        ...(swing.length > 0 ? { swing } : {}),
       });
     });
   }

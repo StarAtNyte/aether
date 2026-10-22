@@ -37,6 +37,11 @@ export interface SceneOpening {
   leaf?: EntityId;
   /** The wall entity that carries the opening. */
   wall: EntityId;
+  /**
+   * Floor area each swinging leaf sweeps into this room while it opens (a convex quarter disc per leaf, plan metres); absent for
+   * sliding doors, openings without a leaf and leaves that swing into the room on the other side.
+   */
+  swing?: P2[][];
 }
 
 /** One wall face of a room: its edge, openings and the pieces on it. */

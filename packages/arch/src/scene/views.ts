@@ -13,6 +13,7 @@ import { cmr } from './geom';
 import { itemLine } from './facts';
 import { readScene } from './read';
 import type { Scene, SceneItem, SceneOpening, SceneRoom } from './types';
+import type { PlanOverlay } from './advice';
 
 /** A camera for one review image. */
 export interface ReviewPose {
@@ -477,6 +478,31 @@ export function projectGeometry(geometry: readonly EntityGeometry[], pose: Revie
     const y1 = Math.min(1, Math.max(...ys));
     if (x1 <= x0 || y1 <= y0) continue;
     out.set(g.id, [x0, y0, x1, y1]);
+  }
+  return out;
+}
+
+/** A shape on one image, in normalised image coordinates (origin top-left). */
+export interface ImageOverlay {
+  kind: PlanOverlay['kind'];
+  closed: boolean;
+  label: string;
+  pts: Array<[number, number]>;
+}
+
+/** The advisory shapes of the room (door arcs, approach zones, walking paths) projected onto one image. */
+export function projectOverlays(world: WorldDoc, building: EntityId, pose: ReviewPose, overlays: readonly PlanOverlay[], levelId?: EntityId, aspect = 1.5): ImageOverlay[] {
+  const scene = readScene(world, building);
+  if (!scene) return [];
+  const f = frameOf(world, scene);
+  const cam = camOf(pose, aspect);
+  const lv = levelId ?? scene.levels[0]?.id;
+  if (!lv) return [];
+  const out: ImageOverlay[] = [];
+  for (const o of overlays) {
+    const pts = o.pts.map((p) => project(cam, toWorld(f, p, 0.02, lv)));
+    if (pts.some((p) => p === null)) continue;
+    out.push({ kind: o.kind, closed: o.closed, label: o.label, pts: pts.map((p) => [p!.x, p!.y] as [number, number]) });
   }
   return out;
 }

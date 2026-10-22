@@ -231,7 +231,7 @@ export class AgentBridge implements AgentHost {
       const view = views[i];
       const image = images[i];
       if (!view || !image || opts.signal?.aborted) continue;
-      out.push({ name: view.name, dataUrl: await drawMarks(image, view.marks) });
+      out.push({ name: view.name, dataUrl: await drawMarks(image, view.marks, view.overlays ?? []) });
     }
     return out;
   }

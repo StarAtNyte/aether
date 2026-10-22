@@ -66,11 +66,43 @@ export function layoutMarks(marks: readonly NormMark[], width: number, height: n
   return out;
 }
 
+/** An advisory shape in normalised image coordinates (door arc, approach zone, walking path, blocked piece). */
+export interface NormOverlay {
+  kind: 'swing' | 'approach' | 'path' | 'blocked';
+  closed: boolean;
+  label: string;
+  pts: ReadonlyArray<readonly [number, number]>;
+}
+
+const OVERLAY_STYLE: Record<NormOverlay['kind'], { stroke: string; fill: string }> = {
+  swing: { stroke: '#18c24a', fill: 'rgba(24,194,74,0.22)' },
+  approach: { stroke: '#f0a30a', fill: 'rgba(240,163,10,0.20)' },
+  path: { stroke: '#2f7bff', fill: 'rgba(47,123,255,0)' },
+  blocked: { stroke: '#ff2d2d', fill: 'rgba(255,45,45,0.30)' },
+};
+
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
+function drawOverlays(ctx: Ctx, overlays: readonly NormOverlay[], w: number, h: number): void {
+  for (const o of overlays) {
+    if (o.pts.length < 2 || !o.pts.every((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]))) continue;
+    const st = OVERLAY_STYLE[o.kind];
+    ctx.beginPath();
+    o.pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p[0] * w, p[1] * h) : ctx.lineTo(p[0] * w, p[1] * h)));
+    if (o.closed) ctx.closePath();
+    ctx.fillStyle = st.fill;
+    ctx.strokeStyle = st.stroke;
+    ctx.lineWidth = o.kind === 'path' ? 4 : 2;
+    if (o.kind === 'path') ctx.setLineDash([10, 6]);
+    if (o.closed) ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
 /** Draw the marks onto an image data URL; returns the original on any failure. */
-export async function drawMarks(dataUrl: string, marks: readonly NormMark[]): Promise<string> {
-  if (marks.length === 0) return dataUrl;
+export async function drawMarks(dataUrl: string, marks: readonly NormMark[], overlays: readonly NormOverlay[] = []): Promise<string> {
+  if (marks.length === 0 && overlays.length === 0) return dataUrl;
   try {
     const blob = dataUrlToBlob(dataUrl);
     if (!blob) return dataUrl;
@@ -87,6 +119,7 @@ export async function drawMarks(dataUrl: string, marks: readonly NormMark[]): Pr
       ctx.font = `700 ${Math.round(unit * 0.95)}px system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
+      drawOverlays(ctx, overlays, w, h);
       for (const p of layoutMarks(marks, w, h)) {
         ctx.strokeStyle = `hsl(${p.hue} 95% 52%)`;
         ctx.strokeRect(p.x, p.y, p.w, p.h);

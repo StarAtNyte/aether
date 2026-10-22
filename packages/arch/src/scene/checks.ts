@@ -186,7 +186,14 @@ export function windowFindings(scene: Scene): Finding[] {
   return out;
 }
 
-/** Furniture in front of a doorway (the walking approach), and in the room's way. */
+/** Metres of clear floor kept in front of every doorway (a person walking through, a leaf being pushed). */
+export const DOOR_APPROACH = 0.9;
+
+/**
+ * Furniture in front of a doorway or in the sweep of its leaf. Hard rule for every door: the full arc a swinging leaf
+ * sweeps into the room and a 0.9 m approach zone the width of the opening stay free of anything that stands on the floor
+ * (head height and below), so the door opens fully without touching a collider and a person can step through.
+ */
 export function doorwayFindings(scene: Scene): Finding[] {
   const out: Finding[] = [];
   for (const room of scene.rooms) {
@@ -194,20 +201,24 @@ export function doorwayFindings(scene: Scene): Finding[] {
       for (const o of wall.openings) {
         if (o.kind === 'window') continue;
         const half = o.width / 2 + 0.05;
-        const depth = 0.7;
         const c: P2 = [wall.a[0] + wall.dir[0] * o.centre - wall.out[0] * wall.inset, wall.a[1] + wall.dir[1] * o.centre - wall.out[1] * wall.inset];
         const n = inward(wall);
         const zone: P2[] = [
           [c[0] - wall.dir[0] * half, c[1] - wall.dir[1] * half],
           [c[0] + wall.dir[0] * half, c[1] + wall.dir[1] * half],
-          [c[0] + wall.dir[0] * half + n[0] * depth, c[1] + wall.dir[1] * half + n[1] * depth],
-          [c[0] - wall.dir[0] * half + n[0] * depth, c[1] - wall.dir[1] * half + n[1] * depth],
+          [c[0] + wall.dir[0] * half + n[0] * DOOR_APPROACH, c[1] + wall.dir[1] * half + n[1] * DOOR_APPROACH],
+          [c[0] - wall.dir[0] * half + n[0] * DOOR_APPROACH, c[1] - wall.dir[1] * half + n[1] * DOOR_APPROACH],
         ];
+        const zones: Array<{ poly: P2[]; what: string }> = [{ poly: zone, what: `the ${DOOR_APPROACH} m approach` }, ...(o.swing ?? []).map((poly) => ({ poly, what: 'the sweep of its leaf' }))];
         for (const it of scene.items) {
           if (it.room !== room.id || it.mount === 'wall' || it.mount === 'ceiling' || it.kind === 'rug' || it.y0 > 2.0) continue;
           if (it.y1 < 0.3) continue;
-          const pen = penetration(it.footprint, zone, 0.02);
-          if (pen && pen.depth > 0.05) out.push({ code: 'doorway_blocked', severity: 'error', message: `${it.kind} ${it.id} stands in the way of the ${o.kind} ${o.id} on the ${wall.compass} wall of ${room.key} (${cmr(pen.depth).toFixed(2)} m into the 0.7 m approach)`, entities: [it.id, o.id], room: room.key, fix: `Move ${it.id} at least ${cmr(depth).toFixed(2)} m from the ${wall.compass} wall at t ${cmr(o.t0 - 0.05)}..${cmr(o.t1 + 0.05)}.` });
+          let worst: { depth: number; what: string } | null = null;
+          for (const z of zones) {
+            const pen = penetration(it.footprint, z.poly, 0.02);
+            if (pen && pen.depth > 0.03 && (!worst || pen.depth > worst.depth)) worst = { depth: pen.depth, what: z.what };
+          }
+          if (worst) out.push({ code: 'doorway_blocked', severity: 'error', message: `${it.kind} ${it.id} stands in ${worst.what} of the ${o.kind} ${o.id} on the ${wall.compass} wall of ${room.key} (${cmr(worst.depth).toFixed(2)} m in): the door would not open fully`, entities: [it.id, o.id], room: room.key, fix: `Move ${it.id} out of the door's sweep and the ${DOOR_APPROACH} m in front of it (along the wall, or to another wall), or put it somewhere else.` });
         }
       }
     }

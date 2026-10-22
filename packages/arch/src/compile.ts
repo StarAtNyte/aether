@@ -487,7 +487,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       };
       const into = privacy(ra) >= privacy(rb) ? ra : rb;
       const side: 1 | -1 = (into === ra ? sa : sb) === 1 ? 1 : -1;
-      const doubleLeaf = (d.style === 'double' || d.style === 'french') && d.kind === 'swing' && width >= 1.2;
+      // A single leaf wider than ~1.3 m would sweep a room: wide swing doors (a glazed balcony door) hang as a pair.
+      const doubleLeaf = d.kind === 'swing' && width >= 1.2 && (d.style === 'double' || d.style === 'french' || width >= 1.3);
       const arched = d.style === 'arched';
       const springing = arched ? round(Math.max(1.6, Math.min(height - 0.35, height * 0.82))) : undefined;
       const fullLeafW = round(width - 2 * LINING - 2 * DOOR_CLEARANCE);
