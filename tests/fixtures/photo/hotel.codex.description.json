@@ -1,0 +1,490 @@
+{
+ "summary": "A compact hotel bedroom with tall plum curtains around a bright sash window, mauve painted walls, and a white double bed against a dark upholstered headboard. Two framed circular photographs, a cream chair, two lamps, and a small television complete the visible room.",
+ "roomType": "bedroom",
+ "style": "classic",
+ "footprint": {
+  "width": 3.4,
+  "depth": 3.8,
+  "ceiling": 3.05
+ },
+ "camera": {
+  "x": 0.35,
+  "z": 3.48,
+  "height": 1.5,
+  "heading": 35,
+  "pitch": 0,
+  "fov": 84
+ },
+ "walls": {
+  "north": {
+   "color": "#987d83",
+   "material": "painted plaster",
+   "finish": "paint",
+   "box": [
+    0.012,
+    0.075,
+    0.077,
+    0.361
+   ],
+   "visible": true
+  },
+  "east": {
+   "color": "#9e8588",
+   "material": "painted plaster",
+   "finish": "paint",
+   "box": [
+    0.569,
+    0.177,
+    0.802,
+    0.333
+   ],
+   "visible": true
+  },
+  "south": {
+   "color": "#987d83",
+   "material": "painted plaster",
+   "finish": "paint",
+   "box": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "visible": false
+  },
+  "west": {
+   "color": "#987d83",
+   "material": "painted plaster",
+   "finish": "paint",
+   "box": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "visible": false
+  }
+ },
+ "floor": {
+  "material": "carpet",
+  "finish": "fabric",
+  "color": "#8e7b72",
+  "box": [
+   0.237,
+   0.846,
+   0.28,
+   0.857
+  ],
+  "note": "Only a very small shaded strip is exposed below the window; carpet material and its colour are uncertain."
+ },
+ "ceiling": {
+  "style": "flat",
+  "color": "#eee2c9",
+  "box": [
+   0.281,
+   0.006,
+   0.523,
+   0.062
+  ],
+  "cornice": {
+   "height": 0.16,
+   "depth": 0.12,
+   "profile": "classic",
+   "color": "#eee5d3"
+  }
+ },
+ "skirting": {
+  "height": 0.17,
+  "profile": "stepped",
+  "color": "#e9dfcd"
+ },
+ "niches": [],
+ "openings": [
+  {
+   "id": "window-1",
+   "kind": "window",
+   "style": "sash",
+   "frame": "#f1ead9",
+   "casing": true,
+   "wall": "north",
+   "along": 1.55,
+   "width": 1.48,
+   "height": 2.43,
+   "sill": 0.53,
+   "visible": true,
+   "glow": true,
+   "daylight": "#fff4d6",
+   "box": [
+    0.23,
+    0.053,
+    0.397,
+    0.722
+   ],
+   "note": "Very tall white-painted recessed window with a broad lower sill and horizontal sash rails; glazing bars are not clearly discernible. Strong warm daylight washes out parts of the glass; a pale masonry building with rows of windows is visible outside."
+  }
+ ],
+ "items": [
+  {
+   "id": "curtains-1",
+   "kind": "curtain",
+   "label": "Two full-length densely pleated plum curtain panels",
+   "wall": "north",
+   "along": 1.55,
+   "gap": 0.14,
+   "opening": "window-1",
+   "params": {
+    "width": 0.88,
+    "height": 2.98,
+    "color": "#684454",
+    "sheer": "linen",
+    "style": "pleated",
+    "pelmet": "none",
+    "rod": "track",
+    "tieback": false,
+    "closed": 0.08,
+    "panels": 2,
+    "gap": 1.48,
+    "pool": 0
+   },
+   "visible": true,
+   "box": [
+    0.087,
+    0,
+    0.513,
+    0.913
+   ],
+   "confidence": 0.96
+  },
+  {
+   "id": "bed-1",
+   "kind": "bed",
+   "label": "White double bed with a tall dark plum upholstered slab headboard and two plum cushions",
+   "wall": "east",
+   "along": 2.15,
+   "gap": 0.03,
+   "faces": "west",
+   "params": {
+    "size": "double",
+    "frame": "fabric",
+    "headboard": "#503747",
+    "linen": "#f4eddc",
+    "headboardHeight": 1.25,
+    "accents": 2,
+    "accent": "#714259",
+    "headboardStyle": "slab",
+    "pattern": "plain",
+    "canopy": false
+   },
+   "visible": true,
+   "box": [
+    0.176,
+    0.59,
+    1,
+    1
+   ],
+   "confidence": 0.95
+  },
+  {
+   "id": "art-1",
+   "kind": "art",
+   "label": "Smaller dark wood frame containing a circular monochrome architectural photograph on a cream mat",
+   "wall": "east",
+   "along": 1.58,
+   "bottom": 1.48,
+   "params": {
+    "width": 0.53,
+    "height": 0.64,
+    "frame": "walnut",
+    "subject": "round",
+    "matColor": "#f0e6cf",
+    "ink": "#473b4a"
+   },
+   "visible": true,
+   "box": [
+    0.673,
+    0.352,
+    0.779,
+    0.555
+   ],
+   "confidence": 0.96
+  },
+  {
+   "id": "art-2",
+   "kind": "art",
+   "label": "Larger dark wood frame containing a circular monochrome tree and landscape photograph",
+   "wall": "east",
+   "along": 2.55,
+   "bottom": 1.48,
+   "params": {
+    "width": 0.67,
+    "height": 0.73,
+    "frame": "walnut",
+    "subject": "round",
+    "matColor": "#eee4cc",
+    "ink": "#493d4c"
+   },
+   "visible": true,
+   "box": [
+    0.826,
+    0.321,
+    0.987,
+    0.583
+   ],
+   "confidence": 0.96
+  },
+  {
+   "id": "nightstand-1",
+   "kind": "nightstand",
+   "label": "Low dark bedside cabinet between the bed and window corner",
+   "wall": "east",
+   "along": 1.05,
+   "gap": 0.04,
+   "params": {
+    "body": "walnut",
+    "color": "#352b34",
+    "style": "cabinet",
+    "height": 0.48
+   },
+   "visible": true,
+   "box": [
+    0.492,
+    0.751,
+    0.586,
+    0.797
+   ],
+   "confidence": 0.76
+  },
+  {
+   "id": "table-lamp-1",
+   "kind": "table-lamp",
+   "label": "Small bedside lamp with a slim silver stem and ivory tapered shade",
+   "on": "nightstand-1",
+   "offset": [
+    0,
+    0
+   ],
+   "params": {
+    "base": "#b7afa2",
+    "shade": "#efe3c4",
+    "lit": false
+   },
+   "visible": true,
+   "box": [
+    0.54,
+    0.65,
+    0.589,
+    0.783
+   ],
+   "confidence": 0.96
+  },
+  {
+   "id": "floor-lamp-1",
+   "kind": "floor-lamp",
+   "label": "Tall slim silver floor lamp with a cream tapered shade beside the curtain",
+   "at": [
+    2.9,
+    0.52
+   ],
+   "params": {
+    "style": "pole",
+    "finish": "chrome",
+    "shade": "#e9dcc0",
+    "lit": false
+   },
+   "visible": true,
+   "box": [
+    0.473,
+    0.482,
+    0.534,
+    0.76
+   ],
+   "confidence": 0.94
+  },
+  {
+   "id": "chair-1",
+   "kind": "armchair",
+   "label": "Armless cream upholstered occasional chair beneath the right side of the window; closest available chair form",
+   "wall": "north",
+   "along": 2.23,
+   "gap": 0.16,
+   "faces": "south",
+   "params": {
+    "width": 0.63,
+    "upholstery": "fabric",
+    "color": "#e9dfc4",
+    "legs": "walnut"
+   },
+   "visible": true,
+   "box": [
+    0.345,
+    0.655,
+    0.467,
+    0.835
+   ],
+   "confidence": 0.88
+  },
+  {
+   "id": "small-table-1",
+   "kind": "coffee-table",
+   "label": "Small square dark wooden table immediately in front of the cream chair",
+   "at": [
+    2.18,
+    1.02
+   ],
+   "params": {
+    "width": 0.48,
+    "depth": 0.4,
+    "height": 0.4,
+    "shape": "rect",
+    "top": "walnut",
+    "legs": "walnut",
+    "shelf": false
+   },
+   "visible": true,
+   "box": [
+    0.343,
+    0.772,
+    0.455,
+    0.836
+   ],
+   "confidence": 0.86
+  },
+  {
+   "id": "book-1",
+   "kind": "book",
+   "label": "Large illustrated magazine or thin book lying flat on the small table",
+   "on": "small-table-1",
+   "offset": [
+    0,
+    0
+   ],
+   "params": {
+    "color": "#b6a58d"
+   },
+   "visible": true,
+   "box": [
+    0.361,
+    0.77,
+    0.439,
+    0.817
+   ],
+   "confidence": 0.88
+  },
+  {
+   "id": "tv-cabinet-1",
+   "kind": "sideboard",
+   "label": "Tall dark television cabinet cropped at the left edge; represented by the closest cabinet form",
+   "wall": "west",
+   "along": 2.65,
+   "gap": 0.03,
+   "faces": "east",
+   "params": {
+    "width": 0.8,
+    "height": 0.9,
+    "body": "walnut",
+    "fronts": "doors",
+    "legs": "walnut",
+    "color": "#352b34"
+   },
+   "visible": true,
+   "box": [
+    0,
+    0.539,
+    0.139,
+    1
+   ],
+   "confidence": 0.7
+  },
+  {
+   "id": "tv-1",
+   "kind": "tv-set",
+   "label": "Small older silver television with a thick bezel and dark screen, standing on the cabinet",
+   "on": "tv-cabinet-1",
+   "offset": [
+    0,
+    0
+   ],
+   "params": {
+    "inches": 19,
+    "shell": "#bcb7ab"
+   },
+   "visible": true,
+   "box": [
+    0.027,
+    0.38,
+    0.128,
+    0.549
+   ],
+   "confidence": 0.96
+  },
+  {
+   "id": "book-2",
+   "kind": "book",
+   "label": "Thin pale booklet lying on the television cabinet",
+   "on": "tv-cabinet-1",
+   "offset": [
+    0.2,
+    0.1
+   ],
+   "params": {
+    "color": "#c9bda3"
+   },
+   "visible": true,
+   "box": [
+    0.062,
+    0.549,
+    0.119,
+    0.564
+   ],
+   "confidence": 0.65
+  }
+ ],
+ "light": {
+  "timeOfDay": 12,
+  "sky": "day",
+  "from": "north",
+  "warmth": "warm",
+  "brightness": 0.86,
+  "note": "Strong diffuse daylight through the tall window; warm cream highlights and deep plum shadows. Both visible lamp shades appear unlit. The photograph has a warm, slightly faded colour treatment."
+ },
+ "palette": [
+  "#9e8588",
+  "#684454",
+  "#503747",
+  "#714259",
+  "#f4eddc",
+  "#eee2c9"
+ ],
+ "assumptions": [
+  {
+   "id": "room-size",
+   "text": "The unseen room boundaries are estimated as 3.4 by 3.8 metres, using a roughly 1.5 by 2 metre double bed and the chair as scale references. The tall window and cornice suggest a ceiling around 3.05 metres.",
+   "confidence": 0.57,
+   "adjust": "Make the room 3.8 metres wide, 4.2 metres deep, and 3.2 metres high."
+  },
+  {
+   "id": "camera",
+   "text": "The camera is estimated in the southwest part of the room looking northeast, with the window on the north wall and headboard on the east wall. Lens field of view and unseen wall extents remain uncertain.",
+   "confidence": 0.62,
+   "adjust": "Move the camera farther south and use a 90 degree horizontal field of view."
+  },
+  {
+   "id": "floor",
+   "text": "Furniture and curtains hide almost all the floor. A muted brown carpet is assumed from the tiny exposed shaded strip; no rug is identifiable.",
+   "confidence": 0.25,
+   "adjust": "Use dark brown fitted carpet across the floor."
+  },
+  {
+   "id": "furniture-approximations",
+   "text": "The cream chair is visibly armless, while the available armchair part is the closest upholstered form. The TV cabinet extends beyond the frame and may be taller than the 0.9 metre maximum available sideboard; the television is a thick older model rather than a modern flat screen.",
+   "confidence": 0.74,
+   "adjust": "Make the television cabinet 1.15 metres tall and use an armless cream chair."
+  },
+  {
+   "id": "window-detail",
+   "text": "The overexposed window is interpreted as a tall sash window. Its precise rail and glazing arrangement, and portions covered by curtains, cannot be measured reliably.",
+   "confidence": 0.63,
+   "adjust": "Use a single tall sash window without glazing bars."
+  }
+ ]
+}

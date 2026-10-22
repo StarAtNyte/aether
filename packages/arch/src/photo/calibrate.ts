@@ -53,6 +53,8 @@ export interface FramingReport {
   /** 1 - mean error (1: every box matches). */
   score: number;
   rows: FramingRow[];
+  /** What the fit itself saw (the camera against a limit): evidence for the model, never a verdict. */
+  notes?: string[];
 }
 
 function union(boxes: readonly ImageBox[]): ImageBox | null {
@@ -166,6 +168,16 @@ export function calibrateCamera(world: Parameters<typeof entityGeometry>[0], d: 
   if (!poseBefore || !poseAfter) return null;
   const before = framingOf(geometry, targets, poseBefore, aspect);
   const after = framingOf(geometry, targets, poseAfter, aspect);
+  const pinned: string[] = [];
+  const near = (v: number, b: number): boolean => Math.abs(v - b) < 0.03;
+  if (near(best.p[0], lo[0]) || near(best.p[0], hi[0]) || near(best.p[1], lo[1]) || near(best.p[1], hi[1])) {
+    pinned.push('The fitted camera stands against a wall of the room (it cannot go further back inside it): the photo was probably taken from further back, from a doorway or past the room, or the room is deeper or wider than described. Check the room size before moving single pieces.');
+  }
+  if (near(best.p[4], lo[4]) || near(best.p[4], hi[4])) pinned.push(`The fitted field of view hit its limit (${round(best.p[4], 0)} degrees): the camera or the room size is off.`);
+  if (pinned.length > 0) {
+    after.notes = pinned;
+    before.notes = pinned;
+  }
   const camera: PhotoCamera = { x: round(best.p[0], 2), z: round(best.p[1], 2), heading: round(best.p[2], 1), pitch: round(best.p[3], 1), fov: round(best.p[4], 1), height: round(best.p[5], 2) };
   return { camera, before, after, improved: after.score > before.score + 0.03 };
 }
@@ -175,13 +187,44 @@ function round(v: number, n: number): number {
   return Math.round(v * m) / m;
 }
 
+/**
+ * How the boxes of the photo differ in scale from the render's, as words for the model (null when they agree). Taller in the
+ * photo than in the render while no wider means the room is probably taller (or narrower) than described: the vertical
+ * proportions of a room (ceiling, window and door heights) are what a model reads worst from a flat picture.
+ */
+export function scaleAdvice(r: FramingReport): string | null {
+  const hs: number[] = [];
+  const ws: number[] = [];
+  for (const x of r.rows) {
+    if (!x.got) continue;
+    const wh = x.want[3] - x.want[1];
+    const gh = x.got[3] - x.got[1];
+    const ww = x.want[2] - x.want[0];
+    const gw = x.got[2] - x.got[0];
+    // Boxes cut by the picture's frame say little about size.
+    if (x.want[0] <= 0.005 || x.want[1] <= 0.005 || x.want[2] >= 0.995 || x.want[3] >= 0.995) continue;
+    if (wh > 0.04 && gh > 0.02) hs.push(wh / gh);
+    if (ww > 0.04 && gw > 0.02) ws.push(ww / gw);
+  }
+  if (hs.length < 3 || ws.length < 3) return null;
+  const med = (a: number[]): number => [...a].sort((p, q) => p - q)[Math.floor(a.length / 2)] as number;
+  const h = med(hs);
+  const w = med(ws);
+  const rel = h / w;
+  if (rel > 1.25) return `Scale: the pieces are about ${rel.toFixed(1)}x taller in the photo than in the render compared with their width (median over ${hs.length} pieces). The room is probably taller than described, or narrower: check the ceiling height and the heights of windows, doors and tall pieces, and say what you change.`;
+  if (rel < 0.8) return `Scale: the pieces are about ${(1 / rel).toFixed(1)}x wider in the photo than in the render compared with their height (median over ${hs.length} pieces). The room is probably lower or wider than described: check the ceiling height and the widths.`;
+  return null;
+}
+
 /** Plain-text lines for the model: the worst boxes, where the photo has them and where the render does. */
 export function framingText(r: FramingReport, limit = 8): string {
   const pct = (b: ImageBox): string => `x ${Math.round(b[0] * 100)}–${Math.round(b[2] * 100)}%, y ${Math.round(b[1] * 100)}–${Math.round(b[3] * 100)}%`;
+  const extra = [...(scaleAdvice(r) ? [scaleAdvice(r) as string] : []), ...(r.notes ?? [])];
   const worst = r.rows.filter((x) => x.error > 0.12).sort((a, b) => b.error - a.error).slice(0, limit);
-  if (worst.length === 0) return `Framing: everything the photo shows is where the photo has it (score ${Math.round(r.score * 100)}%).`;
+  if (worst.length === 0) return [`Framing: everything the photo shows is where the photo has it (score ${Math.round(r.score * 100)}%).`, ...extra].join('\n');
   return [
-    `Framing score ${Math.round(r.score * 100)}% (the camera is already fitted as well as it can be to where the photo shows things; what is left is a piece in the wrong place or of the wrong size). Worst, as image boxes (% of the picture width and height):`,
+    `Framing score ${Math.round(r.score * 100)}% (the camera is fitted as well as it can be to where the photo shows things; what is left is a piece in the wrong place or of the wrong size, or the room itself). Worst, as image boxes (% of the picture width and height):`,
     ...worst.map((x) => `- ${x.label}: photo ${pct(x.want)}; render ${x.got ? pct(x.got) : 'not in the picture'}`),
+    ...extra,
   ].join('\n');
 }

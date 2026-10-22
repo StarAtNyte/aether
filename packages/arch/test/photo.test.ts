@@ -11,6 +11,7 @@ import {
   framingOf,
   framingTargets,
   framingText,
+  scaleAdvice,
   fitOpening,
   deriveBuild,
   floorFinish,
@@ -99,6 +100,30 @@ describe('openings that a photo estimate gets slightly wrong', () => {
     const mem = memoryCaller(createWorld({}));
     const run = await runBuild(mem.world(), deriveBuild(tall), mem.call);
     expect(run.shellOk, run.shellText).toBe(true);
+  });
+});
+
+describe('what the fit tells the model about the room itself', () => {
+  const row = (label: string, want: [number, number, number, number], got: [number, number, number, number] | null) => ({ label, error: 0.3, want, got });
+  it('says the room is probably taller when the pieces are taller in the photo than in the render, and stays quiet when they agree', () => {
+    const tall = { score: 0.7, rows: [row('a', [0.2, 0.05, 0.4, 0.75], [0.2, 0.25, 0.44, 0.7]), row('b', [0.5, 0.3, 0.6, 0.8], [0.55, 0.45, 0.66, 0.8]), row('c', [0.6, 0.2, 0.7, 0.7], [0.62, 0.35, 0.72, 0.72])] };
+    expect(scaleAdvice(tall)).toMatch(/taller in the photo/);
+    expect(framingText(tall)).toMatch(/ceiling height/);
+    const same = { score: 0.9, rows: tall.rows.map((r) => ({ ...r, got: r.want })) };
+    expect(scaleAdvice(same)).toBeNull();
+  });
+
+  it('reads a recorded live hotel description: the camera is against the wall and the render is too low, and the text says both', async () => {
+    const live = JSON.parse(readFileSync(resolve(__dirname, '../../../tests/fixtures/photo/hotel.codex.description.json'), 'utf8')) as unknown;
+    const p = parseRoomDescription(live, partKinds());
+    if (!p.ok) throw new Error(p.error);
+    const mem = memoryCaller(createWorld({}));
+    const run = await runBuild(mem.world(), deriveBuild(p.value), mem.call);
+    const fit = calibrateCamera(run.world, p.value, 1.04, framingTargets(p.value, run.openings));
+    expect(fit).not.toBeNull();
+    const text = framingText(fit!.improved ? fit!.after : fit!.before, 20);
+    expect(text).toMatch(/against a wall of the room/);
+    expect(text).toMatch(/taller in the photo/);
   });
 });
 

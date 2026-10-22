@@ -5193,3 +5193,43 @@ judged score drift down (final lower than best, pd2); the planner house's north-
 half-finished hill edit was a Claude Code take-over after the limit, not repeated with Codex.
 
 Gates: typecheck 0, vitest agent + arch + playtest 123 files / 1582 tests, smoke 34/34.
+
+## Photo to room: best state kept by the judges, hung curtains, what the camera fit says about the room
+
+Three items left open by the live check above. Scripted-model tests only; no live run was made in this pass (the Codex
+limit had reset, but the fixes are about what the loop does with answers it already gets, and a live run is the next step).
+
+**Final state below the best seen.** A tied round is accepted, so a run of ties could end under the best state (pd2: 11/21
+then 4/21). The loop now remembers the best state by the judges' own word (the first look, then each state they found closer
+than the accepted one or whose median score rose). When it ends on a different state, the panel looks at the last render and
+the best render side by side (A/B order alternated per seat, as in every round) and the room goes back to the best only
+when they find it closer; a tie or a vote for the last keeps the last. No score is compared in code. The summary says so
+("compared the last state (round N) with the best one seen (round M) side by side ... the room is the best one"), the
+score shown is the one the judges gave that state at its own round, and `judgedBy` is unchanged. One extra panel call, only
+when the end state is not the best. Not done: the `judges: 0` mode (the assistant judging alone) has no such final check;
+it already sees the best render each round but ties still drift there. Tests: `photo-pipeline.test.ts` (ties then a vote for the best
+rolls back; a final tie keeps the last).
+
+**Curtains lost in the Codex hotel run.** Reproduced offline from the recorded description. The model wrote one curtain item
+with `panels: 2` and `gap: 1.48` (the whole dressing), and `placeCurtain` hangs a panel per side but passed those params to
+each panel, so each side became a pair 3.4 m wide (1.09 to 4.49 m on a 4 m wall) that sat over the glass and the placement audit
+refused it ("that wall has no clear stretch wide enough"). The model's retries repeated `panels: 2`, so it could not recover and
+finished saying the placement checks reject the curtains. Fix at the cause (`scene/edit.ts`): each side panel is a single panel
+whatever the caller wrote (`gap` dropped, kept to 0.2 only for a drawn panel); the photo prompt now says not to set panels or gap.
+Test in `photo.test.ts` fails without the change. Side effect: `closed` on a hung side panel has little visual effect.
+
+**Shell size and the cropped sideboard.** Cause found for shell size on the same recorded hotel: the camera fit (boxes only)
+ends pinned against the room wall (x 0.15 m) and the photo's pieces are about 2x taller relative to their width than the
+render's (window 5 to 72 % of the picture height in the photo, 24 to 68 % in the render; its width 17 % against 23 %). That is
+the signature of a room taller (or narrower) than described, which the model reads worst from a flat picture, not of a framing
+or a wrong field of view (a search over starting fields of view changed nothing). The old text told the model the camera was
+fitted "as well as it can be", so it never looked at the room. `framingText` now adds, as evidence only, a scale line when the
+median height ratio differs from the width ratio by 25 % (ceiling, window, door heights) and a note when the fit hit a wall or
+a field-of-view limit (the photo was taken from further back, or the room is bigger). The model decides what to change. The
+sideboard: the TV cabinet is cropped by the frame and its listed height (0.9 m) puts the TV much lower than in the photo
+(TV 38 to 55 % in the photo, 57 to 71 % in the render); the scale advice excludes frame-cut boxes from the ratio but nothing
+rebuilds the cabinet automatically. Not verified live: whether a model acts on the new lines and the judges then pass
+shell-size. Tests: `photo.test.ts` (synthetic and the recorded live description, fixture `hotel.codex.description.json`).
+
+**Environment note.** A worktree whose `node_modules` was symlinked from another checkout resolved `@aether/*` to that
+checkout and gave 10 false failures; use `npm ci --ignore-scripts` in a worktree.
