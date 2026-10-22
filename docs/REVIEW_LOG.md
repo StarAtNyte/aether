@@ -5529,7 +5529,7 @@ subscription backend; whether models keep the ids stable between rounds; the cos
    single-pass outlines with a resolution slider). The studio has tier and per-effect switches (ambient occlusion, reflections,
    grain, …) but no outline or cavity options; the selection highlight is in `packages/render/src/view/highlighter.ts`.
 7. *Blueprint options* (grid opacity, contour lines, line opacity, blueprint colours; geometry view with x-ray and "see inside
-   rooms"). A plan view exists (`PlanView.tsx`, ink and paper plan mode in the renders); the opacity sliders and an x-ray are not
+   rooms"). A plan view exists (`PlanView.tsx`); the opacity sliders and an x-ray are not
    there.
 8. *Units toggle (metric / imperial).* Every length is metres in the model, the inspector and the tool results. A display setting
    (feet and inches in fields and readouts, parsed back to metres) touches every numeric field; keep the model side metric.
@@ -5539,8 +5539,8 @@ subscription backend; whether models keep the ids stable between rounds; the cos
 10. *Navigation settings* (orbit, fly, run; fly and run speed, run height, jump height, scale speed with altitude, inverted
     look). The studio has orbit and a play mode with its own controller; a run-through mode for walking the built room at eye
     height before playing would help judging scale.
-11. *Viewport settings* (frame selected, reset view, field of view, gizmo size, solid ground, hide back-facing surfaces). Frame
-    and reset exist as commands; the field-of-view slider and the back-face toggle were not checked.
+11. *Viewport settings* (frame selected, reset view, field of view, gizmo size, solid ground, hide back-facing surfaces). Framing
+    the world exists (`frameWorld`); reset view, the field-of-view slider and the back-face toggle were not checked.
 12. *Iterations of a design* (an Output panel with numbered iterations, each holding its own prompt, render, progress and style
     reference). Aether has branches and time travel in history (ARCHITECTURE §5); a gallery of branches with a thumbnail each
     and "compare two" would be the equivalent.
