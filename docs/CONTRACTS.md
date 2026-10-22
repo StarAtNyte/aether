@@ -2859,8 +2859,8 @@ a structured description and derives tool calls from it.
   `{reads, asked, items: pieces per read, consensus, checklist, dropped, contested, reconciled: reasons}`.
 - `CompletionRequest.seed?` (advisory, like `temperature`).
 - `@aether/arch/photo`: `measureFidelity(world, description, {framing?, similarity?, regionColour?}) →
-  {metrics, score, issues} | null`, deterministic; `FIDELITY_WEIGHTS` framing 0.25, openings 0.15, inventory 0.15,
-  placement 0.1, similarity 0.1, regionColour 0.1, sizes 0.05, materials 0.05, clearance 0.05 (missing measures
+  {metrics, score, issues} | null`, deterministic; `FIDELITY_WEIGHTS` framing 0.22, openings 0.14, inventory 0.14,
+  placement 0.1, similarity 0.1, regionColour 0.1, shell 0.08, sizes 0.04, materials 0.04, clearance 0.04 (missing measures
   are left out and the rest renormalised; the per-measure formulas are in `fidelity.ts`); `deltaE2000`,
   `hexDeltaE`, `rgbToLab`. Regression snapshot: `tests/fixtures/photo/hotel.fidelity.json`.
 - `@aether/arch/photo` consensus (`consensus.ts`, pure and deterministic): `clusterReads(reads) → {reads, rotations,

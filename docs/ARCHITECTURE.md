@@ -1950,15 +1950,18 @@ photo ─▶ N independent reads (default 3, in parallel, stateless): describe_r
 - **Steady numbers.** A single vision call is a noisy judge (the same room passes an item in one call and fails it
   in the next), so progress is not decided on its absolute score. Each round is first measured: `measureFidelity`
   (`packages/arch/src/photo/fidelity.ts`) compares the built room with the description, deterministically, on
-  framing (weight 0.25), openings (0.15: per wall, kind, centre, width, sill and head), inventory (0.15: F1, a
+  framing (weight 0.22), openings (0.14: per wall, kind, centre, width, sill and head), inventory (0.14: F1, a
   re-placed piece of the same kind counts 0.8), placement (0.1: plan and height error, zero at 1.2 m), pixel
-  similarity (0.1), region colour (0.1: ΔE inside each described box, photo against graded render), sizes (0.05),
-  materials (0.05: CIEDE2000 per visible wall, floor, ceiling and colour param) and clearance (0.05); measures
+  similarity (0.1), region colour (0.1: ΔE inside each described box, photo against graded render), shell (0.08: the
+  room-shell vocabulary the description names, such as ceiling style, cornice, dado, skirting, niches and window
+  styles), sizes (0.04), materials (0.04: CIEDE2000 per visible wall, floor, ceiling and colour param) and clearance
+  (0.04); measures
   that cannot be taken are left out and the rest renormalised. Then a judge panel (`photo/judge.ts`) of `judges`
   stateless critic calls (default 3; the studio uses 1 on a paid key) scores each checklist item 0..4 with
   evidence (a verdict without evidence is dropped) on the clean photo-camera view, with a fixed system prompt and
   rubric, temperature 0 and a seed per seat where the API takes them; the median per item damps one wavering
-  answer. From the second look each seat sees the accepted render and the new one blind as A/B (order
+  answer, and each judge also states its own accept call per item (`ok`): an item passes by their majority, by a median
+  of 3 only when nobody gave a call. From the second look each seat sees the accepted render and the new one blind as A/B (order
   alternating by seat), scores both and votes. `decideRound` is their call: a state they prefer is kept, one they do not is reverted; the measured sub-score and measures are advice passed to them and to the model, never the gate. A rejected state is reverted
   before the fixing model sees the round, and it is told why. Comparing two renders side by side is far less
   noisy than comparing two absolute scores. `ProgressTracker` counts a stall on no round the judges found better
