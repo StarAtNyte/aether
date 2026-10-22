@@ -1,0 +1,12 @@
+{
+ "note": "Look chosen by the reviewing assistant from GPU stills of the room next to the photo (docs/REVIEW_LOG.md, 2026-10-22): the replayed run records no tune_look, so the exposure and light of the example room are set here.",
+ "environment": {
+  "exposure": 3.8,
+  "ambientIntensity": 1.6,
+  "look": {
+   "lampStrength": 0.6
+  },
+  "hdri": "sky-partly-cloudy",
+  "hdriBackground": true
+ }
+}

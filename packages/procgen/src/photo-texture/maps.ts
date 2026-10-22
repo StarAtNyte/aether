@@ -76,8 +76,19 @@ export function surfaceClassOf(word: string | undefined): SurfaceClass {
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
+/** The fine grain of each library finish, computed once (the three tiers of every set read it). */
+const GRAIN = new Map<MaterialFinish, ReturnType<typeof fineGrainOf>>();
+function fineGrain(finish: MaterialFinish): ReturnType<typeof fineGrainOf> {
+  let g = GRAIN.get(finish);
+  if (!g) {
+    g = fineGrainOf(finish);
+    GRAIN.set(finish, g);
+  }
+  return g;
+}
+
 /** High-pass ratio of a luminance plane (value over its blurred self), the fine grain of a library finish. */
-function fineGrain(finish: MaterialFinish, size: number): { grain: Float32Array; rough: Float32Array; dx: Float32Array; dy: Float32Array; ao: Float32Array; n: number } {
+function fineGrainOf(finish: MaterialFinish): { grain: Float32Array; rough: Float32Array; dx: Float32Array; dy: Float32Array; ao: Float32Array; n: number } {
   const n = 256;
   const px = finishPixels(finish, n);
   const lum = new Float32Array(n * n);
@@ -102,7 +113,6 @@ function fineGrain(finish: MaterialFinish, size: number): { grain: Float32Array;
     grain[i] = (lum[i] as number) / Math.max(1e-3, low[i] as number);
     rough[i] = (rough[i] as number) / Math.max(1e-3, rm);
   }
-  void size;
   return { grain, rough, dx, dy, ao, n };
 }
 
@@ -130,7 +140,7 @@ export function buildMaps(tile: FImage, opts: BuildMapsOptions): PbrMaps {
   const n = size * size;
   const def = FINISHES[cls.finish];
   const f = Math.max(1, Math.round(opts.tileMetres / def.tile));
-  const fine = cls.grain > 0 || cls.fineRelief > 0 ? fineGrain(cls.finish, size) : null;
+  const fine = cls.grain > 0 || cls.fineRelief > 0 ? fineGrain(cls.finish) : null;
   // Fine grain on the albedo.
   const albedo = new Uint8Array(n * 4);
   const lum = luminance(ratio);

@@ -232,16 +232,10 @@ function patchesFor(world: WorldDoc, r: Resolved, made: { id: string; def: Textu
     const part = dominantPart(e);
     if (!part) return { patches, ops, note: `${r.label} has no texturable cover` };
     const params = e.shape.kind === 'procedural' ? (e.shape.params as Record<string, unknown>) : {};
-    let colour = part.color;
+    const colour = part.color;
     const set: Record<string, unknown> = {};
-    // The cover takes the source's colour: the parameter that gave the part its colour is set to the source's mean.
-    if (made && opts.color && colour) {
-      const name = Object.keys(params).find((k) => typeof params[k] === 'string' && String(params[k]).toLowerCase() === colour);
-      if (name) {
-        set['shape'] = { params: { [name]: opts.color } };
-        colour = opts.color.toLowerCase();
-      }
-    }
+    // The piece keeps the colour it has (the description's, already matched to the photo's pixels); the texture adds the pattern.
+    void params;
     const key = colour ? `${part.finish}#${colour.slice(1)}` : part.finish;
     const skins: Record<string, unknown> = {};
     if (ref) skins[key] = ref;
@@ -256,7 +250,8 @@ function patchesFor(world: WorldDoc, r: Resolved, made: { id: string; def: Textu
   const base: MaterialSpec = { ...(cur ?? {}) };
   delete base.texture;
   const finish = (opts.finish && Object.hasOwn(FINISHES, opts.finish) ? (opts.finish as MaterialFinish) : undefined) ?? base.finish ?? (r.kind === 'floor' ? 'oak' : 'paint');
-  const material: MaterialSpec = { ...base, finish, ...(ref ? { texture: ref } : {}), ...(made && opts.color ? { color: opts.color } : {}) };
+  // A surface that has a colour keeps it (the description's, matched to the photo's pixels); one without takes the source's mean.
+  const material: MaterialSpec = { ...base, finish, ...(ref ? { texture: ref } : {}), ...(made && opts.color && !base.color ? { color: opts.color } : {}) };
   if (r.kind === 'floor') ops.push({ op: 'set_material', building: r.building, target: 'floor', room: r.room.id, material });
   else ops.push({ op: 'set_wall', building: r.building, room: r.room.id, wall: r.compass, material });
   return { patches, ops, note: r.label };

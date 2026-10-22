@@ -1,0 +1,9 @@
+{
+ "note": "Look chosen by the reviewing assistant from GPU stills (docs/REVIEW_LOG.md, 2026-10-22).",
+ "environment": {
+  "exposure": 2.8,
+  "ambientIntensity": 1.4,
+  "hdri": "sky-partly-cloudy",
+  "hdriBackground": true
+ }
+}

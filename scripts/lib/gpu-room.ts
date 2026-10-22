@@ -44,6 +44,9 @@ export class GpuRoom {
       await ctx.addInitScript(SKIP_FIRST_RUN);
       const page = await ctx.newPage();
       page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
+      page.on('console', (m) => {
+        if (m.type() === 'error' || m.type() === 'warning' || process.env['GPU_ROOM_VERBOSE'] === '1') log(`  console.${m.type()}: ${m.text().slice(0, 240)}`);
+      });
       await page.goto(`${server.url}/?debug=1#/new`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(
         () => {
@@ -97,7 +100,12 @@ export class GpuRoom {
       return '';
     }, world as unknown);
     if (err) throw new Error(err);
+    const toast = await this.page.evaluate(() => JSON.stringify((window.__aether?.store.getState() as unknown as { toasts?: Array<{ text?: string; message?: string }> }).toasts ?? []).slice(0, 300));
+    if (/could not|error/i.test(toast)) this.log(`  studio toasts: ${toast}`);
+    const have = await this.page.evaluate(() => Object.keys(window.__aether?.studio.history.current.entities ?? {}).length);
+    if (have !== Object.keys(world.entities).length) this.log(`  the studio holds ${have} entities after the load, the room has ${Object.keys(world.entities).length}`);
     await this.page.evaluate(async () => {
+      window.addEventListener('unhandledrejection', (e) => console.error(`unhandled: ${String((e.reason as Error)?.stack ?? e.reason).slice(0, 400)}`));
       await window.__aether?.simulation?.whenSynced();
     });
     await this.page.waitForFunction(() => window.__aether?.simulation?.renderer.animating === false, null, { timeout: 120_000, polling: 500 }).catch(() => this.log('  (still animating, continuing)'));
@@ -109,6 +117,9 @@ export class GpuRoom {
    * @param quality `studio` (photoreal, a few samples) or `final` (supersampled).
    */
   async still(view: GpuView, size: { width: number; height: number }, quality: 'studio' | 'final' = 'studio'): Promise<Buffer> {
+    const now = await this.page.evaluate(() => `${window.__aether?.studio.history.current.name}:${Object.keys(window.__aether?.studio.history.current.entities ?? {}).length}`);
+    const st = await this.page.evaluate(() => JSON.stringify((window.__aether?.simulation?.renderer as unknown as { stats(): unknown } | undefined)?.stats()));
+    this.log(`  drawing world ${now}; renderer ${st}`);
     // The studio re-frames its camera and arch view after a load; make sure the walls are solid before drawing.
     await this.page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up' }));
     await this.page.waitForTimeout(800);
@@ -141,6 +152,19 @@ export class GpuRoom {
     );
     if (!dataUrl) throw new Error('still failed');
     return Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
+  }
+
+  /** A screenshot of the page as it is (debugging). */
+  async snap(path: string): Promise<void> {
+    await this.page.screenshot({ path });
+  }
+
+  /** What the renderer says about the building's bounced-light volume (for diagnosing a dark still). */
+  async lightVolume(): Promise<unknown> {
+    return this.page.evaluate(() => {
+      const r = window.__aether?.simulation?.renderer as unknown as { lightVolumeReady?: boolean; lightVolumeBaking?: boolean; lightVolumeStats?: unknown } | undefined;
+      return r ? { ready: r.lightVolumeReady, baking: r.lightVolumeBaking, stats: typeof r.lightVolumeStats === 'function' ? (r.lightVolumeStats as () => unknown)() : r.lightVolumeStats } : null;
+    });
   }
 
   /** Stop the browser and the server. */

@@ -112,3 +112,15 @@ export function delight(img: FImage, opts: { valid?: Uint8Array; sigma?: number;
   const contrast = count > 0 ? Math.sqrt(Math.max(0, sum2 / count - mu * mu)) / Math.max(1e-3, mu) : 0;
   return { ratio, mean, contrast };
 }
+
+/**
+ * Pull the pattern of a ratio image towards 1 so its luminance spread is at most `maxSpread` (relative standard deviation).
+ * A photograph of a cover also holds folds, creases, a background that crept into the crop and shadows; a spread beyond what
+ * a real weave, grain or print has reads as a blotchy fake, so it is damped, never amplified. Returns the factor used (1: untouched).
+ */
+export function limitSpread(ratio: FImage, current: number, maxSpread: number): number {
+  if (!(current > maxSpread) || maxSpread <= 0) return 1;
+  const k = maxSpread / current;
+  for (let i = 0; i < ratio.data.length; i++) ratio.data[i] = Math.max(0.02, 1 + ((ratio.data[i] as number) - 1) * k);
+  return k;
+}

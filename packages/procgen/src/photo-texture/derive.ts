@@ -13,7 +13,7 @@ import type { PhotoItem, RoomDescription } from '@aether/arch/photo';
 import { cameraModel, roomPlanes, type CameraModel } from './project';
 import { rectify, type Box } from './rectify';
 import { bestSquare, crop, fillHoles, rejectOutliers } from './fill';
-import { delight } from './delight';
+import { delight, limitSpread } from './delight';
 import { quilt, seamless } from './tile';
 import { buildMaps, surfaceClassOf, type PbrMaps, type SurfaceClass } from './maps';
 import { fromRgba8, linearToHex, resize, type FImage, type Rgba8 } from './raster';
@@ -112,11 +112,12 @@ function tileFrom(
   valid: Uint8Array,
   sq: { x: number; y: number; size: number; fill: number },
   sourceMetres: number,
-  opts: { keepShading: number; quiltBelow: number },
+  opts: { keepShading: number; quiltBelow: number; maxSpread: number; sigmaDiv?: number },
 ): { tile: FImage; tileMetres: number; mean: [number, number, number]; contrast: number } {
   const { image, valid: v } = crop(img, valid, sq.x, sq.y, sq.size, sq.size);
   const filled = fillHoles(image, v);
-  const lit = delight(filled, { sigma: Math.max(4, sq.size / 3), keepShading: opts.keepShading });
+  const lit = delight(filled, { sigma: Math.max(4, sq.size / (opts.sigmaDiv ?? 3)), keepShading: opts.keepShading });
+  const damped = limitSpread(lit.ratio, lit.contrast, opts.maxSpread);
   let tile = lit.ratio;
   let metres = sourceMetres;
   if (sourceMetres < opts.quiltBelow && sq.size >= 40) {
@@ -124,7 +125,7 @@ function tileFrom(
     metres = sourceMetres * (tile.width / sq.size);
   }
   tile = seamless(tile);
-  return { tile: resize(tile, MASTER_SIZE, MASTER_SIZE, true), tileMetres: Math.round(metres * 100) / 100, mean: lit.mean, contrast: lit.contrast };
+  return { tile: resize(tile, MASTER_SIZE, MASTER_SIZE, true), tileMetres: Math.round(metres * 100) / 100, mean: lit.mean, contrast: lit.contrast * damped };
 }
 
 /** Reads one surface or piece after another from one photograph (decoded and projected once). */
@@ -168,7 +169,7 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           sourceMetres = (sq.size * spec.width(item) * (region[2] - region[0])) / w;
           coverage = sq.fill;
           // Folds and creases are the fabric's character: keep a share of the shading in soft covers.
-          tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.35, quiltBelow: 0.9 });
+          tile = tileFrom(c.image, valid, sq, sourceMetres, { keepShading: 0.05, quiltBelow: 0.9, maxSpread: 0.18, sigmaDiv: 6 });
           notes.push('cover of a piece: photographed straight on (not flattened by the camera), tile size estimated from its width');
         } else {
           const plane = planes[target.id];
@@ -182,7 +183,7 @@ export function textureReader(photo: Rgba8, d: RoomDescription, opts: { ppm?: nu
           if (!sq) return skip('no clear square of at least 0.2 m of it is visible (furniture, windows and oblique angles cover the rest)');
           sourceMetres = sq.size / rr.ppm;
           coverage = sq.fill;
-          tile = tileFrom(rr.image, valid, sq, sourceMetres, { keepShading: 0, quiltBelow: 1.1 });
+          tile = tileFrom(rr.image, valid, sq, sourceMetres, { keepShading: 0, quiltBelow: 1.1, maxSpread: 0.5 });
           if (target.kind === 'wall') {
             // A wall tile's rows run from the top down; the shader's v runs up.
             const flipped = new Float32Array(tile.tile.data.length);

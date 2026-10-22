@@ -36,6 +36,8 @@ try {
   }
   await gpu.registerTextures(sets);
   await gpu.load(withEnv);
+  if (flag('snap')) await gpu.snap(resolve(flag('snap') as string));
+  if (flag('stats')) console.log(JSON.stringify(await gpu.lightVolume()));
   const png = await gpu.still({ position: view.pose.position, target: view.pose.target, fov: view.pose.fov }, { width, height: Math.round(width / Math.max(0.5, Math.min(3, view.aspect))) }, flag('quality') === 'studio' ? 'studio' : 'final');
   writeFileSync(resolve(outArg), png);
   console.log(`wrote ${outArg}`);

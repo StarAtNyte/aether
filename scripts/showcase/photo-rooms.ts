@@ -37,14 +37,21 @@ const worldFileText = (world: WorldDoc): string => `${stableStringify({ format: 
 async function repair(world: WorldDoc): Promise<{ world: WorldDoc; removed: string[]; passed: boolean }> {
   let cur = world;
   const removed: string[] = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const verdict = await runVerify(cur);
     if (verdict.passed) return { world: cur, removed, passed: true };
     const ids = [...new Set([...verdict.summary.matchAll(/Remove (room-photo-[\w-]+):/g)].map((m) => m[1] as string))].filter((id) => cur.entities[id]?.arch?.kind === 'curtain');
-    if (ids.length === 0) break;
+    // A curtain over tall furniture ("Move <id> to …").
+    const moves = [...verdict.summary.matchAll(/Move (room-photo-[\w-]+) to (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)/g)].filter((m) => cur.entities[m[1] as string]?.arch?.kind === 'curtain');
+    if (ids.length === 0 && moves.length === 0) {
+      console.error(`      verification: ${verdict.summary.slice(0, 600)}`);
+      break;
+    }
     const entities = { ...cur.entities };
     for (const id of ids) delete entities[id];
-    removed.push(...ids);
+    // The pose the checker names is along the wall's own axis, not the piece's: the panel is dropped, as for a "Remove" verdict.
+    for (const m of moves) delete entities[m[1] as string];
+    removed.push(...ids, ...moves.map((m) => m[1] as string));
     cur = { ...cur, entities };
   }
   return { world: cur, removed, passed: false };
@@ -60,7 +67,7 @@ try {
     if (FILTERS.length > 0 && !FILTERS.some((f) => e.slug.includes(f) || RUN_ID[e.photo?.file ?? ''] === f)) continue;
     const id = RUN_ID[e.photo?.file ?? ''];
     if (!id) throw new Error(`${e.slug}: unknown photo file`);
-    const r = spawnSync('npx', ['tsx', join(ROOT, 'scripts/eval-photo.ts'), `--photo=${id}`, '--mode=replay', ...(THUMBS ? ['--render=gpu'] : []), `--out=${tmp}`], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'], encoding: 'utf8' });
+    const r = spawnSync('npx', ['tsx', join(ROOT, 'scripts/eval-photo.ts'), `--photo=${id}`, '--mode=replay', `--out=${tmp}`], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'], encoding: 'utf8' });
     if (r.status !== 0) {
       console.error(`FAIL  ${e.slug}: replay exited ${r.status}`);
       failed++;
@@ -78,7 +85,13 @@ try {
     let world0: WorldDoc = v.world;
     if (existsSync(lookFile)) {
       const look = JSON.parse(readFileSync(lookFile, 'utf8')) as { environment?: Record<string, unknown> };
-      if (look.environment) world0 = { ...world0, environment: { ...world0.environment, ...look.environment } } as WorldDoc;
+      if (look.environment) {
+        const env = world0.environment as unknown as Record<string, unknown>;
+        const merged: Record<string, unknown> = { ...env, ...look.environment };
+        // `grade` and `look` are objects of independent fields: merge them instead of replacing the derived ones.
+        for (const k of ['grade', 'look']) if (typeof env[k] === 'object' && env[k] !== null && typeof look.environment[k] === 'object') merged[k] = { ...(env[k] as object), ...(look.environment[k] as object) };
+        world0 = { ...world0, environment: merged } as unknown as WorldDoc;
+      }
     }
     // Texture sets of the room are static files next to the worlds; the records point at them.
     if (world0.textures) {
@@ -88,7 +101,13 @@ try {
       const from = join(tmp, id, 'textures');
       if (existsSync(from)) for (const f of readdirSync(from)) copyFileSync(join(from, f), join(TEXTURE_DIR, f));
     }
-    const fixed = await repair(world0);
+    const checked = validateWorld(world0);
+    if (!checked.ok) {
+      console.error(`FAIL  ${e.slug}: the look breaks the world: ${checked.issues[0]?.message}`);
+      failed++;
+      continue;
+    }
+    const fixed = await repair(checked.world);
     if (!fixed.passed) {
       console.error(`FAIL  ${e.slug}: still fails verification after removing ${fixed.removed.join(', ') || 'nothing'}`);
       failed++;
@@ -97,7 +116,14 @@ try {
     if (fixed.removed.length > 0) console.log(`      ${e.slug}: removed ${fixed.removed.join(', ')} (flagged by the usability check)`);
     writeFileSync(join(OUT, 'worlds', `${e.slug}.json`), worldFileText(fixed.world));
     if (THUMBS) {
-      const w = spawnSync('python3', ['-I', join(ROOT, 'scripts/showcase/to-webp.py'), join(tmp, id, 'final.png'), join(OUT, `${e.slug}.webp`), '640', '360', '60'], { stdio: 'inherit' });
+      // The card shows the finished room (look included) drawn on the GPU from the photo's camera, not the flat software preview.
+      writeFileSync(join(tmp, id, 'final.world.json'), `${JSON.stringify(fixed.world)}\n`);
+      const shot = spawnSync('npx', ['tsx', join(ROOT, 'scripts/photo-still.ts'), join(tmp, id), join(tmp, id, 'thumb.png'), '--world=final.world.json', '--width=1280', '--quality=final'], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, GEN_GPU: process.env['GEN_GPU'] ?? 'intel' } });
+      if (shot.status !== 0) {
+        failed++;
+        continue;
+      }
+      const w = spawnSync('python3', ['-I', join(ROOT, 'scripts/showcase/to-webp.py'), join(tmp, id, 'thumb.png'), join(OUT, `${e.slug}.webp`), '640', '360', '60'], { stdio: 'inherit' });
       if (w.status !== 0) failed++;
     }
     console.log(`wrote ${e.slug} (${Object.keys(fixed.world.entities).length} entities)`);
