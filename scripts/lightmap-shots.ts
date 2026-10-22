@@ -209,13 +209,19 @@ async function main(): Promise<void> {
             }
           }
           const costs: Record<string, { median: number; p90: number }> = {};
+          const eye: Record<string, unknown> = {};
           for (const c of cams) {
             await setCam(page, c);
             await page.waitForFunction(() => window.__aether?.simulation?.renderer.lightVolumeBaking !== true, null, { timeout: 60_000, polling: 250 }).catch(() => undefined);
             await shoot(page, join(outDir!, `${slug}-${mode}-${c.name}.png`));
+            eye[c.name] = await page.evaluate((pos) => {
+              const r = window.__aether?.simulation?.renderer;
+              const s = r?.lightVolumeAt(pos[0]!, pos[1]!, pos[2]!);
+              return s ? { eyeEv: s.eyeEv, ev: s.ev, vis: s.vis, bounce: s.bounce, lamps: s.lamps } : null;
+            }, c.pos);
             if (c.name === 'spawn' || c.name === 'cover') costs[c.name] = await frameCost(page, c);
           }
-          const row = { slug, mode, samples: SAMPLES ?? null, bakeWaitMs: waited.ms, timedOut: waited.timedOut, ...info, frameMs: costs };
+          const row = { slug, mode, samples: SAMPLES ?? null, bakeWaitMs: waited.ms, timedOut: waited.timedOut, ...info, frameMs: costs, eye };
           results.push(row);
           log(JSON.stringify(row));
         }
