@@ -30,7 +30,7 @@ const SAMPLES = arg('samples') ? Number(arg('samples')) : null;
 const FILTERS = ARGS.filter((a) => !a.startsWith('--'));
 const TIMEOUT_S = Number(process.env['LM_TIMEOUT'] ?? 900);
 /** Worlds with an interior worth baking: the architecture showcase (photo rooms and flagship houses). */
-const DEFAULT_SLUGS = ['photo-hotel-bedroom', 'photo-twin-room', 'photo-four-poster', 'photo-vaulted-bedroom', 'skyline-penthouse', 'casa-patio', 'dusk-lake-house'];
+const DEFAULT_SLUGS = ['photo-hotel-bedroom', 'photo-twin-room', 'photo-four-poster', 'photo-vaulted-bedroom', 'skyline-penthouse', 'casa-patio'];
 
 const log = (l: string): void => void process.stdout.write(`${l}\n`);
 const INTEL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];

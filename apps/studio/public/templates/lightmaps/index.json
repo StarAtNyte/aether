@@ -1,1 +1,48 @@
-{ "keys": [] }
+{
+  "keys": [
+    "lm1-015845f9a2288aabdee267941f6cdcdb",
+    "lm1-60b8d68e40212202a92e1eece3622635",
+    "lm1-8812407077f9d5b447838c05cee7c0af",
+    "lm1-9445b8b311dbf2b9a17d5e151d41809e",
+    "lm1-b6a07b44e373f77dcb868621d3d2a22a",
+    "lm1-d0e8f27c7269ee5afaee27b63c9f5212"
+  ],
+  "worlds": {
+    "casa-patio": {
+      "key": "lm1-b6a07b44e373f77dcb868621d3d2a22a",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 730900
+    },
+    "photo-four-poster": {
+      "key": "lm1-d0e8f27c7269ee5afaee27b63c9f5212",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 248708
+    },
+    "photo-hotel-bedroom": {
+      "key": "lm1-60b8d68e40212202a92e1eece3622635",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 228988
+    },
+    "photo-twin-room": {
+      "key": "lm1-8812407077f9d5b447838c05cee7c0af",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 216724
+    },
+    "photo-vaulted-bedroom": {
+      "key": "lm1-015845f9a2288aabdee267941f6cdcdb",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 259088
+    },
+    "skyline-penthouse": {
+      "key": "lm1-9445b8b311dbf2b9a17d5e151d41809e",
+      "quality": "medium",
+      "samples": 48,
+      "bytes": 732632
+    }
+  }
+}
