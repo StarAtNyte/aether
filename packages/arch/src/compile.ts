@@ -296,6 +296,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
   const levelOutlines: P2[][][] = [];
   const topLevelIndex = plan.levels.length - 1;
   let prevStairHoles: P2[][] = [];
+  // Furniture and people keep the landing a stair needs at each end (its width, never less than 0.9 m) and a hand's breadth more.
+  const walkway = Math.max(STAIR_WALKWAY, ...plan.levels.flatMap((l) => l.stairs.map((st) => st.width + 0.05)));
   // Railings around stairwells, created on the level above the stair.
   type Rail = { points: P2[]; style: 'glass' | 'bars' | 'cable' | 'solid' | 'timber' };
   let railingsHere: Rail[] = [];
@@ -431,6 +433,30 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       return rec.w.roomB === roomId ? 1 : rec.w.roomA === roomId ? -1 : 0;
     }
 
+    /**
+     * Which jamb a leaf into `room` is hinged on so that it folds away from a stair or stairwell in that room (null when
+     * there is none within 4 m or it stands straight ahead): people arrive from the stair, and a leaf hinged on that side
+     * swings across their way to the door (the walkthrough bot stood boxed in against the open leaf, with the balustrade
+     * behind it, until the clock ran out).
+     */
+    function hingeAwayFromStair(c: P2, dir: P2, room: string): 'left' | 'right' | null {
+      const poly = polys.get(room);
+      if (!poly) return null;
+      const near = [...lvl.stairs.map((st) => stairWorldFootprint(st, lvl.height)), ...prevStairHoles].filter((f) => pointInPolygon(centroid(f)[0], centroid(f)[1], poly));
+      let along = 0;
+      let best = 4;
+      for (const f of near) {
+        for (const q of f) {
+          const d = Math.hypot(q[0] - c[0], q[1] - c[1]);
+          if (d < best) {
+            best = d;
+            along = (q[0] - c[0]) * dir[0] + (q[1] - c[1]) * dir[1];
+          }
+        }
+      }
+      return Math.abs(along) < 0.25 ? null : along > 0 ? 'left' : 'right';
+    }
+
     function addDoor(rec: WallRec, t: number, width: number, d: PlanDoor, ra: string, rb: string): void {
       const kind = d.kind === 'opening' ? 'opening' : 'door';
       const height = Math.min(d.height, ceiling - 0.1);
@@ -474,7 +500,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
             { suffix: '', w: round((fullLeafW - 0.004) / 2), xoff: round(-(fullLeafW + 0.004) / 4), hinge: 'left' },
             { suffix: '-b', w: round((fullLeafW - 0.004) / 2), xoff: round((fullLeafW + 0.004) / 4), hinge: 'right' },
           ]
-        : [{ suffix: '', w: fullLeafW, xoff: 0, hinge: n % 2 === 0 ? 'left' : 'right' }];
+        : [{ suffix: '', w: fullLeafW, xoff: 0, hinge: hingeAwayFromStair(c, rec.dir, into) ?? (n % 2 === 0 ? 'left' : 'right') }];
       const leafW = leaves[0]?.w ?? fullLeafW;
       const hinge = leaves[0]?.hinge ?? 'left';
       for (const lf of leaves) {
@@ -795,7 +821,7 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       const stairBlock = lvl.stairs.map((s) => stairWorldFootprint(s, lvl.height)).filter((f) => pointInPolygon(centroid(f)[0], centroid(f)[1], poly));
       const holeBlock = holes;
       // Furniture keeps a walkway round the stair and the stairwell, so the top and bottom steps lead somewhere.
-      ctx.keepClear = [...stairBlock, ...holeBlock].map((f) => grownBox(f, STAIR_WALKWAY));
+      ctx.keepClear = [...stairBlock, ...holeBlock].map((f) => grownBox(f, walkway));
       const { placed, notes: fn } = furnishRoom(ctx, r.items, r.furnish, r.dress ?? r.furnish);
       notes.push(...fn);
       residentRooms.push({
@@ -804,6 +830,9 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         name,
         polygon: positive(poly),
         blockers: [...placed.filter((p) => p.def.mount === 'floor' && p.def.kind !== 'rug' && p.footprint.length >= 3).map((p) => p.footprint), ...stairBlock, ...holeBlock],
+        // A person keeps out of the stair's walkway as furniture does (a body in the strip beside the foot or at the top
+        // landing narrows the way up below what the walker's body passes, and they wander a little from their spot).
+        avoid: [...stairBlock, ...holeBlock].map((f) => grownBox(f, walkway)),
         level: li,
         elevation: round(elevation),
       });
@@ -1197,8 +1226,8 @@ function openSides(sp: StairParams, at: readonly [number, number], yaw: number, 
 /** How far a stairwell balustrade stands back from the edge of the opening (m): the half-thickness of its collider and a hair. */
 const WELL_RAIL_SETBACK = 0.05;
 
-/** Walkway kept free of furniture round a stair and a stairwell (m). */
-const STAIR_WALKWAY = 0.8;
+/** Least walkway kept free of furniture round a stair and a stairwell (m): a landing of the least depth and a hand's breadth. */
+const STAIR_WALKWAY = 0.95;
 
 /** Axis-aligned box round a footprint, grown by `by` on every side (stairs are axis-aligned in plan). */
 function grownBox(fp: readonly P2[], by: number): P2[] {

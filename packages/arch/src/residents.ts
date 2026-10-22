@@ -22,6 +22,8 @@ export interface ResidentRoom {
   polygon: P2[];
   /** Floor footprints that must stay clear (furniture, stairs, stairwell holes). */
   blockers: P2[][];
+  /** Floor people keep out of beyond the blockers (the walkway round a stair and its stairwell): never stood on, but not solid. */
+  avoid?: P2[][];
   /** Level index and the height of its floor above the ground (building frame). */
   level: number;
   elevation: number;
@@ -140,7 +142,7 @@ function candidates(room: ResidentRoom, keep: readonly KeepOut[], seed: number):
       if (!pointInPolygon(x, z, inner)) continue;
       let blocked = false;
       let nearest = Infinity;
-      for (const b of room.blockers) {
+      for (const b of [...room.blockers, ...(room.avoid ?? [])]) {
         if (pointInPolygon(x, z, b)) {
           blocked = true;
           break;
