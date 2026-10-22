@@ -214,7 +214,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
   const busy = useUI((s) => s.agentBusy);
   const [open, setOpen] = useState(false);
   const tone = event.phase === 'done' ? 'ok' : event.phase === 'offline' || event.phase === 'unavailable' ? 'warn' : 'info';
-  const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
+  const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'textures' ? 'Textures' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
   const sc = event.score;
   const pct = sc && sc.total > 0 ? Math.round((sc.passed / sc.total) * 100) : null;
   const p = (v: number): string => `${Math.round(v * 100)}%`;

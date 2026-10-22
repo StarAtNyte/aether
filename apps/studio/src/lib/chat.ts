@@ -69,7 +69,7 @@ export function toDifferences(v: unknown): DifferenceEventView[] | undefined {
 /** Progress of a room rebuilt from a photograph (reading it, the assumptions as chips, each compare round, the final score). */
 export interface PhotoEventView {
   type: 'photo';
-  phase: 'analysing' | 'described' | 'building' | 'built' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+  phase: 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
   text: string;
   round?: number;
   assumptions?: Array<{ id: string; text: string; confidence: number; adjust: string }>;
@@ -103,7 +103,7 @@ export interface PhotoScoreEventView {
   failing: Array<{ id: string; text: string; note: string }>;
 }
 
-const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
+const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'textures', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
 
 /** Bounded, validated view of a photo event (live or stored). */
 function photoView(v: Record<string, unknown>): PhotoEventView {

@@ -121,7 +121,7 @@ export interface PhotoDifferenceView {
 }
 
 /** Where the photo flow is. */
-export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
 
 /** One assumption of a reconstruction, with the sentence that changes it (the UI shows it as a chip). */
 export interface PhotoAssumptionView {

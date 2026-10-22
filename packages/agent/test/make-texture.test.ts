@@ -9,6 +9,7 @@ import { MemoryHost } from './helpers';
 import { MAKE_TEXTURE_TOOL, makeTextureTool, resolveTarget as resolveTextureTarget } from '../src/textures';
 import type { ExecutorContext } from '../src/executor';
 import type { ImageGenerator } from '../src/images';
+import { texturePass, texturePassLine, textureSource } from '../src/photo/texture-pass';
 import { createMockProvider } from '../src/providers/mock/index';
 
 const FIXTURE = resolve(__dirname, '../../../tests/fixtures/photo/hotel.description.json');
@@ -132,5 +133,26 @@ describe('make_texture', () => {
     const out = await makeTextureTool(ctx, { target: 'bed', source: 'procedural' });
     expect(out.content).toContain('procedural');
     expect(Object.values(host.world.entities['room-photo-bed']?.arch?.skins ?? {})).toEqual([]);
+  });
+
+  it('the first texture pass skips cleanly without a store and states what it did with one', async () => {
+    const { world, desc } = await room();
+    const bare = new MemoryHost(world);
+    const none = ctxFor(bare, { textures: {} }).ctx;
+    bare.storeTexture = undefined;
+    expect(await textureSource(none, 'data:image/png;base64,AA==', desc)).toBeNull();
+    const host = new MemoryHost(world);
+    const { ctx } = ctxFor(host, { textures: {} });
+    const src = await textureSource(ctx, 'data:image/png;base64,AA==', desc);
+    expect(src).not.toBeNull();
+    const events: unknown[] = [];
+    const gen = texturePass(ctx, { ...(src as NonNullable<typeof src>), raster: noisePhoto() });
+    let r = await gen.next();
+    while (!r.done) {
+      events.push(r.value);
+      r = await gen.next();
+    }
+    expect(events.length).toBeGreaterThan(0);
+    expect(texturePassLine(r.value)).toMatch(/photograph|No surface|procedural/);
   });
 });

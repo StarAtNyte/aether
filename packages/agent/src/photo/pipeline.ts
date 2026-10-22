@@ -76,6 +76,8 @@ import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
+import { texturePass, texturePassLine, textureSource } from './texture-pass';
+import { MAKE_TEXTURE_TOOL } from '../textures';
 
 /** Everything the photo flow needs from the agent. */
 export interface PhotoRun {
@@ -597,6 +599,21 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   const refusals = built.outcomes.filter((o) => !o.ok).map((o) => `${o.id} (${o.kind}): ${o.text}`.slice(0, 360));
   yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop` : ''}.` };
 
+  // Textures: the surfaces the photograph shows clearly are sampled from it before the first comparison.
+  let textureLine = '';
+  try {
+    const source = await textureSource(ctx, run.image, desc);
+    if (source) {
+      ctx.textures = { ...(ctx.textures ?? {}), photo: source };
+      const pass = yield* texturePass(ctx, source);
+      textureLine = texturePassLine(pass);
+      if (textureLine) yield { type: 'photo', phase: 'textures', text: textureLine };
+    }
+  } catch (e) {
+    if (ctx.signal?.aborted) throw e;
+    yield { type: 'photo', phase: 'textures', text: `Textures from the photo were skipped (${errorMessage(e).slice(0, 160)}); the room keeps its procedural finishes.` };
+  }
+
   // Compare and correct.
   const ledger = run.options.differences === true ? new DifferenceLedger() : null;
   let final: Judged | null = null;
@@ -627,6 +644,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   const open = ledger?.unresolvedText() ?? '';
   if (open) lines.push(open);
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
+  if (textureLine) lines.push(textureLine);
   lines.push(`I assumed ${assumptions.length} thing${assumptions.length === 1 ? '' : 's'} the photo cannot show; each one is listed with a one-tap way to change it.`);
   yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}) };
   yield { type: 'message', text: lines.join(' ') };
@@ -683,7 +701,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -985,8 +1003,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Done.' });
           continue;
         }
-        if (!isDesignTool(call.name) && call.name !== 'tune_look') {
-          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan, tune_look or finish.`, isError: true });
+        if (!isDesignTool(call.name) && call.name !== 'tune_look' && call.name !== 'make_texture') {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: `Unknown tool "${call.name.slice(0, 40)}" here. Use report_verdicts, edit_items, place_items, query_scene, design_plan, tune_look, make_texture or finish.`, isError: true });
           continue;
         }
         if (rolledBack) {
