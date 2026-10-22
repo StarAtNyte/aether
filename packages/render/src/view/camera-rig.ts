@@ -64,7 +64,7 @@ export const MIN_FOLLOW_DISTANCE = 1.2;
 const OCCLUSION_PADDING = 0.35;
 const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
-const EYE_HEIGHT = 1.6;
+const EYE_HEIGHT = 1.65;
 
 /** Half-width of the chase camera's "lens" (m): the boom is probed with a ring of rays this far off its axis, so a wall beside the boom pulls the camera in before the near plane can cut into it. */
 export const BOOM_RADIUS = 0.3;

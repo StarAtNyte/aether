@@ -366,6 +366,8 @@ const VIEW_NAMES: ReadonlySet<string> = new Set(['top', 'front', 'side', 'iso'])
 // Scratch (per-frame paths must not allocate).
 const _ndc = new Vector2();
 const _bounds = new Box3();
+/** Vertical field of view (degrees) of the first-person walk camera. */
+export const WALK_FOV = 70;
 const _center = new Vector3();
 const _size = new Vector2();
 const _buffer = new Vector2();
@@ -2142,11 +2144,22 @@ export class WorldRenderer {
       }
     }
     this.followId = mode !== 'orbit' && target ? target : null;
+    // Walking eye-level in a room: a wider lens than the orbit camera's, so a room reads at its true size instead of a corridor.
+    if (mode === 'firstPerson') {
+      if (this.savedLensFov === null) this.savedLensFov = this.perspective.fov;
+      this.perspective.fov = WALK_FOV;
+      this.perspective.updateProjectionMatrix();
+    } else if (this.savedLensFov !== null) {
+      this.perspective.fov = this.savedLensFov;
+      this.savedLensFov = null;
+      this.perspective.updateProjectionMatrix();
+    }
     this.avatar.setHidden(mode === 'firstPerson' && !target);
     this.rig.setMode(mode, source);
     this.needsDraw = true;
   }
 
+  private savedLensFov: number | null = null;
   private voxelZenithHex = '';
   private readonly voxelZenith = new Color();
 
