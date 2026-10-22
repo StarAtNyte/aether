@@ -11,6 +11,8 @@
  * Nothing here is ever enabled on a hosted deployment (see the server's
  * `AETHER_LOCAL_AI`): it would spend the machine owner's subscription.
  */
+import { BridgeError } from './errors';
+import { createCodexImageBackend, type ImageJob, type ImageResultBytes } from './backends/codex-image';
 import { join } from 'node:path';
 import { createEmulatedProvider, type BridgeBackendId, type BridgeBackendStatus, type BridgeEffort, type LocalStatus, type Provider, type TextBackend } from '@aether/agent';
 import { CodexAccounts, DEFAULT_ACCOUNT_ID } from './accounts';
@@ -102,6 +104,15 @@ export class LocalAi {
   /** A tool-calling provider over one backend (quick completions). */
   provider(backend: BridgeBackendId, model?: string, effort?: BridgeEffort): Provider {
     return createEmulatedProvider({ backend: this.backends[backend], name: backend, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+  }
+
+  /** Make a picture with Codex's built-in image tool (the machine's signed-in Codex); queued with the quick calls. */
+  async image(job: ImageJob, signal?: AbortSignal): Promise<ImageResultBytes> {
+    const command = this.commands.codex;
+    if (!command) throw new BridgeError('cli_missing', 'The Codex CLI could not be found. Install it (npm i -g @openai/codex) and run "codex login".');
+    const home = await this.accounts.activeHome();
+    const backend = createCodexImageBackend({ command, ...(home ? { codexHome: home, env: { ...process.env, CODEX_HOME: home } } : {}) });
+    return this.queue.run(() => backend.generate(job, signal), signal);
   }
 
   /** The sign-in state; a finished sign-in refreshes account and backend status. */

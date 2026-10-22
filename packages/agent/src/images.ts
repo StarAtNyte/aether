@@ -140,8 +140,10 @@ export function createOpenAiImageGenerator(opts: OpenAiImageOptions): ImageGener
 
 /** Options of {@link createBridgeImageGenerator}. */
 export interface BridgeImageOptions {
+  /** The bridge origin, or (local app) the page-relative `/api/local` base. */
   baseUrl: string;
-  token: string;
+  /** Bearer token of the paired bridge; absent for the local app, which authenticates by its session cookie. */
+  token?: string;
   backend?: 'codex';
   fetch?: typeof fetch;
   timeoutMs?: number;
@@ -150,6 +152,7 @@ export interface BridgeImageOptions {
 /** An image generator that asks the local bridge (Codex's built-in image tool on the user's ChatGPT login). */
 export function createBridgeImageGenerator(opts: BridgeImageOptions): ImageGenerator {
   const base = opts.baseUrl.replace(/\/+$/, '');
+  const path = opts.token === undefined ? '/image' : '/v1/image';
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   return {
     id: 'codex',
@@ -160,9 +163,9 @@ export function createBridgeImageGenerator(opts: BridgeImageOptions): ImageGener
       const onAbort = (): void => ctrl.abort();
       req.signal?.addEventListener('abort', onAbort, { once: true });
       try {
-        const res = await doFetch(`${base}/v1/image`, {
+        const res = await doFetch(`${base}${path}`, {
           method: 'POST',
-          headers: { authorization: `Bearer ${opts.token}`, 'content-type': 'application/json' },
+          headers: { ...(opts.token !== undefined ? { authorization: `Bearer ${opts.token}` } : {}), 'content-type': 'application/json' },
           body: JSON.stringify({ backend: opts.backend ?? 'codex', prompt: req.prompt, ...(req.size ? { size: req.size } : {}), ...(req.reference ? { reference: req.reference } : {}) }),
           signal: ctrl.signal,
         });

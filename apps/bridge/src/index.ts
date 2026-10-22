@@ -16,6 +16,7 @@ export { runProcess, type RunOptions, type RunResult, type SpawnFn } from './pro
 export { createClaudeCodeBackend, claudeArgs, claudeInput, observeClaudeLine, CLAUDE_MODELS, CLAUDE_DEFAULT_MODEL, CLAUDE_DENIED_TOOLS } from './backends/claude';
 export { createCodexBackend, codexLockdownConfig, codexThreadOptions, mcpDisableOverrides, CODEX_DISABLED_FEATURES, FORBIDDEN_ITEM_TYPES, type CodexLike } from './backends/codex';
 export { probeCodex, probeClaude, parseCodexModels, listCodexMcpServers, cached, CODEX_FALLBACK_MODELS } from './backends/status';
+export { createCodexImageBackend, codexImageArgs, codexImagePrompt, scanEvents as scanCodexImageEvents, sniffImage, type ImageBackend, type ImageJob, type ImageResultBytes } from './backends/codex-image';
 export { createHeadlessBackends, createHeadlessProvider, resolveCommands, type HeadlessOptions } from './headless';
 export { which, locateCli, findCliPath, fallbackDirs, cliMissingDetail, CLI_ENV_OVERRIDE, type CliName, type CliLocation, type LocateOptions } from './which';
 export { LocalAi, LOCAL_AI_VERSION, type LocalAiOptions } from './local';

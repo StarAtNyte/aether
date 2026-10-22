@@ -15,6 +15,7 @@ import {
   AccountCreateRequestSchema,
   AssetJobRequestSchema,
   BridgeCompleteRequestSchema,
+  BridgeImageRequestSchema,
   CompletionResponseSchema,
   JOB_ID_RE,
   ACCOUNT_ID_RE,
@@ -143,6 +144,27 @@ export function registerLocalRoutes(app: Hono<AppEnv>, deps: LocalRouteDeps): vo
       const valid = CompletionResponseSchema.safeParse(out);
       if (!valid.success) return errorBody(c, 'backend_error', 'The model returned an unexpected response.', 502);
       return c.json(valid.data);
+    } catch (e) {
+      return toError(c, e, logger);
+    } finally {
+      c.req.raw.signal.removeEventListener('abort', onAbort);
+      deps.shutdownSignal?.removeEventListener('abort', onAbort);
+    }
+  });
+
+  // Pictures from Codex's built-in image tool (optional; textures fall back to the photo and the library without it).
+  app.post('/api/local/image', async (c) => {
+    const body = await jsonBody(c);
+    if (!body.ok) return body.response;
+    const parsed = BridgeImageRequestSchema.safeParse(body.value);
+    if (!parsed.success) return errorBody(c, 'invalid_request', `The image request is invalid (${parsed.error.issues[0]?.path.join('.') ?? ''}: ${parsed.error.issues[0]?.message ?? ''}).`.slice(0, 300), 400);
+    const ctrl = new AbortController();
+    const onAbort = (): void => ctrl.abort();
+    c.req.raw.signal.addEventListener('abort', onAbort, { once: true });
+    deps.shutdownSignal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const out = await local.image({ prompt: parsed.data.prompt, ...(parsed.data.size ? { size: parsed.data.size } : {}), ...(parsed.data.reference ? { reference: parsed.data.reference } : {}) }, ctrl.signal);
+      return c.json({ image: `data:${out.mime};base64,${Buffer.from(out.bytes).toString('base64')}`, model: out.model });
     } catch (e) {
       return toError(c, e, logger);
     } finally {

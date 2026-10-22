@@ -9,6 +9,11 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   createBridgeAccountApi,
+  createBridgeImageGenerator,
+  createOpenAiImageGenerator,
+  imageChain,
+  LOCAL_AI_BASE,
+  type ImageGenerator,
   createBridgeProvider,
   createLocalAiApi,
   createLocalProvider,
@@ -506,6 +511,33 @@ export class AiConnection {
         });
       }
     }
+  }
+
+  /**
+   * Image models the user has connected, best first: Codex's image tool (through this computer's local app or the paired bridge,
+   * on the ChatGPT login) and an OpenAI Images key. Null when there is none: textures then come from the photo or the library.
+   * A key is capped at a few pictures per session so it cannot run up a bill unnoticed.
+   */
+  imageGenerator(): ImageGenerator | null {
+    const s = this.store.getState();
+    const list: ImageGenerator[] = [];
+    const codexImage = (b: ReadonlyArray<{ id: string; installed: boolean; loggedIn: boolean; image?: boolean | undefined }>): boolean => b.some((x) => x.id === 'codex' && x.installed && x.loggedIn && x.image !== false);
+    if (s.local.state === 'ready' && codexImage(s.local.backends)) list.push(createBridgeImageGenerator({ baseUrl: LOCAL_AI_BASE, fetch: this.fetchImpl }));
+    else if (this.token && s.bridge.state === 'ready' && codexImage(s.bridge.backends)) list.push(createBridgeImageGenerator({ baseUrl: s.bridge.url, token: this.token, fetch: this.fetchImpl }));
+    const key = this.keyFor('openai');
+    if (key) {
+      const inner = createOpenAiImageGenerator({ apiKey: key, fetch: this.fetchImpl });
+      let used = 0;
+      list.push({
+        ...inner,
+        async generate(req) {
+          if (used >= 12) throw new ProviderError('rate_limit', 'this session already made 12 pictures with your OpenAI key');
+          used++;
+          return inner.generate(req);
+        },
+      });
+    }
+    return imageChain(list);
   }
 
   /**
