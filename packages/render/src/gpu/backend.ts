@@ -17,10 +17,11 @@
  * `'webgpu'` / `'webgl2'` force a backend (WebGPU still falls back when it
  * cannot start).
  */
-import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace } from 'three';
+import { ACESFilmicToneMapping, BasicShadowMap, PCFShadowMap, SRGBColorSpace } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { acquireAdapter, acquireDevice, type AdapterLike, type DeviceLike, type GpuLike } from './acquire';
+import { geckoSafePath } from './gecko-safe';
 
 /** Active GPU backend. */
 export type BackendKind = 'webgpu' | 'webgl2';
@@ -344,7 +345,10 @@ function finish(renderer: WebGPURenderer, opts: BackendOptions, report: BackendR
   renderer.toneMappingExposure = 1;
   // PCFSoftShadowMap was removed in r186; PCF with a blur radius gives the same soft look.
   renderer.shadowMap.enabled = opts.shadows;
-  renderer.shadowMap.type = PCFShadowMap;
+  // Firefox on WebGL2 warns that comparing a LINEAR-filtered depth texture is implementation-defined, which is what PCF
+  // relies on: there the map is compared with NEAREST (Basic) and the sun's filter runs in the shader (sun-shadow-plan.ts).
+  const description = gpuInfoOf(renderer).description;
+  renderer.shadowMap.type = geckoSafePath(detectBackend(renderer), description) ? BasicShadowMap : PCFShadowMap;
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   renderer.setPixelRatio(Math.min(dpr, Math.max(0.5, opts.pixelRatioCap)));
   const backend = detectBackend(renderer);

@@ -5,6 +5,7 @@
  *  - right: performance overlay toggle, command palette, Share, Publish, inspector toggle
  * On phones it collapses to logomark menu + name + Play + overflow menu.
  */
+import { graphicsSummary } from '../engine/graphicsSummary';
 import { memo, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 import { MAX_IMPORT_BYTES } from '../config';
 import { useHistoryState, useStudio, useUI, useWorld } from '../app/context';
@@ -87,6 +88,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
   const panels = useUI((s) => s.panels);
   const settings = useUI((s) => s.settings);
   const memory = useUI((s) => s.memory);
+  const gpuRender = useUI((s) => s.gpu?.render);
+  const graphicsLabel = graphicsSummary(gpuRender, settings.renderTier);
   const selection = useUI((s) => s.selection);
   const { canUndo, canRedo } = useHistoryState();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -161,6 +164,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { id: 'labels', label: 'Object labels', checked: settings.showLabels, shortcut: 'L', onSelect: () => st().updateSettings({ showLabels: !settings.showLabels }) },
     { id: 'perf', label: 'Performance', checked: settings.showPerf, shortcut: shortcut('Shift+P'), onSelect: () => st().updateSettings({ showPerf: !settings.showPerf }) },
     { id: 'colliders', label: 'Colliders', checked: settings.showColliders, onSelect: () => st().updateSettings({ showColliders: !settings.showColliders }) },
+    ...(graphicsLabel ? [{ kind: 'separator' as const, id: 's-gfx' }, { kind: 'heading' as const, id: 'h-gfx', label: graphicsLabel }] : []),
   ];
 
   const phoneMenu: MenuEntry[] = [

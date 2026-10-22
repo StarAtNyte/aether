@@ -101,19 +101,37 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
   window: 40,
   /** Frame deltas above this break the continuous streak (s; shader links and loads are not slowness). */
   maxContinuousDt: 0.25,
+  /** Frame rate (p90) above which the climb back up counts time. Well above `lowFps`: no flapping between the two. */
+  upFps: 48,
+  /** Seconds above `upFps` before a step back up. */
+  upAfter: 10,
+  /** Seconds after any move before the next step up (a move recompiles shaders; frames settle first). */
+  settle: 20,
+  /** A step down this soon (s) after a step up pins the floor. */
+  retreat: 45,
 });
 
 /**
  * Steps down the {@link PERFORMANCE_STEPS} ladder while frames stay slow: p90 of the last frames under `lowFps` for
  * `after` seconds with resolution already lowered, or under `badFps` for `afterBad` seconds. Only back-to-back frames
- * count (an idle editor or a hidden tab never looks slow), and it never goes back up: every step recompiles shaders, so
- * trying again would turn one slow patch into a stutter every few seconds. Allocation-free per frame.
+ * count (an idle editor or a hidden tab never looks slow).
+ *
+ * It also climbs back, one step at a time, when frames are comfortably fast: p90 above `upFps` with the resolution at full
+ * scale for `upAfter` seconds, and not sooner than `settle` seconds after the last move. Every step recompiles shaders, so
+ * the climb is slow on purpose and has hysteresis: `upFps` is well above `lowFps`, and when a climb is undone by a step down
+ * within `retreat` seconds, that level becomes the floor and the climb stops there for the rest of the session. A governor
+ * that starts above level 0 (a machine on a path known to need care) is told with {@link start}. Time here is the sum of
+ * the continuous frames recorded, so a hidden tab does not move it. Allocation-free per frame.
  */
 export class PerformanceGovernor {
-  /** Steps taken so far. */
+  /** Steps taken so far (lower: less given up). */
   level = 0;
+  /** Direction of the move the last true {@link record} made: 1 gave something up, -1 gave something back, 0 none yet. */
+  lastMove: -1 | 0 | 1 = 0;
   /** Whether it may step (off when the user chose a tier). */
   enabled = true;
+  /** Lowest level the climb may return to (raised when a climb was undone at once). */
+  floor = 0;
   private readonly o: typeof GOVERNOR_DEFAULTS;
   private readonly ring: Float32Array;
   private readonly sorted: Float32Array;
@@ -121,11 +139,25 @@ export class PerformanceGovernor {
   private filled = 0;
   private slow = 0;
   private bad = 0;
+  private fast = 0;
+  private clock = 0;
+  private lastMoveAt = Number.NEGATIVE_INFINITY;
+  private lastUpAt = Number.NEGATIVE_INFINITY;
 
   constructor(opts: Partial<typeof GOVERNOR_DEFAULTS> = {}) {
     this.o = { ...GOVERNOR_DEFAULTS, ...opts };
     this.ring = new Float32Array(this.o.window);
     this.sorted = new Float32Array(this.o.window);
+  }
+
+  /** Begin at `level` (a cautious start): the climb may come back down to 0. */
+  start(level: number): void {
+    this.level = Math.max(0, Math.min(PERFORMANCE_STEPS.length, Math.floor(Number.isFinite(level) ? level : 0)));
+    this.floor = 0;
+    this.lastMove = 0;
+    this.lastMoveAt = this.clock;
+    this.lastUpAt = Number.NEGATIVE_INFINITY;
+    this.reset();
   }
 
   /** Frame rate implied by the p90 frame time of the window (0: no data). */
@@ -143,28 +175,46 @@ export class PerformanceGovernor {
     this.cursor = 0;
     this.slow = 0;
     this.bad = 0;
+    this.fast = 0;
   }
 
   /**
    * Record one drawn frame (`dt` seconds since the previous drawn one; `continuous` false when the previous animation
-   * frame drew nothing) under adaptive resolution `scale`. Returns true when a step was due: the caller applies
-   * {@link cutsAt}`(level)` and `level` has already advanced.
+   * frame drew nothing) under adaptive resolution `scale` (0: adaptive resolution is off). Returns true when a move was
+   * due: the caller applies {@link cutsAt}`(level)` and `level` has already moved ({@link lastMove} says which way).
    */
   record(dt: number, continuous: boolean, scale: number): boolean {
-    if (!this.enabled || this.level >= PERFORMANCE_STEPS.length || !(dt > 0) || !Number.isFinite(dt)) return false;
+    if (!this.enabled || !(dt > 0) || !Number.isFinite(dt)) return false;
     if (!continuous || dt > this.o.maxContinuousDt) {
       this.reset();
       return false;
     }
+    this.clock += dt;
     this.ring[this.cursor] = dt;
     this.cursor = (this.cursor + 1) % this.o.window;
     if (this.filled < this.o.window) this.filled++;
     const fps = this.fps;
     if (fps === 0) return false;
-    this.bad = fps < this.o.badFps ? this.bad + dt : 0;
-    this.slow = fps < this.o.lowFps && scale <= this.o.afterScale ? this.slow + dt : 0;
-    if (this.bad >= this.o.afterBad || this.slow >= this.o.after) {
-      this.level++;
+    if (this.level < PERFORMANCE_STEPS.length) {
+      this.bad = fps < this.o.badFps ? this.bad + dt : 0;
+      this.slow = fps < this.o.lowFps && scale <= this.o.afterScale ? this.slow + dt : 0;
+      if (this.bad >= this.o.afterBad || this.slow >= this.o.after) {
+        // A climb undone at once: the level it climbed to is too much for this machine.
+        if (this.clock - this.lastUpAt <= this.o.retreat) this.floor = Math.max(this.floor, this.level);
+        this.level++;
+        this.lastMove = 1;
+        this.lastMoveAt = this.clock;
+        this.reset();
+        return true;
+      }
+    }
+    const roomy = fps >= this.o.upFps && (scale === 0 || scale >= 0.99);
+    this.fast = roomy && this.level > this.floor ? this.fast + dt : 0;
+    if (this.fast >= this.o.upAfter && this.clock - this.lastMoveAt >= this.o.settle) {
+      this.level--;
+      this.lastMove = -1;
+      this.lastMoveAt = this.clock;
+      this.lastUpAt = this.clock;
       this.reset();
       return true;
     }

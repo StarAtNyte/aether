@@ -449,7 +449,10 @@ export class Studio {
             s.setCameraView(mode === 'play' ? (this.history.current.player.mode === 'firstPerson' ? 'firstPerson' : 'follow') : 'orbit');
           },
           onError: (message) => this.store.getState().toast(message, 'error', 6),
-          onPerformance: (_level, step) => this.store.getState().toast(PERFORMANCE_NOTICE[step] ?? 'Lowered the graphics to keep the frame rate up.', 'info', 6),
+          onPerformance: (_level, step, up) => {
+            this.store.getState().toast(up ? 'Frames are smooth: gave some graphics quality back.' : (PERFORMANCE_NOTICE[step] ?? 'Lowered the graphics to keep the frame rate up.'), 'info', 6);
+            this.publishGraphicsState();
+          },
           onFatal: (message) => this.store.getState().setFatal(message),
           onContextLost: (info) => {
             if (gen === this.attachGen) this.handleContextLost(info);
@@ -609,8 +612,16 @@ export class Studio {
     }
     r.setRenderTier(st.settings.renderTier);
     r.setEffects(overrides);
+    this.publishGraphicsState();
+  }
+
+  /** Put the tier in effect, the tier the GPU asks for and the performance ladder into the store (the View menu shows them). */
+  private publishGraphicsState(): void {
+    const r = this.sim?.renderer;
+    if (!r) return;
+    const st = this.store.getState();
     const gpu = st.gpu ?? { tier: r.gpu.tier, description: r.gpu.description };
-    st.setGpu({ ...gpu, backend: r.gpu.report, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects } });
+    st.setGpu({ ...gpu, backend: r.gpu.report, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects, ladder: r.performanceLevel } });
   }
 
   /** Re-decide low-memory mode from the setting and the session's signals, and apply it everywhere. */

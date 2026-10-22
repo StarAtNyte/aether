@@ -5,6 +5,7 @@
  * WebGL2 backends; updating it costs one small vertex-color upload and only
  * happens when the environment changes.
  */
+import { bakeFlipY } from '../gpu/gecko-safe';
 import {
   AdditiveBlending,
   BackSide,
@@ -211,7 +212,9 @@ export class SkyDome {
     tex.magFilter = LinearFilter;
     tex.minFilter = LinearFilter;
     tex.generateMipmaps = false;
+    // Rows flipped here, not by the driver: a pixel-store flip on a typed-array upload is deprecated in Firefox.
     tex.flipY = true;
+    bakeFlipY(tex);
     tex.needsUpdate = true;
     this.bodyTextures.push(tex);
     return tex;

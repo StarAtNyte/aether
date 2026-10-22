@@ -68,6 +68,11 @@ export interface SunShadowInput {
   software?: boolean;
   /** False: one fitted map, whatever the tier (the performance ladder gave cascades up). */
   cascades?: boolean;
+  /**
+   * The map is compared with NEAREST sampling (Firefox on WebGL2, see `gpu/gecko-safe.ts`), which makes three's PCF a hard
+   * edge: the soft filter then runs on every tier, with the medium tier's taps on the low one.
+   */
+  nearestCompare?: boolean;
 }
 
 /** Content smaller than this (radius, m) is sharp enough with one fitted map: no cascades. */
@@ -95,7 +100,7 @@ export function planSunShadows(input: SunShadowInput): SunShadowPlan {
   const radius = finitePositive(input.contentRadius, 0);
   const tier: RenderTier = input.still ? 'ultra' : input.tier;
   const capable = (input.still || tier !== 'low') && input.software !== true;
-  const filter: SunShadowFilter = capable ? 'soft' : 'pcf';
+  const filter: SunShadowFilter = capable || (input.nearestCompare === true && input.software !== true) ? 'soft' : 'pcf';
   // Cascades draw the casters three times (a third of a medium-tier frame on an integrated GPU, measured: 1100 draw calls
   // against 614 on a house, 22.6 ms against 14.3 ms): they belong to the tiers that have the GPU for them.
   const cascadeTier = input.still || tier === 'high' || tier === 'ultra';

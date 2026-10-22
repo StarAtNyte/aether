@@ -63,7 +63,7 @@ describe('PerformanceGovernor', () => {
     const g = new PerformanceGovernor();
     expect(feed(g, 3, 1 / 8, 1)).toBeGreaterThanOrEqual(1);
   });
-  it('never goes past the last step and never back', () => {
+  it('never goes past the last step, and does not climb while the resolution is still lowered', () => {
     const g = new PerformanceGovernor();
     feed(g, 120, 1 / 5);
     expect(g.level).toBe(PERFORMANCE_STEPS.length);
@@ -85,5 +85,62 @@ describe('PerformanceGovernor', () => {
   });
   it('has sane defaults', () => {
     expect(GOVERNOR_DEFAULTS.badFps).toBeLessThan(GOVERNOR_DEFAULTS.lowFps);
+  });
+
+  describe('climbing back', () => {
+    it('starts at a level and climbs one step after fast frames at full scale, not before the settle time', () => {
+      const g = new PerformanceGovernor();
+      g.start(4);
+      expect(g.level).toBe(4);
+      expect(feed(g, 15, 1 / 60, 1)).toBe(0);
+      expect(g.level).toBe(4);
+      expect(feed(g, 10, 1 / 60, 1)).toBe(1);
+      expect(g.level).toBe(3);
+      expect(g.lastMove).toBe(-1);
+    });
+    it('climbs every settle period down to 0 and then stays', () => {
+      const g = new PerformanceGovernor();
+      g.start(3);
+      let moves = 0;
+      for (let t = 0; t < 400; t += 1 / 60) if (g.record(1 / 60, true, 0)) moves++;
+      expect(moves).toBe(3);
+      expect(g.level).toBe(0);
+    });
+    it('does not climb on moderate frame rates (hysteresis band between the down and up thresholds)', () => {
+      const g = new PerformanceGovernor();
+      g.start(2);
+      expect(feed(g, 120, 1 / 35, 1)).toBe(0);
+      expect(g.level).toBe(2);
+    });
+    it('does not climb while adaptive resolution is below full scale', () => {
+      const g = new PerformanceGovernor();
+      g.start(2);
+      expect(feed(g, 120, 1 / 60, 0.8)).toBe(0);
+    });
+    it('pins the floor when a climb is undone at once, and never climbs there again', () => {
+      const g = new PerformanceGovernor();
+      g.start(2);
+      feed(g, 25, 1 / 60, 1);
+      expect(g.level).toBe(1);
+      // The step up made frames slow: down again within the retreat window.
+      expect(feed(g, 3.2, 1 / 6, 1)).toBe(1);
+      expect(g.lastMove).toBe(1);
+      expect(g.level).toBe(2);
+      expect(g.floor).toBe(1);
+      feed(g, 300, 1 / 60, 1);
+      expect(g.level).toBe(1);
+    });
+    it('is idle when disabled and ignores hidden-tab stalls', () => {
+      const g = new PerformanceGovernor();
+      g.start(4);
+      g.enabled = false;
+      expect(feed(g, 100, 1 / 60, 1)).toBe(0);
+      g.enabled = true;
+      for (let i = 0; i < 200; i++) g.record(2, true, 1);
+      expect(g.level).toBe(4);
+    });
+    it('keeps the up threshold well above the down threshold', () => {
+      expect(GOVERNOR_DEFAULTS.upFps).toBeGreaterThan(GOVERNOR_DEFAULTS.lowFps * 2);
+    });
   });
 });

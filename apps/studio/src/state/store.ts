@@ -103,7 +103,7 @@ export interface GpuState {
   /** How the backend was chosen and why (adapter attempts, fallback reason). */
   backend?: BackendReport;
   /** Render tier in effect and the effects running (filled in once the renderer has applied the settings). */
-  render?: { tier: string; auto: string; effects: string[] };
+  render?: { tier: string; auto: string; effects: string[]; /** Steps of the performance ladder given up (0: none). */ ladder?: number };
 }
 
 /** A transient notification. */

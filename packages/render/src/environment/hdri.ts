@@ -5,6 +5,7 @@
  * the analytic sky stays in place until the map arrives or when the id is
  * unknown, so a world never renders without a sky.
  */
+import { bakeFlipY } from '../gpu/gecko-safe';
 import { DataUtils, EquirectangularReflectionMapping, type Scene, type Texture } from 'three';
 import { assetInfo, loadCatalog } from '@aether/assets';
 
@@ -277,6 +278,8 @@ export class HdriController {
           tex.mapping = EquirectangularReflectionMapping;
           this.sunInfo = hdriSun(tex);
           if (this.clampSun) clampRadiance(tex, HDRI_SUN_CLAMP);
+          // The loader leaves flipY on; the sun above was read with rows top first. Flip the rows now so the upload sets no flag.
+          bakeFlipY(tex);
           this.tex = tex;
           this.texAuto = this.clampSun;
           this.onChange();

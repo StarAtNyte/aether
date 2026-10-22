@@ -79,6 +79,8 @@ import { capTier, cutsAt, hardwareTierCap, PerformanceGovernor, PERFORMANCE_STEP
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { planSunShadows } from './environment/sun-shadow-plan';
+import { GECKO_START_LEVEL, geckoSafePath } from './gpu/gecko-safe';
+import { primeTarget } from './gpu/prime-target';
 import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
 import { setFoliageTint } from './materials/foliage-shading';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
@@ -631,9 +633,11 @@ export class WorldRenderer {
   private readonly hardware: HardwareHints = readHardware();
   /** Steps down the performance ladder while frames stay slow (automatic tier only). */
   private readonly governor = new PerformanceGovernor();
+  /** Firefox on WebGL2 with a real GPU: nearest shadow comparison, cleared targets and a light start that climbs (gpu/gecko-safe.ts). */
+  private readonly geckoSafe: boolean;
   private cuts: PerformanceCuts = cutsAt(0);
   /** Told when the governor gave something up: the step and what it was. */
-  onPerformanceStep: ((level: number, step: string) => void) | null = null;
+  onPerformanceStep: ((level: number, step: string, up?: boolean) => void) | null = null;
   /** Told when the black-screen watchdog stepped down or a shader failed to build (see {@link WatchdogEvent}). */
   onWatchdog: ((e: WatchdogEvent) => void) | null = null;
   private readonly watchdog: BlackScreenWatchdog;
@@ -776,6 +780,7 @@ export class WorldRenderer {
     this.domElement = canvas;
     this.perspective = camera;
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
+    this.geckoSafe = geckoSafePath(backend, gpu.description);
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.watchdogOn = opts.watchdog !== false;
     // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
@@ -956,6 +961,7 @@ export class WorldRenderer {
     onControlsChange?.(() => wr.requestRender());
     wr.resize(width, height);
     if (opts.safeMode === true) wr.setSafeMode(true);
+    else wr.startCautiously();
     if (wr.budget.post) {
       const want = wr.wantedEffects();
       if (want) {
@@ -2991,7 +2997,7 @@ export class WorldRenderer {
     // shaders can be checked on SwiftShader's WebGPU and WebGL2.
     if (!this.env.sun.castShadow) return;
     const q = this.qualityPlan;
-    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, cascades: this.cuts.cascades, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
+    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, cascades: this.cuts.cascades, nearestCompare: this.geckoSafe, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
     if (!this.env.setSunShadows(plan, this.perspective)) return;
     this.env.sun.shadow.radius = q.shadowRadius;
     if (this.post || this.postPending) {
@@ -3353,16 +3359,34 @@ export class WorldRenderer {
     }
   }
 
-  /** Apply the cuts of the ladder's current level. */
+  /**
+   * Firefox on WebGL2 starts on the light end of the ladder (no baked room light, one shadow map, the lowest tier: no
+   * bloom chain) and the governor climbs while frames stay comfortably fast. Clears the targets the water samples.
+   */
+  private startCautiously(): void {
+    if (!this.geckoSafe) return;
+    primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.backdrop.target);
+    primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.mirror.mirror.target);
+    this.governor.start(GECKO_START_LEVEL);
+    this.cuts = cutsAt(GECKO_START_LEVEL);
+    this.fx.vfx.emissionScale = this.cuts.effects;
+    this.syncInteriorLight();
+    this.applyQuality(this.qualityPlan.quality);
+    log.info(`performance: cautious start at level ${GECKO_START_LEVEL} (Firefox on WebGL2), climbs while frames are fast`);
+  }
+
+  /** Apply the cuts of the ladder's current level (the governor moved one step: {@link PerformanceGovernor.lastMove}). */
   private applyPerformance(): void {
-    while (this.governor.level < PERFORMANCE_STEPS.length && !this.stepUseful(PERFORMANCE_STEPS[this.governor.level - 1] as (typeof PERFORMANCE_STEPS)[number])) this.governor.level++;
+    const up = this.governor.lastMove < 0;
+    if (!up) while (this.governor.level < PERFORMANCE_STEPS.length && !this.stepUseful(PERFORMANCE_STEPS[this.governor.level - 1] as (typeof PERFORMANCE_STEPS)[number])) this.governor.level++;
     const level = this.governor.level;
     this.cuts = cutsAt(level);
     this.fx.vfx.emissionScale = this.cuts.effects;
     this.syncInteriorLight();
     this.applyQuality(this.qualityPlan.quality);
-    log.info(`performance: gave up ${PERFORMANCE_STEPS[level - 1] ?? 'nothing'} (level ${level})`);
-    this.onPerformanceStep?.(level, PERFORMANCE_STEPS[level - 1] ?? '');
+    if (up) log.info(`performance: gave back ${PERFORMANCE_STEPS[level] ?? 'nothing'} (level ${level}, tier ${this.qualityPlan.tier})`);
+    else log.info(`performance: gave up ${PERFORMANCE_STEPS[level - 1] ?? 'nothing'} (level ${level})`);
+    this.onPerformanceStep?.(level, up ? '' : (PERFORMANCE_STEPS[level - 1] ?? ''), up);
   }
 
   /**
