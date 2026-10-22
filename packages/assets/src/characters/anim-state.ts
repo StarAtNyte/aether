@@ -60,6 +60,12 @@ const RATE_MAX = 1.7;
 const FALL_AFTER = 0.55;
 /** Vertical speed below which an airborne body is falling, not rising. */
 const FALL_VY = -2.5;
+/** Seconds the take-off pose holds before the rising pose (the rig shapes the push-off and the tuck from the vertical speed). */
+const TAKEOFF_TIME = 0.14;
+/** Play rate of the sit down and stand up clips (the captured ones are slow, with a long settle). */
+export const SIT_RATE = 1.4;
+/** Shortest fall (s) that ends in a landing absorb. */
+const LAND_AFTER = 0.18;
 
 /** Clip for a mood when standing. */
 export function idleClipFor(mood: CharacterMood): string {
@@ -272,15 +278,15 @@ export class LocomotionMachine {
         this.stateTime = 0;
       }
       this.wasGrounded = false;
-      if (this.state === 'jump' && this.stateTime > this.dur('jump_start') * 0.95) this.state = 'air';
+      if (this.state === 'jump' && this.stateTime > TAKEOFF_TIME) this.state = 'air';
       if (this.state !== 'jump' && (input.vy < FALL_VY || this.airTime > FALL_AFTER) && input.vy < -0.5) this.state = this.has('fall') ? 'fall' : 'air';
       if (this.state === 'loco' || this.state === 'crouch' || this.state === 'talk' || this.state === 'sit' || this.state === 'sit_down' || this.state === 'stand_up') this.state = input.vy > 0 ? 'air' : this.has('fall') ? 'fall' : 'air';
-      const c = this.state === 'jump' ? 'jump_start' : this.state === 'fall' ? 'fall' : 'jump_air';
+      const c = this.state === 'fall' ? 'fall' : 'jump_air';
       return this.finish(this.has(c) ? c : 'idle', 1, this.state !== 'jump', 0.12, prevState);
     }
     if (!this.wasGrounded) {
       this.wasGrounded = true;
-      if ((this.state === 'air' || this.state === 'fall' || this.state === 'jump') && this.airTime > 0.25 && this.has('land')) {
+      if ((this.state === 'air' || this.state === 'fall' || this.state === 'jump') && this.airTime > LAND_AFTER && this.has('land')) {
         this.state = 'land';
         this.stateTime = 0;
       } else this.state = 'loco';
@@ -299,13 +305,13 @@ export class LocomotionMachine {
           this.sitPhase = this.has('sit_down') ? 'down' : 'sit';
           this.stateTime = 0;
         }
-        if (this.sitPhase === 'down' && this.stateTime >= this.dur('sit_down') * 0.97) {
+        if (this.sitPhase === 'down' && this.stateTime >= (this.dur('sit_down') / SIT_RATE) * 0.97) {
           this.sitPhase = 'sit';
           this.stateTime = 0;
         }
         if (this.sitPhase === 'down') {
           this.state = 'sit_down';
-          return this.finish('sit_down', 1, false, 0.2, prevState);
+          return this.finish('sit_down', SIT_RATE, false, 0.2, prevState);
         }
         this.state = 'sit';
         const sitting = input.talking && this.has('sit_shrug') ? 'sit_shrug' : this.has('sit') ? 'sit' : 'idle';
@@ -315,9 +321,9 @@ export class LocomotionMachine {
       this.stateTime = 0;
     }
     if (this.sitPhase === 'up') {
-      if (this.stateTime < this.dur('stand_up') * 0.95) {
+      if (this.stateTime < (this.dur('stand_up') / SIT_RATE) * 0.95) {
         this.state = 'stand_up';
-        return this.finish('stand_up', 1, false, 0.2, prevState);
+        return this.finish('stand_up', SIT_RATE, false, 0.2, prevState);
       }
       this.sitPhase = 'none';
     }

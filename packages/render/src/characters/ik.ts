@@ -39,7 +39,11 @@ export interface LookState {
 /** Distribution of the look rotation over the spine, neck and head. */
 const LOOK_SPLIT = { spine: 0.18, neck: 0.32, head: 0.5 } as const;
 /** Largest head turn (radians) before the target is out of reach. */
-export const LOOK_MAX_YAW = (75 * Math.PI) / 180;
+export const LOOK_MAX_YAW = (70 * Math.PI) / 180;
+/** A target farther round than this (behind the body) is not looked at: the head returns to forward instead of flipping. */
+export const LOOK_GIVE_UP_YAW = (110 * Math.PI) / 180;
+/** Fastest head turn (radians per second). */
+export const LOOK_MAX_RATE = (260 * Math.PI) / 180;
 export const LOOK_MAX_PITCH = (35 * Math.PI) / 180;
 
 /** Bones used for looking. */
@@ -115,4 +119,52 @@ export function solveTwoBone(upper: Bone, lower: Bone, end: Object3D, target: Ve
   const dL = new Quaternion().setFromUnitVectors(curLower, want);
   if (weight < 1) dL.slerp(new Quaternion(), 1 - weight);
   rotateBoneWorld(lower, dL);
+}
+
+
+/** Wrap an angle to (-PI, PI] (the shortest way round). */
+export function wrapAngle(a: number): number {
+  let d = a % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  else if (d <= -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/**
+ * Smoothed head gaze: eases toward a wanted yaw / pitch within the limits, returns slowly to forward when there is
+ * nothing to look at, and fades out (weight) while the body is busy (jumping, turning, sitting down), so the head
+ * never snaps, spins or flips. Pure: a function of the inputs and `dt`.
+ */
+export class LookController {
+  yaw = 0;
+  pitch = 0;
+  /** 0..1 share of the gaze applied to the bones. */
+  weight = 0;
+
+  /**
+   * `want` is the target's yaw / pitch relative to the body (radians) or null for none; `allow` false fades the gaze out.
+   * Returns the state to apply (scale it by `weight`).
+   */
+  update(dt: number, want: { yaw: number; pitch: number } | null, allow: boolean): void {
+    const step = Math.min(dt, 0.1);
+    let wy = 0;
+    let wp = 0;
+    let follow = false;
+    if (want && allow && Number.isFinite(want.yaw + want.pitch)) {
+      const yaw = wrapAngle(want.yaw);
+      if (Math.abs(yaw) < LOOK_GIVE_UP_YAW) {
+        wy = Math.max(-LOOK_MAX_YAW, Math.min(LOOK_MAX_YAW, yaw));
+        wp = Math.max(-LOOK_MAX_PITCH, Math.min(LOOK_MAX_PITCH, want.pitch));
+        follow = true;
+      }
+    }
+    const k = follow ? 7 : 2.2;
+    const maxStep = LOOK_MAX_RATE * step;
+    this.yaw += Math.max(-maxStep, Math.min(maxStep, (wy - this.yaw) * Math.min(1, step * k)));
+    this.pitch += Math.max(-maxStep, Math.min(maxStep, (wp - this.pitch) * Math.min(1, step * k)));
+    const wantW = allow ? 1 : 0;
+    this.weight += (wantW - this.weight) * Math.min(1, step * (allow ? 5 : 12));
+    this.yaw = Math.max(-LOOK_MAX_YAW, Math.min(LOOK_MAX_YAW, this.yaw));
+    this.pitch = Math.max(-LOOK_MAX_PITCH, Math.min(LOOK_MAX_PITCH, this.pitch));
+  }
 }

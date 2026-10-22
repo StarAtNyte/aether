@@ -10,8 +10,9 @@
 import { AnimationMixer, Group, LoopOnce, LoopRepeat, Material, MathUtils, Mesh, Object3D, Quaternion, Vector3, type AnimationAction, type AnimationClip, type Bone } from 'three';
 import type { CharacterHold } from '@aether/core';
 import { LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, type Plan, type ResolvedLook } from '@aether/assets';
-import { applyLook, LOOK_MAX_PITCH, LOOK_MAX_YAW, solveTwoBone, type LookState } from './ik';
+import { applyLook, LookController, solveTwoBone, type LookState } from './ik';
 import { buildProp, type Prop } from './props';
+import { airPoseOf, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
 export type Foot = 'L' | 'R';
@@ -40,6 +41,7 @@ const _v2 = new Vector3();
 const _q = new Quaternion();
 const _target = new Vector3();
 const _pole = new Vector3();
+const _target2 = new Vector3();
 
 function boneOf(root: Object3D, name: string): Bone | null {
   return (root.getObjectByName(name) as Bone | undefined) ?? null;
@@ -71,6 +73,8 @@ export class CharacterRig {
   private smoothSpeed = 0;
   private timeScale = 1;
   private readonly lookState: LookState = { yaw: 0, pitch: 0 };
+  /** Smoothed, limited gaze (see {@link LookController}). */
+  readonly gaze = new LookController();
   private readonly bones: {
     root: Bone | null;
     spine: Bone | null;
@@ -82,9 +86,16 @@ export class CharacterRig {
     rUpper: Bone | null;
     rLower: Bone | null;
     rHand: Bone | null;
+    lThigh: Bone | null;
+    lCalf: Bone | null;
+    lFoot: Bone | null;
+    rThigh: Bone | null;
+    rCalf: Bone | null;
+    rFoot: Bone | null;
+    pelvis: Bone | null;
   };
   /** Every bone with the pose the mixer last left it in (before any correction): see {@link restoreClean}. */
-  private readonly allBones: Bone[] = [];
+  private readonly allBones: Object3D[] = [];
   private cleanQ: Float32Array = new Float32Array(0);
   private cleanP: Float32Array = new Float32Array(0);
   private cleanS: Float32Array = new Float32Array(0);
@@ -95,6 +106,20 @@ export class CharacterRig {
   private rootRestY = 0;
   /** Right arm rotations of the idle pose: a held long prop damps the arm swing toward them. */
   private readonly armRest: Array<{ bone: Bone; q: Quaternion }> = [];
+  /** Height of the ankle joint above the sole in the rest pose (m, scaled). */
+  private ankleRest = 0.1;
+  /** Top of the seat above the rig's feet (m) while the person sits, or null: the pelvis settles onto it. */
+  seatTop: number | null = null;
+  private seatBlend = 0;
+  private wasGrounded = true;
+  private airT = 0;
+  private peakUp = 0;
+  private minVy = 0;
+  private lastVy = 0;
+  private kick = 0;
+  private launchY = 0;
+  private impact = 0;
+  private landSide = 1;
   private footPhase = -1;
   private airBlend = 0;
   private strokeAmp = 0;
@@ -135,10 +160,18 @@ export class CharacterRig {
       rUpper: boneOf(s, 'Bip01_R_UpperArm'),
       rLower: boneOf(s, 'Bip01_R_Forearm'),
       rHand: boneOf(s, 'Bip01_R_Hand'),
+      lThigh: boneOf(s, 'Bip01_L_Thigh'),
+      lCalf: boneOf(s, 'Bip01_L_Calf'),
+      lFoot: boneOf(s, 'Bip01_L_Foot'),
+      rThigh: boneOf(s, 'Bip01_R_Thigh'),
+      rCalf: boneOf(s, 'Bip01_R_Calf'),
+      rFoot: boneOf(s, 'Bip01_R_Foot'),
+      pelvis: boneOf(s, 'Bip01_Pelvis'),
     };
     this.rootRestY = this.bones.root?.position.y ?? 0;
     s.traverse((o) => {
-      if ((o as Bone).isBone) this.allBones.push(o as Bone);
+      // Bones and the plain nodes above them (the skeleton's root node is animated and hip-scaled too).
+      if (o !== s && !(o as Mesh).isMesh) this.allBones.push(o as Bone);
     });
     this.cleanQ = new Float32Array(this.allBones.length * 4);
     this.cleanP = new Float32Array(this.allBones.length * 3);
@@ -148,6 +181,10 @@ export class CharacterRig {
     this.setHold(opts.look.hold);
     const sc = opts.look.scale;
     if (sc !== 1) this.root.scale.setScalar(sc);
+    this.root.updateMatrixWorld(true);
+    this.pelvisRestY = this.bones.pelvis ? this.root.worldToLocal(this.bones.pelvis.getWorldPosition(_v)).y / Math.max(0.01, sc) : 0;
+    const foot = this.bones.lFoot;
+    if (foot) this.ankleRest = foot.getWorldPosition(_v).y - this.root.getWorldPosition(_v2).y;
   }
 
   private action(name: string): AnimationAction | null {
@@ -347,6 +384,10 @@ export class CharacterRig {
     if (this.bones.root && this.hipScale !== 1) this.bones.root.position.y = this.bones.root.position.y * this.hipScale;
     this.checkFootsteps();
     this.dampHeldArm(plan.state);
+    this.model.position.set(0, 0, 0);
+    this.airArms = 0;
+    this.trackAir(step);
+    if (detail >= 1) this.applyBodyPose(plan.state, step);
     if (detail >= 1) this.relaxAirArms(plan.state, step);
     if (detail >= 1) this.paddleStroke(plan.state, step);
     if (detail >= 1) {
@@ -365,7 +406,7 @@ export class CharacterRig {
     if (!this.cleanReady) return;
     const b = this.allBones;
     for (let i = 0; i < b.length; i++) {
-      const bone = b[i] as Bone;
+      const bone = b[i] as Object3D;
       bone.quaternion.set(this.cleanQ[i * 4] as number, this.cleanQ[i * 4 + 1] as number, this.cleanQ[i * 4 + 2] as number, this.cleanQ[i * 4 + 3] as number);
       bone.position.set(this.cleanP[i * 3] as number, this.cleanP[i * 3 + 1] as number, this.cleanP[i * 3 + 2] as number);
       bone.scale.set(this.cleanS[i * 3] as number, this.cleanS[i * 3 + 1] as number, this.cleanS[i * 3 + 2] as number);
@@ -375,12 +416,165 @@ export class CharacterRig {
   private saveClean(): void {
     const b = this.allBones;
     for (let i = 0; i < b.length; i++) {
-      const bone = b[i] as Bone;
+      const bone = b[i] as Object3D;
       bone.quaternion.toArray(this.cleanQ, i * 4);
       bone.position.toArray(this.cleanP, i * 3);
       bone.scale.toArray(this.cleanS, i * 3);
     }
     this.cleanReady = true;
+  }
+
+  /** Air bookkeeping from what the simulation published: take-off point, peak climb, impact speed, a second jump. */
+  private trackAir(dt: number): void {
+    const inp = this.input;
+    if (!inp.grounded) {
+      if (this.wasGrounded) {
+        this.airT = 0;
+        this.peakUp = 0;
+        this.minVy = 0;
+        this.kick = 0;
+        this.launchY = this.root.getWorldPosition(_v).y;
+      }
+      this.airT += dt;
+      // A fresh upward burst in mid-air is a second jump.
+      if (!this.wasGrounded && inp.vy > this.lastVy + 2.2 && inp.vy > 2 && this.airT > 0.12) {
+        this.kick = 1;
+        this.peakUp = inp.vy;
+        this.airT = 0.14;
+      }
+      this.peakUp = Math.max(this.peakUp, inp.vy);
+      this.minVy = Math.min(this.minVy, inp.vy);
+      this.kick = Math.max(0, this.kick - dt * 2.4);
+    } else if (!this.wasGrounded) {
+      this.impact = Math.max(0, -this.minVy);
+      this.landSide = -this.landSide;
+    }
+    this.lastVy = inp.vy;
+    this.wasGrounded = inp.grounded;
+  }
+
+  /**
+   * The body shaping that sits on top of the captured clips and follows physics and furniture: seat placement, feet on
+   * the floor, hands on the lap, the push-off, tuck and landing of a jump. Idempotent per frame (see {@link restoreClean}).
+   */
+  private applyBodyPose(state: string, dt: number): void {
+    const b = this.bones;
+    const sc = this.root.scale.x;
+    // Seat.
+    const rawSeat = this.seatTop === null ? 0 : seatBlendOf(state, this.current?.time ?? 0);
+    this.seatBlend += (rawSeat - this.seatBlend) * Math.min(1, dt * 14);
+    if (this.seatBlend < 0.002) this.seatBlend = 0;
+    const airborne = state === 'jump' || state === 'air' || state === 'fall';
+    const landing = state === 'land';
+    const pose = airborne ? airPoseOf(this.input.vy, this.peakUp, this.airT, this.kick) : null;
+    // Everything eases in and out so crossfades between clips never meet a popping correction.
+    const ease = Math.min(1, dt * (airborne ? 22 : 14));
+    this.hipS += ((pose?.hipFlex ?? 0) - this.hipS) * ease;
+    this.kneeS += ((pose?.kneeFlex ?? 0) - this.kneeS) * ease;
+    this.plantS += ((pose ? pose.plant : landing ? 1 : 0) - this.plantS) * Math.min(1, dt * 18);
+    this.landS += ((landing ? 1 : 0) - this.landS) * Math.min(1, dt * 16);
+    if (this.hipS < 0.002) this.hipS = 0;
+    if (this.kneeS < 0.002) this.kneeS = 0;
+    if (this.plantS < 0.01) this.plantS = 0;
+    if (this.landS < 0.01) this.landS = 0;
+    if (this.seatBlend === 0 && this.hipS === 0 && this.kneeS === 0 && this.plantS === 0 && this.landS === 0) return;
+    this.root.updateWorldMatrix(true, true);
+    const rootY = this.root.getWorldPosition(_v).y;
+    if (this.seatBlend > 0 && this.seatTop !== null && b.pelvis) {
+      b.pelvis.getWorldPosition(_v2);
+      this.root.worldToLocal(_v2);
+      const target = this.seatTop + PELVIS_ABOVE_SEAT * sc;
+      this.model.position.set(-this.seatBlend * _v2.x, this.seatBlend * (target - _v2.y), -this.seatBlend * _v2.z);
+      this.root.updateWorldMatrix(false, true);
+      this.plantFeet(rootY, this.seatBlend);
+      if (!this.prop && this.seatBlend > 0.4) this.handsOnLap(this.seatBlend * 0.9);
+    }
+    if (this.landS > 0 && b.pelvis) {
+      // The captured landing crouch is deep: a hop keeps a share of it, a drop all of it; the planted feet bend the knees the rest.
+      const rest = this.pelvisRest(sc);
+      b.pelvis.getWorldPosition(_v2);
+      this.root.worldToLocal(_v2);
+      const deficit = Math.max(0, rest - _v2.y);
+      const keep = landKeep(this.impact);
+      this.model.position.x += this.landS * 0.14 * deficit * this.landSide * (1 - keep * 0.5);
+      this.model.position.y += this.landS * (1 - keep) * deficit;
+      this.root.updateWorldMatrix(false, true);
+    }
+    if (this.hipS > 0 || this.kneeS > 0) this.legPose(this.hipS, this.kneeS);
+    if (pose) this.airArms = pose.armSwing;
+    if (this.plantS > 0) {
+      this.root.updateWorldMatrix(false, true);
+      this.plantFeet(airborne ? this.launchY : rootY, airborne ? this.plantS : this.plantS * (1 - landKeep(this.impact) * 0.4));
+    }
+  }
+
+  private hipS = 0;
+  private kneeS = 0;
+  private plantS = 0;
+  private landS = 0;
+
+  private airArms = 0;
+  private pelvisRestY = 0;
+
+  /** Standing pelvis height above the feet (m), measured once from the idle pose. */
+  private pelvisRest(sc: number): number {
+    if (this.pelvisRestY > 0) return this.pelvisRestY * sc;
+    return (this.bones.root?.position.y ?? 0.9) * this.hipScale * sc;
+  }
+
+  /** Both legs flexed: thighs forward by `hip`, calves back by `knee` (radians, staggered a little left to right). */
+  private legPose(hip: number, knee: number): void {
+    const b = this.bones;
+    this.model.getWorldQuaternion(_qm);
+    for (const [thigh, calf, k] of [[b.lThigh, b.lCalf, 1.18], [b.rThigh, b.rCalf, 0.82]] as const) {
+      if (!thigh || !calf) continue;
+      thigh.parent?.updateWorldMatrix(true, false);
+      thigh.parent?.getWorldQuaternion(_qp);
+      thigh.quaternion.copy(boneTurned(thigh.quaternion, _qp, _qm, _xAxis, -hip * k));
+      thigh.updateWorldMatrix(true, false);
+      thigh.getWorldQuaternion(_qp);
+      calf.quaternion.copy(boneTurned(calf.quaternion, _qp, _qm, _xAxis, knee * k));
+    }
+  }
+
+  /** Put both soles on the floor plane `groundY` (world) with the knees pointing the way the body faces. */
+  private plantFeet(groundY: number, weight: number): void {
+    const b = this.bones;
+    const e = this.root.matrixWorld.elements;
+    const fx = -Math.sin(Math.atan2(e[8] as number, e[10] as number));
+    const fz = -Math.cos(Math.atan2(e[8] as number, e[10] as number));
+    for (const [thigh, calf, foot] of [[b.lThigh, b.lCalf, b.lFoot], [b.rThigh, b.rCalf, b.rFoot]] as const) {
+      if (!thigh || !calf || !foot) continue;
+      foot.updateWorldMatrix(true, false);
+      foot.getWorldPosition(_target);
+      _target.y = groundY + this.ankleRest;
+      thigh.getWorldPosition(_pole);
+      _pole.x += fx * 0.6;
+      _pole.z += fz * 0.6;
+      solveTwoBone(thigh, calf, foot, _target, _pole, weight);
+    }
+  }
+
+  /** Both hands resting on the thighs (a seated person with free hands), elbows out a little. */
+  private handsOnLap(weight: number): void {
+    const b = this.bones;
+    const pelvis = b.pelvis;
+    if (!pelvis) return;
+    const pairs = [[b.lUpper, b.lLower, b.lHand, b.lThigh, b.lCalf], [b.rUpper, b.rLower, b.rHand, b.rThigh, b.rCalf]] as const;
+    for (const [upper, lower, hand, thigh, calf] of pairs) {
+      if (!upper || !lower || !hand || !thigh || !calf) continue;
+      thigh.updateWorldMatrix(true, false);
+      calf.updateWorldMatrix(true, false);
+      thigh.getWorldPosition(_target);
+      calf.getWorldPosition(_v2);
+      _target.lerp(_v2, 0.55);
+      _target.y += 0.09 * this.root.scale.x;
+      upper.getWorldPosition(_pole);
+      pelvis.getWorldPosition(_v2);
+      _v2.set(_pole.x - _v2.x, 0, _pole.z - _v2.z).normalize();
+      _pole.addScaledVector(_v2, 0.3).y -= 0.12;
+      solveTwoBone(upper, lower, hand, _target, _pole, weight);
+    }
   }
 
   /**
@@ -404,6 +598,7 @@ export class CharacterRig {
     const lo = this.bones.lUpper;
     const ro = this.bones.rUpper;
     if (this.airBlend < 0.02 || !lo || !ro) return;
+    const swing = this.airArms * this.airBlend;
     const k = MathUtils.degToRad(state === 'fall' ? 44 : 32) * this.airBlend;
     this.root.updateWorldMatrix(true, true);
     this.model.getWorldQuaternion(_qm);
@@ -412,6 +607,11 @@ export class CharacterRig {
       if (!parent) continue;
       parent.getWorldQuaternion(_qp);
       bone.quaternion.copy(armRelaxed(bone.quaternion, _qp, _qm, sign * k));
+      if (Math.abs(swing) > 1e-3) {
+        bone.updateWorldMatrix(false, false);
+        parent.getWorldQuaternion(_qp);
+        bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, -swing));
+      }
     }
   }
 
@@ -484,13 +684,16 @@ export class CharacterRig {
 
   private updateLook(dt: number, detail: number): void {
     const head = this.bones.head;
+    if (!head) return;
     const target = this.lookTarget;
-    let wantYaw = 0;
-    let wantPitch = 0;
-    if (head && target && !this.machine.isDead) {
-      this.root.updateWorldMatrix(true, false);
-      const e = this.root.matrixWorld.elements;
-      const bodyYaw = Math.atan2(e[8] as number, e[10] as number);
+    const state = this.plan?.state ?? 'loco';
+    // The head leaves the body alone while it jumps, lands, is hit, turns or changes between standing and sitting.
+    const allow = !this.machine.isDead && state !== 'jump' && state !== 'air' && state !== 'fall' && state !== 'land' && state !== 'hit' && state !== 'attack' && state !== 'sit_down' && state !== 'stand_up';
+    let want: { yaw: number; pitch: number } | null = null;
+    this.root.updateWorldMatrix(true, false);
+    const e = this.root.matrixWorld.elements;
+    const bodyYaw = Math.atan2(e[8] as number, e[10] as number);
+    if (target) {
       head.getWorldPosition(_v2);
       const dx = target.x - _v2.x;
       const dz = target.z - _v2.z;
@@ -498,24 +701,15 @@ export class CharacterRig {
       if (horiz > 0.15) {
         const fx = -Math.sin(bodyYaw);
         const fz = -Math.cos(bodyYaw);
-        const yaw = Math.atan2(fz * dx - fx * dz, fx * dx + fz * dz);
-        if (Math.abs(yaw) < MathUtils.degToRad(120)) {
-          wantYaw = MathUtils.clamp(yaw, -LOOK_MAX_YAW, LOOK_MAX_YAW);
-          wantPitch = MathUtils.clamp(Math.atan2(target.y - _v2.y, horiz), -LOOK_MAX_PITCH, LOOK_MAX_PITCH);
-        }
+        want = { yaw: Math.atan2(fz * dx - fx * dz, fx * dx + fz * dz), pitch: Math.atan2(target.y - _v2.y, horiz) };
       }
-      this.lookState.yaw += (wantYaw - this.lookState.yaw) * Math.min(1, dt * 6);
-      this.lookState.pitch += (wantPitch - this.lookState.pitch) * Math.min(1, dt * 6);
-      if (detail >= 1) applyLook(this.bones, this.lookState, bodyYaw);
-      return;
     }
-    this.lookState.yaw *= Math.max(0, 1 - dt * 6);
-    this.lookState.pitch *= Math.max(0, 1 - dt * 6);
-    if (Math.abs(this.lookState.yaw) > 1e-3 && head) {
-      this.root.updateWorldMatrix(true, false);
-      const e = this.root.matrixWorld.elements;
-      applyLook(this.bones, this.lookState, Math.atan2(e[8] as number, e[10] as number));
-    }
+    this.gaze.update(dt, want, allow);
+    const g = this.gaze;
+    if (g.weight < 0.01 || (Math.abs(g.yaw) < 1e-4 && Math.abs(g.pitch) < 1e-4)) return;
+    this.lookState.yaw = g.yaw * g.weight;
+    this.lookState.pitch = g.pitch * g.weight;
+    if (detail >= 1) applyLook(this.bones, this.lookState, bodyYaw);
   }
 
   private updateCarry(): void {

@@ -254,7 +254,7 @@ describe('sitting', () => {
     expect(Math.abs(left?.feet[0] ?? 9)).toBeLessThanOrEqual(0.71);
     // A chair is centred; a turned piece turns the pose.
     const chair = seatPose('chair', [1, 0, 1], 90, [5, 0, 5]);
-    expect(chair?.feet[0]).toBeCloseTo(1 + Math.sin(Math.PI / 2) * 0.02, 5);
+    expect(chair?.feet[0]).toBeCloseTo(1 - Math.sin(Math.PI / 2) * 0.08, 5);
     expect(chair?.stand[0]).toBeGreaterThan(1.5);
     expect(seatPose('dining-table', [0, 0, 0], 0, [0, 0, 0])).toBeNull();
     expect(seatPose('sofa', [Number.NaN, 0, 0], 0, [0, 0, 0])).toBeNull();

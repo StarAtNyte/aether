@@ -41,6 +41,10 @@ describe('rig stability', () => {
       maxHeadDrift = Math.max(maxHeadDrift, ref.y);
       expect(Number.isFinite(ref.y)).toBe(true);
     }
+    const pelvis = rig.root.getObjectByName('Bip01_Pelvis')!;
+    pelvis.getWorldPosition(ref);
+    expect(ref.y).toBeGreaterThan(0.5);
+    expect(ref.y).toBeLessThan(1.3);
     expect(maxScaleErr).toBeLessThan(1e-3);
     expect(maxHeadDrift).toBeLessThan(2.5);
     // body-relative head yaw: the model faces ±Z in the file, so measure its distance from either axis

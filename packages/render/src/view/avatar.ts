@@ -26,6 +26,12 @@ export interface AvatarState {
   vy: number;
   crouching?: boolean;
   sprinting?: boolean;
+  /** Seated: the sit clips play (the owner walks the body to the seat and lowers it, see the studio's seat sequence). */
+  sitting?: boolean;
+  /** Seat surface height above the feet (m) while a seat is in use (also during the approach and the stand-up). */
+  seatTop?: number;
+  /** Body facing (degrees, 0 faces −Z) imposed by the owner (turning to face out of a seat), or null/absent: the body turns toward its motion. */
+  faceYawDeg?: number | null;
 }
 
 /** Camera distance (m, to the head) under which the body stops being drawn. */
@@ -49,6 +55,7 @@ export class Avatar {
   private lastX = Number.NaN;
   private lastZ = Number.NaN;
   private bodyYaw = 0;
+  private turning = false;
   private lastTime = 0;
   private readonly look = new Vector3();
 
@@ -143,12 +150,29 @@ export class Avatar {
     this.lastTime = now;
     // The body turns toward where it walks; at rest it keeps its heading (first person: the camera's).
     const camYaw = this.group.rotation.y;
-    if (Number.isFinite(this.lastX) && dt > 0) {
+    let moving = false;
+    const face = state?.faceYawDeg;
+    if (face !== undefined && face !== null && Number.isFinite(face)) {
+      // Imposed facing (turning round to sit): a quick, smooth turn the short way.
+      this.bodyYaw = turnToward(this.bodyYaw, (face * Math.PI) / 180, Math.min(1, dt * 8));
+    } else if (Number.isFinite(this.lastX) && dt > 0) {
       const dx = x - this.lastX;
       const dz = z - this.lastZ;
       if (Math.hypot(dx, dz) / dt > 0.4) {
+        moving = true;
         const target = Math.atan2(-dx, -dz);
         this.bodyYaw = turnToward(this.bodyYaw, target, dt * 9);
+        this.turning = false;
+      } else {
+        // Standing still: the body turns on the spot once the view is well round (not for every small look).
+        let off = camYaw - this.bodyYaw;
+        while (off > Math.PI) off -= Math.PI * 2;
+        while (off < -Math.PI) off += Math.PI * 2;
+        if (Math.abs(off) > (70 * Math.PI) / 180) this.turning = true;
+        if (this.turning) {
+          this.bodyYaw = turnToward(this.bodyYaw, camYaw, Math.min(1, dt * 5));
+          if (Math.abs(off) < (20 * Math.PI) / 180) this.turning = false;
+        }
       }
     } else if (first) this.bodyYaw = camYaw;
     this.lastX = x;
@@ -161,10 +185,15 @@ export class Avatar {
         rig.input.vy = state.vy;
         rig.input.crouching = state.crouching ?? false;
         rig.input.sprinting = state.sprinting ?? false;
+        rig.input.sitting = state.sitting ?? false;
+        rig.seatTop = state.seatTop ?? null;
       }
-      // The head follows the camera's direction.
-      this.look.set(x - Math.sin(camYaw) * 6, y + 1.55, z - Math.cos(camYaw) * 6);
-      rig.lookTarget = this.look;
+      // The head follows the camera's direction only while the body is at rest (and then within the head's limits);
+      // on the move, in the air or turning it looks ahead.
+      if (!moving && !this.turning) {
+        this.look.set(x - Math.sin(camYaw) * 6, y + 1.55, z - Math.cos(camYaw) * 6);
+        rig.lookTarget = this.look;
+      } else rig.lookTarget = null;
     }
     this.applyVisibility();
   }

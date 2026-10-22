@@ -42,7 +42,8 @@ import { findAvatar, framingSphere, movingIds } from './worldQueries';
 import type { VoxelSession, VoxelPlay } from '../voxel/session';
 import type { VoxelHudState } from '../voxel/hudState';
 import { nextFrame } from '../lib/frame';
-import { PlayInteraction, seatPose, type InteractPrompt, type SeatPose } from './interaction';
+import { PlayInteraction, seatPose, SEATED_EYE, type InteractPrompt, type SeatPose } from './interaction';
+import { SeatSequence, type SeatFrame } from './seat-sequence';
 import { FeelOverlay } from './feelOverlay';
 import { footstepEffect, landingIntensity } from './feel';
 
@@ -264,7 +265,7 @@ export class Simulation {
   /** Aim-and-use controller of the running session (drawers, doors, taps, props to carry). */
   private interaction: PlayInteraction | null = null;
   /** The player sits on a piece of furniture (capsule disabled, eye lowered, movement locked until they stand). */
-  private sitting: { id: EntityId; pose: SeatPose } | null = null;
+  private sitting: { id: EntityId; pose: SeatPose; seq: SeatSequence; frame: SeatFrame } | null = null;
   private readonly interactionKeys = (e: KeyboardEvent): void => this.onInteractionKey(e);
   private readonly interactionClick = (e: PointerEvent): void => {
     if (e.button === 0 && this.interaction?.throwCarried()) e.stopImmediatePropagation();
@@ -1157,29 +1158,48 @@ export class Simulation {
     const q = t.quaternion;
     const yaw = (Math.atan2(2 * (q[3] * q[1] + q[0] * q[2]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180) / Math.PI;
     const b = entityWorldBounds(s.world, id);
-    const width = b ? Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]) : 1;
-    const pose = seatPose(kind, [t.position[0], t.position[1], t.position[2]], yaw, character.position, width);
+    // Footprint in the piece's own frame: a piece turned a quarter swaps its world extents.
+    const quarter = Math.abs(Math.sin((yaw * Math.PI) / 180)) > 0.7;
+    const wx = b ? b.max[0] - b.min[0] : 1;
+    const wz = b ? b.max[2] - b.min[2] : 0.8;
+    const dims = { width: quarter ? wz : wx, depth: quarter ? wx : wz, height: b ? b.max[1] - b.min[1] : 0 };
+    const pose = seatPose(kind, [t.position[0], t.position[1], t.position[2]], yaw, character.position, dims);
     if (!pose) return false;
+    // The capsule is out of the world for the whole sitting: it cannot climb the furniture. The body is placed by the sequence.
+    const from = character.position;
     character.setEnabled(false);
-    character.teleport(pose.feet);
-    this.input.setYaw(pose.yawDeg);
+    character.teleport(pose.floor);
     this.input.setPitch(-8);
-    this.renderer.setEyeHeight(pose.eye);
-    this.sitting = { id, pose };
+    const seq = new SeatSequence(pose, from);
+    this.sitting = { id, pose, seq, frame: seq.update(0) };
     return true;
   }
 
-  /** Stand up in front of the seat. */
+  /** Stand up in front of the seat (the body rises and steps out; the capsule returns when it has). */
   standUp(): void {
-    const s = this.session;
+    this.sitting?.seq.standUp();
+  }
+
+  /** Advance the sit-down or stand-up: body placement for the avatar, camera height and the end of the sitting. */
+  private stepSeat(s: PlaySession, dt: number): void {
     const sit = this.sitting;
+    const c = s.character;
     if (!sit) return;
-    this.sitting = null;
-    this.renderer.setEyeHeight(1.6);
-    const c = s?.character;
-    if (c) {
-      c.teleport(sit.pose.stand);
-      c.setEnabled(true);
+    const f = sit.seq.update(dt);
+    sit.frame = f;
+    if (f.phase === 'turn' || f.phase === 'approach') {
+      // The view comes round with the body.
+      const d = ((((sit.pose.yawDeg - this.input.yawDeg) % 360) + 540) % 360) - 180;
+      this.input.setYaw(this.input.yawDeg + d * Math.min(1, dt * 4));
+    }
+    this.renderer.setEyeHeight(1.6 + (sit.pose.top + SEATED_EYE - 1.6) * f.blend);
+    if (sit.seq.finished) {
+      this.sitting = null;
+      this.renderer.setEyeHeight(1.6);
+      if (c) {
+        c.teleport(sit.pose.stand);
+        c.setEnabled(true);
+      }
     }
   }
 
@@ -1216,7 +1236,7 @@ export class Simulation {
           const m = sim.renderer.camera.matrixWorld.elements;
           const dir: Vec3 = [-(m[8] as number), -(m[9] as number), -(m[10] as number)];
           const c = sim.renderer.camera.position;
-          const eye: Vec3 = feet ? [feet[0], feet[1] + (sim.sitting ? sim.sitting.pose.eye : 1.55), feet[2]] : [c.x, c.y, c.z];
+          const eye: Vec3 = feet ? [feet[0], feet[1] + (sim.sitting ? sim.sitting.pose.top * sim.sitting.frame.blend + sim.sitting.pose.eye : 1.55), feet[2]] : [c.x, c.y, c.z];
           return { eye, dir };
         },
         playerVelocity: () => [0, 0, 0],
@@ -1510,7 +1530,7 @@ export class Simulation {
       if (s.voxel) s.voxel.step(FIXED_DT);
       if (character && this.sitting) {
         // Seated: held in place; any walking or jumping input stands the player up.
-        character.teleport(this.sitting.pose.feet);
+        character.teleport(this.sitting.pose.floor);
         if (Math.abs(input.forward) > 0.4 || Math.abs(input.right) > 0.4 || input.jump) this.standUp();
       } else if (character) {
         // Holding Shift sneaks: half pace, quiet enough for guards not to hear.
@@ -1525,13 +1545,17 @@ export class Simulation {
       logic.tick(FIXED_DT, input, events);
     }
     if (s.ended) return;
+    this.stepSeat(s, dt);
     this.pumpNpc(s);
     this.feedCharacters(s);
     this.renderer.setLookPitch((this.input.pitchDeg * Math.PI) / 180);
     this.interaction?.frame();
     pw.writeTransforms(this.table.packed, this.table.order);
     this.renderer.applyTransforms(this.table.packed, this.table.order);
-    if (character) {
+    if (character && this.sitting) {
+      const f = this.sitting.frame;
+      this.renderer.setPlayerAvatar(f.position, this.input.yawDeg, { grounded: true, vy: 0, crouching: false, sprinting: false, sitting: f.sitting, seatTop: this.sitting.pose.top, faceYawDeg: f.yawDeg });
+    } else if (character) {
       this.renderer.setPlayerAvatar(character.position, this.input.yawDeg, {
         grounded: character.grounded,
         vy: character.verticalSpeed,
