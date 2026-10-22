@@ -2964,7 +2964,9 @@ export class WorldRenderer {
     if (!this.budget.post) return null;
     const plan = this.qualityPlan;
     let effects = resolveEffects(plan.effects, this.effectOverrides, this.failedEffects);
-    if (!effects.composite && plan.tier === 'low' && this.effectOverrides.composite !== false && this.env.bloom > 0.001) effects = { ...effects, composite: true };
+    // Not on a weak machine: the bloom chain is the one post pass the low tier could still run, and on a machine
+    // that cannot spare the frame time (or whose driver draws it black) the direct draw is the safe one.
+    if (!effects.composite && plan.tier === 'low' && this.effectOverrides.composite !== false && this.env.bloom > 0.001 && !weakHardware(this.hardware) && !this.safe) effects = { ...effects, composite: true };
     if (!effects.composite || this.postFailed) return null;
     // Sun shafts march through the sun's shadow map: they need a shadow-casting sun with a map in use.
     if (effects.shafts && (!this.env.sun.castShadow || this.shaftsUnavailable)) effects = { ...effects, shafts: false };
@@ -3031,7 +3033,12 @@ export class WorldRenderer {
   private onWatchdogAction(a: WatchdogAction): void {
     this.noteWatch(`${a.reason}: ${a.step} (${a.message})`);
     log.warn(`black-screen watchdog (${a.reason}, step ${a.taken}): ${a.message}`);
-    if (a.step !== 'exhausted') this.applyWatchdogStep(a.step);
+    if (a.step !== 'exhausted') {
+      // Already on the lowest tier: the first step changes nothing, so the next one is applied with it.
+      const alreadyLow = a.step === 'low-tier' && this.renderTier === 'low';
+      this.applyWatchdogStep(a.step);
+      if (alreadyLow) this.applyWatchdogStep('no-effects');
+    }
     this.emitWatch({ kind: a.step === 'exhausted' ? 'exhausted' : 'step', step: a.step, reason: a.reason, message: a.message });
   }
 
