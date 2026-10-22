@@ -480,8 +480,9 @@ disables WebGPU for the origin. Settings: ACES tone
 mapping, sRGB output, environment-driven exposure, bloom plus a subtle
 vignette through `RenderPipeline` (disabled automatically if it fails), and
 sun shadows planned per tier (section 39: one map fitted to the meaningful
-content on the low tier, focus cascades with a contact-hardening filter and
-screen-space contact shadows above it).
+content on the low tier, a single map with a contact-hardening filter on medium,
+focus cascades with that filter and screen-space contact shadows on high, ultra
+and stills).
 
 **Memory budgets.** On a laptop with an integrated GPU, GPU memory *is* system
 memory, and drawing-buffer pixels dominate it: a multisampled half-float
@@ -646,6 +647,17 @@ allocation-free per frame (allocation probe).
 - *Resolution governor.* `AdaptiveResolution` decides on the 90th-percentile
   frame time of the last 48 frames, so periodic stutter scales the buffer
   down even when the mean frame rate looks fine.
+- *Performance governor* (`gpu/performance.ts`, pure). The GPU class alone misses weak
+  machines: few cores also link shaders and run the physics worker, little memory cannot hold
+  the post chain. Before the first frame `hardwareTierCap` lowers the automatic tier from
+  `hardwareConcurrency` / `deviceMemory` (2 cores or 2 GB: `low`; 4 cores or 4 GB: `medium` on a
+  discrete GPU, else `low`) and the pixel ratio is capped at 1. While the tier is `auto` and
+  adaptive resolution is already down to 0.72, `PerformanceGovernor` steps down a ladder when the
+  p90 frame rate of the last 40 back-to-back frames stays under 20 fps for 6 s (under 12 fps for
+  1.5 s): the baked room light volume, then the sun cascades, then the post chain to `medium`,
+  then to `low`, then particles to a quarter. Steps that would change nothing are skipped, it
+  never climbs back (every step recompiles shaders), the studio tells the player with a toast,
+  and choosing a tier by hand gives everything back.
 
 `setEntityProperty` accepts only validated paths. `addTransient` and
 `removeTransient` handle runtime spawns. `clearRuntimeOverrides` resets the
@@ -1477,10 +1489,11 @@ unit-tested decisions (`gpu/finishing.ts`, `gpu/render-quality.ts`) and a TSL pi
 
 **Tiers.** `low` draws the scene directly (worlds with bloom keep a bloom-only composite),
 `medium` runs the composite with grain, `high` adds screen-space ambient occlusion (GTAO as an AO
-context of the scene pass) and temporal AA, `ultra` adds screen-space reflections, sun shafts
+context of the scene pass), temporal AA and screen-space contact shadows of the sun (section 39), `ultra` adds screen-space reflections, sun shafts
 (ray-marched through the sun's shadow map and blended depth-aware), halation and chromatic
 aberration. `auto` picks from the GPU class and memory budget (software GPUs and low-memory mode
-stay low). Each effect can be switched on or off in Settings, Graphics. An effect that fails to
+stay low; discrete GPUs get `high`, others `medium`), lowered further on few cores or little memory and
+by the performance governor (section 10). Each effect can be switched on or off in Settings, Graphics. An effect that fails to
 build on a device is dropped by a fixed degradation order instead of failing the viewport; the
 failures are reported by `failedEffectNames`.
 
@@ -1876,12 +1889,14 @@ photo ─▶ N independent reads (default 3, in parallel, stateless): describe_r
                           (pictures hung above the piece beneath), curtains anchored to their window, cornices
       ─▶ compare rounds: render from the photo's own camera (numbered marks) + a clean render
                           host: deterministic fidelity (openings, inventory, placement, sizes, ΔE colours,
-                                clearance, framing, pixel and region similarity) → a weighted sub-score
+                                clearance, framing, pixel and region similarity) → a weighted sub-score (advisory)
                           judges: N stateless calls, fixed rubric 0..4 with evidence, the clean view, median per
                                 item; from round 2 blind A/B against the accepted render ("which is closer?")
-                          gate: accept only if the measures do not regress AND the judges prefer it, else go back
+                          decision: the judges' side-by-side call keeps or reverts the round; the measured
+                                    sub-score is advice for them and the model, never a gate
                           model: sees the consensus + the measured differences, fixes with edit_items / place_items
-      ─▶ verification, final message with the measured score and the assumptions as one-tap chips
+      ─▶ end: the last state is compared side by side with the best one the judges saw; the one they find closer stays
+      ─▶ verification, final message with the judged score and the assumptions as one-tap chips
 ```
 
 - **A steady reading of the photo.** One reading of the photo is the description, the checklist and the yardstick
@@ -1908,7 +1923,10 @@ photo ─▶ N independent reads (default 3, in parallel, stateless): describe_r
   marked. The judge answers pass or fail per id against the PHOTO; unjudged ids fail; a structural failure is
   reported whatever the pass rate.
 - **Honest numbers.** The final score is always the verdict of a render that was actually judged: when the last
-  round changed the room, it is judged once more before it is kept.
+  round changed the room, it is judged once more before it is kept. Ties are accepted, so a run of them can end below
+  the best state seen (`best`: the first look, then every state the judges found closer or clearly higher). When the
+  run ends on another state, the judges compare the last render with the best one side by side (`pickBest` in
+  `pipeline.ts`) and the room is the one they find closer; on a tie it stays as it is.
 - **Steady numbers.** A single vision call is a noisy judge (the same room passes an item in one call and fails it
   in the next), so progress is not decided on its absolute score. Each round is first measured: `measureFidelity`
   (`packages/arch/src/photo/fidelity.ts`) compares the built room with the description, deterministically, on
@@ -2026,7 +2044,17 @@ camera on the CPU (no pixel read-back) and replaces the ceiling-based exposure b
 building while the eye is inside, so window patches have crisp edges; the post tiers apply one exposure (in the tone
 mapping, not again in the grade); the grade warms slightly inside a lit building; architectural lamps fade from full at
 night toward 5 % as the sun rises from −4 to 10 degrees and switch off once their factor drops below 0.2, that is,
-soon after sunrise. The volume is off in low-memory mode.
+soon after sunrise. The volume is off in low-memory mode and is the first thing the performance governor gives up
+(section 10). Finished bakes are cached in IndexedDB (`aether-light-volumes`, `environment/light-volume-cache.ts`; at most 12 entries
+and 48 MB, least recently used out) under a content hash of the building and its light, so a revisit skips the bake.
+
+**Look is the assistant's call.** Constants such as the interior warmth (0.45), the white-balance share (1), the vignette (0.22) and the lamp
+strength are only defaults. `environment.look` (World IR, optional: `interiorWarmth`, `interiorBalance`, `sunTint`, `ambientTint`,
+`foliageTint`, `lampStrength`, `vignette`; contracts list the ranges) and `environment.grade` hold what the connected assistant chose for
+this world after viewing renders, with the `tune_look` planner tool (`packages/agent/src/look-edit.ts`; exposure, grade, bloom, light
+strengths, fog and the `look` fields in one `setEnvironment` patch, one undo step). A field that is absent keeps the renderer's constant.
+Nothing sets the look from measured pixels any more: the photo-to-room flow (section 28) shows the model the evidence and it decides;
+the photo eval renders follow the exposure it set.
 
 **Hero shots.** The default framing of a building is a 21 degree three-quarter view from the garden side (toward the terrace or pool, else the entrance), swung
 aside by the candidate azimuth with the clearest sight line to the house (no tree in the foreground; `pickClearView`, the house itself never counts). Backdrop scenery is excluded from
@@ -2338,8 +2366,10 @@ turns shake, FOV kicks and flashes off; published games have the same switch in 
 its texels were 15 to 30 cm wide and the PCF radius blurred them further, so people, tents, benches and grass tufts had
 no shadow of their own and nothing looked grounded. The policy is now per tier (`environment/sun-shadow-plan.ts`, pure
 and tested): the low tier, block worlds (they shade themselves, section 17), content under 16 m radius and software
-rasterisers keep the single fitted map with three's PCF; every other tier gets three maps (two focus boxes and the
-content fit; medium's near maps are 1024²) and Aether's soft filter.
+rasterisers keep the single fitted map with three's PCF; the soft filter below runs on every other tier, and only
+high, ultra and stills get three maps (two focus boxes and the content fit; near maps 2048², the outermost map the
+GPU budget's cap). Medium keeps one fitted map: three casts drew a house on an integrated GPU as 1100 draw calls
+against 614 and 22.6 ms against 14.3 ms. The performance governor (section 10) can also give the cascades up.
 
 **Focus cascades.** `gpu/sun-shadow-nodes.ts` extends three's `CSMShadowNode` (its cascade lights, shadow maps and
 life cycle) but not its placement. CSM slices the view frustum along depth from the camera's near plane, which spends
@@ -2374,8 +2404,8 @@ contact footprints under furniture (section 36) stay on every tier as the ambien
 **Rebuilds.** The cascade count and the filter are compiled into lit materials, and three's light node keeps the
 shadow node it was first built with, so a change of technique replaces the sun with a fresh `DirectionalLight` (one
 material rebuild, as for any change of the scene's lights) and rebuilds the post chain that held the old one. The
-shader shape is deliberately the same on medium, high, ultra and stills (tap counts, softness and map sizes change in
-place), so only low ↔ the others or small ↔ large content rebuild: a first version with 2/3/4 cascades per tier rebuilt
+shader shape is deliberately the same on high, ultra and stills (tap counts, softness and map sizes change in
+place), so only a change of the cascade count or filter (low, medium, high; small ↔ large content; a governor step) rebuilds: a first version with 2/3/4 cascades per tier rebuilt
 every lit material on each tier change, and the transient JS heap of those rebuilds (250 to 700 MB on highland-trail)
 tripped the studio's low-memory switch after a few changes; now the heap stays between 235 and 430 MB over eight. Nothing per frame allocates (cascade placement uses scratch vectors).
 `renderer.sunShadowInfo` reports the plan and where the boxes are; `gpu-parity` has `sun-medium`, `sun-high` and

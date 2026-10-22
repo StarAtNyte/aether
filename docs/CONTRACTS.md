@@ -438,8 +438,9 @@ disables WebGPU for the origin. A lost device/context calls `onContextLost`
 
 Rendering requirements: instanced rendering for `scatter` shapes (InstancedMesh /
 BatchedMesh), geometry & material caches keyed by stable JSON, per-frame zero
-allocation, frustum culling, PCF soft shadows with a camera-fitted directional
-light, procedural sky per `environment.sky` and `timeOfDay`, fog, weather
+allocation, frustum culling, sun shadows planned per tier (`environment/sun-shadow-plan.ts`: one
+content-fitted map with PCF on low and for small content, focus cascades with a contact-hardening
+filter on high, ultra and stills, a lighter single-map soft filter on medium; architecture section 39), procedural sky per `environment.sky` and `timeOfDay`, fog, weather
 particles (GPU points), bloom/tone mapping (ACES), dispose everything on removal.
 
 **Look (art direction, all pure and unit-tested):**
@@ -2024,7 +2025,7 @@ Everything here is additive; the World IR is unchanged.
 
 ```
 RenderTier = 'low' | 'medium' | 'high' | 'ultra'
-PostEffects = { composite, ao, gi, taa, ssr, shafts, halation, aberration, grain, dof }   // booleans
+PostEffects = { composite, ao, gi, taa, contact, ssr, shafts, halation, aberration, grain, dof }   // booleans
 EffectOverrides = Partial<Record<keyof PostEffects, boolean>>
 RenderQuality = 'realtime' | 'studio' | 'final'      // `final` adds depth of field and the heaviest still plan
 GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior' | 'overcast' | 'night' | 'neutral'
@@ -2033,6 +2034,7 @@ WorldRenderer.setRenderTier(tier | 'auto') → tier in effect; .renderTier; .aut
 WorldRenderer.setEffects(overrides)          // replaces the whole override set; {} follows the tier again
 WorldRenderer.activeEffects / .intendedEffects / .failedEffectNames   // what runs / is asked for / failed on this device
 WorldRenderer.setGradePreset(id | null) / .gradePreset                // null follows the sky
+WorldRenderer.performanceLevel; .onPerformanceStep = (level, step) => void   // steps the performance ladder has given up; null = nothing
 WorldRenderer.setRenderQuality('realtime' | 'studio' | 'final')
 WorldRenderer.planStill(w, h, 'studio' | 'final') → StillPlan { supersample: 1|2, tileSize, single, frames }
 WorldRenderer.preparePost(timeoutMs?)        // waits for the post pipeline to exist (stills call it themselves)
@@ -2047,12 +2049,26 @@ qualityPlan(quality, budget, software, tier) → { tier, effects, shadowMapCap, 
 ```
 
 Tiers: `low` draws directly (a bloom-only composite stays for worlds with bloom), `medium`
-adds the composite and grain, `high` adds ambient occlusion and temporal AA, `ultra` adds
-reflections, sun shafts, halation and chromatic aberration. `auto` is chosen from the GPU
-class and memory budget; an effect that fails to build on a device is dropped (and listed in
+adds the composite and grain, `high` adds ambient occlusion, temporal AA and screen-space
+contact shadows of the sun (`contact`), `ultra` adds reflections, sun shafts, halation and
+chromatic aberration. `auto` is chosen from the GPU class and memory budget (`autoTier`:
+discrete `high`, otherwise `medium`, software or no post budget `low`), lowered for weak
+hardware (`hardwareTierCap`, `gpu/performance.ts`: 2 cores or 2 GB `low`; 4 cores or 4 GB
+`medium` on a discrete GPU, else `low`, from `navigator.hardwareConcurrency` / `deviceMemory`;
+the pixel ratio is capped at 1 there) and by the performance ladder below. An effect that fails to build on a device is dropped (and listed in
 `failedEffectNames`) instead of failing the viewport. The high and ultra tiers, and stills,
 light and reflect with a photographed sky chosen from the sky preset when the world names no
 HDRI.
+
+**Performance ladder** (`gpu/performance.ts`, pure; active only while the tier is `auto`, an explicit
+tier gives everything back). After adaptive resolution has fallen to 0.72 of the budget, a
+`PerformanceGovernor` watches the 90th-percentile frame time of the last 40 back-to-back frames;
+under 20 fps for 6 s, or under 12 fps for 1.5 s, it takes one step of `PERFORMANCE_STEPS` and
+`cutsAt(level)` applies them cumulatively: `light-volume` (the baked room light; the analytic interior
+fills stay), `cascades` (one fitted sun map), `post-medium` (tier at most `medium`), `post-off` (tier
+`low`), `effects` (particle emission scale 0.25). A step that would change nothing is skipped. It never
+steps back up (each step recompiles shaders). `onPerformanceStep` reaches the studio, which shows a
+toast naming what was lowered.
 
 Pure modules, unit-tested: `gpu/finishing.ts` (tiers, effect sets, degradation order, grade
 presets), `gpu/render-quality.ts`, `environment/clouds.ts`, `materials/anti-tile.ts`,
@@ -2784,7 +2800,8 @@ a structured description and derives tool calls from it.
 - Parts library additions: `cornice` (wall mount, runs the top of a wall, ignored by wall-space checks), `tv-set`
   (surface mount), `art` parameters `subject` (`abstract` | `round` | `blank`), `matColor`, `ink`; `bed` parameters
   `accents` (0..4) and `accent`; `floor-lamp` style `pole`; `nightstand` and `sideboard` `color`. `place_items` for
-  curtains honours `params.width` (gathered width of one panel).
+  curtains honours `params.width` (gathered width of one panel); `panels` and `gap` are ignored: each side of the
+  window gets its own single panel (a description asking for `panels: 2` with a `gap` no longer makes two pairs that cover the glass).
 
 ### `@aether/agent` (`packages/agent/src/photo`)
 
@@ -2824,7 +2841,10 @@ a structured description and derives tool calls from it.
   no round the judges found better for `stallRounds` rounds. The loop ends when every item passes, the model stops
   with nothing to change, progress stalls, or `maxRounds` is reached: unset (subscriptions) means no fixed cap, only a
   runaway ceiling `PHOTO_ROUNDS_CEILING` (200); the studio sets 10 on a paid key; edits made after the last judged
-  render get one final judgement (the panel's, relative) and are kept only when accepted.
+  render get one final judgement (the panel's, relative) and are kept only when accepted. The loop tracks the best
+  state by the judges' word (the first look, then each state they found closer or clearly higher); when the run ends on
+  another state (ties are accepted), the judges compare the last render with the best one side by side and the room
+  goes back to the best if they find it closer (`pickBest`; a tie or no answer keeps the last).
 - `AgentEvent` gains `{type:'photo', phase: 'analysing'|'described'|'building'|'built'|'comparing'|'round'|'done'|
   'offline'|'unavailable', text, round?, assumptions?: [{id, text, confidence, adjust}], score?: {passed, total,
   rate, objective? (the fidelity sub-score, advisory), fidelity? (its measures, advisory), judge?, judges?, spread?,
@@ -2866,7 +2886,10 @@ a structured description and derives tool calls from it.
 - `RoomDescription` items and openings may carry `box: [x0, y0, x1, y1]` (0..1 of the photo, origin top-left; unusable boxes
   are dropped). `framingTargets(description, builtOpenings)`, `framingOf(geometry, targets, pose, aspect) → {score, rows}`,
   `calibrateCamera(world, description, aspect, targets) → {camera, before, after, improved} | null` (needs 4 targets;
-  deterministic), `framingText(report)`; `entityGeometry` / `projectGeometry` in the scene views project every piece and
+  deterministic; sets `notes` on both reports when the fitted camera stands against a wall or the fov hit its limit),
+  `scaleAdvice(report)` (median height-to-width ratio of the photo boxes against the render's, over at least 3 boxes
+  not cut by the frame; above 1.25 or below 0.8 it says the room is probably taller/narrower or lower/wider than
+  described), `framingText(report, limit = 8)` (worst boxes, then the scale line and the notes); `entityGeometry` / `projectGeometry` in the scene views project every piece and
   opening through any pose. `PlanRoom.wallColors` / `DesignRoom.wallColors` (per compass side) are additive.
 - `deriveBuild` fits openings first (`fitOpening`: under the ceiling, inside the wall, 0.3 m clear of corners).
 - The agent measures framing and pixel similarity each round; they are two of the `measureFidelity` measures (weights
@@ -3236,7 +3259,7 @@ before.
 
 ### `@aether/agent`
 
-- Planner tool `tune_look` (`TuneLookInput`, `look-edit.ts`; the 16th planner tool): `exposure?`, `exposureEv?`, `temperature?`,
+- Planner tool `tune_look` (`TuneLookInput`, `look-edit.ts`): `exposure?`, `exposureEv?`, `temperature?`,
   `tint?`, `saturation?`, `contrast?`, `bloom?`, `ambientIntensity?`, `sunIntensity?`, `hdriIntensity?`, `fogColor?`,
   `fogDensity?`, `fogVisibility?`, `interiorWarmth?`, `interiorBalance?`, `lampStrength?`, `vignette?`, `sunTint?`,
   `ambientTint?`, `foliageTint?`, `reset?` (names back to default; `fog` removes it), `message?` → one `setEnvironment`
