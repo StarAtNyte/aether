@@ -90,6 +90,9 @@
   "engines": {
     "node": ">=24"
   },
+  "overrides": {
+    "@dimforge/rapier3d-compat": "0.21.0"
+  },
   "devDependencies": {
     "@gltf-transform/core": "4.5.1",
     "@gltf-transform/extensions": "4.5.1",

@@ -23,6 +23,7 @@
     "@aether/physics": "*",
     "@aether/playtest": "*",
     "@aether/procgen": "*",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "tsx": "^4.23.15",
     "zod": "^4.6.6"
   }

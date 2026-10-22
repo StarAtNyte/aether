@@ -17,6 +17,7 @@
     "@aether/playtest": "*",
     "@aether/render": "*",
     "@aether/procgen": "*",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "@aether/logic": "*",
     "@aether/verifier": "*",
     "@aether/agent": "*",
