@@ -22,6 +22,8 @@ const log = (l: string): void => void process.stdout.write(`${l}\n`);
 const W = Number(process.env['SHOT_W'] ?? 640);
 const H = Number(process.env['SHOT_H'] ?? 360);
 const SHOTS = process.env['EXP_SHOTS'] === '1';
+const SHOT_CAMS = (process.env['EXP_SHOT_CAMS'] ?? '').split(',').filter(Boolean);
+const PATH = process.env['EXP_PATH'] === '1';
 const WALLS = (process.env['EXP_WALLS'] ?? 'up,cutaway,down').split(',').filter(Boolean);
 const INTEL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit'];
 
@@ -147,13 +149,37 @@ async function main(): Promise<void> {
               return { vis: s?.['vis'], eyeEv: s?.['eyeEv'], pointEv: s?.['ev'], diag: r.eyeExposure ?? null };
             }, c.pos);
             (rows[walls] ??= {})[c.name] = read;
-            if (SHOTS) {
+            if (SHOTS && (SHOT_CAMS.length === 0 || SHOT_CAMS.includes(c.name))) {
               const data = await page.evaluate(async ([w, h]) => (await window.__aether?.simulation?.renderer.screenshot({ width: w as number, height: h as number, mime: 'image/png' })) ?? null, [W, H]);
               if (data) writeFileSync(join(outDir!, `${slug}-${walls}-${c.name}.png`), Buffer.from(data.slice('data:image/png;base64,'.length), 'base64'));
             }
           }
         }
-        const row = { slug, rows };
+        // A walk from the outside view through the room to the spawn, in small steps (the eye adapts as it would on screen).
+        const path: Array<Record<string, unknown>> = [];
+        const out = cams.find((c) => c.name === 'outside');
+        const sp = cams.find((c) => c.name === 'spawn');
+        if (PATH && out && sp) {
+          await page.evaluate((w) => window.__aether?.store.getState().setArch({ walls: w } as never), WALLS.includes('cutaway') ? 'cutaway' : (WALLS[0] ?? 'up'));
+          const N = 18;
+          for (let i = 0; i <= N; i++) {
+            const f = i / N;
+            const pos = [0, 1, 2].map((k) => out.pos[k]! + (sp.pos[k]! - out.pos[k]!) * f) as [number, number, number];
+            await page.evaluate(
+              ([p, t]) => {
+                const dx = t![0]! - p![0]!, dy = t![1]! - p![1]!, dz = t![2]! - p![2]!;
+                window.__aether?.simulation?.renderer.setCameraPose(p![0]!, p![1]!, p![2]!, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
+              },
+              [pos, sp.target] as const,
+            );
+            await page.waitForTimeout(450);
+            path.push(await page.evaluate(() => {
+              const r = window.__aether?.simulation?.renderer as unknown as { eyeExposure?: { ev: number; room: string | null; weight: number; subject: boolean } };
+              return { ev: r.eyeExposure?.ev ?? null, room: r.eyeExposure?.room ?? null, w: r.eyeExposure?.weight ?? null, subject: r.eyeExposure?.subject ?? null };
+            }));
+          }
+        }
+        const row = { slug, rows, path };
         results.push(row);
         log(JSON.stringify(row));
       } finally {
