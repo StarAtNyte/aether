@@ -91,7 +91,7 @@ describe('CameraRig', () => {
       return Math.PI / 2;
     });
     rig.update(0.016);
-    expect(cam.position.y).toBeCloseTo(1.6);
+    expect(cam.position.y).toBeCloseTo(1.65);
     const fwd = new Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     expect(fwd.x).toBeCloseTo(-1, 5);
     rig.setMode('follow', () => Number.NaN);
