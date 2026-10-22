@@ -1093,6 +1093,68 @@
   font-size: var(--fs-12);
 }
 
+/* Graphics alert: the view stayed blank or a shader failed */
+.vp-gfx {
+  position: absolute;
+  inset: 56px var(--s-3) auto var(--s-3);
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.vp-gfx__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.vp-gfx__icon {
+  display: grid;
+  color: var(--warning-text);
+}
+
+.vp-gfx__text {
+  flex: 1 1 240px;
+  overflow-wrap: anywhere;
+}
+
+.vp-gfx__safe {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  white-space: nowrap;
+}
+
+.vp-gfx__btn {
+  padding: 2px var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vp-gfx__log {
+  max-height: 40vh;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-3);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  user-select: text;
+}
+
 /* ---- Play mode ---------------------------------------------------------- */
 
 .play-tweak {

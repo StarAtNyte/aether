@@ -27,7 +27,7 @@ import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aethe
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type BackendReason, type ContextLossInfo, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -177,6 +177,8 @@ export interface SimulationListener {
   onFatal?(message: string): void;
   /** The GPU device / WebGL context was lost; the simulation must be replaced. */
   onContextLost?(info: ContextLossInfo): void;
+  /** The viewport stayed blank and the renderer stepped down, or a shader failed to build. */
+  onWatchdog?(e: WatchdogEvent): void;
   /** Voxel game HUD snapshot (null when no voxel game runs). */
   onVoxelHud?(state: VoxelHudState | null): void;
   /** The player pressed Start / Options on a controller (published games open their pause menu). */
@@ -197,6 +199,8 @@ export interface SimulationOptions {
   onProgress?: (msg: string) => void;
   /** Low-memory mode (see `renderBudget` in `@aether/render`). */
   lowMemory?: boolean;
+  /** Start in safe mode (lowest tier, no effects). */
+  safeMode?: boolean;
   /** Skip collecting renderer stats in edit mode (perf HUD hidden). */
   statsWhileEditing?: boolean;
   /**
@@ -374,6 +378,7 @@ export class Simulation {
       shadows: opts.shadows !== false,
       antialias: true,
       lowMemory: opts.lowMemory === true,
+      ...(opts.safeMode ? { safeMode: true } : {}),
       growIn: !prefersReducedMotion(),
       ...(opts.scaleGeometry === false ? { fields: false, virtualGeometry: false } : {}),
       ...(opts.compressedTextures === false ? { transcoderPath: null } : {}),
@@ -382,6 +387,7 @@ export class Simulation {
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     renderer.onPerformanceStep = (level, step) => listener.onPerformance?.(level, step);
+    renderer.onWatchdog = (e) => listener.onWatchdog?.(e);
     return new Simulation(renderer, history, listener, opts);
   }
 

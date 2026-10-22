@@ -55,6 +55,8 @@ import { gradeFor, gradeWithPreset } from './gpu/grade';
 import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
 import { AdaptiveResolution } from './view/adaptive-resolution';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { adaptStep, adaptedLook, interiorBalance, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
@@ -72,6 +74,7 @@ import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
+import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
 import { capTier, cutsAt, hardwareTierCap, PerformanceGovernor, PERFORMANCE_STEPS, readHardware, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
@@ -92,6 +95,19 @@ import type { VoxelLayer } from './voxel/voxel-layer';
 import type { Environment } from '@aether/core';
 
 /** Renderer construction options. */
+/** What the black-screen watchdog (or a shader failure) tells the host. */
+export interface WatchdogEvent {
+  kind: 'step' | 'exhausted' | 'shader-error';
+  step: string | null;
+  reason: string | null;
+  /** One honest sentence for the user. */
+  message: string;
+  /** The renderer is on WebGPU: the host may restart it on WebGL2 as the next thing to try. */
+  webgpu: boolean;
+  /** {@link WorldRenderer.diagnostics} at that moment. */
+  diagnostics: string;
+}
+
 export interface RendererOptions {
   /** Backend policy (default 'auto', see `gpu/backend.ts`). */
   backend?: BackendPreference;
@@ -101,6 +117,10 @@ export interface RendererOptions {
   preferWebGPU?: boolean;
   antialias?: boolean;
   shadows?: boolean;
+  /** Start in safe mode: lowest tier, no post effects, baked room light or cascaded shadows, half the resolution cap lifted (see {@link WorldRenderer.setSafeMode}). */
+  safeMode?: boolean;
+  /** Tunables of the black-screen watchdog (`false`: off). */
+  watchdog?: Partial<WatchdogOptions> | false;
   /** Extra cap on the device pixel ratio (the GPU budget applies its own, lower caps). */
   pixelRatioCap?: number;
   /** Sandbox for custom (LLM-written) generators. */
@@ -610,6 +630,19 @@ export class WorldRenderer {
   private cuts: PerformanceCuts = cutsAt(0);
   /** Told when the governor gave something up: the step and what it was. */
   onPerformanceStep: ((level: number, step: string) => void) | null = null;
+  /** Told when the black-screen watchdog stepped down or a shader failed to build (see {@link WatchdogEvent}). */
+  onWatchdog: ((e: WatchdogEvent) => void) | null = null;
+  private readonly watchdog: BlackScreenWatchdog;
+  private readonly watchdogOn: boolean;
+  private readonly gpuLog = new GpuLogCapture();
+  private uninstallGpuLog: (() => void) | null = null;
+  private probe: CanvasRenderingContext2D | null = null;
+  private readonly watchLog: Array<{ at: number; text: string }> = [];
+  private safe = false;
+  private simple = false;
+  private minimal = false;
+  private watchPostOff = false;
+  private watchNudge = 0;
   /** User toggles of single effects (undefined keeps the tier's choice). */
   private effectOverrides: EffectOverrides = {};
   /** Effects that failed to build or draw on this device (never retried). */
@@ -740,6 +773,11 @@ export class WorldRenderer {
     this.perspective = camera;
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
+    this.watchdogOn = opts.watchdog !== false;
+    // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
+    this.watchdog = new BlackScreenWatchdog(opts.watchdog === false ? {} : (opts.watchdog ?? (globalThis as { __aetherWatchdog?: Partial<WatchdogOptions> }).__aetherWatchdog));
+    this.gpuLog.onShaderFailure = (text) => this.shaderFailed(text);
+    if (this.watchdogOn && typeof console !== 'undefined') this.uninstallGpuLog = this.gpuLog.install();
     this.budget = this.budgetFor(this.lowMemory);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
@@ -913,6 +951,7 @@ export class WorldRenderer {
     // User camera input marks the next on-demand frame dirty.
     onControlsChange?.(() => wr.requestRender());
     wr.resize(width, height);
+    if (opts.safeMode === true) wr.setSafeMode(true);
     if (wr.budget.post) {
       const want = wr.wantedEffects();
       if (want) {
@@ -1254,6 +1293,7 @@ export class WorldRenderer {
   async setWorld(world: WorldDoc): Promise<void> {
     if (this.disposed) return;
     const prev = this.sync.world;
+    this.watchdog.begin(now(), this.framesDrawn);
     if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
     this.avatar.setLook(world.player.character);
     // A first world, or a big replacement: nothing is drawn until its models are in and its programs linked
@@ -2683,6 +2723,7 @@ export class WorldRenderer {
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
+    if (this.watchdogOn) this.watch(false);
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
@@ -2769,6 +2810,7 @@ export class WorldRenderer {
       this.fx.afterDraw(this.perspective);
     }
     this.framesDrawn++;
+    if (this.watchdogOn) this.watch(true);
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
     this.lastTriangles = info.triangles ?? 0;
@@ -2944,6 +2986,197 @@ export class WorldRenderer {
   setRenderQuality(quality: RenderQuality): RenderQuality {
     const want: RenderQuality = quality !== 'realtime' && !this.studioFailed ? quality : 'realtime';
     return this.applyQuality(want);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Black-screen watchdog, safe mode, diagnostics
+  // ---------------------------------------------------------------------------
+
+  /** One tick of the watchdog; `drew` when a frame was just drawn (then a read-back of it may be taken). */
+  private watch(drew: boolean): void {
+    if (this.watchdog.finished) return;
+    const t = now();
+    // Content that is still growing in or waiting for its programs is not a failure to draw.
+    const settled = !this.warming && !this.grow.active;
+    let sample: FrameSample | null = null;
+    // An idle editor draws nothing, and a watch that has not yet seen an image needs one: ask for a frame now and then.
+    if (!drew && settled && this.framesDrawn > 0 && t - this.watchNudge > 1000) {
+      this.watchNudge = t;
+      this.needsDraw = true;
+    }
+    if (drew && settled && this.watchdog.wantsSample(t, this.framesDrawn)) sample = this.sampleView();
+    const action = this.watchdog.tick(t, this.framesDrawn, sample);
+    if (action) this.onWatchdogAction(action);
+  }
+
+  /** The drawn frame as a 16×16 read-back (null where the browser cannot give one). Same task as the draw. */
+  private sampleView(): FrameSample | null {
+    try {
+      const src = this.renderer.domElement as HTMLCanvasElement;
+      if (typeof document === 'undefined' || !(src.width > 0 && src.height > 0)) return null;
+      if (!this.probe) {
+        const c = document.createElement('canvas');
+        c.width = 16;
+        c.height = 16;
+        this.probe = c.getContext('2d', { willReadFrequently: true });
+        if (!this.probe) return null;
+      }
+      this.probe.drawImage(src, 0, 0, 16, 16);
+      return measureFrame(this.probe.getImageData(0, 0, 16, 16).data);
+    } catch {
+      return null;
+    }
+  }
+
+  private onWatchdogAction(a: WatchdogAction): void {
+    this.noteWatch(`${a.reason}: ${a.step} (${a.message})`);
+    log.warn(`black-screen watchdog (${a.reason}, step ${a.taken}): ${a.message}`);
+    if (a.step !== 'exhausted') this.applyWatchdogStep(a.step);
+    this.emitWatch({ kind: a.step === 'exhausted' ? 'exhausted' : 'step', step: a.step, reason: a.reason, message: a.message });
+  }
+
+  private noteWatch(text: string): void {
+    this.watchLog.push({ at: Math.round(now()), text });
+    if (this.watchLog.length > 40) this.watchLog.shift();
+  }
+
+  private emitWatch(e: Omit<WatchdogEvent, 'diagnostics' | 'webgpu'>): void {
+    try {
+      this.onWatchdog?.({ ...e, webgpu: this.backend === 'webgpu', diagnostics: this.diagnostics() });
+    } catch (err) {
+      log.warn(`watchdog listener failed: ${errorMessage(err)}`);
+    }
+  }
+
+  /** A shader failed to compile or a program failed to link: say so (the view may be black because of it). */
+  private shaderFailed(text: string): void {
+    if (this.disposed) return;
+    this.noteWatch(`shader failure: ${text.slice(0, 200)}`);
+    this.emitWatch({ kind: 'shader-error', step: null, reason: null, message: `A shader failed to build on this GPU (${text.slice(0, 160)}). Parts of the scene may be missing or black.` });
+  }
+
+  /** Apply one step of the watchdog's ladder (each includes the ones before). */
+  private applyWatchdogStep(step: (typeof WATCHDOG_STEPS)[number]): void {
+    if (step === 'low-tier') this.lowestTier();
+    else if (step === 'no-effects') this.noEffects();
+    else if (step === 'simple-materials') this.plainMaterials(true);
+    else this.minimalDraw(true);
+  }
+
+  private lowestTier(): void {
+    this.setRenderTier('low');
+  }
+
+  private noEffects(): void {
+    this.lowestTier();
+    this.governor.level = PERFORMANCE_STEPS.length;
+    this.cuts = cutsAt(PERFORMANCE_STEPS.length);
+    this.fx.vfx.emissionScale = this.cuts.effects;
+    this.watchPostOff = true;
+    this.postFailed = true;
+    this.syncInteriorLight();
+    this.applyQuality(this.qualityPlan.quality);
+  }
+
+  private plainMaterials(on: boolean): void {
+    this.noEffects();
+    this.simple = on;
+    this.scene.overrideMaterial = on ? new MeshBasicNodeMaterial({ color: 0xb4b8c0 }) : null;
+    this.needsDraw = true;
+  }
+
+  private minimalDraw(on: boolean): void {
+    this.plainMaterials(true);
+    this.minimal = on;
+    this.renderer.shadowMap.enabled = !on && this.env.sun.castShadow;
+    this.env.sun.castShadow = !on && this.env.sun.castShadow;
+    this.setPixelRatioCap(on ? 0.5 : Number.POSITIVE_INFINITY);
+  }
+
+  /**
+   * Safe mode: the lowest tier, no post effects, no baked room light, simple sun shadows, particles reduced. A manual
+   * switch for a machine that struggles; the watchdog goes further when the view is blank. Turning it off returns to the
+   * automatic tier and the full set of effects.
+   */
+  setSafeMode(on: boolean): void {
+    if (on === this.safe && !this.simple && !this.minimal) return;
+    this.safe = on;
+    if (on) {
+      this.noEffects();
+      this.noteWatch('safe mode on');
+    } else {
+      this.simple = false;
+      this.minimal = false;
+      this.scene.overrideMaterial = null;
+      this.renderer.shadowMap.enabled = true;
+      this.setPixelRatioCap(Number.POSITIVE_INFINITY);
+      this.watchPostOff = false;
+      this.postFailed = false;
+      this.governor.level = 0;
+      this.cuts = cutsAt(0);
+      this.fx.vfx.emissionScale = 1;
+      this.syncInteriorLight();
+      this.setRenderTier('auto');
+      this.noteWatch('safe mode off');
+    }
+    this.needsDraw = true;
+  }
+
+  /** Safe mode is on (set by the user or at start). */
+  get safeMode(): boolean {
+    return this.safe;
+  }
+
+  /** What the watchdog has done so far (empty: nothing was wrong). */
+  get watchdogSteps(): readonly string[] {
+    return this.watchLog.map((l) => l.text);
+  }
+
+  /** The last read-back of the viewport the watchdog took (null: none yet). */
+  get lastViewSample(): Readonly<FrameSample> | null {
+    return this.watchdog.last;
+  }
+
+  /**
+   * A plain-text report of this renderer for a bug report: backend decision and its events, GPU and its limits,
+   * hardware, tier and ladder, frames and timings, what the watchdog did, and the GPU-related console lines.
+   */
+  diagnostics(): string {
+    const out: string[] = [];
+    const add = (k: string, v: unknown): void => void out.push(`${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+    out.push('Aether graphics diagnostics');
+    add('time', new Date().toISOString());
+    if (typeof navigator !== 'undefined') add('userAgent', navigator.userAgent);
+    add('hardware', { ...this.hardware, dpr: typeof window === 'undefined' ? 1 : window.devicePixelRatio });
+    add('backend', { active: this.backend, report: this.gpu.report });
+    add('gpu', { description: this.gpu.description, tier: this.gpu.tier });
+    try {
+      const gl = (this.renderer as unknown as { backend?: { gl?: WebGL2RenderingContext } }).backend?.gl;
+      if (gl && typeof gl.getParameter === 'function') {
+        const ext = gl.getSupportedExtensions() ?? [];
+        add('webgl', { version: gl.getParameter(gl.VERSION), maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE), parallelCompile: ext.includes('KHR_parallel_shader_compile'), floatTargets: ext.includes('EXT_color_buffer_float'), halfFloatTargets: ext.includes('EXT_color_buffer_half_float'), anisotropy: ext.includes('EXT_texture_filter_anisotropic'), contextLost: gl.isContextLost() });
+      }
+    } catch {
+      /* the backend object differs by version */
+    }
+    add('tier', { in_effect: this.renderTier, auto: this.autoRenderTier, ladder: this.governor.level, safeMode: this.safe, plainMaterials: this.simple, minimal: this.minimal, postOffByWatchdog: this.watchPostOff });
+    add('canvas', { width: this.domElement.width, height: this.domElement.height, pixelRatio: this.renderer.getPixelRatio(), adaptiveScale: this.adaptive.scale });
+    const st = this.stats();
+    add('frames', { drawn: this.framesDrawn, fps: st.fps, frameMs: st.frameMs, drawCalls: st.drawCalls, triangles: st.triangles, textures: st.textures, geometries: st.geometries });
+    add('load', { shaderWarmupMs: Math.round(this.shaderWarmupMs), warming: this.warming, lost: this.lost });
+    add('viewSample', this.watchdog.last ?? 'none taken');
+    add('watchdog', { healthy: this.watchdog.healthy, stepsTaken: this.watchdog.stepsTaken });
+    if (this.watchLog.length > 0) {
+      out.push('watchdog log:');
+      for (const l of this.watchLog) out.push(`  +${(l.at / 1000).toFixed(1)}s ${l.text}`);
+    }
+    const slow = textureWork.slowest;
+    if (slow.length > 0) add('slowest texture jobs', slow);
+    if (this.gpuLog.lines.length > 0) {
+      out.push('GPU console lines:');
+      for (const l of this.gpuLog.lines) out.push(`  [${l.level}] ${l.text}`);
+    }
+    return out.join('\n');
   }
 
   /**
@@ -4143,6 +4376,8 @@ export class WorldRenderer {
     this.capture?.end();
     this.capture = null;
     this.disposed = true;
+    this.uninstallGpuLog?.();
+    this.uninstallGpuLog = null;
     this.pathOverlay.dispose();
     this.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.domElement.removeEventListener('pointerdown', this.onUserCamera);

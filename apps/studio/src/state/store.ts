@@ -65,6 +65,37 @@ export interface MemoryState {
   automatic: boolean;
 }
 
+const SAFE_GRAPHICS_KEY = 'aether.studio.safegraphics.v1';
+
+/** The remembered safe-graphics choice (false where storage is unavailable). */
+function readSafeGraphics(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(SAFE_GRAPHICS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSafeGraphics(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(SAFE_GRAPHICS_KEY, '1');
+    else localStorage.removeItem(SAFE_GRAPHICS_KEY);
+  } catch {
+    /* storage unavailable: the choice lasts for this page only */
+  }
+}
+
+/** The renderer stepped down, or a shader failed: what to tell the user (shown over the viewport). */
+export interface GraphicsAlert {
+  kind: 'step' | 'exhausted' | 'shader-error';
+  /** One honest sentence. */
+  message: string;
+  /** Plain-text report the user can copy. */
+  diagnostics: string;
+  /** What was done, oldest first. */
+  steps: string[];
+}
+
 /** GPU the renderer runs on. */
 export interface GpuState {
   tier: 'discrete' | 'integrated' | 'software' | 'unknown';
@@ -296,6 +327,10 @@ export interface StudioState {
   backend: 'webgpu' | 'webgl2' | null;
   loading: string | null;
   fatal: string | null;
+  /** The renderer stepped down (or a shader failed): a message with the Safe mode toggle and the diagnostics. */
+  graphicsAlert: GraphicsAlert | null;
+  /** Safe graphics mode: lowest tier, no effects (remembered on this device). */
+  safeGraphics: boolean;
   stats: PerfStats;
   verify: VerifyState;
   /** Autonomous playtest verdict (the Verified badge). */
@@ -370,6 +405,8 @@ export interface StudioState {
   setBackend(b: 'webgpu' | 'webgl2' | null): void;
   setLoading(msg: string | null): void;
   setFatal(msg: string | null): void;
+  setGraphicsAlert(a: GraphicsAlert | null): void;
+  setSafeGraphics(on: boolean): void;
   setStats(stats: PerfStats): void;
   setVerify(v: Partial<VerifyState>): void;
   setPlaytest(v: Partial<PlaytestState>): void;
@@ -506,6 +543,8 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     backend: null,
     loading: 'Starting renderer…',
     fatal: null,
+    graphicsAlert: null,
+    safeGraphics: readSafeGraphics(),
     stats: EMPTY_STATS,
     verify: IDLE_VERIFY,
     playtest: IDLE_PLAYTEST,
@@ -599,6 +638,11 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setBackend: (backend) => set({ backend }),
     setLoading: (loading) => set({ loading }),
     setFatal: (fatal) => set({ fatal }),
+    setGraphicsAlert: (graphicsAlert) => set({ graphicsAlert }),
+    setSafeGraphics: (safeGraphics) => {
+      writeSafeGraphics(safeGraphics);
+      set({ safeGraphics });
+    },
     setStats: (stats) => set((s) => (shallowEqual(s.stats, stats) ? s : { stats })),
     setVerify: (v) => set((s) => ({ verify: { ...s.verify, ...v } })),
     setPlaytest: (v) => set((s) => ({ playtest: { ...s.playtest, ...v } })),

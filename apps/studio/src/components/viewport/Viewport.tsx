@@ -25,6 +25,7 @@ import { ContextBar } from './ContextBar';
 import { Menu } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
+import { GraphicsAlert } from './GraphicsAlert';
 import { GeometryBadge } from './GeometryBadge';
 import { NpcSpeech } from './NpcSpeech';
 import { InteractPromptView, PlayHud, TitleCard } from './PlayHud';
@@ -429,6 +430,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
         </div>
       )}
       {loading && !fatal && <ViewportLoading text={loading} />}
+      {!fatal && <GraphicsAlert />}
       {fatal && (
         <div className="vp-fatal" role="alert">
           <span className="vp-fatal__icon">

@@ -40,7 +40,7 @@ import { downloadBytes, downloadText } from '../lib/download';
 import { exportFileName, exportWorld, parseWorldImport, validateImportedValue } from '../lib/worldIO';
 import { initialPanels } from '../lib/layout';
 import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, readMemorySignals, RecoveryLimiter } from '../lib/memory';
-import type { ContextLossInfo, RenderMemoryStats } from '@aether/render';
+import type { ContextLossInfo, RenderMemoryStats, WatchdogEvent } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { AssetController } from './assets';
 import { ForgeController } from './forge';
@@ -454,6 +454,9 @@ export class Studio {
           onContextLost: (info) => {
             if (gen === this.attachGen) this.handleContextLost(info);
           },
+          onWatchdog: (e) => {
+            if (gen === this.attachGen) this.handleWatchdog(e);
+          },
           onVoxelHud: (state) => this.store.getState().setVoxelHud(state),
         },
         {
@@ -462,6 +465,7 @@ export class Studio {
           shadows: st.settings.shadows,
           pointerLock: st.settings.pointerLock,
           lowMemory: st.memory.lowMemory,
+          safeMode: st.safeGraphics,
           statsWhileEditing: st.settings.showPerf,
           scaleGeometry: !classicEngineRequested(),
           compressedTextures: !uncompressedTexturesRequested(),
@@ -539,6 +543,40 @@ export class Studio {
     st.setFatal(null);
     st.setLoading(message);
     st.bumpRendererEpoch();
+  }
+
+  /**
+   * The viewport stayed blank and the renderer stepped down, or a shader failed to build: say so over the viewport
+   * (with the Safe mode switch and the diagnostics), in the console, and as a toast. When even the plainest drawing on
+   * WebGPU stays blank, the renderer restarts on WebGL2 once.
+   */
+  private handleWatchdog(e: WatchdogEvent): void {
+    const st = this.store.getState();
+    const prev = st.graphicsAlert;
+    const steps = [...(prev?.steps ?? []), ...(e.step ? [e.step] : [])];
+    log.warn(`graphics: ${e.kind}${e.reason ? ` (${e.reason})` : ''}: ${e.message}`);
+    log.warn(`graphics diagnostics:\n${e.diagnostics}`);
+    st.setGraphicsAlert({ kind: e.kind, message: e.message, diagnostics: e.diagnostics, steps });
+    if (e.webgpu && (e.kind === 'exhausted' || e.step === 'minimal') && !this.forceWebGL2) {
+      this.forceWebGL2 = true;
+      st.toast('The view stayed blank on WebGPU: restarting on WebGL2.', 'info', 6);
+      void this.restartRenderer('Restarting on WebGL2…');
+    }
+  }
+
+  /** Turn safe graphics (lowest tier, no effects) on or off; remembered on this device. */
+  setSafeGraphics(on: boolean): void {
+    const st = this.store.getState();
+    st.setSafeGraphics(on);
+    this.sim?.renderer.setSafeMode(on);
+    const a = st.graphicsAlert;
+    if (a) st.setGraphicsAlert({ ...a, message: on ? 'Safe mode is on: lowest graphics tier, no effects.' : 'Safe mode is off.', diagnostics: this.sim?.renderer.diagnostics() ?? a.diagnostics });
+    else st.toast(on ? 'Safe mode on: lowest graphics, no effects.' : 'Safe mode off.', 'info', 4);
+  }
+
+  /** The renderer's diagnostics report (plain text), for the copy button. */
+  graphicsDiagnostics(): string {
+    return this.sim?.renderer.diagnostics() ?? this.store.getState().graphicsAlert?.diagnostics ?? 'No renderer is running.';
   }
 
   private handleContextLost(info: ContextLossInfo): void {

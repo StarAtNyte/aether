@@ -6,7 +6,7 @@
  * (scene sync, material/geometry caches, scatter layout, sky model, …) are
  * exported too for tests, tooling and alternative front-ends.
  */
-export { WorldRenderer, rectsOverlap, type ContextLossInfo, type EntityHit, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
+export { WorldRenderer, rectsOverlap, type WatchdogEvent, type ContextLossInfo, type EntityHit, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
 export { SelectionGizmo, readLocal, topLevelTargets, type GizmoCommit, type GizmoOptions, type GizmoPivot, type GizmoSpace, type GizmoTarget, type GizmoTargetChange, type SelectionControlsLike, type SnapHit } from './view/selection-gizmo';
 export { EditOverlay, MAX_VERTEX_MARKERS, type ComponentMode, type ComponentView } from './view/edit-overlay';
 export { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle, type MeshSlotGeometry } from './geometry/mesh-asset';
@@ -114,3 +114,5 @@ export { VfxSystem, MAX_EMITTERS, type BurstOptions } from './vfx/system';
 export { ParticlePool, SeededRandom, mixSeed, linearColor, STRIDE as PARTICLE_STRIDE, NO_FLOOR, SPIN_BIAS, type SpawnOptions } from './vfx/pool';
 export { VFX_PRESETS, CONTINUOUS_VFX, SPRITE, vfxBudget, type VfxDef, type VfxLayer, type EmitShape, type SpriteCell } from './vfx/presets';
 export { atlasPixels, ATLAS_CELLS } from './vfx/atlas';
+
+export { BlackScreenWatchdog, GpuLogCapture, isBlackFrame, isShaderFailure, measureFrame, WATCHDOG_STEPS } from './gpu/watchdog';

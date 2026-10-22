@@ -69,6 +69,7 @@ async function runWorld(base: string, world: string): Promise<boolean> {
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
     await context.addInitScript({ content: SKIP_FIRST_RUN });
+    await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
     // WebGL2 only (no WebGPU), a weak machine.
     await context.addInitScript({
       content: `delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}
@@ -138,12 +139,59 @@ async function runWorld(base: string, world: string): Promise<boolean> {
   return problems.length === 0;
 }
 
+/**
+ * The watchdog itself: the read-back the watchdog takes of the drawn frame is made to come back empty (as a view that
+ * drew nothing would), with short waits.
+ * The renderer must step down, say so over the viewport with a Safe mode switch, log why, and offer diagnostics.
+ */
+async function runForcedBlack(base: string, world: string): Promise<boolean> {
+  const browser = FIREFOX
+    ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } })
+    : await chromium.launch({ executablePath: findChrome(), args: [...(GPU_ARGS[GPU] ?? []), '--disable-gpu-vsync'] });
+  const problems: string[] = [];
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    await context.addInitScript({ content: SKIP_FIRST_RUN });
+    await context.addInitScript({ content: 'globalThis.__name = (f) => f; delete Navigator.prototype.gpu; window.__aetherWatchdog = { firstFrameMs: 60000, stepFrameMs: 3000, sampleEveryMs: 300, darkSamples: 2 }; { const d = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (this.canvas.width === 16 && this.canvas.height === 16) return; return d.apply(this, a); }; }' });
+    const page = await context.newPage();
+    const logs: string[] = [];
+    page.on('console', (m) => void logs.push(m.text()));
+    await page.goto(`${base}/?debug=1#/new/${world}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__aether?.store.getState().loading === null && (window.__aether?.simulation?.renderer.frameCount ?? 0) > 3, null, { timeout: 120_000, polling: 250 });
+    const before = await page.evaluate(() => (window.__aether?.simulation?.renderer.renderTier ?? '') as string);
+    const alert = page.locator('[data-testid="graphics-alert"]');
+    await alert.waitFor({ state: 'visible', timeout: 60_000 }).catch(() => problems.push('no graphics alert after the view went black'));
+    if (await alert.isVisible()) {
+      const said = await alert.locator('.vp-gfx__text').innerText();
+      log(`alert: ${said.slice(0, 200)}`);
+      if (!/black/.test(said)) problems.push(`the alert does not say the picture was black: ${said.slice(0, 80)}`);
+      const safe = alert.getByLabel('Safe mode');
+      if (!(await safe.isVisible())) problems.push('no Safe mode toggle');
+      await safe.check();
+      const mode = await page.evaluate(() => (window.__aether?.simulation?.renderer as unknown as { safeMode: boolean }).safeMode);
+      if (!mode) problems.push('Safe mode toggle did not reach the renderer');
+      await alert.getByRole('button', { name: 'Diagnostics', exact: true }).click();
+      const text = await alert.locator('.vp-gfx__log').innerText();
+      if (!/Aether graphics diagnostics/.test(text) || !/watchdog log/.test(text)) problems.push('diagnostics panel lacks the report or the watchdog log');
+      log(`diagnostics ${text.split('\n').length} lines; tier before ${before}`);
+      if (process.env['SHOW_DIAG']) log(text);
+    }
+    if (!logs.some((l) => /black-screen watchdog/.test(l))) problems.push('the reason was not logged to the console');
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+  for (const p of problems) log(`  PROBLEM forced-black ${world}: ${p}`);
+  return problems.length === 0;
+}
+
 async function main(): Promise<void> {
   const server = URL_ARG ? { url: URL_ARG.replace(/\/+$/, ''), stop: async () => undefined } : await startServer(log);
   let ok = true;
   try {
     log(`target ${server.url}, gpu ${GPU}, throttle ${THROTTLE}x, ${CORES} cores, ${MEM} GB, worlds ${WORLDS.join(',')}`);
-    for (const w of WORLDS) ok = (await runWorld(server.url, w)) && ok;
+    if (ARGS.includes('--force-black')) ok = (await runForcedBlack(server.url, WORLDS[0] ?? 'highland-trail')) && ok;
+    else for (const w of WORLDS) ok = (await runWorld(server.url, w)) && ok;
   } finally {
     await server.stop();
   }
