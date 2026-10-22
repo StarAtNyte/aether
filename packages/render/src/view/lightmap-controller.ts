@@ -32,7 +32,7 @@ import { LIGHTMAP_CACHE_MIN_BAKE_MS, createIdbLightmapCache, type LightmapCache 
 import { decodeImage, encodeImage } from '../environment/lightmap-codec';
 import { parseLightmapReply, type LightmapRequest } from '../environment/lightmap-protocol';
 import { collectTraceInput, type TraceProxy, type VolumeLighting, type VolumePart } from './light-volume-controller';
-import type { LightmapSource } from '../sync/lightmap-uv';
+import { refreshProgram, type LightmapSource } from '../sync/lightmap-uv';
 import { expandWithLightmap, lightmapEligible, worldMeshData } from './lightmap-geometry';
 
 /** Quiet time (s) after the volume is up before an automatic bake starts. */
@@ -207,6 +207,7 @@ export class LightmapController implements LightmapSource {
     const clone = expandWithLightmap(original, u);
     mesh.geometry = clone;
     this.swapped.set(mesh, { original, clone });
+    refreshProgram(mesh);
   }
 
   /** The bytes of the applied lightmap (the `.lmap` file: save it with the project, ship it with a bundled world). */
@@ -348,7 +349,10 @@ export class LightmapController implements LightmapSource {
     // Merged geometry loses its coordinates (rebuilt without), standalone meshes get their own geometry back.
     if (had) this.opts.attach?.(null);
     for (const [mesh, s] of this.swapped) {
-      if (mesh.geometry === s.clone) mesh.geometry = s.original;
+      if (mesh.geometry === s.clone) {
+        mesh.geometry = s.original;
+        refreshProgram(mesh);
+      }
       s.clone.dispose();
     }
     this.swapped.clear();
@@ -672,7 +676,10 @@ export class LightmapController implements LightmapSource {
     // New coordinates: take the old ones away first, then give merged geometry and standalone meshes the new ones.
     const restore = (): void => {
       for (const [mesh, s] of this.swapped) {
-        if (mesh.geometry === s.clone) mesh.geometry = s.original;
+        if (mesh.geometry === s.clone) {
+          mesh.geometry = s.original;
+          refreshProgram(mesh);
+        }
         s.clone.dispose();
       }
       this.swapped.clear();

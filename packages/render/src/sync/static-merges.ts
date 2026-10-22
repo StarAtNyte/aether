@@ -21,7 +21,7 @@
  */
 import { BufferAttribute, BufferGeometry, Matrix3, Matrix4, Mesh, type Material, type Object3D } from 'three';
 import type { EntityNode } from './entity-node';
-import { concatMemberUv, expandWithLightmap, type LightmapSource } from './lightmap-uv';
+import { concatMemberUv, expandWithLightmap, refreshProgram, type LightmapSource } from './lightmap-uv';
 import { BATCHED_LAYER } from './static-batches';
 
 /** Smallest group worth merging (fewer meshes draw as they are). */
@@ -200,6 +200,7 @@ export class StaticMerges {
       const next = this.build(m.members.map((x) => x.mesh), m.members);
       m.mesh.geometry.dispose();
       m.mesh.geometry = next;
+      refreshProgram(m.mesh);
       n++;
     }
     return n;

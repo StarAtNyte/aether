@@ -3081,6 +3081,46 @@ With a volume ready the eye exposure comes from `lightVolumeAt` the camera (no p
 scaled by the ceiling factor, the sun's shadow map is fitted to the building's shell while the eye is inside, the post tiers
 apply the exposure once (in the tone mapping), and the grade warms a little inside (not with a document `grade`).
 
+**Baked lightmaps (worlds with a building; additive, nothing else in the World IR but `environment.lightBake`).** The per-surface companion of the volume:
+a path-traced atlas of sky occlusion and bounce light for every wall, floor, ceiling and furniture surface, applied where the volume's probes (0.45 m apart)
+read the same smooth value on a whole wall.
+
+```
+@aether/core   Environment.lightBake?: { quality: 'off' | 'low' | 'medium' | 'high'; samples?: 8..512 }
+                                // absent = automatic; `off` = probe volume only. Presentation only, never the simulation.
+environment/lightmap.ts         pure, deterministic, no three.js: planLightmap(quality, samples?) -> { size 256 | 512 | 1024, samples 24 | 48 | 96, density }
+                                // axis-aligned charts shelf-packed into one square atlas (UV2 per mesh, 6 x u16 per triangle); a CPU path tracer:
+                                // cosine-weighted stratified rays per texel against the TraceScene (sun and lamps with shadow rays, the volume as the later
+                                // bounces = final gather); edge-aware denoise inside the atlas; LIGHTMAP_MAX_TRIANGLES 160 000 (the rest keeps the volume)
+environment/lightmap.worker.ts  module worker that runs a bake; lightmap-protocol.ts validates request and reply in both directions
+environment/lightmap-asset.ts   the `.lmap` file: magic, JSON meta (version, key, size, quality, samples, bake ms ...), 16-bit chart coordinates, one
+                                stacked image (size x 2 size RGB: sqrt bounce on top, sky visibility as grey below; WebP when the browser encodes it, else
+                                PNG, else raw). LIGHTMAP_MAX_ASSET_BYTES 2 MiB (re-encoded lower, then dropped). lightmapKey(contentHash(geometry, volume),
+                                plan, light, grid) = `lm<version>-<32 hex>`: a content key, file-safe
+environment/lightmap-cache.ts   IndexedDB cache of `.lmap` bytes, LRU, 8 entries / 16 MiB, bakes under 1.5 s are not kept
+view/lightmap-controller.ts     LightmapController: starts once the volume is on screen (+1.2 s), gathers and applies in 5 ms slices, never blocks a frame.
+                                Lookup order: bundled file (`<lightmapBase>/<key>.lmap`, listed in `index.json`), browser cache, worker bake. With no explicit
+                                request any bundled quality applies (high, medium, low); a bake only starts automatically where `lightmapAutoBake()` says
+                                the machine can afford it (not the software tier, not low-memory mode, not weak hardware, not the `low` quality tier), so a
+                                weak machine still gets a bundled file, which costs one 2D read per surface instead of twelve 3D reads.
+                                Any change to the building or its light drops the lightmap at once (geometry put back, the volume lights it) and starts over
+                                after the volume has. No worker, a failed or cancelled bake: the volume keeps lighting, no error.
+gpu/light-volume-node.ts        a mesh with the `aetherLM` attribute reads its atlas texel (ambientOcclusion *= vis, irradiance += bounce / vis, the same
+                                formula as the volume) and keeps the volume otherwise; direct sun, lamps, shadow maps and opening doors stay on the live path
+WorldRenderer.bakeLight(quality, samples?) / .cancelLightmapBake() / .lightmapStatus / .lightmapStats / .lightmapAsset
+LightmapStatus { state: 'off' | 'idle' | 'waiting' | 'baking' | 'applied' | 'failed' | 'cancelled'; progress; quality; samples; message }
+Studio: baking pill (progress, cancel), display menu "Baked light" (automatic, off, low, medium, high; one undo step), Studio.setLightBake(quality | null)
+@aether/agent  bake_light { quality: off | low | medium | high, samples?: 8..512, message? }   // one setEnvironment patch = one undo step
+               // the model decides from renders (an interior that looks flat or evenly lit), then looks again; the critic names it as a fix
+scripts/showcase/lightmaps.ts   bake the architecture showcase worlds in a browser into apps/studio/public/templates/lightmaps/<key>.lmap + index.json
+                                (`npx tsx scripts/showcase/lightmaps.ts [slug...] [--quality=] [--samples=] [--verify]`)
+scripts/lightmap-shots.ts       before/after stills, bake wall time, file size and draw cost per mode (fresh page per mode)
+```
+
+The bake reads the geometry the renderer shows, and the architectural view changes that geometry (`cutaway` sections the walls that face the camera, so a
+volume or lightmap baked while the camera is outside sees a room opened on one side). The key therefore names the view state a bake came from: a bundled
+file matches the world as it opens, and a world opened in another view bakes in the browser as before.
+
 ### Scripts
 
 `tests/e2e/archshots.e2e.ts` gained per-camera `hour` and `js` (a snippet run with `renderer`), cameras without a pose (`frameContent` hooks), `--world=<file>` (a world

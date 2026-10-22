@@ -131,9 +131,12 @@ describe('lightmap controller', () => {
     const t = setup();
     t.ctl.setEnabled(true);
     const before = t.meshes.map((m) => m.geometry);
+    const versionBefore = (t.meshes[0]!.material as MeshStandardMaterial).version;
     t.ctl.request('low', 12);
     expect(t.ctl.baking).toBe(true);
     await until(() => t.ctl.ready);
+    // The draw list re-reads a mesh's program only when its material's version changes: without it the atlas is never read.
+    expect((t.meshes[0]!.material as MeshStandardMaterial).version).toBeGreaterThan(versionBefore);
     expect(t.posted).toHaveLength(1);
     expect(t.ctl.status.state).toBe('applied');
     expect(t.light.lightmapStrength).toBe(1);
@@ -154,6 +157,7 @@ describe('lightmap controller', () => {
     expect(t.ctl.ready).toBe(false);
     expect(t.light.lightmapStrength).toBe(0);
     t.meshes.forEach((m, i) => expect(m.geometry).toBe(before[i]));
+    expect((t.meshes[0]!.material as MeshStandardMaterial).version).toBeGreaterThan(versionBefore + 1);
     expect(t.attached()).toBeNull();
     t.ctl.dispose();
   });

@@ -59,3 +59,14 @@ export function concatMemberUv(members: readonly Mesh[], source: LightmapSource)
   }
   return out;
 }
+
+/**
+ * Ask the renderer to re-read a mesh's program key. The draw list keeps a program per mesh and material and only looks at
+ * the geometry's attributes again when the material's version changes, so a mesh that gains (or loses) the lightmap
+ * coordinates keeps drawing with the program it had, which never reads the atlas.
+ */
+export function refreshProgram(mesh: Pick<Mesh, 'material'>): void {
+  const m = mesh.material;
+  if (Array.isArray(m)) for (const x of m) x.needsUpdate = true;
+  else if (m) m.needsUpdate = true;
+}
