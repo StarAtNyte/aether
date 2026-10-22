@@ -5480,3 +5480,75 @@ browser with no account. Its judges, rollback and measured checks are advisory, 
 **Tests.** `agent/test/land.test.ts` (row on terrain, both sides, refusals, group read), `photo-closer.test.ts` (crop boxes,
 refusals, advertisement), `photo-pipeline.test.ts` (a scripted model calls `look_closer` and gets the pictures; the intro
 carries the ranking step).
+
+## Inspiration backlog
+
+Source: the same ten screenshots as the comparison above (the Agent, Scene and Properties tabs, the viewport toolbar popovers,
+the settings panel and the Output panel of an image-to-room tool). Ideas and workflow observations only; no code, assets, wording
+or branding were taken, and nothing in Aether's interface names that tool. What the checks below say was verified by reading the
+Aether source; nothing was run against a live model.
+
+**Done in this round.**
+
+Agent harness (`packages/agent`, scripted-model tests in `harness.test.ts`, `photo-differences.test.ts`,
+`review-differences.test.ts`):
+- Refused-call reflection, hopeless-repeat guard and the unresolved-calls list before finishing (the loop had no memory of
+  refusals beyond the last one).
+- Wrap-up heads-up before the turn and tool-call budgets (the run used to be cut off mid-edit with "Stopped after N turns").
+- Compaction of old tool results past a size budget, in the run and for continued conversations (a conversation over 300,000
+  characters used to be thrown away whole).
+- Queue-a-message while a turn runs (`RunOptions.steer`), and continue-after-cancel (a cancelled run used to forget everything).
+- `step` events with plain labels and, for a look at images, the pictures the model was shown (the tool shows "Assessing content"
+  with thumbnails; the equivalent here is the folded step list with thumbnails).
+- Photo compare kit: photo and render side by side from the same camera, region crops, colour readout; the ranked differences
+  ledger with verify-after-fix; an independent fresh-eyes cross-check; unresolved differences named in the closing message.
+  The same ledger and cross-check for the review of a prompt-built world, compared with the request and any reference pictures.
+- Studio: the composer queues messages while a turn runs, "Step N" and "Still working…", the folded step list with thumbnails,
+  the ranked differences list in the chat. Turned on for every studio run (`differences`, `crossCheck`).
+
+**Not run.** No live model was asked to use the new tools, so what they do to output quality is unmeasured. Open questions for a
+live check: whether the extra images per round (side by side plus up to four crops) help or crowd out the single views on a
+subscription backend; whether models keep the ids stable between rounds; the cost of the cross-check call on metered keys
+(one extra call per run; it is skipped without a vision model or a host that renders).
+
+**Backlog, in priority order.**
+
+1. *Ask the user mid-run* (`ask_user` tool; the chat shows the question and the answer resumes the turn). The tool's agent states
+   assumptions and carries on; a question about a real fork (which of two doors is the main one) would save a round trip. Needs a
+   run that can pause on an answer, which the loop does not have yet (the `clarify` event ends the run).
+2. *Oscillation guard.* The ledger catches identical refused calls; it does not catch edit A → B → A on the same property across
+   rounds. A per-entity edit history in the run, with a reflection on the third reversal.
+3. *Persist the conversation.* `ConversationStore` is in memory, so a page reload drops the thread; storing the compacted
+   conversation per project would make continue-after-reload work.
+4. *Rewind to a step.* Every step is one undo entry already; the step list could offer "undo back to here" (per-step checkpoints).
+5. *Properties editing with a boolean cut, mirror and radial repetition.* The inspector edits transform, shape size, material,
+   physics and behaviours with undo; mirror and radial repeats and a cut/union/intersect between two shapes are not there. Aether
+   builds rooms from parts and walls with openings, so the cut already exists for openings; a general repeat (mirror, radial) would
+   serve furniture sets and columns. Larger.
+6. *Viewport quality toggles* (outline through objects, hover outline, cavity, ink hatching, simplify while dragging, retina,
+   single-pass outlines with a resolution slider). The studio has tier and per-effect switches (ambient occlusion, reflections,
+   grain, …) but no outline or cavity options; the selection highlight is in `packages/render/src/view/highlighter.ts`.
+7. *Blueprint options* (grid opacity, contour lines, line opacity, blueprint colours; geometry view with x-ray and "see inside
+   rooms"). A plan view exists (`PlanView.tsx`, ink and paper plan mode in the renders); the opacity sliders and an x-ray are not
+   there.
+8. *Units toggle (metric / imperial).* Every length is metres in the model, the inspector and the tool results. A display setting
+   (feet and inches in fields and readouts, parsed back to metres) touches every numeric field; keep the model side metric.
+9. *Gizmo and snapping popover* (handles auto/3D/surface, global/local space, gizmo location origin/centre/bottom-centre, ground
+   and surface snapping with landing normal/upright, wall snapping flush with turn/slide, grid snapping). `GizmoSettings` exists
+   in the store; the surface and wall snapping modes were not checked and may be partly there.
+10. *Navigation settings* (orbit, fly, run; fly and run speed, run height, jump height, scale speed with altitude, inverted
+    look). The studio has orbit and a play mode with its own controller; a run-through mode for walking the built room at eye
+    height before playing would help judging scale.
+11. *Viewport settings* (frame selected, reset view, field of view, gizmo size, solid ground, hide back-facing surfaces). Frame
+    and reset exist as commands; the field-of-view slider and the back-face toggle were not checked.
+12. *Iterations of a design* (an Output panel with numbered iterations, each holding its own prompt, render, progress and style
+    reference). Aether has branches and time travel in history (ARCHITECTURE §5); a gallery of branches with a thumbnail each
+    and "compare two" would be the equivalent.
+13. *Edit scene / render toggle, label and adjust bottom bar, tool-tip cards with "Got it".* The studio has the tour and
+    shortcut tips; the bottom bar (label the selection, adjust it) is a quick-access idea for the selected object.
+14. *Splat view of renders, style reference for renders, video render.* Not applicable: Aether renders the real scene (path-traced
+    still, video export already exist).
+
+**Observed in the tool, deliberately not copied.** Output rows (cameras and render prompts) for a generative render step; a
+parametric clay scene graph as the only representation; a separate "Render" model pass. Aether keeps one world that is also the
+game.

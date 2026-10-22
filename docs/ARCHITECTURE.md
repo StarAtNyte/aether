@@ -762,6 +762,21 @@ sequenceDiagram
   chat as "… in (… cached)".
 - **Budgets.** `maxTurns`, `maxRepairs`, a total tool-call budget, input size
   limits and prompt abort (even mid-call) through `AbortSignal`.
+- **Loop discipline.** `harness.ts`: repeated refused calls get a reflection and
+  are not run again, refused calls nobody redid are listed before the model
+  finishes, a wrap-up heads-up comes before the turn and call budgets run out,
+  old tool results shrink when a conversation grows past a budget, messages the
+  user queues (`RunOptions.steer`) reach the model between turns, and a
+  cancelled run's conversation can be continued. `step` events carry plain
+  labels (and, for a look at images, the pictures) for the studio's step list.
+- **Compare kit, differences ledger, independent check.** A compare round (and a
+  review round) can show the reference and the render side by side, zoomed
+  crops of each region and a colour readout; the model writes a ranked list of
+  what differs (`report_differences`), fixes the largest first and must confirm
+  on the next render that the exact gap shrank; an independent seat with fresh
+  eyes cross-checks the final render and what is still open is named in the
+  closing message (`photo/differences.ts`, `photo/kit.ts`, `review-diff.ts`).
+  AI judges, measures advisory; see AGENT_TOOLS.md.
 
 **AgentHost in the studio (`AgentBridge`).** Patches become History commits
 with source `agent`. Verification runs headless physics with the world's

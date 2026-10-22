@@ -480,6 +480,7 @@ sub-call tools, and the design tools the planner already has.
 | `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{verdicts[1..140]{id, a 0..4, b? 0..4, evidence, ok?, okB?}, closer?: A\|B\|same, why?}` | Scores each checklist item on a rubric and says whether it would accept the item (`ok`). An item passes by the majority of those calls; without them, at a median of 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B, and its `closer` decides whether the new state is kept |
 | `sample_photo` | the model doing the fixes, in each compare round. Offered only when the photo raster could be read | `{regions[1..8] {surface?, box?, kind?: wall\|floor\|ceiling\|any, hint?}}` | Reads colour from the photo's pixels instead of guessing: the well-lit colour, the mean and shadow colour of each region, and the nearest library finishes with the tint to give each. `surface` is `wall-north`, `wall-east`, `wall-south`, `wall-west`, `floor`, `ceiling` or a piece or opening id; `box` is `[x0,y0,x1,y1]` in 0..1, origin top-left. It is ranked with verdicts, before edits |
 | `look_closer` | the model doing the fixes, in each compare round | `{regions[≤4]{box [x0,y0,x1,y1] in 0..1, note?}, side_by_side?, plan?}` | The magnifier (`photo/closer.ts`). The render is always taken from the photo's own solved camera, so one box is the same place in both pictures. `regions`: each box as the photo crop next to the same render crop; `side_by_side`: the whole photo and render in one image; `plan`: the room from above, ceiling removed, numbered pieces (legend: id, position, size) and the room's width, depth and height. Needs the host's `composeImages` (crops) and `captureReview` (plan); says what is unavailable otherwise. Ranked with verdicts, before edits |
+| `report_differences` | the model doing the fixes, in each compare round, when `PhotoOptions.differences` is on (the studio sets it); also the independent cross-check seat | `{differences[≤30]{id, kind?: proportion\|position\|colour\|material\|lighting\|missing\|extra\|scale\|other, where?, what, size 0..5, status?: fixed\|smaller\|same\|worse}, summary?}` | The ranked list of what still differs between the photo and the render, from the side-by-side image, the region crops and the colour readout. Edits are refused until it is called in the round. From the second round on the model re-sends every earlier id with its status on the NEW render. See "Differences ledger" below |
 | `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..140] {id, pass, note?}, summary?, closer?: new\|best\|same}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round (edits sent before verdicts are refused), and `closer` is its side-by-side call between the new render and the best one, shown next to each other: `best` rolls the room back |
 | `design_plan`, `place_items` | the builder (`runBuild` in `@aether/arch/photo`) | as above | Shell first, then pieces at measured positions |
 | `edit_items`, `place_items`, `query_scene`, `design_plan`, `tune_look`, `finish` | the model in each compare round | as above | Fix what still differs from the photo; `tune_look` sets the world's light and colour when the whole picture reads differently |
@@ -522,6 +523,37 @@ How a run proceeds:
 The studio sets these values for paid keys: `maxRounds: 10`, `judges: 1`, `reads: 1` (`PHOTO_ROUNDS_METERED`,
 `PHOTO_JUDGES_METERED`, `PHOTO_READS_METERED` in `Studio.ts`). Subscription backends get no round cap and the
 defaults above.
+
+### Compare kit, differences ledger and cross-check
+
+What the model sees each compare round, besides the numbered render views (all of it advisory data for the model's eyes; nothing
+here accepts or rejects a round):
+
+- **Side by side.** The photo and the clean render from the same solved camera in one image (`AgentHost.composeImages`).
+- **Region crops.** For up to `PhotoOptions.crops` regions (default 4, at most 8) the same box cut from the photo and the render,
+  side by side. Regions are the walls, floor and ceiling the description boxes, then the largest pieces and openings; the ones
+  that failed last round come first (`cropRegions`, `photo/kit.ts`). `look_closer` still lets the model ask for any other region.
+- **Colour readout.** For the same regions, the lit and shadow colour of the photo against the render's lit colour, ΔE and
+  lighter/darker (`regionReadout`). Small differences are the preview's flat light; the model is told to look at hue and
+  relative lightness.
+
+With `PhotoOptions.differences: true` the round is also a ledger (`photo/differences.ts`, `DifferenceLedger`):
+
+1. The model lists every difference it sees (`report_differences`), with kind, where, the amount and a size 1..5, before any edit.
+   Edits sent first are refused ("List the differences first"); the list and the edits can share one reply (the list runs first).
+2. It fixes the largest first, one change per difference.
+3. In the next round it receives its list and must send every id again with a status judged on the new render only. The ledger
+   points out the largest difference when it is still "same" after an edit, flags "worse", and keeps an id that was left out
+   counted as open. A round that the judges rolled back does not blame the undone edit.
+4. At the end the closing message names what is still open, largest first, from both seats.
+
+With `PhotoOptions.crossCheck: true`, after the compare rounds one independent seat (role `critic`, temperature 0, seed
+`CROSSCHECK_SEED`) gets a fresh conversation with the photo, the final render, the kit and the readout, and lists the differences it
+sees. It never edits; its findings join the ledger as `check-…` entries and are reported with the others. The same two options
+exist for the review loop of a prompt-built world (`ReviewOptions.differences`, `crossCheck`): the renders are compared with the
+request (and any reference pictures the user attached, shown side by side with a render), the gaps are ranked and fixed largest
+first and confirmed on the next renders, an approval that leaves a gap of size 4 or 5 open is asked about once, and an
+independent seat checks the final renders against the request. Both options are off in `WorldAgent` unless set and on in the studio.
 
 ## Conversation control
 
@@ -598,6 +630,26 @@ ends with one `done` event that carries token usage.
 
 8. **Playtest.** In the studio, the playtest bot runs after the turn (see
    [Verification and playtest](#verification-and-playtest)).
+
+**Loop discipline** (`packages/agent/src/harness.ts`, shared by the main loop and the review rounds):
+
+- **Refused calls.** `CallLedger` remembers refused calls. The second identical refusal appends a reflection to the result; the third
+  says it will not be run again, and the fourth identical call is not run at all ("Not run: …"). Three refusals of one tool in a
+  row with different arguments earn a "step back" note. Before the model finishes, refused calls that the same tool never
+  succeeded at afterwards are listed once, so its closing message accounts for them (`ledger.unresolved()`).
+- **Budgets.** Two turns before `maxTurns` (and on the last turn) and when 15% of the tool-call budget is left, the model is told
+  to wrap up (`budgetNote`).
+- **Compaction.** When a conversation passes 240,000 characters, tool results older than the newest 12 messages shrink to their
+  first lines plus a count of what was dropped (`compactConversation`, one sweep, so the cache prefix changes once). A continued
+  conversation over its 300,000-character budget is compacted the same way before it is abandoned.
+- **Queued messages.** `RunOptions.steer` is polled between model turns and before the run would end; what it returns reaches the
+  model as `<queued_message>` blocks, a `steer` event reports it, and the run does not end while a message waits. The studio's
+  composer queues messages while a turn runs; messages not picked up run next as one message, and a stopped turn drops them.
+- **Cancel and continue.** A cancelled run with a session key keeps its conversation up to the last answered turn (with a note that
+  the user cancelled) and the world as the model last saw it, so "no, instead …" continues instead of starting over.
+- **Steps.** Every tool call yields a `step` event with a plain label ("Placing 4 items"); a look at images yields one with the
+  pictures (`looked`), which the studio shrinks to thumbnails and never stores. The studio shows "Step N", "Still working…" after
+  ten quiet seconds, and the steps folded behind "Show all N steps".
 
 **Continued conversations.** A run with a session key continues the planner conversation of its last successful
 run. It sends only the scene changes since then (`sceneChangesText`), not the full summary
