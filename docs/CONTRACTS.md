@@ -16,7 +16,7 @@ declared in its `package.json`):
 core      ← (none)
 assets    ← core
 voxel     ← core
-logic     ← core, assets
+logic     ← core, arch, assets
 arch      ← core, assets
 procgen   ← core, arch
 render    ← core, assets, arch, procgen
@@ -2723,6 +2723,9 @@ characters); unknown ids, `NaN`/huge values and prototype keys are refused with 
 - `CharacterOptions.feel?: CharacterFeel` and `CHARACTER_FEEL`: acceleration 48 and deceleration 60 m/s², air control
   0.55, coyote time 0.11 s, jump buffer 0.12 s, jump cut 0.55. The studio's player uses it; without `feel` the
   controller takes the input velocity instantly (the playtest bot and the replays use that, unchanged).
+- Kinematic floors: a controller move that loops on the upward face of a kinematic body (a resting lift or deck; at least 8
+  collisions or under half the wanted progress) is redone in two phases (sideways with a 1 mm upward bias, then the vertical
+  rest), always for a loop, otherwise only when it walks further. Fixed ground is unaffected.
 
 ### `@aether/playtest`
 

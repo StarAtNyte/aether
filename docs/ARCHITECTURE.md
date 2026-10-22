@@ -40,7 +40,10 @@ each package). This document explains the design behind them.
 - [33. Water, animals and ambient life](#33-water-animals-and-ambient-life-outdoorb)
 - [34. Generated worlds: land, water and hills by default](#34-generated-worlds-land-water-and-hills-by-default)
 - [35. What belongs to an object, and what rests on what](#35-what-belongs-to-an-object-and-what-rests-on-what)
+- [36. Baked interior light and photographed foliage](#36-baked-interior-light-and-photographed-foliage-look2)
+- [37. Stairs people use: balustrades, and NPCs on several floors](#37-stairs-people-use-balustrades-and-npcs-on-several-floors)
 - [38. Game feel and gameplay effects](#38-game-feel-and-gameplay-effects)
+- [39. Sun shadows: focus cascades, contact hardening and contact shadows](#39-sun-shadows-focus-cascades-contact-hardening-and-contact-shadows)
 
 ---
 
@@ -1661,10 +1664,14 @@ World IR ──deriveGoals──▶ objectives, doors + openers, hazards, movers
   when something stays undone. `rideLift` (`liftride.ts`) waits at the boarding point until the clock says the deck is
   level for long enough, runs across a gap up to `runGap` or jumps with the thrust steered to land on the deck's
   centre, walks to the middle of the deck, stands still, and jumps off at the landing when the deck is level with it.
-  A resting kinematic deck is walked like any floor (the character controller redoes a move that Rapier's
-  controller loops on, see `CharacterController` in `packages/physics/src/character.ts`); jumps are for gaps and
-  for leaving the deck.
-- **Finishing, not running out the clock** (bot version 2, `BOT_VERSION`).
+  A resting kinematic deck is walked like any floor: Rapier's character controller reports a
+  contact with a kinematic body again and again at impact time 0, so a walk across a resting deck stalled after a few
+  centimetres. When a move (falling or standing, `vy <= 0`) ends with at least 8 collisions, or less than half the
+  wanted horizontal progress, on the upward face of a kinematic body, `CharacterController` redoes it in two phases:
+  sideways with a 1 mm upward bias, then the remaining vertical motion alone. A loop on the contact is always redone;
+  otherwise the redo is kept only when it walks further, so a door jamb or leaf still blocks. Fixed ground never takes
+  this path. Jumps are for gaps and for leaving the deck.
+- **Finishing, not running out the clock** (added in bot version 2; `BOT_VERSION` is 3, recorded as the proof's `bot`).
   The progress watchdog counts movement along the ground only, so a hop on
   the spot is not progress. Standing more than 1 m above the path's surface
   (on a footbridge deck over a path that runs beneath it) re-plans from where
