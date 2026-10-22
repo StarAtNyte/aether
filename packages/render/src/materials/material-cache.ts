@@ -111,6 +111,8 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     // Leaf cards: the cut-out is the alpha test; both faces are in the geometry, so the material stays single-sided.
     m.map = foliage.get(r.foliage);
     m.alphaTest = 0.5;
+    // With multisampling the cut-out edge is anti-aliased by coverage instead of crawling as a hard threshold.
+    m.alphaToCoverage = true;
     m.shadowSide = DoubleSide;
     m.userData['aetherFoliage'] = r.foliage;
     applyFoliageShading(m);

@@ -11,6 +11,7 @@ import { loadTextureVariants, textureVariantUrl } from '@aether/assets';
 import type { TextureCompression } from '../gpu/texture-compression';
 import { errorMessage, log } from '../log';
 import { RefCache } from '../refcache';
+import { sharpenObject } from '../materials/anisotropy';
 
 /** Loads a model URL into a scene graph. Injected so tests can fake it. */
 export interface ModelLoader {
@@ -101,6 +102,7 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
           const gltf = await withKtx2.loadAsync(twin);
           gltf.scene.animations = gltf.animations;
           gltf.scene.userData[COMPRESSED_SOURCE_KEY] = url;
+          sharpenObject(gltf.scene);
           return gltf.scene;
         } catch (e) {
           log.warn(`compressed twin of ${url} failed, loading the original: ${errorMessage(e)}`);
@@ -108,6 +110,7 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
       }
       const gltf = await (await base()).loadAsync(url);
       gltf.scene.animations = gltf.animations;
+      sharpenObject(gltf.scene);
       return gltf.scene;
     },
   };

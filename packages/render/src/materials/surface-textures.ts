@@ -9,6 +9,7 @@
  */
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 import { rng } from '@aether/core';
+import { TEXTURE_ANISOTROPY } from './anisotropy';
 
 /**
  * Surfaces with procedural detail. `ground` is the soft albedo mottling of
@@ -234,7 +235,7 @@ function makeTexture(pixels: Uint8Array, size: number, srgb: boolean, tileMetres
   tex.magFilter = LinearFilter;
   tex.minFilter = LinearMipmapLinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 4;
+  tex.anisotropy = TEXTURE_ANISOTROPY;
   tex.repeat.set(1 / tileMetres, 1 / tileMetres);
   tex.needsUpdate = true;
   return tex;

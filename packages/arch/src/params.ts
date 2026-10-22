@@ -113,7 +113,7 @@ export const WallParams = z.object({
   skirting: z.enum(['none', 'a', 'b', 'both']).default('both'),
   skirtingMaterial: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }),
   /** Additive: height, projection and profile of the skirting (default: the plain 8 cm board). */
-  skirtingStyle: z.object({ height: z.number().min(0.03).max(0.5).default(0.08), depth: z.number().min(0.008).max(0.06).default(0.012), profile: SkirtingProfile.default('square') }).optional(),
+  skirtingStyle: z.object({ height: z.number().min(0.03).max(0.5).default(0.08), depth: z.number().min(0.012).max(0.06).default(0.016), profile: SkirtingProfile.default('square') }).optional(),
   /** Additive: a picture rail on side A / B: centre height above the base and its material. */
   railA: z.object({ y: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT), material: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }) }).optional(),
   railB: z.object({ y: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT), material: MaterialSpec.default({ finish: 'paint', color: '#f1eee8' }) }).optional(),

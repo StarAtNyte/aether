@@ -12,6 +12,7 @@
  */
 import { DataArrayTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, RepeatWrapping, UnsignedByteType } from 'three';
 import type { FinishMaps } from './finish-textures';
+import { TEXTURE_ANISOTROPY } from './anisotropy';
 
 /** Which of the three maps of a finish an array holds. */
 export type MapKind = 'map' | 'orm' | 'normal';
@@ -27,7 +28,7 @@ function makeArray(size: number, layers: number): DataArrayTexture {
   tex.magFilter = LinearFilter;
   tex.minFilter = LinearMipmapLinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 8;
+  tex.anisotropy = TEXTURE_ANISOTROPY;
   tex.needsUpdate = true;
   return tex;
 }

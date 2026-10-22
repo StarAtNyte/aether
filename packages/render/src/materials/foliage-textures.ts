@@ -11,6 +11,7 @@ import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBA
 import { FOLIAGE_TEXTURE_SIZE, foliageAtlasSize, foliagePixelsJob, type FoliageKind } from '@aether/procgen';
 import { textureWork } from '../gpu/task-queue';
 import { loadLeafPhotos, photoAtlasJob, PHOTO_KINDS, type LeafPhotos } from './foliage-photo';
+import { TEXTURE_ANISOTROPY } from './anisotropy';
 
 /** Lazily created, shared foliage card textures. */
 export class FoliageTextures {
@@ -63,7 +64,7 @@ export class FoliageTextures {
     tex.magFilter = LinearFilter;
     tex.minFilter = LinearMipmapLinearFilter;
     tex.generateMipmaps = true;
-    tex.anisotropy = 8;
+    tex.anisotropy = TEXTURE_ANISOTROPY;
     tex.flipY = false;
     tex.needsUpdate = true;
     this.textures.set(kind, tex);

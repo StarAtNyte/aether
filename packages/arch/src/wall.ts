@@ -19,7 +19,7 @@ import { buildNiche, extrudeProfile, freeStretches, nicheSpan, panelDetail, pict
 
 /** Skirting board height and projection (metres). */
 export const SKIRTING_HEIGHT = 0.08;
-export const SKIRTING_DEPTH = 0.012;
+export const SKIRTING_DEPTH = 0.016;
 /** How far a wall face runs past a joined corner into its neighbour (metres), so the two faces overlap instead of meeting on a crack. */
 export const CORNER_SEAM = 0.004;
 

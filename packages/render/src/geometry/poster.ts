@@ -6,6 +6,7 @@
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, PlaneGeometry, SRGBColorSpace, TextureLoader, type Texture } from 'three';
 import { isAllowedModelUrl } from '@aether/core';
 import { RefCache } from '../refcache';
+import { TEXTURE_ANISOTROPY } from '../materials/anisotropy';
 
 /** Loads a texture from a URL. Injected so tests can fake it. */
 export interface TextureSource {
@@ -20,7 +21,7 @@ export function createTextureSource(): TextureSource {
       if (!url.startsWith('blob:') && !(url.startsWith('/') && isAllowedModelUrl(url))) throw new Error('image url rejected');
       const tex = await loader.loadAsync(url);
       tex.colorSpace = SRGBColorSpace;
-      tex.anisotropy = 4;
+      tex.anisotropy = TEXTURE_ANISOTROPY;
       return tex;
     },
   };

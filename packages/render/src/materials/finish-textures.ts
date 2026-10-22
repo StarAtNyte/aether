@@ -17,6 +17,7 @@ import { FINISH_TEXTURE_SIZE, finishAlbedoScale, finishPixels, type FinishPixels
 import { textureWork } from '../gpu/task-queue';
 import { errorMessage, log } from '../log';
 import { SplatArrays } from './splat-arrays';
+import { TEXTURE_ANISOTROPY } from './anisotropy';
 
 /** The maps of one finish. */
 export interface FinishMaps {
@@ -116,7 +117,7 @@ function texture(data: Uint8Array, size: number, tile: number): DataTexture {
   tex.magFilter = LinearFilter;
   tex.minFilter = LinearMipmapLinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 8;
+  tex.anisotropy = TEXTURE_ANISOTROPY;
   tex.repeat.set(1 / tile, 1 / tile);
   tex.needsUpdate = true;
   return tex;

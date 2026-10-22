@@ -188,7 +188,7 @@ export function panelDetail(f: PanelFace): Geom {
   if (f.style === 'batten' || f.style === 'beadboard') {
     const bead = f.style === 'beadboard';
     const width = bead ? 0.012 : 0.045;
-    const proud = bead ? 0.004 : 0.012;
+    const proud = bead ? 0.006 : 0.012;
     let pitch = bead ? 0.07 : 0.2;
     const lo = f.style === 'batten' ? bottom : f.skirt + 0.01;
     const hi = f.style === 'batten' ? top : f.top - (f.rail ? 0.045 : 0.01);

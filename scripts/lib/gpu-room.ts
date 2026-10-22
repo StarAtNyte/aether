@@ -154,6 +154,48 @@ export class GpuRoom {
     return Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
   }
 
+  /**
+   * Live frames, as the studio draws them while the camera moves: the camera is posed (yaw/pitch in radians), a few frames are left
+   * to settle, and the canvas is read back as a grey image of `w` x `h`. Used to score flicker; stills use {@link still}.
+   */
+  async liveFrames(poses: ReadonlyArray<{ x: number; y: number; z: number; yaw: number; pitch: number }>, size: { w: number; h: number }, settleFrames = 6): Promise<Uint8Array[]> {
+    await this.page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up' }));
+    const out: Uint8Array[] = [];
+    for (const p of poses) {
+      await this.page.evaluate(async ([x, y, z, yaw, pitch, n]) => {
+        const r = window.__aether?.simulation?.renderer;
+        r?.setCameraPose(x as number, y as number, z as number, yaw as number, pitch as number);
+        for (let i = 0; i < (n as number); i++) await new Promise((res) => requestAnimationFrame(() => res(null)));
+      }, [p.x, p.y, p.z, p.yaw, p.pitch, settleFrames] as const);
+      const png = await this.page.screenshot({ type: 'png' });
+      const b64 = await this.page.evaluate(
+        async ([data, w, h]) => {
+          const blob = await (await fetch(`data:image/png;base64,${data}`)).blob();
+          const bmp = await createImageBitmap(blob);
+          const c = new OffscreenCanvas(w as number, h as number);
+          const ctx = c.getContext('2d');
+          if (!ctx) return '';
+          ctx.drawImage(bmp, 0, 0, w as number, h as number);
+          const px = ctx.getImageData(0, 0, w as number, h as number).data;
+          const g = new Uint8Array((w as number) * (h as number));
+          for (let i = 0; i < g.length; i++) g[i] = Math.round(0.2126 * (px[i * 4] as number) + 0.7152 * (px[i * 4 + 1] as number) + 0.0722 * (px[i * 4 + 2] as number));
+          let bin = '';
+          for (let i = 0; i < g.length; i += 0x8000) bin += String.fromCharCode(...g.subarray(i, i + 0x8000));
+          return btoa(bin);
+        },
+        [png.toString('base64'), size.w, size.h] as const,
+      );
+      out.push(Uint8Array.from(Buffer.from(b64, 'base64')));
+    }
+    return out;
+  }
+
+  /** Set the render tier of the live view (`low`..`ultra`, or `auto`). */
+  async setTier(tier: string): Promise<void> {
+    await this.page.evaluate((t) => (window.__aether?.simulation?.renderer as unknown as { setRenderTier?: (x: string) => void } | undefined)?.setRenderTier?.(t), tier);
+    await this.page.waitForTimeout(1500);
+  }
+
   /** A screenshot of the page as it is (debugging). */
   async snap(path: string): Promise<void> {
     await this.page.screenshot({ path });
