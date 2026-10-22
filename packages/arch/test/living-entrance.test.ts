@@ -39,14 +39,15 @@ function unreached(w: number, d: number, at: number, width: number, style: strin
 
 describe('living entrance room keeps its doors connected', () => {
   it('the pinned layouts that sealed the kitchen are walkable now', () => {
-    for (const args of [
+    const cases: Array<[number, number, number, number, string, string]> = [
       [3.5, 3.8, 0.2, 0.9, 'modern', 'north'],
       [3.5, 3.8, 0.8, 0.9, 'modern', 'south'],
       [3.5, 4.5, 0.2, 0.9, 'scandinavian', 'north'],
       [3.5, 4.5, 0.8, 0.9, 'scandinavian', 'south'],
       [4, 5.5, 0.35, 0.9, 'modern', 'south'],
       [4, 5.5, 0.65, 1.2, 'modern', 'north'],
-    ] as const) expect(unreached(...args), args.join(' ')).toEqual([]);
+    ];
+    for (const args of cases) expect(unreached(...args), args.join(' ')).toEqual([]);
   });
 
   it('a sweep of sizes, opening positions, widths and main-door walls never leaves a room unreachable', () => {

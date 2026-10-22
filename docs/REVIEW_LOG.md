@@ -5389,3 +5389,55 @@ answer for the volume only.
 
 **Tests.** `packages/render/test/wall-shadow-side.test.ts` (solid material: own cache key, front faces for its shadow,
 the plain one untouched; glass, foliage and the ghost keep theirs; a wall entity gets it and a crate does not).
+
+## Residents and the bot on a narrow flight; furniture that sealed a living entrance room (stage `stairyield`)
+
+**Problem.** (1) The planner house with three bedrooms and a family of four, stair drawn at `[3.06, 0.66]`: the walkthrough
+ended "the player got stuck on villa-l1-rail0" (also with the phrase "a 3 bedroom two-storey house for a family of four";
+without residents' routines, or with the stair at `[0.2, 1.2]` or `[1.46, 0.66]`, it passes). (2) In a hall type `living`
+the furniture could seal the opening to the next room.
+
+**Cause, measured** (positions every 0.25 s). Not on the flight: at 46 to 51 s resident 2 walks the upstairs walkway beside
+the stairwell (about 1 m between the railing and the wall) towards the bot. Kinematic residents ignored the player on the
+floor grid (only on stairs did they yield), so the resident walked into the bot's capsule and pushed it east at 0.9 m/s
+against the stairwell railing; once the capsule was lifted onto the glass railing's top (y 4.3 on a 3.25 m floor), the
+watchdog marked the edges bad and the replanning cascade ended in the failure above. Removing the routines removed the failure.
+
+**Changes.**
+- NPC side (`packages/logic/src/npc/brain.ts`): in a building a calm NPC with the player within 1.2 m ahead on its floor
+  stands for 0.5 s, then steps aside (right of its way, else left, else back, whichever the floor grid leaves open) at half
+  pace, and goes on after 8 s at most (decaying while the way is clear). Hostile NPCs and dynamic bodies are unchanged.
+- Bot side (`packages/playtest/src/agent.ts`): `yieldToResident`: (a) at the foot (or landing) of a stair about to be
+  climbed, while a resident stands on that flight, the bot waits and backs off while it is within 1.4 m of it; (b) when the
+  watchdog would mark a way bad and a calm resident is within 1.1 m, the bot backs off and waits instead (no bad edge). Both
+  share a patience of 24 simulated s per objective; past it a `stuck` warning names the resident, the place and the time and
+  suggests another stop or a wider way. Head-on on a flight or walkway the bot does not give way by itself: with both
+  standing back (tried first) they held each other up for 25 s and failed; the NPC side gives way there.
+- Furniture (`packages/arch/src/layout.ts`, `RoomLayout.fits`): a floor piece is refused if it would cut the room's doorways
+  from each other, or cut off a pocket of floor a body (radius 0.34 m, as the building check) can stand on, 0.3 m2 or more,
+  from the doors (flood over a 0.1 m grid; rooms already cut off are not made worse). This is a pocket rule, not only
+  door to door: the failing cases had an armchair in front of the main door and a plant in the corner closing a pocket
+  round the spawn, with the two doors still connected.
+- Test support: `generateHouse` takes `residents`.
+
+**Measured.** Repro, 4 phrasings x 3 stair positions: before 2 failed (stair at 3.06, 0.66 with three bedrooms), after all
+pass. Bot-only (NPC change reverted): the repro still fails (a resident that walks into the bot cannot be stepped away from
+in a 1 m walkway), so the NPC change is what fixes it; NPC-only passes too; the bot rule is the safeguard for flights. Living
+entrance sweep (5 widths x 4 depths x 5 opening positions x 3 widths x 2 styles x 3 main-door walls = 1800 houses): 64
+unreachable before, 0 after. 60 of them show another, separate fault (below).
+
+**Tests.** `playtest/test/stair-yield.test.ts` (repro at the three stair positions; a resident walking at a standing player
+does not push it more than 0.35 m or onto the railing in 70 s; fails without the NPC change), `stair-sweep.test.ts` (eight
+generated houses with three residents; the planner house at five stair positions and four phrasings),
+`arch/test/living-entrance.test.ts` (six pinned layouts and a 144-house sweep; fails without the rule).
+
+**Gates.** tsc 0; vitest arch, playtest, agent, logic: 144 files, 1844 tests pass; smoke 34/34; `showcase:bake --check` clean
+after rebaking `apartment` and `cafe-interior` (their furniture layouts changed with the rule).
+
+**Open.**
+- The bot's patience finding (a resident that never leaves) has no test: a resident standing in a corridor is treated by
+  the static route planner as a wall ("cannot be reached"), so the wait is not reached in a small world; only the repro and
+  sweep exercise the wait paths.
+- A curtain overlapping tall furniture on the north wall (3.5 x 3.2 m living room, opening at 0.8) fails the building check
+  in 60 of the 1800 houses; not related to doors, not fixed.
+- Residents and the bot still pass through each other after the 8 s / 24 s patience.
