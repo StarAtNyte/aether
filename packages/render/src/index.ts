@@ -43,6 +43,9 @@ export { HeightGrid, buildHeightGrid, transformPositions, DEFAULT_GRID_RESOLUTIO
 export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, instantiateAsset, cloneModel, hasSkin, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
 export { TextureCache, createTextureSource, createPoster, shareMaterials, type TextureSource } from './geometry/poster';
 export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animator';
+export { planLightmap, LIGHTMAP_VERSION, type LightmapQuality, type LightmapPlan } from './environment/lightmap';
+export { LIGHTMAP_MAX_ASSET_BYTES } from './environment/lightmap-asset';
+export type { LightmapStatus, LightmapState } from './view/lightmap-controller';
 export { HdriController, createHdriSource, type HdriSource } from './environment/hdri';
 
 export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';

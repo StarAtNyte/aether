@@ -471,6 +471,7 @@ export class Studio {
             if (gen === this.attachGen) this.handleWatchdog(e);
           },
           onVoxelHud: (state) => this.store.getState().setVoxelHud(state),
+          onLightmap: (status) => this.store.getState().setLightmap(status),
         },
         {
           backend: this.forceWebGL2 ? 'webgl2' : st.settings.backend,
@@ -483,6 +484,7 @@ export class Studio {
           scaleGeometry: !classicEngineRequested(),
           compressedTextures: !uncompressedTexturesRequested(),
           saveBase: this.projectId ?? 'scratch',
+          lightmapBase: `${import.meta.env.BASE_URL ?? '/'}templates/lightmaps/`,
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),
         },
@@ -1559,6 +1561,17 @@ export class Studio {
   }
 
   /** Editor camera presets ('reset' re-frames the whole world). */
+  /** Stop a running baked-light bake (the building keeps the probe light). */
+  cancelLightBake(): void {
+    this.sim?.renderer.cancelLightmapBake();
+  }
+
+  /** Set the world's baked light (`environment.lightBake`): one undo step; null puts it back to automatic. */
+  setLightBake(quality: 'off' | 'low' | 'medium' | 'high' | null): void {
+    const label = quality === null ? 'Baked light: automatic' : quality === 'off' ? 'Baked light: off' : `Baked light: ${quality}`;
+    this.commitUser([{ op: 'setEnvironment', set: { lightBake: quality === null ? null : { quality, samples: null } } }], label);
+  }
+
   viewPreset(preset: 'top' | 'front' | 'side' | 'iso' | 'reset'): void {
     if (!this.sim || this.sim.mode === 'play') return;
     if (preset === 'reset') void this.sim.frameWorld();

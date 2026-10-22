@@ -27,7 +27,7 @@ import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aethe
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
 import { FixedStepper } from './FixedStepper';
@@ -185,10 +185,14 @@ export interface SimulationListener {
   onPauseRequest?(): void;
   /** What the crosshair is on and can use ("E · Open drawer"); null when nothing. */
   onInteract?(prompt: InteractPrompt | null): void;
+  /** The baked interior light started, progressed, applied, failed or was cancelled. */
+  onLightmap?(status: LightmapStatus): void;
 }
 
 /** Construction options. */
 export interface SimulationOptions {
+  /** Where bundled baked-lightmap files are served (see the render package's `lightmapBase`). */
+  lightmapBase?: string | null;
   /** Backend policy (default 'auto'). */
   backend?: BackendPreference;
   /** Why WebGL2 is forced (recorded in the backend report). */
@@ -382,6 +386,8 @@ export class Simulation {
       growIn: !prefersReducedMotion(),
       ...(opts.scaleGeometry === false ? { fields: false, virtualGeometry: false } : {}),
       ...(opts.compressedTextures === false ? { transcoderPath: null } : {}),
+      ...(opts.lightmapBase !== undefined ? { lightmapBase: opts.lightmapBase } : {}),
+      onLightmapStatus: (status) => listener.onLightmap?.(status),
       onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),

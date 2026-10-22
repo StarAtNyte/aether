@@ -263,3 +263,30 @@
   margin: var(--s-2) 0 0;
   font-size: var(--fs-11);
 }
+
+/* --- Baked light status in the viewport --- */
+
+.lightmap-pill {
+  gap: var(--s-2);
+}
+
+.lightmap-pill .vp-btn__status {
+  background: var(--accent);
+  animation: lightmap-pulse 1.4s var(--ease) infinite;
+}
+
+.lightmap-pill .icon-btn {
+  margin-inline-end: calc(-1 * var(--s-1));
+}
+
+@keyframes lightmap-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightmap-pill .vp-btn__status {
+    animation: none;
+  }
+}

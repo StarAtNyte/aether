@@ -20,7 +20,7 @@ import type { VoxelHudState } from '../voxel/hudState';
 import type { LabelSpec } from '../engine/viewOverlay';
 import type { NpcFrame } from '../engine/npcFrame';
 import type { InteractPrompt } from '../engine/interaction';
-import type { BackendReport } from '@aether/render';
+import type { BackendReport, LightmapStatus } from '@aether/render';
 
 /** Editor vs. simulation. */
 export type StudioMode = 'edit' | 'play';
@@ -335,6 +335,8 @@ export interface StudioState {
   verify: VerifyState;
   /** Autonomous playtest verdict (the Verified badge). */
   playtest: PlaytestState;
+  /** The baked-light state of the building on screen (null before the renderer reports one). */
+  lightmap: LightmapStatus | null;
   /** Ghost replay of the bot's run, while shown (null otherwise). */
   replay: ReplayState | null;
   /** Seal of the last verification run, while shown (null otherwise). */
@@ -410,6 +412,7 @@ export interface StudioState {
   setStats(stats: PerfStats): void;
   setVerify(v: Partial<VerifyState>): void;
   setPlaytest(v: Partial<PlaytestState>): void;
+  setLightmap(v: LightmapStatus | null): void;
   setReplay(v: ReplayState | null): void;
   setProofSeal(seal: ProofSeal | null): void;
   setPlanMarks(marks: { id: number; labels: LabelSpec[] } | null): void;
@@ -548,6 +551,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     stats: EMPTY_STATS,
     verify: IDLE_VERIFY,
     playtest: IDLE_PLAYTEST,
+    lightmap: null,
     replay: null,
     proofSeal: null,
     planMarks: null,
@@ -646,6 +650,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setStats: (stats) => set((s) => (shallowEqual(s.stats, stats) ? s : { stats })),
     setVerify: (v) => set((s) => ({ verify: { ...s.verify, ...v } })),
     setPlaytest: (v) => set((s) => ({ playtest: { ...s.playtest, ...v } })),
+    setLightmap: (lightmap) => set((s) => (s.lightmap && lightmap && shallowEqual(s.lightmap, lightmap) ? s : { lightmap })),
     setReplay: (replay) => set({ replay }),
     setProofSeal: (proofSeal) => set({ proofSeal }),
     setPlanMarks: (planMarks) => set({ planMarks }),

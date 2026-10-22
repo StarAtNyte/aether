@@ -22,7 +22,7 @@ import { ASSET_DRAG_TYPE, dragState } from '../../editor/library/useLibrary';
 import { Icon } from '../Icon';
 import { ToolDock } from './ToolDock';
 import { ContextBar } from './ContextBar';
-import { Menu } from '../ui/Menu';
+import { Menu, type MenuEntry } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
 import { PerfHud } from './PerfHud';
 import { GraphicsAlert } from './GraphicsAlert';
@@ -37,6 +37,7 @@ import { PlanView } from './PlanView';
 import { TouchControls } from './TouchControls';
 import { VerifyPill } from './VerifyPill';
 import { ProofSeal } from './ProofSeal';
+import { LightmapPill } from './LightmapPill';
 import { PlaytestPill } from './PlaytestPill';
 import { ReplayBar } from './ReplayBar';
 
@@ -103,12 +104,27 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
   const studio = useStudio();
   const s = useUI((x) => x.settings);
   const update = studio.store.getState().updateSettings;
+  const world = useWorld();
+  const bake = world.environment.lightBake?.quality ?? null;
+  const building = Object.values(world.entities).some((e) => e.arch !== undefined);
   return (
     <Menu
       label="Display options"
       align="end"
       width={220}
       items={[
+        ...(building
+          ? ([
+              { kind: 'heading', id: 'h-bake', label: 'Baked interior light' },
+              ...([['auto', 'Automatic', null], ['off', 'Off', 'off'], ['low', 'Low', 'low'], ['medium', 'Medium', 'medium'], ['high', 'High', 'high']] as const).map(([id, label, q]) => ({
+                id: `bake-${id}`,
+                label,
+                checked: bake === q,
+                onSelect: () => studio.setLightBake(q),
+              })),
+              { kind: 'separator', id: 's-bake' },
+            ] satisfies MenuEntry[])
+          : []),
         { id: 'labels', label: 'Object labels', checked: s.showLabels, shortcut: 'L', onSelect: () => update({ showLabels: !s.showLabels }) },
         { id: 'perf', label: 'Performance', checked: s.showPerf, shortcut: shortcut('Shift+P'), onSelect: () => update({ showPerf: !s.showPerf }) },
         { id: 'colliders', label: 'Colliders', checked: s.showColliders, onSelect: () => update({ showColliders: !s.showColliders }) },
@@ -398,6 +414,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
       <div className="vp-overlay vp-overlay--tr">
         {playing ? !voxelGame && <CameraToggle /> : ready && (
           <>
+            <LightmapPill />
             <PlaytestPill />
             <VerifyPill />
           </>
