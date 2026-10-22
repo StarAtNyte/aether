@@ -6,12 +6,15 @@
  *   that close the horizon; or a sandstone canyon), an optional stream carved across it with flowing water, woods of
  *   the leaf-card trees on the slopes and clumped ground cover (grass, flowers) round the plot. Replaces the land it
  *   built before.
+ * - `row`: trees, hedges, fence posts or props strung along a polyline (a lane's avenue, a hedge, a tree line), each
+ *   standing on the ground at its own point; one instanced scatter entity with explicit points.
  * - `path`: a trail, lane or road draped over whatever terrain is there as one mesh with soft verges.
  *
  * Deterministic for its input. Everything it adds is tagged `land`; positions are measured from the same heightfield
  * physics uses, so `place_level_items` and `query_level` agree with it.
  */
 import { Color, hashString, rng, type Json, type PatchInput, type WorldDoc } from '@aether/core';
+import { getBuiltinGenerator, isLibraryGenerator } from '@aether/procgen';
 import { z } from 'zod';
 import { Builder, r2, type Mood } from './providers/mock/builder';
 import { naturalGround, scatterBelt, type ThemeCtx } from './providers/mock/decor';
@@ -53,6 +56,18 @@ export const LandInput = z.discriminatedUnion('op', [
     color: Color.optional(),
     name: z.string().max(60).optional(),
   }),
+  z.object({
+    op: z.literal('row'),
+    points: z.array(z.tuple([XZ, XZ])).min(2).max(64),
+    of: z.string().min(1).max(64),
+    params: z.record(z.string(), z.unknown()).optional(),
+    spacing: z.number().min(0.25).max(60).default(4),
+    jitter: z.number().min(0).max(1).default(0.25),
+    scale: z.tuple([z.number().min(0.1).max(10), z.number().min(0.1).max(10)]).default([0.85, 1.15]),
+    sides: z.enum(['centre', 'both']).default('centre'),
+    offset: z.number().min(0).max(40).default(0),
+    name: z.string().max(60).optional(),
+  }),
 ]);
 export type LandInput = z.infer<typeof LandInput>;
 
@@ -87,9 +102,10 @@ function tagLand(patches: PatchInput[]): PatchInput[] {
 }
 
 /** The patches for one `shape_land` call against `world`, and a summary for the model. */
-export function landPatches(world: WorldDoc, input: LandInput): { patches: PatchInput[]; summary: string } {
+export function landPatches(world: WorldDoc, input: LandInput): { patches: PatchInput[]; summary: string; refused?: boolean } {
   const seed = hashString(JSON.stringify(input)) >>> 0;
   const ids = Object.keys(world.entities);
+  if (input.op === 'row') return rowPatches(world, input, seed, ids);
   if (input.op === 'mound') {
     const b = new Builder(seed, ids, CALM);
     const h = worldGround(world);
@@ -179,4 +195,56 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
     removals.length > 0 ? `Replaced the previous land (${removals.length} entities).` : '',
   ];
   return { patches, summary: parts.filter(Boolean).join(' ') };
+}
+
+/** Points along a polyline every `spacing` metres (the first at the start), with the cumulative length. */
+function alongPolyline(pts: ReadonlyArray<readonly [number, number]>, spacing: number): { at: Array<[number, number, number, number]>; length: number } {
+  const at: Array<[number, number, number, number]> = [];
+  let carried = 0;
+  let length = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, az] = pts[i - 1] as [number, number];
+    const [bx, bz] = pts[i] as [number, number];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 1e-6) continue;
+    const dx = (bx - ax) / len;
+    const dz = (bz - az) / len;
+    for (let d = carried; d <= len + 1e-9; d += spacing) {
+      at.push([ax + dx * d, az + dz * d, dx, dz]);
+      carried = d + spacing - len;
+    }
+    if (at.length === 0) carried = 0;
+    length += len;
+  }
+  return { at, length };
+}
+
+/** `row`: one instanced scatter of `of`, one instance per step along the polyline, each on the ground at its point. */
+function rowPatches(world: WorldDoc, input: Extract<LandInput, { op: 'row' }>, seed: number, ids: string[]): { patches: PatchInput[]; summary: string; refused?: boolean } {
+  const known = (id: string) => Boolean(getBuiltinGenerator(id)) || isLibraryGenerator(id) || Object.prototype.hasOwnProperty.call(world.generators ?? {}, id);
+  if (!known(input.of)) return { patches: [], refused: true, summary: `shape_land row refused: "${input.of}" is not a generator (built-in, library or defined by defineGenerator). Use e.g. tree-pine, tree-oak, bush, rock, or define one first.` };
+  const { at, length } = alongPolyline(input.points, input.spacing);
+  const sides = input.sides === 'both' && input.offset > 0 ? [-1, 1] : [0];
+  const h = worldGround(world);
+  const random = rng(seed);
+  const pts: Array<[number, number, number]> = [];
+  for (const [x, z, dx, dz] of at) {
+    for (const side of sides) {
+      const px = x + (-dz) * input.offset * side + (random() - 0.5) * 2 * input.jitter * input.spacing * 0.5;
+      const pz = z + dx * input.offset * side + (random() - 0.5) * 2 * input.jitter * input.spacing * 0.5;
+      pts.push([r2(px), r2(h(px, pz)), r2(pz)]);
+    }
+  }
+  if (pts.length === 0) return { patches: [], refused: true, summary: 'shape_land row refused: the line is too short for even one instance; give two distinct points or a smaller spacing.' };
+  if (pts.length > 2000) return { patches: [], refused: true, summary: `shape_land row refused: ${pts.length} instances would be placed (limit 2000); raise spacing (the line is ${length.toFixed(0)} m long) or split it.` };
+  const b = new Builder(seed, ids, CALM);
+  const id = b.add({
+    id: b.id('row'),
+    name: input.name ?? `Row of ${input.of}`,
+    transform: { position: [0, 0, 0] },
+    shape: { kind: 'scatter', of: { kind: 'procedural', generator: input.of, params: (input.params ?? {}) as Record<string, Json> }, count: pts.length, area: [1, 1], seed: seed % 100_000, scaleRange: input.scale, points: pts },
+    tags: ['row'],
+  });
+  const ys = pts.map((p) => p[1]);
+  return { patches: tagLand(b.build()), summary: `Strung "${id}": ${pts.length} x ${input.of} along ${length.toFixed(0)} m of line every ${input.spacing} m${sides.length > 1 ? ` on both sides ${input.offset} m off it` : ''}, each standing on the ground at its own point (heights ${Math.min(...ys).toFixed(1)}..${Math.max(...ys).toFixed(1)} m). Read it back with inspect {ids:["${id}"]}; move or thin it by sending the row again after removing this one.` };
 }

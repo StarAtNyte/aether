@@ -82,3 +82,30 @@ describe('realistic exchange on apply_patches', () => {
     expect(realisticWorld('a forest', createWorld())).toBe(true);
   });
 });
+
+describe('shape_land row', () => {
+  it('strings one instanced scatter along a polyline, each instance on the ground', () => {
+    const w1 = apply(createWorld(), { op: 'land', kind: 'meadow', plot: { x: 0, z: 0, radius: 10 }, relief: 40 });
+    const w2 = apply(w1, { op: 'row', points: [[0, 0], [0, 40], [30, 60]], of: 'tree-oak', spacing: 5 });
+    const row = Object.values(w2.entities).find((e) => e.tags.includes('row'));
+    expect(row?.shape.kind).toBe('scatter');
+    if (row?.shape.kind !== 'scatter') throw new Error('not scatter');
+    const pts = row.shape.points ?? [];
+    expect(pts.length).toBeGreaterThanOrEqual(10);
+    const h = worldGround(w2);
+    for (const [x, y, z] of pts) expect(Math.abs(y - h(x, z))).toBeLessThan(0.02);
+    // The instances stay near the line (jitter is a fraction of the spacing).
+    for (const [x, , z] of pts) expect(z >= -3 && z <= 63 && x >= -3 && x <= 33).toBe(true);
+  });
+
+  it('puts both sides of the line when offset is set, and refuses unknown generators and runaway counts', () => {
+    const one = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'bush', spacing: 5 }));
+    const two = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'bush', spacing: 5, sides: 'both', offset: 3 }));
+    const count = (r: { patches: Array<{ op: string; entity?: { shape?: { points?: unknown[] } } }> }) => (r.patches.find((p) => p.op === 'add')?.entity?.shape?.points ?? []).length;
+    expect(count(two)).toBe(count(one) * 2);
+    const bad = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'no-such-thing' }));
+    expect(bad.refused).toBe(true);
+    const huge = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 2000]], of: 'bush', spacing: 0.25 }));
+    expect(huge.refused).toBe(true);
+  });
+});
