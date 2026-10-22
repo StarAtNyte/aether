@@ -81,11 +81,19 @@ export function materialAlbedo(m: Material | Material[] | null | undefined, out:
   out[0] = out[1] = out[2] = 0.5;
 }
 
+/** A furniture box proxy in the trace input: its corners and its 12 triangles `[tri, tri + 12)`. */
+export interface TraceProxy {
+  lo: V3;
+  hi: V3;
+  tri: number;
+}
+
 /**
  * The trace input of a building: shell meshes as their real triangles (glass left out), furniture and fixtures
- * as boxes. Returns null when nothing usable is there. `bounds` receives the shell's world box.
+ * as boxes. Returns null when nothing usable is there. `bounds` receives the shell's world box; `proxies` (when
+ * given) receives the boxes, so a bake of the furniture's own surfaces can leave a box out of its rays.
  */
-export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3): Required<TraceInput> | null {
+export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3, proxies?: TraceProxy[]): Required<TraceInput> | null {
   const pos: number[] = [];
   const alb: number[] = [];
   const two: number[] = [];
@@ -144,6 +152,7 @@ export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3): R
       const sh = 0.08;
       const lo: V3 = [_box.min.x + sx * sh, _box.min.y, _box.min.z + sz * sh];
       const hi: V3 = [_box.max.x - sx * sh, _box.max.y - sy * sh * 0.5, _box.max.z - sz * sh];
+      proxies?.push({ lo, hi, tri: tris });
       tris += pushBox(pos, alb, two, lo, hi, col);
     }
   }

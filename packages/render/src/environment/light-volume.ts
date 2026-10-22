@@ -138,6 +138,9 @@ export class TraceScene {
   private readonly stack = new Int32Array(128);
   /** Distance of the last closest hit. */
   hitT = 0;
+  /** Triangles `[skipLo, skipHi)` are invisible to queries (a surface does not shadow itself); an empty range skips none. */
+  skipLo = 0;
+  skipHi = 0;
 
   constructor(input: TraceInput) {
     const n = Math.min(MAX_TRACE_TRIANGLES, Math.floor(input.positions.length / 9), Math.floor(input.albedo.length / 3));
@@ -289,6 +292,7 @@ export class TraceScene {
       const end = start - m1;
       for (let k = start; k < end; k++) {
         const i = this.order[k]!;
+        if (i >= this.skipLo && i < this.skipHi) continue;
         const q = i * 12;
         const e1x = t[q + 3]!, e1y = t[q + 4]!, e1z = t[q + 5]!;
         const e2x = t[q + 6]!, e2y = t[q + 7]!, e2z = t[q + 8]!;
