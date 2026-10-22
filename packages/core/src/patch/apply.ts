@@ -500,6 +500,15 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
   else if (p.intro !== undefined && !deepEqual(p.intro, d.world.intro)) d.setIntro(p.intro);
   if (p.feel === null) d.setFeel(undefined);
   else if (p.feel !== undefined && !deepEqual(p.feel, d.world.feel)) d.setFeel(p.feel);
+  if (p.textures !== undefined) {
+    const next: NonNullable<typeof d.world.textures> = { ...(d.world.textures ?? {}) };
+    for (const [id, def] of Object.entries(p.textures)) {
+      if (def === null) delete next[id];
+      else next[id] = def;
+    }
+    if (Object.keys(next).length > 48) return fail('a world holds at most 48 texture sets');
+    if (!deepEqual(next, d.world.textures ?? {})) d.setTextures(Object.keys(next).length > 0 ? next : undefined);
+  }
   return OK;
 }
 

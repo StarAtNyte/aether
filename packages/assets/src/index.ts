@@ -41,6 +41,25 @@ export {
   type AssetInfo,
   type UserAssetEntry,
 } from './info';
+export {
+  TEXTURE_LIMITS,
+  TEXTURE_MAPS,
+  TEXTURE_PROVENANCE_LABEL,
+  isTextureId,
+  textureFileName,
+  registerTextureSet,
+  unregisterTextureSet,
+  textureSet,
+  textureSets,
+  onTextureSetsChanged,
+  clearTextureSets,
+  pickTextureTier,
+  registerBundledTextureSets,
+  validateTextureMap,
+  type TextureMapName,
+  type TextureSetFiles,
+  type TextureSetEntry,
+} from './texture-sets';
 export { creditsFor, creditsText, worldAssetIds, type Credit } from './credits';
 export { catalogSummary } from './summary';
 export { validateGltf, writeGlb, sanitizeName, DEFAULT_GLTF_LIMITS, SUPPORTED_GLTF_EXTENSIONS, type GltfLimits, type GltfReport, type GltfResult } from './import/glb';

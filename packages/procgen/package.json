@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node.ts",
-    "./library": "./src/library.ts"
+    "./library": "./src/library.ts",
+    "./photo-texture": "./src/photo-texture/index.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -95,10 +95,32 @@ export const MaterialFinish = z.enum([
 ]);
 export type MaterialFinish = z.infer<typeof MaterialFinish>;
 
+/** Ids of texture sets: `tex-` + 12 hex characters of the maps' content hash. */
+export const TEXTURE_ID = /^tex-[0-9a-f]{12}$/;
+export const TextureId = z.string().regex(TEXTURE_ID, 'texture ids are tex- plus 12 hex characters');
+export type TextureId = z.infer<typeof TextureId>;
+
+/** Where the pixels of a texture set came from (shown to the user, never hidden). */
+export const TextureProvenance = z.enum(['photographed', 'ai-generated', 'procedural']);
+export type TextureProvenance = z.infer<typeof TextureProvenance>;
+
+/**
+ * Additive: a texture set of the project (albedo, occlusion / roughness, normal maps kept in the project's asset store, described
+ * by `WorldDoc.textures[id]`) drawn instead of the finish's procedural maps. `tile` overrides the real-world size of one tile (m).
+ * The material's `color` still multiplies the albedo (the maps hold ratios around 1), so tints and prompts keep working.
+ */
+export const TextureRef = z.object({
+  id: TextureId,
+  tile: z.number().min(0.05).max(16).optional(),
+});
+export type TextureRef = z.infer<typeof TextureRef>;
+
 export const MaterialSpec = z.object({
   preset: MaterialPreset.optional(),
   /** Additive: physically based finish with procedural texture maps (see {@link MaterialFinish}). */
   finish: MaterialFinish.optional(),
+  /** Additive: a texture set of the project (photographed, AI-generated or procedural) replacing the finish's maps. */
+  texture: TextureRef.optional(),
   color: Color.optional(),
   roughness: z.number().min(0).max(1).optional(),
   metalness: z.number().min(0).max(1).optional(),
@@ -417,6 +439,11 @@ export const ArchMeta = z.object({
   overrides: z.record(z.string(), Json).refine((r) => Object.keys(r).length <= 64, 'at most 64 recorded edits per piece').optional(),
   /** Building entity only: ids of compiled pieces the user removed; they stay removed on re-compile. */
   removed: z.array(EntityId).max(400).optional(),
+  /**
+   * Furniture and fixtures: texture sets for parts of the piece, keyed by the part's finish (`fabric`) or finish and colour
+   * (`fabric#f7f4ee`, the more specific key wins). A part whose material matches draws the set instead of the procedural maps.
+   */
+  skins: z.record(z.string().regex(/^[a-z][a-z-]{1,24}(#[0-9a-f]{6})?$/), TextureRef).refine((r) => Object.keys(r).length <= 8, 'at most 8 skins per piece').optional(),
 });
 export type ArchMeta = z.infer<typeof ArchMeta>;
 
@@ -812,6 +839,44 @@ export type WorldIntro = z.infer<typeof WorldIntro>;
 // World document
 // ---------------------------------------------------------------------------
 
+/** Largest edge (px) of a stored texture tier; the tiers a set may carry. */
+export const TEXTURE_TIERS = [256, 512, 1024] as const;
+export type TextureTier = (typeof TEXTURE_TIERS)[number];
+
+/**
+ * Additive: the description of one texture set. The maps themselves (`tex-<id>.albedo|orm|normal.<tier>.webp`) live in the
+ * project's asset store (studio: IndexedDB, packages: `assets/`, bundled worlds: `templates/textures/`); the world keeps only
+ * this record so the provenance travels with it.
+ */
+export const TextureSetDef = z.object({
+  name: z.string().max(64),
+  provenance: TextureProvenance,
+  /** Real-world size of one tile in metres. */
+  tile: z.number().min(0.05).max(16),
+  /** Tiers stored (edge length in px). */
+  tiers: z.array(z.union([z.literal(256), z.literal(512), z.literal(1024)])).min(1).max(3),
+  /** The albedo map holds linear ratios around 1 divided by this; the material colour is multiplied by it. */
+  albedoScale: z.number().min(1).max(8).default(2.5),
+  /** Mean colour of the source (the colour the surface had in the photo or the generated image). */
+  mean: Color,
+  /** The finish the maps stand in for (roughness and relief class), when there is one. */
+  finish: MaterialFinish.optional(),
+  /** What it was made from (shown in the credits): the photo region, the prompt, the model. */
+  source: z
+    .object({
+      region: z.string().max(80).optional(),
+      photo: z.string().max(80).optional(),
+      prompt: z.string().max(400).optional(),
+      model: z.string().max(64).optional(),
+      /** The set this one refines. */
+      from: TextureId.optional(),
+    })
+    .optional(),
+  /** Bundled worlds: relative folder the maps are served from (same origin, no `..`). */
+  base: z.string().max(120).regex(/^[A-Za-z0-9._/-]*$/).refine((b) => !b.split('/').includes('..') && !b.startsWith('/'), 'a relative folder').optional(),
+});
+export type TextureSetDef = z.infer<typeof TextureSetDef>;
+
 export const WorldDoc = z.object({
   version: z.literal(1).default(1),
   id: z.string().default('world'),
@@ -840,6 +905,8 @@ export const WorldDoc = z.object({
   intro: WorldIntro.optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
+  /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */
+  textures: z.record(TextureId, TextureSetDef).refine((r) => Object.keys(r).length <= 48, 'at most 48 texture sets per world').optional(),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;
@@ -876,6 +943,8 @@ export const Patch = z.discriminatedUnion('op', [
     intro: WorldIntro.nullable().optional(),
     /** Additive: replace the game feel (`world.feel`), or with `null` remove it (back to the `normal` tier). */
     feel: FeelSpec.nullable().optional(),
+    /** Additive: add or replace texture sets of the project by id, or with `null` remove one (`WorldDoc.textures`). */
+    textures: z.record(TextureId, TextureSetDef.nullable()).optional(),
   }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
   /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */
