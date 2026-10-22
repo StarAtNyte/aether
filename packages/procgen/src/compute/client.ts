@@ -17,7 +17,12 @@ import type { MaterialFinish } from '@aether/core';
 
 /** Options of {@link ComputeClient}. */
 export interface ComputeClientOptions {
-  /** Per-request budget in ms (default 20000). */
+  /**
+   * How long the worker may go without finishing anything while it has work (default 20000). Requests wait in the
+   * worker's queue, so the clock is the time since the last reply (or since the request, when it was idle), never
+   * the time spent waiting behind other requests: a slow CPU that needs a minute for a hundred fast jobs is fine, a
+   * job that runs 20 s is not. The worker's own start-up gets three times as long.
+   */
   timeoutMs?: number;
   /** Terminate the worker after this long without work (default 60000; 0 keeps it). */
   idleTimeoutMs?: number;
@@ -31,7 +36,8 @@ interface Pending {
   size?: number;
   resolve: (v: MeshOpResult | GeneratorOutput | FinishPixels) => void;
   reject: (e: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  /** The request, kept so that it can be sent again to a fresh worker when another request stalled it (none: it carried transferables). */
+  retry: { req: ComputeRequest; attempts: number } | null;
 }
 
 function defaultWorker(): WorkerLike {
@@ -44,6 +50,9 @@ export class ComputeClient {
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** One watchdog for the worker: re-armed by every reply, see {@link ComputeClientOptions.timeoutMs}. */
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private booted = false;
   private readonly timeoutMs: number;
   private readonly idleTimeoutMs: number;
   private readonly factory: (() => WorkerLike) | null;
@@ -66,6 +75,7 @@ export class ComputeClient {
     if (this.worker) return this.worker;
     try {
       const w = this.factory();
+      this.booted = false;
       w.onmessage = (e: MessageEvent) => this.onMessage(e.data);
       w.onerror = () => this.fail(new Error('the compute worker crashed'), true);
       this.worker = w;
@@ -78,11 +88,16 @@ export class ComputeClient {
 
   private onMessage(data: unknown): void {
     const msg = parseComputeReply(data);
-    if (!msg || msg.type === 'ready') return;
+    if (!msg) return;
+    this.booted = true;
+    if (msg.type === 'ready') {
+      this.arm();
+      return;
+    }
     const p = this.pending.get(msg.id);
     if (!p || p.type !== msg.type) return;
     this.pending.delete(msg.id);
-    clearTimeout(p.timer);
+    this.arm();
     this.scheduleIdle();
     if (!msg.ok) {
       p.reject(new Error(msg.error));
@@ -107,11 +122,9 @@ export class ComputeClient {
 
   /** Reject everything in flight; with `terminate`, drop the worker (respawned on next use). */
   private fail(err: Error, terminate: boolean): void {
-    for (const [, p] of this.pending) {
-      clearTimeout(p.timer);
-      p.reject(err);
-    }
+    for (const [, p] of this.pending) p.reject(err);
     this.pending.clear();
+    this.disarm();
     if (terminate && this.worker) {
       try {
         this.worker.terminate();
@@ -141,21 +154,69 @@ export class ComputeClient {
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(req.id);
-        reject(new Error(`the operation took longer than ${Math.round(this.timeoutMs / 1000)} s and was stopped`));
-        // A runaway computation: restart the worker (other requests are retried by their callers).
-        this.fail(new Error('the compute worker was restarted'), true);
-      }, this.timeoutMs);
-      this.pending.set(req.id, { type: req.type, ...(req.type === 'finish' ? { size: req.size } : {}), resolve: resolve as Pending['resolve'], reject, timer });
+      this.pending.set(req.id, { type: req.type, ...(req.type === 'finish' ? { size: req.size } : {}), resolve: resolve as Pending['resolve'], reject, retry: transfer.length === 0 ? { req, attempts: 0 } : null });
       try {
         w.postMessage(req, transfer);
+        // Idle until now: this request starts the clock. Busy: the clock already runs from the last reply.
+        if (this.watchdog === null) this.arm();
       } catch (err) {
-        clearTimeout(timer);
         this.pending.delete(req.id);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
+  }
+
+  private disarm(): void {
+    if (this.watchdog !== null) clearTimeout(this.watchdog);
+    this.watchdog = null;
+  }
+
+  /** (Re)start the stall clock while there is work in the worker. */
+  private arm(): void {
+    this.disarm();
+    if (this.pending.size === 0 || !this.worker) return;
+    const ms = this.booted ? this.timeoutMs : this.timeoutMs * 3;
+    this.watchdog = setTimeout(() => this.stalled(), ms);
+  }
+
+  /**
+   * Nothing came back for a whole budget. The request that has waited longest is the one that was running: it fails,
+   * the worker is replaced, and the requests queued behind it are sent again (those that carried buffers cannot be).
+   */
+  private stalled(): void {
+    this.watchdog = null;
+    const first = this.pending.entries().next();
+    if (first.done) return;
+    const [id, culprit] = first.value;
+    this.pending.delete(id);
+    culprit.reject(new Error(`the operation took longer than ${Math.round(this.timeoutMs / 1000)} s and was stopped`));
+    const queued = [...this.pending.entries()];
+    this.pending.clear();
+    try {
+      this.worker?.terminate();
+    } catch {
+      /* already gone */
+    }
+    this.worker = null;
+    for (const [qid, p] of queued) {
+      if (!p.retry || p.retry.attempts >= 1 || this.disposed) {
+        p.reject(new Error('the compute worker was restarted'));
+        continue;
+      }
+      const w = this.ensure();
+      if (!w) {
+        p.reject(new Error('the compute worker was restarted'));
+        continue;
+      }
+      this.pending.set(qid, { ...p, retry: { req: p.retry.req, attempts: p.retry.attempts + 1 } });
+      try {
+        w.postMessage(p.retry.req, []);
+      } catch (err) {
+        this.pending.delete(qid);
+        p.reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+    this.arm();
   }
 
   /**

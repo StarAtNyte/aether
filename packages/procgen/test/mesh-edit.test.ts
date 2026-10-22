@@ -317,6 +317,66 @@ describe('ComputeClient', () => {
     c.dispose();
   });
 
+  it('counts the stall budget from the last reply, not from the request (a long queue of short jobs is not a stall)', async () => {
+    let worker: WorkerLike | null = null;
+    const queue: Array<{ id: number; generator: string }> = [];
+    let busy = false;
+    const pump = (): void => {
+      if (busy) return;
+      const job = queue.shift();
+      if (!job) return;
+      busy = true;
+      setTimeout(() => {
+        busy = false;
+        const out = generateBuiltinSync('rock', {}, 1);
+        worker?.onmessage?.({ data: { type: 'generate', id: job.id, ok: true, output: out } } as MessageEvent);
+        pump();
+      }, 40);
+    };
+    const fake: WorkerLike = {
+      postMessage: (m: unknown) => {
+        queue.push(m as { id: number; generator: string });
+        pump();
+      },
+      terminate: () => undefined,
+      onmessage: null,
+      onerror: null,
+    };
+    worker = fake;
+    // Eight jobs of 40 ms behind a 120 ms budget: the last one is answered 320 ms after it was sent.
+    const c = new ComputeClient({ createWorker: () => fake, timeoutMs: 120 });
+    const all = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => c.generate('rock', {}, i)));
+    expect(all.filter((r) => r.status === 'rejected')).toHaveLength(0);
+    c.dispose();
+  });
+
+  it('a stalled request fails alone; the ones queued behind it are sent to a new worker', async () => {
+    const workers: Array<{ w: WorkerLike; posted: Array<{ id: number }> }> = [];
+    const c = new ComputeClient({
+      timeoutMs: 100,
+      createWorker: () => {
+        const rec = { posted: [] as Array<{ id: number }>, w: null as unknown as WorkerLike };
+        rec.w = {
+          postMessage: (m: unknown) => {
+            rec.posted.push(m as { id: number });
+            // The second worker answers; the first never does.
+            if (workers.length > 1) setTimeout(() => rec.w.onmessage?.({ data: { type: 'generate', id: (m as { id: number }).id, ok: true, output: generateBuiltinSync('rock', {}, 1) } } as MessageEvent), 1);
+          },
+          terminate: () => undefined,
+          onmessage: null,
+          onerror: null,
+        };
+        workers.push(rec);
+        return rec.w;
+      },
+    });
+    const [a, b] = [c.generate('rock', {}, 1), c.generate('rock', {}, 2)];
+    await expect(a).rejects.toThrow(/longer than/);
+    await expect(b).resolves.toBeDefined();
+    expect(workers).toHaveLength(2);
+    c.dispose();
+  });
+
   it('rejects malformed worker replies', async () => {
     let worker: WorkerLike | null = null;
     const fake: WorkerLike = {
