@@ -168,3 +168,45 @@ describe('steps and differences in the chat', () => {
     expect(v.type === 'review' && v.differences?.[0]?.what.length).toBeLessThanOrEqual(200);
   });
 });
+
+describe('staged photo room', () => {
+  const stages = [
+    { id: 'capability', title: 'Check what this run can do', status: 'passed', note: 'ok' },
+    { id: 'camera', title: 'Solve the camera and framing', status: 'sparkly' },
+  ];
+  it('keeps the stage checklist and the provenance record bounded, and drops bad values', () => {
+    const v = toEventView(
+      {
+        type: 'photo',
+        phase: 'done',
+        text: 'x',
+        stages,
+        provenance: { version: 1, source: { sha256: 'a'.repeat(64), width: 100, height: 50, stored: false }, permission: { localProcessing: 'mine', publication: 'not stated' }, scale: { width: 4, depth: 3, ceiling: 2.5, basis: 'door', confidence: 7 }, assumptions: [{ id: 'a', text: 't', confidence: 9, stage: 'evidence', kind: 'scale' }], limits: ['one view', 3], stages: [], repairs: [{ round: 2, difference: 'd', cause: 'camera', why: 'w' }], open: [], rounds: 3, models: ['m'], exports: ['GLB'] },
+        resume: { version: 1 },
+      } as unknown as AgentEvent,
+      { head: 0 },
+    );
+    expect(v.type).toBe('photo');
+    if (v.type !== 'photo') return;
+    expect(v.stages?.map((s) => s.status)).toEqual(['passed', 'pending']);
+    expect(v.provenance?.sha256).toHaveLength(64);
+    expect(v.provenance?.scale.confidence).toBe(1);
+    expect(v.provenance?.assumptions[0]?.confidence).toBe(1);
+    expect(v.provenance?.limits).toEqual(['one view']);
+    expect(v.resumable).toBe(true);
+    // The saved state itself never reaches the chat.
+    expect(JSON.stringify(v)).not.toContain('"resume"');
+  });
+  it('rejects a hash that is not 64 hex characters', () => {
+    const v = toEventView({ type: 'photo', phase: 'done', text: 'x', provenance: { source: { sha256: 'zz' } } } as unknown as AgentEvent, { head: 0 });
+    expect(v.type === 'photo' && v.provenance?.sha256).toBeNull();
+  });
+  it('shows one live checklist: a newer stage update replaces the older one in place', () => {
+    const ev = (text: string): ChatEventView => ({ type: 'photo', phase: 'stage', text, stages: [] });
+    const a = appendEvent([{ type: 'message', text: 'hi' }, ev('one')], { type: 'step', tool: 'look', label: 'l', ok: true });
+    const b = appendEvent(a, ev('two'));
+    expect(b.filter((e) => e.type === 'photo')).toHaveLength(1);
+    expect(b.findIndex((e) => e.type === 'photo')).toBe(1);
+    expect((b[1] as Extract<ChatEventView, { type: 'photo' }>).text).toBe('two');
+  });
+});

@@ -69,13 +69,79 @@ export function toDifferences(v: unknown): DifferenceEventView[] | undefined {
 /** Progress of a room rebuilt from a photograph (reading it, the assumptions as chips, each compare round, the final score). */
 export interface PhotoEventView {
   type: 'photo';
-  phase: 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
+  phase: 'analysing' | 'described' | 'building' | 'built' | 'textures' | 'stage' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
   text: string;
   round?: number;
+  /** The staged checklist (capability to delivery) with each stage's status. */
+  stages?: PhotoStageEventView[];
+  /** The record kept with the photo room: source hash, permission note, scale, assumptions, limits, repairs. */
+  provenance?: PhotoProvenanceEventView;
+  /** The run can be continued at its repair stage (the state itself is held by the studio, not the chat). */
+  resumable?: boolean;
   assumptions?: Array<{ id: string; text: string; confidence: number; adjust: string }>;
   score?: PhotoScoreEventView;
   palette?: string[];
   differences?: DifferenceEventView[];
+}
+
+export const STAGE_STATUSES = ['pending', 'active', 'passed', 'failed', 'blocked', 'skipped'] as const;
+export interface PhotoStageEventView {
+  id: string;
+  title: string;
+  status: (typeof STAGE_STATUSES)[number];
+  note?: string;
+}
+
+/** Bounded view of the provenance record of a photo room. */
+export interface PhotoProvenanceEventView {
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  permission: { localProcessing: string; publication: string };
+  scale: { width: number; depth: number; ceiling: number; basis: string; confidence: number };
+  assumptions: Array<{ id: string; text: string; confidence: number; stage: string; kind: string }>;
+  limits: string[];
+  repairs: Array<{ round: number; difference: string; cause: string; why: string }>;
+  open: Array<{ id: string; cause: string; size: number; what: string }>;
+  rounds: number;
+  models: string[];
+  exports: string[];
+  /** The record as the agent wrote it (what the download saves). */
+  raw: unknown;
+}
+
+function toStages(v: unknown): PhotoStageEventView[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter(isRecord).slice(0, 16).map((x): PhotoStageEventView => {
+    const note = str(x['note'], 300);
+    return { id: str(x['id'], 24), title: str(x['title'], 80), status: STAGE_STATUSES.find((k) => k === x['status']) ?? 'pending', ...(note ? { note } : {}) };
+  });
+  return out.length > 0 ? out : undefined;
+}
+
+function toProvenance(v: unknown): PhotoProvenanceEventView | undefined {
+  if (!isRecord(v)) return undefined;
+  const src = isRecord(v['source']) ? v['source'] : {};
+  const perm = isRecord(v['permission']) ? v['permission'] : {};
+  const sc = isRecord(v['scale']) ? v['scale'] : {};
+  const list = (x: unknown): Record<string, unknown>[] => (Array.isArray(x) ? x.filter(isRecord) : []);
+  const strs = (x: unknown, n: number): string[] => (Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string').slice(0, n).map((i) => str(i, 300)) : []);
+  const nn = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : null);
+  return {
+    sha256: typeof src['sha256'] === 'string' && /^[0-9a-f]{64}$/.test(src['sha256']) ? src['sha256'] : null,
+    width: nn(src['width']),
+    height: nn(src['height']),
+    permission: { localProcessing: str(perm['localProcessing'], 300), publication: str(perm['publication'], 300) },
+    scale: { width: num(sc['width']), depth: num(sc['depth']), ceiling: num(sc['ceiling']), basis: str(sc['basis'], 300), confidence: Math.max(0, Math.min(1, num(sc['confidence']))) },
+    assumptions: list(v['assumptions']).slice(0, 40).map((a) => ({ id: str(a['id'], 40), text: str(a['text'], 300), confidence: Math.max(0, Math.min(1, num(a['confidence']))), stage: str(a['stage'], 20), kind: str(a['kind'], 20) })),
+    limits: strs(v['limits'], 8),
+    repairs: list(v['repairs']).slice(0, 60).map((r) => ({ round: Math.max(0, Math.min(999, Math.round(num(r['round'])))), difference: str(r['difference'], 40), cause: str(r['cause'], 20), why: str(r['why'], 200) })),
+    open: list(v['open']).slice(0, 20).map((d) => ({ id: str(d['id'], 40), cause: str(d['cause'], 20), size: Math.max(0, Math.min(5, Math.round(num(d['size'])))), what: str(d['what'], 160) })),
+    rounds: Math.max(0, Math.min(999, Math.round(num(v['rounds'])))),
+    models: strs(v['models'], 6).map((m) => m.slice(0, 64)),
+    exports: strs(v['exports'], 8),
+    raw: v,
+  };
 }
 
 /** Measures behind the measured fidelity of a photo round. */
@@ -103,7 +169,7 @@ export interface PhotoScoreEventView {
   failing: Array<{ id: string; text: string; note: string }>;
 }
 
-const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'textures', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
+const PHOTO_PHASES = ['analysing', 'described', 'building', 'built', 'textures', 'stage', 'comparing', 'round', 'done', 'offline', 'unavailable'] as const;
 
 /** Bounded, validated view of a photo event (live or stored). */
 function photoView(v: Record<string, unknown>): PhotoEventView {
@@ -143,6 +209,11 @@ function photoView(v: Record<string, unknown>): PhotoEventView {
   }
   const diffs = toDifferences(v['differences']);
   if (diffs) out.differences = diffs;
+  const stages = toStages(v['stages']);
+  if (stages) out.stages = stages;
+  const prov = toProvenance(v['provenance']);
+  if (prov) out.provenance = prov;
+  if (isRecord(v['resume']) || v['resumable'] === true) out.resumable = true;
   if (Array.isArray(v['palette'])) out.palette = v['palette'].filter((c): c is string => typeof c === 'string' && HEX.test(c)).slice(0, 8);
   return out;
 }
@@ -287,7 +358,10 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
 export function appendEvent(events: readonly ChatEventView[], view: ChatEventView): ChatEventView[] {
   const last = events[events.length - 1];
   const base = last && last.type === 'status' && view.type === 'status' ? events.slice(0, -1) : events.slice();
-  base.push(view);
+  // The staged checklist of a photo room is one live card: a newer stage update replaces the older one in place.
+  const at = view.type === 'photo' && view.phase === 'stage' ? base.findLastIndex((e) => e.type === 'photo' && e.phase === 'stage') : -1;
+  if (at >= 0) base[at] = view;
+  else base.push(view);
   // Steps are the bulk of a long run: only the newest ones are kept, so they never push real results out.
   const steps = base.reduce((n, e) => n + (e.type === 'step' ? 1 : 0), 0);
   if (steps > MAX_STEPS_PER_ENTRY) {

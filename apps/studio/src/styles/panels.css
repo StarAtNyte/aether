@@ -2552,6 +2552,17 @@ button.chip:disabled {
   color: var(--text-2);
 }
 
+.photo__stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-2); }
+.photo__stage.is-passed { color: var(--text-1); }
+.photo__stage.is-failed, .photo__stage.is-blocked { color: var(--danger, #c0392b); }
+.photo__stage.is-skipped { opacity: 0.6; }
+.photo__mark { display: inline-block; width: 1.2em; text-align: center; }
+.photo__prov { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-2); }
+.photo__prov > summary { cursor: pointer; }
+.photo__facts { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s-2); margin: var(--s-2) 0; }
+.photo__facts dt { font-weight: 600; }
+.photo__facts dd { margin: 0; }
+.photo__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
 .differences { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-1); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-2); }
 .differences__row { display: grid; grid-template-columns: auto auto 1fr; gap: var(--s-2); align-items: baseline; }
 .differences__row.is-fixed { opacity: 0.55; text-decoration: line-through; }

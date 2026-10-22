@@ -8,7 +8,7 @@ import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -142,6 +142,8 @@ export interface SendOptions {
   intent?: 'auto' | 'new' | 'refine';
   /** 'recreate': rebuild the room of the first attached photo (the composer's "Recreate this image"); 'off': never. */
   photo?: 'recreate' | 'off';
+  /** Continue the repair of the last room rebuilt from a photo, with the same photo and the saved stage state. */
+  continuePhoto?: boolean;
   /** Start playing again once the edit is done (the in-game tweak bar). */
   resumePlay?: boolean;
   /** What the chat shows as the user's message when it differs from the prompt (an answer to a question). */
@@ -206,6 +208,9 @@ export class Studio {
   /** What the next prompt can refer to ("it", "the same", "the other one"). Reset with the conversation. */
   private refineMemory: RefineMemory = EMPTY_MEMORY;
   private lastPrompt = '';
+  /** The last photo room: the photo (kept in memory only) and the state to continue its repair from. */
+  private photoSource: string | null = null;
+  private photoResume: PhotoResumeState | null = null;
   /** What the agent last told the user in one line (shown as a toast for edits made while playing). */
   private lastReply = '';
   private proofGen = 0;
@@ -830,6 +835,17 @@ export class Studio {
     return null;
   }
 
+  /** A room from a photo can be continued: its saved stage state and its photo are still held. */
+  canContinuePhoto(): boolean {
+    return this.photoResume !== null && this.photoSource !== null;
+  }
+
+  /** Download the provenance and assumptions record of a photo room as JSON. */
+  exportPhotoRecord(record: Provenance): void {
+    const name = exportFileName(this.history.current).replace(/\.aether\.json$/, '.provenance.json');
+    downloadText(name, `${JSON.stringify(record, null, 2)}\n`);
+  }
+
   /** Download the current world as JSON. */
   exportToFile(): void {
     const world = this.history.current;
@@ -1106,7 +1122,12 @@ export class Studio {
       }
     }
     const primary = opts.offline ? null : this.ai.createProvider(prefs, resolved);
-    const images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
+    let images = (opts.images ?? []).filter((u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(u)).slice(0, 4);
+    if (opts.continuePhoto && this.photoResume && this.photoSource) images = [this.photoSource];
+    else if (images[0]) {
+      this.photoSource = images[0];
+      this.photoResume = null;
+    }
     const history = buildAgentHistory(st.chat);
     const before = this.history.current;
     this.turnHead = this.history.head;
@@ -1163,13 +1184,13 @@ export class Studio {
       // nothing is guessed (the offline planner would build some other room) and the user is told so.
       // Each render is scored by a panel of independent judges (median per item, compared with the accepted state):
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
-      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
+      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, harness: true, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
       const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
-      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo ? { photo: opts.photo } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued() } as const;
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo || opts.continuePhoto ? { photo: opts.photo ?? ('recreate' as const) } : {}), ...(images.length > 0 ? { photoPermission: 'The user attached this photo and asked for it to be rebuilt as a room in their project; no further terms were stated.' } : {}), ...(opts.continuePhoto && this.photoResume ? { photoResume: this.photoResume } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued() } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
       // A targeted edit ("move the shrine", "make the sofa green") is not followed by scene-wide polishing: the quality
@@ -1276,6 +1297,7 @@ export class Studio {
     // A small edit's card says what changed: the reply after it keeps only what the card does not say.
     let card: { summary: string; notes: readonly string[] } | null = null;
     for await (const event of run) {
+      if (event.type === 'photo' && event.resume) this.photoResume = event.resume;
       if (event.type === 'done') {
         usage.inputTokens += event.usage.inputTokens;
         usage.cachedInputTokens += event.usage.cachedInputTokens ?? 0;

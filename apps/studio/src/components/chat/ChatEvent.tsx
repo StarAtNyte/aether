@@ -1,6 +1,6 @@
 import { memo, useState, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../../app/context';
-import { FIDELITY_KEYS, type ChatEventView, type DifferenceEventView, type FidelityKey } from '../../lib/chat';
+import { FIDELITY_KEYS, type ChatEventView, type DifferenceEventView, type FidelityKey, type PhotoProvenanceEventView, type PhotoStageEventView } from '../../lib/chat';
 import { patchChips } from '../../lib/patchSummary';
 import { compactCount } from '../../lib/format';
 import { CodeBlock } from '../CodeBlock';
@@ -202,6 +202,66 @@ function DifferencesList({ items, label }: { items: readonly DifferenceEventView
   );
 }
 
+const STAGE_MARK: Readonly<Record<PhotoStageEventView['status'], string>> = { pending: '○', active: '●', passed: '✓', failed: '✕', blocked: '■', skipped: '–' };
+
+/** The stages of a photo room as a checklist with ticks; the model's evidence for each verdict is its tooltip. */
+function StageList({ stages }: { stages: readonly PhotoStageEventView[] }): ReactElement {
+  return (
+    <ol className="photo__stages" aria-label="Stages" data-testid="photo-stages">
+      {stages.map((s) => (
+        <li key={s.id} className={`photo__stage is-${s.status}`} title={s.note || undefined} aria-label={`${s.title}: ${s.status}`} data-testid={`photo-stage-${s.id}`}>
+          <span className="photo__mark" aria-hidden="true">{STAGE_MARK[s.status]}</span> {s.title}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** What the photo room rests on: the photo's hash, the permission note, the estimated scale, the assumptions with confidence, the limits; and the ways to take it out. */
+function ProvenancePanel({ prov, resumable }: { prov: PhotoProvenanceEventView; resumable: boolean }): ReactElement {
+  const studio = useStudio();
+  const busy = useUI((s) => s.agentBusy);
+  const p = (v: number): string => `${Math.round(v * 100)}%`;
+  return (
+    <details className="photo__prov" data-testid="photo-provenance">
+      <summary>Source, assumptions and limits</summary>
+      <dl className="photo__facts">
+        <dt>Photo</dt>
+        <dd>{prov.sha256 ? `SHA-256 ${prov.sha256.slice(0, 16)}…` : 'hash not available'}{prov.width && prov.height ? ` · ${prov.width} × ${prov.height} px` : ''} · the photo itself is not stored</dd>
+        <dt>Permission</dt>
+        <dd>{prov.permission.localProcessing} Publication: {prov.permission.publication}</dd>
+        <dt>Scale</dt>
+        <dd>about {prov.scale.width} × {prov.scale.depth} m, {prov.scale.ceiling} m high ({p(prov.scale.confidence)} sure): {prov.scale.basis}</dd>
+        <dt>Repairs</dt>
+        <dd>{prov.repairs.length === 0 ? 'none declared' : prov.repairs.map((r) => `${r.cause} (${r.difference})`).join(', ')} · {prov.rounds} round{prov.rounds === 1 ? '' : 's'}</dd>
+      </dl>
+      {prov.assumptions.length > 0 && (
+        <ul className="photo__failing" aria-label="Assumptions by confidence">
+          {prov.assumptions.slice(0, 12).map((a) => (
+            <li key={a.id}>
+              {a.text} <i>({p(a.confidence)} sure{a.kind !== 'other' ? `, ${a.kind}` : ''})</i>
+            </li>
+          ))}
+        </ul>
+      )}
+      {prov.open.length > 0 && <p className="photo__measures">Still open: {prov.open.slice(0, 6).map((d) => `${d.id} (${d.cause})`).join(', ')}.</p>}
+      <ul className="photo__failing" aria-label="Limits">
+        {prov.limits.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      <div className="photo__actions" role="group" aria-label="Export">
+        <button type="button" className="chip chip--action" onClick={() => void studio.exportGltf()} data-testid="photo-export-glb" title="The room as a portable glTF model (.glb)">Download GLB</button>
+        <button type="button" className="chip chip--action" onClick={() => studio.exportToFile()} data-testid="photo-export-project" title="The playable project (.aether.json)">Download project</button>
+        <button type="button" className="chip chip--action" onClick={() => studio.exportPhotoRecord(prov.raw as Parameters<typeof studio.exportPhotoRecord>[0])} data-testid="photo-export-record" title="This record as JSON">Download record</button>
+        {resumable && studio.canContinuePhoto() && (
+          <button type="button" className="chip chip--action" disabled={busy} onClick={() => void studio.send('Continue repairing this room against the photo.', { continuePhoto: true, intent: 'refine' })} data-testid="photo-continue">Continue repair</button>
+        )}
+      </div>
+    </details>
+  );
+}
+
 const FIDELITY_LABELS: Readonly<Record<FidelityKey, string>> = { openings: 'openings', inventory: 'pieces', placement: 'placement', sizes: 'sizes', materials: 'colours', clearance: 'clearance', framing: 'framing', similarity: 'pixels', regionColour: 'region colour' };
 
 /**
@@ -214,7 +274,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
   const busy = useUI((s) => s.agentBusy);
   const [open, setOpen] = useState(false);
   const tone = event.phase === 'done' ? 'ok' : event.phase === 'offline' || event.phase === 'unavailable' ? 'warn' : 'info';
-  const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'textures' ? 'Textures' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
+  const label = event.phase === 'analysing' ? 'Reading photo' : event.phase === 'described' ? 'Described' : event.phase === 'building' ? 'Building' : event.phase === 'built' ? 'Built' : event.phase === 'textures' ? 'Textures' : event.phase === 'stage' ? 'Stages' : event.phase === 'comparing' ? `Comparing${event.round ? ` ${event.round}` : ''}` : event.phase === 'round' ? `Round ${event.round ?? ''}`.trim() : event.phase === 'done' ? 'Matched' : event.phase === 'offline' ? 'Needs a vision model' : 'Not compared';
   const sc = event.score;
   const pct = sc && sc.total > 0 ? Math.round((sc.passed / sc.total) * 100) : null;
   const p = (v: number): string => `${Math.round(v * 100)}%`;
@@ -232,6 +292,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
         )}
       </div>
       <p className="ev__desc">{event.text}</p>
+      {event.stages && (event.phase === 'stage' || event.phase === 'done') && <StageList stages={event.stages} />}
       {measures.length > 0 && (
         <p className="photo__measures" data-testid="photo-measures" title="Deterministic measures of the room against the photo. They are evidence the AI judges were given; they are not the verdict and never decide whether a change is kept.">
           Measured, advisory: {measures.join(' · ')}
@@ -262,6 +323,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
         </div>
       )}
       {event.differences && event.differences.length > 0 && <DifferencesList items={event.differences} label="difference" />}
+      {event.provenance && <ProvenancePanel prov={event.provenance} resumable={event.resumable === true} />}
       {event.score && event.score.failing.length > 0 && (
         <>
           <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
