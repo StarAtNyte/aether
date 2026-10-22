@@ -208,7 +208,7 @@ See [Eyes](#query_scene-1).
 - **What it does.** Builds real ground for outdoor worlds, as one undo step (`packages/agent/src/land.ts`,
   `LandInput`). Everything it adds is tagged `land`. Heights come from the same heightfield physics uses, so
   `query_level` and `place_level_items` agree with it.
-- **Input.** One of three ops:
+- **Input.** One of four ops:
   - `{op:"land", kind: meadow|forest|snow|canyon, size 120..800 (420), relief 0..120 (48), color?, plot?
     {x, z, radius 4..200 (20)}, stream? {z, half 1..12, bend 0..30, depth 0.4..4}, lake? {x, z, radius 3..120,
     depth 0.5..10}, woods? {conifers ≤400, broadleaf ≤400, birch ≤200, scrub ≤600, boulders ≤200}, cover? {grass?,
@@ -217,6 +217,11 @@ See [Eyes](#query_scene-1).
     name?}` raises a natural hill with a level summit.
   - `{op:"path", points[2..64], width 0.6..14 (1.8), surface: soil|gravel|cobble|sand|decking|asphalt|dry-earth,
     color?, name?}` lays a path over the terrain.
+  - `{op:"row", points[2..64], of: generator id (built-in, library or defined), spacing 0.25..60 (4), jitter 0..1
+    (0.25), scale [lo, hi] (0.85..1.15), params?, sides: centre|both + offset 0..40 (m off the line), name?}` strings
+    trees, a hedge, fence posts or props along a polyline (an avenue, a bank, a boundary). One instanced scatter entity
+    with explicit points, each point on the ground height at its x,z. Refused (nothing applied) for an unknown
+    generator or more than 2000 instances.
   - Coordinates are within ±2000 m.
 - **Returns.** A summary of what was built (`landPatches`), or the patches that failed.
 - **When to use it.** First, for any outdoor world. Then place things, then lay paths (system prompt, "Levels").
@@ -350,9 +355,13 @@ The loop stops when the score reaches `FORGE_GATE` (0.8) or the budget runs out.
 ### `inspect`
 
 - **What it does.** Reads the world.
-- **Input.** `{ids?[≤24]}`, each id up to 64 characters.
+- **Input.** `{ids?[≤24], groups?}`, each id up to 64 characters.
 - **Returns.** With no ids: the compact world summary, up to 400 entities. With ids: the full JSON of each entity,
-  cut at 3,000 characters, plus a list of ids that were not found.
+  cut at 3,000 characters, plus a list of ids that were not found. With `groups:true`: a read of every group of
+  repeated things at once (`packages/agent/src/groups.ts`): each scatter layer and each run of three or more alike
+  separate entities, with count, bounds, closest and typical neighbour distance, pairs closer than the spacing
+  (overlapping) and instances more than 0.35 m off the ground height (floating or buried); `ids` narrow it to layers.
+  Measurement only, for the model to act on.
 
 ### `query_scene`
 
@@ -470,6 +479,7 @@ sub-call tools, and the design tools the planner already has.
 | `reconcile_room` | one call after the reads | `{add[≤80]{key, reason 12..300}, remove[≤80]{key, reason}, summary?}` | Settles entries that the reads disagree on, by checking the photo. Runs only when two or more valid reads disagree and `reconcile` is not false |
 | `report_judgement` | each independent judge (`role:"critic"`, `JUDGE_SYSTEM`) | `{verdicts[1..140]{id, a 0..4, b? 0..4, evidence, ok?, okB?}, closer?: A\|B\|same, why?}` | Scores each checklist item on a rubric and says whether it would accept the item (`ok`). An item passes by the majority of those calls; without them, at a median of 3 (`PASS_SCORE`). From the second look, the judge compares the accepted render with the new one blind, as A and B, and its `closer` decides whether the new state is kept |
 | `sample_photo` | the model doing the fixes, in each compare round. Offered only when the photo raster could be read | `{regions[1..8] {surface?, box?, kind?: wall\|floor\|ceiling\|any, hint?}}` | Reads colour from the photo's pixels instead of guessing: the well-lit colour, the mean and shadow colour of each region, and the nearest library finishes with the tint to give each. `surface` is `wall-north`, `wall-east`, `wall-south`, `wall-west`, `floor`, `ceiling` or a piece or opening id; `box` is `[x0,y0,x1,y1]` in 0..1, origin top-left. It is ranked with verdicts, before edits |
+| `look_closer` | the model doing the fixes, in each compare round | `{regions[≤4]{box [x0,y0,x1,y1] in 0..1, note?}, side_by_side?, plan?}` | The magnifier (`photo/closer.ts`). The render is always taken from the photo's own solved camera, so one box is the same place in both pictures. `regions`: each box as the photo crop next to the same render crop; `side_by_side`: the whole photo and render in one image; `plan`: the room from above, ceiling removed, numbered pieces (legend: id, position, size) and the room's width, depth and height. Needs the host's `composeImages` (crops) and `captureReview` (plan); says what is unavailable otherwise. Ranked with verdicts, before edits |
 | `report_verdicts` | the model doing the fixes, in each compare round | `{verdicts[1..140] {id, pass, note?}, summary?, closer?: new\|best\|same}` | Its own pass/fail per item. When there is no judge panel, these verdicts judge the round (edits sent before verdicts are refused), and `closer` is its side-by-side call between the new render and the best one, shown next to each other: `best` rolls the room back |
 | `design_plan`, `place_items` | the builder (`runBuild` in `@aether/arch/photo`) | as above | Shell first, then pieces at measured positions |
 | `edit_items`, `place_items`, `query_scene`, `design_plan`, `tune_look`, `finish` | the model in each compare round | as above | Fix what still differs from the photo; `tune_look` sets the world's light and colour when the whole picture reads differently |
@@ -481,6 +491,7 @@ How a run proceeds:
    one description.
 2. **Compare rounds.** Each round renders the room from the photo's calibrated camera, plus straight-on views of
    walls with failing items. `maxViews` defaults to 3, with a maximum of 4. Then it:
+   - gives the model `look_closer` (crops of photo and render at the same camera, both side by side, the plan from above), and an opening step that ranks the differences (proportion, position, colour, material, lighting, missing or extra items) and fixes the largest first,
    - measures fidelity, and
    - asks `judges` independent judges: default 3 (`JUDGES_DEFAULT`), maximum 7 (`JUDGES_MAX`), seed
      `JUDGE_SEED` (7331) + seat.

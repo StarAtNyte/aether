@@ -70,6 +70,7 @@ import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
+import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
 
@@ -381,6 +382,21 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, lookEvidence };
 }
 
+/** The room from above for `look_closer`: the level plan with its numbered pieces, and the legend of the numbers. */
+async function planShot(run: PhotoRun, aspect: number): Promise<{ dataUrl: string; legend: string } | null> {
+  const { host } = run.ctx;
+  if (typeof host.captureReview !== 'function') return null;
+  const world = host.getWorld();
+  const pose = reviewPoses(world, PHOTO_BUILDING_ID, { rooms: [PHOTO_ROOM_ID], maxViews: 12, aspect: Math.max(1, Math.min(1.5, aspect)) }).find((p) => p.kind === 'plan');
+  if (!pose) return null;
+  const asp = Math.max(1, Math.min(1.5, aspect));
+  const marks = projectMarks(world, PHOTO_BUILDING_ID, pose, asp);
+  const shown = new Set(marks.map((m) => m.n));
+  const got = await raceAbort(host.captureReview([toRequest(pose, asp, marks)], run.ctx.signal ? { signal: run.ctx.signal } : {}), run.ctx.signal);
+  const img = got[0];
+  return img ? { dataUrl: img.dataUrl, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown) } : null;
+}
+
 /** What one look at the room came to: the judgement (the panel's, or the single judge's) and the measures. */
 interface Judged {
   score: Scoreboard;
@@ -653,7 +669,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -841,6 +857,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     extraWalls = [];
 
     let workerJudged = false;
+    const lookBlocks: ContentBlock[] = [];
     let edited = false;
     let declared = false;
     let rolledBack = false;
@@ -867,7 +884,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
         if (call.name === VERDICT_TOOL_NAME) {
@@ -904,6 +921,12 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: samplePhotoText(photo.raster, desc, call.input) });
           continue;
         }
+        if (call.name === CLOSER_TOOL_NAME) {
+          const look = await lookCloser({ photoUrl: photo.dataUrl, renderUrl: shot.clean, compose: run.ctx.host.composeImages?.bind(run.ctx.host), plan: () => planShot(run, photo.aspect), roomLine: `Room ${desc.footprint.width} m (west-east) by ${desc.footprint.depth} m (north-south), ceiling ${desc.footprint.ceiling} m.` }, call.input);
+          results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
+          lookBlocks.push(...look.blocks);
+          continue;
+        }
         if (call.name === 'finish') {
           declared = true;
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Done.' });
@@ -933,6 +956,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
       }
       messages.push({ role: 'user', content: results });
+      if (lookBlocks.length > 0) pushUser(messages, lookBlocks.splice(0));
     }
 
     if (!standing) {

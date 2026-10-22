@@ -253,6 +253,39 @@ describe('room from a photo, with a vision model', () => {
     expect(host.world.environment.look).toBeUndefined();
   });
 
+  it('look_closer returns photo and render crops, the whole pair and the plan view as pictures, and the intro ranks the biggest difference', async () => {
+    const composed: Array<{ n: number; boxes: unknown[] }> = [];
+    class ComposeHost extends PhotoHost {
+      async composeImages(tiles: ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>): Promise<string | null> {
+        composed.push({ n: tiles.length, boxes: tiles.map((t) => t.box ?? null) });
+        return `data:image/png;base64,${Buffer.from(`pair${composed.length}`).toString('base64')}`;
+      }
+    }
+    const provider = scripted([
+      describeCall(),
+      () => [
+        call('look_closer', { regions: [{ box: [0.1, 0.1, 0.12, 0.2], note: 'curtain' }], side_by_side: true, plan: true }),
+        call('report_verdicts', { verdicts: buildChecklist(description()).map((c) => ({ id: c.id, pass: true, note: 'ok' })) }),
+      ],
+      finish,
+    ]);
+    const host = new ComposeHost();
+    await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    const first = JSON.stringify(provider.requests[1]?.messages);
+    expect(first).toContain('BIGGEST DIFFERENCE FIRST');
+    expect(provider.requests[1]?.tools?.map((t) => t.name)).toContain('look_closer');
+    expect(composed).toHaveLength(2);
+    // The one-region crop was widened to a usable size and applied to both pictures; the pair has no box.
+    expect(composed[0]?.n).toBe(2);
+    expect(composed.some((c) => c.boxes.every((b) => b === null))).toBe(true);
+    const next = provider.requests[2]?.messages.at(-1);
+    const text = JSON.stringify(next?.content);
+    expect(text).toContain('PHOTO on the left');
+    expect(text).toContain('top-down');
+    expect(host.captures.some((c) => c.names.some((nm) => /plan/.test(nm)))).toBe(true);
+    expect(imageCount({ ...provider.requests[2]!, messages: next ? [next] : [] })).toBeGreaterThanOrEqual(3);
+  });
+
   it('refuses to edit before judging, and applies a fix in the same reply as the verdicts', async () => {
     const provider = scripted([
       describeCall(),

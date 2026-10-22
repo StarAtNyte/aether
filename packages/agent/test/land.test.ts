@@ -101,11 +101,34 @@ describe('shape_land row', () => {
   it('puts both sides of the line when offset is set, and refuses unknown generators and runaway counts', () => {
     const one = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'bush', spacing: 5 }));
     const two = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'bush', spacing: 5, sides: 'both', offset: 3 }));
-    const count = (r: { patches: Array<{ op: string; entity?: { shape?: { points?: unknown[] } } }> }) => (r.patches.find((p) => p.op === 'add')?.entity?.shape?.points ?? []).length;
+    const count = (r: ReturnType<typeof landPatches>): number => {
+      const add = r.patches.find((p) => p.op === 'add');
+      const shape = add && add.op === 'add' ? add.entity.shape : undefined;
+      return shape && shape.kind === 'scatter' ? (shape.points ?? []).length : 0;
+    };
     expect(count(two)).toBe(count(one) * 2);
     const bad = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 20]], of: 'no-such-thing' }));
     expect(bad.refused).toBe(true);
     const huge = landPatches(createWorld(), LandInput.parse({ op: 'row', points: [[0, 0], [0, 2000]], of: 'bush', spacing: 0.25 }));
     expect(huge.refused).toBe(true);
+  });
+});
+
+describe('inspect groups', () => {
+  it('reads a row layer and flags overlapping pairs and floating instances', async () => {
+    const host = new MemoryHost();
+    const ctx = { host, provider: {} as never, coderSystem: '', builtinGenerators: new Set<string>(), usage: { inputTokens: 0, outputTokens: 0 } } as unknown as ExecutorContext;
+    await executeTool(ctx, 'shape_land', { op: 'row', points: [[0, 0], [0, 30]], of: 'tree-oak', spacing: 5 });
+    const ok = await executeTool(ctx, 'inspect', { groups: true });
+    expect(ok.isError).toBe(false);
+    expect(ok.content).toContain('tree-oak');
+    expect(ok.content).toContain('0 pairs closer');
+    // A tight, floating run of three separate trees.
+    const adds = [0, 1, 2].map((i) => ({ op: 'add', entity: { id: `t${i}`, shape: { kind: 'procedural', generator: 'tree-pine' }, transform: { position: [20 + i * 0.3, 2, 5] } } }));
+    host.applyPatches(adds, 'trees');
+    const bad = await executeTool(ctx, 'inspect', { groups: true });
+    expect(bad.content).toMatch(/tree-pine x3 as separate entities/);
+    expect(bad.content).toMatch(/[1-9]\d* pairs? closer than 0\.6/);
+    expect(bad.content).toContain('off the ground');
   });
 });

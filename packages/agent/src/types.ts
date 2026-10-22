@@ -195,6 +195,12 @@ export interface AgentHost {
    */
   captureReview?(views: readonly ReviewViewRequest[], opts?: { signal?: AbortSignal; size?: number }): Promise<Array<{ name: string; dataUrl: string }>>;
   /**
+   * Lay image tiles side by side in one picture (each tile cropped to `box` = [x0,y0,x1,y1] in 0..1 when given, scaled to a
+   * common height; the longer side at most `maxSide`). Null when it cannot be drawn. Used by the photo compare turn's
+   * `look_closer` (photo and render crops, whole-picture side by side).
+   */
+  composeImages?(tiles: ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>, opts?: { maxSide?: number }): Promise<string | null>;
+  /**
    * Decode an image data URL to pixels, reduced to at most `maxSide` pixels on its longer side (the photo flow
    * measures the aspect of a photo and compares it with renders). Null when it cannot be decoded.
    */

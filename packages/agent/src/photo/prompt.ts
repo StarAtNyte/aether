@@ -132,6 +132,13 @@ export function refusalText(error: string): string {
   return `The description was refused: ${error}\nFix exactly that and call describe_room again with the complete corrected description.`;
 }
 
+/**
+ * The biggest-difference step of every compare round: rank before fixing. One line the model writes first, so the largest
+ * difference (by how much of the picture it changes, not by how easy it is to fix) goes first.
+ */
+export const BIGGEST_DIFFERENCE_TEXT =
+  'BIGGEST DIFFERENCE FIRST. Before any edit, write one line that ranks what differs between the photo and the render, largest first, across: proportion (room and piece sizes, ceiling height), position (what stands where, spacing, alignment), colour, material and finish, lighting (direction, warmth, brightness, window light), and missing or extra items (a piece the photo has that the render lacks, or the reverse). Name the single largest difference, say by how much (metres, share of the picture, which hue), and fix THAT first; then the next. Use look_closer to see a region of both at the same camera, both whole pictures side by side, or the plan from above with ids and dimensions, instead of guessing from a small picture.';
+
 /** The first compare message: what was built, the checklist, how to answer. */
 export function compareIntroText(opts: { summary: string; checklist: readonly ChecklistItem[]; notes: readonly string[]; hasObjective: boolean; plan?: string; framing?: string; judged?: boolean; measured?: string }): string {
   return [
@@ -143,6 +150,7 @@ export function compareIntroText(opts: { summary: string; checklist: readonly Ch
     opts.judged
       ? 'Each round: (1) independent judges have already scored the render against the photo item by item (their consensus and the measured differences follow); you may call report_verdicts with your own notes, but their scores decide. (2) Fix every item they found different with edit_items / place_items / query_scene (the numbers on the render are pieces; the legend names them; a wall query gives exact positions). Fix the shell and openings first, then furniture, then decor, then materials and lighting. Make the smallest change that works, never rebuild a room to move one piece. (3) The host renders again; the judges compare the new render with the accepted one, and a change they do not prefer is rolled back. When nothing more can be improved, call finish.'
       : 'Each round: (1) call report_verdicts with a verdict for EVERY id, judging the render against the photo as a strict reviewer: right place, right size, right colour, right material, right proportion. (2) For every failing item, fix it in the same reply with edit_items / place_items / query_scene (the numbers on the render are pieces; the legend names them; a wall query gives exact positions). Fix the shell and openings first, then furniture, then decor, then materials and lighting. Make the smallest change that works, never rebuild a room to move one piece. (3) The host renders again and you judge again. When every item passes, call finish.',
+    BIGGEST_DIFFERENCE_TEXT,
     opts.hasObjective ? 'The host also measures the room deterministically against your description and the photo (openings, inventory, placement, sizes, colours, clearance, framing, pixel similarity); they are evidence for you, not a verdict: nothing is accepted or rolled back because of a measured number, only because of what you (or the judges) see.' : '',
     opts.measured ?? '',
     'Check the SCALE against the photo before you fix single pieces, and again whenever the pieces look too big or too small for the room: the room\'s width, depth and ceiling height are the numbers a flat picture gives you worst. Compare the render with the photo for how much of the wall the door, the windows and the bed take up, how much floor shows in front of the furniture, and how high the ceiling is above the window head and the tallest piece; where the render and the photo disagree, correct the shell (and the heights of the pieces) first and say which number you changed and why. If the shell-size item fails, change a room dimension; do not leave it failing while you move furniture.',
@@ -165,6 +173,7 @@ export function compareRoundText(round: number, score: Scoreboard | null, object
     measured,
     refusals.length > 0 ? `Refused last time:\n${refusals.map((r) => `- ${r}`).join('\n')}` : '',
     `Legend:\n${legend}`,
+    'Rank the differences again (proportion, position, colour, material, lighting, missing or extra items): name the largest, fix it first; look_closer shows a region of both, the two side by side, or the plan.',
     judged
       ? 'Fix what the judges and the measures found different (report_verdicts is optional: your own notes). Call finish when everything matches or when the remaining differences cannot be fixed with the tools (say why).'
       : 'Call report_verdicts for EVERY id again (judge only what you see now), then fix what fails. Call finish when everything passes or when the remaining differences cannot be fixed with the tools (say why).',

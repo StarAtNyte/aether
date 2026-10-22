@@ -11,6 +11,7 @@ import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
 import { requestGenerator } from './coder';
 import { libraryDefinitions } from './library-refs';
+import { readGroups } from './groups';
 import { landPatches, type LandInput } from './land';
 import { feelPatches, type TuneFeelInput } from './feel-edit';
 import { lookPatches, type TuneLookInput } from './look-edit';
@@ -388,6 +389,7 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
 
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {
   const world = ctx.host.getWorld();
+  if (input.groups) return { content: clip(readGroups(world, input.ids)), isError: false, events: [], edited: false };
   if (!input.ids || input.ids.length === 0) return { content: clip(summarizeWorldForModel(world, { maxEntities: 400 })), isError: false, events: [], edited: false };
   const parts: string[] = [];
   const missing: string[] = [];

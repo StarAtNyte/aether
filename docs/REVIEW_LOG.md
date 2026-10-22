@@ -5441,3 +5441,42 @@ after rebaking `apartment` and `cafe-interior` (their furniture layouts changed 
 - A curtain overlapping tall furniture on the north wall (3.5 x 3.2 m living room, opening at 0.8) fails the building check
   in 60 of the 1800 houses; not related to doors, not fixed.
 - Residents and the bot still pass through each other after the 8 s / 24 s patience.
+
+## Atlas Chisel comparison
+
+Observation only, from ten screenshots of a public beta session of an image-to-room tool (Chisel). No code, assets or
+prompts were taken; the ideas below are workflow patterns any such tool shares.
+
+**What the tool does.** A model builds a clay (grey-box) scene graph of parametric shapes: walls with openings, a curtain, a
+rug, artwork, trees scattered along curves and in groups. A "photo match" camera is solved to the reference photo; the agent
+renders a clay capture from it and assesses it against the photo in a loop, names the biggest differences (proportion, curtain
+position, artwork, rug, pendants) and fixes the largest first. It reads every tree, curve and group before editing, runs a
+layout check for floating and buried parts, shows a visible plan with steps, offers a top-down blueprint with grid and line
+controls, edits per-object parameters (size, fillet, boolean cut), then stages a camera set and writes output rows (cameras and
+render prompts) for a separate generative render step with a style reference.
+
+**What Aether already had.** A solved photo camera whose render is always the first compare image, numbered marks and a
+legend on every piece, a top-down plan pose in the review views, a layout check (`query_scene review`, floating and buried
+flags, level grounding), chat plan text during generation, independent judges, rollback of changes that make things worse,
+and a measured-fidelity score used as advice only.
+
+**What Aether lacked, and what was added.**
+- The model could not ask for a closer look. Added `look_closer` in the compare turn: crops of the photo and the same crop of
+  the render side by side, the whole pair in one image, and the plan from above with ids, sizes and the room's dimensions.
+- The compare turn named a fix order only by checklist. Added an opening step in each round: rank the differences across
+  proportion, position, colour, material, lighting and missing or extra items, name the largest, say by how much, fix it first.
+- Trees, hedges and fence posts along a lane or bank needed one entity per tree or hand-typed points. Added
+  `shape_land {op:"row"}`: an instanced line of any generator along a polyline, each instance on the ground height.
+- No one-call read of groups. Added `inspect {groups:true}`: counts, bounds, neighbour distances, overlapping pairs and
+  floating or buried instances for every scatter layer and every run of alike entities.
+- Not added: a structured plan checklist widget (the existing plan text events already show the model's stated steps in
+  chat), clay-to-generative output rows (Aether renders the real scene), and parametric fillet and boolean-cut shape editing.
+
+**Where Aether is ahead.** The result is a playable, physical world, not a grey-box for a later render: Rapier physics, doors
+and drawers on joints, NPCs and a playtest bot, with verification that fails a world that cannot be played or walked. It renders
+in real time with PBR and a path-traced still, works offline with the planner and with local models, is open and runs in the
+browser with no account. Its judges, rollback and measured checks are advisory, and the model decides.
+
+**Tests.** `agent/test/land.test.ts` (row on terrain, both sides, refusals, group read), `photo-closer.test.ts` (crop boxes,
+refusals, advertisement), `photo-pipeline.test.ts` (a scripted model calls `look_closer` and gets the pictures; the intro
+carries the ranking step).

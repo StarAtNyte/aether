@@ -229,10 +229,10 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
   {
     name: 'inspect',
-    description: 'Read the current world. Without ids: the compact world summary. With ids: the full JSON of those entities (up to 24).',
+    description: 'Read the current world. Without ids: the compact world summary. With ids: the full JSON of those entities (up to 24). With groups:true: every group of repeated things (scatter layers of trees, rocks, grass, hedges, fence posts, and runs of alike separate entities) in one read: count, bounds, closest and typical neighbour distance, overlapping pairs, instances floating or buried (ids narrow it to those layers). Read the groups before and after you place or thin trees.',
     inputSchema: {
       type: 'object',
-      properties: { ids: { type: 'array', items: { type: 'string' }, maxItems: TOOL_LIMITS.MAX_INSPECT_IDS } },
+      properties: { ids: { type: 'array', items: { type: 'string' }, maxItems: TOOL_LIMITS.MAX_INSPECT_IDS }, groups: { type: 'boolean' } },
       additionalProperties: false,
     },
   },
@@ -419,7 +419,7 @@ export const ToolInputs = {
     category: z.enum(ASSET_CATEGORIES).optional(),
     limit: z.number().int().min(1).max(20).default(8),
   }),
-  inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional() }),
+  inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),
   run_verification: z.object({}),
   shape_land: LandInput,
   tune_feel: TuneFeelInput,
