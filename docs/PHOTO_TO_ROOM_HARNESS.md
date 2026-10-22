@@ -18,7 +18,7 @@ A run walks ten stages in order. A stage is `pending`, `active`, `passed`, `fail
 | 6 | `materials` | Finishes for every surface the photo shows, sampled or chosen, never an image card. | Hue, lightness, gloss and pattern scale of the main surfaces, judged in crops. |
 | 7 | `lighting` | Sun direction and tint, window light, lamps, exposure and white balance. | Same light direction, same warmth, same brightness relation between lit and shaded areas. |
 | 8 | `repair` | Compare and repair. The causes are fixed in a fixed order: camera, then geometry, then materials, then lighting (see below). | No open difference of size 3 or more in a class before the next class is worked on; the last round has no large open difference or the stall is named. |
-| 9 | `crosscheck` | A fresh seat with no conversation compares the photo and the final render and lists what still differs. It records; it does not fix. | The seat's list is merged into the ledger. Large items it finds that the fixer called fixed re-open. |
+| 9 | `crosscheck` | A fresh seat with no conversation compares the photo and the final render and lists what still differs. It records; it does not fix. | The seat's list is merged into the ledger as its own entries (source `independent`), so what it finds is counted as open in the closing message. |
 | 10 | `delivery` | Walkthrough verification (a bot reaches every room, doors and drawers work), provenance record saved with the project, export offered. | Verification result and honest limits written into the closing message. |
 
 `camera` to `lighting` are judged together on the first render (the first look) and again whenever the repair loop clears a class. Stage verdicts come from a `stage_gate` tool the model calls: `{gates:[{stage, verdict: pass|fail|blocked, evidence, blocker?}]}`. The machine rejects a `pass` with no evidence text, a `blocked` with no blocker, and a verdict for a stage that is not yet active. A model that never calls the tool leaves the stage `pending`, and the closing message says so; the run does not claim a tick it was not given.
@@ -41,7 +41,7 @@ A refusal teaches: the reply names the class to work on and the open difference 
 
 ## Verify after fix
 
-A difference the model fixed is not closed until the next render shows it. The existing ledger already requires an earlier id to be reported again with `fixed`, `smaller`, `same` or `worse`. The harness adds: the status is judged by the model on the new render and, if the independent seat disagrees at the cross-check, the item re-opens and is marked as such.
+A difference the model fixed is not closed until the next render shows it. The ledger requires an earlier id to be reported again with `fixed`, `smaller`, `same` or `worse`, judged on the new render; an id left out stays open; a difference that did not shrink after an edit is pointed out; a round the judges find worse is rolled back, including a camera change. The independent seat at the end lists what it sees without the conversation, so a difference the fixer called fixed can still show up there as its own entry.
 
 ## Assumptions and blockers
 
@@ -51,7 +51,7 @@ The run does not stop to ask about assumptions. It makes the most conservative o
 
 ## Provenance record
 
-Saved with the project (world metadata `provenance`) when the room is built and updated at the end:
+Built at the end of the run and carried on the final `photo` event (`provenance`). The studio keeps it in the chat record of the project, shows it in a panel on the photo room and downloads it as JSON. The world document itself has no field for it, so it is not inside the `.aether.json` project file; it travels as the downloaded record:
 
 - source photo SHA-256 and pixel size (the photo itself is not stored);
 - permission note: the user states the photo is theirs or they may use it for this; local processing is recorded separately from any publication right, which the record leaves as "not stated";
@@ -64,7 +64,7 @@ The studio shows this record in a panel on the photo room: the stage list, the a
 
 ## Delivery and export
 
-The room is already a playable project (walkthrough, doors that swing, drawers, switches). Delivery offers: the playable project, a portable GLB of the room, and the provenance record as JSON. The limits are written in plain words with the files: one view cannot show hidden surfaces, scale is estimated, and furniture is built from the photo, not scanned.
+The room is already a playable project (walkthrough, doors that swing, drawers, switches). Delivery offers (buttons on the photo room's panel): the playable project (`.aether.json`), a portable GLB of the static room, and the provenance record as JSON. The limits are written in plain words with the files: one view cannot show hidden surfaces, scale is estimated, and furniture is built from the photo, not scanned.
 
 ## What this adds over a fixed workflow
 
@@ -74,7 +74,7 @@ The room is already a playable project (walkthrough, doors that swing, drawers, 
 - A verify-after-fix ledger: no difference is closed on the fixer's say-so.
 - A playable check: the walkthrough bot must reach every room and the doors and drawers must work, not only a still that looks right.
 - Live edit by chat afterwards: small patches, one undo step each.
-- A resumable run: the stage machine, the ledger and the provenance serialise (`snapshot()`), so a later turn can continue the repair stage from where it stopped.
+- A resumable run: the final `photo` event carries a resume state (room description, built opening ids, stage states, assumptions, differences ledger, repair log). A later turn with the same photo (matched by hash) and the room still in the world skips reading and building and continues at the repair stage ("Continue repair" in the panel). The photo itself is held in memory by the studio only, so a reload loses the ability to continue.
 - Offline fallback is labelled: with no model that sees images the run says so and builds nothing; it never passes off a template room as the photo.
 
 ## Honest limits
