@@ -175,8 +175,9 @@ it (`attachedTo`).
 - **Graphics quality.** Settings → Graphics has Auto, Low, Medium, High and
   Ultra. Medium adds a composite pass and grain; High adds ambient occlusion,
   temporal anti-aliasing and contact shadows; Ultra adds reflections, sun
-  shafts, glow and lens fringing. The sun gets focus cascades with
-  contact-hardening shadows on the higher tiers. On Auto, a performance
+  shafts, glow and lens fringing. Medium and above soften sun shadows with
+  distance from the caster (contact hardening); High, Ultra and stills add
+  focus cascades around what you look at. On Auto, a performance
   governor first lowers the resolution and then gives up costs one at a time
   (baked light volume, cascades, post effects, particles) while frames stay
   slow. Choosing a tier yourself turns it off.
@@ -354,7 +355,7 @@ on Windows). See [docs/SECURITY.md](docs/SECURITY.md).
 | `npm run e2e` | Playwright against the built studio: Chromium WebGPU, Chromium WebGL2, Firefox WebGL2 |
 | `npm run e2e:verified` · `e2e:refine` · `e2e:arch` · `e2e:gameplay` · `e2e:publish` · `e2e:voxel` · `e2e:ux` | Focused browser suites (bot verification and repair, chat edits, architecture, playing flagships to the win, publishing, block worlds, UX) |
 | `npm run showcase:bake` / `showcase:thumbs` / `showcase:photo-rooms` | Rebuild the featured worlds from their prompts; render their covers; rebuild the photo example rooms from their recorded runs |
-| `npm run eval:photo` / `eval:design` | Replay the recorded photo-to-room runs; evaluate design quality |
+| `npm run eval:photo` / `eval:design` | Replay the recorded photo-to-room runs; compare the AI design path with the offline planner |
 | `npx tsx scripts/bot-probe.ts <world.json \| prompt:… \| plan:…>` | Run the playtest bot headless on one world and print timings |
 
 Every script is in [`package.json`](package.json). For browsers, run

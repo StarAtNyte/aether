@@ -159,14 +159,19 @@ Aether reads the photo several times (three reads on a subscription, one on
 a paid key) and merges the readings. It shows its assumptions as chips you
 can tap to adjust. Then it builds the shell, windows and
 doors, the furniture and the decor. Each round renders the room from the
-photo's camera. A panel of AI judges looks at the render next to the photo and
-decides, item by item, what still differs; the card says who judged. The
-assistant then fixes what they found, and sets the room's light and colour
-(exposure, white balance, fog, tints) from what it sees. A change is kept
-when the judges find the new render closer to the photo; otherwise it is shown
-as "not kept". Measured numbers (openings, inventory, placement, colour
-difference) are shown as advice and never decide. On a subscription the loop runs until everything
+photo's camera. A panel of AI judges (three on a subscription, one on a paid
+key) looks at the render next to the photo and decides, item by item, what
+still differs; the card says who judged. The assistant then fixes what they
+found, and grades the room's light and colour (exposure, white balance, fog,
+tints, lamp strength; the `tune_look` tool) from what it sees. A change is
+kept when the judges find the new render closer to the photo; otherwise it is
+shown as "not kept" and the room goes back to the best state so far. Measured
+numbers (openings, inventory, placement, colour difference) are shown as
+advice and never decide. On a subscription the loop runs until everything
 matches or progress stalls. On a paid key it stops after 10 rounds.
+
+Four example rooms made this way (a hotel bedroom, a twin room, a four-poster
+bedroom and a vaulted bedroom) are on the home page under **More worlds**.
 
 Expect a few minutes and 20 to 40 calls. Vaulted ceilings, cornices, sash
 windows and some door styles cannot be built yet. Offline, Aether says it
@@ -175,7 +180,33 @@ cannot rebuild a room from a photo and offers to build from text.
 Any image attached to a normal prompt is a **reference**. It informs style
 and content but does not trigger a reconstruction.
 
-## 7. Editing by hand
+## 7. Graphics quality
+
+**Settings → Graphics → Quality** offers Auto, Low, Medium, High and Ultra.
+Auto picks a tier for your GPU and machine: software renderers and weak
+computers (four cores or less, or little memory) get Low or Medium, a
+discrete GPU gets High. Higher tiers add effects, each of which has its own
+switch below the picker:
+
+| Tier | Adds |
+| --- | --- |
+| Low | no post effects |
+| Medium | a composite pass, film grain, soft sun shadows |
+| High | ambient occlusion, temporal anti-aliasing, contact shadows, sun cascades |
+| Ultra | reflections, sun shafts, glow, lens fringing |
+
+Sun shadows soften with distance from the caster. On High and Ultra the sun
+also gets cascades: finer shadow maps around what you look at, so a chair leg
+or a boot has its own shadow.
+
+On Auto, a performance governor watches the frame time. When frames stay
+slow after the resolution has already dropped, it gives up one cost at a time:
+the baked light volume of buildings, the sun cascades, the post effects, then
+particles. It never goes back up. Picking a tier yourself turns the governor
+off and restores everything. The Performance overlay (top bar) shows frame
+timing.
+
+## 8. Editing by hand
 
 The prompt is the main tool, but everything can be edited directly:
 
@@ -200,7 +231,7 @@ single storeys, x-ray, a section cut, a daylight study, a studio render and
 view shows room areas and dimensions, and you can draw rooms, doors and
 windows on it.
 
-## 8. Publishing and sharing
+## 9. Publishing and sharing
 
 **Share** copies a link that carries the whole world after the `#`
 (compressed, typically tens of kilobytes). Nothing is uploaded. The link opens a
@@ -231,7 +262,7 @@ re-run it on the visitor's device.
 Every bundled asset's credit appears in the credits panel, on the end-of-game
 screen and in the exported `CREDITS.txt`.
 
-## 9. Projects and recovery
+## 10. Projects and recovery
 
 Projects live in your browser (IndexedDB) with thumbnails, search, sort,
 rename, duplicate, delete with Undo, and `.aether.json` export and import.
@@ -239,7 +270,7 @@ To recover from a world that will not load, open the studio with `?safe=1`,
 which boots the starter scene and keeps your last world one Undo away.
 `?debug=1` turns on verbose logging.
 
-## 10. Driving Aether from another agent
+## 11. Driving Aether from another agent
 
 `aether mcp` exposes create, edit, patch, verify, playtest, replay, render
 and export as MCP tools for Claude Code, Codex or your own scripts. See
