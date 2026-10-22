@@ -41,6 +41,8 @@ export type ChatEventView =
   | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; ms?: number; via?: string; models?: string[] }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string; /** Offline planner could not map the request: show the connect-AI action and these examples. */ offline?: { examples: string[] } }
   | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit' | 'crosscheck'; text: string; score?: number; findings?: number; differences?: DifferenceEventView[] }
+  /** One step the agent took ("Placing 4 items"); `thumbs` are small pictures of what it looked at (live only, never stored). */
+  | { type: 'step'; tool: string; label: string; ok: boolean; thumbs?: Array<{ label: string; src: string }> }
   | PhotoEventView
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
 
@@ -171,6 +173,8 @@ export type ChatEntry =
 
 const MAX_SOURCE_CHARS = 60_000;
 const MAX_ERRORS = 20;
+/** Most step events kept in one assistant entry. */
+export const MAX_STEPS_PER_ENTRY = 80;
 const MAX_RESULTS = 100;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -246,6 +250,8 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
       return { type: e.type, text: str(e.text) };
     case 'steer':
       return { type: 'status', text: `Picked up your queued message: ${str(e.text, 160)}` };
+    case 'step':
+      return { type: 'step', tool: str(e.tool, 40), label: str(e.label, 80), ok: e.ok === true };
     case 'repair':
       return { type: 'repair', text: str(e.text), attempt: num(e.attempt) };
     case 'patches':
@@ -282,6 +288,13 @@ export function appendEvent(events: readonly ChatEventView[], view: ChatEventVie
   const last = events[events.length - 1];
   const base = last && last.type === 'status' && view.type === 'status' ? events.slice(0, -1) : events.slice();
   base.push(view);
+  // Steps are the bulk of a long run: only the newest ones are kept, so they never push real results out.
+  const steps = base.reduce((n, e) => n + (e.type === 'step' ? 1 : 0), 0);
+  if (steps > MAX_STEPS_PER_ENTRY) {
+    let drop = steps - MAX_STEPS_PER_ENTRY;
+    const kept = base.filter((e) => !(e.type === 'step' && drop-- > 0));
+    return kept.length > MAX_EVENTS_PER_ENTRY ? kept.slice(kept.length - MAX_EVENTS_PER_ENTRY) : kept;
+  }
   return base.length > MAX_EVENTS_PER_ENTRY ? base.slice(base.length - MAX_EVENTS_PER_ENTRY) : base;
 }
 
@@ -369,6 +382,8 @@ export function reviveEvent(v: unknown): ChatEventView | null {
     case 'message':
     case 'error':
       return { type: v['type'], text: str(v['text']) };
+    case 'step':
+      return { type: 'step', tool: str(v['tool'], 40), label: str(v['label'], 80), ok: v['ok'] === true };
     case 'repair':
       return { type: 'repair', text: str(v['text']), attempt: num(v['attempt']) };
     case 'patches': {

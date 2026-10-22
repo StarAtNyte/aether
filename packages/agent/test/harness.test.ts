@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WorldAgent } from '../src/agent';
 import { ConversationStore } from '../src/conversation';
-import { CallLedger, STREAK_LIMIT, budgetNote, compactConversation, drainSteer, steerText, trimToAnswered } from '../src/harness';
+import { CallLedger, STREAK_LIMIT, budgetNote, stepLabel, compactConversation, drainSteer, steerText, trimToAnswered } from '../src/harness';
 import { ProviderError } from '../src/providers/errors';
 import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, Provider } from '../src/types';
 import { collect, MemoryHost, TEST_CATALOGS } from './helpers';
@@ -132,6 +132,21 @@ describe('the loop reflects on refusals', () => {
     const provider = new Scripted([turn(call('query_scene', {})), turn(call('query_scene', {})), turn(call('finish', { message: 'x' }))]);
     await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 3 }).run('a thing', new MemoryHost()));
     expect(lastText(provider.requests[1]!)).toMatch(/2 model turns remain/);
+  });
+});
+
+describe('steps', () => {
+  it('reports each tool call as a step with a plain label', async () => {
+    const provider = new Scripted([turn(call('apply_patches', { patches: [box('crate-1'), box('crate-2')], message: 'Add' }), call('query_scene', { q: 'vocabulary' })), turn(call('finish', { message: 'ok' }))]);
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('crates', new MemoryHost()));
+    const steps = events.filter((e): e is Extract<AgentEvent, { type: 'step' }> => e.type === 'step');
+    expect(steps.map((s) => s.label)).toEqual(['Applying 2 changes', 'Reading the scene (vocabulary) (refused)']);
+    // (There is no building to read in an empty world, so the second call is refused.)
+    expect(steps.map((s) => s.ok)).toEqual([true, false]);
+  });
+  it('labels a refused call as refused', () => {
+    expect(stepLabel('edit_items', { edits: [1, 2, 3] }, false)).toBe('Editing 3 items (refused)');
+    expect(stepLabel('something_new', {}, true)).toBe('something_new');
   });
 });
 

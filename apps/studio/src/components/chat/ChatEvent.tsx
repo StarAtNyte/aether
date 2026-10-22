@@ -413,6 +413,9 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       if (event.calls > 0 && event.via !== 'Offline planner') parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in${event.cachedInputTokens ? ` (${compactCount(event.cachedInputTokens)} cached)` : ''} / ${compactCount(event.outputTokens)} out tokens`);
       return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;
     }
+    // Steps are listed together (and folded) by the chat entry, not one by one.
+    case 'step':
+      return null;
     case 'notice':
       return <NoticeView event={event} />;
     case 'quality':

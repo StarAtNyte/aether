@@ -166,3 +166,82 @@ export function trimToAnswered(messages: readonly ChatMessage[]): ChatMessage[] 
   if (last && typeof last.content !== 'string') return [...kept.slice(0, -1), { role: 'user', content: [...last.content, note] }];
   return [...kept, { role: 'user', content: [note] }];
 }
+
+const count = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * A short human label for a finished tool call ("Placing 4 items", "Reading the scene"), for the step list the user can
+ * open. Never throws; an unknown tool gets its name.
+ */
+export function stepLabel(name: string, input: unknown, ok: boolean): string {
+  const i = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const n = (key: string): number => count(i[key]);
+  let text: string;
+  switch (name) {
+    case 'apply_patches':
+      text = n('patches') > 0 ? `Applying ${plural(n('patches'), 'change')}` : 'Applying changes';
+      break;
+    case 'build_architecture':
+      text = 'Building the architecture';
+      break;
+    case 'design_plan':
+      text = 'Planning the building';
+      break;
+    case 'place_items':
+      text = n('items') > 0 ? `Placing ${plural(n('items'), 'item')}` : 'Placing items';
+      break;
+    case 'edit_items':
+      text = n('edits') > 0 ? `Editing ${plural(n('edits'), 'item')}` : 'Editing items';
+      break;
+    case 'query_scene':
+      text = typeof i['q'] === 'string' ? `Reading the scene (${i['q'].slice(0, 24)})` : 'Reading the scene';
+      break;
+    case 'query_level':
+      text = 'Measuring the level';
+      break;
+    case 'place_level_items':
+      text = n('items') > 0 ? `Placing ${plural(n('items'), 'item')} on the ground` : 'Placing items on the ground';
+      break;
+    case 'inspect':
+      text = typeof i['id'] === 'string' ? `Inspecting ${i['id'].slice(0, 32)}` : 'Inspecting the world';
+      break;
+    case 'tune_look':
+      text = 'Setting the look';
+      break;
+    case 'tune_feel':
+      text = 'Tuning the game feel';
+      break;
+    case 'shape_land':
+      text = 'Shaping the land';
+      break;
+    case 'write_generator':
+    case 'request_asset':
+      text = 'Making a new asset';
+      break;
+    case 'write_script':
+      text = 'Writing a script';
+      break;
+    case 'search_assets':
+      text = 'Searching the asset library';
+      break;
+    case 'run_verification':
+      text = 'Running the checks';
+      break;
+    case 'report_differences':
+      text = 'Listing what differs';
+      break;
+    case 'report_verdicts':
+      text = 'Judging each item';
+      break;
+    case 'sample_photo':
+      text = 'Reading colours from the photo';
+      break;
+    case 'look_closer':
+      text = 'Looking closer';
+      break;
+    default:
+      text = name.slice(0, 40);
+  }
+  return ok ? text : `${text} (refused)`;
+}

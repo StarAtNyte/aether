@@ -30,7 +30,7 @@ import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
 import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
-import { CallLedger, budgetNote, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
+import { CallLedger, budgetNote, stepLabel, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
@@ -492,6 +492,7 @@ export class WorldAgent {
           }
           toolCalls++;
           const out = await guardedTool(ledger, ctx, call.name, call.input);
+          if (call.name !== 'finish') yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
           for (const ev of out.events) yield ev;
           if (out.edited) dirty = true;
           if (out.edited && (call.name === 'design_plan' || call.name === 'build_architecture')) structural = true;
@@ -752,6 +753,7 @@ export class WorldAgent {
         if (list) content.push({ type: 'text', text: list });
         content.push({ type: 'text', text: requirementText(this.reviewAsk.request, refs.length > 0, round, list.length > 0) });
       }
+      if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };
       pushUserBlocks(messages, content);
       // One round: the model works with the tools until it calls finish (or answers without a tool call).
       let editedThisRound = false;
@@ -803,6 +805,7 @@ export class WorldAgent {
               continue;
             }
             const rec = diffs.record(call.input);
+            yield { type: 'step', tool: DIFFERENCES_TOOL_NAME, label: stepLabel(DIFFERENCES_TOOL_NAME, call.input, true), ok: true };
             if (!rec.ok) {
               results.push({ type: 'tool_result', toolUseId: call.id, content: rec.error, isError: true });
               continue;
@@ -818,6 +821,7 @@ export class WorldAgent {
           }
           toolCalls++;
           const out = await guardedTool(ledger, ctx, call.name, call.input);
+          if (call.name !== 'finish') yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
           for (const ev of out.events) yield ev;
           if (out.edited) {
             editedThisRound = true;

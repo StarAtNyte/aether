@@ -70,4 +70,22 @@ describe('studio store', () => {
     s.setOutlinerFilter('y'.repeat(500));
     expect(store.getState().outlinerFilter).toHaveLength(120);
   });
+
+  it('counts the steps of a running turn and queues messages for the agent to pick up', () => {
+    const store = createStudioStore();
+    const s = store.getState();
+    s.setAgentRun({ startedAt: 1, via: 'x', step: 'Planning…' });
+    s.bumpAgentStep('Placing 3 items');
+    s.bumpAgentStep();
+    expect(store.getState().agentRun).toMatchObject({ steps: 2, step: 'Placing 3 items' });
+    s.queueMessage('  add a rug ');
+    s.queueMessage('and a lamp');
+    s.removeQueued(0);
+    expect(store.getState().queued).toEqual(['and a lamp']);
+    for (let i = 0; i < 10; i++) s.queueMessage(`m${i}`);
+    expect(store.getState().queued).toHaveLength(4);
+    expect(s.takeQueued()).toHaveLength(4);
+    expect(store.getState().queued).toEqual([]);
+    expect(s.takeQueued()).toEqual([]);
+  });
 });

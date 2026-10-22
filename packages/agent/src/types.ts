@@ -91,6 +91,11 @@ export type AgentEvent =
   | { type: 'history'; action: 'undo' | 'redo' }
   /** Conversation memory for the next prompt ("it", "the same", "the other one"). */
   | { type: 'memory'; memory: RefineMemory }
+  /**
+   * One step the agent took (a tool call, or a look at images), for the step list. `looked` carries what the model was
+   * shown (full-size data URLs: the host makes thumbnails and never stores them).
+   */
+  | { type: 'step'; tool: string; label: string; ok: boolean; looked?: Array<{ label: string; dataUrl: string }> }
   /** A message the user queued while the run worked was handed to the model. */
   | { type: 'steer'; text: string }
   | { type: 'error'; text: string }

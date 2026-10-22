@@ -45,7 +45,7 @@ describe('WorldAgent loop', () => {
     const provider = new ScriptedProvider([turn({ type: 'text', text: 'Adding a box.' }, call('apply_patches', { patches: [box('crate-1')], message: 'Add crate' }), call('finish', { message: 'A crate.' }))]);
     const host = new MemoryHost();
     const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS }).run('a crate', host));
-    expect(types(events)).toEqual(['status', 'plan', 'patches', 'message', 'status', 'verify', 'done']);
+    expect(types(events)).toEqual(['status', 'plan', 'step', 'patches', 'message', 'status', 'verify', 'done']);
     expect(host.world.entities['crate-1']).toBeDefined();
     expect(host.commits[0]?.message).toBe('Add crate');
     const done = events.at(-1);

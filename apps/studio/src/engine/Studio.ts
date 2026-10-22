@@ -65,6 +65,7 @@ import { loadAiPrefs, saveAiPrefs } from '../ai/prefs';
 import { runQualityPass, toQualityView } from '../ai/quality';
 import { fallbackText } from '../ai/messages';
 import { createProviderChain, type ChainLink } from '../ai/chain';
+import { composeTiles } from '../ai/decode';
 import { prefersReducedMotion, Simulation } from './Simulation';
 
 /** Token usage of one turn (all agent runs of a prompt). */
@@ -1103,18 +1104,18 @@ export class Studio {
       // Subscription backends are not metered, so the loop has no round cap there (it stops when the model
       // approves or progress stalls); paid keys keep a high finite cap. Small on-device models skip it.
       const subscription = resolved.kind === 'bridge' || resolved.kind === 'local';
-      const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6 } : undefined;
+      const review = primary && promptProfile === 'full' ? { ...(subscription ? {} : { maxRounds: REVIEW_ROUNDS_METERED }), vision: () => chain?.active()?.vision ?? resolved.vision, maxViews: 6, differences: true, crossCheck: true } : undefined;
       // A photo of a room is rebuilt from the photo through the design tools; without an assistant that can see it,
       // nothing is guessed (the offline planner would build some other room) and the user is told so.
       // Each render is scored by a panel of independent judges (median per item, compared with the accepted state):
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
-      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
+      const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
       const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
-      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo ? { photo: opts.photo } : {}), ...(session ? { session } : {}) } as const;
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo ? { photo: opts.photo } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued() } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
       // A targeted edit ("move the shrine", "make the sofa green") is not followed by scene-wide polishing: the quality
@@ -1160,6 +1161,9 @@ export class Studio {
       if (this.onSave) this.schedulePersist();
       else saveChat(this.storage, this.store.getState().chat);
     }
+    // Messages queued while the turn ran and not picked up by it go next, as one message; a stopped turn drops them.
+    const waiting = this.store.getState().takeQueued();
+    if (waiting.length > 0 && status !== 'aborted' && !this.disposed) void this.send(waiting.join('\n'));
     const local = this.localEdit;
     if (status === 'done' && this.history.current !== before) {
       if (!(local && local.cosmetic)) void this.presentProof();
@@ -1269,6 +1273,15 @@ export class Studio {
       }
       card = event.type === 'edit' ? { summary: event.summary, notes: event.notes } : event.type === 'status' ? card : null;
       const view = toEventView(event, { head: this.history.head });
+      if (event.type === 'step' && view.type === 'step') {
+        // The "Step N" counter and, for a look at images, small pictures of what the model was shown (never stored).
+        this.store.getState().bumpAgentStep(event.label);
+        if (event.looked && event.looked.length > 0) {
+          const thumbs = await Promise.all(event.looked.slice(0, 6).map(async (l) => ({ label: l.label.slice(0, 60), src: await composeTiles([{ dataUrl: l.dataUrl }], 120).catch(() => null) })));
+          const ok = thumbs.filter((t): t is { label: string; src: string } => t.src !== null);
+          if (ok.length > 0) view.thumbs = ok;
+        }
+      }
       this.store.getState().pushEvent(entryId, view);
       if (event.type === 'patches') {
         // Name what was just placed while it materialises (the plan, annotated on the world).

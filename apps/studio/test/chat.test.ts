@@ -141,3 +141,30 @@ describe('photo round scores', () => {
     expect(ev.score?.fidelity).toBeUndefined();
   });
 });
+
+describe('steps and differences in the chat', () => {
+  it('maps an agent step, drops its pictures from the stored view, and revives it without them', () => {
+    const v = toEventView({ type: 'step', tool: 'look', label: 'Looking at the renders', ok: true, looked: [{ label: 'x', dataUrl: 'data:image/png;base64,AAAA' }] });
+    expect(v).toEqual({ type: 'step', tool: 'look', label: 'Looking at the renders', ok: true });
+    const chat = reviveChat([{ role: 'assistant', status: 'done', events: [{ type: 'step', tool: 'edit_items', label: 'Editing 2 items', ok: false, thumbs: [{ src: 'x' }] }] }]);
+    expect(chat[0]?.role === 'assistant' && chat[0].events[0]).toEqual({ type: 'step', tool: 'edit_items', label: 'Editing 2 items', ok: false });
+  });
+  it('keeps only the newest steps so they never push real results out', () => {
+    let events: ChatEventView[] = [{ type: 'message', text: 'kept' }];
+    for (let i = 0; i < 120; i++) events = appendEvent(events, { type: 'step', tool: 'query_scene', label: `Step ${i}`, ok: true });
+    const steps = events.filter((e) => e.type === 'step');
+    expect(steps).toHaveLength(80);
+    expect(steps.at(-1)).toMatchObject({ label: 'Step 119' });
+    expect(events[0]).toEqual({ type: 'message', text: 'kept' });
+  });
+  it('turns a queued message the agent picked up into a status line', () => {
+    expect(toEventView({ type: 'steer', text: 'add a rug' })).toEqual({ type: 'status', text: 'Picked up your queued message: add a rug' });
+  });
+  it('bounds a differences list on a photo or review event', () => {
+    const list = Array.from({ length: 40 }, (_, i) => ({ id: `d${i}`, kind: 'scale', where: 'wall', what: 'x'.repeat(500), size: 9, status: 'open', rounds: 0, source: 'independent' as const }));
+    const v = toEventView({ type: 'review', round: 1, phase: 'crosscheck', text: 't', differences: list });
+    expect(v.type === 'review' && v.differences).toHaveLength(20);
+    expect(v.type === 'review' && v.differences?.[0]).toMatchObject({ size: 5, rounds: 1, source: 'independent' });
+    expect(v.type === 'review' && v.differences?.[0]?.what.length).toBeLessThanOrEqual(200);
+  });
+});

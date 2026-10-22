@@ -2558,3 +2558,13 @@ button.chip:disabled {
 .differences__size { letter-spacing: -2px; font-size: 9px; min-width: 38px; }
 .differences__kind { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
 .differences__text i { font-style: normal; opacity: 0.75; }
+
+.steps { display: grid; gap: var(--s-1); margin: var(--s-1) 0; }
+.steps__toggle { justify-self: start; background: none; border: 0; padding: 0; font-size: var(--fs-12); color: var(--text-2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.steps__chip { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-1) var(--s-2); border: 1px solid var(--border, rgba(127, 127, 127, 0.25)); border-radius: var(--r-2, 6px); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-2); }
+.steps__chip.is-bad { opacity: 0.75; border-style: dashed; }
+.steps__thumbs { display: inline-flex; gap: var(--s-1); flex-wrap: wrap; }
+.steps__thumb { height: 36px; width: auto; border-radius: 3px; border: 1px solid var(--border, rgba(127, 127, 127, 0.25)); }
+.composer__queue { list-style: none; margin: 0 0 var(--s-1); padding: 0; display: grid; gap: var(--s-1); }
+.composer__queued { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-2); border: 1px dashed var(--border, rgba(127, 127, 127, 0.35)); border-radius: var(--r-2, 6px); font-size: var(--fs-12); color: var(--text-2); }
+.composer__queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

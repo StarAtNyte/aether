@@ -61,6 +61,7 @@ import {
 } from '@aether/arch';
 import { z } from 'zod';
 import { requestView } from '../context';
+import { stepLabel } from '../harness';
 import { executeTool, raceAbort, runVerification, type ExecutorContext } from '../executor';
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
@@ -881,6 +882,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + (kit?.images.length ?? 0)}: BEST SO FAR (round ${ref0.round}), the state your last changes started from. In report_verdicts set "closer" to "new" when the new render is closer to the photo, "best" when this one is (the room then goes back to it), or "same".` }, { type: 'image', dataUrl: bestImage });
     }
     if (round === 1) blocks.push({ type: 'text', text: `Legend of the numbers:\n${view.legend}${firstRefusals.length > 0 ? `\nRefused while building (place these again with the right numbers, or fix the cause):\n${firstRefusals.map((r) => `- ${r}`).join('\n')}` : ''}` });
+    yield { type: 'step', tool: 'look', label: round === 1 ? 'Comparing the render with the photo' : `Comparing again (round ${round})`, ok: true, looked: [{ label: 'the photo', dataUrl: photo.dataUrl }, ...view.images.map((im) => ({ label: `render: ${im.label}`, dataUrl: im.dataUrl })), ...(kit?.images ?? []).map((im) => ({ label: im.label.slice(0, 60), dataUrl: im.dataUrl }))].slice(0, 8) };
     pushUser(messages, blocks);
     refusals = [];
     extraWalls = [];
@@ -927,6 +929,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             continue;
           }
           const rec = ledger.record(call.input);
+          yield { type: 'step', tool: DIFFERENCES_TOOL_NAME, label: stepLabel(DIFFERENCES_TOOL_NAME, call.input, rec.ok), ok: rec.ok };
           if (!rec.ok) {
             results.push({ type: 'tool_result', toolUseId: call.id, content: rec.error, isError: true });
             continue;
@@ -1004,6 +1007,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         }
         toolCalls++;
         const out = await executeTool(ctx, call.name, call.input);
+        yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
         for (const ev of out.events) yield ev;
         if (out.edited) {
           edited = true;

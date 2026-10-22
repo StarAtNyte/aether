@@ -18,7 +18,7 @@ function nameOf(world: Pick<WorldDoc, 'entities'>, id: string): string | null {
 
 /** Placeholder of the composer. */
 export function composerPlaceholder(world: Pick<WorldDoc, 'entities' | 'voxel'>, selection: readonly string[], busy: boolean): string {
-  if (busy) return 'Working on it…';
+  if (busy) return 'Working on it. Queue a message: it reaches the assistant between its steps…';
   if (!hasContent(world)) return 'Describe a world…';
   const first = selection[0];
   const name = first ? nameOf(world, first) : null;

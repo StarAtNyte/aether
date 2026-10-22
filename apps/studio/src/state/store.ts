@@ -6,7 +6,10 @@
  * stats (pushed at 4 Hz, never per frame), verification results and toasts.
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import { MAX_TOASTS } from '../config';
+import { MAX_PROMPT_CHARS, MAX_TOASTS } from '../config';
+
+/** Messages the user may queue while a turn runs. */
+const MAX_QUEUED = 4;
 import { appendEvent, trimChat, type ChatEntry, type ChatEventView, type ChatStatus, type DiagnosticView, type TestResultView } from '../lib/chat';
 import { DEFAULT_SETTINGS, type StudioSettings } from '../lib/storage';
 import { constrainPanels, togglePanels, type LayoutMode } from '../lib/layout';
@@ -325,7 +328,7 @@ export interface StudioState {
   /** AI connection / model / effort / refinement for this project. */
   aiPrefs: AiPrefs;
   /** The running agent turn: when it started, which connection it uses and the current step (null when idle). */
-  agentRun: { startedAt: number; via: string; step: string } | null;
+  agentRun: { startedAt: number; via: string; step: string; steps: number; lastAt: number } | null;
   /** Transform gizmo options. */
   gizmo: GizmoSettings;
   /** Mesh being edited at component level (null: object mode). */
@@ -391,8 +394,16 @@ export interface StudioState {
   setGpu(g: GpuState | null): void;
   bumpRendererEpoch(): void;
   setAiPrefs(patch: Partial<AiPrefs>): void;
-  setAgentRun(run: { startedAt: number; via: string; step: string } | null): void;
+  setAgentRun(run: { startedAt: number; via: string; step: string; steps?: number; lastAt?: number } | null): void;
   setAgentStep(step: string): void;
+  /** One more step taken by the running turn (the "Step N" counter); `label` becomes the current step line. */
+  bumpAgentStep(label?: string): void;
+  /** Messages the user typed while the turn runs; the agent reads them between its steps. */
+  queued: string[];
+  queueMessage(text: string): void;
+  removeQueued(index: number): void;
+  /** Hand over (and empty) the queue. */
+  takeQueued(): string[];
   pruneEntities(existing: ReadonlySet<string>): void;
   setGizmoSettings(patch: Partial<GizmoSettings>): void;
   setMeshEdit(state: MeshEditState | null): void;
@@ -517,6 +528,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     rendererEpoch: 0,
     aiPrefs: init.aiPrefs ? parsePrefs(init.aiPrefs) : { ...DEFAULT_AI_PREFS },
     agentRun: null,
+    queued: [],
     gizmo: { ...DEFAULT_GIZMO },
     meshEdit: null,
     meshBusy: false,
@@ -618,8 +630,16 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setGpu: (gpu) => set({ gpu }),
     bumpRendererEpoch: () => set((s) => ({ rendererEpoch: s.rendererEpoch + 1 })),
     setAiPrefs: (patch) => set((s) => ({ aiPrefs: parsePrefs({ ...s.aiPrefs, ...patch }) })),
-    setAgentRun: (agentRun) => set({ agentRun }),
-    setAgentStep: (step) => set((s) => (s.agentRun && s.agentRun.step !== step ? { agentRun: { ...s.agentRun, step: step.slice(0, 120) } } : s)),
+    setAgentRun: (run) => set({ agentRun: run ? { ...run, steps: run.steps ?? 0, lastAt: run.lastAt ?? Date.now() } : null }),
+    bumpAgentStep: (label) => set((s) => (s.agentRun ? { agentRun: { ...s.agentRun, steps: s.agentRun.steps + 1, lastAt: Date.now(), ...(label ? { step: label.slice(0, 120) } : {}) } } : s)),
+    queueMessage: (text) => set((s) => (s.queued.length >= MAX_QUEUED ? s : { queued: [...s.queued, text.trim().slice(0, MAX_PROMPT_CHARS)] })),
+    removeQueued: (index) => set((s) => ({ queued: s.queued.filter((_, i) => i !== index) })),
+    takeQueued: () => {
+      const q = get().queued;
+      if (q.length > 0) set({ queued: [] });
+      return q;
+    },
+    setAgentStep: (step) => set((s) => (s.agentRun && s.agentRun.step !== step ? { agentRun: { ...s.agentRun, step: step.slice(0, 120), lastAt: Date.now() } } : s)),
     pruneEntities: (existing) => {
       const s = get();
       const selection = s.selection.filter((id) => existing.has(id));

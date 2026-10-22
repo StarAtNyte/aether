@@ -7,7 +7,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../config';
 import { useStudio, useUI, useWorld } from '../app/context';
-import type { ChatEntry } from '../lib/chat';
+import type { ChatEntry, ChatEventView } from '../lib/chat';
 import { FEATURED_TEMPLATES, SUGGESTION_CHIPS, TEMPLATES, templateThumbnail } from '../lib/examples';
 import { MAX_REFERENCE_IMAGES, prepareReferenceImage } from '../lib/images';
 import { followUpChips, remixSuggestions } from '../lib/remix';
@@ -115,6 +115,43 @@ const EmptyAgent = memo(function EmptyAgent({ onPrompt, onRefine, onTemplate }: 
   );
 });
 
+/** Quiet time after which the live line says the assistant is still at it. */
+const STILL_WORKING_MS = 10_000;
+/** Steps always shown in a group; the rest sit behind "Show all N steps". */
+const STEPS_VISIBLE = 3;
+
+type StepView = Extract<ChatEventView, { type: 'step' }>;
+
+/**
+ * The steps the assistant took, one chip each (what it did, and small pictures of what it looked at). Folded to the last
+ * few while the turn runs and when it is over, with a toggle for all of them.
+ */
+const StepGroup = memo(function StepGroup({ steps }: { steps: readonly StepView[] }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const shown = open ? steps : steps.slice(-STEPS_VISIBLE);
+  return (
+    <div className="steps" data-testid="steps">
+      {steps.length > STEPS_VISIBLE && (
+        <button type="button" className="steps__toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? 'Hide steps' : `Show all ${steps.length} steps`}
+        </button>
+      )}
+      {shown.map((s, i) => (
+        <div key={i} className={`steps__chip${s.ok ? '' : ' is-bad'}`}>
+          <span className="steps__label">{s.label}</span>
+          {s.thumbs && s.thumbs.length > 0 && (
+            <span className="steps__thumbs">
+              {s.thumbs.map((t, j) => (
+                <img key={j} src={t.src} alt={t.label} title={t.label} className="steps__thumb" />
+              ))}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+});
+
 /** Live progress while the agent works: current step, connection, elapsed time and cancel. */
 function ThinkingSkeleton({ text }: { text: string }): ReactElement {
   const studio = useStudio();
@@ -127,9 +164,10 @@ function ThinkingSkeleton({ text }: { text: string }): ReactElement {
   return (
     <div className="thinking" role="status">
       <span className="thinking__row">
-        <span className="thinking__text">{run?.step || text}</span>
+        <span className="thinking__text">{run && now - run.lastAt > STILL_WORKING_MS ? 'Still working…' : run?.step || text}</span>
         {run && (
           <span className="thinking__meta">
+            {run.steps > 0 ? `Step ${run.steps} · ` : ''}
             {run.via} · {formatElapsed(Math.max(0, now - run.startedAt))}
           </span>
         )}
@@ -143,6 +181,17 @@ function ThinkingSkeleton({ text }: { text: string }): ReactElement {
       <span className="skeleton skeleton--line" style={{ width: '74%' }} />
     </div>
   );
+}
+
+/** The steps of the run that starts at `from`. */
+function stepRun(events: readonly ChatEventView[], from: number): StepView[] {
+  const out: StepView[] = [];
+  for (let i = from; i < events.length; i++) {
+    const e = events[i];
+    if (!e || e.type !== 'step') break;
+    out.push(e);
+  }
+  return out;
 }
 
 /** One chat entry. */
@@ -160,6 +209,8 @@ const ChatItem = memo(function ChatItem({ entry }: { entry: ChatEntry }): ReactE
     <div className={`msg msg--assistant${live ? ' is-live' : ''}`}>
       {entry.events.length === 0 && live && <ThinkingSkeleton text="Thinking…" />}
       {entry.events.map((ev, i) =>
+        // Steps are listed together: a run of them is one folded group, drawn at its first step.
+        ev.type === 'step' ? (entry.events[i - 1]?.type === 'step' ? null : <StepGroup key={i} steps={stepRun(entry.events, i)} />) :
         // A small edit's card already says what changed: the generic patch summary before it is redundant.
         ev.type === 'patches' && entry.events[i + 1]?.type === 'edit' ? null :
         // While streaming only the newest progress line is relevant.
@@ -211,6 +262,7 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
   const studio = useStudio();
   const world = useWorld();
   const selection = useUI((s) => s.selection);
+  const queued = useUI((s) => s.queued);
   const [draft, setDraft] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -225,7 +277,13 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
 
   const send = (): void => {
     const t = draft.trim();
-    if (!t || busy) return;
+    if (!t) return;
+    // While the assistant works the message is queued: it reaches the assistant between its steps (or runs next).
+    if (busy) {
+      studio.store.getState().queueMessage(t);
+      setDraft('');
+      return;
+    }
     onSend(t, images);
     setDraft('');
     setImages([]);
@@ -260,6 +318,18 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
         send();
       }}
     >
+      {queued.length > 0 && (
+        <ul className="composer__queue" aria-label="Queued messages" data-testid="queued-messages">
+          {queued.map((q, i) => (
+            <li key={`${i}-${q.slice(0, 12)}`} className="composer__queued">
+              <span className="composer__queued-text" title={q}>{q}</span>
+              <button type="button" className="composer__image-x" aria-label={`Remove queued message ${i + 1}`} onClick={() => studio.store.getState().removeQueued(i)}>
+                <Icon name="x" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {images.length > 0 && (
         <div className="composer__images">
           {images.map((src, i) => (
@@ -315,6 +385,11 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
           </button>
         )}
         <span className="spacer" />
+        {busy && draft.trim() !== '' && (
+          <button type="submit" className="send-btn" aria-label="Queue message" data-tip="Queue this message" data-kbd="↵" data-testid="queue-message">
+            <Icon name="send" />
+          </button>
+        )}
         {busy ? (
           <button type="button" className="send-btn send-btn--stop" onClick={() => studio.stopAgent()} aria-label="Stop generating" data-tip="Stop" data-kbd="Esc">
             <Icon name="stop" />
