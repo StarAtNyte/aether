@@ -71,6 +71,23 @@ Models evaluated and **not** recommended as the default for an MIT product:
 - **TRELLIS (v1)**: superseded by TRELLIS.2 and has the same nvdiffrast
   dependency.
 
+## Where it meets the model library
+
+The photographed models (`find_model`, `place_items kind "model:<id>"`) cover the
+common pieces of a room. A piece the library has no close model for (a particular
+lamp, a sculpture seen in a photo) is the case for this route: the generated GLB is
+imported as a user asset (`importUserAsset`, which runs `validateGltf`), and
+`place_items` then takes it like any library model with `kind "model:<user asset
+id>"` and `fit [w,h,d]`, so anchoring, collisions and usability work the same. Only
+this hook ships; no image-to-mesh model was run for the model library, and none
+runs in the browser.
+
+Candidates, all of them behind the same wire protocol and none of them started by
+the project: **TripoSR** (MIT code and weights; a single feed-forward pass, a few GB
+of VRAM, vertex-coloured mesh), **TRELLIS.2** (MIT, see above) and **Hunyuan3D-2**
+(Tencent Hunyuan 3D Community Licence, see the licence notes above before use). The
+licence of every library a wrapper imports is the wrapper owner's to check.
+
 ## Running TRELLIS.2 locally (NVIDIA GPU, 24 GB VRAM or more)
 
 1. Follow the TRELLIS.2 repository's install instructions (Python env,

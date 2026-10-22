@@ -341,6 +341,132 @@ CC0-1.0, source polyhaven.com. 16 models; SHA-256 of every shipped file in
 | street-lamp-realistic | street_lamp_02 | Josh Dean |
 | tv-retro | Television_01 | Gabriel Radić |
 
+**Poly Haven interior models** (CC0-1.0, [polyhaven.com/license](https://polyhaven.com/license);
+retrieved 2026-10-22 through the Poly Haven API, each file checked against the
+API's MD5 by `scripts/assets/fetch.ts`, the licence read from the API's `/info`
+record, which lists the author). Furniture, lamps, plants, books, vases, clocks,
+mirrors, pictures and small appliances, built by `scripts/assets/build.ts --interior`
+from the rows of `scripts/assets/selection-interior.ts` and stored in
+`assets/lib/i/` (main file, one distance level, a light copy for the low tiers).
+The build scales to metres, puts the pivot at floor centre, simplifies models above
+20,000 triangles, resizes the photographed maps to 512 px (1024 px for sofas,
+beds, tables, desks, wardrobes, armchairs, sideboards, bookshelves and chests of
+drawers) and 256 px for the light copy, and packs the geometry with meshopt. Credit
+line: *"Poly Haven by <author>"*, licence CC0-1.0, source polyhaven.com. The table
+gives the SHA-256 of each main file; the hashes of the other files are in
+`assets/manifest.json`, which also names the source archive per model, and the
+build input is `assets/interior.json`.
+
+| Library id | Poly Haven asset | Author | SHA-256 of the shipped main file |
+| --- | --- | --- | --- |
+| armchair-chinese | [chinese_armchair](https://polyhaven.com/a/chinese_armchair) | Kirill Sannikov | `e2a73633376aa8d6af89c8bfc6d40e108c58183f23e35e69dd3c654609d5a877` |
+| armchair-green | [GreenChair_01](https://polyhaven.com/a/GreenChair_01) | Kirill Sannikov | `b273d491d23e512049ea59153d44b3c86cb42b7028655ca3ba195e506eb473d9` |
+| armchair-mid-century | [mid_century_lounge_chair](https://polyhaven.com/a/mid_century_lounge_chair) | Kuutti Siitonen | `f6a10aec671ff990e1eed687be678ed021987617c28480c91436a2f3f0ff9af5` |
+| armchair-modern-01 | [modern_arm_chair_01](https://polyhaven.com/a/modern_arm_chair_01) | Vibrant Nordic | `ed399b6addbe98391193e6b79ddc811969f72321c7b5db48c71896b5e838a6d0` |
+| bar-chair-round | [bar_chair_round_01](https://polyhaven.com/a/bar_chair_round_01) | Dairon Sanchez | `b229aaa41c9b3f2d2d84ff00c1adfbfe08516e71230bd7ad00ded6f07e378e0c` |
+| barber-chair | [BarberShopChair_01](https://polyhaven.com/a/BarberShopChair_01) | Fernando Quinn | `1b8e03c40fc369d433058ba5fad6f294a158d8c9573164791e584e56b542fd2e` |
+| basket-wicker | [wicker_basket_02](https://polyhaven.com/a/wicker_basket_02) | Kuutti Siitonen | `8c21e00e5c4ecf44090f48a533232d3507609902b9241bb3f738d0dfec56d85e` |
+| bed-day-vintage | [vintage_day_bed](https://polyhaven.com/a/vintage_day_bed) | Aron Łyczek | `9a2e2e6dcb7306c8d6f19435281b7dd3366d38328946e6364f65f7ccb843ea5a` |
+| bed-gothic | [GothicBed_01](https://polyhaven.com/a/GothicBed_01) | Kirill Sannikov | `f0164101ffd38ca7bea046232c54e0e07985ce8ec64db97f88923a77733052f8` |
+| bed-old-frame | [old_bed_frame](https://polyhaven.com/a/old_bed_frame) | Luca B | `d8fbaed229a4e6aa7110b25f7f4605cdfd2c6a7f8f29850835ef53e4b12a30d5` |
+| books-encyclopedia | [book_encyclopedia_set_01](https://polyhaven.com/a/book_encyclopedia_set_01) | John Malcolm | `e98094166404796e7df8abdbe7b01ad304fc2a36c567b81f968411e5f6d8c10d` |
+| bookshelf-display | [wooden_display_shelves_01](https://polyhaven.com/a/wooden_display_shelves_01) | James Ray Cock | `dcdc8aa5b49605130f90f9a11404c13120dfea1d4912f51923e67c4b780d80ff` |
+| bookshelf-painted | [painted_wooden_shelves](https://polyhaven.com/a/painted_wooden_shelves) | Kirill Sannikov | `e0b6e4b0d2f353b8c5fa740774ee496f4e575b145f252cd643023cc07b8a5ed2` |
+| bookshelf-steel | [steel_frame_shelves_03](https://polyhaven.com/a/steel_frame_shelves_03) | Ulan Cabanilla | `93b9a7cd8050bf3af61f218b8133dd6c433190849a9cacd2b02c5da9b6599f9d` |
+| bookshelf-worn | [wooden_bookshelf_worn](https://polyhaven.com/a/wooden_bookshelf_worn) | Ulan Cabanilla | `bc0fcf4cbcf99bb7144d0732f99f7e41676b31b03b0e9ce3c8745e33e321c056` |
+| boombox | [boombox](https://polyhaven.com/a/boombox) | Thomas Paul Mouilleron | `cfa76b5e004d2c28d5ca45c9ddf168f03d4ba0d7400a193bc87f730b659b89f7` |
+| bowl-wooden-01 | [wooden_bowl_01](https://polyhaven.com/a/wooden_bowl_01) | Oliver Harries | `63753aa0f2919d81a7bdc8f57dce106e6f009881f8156b909efb5a8eea8e8604` |
+| bust-marble | [marble_bust_01](https://polyhaven.com/a/marble_bust_01) | Rico Cilliers | `0fa3a5fd84aaee1c34c5e4eeede933acbcf86c0f98045ea55cc6c14c2b47c58b` |
+| candleholders-brass | [brass_candleholders](https://polyhaven.com/a/brass_candleholders) | Tina | `a4628fcce2a5cf429edde76120a4725063db2e6d644696341f053f1837980cc6` |
+| ceiling-fan-realistic | [ceiling_fan](https://polyhaven.com/a/ceiling_fan) | Ulan Cabanilla | `d0c8971734f47fd4851f586574f9edbe3d8c42621156e2bf026a6218dbc11fe7` |
+| chair-dining-02 | [dining_chair_02](https://polyhaven.com/a/dining_chair_02) | James Ray Cock | `3c4db640571e640889b137ac01aaf2c500aefc536e0b09eae02b976920ebfbbd` |
+| chair-gallinera | [gallinera_chair](https://polyhaven.com/a/gallinera_chair) | Ulan Cabanilla | `6155c1256408e434fb77e19769641badbacf1e3c0c2ec7a5e60fb3edecb5015a` |
+| chair-monobloc | [plastic_monobloc_chair_01](https://polyhaven.com/a/plastic_monobloc_chair_01) | Kuutti Siitonen | `6e959e7f65af1ce16c852a0f1fd5a73cbabd40bfed1b506a5e44f11f3b0feb32` |
+| chair-painted-01 | [painted_wooden_chair_01](https://polyhaven.com/a/painted_wooden_chair_01) | Kuutti Siitonen | `cdbf3e408d1ac4c8d9b74ab22c2c8b43a9934e772684b3958d1decb1bb4db558` |
+| chair-painted-02 | [painted_wooden_chair_02](https://polyhaven.com/a/painted_wooden_chair_02) | Kirill Sannikov | `1ab2ceaf054abc04e825cdc9ef1f1c195d0dd70fccd2fb3e3add5a3a12a4014b` |
+| chair-school | [SchoolChair_01](https://polyhaven.com/a/SchoolChair_01) | Ethan Place | `8e6f67db1ac03d05d2578ed511afc05461416d0b9acb1e835b602d00c835f8e2` |
+| chair-wooden-01 | [WoodenChair_01](https://polyhaven.com/a/WoodenChair_01) | Jake Mobley | `2fc2651ac9975031c1011a2514dc2b7b681f1a6ffa488906118d4fa5716ffd67` |
+| chandelier-01 | [Chandelier_01](https://polyhaven.com/a/Chandelier_01) | Kirill Sannikov | `8dc53a6029c3483fdd5048f9615dd5f05b1b30471574a2b0ba85d85cb575783c` |
+| chandelier-02 | [Chandelier_02](https://polyhaven.com/a/Chandelier_02) | Kirill Sannikov | `5b94403a3012d85eaf525fa5c9c6b1100effd4396c194325c41bc8d99a31dc07` |
+| chess-set | [chess_set](https://polyhaven.com/a/chess_set) | Riley Queen | `c4c8b1f6226b10579f4ec145e5ef0993a5e26db6df962297e661995da5bf1919` |
+| clock-mantel | [mantel_clock_01](https://polyhaven.com/a/mantel_clock_01) | Yann Kervran, Rico Cilliers | `d1dcb11c8cbb46d2636e1eba79f9be18d5306654d270a94196cf76216843dbf1` |
+| clock-wall | [wall_clock](https://polyhaven.com/a/wall_clock) | PierreB3D | `c85dc25675afdbac3b8503e16e170d7ea25ebdf8591ff3f3ea31335048914210` |
+| coffee-table-01 | [CoffeeTable_01](https://polyhaven.com/a/CoffeeTable_01) | Fernando Quinn | `62972f9825764c09e78ae9e38b60f8efc08214615358db47f3c570b9f938b454` |
+| coffee-table-chinese | [chinese_tea_table](https://polyhaven.com/a/chinese_tea_table) | Kirill Sannikov | `7c3c26d95c46197a66441cfa8dbb2595c5f758582e158423e7a081f3001c89d0` |
+| coffee-table-gothic | [gothic_coffee_table](https://polyhaven.com/a/gothic_coffee_table) | Ulan Cabanilla | `92c3874fbac72aa117dd98d06cae1d8c2fda62c5deea7522633e223b7ded62df` |
+| coffee-table-industrial | [industrial_coffee_table](https://polyhaven.com/a/industrial_coffee_table) | Ulan Cabanilla | `1f1c5a1448ddea1ad06f8120f7c4ba18770577e397e2c4c3e8dfeddb76d7d585` |
+| coffee-table-modern-01 | [modern_coffee_table_01](https://polyhaven.com/a/modern_coffee_table_01) | Amin | `3ebcbf3d5094f98e946a03b4344f7e430ba9141d6b2d755a644a8c4de70ba572` |
+| coffee-table-modern-02 | [modern_coffee_table_02](https://polyhaven.com/a/modern_coffee_table_02) | Amin | `b4f5a61424f2fe2bb184c134a1831cefb3e4fd96900960d225fb62b54a6175f7` |
+| console-chinese | [chinese_console_table](https://polyhaven.com/a/chinese_console_table) | Kirill Sannikov | `712d48448f2726f243f70454e2bd6615954c504f33087c169863c0e856f05888` |
+| console-classic | [ClassicConsole_01](https://polyhaven.com/a/ClassicConsole_01) | Kirill Sannikov | `e16b7ed7200c0c8272b078671c59e8daa22fd9ad68fb29af6a6e1de83daff791` |
+| cooker-electric | [electric_stove](https://polyhaven.com/a/electric_stove) | Kuutti Siitonen | `5f74fc8239328d85baf89e87356e75aade26d78ce62e95033fb464c69a2c6456` |
+| desk-metal-office | [metal_office_desk](https://polyhaven.com/a/metal_office_desk) | Ulan Cabanilla | `e37da4cd5feb8c3befef86beec50ea6405f4511b0b4382f8f2f4d9dde12d87b3` |
+| desk-school | [SchoolDesk_01](https://polyhaven.com/a/SchoolDesk_01) | Ethan Place | `4b5cb9c14856185c03c29d8ae2db5be5ec3096db4b174269f804e056e903ac1d` |
+| dresser-chinese | [chinese_commode](https://polyhaven.com/a/chinese_commode) | Kirill Sannikov | `d8e152992d46dcbe12e4e05e11f3df44bbd09af43cc272ae33ef6c002efbe785` |
+| dresser-drawer | [drawer_cabinet](https://polyhaven.com/a/drawer_cabinet) | Ulan Cabanilla | `bfbe03b0263c2746cdb5190f2a7060723e4fc63c32232b2817ee7a869921ed9d` |
+| dresser-gothic | [GothicCommode_01](https://polyhaven.com/a/GothicCommode_01) | Kirill Sannikov | `0959e8cc95c69b53ba6ee79140843ed0c2b997508358a50290299a8ddf4950ab` |
+| dresser-vintage | [vintage_wooden_drawer_01](https://polyhaven.com/a/vintage_wooden_drawer_01) | James Ray Cock | `43cfd8036e3273b5e6b5cc66f8ecbb8845087a28ee70c2b74785488e668c4138` |
+| frame-fancy-01 | [fancy_picture_frame_01](https://polyhaven.com/a/fancy_picture_frame_01) | Rob Tuytel, Rico Cilliers | `1baefa9a5bfc51bc4c5f46a21be3b17cae2ef74cb6a1708d0aa7b6d3729344b3` |
+| gaming-console | [gaming_console](https://polyhaven.com/a/gaming_console) | Sean Buckley | `bb065ad05ffb2f0f089575b8082f29d452e638ae17e60bc3637062eea1088c75` |
+| kettle-vintage | [vintage_electric_kettle](https://polyhaven.com/a/vintage_electric_kettle) | SV Garip | `d58a9e3d533658d2677eb7e2972fa85cdcac60c59ecf535b98538b682d78a7a8` |
+| lamp-desk-arm | [desk_lamp_arm_01](https://polyhaven.com/a/desk_lamp_arm_01) | Yann Kervran, Kuutti Siitonen | `fb8561c2be32535d146980f9ec082086fef00cc2292832f4760e1eb440f3c39d` |
+| lamp-lantern-chandelier | [lantern_chandelier_01](https://polyhaven.com/a/lantern_chandelier_01) | Kirill Sannikov | `6f2a95495cd6d34db26fbe5c734b535c41f11a644e6ed7b53b56b6c5e2aea261` |
+| lamp-oil-vintage | [vintage_oil_lamp](https://polyhaven.com/a/vintage_oil_lamp) | Monsta3D | `1e4a07b6df7fda78927cc461fb5da2dd7a33640e0fe73f8b671d36af19741872` |
+| lamp-pendant-industrial | [hanging_industrial_lamp](https://polyhaven.com/a/hanging_industrial_lamp) | Kuutti Siitonen | `df3b52b5afb07bd13b38f385de5731286a2803ca43fe37c7c6b92b97b37f5d19` |
+| lamp-wall-sconce | [industrial_wall_sconce](https://polyhaven.com/a/industrial_wall_sconce) | Ulan Cabanilla | `a8d0dbf46701bfe33af7a2dd910e1c446c53591e0da5b8a75cbedc9e94a9a6e8` |
+| laptop-classic | [classic_laptop](https://polyhaven.com/a/classic_laptop) | Arrangemonk | `0af27397078b129b9724eca85f1451a414444b34045ccd62913dd691708bfd51` |
+| microwave-vintage | [vintage_microwave](https://polyhaven.com/a/vintage_microwave) | Adam Nekola | `8820d4facb3c6640fa2e4a5ae9c2ccaaa63b893e7256f20beee7d776d419d459` |
+| mirror-ornate | [ornate_mirror_01](https://polyhaven.com/a/ornate_mirror_01) | James Ray Cock | `85bc8d05d5b6d02ade7ba3b4b9d44605332602084b21b2a217344d6dac42195d` |
+| nightstand-painted | [painted_wooden_nightstand](https://polyhaven.com/a/painted_wooden_nightstand) | Kirill Sannikov | `d00406f0d3cf726f57bd707b6c661a34b8e02bb54079cdb49d2fd841de6064a4` |
+| ottoman-01 | [Ottoman_01](https://polyhaven.com/a/Ottoman_01) | Caspian Fortune | `e50aa7e7a74df26e930ec7ef89f6ad820bf0c21ae007f1259c03801ea52f7c97` |
+| pillows-throw | [throw_pillows_01](https://polyhaven.com/a/throw_pillows_01) | Serhii Khromov | `ad51f920bfe968c51cd9829f24fe70505be34ede160a3e5f52c40ff82b23e407` |
+| plant-potted-01 | [potted_plant_01](https://polyhaven.com/a/potted_plant_01) | Rico Cilliers | `bc624800198b7ceecd396f87890b85f807a1a0d6fe9749772a3b32400f2f61c2` |
+| plant-potted-02 | [potted_plant_02](https://polyhaven.com/a/potted_plant_02) | Rico Cilliers | `cdda23c56017199d0a2fc6af6f7490941a2b11778d539214e4c5d85ea4442de4` |
+| planter-box-01 | [planter_box_01](https://polyhaven.com/a/planter_box_01) | James Ray Cock | `a2e4c23a4fc82b1176c4fe40e53fc368e51e488848c4c4500623f729e46948dd` |
+| radio-vintage | [vintage_radio_transceiver](https://polyhaven.com/a/vintage_radio_transceiver) | Mateusz Sadek | `caebd57e8e57ce0cbe85028513f85cb45b45ebb7c7f2b2acfdc790fa66357a4d` |
+| rocking-chair | [Rockingchair_01](https://polyhaven.com/a/Rockingchair_01) | Jorge Camacho | `21eacbd957daa1ebe8e5fddb90b3b20a98987bcaf0562e008637d543a65750e4` |
+| shelf-wall-01 | [Shelf_01](https://polyhaven.com/a/Shelf_01) | Gabriel Radić | `92cf9e582bf2b6a99ff1fc80a35fe549b4854a698afa97018f52d0bf860d5376` |
+| side-table-01 | [side_table_01](https://polyhaven.com/a/side_table_01) | James Ray Cock | `4a53ad99aab81619f2487a67720f9293d2d6765d4b42630e4038d9e46b8ce18d` |
+| side-table-tall | [side_table_tall_01](https://polyhaven.com/a/side_table_tall_01) | James Ray Cock | `20c3b38e8041a2cae9ee5d4eb3e97ed72575c0e0c28d9cee3e9f7744bcd36db3` |
+| sideboard-modern | [modern_wooden_cabinet](https://polyhaven.com/a/modern_wooden_cabinet) | Patrik Pangerl | `e85897f5656d6f61181bdf60935652b1973e062bbbb81688298209019ff65afc` |
+| sofa-02 | [sofa_02](https://polyhaven.com/a/sofa_02) | Kirill Sannikov | `8b68a4a5adc576abc368a386a02e11ef5a467dbf982f098f746c4ac15ace6150` |
+| sofa-03 | [sofa_03](https://polyhaven.com/a/sofa_03) | Fran Calvente | `cc956f6130e07766459b54a87ebf5d14daa1565c50d43618ecb83bc80a843fbc` |
+| sofa-chinese | [chinese_sofa](https://polyhaven.com/a/chinese_sofa) | Kirill Sannikov | `23ebb99370801a54577f03ac3c98c83653f2defc02ead7a2918358f18884aab1` |
+| sofa-painted-wood | [painted_wooden_sofa](https://polyhaven.com/a/painted_wooden_sofa) | Kirill Sannikov | `4cf35c4fdb3b9c62b4ddf7af1da590eea146a66f2784e987e0150b4da7d25f19` |
+| stool-chinese | [chinese_stool](https://polyhaven.com/a/chinese_stool) | Kirill Sannikov | `0d6febcb33d565ae94aea32d8adb7f95ee405be9b21a16006ea9b174783a0746` |
+| stool-metal-01 | [metal_stool_01](https://polyhaven.com/a/metal_stool_01) | Ulan Cabanilla | `4e8378e34c93848d7d53002ee4c5073aba18592a30faa4e5577b3ea76590c54f` |
+| stool-painted | [painted_wooden_stool](https://polyhaven.com/a/painted_wooden_stool) | Kirill Sannikov | `83472eca3bea551878268f91c068095cc9405f16fb97a4ba45ae96cffcd78efa` |
+| stool-wooden-01 | [wooden_stool_01](https://polyhaven.com/a/wooden_stool_01) | Kuutti Siitonen | `0b1e8a5a436a570ff900df2225ea7f48b870d3ae11501bf7931bcd9ce7589524` |
+| stool-wooden-02 | [wooden_stool_02](https://polyhaven.com/a/wooden_stool_02) | Kuutti Siitonen | `e127cde3089b8e0d61b55ceede292708c9d0a1bfe1f422d135c38de15ee8ba80` |
+| stove-masonry | [scandinavian_masonry_heater](https://polyhaven.com/a/scandinavian_masonry_heater) | Kuutti Siitonen | `ba598c65255a68c029e1e1f869fa7802d4726d79aedaa5da28c8a7b046e31c10` |
+| table-dining-modern | [dining_table](https://polyhaven.com/a/dining_table) | Aron Łyczek | `6ab0d7c519b6e0064bc90882d30a2ffe4f22cc30325c15bf07be7d004ec7bd53` |
+| table-gallinera | [gallinera_table](https://polyhaven.com/a/gallinera_table) | Ulan Cabanilla | `29a33d21bb461901f9e90ca6f2f3ca3113385eef0f41882884e6b3b2cc65ab0c` |
+| table-painted | [painted_wooden_table](https://polyhaven.com/a/painted_wooden_table) | Kirill Sannikov | `2b2b26f8922f5d830a87b152a131a818106b2d88de6dfff7a372c48f146080d2` |
+| table-round-01 | [round_wooden_table_01](https://polyhaven.com/a/round_wooden_table_01) | Ulan Cabanilla | `43653d3379eb87f6ef265f546df759c89179866855c08ebbdd0f1d3da6ab9cb2` |
+| table-round-02 | [round_wooden_table_02](https://polyhaven.com/a/round_wooden_table_02) | Ulan Cabanilla | `ee9ddb6145e6d2840c4165bcc2c89387b226fba59327784651f7fc9facc46350` |
+| table-small-01 | [small_wooden_table_01](https://polyhaven.com/a/small_wooden_table_01) | Ulan Cabanilla | `b459bf0bcfd33ec45c4047b6d609725b1abbe5bdc3ce197bdbf820c912bd8d8b` |
+| table-wooden-01 | [WoodenTable_01](https://polyhaven.com/a/WoodenTable_01) | Ethan Place | `475b875c15861259d3d5f7dee4d141b84076bd46d98a7509b2c037cbb706fe7b` |
+| table-wooden-02 | [wooden_table_02](https://polyhaven.com/a/wooden_table_02) | Serhii Khromov | `3f6ea9311cbe300f294109aaa26e948b642c415e9fc5536653927ad1dbcec371` |
+| tv-crt-02 | [television_02](https://polyhaven.com/a/television_02) | Benny Weimer | `5a227e8c16d18b61cf1f2dd627d6792dc483f9b0d9c2c896b4decd8ba60b15af` |
+| vase-antique | [antique_ceramic_vase_01](https://polyhaven.com/a/antique_ceramic_vase_01) | James Ray Cock | `7b15256c8f4982a1ec99a815206ffe3fc3308c299a920bd8d8da849dff28770e` |
+| vase-brass-01 | [brass_vase_01](https://polyhaven.com/a/brass_vase_01) | Rico Cilliers | `552852be720fc6b03c6a93781aa262fbe2bc89a73e1dcda5618dace777d3e26e` |
+| vase-ceramic-02 | [ceramic_vase_02](https://polyhaven.com/a/ceramic_vase_02) | James Ray Cock | `235895a31500f82f48929327366564b467e44ec830a9db8786f9e7b96b2a0c5d` |
+| vase-ceramic-03 | [ceramic_vase_03](https://polyhaven.com/a/ceramic_vase_03) | James Ray Cock | `0b0196315417676c5e4efcdcd6ebce6c937be3f52aa3976c90c5d674644f79fb` |
+| vase-ceramic-04 | [ceramic_vase_04](https://polyhaven.com/a/ceramic_vase_04) | James Ray Cock | `db42fe95ef2a2999da05a1b5741bad9fdb9b5f1c5ab31255d8cf2a1c38cd3405` |
+| wardrobe-chinese | [chinese_cabinet](https://polyhaven.com/a/chinese_cabinet) | Kirill Sannikov | `964095672f7d7013e194164efef85146a2ea7aadfd09af8b53cca7e293d6d8c2` |
+| wardrobe-gothic | [GothicCabinet_01](https://polyhaven.com/a/GothicCabinet_01) | Kirill Sannikov | `2c08d478d71abd14bb6f99345871490770cc14ac88ad4e3020b9a157c5a002ed` |
+| wardrobe-painted-01 | [painted_wooden_cabinet](https://polyhaven.com/a/painted_wooden_cabinet) | Kirill Sannikov | `3deefa2ca719968cd033ab6785c790f094e406447de71ba95719c9ef709b9e66` |
+| wardrobe-painted-02 | [painted_wooden_cabinet_02](https://polyhaven.com/a/painted_wooden_cabinet_02) | Kirill Sannikov | `2b29497bfbc72ba830d6708d9523d072ae1a059edb2ed186d8e50c9e080c3c8f` |
+| wardrobe-vintage | [vintage_cabinet_01](https://polyhaven.com/a/vintage_cabinet_01) | Rico Cilliers | `b455ba06b7401eb01aaea730e2c61b7eb4720b82224613bb615465c7803da031` |
+
+Considered and not shipped: Quaternius packs (the licence is stated inside each
+zip's own `License.txt`, which was not part of this download, so nothing was
+taken), Smithsonian Open Access 3D (CC0 scans of museum objects, none useful as
+room furniture), and the Poly Haven models `decorative_book_set_01` (no glTF
+published), `vintage_grandfather_clock_01` (the only glTF published is 8k and its
+MD5 did not match the API), three leafy plants whose leaf cards fell apart when
+simplified, and three picture frames that ship with a black canvas.
+
 ### Human characters and their motions (`assets/lib/c/`)
 
 | Item | Source | Licence | Evidence |
@@ -593,7 +719,7 @@ SHA-256 of the shipped files that have no per-file hash elsewhere in this
 document, recomputed on 2026-10-22 with `sha256sum`. Set rules cover the rest
 of the repository:
 
-- **Library files** (`assets/lib/m`, `c`, `k`, `x`, `h`): the SHA-256 of every
+- **Library files** (`assets/lib/m`, `i`, `c`, `k`, `x`, `h`): the SHA-256 of every
   file is recorded next to its path in `assets/manifest.json`,
   `assets/characters.json` or `assets/ktx2.json`, and the first 8 hex digits of
   the hash are part of the file name. The exceptions are the 10 character

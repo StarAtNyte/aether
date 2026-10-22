@@ -221,6 +221,39 @@ library file it uses, its imports and `CREDITS.txt`. Opening a package
 re-validates every file (entry count and size caps enforced while inflating, CRC, safe names,
 content ids must match).
 
+### The interior model library
+
+About a hundred photographed interior models (sofas, armchairs, chairs, tables,
+beds, shelves, lamps, plants, vases, books, mirrors, pictures, clocks, small
+appliances) from Poly Haven (CC0) ship next to the Kenney kits, in `assets/lib/i/`.
+They are built by their own step so a full `assets:build` never has to run for them:
+
+```sh
+npm run assets:fetch -- --only=polyhaven   # sequential, MD5-checked downloads into the cache
+npx tsx scripts/assets/build.ts --interior # rows of scripts/assets/selection-interior.ts → assets/lib/i, assets/interior.json, catalog, manifest
+npx tsx scripts/assets/thumbs.ts           # thumbnails of the new entries
+npx tsx scripts/assets/thumbs.ts --only a,b --front=out --yaw=0   # straight-on views, to check which way a model faces
+```
+
+- Real metres and a floor-centre pivot (the front faces +Z; `rot` in the selection
+  turns a model that does not), meshopt packing, a triangle budget of 20,000 for the
+  main file (the vertex buffers shrink with it) and one distance level.
+- Texture tiers: the photographed maps are resized by `scripts/assets/tex_tiers.py`
+  (Pillow) to 512 px, or 1024 px for large pieces, and to 256 px for the **light copy**
+  (`lite` in the catalog) that the renderer loads on the low quality tiers (software
+  or weak GPUs, low memory). Nothing loads until a piece is placed: each model is its
+  own file, fetched on first use and cached with the rest of the library.
+- Catalog facts (`interior`): the type ("sofa", "coffee-table"), design styles,
+  colour names and the dominant colour measured from the model's own base-colour
+  texture, and whether its upholstery can be recoloured. `@aether/assets` `findModels`
+  ranks on them (type, then style, colour and size); `pickModel` is what layouts use.
+- Variants: the other models of the same type (up to twelve) are listed as
+  `variants`, 2 to 9 per type.
+- Gaps, stated plainly: Poly Haven has no sink, toilet, bath, fridge, rug, curtain
+  or modern bed. Those stay parametric parts (or the Kenney pieces).
+- Size on disk: about 50 MB for the main files and distance levels, 17 MB more for
+  the light copies. A scene fetches only the models it places.
+
 ## Optional image → mesh
 
 See [IMAGE_TO_3D.md](IMAGE_TO_3D.md) for the off-by-default TRELLIS.2
