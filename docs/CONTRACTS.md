@@ -1989,8 +1989,12 @@ Everything here is additive; the World IR is unchanged.
 - `src/showcase/manifest.ts` — `SHOWCASE: ShowcaseEntry[]`, the single place
   to curate default projects: `{ slug, title, description, prompt, kind,
   curation: 'featured' | 'candidate' | 'hidden', origin: 'flagship' |
-  'gallery', shot? }`; array order is display order. `src/lib/examples.ts`
-  derives `FEATURED_TEMPLATES`, `MORE_TEMPLATES`, `TEMPLATES` (shown ones),
+  'gallery' | 'photo', shot?, photo?: PhotoCredit }`; `photo` ({ file, author,
+  licence, url }) credits the photograph an `origin: 'photo'` example room was
+  rebuilt from (four of them; `npm run showcase:photo-rooms` regenerates the
+  worlds from recorded runs); array order is display order. `src/lib/examples.ts`
+  derives `FEATURED_TEMPLATES`, `MORE_TEMPLATES` (without photo rooms), `PHOTO_TEMPLATES`,
+  `TEMPLATES` (shown ones; `EXAMPLE_PROMPTS` leaves the photo rooms out),
   `templateBySlug` (hidden included), `templateThumbnail(slug)`
   (`/templates/<slug>.webp`) and `templateWorldUrl(slug)`
   (`/templates/worlds/<slug>.json`). `TemplateKind` adds `'architecture'`.

@@ -1352,7 +1352,14 @@ parses source formats at run time.
   ready and the original otherwise or on any failure, so the index is a pure
   optimisation. `gpu/texture-memory.ts` corrects three's texture byte
   accounting (compressed textures at their block size, generated mips) and
-  breaks the live bytes down by kind for `memoryStats()`.
+  breaks the live bytes down by kind for `memoryStats()`. Character bodies and motion
+  sets (`/c/*.glb`) are the exception: they load as they are (their WebP textures are 0.7 MB,
+  the twin 2.8 MB, and a recoloured body needs the originals anyway).
+- **Photographed finishes and skies are WebP.** The `material` entries carry 512 px WebP maps
+  (albedo, ORM, normal) plus a 256 px set (`material.small`) that the tiers with 256 px finish
+  textures load, and HDRIs have a 512 x 256 `lite` copy that serves image-based light alone
+  (the full file is fetched when the sky is also the background): finish maps went from 6.1 MB to
+  1.7 MB for a medium-tier visitor, a 1.4 MB sky to 0.4 MB.
 - **Animation from simulation.** Characters do not run behaviours of their
   own: the animator reads each animated entity's world-space speed (physics
   or the logic runtime moved it) and cross-fades idle / walk / run, scaling
@@ -1457,6 +1464,12 @@ npm run showcase:thumbs flagship covers from art-directed cameras (docs/screensh
   top of the Templates page and in the agent's empty state; `'candidate'`
   lists it under "More worlds"; `'hidden'` keeps the files and old links
   (`#/new/<slug>`) without showing it. Array order is display order.
+- **Photo example rooms.** Four entries with `origin: 'photo'` (hotel bedroom, twin room, four-poster, vaulted bedroom) are
+  rooms rebuilt from CC0 or public-domain photographs. Their worlds are the replayed recorded runs of the photo flow
+  (`tests/fixtures/photo/<id>.transcript.json` through `scripts/eval-photo.ts`, written by `npm run showcase:photo-rooms`,
+  then re-verified by `showcase:bake`, which also removes pieces the usability check names). The entry carries a `photo`
+  credit (file, author, licence, page) shown on the card; they sit under their own heading on the home page, and since
+  their prompt names a photo they are not offered as example prompts.
 - **Flagships are planner output.** Each flagship is a deterministic plan in
   `packages/agent/src/providers/mock/showcase/` composed from the
   framework's parts (terrain variants, instanced scatter with hand-placed
@@ -1963,8 +1976,9 @@ photo ─▶ N independent reads (default 3, in parallel, stateless): describe_r
   (`applyReality`: socket and picture heights, pieces standing in each other, plants and TVs that cannot be what was
   described, words such as "four-poster" or "zigzag" mapped to part options); the camera is fitted to the boxes
   (`calibrateCamera`) and then each piece's place along its wall (`fitLayout`, small bounded moves through `edit_items`);
-  photo-matched exposure, white balance and tone (`grade.ts`) grade the render before it is compared and set the
-  environment's exposure and additive `grade`; windows can glow (`daylight`), ceilings can be vaulted with exposed
+  photo-matched exposure, white balance and tone (`grade.ts`) are measured from the picture and used to grade the render
+  before the pixel and region measures are taken, and handed to the model as look evidence (`lookEvidenceText`); nothing there
+  changes the world, the model sets exposure and grade itself with `tune_look` (section 30); windows can glow (`daylight`), ceilings can be vaulted with exposed
   trusses, beds, side tables, plants and rugs have the options the photos needed. Review stills come from the studio on
   the GPU (`scripts/lib/gpu-room.ts`, `eval-photo --render=gpu`).
 - **Known limits.** One room per photo; the shell is a rectangle with a flat or gable ceiling (no hips, sloping walls,
