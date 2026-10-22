@@ -15,6 +15,7 @@ import {
   catalogEntry,
   creditsFor,
   creditsText,
+  textureCredits,
   isUserAssetId,
   loadCatalog,
   libraryUrl,
@@ -30,6 +31,7 @@ import type { StudioState } from '../state/store';
 import type { Simulation } from './Simulation';
 import { placeAsset, type Placement } from '../assets/placement';
 import { readFavorites, toggleFavorite } from '../assets/favorites';
+import type { TextureController } from './textures';
 import { openUserAssetStore, type Creation, type UserAssetStore } from '../assets/userStore';
 import type { ZipEntry } from '../assets/zip';
 import { browserStorage, type StorageLike } from '../lib/storage';
@@ -46,6 +48,8 @@ export interface AssetHost {
   onSimulation(fn: (sim: Simulation | null) => void): () => void;
   commitUser(patches: Patch[] | unknown[], message: string): string | null;
   replaceWorld(world: WorldDoc, message: string): void;
+  /** The project's texture sets (packages carry their files). */
+  readonly textures?: TextureController;
 }
 
 /** Library UI state. */
@@ -450,6 +454,16 @@ export class AssetController {
     return out;
   }
 
+  /** The files of the world's own texture sets (bundled sets are served from their `base` and need none). */
+  private async textureFiles(world: WorldDoc): Promise<ZipEntry[]> {
+    const out: ZipEntry[] = [];
+    for (const [id, def] of Object.entries(world.textures ?? {})) {
+      if (def.base !== undefined) continue;
+      for (const f of (await this.host.textures?.files(id)) ?? []) out.push({ name: `assets/${f.name}`, data: f.data });
+    }
+    return out;
+  }
+
   /** Build the package bytes for the current world. */
   async buildPackage(): Promise<{ name: string; bytes: Uint8Array }> {
     await this.ready();
@@ -465,8 +479,9 @@ export class AssetController {
     const entries: ZipEntry[] = [
       { name: 'world.aether.json', data: new TextEncoder().encode(exportWorld(world)) },
       { name: 'package.json', data: new TextEncoder().encode(JSON.stringify({ format: PACKAGE_FORMAT, version: 1, world: 'world.aether.json', imports }, null, 2)) },
-      { name: 'CREDITS.txt', data: new TextEncoder().encode(creditsText(world.name, credits)) },
+      { name: 'CREDITS.txt', data: new TextEncoder().encode(creditsText(world.name, credits, textureCredits(world))) },
       ...(await this.packageFiles(world)),
+      ...(await this.textureFiles(world)),
     ];
     const base = exportFileName(world).replace(/\.aether\.json$/, '');
     const { writeZip } = await import('../assets/zip');
@@ -524,6 +539,19 @@ export class AssetController {
         if (!imported.ok || imported.asset.meta.id !== m[1]) continue;
         await store.put(imported.asset.meta, imported.asset.data);
         this.register(imported.asset.meta, new Blob([imported.asset.data as Uint8Array<ArrayBuffer>], { type: imported.asset.meta.mime }));
+      }
+      // Texture sets: only the files the world's records name, every one re-checked against the caps and its header.
+      const sets = new Map<string, Array<{ tier: 256 | 512 | 1024; map: 'albedo' | 'orm' | 'normal'; bytes: Uint8Array }>>();
+      for (const e of zip.entries) {
+        const m = /^assets\/(tex-[0-9a-f]{12})\.(albedo|orm|normal)\.(256|512|1024)\.webp$/.exec(e.name);
+        if (!m || !r.world.textures?.[m[1] as string]) continue;
+        const list = sets.get(m[1] as string) ?? [];
+        list.push({ tier: Number(m[3]) as 256 | 512 | 1024, map: m[2] as 'albedo' | 'orm' | 'normal', bytes: e.data });
+        sets.set(m[1] as string, list);
+      }
+      for (const [id, files] of sets) {
+        const def = r.world.textures?.[id];
+        if (def) await this.host.textures?.add({ id, def, files });
       }
       this.host.replaceWorld(r.world, `Import "${r.world.name}"`);
       this.host.store.getState().toast(`Opened "${r.world.name}"`, 'success');

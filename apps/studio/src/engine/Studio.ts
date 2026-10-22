@@ -43,6 +43,7 @@ import { decideLowMemory, HISTORY_ENTRIES, heapUnderPressure, MEMORY_SAMPLE_MS, 
 import type { ContextLossInfo, RenderMemoryStats, WatchdogEvent } from '@aether/render';
 import { Editor } from './editor/Editor';
 import { AssetController } from './assets';
+import { TextureController } from './textures';
 import { ForgeController } from './forge';
 import { NpcChatController, type ChatResult } from './npcChat';
 import { ArchController } from './arch';
@@ -183,6 +184,8 @@ export class Studio {
   readonly arch: ArchController;
   /** Asset library, user imports, placement and world packages. */
   readonly assets: AssetController;
+  /** The project's texture sets (photographed, AI-generated): stored, registered, restored with the world. */
+  readonly textures: TextureController;
   /** Image / text → parametric generator (the asset forge). */
   readonly forge: ForgeController;
   /** Free conversation with characters through the connected model (off offline). */
@@ -294,6 +297,8 @@ export class Studio {
     this.editor = new Editor(this, { storage: this.storage });
     this.arch = new ArchController(this);
     this.assets = new AssetController(this, { storage: this.storage });
+    this.textures = new TextureController(this);
+    this.bridge.textures = this.textures;
     this.forge = new ForgeController(this);
     this.npcChat = new NpcChatController(this);
     this.publish = new PublishController(this);
@@ -1574,6 +1579,7 @@ export class Studio {
     this.forge.cancel();
     this.forge.close();
     this.assets.dispose();
+    this.textures.dispose();
     this.editor.dispose();
     this.sim?.dispose();
     this.sim = null;

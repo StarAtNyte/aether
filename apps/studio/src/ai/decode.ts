@@ -23,7 +23,7 @@ export async function decodeImageData(dataUrl: string, maxSide: number): Promise
     if (!blob) return null;
     const bitmap = await createImageBitmap(blob);
     try {
-      const side = Math.max(16, Math.min(1024, Math.round(maxSide)));
+      const side = Math.max(16, Math.min(2048, Math.round(maxSide)));
       const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
       const w = Math.max(1, Math.round(bitmap.width * scale));
       const h = Math.max(1, Math.round(bitmap.height * scale));

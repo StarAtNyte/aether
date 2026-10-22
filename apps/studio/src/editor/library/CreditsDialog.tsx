@@ -7,6 +7,7 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { useStudio, useWorld } from '../../app/context';
 import { Dialog } from '../../components/ui/Dialog';
+import { textureCredits } from '@aether/assets';
 import { useLibrary } from './useLibrary';
 
 /** The credits dialog (open state lives in the library store). */
@@ -16,6 +17,7 @@ export const CreditsDialog = memo(function CreditsDialog(): ReactElement | null 
   const catalog = useLibrary((s) => s.catalog);
   const world = useWorld();
   const credits = useMemo(() => (open ? studio.assets.credits() : []), [open, studio, world, catalog]);
+  const textures = useMemo(() => (open ? textureCredits(world) : []), [open, world]);
   if (!open) return null;
   return (
     <Dialog open={open} onClose={() => studio.assets.setCreditsOpen(false)} title="Credits" description="The people and libraries behind the assets in this world." size="md" className="credits-dialog">
@@ -54,6 +56,23 @@ export const CreditsDialog = memo(function CreditsDialog(): ReactElement | null 
           </ul>
         )}
       </section>
+      {textures.length > 0 && (
+        <section className="credits" aria-label="Textures in this world">
+          <h3 className="credits__title">Textures</h3>
+          <p className="panel-empty">Made for this project. Each one says where its pixels came from.</p>
+          <ul className="credits__list">
+            {textures.map((t) => (
+              <li key={t.id} className="credits__item" data-provenance={t.provenance}>
+                <div className="credits__head">
+                  <strong>{t.name}</strong>
+                  <span className="credits__by">{t.label}</span>
+                </div>
+                {t.detail && <div className="credits__used">{t.detail}</div>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {catalog && catalog.packs.length > 0 && (
         <section className="credits" aria-label="Asset library">
           <h3 className="credits__title">Asset library</h3>

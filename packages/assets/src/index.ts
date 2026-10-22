@@ -61,7 +61,7 @@ export {
   type TextureSetFiles,
   type TextureSetEntry,
 } from './texture-sets';
-export { creditsFor, creditsText, worldAssetIds, type Credit } from './credits';
+export { creditsFor, creditsText, textureCredits, worldAssetIds, type Credit, type TextureCredit } from './credits';
 export { catalogSummary } from './summary';
 export { validateGltf, writeGlb, sanitizeName, DEFAULT_GLTF_LIMITS, SUPPORTED_GLTF_EXTENSIONS, type GltfLimits, type GltfReport, type GltfResult } from './import/glb';
 export { validateImage, validateHdr, DEFAULT_IMAGE_LIMITS, DEFAULT_HDR_LIMITS, type ImageInfo, type ImageFormat, type ImageLimits, type ImageResult, type HdrResult } from './import/image';

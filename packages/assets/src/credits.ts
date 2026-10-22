@@ -6,6 +6,7 @@
  */
 import type { WorldDoc } from '@aether/core';
 import { assetInfo, effectiveAssetId } from './info';
+import { TEXTURE_PROVENANCE_LABEL } from './texture-sets';
 import { getCatalog } from './registry';
 import type { Catalog, CatalogPack } from './schema';
 import { characterCredit } from './characters/credits';
@@ -73,7 +74,29 @@ export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'> & {
 }
 
 /** Plain-text credits (for `CREDITS.txt` in exported packages). */
-export function creditsText(worldName: string, credits: readonly Credit[]): string {
+/** One texture set of a world as the UI states it: where its pixels came from, never hidden. */
+export interface TextureCredit {
+  id: string;
+  name: string;
+  provenance: 'photographed' | 'ai-generated' | 'procedural';
+  /** `photographed (sampled from your photo)`, `AI-generated`, `procedural (made by the app)`. */
+  label: string;
+  /** What it was made from (photo region, prompt, model), when recorded. */
+  detail: string;
+}
+
+/** The texture sets of a world with their provenance. They belong to the project: no third-party licence applies. */
+export function textureCredits(world: Pick<WorldDoc, 'textures'>): TextureCredit[] {
+  return Object.entries(world.textures ?? {}).map(([id, d]) => ({
+    id,
+    name: d.name,
+    provenance: d.provenance,
+    label: TEXTURE_PROVENANCE_LABEL[d.provenance],
+    detail: [d.source?.photo, d.source?.region, d.source?.prompt ? `prompt: ${d.source.prompt}` : '', d.source?.model ? `model: ${d.source.model}` : ''].filter((x): x is string => !!x).join('; '),
+  }));
+}
+
+export function creditsText(worldName: string, credits: readonly Credit[], textures: readonly TextureCredit[] = []): string {
   const lines = [`Credits — ${worldName}`, ''];
   if (credits.length === 0) lines.push('This world uses no third-party assets.');
   for (const c of credits) {
@@ -81,6 +104,11 @@ export function creditsText(worldName: string, credits: readonly Credit[]): stri
     lines.push(`  Licence: ${c.licence}${c.licenceUrl ? ` (${c.licenceUrl})` : ''}`);
     if (c.url) lines.push(`  Source: ${c.url}`);
     lines.push(`  Used: ${c.assets.join(', ')}`);
+    lines.push('');
+  }
+  if (textures.length > 0) {
+    lines.push('Textures made for this project (yours; no third-party licence applies):');
+    for (const t of textures) lines.push(`  ${t.name}: ${t.label}${t.detail ? ` — ${t.detail}` : ''}`);
     lines.push('');
   }
   lines.push('Made with Aether.');

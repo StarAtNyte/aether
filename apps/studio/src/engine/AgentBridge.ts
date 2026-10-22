@@ -8,7 +8,8 @@
  * reports a live model, otherwise the deterministic offline mock.
  */
 import { catalogSummary, getCatalog } from '@aether/assets';
-import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
+import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type TextureSetDef, type TextureTier, type WorldDoc } from '@aether/core';
+import { webpEncoder, type TextureController } from './textures';
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { drawMarks } from '../ai/marks';
@@ -109,6 +110,8 @@ export class AgentBridge implements AgentHost {
 
   /** Live progress of agent-triggered verification (the Verify panel streams it). */
   verifyListener: VerifyProgressListener | null = null;
+  /** The project's texture sets (set by the studio): where generated and photographed textures are kept. */
+  textures: TextureController | null = null;
   /** Record motion traces for the proof replay (the studio turns this on; headless callers leave it off). */
   traceProofs = false;
   /** Where and how fast the last agent-triggered verification ran. */
@@ -236,6 +239,12 @@ export class AgentBridge implements AgentHost {
   composeImages(tiles: ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>, opts: { maxSide?: number } = {}): Promise<string | null> {
     return composeTiles(tiles, opts.maxSide);
   }
+
+  async storeTexture(set: { id: string; def: TextureSetDef; files: ReadonlyArray<{ tier: TextureTier; map: 'albedo' | 'orm' | 'normal'; bytes: Uint8Array }> }): Promise<{ ok: true } | { ok: false; error: string }> {
+    return this.textures ? this.textures.add(set) : { ok: false, error: 'this host has no texture store' };
+  }
+
+  encodeTextureMap = webpEncoder;
 
   decodeImage(dataUrl: string, maxSide: number): Promise<{ width: number; height: number; data: Uint8ClampedArray } | null> {
     return decodeImageData(dataUrl, maxSide);
