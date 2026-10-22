@@ -49,7 +49,7 @@ publishing.
 
 ## Featured worlds
 
-Fifteen finished projects ship with the studio and open from the home page.
+Fifteen featured projects ship with the studio and open from the home page.
 Each was built from the prompt on its card. Each passes its physics checks,
 and the bot plays the games to their win screens in the test suite. Blockfall
 and Sakura River are the exceptions: they use their own game loops, which the
@@ -63,10 +63,16 @@ general bot does not drive.
 | ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp)<br>**Four-Seasons Garden**: switch seasons with the 1 to 5 keys | ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp)<br>**Orbital Lab**: low gravity, five power cells, restart the reactor | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp)<br>**Sakura River Journey**: paddle a canoe through four seasons |
 | ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: the plan drawn in ink, the walls rising, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
 
+Four more example rooms, rebuilt from CC0 or public-domain photographs, are
+listed under **More worlds**: a hotel bedroom, a twin room, a four-poster
+bedroom and a vaulted bedroom. The photo credit is on each card. They are saved runs of the photo flow
+(`npm run showcase:photo-rooms`).
+
 The list and its order live in
 [`apps/studio/src/showcase/manifest.ts`](apps/studio/src/showcase/manifest.ts).
 `npm run showcase:bake -- --check` confirms that every saved world still
-matches what its prompt builds.
+matches what its prompt builds (the photo rooms are re-validated and
+re-verified instead).
 
 ## What is different
 
@@ -86,7 +92,9 @@ Codex or Claude Code connected, the model plans the layout first, then places
 things through measuring tools. Some tools refuse nonsense: a bed through a
 wall, a painting over a window, a stair that lands in a wall. The model then
 looks at rendered views of its own result and fixes what it sees, round after
-round. On a subscription login there is no fixed round cap: the loop ends when
+round. It also grades the look the way a photographer would (`tune_look`:
+white balance, exposure, tints, fog, lamp strength), stored in the world as one
+undo step. On a subscription login there is no fixed round cap: the loop ends when
 the model approves its result or progress stalls. Paid API keys keep a finite
 cap. Without a model, a deterministic offline planner builds from the same
 parts, and the studio tells you it is offline. See
@@ -158,9 +166,20 @@ it (`attachedTo`).
 - **A room from a photo.** With a vision model connected, Aether reads the
   photo several times and merges the readings into one description. It builds
   the shell, the furniture and the decor, renders the result from the photo's
-  camera, and scores it with deterministic fidelity measures and a panel of
-  critic calls. It keeps a change only when it measurably helps. Offline it
-  says plainly that it cannot do this.
+  camera, and a panel of AI judges compares render and photo item by item. The
+  judges decide whether a round helped; the measured fidelity (openings,
+  inventory, placement, colour) is shown as advice and never decides. The best
+  state the judges preferred is kept, and a round they find worse is rolled
+  back. The model also sets the room's light and colour from what it sees.
+  Offline it says plainly that it cannot do this.
+- **Graphics quality.** Settings → Graphics has Auto, Low, Medium, High and
+  Ultra. Medium adds a composite pass and grain; High adds ambient occlusion,
+  temporal anti-aliasing and contact shadows; Ultra adds reflections, sun
+  shafts, glow and lens fringing. The sun gets focus cascades with
+  contact-hardening shadows on the higher tiers. On Auto, a performance
+  governor first lowers the resolution and then gives up costs one at a time
+  (baked light volume, cascades, post effects, particles) while frames stay
+  slow. Choosing a tier yourself turns it off.
 - **Block worlds.** Endless seeded voxel terrain with biomes, caves, ores and
   water, meshed in workers. A survival mode adds mining, crafting, health,
   hunger, day and night, and mobs.
@@ -208,7 +227,7 @@ flowchart LR
     P["Prompt, optional photo"] --> M{"Model connected?"}
     M -->|"Codex / Claude Code / API key"| AI["Agent: plan first,<br/>then tools"]
     M -->|no| OFF["Offline planner"]
-    AI -->|"apply_patches, design_plan,<br/>shape_land, dress_room, add_stairs…"| IR["World IR<br/>validated patches, undo history"]
+    AI -->|"apply_patches, design_plan,<br/>place_items, shape_land, tune_look…"| IR["World IR<br/>validated patches, undo history"]
     OFF --> IR
     IR --> R["Renderer<br/>three.js WebGPU / WebGL2"]
     IR --> V["verify<br/>headless Rapier fork,<br/>world tests"]
@@ -264,7 +283,8 @@ prompt caching, photo-to-room, the bot, and rendering.
   materials, HDR skies, baked light for interiors, AO and grading, but they
   are not a Blender Cycles still. Distant canyon walls show facets, some
   library models are stylised (kart drivers, farm animals), and flames are
-  glowing cones. Software-GPU machines get the lower quality tiers.
+  glowing cones. Software-GPU and weak machines (four cores or less) get the lower quality
+  tiers.
 - **The offline planner** reads English only and knows a fixed vocabulary
   (21 themes and 40+ library objects). In the benchmark it got 53 of 57
   in-vocabulary prompts fully right, but only 3 of 19 prompts outside its
@@ -280,7 +300,8 @@ prompt caching, photo-to-room, the bot, and rendering.
   proofs, and a world with no tests passes trivially. A proof is tied to the
   engine version.
 - **Photo-to-room** needs a vision model and minutes of calls. Measured
-  fidelity in recorded runs was 0.78 to 0.84. Vaulted ceilings, cornices,
+  fidelity in recorded runs was 0.78 to 0.84 (advisory; AI judges give the
+  verdict). Vaulted ceilings, cornices,
   sash windows and some door styles cannot be built yet. The final item pass
   rate still varies from run to run (83 to 100% in the latest three runs).
 - **Hosted studio:** a browser tab cannot run Codex. Use the bridge, your own
@@ -325,14 +346,15 @@ on Windows). See [docs/SECURITY.md](docs/SECURITY.md).
 | Command | What it does |
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
-| `npm test` | All Vitest unit and integration tests (about 4,170 tests in 390 files; no network) |
+| `npm test` | All Vitest unit and integration tests (about 440 test files; no network) |
 | `npm run smoke` | The real agent loop with the offline planner on every featured prompt plus block-world, architecture and asset prompts; every world is re-verified headless |
 | `npm run bench` / `bench:quick` | The public benchmark ([docs/BENCHMARK.md](docs/BENCHMARK.md)); `bench:quick` fails when a documented claim stops holding |
 | `npm run eval:edits` | Small-edit evaluation: 199 prompts over the default projects |
 | `npm run build` then `npm run start` | Production build, then studio + API on one origin (port 8787) |
 | `npm run e2e` | Playwright against the built studio: Chromium WebGPU, Chromium WebGL2, Firefox WebGL2 |
 | `npm run e2e:verified` · `e2e:refine` · `e2e:arch` · `e2e:gameplay` · `e2e:publish` · `e2e:voxel` · `e2e:ux` | Focused browser suites (bot verification and repair, chat edits, architecture, playing flagships to the win, publishing, block worlds, UX) |
-| `npm run showcase:bake` / `showcase:thumbs` | Rebuild the featured worlds from their prompts; render their covers |
+| `npm run showcase:bake` / `showcase:thumbs` / `showcase:photo-rooms` | Rebuild the featured worlds from their prompts; render their covers; rebuild the photo example rooms from their recorded runs |
+| `npm run eval:photo` / `eval:design` | Replay the recorded photo-to-room runs; evaluate design quality |
 | `npx tsx scripts/bot-probe.ts <world.json \| prompt:… \| plan:…>` | Run the playtest bot headless on one world and print timings |
 
 Every script is in [`package.json`](package.json). For browsers, run
