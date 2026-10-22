@@ -110,6 +110,8 @@ export class CharacterRig {
   private ankleRest = 0.1;
   /** Top of the seat above the rig's feet (m) while the person sits, or null: the pelvis settles onto it. */
   seatTop: number | null = null;
+  /** World point under the pelvis on the seat surface (y = the surface): placed bodies that are not at the seat's origin (NPCs). Overrides `seatTop`. */
+  seatAnchor: Vector3 | null = null;
   private seatBlend = 0;
   private wasGrounded = true;
   private airT = 0;
@@ -461,7 +463,7 @@ export class CharacterRig {
     const b = this.bones;
     const sc = this.root.scale.x;
     // Seat.
-    const rawSeat = this.seatTop === null ? 0 : seatBlendOf(state, this.current?.time ?? 0);
+    const rawSeat = this.seatTop === null && this.seatAnchor === null ? 0 : seatBlendOf(state, this.current?.time ?? 0);
     this.seatBlend += (rawSeat - this.seatBlend) * Math.min(1, dt * 14);
     if (this.seatBlend < 0.002) this.seatBlend = 0;
     const airborne = state === 'jump' || state === 'air' || state === 'fall';
@@ -480,11 +482,22 @@ export class CharacterRig {
     if (this.seatBlend === 0 && this.hipS === 0 && this.kneeS === 0 && this.plantS === 0 && this.landS === 0) return;
     this.root.updateWorldMatrix(true, true);
     const rootY = this.root.getWorldPosition(_v).y;
-    if (this.seatBlend > 0 && this.seatTop !== null && b.pelvis) {
+    if (this.seatBlend > 0 && (this.seatTop !== null || this.seatAnchor !== null) && b.pelvis) {
       b.pelvis.getWorldPosition(_v2);
       this.root.worldToLocal(_v2);
-      const target = this.seatTop + PELVIS_ABOVE_SEAT * sc;
-      this.model.position.set(-this.seatBlend * _v2.x, this.seatBlend * (target - _v2.y), -this.seatBlend * _v2.z);
+      // Where the pelvis should end up, in the rig's own frame.
+      let tx = 0;
+      let tz = 0;
+      let top = this.seatTop ?? 0;
+      if (this.seatAnchor) {
+        _target2.copy(this.seatAnchor);
+        this.root.worldToLocal(_target2);
+        tx = _target2.x;
+        tz = _target2.z;
+        top = this.seatAnchor.y - rootY;
+      }
+      const target = top + PELVIS_ABOVE_SEAT * sc;
+      this.model.position.set(this.seatBlend * (tx - _v2.x), this.seatBlend * (target - _v2.y), this.seatBlend * (tz - _v2.z));
       this.root.updateWorldMatrix(false, true);
       this.plantFeet(rootY, this.seatBlend);
       if (!this.prop && this.seatBlend > 0.4) this.handsOnLap(this.seatBlend * 0.9);

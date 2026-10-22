@@ -265,6 +265,11 @@ export const NpcRoutineStop = z.object({
   hours: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).optional(),
   wander: z.number().min(0).max(20).default(0.6),
   name: z.string().max(40).optional(),
+  /**
+   * A seat (entity id: sofa, armchair, chair, stool, bed) to sit on at this stop. `at` is where the character stands in front of it;
+   * it turns to face out of the seat, lowers onto it, sits for the stay (or the hours) and stands up before moving on.
+   */
+  sit: z.string().min(1).max(100).optional(),
 });
 export type NpcRoutineStop = z.infer<typeof NpcRoutineStop>;
 
@@ -330,5 +335,5 @@ export type NpcSpec = z.infer<typeof NpcSpec>;
 export type NpcSpecInput = z.input<typeof NpcSpec>;
 
 /** Runtime animation hints published as `npcAnim` on the entity state. */
-export const NPC_ANIMS = ['idle', 'walk', 'run', 'attack', 'talk', 'hurt', 'dead'] as const;
+export const NPC_ANIMS = ['idle', 'walk', 'run', 'attack', 'talk', 'hurt', 'dead', 'sit'] as const;
 export type NpcAnim = (typeof NPC_ANIMS)[number];

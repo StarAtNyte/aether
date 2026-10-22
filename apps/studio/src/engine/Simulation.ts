@@ -1697,11 +1697,46 @@ export class Simulation {
       const rig = this.renderer.characterRig(brain.id);
       if (!rig) continue;
       const hint = brain.animation;
+      this.feedSeat(s, brain.id, brain.seatId, rig);
       rig.input.hint = hint === 'idle' || hint === 'walk' || hint === 'run' || hint === 'attack' || hint === 'talk' || hint === 'hurt' || hint === 'dead' ? hint : 'idle';
       rig.input.talking = brain.conversing || speaking.has(brain.id);
       rig.lookTarget = pos && (brain.attentive || speaking.has(brain.id)) ? target : null;
     }
   }
+
+  /** Seat pose of NPCs that sit (by NPC id), kept while they sit. */
+  private readonly npcSeats = new Map<EntityId, { seat: string; anchor: Vector3 }>();
+
+  /** A person of the NPC system on a seat: the sit clips, the pelvis on the seat surface of the piece, their feet on the floor. */
+  private feedSeat(s: PlaySession, id: EntityId, seatId: string | null, rig: { input: { sitting: boolean }; seatAnchor: Vector3 | null }): void {
+    if (seatId === null) {
+      // The anchor stays while the stand-up clip plays (the rig fades the seat out); the next sitting replaces it.
+      rig.input.sitting = false;
+      return;
+    }
+    let held = this.npcSeats.get(id);
+    if (!held || held.seat !== seatId) {
+      const e = s.world.entities[seatId];
+      const t = e ? safeWorldTransform(s.world, seatId) : null;
+      const at = s.pw.readPose(id, this.seatPos, this.seatQuat) ? this.seatPos : (s.world.entities[id]?.transform.position ?? null);
+      if (!e || !t) return;
+      const q = t.quaternion;
+      const yaw = (Math.atan2(2 * (q[3] * q[1] + q[0] * q[2]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180) / Math.PI;
+      const b = entityWorldBounds(s.world, seatId);
+      const quarter = Math.abs(Math.sin((yaw * Math.PI) / 180)) > 0.7;
+      const wx = b ? b.max[0] - b.min[0] : 1;
+      const wz = b ? b.max[2] - b.min[2] : 0.8;
+      const who: Vec3 = at ? [at[0], at[1], at[2]] : [t.position[0], t.position[1], t.position[2] + 1];
+      const pose = seatPose(e.arch?.kind ?? 'chair', [t.position[0], t.position[1], t.position[2]], yaw, who, { width: quarter ? wz : wx, depth: quarter ? wx : wz, height: b ? b.max[1] - b.min[1] : 0 });
+      if (!pose) return;
+      held = { seat: seatId, anchor: new Vector3(pose.feet[0], pose.feet[1], pose.feet[2]) };
+      this.npcSeats.set(id, held);
+    }
+    rig.seatAnchor = held.anchor;
+    rig.input.sitting = true;
+  }
+  private readonly seatPos: Vec3 = [0, 0, 0];
+  private readonly seatQuat: QuatTuple = [0, 0, 0, 1];
 
   /** Sample the NPC system for the UI: on change, and at ~12 Hz while bubbles are on screen. */
   private pumpNpc(s: PlaySession): void {

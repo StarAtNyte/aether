@@ -5739,3 +5739,56 @@ set, HTTP 200).
 or a floor; fit the look by the measured evidence plus a look at the pictures instead of by eye alone; photograph-based window views
 (an HDRI of the real outlook, or a sampled backdrop from the window region of the photo); texture the ceiling only where the photo
 shows a pattern; anti-tile the large sets so the repeat of a small patch hides.
+
+## People that move like people: sitting, jumping, the head
+
+The report: in the four-poster bedroom the player's body stood on top of the armchair after "E Sit on" (the game thought he sat), his head turned
+and then grew, the jump looked bad, and the outfit looked speckled. What was wrong, what changed, what was measured.
+
+**The head that turned on and grew (root cause).** Three's animation mixer writes a bone only when the animated value changed since its
+last write, so a clip that never changes a bone (the jump and fall poses are single static poses) leaves whatever was last put there.
+The rig applied its corrections after the mixer, on top of the bone each frame: the look-at rotation, the arm relax, and the hip-scale
+multiply of the skeleton's root node (`position.y *= hipScale`). In a static pose each frame compounded the last: the head turned on
+and on and the body's scale ran away. Fix: before the mixer runs, every animated node is put back to the clean pose saved right after the
+previous mixer step, so a correction is always applied to the clean pose once. Reproduced headlessly first (`rig-stability.test.ts`, a real cast body and the
+real clips loaded without textures; look target, jumps, falls over 4000 frames): the head's world scale drifted by 0.12 before, stays within 1e-3 after.
+
+**Sitting.** The old sit teleported the capsule to the seat surface and the body (which had no sit state) stood there: feet on the cushion.
+Now: `seatPose` is an anchor computed from the kind and the piece's footprint (seat height, the pelvis toward the backrest for backed
+seats, the way out; a bed is sat on at the side edge nearest the player, a stool takes its own height, loungers and beds are seats now).
+`SeatSequence` (pure) walks the body to the approach point, turns it to face out of the seat, lowers it (the captured sit-down clip at
+1.4x, the body slides back onto the seat), holds the seated clip with its breathing, rises and steps out. The capsule is disabled for
+the whole time and returned at the approach point. In the rig the pelvis is placed on the seat surface (`seatTop` or a world
+`seatAnchor` for NPCs), both feet are planted on the floor with two-bone IK, the hands rest on the thighs with arm IK, the thighs stay level.
+NPC routine stops take `sit: <seat entity id>`: they stand at the stop, turn out of the seat, sit for the stay, stand up, walk on.
+Measured headlessly (`rig-motion.test.ts`): pelvis within 3 cm of seat top + 11 cm for 42 cm, 45 cm and 65 cm seats, ankles within 6 cm of their standing height, head within 30 cm of
+the pelvis horizontally (upright spine), thighs level within 14 cm, and after standing up the pelvis is back at 0.85 m or more with no model offset left.
+
+**Jumping.** The captured jump start played a crouch while the body was already rising (physics leaves the ground at once), and the
+jump and fall poses are static. Now the push-off keeps the soles on the launch point for 0.14 s as the legs extend, the knees and hips
+tuck as the climb slows (the amount follows vertical speed against the jump's peak speed), the legs reach for the floor on the way
+down, the arms swing up and then out, a fresh upward burst in mid-air reads as a second jump (a faster, fuller tuck, for a game feel that
+allows it; there is no double jump in the controller today), and the landing keeps a share of the captured crouch scaled by the impact
+speed with the feet planted and a small weight shift. Everything eases in and out of the clips.
+
+**The head.** `LookController`: yaw within 70 degrees, pitch within 35, a turn rate limit, a slow return to forward, a fade-out while the
+body jumps, lands, is hit, sits down or stands up, targets farther round than 110 degrees are given up (the head returns to forward, no
+flip). The player's gaze follows the view only while the body is at rest; the body turns on the spot once the view is more than 70
+degrees round. Tests circle a target (behind the body included) at head height and over it and assert limits and no single-frame step of 10 degrees or more.
+
+**Stills** (`~/.local/share/aether/look13/strips1/strip-*.png`, Chromium WebGL2 over ANGLE GL on the Intel iGPU, 960 x 720, a camera
+2.3 m to the side; `scripts/motion-strips.ts` records, `scripts/motion-montage.py` lays out): walk, jump, sit-down (the player walks to the approach point,
+turns, lowers into the armchair), seated, stand-up. Honest reading: the sit reads as a person sitting in the chair, with the lean
+forward of the captured motion on the way down; the jump shows the leg tuck and the landing absorb. Weaker: the arms are fairly straight
+at the apex, the stand-up ends with one arm out as the captured clip does, the stills are 100 to 400 ms apart on this GPU so they are
+samples, not a smooth strip, and walking is the captured gait (feet are not re-planted by IK: the clips are speed matched, which is
+what keeps them from sliding, nothing more was done there).
+
+**The speckle.** Not reproduced: the outfit textures render clean on this GPU in the stills above. In the report's screenshot the same grain is on the curtains, wall
+and chair, so it is the scene's lighting noise (the other render work), not the character's recolouring. What was changed anyway: the recoloured
+texture now always has a full mip chain (a minified photographic texture without one shimmers as salt and pepper), straight alpha and
+at least 4x anisotropy. Not verified on the machine that showed it.
+
+**Licences.** No new clips: everything procedural or IK on the existing captured set (credits unchanged in `docs/THIRD_PARTY.md`).
+
+**Gates**: see the final report of the turn.

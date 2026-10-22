@@ -59,7 +59,7 @@ export function airPoseOf(vy: number, peak: number, t: number, kick: number): Ai
   const plant = rising ? push : 0;
   const hipFlex = (8 + 52 * k) * DEG * (1 - push);
   const kneeFlex = (10 + 62 * k) * DEG * (1 - push) + 38 * DEG * push;
-  const armSwing = rising ? (-25 + 95 * smoothstep(0, 0.5, t) - 40 * smoothstep(0.5, 1, 1 - vy / up)) * DEG : (35 - 35 * smoothstep(0, 5, -vy)) * DEG;
+  const armSwing = rising ? (-20 + 65 * smoothstep(0, 0.5, t) - 30 * smoothstep(0.5, 1, 1 - vy / up)) * DEG : (25 - 25 * smoothstep(0, 5, -vy)) * DEG;
   return { tuck: k, hipFlex, kneeFlex, armSwing, plant };
 }
 

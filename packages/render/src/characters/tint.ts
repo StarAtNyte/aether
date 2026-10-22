@@ -14,7 +14,7 @@
  * Variants share textures and materials by key (`bodyId|top|bottom|hair`):
  * a crowd of red guards uploads one set.
  */
-import { CanvasTexture, Color, SRGBColorSpace, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
+import { CanvasTexture, Color, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 
 /** Tint request. Hex strings (#rrggbb, sRGB); omitted parts keep the original colours. */
 export interface Tint {
@@ -172,7 +172,12 @@ export function bakeTexture(source: Texture, apply: (rgba: Uint8ClampedArray, wi
   t.flipY = source.flipY;
   t.wrapS = source.wrapS;
   t.wrapT = source.wrapT;
-  t.anisotropy = source.anisotropy;
+  t.anisotropy = Math.max(4, source.anisotropy);
+  // Always a full mip chain: a minified photographic texture without one shimmers as salt-and-pepper noise.
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.premultiplyAlpha = false;
   t.channel = source.channel;
   t.needsUpdate = true;
   return t;

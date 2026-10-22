@@ -2202,7 +2202,7 @@ NpcSpec = {
   talkRange (2.8 m), dialogue?: Dialogue, chat?: NpcChat, barks?: { spot, lose, flee, hurt, alert, idle: string[] ≤ 6 }
   transitions: NpcTransition[] ≤ 24                                         // extra graph edges, win ties
 }
-NpcRoutineStop = { at: Vec3 (y = the floor it stands on), stay 0..3600 s (30), hours?: [from, to], wander 0..20 m (0.6), name? ≤ 40 }
+NpcRoutineStop = { at: Vec3 (y = the floor it stands on), stay 0..3600 s (30), hours?: [from, to], wander 0..20 m (0.6), name? ≤ 40, sit?: entity id of a seat (sofa, armchair, chair, stool, bed: `at` is where it stands in front; it turns to face out of the seat, sits for the stay or the hours, stands up, moves on; `npcAnim` is `sit` while seated) }
                  // a stop with hours is where it is in those hours; the others are visited in turn
 // In a world with stairs, the y of waypoints and routine stops picks the floor (the floor under (x, z) closest to y).
 NpcArchetype = villager | guard | merchant | predator | prey | follower | sentinel

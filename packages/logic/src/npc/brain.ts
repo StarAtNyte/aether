@@ -50,9 +50,12 @@ const WAY_STAND_S = 0.5;
 const WAY_MAX_S = 8;
 /** Pace of the step aside, relative to the walking speed. */
 const WAY_PACE = 0.5;
+/** Seconds an NPC takes to turn round before sitting, and to stand up again before walking on. */
+const SIT_TURN_S = 0.9;
+const SIT_RISE_S = 1.9;
 
 /** Animation hints published on `state.npcAnim`. */
-type Anim = 'idle' | 'walk' | 'run' | 'attack' | 'talk' | 'hurt' | 'dead';
+type Anim = 'idle' | 'walk' | 'run' | 'attack' | 'talk' | 'hurt' | 'dead' | 'sit';
 
 /** Target kinds. */
 const T_NONE = 0;
@@ -125,6 +128,14 @@ export class NpcBrain implements BehaviorInstance {
   // --- daily routine ----------------------------------------------------------------
   private stopIdx = -1;
   private atStop = false;
+  /** Sitting at a routine stop: 0 not, 1 turning to face out of the seat, 2 seated, 3 rising. */
+  private sitPhase = 0;
+  private sitT = 0;
+  /** Entity id of the seat in use while seated, or null. */
+  get seatId(): string | null {
+    return this.sitPhase === 2 ? this.sitSeat : null;
+  }
+  private sitSeat = '';
   private stayT = 0;
   private readonly wanderState: WanderState = { theta: 0 };
   private readonly dirOut = new Float64Array(2);
@@ -1280,6 +1291,19 @@ export class NpcBrain implements BehaviorInstance {
       const cur = routine[this.stopIdx];
       want = this.stopIdx >= 0 && cur !== undefined && cur.hours === undefined ? this.stopIdx : this.nextStop(routine, this.stopIdx);
     }
+    if (this.sitPhase === 3) {
+      // Standing up before anything else.
+      this.stop(env);
+      this.sitT += dt;
+      if (this.sitT >= SIT_RISE_S) this.sitPhase = 0;
+      return;
+    }
+    if (want !== this.stopIdx && this.sitPhase !== 0) {
+      this.sitPhase = 3;
+      this.sitT = 0;
+      this.stop(env);
+      return;
+    }
     if (want !== this.stopIdx) {
       this.stopIdx = want;
       this.atStop = false;
@@ -1306,6 +1330,7 @@ export class NpcBrain implements BehaviorInstance {
       }
       return;
     }
+    if (st.sit !== undefined && (this.stayT > 0 || this.sitPhase !== 0 || st.hours !== undefined) && this.doSit(env, dt, st)) return;
     this.stayT -= dt;
     if (this.stayT <= 0 && st.hours === undefined && this.trav < 0) {
       const next = this.nextStop(routine, this.stopIdx);
@@ -1335,6 +1360,35 @@ export class NpcBrain implements BehaviorInstance {
       this.wanderX = Number.NaN;
       this.waitT = 0.5;
     }
+  }
+
+  /**
+   * Sitting at a stop: turn to face out of the seat, sit for the stay (a stop with hours: while it is the stop of the hour), then
+   * rise (the caller moves on once standing). True while it holds the character.
+   */
+  private doSit(env: BehaviorEnv, dt: number, st: NpcRoutineStop): boolean {
+    const seat = st.sit !== undefined ? env.positionOf(st.sit) : undefined;
+    if (!seat) return false;
+    this.stop(env);
+    if (this.sitPhase === 0) {
+      this.sitPhase = 1;
+      this.sitT = 0;
+      this.sitSeat = st.sit as string;
+    }
+    if (this.sitPhase === 1) {
+      // Out of the seat is away from its centre.
+      this.face(env, dt, this.x + (this.x - seat[0]), this.z + (this.z - seat[2]));
+      this.sitT += dt;
+      if (this.sitT >= SIT_TURN_S) this.sitPhase = 2;
+      return true;
+    }
+    this.stayT -= dt;
+    if (this.stayT <= 0 && st.hours === undefined) {
+      this.sitPhase = 3;
+      this.sitT = 0;
+      this.stayT = 0;
+    }
+    return true;
   }
 
   /** The next stop without hours after `i` (cyclic), or `i` itself when there is none. */
@@ -1617,9 +1671,11 @@ export class NpcBrain implements BehaviorInstance {
   private animate(env: BehaviorEnv, dt: number): void {
     const s = this.self;
     let next: Anim;
+    if (this.sitPhase !== 0 && this.mode !== 'idle') this.sitPhase = 0;
     if (this.hurtT > 0) next = 'hurt';
     else if (this.attackAnimT > 0) next = 'attack';
     else if (this.mode === 'talk' || this.mode === 'trade') next = 'talk';
+    else if (this.sitPhase === 2) next = 'sit';
     else if (this.speedNow > this.spec.speed * 1.5 + 0.2) next = 'run';
     else if (this.speedNow > 0.15) next = 'walk';
     else next = 'idle';
