@@ -26,7 +26,7 @@ const HEADINGS = ['north', 'east', 'south', 'west'] as const;
 const snap = (v: number, step = 0.5): number => Math.round(v / step) * step;
 
 /** A house of 2 or 3 storeys, 7-15 m wide and 5-9 m deep, with a stair per storey drawn anywhere on the ground floor. */
-export function generateHouse(seed: number, opts: { furnish?: boolean } = {}): GeneratedHouse {
+export function generateHouse(seed: number, opts: { furnish?: boolean; residents?: number } = {}): GeneratedHouse {
   const r = rng(seed * 7919 + 13);
   const W = snap(7 + r() * 8);
   const D = snap(5 + r() * 4);
@@ -64,6 +64,6 @@ export function generateHouse(seed: number, opts: { furnish?: boolean } = {}): G
     });
   }
   if (opts.furnish === false) for (const l of levels) for (const room of l['rooms'] as Array<Record<string, unknown>>) room['furnish'] = false;
-  const plan = { id: 'house', style: styles[Math.floor(r() * 4)], levels };
+  const plan = { id: 'house', style: styles[Math.floor(r() * 4)], ...(opts.residents ? { residents: opts.residents } : {}), levels };
   return { plan, label: `seed ${seed}: ${W} x ${D} m, split at ${a}, ${storeys} storeys of ${height} m, drawn stairs ${JSON.stringify(levels.map((l) => (l['stairs'] as PlanStair[] | undefined)?.[0]))}` };
 }

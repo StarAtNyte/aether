@@ -43,6 +43,13 @@ const STAIR_EXIT_GRACE = 1.5;
 const STAIR_YIELD_MAX = 6;
 /** How close ahead on a stair the player makes an NPC stop (m). */
 const STAIR_YIELD_AHEAD = 1.1;
+/** In a building a resident gives way to a player who is this close ahead of it on its floor (m). */
+const WAY_AHEAD = 1.2;
+/** It stands for this long (s), then steps aside (or back) if there is room, for this long at most (s) before it goes on. */
+const WAY_STAND_S = 0.5;
+const WAY_MAX_S = 8;
+/** Pace of the step aside, relative to the walking speed. */
+const WAY_PACE = 0.5;
 
 /** Animation hints published on `state.npcAnim`. */
 type Anim = 'idle' | 'walk' | 'run' | 'attack' | 'talk' | 'hurt' | 'dead';
@@ -111,6 +118,8 @@ export class NpcBrain implements BehaviorInstance {
   private travEZ = 0;
   private exitT = 0;
   private yieldT = 0;
+  /** Seconds spent giving way to the player on a floor (decays while the way is clear). */
+  private wayT = 0;
   private readonly pt = new Float32Array(5);
   private readonly aim = new Float64Array(3);
   // --- daily routine ----------------------------------------------------------------
@@ -1038,6 +1047,34 @@ export class NpcBrain implements BehaviorInstance {
     // Ramp speed; slow into the final point.
     let target = speed;
     if (remaining < 1.2) target = arriveSpeed(remaining, target);
+    // In a building the player ahead on a narrow way goes first: stand, then step aside (right, left, else back) while
+    // they pass; after a few seconds the resident goes on (characters pass through each other then).
+    let giving = false;
+    const sys = this.sys;
+    if (this.layers !== null && this.grid !== null && !Number.isNaN(sys.playerX) && !s.dynamic && !this.isHostileToPlayer()) {
+      const ox = sys.playerX - x;
+      const oz = sys.playerZ - z;
+      const od = hyp(ox, oz);
+      if (od < WAY_AHEAD && Math.abs(sys.playerY - this.feetY) < 1.2 && ox * dx + oz * dz > 0.35 * od && this.wayT < WAY_MAX_S) {
+        giving = true;
+        this.wayT += dt;
+        target = 0;
+        if (this.wayT > WAY_STAND_S) {
+          const grid = this.grid;
+          const reach = this.spec.radius + 0.35;
+          // Right of the way it walks, then left, then back the way it came; whichever is open on the floor grid.
+          const sides: ReadonlyArray<readonly [number, number]> = [[-dz, dx], [dz, -dx], [-dx, -dz]];
+          for (const [sx, sz] of sides) {
+            if (free(grid, x + sx * reach, z + sz * reach, false)) {
+              vx = sx;
+              vz = sz;
+              target = speed * WAY_PACE;
+              break;
+            }
+          }
+        }
+      } else this.wayT = Math.max(0, this.wayT - dt);
+    }
     this.wantMove = true;
     this.speedNow += clamp(target - this.speedNow, -18 * dt, 9 * dt);
     const step = this.speedNow * dt;
@@ -1063,7 +1100,10 @@ export class NpcBrain implements BehaviorInstance {
     if (grid !== null && this.layers !== null) {
       // In a building the NPC follows its path (each stretch is clear on the floor grid): neighbours push it aside
       // only where there is room, and its body may brush a door frame (the squeeze mask), never cross a wall.
-      if (!escaping && !free(grid, nx, nz, true)) {
+      if (giving && !free(grid, nx, nz, true)) {
+        nx = s.anchor[0];
+        nz = s.anchor[2];
+      } else if (!escaping && !free(grid, nx, nz, true)) {
         nx = s.anchor[0] + dx * step;
         nz = s.anchor[2] + dz * step;
         if (!free(grid, nx, nz, true) && free(grid, s.anchor[0], s.anchor[2], true)) {

@@ -73,6 +73,16 @@ const MAX_THREAT_TURNS = 400;
  * hesitates for a while and then runs for it, taking a bite if need be, and so does the bot.
  */
 const EVADE_PATIENCE_S = 2 * GAP_WAIT_S;
+/**
+ * People who live in the world (calm NPCs) share its narrow ways: a 1 m flight, a landing, a hall. The bot lets one
+ * go first: it steps away from it and waits while it is in the way, at most this long (simulated s) per objective,
+ * then reports who kept the way blocked.
+ */
+const RESIDENT_PATIENCE_S = 24;
+/** A resident this close ahead of the player (m), at about its height, is in its way. */
+const RESIDENT_AHEAD = 1.0;
+/** Another walk at a stair's foot waits while a resident is on that stair, and for this long at most per objective (s). */
+const STAIR_WAIT_S = 12;
 /** Feet this far above the surface of the path (m) while standing: the player walked onto another level (a bridge deck over a path that runs under it). */
 const OFF_LEVEL_M = 1;
 /** Walking a path may take this many times its length at full speed, plus {@link LEG_SLACK_S}, before it counts as stuck. */
@@ -296,6 +306,10 @@ class Bot {
   private threatSensedAt = -1;
   private readonly threatTurns = new Map<string, number>();
   private readonly gapWaited = new Map<string, number>();
+  /** Simulated seconds spent letting residents go first, per objective. */
+  private readonly residentWaited = new Map<string, number>();
+  private readonly residentReported = new Set<string>();
+  private readonly residentIds: EntityId[];
   /** When the bot first set out for each objective (simulated s) and the time it may take. */
   private readonly objectiveStart = new Map<string, { t: number; limit: number }>();
   /** Zones walked back to once everything else was done. */
@@ -308,6 +322,7 @@ class Bot {
   constructor(world: WorldDoc, private readonly opts: PlaytestOptions, private readonly kind: PlaytestKind) {
     this.world = world;
     this.stairs = stairGuides(world);
+    this.residentIds = Object.keys(world.entities).filter((id) => world.entities[id]?.npc !== undefined);
     this.budgetMs = clamp(opts.budgetMs, PLAYTEST_LIMITS.DEFAULT_BUDGET_MS, 500, PLAYTEST_LIMITS.MAX_BUDGET_MS);
     this.maxSim = clamp(opts.maxSimSeconds, PLAYTEST_LIMITS.DEFAULT_MAX_SIM_SECONDS, 5, PLAYTEST_LIMITS.MAX_SIM_SECONDS);
   }
@@ -974,6 +989,24 @@ class Bot {
         resetWatch();
         continue;
       }
+      // Residents share the stair: wait at its foot (or landing) while one is on the flight about to be climbed, backed off
+      // from where it comes out. (Met head-on on a flight or the walkway beside its stairwell, a resident gives way to the
+      // player itself; the bot only gives way when it is pressed, below: both standing back would hold up the pair.)
+      if (this.residentIds.length > 0 && guide === null) {
+        const next = stretches.find((st) => st.from >= idx - 1 && st.from <= idx + 4);
+        if (next && Math.hypot((next.line[0] as Vec3)[0] - pos[0], (next.line[0] as Vec3)[2] - pos[2]) < 3) {
+          const blocker = this.residentIds.find((id) => {
+            if (this.threats?.list.some((t) => t.id === id)) return false;
+            const info = s.runtime.npcs.info(id);
+            return info !== undefined && !info.dead && onStair(next.stair, [info.x, info.y, info.z], 0.1);
+          });
+          if (blocker && (await this.yieldToResident(blocker, pos, next.line[0] as Vec3, 'at the foot of the stair', () => !onStair(next.stair, this.residentPos(blocker), 0.1)))) {
+            if (this.stopped) return s.over ? 'ended' : 'stopped';
+            resetWatch();
+            continue;
+          }
+        }
+      }
       // Look ahead along walk edges for a smoother line.
       // Doorways are narrow: follow their nodes one by one, slowly, so the capsule does not clip a jamb.
       const strict = !along && (this.doorNear(pos, 1.1) !== null || this.doorNear(g.pos(b), 1.1) !== null);
@@ -1055,6 +1088,13 @@ class Bot {
             strafeDir = stalls === 2 ? -1 : 1;
             strafeUntil = s.time + 0.45;
           } else {
+            // A resident pressed against the player (or the player against a rail with it opposite): let it go first.
+            const near = this.residentsNear(here, 1.1)[0];
+            if (near && (await this.yieldToResident(near.id, here, waypoint, 'on the way'))) {
+              if (this.stopped) return s.over ? 'ended' : 'stopped';
+              resetWatch();
+              continue;
+            }
             const blocker = this.blockerAhead(here, yaw);
             // An enemy standing in the way moves on: route round it rather than writing the way off.
             if (blocker !== null && this.threats?.list.some((t) => t.id === blocker) && this.threatTurn()) return 'threat';
@@ -1068,6 +1108,73 @@ class Bot {
       }
     }
     return 'arrived';
+  }
+
+  private residentPos(id: EntityId): Vec3 {
+    const info = this.session.runtime.npcs.info(id);
+    return info ? [info.x, info.y, info.z] : [Infinity, Infinity, Infinity];
+  }
+
+  private residentDistance(id: EntityId): number {
+    const info = this.session.runtime.npcs.info(id);
+    const p = this.session.position;
+    return info ? Math.hypot(info.x - p[0], info.z - p[2]) : Infinity;
+  }
+
+  /** Calm characters (not the enemies the bot dodges) within `r` of a point, nearest first, with their feet positions. */
+  private residentsNear(p: Readonly<Vec3>, r: number, ahead?: Readonly<Vec3>): Array<{ id: EntityId; pos: Vec3; d: number }> {
+    const out: Array<{ id: EntityId; pos: Vec3; d: number }> = [];
+    const npcs = this.session.runtime.npcs;
+    for (const id of this.residentIds) {
+      if (this.threats?.list.some((t) => t.id === id)) continue;
+      const info = npcs.info(id);
+      if (!info || info.dead) continue;
+      const d = Math.hypot(info.x - p[0], info.z - p[2]);
+      if (d > r || Math.abs(info.y - p[1]) > 1.2) continue;
+      // Only those in the way: ahead of the player, towards `ahead`.
+      if (ahead) {
+        const fx = ahead[0] - p[0];
+        const fz = ahead[2] - p[2];
+        const fl = Math.hypot(fx, fz);
+        if (fl > 1e-6 && d > 0.05 && ((info.x - p[0]) * fx + (info.z - p[2]) * fz) / (fl * d) < 0.3) continue;
+      }
+      out.push({ id, pos: [info.x, info.y, info.z], d });
+    }
+    return out.sort((a, b) => a.d - b.d);
+  }
+
+  /**
+   * A resident is in the way (on a narrow flight, a landing, a hall): back away from it and wait for it to pass; true
+   * when it was handled (the caller walks on), false once this objective's patience is spent (a finding names the resident). A resident that keeps standing there is a defect
+   * of the world's routines, not of the way.
+   */
+  private async yieldToResident(id: EntityId, at: Readonly<Vec3>, towards: Readonly<Vec3>, why: string, clear?: () => boolean): Promise<boolean> {
+    const s = this.session;
+    const key = this.current?.id ?? '';
+    const waited = this.residentWaited.get(key) ?? 0;
+    if (waited >= RESIDENT_PATIENCE_S) {
+      if (!this.residentReported.has(id)) {
+        this.residentReported.add(id);
+        this.findings.push({ code: 'stuck', severity: 'warning', message: `${this.world.entities[id]?.name || id} (${id}) stayed in the way ${why} at ${fmtPos(at)} for ${Math.round(waited)} s; the bot waited, stepped aside and gave up`, entities: [id], position: [at[0], at[1], at[2]], hint: `give ${id}'s routine other stops or hours, or widen the way` });
+      }
+      return false;
+    }
+    const t0 = s.time;
+    this.note = `letting ${id} go first ${why}`;
+    // Back off along the way it came while the resident is close (never sideways: the walkway beside a stairwell and
+    // a flight are a metre wide, with a drop or a wall on each side), else stand and let it pass.
+    const stepAside = (): { fwd: number; yaw: number } => {
+      const yaw = this.yawTo(s.position, towards[0], towards[2]);
+      return { fwd: this.residentDistance(id) < RESIDENT_AHEAD + 0.4 ? -0.4 : 0, yaw };
+    };
+    // At least one tick, so that time always passes; then until it has gone by (or the wait of this round is over).
+    do {
+      const a = stepAside();
+      if (!(await this.step(a.fwd, 0, false, a.yaw))) break;
+      if (clear ? clear() : this.residentDistance(id) > RESIDENT_AHEAD + 0.3) break;
+    } while (s.time - t0 < 1.5 && !this.stopped);
+    this.residentWaited.set(key, waited + (s.time - t0));
+    return true;
   }
 
   /** Read the enemies' positions once per simulated tick. */

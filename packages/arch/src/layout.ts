@@ -86,6 +86,15 @@ export const DOOR_HEIGHT = 2.1;
 
 /** Walkway kept free in front of furniture fronts and doors (metres). */
 export const WALKWAY = 0.8;
+/**
+ * Radius of the body that must get from door to door through a room (m): the walkthrough capsule and the building
+ * check's grid (a 0.8 m walkway less its slack).
+ */
+export const BODY_RADIUS = 0.34;
+/** Cell of the door-to-door flood (m). */
+const FLOW_CELL = 0.1;
+/** A pocket of standable floor this big (cells of {@link FLOW_CELL}: 0.3 m2) cut off from the doors by a piece is refused. */
+const POCKET_CELLS = 30;
 /** Gap between a piece's back and the wall face. */
 export const WALL_GAP = 0.02;
 
@@ -171,6 +180,20 @@ export function doorKeepout(ctx: RoomContext, d: RoomDoor): P2[] {
     pts.push([c[0] + e.dir[0] * u + inX * v, c[1] + e.dir[1] * u + inZ * v]);
   }
   return pts;
+}
+
+/** Whether a point is within `r` of a convex polygon's outline. */
+function nearPolygon(x: number, z: number, poly: readonly P2[], r: number): boolean {
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i] as P2;
+    const b = poly[(i + 1) % poly.length] as P2;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const l2 = dx * dx + dz * dz;
+    const u = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+    if (Math.hypot(x - a[0] - dx * u, z - a[1] - dz * u) < r) return true;
+  }
+  return false;
 }
 
 /** Collects placements for one room and validates every candidate. */
@@ -274,8 +297,141 @@ export class RoomLayout {
         // Decor keeps out of the wet zone: no plant in the shower, nothing at the bath's edge where one steps in.
         if (WET_KINDS.has(p.kind) && DRY_DECOR.has(kind) && convexOverlap(fp, p.footprint, -WET_CLEARANCE)) return false;
       }
+      // Door to door: a piece that would shut the way between two doorways of the room (a sofa, two armchairs and a
+      // bookshelf in a row across a small living room) is not placed, whatever stands clear of each door's swing.
+      if (!this.keepsDoorsConnected(fp, ignore)) return false;
     }
     return true;
+  }
+
+  private flow: { x0: number; z0: number; nx: number; nz: number; wall: Uint8Array; seeds: number[]; cells: Map<Placed, number[]> } | null | undefined;
+
+  /** The room's grid for the door-to-door flood: cells a body of {@link BODY_RADIUS} cannot stand on at the walls, and the doors' cells. */
+  private flowGrid(): NonNullable<RoomLayout['flow']> | null {
+    if (this.flow !== undefined) return this.flow;
+    this.flow = null;
+    const ctx = this.ctx;
+    if (ctx.doors.length < 1) return null;
+    let x0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let z1 = -Infinity;
+    for (const [x, z] of ctx.polygon) {
+      x0 = Math.min(x0, x);
+      z0 = Math.min(z0, z);
+      x1 = Math.max(x1, x);
+      z1 = Math.max(z1, z);
+    }
+    const nx = Math.max(1, Math.ceil((x1 - x0) / FLOW_CELL));
+    const nz = Math.max(1, Math.ceil((z1 - z0) / FLOW_CELL));
+    if (nx * nz > 40_000) return null;
+    const wall = new Uint8Array(nx * nz);
+    for (let k = 0; k < nz; k++) {
+      for (let i = 0; i < nx; i++) {
+        const x = x0 + (i + 0.5) * FLOW_CELL;
+        const z = z0 + (k + 0.5) * FLOW_CELL;
+        if (!pointInPolygon(x, z, ctx.polygon)) {
+          wall[k * nx + i] = 1;
+          continue;
+        }
+        for (let e = 0; e < ctx.edges.length; e++) {
+          const ed = ctx.edges[e] as RoomEdge;
+          const along = Math.max(0, Math.min(ed.length, (x - ed.a[0]) * ed.dir[0] + (z - ed.a[1]) * ed.dir[1]));
+          const d = Math.hypot(x - (ed.a[0] + ed.dir[0] * along), z - (ed.a[1] + ed.dir[1] * along));
+          if (d < (ctx.inset[e] ?? 0.06) + BODY_RADIUS - 0.03) {
+            wall[k * nx + i] = 1;
+            break;
+          }
+        }
+      }
+    }
+    const seeds: number[] = [];
+    for (const d of ctx.doors) {
+      const e = ctx.edges[d.edge] as RoomEdge;
+      const c = edgePoint(e, d.t);
+      const off = (ctx.inset[d.edge] ?? 0.06) + BODY_RADIUS + 0.03;
+      const i = Math.floor((c[0] - e.out[0] * off - x0) / FLOW_CELL);
+      const k = Math.floor((c[1] - e.out[1] * off - z0) / FLOW_CELL);
+      if (i < 0 || k < 0 || i >= nx || k >= nz || wall[k * nx + i]) continue;
+      seeds.push(k * nx + i);
+    }
+    if (seeds.length < 1) return null;
+    this.flow = { x0, z0, nx, nz, wall, seeds, cells: new Map() };
+    return this.flow;
+  }
+
+  /** Cells a body cannot stand on because of a footprint: within {@link BODY_RADIUS} of it. */
+  private blockedBy(g: NonNullable<RoomLayout['flow']>, fp: readonly P2[]): number[] {
+    let bx0 = Infinity;
+    let bz0 = Infinity;
+    let bx1 = -Infinity;
+    let bz1 = -Infinity;
+    for (const [x, z] of fp) {
+      bx0 = Math.min(bx0, x);
+      bz0 = Math.min(bz0, z);
+      bx1 = Math.max(bx1, x);
+      bz1 = Math.max(bz1, z);
+    }
+    const r = BODY_RADIUS - 0.03;
+    const i0 = Math.max(0, Math.floor((bx0 - r - g.x0) / FLOW_CELL));
+    const i1 = Math.min(g.nx - 1, Math.floor((bx1 + r - g.x0) / FLOW_CELL));
+    const k0 = Math.max(0, Math.floor((bz0 - r - g.z0) / FLOW_CELL));
+    const k1 = Math.min(g.nz - 1, Math.floor((bz1 + r - g.z0) / FLOW_CELL));
+    const out: number[] = [];
+    for (let k = k0; k <= k1; k++) {
+      for (let i = i0; i <= i1; i++) {
+        const x = g.x0 + (i + 0.5) * FLOW_CELL;
+        const z = g.z0 + (k + 0.5) * FLOW_CELL;
+        if (pointInPolygon(x, z, fp) || nearPolygon(x, z, fp, r)) out.push(k * g.nx + i);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Floods the room's floor from its first doorway with the placed pieces and `extra` standing in it: whether every
+   * doorway was reached, and how many cells a body can stand on but not reach (a pocket cut off by the furniture).
+   */
+  private flood(g: NonNullable<RoomLayout['flow']>, extra: readonly P2[] | null, ignore: ReadonlySet<Placed>): { doors: boolean; stranded: number } {
+    const blocked = new Uint8Array(g.wall);
+    for (const p of this.placed) {
+      if (ignore.has(p) || p.footprint.length === 0 || p.kind === 'rug' || p.wall) continue;
+      let cells = g.cells.get(p);
+      if (!cells) g.cells.set(p, (cells = this.blockedBy(g, p.footprint)));
+      for (const c of cells) blocked[c] = 1;
+    }
+    if (extra) for (const c of this.blockedBy(g, extra)) blocked[c] = 1;
+    let free = 0;
+    for (let c = 0; c < blocked.length; c++) if (!blocked[c]) free++;
+    const start = g.seeds[0] as number;
+    if (blocked[start]) return { doors: false, stranded: free };
+    const seen = new Uint8Array(blocked.length);
+    const queue = [start];
+    seen[start] = 1;
+    for (let q = 0; q < queue.length; q++) {
+      const c = queue[q] as number;
+      const i = c % g.nx;
+      const k = (c - i) / g.nx;
+      if (i + 1 < g.nx && !seen[c + 1] && !blocked[c + 1]) (seen[c + 1] = 1), queue.push(c + 1);
+      if (i > 0 && !seen[c - 1] && !blocked[c - 1]) (seen[c - 1] = 1), queue.push(c - 1);
+      if (k + 1 < g.nz && !seen[c + g.nx] && !blocked[c + g.nx]) (seen[c + g.nx] = 1), queue.push(c + g.nx);
+      if (k > 0 && !seen[c - g.nx] && !blocked[c - g.nx]) (seen[c - g.nx] = 1), queue.push(c - g.nx);
+    }
+    return { doors: g.seeds.every((c) => seen[c] === 1), stranded: free - queue.length };
+  }
+
+  /**
+   * False when the footprint would cut the way between two doorways of the room that is open now, or cut a pocket off
+   * from the doors that a body could stand in (a player who spawns there would be shut in). A room that was cut
+   * already (behind a wall or a stairwell) is not made worse by it: nothing is rejected on account of what was.
+   */
+  private keepsDoorsConnected(fp: readonly P2[], ignore: ReadonlySet<Placed>): boolean {
+    const g = this.flowGrid();
+    if (!g) return true;
+    const before = this.flood(g, null, ignore);
+    const after = this.flood(g, fp, ignore);
+    if (before.doors && !after.doors) return false;
+    return after.stranded - before.stranded <= POCKET_CELLS;
   }
 
   /** True when a floor piece of `height` standing against a wall would run into a picture, curtain or other piece hanging there. */

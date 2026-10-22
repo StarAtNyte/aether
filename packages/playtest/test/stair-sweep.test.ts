@@ -59,10 +59,28 @@ describe('generated houses: every storey reachable', () => {
   }
 });
 
+describe('generated houses with people at home', () => {
+  // Residents walk their day up and down the same stairs: the bot lets them go first (and they give way to it), so every
+  // storey is still walked, or the report names the resident that kept the way blocked.
+  const seeds = [5, 13, 23, 36, 60, 117, 141, 173].map((n) => n + FROM - 1);
+  it(`${seeds.length} houses with three residents: the bot reaches every room`, async () => {
+    const bad: string[] = [];
+    for (const seed of seeds) {
+      const h = generateHouse(seed, { furnish: true, residents: 3 });
+      const built = applyArchOps(createWorld(), [{ op: 'create_building', plan: h.plan }]);
+      if (built.errors.length > 0 || built.lines.some((l) => l.startsWith('stair does not work'))) continue;
+      await ensureAssetCatalog(built.target);
+      const r = await walkthrough(built.target, { trace: false });
+      if (r.status !== 'passed') bad.push(`${h.label}: bot: ${r.summary}`);
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  }, 900_000);
+});
+
 describe('the offline planner house with people at home', () => {
   // People stood on the walkway at the foot of the stair and in the strip beside the flight: the bot found no way up.
-  for (const text of ['a family of four in a two-storey house', 'a family of six in a two-storey house', 'a villa with a pool and a family of five']) {
-    for (const at of [[0.2, 1.2], [0.4, 2.2], [3, 3]] as const) {
+  for (const text of ['a family of four in a two-storey house', 'a family of six in a two-storey house', 'a villa with a pool and a family of five', 'a 3 bedroom two-storey house for a family of four']) {
+    for (const at of [[0.2, 1.2], [0.4, 2.2], [3, 3], [3.06, 0.66], [1.46, 0.66]] as const) {
       it(`${text}, stair drawn at (${at[0]}, ${at[1]}): every room is walked`, async () => {
         const plan = (planArch(text, '')?.arch?.ops[0] as { plan: { levels: Array<{ stairs: unknown[] }> } }).plan;
         plan.levels[0]!.stairs = [{ at, heading: 'east', width: 1 }];
