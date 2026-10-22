@@ -272,9 +272,10 @@ PDF export uses the PDF base-14 Helvetica by name; no font file is embedded.
 
 Described in [ASSETS.md](ASSETS.md). Every shipped file is listed with its
 source archive, the file inside it, its licence, authors and SHA-256 in the
-machine-readable `assets/manifest.json` (396 assets; all 499 file hashes in
-`manifest.json` and `characters.json` were recomputed on 2026-10-21 and match,
-and every file under `assets/lib/` is accounted for). Downloads and their
+machine-readable `assets/manifest.json` (396 assets; its 561 file hashes and the
+12 in `characters.json` were recomputed on 2026-10-22 and match, as do the
+195 KTX2 twins in `assets/ktx2.json`; the 10 character mask files are listed with
+full hashes under [Shipped file checksums](#shipped-file-checksums)). Downloads and their
 checksums are pinned in `assets/sources.json` and `assets/creatures.json`.
 The fetch script accepts only CC0-1.0 and CC-BY-4.0 sources and refuses a
 Kenney archive whose `License.txt` does not state CC0.
@@ -352,8 +353,9 @@ Credit line (in-app, `packages/assets/src/characters/credits.ts`, added to
 every world that has a person in it): *"Microsoft Rocketbox avatars and
 animations by Microsoft (Rocketbox Libraries), © 2020 Microsoft"*, licence MIT
 (link to the repository's `LICENSE.md`), with the cast members used; the full
-MIT notice ships in the same file (`ROCKETBOX_NOTICE`). SHA-256 of every body, mask and
-motion file is in `assets/characters.json` (all match). The local source
+MIT notice ships in the same file (`ROCKETBOX_NOTICE`). SHA-256 of every body and
+motion file is in `assets/characters.json` (all match); the mask files are hashed in
+[Shipped file checksums](#shipped-file-checksums). The local source
 checkout (`~/.local/share/aether/characters-src`) holds the repository's
 `LICENSE.md` with the hash above. Processing (`scripts/characters/`): FBX read
 with three's FBXLoader, textures downscaled to 1024 px and re-encoded as WebP
@@ -549,10 +551,10 @@ WebCodecs or MediaRecorder.
 | `og.jpg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | Rendered by `scripts/brand/render.ts` from the project's logomark and its own showcase renders, system fonts only | MIT |
 | `apps/studio/public/templates/*.webp`, `apps/studio/public/palette/*.webp`, `assets/lib/t/*.webp` thumbnails | Renders of Aether's own worlds and of the library assets, made with this application's renderer | MIT (the depicted third-party assets keep their own licences above) |
 | `docs/screenshots/**` | Captures of this application | MIT |
-| `tests/fixtures/photo/bedroom-cc0-hotel.jpg` (SHA-256 `5bb4bc51…a696`) | [Hotel bedroom windows (Unsplash)](https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg), Markus Spiske | CC0 1.0 |
-| `tests/fixtures/photo/bedroom-cc0-twin.jpg` (`be7f0446…6fce`) | [Twin room in a German youth hostel with single beds and wardrobe A](https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg), Profpcde | CC0 1.0 |
-| `tests/fixtures/photo/bedroom-pd-1.jpg` (`59888d02…7907`) | [USVI IMG 5175](https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg), Government of the United States Virgin Islands | Public domain |
-| `tests/fixtures/photo/bedroom-pd-2.jpg` (`61970ccc…5c73`) | [USVI IMG 5201](https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg), Government of the United States Virgin Islands | Public domain |
+| `tests/fixtures/photo/bedroom-cc0-hotel.jpg` (SHA-256 `5bb4bc51ac93cbb8cfb7712f3c4ed359081d3ed4eec613dd9914b443c8aba696`) | [Hotel bedroom windows (Unsplash)](https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg), Markus Spiske | CC0 1.0 |
+| `tests/fixtures/photo/bedroom-cc0-twin.jpg` (`be7f04460aca06dc1ad35affb28366f6087cd6b2dc1433226d1311cfb2d26fce`) | [Twin room in a German youth hostel with single beds and wardrobe A](https://commons.wikimedia.org/wiki/File:Twin_room_in_a_German_youth_hostel_with_single_beds_and_wardrobe_A.jpg), Profpcde | CC0 1.0 |
+| `tests/fixtures/photo/bedroom-pd-1.jpg` (`59888d02c1d0985c8226387526c283238295b4d1da45cc74ee589907c3197907`) | [USVI IMG 5175](https://commons.wikimedia.org/wiki/File:USVI_IMG_5175_-_White-walled_bedroom_with_a_four-poster_bed_colorful_rug_and_modern_furniture_in_bright_airy_setting.jpg), Government of the United States Virgin Islands | Public domain |
+| `tests/fixtures/photo/bedroom-pd-2.jpg` (`61970ccce764c5f06f23c4bce3bfd437e66a67e114722a1210e3deb2139c5d73`) | [USVI IMG 5201](https://commons.wikimedia.org/wiki/File:USVI_IMG_5201_-_Bright_modern_bedroom_with_a_white_vaulted_ceiling_a_colorful_zigzag_rug_and_a_four-poster_bed.jpg), Government of the United States Virgin Islands | Public domain |
 
 The four photographs above are also the sources of the example rooms in the
 studio's gallery ("Rooms rebuilt from a photo", `apps/studio/public/templates/worlds/photo-*.json`
@@ -577,6 +579,73 @@ Source Code Licences allow research or evaluation use only; TripoSG's reference 
 4.0), BRIA RMBG-1.4 (non-commercial) and `pymeshlab` (GPL-3.0). The server logs a licence notice when the
 route is turned on. Hunyuan3D-2 (territory exclusions, MAU cap), SF3D / SPAR3D (revenue cap) and InstantMesh
 (non-commercial Zero123++ weights) are not recommended. See [IMAGE_TO_3D.md](IMAGE_TO_3D.md).
+
+## Shipped file checksums
+
+SHA-256 of the shipped files that have no per-file hash elsewhere in this
+document, recomputed on 2026-10-22 with `sha256sum`. Set rules cover the rest
+of the repository:
+
+- **Library files** (`assets/lib/m`, `c`, `k`, `x`, `h`): the SHA-256 of every
+  file is recorded next to its path in `assets/manifest.json`,
+  `assets/characters.json` or `assets/ktx2.json`, and the first 8 hex digits of
+  the hash are part of the file name. The exceptions are the 10 character
+  masks, hashed below.
+- **Thumbnails** (`assets/lib/t/*.webp`, `apps/studio/public/templates/*.webp`,
+  `apps/studio/public/palette/*.webp`) and **`docs/screenshots/**`**: renders
+  and captures made with this application (MIT). The thumbnails in
+  `assets/lib/t/` carry the first 8 hex digits of their hash in the file name.
+  The depicted third-party assets keep their own licences, listed above.
+- **`apps/studio/public/templates/worlds/*.json`**: worlds made with this
+  application. The four photo-room worlds are generated from the photographs
+  listed above and contain no pixels of them.
+- **Test photographs**: hashed in full in
+  [Images, icons and test fixtures](#images-icons-and-test-fixtures).
+
+| File under `apps/studio/public/` | Origin and licence | SHA-256 |
+| --- | --- | --- |
+| `basis/basis_transcoder.js` | Basis Universal transcoder, Binomial LLC, Apache-2.0; byte-identical to `three@0.186.1` `examples/jsm/libs/basis/` | `8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1` |
+| `basis/basis_transcoder.wasm` | Same | `6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a` |
+| `basis/ktx2-worker.js` | Worker body of three's KTX2Loader (MIT) around the transcoder (Apache-2.0), generated by `scripts/assets/basis-worker.ts` | `f968b72d469e63cd1e31973efd8dd19423474e002510ec1c5266906b0c9910af` |
+| `foliage/leaf-sprites.webp` | 42 Poly Haven leaf, frond, grass and flower cut-outs, CC0-1.0, packed by `scripts/foliage/leaf-sprites.ts`; the source files are hashed in the foliage table above | `357a1cd9756a8284856a114e71629c12c07918277f13143f76be6bc23626a0b8` |
+| `foliage/leaf-sprites.json` | Index of the sprite sheet, this project (MIT) | `3ecce0ea804f1b176e609270c4b72d84f56ec488b37d162081c09ce2cbf023e3` |
+| `blocks/block-albedo.webp` | Block sheet made from 32 ambientCG materials, CC0-1.0 | `dce4c1d17adda269338442cf92131ef357dbcd8e2c59a1e91ee6e32e6ea3f180` |
+| `blocks/block-normal.webp` | Same, normal sheet | `6ae42e7110a67815327801e133a97e96865bf640301b5e234367949fbb646e54` |
+| `blocks/block-orm.webp` | Same, occlusion-roughness-metal sheet | `5b046274bb51277d16520e12e66834c5438dc375bf4e070551a2722efa36fa62` |
+| `blocks/block-albedo.ktx2` | KTX2 (UASTC) twin of the albedo sheet, same licence | `60187d0cc83d23e2caccc85b0e7711fde961ab89c72a5b26ec007de4968334e8` |
+| `blocks/block-normal.ktx2` | Same, normal sheet | `f8f18b57a1fb60905f5be42139ca2cc2a3c47d1d1c2ff21145df70abdc13e0b6` |
+| `blocks/block-orm.ktx2` | Same, ORM sheet | `f3e94f902b082068ed9326568ae4864a278d82d9e6476f8ed5a6fe67b971d9f7` |
+| `blocks/block-materials.json` | Slot map and licence record, this project (MIT) | `7394e6b83be11e006c906d5097512d20b6e349eeec92176aa3c08685f27293ba` |
+| `blocks/block-ktx2.json` | KTX2 record, this project (MIT) | `89a4c064680eee6dcc8aa25ef387ca5702ea079ef9d5552e96d1934e57086c66` |
+| `fonts/inter-var-latin.woff2` | Inter subset, SIL OFL 1.1, see Fonts | `61bfb1520d2e7d081e984f35dada957961b56e36734837aa6ce5bebcbe1e243b` |
+| `fonts/Inter-OFL.txt` | Inter licence text | `262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a` |
+| `fonts/jetbrains-mono-var-latin.woff2` | JetBrains Mono subset, SIL OFL 1.1, see Fonts | `f4256d9ed255e928da20ca7a44a8d6a8b7f8e4128f63229c4de028c842868367` |
+| `fonts/JetBrainsMono-OFL.txt` | JetBrains Mono licence text | `30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad` |
+| `favicon.svg` | Original to this project (MIT) | `dee32b52e7da5334ea177a63d7cc74bb15e751ae7527dabdc893c5e25d2bc2d3` |
+| `icon-192.png` | This project (MIT) | `b794e0b17f0caae2ac0815b25a227b8ccf92a9f0567dedc0c987a3efce5e4dd2` |
+| `icon-512.png` | This project (MIT) | `d2738791426ce73d84164f30fe1d6526e3604dfc090635e30fbd0060205df77b` |
+| `apple-touch-icon.png` | This project (MIT) | `a47c289a668a0f3273b3dcf55b3d111497a92c2afefc8aa5308168252c644951` |
+| `og.jpg` | Rendered from this project's logomark and showcase renders (MIT) | `447333bfdb5ab30766d553210dc571aeb28b7cd691e7a2515b4c97760aa6a14a` |
+| `404.html` | This project (MIT) | `3acc4f1b0324d56b3e724f25c951596f8a00aa7578332ce09f4164778ec50d91` |
+| `robots.txt` | This project (MIT) | `43fe06c8a24bcc38d15e8b172684f2f1790d7c505a040b717f092155fd25fd08` |
+| `site.webmanifest` | This project (MIT) | `6fdbf55c9eb6601c1b2543a22b6c55c0e3c01ad0aea42990addf6a8ec0b790db` |
+| `theme-boot.js` | This project (MIT) | `cf3c36212da238d55d20c7b8e3b83255160c8537f74f9f4887707f5728177124` |
+
+The ten character masks are WebP outfit masks derived from the Rocketbox
+textures (MIT, © 2020 Microsoft) by `scripts/characters/`:
+
+| File under `assets/lib/c/` | SHA-256 |
+| --- | --- |
+| `dario.masks.b1f6a6f1.webp` | `b1f6a6f12e576721d2fd9e1b7b353469416d5f5d47f026a5e0eae3c51aa40c62` |
+| `edith.masks.89d618af.webp` | `89d618af9c31d43162fe7bb08f322081f4c0be94c4036f047f3f6f78c874f99b` |
+| `felix.masks.378477bb.webp` | `378477bb6e39a5c23a0198aed25a171f2d31fcd73691e25ea75fe2975434ead7` |
+| `juno.masks.6bbb1748.webp` | `6bbb17484afe40ea10c9e6127e65a3a00877ad5079e0164f998e3a77a52a19eb` |
+| `kofi.masks.7a1cec1b.webp` | `7a1cec1b2855b8b79e67b5efacb2768d21d9f4c7ecba44fb58b86c6ecaa3d7b7` |
+| `marcus.masks.25fbd7f2.webp` | `25fbd7f2d21cdf50ce98c58f1df53dd4eeb13969c7c82b302905416fbf32dd3d` |
+| `rosa.masks.6adda7e8.webp` | `6adda7e89c1fb1279cc21d22bf8d094ee9c5a447067717fe5f38df252df87daf` |
+| `sophie.masks.ac99bbe4.webp` | `ac99bbe4f3c1ebce323ecf59fc906097eb9dc18fc664d4f101bfdd691e6bb1b9` |
+| `tomas.masks.c8bd41a2.webp` | `c8bd41a2a467c43bb9d8b11d3208538f94a51352c8d5053f0a643db520286fed` |
+| `walter.masks.a9e9f7bd.webp` | `a9e9f7bd61a8120da7adea3aa140099d22080287ac1c385cf2407197ee0a49b8` |
 
 ## External services
 
