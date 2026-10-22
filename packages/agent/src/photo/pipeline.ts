@@ -574,8 +574,11 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
 
   // Compare and correct.
   let final: Judged | null = null;
+  let finalNote = '';
   try {
-    final = (yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals)).judged;
+    const loop = yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals);
+    final = loop.judged;
+    finalNote = loop.note ?? '';
   } catch (e) {
     if (ctx.signal?.aborted) throw e;
     if (!(e instanceof Unavailable)) yield { type: 'error', text: `The compare loop stopped: ${errorMessage(e).slice(0, 300)}. The room as built so far is kept.` };
@@ -591,6 +594,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   if (final) {
     const s = final.score;
     lines.push(`Rebuilt the room from your photo: ${s.passed} of ${s.total} checklist items match${final.panel ? ` (judged by ${final.panel.samples} independent AI judges, median per item)` : ' (judged by the assistant that built it)'}${final.objective !== null ? `; the deterministic checks measure ${Math.round(final.objective * 100)}% (advisory, not the verdict)` : ''}.`);
+    if (finalNote) lines.push(finalNote);
     if (s.failing.length > 0) lines.push(`Still different: ${s.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
   } else lines.push('Rebuilt the room from your photo (not compared with it: no renders were available).');
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
@@ -602,6 +606,8 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
 interface LoopResult {
   /** The judgement of the room as it ends up (null: it was never judged). */
   judged: Judged | null;
+  /** What the final best-against-last comparison decided, in words for the user (absent: no such comparison was needed). */
+  note?: string;
 }
 
 /** A state the loop accepted: the room, its render and its judgement. */
@@ -653,6 +659,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
   let accepted = null as Accepted | null;
   let last: Judged | null = null;
+  /**
+   * The best state by the judges' own word: the first look, then every state they found closer than the accepted one (or
+   * whose median score rose). A tie is accepted, so `accepted` can drift below this; the end of the loop asks the judges.
+   */
+  let best = null as Accepted | null;
   /** The room changed since the accepted state (so the next look has to be judged). */
   let changed = true;
   let refusals: string[] = [...firstRefusals];
@@ -689,6 +700,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? said);
     if (decision.accept) {
       accepted = { world, round: at, shot, judged: cand };
+      if (decision.gain || !best) best = accepted;
       return { decision, standing: cand, rejected: null };
     }
     if (ref && revertTo(ref.world, `Back to round ${ref.round}`)) return { decision, standing: ref.judged, rejected: ref };
@@ -697,6 +709,45 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
 
   /** End of the loop: edits made after the last judged render are judged once more, and kept only when accepted. */
   async function* conclude(j: Judged, unjudgedEdits: boolean): AsyncGenerator<AgentEvent, LoopResult> {
+    const res = yield* concludeEdits(j, unjudgedEdits);
+    return yield* pickBest(res);
+  }
+
+  /**
+   * Ties are accepted, so a run of them can leave the room below the best state seen. When the state the loop ends on is
+   * not the best one, the judges look at the two renders side by side (the last against the best) and the room is the
+   * one they find closer; on a tie it stays as it is. The model decides; no score is compared here.
+   */
+  async function* pickBest(res: LoopResult): AsyncGenerator<AgentEvent, LoopResult> {
+    const cur = accepted;
+    const top = best;
+    if (judges === 0 || !cur || !top || cur === top || res.judged === null) return res;
+    const a = cur.shot.clean ?? cur.shot.images[0]?.dataUrl;
+    const b = top.shot.clean ?? top.shot.images[0]?.dataUrl;
+    if (!a || !b) return res;
+    let pref: Consensus['preference'] = null;
+    let n = 0;
+    try {
+      const out = await runPanel((req) => complete(run, req), { photo: photo.dataUrl, current: a, previous: b, checklist, judges, maxTokens: Math.min(run.maxTokens, 8000) });
+      pref = out.consensus?.preference ?? null;
+      n = out.consensus?.samples ?? 0;
+    } catch (e) {
+      if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+    }
+    if (pref === null) return res;
+    const who = `${n} AI judge${n === 1 ? '' : 's'}`;
+    if (pref === 'previous' && revertTo(top.world, `Back to the best state, round ${top.round}`)) {
+      accepted = top;
+      const note = `At the end the ${who} compared the last state (round ${cur.round}) with the best one seen (round ${top.round}) side by side and found the best closer to the photo; the room is the best one.`;
+      yield { type: 'photo', phase: 'round', text: note, score: scoreView(top.judged, true) };
+      return { judged: top.judged, note };
+    }
+    const note = `At the end the ${who} compared the last state (round ${cur.round}) with the best one seen (round ${top.round}) side by side and ${pref === 'current' ? 'found the last closer to the photo' : 'could not tell them apart'}; the last state is kept.`;
+    yield { type: 'photo', phase: 'round', text: note, score: scoreView(res.judged) };
+    return { ...res, note };
+  }
+
+  async function* concludeEdits(j: Judged, unjudgedEdits: boolean): AsyncGenerator<AgentEvent, LoopResult> {
     if (!unjudgedEdits) return { judged: j };
     const shot = await snapshot(run, photo, desc, targets, [], 1, judges > 0).catch((e) => {
       if (ctx.signal?.aborted) throw e;
@@ -739,7 +790,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     });
     if (!shot) {
       yield { type: 'photo', phase: 'unavailable', text: 'No render of the room could be made here, so it was not compared with the photo.' };
-      return { judged: last };
+      return yield* pickBest({ judged: last });
     }
     const judgedWorld = host.getWorld();
     yield { type: 'photo', phase: 'comparing', round, text: round === 1 ? 'Comparing the render with the photo, item by item.' : `Round ${round}: judging the render again.` };
@@ -802,7 +853,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       const text = textOf(res.content);
       if (res.stopReason === 'error' && calls.length === 0) {
         yield { type: 'error', text: text || 'The model could not complete the comparison.' };
-        return { judged: standing ?? last };
+        return yield* pickBest({ judged: standing ?? last });
       }
       if (calls.length === 0) {
         if (ready()) {
@@ -886,7 +937,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
 
     if (!standing) {
       yield { type: 'photo', phase: 'unavailable', text: 'The assistant did not judge the render; stopped comparing.' };
-      return { judged: last };
+      return yield* pickBest({ judged: last });
     }
     const j: Judged = standing;
     last = j;

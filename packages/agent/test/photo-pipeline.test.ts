@@ -138,7 +138,8 @@ describe('verdict limits', () => {
     const host = new PhotoHost();
     const tooMany = (): ContentBlock[] => [call('report_verdicts', { verdicts: Array.from({ length: MAX_VERDICTS + 1 }, (_, i) => ({ id: `item-${i}`, pass: true })) })];
     const provider = scripted([describeCall(), tooMany, verdicts([]), finish]);
-    await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    const evs = await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    console.log('EVT', JSON.stringify(evs.filter(e=>e.type!=='patches').map(e=>(e as any).text?.slice(0,200))));
     const results = provider.requests.flatMap((r) => r.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : []))).filter((b): b is Extract<ContentBlock, { type: 'tool_result' }> => b.type === 'tool_result');
     expect(results.some((r) => r.isError === true && r.content.includes(`at most ${MAX_VERDICTS}`))).toBe(true);
   });
@@ -263,7 +264,8 @@ describe('room from a photo, with a vision model', () => {
       verdicts([]),
     ]);
     const host = new PhotoHost();
-    await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    const evs = await collect(agent(provider).run('recreate this room', host, { images: [fakePhoto(1200, 1600)] }));
+    console.log('EVT', JSON.stringify(evs.filter(e=>e.type!=='patches').map(e=>(e as any).text?.slice(0,200))));
     const second = provider.requests[2]?.messages.at(-1);
     const text = JSON.stringify(second?.content);
     expect(text).toContain('Judge first');
@@ -462,6 +464,32 @@ describe('room from a photo, with a panel of independent judges', () => {
     const later = JSON.stringify(provider.requests.at(-1)?.messages);
     expect(later).toMatch(/Advisory, from the deterministic checks/);
     expect(later).toMatch(/measured inventory fell/);
+  });
+
+  it('a run of accepted ties ends on the judges\' side-by-side pick of the best state, not on the drifted one', async () => {
+    let calls = 0;
+    const judge = (req: CompletionRequest): ContentBlock[] => {
+      calls++;
+      // Looks 1 and 2 (three seats each): the second is a tie. The final best-against-last comparison prefers the best.
+      return judgeReply(calls > 6 ? 'previous' : 'same', ['item-picture-left'])(req);
+    };
+    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: 2.3 }] })], finish], judge);
+    const host = new PhotoHost();
+    const events = await collect(panelAgent(provider, { maxRounds: 3 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    expect(calls).toBe(9);
+    const t = readScene(host.world, PHOTO_BUILDING_ID)?.items.find((i) => i.id.endsWith('picture-left'))?.wall?.t;
+    expect(t).not.toBeCloseTo(2.3, 1);
+    const done = photoEvents(events).find((e) => e.phase === 'done');
+    expect(done?.text).toMatch(/side by side and found the best closer/);
+    expect(done?.text).toMatch(/3 AI judges/);
+  });
+
+  it('keeps the last state when the final side-by-side finds no difference', async () => {
+    const provider = scripted([describeCall(), () => [call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: 2.3 }] })], finish], judgeReply('same', ['item-picture-left']));
+    const host = new PhotoHost();
+    const events = await collect(panelAgent(provider, { maxRounds: 3 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    expect(readScene(host.world, PHOTO_BUILDING_ID)?.items.find((i) => i.id.endsWith('picture-left'))?.wall?.t).toBeCloseTo(2.3, 1);
+    expect(photoEvents(events).find((e) => e.phase === 'done')?.text).toMatch(/could not tell them apart; the last state is kept/);
   });
 
   it('falls back to the model in the conversation when no judge answers', async () => {
