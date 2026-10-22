@@ -11,6 +11,9 @@ import { isForbiddenKey, MaterialFinish as MaterialFinishSchema, type Json, type
 import type { Compass } from '../plan';
 import type { DesignPlan } from '../scene/design';
 import { furnitureByKind, furnitureSize } from '../furniture/index';
+
+/** Kinds whose parametric part a photo room swaps for the closest real model when the description names none. */
+const PHOTO_MODEL_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'dining-table', 'coffee-table', 'bed', 'desk', 'plant']);
 import type { PhotoItem, PhotoOpening, PhotoWallFinish, RoomDescription } from './description';
 
 /** Half the thickness of the (exterior) wall of the shell: interior face coordinates are shifted by this to wall `t`. */
@@ -469,6 +472,15 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
     const base: Record<string, Json> = { kind: it.kind, room: PHOTO_ROOM_ID, id: it.id, name: (it.label || it.kind).slice(0, 60) };
     const params = paramJson(it.params);
     if (Object.keys(params).length > 0) base['params'] = params;
+    // A real model for the piece: the one the description names, else the closest the finder knows. Its size follows the
+    // width, height and depth the description gives; the parametric part is the fallback when no model fits.
+    const model = it.model ?? (PHOTO_MODEL_KINDS.has(it.kind) && it.params['builtin'] !== true ? 'auto' : undefined);
+    if (model) {
+      base['model'] = model;
+      // The part's own size (the described one, or the part's default) is what the room is laid out for.
+      const sz = furnitureSize(def, params);
+      base['fit'] = [Math.round(sz[0] * 100) / 100, Math.round(sz[1] * 100) / 100, Math.round(sz[2] * 100) / 100];
+    }
     if (it.kind === 'cornice') continue; // handled below from the ceiling description, per wall
     if (it.kind === 'curtain') {
       if (!it.opening || !windowIds.has(it.opening)) {

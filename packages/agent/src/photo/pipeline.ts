@@ -885,7 +885,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
   const hs = run.harness ?? null;
   const baseRounds = hs?.rounds ?? 0;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1124,7 +1124,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME || n === GATE_TOOL_NAME ? 0 : n === 'finish' ? 3 : n === REPAIR_TOOL_NAME ? 1 : 2);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME || n === GATE_TOOL_NAME ? 0 : n === 'finish' ? 3 : n === REPAIR_TOOL_NAME || n === 'find_model' ? 1 : 2);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
         if (call.name === DIFFERENCES_TOOL_NAME) {

@@ -65,6 +65,8 @@ export const PlaceItemInput = z
   .object({
     kind: z.string().min(1).max(40).optional(),
     asset: z.string().max(90).optional(),
+    model: z.string().max(90).optional(),
+    fit: z.array(z.number().finite().min(0).max(10)).min(1).max(3).optional(),
     room: Ref,
     level: z.number().int().min(0).max(20).optional(),
     id: z.string().max(40).optional(),
@@ -321,7 +323,7 @@ function runBatch(world: WorldDoc, rawInput: unknown, tool: 'place_items' | 'edi
         lines.push(`[${label}] refused: ${issues(p.error)}`);
         return;
       }
-      label = `${index + 1} ${p.data.kind ?? p.data.asset ?? 'item'}`;
+      label = `${index + 1} ${p.data.kind ?? p.data.model ?? p.data.asset ?? 'item'}`;
       r = placeItem(working, data.building, stripUndefined(p.data));
     } else {
       const p = EditItemInput.safeParse(raw);

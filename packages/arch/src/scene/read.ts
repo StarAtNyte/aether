@@ -165,7 +165,8 @@ export function readScene(world: WorldDoc, buildingId: EntityId): Scene | null {
       items.push(readItem(e, g, L.id, index, levelRooms, ceiling));
     }
   }
-  return { building: buildingId, levels, rooms, items, obstacles };
+  const planStyle = (root.arch?.plan as { style?: unknown } | undefined)?.style;
+  return { building: buildingId, levels, rooms, items, obstacles, ...(typeof planStyle === 'string' ? { style: planStyle } : {}) };
 }
 
 /** Opening angle the sweep is measured to (a little over the leaf's 92 degrees). */

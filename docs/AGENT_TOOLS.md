@@ -30,7 +30,7 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 
 | Tool set | Names | Source |
 | --- | --- | --- |
-| Planner tools (`AGENT_TOOLS`), 16 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
+| Planner tools (`AGENT_TOOLS`), 17 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `find_model`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
 | Tools given to sub-calls, 6. The planner never sees these | `submit_generator` (coder), `describe_room`, `sample_photo`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts` (`describe_room`, `sample_photo`, `report_verdicts`), `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
@@ -124,6 +124,13 @@ refusals as text with a fix.
 - **Input.** `{items[1..40], building?, message?}`. Each item (`PlaceItemInput`, strict) has:
   - `kind` or `asset`, `room`, `level?`, `id?`, `name?`, `params?` and `opening?` (the window, for curtains and
     blinds).
+  - A real model: `kind: "model:<id>"` (or `model: "<id>"`) places a library model found with `find_model`; the model
+    stands in for the catalogue kind that mounts the way it does (sofa, lamp, picture...), so anchoring, collisions,
+    clearances and seating work as for a part. `model: "auto"` with a `kind` lets the finder choose by the building's
+    style, `params.color` and `fit`; when nothing fits, the parametric part is placed and the answer says so.
+    `fit: [w,h,d]` (metres, 0 for a side that does not matter) scales the model within 0.5x to 2x. `params.color`
+    (`#rrggbb`) recolours upholstery models (their main material is named `paint`). Models do not open: wardrobes,
+    cabinets and kitchens stay parts.
   - A target: `wall` with `t` or `align`, or `at [x,z]`, or `on` (a host piece) with `offset`. Optional `edge`,
     `gap`, `y`, `yaw` and `faces`.
 - **Curtains and blinds.** A `curtain` item with `opening` hangs one panel on each side of that window (two
@@ -318,6 +325,19 @@ See [Eyes](#query_level-1).
   with their procedural shape. Places with `shape {"kind":"asset","id"}`. If the library is not loaded, the
   result says so.
 - **When to use it.** For everyday objects, ahead of primitives (system prompt, "Guidelines").
+
+### `find_model`
+
+- **What it does.** Ranks the photographed, real-size interior models of the library (`@aether/assets`
+  `findModels`: sofas, armchairs, chairs, tables, beds, shelves, lamps, plants, vases, books, mirrors, pictures,
+  clocks, small appliances) by what the piece is, the design style, the colour and the size wanted.
+- **Input.** `{what, style?, color?, size? [w,h,d], limit 1..8 (4)}`. `what` is free text ("green velvet armchair");
+  its type word picks the models, the other words rank them.
+- **Returns.** One line per model: `id — name: size; styles; colours; where it goes; why it ranked`. The model judges
+  the candidates (and later the render) and places one with `place_items`. Colours are measured from the model's own
+  base-colour texture, not written by hand.
+- **When to use it.** Before placing seating, tables, beds, lamps, plants and decor, and in the photo compare loop when a
+  piece differs in shape, style or colour.
 
 ### `write_generator`
 

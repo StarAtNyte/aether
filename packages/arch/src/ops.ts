@@ -167,6 +167,9 @@ function subtree(world: WorldDoc, root: EntityId): Set<EntityId> {
 /** Re-apply recorded property edits to a freshly compiled piece (invalid results keep the compiled piece). */
 function withOverrides(piece: Entity, overrides: Readonly<Record<string, Json>>): Entity {
   const draft = structuredClone(piece) as unknown as Record<string, unknown>;
+  // Recorded edits of a part's own options (cover, colour, size) need the parametric part: a library model that the
+  // compiler chose for the piece gives way to its fallback.
+  if (piece.shape.kind === 'asset' && piece.shape.fallback?.kind === 'procedural' && Object.keys(overrides).some((k) => k.startsWith('shape.params.'))) draft['shape'] = structuredClone(piece.shape.fallback);
   for (const [path, value] of Object.entries(overrides)) {
     const keys = path.split('.');
     if (keys.some((k) => isForbiddenKey(k)) || keys[0] === 'id' || keys[0] === 'parent' || keys[0] === 'arch') continue;

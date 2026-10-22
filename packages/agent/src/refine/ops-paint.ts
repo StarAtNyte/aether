@@ -8,6 +8,7 @@
  * finish of the face that looks into the room.
  */
 import { FINISHES } from '@aether/arch';
+import { catalogEntry } from '@aether/assets';
 import { MaterialFinish, type Entity, type EntityId, type Json, type MaterialPreset, type MaterialSpec, type ParamSpec } from '@aether/core';
 import { adjustColor } from './adjust';
 import type { Command, Look } from './command';
@@ -332,7 +333,18 @@ function descendantsWithShape(env: OpEnv, id: EntityId): SceneItem[] {
   return env.index.subtree(id).slice(1).map((c) => env.index.get(c)).filter((x): x is SceneItem => !!x && x.entity.shape.kind !== 'none' && !x.entity.light);
 }
 
-function paintItem(env: OpEnv, item: SceneItem, cmd: Extract<Command, { op: 'paint' }>, notes: string[]): boolean {
+function paintItem(env: OpEnv, picked: SceneItem, cmd: Extract<Command, { op: 'paint' }>, notes: string[]): boolean {
+  let item = picked;
+  // A library model keeps its photographed look: a plain recolour tints upholstery models (their paint material). Anything
+  // else (a finish, a part, a cover material) goes back to the parametric part, which has the options to change.
+  const model = item.entity.shape;
+  if (model.kind === 'asset' && model.fallback?.kind === 'procedural') {
+    const tint = catalogEntry(model.id)?.interior?.paint === true && cmd.look.color !== undefined && !cmd.look.finish && !cmd.look.preset && !cmd.ref.part;
+    if (!tint) {
+      env.draft.entity(item.id).shape = model.fallback;
+      item = { ...item, entity: { ...item.entity, shape: model.fallback } };
+    }
+  }
   const e = item.entity;
   const lightNoun = /^(light|lamp|lantern|bulb|lighting)$/.test(cmd.ref.noun);
   // A light's colour.

@@ -4,7 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
-import { loadCatalog, searchAssets } from '@aether/assets';
+import { describeModel, findModels, loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
@@ -391,6 +391,17 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).`), isError: false, events: [], edited: false };
 }
 
+/** find_model: ranked real models for one piece with the facts to judge them by. */
+async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
+  const catalog = await loadCatalog();
+  if (catalog.entries.length === 0) return { content: 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
+  const hits = findModels(catalog, { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) });
+  if (hits.length === 0) return { content: `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
+  const lines = hits.map(describeModel);
+  const same = hits[0]!.entry.interior?.type;
+  return { content: clip(`${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x). ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
+}
+
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {
   const world = ctx.host.getWorld();
   if (input.groups) return { content: clip(readGroups(world, input.ids)), isError: false, events: [], edited: false };
@@ -519,7 +530,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -566,6 +577,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'request_asset': {
         const p = ToolInputs.request_asset.safeParse(rawInput);
         return p.success ? await requestAssetTool(ctx, p.data) : fail(`Invalid request_asset input: ${issuesText(p.error)}`);
+      }
+      case 'find_model': {
+        const p = ToolInputs.find_model.safeParse(rawInput);
+        return p.success ? await findModelTool(p.data) : fail(`Invalid find_model input: ${issuesText(p.error)}`);
       }
       case 'search_assets': {
         const p = ToolInputs.search_assets.safeParse(rawInput);

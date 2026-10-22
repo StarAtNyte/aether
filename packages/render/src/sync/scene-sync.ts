@@ -120,6 +120,8 @@ export interface SceneSyncOptions {
   models?: ModelCache;
   /** Image textures for imported posters (asset shapes of user images). */
   textures?: TextureCache;
+  /** Asked when a library model mounts: true loads its light copy (256 px textures) instead of the full file, for the low tiers. */
+  liteModels?: () => boolean;
   /** 'ghost' renders translucent previews: no lights, no shadows. */
   variant?: MaterialVariant;
   /** Total instance budget (default {@link DEFAULT_MAX_INSTANCES}). */
@@ -1248,8 +1250,10 @@ export class SceneSync {
   private async mountModelAsset(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number): Promise<void> {
     const models = this.opts.models;
     if (!models || !info.url) throw new Error('model loading is not available');
-    const url = info.url;
-    const lodUrls = this.variant === 'standard' ? info.lodUrls : [];
+    // The low tiers load the light copy (small textures, one level) of models that have one.
+    const lite = info.liteUrl && this.variant === 'standard' && this.opts.liteModels?.() === true;
+    const url = lite ? info.liteUrl! : info.url;
+    const lodUrls = this.variant === 'standard' && !lite ? info.lodUrls : [];
     const urls = [url, ...lodUrls];
     // One reference per URL, held until the content is torn down (or released at once on failure / staleness).
     const loads = urls.map((u) => models.acquire(u));

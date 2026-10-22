@@ -77,6 +77,8 @@ export interface Placed {
   name: string;
   /** Library model shown instead of the generator (see `furniture/assets.ts`); `size` is then the model's. */
   asset?: string;
+  /** A library model resized to this largest dimension (metres). */
+  assetFit?: number;
   /** Wall pieces: the edge they hang on and their centre along it. */
   wall?: { edge: number; t: number };
 }
@@ -480,8 +482,10 @@ export class RoomLayout {
   }
 
   make(def: FurnitureDef, params: Record<string, Json>, x: number, z: number, yaw: number, y = 0, name?: string): Placed {
-    const asset = this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style);
-    const size = asset ? asset.size : furnitureSize(def, params);
+    // The room's seed picks among equally good models: every piece of a kind in a room is the same model, rooms differ.
+    const asset = this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style, { seed: String(this.ctx.seed) });
+    const wanted = furnitureSize(def, params);
+    const size = asset ? asset.size : wanted;
     const floor = def.mount === 'floor';
     return {
       ...(asset ? { asset: asset.id } : {}),
@@ -524,7 +528,7 @@ export class RoomLayout {
   private againstWallOnce(kind: string, params: Record<string, Json>, edge: number, t: number | null, name?: string): Placed | null {
     const def = this.def(kind);
     if (!def) return null;
-    const size = (this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style))?.size ?? furnitureSize(def, params);
+    const size = (this.parametricOnly ? null : furnitureAsset(def.kind, this.ctx.style, { seed: String(this.ctx.seed) }))?.size ?? furnitureSize(def, params);
     const e = this.ctx.edges[edge] as RoomEdge;
     const yaw = yawFacingIn(e);
     const free = this.freeIntervals(edge, size[1]);

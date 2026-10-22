@@ -888,6 +888,7 @@ export class WorldRenderer {
     this.ghostRun.setSystem(this.characters);
     this.sync = new SceneSync({
       ...common,
+      liteModels: () => this.lowMemory || this.gpu.tier === 'software' || this.autoTierNow() === 'low',
       characters: this.characters,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,

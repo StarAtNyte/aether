@@ -333,6 +333,8 @@ export function planShape(env: OpEnv, cmd: Extract<Command, { op: 'shape' }>): O
   let changed = 0;
   for (const it of res.items) {
     const ent = env.draft.entity(it.id);
+    // A named shape ("round", "oak") is a part option: a library model goes back to its parametric part first.
+    if (ent.shape.kind === 'asset' && ent.shape.fallback?.kind === 'procedural') ent.shape = ent.shape.fallback;
     const sh = ent.shape;
     if (sh.kind === 'procedural') {
       const spec = env.params(sh.generator);

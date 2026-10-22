@@ -140,7 +140,7 @@ function living(L: RoomLayout): void {
     const sw = sofa.size[0];
     const ctW = Math.min(1.3, Math.max(0.8, sw * 0.52));
     // 0.42 m of knee room in front of the seat; the table's own half depth (a library model may be deeper).
-    const ctDepth = furnitureAsset('coffee-table', ctx.style)?.size[2] ?? 0.6;
+    const ctDepth = furnitureAsset('coffee-table', ctx.style, { seed: String(ctx.seed) })?.size[2] ?? 0.6;
     const ctPos = ahead(sofa, sofa.size[2] / 2 + 0.42 + ctDepth / 2);
     L.tryAt('rug', { width: Math.min(3.4, sw + 0.8), depth: 2.2, color: pal.rug, border: pal.rugBorder }, ...ahead(sofa, sofa.size[2] / 2 + 0.55), sofa.yaw);
     L.tryAt('coffee-table', { width: ctW, depth: 0.6, top: pal.worktop === 'oak' ? 'walnut' : pal.worktop, legs: pal.metal === 'brass' ? 'brass' : 'black-metal', shape: ctx.style === 'japandi' ? 'oval' : 'rect' }, ctPos[0], ctPos[1], sofa.yaw);

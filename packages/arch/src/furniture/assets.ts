@@ -8,7 +8,7 @@
  * and asset furniture are checked the same way.
  */
 import type { Entity, Json } from '@aether/core';
-import { assetShapeSize, catalogEntry, getCatalog } from '@aether/assets';
+import { assetShapeSize, AUTO_MODEL_KINDS, catalogEntry, getCatalog, pickModel, type CatalogEntry } from '@aether/assets';
 import { furnitureById, furnitureByKind, furnitureSize, type FurnitureDef } from './index';
 import type { ArchStyle } from '../plan';
 
@@ -26,15 +26,40 @@ export const FURNITURE_ASSETS: Readonly<Record<string, ReadonlyArray<{ id: strin
   pendant: [{ id: 'pendant-lamp', styles: ['modern', 'scandinavian', 'industrial', 'japandi'] }],
 };
 
-/** The library model a layout should use for a kind in a style, or null (catalog not loaded, or none fits). */
-export function furnitureAsset(kind: string, style: ArchStyle = 'modern'): { id: string; size: [number, number, number] } | null {
-  if (!getCatalog()) return null;
+/**
+ * The library model a layout should use for a kind in a style, or null (catalog not loaded, or none fits).
+ * The hand-picked list above goes first; then the interior finder chooses among the realistic models of that
+ * type whose styles suit the building (kinds with doors and drawers keep their parametric part, which opens in play).
+ */
+export function furnitureAsset(kind: string, style: ArchStyle = 'modern', opts: { seed?: string; color?: string; size?: ReadonlyArray<number | undefined> } = {}): { id: string; size: [number, number, number] } | null {
+  const catalog = getCatalog();
+  if (!catalog) return null;
   for (const opt of FURNITURE_ASSETS[kind] ?? []) {
     if (!opt.styles.includes(style)) continue;
     const e = catalogEntry(opt.id);
     if (e && e.kind === 'model') return { id: opt.id, size: [e.size[0], e.size[1], e.size[2]] };
   }
-  return null;
+  if (!AUTO_MODEL_KINDS.has(kind)) return null;
+  const e = pickModel(catalog, kind, style, opts);
+  return e ? { id: e.id, size: [e.size[0], e.size[1], e.size[2]] } : null;
+}
+
+/**
+ * The catalogue kind that stands in for a library model when it is placed by id: it carries the mount, the
+ * clearance in front and the seat semantics (a sofa model is sat on, a lamp model hangs where lamps hang).
+ */
+export function kindForModel(e: CatalogEntry): string {
+  const t = e.interior?.type ?? e.id.split('-')[0] ?? '';
+  const byType: Record<string, string> = {
+    sofa: 'sofa', armchair: 'armchair', chair: 'chair', stool: 'bar-stool', ottoman: 'armchair', bench: 'chair', table: 'dining-table', 'coffee-table': 'coffee-table',
+    'side-table': 'coffee-table', desk: 'desk', nightstand: 'nightstand', console: 'sideboard', sideboard: 'sideboard', dresser: 'sideboard', wardrobe: 'wardrobe',
+    bookshelf: 'bookshelf', shelf: 'bookshelf', bed: 'bed', fireplace: 'fireplace', plant: 'plant', mirror: 'mirror', picture: 'art', tv: 'tv-set',
+  };
+  if (t === 'lamp') return e.placement === 'ceiling' ? 'pendant' : e.placement === 'wall' ? 'sconce' : e.placement === 'surface' ? 'table-lamp' : 'plant';
+  const k = byType[t];
+  // The stand-in must mount the way the model does (a standing photo frame is not a wall picture).
+  if (k && furnitureByKind(k)?.mount === e.placement) return k;
+  return e.placement === 'wall' ? 'art' : e.placement === 'ceiling' ? 'pendant' : e.placement === 'surface' ? 'accent' : 'plant';
 }
 
 /** Furniture semantics of an entity: its definition (from the generator or the asset's fallback) and size. */

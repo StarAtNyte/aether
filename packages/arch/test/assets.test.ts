@@ -28,9 +28,13 @@ describe('library furniture in buildings', () => {
   it('uses photographed models for mapped kinds, with the generator as fallback', async () => {
     await loadCatalog();
     expect(furnitureAsset('sofa', 'classic')?.id).toBe('sofa-classic');
-    expect(furnitureAsset('sofa', 'modern')).toBeNull();
+    // A modern flat gets a real modern sofa from the interior set (the hand-picked classic one stays classic-only).
+    expect(furnitureAsset('sofa', 'modern')?.id).toMatch(/^sofa-0[23]$/);
     expect(furnitureAsset('pendant', 'modern')?.id).toBe('pendant-lamp');
-    expect(furnitureAsset('bed', 'classic')).toBeNull();
+    // Beds come from the interior set too, but kinds with doors and drawers keep their parametric parts.
+    expect(furnitureAsset('bed', 'classic')?.id).toMatch(/^bed-/);
+    expect(furnitureAsset('wardrobe', 'classic')).toBeNull();
+    expect(furnitureAsset('nightstand', 'modern')).toBeNull();
     const world = build();
     const sofa = Object.values(world.entities).find((e) => e.arch?.kind === 'sofa')!;
     expect(sofa.shape).toMatchObject({ kind: 'asset', id: 'sofa-classic', fallback: { kind: 'procedural', generator: 'furn-sofa' } });
@@ -41,7 +45,8 @@ describe('library furniture in buildings', () => {
     expect(f.def.kind).toBe('sofa');
     expect(f.size[0]).toBeCloseTo(1.571, 2);
     const beds = Object.values(world.entities).filter((e) => e.arch?.kind === 'bed');
-    for (const b of beds) expect(b.shape.kind).toBe('procedural');
+    for (const b of beds) expect(b.shape.kind === 'procedural' || (b.shape.kind === 'asset' && b.shape.fallback?.kind === 'procedural')).toBe(true);
+    for (const w of Object.values(world.entities).filter((e) => e.arch?.kind === 'wardrobe')) expect(w.shape.kind).toBe('procedural');
   });
 
   it('a modern flat keeps parametric seating but gets real coffee tables and pendants', async () => {

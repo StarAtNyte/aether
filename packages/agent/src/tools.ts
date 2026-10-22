@@ -48,7 +48,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -226,6 +226,23 @@ export const AGENT_TOOLS: ToolDef[] = [
         limit: { type: 'integer', minimum: 1, maximum: 20 },
       },
       required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'find_model',
+    description:
+      'Find photographed, real-size furniture and decor models for one piece, ranked by style, colour and size, with their facts so you can choose. Pick one and place it with place_items {"kind":"model:<id>"} (optional "fit":[w,h,d] metres to scale it, "yaw"); kind "sofa" with "model":"auto" lets the finder choose. Models do not open (no drawers or doors): keep the parametric part for wardrobes, cabinets and kitchens.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        what: { type: 'string', description: 'The piece, e.g. "sofa", "green armchair", "round dining table", "floor plant", "pendant lamp".' },
+        style: { type: 'string', description: 'modern, scandinavian, industrial, japandi, classic, rustic, vintage...' },
+        color: { type: 'string', description: 'Colour name or #rrggbb of the piece.' },
+        size: { type: 'array', items: { type: 'number' }, minItems: 1, maxItems: 3, description: 'Wanted [width, height, depth] in metres (0 for a side that does not matter).' },
+        limit: { type: 'integer', minimum: 1, maximum: 8 },
+      },
+      required: ['what'],
       additionalProperties: false,
     },
   },
@@ -435,6 +452,13 @@ export const ToolInputs = {
     query: z.string().max(120),
     category: z.enum(ASSET_CATEGORIES).optional(),
     limit: z.number().int().min(1).max(20).default(8),
+  }),
+  find_model: z.object({
+    what: z.string().min(1).max(120),
+    style: z.string().max(40).optional(),
+    color: z.string().max(40).optional(),
+    size: z.array(z.number().finite().min(0).max(20)).min(1).max(3).optional(),
+    limit: z.number().int().min(1).max(8).default(4),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),
   run_verification: z.object({}),

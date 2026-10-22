@@ -228,6 +228,9 @@ export function stepLabel(name: string, input: unknown, ok: boolean): string {
     case 'search_assets':
       text = 'Searching the asset library';
       break;
+    case 'find_model':
+      text = 'Choosing a real model';
+      break;
     case 'run_verification':
       text = 'Running the checks';
       break;

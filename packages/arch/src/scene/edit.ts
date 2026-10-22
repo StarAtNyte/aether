@@ -11,8 +11,9 @@
  * stairs, in a door's swing, walling a room in), the placement is refused.
  */
 import { applyPatches, Entity, hasOwn, type EntityId, type Json, type Patch, type WorldDoc } from '@aether/core';
-import { assetShapeSize, catalogEntry } from '@aether/assets';
+import { assetShapeSize, catalogEntry, findModels, getCatalog } from '@aether/assets';
 import { furnitureByKind, furnitureSize } from '../furniture/index';
+import { kindForModel } from '../furniture/assets';
 import { yawFacingIn } from '../layout';
 import type { Compass } from '../plan';
 import type { RoomEdge } from '../rooms';
@@ -62,6 +63,10 @@ export interface PlaceSpec extends Target {
   kind?: string;
   /** Library model id (alternative to `kind`; give `kind` too when it is not a catalogue kind). */
   asset?: string;
+  /** A library model: its id, or "auto" to let the finder choose the best model for `kind` (style, colour, size). */
+  model?: string;
+  /** Wanted size [width, height, depth] in metres for a library model; it is scaled (within 0.5x to 2x) to match. */
+  fit?: number[];
   room: string;
   level?: number;
   /** Handle of the piece (entity id becomes `<building>-<handle>`). */
@@ -276,23 +281,61 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
   const { scene } = b;
   const room = findRoom(scene, spec.room, spec.level);
   if (isLookupError(room)) return fail(room.error);
-  const kindWanted = typeof spec.kind === 'string' ? spec.kind.trim().toLowerCase() : '';
-  if (!kindWanted && !spec.asset) return fail(`say what to place: kind is one of ${partKinds().join(', ')} (or an asset id)`);
-  const def = kindWanted ? furnitureByKind(kindWanted) : undefined;
-  let assetInfo: { id: string; size: [number, number, number]; placement?: string } | undefined;
-  if (spec.asset) {
-    if (typeof spec.asset !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(spec.asset)) return fail('asset must be a library asset id (see search_assets)');
-    const entry = catalogEntry(spec.asset);
-    const size = entry ? assetShapeSize({ id: spec.asset }) : null;
-    if (!entry || !size) return fail(`unknown library asset "${spec.asset.slice(0, 60)}": find ids with search_assets`);
-    assetInfo = { id: spec.asset, size, ...(entry.placement ? { placement: entry.placement } : {}) };
+  let kindWanted = typeof spec.kind === 'string' ? spec.kind.trim().toLowerCase() : '';
+  // `kind: "model:<id>"` and `model: "<id>"` name a library model; `model: "auto"` lets the finder choose for the kind.
+  let assetId = spec.asset;
+  let autoMiss = '';
+  const modelRef = /^model:(.+)$/.exec(kindWanted);
+  if (modelRef) {
+    assetId = modelRef[1]!.trim();
+    kindWanted = '';
+  }
+  if (typeof spec.model === 'string' && spec.model !== '') {
+    if (spec.model === 'auto') {
+      const catalog = getCatalog();
+      const want = kindWanted || 'accent';
+      const color = spec.params && typeof spec.params['color'] === 'string' ? (spec.params['color'] as string) : undefined;
+      // With a wanted size, only a model within a third of it in every given side stands in (a queen bed is not a day bed).
+      const fits = (e: { size: readonly number[] }): boolean => !spec.fit || spec.fit.every((v, i) => !(v > 0) || !(e.size[i]! > 0) || Math.abs(Math.log(e.size[i]! / v)) <= 0.3);
+      const hit = catalog ? findModels(catalog, { kind: want, style: scene.style ?? 'modern', limit: 12, strictStyle: true, ...(color ? { color } : {}), ...(spec.fit ? { size: spec.fit } : {}) }).find((h) => fits(h.entry)) : undefined;
+      // No catalog or no fit: the parametric part is placed instead (the answer says so).
+      if (hit) assetId = hit.entry.id;
+      else autoMiss = `no library model fits "${want}" in this style: the parametric part was placed`;
+    } else assetId = spec.model.replace(/^model:/, '').trim();
+  }
+  if (!kindWanted && !assetId) return fail(`say what to place: kind is one of ${partKinds().join(', ')} (or a model id)`);
+  let def = kindWanted ? furnitureByKind(kindWanted) : undefined;
+  let assetInfo: { id: string; size: [number, number, number]; fitSize?: number; placement?: string; tint?: string } | undefined;
+  if (assetId) {
+    if (typeof assetId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(assetId)) return fail('asset must be a library model id (see find_model)');
+    const entry = catalogEntry(assetId);
+    const size = entry ? assetShapeSize({ id: assetId }) : null;
+    if (!entry || !size) return fail(`unknown library model "${assetId.slice(0, 60)}": find ids with find_model`);
+    assetInfo = { id: assetId, size, ...(entry.placement ? { placement: entry.placement } : {}) };
+    // An explicit colour recolours upholstery and painted models (their main material is named "paint").
+    const asked = spec.params?.['color'];
+    if (entry.interior?.paint && typeof asked === 'string' && /^#[0-9a-f]{6}$/i.test(asked)) assetInfo.tint = asked;
+    // A model placed by id stands in for the catalogue kind that mounts the way it does (sofa, lamp, picture...).
+    def ??= furnitureByKind(kindForModel(entry));
+    if (spec.fit && spec.fit.length > 0) {
+      const ratios = spec.fit.slice(0, 3).flatMap((v, i) => (Number.isFinite(v) && v > 0 && size[i]! > 0.01 ? [v / size[i]!] : []));
+      if (ratios.length > 0) {
+        const raw = Math.exp(ratios.reduce((a, r) => a + Math.log(r), 0) / ratios.length);
+        const k = Math.min(2, Math.max(0.5, raw));
+        if (Math.abs(k - 1) > 0.02) {
+          assetInfo.size = [size[0] * k, size[1] * k, size[2] * k];
+          assetInfo.fitSize = Math.round(Math.max(size[0], size[1], size[2]) * k * 1000) / 1000;
+        }
+      }
+    }
   }
   if (!def && !assetInfo) return fail(`unknown kind "${kindWanted.slice(0, 40)}": the parts are ${partKinds().join(', ')}`);
   // A catalogue kind carries the mount and parameters; a bare library asset is a generic floor / wall piece.
   const mount = def ? def.mount : assetInfo?.placement === 'wall' ? 'wall' : assetInfo?.placement === 'ceiling' ? 'ceiling' : 'floor';
-  if (!def) return fail('place a library asset by giving its catalogue kind too (for example kind "sofa" with asset "sofa-classic"); generic assets are not supported yet');
+  if (!def) return fail('this library model has no matching part to place it as: give its catalogue kind too (for example kind "sofa")');
   const given = spec.params && typeof spec.params === 'object' && !Array.isArray(spec.params) ? spec.params : {};
   const { params, notes } = resolvePartParams(def, given);
+  if (autoMiss) notes.push(autoMiss);
   const size = assetInfo ? assetInfo.size : (defaultSizeFor(def.kind, params) as [number, number, number]);
   const handle = spec.id ? slug(spec.id) : nextHandle(scene, b.id, def.kind);
   if (!handle || !ID_RE.test(handle)) return fail('id must be a short lowercase slug (letters, digits, dashes)');
@@ -376,7 +419,7 @@ function finishPlace(
   scene: Scene,
   room: SceneRoom,
   def: NonNullable<ReturnType<typeof furnitureByKind>>,
-  assetInfo: { id: string; size: [number, number, number] } | undefined,
+  assetInfo: { id: string; size: [number, number, number]; fitSize?: number; tint?: string } | undefined,
   params: Record<string, Json>,
   notes: string[],
   entityId: EntityId,
@@ -395,7 +438,7 @@ function finishPlace(
     levelId,
     level: room.level,
     ...(spec.name ? { name: spec.name.slice(0, 80) } : {}),
-    ...(assetInfo ? { asset: { id: assetInfo.id, size: assetInfo.size } } : {}),
+    ...(assetInfo ? { asset: { id: assetInfo.id, size: assetInfo.size, ...(assetInfo.fitSize !== undefined ? { fitSize: assetInfo.fitSize } : {}), ...(assetInfo.tint ? { tint: assetInfo.tint } : {}) } } : {}),
     ...(def.kind === 'pendant' || def.kind === 'ceiling-light' ? { light: fittingLight(Math.hypot(room.bbox[2] - room.bbox[0], room.bbox[3] - room.bbox[1]) * 1.1) } : {}),
   });
   const parsed = Entity.safeParse(ent);

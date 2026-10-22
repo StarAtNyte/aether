@@ -148,6 +148,8 @@ export const PhotoItem = z.object({
   /** Wall pieces hung above another piece: the id of that piece and the gap above its top. */
   above: Handle.optional(),
   aboveGap: Num(0, 3).optional(),
+  /** A library model id (from find_model) that stands in for the part; its size follows the part's width, height and depth. */
+  model: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}$/i).optional(),
   /** Part parameters (see the catalogue). */
   params: z.record(z.string().max(32), ParamValue).default({}),
   /** Seen in the photo (false: assumed from what is typical or hidden behind other things). */
