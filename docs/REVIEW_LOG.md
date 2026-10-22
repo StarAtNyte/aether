@@ -5930,3 +5930,47 @@ Not fixed, with what is known
 - A lightmap bundled for a world opened with other walls cut keys differently (the drawn wall meshes are part of the key): a world opened in another view bakes in the browser.
 
 Gates (worktree `aether-expo`): `tsc` 0 errors; vitest packages/render + packages/agent 166 files, 1756 tests passed (one earlier full run had a single failure that did not reproduce on rerun; not identified); smoke 34/34; `showcase:bake --check` exit 0; `showcase:lightmaps --verify` six static; `e2e:weak` WEAK GPU OK.
+
+## 2026-10-23 Photo to room: live runs on all four photos, what was wrong, what changed, honest numbers
+
+Setup: Claude Code backend (Codex answered a trivial call but the limit was not tested for real runs, so everything below is Claude Code), full staged harness, three judges with cross-check, GPU-still renders on software GL (`--render=gpu`, SwiftShader, `nice -n 19` under `heavy2.lock`, one run at a time). Outputs: `~/.local/share/aether/qa/live3/{a,b,c}-<photo>/<photo>/{montage,final,first}.png` and logs `…/live3/*.log`. Run `a` is the harness before any change, `c` the harness after. Run `b` was an intermediate state (hotel failed on a Claude Code tool-exposure refusal, not a harness fault).
+
+Judged items (3 judges, median; the checklist differs between runs because each run reads the photo anew, so totals move)
+
+| photo | a (before) | b (middle) | c (after) |
+| --- | --- | --- | --- |
+| hotel | 19/19 (first attempt 5) | refused by backend | 11/19 (first attempt 4) |
+| twin | 10/16 (first 6) | 4/17 | 10/16 (first 4) |
+| pd1 | 5/19 (first 0) | 6/17 | 3/20 |
+| pd2 | 3/21 (first 2) | 4/21 | 6/20 |
+
+Read honestly: single live runs vary by more than my changes move the judged count (hotel 14/19 and 19/19 in earlier runs of the same code, 11/19 now). The judged number is not evidence of improvement or regression either way. What I trust is the side-by-side reading below.
+
+What I saw in the final render beside the photo (largest remaining differences, before the change)
+- hotel: curtains brown and half hidden (photo: heavy aubergine, floor to ceiling, both sides); window burnt out and narrow; four ceiling downlights the photo does not have; a white box at the foot of the bed; frames with large white mats.
+- twin: the blue-and-red curtains at the glass door missing altogether; a stack of towels floating at headboard height; a fourth of the pieces refused in the first build and never recovered (desk, chair, lamp); two ceiling spots.
+- pd1: wrong cool cast, drapes absent, lamp shade far too big, dresser small, floor grey instead of pale boards.
+- pd2: dark walnut armchairs where the photo has cane chairs, no trunk or basket, window drawn where the photo shows sheer curtains.
+
+Generic causes found and fixed (none is fixture specific; all are in the harness or placement)
+1. Invented downlights: the arch compiler adds a downlight grid to every habitable room. A photo room now has none unless the description says the ceiling shows spots (`ceiling.downlights`, plan `room.downlights`; a plan whose id is the photo building defaults to none, so a model that resends the plan cannot bring them back).
+2. Curtains refused at a glass door: `place_items` curtain, `anchorToOpening`, the wall-space anchor and the placement audit all required `kind: window`. A door 1.4 m or wider now takes curtains (panels flank it and may cover more of the glass, `curtainOverlap`), and the photo derivation lets a curtain name such a door. The twin build test (`packages/agent/test/photo-build-twin.test.ts`) hangs them.
+3. Curtain pairs: a texture target named one panel; the other panel stayed untextured (hotel `…-curtain-1-r` had no skin). A texture for one panel now dresses its twin.
+4. Items on a bed: anything placed `on` a bed stood at headboard height (towels floated). It now rests at the duvet (0.58 m, `BED_SURFACE`) and the support check accepts it.
+5. Small refusals dropped pieces: the twin's desk chair overlapped a bed by 0.04 m, the checker named the spot (`Move … 0.06 m south (to x, z)`), and the piece was left out. A refusal asking for 0.15 m or less is now placed at that spot, facing as before; larger ones still go to the model.
+6. The run log now names the refusals of the first build (it said only how many).
+
+Effect seen in the `c` renders: twin has the blue curtains on both sides of the glass door and no ceiling spots; hotel has no spots and both curtain panels; the first-build refusals of the twin are down from four to the desk. No change in the judged counts that I can separate from noise.
+
+Tried and removed: a rule that rejects a library model whose colour is far from the photo's. It would have turned a cream armchair of the recorded hotel into the plain part and cost a curtain panel in a pipeline test; the dark chairs of pd2 are tintable ("paint") models, so the rule would not have caught them anyway.
+
+Not fixed, honest remaining gaps
+- Lighting and exposure (washed or too dark first renders, cool cast in pd1, burnt windows) belong to the other agent's work on interior exposure; `c` was rendered on the studio build from before that commit.
+- Scale: rooms still read narrow. Twin was built 3.28 m wide (the photo is a wide lens); the desk is still refused for lack of a 0.6 m path to the beds, and the model has to decide what to give up.
+- Items the photo shows that the render lacks or invents: pd1 `c` invented a marble coffee table and a red window with a pink drape; pd2 `c` drew big windows where the photo shows sheer curtains; twin bed linen came out striped where the photo is plain with teal towels. These are reading errors of the model; a stricter "no object the photo does not show" check would help, left for later.
+- Models: no cane or rattan chair, no modern bed or curtain model in the library; the part is used.
+- Window views are still a sky and a plane; the lamp part in pd1 is oversized.
+- Example rooms were not rebaked: the twin of `c` is better than its own `a` but not clearly better than the shipped, hand-widened twin (3.28 m against 4.2 m), and the other three are not better.
+- Codex was not used: the limit makes a long run a gamble, and the task asked for Claude Code now.
+
+Gates (worktree `aether-p2r`, Node 24): `tsc --noEmit` 0 errors; vitest `packages/arch` + `packages/agent` 108 files pass (incl. the new twin build test); smoke 34/34; `showcase:bake --check` all worlds up to date; `e2e:weak` WEAK GPU OK. No browser or server left running.
