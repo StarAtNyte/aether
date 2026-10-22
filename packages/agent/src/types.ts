@@ -82,7 +82,7 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
-  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView }
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[] }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -98,6 +98,21 @@ export type AgentEvent =
 
 /** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
 export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit';
+
+/** One difference between the reference and the render, as the model that looked at both wrote it. */
+export interface PhotoDifferenceView {
+  id: string;
+  kind: string;
+  where: string;
+  what: string;
+  /** 1..5 (5: obvious at first glance); 0 once fixed. */
+  size: number;
+  status: string;
+  /** Rounds it has been open. */
+  rounds: number;
+  /** The model that fixes, or the independent check at the end. */
+  source: 'model' | 'independent';
+}
 
 /** Where the photo flow is. */
 export type PhotoPhase = 'analysing' | 'described' | 'building' | 'built' | 'comparing' | 'round' | 'done' | 'offline' | 'unavailable';
@@ -322,6 +337,19 @@ export interface PhotoOptions {
    * accepted state). Default 3; 0 leaves the judging to the model doing the fixes (one call per round, noisier).
    */
   judges?: number;
+  /**
+   * The differences ledger (default false; the studio turns it on): each round the model also writes a ranked list of
+   * what still differs (`report_differences`), fixes the largest first, and must confirm on the next render that the
+   * exact difference shrank; what is still open at the end is listed in the closing message.
+   */
+  differences?: boolean;
+  /** Zoomed side-by-side crops per round (0..8, default 4) when the host can crop and compose images. */
+  crops?: number;
+  /**
+   * After the compare rounds, one independent seat with fresh eyes (no conversation) compares the photo and the final
+   * render and lists what still differs (default false; the studio turns it on). It records, it does not fix.
+   */
+  crossCheck?: boolean;
 }
 
 /** Result of one level tool call (patches commit as one undo step). */

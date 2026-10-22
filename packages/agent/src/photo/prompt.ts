@@ -181,3 +181,29 @@ export function compareRoundText(round: number, score: Scoreboard | null, object
     .filter((l) => l.length > 0)
     .join('\n');
 }
+
+/** Seed of the independent cross-check seat. */
+export const CROSSCHECK_SEED = 9917;
+
+/** System prompt of the independent cross-check seat: fresh eyes, records differences, fixes nothing. */
+export const CROSSCHECK_SYSTEM =
+  'You are an independent reviewer of a 3D reconstruction. You did not build it and you have not seen how it was built. You are shown a REFERENCE photograph and a RENDER of the reconstruction from the same camera, side by side, then zoomed crops of the same regions in both, and a colour readout. Look at everything with fresh eyes and call report_differences once with every real difference you can see: proportion, position, colour, material, lighting, missing or extra items, scale. Be concrete (which piece or surface, how much) and rank by size (5 = obvious at first glance). The render is a plain preview: do not list its flatter light, softer shadows or lack of glare as differences, but do list a wall that is clearly a different hue, a piece that is the wrong size or in the wrong place, or something that is missing. Do not invent differences: when the render matches, send an empty list.';
+
+/** The user turn of the cross-check seat. The images follow it (labelled by the caller). */
+export function crossCheckText(opts: { summary: string; readout: string }): string {
+  return [`REFERENCE and RENDER, ${opts.summary ? `the room: ${opts.summary}` : 'same camera'}. Compare them region by region, then call report_differences.`, opts.readout].filter((l) => l.length > 0).join('\n');
+}
+
+/** What the model is asked to do with the compare kit each round (the tool's own description has the details). */
+export function differencesProcedure(round: number, hasKit: boolean): string {
+  return [
+    hasKit
+      ? 'COMPARE KIT: besides the single views you have the PHOTO and the RENDER side by side in one image (same camera) and zoomed crops of the same region in both; look at the crops for colour, material, edges and size, and at the side-by-side for position and proportion.'
+      : '',
+    round === 1
+      ? 'DIFFERENCES: look at the photo and the render together and call report_differences with every difference you can see (kind, where, what with the amount, size 1..5). Rank by size and fix the LARGEST first, one change per difference.'
+      : 'DIFFERENCES: your list is above. Judge each earlier id on THIS render only (status: fixed, smaller, same, worse), add what is new, and call report_differences before editing. If a difference you worked on last round did not shrink, change the approach. Then fix the largest open one next.',
+  ]
+    .filter((l) => l.length > 0)
+    .join('\n');
+}

@@ -65,8 +65,10 @@ import { executeTool, raceAbort, runVerification, type ExecutorContext } from '.
 import { extractJsonObject } from '../emulation/json';
 import { errorMessage } from '../providers/errors';
 import type { AgentEvent, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
+import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './differences';
+import { cropRegions, regionReadout, type CropRegion } from './kit';
 import { imageSize } from './image-size';
-import { ANALYSIS_SYSTEM, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
+import { ANALYSIS_SYSTEM, CROSSCHECK_SEED, CROSSCHECK_SYSTEM, crossCheckText, differencesProcedure, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
@@ -89,6 +91,8 @@ export interface PhotoRun {
   options: PhotoOptions;
   /** The room replaces what is in the world (one undo step brings it back); false: it is added beside it. */
   replace?: boolean;
+  /** Images one request may carry (the compare kit shows more than the default); set by the compare loop. */
+  imageCap?: number;
 }
 
 /** Model turns allowed inside one analysis (a refused description is sent back to be fixed). */
@@ -148,7 +152,7 @@ function ask(run: PhotoRun, messages: ChatMessage[], tools: readonly ToolDef[], 
     role: 'planner',
     system: tools.some((t) => t.name === DESCRIBE_TOOL_NAME) ? ANALYSIS_SYSTEM : run.system,
     // The conversation stays append-only (a resumed thread keeps matching it); the request carries the newest images.
-    messages: requestView(messages),
+    messages: requestView(messages, ...(run.imageCap ? [run.imageCap] : [])),
     tools: [...tools],
     maxTokens: run.maxTokens,
     ...(useSession && run.session ? { session: run.session } : {}),
@@ -299,6 +303,8 @@ interface Shot {
   fidelity: FidelityReport | null;
   /** The photo-camera render without marks (what the judges look at; null when the host did not draw it). */
   clean: string | null;
+  /** That render decoded small (null when it could not be): for the colour readout of the compare kit. */
+  renderRaster: Raster | null;
   /** How the picture's brightness, white point and tone differ from the photo's, as advisory data for `tune_look` ('' when unmeasured). */
   lookEvidence: string;
 }
@@ -357,10 +363,12 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   let similarity: number | null = null;
   let regionColour: number | null = null;
   let lookEvidence = '';
+  let renderRaster: Raster | null = null;
   const cleanShot = got.find((x) => x.name === clean.name);
   if (cleanShot && photo.raster && host.decodeImage) {
     const r = await host.decodeImage(cleanShot.dataUrl, 256).catch(() => null);
     if (r) {
+      renderRaster = r;
       // The render is graded like the photo (white point, tone) before the pixel similarity is measured, so a correct room with
       // another exposure or light colour is not punished for it. Nothing is changed in the world here: how the look should move
       // is the assistant's decision (tune_look), made from the two pictures; the measured difference is handed over as data.
@@ -379,7 +387,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   const fidelity = measureFidelity(world, desc0, { framing, similarity, regionColour });
   const objective = fidelity?.score ?? null;
   const measure = fidelity ? fidelityLine(fidelity) : [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
-  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, lookEvidence };
+  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, renderRaster, lookEvidence };
 }
 
 /** The room from above for `look_closer`: the level plan with its numbered pieces, and the legend of the numbers. */
@@ -589,12 +597,14 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop` : ''}.` };
 
   // Compare and correct.
+  const ledger = run.options.differences === true ? new DifferenceLedger() : null;
   let final: Judged | null = null;
   let finalNote = '';
   try {
-    const loop = yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals);
+    const loop = yield* compareLoop(run, photo, desc, framingTargets(desc, built.openings), checklist, build, refusals, ledger);
     final = loop.judged;
     finalNote = loop.note ?? '';
+    if (ledger && run.options.crossCheck === true) yield* crossCheck(run, photo, desc, framingTargets(desc, built.openings), ledger);
   } catch (e) {
     if (ctx.signal?.aborted) throw e;
     if (!(e instanceof Unavailable)) yield { type: 'error', text: `The compare loop stopped: ${errorMessage(e).slice(0, 300)}. The room as built so far is kept.` };
@@ -613,9 +623,11 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
     if (finalNote) lines.push(finalNote);
     if (s.failing.length > 0) lines.push(`Still different: ${s.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
   } else lines.push('Rebuilt the room from your photo (not compared with it: no renders were available).');
+  const open = ledger?.unresolvedText() ?? '';
+  if (open) lines.push(open);
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
   lines.push(`I assumed ${assumptions.length} thing${assumptions.length === 1 ? '' : 's'} the photo cannot show; each one is listed with a one-tap way to change it.`);
-  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}) };
+  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}) };
   yield { type: 'message', text: lines.join(' ') };
 }
 
@@ -659,8 +671,9 @@ async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, t
  * conversation), accept the new state or go back to the accepted one, then let the model fix what still differs.
  * Returns the judgement of the room as it ends up.
  */
-async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[]): AsyncGenerator<AgentEvent, LoopResult> {
+async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[], ledger: DifferenceLedger | null = null): AsyncGenerator<AgentEvent, LoopResult> {
   const { ctx } = run;
+  const kitOn = ledger !== null || (run.options.crops ?? 0) > 0;
   const host = ctx.host;
   // No fixed ceiling unless the host sets one (paid keys): the loop ends on agreement, on nothing left to change, or on a stall.
   const cap = run.options.maxRounds;
@@ -669,7 +682,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const judges = judgesOf(run.options);
   const tracker = new ProgressTracker(run.options.stallRounds ?? 3);
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -800,7 +813,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   for (round = 1; round <= maxRounds; round++) {
     if (ctx.signal?.aborted) throw new Error('aborted');
     yield { type: 'status', text: round === 1 ? 'Comparing the render with the photo…' : `Compare round ${round}…` };
-    const shot = await snapshot(run, photo, desc, targets, extraWalls, maxViews, judges > 0).catch((e) => {
+    const shot = await snapshot(run, photo, desc, targets, extraWalls, maxViews, judges > 0 || kitOn).catch((e) => {
       if (ctx.signal?.aborted) throw e;
       return null;
     });
@@ -829,6 +842,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         standing = s.standing;
         if (s.rejected) {
           view = s.rejected.shot;
+          ledger?.clearEdited();
           rejectNote = `Your last changes were rolled back to the state of round ${s.rejected.round}: ${s.decision.reason}. The images below show that state. Try a different, smaller fix.`;
           yield { type: 'photo', phase: 'round', round, text: `Round ${round} was not kept (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(cand, false) };
         }
@@ -836,8 +850,21 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       }
     }
 
+    // The compare kit (side by side, crops of the regions that still fail, a colour readout) of the render the model works from.
+    const priority = new Set<string>();
+    for (const f of last?.score.failing ?? []) {
+      const it = checklist.find((c) => c.id === f.id);
+      if (it?.target) priority.add(it.target);
+      const w = wallOf(desc, it ?? ({ target: undefined } as unknown as ChecklistItem));
+      if (w) priority.add(`wall-${w}`);
+    }
+    const kit = kitOn ? await buildKit(run, photo, desc, view, priority).catch((e) => {
+      if (ctx.signal?.aborted) throw e;
+      return null;
+    }) : null;
+    if (kit && kit.images.length > 0) run.imageCap = Math.max(run.imageCap ?? 0, 6 + kit.images.length + 2);
     const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence].filter((l) => l.length > 0).join('\n');
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, kit?.readout ?? '', ledger ? ledger.roundText() : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
@@ -846,10 +873,12 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     } else blocks.push({ type: 'text', text: compareRoundText(round, last?.score ?? null, view.objective, view.legend, refusals, view.framing ? framingText(view.framing) : '', notes, standing !== null) });
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
     view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+    if (kit) kit.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+    if (ledger) blocks.push({ type: 'text', text: differencesProcedure(round, kit !== null && kit.images.length > 0) });
     // Judging alone, the model decides whether its last changes helped by looking at the best state next to the new one.
     const bestImage = ref0 ? (ref0.shot.clean ?? ref0.shot.images[0]?.dataUrl ?? null) : null;
     if (judges === 0 && ref0 && bestImage && changed && round > 1) {
-      blocks.push({ type: 'text', text: `Image ${view.images.length + 2}: BEST SO FAR (round ${ref0.round}), the state your last changes started from. In report_verdicts set "closer" to "new" when the new render is closer to the photo, "best" when this one is (the room then goes back to it), or "same".` }, { type: 'image', dataUrl: bestImage });
+      blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + (kit?.images.length ?? 0)}: BEST SO FAR (round ${ref0.round}), the state your last changes started from. In report_verdicts set "closer" to "new" when the new render is closer to the photo, "best" when this one is (the room then goes back to it), or "same".` }, { type: 'image', dataUrl: bestImage });
     }
     if (round === 1) blocks.push({ type: 'text', text: `Legend of the numbers:\n${view.legend}${firstRefusals.length > 0 ? `\nRefused while building (place these again with the right numbers, or fix the cause):\n${firstRefusals.map((r) => `- ${r}`).join('\n')}` : ''}` });
     pushUser(messages, blocks);
@@ -862,6 +891,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     let declared = false;
     let rolledBack = false;
     let toolCalls = 0;
+    let listed = ledger === null;
     const ready = (): boolean => standing !== null || workerJudged;
     for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack)); turn++) {
       const res = await ask(run, messages, tools, true);
@@ -884,9 +914,28 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME ? 0 : n === 'finish' ? 2 : 1);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
+        if (call.name === DIFFERENCES_TOOL_NAME) {
+          if (!ledger) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'Unknown tool here.', isError: true });
+            continue;
+          }
+          if (listed) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'Already recorded this round. Fix the largest open difference, or call finish.' });
+            continue;
+          }
+          const rec = ledger.record(call.input);
+          if (!rec.ok) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: rec.error, isError: true });
+            continue;
+          }
+          listed = true;
+          results.push({ type: 'tool_result', toolUseId: call.id, content: rec.text });
+          yield { type: 'photo', phase: 'round', round, text: rec.open === 0 ? 'No open differences from the photo.' : `${rec.open} difference${rec.open === 1 ? '' : 's'} from the photo; largest: ${rec.ranked[0]?.id} (${rec.ranked[0]?.what.slice(0, 100)}).`, differences: differenceViews(rec.ranked) };
+          continue;
+        }
         if (call.name === VERDICT_TOOL_NAME) {
           const ok = parseVerdicts(call.input);
           if (ok.length === 0) {
@@ -911,6 +960,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           let note = verdictReply(sb);
           if (s.rejected) {
             rolledBack = true;
+            ledger?.clearEdited();
             note += ` You found the best state (round ${s.rejected.round}) closer to the photo (${s.decision.reason}), so the room was rolled back to round ${s.rejected.round}; the changes in this reply are not applied. Look at the next render and try a different, smaller fix.`;
             yield { type: 'photo', phase: 'round', round, text: `Round ${round} was worse (${s.decision.reason}): back to round ${s.rejected.round}.`, score: scoreView(s.rejected.judged) };
           }
@@ -940,6 +990,10 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Not applied: the room was rolled back to its best state because the last round made it worse.', isError: true });
           continue;
         }
+        if (!listed) {
+          results.push({ type: 'tool_result', toolUseId: call.id, content: 'List the differences first: call report_differences (in the same reply is fine), ranked by size, then fix the largest.', isError: true });
+          continue;
+        }
         if (!ready()) {
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Judge first: call report_verdicts for every id (in the same reply is fine), then change things.', isError: true });
           continue;
@@ -951,7 +1005,10 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         toolCalls++;
         const out = await executeTool(ctx, call.name, call.input);
         for (const ev of out.events) yield ev;
-        if (out.edited) edited = true;
+        if (out.edited) {
+          edited = true;
+          ledger?.markEdited();
+        }
         if (out.isError || /refused/i.test(out.content)) refusals.push(`${call.name}: ${out.content.split('\n').slice(0, 3).join(' ').slice(0, 300)}`);
         results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
       }
@@ -985,6 +1042,84 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   round = maxRounds;
   // Out of rounds: edits made in the last one have not been looked at.
   return yield* conclude(last ?? judgedOf(scoreVerdicts(checklist, []), { objective: null, fidelity: null, measure: '' }, null), changed);
+}
+
+/** The compare kit of one render: the images to show (side by side, then region crops) and the colour readout. */
+interface Kit {
+  images: Array<{ label: string; dataUrl: string }>;
+  readout: string;
+}
+
+/**
+ * Build the kit from the photo and the clean render (both from the photo's camera, so a region box means the same place
+ * in each). Needs the host's `composeImages` for the pictures; the colour readout needs only the rasters.
+ * Returns null when there is nothing to add.
+ */
+async function buildKit(run: PhotoRun, photo: Photo, desc: RoomDescription, shot: Shot, priority: ReadonlySet<string>): Promise<Kit | null> {
+  const host = run.ctx.host;
+  const clean = shot.clean;
+  if (!clean) return null;
+  const want = Math.max(0, Math.min(8, Math.floor(run.options.crops ?? 4)));
+  const regions: CropRegion[] = cropRegions(desc, { max: 8, priority });
+  const readout = photo.raster && shot.renderRaster ? regionReadout(photo.raster, shot.renderRaster, regions) : '';
+  const images: Kit['images'] = [];
+  if (host.composeImages) {
+    const sbs = await raceAbort(host.composeImages([{ dataUrl: photo.dataUrl }, { dataUrl: clean }], { maxSide: 1400 }), run.ctx.signal).catch(() => null);
+    if (sbs) images.push({ label: 'the PHOTO beside the RENDER from the same camera (left: photo, right: render)', dataUrl: sbs });
+    // The same box cut out of both pictures (the render is taken from the photo's camera, so a box means the same place in each).
+    for (const r of regions.slice(0, want)) {
+      if (run.ctx.signal?.aborted) throw new Error('aborted');
+      const pair = await raceAbort(host.composeImages([{ dataUrl: photo.dataUrl, box: r.box }, { dataUrl: clean, box: r.box }], { maxSide: 900 }), run.ctx.signal).catch(() => null);
+      if (pair) images.push({ label: `zoom on ${r.label} (${r.id}): the PHOTO beside the RENDER (left: photo, right: render)`, dataUrl: pair });
+    }
+  }
+  return images.length === 0 && readout === '' ? null : { images, readout };
+}
+
+/**
+ * The independent cross-check: one seat with fresh eyes (no conversation, a fixed seed) sees the final render beside the
+ * photo, with the same crops and readout, and lists what still differs. It records; it never edits. Its findings join
+ * the ledger as the independent seat's, so the closing message names them next to the model's own.
+ */
+async function* crossCheck(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], ledger: DifferenceLedger): AsyncGenerator<AgentEvent> {
+  const { ctx } = run;
+  yield { type: 'status', text: 'Independent check of the final render against the photo…' };
+  const shot = await snapshot(run, photo, desc, targets, [], 1, true).catch((e) => {
+    if (ctx.signal?.aborted) throw e;
+    return null;
+  });
+  if (!shot || !shot.clean) return;
+  const kit = await buildKit(run, photo, desc, shot, new Set()).catch((e) => {
+    if (ctx.signal?.aborted) throw e;
+    return null;
+  });
+  const blocks: ContentBlock[] = [{ type: 'text', text: crossCheckText({ summary: desc.summary || desc.roomType, readout: kit?.readout ?? '' }) }, { type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl }, { type: 'text', text: 'Image 2: RENDER from the same camera' }, { type: 'image', dataUrl: shot.clean }];
+  (kit?.images ?? []).forEach((im, i) => blocks.push({ type: 'text', text: `Image ${3 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+  const fresh = new DifferenceLedger();
+  const messages: ChatMessage[] = [{ role: 'user', content: blocks }];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let res: CompletionResponse;
+    try {
+      res = await complete(run, { role: 'critic', system: CROSSCHECK_SYSTEM, messages: requestView(messages, 14), tools: [DIFFERENCES_TOOL], maxTokens: Math.min(run.maxTokens, 8000), temperature: 0, seed: CROSSCHECK_SEED });
+    } catch (e) {
+      if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+      return;
+    }
+    messages.push({ role: 'assistant', content: res.content });
+    const c = res.content.find((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use' && b.name === DIFFERENCES_TOOL_NAME);
+    if (!c) {
+      messages.push({ role: 'user', content: [{ type: 'text', text: 'Call report_differences now (an empty list when nothing differs).' }] });
+      continue;
+    }
+    const rec = fresh.record(c.input, 'independent');
+    if (!rec.ok) {
+      messages.push({ role: 'user', content: [{ type: 'tool_result', toolUseId: c.id, content: rec.error, isError: true }] });
+      continue;
+    }
+    for (const d of rec.ranked) ledger.record({ differences: [{ id: `check-${d.id}`.slice(0, 40), kind: d.kind, where: d.where, what: d.what, size: d.size }] }, 'independent');
+    yield { type: 'photo', phase: 'round', text: rec.open === 0 ? 'Independent check, fresh eyes: the render matches the photo; no difference found.' : `Independent check, fresh eyes: ${rec.open} difference${rec.open === 1 ? '' : 's'} still seen; largest: ${rec.ranked[0]?.id} (${rec.ranked[0]?.what.slice(0, 100)}).`, differences: differenceViews(rec.ranked.map((d) => ({ ...d, source: 'independent' as const }))) };
+    return;
+  }
 }
 
 const SampleInput = z.object({
