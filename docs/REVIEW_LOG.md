@@ -5847,3 +5847,46 @@ Production build (`npm run build`, 1210 modules): `apps/studio/dist` is 235 MB, 
 Hosted site: `https://aether-studio-lyart.vercel.app` serves `7bf28cb6` (deployment 13:40 UTC), not the newest `main`. Vercel refused the builds of the two later commits (`ff34784f`, `45d79e40`, lockfile and package.json only) with "Deployment rate limited, retry in 24 hours", on both Vercel projects (`aether-studio`, `deploy-bc88ec5`). Served asset hashes match a local build of current main except the entry script (`index-vc5Gu5ZL.js` live, `index-CFNkfnyH.js` local), which I did not trace. Nothing user-visible should be missing, but the rapier pin is not live until a redeploy succeeds.
 
 Assets on the host: `assets/lib/**` is served `public, max-age=31536000, immutable` with content-hashed names (checked a model in `i/` and a texture in `t/`; `model/gltf-binary`). `templates/*` is cached 300 s. `templates/lightmaps/index.json` is `{ "keys": [] }`: no baked lightmaps are shipped yet. Lazy loading, measured in Chromium (40 s per world, software GPU): the highland-trail world requests no `lib/i` file, photo-twin-room requests 1, apartment 6, of 98 interior models. The catalog chunk (metadata only, 316 KB) is not preloaded by `index.html`.
+
+## 2026-10-22 Baked lightmaps: finished, shipped for seven rooms, honest numbers
+
+Task: finish the baked global-illumination lightmaps (path-traced bounce light and sky occlusion per surface, content-keyed assets, runtime on the medium and high tiers over the coarse light volume, `bake_light` for the model, visible status with cancel, graceful fallback).
+
+What was on `main` already (reviewed, kept): the CPU path tracer and chart unwrap (`environment/lightmap.ts`, worker, validated request and reply), the `.lmap` file and IndexedDB cache, `LightmapController` with an in-process-worker test, bundled files through an index, the baking pill with cancel and the baked-light choice in the display menu, `environment.lightBake` and the `bake_light` tool (system prompt unchanged apart from the tool description; agent prompt tests pass). No three-gpu-pathtracer is used: the bake is a worker tracer, so it does not need WebGPU and runs on every machine; WebP is the image codec (PNG, then raw as fallbacks), KTX2 was not done.
+
+Salvaged from the stopped worktree `aether-bake`: the key split (content hash of geometry and volume apart from the quality, so a bundled file of any quality applies when none was asked for) and the `scripts/showcase/lightmaps.ts` bundling script. Not salvaged: the `LM_DEBUG` console line in the renderer, the `package.json` script (another agent owns that file; run the script with `npx tsx`).
+
+What was wrong and is fixed
+- The lightmap never reached the screen. Measured with the volume switched off and the atlas on: the image was byte-identical to no light at all, even with the irradiance scaled twelve times. Cause: three keeps one program per mesh and material and looks at the geometry's attributes again only when the material's version changes. A mesh that swapped to the geometry with the `aetherLM` coordinates kept the program that never reads the atlas. `refreshProgram` (material `needsUpdate`) is now called on every swap and restore, in the controller and in the merged building geometry; a controller test pins it. With it, atlas alone vs nothing differs (mean 1.5 of 255 on the twin room), and atlas strength 0 vs 1 differs (2.2).
+- Shell and volume depend on the camera: `cutaway` walls (and lowered walls in the view modes) change what the light volume traces, so a volume baked with the camera outside sees a room opened on one side (hotel room: 0.18 sky visibility at the eye) and one rebaked with the camera inside sees it closed (0.009, exposure +4 EV, the window blows out). This is older than the lightmap and is not fixed. Consequences: every mode of the stills below opens a fresh page and bakes from the state a world opens in, before the camera moves; the bundled files match the world as it opens (verified), and a world opened in another view bakes in the browser. I tried replacing a buried probe sample at the eye by its open neighbours: it did not change the measured case and was reverted.
+
+Bundled (`apps/studio/public/templates/lightmaps/`, medium, 512 px atlas, 48 rays per texel; 2.4 MB for six files, each under the 2 MiB cap)
+
+| world | meshes baked | texels | bake wall time (Intel iGPU box, nice 19, worker) | file |
+| --- | --- | --- | --- | --- |
+| photo-hotel-bedroom | 60 | 106 078 | 7.0 s | 229 KB |
+| photo-twin-room | 60 | 103 677 | 6.7 s | 217 KB |
+| photo-four-poster | 57 | 89 886 | 7.6 s | 249 KB |
+| photo-vaulted-bedroom | 60 | 96 368 | 8.5 s | 259 KB |
+| skyline-penthouse | 219 | 38 384 | 8.2 s | 733 KB |
+| casa-patio | 273 | 51 437 | 8.6 s | 731 KB |
+
+Two bake runs gave the same keys (deterministic). `showcase:lightmaps --verify` (dist containing the files): all six open with `source: static` and the atlas applied with no bake. The bake only starts after the light volume is on screen, so it never blocks the first frame; the volume itself took 0.3 to 17 s on these worlds. Other sizes, hotel room: low 256 px / 24 rays 0.8 s (14 366 texels), medium 7 to 11 s, high 1024 px / 96 rays 43 s (315 000 texels).
+
+Before and after (stills under `~/.local/share/aether/look8/lm3/<world>-{off,medium}-{spawn,back,cover}.png`, side by side with a 6x difference in `.../compare/`)
+- First-person interiors show it: corners and the ceiling line darken, the floor darkens along the walls, wall tone follows the window side (vaulted bedroom spawn: mean 8-bit difference 5.0, twin room 4.9, four-poster 3.6, hotel 2.9). The effect is soft, not dramatic: a few levels of 255 on average, more along edges.
+- From the cover cameras of the two large houses the building is small in the frame and the difference is about 0.05 to 0.7 of 255: invisible. Skyline spawn: 0.08.
+- Artifact seen: the vaulted bedroom has a pale blue blotch high on its left wall in the baked still (a chart seam near the ceiling reading the sky); not fixed.
+- Exposure is identical in both modes (the eye's light comes from the volume), so the pairs are comparable.
+
+Render cost: the draw cost per frame in these captures (median of 12 frames, headless Chromium on the Intel iGPU through ANGLE/WebGL2) is 1.2 to 13 ms with large run-to-run swings and no consistent sign between off and medium (hotel 1.5 vs 2.1 ms, four-poster 2.4 vs 1.2, skyline 11.2 vs 13.1, casa 5.0 vs 6.4). The timer measures frame spacing with the GPU asynchronous, so a difference of a few percent is not resolved here. What is known from the shader: a baked surface reads one 2D texture (two reads with the colour decode) instead of twelve 3D reads plus the leak test of the volume. No measured speed-up is claimed. A shader recompile for the swapped meshes follows an apply (a few hundred ms on the main thread of a weak machine, not measured separately).
+
+Weak devices: the automatic bake does not start on the software tier, in low-memory mode, on weak hardware or on the low quality tier; a bundled file is still looked up and applied there (that is the case the bundle is for). `npm run e2e:weak` passes (software GPU, 4x throttle, highland-trail: not an interior, so it does not exercise the atlas).
+
+Not done or not verified
+- The WebGPU backend was not exercised for the lightmap: all captures are Chromium on the Intel iGPU through ANGLE (WebGL2). The same node code serves both, and the program-key problem is backend independent, but only WebGL2 was looked at.
+- Baked light is stored as the browser cache plus the bundled folder, both content-keyed. It is not embedded in an exported or shared project file; a project opened on another machine bakes again (seconds to a minute) unless it is one of the bundled worlds.
+- The `bake_light` tool was unit-tested and is in the prompt, but no live model run decided to call it in this work (the offline planner does not use it); the model's judgement from renders is untested.
+- Bundled keys depend on the world and on the render code that feeds the bake: a rebaked world or a change to the unwrap invalidates its file (`--verify` finds it) and the browser bakes instead.
+
+Gates (worktree `aether-bake2`): `tsc --noEmit` 0 errors; `vitest packages/render` 851 passed, agent prompt and bake-edit 16 passed; smoke 34/34; `showcase:bake --check` exit 0; `e2e:weak` passed.

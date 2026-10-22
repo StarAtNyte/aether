@@ -10,7 +10,7 @@
  *   npm run showcase:lightmaps -- --quality=high --samples=128
  *   npm run showcase:lightmaps -- --verify          open each world and check that its bundled lightmap applies
  *
- * Needs `npm run build` first (the browser runs the production build) and Chromium. `GEN_GPU=intel` bakes on the integrated GPU's
+ * Needs `npm run build` first (the browser runs the production build; rebuild after baking so `dist` carries the files `--verify` opens) and Chromium. `GEN_GPU=intel` bakes on the integrated GPU's
  * browser path (the bake itself is CPU work in a worker; the GPU only shows the result). Files of a world that was baked again
  * replace its old ones; the index lists every file present.
  */

@@ -3107,6 +3107,8 @@ view/lightmap-controller.ts     LightmapController: starts once the volume is on
                                 after the volume has. No worker, a failed or cancelled bake: the volume keeps lighting, no error.
 gpu/light-volume-node.ts        a mesh with the `aetherLM` attribute reads its atlas texel (ambientOcclusion *= vis, irradiance += bounce / vis, the same
                                 formula as the volume) and keeps the volume otherwise; direct sun, lamps, shadow maps and opening doors stay on the live path
+sync/lightmap-uv.ts             refreshProgram(mesh): a mesh that gains or loses the atlas coordinates bumps its material's version (three re-reads a mesh's
+                                program only then; without it the old program, which never reads the atlas, keeps drawing)
 WorldRenderer.bakeLight(quality, samples?) / .cancelLightmapBake() / .lightmapStatus / .lightmapStats / .lightmapAsset
 LightmapStatus { state: 'off' | 'idle' | 'waiting' | 'baking' | 'applied' | 'failed' | 'cancelled'; progress; quality; samples; message }
 Studio: baking pill (progress, cancel), display menu "Baked light" (automatic, off, low, medium, high; one undo step), Studio.setLightBake(quality | null)
