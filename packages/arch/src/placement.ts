@@ -212,11 +212,12 @@ function blockersOf(s: Scan, frame: WallFrame, side: 'A' | 'B', self: EntityId |
 function anchorWindow(frame: WallFrame, m: WallMount): { ref: string; t0: number; t1: number; sill: number; top: number } | null {
   let best: { ref: string; t0: number; t1: number; sill: number; top: number; gap: number } | null = null;
   frame.params.openings.forEach((o, i) => {
-    if (o.kind !== 'window') return;
+    // A wide door (patio, balcony, glass wall) takes curtains like a window.
+    if (o.kind !== 'window' && !(o.kind === 'door' && o.width >= 1.4)) return;
     const t0 = o.offset - o.width / 2;
     const t1 = o.offset + o.width / 2;
     const gap = Math.max(0, t0 - (m.t + m.width / 2), m.t - m.width / 2 - t1);
-    if (!best || gap < best.gap) best = { ref: `window:${i}`, t0, t1, sill: o.sill, top: o.sill + o.height, gap };
+    if (!best || gap < best.gap) best = { ref: `${o.kind}:${i}`, t0, t1, sill: o.sill, top: o.sill + o.height, gap };
   });
   return best;
 }

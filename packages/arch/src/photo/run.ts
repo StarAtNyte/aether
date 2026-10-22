@@ -140,6 +140,17 @@ export async function runBuild(world: WorldDoc, build: PhotoBuild, call: ToolCal
           results[k] = { step: results[k]!.step, bad: refusedAgain.get(j + 1) ?? (again.ok || again.text.includes('applied') ? undefined : again.text.slice(0, 300)) };
         });
       }
+      // A refusal that only asks for a hand's breadth (the reply names the spot: "Move x 0.06 m south (to 2.25, 2.66)") would drop a
+      // piece the photo shows over a few centimetres of a rounded size: it is placed there instead, facing as it did.
+      const nudge = items.map((it, k) => ({ it, k, to: nudgeTarget(results[k]!.bad, it.step.id) })).filter((n) => n.to !== null);
+      if (nudge.length > 0) {
+        const again = await call('place_items', { items: nudge.map(({ it, to }) => nudgedItem(it.item, to as [number, number])), message: `Place ${nudge.map(({ it }) => it.step.id).join(', ')} a few centimetres from where the photo puts them` });
+        current = again.world;
+        const refusedAgain = refusedByIndex(again.text);
+        nudge.forEach(({ k }, j) => {
+          results[k] = { step: results[k]!.step, bad: refusedAgain.get(j + 1) ?? (again.ok || again.text.includes('applied') ? undefined : again.text.slice(0, 300)) };
+        });
+      }
       for (const { step, bad } of results) outcomes.push({ id: step.id, kind: String(step.input['kind']), ok: bad === undefined, text: bad ?? '' });
     }
   }
@@ -155,4 +166,25 @@ function refusedByIndex(text: string): Map<number, string> {
     if (m) out.set(Number(m[1]), (m[2] ?? '').replace(/\s*\n\s*/g, ' ').slice(0, 400));
   }
   return out;
+}
+
+/** The spot a refusal suggests for a piece when it is at most 0.15 m from where it was asked to stand. */
+function nudgeTarget(text: string | undefined, id: string): [number, number] | null {
+  if (!text) return null;
+  const m = /Move \S*?([a-z0-9-]+) ([\d.]+) m (?:north|south|east|west)[a-z]* \(to (-?[\d.]+), (-?[\d.]+)\)/.exec(text);
+  if (!m || !id.endsWith(m[1] as string) && !(m[1] as string).endsWith(id)) return null;
+  if (Number(m[2]) > 0.15) return null;
+  return [Number(m[3]), Number(m[4])];
+}
+
+/** Unit step of the direction a piece faces when it stands against the named wall (away from it). */
+const AWAY_FROM_WALL: Record<string, [number, number]> = { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] };
+
+/** The same item standing at a point, facing as it did (away from the wall it stood against). */
+function nudgedItem(item: Record<string, Json>, to: [number, number]): Record<string, Json> {
+  const { wall, t, along, gap, align, ...rest } = item as Record<string, Json>;
+  void t; void along; void gap; void align;
+  const dir = typeof wall === 'string' ? AWAY_FROM_WALL[wall] : undefined;
+  const faced = rest['faces'] !== undefined || rest['yaw'] !== undefined;
+  return { ...rest, at: to, ...(!faced && dir ? { faces: { point: [Math.round((to[0] + dir[0]) * 1000) / 1000, Math.round((to[1] + dir[1]) * 1000) / 1000] } } : {}) };
 }

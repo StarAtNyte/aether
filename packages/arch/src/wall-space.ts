@@ -61,6 +61,10 @@ export function mountRule(kind: string): MountRule {
 
 /** How far a curtain panel (rod included) may overlap the window it is anchored to (the pleats gather over the frame). */
 export const CURTAIN_WINDOW_OVERLAP = 0.2;
+/** The same for the opening a curtain is anchored to: a glass wall fills its wall, so its curtains open over more of the glass. */
+export function curtainOverlap(kind: string, width: number): number {
+  return kind === 'door' ? Math.min(0.6, width * 0.22) : CURTAIN_WINDOW_OVERLAP;
+}
 /** Clear height margin above and below doors and windows. */
 const V_MARGIN = 0.04;
 /** Slack added to blocker margins when choosing a spot. */
@@ -92,10 +96,11 @@ export function forbiddenBy(spec: MountSpec, b: WallBlocker, anchor?: string): [
   if (spec.y1 <= b.y0 - vm || spec.y0 >= b.y1 + vm) return null;
   // A blind hangs over its own window: that window never blocks it.
   if (b.kind === 'window' && anchor !== undefined && b.ref === anchor && spec.kind === 'blind') return null;
-  if (b.kind === 'window' && anchor !== undefined && b.ref === anchor && spec.kind === 'curtain') {
-    // Its own window: only the glass area stays clear.
-    const lo = b.t0 + CURTAIN_WINDOW_OVERLAP;
-    const hi = b.t1 - CURTAIN_WINDOW_OVERLAP;
+  if ((b.kind === 'window' || b.kind === 'door') && anchor !== undefined && b.ref === anchor && spec.kind === 'curtain') {
+    // Its own window (or glass door): only the glass area stays clear.
+    const ov = curtainOverlap(b.kind, b.t1 - b.t0);
+    const lo = b.t0 + ov;
+    const hi = b.t1 - ov;
     return hi > lo ? [lo, hi] : null;
   }
   const m = b.kind === 'door' ? rule.door : b.kind === 'window' ? rule.window : b.kind === 'item' ? rule.item : b.kind === 'furniture' ? rule.furniture : 0;

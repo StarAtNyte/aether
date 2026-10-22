@@ -17,7 +17,7 @@ import { kindForModel } from '../furniture/assets';
 import { yawFacingIn } from '../layout';
 import type { Compass } from '../plan';
 import type { RoomEdge } from '../rooms';
-import { collisions, CURTAIN_WINDOW_OVERLAP, nearestMountCentre, mountRule, type MountSpec } from '../wall-space';
+import { collisions, curtainOverlap, nearestMountCentre, mountRule, type MountSpec } from '../wall-space';
 import { reviewScene, walkability, freeFrontDepth, type Finding } from './checks';
 import { findItem, findOpening, findRoom, findWall, isLookupError, itemLine, wallBlockers, facingOf } from './facts';
 import { cmr, compassWord, describeOffset, mm, polygonGap } from './geom';
@@ -508,7 +508,9 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
     {
       // Room between the corner (rod included) and the part of the glass a panel may not cover.
       const outer = side < 0 ? prevInset + 0.04 + 0.08 + 0.015 : wall.length - nextInset - 0.04 - 0.08 - 0.015; // panel edge, rod reach already allowed
-      const inner = side < 0 ? opening.t0 + CURTAIN_WINDOW_OVERLAP - 0.08 - 0.015 : opening.t1 - CURTAIN_WINDOW_OVERLAP + 0.08 + 0.015; // the glass a panel may not cover, rod reach allowed
+      // A glass wall fills the wall: its curtains open over the glass edges, as in a photo of one, so a wide door lets a panel cover more of it.
+      const overlap = curtainOverlap(opening.kind, len);
+      const inner = side < 0 ? opening.t0 + overlap - 0.08 - 0.015 : opening.t1 - overlap + 0.08 + 0.015; // the glass a panel may not cover, rod reach allowed
       const avail = Math.abs(outer - inner);
       for (const f of [1, 0.85, 0.7]) {
         const panel = Math.min(full * f, avail);
