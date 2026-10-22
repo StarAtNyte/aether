@@ -1350,7 +1350,7 @@ parses source formats at run time.
   source and output SHA-256, made offline by `scripts/assets/ktx2.ts` with
   KTX-Software). `TextureCompression` (one per renderer, `gpu/
   texture-compression.ts`) sets up a self-tested `KTX2Loader` whose
-  transcoder runs in the static `basis/ktx2-worker.js` under its own CSP;
+  transcoder runs in the static `basis/ktx2-worker.js` under its own CSP (published game builds pack the worker next to the transcoder);
   `createGltfModelLoader({ compression })` loads a twin when the loader is
   ready and the original otherwise or on any failure, so the index is a pure
   optimisation. `gpu/texture-memory.ts` corrects three's texture byte
