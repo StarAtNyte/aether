@@ -5814,3 +5814,22 @@ Measured, honestly
 - Gates: vitest arch, agent, procgen, render and scripts/bench pass; smoke 34/34; showcase:bake --check ok; e2e:weak ok. `tsc` has one error that is not from this work: `packages/agent/src/refine/ops-paint.ts(342)` reads `Look.preset`, which another commit on main introduced.
 
 Not salvaged: the earlier uncommitted worktree changes that silently enlarged rooms and slid furniture clear of doors during the build (against the principle above; the evidence now goes to the model instead), and the PBR finish and fabric-geometry experiments in `aether-realism4-a/b/c` (unreviewed, touch the schema). The lightmap files were not touched.
+
+## 2026-10-22 Real furniture models instead of primitives
+
+User report: furniture and props look like Minecraft blocks and primitives; wanted real models without Blender, chosen and judged by the model.
+
+Salvaged from the stopped worktree (`aether-lib`, uncommitted): the interior selection table, the catalog `interior` schema, the texture-tier script and the Poly Haven list limit. Everything else was built new and checked.
+
+What changed
+- Library: 98 photographed Poly Haven models (CC0) in `assets/lib/i/`, built by `build.ts --interior` from `selection-interior.ts`: metres, floor-centre pivot, meshopt, triangle budget 20k, one distance level, a light copy (256 px) for low tiers, 512/1024 px maps. Colours and styles are measured/recorded per model; types: sofa, armchair, chair, stool, table, coffee table, desk, bed, wardrobe, dresser, shelf, bookshelf, lamp, plant, vase, books, clock, mirror, picture, small appliances. Sources, authors and SHA-256 are in `docs/THIRD_PARTY.md`.
+- Orientation was checked from straight-on renders (`thumbs.ts --front`): two models were turned. Six models were dropped after looking at them (broken leaf cards after simplification, black picture canvases, a 2.3 m throne chair, a plastic chair that ended up around a penthouse table).
+- LLM flow: `find_model` (style, colour, size ranking with facts), `place_items kind "model:<id>"`, `model: "auto"`, `fit [w,h,d]`, upholstery recolour; anchoring, collisions and usability treat a model as the part it stands in for. Photo rooms ask for the closest model per piece (sized to the described part) and fall back to the part when it does not fit. Generated architecture takes models for seating, tables, beds, lamps and plants; cabinets, wardrobes, kitchens, mirrors and pictures stay parts (they open or vary). Fine edits that need part options send a piece back to its part.
+- Image-to-3D: hook documented only (TripoSR, TRELLIS.2, Hunyuan3D); nothing was run.
+
+Measured, honestly
+- Shipped bytes: about 50 MB main files plus distance levels, 17 MB light copies; a scene fetches only what it places.
+- Stills (Intel iGPU, `~/.local/share/aether/look10/{before,after,compare}`): the armchairs, plants, shelves and tables read as real objects; the rest of the rooms is unchanged. The photo rooms gain only one to four models each (beds, nightstands and curtains have no model in the library), so their difference is small. The hotel room was left as it was: with the model armchair the recorded replay lost a side table and a curtain.
+- Gaps: no sink, toilet, bath, fridge, rug, curtain or modern bed exists among the CC0 sources checked; those stay parts. Cube shelves replace a book-filled parametric shelf in the apartment, which is arguably worse.
+- Existing refine tests changed: sofa resize now scales the model; a cover material on a model goes back to the part.
+- The twin-room verification failure seen on `main` before this work is fixed by the other agent's rebake; this work did not cause it.
