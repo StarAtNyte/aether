@@ -51,7 +51,7 @@ export const Sources = z.object({
   polyhaven: z.object({
     licence: z.string(),
     api: z.string().url(),
-    models: z.array(z.string().regex(/^[A-Za-z0-9_]+$/)).max(64),
+    models: z.array(z.string().regex(/^[A-Za-z0-9_]+$/)).max(240),
     hdris: z.array(z.string().regex(/^[A-Za-z0-9_]+$/)).max(16),
     resolution: z.enum(['1k', '2k']),
   }),
@@ -260,11 +260,10 @@ async function main(): Promise<void> {
   const sources = readSources();
   mkdirSync(SOURCE_DIR, { recursive: true });
   // `--only=ambientcg`: just the photographed finish materials (small, no model packs).
-  if (!process.argv.includes('--only=ambientcg')) {
-    for (const p of sources.packs) await fetchPack(p);
-    await fetchPolyhaven(sources.polyhaven);
-  }
-  if (sources.ambientcg) await fetchAmbientcg(sources.ambientcg);
+  const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
+  if (!only) for (const p of sources.packs) await fetchPack(p);
+  if (!only || only === 'polyhaven') await fetchPolyhaven(sources.polyhaven);
+  if (sources.ambientcg && (!only || only === 'ambientcg')) await fetchAmbientcg(sources.ambientcg);
   console.log(`sources ready in ${SOURCE_DIR}`);
 }
 

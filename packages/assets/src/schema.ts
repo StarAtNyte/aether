@@ -65,6 +65,19 @@ export const CatalogAnims = z.object({
 });
 export type CatalogAnims = z.infer<typeof CatalogAnims>;
 
+/**
+ * Interior-model facts the model-finding tool ranks on. `type` is the object ("sofa", "bed",
+ * "coffee-table"), `styles` the design styles it suits, `colors` colour names measured from the
+ * model's own base-colour texture (most dominant first) and `rgb` that dominant colour.
+ */
+export const CatalogInterior = z.object({
+  type: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/),
+  styles: z.array(z.string().regex(/^[a-z][a-z-]{1,23}$/)).max(6),
+  colors: z.array(z.string().regex(/^[a-z][a-z-]{1,15}$/)).max(4),
+  rgb: z.tuple([z.number().int().min(0).max(255), z.number().int().min(0).max(255), z.number().int().min(0).max(255)]),
+});
+export type CatalogInterior = z.infer<typeof CatalogInterior>;
+
 export const CatalogEntry = z.object({
   id: AssetId,
   name: z.string().min(1).max(60),
@@ -89,8 +102,13 @@ export const CatalogEntry = z.object({
   /** Main file (LOD 0). Absent for generators. */
   file: LibraryPath.optional(),
   lods: z.array(CatalogLod).max(2).default([]),
-  /** HDRIs: a half-resolution copy (512 x 256) for lighting alone; the full file is for the background and sharp reflections. */
+  /**
+   * HDRIs: a half-resolution copy (512 x 256) for lighting alone; the full file is for the background and sharp reflections.
+   * Models: a light copy (256 px textures, fewer triangles) for the low quality tiers.
+   */
   lite: LibraryPath.optional(),
+  /** Interior models: what the object is, its styles and colours (see {@link CatalogInterior}). */
+  interior: CatalogInterior.optional(),
   thumb: LibraryPath.optional(),
   collider: CatalogCollider,
   placement: AssetPlacement,
