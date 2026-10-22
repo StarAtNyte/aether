@@ -3305,3 +3305,61 @@ before.
 - Scripts and tests: `npm run e2e:vfx -- <outDir>` (`tests/e2e/vfx.e2e.ts`: Chromium WebGPU, Chromium WebGL2 and
   Firefox WebGL2; every preset must change its neighbourhood, no shader or validation errors); `scripts/feel-shots.ts`
   (editor and play stills of a game with its fires and every feel event).
+
+## Texture sets: photographed, AI-generated and procedural surfaces (additive)
+
+The finish library gives every surface procedural maps. A world can instead draw a **texture set** of its own project: PBR maps
+sampled from the user's photograph, produced by an image model, or procedural. Old worlds are unaffected (every field is optional).
+
+### World IR (`@aether/core`)
+
+```ts
+TextureId        = /^tex-[0-9a-f]{12}$/                    // content hash of the 256 px maps and the tile size
+TextureProvenance = 'photographed' | 'ai-generated' | 'procedural'
+TextureRef       = { id: TextureId, tile?: 0.05..16 }      // tile: metres of one tile, overrides the set's own
+MaterialSpec.texture?: TextureRef                          // replaces the finish's maps (opaque finishes); `color` still multiplies (maps are ratios)
+ArchMeta.skins?: Record<'finish' | 'finish#rrggbb', TextureRef | null>   // pieces: the part whose material matches wears the set; the colour key wins; null removes (merge patches)
+WorldDoc.textures?: Record<TextureId, TextureSetDef>       // <= 48 sets
+TextureSetDef = { name <= 64, provenance, tile: m, tiers: (256|512|1024)[], albedoScale = 2.5, mean: #rrggbb,
+                  finish?: MaterialFinish, source?: { region?, photo?, prompt?, model?, from?: TextureId }, base?: relative folder }
+Patch setMeta += { textures?: Record<TextureId, TextureSetDef | null> }   // add / replace / remove; undo, diff and `clear` handled (clear drops the sets)
+```
+
+Floors and walls carry `texture` inside the plan's `MaterialSpec`s (`PlanRoom.floor`, `walls[compass]`, `finish`), so a re-compile
+keeps it; the ceiling keeps its paint. Placed pieces keep `arch.skins` through a re-compile; compiled pieces carry them over by id.
+
+### Asset store (`@aether/assets`, `texture-sets.ts`)
+
+Maps are `tex-<id>.<albedo|orm|normal>.<256|512|1024>.webp` (WebP or PNG header, square at the tier edge). Albedo = linear ratios
+around 1 divided by `TEXTURE_ALBEDO_SCALE` (2.5, fixed in the renderer so a late set needs no recompile); ORM: R = occlusion,
+G = roughness (absolute), B unused; normal: tangent space, the finish library's encoding. Caps (`TEXTURE_LIMITS`): per file 96 / 320 /
+1100 KB for 256 / 512 / 1024, 4 MB per set, 24 MB and 48 sets per world. Host registry: `registerTextureSet({ id, def, tiers })`,
+`textureSet(id)`, `onTextureSetsChanged`, `registerBundledTextureSets(textures, root)` (worlds whose records carry `base`),
+`validateTextureMap`, `textureCredits(world)` (provenance for the UI and `CREDITS.txt`), `TEXTURE_PROVENANCE_LABEL`.
+Studio: `studio.textures` (`TextureController`: IndexedDB `aether-textures`, registry sync on every world change, package export and
+import carry `assets/tex-*.webp`; the JSON export keeps only the records, so a set missing from the store draws its neutral base colour).
+
+### Renderer (`@aether/render`)
+
+`ResolvedMaterial.texture`, `FinishTextures.getSet(id, tile?)` (neutral maps at once, decoded and copied in when the registry has
+the files; tile overrides through texture clones sharing the pixels), `skinned(spec, skins)` and `mergeMaterial(…, skins)` for pieces.
+The set is bound as classic `map` / `roughnessMap` / `aoMap` / `normalMap` (no anti-tile nodes: the tiles are quilted and seamless).
+
+### Photo textures (`@aether/procgen/photo-texture`, pure, deterministic)
+
+`cameraModel`, `roomPlanes`, `rectify` (every texel of a floor or wall projected through the solved camera; occluders from the
+description's boxes, grazing angles and out-of-picture texels invalid), `rejectOutliers`, `bestSquare`, `fillHoles` (push-pull +
+texture copied from valid neighbours), `delight` (plane fit + blurred gradient divided out per channel, ratios around 1), `seamless`
+(offset blend, contrast preserving), `quilt` (Efros-Freeman min-cut, enlarges a small sample), `buildMaps` (relief from the mid-sized
+luminance pattern, occlusion from cavities, roughness from the surface class, fine grain and relief from the library finish of the
+same class so detail finer than the photo resolves is kept), `textureReader` / `deriveTextures` / `deriveFromSwatch`,
+`buildTextureSet(tile, info, encoder, tiers)` (id, record, files under the caps; the encoder is the host's WebP).
+These are stated heuristics, not measurements of relief or gloss: the provenance stays "photographed" because colour and pattern are the
+photo's; the credits text says fine grain is added by the app.
+
+### Agent (`@aether/agent`)
+
+`make_texture` (see `docs/AGENT_TOOLS.md`), `AgentOptions.textures?: { images?: ImageGenerator | null, photo?: PhotoSource | null }`,
+`AgentHost.storeTexture?` / `encodeTextureMap?`, `ImageGenerator` (`createOpenAiImageGenerator`, `createBridgeImageGenerator`, `imageChain`,
+`texturePrompt`), photo phase `textures`. Bridge: `POST /v1/image` ({ prompt, size?, reference? } -> { image, model }; bearer token),
+local app `POST /api/local/image`, status `backends[].image`. Details and the Codex finding: `docs/IMAGE_GENERATION.md`.

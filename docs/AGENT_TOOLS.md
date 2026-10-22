@@ -250,6 +250,30 @@ See [Eyes](#query_scene-1).
   it; the detail is in the tool description. The photo flow hands the assistant the measured brightness, white point,
   saturation and tonal spread of photo and render as data (`lookEvidenceText`) and does not change the look itself.
 
+### `make_texture`
+
+- **What it does.** Gives a surface or a piece a real texture and says which source it came from
+  (`packages/agent/src/textures.ts`, `makeTextureTool`). Offered when the host can store pictures
+  (`AgentOptions.textures`; the studio always offers it, with an image generator when one is connected). Sources, in order:
+  an image model (a `prompt` and a connected Codex image tool or OpenAI Images key; `from_photo_region` sends a crop of the
+  photo as a reference), the user's photograph (floors and walls rectified through the solved camera, pieces cropped from
+  their boxes), the procedural library (nearest finish; removes an older texture). The picture is de-lit, made seamless,
+  turned into albedo / occlusion-roughness / normal maps in three tiers and kept in the project's asset store; floors
+  and walls carry it as `MaterialSpec.texture` in the stored plan (`set_material` / `set_wall`, so it survives a re-compile),
+  pieces as `arch.skins` on the piece. The colour of the surface becomes the source's mean colour; the maps hold ratios around it.
+- **Input.** `target` ("floor", "wall:north", "walls", a piece id or kind), `prompt?` (<=300), `from_photo_region?` (true, or
+  `[x0,y0,x1,y1]` in 0..1 of the photo), `tileable?` (default true), `tile?` (metres of one tile, 0.1..8), `finish?`
+  (material class word), `source?` (`auto` | `photo` | `ai` | `procedural`), `room?`, `message?`.
+- **Returns.** One line per target: the source used and its caution (clean square, coverage, pattern contrast, tile size) and,
+  after `| not used:`, why the other sources were not (no image model connected, the photo does not show it, the model failed).
+  Then `Provenance: <target>: photographed | AI-generated | procedural`. The assistant is told to look at the next render beside the
+  photo and keep the result only if it reads like the real surface; the numbers are advisory.
+- **Photo flow.** Before the first comparison the host samples every floor, wall and soft piece the photo shows clearly
+  (`photo/texture-pass.ts`, phase `textures` in the chat) and the compare turn lists `make_texture`; the user message names
+  what was photographed and what kept its procedural finish, with the reason.
+- **Without an image model.** Nothing changes except the first source is skipped and the result says so. The tool, the photo pass
+  and the library path need no network and no key. Details: `docs/IMAGE_GENERATION.md`.
+
 ### `query_level`
 
 See [Eyes](#query_level-1).
