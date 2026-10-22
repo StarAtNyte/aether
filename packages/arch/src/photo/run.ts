@@ -128,10 +128,19 @@ export async function runBuild(world: WorldDoc, build: PhotoBuild, call: ToolCal
       const reply = await call('place_items', { items: items.map((i) => i.item), message: `Place ${items.map((i) => i.step.id).slice(0, 4).join(', ')}${items.length > 4 ? '…' : ''}` });
       current = reply.world;
       const refused = refusedByIndex(reply.text);
-      items.forEach(({ step }, k) => {
-        const bad = refused.get(k + 1) ?? (reply.ok || reply.text.includes('applied') ? undefined : reply.text.slice(0, 300));
-        outcomes.push({ id: step.id, kind: String(step.input['kind']), ok: bad === undefined, text: bad ?? '' });
-      });
+      const results = items.map(({ step }, k) => ({ step, bad: refused.get(k + 1) ?? (reply.ok || reply.text.includes('applied') ? undefined : reply.text.slice(0, 300)) }));
+      // A real model that does not fit where the part would (it is bigger, or its footprint meets a neighbour) gives way to the
+      // parametric part, which the room was laid out for: the same piece is sent again without its model.
+      const retry = items.map((it, k) => ({ it, k })).filter(({ it, k }) => results[k]!.bad !== undefined && it.item['model'] !== undefined);
+      if (retry.length > 0) {
+        const again = await call('place_items', { items: retry.map(({ it }) => { const { model: _m, fit: _f, ...rest } = it.item; return rest; }), message: `Place ${retry.map(({ it }) => it.step.id).slice(0, 4).join(', ')} as parts` });
+        current = again.world;
+        const refusedAgain = refusedByIndex(again.text);
+        retry.forEach(({ k }, j) => {
+          results[k] = { step: results[k]!.step, bad: refusedAgain.get(j + 1) ?? (again.ok || again.text.includes('applied') ? undefined : again.text.slice(0, 300)) };
+        });
+      }
+      for (const { step, bad } of results) outcomes.push({ id: step.id, kind: String(step.input['kind']), ok: bad === undefined, text: bad ?? '' });
     }
   }
   return { world: current, shellOk: true, shellText: plan.text, outcomes, openings };
