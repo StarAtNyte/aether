@@ -45,6 +45,11 @@ export interface VolumePart {
   role: string;
   object: Object3D;
   meshes: readonly VolumeMesh[];
+  /**
+   * The meshes that are drawn, when `meshes` are trace stand-ins (a wall the view has sectioned is traced as built): the
+   * baked lightmap goes onto these.
+   */
+  drawn?: readonly VolumeMesh[];
   /** The part moves at run time (a behaviour, a dynamic body): a baked lightmap does not follow it. */
   movable?: boolean;
 }

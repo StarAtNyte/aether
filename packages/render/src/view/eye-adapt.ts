@@ -101,3 +101,13 @@ export function interiorBalance(light: { r: number; b: number }): number {
   const t = (m - 1) / (0.16 + 0.2 * m);
   return Math.max(-0.7, Math.min(0.3, t));
 }
+
+/**
+ * Tone-mapping exposure of a view: the world's own `environment.exposure` (the model's `tune_look` multiplier, 1 neutral)
+ * times the eye's adaptation to the light of the room (`eyeEv`, stops). The model's setting is a bias on the adapted
+ * exposure, never a replacement for it, so the same value reads the same in every room and from every camera.
+ */
+export function toneExposure(envExposure: number, eyeEv: number): number {
+  const e = Number.isFinite(envExposure) ? Math.max(0, envExposure) : 1;
+  return e * 2 ** (Number.isFinite(eyeEv) ? eyeEv : 0);
+}

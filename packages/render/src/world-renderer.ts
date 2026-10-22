@@ -7,9 +7,10 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
-import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, Color, FogExp2, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { buildStructure } from '@aether/arch';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
 import { MaterialCache } from './materials/material-cache';
@@ -32,6 +33,7 @@ import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
 import { getCatalog } from '@aether/assets';
 import { SceneSync } from './sync/scene-sync';
+import type { EntityNode } from './sync/entity-node';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
 import { SKY_RADIUS } from './environment/sky-dome';
@@ -58,8 +60,10 @@ import { AdaptiveResolution } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
-import { adaptStep, adaptedLook, interiorBalance, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
-import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
+import { adaptStep, adaptedLook, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
+import { looksInside } from './view/arch-view';
+import { ROOM_MAX_EV, ROOM_MIN_EV, RoomSelector, roomLight, roomSamplePoints, type PointLight, type RoomBox, type RoomLight } from './view/room-exposure';
+import { LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
 import { LightmapController, type LightmapScene, type LightmapStatus } from './view/lightmap-controller';
 import type { LightmapQuality } from './environment/lightmap';
 import type { VolumeLamp } from './environment/light-volume';
@@ -1102,6 +1106,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     this.env.setVolumeLit(true);
     this.lightmap.volumeChanged();
+    this.roomLights = null;
     this.eyeClock = 1;
     this.applyLook();
     // The interior shadow fit may now apply.
@@ -1168,7 +1173,7 @@ export class WorldRenderer {
     const ROLE_RANK: Record<string, number> = { room: 0, wall: 1, ceiling: 2, roof: 3, stair: 4, column: 5 };
     const order = g.parts.filter((p) => !p.movable && p.role !== 'door' && p.role !== 'window' && p.role !== 'opening').sort((a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9));
     for (const p of order) {
-      for (const vm of p.meshes) {
+      for (const vm of p.drawn ?? p.meshes) {
         if (vm.seeThrough || seen.has(vm.mesh)) continue;
         seen.add(vm.mesh);
         meshes.push(vm.mesh);
@@ -1287,6 +1292,54 @@ export class WorldRenderer {
     this.contact.set(planContactShadows(boxes, floors), this.activeEffects.ao ? 0.6 : 1);
   }
 
+  /**
+   * A wall the architectural view has sectioned (`shape.params.cut`: cutaway, lowered, cut open) as it was built, for the
+   * light bake: its full height with its window holes. The meshes are throw-away trace geometry, never drawn. Null for a wall
+   * that is whole, or when the generator refuses the params.
+   */
+  private asBuiltWall(node: Readonly<EntityNode>): VolumePart | null {
+    const shape = node.entity.shape;
+    if (shape.kind !== 'procedural' || shape.generator !== 'arch-wall' || typeof shape.params['cut'] !== 'number') return null;
+    try {
+      const params: Record<string, Json> = { ...shape.params };
+      delete params['cut'];
+      const out = buildStructure('arch-wall', params);
+      const meshes: Array<{ mesh: Mesh; seeThrough: boolean; doubleSided: boolean }> = [];
+      // Fallback albedo: the mean of the lit parts the view's wall carries (the section cap is a dark poche, not a finish).
+      const mean = new Color(0, 0, 0);
+      let n = 0;
+      const a: [number, number, number] = [0.5, 0.5, 0.5];
+      for (const b of node.bindings) {
+        materialAlbedo(b.mesh.material, a);
+        if (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2] < 0.04) continue;
+        mean.r += a[0];
+        mean.g += a[1];
+        mean.b += a[2];
+        n++;
+      }
+      if (n > 0) mean.multiplyScalar(1 / n);
+      else mean.setRGB(0.5, 0.5, 0.5);
+      const two = node.bindings[0]?.doubleSided ?? false;
+      node.object.updateWorldMatrix(true, false);
+      for (const part of out.parts) {
+        if (part.indices.length < 3) continue;
+        const g = new BufferGeometry();
+        g.setAttribute('position', new BufferAttribute(part.positions, 3));
+        g.setIndex(new BufferAttribute(part.indices, 1));
+        const spec = part.material as { color?: string };
+        const c = spec.color ? new Color(spec.color) : mean;
+        const mesh = new ThreeMesh(g, new MeshBasicMaterial({ color: c }));
+        (mesh.material as Material).userData['aetherAlbedo'] = [c.r, c.g, c.b];
+        mesh.matrixWorld.copy(node.object.matrixWorld);
+        meshes.push({ mesh, seeThrough: false, doubleSided: two });
+      }
+      return meshes.length > 0 ? { role: 'wall', object: node.object, meshes, drawn: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) } : null;
+    } catch (e) {
+      log.warn(`wall light trace falls back to the sectioned wall: ${errorMessage(e)}`);
+      return null;
+    }
+  }
+
   /** What a light-volume bake needs: the building parts, the light of the environment and the ground height. */
   private gatherLightVolume(): { parts: VolumePart[]; lighting: VolumeLighting; groundY: number } | null {
     if (!this.archView.active) return null;
@@ -1314,6 +1367,13 @@ export class WorldRenderer {
         if (a.role === 'building') {
           node.object.getWorldPosition(_pos);
           groundY = Math.min(groundY, _pos.y);
+          return;
+        }
+        // A wall the view has sectioned (cutaway, lowered, cut open) is traced as built: the light of a room must not
+        // depend on where the camera stands or which walls the view has lowered.
+        const asBuilt = a.role === 'wall' ? this.asBuiltWall(node) : null;
+        if (asBuilt) {
+          parts.push(asBuilt);
           return;
         }
         const movable = e.behaviors.length > 0 || (e.physics !== undefined && e.physics.body !== 'static');
@@ -3607,8 +3667,7 @@ export class WorldRenderer {
     const volume = this.lightVolume.ready;
     this.env.setEnvScale(volume ? 1 : eye.envScale);
     this.env.setInteriorFill(this.eyeFactor);
-    const eyeExposure = volume ? 2 ** this.eyeEv : eye.exposure;
-    this.renderer.toneMappingExposure = this.env.exposure * eyeExposure;
+    this.renderer.toneMappingExposure = volume ? toneExposure(this.env.exposure, this.eyeEv) : this.env.exposure * eye.exposure;
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
       // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
@@ -3643,10 +3702,65 @@ export class WorldRenderer {
   private volumeOutdoor = { ambient: 1, sun: 3 };
   private ceilings: CeilingBox[] | null = null;
   private eyeClock = 0;
+  /** The rooms of the buildings and the light measured for each, once per volume (null until asked for, dropped with the volume). */
+  private roomLights: { boxes: RoomBox[]; lights: Map<string, RoomLight> } | null = null;
+  private readonly roomSelect = new RoomSelector();
+  private roomPick: { id: string; weight: number; subject: boolean } | null = null;
 
   /** Drop the cached ceilings (the building changed). */
   private invalidateCeilings(): void {
     this.ceilings = null;
+    this.roomLights = null;
+  }
+
+  /**
+   * The rooms (floors with the ceiling over them) and the light of each, measured over the room's plan in the light volume.
+   * Computed once per volume and per building change, so the exposure of a room is one number however the camera moves.
+   */
+  private ensureRoomLights(): { boxes: RoomBox[]; lights: Map<string, RoomLight> } {
+    if (this.roomLights) return this.roomLights;
+    const boxes: RoomBox[] = [];
+    const lights = new Map<string, RoomLight>();
+    if (this.archView.active) {
+      const ceil: CeilingBox[] = this.ceilings ?? [];
+      const box = new Box3();
+      this.grow.withFullScale(() => {
+        this.sync.forEachNode((node) => {
+          const a = node.entity.arch;
+          if (a?.role !== 'room' || a.kind === 'terrace' || node.entity.template) return;
+          box.setFromObject(node.object);
+          if (box.isEmpty() || box.max.x - box.min.x < 0.8 || box.max.z - box.min.z < 0.8) return;
+          const floorY = box.max.y;
+          const cx = (box.min.x + box.max.x) / 2;
+          const cz = (box.min.z + box.max.z) / 2;
+          // The lowest ceiling over the room's centre that is above head height; none: a room open to the sky is no room.
+          let ceilY = Number.POSITIVE_INFINITY;
+          for (const c of ceil) {
+            if (cx < c.minX || cx > c.maxX || cz < c.minZ || cz > c.maxZ) continue;
+            if (c.y > floorY + 1.8 && c.y < ceilY) ceilY = c.y;
+          }
+          if (!Number.isFinite(ceilY)) return;
+          boxes.push({ id: node.id, minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z, floorY, ceilY });
+        });
+      });
+    }
+    for (const r of boxes) {
+      const pts: PointLight[] = [];
+      for (const q of roomSamplePoints(r)) {
+        const s = this.lightVolume.eyeSample(q[0], q[1], q[2]);
+        if (s) pts.push(s);
+      }
+      const light = roomLight(pts, this.volumeOutdoor);
+      if (light) lights.set(r.id, light);
+    }
+    this.roomLights = { boxes, lights };
+    return this.roomLights;
+  }
+
+  /** Diagnostics: the exposure the eye has settled on and the rooms it comes from. */
+  get eyeExposure(): { ev: number; room: string | null; weight: number; subject: boolean; rooms: Array<{ id: string; name: string | null; ev: number; raw: number; used: number; trimmed: number; box: RoomBox }> } {
+    const rooms = this.roomLights ? [...this.roomLights.lights].map(([id, l]) => ({ id, name: this.sync.node(id)?.entity.arch?.name ?? null, ev: l.ev, raw: l.raw, used: l.used, trimmed: l.trimmed, box: this.roomLights?.boxes.find((b) => b.id === id) as RoomBox })) : [];
+    return { ev: this.eyeEv, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
   }
 
   private adaptEye(dt: number): void {
@@ -3671,9 +3785,37 @@ export class WorldRenderer {
     const p = this.perspective.position;
     const target = this.ceilings.length === 0 ? 0 : interiorFactor(p.x, p.y, p.z, this.ceilings);
     const sample = this.lightVolume.ready ? this.lightVolume.eyeSample(p.x, p.y, p.z) : null;
-    const targetEv = sample ? volumeExposure(sample, this.volumeOutdoor) : 0;
-    // Balance only as far as the eye has adapted to the room (outdoors the sky sets the white).
-    const targetBalance = sample ? interiorBalance(sample) * Math.max(0, Math.min(1, targetEv / 1.5)) : 0;
+    // The room the eye stands in (or looks at through a cutaway) sets the exposure from its own light, measured once
+    // for the whole room (see `view/room-exposure.ts`): not from the point the camera happens to be at.
+    const rooms = this.lightVolume.ready ? this.ensureRoomLights() : null;
+    let targetEv = 0;
+    let targetBalance = 0;
+    this.roomPick = null;
+    if (rooms && rooms.boxes.length > 0) {
+      this.perspective.getWorldDirection(_dir);
+      const pick = this.roomSelect.select(rooms.boxes, p.x, p.y, p.z, [_dir.x, _dir.y, _dir.z], looksInside(this.archView.value));
+      let ev = 0;
+      let bal = 0;
+      let main: { id: string; weight: number } | null = null;
+      for (const sh of pick.shares) {
+        const light = rooms.lights.get(sh.room.id);
+        if (!light) continue;
+        ev += light.ev * sh.weight;
+        bal += light.balance * sh.weight;
+        main ??= { id: sh.room.id, weight: sh.weight };
+      }
+      if (main) {
+        this.roomPick = { ...main, subject: pick.subject };
+        targetEv = ev;
+        targetBalance = bal * Math.max(0, Math.min(1, targetEv / 1.5));
+      }
+    }
+    if (this.roomPick === null && sample) {
+      // Outside every room (a hall without a floor of its own, a stair, the garden): the spot's own reading, in the room range.
+      targetEv = Math.max(ROOM_MIN_EV, Math.min(ROOM_MAX_EV, volumeExposure(sample, this.volumeOutdoor)));
+      // Balance only as far as the eye has adapted to the room (outdoors the sky sets the white).
+      targetBalance = interiorBalance(sample) * Math.max(0, Math.min(1, targetEv / 1.5));
+    }
     // Under a roof by the ceilings, or by the volume itself (little sky seen from the eye).
     const inside = this.lightVolume.ready && (target > 0.5 || (sample !== null && sample.vis < 0.3));
     if (inside !== this.shadowInside) {
