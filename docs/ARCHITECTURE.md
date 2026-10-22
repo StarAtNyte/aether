@@ -153,14 +153,14 @@ colours as `#rrggbb`; ids as lowercase slugs.
 | Field | Contents |
 | --- | --- |
 | `entities` | Record by id. Each entity has `transform`, `shape` (`primitive`, `procedural`, `model`, `scatter`, `mesh`, `asset` or `none`), `material` (22 presets plus overrides and finishes), `physics` (body type, collider, mass or density, friction, restitution, sensor, damping, CCD), `joint` (fixed, revolute, prismatic or spherical with limits and motor), `light`, `behaviors`, `state`, `parent`, `attachedTo` (an owner without parenting, see §35), `tags`, `template` and `locked`, plus the optional domain blocks `arch` (§18), `npc` (§24), `character` (people) and `interact` (§29) |
-| `rules` | WHEN (11 triggers: start, tick, timer, collision, enter, exit, key, click, state, event, fallBelow) / IF (state conditions) / THEN (17 actions: set, add, spawn, destroy, impulse, setVelocity, teleport, setProperty, enableBehavior, explode, setGravity, emit, message, sound, win, lose, reset) |
-| `environment` | Sky preset, time of day, fog, weather, ambient and sun intensity, ground, gravity, bloom, exposure |
+| `rules` | WHEN (11 triggers: start, tick, timer, collision, enter, exit, key, click, state, event, fallBelow) / IF (state conditions) / THEN (18 actions: set, add, spawn, destroy, impulse, setVelocity, teleport, setProperty, enableBehavior, explode, setGravity, emit, message, sound, win, lose, reset, effect) |
+| `environment` | Sky preset, time of day, fog, weather, ambient and sun intensity, ground, gravity, wind, bloom, exposure, optional HDRI, colour `grade` and `look` (interior warmth and balance, sun, ambient and foliage tints, lamp strength, vignette; tuned by the assistant, section 30) |
 | `player` | Mode (orbit, firstPerson, thirdPerson or vehicle), spawn, controlled entity, speeds |
 | `state`, `hud` | Global variables and the HUD bindings that display them |
 | `generators`, `scripts` | Code written by the coder model (see §9) |
 | `meshes` | Editable mesh assets referenced by `mesh` shapes |
 | `tests` | `stable`, `noOverlap`, `reaches`, `eventually`, `moves`, `topples`, `staysAbove`, `navigable` (buildings, §18) and `npcs` (characters, §24) |
-| `voxel`, `intro` | Optional block terrain (§17) and the title card shown before play starts (§21) |
+| `voxel`, `intro`, `feel` | Optional block terrain (§17), the title card shown before play starts (§21) and the game-feel tier and per-event cues (§38; an entity's `vfx` block adds a particle emitter) |
 
 Edits are one of 23 patch ops (`Patch` in `schema.ts`: entity add / update /
 remove / rename, rules, environment, player, state, HUD, generators, scripts,
