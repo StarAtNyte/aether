@@ -365,6 +365,51 @@ function clearFloor(q: readonly P2[], ring: RoomRing, footprint: readonly P2[], 
   return blockedBy(q, obstacles) === null;
 }
 
+/** Whether two outlines share floor (not merely an edge): points over `a` on a 10 cm grid that lie inside `b`. */
+function overlapsFloor(a: readonly P2[], b: readonly P2[]): boolean {
+  const [x0, z0, x1, z1] = bounds(a);
+  for (let x = x0 + 0.05; x < x1; x += 0.1) {
+    for (let z = z0 + 0.05; z < z1; z += 0.1) {
+      if (pointInPolygon(x, z, a) && pointInPolygon(x, z, b) && !onOutline([x, z], b)) return true;
+    }
+  }
+  return false;
+}
+
+/** Narrowest gap that is no way through between a stair and a stairwell or another stair beside it (m): a walker's 0.8 m walkway. */
+const PINCH = 0.8;
+
+/** Points along an outline, about 10 cm apart (corners included). */
+function outlinePoints(poly: readonly P2[]): P2[] {
+  const out: P2[] = [];
+  for (let k = 0; k < poly.length; k++) {
+    const p = poly[k] as P2;
+    const q = poly[(k + 1) % poly.length] as P2;
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 0.1));
+    for (let i = 0; i < n; i++) out.push([p[0] + ((q[0] - p[0]) * i) / n, p[1] + ((q[1] - p[1]) * i) / n]);
+  }
+  return out;
+}
+
+/**
+ * How narrow the gap between two outlines is (m), or null when there is none that matters: a gap too narrow to walk
+ * (less than {@link PINCH} but more than the 3 cm of two things that touch) is a slit between a stair and a stairwell
+ * or another stair that the walkthrough bot could not get through, along a face or from corner to corner. Side by side
+ * with no gap is fine (nobody walks there).
+ */
+function lanePinch(a: readonly P2[], b: readonly P2[]): number | null {
+  let narrowest = Infinity;
+  for (const p of outlinePoints(a)) {
+    const d = distanceToPolygon(p, b);
+    if (d > 0.03) narrowest = Math.min(narrowest, d);
+  }
+  for (const p of outlinePoints(b)) {
+    const d = distanceToPolygon(p, a);
+    if (d > 0.03) narrowest = Math.min(narrowest, d);
+  }
+  return narrowest < PINCH ? narrowest : null;
+}
+
 function onOutline(p: P2, poly: readonly P2[]): boolean {
   for (let k = 0; k < poly.length; k++) {
     const a = poly[k] as P2;
@@ -393,6 +438,8 @@ export interface StairDoor {
   id: string;
   at: P2;
   width: number;
+  /** A hinged door: the unit direction (plan frame) its leaf swings into, and the leaf's width (m). */
+  swing?: { into: P2; leaf: number; /** Which way along the wall (unit, plan frame) the hinge lies from the door's centre. */ hinge: P2 };
 }
 
 /** Doorways per level from the compiled building (door frames and open passages). */
@@ -404,15 +451,69 @@ export function levelDoors(plan: BuildingPlan): StairDoor[][] {
   } catch {
     return out;
   }
+  const leaves = new Map<string, (typeof compiled.entities)[number]>();
+  for (const e of compiled.entities) if (e.arch?.role === 'door') leaves.set(e.id, e);
   for (const e of compiled.entities) {
     if (e.arch?.role !== 'opening' || !e.parent) continue;
     const m = /-l(\d+)$/.exec(e.parent);
     const li = m ? Number(m[1]) : -1;
     const width = typeof e.shape?.kind === 'string' && e.shape.kind === 'procedural' ? Number((e.shape.params as Record<string, unknown> | undefined)?.['width'] ?? 0.9) : 0.9;
     const pos = e.transform?.position ?? [0, 0, 0];
-    out[li]?.push({ id: e.id, at: [pos[0], pos[2]], width: Number.isFinite(width) ? width : 0.9 });
+    const door: StairDoor = { id: e.id, at: [pos[0], pos[2]], width: Number.isFinite(width) ? width : 0.9 };
+    // A leaf on hinges sits on the face of the wall it swings into: that offset from the frame says which side.
+    const leaf = leaves.get(`${e.id}-leaf`);
+    const swings = leaf?.behaviors?.some((b) => b.type === 'door' && (b.params as Record<string, unknown> | undefined)?.['motion'] !== 'slide');
+    if (leaf && swings) {
+      const yaw = typeof e.transform?.rotation?.[1] === 'number' ? e.transform.rotation[1] : 0;
+      const v = rotateYaw(0, 1, yaw);
+      const lp = leaf.transform?.position ?? pos;
+      const side = (lp[0] - pos[0]) * v[0] + (lp[2] - pos[2]) * v[1] >= 0 ? 1 : -1;
+      const lw = Number((leaf.shape as { params?: Record<string, unknown> } | undefined)?.params?.['width'] ?? 0.8);
+      const hingeLeft = (leaf.behaviors?.find((b) => b.type === 'door')?.params as Record<string, unknown> | undefined)?.['hinge'] !== 'right';
+      const u = rotateYaw(1, 0, yaw);
+      door.swing = { into: [v[0] * side, v[1] * side], leaf: Number.isFinite(lw) ? lw : 0.8, hinge: hingeLeft ? [-u[0], -u[1]] : [u[0], u[1]] };
+    }
+    out[li]?.push(door);
   }
   return out;
+}
+
+
+/**
+ * Room a walker needs between a door's open leaf and a stair (or the balustrade round its stairwell) on the side the
+ * leaf swings into (m): the 0.8 m walkway the building check asks for, and a hand's breadth. Less than that and the open leaf and the railing pinch the way to the door shut
+ * (a walkthrough bot stood in front of a bedroom door whose leaf swung into the 1.4 m between the stairwell rail and
+ * the wall).
+ */
+const SWING_WALKWAY = 0.85;
+
+/**
+ * Whether a stair (or its stairwell balustrade, `footprint` grown by `reach`) spoils the floor in front of a hinged door:
+ * it stands in the way of the doorway itself, within the leaf's swing and a walkway beyond it, or it leaves a pocket
+ * beside the hinge, between the open leaf and the stair, that a walker steps into and cannot turn in (the leaf, the
+ * wall and the balustrade shut the way on; a bot stood there until the clock ran out). A stair flush with the
+ * hinge side leaves no pocket. Returns how far in from the wall the trouble starts, or null when the floor is clear.
+ */
+export function stairInDoorSwing(d: StairDoor, footprint: readonly P2[], reach = 0): number | null {
+  if (!d.swing) return null;
+  const [nx, nz] = d.swing.into;
+  const depth = d.swing.leaf + SWING_WALKWAY;
+  const half = d.width / 2;
+  // The walker's own line through the doorway: the width less a hand's breadth each side (the frame is passed at a slant).
+  const walk = Math.max(0, half - 0.1);
+  const [hx, hz] = d.swing.hinge;
+  // +1 when positive lateral offsets (along -nz, nx) lie on the hinge side.
+  const hingeSign = hx * -nz + hz * nx >= 0 ? 1 : -1;
+  const hit = (t: number, l: number): boolean => distanceToPolygon([d.at[0] + nx * t - nz * l, d.at[1] + nz * t + nx * l], footprint) <= reach + 1e-6;
+  for (let t = 0.05; t <= depth + 1e-9; t += 0.05) {
+    for (let l = -walk; l <= walk + 1e-9; l += 0.1) if (hit(t, l)) return t;
+    for (let g = 0; g <= STAIR_BODY + 1e-9; g += 0.05) {
+      if (!hit(t, hingeSign * (half + g))) continue;
+      if (g > 0.1) return t;
+      break;
+    }
+  }
+  return null;
 }
 
 /** What is wrong with a stair (empty when it works), each with numbers. */
@@ -461,6 +562,17 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
     const where = hit.length > 1 ? `crosses the wall between ${hit.join(' and ')}` : fp.ring ? `runs ${f2(fp.out)} m into or past the walls of ${fp.ring.id}` : 'is outside every room';
     problems.push(`its footprint (${box}, ${f2(shape.size[0])} × ${f2(shape.size[1])} m for ${shape.risers} risers of ${f2(shape.riser)} m) ${where}`);
   }
+  // On a level with a stairwell from the stair below, the floor is open there: a flight cannot start over the hole.
+  const belowRise = plan.levels[li - 1]?.height ?? 3;
+  for (const b of plan.levels[li - 1]?.stairs ?? []) {
+    if (overlapsFloor(shape.footprint, wellOf(b, belowRise))) problems.push(`its footprint (${box}) stands in the stairwell of the stair from level ${li - 1} at ${at2(b.at)}, where the floor is open`);
+    // ... nor on the landing that stair comes out onto (the way off its top step).
+    else if (overlapsFloor(shape.footprint, stairShape(b, belowRise).arrivalMin)) problems.push(`its footprint (${box}) stands on the landing where the stair from level ${li - 1} at ${at2(b.at)} comes out`);
+    else {
+      const lane = lanePinch(shape.footprint, wellOf(b, belowRise));
+      if (lane !== null) problems.push(`it leaves ${f2(lane)} m between itself and the stairwell of the stair from level ${li - 1} at ${at2(b.at)}, narrower than the ${f2(PINCH)} m a walker needs`);
+    }
+  }
   const room = fp.ring?.id;
   const need = shape.landing;
   const needText = `${f2(need)} m (${need > STAIR_MIN_LANDING + 1e-9 ? 'the stair\'s width' : `a ${f2(STAIR_BODY)} m body with ${f2(STAIR_BODY_CLEARANCE)} m each side`})`;
@@ -479,9 +591,15 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
     const gap = Math.min(distanceToPolygon(d.at, shape.footprint), distanceToPolygon(d.at, shape.approachMin) + STAIR_DOOR_CLEARANCE);
     const need = d.width / 2 + STAIR_DOOR_CLEARANCE;
     if (gap < need - 0.01) problems.push(`it comes within ${f2(gap)} m of the doorway ${d.id} at (${f2(d.at[0])}, ${f2(d.at[1])}) (keep ${f2(need)} m clear)`);
+    else {
+      const swing = stairInDoorSwing(d, shape.footprint);
+      if (swing !== null) problems.push(`it stands ${f2(swing)} m in front of the door ${d.id} at (${f2(d.at[0])}, ${f2(d.at[1])}), where the leaf swings (keep ${f2(d.swing ? d.swing.leaf + SWING_WALKWAY : 0)} m clear in front of it)`);
+    }
   }
   for (const o of others) {
     const s = stairShape(o, level.height);
+    const lane = lanePinch(shape.footprint, s.footprint);
+    if (lane !== null) problems.push(`it leaves ${f2(lane)} m between itself and the stair at (${f2(o.at[0])}, ${f2(o.at[1])}), narrower than the ${f2(PINCH)} m a walker needs`);
     if (s.footprint.some((p) => pointInPolygon(p[0], p[1], shape.footprint)) || shape.footprint.some((p) => pointInPolygon(p[0], p[1], s.footprint))) problems.push(`it overlaps the stair at (${f2(o.at[0])}, ${f2(o.at[1])})`);
   }
   let arrives: string | undefined;
@@ -495,6 +613,10 @@ export function checkStair(plan: BuildingPlan, li: number, stair: PlanStair, doo
       const gap = distanceToPolygon(d.at, shape.footprint) - WELL_RAIL_REACH;
       const need = d.width / 2 + STAIR_DOOR_CLEARANCE;
       if (gap < need - 0.01) problems.push(`upstairs the stairwell comes within ${f2(Math.max(0, gap))} m of the doorway ${d.id} at (${f2(d.at[0])}, ${f2(d.at[1])}) on level ${li + 1} (keep ${f2(need)} m clear)`);
+      else {
+        const swing = stairInDoorSwing(d, shape.footprint, WELL_RAIL_REACH);
+        if (swing !== null) problems.push(`upstairs the stairwell balustrade stands ${f2(swing)} m in front of the door ${d.id} at (${f2(d.at[0])}, ${f2(d.at[1])}) on level ${li + 1}, where the leaf swings (keep ${f2(d.swing ? d.swing.leaf + SWING_WALKWAY : 0)} m clear in front of it)`);
+      }
     }
     const arr = bestRing(shape.arrivalMin, up);
     arrives = arr.ring?.id;
