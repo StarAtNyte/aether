@@ -23,3 +23,18 @@ describe('Environment.look', () => {
     expect(w.environment.look).toEqual({ vignette: 0.1 });
   });
 });
+
+describe('Environment.lightBake', () => {
+  it('is optional, bounded and replaceable through setEnvironment', () => {
+    expect(Environment.parse({}).lightBake).toBeUndefined();
+    expect(Environment.parse({ lightBake: { quality: 'high', samples: 128 } }).lightBake).toEqual({ quality: 'high', samples: 128 });
+    expect(Environment.safeParse({ lightBake: { quality: 'ultra' } }).success).toBe(false);
+    expect(Environment.safeParse({ lightBake: { quality: 'low', samples: 4 } }).success).toBe(false);
+    expect(Environment.safeParse({ lightBake: { quality: 'low', samples: 600 } }).success).toBe(false);
+    let w = createWorld();
+    w = applyPatches(w, [{ op: 'setEnvironment', set: { lightBake: { quality: 'medium' } } }]).world;
+    expect(w.environment.lightBake).toEqual({ quality: 'medium' });
+    w = applyPatches(w, [{ op: 'setEnvironment', set: { lightBake: null } }]).world;
+    expect(w.environment.lightBake).toBeUndefined();
+  });
+});

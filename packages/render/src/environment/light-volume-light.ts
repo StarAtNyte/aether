@@ -8,13 +8,18 @@
  * lifetime; a new bake rewrites its pixels, so neither the GPU texture nor any material is rebuilt for a
  * rebake. With no bake ({@link strength} 0) the light changes nothing.
  */
-import { ClampToEdgeWrapping, Data3DTexture, HalfFloatType, Light, LinearFilter, RGBAFormat, Vector3 } from 'three';
+import { ClampToEdgeWrapping, Data3DTexture, DataTexture, HalfFloatType, Light, LinearFilter, RGBAFormat, UnsignedByteType, Vector3 } from 'three';
 import { atlasDepth, packVolumeAtlas, VOLUME_ALLOC, type VolumeGrid } from './light-volume';
 
 /** Metres over which the volume's effect fades out beyond its box. */
 export const VOLUME_FADE = 1.2;
 /** Lowest sky visibility applied (a sealed room keeps a trace of the ambient instead of turning black). */
 export const VOLUME_VIS_FLOOR = 0.05;
+
+/** Name of the vertex attribute that carries a mesh's lightmap coordinates (see `lightmap.ts`). */
+export const LIGHTMAP_ATTRIBUTE = 'aetherLM';
+/** Edge of the lightmap texture allocated for any atlas (an atlas is 256, 512 or 1024 and sits in its corner). */
+export const LIGHTMAP_ALLOC = 1024;
 
 /** A light that applies a baked volume to every lit material (see the module comment). */
 export class LightVolume extends Light {
@@ -36,6 +41,16 @@ export class LightVolume extends Light {
   /** Bumped by every upload. */
   bakeVersion = 0;
   private readonly atlas: Uint16Array;
+  /** The baked lightmap atlas (allocated at the first {@link setLightmap}, then reused): sqrt bounce in rgb, sky visibility in a. */
+  lightmap: DataTexture | null = null;
+  /** 0 with no lightmap, 1 with one. */
+  lightmapStrength = 0;
+  /** Atlas edge over {@link LIGHTMAP_ALLOC}: coordinates of the atlas are scaled by it. */
+  lightmapScale = 1;
+  /** Irradiance a code of 255 stands for. */
+  lightmapIrradiance = 1;
+  /** Bumped by every lightmap upload. */
+  lightmapVersion = 0;
 
   constructor() {
     super(0xffffff, 1);
@@ -71,6 +86,33 @@ export class LightVolume extends Light {
     this.bakeVersion++;
   }
 
+  /** Upload a baked atlas (`size` × `size` RGBA8, see `LightmapResult`); the texture is allocated once. */
+  setLightmap(rgba: Uint8Array, size: number, irradianceScale: number): void {
+    if (!this.lightmap) {
+      const data = new Uint8Array(LIGHTMAP_ALLOC * LIGHTMAP_ALLOC * 4);
+      const t = new DataTexture(data, LIGHTMAP_ALLOC, LIGHTMAP_ALLOC, RGBAFormat, UnsignedByteType);
+      t.minFilter = LinearFilter;
+      t.magFilter = LinearFilter;
+      t.wrapS = t.wrapT = ClampToEdgeWrapping;
+      t.generateMipmaps = false;
+      t.unpackAlignment = 1;
+      this.lightmap = t;
+    }
+    const dst = this.lightmap.image.data as Uint8Array;
+    dst.fill(0);
+    for (let y = 0; y < size; y++) dst.set(rgba.subarray(y * size * 4, (y + 1) * size * 4), y * LIGHTMAP_ALLOC * 4);
+    this.lightmap.needsUpdate = true;
+    this.lightmapScale = size / LIGHTMAP_ALLOC;
+    this.lightmapIrradiance = irradianceScale;
+    this.lightmapStrength = 1;
+    this.lightmapVersion++;
+  }
+
+  /** The lightmap no longer applies (meshes that carried coordinates must have been restored). */
+  clearLightmap(): void {
+    this.lightmapStrength = 0;
+  }
+
   /** Back to no effect (the building went away). */
   clearBake(): void {
     this.strength = 0;
@@ -78,6 +120,7 @@ export class LightVolume extends Light {
 
   override dispose(): void {
     this.texture.dispose();
+    this.lightmap?.dispose();
     super.dispose();
   }
 }

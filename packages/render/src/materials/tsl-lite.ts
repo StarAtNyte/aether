@@ -29,6 +29,7 @@ export interface Nd {
   r: Nd;
   g: Nd;
   b: Nd;
+  a: Nd;
   xy: Nd;
   xz: Nd;
   xyz: Nd;
@@ -74,6 +75,7 @@ export interface Tsl {
   viewportSharedTexture(uv: Nd): Nd;
   reflector(opts: { resolutionScale?: number; bounces?: boolean; target?: import('three').Object3D }): Nd;
   uniform(v: unknown): Nd;
+  attribute(name: string, type?: string): Nd;
   uniformArray(v: unknown[], type: string): Nd;
   positionWorld: Nd;
   normalWorld: Nd;

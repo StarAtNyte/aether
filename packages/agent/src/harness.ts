@@ -209,6 +209,9 @@ export function stepLabel(name: string, input: unknown, ok: boolean): string {
     case 'tune_look':
       text = 'Setting the look';
       break;
+    case 'bake_light':
+      text = 'Baking the interior light';
+      break;
     case 'tune_feel':
       text = 'Tuning the game feel';
       break;

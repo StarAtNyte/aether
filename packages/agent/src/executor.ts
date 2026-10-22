@@ -14,6 +14,7 @@ import { libraryDefinitions } from './library-refs';
 import { readGroups } from './groups';
 import { landPatches, type LandInput } from './land';
 import { feelPatches, type TuneFeelInput } from './feel-edit';
+import { bakePatches, type BakeLightInput } from './bake-edit';
 import { lookPatches, type TuneLookInput } from './look-edit';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
@@ -495,6 +496,17 @@ function tuneLookTool(ctx: ExecutorContext, input: TuneLookInput): ToolOutcome {
   return { content: `${summary}${notes}`, isError: false, events, edited: true };
 }
 
+/** bake_light: whether and how a building's interior light is baked, committed as one undo step (the renderer does the work). */
+function bakeLightTool(ctx: ExecutorContext, input: BakeLightInput): ToolOutcome {
+  const { patches, summary } = bakePatches(ctx.host.getWorld(), input);
+  if (patches.length === 0) return { content: summary, isError: false, events: [], edited: false };
+  const message = (input.message ?? 'Bake the interior light').slice(0, 200);
+  const result = ctx.host.applyPatches(patches, message);
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
+  if (result.errors.length > 0) return { content: `bake_light could not apply: ${result.errors.slice(0, 4).map((e) => e.message.slice(0, 160)).join('; ')}`, isError: result.applied.length === 0, events, edited: result.applied.length > 0 };
+  return { content: summary, isError: false, events, edited: true };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   if (isLevelToolName(name)) {
@@ -507,7 +519,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -519,6 +531,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'tune_feel': {
         const p = ToolInputs.tune_feel.safeParse(rawInput ?? {});
         return p.success ? tuneFeelTool(ctx, p.data) : fail(`Invalid tune_feel input: ${issuesText(p.error)}`);
+      }
+      case 'bake_light': {
+        const p = ToolInputs.bake_light.safeParse(rawInput ?? {});
+        return p.success ? bakeLightTool(ctx, p.data) : fail(`Invalid bake_light input: ${issuesText(p.error)}`);
       }
       case 'tune_look': {
         const p = ToolInputs.tune_look.safeParse(rawInput ?? {});

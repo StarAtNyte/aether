@@ -21,6 +21,7 @@
  */
 import { BufferAttribute, BufferGeometry, Matrix3, Matrix4, Mesh, type Material, type Object3D } from 'three';
 import type { EntityNode } from './entity-node';
+import { concatMemberUv, expandWithLightmap, type LightmapSource } from './lightmap-uv';
 import { BATCHED_LAYER } from './static-batches';
 
 /** Smallest group worth merging (fewer meshes draw as they are). */
@@ -76,6 +77,8 @@ const _nrm = new Matrix3();
 /** Merged building geometry under one scene root. */
 export class StaticMerges {
   private merges: Merge[] = [];
+  /** Baked lightmap coordinates of the members, when a lightmap is applied: merged geometry then carries them. */
+  private lightmap: LightmapSource | null = null;
   /** Meshes evicted since the last rebuild (they draw themselves until content changes). */
   private readonly evicted = new WeakSet<Mesh>();
   private saved = 0;
@@ -183,6 +186,33 @@ export class StaticMerges {
   private evict(mesh: Mesh): void {
     this.evicted.add(mesh);
     mesh.layers.set(0);
+    this.lightmap?.standalone(mesh);
+  }
+
+  /**
+   * Use `source` for the lightmap coordinates of merged geometry (null: none) and rebuild the geometry of the merges that exist.
+   * @returns the number of merges rebuilt
+   */
+  setLightmap(source: LightmapSource | null): number {
+    this.lightmap = source;
+    let n = 0;
+    for (const m of this.merges) {
+      const next = this.build(m.members.map((x) => x.mesh), m.members);
+      m.mesh.geometry.dispose();
+      m.mesh.geometry = next;
+      n++;
+    }
+    return n;
+  }
+
+  /** The merged geometry of `members`, with lightmap coordinates when every member has some. */
+  private build(meshes: readonly Mesh[], members: readonly Member[]): BufferGeometry {
+    const merged = mergeGeometries(members);
+    const uv = this.lightmap ? concatMemberUv(meshes, this.lightmap) : null;
+    if (!uv || uv.length !== (merged.index?.count ?? 0) * 2) return merged;
+    const lit = expandWithLightmap(merged, uv);
+    merged.dispose();
+    return lit;
   }
 
   private create(key: string, parent: Object3D, material: Material, meshes: readonly Mesh[]): void {
@@ -206,7 +236,7 @@ export class StaticMerges {
         _rel.multiplyMatrices(_inv, mesh.matrixWorld);
         return { mesh, geometry: mesh.geometry, material: mesh.material as Material, rel: Float64Array.from(_rel.elements) };
       });
-      const geometry = mergeGeometries(members);
+      const geometry = this.build(slice, members);
       const mesh = new Mesh(geometry, material);
       mesh.name = 'aether:merged';
       const first = slice[0] as Mesh;
@@ -224,7 +254,12 @@ export class StaticMerges {
 
   /** Remove a merge; members not in `still` go back to the default layer. */
   private release(m: Merge, still: ReadonlySet<Mesh>): void {
-    for (const x of m.members) if (!still.has(x.mesh) && x.mesh.layers.isEnabled(BATCHED_LAYER)) x.mesh.layers.set(0);
+    for (const x of m.members) {
+      if (!still.has(x.mesh) && x.mesh.layers.isEnabled(BATCHED_LAYER)) {
+        x.mesh.layers.set(0);
+        this.lightmap?.standalone(x.mesh);
+      }
+    }
     m.mesh.removeFromParent();
     m.mesh.geometry.dispose();
   }

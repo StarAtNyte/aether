@@ -45,6 +45,8 @@ export interface VolumePart {
   role: string;
   object: Object3D;
   meshes: readonly VolumeMesh[];
+  /** The part moves at run time (a behaviour, a dynamic body): a baked lightmap does not follow it. */
+  movable?: boolean;
 }
 
 /** Light and ground the bake uses, read from the environment rig. */
@@ -341,6 +343,11 @@ export class LightVolumeController {
   /** A bake is pending or running. */
   get baking(): boolean {
     return this.enabled && (this.pending || this.baker !== null || this.job !== null);
+  }
+
+  /** The finished volume on screen (the lightmap bake reads it for the bounces it does not trace), or null. */
+  get bakedVolume(): { grid: VolumeGrid; data: Float32Array } | null {
+    return this.enabled && this.grid && this.data ? { grid: this.grid, data: this.data } : null;
   }
 
   /** A finished bake is on screen. */

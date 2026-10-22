@@ -16,7 +16,7 @@
 import { Vector3, Vector4 } from 'three';
 import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
-import { LightVolume } from '../environment/light-volume-light';
+import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
 import { ATLAS_SUBVOLUMES, FREE_SLACK, FREE_STEPS } from '../environment/light-volume';
 
 interface LightingContext {
@@ -37,6 +37,8 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
   private readonly vAlloc = new Vector3(2, 2, 2);
   /** spacing, fade, visibility floor, strength. */
   private readonly vParams = new Vector4(1, 1, 0.05, 0);
+  /** Lightmap: atlas scale, irradiance scale, strength. */
+  private readonly vMap = new Vector4(1, 1, 0, 0);
 
   constructor(light: LightVolume | null = null) {
     super(light);
@@ -50,6 +52,7 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     this.vRes.copy(l.gridResolution);
     this.vAlloc.copy(l.allocResolution);
     this.vParams.set(l.spacing, Math.max(0.01, l.fade), Math.max(0.005, l.visFloor), l.visible ? l.strength * l.intensity : 0);
+    this.vMap.set(l.lightmapScale, l.lightmapIrradiance, l.visible ? l.lightmapStrength * l.intensity : 0, 0);
     return undefined;
   }
 
@@ -57,6 +60,23 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     const light = this.light;
     if (!light) return undefined;
     const ctx = builder.context as unknown as LightingContext;
+    // A mesh with baked lightmap coordinates reads its texel instead of the probes: one filtered read of a 2D atlas
+    // (two for the rest of the lighting) against twelve reads of the 3D volume, and the baked surface detail
+    // (corners, the floor under furniture) the probes cannot hold. Meshes without coordinates keep the volume.
+    if (light.lightmap && (builder as unknown as { hasGeometryAttribute(name: string): boolean }).hasGeometryAttribute(LIGHTMAP_ATTRIBUTE)) {
+      const uMap = T.uniform(this.vMap);
+      const uParamsLm = T.uniform(this.vParams);
+      const s = T.texture(light.lightmap).sample(T.attribute(LIGHTMAP_ATTRIBUTE, 'vec2').mul(uMap.x));
+      const has = T.step(0.5 / 255, s.a);
+      const wm = has.mul(uMap.z);
+      const vis = T.mix(T.float(1), s.a, wm);
+      const visC = T.max(vis, uParamsLm.z);
+      const bounce = s.rgb.mul(s.rgb).mul(uMap.y).mul(wm);
+      ctx.ambientOcclusion.mulAssign(visC);
+      ctx.irradiance.addAssign(bounce.div(visC));
+      ctx.radiance.addAssign(bounce.div(visC).mul(1 / Math.PI));
+      return undefined;
+    }
     const uMin = T.uniform(this.vMin);
     const uExtent = T.uniform(this.vExtent);
     const uRes = T.uniform(this.vRes);

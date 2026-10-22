@@ -10,6 +10,7 @@
  */
 import { accelerateRaycast } from '../geometry/raycast-bvh';
 import { StaticBatches } from './static-batches';
+import type { LightmapSource } from './lightmap-uv';
 import { StaticMerges } from './static-merges';
 import {
   Box3,
@@ -455,6 +456,11 @@ export class SceneSync {
   get batchesActive(): boolean {
     const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0);
     return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging;
+  }
+
+  /** Merged building geometry carries the baked lightmap coordinates `source` gives (null: none). */
+  setLightmapSource(source: LightmapSource | null): void {
+    this.merges?.setLightmap(source);
   }
 
   /** Static-prop batches / building merges and the draw calls they save per pass. */

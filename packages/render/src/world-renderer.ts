@@ -60,6 +60,8 @@ import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
 import { adaptStep, adaptedLook, interiorBalance, interiorFactor, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { LightVolumeController, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
+import { LightmapController, type LightmapScene, type LightmapStatus } from './view/lightmap-controller';
+import type { LightmapQuality } from './environment/lightmap';
 import type { VolumeLamp } from './environment/light-volume';
 import { LightVolume } from './environment/light-volume-light';
 import { LightVolumeNode } from './gpu/light-volume-node';
@@ -196,6 +198,13 @@ export interface RendererOptions {
   virtualGeometry?: boolean;
   /** Run built-in generators in a worker (default true where module workers exist). */
   workerGeneration?: boolean;
+  /**
+   * Where bundled baked-lightmap files (`<key>.lmap`) are served, with a trailing slash (default none: the browser cache and
+   * the bake only). A bundled world ships the lightmap its own build produced.
+   */
+  lightmapBase?: string | null;
+  /** The baked lightmap started, progressed, applied, failed or was cancelled (a status line, a cancel button). */
+  onLightmapStatus?: (status: LightmapStatus) => void;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -387,20 +396,27 @@ const INTERIOR_WARMTH = 0.45;
 /** Share of the room light's own cast the interior white balance takes out (the world's `look.interiorBalance` replaces it). */
 const INTERIOR_BALANCE = 1;
 
-/** Whether `next` changes a building part or a light of `prev` (the light volume then bakes again). */
-function archChanged(prev: WorldDoc, next: WorldDoc): boolean {
-  if (prev.entities === next.entities) return false;
+/**
+ * What `next` changes of the building's light relative to `prev`: `geometry` when a building part changed (the baked light
+ * bakes again), `light` when only a light did, null when neither.
+ */
+function archChangeKind(prev: WorldDoc, next: WorldDoc): 'geometry' | 'light' | null {
+  if (prev.entities === next.entities) return null;
+  let kind: 'geometry' | 'light' | null = null;
   for (const id in next.entities) {
     const e = next.entities[id];
     const before = prev.entities[id];
     if (e === before) continue;
-    if (e?.arch || e?.light || before?.arch || before?.light) return true;
+    if (e?.arch || before?.arch) return 'geometry';
+    if (e?.light || before?.light) kind = 'light';
   }
   for (const id in prev.entities) {
     const before = prev.entities[id];
-    if (!(id in next.entities) && (before?.arch || before?.light)) return true;
+    if (id in next.entities) continue;
+    if (before?.arch) return 'geometry';
+    if (before?.light) kind = 'light';
   }
-  return false;
+  return kind;
 }
 
 /** Mean linear radiance of the upper and lower halves of an sRGB equirectangular sky map (grey without one). */
@@ -678,6 +694,13 @@ export class WorldRenderer {
     settled: () => this.syncing === 0 && !this.grow.active && !this.disposed,
     onUpload: () => this.onLightVolume(),
   });
+  /**
+   * Baked per-surface light of the buildings (see `view/lightmap-controller.ts`): applied on top of the volume's light node, which
+   * it replaces for the surfaces it covers. Built after the volume, whose bake it needs.
+   */
+  private readonly lightmap: LightmapController;
+  /** What the world asked for (`environment.lightBake`): undefined is the automatic policy. */
+  private lightBake: { quality: 'off' | LightmapQuality; samples?: number } | undefined;
   /** Soft footprints under the furniture of buildings (see `view/contact-shadows.ts`). */
   private readonly contact = new ContactShadows();
   /** Scene syncs still generating geometry (the light volume waits for them). */
@@ -782,6 +805,17 @@ export class WorldRenderer {
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
     this.geckoSafe = geckoSafePath(backend, gpu.description);
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
+    this.lightmap = new LightmapController(this.lightVolume.light, {
+      gather: () => this.gatherLightmap(),
+      volume: () => (this.lightVolume.baking ? null : this.lightVolume.bakedVolume),
+      settled: () => this.syncing === 0 && !this.grow.active && !this.disposed,
+      onChange: () => this.onLightmap(),
+      attach: (source) => this.sync.setLightmapSource(source),
+      onStatus: (st) => opts.onLightmapStatus?.(st),
+      autoBake: () => this.lightmapAutoBake(),
+      autoQuality: () => this.lightmapAutoQuality(),
+      staticBase: opts.lightmapBase ?? null,
+    });
     this.watchdogOn = opts.watchdog !== false;
     // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
     this.watchdog = new BlackScreenWatchdog(opts.watchdog === false ? {} : (opts.watchdog ?? (globalThis as { __aetherWatchdog?: Partial<WatchdogOptions> }).__aetherWatchdog));
@@ -1031,7 +1065,7 @@ export class WorldRenderer {
 
   /** The buildings' light volume is waiting to bake or baking (captures that want the finished light wait for it). */
   get lightVolumeBaking(): boolean {
-    return this.lightVolume.baking;
+    return this.lightVolume.baking || this.lightmap.baking;
   }
 
   /** Photographed leaf cards are still being composed (captures that want the final foliage wait for them). */
@@ -1064,6 +1098,7 @@ export class WorldRenderer {
   private onLightVolume(): void {
     if (this.disposed) return;
     this.env.setVolumeLit(true);
+    this.lightmap.volumeChanged();
     this.eyeClock = 1;
     this.applyLook();
     // The interior shadow fit may now apply.
@@ -1076,8 +1111,92 @@ export class WorldRenderer {
     const on = this.archView.active && !this.lowMemory && this.cuts.lightVolume;
     this.env.setInteriorBounce(this.archView.active);
     this.lightVolume.setEnabled(on);
-    this.env.setVolumeLit(on && this.lightVolume.ready);
+    // The baked lightmap outlives the volume cut by the performance ladder (it is the cheaper of the two): only a building
+    // without a view, or the low-memory mode, takes it away.
+    this.lightmap.setEnabled(this.archView.active && !this.lowMemory);
+    this.syncLightNode();
+    this.env.setVolumeLit((on && this.lightVolume.ready) || this.lightmap.hasMeshes);
     if (!this.archView.active) this.contact.set([]);
+  }
+
+  /** The light node serves the volume or the lightmap: it stays in the scene while either is on. */
+  private syncLightNode(): void {
+    this.lightVolume.light.visible = this.lightVolume.active || this.lightmap.hasMeshes;
+  }
+
+  /** A lightmap was applied or taken away: the analytic fills step aside or return, the view redraws. */
+  private onLightmap(): void {
+    if (this.disposed) return;
+    this.syncLightNode();
+    this.env.setVolumeLit((this.archView.active && !this.lowMemory && this.cuts.lightVolume && this.lightVolume.ready) || this.lightmap.hasMeshes);
+    this.eyeClock = 1;
+    this.applyLook();
+    this.boundsDirty = true;
+    this.needsDraw = true;
+  }
+
+  /** What `environment.lightBake` asks for, applied when it changes. */
+  private applyLightBake(want: Environment['lightBake']): void {
+    const key = want ? JSON.stringify(want) : '';
+    if (key === (this.lightBake ? JSON.stringify(this.lightBake) : '')) return;
+    this.lightBake = want;
+    if (!want) this.lightmap.reset();
+    else if (want.quality === 'off') this.lightmap.clear();
+    else this.lightmap.request(want.quality, want.samples);
+  }
+
+  /** Whether a bake nobody asked for may start: a tier that draws the baked light, a machine with cores to spare. */
+  private lightmapAutoBake(): boolean {
+    if (this.lowMemory || this.lightBake?.quality === 'off') return false;
+    if (this.gpu.tier === 'software' || weakHardware(this.hardware)) return false;
+    return this.qualityPlan.tier !== 'low';
+  }
+
+  private lightmapAutoQuality(): LightmapQuality {
+    return 'medium';
+  }
+
+  /** What a lightmap bake reads: the building's own meshes (merge members too), the volume's trace parts and the light. */
+  private gatherLightmap(): LightmapScene | null {
+    const g = this.gatherLightVolume();
+    if (!g) return null;
+    const meshes: Mesh[] = [];
+    const seen = new Set<Mesh>();
+    const ROLE_RANK: Record<string, number> = { room: 0, wall: 1, ceiling: 2, roof: 3, stair: 4, column: 5 };
+    const order = g.parts.filter((p) => !p.movable && p.role !== 'door' && p.role !== 'window' && p.role !== 'opening').sort((a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9));
+    for (const p of order) {
+      for (const vm of p.meshes) {
+        if (vm.seeThrough || seen.has(vm.mesh)) continue;
+        seen.add(vm.mesh);
+        meshes.push(vm.mesh);
+      }
+    }
+    return { meshes, parts: g.parts, lighting: g.lighting, groundY: g.groundY };
+  }
+
+  /** Bake the buildings' light now at this quality (the assistant's `bake_light`, the editor's button). */
+  bakeLight(quality: LightmapQuality, samples?: number): void {
+    this.lightmap.request(quality, samples);
+  }
+
+  /** Stop a running or waiting lightmap bake. */
+  cancelLightmapBake(): void {
+    this.lightmap.cancel();
+  }
+
+  /** The lightmap's state: what runs, how far, what was baked. */
+  get lightmapStatus(): LightmapStatus {
+    return this.lightmap.status;
+  }
+
+  /** Size, cost and source of the lightmap on screen (null without one). */
+  get lightmapStats(): Readonly<NonNullable<LightmapController['lastBake']>> | null {
+    return this.lightmap.ready ? this.lightmap.lastBake : null;
+  }
+
+  /** The `.lmap` file of the lightmap on screen (save it with the project or ship it with a bundled world). */
+  get lightmapAsset(): Uint8Array | null {
+    return this.lightmap.asset;
   }
 
   /**
@@ -1194,7 +1313,8 @@ export class WorldRenderer {
           groundY = Math.min(groundY, _pos.y);
           return;
         }
-        parts.push({ role: a.role, object: node.object, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
+        const movable = e.behaviors.length > 0 || (e.physics !== undefined && e.physics.body !== 'static');
+        parts.push({ role: a.role, object: node.object, movable, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
       });
     });
     this.placeContactShadows(parts);
@@ -1316,12 +1436,15 @@ export class WorldRenderer {
     this.archView.invalidate();
     this.invalidateCeilings();
     this.syncInteriorLight();
-    if (!prev || archChanged(prev, world)) {
+    const change = prev ? archChangeKind(prev, world) : 'geometry';
+    if (change) {
       this.lightVolume.invalidate();
+      this.lightmap.invalidate(change);
       this.syncing++;
       void done.finally(() => {
         this.syncing = Math.max(0, this.syncing - 1);
         this.lightVolume.invalidate();
+        this.lightmap.invalidate(change);
       });
     }
     // New entities stay hidden while their geometry streams in, then grow in together.
@@ -1751,6 +1874,8 @@ export class WorldRenderer {
     this.docLook = env.look ?? null;
     setFoliageTint(env.look?.foliageTint ?? null);
     this.lightVolume.invalidate();
+    this.lightmap.invalidate('light');
+    this.applyLightBake(env.lightBake);
     this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
@@ -2173,6 +2298,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     this.env.apply(env, this.scene);
     this.lightVolume.invalidate();
+    this.lightmap.invalidate('light');
     this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
     this.applyLook();
@@ -4526,6 +4652,7 @@ export class WorldRenderer {
     this.gizmo?.dispose();
     this.gizmo = null;
     this.archView.dispose();
+    this.lightmap.dispose();
     this.lightVolume.dispose();
     this.contact.dispose();
     this.editOverlay.dispose();

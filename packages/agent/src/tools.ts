@@ -12,6 +12,7 @@ import { LandInput } from './land';
 import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
 import { FeelEvent, FeelTier, VfxPreset } from '@aether/core';
 import { TuneFeelInput } from './feel-edit';
+import { BAKE_QUALITIES, BakeLightInput } from './bake-edit';
 import { LOOK_RESET_KEYS, TuneLookInput } from './look-edit';
 import type { ToolDef } from './types';
 import { MakeTextureInput } from './textures';
@@ -47,7 +48,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -319,6 +320,21 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'bake_light',
+    description:
+      'Decide whether a building interior needs BAKED light, after you have looked at renders. A bake path-traces the sky occlusion and the light that bounces between surfaces (sun patches on the floor warming the ceiling, lamps on the walls, window light reaching the back of the room) into a lightmap per wall, floor, ceiling and furniture surface, so corners darken, the floor under a sofa grounds it and the room reads lit by its windows instead of by one flat value. Direct sun and lamps stay live (shadows, switches, opening doors). quality: low (256 px atlas, 24 rays per texel), medium (512 px, 48), high (1024 px, 96, slowest) or off (probe light only). samples overrides the rays. It runs in the background in the renderer (seconds to about a minute, with a visible cancellable status), is cached by content, falls back to the probe light if it cannot run, and is cheaper to draw than the probe light, so it also helps weak machines. Use it for interiors, photo-built rooms and showcase houses that look flat or too evenly lit; skip it for outdoor games. Stored in the world (environment.lightBake) as one undo step. After it applies, look again at the renders: if it does not help, set quality off or another quality; do not bake to make a number match.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        quality: { type: 'string', enum: [...BAKE_QUALITIES] },
+        samples: { type: 'integer', minimum: 8, maximum: 512 },
+        message: { type: 'string' },
+      },
+      required: ['quality'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
     inputSchema: {
@@ -425,6 +441,7 @@ export const ToolInputs = {
   shape_land: LandInput,
   tune_feel: TuneFeelInput,
   tune_look: TuneLookInput,
+  bake_light: BakeLightInput,
   make_texture: MakeTextureInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;

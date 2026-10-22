@@ -687,6 +687,18 @@ export const Environment = z.object({
       vignette: z.number().min(0).max(1).optional(),
     })
     .optional(),
+  /**
+   * Additive: the baked lightmap of a building's interior (bounce light and sky occlusion per surface texel, path traced on the
+   * CPU and cached by content). Absent: the renderer decides (an automatic bake on the medium and high tiers). `quality` picks
+   * the atlas size and the rays per texel (low 256 px / 24 rays, medium 512 / 48, high 1024 / 96), `off` keeps the probe volume
+   * alone; `samples` overrides the ray count. It changes how light is presented, never the simulation.
+   */
+  lightBake: z
+    .object({
+      quality: z.enum(['off', 'low', 'medium', 'high']),
+      samples: z.number().int().min(8).max(512).optional(),
+    })
+    .optional(),
 });
 export type Environment = z.infer<typeof Environment>;
 

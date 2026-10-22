@@ -37,6 +37,7 @@ export { MAKE_TEXTURE_TOOL, MakeTextureInput, makeTextureTool, resolveTarget as 
 export { createOpenAiImageGenerator, createBridgeImageGenerator, imageChain, texturePrompt, isImageDataUrl as isGeneratedImage, type ImageGenerator, type ImageRequest, type GeneratedImage } from './images';
 export { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS, LEVEL_TOOL_NAMES, isLevelToolName, PATCH_OPS, TOOL_LIMITS, type AgentToolName } from './tools';
 export { lookPatches, lookText, currentLook, TuneLookInput, LOOK_RESET_KEYS, type LookEditResult, type LookResetKey } from './look-edit';
+export { bakePatches, bakeText, BakeLightInput, BAKE_QUALITIES } from './bake-edit';
 export { feelPatches, mergeFeel, feelTierFor, defaultEmitterPatches, isGameWorld, TuneFeelInput, FeelEmitterInput, MAX_FEEL_TARGETS, type FeelEditResult } from './feel-edit';
 export { buildSystemPrompt, buildCoderPrompt, buildCompactSystemPrompt, COMPACT_EXAMPLE } from './prompt';
 export { PROMPT_EXAMPLES, type PromptExample } from './examples';

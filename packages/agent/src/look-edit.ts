@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { Color as HexColor, type Patch, type WorldDoc } from '@aether/core';
+import { bakeText } from './bake-edit';
 
 const unit = (min: number, max: number) => z.number().min(min).max(max);
 
@@ -172,6 +173,7 @@ export function lookText(world: WorldDoc): string {
     `sky ${e.sky}${e.timeOfDay !== undefined ? ` at ${e.timeOfDay} h` : ''}; exposure ${d(e.exposure, '1')}, bloom ${d(e.bloom, '0.4')}, ambient ${d(e.ambientIntensity, '0.4')}, sun ${d(e.sunIntensity, '2.5')}`,
     `grade: temperature ${d(g.temperature, 'preset')}, tint ${d(g.tint, 'preset')}, saturation ${d(g.saturation, 'preset')}, contrast ${d(g.contrast, 'preset')}, exposureEv ${d(g.exposureEv, 'preset')}`,
     `look: interiorWarmth ${d(l.interiorWarmth, '0.45')}, interiorBalance ${d(l.interiorBalance, '1')}, sunTint ${d(l.sunTint, 'white')}, ambientTint ${d(l.ambientTint, 'white')}, foliageTint ${d(l.foliageTint, 'white')}, lampStrength ${d(l.lampStrength, '1')}, vignette ${d(l.vignette, '0.22')}`,
+    bakeText(world),
     `fog: ${e.fog ? `${e.fog.color}, density ${e.fog.density}${e.fog.visibility ? `, range ${e.fog.visibility} m` : ''}` : 'none'}`,
   ].join('\n');
 }
