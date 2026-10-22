@@ -427,7 +427,13 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
   const color = typeof params['color'] === 'string' ? (params['color'] as string) : '#d8d2c6';
   // A pelmet spans both panels (and the glass between them), so it is its own piece; the panels carry none.
   const pelmetStyle = typeof params['pelmet'] === 'string' && ['box', 'valance', 'swag'].includes(params['pelmet'] as string) ? (params['pelmet'] as string) : null;
-  const panelParams: Record<string, Json> = pelmetStyle ? { ...params, pelmet: 'none' } : params;
+  // Each side gets a panel of its own, so the entity is a single panel whatever the caller wrote: a description or a model
+  // call that says `panels: 2` with a `gap` (the whole dressing) would otherwise make each side a pair 3 m wide that sits over
+  // the glass and is refused as covering the window. A single panel's `gap` is its reach when drawn; it is kept to its own width.
+  const single: Record<string, Json> = { ...params, panels: 1 };
+  delete single['gap'];
+  if (typeof single['closed'] === 'number' && single['closed'] > 0) single['gap'] = 0.2;
+  const panelParams: Record<string, Json> = pelmetStyle ? { ...single, pelmet: 'none' } : single;
   let spanLo = Infinity;
   let spanHi = -Infinity;
   const blockers = wallBlockers(scene, room, wall);

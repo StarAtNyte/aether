@@ -102,6 +102,24 @@ describe('openings that a photo estimate gets slightly wrong', () => {
   });
 });
 
+describe('curtains described as a pair', () => {
+  it('hang as one panel each side of the window although the description asks for panels 2 with a gap (the whole dressing was refused as covering the glass)', async () => {
+    const r = raw() as { items: Array<Record<string, unknown>> };
+    const curtain = r.items.find((i) => i['kind'] === 'curtain');
+    expect(curtain).toBeTruthy();
+    curtain!['params'] = { ...((curtain!['params'] as object) ?? {}), width: 0.88, height: 2.9, panels: 2, gap: 1.48, closed: 0.08, style: 'pleated' };
+    const p = parseRoomDescription(r, partKinds());
+    if (!p.ok) throw new Error(p.error);
+    const mem = memoryCaller(createWorld({}));
+    const run = await runBuild(mem.world(), deriveBuild(p.value), mem.call);
+    expect(run.outcomes.filter((o) => !o.ok), JSON.stringify(run.outcomes.filter((o) => !o.ok))).toEqual([]);
+    const scene = readScene(run.world, PHOTO_BUILDING_ID);
+    const panels = scene?.items.filter((i) => i.kind === 'curtain') ?? [];
+    expect(panels.length).toBe(2);
+    for (const q of panels) expect(q.size[0]).toBeLessThan(1.3);
+  });
+});
+
 describe('derivation', () => {
   it('maps floor words to finishes', () => {
     expect(floorFinish('dark fitted carpet')).toBe('carpet');
