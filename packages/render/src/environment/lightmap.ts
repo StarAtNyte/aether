@@ -25,7 +25,7 @@
 import { sampleVolume, TraceScene, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
 
 /** Bump when the unwrap, the bake or the encoding changes: stored lightmaps stop matching. */
-export const LIGHTMAP_VERSION = 1;
+export const LIGHTMAP_VERSION = 2;
 /** Most triangles baked in one lightmap (the rest keep the volume). */
 export const LIGHTMAP_MAX_TRIANGLES = 160_000;
 /** Empty texels around every chart (bilinear filtering never reaches another chart). */
@@ -536,6 +536,8 @@ export class LightmapBaker {
   /** Texels whose rays mostly left through back faces (on a chart edge, flush with a wall): filled from their neighbours. */
   private bad = new Uint8Array(0);
   private result: LightmapResult | null = null;
+  /** Texels no neighbour could fill (set while denoising). */
+  leftover = 0;
   private rays = 0;
   private readonly groundL: [number, number, number];
   private readonly samples: number;
@@ -841,7 +843,7 @@ export class LightmapBaker {
   private fillBad(): void {
     const t = this.texels as Texels;
     const S = t.size;
-    for (let ring = 0; ring < 3; ring++) {
+    for (let ring = 0; ring < 6; ring++) {
       const fixed: number[] = [];
       for (let o = 0; o < S * S; o++) {
         if (!this.bad[o]) continue;
@@ -870,8 +872,30 @@ export class LightmapBaker {
       if (fixed.length === 0) break;
       for (const o of fixed) this.bad[o] = 0;
     }
-    // Whatever is left (a chart that lies inside a solid) is neutral: no occlusion, no bounce.
-    for (let o = 0; o < S * S; o++) if (this.bad[o]) this.vis[o] = 1;
+    // Whatever is left (a chart that lies inside a solid: a thin curtain, a canopy) takes the mean of the building's good
+    // texels: open sky (full visibility, no bounce) read as a pale blue patch on the surface.
+    let n = 0, mv = 0, mr = 0, mg = 0, mb = 0;
+    let left = 0;
+    for (let o = 0; o < S * S; o++) {
+      if (this.bad[o]) {
+        left++;
+        continue;
+      }
+      if (t.cov[o] !== 1) continue;
+      n++;
+      mv += this.vis[o] as number;
+      mr += this.bounce[o * 3] as number;
+      mg += this.bounce[o * 3 + 1] as number;
+      mb += this.bounce[o * 3 + 2] as number;
+    }
+    this.leftover = left;
+    for (let o = 0; o < S * S; o++) {
+      if (!this.bad[o]) continue;
+      this.vis[o] = n > 0 ? mv / n : 0.2;
+      this.bounce[o * 3] = n > 0 ? mr / n : 0;
+      this.bounce[o * 3 + 1] = n > 0 ? mg / n : 0;
+      this.bounce[o * 3 + 2] = n > 0 ? mb / n : 0;
+    }
   }
 
   private encode(): void {

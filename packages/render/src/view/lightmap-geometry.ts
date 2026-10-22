@@ -3,7 +3,7 @@
  * the unindexed copy of a geometry that carries the atlas coordinates (a vertex shared by two charts needs two coordinates, so a
  * baked mesh draws from its own expanded vertices; the original geometry is kept and put back when the lightmap goes).
  */
-import { Matrix3, Matrix4, type InstancedMesh, type Mesh, type SkinnedMesh } from 'three';
+import { DoubleSide, Matrix3, Matrix4, type InstancedMesh, type Mesh, type SkinnedMesh } from 'three';
 import { LIGHTMAP_ATTRIBUTE } from '../environment/light-volume-light';
 import { LIGHTMAP_MAX_TRIANGLES, type LightmapMesh } from '../environment/lightmap';
 
@@ -18,6 +18,9 @@ export function lightmapEligible(mesh: Mesh): boolean {
   const m = mesh.material;
   if (!g || Array.isArray(m) || !m) return false;
   if (m.transparent || !m.depthWrite) return false;
+  // A thin two-sided surface (a canopy, a curtain, a sheet) shows one atlas texel from both faces: the underside would wear the
+  // light of the side the sun and sky reach (a pale blue patch under a canopy). It keeps the light volume's light.
+  if (m.side === DoubleSide) return false;
   if (!(m as { isMeshStandardMaterial?: boolean }).isMeshStandardMaterial && !(m as { isNodeMaterial?: boolean }).isNodeMaterial) return false;
   const p = g.getAttribute('position');
   const n = g.getAttribute('normal');

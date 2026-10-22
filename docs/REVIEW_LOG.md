@@ -5890,3 +5890,43 @@ Not done or not verified
 - Bundled keys depend on the world and on the render code that feeds the bake: a rebaked world or a change to the unwrap invalidates its file (`--verify` finds it) and the browser bakes instead.
 
 Gates (worktree `aether-bake2`): `tsc --noEmit` 0 errors; `vitest packages/render` 851 passed, agent prompt and bake-edit 16 passed; smoke 34/34; `showcase:bake --check` exit 0; `e2e:weak` passed.
+
+## 2026-10-23 Interior exposure that does not depend on the camera (room exposure, as-built light volume, windows that let light in)
+
+Task: the eye-adaptation exposure of a building followed the camera (hotel photo room: sky visibility 0.18 at the eye with the camera outside, 0.009 with it inside; exposure +1.6 EV against +4 EV and a blown window). The earlier attempt (replace a buried probe sample) did not touch the cause and was reverted.
+
+What was really wrong (reproduced with `scripts/exposure-trace.ts`, before = the build of `bb3eb480`)
+1. The light volume (and the lightmap) was traced from the scene as it stood, and the architectural view edits that scene: a `cutaway` wall facing the camera is regenerated at 1.05 m with its window holes filled, hidden ceilings stay, `down` and section cuts do the same. A volume baked with the camera outside therefore saw a room open at the top (vis 0.177 at the spawn); one baked with the camera inside saw a closed room (0.009). Hotel room, same world, walls `cutaway`: camera outside 0.177 and +1.65 EV, camera at the spawn 0.009 and +4.00 EV. The worlds open in that cutaway-from-outside state, so every bundled lightmap was baked from the leaky volume.
+2. The eye read the volume at one point, six directions, so one step along the room moved the exposure: hotel room, five positions in one room, one bake, +1.24 to +2.11 EV (spread 0.88); in the closed-room volume +1.1 to +4.
+3. Windows were solid in the trace: an `arch-window` carries a thin emissive "daylight" pane (the picture of the sky) that the trace treated as a wall. The probe map of the vaulted bedroom had 0 sky visibility next to its two windows. Everything that looked lit before was light leaking over the lowered walls.
+(The adaptation smoothing was not the cause: 0.55 s time constant, snap on a jump of more than 1.5 m, unchanged.)
+
+What changed
+- `view/room-exposure.ts` (pure): one exposure per room, measured once per volume over the room's floor plan (5 x 5 points at 1.5 m, 0.45 m off the walls): the brightest 30 % (windows) and darkest 10 % of the points are dropped, the rest averaged as stops with the existing 0.88 share, held to -1.5..+3 EV (was -2..+4 per point). The weight of a room ramps over 0.45 m at its edge, rooms share an eye at a doorway (mean of both), the room the eye was in keeps its weight 0.25 m past its wall (hysteresis), a camera outside looking into a room through cutaway/lowered walls reads that room (full weight to 10 m, none at 22 m, within 0.62 rad of the view axis). Outside every room: the old point reading, held to the same range. The rooms are found from the `room` floors and the ceilings over them and recomputed when the volume changes. The existing 0.55 s smoothing stays. `environment.exposure` and the grade's `exposureEv` (the model's `tune_look`) multiply the adapted exposure (`toneExposure`): a bias on top, same value in every room.
+- The volume and the lightmap trace walls as built (`asBuiltWall`: the generator is run again without `params.cut`, throw-away trace meshes; the lightmap still bakes onto the drawn meshes) and a window's daylight pane lets light through (`isDaylightPane`).
+- `scripts/exposure-trace.ts` (exposure at a set of cameras and along a path), `volume-probe.ts`, `pixel-probe.ts` (debug).
+- Tests: `room-exposure.test.ts` (10: same value for five eye positions in one room within 0.3 EV while the point reading spreads more than 0.3, window trimming, clamps, doorway sharing and hysteresis, subject room, tune_look as a bias), a daylight-pane test in `light-volume-controller.test.ts`, `lightmap-geometry.test.ts`.
+- The six bundled lightmaps were rebaked (the volume changed, so every key changed; `LIGHTMAP_VERSION` is 2 for the second, unrelated change below); `--verify`: all six `static`.
+
+Measured, after (Intel iGPU, Chromium, walls `cutaway`; numbers from `~/.local/share/aether/look14/after/trace.json`; positions: the spawn, its reverse and steps of 1.2 m around it; `east` is 1.2 m east of the spawn and, in the hotel and twin rooms, stands in the window wall just past the floor plan)
+| world | in-room EV (spawn, back, west, north, south) | `east` | outside cameras through the cutaway |
+| --- | --- | --- | --- |
+| hotel bedroom | 3, 3, 3, 3, 3 | 2.3 | 2.99, 2.99 |
+| twin room | 3, 3, 3, 3, 3 | 1.4 | 2.8, 3.0 |
+| four-poster | 2.87 all | 2.87 | 2.82, 2.87 |
+| vaulted bedroom | 3 all | 3 | 2.64, 3.0 |
+| Skyline Penthouse | rooms differ (Gallery +1.04, Living -0.15, Main bedroom -0.8, Dining -1.2): +1.04 at the spawn and its reverse | n/a | -0.1; cover 0 |
+| Casa Patio | 3 all (seven rooms, raw 3.3 to 10) | 3 | 3, 3; cover 0 |
+Before (same cameras, one volume, walls `cutaway`): hotel 1.65, 1.65, 2.11, 1.76, 1.82 (east 1.24), vault 0.9, 0.9, 1.56, 1.31, 1.44, four-poster 1.9 to 2.2, twin 2.2 to 2.5, casa 2.5 to 2.8; and with the volume baked from another camera, +4.0 against +1.65 in the hotel room. Outside cameras through the cutaway read 0 (outside the volume's box) or whatever the nearest probe held. Walk from the outside view into the room (19 steps of about 0.5 m, 450 ms apart): the exposure holds the room's value while the camera looks in, dips to 1.4 to 2.6 as the eye crosses the wall (weights ramp), and returns to the room's value, with the largest step between two readings 1.6 EV (vaulted bedroom, at the wall).
+Honest reading of these numbers: inside one room the exposure no longer depends on where the eye is, but four of six worlds sit on the +3 clamp (their raw demand is 3.3 to 10 EV), so part of the stability is the clamp. The camera dependence of the volume itself is gone: the same volume results from a camera outside and inside (vis 0.009 at the hotel spawn both ways).
+
+Stills (`look14/after/`, `look14/before6/`, 640 x 360): the twin room and the hotel room read as before (twin: nearly the same picture; hotel window no longer driven to +4). The vaulted bedroom is darker and cooler than before (walls grey where they were cream): the old picture came from sky light leaking over lowered walls; with the room closed and its windows open only through the daylight panes, the volume's bounce is thin and +3 EV does not make up for it. I did not tune the volume's bounce or raise the clamp to hide this.
+
+Not fixed, with what is known
+- The pale patch high on the vaulted bedroom's left wall is still there. Found: in the volume-only render (`look8/lm3/...-off-spawn.png`) the same place is a dark, stair-stepped patch, so it is a light-volume cell artifact that the lightmap re-lights (pale blue sky tint); the pixel under it in the current world is the four-poster's canopy (a ray at that pixel hits `furn-bed`), i.e. a thin canopy inside the bed's box proxy, not a chart seam on the wall. Two things tried and kept as sound but not the cause: leftover untraceable texels take the building's mean light instead of full sky (was vis 1; `LIGHTMAP_VERSION` 2), and two-sided meshes stay out of the lightmap (none of the six worlds has one among its baked meshes, the key did not change). Open: exclude a bed's canopy from the proxy box or give the canopy its own sample.
+- White squares and bars on the vaulted bedroom's walls and curtains in the new stills come from the other change merged during this work (curtain and decor pieces without their photographed texture in the headless run); not investigated here.
+- Exploded storeys: the trace still uses the lifted positions.
+- The room exposure uses the volume; with the volume cut by the performance ladder and only the lightmap on, the old ceiling-based boost applies as before.
+- A lightmap bundled for a world opened with other walls cut keys differently (the drawn wall meshes are part of the key): a world opened in another view bakes in the browser.
+
+Gates (worktree `aether-expo`): `tsc` 0 errors; vitest packages/render + packages/agent 166 files, 1756 tests passed (one earlier full run had a single failure that did not reproduce on rerun; not identified); smoke 34/34; `showcase:bake --check` exit 0; `showcase:lightmaps --verify` six static; `e2e:weak` WEAK GPU OK.
