@@ -5669,3 +5669,11 @@ subscription backend; whether models keep the ids stable between rounds; the cos
 **Observed in the tool, deliberately not copied.** Output rows (cameras and render prompts) for a generative render step; a
 parametric clay scene graph as the only representation; a separate "Render" model pass. Aether keeps one world that is also the
 game.
+
+## Staged photo-to-room harness
+
+What was added: a stage machine (capability, evidence, camera, shell, furniture, materials, lighting, repair, cross-check, delivery) with verdicts given by the model through `stage_gate`; repair order enforcement (`declare_repair` with a cause class, camera before geometry before materials before lighting, size 3 and up blocks later classes; `set_photo_camera` for the camera class); an assumptions ledger and a provenance record (photo hash, permission note, estimated scale, hidden-surface limits, repairs); a resume state for the repair stage; a checklist card and a record panel with exports in the studio. Design: `docs/PHOTO_TO_ROOM_HARNESS.md`. Opt-in through `PhotoOptions.harness`; the studio turns it on.
+
+What was checked: scripted-model tests for every stage and gate, the guard and the resume (`packages/agent/test/photo-stages.test.ts`), the chat view model (`apps/studio/test/chat.test.ts`), typecheck, the agent and studio suites, smoke, `showcase:bake --check`.
+
+What was not checked: a run against a live model (the Codex subscription is limited, so only scripted models were used); the new panel in a real browser (no photo run was driven through the UI); whether models call `stage_gate` and `declare_repair` reliably, which only real runs can show. Known gaps: the record is not inside the `.aether.json` project file (the world document has no field for it); a resumed run needs the photo still held in memory by the studio; the playable verification is the existing host verification, not a new walkthrough bot.
