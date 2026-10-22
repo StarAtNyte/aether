@@ -5442,6 +5442,79 @@ after rebaking `apartment` and `cafe-interior` (their furniture layouts changed 
   in 60 of the 1800 houses; not related to doors, not fixed.
 - Residents and the bot still pass through each other after the 8 s / 24 s patience.
 
+## A black viewport on a weak machine: what was found, the watchdog, the lighter low tier
+
+A saved world (Highland Trail) opened in Firefox on a weak machine, through a tunnelled Vite dev server, left the 3D
+viewport black with no error shown (167 objects, "Saved", WebGL2, no frames per second). The console held WebGL driver
+hints (shadow-map comparison filtering, premultiply and flip on texture uploads, a texture "incurring lazy
+initialization" on repeated draws) and then `finish "brass" textures failed: the operation took longer than 20 s and
+was stopped`, followed by `the compute worker was restarted` for six more finishes.
+
+**What was not reproduced, honestly.** The black view itself did not appear here. Every combination below drew the world
+(non-flat pixels at 5 s to 60 s, no page error): Chromium on the integrated GPU (WebGL2, `navigator.gpu` removed) and on
+SwiftShader; Firefox on llvmpipe, also with the GPU string spoofed to an integrated Intel so that the real-GPU load path
+(draws held until programs link) runs; CPU throttle 1x, 4x, 6x; 4 cores and 4 GB reported; a slow link (60 to 150 ms,
+3 to 20 Mbit/s, which only delays the page: a dev server over 3 Mbit/s needed more than two minutes to start, nothing
+black); assets held 40 s; the compute worker script held 30 s; all cores busy with a spinner on top of 4x throttle
+(world open in 22 s, 117 to 287 ms frames, still drawn). `tests/e2e/weak-gpu.e2e.ts` (`npm run e2e:weak`) is that matrix
+as a tool and as a regression test. The remaining difference to the failing machine is a real GPU under Firefox, which
+this machine cannot run headless.
+
+**A real defect, in the worker the console points at** (`packages/procgen/src/compute/client.ts`). Every request to the
+compute worker (mesh edits, built-in generators for the entities of a world, the finish textures) started its 20 s timer
+when it was queued, not when the worker began it. A world sends a hundred generator calls and the finishes at once; on a
+CPU that needs more than 20 s for the queue, every timer expires together, the first one kills the worker, all pending
+calls reject with `the compute worker was restarted`, and the callers fall back to running the generators inline on the
+main thread (`procgen/generate.ts`), one synchronous generator per task, on the machine that could not keep up with the
+worker. That matches the log line for line (the first request, `brass`, "took longer than 20 s", the rest "restarted"),
+and it turns a slow start into a frozen one. The stall budget now runs from the last reply (three times as long for the
+worker's own start-up), the request that was running fails alone, and the ones queued behind it go to a new worker.
+Unit tests: a queue of eight 40 ms jobs behind a 120 ms budget all succeed; a stalled request fails alone and the next
+one is answered by the replacement worker. I could not show that this alone turns a black view into a drawn one.
+
+**Black-screen watchdog** (`gpu/watchdog.ts`, integrated in `WorldRenderer`, shown by `GraphicsAlert`). From the first
+world on it watches two facts: frames being drawn, and a 16 x 16 read-back of the drawn frame (a `drawImage` of the canvas
+in the same task, any backend) being one flat dark colour (spread <= 2, mean < 12) three samples 1.2 s apart. No frame
+35 s after the world was handed over (the load hold alone may take 20 s), or a black read-back, takes the next step:
+lowest tier; no post effects, baked room light or cascaded shadows; plain materials (`scene.overrideMaterial`); shadows off
+and half resolution (on WebGPU the studio then restarts on WebGL2). An image in any sample ends the watch. Already on the
+lowest tier, the first step applies the second with it. Each step logs why in the console (`black-screen watchdog (...)`
+plus the whole diagnostics report), shows one honest sentence over the viewport with a Safe mode checkbox (remembered on
+the device, applied at renderer start) and a Diagnostics panel with Copy. The report holds the user agent, cores and
+memory, the backend decision and its events, the GPU string and WebGL limits (parallel compile, float targets), tier and
+ladder, canvas size and pixel ratio, frames and draw calls, the last read-back, the watchdog's log, the slowest texture
+jobs and the GPU-related console lines. Shader compile and program link failures (three's and the driver's wording; driver
+performance hints are ignored) are caught from the console as they happen and shown as an error, not left as a black view.
+Tests: `packages/render/test/watchdog.test.ts` (9) and the forced-black check in `npm run e2e:weak` (the read-back is made
+to come back empty: the alert says the picture was black, the Safe mode switch reaches the renderer, the diagnostics panel
+holds the report and the log, the reason is in the console). The editor draws on demand, so while no image has been seen
+the watchdog asks for a frame once a second.
+
+**Low tier on a weak machine.** Measured with the integrated GPU, 4 cores and 4 GB reported, CPU throttle 4x (frame times
+are CPU-bound there; `GEN_GPU=intel`, dev server, median of 55 frames of a slow orbit, adaptive resolution left on):
+
+| world | before | after |
+|---|---|---|
+| Highland Trail | 952 draw calls, 2.17 M triangles, 58 ms | 290 draw calls, 1.04 M triangles, 21 ms |
+| Kart Canyon | 430 draw calls, 36.8 ms (earlier run) | 346 draw calls, 26 ms |
+| Casa Patio | 598 draw calls, 35.2 ms (earlier run) | 582 draw calls, 31 ms |
+
+Highland Trail's frame was dominated by the sun's shadow pass (shadows off: 27 ms) and then by animals: 359 skinned parts
+of birds, fish, butterflies and crows cast shadows and were drawn. On the low tier now only the three nearest characters
+(within 30 m) cast into the shadow map (10 within 60 m on medium); assets smaller than 0.9 m and scattered fields do not
+cast; skinned assets beyond 55 m are not drawn (they return when the eye comes near or the tier rises). The low tier on a
+weak machine also draws directly, without the bloom chain: it was the one post pass the tier could still run, and the
+"lazy initialization" warnings on repeated draws in the failing console are what a post input that was never written looks
+like, so this is the first suspect for the black view on that driver and the watchdog's second step removes it anyway.
+
+**Dev server.** `npm run dev:fast` (`AETHER_DEV_PREBUNDLE=1`) pre-bundles the workspace packages: the home page goes from 373
+to 120 requests and a world open from 758 to 346 (about the same bytes). It is off by default because pre-bundled packages
+do not hot-reload. Production builds are unaffected. Judge load times from the build (see the section above).
+
+**Not done.** A real-GPU Firefox run. The tint step of characters (`characters/tint.ts`, about 1 s of main-thread time at
+4x per world with people) is still on the main thread. The low tier's shadow map still draws every building and large prop
+each frame; a map that redraws only when something moves would halve the rest.
+
 ## Atlas Chisel comparison
 
 Observation only, from ten screenshots of a public beta session of an image-to-room tool (Chisel). No code, assets or

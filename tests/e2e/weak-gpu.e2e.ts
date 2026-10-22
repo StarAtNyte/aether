@@ -9,8 +9,11 @@
  * Chromium only, closed in `finally`. Target: the local production build (default), or `--url=http://host:port`
  * (a running dev server: `vite --port N`; nothing here starts or stops it).
  *
- * Run: `npm run build && npx tsx tests/e2e/weak-gpu.e2e.ts [--worlds=highland-trail,casa-patio] [--throttle=4]
- * [--gpu=intel|software] [--at=5,15,30,60] [--url=…] [--first-frame=30] [--shots=dir] [--cores=4] [--mem=4]`
+ * Run: `npm run build && npm run e2e:weak -- [--worlds=highland-trail,casa-patio] [--throttle=4]
+ * [--gpu=intel|software] [--at=5,15,30,60] [--url=…] [--first-frame=30] [--shots=dir] [--cores=4] [--mem=4]
+ * [--browser=firefox] [--spoof-gpu] [--net=150:4000] [--delay=regex::ms] [--force-black] [--no-black] [--no-fail]`.
+ * Without --url it also runs the watchdog check (the read-back comes back empty: the renderer must step down, say so
+ * with a Safe mode switch, log why and offer diagnostics).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -190,8 +193,9 @@ async function main(): Promise<void> {
   let ok = true;
   try {
     log(`target ${server.url}, gpu ${GPU}, throttle ${THROTTLE}x, ${CORES} cores, ${MEM} GB, worlds ${WORLDS.join(',')}`);
-    if (ARGS.includes('--force-black')) ok = (await runForcedBlack(server.url, WORLDS[0] ?? 'highland-trail')) && ok;
-    else for (const w of WORLDS) ok = (await runWorld(server.url, w)) && ok;
+    const only = ARGS.includes('--force-black');
+    if (!only) for (const w of WORLDS) ok = (await runWorld(server.url, w)) && ok;
+    if (only || (!URL_ARG && !ARGS.includes('--no-black'))) ok = (await runForcedBlack(server.url, WORLDS[0] ?? 'highland-trail')) && ok;
   } finally {
     await server.stop();
   }
