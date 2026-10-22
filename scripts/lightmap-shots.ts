@@ -166,6 +166,9 @@ async function main(): Promise<void> {
   const results: unknown[] = [];
   try {
     for (const slug of slugs) {
+     // A fresh page per mode: the light volume (and with it the eye's exposure) depends on the architectural view (cutaway
+     // walls), so every mode bakes from the state a world opens in, before the camera moves into the room.
+     for (const mode of MODES) {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
       await ctx.addInitScript(SKIP_FIRST_RUN);
       await ctx.addInitScript('globalThis.__name = (f) => f;');
@@ -178,7 +181,7 @@ async function main(): Promise<void> {
         });
         await open(page, server.url, slug);
         const cams = await cameras(page, slug);
-        for (const mode of MODES) {
+        {
           log(`${slug} [${mode}]`);
           await page.evaluate(
             ([m, s]) => {
@@ -228,6 +231,7 @@ async function main(): Promise<void> {
       } finally {
         await ctx.close();
       }
+     }
     }
   } finally {
     writeFileSync(join(outDir!, 'results.json'), JSON.stringify(results, null, 2));

@@ -28,11 +28,6 @@ const EYE_LAMP_REACH = 12;
 const EYE_LAMP_STOREY = 2.4;
 
 /** Arch roles whose real geometry the rays hit. */
-/** Mean sky visibility below which an eye sample counts as buried in a wall. */
-const EYE_BURIED_VIS = 0.03;
-/** Horizontal steps (metres) to the open points that replace a buried eye sample. */
-const EYE_STEPS: ReadonlyArray<readonly [number, number]> = [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]];
-
 export const SHELL_ROLES: ReadonlySet<string> = new Set(['wall', 'room', 'ceiling', 'roof', 'stair', 'door', 'window', 'opening', 'column']);
 /** Arch roles that become box proxies (their bounding box, their mean colour). */
 export const PROXY_ROLES: ReadonlySet<string> = new Set(['furniture', 'fixture']);
@@ -527,25 +522,6 @@ export class LightVolumeController {
    * outside the volume's box).
    */
   eyeSample(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number; r: number; b: number } | null {
-    const here = this.eyeSampleAt(x, y, z);
-    if (!here || here.vis >= EYE_BURIED_VIS) return here;
-    // Probes buried in a wall report a closed-in point: an eye in a window reveal or against a thick wall would open
-    // the exposure to its maximum. The open points a short step away stand in for it.
-    let n = 0;
-    const sum = { vis: 0, bounce: 0, r: 0, b: 0 };
-    for (const [dx, dz] of EYE_STEPS) {
-      const s = this.eyeSampleAt(x + dx, y, z + dz);
-      if (!s || s.vis < EYE_BURIED_VIS) continue;
-      n++;
-      sum.vis += s.vis;
-      sum.bounce += s.bounce;
-      sum.r += s.r;
-      sum.b += s.b;
-    }
-    return n === 0 ? here : { vis: sum.vis / n, bounce: sum.bounce / n, lamps: here.lamps, r: sum.r / n, b: sum.b / n };
-  }
-
-  private eyeSampleAt(x: number, y: number, z: number): { vis: number; bounce: number; lamps: number; r: number; b: number } | null {
     const g = this.grid;
     const d = this.data;
     if (!g || !d || !Number.isFinite(x + y + z)) return null;

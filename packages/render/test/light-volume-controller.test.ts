@@ -74,20 +74,6 @@ describe('light volume controller: trace input', () => {
   });
 });
 
-describe('light volume controller: eye sample', () => {
-  it('replaces a sample buried in a wall by the open points beside it', () => {
-    const c = new LightVolumeController(() => ({ parts: roomParts(), lighting: LIGHTING, groundY: 0 }), { createWorker: null });
-    const raw = vi.spyOn(c as unknown as { eyeSampleAt(x: number, y: number, z: number): unknown }, 'eyeSampleAt');
-    const open = { vis: 0.3, bounce: 0.2, lamps: 0, r: 0.2, b: 0.1 };
-    raw.mockImplementation((x: number) => (x === 0 ? { vis: 0.005, bounce: 0.01, lamps: 0.4, r: 0, b: 0 } : open));
-    const got = c.eyeSample(0, 1.6, 0)!;
-    expect(got.vis).toBeCloseTo(0.3, 6);
-    expect(got.lamps).toBe(0.4);
-    raw.mockImplementation(() => ({ vis: 0.005, bounce: 0.01, lamps: 0, r: 0, b: 0 }));
-    expect(c.eyeSample(0, 1.6, 0)!.vis).toBeCloseTo(0.005, 6);
-  });
-});
-
 describe('light volume controller: baking', () => {
   it('waits for the building to settle, bakes between frames and uploads once', async () => {
     vi.useFakeTimers();
