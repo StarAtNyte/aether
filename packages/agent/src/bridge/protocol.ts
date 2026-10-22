@@ -6,6 +6,7 @@
  *   POST /v1/pair      { code }                      → { token }
  *   GET  /v1/status    (bearer)                      → BridgeStatus
  *   POST /v1/complete  (bearer) BridgeCompleteRequest → CompletionResponse
+ *   POST /v1/image     (bearer) BridgeImageRequest    → { image: data URL, model }   (Codex's built-in image tool)
  *
  * Errors are `{ error: { code: BridgeErrorCode, message } }`.
  */
@@ -73,6 +74,19 @@ export const BridgeCompleteRequestSchema = z
 /** Parsed `POST /v1/complete` body. */
 export type BridgeCompleteRequest = z.infer<typeof BridgeCompleteRequestSchema>;
 
+/** `POST /v1/image` body: a prompt and optionally a reference picture. */
+export const BridgeImageRequestSchema = z
+  .object({
+    backend: z.literal('codex').default('codex'),
+    prompt: z.string().min(1).max(1500),
+    size: z.union([z.literal(512), z.literal(1024)]).optional(),
+    /** PNG / JPEG / WebP data URL (a crop of the user's photo). */
+    reference: z.string().max(6_000_000).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/).optional(),
+  })
+  .strict();
+/** Parsed `POST /v1/image` body. */
+export type BridgeImageRequest = z.infer<typeof BridgeImageRequestSchema>;
+
 /** One model a backend offers. */
 export const BridgeModelSchema = z.object({
   id: z.string().regex(MODEL_ID_RE),
@@ -97,6 +111,8 @@ export const BridgeBackendStatusSchema = z.object({
   account: z.string().max(160).optional(),
   models: z.array(BridgeModelSchema).max(32),
   defaultModel: z.string().regex(MODEL_ID_RE).optional(),
+  /** The backend can make pictures (Codex: its built-in image tool; needs the ChatGPT login). */
+  image: z.boolean().optional(),
   /** Jobs running + queued. */
   busy: z.number().int().min(0).max(1000),
 });

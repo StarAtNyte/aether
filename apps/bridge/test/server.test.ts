@@ -88,6 +88,7 @@ beforeEach(async () => {
     port: () => port,
     pairing,
     backends: { codex, 'claude-code': claude },
+    images: { name: 'fake', generate: async (job) => ({ bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, ...Array.from(job.prompt, (c) => c.charCodeAt(0) & 255)]), mime: 'image/png', model: 'fake-image' }) },
     status: async () => [
       { id: 'codex', label: 'Codex', installed: true, loggedIn: true, detail: 'Logged in using ChatGPT', models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' }] },
       { id: 'claude-code', label: 'Claude Code', installed: false, loggedIn: false, detail: 'not found', models: [] },
@@ -101,6 +102,22 @@ beforeEach(async () => {
 afterEach(async () => {
   server.closeAllConnections();
   await new Promise<void>((r) => server.close(() => r()));
+});
+
+describe('bridge image route', () => {
+  it('needs the pairing token, validates the body and returns the picture as a data URL', async () => {
+    const headers = { origin: ORIGIN, 'content-type': 'application/json' };
+    expect((await call('POST', '/v1/image', { headers, body: JSON.stringify({ prompt: 'oak' }) })).status).toBe(401);
+    const token = await pairToken();
+    const auth = { ...headers, authorization: `Bearer ${token}` };
+    expect((await call('POST', '/v1/image', { headers: auth, body: JSON.stringify({ prompt: '' }) })).status).toBe(400);
+    expect((await call('POST', '/v1/image', { headers: auth, body: JSON.stringify({ prompt: 'x', reference: 'http://evil/x.png' }) })).status).toBe(400);
+    const ok = await call('POST', '/v1/image', { headers: auth, body: JSON.stringify({ prompt: 'oak boards', size: 512 }) });
+    expect(ok.status).toBe(200);
+    const body = ok.body as { image: string; model: string };
+    expect(body.image.startsWith('data:image/png;base64,')).toBe(true);
+    expect(body.model).toBe('fake-image');
+  });
 });
 
 describe('bridge HTTP security', () => {

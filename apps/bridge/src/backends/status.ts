@@ -74,7 +74,7 @@ export async function probeCodex(deps: ProbeDeps): Promise<Omit<BridgeBackendSta
   }
   if (models.length === 0) models = [...CODEX_FALLBACK_MODELS];
   const via = /using\s+(.+)$/i.exec(line)?.[1]?.trim();
-  return { ...base, installed: true, loggedIn, detail: line.slice(0, 200), ...(loggedIn && via ? { account: via.slice(0, 120) } : {}), models, defaultModel: models[0]?.id ?? 'gpt-6.1-sol' };
+  return { ...base, installed: true, loggedIn, ...(loggedIn ? { image: true } : {}), detail: line.slice(0, 200), ...(loggedIn && via ? { account: via.slice(0, 120) } : {}), models, defaultModel: models[0]?.id ?? 'gpt-6.1-sol' };
 }
 
 /** Status of the Claude Code CLI. */

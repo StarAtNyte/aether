@@ -5,6 +5,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { probeClaude, probeCodex, cached } from './backends/status';
+import { createCodexImageBackend } from './backends/codex-image';
 import type { BridgeConfig } from './config';
 import { createHeadlessBackends, resolveCommands } from './headless';
 import { LoginManager } from './auth';
@@ -55,7 +56,7 @@ export async function startBridge(config: BridgeConfig, opts: { logger?: BridgeL
   };
   const pairing = new Pairing(opts.onCode);
   let boundPort = config.port;
-  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status: () => status(), login, sessions, onAuthChange, ...(opts.logger ? { logger: opts.logger } : {}), ...(opts.publish ? { publish: opts.publish } : {}) }));
+  const server = createServer(createBridgeHandler({ config, port: () => boundPort, pairing, backends, status: () => status(), login, sessions, ...(commands.codex ? { images: createCodexImageBackend({ command: commands.codex, timeoutMs: config.timeoutMs }) } : {}), onAuthChange, ...(opts.logger ? { logger: opts.logger } : {}), ...(opts.publish ? { publish: opts.publish } : {}) }));
   server.requestTimeout = config.timeoutMs + 60_000;
   server.headersTimeout = 30_000;
   server.keepAliveTimeout = 5_000;

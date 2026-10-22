@@ -5,6 +5,7 @@
  *   POST /v1/pair       { code } → { token }
  *   GET  /v1/status     → BridgeStatus                      (bearer token)
  *   POST /v1/complete   BridgeCompleteRequest → CompletionResponse (bearer token)
+ *   POST /v1/image      BridgeImageRequest → { image, model } (bearer token; Codex's image tool, optional)
  *   POST /v1/auth/login { backend } → LoginState       (bearer; runs the CLI's own sign-in on this machine)
  *   GET  /v1/auth/login → { login }                     (bearer)
  *   POST /v1/auth/login/cancel → { login }              (bearer)
@@ -20,6 +21,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   BridgeCompleteRequestSchema,
+  BridgeImageRequestSchema,
   BridgePairRequestSchema,
   LoginStartRequestSchema,
   LogoutRequestSchema,
@@ -39,6 +41,7 @@ import { BridgeError } from './errors';
 import type { Pairing } from './pairing';
 import { JobQueue } from './queue';
 import type { LoginManager } from './auth';
+import type { ImageBackend } from './backends/codex-image';
 import type { SessionStore } from './sessions';
 
 /** Bridge version reported by /v1/status. */
@@ -63,6 +66,8 @@ export interface BridgeDeps {
   now?: () => number;
   /** CLI sign-in flows (absent: the auth endpoints answer not_found). */
   login?: LoginManager;
+  /** Image generation (absent: `/v1/image` answers not_found). */
+  images?: ImageBackend;
   /** Resumable conversations (absent: nothing to clear). */
   sessions?: SessionStore;
   /** Called after a sign-in finished or a sign-out (refresh cached status). */
@@ -246,7 +251,7 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
     }
     const sessionMatch = req.method === 'DELETE' ? /^\/v1\/sessions\/([a-z0-9-]{1,80})$/.exec(url.pathname) : null;
     const publishRoute = url.pathname.startsWith('/v1/publish/');
-    const known = route === 'GET /v1/status' || route === 'POST /v1/complete' || route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login' || sessionMatch !== null || publishRoute;
+    const known = route === 'GET /v1/status' || route === 'POST /v1/complete' || route === 'POST /v1/image' || route.startsWith('POST /v1/auth/') || route === 'GET /v1/auth/login' || sessionMatch !== null || publishRoute;
     if (!known) throw new BridgeError('not_found', 'Unknown endpoint.');
     if (!deps.pairing.verify(bearer(req))) throw new BridgeError('unauthorized', 'Not paired with this bridge (or it restarted). Pair again with the code it printed.');
 
@@ -321,6 +326,27 @@ export function createBridgeHandler(deps: BridgeDeps): (req: IncomingMessage, re
       const list = await deps.status();
       const status: BridgeStatus = { ok: true, name: 'aether-bridge', version: BRIDGE_VERSION, backends: list.map((b) => ({ ...b, busy: queues[b.id].size })) };
       send(res, 200, status, cors);
+      return;
+    }
+
+    if (route === 'POST /v1/image') {
+      const images = deps.images;
+      if (!images) throw new BridgeError('not_found', 'Image generation is not available on this bridge.');
+      const body = BridgeImageRequestSchema.safeParse(parseJson(await readBody(req, 8 * 1024 * 1024)));
+      if (!body.success) throw new BridgeError('invalid_request', `The image request is invalid (${body.error.issues[0]?.path.join('.') ?? ''}: ${body.error.issues[0]?.message ?? ''}).`.slice(0, 300));
+      const ctrl = new AbortController();
+      const onClose = (): void => {
+        if (!res.writableEnded) ctrl.abort();
+      };
+      res.on('close', onClose);
+      const started = now();
+      try {
+        const out = await queues['codex'].run(() => images.generate({ prompt: body.data.prompt, ...(body.data.size ? { size: body.data.size } : {}), ...(body.data.reference ? { reference: body.data.reference } : {}) }, ctrl.signal), ctrl.signal);
+        log?.info('image', { backend: 'codex', ms: now() - started, bytes: out.bytes.byteLength });
+        send(res, 200, { image: `data:${out.mime};base64,${Buffer.from(out.bytes).toString('base64')}`, model: out.model }, cors);
+      } finally {
+        res.off('close', onClose);
+      }
       return;
     }
 
