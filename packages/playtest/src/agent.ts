@@ -566,6 +566,7 @@ class Bot {
       ...b,
       params: this.params,
       hazards: this.goals.hazards,
+      noDrops: this.kind === 'walkthrough',
       portals,
       tick: async () => {
         await this.checkpoint();

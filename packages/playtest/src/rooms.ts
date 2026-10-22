@@ -34,8 +34,49 @@ export function roomOutline(world: WorldDoc, room: Entity): P2[] | null {
   return out;
 }
 
+/** World-space openings in the floor of a room (the stairwells cut through it), or none. */
+export function roomHoles(world: WorldDoc, room: Entity): P2[][] {
+  const shape = room.shape;
+  if (shape.kind !== 'procedural') return [];
+  const raw = shape.params['holes'];
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 32) return [];
+  let t;
+  try {
+    t = worldTransform(world, room.id);
+  } catch {
+    return [];
+  }
+  const out: P2[][] = [];
+  for (const ring of raw) {
+    if (!Array.isArray(ring) || ring.length < 3 || ring.length > 256) continue;
+    const pts: P2[] = [];
+    for (const p of ring) {
+      if (!Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number') break;
+      const w = rotateVec3(t.quaternion, [p[0] * t.scale[0], 0, p[1] * t.scale[2]]);
+      pts.push([t.position[0] + w[0], t.position[2] + w[2]]);
+    }
+    if (pts.length === ring.length) out.push(pts);
+  }
+  return out;
+}
+
+/** Distance from a point to the outline of a polygon (m). */
+function outlineDistance(p: P2, poly: readonly P2[]): number {
+  let d = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i] as P2;
+    const b = poly[(i + 1) % poly.length] as P2;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const l2 = dx * dx + dz * dz;
+    const u = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / l2));
+    d = Math.min(d, Math.hypot(p[0] - a[0] - u * dx, p[1] - a[1] - u * dz));
+  }
+  return d;
+}
+
 /** A point well inside a polygon: the centroid when it is inside, else the middle of the widest horizontal span. */
-export function interiorPoint(poly: readonly P2[]): { point: P2; radius: number } {
+export function interiorPoint(poly: readonly P2[], holes: readonly (readonly P2[])[] = []): { point: P2; radius: number } {
   let cx = 0, cz = 0, area = 0;
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i] as P2;
@@ -69,7 +110,25 @@ export function interiorPoint(poly: readonly P2[]): { point: P2; radius: number 
       }
     }
   }
-  const radius = Math.max(0.35, Math.min(1.4, Math.min(maxX - minX, maxZ - minZ) * 0.3));
+  let radius = Math.max(0.35, Math.min(1.4, Math.min(maxX - minX, maxZ - minZ) * 0.3));
+  // A stairwell in the middle of the floor (a landing is where the stair comes out): the point to walk to is the floor
+  // farthest from the opening and the walls, not the middle of the hole (nobody can stand there).
+  if (holes.some((h) => pointInPolygon(point[0], point[1], h) || outlineDistance(point, h) < 0.7)) {
+    let best = -Infinity;
+    for (let i = 0; i <= 40; i++) {
+      for (let j = 0; j <= 40; j++) {
+        const x = minX + ((maxX - minX) * i) / 40;
+        const z = minZ + ((maxZ - minZ) * j) / 40;
+        if (!pointInPolygon(x, z, poly) || holes.some((h) => pointInPolygon(x, z, h))) continue;
+        const clear = Math.min(outlineDistance([x, z], poly), ...holes.map((h) => outlineDistance([x, z], h)));
+        if (clear > best) {
+          best = clear;
+          point = [x, z];
+        }
+      }
+    }
+    radius = Math.max(0.35, Math.min(radius, best * 0.9));
+  }
   return { point, radius };
 }
 
@@ -82,7 +141,7 @@ export function deriveWalkGoals(world: WorldDoc): GoalModel {
     if (e.template || e.arch?.role !== 'room') continue;
     const poly = roomOutline(world, e);
     if (!poly) continue;
-    const { point, radius } = interiorPoint(poly);
+    const { point, radius } = interiorPoint(poly, roomHoles(world, e));
     const b = entityBounds(world, id);
     const floorY = b ? b.max[1] : (worldTransformSafe(world, id)?.[1] ?? 0);
     const center: Vec3 = [point[0], floorY, point[1]];

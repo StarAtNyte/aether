@@ -77,6 +77,12 @@ export interface NavBuildInput {
   portals?: readonly NavPortal[];
   /** Cooperative cancellation / yielding hook, called now and then while building. */
   tick?: () => Promise<void> | void;
+  /**
+   * No leaps down (jumps up and hops stay): a walkthrough walks, it does not jump down a stairwell. With them the
+   * cheapest way down to a room on the floor below was a fall through the hole beside the stair, a link that fails
+   * when tried; a few dozen of those along the balustrade used up the planner's attempts before it came to the stair.
+   */
+  noDrops?: boolean;
 }
 
 /** Maximum jump height (m) for the given abilities. */
@@ -237,6 +243,7 @@ export class NavGraph {
   private readonly spawnY: number;
   /** Hurting volumes: a jump or drop whose arc passes through one is not a way (the river under a leap). */
   private readonly hazards: readonly HazardZone[];
+  private readonly noDrops: boolean;
   /** Blocks of {@link BLOCK}×{@link BLOCK} cells: columns and rows, and the lowest node height in each (Infinity when empty). */
   private readonly nbx: number;
   private readonly nbz: number;
@@ -256,6 +263,7 @@ export class NavGraph {
     this.pw = input.pw;
     this.params = input.params;
     this.hazards = input.hazards;
+    this.noDrops = input.noDrops === true;
     this.cell = cell;
     this.nx = nx;
     this.nz = nz;
@@ -718,6 +726,7 @@ export class NavGraph {
             const reachD = dy < 0 ? dropReach(p, dy) * 0.9 - 0.25 : 0;
             if (h > Math.max(reachJ, reachD)) continue;
             const kind = h <= reachD ? EdgeKind.Drop : EdgeKind.Jump;
+            if (this.noDrops && dy < -p.stepHeight) continue;
             const cost = h + (kind === EdgeKind.Jump ? 1.5 : 0.3) + (dy < 0 ? -dy * 0.35 : dy * 1.0);
             (bins[table.bin[k] as number] as Cand[]).push({ j, kind, cost, ang });
           }
