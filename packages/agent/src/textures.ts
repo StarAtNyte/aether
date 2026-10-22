@@ -126,7 +126,11 @@ export function resolveTarget(world: WorldDoc, text: string, roomHint?: string):
   const pieces = Object.values(world.entities).filter((e) => e.arch?.role === 'furniture' || e.arch?.role === 'fixture');
   const exact = pieces.find((e) => e.id === text.trim());
   const named = exact ?? pieces.find((e) => e.id.endsWith(`-${t}`)) ?? pieces.find((e) => e.arch?.kind === t) ?? pieces.find((e) => e.id.includes(t));
-  if (named) return [{ kind: 'piece', entity: named, label: named.name || named.id, id: named.id }];
+  if (named) {
+    // A curtain is built as a left and a right panel (ids end -l and -r): a cover given to one dresses both.
+    const twin = /-[lr]$/.test(named.id) ? pieces.find((e) => e.id === `${named.id.slice(0, -1)}${named.id.endsWith('l') ? 'r' : 'l'}` && e.arch?.kind === named.arch?.kind) : undefined;
+    return [named, ...(twin ? [twin] : [])].map((e) => ({ kind: 'piece' as const, entity: e, label: e.name || e.id, id: e.id }));
+  }
   return `no surface or piece "${text.slice(0, 40)}": use floor, wall:<north|east|south|west>, walls, or a piece id (${pieces.slice(0, 8).map((e) => e.id).join(', ') || 'none placed'})`;
 }
 

@@ -677,7 +677,7 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
       else if (def.mount === 'ceiling') ok = Math.abs(y - (L.height - 0.22)) <= 0.06;
       else if (def.mount === 'surface') {
         const p = e.transform.position;
-        ok = furniture.some((f) => pointInPolygon(p[0], p[2], f.poly) && Math.abs(f.top - y) <= 0.04);
+        ok = furniture.some((f) => pointInPolygon(p[0], p[2], f.poly) && (Math.abs(f.top - y) <= 0.04 || (f.kind === 'bed' && Math.abs(y - 0.58) <= 0.08)));
       }
       if (!ok) issues.push({ code: 'floating', message: `${def.kind} ${e.id} is not supported (y = ${y.toFixed(2)})`, entities: [e.id], hint: def.mount === 'floor' ? 'Set its y to 0 (floor level of its storey).' : def.mount === 'surface' ? 'Put it on top of a table or nightstand (y = the host top).' : `Hang it at the ceiling (y = ${(L.height - 0.22).toFixed(2)}).` });
     }

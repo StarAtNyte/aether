@@ -450,6 +450,7 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
             ...wallVocabulary(d, wallColor),
             ...(ceilingDetail(d) ? { ceiling: ceilingDetail(d) } : {}),
             ...(d.ceiling.cornice && !d.ceiling.vault ? { cornice: { height: d.ceiling.cornice.height, depth: d.ceiling.cornice.depth ?? Math.min(0.2, Math.max(0.06, d.ceiling.cornice.height * 0.9)), profile: d.ceiling.cornice.profile ?? 'classic', ...(d.ceiling.cornice.color ? { color: d.ceiling.cornice.color } : {}) } } : {}),
+            downlights: d.ceiling.downlights === true,
             ...(d.ceiling.pictureRail ? { pictureRail: d.ceiling.pictureRail } : {}),
             ...(d.skirting ? { skirting: { height: d.skirting.height, depth: Math.round(Math.min(0.05, Math.max(0.012, d.skirting.height * 0.2)) * 1000) / 1000, profile: d.skirting.profile, ...(d.skirting.color ? { color: d.skirting.color } : {}) } } : {}),
             ...(d.niches.length > 0 ? { niches: d.niches.filter((n) => n.visible).map((n) => ({ wall: n.wall, along: alongToT(n.along), width: n.width, height: n.height, sill: n.sill, depth: n.depth, shelves: n.shelves, arched: n.arched, ...(n.color ? { color: n.color } : {}) })) } : {}),
@@ -465,7 +466,9 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
   } as DesignPlan;
 
   const steps: PlaceStep[] = [];
-  const windowIds = new Set(openings.filter((o) => o.kind === 'window').map((o) => o.id));
+  // A curtain hangs at a window, or at a glazed door (patio or balcony door, glass wall) that reads as one.
+  const glazedDoor = (o: { kind: string; style?: string; width?: number }): boolean => o.kind === 'door' && (o.width ?? 0) >= 1.4;
+  const windowIds = new Set(openings.filter((o) => o.kind === 'window' || glazedDoor(o)).map((o) => o.id));
   for (const it of d.items) {
     const def = furnitureByKind(it.kind);
     if (!def) continue;

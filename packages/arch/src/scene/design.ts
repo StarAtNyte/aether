@@ -53,6 +53,7 @@ export const DesignRoom = z
     /** Additive room-shell vocabulary (see `query_scene {q:"vocabulary"}`): ceiling style, crown moulding, picture rail, skirting, per-wall dados and niches. */
     ceiling: CeilingDetail.optional(),
     cornice: Cornice.optional(),
+    downlights: z.boolean().optional(),
     pictureRail: PictureRail.optional(),
     skirting: Skirting.optional(),
     dados: z.partialRecord(Compass, WallDado).optional(),
@@ -351,7 +352,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       ...(lvl.name ? { name: lvl.name } : {}),
       ...(lvl.height !== undefined ? { height: lvl.height } : {}),
       autoWindows: false,
-      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), ...(r.ceiling ? { ceiling: r.ceiling } : {}), ...(r.cornice ? { cornice: r.cornice } : {}), ...(r.pictureRail ? { pictureRail: r.pictureRail } : {}), ...(r.skirting ? { skirting: r.skirting } : {}), ...(r.dados ? { dados: r.dados } : {}), ...(r.niches ? { niches: r.niches } : {}), furnish: false, items: [] })),
+      rooms: lvl.rooms.map((r) => ({ id: r.id, type: r.type, ...(r.name ? { name: r.name } : {}), ...(r.rect ? { rect: r.rect } : {}), ...(r.polygon ? { polygon: r.polygon } : {}), ...(r.floor ? { floor: r.floor } : {}), ...(r.wallColor ? { wallColor: r.wallColor } : {}), ...(r.wallColors ? { wallColors: r.wallColors } : {}), ...(r.vault ? { vault: r.vault } : {}), ...(r.finish ? { finish: r.finish } : {}), ...(r.walls ? { walls: r.walls } : {}), ...(r.dado ? { dado: r.dado } : {}), ...(r.ceiling ? { ceiling: r.ceiling } : {}), ...(r.cornice ? { cornice: r.cornice } : {}), ...(r.downlights !== undefined ? { downlights: r.downlights } : {}), ...(r.pictureRail ? { pictureRail: r.pictureRail } : {}), ...(r.skirting ? { skirting: r.skirting } : {}), ...(r.dados ? { dados: r.dados } : {}), ...(r.niches ? { niches: r.niches } : {}), furnish: false, items: [] })),
       doors,
       windows,
       stairs: lvl.stairs.flatMap((st) => (st.at ? [{ at: st.at, heading: st.heading ?? 'north', shape: st.shape ?? 'straight', width: st.width ?? 1, turn: st.turn ?? 'left' }] : [])),

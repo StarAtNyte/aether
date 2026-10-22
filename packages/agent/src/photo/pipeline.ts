@@ -673,7 +673,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   const env = host.applyPatches([{ op: 'setEnvironment', set: build.environment }], 'Light of the photo');
   if (env.errors.length === 0 && env.applied.length > 0) yield { type: 'patches', patches: env.applied, message: 'Light of the photo', result: { applied: env.applied.length, errors: [] } };
   const refusals = built.outcomes.filter((o) => !o.ok).map((o) => `${o.id} (${o.kind}): ${o.text}`.slice(0, 360));
-  yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop` : ''}.` };
+  yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop: ${refusals.map((r) => r.slice(0, 200)).join(' | ')}` : ''}.` };
 
   if (hs) hs.stages.begin('materials');
   // Textures: the surfaces the photograph shows clearly are sampled from it before the first comparison.

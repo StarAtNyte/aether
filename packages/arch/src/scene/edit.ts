@@ -357,7 +357,8 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
     const t = (host.yaw * Math.PI) / 180;
     const x = host.pos[0] + off[0] * Math.cos(t) + off[1] * Math.sin(t);
     const z = host.pos[2] - off[0] * Math.sin(t) + off[1] * Math.cos(t);
-    pos = [mm(x), mm(host.y1), mm(z)];
+    // A bed is as tall as its headboard, but what lies on it rests on the duvet.
+    pos = [mm(x), mm(host.kind === 'bed' ? BED_SURFACE : host.y1), mm(z)];
     yaw = spec.yaw !== undefined ? normYaw(spec.yaw) : host.yaw;
     if (Math.abs(off[0]) > host.size[0] / 2 || Math.abs(off[1]) > host.size[2] / 2) return fail(`offset ${off[0]}, ${off[1]} is off ${host.id} (it spans ±${cmr(host.size[0] / 2)} across and ±${cmr(host.size[2] / 2)} deep)`);
     return finishPlace(world, b.id, scene, room, def, assetInfo, params, notes, entityId, spec, pos, yaw, levelId);
@@ -447,6 +448,14 @@ function finishPlace(
   return commit(`Place ${def.kind} ${entityId}`, [{ op: 'add', entity: ent } as Patch], world, building, [entityId], notes);
 }
 
+/** Height of the duvet of a bed: the surface towels, throws and cushions rest on (the bed's own height is its headboard). */
+export const BED_SURFACE = 0.58;
+
+/** A door wide enough to be a glass wall or patio door (1.4 m or more): curtains may flank it. */
+function glazedDoorOpening(o: { kind: string; width: number }): boolean {
+  return o.kind === 'door' && o.width >= 1.4;
+}
+
 /** Curtains: a panel each side of a window, hung with the wall-space rules. */
 function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: SceneRoom, spec: PlaceSpec, handle: string, params: Record<string, Json>, notes: string[]): EditResult {
   const def = furnitureByKind('curtain');
@@ -456,7 +465,8 @@ function placeCurtain(world: WorldDoc, building: EntityId, scene: Scene, room: S
   if (isLookupError(found)) return fail(found.error);
   const { opening, wall, room: openRoom } = found;
   if (openRoom.id !== room.id) return fail(`window ${opening.id} belongs to ${openRoom.key}, not ${room.key}`);
-  if (opening.kind !== 'window') return fail(`${opening.id} is a ${opening.kind}, not a window: a curtain over it would hide the way through. Curtains go beside windows only`);
+  // Panels flank the opening, so a wide glazed door (patio, balcony, glass wall) takes them like a window; a narrow door does not.
+  if (opening.kind !== 'window' && !glazedDoorOpening(opening)) return fail(`${opening.id} is a ${opening.kind}, not a window: a curtain over it would hide the way through. Curtains go beside windows and wide glazed doors only`);
   const len = opening.t1 - opening.t0;
   // The caller may ask for the gathered width of one panel (the photo shows it); otherwise it follows the window.
   const askedWidth = spec.params && typeof spec.params['width'] === 'number' && Number.isFinite(spec.params['width']) ? Math.min(2.5, Math.max(0.3, spec.params['width'])) : null;
@@ -775,7 +785,7 @@ export function anchorToOpening(world: WorldDoc, buildingRef: string | undefined
   const w = it.size[0];
   let t: number;
   if (it.kind === 'curtain') {
-    if (opening.kind !== 'window') return fail(`${opening.id} is a ${opening.kind}: curtains belong beside windows only`);
+    if (opening.kind !== 'window' && !glazedDoorOpening(opening)) return fail(`${opening.id} is a ${opening.kind}: curtains belong beside windows and wide glazed doors only`);
     t = mode === 'right' ? opening.t1 - 0.08 + w / 2 : opening.t0 + 0.08 - w / 2;
   } else if (mode === 'left') t = opening.t0 - (opts.gap ?? 0.1) - w / 2;
   else if (mode === 'right') t = opening.t1 + (opts.gap ?? 0.1) + w / 2;

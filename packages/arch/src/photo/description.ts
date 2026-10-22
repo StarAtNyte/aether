@@ -256,6 +256,8 @@ export const RoomDescription = z.object({
       color: Color.optional(),
       /** Crown moulding along the top of the walls: drop, projection, profile and colour. */
       cornice: z.object({ height: Num(0.04, 0.4), depth: Num(0.03, 0.3).optional(), profile: CorniceProfile.optional(), color: Color.optional() }).optional(),
+      /** True only when recessed spotlights are visible in the ceiling; a room never gets any the photo does not show. */
+      downlights: z.boolean().optional(),
       /** Picture rail: drop below the ceiling (m) and colour. */
       pictureRail: z.object({ drop: Num(0.05, 1.2).default(0.3), color: Color.optional() }).optional(),
       /**

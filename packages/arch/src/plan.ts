@@ -82,6 +82,8 @@ export const PlanRoom = z
      */
     ceiling: CeilingDetail.optional(),
     cornice: Cornice.optional(),
+    /** false: no recessed downlights (a room rebuilt from a photograph only has the ones the photo shows). Default: a grid in habitable rooms. */
+    downlights: z.boolean().optional(),
     pictureRail: PictureRail.optional(),
     skirting: Skirting.optional(),
     dados: z.partialRecord(Compass, WallDado).optional(),

@@ -794,6 +794,7 @@ export function consensusDescription(c: ReadClusters, knownKinds: readonly strin
   const vaults = c.reads.map((d) => d.ceiling.vault).filter((x): x is NonNullable<RoomDescription['ceiling']['vault']> => x !== undefined);
   const ceilingColour = medoidColour(c.reads.map((d) => d.ceiling.color).filter(isHex));
   const ceiling: RoomDescription['ceiling'] = { ...(ceilingColour ? { color: ceilingColour } : {}) };
+  if (c.reads.filter((d) => d.ceiling.downlights === true).length * 2 > c.reads.length) ceiling.downlights = true;
   if (cornices.length >= need) {
     const depth = medianOpt(cornices.map((x) => x.depth));
     const color = medoidColour(cornices.map((x) => x.color).filter(isHex));

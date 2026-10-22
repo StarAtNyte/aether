@@ -26,6 +26,13 @@ describe('recessed downlights', () => {
     expect((living?.shape as unknown as { params: { downlights: unknown[] } }).params.downlights.length).toBeGreaterThanOrEqual(4);
   });
 
+  it('a room that says downlights false (a photo room whose ceiling shows none) gets none', () => {
+    const plan = JSON.parse(JSON.stringify(APARTMENT)) as typeof APARTMENT;
+    for (const lvl of plan.levels) for (const r of lvl.rooms) (r as { downlights?: boolean }).downlights = false;
+    const b = compileBuilding(plan);
+    for (const c of b.entities.filter((e) => e.arch?.role === 'ceiling')) expect((c.shape as unknown as { params: { downlights: unknown[] } }).params.downlights).toHaveLength(0);
+  });
+
   it('grids scale with the room and skip tiny rooms and industrial style', () => {
     const big = downlightGrid([[0, 0], [8, 0], [8, 6], [0, 6]], 'living', 'modern');
     const small = downlightGrid([[0, 0], [2.4, 0], [2.4, 2.4], [0, 2.4]], 'bathroom', 'modern');
