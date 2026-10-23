@@ -6259,3 +6259,40 @@ Honest limits. In motion those two worlds are drawn at 0.25 to 0.3 of the frame 
 Idle and rest: with the camera still and refinement converged no frame is drawn (0 frames in 2 s on hotel, skyline and casa); refinement runs only when nothing changed, never while the view moves.
 
 Stills at rest, pixel-diffed against the task-start build (mean 8-bit difference, share of pixels over 8): hotel 0.67 (0.02 %), twin 0.71 (0.09 %), vaulted 0.50 (0.06 %), skyline 1.6 (0.6 %); casa regional means within 0.3 / 255 (foliage speckle differs between any two captures). Viewed side by side: the same pictures. Gates: tsc clean; vitest packages/render and apps/studio 1575 pass (new floor tests); smoke 34/34; e2e:weak ok; showcase:bake --check up to date; showcase:lightmaps --verify ok.
+
+## Look audit: rest stills against an archviz / game bar, and three generic fixes
+
+Task: judge the default view at rest (Studio quality, refinement done, Intel iGPU through ANGLE/GL, 1280 x 720, cover cameras; `rest-stills.e2e.ts`) on hotel, twin, vaulted bedroom, skyline penthouse, casa patio, Highland Trail and Neon Rain City, name the six most visible gaps, fix the cheapest generic ones, keep the frame cost flat.
+
+The six gaps, most visible first:
+1. Foliage and meadow came out as a stipple of white dots (Highland Trail, every tree and flower patch) or black dots (software WebGPU), and as pixel-cut cards on the skyline and casa trees. This was a defect, not a taste gap (fixed, below).
+2. Pale, low-contrast picture: AgX lifts blacks and desaturates, and the day grade on top of it was only 1.08 contrast and 1.04 saturation, so hills, lawns and water read as washed (fixed, below).
+3. Lawn and ground planes read as a smooth carpet beyond about 8 m (hotel, twin, vaulted): the photographed grass tile averages to one flat tone once its texels are under a pixel, and the micro detail stops at 7 m while the macro lookup starts at 10 m (partly fixed, below).
+4. The three photo rooms stand on an empty lawn to a bright horizon band with a near-white sky: no site, no context, no depth cue other than haze. Not fixed (needs site content or a sky with a real gradient behind the haze; changing world content would change the bundled lightmap keys).
+5. Backdrop towers of the skyline and the neon street are flat boxes with a repeated window grid, emissive signs bloom into smears (Neon Rain City), shells in cutaway are flat grey with no grime or edge wear. Not fixed.
+6. The full chain never arrives on busy hardware for animated worlds: casa and Highland (water, animals) kept `restDeferred` for ten slow frames in a row on this loaded machine, so the user keeps the light chain at a reduced scale. A product behaviour, not changed here; recorded because it decides which picture people see.
+
+What changed (all generic, no world content, no lightmap key):
+1. Foliage cut-outs are no longer alpha-to-coverage (`materials/material-cache.ts`). The post chains draw the scene single-sampled (temporal AA needs it), and coverage on a single-sampled target dithers the whole card into a stipple. Found by bisecting the symptom: forcing it off restored solid leaves on Highland, casa and the skyline planters with TAA smoothing the edges. The earlier note that foliage "needs MSAA" (4 ms) described this same defect; the scene pass MSAA can now be reconsidered by whoever owns the chain.
+2. Day grade looks (`gpu/finishing.ts`): archviz daylight and golden hour contrast 1.2 and saturation 1.14 and 1.15, overcast 1.14 and 1.04 (were 1.08 / 1.04, 1.10 / 1.08, 1.04 / 0.96). Uniform values only; the shader and the exposure are unchanged, and the lightmap exposure calibration reads the sun and sky, not the grade.
+3. Mid-range ground breakup (`materials/anti-tile.ts`): grass, gravel, soil, sand, snow, rock and dry earth multiply their albedo by two lookups of the shared noise texture (clumps about 0.6 m, grain about 18 cm; plus or minus 25 % and 11 %), fading in over 2.5 to 9 m. Only in the full path: the lean path (moving views on integrated GPUs) does not read them, so the cost in motion is zero. Walls and indoor floors are excluded (the first try streaked plaster walls along the noise skew).
+
+Not done and why: the CC0 PBR terrain finishes (new `material.finish` names with schema, tiers and licence records) were not added. The finish library already carries 23 photographed ambientCG sets including grass, soil, rock, sand, gravel and snow, so the visible loss was the distance behaviour (3) and the foliage defect (1), not a missing set; a moss or leaf-litter finish would add variety but not fix what the stills show. HDRI windows, baked lightmaps for game worlds and edge-wear maps were not started either; the stills did not rank them above the three fixes.
+
+Frame cost (default-perf harness, 1280 x 720, 60 frames in motion, GPU timer, same machine and build before and after; the build before is the task-start commit):
+
+| room | ms per frame in motion before | after | rest chain GPU before | after |
+|---|---:|---:|---:|---:|
+| hotel | 1.0 | 1.1 | 18.9 | 20.4 |
+| twin | 1.3 | 1.4 | 20.3 | 20.4 |
+| vaulted | 1.2 | 1.3 | 26.5 | 26.5 |
+| skyline | 21.1 | 21.0 | 49.4 | 48.1 |
+| casa | 20.6 | 19.3 | 54.5 | 54.7 |
+
+Differences are inside run-to-run noise (0.1 ms on the rooms; the machine was shared); the rest-chain column is a single frame. The rooms stay at 60 fps at the default.
+
+Pixel diff of rest stills, before against after (mean 8-bit difference, share of pixels over 8): hotel 3.98 (33 %), twin 3.85 (39 %), vaulted 4.44 (43 %), skyline 4.46 (9.9 %), casa 18.1 (77 %: the foliage and meadow stipple is gone and the grade is richer); Highland and Neon Rain City viewed side by side (Highland: white stipple replaced by green crowns, richer slopes and water). Neon Rain City has no foliage and only the grade changed. Every still was viewed, before and after.
+
+Gates: `tsc` clean; vitest core, render and studio 1830 tests (one unrelated flaky failure in the first run, green on the second); smoke 34/34; `e2e:weak` passes; `showcase:bake --check` up to date; `showcase:lightmaps --verify` 6/6 (no key changed, nothing regenerated).
+
+Honest limits. Stills of the animated worlds depend on the machine: the full chain is reached only when ten frames in a row stay under 34 ms, so the harness retried until `atRest=true` (Highland, Neon) and the casa still was taken after the lightmap bake had started (the "baking light" chip is in the frame) in the light chain at scale 0.6 to 1. The grade change is a taste call that is stronger on golden-hour skies; it is two numbers to move back.
