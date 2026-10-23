@@ -43,7 +43,9 @@ describe('architecture UI state', () => {
     const a = mergeArchUi(DEFAULT_ARCH_UI, { building: 'house', levels, level: 7, walls: 'down', section: 99, sunHour: -3 });
     expect(a).toMatchObject({ building: 'house', level: 1, walls: 'down', section: SECTION_RANGE[1], sunHour: 0 });
     const b = mergeArchUi(a, { walls: 'sideways' as never, levelMode: 'x' as never, planTool: 'laser' as never, roomType: 'dungeon' as never, quality: 'ultra' as never, section: Number.NaN });
-    expect(b).toMatchObject({ walls: 'down', levelMode: 'stacked', planTool: 'select', roomType: 'living', quality: 'realtime', section: SECTION_RANGE[1] });
+    // Studio render is the default; only an explicit 'realtime' turns it off.
+    expect(b).toMatchObject({ walls: 'down', levelMode: 'stacked', planTool: 'select', roomType: 'living', quality: 'studio', section: SECTION_RANGE[1] });
+    expect(mergeArchUi(b, { quality: 'realtime' }).quality).toBe('realtime');
     expect(mergeArchUi(b, { building: '' }).building).toBeNull();
     expect(mergeArchUi(b, { section: null, sunHour: null })).toMatchObject({ section: null, sunHour: null });
   });
@@ -315,6 +317,7 @@ describe('ArchController', () => {
     const sim = { renderer } as unknown as NonNullable<ArchHost['simulation']>;
     const withSim: ArchHost = { ...h, get simulation() { return sim; }, onSimulation: (fn) => { listener = fn as (s: unknown) => void; return () => undefined; } };
     const c = new ArchController(withSim);
+    h.store.getState().setArch({ quality: 'realtime' });
     listener!(sim);
     h.store.getState().setArch({ photo: true });
     expect(quality).toBe('studio');

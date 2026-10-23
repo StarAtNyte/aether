@@ -126,7 +126,8 @@ export class ArchController {
       const st = this.host.store.getState();
       if (want === 'studio' && got !== 'studio') {
         st.setArch({ quality: 'realtime', studioAvailable: false });
-        st.toast('Studio render is not available on this device (low memory mode or no post-processing). Showing the realtime view.', 'info', 5);
+        // Studio is the default view: a device that cannot run it falls back silently; only a click on the button explains.
+        if (prev) st.toast('Studio render is not available on this device (low memory mode or no post-processing). Showing the realtime view.', 'info', 5);
       } else if (st.arch.studioAvailable !== r.studioQualityAvailable) st.setArch({ studioAvailable: r.studioQualityAvailable });
     }
     if (!prev || a.sunHour !== prev.sunHour) this.applySun();

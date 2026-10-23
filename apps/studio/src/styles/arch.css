@@ -484,6 +484,11 @@
     max-width: calc(100% - 24px);
     transform: none;
   }
+
+  /* The bar sits in the top-left column here: keep the performance overlay below it. */
+  .viewport:has(.arch-bar) .vp-overlay--tl .perf-hud {
+    margin-top: calc(var(--control-h) + var(--s-3));
+  }
 }
 
 @container viewport (max-width: 760px) {
