@@ -5,7 +5,9 @@
  * the assistant compares them with what the photograph shows and decides whether to change the footprint. Nothing here changes
  * the room or gates a round.
  */
-import type { WorldDoc } from '@aether/core';
+import type { Json, WorldDoc } from '@aether/core';
+import { furnitureByKind, furnitureSize } from '../furniture/index';
+import type { RoomDescription } from './description';
 import { readScene } from '../scene/read';
 import { roomAdvice } from '../scene/advice';
 import { PHOTO_BUILDING_ID, PHOTO_ROOM_ID } from './derive';
@@ -96,4 +98,46 @@ export function rescaleDescription<T extends Resizable>(d: T, width: number, dep
   for (const n of out.niches ?? []) if (n.along !== undefined) n.along = along(n.wall, n.along);
   if (out.camera) out.camera = { ...out.camera, x: centred(out.camera.x, W, width), z: anchored(out.camera.z, D, depth) };
   return out;
+}
+
+/** Walkway kept between two rows of floor pieces. */
+const GAP = 0.8;
+
+/**
+ * The smallest room the floor pieces of a description need, measured from the pieces themselves: along a wall their widths
+ * (plus a walkway between neighbours), across the room the depths of the pieces on the two facing walls plus a walkway.
+ */
+export function footprintMinimum(d: RoomDescription): { width: number; depth: number; basis: { width: string; depth: string } } {
+  const on = (wall: string) => d.items.filter((i) => i.wall === wall && i.at === undefined && i.on === undefined).flatMap((i) => {
+    const def = furnitureByKind(i.kind);
+    if (!def || def.mount !== 'floor' || i.kind === 'rug') return [];
+    const [w, , dp] = furnitureSize(def, i.params as Record<string, Json>);
+    const width = typeof i.params['width'] === 'number' ? i.params['width'] : w;
+    return [{ id: i.id, w: width, d: typeof i.params['depth'] === 'number' ? i.params['depth'] : dp }];
+  });
+  const run = (wall: string) => { const l = on(wall); return { sum: l.reduce((s, p) => s + p.w, 0) + GAP * Math.max(0, l.length - 1), ids: l.map((p) => p.id) }; };
+  const deep = (wall: string) => on(wall).reduce((m, p) => Math.max(m, p.d), 0);
+  const axis = (a: string, b: string, c: string, e: string) => {
+    const r1 = run(a); const r2 = run(b);
+    const across = deep(c) + deep(e) + GAP;
+    const alongBest = r1.sum >= r2.sum ? r1 : r2;
+    return alongBest.sum >= across
+      ? { v: alongBest.sum, basis: `${alongBest.ids.join(' + ')} side by side with a ${GAP} m walkway between` }
+      : { v: across, basis: `the pieces on the ${c} and ${e} walls (${deep(c).toFixed(2)} m + ${deep(e).toFixed(2)} m deep) with a ${GAP} m walkway between` };
+  };
+  const x = axis('north', 'south', 'east', 'west');
+  const z = axis('east', 'west', 'north', 'south');
+  return { width: Math.round(x.v * 100) / 100, depth: Math.round(z.v * 100) / 100, basis: { width: x.basis, depth: z.basis } };
+}
+
+/** Advisory shown with the first shell size: the measured minimum next to the guess (empty when the guess already holds the pieces). */
+export function footprintAdvisory(d: RoomDescription): string {
+  const m = footprintMinimum(d);
+  const w = d.footprint.width;
+  const dp = d.footprint.depth;
+  const lines: string[] = [];
+  if (m.width > w + 0.1) lines.push(`width: you wrote ${w} m, the pieces you listed need at least ${m.width} m (${m.basis.width})`);
+  if (m.depth > dp + 0.1) lines.push(`depth: you wrote ${dp} m, the pieces you listed need at least ${m.depth} m (${m.basis.depth})`);
+  if (lines.length === 0) return '';
+  return `Measured minimum for the shell (advisory, you decide): ${lines.join('; ')}. Hotel and bedroom rooms with two beds are usually 3.8 to 4.5 m across. Reconcile before you judge the shell-size item: either the room is larger than you wrote (a photo from a wide lens makes rooms look narrower), and you widen it by resending design_plan with the room's rect changed (placed pieces stay), or a listed piece is smaller or not there, and you say so.`;
 }

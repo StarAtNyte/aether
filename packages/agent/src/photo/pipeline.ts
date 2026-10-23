@@ -26,6 +26,7 @@ import {
   framingText,
   measureFidelity,
   scaleAdvisory,
+  footprintAdvisory,
   type FidelityReport,
   type FramingReport,
   type FramingTarget,
@@ -672,7 +673,7 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   if (hs) hs.stages.begin('lighting');
   const env = host.applyPatches([{ op: 'setEnvironment', set: build.environment }], 'Light of the photo');
   if (env.errors.length === 0 && env.applied.length > 0) yield { type: 'patches', patches: env.applied, message: 'Light of the photo', result: { applied: env.applied.length, errors: [] } };
-  const refusals = built.outcomes.filter((o) => !o.ok).map((o) => `${o.id} (${o.kind}): ${o.text}`.slice(0, 360));
+  const refusals = built.outcomes.filter((o) => !o.ok).map((o) => `${o.id} (${o.kind}): ${o.text}`.slice(0, 1400));
   yield { type: 'photo', phase: 'built', text: `Built. ${built.outcomes.filter((o) => o.ok).length} of ${built.outcomes.length} pieces placed${refusals.length > 0 ? `; ${refusals.length} refused and handed to the compare loop: ${refusals.map((r) => r.slice(0, 200)).join(' | ')}` : ''}.` };
 
   if (hs) hs.stages.begin('materials');
@@ -742,6 +743,8 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
   const hs = run.harness ?? null;
   const stageEv = (text: string): AgentEvent => ({ type: 'photo', phase: 'stage', text, ...(hs ? { stages: hs.stages.views() } : {}) });
   const ledger = ledger0 ?? (run.options.differences === true || hs ? new DifferenceLedger() : null);
+  // A piece the first build refused for lack of space is a geometry difference until the model places it (widening the shell), not a piece to drop.
+  if (ledger && !ledger0) for (const r of refusals) { const m = /^(\S+) \((\S+)\): .*Space evidence/.exec(r); if (m) ledger.seed(m[1] as string, `the ${m[2]} was refused for lack of space in the first build and is not in the room: widen the shell (see the space evidence) and place it again`); }
   const targets = framingTargets(desc, openings);
   let final: Judged | null = null;
   let finalNote = '';
@@ -1072,7 +1075,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     }) : null;
     if (kit && kit.images.length > 0) run.imageCap = Math.max(run.imageCap ?? 0, 6 + kit.images.length + 2);
     const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';

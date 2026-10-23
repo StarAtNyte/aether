@@ -157,6 +157,13 @@ export class DifferenceLedger {
     return { ok: true, text: [...lines, ...notes].join('\n'), open: ranked.length, ranked };
   }
 
+  /** A difference found by the build itself (a piece refused for lack of space): open until the model reports it fixed. */
+  seed(id: string, what: string, where = ''): void {
+    const key = `missing-${id}`.slice(0, 40);
+    if (this.entries.has(key)) return;
+    this.entries.set(key, { id: key, kind: 'missing', cause: 'geometry', where, what: what.slice(0, 300), size: 3, status: 'open', rounds: 1, since: 0, source: 'model' });
+  }
+
   /** Open differences, largest first (older first among equals). */
   ranked(): Difference[] {
     return [...this.entries.values()].filter((d) => d.status !== 'fixed').sort((a, b) => b.size - a.size || b.rounds - a.rounds || a.since - b.since);

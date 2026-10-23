@@ -163,7 +163,7 @@ function refusedByIndex(text: string): Map<number, string> {
   // A refusal can span lines (a heading and one line per problem): split before each `[n …]` label.
   for (const block of text.split(/\n(?=\[\d+[^\]]*\] )/)) {
     const m = /^\[(\d+)[^\]]*\] refused: ([\s\S]*)$/.exec(block);
-    if (m) out.set(Number(m[1]), (m[2] ?? '').replace(/\s*\n\s*/g, ' ').slice(0, 400));
+    if (m) out.set(Number(m[1]), (m[2] ?? '').replace(/\s*\n\s*/g, ' ').slice(0, 1400));
   }
   return out;
 }

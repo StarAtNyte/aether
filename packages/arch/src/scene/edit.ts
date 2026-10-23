@@ -23,6 +23,7 @@ import { findItem, findOpening, findRoom, findWall, isLookupError, itemLine, wal
 import { cmr, compassWord, describeOffset, mm, polygonGap } from './geom';
 import { defaultWallBottom, fittingLight, itemEntity, partInfo, partKinds, resolvePartParams } from './parts';
 import { readScene } from './read';
+import { spaceEvidence } from './space';
 import type { Scene, SceneItem, SceneOpening, SceneRoom, SceneWall } from './types';
 
 /** Result of an edit tool. */
@@ -206,15 +207,15 @@ function audit(before: WorldDoc, patches: Patch[], building: EntityId, ids: Read
   return { world: res.world, scene, errors, warnings };
 }
 
-function refusal(what: string, errors: readonly Finding[]): EditResult {
+function refusal(what: string, errors: readonly Finding[], space = ''): EditResult {
   const lines = errors.slice(0, 6).map((f) => `- ${f.message}. ${f.fix}`);
-  return fail(`${what} refused, nothing changed:\n${lines.join('\n')}${errors.length > 6 ? `\n- … ${errors.length - 6} more problems` : ''}`);
+  return fail(`${what} refused, nothing changed:\n${lines.join('\n')}${errors.length > 6 ? `\n- … ${errors.length - 6} more problems` : ''}${space ? `\n${space}` : ''}`);
 }
 
 function commit(what: string, patches: Patch[], before: WorldDoc, building: EntityId, ids: EntityId[], note: string[] = []): EditResult {
   const a = audit(before, patches, building, new Set(ids));
   if ('error' in a) return fail(a.error);
-  if (a.errors.length > 0) return refusal(what, a.errors);
+  if (a.errors.length > 0) return refusal(what, a.errors, spaceEvidence(a.scene, a.errors, new Set(ids)));
   const touched = a.scene.items.filter((i) => ids.includes(i.id));
   const text = [`${what}: done.`, ...touched.map((i) => describePlaced(a.scene, i)), ...note.map((n) => `note: ${n}`), ...a.warnings.slice(0, 4).map((w) => `heads-up (${w.code}): ${w.message}. ${w.fix}`)].join('\n');
   return { ok: true, patches, message: what.slice(0, 120), text, ids, warnings: a.warnings.map((w) => w.message) };
