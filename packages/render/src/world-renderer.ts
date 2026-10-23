@@ -559,6 +559,10 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 /** Attempts of a capture that comes back blank. */
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
+/** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
+const SUN_MAP_REFRESH = 24;
+/** Frames between redraws of the cached sun shadow map while casters animate (30 fps at 60). */
+const SUN_MAP_SOFT_REFRESH = 2;
 /** Assets smaller than this in every direction cast no sun shadow on the low tier (metres). */
 const SMALL_CASTER_METRES = 0.9;
 /** Skinned assets farther than this from the eye are not drawn on the low tier (metres). */
@@ -731,7 +735,24 @@ export class WorldRenderer {
   private asyncCaptureFailed = false;
   private boundsDirty = true;
   /** Something visible changed since the last drawn frame (on-demand rendering). */
-  private needsDraw = true;
+  private _needsDraw = true;
+  private get needsDraw(): boolean {
+    return this._needsDraw;
+  }
+  /** Any content or view-state change that asks for a frame also asks for a fresh sun shadow map (see {@link cacheSunMap}). */
+  private set needsDraw(on: boolean) {
+    this._needsDraw = on;
+    if (on) this.sunMapDirty = true;
+  }
+  /** The sun's shadow map no longer matches the scene: content changed. */
+  private sunMapDirty = true;
+  /** Casters that animate or re-plan with the view (people, wind, scatter fields): the map follows them at a lower rate. */
+  private sunMapSoft = false;
+  /** Frames since the sun's shadow map was drawn. */
+  private sunMapAge = 0;
+  /** The sun light, map size and fitted frustum the map was drawn for. */
+  private sunMapKey: object | null = null;
+  private readonly sunMapSig = new Float64Array(14);
   private debugDirty = false;
   private sinceRefit = REFIT_INTERVAL;
   private framed = false;
@@ -3084,8 +3105,14 @@ export class WorldRenderer {
     if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
     if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
-    if (opts.animate !== false && this.stepAnimations(gameStep)) this.needsDraw = true;
-    if (opts.animate !== false && this.fx.animating) this.needsDraw = true;
+    if (opts.animate !== false && this.stepAnimations(gameStep)) {
+      this._needsDraw = true;
+      this.sunMapSoft = true;
+    }
+    if (opts.animate !== false && this.fx.animating) {
+      this._needsDraw = true;
+      this.sunMapSoft = true;
+    }
     this.stepWater(step, opts.animate !== false);
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
     // and merge building geometry only once nothing animates any more.
@@ -3253,12 +3280,50 @@ export class WorldRenderer {
       const k = (this.shadowFrame = (this.shadowFrame + 1) % 64);
       shadowNoiseValue.set((k * 37) % 64, (k * 23) % 64);
     } else if (shadowNoiseValue.x !== 0 || shadowNoiseValue.y !== 0) shadowNoiseValue.set(0, 0);
+    this.cacheSunMap(capture || cascades !== null);
     if (!cascades) return;
     const h = cascades.hints;
     h.target = this.rig.getSubject(_focusTarget) ?? this.probeFocus(capture);
     const f = this.framing;
     h.groundY = f ? Math.min(f.center[1], 0) : 0;
     h.maxDistance = f ? this.perspective.position.distanceTo(_center.set(f.center[0], f.center[1], f.center[2])) + f.radius * 1.5 : 200;
+  }
+
+  /**
+   * A single content-fitted sun map does not depend on the camera, so a frame that only moved the view (an orbit, a walk
+   * through a house with nothing animating) reuses the last map instead of drawing every caster again. The map is drawn
+   * again when content changed (anything that asked for a frame besides the camera), the sun or its frustum moved, every
+   * few frames while casters animate or scatter fields re-plan with the view, and now and then regardless (a safety net
+   * for a change nobody reported). Cascades follow the view and captures are exact: they always draw.
+   */
+  private cacheSunMap(always: boolean): void {
+    const sun = this.env.sun;
+    const shadow = sun.shadow;
+    if (always || !sun.castShadow || !this.renderer.shadowMap.enabled) {
+      shadow.autoUpdate = true;
+      this.sunMapDirty = true;
+      return;
+    }
+    const sig = this.sunMapSig;
+    const cam = shadow.camera;
+    const p = sun.position;
+    const t = sun.target.position;
+    const next = [p.x, p.y, p.z, t.x, t.y, t.z, cam.left, cam.right, cam.top, cam.bottom, cam.near, cam.far, shadow.mapSize.x, shadow.bias];
+    let moved = this.sunMapKey !== sun;
+    for (let i = 0; i < next.length; i++) {
+      if (sig[i] !== next[i]) moved = true;
+      sig[i] = next[i] as number;
+    }
+    this.sunMapKey = sun;
+    shadow.autoUpdate = false;
+    const age = this.sunMapAge + 1;
+    const due = this.sunMapDirty || moved || age >= SUN_MAP_REFRESH || (this.sunMapSoft && age >= SUN_MAP_SOFT_REFRESH);
+    shadow.needsUpdate = due;
+    if (due) {
+      this.sunMapAge = 0;
+      this.sunMapDirty = false;
+      this.sunMapSoft = false;
+    } else this.sunMapAge = age;
   }
 
   private shadowFrame = 0;
@@ -4179,7 +4244,7 @@ export class WorldRenderer {
     if (this.viewChanged() || this.sync.viewNeedsUpdate) {
       const target = this.renderer.getOutputRenderTarget();
       const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
-      this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now());
+      if (this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now())) this.sunMapSoft = true;
     }
     // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
     // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.

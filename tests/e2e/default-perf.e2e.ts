@@ -25,6 +25,7 @@ const ROWS = arg('rows')?.split(',');
 const STILLS = arg('stills');
 const WEAK = arg('weak') !== undefined;
 const VSYNC = arg('vsync') !== undefined;
+const FORCE_DRAW = arg('forcedraw') !== undefined;
 const PROFILE = arg('profile') !== undefined;
 const TIMEOUT = 150_000;
 const t0 = performance.now();
@@ -183,7 +184,7 @@ async function describe(page: Page): Promise<string> {
 
 async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{ median: number; p90: number; cpu: number; state: string }> {
   return page.evaluate(
-    async ([c, frames, p]) => {
+    async ([c, frames, p, forceDraw]) => {
       const cfg = c as Cfg;
       const r = window.__aether?.simulation?.renderer as unknown as R;
       const hook = async (rr: R, name: string): Promise<void> => {
@@ -334,7 +335,8 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
             last = now;
             yaw += 0.002;
             r.setCameraPose(pose[0] as number, pose[1] as number, pose[2] as number, yaw, pose[4] as number);
-            r.requestRender();
+            // The camera alone moves the view (as a user's orbit does); `--forcedraw` also marks the content changed every frame.
+            if (forceDraw) r.requestRender();
             if (++i < n) requestAnimationFrame(step);
             else done();
           };
@@ -420,7 +422,7 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
       const s = r.stats();
       return { median: best, p90: bestP90, cpu: s['frameMs'] as number, state: `${(window as unknown as { __dbg: string }).__dbg} ad=${String((r as unknown as { adaptive: { enabled: boolean; smoothedFps: number } }).adaptive.enabled)}/${String((r as unknown as { atRest: boolean }).atRest)}/${(r as unknown as { adaptive: { smoothedFps: number } }).adaptive.smoothedFps.toFixed(0)} post=${(r as unknown as { post?: { key: string } | null }).post?.key ?? 'none'} maps=${r.sunShadowInfo.mapSizes.join('/')} ${r.renderQuality}/${r.renderTier} fx=${r.intendedEffects.length} lvl=${s['performanceLevel']} scale=${s['resolutionScale']} draws=${s['drawCalls']}` };
     },
-    [cfg, FRAMES, [...pose]] as const,
+    [cfg, FRAMES, [...pose], FORCE_DRAW] as const,
   );
 }
 
