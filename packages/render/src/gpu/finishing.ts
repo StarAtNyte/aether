@@ -157,10 +157,10 @@ export type GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior'
 
 /** The preset table. Frozen. */
 export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Object.freeze({
-  'archviz-daylight': { id: 'archviz-daylight', tone: 'agx', exposureEv: 0.15, saturation: 1.04, contrast: 1.08, temperature: 0.04, tint: 0, grain: 1, bloom: 0.85 },
-  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.1, saturation: 1.08, contrast: 1.1, temperature: 0.2, tint: 0.02, grain: 1, bloom: 1.1 },
+  'archviz-daylight': { id: 'archviz-daylight', tone: 'agx', exposureEv: 0.15, saturation: 1.14, contrast: 1.2, temperature: 0.04, tint: 0, grain: 1, bloom: 0.85 },
+  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.1, saturation: 1.15, contrast: 1.2, temperature: 0.2, tint: 0.02, grain: 1, bloom: 1.1 },
   'dusk-interior': { id: 'dusk-interior', tone: 'agx', exposureEv: 0.25, saturation: 1.02, contrast: 1.12, temperature: 0.1, tint: -0.02, grain: 1.2, bloom: 1.25 },
-  overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 0.96, contrast: 1.04, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7 },
+  overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 1.04, contrast: 1.14, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7 },
   night: { id: 'night', tone: 'agx', exposureEv: 0.35, saturation: 0.9, contrast: 1.1, temperature: -0.12, tint: 0, grain: 1.5, bloom: 1.3 },
   neutral: { id: 'neutral', tone: 'aces', exposureEv: 0, saturation: 1, contrast: 1, temperature: 0, tint: 0, grain: 0.6, bloom: 1 },
 });

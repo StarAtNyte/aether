@@ -105,6 +105,13 @@ describe('grade presets', () => {
     expect(at({ sky: 'studio', sunIntensity: 2.5, ambientIntensity: 0.4 })).toBe('neutral');
     expect(at({ sky: 'space', sunIntensity: 2.5, ambientIntensity: 0.4 })).toBe('night');
   });
+  it('the AgX day looks counter the curve flat blacks and pale colour with a punchier contrast and saturation', () => {
+    for (const id of ['archviz-daylight', 'golden-hour', 'overcast'] as const) {
+      expect(GRADE_PRESETS[id].tone).toBe('agx');
+      expect(GRADE_PRESETS[id].contrast).toBeGreaterThanOrEqual(1.14);
+      expect(GRADE_PRESETS[id].saturation).toBeGreaterThanOrEqual(1.04);
+    }
+  });
   it('every preset is a sane, frozen look', () => {
     for (const [id, p] of Object.entries(GRADE_PRESETS)) {
       expect(isGradePresetId(id)).toBe(true);
